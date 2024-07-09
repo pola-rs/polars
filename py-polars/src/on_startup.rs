@@ -1,20 +1,17 @@
 use std::any::Any;
-use std::sync::Arc;
 
 use polars::prelude::*;
 use polars_core::chunked_array::object::builder::ObjectChunkedBuilder;
-use polars_core::chunked_array::object::registry;
 use polars_core::chunked_array::object::registry::AnonymousObjectBuilder;
+use polars_core::chunked_array::object::{registry, set_polars_allow_extension};
 use polars_core::error::PolarsError::ComputeError;
-use polars_core::error::PolarsResult;
-use polars_core::frame::DataFrame;
 use polars_error::PolarsWarning;
 use pyo3::intern;
 use pyo3::prelude::*;
 
 use crate::dataframe::PyDataFrame;
 use crate::map::lazy::{call_lambda_with_series, ToSeries};
-use crate::prelude::{python_udf, ObjectValue};
+use crate::prelude::ObjectValue;
 use crate::py_modules::{POLARS, UTILS};
 use crate::Wrap;
 
@@ -42,7 +39,7 @@ fn python_function_caller_df(df: DataFrame, lambda: &PyObject) -> PolarsResult<D
         })?;
         // unpack the wrapper in a PyDataFrame
         let py_pydf = result_df_wrapper.getattr(py, "_df").map_err(|_| {
-            let pytype = result_df_wrapper.as_ref(py).get_type();
+            let pytype = result_df_wrapper.bind(py).get_type();
             PolarsError::ComputeError(
                 format!("Expected 'LazyFrame.map' to return a 'DataFrame', got a '{pytype}'",)
                     .into(),
@@ -60,10 +57,7 @@ fn python_function_caller_df(df: DataFrame, lambda: &PyObject) -> PolarsResult<D
 
 fn warning_function(msg: &str, warning: PolarsWarning) {
     Python::with_gil(|py| {
-        let warn_fn = UTILS
-            .as_ref(py)
-            .getattr(intern!(py, "_polars_warn"))
-            .unwrap();
+        let warn_fn = UTILS.bind(py).getattr(intern!(py, "_polars_warn")).unwrap();
 
         if let Err(e) = warn_fn.call1((msg, Wrap(warning))) {
             eprintln!("{e}")
@@ -73,7 +67,15 @@ fn warning_function(msg: &str, warning: PolarsWarning) {
 
 #[pyfunction]
 pub fn __register_startup_deps() {
+    set_polars_allow_extension(true);
     if !registry::is_object_builder_registered() {
+        // Stack frames can get really large in debug mode.
+        #[cfg(debug_assertions)]
+        {
+            recursive::set_minimum_stack_size(1024 * 1024);
+            recursive::set_stack_allocation_size(1024 * 1024 * 16);
+        }
+
         // register object type builder
         let object_builder = Box::new(|name: &str, capacity: usize| {
             Box::new(ObjectChunkedBuilder::<ObjectValue>::new(name, capacity))

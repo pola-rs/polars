@@ -21,8 +21,8 @@ from functools import partial, singledispatch
 from typing import TYPE_CHECKING, Any, Callable
 
 import polars._reexport as pl
+from polars._utils.convert import to_py_date, to_py_datetime
 from polars.dependencies import pyiceberg
-from polars.utils.convert import _to_python_date, _to_python_datetime
 
 if TYPE_CHECKING:
     from datetime import date, datetime
@@ -34,8 +34,8 @@ if TYPE_CHECKING:
 __all__ = ["scan_iceberg"]
 
 _temporal_conversions: dict[str, Callable[..., datetime | date]] = {
-    "_to_python_date": _to_python_date,
-    "_to_python_datetime": _to_python_datetime,
+    "to_py_date": to_py_date,
+    "to_py_datetime": to_py_datetime,
 }
 
 

@@ -4,7 +4,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:read]
     use polars::prelude::*;
 
-    let df = CsvReader::from_path("docs/data/path.csv")
+    let df = CsvReadOptions::default()
+        .try_into_reader_with_file_path(Some("docs/data/path.csv".into()))
         .unwrap()
         .finish()
         .unwrap();

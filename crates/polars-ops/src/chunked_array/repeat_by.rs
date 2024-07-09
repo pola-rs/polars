@@ -1,5 +1,4 @@
 use arrow::array::ListArray;
-use arrow::legacy::array::ListFromIter;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
 
@@ -40,7 +39,7 @@ where
                 unsafe {
                     LargeListArray::from_iter_primitive_trusted_len(
                         iter,
-                        T::get_dtype().to_arrow(true),
+                        T::get_dtype().to_arrow(CompatLevel::newest()),
                     )
                 }
             }))

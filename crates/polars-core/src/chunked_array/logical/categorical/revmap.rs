@@ -158,14 +158,14 @@ impl RevMapping {
                 }
                 rev_map
                     .iter()
-                    // Safety:
+                    // SAFETY:
                     // value is always within bounds
                     .find(|(_k, &v)| (unsafe { a.value_unchecked(v as usize) } == value))
                     .map(|(k, _v)| *k)
             },
 
             Self::Local(a, _) => {
-                // Safety: within bounds
+                // SAFETY: within bounds
                 unsafe { (0..a.len()).find(|idx| a.value_unchecked(*idx) == value) }
                     .map(|idx| idx as u32)
             },

@@ -12,7 +12,7 @@ impl Arrow2Arrow for StructArray {
             .nulls(self.validity.as_ref().map(|b| b.clone().into()))
             .child_data(self.values.iter().map(|x| to_data(x.as_ref())).collect());
 
-        // Safety: Array is valid
+        // SAFETY: Array is valid
         unsafe { builder.build_unchecked() }
     }
 

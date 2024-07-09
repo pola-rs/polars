@@ -1,13 +1,41 @@
 from __future__ import annotations
 
+import gc
+import os
 import random
 import string
-from typing import List, cast
+import sys
+import tracemalloc
+from typing import Any, Generator, List, cast
 
 import numpy as np
 import pytest
 
 import polars as pl
+from polars.testing.parametric import load_profile
+
+load_profile(
+    profile=os.environ.get("POLARS_HYPOTHESIS_PROFILE", "fast"),  # type: ignore[arg-type]
+)
+
+# Data type groups
+SIGNED_INTEGER_DTYPES = [pl.Int8(), pl.Int16(), pl.Int32(), pl.Int64()]
+UNSIGNED_INTEGER_DTYPES = [pl.UInt8(), pl.UInt16(), pl.UInt32(), pl.UInt64()]
+INTEGER_DTYPES = SIGNED_INTEGER_DTYPES + UNSIGNED_INTEGER_DTYPES
+FLOAT_DTYPES = [pl.Float32(), pl.Float64()]
+NUMERIC_DTYPES = INTEGER_DTYPES + FLOAT_DTYPES
+
+DATETIME_DTYPES = [pl.Datetime("ms"), pl.Datetime("us"), pl.Datetime("ns")]
+DURATION_DTYPES = [pl.Duration("ms"), pl.Duration("us"), pl.Duration("ns")]
+TEMPORAL_DTYPES = [*DATETIME_DTYPES, *DURATION_DTYPES, pl.Date(), pl.Time()]
+
+NESTED_DTYPES = [pl.List, pl.Struct, pl.Array]
+
+
+@pytest.fixture()
+def partition_limit() -> int:
+    """The limit at which Polars will start partitioning in debug builds."""
+    return 15
 
 
 @pytest.fixture()
@@ -32,13 +60,11 @@ def df() -> pl.DataFrame:
         }
     )
     return df.with_columns(
-        [
-            pl.col("date").cast(pl.Date),
-            pl.col("datetime").cast(pl.Datetime),
-            pl.col("strings").cast(pl.Categorical).alias("cat"),
-            pl.col("strings").cast(pl.Enum(["foo", "ham", "bar"])).alias("enum"),
-            pl.col("time").cast(pl.Time),
-        ]
+        pl.col("date").cast(pl.Date),
+        pl.col("datetime").cast(pl.Datetime),
+        pl.col("strings").cast(pl.Categorical).alias("cat"),
+        pl.col("strings").cast(pl.Enum(["foo", "ham", "bar"])).alias("enum"),
+        pl.col("time").cast(pl.Time),
     )
 
 
@@ -138,3 +164,65 @@ for date_sep in ("/", "-"):
 @pytest.fixture(params=ISO8601_FORMATS_DATE)
 def iso8601_format_date(request: pytest.FixtureRequest) -> list[str]:
     return cast(List[str], request.param)
+
+
+class MemoryUsage:
+    """
+    Provide an API for measuring peak memory usage.
+
+    Memory from PyArrow is not tracked at the moment.
+    """
+
+    def reset_tracking(self) -> None:
+        """Reset tracking to zero."""
+        gc.collect()
+        tracemalloc.stop()
+        tracemalloc.start()
+        assert self.get_peak() < 100_000
+
+    def get_current(self) -> int:
+        """
+        Return currently allocated memory, in bytes.
+
+        This only tracks allocations since this object was created or
+        ``reset_tracking()`` was called, whichever is later.
+        """
+        return tracemalloc.get_traced_memory()[0]
+
+    def get_peak(self) -> int:
+        """
+        Return peak allocated memory, in bytes.
+
+        This returns peak allocations since this object was created or
+        ``reset_tracking()`` was called, whichever is later.
+        """
+        return tracemalloc.get_traced_memory()[1]
+
+
+@pytest.fixture()
+def memory_usage_without_pyarrow() -> Generator[MemoryUsage, Any, Any]:
+    """
+    Provide an API for measuring peak memory usage.
+
+    Not thread-safe: there should only be one instance of MemoryUsage at any
+    given time.
+
+    Memory usage from PyArrow is not tracked.
+    """
+    if not pl.build_info()["compiler"]["debug"]:
+        pytest.skip("Memory usage only available in debug/dev builds.")
+
+    if os.getenv("POLARS_FORCE_ASYNC", "0") == "1":
+        pytest.skip("Hangs when combined with async glob")
+
+    if sys.platform == "win32":
+        # abi3 wheels don't have the tracemalloc C APIs, which breaks linking
+        # on Windows.
+        pytest.skip("Windows not supported at the moment.")
+
+    gc.collect()
+    tracemalloc.start()
+    try:
+        yield MemoryUsage()
+    finally:
+        tracemalloc.stop()

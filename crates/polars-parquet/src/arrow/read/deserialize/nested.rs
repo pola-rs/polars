@@ -1,12 +1,9 @@
 use arrow::array::PrimitiveArray;
-use arrow::datatypes::{ArrowDataType, Field};
 use arrow::match_integer_type;
 use ethnum::I256;
 use polars_error::polars_bail;
 
-use super::nested_utils::{InitNested, NestedArrayIter};
 use super::*;
-use crate::parquet::schema::types::PrimitiveType;
 
 /// Converts an iterator of arrays to a trait object returning trait objects
 #[inline]
@@ -37,7 +34,7 @@ where
     }))
 }
 
-pub fn columns_to_iter_recursive<'a, I: 'a>(
+pub fn columns_to_iter_recursive<'a, I>(
     mut columns: Vec<I>,
     mut types: Vec<&PrimitiveType>,
     field: Field,
@@ -46,7 +43,7 @@ pub fn columns_to_iter_recursive<'a, I: 'a>(
     chunk_size: Option<usize>,
 ) -> PolarsResult<NestedArrayIter<'a>>
 where
-    I: PagesIter,
+    I: 'a + PagesIter,
 {
     use arrow::datatypes::PhysicalType::*;
     use arrow::datatypes::PrimitiveType::*;
@@ -242,10 +239,25 @@ where
                     dict_read::<$K, _>(iter, init, type_, data_type, num_rows, chunk_size)
                 })?
             },
-            ArrowDataType::List(inner)
-            | ArrowDataType::LargeList(inner)
-            | ArrowDataType::FixedSizeList(inner, _) => {
+            ArrowDataType::List(inner) | ArrowDataType::LargeList(inner) => {
                 init.push(InitNested::List(field.is_nullable));
+                let iter = columns_to_iter_recursive(
+                    columns,
+                    types,
+                    inner.as_ref().clone(),
+                    init,
+                    num_rows,
+                    chunk_size,
+                )?;
+                let iter = iter.map(move |x| {
+                    let (mut nested, array) = x?;
+                    let array = create_list(field.data_type().clone(), &mut nested, array);
+                    Ok((nested, array))
+                });
+                Box::new(iter) as _
+            },
+            ArrowDataType::FixedSizeList(inner, width) => {
+                init.push(InitNested::FixedSizeList(field.is_nullable, *width));
                 let iter = columns_to_iter_recursive(
                     columns,
                     types,
@@ -407,7 +419,7 @@ where
                     },
                     PhysicalType::FixedLenByteArray(n) => {
                         polars_bail!(ComputeError:
-                            "Can't decode Decimal256 type from from `FixedLenByteArray` of len {n}"
+                            "Can't decode Decimal256 type from `FixedLenByteArray` of len {n}"
                         )
                     },
                     _ => {

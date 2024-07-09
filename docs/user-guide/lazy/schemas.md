@@ -1,8 +1,8 @@
 # Schema
 
-The schema of a Polars `DataFrame` or `LazyFrame` sets out the names of the columns and their datatypes. You can see the schema with the `.schema` method on a `DataFrame` or `LazyFrame`
+The schema of a Polars `DataFrame` or `LazyFrame` sets out the names of the columns and their datatypes. You can see the schema with the `.collect_schema` method on a `DataFrame` or `LazyFrame`
 
-{{code_block('user-guide/lazy/schema','schema',['DataFrame','lazy'])}}
+{{code_block('user-guide/lazy/schema','schema',['LazyFrame'])}}
 
 ```python exec="on" result="text" session="user-guide/lazy/schemas"
 --8<-- "python/user-guide/lazy/schema.py:setup"
@@ -17,11 +17,16 @@ One advantage of the lazy API is that Polars will check the schema before any da
 
 We see how this works in the following simple example where we call the `.round` expression on the integer `bar` column.
 
-{{code_block('user-guide/lazy/schema','typecheck',['lazy','with_columns'])}}
+{{code_block('user-guide/lazy/schema','lazyround',['with_columns'])}}
 
 The `.round` expression is only valid for columns with a floating point dtype. Calling `.round` on an integer column means the operation will raise an `InvalidOperationError` when we evaluate the query with `collect`. This schema check happens before the data is processed when we call `collect`.
 
-`python exec="on" result="text" session="user-guide/lazy/schemas"`
+{{code_block('user-guide/lazy/schema','typecheck',[])}}
+
+```python exec="on" result="text" session="user-guide/lazy/schemas"
+--8<-- "python/user-guide/lazy/schema.py:lazyround"
+--8<-- "python/user-guide/lazy/schema.py:typecheck"
+```
 
 If we executed this query in eager mode the error would only be found once the data had been processed in all earlier steps.
 
@@ -53,7 +58,7 @@ We show how to deal with a non-lazy operation in this example where we:
 - do a `.filter`
 - finish by executing the query with `.collect` to get a `DataFrame`
 
-{{code_block('user-guide/lazy/schema','lazyeager',['collect','pivot','filter'])}}
+{{code_block('user-guide/lazy/schema','lazyeager',['collect','lazy','pivot','filter'])}}
 
 ```python exec="on" result="text" session="user-guide/lazy/schemas"
 --8<-- "python/user-guide/lazy/schema.py:lazyeager"

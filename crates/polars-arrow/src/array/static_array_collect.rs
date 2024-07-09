@@ -70,7 +70,13 @@ pub trait ArrayFromIter<T>: Sized {
 impl<T, A: ParameterFreeDtypeStaticArray + ArrayFromIter<T>> ArrayFromIterDtype<T> for A {
     #[inline(always)]
     fn arr_from_iter_with_dtype<I: IntoIterator<Item = T>>(dtype: ArrowDataType, iter: I) -> Self {
-        debug_assert!(std::mem::discriminant(&dtype) == std::mem::discriminant(&A::get_dtype()));
+        // FIXME: currently some Object arrays have Unknown dtype, when this is fixed remove this bypass.
+        if dtype != ArrowDataType::Unknown {
+            debug_assert_eq!(
+                std::mem::discriminant(&dtype),
+                std::mem::discriminant(&A::get_dtype())
+            );
+        }
         Self::arr_from_iter(iter)
     }
 
@@ -80,7 +86,13 @@ impl<T, A: ParameterFreeDtypeStaticArray + ArrayFromIter<T>> ArrayFromIterDtype<
         I: IntoIterator<Item = T>,
         I::IntoIter: TrustedLen,
     {
-        debug_assert!(std::mem::discriminant(&dtype) == std::mem::discriminant(&A::get_dtype()));
+        // FIXME: currently some Object arrays have Unknown dtype, when this is fixed remove this bypass.
+        if dtype != ArrowDataType::Unknown {
+            debug_assert_eq!(
+                std::mem::discriminant(&dtype),
+                std::mem::discriminant(&A::get_dtype())
+            );
+        }
         Self::arr_from_iter_trusted(iter)
     }
 
@@ -89,7 +101,13 @@ impl<T, A: ParameterFreeDtypeStaticArray + ArrayFromIter<T>> ArrayFromIterDtype<
         dtype: ArrowDataType,
         iter: I,
     ) -> Result<Self, E> {
-        debug_assert!(std::mem::discriminant(&dtype) == std::mem::discriminant(&A::get_dtype()));
+        // FIXME: currently some Object arrays have Unknown dtype, when this is fixed remove this bypass.
+        if dtype != ArrowDataType::Unknown {
+            debug_assert_eq!(
+                std::mem::discriminant(&dtype),
+                std::mem::discriminant(&A::get_dtype())
+            );
+        }
         Self::try_arr_from_iter(iter)
     }
 
@@ -99,7 +117,13 @@ impl<T, A: ParameterFreeDtypeStaticArray + ArrayFromIter<T>> ArrayFromIterDtype<
         I: IntoIterator<Item = Result<T, E>>,
         I::IntoIter: TrustedLen,
     {
-        debug_assert!(std::mem::discriminant(&dtype) == std::mem::discriminant(&A::get_dtype()));
+        // FIXME: currently some Object arrays have Unknown dtype, when this is fixed remove this bypass.
+        if dtype != ArrowDataType::Unknown {
+            debug_assert_eq!(
+                std::mem::discriminant(&dtype),
+                std::mem::discriminant(&A::get_dtype())
+            );
+        }
         Self::try_arr_from_iter_trusted(iter)
     }
 }
@@ -552,7 +576,7 @@ impl<T: IntoBytes> ArrayFromIter<Option<T>> for BinaryViewArray {
     // fn try_arr_from_iter_trusted<E, I>(iter: I) -> Result<Self, E>
 }
 
-/// We use this to re-use the binary collect implementation for strings.
+/// We use this to reuse the binary collect implementation for strings.
 /// # Safety
 /// The array must be valid UTF-8.
 unsafe fn into_utf8array(arr: BinaryArray<i64>) -> Utf8Array<i64> {
@@ -807,12 +831,14 @@ impl ArrayFromIter<Option<bool>> for BooleanArray {
 // as Rust considers that AsRef<dyn Array> for Option<&dyn Array> could be implemented.
 trait AsArray {
     fn as_array(&self) -> &dyn Array;
+    #[cfg(feature = "dtype-array")]
     fn into_boxed_array(self) -> Box<dyn Array>; // Prevents unnecessary re-boxing.
 }
 impl AsArray for Box<dyn Array> {
     fn as_array(&self) -> &dyn Array {
         self.as_ref()
     }
+    #[cfg(feature = "dtype-array")]
     fn into_boxed_array(self) -> Box<dyn Array> {
         self
     }
@@ -821,6 +847,7 @@ impl<'a> AsArray for &'a dyn Array {
     fn as_array(&self) -> &'a dyn Array {
         *self
     }
+    #[cfg(feature = "dtype-array")]
     fn into_boxed_array(self) -> Box<dyn Array> {
         self.to_boxed()
     }
@@ -874,7 +901,39 @@ impl<T: AsArray> ArrayFromIterDtype<Option<T>> for ListArray<i64> {
         iter: I,
     ) -> Result<Self, E> {
         let iter_values = iter.into_iter().collect::<Result<Vec<_>, E>>()?;
-        Ok(Self::arr_from_iter_with_dtype(dtype, iter_values))
+        let mut builder = AnonymousListArrayBuilder::new(iter_values.len());
+        for arr in &iter_values {
+            builder.push_opt(arr.as_ref().map(|a| a.as_array()));
+        }
+        let inner = dtype
+            .inner_dtype()
+            .expect("expected nested type in ListArray collect");
+        Ok(builder
+            .finish(Some(&inner.underlying_physical_type()))
+            .unwrap())
+    }
+}
+
+impl<T: AsArray> ArrayFromIter<Option<T>> for ListArray<i64> {
+    fn arr_from_iter<I: IntoIterator<Item = Option<T>>>(iter: I) -> Self {
+        let iter = iter.into_iter();
+        let iter_values: Vec<Option<T>> = iter.into_iter().collect();
+        let mut builder = AnonymousListArrayBuilder::new(iter_values.len());
+        for arr in &iter_values {
+            builder.push_opt(arr.as_ref().map(|a| a.as_array()));
+        }
+        builder.finish(None).unwrap()
+    }
+
+    fn try_arr_from_iter<E, I: IntoIterator<Item = Result<Option<T>, E>>>(
+        iter: I,
+    ) -> Result<Self, E> {
+        let iter_values = iter.into_iter().collect::<Result<Vec<_>, E>>()?;
+        let mut builder = AnonymousListArrayBuilder::new(iter_values.len());
+        for arr in &iter_values {
+            builder.push_opt(arr.as_ref().map(|a| a.as_array()));
+        }
+        Ok(builder.finish(None).unwrap())
     }
 }
 

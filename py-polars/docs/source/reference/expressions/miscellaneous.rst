@@ -6,5 +6,6 @@ Miscellaneous
 .. autosummary::
    :toctree: api/
 
-    Expr.from_json
-    Expr.set_sorted
+   Expr.deserialize
+   Expr.from_json
+   Expr.set_sorted

@@ -1,4 +1,3 @@
-use std::iter::FromIterator;
 use std::sync::Arc;
 
 use polars_error::{polars_bail, PolarsResult};
@@ -236,6 +235,7 @@ impl<O: Offset, P: AsRef<[u8]>> FromIterator<Option<P>> for MutableBinaryArray<O
 
 impl<O: Offset> MutableBinaryArray<O> {
     /// Creates a [`MutableBinaryArray`] from an iterator of trusted length.
+    ///
     /// # Safety
     /// The iterator must be [`TrustedLen`](https://doc.rust-lang.org/std/iter/trait.TrustedLen.html).
     /// I.e. that `size_hint().1` correctly reports its length.
@@ -262,6 +262,7 @@ impl<O: Offset> MutableBinaryArray<O> {
     }
 
     /// Creates a new [`BinaryArray`] from a [`TrustedLen`] of `&[u8]`.
+    ///
     /// # Safety
     /// The iterator must be [`TrustedLen`](https://doc.rust-lang.org/std/iter/trait.TrustedLen.html).
     /// I.e. that `size_hint().1` correctly reports its length.
@@ -283,6 +284,7 @@ impl<O: Offset> MutableBinaryArray<O> {
     }
 
     /// Creates a [`MutableBinaryArray`] from an falible iterator of trusted length.
+    ///
     /// # Safety
     /// The iterator must be [`TrustedLen`](https://doc.rust-lang.org/std/iter/trait.TrustedLen.html).
     /// I.e. that `size_hint().1` correctly reports its length.
@@ -325,7 +327,7 @@ impl<O: Offset> MutableBinaryArray<O> {
         P: AsRef<[u8]>,
         I: TrustedLen<Item = P>,
     {
-        // Safety: The iterator is `TrustedLen`
+        // SAFETY: The iterator is `TrustedLen`
         unsafe { self.extend_trusted_len_values_unchecked(iterator) }
     }
 
@@ -349,6 +351,7 @@ impl<O: Offset> MutableBinaryArray<O> {
     /// Extends the [`MutableBinaryArray`] from an `iterator` of values of trusted length.
     /// This differs from `extend_trusted_len_unchecked` which accepts iterator of optional
     /// values.
+    ///
     /// # Safety
     /// The `iterator` must be [`TrustedLen`]
     #[inline]
@@ -373,11 +376,12 @@ impl<O: Offset> MutableBinaryArray<O> {
         P: AsRef<[u8]>,
         I: TrustedLen<Item = Option<P>>,
     {
-        // Safety: The iterator is `TrustedLen`
+        // SAFETY: The iterator is `TrustedLen`
         unsafe { self.extend_trusted_len_unchecked(iterator) }
     }
 
     /// Extends the [`MutableBinaryArray`] from an iterator of [`TrustedLen`]
+    ///
     /// # Safety
     /// The `iterator` must be [`TrustedLen`]
     #[inline]

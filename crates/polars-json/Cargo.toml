@@ -15,6 +15,7 @@ polars-utils = { workspace = true }
 ahash = { workspace = true }
 arrow = { workspace = true }
 chrono = { workspace = true }
+chrono-tz = { workspace = true, optional = true }
 fallible-streaming-iterator = { version = "0.1" }
 hashbrown = { workspace = true }
 indexmap = { workspace = true }
@@ -23,3 +24,8 @@ num-traits = { workspace = true }
 ryu = { workspace = true }
 simd-json = { workspace = true }
 streaming-iterator = { workspace = true }
+
+[features]
+chrono-tz = ["dep:chrono-tz", "arrow/chrono-tz"]
+dtype-decimal = ["arrow/dtype-decimal"]
+timezones = ["arrow/chrono-tz"]

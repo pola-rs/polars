@@ -13,7 +13,7 @@ pub(crate) fn naive_date_to_date(nd: NaiveDate) -> i32 {
 
 impl DateChunked {
     pub fn as_date_iter(&self) -> impl TrustedLen<Item = Option<NaiveDate>> + '_ {
-        // safety: we know the iterators len
+        // SAFETY: we know the iterators len
         unsafe {
             self.downcast_iter()
                 .flat_map(|iter| {

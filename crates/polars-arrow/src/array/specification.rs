@@ -93,7 +93,7 @@ pub fn try_check_utf8<O: Offset>(offsets: &[O], values: &[u8]) -> PolarsResult<(
         for start in starts {
             let start = start.to_usize();
 
-            // Safety: `try_check_offsets_bounds` just checked for bounds
+            // SAFETY: `try_check_offsets_bounds` just checked for bounds
             let b = *unsafe { values.get_unchecked(start) };
 
             // A valid code-point iff it does not start with 0b10xxxxxx

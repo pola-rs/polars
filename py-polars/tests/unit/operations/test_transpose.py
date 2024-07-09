@@ -5,7 +5,11 @@ from typing import Iterator
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError, StringCacheMismatchError
+from polars.exceptions import (
+    InvalidOperationError,
+    SchemaError,
+    StringCacheMismatchError,
+)
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -31,7 +35,7 @@ def test_transpose_tz_naive_and_tz_aware() -> None:
     )
     df = df.with_columns(pl.col("b").dt.replace_time_zone("Asia/Kathmandu"))
     with pytest.raises(
-        ComputeError,
+        SchemaError,
         match=r"failed to determine supertype of datetime\[μs\] and datetime\[μs, Asia/Kathmandu\]",
     ):
         df.transpose()
@@ -192,7 +196,7 @@ def test_err_transpose_object() -> None:
     class CustomObject:
         pass
 
-    with pytest.raises(pl.InvalidOperationError):
+    with pytest.raises(InvalidOperationError):
         pl.DataFrame([CustomObject()]).transpose()
 
 
@@ -200,3 +204,9 @@ def test_transpose_name_from_column_13777() -> None:
     csv_file = io.BytesIO(b"id,kc\nhi,3")
     df = pl.read_csv(csv_file).transpose(column_names="id")
     assert_series_equal(df.to_series(0), pl.Series("hi", [3]))
+
+
+def test_transpose_multiple_chunks() -> None:
+    df = pl.DataFrame({"a": ["1"]})
+    expected = pl.DataFrame({"column_0": ["1"], "column_1": ["1"]})
+    assert_frame_equal(df.vstack(df).transpose(), expected)

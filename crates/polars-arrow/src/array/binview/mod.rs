@@ -26,6 +26,7 @@ mod private {
 }
 pub use iterator::BinaryViewValueIter;
 pub use mutable::MutableBinaryViewArray;
+use polars_utils::slice::GetSaferUnchecked;
 use private::Sealed;
 
 use crate::array::binview::view::{validate_binary_view, validate_utf8_only, validate_utf8_view};
@@ -34,6 +35,8 @@ use crate::bitmap::utils::{BitmapIter, ZipValidity};
 pub type BinaryViewArray = BinaryViewArrayGeneric<[u8]>;
 pub type Utf8ViewArray = BinaryViewArrayGeneric<str>;
 pub use view::View;
+
+use super::Splitable;
 
 pub type MutablePlString = MutableBinaryViewArray<str>;
 pub type MutablePlBinary = MutableBinaryViewArray<[u8]>;
@@ -109,8 +112,6 @@ pub struct BinaryViewArrayGeneric<T: ViewType + ?Sized> {
     data_type: ArrowDataType,
     views: Buffer<View>,
     buffers: Arc<[Buffer<u8>]>,
-    // Raw buffer access. (pointer, len).
-    raw_buffers: Arc<[(*const u8, usize)]>,
     validity: Option<Bitmap>,
     phantom: PhantomData<T>,
     /// Total bytes length if we would concatenate them all.
@@ -121,7 +122,7 @@ pub struct BinaryViewArrayGeneric<T: ViewType + ?Sized> {
 
 impl<T: ViewType + ?Sized> PartialEq for BinaryViewArrayGeneric<T> {
     fn eq(&self, other: &Self) -> bool {
-        self.into_iter().zip(other).all(|(l, r)| l == r)
+        self.len() == other.len() && self.into_iter().zip(other).all(|(l, r)| l == r)
     }
 }
 
@@ -131,7 +132,6 @@ impl<T: ViewType + ?Sized> Clone for BinaryViewArrayGeneric<T> {
             data_type: self.data_type.clone(),
             views: self.views.clone(),
             buffers: self.buffers.clone(),
-            raw_buffers: self.raw_buffers.clone(),
             validity: self.validity.clone(),
             phantom: Default::default(),
             total_bytes_len: AtomicU64::new(self.total_bytes_len.load(Ordering::Relaxed)),
@@ -143,12 +143,6 @@ impl<T: ViewType + ?Sized> Clone for BinaryViewArrayGeneric<T> {
 unsafe impl<T: ViewType + ?Sized> Send for BinaryViewArrayGeneric<T> {}
 unsafe impl<T: ViewType + ?Sized> Sync for BinaryViewArrayGeneric<T> {}
 
-fn buffers_into_raw<T>(buffers: &[Buffer<T>]) -> Arc<[(*const T, usize)]> {
-    buffers
-        .iter()
-        .map(|buf| (buf.storage_ptr(), buf.len()))
-        .collect()
-}
 const UNKNOWN_LEN: u64 = u64::MAX;
 
 impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
@@ -164,12 +158,10 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         total_bytes_len: usize,
         total_buffer_len: usize,
     ) -> Self {
-        let raw_buffers = buffers_into_raw(&buffers);
         Self {
             data_type,
             views,
             buffers,
-            raw_buffers,
             validity,
             phantom: Default::default(),
             total_bytes_len: AtomicU64::new(total_bytes_len as u64),
@@ -178,6 +170,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     }
 
     /// Create a new BinaryViewArray but initialize a statistics compute.
+    ///
     /// # Safety
     /// The caller must ensure the invariants
     pub unsafe fn new_unchecked_unknown_md(
@@ -210,6 +203,32 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
 
     pub fn views(&self) -> &Buffer<View> {
         &self.views
+    }
+
+    pub fn into_views(self) -> Vec<View> {
+        self.views.make_mut()
+    }
+
+    pub fn into_inner(
+        self,
+    ) -> (
+        Buffer<View>,
+        Arc<[Buffer<u8>]>,
+        Option<Bitmap>,
+        usize,
+        usize,
+    ) {
+        let views = self.views;
+        let buffers = self.buffers;
+        let validity = self.validity;
+
+        (
+            views,
+            buffers,
+            validity,
+            self.total_bytes_len.load(Ordering::Relaxed) as usize,
+            self.total_buffer_len,
+        )
     }
 
     pub fn try_new(
@@ -267,33 +286,13 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     }
 
     /// Returns the element at index `i`
+    ///
     /// # Safety
     /// Assumes that the `i < self.len`.
     #[inline]
     pub unsafe fn value_unchecked(&self, i: usize) -> &T {
-        let v = *self.views.get_unchecked(i);
-        let len = v.length;
-
-        // view layout:
-        // length: 4 bytes
-        // prefix: 4 bytes
-        // buffer_index: 4 bytes
-        // offset: 4 bytes
-
-        // inlined layout:
-        // length: 4 bytes
-        // data: 12 bytes
-
-        let bytes = if len <= 12 {
-            let ptr = self.views.as_ptr() as *const u8;
-            std::slice::from_raw_parts(ptr.add(i * 16 + 4), len as usize)
-        } else {
-            let (data_ptr, data_len) = *self.raw_buffers.get_unchecked(v.buffer_idx as usize);
-            let data = std::slice::from_raw_parts(data_ptr, data_len);
-            let offset = v.offset as usize;
-            data.get_unchecked(offset..offset + len as usize)
-        };
-        T::from_bytes_unchecked(bytes)
+        let v = self.views.get_unchecked_release(i);
+        T::from_bytes_unchecked(v.get_slice_unchecked(&self.buffers))
     }
 
     /// Returns an iterator of `Option<&T>` over every element of this array.
@@ -365,7 +364,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
             return self;
         }
         let mut mutable = MutableBinaryViewArray::with_capacity(self.len());
-        let buffers = self.raw_buffers.as_ref();
+        let buffers = self.buffers.as_ref();
 
         for view in self.views.as_ref() {
             unsafe { mutable.push_view(*view, buffers) }
@@ -422,7 +421,7 @@ impl BinaryViewArray {
     /// Validate the underlying bytes on UTF-8.
     pub fn validate_utf8(&self) -> PolarsResult<()> {
         // SAFETY: views are correct
-        unsafe { validate_utf8_only(&self.views, &self.buffers) }
+        unsafe { validate_utf8_only(&self.views, &self.buffers, &self.buffers) }
     }
 
     /// Convert [`BinaryViewArray`] to [`Utf8ViewArray`].
@@ -485,6 +484,16 @@ impl<T: ViewType + ?Sized> Array for BinaryViewArrayGeneric<T> {
         self.validity.as_ref()
     }
 
+    fn split_at_boxed(&self, offset: usize) -> (Box<dyn Array>, Box<dyn Array>) {
+        let (lhs, rhs) = Splitable::split_at(self, offset);
+        (Box::new(lhs), Box::new(rhs))
+    }
+
+    unsafe fn split_at_boxed_unchecked(&self, offset: usize) -> (Box<dyn Array>, Box<dyn Array>) {
+        let (lhs, rhs) = unsafe { Splitable::split_at_unchecked(self, offset) };
+        (Box::new(lhs), Box::new(rhs))
+    }
+
     fn slice(&mut self, offset: usize, length: usize) {
         assert!(
             offset + length <= self.len(),
@@ -512,5 +521,41 @@ impl<T: ViewType + ?Sized> Array for BinaryViewArrayGeneric<T> {
 
     fn to_boxed(&self) -> Box<dyn Array> {
         Box::new(self.clone())
+    }
+}
+
+impl<T: ViewType + ?Sized> Splitable for BinaryViewArrayGeneric<T> {
+    fn check_bound(&self, offset: usize) -> bool {
+        offset <= self.len()
+    }
+
+    unsafe fn _split_at_unchecked(&self, offset: usize) -> (Self, Self) {
+        let (lhs_views, rhs_views) = unsafe { self.views.split_at_unchecked(offset) };
+        let (lhs_validity, rhs_validity) = unsafe { self.validity.split_at_unchecked(offset) };
+
+        unsafe {
+            (
+                Self::new_unchecked(
+                    self.data_type.clone(),
+                    lhs_views,
+                    self.buffers.clone(),
+                    lhs_validity,
+                    if offset == 0 { 0 } else { UNKNOWN_LEN as _ },
+                    self.total_buffer_len(),
+                ),
+                Self::new_unchecked(
+                    self.data_type.clone(),
+                    rhs_views,
+                    self.buffers.clone(),
+                    rhs_validity,
+                    if offset == self.len() {
+                        0
+                    } else {
+                        UNKNOWN_LEN as _
+                    },
+                    self.total_buffer_len(),
+                ),
+            )
+        }
     }
 }

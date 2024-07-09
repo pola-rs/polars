@@ -1,18 +1,18 @@
 from __future__ import annotations
 
-from io import BytesIO, StringIO
-from pathlib import Path
 from typing import TYPE_CHECKING, Literal, overload
 
+from polars._utils.deprecation import deprecate_renamed_function
+from polars._utils.serde import serialize_polars_object
+from polars._utils.wrap import wrap_expr
 from polars.exceptions import ComputeError
-from polars.utils._wrap import wrap_expr
-from polars.utils.deprecation import deprecate_nonkeyword_arguments
-from polars.utils.various import normalize_filepath
 
 if TYPE_CHECKING:
     from io import IOBase
+    from pathlib import Path
 
     from polars import Expr
+    from polars._typing import SerializationFormat
 
 
 class ExprMetaNameSpace:
@@ -67,7 +67,7 @@ class ExprMetaNameSpace:
 
         Examples
         --------
-        >>> e = pl.col(["a", "b"]).alias("bar")
+        >>> e = pl.col(["a", "b"]).name.suffix("_foo")
         >>> e.meta.has_multiple_outputs()
         True
         """
@@ -97,19 +97,55 @@ class ExprMetaNameSpace:
 
         Examples
         --------
-        >>> e = pl.col("^.*$").alias("bar")
+        >>> e = pl.col("^.*$").name.prefix("foo_")
         >>> e.meta.is_regex_projection()
         True
         """
         return self._pyexpr.meta_is_regex_projection()
 
-    @overload
-    def output_name(self, *, raise_if_undetermined: Literal[True] = True) -> str:
-        ...
+    def is_column_selection(self, *, allow_aliasing: bool = False) -> bool:
+        """
+        Indicate if this expression only selects columns (optionally with aliasing).
+
+        This can include bare columns, column matches by regex or dtype, selectors
+        and exclude ops, and (optionally) column/expression aliasing.
+
+        .. versionadded:: 0.20.30
+
+        Parameters
+        ----------
+        allow_aliasing
+            If False (default), any aliasing is not considered pure column selection.
+            Set True to allow for column selection that also includes aliasing.
+
+        Examples
+        --------
+        >>> import polars.selectors as cs
+        >>> e = pl.col("foo")
+        >>> e.meta.is_column_selection()
+        True
+        >>> e = pl.col("foo").alias("bar")
+        >>> e.meta.is_column_selection()
+        False
+        >>> e.meta.is_column_selection(allow_aliasing=True)
+        True
+        >>> e = pl.col("foo") * pl.col("bar")
+        >>> e.meta.is_column_selection()
+        False
+        >>> e = cs.starts_with("foo")
+        >>> e.meta.is_column_selection()
+        True
+        >>> e = cs.starts_with("foo").exclude("foo!")
+        >>> e.meta.is_column_selection()
+        True
+        """
+        return self._pyexpr.meta_is_column_selection(allow_aliasing)
 
     @overload
-    def output_name(self, *, raise_if_undetermined: Literal[False]) -> str | None:
-        ...
+    def output_name(self, *, raise_if_undetermined: Literal[True] = True) -> str: ...
+
+    @overload
+    def output_name(self, *, raise_if_undetermined: Literal[False]) -> str | None: ...
 
     def output_name(self, *, raise_if_undetermined: bool = True) -> str | None:
         """
@@ -206,54 +242,109 @@ class ExprMetaNameSpace:
         return wrap_expr(self._pyexpr._meta_as_selector())
 
     def _selector_add(self, other: Expr) -> Expr:
-        """Add selectors."""
+        """Add ('+') selectors."""
         return wrap_expr(self._pyexpr._meta_selector_add(other._pyexpr))
 
-    def _selector_sub(self, other: Expr) -> Expr:
-        """Subtract selectors."""
-        return wrap_expr(self._pyexpr._meta_selector_sub(other._pyexpr))
-
     def _selector_and(self, other: Expr) -> Expr:
-        """& selectors."""
+        """And ('&') selectors."""
         return wrap_expr(self._pyexpr._meta_selector_and(other._pyexpr))
 
-    @overload
-    def write_json(self, file: None = ...) -> str:
-        ...
+    def _selector_sub(self, other: Expr) -> Expr:
+        """Subtract ('-') selectors."""
+        return wrap_expr(self._pyexpr._meta_selector_sub(other._pyexpr))
+
+    def _selector_xor(self, other: Expr) -> Expr:
+        """Xor ('^') selectors."""
+        return wrap_expr(self._pyexpr._meta_selector_xor(other._pyexpr))
 
     @overload
-    def write_json(self, file: IOBase | str | Path) -> None:
-        ...
+    def serialize(
+        self, file: None = ..., *, format: Literal["binary"] = ...
+    ) -> bytes: ...
+    @overload
+    def serialize(self, file: None = ..., *, format: Literal["json"]) -> str: ...
+    @overload
+    def serialize(
+        self, file: IOBase | str | Path, *, format: SerializationFormat = ...
+    ) -> None: ...
 
-    def write_json(self, file: IOBase | str | Path | None = None) -> str | None:
-        """Write expression to json."""
-        if isinstance(file, (str, Path)):
-            file = normalize_filepath(file)
-        to_string_io = (file is not None) and isinstance(file, StringIO)
-        if file is None or to_string_io:
-            with BytesIO() as buf:
-                self._pyexpr.meta_write_json(buf)
-                json_bytes = buf.getvalue()
+    def serialize(
+        self,
+        file: IOBase | str | Path | None = None,
+        *,
+        format: SerializationFormat = "binary",
+    ) -> bytes | str | None:
+        r"""
+        Serialize this expression to a file or string in JSON format.
 
-            json_str = json_bytes.decode("utf8")
-            if to_string_io:
-                file.write(json_str)  # type: ignore[union-attr]
-            else:
-                return json_str
+        Parameters
+        ----------
+        file
+            File path to which the result should be written. If set to `None`
+            (default), the output is returned as a string instead.
+        format
+            The format in which to serialize. Options:
+
+            - `"binary"`: Serialize to binary format (bytes). This is the default.
+            - `"json"`: Serialize to JSON format (string).
+
+        See Also
+        --------
+        Expr.deserialize
+
+        Notes
+        -----
+        Serialization is not stable across Polars versions: a LazyFrame serialized
+        in one Polars version may not be deserializable in another Polars version.
+
+        Examples
+        --------
+        Serialize the expression into a binary representation.
+
+        >>> expr = pl.col("foo").sum().over("bar")
+        >>> bytes = expr.meta.serialize()
+        >>> bytes  # doctest: +ELLIPSIS
+        b'\xa1fWindow\xa4hfunction\xa1cAgg\xa1cSum\xa1fColumncfoolpartition_by\x81...'
+
+        The bytes can later be deserialized back into an `Expr` object.
+
+        >>> import io
+        >>> pl.Expr.deserialize(io.BytesIO(bytes))  # doctest: +ELLIPSIS
+        <Expr ['col("foo").sum().over([col("ba…'] at ...>
+        """
+        if format == "binary":
+            serializer = self._pyexpr.serialize_binary
+        elif format == "json":
+            serializer = self._pyexpr.serialize_json
         else:
-            self._pyexpr.meta_write_json(file)
-        return None
+            msg = f"`format` must be one of {{'binary', 'json'}}, got {format!r}"
+            raise ValueError(msg)
+
+        return serialize_polars_object(serializer, file, format)
 
     @overload
-    def tree_format(self, *, return_as_string: Literal[False]) -> None:
-        ...
+    def write_json(self, file: None = ...) -> str: ...
 
     @overload
-    def tree_format(self, *, return_as_string: Literal[True]) -> str:
-        ...
+    def write_json(self, file: IOBase | str | Path) -> None: ...
 
-    @deprecate_nonkeyword_arguments(version="0.19.3")
-    def tree_format(self, return_as_string: bool = False) -> str | None:  # noqa: FBT001
+    @deprecate_renamed_function("Expr.meta.serialize", version="0.20.11")
+    def write_json(self, file: IOBase | str | Path | None = None) -> str | None:
+        """
+        Write expression to json.
+
+        .. deprecated:: 0.20.11
+            This method has been renamed to :meth:`serialize`.
+        """
+        return self.serialize(file, format="json")
+
+    @overload
+    def tree_format(self, *, return_as_string: Literal[False]) -> None: ...
+
+    @overload
+    def tree_format(self, *, return_as_string: Literal[True]) -> str: ...
+
+    def tree_format(self, *, return_as_string: bool = False) -> str | None:
         """
         Format the expression as a tree.
 

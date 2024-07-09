@@ -4,8 +4,16 @@ use crate::series::implementations::null::NullChunked;
 macro_rules! unpack_chunked {
     ($series:expr, $expected:pat => $ca:ty, $name:expr) => {
         match $series.dtype() {
-            $expected => unsafe {
-                Ok(&*($series.as_ref() as *const dyn SeriesTrait as *const $ca))
+            $expected => {
+                // Check downcast in debug compiles
+                #[cfg(debug_assertions)]
+                {
+                    Ok($series.as_ref().as_any().downcast_ref::<$ca>().unwrap())
+                }
+                #[cfg(not(debug_assertions))]
+                unsafe {
+                    Ok(&*($series.as_ref() as *const dyn SeriesTrait as *const $ca))
+                }
             },
             dt => polars_bail!(
                 SchemaMismatch: "invalid series dtype: expected `{}`, got `{}`", $name, dt,

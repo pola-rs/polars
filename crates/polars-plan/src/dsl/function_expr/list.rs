@@ -21,9 +21,11 @@ pub enum ListFunction {
     },
     Slice,
     Shift,
-    Get,
+    Get(bool),
     #[cfg(feature = "list_gather")]
     Gather(bool),
+    #[cfg(feature = "list_gather")]
+    GatherEvery,
     #[cfg(feature = "list_count")]
     CountMatches,
     Sum,
@@ -44,6 +46,7 @@ pub enum ListFunction {
     Sort(SortOptions),
     Reverse,
     Unique(bool),
+    NUnique,
     #[cfg(feature = "list_sets")]
     SetOperation(SetOperation),
     #[cfg(feature = "list_any_all")]
@@ -68,9 +71,11 @@ impl ListFunction {
             Sample { .. } => mapper.with_same_dtype(),
             Slice => mapper.with_same_dtype(),
             Shift => mapper.with_same_dtype(),
-            Get => mapper.map_to_list_and_array_inner_dtype(),
+            Get(_) => mapper.map_to_list_and_array_inner_dtype(),
             #[cfg(feature = "list_gather")]
             Gather(_) => mapper.with_same_dtype(),
+            #[cfg(feature = "list_gather")]
+            GatherEvery => mapper.with_same_dtype(),
             #[cfg(feature = "list_count")]
             CountMatches => mapper.with_dtype(IDX_DTYPE),
             Sum => mapper.nested_sum_type(),
@@ -97,6 +102,7 @@ impl ListFunction {
             Join(_) => mapper.with_dtype(DataType::String),
             #[cfg(feature = "dtype-array")]
             ToArray(width) => mapper.try_map_dtype(|dt| map_list_dtype_to_array_dtype(dt, *width)),
+            NUnique => mapper.with_dtype(IDX_DTYPE),
         }
     }
 }
@@ -130,9 +136,11 @@ impl Display for ListFunction {
             },
             Slice => "slice",
             Shift => "shift",
-            Get => "get",
+            Get(_) => "get",
             #[cfg(feature = "list_gather")]
             Gather(_) => "gather",
+            #[cfg(feature = "list_gather")]
+            GatherEvery => "gather_every",
             #[cfg(feature = "list_count")]
             CountMatches => "count_matches",
             Sum => "sum",
@@ -156,6 +164,7 @@ impl Display for ListFunction {
                     "unique"
                 }
             },
+            NUnique => "n_unique",
             #[cfg(feature = "list_sets")]
             SetOperation(s) => return write!(f, "list.{s}"),
             #[cfg(feature = "list_any_all")]
@@ -194,9 +203,11 @@ impl From<ListFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             },
             Slice => wrap!(slice),
             Shift => map_as_slice!(shift),
-            Get => wrap!(get),
+            Get(null_on_oob) => wrap!(get, null_on_oob),
             #[cfg(feature = "list_gather")]
-            Gather(null_ob_oob) => map_as_slice!(gather, null_ob_oob),
+            Gather(null_on_oob) => map_as_slice!(gather, null_on_oob),
+            #[cfg(feature = "list_gather")]
+            GatherEvery => map_as_slice!(gather_every),
             #[cfg(feature = "list_count")]
             CountMatches => map_as_slice!(count_matches),
             Sum => map!(sum),
@@ -223,6 +234,7 @@ impl From<ListFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Join(ignore_nulls) => map_as_slice!(join, ignore_nulls),
             #[cfg(feature = "dtype-array")]
             ToArray(width) => map!(to_array, width),
+            NUnique => map!(n_unique),
         }
     }
 }
@@ -314,17 +326,14 @@ pub(super) fn slice(args: &mut [Series]) -> PolarsResult<Option<Series>> {
             let length_ca = length_s.cast(&DataType::Int64)?;
             let length_ca = length_ca.i64().unwrap();
 
-            // SAFETY: unstable series never lives longer than the iterator.
-            unsafe {
-                list_ca
-                    .amortized_iter()
-                    .zip(length_ca)
-                    .map(|(opt_s, opt_length)| match (opt_s, opt_length) {
-                        (Some(s), Some(length)) => Some(s.as_ref().slice(offset, length as usize)),
-                        _ => None,
-                    })
-                    .collect_trusted()
-            }
+            list_ca
+                .amortized_iter()
+                .zip(length_ca)
+                .map(|(opt_s, opt_length)| match (opt_s, opt_length) {
+                    (Some(s), Some(length)) => Some(s.as_ref().slice(offset, length as usize)),
+                    _ => None,
+                })
+                .collect_trusted()
         },
         (offset_len, 1) => {
             check_slice_arg_shape(offset_len, list_ca.len(), "offset")?;
@@ -335,17 +344,14 @@ pub(super) fn slice(args: &mut [Series]) -> PolarsResult<Option<Series>> {
                 .unwrap_or(usize::MAX);
             let offset_ca = offset_s.cast(&DataType::Int64)?;
             let offset_ca = offset_ca.i64().unwrap();
-            // SAFETY: unstable series never lives longer than the iterator.
-            unsafe {
-                list_ca
-                    .amortized_iter()
-                    .zip(offset_ca)
-                    .map(|(opt_s, opt_offset)| match (opt_s, opt_offset) {
-                        (Some(s), Some(offset)) => Some(s.as_ref().slice(offset, length_slice)),
-                        _ => None,
-                    })
-                    .collect_trusted()
-            }
+            list_ca
+                .amortized_iter()
+                .zip(offset_ca)
+                .map(|(opt_s, opt_offset)| match (opt_s, opt_offset) {
+                    (Some(s), Some(offset)) => Some(s.as_ref().slice(offset, length_slice)),
+                    _ => None,
+                })
+                .collect_trusted()
         },
         _ => {
             check_slice_arg_shape(offset_s.len(), list_ca.len(), "offset")?;
@@ -357,22 +363,19 @@ pub(super) fn slice(args: &mut [Series]) -> PolarsResult<Option<Series>> {
             let length_ca = length_s.cast(&DataType::Int64)?;
             let length_ca = length_ca.i64().unwrap();
 
-            // SAFETY: unstable series never lives longer than the iterator.
-            unsafe {
-                list_ca
-                    .amortized_iter()
-                    .zip(offset_ca)
-                    .zip(length_ca)
-                    .map(|((opt_s, opt_offset), opt_length)| {
-                        match (opt_s, opt_offset, opt_length) {
-                            (Some(s), Some(offset), Some(length)) => {
-                                Some(s.as_ref().slice(offset, length as usize))
-                            },
-                            _ => None,
-                        }
-                    })
-                    .collect_trusted()
-            }
+            list_ca
+                .amortized_iter()
+                .zip(offset_ca)
+                .zip(length_ca)
+                .map(
+                    |((opt_s, opt_offset), opt_length)| match (opt_s, opt_offset, opt_length) {
+                        (Some(s), Some(offset), Some(length)) => {
+                            Some(s.as_ref().slice(offset, length as usize))
+                        },
+                        _ => None,
+                    },
+                )
+                .collect_trusted()
         },
     };
     out.rename(s.name());
@@ -386,7 +389,7 @@ pub(super) fn concat(s: &mut [Series]) -> PolarsResult<Option<Series>> {
     let mut first_ca = match first.list().ok() {
         Some(ca) => ca,
         None => {
-            first = first.reshape(&[-1, 1]).unwrap();
+            first = first.reshape_list(&[-1, 1]).unwrap();
             first.list().unwrap()
         },
     }
@@ -402,7 +405,7 @@ pub(super) fn concat(s: &mut [Series]) -> PolarsResult<Option<Series>> {
     first_ca.lst_concat(other).map(|ca| Some(ca.into_series()))
 }
 
-pub(super) fn get(s: &mut [Series]) -> PolarsResult<Option<Series>> {
+pub(super) fn get(s: &mut [Series], null_on_oob: bool) -> PolarsResult<Option<Series>> {
     let ca = s[0].list()?;
     let index = s[1].cast(&DataType::Int64)?;
     let index = index.i64().unwrap();
@@ -411,35 +414,70 @@ pub(super) fn get(s: &mut [Series]) -> PolarsResult<Option<Series>> {
         1 => {
             let index = index.get(0);
             if let Some(index) = index {
-                ca.lst_get(index).map(Some)
+                ca.lst_get(index, null_on_oob).map(Some)
             } else {
-                polars_bail!(ComputeError: "unexpected null index received in `list.get`")
+                Ok(Some(Series::full_null(
+                    ca.name(),
+                    ca.len(),
+                    ca.inner_dtype(),
+                )))
             }
         },
         len if len == ca.len() => {
             let ca = ca.rechunk();
             let arr = ca.downcast_iter().next().unwrap();
             let offsets = arr.offsets().as_slice();
-
-            let take_by = index
-                .into_iter()
-                .enumerate()
-                .map(|(i, opt_idx)| {
-                    opt_idx.and_then(|idx| {
-                        let (start, end) =
-                            unsafe { (*offsets.get_unchecked(i), *offsets.get_unchecked(i + 1)) };
-                        let offset = if idx >= 0 { start + idx } else { end + idx };
-                        if offset >= end || offset < start || start == end {
-                            None
-                        } else {
-                            Some(offset as IdxSize)
-                        }
+            let take_by = if ca.null_count() == 0 {
+                index
+                    .iter()
+                    .enumerate()
+                    .map(|(i, opt_idx)| match opt_idx {
+                        Some(idx) => {
+                            let (start, end) = unsafe {
+                                (*offsets.get_unchecked(i), *offsets.get_unchecked(i + 1))
+                            };
+                            let offset = if idx >= 0 { start + idx } else { end + idx };
+                            if offset >= end || offset < start || start == end {
+                                if null_on_oob {
+                                    Ok(None)
+                                } else {
+                                    polars_bail!(ComputeError: "get index is out of bounds");
+                                }
+                            } else {
+                                Ok(Some(offset as IdxSize))
+                            }
+                        },
+                        None => Ok(None),
                     })
-                })
-                .collect::<IdxCa>();
+                    .collect::<Result<IdxCa, _>>()?
+            } else {
+                index
+                    .iter()
+                    .zip(arr.validity().unwrap())
+                    .enumerate()
+                    .map(|(i, (opt_idx, valid))| match (valid, opt_idx) {
+                        (true, Some(idx)) => {
+                            let (start, end) = unsafe {
+                                (*offsets.get_unchecked(i), *offsets.get_unchecked(i + 1))
+                            };
+                            let offset = if idx >= 0 { start + idx } else { end + idx };
+                            if offset >= end || offset < start || start == end {
+                                if null_on_oob {
+                                    Ok(None)
+                                } else {
+                                    polars_bail!(ComputeError: "get index is out of bounds");
+                                }
+                            } else {
+                                Ok(Some(offset as IdxSize))
+                            }
+                        },
+                        _ => Ok(None),
+                    })
+                    .collect::<Result<IdxCa, _>>()?
+            };
             let s = Series::try_from((ca.name(), arr.values().clone())).unwrap();
             unsafe { s.take_unchecked(&take_by) }
-                .cast(&ca.inner_dtype())
+                .cast(ca.inner_dtype())
                 .map(Some)
         },
         len => polars_bail!(
@@ -459,12 +497,21 @@ pub(super) fn gather(args: &[Series], null_on_oob: bool) -> PolarsResult<Series>
     if idx.len() == 1 && null_on_oob {
         // fast path
         let idx = idx.get(0)?.try_extract::<i64>()?;
-        let out = ca.lst_get(idx)?;
+        let out = ca.lst_get(idx, null_on_oob)?;
         // make sure we return a list
-        out.reshape(&[-1, 1])
+        out.reshape_list(&[-1, 1])
     } else {
         ca.lst_gather(idx, null_on_oob)
     }
+}
+
+#[cfg(feature = "list_gather")]
+pub(super) fn gather_every(args: &[Series]) -> PolarsResult<Series> {
+    let ca = &args[0];
+    let n = &args[1].strict_cast(&IDX_DTYPE)?;
+    let offset = &args[2].strict_cast(&IDX_DTYPE)?;
+
+    ca.list()?.lst_gather_every(n.idx()?, offset.idx()?)
 }
 
 #[cfg(feature = "list_count")]
@@ -526,7 +573,7 @@ pub(super) fn diff(s: &Series, n: i64, null_behavior: NullBehavior) -> PolarsRes
 }
 
 pub(super) fn sort(s: &Series, options: SortOptions) -> PolarsResult<Series> {
-    Ok(s.list()?.lst_sort(options).into_series())
+    Ok(s.list()?.lst_sort(options)?.into_series())
 }
 
 pub(super) fn reverse(s: &Series) -> PolarsResult<Series> {
@@ -589,4 +636,8 @@ pub(super) fn join(s: &[Series], ignore_nulls: bool) -> PolarsResult<Series> {
 pub(super) fn to_array(s: &Series, width: usize) -> PolarsResult<Series> {
     let array_dtype = map_list_dtype_to_array_dtype(s.dtype(), width)?;
     s.cast(&array_dtype)
+}
+
+pub(super) fn n_unique(s: &Series) -> PolarsResult<Series> {
+    Ok(s.list()?.lst_n_unique()?.into_series())
 }

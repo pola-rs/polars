@@ -12,9 +12,13 @@ impl Series {
                 ArrayChunked::full_null_with_dtype(name, size, inner_dtype, *width).into_series()
             },
             #[cfg(feature = "dtype-categorical")]
-            dt @ (DataType::Categorical(rev_map, _) | DataType::Enum(rev_map, _)) => {
-                let mut ca =
-                    CategoricalChunked::full_null(name, matches!(dt, DataType::Enum(_, _)), size);
+            dt @ (DataType::Categorical(rev_map, ord) | DataType::Enum(rev_map, ord)) => {
+                let mut ca = CategoricalChunked::full_null(
+                    name,
+                    matches!(dt, DataType::Enum(_, _)),
+                    size,
+                    *ord,
+                );
                 // ensure we keep the rev-map of a cleared series
                 if let Some(rev_map) = rev_map {
                     unsafe { ca.set_rev_map(rev_map.clone(), false) }
@@ -39,10 +43,7 @@ impl Series {
                 .into_series(),
             #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(precision, scale) => Int128Chunked::full_null(name, size)
-                .into_decimal_unchecked(
-                    *precision,
-                    scale.unwrap_or_else(|| unreachable!("scale should be set")),
-                )
+                .into_decimal_unchecked(*precision, scale.unwrap_or(0))
                 .into_series(),
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => {
@@ -53,6 +54,10 @@ impl Series {
                 StructChunked::new(name, &fields).unwrap().into_series()
             },
             DataType::Null => Series::new_null(name, size),
+            DataType::Unknown(kind) => {
+                let dtype = kind.materialize().expect("expected known type");
+                Series::full_null(name, size, &dtype)
+            },
             _ => {
                 macro_rules! primitive {
                     ($type:ty) => {{

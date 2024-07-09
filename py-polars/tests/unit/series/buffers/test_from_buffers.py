@@ -1,19 +1,28 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 import pytest
 from hypothesis import given
 
 import polars as pl
+from polars.exceptions import PanicException
 from polars.testing import assert_series_equal
 from polars.testing.parametric import series
+from tests.unit.conftest import NUMERIC_DTYPES
+
+if TYPE_CHECKING:
+    from zoneinfo import ZoneInfo
+
+else:
+    from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
 
 @given(
     s=series(
-        allowed_dtypes=(pl.INTEGER_DTYPES | pl.FLOAT_DTYPES | {pl.Boolean}),
-        chunked=False,
+        allowed_dtypes=[*NUMERIC_DTYPES, pl.Boolean],
+        allow_chunks=False,
     )
 )
 def test_series_from_buffers_numeric_with_validity(s: pl.Series) -> None:
@@ -24,9 +33,9 @@ def test_series_from_buffers_numeric_with_validity(s: pl.Series) -> None:
 
 @given(
     s=series(
-        allowed_dtypes=(pl.INTEGER_DTYPES | pl.FLOAT_DTYPES | {pl.Boolean}),
-        chunked=False,
-        null_probability=0.0,
+        allowed_dtypes=[*NUMERIC_DTYPES, pl.Boolean],
+        allow_chunks=False,
+        allow_null=False,
     )
 )
 def test_series_from_buffers_numeric(s: pl.Series) -> None:
@@ -34,7 +43,12 @@ def test_series_from_buffers_numeric(s: pl.Series) -> None:
     assert_series_equal(s, result)
 
 
-@given(s=series(allowed_dtypes=pl.TEMPORAL_DTYPES, chunked=False))
+@given(
+    s=series(
+        allowed_dtypes=[pl.Date, pl.Time, pl.Datetime, pl.Duration],
+        allow_chunks=False,
+    )
+)
 def test_series_from_buffers_temporal_with_validity(s: pl.Series) -> None:
     validity = s.is_not_null()
     physical = pl.Int32 if s.dtype == pl.Date else pl.Int64
@@ -78,11 +92,12 @@ def test_series_from_buffers_boolean() -> None:
 
 def test_series_from_buffers_datetime() -> None:
     dtype = pl.Datetime(time_zone="Europe/Amsterdam")
+    tzinfo = ZoneInfo("Europe/Amsterdam")
     data = pl.Series(
         [
-            datetime(2022, 2, 10, 6),
-            datetime(2022, 2, 11, 12),
-            datetime(2022, 2, 12, 18),
+            datetime(2022, 2, 10, 6, tzinfo=tzinfo),
+            datetime(2022, 2, 11, 12, tzinfo=tzinfo),
+            datetime(2022, 2, 12, 18, tzinfo=tzinfo),
         ],
         dtype=dtype,
     ).cast(pl.Int64)
@@ -92,9 +107,9 @@ def test_series_from_buffers_datetime() -> None:
 
     expected = pl.Series(
         [
-            datetime(2022, 2, 10, 6),
+            datetime(2022, 2, 10, 6, tzinfo=tzinfo),
             None,
-            datetime(2022, 2, 12, 18),
+            datetime(2022, 2, 12, 18, tzinfo=tzinfo),
         ],
         dtype=dtype,
     )
@@ -159,7 +174,7 @@ def test_series_from_buffers_offsets_do_not_match_data() -> None:
     offsets = pl.Series([0, 1, 3, 3, 9, 11], dtype=pl.Int64)
 
     msg = "offsets must not exceed the values length"
-    with pytest.raises(pl.PolarsPanicError, match=msg):
+    with pytest.raises(PanicException, match=msg):
         pl.Series._from_buffers(pl.String, data=[data, offsets])
 
 

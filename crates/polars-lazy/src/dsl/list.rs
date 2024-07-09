@@ -2,13 +2,13 @@ use std::sync::Mutex;
 
 use arrow::array::ValueSize;
 use arrow::legacy::utils::CustomIterTools;
+use polars_core::chunked_array::from_iterator_par::ChunkedCollectParIterExt;
 use polars_core::prelude::*;
 use polars_plan::constants::MAP_LIST_NAME;
 use polars_plan::dsl::*;
 use rayon::prelude::*;
 
 use crate::physical_plan::exotic::prepare_expression_for_context;
-use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 
 pub trait IntoListNameSpace {
@@ -50,7 +50,7 @@ fn run_per_sublist(
     parallel: bool,
     output_field: Field,
 ) -> PolarsResult<Option<Series>> {
-    let phys_expr = prepare_expression_for_context("", expr, &lst.inner_dtype(), Context::Default)?;
+    let phys_expr = prepare_expression_for_context("", expr, lst.inner_dtype(), Context::Default)?;
 
     let state = ExecutionState::new();
 
@@ -61,7 +61,7 @@ fn run_per_sublist(
             .par_iter()
             .map(|opt_s| {
                 opt_s.and_then(|s| {
-                    let df = DataFrame::new_no_checks(vec![s]);
+                    let df = s.into_frame();
                     let out = phys_expr.evaluate(&df, &state);
                     match out {
                         Ok(s) => Some(s),
@@ -72,11 +72,11 @@ fn run_per_sublist(
                     }
                 })
             })
-            .collect();
+            .collect_ca_with_dtype("", output_field.dtype.clone());
         err = m_err.into_inner().unwrap();
         ca
     } else {
-        let mut df_container = DataFrame::new_no_checks(vec![]);
+        let mut df_container = DataFrame::empty();
 
         lst.into_iter()
             .map(|s| {
@@ -120,12 +120,12 @@ fn run_on_group_by_engine(
     // List elements in a series.
     let values = Series::try_from(("", arr.values().clone())).unwrap();
     let inner_dtype = lst.inner_dtype();
-    // SAFETY
+    // SAFETY:
     // Invariant in List means values physicals can be cast to inner dtype
-    let values = unsafe { values.cast_unchecked(&inner_dtype).unwrap() };
+    let values = unsafe { values.cast_unchecked(inner_dtype).unwrap() };
 
-    let df_context = DataFrame::new_no_checks(vec![values]);
-    let phys_expr = prepare_expression_for_context("", expr, &inner_dtype, Context::Aggregation)?;
+    let df_context = values.into_frame();
+    let phys_expr = prepare_expression_for_context("", expr, inner_dtype, Context::Aggregation)?;
 
     let state = ExecutionState::new();
     let mut ac = phys_expr.evaluate_on_groups(&df_context, &groups, &state)?;
@@ -196,7 +196,7 @@ pub trait ListNameSpaceExtension: IntoListNameSpace + Sized {
         this.0
             .map(
                 func,
-                GetOutput::map_field(move |f| eval_field_to_dtype(f, &expr2, true)),
+                GetOutput::map_field(move |f| Ok(eval_field_to_dtype(f, &expr2, true))),
             )
             .with_fmt("eval")
     }

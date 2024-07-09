@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
+import hypothesis.strategies as st
 import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pytest
 from hypothesis import given
-from hypothesis.strategies import just, lists, one_of
 
 import polars as pl
+
+if TYPE_CHECKING:
+    from polars._typing import PolarsDataType
 
 
 def test_df_to_pandas_empty() -> None:
@@ -33,10 +36,8 @@ def test_to_pandas() -> None:
         },
         schema_overrides={"a": pl.UInt8},
     ).with_columns(
-        [
-            pl.col("e").cast(pl.Categorical).alias("h"),
-            pl.col("f").cast(pl.Categorical).alias("i"),
-        ]
+        pl.col("e").cast(pl.Categorical).alias("h"),
+        pl.col("f").cast(pl.Categorical).alias("i"),
     )
 
     pd_out = df.to_pandas()
@@ -89,8 +90,8 @@ def test_cat_to_pandas(dtype: pl.DataType) -> None:
 
 
 @given(
-    column_type_names=lists(
-        one_of(just("Object"), just("Int32")), min_size=1, max_size=8
+    column_type_names=st.lists(
+        st.one_of(st.just("Object"), st.just("Int32")), min_size=1, max_size=8
     )
 )
 def test_object_to_pandas(column_type_names: list[Literal["Object", "Int32"]]) -> None:
@@ -182,7 +183,7 @@ def test_object_to_pandas_series(use_pyarrow_extension_array: bool) -> None:
 
 
 @pytest.mark.parametrize("polars_dtype", [pl.Categorical, pl.Enum(["a", "b"])])
-def test_series_to_pandas_categorical(polars_dtype: pl.PolarsDataType) -> None:
+def test_series_to_pandas_categorical(polars_dtype: PolarsDataType) -> None:
     s = pl.Series("x", ["a", "b", "a"], dtype=polars_dtype)
     result = s.to_pandas()
     expected = pd.Series(["a", "b", "a"], name="x", dtype="category")
@@ -190,7 +191,7 @@ def test_series_to_pandas_categorical(polars_dtype: pl.PolarsDataType) -> None:
 
 
 @pytest.mark.parametrize("polars_dtype", [pl.Categorical, pl.Enum(["a", "b"])])
-def test_series_to_pandas_categorical_pyarrow(polars_dtype: pl.PolarsDataType) -> None:
+def test_series_to_pandas_categorical_pyarrow(polars_dtype: PolarsDataType) -> None:
     s = pl.Series("x", ["a", "b", "a"], dtype=polars_dtype)
     result = s.to_pandas(use_pyarrow_extension_array=True)
     assert s.to_list() == result.to_list()

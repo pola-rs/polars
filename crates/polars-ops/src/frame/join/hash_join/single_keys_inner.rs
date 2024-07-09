@@ -4,23 +4,25 @@ use polars_utils::idx_vec::IdxVec;
 use polars_utils::iter::EnumerateIdxTrait;
 use polars_utils::nulls::IsNull;
 use polars_utils::sync::SyncPtr;
+use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 
 use super::*;
 
 pub(super) fn probe_inner<T, F, I>(
     probe: I,
-    hash_tbls: &[PlHashMap<T, IdxVec>],
+    hash_tbls: &[PlHashMap<<T as ToTotalOrd>::TotalOrdItem, IdxVec>],
     results: &mut Vec<(IdxSize, IdxSize)>,
     local_offset: IdxSize,
     n_tables: usize,
     swap_fn: F,
 ) where
-    T: Send + Hash + Eq + Sync + Copy + DirtyHash,
+    T: TotalHash + TotalEq + DirtyHash + ToTotalOrd,
+    <T as ToTotalOrd>::TotalOrdItem: Hash + Eq + DirtyHash,
     I: IntoIterator<Item = T>,
-    // <I as IntoIterator>::IntoIter: TrustedLen,
     F: Fn(IdxSize, IdxSize) -> (IdxSize, IdxSize),
 {
     probe.into_iter().enumerate_idx().for_each(|(idx_a, k)| {
+        let k = k.to_total_ord();
         let idx_a = idx_a + local_offset;
         // probe table that contains the hashed value
         let current_probe_table =
@@ -45,8 +47,8 @@ pub(super) fn hash_join_tuples_inner<T, I>(
 ) -> PolarsResult<(Vec<IdxSize>, Vec<IdxSize>)>
 where
     I: IntoIterator<Item = T> + Send + Sync + Clone,
-    // <I as IntoIterator>::IntoIter: TrustedLen,
-    T: Send + Hash + Eq + Sync + Copy + DirtyHash + IsNull,
+    T: Send + Sync + Copy + TotalHash + TotalEq + DirtyHash + ToTotalOrd,
+    <T as ToTotalOrd>::TotalOrdItem: Send + Sync + Copy + Hash + Eq + DirtyHash + IsNull,
 {
     // NOTE: see the left join for more elaborate comments
     // first we hash one relation

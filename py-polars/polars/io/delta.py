@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 from polars.convert import from_arrow
-from polars.datatypes import Categorical, Null, Time
+from polars.datatypes import Null, Time
 from polars.datatypes.convert import unpack_dtypes
 from polars.dependencies import _DELTALAKE_AVAILABLE, deltalake
 from polars.io.pyarrow_dataset import scan_pyarrow_dataset
@@ -17,8 +18,9 @@ if TYPE_CHECKING:
 def read_delta(
     source: str,
     *,
-    version: int | None = None,
+    version: int | str | datetime | None = None,
     columns: list[str] | None = None,
+    rechunk: bool = False,
     storage_options: dict[str, Any] | None = None,
     delta_table_options: dict[str, Any] | None = None,
     pyarrow_options: dict[str, Any] | None = None,
@@ -34,18 +36,21 @@ def read_delta(
         Note: For Local filesystem, absolute and relative paths are supported but
         for the supported object storages - GCS, Azure and S3 full URI must be provided.
     version
-        Version of the Delta lake table.
+        Numerical version or timestamp version of the Delta lake table.
 
         Note: If `version` is not provided, the latest version of delta lake
         table is read.
     columns
         Columns to select. Accepts a list of column names.
+    rechunk
+        Make sure that all columns are contiguous in memory by
+        aggregating the chunks into a single array.
     storage_options
         Extra options for the storage backends supported by `deltalake`.
         For cloud storages, this may include configurations for authentication etc.
 
         More info is available `here
-        <https://delta-io.github.io/delta-rs/python/usage.html?highlight=backend#loading-a-delta-table>`__.
+        <https://delta-io.github.io/delta-rs/usage/loading-table/>`__.
     delta_table_options
         Additional keyword arguments while reading a Delta lake Table.
     pyarrow_options
@@ -76,6 +81,12 @@ def read_delta(
     Note: This will fail if the provided version of the delta table does not exist.
 
     >>> pl.read_delta(table_path, version=1)  # doctest: +SKIP
+
+    Time travel a delta table from local filesystem using a timestamp version.
+
+    >>> pl.read_delta(
+    ...     table_path, version=datetime(2020, 1, 1, tzinfo=timezone.utc)
+    ... )  # doctest: +SKIP
 
     Reads a Delta table from AWS S3.
     See a list of supported storage options for S3 `here
@@ -136,13 +147,15 @@ def read_delta(
         delta_table_options=delta_table_options,
     )
 
-    return from_arrow(dl_tbl.to_pyarrow_table(columns=columns, **pyarrow_options))  # type: ignore[return-value]
+    return from_arrow(
+        dl_tbl.to_pyarrow_table(columns=columns, **pyarrow_options), rechunk=rechunk
+    )  # type: ignore[return-value]
 
 
 def scan_delta(
     source: str,
     *,
-    version: int | None = None,
+    version: int | str | datetime | None = None,
     storage_options: dict[str, Any] | None = None,
     delta_table_options: dict[str, Any] | None = None,
     pyarrow_options: dict[str, Any] | None = None,
@@ -158,7 +171,7 @@ def scan_delta(
         Note: For Local filesystem, absolute and relative paths are supported but
         for the supported object storages - GCS, Azure and S3 full URI must be provided.
     version
-        Version of the Delta lake table.
+        Numerical version or timestamp version of the Delta lake table.
 
         Note: If `version` is not provided, the latest version of delta lake
         table is read.
@@ -167,7 +180,7 @@ def scan_delta(
         For cloud storages, this may include configurations for authentication etc.
 
         More info is available `here
-        <https://delta-io.github.io/delta-rs/python/usage.html?highlight=backend#loading-a-delta-table>`__.
+        <https://delta-io.github.io/delta-rs/usage/loading-table/>`__.
     delta_table_options
         Additional keyword arguments while reading a Delta lake Table.
     pyarrow_options
@@ -198,6 +211,12 @@ def scan_delta(
     Note: This will fail if the provided version of the delta table does not exist.
 
     >>> pl.scan_delta(table_path, version=1).collect()  # doctest: +SKIP
+
+    Time travel a delta table from local filesystem using a timestamp version.
+
+    >>> pl.scan_delta(
+    ...     table_path, version=datetime(2020, 1, 1, tzinfo=timezone.utc)
+    ... ).collect()  # doctest: +SKIP
 
     Creates a scan for a Delta table from AWS S3.
     See a list of supported storage options for S3 `here
@@ -281,7 +300,7 @@ def _resolve_delta_lake_uri(table_uri: str, *, strict: bool = True) -> str:
 
 def _get_delta_lake_table(
     table_path: str,
-    version: int | None = None,
+    version: int | str | datetime | None = None,
     storage_options: dict[str, Any] | None = None,
     delta_table_options: dict[str, Any] | None = None,
 ) -> deltalake.DeltaTable:
@@ -291,19 +310,27 @@ def _get_delta_lake_table(
     Notes
     -----
     Make sure to install deltalake>=0.8.0. Read the documentation
-    `here <https://delta-io.github.io/delta-rs/python/installation.html>`_.
+    `here <https://delta-io.github.io/delta-rs/usage/installation/>`_.
     """
     _check_if_delta_available()
 
     if delta_table_options is None:
         delta_table_options = {}
 
-    dl_tbl = deltalake.DeltaTable(
-        table_path,
-        version=version,
-        storage_options=storage_options,
-        **delta_table_options,
-    )
+    if not isinstance(version, (str, datetime)):
+        dl_tbl = deltalake.DeltaTable(
+            table_path,
+            version=version,
+            storage_options=storage_options,
+            **delta_table_options,
+        )
+    else:
+        dl_tbl = deltalake.DeltaTable(
+            table_path,
+            storage_options=storage_options,
+            **delta_table_options,
+        )
+        dl_tbl.load_as_version(version)
 
     return dl_tbl
 
@@ -316,7 +343,10 @@ def _check_if_delta_available() -> None:
 
 def _check_for_unsupported_types(dtypes: list[DataType]) -> None:
     schema_dtypes = unpack_dtypes(*dtypes)
-    unsupported_types = {Time, Categorical, Null}
+    unsupported_types = {Time, Null}
+    # Note that this overlap check does NOT work correctly for Categorical, so
+    # if Categorical is added back to unsupported_types a different check will
+    # need to be used.
     overlap = schema_dtypes & unsupported_types
 
     if overlap:

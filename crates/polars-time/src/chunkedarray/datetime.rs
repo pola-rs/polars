@@ -1,6 +1,5 @@
-use arrow;
 use arrow::array::{Array, PrimitiveArray};
-use arrow::compute::cast::{cast, CastOptions};
+use arrow::compute::cast::{cast, CastOptionsImpl};
 use arrow::compute::temporal;
 use polars_core::prelude::*;
 
@@ -13,12 +12,12 @@ fn cast_and_apply<
     ca: &DatetimeChunked,
     func: F,
 ) -> ChunkedArray<T> {
-    let dtype = ca.dtype().to_arrow(true);
+    let dtype = ca.dtype().to_arrow(CompatLevel::newest());
     let chunks = ca.downcast_iter().map(|arr| {
         let arr = cast(
             arr,
             &dtype,
-            CastOptions {
+            CastOptionsImpl {
                 wrapped: true,
                 partial: false,
             },
@@ -161,8 +160,6 @@ impl DatetimeMethods for DatetimeChunked {}
 
 #[cfg(test)]
 mod test {
-    use chrono::NaiveDateTime;
-
     use super::*;
 
     #[test]

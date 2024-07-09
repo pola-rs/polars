@@ -5,7 +5,6 @@ mod numeric;
 
 use std::ops::{Add, Div, Mul, Rem, Sub};
 
-use arrow::array::PrimitiveArray;
 use arrow::compute::utils::combine_validities_and;
 use num_traits::{Num, NumCast, ToPrimitive};
 pub use numeric::ArithmeticChunked;
@@ -24,7 +23,7 @@ impl Add for &StringChunked {
     type Output = StringChunked;
 
     fn add(self, rhs: Self) -> Self::Output {
-        unsafe { (self.as_binary() + rhs.as_binary()).to_string() }
+        unsafe { (self.as_binary() + rhs.as_binary()).to_string_unchecked() }
     }
 }
 
@@ -40,7 +39,7 @@ impl Add<&str> for &StringChunked {
     type Output = StringChunked;
 
     fn add(self, rhs: &str) -> Self::Output {
-        unsafe { ((&self.as_binary()) + rhs.as_bytes()).to_string() }
+        unsafe { ((&self.as_binary()) + rhs.as_bytes()).to_string_unchecked() }
     }
 }
 

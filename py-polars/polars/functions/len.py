@@ -3,12 +3,13 @@ Module containing the `len` function.
 
 Keep this function in its own module to avoid conflicts with Python's built-in `len`.
 """
+
 from __future__ import annotations
 
 import contextlib
 from typing import TYPE_CHECKING
 
-from polars.utils._wrap import wrap_expr
+from polars._utils.wrap import wrap_expr
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr

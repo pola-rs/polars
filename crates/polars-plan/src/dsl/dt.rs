@@ -4,6 +4,27 @@ use super::*;
 pub struct DateLikeNameSpace(pub(crate) Expr);
 
 impl DateLikeNameSpace {
+    /// Add a given number of business days.
+    #[cfg(feature = "business")]
+    pub fn add_business_days(
+        self,
+        n: Expr,
+        week_mask: [bool; 7],
+        holidays: Vec<i32>,
+        roll: Roll,
+    ) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::Business(BusinessFunction::AddBusinessDay {
+                week_mask,
+                holidays,
+                roll,
+            }),
+            &[n],
+            false,
+            false,
+        )
+    }
+
     /// Convert from Date/Time/Datetime into String with the given format.
     /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
     pub fn to_string(self, format: &str) -> Expr {
@@ -182,9 +203,9 @@ impl DateLikeNameSpace {
     }
 
     /// Truncate the Datetime/Date range into buckets.
-    pub fn truncate(self, every: Expr, offset: String) -> Expr {
+    pub fn truncate(self, every: Expr) -> Expr {
         self.0.map_many_private(
-            FunctionExpr::TemporalExpr(TemporalFunction::Truncate(offset)),
+            FunctionExpr::TemporalExpr(TemporalFunction::Truncate),
             &[every],
             false,
             false,
@@ -192,14 +213,14 @@ impl DateLikeNameSpace {
     }
 
     /// Roll backward to the first day of the month.
-    #[cfg(feature = "date_offset")]
+    #[cfg(feature = "month_start")]
     pub fn month_start(self) -> Expr {
         self.0
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::MonthStart))
     }
 
     /// Roll forward to the last day of the month.
-    #[cfg(feature = "date_offset")]
+    #[cfg(feature = "month_end")]
     pub fn month_end(self) -> Expr {
         self.0
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::MonthEnd))
@@ -220,27 +241,36 @@ impl DateLikeNameSpace {
     }
 
     /// Round the Datetime/Date range into buckets.
-    pub fn round<S: AsRef<str>>(self, every: S, offset: S) -> Expr {
-        let every = every.as_ref().into();
-        let offset = offset.as_ref().into();
-        self.0
-            .map_private(FunctionExpr::TemporalExpr(TemporalFunction::Round(
-                every, offset,
-            )))
+    pub fn round(self, every: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::TemporalExpr(TemporalFunction::Round),
+            &[every],
+            false,
+            false,
+        )
     }
 
     /// Offset this `Date/Datetime` by a given offset [`Duration`].
     /// This will take leap years/ months into account.
-    #[cfg(feature = "date_offset")]
+    #[cfg(feature = "offset_by")]
     pub fn offset_by(self, by: Expr) -> Expr {
-        self.0
-            .map_many_private(FunctionExpr::DateOffset, &[by], false, false)
+        self.0.map_many_private(
+            FunctionExpr::TemporalExpr(TemporalFunction::OffsetBy),
+            &[by],
+            false,
+            false,
+        )
     }
 
     #[cfg(feature = "timezones")]
-    pub fn replace_time_zone(self, time_zone: Option<TimeZone>, ambiguous: Expr) -> Expr {
+    pub fn replace_time_zone(
+        self,
+        time_zone: Option<TimeZone>,
+        ambiguous: Expr,
+        non_existent: NonExistent,
+    ) -> Expr {
         self.0.map_many_private(
-            FunctionExpr::TemporalExpr(TemporalFunction::ReplaceTimeZone(time_zone)),
+            FunctionExpr::TemporalExpr(TemporalFunction::ReplaceTimeZone(time_zone, non_existent)),
             &[ambiguous],
             false,
             false,

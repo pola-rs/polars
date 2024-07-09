@@ -30,6 +30,7 @@ impl FixedSizeBinary {
 }
 
 impl<'a> Pushable<&'a [u8]> for FixedSizeBinary {
+    type Freeze = ();
     #[inline]
     fn reserve(&mut self, additional: usize) {
         self.values.reserve(additional * self.size);
@@ -54,5 +55,13 @@ impl<'a> Pushable<&'a [u8]> for FixedSizeBinary {
     #[inline]
     fn len(&self) -> usize {
         self.values.len() / self.size
+    }
+
+    #[inline]
+    fn extend_null_constant(&mut self, additional: usize) {
+        self.extend_constant(additional)
+    }
+    fn freeze(self) -> Self::Freeze {
+        unimplemented!()
     }
 }

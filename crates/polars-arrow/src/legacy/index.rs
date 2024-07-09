@@ -1,18 +1,27 @@
+use std::fmt::Display;
+
 use num_traits::{NumCast, Signed, Zero};
+use polars_error::{polars_err, PolarsResult};
+use polars_utils::IdxSize;
 
-#[cfg(not(feature = "bigidx"))]
-use crate::array::UInt32Array;
-#[cfg(feature = "bigidx")]
-use crate::array::UInt64Array;
+use crate::array::PrimitiveArray;
 
-pub trait IndexToUsize {
+pub trait IndexToUsize: Display {
     /// Translate the negative index to an offset.
     fn negative_to_usize(self, len: usize) -> Option<usize>;
+
+    fn try_negative_to_usize(self, len: usize) -> PolarsResult<usize>
+    where
+        Self: Sized + Copy,
+    {
+        self.negative_to_usize(len)
+            .ok_or_else(|| polars_err!(OutOfBounds: "index {} for length: {}", self, len))
+    }
 }
 
 impl<I> IndexToUsize for I
 where
-    I: PartialOrd + PartialEq + NumCast + Signed + Zero,
+    I: PartialOrd + PartialEq + NumCast + Signed + Zero + Display,
 {
     #[inline]
     fn negative_to_usize(self, len: usize) -> Option<usize> {
@@ -33,17 +42,8 @@ where
     }
 }
 
-/// The type used by polars to index data.
-#[cfg(not(feature = "bigidx"))]
-pub type IdxSize = u32;
-#[cfg(feature = "bigidx")]
-pub type IdxSize = u64;
-
-#[cfg(not(feature = "bigidx"))]
-pub type IdxArr = UInt32Array;
-#[cfg(feature = "bigidx")]
-pub type IdxArr = UInt64Array;
-
 pub fn indexes_to_usizes(idx: &[IdxSize]) -> impl Iterator<Item = usize> + '_ {
     idx.iter().map(|idx| *idx as usize)
 }
+
+pub type IdxArr = PrimitiveArray<IdxSize>;

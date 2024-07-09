@@ -1,8 +1,8 @@
 use crate::array::BooleanArray;
+use crate::bitmap::utils::set_bit_unchecked;
 use crate::bitmap::MutableBitmap;
 use crate::datatypes::ArrowDataType;
 use crate::legacy::array::default_arrays::FromData;
-use crate::legacy::bit_util::{set_bit_raw, unset_bit_raw};
 use crate::legacy::trusted_len::FromIteratorReversed;
 use crate::legacy::utils::FromTrustedLenIterator;
 use crate::trusted_len::TrustedLen;
@@ -37,14 +37,14 @@ impl FromIteratorReversed<bool> for BooleanArray {
     fn from_trusted_len_iter_rev<I: TrustedLen<Item = bool>>(iter: I) -> Self {
         let size = iter.size_hint().1.unwrap();
 
-        let vals = MutableBitmap::from_len_zeroed(size);
-        let vals_ptr = vals.as_slice().as_ptr() as *mut u8;
+        let mut vals = MutableBitmap::from_len_zeroed(size);
+        let vals_slice = vals.as_mut_slice();
         unsafe {
             let mut offset = size;
             iter.for_each(|item| {
                 offset -= 1;
                 if item {
-                    set_bit_raw(vals_ptr, offset);
+                    set_bit_unchecked(vals_slice, offset, true);
                 }
             });
         }
@@ -56,11 +56,11 @@ impl FromIteratorReversed<Option<bool>> for BooleanArray {
     fn from_trusted_len_iter_rev<I: TrustedLen<Item = Option<bool>>>(iter: I) -> Self {
         let size = iter.size_hint().1.unwrap();
 
-        let vals = MutableBitmap::from_len_zeroed(size);
+        let mut vals = MutableBitmap::from_len_zeroed(size);
         let mut validity = MutableBitmap::with_capacity(size);
         validity.extend_constant(size, true);
-        let validity_ptr = validity.as_slice().as_ptr() as *mut u8;
-        let vals_ptr = vals.as_slice().as_ptr() as *mut u8;
+        let validity_slice = validity.as_mut_slice();
+        let vals_slice = vals.as_mut_slice();
         unsafe {
             let mut offset = size;
 
@@ -70,12 +70,12 @@ impl FromIteratorReversed<Option<bool>> for BooleanArray {
                     Some(item) => {
                         if item {
                             // Set value (validity bit is already true).
-                            set_bit_raw(vals_ptr, offset);
+                            set_bit_unchecked(vals_slice, offset, true);
                         }
                     },
                     None => {
                         // Unset validity bit.
-                        unset_bit_raw(validity_ptr, offset)
+                        set_bit_unchecked(validity_slice, offset, false)
                     },
                 }
             });

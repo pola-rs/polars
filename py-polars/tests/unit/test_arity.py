@@ -79,3 +79,40 @@ def test_broadcast_string_ops_12632(
     assert df.select(needs_broadcast.str.strip_chars(pl.col("name"))).height == 3
     assert df.select(needs_broadcast.str.strip_chars_start(pl.col("name"))).height == 3
     assert df.select(needs_broadcast.str.strip_chars_end(pl.col("name"))).height == 3
+
+
+def test_negate_inlined_14278() -> None:
+    df = pl.DataFrame(
+        {"group": ["A", "A", "B", "B", "B", "C", "C"], "value": [1, 2, 3, 4, 5, 6, 7]}
+    )
+
+    agg_expr = [
+        pl.struct("group", "value").tail(2).alias("list"),
+        pl.col("value").sort().tail(2).count().alias("count"),
+    ]
+
+    q = df.lazy().group_by("group").agg(agg_expr)
+    assert q.collect().sort("group").to_dict(as_series=False) == {
+        "group": ["A", "B", "C"],
+        "list": [
+            [{"group": "A", "value": 1}, {"group": "A", "value": 2}],
+            [{"group": "B", "value": 4}, {"group": "B", "value": 5}],
+            [{"group": "C", "value": 6}, {"group": "C", "value": 7}],
+        ],
+        "count": [2, 2, 2],
+    }
+
+
+def test_nested_level_literals_17377() -> None:
+    df = pl.LazyFrame({"group": [1, 2], "value": [1, 2]})
+
+    df2 = df.group_by("group").agg(
+        [
+            pl.when((pl.col("value") < 0).all())
+            .then(None)
+            .otherwise(pl.col("value").mean())
+            .alias("res")
+        ]
+    )
+
+    assert df2.collect_schema() == pl.Schema({"group": pl.Int64(), "res": pl.Float64()})

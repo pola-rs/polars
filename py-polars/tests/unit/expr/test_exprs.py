@@ -1,22 +1,15 @@
 from __future__ import annotations
 
-import sys
 from datetime import date, datetime, timedelta, timezone
 from itertools import permutations
-from typing import Any, cast
-
-if sys.version_info >= (3, 9):
-    from zoneinfo import ZoneInfo
-else:
-    # Import from submodule due to typing issue with backports.zoneinfo package:
-    # https://github.com/pganssle/zoneinfo/issues/125
-    from backports.zoneinfo._zoneinfo import ZoneInfo
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import pytest
 
 import polars as pl
-from polars.datatypes import (
+from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.conftest import (
     DATETIME_DTYPES,
     DURATION_DTYPES,
     FLOAT_DTYPES,
@@ -24,7 +17,13 @@ from polars.datatypes import (
     NUMERIC_DTYPES,
     TEMPORAL_DTYPES,
 )
-from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from zoneinfo import ZoneInfo
+
+    from polars._typing import PolarsDataType
+else:
+    from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
 
 def test_arg_true() -> None:
@@ -129,15 +128,15 @@ def test_unique_stable() -> None:
 def test_entropy() -> None:
     df = pl.DataFrame(
         {
-            "group": ["A", "A", "A", "B", "B", "B", "B"],
-            "id": [1, 2, 1, 4, 5, 4, 6],
+            "group": ["A", "A", "A", "B", "B", "B", "B", "C"],
+            "id": [1, 2, 1, 4, 5, 4, 6, 7],
         }
     )
     result = df.group_by("group", maintain_order=True).agg(
         pl.col("id").entropy(normalize=True)
     )
     expected = pl.DataFrame(
-        {"group": ["A", "B"], "id": [1.0397207708399179, 1.371381017771811]}
+        {"group": ["A", "B", "C"], "id": [1.0397207708399179, 1.371381017771811, 0.0]}
     )
     assert_frame_equal(result, expected)
 
@@ -247,7 +246,7 @@ def test_list_eval_expression() -> None:
             "rank": [[1.0, 2.0], [2.0, 1.0], [2.0, 1.0]],
         }
 
-        assert df["a"].reshape((1, -1)).list.eval(
+        assert df["a"].reshape((1, -1)).arr.to_list().list.eval(
             pl.first(), parallel=parallel
         ).to_list() == [[1, 8, 3]]
 
@@ -281,11 +280,9 @@ def test_power_by_expression() -> None:
     out = pl.DataFrame(
         {"a": [1, None, None, 4, 5, 6], "b": [1, 2, None, 4, None, 6]}
     ).select(
-        [
-            pl.col("a").pow(pl.col("b")).alias("pow_expr"),
-            (pl.col("a") ** pl.col("b")).alias("pow_op"),
-            (2 ** pl.col("b")).alias("pow_op_left"),
-        ]
+        pl.col("a").pow(pl.col("b")).alias("pow_expr"),
+        (pl.col("a") ** pl.col("b")).alias("pow_op"),
+        (2 ** pl.col("b")).alias("pow_op_left"),
     )
 
     for pow_col in ("pow_expr", "pow_op"):
@@ -299,7 +296,7 @@ def test_expression_appends() -> None:
     assert df.select(pl.repeat(None, 3).append(pl.col("a"))).n_chunks() == 2
     assert df.select(pl.repeat(None, 3).append(pl.col("a")).rechunk()).n_chunks() == 1
 
-    out = df.select(pl.concat([pl.repeat(None, 3), pl.col("a")]))
+    out = df.select(pl.concat([pl.repeat(None, 3), pl.col("a")], rechunk=True))
 
     assert out.n_chunks() == 1
     assert out.to_series().to_list() == [None, None, None, 1, 1, 2]
@@ -412,6 +409,46 @@ def test_search_sorted() -> None:
     assert a.search_sorted(b, side="right").to_list() == [0, 2, 2, 4, 4]
 
 
+def test_search_sorted_multichunk() -> None:
+    for seed in [1, 2, 3]:
+        np.random.seed(seed)
+        arr = np.sort(np.random.randn(10) * 100)
+        q = len(arr) // 4
+        a, b, c, d = map(
+            pl.Series, (arr[:q], arr[q : 2 * q], arr[2 * q : 3 * q], arr[3 * q :])
+        )
+        s = pl.concat([a, b, c, d], rechunk=False)
+        assert s.n_chunks() == 4
+
+        for v in range(int(np.min(arr)), int(np.max(arr)), 20):
+            assert np.searchsorted(arr, v) == s.search_sorted(v)
+
+    a = pl.concat(
+        [
+            pl.Series([None, None, None], dtype=pl.Int64),
+            pl.Series([None, 1, 1, 2, 3]),
+            pl.Series([4, 4, 5, 6, 7, 8, 8]),
+        ],
+        rechunk=False,
+    )
+    assert a.n_chunks() == 3
+    b = pl.Series([-10, 0, 1, 2, 3, 4, 5, 6, 7, 8, 10, None])
+    left_ref = pl.Series(
+        [4, 4, 4, 6, 7, 8, 10, 11, 12, 13, 15, 0], dtype=pl.get_index_type()
+    )
+    right_ref = pl.Series(
+        [4, 4, 6, 7, 8, 10, 11, 12, 13, 15, 15, 4], dtype=pl.get_index_type()
+    )
+    assert_series_equal(a.search_sorted(b, side="left"), left_ref)
+    assert_series_equal(a.search_sorted(b, side="right"), right_ref)
+
+
+def test_search_sorted_right_nulls() -> None:
+    a = pl.Series([1, 2, None, None])
+    assert a.search_sorted(None, side="left") == 2
+    assert a.search_sorted(None, side="right") == 4
+
+
 def test_logical_boolean() -> None:
     # note, cannot use expressions in logical
     # boolean context (eg: and/or/not operators)
@@ -430,36 +467,8 @@ def test_logical_boolean() -> None:
         df.select([(pl.col("a") > pl.col("b")) or (pl.col("b") > pl.col("b"))])
 
 
-# https://github.com/pola-rs/polars/issues/4951
-def test_ewm_with_multiple_chunks() -> None:
-    df0 = pl.DataFrame(
-        data=[
-            ("w", 6.0, 1.0),
-            ("x", 5.0, 2.0),
-            ("y", 4.0, 3.0),
-            ("z", 3.0, 4.0),
-        ],
-        schema=["a", "b", "c"],
-    ).with_columns(
-        [
-            pl.col(pl.Float64).log().diff().name.prefix("ld_"),
-        ]
-    )
-    assert df0.n_chunks() == 1
-
-    # NOTE: We aren't testing whether `select` creates two chunks;
-    # we just need two chunks to properly test `ewm_mean`
-    df1 = df0.select(["ld_b", "ld_c"])
-    assert df1.n_chunks() == 2
-
-    ewm_std = df1.with_columns(
-        pl.all().ewm_std(com=20).name.prefix("ewm_"),
-    )
-    assert ewm_std.null_count().sum_horizontal()[0] == 4
-
-
 def test_lit_dtypes() -> None:
-    def lit_series(value: Any, dtype: pl.PolarsDataType | None) -> pl.Series:
+    def lit_series(value: Any, dtype: PolarsDataType | None) -> pl.Series:
         return pl.select(pl.lit(value, dtype=dtype)).to_series()
 
     d = datetime(2049, 10, 5, 1, 2, 3, 987654)
@@ -477,7 +486,7 @@ def test_lit_dtypes() -> None:
             "dtm_aware_0": lit_series(d, pl.Datetime("us", "Asia/Kathmandu")),
             "dtm_aware_1": lit_series(d_tz, pl.Datetime("us")),
             "dtm_aware_2": lit_series(d_tz, None),
-            "dtm_aware_3": lit_series(d, pl.Datetime(None, "Asia/Kathmandu")),
+            "dtm_aware_3": lit_series(d, pl.Datetime(time_zone="Asia/Kathmandu")),
             "dur_ms": lit_series(td, pl.Duration("ms")),
             "dur_us": lit_series(td, pl.Duration("us")),
             "dur_ns": lit_series(td, pl.Duration("ns")),
@@ -671,7 +680,7 @@ def test_head() -> None:
     assert df.select(pl.col("a").head(10)).to_dict(as_series=False) == {
         "a": [1, 2, 3, 4, 5]
     }
-    assert df.select(pl.col("a").head(pl.len() / 2)).to_dict(as_series=False) == {
+    assert df.select(pl.col("a").head(pl.len() // 2)).to_dict(as_series=False) == {
         "a": [1, 2]
     }
 
@@ -683,20 +692,9 @@ def test_tail() -> None:
     assert df.select(pl.col("a").tail(10)).to_dict(as_series=False) == {
         "a": [1, 2, 3, 4, 5]
     }
-    assert df.select(pl.col("a").tail(pl.len() / 2)).to_dict(as_series=False) == {
+    assert df.select(pl.col("a").tail(pl.len() // 2)).to_dict(as_series=False) == {
         "a": [4, 5]
     }
-
-
-def test_is_not_deprecated() -> None:
-    df = pl.DataFrame({"a": [True, False, True]})
-
-    with pytest.deprecated_call():
-        expr = pl.col("a").is_not()
-    result = df.select(expr)
-
-    expected = pl.DataFrame({"a": [False, True, False]})
-    assert_frame_equal(result, expected)
 
 
 def test_repr_short_expression() -> None:
@@ -724,9 +722,9 @@ def test_repr_long_expression() -> None:
 
 def test_repr_gather() -> None:
     result = repr(pl.col("a").gather(0))
-    assert 'col("a").gather(0)' in result
+    assert 'col("a").gather(dyn int: 0)' in result
     result = repr(pl.col("a").get(0))
-    assert 'col("a").get(0)' in result
+    assert 'col("a").get(dyn int: 0)' in result
 
 
 def test_replace_no_cse() -> None:
@@ -736,3 +734,29 @@ def test_replace_no_cse() -> None:
         .explain()
     )
     assert "POLARS_CSER" not in plan
+
+
+def test_slice_rejects_non_integral() -> None:
+    df = pl.LazyFrame({"a": [0, 1, 2, 3], "b": [1.5, 2, 3, 4]})
+
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        df.select(pl.col("a").slice(pl.col("b").slice(0, 1), None)).collect()
+
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        df.select(pl.col("a").slice(0, pl.col("b").slice(1, 2))).collect()
+
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        df.select(pl.col("a").slice(pl.lit("1"), None)).collect()
+
+
+def test_slice() -> None:
+    data = {"a": [0, 1, 2, 3], "b": [1, 2, 3, 4]}
+    df = pl.DataFrame(data)
+
+    result = df.select(pl.col("a").slice(1))
+    expected = pl.DataFrame({"a": data["a"][1:]})
+    assert_frame_equal(result, expected)
+
+    result = df.select(pl.all().slice(1, 1))
+    expected = pl.DataFrame({"a": data["a"][1:2], "b": data["b"][1:2]})
+    assert_frame_equal(result, expected)

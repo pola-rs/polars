@@ -26,10 +26,12 @@ Notes
   all outputs, set `IGNORE_RESULT_ALL=True` below. Do note that this does mean no output
   is being checked anymore.
 """
+
 from __future__ import annotations
 
 import doctest
 import importlib
+import re
 import sys
 import unittest
 import warnings
@@ -43,6 +45,33 @@ if TYPE_CHECKING:
     from types import ModuleType
 
 
+if sys.version_info < (3, 12):
+    # Tests that print an OrderedDict fail (e.g. DataFrame.schema) as the repr
+    # has changed in Python 3.12
+    warnings.warn(
+        "Certain doctests may fail when running on a Python version below 3.12."
+        " Update your Python version to 3.12 or later to make sure all tests pass.",
+        stacklevel=2,
+    )
+
+# associate specific doctest method names with optional modules.
+# if the module is found in the environment those doctests will
+# run; if the module is not found, their doctests are skipped.
+OPTIONAL_MODULES_AND_METHODS: dict[str, set[str]] = {
+    "jax": {"to_jax"},
+    "torch": {"to_torch"},
+}
+OPTIONAL_MODULES: set[str] = set()
+SKIP_METHODS: set[str] = set()
+
+for mod, methods in OPTIONAL_MODULES_AND_METHODS.items():
+    try:
+        importlib.import_module(mod)
+    except ImportError:
+        SKIP_METHODS.update(methods)
+        OPTIONAL_MODULES.add(mod)
+
+
 def doctest_teardown(d: doctest.DocTest) -> None:
     # don't let config changes or string cache state leak between tests
     polars.Config.restore_defaults()
@@ -51,11 +80,26 @@ def doctest_teardown(d: doctest.DocTest) -> None:
 
 def modules_in_path(p: Path) -> Iterator[ModuleType]:
     for file in p.rglob("*.py"):
-        # Construct path as string for import, for instance "dataframe.frame"
-        # The -3 drops the ".py"
-        file_name_import = ".".join(file.relative_to(p).parts)[:-3]
-        temp_module = importlib.import_module(p.name + "." + file_name_import)
-        yield temp_module
+        # Construct path as string for import, for instance "dataframe.frame".
+        # (The -3 drops the ".py")
+        try:
+            file_name_import = ".".join(file.relative_to(p).parts)[:-3]
+            temp_module = importlib.import_module(p.name + "." + file_name_import)
+            yield temp_module
+        except ImportError as err:
+            if not any(re.search(rf"\b{mod}\b", str(err)) for mod in OPTIONAL_MODULES):
+                raise
+
+
+class FilteredTestSuite(unittest.TestSuite):  # noqa: D101
+    def __iter__(self) -> Iterator[Any]:
+        for suite in self._tests:
+            suite._tests = [  # type: ignore[attr-defined]
+                test
+                for test in suite._tests  # type: ignore[attr-defined]
+                if test.id().rsplit(".", 1)[-1] not in SKIP_METHODS
+            ]
+            yield suite
 
 
 if __name__ == "__main__":
@@ -70,7 +114,7 @@ if __name__ == "__main__":
     IGNORE_RESULT = doctest.register_optionflag("IGNORE_RESULT")
 
     # Set doctests to fail on warnings
-    warnings.simplefilter("error", DeprecationWarning)
+    warnings.simplefilter("error", Warning)
     warnings.filterwarnings(
         "ignore",
         message="datetime.datetime.utcfromtimestamp\\(\\) is deprecated.*",
@@ -116,12 +160,12 @@ if __name__ == "__main__":
             doctest.DocTestSuite(
                 m,
                 extraglobs={"pl": polars, "dirpath": Path(tmpdir)},
-                optionflags=1,
                 tearDown=doctest_teardown,
+                optionflags=1,
             )
             for m in modules_in_path(src_dir)
         ]
-        test_suite = unittest.TestSuite(tests)
+        test_suite = FilteredTestSuite(tests)
 
         # Ensure that we clean up any artifacts produced by the doctests
         # with patch(polars.DataFrame.write_csv):

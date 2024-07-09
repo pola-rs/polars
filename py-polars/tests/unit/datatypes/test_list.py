@@ -10,9 +10,10 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.conftest import NUMERIC_DTYPES
 
 if TYPE_CHECKING:
-    from polars import PolarsDataType
+    from polars._typing import PolarsDataType
 
 
 def test_dtype() -> None:
@@ -23,15 +24,20 @@ def test_dtype() -> None:
     assert a.dtype.is_(pl.List(pl.Int64))
 
     # explicit
+    u64_max = (2**64) - 1
     df = pl.DataFrame(
         data={
             "i": [[1, 2, 3]],
+            "li": [[[1, 2, 3]]],
+            "u": [[u64_max]],
             "tm": [[time(10, 30, 45)]],
             "dt": [[date(2022, 12, 31)]],
             "dtm": [[datetime(2022, 12, 31, 1, 2, 3)]],
         },
         schema=[
             ("i", pl.List(pl.Int8)),
+            ("li", pl.List(pl.List(pl.Int8))),
+            ("u", pl.List(pl.UInt64)),
             ("tm", pl.List(pl.Time)),
             ("dt", pl.List(pl.Date)),
             ("dtm", pl.List(pl.Datetime)),
@@ -39,6 +45,8 @@ def test_dtype() -> None:
     )
     assert df.schema == {
         "i": pl.List(pl.Int8),
+        "li": pl.List(pl.List(pl.Int8)),
+        "u": pl.List(pl.UInt64),
         "tm": pl.List(pl.Time),
         "dt": pl.List(pl.Date),
         "dtm": pl.List(pl.Datetime),
@@ -48,6 +56,8 @@ def test_dtype() -> None:
     assert df.rows() == [
         (
             [1, 2, 3],
+            [[1, 2, 3]],
+            [u64_max],
             [time(10, 30, 45)],
             [date(2022, 12, 31)],
             [datetime(2022, 12, 31, 1, 2, 3)],
@@ -106,49 +116,43 @@ def test_cast_inner() -> None:
 def test_list_empty_group_by_result_3521() -> None:
     # Create a left relation where the join column contains a null value
     left = pl.DataFrame().with_columns(
-        [
-            pl.lit(1).alias("group_by_column"),
-            pl.lit(None).cast(pl.Int32).alias("join_column"),
-        ]
+        pl.lit(1).alias("group_by_column"),
+        pl.lit(None).cast(pl.Int32).alias("join_column"),
     )
 
     # Create a right relation where there is a column to count distinct on
     right = pl.DataFrame().with_columns(
-        [
-            pl.lit(1).alias("join_column"),
-            pl.lit(1).alias("n_unique_column"),
-        ]
+        pl.lit(1).alias("join_column"),
+        pl.lit(1).alias("n_unique_column"),
     )
 
     # Calculate n_unique after dropping nulls
     # This will panic on polars version 0.13.38 and 0.13.39
-    assert (
+    result = (
         left.join(right, on="join_column", how="left")
         .group_by("group_by_column")
         .agg(pl.col("n_unique_column").drop_nulls())
-    ).to_dict(as_series=False) == {"group_by_column": [1], "n_unique_column": [[]]}
+    )
+    expected = {"group_by_column": [1], "n_unique_column": [[]]}
+    assert result.to_dict(as_series=False) == expected
 
 
 def test_list_fill_null() -> None:
     df = pl.DataFrame({"C": [["a", "b", "c"], [], [], ["d", "e"]]})
     assert df.with_columns(
-        [
-            pl.when(pl.col("C").list.len() == 0)
-            .then(None)
-            .otherwise(pl.col("C"))
-            .alias("C")
-        ]
+        pl.when(pl.col("C").list.len() == 0)
+        .then(None)
+        .otherwise(pl.col("C"))
+        .alias("C")
     ).to_series().to_list() == [["a", "b", "c"], None, None, ["d", "e"]]
 
 
 def test_list_fill_list() -> None:
     assert pl.DataFrame({"a": [[1, 2, 3], []]}).select(
-        [
-            pl.when(pl.col("a").list.len() == 0)
-            .then([5])
-            .otherwise(pl.col("a"))
-            .alias("filled")
-        ]
+        pl.when(pl.col("a").list.len() == 0)
+        .then([5])
+        .otherwise(pl.col("a"))
+        .alias("filled")
     ).to_dict(as_series=False) == {"filled": [[1, 2, 3], [5]]}
 
 
@@ -299,17 +303,6 @@ def test_flat_aggregation_to_list_conversion_6918() -> None:
     ).to_dict(as_series=False) == {"a": [1, 2], "b": [[[0.0, 1.0]], [[3.0, 4.0]]]}
 
 
-def test_list_count_matches_deprecated() -> None:
-    df = pl.DataFrame({"listcol": [[], [1], [1, 2, 3, 2], [1, 2, 1], [4, 4]]})
-    with pytest.deprecated_call():
-        result = df.select(
-            pl.col("listcol").list.count_match(2).alias("number_of_twos")
-        )
-
-    expected = {"number_of_twos": [0, 0, 2, 1, 0]}
-    assert result.to_dict(as_series=False) == expected
-
-
 def test_list_count_matches() -> None:
     assert pl.DataFrame({"listcol": [[], [1], [1, 2, 3, 2], [1, 2, 1], [4, 4]]}).select(
         pl.col("listcol").list.count_matches(2).alias("number_of_twos")
@@ -409,20 +402,22 @@ def test_list_any() -> None:
     }
 
 
-def test_list_min_max() -> None:
-    for dt in pl.INTEGER_DTYPES | pl.FLOAT_DTYPES:
-        df = pl.DataFrame(
-            {"a": [[1], [1, 2, 3], [1, 2, 3, 4], [1, 2, 3, 4, 5]]},
-            schema={"a": pl.List(dt)},
-        )
-        result = df.select(pl.col("a").list.min())
-        expected = df.select(pl.col("a").list.first())
-        assert_frame_equal(result, expected)
+@pytest.mark.parametrize("dtype", NUMERIC_DTYPES)
+def test_list_min_max(dtype: pl.DataType) -> None:
+    df = pl.DataFrame(
+        {"a": [[1], [1, 2, 3], [1, 2, 3, 4], [1, 2, 3, 4, 5]]},
+        schema={"a": pl.List(dtype)},
+    )
+    result = df.select(pl.col("a").list.min())
+    expected = df.select(pl.col("a").list.first())
+    assert_frame_equal(result, expected)
 
-        result = df.select(pl.col("a").list.max())
-        expected = df.select(pl.col("a").list.last())
-        assert_frame_equal(result, expected)
+    result = df.select(pl.col("a").list.max())
+    expected = df.select(pl.col("a").list.last())
+    assert_frame_equal(result, expected)
 
+
+def test_list_min_max2() -> None:
     df = pl.DataFrame(
         {"a": [[1], [1, 5, -1, 3], [1, 2, 3, 4], [1, 2, 3, 4, 5], None]},
     )
@@ -432,6 +427,16 @@ def test_list_min_max() -> None:
     assert df.select(pl.col("a").list.max()).to_dict(as_series=False) == {
         "a": [1, 5, 4, 5, None]
     }
+
+
+def test_list_mean_fast_path_empty() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [[], [1, 2, 3]],
+        }
+    )
+    output = df.select(pl.col("a").list.mean())
+    assert output.to_dict(as_series=False) == {"a": [None, 2.0]}
 
 
 def test_list_min_max_13978() -> None:
@@ -584,9 +589,8 @@ def test_list_null_pickle() -> None:
 
 def test_struct_with_nulls_as_list() -> None:
     df = pl.DataFrame([[{"a": 1, "b": 2}], [{"c": 3, "d": None}]])
-    assert df.select(pl.concat_list(pl.all()).alias("as_list")).to_dict(
-        as_series=False
-    ) == {
+    result = df.select(pl.concat_list(pl.all()).alias("as_list"))
+    assert result.to_dict(as_series=False) == {
         "as_list": [
             [
                 {"a": 1, "b": 2, "c": None, "d": None},
@@ -752,3 +756,93 @@ def test_list_median(data_dispersion: pl.DataFrame) -> None:
     )
 
     assert_frame_equal(result, expected)
+
+
+def test_list_gather_null_struct_14927() -> None:
+    df = pl.DataFrame(
+        [
+            {
+                "index": 0,
+                "col_0": [{"field_0": 1.0}],
+            },
+            {
+                "index": 1,
+                "col_0": None,
+            },
+        ]
+    )
+
+    expected = pl.DataFrame(
+        {"index": [1], "col_0": [None], "field_0": [None]},
+        schema={**df.schema, "field_0": pl.Float64},
+    )
+    expr = pl.col("col_0").list.get(0, null_on_oob=True).struct.field("field_0")
+    out = df.filter(pl.col("index") > 0).with_columns(expr)
+    assert_frame_equal(out, expected)
+
+
+def test_list_of_series_with_nulls() -> None:
+    inner_series = pl.Series("inner", [1, 2, 3])
+    s = pl.Series("a", [inner_series, None])
+    assert_series_equal(s, pl.Series("a", [[1, 2, 3], None]))
+
+
+def test_take_list_15719() -> None:
+    schema = pl.List(pl.List(pl.Int64))
+    df = pl.DataFrame(
+        {"a": [None, None], "b": [None, [[1, 2]]]}, schema={"a": schema, "b": schema}
+    )
+    df = df.select(
+        a_explode=pl.col("a").explode(),
+        a_get=pl.col("a").list.get(0, null_on_oob=True),
+        b_explode=pl.col("b").explode(),
+        b_get=pl.col("b").list.get(0, null_on_oob=True),
+    )
+
+    expected_schema = pl.List(pl.Int64)
+    expected = pl.DataFrame(
+        {
+            "a_explode": [None, None],
+            "a_get": [None, None],
+            "b_explode": [None, [1, 2]],
+            "b_get": [None, [1, 2]],
+        },
+        schema={
+            "a_explode": expected_schema,
+            "a_get": expected_schema,
+            "b_explode": expected_schema,
+            "b_get": expected_schema,
+        },
+    )
+
+    assert_frame_equal(df, expected)
+
+
+def test_list_str_sum_exception_12935() -> None:
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.Series(["foo", "bar"]).sum()
+
+
+def test_list_list_sum_exception_12935() -> None:
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.Series([[1], [2]]).sum()
+
+
+def test_null_list_categorical_16405() -> None:
+    df = pl.DataFrame(
+        [(None, "foo")],
+        schema={
+            "match": pl.List(pl.Categorical),
+            "what": pl.Categorical,
+        },
+        orient="row",
+    )
+
+    df = df.select(
+        pl.col("match")
+        .list.set_intersection(pl.concat_list(pl.col("what")))
+        .alias("result")
+    )
+
+    expected = pl.DataFrame([None], schema={"result": pl.List(pl.Categorical)})
+    assert_frame_equal(df, expected)

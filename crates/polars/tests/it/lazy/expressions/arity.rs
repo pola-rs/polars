@@ -218,7 +218,7 @@ fn test_when_then_otherwise_sum_in_agg() -> PolarsResult<()> {
         .agg([when(all().exclude(["groups"]).sum().eq(lit(1)))
             .then(all().exclude(["groups"]).sum())
             .otherwise(lit(NULL))])
-        .sort("groups", Default::default());
+        .sort(["groups"], Default::default());
 
     let expected = df![
         "groups" => [1, 2],
@@ -274,7 +274,7 @@ fn test_ternary_aggregation_set_literals() -> PolarsResult<()> {
         .agg([when(col("value").sum().eq(lit(3)))
             .then(col("value").rank(Default::default(), None))
             .otherwise(lit(Series::new("", &[10 as IdxSize])))])
-        .sort("name", Default::default())
+        .sort(["name"], Default::default())
         .collect()?;
 
     let out = out.column("value")?;
@@ -294,7 +294,7 @@ fn test_ternary_aggregation_set_literals() -> PolarsResult<()> {
         .agg([when(col("value").sum().eq(lit(3)))
             .then(lit(Series::new("", &[10 as IdxSize])).alias("value"))
             .otherwise(col("value").rank(Default::default(), None))])
-        .sort("name", Default::default())
+        .sort(["name"], Default::default())
         .collect()?;
 
     let out = out.column("value")?;
@@ -314,7 +314,7 @@ fn test_ternary_aggregation_set_literals() -> PolarsResult<()> {
         .agg([when(col("value").sum().eq(lit(3)))
             .then(col("value").rank(Default::default(), None))
             .otherwise(Null {}.lit())])
-        .sort("name", Default::default())
+        .sort(["name"], Default::default())
         .collect()?;
 
     let out = out.column("value")?;
@@ -328,7 +328,7 @@ fn test_ternary_aggregation_set_literals() -> PolarsResult<()> {
         .agg([when(col("value").sum().eq(lit(3)))
             .then(Null {}.lit().alias("value"))
             .otherwise(col("value").rank(Default::default(), None))])
-        .sort("name", Default::default())
+        .sort(["name"], Default::default())
         .collect()?;
 
     let out = out.column("value")?;
@@ -350,7 +350,7 @@ fn test_binary_group_consistency() -> PolarsResult<()> {
     let out = lf
         .group_by([col("category")])
         .agg([col("name").filter(col("score").eq(col("score").max()))])
-        .sort("category", Default::default())
+        .sort(["category"], Default::default())
         .collect()?;
     let out = out.column("name")?;
 

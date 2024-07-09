@@ -12,7 +12,6 @@ use arrow::legacy::kernels::rolling::no_nulls::{
     MaxWindow, MeanWindow, MinWindow, QuantileWindow, RollingAggWindowNoNulls, SumWindow, VarWindow,
 };
 use arrow::legacy::kernels::rolling::nulls::RollingAggWindowNulls;
-use arrow::legacy::kernels::rolling::{RollingQuantileParams, RollingVarParams};
 use arrow::legacy::kernels::take_agg::*;
 use arrow::legacy::prelude::QuantileInterpolOptions;
 use arrow::legacy::trusted_len::TrustedLenPush;
@@ -24,6 +23,7 @@ use polars_utils::idx_vec::IdxVec;
 use polars_utils::ord::{compare_fn_nan_max, compare_fn_nan_min};
 use rayon::prelude::*;
 
+use crate::chunked_array::cast::CastOptions;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::extension::create_extension;
 use crate::frame::group_by::GroupsIdx;
@@ -52,7 +52,10 @@ pub fn _use_rolling_kernels(groups: &GroupsSlice, chunks: &[ArrayRef]) -> bool {
             let [first_offset, first_len] = groups[0];
             let second_offset = groups[1][0];
 
-            second_offset < (first_offset + first_len) && chunks.len() == 1
+            second_offset >= first_offset // Prevent false positive from regular group-by that has out of order slices.
+                                          // Rolling group-by is expected to have monotonically increasing slices.
+                && second_offset < (first_offset + first_len)
+                && chunks.len() == 1
         },
     }
 }
@@ -78,7 +81,7 @@ where
     // these represent the number of groups in the group_by operation
     let output_len = offsets.size_hint().0;
     // start with a dummy index, will be overwritten on first iteration.
-    // Safety:
+    // SAFETY:
     // we are in bounds
     let mut agg_window = unsafe { Agg::new(values, validity, 0, 0, params) };
 
@@ -90,7 +93,7 @@ where
         .map(|(idx, (start, len))| {
             let end = start + len;
 
-            // safety:
+            // SAFETY:
             // we are in bounds
 
             let agg = if start == end {
@@ -102,7 +105,7 @@ where
             match agg {
                 Some(val) => val,
                 None => {
-                    // safety: we are in bounds
+                    // SAFETY: we are in bounds
                     unsafe { validity.set_unchecked(idx, false) };
                     T::default()
                 },
@@ -140,7 +143,7 @@ where
                 None
             } else {
                 // SAFETY: we are in bounds.
-                Some(unsafe { agg_window.update(start as usize, end as usize) })
+                unsafe { agg_window.update(start as usize, end as usize) }
             }
         })
         .collect::<PrimitiveArray<T>>()
@@ -185,6 +188,18 @@ where
 {
     let ca: ChunkedArray<T> = POOL.install(|| groups.all().into_par_iter().map(f).collect());
     ca.into_series()
+}
+
+/// Same as `agg_helper_idx_on_all` but for aggregations that don't return an Option.
+fn agg_helper_idx_on_all_no_null<T, F>(groups: &GroupsIdx, f: F) -> Series
+where
+    F: Fn(&IdxVec) -> T::Native + Send + Sync,
+    T: PolarsNumericType,
+    ChunkedArray<T>: IntoSeries,
+{
+    let ca: NoNull<ChunkedArray<T>> =
+        POOL.install(|| groups.all().into_par_iter().map(f).collect());
+    ca.into_inner().into_series()
 }
 
 pub fn _agg_helper_slice<T, F>(groups: &[[IdxSize; 2]], f: F) -> Series
@@ -362,7 +377,9 @@ where
         GroupsProxy::Slice { groups, .. } => {
             if _use_rolling_kernels(groups, ca.chunks()) {
                 // this cast is a no-op for floats
-                let s = ca.cast(&K::get_dtype()).unwrap();
+                let s = ca
+                    .cast_with_options(&K::get_dtype(), CastOptions::Overflowing)
+                    .unwrap();
                 let ca: &ChunkedArray<K> = s.as_ref().as_ref();
                 let arr = ca.downcast_iter().next().unwrap();
                 let values = arr.values().as_slice();
@@ -797,7 +814,13 @@ where
                         debug_assert!(len <= self.len() as IdxSize);
                         match len {
                             0 => None,
-                            1 => NumCast::from(0),
+                            1 => {
+                                if ddof == 0 {
+                                    NumCast::from(0)
+                                } else {
+                                    None
+                                }
+                            },
                             _ => {
                                 let arr_group = _slice_from_offsets(self, first, len);
                                 arr_group.var(ddof).map(|flt| NumCast::from(flt).unwrap())
@@ -815,7 +838,7 @@ where
         let ca = &self.0.rechunk();
         match groups {
             GroupsProxy::Idx(groups) => {
-                let arr = self.downcast_iter().next().unwrap();
+                let arr = ca.downcast_iter().next().unwrap();
                 let no_nulls = arr.null_count() == 0;
                 agg_helper_idx_on_all::<T, _>(groups, |idx| {
                     debug_assert!(idx.len() <= ca.len());
@@ -832,7 +855,7 @@ where
             },
             GroupsProxy::Slice { groups, .. } => {
                 if _use_rolling_kernels(groups, self.chunks()) {
-                    let arr = self.downcast_iter().next().unwrap();
+                    let arr = ca.downcast_iter().next().unwrap();
                     let values = arr.values().as_slice();
                     let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
                     let arr = match arr.validity() {
@@ -859,7 +882,13 @@ where
                         debug_assert!(len <= self.len() as IdxSize);
                         match len {
                             0 => None,
-                            1 => NumCast::from(0),
+                            1 => {
+                                if ddof == 0 {
+                                    NumCast::from(0)
+                                } else {
+                                    None
+                                }
+                            },
                             _ => {
                                 let arr_group = _slice_from_offsets(self, first, len);
                                 arr_group.std(ddof).map(|flt| NumCast::from(flt).unwrap())
@@ -908,6 +937,8 @@ where
     pub(crate) unsafe fn agg_mean(&self, groups: &GroupsProxy) -> Series {
         match groups {
             GroupsProxy::Idx(groups) => {
+                let ca = self.rechunk();
+                let arr = ca.downcast_get(0).unwrap();
                 _agg_helper_idx::<Float64Type, _>(groups, |(first, idx)| {
                     // this can fail due to a bug in lazy code.
                     // here users can create filters in aggregations
@@ -923,7 +954,7 @@ where
                         match (self.has_validity(), self.chunks.len()) {
                             (false, 1) => {
                                 take_agg_no_null_primitive_iter_unchecked::<_, f64, _, _>(
-                                    self.downcast_iter().next().unwrap(),
+                                    arr,
                                     idx2usize(idx),
                                     |a, b| a + b,
                                 )
@@ -937,11 +968,7 @@ where
                                         _,
                                         _,
                                     >(
-                                        self.downcast_iter().next().unwrap(),
-                                        idx2usize(idx),
-                                        |a, b| a + b,
-                                        0.0,
-                                        idx.len() as IdxSize,
+                                        arr, idx2usize(idx), |a, b| a + b, 0.0, idx.len() as IdxSize
                                     )
                                 }
                                 .map(|(sum, null_count)| {
@@ -961,7 +988,9 @@ where
                 ..
             } => {
                 if _use_rolling_kernels(groups_slice, self.chunks()) {
-                    let ca = self.cast(&DataType::Float64).unwrap();
+                    let ca = self
+                        .cast_with_options(&DataType::Float64, CastOptions::Overflowing)
+                        .unwrap();
                     ca.agg_mean(groups)
                 } else {
                     _agg_helper_slice::<Float64Type, _>(groups_slice, |[first, len]| {
@@ -1003,14 +1032,22 @@ where
                 ..
             } => {
                 if _use_rolling_kernels(groups_slice, self.chunks()) {
-                    let ca = self.cast(&DataType::Float64).unwrap();
+                    let ca = self
+                        .cast_with_options(&DataType::Float64, CastOptions::Overflowing)
+                        .unwrap();
                     ca.agg_var(groups, ddof)
                 } else {
                     _agg_helper_slice::<Float64Type, _>(groups_slice, |[first, len]| {
                         debug_assert!(first + len <= self.len() as IdxSize);
                         match len {
                             0 => None,
-                            1 => NumCast::from(0),
+                            1 => {
+                                if ddof == 0 {
+                                    NumCast::from(0)
+                                } else {
+                                    None
+                                }
+                            },
                             _ => {
                                 let arr_group = _slice_from_offsets(self, first, len);
                                 arr_group.var(ddof)
@@ -1045,14 +1082,22 @@ where
                 ..
             } => {
                 if _use_rolling_kernels(groups_slice, self.chunks()) {
-                    let ca = self.cast(&DataType::Float64).unwrap();
+                    let ca = self
+                        .cast_with_options(&DataType::Float64, CastOptions::Overflowing)
+                        .unwrap();
                     ca.agg_std(groups, ddof)
                 } else {
                     _agg_helper_slice::<Float64Type, _>(groups_slice, |[first, len]| {
                         debug_assert!(first + len <= self.len() as IdxSize);
                         match len {
                             0 => None,
-                            1 => NumCast::from(0),
+                            1 => {
+                                if ddof == 0 {
+                                    NumCast::from(0)
+                                } else {
+                                    None
+                                }
+                            },
                             _ => {
                                 let arr_group = _slice_from_offsets(self, first, len);
                                 arr_group.std(ddof)

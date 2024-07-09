@@ -7,16 +7,15 @@ import pytest
 
 import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS
-from polars.exceptions import ComputeError, TimeZoneAwareConstructorWarning
+from polars.exceptions import ComputeError, PanicException, SchemaError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
 
-    from polars.datatypes import PolarsDataType
-    from polars.type_aliases import ClosedInterval, TimeUnit
+    from polars._typing import ClosedInterval, PolarsDataType, TimeUnit
 else:
-    from polars.utils.convert import get_zoneinfo as ZoneInfo
+    from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
 
 def test_datetime_range() -> None:
@@ -95,7 +94,7 @@ def test_datetime_range_precision(
 
 
 def test_datetime_range_invalid_time_unit() -> None:
-    with pytest.raises(pl.PolarsPanicError, match="'x' not supported"):
+    with pytest.raises(PanicException, match="'x' not supported"):
         pl.datetime_range(
             start=datetime(2021, 12, 16),
             end=datetime(2021, 12, 16, 3),
@@ -104,23 +103,32 @@ def test_datetime_range_invalid_time_unit() -> None:
         )
 
 
-def test_datetime_range_lazy_time_zones_warning() -> None:
+def test_datetime_range_lazy_time_zones() -> None:
     start = datetime(2020, 1, 1, tzinfo=ZoneInfo("Asia/Kathmandu"))
     stop = datetime(2020, 1, 2, tzinfo=ZoneInfo("Asia/Kathmandu"))
-    with pytest.warns(TimeZoneAwareConstructorWarning, match="Series with UTC"):
-        (
-            pl.DataFrame({"start": [start], "stop": [stop]})
-            .with_columns(
-                pl.datetime_range(
-                    start,
-                    stop,
-                    interval="678d",
-                    eager=False,
-                    time_zone="Pacific/Tarawa",
-                )
+    result = (
+        pl.DataFrame({"start": [start], "stop": [stop]})
+        .with_columns(
+            pl.datetime_range(
+                start,
+                stop,
+                interval="678d",
+                eager=False,
+                time_zone="Pacific/Tarawa",
             )
-            .lazy()
         )
+        .lazy()
+    )
+    expected = pl.DataFrame(
+        {
+            "start": [datetime(2019, 12, 31, 18, 15, tzinfo=ZoneInfo(key="UTC"))],
+            "stop": [datetime(2020, 1, 1, 18, 15, tzinfo=ZoneInfo(key="UTC"))],
+            "literal": [
+                datetime(2020, 1, 1, 6, 15, tzinfo=ZoneInfo(key="Pacific/Tarawa"))
+            ],
+        }
+    ).with_columns(pl.col("literal").dt.convert_time_zone("Pacific/Tarawa"))
+    assert_frame_equal(result.collect(), expected)
 
 
 @pytest.mark.parametrize("low", ["start", pl.col("start")])
@@ -150,7 +158,7 @@ def test_datetime_range_lazy_with_expressions(
 
 
 def test_datetime_range_invalid_time_zone() -> None:
-    with pytest.raises(pl.ComputeError, match="unable to parse time zone: 'foo'"):
+    with pytest.raises(ComputeError, match="unable to parse time zone: 'foo'"):
         pl.datetime_range(
             datetime(2001, 1, 1),
             datetime(2001, 1, 3),
@@ -166,17 +174,17 @@ def test_timezone_aware_datetime_range() -> None:
     assert pl.datetime_range(
         low, high, interval=timedelta(days=5), eager=True
     ).to_list() == [
-        datetime(2022, 10, 17, 10, 0, tzinfo=ZoneInfo(key="Asia/Shanghai")),
-        datetime(2022, 10, 22, 10, 0, tzinfo=ZoneInfo(key="Asia/Shanghai")),
-        datetime(2022, 10, 27, 10, 0, tzinfo=ZoneInfo(key="Asia/Shanghai")),
-        datetime(2022, 11, 1, 10, 0, tzinfo=ZoneInfo(key="Asia/Shanghai")),
-        datetime(2022, 11, 6, 10, 0, tzinfo=ZoneInfo(key="Asia/Shanghai")),
-        datetime(2022, 11, 11, 10, 0, tzinfo=ZoneInfo(key="Asia/Shanghai")),
-        datetime(2022, 11, 16, 10, 0, tzinfo=ZoneInfo(key="Asia/Shanghai")),
+        datetime(2022, 10, 17, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+        datetime(2022, 10, 22, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+        datetime(2022, 10, 27, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+        datetime(2022, 11, 1, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+        datetime(2022, 11, 6, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+        datetime(2022, 11, 11, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+        datetime(2022, 11, 16, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
     ]
 
     with pytest.raises(
-        ComputeError,
+        SchemaError,
         match="failed to determine supertype",
     ):
         pl.datetime_range(
@@ -249,7 +257,7 @@ def test_tzaware_datetime_range_crossing_dst_monthly() -> None:
 
 def test_datetime_range_with_unsupported_datetimes() -> None:
     with pytest.raises(
-        pl.ComputeError,
+        ComputeError,
         match=r"datetime '2021-11-07 01:00:00' is ambiguous in time zone 'US/Central'",
     ):
         pl.datetime_range(
@@ -260,7 +268,7 @@ def test_datetime_range_with_unsupported_datetimes() -> None:
             eager=True,
         )
     with pytest.raises(
-        pl.ComputeError,
+        ComputeError,
         match=r"datetime '2021-03-28 02:30:00' is non-existent in time zone 'Europe/Vienna'",
     ):
         pl.datetime_range(
@@ -330,7 +338,7 @@ def test_datetime_ranges_schema(
             pl.Datetime(time_unit=output_time_unit, time_zone=output_time_zone)
         ),
     }
-    assert result.schema == expected_schema
+    assert result.collect_schema() == expected_schema
     assert result.collect().schema == expected_schema
 
     expected = pl.DataFrame(
@@ -434,7 +442,7 @@ def test_datetime_range_schema_upcasts_to_datetime(
         "end": pl.Date,
         "datetime_range": pl.List(output_dtype),
     }
-    assert result.schema == expected_schema
+    assert result.collect_schema() == expected_schema
     assert result.collect().schema == expected_schema
 
     expected = pl.DataFrame(
@@ -477,13 +485,13 @@ def test_datetime_ranges_no_alias_schema_9037() -> None:
         "start": pl.List(pl.Datetime(time_unit="us", time_zone=None)),
         "end": pl.Datetime(time_unit="us", time_zone=None),
     }
-    assert result.schema == expected_schema
+    assert result.collect_schema() == expected_schema
     assert result.collect().schema == expected_schema
 
 
 @pytest.mark.parametrize("interval", [timedelta(0), timedelta(minutes=-10)])
 def test_datetime_range_invalid_interval(interval: timedelta) -> None:
-    with pytest.raises(pl.ComputeError, match="`interval` must be positive"):
+    with pytest.raises(ComputeError, match="`interval` must be positive"):
         pl.datetime_range(
             datetime(2000, 3, 20), datetime(2000, 3, 21), interval="-1h", eager=True
         )

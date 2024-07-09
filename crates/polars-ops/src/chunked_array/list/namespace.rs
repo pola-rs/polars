@@ -1,8 +1,7 @@
-use std::convert::TryFrom;
 use std::fmt::Write;
 
 use arrow::array::ValueSize;
-use arrow::legacy::kernels::list::sublist_get;
+use arrow::legacy::kernels::list::{index_is_oob, sublist_get};
 use polars_core::chunked_array::builder::get_list_builder;
 #[cfg(feature = "list_gather")]
 use polars_core::export::num::ToPrimitive;
@@ -45,7 +44,7 @@ fn cast_rhs(
         }
         if !matches!(s.dtype(), DataType::List(_)) && s.dtype() == inner_type {
             // coerce to list JIT
-            *s = s.reshape(&[-1, 1]).unwrap();
+            *s = s.reshape_list(&[-1, 1]).unwrap();
         }
         if s.dtype() != dtype {
             *s = s.cast(dtype).map_err(|e| {
@@ -137,8 +136,7 @@ pub trait ListNameSpaceImpl: AsList {
         // used to amortize heap allocs
         let mut buf = String::with_capacity(128);
         let mut builder = StringChunkedBuilder::new(ca.name(), ca.len());
-        // SAFETY: unstable series never lives longer than the iterator.
-        unsafe {
+        {
             ca.amortized_iter()
                 .zip(separator)
                 .for_each(|(opt_s, opt_sep)| match opt_sep {
@@ -195,13 +193,13 @@ pub trait ListNameSpaceImpl: AsList {
         let ca = self.as_list();
 
         if has_inner_nulls(ca) {
-            return sum_with_nulls(ca, &ca.inner_dtype());
+            return sum_with_nulls(ca, ca.inner_dtype());
         };
 
         match ca.inner_dtype() {
             DataType::Boolean => Ok(count_boolean_bits(ca).into_series()),
-            dt if dt.is_numeric() => Ok(sum_list_numerical(ca, &dt)),
-            dt => sum_with_nulls(ca, &dt),
+            dt if dt.is_numeric() => Ok(sum_list_numerical(ca, dt)),
+            dt => sum_with_nulls(ca, dt),
         }
     }
 
@@ -213,7 +211,7 @@ pub trait ListNameSpaceImpl: AsList {
         };
 
         match ca.inner_dtype() {
-            dt if dt.is_numeric() => mean_list_numerical(ca, &dt),
+            dt if dt.is_numeric() => mean_list_numerical(ca, dt),
             _ => sum_mean::mean_with_nulls(ca),
         }
     }
@@ -243,11 +241,10 @@ pub trait ListNameSpaceImpl: AsList {
         }
     }
 
-    #[must_use]
-    fn lst_sort(&self, options: SortOptions) -> ListChunked {
+    fn lst_sort(&self, options: SortOptions) -> PolarsResult<ListChunked> {
         let ca = self.as_list();
-        let out = ca.apply_amortized(|s| s.as_ref().sort_with(options));
-        self.same_type(out)
+        let out = ca.try_apply_amortized(|s| s.as_ref().sort_with(options))?;
+        Ok(self.same_type(out))
     }
 
     #[must_use]
@@ -255,6 +252,14 @@ pub trait ListNameSpaceImpl: AsList {
         let ca = self.as_list();
         let out = ca.apply_amortized(|s| s.as_ref().reverse());
         self.same_type(out)
+    }
+
+    fn lst_n_unique(&self) -> PolarsResult<IdxCa> {
+        let ca = self.as_list();
+        ca.try_apply_amortized_generic(|s| {
+            let opt_v = s.map(|s| s.as_ref().n_unique()).transpose()?;
+            Ok(opt_v.map(|idx| idx as IdxSize))
+        })
     }
 
     fn lst_unique(&self) -> PolarsResult<ListChunked> {
@@ -274,7 +279,6 @@ pub trait ListNameSpaceImpl: AsList {
         ca.apply_amortized_generic(|opt_s| {
             opt_s.and_then(|s| s.as_ref().arg_min().map(|idx| idx as IdxSize))
         })
-        .with_name(ca.name())
     }
 
     fn lst_arg_max(&self) -> IdxCa {
@@ -282,7 +286,6 @@ pub trait ListNameSpaceImpl: AsList {
         ca.apply_amortized_generic(|opt_s| {
             opt_s.and_then(|s| s.as_ref().arg_max().map(|idx| idx as IdxSize))
         })
-        .with_name(ca.name())
     }
 
     #[cfg(feature = "diff")]
@@ -300,7 +303,7 @@ pub trait ListNameSpaceImpl: AsList {
                 if let Some(periods) = periods.get(0) {
                     ca.apply_amortized(|s| s.as_ref().shift(periods))
                 } else {
-                    ListChunked::full_null_with_dtype(ca.name(), ca.len(), &ca.inner_dtype())
+                    ListChunked::full_null_with_dtype(ca.name(), ca.len(), ca.inner_dtype())
                 }
             },
             _ => ca.zip_and_apply_amortized(periods, |opt_s, opt_periods| {
@@ -337,18 +340,85 @@ pub trait ListNameSpaceImpl: AsList {
     /// So index `0` would return the first item of every sublist
     /// and index `-1` would return the last item of every sublist
     /// if an index is out of bounds, it will return a `None`.
-    fn lst_get(&self, idx: i64) -> PolarsResult<Series> {
+    fn lst_get(&self, idx: i64, null_on_oob: bool) -> PolarsResult<Series> {
         let ca = self.as_list();
+        if !null_on_oob && ca.downcast_iter().any(|arr| index_is_oob(arr, idx)) {
+            polars_bail!(ComputeError: "get index is out of bounds");
+        }
+
         let chunks = ca
             .downcast_iter()
             .map(|arr| sublist_get(arr, idx))
             .collect::<Vec<_>>();
-        // Safety: every element in list has dtype equal to its inner type
+        // SAFETY: every element in list has dtype equal to its inner type
         unsafe {
             Series::try_from((ca.name(), chunks))
                 .unwrap()
-                .cast_unchecked(&ca.inner_dtype())
+                .cast_unchecked(ca.inner_dtype())
         }
+    }
+
+    #[cfg(feature = "list_gather")]
+    fn lst_gather_every(&self, n: &IdxCa, offset: &IdxCa) -> PolarsResult<Series> {
+        let list_ca = self.as_list();
+        let out = match (n.len(), offset.len()) {
+            (1, 1) => match (n.get(0), offset.get(0)) {
+                (Some(n), Some(offset)) => list_ca
+                    .apply_amortized(|s| s.as_ref().gather_every(n as usize, offset as usize)),
+                _ => ListChunked::full_null_with_dtype(
+                    list_ca.name(),
+                    list_ca.len(),
+                    list_ca.inner_dtype(),
+                ),
+            },
+            (1, len_offset) if len_offset == list_ca.len() => {
+                if let Some(n) = n.get(0) {
+                    list_ca.zip_and_apply_amortized(offset, |opt_s, opt_offset| {
+                        match (opt_s, opt_offset) {
+                            (Some(s), Some(offset)) => {
+                                Some(s.as_ref().gather_every(n as usize, offset as usize))
+                            },
+                            _ => None,
+                        }
+                    })
+                } else {
+                    ListChunked::full_null_with_dtype(
+                        list_ca.name(),
+                        list_ca.len(),
+                        list_ca.inner_dtype(),
+                    )
+                }
+            },
+            (len_n, 1) if len_n == list_ca.len() => {
+                if let Some(offset) = offset.get(0) {
+                    list_ca.zip_and_apply_amortized(n, |opt_s, opt_n| match (opt_s, opt_n) {
+                        (Some(s), Some(n)) => {
+                            Some(s.as_ref().gather_every(n as usize, offset as usize))
+                        },
+                        _ => None,
+                    })
+                } else {
+                    ListChunked::full_null_with_dtype(
+                        list_ca.name(),
+                        list_ca.len(),
+                        list_ca.inner_dtype(),
+                    )
+                }
+            },
+            (len_n, len_offset) if len_n == len_offset && len_n == list_ca.len() => list_ca
+                .binary_zip_and_apply_amortized(n, offset, |opt_s, opt_n, opt_offset| {
+                    match (opt_s, opt_n, opt_offset) {
+                        (Some(s), Some(n), Some(offset)) => {
+                            Some(s.as_ref().gather_every(n as usize, offset as usize))
+                        },
+                        _ => None,
+                    }
+                }),
+            _ => {
+                polars_bail!(ComputeError: "The lengths of `n` and `offset` should be 1 or equal to the length of list.")
+            },
+        };
+        Ok(out.into_series())
     }
 
     #[cfg(feature = "list_gather")]
@@ -357,8 +427,7 @@ pub trait ListNameSpaceImpl: AsList {
 
         let index_typed_index = |idx: &Series| {
             let idx = idx.cast(&IDX_DTYPE).unwrap();
-            // SAFETY: unstable series never lives longer than the iterator.
-            unsafe {
+            {
                 list_ca
                     .amortized_iter()
                     .map(|s| {
@@ -380,8 +449,7 @@ pub trait ListNameSpaceImpl: AsList {
         match idx.dtype() {
             List(_) => {
                 let idx_ca = idx.list().unwrap();
-                // SAFETY: unstable series never lives longer than the iterator.
-                let mut out = unsafe {
+                let mut out = {
                     list_ca
                         .amortized_iter()
                         .zip(idx_ca)
@@ -408,8 +476,7 @@ pub trait ListNameSpaceImpl: AsList {
                     if min >= 0 {
                         index_typed_index(idx)
                     } else {
-                        // SAFETY: unstable series never lives longer than the iterator.
-                        let mut out = unsafe {
+                        let mut out = {
                             list_ca
                                 .amortized_iter()
                                 .map(|opt_s| {
@@ -461,7 +528,7 @@ pub trait ListNameSpaceImpl: AsList {
                     Ok(ListChunked::full_null_with_dtype(
                         ca.name(),
                         ca.len(),
-                        &ca.inner_dtype(),
+                        ca.inner_dtype(),
                     ))
                 }
             },
@@ -500,7 +567,7 @@ pub trait ListNameSpaceImpl: AsList {
                     Ok(ListChunked::full_null_with_dtype(
                         ca.name(),
                         ca.len(),
-                        &ca.inner_dtype(),
+                        ca.inner_dtype(),
                     ))
                 }
             },
@@ -522,7 +589,7 @@ pub trait ListNameSpaceImpl: AsList {
         let other_len = other.len();
         let length = ca.len();
         let mut other = other.to_vec();
-        let mut inner_super_type = ca.inner_dtype();
+        let mut inner_super_type = ca.inner_dtype().clone();
 
         for s in &other {
             match s.dtype() {
@@ -613,8 +680,7 @@ pub trait ListNameSpaceImpl: AsList {
             let mut iters = Vec::with_capacity(other_len + 1);
 
             for s in other.iter_mut() {
-                // SAFETY: unstable series never lives longer than the iterator.
-                iters.push(unsafe { s.list()?.amortized_iter() })
+                iters.push(s.list()?.amortized_iter())
             }
             let mut first_iter: Box<dyn PolarsIterator<Item = Option<Series>>> = ca.into_iter();
             let mut builder = get_list_builder(

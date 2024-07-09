@@ -81,7 +81,7 @@ def test_series_describe_date() -> None:
     stats = {
         "count": "3",
         "null_count": "0",
-        "mean": "2010-09-29",
+        "mean": "2010-09-29 16:00:00",
         "min": "1999-12-31",
         "25%": "2005-08-05",
         "50%": "2011-03-11",
@@ -117,7 +117,7 @@ def test_series_describe_null() -> None:
 def test_series_describe_nested_list() -> None:
     s = pl.Series(
         values=[[10e10, 10e15], [10e12, 10e13], [10e10, 10e15]],
-        dtype=pl.List(pl.Int64),
+        dtype=pl.List(pl.Float64),
     )
     result = s.describe()
     stats = {

@@ -17,7 +17,7 @@ use crate::io::ipc::{IpcField, ARROW_MAGIC_V2};
 
 type WriteOutput<W> = (usize, Option<Block>, Vec<Block>, Option<W>);
 
-///  Sink that writes array [`chunks`](crate::chunk::Chunk) as an IPC file.
+///  Sink that writes array [`chunks`](crate::record_batch::RecordBatchT) as an IPC file.
 ///
 /// The file header is automatically written before writing the first chunk, and the file footer is
 /// automatically written when the sink is closed.

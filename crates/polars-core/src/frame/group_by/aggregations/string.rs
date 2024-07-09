@@ -69,7 +69,7 @@ impl BinaryChunked {
                         let arr_group = _slice_from_offsets(self, first, len);
                         let borrowed = arr_group.min_binary();
 
-                        // Safety:
+                        // SAFETY:
                         // The borrowed has `arr_group`s lifetime, but it actually points to data
                         // hold by self. Here we tell the compiler that.
                         unsafe { std::mem::transmute::<Option<&[u8]>, Option<&'a [u8]>>(borrowed) }
@@ -131,7 +131,7 @@ impl BinaryChunked {
                         let arr_group = _slice_from_offsets(self, first, len);
                         let borrowed = arr_group.max_binary();
 
-                        // Safety:
+                        // SAFETY:
                         // The borrowed has `arr_group`s lifetime, but it actually points to data
                         // hold by self. Here we tell the compiler that.
                         unsafe { std::mem::transmute::<Option<&[u8]>, Option<&'a [u8]>>(borrowed) }
@@ -146,12 +146,12 @@ impl StringChunked {
     #[allow(clippy::needless_lifetimes)]
     pub(crate) unsafe fn agg_min<'a>(&'a self, groups: &GroupsProxy) -> Series {
         let out = self.as_binary().agg_min(groups);
-        out.binary().unwrap().to_string().into_series()
+        out.binary().unwrap().to_string_unchecked().into_series()
     }
 
     #[allow(clippy::needless_lifetimes)]
     pub(crate) unsafe fn agg_max<'a>(&'a self, groups: &GroupsProxy) -> Series {
         let out = self.as_binary().agg_max(groups);
-        out.binary().unwrap().to_string().into_series()
+        out.binary().unwrap().to_string_unchecked().into_series()
     }
 }

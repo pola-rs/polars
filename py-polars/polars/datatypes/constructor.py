@@ -16,7 +16,7 @@ except ImportError:
     _DOCUMENTING = True
 
 if TYPE_CHECKING:
-    from polars.type_aliases import PolarsDataType
+    from polars._typing import PolarsDataType
 
 if not _DOCUMENTING:
     _POLARS_TYPE_TO_CONSTRUCTOR: dict[
@@ -51,13 +51,12 @@ def polars_type_to_constructor(
     dtype: PolarsDataType,
 ) -> Callable[[str, Sequence[Any], bool], PySeries]:
     """Get the right PySeries constructor for the given Polars dtype."""
+    # Special case for Array as it needs to pass the dtype argument on construction
+    if isinstance(dtype, dt.Array):
+        return functools.partial(PySeries.new_array, dtype=dtype)
+
     try:
         base_type = dtype.base_type()
-        # special case for Array as it needs to pass the width argument
-        # upon construction
-        if base_type == dt.Array:
-            return functools.partial(PySeries.new_array, dtype.width, dtype.inner)  # type: ignore[union-attr]
-
         return _POLARS_TYPE_TO_CONSTRUCTOR[base_type]
     except KeyError:  # pragma: no cover
         msg = f"cannot construct PySeries for type {dtype!r}"
@@ -135,7 +134,9 @@ def numpy_type_to_constructor(
         return _NUMPY_TYPE_TO_CONSTRUCTOR[dtype]  # type:ignore[index]
     except KeyError:
         if len(values) > 0:
-            first_non_nan = next((v for v in values if v == v), None)
+            first_non_nan = next(
+                (v for v in values if isinstance(v, np.ndarray) or v == v), None
+            )
             if isinstance(first_non_nan, str):
                 return PySeries.new_str
             if isinstance(first_non_nan, bytes):

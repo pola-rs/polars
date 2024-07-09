@@ -1,4 +1,5 @@
 use arrow::array::{Array, PrimitiveArray};
+use arrow::scalar::PrimitiveScalar;
 use arrow::types::NativeType;
 use polars_error::{polars_bail, PolarsResult};
 
@@ -9,9 +10,10 @@ use crate::parquet::encoding::delta_bitpacked::encode;
 use crate::parquet::encoding::Encoding;
 use crate::parquet::page::DataPage;
 use crate::parquet::schema::types::PrimitiveType;
-use crate::parquet::statistics::{serialize_statistics, PrimitiveStatistics};
+use crate::parquet::statistics::PrimitiveStatistics;
 use crate::parquet::types::NativeType as ParquetNativeType;
 use crate::read::Page;
+use crate::write::StatisticsOptions;
 
 pub(crate) fn encode_plain<T, P>(
     array: &PrimitiveArray<T>,
@@ -136,11 +138,8 @@ where
 
     let buffer = encode(array, is_optional, buffer);
 
-    let statistics = if options.write_statistics {
-        Some(serialize_statistics(&build_statistics(
-            array,
-            type_.clone(),
-        )))
+    let statistics = if options.has_statistics() {
+        Some(build_statistics(array, type_.clone(), &options.statistics).serialize())
     } else {
         None
     };
@@ -162,6 +161,7 @@ where
 pub fn build_statistics<T, P>(
     array: &PrimitiveArray<T>,
     primitive_type: PrimitiveType,
+    options: &StatisticsOptions,
 ) -> PrimitiveStatistics<P>
 where
     T: NativeType,
@@ -170,21 +170,29 @@ where
 {
     PrimitiveStatistics::<P> {
         primitive_type,
-        null_count: Some(array.null_count() as i64),
+        null_count: options.null_count.then_some(array.null_count() as i64),
         distinct_count: None,
-        max_value: array
-            .non_null_values_iter()
-            .map(|x| {
-                let x: P = x.as_();
-                x
+        max_value: options
+            .max_value
+            .then(|| {
+                let scalar =
+                    polars_compute::min_max::dyn_array_max_propagate_nan(array as &dyn Array);
+                scalar.and_then(|s| {
+                    let s = s.as_any().downcast_ref::<PrimitiveScalar<T>>().unwrap();
+                    s.value().map(|x| x.as_())
+                })
             })
-            .max_by(|x, y| x.ord(y)),
-        min_value: array
-            .non_null_values_iter()
-            .map(|x| {
-                let x: P = x.as_();
-                x
+            .flatten(),
+        min_value: options
+            .min_value
+            .then(|| {
+                let scalar =
+                    polars_compute::min_max::dyn_array_min_propagate_nan(array as &dyn Array);
+                scalar.and_then(|s| {
+                    let s = s.as_any().downcast_ref::<PrimitiveScalar<T>>().unwrap();
+                    s.value().map(|x| x.as_())
+                })
             })
-            .min_by(|x, y| x.ord(y)),
+            .flatten(),
     }
 }

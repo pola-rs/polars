@@ -95,7 +95,7 @@ where
     ///
     /// There are two use-cases for this function:
     /// * to continue writing to its writer
-    /// * to re-use an internal buffer of its iterator
+    /// * to reuse an internal buffer of its iterator
     pub fn into_inner(self) -> (W, I) {
         (self.writer, self.iterator)
     }

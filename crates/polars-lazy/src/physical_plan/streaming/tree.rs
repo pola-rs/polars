@@ -1,11 +1,7 @@
 use std::collections::BTreeSet;
 use std::fmt::Debug;
 
-#[cfg(debug_assertions)]
 use polars_plan::prelude::*;
-#[cfg(debug_assertions)]
-use polars_utils::arena::Arena;
-use polars_utils::arena::Node;
 
 #[derive(Copy, Clone, Debug)]
 pub(super) enum PipelineNode {
@@ -58,10 +54,6 @@ impl Branch {
         // so the first sink is the final one.
         self.operators_sinks.iter().find_map(sink_node)
     }
-    pub(super) fn iter_sinks(&self) -> impl Iterator<Item = Node> + '_ {
-        self.operators_sinks.iter().flat_map(sink_node)
-    }
-
     pub(super) fn split(&self) -> Self {
         Self {
             execution_id: self.execution_id,
@@ -134,7 +126,7 @@ pub(super) fn is_valid_tree(tree: TreeRef) -> bool {
 
 #[cfg(debug_assertions)]
 #[allow(unused)]
-pub(super) fn dbg_branch(b: &Branch, lp_arena: &Arena<ALogicalPlan>) {
+pub(super) fn dbg_branch(b: &Branch, lp_arena: &Arena<IR>) {
     // streamable: bool,
     // sources: Vec<Node>,
     // // joins seen in whole branch (we count a union as joins with multiple counts)
@@ -166,7 +158,7 @@ pub(super) fn dbg_branch(b: &Branch, lp_arena: &Arena<ALogicalPlan>) {
 
 #[cfg(debug_assertions)]
 #[allow(unused)]
-pub(super) fn dbg_tree(tree: Tree, lp_arena: &Arena<ALogicalPlan>, expr_arena: &Arena<AExpr>) {
+pub(super) fn dbg_tree(tree: Tree, lp_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) {
     if tree.is_empty() {
         println!("EMPTY TREE");
         return;
@@ -185,8 +177,15 @@ pub(super) fn dbg_tree(tree: Tree, lp_arena: &Arena<ALogicalPlan>, expr_arena: &
         .unwrap();
 
     println!("SUBPLAN ELIGIBLE FOR STREAMING:");
-    let lp = node_to_lp(root, expr_arena, &mut (lp_arena.clone()));
-    println!("{lp:?}\n");
+    println!(
+        "{}\n",
+        IRPlanRef {
+            lp_top: root,
+            lp_arena,
+            expr_arena
+        }
+        .display()
+    );
 
     println!("PIPELINE TREE:");
     for (i, branch) in tree.iter().enumerate() {

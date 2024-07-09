@@ -5,7 +5,8 @@ use arrow::bitmap::MutableBitmap;
 use arrow::legacy::utils::CustomIterTools;
 use polars_core::prelude::*;
 use polars_core::utils::NoNull;
-use polars_core::with_match_physical_integer_polars_type;
+use polars_core::with_match_physical_numeric_polars_type;
+use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 
 pub fn is_last_distinct(s: &Series) -> PolarsResult<BooleanChunked> {
     // fast path.
@@ -31,24 +32,19 @@ pub fn is_last_distinct(s: &Series) -> PolarsResult<BooleanChunked> {
             let s = s.cast(&Binary).unwrap();
             return is_last_distinct(&s);
         },
-        Float32 => {
-            let ca = s.bit_repr_small();
-            is_last_distinct_numeric(&ca)
-        },
-        Float64 => {
-            let ca = s.bit_repr_large();
-            is_last_distinct_numeric(&ca)
-        },
         dt if dt.is_numeric() => {
-            with_match_physical_integer_polars_type!(s.dtype(), |$T| {
+            with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                 is_last_distinct_numeric(ca)
             })
         },
         #[cfg(feature = "dtype-struct")]
         Struct(_) => return is_last_distinct_struct(&s),
-        #[cfg(feature = "group_by_list")]
-        List(inner) if inner.is_numeric() => {
+        List(inner) => {
+            polars_ensure!(
+                !inner.is_nested(),
+                InvalidOperation: "`is_last_distinct` on list type is only allowed if the inner type is not nested."
+            );
             let ca = s.list().unwrap();
             return is_last_distinct_list(ca);
         },
@@ -131,7 +127,8 @@ fn is_last_distinct_bin(ca: &BinaryChunked) -> BooleanChunked {
 fn is_last_distinct_numeric<T>(ca: &ChunkedArray<T>) -> BooleanChunked
 where
     T: PolarsNumericType,
-    T::Native: Hash + Eq,
+    T::Native: TotalHash + TotalEq + ToTotalOrd,
+    <T::Native as ToTotalOrd>::TotalOrdItem: Hash + Eq,
 {
     let ca = ca.rechunk();
     let arr = ca.downcast_iter().next().unwrap();
@@ -139,7 +136,7 @@ where
     let mut new_ca: BooleanChunked = arr
         .into_iter()
         .rev()
-        .map(|opt_v| unique.insert(opt_v))
+        .map(|opt_v| unique.insert(opt_v.to_total_ord()))
         .collect_reversed::<NoNull<BooleanChunked>>()
         .into_inner();
     new_ca.rename(ca.name());
@@ -163,7 +160,6 @@ fn is_last_distinct_struct(s: &Series) -> PolarsResult<BooleanChunked> {
     Ok(BooleanChunked::with_chunk(s.name(), arr))
 }
 
-#[cfg(feature = "group_by_list")]
 fn is_last_distinct_list(ca: &ListChunked) -> PolarsResult<BooleanChunked> {
     let groups = ca.group_tuples(true, false)?;
     // SAFETY: all groups have at least a single member

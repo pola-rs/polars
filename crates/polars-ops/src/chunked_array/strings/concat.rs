@@ -1,10 +1,9 @@
 use arrow::array::{Utf8Array, ValueSize};
 use arrow::compute::cast::utf8_to_utf8view;
-use arrow::legacy::array::default_arrays::FromDataUtf8;
 use polars_core::prelude::*;
 
 // Vertically concatenate all strings in a StringChunked.
-pub fn str_concat(ca: &StringChunked, delimiter: &str, ignore_nulls: bool) -> StringChunked {
+pub fn str_join(ca: &StringChunked, delimiter: &str, ignore_nulls: bool) -> StringChunked {
     if ca.is_empty() {
         return StringChunked::new(ca.name(), &[""]);
     }
@@ -89,12 +88,10 @@ pub fn hor_str_concat(
     // Broadcast if appropriate.
     let mut cols: Vec<_> = cas
         .iter()
-        .map(|ca| {
-            if ca.len() > 1 {
-                ColumnIter::Iter(ca.iter())
-            } else {
-                ColumnIter::Broadcast(ca.get(0))
-            }
+        .map(|ca| match ca.len() {
+            0 => ColumnIter::Broadcast(None),
+            1 => ColumnIter::Broadcast(ca.get(0)),
+            _ => ColumnIter::Iter(ca.iter()),
         })
         .collect();
 
@@ -145,7 +142,7 @@ mod test {
     fn test_str_concat() {
         let ca = Int32Chunked::new("foo", &[Some(1), None, Some(3)]);
         let ca_str = ca.cast(&DataType::String).unwrap();
-        let out = str_concat(ca_str.str().unwrap(), "-", true);
+        let out = str_join(ca_str.str().unwrap(), "-", true);
 
         let out = out.get(0);
         assert_eq!(out, Some("1-3"));

@@ -46,7 +46,7 @@ impl<'a> PartialEq for BytesHash<'a> {
     }
 }
 
-#[inline]
+#[inline(always)]
 pub fn hash_to_partition(h: u64, n_partitions: usize) -> usize {
     // Assuming h is a 64-bit random number, we note that
     // h / 2^64 is almost a uniform random number in [0, 1), and thus
@@ -85,6 +85,14 @@ impl_hash_partition_as_u64!(i8);
 impl_hash_partition_as_u64!(i16);
 impl_hash_partition_as_u64!(i32);
 impl_hash_partition_as_u64!(i64);
+
+impl DirtyHash for i128 {
+    fn dirty_hash(&self) -> u64 {
+        (*self as u64)
+            .wrapping_mul(RANDOM_ODD)
+            .wrapping_add((*self >> 64) as u64)
+    }
+}
 
 impl<'a> DirtyHash for BytesHash<'a> {
     fn dirty_hash(&self) -> u64 {

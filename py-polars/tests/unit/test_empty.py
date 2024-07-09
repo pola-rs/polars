@@ -1,6 +1,7 @@
 import pytest
 
 import polars as pl
+from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -11,12 +12,6 @@ def test_empty_str_concat_lit() -> None:
         "b": pl.String,
         "literal": pl.String,
     }
-
-
-def test_top_k_empty() -> None:
-    df = pl.DataFrame({"test": []})
-
-    assert_frame_equal(df.select([pl.col("test").top_k(2)]), df)
 
 
 def test_empty_cross_join() -> None:
@@ -58,7 +53,7 @@ def test_empty_count_window() -> None:
 
 def test_empty_sort_by_args() -> None:
     df = pl.DataFrame([1, 2, 3])
-    with pytest.raises(pl.InvalidOperationError):
+    with pytest.raises(InvalidOperationError):
         df.select(pl.all().sort_by([]))
 
 
@@ -133,3 +128,18 @@ def test_empty_is_in() -> None:
     assert_series_equal(
         pl.Series("a", [1, 2, 3]).is_in([]), pl.Series("a", [False] * 3)
     )
+
+
+@pytest.mark.parametrize("method", ["drop_nulls", "unique"])
+def test_empty_to_empty(method: str) -> None:
+    assert getattr(pl.DataFrame(), method)().shape == (0, 0)
+
+
+def test_empty_shift_over_16676() -> None:
+    df = pl.DataFrame({"a": [], "b": []})
+    assert df.with_columns(pl.col("a").shift(fill_value=0).over("b")).shape == (0, 2)
+
+
+def test_empty_list_cat_16405() -> None:
+    df = pl.DataFrame(schema={"cat": pl.List(pl.Categorical)})
+    df.select(pl.col("cat") == pl.col("cat"))

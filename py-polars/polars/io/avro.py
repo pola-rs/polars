@@ -1,18 +1,22 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, BinaryIO
+import contextlib
+from pathlib import Path
+from typing import IO, TYPE_CHECKING
 
-import polars._reexport as pl
+from polars._utils.various import normalize_filepath
+from polars._utils.wrap import wrap_df
+from polars.io._utils import parse_columns_arg
+
+with contextlib.suppress(ImportError):  # Module not available when building docs
+    from polars.polars import PyDataFrame
 
 if TYPE_CHECKING:
-    from io import BytesIO
-    from pathlib import Path
-
     from polars import DataFrame
 
 
 def read_avro(
-    source: str | Path | BytesIO | BinaryIO,
+    source: str | Path | IO[bytes] | bytes,
     *,
     columns: list[int] | list[str] | None = None,
     n_rows: int | None = None,
@@ -23,9 +27,9 @@ def read_avro(
     Parameters
     ----------
     source
-        Path to a file or a file-like object (by file-like object, we refer to objects
-        that have a `read()` method, such as a file handler (e.g. via builtin `open`
-        function) or `BytesIO`).
+        Path to a file or a file-like object (by "file-like object" we refer to objects
+        that have a `read()` method, such as a file handler like the builtin `open`
+        function, or a `BytesIO` instance).
     columns
         Columns to select. Accepts a list of column indices (starting at zero) or a list
         of column names.
@@ -36,4 +40,9 @@ def read_avro(
     -------
     DataFrame
     """
-    return pl.DataFrame._read_avro(source, n_rows=n_rows, columns=columns)
+    if isinstance(source, (str, Path)):
+        source = normalize_filepath(source)
+    projection, column_names = parse_columns_arg(columns)
+
+    pydf = PyDataFrame.read_avro(source, column_names, projection, n_rows)
+    return wrap_df(pydf)

@@ -86,14 +86,14 @@ jobs:
       fail-fast: false
       matrix:
         package: [polars, polars-lts-cpu, polars-u64-idx]
-        os: [ubuntu-latest, macos-latest, windows-32gb-ram]
+        os: [ubuntu-latest, macos-13, windows-32gb-ram]
         architecture: [x86-64, aarch64]
         exclude:
           - os: windows-32gb-ram
             architecture: aarch64
 
     env:
-      SED_INPLACE: ${{ matrix.os == 'macos-latest' && '-i ''''' || '-i'}}
+      SED_INPLACE: ${{ matrix.os == 'macos-13' && '-i ''''' || '-i'}}
       CPU_CHECK_MODULE: py-polars/polars/_cpu_check.py
 
     steps:
@@ -128,14 +128,15 @@ jobs:
         if: matrix.architecture == 'x86-64'
         env:
           IS_LTS_CPU: ${{ matrix.package == 'polars-lts-cpu' }}
-          IS_MACOS: ${{ matrix.os == 'macos-latest' }}
+          IS_MACOS: ${{ matrix.os == 'macos-13' }}
+        # IMPORTANT: All features enabled here should also be included in py-polars/polars/_cpu_check.py
         run: |
           if [[ "$IS_LTS_CPU" = true ]]; then
             FEATURES=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt
           elif [[ "$IS_MACOS" = true ]]; then
-            FEATURES=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma
+            FEATURES=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma,+pclmulqdq
           else
-            FEATURES=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+avx2,+fma,+bmi1,+bmi2,+lzcnt
+            FEATURES=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+avx2,+fma,+bmi1,+bmi2,+lzcnt,+pclmulqdq
           fi
           echo "features=$FEATURES" >> $GITHUB_OUTPUT
 
@@ -143,7 +144,7 @@ jobs:
         if: matrix.architecture == 'x86-64'
         env:
           FEATURES: ${{ steps.features.outputs.features }}
-          CFG: ${{ matrix.package == 'polars-lts-cpu' && '--cfg use_mimalloc' || '' }}
+          CFG: ${{ matrix.package == 'polars-lts-cpu' && '--cfg allocator="default"' || '' }}
         run: echo "RUSTFLAGS=-C target-feature=${{ steps.features.outputs.features }} $CFG" >> $GITHUB_ENV
 
       - name: Set variables in CPU check module
@@ -159,7 +160,7 @@ jobs:
         if: matrix.architecture == 'aarch64'
         id: target
         run: |
-          TARGET=${{ matrix.os == 'macos-latest' && 'aarch64-apple-darwin' || 'aarch64-unknown-linux-gnu'}}
+          TARGET=${{ matrix.os == 'macos-13' && 'aarch64-apple-darwin' || 'aarch64-unknown-linux-gnu'}}
           echo "target=$TARGET" >> $GITHUB_OUTPUT
 
       - name: Set jemalloc for aarch64 Linux
@@ -177,6 +178,13 @@ jobs:
             --manifest-path py-polars/Cargo.toml
             --out dist
           manylinux: ${{ matrix.architecture == 'aarch64' && '2_24' || 'auto' }}
+
+      - name: Test wheel
+        # Only test on x86-64 for now as this matches the runner architecture
+        if: matrix.architecture == 'x86-64'
+        run: |
+          pip install --force-reinstall --verbose dist/*.whl
+          python -c 'import polars'
 
       - name: Upload wheel
         uses: actions/upload-artifact@v4
@@ -235,7 +243,7 @@ jobs:
 
       - name: Create GitHub release
         id: github-release
-        uses: release-drafter/release-drafter@v5
+        uses: release-drafter/release-drafter@v6
         with:
           config-name: release-drafter-python.yml
           name: Python Polars ${{ steps.version.outputs.version }}
@@ -262,13 +270,14 @@ jobs:
           TAG: ${{ steps.github-release.outputs.tag_name }}
 
       - name: Trigger other workflows related to the release
-        if: inputs.dry-run == false && steps.version.outputs.is_prerelease == 'false'
-        uses: peter-evans/repository-dispatch@v2
+        if: inputs.dry-run == false
+        uses: peter-evans/repository-dispatch@v3
         with:
           event-type: python-release
           client-payload: >
             {
               "version": "${{ steps.version.outputs.version }}",
+              "is_prerelease": "${{ steps.version.outputs.is_prerelease }}",
               "tag": "${{ steps.github-release.outputs.tag_name }}",
               "sha": "${{ inputs.sha || github.sha }}"
             }

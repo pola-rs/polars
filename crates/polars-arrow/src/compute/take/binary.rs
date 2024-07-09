@@ -31,7 +31,7 @@ pub unsafe fn take_unchecked<O: Offset, I: Index>(
 
     let (offsets, values, validity) = match (values_has_validity, indices_has_validity) {
         (false, false) => {
-            take_no_validity::<O, I>(values.offsets(), values.values(), indices.values())
+            take_no_validity_unchecked::<O, I>(values.offsets(), values.values(), indices.values())
         },
         (true, false) => take_values_validity(values, indices.values()),
         (false, true) => take_indices_validity(values.offsets(), values.values(), indices),

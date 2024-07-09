@@ -1,9 +1,8 @@
 use polars_core::prelude::*;
+use polars_expr::{create_physical_expr, ExpressionConversionState};
 use rayon::prelude::*;
 
 use super::*;
-use crate::physical_plan::planner::create_physical_expr;
-use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 
 pub(crate) fn eval_field_to_dtype(f: &Field, expr: &Expr, list: bool) -> Field {
@@ -55,13 +54,13 @@ pub trait ExprEvalExtension: IntoExpr + Sized {
 
             let expr = expr.clone();
             let mut arena = Arena::with_capacity(10);
-            let aexpr = to_aexpr(expr, &mut arena);
+            let aexpr = to_expr_ir(expr, &mut arena);
             let phys_expr = create_physical_expr(
-                aexpr,
+                &aexpr,
                 Context::Default,
                 &arena,
                 None,
-                &mut Default::default(),
+                &mut ExpressionConversionState::new(true, 0),
             )?;
 
             let state = ExecutionState::new();
@@ -82,7 +81,7 @@ pub trait ExprEvalExtension: IntoExpr + Sized {
                     .map(|len| {
                         let s = s.slice(0, len);
                         if (len - s.null_count()) >= min_periods {
-                            let df = DataFrame::new_no_checks(vec![s]);
+                            let df = s.into_frame();
                             let out = phys_expr.evaluate(&df, &state)?;
                             finish(out)
                         } else {
@@ -91,7 +90,7 @@ pub trait ExprEvalExtension: IntoExpr + Sized {
                     })
                     .collect::<PolarsResult<Vec<_>>>()?
             } else {
-                let mut df_container = DataFrame::new_no_checks(vec![]);
+                let mut df_container = DataFrame::empty();
                 (1..s.len() + 1)
                     .map(|len| {
                         let s = s.slice(0, len);
@@ -119,7 +118,7 @@ pub trait ExprEvalExtension: IntoExpr + Sized {
 
         this.apply(
             func,
-            GetOutput::map_field(move |f| eval_field_to_dtype(f, &expr2, false)),
+            GetOutput::map_field(move |f| Ok(eval_field_to_dtype(f, &expr2, false))),
         )
         .with_fmt("expanding_eval")
     }

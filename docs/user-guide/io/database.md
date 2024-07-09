@@ -41,13 +41,13 @@ $ pip install connectorx
 
 ADBC (Arrow Database Connectivity) is an engine supported by the Apache Arrow project. ADBC aims to be both an API standard for connecting to databases and libraries implementing this standard in a range of languages.
 
-It is still early days for ADBC so support for different databases is still limited. At present drivers for ADBC are only available for [Postgres and SQLite](https://arrow.apache.org/adbc/0.1.0/driver/cpp/index.html). To install ADBC you need to install the driver for your database. For example to install the driver for SQLite you run
+It is still early days for ADBC so support for different databases is limited. At present, drivers for ADBC are only available for [Postgres](https://pypi.org/project/adbc-driver-postgresql/), [SQLite](https://pypi.org/project/adbc-driver-sqlite/) and [Snowflake](https://pypi.org/project/adbc-driver-snowflake/). To install ADBC, you need to install the driver for your database. For example, to install the driver for SQLite, you run:
 
 ```shell
 $ pip install adbc-driver-sqlite
 ```
 
-As ADBC is not the default engine you must specify the engine as an argument to `pl.read_database_uri`
+As ADBC is not the default engine, you must specify the engine as an argument to `pl.read_database_uri`.
 
 {{code_block('user-guide/io/database','adbc',['read_database_uri'])}}
 
@@ -57,7 +57,7 @@ We can write to a database with Polars using the `pl.write_database` function.
 
 ### Engines
 
-As with reading from a database above Polars uses an _engine_ to write to a database. The currently supported engines are:
+As with reading from a database above, Polars uses an _engine_ to write to a database. The currently supported engines are:
 
 - [SQLAlchemy](https://www.sqlalchemy.org/) and
 - Arrow Database Connectivity (ADBC)
@@ -78,6 +78,6 @@ In the SQLAlchemy approach, Polars converts the `DataFrame` to a Pandas `DataFra
 
 #### ADBC
 
-As with reading from a database, you can also use ADBC to write to a SQLite or Posgres database. As shown above, you need to install the appropriate ADBC driver for your database.
+ADBC can also be used to write to a database. Writing is supported for the same databases that support reading with ADBC. As shown above, you need to install the appropriate ADBC driver for your database.
 
 {{code_block('user-guide/io/database','write_adbc',['write_database'])}}

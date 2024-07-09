@@ -2,7 +2,7 @@
 Functions
 =========
 
-These functions are available from the polars module root and can be used as expressions, and sometimes also in eager contexts.
+These functions are available from the Polars module root and can be used as expressions, and sometimes also in eager contexts.
 
 ----
 
@@ -16,13 +16,13 @@ These functions are available from the polars module root and can be used as exp
    all_horizontal
    any
    any_horizontal
-   apply
    approx_n_unique
    arange
    arctan2
    arctan2d
    arg_sort_by
    arg_where
+   business_day_count
    coalesce
    concat_list
    concat_str
@@ -34,10 +34,6 @@ These functions are available from the polars module root and can be used as exp
    cum_reduce
    cum_sum
    cum_sum_horizontal
-   cumfold
-   cumreduce
-   cumsum
-   cumsum_horizontal
    date
    datetime
    date_range
@@ -59,16 +55,17 @@ These functions are available from the polars module root and can be used as exp
    last
    len
    lit
-   map
    map_batches
    map_groups
    max
    max_horizontal
    mean
+   mean_horizontal
    median
    min
    min_horizontal
    n_unique
+   nth
    ones
    quantile
    reduce
@@ -80,6 +77,7 @@ These functions are available from the polars module root and can be used as exp
    struct
    sum
    sum_horizontal
+   sql
    sql_expr
    tail
    time
@@ -97,15 +95,12 @@ These functions are available from the polars module root and can be used as exp
 
    Expr.all
    Expr.any
-   Expr.apply
    Expr.approx_n_unique
    Expr.count
-   Expr.cumsum
    Expr.exclude
    Expr.first
    Expr.head
    Expr.implode
-   Expr.map
    Expr.map_batches
    Expr.map_elements
    Expr.max

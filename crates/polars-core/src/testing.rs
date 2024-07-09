@@ -6,7 +6,7 @@ use crate::prelude::*;
 impl Series {
     /// Check if series are equal. Note that `None == None` evaluates to `false`
     pub fn equals(&self, other: &Series) -> bool {
-        if self.null_count() > 0 || other.null_count() > 0 || self.dtype() != other.dtype() {
+        if self.null_count() > 0 || other.null_count() > 0 {
             false
         } else {
             self.equals_missing(other)
@@ -14,10 +14,10 @@ impl Series {
     }
 
     /// Check if all values in series are equal where `None == None` evaluates to `true`.
-    /// Two [`Datetime`](DataType::Datetime) series are *not* equal if their timezones are different, regardless
-    /// if they represent the same UTC time or not.
     pub fn equals_missing(&self, other: &Series) -> bool {
         match (self.dtype(), other.dtype()) {
+            // Two [`Datetime`](DataType::Datetime) series are *not* equal if their timezones
+            // are different, regardless if they represent the same UTC time or not.
             #[cfg(feature = "timezones")]
             (DataType::Datetime(_, tz_lhs), DataType::Datetime(_, tz_rhs)) => {
                 if tz_lhs != tz_rhs {
@@ -27,17 +27,14 @@ impl Series {
             _ => {},
         }
 
-        // differences from Partial::eq in that numerical dtype may be different
-        self.len() == other.len()
-            && self.name() == other.name()
-            && self.null_count() == other.null_count()
-            && {
-                let eq = self.equal_missing(other);
-                match eq {
-                    Ok(b) => b.sum().map(|s| s as usize).unwrap_or(0) == self.len(),
-                    Err(_) => false,
-                }
+        // Differs from Partial::eq in that numerical dtype may be different
+        self.len() == other.len() && self.null_count() == other.null_count() && {
+            let eq = self.equal_missing(other);
+            match eq {
+                Ok(b) => b.all(),
+                Err(_) => false,
             }
+        }
     }
 
     /// Get a pointer to the underlying data of this [`Series`].
@@ -45,7 +42,7 @@ impl Series {
     pub fn get_data_ptr(&self) -> usize {
         let object = self.0.deref();
 
-        // Safety:
+        // SAFETY:
         // A fat pointer consists of a data ptr and a ptr to the vtable.
         // we specifically check that we only transmute &dyn SeriesTrait e.g.
         // a trait object, therefore this is sound.
@@ -99,7 +96,7 @@ impl DataFrame {
             return false;
         }
         for (left, right) in self.get_columns().iter().zip(other.get_columns()) {
-            if !left.equals(right) {
+            if left.name() != right.name() || !left.equals(right) {
                 return false;
             }
         }
@@ -125,7 +122,7 @@ impl DataFrame {
             return false;
         }
         for (left, right) in self.get_columns().iter().zip(other.get_columns()) {
-            if !left.equals_missing(right) {
+            if left.name() != right.name() || !left.equals_missing(right) {
                 return false;
             }
         }
@@ -164,6 +161,18 @@ impl PartialEq for DataFrame {
     }
 }
 
+/// Asserts that two expressions of type [`DataFrame`] are equal according to [`DataFrame::equals`]
+/// at runtime. If the expression are not equal, the program will panic with a message that displays
+/// both dataframes.
+#[macro_export]
+macro_rules! assert_df_eq {
+    ($a:expr, $b:expr $(,)?) => {
+        let a: &$crate::frame::DataFrame = &$a;
+        let b: &$crate::frame::DataFrame = &$b;
+        assert!(a.equals(b), "expected {:?}\nto equal {:?}", a, b);
+    };
+}
+
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
@@ -179,10 +188,11 @@ mod test {
     }
 
     #[test]
-    fn test_series_dtype_noteq() {
+    fn test_series_dtype_not_equal() {
         let s_i32 = Series::new("a", &[1_i32, 2_i32]);
         let s_i64 = Series::new("a", &[1_i64, 2_i64]);
-        assert!(!s_i32.equals(&s_i64));
+        assert!(s_i32.dtype() != s_i64.dtype());
+        assert!(s_i32.equals(&s_i64));
     }
 
     #[test]
@@ -192,6 +202,19 @@ mod test {
 
         let df1 = DataFrame::new(vec![a, b]).unwrap();
         assert!(df1.equals(&df1))
+    }
+
+    #[test]
+    fn assert_df_eq_passes() {
+        let df = df!("a" => [1], "b" => [2]).unwrap();
+        assert_df_eq!(df, df);
+        drop(df); // Ensure `assert_df_eq!` does not consume its arguments.
+    }
+
+    #[test]
+    #[should_panic(expected = "to equal")]
+    fn assert_df_eq_panics() {
+        assert_df_eq!(df!("a" => [1]).unwrap(), df!("a" => [2]).unwrap(),);
     }
 
     #[test]

@@ -33,13 +33,27 @@ Importing
 Set operations
 --------------
 
-Selectors support ``set`` operations such as:
+Selectors support the following ``set`` operations:
 
-- UNION:        ``A | B``
-- INTERSECTION: ``A & B``
-- DIFFERENCE:   ``A - B``
-- COMPLEMENT:   ``~A``
+.. table::
+   :widths: 20 60
 
+   +------------------------+------------+
+   | Operation              | Expression |
+   +========================+============+
+   | `UNION`                | ``A | B``  |
+   +------------------------+------------+
+   | `INTERSECTION`         | ``A & B``  |
+   +------------------------+------------+
+   | `DIFFERENCE`           | ``A - B``  |
+   +------------------------+------------+
+   | `SYMMETRIC DIFFERENCE` | ``A ^ B``  |
+   +------------------------+------------+
+   | `COMPLEMENT`           | ``~A``     |
+   +------------------------+------------+
+
+Note that both individual selector results and selector set operations will always return
+matching columns in the same order as the underlying frame schema.
 
 Examples
 ========
@@ -86,6 +100,13 @@ Examples
     assert df.select(cs.temporal() - cs.matches("opp|JJK")).schema == {
         "ghi": pl.Time,
         "Lmn": pl.Duration,
+    }
+
+    # Select the SYMMETRIC DIFFERENCE of numeric columns and columns that contain an "e"
+    assert df.select(cs.contains("e") ^ cs.numeric()).schema == {
+        "abc": UInt16,
+        "bbb": UInt32,
+        "eee": Boolean,
     }
 
     # Select the COMPLEMENT of all columns of dtypes Duration and Time

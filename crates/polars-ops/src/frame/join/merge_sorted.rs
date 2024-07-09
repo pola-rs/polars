@@ -43,7 +43,7 @@ pub fn _merge_sorted_dfs(
         })
         .collect();
 
-    Ok(DataFrame::new_no_checks(new_columns))
+    Ok(unsafe { DataFrame::new_no_checks(new_columns) })
 }
 
 fn merge_series(lhs: &Series, rhs: &Series, merge_indicator: &[bool]) -> Series {
@@ -120,7 +120,7 @@ where
         }
     });
 
-    // Safety: length is correct
+    // SAFETY: length is correct
     unsafe { iter.trust_my_length(total_len).collect_trusted() }
 }
 

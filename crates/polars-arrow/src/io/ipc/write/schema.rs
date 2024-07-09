@@ -38,18 +38,13 @@ pub fn serialize_schema(
         .map(|(field, ipc_field)| serialize_field(field, ipc_field))
         .collect::<Vec<_>>();
 
-    let mut custom_metadata = vec![];
-    for (key, value) in &schema.metadata {
-        custom_metadata.push(arrow_format::ipc::KeyValue {
-            key: Some(key.clone()),
-            value: Some(value.clone()),
-        });
-    }
-    let custom_metadata = if custom_metadata.is_empty() {
-        None
-    } else {
-        Some(custom_metadata)
-    };
+    let custom_metadata = schema
+        .metadata
+        .iter()
+        .map(|(k, v)| key_value(k, v))
+        .collect::<Vec<_>>();
+
+    let custom_metadata = (!custom_metadata.is_empty()).then_some(custom_metadata);
 
     arrow_format::ipc::Schema {
         endianness,
@@ -59,14 +54,17 @@ pub fn serialize_schema(
     }
 }
 
+fn key_value(key: impl Into<String>, val: impl Into<String>) -> arrow_format::ipc::KeyValue {
+    arrow_format::ipc::KeyValue {
+        key: Some(key.into()),
+        value: Some(val.into()),
+    }
+}
+
 fn write_metadata(metadata: &Metadata, kv_vec: &mut Vec<arrow_format::ipc::KeyValue>) {
     for (k, v) in metadata {
         if k != "ARROW:extension:name" && k != "ARROW:extension:metadata" {
-            let entry = arrow_format::ipc::KeyValue {
-                key: Some(k.clone()),
-                value: Some(v.clone()),
-            };
-            kv_vec.push(entry);
+            kv_vec.push(key_value(k, v));
         }
     }
 }
@@ -76,21 +74,11 @@ fn write_extension(
     metadata: &Option<String>,
     kv_vec: &mut Vec<arrow_format::ipc::KeyValue>,
 ) {
-    // metadata
     if let Some(metadata) = metadata {
-        let entry = arrow_format::ipc::KeyValue {
-            key: Some("ARROW:extension:metadata".to_string()),
-            value: Some(metadata.clone()),
-        };
-        kv_vec.push(entry);
+        kv_vec.push(key_value("ARROW:extension:metadata", metadata));
     }
 
-    // name
-    let entry = arrow_format::ipc::KeyValue {
-        key: Some("ARROW:extension:name".to_string()),
-        value: Some(name.to_string()),
-    };
-    kv_vec.push(entry);
+    kv_vec.push(key_value("ARROW:extension:name", name));
 }
 
 /// Create an IPC Field from an Arrow Field
@@ -259,6 +247,7 @@ fn serialize_type(data_type: &ArrowDataType) -> arrow_format::ipc::Type {
         Extension(_, v, _) => serialize_type(v),
         Utf8View => ipc::Type::Utf8View(Box::new(ipc::Utf8View {})),
         BinaryView => ipc::Type::BinaryView(Box::new(ipc::BinaryView {})),
+        Unknown => unimplemented!(),
     }
 }
 
@@ -307,6 +296,7 @@ fn serialize_children(
             .collect(),
         Dictionary(_, inner, _) => serialize_children(inner, ipc_field),
         Extension(_, inner, _) => serialize_children(inner, ipc_field),
+        Unknown => unimplemented!(),
     }
 }
 

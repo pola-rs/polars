@@ -30,6 +30,10 @@ where
     F: FnMut(Simd<T, N>, Simd<T, N>) -> Simd<T, N>,
     LaneCount<N>: SupportedLaneCount,
 {
+    if arr.is_empty() {
+        return None;
+    }
+
     let mut arr_chunks = arr.chunks_exact(N);
 
     let identity = Simd::splat(scalar_identity);
@@ -135,22 +139,16 @@ macro_rules! impl_min_max_kernel_float {
             type Scalar<'a> = $T;
 
             fn min_ignore_nan_kernel(&self) -> Option<Self::Scalar<'_>> {
-                fold_agg_kernel::<$N, $T, _>(
-                    self.values(),
-                    self.validity(),
-                    <$T>::INFINITY,
-                    |a, b| a.simd_min(b),
-                )
+                fold_agg_kernel::<$N, $T, _>(self.values(), self.validity(), <$T>::NAN, |a, b| {
+                    a.simd_min(b)
+                })
                 .map(|s| s.reduce_min())
             }
 
             fn max_ignore_nan_kernel(&self) -> Option<Self::Scalar<'_>> {
-                fold_agg_kernel::<$N, $T, _>(
-                    self.values(),
-                    self.validity(),
-                    <$T>::NEG_INFINITY,
-                    |a, b| a.simd_max(b),
-                )
+                fold_agg_kernel::<$N, $T, _>(self.values(), self.validity(), <$T>::NAN, |a, b| {
+                    a.simd_max(b)
+                })
                 .map(|s| s.reduce_max())
             }
 
@@ -179,12 +177,12 @@ macro_rules! impl_min_max_kernel_float {
             type Scalar<'a> = $T;
 
             fn min_ignore_nan_kernel(&self) -> Option<Self::Scalar<'_>> {
-                fold_agg_kernel::<$N, $T, _>(self, None, <$T>::INFINITY, |a, b| a.simd_min(b))
+                fold_agg_kernel::<$N, $T, _>(self, None, <$T>::NAN, |a, b| a.simd_min(b))
                     .map(|s| s.reduce_min())
             }
 
             fn max_ignore_nan_kernel(&self) -> Option<Self::Scalar<'_>> {
-                fold_agg_kernel::<$N, $T, _>(self, None, <$T>::NEG_INFINITY, |a, b| a.simd_max(b))
+                fold_agg_kernel::<$N, $T, _>(self, None, <$T>::NAN, |a, b| a.simd_max(b))
                     .map(|s| s.reduce_max())
             }
 

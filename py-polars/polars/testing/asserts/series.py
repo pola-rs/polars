@@ -2,18 +2,17 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from polars._utils.deprecation import deprecate_renamed_parameter
 from polars.datatypes import (
-    FLOAT_DTYPES,
     Array,
     Categorical,
-    Decimal,
-    Float64,
     List,
     String,
     Struct,
     unpack_dtypes,
 )
-from polars.exceptions import ComputeError
+from polars.datatypes.group import FLOAT_DTYPES
+from polars.exceptions import ComputeError, InvalidOperationError
 from polars.series import Series
 from polars.testing.asserts.utils import raise_assertion_error
 
@@ -21,12 +20,14 @@ if TYPE_CHECKING:
     from polars import DataType
 
 
+@deprecate_renamed_parameter("check_dtype", "check_dtypes", version="0.20.31")
 def assert_series_equal(
     left: Series,
     right: Series,
     *,
-    check_dtype: bool = True,
+    check_dtypes: bool = True,
     check_names: bool = True,
+    check_order: bool = True,
     check_exact: bool = False,
     rtol: float = 1e-5,
     atol: float = 1e-8,
@@ -44,10 +45,12 @@ def assert_series_equal(
         The first Series to compare.
     right
         The second Series to compare.
-    check_dtype
+    check_dtypes
         Require data types to match.
     check_names
         Require names to match.
+    check_order
+        Require elements to appear in the same order.
     check_exact
         Require float values to match exactly. If set to `False`, values are considered
         equal when within tolerance of each other (see `rtol` and `atol`).
@@ -85,6 +88,8 @@ def assert_series_equal(
     [left]:  [1, 2, 3]
     [right]: [1, 5, 3]
     """
+    __tracebackhide__ = True
+
     if not (isinstance(left, Series) and isinstance(right, Series)):  # type: ignore[redundant-expr]
         raise_assertion_error(
             "inputs",
@@ -99,12 +104,13 @@ def assert_series_equal(
     if check_names and left.name != right.name:
         raise_assertion_error("Series", "name mismatch", left.name, right.name)
 
-    if check_dtype and left.dtype != right.dtype:
+    if check_dtypes and left.dtype != right.dtype:
         raise_assertion_error("Series", "dtype mismatch", left.dtype, right.dtype)
 
     _assert_series_values_equal(
         left,
         right,
+        check_order=check_order,
         check_exact=check_exact,
         rtol=rtol,
         atol=atol,
@@ -116,26 +122,22 @@ def _assert_series_values_equal(
     left: Series,
     right: Series,
     *,
+    check_order: bool,
     check_exact: bool,
     rtol: float,
     atol: float,
     categorical_as_str: bool,
 ) -> None:
     """Assert that the values in both Series are equal."""
+    __tracebackhide__ = True
+
     # Handle categoricals
     if categorical_as_str:
-        if left.dtype == Categorical:
-            left = left.cast(String)
-        if right.dtype == Categorical:
-            right = right.cast(String)
+        left = _categorical_series_to_string(left)
+        right = _categorical_series_to_string(right)
 
-    # Handle decimals
-    # TODO: Delete this branch when Decimal equality is implemented
-    # https://github.com/pola-rs/polars/issues/12118
-    if left.dtype == Decimal:
-        left = left.cast(Float64)
-    if right.dtype == Decimal:
-        right = right.cast(Float64)
+    if not check_order:
+        left, right = _sort_series(left, right)
 
     # Determine unequal elements
     try:
@@ -192,6 +194,16 @@ def _assert_series_values_equal(
     )
 
 
+def _sort_series(left: Series, right: Series) -> tuple[Series, Series]:
+    try:
+        left = left.sort()
+        right = right.sort()
+    except InvalidOperationError as exc:
+        msg = "cannot set `check_order=False` on Series with unsortable data type"
+        raise TypeError(msg) from exc
+    return left, right
+
+
 def _assert_series_nested_values_equal(
     left: Series,
     right: Series,
@@ -201,6 +213,8 @@ def _assert_series_nested_values_equal(
     atol: float,
     categorical_as_str: bool,
 ) -> None:
+    __tracebackhide__ = True
+
     # compare nested lists element-wise
     if _comparing_lists(left.dtype, right.dtype):
         for s1, s2 in zip(left, right):
@@ -210,6 +224,7 @@ def _assert_series_nested_values_equal(
             _assert_series_values_equal(
                 s1,
                 s2,
+                check_order=True,
                 check_exact=check_exact,
                 rtol=rtol,
                 atol=atol,
@@ -223,6 +238,7 @@ def _assert_series_nested_values_equal(
             _assert_series_values_equal(
                 s1,
                 s2,
+                check_order=True,
                 check_exact=check_exact,
                 rtol=rtol,
                 atol=atol,
@@ -231,6 +247,7 @@ def _assert_series_nested_values_equal(
 
 
 def _assert_series_null_values_match(left: Series, right: Series) -> None:
+    __tracebackhide__ = True
     null_value_mismatch = left.is_null() != right.is_null()
     if null_value_mismatch.any():
         raise_assertion_error(
@@ -239,6 +256,7 @@ def _assert_series_null_values_match(left: Series, right: Series) -> None:
 
 
 def _assert_series_nan_values_match(left: Series, right: Series) -> None:
+    __tracebackhide__ = True
     if not _comparing_floats(left.dtype, right.dtype):
         return
     nan_value_mismatch = left.is_nan() != right.is_nan()
@@ -280,6 +298,8 @@ def _assert_series_values_within_tolerance(
     rtol: float,
     atol: float,
 ) -> None:
+    __tracebackhide__ = True
+
     left_unequal, right_unequal = left.filter(unequal), right.filter(unequal)
 
     difference = (left_unequal - right_unequal).abs()
@@ -295,12 +315,43 @@ def _assert_series_values_within_tolerance(
         )
 
 
+def _categorical_series_to_string(s: Series) -> Series:
+    """Cast a (possibly nested) Categorical Series to a String Series."""
+    dtype = s.dtype
+    noncat_dtype = _categorical_dtype_to_string_dtype(dtype)
+    if dtype != noncat_dtype:
+        s = s.cast(noncat_dtype)
+    return s
+
+
+def _categorical_dtype_to_string_dtype(dtype: DataType) -> DataType:
+    """Change a (possibly nested) Categorical data type to a String data type."""
+    if isinstance(dtype, Categorical):
+        return String()
+    elif isinstance(dtype, List):
+        inner_cast = _categorical_dtype_to_string_dtype(dtype.inner)  # type: ignore[arg-type]
+        return List(inner_cast)
+    elif isinstance(dtype, Array):
+        inner_cast = _categorical_dtype_to_string_dtype(dtype.inner)  # type: ignore[arg-type]
+        return Array(inner_cast, dtype.size)
+    elif isinstance(dtype, Struct):
+        fields = {
+            f.name: _categorical_dtype_to_string_dtype(f.dtype)  # type: ignore[arg-type]
+            for f in dtype.fields
+        }
+        return Struct(fields)
+    else:
+        return dtype
+
+
+@deprecate_renamed_parameter("check_dtype", "check_dtypes", version="0.20.31")
 def assert_series_not_equal(
     left: Series,
     right: Series,
     *,
-    check_dtype: bool = True,
+    check_dtypes: bool = True,
     check_names: bool = True,
+    check_order: bool = True,
     check_exact: bool = False,
     rtol: float = 1e-5,
     atol: float = 1e-8,
@@ -317,10 +368,12 @@ def assert_series_not_equal(
         The first Series to compare.
     right
         The second Series to compare.
-    check_dtype
+    check_dtypes
         Require data types to match.
     check_names
         Require names to match.
+    check_order
+        Require elements to appear in the same order.
     check_exact
         Require float values to match exactly. If set to `False`, values are considered
         equal when within tolerance of each other (see `rtol` and `atol`).
@@ -349,12 +402,15 @@ def assert_series_not_equal(
     ...
     AssertionError: Series are equal
     """
+    __tracebackhide__ = True
+
     try:
         assert_series_equal(
             left=left,
             right=right,
-            check_dtype=check_dtype,
+            check_dtypes=check_dtypes,
             check_names=check_names,
+            check_order=check_order,
             check_exact=check_exact,
             rtol=rtol,
             atol=atol,

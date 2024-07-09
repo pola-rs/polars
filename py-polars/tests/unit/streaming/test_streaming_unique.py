@@ -16,8 +16,10 @@ pytestmark = pytest.mark.xdist_group("streaming")
 @pytest.mark.write_disk()
 @pytest.mark.slow()
 def test_streaming_out_of_core_unique(
-    io_files_path: Path, monkeypatch: Any, capfd: Any
+    io_files_path: Path, tmp_path: Path, monkeypatch: Any, capfd: Any
 ) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    monkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
     monkeypatch.setenv("POLARS_FORCE_OOC", "1")
     monkeypatch.setenv("POLARS_VERBOSE", "1")
     monkeypatch.setenv("POLARS_STREAMING_GROUPBY_SPILL_SIZE", "256")

@@ -1,15 +1,34 @@
+use num_traits::Signed;
+
 use super::*;
 
-/// Given two datatypes, determine the supertype that both types can safely be cast to
+/// Given two data types, determine the data type that both types can safely be cast to.
+///
+/// Returns a [`PolarsError::ComputeError`] if no such data type exists.
 pub fn try_get_supertype(l: &DataType, r: &DataType) -> PolarsResult<DataType> {
     get_supertype(l, r).ok_or_else(
-        || polars_err!(ComputeError: "failed to determine supertype of {} and {}", l, r),
+        || polars_err!(SchemaMismatch: "failed to determine supertype of {} and {}", l, r),
     )
 }
 
-/// Given two datatypes, determine the supertype that both types can safely be cast to
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Default)]
+pub struct SuperTypeOptions {
+    pub implode_list: bool,
+}
+
 pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
-    fn inner(l: &DataType, r: &DataType) -> Option<DataType> {
+    get_supertype_with_options(l, r, SuperTypeOptions::default())
+}
+
+/// Given two data types, determine the data type that both types can safely be cast to.
+///
+/// Returns [`None`] if no such data type exists.
+pub fn get_supertype_with_options(
+    l: &DataType,
+    r: &DataType,
+    options: SuperTypeOptions,
+) -> Option<DataType> {
+    fn inner(l: &DataType, r: &DataType, options: SuperTypeOptions) -> Option<DataType> {
         use DataType::*;
         if l == r {
             return Some(l.clone());
@@ -162,7 +181,7 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
             (Datetime(_, _), Float32) => Some(Float64),
             #[cfg(feature = "dtype-datetime")]
             (Datetime(_, _), Float64) => Some(Float64),
-            #[cfg(all(feature = "dtype-datetime", feature = "dtype=date"))]
+            #[cfg(all(feature = "dtype-datetime", feature = "dtype-date"))]
             (Datetime(tu, tz), Date) => Some(Datetime(*tu, tz.clone())),
 
             (Boolean, Float32) => Some(Float32),
@@ -191,9 +210,9 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
             (Time, Float64) => Some(Float64),
 
             // every known type can be casted to a string except binary
-            (dt, String) if dt != &DataType::Unknown && dt != &DataType::Binary => Some(String),
+            (dt, String) if !matches!(dt, DataType::Unknown(UnknownKind::Any)) && dt != &DataType::Binary => Some(String),
 
-            (dt, String) if dt != &DataType::Unknown => Some(String),
+            (dt, String) if !matches!(dt, DataType::Unknown(UnknownKind::Any)) => Some(String),
 
             (dt, Null) => Some(dt.clone()),
 
@@ -227,29 +246,80 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
             }
             (List(inner_left), List(inner_right)) => {
                 let st = get_supertype(inner_left, inner_right)?;
-                Some(DataType::List(Box::new(st)))
+                Some(List(Box::new(st)))
             }
             #[cfg(feature = "dtype-array")]
             (List(inner_left), Array(inner_right, _)) | (Array(inner_left, _), List(inner_right)) => {
                 let st = get_supertype(inner_left, inner_right)?;
-                Some(DataType::List(Box::new(st)))
-            }
-            // todo! check if can be removed
-            (List(inner), other) | (other, List(inner)) => {
-                let st = get_supertype(inner, other)?;
-                Some(DataType::List(Box::new(st)))
+                Some(List(Box::new(st)))
             }
             #[cfg(feature = "dtype-array")]
             (Array(inner_left, width_left), Array(inner_right, width_right)) if *width_left == *width_right => {
                 let st = get_supertype(inner_left, inner_right)?;
-                Some(DataType::Array(Box::new(st), *width_left))
+                Some(Array(Box::new(st), *width_left))
+            }
+            (List(inner), other) | (other, List(inner)) if options.implode_list => {
+                let st = get_supertype(inner, other)?;
+                Some(List(Box::new(st)))
             }
             #[cfg(feature = "dtype-array")]
             (Array(inner_left, _), Array(inner_right, _)) => {
                 let st = get_supertype(inner_left, inner_right)?;
-                Some(DataType::List(Box::new(st)))
+                Some(List(Box::new(st)))
             }
-            (_, Unknown) => Some(Unknown),
+            #[cfg(feature = "dtype-struct")]
+            (Struct(inner), right @ Unknown(UnknownKind::Float | UnknownKind::Int(_))) => {
+                match inner.first() {
+                    Some(inner) => get_supertype(&inner.dtype, right),
+                    None => None
+                }
+            },
+            (dt, Unknown(kind)) => {
+                match kind {
+                    // numeric vs float|str -> always float|str|decimal
+                    UnknownKind::Float | UnknownKind::Int(_) if dt.is_float() | dt.is_string() | dt.is_decimal() => Some(dt.clone()),
+                    UnknownKind::Float if dt.is_integer() => Some(Unknown(UnknownKind::Float)),
+                    // Materialize float to float or decimal
+                    UnknownKind::Float if dt.is_float() | dt.is_decimal() => Some(dt.clone()),
+                    // Materialize str
+                    UnknownKind::Str if dt.is_string() | dt.is_enum() => Some(dt.clone()),
+                    // Materialize str
+                    #[cfg(feature = "dtype-categorical")]
+                    UnknownKind::Str if dt.is_categorical()  => {
+                        let Categorical(_, ord) = dt else { unreachable!()};
+                        Some(Categorical(None, *ord))
+                    },
+                    // Keep unknown
+                    dynam if dt.is_null() => Some(Unknown(*dynam)),
+                    // Find integers sizes
+                    UnknownKind::Int(v) if dt.is_numeric() => {
+                        // Both dyn int
+                        if let Unknown(UnknownKind::Int(v_other)) = dt {
+                            // Take the maximum value to ensure we bubble up the required minimal size.
+                            Some(Unknown(UnknownKind::Int(std::cmp::max(*v, *v_other))))
+                        }
+                        // dyn int vs number
+                        else {
+                            let smallest_fitting_dtype = if dt.is_unsigned_integer() && !v.is_negative() {
+                                materialize_dyn_int_pos(*v).dtype()
+                            } else {
+                                materialize_smallest_dyn_int(*v).dtype()
+                            };
+                            match dt {
+                                UInt64 if smallest_fitting_dtype.is_signed_integer() => {
+                                    // Ensure we don't cast to float when dealing with dynamic literals
+                                    Some(Int64)
+                                },
+                                _ => {
+                                    get_supertype(dt, &smallest_fitting_dtype)
+                                }
+                            }
+                        }
+                    }
+                    UnknownKind::Int(_) if dt.is_decimal() => Some(dt.clone()),
+                    _ => Some(Unknown(UnknownKind::Any))
+                }
+            },
             #[cfg(feature = "dtype-struct")]
             (Struct(fields_a), Struct(fields_b)) => {
                 super_type_structs(fields_a, fields_b)
@@ -264,18 +334,32 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
                 Some(Struct(new_fields))
             }
             #[cfg(feature = "dtype-decimal")]
-            (d @ Decimal(_, _), dt) if dt.is_signed_integer() || dt.is_unsigned_integer() => Some(d.clone()),
-            #[cfg(feature = "dtype-decimal")]
             (Decimal(p1, s1), Decimal(p2, s2)) => {
                 Some(Decimal((*p1).zip(*p2).map(|(p1, p2)| p1.max(p2)), (*s1).max(*s2)))
             }
             #[cfg(feature = "dtype-decimal")]
             (Decimal(_, _), f @ (Float32 | Float64)) => Some(f.clone()),
+            #[cfg(feature = "dtype-decimal")]
+            (d @ Decimal(_, _), dt) if dt.is_signed_integer() || dt.is_unsigned_integer() => Some(d.clone()),
             _ => None,
         }
     }
 
-    inner(l, r).or_else(|| inner(r, l))
+    inner(l, r, options).or_else(|| inner(r, l, options))
+}
+
+/// Given multiple data types, determine the data type that all types can safely be cast to.
+///
+/// Returns [`DataType::Null`] if no data types were passed.
+pub fn dtypes_to_supertype<'a, I>(dtypes: I) -> PolarsResult<DataType>
+where
+    I: IntoIterator<Item = &'a DataType>,
+{
+    dtypes
+        .into_iter()
+        .try_fold(DataType::Null, |supertype, dtype| {
+            try_get_supertype(&supertype, dtype)
+        })
 }
 
 #[cfg(feature = "dtype-struct")]
@@ -321,5 +405,56 @@ fn super_type_structs(fields_a: &[Field], fields_b: &[Field]) -> Option<DataType
             new_fields.push(Field::new(&a.name, st))
         }
         Some(DataType::Struct(new_fields))
+    }
+}
+
+pub fn materialize_dyn_int(v: i128) -> AnyValue<'static> {
+    // Try to get the "smallest" fitting value.
+    // TODO! next breaking go to true smallest.
+    match i32::try_from(v).ok() {
+        Some(v) => AnyValue::Int32(v),
+        None => match i64::try_from(v).ok() {
+            Some(v) => AnyValue::Int64(v),
+            None => match u64::try_from(v).ok() {
+                Some(v) => AnyValue::UInt64(v),
+                None => AnyValue::Null,
+            },
+        },
+    }
+}
+fn materialize_dyn_int_pos(v: i128) -> AnyValue<'static> {
+    // Try to get the "smallest" fitting value.
+    // TODO! next breaking go to true smallest.
+    match u8::try_from(v).ok() {
+        Some(v) => AnyValue::UInt8(v),
+        None => match u16::try_from(v).ok() {
+            Some(v) => AnyValue::UInt16(v),
+            None => match u32::try_from(v).ok() {
+                Some(v) => AnyValue::UInt32(v),
+                None => match u64::try_from(v).ok() {
+                    Some(v) => AnyValue::UInt64(v),
+                    None => AnyValue::Null,
+                },
+            },
+        },
+    }
+}
+
+fn materialize_smallest_dyn_int(v: i128) -> AnyValue<'static> {
+    match i8::try_from(v).ok() {
+        Some(v) => AnyValue::Int8(v),
+        None => match i16::try_from(v).ok() {
+            Some(v) => AnyValue::Int16(v),
+            None => match i32::try_from(v).ok() {
+                Some(v) => AnyValue::Int32(v),
+                None => match i64::try_from(v).ok() {
+                    Some(v) => AnyValue::Int64(v),
+                    None => match u64::try_from(v).ok() {
+                        Some(v) => AnyValue::UInt64(v),
+                        None => AnyValue::Null,
+                    },
+                },
+            },
+        },
     }
 }

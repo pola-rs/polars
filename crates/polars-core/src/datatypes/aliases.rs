@@ -1,11 +1,8 @@
-pub use arrow::legacy::index::{IdxArr, IdxSize};
+pub use arrow::legacy::index::IdxArr;
 pub use polars_utils::aliases::{InitHashMaps, PlHashMap, PlHashSet, PlIndexMap, PlIndexSet};
 
 use super::*;
 use crate::hashing::IdBuildHasher;
-
-/// [ChunkIdx, DfIdx]
-pub type ChunkId = [IdxSize; 2];
 
 #[cfg(not(feature = "bigidx"))]
 pub type IdxCa = UInt32Chunked;
@@ -21,6 +18,8 @@ pub const IDX_DTYPE: DataType = DataType::UInt64;
 pub type IdxType = UInt32Type;
 #[cfg(feature = "bigidx")]
 pub type IdxType = UInt64Type;
+
+pub use smartstring::alias::String as SmartString;
 
 /// This hashmap uses an IdHasher
 pub type PlIdHashMap<K, V> = hashbrown::HashMap<K, V, IdBuildHasher>;

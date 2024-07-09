@@ -8,13 +8,14 @@ from typing import TYPE_CHECKING, Any, Iterable, Iterator, Mapping, Sequence
 
 import polars._reexport as pl
 import polars.datatypes
+import polars.functions as F
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import dtype_str_repr as _dtype_str_repr
 
 if TYPE_CHECKING:
     from polars import Series
-    from polars.type_aliases import (
+    from polars._typing import (
         CategoricalOrdering,
         PolarsDataType,
         PythonDataType,
@@ -51,10 +52,6 @@ class DataTypeClass(type):
         ...
 
     @classmethod
-    def is_not(cls, other: PolarsDataType) -> bool:  # noqa: D102
-        ...
-
-    @classmethod
     def is_numeric(cls) -> bool:  # noqa: D102
         ...
 
@@ -83,15 +80,12 @@ class DataTypeClass(type):
         ...
 
     @classmethod
-    def is_nested(self) -> bool:  # noqa: D102
+    def is_nested(cls) -> bool:  # noqa: D102
         ...
 
 
 class DataType(metaclass=DataTypeClass):
     """Base class for all Polars data types."""
-
-    def __reduce__(self) -> Any:
-        return (_custom_reconstruct, (type(self), object, None), self.__dict__)
 
     def _string_repr(self) -> str:
         return _dtype_str_repr(self)
@@ -146,38 +140,6 @@ class DataType(metaclass=DataTypeClass):
         """
         return self == other and hash(self) == hash(other)
 
-    @classinstmethod  # type: ignore[arg-type]
-    def is_not(self, other: PolarsDataType) -> bool:
-        """
-        Check if this DataType is NOT the same as another DataType.
-
-        .. deprecated:: 0.19.14
-            Use `not dtype.is_(...)` instead.
-
-        This is a stricter check than `self != other`, as it enforces an exact
-        match of all dtype attributes for nested and/or uninitialised dtypes.
-
-        Parameters
-        ----------
-        other
-            the other polars dtype to compare with.
-
-        Examples
-        --------
-        >>> pl.List != pl.List(pl.Int32)
-        False
-        >>> pl.List.is_not(pl.List(pl.Int32))  # doctest: +SKIP
-        True
-        """
-        from polars.utils.deprecation import issue_deprecation_warning
-
-        issue_deprecation_warning(
-            "`DataType.is_not` is deprecated and will be removed in the next breaking release."
-            " Use `not dtype.is_(...)` instead.",
-            version="0.19.14",
-        )
-        return not self.is_(other)
-
     @classmethod
     def is_numeric(cls) -> bool:
         """Check whether the data type is a numeric type."""
@@ -205,7 +167,7 @@ class DataType(metaclass=DataTypeClass):
 
     @classmethod
     def is_float(cls) -> bool:
-        """Check whether the data type is a temporal type."""
+        """Check whether the data type is a floating point type."""
         return issubclass(cls, FloatType)
 
     @classmethod
@@ -217,51 +179,6 @@ class DataType(metaclass=DataTypeClass):
     def is_nested(cls) -> bool:
         """Check whether the data type is a nested type."""
         return issubclass(cls, NestedType)
-
-
-def _custom_reconstruct(
-    cls: type[Any], base: type[Any], state: Any
-) -> PolarsDataType | type:
-    """Helper function for unpickling DataType objects."""
-    if state:
-        obj = base.__new__(cls, state)
-        if base.__init__ != object.__init__:
-            base.__init__(obj, state)
-    else:
-        obj = object.__new__(cls)
-    return obj
-
-
-class DataTypeGroup(frozenset):  # type: ignore[type-arg]
-    """Group of data types."""
-
-    _match_base_type: bool
-
-    def __new__(
-        cls, items: Iterable[DataType | DataTypeClass], *, match_base_type: bool = True
-    ) -> DataTypeGroup:
-        """
-        Construct a DataTypeGroup.
-
-        Parameters
-        ----------
-        items :
-            iterable of data types
-        match_base_type:
-            match the base type
-        """
-        for it in items:
-            if not isinstance(it, (DataType, DataTypeClass)):
-                msg = f"DataTypeGroup items must be dtypes; found {type(it).__name__!r}"
-                raise TypeError(msg)
-        dtype_group = super().__new__(cls, items)  # type: ignore[arg-type]
-        dtype_group._match_base_type = match_base_type
-        return dtype_group
-
-    def __contains__(self, item: Any) -> bool:
-        if self._match_base_type and isinstance(item, (DataType, DataTypeClass)):
-            item = item.base_type()
-        return super().__contains__(item)
 
 
 class NumericType(DataType):
@@ -340,6 +257,14 @@ class Decimal(NumericType):
         This functionality is considered **unstable**.
         It is a work-in-progress feature and may not always work as expected.
         It may be changed at any point without it being considered a breaking change.
+
+    Parameters
+    ----------
+    precision
+        Maximum number of digits in each number.
+        If set to `None` (default), the precision is inferred.
+    scale
+        Number of digits to the right of the decimal point in each number.
     """
 
     precision: int | None
@@ -352,7 +277,7 @@ class Decimal(NumericType):
     ):
         # Issuing the warning on `__init__` does not trigger when the class is used
         # without being instantiated, but it's better than nothing
-        from polars.utils.unstable import issue_unstable_warning
+        from polars._utils.unstable import issue_unstable_warning
 
         issue_unstable_warning(
             "The Decimal data type is considered unstable."
@@ -397,47 +322,68 @@ class Binary(DataType):
 
 
 class Date(TemporalType):
-    """Calendar date type."""
+    """
+    Data type representing a calendar date.
+
+    Notes
+    -----
+    The underlying representation of this type is a 32-bit signed integer.
+    The integer indicates the number of days since the Unix epoch (1970-01-01).
+    The number can be negative to indicate dates before the epoch.
+    """
 
 
 class Time(TemporalType):
-    """Time of day type."""
+    """
+    Data type representing the time of day.
+
+    Notes
+    -----
+    The underlying representation of this type is a 64-bit signed integer.
+    The integer indicates the number of nanoseconds since midnight.
+    """
 
 
 class Datetime(TemporalType):
-    """Calendar date and time type."""
+    """
+    Data type representing a calendar date and time of day.
 
-    time_unit: TimeUnit | None = None
-    time_zone: str | None = None
+    Parameters
+    ----------
+    time_unit : {'us', 'ns', 'ms'}
+        Unit of time. Defaults to `'us'` (microseconds).
+    time_zone
+        Time zone string, as defined in zoneinfo (to see valid strings run
+        `import zoneinfo; zoneinfo.available_timezones()` for a full list).
+        When used to match dtypes, can set this to "*" to check for Datetime
+        columns that have any (non-null) timezone.
+
+    Notes
+    -----
+    The underlying representation of this type is a 64-bit signed integer.
+    The integer indicates the number of time units since the Unix epoch
+    (1970-01-01 00:00:00). The number can be negative to indicate datetimes before the
+    epoch.
+    """
+
+    time_unit: TimeUnit
+    time_zone: str | None
 
     def __init__(
-        self, time_unit: TimeUnit | None = "us", time_zone: str | timezone | None = None
+        self, time_unit: TimeUnit = "us", time_zone: str | timezone | None = None
     ):
-        """
-        Calendar date and time type.
+        if time_unit not in ("ms", "us", "ns"):
+            msg = (
+                "invalid `time_unit`"
+                f"\n\nExpected one of {{'ns','us','ms'}}, got {time_unit!r}."
+            )
+            raise ValueError(msg)
 
-        Parameters
-        ----------
-        time_unit : {'us', 'ns', 'ms'}
-            Unit of time / precision.
-        time_zone
-            Time zone string, as defined in zoneinfo (to see valid strings run
-            `import zoneinfo; zoneinfo.available_timezones()` for a full list).
-            When using to match dtypes, can use "*" to check for Datetime columns
-            that have any timezone.
-        """
         if isinstance(time_zone, timezone):
             time_zone = str(time_zone)
 
-        self.time_unit = time_unit or "us"
+        self.time_unit = time_unit
         self.time_zone = time_zone
-
-        if self.time_unit not in ("ms", "us", "ns"):
-            msg = (
-                "invalid `time_unit`"
-                f"\n\nExpected one of {{'ns','us','ms'}}, got {self.time_unit!r}."
-            )
-            raise ValueError(msg)
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
         # allow comparing object instances to class
@@ -461,26 +407,32 @@ class Datetime(TemporalType):
 
 
 class Duration(TemporalType):
-    """Time duration/delta type."""
+    """
+    Data type representing a time duration.
 
-    time_unit: TimeUnit | None = None
+    Parameters
+    ----------
+    time_unit : {'us', 'ns', 'ms'}
+        Unit of time. Defaults to `'us'` (microseconds).
+
+    Notes
+    -----
+    The underlying representation of this type is a 64-bit signed integer.
+    The integer indicates an amount of time units and can be negative to indicate
+    negative time offsets.
+    """
+
+    time_unit: TimeUnit
 
     def __init__(self, time_unit: TimeUnit = "us"):
-        """
-        Time duration/delta type.
-
-        Parameters
-        ----------
-        time_unit : {'us', 'ns', 'ms'}
-            Unit of time.
-        """
-        self.time_unit = time_unit
-        if self.time_unit not in ("ms", "us", "ns"):
+        if time_unit not in ("ms", "us", "ns"):
             msg = (
                 "invalid `time_unit`"
-                f"\n\nExpected one of {{'ns','us','ms'}}, got {self.time_unit!r}."
+                f"\n\nExpected one of {{'ns','us','ms'}}, got {time_unit!r}."
             )
             raise ValueError(msg)
+
+        self.time_unit = time_unit
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
         # allow comparing object instances to class
@@ -505,9 +457,9 @@ class Categorical(DataType):
 
     Parameters
     ----------
-        ordering : {'lexical', 'physical'}
-            Ordering by order of appearance (physical, default)
-            or string value (lexical).
+    ordering : {'lexical', 'physical'}
+        Ordering by order of appearance (`'physical'`, default)
+        or string value (`'lexical'`).
     """
 
     ordering: CategoricalOrdering | None
@@ -542,22 +494,19 @@ class Enum(DataType):
         This functionality is considered **unstable**.
         It is a work-in-progress feature and may not always work as expected.
         It may be changed at any point without it being considered a breaking change.
+
+    Parameters
+    ----------
+    categories
+        The categories in the dataset. Categories must be strings.
     """
 
     categories: Series
 
     def __init__(self, categories: Series | Iterable[str]):
-        """
-        A fixed set categorical encoding of a set of strings.
-
-        Parameters
-        ----------
-        categories
-            Valid categories in the dataset.
-        """
         # Issuing the warning on `__init__` does not trigger when the class is used
         # without being instantiated, but it's better than nothing
-        from polars.utils.unstable import issue_unstable_warning
+        from polars._utils.unstable import issue_unstable_warning
 
         issue_unstable_warning(
             "The Enum data type is considered unstable."
@@ -571,7 +520,7 @@ class Enum(DataType):
             self.categories = pl.Series(name="category", dtype=String)
             return
 
-        if categories.null_count() > 0:
+        if categories.has_nulls():
             msg = "Enum categories must not contain null values"
             raise TypeError(msg)
 
@@ -602,53 +551,60 @@ class Enum(DataType):
         class_name = self.__class__.__name__
         return f"{class_name}(categories={self.categories.to_list()!r})"
 
+    def union(self, other: Enum) -> Enum:
+        """Union of two Enums."""
+        return Enum(
+            F.concat((self.categories, other.categories)).unique(maintain_order=True)
+        )
+
+    __or__ = union
+
 
 class Object(DataType):
-    """Type for wrapping arbitrary Python objects."""
+    """Data type for wrapping arbitrary Python objects."""
 
 
 class Null(DataType):
-    """Type representing Null / None values."""
+    """Data type representing null values."""
 
 
 class Unknown(DataType):
-    """Type representing Datatype values that could not be determined statically."""
+    """Type representing DataType values that could not be determined statically."""
 
 
 class List(NestedType):
-    """Variable length list type."""
+    """
+    Variable length list type.
 
-    inner: PolarsDataType | None = None
+    Parameters
+    ----------
+    inner
+        The `DataType` of the values within each list.
+
+    Examples
+    --------
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "integer_lists": [[1, 2], [3, 4]],
+    ...         "float_lists": [[1.0, 2.0], [3.0, 4.0]],
+    ...     }
+    ... )
+    >>> df
+    shape: (2, 2)
+    ┌───────────────┬─────────────┐
+    │ integer_lists ┆ float_lists │
+    │ ---           ┆ ---         │
+    │ list[i64]     ┆ list[f64]   │
+    ╞═══════════════╪═════════════╡
+    │ [1, 2]        ┆ [1.0, 2.0]  │
+    │ [3, 4]        ┆ [3.0, 4.0]  │
+    └───────────────┴─────────────┘
+    """
+
+    inner: PolarsDataType
 
     def __init__(self, inner: PolarsDataType | PythonDataType):
-        """
-        Variable length list type.
-
-        Parameters
-        ----------
-        inner
-            The `DataType` of the values within each list.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "integer_lists": [[1, 2], [3, 4]],
-        ...         "float_lists": [[1.0, 2.0], [3.0, 4.0]],
-        ...     }
-        ... )
-        >>> df
-        shape: (2, 2)
-        ┌───────────────┬─────────────┐
-        │ integer_lists ┆ float_lists │
-        │ ---           ┆ ---         │
-        │ list[i64]     ┆ list[f64]   │
-        ╞═══════════════╪═════════════╡
-        │ [1, 2]        ┆ [1.0, 2.0]  │
-        │ [3, 4]        ┆ [3.0, 4.0]  │
-        └───────────────┴─────────────┘
-        """
-        self.inner = polars.datatypes.py_type_to_dtype(inner)
+        self.inner = polars.datatypes.parse_into_dtype(inner)
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
         # This equality check allows comparison of type classes and type instances.
@@ -660,11 +616,8 @@ class List(NestedType):
         # allow comparing object instances to class
         if type(other) is DataTypeClass and issubclass(other, List):
             return True
-        if isinstance(other, List):
-            if self.inner is None or other.inner is None:
-                return True
-            else:
-                return self.inner == other.inner
+        elif isinstance(other, List):
+            return self.inner == other.inner
         else:
             return False
 
@@ -677,35 +630,70 @@ class List(NestedType):
 
 
 class Array(NestedType):
-    """Fixed length list type."""
+    """
+    Fixed length list type.
 
-    inner: PolarsDataType | None = None
-    width: int
+    Parameters
+    ----------
+    inner
+        The `DataType` of the values within each array.
+    width
+        The length of the arrays.
 
-    def __init__(self, inner: PolarsDataType | PythonDataType, width: int):
-        """
-        Fixed length list type.
+    Examples
+    --------
+    >>> s = pl.Series("a", [[1, 2], [4, 3]], dtype=pl.Array(pl.Int64, 2))
+    >>> s
+    shape: (2,)
+    Series: 'a' [array[i64, 2]]
+    [
+            [1, 2]
+            [4, 3]
+    ]
+    """
 
-        Parameters
-        ----------
-        inner
-            The `DataType` of the values within each array.
-        width
-            The length of the arrays.
+    inner: PolarsDataType
+    size: int
+    shape: tuple[int, ...]
 
-        Examples
-        --------
-        >>> s = pl.Series("a", [[1, 2], [4, 3]], dtype=pl.Array(pl.Int64, 2))
-        >>> s
-        shape: (2,)
-        Series: 'a' [array[i64, 2]]
-        [
-                [1, 2]
-                [4, 3]
-        ]
-        """
-        self.inner = polars.datatypes.py_type_to_dtype(inner)
-        self.width = width
+    def __init__(
+        self,
+        inner: PolarsDataType | PythonDataType,
+        shape: int | tuple[int, ...] | None = None,
+        *,
+        width: int | None = None,
+    ):
+        if width is not None:
+            from polars._utils.deprecation import issue_deprecation_warning
+
+            issue_deprecation_warning(
+                "The `width` parameter for `Array` is deprecated. Use `shape` instead.",
+                version="0.20.31",
+            )
+            shape = width
+        elif shape is None:
+            msg = "Array constructor is missing the required argument `shape`"
+            raise TypeError(msg)
+
+        inner_parsed = polars.datatypes.parse_into_dtype(inner)
+        inner_shape = inner_parsed.shape if isinstance(inner_parsed, Array) else ()
+
+        if isinstance(shape, int):
+            self.inner = inner_parsed
+            self.size = shape
+            self.shape = (shape,) + inner_shape
+
+        elif isinstance(shape, tuple):
+            if len(shape) > 1:
+                inner_parsed = Array(inner_parsed, shape[1:])
+
+            self.inner = inner_parsed
+            self.size = shape[0]
+            self.shape = shape + inner_shape
+
+        else:
+            msg = f"invalid input for shape: {shape!r}"
+            raise TypeError(msg)
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
         # This equality check allows comparison of type classes and type instances.
@@ -717,40 +705,56 @@ class Array(NestedType):
         # allow comparing object instances to class
         if type(other) is DataTypeClass and issubclass(other, Array):
             return True
-        if isinstance(other, Array):
-            if self.width != other.width:
+        elif isinstance(other, Array):
+            if self.shape != other.shape:
                 return False
-            elif self.inner is None or other.inner is None:
-                return True
             else:
                 return self.inner == other.inner
         else:
             return False
 
     def __hash__(self) -> int:
-        return hash((self.__class__, self.inner, self.width))
+        return hash((self.__class__, self.inner, self.size))
 
     def __repr__(self) -> str:
+        # Get leaf type
+        dtype = self.inner
+        while isinstance(dtype, Array):
+            dtype = dtype.inner
+
         class_name = self.__class__.__name__
-        return f"{class_name}({self.inner!r}, width={self.width})"
+        return f"{class_name}({dtype!r}, shape={self.shape})"
+
+    @property
+    def width(self) -> int:
+        """The size of the Array."""
+        from polars._utils.deprecation import issue_deprecation_warning
+
+        issue_deprecation_warning(
+            "The `width` attribute for `Array` is deprecated. Use `size` instead.",
+            version="0.20.31",
+        )
+        return self.size
 
 
 class Field:
-    """Definition of a single field within a `Struct` DataType."""
+    """
+    Definition of a single field within a `Struct` DataType.
+
+    Parameters
+    ----------
+    name
+        The name of the field within its parent `Struct`.
+    dtype
+        The `DataType` of the field's values.
+    """
+
+    name: str
+    dtype: PolarsDataType
 
     def __init__(self, name: str, dtype: PolarsDataType):
-        """
-        Definition of a single field within a `Struct` DataType.
-
-        Parameters
-        ----------
-        name
-            The name of the field within its parent `Struct`
-        dtype
-            The `DataType` of the field's values
-        """
         self.name = name
-        self.dtype = polars.datatypes.py_type_to_dtype(dtype)
+        self.dtype = polars.datatypes.parse_into_dtype(dtype)
 
     def __eq__(self, other: Field) -> bool:  # type: ignore[override]
         return (self.name == other.name) & (self.dtype == other.dtype)
@@ -764,49 +768,46 @@ class Field:
 
 
 class Struct(NestedType):
-    """Struct composite type."""
+    """
+    Struct composite type.
+
+    Parameters
+    ----------
+    fields
+        The fields that make up the struct. Can be either a sequence of Field
+        objects or a mapping of column names to data types.
+
+    Examples
+    --------
+    Initialize using a dictionary:
+
+    >>> dtype = pl.Struct({"a": pl.Int8, "b": pl.List(pl.String)})
+    >>> dtype
+    Struct({'a': Int8, 'b': List(String)})
+
+    Initialize using a list of Field objects:
+
+    >>> dtype = pl.Struct([pl.Field("a", pl.Int8), pl.Field("b", pl.List(pl.String))])
+    >>> dtype
+    Struct({'a': Int8, 'b': List(String)})
+
+    When initializing a Series, Polars can infer a struct data type from the data.
+
+    >>> s = pl.Series([{"a": 1, "b": ["x", "y"]}, {"a": 2, "b": ["z"]}])
+    >>> s
+    shape: (2,)
+    Series: '' [struct[2]]
+    [
+            {1,["x", "y"]}
+            {2,["z"]}
+    ]
+    >>> s.dtype
+    Struct({'a': Int64, 'b': List(String)})
+    """
 
     fields: list[Field]
 
     def __init__(self, fields: Sequence[Field] | SchemaDict):
-        """
-        Struct composite type.
-
-        Parameters
-        ----------
-        fields
-            The fields that make up the struct. Can be either a sequence of Field
-            objects or a mapping of column names to data types.
-
-        Examples
-        --------
-        Initialize using a dictionary:
-
-        >>> dtype = pl.Struct({"a": pl.Int8, "b": pl.List(pl.String)})
-        >>> dtype
-        Struct({'a': Int8, 'b': List(String)})
-
-        Initialize using a list of Field objects:
-
-        >>> dtype = pl.Struct(
-        ...     [pl.Field("a", pl.Int8), pl.Field("b", pl.List(pl.String))]
-        ... )
-        >>> dtype
-        Struct({'a': Int8, 'b': List(String)})
-
-        When initializing a Series, Polars can infer a struct data type from the data.
-
-        >>> s = pl.Series([{"a": 1, "b": ["x", "y"]}, {"a": 2, "b": ["z"]}])
-        >>> s
-        shape: (2,)
-        Series: '' [struct[2]]
-        [
-                {1,["x", "y"]}
-                {2,["z"]}
-        ]
-        >>> s.dtype
-        Struct({'a': Int64, 'b': List(String)})
-        """
         if isinstance(fields, Mapping):
             self.fields = [Field(name, dtype) for name, dtype in fields.items()]
         else:

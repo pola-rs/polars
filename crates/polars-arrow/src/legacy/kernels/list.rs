@@ -1,5 +1,7 @@
-use crate::array::{ArrayRef, ListArray};
-use crate::legacy::compute::take::take_unchecked;
+use polars_utils::IdxSize;
+
+use crate::array::{Array, ArrayRef, ListArray};
+use crate::compute::take::take_unchecked;
 use crate::legacy::prelude::*;
 use crate::legacy::trusted_len::TrustedLenPush;
 use crate::legacy::utils::CustomIterTools;
@@ -37,8 +39,8 @@ fn sublist_get_indexes(arr: &ListArray<i64>, index: i64) -> IdxArr {
     let mut cum_offset = (*offsets.first().unwrap_or(&0)) as IdxSize;
 
     if let Some(mut previous) = iter.next().copied() {
-        let a: IdxArr = iter
-            .map(|&offset| {
+        if arr.null_count() == 0 {
+            iter.map(|&offset| {
                 let len = offset - previous;
                 previous = offset;
                 // make sure that empty lists don't get accessed
@@ -57,9 +59,35 @@ fn sublist_get_indexes(arr: &ListArray<i64>, index: i64) -> IdxArr {
                 cum_offset += len as IdxSize;
                 out
             })
-            .collect_trusted();
+            .collect_trusted()
+        } else {
+            // we can ensure that validity is not none as we have null value.
+            let validity = arr.validity().unwrap();
+            iter.enumerate()
+                .map(|(i, &offset)| {
+                    let len = offset - previous;
+                    previous = offset;
+                    // make sure that empty and null lists don't get accessed and return null.
+                    // SAFETY, we are within bounds
+                    if len == 0 || !unsafe { validity.get_bit_unchecked(i) } {
+                        cum_offset += len as IdxSize;
+                        return None;
+                    }
 
-        a
+                    // make sure that out of bounds return null
+                    if index >= len {
+                        cum_offset += len as IdxSize;
+                        return None;
+                    }
+
+                    let out = index
+                        .negative_to_usize(len as usize)
+                        .map(|idx| idx as IdxSize + cum_offset);
+                    cum_offset += len as IdxSize;
+                    out
+                })
+                .collect_trusted()
+        }
     } else {
         IdxArr::from_slice([])
     }
@@ -68,16 +96,37 @@ fn sublist_get_indexes(arr: &ListArray<i64>, index: i64) -> IdxArr {
 pub fn sublist_get(arr: &ListArray<i64>, index: i64) -> ArrayRef {
     let take_by = sublist_get_indexes(arr, index);
     let values = arr.values();
-    // Safety:
+    // SAFETY:
     // the indices we generate are in bounds
     unsafe { take_unchecked(&**values, &take_by) }
+}
+
+/// Check if an index is out of bounds for at least one sublist.
+pub fn index_is_oob(arr: &ListArray<i64>, index: i64) -> bool {
+    if arr.null_count() == 0 {
+        arr.offsets()
+            .lengths()
+            .any(|len| index.negative_to_usize(len).is_none())
+    } else {
+        arr.offsets()
+            .lengths()
+            .zip(arr.validity().unwrap())
+            .any(|(len, valid)| {
+                if valid {
+                    index.negative_to_usize(len).is_none()
+                } else {
+                    // skip nulls
+                    false
+                }
+            })
+    }
 }
 
 /// Convert a list `[1, 2, 3]` to a list type of `[[1], [2], [3]]`
 pub fn array_to_unit_list(array: ArrayRef) -> ListArray<i64> {
     let len = array.len();
     let mut offsets = Vec::with_capacity(len + 1);
-    // Safety: we allocated enough
+    // SAFETY: we allocated enough
     unsafe {
         offsets.push_unchecked(0i64);
 
@@ -86,7 +135,7 @@ pub fn array_to_unit_list(array: ArrayRef) -> ListArray<i64> {
         }
     };
 
-    // Safety:
+    // SAFETY:
     // offsets are monotonically increasing
     unsafe {
         let offsets: OffsetsBuffer<i64> = Offsets::new_unchecked(offsets).into();
@@ -98,7 +147,7 @@ pub fn array_to_unit_list(array: ArrayRef) -> ListArray<i64> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::array::{Array, Int32Array, PrimitiveArray};
+    use crate::array::{Int32Array, PrimitiveArray};
     use crate::datatypes::ArrowDataType;
 
     fn get_array() -> ListArray<i64> {

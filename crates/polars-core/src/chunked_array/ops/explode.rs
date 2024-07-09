@@ -1,17 +1,16 @@
-use std::convert::TryFrom;
-
 use arrow::array::*;
+use arrow::bitmap::utils::set_bit_unchecked;
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::legacy::array::list::AnonymousBuilder;
-use arrow::legacy::array::PolarsArray;
-use arrow::legacy::bit_util::unset_bit_raw;
 #[cfg(feature = "dtype-array")]
 use arrow::legacy::is_valid::IsValid;
 use arrow::legacy::prelude::*;
 use arrow::legacy::trusted_len::TrustedLenPush;
+use polars_utils::slice::GetSaferUnchecked;
 
 #[cfg(feature = "dtype-array")]
 use crate::chunked_array::builder::get_fixed_size_list_builder;
+use crate::chunked_array::metadata::MetadataProperties;
 use crate::prelude::*;
 use crate::series::implementations::null::NullChunked;
 
@@ -85,7 +84,7 @@ where
                             new_values.extend_from_slice(values.get_unchecked(start..last))
                         };
 
-                        // Safety:
+                        // SAFETY:
                         // we are in bounds
                         unsafe {
                             unset_nulls(
@@ -107,7 +106,7 @@ where
             }
 
             // final null check
-            // Safety:
+            // SAFETY:
             // we are in bounds
             unsafe {
                 unset_nulls(
@@ -124,12 +123,8 @@ where
                 let o = o as usize;
                 if o == last {
                     if start != last {
-                        #[cfg(debug_assertions)]
-                        new_values.extend_from_slice(&values[start..last]);
-
-                        #[cfg(not(debug_assertions))]
                         unsafe {
-                            new_values.extend_from_slice(values.get_unchecked(start..last))
+                            new_values.extend_from_slice(values.get_unchecked_release(start..last))
                         };
                     }
 
@@ -146,16 +141,16 @@ where
 
         let mut validity = MutableBitmap::with_capacity(new_values.len());
         validity.extend_constant(new_values.len(), true);
-        let validity_slice = validity.as_slice().as_ptr() as *mut u8;
+        let validity_slice = validity.as_mut_slice();
 
         for i in empty_row_idx {
-            unsafe { unset_bit_raw(validity_slice, i) }
+            unsafe { set_bit_unchecked(validity_slice, i, false) }
         }
         for i in nulls {
-            unsafe { unset_bit_raw(validity_slice, i) }
+            unsafe { set_bit_unchecked(validity_slice, i, false) }
         }
         let arr = PrimitiveArray::new(
-            T::get_dtype().to_arrow(true),
+            T::get_dtype().to_arrow(CompatLevel::newest()),
             new_values.into(),
             Some(validity.into()),
         );
@@ -252,9 +247,9 @@ impl ExplodeByOffsets for ListChunked {
                         unsafe {
                             // we create a pointer to evade the bck
                             let ptr = arr.as_ref() as *const dyn Array;
-                            // safety: we preallocated
+                            // SAFETY: we preallocated
                             owned.push_unchecked(arr);
-                            // safety: the pointer is still valid as `owned` will not reallocate
+                            // SAFETY: the pointer is still valid as `owned` will not reallocate
                             builder.push(&*ptr as &dyn Array);
                         }
                     },
@@ -274,8 +269,15 @@ impl ExplodeByOffsets for ListChunked {
             last = o;
         }
         process_range(start, last, &mut builder);
-        let arr = builder.finish(Some(&inner_type.to_arrow(true))).unwrap();
-        unsafe { self.copy_with_chunks(vec![Box::new(arr)], true, true) }.into_series()
+        let arr = builder
+            .finish(Some(&inner_type.to_arrow(CompatLevel::newest())))
+            .unwrap();
+        let mut ca = unsafe { self.copy_with_chunks(vec![Box::new(arr)]) };
+
+        use MetadataProperties as P;
+        ca.copy_metadata(self, P::SORTED | P::FAST_EXPLODE_LIST);
+
+        ca.into_series()
     }
 }
 
@@ -288,7 +290,7 @@ impl ExplodeByOffsets for ArrayChunked {
         let cap = get_capacity(offsets);
         let inner_type = self.inner_dtype();
         let mut builder =
-            get_fixed_size_list_builder(&inner_type, cap, self.width(), self.name()).unwrap();
+            get_fixed_size_list_builder(inner_type, cap, self.width(), self.name()).unwrap();
 
         let mut start = offsets[0] as usize;
         let mut last = start;

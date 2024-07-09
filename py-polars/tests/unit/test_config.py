@@ -8,8 +8,8 @@ import pytest
 
 import polars as pl
 import polars.polars as plr
+from polars._utils.unstable import issue_unstable_warning
 from polars.config import _POLARS_CFG_ENV_VARS
-from polars.utils.unstable import issue_unstable_warning
 
 
 @pytest.fixture(autouse=True)
@@ -85,30 +85,6 @@ def test_hide_header_elements() -> None:
         "│ 3   ┆ 6   ┆ 9   │\n"
         "└─────┴─────┴─────┘"
     )
-
-
-def test_html_tables() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6], "c": [7, 8, 9]})
-
-    # default: header contains names/dtypes
-    header = "<thead><tr><th>a</th><th>b</th><th>c</th></tr><tr><td>i64</td><td>i64</td><td>i64</td></tr></thead>"
-    assert header in df._repr_html_()
-
-    # validate that relevant config options are respected
-    with pl.Config(tbl_hide_column_names=True):
-        header = "<thead><tr><td>i64</td><td>i64</td><td>i64</td></tr></thead>"
-        assert header in df._repr_html_()
-
-    with pl.Config(tbl_hide_column_data_types=True):
-        header = "<thead><tr><th>a</th><th>b</th><th>c</th></tr></thead>"
-        assert header in df._repr_html_()
-
-    with pl.Config(
-        tbl_hide_column_data_types=True,
-        tbl_hide_column_names=True,
-    ):
-        header = "<thead></thead>"
-        assert header in df._repr_html_()
 
 
 def test_set_tbl_cols() -> None:
@@ -196,7 +172,7 @@ def test_set_tbl_rows() -> None:
         "╞═════╪═════╪═════╡\n"
         "│ 1   ┆ 5   ┆ 9   │\n"
         "│ 2   ┆ 6   ┆ 10  │\n"
-        "│ 3   ┆ 7   ┆ 11  │\n"
+        "│ …   ┆ …   ┆ …   │\n"
         "│ 4   ┆ 8   ┆ 12  │\n"
         "└─────┴─────┴─────┘"
     )
@@ -205,8 +181,8 @@ def test_set_tbl_rows() -> None:
         "Series: 'ser' [i64]\n"
         "[\n"
         "\t1\n"
+        "\t2\n"
         "\t…\n"
-        "\t4\n"
         "\t5\n"
         "]"
     )
@@ -231,7 +207,7 @@ def test_set_tbl_rows() -> None:
         "[\n"
         "\t1\n"
         "\t2\n"
-        "\t3\n"
+        "\t…\n"
         "\t4\n"
         "\t5\n"
         "]"
@@ -254,8 +230,8 @@ def test_set_tbl_rows() -> None:
         "│ i64 ┆ i64 ┆ i64 │\n"
         "╞═════╪═════╪═════╡\n"
         "│ 1   ┆ 6   ┆ 11  │\n"
+        "│ 2   ┆ 7   ┆ 12  │\n"
         "│ …   ┆ …   ┆ …   │\n"
-        "│ 4   ┆ 9   ┆ 14  │\n"
         "│ 5   ┆ 10  ┆ 15  │\n"
         "└─────┴─────┴─────┘"
     )
@@ -363,7 +339,7 @@ def test_set_tbl_width_chars() -> None:
             "this is 10": [4, 5, 6],
         }
     )
-    assert max(len(line) for line in str(df).split("\n")) == 70
+    assert max(len(line) for line in str(df).split("\n")) == 68
 
     pl.Config.set_tbl_width_chars(60)
     assert max(len(line) for line in str(df).split("\n")) == 60
@@ -596,7 +572,7 @@ def test_numeric_right_alignment() -> None:
             )
 
     df = pl.DataFrame(
-        {"a": [1.1, 22.2, 3.33], "b": [444, 55.5, 6.6], "c": [77.7, 8888, 9.9999]}
+        {"a": [1.1, 22.2, 3.33], "b": [444.0, 55.5, 6.6], "c": [77.7, 8888.0, 9.9999]}
     )
     with pl.Config(fmt_float="full", float_precision=1):
         assert (
@@ -757,14 +733,6 @@ def test_config_state_env_only() -> None:
     assert "set_fmt_float" not in state_env_only
 
 
-def test_activate_decimals() -> None:
-    with pl.Config() as cfg:
-        cfg.activate_decimals(True)
-        assert os.environ.get("POLARS_ACTIVATE_DECIMAL") == "1"
-        cfg.activate_decimals(False)
-        assert "POLARS_ACTIVATE_DECIMAL" not in os.environ
-
-
 def test_set_streaming_chunk_size() -> None:
     with pl.Config() as cfg:
         cfg.set_streaming_chunk_size(8)
@@ -800,7 +768,6 @@ def test_warn_unstable(recwarn: pytest.WarningsRecorder) -> None:
 @pytest.mark.parametrize(
     ("environment_variable", "config_setting", "value", "expected"),
     [
-        ("POLARS_ACTIVATE_DECIMAL", "activate_decimals", True, "1"),
         ("POLARS_AUTO_STRUCTIFY", "set_auto_structify", True, "1"),
         ("POLARS_FMT_MAX_COLS", "set_tbl_cols", 12, "12"),
         ("POLARS_FMT_MAX_ROWS", "set_tbl_rows", 3, "3"),

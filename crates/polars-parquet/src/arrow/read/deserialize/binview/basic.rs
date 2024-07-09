@@ -1,15 +1,19 @@
 use std::cell::Cell;
 use std::collections::VecDeque;
 
-use arrow::array::{Array, ArrayRef, BinaryViewArray, MutableBinaryViewArray, Utf8ViewArray};
+use arrow::array::{Array, ArrayRef, BinaryViewArray, MutableBinaryViewArray, Utf8ViewArray, View};
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::datatypes::{ArrowDataType, PhysicalType};
 use polars_error::PolarsResult;
+use polars_utils::iter::FallibleIterator;
 
 use super::super::binary::decoders::*;
+use crate::parquet::encoding::hybrid_rle::BinaryDictionaryTranslator;
+use crate::parquet::error::ParquetError;
 use crate::parquet::page::{DataPage, DictPage};
-use crate::read::deserialize::utils;
-use crate::read::deserialize::utils::{extend_from_decoder, next, DecodedState, MaybeNext};
+use crate::read::deserialize::utils::{
+    self, extend_from_decoder, next, DecodedState, MaybeNext, TranslatedHybridRle,
+};
 use crate::read::{PagesIter, PrimitiveLogicalType};
 
 type DecodedStateTuple = (MutableBinaryViewArray<[u8]>, MutableBitmap);
@@ -57,6 +61,8 @@ impl<'a> utils::Decoder<'a> for BinViewDecoder {
         additional: usize,
     ) -> PolarsResult<()> {
         let (values, validity) = decoded;
+        let views_offset = values.views().len();
+        let buffer_offset = values.completed_buffers().len();
         let mut validate_utf8 = self.check_utf8.take();
 
         match state {
@@ -66,7 +72,7 @@ impl<'a> utils::Decoder<'a> for BinViewDecoder {
                 Some(additional),
                 values,
                 page_values,
-            ),
+            )?,
             BinaryState::Required(page) => {
                 for x in page.values.by_ref().take(additional) {
                     values.push_value_ignore_validity(x)
@@ -84,7 +90,7 @@ impl<'a> utils::Decoder<'a> for BinViewDecoder {
                     Some(additional),
                     values,
                     page_values,
-                );
+                )?;
             },
             BinaryState::FilteredRequired(page) => {
                 for x in page.values.by_ref().take(additional) {
@@ -99,30 +105,77 @@ impl<'a> utils::Decoder<'a> for BinViewDecoder {
             BinaryState::OptionalDictionary(page_validity, page_values) => {
                 // Already done on the dict.
                 validate_utf8 = false;
+
                 let page_dict = &page_values.dict;
+                let offsets = page_dict.offsets();
+
+                // @NOTE: If there is no lengths (i.e. 0-1 offset), then we will have only nulls.
+                let max_length = offsets.lengths().max().unwrap_or(0);
+
+                // We do not have to push the buffer if all elements fit as inline views.
+                let buffer_idx = if max_length <= View::MAX_INLINE_SIZE as usize {
+                    0
+                } else {
+                    values.push_buffer(page_dict.values().clone())
+                };
+
+                // @NOTE: we could potentially use the View::new_inline function here, but that
+                // would require two collectors & two translators. So I don't think it is worth
+                // it.
+                let translator = BinaryDictionaryTranslator {
+                    dictionary: page_dict,
+                    buffer_idx,
+                };
+                let collector = TranslatedHybridRle::new(&mut page_values.values, &translator);
+
                 utils::extend_from_decoder(
                     validity,
                     page_validity,
                     Some(additional),
                     values,
-                    &mut page_values
-                        .values
-                        .by_ref()
-                        .map(|index| page_dict.value(index.unwrap() as usize)),
-                )
+                    collector,
+                )?;
             },
             BinaryState::RequiredDictionary(page) => {
                 // Already done on the dict.
                 validate_utf8 = false;
-                let page_dict = &page.dict;
 
-                for x in page
-                    .values
-                    .by_ref()
-                    .map(|index| page_dict.value(index.unwrap() as usize))
-                    .take(additional)
-                {
-                    values.push_value_ignore_validity(x)
+                let page_dict = &page.dict;
+                let offsets = page_dict.offsets();
+
+                if let Some(max_length) = offsets.lengths().max() {
+                    // We do not have to push the buffer if all elements fit as inline views.
+                    let buffer_idx = if max_length <= View::MAX_INLINE_SIZE as usize {
+                        0
+                    } else {
+                        values.push_buffer(page_dict.values().clone())
+                    };
+
+                    // @NOTE: we could potentially use the View::new_inline function here, but that
+                    // would require two collectors & two translators. So I don't think it is worth
+                    // it.
+                    let translator = BinaryDictionaryTranslator {
+                        dictionary: page_dict,
+                        buffer_idx,
+                    };
+
+                    page.values.translate_and_collect_n_into(
+                        values.views_mut(),
+                        additional,
+                        &translator,
+                    )?;
+                    if let Some(validity) = values.validity() {
+                        validity.extend_constant(additional, true);
+                    }
+                } else {
+                    // @NOTE: If there are no dictionary items, there is no way we can look up
+                    // items.
+                    if additional != 0 {
+                        return Err(ParquetError::oos(
+                            "Attempt to search items with empty dictionary",
+                        )
+                        .into());
+                    }
                 }
             },
             BinaryState::FilteredOptional(page_validity, page_values) => {
@@ -132,7 +185,7 @@ impl<'a> utils::Decoder<'a> for BinViewDecoder {
                     Some(additional),
                     values,
                     page_values.by_ref(),
-                );
+                )?;
             },
             BinaryState::FilteredOptionalDelta(page_validity, page_values) => {
                 extend_from_decoder(
@@ -141,7 +194,7 @@ impl<'a> utils::Decoder<'a> for BinViewDecoder {
                     Some(additional),
                     values,
                     page_values.by_ref(),
-                );
+                )?;
             },
             BinaryState::FilteredRequiredDictionary(page) => {
                 // TODO! directly set the dict as buffers and only insert the proper views.
@@ -152,11 +205,12 @@ impl<'a> utils::Decoder<'a> for BinViewDecoder {
                 for x in page
                     .values
                     .by_ref()
-                    .map(|index| page_dict.value(index.unwrap() as usize))
+                    .map(|index| page_dict.value(index as usize))
                     .take(additional)
                 {
                     values.push_value_ignore_validity(x)
                 }
+                page.values.iter.get_result()?;
             },
             BinaryState::FilteredOptionalDictionary(page_validity, page_values) => {
                 // Already done on the dict.
@@ -172,8 +226,9 @@ impl<'a> utils::Decoder<'a> for BinViewDecoder {
                     &mut page_values
                         .values
                         .by_ref()
-                        .map(|index| page_dict.value(index.unwrap() as usize)),
-                )
+                        .map(|index| page_dict.value(index as usize)),
+                )?;
+                page_values.values.get_result()?;
             },
             BinaryState::OptionalDeltaByteArray(page_validity, page_values) => extend_from_decoder(
                 validity,
@@ -181,7 +236,7 @@ impl<'a> utils::Decoder<'a> for BinViewDecoder {
                 Some(additional),
                 values,
                 page_values,
-            ),
+            )?,
             BinaryState::DeltaByteArray(page_values) => {
                 for x in page_values.take(additional) {
                     values.push_value_ignore_validity(x)
@@ -190,7 +245,7 @@ impl<'a> utils::Decoder<'a> for BinViewDecoder {
         }
 
         if validate_utf8 {
-            values.validate_utf8()
+            values.validate_utf8(buffer_offset, views_offset)
         } else {
             Ok(())
         }
@@ -266,19 +321,9 @@ pub(super) fn finish(
     }
 
     match data_type.to_physical_type() {
-        PhysicalType::BinaryView => unsafe {
-            Ok(BinaryViewArray::new_unchecked(
-                data_type.clone(),
-                array.views().clone(),
-                array.data_buffers().clone(),
-                array.validity().cloned(),
-                array.total_bytes_len(),
-                array.total_buffer_len(),
-            )
-            .boxed())
-        },
+        PhysicalType::BinaryView => Ok(array.boxed()),
         PhysicalType::Utf8View => {
-            // Safety: we already checked utf8
+            // SAFETY: we already checked utf8
             unsafe {
                 Ok(Utf8ViewArray::new_unchecked(
                     data_type.clone(),

@@ -33,37 +33,55 @@ classifiers = [
 
 [project.urls]
 Homepage = "https://www.pola.rs/"
-Documentation = "https://docs.pola.rs/py-polars/html/reference/index.html"
+Documentation = "https://docs.pola.rs/api/python/stable/reference/index.html"
 Repository = "https://github.com/pola-rs/polars"
 Changelog = "https://github.com/pola-rs/polars/releases"
 
 [project.optional-dependencies]
 # NOTE: keep this list in sync with show_versions() and requirements-dev.txt
-adbc = ["adbc_driver_sqlite"]
-cloudpickle = ["cloudpickle"]
-connectorx = ["connectorx >= 0.3.2"]
-deltalake = ["deltalake >= 0.14.0"]
-fsspec = ["fsspec"]
-gevent = ["gevent"]
-plot = ["hvplot >= 0.9.1"]
-matplotlib = ["matplotlib"]
+# Interop
+# TODO: Remove NumPy upper bound once we support NumPy 2.0.0
+# https://github.com/pola-rs/polars/issues/16998
 numpy = ["numpy >= 1.16.0"]
-openpyxl = ["openpyxl >= 3.0.0"]
-pandas = ["pyarrow >= 7.0.0", "pandas"]
+pandas = ["pandas", "polars[pyarrow]"]
 pyarrow = ["pyarrow >= 7.0.0"]
 pydantic = ["pydantic"]
-pyiceberg = ["pyiceberg >= 0.5.0"]
-pyxlsb = ["pyxlsb >= 1.0"]
-sqlalchemy = ["sqlalchemy", "pandas"]
-timezone = ["backports.zoneinfo; python_version < '3.9'", "tzdata; platform_system == 'Windows'"]
+
+# Excel
+calamine = ["fastexcel >= 0.9"]
+openpyxl = ["openpyxl >= 3.0.0"]
 xlsx2csv = ["xlsx2csv >= 0.8.0"]
 xlsxwriter = ["xlsxwriter"]
+excel = ["polars[calamine,openpyxl,xlsx2csv,xlsxwriter]"]
+
+# Database
+adbc = ["adbc-driver-manager[dbapi]", "adbc-driver-sqlite[dbapi]"]
+connectorx = ["connectorx >= 0.3.2"]
+sqlalchemy = ["sqlalchemy", "polars[pandas]"]
+database = ["polars[adbc,connectorx,sqlalchemy]", "nest-asyncio"]
+
+# Cloud
+fsspec = ["fsspec"]
+
+# Other I/O
+deltalake = ["deltalake >= 0.15.0"]
+iceberg = ["pyiceberg >= 0.5.0"]
+
+# Other
+async = ["gevent"]
+cloudpickle = ["cloudpickle"]
+graph = ["matplotlib"]
+plot = ["hvplot >= 0.9.1", "polars[pandas]"]
+style = ["great-tables >= 0.8.0"]
+timezone = ["backports.zoneinfo; python_version < '3.9'", "tzdata; platform_system == 'Windows'"]
+
+# All
 all = [
-  "polars[pyarrow,pandas,numpy,fsspec,plot,connectorx,xlsx2csv,deltalake,timezone,pydantic,pyiceberg,sqlalchemy,xlsxwriter,adbc,cloudpickle,gevent]",
+  "polars[async,cloudpickle,database,deltalake,excel,fsspec,graph,iceberg,numpy,pandas,plot,pyarrow,pydantic,style,timezone]",
 ]
 
 [tool.maturin]
-include = ["rust-toolchain.toml"]
+include = [{ path = "rust-toolchain.toml", format = "sdist" }]
 
 [tool.mypy]
 files = ["polars", "tests"]
@@ -86,18 +104,22 @@ module = [
   "backports",
   "connectorx",
   "deltalake.*",
-  "ezodf.*",
   "fsspec.*",
   "gevent",
+  "great_tables",
   "hvplot.*",
+  "jax.*",
+  "kuzu",
   "matplotlib.*",
   "moto.server",
+  "nest_asyncio",
   "openpyxl",
   "polars.polars",
   "pyarrow.*",
   "pydantic",
-  "pyxlsb",
+  "pyiceberg.*",
   "sqlalchemy.*",
+  "torch.*",
   "xlsx2csv",
   "xlsxwriter.*",
   "zoneinfo",
@@ -108,7 +130,6 @@ ignore_missing_imports = true
 module = [
   "IPython.*",
   "matplotlib.*",
-  "dataframe_api_compat.*",
 ]
 follow_imports = "skip"
 
@@ -125,6 +146,7 @@ warn_return_any = false
 line-length = 88
 fix = true
 
+[tool.ruff.lint]
 select = [
   "E", # pycodestyle
   "W", # pycodestyle
@@ -178,23 +200,23 @@ ignore = [
   "W191",
 ]
 
-[tool.ruff.format]
-docstring-code-format = true
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["D100", "D102", "D103", "B018", "FBT001"]
 
-[tool.ruff.pycodestyle]
+[tool.ruff.lint.pycodestyle]
 max-doc-length = 88
 
 [tool.ruff.lint.pydocstyle]
 convention = "numpy"
 
-[tool.ruff.flake8-tidy-imports]
+[tool.ruff.lint.flake8-tidy-imports]
 ban-relative-imports = "all"
 
-[tool.ruff.flake8-type-checking]
+[tool.ruff.lint.flake8-type-checking]
 strict = true
 
-[tool.ruff.per-file-ignores]
-"tests/**/*.py" = ["D100", "D103", "B018", "FBT001"]
+[tool.ruff.format]
+docstring-code-format = true
 
 [tool.pytest.ini_options]
 addopts = [
@@ -203,13 +225,15 @@ addopts = [
   "--strict-markers",
   "--import-mode=importlib",
   # Default to running fast tests only. To run ALL tests, run: pytest -m ""
-  "-m not slow and not hypothesis and not benchmark and not write_disk and not docs",
+  "-m not slow and not write_disk and not release and not docs and not hypothesis and not benchmark and not ci_only",
 ]
 markers = [
-  "write_disk: Tests that write to disk",
-  "slow: Tests with a longer than average runtime.",
-  "benchmark: Tests that should be run on a Polars release build.",
+  "ci_only: Tests that should only run on CI by default.",
+  "debug: Tests that should be run on a Polars debug build.",
   "docs: Documentation code snippets",
+  "release: Tests that should be run on a Polars release build.",
+  "slow: Tests with a longer than average runtime.",
+  "write_disk: Tests that write to disk",
 ]
 filterwarnings = [
   # Fail on warnings
@@ -223,6 +247,9 @@ filterwarnings = [
   "ignore:datetime.datetime.utcnow\\(\\) is deprecated.*:DeprecationWarning",
   # Introspection under PyCharm IDE can generate this in Python 3.12
   "ignore:.*co_lnotab is deprecated, use co_lines.*:DeprecationWarning",
+  # TODO: Excel tests lead to unclosed file warnings
+  # https://github.com/pola-rs/polars/issues/14466
+  "ignore:unclosed file.*:ResourceWarning",
 ]
 xfail_strict = true
 

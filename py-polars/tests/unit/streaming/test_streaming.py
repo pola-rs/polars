@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import tempfile
 import time
 from datetime import date
 from pathlib import Path
@@ -15,7 +14,7 @@ from polars.exceptions import PolarsInefficientMapWarning
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
-    from polars.type_aliases import JoinStrategy
+    from polars._typing import JoinStrategy
 
 pytestmark = pytest.mark.xdist_group("streaming")
 
@@ -116,42 +115,6 @@ def test_streaming_literal_expansion() -> None:
     }
 
 
-def test_tree_validation_streaming() -> None:
-    # this query leads to a tree collection with an invalid branch
-    # this test triggers the tree validation function.
-    df_1 = pl.DataFrame(
-        {
-            "a": [22, 1, 1],
-            "b": [500, 37, 20],
-        },
-    ).lazy()
-
-    df_2 = pl.DataFrame(
-        {"a": [23, 4, 20, 28, 3]},
-    ).lazy()
-
-    dfs = [df_2]
-    cat = pl.concat(dfs, how="vertical")
-
-    df_3 = df_1.select(
-        [
-            "a",
-            # this expression is not allowed streaming, so it invalidates a branch
-            pl.col("b")
-            .filter(pl.col("a").min() > pl.col("a").rank())
-            .alias("b_not_streaming"),
-        ]
-    ).join(
-        cat,
-        on=[
-            "a",
-        ],
-    )
-
-    out = df_1.join(df_3, on="a", how="left")
-    assert out.collect(streaming=True).shape == (3, 3)
-
-
 def test_streaming_apply(monkeypatch: Any, capfd: Any) -> None:
     monkeypatch.setenv("POLARS_VERBOSE", "1")
 
@@ -175,7 +138,7 @@ def test_streaming_ternary() -> None:
             pl.when(pl.col("a") >= 2).then(pl.col("a")).otherwise(None).alias("b"),
         )
         .explain(streaming=True)
-        .startswith("--- STREAMING")
+        .startswith("STREAMING")
     )
 
 
@@ -282,7 +245,7 @@ def test_streaming_empty_df() -> None:
 
 def test_streaming_duplicate_cols_5537() -> None:
     assert pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 3]}).lazy().with_columns(
-        [(pl.col("a") * 2).alias("foo"), (pl.col("a") * 3)]
+        (pl.col("a") * 2).alias("foo"), (pl.col("a") * 3)
     ).collect(streaming=True).to_dict(as_series=False) == {
         "a": [3, 6, 9],
         "b": [1, 2, 3],
@@ -316,19 +279,9 @@ def test_boolean_agg_schema() -> None:
     for streaming in [True, False]:
         assert (
             agg_df.collect(streaming=streaming).schema
-            == agg_df.schema
+            == agg_df.collect_schema()
             == {"x": pl.Int64, "max_y": pl.Boolean}
         )
-
-
-def test_streaming_11219() -> None:
-    lf = pl.LazyFrame({"a": [1, 2, 3], "b": ["a", "c", None]})
-    lf_other = pl.LazyFrame({"c": ["foo", "ham"]})
-    lf_other2 = pl.LazyFrame({"c": ["foo", "ham"]})
-
-    assert lf.with_context([lf_other, lf_other2]).select(
-        pl.col("b") + pl.col("c").first()
-    ).collect(streaming=True).to_dict(as_series=False) == {"b": ["afoo", "cfoo", None]}
 
 
 @pytest.mark.write_disk()
@@ -347,19 +300,17 @@ def test_streaming_csv_headers_but_no_data_13770(tmp_path: Path) -> None:
 
 
 @pytest.mark.write_disk()
-def test_custom_temp_dir(monkeypatch: Any) -> None:
-    test_temp_dir = "test_temp_dir"
-    temp_dir = Path(tempfile.gettempdir()) / test_temp_dir
-
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+def test_custom_temp_dir(tmp_path: Path, monkeypatch: Any) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    monkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
     monkeypatch.setenv("POLARS_FORCE_OOC", "1")
-    monkeypatch.setenv("POLARS_TEMP_DIR", str(temp_dir))
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
 
     s = pl.arange(0, 100_000, eager=True).rename("idx")
     df = s.shuffle().to_frame()
     df.lazy().sort("idx").collect(streaming=True)
 
-    assert os.listdir(temp_dir), f"Temp directory '{temp_dir}' is empty"
+    assert os.listdir(tmp_path), f"Temp directory '{tmp_path}' is empty"
 
 
 @pytest.mark.write_disk()
@@ -396,7 +347,7 @@ def test_streaming_with_hconcat(tmp_path: Path) -> None:
     for i, line in enumerate(plan_lines):
         if line.startswith("PLAN"):
             assert plan_lines[i + 1].startswith(
-                "--- STREAMING"
+                "STREAMING"
             ), f"{line} does not contain a streaming section"
 
     result = query.collect(streaming=True)

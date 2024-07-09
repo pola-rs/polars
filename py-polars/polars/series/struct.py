@@ -1,17 +1,16 @@
 from __future__ import annotations
 
-import os
-from collections import OrderedDict
 from typing import TYPE_CHECKING, Sequence
 
+from polars._utils.various import BUILDING_SPHINX_DOCS, sphinx_accessor
+from polars._utils.wrap import wrap_df
+from polars.schema import Schema
 from polars.series.utils import expr_dispatch
-from polars.utils._wrap import wrap_df
-from polars.utils.various import sphinx_accessor
 
 if TYPE_CHECKING:
-    from polars import DataFrame, DataType, Series
+    from polars import DataFrame, Series
     from polars.polars import PySeries
-elif os.getenv("BUILDING_SPHINX_DOCS"):
+elif BUILDING_SPHINX_DOCS:
     property = sphinx_accessor
 
 
@@ -38,7 +37,15 @@ class StructNameSpace:
 
     @property
     def fields(self) -> list[str]:
-        """Get the names of the fields."""
+        """
+        Get the names of the fields.
+
+        Examples
+        --------
+        >>> s = pl.Series([{"a": 1, "b": 2}, {"a": 3, "b": 4}])
+        >>> s.struct.fields
+        ['a', 'b']
+        """
         if getattr(self, "_s", None) is None:
             return []
         return self._s.struct_fields()
@@ -50,7 +57,18 @@ class StructNameSpace:
         Parameters
         ----------
         name
-            Name of the field
+            Name of the field.
+
+        Examples
+        --------
+        >>> s = pl.Series([{"a": 1, "b": 2}, {"a": 3, "b": 4}])
+        >>> s.struct.field("a")
+        shape: (2,)
+        Series: 'a' [i64]
+        [
+            1
+            3
+        ]
         """
 
     def rename_fields(self, names: Sequence[str]) -> Series:
@@ -60,15 +78,34 @@ class StructNameSpace:
         Parameters
         ----------
         names
-            New names in the order of the struct's fields
+            New names in the order of the struct's fields.
+
+        Examples
+        --------
+        >>> s = pl.Series([{"a": 1, "b": 2}, {"a": 3, "b": 4}])
+        >>> s.struct.fields
+        ['a', 'b']
+        >>> s = s.struct.rename_fields(["c", "d"])
+        >>> s.struct.fields
+        ['c', 'd']
         """
 
     @property
-    def schema(self) -> OrderedDict[str, DataType]:
-        """Get the struct definition as a name/dtype schema dict."""
+    def schema(self) -> Schema:
+        """
+        Get the struct definition as a name/dtype schema dict.
+
+        Examples
+        --------
+        >>> s = pl.Series([{"a": 1, "b": 2}, {"a": 3, "b": 4}])
+        >>> s.struct.schema
+        Schema({'a': Int64, 'b': Int64})
+        """
         if getattr(self, "_s", None) is None:
-            return OrderedDict()
-        return OrderedDict(self._s.dtype().to_schema())
+            return Schema({})
+
+        schema = self._s.dtype().to_schema()
+        return Schema(schema)
 
     def unnest(self) -> DataFrame:
         """
@@ -101,7 +138,7 @@ class StructNameSpace:
         shape: (2,)
         Series: 'a' [str]
         [
-            "{"a":[1,2],"b"…
-            "{"a":[9,1,3],"…
+            "{"a":[1,2],"b":[45]}"
+            "{"a":[9,1,3],"b":null}"
         ]
         """

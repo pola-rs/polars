@@ -31,7 +31,7 @@ impl<'a> Iterator for StructValueIter<'a> {
         let old = self.index;
         self.index += 1;
 
-        // Safety:
+        // SAFETY:
         // self.end is maximized by the length of the array
         Some(
             self.array
@@ -58,7 +58,7 @@ impl<'a> DoubleEndedIterator for StructValueIter<'a> {
         } else {
             self.end -= 1;
 
-            // Safety:
+            // SAFETY:
             // self.end is maximized by the length of the array
             Some(
                 self.array

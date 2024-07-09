@@ -24,6 +24,13 @@ pub(super) fn interpolate(s: &Series, method: InterpolationMethod) -> PolarsResu
     Ok(polars_ops::prelude::interpolate(s, method))
 }
 
+#[cfg(feature = "interpolate_by")]
+pub(super) fn interpolate_by(s: &[Series]) -> PolarsResult<Series> {
+    let by = &s[1];
+    let by_is_sorted = by.is_sorted(Default::default())?;
+    polars_ops::prelude::interpolate_by(&s[0], by, by_is_sorted)
+}
+
 pub(super) fn to_physical(s: &Series) -> PolarsResult<Series> {
     Ok(s.to_physical_repr().into_owned())
 }
@@ -35,16 +42,26 @@ pub(super) fn set_sorted_flag(s: &Series, sorted: IsSorted) -> PolarsResult<Seri
 }
 
 #[cfg(feature = "timezones")]
-pub(super) fn replace_time_zone(s: &[Series], time_zone: Option<&str>) -> PolarsResult<Series> {
+pub(super) fn replace_time_zone(
+    s: &[Series],
+    time_zone: Option<&str>,
+    non_existent: NonExistent,
+) -> PolarsResult<Series> {
     let s1 = &s[0];
     let ca = s1.datetime().unwrap();
     let s2 = &s[1].str()?;
-    Ok(polars_ops::prelude::replace_time_zone(ca, time_zone, s2)?.into_series())
+    Ok(polars_ops::prelude::replace_time_zone(ca, time_zone, s2, non_existent)?.into_series())
 }
 
 #[cfg(feature = "dtype-struct")]
-pub(super) fn value_counts(s: &Series, sort: bool, parallel: bool) -> PolarsResult<Series> {
-    s.value_counts(sort, parallel)
+pub(super) fn value_counts(
+    s: &Series,
+    sort: bool,
+    parallel: bool,
+    name: String,
+    normalize: bool,
+) -> PolarsResult<Series> {
+    s.value_counts(sort, parallel, name, normalize)
         .map(|df| df.into_struct(s.name()).into_series())
 }
 
@@ -53,8 +70,12 @@ pub(super) fn unique_counts(s: &Series) -> PolarsResult<Series> {
     polars_ops::prelude::unique_counts(s)
 }
 
-pub(super) fn reshape(s: &Series, dims: Vec<i64>) -> PolarsResult<Series> {
-    s.reshape(&dims)
+pub(super) fn reshape(s: &Series, dimensions: &[i64], nested: &NestedType) -> PolarsResult<Series> {
+    match nested {
+        NestedType::List => s.reshape_list(dimensions),
+        #[cfg(feature = "dtype-array")]
+        NestedType::Array => s.reshape_array(dimensions),
+    }
 }
 
 #[cfg(feature = "repeat_by")]
@@ -73,16 +94,20 @@ pub(super) fn forward_fill(s: &Series, limit: FillNullLimit) -> PolarsResult<Ser
     s.fill_null(FillNullStrategy::Forward(limit))
 }
 
-pub(super) fn sum_horizontal(s: &mut [Series]) -> PolarsResult<Option<Series>> {
-    polars_ops::prelude::sum_horizontal(s)
-}
-
 pub(super) fn max_horizontal(s: &mut [Series]) -> PolarsResult<Option<Series>> {
     polars_ops::prelude::max_horizontal(s)
 }
 
 pub(super) fn min_horizontal(s: &mut [Series]) -> PolarsResult<Option<Series>> {
     polars_ops::prelude::min_horizontal(s)
+}
+
+pub(super) fn sum_horizontal(s: &mut [Series]) -> PolarsResult<Option<Series>> {
+    polars_ops::prelude::sum_horizontal(s)
+}
+
+pub(super) fn mean_horizontal(s: &mut [Series]) -> PolarsResult<Option<Series>> {
+    polars_ops::prelude::mean_horizontal(s)
 }
 
 pub(super) fn drop_nulls(s: &Series) -> PolarsResult<Series> {
@@ -131,9 +156,18 @@ pub(super) fn hist(
 }
 
 #[cfg(feature = "replace")]
-pub(super) fn replace(s: &[Series], return_dtype: Option<DataType>) -> PolarsResult<Series> {
-    let default = if let Some(s) = s.get(3) { s } else { &s[0] };
-    polars_ops::series::replace(&s[0], &s[1], &s[2], default, return_dtype)
+pub(super) fn replace(s: &[Series]) -> PolarsResult<Series> {
+    polars_ops::series::replace(&s[0], &s[1], &s[2])
+}
+
+#[cfg(feature = "replace")]
+pub(super) fn replace_strict(s: &[Series], return_dtype: Option<DataType>) -> PolarsResult<Series> {
+    match s.get(3) {
+        Some(default) => {
+            polars_ops::series::replace_or_default(&s[0], &s[1], &s[2], default, return_dtype)
+        },
+        None => polars_ops::series::replace_strict(&s[0], &s[1], &s[2], return_dtype),
+    }
 }
 
 pub(super) fn fill_null_with_strategy(

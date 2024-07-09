@@ -73,14 +73,13 @@ pub trait BinaryNameSpaceImpl: AsBinary {
     fn hex_decode(&self, strict: bool) -> PolarsResult<BinaryChunked> {
         let ca = self.as_binary();
         if strict {
-            ca.try_apply(|s| {
-                let bytes = hex::decode(s).map_err(|_| {
+            ca.try_apply_nonnull_values_generic(|s| {
+                hex::decode(s).map_err(|_| {
                     polars_err!(
                         ComputeError:
                         "invalid `hex` encoding found; try setting `strict=false` to ignore"
                     )
-                })?;
-                Ok(bytes.into())
+                })
             })
         } else {
             Ok(ca.apply(|opt_s| opt_s.and_then(|s| hex::decode(s).ok().map(Cow::Owned))))
@@ -101,14 +100,13 @@ pub trait BinaryNameSpaceImpl: AsBinary {
     fn base64_decode(&self, strict: bool) -> PolarsResult<BinaryChunked> {
         let ca = self.as_binary();
         if strict {
-            ca.try_apply(|s| {
-                let bytes = general_purpose::STANDARD.decode(s).map_err(|_e| {
+            ca.try_apply_nonnull_values_generic(|s| {
+                general_purpose::STANDARD.decode(s).map_err(|_e| {
                     polars_err!(
                         ComputeError:
                         "invalid `base64` encoding found; try setting `strict=false` to ignore"
                     )
-                })?;
-                Ok(bytes.into())
+                })
             })
         } else {
             Ok(ca.apply(|opt_s| {

@@ -15,18 +15,13 @@ impl CategoricalChunked {
                 .zip(self.iter_str())
                 .collect_trusted::<Vec<_>>();
 
-            sort_unstable_by_branch(
-                vals.as_mut_slice(),
-                options.descending,
-                |a, b| a.1.cmp(&b.1),
-                options.multithreaded,
-            );
+            sort_unstable_by_branch(vals.as_mut_slice(), options, |a, b| a.1.cmp(&b.1));
             let cats: UInt32Chunked = vals
                 .into_iter()
                 .map(|(idx, _v)| idx)
                 .collect_ca_trusted(self.name());
 
-            // safety:
+            // SAFETY:
             // we only reordered the indexes so we are still in bounds
             return unsafe {
                 CategoricalChunked::from_cats_and_rev_map_unchecked(
@@ -38,7 +33,7 @@ impl CategoricalChunked {
             };
         }
         let cats = self.physical().sort_with(options);
-        // safety:
+        // SAFETY:
         // we only reordered the indexes so we are still in bounds
         unsafe {
             CategoricalChunked::from_cats_and_rev_map_unchecked(
@@ -79,9 +74,13 @@ impl CategoricalChunked {
 
     /// Retrieve the indexes need to sort this and the other arrays.
 
-    pub(crate) fn arg_sort_multiple(&self, options: &SortMultipleOptions) -> PolarsResult<IdxCa> {
+    pub(crate) fn arg_sort_multiple(
+        &self,
+        by: &[Series],
+        options: &SortMultipleOptions,
+    ) -> PolarsResult<IdxCa> {
         if self.uses_lexical_ordering() {
-            args_validate(self.physical(), &options.other, &options.descending)?;
+            args_validate(self.physical(), by, &options.descending)?;
             let mut count: IdxSize = 0;
 
             // we use bytes to save a monomorphisized str impl
@@ -95,9 +94,9 @@ impl CategoricalChunked {
                 })
                 .collect_trusted();
 
-            arg_sort_multiple_impl(vals, options)
+            arg_sort_multiple_impl(vals, by, options)
         } else {
-            self.physical().arg_sort_multiple(options)
+            self.physical().arg_sort_multiple(by, options)
         }
     }
 }
@@ -171,12 +170,18 @@ mod test {
                 "vals" => [1, 1, 2, 2]
             ]?;
 
-            let out = df.sort(["cat", "vals"], vec![false, false], false)?;
+            let out = df.sort(
+                ["cat", "vals"],
+                SortMultipleOptions::default().with_order_descending_multi([false, false]),
+            )?;
             let out = out.column("cat")?;
             let cat = out.categorical()?;
             assert_order(cat, &["a", "a", "b", "c"]);
 
-            let out = df.sort(["vals", "cat"], vec![false, false], false)?;
+            let out = df.sort(
+                ["vals", "cat"],
+                SortMultipleOptions::default().with_order_descending_multi([false, false]),
+            )?;
             let out = out.column("cat")?;
             let cat = out.categorical()?;
             assert_order(cat, &["b", "c", "a", "a"]);

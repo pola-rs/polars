@@ -1,0 +1,174 @@
+name: Code coverage
+
+on:
+  pull_request:
+    paths:
+      - '**.rs'
+      - '**.py'
+      - .github/workflows/test-coverage.yml
+  push:
+    branches:
+      - main
+    paths:
+      - '**.rs'
+      - '**.py'
+      - .github/workflows/test-coverage.yml
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  RUSTFLAGS: '-C instrument-coverage --cfg=coverage --cfg=coverage_nightly --cfg=trybuild_no_target'
+  RUST_BACKTRACE: 1
+  LLVM_PROFILE_FILE: ${{ github.workspace }}/target/polars-%p-%3m.profraw
+  CARGO_LLVM_COV: 1
+  CARGO_LLVM_COV_SHOW_ENV: 1
+  CARGO_LLVM_COV_TARGET_DIR: ${{ github.workspace }}/target
+
+jobs:
+  coverage-rust:
+    # Running under ubuntu doesn't seem to work:
+    # https://github.com/pola-rs/polars/issues/14255
+    # Pinned on macos-13 because latest does not work:
+    # https://github.com/pola-rs/polars/issues/15917
+    runs-on: macos-13
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Rust
+        run: rustup component add llvm-tools-preview
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref_name == 'main' }}
+
+      - name: Prepare coverage
+        run: cargo llvm-cov clean --workspace
+
+      - name: Run tests
+        run: >
+          cargo test --all-features
+          -p polars-arrow
+          -p polars-compute
+          -p polars-core
+          -p polars-io
+          -p polars-lazy
+          -p polars-ops
+          -p polars-parquet
+          -p polars-plan
+          -p polars-row
+          -p polars-sql
+          -p polars-time
+          -p polars-utils
+
+      - name: Run integration tests
+        run: cargo test --all-features -p polars --test it
+
+      - name: Report coverage
+        run: cargo llvm-cov report --lcov --output-path coverage-rust.lcov
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-rust
+          path: coverage-rust.lcov
+
+  coverage-python:
+    # Running under ubuntu doesn't seem to work:
+    # https://github.com/pola-rs/polars/issues/14255
+    runs-on: macos-13
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Create virtual environment
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          uv venv
+          echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
+          echo "VIRTUAL_ENV=$GITHUB_WORKSPACE/.venv" >> $GITHUB_ENV
+
+      - name: Install Python dependencies
+        working-directory: py-polars
+        run: uv pip install --compile-bytecode -r requirements-dev.txt -r requirements-ci.txt
+
+      - name: Set up Rust
+        run: rustup component add llvm-tools-preview
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref_name == 'main' }}
+
+      - name: Prepare coverage
+        run: cargo llvm-cov clean --workspace
+
+      - name: Install Polars
+        run: maturin develop -m py-polars/Cargo.toml
+
+      - name: Run Python tests
+        working-directory: py-polars
+        run: >
+          pytest
+          -n auto --dist loadgroup
+          -m "not release and not benchmark and not docs"
+          -k 'not test_polars_import'
+          --cov --cov-report xml:main.xml
+
+      - name: Run Python tests - async reader
+        working-directory: py-polars
+        env:
+          POLARS_FORCE_ASYNC: 1
+        run: >
+          pytest tests/unit/io/
+          -n auto --dist loadgroup
+          -m "not release and not benchmark and not docs"
+          --cov --cov-report xml:async.xml --cov-fail-under=0
+
+      - name: Report Rust coverage
+        run: cargo llvm-cov report --lcov --output-path coverage-python.lcov
+
+      - name: Upload coverage reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-python
+          path: |
+            coverage-python.lcov
+            py-polars/main.xml
+            py-polars/async.xml
+
+  upload-coverage:
+    needs: [coverage-rust, coverage-python]
+    runs-on: ubuntu-latest
+
+    steps:
+        # Needed to fetch the Codecov config file
+      - uses: actions/checkout@v4
+
+      - name: Download coverage reports
+        uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage-rust.lcov,coverage-python.lcov,py-polars/main.xml,py-polars/async.xml
+          root_dir: ${{ github.workspace }}

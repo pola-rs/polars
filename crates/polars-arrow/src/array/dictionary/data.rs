@@ -13,7 +13,7 @@ impl<K: DictionaryKey> Arrow2Arrow for DictionaryArray<K> {
             .data_type(self.data_type.clone().into())
             .child_data(vec![to_data(self.values.as_ref())]);
 
-        // Safety: Dictionary is valid
+        // SAFETY: Dictionary is valid
         unsafe { builder.build_unchecked() }
     }
 
@@ -35,7 +35,7 @@ impl<K: DictionaryKey> Arrow2Arrow for DictionaryArray<K> {
             .len(data.len())
             .nulls(data.nulls().cloned());
 
-        // Safety: Dictionary is valid
+        // SAFETY: Dictionary is valid
         let key_data = unsafe { key_builder.build_unchecked() };
         let keys = PrimitiveArray::from_data(&key_data);
         let values = from_data(&data.child_data()[0]);

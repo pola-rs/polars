@@ -118,7 +118,7 @@ pub unsafe fn slice_and_owner<T: NativeType, O>(slice: &[T], owner: O) -> Primit
     let ptr = data.as_ptr();
     let data = Arc::new(owner);
 
-    // safety: the underlying assumption of this function: the array will not be used
+    // SAFETY: the underlying assumption of this function: the array will not be used
     // beyond the
     let array = create_array(
         data,
@@ -131,7 +131,7 @@ pub unsafe fn slice_and_owner<T: NativeType, O>(slice: &[T], owner: O) -> Primit
     );
     let array = InternalArrowArray::new(array, T::PRIMITIVE.into());
 
-    // safety: we just created a valid array
+    // SAFETY: we just created a valid array
     unsafe { PrimitiveArray::<T>::try_from_ffi(array) }.unwrap()
 }
 
@@ -181,7 +181,7 @@ pub unsafe fn bitmap_and_owner<O>(
     let ptr = data.as_ptr();
     let data = Arc::new(owner);
 
-    // safety: the underlying assumption of this function: the array will not be used
+    // SAFETY: the underlying assumption of this function: the array will not be used
     // beyond the
     let array = create_array(
         data,
@@ -194,6 +194,6 @@ pub unsafe fn bitmap_and_owner<O>(
     );
     let array = InternalArrowArray::new(array, ArrowDataType::Boolean);
 
-    // safety: we just created a valid array
+    // SAFETY: we just created a valid array
     Ok(unsafe { BooleanArray::try_from_ffi(array) }.unwrap())
 }

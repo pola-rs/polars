@@ -1,6 +1,6 @@
 use polars_error::PolarsResult;
 
-use super::CastOptions;
+use super::CastOptionsImpl;
 use crate::array::*;
 use crate::datatypes::ArrowDataType;
 use crate::offset::{Offset, Offsets};
@@ -118,7 +118,7 @@ where
 pub(super) fn binary_to_primitive_dyn<O: Offset, T>(
     from: &dyn Array,
     to: &ArrowDataType,
-    options: CastOptions,
+    options: CastOptionsImpl,
 ) -> PolarsResult<Box<dyn Array>>
 where
     T: NativeType + Parse,
@@ -139,6 +139,7 @@ pub fn binary_to_dictionary<O: Offset, K: DictionaryKey>(
     from: &BinaryArray<O>,
 ) -> PolarsResult<DictionaryArray<K>> {
     let mut array = MutableDictionaryArray::<K, MutableBinaryArray<O>>::new();
+    array.reserve(from.len());
     array.try_extend(from.iter())?;
 
     Ok(array.into())
@@ -156,7 +157,7 @@ fn fixed_size_to_offsets<O: Offset>(values_len: usize, fixed_size: usize) -> Off
         .step_by(fixed_size)
         .map(|v| O::from_as_usize(v))
         .collect();
-    // Safety
+    // SAFETY:
     // * every element is `>= 0`
     // * element at position `i` is >= than element at position `i-1`.
     unsafe { Offsets::new_unchecked(offsets) }

@@ -1,7 +1,6 @@
 use std::fmt::Formatter;
 use std::ops::Deref;
 
-use polars_core::utils::get_supertype;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "serde")]
@@ -167,7 +166,7 @@ impl<'a> Deserialize<'a> for SpecialEq<Series> {
 }
 
 #[cfg(feature = "serde")]
-impl Serialize for SpecialEq<Arc<LogicalPlan>> {
+impl Serialize for SpecialEq<Arc<DslPlan>> {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -177,12 +176,12 @@ impl Serialize for SpecialEq<Arc<LogicalPlan>> {
 }
 
 #[cfg(feature = "serde")]
-impl<'a> Deserialize<'a> for SpecialEq<Arc<LogicalPlan>> {
+impl<'a> Deserialize<'a> for SpecialEq<Arc<DslPlan>> {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
         D: Deserializer<'a>,
     {
-        let t = LogicalPlan::deserialize(deserializer)?;
+        let t = DslPlan::deserialize(deserializer)?;
         Ok(SpecialEq(Arc::new(t)))
     }
 }
@@ -245,7 +244,12 @@ where
 }
 
 pub trait FunctionOutputField: Send + Sync {
-    fn get_field(&self, input_schema: &Schema, cntxt: Context, fields: &[Field]) -> Field;
+    fn get_field(
+        &self,
+        input_schema: &Schema,
+        cntxt: Context,
+        fields: &[Field],
+    ) -> PolarsResult<Field>;
 }
 
 pub type GetOutput = SpecialEq<Arc<dyn FunctionOutputField>>;
@@ -253,7 +257,7 @@ pub type GetOutput = SpecialEq<Arc<dyn FunctionOutputField>>;
 impl Default for GetOutput {
     fn default() -> Self {
         SpecialEq::new(Arc::new(
-            |_input_schema: &Schema, _cntxt: Context, fields: &[Field]| fields[0].clone(),
+            |_input_schema: &Schema, _cntxt: Context, fields: &[Field]| Ok(fields[0].clone()),
         ))
     }
 }
@@ -265,35 +269,41 @@ impl GetOutput {
 
     pub fn from_type(dt: DataType) -> Self {
         SpecialEq::new(Arc::new(move |_: &Schema, _: Context, flds: &[Field]| {
-            Field::new(flds[0].name(), dt.clone())
+            Ok(Field::new(flds[0].name(), dt.clone()))
         }))
     }
 
-    pub fn map_field<F: 'static + Fn(&Field) -> Field + Send + Sync>(f: F) -> Self {
+    pub fn map_field<F: 'static + Fn(&Field) -> PolarsResult<Field> + Send + Sync>(f: F) -> Self {
         SpecialEq::new(Arc::new(move |_: &Schema, _: Context, flds: &[Field]| {
             f(&flds[0])
         }))
     }
 
-    pub fn map_fields<F: 'static + Fn(&[Field]) -> Field + Send + Sync>(f: F) -> Self {
+    pub fn map_fields<F: 'static + Fn(&[Field]) -> PolarsResult<Field> + Send + Sync>(
+        f: F,
+    ) -> Self {
         SpecialEq::new(Arc::new(move |_: &Schema, _: Context, flds: &[Field]| {
             f(flds)
         }))
     }
 
-    pub fn map_dtype<F: 'static + Fn(&DataType) -> DataType + Send + Sync>(f: F) -> Self {
+    pub fn map_dtype<F: 'static + Fn(&DataType) -> PolarsResult<DataType> + Send + Sync>(
+        f: F,
+    ) -> Self {
         SpecialEq::new(Arc::new(move |_: &Schema, _: Context, flds: &[Field]| {
             let mut fld = flds[0].clone();
-            let new_type = f(fld.data_type());
+            let new_type = f(fld.data_type())?;
             fld.coerce(new_type);
-            fld
+            Ok(fld)
         }))
     }
 
     pub fn float_type() -> Self {
-        Self::map_dtype(|dt| match dt {
-            DataType::Float32 => DataType::Float32,
-            _ => DataType::Float64,
+        Self::map_dtype(|dt| {
+            Ok(match dt {
+                DataType::Float32 => DataType::Float32,
+                _ => DataType::Float64,
+            })
         })
     }
 
@@ -301,31 +311,36 @@ impl GetOutput {
         Self::map_dtypes(|dtypes| {
             let mut st = dtypes[0].clone();
             for dt in &dtypes[1..] {
-                st = get_supertype(&st, dt).unwrap();
+                st = try_get_supertype(&st, dt)?;
             }
-            st
+            Ok(st)
         })
     }
 
     pub fn map_dtypes<F>(f: F) -> Self
     where
-        F: 'static + Fn(&[&DataType]) -> DataType + Send + Sync,
+        F: 'static + Fn(&[&DataType]) -> PolarsResult<DataType> + Send + Sync,
     {
         SpecialEq::new(Arc::new(move |_: &Schema, _: Context, flds: &[Field]| {
             let mut fld = flds[0].clone();
             let dtypes = flds.iter().map(|fld| fld.data_type()).collect::<Vec<_>>();
-            let new_type = f(&dtypes);
+            let new_type = f(&dtypes)?;
             fld.coerce(new_type);
-            fld
+            Ok(fld)
         }))
     }
 }
 
 impl<F> FunctionOutputField for F
 where
-    F: Fn(&Schema, Context, &[Field]) -> Field + Send + Sync,
+    F: Fn(&Schema, Context, &[Field]) -> PolarsResult<Field> + Send + Sync,
 {
-    fn get_field(&self, input_schema: &Schema, cntxt: Context, fields: &[Field]) -> Field {
+    fn get_field(
+        &self,
+        input_schema: &Schema,
+        cntxt: Context,
+        fields: &[Field],
+    ) -> PolarsResult<Field> {
         self(input_schema, cntxt, fields)
     }
 }

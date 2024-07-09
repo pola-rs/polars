@@ -42,18 +42,33 @@ You may use the issue to discuss possible solutions.
 
 ### Setting up your local environment
 
-Polars development flow relies on both Rust and Python, which means setting up your local development environment is not trivial.
+The Polars development flow relies on both Rust and Python, which means setting up your local development environment is not trivial.
 If you run into problems, please contact us on [Discord](https://discord.gg/4UfP5cfBE7).
 
-_Note that if you are a Windows user, the steps below might not work as expected; try developing using [WSL](https://learn.microsoft.com/en-us/windows/wsl/install)._
-_Under native Windows, you may have to manually copy the contents of `toolchain.toml` to `py-polars/toolchain.toml`, as Git for Windows may not correctly handle symbolic links._
+!!! note
 
+    If you are a Windows user, the steps below might not work as expected.
+    Try developing using [WSL](https://learn.microsoft.com/en-us/windows/wsl/install).
+    Under native Windows, you may have to manually copy the contents of `toolchain.toml` to `py-polars/toolchain.toml`, as Git for Windows may not correctly handle symbolic links.
+
+#### Configuring Git
+
+For contributing to Polars you need a free [GitHub account](https://github.com) and have [git](https://git-scm.com) installed on your machine.
 Start by [forking](https://docs.github.com/en/get-started/quickstart/fork-a-repo) the Polars repository, then clone your forked repository using `git`:
 
 ```bash
 git clone https://github.com/<username>/polars.git
 cd polars
 ```
+
+Optionally set the `upstream` remote to be able to sync your fork with the Polars repository in the future:
+
+```bash
+git remote add upstream https://github.com/pola-rs/polars.git
+git fetch upstream
+```
+
+#### Installing dependencies
 
 In order to work on Polars effectively, you will need [Rust](https://www.rust-lang.org/), [Python](https://www.python.org/), and [dprint](https://dprint.dev/).
 
@@ -66,7 +81,7 @@ rustup toolchain install nightly --component miri
 
 Next, install Python, for example using [pyenv](https://github.com/pyenv/pyenv#installation).
 We recommend using the latest Python version (`3.12`).
-Make sure you deactivate any active virtual environments or conda environments, as the steps below will create a new virtual environment for Polars.
+Make sure you deactivate any active virtual environments (command: `deactivate`) or conda environments (command: `conda deactivate`), as the steps below will create a new [virtual environment](https://docs.python.org/3/tutorial/venv.html) for Polars.
 You will need Python even if you intend to work on the Rust code only, as we rely on the Python tests to verify all functionality.
 
 Finally, install [dprint](https://dprint.dev/install/).
@@ -83,9 +98,15 @@ make test
 This will do a number of things:
 
 - Use Python to create a virtual environment in the `.venv` folder.
-- Use [pip](https://pip.pypa.io/) to install all Python dependencies for development, linting, and building documentation.
+- Use [pip](https://pip.pypa.io/) and [uv](https://github.com/astral-sh/uv) to install all Python dependencies for development, linting, and building documentation.
 - Use Rust to compile and install Polars in your virtual environment. _At least 8GB of RAM is recommended for this step to run smoothly._
 - Use [pytest](https://docs.pytest.org/) to run the Python unittests in your virtual environment
+
+!!! note
+
+    There are a small number of specialized dependencies that are not installed by default.
+    If you are running specific tests and encounter an error message about a missing dependency,
+    try running `make requirements-all` to install _all_ known dependencies).
 
 Check if linting also works correctly by running:
 
@@ -103,6 +124,34 @@ We use the Makefile to conveniently run the following formatting and linting too
 - [dprint](https://dprint.dev/)
 
 If this all runs correctly, you're ready to start contributing to the Polars codebase!
+
+#### Updating the development environment
+
+Dependencies are updated regularly - at least once per month.
+If you do not keep your environment up-to-date, you may notice tests or CI checks failing, or you may not be able to build Polars at all.
+
+To update your environment, first make sure your fork is in sync with the Polars repository:
+
+```bash
+git checkout main
+git fetch upstream
+git rebase upstream/main
+git push origin main
+```
+
+Update all Python dependencies to their latest versions by running:
+
+```bash
+make requirements
+```
+
+If the Rust toolchain version has been updated, you should update your Rust toolchain.
+Follow it up by running `cargo clean` to make sure your Cargo folder does not grow too large:
+
+```bash
+rustup update
+cargo clean
+```
 
 ### Working on your issue
 
@@ -127,10 +176,20 @@ Two other things to keep in mind:
 When you have resolved your issue, [open a pull request](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/proposing-changes-to-your-work-with-pull-requests/creating-a-pull-request-from-a-fork) in the Polars repository.
 Please adhere to the following guidelines:
 
-- Start your pull request title with a [conventional commit](https://www.conventionalcommits.org/) tag. This helps us add your contribution to the right section of the changelog. We use the [Angular convention](https://github.com/angular/angular/blob/22b96b9/CONTRIBUTING.md#type). Scope can be `rust` and/or `python`, depending on your contribution.
-- Use a descriptive title. This text will end up in the [changelog](https://github.com/pola-rs/polars/releases).
-- In the pull request description, [link](https://docs.github.com/en/issues/tracking-your-work-with-issues/linking-a-pull-request-to-an-issue) to the issue you were working on.
-- Add any relevant information to the description that you think may help the maintainers review your code.
+- Title
+  - Start your pull request title with a [conventional commit](https://www.conventionalcommits.org/) tag.
+    This helps us add your contribution to the right section of the changelog.
+    We use the [Angular convention](https://github.com/angular/angular/blob/22b96b9/CONTRIBUTING.md#type).
+    Scope can be `rust` and/or `python`, depending on your contribution: this tag determines which changelog(s) will include your change.
+    Omit the scope if your change affects both Rust and Python.
+  - Use a descriptive title starting with an uppercase letter.
+    This text will end up in the [changelog](https://github.com/pola-rs/polars/releases), so make sure the text is meaningful to the user.
+    Use single backticks to annotate code snippets.
+    Use active language and do not end your title with punctuation.
+  - Example: ``fix(python): Fix `DataFrame.top_k` not handling nulls correctly``
+- Description
+  - In the pull request description, [link](https://docs.github.com/en/issues/tracking-your-work-with-issues/linking-a-pull-request-to-an-issue) to the issue you were working on.
+  - Add any relevant information to the description that you think may help the maintainers review your code.
 - Make sure your branch is [rebased](https://docs.github.com/en/get-started/using-git/about-git-rebase) against the latest version of the `main` branch.
 - Make sure all [GitHub Actions checks](./ci.md) pass.
 
@@ -142,7 +201,7 @@ If you are stuck or unsure about your solution, feel free to open a draft pull r
 
 ## Contributing to documentation
 
-The most important components of Polars documentation are the [user guide](https://docs.pola.rs/user-guide/), the API references, and the database of questions on [StackOverflow](https://stackoverflow.com/).
+The most important components of Polars documentation are the [user guide](https://docs.pola.rs/user-guide/), the [API references](https://docs.pola.rs/api/), and the database of questions on [StackOverflow](https://stackoverflow.com/).
 
 ### User guide
 
@@ -150,9 +209,9 @@ The user guide is maintained in the `docs/user-guide` folder. Before creating a 
 
 #### Building and serving the user guide
 
-The user guide is built using [MkDocs](https://www.mkdocs.org/). You install the dependencies for building the user guide by running `make requirements` in the root of the repo.
+The user guide is built using [MkDocs](https://www.mkdocs.org/). You install the dependencies for building the user guide by running `make build` in the root of the repo.
 
-Run `mkdocs serve` to build and serve the user guide, so you can view it locally and see updates as you make changes.
+Activate the virtual environment and run `mkdocs serve` to build and serve the user guide, so you can view it locally and see updates as you make changes.
 
 #### Creating a new user guide page
 
@@ -208,7 +267,7 @@ Before committing, install `dprint` (see above) and run `dprint fmt` from the `d
 
 ### API reference
 
-Polars has separate API references for [Rust](https://docs.pola.rs/docs/rust/dev/polars/) and [Python](https://docs.pola.rs/docs/python/dev/reference/index.html).
+Polars has separate API references for [Rust](https://docs.pola.rs/api/rust/dev/polars/) and [Python](https://docs.pola.rs/api/python/dev/reference/index.html).
 These are generated directly from the codebase, so in order to contribute, you will have to follow the steps outlined in [this section](#contributing-to-the-codebase) above.
 
 #### Rust
@@ -227,7 +286,7 @@ From the `py-polars` directory, run `make fmt` to make sure your additions pass 
 
 Polars uses Sphinx to build the API reference.
 This means docstrings in general should follow the [reST](https://www.sphinx-doc.org/en/master/usage/restructuredtext/basics.html) format.
-If you want to build the API reference locally, go to the `py-polars/docs` directory and run `make html SPHINXOPTS=-W`.
+If you want to build the API reference locally, go to the `py-polars/docs` directory and run `make html`.
 The resulting HTML files will be in `py-polars/docs/build/html`.
 
 New additions to the API should be added manually to the API reference by adding an entry to the correct `.rst` file in the `py-polars/docs/source/reference` directory.

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import io
 import pickle
 from datetime import datetime, timedelta
 
@@ -8,6 +7,7 @@ import pytest
 
 import polars as pl
 from polars import StringCache
+from polars.exceptions import SchemaError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -23,23 +23,11 @@ def test_pickling_as_struct_11100() -> None:
     assert str(pickle.loads(buf)) == str(e)
 
 
-def test_lazyframe_serde() -> None:
-    lf = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]}).lazy().select(pl.col("a"))
-
-    json = lf.serialize()
-    result = pl.LazyFrame.deserialize(io.StringIO(json))
-
-    assert_series_equal(result.collect().to_series(), pl.Series("a", [1, 2, 3]))
-
-
 def test_serde_time_unit() -> None:
-    assert pickle.loads(
-        pickle.dumps(
-            pl.Series(
-                [datetime(2022, 1, 1) + timedelta(days=1) for _ in range(3)]
-            ).cast(pl.Datetime("ns"))
-        )
-    ).dtype == pl.Datetime("ns")
+    values = [datetime(2022, 1, 1) + timedelta(days=1) for _ in range(3)]
+    s = pl.Series(values).cast(pl.Datetime("ns"))
+    result = pickle.loads(pickle.dumps(s))
+    assert result.dtype == pl.Datetime("ns")
 
 
 def test_serde_duration() -> None:
@@ -103,14 +91,6 @@ def test_deser_empty_list() -> None:
     assert s.to_list() == [[[42.0]], []]
 
 
-def test_expression_json() -> None:
-    e = pl.col("foo").sum().over("bar")
-    json = e.meta.write_json()
-
-    round_tripped = pl.Expr.from_json(json)
-    assert round_tripped.meta == e
-
-
 def times2(x: pl.Series) -> pl.Series:
     return x * 2
 
@@ -132,7 +112,7 @@ def test_pickle_udf_expression() -> None:
 
     # tests that 'GetOutput' is also deserialized
     with pytest.raises(
-        pl.SchemaError,
+        SchemaError,
         match=r"expected output type 'String', got 'Int64'; set `return_dtype` to the proper datatype",
     ):
         df.select(e)
@@ -194,20 +174,36 @@ def test_serde_keep_dtype_empty_list() -> None:
 def test_serde_array_dtype() -> None:
     s = pl.Series(
         [[1, 2, 3], [None, None, None], [1, None, 3]],
-        dtype=pl.Array(pl.Int32(), width=3),
+        dtype=pl.Array(pl.Int32(), 3),
     )
     assert_series_equal(pickle.loads(pickle.dumps(s)), s)
 
     nested_s = pl.Series(
-        [[[1, 2, 3], [4, None]], None, [[None, None, 2]]],
-        dtype=pl.List(pl.Array(pl.Int32(), width=3)),
+        [[[1, 2, 3], [4, None, 5]], None, [[None, None, 2]]],
+        dtype=pl.List(pl.Array(pl.Int32(), 3)),
     )
     assert_series_equal(pickle.loads(pickle.dumps(nested_s)), nested_s)
 
 
-def test_expression_json_13991() -> None:
-    e = pl.col("foo").cast(pl.Decimal)
-    json = e.meta.write_json()
+def test_serde_data_type_class() -> None:
+    dtype = pl.Datetime
+    serialized = pickle.dumps(dtype)
+    deserialized = pickle.loads(serialized)
+    assert deserialized == dtype
+    assert isinstance(deserialized, type)
 
-    round_tripped = pl.Expr.from_json(json)
-    assert round_tripped.meta == e
+
+def test_serde_data_type_instantiated() -> None:
+    dtype = pl.Int8()
+    serialized = pickle.dumps(dtype)
+    deserialized = pickle.loads(serialized)
+    assert deserialized == dtype
+    assert isinstance(deserialized, pl.DataType)
+
+
+def test_serde_data_type_instantiated_with_attributes() -> None:
+    dtype = pl.Enum(["a", "b"])
+    serialized = pickle.dumps(dtype)
+    deserialized = pickle.loads(serialized)
+    assert deserialized == dtype
+    assert isinstance(deserialized, pl.DataType)

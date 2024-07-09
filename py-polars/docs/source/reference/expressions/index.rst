@@ -2,7 +2,7 @@
 Expressions
 ===========
 
-This page gives an overview of all public polars expressions.
+This page gives an overview of all public Polars expressions.
 
 .. toctree::
    :maxdepth: 2

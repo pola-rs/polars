@@ -11,7 +11,7 @@ pub fn join<T: PartialOrd + Copy + Debug>(
     if right.is_empty() {
         return (
             (left_offset..left.len() as IdxSize + left_offset).collect(),
-            vec![None; left.len()],
+            vec![NullableIdxSize::null(); left.len()],
         );
     }
     // * 1.5 because there can be duplicates
@@ -27,7 +27,7 @@ pub fn join<T: PartialOrd + Copy + Debug>(
 
     let first_right = right[right_idx as usize];
     let mut left_idx = left.partition_point(|v| v < &first_right) as IdxSize;
-    out_rhs.extend(std::iter::repeat(None).take(left_idx as usize));
+    out_rhs.extend(std::iter::repeat(NullableIdxSize::null()).take(left_idx as usize));
     out_lhs.extend(left_offset..(left_idx + left_offset));
 
     for &val_l in &left[left_idx as usize..] {
@@ -37,7 +37,7 @@ pub fn join<T: PartialOrd + Copy + Debug>(
                     // matching join key
                     if val_l == val_r {
                         out_lhs.push(left_idx + left_offset);
-                        out_rhs.push(Some(right_idx));
+                        out_rhs.push(right_idx.into());
                         let current_idx = right_idx;
 
                         loop {
@@ -52,7 +52,7 @@ pub fn join<T: PartialOrd + Copy + Debug>(
                                 Some(&val_r) => {
                                     if val_l == val_r {
                                         out_lhs.push(left_idx + left_offset);
-                                        out_rhs.push(Some(right_idx));
+                                        out_rhs.push(right_idx.into());
                                     } else {
                                         // reset right index because the next lhs value can be the same
                                         right_idx = current_idx;
@@ -67,7 +67,7 @@ pub fn join<T: PartialOrd + Copy + Debug>(
                     // right is larger than left.
                     if val_r > val_l {
                         out_lhs.push(left_idx + left_offset);
-                        out_rhs.push(None);
+                        out_rhs.push(NullableIdxSize::null());
                         break;
                     }
                     // continue looping the right side
@@ -76,7 +76,7 @@ pub fn join<T: PartialOrd + Copy + Debug>(
                 // we depleted the right array
                 None => {
                     out_lhs.push(left_idx + left_offset);
-                    out_rhs.push(None);
+                    out_rhs.push(NullableIdxSize::null());
                     break;
                 },
             }
@@ -98,14 +98,14 @@ mod test {
         let (l_idx, r_idx) = join(lhs, rhs, 0);
         let out_left = &[0, 1, 1, 2, 2, 3, 4, 5];
         let out_right = &[
-            Some(0),
-            Some(1),
-            Some(2),
-            Some(1),
-            Some(2),
-            None,
-            Some(3),
-            None,
+            0.into(),
+            1.into(),
+            2.into(),
+            1.into(),
+            2.into(),
+            NullableIdxSize::null(),
+            3.into(),
+            NullableIdxSize::null(),
         ];
         assert_eq!(&l_idx, out_left);
         assert_eq!(&r_idx, out_right);
@@ -128,21 +128,21 @@ mod test {
         assert_eq!(
             &r_idx,
             &[
-                Some(0),
-                Some(1),
-                Some(0),
-                Some(1),
-                Some(2),
-                Some(3),
-                Some(4),
-                None,
-                Some(5),
-                Some(6),
-                Some(5),
-                Some(6),
-                Some(5),
-                Some(6),
-                None
+                0.into(),
+                1.into(),
+                0.into(),
+                1.into(),
+                2.into(),
+                3.into(),
+                4.into(),
+                NullableIdxSize::null(),
+                5.into(),
+                6.into(),
+                5.into(),
+                6.into(),
+                5.into(),
+                6.into(),
+                NullableIdxSize::null(),
             ]
         );
 
@@ -153,16 +153,16 @@ mod test {
         assert_eq!(
             &r_idx,
             &[
-                None,
-                None,
-                Some(1),
-                Some(2),
-                Some(2),
-                Some(2),
-                Some(2),
-                Some(3),
-                Some(4),
-                Some(4)
+                NullableIdxSize::null(),
+                NullableIdxSize::null(),
+                1.into(),
+                2.into(),
+                2.into(),
+                2.into(),
+                2.into(),
+                3.into(),
+                4.into(),
+                4.into()
             ]
         );
         let lhs = &[0, 1, 2, 2, 3, 4, 4, 6, 6, 7];
@@ -172,20 +172,20 @@ mod test {
         assert_eq!(
             &r_idx,
             &[
-                None,
-                None,
-                None,
-                None,
-                None,
-                Some(0),
-                Some(1),
-                Some(2),
-                Some(0),
-                Some(1),
-                Some(2),
-                None,
-                None,
-                None
+                NullableIdxSize::null(),
+                NullableIdxSize::null(),
+                NullableIdxSize::null(),
+                NullableIdxSize::null(),
+                NullableIdxSize::null(),
+                0.into(),
+                1.into(),
+                2.into(),
+                0.into(),
+                1.into(),
+                2.into(),
+                NullableIdxSize::null(),
+                NullableIdxSize::null(),
+                NullableIdxSize::null(),
             ]
         )
     }

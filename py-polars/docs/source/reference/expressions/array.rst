@@ -16,6 +16,7 @@ The following methods are available under the `expr.arr` attribute.
     Expr.arr.std
     Expr.arr.to_list
     Expr.arr.unique
+    Expr.arr.n_unique
     Expr.arr.var
     Expr.arr.all
     Expr.arr.any
@@ -30,3 +31,5 @@ The following methods are available under the `expr.arr` attribute.
     Expr.arr.explode
     Expr.arr.contains
     Expr.arr.count_matches
+    Expr.arr.to_struct
+    Expr.arr.shift

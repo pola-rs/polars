@@ -168,7 +168,7 @@ where
                         if agg_map.is_empty() {
                             return None;
                         }
-                        // safety:
+                        // SAFETY:
                         // we will not alias.
                         let ptr = aggregators as *mut AggregateFunction;
                         let agg_fns =
@@ -209,7 +209,7 @@ where
                         cols.push(key_builder.finish().into_series());
                         cols.extend(buffers.into_iter().map(|buf| buf.into_series()));
                         physical_agg_to_logical(&mut cols, &self.output_schema);
-                        Some(DataFrame::new_no_checks(cols))
+                        Some(unsafe { DataFrame::new_no_checks(cols) })
                     })
                     .collect::<Vec<_>>();
             Ok(dfs)
@@ -270,13 +270,13 @@ where
         context: &PExecutionContext,
         chunk: &DataChunk,
     ) -> PolarsResult<Series> {
-        let s = self.key.evaluate(chunk, context.execution_state.as_any())?;
+        let s = self.key.evaluate(chunk, &context.execution_state)?;
         let s = s.to_physical_repr();
         let s = prepare_key(&s, chunk);
 
         // todo! ammortize allocation
         for phys_e in self.aggregation_columns.iter() {
-            let s = phys_e.evaluate(chunk, context.execution_state.as_any())?;
+            let s = phys_e.evaluate(chunk, &context.execution_state)?;
             let s = s.to_physical_repr();
             self.aggregation_series.push(s.rechunk());
         }
@@ -327,7 +327,7 @@ where
                 processed += 1;
             } else {
                 // set this row to true: e.g. processed ooc
-                // safety: we correctly set the length with `reset_ooc_filter_rows`
+                // SAFETY: we correctly set the length with `reset_ooc_filter_rows`
                 unsafe {
                     self.ooc_state.set_row_as_ooc(iteration_idx);
                 }

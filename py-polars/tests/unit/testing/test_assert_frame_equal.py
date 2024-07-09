@@ -4,12 +4,19 @@ import math
 from typing import Any
 
 import pytest
+from hypothesis import given
 
 import polars as pl
-from polars.exceptions import InvalidAssert
 from polars.testing import assert_frame_equal, assert_frame_not_equal
+from polars.testing.parametric import dataframes
 
 nan = float("nan")
+pytest_plugins = ["pytester"]
+
+
+@given(df=dataframes())
+def test_equal(df: pl.DataFrame) -> None:
+    assert_frame_equal(df, df.clone(), check_exact=True)
 
 
 @pytest.mark.parametrize(
@@ -42,13 +49,13 @@ nan = float("nan")
         pytest.param(
             pl.DataFrame({"a": [0.0, 1.0, 2.0]}, schema={"a": pl.Float64}),
             pl.DataFrame({"a": [0, 1, 2]}, schema={"a": pl.Int64}),
-            {"check_dtype": False},
+            {"check_dtypes": False},
             id="equal_int_float_integer_no_check_dtype",
         ),
         pytest.param(
             pl.DataFrame({"a": [0, 1, 2]}, schema={"a": pl.Float64}),
             pl.DataFrame({"a": [0, 1, 2]}, schema={"a": pl.Float32}),
-            {"check_dtype": False},
+            {"check_dtypes": False},
             id="equal_int_float_integer_no_check_dtype",
         ),
         pytest.param(
@@ -153,7 +160,7 @@ def test_assert_frame_equal_passes_assertion(
         pytest.param(
             pl.DataFrame({"a": [[2.0, 3.0]]}),
             pl.DataFrame({"a": [[2, 3]]}),
-            {"check_exact": False, "check_dtype": True},
+            {"check_exact": False, "check_dtypes": True},
             id="list_of_float_list_of_int_check_dtype_true",
         ),
         pytest.param(
@@ -249,8 +256,8 @@ def test_compare_frame_equal_nested_nans() -> None:
             {
                 "id": 2,
                 "struct": [
-                    {"x": "text", "y": [nan, 1], "z": ["!"]},
-                    {"x": "text", "y": [nan, 1], "z": ["?"]},
+                    {"x": "text", "y": [nan, 1.0], "z": ["!"]},
+                    {"x": "text", "y": [nan, 1.0], "z": ["?"]},
                 ],
             },
         ]
@@ -262,7 +269,7 @@ def test_compare_frame_equal_nested_nans() -> None:
     assert_frame_not_equal(df3, df4)
     for check_dtype in (True, False):
         with pytest.raises(AssertionError, match="mismatch|different"):
-            assert_frame_equal(df3, df4, check_dtype=check_dtype)
+            assert_frame_equal(df3, df4, check_dtypes=check_dtype)
 
 
 def test_assert_frame_equal_pass() -> None:
@@ -318,39 +325,31 @@ def test_assert_frame_equal_column_mismatch_order() -> None:
     assert_frame_equal(df1, df2, check_column_order=False)
 
 
-def test_assert_frame_equal_ignore_row_order() -> None:
+def test_assert_frame_equal_check_row_order() -> None:
     df1 = pl.DataFrame({"a": [1, 2], "b": [4, 3]})
     df2 = pl.DataFrame({"a": [2, 1], "b": [3, 4]})
-    df3 = pl.DataFrame({"b": [3, 4], "a": [2, 1]})
+
     with pytest.raises(AssertionError, match="value mismatch for column 'a'"):
         assert_frame_equal(df1, df2)
-
     assert_frame_equal(df1, df2, check_row_order=False)
-    # eg:
-    # ┌─────┬─────┐      ┌─────┬─────┐
-    # │ a   ┆ b   │      │ a   ┆ b   │
-    # │ --- ┆ --- │      │ --- ┆ --- │
-    # │ i64 ┆ i64 │ (eq) │ i64 ┆ i64 │
-    # ╞═════╪═════╡  ==  ╞═════╪═════╡
-    # │ 1   ┆ 4   │      │ 2   ┆ 3   │
-    # │ 2   ┆ 3   │      │ 1   ┆ 4   │
-    # └─────┴─────┘      └─────┴─────┘
+
+
+def test_assert_frame_equal_check_row_col_order() -> None:
+    df1 = pl.DataFrame({"a": [1, 2], "b": [4, 3]})
+    df3 = pl.DataFrame({"b": [3, 4], "a": [2, 1]})
 
     with pytest.raises(AssertionError, match="columns are not in the same order"):
         assert_frame_equal(df1, df3, check_row_order=False)
-
     assert_frame_equal(df1, df3, check_row_order=False, check_column_order=False)
 
-    # note: not all column types support sorting
+
+def test_assert_frame_equal_check_row_order_unsortable() -> None:
+    df1 = pl.DataFrame({"a": [object(), object()], "b": [3, 4]})
+    df2 = pl.DataFrame({"a": [object(), object()], "b": [4, 3]})
     with pytest.raises(
-        InvalidAssert,
-        match="cannot set `check_row_order=False`.*unsortable columns",
+        TypeError, match="cannot set `check_row_order=False`.*unsortable columns"
     ):
-        assert_frame_equal(
-            left=pl.DataFrame({"a": [[1, 2], [3, 4]], "b": [3, 4]}),
-            right=pl.DataFrame({"a": [[3, 4], [1, 2]], "b": [4, 3]}),
-            check_row_order=False,
-        )
+        assert_frame_equal(df1, df2, check_row_order=False)
 
 
 def test_assert_frame_equal_dtypes_mismatch() -> None:
@@ -366,3 +365,78 @@ def test_assert_frame_not_equal() -> None:
     df = pl.DataFrame({"a": [1, 2]})
     with pytest.raises(AssertionError, match="frames are equal"):
         assert_frame_not_equal(df, df)
+
+
+def test_assert_frame_equal_check_dtype_deprecated() -> None:
+    df1 = pl.DataFrame({"a": [1, 2]})
+    df2 = pl.DataFrame({"a": [1.0, 2.0]})
+    df3 = pl.DataFrame({"a": [2, 1]})
+
+    with pytest.deprecated_call():
+        assert_frame_equal(df1, df2, check_dtype=False)  # type: ignore[call-arg]
+
+    with pytest.deprecated_call():
+        assert_frame_not_equal(df1, df3, check_dtype=False)  # type: ignore[call-arg]
+
+
+def test_tracebackhide(testdir: pytest.Testdir) -> None:
+    testdir.makefile(
+        ".py",
+        test_path="""\
+import polars as pl
+from polars.testing import assert_frame_equal, assert_frame_not_equal
+
+def test_frame_equal_fail():
+    df1 = pl.DataFrame({"a": [1, 2]})
+    df2 = pl.DataFrame({"a": [1, 3]})
+    assert_frame_equal(df1, df2)
+
+def test_frame_not_equal_fail():
+    df1 = pl.DataFrame({"a": [1, 2]})
+    df2 = pl.DataFrame({"a": [1, 2]})
+    assert_frame_not_equal(df1, df2)
+
+def test_frame_data_type_fail():
+    df1 = pl.DataFrame({"a": [1, 2]})
+    df2 = {"a": [1, 2]}
+    assert_frame_equal(df1, df2)
+
+def test_frame_schema_fail():
+    df1 = pl.DataFrame({"a": [1, 2]}, {"a": pl.Int64})
+    df2 = pl.DataFrame({"a": [1, 2]}, {"a": pl.Int32})
+    assert_frame_equal(df1, df2)
+""",
+    )
+    result = testdir.runpytest()
+    result.assert_outcomes(passed=0, failed=4)
+    stdout = "\n".join(result.outlines)
+
+    assert "polars/py-polars/polars/testing" not in stdout
+
+    # The above should catch any polars testing functions that appear in the
+    # stack trace.  But we keep the following checks (for specific function
+    # names) just to double-check.
+
+    assert "def assert_frame_equal" not in stdout
+    assert "def assert_frame_not_equal" not in stdout
+    assert "def _assert_correct_input_type" not in stdout
+    assert "def _assert_frame_schema_equal" not in stdout
+
+    assert "def assert_series_equal" not in stdout
+    assert "def assert_series_not_equal" not in stdout
+    assert "def _assert_series_values_equal" not in stdout
+    assert "def _assert_series_nested_values_equal" not in stdout
+    assert "def _assert_series_null_values_match" not in stdout
+    assert "def _assert_series_nan_values_match" not in stdout
+    assert "def _assert_series_values_within_tolerance" not in stdout
+
+    # Make sure the tests are failing for the expected reason (e.g. not because
+    # an import is missing or something like that):
+
+    assert (
+        "AssertionError: DataFrames are different (value mismatch for column 'a')"
+        in stdout
+    )
+    assert "AssertionError: frames are equal" in stdout
+    assert "AssertionError: inputs are different (unexpected input types)" in stdout
+    assert "AssertionError: DataFrames are different (dtypes do not match)" in stdout

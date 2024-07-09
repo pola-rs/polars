@@ -9,16 +9,16 @@ use crate::arrow::write::Nested;
 use crate::parquet::encoding::Encoding;
 use crate::parquet::page::DataPage;
 use crate::parquet::schema::types::PrimitiveType;
-use crate::parquet::statistics::serialize_statistics;
 use crate::parquet::types::NativeType;
 
-pub fn array_to_page<T, R>(
-    array: &PrimitiveArray<T>,
+pub fn array_to_page<'a, T, R>(
+    array: &'a PrimitiveArray<T>,
     options: WriteOptions,
     type_: PrimitiveType,
     nested: &[Nested],
 ) -> PolarsResult<DataPage>
 where
+    PrimitiveArray<T>: polars_compute::min_max::MinMaxKernel<Scalar<'a> = T>,
     T: ArrowNativeType,
     R: NativeType,
     T: num_traits::AsPrimitive<R>,
@@ -32,11 +32,8 @@ where
 
     let buffer = encode_plain(array, is_optional, buffer);
 
-    let statistics = if options.write_statistics {
-        Some(serialize_statistics(&build_statistics(
-            array,
-            type_.clone(),
-        )))
+    let statistics = if options.has_statistics() {
+        Some(build_statistics(array, type_.clone(), &options.statistics).serialize())
     } else {
         None
     };

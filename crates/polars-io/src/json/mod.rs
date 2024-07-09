@@ -25,7 +25,7 @@
 //! let file = Cursor::new(basic_json);
 //! let df = JsonReader::new(file)
 //! .with_json_format(JsonFormat::JsonLines)
-//! .infer_schema_len(Some(3))
+//! .infer_schema_len(NonZeroUsize::new(3))
 //! .with_batch_size(NonZeroUsize::new(3).unwrap())
 //! .finish()
 //! .unwrap();
@@ -64,21 +64,27 @@
 //!
 pub(crate) mod infer;
 
-use std::convert::TryFrom;
 use std::io::Write;
 use std::num::NonZeroUsize;
 use std::ops::Deref;
 
-use arrow::array::{ArrayRef, StructArray};
 use arrow::legacy::conversion::chunk_to_struct;
 use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
-use polars_core::utils::try_get_supertype;
 use polars_json::json::write::FallibleStreamingIterator;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 use simd_json::BorrowedValue;
 
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 use crate::prelude::*;
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct JsonWriterOptions {
+    /// maintain the order the data was processed
+    pub maintain_order: bool,
+}
 
 /// The format to use to write the DataFrame to JSON: `Json` (a JSON array) or `JsonLines` (each row output on a
 /// separate line). In either case, each row is serialized as a JSON object whose keys are the column names and whose
@@ -137,10 +143,14 @@ where
         df.align_chunks();
         let fields = df
             .iter()
-            .map(|s| s.field().to_arrow(true))
-            .collect::<Vec<_>>();
+            .map(|s| {
+                #[cfg(feature = "object")]
+                polars_ensure!(!matches!(s.dtype(), DataType::Object(_, _)), ComputeError: "cannot write 'Object' datatype to json");
+                Ok(s.field().to_arrow(CompatLevel::newest()))
+            })
+            .collect::<PolarsResult<Vec<_>>>()?;
         let batches = df
-            .iter_chunks(true)
+            .iter_chunks(CompatLevel::newest(), false)
             .map(|chunk| Ok(Box::new(chunk_to_struct(chunk, fields.clone())) as ArrayRef));
 
         match self.json_format {
@@ -178,9 +188,13 @@ where
     pub fn write_batch(&mut self, df: &DataFrame) -> PolarsResult<()> {
         let fields = df
             .iter()
-            .map(|s| s.field().to_arrow(true))
-            .collect::<Vec<_>>();
-        let chunks = df.iter_chunks(true);
+            .map(|s| {
+                #[cfg(feature = "object")]
+                polars_ensure!(!matches!(s.dtype(), DataType::Object(_, _)), ComputeError: "cannot write 'Object' datatype to json");
+                Ok(s.field().to_arrow(CompatLevel::newest()))
+            })
+            .collect::<PolarsResult<Vec<_>>>()?;
+        let chunks = df.iter_chunks(CompatLevel::newest(), false);
         let batches =
             chunks.map(|chunk| Ok(Box::new(chunk_to_struct(chunk, fields.clone())) as ArrayRef));
         let mut serializer = polars_json::ndjson::write::Serializer::new(batches, vec![]);
@@ -200,7 +214,7 @@ where
     reader: R,
     rechunk: bool,
     ignore_errors: bool,
-    infer_schema_len: Option<usize>,
+    infer_schema_len: Option<NonZeroUsize>,
     batch_size: NonZeroUsize,
     projection: Option<Vec<String>>,
     schema: Option<SchemaRef>,
@@ -217,7 +231,7 @@ where
             reader,
             rechunk: true,
             ignore_errors: false,
-            infer_schema_len: Some(100),
+            infer_schema_len: Some(NonZeroUsize::new(100).unwrap()),
             batch_size: NonZeroUsize::new(8192).unwrap(),
             projection: None,
             schema: None,
@@ -236,8 +250,8 @@ where
     /// Because JSON values specify their types (number, string, etc), no upcasting or conversion is performed between
     /// incompatible types in the input. In the event that a column contains mixed dtypes, is it unspecified whether an
     /// error is returned or whether elements of incompatible dtypes are replaced with `null`.
-    fn finish(self) -> PolarsResult<DataFrame> {
-        let rb: ReaderBytes = (&self.reader).into();
+    fn finish(mut self) -> PolarsResult<DataFrame> {
+        let rb: ReaderBytes = (&mut self.reader).into();
 
         let out = match self.json_format {
             JsonFormat::Json => {
@@ -253,15 +267,16 @@ where
                         overwrite_schema(mut_schema, overwrite)?;
                     }
 
-                    DataType::Struct(schema.iter_fields().collect()).to_arrow(true)
+                    DataType::Struct(schema.iter_fields().collect()).to_arrow(CompatLevel::newest())
                 } else {
                     // infer
                     let inner_dtype = if let BorrowedValue::Array(values) = &json_value {
                         infer::json_values_to_supertype(
                             values,
-                            self.infer_schema_len.unwrap_or(usize::MAX),
+                            self.infer_schema_len
+                                .unwrap_or(NonZeroUsize::new(usize::MAX).unwrap()),
                         )?
-                        .to_arrow(true)
+                        .to_arrow(CompatLevel::newest())
                     } else {
                         polars_json::json::infer(&json_value)?
                     };
@@ -280,7 +295,7 @@ where
                                 .map(|(name, dt)| Field::new(&name, dt))
                                 .collect(),
                         )
-                        .to_arrow(true)
+                        .to_arrow(CompatLevel::newest())
                     } else {
                         inner_dtype
                     }
@@ -312,6 +327,9 @@ where
                     false,
                     self.infer_schema_len,
                     self.ignore_errors,
+                    None,
+                    None,
+                    None,
                 )?;
                 let mut df: DataFrame = json_reader.as_df()?;
                 if self.rechunk {
@@ -354,7 +372,7 @@ where
     ///
     /// It is an error to pass `max_records = Some(0)`, as a schema cannot be inferred from 0 records when deserializing
     /// from JSON (unlike CSVs, there is no header row to inspect for column names).
-    pub fn infer_schema_len(mut self, max_records: Option<usize>) -> Self {
+    pub fn infer_schema_len(mut self, max_records: Option<NonZeroUsize>) -> Self {
         self.infer_schema_len = max_records;
         self
     }

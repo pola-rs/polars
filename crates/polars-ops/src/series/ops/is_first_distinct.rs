@@ -5,16 +5,18 @@ use arrow::bitmap::MutableBitmap;
 use arrow::legacy::bit_util::*;
 use arrow::legacy::utils::CustomIterTools;
 use polars_core::prelude::*;
-use polars_core::with_match_physical_integer_polars_type;
+use polars_core::with_match_physical_numeric_polars_type;
+use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 fn is_first_distinct_numeric<T>(ca: &ChunkedArray<T>) -> BooleanChunked
 where
     T: PolarsNumericType,
-    T::Native: Hash + Eq,
+    T::Native: TotalHash + TotalEq + ToTotalOrd,
+    <T::Native as ToTotalOrd>::TotalOrdItem: Hash + Eq,
 {
     let mut unique = PlHashSet::new();
     let chunks = ca.downcast_iter().map(|arr| -> BooleanArray {
         arr.into_iter()
-            .map(|opt_v| unique.insert(opt_v))
+            .map(|opt_v| unique.insert(opt_v.to_total_ord()))
             .collect_trusted()
     });
 
@@ -86,7 +88,6 @@ fn is_first_distinct_struct(s: &Series) -> PolarsResult<BooleanChunked> {
     Ok(BooleanChunked::with_chunk(s.name(), arr))
 }
 
-#[cfg(feature = "group_by_list")]
 fn is_first_distinct_list(ca: &ListChunked) -> PolarsResult<BooleanChunked> {
     let groups = ca.group_tuples(true, false)?;
     let first = groups.take_group_firsts();
@@ -126,24 +127,19 @@ pub fn is_first_distinct(s: &Series) -> PolarsResult<BooleanChunked> {
             let s = s.cast(&Binary).unwrap();
             return is_first_distinct(&s);
         },
-        Float32 => {
-            let ca = s.bit_repr_small();
-            is_first_distinct_numeric(&ca)
-        },
-        Float64 => {
-            let ca = s.bit_repr_large();
-            is_first_distinct_numeric(&ca)
-        },
         dt if dt.is_numeric() => {
-            with_match_physical_integer_polars_type!(s.dtype(), |$T| {
+            with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                 is_first_distinct_numeric(ca)
             })
         },
         #[cfg(feature = "dtype-struct")]
         Struct(_) => return is_first_distinct_struct(&s),
-        #[cfg(feature = "group_by_list")]
-        List(inner) if inner.is_numeric() => {
+        List(inner) => {
+            polars_ensure!(
+                !inner.is_nested(),
+                InvalidOperation: "`is_first_distinct` on list type is only allowed if the inner type is not nested."
+            );
             let ca = s.list().unwrap();
             return is_first_distinct_list(ca);
         },

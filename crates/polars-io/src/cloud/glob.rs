@@ -1,13 +1,12 @@
-use arrow::legacy::error::polars_bail;
-use futures::future::ready;
-use futures::{StreamExt, TryStreamExt};
+use futures::TryStreamExt;
 use object_store::path::Path;
 use polars_core::error::to_compute_err;
-use polars_core::prelude::{polars_ensure, polars_err, PolarsError, PolarsResult};
+use polars_core::prelude::{polars_ensure, polars_err};
+use polars_error::PolarsResult;
 use regex::Regex;
 use url::Url;
 
-use super::*;
+use super::CloudOptions;
 
 const DELIMITER: char = '/';
 
@@ -164,7 +163,6 @@ impl Matcher {
     }
 }
 
-#[tokio::main(flavor = "current_thread")]
 /// List files with a prefix derived from the pattern.
 pub async fn glob(url: &str, cloud_options: Option<&CloudOptions>) -> PolarsResult<Vec<String>> {
     // Find the fixed prefix, up to the first '*'.
@@ -178,16 +176,27 @@ pub async fn glob(url: &str, cloud_options: Option<&CloudOptions>) -> PolarsResu
         },
         store,
     ) = super::build_object_store(url, cloud_options).await?;
-    let matcher = Matcher::new(prefix.clone(), expansion.as_deref())?;
+    let matcher = &Matcher::new(
+        if scheme == "file" {
+            // For local paths the returned location has the leading slash stripped.
+            prefix[1..].to_string()
+        } else {
+            prefix.clone()
+        },
+        expansion.as_deref(),
+    )?;
 
-    let list_stream = store
+    let mut locations = store
         .list(Some(&Path::from(prefix)))
-        .map_err(to_compute_err);
-    let locations: Vec<Path> = list_stream
-        .then(|entry| async { Ok::<_, PolarsError>(entry.map_err(to_compute_err)?.location) })
-        .filter(|name| ready(name.as_ref().map_or(true, |name| matcher.is_matching(name))))
-        .try_collect()
-        .await?;
+        .try_filter_map(|x| async move {
+            let out = (x.size > 0 && matcher.is_matching(&x.location)).then_some(x.location);
+            Ok(out)
+        })
+        .try_collect::<Vec<_>>()
+        .await
+        .map_err(to_compute_err)?;
+
+    locations.sort_unstable();
     Ok(locations
         .into_iter()
         .map(|l| full_url(&scheme, &bucket, l))

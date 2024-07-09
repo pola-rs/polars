@@ -16,6 +16,7 @@ The following methods are available under the `Series.arr` attribute.
     Series.arr.std
     Series.arr.to_list
     Series.arr.unique
+    Series.arr.n_unique
     Series.arr.var
     Series.arr.all
     Series.arr.any
@@ -30,3 +31,5 @@ The following methods are available under the `Series.arr` attribute.
     Series.arr.explode
     Series.arr.contains
     Series.arr.count_matches
+    Series.arr.to_struct
+    Series.arr.shift

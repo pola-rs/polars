@@ -6,8 +6,6 @@ impl From<AggExpr> for Expr {
     }
 }
 
-pub trait RefString {}
-
 impl From<&str> for Expr {
     fn from(s: &str) -> Self {
         col(s)

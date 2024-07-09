@@ -38,9 +38,33 @@ pub(super) fn extend_validity(
             Some(validity) => {
                 debug_assert!(start + len <= validity.len());
                 let (slice, offset, _) = validity.as_slice();
-                // safety: invariant offset + length <= slice.len()
+                // SAFETY: invariant offset + length <= slice.len()
                 unsafe {
                     mutable_validity.extend_from_slice_unchecked(slice, start + offset, len);
+                }
+            },
+        }
+    }
+}
+
+pub(super) fn extend_validity_copies(
+    mutable_validity: &mut Option<MutableBitmap>,
+    array: &dyn Array,
+    start: usize,
+    len: usize,
+    copies: usize,
+) {
+    if let Some(mutable_validity) = mutable_validity {
+        match array.validity() {
+            None => mutable_validity.extend_constant(len * copies, true),
+            Some(validity) => {
+                debug_assert!(start + len <= validity.len());
+                let (slice, offset, _) = validity.as_slice();
+                // SAFETY: invariant offset + length <= slice.len()
+                for _ in 0..copies {
+                    unsafe {
+                        mutable_validity.extend_from_slice_unchecked(slice, start + offset, len);
+                    }
                 }
             },
         }

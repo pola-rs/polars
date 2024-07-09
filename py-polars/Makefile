@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 
 PYTHONPATH=
-SHELL=/bin/bash
+SHELL=bash
 VENV=../.venv
 
 ifeq ($(OS),Windows_NT)
@@ -15,7 +15,11 @@ endif
 	@$(MAKE) -s -C .. $@
 
 .PHONY: requirements
-requirements: .venv  ## Install/refresh all project requirements
+requirements: .venv  ## Install/refresh Python project requirements
+	@$(MAKE) -s -C .. $@
+
+.PHONY: requirements-all
+requirements-all: .venv  ## Install/refresh all Python requirements (including those needed for CI tests)
 	@$(MAKE) -s -C .. $@
 
 .PHONY: build
@@ -54,10 +58,15 @@ build-opt-native: .venv  ## Same as build-opt, except with native CPU optimizati
 build-release-native: .venv  ## Same as build-release, except with native CPU optimizations turned on
 	@$(MAKE) -s -C .. $@
 
+.PHONY: lint
+lint: .venv  ## Run lint checks (only)
+	$(VENV_BIN)/ruff check
+	-$(VENV_BIN)/mypy
+
 .PHONY: fmt
-fmt: .venv  ## Run autoformatting and linting
-	$(VENV_BIN)/ruff check .
-	$(VENV_BIN)/ruff format .
+fmt: .venv  ## Run autoformatting (and lint)
+	$(VENV_BIN)/ruff check
+	$(VENV_BIN)/ruff format
 	$(VENV_BIN)/typos
 	cargo fmt --all
 	-dprint fmt
@@ -65,43 +74,50 @@ fmt: .venv  ## Run autoformatting and linting
 
 .PHONY: clippy
 clippy:  ## Run clippy
-	cargo clippy --locked -- -D warnings
+	cargo clippy --locked -- -D warnings -D clippy::dbg_macro
 
 .PHONY: pre-commit
-pre-commit: fmt clippy  ## Run all code quality checks
+pre-commit: fmt clippy  ## Run all code formatting and lint/quality checks
 
 .PHONY: test
 test: .venv build  ## Run fast unittests
-	$(VENV_BIN)/pytest -n auto --dist loadgroup
-
-.PHONY: doctest
-doctest: .venv build  ## Run doctests
-	$(VENV_BIN)/python tests/docs/run_doctest.py
-	$(VENV_BIN)/pytest tests/docs/test_user_guide.py -m docs
+	$(VENV_BIN)/pytest -n auto --dist loadgroup $(PYTEST_ARGS)
 
 .PHONY: test-all
 test-all: .venv build  ## Run all tests
 	$(VENV_BIN)/pytest -n auto --dist loadgroup -m "slow or not slow"
 	$(VENV_BIN)/python tests/docs/run_doctest.py
 
+.PHONY: doctest
+doctest: .venv build  ## Run doctests
+	$(VENV_BIN)/python tests/docs/run_doctest.py
+	$(VENV_BIN)/pytest tests/docs/test_user_guide.py -m docs
+
+.PHONY: docs
+docs: .venv  ## Build Python docs (incremental)
+	@$(MAKE) -s -C docs html
+
+.PHONY: docs-clean
+docs-clean: .venv  ## Build Python docs (full rebuild)
+	@$(MAKE) -s -C docs clean
+	@$(MAKE) docs
+
 .PHONY: coverage
 coverage: .venv build  ## Run tests and report coverage
-	$(VENV_BIN)/pytest --cov -n auto --dist loadgroup -m "not benchmark"
+	$(VENV_BIN)/pytest --cov -n auto --dist loadgroup -m "not release and not benchmark"
 
 .PHONY: clean
 clean:  ## Clean up caches and build artifacts
-	@rm -rf target/
-	@rm -rf docs/build/
-	@rm -rf docs/source/reference/api/
+	@$(MAKE) -s -C docs clean
 	@rm -rf .hypothesis/
 	@rm -rf .mypy_cache/
 	@rm -rf .pytest_cache/
-	@rm -rf .ruff_cache/
+	@$(VENV_BIN)/ruff clean
+	@rm -rf tests/data/tpch/sf*
 	@rm -f .coverage
 	@rm -f coverage.xml
 	@rm -f polars/polars.abi3.so
-	@find . -type f -name '*.py[co]' -delete -or -type d -name __pycache__ -delete
-	@cargo clean
+	@find . -type f -name '*.py[co]' -delete -or -type d -name __pycache__ -exec rm -r {} +
 
 .PHONY: help
 help:  ## Display this help screen

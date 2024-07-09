@@ -1,9 +1,8 @@
 use polars_error::{polars_bail, PolarsResult};
 
-use super::{primitive_as_primitive, primitive_to_primitive, CastOptions};
-use crate::array::{Array, DictionaryArray, DictionaryKey, PrimitiveArray};
+use super::{primitive_as_primitive, primitive_to_primitive, CastOptionsImpl};
+use crate::array::{Array, DictionaryArray, DictionaryKey};
 use crate::compute::cast::cast;
-use crate::compute::take::take_unchecked;
 use crate::datatypes::ArrowDataType;
 use crate::match_integer_type;
 
@@ -16,7 +15,7 @@ macro_rules! key_cast {
         if cast_keys.null_count() > $keys.null_count() {
             polars_bail!(ComputeError: "overflow")
         }
-        // Safety: this is safe because given a type `T` that fits in a `usize`, casting it to type `P` either overflows or also fits in a `usize`
+        // SAFETY: this is safe because given a type `T` that fits in a `usize`, casting it to type `P` either overflows or also fits in a `usize`
         unsafe {
              DictionaryArray::try_new_unchecked($to_datatype, cast_keys, $values.clone())
         }
@@ -36,7 +35,7 @@ pub fn dictionary_to_dictionary_values<K: DictionaryKey>(
     let values = from.values();
     let length = values.len();
 
-    let values = cast(values.as_ref(), values_type, CastOptions::default())?;
+    let values = cast(values.as_ref(), values_type, CastOptionsImpl::default())?;
 
     assert_eq!(values.len(), length); // this is guaranteed by `cast`
     unsafe {
@@ -56,7 +55,7 @@ pub fn wrapping_dictionary_to_dictionary_values<K: DictionaryKey>(
     let values = cast(
         values.as_ref(),
         values_type,
-        CastOptions {
+        CastOptionsImpl {
             wrapped: true,
             partial: false,
         },
@@ -93,7 +92,7 @@ where
             Box::new(values.data_type().clone()),
             is_ordered,
         );
-        // Safety: this is safe because given a type `T` that fits in a `usize`, casting it to type `P` either overflows or also fits in a `usize`
+        // SAFETY: this is safe because given a type `T` that fits in a `usize`, casting it to type `P` either overflows or also fits in a `usize`
         unsafe { DictionaryArray::try_new_unchecked(data_type, casted_keys, values.clone()) }
     }
 }
@@ -128,7 +127,7 @@ where
 pub(super) fn dictionary_cast_dyn<K: DictionaryKey + num_traits::NumCast>(
     array: &dyn Array,
     to_type: &ArrowDataType,
-    options: CastOptions,
+    options: CastOptionsImpl,
 ) -> PolarsResult<Box<dyn Array>> {
     let array = array.as_any().downcast_ref::<DictionaryArray<K>>().unwrap();
     let keys = array.keys();
@@ -141,46 +140,12 @@ pub(super) fn dictionary_cast_dyn<K: DictionaryKey + num_traits::NumCast>(
             // create the appropriate array type
             let to_key_type = (*to_keys_type).into();
 
-            // Safety:
+            // SAFETY:
             // we return an error on overflow so the integers remain within bounds
             match_integer_type!(to_keys_type, |$T| {
                 key_cast!(keys, values, array, &to_key_type, $T, to_type.clone())
             })
         },
-        _ => unpack_dictionary::<K>(keys, values.as_ref(), to_type, options),
+        _ => unimplemented!(),
     }
-}
-
-// Unpack the dictionary
-fn unpack_dictionary<K>(
-    keys: &PrimitiveArray<K>,
-    values: &dyn Array,
-    to_type: &ArrowDataType,
-    options: CastOptions,
-) -> PolarsResult<Box<dyn Array>>
-where
-    K: DictionaryKey + num_traits::NumCast,
-{
-    // attempt to cast the dict values to the target type
-    // use the take kernel to expand out the dictionary
-    let values = cast(values, to_type, options)?;
-
-    // take requires first casting i32
-    let indices = primitive_to_primitive::<_, i32>(keys, &ArrowDataType::Int32);
-
-    Ok(unsafe { take_unchecked(values.as_ref(), &indices) })
-}
-
-/// Casts a [`DictionaryArray`] to its values' [`ArrowDataType`], also known as unpacking.
-/// The resulting array has the same length.
-pub fn dictionary_to_values<K>(from: &DictionaryArray<K>) -> Box<dyn Array>
-where
-    K: DictionaryKey + num_traits::NumCast,
-{
-    // take requires first casting i64
-    let indices = primitive_to_primitive::<_, i64>(from.keys(), &ArrowDataType::Int64);
-
-    // SAFETY:
-    // The dictionary guarantees that the keys are not out-of-bounds.
-    unsafe { take_unchecked(from.values().as_ref(), &indices) }
 }

@@ -24,8 +24,10 @@ use polars_error::{polars_bail, PolarsResult};
 
 use super::primitive::PrimitiveArray;
 use super::specification::check_indexes;
-use super::{new_empty_array, new_null_array, Array};
-use crate::array::dictionary::typed_iterator::{DictValue, DictionaryValuesIterTyped};
+use super::{new_empty_array, new_null_array, Array, Splitable};
+use crate::array::dictionary::typed_iterator::{
+    DictValue, DictionaryIterTyped, DictionaryValuesIterTyped,
+};
 
 /// Trait denoting [`NativeType`]s that can be used as keys of a dictionary.
 /// # Safety
@@ -37,6 +39,7 @@ pub unsafe trait DictionaryKey: NativeType + TryInto<usize> + TryFrom<usize> + H
     const KEY_TYPE: IntegerType;
 
     /// Represents this key as a `usize`.
+    ///
     /// # Safety
     /// The caller _must_ have checked that the value can be casted to `usize`.
     #[inline]
@@ -146,7 +149,7 @@ impl<K: DictionaryKey> DictionaryArray<K> {
 
         if keys.null_count() != keys.len() {
             if K::always_fits_usize() {
-                // safety: we just checked that conversion to `usize` always
+                // SAFETY: we just checked that conversion to `usize` always
                 // succeeds
                 unsafe { check_indexes_unchecked(keys.values(), values.len()) }?;
             } else {
@@ -178,6 +181,7 @@ impl<K: DictionaryKey> DictionaryArray<K> {
     /// * the `data_type`'s logical type is not a `DictionaryArray`
     /// * the `data_type`'s keys is not compatible with `keys`
     /// * the `data_type`'s values's data_type is not equal with `values.data_type()`
+    ///
     /// # Safety
     /// The caller must ensure that every keys's values is represented in `usize` and is `< values.len()`
     pub unsafe fn try_new_unchecked(
@@ -239,30 +243,22 @@ impl<K: DictionaryKey> DictionaryArray<K> {
     ///
     /// # Panics
     ///
-    /// Panics if the keys of this [`DictionaryArray`] have any null types.
-    /// If they do [`DictionaryArray::iter_typed`] should be called
+    /// Panics if the keys of this [`DictionaryArray`] has any nulls.
+    /// If they do [`DictionaryArray::iter_typed`] should be used.
     pub fn values_iter_typed<V: DictValue>(&self) -> PolarsResult<DictionaryValuesIterTyped<K, V>> {
         let keys = &self.keys;
         assert_eq!(keys.null_count(), 0);
         let values = self.values.as_ref();
         let values = V::downcast_values(values)?;
-        Ok(unsafe { DictionaryValuesIterTyped::new(keys, values) })
+        Ok(DictionaryValuesIterTyped::new(keys, values))
     }
 
     /// Returns an iterator over the optional values of  [`Option<V::IterValue>`].
-    ///
-    /// # Panics
-    ///
-    /// This function panics if the `values` array
-    pub fn iter_typed<V: DictValue>(
-        &self,
-    ) -> PolarsResult<ZipValidity<V::IterValue<'_>, DictionaryValuesIterTyped<K, V>, BitmapIter>>
-    {
+    pub fn iter_typed<V: DictValue>(&self) -> PolarsResult<DictionaryIterTyped<K, V>> {
         let keys = &self.keys;
         let values = self.values.as_ref();
         let values = V::downcast_values(values)?;
-        let values_iter = unsafe { DictionaryValuesIterTyped::new(keys, values) };
-        Ok(ZipValidity::new_with_validity(values_iter, self.validity()))
+        Ok(DictionaryIterTyped::new(keys, values))
     }
 
     /// Returns the [`ArrowDataType`] of this [`DictionaryArray`]
@@ -292,6 +288,7 @@ impl<K: DictionaryKey> DictionaryArray<K> {
     }
 
     /// Slices this [`DictionaryArray`].
+    ///
     /// # Safety
     /// Safe iff `offset + length <= self.len()`.
     pub unsafe fn slice_unchecked(&mut self, offset: usize, length: usize) {
@@ -340,14 +337,14 @@ impl<K: DictionaryKey> DictionaryArray<K> {
     /// Returns an iterator of the keys' values of the [`DictionaryArray`] as `usize`
     #[inline]
     pub fn keys_values_iter(&self) -> impl TrustedLen<Item = usize> + Clone + '_ {
-        // safety - invariant of the struct
+        // SAFETY: invariant of the struct
         self.keys.values_iter().map(|x| unsafe { x.as_usize() })
     }
 
     /// Returns an iterator of the keys' of the [`DictionaryArray`] as `usize`
     #[inline]
     pub fn keys_iter(&self) -> impl TrustedLen<Item = Option<usize>> + Clone + '_ {
-        // safety - invariant of the struct
+        // SAFETY: invariant of the struct
         self.keys.iter().map(|x| x.map(|x| unsafe { x.as_usize() }))
     }
 
@@ -356,7 +353,7 @@ impl<K: DictionaryKey> DictionaryArray<K> {
     /// This function panics iff `index >= self.len()`
     #[inline]
     pub fn key_value(&self, index: usize) -> usize {
-        // safety - invariant of the struct
+        // SAFETY: invariant of the struct
         unsafe { self.keys.values()[index].as_usize() }
     }
 
@@ -374,7 +371,7 @@ impl<K: DictionaryKey> DictionaryArray<K> {
     /// This function panics iff `index >= self.len()`
     #[inline]
     pub fn value(&self, index: usize) -> Box<dyn Scalar> {
-        // safety - invariant of this struct
+        // SAFETY: invariant of this struct
         let index = unsafe { self.keys.value(index).as_usize() };
         new_scalar(self.values.as_ref(), index)
     }
@@ -399,5 +396,28 @@ impl<K: DictionaryKey> Array for DictionaryArray<K> {
     #[inline]
     fn with_validity(&self, validity: Option<Bitmap>) -> Box<dyn Array> {
         Box::new(self.clone().with_validity(validity))
+    }
+}
+
+impl<K: DictionaryKey> Splitable for DictionaryArray<K> {
+    fn check_bound(&self, offset: usize) -> bool {
+        offset < self.len()
+    }
+
+    unsafe fn _split_at_unchecked(&self, offset: usize) -> (Self, Self) {
+        let (lhs_keys, rhs_keys) = unsafe { Splitable::split_at_unchecked(&self.keys, offset) };
+
+        (
+            Self {
+                data_type: self.data_type.clone(),
+                keys: lhs_keys,
+                values: self.values.clone(),
+            },
+            Self {
+                data_type: self.data_type.clone(),
+                keys: rhs_keys,
+                values: self.values.clone(),
+            },
+        )
     }
 }

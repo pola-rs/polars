@@ -4,10 +4,10 @@ mod var;
 
 pub use boolean::*;
 use num_traits::{NumCast, ToPrimitive};
+use polars_utils::IdxSize;
 pub use var::*;
 
 use crate::array::{Array, BinaryViewArray, BooleanArray, PrimitiveArray};
-use crate::legacy::index::IdxSize;
 use crate::types::NativeType;
 
 /// Take kernel for single chunk without nulls and an iterator as index.

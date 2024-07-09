@@ -1,25 +1,25 @@
 from __future__ import annotations
 
 import contextlib
-from pathlib import Path
 from typing import TYPE_CHECKING, Sequence
 
-from polars.datatypes import N_INFER_DEFAULT, py_type_to_dtype
-from polars.io.csv._utils import _update_columns
-from polars.utils._wrap import wrap_df
-from polars.utils.various import (
-    _prepare_row_index_args,
+from polars._utils.various import (
     _process_null_values,
-    handle_projection_columns,
     normalize_filepath,
 )
+from polars._utils.wrap import wrap_df
+from polars.datatypes import N_INFER_DEFAULT, parse_into_dtype
+from polars.io._utils import parse_columns_arg, parse_row_index_args
+from polars.io.csv._utils import _update_columns
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyBatchedCsv
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from polars import DataFrame
-    from polars.type_aliases import CsvEncoding, PolarsDataType, SchemaDict
+    from polars._typing import CsvEncoding, PolarsDataType, SchemaDict
 
 
 class BatchedCsvReader:
@@ -35,7 +35,7 @@ class BatchedCsvReader:
         comment_prefix: str | None = None,
         quote_char: str | None = '"',
         skip_rows: int = 0,
-        dtypes: None | (SchemaDict | Sequence[PolarsDataType]) = None,
+        schema_overrides: SchemaDict | Sequence[PolarsDataType] | None = None,
         null_values: str | Sequence[str] | dict[str, str] | None = None,
         missing_utf8_is_empty_string: bool = False,
         ignore_errors: bool = False,
@@ -55,26 +55,25 @@ class BatchedCsvReader:
         new_columns: Sequence[str] | None = None,
         raise_if_empty: bool = True,
         truncate_ragged_lines: bool = False,
+        decimal_comma: bool = False,
     ):
-        path: str | None
-        if isinstance(source, (str, Path)):
-            path = normalize_filepath(source)
+        path = normalize_filepath(source, check_not_directory=False)
 
         dtype_list: Sequence[tuple[str, PolarsDataType]] | None = None
         dtype_slice: Sequence[PolarsDataType] | None = None
-        if dtypes is not None:
-            if isinstance(dtypes, dict):
+        if schema_overrides is not None:
+            if isinstance(schema_overrides, dict):
                 dtype_list = []
-                for k, v in dtypes.items():
-                    dtype_list.append((k, py_type_to_dtype(v)))
-            elif isinstance(dtypes, Sequence):
-                dtype_slice = dtypes
+                for k, v in schema_overrides.items():
+                    dtype_list.append((k, parse_into_dtype(v)))
+            elif isinstance(schema_overrides, Sequence):
+                dtype_slice = schema_overrides
             else:
-                msg = "`dtypes` arg should be list or dict"
+                msg = "`schema_overrides` arg should be list or dict"
                 raise TypeError(msg)
 
         processed_null_values = _process_null_values(null_values)
-        projection, columns = handle_projection_columns(columns)
+        projection, columns = parse_columns_arg(columns)
 
         self._reader = PyBatchedCsv.new(
             infer_schema_length=infer_schema_length,
@@ -99,11 +98,12 @@ class BatchedCsvReader:
             missing_utf8_is_empty_string=missing_utf8_is_empty_string,
             try_parse_dates=try_parse_dates,
             skip_rows_after_header=skip_rows_after_header,
-            row_index=_prepare_row_index_args(row_index_name, row_index_offset),
+            row_index=parse_row_index_args(row_index_name, row_index_offset),
             sample_size=sample_size,
             eol_char=eol_char,
             raise_if_empty=raise_if_empty,
             truncate_ragged_lines=truncate_ragged_lines,
+            decimal_comma=decimal_comma,
         )
         self.new_columns = new_columns
 
@@ -111,14 +111,12 @@ class BatchedCsvReader:
         """
         Read `n` batches from the reader.
 
-        The `n` chunks will be parallelized over the
-        available threads.
+        These batches will be parallelized over the available threads.
 
         Parameters
         ----------
         n
-            Number of chunks to fetch.
-            This is ideally >= number of threads
+            Number of chunks to fetch; ideally this is >= number of threads.
 
         Examples
         --------

@@ -3,7 +3,8 @@ use std::fmt::{Debug, Display};
 use std::hash::Hash;
 
 use arrow::bitmap::utils::{BitmapIter, ZipValidity};
-use arrow::bitmap::Bitmap;
+use arrow::bitmap::{Bitmap, MutableBitmap};
+use polars_utils::total_ord::TotalHash;
 
 use crate::prelude::*;
 
@@ -13,6 +14,8 @@ pub(crate) mod extension;
 mod is_valid;
 mod iterator;
 pub mod registry;
+
+pub use extension::set_polars_allow_extension;
 
 #[derive(Debug, Clone)]
 pub struct ObjectArray<T>
@@ -32,11 +35,19 @@ pub trait PolarsObjectSafe: Any + Debug + Send + Sync + Display {
     fn as_any(&self) -> &dyn Any;
 
     fn to_boxed(&self) -> Box<dyn PolarsObjectSafe>;
+
+    fn equal(&self, other: &dyn PolarsObjectSafe) -> bool;
+}
+
+impl PartialEq for &dyn PolarsObjectSafe {
+    fn eq(&self, other: &Self) -> bool {
+        self.equal(*other)
+    }
 }
 
 /// Values need to implement this so that they can be stored into a Series and DataFrame
 pub trait PolarsObject:
-    Any + Debug + Clone + Send + Sync + Default + Display + Hash + PartialEq + Eq + TotalEq
+    Any + Debug + Clone + Send + Sync + Default + Display + Hash + TotalHash + PartialEq + Eq + TotalEq
 {
     /// This should be used as type information. Consider this a part of the type system.
     fn type_name() -> &'static str;
@@ -53,6 +64,13 @@ impl<T: PolarsObject> PolarsObjectSafe for T {
 
     fn to_boxed(&self) -> Box<dyn PolarsObjectSafe> {
         Box::new(self.clone())
+    }
+
+    fn equal(&self, other: &dyn PolarsObjectSafe) -> bool {
+        let Some(other) = other.as_any().downcast_ref::<T>() else {
+            return false;
+        };
+        self == other
     }
 }
 
@@ -121,15 +139,6 @@ where
         !self.is_valid_unchecked(i)
     }
 
-    #[inline]
-    pub(crate) unsafe fn get_unchecked(&self, item: usize) -> Option<&T> {
-        if self.is_null_unchecked(item) {
-            None
-        } else {
-            Some(self.value_unchecked(item))
-        }
-    }
-
     /// Returns this array with a new validity.
     /// # Panic
     /// Panics iff `validity.len() != self.len()`.
@@ -161,7 +170,7 @@ where
     }
 
     fn data_type(&self) -> &ArrowDataType {
-        unimplemented!()
+        &ArrowDataType::FixedSizeBinary(std::mem::size_of::<T>())
     }
 
     fn slice(&mut self, offset: usize, length: usize) {
@@ -177,6 +186,16 @@ where
 
         self.len = len;
         self.offset = offset;
+    }
+
+    fn split_at_boxed(&self, offset: usize) -> (Box<dyn Array>, Box<dyn Array>) {
+        let (lhs, rhs) = Splitable::split_at(self, offset);
+        (Box::new(lhs), Box::new(rhs))
+    }
+
+    unsafe fn split_at_boxed_unchecked(&self, offset: usize) -> (Box<dyn Array>, Box<dyn Array>) {
+        let (lhs, rhs) = unsafe { Splitable::split_at_unchecked(self, offset) };
+        (Box::new(lhs), Box::new(rhs))
     }
 
     fn len(&self) -> usize {
@@ -207,6 +226,67 @@ where
     }
 }
 
+impl<T: PolarsObject> Splitable for ObjectArray<T> {
+    fn check_bound(&self, offset: usize) -> bool {
+        offset <= self.len()
+    }
+
+    unsafe fn _split_at_unchecked(&self, offset: usize) -> (Self, Self) {
+        (
+            Self {
+                values: self.values.clone(),
+                null_bitmap: self.null_bitmap.clone(),
+                len: offset,
+                offset: self.offset,
+            },
+            Self {
+                values: self.values.clone(),
+                null_bitmap: self.null_bitmap.clone(),
+                len: self.len() - offset,
+                offset: self.offset + offset,
+            },
+        )
+    }
+}
+
+impl<T: PolarsObject> StaticArray for ObjectArray<T> {
+    type ValueT<'a> = &'a T;
+    type ZeroableValueT<'a> = Option<&'a T>;
+    type ValueIterT<'a> = ObjectValueIter<'a, T>;
+
+    #[inline]
+    unsafe fn value_unchecked(&self, idx: usize) -> Self::ValueT<'_> {
+        self.value_unchecked(idx)
+    }
+
+    fn values_iter(&self) -> Self::ValueIterT<'_> {
+        self.values_iter()
+    }
+
+    fn iter(&self) -> ZipValidity<Self::ValueT<'_>, Self::ValueIterT<'_>, BitmapIter> {
+        self.iter()
+    }
+
+    fn with_validity_typed(self, validity: Option<Bitmap>) -> Self {
+        self.with_validity(validity)
+    }
+
+    fn full_null(length: usize, _dtype: ArrowDataType) -> Self {
+        ObjectArray {
+            values: Arc::new(vec![T::default(); length]),
+            null_bitmap: Some(Bitmap::new_with_value(false, length)),
+            offset: 0,
+            len: length,
+        }
+    }
+}
+
+impl<T: PolarsObject> ParameterFreeDtypeStaticArray for ObjectArray<T> {
+    fn get_dtype() -> ArrowDataType {
+        ArrowDataType::FixedSizeBinary(std::mem::size_of::<T>())
+    }
+}
+
 impl<T> ObjectChunked<T>
 where
     T: PolarsObject,
@@ -217,11 +297,19 @@ where
     ///
     /// No bounds checks
     pub unsafe fn get_object_unchecked(&self, index: usize) -> Option<&dyn PolarsObjectSafe> {
-        let chunks = self.downcast_chunks();
         let (chunk_idx, idx) = self.index_to_chunked_index(index);
-        let arr = chunks.get_unchecked(chunk_idx);
-        if arr.is_valid_unchecked(idx) {
-            Some(arr.value(idx))
+        self.get_object_chunked_unchecked(chunk_idx, idx)
+    }
+
+    pub(crate) unsafe fn get_object_chunked_unchecked(
+        &self,
+        chunk: usize,
+        index: usize,
+    ) -> Option<&dyn PolarsObjectSafe> {
+        let chunks = self.downcast_chunks();
+        let arr = chunks.get_unchecked(chunk);
+        if arr.is_valid_unchecked(index) {
+            Some(arr.value(index))
         } else {
             None
         }

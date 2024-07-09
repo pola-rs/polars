@@ -16,7 +16,7 @@ pub use boolean::*;
 #[cfg(feature = "dtype-categorical")]
 use categorical::*;
 use dtypes::*;
-use null::*;
+pub use null::*;
 pub use primitive::*;
 
 use super::*;
@@ -47,13 +47,7 @@ pub trait ListBuilderTrait {
     fn finish(&mut self) -> ListChunked {
         let arr = self.inner_array();
 
-        let mut ca = ListChunked {
-            field: Arc::new(self.field().clone()),
-            chunks: vec![arr],
-            phantom: PhantomData,
-            ..Default::default()
-        };
-        ca.compute_len();
+        let mut ca = ListChunked::new_with_compute_len(Arc::new(self.field().clone()), vec![arr]);
         if self.fast_explode() {
             ca.set_fast_explode()
         }
@@ -142,12 +136,15 @@ pub fn get_list_builder(
             Some(inner_type_logical.clone()),
         ))),
         #[cfg(feature = "dtype-decimal")]
-        DataType::Decimal(_, _) => Ok(Box::new(ListPrimitiveChunkedBuilder::<Int128Type>::new(
-            name,
-            list_capacity,
-            value_capacity,
-            inner_type_logical.clone(),
-        ))),
+        DataType::Decimal(_, _) => Ok(Box::new(
+            ListPrimitiveChunkedBuilder::<Int128Type>::new_with_values_type(
+                name,
+                list_capacity,
+                value_capacity,
+                physical_type,
+                inner_type_logical.clone(),
+            ),
+        )),
         _ => {
             macro_rules! get_primitive_builder {
                 ($type:ty) => {{

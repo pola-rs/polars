@@ -2,7 +2,7 @@
 /// prefixes, lengths and values
 /// # Implementation
 /// This struct does not allocate on the heap.
-use crate::parquet::error::Error;
+use crate::parquet::error::ParquetError;
 
 #[derive(Debug)]
 pub struct BinaryIter<'a> {
@@ -17,7 +17,7 @@ impl<'a> BinaryIter<'a> {
 }
 
 impl<'a> Iterator for BinaryIter<'a> {
-    type Item = Result<&'a [u8], Error>;
+    type Item = Result<&'a [u8], ParquetError>;
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -30,7 +30,7 @@ impl<'a> Iterator for BinaryIter<'a> {
         let length = u32::from_le_bytes(self.values[0..4].try_into().unwrap()) as usize;
         self.values = &self.values[4..];
         if length > self.values.len() {
-            return Some(Err(Error::oos(
+            return Some(Err(ParquetError::oos(
                 "A string in plain encoding declares a length that is out of range",
             )));
         }

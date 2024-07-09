@@ -1,15 +1,17 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable, Sequence
 
+from polars import functions as F
+from polars._utils.wrap import wrap_s
 from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
     from datetime import date, datetime, time
 
     from polars import Series
+    from polars._typing import IntoExpr, IntoExprColumn
     from polars.polars import PySeries
-    from polars.type_aliases import IntoExpr, IntoExprColumn
 
 
 @expr_dispatch
@@ -59,20 +61,14 @@ class ArrayNameSpace:
 
         Examples
         --------
-        >>> df = pl.DataFrame(
-        ...     data={"a": [[1, 2], [4, 3]]},
-        ...     schema={"a": pl.Array(pl.Int64, 2)},
-        ... )
-        >>> df.select(pl.col("a").arr.sum())
-        shape: (2, 1)
-        ┌─────┐
-        │ a   │
-        │ --- │
-        │ i64 │
-        ╞═════╡
-        │ 3   │
-        │ 7   │
-        └─────┘
+        >>> s = pl.Series([[1, 2], [4, 3]], dtype=pl.Array(pl.Int64, 2))
+        >>> s.arr.sum()
+        shape: (2,)
+        Series: '' [i64]
+        [
+            3
+            7
+        ]
         """
 
     def std(self, ddof: int = 1) -> Series:
@@ -132,23 +128,37 @@ class ArrayNameSpace:
         maintain_order
             Maintain order of data. This requires more work.
 
+        Returns
+        -------
+        Series
+            Series of data type :class:`List`.
+
         Examples
         --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [[1, 1, 2]],
-        ...     },
-        ...     schema_overrides={"a": pl.Array(pl.Int64, 3)},
-        ... )
-        >>> df.select(pl.col("a").arr.unique())
-        shape: (1, 1)
-        ┌───────────┐
-        │ a         │
-        │ ---       │
-        │ list[i64] │
-        ╞═══════════╡
-        │ [1, 2]    │
-        └───────────┘
+        >>> s = pl.Series([[1, 1, 2], [3, 4, 5]], dtype=pl.Array(pl.Int64, 3))
+        >>> s.arr.unique()
+        shape: (2,)
+        Series: '' [list[i64]]
+        [
+            [1, 2]
+            [3, 4, 5]
+        ]
+        """
+
+    def n_unique(self) -> Series:
+        """
+        Count the number of unique values in every sub-arrays.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[1, 2], [4, 4]], dtype=pl.Array(pl.Int64, 2))
+        >>> s.arr.n_unique()
+        shape: (2,)
+        Series: 'a' [u32]
+        [
+            2
+            1
+        ]
         """
 
     def to_list(self) -> Series:
@@ -226,7 +236,13 @@ class ArrayNameSpace:
         ]
         """
 
-    def sort(self, *, descending: bool = False, nulls_last: bool = False) -> Series:
+    def sort(
+        self,
+        *,
+        descending: bool = False,
+        nulls_last: bool = False,
+        multithreaded: bool = True,
+    ) -> Series:
         """
         Sort the arrays in this column.
 
@@ -236,6 +252,8 @@ class ArrayNameSpace:
             Sort in descending order.
         nulls_last
             Place null values last.
+        multithreaded
+            Sort using multiple threads.
 
         Examples
         --------
@@ -320,7 +338,7 @@ class ArrayNameSpace:
 
         """
 
-    def get(self, index: int | IntoExprColumn) -> Series:
+    def get(self, index: int | IntoExprColumn, *, null_on_oob: bool = False) -> Series:
         """
         Get the value by index in the sub-arrays.
 
@@ -332,6 +350,10 @@ class ArrayNameSpace:
         ----------
         index
             Index to return per sublist
+        null_on_oob
+            Behavior if an index is out of bounds:
+            True -> set as null
+            False -> raise an error
 
         Returns
         -------
@@ -343,13 +365,13 @@ class ArrayNameSpace:
         >>> s = pl.Series(
         ...     "a", [[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=pl.Array(pl.Int32, 3)
         ... )
-        >>> s.arr.get(pl.Series([1, -2, 4]))
+        >>> s.arr.get(pl.Series([1, -2, 0]), null_on_oob=True)
         shape: (3,)
         Series: 'a' [i32]
         [
             2
             5
-            null
+            7
         ]
 
         """
@@ -505,4 +527,97 @@ class ArrayNameSpace:
             3
         ]
 
+        """
+
+    def to_struct(
+        self,
+        fields: Callable[[int], str] | Sequence[str] | None = None,
+    ) -> Series:
+        """
+        Convert the series of type `Array` to a series of type `Struct`.
+
+        Parameters
+        ----------
+        fields
+            If the name and number of the desired fields is known in advance
+            a list of field names can be given, which will be assigned by index.
+            Otherwise, to dynamically assign field names, a custom function can be
+            used; if neither are set, fields will be `field_0, field_1 .. field_n`.
+
+        Examples
+        --------
+        Convert array to struct with default field name assignment:
+
+        >>> s1 = pl.Series("n", [[0, 1, 2], [3, 4, 5]], dtype=pl.Array(pl.Int8, 3))
+        >>> s2 = s1.arr.to_struct()
+        >>> s2
+        shape: (2,)
+        Series: 'n' [struct[3]]
+        [
+            {0,1,2}
+            {3,4,5}
+        ]
+        >>> s2.struct.fields
+        ['field_0', 'field_1', 'field_2']
+
+        Convert array to struct with field name assignment by function/index:
+
+        >>> s3 = s1.arr.to_struct(fields=lambda idx: f"n{idx:02}")
+        >>> s3.struct.fields
+        ['n00', 'n01', 'n02']
+
+        Convert array to struct with field name assignment by
+        index from a list of names:
+
+        >>> s1.arr.to_struct(fields=["one", "two", "three"]).struct.unnest()
+        shape: (2, 3)
+        ┌─────┬─────┬───────┐
+        │ one ┆ two ┆ three │
+        │ --- ┆ --- ┆ ---   │
+        │ i8  ┆ i8  ┆ i8    │
+        ╞═════╪═════╪═══════╡
+        │ 0   ┆ 1   ┆ 2     │
+        │ 3   ┆ 4   ┆ 5     │
+        └─────┴─────┴───────┘
+        """
+        s = wrap_s(self._s)
+        return s.to_frame().select(F.col(s.name).arr.to_struct(fields)).to_series()
+
+    def shift(self, n: int | IntoExprColumn = 1) -> Series:
+        """
+        Shift array values by the given number of indices.
+
+        Parameters
+        ----------
+        n
+            Number of indices to shift forward. If a negative value is passed, values
+            are shifted in the opposite direction instead.
+
+        Notes
+        -----
+        This method is similar to the `LAG` operation in SQL when the value for `n`
+        is positive. With a negative value for `n`, it is similar to `LEAD`.
+
+        Examples
+        --------
+        By default, array values are shifted forward by one index.
+
+        >>> s = pl.Series([[1, 2, 3], [4, 5, 6]], dtype=pl.Array(pl.Int64, 3))
+        >>> s.arr.shift()
+        shape: (2,)
+        Series: '' [array[i64, 3]]
+        [
+            [null, 1, 2]
+            [null, 4, 5]
+        ]
+
+        Pass a negative value to shift in the opposite direction instead.
+
+        >>> s.arr.shift(-2)
+        shape: (2,)
+        Series: '' [array[i64, 3]]
+        [
+            [3, null, null]
+            [6, null, null]
+        ]
         """

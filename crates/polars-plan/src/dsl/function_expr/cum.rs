@@ -21,6 +21,7 @@ pub(super) fn cum_max(s: &Series, reverse: bool) -> PolarsResult<Series> {
 }
 
 pub(super) mod dtypes {
+    use polars_core::utils::materialize_dyn_int;
     use DataType::*;
 
     use super::*;
@@ -36,6 +37,11 @@ pub(super) mod dtypes {
                 UInt64 => UInt64,
                 Float32 => Float32,
                 Float64 => Float64,
+                Unknown(kind) => match kind {
+                    UnknownKind::Int(v) => cum_sum(&materialize_dyn_int(*v).dtype()),
+                    UnknownKind::Float => Float64,
+                    _ => dt.clone(),
+                },
                 _ => Int64,
             }
         }

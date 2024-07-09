@@ -7,10 +7,10 @@ pub type InnerJoinIds = (JoinIds, JoinIds);
 #[cfg(feature = "chunked_ids")]
 pub(super) type ChunkJoinIds = Either<Vec<IdxSize>, Vec<ChunkId>>;
 #[cfg(feature = "chunked_ids")]
-pub type ChunkJoinOptIds = Either<Vec<Option<IdxSize>>, Vec<Option<ChunkId>>>;
+pub type ChunkJoinOptIds = Either<Vec<NullableIdxSize>, Vec<ChunkId>>;
 
 #[cfg(not(feature = "chunked_ids"))]
-pub type ChunkJoinOptIds = Vec<Option<IdxSize>>;
+pub type ChunkJoinOptIds = Vec<NullableIdxSize>;
 
 #[cfg(not(feature = "chunked_ids"))]
 pub type ChunkJoinIds = Vec<IdxSize>;
@@ -18,10 +18,7 @@ pub type ChunkJoinIds = Vec<IdxSize>;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-#[cfg(feature = "asof_join")]
-use super::asof::AsOfOptions;
-
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct JoinArgs {
     pub how: JoinType,
@@ -29,6 +26,42 @@ pub struct JoinArgs {
     pub suffix: Option<String>,
     pub slice: Option<(i64, usize)>,
     pub join_nulls: bool,
+    pub coalesce: JoinCoalesce,
+}
+
+impl JoinArgs {
+    pub fn should_coalesce(&self) -> bool {
+        self.coalesce.coalesce(&self.how)
+    }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub enum JoinCoalesce {
+    #[default]
+    JoinSpecific,
+    CoalesceColumns,
+    KeepColumns,
+}
+
+impl JoinCoalesce {
+    pub fn coalesce(&self, join_type: &JoinType) -> bool {
+        use JoinCoalesce::*;
+        use JoinType::*;
+        match join_type {
+            Left | Inner | Right => {
+                matches!(self, JoinSpecific | CoalesceColumns)
+            },
+            Full { .. } => {
+                matches!(self, CoalesceColumns)
+            },
+            #[cfg(feature = "asof_join")]
+            AsOf(_) => matches!(self, JoinSpecific | CoalesceColumns),
+            Cross => false,
+            #[cfg(feature = "semi_anti_join")]
+            Semi | Anti => false,
+        }
+    }
 }
 
 impl Default for JoinArgs {
@@ -39,6 +72,7 @@ impl Default for JoinArgs {
             suffix: None,
             slice: None,
             join_nulls: false,
+            coalesce: Default::default(),
         }
     }
 }
@@ -51,7 +85,18 @@ impl JoinArgs {
             suffix: None,
             slice: None,
             join_nulls: false,
+            coalesce: Default::default(),
         }
+    }
+
+    pub fn with_coalesce(mut self, coalesce: JoinCoalesce) -> Self {
+        self.coalesce = coalesce;
+        self
+    }
+
+    pub fn with_suffix(mut self, suffix: Option<String>) -> Self {
+        self.suffix = suffix;
+        self
     }
 
     pub fn suffix(&self) -> &str {
@@ -59,14 +104,13 @@ impl JoinArgs {
     }
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum JoinType {
-    Left,
     Inner,
-    Outer {
-        coalesce: bool,
-    },
+    Left,
+    Right,
+    Full,
     #[cfg(feature = "asof_join")]
     AsOf(AsOfOptions),
     Cross,
@@ -74,18 +118,6 @@ pub enum JoinType {
     Semi,
     #[cfg(feature = "semi_anti_join")]
     Anti,
-}
-
-impl JoinType {
-    pub fn merges_join_keys(&self) -> bool {
-        match self {
-            Self::Outer { coalesce } => *coalesce,
-            // Merges them if they are equal
-            #[cfg(feature = "asof_join")]
-            Self::AsOf(_) => false,
-            _ => true,
-        }
-    }
 }
 
 impl From<JoinType> for JoinArgs {
@@ -99,8 +131,9 @@ impl Display for JoinType {
         use JoinType::*;
         let val = match self {
             Left => "LEFT",
+            Right => "RIGHT",
             Inner => "INNER",
-            Outer { .. } => "OUTER",
+            Full { .. } => "FULL",
             #[cfg(feature = "asof_join")]
             AsOf(_) => "ASOF",
             Cross => "CROSS",
@@ -119,7 +152,20 @@ impl Debug for JoinType {
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, Default)]
+impl JoinType {
+    pub fn is_asof(&self) -> bool {
+        #[cfg(feature = "asof_join")]
+        {
+            matches!(self, JoinType::AsOf(_))
+        }
+        #[cfg(not(feature = "asof_join"))]
+        {
+            false
+        }
+    }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum JoinValidation {
     /// No unique checks
@@ -152,12 +198,11 @@ impl JoinValidation {
         }
     }
 
-    pub fn is_valid_join(&self, join_type: &JoinType, n_keys: usize) -> PolarsResult<()> {
+    pub fn is_valid_join(&self, join_type: &JoinType) -> PolarsResult<()> {
         if !self.needs_checks() {
             return Ok(());
         }
-        polars_ensure!(n_keys == 1, ComputeError: "{self} validation on a {join_type} is not yet supported for multiple keys");
-        polars_ensure!(matches!(join_type, JoinType::Inner | JoinType::Outer{..} | JoinType::Left),
+        polars_ensure!(matches!(join_type, JoinType::Inner | JoinType::Full{..} | JoinType::Left),
                       ComputeError: "{self} validation on a {join_type} join is not supported");
         Ok(())
     }
@@ -185,7 +230,7 @@ impl JoinValidation {
             ManyToMany | ManyToOne => true,
             OneToMany | OneToOne => probe.n_unique()? == probe.len(),
         };
-        polars_ensure!(valid, ComputeError: "the join keys did not fulfil {} validation", self);
+        polars_ensure!(valid, ComputeError: "join keys did not fulfill {} validation", self);
         Ok(())
     }
 
@@ -204,7 +249,7 @@ impl JoinValidation {
             ManyToMany | OneToMany => true,
             ManyToOne | OneToOne => build_size == expected_size,
         };
-        polars_ensure!(valid, ComputeError: "the join keys did not fulfil {} validation", self);
+        polars_ensure!(valid, ComputeError: "join keys did not fulfill {} validation", self);
         Ok(())
     }
 }

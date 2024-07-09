@@ -1,13 +1,14 @@
 use std::borrow::Cow;
 use std::fmt::Formatter;
 
-use serde::de::{MapAccess, Visitor};
+use serde::de::{Error as DeError, MapAccess, Visitor};
+use serde::ser::Error as SerError;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 #[cfg(feature = "dtype-array")]
 use crate::chunked_array::builder::get_fixed_size_list_builder;
 use crate::chunked_array::builder::AnonymousListBuilder;
-use crate::chunked_array::Settings;
+use crate::chunked_array::metadata::MetadataFlags;
 use crate::prelude::*;
 
 impl Serialize for Series {
@@ -70,6 +71,19 @@ impl Serialize for Series {
                 let ca = self.time().unwrap();
                 ca.serialize(serializer)
             },
+            #[cfg(feature = "dtype-decimal")]
+            DataType::Decimal(_, _) => {
+                let ca = self.decimal().unwrap();
+                ca.serialize(serializer)
+            },
+            DataType::Null => {
+                let ca = self.null().unwrap();
+                ca.serialize(serializer)
+            },
+            #[cfg(feature = "object")]
+            DataType::Object(_, _) => Err(S::Error::custom(
+                "serializing data of type Object is not supported",
+            )),
             dt => {
                 with_match_physical_numeric_polars_type!(dt, |$T| {
                 let ca: &ChunkedArray<$T> = self.as_ref().as_ref().as_ref();
@@ -103,7 +117,7 @@ impl<'de> Deserialize<'de> for Series {
             {
                 let mut name: Option<Cow<'de, str>> = None;
                 let mut dtype = None;
-                let mut bit_settings: Option<Settings> = None;
+                let mut bit_settings: Option<MetadataFlags> = None;
                 let mut values_set = false;
                 while let Some(key) = map.next_key::<Cow<str>>().unwrap() {
                     match key.as_ref() {
@@ -194,6 +208,13 @@ impl<'de> Deserialize<'de> for Series {
                         let values: Vec<Option<i64>> = map.next_value()?;
                         Ok(Series::new(&name, values).cast(&DataType::Time).unwrap())
                     },
+                    #[cfg(feature = "dtype-decimal")]
+                    DataType::Decimal(precision, Some(scale)) => {
+                        let values: Vec<Option<i128>> = map.next_value()?;
+                        Ok(ChunkedArray::from_slice_options(&name, &values)
+                            .into_decimal_unchecked(precision, scale)
+                            .into_series())
+                    },
                     DataType::Boolean => {
                         let values: Vec<Option<bool>> = map.next_value()?;
                         Ok(Series::new(&name, values))
@@ -234,12 +255,12 @@ impl<'de> Deserialize<'de> for Series {
                             if let Some(s) = value {
                                 // we only have one chunk per series as we serialize it in this way.
                                 let arr = &s.chunks()[0];
-                                // safety, we are within bounds
+                                // SAFETY, we are within bounds
                                 unsafe {
                                     builder.push_unchecked(arr.as_ref(), 0);
                                 }
                             } else {
-                                // safety, we are within bounds
+                                // SAFETY, we are within bounds
                                 unsafe {
                                     builder.push_null();
                                 }
@@ -264,9 +285,14 @@ impl<'de> Deserialize<'de> for Series {
                         let values: Vec<Option<Cow<str>>> = map.next_value()?;
                         Ok(Series::new(&name, values).cast(&dt).unwrap())
                     },
-                    dt => {
-                        panic!("{dt:?} dtype deserialization not yet implemented")
+                    DataType::Null => {
+                        let values: Vec<usize> = map.next_value()?;
+                        let len = values.first().unwrap();
+                        Ok(Series::new_null(&name, *len))
                     },
+                    dt => Err(A::Error::custom(format!(
+                        "deserializing data of type {dt} is not supported"
+                    ))),
                 }?;
 
                 if let Some(f) = bit_settings {

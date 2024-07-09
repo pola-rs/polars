@@ -67,6 +67,7 @@ pub enum ArrowDataType {
     /// * As used in the Olson time zone database (the "tz database" or
     ///   "tzdata"), such as "America/New_York"
     /// * An absolute time zone offset of the form +XX:XX or -XX:XX, such as +07:30
+    ///
     /// When the timezone is not specified, the timestamp is considered to have no timezone
     /// and is represented _as is_
     Timestamp(TimeUnit, Option<String>),
@@ -169,6 +170,8 @@ pub enum ArrowDataType {
     /// A string type that inlines small values
     /// and can intern strings.
     Utf8View,
+    /// A type unknown to Arrow.
+    Unknown,
 }
 
 #[cfg(feature = "arrow_rs")]
@@ -233,6 +236,7 @@ impl From<ArrowDataType> for arrow_schema::DataType {
             ArrowDataType::BinaryView | ArrowDataType::Utf8View => {
                 panic!("view datatypes not supported by arrow-rs")
             },
+            ArrowDataType::Unknown => unimplemented!(),
         }
     }
 }
@@ -298,13 +302,16 @@ impl From<arrow_schema::DataType> for ArrowDataType {
             DataType::RunEndEncoded(_, _) => {
                 panic!("Run-end encoding not supported by polars_arrow")
             },
+            // This ensures that it doesn't fail to compile when new variants are added to Arrow
+            #[allow(unreachable_patterns)]
+            dtype => unimplemented!("unsupported datatype: {dtype}"),
         }
     }
 }
 
 /// Mode of [`ArrowDataType::Union`]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde_types", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum UnionMode {
     /// Dense union
     Dense,
@@ -470,6 +477,7 @@ impl ArrowDataType {
             Map(_, _) => PhysicalType::Map,
             Dictionary(key, _, _) => PhysicalType::Dictionary(*key),
             Extension(_, key, _) => key.to_physical_type(),
+            Unknown => unimplemented!(),
         }
     }
 
@@ -592,3 +600,8 @@ pub fn get_extension(metadata: &Metadata) -> Extension {
         None
     }
 }
+
+#[cfg(not(feature = "bigidx"))]
+pub type IdxArr = super::array::UInt32Array;
+#[cfg(feature = "bigidx")]
+pub type IdxArr = super::array::UInt64Array;

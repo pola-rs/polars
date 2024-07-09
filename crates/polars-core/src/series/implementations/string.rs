@@ -1,18 +1,8 @@
-use std::borrow::Cow;
-
-use ahash::RandomState;
-
-use super::{private, IntoSeries, SeriesTrait, *};
+use super::*;
 use crate::chunked_array::comparison::*;
-use crate::chunked_array::ops::compare_inner::{
-    IntoTotalEqInner, IntoTotalOrdInner, TotalEqInner, TotalOrdInner,
-};
-use crate::chunked_array::ops::explode::ExplodeByOffsets;
-use crate::chunked_array::AsSinglePtr;
 #[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::*;
 use crate::prelude::*;
-use crate::series::implementations::SeriesWrap;
 
 impl private::PrivateSeries for SeriesWrap<StringChunked> {
     fn compute_len(&mut self) {
@@ -25,10 +15,10 @@ impl private::PrivateSeries for SeriesWrap<StringChunked> {
         self.0.ref_field().data_type()
     }
 
-    fn _set_flags(&mut self, flags: Settings) {
+    fn _set_flags(&mut self, flags: MetadataFlags) {
         self.0.set_flags(flags)
     }
-    fn _get_flags(&self) -> Settings {
+    fn _get_flags(&self) -> MetadataFlags {
         self.0.get_flags()
     }
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
@@ -95,8 +85,12 @@ impl private::PrivateSeries for SeriesWrap<StringChunked> {
         IntoGroupsProxy::group_tuples(&self.0, multithreaded, sorted)
     }
 
-    fn arg_sort_multiple(&self, options: &SortMultipleOptions) -> PolarsResult<IdxCa> {
-        self.0.arg_sort_multiple(options)
+    fn arg_sort_multiple(
+        &self,
+        by: &[Series],
+        options: &SortMultipleOptions,
+    ) -> PolarsResult<IdxCa> {
+        self.0.arg_sort_multiple(by, options)
     }
 }
 
@@ -105,8 +99,8 @@ impl SeriesTrait for SeriesWrap<StringChunked> {
         self.0.rename(name);
     }
 
-    fn chunk_lengths(&self) -> ChunkIdIter {
-        self.0.chunk_id()
+    fn chunk_lengths(&self) -> ChunkLenIter {
+        self.0.chunk_lengths()
     }
     fn name(&self) -> &str {
         self.0.name()
@@ -124,6 +118,10 @@ impl SeriesTrait for SeriesWrap<StringChunked> {
 
     fn slice(&self, offset: i64, length: usize) -> Series {
         self.0.slice(offset, length).into_series()
+    }
+    fn split_at(&self, offset: i64) -> (Series, Series) {
+        let (a, b) = self.0.split_at(offset);
+        (a.into_series(), b.into_series())
     }
 
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
@@ -147,16 +145,6 @@ impl SeriesTrait for SeriesWrap<StringChunked> {
 
     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<Series> {
         ChunkFilter::filter(&self.0, filter).map(|ca| ca.into_series())
-    }
-
-    #[cfg(feature = "chunked_ids")]
-    unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Series {
-        self.0.take_chunked_unchecked(by, sorted).into_series()
-    }
-
-    #[cfg(feature = "chunked_ids")]
-    unsafe fn _take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Series {
-        self.0.take_opt_chunked_unchecked(by).into_series()
     }
 
     fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
@@ -187,8 +175,8 @@ impl SeriesTrait for SeriesWrap<StringChunked> {
         ChunkExpandAtIndex::new_from_index(&self.0, index, length).into_series()
     }
 
-    fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
-        self.0.cast(data_type)
+    fn cast(&self, data_type: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
+        self.0.cast_with_options(data_type, cast_options)
     }
 
     fn get(&self, index: usize) -> PolarsResult<AnyValue> {
@@ -200,8 +188,8 @@ impl SeriesTrait for SeriesWrap<StringChunked> {
         self.0.get_any_value_unchecked(index)
     }
 
-    fn sort_with(&self, options: SortOptions) -> Series {
-        ChunkSort::sort_with(&self.0, options).into_series()
+    fn sort_with(&self, options: SortOptions) -> PolarsResult<Series> {
+        Ok(ChunkSort::sort_with(&self.0, options).into_series())
     }
 
     fn arg_sort(&self, options: SortOptions) -> IdxCa {
@@ -251,21 +239,24 @@ impl SeriesTrait for SeriesWrap<StringChunked> {
         ChunkShift::shift(&self.0, periods).into_series()
     }
 
-    fn _sum_as_series(&self) -> PolarsResult<Series> {
-        Ok(ChunkAggSeries::sum_as_series(&self.0))
+    fn sum_reduce(&self) -> PolarsResult<Scalar> {
+        Err(polars_err!(
+            op = "`sum`",
+            DataType::String,
+            hint = "you may mean to call `str.concat` or `list.join`"
+        ))
     }
-    fn max_as_series(&self) -> PolarsResult<Series> {
-        Ok(ChunkAggSeries::max_as_series(&self.0))
+    fn max_reduce(&self) -> PolarsResult<Scalar> {
+        Ok(ChunkAggSeries::max_reduce(&self.0))
     }
-    fn min_as_series(&self) -> PolarsResult<Series> {
-        Ok(ChunkAggSeries::min_as_series(&self.0))
+    fn min_reduce(&self) -> PolarsResult<Scalar> {
+        Ok(ChunkAggSeries::min_reduce(&self.0))
     }
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }
 
-    #[cfg(feature = "concat_str")]
-    fn str_concat(&self, delimiter: &str) -> StringChunked {
-        self.0.str_concat(delimiter)
+    fn as_any(&self) -> &dyn Any {
+        &self.0
     }
 }

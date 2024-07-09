@@ -89,7 +89,7 @@ impl<'a> AnonymousListBuilder<'a> {
 
             let inner_dtype_physical = inner_dtype
                 .as_ref()
-                .map(|dt| dt.to_physical().to_arrow(true));
+                .map(|dt| dt.to_physical().to_arrow(CompatLevel::newest()));
             let arr = slf.builder.finish(inner_dtype_physical.as_ref()).unwrap();
 
             let list_dtype_logical = match inner_dtype {
@@ -157,7 +157,7 @@ impl ListBuilderTrait for AnonymousOwnedListBuilder {
         let slf = std::mem::take(self);
         let inner_dtype_physical = inner_dtype
             .as_ref()
-            .map(|dt| dt.to_physical().to_arrow(true));
+            .map(|dt| dt.to_physical().to_arrow(CompatLevel::newest()));
         let arr = slf.builder.finish(inner_dtype_physical.as_ref()).unwrap();
 
         let list_dtype_logical = match inner_dtype {

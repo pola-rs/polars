@@ -4,6 +4,7 @@ use arrow::array::{Array, DictionaryArray, DictionaryKey};
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
 use polars_error::{polars_err, PolarsResult};
+use polars_utils::iter::FallibleIterator;
 
 use super::super::super::PagesIter;
 use super::super::nested_utils::*;
@@ -88,7 +89,9 @@ impl<'a, K: DictionaryKey> NestedDecoder<'a> for DictionaryDecoder<K> {
 
         match (page.encoding(), is_optional, is_filtered) {
             (Encoding::RleDictionary | Encoding::PlainDictionary, true, false) => {
-                dict_indices_decoder(page).map(State::Optional)
+                dict_indices_decoder(page)
+                    .map(|v| v.into_iter())
+                    .map(State::Optional)
             },
             (Encoding::RleDictionary | Encoding::PlainDictionary, false, false) => {
                 Required::try_new(page).map(State::Required)
@@ -112,20 +115,18 @@ impl<'a, K: DictionaryKey> NestedDecoder<'a> for DictionaryDecoder<K> {
         let (values, validity) = decoded;
         match state {
             State::Optional(page_values) => {
-                let key = page_values.next().transpose()?;
-                // todo: convert unwrap to error
-                let key = match K::try_from(key.unwrap_or_default() as usize) {
-                    Ok(key) => key,
-                    Err(_) => todo!(),
+                let key = page_values.next().unwrap_or_default();
+                let Ok(key) = K::try_from(key as usize) else {
+                    panic! {}
                 };
                 values.push(key);
                 validity.push(true);
+                page_values.get_result()?;
             },
             State::Required(page_values) => {
-                let key = page_values.values.next().transpose()?;
-                let key = match K::try_from(key.unwrap_or_default() as usize) {
-                    Ok(key) => key,
-                    Err(_) => todo!(),
+                let key = page_values.values.next().unwrap_or_default();
+                let Ok(key) = K::try_from(key as usize) else {
+                    panic! {}
                 };
                 values.push(key);
             },
@@ -162,7 +163,7 @@ pub fn next_dict<K: DictionaryKey, I: PagesIter, F: Fn(&DictPage) -> Box<dyn Arr
     match iter.next() {
         Err(e) => MaybeNext::Some(Err(e.into())),
         Ok(Some(page)) => {
-            let (page, dict) = match (&dict, page) {
+            let (page, dict) = match (&dict, &page) {
                 (None, Page::Data(_)) => {
                     return MaybeNext::Some(Err(polars_err!(ComputeError:
                         "not implemented: dictionary arrays from non-dict-encoded pages",

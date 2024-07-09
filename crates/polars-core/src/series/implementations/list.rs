@@ -1,20 +1,8 @@
-use std::any::Any;
-use std::borrow::Cow;
-
-#[cfg(feature = "group_by_list")]
-use ahash::RandomState;
-
 use super::*;
 use crate::chunked_array::comparison::*;
-use crate::chunked_array::ops::compare_inner::{IntoTotalEqInner, TotalEqInner};
-use crate::chunked_array::ops::explode::ExplodeByOffsets;
-use crate::chunked_array::{AsSinglePtr, Settings};
 #[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::*;
 use crate::prelude::*;
-use crate::series::implementations::SeriesWrap;
-#[cfg(feature = "chunked_ids")]
-use crate::series::IsSorted;
 
 impl private::PrivateSeries for SeriesWrap<ListChunked> {
     fn compute_len(&mut self) {
@@ -26,10 +14,10 @@ impl private::PrivateSeries for SeriesWrap<ListChunked> {
     fn _dtype(&self) -> &DataType {
         self.0.ref_field().data_type()
     }
-    fn _get_flags(&self) -> Settings {
+    fn _get_flags(&self) -> MetadataFlags {
         self.0.get_flags()
     }
-    fn _set_flags(&mut self, flags: Settings) {
+    fn _set_flags(&mut self, flags: MetadataFlags) {
         self.0.set_flags(flags)
     }
 
@@ -56,22 +44,6 @@ impl private::PrivateSeries for SeriesWrap<ListChunked> {
         IntoGroupsProxy::group_tuples(&self.0, multithreaded, sorted)
     }
 
-    #[cfg(feature = "group_by_list")]
-    fn vec_hash(&self, _build_hasher: RandomState, _buf: &mut Vec<u64>) -> PolarsResult<()> {
-        self.0.vec_hash(_build_hasher, _buf)?;
-        Ok(())
-    }
-
-    #[cfg(feature = "group_by_list")]
-    fn vec_hash_combine(
-        &self,
-        _build_hasher: RandomState,
-        _hashes: &mut [u64],
-    ) -> PolarsResult<()> {
-        self.0.vec_hash_combine(_build_hasher, _hashes)?;
-        Ok(())
-    }
-
     fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
         (&self.0).into_total_eq_inner()
     }
@@ -82,8 +54,8 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
         self.0.rename(name);
     }
 
-    fn chunk_lengths(&self) -> ChunkIdIter {
-        self.0.chunk_id()
+    fn chunk_lengths(&self) -> ChunkLenIter {
+        self.0.chunk_lengths()
     }
     fn name(&self) -> &str {
         self.0.name()
@@ -99,8 +71,21 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
         self.0.shrink_to_fit()
     }
 
+    fn sum_reduce(&self) -> PolarsResult<Scalar> {
+        polars_bail!(
+            op = "`sum`",
+            self.dtype(),
+            hint = "you may mean to call `concat_list`"
+        );
+    }
+
     fn slice(&self, offset: i64, length: usize) -> Series {
         self.0.slice(offset, length).into_series()
+    }
+
+    fn split_at(&self, offset: i64) -> (Series, Series) {
+        let (a, b) = self.0.split_at(offset);
+        (a.into_series(), b.into_series())
     }
 
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
@@ -115,16 +100,6 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
 
     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<Series> {
         ChunkFilter::filter(&self.0, filter).map(|ca| ca.into_series())
-    }
-
-    #[cfg(feature = "chunked_ids")]
-    unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Series {
-        self.0.take_chunked_unchecked(by, sorted).into_series()
-    }
-
-    #[cfg(feature = "chunked_ids")]
-    unsafe fn _take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Series {
-        self.0.take_opt_chunked_unchecked(by).into_series()
     }
 
     fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
@@ -155,8 +130,8 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
         ChunkExpandAtIndex::new_from_index(&self.0, index, length).into_series()
     }
 
-    fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
-        self.0.cast(data_type)
+    fn cast(&self, data_type: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
+        self.0.cast_with_options(data_type, cast_options)
     }
 
     fn get(&self, index: usize) -> PolarsResult<AnyValue> {
@@ -176,7 +151,6 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
         self.0.has_validity()
     }
 
-    #[cfg(feature = "group_by_list")]
     #[cfg(feature = "algorithm_group_by")]
     fn unique(&self) -> PolarsResult<Series> {
         if !self.inner_dtype().is_numeric() {
@@ -188,12 +162,11 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
         }
         let main_thread = POOL.current_thread_index().is_none();
         let groups = self.group_tuples(main_thread, false);
-        // safety:
+        // SAFETY:
         // groups are in bounds
         Ok(unsafe { self.0.clone().into_series().agg_first(&groups?) })
     }
 
-    #[cfg(feature = "group_by_list")]
     #[cfg(feature = "algorithm_group_by")]
     fn n_unique(&self) -> PolarsResult<usize> {
         if !self.inner_dtype().is_numeric() {
@@ -211,7 +184,6 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
         }
     }
 
-    #[cfg(feature = "group_by_list")]
     #[cfg(feature = "algorithm_group_by")]
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
         if !self.inner_dtype().is_numeric() {

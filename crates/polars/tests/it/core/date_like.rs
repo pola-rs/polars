@@ -22,7 +22,7 @@ fn test_datelike_join() -> PolarsResult<()> {
         DataType::Datetime(TimeUnit::Nanoseconds, None)
     ));
 
-    let out = df.outer_join(&df.clone(), ["bar"], ["bar"])?;
+    let out = df.full_join(&df.clone(), ["bar"], ["bar"])?;
     assert!(matches!(
         out.column("bar")?.dtype(),
         DataType::Datetime(TimeUnit::Nanoseconds, None)
@@ -141,11 +141,12 @@ fn test_duration() -> PolarsResult<()> {
 
 #[test]
 #[cfg(feature = "dtype-duration")]
-fn test_duration_date_arithmetic() {
+fn test_duration_date_arithmetic() -> PolarsResult<()> {
     let date1 = Int32Chunked::new("", &[1, 1, 1]).into_date().into_series();
     let date2 = Int32Chunked::new("", &[2, 3, 4]).into_date().into_series();
 
     let diff_ms = &date2 - &date1;
+    let diff_ms = diff_ms?;
     let diff_us = diff_ms
         .cast(&DataType::Duration(TimeUnit::Microseconds))
         .unwrap();
@@ -154,14 +155,16 @@ fn test_duration_date_arithmetic() {
         .unwrap();
 
     // `+` is commutative for date and duration
-    assert_series_eq(&(&diff_ms + &date1), &(&date1 + &diff_ms));
-    assert_series_eq(&(&diff_us + &date1), &(&date1 + &diff_us));
-    assert_series_eq(&(&diff_ns + &date1), &(&date1 + &diff_ns));
+    assert_series_eq(&(&diff_ms + &date1)?, &(&date1 + &diff_ms)?);
+    assert_series_eq(&(&diff_us + &date1)?, &(&date1 + &diff_us)?);
+    assert_series_eq(&(&diff_ns + &date1)?, &(&date1 + &diff_ns)?);
 
     // `+` is correct date and duration
-    assert_series_eq(&(&diff_ms + &date1), &date2);
-    assert_series_eq(&(&diff_us + &date1), &date2);
-    assert_series_eq(&(&diff_ns + &date1), &date2);
+    assert_series_eq(&(&diff_ms + &date1)?, &date2);
+    assert_series_eq(&(&diff_us + &date1)?, &date2);
+    assert_series_eq(&(&diff_ns + &date1)?, &date2);
+
+    Ok(())
 }
 
 fn assert_series_eq(s1: &Series, s2: &Series) {

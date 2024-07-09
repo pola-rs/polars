@@ -121,7 +121,7 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
         DataType::Object(_, _) => {
             // We should almost never hit this. The only known exception is when we put objects in
             // structs. Any other hit should be considered a bug.
-            let arr = &*(arr as *const dyn Array as *const FixedSizeBinaryArray);
+            let arr = arr.as_any().downcast_ref::<FixedSizeBinaryArray>().unwrap();
             PolarsExtension::arr_to_av(arr, idx)
         },
         DataType::Null => AnyValue::Null,
@@ -205,7 +205,7 @@ macro_rules! get_any_value {
         if $index >= $self.len() {
             polars_bail!(oob = $index, $self.len());
         }
-        // SAFETY
+        // SAFETY:
         // bounds are checked
         Ok(unsafe { $self.get_any_value_unchecked($index) })
     }};

@@ -7,20 +7,21 @@ import pandas as pd
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError, PanicException
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from polars.type_aliases import ClosedInterval, TimeUnit
+    from polars._typing import ClosedInterval
 
 
 def test_date_range() -> None:
-    # if low/high are both date, range is also be date _iif_ the granularity is >= 1d
+    # if low/high are both date, range is also be date _iff_ the granularity is >= 1d
     result = pl.date_range(date(2022, 1, 1), date(2022, 3, 1), "1mo", eager=True)
     assert result.to_list() == [date(2022, 1, 1), date(2022, 2, 1), date(2022, 3, 1)]
 
 
 def test_date_range_invalid_time_unit() -> None:
-    with pytest.raises(pl.PolarsPanicError, match="'x' not supported"):
+    with pytest.raises(PanicException, match="'x' not supported"):
         pl.date_range(
             start=date(2021, 12, 16),
             end=date(2021, 12, 18),
@@ -30,7 +31,7 @@ def test_date_range_invalid_time_unit() -> None:
 
 
 def test_date_range_invalid_time() -> None:
-    with pytest.raises(pl.ComputeError, match="end is an out-of-range time"):
+    with pytest.raises(ComputeError, match="end is an out-of-range time"):
         pl.date_range(pl.date(2024, 1, 1), pl.date(2024, 2, 30), eager=True)
 
 
@@ -201,123 +202,20 @@ def test_date_range_eager() -> None:
     assert_series_equal(result, expected)
 
 
-@pytest.mark.parametrize(
-    (
-        "input_time_unit",
-        "input_time_zone",
-        "expected_date_range",
-    ),
-    [
-        (None, None, ["2020-01-01", "2020-01-02", "2020-01-03"]),
-    ],
-)
-def test_date_range_schema_no_upcast(
-    input_time_unit: TimeUnit | None,
-    input_time_zone: str | None,
-    expected_date_range: list[str],
-) -> None:
-    output_dtype = pl.Date
-    interval = "1d"
-
-    df = pl.DataFrame({"start": [date(2020, 1, 1)], "end": [date(2020, 1, 3)]}).lazy()
-    result = df.with_columns(
-        pl.date_ranges(
-            pl.col("start"),
-            pl.col("end"),
-            interval=interval,
-            time_unit=input_time_unit,
-            time_zone=input_time_zone,
-        ).alias("date_range")
-    )
-    expected_schema = {
-        "start": pl.Date,
-        "end": pl.Date,
-        "date_range": pl.List(output_dtype),
-    }
-    assert result.schema == expected_schema
-    assert result.collect().schema == expected_schema
-
-    expected = pl.DataFrame(
-        {
-            "start": [date(2020, 1, 1)],
-            "end": [date(2020, 1, 3)],
-            "date_range": pl.Series(expected_date_range)
-            .str.to_datetime(time_unit="ns")
-            .implode(),
-        }
-    ).with_columns(
-        pl.col("date_range").explode().cast(output_dtype).implode(),
-    )
-    assert_frame_equal(result.collect(), expected)
-
-
-@pytest.mark.parametrize(
-    (
-        "input_time_unit",
-        "input_time_zone",
-        "expected_date_range",
-    ),
-    [
-        ("ms", None, ["2020-01-01", "2020-01-02", "2020-01-03"]),
-        (None, "Asia/Kathmandu", ["2020-01-01", "2020-01-02", "2020-01-03"]),
-        ("ms", "Asia/Kathmandu", ["2020-01-01", "2020-01-02", "2020-01-03"]),
-    ],
-)
-def test_date_range_schema_no_upcast2(
-    input_time_unit: TimeUnit | None,
-    input_time_zone: str | None,
-    expected_date_range: list[str],
-) -> None:
-    output_dtype = pl.Date
-    interval = "1d"
-
-    df = pl.DataFrame({"start": [date(2020, 1, 1)], "end": [date(2020, 1, 3)]}).lazy()
-    with pytest.deprecated_call():
-        result = df.with_columns(
-            pl.date_ranges(
-                pl.col("start"),
-                pl.col("end"),
-                interval=interval,
-                time_unit=input_time_unit,
-                time_zone=input_time_zone,
-            ).alias("date_range")
-        )
-    expected_schema = {
-        "start": pl.Date,
-        "end": pl.Date,
-        "date_range": pl.List(output_dtype),
-    }
-    assert result.schema == expected_schema
-    assert result.collect().schema == expected_schema
-
-    expected = pl.DataFrame(
-        {
-            "start": [date(2020, 1, 1)],
-            "end": [date(2020, 1, 3)],
-            "date_range": pl.Series(expected_date_range)
-            .str.to_datetime(time_unit="ns")
-            .implode(),
-        }
-    ).with_columns(
-        pl.col("date_range").explode().cast(output_dtype).implode(),
-    )
-    assert_frame_equal(result.collect(), expected)
-
-
 def test_date_range_input_shape_empty() -> None:
     empty = pl.Series(dtype=pl.Datetime)
     single = pl.Series([datetime(2022, 1, 2)])
 
     with pytest.raises(
-        pl.ComputeError, match="`start` must contain exactly one value, got 0 values"
+        ComputeError, match="`start` must contain exactly one value, got 0 values"
     ):
         pl.date_range(empty, single, eager=True)
     with pytest.raises(
-        pl.ComputeError, match="`end` must contain exactly one value, got 0 values"
+        ComputeError, match="`end` must contain exactly one value, got 0 values"
     ):
         pl.date_range(single, empty, eager=True)
     with pytest.raises(
-        pl.ComputeError, match="`start` must contain exactly one value, got 0 values"
+        ComputeError, match="`start` must contain exactly one value, got 0 values"
     ):
         pl.date_range(empty, empty, eager=True)
 
@@ -327,15 +225,15 @@ def test_date_range_input_shape_multiple_values() -> None:
     multiple = pl.Series([datetime(2022, 1, 3), datetime(2022, 1, 4)])
 
     with pytest.raises(
-        pl.ComputeError, match="`start` must contain exactly one value, got 2 values"
+        ComputeError, match="`start` must contain exactly one value, got 2 values"
     ):
         pl.date_range(multiple, single, eager=True)
     with pytest.raises(
-        pl.ComputeError, match="`end` must contain exactly one value, got 2 values"
+        ComputeError, match="`end` must contain exactly one value, got 2 values"
     ):
         pl.date_range(single, multiple, eager=True)
     with pytest.raises(
-        pl.ComputeError, match="`start` must contain exactly one value, got 2 values"
+        ComputeError, match="`start` must contain exactly one value, got 2 values"
     ):
         pl.date_range(multiple, multiple, eager=True)
 
@@ -346,17 +244,12 @@ def test_date_range_start_later_than_end() -> None:
     assert_series_equal(result, expected)
 
 
-def test_date_range_24h_interval_results_in_datetime() -> None:
-    with pytest.deprecated_call():
-        result = pl.LazyFrame().select(
-            date=pl.date_range(date(2022, 1, 1), date(2022, 1, 3), interval="24h")
-        )
-
-    assert result.schema == {"date": pl.Datetime}
-    expected = pl.Series(
-        "date", [datetime(2022, 1, 1), datetime(2022, 1, 2), datetime(2022, 1, 3)]
-    )
-    assert_series_equal(result.collect().to_series(), expected)
+def test_date_range_24h_interval_raises() -> None:
+    with pytest.raises(
+        ComputeError,
+        match="`interval` input for `date_range` must consist of full days",
+    ):
+        pl.date_range(date(2022, 1, 1), date(2022, 1, 3), interval="24h", eager=True)
 
 
 def test_long_date_range_12461() -> None:
@@ -394,6 +287,26 @@ def test_date_ranges_broadcasting_fail() -> None:
     end = pl.Series([date(2021, 1, 2), date(2021, 1, 3)])
 
     with pytest.raises(
-        pl.ComputeError, match=r"lengths of `start` \(3\) and `end` \(2\) do not match"
+        ComputeError, match=r"lengths of `start` \(3\) and `end` \(2\) do not match"
     ):
         pl.date_ranges(start, end, eager=True)
+
+
+def test_date_range_datetime_input() -> None:
+    result = pl.date_range(
+        datetime(2022, 1, 1, 12), datetime(2022, 1, 3), interval="1d", eager=True
+    )
+    expected = pl.Series(
+        "literal", [date(2022, 1, 1), date(2022, 1, 2), date(2022, 1, 3)]
+    )
+    assert_series_equal(result, expected)
+
+
+def test_date_ranges_datetime_input() -> None:
+    result = pl.date_ranges(
+        datetime(2022, 1, 1, 12), datetime(2022, 1, 3), interval="1d", eager=True
+    )
+    expected = pl.Series(
+        "literal", [[date(2022, 1, 1), date(2022, 1, 2), date(2022, 1, 3)]]
+    )
+    assert_series_equal(result, expected)

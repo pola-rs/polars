@@ -1,11 +1,11 @@
 use std::hash::Hash;
 
 use arrow::bitmap::MutableBitmap;
+use polars_compute::unique::{BooleanUniqueKernelState, PrimitiveRangedUniqueState};
+use polars_utils::float::IsFloat;
+use polars_utils::total_ord::{ToTotalOrd, TotalHash};
 
-#[cfg(feature = "object")]
-use crate::datatypes::ObjectType;
-use crate::datatypes::PlHashSet;
-use crate::frame::group_by::GroupsProxy;
+use crate::chunked_array::metadata::MetadataEnv;
 use crate::hashing::_HASHMAP_INIT_SIZE;
 use crate::prelude::*;
 use crate::series::IsSorted;
@@ -48,7 +48,7 @@ pub(crate) fn is_unique_helper(
 }
 
 #[cfg(feature = "object")]
-impl<T: PolarsObject> ChunkUnique<ObjectType<T>> for ObjectChunked<T> {
+impl<T: PolarsObject> ChunkUnique for ObjectChunked<T> {
     fn unique(&self) -> PolarsResult<ChunkedArray<ObjectType<T>>> {
         polars_bail!(opq = unique, self.dtype());
     }
@@ -60,12 +60,13 @@ impl<T: PolarsObject> ChunkUnique<ObjectType<T>> for ObjectChunked<T> {
 
 fn arg_unique<T>(a: impl Iterator<Item = T>, capacity: usize) -> Vec<IdxSize>
 where
-    T: Hash + Eq,
+    T: ToTotalOrd,
+    <T as ToTotalOrd>::TotalOrdItem: Hash + Eq,
 {
     let mut set = PlHashSet::new();
     let mut unique = Vec::with_capacity(capacity);
     a.enumerate().for_each(|(idx, val)| {
-        if set.insert(val) {
+        if set.insert(val.to_total_ord()) {
             unique.push(idx as IdxSize)
         }
     });
@@ -81,10 +82,11 @@ macro_rules! arg_unique_ca {
     }};
 }
 
-impl<T> ChunkUnique<T> for ChunkedArray<T>
+impl<T> ChunkUnique for ChunkedArray<T>
 where
-    T: PolarsIntegerType,
-    T::Native: Hash + Eq + Ord,
+    T: PolarsNumericType,
+    T::Native: TotalHash + TotalEq + ToTotalOrd,
+    <T::Native as ToTotalOrd>::TotalOrdItem: Hash + Eq + Ord,
     ChunkedArray<T>: IntoSeries + for<'a> ChunkCompare<&'a ChunkedArray<T>, Item = BooleanChunked>,
 {
     fn unique(&self) -> PolarsResult<Self> {
@@ -96,25 +98,23 @@ where
             IsSorted::Ascending | IsSorted::Descending => {
                 if self.null_count() > 0 {
                     let mut arr = MutablePrimitiveArray::with_capacity(self.len());
-                    let mut iter = self.into_iter();
-                    let mut last = None;
 
-                    if let Some(val) = iter.next() {
-                        last = val;
-                        arr.push(val)
-                    };
+                    if !self.is_empty() {
+                        let mut iter = self.iter();
+                        let last = iter.next().unwrap();
+                        arr.push(last);
+                        let mut last = last.to_total_ord();
 
-                    #[allow(clippy::unnecessary_filter_map)]
-                    let to_extend = iter.filter_map(|opt_val| {
-                        if opt_val != last {
-                            last = opt_val;
-                            Some(opt_val)
-                        } else {
-                            None
-                        }
-                    });
+                        let to_extend = iter.filter(|opt_val| {
+                            let opt_val_tot_ord = opt_val.to_total_ord();
+                            let out = opt_val_tot_ord != last;
+                            last = opt_val_tot_ord;
+                            out
+                        });
 
-                    arr.extend(to_extend);
+                        arr.extend(to_extend);
+                    }
+
                     let arr: PrimitiveArray<T::Native> = arr.into();
                     Ok(ChunkedArray::with_chunk(self.name(), arr))
                 } else {
@@ -123,6 +123,37 @@ where
                 }
             },
             IsSorted::Not => {
+                if !T::Native::is_float() && MetadataEnv::experimental_enabled() {
+                    let md = self.metadata();
+                    if let (Some(min), Some(max)) = (md.get_min_value(), md.get_max_value()) {
+                        let data_type = self
+                            .field
+                            .as_ref()
+                            .data_type()
+                            .to_arrow(CompatLevel::oldest());
+                        if let Some(mut state) = PrimitiveRangedUniqueState::new(
+                            *min,
+                            *max,
+                            self.null_count() > 0,
+                            data_type,
+                        ) {
+                            use polars_compute::unique::RangedUniqueKernel;
+
+                            for chunk in self.downcast_iter() {
+                                state.append(chunk);
+
+                                if state.has_seen_all() {
+                                    break;
+                                }
+                            }
+
+                            let unique = state.finalize_unique();
+
+                            return Ok(Self::with_chunk(self.name(), unique));
+                        }
+                    }
+                }
+
                 let sorted = self.sort(false);
                 sorted.unique()
             },
@@ -142,15 +173,18 @@ where
             IsSorted::Ascending | IsSorted::Descending => {
                 if self.null_count() > 0 {
                     let mut count = 0;
-                    let mut iter = self.into_iter();
-                    let mut last = None;
 
-                    if let Some(val) = iter.next() {
-                        last = val;
-                        count += 1;
-                    };
+                    if self.is_empty() {
+                        return Ok(count);
+                    }
+
+                    let mut iter = self.iter();
+                    let mut last = iter.next().unwrap().to_total_ord();
+
+                    count += 1;
 
                     iter.for_each(|opt_val| {
+                        let opt_val = opt_val.to_total_ord();
                         if opt_val != last {
                             last = opt_val;
                             count += 1;
@@ -171,10 +205,10 @@ where
     }
 }
 
-impl ChunkUnique<StringType> for StringChunked {
+impl ChunkUnique for StringChunked {
     fn unique(&self) -> PolarsResult<Self> {
         let out = self.as_binary().unique()?;
-        Ok(unsafe { out.to_string() })
+        Ok(unsafe { out.to_string_unchecked() })
     }
 
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
@@ -186,7 +220,7 @@ impl ChunkUnique<StringType> for StringChunked {
     }
 }
 
-impl ChunkUnique<BinaryType> for BinaryChunked {
+impl ChunkUnique for BinaryChunked {
     fn unique(&self) -> PolarsResult<Self> {
         match self.null_count() {
             0 => {
@@ -234,47 +268,33 @@ impl ChunkUnique<BinaryType> for BinaryChunked {
     }
 }
 
-impl ChunkUnique<BooleanType> for BooleanChunked {
+impl ChunkUnique for BooleanChunked {
     fn unique(&self) -> PolarsResult<Self> {
-        // can be None, Some(true), Some(false)
-        let mut unique = Vec::with_capacity(3);
-        for v in self {
-            if unique.len() == 3 {
+        use polars_compute::unique::RangedUniqueKernel;
+
+        let data_type = self
+            .field
+            .as_ref()
+            .data_type()
+            .to_arrow(CompatLevel::oldest());
+        let has_null = self.null_count() > 0;
+        let mut state = BooleanUniqueKernelState::new(has_null, data_type);
+
+        for arr in self.downcast_iter() {
+            state.append(arr);
+
+            if state.has_seen_all() {
                 break;
             }
-            if !unique.contains(&v) {
-                unique.push(v)
-            }
         }
-        Ok(ChunkedArray::new(self.name(), &unique))
+
+        let unique = state.finalize_unique();
+
+        Ok(Self::with_chunk(self.name(), unique))
     }
 
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
         Ok(IdxCa::from_vec(self.name(), arg_unique_ca!(self)))
-    }
-}
-
-impl ChunkUnique<Float32Type> for Float32Chunked {
-    fn unique(&self) -> PolarsResult<ChunkedArray<Float32Type>> {
-        let ca = self.bit_repr_small();
-        let ca = ca.unique()?;
-        Ok(ca._reinterpret_float())
-    }
-
-    fn arg_unique(&self) -> PolarsResult<IdxCa> {
-        self.bit_repr_small().arg_unique()
-    }
-}
-
-impl ChunkUnique<Float64Type> for Float64Chunked {
-    fn unique(&self) -> PolarsResult<ChunkedArray<Float64Type>> {
-        let ca = self.bit_repr_large();
-        let ca = ca.unique()?;
-        Ok(ca._reinterpret_float())
-    }
-
-    fn arg_unique(&self) -> PolarsResult<IdxCa> {
-        self.bit_repr_large().arg_unique()
     }
 }
 
@@ -296,7 +316,7 @@ mod test {
         let ca = BooleanChunked::from_slice("a", &[true, false, true]);
         assert_eq!(
             ca.unique().unwrap().into_iter().collect::<Vec<_>>(),
-            vec![Some(true), Some(false)]
+            vec![Some(false), Some(true)]
         );
 
         let ca = StringChunked::new("", &[Some("a"), None, Some("a"), Some("b"), None]);

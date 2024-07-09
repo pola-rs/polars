@@ -1,7 +1,8 @@
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 use std::borrow::Cow;
 use std::fmt::{Debug, Display, Formatter, Write};
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::str::FromStr;
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::RwLock;
 use std::{fmt, str};
 
@@ -25,7 +26,14 @@ use num_traits::{Num, NumCast};
 
 use crate::config::*;
 use crate::prelude::*;
-const LIMIT: usize = 25;
+
+// Note: see https://github.com/pola-rs/polars/pull/13699 for the rationale
+// behind choosing 10 as the default value for default number of rows displayed
+const DEFAULT_ROW_LIMIT: usize = 10;
+#[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
+const DEFAULT_COL_LIMIT: usize = 8;
+const DEFAULT_STR_LEN_LIMIT: usize = 30;
+const DEFAULT_LIST_LEN_LIMIT: usize = 3;
 
 #[derive(Copy, Clone)]
 #[repr(u8)]
@@ -36,7 +44,6 @@ pub enum FloatFmt {
 static FLOAT_PRECISION: RwLock<Option<usize>> = RwLock::new(None);
 static FLOAT_FMT: AtomicU8 = AtomicU8::new(FloatFmt::Mixed as u8);
 
-static TRIM_DECIMAL_ZEROS: AtomicBool = AtomicBool::new(false);
 static THOUSANDS_SEPARATOR: AtomicU8 = AtomicU8::new(b'\0');
 static DECIMAL_SEPARATOR: AtomicU8 = AtomicU8::new(b'.');
 
@@ -62,8 +69,9 @@ pub fn get_thousands_separator() -> String {
         sep.to_string()
     }
 }
+#[cfg(feature = "dtype-decimal")]
 pub fn get_trim_decimal_zeros() -> bool {
-    TRIM_DECIMAL_ZEROS.load(Ordering::Relaxed)
+    arrow::compute::decimal::get_trim_decimal_zeros()
 }
 
 // Numeric formatting setters
@@ -79,8 +87,43 @@ pub fn set_decimal_separator(dec: Option<char>) {
 pub fn set_thousands_separator(sep: Option<char>) {
     THOUSANDS_SEPARATOR.store(sep.unwrap_or('\0') as u8, Ordering::Relaxed)
 }
+#[cfg(feature = "dtype-decimal")]
 pub fn set_trim_decimal_zeros(trim: Option<bool>) {
-    TRIM_DECIMAL_ZEROS.store(trim.unwrap_or(false), Ordering::Relaxed)
+    arrow::compute::decimal::set_trim_decimal_zeros(trim)
+}
+
+/// Parses an environment variable value.
+fn parse_env_var<T: FromStr>(name: &str) -> Option<T> {
+    std::env::var(name).ok().and_then(|v| v.parse().ok())
+}
+/// Parses an environment variable value as a limit or set a default.
+///
+/// Negative values (e.g. -1) are parsed as 'no limit' or [`usize::MAX`].
+fn parse_env_var_limit(name: &str, default: usize) -> usize {
+    parse_env_var(name).map_or(
+        default,
+        |n: i64| {
+            if n < 0 {
+                usize::MAX
+            } else {
+                n as usize
+            }
+        },
+    )
+}
+
+fn get_row_limit() -> usize {
+    parse_env_var_limit(FMT_MAX_ROWS, DEFAULT_ROW_LIMIT)
+}
+#[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
+fn get_col_limit() -> usize {
+    parse_env_var_limit(FMT_MAX_COLS, DEFAULT_COL_LIMIT)
+}
+fn get_str_len_limit() -> usize {
+    parse_env_var_limit(FMT_STR_LEN, DEFAULT_STR_LEN_LIMIT)
+}
+fn get_list_len_limit() -> usize {
+    parse_env_var_limit(FMT_TABLE_CELL_LIST_LEN, DEFAULT_LIST_LEN_LIMIT)
 }
 
 macro_rules! format_array {
@@ -93,56 +136,50 @@ macro_rules! format_array {
             $name,
             $dtype
         )?;
-        let truncate = matches!($a.dtype(), DataType::String);
-        let truncate_len = if truncate {
-            std::env::var(FMT_STR_LEN)
-                .as_deref()
-                .unwrap_or("")
-                .parse()
-                .unwrap_or(15)
-        } else {
-            15
+
+        let truncate = match $a.dtype() {
+            DataType::String => true,
+            #[cfg(feature = "dtype-categorical")]
+            DataType::Categorical(_, _) | DataType::Enum(_, _) => true,
+            _ => false,
         };
-        let limit: usize = {
-            let limit = std::env::var(FMT_MAX_ROWS)
-                .as_deref()
-                .unwrap_or("")
-                .parse()
-                .map_or(LIMIT, |n: i64| if n < 0 { $a.len() } else { n as usize });
-            std::cmp::min(limit, $a.len())
-        };
+        let truncate_len = if truncate { get_str_len_limit() } else { 0 };
+
         let write_fn = |v, f: &mut Formatter| -> fmt::Result {
             if truncate {
                 let v = format!("{}", v);
-                let v_trunc = &v[..v
+                let v_no_quotes = &v[1..v.len() - 1];
+                let v_trunc = &v_no_quotes[..v_no_quotes
                     .char_indices()
                     .take(truncate_len)
                     .last()
                     .map(|(i, c)| i + c.len_utf8())
                     .unwrap_or(0)];
-                if v == v_trunc {
+                if v_no_quotes == v_trunc {
                     write!(f, "\t{}\n", v)?;
                 } else {
-                    write!(f, "\t{}…\n", v_trunc)?;
+                    write!(f, "\t\"{}…\n", v_trunc)?;
                 }
             } else {
                 write!(f, "\t{}\n", v)?;
             };
             Ok(())
         };
-        if (limit == 0 && $a.len() > 0) || ($a.len() > limit + 1) {
-            if limit > 0 {
-                for i in 0..std::cmp::max((limit / 2), 1) {
-                    let v = $a.get_any_value(i).unwrap();
-                    write_fn(v, $f)?;
-                }
+
+        let limit = get_row_limit();
+
+        if $a.len() > limit {
+            let half = limit / 2;
+            let rest = limit % 2;
+
+            for i in 0..(half + rest) {
+                let v = $a.get_any_value(i).unwrap();
+                write_fn(v, $f)?;
             }
             write!($f, "\t…\n")?;
-            if limit > 1 {
-                for i in ($a.len() - (limit + 1) / 2)..$a.len() {
-                    let v = $a.get_any_value(i).unwrap();
-                    write_fn(v, $f)?;
-                }
+            for i in ($a.len() - half)..$a.len() {
+                let v = $a.get_any_value(i).unwrap();
+                write_fn(v, $f)?;
             }
         } else {
             for i in 0..$a.len() {
@@ -163,8 +200,8 @@ fn format_object_array(
     array_type: &str,
 ) -> fmt::Result {
     match object.dtype() {
-        DataType::Object(inner_type, None) => {
-            let limit = std::cmp::min(LIMIT, object.len());
+        DataType::Object(inner_type, _) => {
+            let limit = std::cmp::min(DEFAULT_ROW_LIMIT, object.len());
             write!(
                 f,
                 "shape: ({},)\n{}: '{}' [o][{}]\n[\n",
@@ -230,7 +267,7 @@ where
     T: PolarsObject,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let limit = std::cmp::min(LIMIT, self.len());
+        let limit = std::cmp::min(DEFAULT_ROW_LIMIT, self.len());
         let inner_type = T::type_name();
         write!(
             f,
@@ -333,7 +370,7 @@ impl Debug for Series {
                 format_array!(f, self.list().unwrap(), &dt, self.name(), "Series")
             },
             #[cfg(feature = "object")]
-            DataType::Object(_, None) => format_object_array(f, self, self.name(), "Series"),
+            DataType::Object(_, _) => format_object_array(f, self, self.name(), "Series"),
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_, _) => {
                 format_array!(f, self.categorical().unwrap(), "cat", self.name(), "Series")
@@ -495,14 +532,6 @@ fn fmt_df_shape((shape0, shape1): &(usize, usize)) -> String {
     )
 }
 
-fn get_str_width() -> usize {
-    std::env::var(FMT_STR_LEN)
-        .as_deref()
-        .unwrap_or("")
-        .parse()
-        .unwrap_or(32)
-}
-
 impl Display for DataFrame {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
@@ -512,21 +541,10 @@ impl Display for DataFrame {
                 self.columns.iter().all(|s| s.len() == height),
                 "The column lengths in the DataFrame are not equal."
             );
-            let str_truncate = get_str_width();
 
-            let max_n_cols = std::env::var(FMT_MAX_COLS)
-                .as_deref()
-                .unwrap_or("")
-                .parse()
-                .map_or(8, |n: i64| if n < 0 { self.width() } else { n as usize });
-
-            let max_n_rows = std::env::var(FMT_MAX_ROWS)
-                .as_deref()
-                .unwrap_or("")
-                .parse()
-                // Note: see "https://github.com/pola-rs/polars/pull/13699" for
-                // the rationale behind choosing 10 as the default value ;)
-                .map_or(10, |n: i64| if n < 0 { height } else { n as usize });
+            let max_n_cols = get_col_limit();
+            let max_n_rows = get_row_limit();
+            let str_truncate = get_str_len_limit();
 
             let (n_first, n_last) = if self.width() > max_n_cols {
                 ((max_n_cols + 1) / 2, max_n_cols / 2)
@@ -588,11 +606,15 @@ impl Display for DataFrame {
             let mut max_elem_lengths: Vec<usize> = vec![0; n_tbl_cols];
 
             if max_n_rows > 0 {
-                if height > max_n_rows + 1 {
-                    // Truncate the table if we have more rows than the configured maximum
-                    // number of rows plus the single row which would contain "…".
+                if height > max_n_rows {
+                    // Truncate the table if we have more rows than the
+                    // configured maximum number of rows
                     let mut rows = Vec::with_capacity(std::cmp::max(max_n_rows, 2));
-                    for i in 0..std::cmp::max(max_n_rows / 2, 1) {
+
+                    let half = max_n_rows / 2;
+                    let rest = max_n_rows % 2;
+
+                    for i in 0..(half + rest) {
                         let row = self
                             .columns
                             .iter()
@@ -606,23 +628,16 @@ impl Display for DataFrame {
                     }
                     let dots = rows[0].iter().map(|_| "…".to_string()).collect();
                     rows.push(dots);
-                    if max_n_rows > 1 {
-                        for i in (height - (max_n_rows + 1) / 2)..height {
-                            let row = self
-                                .columns
-                                .iter()
-                                .map(|s| s.str_value(i).unwrap())
-                                .collect();
+                    for i in (height - half)..height {
+                        let row = self
+                            .columns
+                            .iter()
+                            .map(|s| s.str_value(i).unwrap())
+                            .collect();
 
-                            let row_strings = prepare_row(
-                                row,
-                                n_first,
-                                n_last,
-                                str_truncate,
-                                &mut max_elem_lengths,
-                            );
-                            rows.push(row_strings);
-                        }
+                        let row_strings =
+                            prepare_row(row, n_first, n_last, str_truncate, &mut max_elem_lengths);
+                        rows.push(row_strings);
                     }
                     table.add_rows(rows);
                 } else {
@@ -968,7 +983,7 @@ fn format_duration(f: &mut Formatter, v: i64, sizes: &[i64], names: &[&str]) -> 
 }
 
 fn format_blob(f: &mut Formatter<'_>, bytes: &[u8]) -> fmt::Result {
-    let width = get_str_width() * 2;
+    let width = get_str_len_limit() * 2;
     write!(f, "b\"")?;
 
     for b in bytes.iter().take(width) {
@@ -1112,11 +1127,7 @@ impl Series {
             return "[]".to_owned();
         }
 
-        let max_items = std::env::var(FMT_TABLE_CELL_LIST_LEN)
-            .as_deref()
-            .unwrap_or("")
-            .parse()
-            .map_or(3, |n: i64| if n < 0 { self.len() } else { n as usize });
+        let max_items = get_list_len_limit();
 
         match max_items {
             0 => "[…]".to_owned(),
@@ -1161,7 +1172,7 @@ impl Series {
 #[inline]
 #[cfg(feature = "dtype-decimal")]
 pub fn fmt_decimal(f: &mut Formatter<'_>, v: i128, scale: usize) -> fmt::Result {
-    use arrow::legacy::compute::decimal::format_decimal;
+    use arrow::compute::decimal::format_decimal;
 
     let trim_zeros = get_trim_decimal_zeros();
     let repr = format_decimal(v, scale, trim_zeros);

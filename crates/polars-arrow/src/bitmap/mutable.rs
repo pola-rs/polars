@@ -1,13 +1,12 @@
 use std::hint::unreachable_unchecked;
-use std::iter::FromIterator;
 use std::sync::Arc;
 
 use polars_error::{polars_bail, PolarsResult};
 
 use super::utils::{
-    count_zeros, fmt, get_bit, set, set_bit, BitChunk, BitChunksExactMut, BitmapIter,
+    count_zeros, fmt, get_bit, set, set_bit, BitChunk, BitChunks, BitChunksExactMut, BitmapIter,
 };
-use super::Bitmap;
+use super::{intersects_with_mut, Bitmap};
 use crate::bitmap::utils::{get_bit_unchecked, merge_reversed, set_bit_unchecked};
 use crate::trusted_len::TrustedLen;
 
@@ -34,11 +33,11 @@ use crate::trusted_len::TrustedLen;
 /// // we can also get the slice:
 /// assert_eq!(bitmap.as_slice(), [0b00001101u8].as_ref());
 /// // debug helps :)
-/// assert_eq!(format!("{:?}", bitmap), "[0b___01101]".to_string());
+/// assert_eq!(format!("{:?}", bitmap), "Bitmap { len: 5, offset: 0, bytes: [0b___01101] }");
 ///
 /// // It supports mutation in place
 /// bitmap.set(0, false);
-/// assert_eq!(format!("{:?}", bitmap), "[0b___01100]".to_string());
+/// assert_eq!(format!("{:?}", bitmap), "Bitmap { len: 5, offset: 0, bytes: [0b___01100] }");
 /// // and `O(1)` random access
 /// assert_eq!(bitmap.get(0), false);
 /// ```
@@ -77,7 +76,7 @@ impl MutableBitmap {
     /// # Errors
     /// This function errors iff `length > bytes.len() * 8`
     #[inline]
-    pub fn try_new(bytes: Vec<u8>, length: usize) -> PolarsResult<Self> {
+    pub fn try_new(mut bytes: Vec<u8>, length: usize) -> PolarsResult<Self> {
         if length > bytes.len().saturating_mul(8) {
             polars_bail!(InvalidOperation:
                 "The length of the bitmap ({}) must be `<=` to the number of bytes times 8 ({})",
@@ -85,6 +84,10 @@ impl MutableBitmap {
                 bytes.len().saturating_mul(8)
             )
         }
+
+        // Ensure invariant holds.
+        let min_byte_length_needed = length.div_ceil(8);
+        bytes.drain(min_byte_length_needed..);
         Ok(Self {
             length,
             buffer: bytes,
@@ -221,6 +224,7 @@ impl MutableBitmap {
     }
 
     /// Pushes a new bit to the [`MutableBitmap`]
+    ///
     /// # Safety
     /// The caller must ensure that the [`MutableBitmap`] has sufficient capacity.
     #[inline]
@@ -242,10 +246,13 @@ impl MutableBitmap {
         count_zeros(&self.buffer, 0, self.length)
     }
 
-    /// Returns the number of unset bits on this [`MutableBitmap`].
-    #[deprecated(since = "0.13.0", note = "use `unset_bits` instead")]
-    pub fn null_count(&self) -> usize {
-        self.unset_bits()
+    /// Returns the number of set bits on this [`MutableBitmap`].
+    ///
+    /// Guaranteed to be `<= self.len()`.
+    /// # Implementation
+    /// This function is `O(N)`
+    pub fn set_bits(&self) -> usize {
+        self.length - self.unset_bits()
     }
 
     /// Returns the length of the [`MutableBitmap`].
@@ -318,6 +325,7 @@ impl MutableBitmap {
     }
 
     /// Sets the position `index` to `value`
+    ///
     /// # Safety
     /// Caller must ensure that `index < self.len()`
     #[inline]
@@ -330,9 +338,20 @@ impl MutableBitmap {
         self.buffer.shrink_to_fit();
     }
 
+    /// Returns an iterator over bits in bit chunks [`BitChunk`].
+    ///
+    /// This iterator is useful to operate over multiple bits via e.g. bitwise.
+    pub fn chunks<T: BitChunk>(&self) -> BitChunks<T> {
+        BitChunks::new(&self.buffer, 0, self.length)
+    }
+
     /// Returns an iterator over mutable slices, [`BitChunksExactMut`]
     pub(crate) fn bitchunks_exact_mut<T: BitChunk>(&mut self) -> BitChunksExactMut<T> {
         BitChunksExactMut::new(&mut self.buffer, self.length)
+    }
+
+    pub fn intersects_with(&self, other: &Self) -> bool {
+        intersects_with_mut(self, other)
     }
 
     pub fn freeze(self) -> Bitmap {
@@ -524,11 +543,12 @@ impl MutableBitmap {
     /// Extends `self` from a [`TrustedLen`] iterator.
     #[inline]
     pub fn extend_from_trusted_len_iter<I: TrustedLen<Item = bool>>(&mut self, iterator: I) {
-        // safety: I: TrustedLen
+        // SAFETY: I: TrustedLen
         unsafe { self.extend_from_trusted_len_iter_unchecked(iterator) }
     }
 
     /// Extends `self` from an iterator of trusted len.
+    ///
     /// # Safety
     /// The caller must guarantee that the iterator has a trusted len.
     #[inline]
@@ -577,6 +597,7 @@ impl MutableBitmap {
     }
 
     /// Creates a new [`MutableBitmap`] from an iterator of booleans.
+    ///
     /// # Safety
     /// The iterator must report an accurate length.
     #[inline]
@@ -597,7 +618,7 @@ impl MutableBitmap {
     where
         I: TrustedLen<Item = bool>,
     {
-        // Safety: Iterator is `TrustedLen`
+        // SAFETY: Iterator is `TrustedLen`
         unsafe { Self::from_trusted_len_iter_unchecked(iterator) }
     }
 
@@ -610,6 +631,7 @@ impl MutableBitmap {
     }
 
     /// Creates a new [`MutableBitmap`] from an falible iterator of booleans.
+    ///
     /// # Safety
     /// The caller must guarantee that the iterator is `TrustedLen`.
     pub unsafe fn try_from_trusted_len_iter_unchecked<E, I>(
@@ -697,6 +719,7 @@ impl MutableBitmap {
     /// # Implementation
     /// When both [`MutableBitmap`]'s length and `offset` are both multiples of 8,
     /// this function performs a memcopy. Else, it first aligns bit by bit and then performs a memcopy.
+    ///
     /// # Safety
     /// Caller must ensure `offset + length <= slice.len() * 8`
     #[inline]
@@ -729,7 +752,7 @@ impl MutableBitmap {
     #[inline]
     pub fn extend_from_slice(&mut self, slice: &[u8], offset: usize, length: usize) {
         assert!(offset + length <= slice.len() * 8);
-        // safety: invariant is asserted
+        // SAFETY: invariant is asserted
         unsafe { self.extend_from_slice_unchecked(slice, offset, length) }
     }
 
@@ -737,7 +760,7 @@ impl MutableBitmap {
     #[inline]
     pub fn extend_from_bitmap(&mut self, bitmap: &Bitmap) {
         let (slice, offset, length) = bitmap.as_slice();
-        // safety: bitmap.as_slice adheres to the invariant
+        // SAFETY: bitmap.as_slice adheres to the invariant
         unsafe {
             self.extend_from_slice_unchecked(slice, offset, length);
         }
@@ -749,6 +772,14 @@ impl MutableBitmap {
     pub fn as_slice(&self) -> &[u8] {
         let len = (self.length).saturating_add(7) / 8;
         &self.buffer[..len]
+    }
+
+    /// Returns the slice of bytes of this [`MutableBitmap`].
+    /// Note that the last byte may not be fully used.
+    #[inline]
+    pub fn as_mut_slice(&mut self) -> &mut [u8] {
+        let len = (self.length).saturating_add(7) / 8;
+        &mut self.buffer[..len]
     }
 }
 

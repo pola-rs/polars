@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
 
 
@@ -32,7 +33,7 @@ def test_map_groups_lazy() -> None:
 
     expected = pl.LazyFrame({"a": [6.0, 2.0, 2.0], "b": [6.0, 2.0, 4.0]})
     assert_frame_equal(result, expected, check_row_order=False)
-    assert result.schema == expected.schema
+    assert result.collect_schema() == expected.collect_schema()
 
 
 def test_map_groups_rolling() -> None:
@@ -63,7 +64,7 @@ def test_map_groups_rolling() -> None:
 def test_map_groups_empty() -> None:
     df = pl.DataFrame(schema={"x": pl.Int64})
     with pytest.raises(
-        pl.ComputeError, match=r"cannot group_by \+ apply on empty 'DataFrame'"
+        ComputeError, match=r"cannot group_by \+ apply on empty 'DataFrame'"
     ):
         df.group_by("x").map_groups(lambda x: x)
 
@@ -140,28 +141,8 @@ def test_map_groups_numpy_output_3057() -> None:
     )
 
     result = df.group_by("id", maintain_order=True).agg(
-        pl.map_groups(["y", "t"], lambda lst: np.trapz(y=lst[0], x=lst[1])).alias(
-            "result"
-        )
+        pl.map_groups(["y", "t"], lambda lst: np.mean([lst[0], lst[1]])).alias("result")
     )
 
-    expected = pl.DataFrame({"id": [0, 1], "result": [1.955, 13.0]})
+    expected = pl.DataFrame({"id": [0, 1], "result": [2.266666, 7.333333]})
     assert_frame_equal(result, expected)
-
-
-def test_apply_deprecated() -> None:
-    df = pl.DataFrame(
-        {
-            "a": [1, 1, 2, 2, 3],
-            "b": [1, 2, 3, 4, 5],
-        }
-    ).set_sorted("a")
-
-    with pytest.deprecated_call():
-        df.group_by("a").apply(lambda x: x)
-    with pytest.deprecated_call():
-        df.rolling("a", period="2i").apply(lambda x: x, schema=None)
-    with pytest.deprecated_call():
-        df.group_by_dynamic("a", every="2i").apply(lambda x: x, schema=None)
-    with pytest.deprecated_call():
-        pl.apply(["a", "b"], lambda x: x)

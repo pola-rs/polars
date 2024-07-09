@@ -21,7 +21,7 @@ bitflags = { workspace = true }
 bytemuck = { workspace = true }
 chrono = { workspace = true, optional = true }
 chrono-tz = { workspace = true, optional = true }
-comfy-table = { version = "7.0.1", default_features = false, optional = true }
+comfy-table = { version = "7.0.1", default-features = false, optional = true }
 either = { workspace = true }
 hashbrown = { workspace = true }
 indexmap = { workspace = true }
@@ -33,7 +33,7 @@ rand_distr = { workspace = true, optional = true }
 rayon = { workspace = true }
 regex = { workspace = true, optional = true }
 # activate if you want serde support for Series and DataFrames
-serde = { workspace = true, features = ["derive"], optional = true }
+serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 smartstring = { workspace = true }
 thiserror = { workspace = true }
@@ -80,7 +80,6 @@ round_series = []
 checked_arithmetic = []
 is_first_distinct = []
 is_last_distinct = []
-asof_join = []
 dot_product = []
 row_hash = []
 reinterpret = []
@@ -89,12 +88,12 @@ take_opt_iter = []
 group_by_list = []
 # rolling window functions
 rolling_window = []
+rolling_window_by = []
 diagonal_concat = []
 dataframe_arithmetic = []
 product = []
 unique_counts = []
 partition_by = []
-chunked_ids = []
 describe = []
 timezones = ["chrono-tz", "arrow/chrono-tz", "arrow/timezones"]
 dynamic_group_by = ["dtype-datetime", "dtype-date"]
@@ -134,17 +133,16 @@ docs-selection = [
   "checked_arithmetic",
   "is_first_distinct",
   "is_last_distinct",
-  "asof_join",
   "dot_product",
   "row_hash",
   "rolling_window",
+  "rolling_window_by",
   "dtype-categorical",
   "dtype-decimal",
   "diagonal_concat",
   "dataframe_arithmetic",
   "product",
   "describe",
-  "chunked_ids",
   "partition_by",
   "algorithm_group_by",
 ]

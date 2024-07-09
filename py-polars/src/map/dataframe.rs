@@ -1,14 +1,11 @@
 use polars::prelude::*;
 use polars_core::frame::row::{rows_to_schema_first_non_null, Row};
 use polars_core::series::SeriesIter;
-use pyo3::conversion::{FromPyObject, IntoPy};
 use pyo3::prelude::*;
+use pyo3::pybacked::PyBackedStr;
 use pyo3::types::{PyBool, PyFloat, PyInt, PyList, PyString, PyTuple};
 
 use super::*;
-use crate::conversion::Wrap;
-use crate::error::PyPolarsErr;
-use crate::series::PySeries;
 use crate::PyDataFrame;
 
 fn get_iters(df: &DataFrame) -> Vec<SeriesIter> {
@@ -26,7 +23,7 @@ fn get_iters_skip(df: &DataFrame, skip: usize) -> Vec<std::iter::Skip<SeriesIter
 pub fn apply_lambda_unknown<'a>(
     df: &'a DataFrame,
     py: Python,
-    lambda: &'a PyAny,
+    lambda: Bound<'a, PyAny>,
     inference_size: usize,
 ) -> PyResult<(PyObject, bool)> {
     let mut null_count = 0;
@@ -34,7 +31,7 @@ pub fn apply_lambda_unknown<'a>(
 
     for _ in 0..df.height() {
         let iter = iters.iter_mut().map(|it| Wrap(it.next().unwrap()));
-        let arg = (PyTuple::new(py, iter),);
+        let arg = (PyTuple::new_bound(py, iter),);
         let out = lambda.call1(arg)?;
 
         if out.is_none() {
@@ -84,7 +81,7 @@ pub fn apply_lambda_unknown<'a>(
                 false,
             ));
         } else if out.is_instance_of::<PyString>() {
-            let first_value = out.extract::<&str>().ok();
+            let first_value = out.extract::<PyBackedStr>().ok();
             return Ok((
                 PySeries::new(
                     apply_lambda_with_string_out_type(df, py, lambda, null_count, first_value)
@@ -139,7 +136,7 @@ Then return a Series object."
 fn apply_iter<'a, T>(
     df: &'a DataFrame,
     py: Python<'a>,
-    lambda: &'a PyAny,
+    lambda: Bound<'a, PyAny>,
     init_null_count: usize,
     skip: usize,
 ) -> impl Iterator<Item = Option<T>> + 'a
@@ -149,7 +146,7 @@ where
     let mut iters = get_iters_skip(df, init_null_count + skip);
     ((init_null_count + skip)..df.height()).map(move |_| {
         let iter = iters.iter_mut().map(|it| Wrap(it.next().unwrap()));
-        let tpl = (PyTuple::new(py, iter),);
+        let tpl = (PyTuple::new_bound(py, iter),);
         match lambda.call1(tpl) {
             Ok(val) => val.extract::<T>().ok(),
             Err(e) => panic!("python function failed {e}"),
@@ -161,7 +158,7 @@ where
 pub fn apply_lambda_with_primitive_out_type<'a, D>(
     df: &'a DataFrame,
     py: Python<'a>,
-    lambda: &'a PyAny,
+    lambda: Bound<'a, PyAny>,
     init_null_count: usize,
     first_value: Option<D::Native>,
 ) -> ChunkedArray<D>
@@ -182,7 +179,7 @@ where
 pub fn apply_lambda_with_bool_out_type<'a>(
     df: &'a DataFrame,
     py: Python,
-    lambda: &'a PyAny,
+    lambda: Bound<'a, PyAny>,
     init_null_count: usize,
     first_value: Option<bool>,
 ) -> ChunkedArray<BooleanType> {
@@ -199,15 +196,15 @@ pub fn apply_lambda_with_bool_out_type<'a>(
 pub fn apply_lambda_with_string_out_type<'a>(
     df: &'a DataFrame,
     py: Python,
-    lambda: &'a PyAny,
+    lambda: Bound<'a, PyAny>,
     init_null_count: usize,
-    first_value: Option<&str>,
+    first_value: Option<PyBackedStr>,
 ) -> StringChunked {
     let skip = usize::from(first_value.is_some());
     if init_null_count == df.height() {
         ChunkedArray::full_null("map", df.height())
     } else {
-        let iter = apply_iter::<&str>(df, py, lambda, init_null_count, skip);
+        let iter = apply_iter::<PyBackedStr>(df, py, lambda, init_null_count, skip);
         iterator_to_string(iter, init_null_count, first_value, "map", df.height())
     }
 }
@@ -216,7 +213,7 @@ pub fn apply_lambda_with_string_out_type<'a>(
 pub fn apply_lambda_with_list_out_type<'a>(
     df: &'a DataFrame,
     py: Python,
-    lambda: &'a PyAny,
+    lambda: Bound<'a, PyAny>,
     init_null_count: usize,
     first_value: Option<&Series>,
     dt: &DataType,
@@ -228,7 +225,7 @@ pub fn apply_lambda_with_list_out_type<'a>(
         let mut iters = get_iters_skip(df, init_null_count + skip);
         let iter = ((init_null_count + skip)..df.height()).map(|_| {
             let iter = iters.iter_mut().map(|it| Wrap(it.next().unwrap()));
-            let tpl = (PyTuple::new(py, iter),);
+            let tpl = (PyTuple::new_bound(py, iter),);
             match lambda.call1(tpl) {
                 Ok(val) => match val.getattr("_s") {
                     Ok(val) => val.extract::<PySeries>().ok().map(|ps| ps.series),
@@ -250,7 +247,7 @@ pub fn apply_lambda_with_list_out_type<'a>(
 pub fn apply_lambda_with_rows_output<'a>(
     df: &'a DataFrame,
     py: Python,
-    lambda: &'a PyAny,
+    lambda: Bound<'a, PyAny>,
     init_null_count: usize,
     first_value: Row<'a>,
     inference_size: usize,
@@ -264,20 +261,20 @@ pub fn apply_lambda_with_rows_output<'a>(
     let mut iters = get_iters_skip(df, init_null_count + skip);
     let mut row_iter = ((init_null_count + skip)..df.height()).map(|_| {
         let iter = iters.iter_mut().map(|it| Wrap(it.next().unwrap()));
-        let tpl = (PyTuple::new(py, iter),);
+        let tpl = (PyTuple::new_bound(py, iter),);
 
         let return_val = lambda.call1(tpl).map_err(|e| polars_err!(ComputeError: format!("{e}")))?;
         if return_val.is_none() {
             Ok(&null_row)
         } else {
-            let tuple = return_val.downcast::<PyTuple>().map_err(|_| polars_err!(ComputeError: format!("expected tuple, got {}", return_val.get_type().name().unwrap())))?;
+            let tuple = return_val.downcast::<PyTuple>().map_err(|_| polars_err!(ComputeError: format!("expected tuple, got {}", return_val.get_type().qualname().unwrap())))?;
             row_buf.0.clear();
             for v in tuple {
                 let v = v.extract::<Wrap<AnyValue>>().unwrap().0;
                 row_buf.0.push(v);
             }
             let ptr = &row_buf as *const Row;
-            // Safety:
+            // SAFETY:
             // we know that row constructor of polars dataframe does not keep a reference
             // to the row. Before we mutate the row buf again, the reference is dropped.
             // we only cannot prove it to the compiler.
@@ -293,10 +290,10 @@ pub fn apply_lambda_with_rows_output<'a>(
         buf.push(v?.clone());
     }
 
-    let schema = rows_to_schema_first_non_null(&buf, Some(50));
+    let schema = rows_to_schema_first_non_null(&buf, Some(50))?;
 
     if init_null_count > 0 {
-        // Safety: we know the iterators size
+        // SAFETY: we know the iterators size
         let iter = unsafe {
             (0..init_null_count)
                 .map(|_| Ok(&null_row))
@@ -306,7 +303,7 @@ pub fn apply_lambda_with_rows_output<'a>(
         };
         DataFrame::try_from_rows_iter_and_schema(iter, &schema)
     } else {
-        // Safety: we know the iterators size
+        // SAFETY: we know the iterators size
         let iter = unsafe {
             buf.iter()
                 .map(Ok)

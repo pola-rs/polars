@@ -14,7 +14,9 @@ pub struct DynMutableListArray {
 impl DynMutableListArray {
     pub fn try_with_capacity(data_type: ArrowDataType, capacity: usize) -> PolarsResult<Self> {
         let inner = match data_type.to_logical_type() {
-            ArrowDataType::List(inner) | ArrowDataType::LargeList(inner) => inner.data_type(),
+            ArrowDataType::List(inner)
+            | ArrowDataType::LargeList(inner)
+            | ArrowDataType::FixedSizeList(inner, _) => inner.data_type(),
             _ => unreachable!(),
         };
         let inner = make_mutable(inner, capacity)?;
@@ -60,6 +62,11 @@ impl MutableArray for DynMutableListArray {
                     None,
                 ))
             },
+            ArrowDataType::FixedSizeList(field, _) => Box::new(FixedSizeListArray::new(
+                ArrowDataType::FixedSizeList(field.clone(), inner.len()),
+                inner,
+                None,
+            )),
             _ => unreachable!(),
         }
     }

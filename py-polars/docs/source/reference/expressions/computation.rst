@@ -24,17 +24,13 @@ Computation
     Expr.cum_min
     Expr.cum_prod
     Expr.cum_sum
-    Expr.cumcount
-    Expr.cummax
-    Expr.cummin
-    Expr.cumprod
-    Expr.cumsum
     Expr.cumulative_eval
     Expr.degrees
     Expr.diff
     Expr.dot
     Expr.entropy
     Expr.ewm_mean
+    Expr.ewm_mean_by
     Expr.ewm_std
     Expr.ewm_var
     Expr.exp
@@ -52,17 +48,24 @@ Computation
     Expr.peak_min
     Expr.radians
     Expr.rank
-    Expr.rolling_apply
     Expr.rolling_map
     Expr.rolling_max
+    Expr.rolling_max_by
     Expr.rolling_mean
+    Expr.rolling_mean_by
     Expr.rolling_median
+    Expr.rolling_median_by
     Expr.rolling_min
+    Expr.rolling_min_by
     Expr.rolling_quantile
+    Expr.rolling_quantile_by
     Expr.rolling_skew
     Expr.rolling_std
+    Expr.rolling_std_by
     Expr.rolling_sum
+    Expr.rolling_sum_by
     Expr.rolling_var
+    Expr.rolling_var_by
     Expr.search_sorted
     Expr.sign
     Expr.sin

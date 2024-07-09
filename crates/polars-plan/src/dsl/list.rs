@@ -4,8 +4,9 @@ use std::sync::RwLock;
 use polars_core::prelude::*;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
+#[cfg(feature = "list_sets")]
+use polars_core::utils::SuperTypeOptions;
 
-use crate::dsl::function_expr::FunctionExpr;
 use crate::prelude::function_expr::ListFunction;
 use crate::prelude::*;
 
@@ -146,10 +147,15 @@ impl ListNameSpace {
             .map_private(FunctionExpr::ListExpr(ListFunction::Unique(true)))
     }
 
+    pub fn n_unique(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::ListExpr(ListFunction::NUnique))
+    }
+
     /// Get items in every sublist by index.
-    pub fn get(self, index: Expr) -> Expr {
+    pub fn get(self, index: Expr, null_on_oob: bool) -> Expr {
         self.0.map_many_private(
-            FunctionExpr::ListExpr(ListFunction::Get),
+            FunctionExpr::ListExpr(ListFunction::Get(null_on_oob)),
             &[index],
             false,
             false,
@@ -160,9 +166,9 @@ impl ListNameSpace {
     ///
     /// # Arguments
     /// - `null_on_oob`: Return a null when an index is out of bounds.
-    /// This behavior is more expensive than defaulting to returning an `Error`.
+    ///   This behavior is more expensive than defaulting to returning an `Error`.
     #[cfg(feature = "list_gather")]
-    pub fn take(self, index: Expr, null_on_oob: bool) -> Expr {
+    pub fn gather(self, index: Expr, null_on_oob: bool) -> Expr {
         self.0.map_many_private(
             FunctionExpr::ListExpr(ListFunction::Gather(null_on_oob)),
             &[index],
@@ -171,14 +177,24 @@ impl ListNameSpace {
         )
     }
 
+    #[cfg(feature = "list_gather")]
+    pub fn gather_every(self, n: Expr, offset: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::ListExpr(ListFunction::GatherEvery),
+            &[n, offset],
+            false,
+            false,
+        )
+    }
+
     /// Get first item of every sublist.
     pub fn first(self) -> Expr {
-        self.get(lit(0i64))
+        self.get(lit(0i64), true)
     }
 
     /// Get last item of every sublist.
     pub fn last(self) -> Expr {
-        self.get(lit(-1i64))
+        self.get(lit(-1i64), true)
     }
 
     /// Join all string items in a sublist and place a separator between them.
@@ -284,7 +300,7 @@ impl ListNameSpace {
                     let out = out_dtype.read().unwrap();
                     match out.as_ref() {
                         // dtype already set
-                        Some(dt) => dt.clone(),
+                        Some(dt) => Ok(dt.clone()),
                         // dtype still unknown, set it
                         None => {
                             drop(out);
@@ -300,7 +316,7 @@ impl ListNameSpace {
                             let dt = DataType::Struct(fields);
 
                             *lock = Some(dt.clone());
-                            dt
+                            Ok(dt)
                         },
                     }
                 }),
@@ -345,17 +361,17 @@ impl ListNameSpace {
 
     #[cfg(feature = "list_sets")]
     fn set_operation(self, other: Expr, set_operation: SetOperation) -> Expr {
-        self.0
-            .map_many_private(
-                FunctionExpr::ListExpr(ListFunction::SetOperation(set_operation)),
-                &[other],
-                false,
-                true,
-            )
-            .with_function_options(|mut options| {
-                options.input_wildcard_expansion = true;
-                options
-            })
+        Expr::Function {
+            input: vec![self.0, other],
+            function: FunctionExpr::ListExpr(ListFunction::SetOperation(set_operation)),
+            options: FunctionOptions {
+                collect_groups: ApplyOptions::ElementWise,
+                returns_scalar: false,
+                cast_to_supertypes: Some(SuperTypeOptions { implode_list: true }),
+                input_wildcard_expansion: true,
+                ..Default::default()
+            },
+        }
     }
 
     /// Return the SET UNION between both list arrays.

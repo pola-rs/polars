@@ -20,7 +20,7 @@ pub use page::{IndexedPageReader, PageFilter, PageIterator, PageMetaData, PageRe
 #[cfg(feature = "async")]
 pub use stream::read_metadata as read_metadata_async;
 
-use crate::parquet::error::Result;
+use crate::parquet::error::ParquetResult;
 use crate::parquet::metadata::{ColumnChunkMetaData, FileMetaData, RowGroupMetaData};
 
 /// Filters row group metadata to only those row groups,
@@ -47,7 +47,7 @@ pub fn get_page_iterator<R: Read + Seek>(
     pages_filter: Option<PageFilter>,
     scratch: Vec<u8>,
     max_page_size: usize,
-) -> Result<PageReader<R>> {
+) -> ParquetResult<PageReader<R>> {
     let pages_filter = pages_filter.unwrap_or_else(|| Arc::new(|_, _| true));
 
     let (col_start, _) = column_chunk.byte_range();

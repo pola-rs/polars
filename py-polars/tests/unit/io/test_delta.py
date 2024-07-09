@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime
+import os
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pyarrow as pa
@@ -23,7 +24,7 @@ def test_scan_delta(delta_table_path: Path) -> None:
     ldf = pl.scan_delta(str(delta_table_path), version=0)
 
     expected = pl.DataFrame({"name": ["Joey", "Ivan"], "age": [14, 32]})
-    assert_frame_equal(expected, ldf.collect(), check_dtype=False)
+    assert_frame_equal(expected, ldf.collect(), check_dtypes=False)
 
 
 def test_scan_delta_version(delta_table_path: Path) -> None:
@@ -33,11 +34,39 @@ def test_scan_delta_version(delta_table_path: Path) -> None:
     assert_frame_not_equal(df1, df2)
 
 
+@pytest.mark.write_disk()
+def test_scan_delta_timestamp_version(tmp_path: Path) -> None:
+    df_sample = pl.DataFrame({"name": ["Joey"], "age": [14]})
+    df_sample.write_delta(tmp_path, mode="append")
+
+    df_sample2 = pl.DataFrame({"name": ["Ivan"], "age": [34]})
+    df_sample2.write_delta(tmp_path, mode="append")
+
+    log_dir = tmp_path / "_delta_log"
+    log_mtime_pair = [
+        ("00000000000000000000.json", datetime(2010, 1, 1).timestamp()),
+        ("00000000000000000001.json", datetime(2024, 1, 1).timestamp()),
+    ]
+    for file_name, dt_epoch in log_mtime_pair:
+        file_path = log_dir / file_name
+        os.utime(str(file_path), (dt_epoch, dt_epoch))
+
+    df1 = pl.scan_delta(
+        str(tmp_path), version=datetime(2010, 1, 1, tzinfo=timezone.utc)
+    ).collect()
+    df2 = pl.scan_delta(
+        str(tmp_path), version=datetime(2024, 1, 1, tzinfo=timezone.utc)
+    ).collect()
+
+    assert_frame_equal(df1, df_sample)
+    assert_frame_equal(df2, pl.concat([df_sample, df_sample2]), check_row_order=False)
+
+
 def test_scan_delta_columns(delta_table_path: Path) -> None:
     ldf = pl.scan_delta(str(delta_table_path), version=0).select("name")
 
     expected = pl.DataFrame({"name": ["Joey", "Ivan"]})
-    assert_frame_equal(expected, ldf.collect(), check_dtype=False)
+    assert_frame_equal(expected, ldf.collect(), check_dtypes=False)
 
 
 def test_scan_delta_filesystem(delta_table_path: Path) -> None:
@@ -49,7 +78,7 @@ def test_scan_delta_filesystem(delta_table_path: Path) -> None:
     )
 
     expected = pl.DataFrame({"name": ["Joey", "Ivan"], "age": [14, 32]})
-    assert_frame_equal(expected, ldf.collect(), check_dtype=False)
+    assert_frame_equal(expected, ldf.collect(), check_dtypes=False)
 
 
 def test_scan_delta_relative(delta_table_path: Path) -> None:
@@ -58,7 +87,7 @@ def test_scan_delta_relative(delta_table_path: Path) -> None:
     ldf = pl.scan_delta(rel_delta_table_path, version=0)
 
     expected = pl.DataFrame({"name": ["Joey", "Ivan"], "age": [14, 32]})
-    assert_frame_equal(expected, ldf.collect(), check_dtype=False)
+    assert_frame_equal(expected, ldf.collect(), check_dtypes=False)
 
     ldf = pl.scan_delta(rel_delta_table_path, version=1)
     assert_frame_not_equal(expected, ldf.collect())
@@ -68,7 +97,7 @@ def test_read_delta(delta_table_path: Path) -> None:
     df = pl.read_delta(str(delta_table_path), version=0)
 
     expected = pl.DataFrame({"name": ["Joey", "Ivan"], "age": [14, 32]})
-    assert_frame_equal(expected, df, check_dtype=False)
+    assert_frame_equal(expected, df, check_dtypes=False)
 
 
 def test_read_delta_version(delta_table_path: Path) -> None:
@@ -78,11 +107,39 @@ def test_read_delta_version(delta_table_path: Path) -> None:
     assert_frame_not_equal(df1, df2)
 
 
+@pytest.mark.write_disk()
+def test_read_delta_timestamp_version(tmp_path: Path) -> None:
+    df_sample = pl.DataFrame({"name": ["Joey"], "age": [14]})
+    df_sample.write_delta(tmp_path, mode="append")
+
+    df_sample2 = pl.DataFrame({"name": ["Ivan"], "age": [34]})
+    df_sample2.write_delta(tmp_path, mode="append")
+
+    log_dir = tmp_path / "_delta_log"
+    log_mtime_pair = [
+        ("00000000000000000000.json", datetime(2010, 1, 1).timestamp()),
+        ("00000000000000000001.json", datetime(2024, 1, 1).timestamp()),
+    ]
+    for file_name, dt_epoch in log_mtime_pair:
+        file_path = log_dir / file_name
+        os.utime(str(file_path), (dt_epoch, dt_epoch))
+
+    df1 = pl.read_delta(
+        str(tmp_path), version=datetime(2010, 1, 1, tzinfo=timezone.utc)
+    )
+    df2 = pl.read_delta(
+        str(tmp_path), version=datetime(2024, 1, 1, tzinfo=timezone.utc)
+    )
+
+    assert_frame_equal(df1, df_sample)
+    assert_frame_equal(df2, pl.concat([df_sample, df_sample2]), check_row_order=False)
+
+
 def test_read_delta_columns(delta_table_path: Path) -> None:
     df = pl.read_delta(str(delta_table_path), version=0, columns=["name"])
 
     expected = pl.DataFrame({"name": ["Joey", "Ivan"]})
-    assert_frame_equal(expected, df, check_dtype=False)
+    assert_frame_equal(expected, df, check_dtypes=False)
 
 
 def test_read_delta_filesystem(delta_table_path: Path) -> None:
@@ -94,7 +151,7 @@ def test_read_delta_filesystem(delta_table_path: Path) -> None:
     )
 
     expected = pl.DataFrame({"name": ["Joey", "Ivan"], "age": [14, 32]})
-    assert_frame_equal(expected, df, check_dtype=False)
+    assert_frame_equal(expected, df, check_dtypes=False)
 
 
 def test_read_delta_relative(delta_table_path: Path) -> None:
@@ -103,7 +160,7 @@ def test_read_delta_relative(delta_table_path: Path) -> None:
     df = pl.read_delta(rel_delta_table_path, version=0)
 
     expected = pl.DataFrame({"name": ["Joey", "Ivan"], "age": [14, 32]})
-    assert_frame_equal(expected, df, check_dtype=False)
+    assert_frame_equal(expected, df, check_dtypes=False)
 
 
 @pytest.mark.write_disk()
@@ -120,11 +177,15 @@ def test_write_delta(df: pl.DataFrame, tmp_path: Path) -> None:
         v1.write_delta(tmp_path)
 
     # Case: Overwrite with new version (version 1)
-    v1.write_delta(tmp_path, mode="overwrite", overwrite_schema=True)
+    v1.write_delta(
+        tmp_path, mode="overwrite", delta_write_options={"schema_mode": "overwrite"}
+    )
 
     # Case: Error if schema contains unsupported columns
     with pytest.raises(TypeError):
-        df.write_delta(tmp_path, mode="overwrite", overwrite_schema=True)
+        df.write_delta(
+            tmp_path, mode="overwrite", delta_write_options={"schema_mode": "overwrite"}
+        )
 
     partitioned_tbl_uri = (tmp_path / ".." / "partitioned_table").resolve()
 
@@ -185,6 +246,17 @@ def test_write_delta(df: pl.DataFrame, tmp_path: Path) -> None:
 
 
 @pytest.mark.write_disk()
+def test_write_delta_overwrite_schema_deprecated(
+    df: pl.DataFrame, tmp_path: Path
+) -> None:
+    df = df.select(pl.col(pl.Int64))
+    with pytest.deprecated_call():
+        df.write_delta(tmp_path, overwrite_schema=True)
+    result = pl.read_delta(str(tmp_path))
+    assert_frame_equal(df, result)
+
+
+@pytest.mark.write_disk()
 @pytest.mark.parametrize(
     "series",
     [
@@ -197,10 +269,8 @@ def test_write_delta(df: pl.DataFrame, tmp_path: Path) -> None:
             dtype=pl.List(pl.List(pl.List(pl.List(pl.UInt16)))),
         ),
         pl.Series(
-            "date_ns",
-            [datetime(2010, 1, 1, 0, 0)],
-            dtype=pl.Datetime(time_unit="ns", time_zone="Australia/Lord_Howe"),
-        ),
+            "date_ns", [datetime(2010, 1, 1, 0, 0)], dtype=pl.Datetime(time_unit="ns")
+        ).dt.replace_time_zone("Australia/Lord_Howe"),
         pl.Series(
             "date_us",
             [datetime(2010, 1, 1, 0, 0)],
@@ -360,18 +430,19 @@ def test_write_delta_with_schema_10540(tmp_path: Path) -> None:
 def test_write_delta_with_tz_in_df(expr: pl.Expr, tmp_path: Path) -> None:
     df = pl.select(expr)
 
-    pa_schema = pa.schema([("datetime", pa.timestamp("us"))])
+    expected_dtype = pl.Datetime("us", "UTC")
+    expected = pl.select(expr.cast(expected_dtype))
 
     df.write_delta(tmp_path, mode="append")
     # write second time because delta-rs also casts timestamp with tz to timestamp no tz
     df.write_delta(tmp_path, mode="append")
 
+    # Check schema of DeltaTable object
     tbl = DeltaTable(tmp_path)
-    assert pa_schema == tbl.schema().to_pyarrow()
+    assert tbl.schema().to_pyarrow() == expected.to_arrow().schema
 
+    # Check result
     result = pl.read_delta(str(tmp_path), version=0)
-
-    expected = df.cast(pl.Datetime)
     assert_frame_equal(result, expected)
 
 
@@ -388,7 +459,7 @@ def test_write_delta_with_merge_and_no_table(tmp_path: Path) -> None:
 def test_write_delta_with_merge(tmp_path: Path) -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
 
-    df.write_delta(tmp_path, mode="append")
+    df.write_delta(tmp_path)
 
     merger = df.write_delta(
         tmp_path,
@@ -407,6 +478,42 @@ def test_write_delta_with_merge(tmp_path: Path) -> None:
 
     merger.when_matched_delete(predicate="t.a > 2").execute()
 
-    table = pl.read_delta(str(tmp_path))
+    result = pl.read_delta(str(tmp_path))
 
-    assert_frame_equal(df.filter(pl.col("a") <= 2), table)
+    expected = df.filter(pl.col("a") <= 2)
+    assert_frame_equal(result, expected, check_row_order=False)
+
+
+@pytest.mark.write_disk()
+def test_unsupported_dtypes(tmp_path: Path) -> None:
+    df = pl.DataFrame({"a": [None]}, schema={"a": pl.Null})
+    with pytest.raises(TypeError, match="unsupported data type"):
+        df.write_delta(tmp_path / "null")
+
+    df = pl.DataFrame({"a": [123]}, schema={"a": pl.Time})
+    with pytest.raises(TypeError, match="unsupported data type"):
+        df.write_delta(tmp_path / "time")
+
+
+@pytest.mark.write_disk()
+def test_categorical_becomes_string(tmp_path: Path) -> None:
+    df = pl.DataFrame({"a": ["A", "B", "A"]}, schema={"a": pl.Categorical})
+    df.write_delta(tmp_path)
+    df2 = pl.read_delta(str(tmp_path))
+    assert_frame_equal(df2, pl.DataFrame({"a": ["A", "B", "A"]}, schema={"a": pl.Utf8}))
+
+
+@pytest.mark.write_disk()
+@pytest.mark.parametrize("rechunk_and_expected_chunks", [(True, 1), (False, 3)])
+def test_read_parquet_respects_rechunk_16982(
+    rechunk_and_expected_chunks: tuple[bool, int], tmp_path: Path
+) -> None:
+    # Create a delta lake table with 3 chunks:
+    df = pl.DataFrame({"a": [1]})
+    df.write_delta(str(tmp_path))
+    df.write_delta(str(tmp_path), mode="append")
+    df.write_delta(str(tmp_path), mode="append")
+
+    rechunk, expected_chunks = rechunk_and_expected_chunks
+    result = pl.read_delta(str(tmp_path), rechunk=rechunk)
+    assert result.n_chunks() == expected_chunks

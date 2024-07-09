@@ -11,6 +11,7 @@ pub enum ArrayFunction {
     Sum,
     ToList,
     Unique(bool),
+    NUnique,
     Std(u8),
     Var(u8),
     Median,
@@ -22,12 +23,13 @@ pub enum ArrayFunction {
     Reverse,
     ArgMin,
     ArgMax,
-    Get,
+    Get(bool),
     Join(bool),
     #[cfg(feature = "is_in")]
     Contains,
     #[cfg(feature = "array_count")]
     CountMatches,
+    Shift,
 }
 
 impl ArrayFunction {
@@ -38,6 +40,7 @@ impl ArrayFunction {
             Sum => mapper.nested_sum_type(),
             ToList => mapper.try_map_dtype(map_array_dtype_to_list_dtype),
             Unique(_) => mapper.try_map_dtype(map_array_dtype_to_list_dtype),
+            NUnique => mapper.with_dtype(IDX_DTYPE),
             Std(_) => mapper.map_to_float_dtype(),
             Var(_) => mapper.map_to_float_dtype(),
             Median => mapper.map_to_float_dtype(),
@@ -46,12 +49,13 @@ impl ArrayFunction {
             Sort(_) => mapper.with_same_dtype(),
             Reverse => mapper.with_same_dtype(),
             ArgMin | ArgMax => mapper.with_dtype(IDX_DTYPE),
-            Get => mapper.map_to_list_and_array_inner_dtype(),
+            Get(_) => mapper.map_to_list_and_array_inner_dtype(),
             Join(_) => mapper.with_dtype(DataType::String),
             #[cfg(feature = "is_in")]
             Contains => mapper.with_dtype(DataType::Boolean),
             #[cfg(feature = "array_count")]
             CountMatches => mapper.with_dtype(IDX_DTYPE),
+            Shift => mapper.with_same_dtype(),
         }
     }
 }
@@ -73,6 +77,7 @@ impl Display for ArrayFunction {
             Sum => "sum",
             ToList => "to_list",
             Unique(_) => "unique",
+            NUnique => "n_unique",
             Std(_) => "std",
             Var(_) => "var",
             Median => "median",
@@ -84,12 +89,13 @@ impl Display for ArrayFunction {
             Reverse => "reverse",
             ArgMin => "arg_min",
             ArgMax => "arg_max",
-            Get => "get",
+            Get(_) => "get",
             Join(_) => "join",
             #[cfg(feature = "is_in")]
             Contains => "contains",
             #[cfg(feature = "array_count")]
             CountMatches => "count_matches",
+            Shift => "shift",
         };
         write!(f, "arr.{name}")
     }
@@ -104,6 +110,7 @@ impl From<ArrayFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Sum => map!(sum),
             ToList => map!(to_list),
             Unique(stable) => map!(unique, stable),
+            NUnique => map!(n_unique),
             Std(ddof) => map!(std, ddof),
             Var(ddof) => map!(var, ddof),
             Median => map!(median),
@@ -115,12 +122,13 @@ impl From<ArrayFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Reverse => map!(reverse),
             ArgMin => map!(arg_min),
             ArgMax => map!(arg_max),
-            Get => map_as_slice!(get),
+            Get(null_on_oob) => map_as_slice!(get, null_on_oob),
             Join(ignore_nulls) => map_as_slice!(join, ignore_nulls),
             #[cfg(feature = "is_in")]
             Contains => map_as_slice!(contains),
             #[cfg(feature = "array_count")]
             CountMatches => map_as_slice!(count_matches),
+            Shift => map_as_slice!(shift),
         }
     }
 }
@@ -158,6 +166,10 @@ pub(super) fn unique(s: &Series, stable: bool) -> PolarsResult<Series> {
     out.map(|ca| ca.into_series())
 }
 
+pub(super) fn n_unique(s: &Series) -> PolarsResult<Series> {
+    Ok(s.array()?.array_n_unique()?.into_series())
+}
+
 pub(super) fn to_list(s: &Series) -> PolarsResult<Series> {
     let list_dtype = map_array_dtype_to_list_dtype(s.dtype())?;
     s.cast(&list_dtype)
@@ -174,7 +186,7 @@ pub(super) fn all(s: &Series) -> PolarsResult<Series> {
 }
 
 pub(super) fn sort(s: &Series, options: SortOptions) -> PolarsResult<Series> {
-    Ok(s.array()?.array_sort(options).into_series())
+    Ok(s.array()?.array_sort(options)?.into_series())
 }
 
 pub(super) fn reverse(s: &Series) -> PolarsResult<Series> {
@@ -189,11 +201,11 @@ pub(super) fn arg_max(s: &Series) -> PolarsResult<Series> {
     Ok(s.array()?.array_arg_max().into_series())
 }
 
-pub(super) fn get(s: &[Series]) -> PolarsResult<Series> {
+pub(super) fn get(s: &[Series], null_on_oob: bool) -> PolarsResult<Series> {
     let ca = s[0].array()?;
     let index = s[1].cast(&DataType::Int64)?;
     let index = index.i64().unwrap();
-    ca.array_get(index)
+    ca.array_get(index, null_on_oob)
 }
 
 pub(super) fn join(s: &[Series], ignore_nulls: bool) -> PolarsResult<Series> {
@@ -223,4 +235,11 @@ pub(super) fn count_matches(args: &[Series]) -> PolarsResult<Series> {
     );
     let ca = s.array()?;
     ca.array_count_matches(element.get(0).unwrap())
+}
+
+pub(super) fn shift(s: &[Series]) -> PolarsResult<Series> {
+    let ca = s[0].array()?;
+    let n = &s[1];
+
+    ca.array_shift(n)
 }

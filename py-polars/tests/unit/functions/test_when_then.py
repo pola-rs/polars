@@ -1,8 +1,14 @@
+from __future__ import annotations
+
+import itertools
+import random
 from datetime import datetime
+from typing import Any
 
 import pytest
 
 import polars as pl
+from polars.exceptions import InvalidOperationError, ShapeError
 from polars.testing import assert_frame_equal
 
 
@@ -161,12 +167,10 @@ def test_type_coercion_when_then_otherwise_2806() -> None:
     out = (
         pl.DataFrame({"names": ["foo", "spam", "spam"], "nrs": [1, 2, 3]})
         .select(
-            [
-                pl.when(pl.col("names") == "spam")
-                .then(pl.col("nrs") * 2)
-                .otherwise(pl.lit("other"))
-                .alias("new_col"),
-            ]
+            pl.when(pl.col("names") == "spam")
+            .then(pl.col("nrs") * 2)
+            .otherwise(pl.lit("other"))
+            .alias("new_col"),
         )
         .to_series()
     )
@@ -242,6 +246,18 @@ def test_comp_categorical_lit_dtype() -> None:
     ).dtypes == [pl.Categorical, pl.Int32]
 
 
+def test_comp_incompatible_enum_dtype() -> None:
+    df = pl.DataFrame({"a": pl.Series(["a", "b"], dtype=pl.Enum(["a", "b"]))})
+
+    with pytest.raises(
+        InvalidOperationError,
+        match="conversion from `str` to `enum` failed in column 'literal'",
+    ):
+        df.with_columns(
+            pl.when(pl.col("a") == "a").then(pl.col("a")).otherwise(pl.lit("c"))
+        )
+
+
 def test_predicate_broadcast() -> None:
     df = pl.DataFrame(
         {
@@ -287,53 +303,39 @@ def test_predicate_broadcast() -> None:
         pl.col("x"),
     ],
 )
-@pytest.mark.parametrize(
-    "df",
-    [
-        pl.Series("x", 5 * [1], dtype=pl.Int32)
-        .to_frame()
-        .with_columns(true=True, false=False, null_bool=pl.lit(None, dtype=pl.Boolean))
-    ],
-)
 def test_single_element_broadcast(
     mask_expr: pl.Expr,
     truthy_expr: pl.Expr,
     falsy_expr: pl.Expr,
-    df: pl.DataFrame,
 ) -> None:
+    df = (
+        pl.Series("x", 5 * [1], dtype=pl.Int32)
+        .to_frame()
+        .with_columns(true=True, false=False, null_bool=pl.lit(None, dtype=pl.Boolean))
+    )
+
     # Given that the lengths of the mask, truthy and falsy are all either:
     # - Length 1
     # - Equal length to the maximum length of the 3.
     # This test checks that all length-1 exprs are broadcasted to the max length.
-
-    expect = df.select("x").head(
+    result = df.select(
+        pl.when(mask_expr).then(truthy_expr.alias("x")).otherwise(falsy_expr)
+    )
+    expected = df.select("x").head(
         df.select(
             pl.max_horizontal(mask_expr.len(), truthy_expr.len(), falsy_expr.len())
         ).item()
     )
+    assert_frame_equal(result, expected)
 
-    actual = df.select(
-        pl.when(mask_expr).then(truthy_expr.alias("x")).otherwise(falsy_expr)
-    )
-
-    assert_frame_equal(
-        expect,
-        actual,
-    )
-
-    actual = (
+    result = (
         df.group_by(pl.lit(True).alias("key"))
         .agg(pl.when(mask_expr).then(truthy_expr.alias("x")).otherwise(falsy_expr))
         .drop("key")
     )
-
-    if expect.height > 1:
-        actual = actual.explode(pl.all())
-
-    assert_frame_equal(
-        expect,
-        actual,
-    )
+    if expected.height > 1:
+        result = result.explode(pl.all())
+    assert_frame_equal(result, expected)
 
 
 @pytest.mark.parametrize(
@@ -350,10 +352,10 @@ def test_single_element_broadcast(
 def test_mismatched_height_should_raise(
     df: pl.DataFrame, ternary_expr: pl.Expr
 ) -> None:
-    with pytest.raises(pl.ShapeError):
+    with pytest.raises(ShapeError):
         df.select(ternary_expr)
 
-    with pytest.raises(pl.ShapeError):
+    with pytest.raises(ShapeError):
         df.group_by(pl.lit(True).alias("key")).agg(ternary_expr)
 
 
@@ -525,3 +527,106 @@ def test_when_then_null_broadcast() -> None:
         ).height
         == 2
     )
+
+
+@pytest.mark.slow()
+@pytest.mark.parametrize("len", [1, 10, 100, 500])
+@pytest.mark.parametrize(
+    ("dtype", "vals"),
+    [
+        pytest.param(pl.Boolean, [False, True], id="Boolean"),
+        pytest.param(pl.UInt8, [0, 1], id="UInt8"),
+        pytest.param(pl.UInt16, [0, 1], id="UInt16"),
+        pytest.param(pl.UInt32, [0, 1], id="UInt32"),
+        pytest.param(pl.UInt64, [0, 1], id="UInt64"),
+        pytest.param(pl.Float32, [0.0, 1.0], id="Float32"),
+        pytest.param(pl.Float64, [0.0, 1.0], id="Float64"),
+        pytest.param(pl.String, ["0", "12"], id="String"),
+        pytest.param(pl.Array(pl.String, 2), [["0", "1"], ["3", "4"]], id="StrArray"),
+        pytest.param(pl.Array(pl.Int64, 2), [[0, 1], [3, 4]], id="IntArray"),
+        pytest.param(pl.List(pl.String), [["0"], ["1", "2"]], id="List"),
+        pytest.param(
+            pl.Struct({"foo": pl.Int32, "bar": pl.String}),
+            [{"foo": 0, "bar": "1"}, {"foo": 1, "bar": "2"}],
+            id="Struct",
+        ),
+        pytest.param(pl.Object, ["x", "y"], id="Object"),
+    ],
+)
+@pytest.mark.parametrize("broadcast", list(itertools.product([False, True], repeat=3)))
+def test_when_then_parametric(
+    len: int, dtype: pl.DataType, vals: list[Any], broadcast: list[bool]
+) -> None:
+    # Makes no sense to broadcast all columns.
+    if all(broadcast):
+        return
+
+    rng = random.Random(42)
+
+    for _ in range(10):
+        mask = rng.choices([False, True, None], k=len)
+        if_true = rng.choices(vals + [None], k=len)
+        if_false = rng.choices(vals + [None], k=len)
+
+        py_mask, py_true, py_false = (
+            [c[0]] * len if b else c
+            for b, c in zip(broadcast, [mask, if_true, if_false])
+        )
+        pl_mask, pl_true, pl_false = (
+            c.first() if b else c
+            for b, c in zip(broadcast, [pl.col.mask, pl.col.if_true, pl.col.if_false])
+        )
+
+        ref = pl.DataFrame(
+            {"if_true": [t if m else f for m, t, f in zip(py_mask, py_true, py_false)]},
+            schema={"if_true": dtype},
+        )
+        df = pl.DataFrame(
+            {
+                "mask": mask,
+                "if_true": if_true,
+                "if_false": if_false,
+            },
+            schema={"mask": pl.Boolean, "if_true": dtype, "if_false": dtype},
+        )
+
+        ans = df.select(pl.when(pl_mask).then(pl_true).otherwise(pl_false))
+        if dtype != pl.Object:
+            assert_frame_equal(ref, ans)
+        else:
+            assert ref["if_true"].to_list() == ans["if_true"].to_list()
+
+
+def test_when_then_supertype_15975() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+
+    assert df.with_columns(
+        pl.when(True).then(1 ** pl.col("a") + 1.0 * pl.col("a"))
+    ).to_dict(as_series=False) == {"a": [1, 2, 3], "literal": [2.0, 3.0, 4.0]}
+
+
+def test_when_then_supertype_15975_comment() -> None:
+    df = pl.LazyFrame({"foo": [1, 3, 4], "bar": [3, 4, 0]})
+
+    q = df.with_columns(
+        pl.when(pl.col("foo") == 1)
+        .then(1)
+        .when(pl.col("foo") == 2)
+        .then(4)
+        .when(pl.col("foo") == 3)
+        .then(1.5)
+        .when(pl.col("foo") == 4)
+        .then(16)
+        .otherwise(0)
+        .alias("val")
+    )
+
+    assert q.collect()["val"].to_list() == [1.0, 1.5, 16.0]
+
+
+def test_chained_when_no_subclass_17142() -> None:
+    # https://github.com/pola-rs/polars/pull/17142
+    when = pl.when(True).then(1).when(True)
+
+    assert not isinstance(when, pl.Expr)
+    assert "<polars.expr.whenthen.ChainedWhen object at" in str(when)

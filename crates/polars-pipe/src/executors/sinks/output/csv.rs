@@ -2,9 +2,8 @@ use std::path::Path;
 
 use crossbeam_channel::bounded;
 use polars_core::prelude::*;
-use polars_io::csv::CsvWriter;
+use polars_io::csv::write::{CsvWriter, CsvWriterOptions};
 use polars_io::SerWriter;
-use polars_plan::prelude::CsvWriterOptions;
 
 use crate::executors::sinks::output::file_sink::{init_writer_thread, FilesSink, SinkWriter};
 use crate::pipeline::morsels_per_sink;
@@ -24,6 +23,7 @@ impl CsvSink {
             .with_datetime_format(options.serialize_options.datetime_format)
             .with_date_format(options.serialize_options.date_format)
             .with_time_format(options.serialize_options.time_format)
+            .with_float_scientific(options.serialize_options.float_scientific)
             .with_float_precision(options.serialize_options.float_precision)
             .with_null_value(options.serialize_options.null)
             .with_quote_style(options.serialize_options.quote_style)
@@ -50,12 +50,12 @@ impl CsvSink {
     }
 }
 
-impl SinkWriter for polars_io::csv::BatchedWriter<std::fs::File> {
+impl SinkWriter for polars_io::csv::write::BatchedWriter<std::fs::File> {
     fn _write_batch(&mut self, df: &DataFrame) -> PolarsResult<()> {
         self.write_batch(df)
     }
 
     fn _finish(&mut self) -> PolarsResult<()> {
-        Ok(())
+        self.finish()
     }
 }

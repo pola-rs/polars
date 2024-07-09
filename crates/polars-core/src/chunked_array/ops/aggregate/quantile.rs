@@ -1,16 +1,14 @@
-use arrow::legacy::prelude::QuantileInterpolOptions;
-
 use super::*;
 
 pub trait QuantileAggSeries {
     /// Get the median of the [`ChunkedArray`] as a new [`Series`] of length 1.
-    fn median_as_series(&self) -> Series;
+    fn median_reduce(&self) -> Scalar;
     /// Get the quantile of the [`ChunkedArray`] as a new [`Series`] of length 1.
-    fn quantile_as_series(
+    fn quantile_reduce(
         &self,
         _quantile: f64,
         _interpol: QuantileInterpolOptions,
-    ) -> PolarsResult<Series>;
+    ) -> PolarsResult<Scalar>;
 }
 
 /// helper

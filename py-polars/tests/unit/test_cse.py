@@ -1,5 +1,6 @@
+from __future__ import annotations
+
 import re
-import typing
 from datetime import date, datetime, timedelta
 from tempfile import NamedTemporaryFile
 from typing import Any
@@ -11,8 +12,14 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 
-# https://github.com/pola-rs/polars/issues/5405
+def num_cse_occurrences(explanation: str) -> int:
+    """The number of unique CSE columns in an explain string."""
+    return len(set(re.findall('__POLARS_CSER_0x[^"]+"', explanation)))
+
+
 def test_cse_rename_cross_join_5405() -> None:
+    # https://github.com/pola-rs/polars/issues/5405
+
     right = pl.DataFrame({"A": [1, 2], "B": [3, 4], "D": [5, 6]}).lazy()
     left = pl.DataFrame({"C": [3, 4]}).lazy().join(right.select("A"), how="cross")
 
@@ -37,7 +44,7 @@ def test_union_duplicates() -> None:
 
     result = len(
         re.findall(
-            r".*CACHE\[id: .*, count: 9].*",
+            r".*CACHE\[id: .*, cache_hits: 9].*",
             pl.concat(lazy_dfs).explain(),
             flags=re.MULTILINE,
         )
@@ -45,8 +52,9 @@ def test_union_duplicates() -> None:
     assert result
 
 
-# https://github.com/pola-rs/polars/issues/11116
 def test_cse_with_struct_expr_11116() -> None:
+    # https://github.com/pola-rs/polars/issues/11116
+
     df = pl.DataFrame([{"s": {"a": 1, "b": 4}, "c": 3}]).lazy()
 
     result = df.with_columns(
@@ -70,8 +78,9 @@ def test_cse_with_struct_expr_11116() -> None:
     assert_frame_equal(result, expected)
 
 
-# https://github.com/pola-rs/polars/issues/6081
 def test_cse_schema_6081() -> None:
+    # https://github.com/pola-rs/polars/issues/6081
+
     df = pl.DataFrame(
         data=[
             [date(2022, 12, 12), 1, 1],
@@ -172,8 +181,8 @@ Gr1,B
     assert_frame_equal(result, expected)
 
 
-def test_cse_expr_selection_context(monkeypatch: Any, capfd: Any) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+@pytest.mark.debug()
+def test_cse_expr_selection_context() -> None:
     q = pl.LazyFrame(
         {
             "a": [1, 2, 3, 4],
@@ -193,6 +202,7 @@ def test_cse_expr_selection_context(monkeypatch: Any, capfd: Any) -> None:
     ]
 
     result = q.select(exprs).collect(comm_subexpr_elim=True)
+    assert num_cse_occurrences(q.select(exprs).explain(comm_subexpr_elim=True)) == 2
     expected = pl.DataFrame(
         {
             "d1": [30],
@@ -204,6 +214,9 @@ def test_cse_expr_selection_context(monkeypatch: Any, capfd: Any) -> None:
     assert_frame_equal(result, expected)
 
     result = q.with_columns(exprs).collect(comm_subexpr_elim=True)
+    assert (
+        num_cse_occurrences(q.with_columns(exprs).explain(comm_subexpr_elim=True)) == 2
+    )
     expected = pl.DataFrame(
         {
             "a": [1, 2, 3, 4],
@@ -216,10 +229,6 @@ def test_cse_expr_selection_context(monkeypatch: Any, capfd: Any) -> None:
         }
     )
     assert_frame_equal(result, expected)
-
-    out = capfd.readouterr().out
-    assert "run ProjectionExec with 2 CSE" in out
-    assert "run StackExec with 2 CSE" in out
 
 
 def test_windows_cse_excluded() -> None:
@@ -234,6 +243,7 @@ def test_windows_cse_excluded() -> None:
             ("b", "qqq", 0),
         ],
         schema=["a", "b", "c"],
+        orient="row",
     )
 
     result = lf.select(
@@ -323,7 +333,7 @@ def test_cse_10401() -> None:
 
     q = df.with_columns(pl.all().fill_null(0).fill_nan(0))
 
-    assert r"""col("clicks").fill_null([0]).alias("__POLARS_CSER""" in q.explain()
+    assert r"""col("clicks").fill_null([0.0]).alias("__POLARS_CSER""" in q.explain()
 
     expected = pl.DataFrame({"clicks": [1.0, 0.0, 0.0]})
     assert_frame_equal(q.collect(comm_subexpr_elim=True), expected)
@@ -481,49 +491,6 @@ def test_cse_count_in_group_by() -> None:
     }
 
 
-def test_no_cse_in_with_context() -> None:
-    df1 = pl.DataFrame(
-        {
-            "timestamp": [
-                datetime(2023, 1, 1, 0, 0),
-                datetime(2023, 5, 1, 0, 0),
-                datetime(2023, 10, 1, 0, 0),
-            ],
-            "value": [2, 5, 9],
-        }
-    )
-    df2 = pl.DataFrame(
-        {
-            "date_start": [
-                datetime(2022, 12, 31, 0, 0),
-                datetime(2023, 1, 2, 0, 0),
-            ],
-            "date_end": [
-                datetime(2023, 4, 30, 0, 0),
-                datetime(2023, 5, 5, 0, 0),
-            ],
-            "label": [0, 1],
-        }
-    )
-
-    assert (
-        df1.lazy()
-        .with_context(df2.lazy())
-        .select(
-            pl.col("date_start", "label").gather(
-                pl.col("date_start").search_sorted("timestamp") - 1
-            ),
-        )
-    ).collect().to_dict(as_series=False) == {
-        "date_start": [
-            datetime(2022, 12, 31, 0, 0),
-            datetime(2023, 1, 2, 0, 0),
-            datetime(2023, 1, 2, 0, 0),
-        ],
-        "label": [0, 1, 1],
-    }
-
-
 def test_cse_slice_11594() -> None:
     df = pl.LazyFrame({"a": [1, 2, 1, 2, 1, 2]})
 
@@ -597,7 +564,6 @@ def test_cse_11958() -> None:
     }
 
 
-@typing.no_type_check
 def test_cse_14047() -> None:
     ldf = pl.LazyFrame(
         {
@@ -614,7 +580,7 @@ def test_cse_14047() -> None:
 
     def count_diff(
         price: pl.Expr, upper_bound: float = 0.1, lower_bound: float = 0.001
-    ):
+    ) -> pl.Expr:
         span_end_to_curr = (
             price.count()
             .cast(int)
@@ -629,7 +595,7 @@ def test_cse_14047() -> None:
             f"count_diff_{upper_bound}_{lower_bound}"
         )
 
-    def s_per_count(count_diff, span) -> pl.Expr:
+    def s_per_count(count_diff: pl.Expr, span: tuple[float, float]) -> pl.Expr:
         return (span[1] * 1000 - span[0] * 1000) / count_diff
 
     spans = [(0.001, 0.1), (1, 10)]
@@ -644,3 +610,137 @@ def test_cse_14047() -> None:
     assert_frame_equal(
         ldf.collect(comm_subexpr_elim=True), ldf.collect(comm_subexpr_elim=False)
     )
+
+
+def test_cse_15536() -> None:
+    source = pl.DataFrame({"a": range(10)})
+
+    data = source.lazy().filter(pl.col("a") >= 5)
+
+    assert pl.concat(
+        [
+            data.filter(pl.lit(True) & (pl.col("a") == 6) | (pl.col("a") == 9)),
+            data.filter(pl.lit(True) & (pl.col("a") == 7) | (pl.col("a") == 8)),
+        ]
+    ).collect()["a"].to_list() == [6, 9, 7, 8]
+
+
+def test_cse_15548() -> None:
+    ldf = pl.LazyFrame({"a": [1, 2, 3]})
+    ldf2 = ldf.filter(pl.col("a") == 1).cache()
+    ldf3 = pl.concat([ldf, ldf2])
+
+    assert len(ldf3.collect(comm_subplan_elim=False)) == 4
+    assert len(ldf3.collect(comm_subplan_elim=True)) == 4
+
+
+@pytest.mark.debug()
+def test_cse_and_schema_update_projection_pd() -> None:
+    df = pl.LazyFrame({"a": [1, 2], "b": [99, 99]})
+
+    q = (
+        df.lazy()
+        .with_row_index()
+        .select(
+            pl.when(pl.col("b") < 10)
+            .then(0.1 * pl.col("b"))
+            .when(pl.col("b") < 100)
+            .then(0.2 * pl.col("b"))
+        )
+    )
+    assert q.collect(comm_subplan_elim=False).to_dict(as_series=False) == {
+        "literal": [19.8, 19.8]
+    }
+    assert num_cse_occurrences(q.explain(comm_subexpr_elim=True)) == 1
+
+
+@pytest.mark.debug()
+def test_cse_predicate_self_join(capfd: Any, monkeypatch: Any) -> None:
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    y = pl.LazyFrame({"a": [1], "b": [2], "y": [3]})
+
+    xf = y.filter(pl.col("y") == 2).select(["a", "b"])
+    y_xf = y.join(xf, on=["a", "b"], how="left")
+
+    y_xf_c = y_xf.select("a", "b")
+    assert y_xf_c.collect().to_dict(as_series=False) == {"a": [1], "b": [2]}
+    captured = capfd.readouterr().err
+    assert "CACHE HIT" in captured
+
+
+def test_cse_manual_cache_15688() -> None:
+    df = pl.LazyFrame(
+        {"a": [1, 2, 3, 1, 2, 3], "b": [1, 1, 1, 1, 1, 1], "id": [1, 1, 1, 2, 2, 2]}
+    )
+
+    df1 = df.filter(id=1).join(df.filter(id=2), on=["a", "b"], how="semi")
+    df2 = df.filter(id=1).join(df1, on=["a", "b"], how="semi")
+    df2 = df2.cache()
+    res = df2.group_by("b").agg(pl.all().sum())
+    assert res.cache().with_columns(foo=1).collect().to_dict(as_series=False) == {
+        "b": [1],
+        "a": [6],
+        "id": [3],
+        "foo": [1],
+    }
+
+
+def test_cse_drop_nulls_15795() -> None:
+    A = pl.LazyFrame({"X": 1})
+    B = pl.LazyFrame({"X": 1, "Y": 0}).filter(pl.col("Y").is_not_null())
+    C = A.join(B, on="X").select("X")
+    D = B.select("X")
+    assert C.join(D, on="X").collect().shape == (1, 1)
+
+
+def test_cse_no_projection_15980() -> None:
+    df = pl.LazyFrame({"x": "a", "y": 1})
+    df = pl.concat(df.with_columns(pl.col("y").add(n)) for n in range(2))
+
+    assert df.filter(pl.col("x").eq("a")).select("x").collect().to_dict(
+        as_series=False
+    ) == {"x": ["a", "a"]}
+
+
+@pytest.mark.debug()
+def test_cse_series_collision_16138() -> None:
+    holdings = pl.DataFrame(
+        {
+            "fund_currency": ["CLP", "CLP"],
+            "asset_currency": ["EUR", "USA"],
+        }
+    )
+
+    usd = ["USD"]
+    eur = ["EUR"]
+    clp = ["CLP"]
+
+    currency_factor_query_dict = [
+        pl.col("asset_currency").is_in(eur) & pl.col("fund_currency").is_in(clp),
+        pl.col("asset_currency").is_in(eur) & pl.col("fund_currency").is_in(usd),
+        pl.col("asset_currency").is_in(clp) & pl.col("fund_currency").is_in(clp),
+        pl.col("asset_currency").is_in(usd) & pl.col("fund_currency").is_in(usd),
+    ]
+
+    factor_holdings = holdings.lazy().with_columns(
+        pl.coalesce(currency_factor_query_dict).alias("currency_factor"),
+    )
+
+    assert factor_holdings.collect(comm_subexpr_elim=True).to_dict(as_series=False) == {
+        "fund_currency": ["CLP", "CLP"],
+        "asset_currency": ["EUR", "USA"],
+        "currency_factor": [True, False],
+    }
+    assert num_cse_occurrences(factor_holdings.explain(comm_subexpr_elim=True)) == 3
+
+
+def test_nested_cache_no_panic_16553() -> None:
+    assert pl.LazyFrame().select(a=[[[1]]]).collect(comm_subexpr_elim=True).to_dict(
+        as_series=False
+    ) == {"a": [[[[1]]]]}
+
+
+def test_hash_empty_series_16577() -> None:
+    s = pl.Series(values=None)
+    out = pl.LazyFrame().select(s).collect()
+    assert out.equals(s.to_frame())

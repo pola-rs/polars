@@ -2,6 +2,7 @@ use std::any::Any;
 
 use polars_error::{polars_bail, PolarsResult};
 
+use super::Splitable;
 use crate::array::{Array, FromFfi, MutableArray, ToFfi};
 use crate::bitmap::{Bitmap, MutableBitmap};
 use crate::datatypes::{ArrowDataType, PhysicalType};
@@ -62,6 +63,7 @@ impl NullArray {
     }
 
     /// Returns a slice of the [`NullArray`].
+    ///
     /// # Safety
     /// The caller must ensure that `offset + length < self.len()`.
     pub unsafe fn slice_unchecked(&mut self, _offset: usize, length: usize) {
@@ -170,6 +172,25 @@ unsafe impl ToFfi for NullArray {
     }
 }
 
+impl Splitable for NullArray {
+    fn check_bound(&self, offset: usize) -> bool {
+        offset <= self.len()
+    }
+
+    unsafe fn _split_at_unchecked(&self, offset: usize) -> (Self, Self) {
+        (
+            Self {
+                data_type: self.data_type.clone(),
+                length: offset,
+            },
+            Self {
+                data_type: self.data_type.clone(),
+                length: self.len() - offset,
+            },
+        )
+    }
+}
+
 impl<A: ffi::ArrowArrayRef> FromFfi<A> for NullArray {
     unsafe fn try_from_ffi(array: A) -> PolarsResult<Self> {
         let data_type = array.data_type().clone();
@@ -187,7 +208,7 @@ mod arrow {
         pub fn to_data(&self) -> ArrayData {
             let builder = ArrayDataBuilder::new(arrow_schema::DataType::Null).len(self.len());
 
-            // Safety: safe by construction
+            // SAFETY: safe by construction
             unsafe { builder.build_unchecked() }
         }
 

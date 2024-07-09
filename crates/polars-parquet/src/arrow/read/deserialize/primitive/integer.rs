@@ -94,19 +94,19 @@ where
 
         match (page.encoding(), dict, is_optional, is_filtered) {
             (Encoding::DeltaBinaryPacked, _, false, false) => {
-                let (_, _, values) = split_buffer(page)?;
+                let values = split_buffer(page)?.values;
                 Ok(delta_bitpacked::Decoder::try_new(values)
                     .map(State::DeltaBinaryPackedRequired)?)
             },
             (Encoding::DeltaBinaryPacked, _, true, false) => {
-                let (_, _, values) = split_buffer(page)?;
+                let values = split_buffer(page)?.values;
                 Ok(State::DeltaBinaryPackedOptional(
                     OptionalPageValidity::try_new(page)?,
                     delta_bitpacked::Decoder::try_new(values)?,
                 ))
             },
             (Encoding::DeltaBinaryPacked, _, false, true) => {
-                let (_, _, values) = split_buffer(page)?;
+                let values = split_buffer(page)?.values;
                 let values = delta_bitpacked::Decoder::try_new(values)?;
 
                 let rows = get_selected_rows(page);
@@ -115,7 +115,7 @@ where
                 Ok(State::FilteredDeltaBinaryPackedRequired(values))
             },
             (Encoding::DeltaBinaryPacked, _, true, true) => {
-                let (_, _, values) = split_buffer(page)?;
+                let values = split_buffer(page)?.values;
                 let values = delta_bitpacked::Decoder::try_new(values)?;
 
                 Ok(State::FilteredDeltaBinaryPackedOptional(
@@ -155,11 +155,11 @@ where
                     page_validity,
                     Some(remaining),
                     values,
-                    page_values
+                    &mut page_values
                         .by_ref()
                         .map(|x| x.unwrap().as_())
                         .map(self.0.op),
-                )
+                )?
             },
             State::FilteredDeltaBinaryPackedRequired(page) => {
                 values.extend(
@@ -175,11 +175,11 @@ where
                     page_validity,
                     Some(remaining),
                     values,
-                    page_values
+                    &mut page_values
                         .by_ref()
                         .map(|x| x.unwrap().as_())
                         .map(self.0.op),
-                );
+                )?;
             },
         }
         Ok(())

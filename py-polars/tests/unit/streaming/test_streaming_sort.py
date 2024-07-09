@@ -75,7 +75,9 @@ def test_streaming_sort_multiple_columns_logical_types() -> None:
 
 @pytest.mark.write_disk()
 @pytest.mark.slow()
-def test_ooc_sort(monkeypatch: Any) -> None:
+def test_ooc_sort(tmp_path: Path, monkeypatch: Any) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    monkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
     monkeypatch.setenv("POLARS_FORCE_OOC", "1")
 
     s = pl.arange(0, 100_000, eager=True).rename("idx")
@@ -90,10 +92,18 @@ def test_ooc_sort(monkeypatch: Any) -> None:
         assert_series_equal(out, s.sort(descending=descending))
 
 
+@pytest.mark.debug()
 @pytest.mark.write_disk()
-def test_streaming_sort(monkeypatch: Any, capfd: Any) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+@pytest.mark.parametrize("spill_source", [True, False])
+def test_streaming_sort(
+    tmp_path: Path, monkeypatch: Any, capfd: Any, spill_source: bool
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    monkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
     monkeypatch.setenv("POLARS_FORCE_OOC", "1")
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    if spill_source:
+        monkeypatch.setenv("POLARS_SPILL_SORT_PARTITIONS", "1")
     # this creates a lot of duplicate partitions and triggers: #7568
     assert (
         pl.Series(np.random.randint(0, 100, 100))
@@ -105,21 +115,30 @@ def test_streaming_sort(monkeypatch: Any, capfd: Any) -> None:
     )
     (_, err) = capfd.readouterr()
     assert "df -> sort" in err
+    if spill_source:
+        assert "PARTITIONED FORCE SPILLED" in err
 
 
 @pytest.mark.write_disk()
-def test_out_of_core_sort_9503(monkeypatch: Any) -> None:
+@pytest.mark.parametrize("spill_source", [True, False])
+def test_out_of_core_sort_9503(
+    tmp_path: Path, monkeypatch: Any, spill_source: bool
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    monkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
     monkeypatch.setenv("POLARS_FORCE_OOC", "1")
+    if spill_source:
+        monkeypatch.setenv("POLARS_SPILL_SORT_PARTITIONS", "1")
     np.random.seed(0)
 
-    num_rows = 1_00_000
+    num_rows = 100_000
     num_columns = 2
     num_tables = 10
 
     # ensure we create many chunks
     # this will ensure we create more files
     # and that creates contention while dumping
-    q = pl.concat(
+    df = pl.concat(
         [
             pl.DataFrame(
                 [
@@ -130,12 +149,14 @@ def test_out_of_core_sort_9503(monkeypatch: Any) -> None:
             for _ in range(num_tables)
         ],
         rechunk=False,
-    ).lazy()
-    q = q.sort(q.columns)
-    df = q.collect(streaming=True)
-    assert df.shape == (1_000_000, 2)
-    assert df["column_0"].flags["SORTED_ASC"]
-    assert df.head(20).to_dict(as_series=False) == {
+    )
+    lf = df.lazy()
+
+    result = lf.sort(df.columns).collect(streaming=True)
+
+    assert result.shape == (1_000_000, 2)
+    assert result["column_0"].flags["SORTED_ASC"]
+    assert result.head(20).to_dict(as_series=False) == {
         "column_0": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         "column_1": [
             242,
@@ -162,15 +183,13 @@ def test_out_of_core_sort_9503(monkeypatch: Any) -> None:
     }
 
 
-@pytest.mark.skip(
-    reason="This test is unreliable - it fails intermittently in our CI"
-    " with 'OSError: No such file or directory (os error 2)'."
-)
 @pytest.mark.write_disk()
 @pytest.mark.slow()
 def test_streaming_sort_multiple_columns(
-    str_ints_df: pl.DataFrame, monkeypatch: Any, capfd: Any
+    str_ints_df: pl.DataFrame, tmp_path: Path, monkeypatch: Any, capfd: Any
 ) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    monkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
     monkeypatch.setenv("POLARS_FORCE_OOC", "1")
     monkeypatch.setenv("POLARS_VERBOSE", "1")
     df = str_ints_df
@@ -242,3 +261,35 @@ def test_reverse_variable_sort_13573() -> None:
     assert df.sort("a", "b", descending=[True, False]).collect(streaming=True).to_dict(
         as_series=False
     ) == {"a": ["two", "three", "one"], "b": ["five", "six", "four"]}
+
+
+def test_nulls_last_streaming_sort() -> None:
+    assert pl.LazyFrame({"x": [1, None]}).sort("x", nulls_last=True).collect(
+        streaming=True
+    ).to_dict(as_series=False) == {"x": [1, None]}
+
+
+@pytest.mark.parametrize("descending", [True, False])
+@pytest.mark.parametrize("nulls_last", [True, False])
+def test_sort_descending_nulls_last(descending: bool, nulls_last: bool) -> None:
+    df = pl.DataFrame({"x": [1, 3, None, 2, None], "y": [1, 3, 0, 2, 0]})
+
+    null_sentinel = 100 if descending ^ nulls_last else -100
+    ref_x = [1, 3, None, 2, None]
+    ref_x.sort(key=lambda k: null_sentinel if k is None else k, reverse=descending)
+    ref_y = [1, 3, 0, 2, 0]
+    ref_y.sort(key=lambda k: null_sentinel if k == 0 else k, reverse=descending)
+
+    assert_frame_equal(
+        df.lazy()
+        .sort("x", descending=descending, nulls_last=nulls_last)
+        .collect(streaming=True),
+        pl.DataFrame({"x": ref_x, "y": ref_y}),
+    )
+
+    assert_frame_equal(
+        df.lazy()
+        .sort(["x", "y"], descending=descending, nulls_last=nulls_last)
+        .collect(streaming=True),
+        pl.DataFrame({"x": ref_x, "y": ref_y}),
+    )

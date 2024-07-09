@@ -11,7 +11,7 @@ use arrow::offset::OffsetsBuffer;
 use arrow::types::NativeType;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_type;
-use polars_utils::total_ord::{TotalEq, TotalHash, TotalOrdWrap};
+use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash, TotalOrdWrap};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -30,12 +30,12 @@ where
     }
 }
 
-impl<T> MaterializeValues<Option<TotalOrdWrap<T>>> for MutablePrimitiveArray<T>
+impl<T> MaterializeValues<TotalOrdWrap<Option<T>>> for MutablePrimitiveArray<T>
 where
     T: NativeType,
 {
-    fn extend_buf<I: Iterator<Item = Option<TotalOrdWrap<T>>>>(&mut self, values: I) -> usize {
-        self.extend(values);
+    fn extend_buf<I: Iterator<Item = TotalOrdWrap<Option<T>>>>(&mut self, values: I) -> usize {
+        self.extend(values.map(|x| x.0));
         self.len()
     }
 }
@@ -84,7 +84,7 @@ where
         SetOperation::Difference => {
             set.extend(a);
             for v in b {
-                set.remove(&v);
+                set.swap_remove(&v);
             }
             out.extend_buf(set.drain(..))
         },
@@ -102,8 +102,10 @@ where
     }
 }
 
-fn copied_wrapper_opt<T: Copy>(v: Option<&T>) -> Option<TotalOrdWrap<T>> {
-    v.copied().map(TotalOrdWrap)
+fn copied_wrapper_opt<T: Copy + ToTotalOrd>(
+    v: Option<&T>,
+) -> <Option<T> as ToTotalOrd>::TotalOrdItem {
+    v.copied().to_total_ord()
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -136,13 +138,14 @@ fn primitive<T>(
     validity: Option<Bitmap>,
 ) -> PolarsResult<ListArray<i64>>
 where
-    T: NativeType + TotalHash + Copy + TotalEq,
+    T: NativeType + TotalHash + TotalEq + Copy + ToTotalOrd,
+    <Option<T> as ToTotalOrd>::TotalOrdItem: Hash + Eq + Copy,
 {
     let broadcast_lhs = offsets_a.len() == 2;
     let broadcast_rhs = offsets_b.len() == 2;
 
     let mut set = Default::default();
-    let mut set2: PlIndexSet<Option<TotalOrdWrap<T>>> = Default::default();
+    let mut set2: PlIndexSet<<Option<T> as ToTotalOrd>::TotalOrdItem> = Default::default();
 
     let mut values_out = MutablePrimitiveArray::with_capacity(std::cmp::max(
         *offsets_a.last().unwrap(),
@@ -151,9 +154,6 @@ where
     let mut offsets = Vec::with_capacity(std::cmp::max(offsets_a.len(), offsets_b.len()));
     offsets.push(0i64);
 
-    if broadcast_rhs {
-        set2.extend(b.into_iter().map(copied_wrapper_opt));
-    }
     let offsets_slice = if offsets_a.len() > offsets_b.len() {
         offsets_a
     } else {
@@ -163,6 +163,14 @@ where
     let second_a = offsets_a[1];
     let first_b = offsets_b[0];
     let second_b = offsets_b[1];
+    if broadcast_rhs {
+        set2.extend(
+            b.into_iter()
+                .skip(first_b as usize)
+                .take(second_b as usize - first_b as usize)
+                .map(copied_wrapper_opt),
+        );
+    }
     for i in 1..offsets_slice.len() {
         // If we go OOB we take the first element as we are then broadcasting.
         let start_a = *offsets_a.get(i - 1).unwrap_or(&first_a) as usize;
@@ -180,7 +188,11 @@ where
                 .skip(start_a)
                 .take(end_a - start_a)
                 .map(copied_wrapper_opt);
-            let b_iter = b.into_iter().map(copied_wrapper_opt);
+            let b_iter = b
+                .into_iter()
+                .skip(first_b as usize)
+                .take(second_b as usize - first_b as usize)
+                .map(copied_wrapper_opt);
             set_operation(
                 &mut set,
                 &mut set2,
@@ -191,7 +203,11 @@ where
                 true,
             )
         } else if broadcast_lhs {
-            let a_iter = a.into_iter().map(copied_wrapper_opt);
+            let a_iter = a
+                .into_iter()
+                .skip(first_a as usize)
+                .take(second_a as usize - first_a as usize)
+                .map(copied_wrapper_opt);
 
             let b_iter = b
                 .into_iter()
@@ -368,7 +384,7 @@ fn array_set_operation(
 
             binary(&a, &b, offsets_a, offsets_b, set_op, validity, true)
         },
-        ArrowDataType::LargeBinary => {
+        ArrowDataType::BinaryView => {
             let a = values_a.as_any().downcast_ref::<BinaryViewArray>().unwrap();
             let b = values_b.as_any().downcast_ref::<BinaryViewArray>().unwrap();
             binary(a, b, offsets_a, offsets_b, set_op, validity, false)
@@ -393,6 +409,7 @@ pub fn list_set_operation(
     set_op: SetOperation,
 ) -> PolarsResult<ListChunked> {
     polars_ensure!(a.len() == b.len() || b.len() == 1 || a.len() == 1, ShapeMismatch: "column lengths don't match");
+    polars_ensure!(a.dtype() == b.dtype(), InvalidOperation: "cannot do 'set' operation on dtypes: {} and {}", a.dtype(), b.dtype());
     let mut a = a.clone();
     let mut b = b.clone();
     if a.len() != b.len() {
@@ -403,6 +420,14 @@ pub fn list_set_operation(
     // We will OOB in the kernel otherwise.
     a.prune_empty_chunks();
     b.prune_empty_chunks();
+
+    // Make categoricals compatible
+    #[cfg(feature = "dtype-categorical")]
+    if let (DataType::Categorical(_, _), DataType::Categorical(_, _)) =
+        (&a.inner_dtype(), &b.inner_dtype())
+    {
+        (a, b) = make_list_categoricals_compatible(a, b)?;
+    }
 
     // we use the unsafe variant because we want to keep the nested logical types type.
     unsafe {

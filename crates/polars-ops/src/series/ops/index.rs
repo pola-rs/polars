@@ -1,5 +1,5 @@
 use num_traits::{Signed, Zero};
-use polars_core::error::{polars_bail, polars_ensure, PolarsResult};
+use polars_core::error::{polars_ensure, PolarsResult};
 use polars_core::prelude::{ChunkedArray, DataType, IdxCa, PolarsIntegerType, Series, IDX_DTYPE};
 use polars_utils::index::ToIdx;
 

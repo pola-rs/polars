@@ -61,7 +61,7 @@ def test_glimpse(capsys: Any) -> None:
     assert result == expected
 
     # the default is to print to the console
-    df.glimpse(return_as_string=False)
+    df.glimpse()
     # remove the last newline on the capsys
     assert capsys.readouterr().out[:-1] == expected
 

@@ -18,6 +18,10 @@ pub fn coerce_lhs_rhs_owned(lhs: Series, rhs: Series) -> PolarsResult<(Series, S
     Ok((left, right))
 }
 
+fn is_eligible(lhs: &DataType, rhs: &DataType) -> bool {
+    !lhs.is_logical() && lhs.to_physical().is_numeric() && rhs.to_physical().is_numeric()
+}
+
 #[cfg(feature = "performant")]
 fn apply_operation_mut<T, F>(mut lhs: Series, mut rhs: Series, op: F) -> Series
 where
@@ -37,20 +41,17 @@ where
 macro_rules! impl_operation {
     ($operation:ident, $method:ident, $function:expr) => {
         impl $operation for Series {
-            type Output = Series;
+            type Output = PolarsResult<Series>;
 
             fn $method(self, rhs: Self) -> Self::Output {
                 #[cfg(feature = "performant")]
                 {
                     // only physical numeric values take the mutable path
-                    if !self.dtype().is_logical()
-                        && self.dtype().to_physical().is_numeric()
-                        && rhs.dtype().to_physical().is_numeric()
-                    {
+                    if is_eligible(self.dtype(), rhs.dtype()) {
                         let (lhs, rhs) = coerce_lhs_rhs_owned(self, rhs).unwrap();
                         let (lhs, rhs) = align_chunks_binary_owned_series(lhs, rhs);
                         use DataType::*;
-                        match lhs.dtype() {
+                        Ok(match lhs.dtype() {
                             #[cfg(feature = "dtype-i8")]
                             Int8 => apply_operation_mut::<Int8Type, _>(lhs, rhs, $function),
                             #[cfg(feature = "dtype-i16")]
@@ -66,7 +67,7 @@ macro_rules! impl_operation {
                             Float32 => apply_operation_mut::<Float32Type, _>(lhs, rhs, $function),
                             Float64 => apply_operation_mut::<Float64Type, _>(lhs, rhs, $function),
                             _ => unreachable!(),
-                        }
+                        })
                     } else {
                         (&self).$method(&rhs)
                     }
@@ -84,3 +85,29 @@ impl_operation!(Add, add, |a, b| a.add(b));
 impl_operation!(Sub, sub, |a, b| a.sub(b));
 impl_operation!(Mul, mul, |a, b| a.mul(b));
 impl_operation!(Div, div, |a, b| a.div(b));
+
+impl Series {
+    pub fn try_add_owned(self, other: Self) -> PolarsResult<Self> {
+        if is_eligible(self.dtype(), other.dtype()) {
+            self + other
+        } else {
+            std::ops::Add::add(&self, &other)
+        }
+    }
+
+    pub fn try_sub_owned(self, other: Self) -> PolarsResult<Self> {
+        if is_eligible(self.dtype(), other.dtype()) {
+            self - other
+        } else {
+            std::ops::Sub::sub(&self, &other)
+        }
+    }
+
+    pub fn try_mul_owned(self, other: Self) -> PolarsResult<Self> {
+        if is_eligible(self.dtype(), other.dtype()) {
+            self * other
+        } else {
+            std::ops::Mul::mul(&self, &other)
+        }
+    }
+}

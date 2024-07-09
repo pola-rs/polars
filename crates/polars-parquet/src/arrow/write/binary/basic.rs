@@ -7,11 +7,9 @@ use super::super::{utils, WriteOptions};
 use crate::arrow::read::schema::is_nullable;
 use crate::parquet::encoding::{delta_bitpacked, Encoding};
 use crate::parquet::schema::types::PrimitiveType;
-use crate::parquet::statistics::{
-    serialize_statistics, BinaryStatistics, ParquetStatistics, Statistics,
-};
+use crate::parquet::statistics::{BinaryStatistics, ParquetStatistics};
 use crate::write::utils::invalid_encoding;
-use crate::write::Page;
+use crate::write::{Page, StatisticsOptions};
 
 pub(crate) fn encode_non_null_values<'a, I: Iterator<Item = &'a [u8]>>(
     iter: I,
@@ -67,8 +65,8 @@ pub fn array_to_page<O: Offset>(
         _ => return Err(invalid_encoding(encoding, array.data_type())),
     }
 
-    let statistics = if options.write_statistics {
-        Some(build_statistics(array, type_.clone()))
+    let statistics = if options.has_statistics() {
+        Some(build_statistics(array, type_.clone(), &options.statistics))
     } else {
         None
     };
@@ -91,23 +89,24 @@ pub fn array_to_page<O: Offset>(
 pub(crate) fn build_statistics<O: Offset>(
     array: &BinaryArray<O>,
     primitive_type: PrimitiveType,
+    options: &StatisticsOptions,
 ) -> ParquetStatistics {
-    let statistics = &BinaryStatistics {
+    use polars_compute::min_max::MinMaxKernel;
+
+    BinaryStatistics {
         primitive_type,
-        null_count: Some(array.null_count() as i64),
+        null_count: options.null_count.then_some(array.null_count() as i64),
         distinct_count: None,
-        max_value: array
-            .iter()
-            .flatten()
-            .max_by(|x, y| ord_binary(x, y))
-            .map(|x| x.to_vec()),
-        min_value: array
-            .iter()
-            .flatten()
-            .min_by(|x, y| ord_binary(x, y))
-            .map(|x| x.to_vec()),
-    } as &dyn Statistics;
-    serialize_statistics(statistics)
+        max_value: options
+            .max_value
+            .then(|| array.max_propagate_nan_kernel().map(<[u8]>::to_vec))
+            .flatten(),
+        min_value: options
+            .min_value
+            .then(|| array.min_propagate_nan_kernel().map(<[u8]>::to_vec))
+            .flatten(),
+    }
+    .serialize()
 }
 
 pub(crate) fn encode_delta<O: Offset>(

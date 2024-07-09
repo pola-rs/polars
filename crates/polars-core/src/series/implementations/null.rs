@@ -1,12 +1,7 @@
-use std::borrow::Cow;
-use std::sync::Arc;
+use std::any::Any;
 
-use arrow::array::ArrayRef;
 use polars_error::constants::LENGTH_LIMIT_MSG;
-use polars_utils::IdxSize;
 
-use crate::datatypes::IdxCa;
-use crate::error::PolarsResult;
 use crate::prelude::compare_inner::{IntoTotalEqInner, TotalEqInner};
 use crate::prelude::explode::ExplodeByOffsets;
 use crate::prelude::*;
@@ -40,7 +35,14 @@ impl NullChunked {
         }
     }
 }
-impl PrivateSeriesNumeric for NullChunked {}
+impl PrivateSeriesNumeric for NullChunked {
+    fn bit_repr(&self) -> Option<BitRepr> {
+        Some(BitRepr::Small(UInt32Chunked::full_null(
+            self.name.as_ref(),
+            self.len(),
+        )))
+    }
+}
 
 impl PrivateSeries for NullChunked {
     fn compute_len(&mut self) {
@@ -58,7 +60,7 @@ impl PrivateSeries for NullChunked {
     }
 
     #[allow(unused)]
-    fn _set_flags(&mut self, flags: Settings) {}
+    fn _set_flags(&mut self, flags: MetadataFlags) {}
 
     fn _dtype(&self) -> &DataType {
         &DataType::Null
@@ -111,8 +113,13 @@ impl PrivateSeries for NullChunked {
         })
     }
 
-    fn _get_flags(&self) -> Settings {
-        Settings::empty()
+    #[cfg(feature = "algorithm_group_by")]
+    unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
+        AggList::agg_list(self, groups)
+    }
+
+    fn _get_flags(&self) -> MetadataFlags {
+        MetadataFlags::empty()
     }
 
     fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
@@ -156,18 +163,8 @@ impl SeriesTrait for NullChunked {
         &mut self.chunks
     }
 
-    fn chunk_lengths(&self) -> ChunkIdIter {
+    fn chunk_lengths(&self) -> ChunkLenIter {
         self.chunks.iter().map(|chunk| chunk.len())
-    }
-
-    #[cfg(feature = "chunked_ids")]
-    unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId], _sorted: IsSorted) -> Series {
-        NullChunked::new(self.name.clone(), by.len()).into_series()
-    }
-
-    #[cfg(feature = "chunked_ids")]
-    unsafe fn _take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Series {
-        NullChunked::new(self.name.clone(), by.len()).into_series()
     }
 
     fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
@@ -198,7 +195,11 @@ impl SeriesTrait for NullChunked {
         NullChunked::new(self.name.clone(), self.len()).into_series()
     }
 
-    fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
+    fn drop_nulls(&self) -> Series {
+        NullChunked::new(self.name.clone(), 0).into_series()
+    }
+
+    fn cast(&self, data_type: &DataType, _cast_options: CastOptions) -> PolarsResult<Series> {
         Ok(Series::full_null(self.name.as_ref(), self.len(), data_type))
     }
 
@@ -241,6 +242,28 @@ impl SeriesTrait for NullChunked {
         .into_series()
     }
 
+    fn split_at(&self, offset: i64) -> (Series, Series) {
+        let (l, r) = chunkops::split_at(self.chunks(), offset, self.len());
+        (
+            NullChunked {
+                name: self.name.clone(),
+                length: l.iter().map(|arr| arr.len() as IdxSize).sum(),
+                chunks: l,
+            }
+            .into_series(),
+            NullChunked {
+                name: self.name.clone(),
+                length: r.iter().map(|arr| arr.len() as IdxSize).sum(),
+                chunks: r,
+            }
+            .into_series(),
+        )
+    }
+
+    fn sort_with(&self, _options: SortOptions) -> PolarsResult<Series> {
+        Ok(self.clone().into_series())
+    }
+
     fn is_null(&self) -> BooleanChunked {
         BooleanChunked::full(self.name(), true, self.len())
     }
@@ -254,8 +277,15 @@ impl SeriesTrait for NullChunked {
     }
 
     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<Series> {
-        let len = filter.sum().unwrap_or(0);
-        Ok(NullChunked::new(self.name.clone(), len as usize).into_series())
+        let len = if self.is_empty() {
+            // We still allow a length of `1` because it could be `lit(true)`.
+            polars_ensure!(filter.len() <= 1, ShapeMismatch: "filter's length: {} differs from that of the series: 0", filter.len());
+            0
+        } else {
+            polars_ensure!(filter.len() == self.len(), ShapeMismatch: "filter's length: {} differs from that of the series: {}", filter.len(), self.len());
+            filter.sum().unwrap_or(0) as usize
+        };
+        Ok(NullChunked::new(self.name.clone(), len).into_series())
     }
 
     fn shift(&self, _periods: i64) -> Series {
@@ -277,6 +307,9 @@ impl SeriesTrait for NullChunked {
 
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(self.clone())
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 

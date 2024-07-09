@@ -1,5 +1,3 @@
-#[cfg(feature = "object")]
-use arrow::array::Array;
 use polars_compute::filter::filter as filter_fn;
 
 #[cfg(feature = "object")]
@@ -33,7 +31,7 @@ where
             arity::binary_unchecked_same_type(
                 self,
                 filter,
-                |left, mask| filter_fn(left, mask).unwrap(),
+                |left, mask| filter_fn(left, mask),
                 true,
                 true,
             )
@@ -55,7 +53,7 @@ impl ChunkFilter<BooleanType> for BooleanChunked {
             arity::binary_unchecked_same_type(
                 self,
                 filter,
-                |left, mask| filter_fn(left, mask).unwrap(),
+                |left, mask| filter_fn(left, mask),
                 true,
                 true,
             )
@@ -66,7 +64,7 @@ impl ChunkFilter<BooleanType> for BooleanChunked {
 impl ChunkFilter<StringType> for StringChunked {
     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<ChunkedArray<StringType>> {
         let out = self.as_binary().filter(filter)?;
-        unsafe { Ok(out.to_string()) }
+        unsafe { Ok(out.to_string_unchecked()) }
     }
 }
 
@@ -84,7 +82,7 @@ impl ChunkFilter<BinaryType> for BinaryChunked {
             arity::binary_unchecked_same_type(
                 self,
                 filter,
-                |left, mask| filter_fn(left, mask).unwrap(),
+                |left, mask| filter_fn(left, mask),
                 true,
                 true,
             )
@@ -106,7 +104,7 @@ impl ChunkFilter<BinaryOffsetType> for BinaryOffsetChunked {
             arity::binary_unchecked_same_type(
                 self,
                 filter,
-                |left, mask| filter_fn(left, mask).unwrap(),
+                |left, mask| filter_fn(left, mask),
                 true,
                 true,
             )
@@ -122,7 +120,9 @@ impl ChunkFilter<ListType> for ListChunked {
                 Some(true) => Ok(self.clone()),
                 _ => Ok(ListChunked::from_chunk_iter(
                     self.name(),
-                    [ListArray::new_empty(self.dtype().to_arrow(true))],
+                    [ListArray::new_empty(
+                        self.dtype().to_arrow(CompatLevel::newest()),
+                    )],
                 )),
             };
         }
@@ -131,7 +131,7 @@ impl ChunkFilter<ListType> for ListChunked {
             arity::binary_unchecked_same_type(
                 self,
                 filter,
-                |left, mask| filter_fn(left, mask).unwrap(),
+                |left, mask| filter_fn(left, mask),
                 true,
                 true,
             )
@@ -148,7 +148,9 @@ impl ChunkFilter<FixedSizeListType> for ArrayChunked {
                 Some(true) => Ok(self.clone()),
                 _ => Ok(ArrayChunked::from_chunk_iter(
                     self.name(),
-                    [FixedSizeListArray::new_empty(self.dtype().to_arrow(true))],
+                    [FixedSizeListArray::new_empty(
+                        self.dtype().to_arrow(CompatLevel::newest()),
+                    )],
                 )),
             };
         }
@@ -157,7 +159,7 @@ impl ChunkFilter<FixedSizeListType> for ArrayChunked {
             arity::binary_unchecked_same_type(
                 self,
                 filter,
-                |left, mask| filter_fn(left, mask).unwrap(),
+                |left, mask| filter_fn(left, mask),
                 true,
                 true,
             )

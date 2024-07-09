@@ -25,6 +25,8 @@ This page gives an overview of all public Series methods.
    struct
    temporal
 
+.. _series:
+
 .. currentmodule:: polars
 
 .. autoclass:: Series

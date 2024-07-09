@@ -2,7 +2,7 @@ use std::ops::Range;
 
 use either::Either;
 
-use super::Array;
+use super::{Array, Splitable};
 use crate::array::iterator::NonNullValuesIter;
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::bitmap::Bitmap;
@@ -22,7 +22,7 @@ mod mutable;
 pub use mutable::*;
 use polars_error::{polars_bail, PolarsResult};
 use polars_utils::index::{Bounded, Indexable, NullCount};
-use polars_utils::slice::SliceAble;
+use polars_utils::slice::{GetSaferUnchecked, SliceAble};
 
 /// A [`PrimitiveArray`] is Arrow's semantically equivalent of an immutable `Vec<Option<T>>` where
 /// T is [`NativeType`] (e.g. [`i32`]). It implements [`Array`].
@@ -208,11 +208,12 @@ impl<T: NativeType> PrimitiveArray<T> {
 
     /// Returns the value at index `i`.
     /// The value on null slots is undetermined (it can be anything).
+    ///
     /// # Safety
     /// Caller must be sure that `i < self.len()`
     #[inline]
     pub unsafe fn value_unchecked(&self, i: usize) -> T {
-        *self.values.get_unchecked(i)
+        *self.values.get_unchecked_release(i)
     }
 
     // /// Returns the element at index `i` or `None` if it is null
@@ -243,6 +244,7 @@ impl<T: NativeType> PrimitiveArray<T> {
     /// Slices this [`PrimitiveArray`] by an offset and length.
     /// # Implementation
     /// This operation is `O(1)`.
+    ///
     /// # Safety
     /// The caller must ensure that `offset + length <= self.len()`.
     #[inline]
@@ -341,7 +343,7 @@ impl<T: NativeType> PrimitiveArray<T> {
     /// This function returns a [`MutablePrimitiveArray`] (via [`std::sync::Arc::get_mut`]) iff both values
     /// and validity have not been cloned / are unique references to their underlying vectors.
     ///
-    /// This function is primarily used to re-use memory regions.
+    /// This function is primarily used to reuse memory regions.
     #[must_use]
     pub fn into_mut(self) -> Either<Self, MutablePrimitiveArray<T>> {
         use Either::*;
@@ -420,6 +422,7 @@ impl<T: NativeType> PrimitiveArray<T> {
     }
 
     /// Creates a new [`PrimitiveArray`] from an iterator over values
+    ///
     /// # Safety
     /// The iterator must be [`TrustedLen`](https://doc.rust-lang.org/std/iter/trait.TrustedLen.html).
     /// I.e. that `size_hint().1` correctly reports its length.
@@ -433,6 +436,7 @@ impl<T: NativeType> PrimitiveArray<T> {
     }
 
     /// Creates a [`PrimitiveArray`] from an iterator of optional values.
+    ///
     /// # Safety
     /// The iterator must be [`TrustedLen`](https://doc.rust-lang.org/std/iter/trait.TrustedLen.html).
     /// I.e. that `size_hint().1` correctly reports its length.
@@ -467,7 +471,7 @@ impl<T: NativeType> PrimitiveArray<T> {
 
     /// Fills this entire array with the given value, leaving the validity mask intact.
     ///
-    /// Re-uses the memory of the PrimitiveArray if possible.
+    /// Reuses the memory of the PrimitiveArray if possible.
     pub fn fill_with(mut self, value: T) -> Self {
         if let Some(values) = self.get_mut_values() {
             for x in values.iter_mut() {
@@ -491,6 +495,31 @@ impl<T: NativeType> Array for PrimitiveArray<T> {
     #[inline]
     fn with_validity(&self, validity: Option<Bitmap>) -> Box<dyn Array> {
         Box::new(self.clone().with_validity(validity))
+    }
+}
+
+impl<T: NativeType> Splitable for PrimitiveArray<T> {
+    #[inline(always)]
+    fn check_bound(&self, offset: usize) -> bool {
+        offset <= self.len()
+    }
+
+    unsafe fn _split_at_unchecked(&self, offset: usize) -> (Self, Self) {
+        let (lhs_values, rhs_values) = unsafe { self.values.split_at_unchecked(offset) };
+        let (lhs_validity, rhs_validity) = unsafe { self.validity.split_at_unchecked(offset) };
+
+        (
+            Self {
+                data_type: self.data_type.clone(),
+                values: lhs_values,
+                validity: lhs_validity,
+            },
+            Self {
+                data_type: self.data_type.clone(),
+                values: rhs_values,
+                validity: rhs_validity,
+            },
+        )
     }
 }
 

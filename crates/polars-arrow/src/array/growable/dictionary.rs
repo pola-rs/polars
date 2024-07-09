@@ -82,7 +82,7 @@ impl<'a, T: DictionaryKey> GrowableDictionary<'a, T> {
             validity.map(|v| v.into()),
         );
 
-        // Safety - the invariant of this struct ensures that this is up-held
+        // SAFETY: the invariant of this struct ensures that this is up-held
         unsafe {
             DictionaryArray::<T>::try_new_unchecked(
                 self.data_type.clone(),

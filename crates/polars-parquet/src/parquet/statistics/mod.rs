@@ -3,132 +3,159 @@ mod boolean;
 mod fixed_len_binary;
 mod primitive;
 
-use std::any::Any;
-use std::sync::Arc;
-
 pub use binary::BinaryStatistics;
 pub use boolean::BooleanStatistics;
 pub use fixed_len_binary::FixedLenStatistics;
 pub use primitive::PrimitiveStatistics;
 
-use crate::parquet::error::Result;
+use crate::parquet::error::ParquetResult;
 use crate::parquet::schema::types::{PhysicalType, PrimitiveType};
 pub use crate::parquet::thrift_format::Statistics as ParquetStatistics;
 
-/// A trait used to describe specific statistics. Each physical type has its own struct.
-/// Match the [`Statistics::physical_type`] to each type and downcast accordingly.
-pub trait Statistics: Send + Sync + std::fmt::Debug {
-    fn as_any(&self) -> &dyn Any;
-
-    fn physical_type(&self) -> &PhysicalType;
-
-    fn null_count(&self) -> Option<i64>;
+#[derive(Debug, PartialEq)]
+pub enum Statistics {
+    Binary(BinaryStatistics),
+    Boolean(BooleanStatistics),
+    FixedLen(FixedLenStatistics),
+    Int32(PrimitiveStatistics<i32>),
+    Int64(PrimitiveStatistics<i64>),
+    Int96(PrimitiveStatistics<[u32; 3]>),
+    Float(PrimitiveStatistics<f32>),
+    Double(PrimitiveStatistics<f64>),
 }
 
-impl PartialEq for &dyn Statistics {
-    fn eq(&self, other: &Self) -> bool {
-        self.physical_type() == other.physical_type() && {
-            match self.physical_type() {
-                PhysicalType::Boolean => {
-                    self.as_any().downcast_ref::<BooleanStatistics>().unwrap()
-                        == other.as_any().downcast_ref::<BooleanStatistics>().unwrap()
-                },
-                PhysicalType::Int32 => {
-                    self.as_any()
-                        .downcast_ref::<PrimitiveStatistics<i32>>()
-                        .unwrap()
-                        == other
-                            .as_any()
-                            .downcast_ref::<PrimitiveStatistics<i32>>()
-                            .unwrap()
-                },
-                PhysicalType::Int64 => {
-                    self.as_any()
-                        .downcast_ref::<PrimitiveStatistics<i64>>()
-                        .unwrap()
-                        == other
-                            .as_any()
-                            .downcast_ref::<PrimitiveStatistics<i64>>()
-                            .unwrap()
-                },
-                PhysicalType::Int96 => {
-                    self.as_any()
-                        .downcast_ref::<PrimitiveStatistics<[u32; 3]>>()
-                        .unwrap()
-                        == other
-                            .as_any()
-                            .downcast_ref::<PrimitiveStatistics<[u32; 3]>>()
-                            .unwrap()
-                },
-                PhysicalType::Float => {
-                    self.as_any()
-                        .downcast_ref::<PrimitiveStatistics<f32>>()
-                        .unwrap()
-                        == other
-                            .as_any()
-                            .downcast_ref::<PrimitiveStatistics<f32>>()
-                            .unwrap()
-                },
-                PhysicalType::Double => {
-                    self.as_any()
-                        .downcast_ref::<PrimitiveStatistics<f64>>()
-                        .unwrap()
-                        == other
-                            .as_any()
-                            .downcast_ref::<PrimitiveStatistics<f64>>()
-                            .unwrap()
-                },
-                PhysicalType::ByteArray => {
-                    self.as_any().downcast_ref::<BinaryStatistics>().unwrap()
-                        == other.as_any().downcast_ref::<BinaryStatistics>().unwrap()
-                },
-                PhysicalType::FixedLenByteArray(_) => {
-                    self.as_any().downcast_ref::<FixedLenStatistics>().unwrap()
-                        == other.as_any().downcast_ref::<FixedLenStatistics>().unwrap()
-                },
-            }
+impl Statistics {
+    #[inline]
+    pub const fn physical_type(&self) -> &PhysicalType {
+        use Statistics as S;
+
+        match self {
+            S::Binary(_) => &PhysicalType::ByteArray,
+            S::Boolean(_) => &PhysicalType::Boolean,
+            S::FixedLen(s) => &s.primitive_type.physical_type,
+            S::Int32(_) => &PhysicalType::Int32,
+            S::Int64(_) => &PhysicalType::Int64,
+            S::Int96(_) => &PhysicalType::Int96,
+            S::Float(_) => &PhysicalType::Float,
+            S::Double(_) => &PhysicalType::Double,
         }
     }
-}
 
-/// Deserializes a raw parquet statistics into [`Statistics`].
-/// # Error
-/// This function errors if it is not possible to read the statistics to the
-/// corresponding `physical_type`.
-pub fn deserialize_statistics(
-    statistics: &ParquetStatistics,
-    primitive_type: PrimitiveType,
-) -> Result<Arc<dyn Statistics>> {
-    match primitive_type.physical_type {
-        PhysicalType::Boolean => boolean::read(statistics),
-        PhysicalType::Int32 => primitive::read::<i32>(statistics, primitive_type),
-        PhysicalType::Int64 => primitive::read::<i64>(statistics, primitive_type),
-        PhysicalType::Int96 => primitive::read::<[u32; 3]>(statistics, primitive_type),
-        PhysicalType::Float => primitive::read::<f32>(statistics, primitive_type),
-        PhysicalType::Double => primitive::read::<f64>(statistics, primitive_type),
-        PhysicalType::ByteArray => binary::read(statistics, primitive_type),
-        PhysicalType::FixedLenByteArray(size) => {
-            fixed_len_binary::read(statistics, size, primitive_type)
-        },
+    /// Deserializes a raw parquet statistics into [`Statistics`].
+    /// # Error
+    /// This function errors if it is not possible to read the statistics to the
+    /// corresponding `physical_type`.
+    #[inline]
+    pub fn deserialize(
+        statistics: &ParquetStatistics,
+        primitive_type: PrimitiveType,
+    ) -> ParquetResult<Self> {
+        use {PhysicalType as T, PrimitiveStatistics as PrimStat};
+        Ok(match primitive_type.physical_type {
+            T::ByteArray => BinaryStatistics::deserialize(statistics, primitive_type)?.into(),
+            T::Boolean => BooleanStatistics::deserialize(statistics)?.into(),
+            T::Int32 => PrimStat::<i32>::deserialize(statistics, primitive_type)?.into(),
+            T::Int64 => PrimStat::<i64>::deserialize(statistics, primitive_type)?.into(),
+            T::Int96 => PrimStat::<[u32; 3]>::deserialize(statistics, primitive_type)?.into(),
+            T::Float => PrimStat::<f32>::deserialize(statistics, primitive_type)?.into(),
+            T::Double => PrimStat::<f64>::deserialize(statistics, primitive_type)?.into(),
+            T::FixedLenByteArray(size) => {
+                FixedLenStatistics::deserialize(statistics, size, primitive_type)?.into()
+            },
+        })
     }
 }
 
-/// Serializes [`Statistics`] into a raw parquet statistics.
-pub fn serialize_statistics(statistics: &dyn Statistics) -> ParquetStatistics {
-    match statistics.physical_type() {
-        PhysicalType::Boolean => boolean::write(statistics.as_any().downcast_ref().unwrap()),
-        PhysicalType::Int32 => primitive::write::<i32>(statistics.as_any().downcast_ref().unwrap()),
-        PhysicalType::Int64 => primitive::write::<i64>(statistics.as_any().downcast_ref().unwrap()),
-        PhysicalType::Int96 => {
-            primitive::write::<[u32; 3]>(statistics.as_any().downcast_ref().unwrap())
-        },
-        PhysicalType::Float => primitive::write::<f32>(statistics.as_any().downcast_ref().unwrap()),
-        PhysicalType::Double => {
-            primitive::write::<f64>(statistics.as_any().downcast_ref().unwrap())
-        },
-        PhysicalType::ByteArray => binary::write(statistics.as_any().downcast_ref().unwrap()),
-        PhysicalType::FixedLenByteArray(_) => {
-            fixed_len_binary::write(statistics.as_any().downcast_ref().unwrap())
-        },
-    }
+macro_rules! statistics_from_as {
+    ($($variant:ident($struct:ty) => ($as_ident:ident, $into_ident:ident, $expect_ident:ident, $owned_expect_ident:ident),)+) => {
+        $(
+            impl From<$struct> for Statistics {
+                #[inline]
+                fn from(stats: $struct) -> Self {
+                    Self::$variant(stats)
+                }
+            }
+        )+
+
+        impl Statistics {
+            #[inline]
+            pub const fn null_count(&self) -> Option<i64> {
+                match self {
+                    $(Self::$variant(s) => s.null_count,)+
+                }
+            }
+
+            /// Serializes [`Statistics`] into a raw parquet statistics.
+            #[inline]
+            pub fn serialize(&self) -> ParquetStatistics {
+                match self {
+                    $(Self::$variant(s) => s.serialize(),)+
+                }
+            }
+
+            const fn variant_str(&self) -> &'static str {
+                match self {
+                    $(Self::$variant(_) => stringify!($struct),)+
+                }
+            }
+
+            $(
+                #[doc = concat!("Try to take [`Statistics`] as [`", stringify!($struct), "`]")]
+                #[inline]
+                pub fn $as_ident(&self) -> Option<&$struct> {
+                    match self {
+                        Self::$variant(s) => Some(s),
+                        _ => None,
+                    }
+                }
+
+                #[doc = concat!("Try to take [`Statistics`] as [`", stringify!($struct), "`]")]
+                #[inline]
+                pub fn $into_ident(self) -> Option<$struct> {
+                    match self {
+                        Self::$variant(s) => Some(s),
+                        _ => None,
+                    }
+                }
+
+                #[doc = concat!("Interpret [`Statistics`] to be [`", stringify!($struct), "`]")]
+                ///
+                /// Panics if it is not the correct variant.
+                #[track_caller]
+                #[inline]
+                pub fn $expect_ident(&self) -> &$struct {
+                    let Self::$variant(s) = self else {
+                        panic!("Expected Statistics to be {}, found {} instead", stringify!($struct), self.variant_str());
+                    };
+
+                    s
+                }
+
+                #[doc = concat!("Interpret [`Statistics`] to be [`", stringify!($struct), "`]")]
+                ///
+                /// Panics if it is not the correct variant.
+                #[track_caller]
+                #[inline]
+                pub fn $owned_expect_ident(self) -> $struct {
+                    let Self::$variant(s) = self else {
+                        panic!("Expected Statistics to be {}, found {} instead", stringify!($struct), self.variant_str());
+                    };
+
+                    s
+                }
+            )+
+
+        }
+    };
+}
+
+statistics_from_as! {
+    Binary    (BinaryStatistics             ) => (as_binary,   into_binary,   expect_as_binary,   expect_binary  ),
+    Boolean   (BooleanStatistics            ) => (as_boolean,  into_boolean,  expect_as_boolean,  expect_boolean ),
+    FixedLen  (FixedLenStatistics           ) => (as_fixedlen, into_fixedlen, expect_as_fixedlen, expect_fixedlen),
+    Int32     (PrimitiveStatistics<i32>     ) => (as_int32,    into_int32,    expect_as_int32,    expect_int32   ),
+    Int64     (PrimitiveStatistics<i64>     ) => (as_int64,    into_int64,    expect_as_int64,    expect_int64   ),
+    Int96     (PrimitiveStatistics<[u32; 3]>) => (as_int96,    into_int96,    expect_as_int96,    expect_int96   ),
+    Float     (PrimitiveStatistics<f32>     ) => (as_float,    into_float,    expect_as_float,    expect_float   ),
+    Double    (PrimitiveStatistics<f64>     ) => (as_double,   into_double,   expect_as_double,   expect_double  ),
 }

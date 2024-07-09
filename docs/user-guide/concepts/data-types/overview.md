@@ -16,7 +16,7 @@ from Arrow, with the exception of `String` (this is actually `LargeUtf8`), `Cate
 |          | `UInt64`      | 64-bit unsigned integer.                                                                                                             |
 |          | `Float32`     | 32-bit floating point.                                                                                                               |
 |          | `Float64`     | 64-bit floating point.                                                                                                               |
-| Nested   | `Struct`      | A struct array is represented as a `Vec<Series>` and is useful to pack multiple/heterogenous values in a single column.              |
+| Nested   | `Struct`      | A struct array is represented as a `Vec<Series>` and is useful to pack multiple/heterogeneous values in a single column.             |
 |          | `List`        | A list array contains a child array containing the list values and an offset array. (this is actually Arrow `LargeList` internally). |
 | Temporal | `Date`        | Date representation, internally represented as days since UNIX epoch encoded by a 32-bit signed integer.                             |
 |          | `Datetime`    | Datetime representation, internally represented as microseconds since UNIX epoch encoded by a 64-bit signed integer.                 |
@@ -41,6 +41,6 @@ Polars generally follows the IEEE 754 floating point standard for `Float32` and 
   e.g. a sort or group by operation may canonicalize all zeroes to +0 and all NaNs
   to a positive NaN without payload for efficient equality checks.
 
-Polars always attempts to provide reasonably accurate results for floating point computations, but does not provide guarantees
+Polars always attempts to provide reasonably accurate results for floating point computations but does not provide guarantees
 on the error unless mentioned otherwise. Generally speaking 100% accurate results are infeasibly expensive to acquire (requiring
 much larger internal representations than 64-bit floats), and thus some error is always to be expected.

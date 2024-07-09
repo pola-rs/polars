@@ -1,6 +1,6 @@
 use polars_error::{polars_bail, polars_err, PolarsResult};
 
-use super::{new_empty_array, new_null_array, Array};
+use super::{new_empty_array, new_null_array, Array, Splitable};
 use crate::bitmap::Bitmap;
 use crate::buffer::Buffer;
 use crate::datatypes::{ArrowDataType, Field, UnionMode};
@@ -130,7 +130,7 @@ impl UnionArray {
 
             Some(hash)
         } else {
-            // Safety: every type in types is smaller than number of fields
+            // SAFETY: every type in types is smaller than number of fields
             let mut is_valid = true;
             for &type_ in types.iter() {
                 if type_ < 0 || type_ >= number_of_fields {
@@ -227,7 +227,7 @@ impl UnionArray {
     /// # Implementation
     /// This operation is `O(F)` where `F` is the number of fields.
     /// # Panic
-    /// This function panics iff `offset + length >= self.len()`.
+    /// This function panics iff `offset + length > self.len()`.
     #[inline]
     pub fn slice(&mut self, offset: usize, length: usize) {
         assert!(
@@ -240,6 +240,7 @@ impl UnionArray {
     /// Returns a slice of this [`UnionArray`].
     /// # Implementation
     /// This operation is `O(F)` where `F` is the number of fields.
+    ///
     /// # Safety
     /// The caller must ensure that `offset + length <= self.len()`.
     #[inline]
@@ -296,20 +297,21 @@ impl UnionArray {
 
     /// Returns the index and slot of the field to select from `self.fields`.
     /// The first value is guaranteed to be `< self.fields().len()`
+    ///
     /// # Safety
     /// This function is safe iff `index < self.len`.
     #[inline]
     pub unsafe fn index_unchecked(&self, index: usize) -> (usize, usize) {
         debug_assert!(index < self.len());
-        // Safety: assumption of the function
+        // SAFETY: assumption of the function
         let type_ = unsafe { *self.types.get_unchecked(index) };
-        // Safety: assumption of the struct
+        // SAFETY: assumption of the struct
         let type_ = self
             .map
             .as_ref()
             .map(|map| unsafe { *map.get_unchecked(type_ as usize) })
             .unwrap_or(type_ as usize);
-        // Safety: assumption of the function
+        // SAFETY: assumption of the function
         let index = self.field_slot_unchecked(index);
         (type_, index)
     }
@@ -323,12 +325,13 @@ impl UnionArray {
     }
 
     /// Returns the slot `index` as a [`Scalar`].
+    ///
     /// # Safety
     /// This function is safe iff `i < self.len`.
     pub unsafe fn value_unchecked(&self, index: usize) -> Box<dyn Scalar> {
         debug_assert!(index < self.len());
         let (type_, index) = self.index_unchecked(index);
-        // Safety: assumption of the struct
+        // SAFETY: assumption of the struct
         debug_assert!(type_ < self.fields.len());
         let field = self.fields.get_unchecked(type_).as_ref();
         new_scalar(field, index)
@@ -375,5 +378,38 @@ impl UnionArray {
     /// Panics iff `data_type`'s logical type is not [`ArrowDataType::Union`].
     pub fn is_sparse(data_type: &ArrowDataType) -> bool {
         Self::get_all(data_type).2.is_sparse()
+    }
+}
+
+impl Splitable for UnionArray {
+    fn check_bound(&self, offset: usize) -> bool {
+        offset <= self.len()
+    }
+
+    unsafe fn _split_at_unchecked(&self, offset: usize) -> (Self, Self) {
+        let (lhs_types, rhs_types) = unsafe { self.types.split_at_unchecked(offset) };
+        let (lhs_offsets, rhs_offsets) = self.offsets.as_ref().map_or((None, None), |v| {
+            let (lhs, rhs) = unsafe { v.split_at_unchecked(offset) };
+            (Some(lhs), Some(rhs))
+        });
+
+        (
+            Self {
+                types: lhs_types,
+                map: self.map,
+                fields: self.fields.clone(),
+                offsets: lhs_offsets,
+                data_type: self.data_type.clone(),
+                offset: self.offset,
+            },
+            Self {
+                types: rhs_types,
+                map: self.map,
+                fields: self.fields.clone(),
+                offsets: rhs_offsets,
+                data_type: self.data_type.clone(),
+                offset: self.offset + offset,
+            },
+        )
     }
 }

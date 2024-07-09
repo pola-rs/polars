@@ -26,10 +26,6 @@ pub use self::conversion::*;
 #[cfg(feature = "timezones")]
 use crate::prelude::{polars_bail, PolarsResult};
 
-pub fn unix_time() -> NaiveDateTime {
-    NaiveDateTime::from_timestamp_opt(0, 0).unwrap()
-}
-
 #[cfg(feature = "timezones")]
 static FIXED_OFFSET_PATTERN: &str = r#"(?x)
     ^
@@ -43,7 +39,7 @@ static FIXED_OFFSET_PATTERN: &str = r#"(?x)
 static FIXED_OFFSET_RE: Lazy<Regex> = Lazy::new(|| Regex::new(FIXED_OFFSET_PATTERN).unwrap());
 
 #[cfg(feature = "timezones")]
-pub(crate) fn validate_time_zone(tz: &str) -> PolarsResult<()> {
+pub fn validate_time_zone(tz: &str) -> PolarsResult<()> {
     match tz.parse::<Tz>() {
         Ok(_) => Ok(()),
         Err(_) => {

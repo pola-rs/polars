@@ -1,6 +1,7 @@
 use arrow::array::{BinaryViewArray, Utf8ViewArray};
 use arrow::bitmap::Bitmap;
 
+use super::TotalEqKernel;
 use crate::comparisons::TotalOrdKernel;
 
 // If s fits in 12 bytes, returns the view encoding it would have in a
@@ -43,7 +44,7 @@ fn broadcast_inequality(
     }))
 }
 
-impl TotalOrdKernel for BinaryViewArray {
+impl TotalEqKernel for BinaryViewArray {
     type Scalar = [u8];
 
     fn tot_eq_kernel(&self, other: &Self) -> Bitmap {
@@ -102,6 +103,46 @@ impl TotalOrdKernel for BinaryViewArray {
         }))
     }
 
+    fn tot_eq_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
+        if let Some(val) = small_view_encoding(other) {
+            Bitmap::from_trusted_len_iter(self.views().iter().map(|v| v.as_u128() == val))
+        } else {
+            let slf_views = self.views().as_slice();
+            let prefix = u32::from_le_bytes(other[..4].try_into().unwrap());
+            let prefix_len = ((prefix as u64) << 32) | other.len() as u64;
+            Bitmap::from_trusted_len_iter((0..self.len()).map(|i| unsafe {
+                let v_prefix_len = slf_views.get_unchecked(i).as_u128() as u64;
+                if v_prefix_len != prefix_len {
+                    false
+                } else {
+                    self.value_unchecked(i) == other
+                }
+            }))
+        }
+    }
+
+    fn tot_ne_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
+        if let Some(val) = small_view_encoding(other) {
+            Bitmap::from_trusted_len_iter(self.views().iter().map(|v| v.as_u128() != val))
+        } else {
+            let slf_views = self.views().as_slice();
+            let prefix = u32::from_le_bytes(other[..4].try_into().unwrap());
+            let prefix_len = ((prefix as u64) << 32) | other.len() as u64;
+            Bitmap::from_trusted_len_iter((0..self.len()).map(|i| unsafe {
+                let v_prefix_len = slf_views.get_unchecked(i).as_u128() as u64;
+                if v_prefix_len != prefix_len {
+                    true
+                } else {
+                    self.value_unchecked(i) != other
+                }
+            }))
+        }
+    }
+}
+
+impl TotalOrdKernel for BinaryViewArray {
+    type Scalar = [u8];
+
     fn tot_lt_kernel(&self, other: &Self) -> Bitmap {
         debug_assert!(self.len() == other.len());
 
@@ -146,42 +187,6 @@ impl TotalOrdKernel for BinaryViewArray {
         }))
     }
 
-    fn tot_eq_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
-        if let Some(val) = small_view_encoding(other) {
-            Bitmap::from_trusted_len_iter(self.views().iter().map(|v| v.as_u128() == val))
-        } else {
-            let slf_views = self.views().as_slice();
-            let prefix = u32::from_le_bytes(other[..4].try_into().unwrap());
-            let prefix_len = ((prefix as u64) << 32) | other.len() as u64;
-            Bitmap::from_trusted_len_iter((0..self.len()).map(|i| unsafe {
-                let v_prefix_len = slf_views.get_unchecked(i).as_u128() as u64;
-                if v_prefix_len != prefix_len {
-                    false
-                } else {
-                    self.value_unchecked(i) == other
-                }
-            }))
-        }
-    }
-
-    fn tot_ne_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
-        if let Some(val) = small_view_encoding(other) {
-            Bitmap::from_trusted_len_iter(self.views().iter().map(|v| v.as_u128() != val))
-        } else {
-            let slf_views = self.views().as_slice();
-            let prefix = u32::from_le_bytes(other[..4].try_into().unwrap());
-            let prefix_len = ((prefix as u64) << 32) | other.len() as u64;
-            Bitmap::from_trusted_len_iter((0..self.len()).map(|i| unsafe {
-                let v_prefix_len = slf_views.get_unchecked(i).as_u128() as u64;
-                if v_prefix_len != prefix_len {
-                    true
-                } else {
-                    self.value_unchecked(i) != other
-                }
-            }))
-        }
-    }
-
     fn tot_lt_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
         broadcast_inequality(self, other, |a, b| a < b, |a, b| a < b)
     }
@@ -199,7 +204,7 @@ impl TotalOrdKernel for BinaryViewArray {
     }
 }
 
-impl TotalOrdKernel for Utf8ViewArray {
+impl TotalEqKernel for Utf8ViewArray {
     type Scalar = str;
 
     fn tot_eq_kernel(&self, other: &Self) -> Bitmap {
@@ -210,20 +215,24 @@ impl TotalOrdKernel for Utf8ViewArray {
         self.to_binview().tot_ne_kernel(&other.to_binview())
     }
 
-    fn tot_lt_kernel(&self, other: &Self) -> Bitmap {
-        self.to_binview().tot_lt_kernel(&other.to_binview())
-    }
-
-    fn tot_le_kernel(&self, other: &Self) -> Bitmap {
-        self.to_binview().tot_le_kernel(&other.to_binview())
-    }
-
     fn tot_eq_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
         self.to_binview().tot_eq_kernel_broadcast(other.as_bytes())
     }
 
     fn tot_ne_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
         self.to_binview().tot_ne_kernel_broadcast(other.as_bytes())
+    }
+}
+
+impl TotalOrdKernel for Utf8ViewArray {
+    type Scalar = str;
+
+    fn tot_lt_kernel(&self, other: &Self) -> Bitmap {
+        self.to_binview().tot_lt_kernel(&other.to_binview())
+    }
+
+    fn tot_le_kernel(&self, other: &Self) -> Bitmap {
+        self.to_binview().tot_le_kernel(&other.to_binview())
     }
 
     fn tot_lt_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {

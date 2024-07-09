@@ -1,16 +1,15 @@
 from __future__ import annotations
 
+import tempfile
 from collections import OrderedDict
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import numpy as np
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError, ShapeError
 from polars.testing import assert_frame_equal
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 @pytest.fixture()
@@ -24,7 +23,7 @@ def test_scan_csv(io_files_path: Path) -> None:
 
 
 def test_scan_csv_no_cse_deadlock(io_files_path: Path) -> None:
-    dfs = [pl.scan_csv(io_files_path / "small.csv")] * (pl.threadpool_size() + 1)
+    dfs = [pl.scan_csv(io_files_path / "small.csv")] * (pl.thread_pool_size() + 1)
     pl.concat(dfs, parallel=True).collect(comm_subplan_elim=False)
 
 
@@ -82,7 +81,7 @@ def test_scan_csv_schema_overwrite_and_dtypes_overwrite(
     file_path = io_files_path / file_name
     df = pl.scan_csv(
         file_path,
-        dtypes={"calories_foo": pl.String, "fats_g_foo": pl.Float32},
+        schema_overrides={"calories_foo": pl.String, "fats_g_foo": pl.Float32},
         with_column_names=lambda names: [f"{a}_foo" for a in names],
     ).collect()
     assert df.dtypes == [pl.String, pl.String, pl.Float32, pl.Int64]
@@ -102,7 +101,7 @@ def test_scan_csv_schema_overwrite_and_small_dtypes_overwrite(
     file_path = io_files_path / file_name
     df = pl.scan_csv(
         file_path,
-        dtypes={"calories_foo": pl.String, "sugars_g_foo": dtype},
+        schema_overrides={"calories_foo": pl.String, "sugars_g_foo": dtype},
         with_column_names=lambda names: [f"{a}_foo" for a in names],
     ).collect()
     assert df.dtypes == [pl.String, pl.String, pl.Float64, dtype]
@@ -124,7 +123,7 @@ def test_scan_csv_schema_new_columns_dtypes(
         # assign 'new_columns', providing partial dtype overrides
         df1 = pl.scan_csv(
             file_path,
-            dtypes={"calories": pl.String, "sugars": dtype},
+            schema_overrides={"calories": pl.String, "sugars": dtype},
             new_columns=["category", "calories", "fats", "sugars"],
         ).collect()
         assert df1.dtypes == [pl.String, pl.String, pl.Float64, dtype]
@@ -133,37 +132,38 @@ def test_scan_csv_schema_new_columns_dtypes(
         # assign 'new_columns' with 'dtypes' list
         df2 = pl.scan_csv(
             file_path,
-            dtypes=[pl.String, pl.String, pl.Float64, dtype],
+            schema_overrides=[pl.String, pl.String, pl.Float64, dtype],
             new_columns=["category", "calories", "fats", "sugars"],
         ).collect()
         assert df1.rows() == df2.rows()
 
     # rename existing columns, then lazy-select disjoint cols
-    df3 = pl.scan_csv(
+    lf = pl.scan_csv(
         file_path,
         new_columns=["colw", "colx", "coly", "colz"],
     )
-    assert df3.dtypes == [pl.String, pl.Int64, pl.Float64, pl.Int64]
-    assert df3.columns == ["colw", "colx", "coly", "colz"]
+    schema = lf.collect_schema()
+    assert schema.dtypes() == [pl.String, pl.Int64, pl.Float64, pl.Int64]
+    assert schema.names() == ["colw", "colx", "coly", "colz"]
     assert (
-        df3.select(["colz", "colx"]).collect().rows()
-        == df1.select(["sugars", pl.col("calories").cast(pl.Int64)]).rows()
+        lf.select("colz", "colx").collect().rows()
+        == df1.select("sugars", pl.col("calories").cast(pl.Int64)).rows()
     )
 
     # partially rename columns / overwrite dtypes
     df4 = pl.scan_csv(
         file_path,
-        dtypes=[pl.String, pl.String],
+        schema_overrides=[pl.String, pl.String],
         new_columns=["category", "calories"],
     ).collect()
     assert df4.dtypes == [pl.String, pl.String, pl.Float64, pl.Int64]
     assert df4.columns == ["category", "calories", "fats_g", "sugars_g"]
 
     # cannot have len(new_columns) > len(actual columns)
-    with pytest.raises(pl.ShapeError):
+    with pytest.raises(ShapeError):
         pl.scan_csv(
             file_path,
-            dtypes=[pl.String, pl.String],
+            schema_overrides=[pl.String, pl.String],
             new_columns=["category", "calories", "c3", "c4", "c5"],
         ).collect()
 
@@ -171,7 +171,7 @@ def test_scan_csv_schema_new_columns_dtypes(
     with pytest.raises(ValueError, match="mutually.exclusive"):
         pl.scan_csv(
             file_path,
-            dtypes=[pl.String, pl.String],
+            schema_overrides=[pl.String, pl.String],
             new_columns=["category", "calories", "fats", "sugars"],
             with_column_names=lambda cols: [col.capitalize() for col in cols],
         ).collect()
@@ -250,7 +250,7 @@ def test_scan_csv_schema_overwrite_not_projected_8483(foods_file_path: Path) -> 
     df = (
         pl.scan_csv(
             foods_file_path,
-            dtypes={"calories": pl.String, "sugars_g": pl.Int8},
+            schema_overrides={"calories": pl.String, "sugars_g": pl.Int8},
         )
         .select(pl.len())
         .collect()
@@ -285,3 +285,141 @@ def test_scan_empty_csv_with_row_index(tmp_path: Path) -> None:
 
     read = pl.scan_csv(file_path).with_row_index("idx")
     assert read.collect().schema == OrderedDict([("idx", pl.UInt32), ("a", pl.String)])
+
+
+@pytest.mark.write_disk()
+def test_csv_null_values_with_projection_15515() -> None:
+    data = """IndCode,SireCode,BirthDate,Flag
+ID00316,.,19940315,
+"""
+
+    with tempfile.NamedTemporaryFile() as f:
+        f.write(data.encode())
+        f.seek(0)
+
+        q = (
+            pl.scan_csv(f.name, null_values={"SireCode": "."})
+            .with_columns(pl.col("SireCode").alias("SireKey"))
+            .select("SireKey", "BirthDate")
+        )
+
+        assert q.collect().to_dict(as_series=False) == {
+            "SireKey": [None],
+            "BirthDate": [19940315],
+        }
+
+
+@pytest.mark.write_disk()
+def test_csv_respect_user_schema_ragged_lines_15254() -> None:
+    with tempfile.NamedTemporaryFile() as f:
+        f.write(
+            b"""
+A,B,C
+1,2,3
+4,5,6,7,8
+9,10,11
+""".strip()
+        )
+        f.seek(0)
+
+        df = pl.scan_csv(
+            f.name, schema=dict.fromkeys("ABCDE", pl.String), truncate_ragged_lines=True
+        ).collect()
+        assert df.to_dict(as_series=False) == {
+            "A": ["1", "4", "9"],
+            "B": ["2", "5", "10"],
+            "C": ["3", "6", "11"],
+            "D": [None, "7", None],
+            "E": [None, "8", None],
+        }
+
+
+@pytest.mark.parametrize("streaming", [True, False])
+@pytest.mark.parametrize(
+    "dfs",
+    [
+        [pl.DataFrame({"a": [1, 2, 3]}), pl.DataFrame({"b": [4, 5, 6]})],
+        [
+            pl.DataFrame({"a": [1, 2, 3]}),
+            pl.DataFrame({"b": [4, 5, 6], "c": [7, 8, 9]}),
+        ],
+    ],
+)
+def test_file_list_schema_mismatch(
+    tmp_path: Path, dfs: list[pl.DataFrame], streaming: bool
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    paths = [f"{tmp_path}/{i}.csv" for i in range(len(dfs))]
+
+    for df, path in zip(dfs, paths):
+        df.write_csv(path)
+
+    lf = pl.scan_csv(paths)
+    with pytest.raises(ComputeError):
+        lf.collect(streaming=streaming)
+
+    if len({df.width for df in dfs}) == 1:
+        expect = pl.concat(df.select(x=pl.first().cast(pl.Int8)) for df in dfs)
+        out = pl.scan_csv(paths, schema={"x": pl.Int8}).collect(streaming=streaming)
+
+        assert_frame_equal(out, expect)
+
+
+@pytest.mark.parametrize("streaming", [True, False])
+def test_file_list_schema_supertype(tmp_path: Path, streaming: bool) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    data_lst = [
+        """\
+a
+1
+2
+""",
+        """\
+a
+b
+c
+""",
+    ]
+
+    paths = [f"{tmp_path}/{i}.csv" for i in range(len(data_lst))]
+
+    for data, path in zip(data_lst, paths):
+        with Path(path).open("w") as f:
+            f.write(data)
+
+    expect = pl.Series("a", ["1", "2", "b", "c"]).to_frame()
+    out = pl.scan_csv(paths).collect(streaming=streaming)
+
+    assert_frame_equal(out, expect)
+
+
+@pytest.mark.parametrize("streaming", [True, False])
+def test_file_list_comment_skip_rows_16327(tmp_path: Path, streaming: bool) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    data_lst = [
+        """\
+# comment
+a
+b
+c
+""",
+        """\
+a
+b
+c
+""",
+    ]
+
+    paths = [f"{tmp_path}/{i}.csv" for i in range(len(data_lst))]
+
+    for data, path in zip(data_lst, paths):
+        with Path(path).open("w") as f:
+            f.write(data)
+
+    expect = pl.Series("a", ["b", "c", "b", "c"]).to_frame()
+    out = pl.scan_csv(paths, comment_prefix="#").collect(streaming=streaming)
+
+    assert_frame_equal(out, expect)

@@ -7,8 +7,10 @@ use std::vec;
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
 use polars_ops::prelude::CrossJoin as CrossJoinTrait;
+use polars_utils::arena::Node;
 use smartstring::alias::String as SmartString;
 
+use crate::executors::operators::PlaceHolder;
 use crate::operators::{
     chunks_to_df_unchecked, DataChunk, FinalizedSink, Operator, OperatorResult, PExecutionContext,
     Sink, SinkResult,
@@ -19,19 +21,35 @@ pub struct CrossJoin {
     chunks: Vec<DataChunk>,
     suffix: SmartString,
     swapped: bool,
+    node: Node,
+    placeholder: PlaceHolder,
 }
 
 impl CrossJoin {
-    pub(crate) fn new(suffix: SmartString, swapped: bool) -> Self {
+    pub(crate) fn new(
+        suffix: SmartString,
+        swapped: bool,
+        node: Node,
+        placeholder: PlaceHolder,
+    ) -> Self {
         CrossJoin {
             chunks: vec![],
             suffix,
             swapped,
+            node,
+            placeholder,
         }
     }
 }
 
 impl Sink for CrossJoin {
+    fn node(&self) -> Node {
+        self.node
+    }
+    fn is_join_build(&self) -> bool {
+        true
+    }
+
     fn sink(&mut self, _context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {
         self.chunks.push(chunk);
         Ok(SinkResult::CanHaveMoreInput)
@@ -47,13 +65,13 @@ impl Sink for CrossJoin {
         Box::new(Self {
             suffix: self.suffix.clone(),
             swapped: self.swapped,
+            placeholder: self.placeholder.clone(),
             ..Default::default()
         })
     }
 
     fn finalize(&mut self, _context: &PExecutionContext) -> PolarsResult<FinalizedSink> {
-        // todo! share sink
-        Ok(FinalizedSink::Operator(Box::new(CrossJoinProbe {
+        let op = Box::new(CrossJoinProbe {
             df: Arc::new(chunks_to_df_unchecked(std::mem::take(&mut self.chunks))),
             suffix: Arc::from(self.suffix.as_ref()),
             in_process_left: None,
@@ -61,7 +79,10 @@ impl Sink for CrossJoin {
             in_process_left_df: Default::default(),
             output_names: None,
             swapped: self.swapped,
-        })))
+        });
+        self.placeholder.replace(op);
+
+        Ok(FinalizedSink::Operator)
     }
 
     fn as_any(&mut self) -> &mut dyn Any {
@@ -90,9 +111,17 @@ impl Operator for CrossJoinProbe {
         _context: &PExecutionContext,
         chunk: &DataChunk,
     ) -> PolarsResult<OperatorResult> {
-        // expected output size = size**2
-        // so this is a small number
-        let size = 250;
+        // Expected output is size**2, so this needs to be a a small number.
+        // However, if one of the DataFrames is much smaller than 250, we want
+        // to take rather more from the other DataFrame so we don't end up with
+        // overly small chunks.
+        let mut size = 250;
+        if chunk.data.height() > 0 {
+            size *= (250 / chunk.data.height()).max(1);
+        }
+        if self.df.height() > 0 {
+            size *= (250 / self.df.height()).max(1);
+        }
 
         if self.in_process_left.is_none() {
             let mut iter_left = (0..self.df.height()).step_by(size);
@@ -121,7 +150,7 @@ impl Operator for CrossJoinProbe {
                         self.in_process_left_df = self.df.slice(offset as i64, size);
                         self.in_process_right = Some((0..chunk.data.height()).step_by(size));
                         let iter_right = self.in_process_right.as_mut().unwrap();
-                        let offset = iter_right.next().unwrap();
+                        let offset = iter_right.next().unwrap_or(0);
                         let right_df = chunk.data.slice(offset as i64, size);
 
                         let (a, b) = if self.swapped {

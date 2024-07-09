@@ -283,3 +283,66 @@ class ExprNameNameSpace:
         └──────┴──────┴──────┴──────┘
         """
         return self._from_pyexpr(self._pyexpr.name_to_uppercase())
+
+    def map_fields(self, function: Callable[[str], str]) -> Expr:
+        """
+        Rename fields of a struct by mapping a function over the field name.
+
+        Notes
+        -----
+        This only take effects for struct.
+
+        Parameters
+        ----------
+        function
+            Function that maps a field name to a new name.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"x": {"a": 1, "b": 2}})
+        >>> df.select(pl.col("x").name.map_fields(lambda x: x.upper())).schema
+        Schema({'x': Struct({'A': Int64, 'B': Int64})})
+        """
+        return self._from_pyexpr(self._pyexpr.name_map_fields(function))
+
+    def prefix_fields(self, prefix: str) -> Expr:
+        """
+        Add a prefix to all fields name of a struct.
+
+        Notes
+        -----
+        This only take effects for struct.
+
+        Parameters
+        ----------
+        prefix
+            Prefix to add to the filed name
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"x": {"a": 1, "b": 2}})
+        >>> df.select(pl.col("x").name.prefix_fields("prefix_")).schema
+        Schema({'x': Struct({'prefix_a': Int64, 'prefix_b': Int64})})
+        """
+        return self._from_pyexpr(self._pyexpr.name_prefix_fields(prefix))
+
+    def suffix_fields(self, suffix: str) -> Expr:
+        """
+        Add a suffix to all fields name of a struct.
+
+        Notes
+        -----
+        This only take effects for struct.
+
+        Parameters
+        ----------
+        suffix
+            Suffix to add to the filed name
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"x": {"a": 1, "b": 2}})
+        >>> df.select(pl.col("x").name.suffix_fields("_suffix")).schema
+        Schema({'x': Struct({'a_suffix': Int64, 'b_suffix': Int64})})
+        """
+        return self._from_pyexpr(self._pyexpr.name_suffix_fields(suffix))

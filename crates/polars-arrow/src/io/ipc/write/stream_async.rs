@@ -14,7 +14,7 @@ use super::common_async::{write_continuation, write_message};
 use super::{default_ipc_fields, schema_to_bytes, Record};
 use crate::datatypes::*;
 
-/// A sink that writes array [`chunks`](crate::chunk::Chunk) as an IPC stream.
+/// A sink that writes array [`chunks`](crate::record_batch::RecordBatchT) as an IPC stream.
 ///
 /// The stream header is automatically written before writing the first chunk.
 pub struct StreamSink<'a, W: AsyncWrite + Unpin + Send + 'a> {

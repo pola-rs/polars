@@ -1,14 +1,9 @@
 //! Implementations of the ChunkApply Trait.
 use std::borrow::Cow;
-use std::convert::TryFrom;
 
-use arrow::array::{BooleanArray, PrimitiveArray};
-use arrow::bitmap::utils::{get_bit_unchecked, set_bit_unchecked};
-use arrow::legacy::bitmap::unary_mut;
-
+use crate::chunked_array::cast::CastOptions;
 use crate::prelude::*;
 use crate::series::IsSorted;
-use crate::utils::CustomIterTools;
 
 impl<T> ChunkedArray<T>
 where
@@ -31,27 +26,6 @@ where
         ChunkedArray::from_chunk_iter(self.name(), iter)
     }
 
-    /// Applies a function to all elements, regardless of whether they
-    /// are null or not, after which the null mask is copied from the
-    /// original array.
-    pub fn try_apply_values_generic<'a, U, K, F, E>(
-        &'a self,
-        mut op: F,
-    ) -> Result<ChunkedArray<U>, E>
-    where
-        U: PolarsDataType,
-        F: FnMut(T::Physical<'a>) -> Result<K, E>,
-        U::Array: ArrayFromIter<K>,
-    {
-        let iter = self.downcast_iter().map(|arr| {
-            let element_iter = arr.values_iter().map(&mut op);
-            let array: U::Array = element_iter.try_collect_arr()?;
-            Ok(array.with_validity_typed(arr.validity().cloned()))
-        });
-
-        ChunkedArray::try_from_chunk_iter(self.name(), iter)
-    }
-
     /// Applies a function only to the non-null elements, propagating nulls.
     pub fn apply_nonnull_values_generic<'a, U, K, F>(
         &'a self,
@@ -68,13 +42,13 @@ where
                 let out: U::Array = arr
                     .values_iter()
                     .map(&mut op)
-                    .collect_arr_with_dtype(dtype.to_arrow(true));
+                    .collect_arr_with_dtype(dtype.to_arrow(CompatLevel::newest()));
                 out.with_validity_typed(arr.validity().cloned())
             } else {
                 let out: U::Array = arr
                     .iter()
                     .map(|opt| opt.map(&mut op))
-                    .collect_arr_with_dtype(dtype.to_arrow(true));
+                    .collect_arr_with_dtype(dtype.to_arrow(CompatLevel::newest()));
                 out.with_validity_typed(arr.validity().cloned())
             }
         });
@@ -159,7 +133,7 @@ where
         drop(arr);
 
         let compute_immutable = |arr: &PrimitiveArray<S::Native>| {
-            arrow::compute::arity::unary(arr, f, S::get_dtype().to_arrow(true))
+            arrow::compute::arity::unary(arr, f, S::get_dtype().to_arrow(CompatLevel::newest()))
         };
 
         if owned_arr.values().is_sliced() {
@@ -192,7 +166,9 @@ impl<T: PolarsNumericType> ChunkedArray<T> {
         // this will ensure we have a single ref count
         // and we can mutate in place
         let chunks = {
-            let s = self.cast(&S::get_dtype()).unwrap();
+            let s = self
+                .cast_with_options(&S::get_dtype(), CastOptions::Overflowing)
+                .unwrap();
             s.chunks().clone()
         };
         apply_in_place_impl(self.name(), chunks, f)
@@ -214,7 +190,7 @@ impl<T: PolarsNumericType> ChunkedArray<T> {
     where
         F: Fn(T::Native) -> T::Native + Copy,
     {
-        // safety, we do no t change the lengths
+        // SAFETY, we do no t change the lengths
         unsafe {
             self.downcast_iter_mut()
                 .for_each(|arr| arrow::compute::arity_assign::unary(arr, f))
@@ -245,22 +221,6 @@ where
         ChunkedArray::from_chunk_iter(self.name(), chunks)
     }
 
-    fn try_apply<F>(&'a self, f: F) -> PolarsResult<Self>
-    where
-        F: Fn(T::Native) -> PolarsResult<T::Native> + Copy,
-    {
-        let mut ca: ChunkedArray<T> = self
-            .data_views()
-            .zip(self.iter_validities())
-            .map(|(slice, validity)| {
-                let vec: PolarsResult<Vec<_>> = slice.iter().copied().map(f).collect();
-                Ok((vec?, validity.cloned()))
-            })
-            .collect::<PolarsResult<_>>()?;
-        ca.rename(self.name());
-        Ok(ca)
-    }
-
     fn apply<F>(&'a self, f: F) -> Self
     where
         F: Fn(Option<T::Native>) -> Option<T::Native> + Copy,
@@ -281,7 +241,7 @@ where
         let mut idx = 0;
         self.downcast_iter().for_each(|arr| {
             arr.into_iter().for_each(|opt_val| {
-                // Safety:
+                // SAFETY:
                 // length asserted above
                 let item = unsafe { slice.get_unchecked_mut(idx) };
                 *item = f(opt_val.copied(), item);
@@ -298,61 +258,23 @@ impl<'a> ChunkApply<'a, bool> for BooleanChunked {
     where
         F: Fn(bool) -> bool + Copy,
     {
-        self.apply_kernel(&|arr| {
-            let values = arrow::bitmap::unary(arr.values(), |chunk| {
-                let bytes = chunk.to_ne_bytes();
-
-                // different output as that might lead
-                // to better internal parallelism
-                let mut out = 0u64.to_ne_bytes();
-                for i in 0..64 {
-                    unsafe {
-                        let val = get_bit_unchecked(&bytes, i);
-                        let res = f(val);
-                        set_bit_unchecked(&mut out, i, res)
-                    };
-                }
-                u64::from_ne_bytes(out)
-            });
-            BooleanArray::from_data_default(values, arr.validity().cloned()).boxed()
-        })
-    }
-
-    fn try_apply<F>(&self, f: F) -> PolarsResult<Self>
-    where
-        F: Fn(bool) -> PolarsResult<bool> + Copy,
-    {
-        let mut failed: Option<PolarsError> = None;
-        let chunks = self.downcast_iter().map(|arr| {
-            let values = unary_mut(arr.values(), |chunk| {
-                let bytes = chunk.to_ne_bytes();
-
-                if failed.is_some() {
-                    0
-                } else {
-                    let mut out = 0u64.to_ne_bytes();
-                    // We reverse the order of the loop so we keep the first error, if any.
-                    for i in (0..64).rev() {
-                        unsafe {
-                            let val = get_bit_unchecked(&bytes, i);
-                            match f(val) {
-                                Ok(res) => set_bit_unchecked(&mut out, i, res),
-                                Err(e) => failed = Some(e),
-                            }
-                        };
-                    }
-                    u64::from_ne_bytes(out)
-                }
-            });
-
-            BooleanArray::from_data_default(values, arr.validity().cloned())
-        });
-
-        let ret = BooleanChunked::from_chunk_iter(self.name(), chunks);
-        if let Some(e) = failed {
-            return Err(e);
+        // Can just fully deduce behavior from two invocations.
+        match (f(false), f(true)) {
+            (false, false) => self.apply_kernel(&|arr| {
+                Box::new(
+                    BooleanArray::full(arr.len(), false, ArrowDataType::Boolean)
+                        .with_validity(arr.validity().cloned()),
+                )
+            }),
+            (false, true) => self.clone(),
+            (true, false) => !self,
+            (true, true) => self.apply_kernel(&|arr| {
+                Box::new(
+                    BooleanArray::full(arr.len(), true, ArrowDataType::Boolean)
+                        .with_validity(arr.validity().cloned()),
+                )
+            }),
         }
-        Ok(ret)
     }
 
     fn apply<F>(&'a self, f: F) -> Self
@@ -371,7 +293,7 @@ impl<'a> ChunkApply<'a, bool> for BooleanChunked {
         let mut idx = 0;
         self.downcast_iter().for_each(|arr| {
             arr.into_iter().for_each(|opt_val| {
-                // Safety:
+                // SAFETY:
                 // length asserted above
                 let item = unsafe { slice.get_unchecked_mut(idx) };
                 *item = f(opt_val, item);
@@ -434,13 +356,6 @@ impl<'a> ChunkApply<'a, &'a str> for StringChunked {
         ChunkedArray::apply_values_generic(self, f)
     }
 
-    fn try_apply<F>(&'a self, f: F) -> PolarsResult<Self>
-    where
-        F: Fn(&'a str) -> PolarsResult<Cow<'a, str>> + Copy,
-    {
-        self.try_apply_values_generic(f)
-    }
-
     fn apply<F>(&'a self, f: F) -> Self
     where
         F: Fn(Option<&'a str>) -> Option<Cow<'a, str>> + Copy,
@@ -457,7 +372,7 @@ impl<'a> ChunkApply<'a, &'a str> for StringChunked {
         let mut idx = 0;
         self.downcast_iter().for_each(|arr| {
             arr.into_iter().for_each(|opt_val| {
-                // Safety:
+                // SAFETY:
                 // length asserted above
                 let item = unsafe { slice.get_unchecked_mut(idx) };
                 *item = f(opt_val, item);
@@ -477,13 +392,6 @@ impl<'a> ChunkApply<'a, &'a [u8]> for BinaryChunked {
         self.apply_values_generic(f)
     }
 
-    fn try_apply<F>(&'a self, f: F) -> PolarsResult<Self>
-    where
-        F: Fn(&'a [u8]) -> PolarsResult<Cow<'a, [u8]>> + Copy,
-    {
-        self.try_apply_values_generic(f)
-    }
-
     fn apply<F>(&'a self, f: F) -> Self
     where
         F: Fn(Option<&'a [u8]>) -> Option<Cow<'a, [u8]>> + Copy,
@@ -500,7 +408,7 @@ impl<'a> ChunkApply<'a, &'a [u8]> for BinaryChunked {
         let mut idx = 0;
         self.downcast_iter().for_each(|arr| {
             arr.into_iter().for_each(|opt_val| {
-                // Safety:
+                // SAFETY:
                 // length asserted above
                 let item = unsafe { slice.get_unchecked_mut(idx) };
                 *item = f(opt_val, item);
@@ -608,40 +516,6 @@ impl<'a> ChunkApply<'a, Series> for ListChunked {
         ca
     }
 
-    fn try_apply<F>(&'a self, f: F) -> PolarsResult<Self>
-    where
-        F: Fn(Series) -> PolarsResult<Series> + Copy,
-    {
-        if self.is_empty() {
-            return Ok(self.clone());
-        }
-
-        let mut fast_explode = true;
-        let mut function = |s: Series| {
-            let out = f(s);
-            if let Ok(out) = &out {
-                if out.is_empty() {
-                    fast_explode = false;
-                }
-            }
-            out
-        };
-        let ca: PolarsResult<ListChunked> = {
-            if !self.has_validity() {
-                self.into_no_null_iter().map(&mut function).collect()
-            } else {
-                self.into_iter()
-                    .map(|opt_v| opt_v.map(&mut function).transpose())
-                    .collect()
-            }
-        };
-        let mut ca = ca?;
-        if fast_explode {
-            ca.set_fast_explode()
-        }
-        Ok(ca)
-    }
-
     fn apply<F>(&'a self, f: F) -> Self
     where
         F: Fn(Option<Series>) -> Option<Series> + Copy,
@@ -663,7 +537,7 @@ impl<'a> ChunkApply<'a, Series> for ListChunked {
             arr.iter().for_each(|opt_val| {
                 let opt_val = opt_val.map(|arrayref| Series::try_from(("", arrayref)).unwrap());
 
-                // Safety:
+                // SAFETY:
                 // length asserted above
                 let item = unsafe { slice.get_unchecked_mut(idx) };
                 *item = f(opt_val, item);
@@ -689,13 +563,6 @@ where
         ca
     }
 
-    fn try_apply<F>(&'a self, _f: F) -> PolarsResult<Self>
-    where
-        F: Fn(&'a T) -> PolarsResult<T> + Copy,
-    {
-        todo!()
-    }
-
     fn apply<F>(&'a self, f: F) -> Self
     where
         F: Fn(Option<&'a T>) -> Option<T> + Copy,
@@ -713,7 +580,7 @@ where
         let mut idx = 0;
         self.downcast_iter().for_each(|arr| {
             arr.into_iter().for_each(|opt_val| {
-                // Safety:
+                // SAFETY:
                 // length asserted above
                 let item = unsafe { slice.get_unchecked_mut(idx) };
                 *item = f(opt_val, item);

@@ -1,5 +1,4 @@
 use std::collections::VecDeque;
-use std::convert::TryInto;
 use std::io::{Read, Seek, SeekFrom};
 
 use polars_error::{polars_bail, polars_err, PolarsResult};
@@ -97,12 +96,12 @@ fn read_uncompressed_buffer<T: NativeType, R: Read + Seek>(
 fn read_compressed_buffer<T: NativeType, R: Read + Seek>(
     reader: &mut R,
     buffer_length: usize,
-    length: usize,
+    output_length: Option<usize>,
     is_little_endian: bool,
     compression: Compression,
     scratch: &mut Vec<u8>,
 ) -> PolarsResult<Vec<T>> {
-    if length == 0 {
+    if output_length == Some(0) {
         return Ok(vec![]);
     }
 
@@ -112,10 +111,6 @@ fn read_compressed_buffer<T: NativeType, R: Read + Seek>(
         )
     }
 
-    // It is undefined behavior to call read_exact on un-initialized, https://doc.rust-lang.org/std/io/trait.Read.html#tymethod.read
-    // see also https://github.com/MaikKlein/ash/issues/354#issue-781730580
-    let mut buffer = vec![T::default(); length];
-
     // decompress first
     scratch.clear();
     scratch.try_reserve(buffer_length)?;
@@ -123,6 +118,13 @@ fn read_compressed_buffer<T: NativeType, R: Read + Seek>(
         .by_ref()
         .take(buffer_length as u64)
         .read_to_end(scratch)?;
+
+    let length = output_length
+        .unwrap_or_else(|| i64::from_le_bytes(scratch[..8].try_into().unwrap()) as usize);
+
+    // It is undefined behavior to call read_exact on un-initialized, https://doc.rust-lang.org/std/io/trait.Read.html#tymethod.read
+    // see also https://github.com/MaikKlein/ash/issues/354#issue-781730580
+    let mut buffer = vec![T::default(); length];
 
     let out_slice = bytemuck::cast_slice_mut(&mut buffer);
 
@@ -151,7 +153,7 @@ fn read_compressed_bytes<R: Read + Seek>(
     read_compressed_buffer::<u8, _>(
         reader,
         buffer_length,
-        buffer_length,
+        None,
         is_little_endian,
         compression,
         scratch,
@@ -225,7 +227,7 @@ pub fn read_buffer<T: NativeType, R: Read + Seek>(
         Ok(read_compressed_buffer(
             reader,
             buffer_length,
-            length,
+            Some(length),
             is_little_endian,
             compression,
             scratch,

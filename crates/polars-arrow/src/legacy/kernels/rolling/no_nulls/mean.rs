@@ -1,7 +1,5 @@
-use no_nulls::{rolling_apply_agg_window, RollingAggWindowNoNulls};
 use polars_error::polars_ensure;
 
-use super::sum::SumWindow;
 use super::*;
 
 pub struct MeanWindow<'a, T> {
@@ -19,9 +17,9 @@ impl<
         }
     }
 
-    unsafe fn update(&mut self, start: usize, end: usize) -> T {
-        let sum = self.sum.update(start, end);
-        sum / NumCast::from(end - start).unwrap()
+    unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
+        let sum = self.sum.update(start, end).unwrap_unchecked();
+        Some(sum / NumCast::from(end - start).unwrap())
     }
 }
 

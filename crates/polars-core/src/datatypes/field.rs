@@ -3,7 +3,7 @@ use smartstring::alias::String as SmartString;
 use super::*;
 
 /// Characterizes the name and the [`DataType`] of a column.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(
     any(feature = "serde", feature = "serde-lazy"),
     derive(Serialize, Deserialize)
@@ -107,10 +107,22 @@ impl Field {
     /// let f = Field::new("Value", DataType::Int64);
     /// let af = arrow::datatypes::Field::new("Value", arrow::datatypes::ArrowDataType::Int64, true);
     ///
-    /// assert_eq!(f.to_arrow(true), af);
+    /// assert_eq!(f.to_arrow(CompatLevel::newest()), af);
     /// ```
-    pub fn to_arrow(&self, pl_flavor: bool) -> ArrowField {
-        self.dtype.to_arrow_field(self.name.as_str(), pl_flavor)
+    pub fn to_arrow(&self, compat_level: CompatLevel) -> ArrowField {
+        self.dtype.to_arrow_field(self.name.as_str(), compat_level)
+    }
+}
+
+impl AsRef<DataType> for Field {
+    fn as_ref(&self) -> &DataType {
+        &self.dtype
+    }
+}
+
+impl AsRef<DataType> for DataType {
+    fn as_ref(&self) -> &DataType {
+        self
     }
 }
 
@@ -147,6 +159,10 @@ impl DataType {
             ArrowDataType::Struct(fields) => {
                 DataType::Struct(fields.iter().map(|fld| fld.into()).collect())
             }
+            #[cfg(not(feature = "dtype-struct"))]
+            ArrowDataType::Struct(_) => {
+                panic!("activate the 'dtype-struct' feature to handle struct data types")
+            }
             ArrowDataType::Extension(name, _, _) if name == "POLARS_EXTENSION_TYPE" => {
                 #[cfg(feature = "object")]
                 {
@@ -169,6 +185,7 @@ impl DataType {
                     DataType::BinaryOffset
                 }
             },
+            ArrowDataType::FixedSizeBinary(_) => DataType::Binary,
             dt => panic!("Arrow datatype {dt:?} not supported by Polars. You probably need to activate that data-type feature."),
         }
     }

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from polars._utils.unstable import unstable
 from polars.io.pyarrow_dataset.anonymous_scan import _scan_pyarrow_dataset
-from polars.utils.unstable import unstable
 
 if TYPE_CHECKING:
     from polars import LazyFrame

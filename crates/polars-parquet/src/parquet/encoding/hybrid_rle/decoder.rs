@@ -1,6 +1,7 @@
+use polars_utils::slice::GetSaferUnchecked;
+
 use super::super::{ceil8, uleb128};
 use super::HybridEncoded;
-use crate::parquet::error::Error;
 
 /// An [`Iterator`] of [`HybridEncoded`].
 #[derive(Debug, Clone)]
@@ -23,26 +24,17 @@ impl<'a> Decoder<'a> {
 }
 
 impl<'a> Iterator for Decoder<'a> {
-    type Item = Result<HybridEncoded<'a>, Error>;
+    type Item = HybridEncoded<'a>;
 
     #[inline] // -18% improvement in bench
     fn next(&mut self) -> Option<Self::Item> {
-        if self.num_bits == 0 {
+        let (indicator, consumed) = uleb128::decode(self.values);
+        self.values = unsafe { self.values.get_unchecked_release(consumed..) };
+
+        // We want to early return if consumed == 0 OR num_bits == 0, so combine into a single branch.
+        if (consumed * self.num_bits) == 0 {
             return None;
         }
-
-        if self.values.is_empty() {
-            return None;
-        }
-
-        let (indicator, consumed) = match uleb128::decode(self.values) {
-            Ok((indicator, consumed)) => (indicator, consumed),
-            Err(e) => return Some(Err(e)),
-        };
-        self.values = &self.values[consumed..];
-        if self.values.is_empty() {
-            return None;
-        };
 
         if indicator & 1 == 1 {
             // is bitpacking
@@ -50,7 +42,7 @@ impl<'a> Iterator for Decoder<'a> {
             let bytes = std::cmp::min(bytes, self.values.len());
             let (result, remaining) = self.values.split_at(bytes);
             self.values = remaining;
-            Some(Ok(HybridEncoded::Bitpacked(result)))
+            Some(HybridEncoded::Bitpacked(result))
         } else {
             // is rle
             let run_length = indicator as usize >> 1;
@@ -58,7 +50,7 @@ impl<'a> Iterator for Decoder<'a> {
             let rle_bytes = ceil8(self.num_bits);
             let (result, remaining) = self.values.split_at(rle_bytes);
             self.values = remaining;
-            Some(Ok(HybridEncoded::Rle(result, run_length)))
+            Some(HybridEncoded::Rle(result, run_length))
         }
     }
 }
@@ -81,11 +73,11 @@ mod tests {
 
         let run = decoder.next().unwrap();
 
-        if let HybridEncoded::Bitpacked(values) = run.unwrap() {
+        if let HybridEncoded::Bitpacked(values) = run {
             assert_eq!(values, &[0b00001011]);
             let result = bitpacked::Decoder::<u32>::try_new(values, bit_width, length)
                 .unwrap()
-                .collect::<Vec<_>>();
+                .collect();
             assert_eq!(result, &[1, 1, 0, 1, 0]);
         } else {
             panic!()
@@ -107,11 +99,11 @@ mod tests {
 
         let run = decoder.next().unwrap();
 
-        if let HybridEncoded::Bitpacked(values) = run.unwrap() {
+        if let HybridEncoded::Bitpacked(values) = run {
             assert_eq!(values, &[0b11101011, 0b00000010]);
             let result = bitpacked::Decoder::<u32>::try_new(values, bit_width, 10)
                 .unwrap()
-                .collect::<Vec<_>>();
+                .collect();
             assert_eq!(result, expected);
         } else {
             panic!()
@@ -132,7 +124,7 @@ mod tests {
 
         let run = decoder.next().unwrap();
 
-        if let HybridEncoded::Rle(values, items) = run.unwrap() {
+        if let HybridEncoded::Rle(values, items) = run {
             assert_eq!(values, &[0b00000001]);
             assert_eq!(items, length);
         } else {

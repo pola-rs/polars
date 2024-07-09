@@ -3,7 +3,7 @@ use std::sync::Arc;
 use polars_utils::slice::GetSaferUnchecked;
 
 use super::{make_growable, Growable};
-use crate::array::growable::utils::{extend_validity, prepare_validity};
+use crate::array::growable::utils::{extend_validity, extend_validity_copies, prepare_validity};
 use crate::array::{Array, FixedSizeListArray};
 use crate::bitmap::MutableBitmap;
 use crate::datatypes::ArrowDataType;
@@ -55,7 +55,7 @@ impl<'a> GrowableFixedSizeList<'a> {
         }
     }
 
-    fn to(&mut self) -> FixedSizeListArray {
+    pub fn to(&mut self) -> FixedSizeListArray {
         let validity = std::mem::take(&mut self.validity);
         let values = self.values.as_box();
 
@@ -74,6 +74,14 @@ impl<'a> Growable<'a> for GrowableFixedSizeList<'a> {
 
         self.values
             .extend(index, start * self.size, len * self.size);
+    }
+
+    unsafe fn extend_copies(&mut self, index: usize, start: usize, len: usize, copies: usize) {
+        let array = *self.arrays.get_unchecked_release(index);
+        extend_validity_copies(&mut self.validity, array, start, len, copies);
+
+        self.values
+            .extend_copies(index, start * self.size, len * self.size, copies);
     }
 
     fn extend_validity(&mut self, additional: usize) {

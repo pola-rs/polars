@@ -2,9 +2,9 @@ use super::*;
 
 pub trait VarAggSeries {
     /// Get the variance of the [`ChunkedArray`] as a new [`Series`] of length 1.
-    fn var_as_series(&self, ddof: u8) -> Series;
+    fn var_reduce(&self, ddof: u8) -> Scalar;
     /// Get the standard deviation of the [`ChunkedArray`] as a new [`Series`] of length 1.
-    fn std_as_series(&self, ddof: u8) -> Series;
+    fn std_reduce(&self, ddof: u8) -> Scalar;
 }
 
 impl<T> ChunkVar for ChunkedArray<T>

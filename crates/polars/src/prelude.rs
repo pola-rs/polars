@@ -1,5 +1,3 @@
-#[cfg(feature = "polars-algo")]
-pub use polars_algo::prelude::*;
 pub use polars_core::prelude::*;
 pub use polars_core::utils::NoNull;
 #[cfg(feature = "polars-io")]

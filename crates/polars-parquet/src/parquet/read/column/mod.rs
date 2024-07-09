@@ -2,7 +2,7 @@ use std::io::{Read, Seek};
 use std::vec::IntoIter;
 
 use super::{get_field_columns, get_page_iterator, PageFilter, PageReader};
-use crate::parquet::error::Error;
+use crate::parquet::error::ParquetError;
 use crate::parquet::metadata::{ColumnChunkMetaData, RowGroupMetaData};
 use crate::parquet::page::CompressedPage;
 use crate::parquet::schema::types::ParquetType;
@@ -86,9 +86,9 @@ impl<R: Read + Seek> ColumnIterator<R> {
 
 impl<R: Read + Seek> MutStreamingIterator for ColumnIterator<R> {
     type Item = (PageReader<R>, ColumnChunkMetaData);
-    type Error = Error;
+    type Error = ParquetError;
 
-    fn advance(mut self) -> Result<State<Self>, Error> {
+    fn advance(mut self) -> Result<State<Self>, ParquetError> {
         let (reader, scratch) = if let Some((iter, _)) = self.current {
             iter.into_inner()
         } else {
@@ -126,15 +126,24 @@ impl<R: Read + Seek> MutStreamingIterator for ColumnIterator<R> {
 #[derive(Debug)]
 pub struct ReadColumnIterator {
     field: ParquetType,
-    chunks: Vec<(Vec<Result<CompressedPage, Error>>, ColumnChunkMetaData)>,
-    current: Option<(IntoIter<Result<CompressedPage, Error>>, ColumnChunkMetaData)>,
+    chunks: Vec<(
+        Vec<Result<CompressedPage, ParquetError>>,
+        ColumnChunkMetaData,
+    )>,
+    current: Option<(
+        IntoIter<Result<CompressedPage, ParquetError>>,
+        ColumnChunkMetaData,
+    )>,
 }
 
 impl ReadColumnIterator {
     /// Returns a new [`ReadColumnIterator`]
     pub fn new(
         field: ParquetType,
-        chunks: Vec<(Vec<Result<CompressedPage, Error>>, ColumnChunkMetaData)>,
+        chunks: Vec<(
+            Vec<Result<CompressedPage, ParquetError>>,
+            ColumnChunkMetaData,
+        )>,
     ) -> Self {
         Self {
             field,
@@ -145,10 +154,13 @@ impl ReadColumnIterator {
 }
 
 impl MutStreamingIterator for ReadColumnIterator {
-    type Item = (IntoIter<Result<CompressedPage, Error>>, ColumnChunkMetaData);
-    type Error = Error;
+    type Item = (
+        IntoIter<Result<CompressedPage, ParquetError>>,
+        ColumnChunkMetaData,
+    );
+    type Error = ParquetError;
 
-    fn advance(mut self) -> Result<State<Self>, Error> {
+    fn advance(mut self) -> Result<State<Self>, ParquetError> {
         if self.chunks.is_empty() {
             return Ok(State::Finished(vec![]));
         }
@@ -178,7 +190,7 @@ pub fn read_columns<'a, R: Read + Seek>(
     reader: &mut R,
     columns: &'a [ColumnChunkMetaData],
     field_name: &'a str,
-) -> Result<Vec<(&'a ColumnChunkMetaData, Vec<u8>)>, Error> {
+) -> Result<Vec<(&'a ColumnChunkMetaData, Vec<u8>)>, ParquetError> {
     get_field_columns(columns, field_name)
         .map(|column| read_column(reader, column).map(|c| (column, c)))
         .collect()
@@ -186,7 +198,7 @@ pub fn read_columns<'a, R: Read + Seek>(
 
 /// Reads a column chunk into memory
 /// This operation is IO-bounded and allocates the column's `compressed_size`.
-pub fn read_column<R>(reader: &mut R, column: &ColumnChunkMetaData) -> Result<Vec<u8>, Error>
+pub fn read_column<R>(reader: &mut R, column: &ColumnChunkMetaData) -> Result<Vec<u8>, ParquetError>
 where
     R: Read + Seek,
 {

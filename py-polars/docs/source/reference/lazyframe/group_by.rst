@@ -2,7 +2,7 @@
 GroupBy
 =======
 
-This namespace comes available by calling `LazyFrame.group_by(..)`.
+This namespace becomes available by calling `LazyFrame.group_by(...)`.
 
 .. currentmodule:: polars.lazyframe.group_by
 
@@ -11,7 +11,6 @@ This namespace comes available by calling `LazyFrame.group_by(..)`.
 
     LazyGroupBy.agg
     LazyGroupBy.all
-    LazyGroupBy.apply
     LazyGroupBy.count
     LazyGroupBy.first
     LazyGroupBy.head

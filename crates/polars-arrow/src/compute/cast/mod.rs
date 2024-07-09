@@ -17,22 +17,23 @@ pub use boolean_to::*;
 pub use decimal_to::*;
 pub use dictionary_to::*;
 use polars_error::{polars_bail, polars_ensure, polars_err, PolarsResult};
+use polars_utils::IdxSize;
 pub use primitive_to::*;
 pub use utf8_to::*;
 
 use crate::array::*;
 use crate::compute::cast::binview_to::{
-    utf8view_to_date32_dyn, utf8view_to_naive_timestamp_dyn, view_to_binary,
+    binview_to_dictionary, utf8view_to_date32_dyn, utf8view_to_dictionary,
+    utf8view_to_naive_timestamp_dyn, view_to_binary,
 };
 use crate::datatypes::*;
-use crate::legacy::index::IdxSize;
 use crate::match_integer_type;
 use crate::offset::{Offset, Offsets};
 use crate::temporal_conversions::utf8view_to_timestamp;
 
 /// options defining how Cast kernels behave
 #[derive(Clone, Copy, Debug, Default)]
-pub struct CastOptions {
+pub struct CastOptionsImpl {
     /// default to false
     /// whether an overflowing cast should be converted to `None` (default), or be wrapped (i.e. `256i16 as u8 = 0` vectorized).
     /// Settings this to `true` is 5-6x faster for numeric types.
@@ -42,7 +43,7 @@ pub struct CastOptions {
     pub partial: bool,
 }
 
-impl CastOptions {
+impl CastOptionsImpl {
     pub fn unchecked() -> Self {
         Self {
             wrapped: true,
@@ -51,7 +52,7 @@ impl CastOptions {
     }
 }
 
-impl CastOptions {
+impl CastOptionsImpl {
     fn with_wrapped(&self, v: bool) -> Self {
         let mut option = *self;
         option.wrapped = v;
@@ -81,7 +82,7 @@ macro_rules! primitive_dyn {
 fn cast_struct(
     array: &StructArray,
     to_type: &ArrowDataType,
-    options: CastOptions,
+    options: CastOptionsImpl,
 ) -> PolarsResult<StructArray> {
     let values = array.values();
     let fields = StructArray::get_fields(to_type);
@@ -101,7 +102,7 @@ fn cast_struct(
 fn cast_list<O: Offset>(
     array: &ListArray<O>,
     to_type: &ArrowDataType,
-    options: CastOptions,
+    options: CastOptionsImpl,
 ) -> PolarsResult<ListArray<O>> {
     let values = array.values();
     let new_values = cast(
@@ -143,7 +144,7 @@ fn cast_large_to_list(array: &ListArray<i64>, to_type: &ArrowDataType) -> ListAr
 fn cast_fixed_size_list_to_list<O: Offset>(
     fixed: &FixedSizeListArray,
     to_type: &ArrowDataType,
-    options: CastOptions,
+    options: CastOptionsImpl,
 ) -> PolarsResult<ListArray<O>> {
     let new_values = cast(
         fixed.values().as_ref(),
@@ -154,7 +155,7 @@ fn cast_fixed_size_list_to_list<O: Offset>(
     let offsets = (0..=fixed.len())
         .map(|ix| O::from_as_usize(ix * fixed.size()))
         .collect::<Vec<_>>();
-    // Safety: offsets _are_ monotonically increasing
+    // SAFETY: offsets _are_ monotonically increasing
     let offsets = unsafe { Offsets::new_unchecked(offsets) };
 
     Ok(ListArray::<O>::new(
@@ -169,12 +170,13 @@ fn cast_list_to_fixed_size_list<O: Offset>(
     list: &ListArray<O>,
     inner: &Field,
     size: usize,
-    options: CastOptions,
+    options: CastOptionsImpl,
 ) -> PolarsResult<FixedSizeListArray> {
     let null_cnt = list.null_count();
     let new_values = if null_cnt == 0 {
         let offsets = list.offsets().buffer().iter();
-        let expected = (0..list.len()).map(|ix| O::from_as_usize(ix * size));
+        let expected =
+            (list.offsets().first().to_usize()..list.len()).map(|ix| O::from_as_usize(ix * size));
 
         match offsets
             .zip(expected)
@@ -225,7 +227,7 @@ fn cast_list_to_fixed_size_list<O: Offset>(
             }
         }
         let take_values = unsafe {
-            crate::legacy::compute::take::take_unchecked(list.values().as_ref(), &indices.freeze())
+            crate::compute::take::take_unchecked(list.values().as_ref(), &indices.freeze())
         };
 
         cast(take_values.as_ref(), inner.data_type(), options)?
@@ -243,7 +245,7 @@ pub fn cast_default(array: &dyn Array, to_type: &ArrowDataType) -> PolarsResult<
 }
 
 pub fn cast_unchecked(array: &dyn Array, to_type: &ArrowDataType) -> PolarsResult<Box<dyn Array>> {
-    cast(array, to_type, CastOptions::unchecked())
+    cast(array, to_type, CastOptionsImpl::unchecked())
 }
 
 /// Cast `array` to the provided data type and return a new [`Array`] with
@@ -265,6 +267,7 @@ pub fn cast_unchecked(array: &dyn Array, to_type: &ArrowDataType) -> PolarsResul
 /// * Time32 and Time64: precision lost when going to higher interval
 /// * Timestamp and Date{32|64}: precision lost when going to higher interval
 /// * Temporal to/from backing primitive: zero-copy with data type change
+///
 /// Unsupported Casts
 /// * non-`StructArray` to `StructArray` or `StructArray` to non-`StructArray`
 /// * List to primitive
@@ -273,7 +276,7 @@ pub fn cast_unchecked(array: &dyn Array, to_type: &ArrowDataType) -> PolarsResul
 pub fn cast(
     array: &dyn Array,
     to_type: &ArrowDataType,
-    options: CastOptions,
+    options: CastOptionsImpl,
 ) -> PolarsResult<Box<dyn Array>> {
     use ArrowDataType::*;
     let from_type = array.data_type();
@@ -293,6 +296,12 @@ pub fn cast(
         (Struct(_), _) | (_, Struct(_)) => polars_bail!(InvalidOperation:
             "Cannot cast from struct to other types"
         ),
+        (Dictionary(index_type, ..), _) => match_integer_type!(index_type, |$T| {
+            dictionary_cast_dyn::<$T>(array, to_type, options)
+        }),
+        (_, Dictionary(index_type, value_type, _)) => match_integer_type!(index_type, |$T| {
+            cast_to_dictionary::<$T>(array, value_type, options)
+        }),
         // not supported by polars
         // (List(_), FixedSizeList(inner, size)) => cast_list_to_fixed_size_list::<i32>(
         //     array.as_any().downcast_ref().unwrap(),
@@ -320,11 +329,6 @@ pub fn cast(
             options,
         )
         .map(|x| x.boxed()),
-        // not supported by polars
-        // (List(_), List(_)) => {
-        //     cast_list::<i32>(array.as_any().downcast_ref().unwrap(), to_type, options)
-        //         .map(|x| x.boxed())
-        // },
         (BinaryView, _) => match to_type {
             Utf8View => array
                 .as_any()
@@ -370,7 +374,7 @@ pub fn cast(
             let values = cast(array, &to.data_type, options)?;
             // create offsets, where if array.len() = 2, we have [0,1,2]
             let offsets = (0..=array.len() as i32).collect::<Vec<_>>();
-            // Safety: offsets _are_ monotonically increasing
+            // SAFETY: offsets _are_ monotonically increasing
             let offsets = unsafe { Offsets::new_unchecked(offsets) };
 
             let list_array = ListArray::<i32>::new(to_type.clone(), offsets.into(), values, None);
@@ -383,7 +387,7 @@ pub fn cast(
             let values = cast(array, &to.data_type, options)?;
             // create offsets, where if array.len() = 2, we have [0,1,2]
             let offsets = (0..=array.len() as i64).collect::<Vec<_>>();
-            // Safety: offsets _are_ monotonically increasing
+            // SAFETY: offsets _are_ monotonically increasing
             let offsets = unsafe { Offsets::new_unchecked(offsets) };
 
             let list_array = ListArray::<i64>::new(
@@ -430,12 +434,6 @@ pub fn cast(
             }
         },
 
-        (Dictionary(index_type, ..), _) => match_integer_type!(index_type, |$T| {
-            dictionary_cast_dyn::<$T>(array, to_type, options)
-        }),
-        (_, Dictionary(index_type, value_type, _)) => match_integer_type!(index_type, |$T| {
-            cast_to_dictionary::<$T>(array, value_type, options)
-        }),
         (_, Boolean) => match from_type {
             UInt8 => primitive_to_boolean_dyn::<u8>(array, to_type.clone()),
             UInt16 => primitive_to_boolean_dyn::<u16>(array, to_type.clone()),
@@ -447,6 +445,7 @@ pub fn cast(
             Int64 => primitive_to_boolean_dyn::<i64>(array, to_type.clone()),
             Float32 => primitive_to_boolean_dyn::<f32>(array, to_type.clone()),
             Float64 => primitive_to_boolean_dyn::<f64>(array, to_type.clone()),
+            Decimal(_, _) => primitive_to_boolean_dyn::<i128>(array, to_type.clone()),
             _ => polars_bail!(InvalidOperation:
                 "casting from {from_type:?} to {to_type:?} not supported",
             ),
@@ -761,7 +760,7 @@ pub fn cast(
 fn cast_to_dictionary<K: DictionaryKey>(
     array: &dyn Array,
     dict_value_type: &ArrowDataType,
-    options: CastOptions,
+    options: CastOptionsImpl,
 ) -> PolarsResult<Box<dyn Array>> {
     let array = cast(array, dict_value_type, options)?;
     let array = array.as_ref();
@@ -774,6 +773,14 @@ fn cast_to_dictionary<K: DictionaryKey>(
         ArrowDataType::UInt16 => primitive_to_dictionary_dyn::<u16, K>(array),
         ArrowDataType::UInt32 => primitive_to_dictionary_dyn::<u32, K>(array),
         ArrowDataType::UInt64 => primitive_to_dictionary_dyn::<u64, K>(array),
+        ArrowDataType::BinaryView => {
+            binview_to_dictionary::<K>(array.as_any().downcast_ref().unwrap())
+                .map(|arr| arr.boxed())
+        },
+        ArrowDataType::Utf8View => {
+            utf8view_to_dictionary::<K>(array.as_any().downcast_ref().unwrap())
+                .map(|arr| arr.boxed())
+        },
         ArrowDataType::LargeUtf8 => utf8_to_dictionary_dyn::<i64, K>(array),
         ArrowDataType::LargeBinary => binary_to_dictionary_dyn::<i64, K>(array),
         ArrowDataType::Time64(_) => primitive_to_dictionary_dyn::<i64, K>(array),

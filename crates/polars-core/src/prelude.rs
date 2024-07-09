@@ -4,10 +4,9 @@ pub use std::sync::Arc;
 pub use arrow::array::ArrayRef;
 pub(crate) use arrow::array::*;
 pub use arrow::datatypes::{ArrowSchema, Field as ArrowField};
-#[cfg(feature = "ewma")]
-pub use arrow::legacy::kernels::ewm::EWMOptions;
 pub use arrow::legacy::prelude::*;
 pub(crate) use arrow::trusted_len::TrustedLen;
+pub use polars_utils::index::{ChunkId, IdxSize, NullableChunkId, NullableIdxSize};
 pub(crate) use polars_utils::total_ord::{TotalEq, TotalOrd};
 
 pub use crate::chunked_array::arithmetic::ArithmeticChunked;
@@ -30,7 +29,7 @@ pub use crate::chunked_array::ops::rolling_window::RollingOptionsFixedWindow;
 pub use crate::chunked_array::ops::*;
 #[cfg(feature = "temporal")]
 pub use crate::chunked_array::temporal::conversion::*;
-pub(crate) use crate::chunked_array::ChunkIdIter;
+pub(crate) use crate::chunked_array::ChunkLenIter;
 pub use crate::chunked_array::ChunkedArray;
 #[cfg(feature = "dtype-categorical")]
 pub use crate::datatypes::string_cache::StringCacheHolder;
@@ -38,7 +37,7 @@ pub use crate::datatypes::{ArrayCollectIterExt, *};
 pub use crate::error::{
     polars_bail, polars_ensure, polars_err, polars_warn, PolarsError, PolarsResult,
 };
-pub use crate::frame::explode::MeltArgs;
+pub use crate::frame::explode::UnpivotArgs;
 #[cfg(feature = "algorithm_group_by")]
 pub(crate) use crate::frame::group_by::aggregations::*;
 #[cfg(feature = "algorithm_group_by")]

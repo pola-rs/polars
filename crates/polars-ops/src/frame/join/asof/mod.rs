@@ -5,15 +5,15 @@ use std::borrow::Cow;
 use default::*;
 pub use groups::AsofJoinBy;
 use polars_core::prelude::*;
-use polars_core::utils::ensure_sorted_arg;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use smartstring::alias::String as SmartString;
 
 #[cfg(feature = "dtype-categorical")]
 use super::_check_categorical_src;
-use super::{_finish_join, build_tables, multiple_keys as mk, prepare_bytes};
+use super::{_finish_join, build_tables, prepare_bytes};
 use crate::frame::IntoDf;
+use crate::series::SeriesMethods;
 
 trait AsofJoinState<T>: Default {
     fn next<F: FnMut(IdxSize) -> Option<T>>(
@@ -142,17 +142,16 @@ impl<T: NumericNative> AsofJoinState<T> for AsofJoinNearestState {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Default)]
+#[derive(Clone, Debug, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct AsOfOptions {
     pub strategy: AsofStrategy,
     /// A tolerance in the same unit as the asof column
     pub tolerance: Option<AnyValue<'static>>,
-    /// An timedelta given as
+    /// A time duration specified as a string, for example:
     /// - "5m"
     /// - "2h15m"
     /// - "1d6h"
-    /// etc
     pub tolerance_str: Option<SmartString>,
     pub left_by: Option<Vec<SmartString>>,
     pub right_by: Option<Vec<SmartString>>,
@@ -185,13 +184,13 @@ fn check_asof_columns(
         a.dtype(), b.dtype()
     );
     if check_sorted {
-        ensure_sorted_arg(a, "asof_join")?;
-        ensure_sorted_arg(b, "asof_join")?;
+        a.ensure_sorted_arg("asof_join")?;
+        b.ensure_sorted_arg("asof_join")?;
     }
     Ok(())
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum AsofStrategy {
     /// selects the last row in the right DataFrame whose ‘on’ key is less than or equal to the left’s key
@@ -209,16 +208,15 @@ pub trait AsofJoin: IntoDf {
     fn _join_asof(
         &self,
         other: &DataFrame,
-        left_on: &str,
-        right_on: &str,
+        left_key: &Series,
+        right_key: &Series,
         strategy: AsofStrategy,
         tolerance: Option<AnyValue<'static>>,
         suffix: Option<String>,
         slice: Option<(i64, usize)>,
+        coalesce: bool,
     ) -> PolarsResult<DataFrame> {
         let self_df = self.to_df();
-        let left_key = self_df.column(left_on)?;
-        let right_key = other.column(right_on)?;
 
         check_asof_columns(left_key, right_key, tolerance.is_some(), true)?;
         let left_key = left_key.to_physical_repr();
@@ -271,8 +269,8 @@ pub trait AsofJoin: IntoDf {
         }?;
 
         // Drop right join column.
-        let other = if left_on == right_on {
-            Cow::Owned(other.drop(right_on)?)
+        let other = if coalesce && left_key.name() == right_key.name() {
+            Cow::Owned(other.drop(right_key.name())?)
         } else {
             Cow::Borrowed(other)
         };
@@ -287,20 +285,6 @@ pub trait AsofJoin: IntoDf {
         let right_df = unsafe { other.take_unchecked(&take_idx) };
 
         _finish_join(left, right_df, suffix.as_deref())
-    }
-
-    /// This is similar to a left-join except that we match on nearest key rather than equal keys.
-    /// The keys must be sorted to perform an asof join
-    fn join_asof(
-        &self,
-        other: &DataFrame,
-        left_on: &str,
-        right_on: &str,
-        strategy: AsofStrategy,
-        tolerance: Option<AnyValue<'static>>,
-        suffix: Option<String>,
-    ) -> PolarsResult<DataFrame> {
-        self._join_asof(other, left_on, right_on, strategy, tolerance, suffix, None)
     }
 }
 

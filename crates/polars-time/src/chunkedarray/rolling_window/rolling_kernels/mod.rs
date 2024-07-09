@@ -3,7 +3,6 @@ use std::fmt::Debug;
 use std::ops::{AddAssign, Mul, SubAssign};
 
 use arrow::array::{ArrayRef, PrimitiveArray};
-use arrow::legacy::index::IdxSize;
 use arrow::trusted_len::TrustedLen;
 use arrow::types::NativeType;
 use polars_core::export::num::{Bounded, Float, NumCast};

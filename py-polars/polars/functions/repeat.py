@@ -6,9 +6,9 @@ from functools import lru_cache
 from typing import TYPE_CHECKING, Any, overload
 
 from polars import functions as F
+from polars._utils.parse import parse_into_expression
+from polars._utils.wrap import wrap_expr
 from polars.datatypes import (
-    FLOAT_DTYPES,
-    INTEGER_DTYPES,
     Array,
     Boolean,
     Decimal,
@@ -16,8 +16,7 @@ from polars.datatypes import (
     List,
     Utf8,
 )
-from polars.utils._parse_expr_input import parse_as_expression
-from polars.utils._wrap import wrap_expr
+from polars.datatypes.group import FLOAT_DTYPES, INTEGER_DTYPES
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -27,7 +26,7 @@ if TYPE_CHECKING:
     from typing import Literal
 
     from polars import Expr, Series
-    from polars.type_aliases import IntoExpr, PolarsDataType
+    from polars._typing import IntoExpr, PolarsDataType
 
 
 # create a lookup of dtypes that have a reasonable one/zero mapping; for
@@ -45,7 +44,7 @@ def _one_or_zero_by_dtype(value: int, dtype: PolarsDataType) -> Any:
     elif isinstance(dtype, Decimal):
         return D(value)
     elif isinstance(dtype, (List, Array)):
-        arr_width = getattr(dtype, "width", 1)
+        arr_width = getattr(dtype, "size", 1)
         return [_one_or_zero_by_dtype(value, dtype.inner)] * arr_width
     return None
 
@@ -57,8 +56,7 @@ def repeat(
     *,
     dtype: PolarsDataType | None = ...,
     eager: Literal[False] = ...,
-) -> Expr:
-    ...
+) -> Expr: ...
 
 
 @overload
@@ -68,8 +66,7 @@ def repeat(
     *,
     dtype: PolarsDataType | None = ...,
     eager: Literal[True],
-) -> Series:
-    ...
+) -> Series: ...
 
 
 @overload
@@ -79,8 +76,7 @@ def repeat(
     *,
     dtype: PolarsDataType | None = ...,
     eager: bool,
-) -> Expr | Series:
-    ...
+) -> Expr | Series: ...
 
 
 def repeat(
@@ -142,7 +138,7 @@ def repeat(
     """
     if isinstance(n, int):
         n = F.lit(n)
-    value = parse_as_expression(value, str_as_lit=True, list_as_lit=True, dtype=dtype)
+    value = parse_into_expression(value, str_as_lit=True, dtype=dtype)
     expr = wrap_expr(plr.repeat(value, n._pyexpr, dtype))
     if eager:
         return F.select(expr).to_series()
@@ -155,8 +151,7 @@ def ones(
     dtype: PolarsDataType = ...,
     *,
     eager: Literal[False] = ...,
-) -> Expr:
-    ...
+) -> Expr: ...
 
 
 @overload
@@ -165,8 +160,7 @@ def ones(
     dtype: PolarsDataType = ...,
     *,
     eager: Literal[True],
-) -> Series:
-    ...
+) -> Series: ...
 
 
 @overload
@@ -175,8 +169,7 @@ def ones(
     dtype: PolarsDataType = ...,
     *,
     eager: bool,
-) -> Expr | Series:
-    ...
+) -> Expr | Series: ...
 
 
 def ones(
@@ -234,8 +227,7 @@ def zeros(
     dtype: PolarsDataType = ...,
     *,
     eager: Literal[False] = ...,
-) -> Expr:
-    ...
+) -> Expr: ...
 
 
 @overload
@@ -244,8 +236,7 @@ def zeros(
     dtype: PolarsDataType = ...,
     *,
     eager: Literal[True],
-) -> Series:
-    ...
+) -> Series: ...
 
 
 @overload
@@ -254,8 +245,7 @@ def zeros(
     dtype: PolarsDataType = ...,
     *,
     eager: bool,
-) -> Expr | Series:
-    ...
+) -> Expr | Series: ...
 
 
 def zeros(

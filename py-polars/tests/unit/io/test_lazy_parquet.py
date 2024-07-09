@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from pathlib import Path
+from threading import Thread
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
@@ -11,7 +12,7 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
-    from polars.type_aliases import ParallelStrategy
+    from polars._typing import ParallelStrategy
 
 
 @pytest.fixture()
@@ -56,6 +57,11 @@ def test_row_index(foods_parquet_path: Path) -> None:
     )
 
     assert df["foo"].to_list() == [10, 16, 21, 23, 24, 30, 35]
+
+
+def test_row_index_len_16543(foods_parquet_path: Path) -> None:
+    q = pl.scan_parquet(foods_parquet_path).with_row_index()
+    assert q.select(pl.all()).select(pl.len()).collect().item() == 27
 
 
 @pytest.mark.write_disk()
@@ -250,7 +256,7 @@ def test_parquet_statistics(monkeypatch: Any, capfd: Any, tmp_path: Path) -> Non
     assert df.n_chunks("all") == [4, 4]
 
     file_path = tmp_path / "stats.parquet"
-    df.write_parquet(file_path, statistics=True, use_pyarrow=False)
+    df.write_parquet(file_path, statistics=True, use_pyarrow=False, row_group_size=50)
 
     for pred in [
         pl.col("idx") < 50,
@@ -386,7 +392,8 @@ def test_io_struct_async_12500(tmp_path: Path) -> None:
 
 
 @pytest.mark.write_disk()
-def test_parquet_different_schema(tmp_path: Path) -> None:
+@pytest.mark.parametrize("streaming", [True, False])
+def test_parquet_different_schema(tmp_path: Path, streaming: bool) -> None:
     # Schema is different but the projected columns are same dtype.
     f1 = tmp_path / "a.parquet"
     f2 = tmp_path / "b.parquet"
@@ -396,7 +403,9 @@ def test_parquet_different_schema(tmp_path: Path) -> None:
 
     a.write_parquet(f1)
     b.write_parquet(f2)
-    assert pl.scan_parquet([f1, f2]).select("b").collect().columns == ["b"]
+    assert pl.scan_parquet([f1, f2]).select("b").collect(
+        streaming=streaming
+    ).columns == ["b"]
 
 
 @pytest.mark.write_disk()
@@ -407,3 +416,37 @@ def test_nested_slice_12480(tmp_path: Path) -> None:
     df.write_parquet(path, use_pyarrow=True, pyarrow_options={"data_page_size": 1})
 
     assert pl.scan_parquet(path).slice(0, 1).collect().height == 1
+
+
+@pytest.mark.write_disk()
+def test_scan_deadlock_rayon_spawn_from_async_15172(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+    monkeypatch.setenv("POLARS_MAX_THREADS", "1")
+    path = tmp_path / "data.parquet"
+
+    df = pl.Series("x", [1]).to_frame()
+    df.write_parquet(path)
+
+    results = [pl.DataFrame()]
+
+    def scan_collect() -> None:
+        results[0] = pl.collect_all([pl.scan_parquet(path)])[0]
+
+    # Make sure we don't sit there hanging forever on the broken case
+    t = Thread(target=scan_collect, daemon=True)
+    t.start()
+    t.join(5)
+
+    assert results[0].equals(df)
+
+
+@pytest.mark.write_disk()
+@pytest.mark.parametrize("streaming", [True, False])
+def test_parquet_schema_mismatch_panic_17067(tmp_path: Path, streaming: bool) -> None:
+    pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]}).write_parquet(tmp_path / "1.parquet")
+    pl.DataFrame({"c": [1, 2, 3], "d": [4, 5, 6]}).write_parquet(tmp_path / "2.parquet")
+
+    with pytest.raises(pl.exceptions.SchemaError):
+        pl.scan_parquet(tmp_path).collect(streaming=streaming)

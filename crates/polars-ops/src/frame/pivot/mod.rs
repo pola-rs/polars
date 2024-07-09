@@ -30,7 +30,7 @@ fn restore_logical_type(s: &Series, logical_type: &DataType) -> Series {
         (dt @ DataType::Categorical(Some(rev_map), ordering), _)
         | (dt @ DataType::Enum(Some(rev_map), ordering), _) => {
             let cats = s.u32().unwrap().clone();
-            // safety:
+            // SAFETY:
             // the rev-map comes from these categoricals
             unsafe {
                 CategoricalChunked::from_cats_and_rev_map_unchecked(
@@ -82,40 +82,33 @@ fn restore_logical_type(s: &Series, logical_type: &DataType) -> Series {
 /// # Note
 /// Polars'/arrow memory is not ideal for transposing operations like pivots.
 /// If you have a relatively large table, consider using a group_by over a pivot.
-pub fn pivot<I0, S0, I1, S1, I2, S2>(
+pub fn pivot<I0, I1, I2, S0, S1, S2>(
     pivot_df: &DataFrame,
-    values: I0,
-    index: I1,
-    columns: I2,
+    on: I0,
+    index: Option<I1>,
+    values: Option<I2>,
     sort_columns: bool,
     agg_fn: Option<PivotAgg>,
     separator: Option<&str>,
 ) -> PolarsResult<DataFrame>
 where
     I0: IntoIterator<Item = S0>,
-    S0: AsRef<str>,
     I1: IntoIterator<Item = S1>,
-    S1: AsRef<str>,
     I2: IntoIterator<Item = S2>,
+    S0: AsRef<str>,
+    S1: AsRef<str>,
     S2: AsRef<str>,
 {
-    let values = values
+    let on = on
         .into_iter()
         .map(|s| s.as_ref().to_string())
         .collect::<Vec<_>>();
-    let index = index
-        .into_iter()
-        .map(|s| s.as_ref().to_string())
-        .collect::<Vec<_>>();
-    let columns = columns
-        .into_iter()
-        .map(|s| s.as_ref().to_string())
-        .collect::<Vec<_>>();
+    let (index, values) = assign_remaining_columns(pivot_df, &on, index, values)?;
     pivot_impl(
         pivot_df,
-        &values,
+        &on,
         &index,
-        &columns,
+        &values,
         agg_fn,
         sort_columns,
         false,
@@ -128,41 +121,33 @@ where
 /// # Note
 /// Polars'/arrow memory is not ideal for transposing operations like pivots.
 /// If you have a relatively large table, consider using a group_by over a pivot.
-pub fn pivot_stable<I0, S0, I1, S1, I2, S2>(
+pub fn pivot_stable<I0, I1, I2, S0, S1, S2>(
     pivot_df: &DataFrame,
-    values: I0,
-    index: I1,
-    columns: I2,
+    on: I0,
+    index: Option<I1>,
+    values: Option<I2>,
     sort_columns: bool,
     agg_fn: Option<PivotAgg>,
     separator: Option<&str>,
 ) -> PolarsResult<DataFrame>
 where
     I0: IntoIterator<Item = S0>,
-    S0: AsRef<str>,
     I1: IntoIterator<Item = S1>,
-    S1: AsRef<str>,
     I2: IntoIterator<Item = S2>,
+    S0: AsRef<str>,
+    S1: AsRef<str>,
     S2: AsRef<str>,
 {
-    let values = values
+    let on = on
         .into_iter()
         .map(|s| s.as_ref().to_string())
         .collect::<Vec<_>>();
-    let index = index
-        .into_iter()
-        .map(|s| s.as_ref().to_string())
-        .collect::<Vec<_>>();
-    let columns = columns
-        .into_iter()
-        .map(|s| s.as_ref().to_string())
-        .collect::<Vec<_>>();
-
+    let (index, values) = assign_remaining_columns(pivot_df, &on, index, values)?;
     pivot_impl(
         pivot_df,
-        &values,
+        &on,
         &index,
-        &columns,
+        &values,
         agg_fn,
         sort_columns,
         true,
@@ -170,16 +155,65 @@ where
     )
 }
 
+/// Ensure both `index` and `values` are populated with `Vec<String>`.
+///
+/// - If `index` is None, assign columns not in `on` and `values` to it.
+/// - If `values` is None, assign columns not in `on` and `index` to it.
+/// - At least one of `index` and `values` must be non-null.
+fn assign_remaining_columns<I1, I2, S1, S2>(
+    df: &DataFrame,
+    on: &[String],
+    index: Option<I1>,
+    values: Option<I2>,
+) -> PolarsResult<(Vec<String>, Vec<String>)>
+where
+    I1: IntoIterator<Item = S1>,
+    I2: IntoIterator<Item = S2>,
+    S1: AsRef<str>,
+    S2: AsRef<str>,
+{
+    match (index, values) {
+        (Some(index), Some(values)) => {
+            let index = index.into_iter().map(|s| s.as_ref().to_string()).collect();
+            let values = values.into_iter().map(|s| s.as_ref().to_string()).collect();
+            Ok((index, values))
+        },
+        (Some(index), None) => {
+            let index: Vec<String> = index.into_iter().map(|s| s.as_ref().to_string()).collect();
+            let values = df
+                .get_column_names()
+                .into_iter()
+                .map(|s| s.to_string())
+                .filter(|c| !(index.contains(c) | on.contains(c)))
+                .collect();
+            Ok((index, values))
+        },
+        (None, Some(values)) => {
+            let values: Vec<String> = values.into_iter().map(|s| s.as_ref().to_string()).collect();
+            let index = df
+                .get_column_names()
+                .into_iter()
+                .map(|s| s.to_string())
+                .filter(|c| !(values.contains(c) | on.contains(c)))
+                .collect();
+            Ok((index, values))
+        },
+        (None, None) => {
+            polars_bail!(InvalidOperation: "`index` and `values` cannot both be None in `pivot` operation")
+        },
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn pivot_impl(
     pivot_df: &DataFrame,
-    // these columns will be aggregated in the nested group_by
-    values: &[String],
     // keys of the first group_by operation
+    on: &[String],
+    // these columns will be aggregated in the nested group_by
     index: &[String],
     // these columns will be used for a nested group_by
     // the rows of this nested group_by will be pivoted as header column values
-    columns: &[String],
+    values: &[String],
     // aggregation function
     agg_fn: Option<PivotAgg>,
     sort_columns: bool,
@@ -188,15 +222,15 @@ fn pivot_impl(
     separator: Option<&str>,
 ) -> PolarsResult<DataFrame> {
     polars_ensure!(!index.is_empty(), ComputeError: "index cannot be zero length");
-    polars_ensure!(!columns.is_empty(), ComputeError: "columns cannot be zero length");
+    polars_ensure!(!on.is_empty(), ComputeError: "`on` cannot be zero length");
     if !stable {
         println!("unstable pivot not yet supported, using stable pivot");
     };
-    if columns.len() > 1 {
+    if on.len() > 1 {
         let schema = Arc::new(pivot_df.schema());
-        let binding = pivot_df.select_with_schema(columns, &schema)?;
+        let binding = pivot_df.select_with_schema(on, &schema)?;
         let fields = binding.get_columns();
-        let column = format!("{{\"{}\"}}", columns.join("\",\""));
+        let column = format!("{{\"{}\"}}", on.join("\",\""));
         if schema.contains(column.as_str()) {
             polars_bail!(ComputeError: "cannot use column name {column} that \
             already exists in the DataFrame. Please rename it prior to calling `pivot`.")
@@ -206,9 +240,9 @@ fn pivot_impl(
         let pivot_df = unsafe { binding.with_column_unchecked(columns_struct) };
         pivot_impl_single_column(
             pivot_df,
+            index,
             &column,
             values,
-            index,
             agg_fn,
             sort_columns,
             separator,
@@ -216,9 +250,9 @@ fn pivot_impl(
     } else {
         pivot_impl_single_column(
             pivot_df,
-            unsafe { columns.get_unchecked(0) },
-            values,
             index,
+            unsafe { on.get_unchecked(0) },
+            values,
             agg_fn,
             sort_columns,
             separator,
@@ -228,9 +262,9 @@ fn pivot_impl(
 
 fn pivot_impl_single_column(
     pivot_df: &DataFrame,
+    index: &[String],
     column: &str,
     values: &[String],
-    index: &[String],
     agg_fn: Option<PivotAgg>,
     sort_columns: bool,
     separator: Option<&str>,
@@ -274,7 +308,7 @@ fn pivot_impl_single_column(
                             let name = expr.root_name()?;
                             let mut value_col = value_col.clone();
                             value_col.rename(name);
-                            let tmp_df = DataFrame::new_no_checks(vec![value_col]);
+                            let tmp_df = value_col.into_frame();
                             let mut aggregated = expr.evaluate(&tmp_df, &groups)?;
                             aggregated.rename(value_col_name);
                             aggregated
@@ -286,8 +320,7 @@ fn pivot_impl_single_column(
             let headers = column_agg.unique_stable()?.cast(&DataType::String)?;
             let mut headers = headers.str().unwrap().clone();
             if values.len() > 1 {
-                // TODO! MILESTONE 1.0: change to `format!("{value_col_name}{sep}{v}")`
-                headers = headers.apply_values(|v| Cow::from(format!("{value_col_name}{sep}{column}{sep}{v}")))
+                headers = headers.apply_values(|v| Cow::from(format!("{value_col_name}{sep}{v}")))
             }
 
             let n_cols = headers.len();
@@ -341,5 +374,7 @@ fn pivot_impl_single_column(
         Ok(())
     });
     out?;
-    Ok(DataFrame::new_no_checks(final_cols))
+
+    // SAFETY: length has already been checked.
+    unsafe { DataFrame::new_no_length_checks(final_cols) }
 }

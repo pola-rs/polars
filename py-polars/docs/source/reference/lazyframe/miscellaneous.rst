@@ -9,15 +9,14 @@ Miscellaneous
     LazyFrame.cache
     LazyFrame.collect
     LazyFrame.collect_async
-    LazyFrame.fetch
+    LazyFrame.collect_schema
     LazyFrame.lazy
-    LazyFrame.map
     LazyFrame.map_batches
     LazyFrame.pipe
     LazyFrame.profile
 
-Read/write logical plan
------------------------
+Serialization
+-------------
 
 .. autosummary::
    :toctree: api/

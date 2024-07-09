@@ -10,7 +10,7 @@ use std::any::Any;
 use std::hash::{Hash, Hasher};
 use std::sync::Mutex;
 
-use arrow::array::{ArrayRef, BinaryArray};
+use arrow::array::BinaryArray;
 use eval::Eval;
 use hash_table::AggHashTable;
 use hashbrown::hash_map::{RawEntryMut, RawVacantEntryMut};
@@ -63,7 +63,7 @@ impl SpillPayload {
         let mut schema = Schema::with_capacity(self.aggs.len() + 2);
         schema.with_column(HASH_COL.into(), DataType::UInt64);
         schema.with_column(INDEX_COL.into(), IDX_DTYPE);
-        schema.with_column(KEYS_COL.into(), DataType::Binary);
+        schema.with_column(KEYS_COL.into(), DataType::BinaryOffset);
         for s in &self.aggs {
             schema.with_column(s.name().into(), s.dtype().clone());
         }
@@ -76,14 +76,14 @@ impl SpillPayload {
 
         let hashes = UInt64Chunked::from_vec(HASH_COL, self.hashes).into_series();
         let chunk_idx = IdxCa::from_vec(INDEX_COL, self.chunk_idx).into_series();
-        let keys = Series::try_from((KEYS_COL, Box::new(self.keys) as ArrayRef)).unwrap();
+        let keys = BinaryOffsetChunked::with_chunk(KEYS_COL, self.keys).into_series();
 
         let mut cols = Vec::with_capacity(self.aggs.len() + 3);
         cols.push(hashes);
         cols.push(chunk_idx);
         cols.push(keys);
         cols.extend(self.aggs);
-        DataFrame::new_no_checks(cols)
+        unsafe { DataFrame::new_no_checks(cols) }
     }
 
     fn spilled_to_columns(

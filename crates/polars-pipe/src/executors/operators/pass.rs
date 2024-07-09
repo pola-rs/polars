@@ -27,6 +27,6 @@ impl Operator for Pass {
     }
 
     fn fmt(&self) -> &str {
-        "pass"
+        self.name
     }
 }

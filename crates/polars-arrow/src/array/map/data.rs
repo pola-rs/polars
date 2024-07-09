@@ -14,7 +14,7 @@ impl Arrow2Arrow for MapArray {
             .nulls(self.validity.as_ref().map(|b| b.clone().into()))
             .child_data(vec![to_data(self.field.as_ref())]);
 
-        // Safety: Array is valid
+        // SAFETY: Array is valid
         unsafe { builder.build_unchecked() }
     }
 

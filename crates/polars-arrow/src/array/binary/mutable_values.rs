@@ -1,4 +1,3 @@
-use std::iter::FromIterator;
 use std::sync::Arc;
 
 use polars_error::{polars_bail, PolarsResult};
@@ -163,6 +162,7 @@ impl<O: Offset> MutableBinaryValuesArray<O> {
     }
 
     /// Returns the value of the element at index `i`.
+    ///
     /// # Safety
     /// This function is safe iff `i < self.len`.
     #[inline]
@@ -266,6 +266,7 @@ impl<O: Offset> MutableBinaryValuesArray<O> {
     }
 
     /// Extends [`MutableBinaryValuesArray`] from an iterator of trusted len.
+    ///
     /// # Safety
     /// The iterator must be trusted len.
     #[inline]
@@ -289,6 +290,7 @@ impl<O: Offset> MutableBinaryValuesArray<O> {
     }
 
     /// Returns a new [`MutableBinaryValuesArray`] from an iterator of trusted length.
+    ///
     /// # Safety
     /// The iterator must be [`TrustedLen`](https://doc.rust-lang.org/std/iter/trait.TrustedLen.html).
     /// I.e. that `size_hint().1` correctly reports its length.

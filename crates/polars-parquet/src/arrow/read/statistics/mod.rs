@@ -1,6 +1,5 @@
 //! APIs exposing `crate::parquet`'s statistics as arrow's statistics.
 use std::collections::VecDeque;
-use std::sync::Arc;
 
 use arrow::array::*;
 use arrow::datatypes::{ArrowDataType, Field, IntervalUnit, PhysicalType};
@@ -13,10 +12,7 @@ use crate::parquet::metadata::RowGroupMetaData;
 use crate::parquet::schema::types::{
     PhysicalType as ParquetPhysicalType, PrimitiveType as ParquetPrimitiveType,
 };
-use crate::parquet::statistics::{
-    BinaryStatistics, BooleanStatistics, FixedLenStatistics, PrimitiveStatistics,
-    Statistics as ParquetStatistics,
-};
+use crate::parquet::statistics::{PrimitiveStatistics, Statistics as ParquetStatistics};
 use crate::parquet::types::int96_to_i64_ns;
 
 mod binary;
@@ -62,90 +58,76 @@ struct MutableStatistics {
 
 impl From<MutableStatistics> for Statistics {
     fn from(mut s: MutableStatistics) -> Self {
-        let null_count = if let PhysicalType::Struct = s.null_count.data_type().to_physical_type() {
-            s.null_count
+        let null_count = match s.null_count.data_type().to_physical_type() {
+            PhysicalType::Struct => s
+                .null_count
                 .as_box()
                 .as_any()
                 .downcast_ref::<StructArray>()
                 .unwrap()
                 .clone()
-                .boxed()
-        } else if let PhysicalType::Map = s.null_count.data_type().to_physical_type() {
-            s.null_count
-                .as_box()
-                .as_any()
-                .downcast_ref::<MapArray>()
-                .unwrap()
-                .clone()
-                .boxed()
-        } else if let PhysicalType::List = s.null_count.data_type().to_physical_type() {
-            s.null_count
+                .boxed(),
+            PhysicalType::List => s
+                .null_count
                 .as_box()
                 .as_any()
                 .downcast_ref::<ListArray<i32>>()
                 .unwrap()
                 .clone()
-                .boxed()
-        } else if let PhysicalType::LargeList = s.null_count.data_type().to_physical_type() {
-            s.null_count
+                .boxed(),
+            PhysicalType::LargeList => s
+                .null_count
                 .as_box()
                 .as_any()
                 .downcast_ref::<ListArray<i64>>()
                 .unwrap()
                 .clone()
-                .boxed()
-        } else {
-            s.null_count
+                .boxed(),
+            _ => s
+                .null_count
                 .as_box()
                 .as_any()
                 .downcast_ref::<UInt64Array>()
                 .unwrap()
                 .clone()
-                .boxed()
+                .boxed(),
         };
-        let distinct_count = if let PhysicalType::Struct =
-            s.distinct_count.data_type().to_physical_type()
-        {
-            s.distinct_count
+
+        let distinct_count = match s.distinct_count.data_type().to_physical_type() {
+            PhysicalType::Struct => s
+                .distinct_count
                 .as_box()
                 .as_any()
                 .downcast_ref::<StructArray>()
                 .unwrap()
                 .clone()
-                .boxed()
-        } else if let PhysicalType::Map = s.distinct_count.data_type().to_physical_type() {
-            s.distinct_count
-                .as_box()
-                .as_any()
-                .downcast_ref::<MapArray>()
-                .unwrap()
-                .clone()
-                .boxed()
-        } else if let PhysicalType::List = s.distinct_count.data_type().to_physical_type() {
-            s.distinct_count
+                .boxed(),
+            PhysicalType::List => s
+                .distinct_count
                 .as_box()
                 .as_any()
                 .downcast_ref::<ListArray<i32>>()
                 .unwrap()
                 .clone()
-                .boxed()
-        } else if let PhysicalType::LargeList = s.distinct_count.data_type().to_physical_type() {
-            s.distinct_count
+                .boxed(),
+            PhysicalType::LargeList => s
+                .distinct_count
                 .as_box()
                 .as_any()
                 .downcast_ref::<ListArray<i64>>()
                 .unwrap()
                 .clone()
-                .boxed()
-        } else {
-            s.distinct_count
+                .boxed(),
+            _ => s
+                .distinct_count
                 .as_box()
                 .as_any()
                 .downcast_ref::<UInt64Array>()
                 .unwrap()
                 .clone()
-                .boxed()
+                .boxed(),
         };
+
         Self {
             null_count,
             distinct_count,
@@ -180,9 +162,10 @@ fn make_mutable(data_type: &ArrowDataType, capacity: usize) -> PolarsResult<Box<
             Box::new(MutableFixedSizeBinaryArray::try_new(data_type.clone(), vec![], None).unwrap())
                 as _
         },
-        PhysicalType::LargeList | PhysicalType::List => Box::new(
+        PhysicalType::LargeList | PhysicalType::List | PhysicalType::FixedSizeList => Box::new(
             DynMutableListArray::try_with_capacity(data_type.clone(), capacity)?,
-        ) as Box<dyn MutableArray>,
+        )
+            as Box<dyn MutableArray>,
         PhysicalType::Dictionary(_) => Box::new(
             dictionary::DynMutableDictionary::try_with_capacity(data_type.clone(), capacity)?,
         ),
@@ -212,32 +195,27 @@ fn make_mutable(data_type: &ArrowDataType, capacity: usize) -> PolarsResult<Box<
 }
 
 fn create_dt(data_type: &ArrowDataType) -> ArrowDataType {
-    if let ArrowDataType::Struct(fields) = data_type.to_logical_type() {
-        ArrowDataType::Struct(
+    match data_type.to_logical_type() {
+        ArrowDataType::Struct(fields) => ArrowDataType::Struct(
             fields
                 .iter()
                 .map(|f| Field::new(&f.name, create_dt(&f.data_type), f.is_nullable))
                 .collect(),
-        )
-    } else if let ArrowDataType::Map(f, ordered) = data_type.to_logical_type() {
-        ArrowDataType::Map(
+        ),
+        ArrowDataType::Map(f, ordered) => ArrowDataType::Map(
             Box::new(Field::new(&f.name, create_dt(&f.data_type), f.is_nullable)),
             *ordered,
-        )
-    } else if let ArrowDataType::List(f) = data_type.to_logical_type() {
-        ArrowDataType::List(Box::new(Field::new(
+        ),
+        ArrowDataType::LargeList(f) => ArrowDataType::LargeList(Box::new(Field::new(
             &f.name,
             create_dt(&f.data_type),
             f.is_nullable,
-        )))
-    } else if let ArrowDataType::LargeList(f) = data_type.to_logical_type() {
-        ArrowDataType::LargeList(Box::new(Field::new(
-            &f.name,
-            create_dt(&f.data_type),
-            f.is_nullable,
-        )))
-    } else {
-        ArrowDataType::UInt64
+        ))),
+        // FixedSizeList piggy backs on list
+        ArrowDataType::List(f) | ArrowDataType::FixedSizeList(f, _) => ArrowDataType::List(
+            Box::new(Field::new(&f.name, create_dt(&f.data_type), f.is_nullable)),
+        ),
+        _ => ArrowDataType::UInt64,
     }
 }
 
@@ -257,7 +235,7 @@ impl MutableStatistics {
 }
 
 fn push_others(
-    from: Option<&dyn ParquetStatistics>,
+    from: Option<&ParquetStatistics>,
     distinct_count: &mut UInt64Vec,
     null_count: &mut UInt64Vec,
 ) {
@@ -268,54 +246,16 @@ fn push_others(
         null_count.push(None);
         return;
     };
-    let (distinct, null_count1) = match from.physical_type() {
-        ParquetPhysicalType::Boolean => {
-            let from = from.as_any().downcast_ref::<BooleanStatistics>().unwrap();
-            (from.distinct_count, from.null_count)
-        },
-        ParquetPhysicalType::Int32 => {
-            let from = from
-                .as_any()
-                .downcast_ref::<PrimitiveStatistics<i32>>()
-                .unwrap();
-            (from.distinct_count, from.null_count)
-        },
-        ParquetPhysicalType::Int64 => {
-            let from = from
-                .as_any()
-                .downcast_ref::<PrimitiveStatistics<i64>>()
-                .unwrap();
-            (from.distinct_count, from.null_count)
-        },
-        ParquetPhysicalType::Int96 => {
-            let from = from
-                .as_any()
-                .downcast_ref::<PrimitiveStatistics<[u32; 3]>>()
-                .unwrap();
-            (from.distinct_count, from.null_count)
-        },
-        ParquetPhysicalType::Float => {
-            let from = from
-                .as_any()
-                .downcast_ref::<PrimitiveStatistics<f32>>()
-                .unwrap();
-            (from.distinct_count, from.null_count)
-        },
-        ParquetPhysicalType::Double => {
-            let from = from
-                .as_any()
-                .downcast_ref::<PrimitiveStatistics<f64>>()
-                .unwrap();
-            (from.distinct_count, from.null_count)
-        },
-        ParquetPhysicalType::ByteArray => {
-            let from = from.as_any().downcast_ref::<BinaryStatistics>().unwrap();
-            (from.distinct_count, from.null_count)
-        },
-        ParquetPhysicalType::FixedLenByteArray(_) => {
-            let from = from.as_any().downcast_ref::<FixedLenStatistics>().unwrap();
-            (from.distinct_count, from.null_count)
-        },
+    use ParquetStatistics as S;
+    let (distinct, null_count1) = match from {
+        S::Binary(s) => (s.distinct_count, s.null_count),
+        S::Boolean(s) => (s.distinct_count, s.null_count),
+        S::FixedLen(s) => (s.distinct_count, s.null_count),
+        S::Int32(s) => (s.distinct_count, s.null_count),
+        S::Int64(s) => (s.distinct_count, s.null_count),
+        S::Int96(s) => (s.distinct_count, s.null_count),
+        S::Float(s) => (s.distinct_count, s.null_count),
+        S::Double(s) => (s.distinct_count, s.null_count),
     };
 
     distinct_count.push(distinct.map(|x| x as u64));
@@ -323,14 +263,14 @@ fn push_others(
 }
 
 fn push(
-    stats: &mut VecDeque<(Option<Arc<dyn ParquetStatistics>>, ParquetPrimitiveType)>,
+    stats: &mut VecDeque<(Option<ParquetStatistics>, ParquetPrimitiveType)>,
     min: &mut dyn MutableArray,
     max: &mut dyn MutableArray,
     distinct_count: &mut dyn MutableArray,
     null_count: &mut dyn MutableArray,
 ) -> PolarsResult<()> {
     match min.data_type().to_logical_type() {
-        List(_) | LargeList(_) => {
+        List(_) | LargeList(_) | FixedSizeList(_, _) => {
             let min = min
                 .as_mut_any()
                 .downcast_mut::<list::DynMutableListArray>()
@@ -434,7 +374,7 @@ fn push(
     }
 
     let (from, type_) = stats.pop_front().unwrap();
-    let from = from.as_deref();
+    let from = from.as_ref();
 
     let distinct_count = distinct_count
         .as_mut_any()
@@ -446,41 +386,84 @@ fn push(
 
     let physical_type = &type_.physical_type;
 
+    macro_rules! rmap {
+        ($from:expr, $map:ident) => {{
+            $from.map(ParquetStatistics::$map)
+        }};
+    }
+
     use ArrowDataType::*;
+    use ParquetPhysicalType as PPT;
     match min.data_type().to_logical_type() {
-        Boolean => boolean::push(from, min, max),
-        Int8 => primitive::push(from, min, max, |x: i32| Ok(x as i8)),
-        Int16 => primitive::push(from, min, max, |x: i32| Ok(x as i16)),
-        Date32 | Time32(_) => primitive::push::<i32, i32, _>(from, min, max, Ok),
-        Interval(IntervalUnit::YearMonth) => fixlen::push_year_month(from, min, max),
-        Interval(IntervalUnit::DayTime) => fixlen::push_days_ms(from, min, max),
-        UInt8 => primitive::push(from, min, max, |x: i32| Ok(x as u8)),
-        UInt16 => primitive::push(from, min, max, |x: i32| Ok(x as u16)),
+        Boolean => boolean::push(rmap!(from, expect_as_boolean), min, max),
+        Int8 => primitive::push(rmap!(from, expect_as_int32), min, max, |x: i32| Ok(x as i8)),
+        Int16 => primitive::push(
+            rmap!(from, expect_as_int32),
+            min,
+            max,
+            |x: i32| Ok(x as i16),
+        ),
+        Date32 | Time32(_) => {
+            primitive::push::<i32, i32, _>(rmap!(from, expect_as_int32), min, max, Ok)
+        },
+        Interval(IntervalUnit::YearMonth) => {
+            fixlen::push_year_month(rmap!(from, expect_as_fixedlen), min, max)
+        },
+        Interval(IntervalUnit::DayTime) => {
+            fixlen::push_days_ms(rmap!(from, expect_as_fixedlen), min, max)
+        },
+        UInt8 => primitive::push(rmap!(from, expect_as_int32), min, max, |x: i32| Ok(x as u8)),
+        UInt16 => primitive::push(
+            rmap!(from, expect_as_int32),
+            min,
+            max,
+            |x: i32| Ok(x as u16),
+        ),
         UInt32 => match physical_type {
             // some implementations of parquet write arrow's u32 into i64.
-            ParquetPhysicalType::Int64 => primitive::push(from, min, max, |x: i64| Ok(x as u32)),
-            ParquetPhysicalType::Int32 => primitive::push(from, min, max, |x: i32| Ok(x as u32)),
+            PPT::Int64 => {
+                primitive::push(
+                    rmap!(from, expect_as_int64),
+                    min,
+                    max,
+                    |x: i64| Ok(x as u32),
+                )
+            },
+            PPT::Int32 => {
+                primitive::push(
+                    rmap!(from, expect_as_int32),
+                    min,
+                    max,
+                    |x: i32| Ok(x as u32),
+                )
+            },
             other => polars_bail!(nyi = "Can't decode UInt32 type from parquet type {other:?}"),
         },
-        Int32 => primitive::push::<i32, i32, _>(from, min, max, Ok),
+        Int32 => primitive::push::<i32, i32, _>(rmap!(from, expect_as_int32), min, max, Ok),
         Date64 => match physical_type {
-            ParquetPhysicalType::Int64 => primitive::push::<i64, i64, _>(from, min, max, Ok),
-            // some implementations of parquet write arrow's date64 into i32.
-            ParquetPhysicalType::Int32 => {
-                primitive::push(from, min, max, |x: i32| Ok(x as i64 * 86400000))
+            PPT::Int64 => {
+                primitive::push::<i64, i64, _>(rmap!(from, expect_as_int64), min, max, Ok)
             },
+            // some implementations of parquet write arrow's date64 into i32.
+            PPT::Int32 => primitive::push(rmap!(from, expect_as_int32), min, max, |x: i32| {
+                Ok(x as i64 * 86400000)
+            }),
             other => polars_bail!(nyi = "Can't decode Date64 type from parquet type {other:?}"),
         },
-        Int64 | Time64(_) | Duration(_) => primitive::push::<i64, i64, _>(from, min, max, Ok),
-        UInt64 => primitive::push(from, min, max, |x: i64| Ok(x as u64)),
+        Int64 | Time64(_) | Duration(_) => {
+            primitive::push::<i64, i64, _>(rmap!(from, expect_as_int64), min, max, Ok)
+        },
+        UInt64 => primitive::push(
+            rmap!(from, expect_as_int64),
+            min,
+            max,
+            |x: i64| Ok(x as u64),
+        ),
         Timestamp(time_unit, _) => {
             let time_unit = *time_unit;
-            if physical_type == &ParquetPhysicalType::Int96 {
+            if physical_type == &PPT::Int96 {
                 let from = from.map(|from| {
-                    let from = from
-                        .as_any()
-                        .downcast_ref::<PrimitiveStatistics<[u32; 3]>>()
-                        .unwrap();
+                    let from = from.expect_as_int96();
                     PrimitiveStatistics::<i64> {
                         primitive_type: from.primitive_type.clone(),
                         null_count: from.null_count,
@@ -489,20 +472,15 @@ fn push(
                         max_value: from.max_value.map(int96_to_i64_ns),
                     }
                 });
-                primitive::push(
-                    from.as_ref().map(|x| x as &dyn ParquetStatistics),
-                    min,
-                    max,
-                    |x: i64| {
-                        Ok(primitive::timestamp(
-                            type_.logical_type.as_ref(),
-                            time_unit,
-                            x,
-                        ))
-                    },
-                )
+                primitive::push(from.as_ref(), min, max, |x: i64| {
+                    Ok(primitive::timestamp(
+                        type_.logical_type.as_ref(),
+                        time_unit,
+                        x,
+                    ))
+                })
             } else {
-                primitive::push(from, min, max, |x: i64| {
+                primitive::push(rmap!(from, expect_as_int64), min, max, |x: i64| {
                     Ok(primitive::timestamp(
                         type_.logical_type.as_ref(),
                         time_unit,
@@ -511,40 +489,48 @@ fn push(
                 })
             }
         },
-        Float32 => primitive::push::<f32, f32, _>(from, min, max, Ok),
-        Float64 => primitive::push::<f64, f64, _>(from, min, max, Ok),
+        Float32 => primitive::push::<f32, f32, _>(rmap!(from, expect_as_float), min, max, Ok),
+        Float64 => primitive::push::<f64, f64, _>(rmap!(from, expect_as_double), min, max, Ok),
         Decimal(_, _) => match physical_type {
-            ParquetPhysicalType::Int32 => primitive::push(from, min, max, |x: i32| Ok(x as i128)),
-            ParquetPhysicalType::Int64 => primitive::push(from, min, max, |x: i64| Ok(x as i128)),
-            ParquetPhysicalType::FixedLenByteArray(n) if *n > 16 => polars_bail!(
+            PPT::Int32 => primitive::push(rmap!(from, expect_as_int32), min, max, |x: i32| {
+                Ok(x as i128)
+            }),
+            PPT::Int64 => primitive::push(rmap!(from, expect_as_int64), min, max, |x: i64| {
+                Ok(x as i128)
+            }),
+            PPT::FixedLenByteArray(n) if *n > 16 => polars_bail!(
                 nyi = "Can't decode Decimal128 type from Fixed Size Byte Array of len {n:?}"
             ),
-            ParquetPhysicalType::FixedLenByteArray(n) => fixlen::push_i128(from, *n, min, max),
+            PPT::FixedLenByteArray(n) => {
+                fixlen::push_i128(rmap!(from, expect_as_fixedlen), *n, min, max)
+            },
             _ => unreachable!(),
         },
         Decimal256(_, _) => match physical_type {
-            ParquetPhysicalType::Int32 => {
-                primitive::push(from, min, max, |x: i32| Ok(i256(I256::new(x.into()))))
+            PPT::Int32 => primitive::push(rmap!(from, expect_as_int32), min, max, |x: i32| {
+                Ok(i256(I256::new(x.into())))
+            }),
+            PPT::Int64 => primitive::push(rmap!(from, expect_as_int64), min, max, |x: i64| {
+                Ok(i256(I256::new(x.into())))
+            }),
+            PPT::FixedLenByteArray(n) if *n <= 16 => {
+                fixlen::push_i256_with_i128(rmap!(from, expect_as_fixedlen), *n, min, max)
             },
-            ParquetPhysicalType::Int64 => {
-                primitive::push(from, min, max, |x: i64| Ok(i256(I256::new(x.into()))))
-            },
-            ParquetPhysicalType::FixedLenByteArray(n) if *n <= 16 => {
-                fixlen::push_i256_with_i128(from, *n, min, max)
-            },
-            ParquetPhysicalType::FixedLenByteArray(n) if *n > 32 => polars_bail!(
+            PPT::FixedLenByteArray(n) if *n > 32 => polars_bail!(
                 nyi = "Can't decode Decimal256 type from Fixed Size Byte Array of len {n:?}"
             ),
-            ParquetPhysicalType::FixedLenByteArray(_) => fixlen::push_i256(from, min, max),
+            PPT::FixedLenByteArray(_) => {
+                fixlen::push_i256(rmap!(from, expect_as_fixedlen), min, max)
+            },
             _ => unreachable!(),
         },
-        Binary => binary::push::<i32>(from, min, max),
-        LargeBinary => binary::push::<i64>(from, min, max),
-        Utf8 => utf8::push::<i32>(from, min, max),
-        LargeUtf8 => utf8::push::<i64>(from, min, max),
-        BinaryView => binview::push::<[u8]>(from, min, max),
-        Utf8View => binview::push::<str>(from, min, max),
-        FixedSizeBinary(_) => fixlen::push(from, min, max),
+        Binary => binary::push::<i32>(rmap!(from, expect_as_binary), min, max),
+        LargeBinary => binary::push::<i64>(rmap!(from, expect_as_binary), min, max),
+        Utf8 => utf8::push::<i32>(rmap!(from, expect_as_binary), min, max),
+        LargeUtf8 => utf8::push::<i64>(rmap!(from, expect_as_binary), min, max),
+        BinaryView => binview::push::<[u8]>(rmap!(from, expect_as_binary), min, max),
+        Utf8View => binview::push::<str>(rmap!(from, expect_as_binary), min, max),
+        FixedSizeBinary(_) => fixlen::push(rmap!(from, expect_as_fixedlen), min, max),
 
         Null => null::push(min, max),
         other => todo!("{:?}", other),
@@ -568,7 +554,7 @@ pub fn deserialize(field: &Field, row_group: &RowGroupMetaData) -> PolarsResult<
                 column.descriptor().descriptor.primitive_type.clone(),
             ))
         })
-        .collect::<PolarsResult<VecDeque<(Option<_>, ParquetPrimitiveType)>>>()?;
+        .collect::<PolarsResult<VecDeque<(Option<ParquetStatistics>, ParquetPrimitiveType)>>>()?;
     push(
         &mut stats,
         statistics.min_value.as_mut(),

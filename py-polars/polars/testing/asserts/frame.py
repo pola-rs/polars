@@ -2,20 +2,22 @@ from __future__ import annotations
 
 from typing import cast
 
+from polars._utils.deprecation import deprecate_renamed_parameter
 from polars.dataframe import DataFrame
-from polars.exceptions import ComputeError, InvalidAssert
+from polars.exceptions import InvalidOperationError
 from polars.lazyframe import LazyFrame
 from polars.testing.asserts.series import _assert_series_values_equal
 from polars.testing.asserts.utils import raise_assertion_error
 
 
+@deprecate_renamed_parameter("check_dtype", "check_dtypes", version="0.20.31")
 def assert_frame_equal(
     left: DataFrame | LazyFrame,
     right: DataFrame | LazyFrame,
     *,
     check_row_order: bool = True,
     check_column_order: bool = True,
-    check_dtype: bool = True,
+    check_dtypes: bool = True,
     check_exact: bool = False,
     rtol: float = 1e-5,
     atol: float = 1e-8,
@@ -35,13 +37,9 @@ def assert_frame_equal(
         The second DataFrame or LazyFrame to compare.
     check_row_order
         Require row order to match.
-
-        .. note::
-            Setting this to `False` requires sorting the data, which will fail on
-            frames that contain unsortable columns.
     check_column_order
         Require column order to match.
-    check_dtype
+    check_dtypes
         Require data types to match.
     check_exact
         Require float values to match exactly. If set to `False`, values are considered
@@ -85,6 +83,8 @@ def assert_frame_equal(
     ...
     AssertionError: values for column 'a' are different
     """
+    __tracebackhide__ = True
+
     lazy = _assert_correct_input_type(left, right)
     objects = "LazyFrames" if lazy else "DataFrames"
 
@@ -92,7 +92,7 @@ def assert_frame_equal(
         left,
         right,
         check_column_order=check_column_order,
-        check_dtype=check_dtype,
+        check_dtypes=check_dtypes,
         objects=objects,
     )
 
@@ -114,6 +114,7 @@ def assert_frame_equal(
             _assert_series_values_equal(
                 s_left,
                 s_right,
+                check_order=True,
                 check_exact=check_exact,
                 rtol=rtol,
                 atol=atol,
@@ -132,6 +133,8 @@ def assert_frame_equal(
 def _assert_correct_input_type(
     left: DataFrame | LazyFrame, right: DataFrame | LazyFrame
 ) -> bool:
+    __tracebackhide__ = True
+
     if isinstance(left, DataFrame) and isinstance(right, DataFrame):
         return False
     elif isinstance(left, LazyFrame) and isinstance(right, LazyFrame):
@@ -149,11 +152,13 @@ def _assert_frame_schema_equal(
     left: DataFrame | LazyFrame,
     right: DataFrame | LazyFrame,
     *,
-    check_dtype: bool,
+    check_dtypes: bool,
     check_column_order: bool,
     objects: str,
 ) -> None:
-    left_schema, right_schema = left.schema, right.schema
+    __tracebackhide__ = True
+
+    left_schema, right_schema = left.collect_schema(), right.collect_schema()
 
     # Fast path for equal frames
     if left_schema == right_schema:
@@ -175,7 +180,7 @@ def _assert_frame_schema_equal(
             detail = "columns are not in the same order"
             raise_assertion_error(objects, detail, left_columns, right_columns)
 
-    if check_dtype:
+    if check_dtypes:
         left_schema_dict, right_schema_dict = dict(left_schema), dict(right_schema)
         if check_column_order or left_schema_dict != right_schema_dict:
             detail = "dtypes do not match"
@@ -187,19 +192,20 @@ def _sort_dataframes(left: DataFrame, right: DataFrame) -> tuple[DataFrame, Data
     try:
         left = left.sort(by)
         right = right.sort(by)
-    except ComputeError as exc:
+    except InvalidOperationError as exc:
         msg = "cannot set `check_row_order=False` on frame with unsortable columns"
-        raise InvalidAssert(msg) from exc
+        raise TypeError(msg) from exc
     return left, right
 
 
+@deprecate_renamed_parameter("check_dtype", "check_dtypes", version="0.20.31")
 def assert_frame_not_equal(
     left: DataFrame | LazyFrame,
     right: DataFrame | LazyFrame,
     *,
     check_row_order: bool = True,
     check_column_order: bool = True,
-    check_dtype: bool = True,
+    check_dtypes: bool = True,
     check_exact: bool = False,
     rtol: float = 1e-5,
     atol: float = 1e-8,
@@ -218,13 +224,9 @@ def assert_frame_not_equal(
         The second DataFrame or LazyFrame to compare.
     check_row_order
         Require row order to match.
-
-        .. note::
-            Setting this to `False` requires sorting the data, which will fail on
-            frames that contain unsortable columns.
     check_column_order
         Require column order to match.
-    check_dtype
+    check_dtypes
         Require data types to match.
     check_exact
         Require float values to match exactly. If set to `False`, values are considered
@@ -253,13 +255,15 @@ def assert_frame_not_equal(
     ...
     AssertionError: frames are equal
     """
+    __tracebackhide__ = True
+
     try:
         assert_frame_equal(
             left=left,
             right=right,
             check_column_order=check_column_order,
             check_row_order=check_row_order,
-            check_dtype=check_dtype,
+            check_dtypes=check_dtypes,
             check_exact=check_exact,
             rtol=rtol,
             atol=atol,

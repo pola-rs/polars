@@ -6,17 +6,18 @@ from typing import TYPE_CHECKING
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from polars.type_aliases import ClosedInterval
+    from polars._typing import ClosedInterval
 
 
 def test_time_range_schema() -> None:
     df = pl.DataFrame({"start": [time(1)], "end": [time(1, 30)]}).lazy()
     result = df.with_columns(time_range=pl.time_ranges(pl.col("start"), pl.col("end")))
     expected_schema = {"start": pl.Time, "end": pl.Time, "time_range": pl.List(pl.Time)}
-    assert result.schema == expected_schema
+    assert result.collect_schema() == expected_schema
     assert result.collect().schema == expected_schema
 
 
@@ -51,15 +52,15 @@ def test_time_range_input_shape_empty() -> None:
     single = pl.Series([time(12, 0)])
 
     with pytest.raises(
-        pl.ComputeError, match="`start` must contain exactly one value, got 0 values"
+        ComputeError, match="`start` must contain exactly one value, got 0 values"
     ):
         pl.time_range(empty, single, eager=True)
     with pytest.raises(
-        pl.ComputeError, match="`end` must contain exactly one value, got 0 values"
+        ComputeError, match="`end` must contain exactly one value, got 0 values"
     ):
         pl.time_range(single, empty, eager=True)
     with pytest.raises(
-        pl.ComputeError, match="`start` must contain exactly one value, got 0 values"
+        ComputeError, match="`start` must contain exactly one value, got 0 values"
     ):
         pl.time_range(empty, empty, eager=True)
 
@@ -69,15 +70,15 @@ def test_time_range_input_shape_multiple_values() -> None:
     multiple = pl.Series([time(11, 0), time(12, 0)])
 
     with pytest.raises(
-        pl.ComputeError, match="`start` must contain exactly one value, got 2 values"
+        ComputeError, match="`start` must contain exactly one value, got 2 values"
     ):
         pl.time_range(multiple, single, eager=True)
     with pytest.raises(
-        pl.ComputeError, match="`end` must contain exactly one value, got 2 values"
+        ComputeError, match="`end` must contain exactly one value, got 2 values"
     ):
         pl.time_range(single, multiple, eager=True)
     with pytest.raises(
-        pl.ComputeError, match="`start` must contain exactly one value, got 2 values"
+        ComputeError, match="`start` must contain exactly one value, got 2 values"
     ):
         pl.time_range(multiple, multiple, eager=True)
 
@@ -109,7 +110,7 @@ def test_time_range_start_later_than_end() -> None:
 
 @pytest.mark.parametrize("interval", [timedelta(0), timedelta(minutes=-10)])
 def test_time_range_invalid_step(interval: timedelta) -> None:
-    with pytest.raises(pl.ComputeError, match="`interval` must be positive"):
+    with pytest.raises(ComputeError, match="`interval` must be positive"):
         pl.time_range(time(11), time(12), interval=interval, eager=True)
 
 

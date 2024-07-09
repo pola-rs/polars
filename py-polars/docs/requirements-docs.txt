@@ -1,21 +1,19 @@
---prefer-binary
-
+hypothesis
 numpy
 pandas
 pyarrow
 
-hypothesis==6.92.1
-
-sphinx==7.2.4
+sphinx==7.3.7
 
 # Third-party Sphinx extensions
-autodocsumm==0.2.11
-numpydoc==1.6.0
-pydata-sphinx-theme==0.14.1
+autodocsumm==0.2.12
+numpydoc==1.7.0
+pydata-sphinx-theme==0.15.4
 sphinx-autosummary-accessors==2023.4.0
 sphinx-copybutton==0.5.2
-sphinx-design==0.5.0
+sphinx-design==0.6.0
 sphinx-favicon==1.0.1
-sphinx-toolbox==3.5.0
+sphinx-reredirects==0.1.4
+sphinx-toolbox==3.6.0
 
-livereload==2.6.3
+livereload==2.7.0

@@ -1,5 +1,4 @@
 use polars_core::prelude::*;
-use polars_core::series::Series;
 use polars_time::{time_range_impl, ClosedWindow, Duration};
 
 use super::utils::{

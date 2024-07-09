@@ -64,17 +64,17 @@ impl Sink for GenericGroupby2 {
         }
         // load data and hashes
         unsafe {
-            // safety: we don't hold mutable refs
+            // SAFETY: we don't hold mutable refs
             self.eval.evaluate_keys_aggs_and_hashes(context, &chunk)?;
         }
-        // safety: eval is alive for the duration of keys
+        // SAFETY: eval is alive for the duration of keys
         let keys = unsafe { self.eval.get_keys_iter() };
-        // safety: we don't hold mutable refs
+        // SAFETY: we don't hold mutable refs
         let mut aggs = unsafe { self.eval.get_aggs_iters() };
 
         let chunk_idx = chunk.chunk_index;
         unsafe {
-            // safety: the mutable borrows are not aliasing
+            // SAFETY: the mutable borrows are not aliasing
             let table = &mut *self.thread_local_table.get();
 
             for (hash, row) in self.eval.hashes().iter().zip(keys.values_iter()) {
@@ -89,7 +89,7 @@ impl Sink for GenericGroupby2 {
         // clear memory
         unsafe {
             drop(aggs);
-            // safety: we don't hold mutable refs, we just dropped them
+            // SAFETY: we don't hold mutable refs, we just dropped them
             self.eval.clear()
         };
 
@@ -122,7 +122,7 @@ impl Sink for GenericGroupby2 {
     }
 
     fn split(&self, _thread_no: usize) -> Box<dyn Sink> {
-        // safety: no mutable refs at this point
+        // SAFETY: no mutable refs at this point
         let map = unsafe { (*self.thread_local_table.get()).split() };
         Box::new(Self {
             eval: self.eval.split(),

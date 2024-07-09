@@ -1,6 +1,6 @@
 use super::super::{bitpacked, uleb128, zigzag_leb128};
 use crate::parquet::encoding::ceil8;
-use crate::parquet::error::Error;
+use crate::parquet::error::{ParquetError, ParquetResult};
 
 /// An [`Iterator`] of [`i64`]
 #[derive(Debug)]
@@ -15,7 +15,7 @@ struct Block<'a> {
     remaining: usize,     // number of elements
     current_index: usize, // invariant: < values_per_mini_block
     // None represents a relative delta of zero, in which case there is no miniblock.
-    current_miniblock: Option<bitpacked::Decoder<'a, u64>>,
+    current_miniblock: Option<bitpacked::DecoderIter<u64>>,
     // number of bytes consumed.
     consumed_bytes: usize,
 }
@@ -26,16 +26,16 @@ impl<'a> Block<'a> {
         num_mini_blocks: usize,
         values_per_mini_block: usize,
         length: usize,
-    ) -> Result<Self, Error> {
+    ) -> ParquetResult<Self> {
         let length = std::cmp::min(length, num_mini_blocks * values_per_mini_block);
 
         let mut consumed_bytes = 0;
-        let (min_delta, consumed) = zigzag_leb128::decode(values)?;
+        let (min_delta, consumed) = zigzag_leb128::decode(values);
         consumed_bytes += consumed;
         values = &values[consumed..];
 
         if num_mini_blocks > values.len() {
-            return Err(Error::oos(
+            return Err(ParquetError::oos(
                 "Block must contain at least num_mini_blocks bytes (the bitwidths)",
             ));
         }
@@ -61,7 +61,7 @@ impl<'a> Block<'a> {
         Ok(block)
     }
 
-    fn advance_miniblock(&mut self) -> Result<(), Error> {
+    fn advance_miniblock(&mut self) -> ParquetResult<()> {
         // unwrap is ok: we sliced it by num_mini_blocks in try_new
         let num_bits = self.bitwidths.next().copied().unwrap() as usize;
 
@@ -70,7 +70,7 @@ impl<'a> Block<'a> {
 
             let miniblock_length = ceil8(self.values_per_mini_block * num_bits);
             if miniblock_length > self.values.len() {
-                return Err(Error::oos(
+                return Err(ParquetError::oos(
                     "block must contain at least miniblock_length bytes (the mini block)",
                 ));
             }
@@ -79,7 +79,11 @@ impl<'a> Block<'a> {
             self.values = remainder;
             self.consumed_bytes += miniblock_length;
 
-            Some(bitpacked::Decoder::try_new(miniblock, num_bits, length).unwrap())
+            Some(
+                bitpacked::Decoder::try_new(miniblock, num_bits, length)
+                    .unwrap()
+                    .collect_into_iter(),
+            )
         } else {
             None
         };
@@ -90,7 +94,7 @@ impl<'a> Block<'a> {
 }
 
 impl<'a> Iterator for Block<'a> {
-    type Item = Result<i64, Error>;
+    type Item = Result<i64, ParquetError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.remaining == 0 {
@@ -131,21 +135,21 @@ pub struct Decoder<'a> {
 }
 
 impl<'a> Decoder<'a> {
-    pub fn try_new(mut values: &'a [u8]) -> Result<Self, Error> {
+    pub fn try_new(mut values: &'a [u8]) -> Result<Self, ParquetError> {
         let mut consumed_bytes = 0;
-        let (block_size, consumed) = uleb128::decode(values)?;
+        let (block_size, consumed) = uleb128::decode(values);
         consumed_bytes += consumed;
         assert_eq!(block_size % 128, 0);
         values = &values[consumed..];
-        let (num_mini_blocks, consumed) = uleb128::decode(values)?;
+        let (num_mini_blocks, consumed) = uleb128::decode(values);
         let num_mini_blocks = num_mini_blocks as usize;
         consumed_bytes += consumed;
         values = &values[consumed..];
-        let (total_count, consumed) = uleb128::decode(values)?;
+        let (total_count, consumed) = uleb128::decode(values);
         let total_count = total_count as usize;
         consumed_bytes += consumed;
         values = &values[consumed..];
-        let (first_value, consumed) = zigzag_leb128::decode(values)?;
+        let (first_value, consumed) = zigzag_leb128::decode(values);
         consumed_bytes += consumed;
         values = &values[consumed..];
 
@@ -180,7 +184,7 @@ impl<'a> Decoder<'a> {
         self.consumed_bytes + self.current_block.as_ref().map_or(0, |b| b.consumed_bytes)
     }
 
-    fn load_delta(&mut self) -> Result<i64, Error> {
+    fn load_delta(&mut self) -> Result<i64, ParquetError> {
         // At this point we must have at least one block and value available
         let current_block = self.current_block.as_mut().unwrap();
         if let Some(x) = current_block.next() {
@@ -200,7 +204,7 @@ impl<'a> Decoder<'a> {
                 Ok(mut next_block) => {
                     let delta = next_block
                         .next()
-                        .ok_or_else(|| Error::oos("Missing block"))?;
+                        .ok_or_else(|| ParquetError::oos("Missing block"))?;
                     self.current_block = Some(next_block);
                     delta
                 },
@@ -211,7 +215,7 @@ impl<'a> Decoder<'a> {
 }
 
 impl<'a> Iterator for Decoder<'a> {
-    type Item = Result<i64, Error>;
+    type Item = Result<i64, ParquetError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.values_remaining == 0 {

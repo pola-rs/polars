@@ -94,8 +94,8 @@ impl Sink for SliceSink {
         let mut chunks = chunks.lock().unwrap();
         let chunks: Vec<DataChunk> = std::mem::take(chunks.as_mut());
         if chunks.is_empty() {
-            return Ok(FinalizedSink::Finished(DataFrame::from(
-                self.schema.as_ref(),
+            return Ok(FinalizedSink::Finished(DataFrame::empty_with_schema(
+                &self.schema,
             )));
         }
 

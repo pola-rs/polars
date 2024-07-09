@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 import polars as pl
+from polars.exceptions import DuplicateError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 inf = float("inf")
@@ -55,7 +56,7 @@ def test_qcut_include_breaks() -> None:
 
     expected = pl.DataFrame(
         {
-            "break_point": [-2.0, -1.0, 1.0, 1.0, inf],
+            "breakpoint": [-2.0, -1.0, 1.0, 1.0, inf],
             "category": ["a", "b", "c", "c", "d"],
         },
         schema_overrides={"category": pl.Categorical},
@@ -73,10 +74,10 @@ def test_qcut_include_breaks_lazy_schema() -> None:
 
     expected = pl.LazyFrame(
         {
-            "brk": [-1.0, -1.0, 1.0, 1.0, inf],
-            "a_bin": ["(-inf, -1]", "(-inf, -1]", "(-1, 1]", "(-1, 1]", "(1, inf]"],
+            "breakpoint": [-1.0, -1.0, 1.0, 1.0, inf],
+            "category": ["(-inf, -1]", "(-inf, -1]", "(-1, 1]", "(-1, 1]", "(1, inf]"],
         },
-        schema_overrides={"a_bin": pl.Categorical},
+        schema_overrides={"category": pl.Categorical},
     )
     assert_frame_equal(result, expected, categorical_as_str=True)
 
@@ -102,7 +103,7 @@ def test_qcut_full_null() -> None:
 def test_qcut_allow_duplicates() -> None:
     s = pl.Series([1, 2, 2, 3])
 
-    with pytest.raises(pl.DuplicateError):
+    with pytest.raises(DuplicateError):
         s.qcut([0.50, 0.51])
 
     result = s.qcut([0.50, 0.51], allow_duplicates=True)
@@ -131,11 +132,3 @@ def test_qcut_over() -> None:
         dtype=pl.Categorical,
     )
     assert_series_equal(out, expected, categorical_as_str=True)
-
-
-def test_qcut_deprecated_label_name() -> None:
-    s = pl.Series([1.0, 2.0])
-    with pytest.deprecated_call():
-        s.qcut([0.1], category_label="x")
-    with pytest.deprecated_call():
-        s.qcut([0.1], break_point_label="x")

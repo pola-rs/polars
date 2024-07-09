@@ -17,34 +17,41 @@
 
 use super::Index;
 use crate::array::growable::{Growable, GrowableList};
-use crate::array::{ListArray, PrimitiveArray};
+use crate::array::{Array, ListArray};
+use crate::datatypes::IdxArr;
 use crate::offset::Offset;
 
 /// `take` implementation for ListArrays
-pub(super) unsafe fn take_unchecked<I: Offset, O: Index>(
+pub(super) unsafe fn take_unchecked<I: Offset>(
     values: &ListArray<I>,
-    indices: &PrimitiveArray<O>,
+    indices: &IdxArr,
 ) -> ListArray<I> {
+    // fast-path: all values to take are none
+    if indices.null_count() == indices.len() {
+        return ListArray::<I>::new_null(values.data_type().clone(), indices.len());
+    }
+
     let mut capacity = 0;
     let arrays = indices
-        .values()
         .iter()
-        .map(|index| {
-            let index = index.to_usize();
-            let slice = values.clone().sliced(index, 1);
-            capacity += slice.len();
-            slice
+        .flat_map(|opt_idx| {
+            opt_idx.map(|index| {
+                let index = index.to_usize();
+                let slice = values.clone().sliced(index, 1);
+                capacity += slice.len();
+                slice
+            })
         })
         .collect::<Vec<ListArray<I>>>();
 
     let arrays = arrays.iter().collect();
-
     if let Some(validity) = indices.validity() {
         let mut growable: GrowableList<I> = GrowableList::new(arrays, true, capacity);
-
+        let mut not_null_index = 0;
         for index in 0..indices.len() {
             if validity.get_bit_unchecked(index) {
-                growable.extend(index, 0, 1);
+                growable.extend(not_null_index, 0, 1);
+                not_null_index += 1;
             } else {
                 growable.extend_validity(1)
             }

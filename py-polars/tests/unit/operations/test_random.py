@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 import polars as pl
+from polars.exceptions import ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -50,6 +51,7 @@ def test_sample_expr() -> None:
 def test_sample_df() -> None:
     df = pl.DataFrame({"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]})
 
+    assert df.sample().shape == (1, 3)
     assert df.sample(n=2, seed=0).shape == (2, 3)
     assert df.sample(fraction=0.4, seed=0).shape == (1, 3)
     assert df.sample(n=pl.Series([2]), seed=0).shape == (2, 3)
@@ -59,6 +61,8 @@ def test_sample_df() -> None:
         1,
         1,
     )
+    with pytest.raises(ValueError, match="cannot specify both `n` and `fraction`"):
+        df.sample(n=2, fraction=0.4)
 
 
 def test_sample_n_expr() -> None:
@@ -92,7 +96,7 @@ def test_sample_empty_df() -> None:
     assert df.sample(fraction=0.4, with_replacement=True).shape == (0, 1)
 
     # // If without replacement, then expect shape mismatch on sample_n not sample_frac
-    with pytest.raises(pl.ShapeError):
+    with pytest.raises(ShapeError):
         df.sample(n=3, with_replacement=False)
     assert df.sample(fraction=0.4, with_replacement=False).shape == (0, 1)
 
@@ -106,7 +110,7 @@ def test_sample_series() -> None:
     assert len(s.sample(n=2, with_replacement=True, seed=0)) == 2
 
     # on a series of length 5, you cannot sample more than 5 items
-    with pytest.raises(pl.ShapeError):
+    with pytest.raises(ShapeError):
         s.sample(n=10, with_replacement=False, seed=0)
     # unless you use with_replacement=True
     assert len(s.sample(n=10, with_replacement=True, seed=0)) == 10
@@ -153,3 +157,13 @@ def test_shuffle_series() -> None:
 
     out = pl.select(pl.lit(a).shuffle(2)).to_series()
     assert_series_equal(out, expected)
+
+
+def test_sample_16232() -> None:
+    k = 2
+    p = 0
+
+    df = pl.DataFrame({"a": [p] * k + [1 + p], "b": [[1] * p] * k + [range(1, p + 2)]})
+    assert df.select(pl.col("b").list.sample(n=pl.col("a"), seed=0)).to_dict(
+        as_series=False
+    ) == {"b": [[], [], [1]]}

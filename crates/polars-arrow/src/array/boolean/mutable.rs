@@ -1,4 +1,3 @@
-use std::iter::FromIterator;
 use std::sync::Arc;
 
 use polars_error::{polars_bail, PolarsResult};
@@ -99,23 +98,30 @@ impl MutableBooleanArray {
         }
     }
 
+    #[inline]
+    pub fn push_value(&mut self, value: bool) {
+        self.values.push(value);
+        match &mut self.validity {
+            Some(validity) => validity.push(true),
+            None => {},
+        }
+    }
+
+    #[inline]
+    pub fn push_null(&mut self) {
+        self.values.push(false);
+        match &mut self.validity {
+            Some(validity) => validity.push(false),
+            None => self.init_validity(),
+        }
+    }
+
     /// Pushes a new entry to [`MutableBooleanArray`].
+    #[inline]
     pub fn push(&mut self, value: Option<bool>) {
         match value {
-            Some(value) => {
-                self.values.push(value);
-                match &mut self.validity {
-                    Some(validity) => validity.push(true),
-                    None => {},
-                }
-            },
-            None => {
-                self.values.push(false);
-                match &mut self.validity {
-                    Some(validity) => validity.push(false),
-                    None => self.init_validity(),
-                }
-            },
+            Some(value) => self.push_value(value),
+            None => self.push_null(),
         }
     }
 
@@ -136,12 +142,13 @@ impl MutableBooleanArray {
     where
         I: TrustedLen<Item = bool>,
     {
-        // Safety: `I` is `TrustedLen`
+        // SAFETY: `I` is `TrustedLen`
         unsafe { self.extend_trusted_len_values_unchecked(iterator) }
     }
 
     /// Extends the [`MutableBooleanArray`] from an iterator of values of trusted len.
     /// This differs from `extend_trusted_len_unchecked`, which accepts in iterator of optional values.
+    ///
     /// # Safety
     /// The iterator must be trusted len.
     #[inline]
@@ -167,11 +174,12 @@ impl MutableBooleanArray {
         P: std::borrow::Borrow<bool>,
         I: TrustedLen<Item = Option<P>>,
     {
-        // Safety: `I` is `TrustedLen`
+        // SAFETY: `I` is `TrustedLen`
         unsafe { self.extend_trusted_len_unchecked(iterator) }
     }
 
     /// Extends the [`MutableBooleanArray`] from an iterator of trusted len.
+    ///
     /// # Safety
     /// The iterator must be trusted len.
     #[inline]
@@ -194,6 +202,31 @@ impl MutableBooleanArray {
         }
     }
 
+    /// Extends `MutableBooleanArray` by additional values of constant value.
+    #[inline]
+    pub fn extend_constant(&mut self, additional: usize, value: Option<bool>) {
+        match value {
+            Some(value) => {
+                self.values.extend_constant(additional, value);
+                if let Some(validity) = self.validity.as_mut() {
+                    validity.extend_constant(additional, true);
+                }
+            },
+            None => {
+                self.values.extend_constant(additional, false);
+                if let Some(validity) = self.validity.as_mut() {
+                    validity.extend_constant(additional, false)
+                } else {
+                    self.init_validity();
+                    self.validity
+                        .as_mut()
+                        .unwrap()
+                        .extend_constant(additional, false)
+                };
+            },
+        };
+    }
+
     fn init_validity(&mut self) {
         let mut validity = MutableBitmap::with_capacity(self.values.capacity());
         validity.extend_constant(self.len(), true);
@@ -205,6 +238,10 @@ impl MutableBooleanArray {
     pub fn into_arc(self) -> Arc<dyn Array> {
         let a: BooleanArray = self.into();
         Arc::new(a)
+    }
+
+    pub fn freeze(self) -> BooleanArray {
+        self.into()
     }
 }
 
@@ -255,6 +292,7 @@ impl MutableBooleanArray {
     /// Creates a new [`MutableBooleanArray`] from an [`TrustedLen`] of `bool`.
     /// Use this over [`BooleanArray::from_trusted_len_iter`] when the iterator is trusted len
     /// but this crate does not mark it as such.
+    ///
     /// # Safety
     /// The iterator must be [`TrustedLen`](https://doc.rust-lang.org/std/iter/trait.TrustedLen.html).
     /// I.e. that `size_hint().1` correctly reports its length.
@@ -276,6 +314,7 @@ impl MutableBooleanArray {
     /// Creates a [`BooleanArray`] from an iterator of trusted length.
     /// Use this over [`BooleanArray::from_trusted_len_iter`] when the iterator is trusted len
     /// but this crate does not mark it as such.
+    ///
     /// # Safety
     /// The iterator must be [`TrustedLen`](https://doc.rust-lang.org/std/iter/trait.TrustedLen.html).
     /// I.e. that `size_hint().1` correctly reports its length.
@@ -297,11 +336,12 @@ impl MutableBooleanArray {
         P: std::borrow::Borrow<bool>,
         I: TrustedLen<Item = Option<P>>,
     {
-        // Safety: `I` is `TrustedLen`
+        // SAFETY: `I` is `TrustedLen`
         unsafe { Self::from_trusted_len_iter_unchecked(iterator) }
     }
 
     /// Creates a [`BooleanArray`] from an falible iterator of trusted length.
+    ///
     /// # Safety
     /// The iterator must be [`TrustedLen`](https://doc.rust-lang.org/std/iter/trait.TrustedLen.html).
     /// I.e. that `size_hint().1` correctly reports its length.
@@ -331,7 +371,7 @@ impl MutableBooleanArray {
         P: std::borrow::Borrow<bool>,
         I: TrustedLen<Item = std::result::Result<Option<P>, E>>,
     {
-        // Safety: `I` is `TrustedLen`
+        // SAFETY: `I` is `TrustedLen`
         unsafe { Self::try_from_trusted_len_iter_unchecked(iterator) }
     }
 
@@ -555,7 +595,7 @@ impl TryExtendFromSelf for MutableBooleanArray {
         extend_validity(self.len(), &mut self.validity, &other.validity);
 
         let slice = other.values.as_slice();
-        // safety: invariant offset + length <= slice.len()
+        // SAFETY: invariant offset + length <= slice.len()
         unsafe {
             self.values
                 .extend_from_slice_unchecked(slice, 0, other.values.len());

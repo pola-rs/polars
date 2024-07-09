@@ -41,7 +41,7 @@ impl<'a> AnonymousBuilder<'a> {
     }
 
     pub fn take_offsets(self) -> Offsets<i64> {
-        // safety: offsets are correct
+        // SAFETY: offsets are correct
         unsafe { Offsets::new_unchecked(self.offsets) }
     }
 
@@ -102,7 +102,7 @@ impl<'a> AnonymousBuilder<'a> {
     }
 
     pub fn finish(self, inner_dtype: Option<&ArrowDataType>) -> PolarsResult<ListArray<i64>> {
-        // Safety:
+        // SAFETY:
         // offsets are monotonically increasing
         let offsets = unsafe { Offsets::new_unchecked(self.offsets) };
         let (inner_dtype, values) = if self.arrays.is_empty() {

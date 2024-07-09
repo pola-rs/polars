@@ -1,5 +1,3 @@
-use arrow::array::StructArray;
-
 use crate::prelude::*;
 
 impl TryFrom<StructArray> for DataFrame {
@@ -15,7 +13,7 @@ impl TryFrom<StructArray> for DataFrame {
             .iter()
             .zip(arrs)
             .map(|(fld, arr)| {
-                // Safety
+                // SAFETY:
                 // reported data type is correct
                 unsafe {
                     Series::_try_from_arrow_unchecked_with_md(
@@ -28,26 +26,5 @@ impl TryFrom<StructArray> for DataFrame {
             })
             .collect::<PolarsResult<Vec<_>>>()?;
         DataFrame::new(columns)
-    }
-}
-
-impl From<&Schema> for DataFrame {
-    fn from(schema: &Schema) -> Self {
-        let cols = schema
-            .iter()
-            .map(|(name, dtype)| Series::new_empty(name, dtype))
-            .collect();
-        DataFrame::new_no_checks(cols)
-    }
-}
-
-impl From<&ArrowSchema> for DataFrame {
-    fn from(schema: &ArrowSchema) -> Self {
-        let cols = schema
-            .fields
-            .iter()
-            .map(|fld| Series::new_empty(fld.name.as_str(), &(fld.data_type().into())))
-            .collect();
-        DataFrame::new_no_checks(cols)
     }
 }

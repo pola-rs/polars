@@ -52,7 +52,7 @@ fn test_groups_update_binary_shift_log() -> PolarsResult<()> {
     .lazy()
     .group_by([col("b")])
     .agg([col("a") - col("a").shift(lit(1)).log(2.0)])
-    .sort("b", Default::default())
+    .sort(["b"], Default::default())
     .explode([col("a")])
     .collect()?;
     assert_eq!(
@@ -89,6 +89,15 @@ fn test_apply_groups_empty() -> PolarsResult<()> {
         "id" => [1, 1],
         "hi" => ["here", "here"]
     ]?;
+    let out = df
+        .clone()
+        .lazy()
+        .filter(col("id").eq(lit(2)))
+        .group_by([col("id")])
+        .agg([col("hi").drop_nulls().unique()])
+        .explain(true)
+        .unwrap();
+    println!("{}", out);
 
     let out = df
         .lazy()

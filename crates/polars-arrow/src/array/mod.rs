@@ -10,6 +10,7 @@
 //! * [`BinaryArray`] and [`MutableBinaryArray`], an array of opaque variable length values
 //! * [`ListArray`] and [`MutableListArray`], an array of arrays (e.g. `[[1, 2], None, [], [None]]`)
 //! * [`StructArray`] and [`MutableStructArray`], an array of arrays identified by a string (e.g. `{"a": [1, 2], "b": [true, false]}`)
+//!
 //! All immutable arrays implement the trait object [`Array`] and that can be downcasted
 //! to a concrete struct based on [`PhysicalType`](crate::datatypes::PhysicalType) available from [`Array::data_type`].
 //! All immutable arrays are backed by [`Buffer`](crate::buffer::Buffer) and thus cloning and slicing them is `O(1)`.
@@ -23,6 +24,38 @@ use crate::bitmap::{Bitmap, MutableBitmap};
 use crate::datatypes::ArrowDataType;
 
 pub mod physical_binary;
+
+pub trait Splitable: Sized {
+    fn check_bound(&self, offset: usize) -> bool;
+
+    /// Split [`Self`] at `offset` where `offset <= self.len()`.
+    #[inline]
+    #[must_use]
+    fn split_at(&self, offset: usize) -> (Self, Self) {
+        assert!(self.check_bound(offset));
+        unsafe { self._split_at_unchecked(offset) }
+    }
+
+    /// Split [`Self`] at `offset` without checking `offset <= self.len()`.
+    ///
+    /// # Safety
+    ///
+    /// Safe if `offset <= self.len()`.
+    #[inline]
+    #[must_use]
+    unsafe fn split_at_unchecked(&self, offset: usize) -> (Self, Self) {
+        debug_assert!(self.check_bound(offset));
+        unsafe { self._split_at_unchecked(offset) }
+    }
+
+    /// Internal implementation of `split_at_unchecked`. For any usage, prefer the using
+    /// `split_at` or `split_at_unchecked`.
+    ///
+    /// # Safety
+    ///
+    /// Safe if `offset <= self.len()`.
+    unsafe fn _split_at_unchecked(&self, offset: usize) -> (Self, Self);
+}
 
 /// A trait representing an immutable Arrow array. Arrow arrays are trait objects
 /// that are infallibly downcasted to concrete types according to the [`Array::data_type`].
@@ -75,6 +108,7 @@ pub trait Array: Send + Sync + dyn_clone::DynClone + 'static {
     }
 
     /// Returns whether slot `i` is null.
+    ///
     /// # Safety
     /// The caller must ensure `i < self.len()`
     #[inline]
@@ -93,6 +127,18 @@ pub trait Array: Send + Sync + dyn_clone::DynClone + 'static {
         !self.is_null(i)
     }
 
+    /// Split [`Self`] at `offset` into two boxed [`Array`]s where `offset <= self.len()`.
+    #[must_use]
+    fn split_at_boxed(&self, offset: usize) -> (Box<dyn Array>, Box<dyn Array>);
+
+    /// Split [`Self`] at `offset` into two boxed [`Array`]s without checking `offset <= self.len()`.
+    ///
+    /// # Safety
+    ///
+    /// Safe if `offset <= self.len()`.
+    #[must_use]
+    unsafe fn split_at_boxed_unchecked(&self, offset: usize) -> (Box<dyn Array>, Box<dyn Array>);
+
     /// Slices this [`Array`].
     /// # Implementation
     /// This operation is `O(1)` over `len`.
@@ -103,6 +149,7 @@ pub trait Array: Send + Sync + dyn_clone::DynClone + 'static {
     /// Slices the [`Array`].
     /// # Implementation
     /// This operation is `O(1)`.
+    ///
     /// # Safety
     /// The caller must ensure that `offset + length <= self.len()`
     unsafe fn slice_unchecked(&mut self, offset: usize, length: usize);
@@ -114,6 +161,9 @@ pub trait Array: Send + Sync + dyn_clone::DynClone + 'static {
     /// This function panics iff `offset + length > self.len()`.
     #[must_use]
     fn sliced(&self, offset: usize, length: usize) -> Box<dyn Array> {
+        if length == 0 {
+            return new_empty_array(self.data_type().clone());
+        }
         let mut new = self.to_boxed();
         new.slice(offset, length);
         new
@@ -123,6 +173,7 @@ pub trait Array: Send + Sync + dyn_clone::DynClone + 'static {
     /// # Implementation
     /// This operation is `O(1)` over `len`, as it amounts to increase two ref counts
     /// and moving the struct to the heap.
+    ///
     /// # Safety
     /// The caller must ensure that `offset + length <= self.len()`
     #[must_use]
@@ -142,15 +193,6 @@ pub trait Array: Send + Sync + dyn_clone::DynClone + 'static {
 }
 
 dyn_clone::clone_trait_object!(Array);
-
-/// A trait describing an array with a backing store that can be preallocated to
-/// a given size.
-pub(crate) trait Container {
-    /// Create this array with a given capacity.
-    fn with_capacity(capacity: usize) -> Self
-    where
-        Self: Sized;
-}
 
 /// A trait describing a mutable array; i.e. an array whose values can be changed.
 /// Mutable arrays cannot be cloned but can be mutated in place,
@@ -272,7 +314,7 @@ impl std::fmt::Debug for dyn Array + '_ {
         match self.data_type().to_physical_type() {
             Null => fmt_dyn!(self, NullArray, f),
             Boolean => fmt_dyn!(self, BooleanArray, f),
-            Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
+            Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
                 fmt_dyn!(self, PrimitiveArray<$T>, f)
             }),
             BinaryView => fmt_dyn!(self, BinaryViewArray, f),
@@ -414,7 +456,7 @@ pub fn to_data(array: &dyn Array) -> arrow_data::ArrayData {
     match array.data_type().to_physical_type() {
         Null => to_data_dyn!(array, NullArray),
         Boolean => to_data_dyn!(array, BooleanArray),
-        Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
+        Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
             to_data_dyn!(array, PrimitiveArray<$T>)
         }),
         Binary => to_data_dyn!(array, BinaryArray<i32>),
@@ -445,7 +487,7 @@ pub fn from_data(data: &arrow_data::ArrayData) -> Box<dyn Array> {
     match data_type.to_physical_type() {
         Null => Box::new(NullArray::from_data(data)),
         Boolean => Box::new(BooleanArray::from_data(data)),
-        Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
+        Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
             Box::new(PrimitiveArray::<$T>::from_data(data))
         }),
         Binary => Box::new(BinaryArray::<i32>::from_data(data)),
@@ -496,6 +538,7 @@ macro_rules! impl_sliced {
         /// Returns this array sliced.
         /// # Implementation
         /// This function is `O(1)`.
+        ///
         /// # Safety
         /// The caller must ensure that `offset + length <= self.len()`.
         #[inline]
@@ -617,6 +660,21 @@ macro_rules! impl_common_array {
         }
 
         #[inline]
+        fn split_at_boxed(&self, offset: usize) -> (Box<dyn Array>, Box<dyn Array>) {
+            let (lhs, rhs) = $crate::array::Splitable::split_at(self, offset);
+            (Box::new(lhs), Box::new(rhs))
+        }
+
+        #[inline]
+        unsafe fn split_at_boxed_unchecked(
+            &self,
+            offset: usize,
+        ) -> (Box<dyn Array>, Box<dyn Array>) {
+            let (lhs, rhs) = unsafe { $crate::array::Splitable::split_at_unchecked(self, offset) };
+            (Box::new(lhs), Box::new(rhs))
+        }
+
+        #[inline]
         fn slice(&mut self, offset: usize, length: usize) {
             self.slice(offset, length);
         }
@@ -728,7 +786,7 @@ pub use utf8::{MutableUtf8Array, MutableUtf8ValuesArray, Utf8Array, Utf8ValuesIt
 pub use values::ValueSize;
 
 pub(crate) use self::ffi::{offset_buffers_children_dictionary, FromFfi, ToFfi};
-use crate::{match_integer_type, with_match_primitive_type, with_match_primitive_type_full};
+use crate::{match_integer_type, with_match_primitive_type_full};
 
 /// A trait describing the ability of a struct to create itself from a iterator.
 /// This is similar to [`Extend`], but accepted the creation to error.
@@ -746,6 +804,7 @@ pub trait TryPush<A> {
 /// A trait describing the ability of a struct to receive new items.
 pub trait PushUnchecked<A> {
     /// Push a new element that holds the invariants of the struct.
+    ///
     /// # Safety
     /// The items must uphold the invariants of the struct
     /// Read the specific implementation of the trait to understand what these are.
@@ -773,3 +832,20 @@ pub unsafe trait GenericBinaryArray<O: crate::offset::Offset>: Array {
 }
 
 pub type ArrayRef = Box<dyn Array>;
+
+impl Splitable for Option<Bitmap> {
+    #[inline(always)]
+    fn check_bound(&self, offset: usize) -> bool {
+        self.as_ref().map_or(true, |v| offset <= v.len())
+    }
+
+    unsafe fn _split_at_unchecked(&self, offset: usize) -> (Self, Self) {
+        self.as_ref().map_or((None, None), |bm| {
+            let (lhs, rhs) = unsafe { bm.split_at_unchecked(offset) };
+            (
+                (lhs.unset_bits() > 0).then_some(lhs),
+                (rhs.unset_bits() > 0).then_some(rhs),
+            )
+        })
+    }
+}

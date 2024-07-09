@@ -1,12 +1,12 @@
 use parquet_format_safe::SchemaElement;
 
 use super::super::types::ParquetType;
-use crate::parquet::error::{Error, Result};
+use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::schema::types::FieldInfo;
 
 impl ParquetType {
     /// Method to convert from Thrift.
-    pub fn try_from_thrift(elements: &[SchemaElement]) -> Result<ParquetType> {
+    pub fn try_from_thrift(elements: &[SchemaElement]) -> ParquetResult<ParquetType> {
         let mut index = 0;
         let mut schema_nodes = Vec::new();
         while index < elements.len() {
@@ -15,7 +15,7 @@ impl ParquetType {
             schema_nodes.push(t.1);
         }
         if schema_nodes.len() != 1 {
-            return Err(Error::oos(format!(
+            return Err(ParquetError::oos(format!(
                 "Expected exactly one root node, but found {}",
                 schema_nodes.len()
             )));
@@ -29,14 +29,17 @@ impl ParquetType {
 /// The first result is the starting index for the next Type after this one. If it is
 /// equal to `elements.len()`, then this Type is the last one.
 /// The second result is the result Type.
-fn from_thrift_helper(elements: &[SchemaElement], index: usize) -> Result<(usize, ParquetType)> {
+fn from_thrift_helper(
+    elements: &[SchemaElement],
+    index: usize,
+) -> ParquetResult<(usize, ParquetType)> {
     // Whether or not the current node is root (message type).
     // There is only one message type node in the schema tree.
     let is_root_node = index == 0;
 
-    let element = elements
-        .get(index)
-        .ok_or_else(|| Error::oos(format!("index {} on SchemaElement is not valid", index)))?;
+    let element = elements.get(index).ok_or_else(|| {
+        ParquetError::oos(format!("index {} on SchemaElement is not valid", index))
+    })?;
     let name = element.name.clone();
     let converted_type = element.converted_type;
 
@@ -51,11 +54,13 @@ fn from_thrift_helper(elements: &[SchemaElement], index: usize) -> Result<(usize
             // primitive type
             let repetition = element
                 .repetition_type
-                .ok_or_else(|| Error::oos("Repetition level must be defined for a primitive type"))?
+                .ok_or_else(|| {
+                    ParquetError::oos("Repetition level must be defined for a primitive type")
+                })?
                 .try_into()?;
-            let physical_type = element
-                .type_
-                .ok_or_else(|| Error::oos("Physical type must be defined for a primitive type"))?;
+            let physical_type = element.type_.ok_or_else(|| {
+                ParquetError::oos("Physical type must be defined for a primitive type")
+            })?;
 
             let converted_type = converted_type
                 .map(|converted_type| {
@@ -63,7 +68,7 @@ fn from_thrift_helper(elements: &[SchemaElement], index: usize) -> Result<(usize
                         (Some(precision), Some(scale)) => Some((precision, scale)),
                         (None, None) => None,
                         _ => {
-                            return Err(Error::oos(
+                            return Err(ParquetError::oos(
                                 "When precision or scale are defined, both must be defined",
                             ))
                         },
@@ -104,7 +109,7 @@ fn from_thrift_helper(elements: &[SchemaElement], index: usize) -> Result<(usize
                 let repetition = if let Some(repetition) = element.repetition_type {
                     repetition.try_into()?
                 } else {
-                    return Err(Error::oos(
+                    return Err(ParquetError::oos(
                         "The repetition level of a non-root must be non-null",
                     ));
                 };

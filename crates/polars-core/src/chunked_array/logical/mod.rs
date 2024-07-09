@@ -31,9 +31,10 @@ pub use struct_::*;
 #[cfg(feature = "dtype-time")]
 pub use time::*;
 
+use crate::chunked_array::cast::CastOptions;
 use crate::prelude::*;
 
-/// Maps a logical type to a a chunked array implementation of the physical type.
+/// Maps a logical type to a chunked array implementation of the physical type.
 /// This saves a lot of compiler bloat and allows us to reuse functionality.
 pub struct Logical<Logical: PolarsDataType, Physical: PolarsDataType>(
     pub ChunkedArray<Physical>,
@@ -44,7 +45,7 @@ pub struct Logical<Logical: PolarsDataType, Physical: PolarsDataType>(
 impl<K: PolarsDataType, T: PolarsDataType> Clone for Logical<K, T> {
     fn clone(&self) -> Self {
         let mut new = Logical::<K, _>::new_logical(self.0.clone());
-        new.2 = self.2.clone();
+        new.2.clone_from(&self.2);
         new
     }
 }
@@ -64,7 +65,7 @@ impl<K: PolarsDataType, T: PolarsDataType> DerefMut for Logical<K, T> {
 }
 
 impl<K: PolarsDataType, T: PolarsDataType> Logical<K, T> {
-    pub(crate) fn new_logical<J: PolarsDataType>(ca: ChunkedArray<T>) -> Logical<J, T> {
+    pub fn new_logical<J: PolarsDataType>(ca: ChunkedArray<T>) -> Logical<J, T> {
         Logical(ca, PhantomData, None)
     }
 }
@@ -84,7 +85,11 @@ pub trait LogicalType {
         unimplemented!()
     }
 
-    fn cast(&self, dtype: &DataType) -> PolarsResult<Series>;
+    fn cast_with_options(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Series>;
+
+    fn cast(&self, dtype: &DataType) -> PolarsResult<Series> {
+        self.cast_with_options(dtype, CastOptions::NonStrict)
+    }
 }
 
 impl<K: PolarsDataType, T: PolarsDataType> Logical<K, T>

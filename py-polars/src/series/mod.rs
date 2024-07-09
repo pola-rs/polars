@@ -1,6 +1,7 @@
 mod aggregation;
 mod arithmetic;
 mod buffers;
+mod c_interface;
 mod comparison;
 mod construction;
 mod export;
@@ -9,6 +10,7 @@ mod scatter;
 
 use std::io::Cursor;
 
+use polars_core::chunked_array::cast::CastOptions;
 use polars_core::series::IsSorted;
 use polars_core::utils::flatten::flatten_series;
 use polars_core::{with_match_physical_numeric_polars_type, with_match_physical_numeric_type};
@@ -49,8 +51,7 @@ pub(crate) trait ToSeries {
 
 impl ToSeries for Vec<PySeries> {
     fn to_series(self) -> Vec<Series> {
-        // Safety
-        // repr is transparent
+        // SAFETY: repr is transparent.
         unsafe { std::mem::transmute(self) }
     }
 }
@@ -61,8 +62,7 @@ pub(crate) trait ToPySeries {
 
 impl ToPySeries for Vec<Series> {
     fn to_pyseries(self) -> Vec<PySeries> {
-        // Safety
-        // repr is transparent
+        // SAFETY: repr is transparent.
         unsafe { std::mem::transmute(self) }
     }
 }
@@ -126,24 +126,34 @@ impl PySeries {
         })
     }
 
-    fn get_fmt(&self, index: usize, str_lengths: usize) -> String {
-        let val = format!("{}", self.series.get(index).unwrap());
+    fn reshape(&self, dims: Vec<i64>) -> PyResult<Self> {
+        let out = self
+            .series
+            .reshape_array(&dims)
+            .map_err(PyPolarsErr::from)?;
+        Ok(out.into())
+    }
+
+    /// Returns the string format of a single element of the Series.
+    fn get_fmt(&self, index: usize, str_len_limit: usize) -> String {
+        let v = format!("{}", self.series.get(index).unwrap());
         if let DataType::String | DataType::Categorical(_, _) | DataType::Enum(_, _) =
             self.series.dtype()
         {
-            let v_trunc = &val[..val
+            let v_no_quotes = &v[1..v.len() - 1];
+            let v_trunc = &v_no_quotes[..v_no_quotes
                 .char_indices()
-                .take(str_lengths)
+                .take(str_len_limit)
                 .last()
                 .map(|(i, c)| i + c.len_utf8())
                 .unwrap_or(0)];
-            if val == v_trunc {
-                val
+            if v_no_quotes == v_trunc {
+                v
             } else {
-                format!("{v_trunc}…")
+                format!("\"{v_trunc}…")
             }
         } else {
-            val
+            v
         }
     }
 
@@ -157,6 +167,7 @@ impl PySeries {
         }
     }
 
+    /// Get a value by index.
     fn get_index(&self, py: Python, index: usize) -> PyResult<PyObject> {
         let av = match self.series.get(index) {
             Ok(v) => v,
@@ -182,10 +193,10 @@ impl PySeries {
         Ok(out)
     }
 
-    /// Get index but allow negative indices
-    fn get_index_signed(&self, py: Python, index: i64) -> PyResult<PyObject> {
+    /// Get a value by index, allowing negative indices.
+    fn get_index_signed(&self, py: Python, index: isize) -> PyResult<PyObject> {
         let index = if index < 0 {
-            match self.len().checked_sub(index.unsigned_abs() as usize) {
+            match self.len().checked_sub(index.unsigned_abs()) {
                 Some(v) => v,
                 None => {
                     return Err(PyIndexError::new_err(
@@ -194,7 +205,7 @@ impl PySeries {
                 },
             }
         } else {
-            index as usize
+            usize::try_from(index).unwrap()
         };
         self.get_index(py, index)
     }
@@ -284,14 +295,23 @@ impl PySeries {
         }
     }
 
-    fn sort(&mut self, descending: bool, nulls_last: bool) -> Self {
-        self.series.sort(descending, nulls_last).into()
+    fn sort(&mut self, descending: bool, nulls_last: bool, multithreaded: bool) -> PyResult<Self> {
+        Ok(self
+            .series
+            .sort(
+                SortOptions::default()
+                    .with_order_descending(descending)
+                    .with_nulls_last(nulls_last)
+                    .with_multithreaded(multithreaded),
+            )
+            .map_err(PyPolarsErr::from)?
+            .into())
     }
 
-    fn take_with_series(&self, indices: &PySeries) -> PyResult<Self> {
-        let idx = indices.series.idx().map_err(PyPolarsErr::from)?;
-        let take = self.series.take(idx).map_err(PyPolarsErr::from)?;
-        Ok(take.into())
+    fn gather_with_series(&self, indices: &PySeries) -> PyResult<Self> {
+        let indices = indices.series.idx().map_err(PyPolarsErr::from)?;
+        let s = self.series.take(indices).map_err(PyPolarsErr::from)?;
+        Ok(s.into())
     }
 
     fn null_count(&self) -> PyResult<usize> {
@@ -302,8 +322,17 @@ impl PySeries {
         self.series.has_validity()
     }
 
-    fn equals(&self, other: &PySeries, null_equal: bool, strict: bool) -> bool {
-        if strict && (self.series.dtype() != other.series.dtype()) {
+    fn equals(
+        &self,
+        other: &PySeries,
+        check_dtypes: bool,
+        check_names: bool,
+        null_equal: bool,
+    ) -> bool {
+        if check_dtypes && (self.series.dtype() != other.series.dtype()) {
+            return false;
+        }
+        if check_names && (self.series.name() != other.series.name()) {
             return false;
         }
         if null_equal {
@@ -335,11 +364,18 @@ impl PySeries {
     #[pyo3(signature = (lambda, output_type, skip_nulls))]
     fn apply_lambda(
         &self,
-        lambda: &PyAny,
+        lambda: &Bound<PyAny>,
         output_type: Option<Wrap<DataType>>,
         skip_nulls: bool,
     ) -> PyResult<PySeries> {
         let series = &self.series;
+
+        if output_type.is_none() {
+            polars_warn!(
+                MapWithoutReturnDtypeWarning,
+                "Calling `map_elements` without specifying `return_dtype` can lead to unpredictable results. \
+                Specify `return_dtype` to silence this warning.")
+        }
 
         if skip_nulls && (series.null_count() == series.len()) {
             if let Some(output_type) = output_type {
@@ -388,7 +424,8 @@ impl PySeries {
             ) || !skip_nulls
             {
                 let mut avs = Vec::with_capacity(self.series.len());
-                let iter = self.series.iter().map(|av| match (skip_nulls, av) {
+                let s = self.series.rechunk();
+                let iter = s.iter().map(|av| match (skip_nulls, av) {
                     (true, AnyValue::Null) => AnyValue::Null,
                     (_, av) => {
                         let input = Wrap(av);
@@ -593,9 +630,32 @@ impl PySeries {
         self.series.shrink_to_fit();
     }
 
-    fn dot(&self, other: &PySeries) -> PyResult<f64> {
-        let out = self.series.dot(&other.series).map_err(PyPolarsErr::from)?;
-        Ok(out)
+    fn dot(&self, other: &PySeries, py: Python) -> PyResult<PyObject> {
+        let lhs_dtype = self.series.dtype();
+        let rhs_dtype = other.series.dtype();
+
+        if !lhs_dtype.is_numeric() {
+            return Err(PyPolarsErr::from(polars_err!(opq = dot, lhs_dtype)).into());
+        };
+        if !rhs_dtype.is_numeric() {
+            return Err(PyPolarsErr::from(polars_err!(opq = dot, rhs_dtype)).into());
+        }
+
+        let result: AnyValue = if lhs_dtype.is_float() || rhs_dtype.is_float() {
+            (&self.series * &other.series)
+                .map_err(PyPolarsErr::from)?
+                .sum::<f64>()
+                .map_err(PyPolarsErr::from)?
+                .into()
+        } else {
+            (&self.series * &other.series)
+                .map_err(PyPolarsErr::from)?
+                .sum::<i64>()
+                .map_err(PyPolarsErr::from)?
+                .into()
+        };
+
+        Ok(Wrap(result).into_py(py))
     }
 
     #[cfg(feature = "ipc_streaming")]
@@ -605,18 +665,20 @@ impl PySeries {
         // IPC only support DataFrames so we need to convert it
         let mut df = self.series.clone().into_frame();
         IpcStreamWriter::new(&mut buf)
-            .with_pl_flavor(true)
+            .with_compat_level(CompatLevel::newest())
             .finish(&mut df)
             .expect("ipc writer");
-        Ok(PyBytes::new(py, &buf).to_object(py))
+        Ok(PyBytes::new_bound(py, &buf).to_object(py))
     }
 
     #[cfg(feature = "ipc_streaming")]
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
         // Used in pickle/pickling
-        match state.extract::<&PyBytes>(py) {
+
+        use pyo3::pybacked::PyBackedBytes;
+        match state.extract::<PyBackedBytes>(py) {
             Ok(s) => {
-                let c = Cursor::new(s.as_bytes());
+                let c = Cursor::new(&s);
                 let reader = IpcStreamReader::new(c);
                 let mut df = reader.finish().map_err(PyPolarsErr::from)?;
 
@@ -648,13 +710,17 @@ impl PySeries {
         Ok(out)
     }
 
-    fn cast(&self, dtype: Wrap<DataType>, strict: bool) -> PyResult<Self> {
-        let dtype = dtype.0;
-        let out = if strict {
-            self.series.strict_cast(&dtype)
+    fn cast(&self, dtype: Wrap<DataType>, strict: bool, wrap_numerical: bool) -> PyResult<Self> {
+        let options = if wrap_numerical {
+            CastOptions::Overflowing
+        } else if strict {
+            CastOptions::Strict
         } else {
-            self.series.cast(&dtype)
+            CastOptions::NonStrict
         };
+
+        let dtype = dtype.0;
+        let out = self.series.cast_with_options(&dtype, options);
         let out = out.map_err(PyPolarsErr::from)?;
         Ok(out.into())
     }
@@ -669,10 +735,10 @@ impl PySeries {
         })
     }
 
-    fn is_sorted(&self, descending: bool) -> PyResult<bool> {
+    fn is_sorted(&self, descending: bool, nulls_last: bool) -> PyResult<bool> {
         let options = SortOptions {
             descending,
-            nulls_last: descending,
+            nulls_last,
             multithreaded: true,
             maintain_order: false,
         };
@@ -691,10 +757,16 @@ impl PySeries {
         self.series.tail(Some(n)).into()
     }
 
-    fn value_counts(&self, sort: bool, parallel: bool) -> PyResult<PyDataFrame> {
+    fn value_counts(
+        &self,
+        sort: bool,
+        parallel: bool,
+        name: String,
+        normalize: bool,
+    ) -> PyResult<PyDataFrame> {
         let out = self
             .series
-            .value_counts(sort, parallel)
+            .value_counts(sort, parallel, name, normalize)
             .map_err(PyPolarsErr::from)?;
         Ok(out.into())
     }

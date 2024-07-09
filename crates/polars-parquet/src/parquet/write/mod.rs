@@ -20,8 +20,10 @@ pub use row_group::ColumnOffsetsMetadata;
 
 use crate::parquet::page::CompressedPage;
 
-pub type RowGroupIter<'a, E> =
-    DynIter<'a, std::result::Result<DynStreamingIterator<'a, CompressedPage, E>, E>>;
+pub type RowGroupIterColumns<'a, E> =
+    DynIter<'a, Result<DynStreamingIterator<'a, CompressedPage, E>, E>>;
+
+pub type RowGroupIter<'a, E> = DynIter<'a, RowGroupIterColumns<'a, E>>;
 
 /// Write options of different interfaces on this crate
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]

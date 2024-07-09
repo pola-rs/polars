@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
 
 import polars as pl
+from polars.exceptions import DuplicateError
 from polars.testing import assert_frame_equal
+from tests.unit.conftest import INTEGER_DTYPES
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 pytestmark = pytest.mark.xdist_group("streaming")
 
@@ -62,7 +67,8 @@ def test_streaming_group_by_types() -> None:
                         pl.col("bool").mean().alias("bool_mean"),
                         pl.col("bool").sum().alias("bool_sum"),
                         pl.col("date").sum().alias("date_sum"),
-                        pl.col("date").mean().alias("date_mean"),
+                        # Date streaming mean/median has been temporarily disabled
+                        # pl.col("date").mean().alias("date_mean"),
                         pl.col("date").first().alias("date_first"),
                         pl.col("date").last().alias("date_last"),
                         pl.col("date").min().alias("date_min"),
@@ -83,7 +89,7 @@ def test_streaming_group_by_types() -> None:
             "bool_mean": pl.Float64,
             "bool_sum": pl.UInt32,
             "date_sum": pl.Date,
-            "date_mean": pl.Date,
+            # "date_mean": pl.Date,
             "date_first": pl.Date,
             "date_last": pl.Date,
             "date_min": pl.Date,
@@ -97,17 +103,18 @@ def test_streaming_group_by_types() -> None:
             "str_sum": [None],
             "bool_first": [True],
             "bool_last": [False],
-            "bool_mean": [None],
+            "bool_mean": [0.5],
             "bool_sum": [1],
-            "date_sum": [date(2074, 1, 1)],
-            "date_mean": [date(2022, 1, 1)],
+            "date_sum": [None],
+            # Date streaming mean/median has been temporarily disabled
+            # "date_mean": [date(2022, 1, 1)],
             "date_first": [date(2022, 1, 1)],
             "date_last": [date(2022, 1, 1)],
             "date_min": [date(2022, 1, 1)],
             "date_max": [date(2022, 1, 1)],
         }
 
-    with pytest.raises(pl.DuplicateError):
+    with pytest.raises(DuplicateError):
         (
             df.lazy()
             .group_by("person_id")
@@ -202,15 +209,17 @@ def random_integers() -> pl.Series:
 
 @pytest.mark.write_disk()
 def test_streaming_group_by_ooc_q1(
-    monkeypatch: Any, random_integers: pl.Series
+    random_integers: pl.Series,
+    tmp_path: Path,
+    monkeypatch: Any,
 ) -> None:
-    s = random_integers
+    tmp_path.mkdir(exist_ok=True)
+    monkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
     monkeypatch.setenv("POLARS_FORCE_OOC", "1")
 
+    lf = random_integers.to_frame().lazy()
     result = (
-        s.to_frame()
-        .lazy()
-        .group_by("a")
+        lf.group_by("a")
         .agg(pl.first("a").alias("a_first"), pl.last("a").alias("a_last"))
         .sort("a")
         .collect(streaming=True)
@@ -228,16 +237,17 @@ def test_streaming_group_by_ooc_q1(
 
 @pytest.mark.write_disk()
 def test_streaming_group_by_ooc_q2(
-    monkeypatch: Any, random_integers: pl.Series
+    random_integers: pl.Series,
+    tmp_path: Path,
+    monkeypatch: Any,
 ) -> None:
-    s = random_integers
+    tmp_path.mkdir(exist_ok=True)
+    monkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
     monkeypatch.setenv("POLARS_FORCE_OOC", "1")
 
+    lf = random_integers.cast(str).to_frame().lazy()
     result = (
-        s.cast(str)
-        .to_frame()
-        .lazy()
-        .group_by("a")
+        lf.group_by("a")
         .agg(pl.first("a").alias("a_first"), pl.last("a").alias("a_last"))
         .sort("a")
         .collect(streaming=True)
@@ -255,15 +265,17 @@ def test_streaming_group_by_ooc_q2(
 
 @pytest.mark.write_disk()
 def test_streaming_group_by_ooc_q3(
-    monkeypatch: Any, random_integers: pl.Series
+    random_integers: pl.Series,
+    tmp_path: Path,
+    monkeypatch: Any,
 ) -> None:
-    s = random_integers
+    tmp_path.mkdir(exist_ok=True)
+    monkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
     monkeypatch.setenv("POLARS_FORCE_OOC", "1")
 
+    lf = pl.LazyFrame({"a": random_integers, "b": random_integers})
     result = (
-        pl.DataFrame({"a": s, "b": s})
-        .lazy()
-        .group_by(["a", "b"])
+        lf.group_by("a", "b")
         .agg(pl.first("a").alias("a_first"), pl.last("a").alias("a_last"))
         .sort("a")
         .collect(streaming=True)
@@ -310,7 +322,7 @@ def test_streaming_group_by_all_numeric_types_stability_8570() -> None:
     dfc = dfa.join(dfb, how="cross")
 
     for keys in [["x", "y"], "z"]:
-        for dtype in [pl.Boolean, *pl.INTEGER_DTYPES]:
+        for dtype in [*INTEGER_DTYPES, pl.Boolean]:
             # the alias checks if the schema is correctly handled
             dfd = (
                 dfc.lazy()
@@ -388,7 +400,7 @@ def test_streaming_restart_non_streamable_group_by() -> None:
         )  # non-streamable UDF + nested_agg
     )
 
-    assert """--- STREAMING""" in res.explain(streaming=True)
+    assert "STREAMING" in res.explain(streaming=True)
 
 
 def test_group_by_min_max_string_type() -> None:
@@ -438,3 +450,72 @@ def test_group_by_multiple_keys_one_literal(streaming: bool) -> None:
         .to_dict(as_series=False)
         == expected
     )
+
+
+def test_streaming_group_null_count() -> None:
+    df = pl.DataFrame({"g": [1] * 6, "a": ["yes", None] * 3}).lazy()
+    assert df.group_by("g").agg(pl.col("a").count()).collect(streaming=True).to_dict(
+        as_series=False
+    ) == {"g": [1], "a": [3]}
+
+
+def test_streaming_group_by_binary_15116() -> None:
+    assert (
+        pl.LazyFrame(
+            {
+                "str": [
+                    "A",
+                    "A",
+                    "BB",
+                    "BB",
+                    "CCCC",
+                    "CCCC",
+                    "DDDDDDDD",
+                    "DDDDDDDD",
+                    "EEEEEEEEEEEEEEEE",
+                    "A",
+                ]
+            }
+        )
+        .select([pl.col("str").cast(pl.Binary)])
+        .group_by(["str"])
+        .agg([pl.len().alias("count")])
+    ).sort("str").collect(streaming=True).to_dict(as_series=False) == {
+        "str": [b"A", b"BB", b"CCCC", b"DDDDDDDD", b"EEEEEEEEEEEEEEEE"],
+        "count": [3, 2, 2, 2, 1],
+    }
+
+
+def test_streaming_group_by_convert_15380(partition_limit: int) -> None:
+    assert (
+        pl.DataFrame({"a": [1] * partition_limit}).group_by(b="a").len()["len"].item()
+        == partition_limit
+    )
+
+
+@pytest.mark.parametrize("streaming", [True, False])
+@pytest.mark.parametrize("n_rows_limit_offset", [-1, +3])
+def test_streaming_group_by_boolean_mean_15610(
+    n_rows_limit_offset: int, streaming: bool, partition_limit: int
+) -> None:
+    n_rows = partition_limit + n_rows_limit_offset
+
+    # Also test non-streaming because it sometimes dispatched to streaming agg.
+    expect = pl.DataFrame({"a": [False, True], "c": [0.0, 0.5]})
+
+    n_repeats = n_rows // 3
+    assert n_repeats > 0
+
+    out = (
+        pl.select(
+            a=pl.repeat([True, False, True], n_repeats).explode(),
+            b=pl.repeat([True, False, False], n_repeats).explode(),
+        )
+        .lazy()
+        .group_by("a")
+        .agg(c=pl.mean("b"))
+        .sort("a")
+        .collect(streaming=streaming)
+    )
+
+    assert_frame_equal(out, expect)

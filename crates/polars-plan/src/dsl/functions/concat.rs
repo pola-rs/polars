@@ -62,7 +62,7 @@ pub fn concat_list<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(s: E) -> PolarsResult
         input: s,
         function: FunctionExpr::ListExpr(ListFunction::Concat),
         options: FunctionOptions {
-            collect_groups: ApplyOptions::GroupWise,
+            collect_groups: ApplyOptions::ElementWise,
             input_wildcard_expansion: true,
             ..Default::default()
         },
@@ -80,9 +80,9 @@ pub fn concat_expr<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(
         input: s,
         function: FunctionExpr::ConcatExpr(rechunk),
         options: FunctionOptions {
-            collect_groups: ApplyOptions::GroupWise,
+            collect_groups: ApplyOptions::ElementWise,
             input_wildcard_expansion: true,
-            cast_to_supertypes: true,
+            cast_to_supertypes: Some(Default::default()),
             ..Default::default()
         },
     })

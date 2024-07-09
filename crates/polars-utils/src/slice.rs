@@ -91,7 +91,7 @@ impl<T> GetSaferUnchecked<T> for [T] {
         if cfg!(debug_assertions) {
             &self[index]
         } else {
-            self.get_unchecked(index)
+            unsafe { self.get_unchecked(index) }
         }
     }
 
@@ -106,7 +106,7 @@ impl<T> GetSaferUnchecked<T> for [T] {
         if cfg!(debug_assertions) {
             &mut self[index]
         } else {
-            self.get_unchecked_mut(index)
+            unsafe { self.get_unchecked_mut(index) }
         }
     }
 }
@@ -120,4 +120,28 @@ impl<T> Slice2Uninit<T> for [T] {
     fn as_uninit(&self) -> &[MaybeUninit<T>] {
         unsafe { std::slice::from_raw_parts(self.as_ptr() as *const MaybeUninit<T>, self.len()) }
     }
+}
+
+// Loads a u64 from the given byteslice, as if it were padded with zeros.
+#[inline]
+pub fn load_padded_le_u64(bytes: &[u8]) -> u64 {
+    let len = bytes.len();
+    if len >= 8 {
+        return u64::from_le_bytes(bytes[0..8].try_into().unwrap());
+    }
+
+    if len >= 4 {
+        let lo = u32::from_le_bytes(bytes[0..4].try_into().unwrap());
+        let hi = u32::from_le_bytes(bytes[len - 4..len].try_into().unwrap());
+        return (lo as u64) | ((hi as u64) << (8 * (len - 4)));
+    }
+
+    if len == 0 {
+        return 0;
+    }
+
+    let lo = bytes[0] as u64;
+    let mid = (bytes[len / 2] as u64) << (8 * (len / 2));
+    let hi = (bytes[len - 1] as u64) << (8 * (len - 1));
+    lo | mid | hi
 }

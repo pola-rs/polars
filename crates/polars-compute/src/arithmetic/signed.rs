@@ -1,34 +1,31 @@
 use arrow::array::{PrimitiveArray as PArr, StaticArray};
 use arrow::compute::utils::{combine_validities_and, combine_validities_and3};
-use polars_utils::signed_divmod::SignedDivMod;
+use polars_utils::floor_divmod::FloorDivMod;
 use strength_reduce::*;
 
 use super::PrimitiveArithmeticKernelImpl;
 use crate::arity::{prim_binary_values, prim_unary_values};
-use crate::comparisons::TotalOrdKernel;
+use crate::comparisons::TotalEqKernel;
 
 macro_rules! impl_signed_arith_kernel {
-    ($T:ty, $U:ty, $StrRed:ty) => {
+    ($T:ty, $StrRed:ty) => {
         impl PrimitiveArithmeticKernelImpl for $T {
             type TrueDivT = f64;
 
+            fn prim_wrapping_abs(lhs: PArr<$T>) -> PArr<$T> {
+                prim_unary_values(lhs, |x| x.wrapping_abs())
+            }
+
             fn prim_wrapping_neg(lhs: PArr<$T>) -> PArr<$T> {
-                // Wrapping signed and unsigned addition/subtraction are the same.
-                <$U>::prim_wrapping_neg(lhs.transmute::<$U>()).transmute::<$T>()
+                prim_unary_values(lhs, |x| x.wrapping_neg())
             }
 
             fn prim_wrapping_add(lhs: PArr<$T>, other: PArr<$T>) -> PArr<$T> {
-                // Wrapping signed and unsigned addition/subtraction are the same.
-                let lhs = lhs.transmute::<$U>();
-                let rhs = other.transmute::<$U>();
-                <$U>::prim_wrapping_add(lhs, rhs).transmute::<$T>()
+                prim_binary_values(lhs, other, |a, b| a.wrapping_add(b))
             }
 
             fn prim_wrapping_sub(lhs: PArr<$T>, other: PArr<$T>) -> PArr<$T> {
-                // Wrapping signed and unsigned addition/subtraction are the same.
-                let lhs = lhs.transmute::<$U>();
-                let rhs = other.transmute::<$U>();
-                <$U>::prim_wrapping_sub(lhs, rhs).transmute::<$T>()
+                prim_binary_values(lhs, other, |a, b| a.wrapping_sub(b))
             }
 
             fn prim_wrapping_mul(lhs: PArr<$T>, other: PArr<$T>) -> PArr<$T> {
@@ -42,7 +39,8 @@ macro_rules! impl_signed_arith_kernel {
                     other.take_validity().as_ref(), // compute combination twice.
                     Some(&mask),
                 );
-                let ret = prim_binary_values(lhs, other, |lhs, rhs| lhs.wrapping_div_mod(rhs).0);
+                let ret =
+                    prim_binary_values(lhs, other, |lhs, rhs| lhs.wrapping_floor_div_mod(rhs).0);
                 ret.with_validity(valid)
             }
 
@@ -70,29 +68,21 @@ macro_rules! impl_signed_arith_kernel {
                     other.take_validity().as_ref(), // compute combination twice.
                     Some(&mask),
                 );
-                let ret = prim_binary_values(lhs, other, |lhs, rhs| lhs.wrapping_div_mod(rhs).1);
+                let ret =
+                    prim_binary_values(lhs, other, |lhs, rhs| lhs.wrapping_floor_div_mod(rhs).1);
                 ret.with_validity(valid)
             }
 
             fn prim_wrapping_add_scalar(lhs: PArr<$T>, rhs: $T) -> PArr<$T> {
-                // Wrapping signed and unsigned addition/subtraction are the same.
-                let lhs = lhs.transmute::<$U>();
-                let rhs = rhs as $U;
-                <$U>::prim_wrapping_add_scalar(lhs, rhs).transmute::<$T>()
+                prim_unary_values(lhs, |x| x.wrapping_add(rhs))
             }
 
             fn prim_wrapping_sub_scalar(lhs: PArr<$T>, rhs: $T) -> PArr<$T> {
-                // Wrapping signed and unsigned addition/subtraction are the same.
-                let lhs = lhs.transmute::<$U>();
-                let rhs = rhs as $U;
-                <$U>::prim_wrapping_sub_scalar(lhs, rhs).transmute::<$T>()
+                Self::prim_wrapping_add_scalar(lhs, rhs.wrapping_neg())
             }
 
             fn prim_wrapping_sub_scalar_lhs(lhs: $T, rhs: PArr<$T>) -> PArr<$T> {
-                // Wrapping signed and unsigned addition/subtraction are the same.
-                let lhs = lhs as $U;
-                let rhs = rhs.transmute::<$U>();
-                <$U>::prim_wrapping_sub_scalar_lhs(lhs, rhs).transmute::<$T>()
+                prim_unary_values(rhs, |x| lhs.wrapping_sub(x))
             }
 
             fn prim_wrapping_mul_scalar(lhs: PArr<$T>, rhs: $T) -> PArr<$T> {
@@ -149,7 +139,7 @@ macro_rules! impl_signed_arith_kernel {
 
                 let mask = rhs.tot_ne_kernel_broadcast(&0);
                 let valid = combine_validities_and(rhs.validity(), Some(&mask));
-                let ret = prim_unary_values(rhs, |x| lhs.wrapping_div_mod(x).0);
+                let ret = prim_unary_values(rhs, |x| lhs.wrapping_floor_div_mod(x).0);
                 ret.with_validity(valid)
             }
 
@@ -221,7 +211,7 @@ macro_rules! impl_signed_arith_kernel {
 
                 let mask = rhs.tot_ne_kernel_broadcast(&0);
                 let valid = combine_validities_and(rhs.validity(), Some(&mask));
-                let ret = prim_unary_values(rhs, |x| lhs.wrapping_div_mod(x).1);
+                let ret = prim_unary_values(rhs, |x| lhs.wrapping_floor_div_mod(x).1);
                 ret.with_validity(valid)
             }
 
@@ -241,8 +231,8 @@ macro_rules! impl_signed_arith_kernel {
     };
 }
 
-impl_signed_arith_kernel!(i8, u8, StrengthReducedU8);
-impl_signed_arith_kernel!(i16, u16, StrengthReducedU16);
-impl_signed_arith_kernel!(i32, u32, StrengthReducedU32);
-impl_signed_arith_kernel!(i64, u64, StrengthReducedU64);
-impl_signed_arith_kernel!(i128, u128, StrengthReducedU128);
+impl_signed_arith_kernel!(i8, StrengthReducedU8);
+impl_signed_arith_kernel!(i16, StrengthReducedU16);
+impl_signed_arith_kernel!(i32, StrengthReducedU32);
+impl_signed_arith_kernel!(i64, StrengthReducedU64);
+impl_signed_arith_kernel!(i128, StrengthReducedU128);

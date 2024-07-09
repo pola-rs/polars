@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "0.20.6"
+version = "1.1.0"
 edition = "2021"
 
 [lib]
@@ -10,22 +10,31 @@ crate-type = ["cdylib"]
 [dependencies]
 polars-core = { workspace = true, features = ["python"] }
 polars-error = { workspace = true }
+polars-io = { workspace = true }
 polars-lazy = { workspace = true, features = ["python"] }
 polars-ops = { workspace = true }
 polars-parquet = { workspace = true, optional = true }
 polars-plan = { workspace = true }
+polars-time = { workspace = true }
 polars-utils = { workspace = true }
 
+# TODO! remove this once truly activated. This is required to make sdist building work
+polars-stream = { workspace = true }
+
 ahash = { workspace = true }
+arboard = { workspace = true, optional = true }
 ciborium = { workspace = true }
 either = { workspace = true }
 itoa = { workspace = true }
 libc = "0.2"
 ndarray = { workspace = true }
-numpy = { version = "0.20", default-features = false }
+num-traits = { workspace = true }
+# TODO: Pin to released version once NumPy 2.0 support is merged
+# https://github.com/PyO3/rust-numpy/issues/409
+numpy = { git = "https://github.com/stinodego/rust-numpy.git", rev = "9ba9962ae57ba26e35babdce6f179edf5fe5b9c8", default-features = false }
 once_cell = { workspace = true }
-pyo3 = { workspace = true, features = ["abi3-py38", "extension-module", "multiple-pymethods"] }
-pyo3-built = { version = "0.4", optional = true }
+pyo3 = { workspace = true, features = ["abi3-py38", "chrono", "extension-module", "multiple-pymethods"] }
+recursive = { workspace = true }
 serde_json = { workspace = true, optional = true }
 smartstring = { workspace = true }
 thiserror = { workspace = true }
@@ -36,11 +45,14 @@ features = [
   "abs",
   "approx_unique",
   "arg_where",
+  "business",
   "concat_str",
   "cum_agg",
   "cumulative_eval",
   "dataframe_arithmetic",
-  "date_offset",
+  "month_start",
+  "month_end",
+  "offset_by",
   "diagonal_concat",
   "diff",
   "dot_diagram",
@@ -49,8 +61,10 @@ features = [
   "dtype-full",
   "dynamic_group_by",
   "ewma",
+  "ewma_by",
   "fmt",
   "interpolate",
+  "interpolate_by",
   "is_first_distinct",
   "is_last_distinct",
   "is_unique",
@@ -58,6 +72,7 @@ features = [
   "lazy",
   "list_eval",
   "list_to_struct",
+  "array_to_struct",
   "log",
   "mode",
   "moment",
@@ -70,6 +85,7 @@ features = [
   "reinterpret",
   "replace",
   "rolling_window",
+  "rolling_window_by",
   "round_series",
   "row_hash",
   "rows",
@@ -91,19 +107,14 @@ features = [
 [build-dependencies]
 built = { version = "0.7", features = ["chrono", "git2", "cargo-lock"], optional = true }
 
-[target.'cfg(any(not(target_family = "unix"), use_mimalloc))'.dependencies]
+[target.'cfg(all(any(not(target_family = "unix"), allocator = "mimalloc"), not(allocator = "default")))'.dependencies]
 mimalloc = { version = "0.1", default-features = false }
 
-[target.'cfg(all(target_family = "unix", not(use_mimalloc)))'.dependencies]
+[target.'cfg(all(target_family = "unix", not(allocator = "mimalloc"), not(allocator = "default")))'.dependencies]
 jemallocator = { version = "0.5", features = ["disable_initial_exec_tls"] }
 
-# features are only there to enable building a slim binary for the benchmark in CI
 [features]
-# needed for macro
-dtype-i8 = []
-dtype-i16 = []
-dtype-u8 = []
-dtype-u16 = []
+# Features below are only there to enable building a slim binary during development.
 avro = ["polars/avro"]
 parquet = ["polars/parquet", "polars-parquet"]
 ipc = ["polars/ipc"]
@@ -124,13 +135,13 @@ search_sorted = ["polars/search_sorted"]
 decompress = ["polars/decompress-fast"]
 regex = ["polars/regex"]
 csv = ["polars/csv"]
-object = ["polars/object"]
+clipboard = ["arboard"]
 extract_jsonpath = ["polars/extract_jsonpath"]
 pivot = ["polars/pivot"]
 top_k = ["polars/top_k"]
 propagate_nans = ["polars/propagate_nans"]
 sql = ["polars/sql"]
-build_info = ["dep:pyo3-built", "dep:built"]
+build_info = ["dep:built"]
 performant = ["polars/performant"]
 timezones = ["polars/timezones"]
 cse = ["polars/cse"]
@@ -152,13 +163,21 @@ cloud = ["polars/cloud", "polars/aws", "polars/gcp", "polars/azure", "polars/htt
 peaks = ["polars/peaks"]
 hist = ["polars/hist"]
 find_many = ["polars/find_many"]
+new_streaming = ["polars-lazy/new_streaming"]
+
+dtype-i8 = []
+dtype-i16 = []
+dtype-u8 = []
+dtype-u16 = []
+dtype-array = []
+object = ["polars/object"]
 
 dtypes = [
-  "dtype-i8",
+  "dtype-array",
   "dtype-i16",
-  "dtype-u8",
+  "dtype-i8",
   "dtype-u16",
-  "polars/group_by_list",
+  "dtype-u8",
   "object",
 ]
 
@@ -202,6 +221,7 @@ io = [
   "avro",
   "csv",
   "cloud",
+  "clipboard",
 ]
 
 optimizations = [
@@ -222,6 +242,7 @@ all = [
   "sql",
   "binary_encoding",
   "ffi_plugin",
+  # "new_streaming",
 ]
 
 # we cannot conditionally activate simd

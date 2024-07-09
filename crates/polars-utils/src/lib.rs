@@ -2,16 +2,20 @@
 pub mod abs_diff;
 pub mod arena;
 pub mod atomic;
+pub mod binary_search;
 pub mod cache;
 pub mod cell;
+pub mod clmul;
 pub mod contention_pool;
+pub mod cpuid;
 mod error;
+pub mod floor_divmod;
 pub mod functions;
 pub mod hashing;
 pub mod idx_vec;
 pub mod mem;
 pub mod min_max;
-pub mod signed_divmod;
+pub mod priority;
 pub mod slice;
 pub mod sort;
 pub mod sync;
@@ -22,12 +26,8 @@ pub mod unwrap;
 
 pub use functions::*;
 
-#[cfg(not(feature = "bigidx"))]
-pub type IdxSize = u32;
-#[cfg(feature = "bigidx")]
-pub type IdxSize = u64;
-
 pub mod aliases;
+pub mod fixedringbuffer;
 pub mod fmt;
 pub mod iter;
 pub mod macros;
@@ -40,5 +40,7 @@ pub mod index;
 pub mod io;
 pub mod nulls;
 pub mod ord;
+pub mod partitioned;
 
-pub use io::open_file;
+pub use index::{IdxSize, NullableIdxSize};
+pub use io::*;

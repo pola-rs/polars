@@ -5,10 +5,9 @@ from datetime import time
 from typing import TYPE_CHECKING, overload
 
 from polars import functions as F
+from polars._utils.parse import parse_into_expression
+from polars._utils.wrap import wrap_expr
 from polars.functions.range._utils import parse_interval_argument
-from polars.utils._parse_expr_input import parse_as_expression
-from polars.utils._wrap import wrap_expr
-from polars.utils.deprecation import deprecate_saturating
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -18,7 +17,7 @@ if TYPE_CHECKING:
     from typing import Literal
 
     from polars import Expr, Series
-    from polars.type_aliases import ClosedInterval, IntoExprColumn
+    from polars._typing import ClosedInterval, IntoExprColumn
 
 
 @overload
@@ -29,8 +28,7 @@ def time_range(
     *,
     closed: ClosedInterval = ...,
     eager: Literal[False] = ...,
-) -> Expr:
-    ...
+) -> Expr: ...
 
 
 @overload
@@ -41,8 +39,7 @@ def time_range(
     *,
     closed: ClosedInterval = ...,
     eager: Literal[True],
-) -> Series:
-    ...
+) -> Series: ...
 
 
 @overload
@@ -53,8 +50,7 @@ def time_range(
     *,
     closed: ClosedInterval = ...,
     eager: bool,
-) -> Series | Expr:
-    ...
+) -> Series | Expr: ...
 
 
 def time_range(
@@ -134,8 +130,6 @@ def time_range(
         23:45:00
     ]
     """
-    interval = deprecate_saturating(interval)
-
     interval = parse_interval_argument(interval)
     for unit in ("y", "mo", "w", "d"):
         if unit in interval:
@@ -147,8 +141,8 @@ def time_range(
     if end is None:
         end = time(23, 59, 59, 999999)
 
-    start_pyexpr = parse_as_expression(start)
-    end_pyexpr = parse_as_expression(end)
+    start_pyexpr = parse_into_expression(start)
+    end_pyexpr = parse_into_expression(end)
 
     result = wrap_expr(plr.time_range(start_pyexpr, end_pyexpr, interval, closed))
 
@@ -166,8 +160,7 @@ def time_ranges(
     *,
     closed: ClosedInterval = ...,
     eager: Literal[False] = ...,
-) -> Expr:
-    ...
+) -> Expr: ...
 
 
 @overload
@@ -178,8 +171,7 @@ def time_ranges(
     *,
     closed: ClosedInterval = ...,
     eager: Literal[True],
-) -> Series:
-    ...
+) -> Series: ...
 
 
 @overload
@@ -190,8 +182,7 @@ def time_ranges(
     *,
     closed: ClosedInterval = ...,
     eager: bool,
-) -> Series | Expr:
-    ...
+) -> Series | Expr: ...
 
 
 def time_ranges(
@@ -274,7 +265,6 @@ def time_ranges(
     │ 10:00:00 ┆ 11:00:00 ┆ [10:00:00, 11:00:00]           │
     └──────────┴──────────┴────────────────────────────────┘
     """
-    interval = deprecate_saturating(interval)
     interval = parse_interval_argument(interval)
     for unit in ("y", "mo", "w", "d"):
         if unit in interval:
@@ -286,8 +276,8 @@ def time_ranges(
     if end is None:
         end = time(23, 59, 59, 999999)
 
-    start_pyexpr = parse_as_expression(start)
-    end_pyexpr = parse_as_expression(end)
+    start_pyexpr = parse_into_expression(start)
+    end_pyexpr = parse_into_expression(end)
 
     result = wrap_expr(plr.time_ranges(start_pyexpr, end_pyexpr, interval, closed))
 

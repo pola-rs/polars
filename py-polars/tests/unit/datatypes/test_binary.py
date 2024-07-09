@@ -16,7 +16,7 @@ def test_binary_filter() -> None:
 
 
 def test_binary_to_list() -> None:
-    data = {"binary": [b"\xFD\x00\xFE\x00\xFF\x00", b"\x10\x00\x20\x00\x30\x00"]}
+    data = {"binary": [b"\xfd\x00\xfe\x00\xff\x00", b"\x10\x00\x20\x00\x30\x00"]}
     schema = {"binary": pl.Binary}
 
     print(pl.DataFrame(data, schema))
@@ -35,5 +35,5 @@ def test_binary_to_list() -> None:
 def test_string_to_binary() -> None:
     s = pl.Series("data", ["", None, "\x01\x02"])
 
-    assert [b"", None, b"\x01\x02"] == s.cast(pl.Binary).to_list()
-    assert ["", None, "\x01\x02"] == s.cast(pl.Binary).cast(pl.Utf8).to_list()
+    assert s.cast(pl.Binary).to_list() == [b"", None, b"\x01\x02"]
+    assert s.cast(pl.Binary).cast(pl.Utf8).to_list() == ["", None, "\x01\x02"]

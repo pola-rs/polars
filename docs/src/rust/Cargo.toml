@@ -10,7 +10,8 @@ description = "Code examples included in the Polars documentation website"
 
 [dependencies]
 aws-config = { version = "1" }
-aws-sdk-s3 = { version = "1" }
+aws-sdk-s3 = { version = "=1.31" } # Exact version because of https://github.com/smithy-lang/smithy-rs/issues/3672
+aws-smithy-checksums = { version = "=0.60.8" } # Exact version because of https://github.com/smithy-lang/smithy-rs/issues/3672
 chrono = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true, features = ["blocking"] }
@@ -25,16 +26,19 @@ path = "home/example.rs"
 required-features = ["polars/lazy"]
 
 [[bin]]
-name = "user-guide-basics-expressions"
-path = "user-guide/basics/expressions.rs"
+name = "user-guide-getting-started-expressions"
+path = "user-guide/getting-started/expressions.rs"
 required-features = ["polars/lazy"]
 [[bin]]
-name = "user-guide-basics-joins"
-path = "user-guide/basics/joins.rs"
+name = "user-guide-getting-started-joins"
+path = "user-guide/getting-started/joins.rs"
 [[bin]]
-name = "user-guide-basics-reading-writing"
-path = "user-guide/basics/reading-writing.rs"
+name = "user-guide-getting-started-reading-writing"
+path = "user-guide/getting-started/reading-writing.rs"
 required-features = ["polars/json"]
+[[bin]]
+name = "user-guide-concepts-data-structures"
+path = "user-guide/concepts/data-structures.rs"
 
 [[bin]]
 name = "user-guide-concepts-contexts"
@@ -78,8 +82,8 @@ name = "user-guide-expressions-lists"
 path = "user-guide/expressions/lists.rs"
 required-features = ["polars/lazy"]
 [[bin]]
-name = "user-guide-expressions-null"
-path = "user-guide/expressions/null.rs"
+name = "user-guide-expressions-missing-data"
+path = "user-guide/expressions/missing-data.rs"
 required-features = ["polars/lazy"]
 [[bin]]
 name = "user-guide-expressions-operators"
@@ -128,8 +132,8 @@ name = "user-guide-transformations-joins"
 path = "user-guide/transformations/joins.rs"
 required-features = ["polars/lazy"]
 [[bin]]
-name = "user-guide-transformations-melt"
-path = "user-guide/transformations/melt.rs"
+name = "user-guide-transformations-unpivot"
+path = "user-guide/transformations/unpivot.rs"
 [[bin]]
 name = "user-guide-transformations-pivot"
 path = "user-guide/transformations/pivot.rs"

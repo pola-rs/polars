@@ -13,6 +13,7 @@ pub fn all_keywords() -> Vec<&'static str> {
     let mut keywords = vec![];
     keywords.extend_from_slice(PolarsTableFunctions::keywords());
     keywords.extend_from_slice(PolarsSQLFunctions::keywords());
+
     use sqlparser::keywords;
     let sql_keywords = &[
         keywords::AND,
@@ -30,6 +31,7 @@ pub fn all_keywords() -> Vec<&'static str> {
         keywords::DISTINCT,
         keywords::DOUBLE,
         keywords::DROP,
+        keywords::EXCEPT,
         keywords::EXCLUDE,
         keywords::FLOAT,
         keywords::FROM,
@@ -39,6 +41,8 @@ pub fn all_keywords() -> Vec<&'static str> {
         keywords::IN,
         keywords::INNER,
         keywords::INT,
+        keywords::INTERSECT,
+        keywords::INTERVAL,
         keywords::JOIN,
         keywords::LEFT,
         keywords::LIMIT,
@@ -50,6 +54,8 @@ pub fn all_keywords() -> Vec<&'static str> {
         keywords::ORDER,
         keywords::OUTER,
         keywords::REGEXP,
+        keywords::RENAME,
+        keywords::REPLACE,
         keywords::RIGHT,
         keywords::RLIKE,
         keywords::SELECT,
@@ -59,6 +65,8 @@ pub fn all_keywords() -> Vec<&'static str> {
         keywords::TABLES,
         keywords::THEN,
         keywords::TIME,
+        keywords::TRUNCATE,
+        keywords::UNION,
         keywords::USING,
         keywords::VARCHAR,
         keywords::WHEN,

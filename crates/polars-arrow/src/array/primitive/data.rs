@@ -14,7 +14,7 @@ impl<T: NativeType> Arrow2Arrow for PrimitiveArray<T> {
             .buffers(vec![self.values.clone().into()])
             .nulls(self.validity.as_ref().map(|b| b.clone().into()));
 
-        // Safety: Array is valid
+        // SAFETY: Array is valid
         unsafe { builder.build_unchecked() }
     }
 

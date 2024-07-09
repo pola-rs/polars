@@ -32,17 +32,21 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-          cache: pip
-          cache-dependency-path: py-polars/docs/requirements-docs.txt
+
+      - name: Create virtual environment
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          uv venv
+          echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
+          echo "VIRTUAL_ENV=$GITHUB_WORKSPACE/.venv" >> $GITHUB_ENV
 
       - name: Install Python dependencies
         working-directory: py-polars/docs
-        run: pip install -r requirements-docs.txt
+        run: uv pip install -r requirements-docs.txt
 
       - name: Build Python documentation
         working-directory: py-polars/docs
         env:
-          SPHINXOPTS: -W --jobs=auto
           POLARS_VERSION: ${{ github.event.client_payload.tag || 'main' }}
         run: make html
 
@@ -51,16 +55,16 @@ jobs:
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           folder: py-polars/docs/build/html
-          target-folder: docs/python/dev
+          target-folder: api/python/dev
           single-commit: true
 
-      - name: Parse the tag to find the major/minor version of Polars
+      - name: Parse the tag to find the major version of Polars
         id: version
         if: github.event_name == 'repository_dispatch'
         shell: bash
         run: |
           tag="${{ github.event.client_payload.tag }}"
-          regex="py-([0-9]+\.[0-9]+)\.[0-9]+.*"
+          regex="py-([0-9]+)\.[0-9]+\.[0-9]+.*"
           [[ $tag =~ $regex ]]
           version=${BASH_REMATCH[1]}
           echo "version=$version" >> "$GITHUB_OUTPUT"
@@ -70,14 +74,13 @@ jobs:
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           folder: py-polars/docs/build/html
-          target-folder: docs/python/version/${{ steps.version.outputs.version }}
+          target-folder: api/python/version/${{ steps.version.outputs.version }}
           single-commit: true
 
       - name: Deploy Python docs for latest release version - stable
-        if: github.event_name == 'repository_dispatch'
+        if: github.event_name == 'repository_dispatch' && github.event.client_payload.is_prerelease == 'false'
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           folder: py-polars/docs/build/html
-          # Keeping this folder for backwards compatibility
-          target-folder: py-polars/html
+          target-folder: api/python/stable
           single-commit: true

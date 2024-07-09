@@ -16,7 +16,7 @@ impl StringChunked {
         assert_eq!(self.chunks.len(), 1);
         let arr = &*self.chunks[0];
 
-        // Safety:
+        // SAFETY:
         // guarded by the type system
         let arr = unsafe { &*(arr as *const dyn Array as *const Utf8ViewArray) };
         (0..arr.len())
@@ -26,7 +26,7 @@ impl StringChunked {
 
     pub fn par_iter(&self) -> impl ParallelIterator<Item = Option<&str>> + '_ {
         self.chunks.par_iter().flat_map(move |arr| {
-            // Safety:
+            // SAFETY:
             // guarded by the type system
             let arr = &**arr;
             let arr = unsafe { &*(arr as *const dyn Array as *const Utf8ViewArray) };

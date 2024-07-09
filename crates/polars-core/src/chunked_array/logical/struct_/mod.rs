@@ -9,10 +9,10 @@ use arrow::legacy::trusted_len::TrustedLenPush;
 use arrow::offset::OffsetsBuffer;
 use smartstring::alias::String as SmartString;
 
-use self::sort::arg_sort_multiple::_get_rows_encoded_ca;
 use super::*;
 use crate::chunked_array::iterator::StructIter;
 use crate::datatypes::*;
+use crate::prelude::sort::arg_sort_multiple::_get_rows_encoded_ca_unordered;
 use crate::utils::index_to_chunked_index;
 
 /// This is logical type [`StructChunked`] that
@@ -48,12 +48,12 @@ fn fields_to_struct_array(fields: &[Series], physical: bool) -> (ArrayRef, Vec<S
             let s = s.rechunk();
             match s.dtype() {
                 #[cfg(feature = "object")]
-                DataType::Object(_, _) => s.to_arrow(0, true),
+                DataType::Object(_, _) => s.to_arrow(0, CompatLevel::newest()),
                 _ => {
                     if physical {
                         s.chunks()[0].clone()
                     } else {
-                        s.to_arrow(0, true)
+                        s.to_arrow(0, CompatLevel::newest())
                     }
                 },
             }
@@ -145,7 +145,7 @@ impl StructChunked {
                 .iter()
                 .map(|s| match s.dtype() {
                     #[cfg(feature = "object")]
-                    DataType::Object(_, _) => s.to_arrow(i, true),
+                    DataType::Object(_, _) => s.to_arrow(i, CompatLevel::newest()),
                     _ => s.chunks()[i].clone(),
                 })
                 .collect::<Vec<_>>();
@@ -274,7 +274,7 @@ impl StructChunked {
 
     pub(crate) fn try_apply_fields<F>(&self, func: F) -> PolarsResult<Self>
     where
-        F: Fn(&Series) -> PolarsResult<Series>,
+        F: FnMut(&Series) -> PolarsResult<Series>,
     {
         let fields = self
             .fields
@@ -284,7 +284,7 @@ impl StructChunked {
         Ok(Self::new_unchecked(self.field.name(), &fields))
     }
 
-    pub(crate) fn apply_fields<F>(&self, func: F) -> Self
+    pub fn _apply_fields<F>(&self, func: F) -> Self
     where
         F: FnMut(&Series) -> Series,
     {
@@ -295,11 +295,11 @@ impl StructChunked {
         self.into()
     }
 
-    pub(crate) fn to_arrow(&self, i: usize, pl_flavor: bool) -> ArrayRef {
+    pub(crate) fn to_arrow(&self, i: usize, compat_level: CompatLevel) -> ArrayRef {
         let values = self
             .fields
             .iter()
-            .map(|s| s.to_arrow(i, pl_flavor))
+            .map(|s| s.to_arrow(i, compat_level))
             .collect::<Vec<_>>();
 
         // we determine fields from arrays as there might be object arrays
@@ -312,7 +312,12 @@ impl StructChunked {
         ))
     }
 
-    unsafe fn cast_impl(&self, dtype: &DataType, unchecked: bool) -> PolarsResult<Series> {
+    unsafe fn cast_impl(
+        &self,
+        dtype: &DataType,
+        cast_options: CastOptions,
+        unchecked: bool,
+    ) -> PolarsResult<Series> {
         match dtype {
             DataType::Struct(dtype_fields) => {
                 let map = BTreeMap::from_iter(self.fields().iter().map(|s| (s.name(), s)));
@@ -324,7 +329,7 @@ impl StructChunked {
                             if unchecked {
                                 s.cast_unchecked(&new_field.dtype)
                             } else {
-                                s.cast(&new_field.dtype)
+                                s.cast_with_options(&new_field.dtype, cast_options)
                             }
                         },
                         None => Ok(Series::full_null(
@@ -349,7 +354,7 @@ impl StructChunked {
 
                 let mut length_so_far = 0_i64;
                 unsafe {
-                    // safety: we have pre-allocated
+                    // SAFETY: we have pre-allocated
                     offsets.push_unchecked(length_so_far);
                 }
                 for row in 0..ca.len() {
@@ -366,7 +371,7 @@ impl StructChunked {
                     unsafe {
                         *values.last_mut().unwrap_unchecked() = b'}';
 
-                        // safety: we have pre-allocated
+                        // SAFETY: we have pre-allocated
                         length_so_far = values.len() as i64;
                         offsets.push_unchecked(length_so_far);
                     }
@@ -398,7 +403,7 @@ impl StructChunked {
                         if unchecked {
                             s.cast_unchecked(dtype)
                         } else {
-                            s.cast(dtype)
+                            s.cast_with_options(dtype, cast_options)
                         }
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
@@ -411,12 +416,11 @@ impl StructChunked {
         if dtype == self.dtype() {
             return Ok(self.clone().into_series());
         }
-        self.cast_impl(dtype, true)
+        self.cast_impl(dtype, CastOptions::Overflowing, true)
     }
 
     pub fn rows_encode(&self) -> PolarsResult<BinaryOffsetChunked> {
-        let descending = vec![false; self.fields.len()];
-        _get_rows_encoded_ca(self.name(), &self.fields, &descending, false)
+        _get_rows_encoded_ca_unordered(self.name(), &self.fields)
     }
 
     pub fn iter(&self) -> StructIter {
@@ -438,7 +442,7 @@ impl LogicalType for StructChunked {
     unsafe fn get_any_value_unchecked(&self, i: usize) -> AnyValue<'_> {
         let (chunk_idx, idx) = index_to_chunked_index(self.chunks.iter().map(|c| c.len()), i);
         if let DataType::Struct(flds) = self.dtype() {
-            // safety: we already have a single chunk and we are
+            // SAFETY: we already have a single chunk and we are
             // guarded by the type system.
             unsafe {
                 let arr = &**self.chunks.get_unchecked(chunk_idx);
@@ -451,8 +455,12 @@ impl LogicalType for StructChunked {
     }
 
     // in case of a struct, a cast will coerce the inner types
-    fn cast(&self, dtype: &DataType) -> PolarsResult<Series> {
-        unsafe { self.cast_impl(dtype, false) }
+    fn cast_with_options(
+        &self,
+        dtype: &DataType,
+        cast_options: CastOptions,
+    ) -> PolarsResult<Series> {
+        unsafe { self.cast_impl(dtype, cast_options, false) }
     }
 }
 

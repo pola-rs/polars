@@ -1,4 +1,3 @@
-use super::function_expr::BinaryFunction;
 use super::*;
 /// Specialized expressions for [`Series`] of [`DataType::String`].
 pub struct BinaryNameSpace(pub(crate) Expr);

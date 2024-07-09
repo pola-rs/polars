@@ -15,7 +15,7 @@ impl<O: Offset> Arrow2Arrow for Utf8Array<O> {
             ])
             .nulls(self.validity.as_ref().map(|b| b.clone().into()));
 
-        // Safety: Array is valid
+        // SAFETY: Array is valid
         unsafe { builder.build_unchecked() }
     }
 
@@ -28,7 +28,7 @@ impl<O: Offset> Arrow2Arrow for Utf8Array<O> {
 
         let buffers = data.buffers();
 
-        // Safety: ArrayData is valid
+        // SAFETY: ArrayData is valid
         let mut offsets = unsafe { OffsetsBuffer::new_unchecked(buffers[0].clone().into()) };
         offsets.slice(data.offset(), data.len() + 1);
 

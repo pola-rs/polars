@@ -1,13 +1,13 @@
 use std::io::Cursor;
 use std::sync::Arc;
 
-use arrow::legacy::error::PolarsResult;
 use polars_core::datatypes::{DataType, Field};
 use polars_core::error::*;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::Series;
-use pyo3::types::{PyBytes, PyModule};
-use pyo3::{PyErr, PyObject, Python};
+use pyo3::prelude::*;
+use pyo3::pybacked::PyBackedBytes;
+use pyo3::types::PyBytes;
 #[cfg(feature = "serde")]
 use serde::ser::Error;
 #[cfg(feature = "serde")]
@@ -57,8 +57,8 @@ impl Serialize for PythonFunction {
         S: Serializer,
     {
         Python::with_gil(|py| {
-            let pickle = PyModule::import(py, "cloudpickle")
-                .or(PyModule::import(py, "pickle"))
+            let pickle = PyModule::import_bound(py, "cloudpickle")
+                .or_else(|_| PyModule::import_bound(py, "pickle"))
                 .expect("Unable to import 'cloudpickle' or 'pickle'")
                 .getattr("dumps")
                 .unwrap();
@@ -68,9 +68,9 @@ impl Serialize for PythonFunction {
             let dumped = pickle
                 .call1((python_function,))
                 .map_err(|s| S::Error::custom(format!("cannot pickle {s}")))?;
-            let dumped = dumped.extract::<&PyBytes>().unwrap();
+            let dumped = dumped.extract::<PyBackedBytes>().unwrap();
 
-            serializer.serialize_bytes(dumped.as_bytes())
+            serializer.serialize_bytes(&dumped)
         })
     }
 }
@@ -85,12 +85,12 @@ impl<'a> Deserialize<'a> for PythonFunction {
         let bytes = Vec::<u8>::deserialize(deserializer)?;
 
         Python::with_gil(|py| {
-            let pickle = PyModule::import(py, "cloudpickle")
-                .or(PyModule::import(py, "pickle"))
+            let pickle = PyModule::import_bound(py, "cloudpickle")
+                .or_else(|_| PyModule::import_bound(py, "pickle"))
                 .expect("Unable to import 'pickle'")
                 .getattr("loads")
                 .unwrap();
-            let arg = (PyBytes::new(py, &bytes),);
+            let arg = (PyBytes::new_bound(py, &bytes),);
             let python_function = pickle
                 .call1(arg)
                 .map_err(|s| D::Error::custom(format!("cannot pickle {s}")))?;
@@ -104,14 +104,21 @@ pub struct PythonUdfExpression {
     python_function: PyObject,
     output_type: Option<DataType>,
     is_elementwise: bool,
+    returns_scalar: bool,
 }
 
 impl PythonUdfExpression {
-    pub fn new(lambda: PyObject, output_type: Option<DataType>, is_elementwise: bool) -> Self {
+    pub fn new(
+        lambda: PyObject,
+        output_type: Option<DataType>,
+        is_elementwise: bool,
+        returns_scalar: bool,
+    ) -> Self {
         Self {
             python_function: lambda,
             output_type,
             is_elementwise,
+            returns_scalar,
         }
     }
 
@@ -121,23 +128,24 @@ impl PythonUdfExpression {
         // skip header
         let buf = &buf[MAGIC_BYTE_MARK.len()..];
         let mut reader = Cursor::new(buf);
-        let (output_type, is_elementwise): (Option<DataType>, bool) =
+        let (output_type, is_elementwise, returns_scalar): (Option<DataType>, bool, bool) =
             ciborium::de::from_reader(&mut reader).map_err(map_err)?;
 
         let remainder = &buf[reader.position() as usize..];
 
         Python::with_gil(|py| {
-            let pickle = PyModule::import(py, "cloudpickle")
-                .or(PyModule::import(py, "pickle"))
+            let pickle = PyModule::import_bound(py, "cloudpickle")
+                .or_else(|_| PyModule::import_bound(py, "pickle"))
                 .expect("Unable to import 'pickle'")
                 .getattr("loads")
                 .unwrap();
-            let arg = (PyBytes::new(py, remainder),);
+            let arg = (PyBytes::new_bound(py, remainder),);
             let python_function = pickle.call1(arg).map_err(from_pyerr)?;
             Ok(Arc::new(PythonUdfExpression::new(
                 python_function.into(),
                 output_type,
                 is_elementwise,
+                returns_scalar,
             )) as Arc<dyn SeriesUdf>)
         })
     }
@@ -158,48 +166,65 @@ impl SeriesUdf for PythonUdfExpression {
     fn call_udf(&self, s: &mut [Series]) -> PolarsResult<Option<Series>> {
         let func = unsafe { CALL_SERIES_UDF_PYTHON.unwrap() };
 
-        let output_type = self.output_type.clone().unwrap_or(DataType::Unknown);
-        let out = func(s[0].clone(), &self.python_function)?;
+        let output_type = self
+            .output_type
+            .clone()
+            .unwrap_or_else(|| DataType::Unknown(Default::default()));
+        let mut out = func(s[0].clone(), &self.python_function)?;
+        if !matches!(output_type, DataType::Unknown(_)) {
+            let must_cast = out.dtype().matches_schema_type(&output_type).map_err(|_| {
+                polars_err!(
+                    SchemaMismatch: "expected output type '{:?}', got '{:?}'; set `return_dtype` to the proper datatype",
+                    output_type, out.dtype(),
+                )
+            })?;
+            if must_cast {
+                out = out.cast(&output_type)?;
+            }
+        }
 
-        polars_ensure!(
-            matches!(output_type, DataType::Unknown) || out.dtype() == &output_type,
-            SchemaMismatch:
-            "expected output type '{:?}', got '{:?}'; set `return_dtype` to the proper datatype",
-            output_type, out.dtype(),
-        );
         Ok(Some(out))
     }
 
     #[cfg(feature = "serde")]
     fn try_serialize(&self, buf: &mut Vec<u8>) -> PolarsResult<()> {
         buf.extend_from_slice(MAGIC_BYTE_MARK);
-        ciborium::ser::into_writer(&(self.output_type.clone(), self.is_elementwise), &mut *buf)
-            .unwrap();
+        ciborium::ser::into_writer(
+            &(
+                self.output_type.clone(),
+                self.is_elementwise,
+                self.returns_scalar,
+            ),
+            &mut *buf,
+        )
+        .unwrap();
 
         Python::with_gil(|py| {
-            let pickle = PyModule::import(py, "cloudpickle")
-                .or(PyModule::import(py, "pickle"))
+            let pickle = PyModule::import_bound(py, "cloudpickle")
+                .or_else(|_| PyModule::import_bound(py, "pickle"))
                 .expect("Unable to import 'pickle'")
                 .getattr("dumps")
                 .unwrap();
             let dumped = pickle
                 .call1((self.python_function.clone(),))
                 .map_err(from_pyerr)?;
-            let dumped = dumped.extract::<&PyBytes>().unwrap();
-            buf.extend_from_slice(dumped.as_bytes());
+            let dumped = dumped.extract::<PyBackedBytes>().unwrap();
+            buf.extend_from_slice(&dumped);
             Ok(())
         })
     }
 
     fn get_output(&self) -> Option<GetOutput> {
         let output_type = self.output_type.clone();
-        Some(GetOutput::map_field(move |fld| match output_type {
-            Some(ref dt) => Field::new(fld.name(), dt.clone()),
-            None => {
-                let mut fld = fld.clone();
-                fld.coerce(DataType::Unknown);
-                fld
-            },
+        Some(GetOutput::map_field(move |fld| {
+            Ok(match output_type {
+                Some(ref dt) => Field::new(fld.name(), dt.clone()),
+                None => {
+                    let mut fld = fld.clone();
+                    fld.coerce(DataType::Unknown(Default::default()));
+                    fld
+                },
+            })
         }))
     }
 }
@@ -214,14 +239,17 @@ impl Expr {
             (ApplyOptions::GroupWise, "python_udf")
         };
 
+        let returns_scalar = func.returns_scalar;
         let return_dtype = func.output_type.clone();
-        let output_type = GetOutput::map_field(move |fld| match return_dtype {
-            Some(ref dt) => Field::new(fld.name(), dt.clone()),
-            None => {
-                let mut fld = fld.clone();
-                fld.coerce(DataType::Unknown);
-                fld
-            },
+        let output_type = GetOutput::map_field(move |fld| {
+            Ok(match return_dtype {
+                Some(ref dt) => Field::new(fld.name(), dt.clone()),
+                None => {
+                    let mut fld = fld.clone();
+                    fld.coerce(DataType::Unknown(Default::default()));
+                    fld
+                },
+            })
         });
 
         Expr::AnonymousFunction {
@@ -231,6 +259,7 @@ impl Expr {
             options: FunctionOptions {
                 collect_groups,
                 fmt_str: name,
+                returns_scalar,
                 ..Default::default()
             },
         }

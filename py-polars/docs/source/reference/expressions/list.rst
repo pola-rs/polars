@@ -16,7 +16,6 @@ The following methods are available under the `expr.list` attribute.
     Expr.list.arg_min
     Expr.list.concat
     Expr.list.contains
-    Expr.list.count_match
     Expr.list.count_matches
     Expr.list.diff
     Expr.list.eval
@@ -28,7 +27,6 @@ The following methods are available under the `expr.list` attribute.
     Expr.list.join
     Expr.list.last
     Expr.list.len
-    Expr.list.lengths
     Expr.list.max
     Expr.list.mean
     Expr.list.median
@@ -45,8 +43,9 @@ The following methods are available under the `expr.list` attribute.
     Expr.list.std
     Expr.list.sum
     Expr.list.tail
-    Expr.list.take
     Expr.list.to_array
     Expr.list.to_struct
     Expr.list.unique
-    Expr.list.var 
+    Expr.list.n_unique
+    Expr.list.var
+    Expr.list.gather_every

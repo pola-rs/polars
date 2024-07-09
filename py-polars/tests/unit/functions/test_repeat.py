@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError, OutOfBoundsError, SchemaError
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from polars._typing import PolarsDataType
 
 
 @pytest.mark.parametrize(
@@ -28,13 +32,15 @@ from polars.testing import assert_frame_equal, assert_series_equal
         (8, 2, pl.UInt8, pl.UInt8),
         (date(2023, 2, 2), 3, pl.Datetime, pl.Datetime),
         (7.5, 5, pl.UInt16, pl.UInt16),
+        ([1, 2, 3], 2, pl.List(pl.Int64), pl.List(pl.Int64)),
+        (b"ab12", 3, pl.Binary, pl.Binary),
     ],
 )
 def test_repeat(
     value: Any,
     n: int,
-    dtype: pl.PolarsDataType,
-    expected_dtype: pl.PolarsDataType,
+    dtype: PolarsDataType,
+    expected_dtype: PolarsDataType,
 ) -> None:
     expected = pl.Series("repeat", [value] * n).cast(expected_dtype)
 
@@ -70,18 +76,18 @@ def test_repeat_n_zero() -> None:
     [1.5, 2.0, date(1971, 1, 2), "hello"],
 )
 def test_repeat_n_non_integer(n: Any) -> None:
-    with pytest.raises(pl.SchemaError, match="expected expression of dtype 'integer'"):
+    with pytest.raises(SchemaError, match="expected expression of dtype 'integer'"):
         pl.repeat(1, n=pl.lit(n), eager=True)
 
 
 def test_repeat_n_empty() -> None:
     df = pl.DataFrame(schema={"a": pl.Int32})
-    with pytest.raises(pl.OutOfBoundsError, match="index 0 is out of bounds"):
+    with pytest.raises(OutOfBoundsError, match="index 0 is out of bounds"):
         df.select(pl.repeat(1, n=pl.col("a")))
 
 
 def test_repeat_n_negative() -> None:
-    with pytest.raises(pl.ComputeError, match="could not parse value '-1' as a size"):
+    with pytest.raises(ComputeError, match="could not parse value '-1' as a size"):
         pl.repeat(1, n=-1, eager=True)
 
 
@@ -95,15 +101,15 @@ def test_repeat_n_negative() -> None:
         (2, ["1"], pl.List(pl.Utf8)),
         (4, True, pl.Boolean),
         (2, [True], pl.List(pl.Boolean)),
-        (2, [1], pl.Array(pl.Int16, width=1)),
-        (2, [1, 1, 1], pl.Array(pl.Int8, width=3)),
+        (2, [1], pl.Array(pl.Int16, shape=1)),
+        (2, [1, 1, 1], pl.Array(pl.Int8, shape=3)),
         (1, [1], pl.List(pl.UInt32)),
     ],
 )
 def test_ones(
     n: int,
     value: Any,
-    dtype: pl.PolarsDataType,
+    dtype: PolarsDataType,
 ) -> None:
     expected = pl.Series("ones", [value] * n, dtype=dtype)
 
@@ -124,15 +130,15 @@ def test_ones(
         (2, ["0"], pl.List(pl.Utf8)),
         (4, False, pl.Boolean),
         (2, [False], pl.List(pl.Boolean)),
-        (3, [0], pl.Array(pl.UInt32, width=1)),
-        (2, [0, 0, 0], pl.Array(pl.UInt32, width=3)),
+        (3, [0], pl.Array(pl.UInt32, shape=1)),
+        (2, [0, 0, 0], pl.Array(pl.UInt32, shape=3)),
         (1, [0], pl.List(pl.UInt32)),
     ],
 )
 def test_zeros(
     n: int,
     value: Any,
-    dtype: pl.PolarsDataType,
+    dtype: PolarsDataType,
 ) -> None:
     expected = pl.Series("zeros", [value] * n, dtype=dtype)
 

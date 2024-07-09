@@ -1,8 +1,4 @@
-use std::sync::Arc;
-
-use polars_core::prelude::{DataType, Field, *};
-use polars_core::series::Series;
-use polars_error::PolarsResult;
+use polars_core::prelude::*;
 use polars_lazy::prelude::IntoLazy;
 use polars_plan::prelude::{GetOutput, UserDefinedFunction};
 use polars_sql::function_registry::FunctionRegistry;
@@ -46,7 +42,7 @@ fn test_udfs() -> PolarsResult<()> {
         move |s: &mut [Series]| {
             let first = s[0].clone();
             let second = s[1].clone();
-            Ok(Some(first + second))
+            (first + second).map(Some)
         },
     );
 
@@ -81,7 +77,7 @@ fn test_udfs() -> PolarsResult<()> {
         move |s: &mut [Series]| {
             let first = s[0].clone();
             let second = s[1].clone();
-            Ok(Some(first / second))
+            (first / second).map(Some)
         },
     );
 

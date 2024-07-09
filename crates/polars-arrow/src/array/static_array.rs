@@ -1,11 +1,12 @@
 use bytemuck::Zeroable;
 
 use crate::array::binview::BinaryViewValueIter;
+use crate::array::growable::{Growable, GrowableFixedSizeList};
 use crate::array::static_array_collect::ArrayFromIterDtype;
 use crate::array::{
     Array, ArrayValuesIter, BinaryArray, BinaryValueIter, BinaryViewArray, BooleanArray,
-    FixedSizeListArray, ListArray, ListValuesIter, PrimitiveArray, Utf8Array, Utf8ValuesIter,
-    Utf8ViewArray,
+    FixedSizeListArray, ListArray, ListValuesIter, MutableBinaryViewArray, PrimitiveArray,
+    Utf8Array, Utf8ValuesIter, Utf8ViewArray,
 };
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::bitmap::Bitmap;
@@ -18,6 +19,7 @@ pub trait StaticArray:
     + for<'a> ArrayFromIterDtype<Self::ValueT<'a>>
     + for<'a> ArrayFromIterDtype<Self::ZeroableValueT<'a>>
     + for<'a> ArrayFromIterDtype<Option<Self::ValueT<'a>>>
+    + Clone
 {
     type ValueT<'a>: Clone
     where
@@ -82,6 +84,10 @@ pub trait StaticArray:
     }
 
     fn full_null(length: usize, dtype: ArrowDataType) -> Self;
+
+    fn full(length: usize, value: Self::ValueT<'_>, dtype: ArrowDataType) -> Self {
+        Self::arr_from_iter_with_dtype(dtype, std::iter::repeat(value).take(length))
+    }
 }
 
 pub trait ParameterFreeDtypeStaticArray: StaticArray {
@@ -126,6 +132,10 @@ impl<T: NativeType> StaticArray for PrimitiveArray<T> {
     fn full_null(length: usize, dtype: ArrowDataType) -> Self {
         Self::new_null(dtype, length)
     }
+
+    fn full(length: usize, value: Self::ValueT<'_>, _dtype: ArrowDataType) -> Self {
+        PrimitiveArray::from_vec(vec![value; length])
+    }
 }
 
 impl<T: NativeType> ParameterFreeDtypeStaticArray for PrimitiveArray<T> {
@@ -166,6 +176,10 @@ impl StaticArray for BooleanArray {
 
     fn full_null(length: usize, dtype: ArrowDataType) -> Self {
         Self::new_null(dtype, length)
+    }
+
+    fn full(length: usize, value: Self::ValueT<'_>, _dtype: ArrowDataType) -> Self {
+        Bitmap::new_with_value(value, length).into()
     }
 }
 
@@ -265,6 +279,12 @@ impl StaticArray for BinaryViewArray {
     fn full_null(length: usize, dtype: ArrowDataType) -> Self {
         Self::new_null(dtype, length)
     }
+
+    fn full(length: usize, value: Self::ValueT<'_>, _dtype: ArrowDataType) -> Self {
+        let mut builder = MutableBinaryViewArray::with_capacity(length);
+        builder.extend_constant(length, Some(value));
+        builder.into()
+    }
 }
 
 impl ParameterFreeDtypeStaticArray for BinaryViewArray {
@@ -296,6 +316,13 @@ impl StaticArray for Utf8ViewArray {
 
     fn full_null(length: usize, dtype: ArrowDataType) -> Self {
         Self::new_null(dtype, length)
+    }
+
+    fn full(length: usize, value: Self::ValueT<'_>, _dtype: ArrowDataType) -> Self {
+        unsafe {
+            BinaryViewArray::full(length, value.as_bytes(), ArrowDataType::BinaryView)
+                .to_utf8view_unchecked()
+        }
     }
 }
 
@@ -356,5 +383,12 @@ impl StaticArray for FixedSizeListArray {
 
     fn full_null(length: usize, dtype: ArrowDataType) -> Self {
         Self::new_null(dtype, length)
+    }
+
+    fn full(length: usize, value: Self::ValueT<'_>, dtype: ArrowDataType) -> Self {
+        let singular_arr = FixedSizeListArray::new(dtype, value, None);
+        let mut arr = GrowableFixedSizeList::new(vec![&singular_arr], false, length);
+        unsafe { arr.extend_copies(0, 0, 1, length) }
+        arr.into()
     }
 }

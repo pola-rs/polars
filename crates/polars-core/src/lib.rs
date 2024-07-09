@@ -47,6 +47,7 @@ pub static PROCESS_ID: Lazy<u128> = Lazy::new(|| {
 // this is re-exported in utils for polars child crates
 #[cfg(not(target_family = "wasm"))] // only use this on non wasm targets
 pub static POOL: Lazy<ThreadPool> = Lazy::new(|| {
+    let thread_name = std::env::var("POLARS_THREAD_NAME").unwrap_or_else(|_| "polars".to_string());
     ThreadPoolBuilder::new()
         .num_threads(
             std::env::var("POLARS_MAX_THREADS")
@@ -57,6 +58,7 @@ pub static POOL: Lazy<ThreadPool> = Lazy::new(|| {
                         .get()
                 }),
         )
+        .thread_name(move |i| format!("{}-{}", thread_name, i))
         .build()
         .expect("could not spawn threads")
 });

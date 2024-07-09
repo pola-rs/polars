@@ -11,9 +11,11 @@ use super::super::utils::{
 };
 use super::super::{utils, PagesIter};
 use crate::parquet::deserialize::SliceFilteredIter;
-use crate::parquet::encoding::{hybrid_rle, Encoding};
+use crate::parquet::encoding::hybrid_rle::DictionaryTranslator;
+use crate::parquet::encoding::{byte_stream_split, hybrid_rle, Encoding};
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
 use crate::parquet::types::{decode, NativeType as ParquetNativeType};
+use crate::read::deserialize::utils::TranslatedHybridRle;
 
 #[derive(Debug)]
 pub(super) struct FilteredRequiredValues<'a> {
@@ -22,7 +24,7 @@ pub(super) struct FilteredRequiredValues<'a> {
 
 impl<'a> FilteredRequiredValues<'a> {
     pub fn try_new<P: ParquetNativeType>(page: &'a DataPage) -> PolarsResult<Self> {
-        let (_, _, values) = split_buffer(page)?;
+        let values = split_buffer(page)?.values;
         assert_eq!(values.len() % std::mem::size_of::<P>(), 0);
 
         let values = values.chunks_exact(std::mem::size_of::<P>());
@@ -46,7 +48,7 @@ pub(super) struct Values<'a> {
 
 impl<'a> Values<'a> {
     pub fn try_new<P: ParquetNativeType>(page: &'a DataPage) -> PolarsResult<Self> {
-        let (_, _, values) = split_buffer(page)?;
+        let values = split_buffer(page)?.values;
         assert_eq!(values.len() % std::mem::size_of::<P>(), 0);
         Ok(Self {
             values: values.chunks_exact(std::mem::size_of::<P>()),
@@ -65,14 +67,14 @@ where
     T: NativeType,
 {
     pub values: hybrid_rle::HybridRleDecoder<'a>,
-    pub dict: &'a Vec<T>,
+    pub dict: &'a [T],
 }
 
 impl<'a, T> ValuesDictionary<'a, T>
 where
     T: NativeType,
 {
-    pub fn try_new(page: &'a DataPage, dict: &'a Vec<T>) -> PolarsResult<Self> {
+    pub fn try_new(page: &'a DataPage, dict: &'a [T]) -> PolarsResult<Self> {
         let values = utils::dict_indices_decoder(page)?;
 
         Ok(Self { dict, values })
@@ -80,7 +82,7 @@ where
 
     #[inline]
     pub fn len(&self) -> usize {
-        self.values.size_hint().0
+        self.values.len()
     }
 }
 
@@ -96,6 +98,8 @@ where
     OptionalDictionary(OptionalPageValidity<'a>, ValuesDictionary<'a, T>),
     FilteredRequired(FilteredRequiredValues<'a>),
     FilteredOptional(FilteredOptionalPageValidity<'a>, Values<'a>),
+    RequiredByteStreamSplit(byte_stream_split::Decoder<'a>),
+    OptionalByteStreamSplit(OptionalPageValidity<'a>, byte_stream_split::Decoder<'a>),
 }
 
 impl<'a, T> utils::PageState<'a> for State<'a, T>
@@ -110,6 +114,8 @@ where
             State::OptionalDictionary(optional, _) => optional.len(),
             State::FilteredRequired(values) => values.len(),
             State::FilteredOptional(optional, _) => optional.len(),
+            State::RequiredByteStreamSplit(decoder) => decoder.len(),
+            State::OptionalByteStreamSplit(optional, _) => optional.len(),
         }
     }
 }
@@ -190,6 +196,20 @@ where
                 FilteredOptionalPageValidity::try_new(page)?,
                 Values::try_new::<P>(page)?,
             )),
+            (Encoding::ByteStreamSplit, _, false, false) => {
+                let values = split_buffer(page)?.values;
+                Ok(State::RequiredByteStreamSplit(
+                    byte_stream_split::Decoder::try_new(values, std::mem::size_of::<P>())?,
+                ))
+            },
+            (Encoding::ByteStreamSplit, _, true, false) => {
+                let validity = OptionalPageValidity::try_new(page)?;
+                let values = split_buffer(page)?.values;
+                Ok(State::OptionalByteStreamSplit(
+                    validity,
+                    byte_stream_split::Decoder::try_new(values, std::mem::size_of::<P>())?,
+                ))
+            },
             _ => Err(utils::not_implemented(page)),
         }
     }
@@ -214,8 +234,8 @@ where
                 page_validity,
                 Some(remaining),
                 values,
-                page_values.values.by_ref().map(decode).map(self.op),
-            ),
+                &mut page_values.values.by_ref().map(decode).map(self.op),
+            )?,
             State::Required(page) => {
                 values.extend(
                     page.values
@@ -226,24 +246,22 @@ where
                 );
             },
             State::OptionalDictionary(page_validity, page_values) => {
-                let op1 = |index: u32| page_values.dict[index as usize];
+                let translator = DictionaryTranslator(page_values.dict);
+                let translated_hybridrle =
+                    TranslatedHybridRle::new(&mut page_values.values, &translator);
+
                 utils::extend_from_decoder(
                     validity,
                     page_validity,
                     Some(remaining),
                     values,
-                    &mut page_values.values.by_ref().map(|x| x.unwrap()).map(op1),
-                )
+                    translated_hybridrle,
+                )?;
             },
             State::RequiredDictionary(page) => {
-                let op1 = |index: u32| page.dict[index as usize];
-                values.extend(
-                    page.values
-                        .by_ref()
-                        .map(|x| x.unwrap())
-                        .map(op1)
-                        .take(remaining),
-                );
+                let translator = DictionaryTranslator(page.dict);
+                page.values
+                    .translate_and_collect_n_into(values, remaining, &translator)?;
             },
             State::FilteredRequired(page) => {
                 values.extend(
@@ -260,9 +278,19 @@ where
                     page_validity,
                     Some(remaining),
                     values,
-                    page_values.values.by_ref().map(decode).map(self.op),
-                );
+                    &mut page_values.values.by_ref().map(decode).map(self.op),
+                )?;
             },
+            State::RequiredByteStreamSplit(decoder) => {
+                values.extend(decoder.iter_converted(decode).map(self.op).take(remaining));
+            },
+            State::OptionalByteStreamSplit(page_validity, decoder) => utils::extend_from_decoder(
+                validity,
+                page_validity,
+                Some(remaining),
+                values,
+                &mut decoder.iter_converted(decode).map(self.op),
+            )?,
         }
         Ok(())
     }

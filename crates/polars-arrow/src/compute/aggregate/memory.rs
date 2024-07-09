@@ -1,8 +1,8 @@
 use crate::array::*;
 use crate::bitmap::Bitmap;
 use crate::datatypes::PhysicalType;
+pub use crate::types::PrimitiveType;
 use crate::{match_integer_type, with_match_primitive_type_full};
-
 fn validity_size(validity: Option<&Bitmap>) -> usize {
     validity.as_ref().map(|b| b.as_slice().0.len()).unwrap_or(0)
 }
@@ -24,9 +24,9 @@ macro_rules! dyn_binary {
 }
 
 fn binview_size<T: ViewType + ?Sized>(array: &BinaryViewArrayGeneric<T>) -> usize {
-    array.views().len() * std::mem::size_of::<u128>()
-        + array.data_buffers().iter().map(|b| b.len()).sum::<usize>()
-        + validity_size(array.validity())
+    // We choose the optimal usage as data can be shared across buffers.
+    // If we would sum all buffers we overestimate memory usage and trigger OOC when not needed.
+    array.total_bytes_len()
 }
 
 /// Returns the total (heap) allocated size of the array in bytes.
@@ -47,6 +47,10 @@ pub fn estimated_bytes_size(array: &dyn Array) -> usize {
         Boolean => {
             let array = array.as_any().downcast_ref::<BooleanArray>().unwrap();
             array.values().as_slice().0.len() + validity_size(array.validity())
+        },
+        Primitive(PrimitiveType::DaysMs) => {
+            let array = array.as_any().downcast_ref::<DaysMsArray>().unwrap();
+            array.values().len() * std::mem::size_of::<i32>() * 2 + validity_size(array.validity())
         },
         Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
             let array = array

@@ -40,17 +40,18 @@ and library integrations:
 * `Quick start guide <https://hypothesis.readthedocs.io/en/latest/quickstart.html>`_
 
 
-Polars primitives
+Polars strategies
 ~~~~~~~~~~~~~~~~~
 
 Polars provides the following `hypothesis <https://hypothesis.readthedocs.io>`_
-testing primitives and strategy generators/helpers to make it easy to generate
-suitable test DataFrames and Series.
+testing strategies:
 
 .. autosummary::
    :toctree: api/
 
     testing.parametric.dataframes
+    testing.parametric.dtypes
+    testing.parametric.lists
     testing.parametric.series
 
 
@@ -112,20 +113,21 @@ of any generated value being ``null`` (this is distinct from ``NaN``).
 
 .. code-block:: python
 
+    import polars as pl
     from polars.testing.parametric import dataframes
     from polars import NUMERIC_DTYPES
-    from hypothesis import given
 
+    from hypothesis import given
 
     @given(
         dataframes(
             cols=5,
-            null_probabililty=0.1,
+            allow_null=True,
             allowed_dtypes=NUMERIC_DTYPES,
         )
     )
-    def test_numeric(df):
-        assert all(df[col].is_numeric() for col in df.columns)
+    def test_numeric(df: pl.DataFrame):
+        assert all(df[col].dtype.is_numeric() for col in df.columns)
 
         # Example frame:
         # ┌──────┬────────┬───────┬────────────┬────────────┐
@@ -145,27 +147,27 @@ conform to the given strategies:
 
 .. code-block:: python
 
+    import polars as pl
     from polars.testing.parametric import column, dataframes
-    from hypothesis.strategies import floats, sampled_from, text
-    from hypothesis import given
 
+    import hypothesis.strategies as st
+    from hypothesis import given
     from string import ascii_letters, digits
 
     id_chars = ascii_letters + digits
 
-
     @given(
         dataframes(
             cols=[
-                column("id", strategy=text(min_size=4, max_size=4, alphabet=id_chars)),
-                column("ccy", strategy=sampled_from(["GBP", "EUR", "JPY", "USD"])),
-                column("price", strategy=floats(min_value=0.0, max_value=1000.0)),
+                column("id", strategy=st.text(min_size=4, max_size=4, alphabet=id_chars)),
+                column("ccy", strategy=st.sampled_from(["GBP", "EUR", "JPY", "USD"])),
+                column("price", strategy=st.floats(min_value=0.0, max_value=1000.0)),
             ],
             min_size=5,
             lazy=True,
         )
     )
-    def test_price_calculations(lf):
+    def test_price_calculations(lf: pl.LazyFrame):
         ...
         print(lf.collect())
 
@@ -189,16 +191,17 @@ is always less than or equal to the second value:
 
 .. code-block:: python
 
-    from polars.testing.parametric import create_list_strategy, dataframes, column
-    from hypothesis.strategies import composite
+    import polars as pl
+    from polars.testing.parametric import column, dataframes, lists
+
+    import hypothesis.strategies as st
     from hypothesis import given
 
-
-    @composite
-    def uint8_pairs(draw, uints=create_list_strategy(pl.UInt8, size=2)):
+    @st.composite
+    def uint8_pairs(draw: st.DrawFn):
+        uints = lists(pl.UInt8, size=2)
         pairs = list(zip(draw(uints), draw(uints)))
         return [sorted(ints) for ints in pairs]
-
 
     @given(
         dataframes(
@@ -207,11 +210,11 @@ is always less than or equal to the second value:
                 column("coly", strategy=uint8_pairs()),
                 column("colz", strategy=uint8_pairs()),
             ],
-            size=3,
+            min_size=3,
+            max_size=3,
         )
     )
-    def test_miscellaneous(df):
-        ...
+    def test_miscellaneous(df: pl.DataFrame): ...
 
         # Example frame:
         # ┌─────────────────────────┬─────────────────────────┬──────────────────────────┐

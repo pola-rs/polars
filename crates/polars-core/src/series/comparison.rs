@@ -3,8 +3,6 @@
 #[cfg(feature = "dtype-struct")]
 use std::ops::Deref;
 
-use super::Series;
-use crate::apply_method_physical_numeric;
 use crate::prelude::*;
 use crate::series::arithmetic::coerce_lhs_rhs;
 use crate::series::nulls::replace_non_null;
@@ -41,7 +39,8 @@ macro_rules! impl_compare {
             _ => (),
         };
 
-        let (lhs, rhs) = coerce_lhs_rhs(lhs, rhs).expect("cannot coerce datatypes");
+        let (lhs, rhs) = coerce_lhs_rhs(lhs, rhs).map_err(|_| polars_err!(SchemaMismatch: "could not evaluate comparison between series '{}' of dtype: {} and series '{}' of dtype: {}",
+        lhs.name(), lhs.dtype(), rhs.name(), rhs.dtype()))?;
         let lhs = lhs.to_physical_repr();
         let rhs = rhs.to_physical_repr();
         let mut out = match lhs.dtype() {
@@ -67,29 +66,39 @@ macro_rules! impl_compare {
                 .struct_()
                 .unwrap()
                 .$method(rhs.struct_().unwrap().deref()),
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(_, s1) => {
+                let DataType::Decimal(_, s2) = rhs.dtype() else {
+                    unreachable!()
+                };
+                let scale = s1.max(s2).unwrap();
+                let lhs = lhs.decimal().unwrap().to_scale(scale).unwrap();
+                let rhs = rhs.decimal().unwrap().to_scale(scale).unwrap();
+                lhs.0.$method(&rhs.0)
+            },
 
-            _ => unimplemented!(),
+            dt => polars_bail!(InvalidOperation: "could not apply comparison on series of dtype '{}; operand names: '{}', '{}'", dt, lhs.name(), rhs.name()),
         };
         out.rename(lhs.name());
-        Ok(out) as PolarsResult<BooleanChunked>
+        PolarsResult::Ok(out)
     }};
 }
 
 fn validate_types(left: &DataType, right: &DataType) -> PolarsResult<()> {
     use DataType::*;
-    #[cfg(feature = "dtype-categorical")]
-    {
-        let mismatch = matches!(left, String | Categorical(_, _) | Enum(_, _))
-            && right.is_numeric()
-            || left.is_numeric() && matches!(right, String | Categorical(_, _) | Enum(_, _));
-        polars_ensure!(!mismatch, ComputeError: "cannot compare string with numeric data");
-    }
-    #[cfg(not(feature = "dtype-categorical"))]
-    {
-        let mismatch = matches!(left, String) && right.is_numeric()
-            || left.is_numeric() && matches!(right, String);
-        polars_ensure!(!mismatch, ComputeError: "cannot compare string with numeric data");
-    }
+
+    match (left, right) {
+        (String, dt) | (dt, String) if dt.is_numeric() => {
+            polars_bail!(ComputeError: "cannot compare string with numeric type ({})", dt)
+        },
+        #[cfg(feature = "dtype-categorical")]
+        (Categorical(_, _) | Enum(_, _), dt) | (dt, Categorical(_, _) | Enum(_, _))
+            if !(dt.is_categorical() | dt.is_string() | dt.is_enum()) =>
+        {
+            polars_bail!(ComputeError: "cannot compare categorical with {}", dt);
+        },
+        _ => (),
+    };
     Ok(())
 }
 

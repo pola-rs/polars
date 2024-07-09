@@ -3,24 +3,20 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Callable, Sequence
 
 from polars import functions as F
+from polars._utils.wrap import wrap_s
 from polars.series.utils import expr_dispatch
-from polars.utils._wrap import wrap_s
-from polars.utils.deprecation import (
-    deprecate_renamed_function,
-    deprecate_renamed_parameter,
-)
 
 if TYPE_CHECKING:
     from datetime import date, datetime, time
 
     from polars import Expr, Series
-    from polars.polars import PySeries
-    from polars.type_aliases import (
+    from polars._typing import (
         IntoExpr,
         IntoExprColumn,
         NullBehavior,
         ToStructStrategy,
     )
+    from polars.polars import PySeries
 
 
 @expr_dispatch
@@ -234,15 +230,60 @@ class ListNameSpace:
         """
 
     def median(self) -> Series:
-        """Compute the median value of the arrays in the list."""
+        """
+        Compute the median value of the arrays in the list.
 
-    def std(self) -> Series:
-        """Compute the std value of the arrays in the list."""
+        Examples
+        --------
+        >>> s = pl.Series("values", [[-1, 0, 1], [1, 10]])
+        >>> s.list.median()
+        shape: (2,)
+        Series: 'values' [f64]
+        [
+                0.0
+                5.5
+        ]
+        """
 
-    def var(self) -> Series:
-        """Compute the var value of the arrays in the list."""
+    def std(self, ddof: int = 1) -> Series:
+        """
+        Compute the std value of the arrays in the list.
 
-    def sort(self, *, descending: bool = False, nulls_last: bool = False) -> Series:
+        Examples
+        --------
+        >>> s = pl.Series("values", [[-1, 0, 1], [1, 10]])
+        >>> s.list.std()
+        shape: (2,)
+        Series: 'values' [f64]
+        [
+                1.0
+                6.363961
+        ]
+        """
+
+    def var(self, ddof: int = 1) -> Series:
+        """
+        Compute the var value of the arrays in the list.
+
+        Examples
+        --------
+        >>> s = pl.Series("values", [[-1, 0, 1], [1, 10]])
+        >>> s.list.var()
+        shape: (2,)
+        Series: 'values' [f64]
+        [
+                1.0
+                40.5
+        ]
+        """
+
+    def sort(
+        self,
+        *,
+        descending: bool = False,
+        nulls_last: bool = False,
+        multithreaded: bool = True,
+    ) -> Series:
         """
         Sort the arrays in this column.
 
@@ -252,6 +293,8 @@ class ListNameSpace:
             Sort in descending order.
         nulls_last
             Place null values last.
+        multithreaded
+            Sort using multiple threads.
 
         Examples
         --------
@@ -309,6 +352,22 @@ class ListNameSpace:
         ]
         """
 
+    def n_unique(self) -> Series:
+        """
+        Count the number of unique values in every sub-lists.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[1, 1, 2], [2, 3, 4]])
+        >>> s.list.n_unique()
+        shape: (2,)
+        Series: 'a' [u32]
+        [
+            2
+            3
+        ]
+        """
+
     def concat(self, other: list[Series] | Series | list[Any]) -> Series:
         """
         Concat the arrays in a Series dtype List in linear time.
@@ -331,7 +390,12 @@ class ListNameSpace:
         ]
         """
 
-    def get(self, index: int | Series | list[int]) -> Series:
+    def get(
+        self,
+        index: int | Series | list[int],
+        *,
+        null_on_oob: bool = False,
+    ) -> Series:
         """
         Get the value by index in the sublists.
 
@@ -343,11 +407,15 @@ class ListNameSpace:
         ----------
         index
             Index to return per sublist
+        null_on_oob
+            Behavior if an index is out of bounds:
+            True -> set as null
+            False -> raise an error
 
         Examples
         --------
         >>> s = pl.Series("a", [[3, 2, 1], [], [1, 2]])
-        >>> s.list.get(0)
+        >>> s.list.get(0, null_on_oob=True)
         shape: (3,)
         Series: 'a' [i64]
         [
@@ -389,6 +457,32 @@ class ListNameSpace:
             [3, 1]
             [null, null]
             [1, null]
+        ]
+        """
+
+    def gather_every(
+        self, n: int | IntoExprColumn, offset: int | IntoExprColumn = 0
+    ) -> Series:
+        """
+        Take every n-th value start from offset in sublists.
+
+        Parameters
+        ----------
+        n
+            Gather every n-th element.
+        offset
+            Starting index.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[1, 2, 3], [], [6, 7, 8, 9]])
+        >>> s.list.gather_every(2, offset=1)
+        shape: (3,)
+        Series: 'a' [list[i64]]
+        [
+            [2]
+            []
+            [7, 9]
         ]
         """
 
@@ -574,7 +668,6 @@ class ListNameSpace:
         ]
         """
 
-    @deprecate_renamed_parameter("periods", "n", version="0.19.11")
     def shift(self, n: int | IntoExprColumn = 1) -> Series:
         """
         Shift list values by the given number of indices.
@@ -959,53 +1052,3 @@ class ListNameSpace:
             [5, 7, 8]
         ]
         """  # noqa: W505
-
-    @deprecate_renamed_function("count_matches", version="0.19.3")
-    def count_match(
-        self, element: float | str | bool | int | date | datetime | time | Expr
-    ) -> Expr:
-        """
-        Count how often the value produced by `element` occurs.
-
-        .. deprecated:: 0.19.3
-            This method has been renamed to :func:`count_matches`.
-
-        Parameters
-        ----------
-        element
-            An expression that produces a single value
-        """
-
-    @deprecate_renamed_function("len", version="0.19.8")
-    def lengths(self) -> Series:
-        """
-        Return the number of elements in each list.
-
-        .. deprecated:: 0.19.8
-            This method has been renamed to :func:`len`.
-        """
-
-    @deprecate_renamed_function("gather", version="0.19.14")
-    @deprecate_renamed_parameter("index", "indices", version="0.19.14")
-    def take(
-        self,
-        indices: Series | list[int] | list[list[int]],
-        *,
-        null_on_oob: bool = False,
-    ) -> Series:
-        """
-        Take sublists by multiple indices.
-
-        .. deprecated:: 0.19.14
-            This method has been renamed to :func:`gather`.
-
-        Parameters
-        ----------
-        indices
-            Indices to return per sublist
-        null_on_oob
-            Behavior if an index is out of bounds:
-            True -> set as null
-            False -> raise an error
-            Note that defaulting to raising an error is much cheaper
-        """

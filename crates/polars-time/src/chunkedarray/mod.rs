@@ -6,7 +6,7 @@ mod datetime;
 #[cfg(feature = "dtype-duration")]
 mod duration;
 mod kernels;
-#[cfg(feature = "rolling_window")]
+#[cfg(any(feature = "rolling_window", feature = "rolling_window_by"))]
 mod rolling_window;
 pub mod string;
 #[cfg(feature = "dtype-time")]
@@ -22,15 +22,11 @@ pub use datetime::DatetimeMethods;
 pub use duration::DurationMethods;
 use kernels::*;
 use polars_core::prelude::*;
-#[cfg(feature = "rolling_window")]
+#[cfg(any(feature = "rolling_window", feature = "rolling_window_by"))]
 pub use rolling_window::*;
 pub use string::StringMethods;
 #[cfg(feature = "dtype-time")]
 pub use time::TimeMethods;
-
-pub fn unix_time() -> NaiveDateTime {
-    NaiveDateTime::from_timestamp_opt(0, 0).unwrap()
-}
 
 // a separate function so that it is not compiled twice
 #[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]

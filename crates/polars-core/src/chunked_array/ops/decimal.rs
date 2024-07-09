@@ -1,3 +1,4 @@
+use crate::chunked_array::cast::CastOptions;
 use crate::prelude::*;
 
 impl StringChunked {
@@ -13,7 +14,7 @@ impl StringChunked {
         let mut iter = self.into_iter();
         let mut valid_count = 0;
         while let Some(Some(v)) = iter.next() {
-            let scale_value = arrow::legacy::compute::decimal::infer_scale(v.as_bytes());
+            let scale_value = arrow::compute::decimal::infer_scale(v.as_bytes());
             scale = std::cmp::max(scale, scale_value);
             valid_count += 1;
             if valid_count == infer_length {
@@ -21,7 +22,10 @@ impl StringChunked {
             }
         }
 
-        self.cast(&DataType::Decimal(None, Some(scale as usize)))
+        self.cast_with_options(
+            &DataType::Decimal(None, Some(scale as usize)),
+            CastOptions::NonStrict,
+        )
     }
 }
 

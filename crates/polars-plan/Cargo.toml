@@ -15,7 +15,7 @@ doctest = false
 libloading = { version = "0.8.0", optional = true }
 polars-core = { workspace = true, features = ["lazy", "zip_with", "random"] }
 polars-ffi = { workspace = true, optional = true }
-polars-io = { workspace = true, features = ["lazy"] }
+polars-io = { workspace = true, features = ["lazy", "csv"] }
 polars-json = { workspace = true, optional = true }
 polars-ops = { workspace = true, features = [] }
 polars-parquet = { workspace = true, optional = true }
@@ -28,13 +28,16 @@ bytemuck = { workspace = true }
 chrono = { workspace = true, optional = true }
 chrono-tz = { workspace = true, optional = true }
 ciborium = { workspace = true, optional = true }
+either = { workspace = true }
 futures = { workspace = true, optional = true }
+hashbrown = { workspace = true }
 once_cell = { workspace = true }
 percent-encoding = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 rayon = { workspace = true }
+recursive = { workspace = true }
 regex = { workspace = true, optional = true }
-serde = { workspace = true, features = ["derive", "rc"], optional = true }
+serde = { workspace = true, features = ["rc"], optional = true }
 smartstring = { workspace = true }
 strum_macros = { workspace = true }
 
@@ -51,10 +54,11 @@ serde = [
   "polars-time/serde",
   "polars-io/serde",
   "polars-ops/serde",
+  "either/serde",
 ]
 streaming = []
 parquet = ["polars-io/parquet", "polars-parquet"]
-async = ["polars-io/async"]
+async = ["polars-io/async", "futures"]
 cloud = ["async", "polars-io/cloud"]
 ipc = ["polars-io/ipc"]
 json = ["polars-io/json", "polars-json"]
@@ -84,7 +88,6 @@ dtype-array = ["polars-core/dtype-array", "polars-ops/dtype-array"]
 dtype-categorical = ["polars-core/dtype-categorical"]
 dtype-struct = ["polars-core/dtype-struct"]
 object = ["polars-core/object"]
-date_offset = ["polars-time", "chrono"]
 list_gather = ["polars-ops/list_gather"]
 list_count = ["polars-ops/list_count"]
 array_count = ["polars-ops/array_count", "dtype-array"]
@@ -107,17 +110,23 @@ is_last_distinct = ["polars-core/is_last_distinct", "polars-ops/is_last_distinct
 is_unique = ["polars-ops/is_unique"]
 is_between = ["polars-ops/is_between"]
 cross_join = ["polars-ops/cross_join"]
-asof_join = ["polars-core/asof_join", "polars-time", "polars-ops/asof_join"]
+asof_join = ["polars-time", "polars-ops/asof_join"]
 concat_str = []
+business = ["polars-ops/business"]
 range = []
 mode = ["polars-ops/mode"]
 cum_agg = ["polars-ops/cum_agg"]
 interpolate = ["polars-ops/interpolate"]
+interpolate_by = ["polars-ops/interpolate_by"]
 rolling_window = [
   "polars-core/rolling_window",
   "polars-time/rolling_window",
   "polars-ops/rolling_window",
-  "polars-time/rolling_window",
+]
+rolling_window_by = [
+  "polars-core/rolling_window_by",
+  "polars-time/rolling_window_by",
+  "polars-ops/rolling_window_by",
 ]
 rank = ["polars-ops/rank"]
 diff = ["polars-ops/diff"]
@@ -127,11 +136,13 @@ abs = ["polars-ops/abs"]
 random = ["polars-core/random"]
 dynamic_group_by = ["polars-core/dynamic_group_by"]
 ewma = ["polars-ops/ewma"]
+ewma_by = ["polars-ops/ewma_by"]
 dot_diagram = []
 unique_counts = ["polars-ops/unique_counts"]
 log = ["polars-ops/log"]
-chunked_ids = ["polars-core/chunked_ids"]
+chunked_ids = []
 list_to_struct = ["polars-ops/list_to_struct"]
+array_to_struct = ["polars-ops/array_to_struct"]
 row_hash = ["polars-core/row_hash", "polars-ops/hash"]
 reinterpret = ["polars-core/reinterpret", "polars-ops/reinterpret"]
 string_pad = ["polars-ops/string_pad"]
@@ -163,6 +174,9 @@ cov = ["polars-ops/cov"]
 hist = ["polars-ops/hist"]
 replace = ["polars-ops/replace"]
 find_many = ["polars-ops/find_many"]
+month_start = ["polars-time/month_start"]
+month_end = ["polars-time/month_end"]
+offset_by = ["polars-time/offset_by"]
 
 bigidx = ["polars-core/bigidx"]
 
@@ -173,6 +187,7 @@ features = [
   "temporal",
   "serde",
   "rolling_window",
+  "rolling_window_by",
   "timezones",
   "dtype-date",
   "extract_groups",
@@ -185,7 +200,9 @@ features = [
   "is_last_distinct",
   "dtype-time",
   "array_any_all",
-  "date_offset",
+  "month_start",
+  "month_end",
+  "offset_by",
   "parquet",
   "strings",
   "row_hash",
@@ -201,6 +218,7 @@ features = [
   "cutqcut",
   "async",
   "ewma",
+  "ewma_by",
   "random",
   "chunked_ids",
   "repeat_by",
@@ -239,6 +257,7 @@ features = [
   "peaks",
   "abs",
   "interpolate",
+  "interpolate_by",
   "list_count",
   "cum_agg",
   "top_k",
@@ -250,6 +269,7 @@ features = [
   "ciborium",
   "dtype-decimal",
   "arg_where",
+  "business",
   "range",
   "meta",
   "hive_partitions",

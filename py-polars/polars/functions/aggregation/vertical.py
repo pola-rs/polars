@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import polars.functions as F
-from polars.utils.deprecation import deprecate_renamed_function
 
 if TYPE_CHECKING:
     from polars import Expr
@@ -24,8 +23,8 @@ def all(*names: str, ignore_nulls: bool = True) -> Expr:
         Ignore null values (default).
 
         If set to `False`, `Kleene logic`_ is used to deal with nulls:
-        if the column contains any null values and no `True` values,
-        the output is `None`.
+        if the column contains any null values and no `False` values,
+        the output is null.
 
         .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
 
@@ -90,7 +89,7 @@ def any(*names: str, ignore_nulls: bool = True) -> Expr | bool | None:
 
         If set to `False`, `Kleene logic`_ is used to deal with nulls:
         if the column contains any null values and no `True` values,
-        the output is `None`.
+        the output is null.
 
         .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
 
@@ -331,19 +330,3 @@ def cum_sum(*names: str) -> Expr:
     └─────┘
     """
     return F.col(*names).cum_sum()
-
-
-@deprecate_renamed_function("cum_sum", version="0.19.14")
-def cumsum(*names: str) -> Expr:
-    """
-    Cumulatively sum all values.
-
-    .. deprecated:: 0.19.14
-        This function has been renamed to :func:`cum_sum`.
-
-    Parameters
-    ----------
-    *names
-        Name(s) of the columns to use in the aggregation.
-    """
-    return cum_sum(*names)

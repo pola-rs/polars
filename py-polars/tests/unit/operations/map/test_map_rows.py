@@ -5,6 +5,7 @@ from typing import Any
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
 
 
@@ -49,7 +50,7 @@ def test_map_rows_error_return_type() -> None:
         res = [x + y for x, y in zip(row[0], row[1])]
         return [res]
 
-    with pytest.raises(pl.ComputeError, match="expected tuple, got list"):
+    with pytest.raises(ComputeError, match="expected tuple, got list"):
         df.map_rows(combine)
 
 
@@ -65,14 +66,4 @@ def test_map_rows_shifted_chunks() -> None:
             "column_1": [None, "test", "test123"],
         }
     )
-    assert_frame_equal(result, expected)
-
-
-def test_apply_deprecated() -> None:
-    df = pl.DataFrame({"a": ["foo", "2"], "b": [1, 2], "c": [1.0, 2.0]})
-
-    with pytest.deprecated_call():
-        result = df.apply(lambda x: len(x), None)
-
-    expected = pl.DataFrame({"map": [3, 3]})
     assert_frame_equal(result, expected)

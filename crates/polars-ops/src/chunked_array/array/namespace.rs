@@ -41,13 +41,13 @@ pub trait ArrayNameSpace: AsArray {
         let ca = self.as_array();
 
         if has_inner_nulls(ca) {
-            return sum_with_nulls(ca, &ca.inner_dtype());
+            return sum_with_nulls(ca, ca.inner_dtype());
         };
 
         match ca.inner_dtype() {
             DataType::Boolean => Ok(count_boolean_bits(ca).into_series()),
-            dt if dt.is_numeric() => Ok(sum_array_numerical(ca, &dt)),
-            dt => sum_with_nulls(ca, &dt),
+            dt if dt.is_numeric() => Ok(sum_array_numerical(ca, dt)),
+            dt => sum_with_nulls(ca, dt),
         }
     }
 
@@ -76,6 +76,14 @@ pub trait ArrayNameSpace: AsArray {
         ca.try_apply_amortized_to_list(|s| s.as_ref().unique_stable())
     }
 
+    fn array_n_unique(&self) -> PolarsResult<IdxCa> {
+        let ca = self.as_array();
+        ca.try_apply_amortized_generic(|opt_s| {
+            let opt_v = opt_s.map(|s| s.as_ref().n_unique()).transpose()?;
+            Ok(opt_v.map(|idx| idx as IdxSize))
+        })
+    }
+
     #[cfg(feature = "array_any_all")]
     fn array_any(&self) -> PolarsResult<Series> {
         let ca = self.as_array();
@@ -88,10 +96,10 @@ pub trait ArrayNameSpace: AsArray {
         array_all(ca)
     }
 
-    fn array_sort(&self, options: SortOptions) -> ArrayChunked {
+    fn array_sort(&self, options: SortOptions) -> PolarsResult<ArrayChunked> {
         let ca = self.as_array();
         // SAFETY: Sort only changes the order of the elements in each subarray.
-        unsafe { ca.apply_amortized_same_type(|s| s.as_ref().sort_with(options)) }
+        unsafe { ca.try_apply_amortized_same_type(|s| s.as_ref().sort_with(options)) }
     }
 
     fn array_reverse(&self) -> ArrayChunked {
@@ -114,9 +122,9 @@ pub trait ArrayNameSpace: AsArray {
         })
     }
 
-    fn array_get(&self, index: &Int64Chunked) -> PolarsResult<Series> {
+    fn array_get(&self, index: &Int64Chunked, null_on_oob: bool) -> PolarsResult<Series> {
         let ca = self.as_array();
-        array_get(ca, index)
+        array_get(ca, index, null_on_oob)
     }
 
     fn array_join(&self, separator: &StringChunked, ignore_nulls: bool) -> PolarsResult<Series> {
@@ -128,6 +136,39 @@ pub trait ArrayNameSpace: AsArray {
     fn array_count_matches(&self, element: AnyValue) -> PolarsResult<Series> {
         let ca = self.as_array();
         array_count_matches(ca, element)
+    }
+
+    fn array_shift(&self, n: &Series) -> PolarsResult<Series> {
+        let ca = self.as_array();
+        let n_s = n.cast(&DataType::Int64)?;
+        let n = n_s.i64()?;
+        let out = match n.len() {
+            1 => {
+                if let Some(n) = n.get(0) {
+                    // SAFETY: Shift does not change the dtype and number of elements of sub-array.
+                    unsafe { ca.apply_amortized_same_type(|s| s.as_ref().shift(n)) }
+                } else {
+                    ArrayChunked::full_null_with_dtype(
+                        ca.name(),
+                        ca.len(),
+                        ca.inner_dtype(),
+                        ca.width(),
+                    )
+                }
+            },
+            _ => {
+                // SAFETY: Shift does not change the dtype and number of elements of sub-array.
+                unsafe {
+                    ca.zip_and_apply_amortized_same_type(n, |opt_s, opt_periods| {
+                        match (opt_s, opt_periods) {
+                            (Some(s), Some(n)) => Some(s.as_ref().shift(n)),
+                            _ => None,
+                        }
+                    })
+                }
+            },
+        };
+        Ok(out.into_series())
     }
 }
 

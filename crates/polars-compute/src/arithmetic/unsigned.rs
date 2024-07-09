@@ -4,12 +4,16 @@ use strength_reduce::*;
 
 use super::PrimitiveArithmeticKernelImpl;
 use crate::arity::{prim_binary_values, prim_unary_values};
-use crate::comparisons::TotalOrdKernel;
+use crate::comparisons::TotalEqKernel;
 
 macro_rules! impl_unsigned_arith_kernel {
     ($T:ty, $StrRed:ty) => {
         impl PrimitiveArithmeticKernelImpl for $T {
             type TrueDivT = f64;
+
+            fn prim_wrapping_abs(lhs: PArr<$T>) -> PArr<$T> {
+                lhs
+            }
 
             fn prim_wrapping_neg(lhs: PArr<$T>) -> PArr<$T> {
                 prim_unary_values(lhs, |x| x.wrapping_neg())

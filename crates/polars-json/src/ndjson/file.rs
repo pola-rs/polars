@@ -1,4 +1,5 @@
 use std::io::BufRead;
+use std::num::NonZeroUsize;
 
 use arrow::datatypes::ArrowDataType;
 use fallible_streaming_iterator::FallibleStreamingIterator;
@@ -41,7 +42,7 @@ fn read_rows<R: BufRead>(reader: &mut R, rows: &mut [String], limit: usize) -> P
 ///
 /// This iterator is used to read chunks of an NDJSON in batches.
 /// This iterator is guaranteed to yield at least one row.
-/// # Implementantion
+/// # Implementation
 /// Advancing this iterator is IO-bounded, but does require parsing each byte to find end of lines.
 /// # Error
 /// Advancing this iterator errors iff the reader errors.
@@ -100,7 +101,7 @@ fn parse_value<'a>(scratch: &'a mut Vec<u8>, val: &[u8]) -> PolarsResult<Borrowe
 /// It performs both `O(N)` IO and CPU-bounded operations where `N` is the number of rows.
 pub fn iter_unique_dtypes<R: std::io::BufRead>(
     reader: &mut R,
-    number_of_rows: Option<usize>,
+    number_of_rows: Option<NonZeroUsize>,
 ) -> PolarsResult<impl Iterator<Item = ArrowDataType>> {
     if reader.fill_buf().map(|b| b.is_empty())? {
         return Err(PolarsError::ComputeError(
@@ -109,7 +110,7 @@ pub fn iter_unique_dtypes<R: std::io::BufRead>(
     }
 
     let rows = vec!["".to_string(); 1]; // 1 <=> read row by row
-    let mut reader = FileReader::new(reader, rows, number_of_rows);
+    let mut reader = FileReader::new(reader, rows, number_of_rows.map(|v| v.into()));
 
     let mut data_types = PlIndexSet::default();
     let mut buf = vec![];

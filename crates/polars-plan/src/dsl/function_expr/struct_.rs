@@ -1,16 +1,20 @@
 use polars_core::utils::slice_offsets;
 
 use super::*;
-use crate::map;
+use crate::{map, map_as_slice};
 
 #[derive(Clone, Eq, PartialEq, Hash, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum StructFunction {
     FieldByIndex(i64),
     FieldByName(Arc<str>),
-    RenameFields(Arc<Vec<String>>),
+    RenameFields(Arc<[String]>),
+    PrefixFields(Arc<str>),
+    SuffixFields(Arc<str>),
     #[cfg(feature = "json")]
     JsonEncode,
+    WithFields,
+    MultipleFields(Arc<[ColumnName]>),
 }
 
 impl StructFunction {
@@ -60,8 +64,62 @@ impl StructFunction {
                         .collect(),
                 ),
             }),
+            PrefixFields(prefix) => mapper.try_map_dtype(|dt| match dt {
+                DataType::Struct(fields) => {
+                    let fields = fields
+                        .iter()
+                        .map(|fld| {
+                            let name = fld.name();
+                            Field::new(&format!("{prefix}{name}"), fld.data_type().clone())
+                        })
+                        .collect();
+                    Ok(DataType::Struct(fields))
+                },
+                _ => polars_bail!(op = "prefix_fields", got = dt, expected = "Struct"),
+            }),
+            SuffixFields(suffix) => mapper.try_map_dtype(|dt| match dt {
+                DataType::Struct(fields) => {
+                    let fields = fields
+                        .iter()
+                        .map(|fld| {
+                            let name = fld.name();
+                            Field::new(&format!("{name}{suffix}"), fld.data_type().clone())
+                        })
+                        .collect();
+                    Ok(DataType::Struct(fields))
+                },
+                _ => polars_bail!(op = "suffix_fields", got = dt, expected = "Struct"),
+            }),
             #[cfg(feature = "json")]
             JsonEncode => mapper.with_dtype(DataType::String),
+            WithFields => {
+                let args = mapper.args();
+                let struct_ = &args[0];
+
+                if let DataType::Struct(fields) = struct_.data_type() {
+                    let mut name_2_dtype = PlIndexMap::with_capacity(fields.len() * 2);
+
+                    for field in fields {
+                        name_2_dtype.insert(field.name(), field.data_type());
+                    }
+                    for arg in &args[1..] {
+                        name_2_dtype.insert(arg.name(), arg.data_type());
+                    }
+                    let dtype = DataType::Struct(
+                        name_2_dtype
+                            .iter()
+                            .map(|(name, dtype)| Field::new(name, (*dtype).clone()))
+                            .collect(),
+                    );
+                    let mut out = struct_.clone();
+                    out.coerce(dtype);
+                    Ok(out)
+                } else {
+                    let dt = struct_.data_type();
+                    polars_bail!(op = "with_fields", got = dt, expected = "Struct")
+                }
+            },
+            MultipleFields(_) => panic!("should be expanded"),
         }
     }
 }
@@ -73,8 +131,12 @@ impl Display for StructFunction {
             FieldByIndex(index) => write!(f, "struct.field_by_index({index})"),
             FieldByName(name) => write!(f, "struct.field_by_name({name})"),
             RenameFields(names) => write!(f, "struct.rename_fields({:?})", names),
+            PrefixFields(_) => write!(f, "name.prefix_fields"),
+            SuffixFields(_) => write!(f, "name.suffixFields"),
             #[cfg(feature = "json")]
             JsonEncode => write!(f, "struct.to_json"),
+            WithFields => write!(f, "with_fields"),
+            MultipleFields(_) => write!(f, "multiple_fields"),
         }
     }
 }
@@ -83,29 +145,25 @@ impl From<StructFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
     fn from(func: StructFunction) -> Self {
         use StructFunction::*;
         match func {
-            FieldByIndex(index) => map!(struct_::get_by_index, index),
-            FieldByName(name) => map!(struct_::get_by_name, name.clone()),
-            RenameFields(names) => map!(struct_::rename_fields, names.clone()),
+            FieldByIndex(_) => panic!("should be replaced"),
+            FieldByName(name) => map!(get_by_name, name.clone()),
+            RenameFields(names) => map!(rename_fields, names.clone()),
+            PrefixFields(prefix) => map!(prefix_fields, prefix.clone()),
+            SuffixFields(suffix) => map!(suffix_fields, suffix.clone()),
             #[cfg(feature = "json")]
-            JsonEncode => map!(struct_::to_json),
+            JsonEncode => map!(to_json),
+            WithFields => map_as_slice!(with_fields),
+            MultipleFields(_) => unimplemented!(),
         }
     }
 }
 
-pub(super) fn get_by_index(s: &Series, index: i64) -> PolarsResult<Series> {
-    let s = s.struct_()?;
-    let (index, _) = slice_offsets(index, 0, s.fields().len());
-    s.fields()
-        .get(index)
-        .cloned()
-        .ok_or_else(|| polars_err!(ComputeError: "struct field index out of bounds"))
-}
 pub(super) fn get_by_name(s: &Series, name: Arc<str>) -> PolarsResult<Series> {
     let ca = s.struct_()?;
     ca.field_by_name(name.as_ref())
 }
 
-pub(super) fn rename_fields(s: &Series, names: Arc<Vec<String>>) -> PolarsResult<Series> {
+pub(super) fn rename_fields(s: &Series, names: Arc<[String]>) -> PolarsResult<Series> {
     let ca = s.struct_()?;
     let fields = ca
         .fields()
@@ -120,10 +178,40 @@ pub(super) fn rename_fields(s: &Series, names: Arc<Vec<String>>) -> PolarsResult
     StructChunked::new(ca.name(), &fields).map(|ca| ca.into_series())
 }
 
+pub(super) fn prefix_fields(s: &Series, prefix: Arc<str>) -> PolarsResult<Series> {
+    let ca = s.struct_()?;
+    let fields = ca
+        .fields()
+        .iter()
+        .map(|s| {
+            let mut s = s.clone();
+            let name = s.name();
+            s.rename(&format!("{prefix}{name}"));
+            s
+        })
+        .collect::<Vec<_>>();
+    StructChunked::new(ca.name(), &fields).map(|ca| ca.into_series())
+}
+
+pub(super) fn suffix_fields(s: &Series, suffix: Arc<str>) -> PolarsResult<Series> {
+    let ca = s.struct_()?;
+    let fields = ca
+        .fields()
+        .iter()
+        .map(|s| {
+            let mut s = s.clone();
+            let name = s.name();
+            s.rename(&format!("{name}{suffix}"));
+            s
+        })
+        .collect::<Vec<_>>();
+    StructChunked::new(ca.name(), &fields).map(|ca| ca.into_series())
+}
+
 #[cfg(feature = "json")]
 pub(super) fn to_json(s: &Series) -> PolarsResult<Series> {
     let ca = s.struct_()?;
-    let dtype = ca.dtype().to_arrow(true);
+    let dtype = ca.dtype().to_arrow(CompatLevel::newest());
 
     let iter = ca.chunks().iter().map(|arr| {
         let arr = arrow::compute::cast::cast_unchecked(arr.as_ref(), &dtype).unwrap();
@@ -131,4 +219,24 @@ pub(super) fn to_json(s: &Series) -> PolarsResult<Series> {
     });
 
     Ok(StringChunked::from_chunk_iter(ca.name(), iter).into_series())
+}
+
+pub(super) fn with_fields(args: &[Series]) -> PolarsResult<Series> {
+    let s = &args[0];
+
+    let ca = s.struct_()?;
+    let current = ca.fields();
+
+    let mut fields = PlIndexMap::with_capacity(current.len() + s.len() - 1);
+
+    for field in current {
+        fields.insert(field.name(), field);
+    }
+
+    for field in &args[1..] {
+        fields.insert(field.name(), field);
+    }
+
+    let new_fields = fields.into_values().cloned().collect::<Vec<_>>();
+    StructChunked::new(ca.name(), &new_fields).map(|ca| ca.into_series())
 }

@@ -3,28 +3,28 @@ from __future__ import annotations
 import contextlib
 from functools import reduce
 from itertools import chain
-from typing import TYPE_CHECKING, Iterable, List, Sequence, cast, get_args
+from typing import TYPE_CHECKING, Iterable, Sequence, get_args
 
 import polars._reexport as pl
 from polars import functions as F
+from polars._typing import ConcatMethod
+from polars._utils.various import ordered_unique
+from polars._utils.wrap import wrap_df, wrap_expr, wrap_ldf, wrap_s
 from polars.exceptions import InvalidOperationError
-from polars.type_aliases import ConcatMethod, FrameType
-from polars.utils._wrap import wrap_df, wrap_expr, wrap_ldf, wrap_s
-from polars.utils.various import ordered_unique
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
 
 if TYPE_CHECKING:
     from polars import DataFrame, Expr, LazyFrame, Series
-    from polars.type_aliases import JoinStrategy, PolarsType
+    from polars._typing import FrameType, JoinStrategy, PolarsType
 
 
 def concat(
     items: Iterable[PolarsType],
     *,
     how: ConcatMethod = "vertical",
-    rechunk: bool = True,
+    rechunk: bool = False,
     parallel: bool = True,
 ) -> PolarsType:
     """
@@ -128,7 +128,7 @@ def concat(
     # unpack/standardise (handles generator input)
     elems = list(items)
 
-    if not len(elems) > 0:
+    if not elems:
         msg = "cannot concat empty list"
         raise ValueError(msg)
     elif len(elems) == 1 and isinstance(
@@ -142,12 +142,12 @@ def concat(
             raise TypeError(msg)
 
         # establish common columns, maintaining the order in which they appear
-        all_columns = list(chain.from_iterable(e.columns for e in elems))
+        all_columns = list(chain.from_iterable(e.collect_schema() for e in elems))
         key = {v: k for k, v in enumerate(ordered_unique(all_columns))}
         common_cols = sorted(
             reduce(
                 lambda x, y: set(x) & set(y),  # type: ignore[arg-type, return-value]
-                chain(e.columns for e in elems),
+                chain(e.collect_schema() for e in elems),
             ),
             key=lambda k: key.get(k, 0),
         )
@@ -156,17 +156,15 @@ def concat(
             msg = "'align' strategy requires at least one common column"
             raise InvalidOperationError(msg)
 
-        # align the frame data using an outer join with no suffix-resolution
+        # align the frame data using a full outer join with no suffix-resolution
         # (so we raise an error in case of column collision, like "horizontal")
         lf: LazyFrame = reduce(
             lambda x, y: (
-                x.join(y, how="outer", on=common_cols, suffix="_PL_CONCAT_RIGHT")
-                # Coalesce outer join columns
+                x.join(y, how="full", on=common_cols, suffix="_PL_CONCAT_RIGHT")
+                # Coalesce full outer join columns
                 .with_columns(
-                    [
-                        F.coalesce([name, f"{name}_PL_CONCAT_RIGHT"])
-                        for name in common_cols
-                    ]
+                    F.coalesce([name, f"{name}_PL_CONCAT_RIGHT"])
+                    for name in common_cols
                 )
                 .drop([f"{name}_PL_CONCAT_RIGHT" for name in common_cols])
             ),
@@ -262,22 +260,20 @@ def concat(
 def _alignment_join(
     *idx_frames: tuple[int, LazyFrame],
     align_on: list[str],
-    how: JoinStrategy = "outer",
+    how: JoinStrategy = "full",
     descending: bool | Sequence[bool] = False,
 ) -> LazyFrame:
     """Create a single master frame with all rows aligned on the common key values."""
     # note: can stackoverflow if the join becomes too large, so we
     # collect eagerly when hitting a large enough number of frames
     post_align_collect = len(idx_frames) >= 250
-    if how == "outer":
-        how = "outer_coalesce"
 
     def join_func(
         idx_x: tuple[int, LazyFrame],
         idx_y: tuple[int, LazyFrame],
     ) -> tuple[int, LazyFrame]:
         (_, x), (y_idx, y) = idx_x, idx_y
-        return y_idx, x.join(y, how=how, on=align_on, suffix=f":{y_idx}")
+        return y_idx, x.join(y, how=how, on=align_on, suffix=f":{y_idx}", coalesce=True)
 
     joined = reduce(join_func, idx_frames)[1].sort(by=align_on, descending=descending)
     if post_align_collect:
@@ -288,7 +284,7 @@ def _alignment_join(
 def align_frames(
     *frames: FrameType,
     on: str | Expr | Sequence[str] | Sequence[Expr] | Sequence[str | Expr],
-    how: JoinStrategy = "outer",
+    how: JoinStrategy = "full",
     select: str | Expr | Sequence[str | Expr] | None = None,
     descending: bool | Sequence[bool] = False,
 ) -> list[FrameType]:
@@ -427,7 +423,8 @@ def align_frames(
     """  # noqa: W505
     if not frames:
         return []
-    elif len({type(f) for f in frames}) != 1:
+
+    if len({type(f) for f in frames}) != 1:
         msg = (
             "input frames must be of a consistent type (all LazyFrame or all DataFrame)"
         )
@@ -439,26 +436,23 @@ def align_frames(
 
     # create aligned master frame (this is the most expensive part; afterwards
     # we just subselect out the columns representing the component frames)
-    idx_frames = tuple((idx, df.lazy()) for idx, df in enumerate(frames))
+    idx_frames = [(idx, frame.lazy()) for idx, frame in enumerate(frames)]
     alignment_frame = _alignment_join(
         *idx_frames, align_on=align_on, how=how, descending=descending
     )
 
     # select-out aligned components from the master frame
-    aligned_cols = set(alignment_frame.columns)
+    aligned_cols = set(alignment_frame.collect_schema())
     aligned_frames = []
-    for idx, df in idx_frames:
+    for idx, lf in idx_frames:
         sfx = f":{idx}"
         df_cols = [
             F.col(f"{c}{sfx}").alias(c) if f"{c}{sfx}" in aligned_cols else F.col(c)
-            for c in df.columns
+            for c in lf.collect_schema()
         ]
         f = alignment_frame.select(*df_cols)
         if select is not None:
             f = f.select(select)
         aligned_frames.append(f)
 
-    return cast(
-        List[FrameType],
-        F.collect_all(aligned_frames) if eager else aligned_frames,
-    )
+    return F.collect_all(aligned_frames) if eager else aligned_frames  # type: ignore[return-value]

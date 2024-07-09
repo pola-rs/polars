@@ -3,20 +3,19 @@ use std::borrow::Cow;
 
 use ahash::RandomState;
 
+use super::{BitRepr, MetadataFlags};
+use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::object::PolarsObjectSafe;
 use crate::chunked_array::ops::compare_inner::{IntoTotalEqInner, TotalEqInner};
-#[cfg(feature = "chunked_ids")]
-use crate::chunked_array::ops::take::TakeChunked;
-use crate::chunked_array::Settings;
-#[cfg(feature = "algorithm_group_by")]
-use crate::frame::group_by::{GroupsProxy, IntoGroupsProxy};
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 use crate::series::private::{PrivateSeries, PrivateSeriesNumeric};
-#[cfg(feature = "chunked_ids")]
-use crate::series::IsSorted;
 
-impl<T: PolarsObject> PrivateSeriesNumeric for SeriesWrap<ObjectChunked<T>> {}
+impl<T: PolarsObject> PrivateSeriesNumeric for SeriesWrap<ObjectChunked<T>> {
+    fn bit_repr(&self) -> Option<BitRepr> {
+        None
+    }
+}
 
 impl<T> PrivateSeries for SeriesWrap<ObjectChunked<T>>
 where
@@ -43,10 +42,10 @@ where
         self.0.dtype()
     }
 
-    fn _set_flags(&mut self, flags: Settings) {
+    fn _set_flags(&mut self, flags: MetadataFlags) {
         self.0.set_flags(flags)
     }
-    fn _get_flags(&self) -> Settings {
+    fn _get_flags(&self) -> MetadataFlags {
         self.0.get_flags()
     }
     unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
@@ -86,8 +85,8 @@ where
         ObjectChunked::rename(&mut self.0, name)
     }
 
-    fn chunk_lengths(&self) -> ChunkIdIter {
-        ObjectChunked::chunk_id(&self.0)
+    fn chunk_lengths(&self) -> ChunkLenIter {
+        ObjectChunked::chunk_lengths(&self.0)
     }
 
     fn name(&self) -> &str {
@@ -109,6 +108,11 @@ where
         ObjectChunked::slice(&self.0, offset, length).into_series()
     }
 
+    fn split_at(&self, offset: i64) -> (Series, Series) {
+        let (a, b) = ObjectChunked::split_at(&self.0, offset);
+        (a.into_series(), b.into_series())
+    }
+
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
         if self.dtype() != other.dtype() {
             polars_bail!(append);
@@ -123,16 +127,6 @@ where
 
     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<Series> {
         ChunkFilter::filter(&self.0, filter).map(|ca| ca.into_series())
-    }
-
-    #[cfg(feature = "chunked_ids")]
-    unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Series {
-        self.0.take_chunked_unchecked(by, sorted).into_series()
-    }
-
-    #[cfg(feature = "chunked_ids")]
-    unsafe fn _take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Series {
-        self.0.take_opt_chunked_unchecked(by).into_series()
     }
 
     fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
@@ -164,7 +158,7 @@ where
         ChunkExpandAtIndex::new_from_index(&self.0, index, length).into_series()
     }
 
-    fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
+    fn cast(&self, data_type: &DataType, _cast_options: CastOptions) -> PolarsResult<Series> {
         if matches!(data_type, DataType::Object(_, None)) {
             Ok(self.0.clone().into_series())
         } else {
@@ -176,6 +170,9 @@ where
 
     fn get(&self, index: usize) -> PolarsResult<AnyValue> {
         ObjectChunked::get_any_value(&self.0, index)
+    }
+    unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
+        ObjectChunked::get_any_value_unchecked(&self.0, index)
     }
     fn null_count(&self) -> usize {
         ObjectChunked::null_count(&self.0)
@@ -221,6 +218,14 @@ where
         ObjectChunked::<T>::get_object(&self.0, index)
     }
 
+    unsafe fn get_object_chunked_unchecked(
+        &self,
+        chunk: usize,
+        index: usize,
+    ) -> Option<&dyn PolarsObjectSafe> {
+        ObjectChunked::<T>::get_object_chunked_unchecked(&self.0, chunk, index)
+    }
+
     fn as_any(&self) -> &dyn Any {
         &self.0
     }
@@ -232,6 +237,7 @@ mod test {
 
     #[test]
     fn test_downcast_object() -> PolarsResult<()> {
+        #[allow(non_local_definitions)]
         impl PolarsObject for i32 {
             fn type_name() -> &'static str {
                 "i32"

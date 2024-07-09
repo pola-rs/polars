@@ -8,7 +8,7 @@ import pytest
 
 import polars as pl
 from polars.exceptions import PolarsInefficientMapWarning
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 def test_map_elements_infer_list() -> None:
@@ -22,12 +22,24 @@ def test_map_elements_infer_list() -> None:
     assert df.select([pl.all().map_elements(lambda x: [x])]).dtypes == [pl.List] * 3
 
 
+def test_map_elements_upcast_null_dtype_empty_list() -> None:
+    df = pl.DataFrame({"a": [1, 2]})
+    out = df.select(
+        pl.col("a").map_elements(lambda _: [], return_dtype=pl.List(pl.Int64))
+    )
+    assert_frame_equal(
+        out, pl.DataFrame({"a": [[], []]}, schema={"a": pl.List(pl.Int64)})
+    )
+
+
 def test_map_elements_arithmetic_consistency() -> None:
     df = pl.DataFrame({"A": ["a", "a"], "B": [2, 3]})
     with pytest.warns(PolarsInefficientMapWarning, match="with this one instead"):
-        assert df.group_by("A").agg(pl.col("B").map_elements(lambda x: x + 1.0))[
-            "B"
-        ].to_list() == [[3.0, 4.0]]
+        assert df.group_by("A").agg(
+            pl.col("B").map_elements(
+                lambda x: x + 1.0, return_dtype=pl.List(pl.Float64)
+            )
+        )["B"].to_list() == [[3.0, 4.0]]
 
 
 def test_map_elements_struct() -> None:
@@ -85,9 +97,12 @@ def test_map_elements_list_any_value_fallback() -> None:
         match=r'(?s)with this one instead:.*pl.col\("text"\).str.json_decode()',
     ):
         df = pl.DataFrame({"text": ['[{"x": 1, "y": 2}, {"x": 3, "y": 4}]']})
-        assert df.select(pl.col("text").map_elements(json.loads)).to_dict(
-            as_series=False
-        ) == {"text": [[{"x": 1, "y": 2}, {"x": 3, "y": 4}]]}
+        assert df.select(
+            pl.col("text").map_elements(
+                json.loads,
+                return_dtype=pl.List(pl.Struct({"x": pl.Int64, "y": pl.Int64})),
+            )
+        ).to_dict(as_series=False) == {"text": [[{"x": 1, "y": 2}, {"x": 3, "y": 4}]]}
 
         # starts with empty list '[]'
         df = pl.DataFrame(
@@ -99,9 +114,14 @@ def test_map_elements_list_any_value_fallback() -> None:
                 ]
             }
         )
-        assert df.select(pl.col("text").map_elements(json.loads)).to_dict(
-            as_series=False
-        ) == {"text": [[], [{"x": 1, "y": 2}, {"x": 3, "y": 4}], [{"x": 1, "y": 2}]]}
+        assert df.select(
+            pl.col("text").map_elements(
+                json.loads,
+                return_dtype=pl.List(pl.Struct({"x": pl.Int64, "y": pl.Int64})),
+            )
+        ).to_dict(as_series=False) == {
+            "text": [[], [{"x": 1, "y": 2}, {"x": 3, "y": 4}], [{"x": 1, "y": 2}]]
+        }
 
 
 def test_map_elements_all_types() -> None:
@@ -131,7 +151,7 @@ def test_map_elements_type_propagation() -> None:
         .group_by("a", maintain_order=True)
         .agg(
             [
-                pl.when(pl.col("b").null_count() == 0)
+                pl.when(~pl.col("b").has_nulls())
                 .then(
                     pl.col("b").map_elements(
                         lambda s: s[0]["c"],
@@ -160,11 +180,17 @@ def test_map_elements_skip_nulls() -> None:
     some_map = {None: "a", 1: "b"}
     s = pl.Series([None, 1])
 
-    assert s.map_elements(lambda x: some_map[x]).to_list() == [None, "b"]
-    assert s.map_elements(lambda x: some_map[x], skip_nulls=False).to_list() == [
-        "a",
-        "b",
-    ]
+    with pytest.warns(
+        PolarsInefficientMapWarning,
+        match=r"(?s)Replace this expression.*s\.map_elements\(lambda x:",
+    ):
+        assert s.map_elements(
+            lambda x: some_map[x], return_dtype=pl.String
+        ).to_list() == [None, "b"]
+
+        assert s.map_elements(
+            lambda x: some_map[x], return_dtype=pl.String, skip_nulls=False
+        ).to_list() == ["a", "b"]
 
 
 def test_map_elements_object_dtypes() -> None:
@@ -175,17 +201,17 @@ def test_map_elements_object_dtypes() -> None:
         assert pl.DataFrame(
             {"a": pl.Series([1, 2, "a", 4, 5], dtype=pl.Object)}
         ).with_columns(
-            [
-                pl.col("a").map_elements(lambda x: x * 2, return_dtype=pl.Object),
-                pl.col("a")
-                .map_elements(
-                    lambda x: isinstance(x, (int, float)), return_dtype=pl.Boolean
-                )
-                .alias("is_numeric1"),
-                pl.col("a")
-                .map_elements(lambda x: isinstance(x, (int, float)))
-                .alias("is_numeric_infer"),
-            ]
+            pl.col("a").map_elements(lambda x: x * 2, return_dtype=pl.Object),
+            pl.col("a")
+            .map_elements(
+                lambda x: isinstance(x, (int, float)), return_dtype=pl.Boolean
+            )
+            .alias("is_numeric1"),
+            pl.col("a")
+            .map_elements(
+                lambda x: isinstance(x, (int, float)), return_dtype=pl.Boolean
+            )
+            .alias("is_numeric_infer"),
         ).to_dict(as_series=False) == {
             "a": [2, 4, "aa", 8, 10],
             "is_numeric1": [True, True, False, True, True],
@@ -195,11 +221,9 @@ def test_map_elements_object_dtypes() -> None:
 
 def test_map_elements_explicit_list_output_type() -> None:
     out = pl.DataFrame({"str": ["a", "b"]}).with_columns(
-        [
-            pl.col("str").map_elements(
-                lambda _: pl.Series([1, 2, 3]), return_dtype=pl.List(pl.Int64)
-            )
-        ]
+        pl.col("str").map_elements(
+            lambda _: pl.Series([1, 2, 3]), return_dtype=pl.List(pl.Int64)
+        )
     )
 
     assert out.dtypes == [pl.List(pl.Int64)]
@@ -212,12 +236,20 @@ def test_map_elements_dict() -> None:
         match=r'(?s)with this one instead:.*pl.col\("abc"\).str.json_decode()',
     ):
         df = pl.DataFrame({"abc": ['{"A":"Value1"}', '{"B":"Value2"}']})
-        assert df.select(pl.col("abc").map_elements(json.loads)).to_dict(
-            as_series=False
-        ) == {"abc": [{"A": "Value1", "B": None}, {"A": None, "B": "Value2"}]}
+        assert df.select(
+            pl.col("abc").map_elements(
+                json.loads, return_dtype=pl.Struct({"A": pl.String, "B": pl.String})
+            )
+        ).to_dict(as_series=False) == {
+            "abc": [{"A": "Value1", "B": None}, {"A": None, "B": "Value2"}]
+        }
         assert pl.DataFrame(
             {"abc": ['{"A":"Value1", "B":"Value2"}', '{"B":"Value3"}']}
-        ).select(pl.col("abc").map_elements(json.loads)).to_dict(as_series=False) == {
+        ).select(
+            pl.col("abc").map_elements(
+                json.loads, return_dtype=pl.Struct({"A": pl.String, "B": pl.String})
+            )
+        ).to_dict(as_series=False) == {
             "abc": [{"A": "Value1", "B": "Value2"}, {"A": None, "B": "Value3"}]
         }
 
@@ -295,8 +327,40 @@ def test_map_elements_on_empty_col_10639() -> None:
     }
 
 
-def test_apply_deprecated() -> None:
-    with pytest.deprecated_call():
-        pl.col("a").apply(lambda x: x + 1)
-    with pytest.deprecated_call():
-        pl.Series([1, 2, 3]).apply(lambda x: x + 1)
+def test_map_elements_chunked_14390() -> None:
+    s = pl.concat(2 * [pl.Series([1])], rechunk=False)
+    assert s.n_chunks() > 1
+    with pytest.warns(PolarsInefficientMapWarning):
+        assert_series_equal(
+            s.map_elements(str, return_dtype=pl.String),
+            pl.Series(["1", "1"]),
+            check_names=False,
+        )
+
+
+def test_cabbage_strategy_14396() -> None:
+    df = pl.DataFrame({"x": [1, 2, 3]})
+    with pytest.raises(
+        ValueError, match="strategy 'cabbage' is not supported"
+    ), pytest.warns(PolarsInefficientMapWarning):
+        df.select(pl.col("x").map_elements(lambda x: 2 * x, strategy="cabbage"))  # type: ignore[arg-type]
+
+
+def test_unknown_map_elements() -> None:
+    df = pl.DataFrame(
+        {
+            "Amount": [10, 1, 1, 5],
+            "Flour": ["1000g", "100g", "50g", "75g"],
+        }
+    )
+
+    q = df.lazy().select(
+        pl.col("Amount"),
+        pl.col("Flour").map_elements(lambda x: 100.0) / pl.col("Amount"),
+    )
+
+    assert q.collect().to_dict(as_series=False) == {
+        "Amount": [10, 1, 1, 5],
+        "Flour": [10.0, 100.0, 100.0, 20.0],
+    }
+    assert q.collect_schema().dtypes() == [pl.Int64, pl.Unknown]

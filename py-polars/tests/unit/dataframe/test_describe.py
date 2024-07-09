@@ -24,12 +24,14 @@ def test_df_describe(lazy: bool) -> None:
             ],
             "g": [date(2020, 1, 1), date(2021, 7, 5), date(2022, 12, 31)],
             "h": [time(10, 30), time(15, 0), time(20, 30)],
+            "i": [1_000_000, 2_000_000, 3_000_000],
         },
-        schema_overrides={"e": pl.Categorical},
+        schema_overrides={"e": pl.Categorical, "i": pl.Duration},
     )
 
     frame: pl.DataFrame | pl.LazyFrame = df.lazy() if lazy else df
     result = frame.describe()
+    print(result)
 
     expected = pl.DataFrame(
         {
@@ -73,7 +75,7 @@ def test_df_describe(lazy: bool) -> None:
             "g": [
                 "3",
                 "0",
-                "2021-07-02",
+                "2021-07-02 16:00:00",
                 None,
                 "2020-01-01",
                 "2021-07-05",
@@ -91,6 +93,17 @@ def test_df_describe(lazy: bool) -> None:
                 "15:00:00",
                 "20:30:00",
                 "20:30:00",
+            ],
+            "i": [
+                "3",
+                "0",
+                "0:00:02",
+                None,
+                "0:00:01",
+                "0:00:02",
+                "0:00:02",
+                "0:00:03",
+                "0:00:03",
             ],
         }
     )
@@ -119,6 +132,7 @@ def test_df_describe_nested() -> None:
         ],
         schema=["statistic"] + df.columns,
         schema_overrides={"struct": pl.Float64, "list": pl.Float64},
+        orient="row",
     )
     assert_frame_equal(result, expected)
 
@@ -141,6 +155,7 @@ def test_df_describe_custom_percentiles() -> None:
             ("max", 2.0),
         ],
         schema=["statistic"] + df.columns,
+        orient="row",
     )
     assert_frame_equal(result, expected)
 
@@ -159,6 +174,7 @@ def test_df_describe_no_percentiles(pcts: list[float] | None) -> None:
             ("max", 2.0),
         ],
         schema=["statistic"] + df.columns,
+        orient="row",
     )
     assert_frame_equal(result, expected)
 
@@ -179,6 +195,7 @@ def test_df_describe_empty_column() -> None:
             ("max", None),
         ],
         schema=["statistic"] + df.columns,
+        orient="row",
     )
     assert_frame_equal(result, expected)
 

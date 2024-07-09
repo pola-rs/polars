@@ -1,17 +1,46 @@
 use std::collections::BTreeMap;
-use std::convert::Into;
-use std::string::ToString;
+
+#[cfg(feature = "dtype-array")]
+use polars_utils::format_tuple;
 
 use super::*;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::registry::ObjectRegistry;
+use crate::utils::materialize_dyn_int;
 
 pub type TimeZone = String;
 
 pub static DTYPE_ENUM_KEY: &str = "POLARS.CATEGORICAL_TYPE";
 pub static DTYPE_ENUM_VALUE: &str = "ENUM";
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
+#[cfg_attr(
+    any(feature = "serde", feature = "serde-lazy"),
+    derive(Serialize, Deserialize)
+)]
+pub enum UnknownKind {
+    // Hold the value to determine the concrete size.
+    Int(i128),
+    Float,
+    // Can be Categorical or String
+    Str,
+    #[default]
+    Any,
+}
+
+impl UnknownKind {
+    pub fn materialize(&self) -> Option<DataType> {
+        let dtype = match self {
+            UnknownKind::Int(v) => materialize_dyn_int(*v).dtype(),
+            UnknownKind::Float => DataType::Float64,
+            UnknownKind::Str => DataType::String,
+            UnknownKind::Any => return None,
+        };
+        Some(dtype)
+    }
+}
+
+#[derive(Clone, Debug)]
 pub enum DataType {
     Boolean,
     UInt8,
@@ -24,9 +53,10 @@ pub enum DataType {
     Int64,
     Float32,
     Float64,
-    #[cfg(feature = "dtype-decimal")]
     /// Fixed point decimal type optional precision and non-negative scale.
     /// This is backed by a signed 128-bit integer which allows for up to 38 significant digits.
+    /// Meaning max precision is 38.
+    #[cfg(feature = "dtype-decimal")]
     Decimal(Option<usize>, Option<usize>), // precision/scale; scale being None means "infer"
     /// String data
     String,
@@ -47,22 +77,27 @@ pub enum DataType {
     Array(Box<DataType>, usize),
     /// A nested list with a variable size in each row
     List(Box<DataType>),
-    #[cfg(feature = "object")]
     /// A generic type that can be used in a `Series`
     /// &'static str can be used to determine/set inner type
+    #[cfg(feature = "object")]
     Object(&'static str, Option<Arc<ObjectRegistry>>),
     Null,
-    #[cfg(feature = "dtype-categorical")]
     // The RevMapping has the internal state.
     // This is ignored with comparisons, hashing etc.
+    #[cfg(feature = "dtype-categorical")]
     Categorical(Option<Arc<RevMapping>>, CategoricalOrdering),
     #[cfg(feature = "dtype-categorical")]
     Enum(Option<Arc<RevMapping>>, CategoricalOrdering),
     #[cfg(feature = "dtype-struct")]
     Struct(Vec<Field>),
     // some logical types we cannot know statically, e.g. Datetime
-    #[default]
-    Unknown,
+    Unknown(UnknownKind),
+}
+
+impl Default for DataType {
+    fn default() -> Self {
+        DataType::Unknown(UnknownKind::Any)
+    }
 }
 
 pub trait AsRefDataType {
@@ -82,7 +117,14 @@ impl PartialEq for DataType {
             match (self, other) {
                 // Don't include rev maps in comparisons
                 #[cfg(feature = "dtype-categorical")]
-                (Categorical(_, _), Categorical(_, _)) | (Enum(_, _), Enum(_, _)) => true,
+                (Categorical(_, _), Categorical(_, _)) => true,
+                #[cfg(feature = "dtype-categorical")]
+                // None means select all Enum dtypes. This is for operation `pl.col(pl.Enum)`
+                (Enum(None, _), Enum(_, _)) | (Enum(_, _), Enum(None, _)) => true,
+                #[cfg(feature = "dtype-categorical")]
+                (Enum(Some(cat_lhs), _), Enum(Some(cat_rhs), _)) => {
+                    cat_lhs.get_categories() == cat_rhs.get_categories()
+                },
                 (Datetime(tu_l, tz_l), Datetime(tu_r, tz_r)) => tu_l == tu_r && tz_l == tz_r,
                 (List(left_inner), List(right_inner)) => left_inner == right_inner,
                 #[cfg(feature = "dtype-duration")]
@@ -95,6 +137,11 @@ impl PartialEq for DataType {
                 (Array(left_inner, left_width), Array(right_inner, right_width)) => {
                     left_width == right_width && left_inner == right_inner
                 },
+                (Unknown(l), Unknown(r)) => match (l, r) {
+                    (UnknownKind::Int(_), UnknownKind::Int(_)) => true,
+                    _ => l == r,
+                },
+                // TODO: Add Decimal equality
                 _ => std::mem::discriminant(self) == std::mem::discriminant(other),
             }
         }
@@ -139,8 +186,27 @@ impl DataType {
             DataType::List(inner) => inner.is_known(),
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => fields.iter().all(|fld| fld.dtype.is_known()),
-            DataType::Unknown => false,
+            DataType::Unknown(_) => false,
             _ => true,
+        }
+    }
+
+    #[cfg(feature = "dtype-array")]
+    /// Get the full shape of a multidimensional array.
+    pub fn get_shape(&self) -> Option<Vec<usize>> {
+        fn get_shape_impl(dt: &DataType, shape: &mut Vec<usize>) {
+            if let DataType::Array(inner, size) = dt {
+                shape.push(*size);
+                get_shape_impl(inner, shape);
+            }
+        }
+
+        if let DataType::Array(inner, size) = self {
+            let mut shape = vec![*size];
+            get_shape_impl(inner, &mut shape);
+            Some(shape)
+        } else {
+            None
         }
     }
 
@@ -152,6 +218,30 @@ impl DataType {
             DataType::Array(inner, _) => Some(inner),
             _ => None,
         }
+    }
+
+    /// Get the absolute inner data type of a nested type.
+    pub fn leaf_dtype(&self) -> &DataType {
+        let mut prev = self;
+        while let Some(dtype) = prev.inner_dtype() {
+            prev = dtype
+        }
+        prev
+    }
+
+    /// Cast the leaf types of Lists/Arrays and keep the nesting.
+    pub fn cast_leaf(&self, to: DataType) -> DataType {
+        use DataType::*;
+        match self {
+            List(inner) => List(Box::new(inner.cast_leaf(to))),
+            #[cfg(feature = "dtype-array")]
+            Array(inner, size) => Array(Box::new(inner.cast_leaf(to)), *size),
+            _ => to,
+        }
+    }
+
+    pub fn implode(self) -> DataType {
+        DataType::List(Box::new(self))
     }
 
     /// Convert to the physical data type
@@ -206,13 +296,61 @@ impl DataType {
         self.is_float() || self.is_integer()
     }
 
-    /// Check if this [`DataType`] is a basic numeric type (excludes Decimal).
+    /// Check if this [`DataType`] is a boolean.
     pub fn is_bool(&self) -> bool {
         matches!(self, DataType::Boolean)
     }
 
+    /// Check if this [`DataType`] is a list.
+    pub fn is_list(&self) -> bool {
+        matches!(self, DataType::List(_))
+    }
+
+    /// Check if this [`DataType`] is an array.
+    pub fn is_array(&self) -> bool {
+        #[cfg(feature = "dtype-array")]
+        {
+            matches!(self, DataType::Array(_, _))
+        }
+        #[cfg(not(feature = "dtype-array"))]
+        {
+            false
+        }
+    }
+
+    pub fn is_nested(&self) -> bool {
+        self.is_list() || self.is_struct() || self.is_array()
+    }
+
+    /// Check if this [`DataType`] is a struct
+    pub fn is_struct(&self) -> bool {
+        #[cfg(feature = "dtype-struct")]
+        {
+            matches!(self, DataType::Struct(_))
+        }
+        #[cfg(not(feature = "dtype-struct"))]
+        {
+            false
+        }
+    }
+
     pub fn is_binary(&self) -> bool {
         matches!(self, DataType::Binary)
+    }
+
+    pub fn is_object(&self) -> bool {
+        #[cfg(feature = "object")]
+        {
+            matches!(self, DataType::Object(_, _))
+        }
+        #[cfg(not(feature = "object"))]
+        {
+            false
+        }
+    }
+
+    pub fn is_null(&self) -> bool {
+        matches!(self, DataType::Null)
     }
 
     pub fn contains_views(&self) -> bool {
@@ -230,6 +368,36 @@ impl DataType {
         }
     }
 
+    pub fn contains_categoricals(&self) -> bool {
+        use DataType::*;
+        match self {
+            #[cfg(feature = "dtype-categorical")]
+            Categorical(_, _) | Enum(_, _) => true,
+            List(inner) => inner.contains_categoricals(),
+            #[cfg(feature = "dtype-array")]
+            Array(inner, _) => inner.contains_categoricals(),
+            #[cfg(feature = "dtype-struct")]
+            Struct(fields) => fields
+                .iter()
+                .any(|field| field.dtype.contains_categoricals()),
+            _ => false,
+        }
+    }
+
+    pub fn contains_objects(&self) -> bool {
+        use DataType::*;
+        match self {
+            #[cfg(feature = "object")]
+            Object(_, _) => true,
+            List(inner) => inner.contains_objects(),
+            #[cfg(feature = "dtype-array")]
+            Array(inner, _) => inner.contains_objects(),
+            #[cfg(feature = "dtype-struct")]
+            Struct(fields) => fields.iter().any(|field| field.dtype.contains_objects()),
+            _ => false,
+        }
+    }
+
     /// Check if type is sortable
     pub fn is_ord(&self) -> bool {
         #[cfg(feature = "dtype-categorical")]
@@ -239,6 +407,7 @@ impl DataType {
 
         let phys = self.to_physical();
         (phys.is_numeric()
+            || self.is_decimal()
             || matches!(
                 phys,
                 DataType::Binary | DataType::String | DataType::Boolean
@@ -257,7 +426,10 @@ impl DataType {
 
     /// Check if this [`DataType`] is a basic floating point type (excludes Decimal).
     pub fn is_float(&self) -> bool {
-        matches!(self, DataType::Float32 | DataType::Float64)
+        matches!(
+            self,
+            DataType::Float32 | DataType::Float64 | DataType::Unknown(UnknownKind::Float)
+        )
     }
 
     /// Check if this [`DataType`] is an integer.
@@ -272,6 +444,7 @@ impl DataType {
                 | DataType::UInt16
                 | DataType::UInt32
                 | DataType::UInt64
+                | DataType::Unknown(UnknownKind::Int(_))
         )
     }
 
@@ -298,8 +471,34 @@ impl DataType {
         }
     }
 
+    pub fn is_string(&self) -> bool {
+        matches!(self, DataType::String | DataType::Unknown(UnknownKind::Str))
+    }
+
+    pub fn is_categorical(&self) -> bool {
+        #[cfg(feature = "dtype-categorical")]
+        {
+            matches!(self, DataType::Categorical(_, _))
+        }
+        #[cfg(not(feature = "dtype-categorical"))]
+        {
+            false
+        }
+    }
+
+    pub fn is_enum(&self) -> bool {
+        #[cfg(feature = "dtype-categorical")]
+        {
+            matches!(self, DataType::Enum(_, _))
+        }
+        #[cfg(not(feature = "dtype-categorical"))]
+        {
+            false
+        }
+    }
+
     /// Convert to an Arrow Field
-    pub fn to_arrow_field(&self, name: &str, pl_flavor: bool) -> ArrowField {
+    pub fn to_arrow_field(&self, name: &str, compat_level: CompatLevel) -> ArrowField {
         let metadata = match self {
             #[cfg(feature = "dtype-categorical")]
             DataType::Enum(_, _) => Some(BTreeMap::from([(
@@ -313,7 +512,7 @@ impl DataType {
             _ => None,
         };
 
-        let field = ArrowField::new(name, self.to_arrow(pl_flavor), true);
+        let field = ArrowField::new(name, self.to_arrow(compat_level), true);
 
         if let Some(metadata) = metadata {
             field.with_metadata(metadata)
@@ -324,12 +523,12 @@ impl DataType {
 
     /// Convert to an Arrow data type.
     #[inline]
-    pub fn to_arrow(&self, pl_flavor: bool) -> ArrowDataType {
-        self.try_to_arrow(pl_flavor).unwrap()
+    pub fn to_arrow(&self, compat_level: CompatLevel) -> ArrowDataType {
+        self.try_to_arrow(compat_level).unwrap()
     }
 
     #[inline]
-    pub fn try_to_arrow(&self, pl_flavor: bool) -> PolarsResult<ArrowDataType> {
+    pub fn try_to_arrow(&self, compat_level: CompatLevel) -> PolarsResult<ArrowDataType> {
         use DataType::*;
         match self {
             Boolean => Ok(ArrowDataType::Boolean),
@@ -344,13 +543,17 @@ impl DataType {
             Float32 => Ok(ArrowDataType::Float32),
             Float64 => Ok(ArrowDataType::Float64),
             #[cfg(feature = "dtype-decimal")]
-            // note: what else can we do here other than setting precision to 38?..
-            Decimal(precision, scale) => Ok(ArrowDataType::Decimal(
-                (*precision).unwrap_or(38),
-                scale.unwrap_or(0), // and what else can we do here?
-            )),
+            Decimal(precision, scale) => {
+                let precision = (*precision).unwrap_or(38);
+                polars_ensure!(precision <= 38 && precision > 0, InvalidOperation: "decimal precision should be <= 38 & >= 1");
+
+                Ok(ArrowDataType::Decimal(
+                    precision,
+                    scale.unwrap_or(0), // and what else can we do here?
+                ))
+            },
             String => {
-                let dt = if pl_flavor {
+                let dt = if compat_level.0 >= 1 {
                     ArrowDataType::Utf8View
                 } else {
                     ArrowDataType::LargeUtf8
@@ -358,7 +561,7 @@ impl DataType {
                 Ok(dt)
             },
             Binary => {
-                let dt = if pl_flavor {
+                let dt = if compat_level.0 >= 1 {
                     ArrowDataType::BinaryView
                 } else {
                     ArrowDataType::LargeBinary
@@ -371,20 +574,25 @@ impl DataType {
             Time => Ok(ArrowDataType::Time64(ArrowTimeUnit::Nanosecond)),
             #[cfg(feature = "dtype-array")]
             Array(dt, size) => Ok(ArrowDataType::FixedSizeList(
-                Box::new(dt.to_arrow_field("item", pl_flavor)),
+                Box::new(dt.to_arrow_field("item", compat_level)),
                 *size,
             )),
             List(dt) => Ok(ArrowDataType::LargeList(Box::new(
-                dt.to_arrow_field("item", pl_flavor),
+                dt.to_arrow_field("item", compat_level),
             ))),
             Null => Ok(ArrowDataType::Null),
             #[cfg(feature = "object")]
-            Object(_, _) => {
-                polars_bail!(InvalidOperation: "cannot convert Object dtype data to Arrow")
+            Object(_, Some(reg)) => Ok(reg.physical_dtype.clone()),
+            #[cfg(feature = "object")]
+            Object(_, None) => {
+                // FIXME: find out why we have Objects floating around without a
+                // known dtype.
+                // polars_bail!(InvalidOperation: "cannot convert Object dtype without registry to Arrow")
+                Ok(ArrowDataType::Unknown)
             },
             #[cfg(feature = "dtype-categorical")]
             Categorical(_, _) | Enum(_, _) => {
-                let values = if pl_flavor {
+                let values = if compat_level.0 >= 1 {
                     ArrowDataType::Utf8View
                 } else {
                     ArrowDataType::LargeUtf8
@@ -397,12 +605,23 @@ impl DataType {
             },
             #[cfg(feature = "dtype-struct")]
             Struct(fields) => {
-                let fields = fields.iter().map(|fld| fld.to_arrow(pl_flavor)).collect();
+                let fields = fields
+                    .iter()
+                    .map(|fld| fld.to_arrow(compat_level))
+                    .collect();
                 Ok(ArrowDataType::Struct(fields))
             },
             BinaryOffset => Ok(ArrowDataType::LargeBinary),
-            Unknown => {
-                polars_bail!(InvalidOperation: "cannot convert Unknown dtype data to Arrow")
+            Unknown(kind) => {
+                let dt = match kind {
+                    UnknownKind::Any => ArrowDataType::Unknown,
+                    UnknownKind::Float => ArrowDataType::Float64,
+                    UnknownKind::Str => ArrowDataType::Utf8View,
+                    UnknownKind::Int(v) => {
+                        return materialize_dyn_int(*v).dtype().try_to_arrow(compat_level)
+                    },
+                };
+                Ok(dt)
             },
         }
     }
@@ -415,6 +634,36 @@ impl DataType {
             #[cfg(feature = "dtype-struct")]
             Struct(fields) => fields.iter().all(|fld| fld.dtype.is_nested_null()),
             _ => false,
+        }
+    }
+
+    // Answers if this type matches the given type of a schema.
+    //
+    // Allows (nested) Null types in this type to match any type in the schema,
+    // but not vice versa. In such a case Ok(true) is returned, because a cast
+    // is necessary. If no cast is necessary Ok(false) is returned, and an
+    // error is returned if the types are incompatible.
+    pub fn matches_schema_type(&self, schema_type: &DataType) -> PolarsResult<bool> {
+        match (self, schema_type) {
+            (DataType::List(l), DataType::List(r)) => l.matches_schema_type(r),
+            #[cfg(feature = "dtype-struct")]
+            (DataType::Struct(l), DataType::Struct(r)) => {
+                let mut must_cast = false;
+                for (l, r) in l.iter().zip(r.iter()) {
+                    must_cast |= l.dtype.matches_schema_type(&r.dtype)?;
+                }
+                Ok(must_cast)
+            },
+            (DataType::Null, DataType::Null) => Ok(false),
+            #[cfg(feature = "dtype-decimal")]
+            (DataType::Decimal(_, s1), DataType::Decimal(_, s2)) => Ok(s1 != s2),
+            // We don't allow the other way around, only if our current type is
+            // null and the schema isn't we allow it.
+            (DataType::Null, _) => Ok(true),
+            (l, r) if l == r => Ok(false),
+            (l, r) => {
+                polars_bail!(SchemaMismatch: "type {:?} is incompatible with expected type {:?}", l, r)
+            },
         }
     }
 }
@@ -464,7 +713,17 @@ impl Display for DataType {
             DataType::Duration(tu) => return write!(f, "duration[{tu}]"),
             DataType::Time => "time",
             #[cfg(feature = "dtype-array")]
-            DataType::Array(tp, size) => return write!(f, "array[{tp}, {size}]"),
+            DataType::Array(_, _) => {
+                let tp = self.leaf_dtype();
+
+                let dims = self.get_shape().unwrap();
+                let shape = if dims.len() == 1 {
+                    format!("{}", dims[0])
+                } else {
+                    format_tuple!(dims)
+                };
+                return write!(f, "array[{tp}, {}]", shape);
+            },
             DataType::List(tp) => return write!(f, "list[{tp}]"),
             #[cfg(feature = "object")]
             DataType::Object(s, _) => s,
@@ -474,7 +733,12 @@ impl Display for DataType {
             DataType::Enum(_, _) => "enum",
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => return write!(f, "struct[{}]", fields.len()),
-            DataType::Unknown => "unknown",
+            DataType::Unknown(kind) => match kind {
+                UnknownKind::Any => "unknown",
+                UnknownKind::Int(_) => "dyn int",
+                UnknownKind::Float => "dyn float",
+                UnknownKind::Str => "dyn str",
+            },
             DataType::BinaryOffset => "binary[offset]",
         };
         f.write_str(s)
@@ -523,36 +787,36 @@ pub fn merge_dtypes(left: &DataType, right: &DataType) -> PolarsResult<DataType>
     })
 }
 
-// if returns
-// `Ok(true)`: can extend, but must cast
-// `Ok(false)`: can extend as is
-// Error: cannot extend.
-pub(crate) fn can_extend_dtype(left: &DataType, right: &DataType) -> PolarsResult<bool> {
-    match (left, right) {
-        (DataType::List(l), DataType::List(r)) => can_extend_dtype(l, r),
-        #[cfg(feature = "dtype-struct")]
-        (DataType::Struct(l), DataType::Struct(r)) => {
-            let mut must_cast = false;
-            for (l, r) in l.iter().zip(r.iter()) {
-                must_cast |= can_extend_dtype(&l.dtype, &r.dtype)?;
-            }
-            Ok(must_cast)
-        },
-        (DataType::Null, DataType::Null) => Ok(false),
-        #[cfg(feature = "dtype-decimal")]
-        (DataType::Decimal(_, s1), DataType::Decimal(_, s2)) => Ok(s1 != s2),
-        // Other way around we don't allow because we keep left dtype as is.
-        // We don't go to supertype, and we certainly don't want to cast self to null type.
-        (_, DataType::Null) => Ok(true),
-        (l, r) => {
-            polars_ensure!(l == r, SchemaMismatch: "cannot extend/append {:?} with {:?}", left, right);
-            Ok(false)
-        },
-    }
-}
-
 #[cfg(feature = "dtype-categorical")]
 pub fn create_enum_data_type(categories: Utf8ViewArray) -> DataType {
     let rev_map = RevMapping::build_local(categories);
     DataType::Enum(Some(Arc::new(rev_map)), Default::default())
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub struct CompatLevel(pub(crate) u16);
+
+impl CompatLevel {
+    pub const fn newest() -> CompatLevel {
+        CompatLevel(1)
+    }
+
+    pub const fn oldest() -> CompatLevel {
+        CompatLevel(0)
+    }
+
+    // The following methods are only used internally
+
+    #[doc(hidden)]
+    pub fn with_level(level: u16) -> PolarsResult<CompatLevel> {
+        if level > CompatLevel::newest().0 {
+            polars_bail!(InvalidOperation: "invalid compat level");
+        }
+        Ok(CompatLevel(level))
+    }
+
+    #[doc(hidden)]
+    pub fn get_level(&self) -> u16 {
+        self.0
+    }
 }

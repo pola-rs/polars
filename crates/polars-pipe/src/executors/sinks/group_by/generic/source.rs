@@ -4,7 +4,7 @@ use polars_io::SerReader;
 
 use super::*;
 use crate::executors::sinks::group_by::generic::global::GlobalTable;
-use crate::executors::sinks::io::{block_thread_until_io_thread_done, IOThread};
+use crate::executors::sinks::io::block_thread_until_io_thread_done;
 use crate::operators::{Source, SourceResult};
 use crate::pipeline::PARTITION_SIZE;
 

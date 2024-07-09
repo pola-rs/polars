@@ -1,5 +1,5 @@
 use super::specification::try_check_offsets_bounds;
-use super::{new_empty_array, Array};
+use super::{new_empty_array, Array, Splitable};
 use crate::bitmap::Bitmap;
 use crate::datatypes::{ArrowDataType, Field};
 use crate::offset::{Offset, Offsets, OffsetsBuffer};
@@ -104,7 +104,7 @@ impl<O: Offset> ListArray<O> {
 impl<O: Offset> ListArray<O> {
     /// Slices this [`ListArray`].
     /// # Panics
-    /// panics iff `offset + length >= self.len()`
+    /// panics iff `offset + length > self.len()`
     pub fn slice(&mut self, offset: usize, length: usize) {
         assert!(
             offset + length <= self.len(),
@@ -114,6 +114,7 @@ impl<O: Offset> ListArray<O> {
     }
 
     /// Slices this [`ListArray`].
+    ///
     /// # Safety
     /// The caller must ensure that `offset + length < self.len()`.
     pub unsafe fn slice_unchecked(&mut self, offset: usize, length: usize) {
@@ -144,20 +145,21 @@ impl<O: Offset> ListArray<O> {
     #[inline]
     pub fn value(&self, i: usize) -> Box<dyn Array> {
         assert!(i < self.len());
-        // Safety: invariant of this function
+        // SAFETY: invariant of this function
         unsafe { self.value_unchecked(i) }
     }
 
     /// Returns the element at index `i` as &str
+    ///
     /// # Safety
     /// Assumes that the `i < self.len`.
     #[inline]
     pub unsafe fn value_unchecked(&self, i: usize) -> Box<dyn Array> {
-        // safety: the invariant of the function
+        // SAFETY: the invariant of the function
         let (start, end) = self.offsets.start_end_unchecked(i);
         let length = end - start;
 
-        // safety: the invariant of the struct
+        // SAFETY: the invariant of the struct
         self.values.sliced_unchecked(start, length)
     }
 
@@ -233,5 +235,31 @@ impl<O: Offset> Array for ListArray<O> {
     #[inline]
     fn with_validity(&self, validity: Option<Bitmap>) -> Box<dyn Array> {
         Box::new(self.clone().with_validity(validity))
+    }
+}
+
+impl<O: Offset> Splitable for ListArray<O> {
+    fn check_bound(&self, offset: usize) -> bool {
+        offset <= self.len()
+    }
+
+    unsafe fn _split_at_unchecked(&self, offset: usize) -> (Self, Self) {
+        let (lhs_offsets, rhs_offsets) = unsafe { self.offsets.split_at_unchecked(offset) };
+        let (lhs_validity, rhs_validity) = unsafe { self.validity.split_at_unchecked(offset) };
+
+        (
+            Self {
+                data_type: self.data_type.clone(),
+                offsets: lhs_offsets,
+                validity: lhs_validity,
+                values: self.values.clone(),
+            },
+            Self {
+                data_type: self.data_type.clone(),
+                offsets: rhs_offsets,
+                validity: rhs_validity,
+                values: self.values.clone(),
+            },
+        )
     }
 }

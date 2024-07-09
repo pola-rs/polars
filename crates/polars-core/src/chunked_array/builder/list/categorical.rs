@@ -142,7 +142,7 @@ impl ListBuilderTrait for ListLocalCategoricalChunkedBuilder {
             let len = self.idx_lookup.len();
 
             // Custom hashing / equality functions for comparing the &str to the idx
-            // Safety: index in hashmap are within bounds of categories
+            // SAFETY: index in hashmap are within bounds of categories
             let r = unsafe {
                 self.idx_lookup.raw_table_mut().find_or_find_insert_slot(
                     hash_cat,
@@ -155,13 +155,13 @@ impl ListBuilderTrait for ListLocalCategoricalChunkedBuilder {
 
             match r {
                 Ok(v) => {
-                    // Safety: Bucket is initialized
+                    // SAFETY: Bucket is initialized
                     idx_mapping.insert_unique_unchecked(idx as u32, unsafe { v.as_ref().0 .0 });
                 },
                 Err(e) => {
                     idx_mapping.insert_unique_unchecked(idx as u32, len as u32);
                     self.categories.push(Some(cat));
-                    // Safety: No mutations in hashmap since find_or_find_insert_slot call
+                    // SAFETY: No mutations in hashmap since find_or_find_insert_slot call
                     unsafe {
                         self.idx_lookup.raw_table_mut().insert_in_slot(
                             hash_cat,
@@ -174,7 +174,7 @@ impl ListBuilderTrait for ListLocalCategoricalChunkedBuilder {
         }
 
         let op = |opt_v: Option<&u32>| opt_v.map(|v| *idx_mapping.get(v).unwrap());
-        // Safety: length is correct as we do one-one mapping over ca.
+        // SAFETY: length is correct as we do one-one mapping over ca.
         let iter = unsafe {
             ca.physical()
                 .downcast_iter()

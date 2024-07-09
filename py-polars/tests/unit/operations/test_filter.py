@@ -1,10 +1,17 @@
-from datetime import datetime
+from __future__ import annotations
 
+from datetime import datetime
+from typing import TYPE_CHECKING
+
+import numpy as np
 import pytest
 
 import polars as pl
-from polars import PolarsDataType
-from polars.testing import assert_frame_equal
+import polars.selectors as cs
+from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from polars._typing import PolarsDataType
 
 
 def test_simplify_expression_lit_true_4376() -> None:
@@ -22,7 +29,7 @@ def test_filter_contains_nth_11205() -> None:
     assert df.filter(pl.first()).is_empty()
 
 
-def test_melt_values_predicate_pushdown() -> None:
+def test_unpivot_values_predicate_pushdown() -> None:
     lf = pl.DataFrame(
         {
             "id": [1],
@@ -33,7 +40,7 @@ def test_melt_values_predicate_pushdown() -> None:
     ).lazy()
 
     assert (
-        lf.melt("id", ["asset_key_1", "asset_key_2", "asset_key_3"])
+        lf.unpivot(index="id", on=["asset_key_1", "asset_key_2", "asset_key_3"])
         .filter(pl.col("value") == pl.lit("123"))
         .collect()
     ).to_dict(as_series=False) == {
@@ -239,3 +246,42 @@ def test_filter_logical_type_13194() -> None:
         },
     )
     assert_frame_equal(df, expected_df)
+
+
+def test_filter_horizontal_selector_15428() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+
+    df = df.filter(pl.all_horizontal((cs.by_name("^.*$") & cs.integer()) <= 2))
+    expected_df = pl.DataFrame({"a": [1, 2]})
+
+    assert_frame_equal(df, expected_df)
+
+
+@pytest.mark.slow()
+@pytest.mark.parametrize(
+    "dtype", [pl.Boolean, pl.Int8, pl.Int16, pl.Int32, pl.Int64, pl.String]
+)
+@pytest.mark.parametrize("size", list(range(64)) + [100, 1000, 10000])
+@pytest.mark.parametrize("selectivity", [0.0, 0.01, 0.1, 0.5, 0.9, 0.99, 1.0 + 1e-6])
+def test_filter(dtype: PolarsDataType, size: int, selectivity: float) -> None:
+    rng = np.random.Generator(np.random.PCG64(size * 100 + int(100 * selectivity)))
+    np_payload = rng.uniform(size=size) * 100.0
+    np_mask = rng.uniform(size=size) < selectivity
+    payload = pl.Series(np_payload).cast(dtype)
+    mask = pl.Series(np_mask, dtype=pl.Boolean)
+
+    reference = pl.Series(np_payload[np_mask]).cast(dtype)
+    result = payload.filter(mask)
+    assert_series_equal(reference, result)
+
+
+def test_filter_group_aware_17030() -> None:
+    df = pl.DataFrame({"foo": ["1", "2", "1", "2", "1", "2"]})
+
+    trim_col = "foo"
+    group_count = pl.col(trim_col).count().over(trim_col)
+    group_cum_count = pl.col(trim_col).cum_count().over(trim_col)
+    filter_expr = (
+        (group_count > 2) & (group_cum_count > 1) & (group_cum_count < group_count)
+    )
+    assert df.filter(filter_expr)["foo"].to_list() == ["1", "2"]

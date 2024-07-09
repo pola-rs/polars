@@ -5,10 +5,18 @@ from typing import Any
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
-def test_arange() -> None:
+def test_int_range() -> None:
+    result = pl.int_range(0, 3)
+    expected = pl.Series("int_range", [0, 1, 2])
+    assert_series_equal(pl.select(int_range=result).to_series(), expected)
+
+
+def test_int_range_alias() -> None:
+    # note: `arange` is an alias for `int_range`
     ldf = pl.LazyFrame({"a": [1, 1, 1]})
     result = ldf.filter(pl.col("a") >= pl.arange(0, 3)).collect()
     expected = pl.DataFrame({"a": [1, 1]})
@@ -29,12 +37,6 @@ def test_int_range_expr() -> None:
     # eager arange
     out2 = pl.arange(0, 10, 2, eager=True)
     assert out2.to_list() == [0, 2, 4, 6, 8]
-
-
-def test_int_range() -> None:
-    result = pl.int_range(0, 3)
-    expected = pl.Series("int_range", [0, 1, 2])
-    assert_series_equal(pl.select(int_range=result).to_series(), expected)
 
 
 def test_int_range_short_syntax() -> None:
@@ -72,7 +74,7 @@ def test_int_range_schema() -> None:
     result = pl.LazyFrame().select(int=pl.int_range(-3, 3))
 
     expected_schema = {"int": pl.Int64}
-    assert result.schema == expected_schema
+    assert result.collect_schema() == expected_schema
     assert result.collect().schema == expected_schema
 
 
@@ -138,7 +140,7 @@ def test_int_ranges_schema_dtype_default() -> None:
     result = lf.select(pl.int_ranges("start", "end"))
 
     expected_schema = {"start": pl.List(pl.Int64)}
-    assert result.schema == expected_schema
+    assert result.collect_schema() == expected_schema
     assert result.collect().schema == expected_schema
 
 
@@ -148,7 +150,7 @@ def test_int_ranges_schema_dtype_arg() -> None:
     result = lf.select(pl.int_ranges("start", "end", dtype=pl.UInt16))
 
     expected_schema = {"start": pl.List(pl.UInt16)}
-    assert result.schema == expected_schema
+    assert result.collect_schema() == expected_schema
     assert result.collect().schema == expected_schema
 
 
@@ -157,15 +159,15 @@ def test_int_range_input_shape_empty() -> None:
     single = pl.Series([5])
 
     with pytest.raises(
-        pl.ComputeError, match="`start` must contain exactly one value, got 0 values"
+        ComputeError, match="`start` must contain exactly one value, got 0 values"
     ):
         pl.int_range(empty, single, eager=True)
     with pytest.raises(
-        pl.ComputeError, match="`end` must contain exactly one value, got 0 values"
+        ComputeError, match="`end` must contain exactly one value, got 0 values"
     ):
         pl.int_range(single, empty, eager=True)
     with pytest.raises(
-        pl.ComputeError, match="`start` must contain exactly one value, got 0 values"
+        ComputeError, match="`start` must contain exactly one value, got 0 values"
     ):
         pl.int_range(empty, empty, eager=True)
 
@@ -175,15 +177,15 @@ def test_int_range_input_shape_multiple_values() -> None:
     multiple = pl.Series([10, 15])
 
     with pytest.raises(
-        pl.ComputeError, match="`start` must contain exactly one value, got 2 values"
+        ComputeError, match="`start` must contain exactly one value, got 2 values"
     ):
         pl.int_range(multiple, single, eager=True)
     with pytest.raises(
-        pl.ComputeError, match="`end` must contain exactly one value, got 2 values"
+        ComputeError, match="`end` must contain exactly one value, got 2 values"
     ):
         pl.int_range(single, multiple, eager=True)
     with pytest.raises(
-        pl.ComputeError, match="`start` must contain exactly one value, got 2 values"
+        ComputeError, match="`start` must contain exactly one value, got 2 values"
     ):
         pl.int_range(multiple, multiple, eager=True)
 
@@ -196,18 +198,20 @@ def test_int_range_index_type_negative() -> None:
 
 
 def test_int_range_null_input() -> None:
-    with pytest.raises(pl.ComputeError, match="invalid null input for `int_range`"):
+    with pytest.raises(ComputeError, match="invalid null input for `int_range`"):
         pl.select(pl.int_range(3, pl.lit(None), -1, dtype=pl.UInt32))
 
 
 def test_int_range_invalid_conversion() -> None:
-    with pytest.raises(pl.ComputeError, match="conversion from `i32` to `u32` failed"):
+    with pytest.raises(
+        InvalidOperationError, match="conversion from `i32` to `u32` failed"
+    ):
         pl.select(pl.int_range(3, -1, -1, dtype=pl.UInt32))
 
 
 def test_int_range_non_integer_dtype() -> None:
     with pytest.raises(
-        pl.ComputeError, match="non-integer `dtype` passed to `int_range`: Float64"
+        ComputeError, match="non-integer `dtype` passed to `int_range`: Float64"
     ):
         pl.select(pl.int_range(3, -1, -1, dtype=pl.Float64))  # type: ignore[arg-type]
 
@@ -252,3 +256,19 @@ def test_int_ranges_broadcasting() -> None:
         }
     )
     assert_frame_equal(result, expected)
+
+
+# https://github.com/pola-rs/polars/issues/15307
+def test_int_range_non_int_dtype() -> None:
+    with pytest.raises(
+        ComputeError, match="non-integer `dtype` passed to `int_range`: String"
+    ):
+        pl.int_range(0, 3, dtype=pl.String, eager=True)  # type: ignore[arg-type]
+
+
+# https://github.com/pola-rs/polars/issues/15307
+def test_int_ranges_non_int_dtype() -> None:
+    with pytest.raises(
+        ComputeError, match="non-integer `dtype` passed to `int_ranges`: String"
+    ):
+        pl.int_ranges(0, 3, dtype=pl.String, eager=True)  # type: ignore[arg-type]

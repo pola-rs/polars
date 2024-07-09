@@ -9,7 +9,7 @@ use super::*;
 #[test]
 #[cfg(feature = "rank")]
 fn test_filter_sort_diff_2984() -> PolarsResult<()> {
-    // make sort that sort doest not oob if filter returns no values
+    // make sure that sort does not oob if filter returns no values
     let df = df![
     "group"=> ["A" ,"A", "A", "B", "B", "B", "B"],
     "id"=> [1, 2, 1, 4, 5, 4, 6],
@@ -21,10 +21,10 @@ fn test_filter_sort_diff_2984() -> PolarsResult<()> {
         .group_by([col("group")])
         .agg([col("id")
             .filter(col("id").lt(lit(3)))
-            .sort(false)
+            .sort(Default::default())
             .diff(1, Default::default())
             .sum()])
-        .sort("group", Default::default())
+        .sort(["group"], Default::default())
         .collect()?;
 
     assert_eq!(Vec::from(out.column("id")?.i32()?), &[Some(1), Some(0)]);
@@ -72,7 +72,7 @@ fn test_filter_diff_arithmetic() -> PolarsResult<()> {
             .diff(1, Default::default())
             * lit(2))
         .alias("diff")])
-        .sort("user", Default::default())
+        .sort(["user"], Default::default())
         .explode([col("diff")])
         .collect()?;
 
@@ -113,7 +113,7 @@ fn test_group_by_agg_list_with_not_aggregated() -> PolarsResult<()> {
         .agg([when(col("value").diff(1, NullBehavior::Ignore).gt_eq(0))
             .then(col("value").diff(1, NullBehavior::Ignore))
             .otherwise(col("value"))])
-        .sort("group", Default::default())
+        .sort(["group"], Default::default())
         .collect()?;
 
     let out = out.column("value")?;
@@ -126,20 +126,21 @@ fn test_group_by_agg_list_with_not_aggregated() -> PolarsResult<()> {
 }
 
 #[test]
-#[cfg(all(feature = "dtype-duration", feature = "dtype-struct"))]
+#[cfg(all(feature = "dtype-duration", feature = "dtype-decimal"))]
 fn test_logical_mean_partitioned_group_by_block() -> PolarsResult<()> {
     let _guard = SINGLE_LOCK.lock();
     let df = df![
-        "a" => [1, 1, 2],
+        "decimal" => [1, 1, 2],
         "duration" => [1000, 2000, 3000]
     ]?;
 
     let out = df
         .lazy()
+        .with_column(col("decimal").cast(DataType::Decimal(None, Some(2))))
         .with_column(col("duration").cast(DataType::Duration(TimeUnit::Microseconds)))
-        .group_by([col("a")])
+        .group_by([col("decimal")])
         .agg([col("duration").mean()])
-        .sort("duration", Default::default())
+        .sort(["duration"], Default::default())
         .collect()?;
 
     let duration = out.column("duration")?;
@@ -166,7 +167,7 @@ fn test_filter_aggregated_expression() -> PolarsResult<()> {
         .lazy()
         .group_by([col("day")])
         .agg([(col("x") - col("x").first()).filter(f)])
-        .sort("day", Default::default())
+        .sort(["day"], Default::default())
         .collect()
         .unwrap();
     let x = df.column("x")?;

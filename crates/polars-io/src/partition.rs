@@ -1,3 +1,5 @@
+//! Functionality for writing a DataFrame partitioned into multiple files.
+
 use std::fs::File;
 use std::io::BufWriter;
 use std::path::{Path, PathBuf};
@@ -7,24 +9,9 @@ use polars_core::series::IsSorted;
 use polars_core::POOL;
 use rayon::prelude::*;
 
+use crate::parquet::write::ParquetWriteOptions;
 use crate::utils::resolve_homedir;
 use crate::WriterFactory;
-
-/// partition_df must be created by the same way of partition_by
-fn resolve_partition_dir<I, S>(rootdir: &Path, by: I, partition_df: &DataFrame) -> PathBuf
-where
-    I: IntoIterator<Item = S>,
-    S: AsRef<str>,
-{
-    let mut path = PathBuf::new();
-    path.push(resolve_homedir(rootdir));
-
-    for key in by.into_iter() {
-        let value = partition_df[key.as_ref()].get(0).unwrap().to_string();
-        path.push(format!("{}={}", key.as_ref(), value))
-    }
-    path
-}
 
 /// Write a DataFrame with disk partitioning
 ///
@@ -40,7 +27,7 @@ where
 ///         .finish(df)
 /// }
 /// ```
-///
+
 pub struct PartitionedWriter<F> {
     option: F,
     rootdir: PathBuf,
@@ -126,60 +113,126 @@ where
     }
 }
 
-#[cfg(test)]
-mod test {
-    use super::*;
+/// `partition_df` must be created in the same way as `partition_by`.
+fn resolve_partition_dir<I, S>(rootdir: &Path, by: I, partition_df: &DataFrame) -> PathBuf
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    let mut path = PathBuf::new();
+    path.push(resolve_homedir(rootdir));
 
-    #[test]
-    #[cfg(feature = "ipc")]
-    fn test_ipc_partition() -> PolarsResult<()> {
-        use std::io::BufReader;
-        use std::path::PathBuf;
+    for key in by.into_iter() {
+        let value = partition_df[key.as_ref()].get(0).unwrap().to_string();
+        path.push(format!("{}={}", key.as_ref(), value))
+    }
+    path
+}
 
-        use tempfile;
+pub fn write_partitioned_dataset<S>(
+    df: &DataFrame,
+    path: &Path,
+    partition_by: &[S],
+    file_write_options: &ParquetWriteOptions,
+    chunk_size: usize,
+) -> PolarsResult<()>
+where
+    S: AsRef<str>,
+{
+    let base_path = path;
 
-        use crate::ipc::IpcReader;
-        use crate::prelude::IpcWriterOption;
-        use crate::SerReader;
+    for (path_part, part_df) in get_hive_partitions_iter(df, partition_by)? {
+        let dir = base_path.join(path_part);
+        std::fs::create_dir_all(&dir)?;
 
-        let tmp_dir = tempfile::tempdir()?;
+        let n_files = (part_df.estimated_size() / chunk_size).clamp(1, 0xf_ffff_ffff_ffff);
+        let rows_per_file = (df.height() / n_files).saturating_add(1);
 
-        let df = df!("a" => [1, 1, 2, 3], "b" => [2, 2, 3, 4], "c" => [2, 3, 4, 5]).unwrap();
-        let by = ["a", "b"];
-        let rootdir = tmp_dir.path().join("ipc-partition");
-
-        let option = IpcWriterOption::new();
-
-        PartitionedWriter::new(option, rootdir.clone(), by).finish(&df)?;
-
-        let expected_dfs = [
-            df!("a" => [1, 1], "b" => [2, 2], "c" => [2, 3])?,
-            df!("a" => [2], "b" => [3], "c" => [4])?,
-            df!("a" => [3], "b" => [4], "c" => [5])?,
-        ];
-
-        let expected: Vec<(PathBuf, DataFrame)> = ["a=1/b=2", "a=2/b=3", "a=3/b=4"]
-            .into_iter()
-            .zip(expected_dfs)
-            .map(|(p, df)| (rootdir.join(p), df))
-            .collect();
-
-        for (expected_dir, expected_df) in expected.iter() {
-            assert!(expected_dir.exists());
-
-            let ipc_paths = std::fs::read_dir(expected_dir)?
-                .map(|e| {
-                    let entry = e?;
-                    Ok(entry.path())
-                })
-                .collect::<PolarsResult<Vec<_>>>()?;
-
-            assert_eq!(ipc_paths.len(), 1);
-            let reader = BufReader::new(polars_utils::open_file(&ipc_paths[0])?);
-            let df = IpcReader::new(reader).finish()?;
-            assert!(expected_df.equals(&df));
+        fn get_path_for_index(i: usize) -> String {
+            // Use a fixed-width file name so that it sorts properly.
+            format!("{:013x}.parquet", i)
         }
 
-        Ok(())
+        for (i, slice_start) in (0..part_df.height()).step_by(rows_per_file).enumerate() {
+            let f = std::fs::File::create(dir.join(get_path_for_index(i)))?;
+
+            file_write_options
+                .to_writer(f)
+                .finish(&mut part_df.slice(slice_start as i64, rows_per_file))?;
+        }
     }
+
+    Ok(())
+}
+
+/// Creates an iterator of (hive partition path, DataFrame) pairs, e.g.:
+/// ("a=1/b=1", DataFrame)
+fn get_hive_partitions_iter<'a, S>(
+    df: &'a DataFrame,
+    partition_by: &'a [S],
+) -> PolarsResult<Box<dyn Iterator<Item = (String, DataFrame)> + 'a>>
+where
+    S: AsRef<str>,
+{
+    let schema = df.schema();
+
+    let partition_by_col_idx = partition_by
+        .iter()
+        .map(|x| {
+            let Some(i) = schema.index_of(x.as_ref()) else {
+                polars_bail!(ColumnNotFound: "{}", x.as_ref())
+            };
+            Ok(i)
+        })
+        .collect::<PolarsResult<Vec<_>>>()?;
+
+    let get_hive_path_part = move |df: &DataFrame| {
+        const CHAR_SET: &percent_encoding::AsciiSet = &percent_encoding::CONTROLS
+            .add(b'/')
+            .add(b'=')
+            .add(b':')
+            .add(b' ');
+
+        let cols = df.get_columns();
+
+        partition_by_col_idx
+            .iter()
+            .map(|&i| {
+                let s = &cols[i].slice(0, 1).cast(&DataType::String).unwrap();
+
+                format!(
+                    "{}={}",
+                    s.name(),
+                    percent_encoding::percent_encode(
+                        s.str()
+                            .unwrap()
+                            .get(0)
+                            .unwrap_or("__HIVE_DEFAULT_PARTITION__")
+                            .as_bytes(),
+                        CHAR_SET
+                    )
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("/")
+    };
+
+    let groups = df.group_by(partition_by)?;
+    let groups = groups.take_groups();
+
+    let out: Box<dyn Iterator<Item = (String, DataFrame)>> = match groups {
+        GroupsProxy::Idx(idx) => Box::new(idx.into_iter().map(move |(_, group)| {
+            let part_df =
+                unsafe { df._take_unchecked_slice_sorted(&group, false, IsSorted::Ascending) };
+            (get_hive_path_part(&part_df), part_df)
+        })),
+        GroupsProxy::Slice { groups, .. } => {
+            Box::new(groups.into_iter().map(move |[offset, len]| {
+                let part_df = df.slice(offset as i64, len as usize);
+                (get_hive_path_part(&part_df), part_df)
+            }))
+        },
+    };
+
+    Ok(out)
 }

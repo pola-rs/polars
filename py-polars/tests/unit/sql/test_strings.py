@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError, InvalidOperationError
+from polars.exceptions import SQLSyntaxError
 from polars.testing import assert_frame_equal
 
 
@@ -46,7 +46,7 @@ def test_string_concat() -> None:
             "z": [1, 2, 3],
         }
     )
-    res = pl.SQLContext(data=lf).execute(
+    res = lf.sql(
         """
         SELECT
           ("x" || "x" || "y")           AS c0,
@@ -56,10 +56,10 @@ def test_string_concat() -> None:
           CONCAT("x", "y", ("z" * 2))   AS c4,
           CONCAT_WS(':', "x", "y", "z") AS c5,
           CONCAT_WS('', "y", "z", '!')  AS c6
-        FROM data
+        FROM self
         """,
-        eager=True,
-    )
+    ).collect()
+
     assert res.to_dict(as_series=False) == {
         "c0": ["aad", None, "ccf"],
         "c1": ["ad1", None, "cf3"],
@@ -76,7 +76,10 @@ def test_string_concat() -> None:
 )
 def test_string_concat_errors(invalid_concat: str) -> None:
     lf = pl.LazyFrame({"x": ["a", "b", "c"]})
-    with pytest.raises(InvalidOperationError, match="invalid number of arguments"):
+    with pytest.raises(
+        SQLSyntaxError,
+        match=r"CONCAT.*expects at least \d argument[s]? \(found \d\)",
+    ):
         pl.SQLContext(data=lf).execute(f"SELECT {invalid_concat} FROM data")
 
 
@@ -98,18 +101,21 @@ def test_string_left_right_reverse() -> None:
         "r": ["de", "bc", "a", None],
         "rev": ["edcba", "cba", "a", None],
     }
-    for func, invalid in (("LEFT", "'xyz'"), ("RIGHT", "6.66")):
+    for func, invalid_arg, invalid_err in (
+        ("LEFT", "'xyz'", '"xyz"'),
+        ("RIGHT", "6.66", "(dyn float: 6.66)"),
+    ):
         with pytest.raises(
-            InvalidOperationError,
-            match=f"invalid 'n_chars' for {func.capitalize()}: {invalid}",
+            SQLSyntaxError,
+            match=rf"""invalid 'n_chars' for {func} \({invalid_err}\)""",
         ):
-            ctx.execute(f"""SELECT {func}(txt,{invalid}) FROM df""").collect()
+            ctx.execute(f"""SELECT {func}(txt,{invalid_arg}) FROM df""").collect()
 
 
 def test_string_left_negative_expr() -> None:
     # negative values and expressions
     df = pl.DataFrame({"s": ["alphabet", "alphabet"], "n": [-6, 6]})
-    with pl.SQLContext(df=df, eager_execution=True) as sql:
+    with pl.SQLContext(df=df, eager=True) as sql:
         res = sql.execute(
             """
             SELECT
@@ -143,7 +149,7 @@ def test_string_left_negative_expr() -> None:
 def test_string_right_negative_expr() -> None:
     # negative values and expressions
     df = pl.DataFrame({"s": ["alphabet", "alphabet"], "n": [-6, 6]})
-    with pl.SQLContext(df=df, eager_execution=True) as sql:
+    with pl.SQLContext(df=df, eager=True) as sql:
         res = sql.execute(
             """
             SELECT
@@ -213,15 +219,15 @@ def test_string_lengths() -> None:
         ("_0%_", "LIKE", [2, 4]),
         ("%0", "LIKE", [2]),
         ("0%", "LIKE", [2]),
-        ("__0%", "LIKE", [2, 3]),
-        ("%*%", "ILIKE", [3]),
-        ("____", "LIKE", [4]),
-        ("a%C", "LIKE", []),
-        ("a%C", "ILIKE", [0, 1, 3]),
-        ("%C?", "ILIKE", [4]),
-        ("a0c?", "LIKE", [4]),
-        ("000", "LIKE", [2]),
-        ("00", "LIKE", []),
+        ("__0%", "~~", [2, 3]),
+        ("%*%", "~~*", [3]),
+        ("____", "~~", [4]),
+        ("a%C", "~~", []),
+        ("a%C", "~~*", [0, 1, 3]),
+        ("%C?", "~~*", [4]),
+        ("a0c?", "~~", [4]),
+        ("000", "~~", [2]),
+        ("00", "~~", []),
     ],
 )
 def test_string_like(pattern: str, like: str, expected: list[int]) -> None:
@@ -232,9 +238,9 @@ def test_string_like(pattern: str, like: str, expected: list[int]) -> None:
         }
     )
     with pl.SQLContext(df=df) as ctx:
-        for not_ in ("", "NOT "):
+        for not_ in ("", ("NOT " if like.endswith("LIKE") else "!")):
             out = ctx.execute(
-                f"""SELECT idx FROM df WHERE txt {not_}{like} '{pattern}'"""
+                f"SELECT idx FROM df WHERE txt {not_}{like} '{pattern}'"
             ).collect()
 
             res = out["idx"].to_list()
@@ -249,7 +255,7 @@ def test_string_position() -> None:
         values=["Dubai", "Abu Dhabi", "Sharjah", "Al Ain", "Ajman", "Ras Al Khaimah"],
     ).to_frame()
 
-    with pl.SQLContext(cities=df, eager_execution=True) as ctx:
+    with pl.SQLContext(cities=df, eager=True) as ctx:
         res = ctx.execute(
             """
             SELECT
@@ -317,7 +323,9 @@ def test_string_replace() -> None:
         res = out["words"].to_list()
         assert res == ["English breakfast tea is the best tea", "", None]
 
-        with pytest.raises(InvalidOperationError, match="invalid number of arguments"):
+        with pytest.raises(
+            SQLSyntaxError, match=r"REPLACE expects 3 arguments \(found 2\)"
+        ):
             ctx.execute("SELECT REPLACE(words,'coffee') FROM df")
 
 
@@ -348,10 +356,16 @@ def test_string_substr() -> None:
         ).collect()
 
         with pytest.raises(
-            InvalidOperationError,
-            match="Substring does not support negative length: -99",
+            SQLSyntaxError,
+            match=r"SUBSTR does not support negative length \(-99\)",
         ):
             ctx.execute("SELECT SUBSTR(scol,2,-99) FROM df")
+
+        with pytest.raises(
+            SQLSyntaxError,
+            match=r"SUBSTR expects 2-3 arguments \(found 1\)",
+        ):
+            pl.sql_expr("SUBSTR(s)")
 
     assert res.to_dict(as_series=False) == {
         "s1": ["abcdefg", "abcde", "abc", None],
@@ -372,24 +386,18 @@ def test_string_substr() -> None:
 
 def test_string_trim(foods_ipc_path: Path) -> None:
     lf = pl.scan_ipc(foods_ipc_path)
-    out = pl.SQLContext(foods1=lf).execute(
+    out = lf.sql(
         """
         SELECT DISTINCT TRIM(LEADING 'vmf' FROM category) as new_category
-        FROM foods1
-        ORDER BY new_category DESC
-        """,
-        eager=True,
-    )
+        FROM self ORDER BY new_category DESC
+        """
+    ).collect()
     assert out.to_dict(as_series=False) == {
         "new_category": ["seafood", "ruit", "egetables", "eat"]
     }
     with pytest.raises(
-        ComputeError,
-        match="unsupported TRIM",
+        SQLSyntaxError,
+        match="unsupported TRIM syntax",
     ):
-        # currently unsupported (snowflake) trim syntax
-        pl.SQLContext(foods=lf).execute(
-            """
-            SELECT DISTINCT TRIM('*^xxxx^*', '^*') as new_category FROM foods
-            """,
-        )
+        # currently unsupported (snowflake-style) trim syntax
+        lf.sql("SELECT DISTINCT TRIM('*^xxxx^*', '^*') as new_category FROM self")

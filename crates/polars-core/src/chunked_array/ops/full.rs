@@ -1,5 +1,4 @@
 use arrow::bitmap::MutableBitmap;
-use arrow::legacy::array::default_arrays::FromData;
 
 use crate::chunked_array::builder::get_list_builder;
 use crate::prelude::*;
@@ -22,7 +21,7 @@ where
     T: PolarsNumericType,
 {
     fn full_null(name: &str, length: usize) -> Self {
-        let arr = PrimitiveArray::new_null(T::get_dtype().to_arrow(true), length);
+        let arr = PrimitiveArray::new_null(T::get_dtype().to_arrow(CompatLevel::newest()), length);
         ChunkedArray::with_chunk(name, arr)
     }
 }
@@ -56,7 +55,7 @@ impl<'a> ChunkFull<&'a str> for StringChunked {
 
 impl ChunkFullNull for StringChunked {
     fn full_null(name: &str, length: usize) -> Self {
-        let arr = Utf8ViewArray::new_null(DataType::String.to_arrow(true), length);
+        let arr = Utf8ViewArray::new_null(DataType::String.to_arrow(CompatLevel::newest()), length);
         ChunkedArray::with_chunk(name, arr)
     }
 }
@@ -73,7 +72,8 @@ impl<'a> ChunkFull<&'a [u8]> for BinaryChunked {
 
 impl ChunkFullNull for BinaryChunked {
     fn full_null(name: &str, length: usize) -> Self {
-        let arr = BinaryViewArray::new_null(DataType::Binary.to_arrow(true), length);
+        let arr =
+            BinaryViewArray::new_null(DataType::Binary.to_arrow(CompatLevel::newest()), length);
         ChunkedArray::with_chunk(name, arr)
     }
 }
@@ -91,7 +91,10 @@ impl<'a> ChunkFull<&'a [u8]> for BinaryOffsetChunked {
 
 impl ChunkFullNull for BinaryOffsetChunked {
     fn full_null(name: &str, length: usize) -> Self {
-        let arr = BinaryArray::<i64>::new_null(DataType::BinaryOffset.to_arrow(true), length);
+        let arr = BinaryArray::<i64>::new_null(
+            DataType::BinaryOffset.to_arrow(CompatLevel::newest()),
+            length,
+        );
         ChunkedArray::with_chunk(name, arr)
     }
 }
@@ -123,7 +126,11 @@ impl ArrayChunked {
     ) -> ArrayChunked {
         let arr = FixedSizeListArray::new_null(
             ArrowDataType::FixedSizeList(
-                Box::new(ArrowField::new("item", inner_dtype.to_arrow(true), true)),
+                Box::new(ArrowField::new(
+                    "item",
+                    inner_dtype.to_arrow(CompatLevel::newest()),
+                    true,
+                )),
                 width,
             ),
             length,
@@ -135,17 +142,18 @@ impl ArrayChunked {
 #[cfg(feature = "dtype-array")]
 impl ChunkFull<&Series> for ArrayChunked {
     fn full(name: &str, value: &Series, length: usize) -> ArrayChunked {
-        if !value.dtype().is_numeric() {
-            todo!("Array only supports numeric data types");
-        };
         let width = value.len();
-        let values = value.tile(length);
-        let values = values.chunks()[0].clone();
-        let data_type = ArrowDataType::FixedSizeList(
-            Box::new(ArrowField::new("item", values.data_type().clone(), true)),
+        let dtype = value.dtype();
+        let arrow_dtype = ArrowDataType::FixedSizeList(
+            Box::new(ArrowField::new(
+                "item",
+                dtype.to_arrow(CompatLevel::newest()),
+                true,
+            )),
             width,
         );
-        let arr = FixedSizeListArray::new(data_type, values, None);
+        let value = value.rechunk().chunks()[0].clone();
+        let arr = FixedSizeListArray::full(length, value, arrow_dtype);
         ChunkedArray::with_chunk(name, arr)
     }
 }
@@ -162,7 +170,7 @@ impl ListChunked {
         let arr: ListArray<i64> = ListArray::new_null(
             ArrowDataType::LargeList(Box::new(ArrowField::new(
                 "item",
-                inner_dtype.to_physical().to_arrow(true),
+                inner_dtype.to_physical().to_arrow(CompatLevel::newest()),
                 true,
             ))),
             length,

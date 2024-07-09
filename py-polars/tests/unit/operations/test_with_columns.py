@@ -1,3 +1,5 @@
+import pytest
+
 import polars as pl
 from polars.testing import assert_frame_equal
 
@@ -34,17 +36,15 @@ def test_with_columns() -> None:
 
     # as exprs list
     dx = df.with_columns(
-        [
-            (pl.col("a") * pl.col("b")).alias("d"),
-            ~pl.col("c").alias("e"),
-            srs_named,
-            pl.lit(True).alias("g"),
-            pl.lit(1).alias("h"),
-            pl.lit(3.2).alias("i"),
-            pl.col("a").alias("j"),
-            pl.lit(None).alias("k"),
-            pl.lit(datetime.datetime(2001, 1, 1, 0, 0)).alias("l"),
-        ]
+        (pl.col("a") * pl.col("b")).alias("d"),
+        ~pl.col("c").alias("e"),
+        srs_named,
+        pl.lit(True).alias("g"),
+        pl.lit(1).alias("h"),
+        pl.lit(3.2).alias("i"),
+        pl.col("a").alias("j"),
+        pl.lit(None).alias("k"),
+        pl.lit(datetime.datetime(2001, 1, 1, 0, 0)).alias("l"),
     )
     assert_frame_equal(dx, expected)
 
@@ -149,3 +149,28 @@ def test_with_columns_single_series() -> None:
 
     expected = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
     assert_frame_equal(result.collect(), expected)
+
+
+def test_with_columns_seq() -> None:
+    df = pl.DataFrame({"a": [1, 2]})
+    result = df.with_columns_seq(
+        pl.lit(5).alias("b"),
+        pl.lit("foo").alias("c"),
+    )
+    expected = pl.DataFrame(
+        {
+            "a": [1, 2],
+            "b": pl.Series([5, 5], dtype=pl.Int32),
+            "c": ["foo", "foo"],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+# https://github.com/pola-rs/polars/issues/15588
+def test_with_columns_invalid_type() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3]})
+    with pytest.raises(
+        TypeError, match="cannot create expression literal for value of type LazyFrame"
+    ):
+        lf.with_columns(lf)  # type: ignore[arg-type]

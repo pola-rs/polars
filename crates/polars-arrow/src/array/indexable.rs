@@ -1,8 +1,9 @@
 use std::borrow::Borrow;
 
 use crate::array::{
-    MutableArray, MutableBinaryArray, MutableBinaryValuesArray, MutableBooleanArray,
-    MutableFixedSizeBinaryArray, MutablePrimitiveArray, MutableUtf8Array, MutableUtf8ValuesArray,
+    MutableArray, MutableBinaryArray, MutableBinaryValuesArray, MutableBinaryViewArray,
+    MutableBooleanArray, MutableFixedSizeBinaryArray, MutablePrimitiveArray, MutableUtf8Array,
+    MutableUtf8ValuesArray, ViewType,
 };
 use crate::offset::Offset;
 use crate::types::NativeType;
@@ -22,6 +23,7 @@ pub trait Indexable {
     fn value_at(&self, index: usize) -> Self::Value<'_>;
 
     /// Returns the element at index `i`.
+    ///
     /// # Safety
     /// Assumes that the `i < self.len`.
     #[inline]
@@ -120,6 +122,26 @@ impl Indexable for MutableFixedSizeBinaryArray {
 impl AsIndexed<MutableFixedSizeBinaryArray> for &[u8] {
     #[inline]
     fn as_indexed(&self) -> &[u8] {
+        self
+    }
+}
+
+impl<T: ViewType + ?Sized> Indexable for MutableBinaryViewArray<T> {
+    type Value<'a> = &'a T;
+    type Type = T;
+
+    fn value_at(&self, index: usize) -> Self::Value<'_> {
+        self.value(index)
+    }
+
+    unsafe fn value_unchecked_at(&self, index: usize) -> Self::Value<'_> {
+        self.value_unchecked(index)
+    }
+}
+
+impl<T: ViewType + ?Sized> AsIndexed<MutableBinaryViewArray<T>> for &T {
+    #[inline]
+    fn as_indexed(&self) -> &T {
         self
     }
 }

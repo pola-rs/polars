@@ -13,8 +13,10 @@ use polars_utils::sync::SyncPtr;
 pub use revmap::*;
 
 use super::*;
-use crate::chunked_array::Settings;
+use crate::chunked_array::cast::CastOptions;
+use crate::chunked_array::metadata::MetadataFlags;
 use crate::prelude::*;
+use crate::series::IsSorted;
 use crate::using_string_cache;
 
 bitflags! {
@@ -29,7 +31,6 @@ pub struct CategoricalChunked {
     physical: Logical<CategoricalType, UInt32Type>,
     /// 1st bit: original local categorical
     ///             meaning that n_unique is the same as the cat map length
-    /// 2nd bit: use lexical sorting
     bit_settings: BitSettings,
 }
 
@@ -105,7 +106,7 @@ impl CategoricalChunked {
                 self.get_ordering(),
             )
         };
-        out.set_fast_unique(self.can_fast_unique());
+        out.set_fast_unique(self._can_fast_unique());
 
         out
     }
@@ -118,7 +119,7 @@ impl CategoricalChunked {
             RevMapping::Local(categories, _) => categories,
         };
 
-        // Safety: keys and values are in bounds
+        // SAFETY: keys and values are in bounds
         unsafe {
             Ok(CategoricalChunked::from_keys_and_values_global(
                 self.name(),
@@ -130,18 +131,18 @@ impl CategoricalChunked {
         }
     }
 
-    // Convert to fixed enum. In case a value is not in the categories return Error
-    pub fn to_enum(&self, categories: &Utf8ViewArray, hash: u128) -> PolarsResult<Self> {
+    // Convert to fixed enum. Values not in categories are mapped to None.
+    pub fn to_enum(&self, categories: &Utf8ViewArray, hash: u128) -> Self {
         // Fast paths
         match self.get_rev_map().as_ref() {
             RevMapping::Local(_, cur_hash) if hash == *cur_hash => {
                 return unsafe {
-                    Ok(CategoricalChunked::from_cats_and_rev_map_unchecked(
+                    CategoricalChunked::from_cats_and_rev_map_unchecked(
                         self.physical().clone(),
                         self.get_rev_map().clone(),
                         true,
                         self.get_ordering(),
-                    ))
+                    )
                 };
             },
             _ => (),
@@ -159,42 +160,30 @@ impl CategoricalChunked {
         let new_phys: UInt32Chunked = self
             .physical()
             .into_iter()
-            .map(|opt_v: Option<u32>| {
-                let Some(v) = opt_v else {
-                    return Ok(None);
-                };
+            .map(|opt_v: Option<u32>| opt_v.and_then(|v| idx_map.get(&v).copied()))
+            .collect();
 
-                let Some(idx) = idx_map.get(&v) else {
-                    polars_bail!(
-                        not_in_enum,
-                        value = old_rev_map.get(v),
-                        categories = &categories
-                    );
-                };
-
-                Ok(Some(*idx))
-            })
-            .collect::<PolarsResult<_>>()?;
-
-        Ok(
-            // Safety: we created the physical from the enum categories
-            unsafe {
-                CategoricalChunked::from_cats_and_rev_map_unchecked(
-                    new_phys,
-                    Arc::new(RevMapping::Local(categories.clone(), hash)),
-                    true,
-                    self.get_ordering(),
-                )
-            },
-        )
+        // SAFETY: we created the physical from the enum categories
+        unsafe {
+            CategoricalChunked::from_cats_and_rev_map_unchecked(
+                new_phys,
+                Arc::new(RevMapping::Local(categories.clone(), hash)),
+                true,
+                self.get_ordering(),
+            )
+        }
     }
 
-    pub(crate) fn get_flags(&self) -> Settings {
+    pub(crate) fn get_flags(&self) -> MetadataFlags {
         self.physical().get_flags()
     }
 
     /// Set flags for the Chunked Array
-    pub(crate) fn set_flags(&mut self, flags: Settings) {
+    pub(crate) fn set_flags(&mut self, mut flags: MetadataFlags) {
+        // We should not set the sorted flag if we are sorting in lexical order
+        if self.uses_lexical_ordering() {
+            flags.set_sorted_flag(IsSorted::Not)
+        }
         self.physical_mut().set_flags(flags)
     }
 
@@ -274,7 +263,9 @@ impl CategoricalChunked {
         }
     }
 
-    pub(crate) fn can_fast_unique(&self) -> bool {
+    /// True if all categories are represented in this array. When this is the case, the unique
+    /// values of the array are the categories.
+    pub fn _can_fast_unique(&self) -> bool {
         self.bit_settings.contains(BitSettings::ORIGINAL)
             && self.physical.chunks.len() == 1
             && self.null_count() == 0
@@ -291,6 +282,10 @@ impl CategoricalChunked {
     pub(crate) fn with_fast_unique(mut self, toggle: bool) -> Self {
         self.set_fast_unique(toggle);
         self
+    }
+
+    pub fn _with_fast_unique(self, toggle: bool) -> Self {
+        self.with_fast_unique(toggle)
     }
 
     /// Get a reference to the mapping of categorical types to the string values.
@@ -337,7 +332,7 @@ impl LogicalType for CategoricalChunked {
         }
     }
 
-    fn cast(&self, dtype: &DataType) -> PolarsResult<Series> {
+    fn cast_with_options(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Series> {
         match dtype {
             DataType::String => {
                 let mapping = &**self.get_rev_map();
@@ -371,9 +366,10 @@ impl LogicalType for CategoricalChunked {
                     polars_bail!(ComputeError: "can not cast to enum with global mapping")
                 };
                 Ok(self
-                    .to_enum(categories, *hash)?
+                    .to_enum(categories, *hash)
                     .set_ordering(*ordering, true)
-                    .into_series())
+                    .into_series()
+                    .with_name(self.name()))
             },
             DataType::Enum(None, _) => {
                 polars_bail!(ComputeError: "can not cast to enum without categories present")
@@ -400,20 +396,22 @@ impl LogicalType for CategoricalChunked {
                     self.physical.name(),
                     self.get_rev_map().get_categories().clone(),
                 );
-                let casted_series = categories.cast(dtype)?;
+                let casted_series = categories.cast_with_options(dtype, options)?;
 
                 #[cfg(feature = "bigidx")]
                 {
-                    let s = self.physical.cast(&DataType::UInt64)?;
+                    let s = self
+                        .physical
+                        .cast_with_options(&DataType::UInt64, options)?;
                     Ok(unsafe { casted_series.take_unchecked(s.u64()?) })
                 }
                 #[cfg(not(feature = "bigidx"))]
                 {
-                    // Safety: Invariant of categorical means indices are in bound
+                    // SAFETY: Invariant of categorical means indices are in bound
                     Ok(unsafe { casted_series.take_unchecked(&self.physical) })
                 }
             },
-            _ => self.physical.cast(dtype),
+            _ => self.physical.cast_with_options(dtype, options),
         }
     }
 }
@@ -431,7 +429,7 @@ impl<'a> Iterator for CatIter<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         self.iter.next().map(|item| {
             item.map(|idx| {
-                // Safety:
+                // SAFETY:
                 // all categories are in bound
                 unsafe { self.rev.get_unchecked(idx) }
             })
@@ -447,8 +445,6 @@ impl<'a> ExactSizeIterator for CatIter<'a> {}
 
 #[cfg(test)]
 mod test {
-    use std::convert::TryFrom;
-
     use super::*;
     use crate::{disable_string_cache, enable_string_cache, SINGLE_LOCK};
 
@@ -468,7 +464,7 @@ mod test {
         let ca = ca.cast(&DataType::Categorical(None, Default::default()))?;
         let ca = ca.categorical().unwrap();
 
-        let arr = ca.to_arrow(true, false);
+        let arr = ca.to_arrow(CompatLevel::newest(), false);
         let s = Series::try_from(("foo", arr))?;
         assert!(matches!(s.dtype(), &DataType::Categorical(_, _)));
         assert_eq!(s.null_count(), 1);
