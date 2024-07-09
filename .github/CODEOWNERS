@@ -4,3 +4,5 @@
 /crates/polars-sql/  @ritchie46 @stinodego @orlp @c-peters @alexander-beedie
 /crates/polars-time/  @ritchie46 @stinodego @orlp @c-peters @MarcoGorelli
 /py-polars/  @ritchie46 @stinodego @c-peters @alexander-beedie @MarcoGorelli @reswqa
+/py-polars/lazyframe/visit.rs  @ritchie46 @stinodego @c-peters @alexander-beedie @MarcoGorelli @reswqa @wence-
+/py-polars/lazyframe/visitor/  @ritchie46 @stinodego @c-peters @alexander-beedie @MarcoGorelli @reswqa @wence-
