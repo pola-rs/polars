@@ -1,9 +1,9 @@
 use std::path::{Path, PathBuf};
 
-use file_list_reader::expanded_from_single_directory;
 use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
 use polars_io::parquet::read::ParallelStrategy;
+use polars_io::utils::expanded_from_single_directory;
 use polars_io::{HiveOptions, RowIndex};
 
 use crate::prelude::*;

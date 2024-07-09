@@ -27,6 +27,7 @@ chrono-tz = { workspace = true, optional = true }
 fast-float = { workspace = true, optional = true }
 flate2 = { workspace = true, optional = true }
 futures = { workspace = true, optional = true }
+glob = { version = "0.3" }
 itoa = { workspace = true, optional = true }
 memchr = { workspace = true }
 memmap = { package = "memmap2", version = "0.7" }

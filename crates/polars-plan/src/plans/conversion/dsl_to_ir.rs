@@ -83,12 +83,12 @@ pub fn to_alp_impl(
 
     let v = match lp {
         DslPlan::Scan {
+            paths,
             file_info,
             hive_parts,
-            paths,
             predicate,
-            mut scan_type,
             mut file_options,
+            mut scan_type,
         } => {
             let mut file_info = if let Some(file_info) = file_info {
                 file_info
