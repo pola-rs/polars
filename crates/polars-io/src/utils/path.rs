@@ -5,7 +5,6 @@ use std::sync::Arc;
 use once_cell::sync::Lazy;
 use polars_core::config;
 use polars_core::error::{polars_bail, to_compute_err, PolarsError, PolarsResult};
-#[cfg(any(feature = "ipc_streaming", feature = "parquet"))]
 use regex::Regex;
 
 use crate::cloud::CloudOptions;
@@ -117,7 +116,7 @@ pub fn expand_paths(
     };
 
     if is_cloud || { cfg!(not(target_family = "windows")) && config::force_async() } {
-        #[cfg(feature = "async")]
+        #[cfg(feature = "cloud")]
         {
             use crate::cloud::object_path_from_string;
 
@@ -234,8 +233,8 @@ pub fn expand_paths(
                 }
             }
         }
-        #[cfg(not(feature = "async"))]
-        panic!("Feature `async` must be enabled to use globbing patterns with cloud urls.")
+        #[cfg(not(feature = "cloud"))]
+        panic!("Feature `cloud` must be enabled to use globbing patterns with cloud urls.")
     } else {
         let mut stack = VecDeque::new();
 
