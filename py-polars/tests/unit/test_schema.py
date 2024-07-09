@@ -1,3 +1,5 @@
+import pickle
+
 import polars as pl
 
 
@@ -32,3 +34,12 @@ def test_schema_equality() -> None:
     assert s1 != s2
     assert s1 != s3
     assert s2 != s3
+
+
+def test_schema_picklable() -> None:
+    s = pl.Schema({"foo": pl.Int8(), "bar": pl.String()})
+
+    pickled = pickle.dumps(s)
+    s2 = pickle.loads(pickled)
+
+    assert s == s2
