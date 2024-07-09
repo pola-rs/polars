@@ -327,7 +327,7 @@ def _post_apply_columns(
         elif dtype is not None and dtype != Unknown and dtype != pydf_dtype:
             column_casts.append(F.col(col).cast(dtype, strict=strict)._pyexpr)
         elif col in cols_has_tz:
-            column_casts.append(F.col(col).dt.replace_time_zone("UTC")._pyexpr)
+            column_casts.append(F.col(col).dt.convert_time_zone("UTC")._pyexpr)
 
     if column_casts or column_subset:
         pydf = pydf.lazy()
