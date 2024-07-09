@@ -111,6 +111,17 @@ pub fn to_alp_impl(
                     file_options.hive_options.enabled = Some(inferred_hive_enabled);
                     file_options.hive_options.hive_start_idx = hive_start_idx;
                 },
+                #[cfg(feature = "json")]
+                FileScan::NDJson { .. } => {
+                    let hive_enabled = file_options.hive_options.enabled;
+                    let (expanded_paths, _) = expand_paths(
+                        &paths,
+                        None,
+                        file_options.glob,
+                        hive_enabled.unwrap_or(false),
+                    )?;
+                    paths = expanded_paths;
+                },
                 _ => (), // TODO
             };
 

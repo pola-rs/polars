@@ -96,7 +96,7 @@ impl LazyFileListReader for LazyJsonLineReader {
             return self.finish_no_glob();
         }
 
-        let paths = self.expand_paths_default()?;
+        let paths = self.paths;
 
         let file_options = FileScanOptions {
             n_rows: self.n_rows,
@@ -106,7 +106,7 @@ impl LazyFileListReader for LazyJsonLineReader {
             rechunk: self.rechunk,
             file_counter: 0,
             hive_options: Default::default(),
-            glob: false,
+            glob: true,
         };
 
         let options = NDJsonReadOptions {
