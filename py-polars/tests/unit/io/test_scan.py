@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, Callable
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing.asserts.frame import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -600,5 +601,5 @@ def test_scan_nonexistent_cloud_path_17444(format: str) -> None:
     assert isinstance(result, pl.LazyFrame)
 
     # Upon collection, it should fail
-    with pytest.raises(FileNotFoundError):
+    with pytest.raises(ComputeError, match="The specified bucket does not exist"):
         result.collect()

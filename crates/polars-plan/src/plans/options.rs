@@ -34,6 +34,7 @@ pub struct FileScanOptions {
     pub rechunk: bool,
     pub file_counter: FileCount,
     pub hive_options: HiveOptions,
+    pub glob: bool,
 }
 
 #[derive(Clone, Debug, Copy, Default, Eq, PartialEq, Hash)]
