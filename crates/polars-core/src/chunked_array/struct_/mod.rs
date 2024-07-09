@@ -9,6 +9,7 @@ use crate::prelude::*;
 use crate::series::Series;
 use crate::utils::{Container, index_to_chunked_index};
 use std::fmt::Write;
+use arrow::compute::utils::combine_validities_and;
 use crate::prelude::sort::arg_sort_multiple::_get_rows_encoded_ca;
 
 pub type StructChunked2 = ChunkedArray<StructType>;
@@ -181,8 +182,27 @@ impl StructChunked2 {
     where
         F: FnMut(&Series) -> Series,
     {
-        let fields = self.fields_as_series().iter().map(func).collect::<Vec<_>>();
-        Self::from_series(self.name(), &fields)
+        self.try_apply_fields(|s| Ok(func(s)))
+    }
+
+    pub(crate) fn try_apply_fields<F>(&self, func: F) -> PolarsResult<Self>
+    where
+        F: FnMut(&Series) -> PolarsResult<Series>,
+    {
+        let fields = self.fields_as_series().iter().map(func).collect::<PolarsResult<Vec<_>>>()?;
+        Self::from_series(self.name(), &fields).map(|mut ca| {
+            if self.null_count > 0 {
+                // SAFETY: we don't change types/ lenghts.
+                unsafe {
+                    for (new, this) in ca.downcast_iter_mut().zip(self.downcast_iter()) {
+                        new.set_validity(this.validity().cloned())
+                    }
+                }
+
+            }
+            ca
+        })
+
     }
 
     pub(crate) fn get_row_encoded(&self, options: SortOptions) -> PolarsResult<BinaryOffsetChunked> {
@@ -201,4 +221,19 @@ impl StructChunked2 {
         }
     }
 
+    /// Combine the validities of two structs.
+    /// # Panics
+    /// Panics if the chunks don't align.
+    pub(crate) fn zip_outer_validity(&mut self, other: &StructChunked2) {
+        if other.null_count > 0 {
+            // SAFETY:
+            // We keep length and dtypes the same.
+            unsafe {
+                for (a, b ) in self.downcast_iter_mut().zip(other.downcast_iter()) {
+                    let new = combine_validities_and(a.validity(), b.validity());
+                    a.set_validity(new)
+                }
+            }
+        }
+    }
 }
