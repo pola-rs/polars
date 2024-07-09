@@ -23,7 +23,7 @@ workspace = true
 [[bin]]
 name = "home"
 path = "home/example.rs"
-required-features = ["polars/lazy"]
+required-features = ["polars/lazy", "polars/csv"]
 
 [[bin]]
 name = "user-guide-getting-started-expressions"
@@ -51,11 +51,11 @@ required-features = ["polars/lazy"]
 [[bin]]
 name = "user-guide-concepts-lazy-vs-eager"
 path = "user-guide/concepts/lazy-vs-eager.rs"
-required-features = ["polars/lazy"]
+required-features = ["polars/lazy", "polars/csv"]
 [[bin]]
 name = "user-guide-concepts-streaming"
 path = "user-guide/concepts/streaming.rs"
-required-features = ["polars/lazy"]
+required-features = ["polars/lazy", "polars/csv"]
 
 [[bin]]
 name = "user-guide-expressions-aggregation"
@@ -130,14 +130,14 @@ required-features = ["polars/lazy"]
 [[bin]]
 name = "user-guide-transformations-joins"
 path = "user-guide/transformations/joins.rs"
-required-features = ["polars/lazy"]
+required-features = ["polars/lazy", "polars/asof_join"]
 [[bin]]
 name = "user-guide-transformations-unpivot"
 path = "user-guide/transformations/unpivot.rs"
 [[bin]]
 name = "user-guide-transformations-pivot"
 path = "user-guide/transformations/pivot.rs"
-required-features = ["polars/lazy"]
+required-features = ["polars/lazy", "polars/pivot"]
 
 [[bin]]
 name = "user-guide-transformations-time-series-filter"

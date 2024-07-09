@@ -408,6 +408,7 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     add_build_info(py, m)?;
 
     // Plugins
+    #[cfg(feature = "ffi_plugin")]
     m.add_wrapped(wrap_pyfunction!(functions::register_plugin_function))
         .unwrap();
 

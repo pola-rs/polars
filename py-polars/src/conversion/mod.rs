@@ -17,6 +17,7 @@ use polars_core::utils::arrow::array::Array;
 use polars_core::utils::arrow::types::NativeType;
 use polars_core::utils::materialize_dyn_int;
 use polars_lazy::prelude::*;
+#[cfg(feature = "parquet")]
 use polars_parquet::write::StatisticsOptions;
 use polars_utils::total_ord::{TotalEq, TotalHash};
 use pyo3::basic::CompareOp;
@@ -466,6 +467,7 @@ impl ToPyObject for Wrap<TimeUnit> {
     }
 }
 
+#[cfg(feature = "parquet")]
 impl<'s> FromPyObject<'s> for Wrap<StatisticsOptions> {
     fn extract_bound(ob: &Bound<'s, PyAny>) -> PyResult<Self> {
         let mut statistics = StatisticsOptions::empty();

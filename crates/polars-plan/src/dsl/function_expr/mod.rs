@@ -304,7 +304,7 @@ pub enum FunctionExpr {
     SetSortedFlag(IsSorted),
     #[cfg(feature = "ffi_plugin")]
     /// Creating this node is unsafe
-    /// This will lead to calls over FFI>
+    /// This will lead to calls over FFI.
     FfiPlugin {
         /// Shared library.
         lib: Arc<str>,

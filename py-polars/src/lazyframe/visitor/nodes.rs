@@ -316,6 +316,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                 inner: file_options.clone(),
             },
             scan_type: match scan_type {
+                #[cfg(feature = "csv")]
                 FileScan::Csv {
                     options,
                     cloud_options,
@@ -328,6 +329,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                         .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
                     ("csv", options, cloud_options).into_py(py)
                 },
+                #[cfg(feature = "parquet")]
                 FileScan::Parquet {
                     options,
                     cloud_options,
@@ -339,7 +341,9 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                         .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
                     ("parquet", options, cloud_options).into_py(py)
                 },
+                #[cfg(feature = "ipc")]
                 FileScan::Ipc { .. } => return Err(PyNotImplementedError::new_err("ipc scan")),
+                #[cfg(feature = "json")]
                 FileScan::NDJson { options } => {
                     let options = serde_json::to_string(options)
                         .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
@@ -451,6 +455,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                     JoinType::Right => "right",
                     JoinType::Inner => "inner",
                     JoinType::Full => "full",
+                    #[cfg(feature = "asof_join")]
                     JoinType::AsOf(_) => return Err(PyNotImplementedError::new_err("asof join")),
                     JoinType::Cross => "cross",
                     JoinType::Semi => "leftsemi",
@@ -533,6 +538,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                 )
                     .to_object(py),
                 FunctionNode::Rechunk => ("rechunk",).to_object(py),
+                #[cfg(feature = "merge_sorted")]
                 FunctionNode::MergeSorted { column } => {
                     ("merge_sorted", column.to_string()).to_object(py)
                 },

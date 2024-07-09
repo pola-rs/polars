@@ -786,6 +786,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     StringFunction::ExtractAll => {
                         (PyStringFunction::ExtractAll.into_py(py),).to_object(py)
                     },
+                    #[cfg(feature = "extract_groups")]
                     StringFunction::ExtractGroups { dtype, pat } => (
                         PyStringFunction::ExtractGroups.into_py(py),
                         Wrap(dtype.clone()).to_object(py),
@@ -807,10 +808,12 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     StringFunction::Lowercase => {
                         (PyStringFunction::Lowercase.into_py(py),).to_object(py)
                     },
+                    #[cfg(feature = "extract_jsonpath")]
                     StringFunction::JsonDecode {
                         dtype: _,
                         infer_schema_len,
                     } => (PyStringFunction::JsonDecode.into_py(py), infer_schema_len).to_object(py),
+                    #[cfg(feature = "extract_jsonpath")]
                     StringFunction::JsonPathMatch => {
                         (PyStringFunction::JsonPathMatch.into_py(py),).to_object(py)
                     },
@@ -881,6 +884,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                         (PyStringFunction::Uppercase.into_py(py),).to_object(py)
                     },
                     StringFunction::ZFill => (PyStringFunction::ZFill.into_py(py),).to_object(py),
+                    #[cfg(feature = "find_many")]
                     StringFunction::ContainsMany {
                         ascii_case_insensitive,
                     } => (
@@ -888,6 +892,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                         ascii_case_insensitive,
                     )
                         .to_object(py),
+                    #[cfg(feature = "find_many")]
                     StringFunction::ReplaceMany {
                         ascii_case_insensitive,
                     } => (
@@ -895,6 +900,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                         ascii_case_insensitive,
                     )
                         .to_object(py),
+                    #[cfg(feature = "find_many")]
                     StringFunction::ExtractMany { .. } => {
                         return Err(PyNotImplementedError::new_err("extract_many"))
                     },
@@ -1027,6 +1033,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     BooleanFunction::Not => (PyBooleanFunction::Not,).into_py(py),
                 },
                 FunctionExpr::Abs => ("abs",).to_object(py),
+                #[cfg(feature = "hist")]
                 FunctionExpr::Hist { .. } => return Err(PyNotImplementedError::new_err("hist")),
                 FunctionExpr::NullCount => ("null_count",).to_object(py),
                 FunctionExpr::Pow(f) => match f {
@@ -1038,6 +1045,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     return Err(PyNotImplementedError::new_err("hash"))
                 },
                 FunctionExpr::ArgWhere => ("argwhere",).to_object(py),
+                #[cfg(feature = "search_sorted")]
                 FunctionExpr::SearchSorted(_) => {
                     return Err(PyNotImplementedError::new_err("search sorted"))
                 },
@@ -1126,6 +1134,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 FunctionExpr::Reshape(_, _) => {
                     return Err(PyNotImplementedError::new_err("reshape"))
                 },
+                #[cfg(feature = "repeat_by")]
                 FunctionExpr::RepeatBy => ("repeat_by",).to_object(py),
                 FunctionExpr::ArgUnique => ("argunique",).to_object(py),
                 FunctionExpr::Rank {
@@ -1137,6 +1146,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     has_max: _,
                 } => return Err(PyNotImplementedError::new_err("clip")),
                 FunctionExpr::AsStruct => return Err(PyNotImplementedError::new_err("as struct")),
+                #[cfg(feature = "top_k")]
                 FunctionExpr::TopK { descending } => ("top_k", descending).to_object(py),
                 FunctionExpr::CumCount { reverse } => ("cumcount", reverse).to_object(py),
                 FunctionExpr::CumSum { reverse } => ("cumsum", reverse).to_object(py),
@@ -1159,6 +1169,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     return Err(PyNotImplementedError::new_err("shrink type"))
                 },
                 FunctionExpr::Diff(_, _) => return Err(PyNotImplementedError::new_err("diff")),
+                #[cfg(feature = "pct_change")]
                 FunctionExpr::PctChange => {
                     return Err(PyNotImplementedError::new_err("pct change"))
                 },
@@ -1189,11 +1200,17 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 FunctionExpr::Correlation { .. } => {
                     return Err(PyNotImplementedError::new_err("corr"))
                 },
+                #[cfg(feature = "peaks")]
                 FunctionExpr::PeakMin => return Err(PyNotImplementedError::new_err("peak min")),
+                #[cfg(feature = "peaks")]
                 FunctionExpr::PeakMax => return Err(PyNotImplementedError::new_err("peak max")),
+                #[cfg(feature = "cutqcut")]
                 FunctionExpr::Cut { .. } => return Err(PyNotImplementedError::new_err("cut")),
+                #[cfg(feature = "cutqcut")]
                 FunctionExpr::QCut { .. } => return Err(PyNotImplementedError::new_err("qcut")),
+                #[cfg(feature = "rle")]
                 FunctionExpr::RLE => return Err(PyNotImplementedError::new_err("rle")),
+                #[cfg(feature = "rle")]
                 FunctionExpr::RLEID => return Err(PyNotImplementedError::new_err("rleid")),
                 FunctionExpr::ToPhysical => {
                     return Err(PyNotImplementedError::new_err("to physical"))
@@ -1210,6 +1227,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     },
                 )
                     .to_object(py),
+                #[cfg(feature = "ffi_plugin")]
                 FunctionExpr::FfiPlugin { .. } => {
                     return Err(PyNotImplementedError::new_err("ffi plugin"))
                 },
@@ -1260,6 +1278,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 FunctionExpr::Business(_) => {
                     return Err(PyNotImplementedError::new_err("business"))
                 },
+                #[cfg(feature = "top_k")]
                 FunctionExpr::TopKBy { descending } => ("top_k_by", descending).to_object(py),
                 FunctionExpr::EwmMeanBy { half_life: _ } => {
                     return Err(PyNotImplementedError::new_err("ewm_mean_by"))
