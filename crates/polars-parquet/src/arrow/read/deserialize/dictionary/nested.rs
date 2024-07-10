@@ -4,52 +4,26 @@ use arrow::array::{Array, DictionaryArray, DictionaryKey};
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
 use polars_error::{polars_err, PolarsResult};
-use polars_utils::iter::FallibleIterator;
 
 use super::super::super::PagesIter;
 use super::super::nested_utils::*;
 use super::super::utils::{dict_indices_decoder, not_implemented, MaybeNext, PageState};
 use super::finish_key;
-use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
+use crate::parquet::encoding::hybrid_rle::{HybridRleDecoder, TryFromUsizeTranslator};
 use crate::parquet::encoding::Encoding;
+use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{DataPage, DictPage, Page};
 use crate::parquet::schema::Repetition;
 
-// The state of a required DataPage with a boolean physical type
 #[derive(Debug)]
-pub struct Required<'a> {
+pub struct State<'a> {
+    is_optional: bool,
     values: HybridRleDecoder<'a>,
-    length: usize,
-}
-
-impl<'a> Required<'a> {
-    fn try_new(page: &'a DataPage) -> PolarsResult<Self> {
-        let values = dict_indices_decoder(page)?;
-        let length = page.num_values();
-        Ok(Self { values, length })
-    }
-}
-
-// The state of a `DataPage` of a `Dictionary` type
-#[allow(clippy::large_enum_variant)]
-#[derive(Debug)]
-pub enum State<'a> {
-    Optional(HybridRleDecoder<'a>),
-    Required(Required<'a>),
-}
-
-impl<'a> State<'a> {
-    pub fn len(&self) -> usize {
-        match self {
-            State::Optional(page) => page.len(),
-            State::Required(page) => page.length,
-        }
-    }
 }
 
 impl<'a> PageState<'a> for State<'a> {
     fn len(&self) -> usize {
-        self.len()
+        self.values.len()
     }
 }
 
@@ -87,17 +61,19 @@ impl<'a, K: DictionaryKey> NestedDecoder<'a> for DictionaryDecoder<K> {
             page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
         let is_filtered = page.selected_rows().is_some();
 
-        match (page.encoding(), is_optional, is_filtered) {
-            (Encoding::RleDictionary | Encoding::PlainDictionary, true, false) => {
-                dict_indices_decoder(page)
-                    .map(|v| v.into_iter())
-                    .map(State::Optional)
-            },
-            (Encoding::RleDictionary | Encoding::PlainDictionary, false, false) => {
-                Required::try_new(page).map(State::Required)
-            },
-            _ => Err(not_implemented(page)),
+        if is_filtered {
+            return Err(not_implemented(page));
         }
+
+        let values = match page.encoding() {
+            Encoding::RleDictionary | Encoding::PlainDictionary => dict_indices_decoder(page)?,
+            _ => return Err(not_implemented(page)),
+        };
+
+        Ok(State {
+            is_optional,
+            values,
+        })
     }
 
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState {
@@ -107,37 +83,34 @@ impl<'a, K: DictionaryKey> NestedDecoder<'a> for DictionaryDecoder<K> {
         )
     }
 
-    fn push_valid(
+    fn push_n_valid(
         &self,
         state: &mut Self::State,
         decoded: &mut Self::DecodedState,
-    ) -> PolarsResult<()> {
+        n: usize,
+    ) -> ParquetResult<()> {
         let (values, validity) = decoded;
-        match state {
-            State::Optional(page_values) => {
-                let key = page_values.next().unwrap_or_default();
-                let Ok(key) = K::try_from(key as usize) else {
-                    panic! {}
-                };
-                values.push(key);
-                validity.push(true);
-                page_values.get_result()?;
-            },
-            State::Required(page_values) => {
-                let key = page_values.values.next().unwrap_or_default();
-                let Ok(key) = K::try_from(key as usize) else {
-                    panic! {}
-                };
-                values.push(key);
-            },
+
+        if state.len() < n {
+            return Err(ParquetError::oos("No values in page left"));
         }
+
+        let translator = <TryFromUsizeTranslator<K>>::default();
+        state
+            .values
+            .translate_and_collect_n_into(values, n, &translator)?;
+
+        if state.is_optional {
+            validity.extend_constant(n, true);
+        }
+
         Ok(())
     }
 
-    fn push_null(&self, decoded: &mut Self::DecodedState) {
+    fn push_n_nulls(&self, decoded: &mut Self::DecodedState, n: usize) {
         let (values, validity) = decoded;
-        values.push(K::default());
-        validity.push(false)
+        values.resize(values.len() + n, K::default());
+        validity.extend_constant(n, false);
     }
 
     fn deserialize_dict(&self, _: &DictPage) -> Self::Dictionary {}

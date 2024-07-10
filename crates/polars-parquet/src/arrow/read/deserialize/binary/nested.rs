@@ -4,8 +4,8 @@ use arrow::array::Array;
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
 use arrow::offset::Offset;
+use arrow::pushable::Pushable;
 use polars_error::PolarsResult;
-use polars_utils::iter::FallibleIterator;
 
 use super::super::nested_utils::*;
 use super::super::utils::MaybeNext;
@@ -13,15 +13,40 @@ use super::basic::finish;
 use super::decoders::*;
 use super::utils::*;
 use crate::arrow::read::PagesIter;
-use crate::parquet::page::{DataPage, DictPage};
+use crate::parquet::encoding::hybrid_rle::{DictionaryTranslator, Translator};
+use crate::parquet::encoding::Encoding;
+use crate::parquet::error::ParquetResult;
+use crate::parquet::page::{split_buffer, DataPage, DictPage};
+use crate::read::deserialize::utils::{
+    not_implemented, page_is_filtered, page_is_optional, PageState,
+};
 
-#[derive(Debug, Default)]
-struct BinaryDecoder<O: Offset> {
-    phantom_o: std::marker::PhantomData<O>,
+#[derive(Debug)]
+pub struct State<'a> {
+    is_optional: bool,
+    translation: StateTranslation<'a>,
 }
 
+#[derive(Debug)]
+pub enum StateTranslation<'a> {
+    Unit(BinaryIter<'a>),
+    Dictionary(ValuesDictionary<'a>, Option<Vec<&'a [u8]>>),
+}
+
+impl<'a> PageState<'a> for State<'a> {
+    fn len(&self) -> usize {
+        match &self.translation {
+            StateTranslation::Unit(iter) => iter.size_hint().0,
+            StateTranslation::Dictionary(values, _) => values.len(),
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+struct BinaryDecoder<O: Offset>(std::marker::PhantomData<O>);
+
 impl<'a, O: Offset> NestedDecoder<'a> for BinaryDecoder<O> {
-    type State = BinaryNestedState<'a>;
+    type State = State<'a>;
     type Dictionary = BinaryDict;
     type DecodedState = (Binary<O>, MutableBitmap);
 
@@ -30,7 +55,29 @@ impl<'a, O: Offset> NestedDecoder<'a> for BinaryDecoder<O> {
         page: &'a DataPage,
         dict: Option<&'a Self::Dictionary>,
     ) -> PolarsResult<Self::State> {
-        build_nested_state(page, dict)
+        let is_optional = page_is_optional(page);
+        let is_filtered = page_is_filtered(page);
+
+        if is_filtered {
+            return Err(not_implemented(page));
+        }
+
+        let translation = match (page.encoding(), dict) {
+            (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict)) => {
+                StateTranslation::Dictionary(ValuesDictionary::try_new(page, dict)?, None)
+            },
+            (Encoding::Plain, _) => {
+                let values = split_buffer(page)?.values;
+                let values = BinaryIter::new(values, page.num_values());
+                StateTranslation::Unit(values)
+            },
+            _ => return Err(not_implemented(page)),
+        };
+
+        Ok(State {
+            is_optional,
+            translation,
+        })
     }
 
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState {
@@ -40,51 +87,45 @@ impl<'a, O: Offset> NestedDecoder<'a> for BinaryDecoder<O> {
         )
     }
 
-    fn push_valid(
+    fn push_n_valid(
         &self,
         state: &mut Self::State,
         decoded: &mut Self::DecodedState,
-    ) -> PolarsResult<()> {
+        n: usize,
+    ) -> ParquetResult<()> {
         let (values, validity) = decoded;
-        match state {
-            BinaryNestedState::Optional(page) => {
-                let value = page.next().unwrap_or_default();
-                values.push(value);
-                validity.push(true);
+
+        match &mut state.translation {
+            StateTranslation::Unit(page) => {
+                // @TODO: This can be optimized to not be a constantly polling
+                for value in page.by_ref().take(n) {
+                    values.push(value);
+                }
             },
-            BinaryNestedState::Required(page) => {
-                let value = page.next().unwrap_or_default();
-                values.push(value);
-            },
-            BinaryNestedState::RequiredDictionary(page) => {
-                let dict_values = &page.dict;
-                let item = page
-                    .values
-                    .next()
-                    .map(|index| dict_values.value(index as usize))
-                    .unwrap_or_default();
-                values.push(item);
-                page.values.get_result()?;
-            },
-            BinaryNestedState::OptionalDictionary(page) => {
-                let dict_values = &page.dict;
-                let item = page
-                    .values
-                    .next()
-                    .map(|index| dict_values.value(index as usize))
-                    .unwrap_or_default();
-                page.values.get_result()?;
-                values.push(item);
-                validity.push(true);
+            StateTranslation::Dictionary(page, dict) => {
+                let dict =
+                    dict.get_or_insert_with(|| page.dict.values_iter().collect::<Vec<&[u8]>>());
+                let translator = DictionaryTranslator(dict);
+
+                // @TODO: This can be optimized to not be a constantly polling
+                for value in page.values.by_ref().take(n) {
+                    values.push(translator.translate(value)?);
+                }
             },
         }
+
+        if state.is_optional {
+            validity.extend_constant(n, true);
+        }
+
         Ok(())
     }
 
-    fn push_null(&self, decoded: &mut Self::DecodedState) {
+    fn push_n_nulls(&self, decoded: &mut Self::DecodedState, n: usize) {
         let (values, validity) = decoded;
-        values.push(&[]);
-        validity.push(false);
+
+        values.extend_null_constant(n);
+        validity.extend_constant(n, false);
     }
 
     fn deserialize_dict(&self, page: &DictPage) -> Self::Dictionary {

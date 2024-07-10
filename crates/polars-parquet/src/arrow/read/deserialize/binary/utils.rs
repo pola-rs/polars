@@ -94,11 +94,12 @@ impl<'a, O: Offset> Pushable<&'a [u8]> for Binary<O> {
 #[derive(Debug)]
 pub struct BinaryIter<'a> {
     values: &'a [u8],
+    num_values: usize,
 }
 
 impl<'a> BinaryIter<'a> {
-    pub fn new(values: &'a [u8]) -> Self {
-        Self { values }
+    pub fn new(values: &'a [u8], num_values: usize) -> Self {
+        Self { values, num_values }
     }
 }
 
@@ -107,14 +108,23 @@ impl<'a> Iterator for BinaryIter<'a> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        if self.values.is_empty() {
+        if self.values.is_empty() || self.num_values == 0 {
             return None;
         }
+
         let (length, remaining) = self.values.split_at(4);
         let length: [u8; 4] = unsafe { length.try_into().unwrap_unchecked() };
         let length = u32::from_le_bytes(length) as usize;
         let (result, remaining) = remaining.split_at(length);
+        self.num_values -= 1;
         self.values = remaining;
         Some(result)
     }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.num_values, Some(self.num_values))
+    }
 }
+
+impl<'a> ExactSizeIterator for BinaryIter<'a> {}

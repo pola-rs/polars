@@ -9,19 +9,18 @@ use crate::parquet::deserialize::SliceFilteredIter;
 use crate::parquet::encoding::{delta_bitpacked, delta_length_byte_array, hybrid_rle, Encoding};
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{split_buffer, DataPage};
-use crate::read::deserialize::utils::{page_is_filtered, page_is_optional};
 
 pub(crate) type BinaryDict = BinaryArray<i64>;
 
 #[derive(Debug)]
 pub(crate) struct Required<'a> {
-    pub values: std::iter::Take<BinaryIter<'a>>,
+    pub values: BinaryIter<'a>,
 }
 
 impl<'a> Required<'a> {
     pub fn try_new(page: &'a DataPage) -> PolarsResult<Self> {
         let values = split_buffer(page)?.values;
-        let values = BinaryIter::new(values).take(page.num_values());
+        let values = BinaryIter::new(values, page.num_values());
 
         Ok(Self { values })
     }
@@ -139,12 +138,12 @@ impl<'a> Iterator for DeltaBytes<'a> {
 
 #[derive(Debug)]
 pub(crate) struct FilteredRequired<'a> {
-    pub values: SliceFilteredIter<std::iter::Take<BinaryIter<'a>>>,
+    pub values: SliceFilteredIter<BinaryIter<'a>>,
 }
 
 impl<'a> FilteredRequired<'a> {
     pub fn new(page: &'a DataPage) -> Self {
-        let values = BinaryIter::new(page.buffer()).take(page.num_values());
+        let values = BinaryIter::new(page.buffer(), page.num_values());
 
         let rows = get_selected_rows(page);
         let values = SliceFilteredIter::new(values, rows);
@@ -277,7 +276,7 @@ impl<'a> utils::PageState<'a> for BinaryState<'a> {
 }
 
 pub(crate) fn deserialize_plain(values: &[u8], num_values: usize) -> BinaryDict {
-    let all = BinaryIter::new(values).take(num_values).collect::<Vec<_>>();
+    let all = BinaryIter::new(values, num_values).collect::<Vec<_>>();
     let values_size = all.iter().map(|v| v.len()).sum::<usize>();
     let mut dict_values = MutableBinaryValuesArray::<i64>::with_capacities(all.len(), values_size);
     for v in all {
@@ -331,8 +330,7 @@ pub(crate) fn build_binary_state<'a>(
         },
         (Encoding::Plain, _, true, false) => {
             let values = split_buffer(page)?.values;
-
-            let values = BinaryIter::new(values);
+            let values = BinaryIter::new(values, page.num_values());
 
             Ok(BinaryState::Optional(
                 OptionalPageValidity::try_new(page)?,
@@ -348,7 +346,7 @@ pub(crate) fn build_binary_state<'a>(
 
             Ok(BinaryState::FilteredOptional(
                 FilteredOptionalPageValidity::try_new(page)?,
-                BinaryIter::new(values),
+                BinaryIter::new(values, page.num_values()),
             ))
         },
         (Encoding::DeltaLengthByteArray, _, false, false) => {
@@ -371,57 +369,6 @@ pub(crate) fn build_binary_state<'a>(
         )),
         (Encoding::DeltaByteArray, _, false, false) => {
             Ok(BinaryState::DeltaByteArray(DeltaBytes::try_new(page)?))
-        },
-        _ => Err(utils::not_implemented(page)),
-    }
-}
-
-#[derive(Debug)]
-pub(crate) enum BinaryNestedState<'a> {
-    Optional(BinaryIter<'a>),
-    Required(BinaryIter<'a>),
-    RequiredDictionary(ValuesDictionary<'a>),
-    OptionalDictionary(ValuesDictionary<'a>),
-}
-
-impl<'a> utils::PageState<'a> for BinaryNestedState<'a> {
-    fn len(&self) -> usize {
-        match self {
-            BinaryNestedState::Optional(validity) => validity.size_hint().0,
-            BinaryNestedState::Required(state) => state.size_hint().0,
-            BinaryNestedState::RequiredDictionary(required) => required.len(),
-            BinaryNestedState::OptionalDictionary(optional) => optional.len(),
-        }
-    }
-}
-
-pub(crate) fn build_nested_state<'a>(
-    page: &'a DataPage,
-    dict: Option<&'a BinaryDict>,
-) -> PolarsResult<BinaryNestedState<'a>> {
-    let is_optional = page_is_optional(page);
-    let is_filtered = page_is_filtered(page);
-
-    match (page.encoding(), dict, is_optional, is_filtered) {
-        (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict), false, false) => {
-            ValuesDictionary::try_new(page, dict).map(BinaryNestedState::RequiredDictionary)
-        },
-        (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict), true, false) => {
-            ValuesDictionary::try_new(page, dict).map(BinaryNestedState::OptionalDictionary)
-        },
-        (Encoding::Plain, _, true, false) => {
-            let values = split_buffer(page)?.values;
-
-            let values = BinaryIter::new(values);
-
-            Ok(BinaryNestedState::Optional(values))
-        },
-        (Encoding::Plain, _, false, false) => {
-            let values = split_buffer(page)?.values;
-
-            let values = BinaryIter::new(values);
-
-            Ok(BinaryNestedState::Required(values))
         },
         _ => Err(utils::not_implemented(page)),
     }

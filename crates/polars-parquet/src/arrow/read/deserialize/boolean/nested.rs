@@ -10,34 +10,23 @@ use super::super::nested_utils::*;
 use super::super::utils::MaybeNext;
 use super::super::{utils, PagesIter};
 use crate::parquet::encoding::Encoding;
+use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
 use crate::parquet::schema::Repetition;
 
-// The state of a `DataPage` of `Boolean` parquet boolean type
-#[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
-enum State<'a> {
-    Optional(BitmapIter<'a>),
-    Required(BitmapIter<'a>),
-}
-
-impl<'a> State<'a> {
-    pub fn len(&self) -> usize {
-        match self {
-            State::Optional(iter) => iter.size_hint().0,
-            State::Required(iter) => iter.size_hint().0,
-        }
-    }
+struct State<'a> {
+    is_optional: bool,
+    iterator: BitmapIter<'a>,
 }
 
 impl<'a> utils::PageState<'a> for State<'a> {
     fn len(&self) -> usize {
-        self.len()
+        self.iterator.len()
     }
 }
 
-#[derive(Default)]
-struct BooleanDecoder {}
+struct BooleanDecoder;
 
 impl<'a> NestedDecoder<'a> for BooleanDecoder {
     type State = State<'a>;
@@ -53,21 +42,22 @@ impl<'a> NestedDecoder<'a> for BooleanDecoder {
             page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
         let is_filtered = page.selected_rows().is_some();
 
-        match (page.encoding(), is_optional, is_filtered) {
-            (Encoding::Plain, true, false) => {
-                let values = split_buffer(page)?.values;
-                let values = BitmapIter::new(values, 0, values.len() * 8);
-
-                Ok(State::Optional(values))
-            },
-            (Encoding::Plain, false, false) => {
-                let values = split_buffer(page)?.values;
-                let values = BitmapIter::new(values, 0, values.len() * 8);
-
-                Ok(State::Required(values))
-            },
-            _ => Err(utils::not_implemented(page)),
+        if is_filtered {
+            return Err(utils::not_implemented(page));
         }
+
+        let iterator = match page.encoding() {
+            Encoding::Plain => {
+                let values = split_buffer(page)?.values;
+                BitmapIter::new(values, 0, values.len() * 8)
+            },
+            _ => return Err(utils::not_implemented(page)),
+        };
+
+        Ok(State {
+            is_optional,
+            iterator,
+        })
     }
 
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState {
@@ -77,26 +67,27 @@ impl<'a> NestedDecoder<'a> for BooleanDecoder {
         )
     }
 
-    fn push_valid(&self, state: &mut State, decoded: &mut Self::DecodedState) -> PolarsResult<()> {
+    fn push_n_valid(
+        &self,
+        state: &mut Self::State,
+        decoded: &mut Self::DecodedState,
+        n: usize,
+    ) -> ParquetResult<()> {
         let (values, validity) = decoded;
-        match state {
-            State::Optional(page_values) => {
-                let value = page_values.next().unwrap_or_default();
-                values.push(value);
-                validity.push(true);
-            },
-            State::Required(page_values) => {
-                let value = page_values.next().unwrap_or_default();
-                values.push(value);
-            },
+
+        state.iterator.collect_n_into(values, n);
+
+        if state.is_optional {
+            validity.extend_constant(n, true);
         }
+
         Ok(())
     }
 
-    fn push_null(&self, decoded: &mut Self::DecodedState) {
+    fn push_n_nulls(&self, decoded: &mut Self::DecodedState, n: usize) {
         let (values, validity) = decoded;
-        values.push(false);
-        validity.push(false);
+        values.extend_constant(n, false);
+        validity.extend_constant(n, false);
     }
 
     fn deserialize_dict(&self, _: &DictPage) -> Self::Dictionary {}
@@ -144,7 +135,7 @@ impl<I: PagesIter> Iterator for NestedIter<I> {
                 &mut self.remaining,
                 &self.init,
                 self.chunk_size,
-                &BooleanDecoder::default(),
+                &BooleanDecoder,
             );
             match maybe_state {
                 MaybeNext::Some(Ok((nested, (values, validity)))) => {

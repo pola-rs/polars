@@ -55,7 +55,7 @@ fn read_dict(data_type: ArrowDataType, dict: &DictPage) -> Box<dyn Array> {
         _ => data_type,
     };
 
-    let values = BinaryIter::new(&dict.buffer).take(dict.num_values);
+    let values = BinaryIter::new(&dict.buffer, dict.num_values);
 
     let mut data = MutableBinaryViewArray::<[u8]>::with_capacity(dict.num_values);
     for item in values {

@@ -42,7 +42,7 @@ fn url_and_creds_to_key(url: &Url, options: Option<&CloudOptions>) -> String {
 
 /// Construct an object_store `Path` from a string without any encoding/decoding.
 pub fn object_path_from_string(path: String) -> PolarsResult<object_store::path::Path> {
-    object_store::path::Path::parse(&path).map_err(to_compute_err)
+    object_store::path::Path::parse(path).map_err(to_compute_err)
 }
 
 /// Build an [`ObjectStore`] based on the URL and passed in url. Return the cloud location and an implementation of the object store.
