@@ -174,7 +174,7 @@ from polars.io import (
     scan_parquet,
     scan_pyarrow_dataset,
 )
-from polars.lazyframe import LazyFrame
+from polars.lazyframe import GPUEngine, LazyFrame
 from polars.meta import (
     build_info,
     get_index_type,
@@ -206,6 +206,8 @@ __all__ = [
     "Expr",
     "LazyFrame",
     "Series",
+    # Engine configuration
+    "GPUEngine",
     # schema
     "Schema",
     # datatypes

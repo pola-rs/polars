@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import os
 from datetime import date, datetime, time, timedelta
-from functools import lru_cache, reduce
+from functools import lru_cache, partial, reduce
 from io import BytesIO, StringIO
 from operator import and_
 from pathlib import Path
@@ -78,6 +78,7 @@ from polars.datatypes import (
 from polars.datatypes.group import DataTypeGroup
 from polars.dependencies import import_optional, subprocess
 from polars.exceptions import PerformanceWarning
+from polars.lazyframe.engine_config import GPUEngine
 from polars.lazyframe.group_by import LazyGroupBy
 from polars.lazyframe.in_process import InProcessQuery
 from polars.schema import Schema
@@ -99,6 +100,7 @@ if TYPE_CHECKING:
         ClosedInterval,
         ColumnNameOrSelector,
         CsvQuoteStyle,
+        EngineType,
         ExplainFormat,
         FillNullStrategy,
         FrameInitTypes,
@@ -1771,6 +1773,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         cluster_with_columns: bool = True,
         no_optimization: bool = False,
         streaming: bool = False,
+        engine: EngineType = "cpu",
         background: Literal[True],
         _eager: bool = False,
     ) -> InProcessQuery: ...
@@ -1789,6 +1792,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         cluster_with_columns: bool = True,
         no_optimization: bool = False,
         streaming: bool = False,
+        engine: EngineType = "cpu",
         background: Literal[False] = False,
         _eager: bool = False,
     ) -> DataFrame: ...
@@ -1806,6 +1810,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         cluster_with_columns: bool = True,
         no_optimization: bool = False,
         streaming: bool = False,
+        engine: EngineType = "cpu",
         background: bool = False,
         _eager: bool = False,
         **_kwargs: Any,
@@ -1848,6 +1853,27 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             .. note::
                 Use :func:`explain` to see if Polars can process the query in streaming
                 mode.
+        engine
+            Select the engine used to process the query, optional.
+            If set to `"cpu"` (default), the query is run using the
+            polars CPU engine. If set to `"gpu"`, the GPU engine is
+            used. Fine-grained control over the GPU engine, for
+            example which device to use on a system with multiple
+            devices, is possible by providing a `GPUEngine` object
+            with configuration options.
+
+            .. note::
+               GPU mode is considered **unstable**. Not all queries will run
+               successfully on the GPU, however, they should fall back transparently
+               to the default engine if execution is not supported.
+
+               Running with `POLARS_VERBOSE=1` will provide information if a query
+               falls back (and why).
+
+            .. note::
+               The GPU engine does not support streaming, or running in the
+               background. If either are enabled, then GPU execution is switched off.
+
         background
             Run the query in the background and get a handle to the query.
             This handle can be used to fetch the result or cancel the query.
@@ -1918,6 +1944,18 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if streaming:
             issue_unstable_warning("Streaming mode is considered unstable.")
 
+        is_gpu = (is_config_obj := isinstance(engine, GPUEngine)) or engine == "gpu"
+        if (streaming or background or new_streaming) and is_gpu:
+            issue_warning(
+                "GPU engine does not support streaming or background collection, "
+                "disabling GPU engine.",
+                category=UserWarning,
+            )
+            is_gpu = False
+        if _eager:
+            # Don't run on GPU in _eager mode (but don't warn)
+            is_gpu = False
+
         ldf = self._ldf.optimization_toggle(
             type_coercion,
             predicate_pushdown,
@@ -1936,9 +1974,22 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             issue_unstable_warning("Background mode is considered unstable.")
             return InProcessQuery(ldf.collect_concurrently())
 
-        # Only for testing purposes atm.
-        callback = _kwargs.get("post_opt_callback")
-
+        callback = None
+        if is_gpu:
+            cudf_polars = import_optional(
+                "cudf_polars",
+                err_prefix="GPU engine requested, but required package",
+                install_message=(
+                    "Please install using the command `pip install cudf-polars-cu12` "
+                    "(or `pip install cudf-polars-cu11` if your system has a "
+                    "CUDA 11 driver)."
+                ),
+            )
+            if not is_config_obj:
+                engine = GPUEngine()
+            callback = partial(cudf_polars.execute_with_cudf, config=engine)
+        # Only for testing purposes
+        callback = _kwargs.get("post_opt_callback", callback)
         return wrap_df(ldf.collect(callback))
 
     @overload
