@@ -81,12 +81,21 @@ pub fn expanded_from_single_directory<P: AsRef<std::path::Path>>(
 }
 
 /// Recursively traverses directories and expands globs if `glob` is `true`.
-/// Returns the expanded paths and the index at which to start parsing hive
-/// partitions from the path.
 pub fn expand_paths(
     paths: &[PathBuf],
-    #[allow(unused_variables)] cloud_options: Option<&CloudOptions>,
     glob: bool,
+    #[allow(unused_variables)] cloud_options: Option<&CloudOptions>,
+) -> PolarsResult<Arc<[PathBuf]>> {
+    expand_paths_hive(paths, glob, cloud_options, false).map(|x| x.0)
+}
+
+/// Recursively traverses directories and expands globs if `glob` is `true`.
+/// Returns the expanded paths and the index at which to start parsing hive
+/// partitions from the path.
+pub fn expand_paths_hive(
+    paths: &[PathBuf],
+    glob: bool,
+    #[allow(unused_variables)] cloud_options: Option<&CloudOptions>,
     check_directory_level: bool,
 ) -> PolarsResult<(Arc<[PathBuf]>, usize)> {
     let Some(first_path) = paths.first() else {

@@ -2,7 +2,7 @@ use arrow::datatypes::ArrowSchemaRef;
 use either::Either;
 use expr_expansion::{is_regex_projection, rewrite_projections};
 use hive::{hive_partitions_from_paths, HivePartitions};
-use polars_io::utils::{expand_paths, expanded_from_single_directory};
+use polars_io::utils::{expand_paths, expand_paths_hive, expanded_from_single_directory};
 
 use super::stack_opt::ConversionOptimizer;
 use super::*;
@@ -97,10 +97,10 @@ pub fn to_alp_impl(
                     ref cloud_options, ..
                 } => {
                     let hive_enabled = file_options.hive_options.enabled;
-                    let (expanded_paths, hive_start_idx) = expand_paths(
+                    let (expanded_paths, hive_start_idx) = expand_paths_hive(
                         &paths,
-                        cloud_options.as_ref(),
                         file_options.glob,
+                        cloud_options.as_ref(),
                         hive_enabled.unwrap_or(false),
                     )?;
                     let inferred_hive_enabled = hive_enabled.unwrap_or_else(|| {
@@ -117,10 +117,10 @@ pub fn to_alp_impl(
                 } => {
                     // TODO: Remove duplication with Parquet branch
                     let hive_enabled = file_options.hive_options.enabled;
-                    let (expanded_paths, hive_start_idx) = expand_paths(
+                    let (expanded_paths, hive_start_idx) = expand_paths_hive(
                         &paths,
-                        cloud_options.as_ref(),
                         file_options.glob,
+                        cloud_options.as_ref(),
                         hive_enabled.unwrap_or(false),
                     )?;
                     let inferred_hive_enabled = hive_enabled.unwrap_or_else(|| {
@@ -134,16 +134,9 @@ pub fn to_alp_impl(
                 #[cfg(feature = "csv")]
                 FileScan::Csv {
                     ref cloud_options, ..
-                } => {
-                    let (expanded_paths, _) =
-                        expand_paths(&paths, cloud_options.as_ref(), file_options.glob, false)?;
-                    paths = expanded_paths;
-                },
+                } => paths = expand_paths(&paths, file_options.glob, cloud_options.as_ref())?,
                 #[cfg(feature = "json")]
-                FileScan::NDJson { .. } => {
-                    let (expanded_paths, _) = expand_paths(&paths, None, file_options.glob, false)?;
-                    paths = expanded_paths;
-                },
+                FileScan::NDJson { .. } => paths = expand_paths(&paths, file_options.glob, None)?,
                 _ => (), // TODO
             };
 
