@@ -19,9 +19,8 @@ pub trait LazyFileListReader: Clone {
             return self.finish_no_glob();
         }
 
-        let paths = self.expand_paths_default()?;
-
-        let lfs = paths
+        let lfs = self
+            .paths()
             .iter()
             .map(|path| {
                 self.clone()
