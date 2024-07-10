@@ -2,7 +2,10 @@ use arrow::datatypes::ArrowSchemaRef;
 use either::Either;
 use expr_expansion::{is_regex_projection, rewrite_projections};
 use hive::{hive_partitions_from_paths, HivePartitions};
-use polars_io::utils::{expand_paths, expand_paths_hive, expanded_from_single_directory};
+#[cfg(any(feature = "csv", feature = "json"))]
+use polars_io::utils::expand_paths;
+#[cfg(any(feature = "ipc", feature = "parquet"))]
+use polars_io::utils::{expand_paths_hive, expanded_from_single_directory};
 
 use super::stack_opt::ConversionOptimizer;
 use super::*;
@@ -84,14 +87,14 @@ pub fn to_alp_impl(
 
     let v = match lp {
         DslPlan::Scan {
-            mut paths,
+            paths,
             file_info,
             hive_parts,
             predicate,
             mut file_options,
             mut scan_type,
         } => {
-            match &scan_type {
+            let paths = match &scan_type {
                 #[cfg(feature = "parquet")]
                 FileScan::Parquet {
                     ref cloud_options, ..
@@ -107,9 +110,10 @@ pub fn to_alp_impl(
                         expanded_from_single_directory(paths.as_ref(), expanded_paths.as_ref())
                     });
 
-                    paths = expanded_paths;
                     file_options.hive_options.enabled = Some(inferred_hive_enabled);
                     file_options.hive_options.hive_start_idx = hive_start_idx;
+
+                    expanded_paths
                 },
                 #[cfg(feature = "ipc")]
                 FileScan::Ipc {
@@ -127,17 +131,18 @@ pub fn to_alp_impl(
                         expanded_from_single_directory(paths.as_ref(), expanded_paths.as_ref())
                     });
 
-                    paths = expanded_paths;
                     file_options.hive_options.enabled = Some(inferred_hive_enabled);
                     file_options.hive_options.hive_start_idx = hive_start_idx;
+
+                    expanded_paths
                 },
                 #[cfg(feature = "csv")]
                 FileScan::Csv {
                     ref cloud_options, ..
-                } => paths = expand_paths(&paths, file_options.glob, cloud_options.as_ref())?,
+                } => expand_paths(&paths, file_options.glob, cloud_options.as_ref())?,
                 #[cfg(feature = "json")]
-                FileScan::NDJson { .. } => paths = expand_paths(&paths, file_options.glob, None)?,
-                _ => (), // TODO
+                FileScan::NDJson { .. } => expand_paths(&paths, file_options.glob, None)?,
+                _ => paths, // TODO
             };
 
             let mut file_info = if let Some(file_info) = file_info {
