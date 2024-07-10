@@ -216,6 +216,7 @@ impl LazyCsvReader {
     where
         F: Fn(Schema) -> PolarsResult<Schema>,
     {
+        // TODO: This should be done when converting to the IR
         let paths = expand_paths(self.paths(), self.glob(), self.cloud_options())?;
 
         let Some(path) = paths.first() else {

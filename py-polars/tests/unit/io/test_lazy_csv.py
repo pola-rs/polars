@@ -423,3 +423,18 @@ c
     out = pl.scan_csv(paths, comment_prefix="#").collect(streaming=streaming)
 
     assert_frame_equal(out, expect)
+
+
+@pytest.mark.xfail(reason="Bug: https://github.com/pola-rs/polars/issues/17444")
+def test_scan_csv_with_column_names_nonexistent_file() -> None:
+    path_str = "my-nonexistent-data.csv"
+    path = Path(path_str)
+    assert not path.exists()
+
+    # Just calling the scan function should not raise any errors
+    result = pl.scan_csv(path, with_column_names=lambda x: [c.upper() for c in x])
+    assert isinstance(result, pl.LazyFrame)
+
+    # Upon collection, it should fail
+    with pytest.raises(FileNotFoundError):
+        result.collect()
