@@ -13,7 +13,7 @@ where
 {
     Box::new(iter.map(|x| {
         x.map(|(mut nested, array)| {
-            let _ = nested.nested.pop().unwrap(); // the primitive
+            let _ = nested.pop().unwrap(); // the primitive
             (nested, array)
         })
     }))
@@ -28,7 +28,7 @@ where
 {
     Box::new(iter.map(|x| {
         x.map(|(mut nested, array)| {
-            let _ = nested.nested.pop().unwrap(); // the primitive
+            let _ = nested.pop().unwrap(); // the primitive
             (nested, Box::new(array) as _)
         })
     }))
@@ -322,7 +322,7 @@ where
                                 validity,
                             )?);
 
-                            let _ = nested.nested.pop().unwrap(); // the primitive
+                            let _ = nested.pop().unwrap(); // the primitive
 
                             Ok((nested, array))
                         });
@@ -380,7 +380,7 @@ where
                                 validity,
                             )?);
 
-                            let _ = nested.nested.pop().unwrap(); // the primitive
+                            let _ = nested.pop().unwrap(); // the primitive
 
                             Ok((nested, array))
                         });
@@ -411,7 +411,7 @@ where
                                 validity,
                             )?);
 
-                            let _ = nested.nested.pop().unwrap(); // the primitive
+                            let _ = nested.pop().unwrap(); // the primitive
 
                             Ok((nested, array))
                         });
