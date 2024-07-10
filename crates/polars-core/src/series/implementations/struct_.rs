@@ -329,18 +329,19 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
     }
 
     fn sort_with(&self, options: SortOptions) -> PolarsResult<Series> {
-        let df = self.0.clone().unnest();
-
-        let n_cols = df.width();
-        let desc = vec![options.descending; n_cols];
-        let last = vec![options.nulls_last; n_cols];
-
-        let multi_options = SortMultipleOptions::from(&options)
-            .with_order_descending_multi(desc)
-            .with_nulls_last_multi(last);
-
-        let out = df.sort_impl(df.columns.clone(), multi_options, None)?;
-        Ok(StructChunked::new_unchecked(self.name(), &out.columns).into_series())
+        // let df = self.0.clone().unnest();
+        //
+        // let n_cols = df.width();
+        // let desc = vec![options.descending; n_cols];
+        // let last = vec![options.nulls_last; n_cols];
+        //
+        // let multi_options = SortMultipleOptions::from(&options)
+        //     .with_order_descending_multi(desc)
+        //     .with_nulls_last_multi(last);
+        //
+        // let out = df.sort_impl(df.columns.clone(), multi_options, None)?;
+        // Ok(StructChunked::new_unchecked(self.name(), &out.columns).into_series())
+        todo!()
     }
 
     fn arg_sort(&self, options: SortOptions) -> IdxCa {

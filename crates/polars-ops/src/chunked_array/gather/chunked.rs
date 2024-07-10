@@ -127,7 +127,7 @@ impl TakeChunked for Series {
             #[cfg(feature = "dtype-struct")]
             Struct(_) => {
                 let ca = phys.struct_().unwrap();
-                ca._apply_fields(|s| s.take_chunked_unchecked(by, sorted))
+                ca._apply_fields(|s| s.take_chunked_unchecked(by, sorted)).expect("infallible")
                     .into_series()
             },
             #[cfg(feature = "object")]
@@ -183,7 +183,7 @@ impl TakeChunked for Series {
             #[cfg(feature = "dtype-struct")]
             Struct(_) => {
                 let ca = phys.struct_().unwrap();
-                ca._apply_fields(|s| s.take_opt_chunked_unchecked(by))
+                ca._apply_fields(|s| s.take_opt_chunked_unchecked(by)).expect("infallible")
                     .into_series()
             },
             #[cfg(feature = "object")]

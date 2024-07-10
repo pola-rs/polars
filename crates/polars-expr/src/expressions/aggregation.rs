@@ -568,8 +568,9 @@ impl PartitionedAggregation for AggregationExpr {
                 match partitioned.dtype() {
                     DataType::Struct(_) => {
                         let ca = partitioned.struct_().unwrap();
-                        let sum = &ca.fields()[0];
-                        let count = &ca.fields()[1];
+                        let fields = ca.fields_as_series();
+                        let sum = &fields[0];
+                        let count = &fields[1];
                         let (agg_count, agg_s) =
                             unsafe { POOL.join(|| count.agg_sum(groups), || sum.agg_sum(groups)) };
                         let agg_s = &agg_s / &agg_count;

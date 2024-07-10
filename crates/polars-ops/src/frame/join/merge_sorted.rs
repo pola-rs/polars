@@ -36,19 +36,19 @@ pub fn _merge_sorted_dfs(
             let lhs_phys = lhs.to_physical_repr();
             let rhs_phys = rhs.to_physical_repr();
 
-            let out = merge_series(&lhs_phys, &rhs_phys, &merge_indicator);
+            let out = merge_series(&lhs_phys, &rhs_phys, &merge_indicator)?;
             let mut out = out.cast(lhs.dtype()).unwrap();
             out.rename(lhs.name());
-            out
+            Ok(out)
         })
-        .collect();
+        .collect::<PolarsResult<_>>()?;
 
     Ok(unsafe { DataFrame::new_no_checks(new_columns) })
 }
 
-fn merge_series(lhs: &Series, rhs: &Series, merge_indicator: &[bool]) -> Series {
+fn merge_series(lhs: &Series, rhs: &Series, merge_indicator: &[bool]) -> PolarsResult<Series> {
     use DataType::*;
-    match lhs.dtype() {
+    let out = match lhs.dtype() {
         Boolean => {
             let lhs = lhs.bool().unwrap();
             let rhs = rhs.bool().unwrap();
@@ -73,14 +73,15 @@ fn merge_series(lhs: &Series, rhs: &Series, merge_indicator: &[bool]) -> Series 
         Struct(_) => {
             let lhs = lhs.struct_().unwrap();
             let rhs = rhs.struct_().unwrap();
+            polars_ensure!(lhs.null_count() + rhs.null_count() == 0, InvalidOperation: "merge sorted with structs with outer nulls not yet supported");
 
             let new_fields = lhs
-                .fields()
+                .fields_as_series()
                 .iter()
-                .zip(rhs.fields())
-                .map(|(lhs, rhs)| merge_series(lhs, rhs, merge_indicator))
-                .collect::<Vec<_>>();
-            StructChunked::new("", &new_fields).unwrap().into_series()
+                .zip(rhs.fields_as_series())
+                .map(|(lhs, rhs)| merge_series(lhs, &rhs, merge_indicator))
+                .collect::<PolarsResult<Vec<_>>>()?;
+            StructChunked2::from_series("", &new_fields).unwrap().into_series()
         },
         List(_) => {
             let lhs = lhs.list().unwrap();
@@ -94,7 +95,8 @@ fn merge_series(lhs: &Series, rhs: &Series, merge_indicator: &[bool]) -> Series 
                     merge_ca(lhs, rhs, merge_indicator).into_series()
             })
         },
-    }
+    };
+    Ok(out)
 }
 
 fn merge_ca<'a, T>(

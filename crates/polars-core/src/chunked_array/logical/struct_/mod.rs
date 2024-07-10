@@ -291,9 +291,6 @@ impl StructChunked {
         let fields = self.fields.iter().map(func).collect::<Vec<_>>();
         Self::new_unchecked(self.field.name(), &fields)
     }
-    pub fn unnest(self) -> DataFrame {
-        self.into()
-    }
 
     pub(crate) fn to_arrow(&self, i: usize, compat_level: CompatLevel) -> ArrayRef {
         let values = self

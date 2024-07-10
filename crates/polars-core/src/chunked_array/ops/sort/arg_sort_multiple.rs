@@ -233,6 +233,15 @@ pub fn _get_rows_encoded_ca(
         .map(|rows| BinaryOffsetChunked::with_chunk(name, rows.into_array()))
 }
 
+pub fn _get_rows_encoded_arr(
+    by: &[Series],
+    descending: &[bool],
+    nulls_last: &[bool],
+) -> PolarsResult<BinaryArray<i64>> {
+    _get_rows_encoded(by, descending, nulls_last)
+        .map(|rows| rows.into_array())
+}
+
 pub fn _get_rows_encoded_ca_unordered(
     name: &str,
     by: &[Series],

@@ -10,12 +10,12 @@ use crate::series::Series;
 use crate::utils::{Container, index_to_chunked_index};
 use std::fmt::Write;
 use arrow::compute::utils::combine_validities_and;
-use crate::prelude::sort::arg_sort_multiple::_get_rows_encoded_ca;
+use crate::prelude::sort::arg_sort_multiple::{_get_rows_encoded_arr, _get_rows_encoded_ca};
 
 pub type StructChunked2 = ChunkedArray<StructType>;
 
 impl StructChunked2 {
-    pub(crate) fn from_series(name: &str, fields: &[Series]) -> PolarsResult<Self> {
+    pub fn from_series(name: &str, fields: &[Series]) -> PolarsResult<Self> {
         polars_ensure!(fields.iter().map(|s| s.n_chunks()).all_equal(), InvalidOperation: "expected equal chunks in struct creation");
 
         let n_chunks = fields[0].n_chunks();
@@ -37,12 +37,12 @@ impl StructChunked2 {
 
     }
 
-    pub(crate) fn struct_fields(&self) -> &[Field] {
+    pub fn struct_fields(&self) -> &[Field] {
         let DataType::Struct(fields) = self.dtype() else {unreachable!()};
         fields
     }
 
-    pub(crate) fn fields_as_series(&self) -> Vec<Series> {
+    pub fn fields_as_series(&self) -> Vec<Series> {
         self.struct_fields().iter().enumerate().map(|(i, field)| {
             let field_chunks = self.downcast_iter().map(|chunk| {
                 chunk.values()[i].clone()
@@ -157,6 +157,10 @@ impl StructChunked2 {
         unsafe { self.cast_impl(dtype, cast_options, false) }
     }
 
+    pub fn cast(&self, dtype: &DataType) -> PolarsResult<Series> {
+        self.cast_with_options(dtype, CastOptions::NonStrict)
+    }
+
     /// Gets AnyValue from LogicalType
     pub(crate) fn get_any_value(&self, i: usize) -> PolarsResult<AnyValue<'_>> {
         polars_ensure!(i < self.len(), oob = i, self.len());
@@ -178,14 +182,14 @@ impl StructChunked2 {
         }
     }
 
-    pub(crate) fn _apply_fields<F>(&self, mut func: F) -> PolarsResult<Self>
+    pub fn _apply_fields<F>(&self, mut func: F) -> PolarsResult<Self>
     where
         F: FnMut(&Series) -> Series,
     {
         self.try_apply_fields(|s| Ok(func(s)))
     }
 
-    pub(crate) fn try_apply_fields<F>(&self, func: F) -> PolarsResult<Self>
+    pub fn try_apply_fields<F>(&self, func: F) -> PolarsResult<Self>
     where
         F: FnMut(&Series) -> PolarsResult<Series>,
     {
@@ -205,7 +209,12 @@ impl StructChunked2 {
 
     }
 
-    pub(crate) fn get_row_encoded(&self, options: SortOptions) -> PolarsResult<BinaryOffsetChunked> {
+    pub fn get_row_encoded_array(&self, options: SortOptions) -> PolarsResult<BinaryArray<i64>> {
+        let s = self.clone().into_series();
+        _get_rows_encoded_arr(&[s], &[options.descending], &[options.nulls_last])
+    }
+
+    pub fn get_row_encoded(&self, options: SortOptions) -> PolarsResult<BinaryOffsetChunked> {
         let s = self.clone().into_series();
         _get_rows_encoded_ca(self.name(), &[s], &[options.descending], &[options.nulls_last])
     }
@@ -224,7 +233,7 @@ impl StructChunked2 {
     /// Combine the validities of two structs.
     /// # Panics
     /// Panics if the chunks don't align.
-    pub(crate) fn zip_outer_validity(&mut self, other: &StructChunked2) {
+    pub fn zip_outer_validity(&mut self, other: &StructChunked2) {
         if other.null_count > 0 {
             // SAFETY:
             // We keep length and dtypes the same.
@@ -235,5 +244,20 @@ impl StructChunked2 {
                 }
             }
         }
+    }
+    pub fn unnest(mut self) -> DataFrame {
+        self.propagate_nulls();
+
+        // SAFETY: invariants for struct are the same
+        unsafe { DataFrame::new_no_checks(self.fields_as_series()) }
+
+    }
+
+    /// Get access to one of this `[StructChunked]`'s fields
+    pub fn field_by_name(&self, name: &str) -> PolarsResult<Series> {
+        self.fields_as_series()
+            .into_iter()
+            .find(|s| s.name() == name)
+            .ok_or_else(|| polars_err!(StructFieldNotFound: "{}", name))
     }
 }
