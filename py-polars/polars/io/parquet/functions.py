@@ -63,6 +63,8 @@ def read_parquet(
         that have a `read()` method, such as a file handler like the builtin `open`
         function, or a `BytesIO` instance). If the path is a directory, files in that
         directory will all be read.
+        For file-like objects,
+        stream position may not be updated accordingly after reading.
     columns
         Columns to select. Accepts a list of column indices (starting at zero) or a list
         of column names.
@@ -273,6 +275,8 @@ def read_parquet_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, Dat
         Path to a file or a file-like object (by "file-like object" we refer to objects
         that have a `read()` method, such as a file handler like the builtin `open`
         function, or a `BytesIO` instance).
+        For file-like objects,
+        stream position may not be updated accordingly after reading.
 
     Returns
     -------
