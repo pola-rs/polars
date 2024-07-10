@@ -3444,7 +3444,7 @@ class Series:
         >>> s[:2].has_nulls()
         False
         """
-        return self.has_nulls()
+        return self._s.has_nulls()
 
     @deprecate_function(
         "Use `has_nulls` instead to check for the presence of null values.",
