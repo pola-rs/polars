@@ -100,7 +100,7 @@ impl ComputeNode for StreamingSliceNode {
 
                     let morsel = Morsel::new(df, global_state.morsel_seq);
                     global_state.morsel_seq = global_state.morsel_seq.successor();
-                    if let Err(_) = sender.send(morsel).await {
+                    if sender.send(morsel).await.is_err() {
                         break;
                     }
                 }
