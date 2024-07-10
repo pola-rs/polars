@@ -231,7 +231,25 @@ fn get_either_file_and_path(
                     .ok()
             })
             .flatten()
-            .map(|fileno| unsafe { libc::dup(fileno) })
+            .map(|fileno| unsafe {
+                // `File::from_raw_fd()` takes the ownership of the file descriptor.
+                // When the File is dropped, it closes the file descriptor.
+                // This is undesired - the Python file object will become invalid.
+                // Therefore, we duplicate the file descriptor here.
+                // Closing the duplicated file descriptor will not close
+                // the original file descriptor;
+                // and the status, e.g. stream position, is still shared with
+                // the original file descriptor.
+                // We use `F_DUPFD_CLOEXEC` here instead of `dup()`
+                // because it also sets the `O_CLOEXEC` flag on the duplicated file descriptor,
+                // which `dup()` clears.
+                // `open()` in both Rust and Python automatically set `O_CLOEXEC` flag;
+                // it prevents leaking file descriptors across processes,
+                // and we want to be consistent with them.
+                // `F_DUPFD_CLOEXEC` is defined in POSIX.1-2008
+                // and is present on all alive UNIX(-like) systems.
+                libc::fcntl(fileno, libc::F_DUPFD_CLOEXEC, 0)
+            })
             .filter(|fileno| *fileno != -1)
             .map(|fileno| fileno as RawFd)
             {
