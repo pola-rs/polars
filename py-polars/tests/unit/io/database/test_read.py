@@ -11,11 +11,13 @@ from typing import TYPE_CHECKING, Any, NamedTuple, cast
 
 import pyarrow as pa
 import pytest
+import sqlalchemy
 from sqlalchemy import Integer, MetaData, Table, create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.sql.expression import cast as alchemy_cast
 
 import polars as pl
+from polars._utils.various import parse_version
 from polars.exceptions import UnsuitableSQLError
 from polars.io.database._arrow_registry import ARROW_DRIVER_REGISTRY
 from polars.testing import assert_frame_equal
@@ -387,6 +389,8 @@ def test_read_database_parameterised(tmp_sqlite_db: Path) -> None:
         for conn in (alchemy_session, alchemy_engine, alchemy_conn, raw_conn):
             if alchemy_session is conn and param == "?":
                 continue  # alchemy session.execute() doesn't support positional params
+            if parse_version(sqlalchemy.__version__) < (2, 0) and param == ":n":
+                continue  # skip for older sqlalchemy versions
 
             assert_frame_equal(
                 expected_frame,

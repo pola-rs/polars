@@ -5,9 +5,11 @@ from math import ceil
 from typing import TYPE_CHECKING, Any, Iterable, overload
 
 import pytest
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+import sqlalchemy
+from sqlalchemy.ext.asyncio import create_async_engine
 
 import polars as pl
+from polars._utils.various import parse_version
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -66,9 +68,14 @@ class MockSurrealConnection:
         return [{"result": self._mock_data, "status": "OK", "time": "32.083µs"}]
 
 
+@pytest.mark.skipif(
+    parse_version(sqlalchemy.__version__) < (2, 0),
+    reason="SQLAlchemy 2.0+ required for async tests",
+)
 def test_read_async(tmp_sqlite_db: Path) -> None:
     # confirm that we can load frame data from the core sqlalchemy async
     # primitives: AsyncConnection, AsyncEngine, and async_sessionmaker
+    from sqlalchemy.ext.asyncio import async_sessionmaker
 
     async_engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_sqlite_db}")
     async_connection = async_engine.connect()
@@ -111,6 +118,10 @@ async def _nested_async_test(tmp_sqlite_db: Path) -> pl.DataFrame:
     )
 
 
+@pytest.mark.skipif(
+    parse_version(sqlalchemy.__version__) < (2, 0),
+    reason="SQLAlchemy 2.0+ required for async tests",
+)
 def test_read_async_nested(tmp_sqlite_db: Path) -> None:
     # this tests validates that we can handle nested async calls. without
     # the nested asyncio handling provided by `nest_asyncio` this test
