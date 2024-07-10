@@ -108,7 +108,8 @@ impl<'a> Iterator for BinaryIter<'a> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        if self.values.is_empty() || self.num_values == 0 {
+        if self.num_values == 0 {
+            assert!(self.values.is_empty());
             return None;
         }
 

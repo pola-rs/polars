@@ -46,7 +46,7 @@ pub fn create_list(
     nested: &mut NestedState,
     values: Box<dyn Array>,
 ) -> Box<dyn Array> {
-    let (mut offsets, validity) = nested.nested.pop().unwrap().take();
+    let (mut offsets, validity) = nested.pop().unwrap();
     match data_type.to_logical_type() {
         ArrowDataType::List(_) => {
             offsets.push(values.len() as i64);
@@ -89,7 +89,7 @@ pub fn create_map(
     nested: &mut NestedState,
     values: Box<dyn Array>,
 ) -> Box<dyn Array> {
-    let (mut offsets, validity) = nested.nested.pop().unwrap().take();
+    let (mut offsets, validity) = nested.pop().unwrap();
     match data_type.to_logical_type() {
         ArrowDataType::Map(_, _) => {
             offsets.push(values.len() as i64);
@@ -147,7 +147,7 @@ where
                 chunk_size,
                 num_rows,
             )?
-            .map(|x| Ok((NestedState::new(vec![]), x?))),
+            .map(|x| Ok((NestedState::default(), x?))),
         ));
     }
 
