@@ -539,15 +539,20 @@ impl ChunkExpandAtIndex<StructType> for StructChunked2 {
     fn new_from_index(&self, length: usize, index: usize) -> ChunkedArray<StructType> {
         let (chunk_idx, idx) = self.index_to_chunked_index(index);
         let chunk = self.downcast_chunks().get(chunk_idx).unwrap();
+        let chunk = if chunk.is_null(idx) {
+            new_null_array(chunk.data_type().clone(), length)
+        } else {
+            let values = chunk.values().iter().map(|arr| {
+                let s = Series::try_from(("", arr.clone())).unwrap();
+                let s = s.new_from_index(idx, length);
+                s.chunks()[0].clone()
+            }).collect::<Vec<_>>();
 
-        let chunks = chunk.values().iter().map(|arr| {
-            let s = Series::try_from(("", arr.clone())).unwrap();
-            let s = s.new_from_index(idx, length);
-            s.chunks()[0].clone()
-        }).collect::<Vec<_>>();
+            StructArray::new(chunk.data_type().clone(), values, None).boxed()
+        };
 
         // SAFETY: chunks are from self.
-        unsafe { self.copy_with_chunks(chunks) }
+        unsafe { self.copy_with_chunks(vec![chunk]) }
     }
 }
 

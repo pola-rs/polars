@@ -1,5 +1,6 @@
 use std::fmt::Write;
-
+use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::pushable::Pushable;
 #[cfg(feature = "dtype-categorical")]
 use crate::chunked_array::cast::CastOptions;
 #[cfg(feature = "object")]
@@ -153,7 +154,9 @@ impl Series {
                 .into_series()
                 .cast(&DataType::Array(inner.clone(), *size))?,
             #[cfg(feature = "dtype-struct")]
-            DataType::Struct(fields) => any_values_to_struct(values, fields, strict)?,
+            DataType::Struct(fields) => {
+                any_values_to_struct(values, fields, strict)?
+            },
             #[cfg(feature = "object")]
             DataType::Object(_, registry) => any_values_to_object(values, registry)?,
             DataType::Null => Series::new_null(name, values.len()),
@@ -654,6 +657,7 @@ fn any_values_to_struct(
 
     // The physical series fields of the struct.
     let mut series_fields = Vec::with_capacity(fields.len());
+    let mut has_outer_validity  = false;
     for (i, field) in fields.iter().enumerate() {
         let mut field_avs = Vec::with_capacity(values.len());
 
@@ -701,7 +705,10 @@ fn any_values_to_struct(
                         append_by_search()
                     }
                 },
-                _ => field_avs.push(AnyValue::Null),
+                _ => {
+                    has_outer_validity = true;
+                    field_avs.push(AnyValue::Null)
+                },
             }
         }
         // If the inferred dtype is null, we let auto inference work.
@@ -712,7 +719,19 @@ fn any_values_to_struct(
         };
         series_fields.push(s)
     }
-    StructChunked2::from_series("", &series_fields).map(|ca| ca.into_series())
+
+    let mut out = StructChunked2::from_series("", &series_fields)?;
+    if has_outer_validity {
+        let mut validity = MutableBitmap::new();
+        validity.extend_constant(values.len(), true);
+        for (i, v) in values.iter().enumerate() {
+            if matches!(v, AnyValue::Null) {
+                unsafe { validity.set_unchecked(i, false) }
+            }
+        }
+        out.set_outer_validity(Some(validity.freeze()))
+    }
+    Ok(out.into_series())
 }
 
 #[cfg(feature = "object")]

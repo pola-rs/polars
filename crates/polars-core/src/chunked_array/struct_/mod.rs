@@ -11,35 +11,98 @@ use crate::prelude::*;
 use crate::series::Series;
 use crate::utils::{Container, index_to_chunked_index};
 use std::fmt::Write;
+use arrow::bitmap::Bitmap;
 use arrow::compute::utils::combine_validities_and;
 use crate::prelude::sort::arg_sort_multiple::{_get_rows_encoded_arr, _get_rows_encoded_ca};
 
 pub type StructChunked2 = ChunkedArray<StructType>;
 
-impl StructChunked2 {
-    pub fn from_series(name: &str, fields: &[Series]) -> PolarsResult<Self> {
-        polars_ensure!(fields.iter().map(|s| s.n_chunks()).all_equal(), InvalidOperation: "expected equal chunks in struct creation");
+fn constructor(name: &str, fields: &[Series]) -> PolarsResult<StructChunked2> {
+    // Different chunk lengths: rechunk and recurse.
+    if !fields.iter().map(|s| s.n_chunks()).all_equal() {
+        let fields = fields.iter().map(|s| s.rechunk()).collect::<Vec<_>>();
+        return constructor(name, &fields)
+    }
 
-        let n_chunks = fields[0].n_chunks();
-        let dtype = DataType::Struct(fields.iter().map(|s| s.field().into_owned()).collect());
-        let arrow_dtype = dtype.to_physical().to_arrow(CompatLevel::newest());
+    let n_chunks = fields[0].n_chunks();
+    let dtype = DataType::Struct(fields.iter().map(|s| s.field().into_owned()).collect());
+    let arrow_dtype = dtype.to_physical().to_arrow(CompatLevel::newest());
 
-        let chunks = (0..n_chunks).map(|c_i| {
-            let fields = fields.iter().map(|field| {
-                field.chunks()[c_i].clone()
-            }).collect::<Vec<_>>();
+    let chunks = (0..n_chunks).map(|c_i| {
+        let fields = fields.iter().map(|field| {
+            field.chunks()[c_i].clone()
+        }).collect::<Vec<_>>();
 
-            polars_ensure!(fields.iter().map(|arr| arr.len()).all_equal(), InvalidOperation: "expected equal chunk lengths in struct creation");
-
-            Ok(StructArray::new(arrow_dtype.clone(), fields, None).boxed())
-
-        }).collect::<PolarsResult<_>>()?;
-
-        // SAFETY: invariants checked above.
-        unsafe {
-            Ok(StructChunked2::from_chunks_and_dtype_unchecked(name, chunks, dtype))
+        if !fields.iter().map(|arr| arr.len()).all_equal() {
+            return Err(())
         }
 
+        Ok(StructArray::new(arrow_dtype.clone(), fields, None).boxed())
+
+    }).collect::<Result<Vec<_>, ()>>();
+
+    match chunks {
+        Ok(chunks) => {
+            // SAFETY: invariants checked above.
+            unsafe {
+                Ok(StructChunked2::from_chunks_and_dtype_unchecked(name, chunks, dtype))
+            }
+        },
+        // Different chunk lengths: rechunk and recurse.
+        Err(_) => {
+            let fields = fields.iter().map(|s| s.rechunk()).collect::<Vec<_>>();
+            constructor(name, &fields)
+        }
+    }
+}
+
+impl StructChunked2 {
+    pub fn from_series(name: &str, fields: &[Series]) -> PolarsResult<Self> {
+        let mut names = PlHashSet::with_capacity(fields.len());
+        let first_len = fields.first().map(|s| s.len()).unwrap_or(0);
+        let mut max_len = first_len;
+
+        let mut all_equal_len = true;
+        let mut is_empty = false;
+        for s in fields {
+            let s_len = s.len();
+            max_len = std::cmp::max(max_len, s_len);
+
+            if s_len != first_len {
+                all_equal_len = false;
+            }
+            if s_len == 0 {
+                is_empty = true;
+            }
+            polars_ensure!(
+                names.insert(s.name()),
+                Duplicate: "multiple fields with name '{}' found", s.name()
+            );
+        }
+
+        if !all_equal_len {
+            let mut new_fields = Vec::with_capacity(fields.len());
+            for s in fields {
+                let s_len = s.len();
+                if is_empty {
+                    new_fields.push(s.clear())
+                } else if s_len == max_len {
+                    new_fields.push(s.clone())
+                } else if s_len == 1 {
+                    new_fields.push(s.new_from_index(0, max_len))
+                } else {
+                    polars_bail!(
+                        ShapeMismatch: "expected all fields to have equal length"
+                    );
+                }
+            }
+            constructor(name, &new_fields)
+        } else if fields.is_empty() {
+            let fields = &[Series::new_null("", 0)];
+            constructor(name, fields)
+        } else {
+            constructor(name, fields)
+        }
     }
 
     pub fn struct_fields(&self) -> &[Field] {
@@ -52,6 +115,7 @@ impl StructChunked2 {
             let field_chunks = self.downcast_iter().map(|chunk| {
                 chunk.values()[i].clone()
             }).collect::<Vec<_>>();
+            dbg!(&field_chunks, &field);
 
             // SAFETY: correct type.
             unsafe { Series::from_chunks_and_dtype_unchecked(&field.name, field_chunks, &field.dtype) }
@@ -249,7 +313,18 @@ impl StructChunked2 {
                 }
             }
         }
+        self.compute_len();
     }
+
+    pub(crate) fn set_outer_validity(&mut self, validity: Option<Bitmap>) {
+        assert_eq!(self.chunks().len(), 1);
+        unsafe {
+            let arr = self.downcast_iter_mut().next().unwrap();
+            arr.set_validity(validity)
+        }
+        self.compute_len();
+    }
+
     pub fn unnest(mut self) -> DataFrame {
         self.propagate_nulls();
 

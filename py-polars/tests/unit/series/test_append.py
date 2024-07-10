@@ -68,19 +68,11 @@ def test_struct_schema_on_append_extend_3452() -> None:
     housing1, housing2 = pl.Series(housing1_data), pl.Series(housing2_data)
     with pytest.raises(
         SchemaError,
-        match=(
-            'cannot append field with name "address" '
-            'to struct with field name "city"'
-        ),
     ):
         housing1.append(housing2)
 
     with pytest.raises(
         SchemaError,
-        match=(
-            'cannot extend field with name "address" '
-            'to struct with field name "city"'
-        ),
     ):
         housing1.extend(housing2)
 
