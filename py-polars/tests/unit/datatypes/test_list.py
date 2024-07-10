@@ -290,7 +290,7 @@ def test_fast_explode_on_list_struct_6208() -> None:
         "ref": [1, 1],
         "parents": [
             {"ref": 1, "tag": "t", "ratio": 62.3},
-            {"ref": None, "tag": None, "ratio": None},
+            None
         ],
     }
 

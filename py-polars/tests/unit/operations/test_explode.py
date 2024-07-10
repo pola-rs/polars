@@ -261,7 +261,7 @@ def test_explode_null_struct() -> None:
 
     assert pl.DataFrame(df).explode("col1").to_dict(as_series=False) == {
         "col1": [
-            {"field1": None, "field2": None, "field3": None},
+            None,
             {"field1": None, "field2": None, "field3": None},
             {"field1": None, "field2": "some", "field3": "value"},
         ]

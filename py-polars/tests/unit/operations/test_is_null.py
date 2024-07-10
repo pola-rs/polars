@@ -21,9 +21,9 @@ def test_is_null_struct() -> None:
         {
             "x": [
                 {"a": 1, "b": 2},
-                {"a": 1, "b": None},
-                {"a": None, "b": 2},
                 {"a": None, "b": None},
+                {"a": None, "b": 2},
+                None
             ]
         }
     )

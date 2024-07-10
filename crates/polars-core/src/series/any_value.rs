@@ -650,6 +650,7 @@ fn any_values_to_struct(
     fields: &[Field],
     strict: bool,
 ) -> PolarsResult<Series> {
+    dbg!("HERE");
     // Fast path for structs with no fields.
     if fields.is_empty() {
         return Ok(StructChunked2::full_null("", values.len()).into_series());
@@ -721,7 +722,7 @@ fn any_values_to_struct(
     }
 
     let mut out = StructChunked2::from_series("", &series_fields)?;
-    if has_outer_validity {
+    if dbg!(has_outer_validity) {
         let mut validity = MutableBitmap::new();
         validity.extend_constant(values.len(), true);
         for (i, v) in values.iter().enumerate() {

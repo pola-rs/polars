@@ -3,7 +3,7 @@ mod scalar;
 #[cfg(feature = "dtype-categorical")]
 mod categorical;
 
-use std::ops::Not;
+use std::ops::{BitAnd, Not};
 
 use arrow::array::BooleanArray;
 use arrow::bitmap::MutableBitmap;
@@ -643,8 +643,9 @@ impl ChunkCompare<&ListChunked> for ListChunked {
 }
 
 #[cfg(feature = "dtype-struct")]
-fn struct_helper<F>(a: &StructChunked2, b: &StructChunked2, op: F, value: bool) -> BooleanChunked
-where F: Fn(&Series, &Series) -> BooleanChunked
+fn struct_helper<F, R>(a: &StructChunked2, b: &StructChunked2, op: F, reduce: R, value: bool) -> BooleanChunked
+where F: Fn(&Series, &Series) -> BooleanChunked,
+    R: Fn(BooleanChunked, BooleanChunked) -> BooleanChunked
 {
     use std::ops::BitAnd;
     if a.len() != b.len() || a.struct_fields().len() != b.struct_fields().len() {
@@ -657,7 +658,7 @@ where F: Fn(&Series, &Series) -> BooleanChunked
             .map(|(l, r)| {
                 op(l, r)
             })
-            .reduce(|lhs, rhs| lhs.bitand(rhs))
+            .reduce(|lhs, rhs| reduce(lhs, rhs))
             .unwrap();
         if a.null_count() > 0 || b.null_count() > 0 {
             let mut a = a.into_owned();
@@ -676,19 +677,19 @@ where F: Fn(&Series, &Series) -> BooleanChunked
 impl ChunkCompare<&StructChunked2> for StructChunked2 {
     type Item = BooleanChunked;
     fn equal(&self, rhs: &StructChunked2) -> BooleanChunked {
-        struct_helper(self, rhs, |l, r| l.equal(r).unwrap(), false)
+        struct_helper(self, rhs, |l, r| l.equal(r).unwrap(), |a, b| a.bitand(b), false)
     }
 
     fn equal_missing(&self, rhs: &StructChunked2) -> BooleanChunked {
-        struct_helper(self, rhs, |l, r| l.equal_missing(r).unwrap(), false)
+        struct_helper(self, rhs, |l, r| l.equal_missing(r).unwrap(), |a, b| a.bitand(b), false)
     }
 
     fn not_equal(&self, rhs: &StructChunked2) -> BooleanChunked {
-        struct_helper(self, rhs, |l, r| l.not_equal(r).unwrap(), true)
+        struct_helper(self, rhs, |l, r| l.not_equal(r).unwrap(),|a, b| a.not_equal(&b).unique().unwrap(), true)
     }
 
     fn not_equal_missing(&self, rhs: &StructChunked2) -> BooleanChunked {
-        struct_helper(self, rhs, |l, r| l.not_equal_missing(r).unwrap(), true)
+        struct_helper(self, rhs, |l, r| l.not_equal_missing(r).unwrap(), |a, b| a.not_equal_missing(&b).unique().unwrap(), true)
     }
 }
 

@@ -427,7 +427,14 @@ fn is_in_struct_list(ca_in: &StructChunked2, other: &Series) -> PolarsResult<Boo
         polars_ensure!(ca_in.len() == other.len(), ComputeError: "shapes don't match: expected {} elements in 'is_in' comparison, got {}", ca_in.len(), other.len());
 
         // TODO! improve this.
-        let ca = ca_in.get_row_encoded(Default::default())?;
+        let ca= if ca_in.null_count() > 0 {
+            let ca_in = ca_in.rechunk();
+            let mut ca = ca_in.get_row_encoded(Default::default())?;
+            ca.merge_validities(ca_in.chunks());
+            ca
+        } else {
+            ca_in.get_row_encoded(Default::default())?
+        };
         {
             ca
                 .iter()
@@ -466,7 +473,14 @@ fn is_in_struct_array(ca_in: &StructChunked2, other: &Series) -> PolarsResult<Bo
         polars_ensure!(ca_in.len() == other.len(), ComputeError: "shapes don't match: expected {} elements in 'is_in' comparison, got {}", ca_in.len(), other.len());
 
         // TODO! improve this.
-        let ca = ca_in.get_row_encoded(Default::default())?;
+        let ca= if ca_in.null_count() > 0 {
+            let ca_in = ca_in.rechunk();
+            let mut ca = ca_in.get_row_encoded(Default::default())?;
+            ca.merge_validities(ca_in.chunks());
+            ca
+        } else {
+           ca_in.get_row_encoded(Default::default())?
+        };
         {
             ca
                 .iter()
@@ -528,9 +542,17 @@ fn is_in_struct(ca_in: &StructChunked2, other: &Series) -> PolarsResult<BooleanC
                 return is_in(&ca_in_super, &other_super);
             }
 
-            let ca_in = ca_in.get_row_encoded(Default::default())?;
-            let ca_other = other.get_row_encoded(Default::default())?;
-            is_in_helper_ca(&ca_in, &ca_other)
+            if ca_in.null_count() > 0 {
+                let ca_in = ca_in.rechunk();
+                let mut ca_in_o = ca_in.get_row_encoded(Default::default())?;
+                ca_in_o.merge_validities(ca_in.chunks());
+                let ca_other = other.get_row_encoded(Default::default())?;
+                is_in_helper_ca(&ca_in_o, &ca_other)
+            } else {
+                let ca_in = ca_in.get_row_encoded(Default::default())?;
+                let ca_other = other.get_row_encoded(Default::default())?;
+                is_in_helper_ca(&ca_in, &ca_other)
+            }
         },
     }
 }

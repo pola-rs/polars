@@ -78,6 +78,11 @@ impl StructChunked2 {
                 names.insert(s.name()),
                 Duplicate: "multiple fields with name '{}' found", s.name()
             );
+            match s.dtype() {
+                #[cfg(feature = "object")]
+                DataType::Object(_, _) => polars_bail!(InvalidOperation: "nested objects are not allowed"),
+                _ => {}
+            }
         }
 
         if !all_equal_len {
@@ -111,11 +116,11 @@ impl StructChunked2 {
     }
 
     pub fn fields_as_series(&self) -> Vec<Series> {
+        dbg!(self.struct_fields());
         self.struct_fields().iter().enumerate().map(|(i, field)| {
             let field_chunks = self.downcast_iter().map(|chunk| {
                 chunk.values()[i].clone()
             }).collect::<Vec<_>>();
-            dbg!(&field_chunks, &field);
 
             // SAFETY: correct type.
             unsafe { Series::from_chunks_and_dtype_unchecked(&field.name, field_chunks, &field.dtype) }

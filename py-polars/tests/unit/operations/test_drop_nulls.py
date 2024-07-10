@@ -30,7 +30,7 @@ def test_df_drop_nulls_struct() -> None:
                 {"a": 1, "b": 2},
                 {"a": 1, "b": None},
                 {"a": None, "b": 2},
-                {"a": None, "b": None},
+                None
             ]
         }
     )
