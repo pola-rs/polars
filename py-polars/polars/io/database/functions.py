@@ -306,15 +306,12 @@ def read_database_uri(
           Supports a range of databases, such as PostgreSQL, Redshift, MySQL, MariaDB,
           Clickhouse, Oracle, BigQuery, SQL Server, and so on. For an up-to-date list
           please see the connectorx docs:
-
-          * https://github.com/sfu-db/connector-x#supported-sources--destinations
-
+          https://github.com/sfu-db/connector-x#supported-sources--destinations
         * `'adbc'`
           Currently there is limited support for this engine, with a relatively small
           number of drivers available, most of which are still in development. For
           an up-to-date list of drivers please see the ADBC docs:
-
-          * https://arrow.apache.org/adbc/
+          https://arrow.apache.org/adbc/
     schema_overrides
         A dictionary mapping column names to dtypes, used to override the schema
         given in the data returned by the query.
