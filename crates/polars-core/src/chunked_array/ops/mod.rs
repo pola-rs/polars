@@ -40,6 +40,7 @@ pub mod zip;
 
 #[cfg(feature = "serde-lazy")]
 use serde::{Deserialize, Serialize};
+use polars_utils::no_call_const;
 pub use sort::options::*;
 
 use crate::chunked_array::cast::CastOptions;
@@ -324,16 +325,28 @@ pub trait ChunkCompare<Rhs> {
     fn not_equal_missing(&self, rhs: Rhs) -> Self::Item;
 
     /// Greater than comparison.
-    fn gt(&self, rhs: Rhs) -> Self::Item;
+    #[allow(unused_variables)]
+    fn gt(&self, rhs: Rhs) -> Self::Item {
+        no_call_const!()
+    }
 
     /// Greater than or equal comparison.
-    fn gt_eq(&self, rhs: Rhs) -> Self::Item;
+    #[allow(unused_variables)]
+    fn gt_eq(&self, rhs: Rhs) -> Self::Item {
+        no_call_const!()
+    }
 
     /// Less than comparison.
-    fn lt(&self, rhs: Rhs) -> Self::Item;
+    #[allow(unused_variables)]
+    fn lt(&self, rhs: Rhs) -> Self::Item {
+        no_call_const!()
+    }
 
     /// Less than or equal comparison
-    fn lt_eq(&self, rhs: Rhs) -> Self::Item;
+    #[allow(unused_variables)]
+    fn lt_eq(&self, rhs: Rhs) -> Self::Item {
+        no_call_const!()
+    }
 }
 
 /// Get unique values in a `ChunkedArray`

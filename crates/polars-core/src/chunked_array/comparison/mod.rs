@@ -10,7 +10,6 @@ use arrow::bitmap::MutableBitmap;
 use arrow::compute;
 use num_traits::{NumCast, ToPrimitive};
 use polars_compute::comparisons::{TotalEqKernel, TotalOrdKernel};
-use polars_utils::no_call_const;
 use crate::prelude::*;
 use crate::series::implementations::null::NullChunked;
 use crate::series::IsSorted;
@@ -690,22 +689,6 @@ impl ChunkCompare<&StructChunked2> for StructChunked2 {
 
     fn not_equal_missing(&self, rhs: &StructChunked2) -> BooleanChunked {
         struct_helper(self, rhs, |l, r| l.not_equal_missing(r).unwrap(), true)
-    }
-
-    fn gt(&self, _rhs: &StructChunked2) -> BooleanChunked {
-        no_call_const!()
-    }
-
-    fn gt_eq(&self, _rhs: &StructChunked2) -> BooleanChunked {
-        no_call_const!()
-    }
-
-    fn lt(&self, _rhs: &StructChunked2) -> BooleanChunked {
-        no_call_const!()
-    }
-
-    fn lt_eq(&self, _rhs: &StructChunked2) -> BooleanChunked {
-        no_call_const!()
     }
 }
 

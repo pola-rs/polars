@@ -60,15 +60,21 @@ pub trait StaticArray:
 
     /// # Safety
     /// It is the callers responsibility that the `idx < self.len()`.
-    unsafe fn value_unchecked(&self, idx: usize) -> Self::ValueT<'_>;
+    unsafe fn value_unchecked(&self, idx: usize) -> Self::ValueT<'_> {
+        no_call_const!()
+    }
 
     #[inline(always)]
     fn as_slice(&self) -> Option<&[Self::ValueT<'_>]> {
         None
     }
 
-    fn iter(&self) -> ZipValidity<Self::ValueT<'_>, Self::ValueIterT<'_>, BitmapIter>;
-    fn values_iter(&self) -> Self::ValueIterT<'_>;
+    fn iter(&self) -> ZipValidity<Self::ValueT<'_>, Self::ValueIterT<'_>, BitmapIter> {
+        no_call_const!()
+    }
+    fn values_iter(&self) -> Self::ValueIterT<'_> {
+        no_call_const!()
+    }
     fn with_validity_typed(self, validity: Option<Bitmap>) -> Self;
 
     fn from_vec(v: Vec<Self::ValueT<'_>>, dtype: ArrowDataType) -> Self {
@@ -395,18 +401,6 @@ impl StaticArray for StructArray {
     type ValueT<'a> = ();
     type ZeroableValueT<'a> = ();
     type ValueIterT<'a>  = std::iter::Repeat<()>;
-
-    unsafe fn value_unchecked(&self, _idx: usize) -> Self::ValueT<'_> {
-        no_call_const!()
-    }
-
-    fn iter(&self) -> ZipValidity<Self::ValueT<'_>, Self::ValueIterT<'_>, BitmapIter> {
-        no_call_const!()
-    }
-
-    fn values_iter(&self) -> Self::ValueIterT<'_> {
-        no_call_const!()
-    }
 
     fn with_validity_typed(self, validity: Option<Bitmap>) -> Self {
         self.with_validity(validity)
