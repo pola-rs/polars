@@ -2245,12 +2245,16 @@ fn make_dict_arg(py: Python, names: &[&str], vals: &[AnyValue]) -> Py<PyDict> {
     dict.unbind()
 }
 
-impl<'a> ApplyLambda<'a> for StructChunked {
+fn get_names(ca: &StructChunked2) -> Vec<&str> {
+    ca.struct_fields().iter().map(|s| s.name().as_str()).collect::<Vec<_>>()
+}
+
+impl<'a> ApplyLambda<'a> for StructChunked2 {
     fn apply_lambda_unknown(&'a self, py: Python, lambda: &Bound<'a, PyAny>) -> PyResult<PySeries> {
-        let names = self.fields().iter().map(|s| s.name()).collect::<Vec<_>>();
+        let names = get_names(self);
         let mut null_count = 0;
         for val in self.into_iter() {
-            let arg = make_dict_arg(py, &names, val);
+            let arg = val.map(|val| make_dict_arg(py, &names, val));
             let out = lambda.call1((arg,))?;
             if out.is_none() {
                 null_count += 1;
@@ -2270,11 +2274,11 @@ impl<'a> ApplyLambda<'a> for StructChunked {
         init_null_count: usize,
         first_value: AnyValue<'a>,
     ) -> PyResult<PySeries> {
-        let names = self.fields().iter().map(|s| s.name()).collect::<Vec<_>>();
+        let names = get_names(self);
 
         let skip = 1;
         let it = self.into_iter().skip(init_null_count + skip).map(|val| {
-            let arg = make_dict_arg(py, &names, val);
+            let arg = val.map(|val| make_dict_arg(py, &names, val));
             let out = lambda.call1((arg,)).unwrap();
             Some(out)
         });
@@ -2292,11 +2296,11 @@ impl<'a> ApplyLambda<'a> for StructChunked {
         D: PyArrowPrimitiveType,
         D::Native: ToPyObject + FromPyObject<'a>,
     {
-        let names = self.fields().iter().map(|s| s.name()).collect::<Vec<_>>();
+        let names = get_names(self);
 
         let skip = usize::from(first_value.is_some());
         let it = self.into_iter().skip(init_null_count + skip).map(|val| {
-            let arg = make_dict_arg(py, &names, val);
+            let arg = val.map(|val| make_dict_arg(py, &names, val));
             call_lambda_and_extract(py, lambda, arg).ok()
         });
 
@@ -2316,11 +2320,11 @@ impl<'a> ApplyLambda<'a> for StructChunked {
         init_null_count: usize,
         first_value: Option<bool>,
     ) -> PyResult<BooleanChunked> {
-        let names = self.fields().iter().map(|s| s.name()).collect::<Vec<_>>();
+        let names = get_names(self);
 
         let skip = usize::from(first_value.is_some());
         let it = self.into_iter().skip(init_null_count + skip).map(|val| {
-            let arg = make_dict_arg(py, &names, val);
+            let arg = val.map(|val| make_dict_arg(py, &names, val));
             call_lambda_and_extract(py, lambda, arg).ok()
         });
 
@@ -2340,11 +2344,11 @@ impl<'a> ApplyLambda<'a> for StructChunked {
         init_null_count: usize,
         first_value: Option<PyBackedStr>,
     ) -> PyResult<StringChunked> {
-        let names = self.fields().iter().map(|s| s.name()).collect::<Vec<_>>();
+        let names = get_names(self);
 
         let skip = usize::from(first_value.is_some());
         let it = self.into_iter().skip(init_null_count + skip).map(|val| {
-            let arg = make_dict_arg(py, &names, val);
+            let arg = val.map(|val| make_dict_arg(py, &names, val));
             call_lambda_and_extract(py, lambda, arg).ok()
         });
 
@@ -2366,11 +2370,11 @@ impl<'a> ApplyLambda<'a> for StructChunked {
     ) -> PyResult<ListChunked> {
         let skip = 1;
 
-        let names = self.fields().iter().map(|s| s.name()).collect::<Vec<_>>();
+        let names = get_names(self);
 
         let lambda = lambda.bind(py);
         let it = self.into_iter().skip(init_null_count + skip).map(|val| {
-            let arg = make_dict_arg(py, &names, val);
+            let arg = val.map(|val| make_dict_arg(py, &names, val));
             call_lambda_series_out(py, lambda, arg).ok()
         });
         iterator_to_list(
@@ -2390,13 +2394,13 @@ impl<'a> ApplyLambda<'a> for StructChunked {
         init_null_count: usize,
         first_value: AnyValue<'a>,
     ) -> PyResult<Series> {
-        let names = self.fields().iter().map(|s| s.name()).collect::<Vec<_>>();
+        let names = get_names(self);
         let mut avs = Vec::with_capacity(self.len());
         avs.extend(std::iter::repeat(AnyValue::Null).take(init_null_count));
         avs.push(first_value);
 
         let iter = self.into_iter().skip(init_null_count + 1).map(|val| {
-            let arg = make_dict_arg(py, &names, val);
+            let arg = val.map(|val| make_dict_arg(py, &names, val));
             call_lambda_and_extract::<_, Wrap<AnyValue>>(py, lambda, arg)
                 .unwrap()
                 .0
@@ -2414,11 +2418,11 @@ impl<'a> ApplyLambda<'a> for StructChunked {
         init_null_count: usize,
         first_value: Option<ObjectValue>,
     ) -> PyResult<ObjectChunked<ObjectValue>> {
-        let names = self.fields().iter().map(|s| s.name()).collect::<Vec<_>>();
+        let names = get_names(self);
 
         let skip = usize::from(first_value.is_some());
         let it = self.into_iter().skip(init_null_count + skip).map(|val| {
-            let arg = make_dict_arg(py, &names, val);
+            let arg = val.map(|val| make_dict_arg(py, &names, val));
             call_lambda_and_extract(py, lambda, arg).ok()
         });
 

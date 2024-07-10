@@ -1,8 +1,9 @@
 use arrow::array::*;
-
+use arrow::bitmap::Bitmap;
 use crate::prelude::*;
 #[cfg(feature = "dtype-struct")]
 use crate::series::iterator::SeriesIter;
+use crate::utils::Container;
 
 pub mod par;
 
@@ -458,6 +459,69 @@ impl<'a> Iterator for StructIter<'a> {
             Some(std::mem::transmute::<&'_ [AnyValue], &'a [AnyValue]>(
                 &self.buf,
             ))
+        }
+    }
+}
+
+#[cfg(feature = "dtype-struct")]
+impl<'a> IntoIterator for &'a StructChunked2 {
+    type Item = Option< &'a [AnyValue<'a>]>;
+    type IntoIter = StructIter2<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        assert_eq!(self.n_chunks(), 1);
+        let fields = self.fields_as_series();
+        let field_iter = fields.iter().map(|s| {
+            let iter = s.iter();
+            // SAFETY: this works as the reference is to the heap, and not to the struct.
+            unsafe { std::mem::transmute::<SeriesIter<'_>, SeriesIter<'a>>(iter) }
+        }).collect();
+        let arr = self.downcast_get(0).unwrap();
+        let validity = arr.validity().cloned();
+
+        StructIter2 {
+            field_iter,
+            buf: vec![],
+            validity,
+            offset: 0
+        }
+    }
+}
+
+#[cfg(feature = "dtype-struct")]
+pub struct StructIter2<'a> {
+    field_iter: Vec<SeriesIter<'a>>,
+    buf: Vec<AnyValue<'a>>,
+    validity: Option<Bitmap>,
+    offset: usize
+}
+
+#[cfg(feature = "dtype-struct")]
+impl<'a> Iterator for StructIter2<'a> {
+    type Item = Option<&'a [AnyValue<'a>]>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.buf.clear();
+
+        for it in &mut self.field_iter {
+            self.buf.push(it.next()?);
+        }
+        let index = self.offset;
+        self.offset += 1;
+
+        if let Some(validity) = &self.validity {
+            let valid = unsafe { validity.get_bit_unchecked(self.offset) };
+            if !valid {
+                return Some(None)
+            }
+        }
+
+        // SAFETY:
+        // Lifetime is bound to struct, we just cannot set the lifetime for the iterator trait
+        unsafe {
+            Some(Some(std::mem::transmute::<&'_ [AnyValue], &'a [AnyValue]>(
+                &self.buf,
+            )))
         }
     }
 }
