@@ -23,7 +23,7 @@ On this page you can find a non-exhaustive list of libraries and tools that supp
 
 #### LanceDB
 
-[LanceDB](https://lancedb.com/) is a developer-friendly, serverless vector database for AI applications. They have added a direct integration with Polars. LanceDB can ingest Polars dataframes, return results as polars dataframes, and export the entire table as a polars lazyframe. You can find a quick tutorial in their blog [LanceDB + Polars](https://blog.lancedb.com/lancedb-polars-2d5eb32a8aa3)
+[LanceDB](https://lancedb.com/) is a developer-friendly, serverless vector database for AI applications. They have added a direct integration with Polars. LanceDB can ingest Polars dataframes, return results as Polars dataframes, and export the entire table as a Polars lazyframe. You can find a quick tutorial in their blog [LanceDB + Polars](https://blog.lancedb.com/lancedb-polars-2d5eb32a8aa3)
 
 ### Data pipelines
 
