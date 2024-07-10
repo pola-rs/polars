@@ -610,10 +610,10 @@ impl ChunkSort<BooleanType> for BooleanChunked {
             let len = self.len();
             let n_set = self.sum().unwrap() as usize;
             let mut bitmap = MutableBitmap::with_capacity(len);
-            let (first, second) = if options.descending {
-                (true, false)
+            let (first, second, n_set) = if options.descending {
+                (true, false, len - n_set)
             } else {
-                (false, true)
+                (false, true, n_set)
             };
             bitmap.extend_constant(len - n_set, first);
             bitmap.extend_constant(n_set, second);
@@ -832,6 +832,11 @@ mod test {
                 None
             ]
         );
+        let b = BooleanChunked::new("b", &[Some(false), Some(true), Some(false)]);
+        let out = b.sort_with(SortOptions::default().with_order_descending(true));
+        assert_eq!(Vec::from(&out), &[Some(true), Some(false), Some(false)]);
+        let out = b.sort_with(SortOptions::default().with_order_descending(false));
+        assert_eq!(Vec::from(&out), &[Some(false), Some(false), Some(true)]);
     }
 
     #[test]
