@@ -561,6 +561,9 @@ impl ApplyExpr {
                     let min = st.to_min()?;
                     let max = st.to_max()?;
 
+                    dbg!(min);
+                    dbg!(max);
+
                     if max.get(0).unwrap() == min.get(0).unwrap() {
                         let one_equals =
                             |value: &Series| Some(ChunkCompare::equal(input, value).ok()?.any());
