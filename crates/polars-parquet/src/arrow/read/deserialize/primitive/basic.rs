@@ -62,18 +62,12 @@ impl<'a> Values<'a> {
 }
 
 #[derive(Debug)]
-pub(super) struct ValuesDictionary<'a, T>
-where
-    T: NativeType,
-{
+pub(super) struct ValuesDictionary<'a, T: NativeType> {
     pub values: hybrid_rle::HybridRleDecoder<'a>,
     pub dict: &'a [T],
 }
 
-impl<'a, T> ValuesDictionary<'a, T>
-where
-    T: NativeType,
-{
+impl<'a, T: NativeType> ValuesDictionary<'a, T> {
     pub fn try_new(page: &'a DataPage, dict: &'a [T]) -> PolarsResult<Self> {
         let values = utils::dict_indices_decoder(page)?;
 

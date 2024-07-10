@@ -8,6 +8,7 @@ use super::super::nested_utils::*;
 use super::super::utils::MaybeNext;
 use super::super::{utils, PagesIter};
 use crate::arrow::read::deserialize::utils::DecodedState;
+use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{DataPage, DictPage};
 
 impl<'a> utils::PageState<'a> for usize {
@@ -17,7 +18,7 @@ impl<'a> utils::PageState<'a> for usize {
 }
 
 #[derive(Debug)]
-struct NullDecoder {}
+struct NullDecoder;
 
 impl DecodedState for usize {
     fn len(&self) -> usize {
@@ -46,18 +47,18 @@ impl<'a> NestedDecoder<'a> for NullDecoder {
         0
     }
 
-    fn push_valid(
+    fn push_n_valid(
         &self,
         state: &mut Self::State,
         decoded: &mut Self::DecodedState,
-    ) -> PolarsResult<()> {
-        *decoded += *state;
+        n: usize,
+    ) -> ParquetResult<()> {
+        *decoded += *state * n;
         Ok(())
     }
 
-    fn push_null(&self, decoded: &mut Self::DecodedState) {
-        let length = decoded;
-        *length += 1;
+    fn push_n_nulls(&self, decoded: &mut Self::DecodedState, n: usize) {
+        *decoded += n;
     }
 
     fn deserialize_dict(&self, page: &DictPage) -> Self::Dictionary {
@@ -98,7 +99,7 @@ where
             items: VecDeque::new(),
             chunk_size,
             remaining: num_rows,
-            decoder: NullDecoder {},
+            decoder: NullDecoder,
         }
     }
 }

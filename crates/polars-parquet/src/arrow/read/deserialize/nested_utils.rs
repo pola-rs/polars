@@ -7,10 +7,12 @@ use polars_error::{polars_bail, PolarsResult};
 use polars_utils::slice::GetSaferUnchecked;
 
 use super::super::PagesIter;
-use super::utils::{DecodedState, MaybeNext, PageState};
+use super::utils::{BatchableCollector, DecodedState, MaybeNext, PageState};
 use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
+use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{split_buffer, DataPage, DictPage, Page};
 use crate::parquet::read::levels::get_bit_width;
+use crate::read::deserialize::utils::BatchedCollector;
 
 #[derive(Debug)]
 pub enum Nested {
@@ -180,6 +182,32 @@ impl Nested {
     }
 }
 
+pub struct BatchedNestedDecoder<'a, 'b, 'c, D: NestedDecoder<'a>> {
+    state: &'b mut D::State,
+    decoder: &'c D,
+}
+
+impl<'a, 'b, 'c, D: NestedDecoder<'a>> BatchableCollector<(), D::DecodedState>
+    for BatchedNestedDecoder<'a, 'b, 'c, D>
+{
+    fn reserve(_target: &mut D::DecodedState, _n: usize) {
+        unreachable!()
+    }
+
+    fn push_n(&mut self, target: &mut D::DecodedState, n: usize) -> ParquetResult<()> {
+        self.decoder.push_n_valid(self.state, target, n)
+    }
+
+    fn push_n_nulls(&mut self, target: &mut D::DecodedState, n: usize) -> ParquetResult<()> {
+        self.decoder.push_n_nulls(target, n);
+        Ok(())
+    }
+
+    fn skip_n(&mut self, _n: usize) -> ParquetResult<()> {
+        unreachable!()
+    }
+}
+
 /// A decoder that knows how to map `State` -> Array
 pub(super) trait NestedDecoder<'a> {
     type State: PageState<'a>;
@@ -195,12 +223,13 @@ pub(super) trait NestedDecoder<'a> {
     /// Initializes a new state
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState;
 
-    fn push_valid(
+    fn push_n_valid(
         &self,
         state: &mut Self::State,
         decoded: &mut Self::DecodedState,
-    ) -> PolarsResult<()>;
-    fn push_null(&self, decoded: &mut Self::DecodedState);
+        n: usize,
+    ) -> ParquetResult<()>;
+    fn push_n_nulls(&self, decoded: &mut Self::DecodedState, n: usize);
 
     fn deserialize_dict(&self, page: &DictPage) -> Self::Dictionary;
 }
@@ -326,16 +355,24 @@ pub(super) fn extend<'a, D: NestedDecoder<'a>>(
             let existing = nested.len();
             let additional = (chunk_size - existing).min(*remaining);
 
+            let mut batched_collector = BatchedCollector::new(
+                BatchedNestedDecoder {
+                    state: &mut values_page,
+                    decoder,
+                },
+                &mut decoded,
+            );
+
             let is_fully_read = extend_offsets2(
                 &mut page,
-                &mut values_page,
+                &mut batched_collector,
                 &mut nested.nested,
-                &mut decoded,
-                decoder,
                 additional,
                 &mut cum_sum,
                 &mut cum_rep,
             )?;
+
+            batched_collector.finalize()?;
 
             first_item_is_fully_read |= is_fully_read;
             *remaining -= nested.len() - existing;
@@ -363,12 +400,15 @@ pub(super) fn extend<'a, D: NestedDecoder<'a>>(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn extend_offsets2<'a, D: NestedDecoder<'a>>(
+fn extend_offsets2<'a, 'b, 'c, 'd, D: NestedDecoder<'a>>(
     page: &mut NestedPage<'a>,
-    values_state: &mut D::State,
+    batched_collector: &mut BatchedCollector<
+        'b,
+        (),
+        D::DecodedState,
+        BatchedNestedDecoder<'a, 'c, 'd, D>,
+    >,
     nested: &mut [Nested],
-    decoded: &mut D::DecodedState,
-    decoder: &D,
     additional: usize,
     // Amortized allocations
     def_levels: &mut Vec<u32>,
@@ -455,7 +495,7 @@ fn extend_offsets2<'a, D: NestedDecoder<'a>>(
 
                     if embed_depth == max_depth - 1 {
                         for _ in 0..num_elements {
-                            decoder.push_null(decoded);
+                            batched_collector.push_invalid();
                         }
 
                         break;
@@ -481,9 +521,9 @@ fn extend_offsets2<'a, D: NestedDecoder<'a>>(
                     let is_valid = (def != def_levels[depth]) || !nest.is_nullable();
 
                     if is_valid {
-                        decoder.push_valid(values_state, decoded)?;
+                        batched_collector.push_valid()?;
                     } else {
-                        decoder.push_null(decoded);
+                        batched_collector.push_invalid();
                     }
                 }
             }

@@ -1,6 +1,7 @@
 use polars_utils::slice::load_padded_le_u64;
 
 use super::get_bit_unchecked;
+use crate::bitmap::MutableBitmap;
 use crate::trusted_len::TrustedLen;
 
 /// An iterator over bits according to the [LSB](https://en.wikipedia.org/wiki/Bit_numbering#Least_significant_bit),
@@ -130,6 +131,69 @@ impl<'a> BitmapIter<'a> {
     #[inline]
     pub fn num_remaining(&self) -> usize {
         self.word_len + self.rest_len
+    }
+
+    /// Collect at most `n` elements from this iterator into `bitmap`
+    pub fn collect_n_into(&mut self, bitmap: &mut MutableBitmap, n: usize) {
+        fn collect_word(
+            word: &mut u64,
+            word_len: &mut usize,
+            bitmap: &mut MutableBitmap,
+            n: &mut usize,
+        ) {
+            while *n > 0 && *word_len > 0 {
+                {
+                    let trailing_ones = word.trailing_ones();
+                    let shift = u32::min(usize::min(*n, u32::MAX as usize) as u32, trailing_ones);
+                    *word = word.wrapping_shr(shift);
+                    *word_len -= shift as usize;
+                    *n -= shift as usize;
+
+                    bitmap.extend_constant(shift as usize, true);
+                }
+
+                {
+                    let trailing_zeros = u32::min(word.trailing_zeros(), *word_len as u32);
+                    let shift = u32::min(usize::min(*n, u32::MAX as usize) as u32, trailing_zeros);
+                    *word = word.wrapping_shr(shift);
+                    *word_len -= shift as usize;
+                    *n -= shift as usize;
+
+                    bitmap.extend_constant(shift as usize, false);
+                }
+            }
+        }
+
+        let mut n = n;
+        bitmap.reserve(usize::min(n, self.num_remaining()));
+
+        collect_word(&mut self.word, &mut self.word_len, bitmap, &mut n);
+
+        if n == 0 {
+            return;
+        }
+
+        let num_words = n / 64;
+
+        if num_words > 0 {
+            bitmap.extend_from_slice(self.bytes, 0, num_words * 64);
+
+            self.bytes = unsafe { self.bytes.get_unchecked(num_words * 8..) };
+            self.rest_len -= num_words * 64;
+            n -= num_words * 64;
+        }
+
+        self.word_len = usize::min(self.rest_len, 64);
+        self.rest_len -= self.word_len;
+        unsafe {
+            let chunk = self.bytes.get_unchecked(..8).try_into().unwrap();
+            self.word = u64::from_le_bytes(chunk);
+            self.bytes = self.bytes.get_unchecked(8..);
+        }
+
+        collect_word(&mut self.word, &mut self.word_len, bitmap, &mut n);
+
+        debug_assert!(self.num_remaining() == 0 || n == 0);
     }
 }
 

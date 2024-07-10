@@ -61,7 +61,7 @@ fn read_dict<O: Offset>(data_type: ArrowDataType, dict: &DictPage) -> Box<dyn Ar
         _ => data_type,
     };
 
-    let values = BinaryIter::new(&dict.buffer).take(dict.num_values);
+    let values = BinaryIter::new(&dict.buffer, dict.num_values);
 
     let mut data = Binary::<O>::with_capacity(dict.num_values);
     data.values = Vec::with_capacity(dict.buffer.len() - 4 * dict.num_values);

@@ -3,36 +3,44 @@ use std::collections::VecDeque;
 use arrow::array::FixedSizeBinaryArray;
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
-use arrow::pushable::Pushable;
 use polars_error::PolarsResult;
-use polars_utils::iter::FallibleIterator;
 
 use super::super::utils::{not_implemented, MaybeNext, PageState};
 use super::utils::FixedSizeBinary;
-use crate::arrow::read::deserialize::fixed_size_binary::basic::{
-    finish, Dict, Optional, OptionalDictionary, Required, RequiredDictionary,
-};
+use crate::arrow::read::deserialize::fixed_size_binary::basic::{finish, Dict};
 use crate::arrow::read::deserialize::nested_utils::{next, NestedDecoder};
 use crate::arrow::read::{InitNested, NestedState, PagesIter};
+use crate::parquet::encoding::hybrid_rle::translator::{SliceDictionaryTranslator, Translator};
+use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use crate::parquet::encoding::Encoding;
+use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{DataPage, DictPage};
 use crate::parquet::schema::Repetition;
+use crate::read::deserialize::utils::dict_indices_decoder;
 
 #[derive(Debug)]
-enum State<'a> {
-    Optional(Optional<'a>),
-    Required(Required<'a>),
-    RequiredDictionary(RequiredDictionary<'a>),
-    OptionalDictionary(OptionalDictionary<'a>),
+struct State<'a> {
+    is_optional: bool,
+    translation: StateTranslation<'a>,
+}
+
+#[allow(clippy::large_enum_variant)]
+#[derive(Debug)]
+enum StateTranslation<'a> {
+    Unit(std::slice::ChunksExact<'a, u8>),
+    Dictionary {
+        values: HybridRleDecoder<'a>,
+        dict: &'a [u8],
+    },
 }
 
 impl<'a> PageState<'a> for State<'a> {
     fn len(&self) -> usize {
-        match self {
-            State::Optional(state) => state.validity.len(),
-            State::Required(state) => state.len(),
-            State::RequiredDictionary(state) => state.len(),
-            State::OptionalDictionary(state) => state.validity.len(),
+        match &self.translation {
+            StateTranslation::Unit(chunks) => chunks.len(),
+            StateTranslation::Dictionary {
+                values: decoder, ..
+            } => decoder.len(),
         }
     }
 }
@@ -56,21 +64,24 @@ impl<'a> NestedDecoder<'a> for BinaryDecoder {
             page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
         let is_filtered = page.selected_rows().is_some();
 
-        match (page.encoding(), dict, is_optional, is_filtered) {
-            (Encoding::Plain, _, true, false) => {
-                Ok(State::Optional(Optional::try_new(page, self.size)?))
+        let translation = match (page.encoding(), dict, is_filtered) {
+            (Encoding::Plain, _, false) => {
+                let values = page.buffer();
+                assert_eq!(values.len() % self.size, 0);
+                let values = values.chunks_exact(self.size);
+                StateTranslation::Unit(values)
             },
-            (Encoding::Plain, _, false, false) => {
-                Ok(State::Required(Required::new(page, self.size)))
+            (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict), false) => {
+                let values = dict_indices_decoder(page)?;
+                StateTranslation::Dictionary { values, dict }
             },
-            (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict), false, false) => {
-                RequiredDictionary::try_new(page, dict).map(State::RequiredDictionary)
-            },
-            (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict), true, false) => {
-                OptionalDictionary::try_new(page, dict).map(State::OptionalDictionary)
-            },
-            _ => Err(not_implemented(page)),
-        }
+            _ => return Err(not_implemented(page)),
+        };
+
+        Ok(State {
+            is_optional,
+            translation,
+        })
     }
 
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState {
@@ -80,57 +91,46 @@ impl<'a> NestedDecoder<'a> for BinaryDecoder {
         )
     }
 
-    fn push_valid(
+    fn push_n_valid(
         &self,
         state: &mut Self::State,
         decoded: &mut Self::DecodedState,
-    ) -> PolarsResult<()> {
+        n: usize,
+    ) -> ParquetResult<()> {
         let (values, validity) = decoded;
-        match state {
-            State::Optional(page) => {
-                let value = page.values.by_ref().next().unwrap_or_default();
-                values.push(value);
-                validity.push(true);
+
+        if PageState::len(state) < n {
+            return Err(ParquetError::oos("No values left in page"));
+        }
+
+        match &mut state.translation {
+            StateTranslation::Unit(page_values) => {
+                for value in page_values.by_ref().take(n) {
+                    values.push(value);
+                }
             },
-            State::Required(page) => {
-                let value = page.values.by_ref().next().unwrap_or_default();
-                values.push(value);
-            },
-            State::RequiredDictionary(page) => {
-                let item = page
-                    .values
-                    .by_ref()
-                    .next()
-                    .map(|index| {
-                        let index = index as usize;
-                        &page.dict[index * self.size..(index + 1) * self.size]
-                    })
-                    .unwrap_or_default();
-                values.push(item);
-                page.values.get_result()?;
-            },
-            State::OptionalDictionary(page) => {
-                let item = page
-                    .values
-                    .by_ref()
-                    .next()
-                    .map(|index| {
-                        let index = index as usize;
-                        &page.dict[index * self.size..(index + 1) * self.size]
-                    })
-                    .unwrap_or_default();
-                values.push(item);
-                validity.push(true);
-                page.values.get_result()?;
+            StateTranslation::Dictionary {
+                values: page_values,
+                dict,
+            } => {
+                let translator = SliceDictionaryTranslator::new(dict, self.size);
+                for value in page_values.by_ref().take(n) {
+                    values.push(translator.translate(value)?);
+                }
             },
         }
+
+        if state.is_optional {
+            validity.extend_constant(n, true);
+        }
+
         Ok(())
     }
 
-    fn push_null(&self, decoded: &mut Self::DecodedState) {
+    fn push_n_nulls(&self, decoded: &mut Self::DecodedState, n: usize) {
         let (values, validity) = decoded;
-        values.push_null();
-        validity.push(false);
+        values.extend_constant(n);
+        validity.extend_constant(n, false);
     }
 
     fn deserialize_dict(&self, page: &DictPage) -> Self::Dictionary {

@@ -3,7 +3,7 @@ mod bitmap;
 mod buffered;
 mod decoder;
 mod encoder;
-mod translator;
+pub mod translator;
 
 #[cfg(test)]
 mod fuzz;
@@ -15,7 +15,7 @@ pub use encoder::encode;
 use polars_utils::iter::FallibleIterator;
 use polars_utils::slice::GetSaferUnchecked;
 pub use translator::{
-    BinaryDictionaryTranslator, DictionaryTranslator, FnTranslator, Translator, UnitTranslator,
+    DictionaryTranslator, FnTranslator, Translator, TryFromUsizeTranslator, UnitTranslator,
 };
 
 use self::buffered::HybridRleBuffered;

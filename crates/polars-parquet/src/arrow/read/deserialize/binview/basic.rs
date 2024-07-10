@@ -1,18 +1,18 @@
 use std::cell::Cell;
 use std::collections::VecDeque;
 
-use arrow::array::{Array, ArrayRef, BinaryViewArray, MutableBinaryViewArray, Utf8ViewArray, View};
+use arrow::array::{Array, ArrayRef, BinaryViewArray, MutableBinaryViewArray, Utf8ViewArray};
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::datatypes::{ArrowDataType, PhysicalType};
 use polars_error::PolarsResult;
 use polars_utils::iter::FallibleIterator;
 
 use super::super::binary::decoders::*;
-use crate::parquet::encoding::hybrid_rle::BinaryDictionaryTranslator;
-use crate::parquet::error::ParquetError;
+use crate::parquet::encoding::hybrid_rle::DictionaryTranslator;
 use crate::parquet::page::{DataPage, DictPage};
 use crate::read::deserialize::utils::{
-    self, extend_from_decoder, next, DecodedState, MaybeNext, TranslatedHybridRle,
+    self, binary_views_dict, extend_from_decoder, next, DecodedState, MaybeNext,
+    TranslatedHybridRle,
 };
 use crate::read::{PagesIter, PrimitiveLogicalType};
 
@@ -107,25 +107,8 @@ impl<'a> utils::Decoder<'a> for BinViewDecoder {
                 validate_utf8 = false;
 
                 let page_dict = &page_values.dict;
-                let offsets = page_dict.offsets();
-
-                // @NOTE: If there is no lengths (i.e. 0-1 offset), then we will have only nulls.
-                let max_length = offsets.lengths().max().unwrap_or(0);
-
-                // We do not have to push the buffer if all elements fit as inline views.
-                let buffer_idx = if max_length <= View::MAX_INLINE_SIZE as usize {
-                    0
-                } else {
-                    values.push_buffer(page_dict.values().clone())
-                };
-
-                // @NOTE: we could potentially use the View::new_inline function here, but that
-                // would require two collectors & two translators. So I don't think it is worth
-                // it.
-                let translator = BinaryDictionaryTranslator {
-                    dictionary: page_dict,
-                    buffer_idx,
-                };
+                let views_dict = binary_views_dict(values, page_dict);
+                let translator = DictionaryTranslator(&views_dict);
                 let collector = TranslatedHybridRle::new(&mut page_values.values, &translator);
 
                 utils::extend_from_decoder(
@@ -141,41 +124,16 @@ impl<'a> utils::Decoder<'a> for BinViewDecoder {
                 validate_utf8 = false;
 
                 let page_dict = &page.dict;
-                let offsets = page_dict.offsets();
+                let views_dict = binary_views_dict(values, page_dict);
+                let translator = DictionaryTranslator(&views_dict);
 
-                if let Some(max_length) = offsets.lengths().max() {
-                    // We do not have to push the buffer if all elements fit as inline views.
-                    let buffer_idx = if max_length <= View::MAX_INLINE_SIZE as usize {
-                        0
-                    } else {
-                        values.push_buffer(page_dict.values().clone())
-                    };
-
-                    // @NOTE: we could potentially use the View::new_inline function here, but that
-                    // would require two collectors & two translators. So I don't think it is worth
-                    // it.
-                    let translator = BinaryDictionaryTranslator {
-                        dictionary: page_dict,
-                        buffer_idx,
-                    };
-
-                    page.values.translate_and_collect_n_into(
-                        values.views_mut(),
-                        additional,
-                        &translator,
-                    )?;
-                    if let Some(validity) = values.validity() {
-                        validity.extend_constant(additional, true);
-                    }
-                } else {
-                    // @NOTE: If there are no dictionary items, there is no way we can look up
-                    // items.
-                    if additional != 0 {
-                        return Err(ParquetError::oos(
-                            "Attempt to search items with empty dictionary",
-                        )
-                        .into());
-                    }
+                page.values.translate_and_collect_n_into(
+                    values.views_mut(),
+                    additional,
+                    &translator,
+                )?;
+                if let Some(validity) = values.validity() {
+                    validity.extend_constant(additional, true);
                 }
             },
             BinaryState::FilteredOptional(page_validity, page_values) => {

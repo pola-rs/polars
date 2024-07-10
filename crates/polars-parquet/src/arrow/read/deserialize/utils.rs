@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use arrow::array::{MutableBinaryViewArray, View};
+use arrow::array::{BinaryArray, MutableBinaryViewArray, View};
 use arrow::bitmap::utils::BitmapIter;
 use arrow::bitmap::MutableBitmap;
 use arrow::pushable::Pushable;
@@ -63,6 +63,16 @@ impl<'a, I, T, C: BatchableCollector<I, T>> BatchedCollector<'a, I, T, C> {
             collector,
             _pd: Default::default(),
         }
+    }
+
+    #[inline]
+    pub fn push_valid(&mut self) -> ParquetResult<()> {
+        self.push_n_valids(1)
+    }
+
+    #[inline]
+    pub fn push_invalid(&mut self) {
+        self.push_n_invalids(1)
     }
 
     #[inline]
@@ -668,6 +678,41 @@ pub(super) fn dict_indices_decoder(page: &DataPage) -> PolarsResult<hybrid_rle::
         bit_width as u32,
         page.num_values(),
     ))
+}
+
+/// Generate a look-up table of views from a look-up table of values into a `BinaryViewArray`.
+///
+/// This makes sure to only allocate the necessary buffer space in the `BinaryViewArray` if it is
+/// desperately needed.
+#[inline]
+pub(super) fn binary_views_dict(
+    values: &mut MutableBinaryViewArray<[u8]>,
+    dict: &BinaryArray<i64>,
+) -> Vec<View> {
+    // We create a dictionary of views here, so that the views only have be calculated
+    // once and are then just a lookup. We also only push the dictionary buffer when we
+    // see the first View that cannot be inlined.
+    //
+    // @TODO: Maybe we can do something smarter here by only pushing the items that are larger than
+    // 12 bytes. Maybe, we say if the num_inlined < dict.len() / 2 then push the whole buffer.
+    // Otherwise, only push the non-inlinable items.
+
+    let mut buffer_idx = None;
+    dict.values_iter()
+        .enumerate()
+        .map(|(i, value)| {
+            if value.len() <= View::MAX_INLINE_SIZE as usize {
+                View::new_inline(value)
+            } else {
+                let (offset, _) = dict.offsets().start_end(i);
+                let buffer_idx =
+                    buffer_idx.get_or_insert_with(|| values.push_buffer(dict.values().clone()));
+
+                debug_assert!(offset <= u32::MAX as usize);
+                View::new_from_bytes(value, *buffer_idx, offset as u32)
+            }
+        })
+        .collect()
 }
 
 pub(super) fn page_is_optional(page: &DataPage) -> bool {
