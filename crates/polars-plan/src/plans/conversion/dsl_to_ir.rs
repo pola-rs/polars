@@ -142,7 +142,7 @@ pub fn to_alp_impl(
                 } => expand_paths(&paths, file_options.glob, cloud_options.as_ref())?,
                 #[cfg(feature = "json")]
                 FileScan::NDJson { .. } => expand_paths(&paths, file_options.glob, None)?,
-                _ => paths, // TODO
+                FileScan::Anonymous { .. } => paths,
             };
 
             let mut file_info = if let Some(file_info) = file_info {
