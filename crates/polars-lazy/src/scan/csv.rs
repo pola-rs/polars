@@ -5,7 +5,7 @@ use polars_io::cloud::CloudOptions;
 use polars_io::csv::read::{
     infer_file_schema, CommentPrefix, CsvEncoding, CsvParseOptions, CsvReadOptions, NullValues,
 };
-use polars_io::utils::get_reader_bytes;
+use polars_io::utils::{expand_paths, get_reader_bytes};
 use polars_io::RowIndex;
 
 use crate::prelude::*;
@@ -216,7 +216,8 @@ impl LazyCsvReader {
     where
         F: Fn(Schema) -> PolarsResult<Schema>,
     {
-        let paths = self.expand_paths_default()?;
+        let paths = expand_paths(self.paths(), self.glob(), self.cloud_options())?;
+
         let Some(path) = paths.first() else {
             polars_bail!(ComputeError: "no paths specified for this reader");
         };

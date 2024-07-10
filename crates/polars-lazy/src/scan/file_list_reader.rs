@@ -2,7 +2,6 @@ use std::path::PathBuf;
 
 use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
-use polars_io::utils::expand_paths_hive;
 use polars_io::RowIndex;
 use polars_plan::prelude::UnionArgs;
 
@@ -109,22 +108,5 @@ pub trait LazyFileListReader: Clone {
     /// [CloudOptions] used to list files.
     fn cloud_options(&self) -> Option<&CloudOptions> {
         None
-    }
-
-    /// Returns a list of paths after resolving globs and directories, as well as
-    /// the string index at which to start parsing hive partitions.
-    fn expand_paths(&self, check_directory_level: bool) -> PolarsResult<(Arc<[PathBuf]>, usize)> {
-        expand_paths_hive(
-            self.paths(),
-            self.glob(),
-            self.cloud_options(),
-            check_directory_level,
-        )
-    }
-
-    /// Expand paths without performing any directory level or file extension
-    /// checks.
-    fn expand_paths_default(&self) -> PolarsResult<Arc<[PathBuf]>> {
-        self.expand_paths(false).map(|x| x.0)
     }
 }
