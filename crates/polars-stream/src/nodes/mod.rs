@@ -54,8 +54,8 @@ pub trait ComputeNode: Send + Sync {
     /// pipeline. Called once per execution phase.
     fn spawn_global<'env, 's>(
         &'env self,
-        scope: &'s TaskScope<'s, 'env>,
-        state: &'s ExecutionState,
+        _scope: &'s TaskScope<'s, 'env>,
+        _state: &'s ExecutionState,
     ) -> Option<JoinHandle<PolarsResult<()>>> {
         None
     }

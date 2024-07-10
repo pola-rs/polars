@@ -189,6 +189,8 @@ impl<T: Send> Sender<T> {
             }
             self.inner.receivers[recv_idx].parker.unpark();
             Ok(())
+        } else if self.inner.receivers[recv_idx].closed.load(Ordering::SeqCst) {
+            Err(SendError::Closed(value))
         } else {
             Err(SendError::Full(value))
         }
@@ -262,14 +264,15 @@ impl<T> Drop for Receiver<T> {
 impl<T> Drop for DistributorInner<T> {
     fn drop(&mut self) {
         for r in 0..self.receivers.len() {
-            while self.receivers[r].read_head.load(Ordering::Relaxed)
-                != self.write_heads[r].load(Ordering::Relaxed)
-            {
-                let read_head = self.receivers[r].read_head.fetch_add(1, Ordering::Relaxed);
+            // We have exclusive access, so we only need to atomically load once.
+            let write_head = self.write_heads[r].load(Ordering::SeqCst);
+            let mut read_head = self.receivers[r].read_head.load(Ordering::Relaxed);
+            while read_head != write_head {
                 let idx = self.reduce_index(read_head);
                 unsafe {
                     (*self.receivers[r].data[idx].get()).assume_init_drop();
                 }
+                read_head = read_head.wrapping_add(1);
             }
         }
     }

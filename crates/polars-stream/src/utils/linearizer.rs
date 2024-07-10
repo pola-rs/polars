@@ -1,10 +1,9 @@
 use std::cmp::Reverse;
-use std::collections::{BinaryHeap, VecDeque};
+use std::collections::BinaryHeap;
 
 use polars_utils::priority::Priority;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 
-use crate::async_primitives::task_parker::TaskParker;
 use crate::morsel::{Morsel, MorselSeq};
 
 /// Stores the state for which inserter we need to poll.
@@ -15,7 +14,6 @@ enum PollState {
 }
 
 pub struct Linearizer {
-    num_inserters: usize,
     receivers: Vec<Receiver<Morsel>>,
     poll_state: PollState,
 
@@ -35,7 +33,6 @@ impl Linearizer {
             inserters.push(Inserter { sender });
         }
         let slf = Self {
-            num_inserters,
             receivers,
             poll_state: PollState::PollAll,
             heap: BinaryHeap::default(),

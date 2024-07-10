@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use parking_lot::Mutex;
 
 use super::compute_node_prelude::*;
@@ -63,7 +61,7 @@ impl ComputeNode for StreamingSliceNode {
     fn spawn_global<'env, 's>(
         &'env self,
         scope: &'s TaskScope<'s, 'env>,
-        state: &'s ExecutionState,
+        _state: &'s ExecutionState,
     ) -> Option<JoinHandle<PolarsResult<()>>> {
         let (mut linearizer, inserters) =
             Linearizer::new(self.num_pipelines, DEFAULT_LINEARIZER_BUFFER_SIZE);
@@ -83,7 +81,7 @@ impl ComputeNode for StreamingSliceNode {
                 let mut df = morsel.into_df();
                 let height = df.height();
 
-                // Start/stop offsets within df.
+                // Calculate start/stop offsets within df and update global offset.
                 let relative_start_offset = self
                     .start_offset
                     .saturating_sub(global_state.stream_offset)
@@ -91,16 +89,22 @@ impl ComputeNode for StreamingSliceNode {
                 let relative_stop_offset = stop_offset
                     .saturating_sub(global_state.stream_offset)
                     .min(height);
+                global_state.stream_offset += height;
+
+                // Slice within df is non-empty, send new morsel.
                 if relative_start_offset < relative_stop_offset {
                     let new_height = relative_stop_offset - relative_start_offset;
                     if new_height != height {
                         df = df.slice(relative_start_offset as i64, new_height);
                     }
-                    sender.send(Morsel::new(df, global_state.morsel_seq)).await;
+
+                    let morsel = Morsel::new(df, global_state.morsel_seq);
                     global_state.morsel_seq = global_state.morsel_seq.successor();
+                    if let Err(_) = sender.send(morsel).await {
+                        break;
+                    }
                 }
 
-                global_state.stream_offset += height;
                 if global_state.stream_offset >= stop_offset {
                     break;
                 }
@@ -117,7 +121,7 @@ impl ComputeNode for StreamingSliceNode {
         pipeline: usize,
         recv: &mut [Option<Receiver<Morsel>>],
         send: &mut [Option<Sender<Morsel>>],
-        state: &'s ExecutionState,
+        _state: &'s ExecutionState,
     ) -> JoinHandle<PolarsResult<()>> {
         assert!(recv.len() == 1 && send.len() == 1);
         let mut recv = recv[0].take().unwrap();
