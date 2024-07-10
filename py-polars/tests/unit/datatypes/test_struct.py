@@ -242,7 +242,7 @@ def test_struct_with_validity() -> None:
     tbl = pa.Table.from_pylist(data)
     df = pl.from_arrow(tbl)
     assert isinstance(df, pl.DataFrame)
-    assert df["a"].to_list() == [{"b": 1}, {"b": None}]
+    assert df["a"].to_list() == [{"b": 1}, None]
 
 
 def test_from_dicts_struct() -> None:

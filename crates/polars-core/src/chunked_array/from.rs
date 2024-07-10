@@ -192,6 +192,8 @@ where
             dtype @ DataType::List(_) => from_chunks_list_dtype(&mut chunks, dtype),
             #[cfg(feature = "dtype-array")]
             dtype @ DataType::Array(_, _) => from_chunks_list_dtype(&mut chunks, dtype),
+            #[cfg(feature = "dtype-struct")]
+            dtype @ DataType::Struct(_) => from_chunks_list_dtype(&mut chunks, dtype),
             dt => dt,
         };
         Self::from_chunks_and_dtype(name, chunks, dtype)

@@ -941,31 +941,26 @@ impl Default for Series {
     }
 }
 
+fn equal_outer_type<T: 'static + PolarsDataType>(dtype: &DataType) -> bool {
+    match (T::get_dtype(), dtype) {
+        (DataType::List(_), DataType::List(_)) => true,
+        #[cfg(feature = "dtype-array")]
+        (DataType::Array(_, _), DataType::Array(_, _)) => true,
+        #[cfg(feature = "dtype-struct")]
+        (DataType::Struct(_), DataType::Struct(_)) => true,
+        (a, b) => &a == b
+    }
+}
+
 impl<'a, T> AsRef<ChunkedArray<T>> for dyn SeriesTrait + 'a
 where
     T: 'static + PolarsDataType,
 {
     fn as_ref(&self) -> &ChunkedArray<T> {
-        #[cfg(feature = "dtype-array")]
-        let is_array = matches!(T::get_dtype(), DataType::Array(_, _))
-            && matches!(self.dtype(), DataType::Array(_, _));
-        #[cfg(not(feature = "dtype-array"))]
-        let is_array = false;
-
-        if &T::get_dtype() == self.dtype() ||
-            // Needed because we want to get ref of List no matter what the inner type is.
-            (matches!(T::get_dtype(), DataType::List(_)) && matches!(self.dtype(), DataType::List(_)))
-            // Similarly for arrays.
-            || is_array
-        {
-            unsafe { &*(self as *const dyn SeriesTrait as *const ChunkedArray<T>) }
-        } else {
-            panic!(
-                "implementation error, cannot get ref {:?} from {:?}",
-                T::get_dtype(),
-                self.dtype()
-            );
-        }
+        let eq = equal_outer_type::<T>(self.dtype()) ;
+        assert!(eq, "implementation error, cannot get ref {:?} from {:?}", T::get_dtype(), self.dtype());
+        // SAFETY: we just checked the type.
+        unsafe { &*(self as *const dyn SeriesTrait as *const ChunkedArray<T>) }
     }
 }
 
@@ -974,18 +969,9 @@ where
     T: 'static + PolarsDataType,
 {
     fn as_mut(&mut self) -> &mut ChunkedArray<T> {
-        if &T::get_dtype() == self.dtype() ||
-            // Needed because we want to get ref of List no matter what the inner type is.
-            (matches!(T::get_dtype(), DataType::List(_)) && matches!(self.dtype(), DataType::List(_)))
-        {
-            unsafe { &mut *(self as *mut dyn SeriesTrait as *mut ChunkedArray<T>) }
-        } else {
-            panic!(
-                "implementation error, cannot get ref {:?} from {:?}",
-                T::get_dtype(),
-                self.dtype()
-            )
-        }
+        let eq = equal_outer_type::<T>(self.dtype()) ;
+        assert!(eq, "implementation error, cannot get ref {:?} from {:?}", T::get_dtype(), self.dtype());
+        unsafe { &mut *(self as *mut dyn SeriesTrait as *mut ChunkedArray<T>) }
     }
 }
 

@@ -22,7 +22,7 @@ impl StructChunked2 {
 
         let n_chunks = fields[0].n_chunks();
         let dtype = DataType::Struct(fields.iter().map(|s| s.field().into_owned()).collect());
-        let arrow_dtype = dtype.to_arrow(CompatLevel::newest());
+        let arrow_dtype = dtype.to_physical().to_arrow(CompatLevel::newest());
 
         let chunks = (0..n_chunks).map(|c_i| {
             let fields = fields.iter().map(|field| {
@@ -31,11 +31,14 @@ impl StructChunked2 {
 
             polars_ensure!(fields.iter().map(|arr| arr.len()).all_equal(), InvalidOperation: "expected equal chunk lengths in struct creation");
 
-            Ok(StructArray::new(arrow_dtype.clone(), fields, None))
+            Ok(StructArray::new(arrow_dtype.clone(), fields, None).boxed())
 
-        });
+        }).collect::<PolarsResult<_>>()?;
 
-        StructChunked2::try_from_chunk_iter(name, chunks)
+        // SAFETY: invariants checked above.
+        unsafe {
+            Ok(StructChunked2::from_chunks_and_dtype_unchecked(name, chunks, dtype))
+        }
 
     }
 

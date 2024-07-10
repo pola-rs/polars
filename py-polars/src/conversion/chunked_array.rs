@@ -2,7 +2,7 @@ use polars_core::export::chrono::NaiveTime;
 use polars_core::utils::arrow::temporal_conversions::date32_to_date;
 use pyo3::intern;
 use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyList, PyTuple};
+use pyo3::types::{PyBytes, PyList, PyNone, PyTuple};
 
 use super::datetime::{
     elapsed_offset_to_timedelta, nanos_since_midnight_to_naivetime, timestamp_to_naive_datetime,
@@ -35,10 +35,13 @@ impl ToPyObject for Wrap<&StructChunked2> {
         // make series::iter() accept a chunk index.
         let s = s.rechunk();
         let iter = s.iter().map(|av| {
-            if let AnyValue::Struct(_, _, flds) = av {
-                struct_dict(py, av._iter_struct_av(), flds)
-            } else {
-                unreachable!()
+            match av {
+                AnyValue::Struct(_, _, flds) => {
+                    struct_dict(py, av._iter_struct_av(), flds)
+                },
+                AnyValue::Null => PyNone::get_bound(py).into_py(py)
+                ,
+                _ => unreachable!()
             }
         });
 

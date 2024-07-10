@@ -706,16 +706,18 @@ pub(crate) fn convert_sort_column_multi_sort(s: &Series) -> PolarsResult<Series>
         Binary | Boolean => s.clone(),
         BinaryOffset => s.clone(),
         String => s.str().unwrap().as_binary().into_series(),
-        // #[cfg(feature = "dtype-struct")]
-        // Struct(_) => {
-        //     let ca = s.struct_().unwrap();
-        //     let new_fields = ca
-        //         .fields_as_series()
-        //         .iter()
-        //         .map(convert_sort_column_multi_sort)
-        //         .collect::<PolarsResult<Vec<_>>>()?;
-        //     return StructChunked::new(ca.name(), &new_fields).map(|ca| ca.into_series());
-        // },
+        #[cfg(feature = "dtype-struct")]
+        Struct(_) => {
+            let ca = s.struct_().unwrap();
+            let new_fields = ca
+                .fields_as_series()
+                .iter()
+                .map(convert_sort_column_multi_sort)
+                .collect::<PolarsResult<Vec<_>>>()?;
+            let mut out = StructChunked2::from_series(ca.name(), &new_fields)?;
+            out.zip_outer_validity(ca);
+            out.into_series()
+        },
         // we could fallback to default branch, but decimal is not numeric dtype for now, so explicit here
         #[cfg(feature = "dtype-decimal")]
         Decimal(_, _) => s.clone(),

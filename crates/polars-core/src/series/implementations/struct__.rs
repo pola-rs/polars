@@ -46,6 +46,12 @@ impl PrivateSeries for SeriesWrap<StructChunked2> {
             .all(|(s, other)| s.equal_element(idx_self, idx_other, &other))
     }
 
+    #[cfg(feature = "algorithm_group_by")]
+    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
+        let ca = self.0.get_row_encoded(Default::default())?;
+        ca.group_tuples(multithreaded, sorted)
+    }
+
     #[cfg(feature = "zip_with")]
     fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> PolarsResult<Series> {
         let other = other.struct_()?;
