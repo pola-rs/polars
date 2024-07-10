@@ -19,8 +19,6 @@ pub(crate) mod null;
 #[cfg(feature = "object")]
 mod object;
 mod string;
-#[cfg(feature = "dtype-struct")]
-mod struct_;
 #[cfg(feature = "dtype-time")]
 mod time;
 #[cfg(feature = "dtype-struct")]

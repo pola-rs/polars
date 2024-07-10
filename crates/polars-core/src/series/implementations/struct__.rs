@@ -56,7 +56,7 @@ impl PrivateSeries for SeriesWrap<StructChunked2> {
             .zip(other.fields_as_series())
             .map(|(lhs, rhs)| lhs.zip_with_same_type(mask, &rhs))
             .collect::<PolarsResult<Vec<_>>>()?;
-        Ok(StructChunked::new_unchecked(self.0.name(), &fields).into_series())
+        StructChunked2::from_series(self.0.name(), &fields).map(|ca|ca.into_series())
     }
 
     #[cfg(feature = "algorithm_group_by")]
@@ -155,6 +155,49 @@ impl SeriesTrait for SeriesWrap<StructChunked2> {
 
     fn null_count(&self) -> usize {
         self.0.null_count()
+    }
+
+    /// Get unique values in the Series.
+    #[cfg(feature = "algorithm_group_by")]
+    fn unique(&self) -> PolarsResult<Series> {
+        // this can called in aggregation, so this fast path can be worth a lot
+        if self.len() < 2 {
+            return Ok(self.0.clone().into_series());
+        }
+        let main_thread = POOL.current_thread_index().is_none();
+        let groups = self.group_tuples(main_thread, false);
+        // SAFETY:
+        // groups are in bounds
+        Ok(unsafe { self.0.clone().into_series().agg_first(&groups?) })
+    }
+
+    /// Get unique values in the Series.
+    #[cfg(feature = "algorithm_group_by")]
+    fn n_unique(&self) -> PolarsResult<usize> {
+        // this can called in aggregation, so this fast path can be worth a lot
+        match self.len() {
+            0 => Ok(0),
+            1 => Ok(1),
+            _ => {
+                // TODO! try row encoding
+                let main_thread = POOL.current_thread_index().is_none();
+                let groups = self.group_tuples(main_thread, false)?;
+                Ok(groups.len())
+            },
+        }
+    }
+
+    /// Get first indexes of unique values.
+    #[cfg(feature = "algorithm_group_by")]
+    fn arg_unique(&self) -> PolarsResult<IdxCa> {
+        // this can called in aggregation, so this fast path can be worth a lot
+        if self.len() == 1 {
+            return Ok(IdxCa::new_vec(self.name(), vec![0 as IdxSize]));
+        }
+        let main_thread = POOL.current_thread_index().is_none();
+        let groups = self.group_tuples(main_thread, true)?;
+        let first = groups.take_group_firsts();
+        Ok(IdxCa::from_vec(self.name(), first))
     }
 
     fn has_validity(&self) -> bool {

@@ -125,7 +125,7 @@ fn cast_single_to_struct(
         new_fields.push(Series::full_null(&fld.name, length, &fld.dtype));
     }
 
-    Ok(StructChunked::new_unchecked(name, &new_fields).into_series())
+    StructChunked2::from_series(name, &new_fields).map(|ca|ca.into_series())
 }
 
 impl<T> ChunkedArray<T>

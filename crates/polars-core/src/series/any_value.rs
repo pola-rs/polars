@@ -649,7 +649,7 @@ fn any_values_to_struct(
 ) -> PolarsResult<Series> {
     // Fast path for structs with no fields.
     if fields.is_empty() {
-        return Ok(StructChunked::full_null("", values.len()).into_series());
+        return Ok(StructChunked2::full_null("", values.len()).into_series());
     }
 
     // The physical series fields of the struct.
@@ -712,7 +712,7 @@ fn any_values_to_struct(
         };
         series_fields.push(s)
     }
-    StructChunked::new("", &series_fields).map(|ca| ca.into_series())
+    StructChunked2::from_series("", &series_fields).map(|ca| ca.into_series())
 }
 
 #[cfg(feature = "object")]
