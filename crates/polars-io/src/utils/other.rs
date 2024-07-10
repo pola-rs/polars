@@ -14,8 +14,13 @@ pub fn get_reader_bytes<'a, R: Read + MmapBytesReader + ?Sized>(
     reader: &'a mut R,
 ) -> PolarsResult<ReaderBytes<'a>> {
     // we have a file so we can mmap
-    if let Some(file) = reader.to_file() {
-        let mmap = unsafe { memmap::Mmap::map(file)? };
+    // only seekable files are mmap-able
+    if let Some((file, offset)) = reader
+        .stream_position()
+        .ok()
+        .and_then(|offset| Some((reader.to_file()?, offset)))
+    {
+        let mmap = unsafe { memmap::MmapOptions::new().offset(offset).map(file)? };
 
         // somehow bck thinks borrows alias
         // this is sound as file was already bound to 'a

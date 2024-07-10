@@ -211,19 +211,21 @@ fn get_either_file_and_path(
                 let encoding = encoding.extract::<Cow<str>>()?;
                 Ok(encoding.eq_ignore_ascii_case("utf-8") || encoding.eq_ignore_ascii_case("utf8"))
             };
-            let flush_file = |py_f: &Bound<PyAny>| -> PyResult<()> {
-                py_f.getattr("flush")?.call0()?;
-                Ok(())
-            };
             #[cfg(target_family = "unix")]
-            if let Some(fd) = ((py_f.is_exact_instance(&io.getattr("FileIO").unwrap())
-                || py_f.is_exact_instance(&io.getattr("BufferedReader").unwrap())
-                || py_f.is_exact_instance(&io.getattr("BufferedWriter").unwrap())
-                || py_f.is_exact_instance(&io.getattr("BufferedRandom").unwrap())
-                || py_f.is_exact_instance(&io.getattr("BufferedRWPair").unwrap())
-                || (py_f.is_exact_instance(&io.getattr("TextIOWrapper").unwrap())
-                    && is_utf8_encoding(&py_f)?))
-                && (!write || flush_file(&py_f).is_ok()))
+            if let Some(fd) = (py_f.is_exact_instance(&io.getattr("FileIO").unwrap())
+                || (py_f.is_exact_instance(&io.getattr("BufferedReader").unwrap())
+                    || py_f.is_exact_instance(&io.getattr("BufferedWriter").unwrap())
+                    || py_f.is_exact_instance(&io.getattr("BufferedRandom").unwrap())
+                    || py_f.is_exact_instance(&io.getattr("BufferedRWPair").unwrap())
+                    || (py_f.is_exact_instance(&io.getattr("TextIOWrapper").unwrap())
+                        && is_utf8_encoding(&py_f)?))
+                    && if write {
+                        // invalidate read buffer
+                        py_f.call_method0("flush").is_ok()
+                    } else {
+                        // flush write buffer
+                        py_f.call_method1("seek", (0, 1)).is_ok()
+                    })
             .then(|| {
                 py_f.getattr("fileno")
                     .and_then(|fileno| fileno.call0())
@@ -261,8 +263,12 @@ fn get_either_file_and_path(
                     )
                     .into());
                 }
+                // XXX: we have to clear buffer here.
+                // Is there a better solution?
                 if write {
-                    flush_file(&py_f)?;
+                    py_f.call_method0("flush")?;
+                } else {
+                    py_f.call_method1("seek", (0, 1))?;
                 }
                 py_f.getattr("buffer")?
             } else {

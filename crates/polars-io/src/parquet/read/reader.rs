@@ -1,4 +1,4 @@
-use std::io::{Read, Seek};
+use std::io::{Read, Seek, SeekFrom};
 use std::sync::Arc;
 
 use arrow::datatypes::ArrowSchemaRef;
@@ -150,6 +150,8 @@ impl<R: MmapBytesReader + 'static> ParquetReader<R> {
         let metadata = self.get_metadata()?.clone();
         let schema = self.schema()?;
 
+        // XXX: Can a parquet file starts at an offset?
+        self.reader.seek(SeekFrom::Start(0))?;
         let row_group_fetcher = FetchRowGroupsFromMmapReader::new(Box::new(self.reader))?.into();
         BatchedParquetReader::new(
             row_group_fetcher,
