@@ -78,6 +78,7 @@ impl Morsel {
         self.seq = seq;
     }
 
+    #[allow(unused)]
     pub fn map<F: FnOnce(DataFrame) -> DataFrame>(mut self, f: F) -> Self {
         self.df = f(self.df);
         self
