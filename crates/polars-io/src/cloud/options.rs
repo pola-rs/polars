@@ -215,6 +215,12 @@ fn read_config(
 }
 
 impl CloudOptions {
+    /// Set the maximum number of retries.
+    pub fn with_max_retries(mut self, max_retries: usize) -> Self {
+        self.max_retries = max_retries;
+        self
+    }
+
     /// Set the configuration for AWS connections. This is the preferred API from rust.
     #[cfg(feature = "aws")]
     pub fn with_aws<I: IntoIterator<Item = (AmazonS3ConfigKey, impl Into<String>)>>(
