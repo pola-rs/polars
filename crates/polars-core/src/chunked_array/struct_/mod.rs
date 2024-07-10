@@ -1,3 +1,5 @@
+mod frame;
+
 use arrow::array::StructArray;
 use arrow::legacy::utils::CustomIterTools;
 use polars_error::{polars_ensure, PolarsResult};

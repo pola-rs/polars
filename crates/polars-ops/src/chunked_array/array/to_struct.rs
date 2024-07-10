@@ -15,7 +15,7 @@ pub trait ToStruct: AsArray {
     fn to_struct(
         &self,
         name_generator: Option<ArrToStructNameGenerator>,
-    ) -> PolarsResult<StructChunked> {
+    ) -> PolarsResult<StructChunked2> {
         let ca = self.as_array();
         let n_fields = ca.width();
 
@@ -37,7 +37,7 @@ pub trait ToStruct: AsArray {
                 .collect::<PolarsResult<Vec<_>>>()
         })?;
 
-        StructChunked::new(ca.name(), &fields)
+        StructChunked2::from_series(ca.name(), &fields)
     }
 }
 

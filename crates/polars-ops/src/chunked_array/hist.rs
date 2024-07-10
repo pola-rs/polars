@@ -145,7 +145,7 @@ where
         let out = fields.pop().unwrap();
         out.with_name(ca.name())
     } else {
-        StructChunked::new(ca.name(), &fields)
+        StructChunked2::from_series(ca.name(), &fields)
             .unwrap()
             .into_series()
     }
