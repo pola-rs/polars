@@ -162,6 +162,7 @@ impl DslBuilder {
         read_options: CsvReadOptions,
         cache: bool,
         cloud_options: Option<CloudOptions>,
+        glob: bool,
     ) -> PolarsResult<Self> {
         let paths = paths.into();
 
@@ -180,7 +181,7 @@ impl DslBuilder {
                 enabled: Some(false),
                 ..Default::default()
             },
-            glob: false,
+            glob,
         };
         Ok(DslPlan::Scan {
             paths,

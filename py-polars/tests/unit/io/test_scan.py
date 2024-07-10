@@ -601,5 +601,6 @@ def test_scan_nonexistent_cloud_path_17444(format: str) -> None:
     assert isinstance(result, pl.LazyFrame)
 
     # Upon collection, it should fail
-    with pytest.raises(ComputeError, match="The specified bucket does not exist"):
+    # TODO: Make sure this is fast (can timeout when no internet connection)
+    with pytest.raises(ComputeError):
         result.collect()
