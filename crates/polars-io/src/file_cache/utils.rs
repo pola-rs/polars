@@ -56,8 +56,6 @@ pub fn init_entries_from_uri_list(
     uri_list: &[Arc<str>],
     cloud_options: Option<&CloudOptions>,
 ) -> PolarsResult<Vec<Arc<FileCacheEntry>>> {
-    let uri_list = uri_list.as_ref();
-
     if uri_list.is_empty() {
         return Ok(Default::default());
     }
