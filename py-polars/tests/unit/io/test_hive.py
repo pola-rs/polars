@@ -681,7 +681,7 @@ def test_hive_write(tmp_path: Path, df: pl.DataFrame) -> None:
 
 @pytest.mark.slow()
 @pytest.mark.write_disk()
-def test_hive_write_multiple_files(tmp_path: Path, monkeypatch: Any) -> None:
+def test_hive_write_multiple_files(tmp_path: Path) -> None:
     chunk_size = 262_144
     n_rows = 100_000
     df = pl.select(a=pl.repeat(0, n_rows), b=pl.int_range(0, n_rows))
