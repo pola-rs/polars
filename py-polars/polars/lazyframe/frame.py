@@ -6455,7 +6455,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         measured variables (value_vars), are "unpivoted" to the row axis leaving just
         two non-identifier columns, 'variable' and 'value'.
 
-        .. deprecated 1.0.0
+        .. deprecated:: 1.0.0
             Please use :meth:`.unpivot` instead.
 
         Parameters

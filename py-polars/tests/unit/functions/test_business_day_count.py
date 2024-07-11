@@ -158,7 +158,7 @@ def test_against_np_busday_count(
         .item()
     )
     expected = np.busday_count(start, end, weekmask=week_mask, holidays=holidays)
-    if start > end and parse_version(np.__version__) < parse_version("1.25"):
+    if start > end and parse_version(np.__version__) < (1, 25):
         # Bug in old versions of numpy
         reject()
     assert result == expected
