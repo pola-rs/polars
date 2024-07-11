@@ -241,26 +241,40 @@ impl CloudOptions {
             }
         }
 
-        read_config(
-            &mut builder,
-            &[(
-                Path::new("~/.aws/config"),
-                &[("region = (.*)\n", AmazonS3ConfigKey::Region)],
-            )],
-        );
-        read_config(
-            &mut builder,
-            &[(
-                Path::new("~/.aws/credentials"),
-                &[
-                    ("aws_access_key_id = (.*)\n", AmazonS3ConfigKey::AccessKeyId),
-                    (
-                        "aws_secret_access_key = (.*)\n",
-                        AmazonS3ConfigKey::SecretAccessKey,
-                    ),
-                ],
-            )],
-        );
+        if builder
+            .get_config_value(&AmazonS3ConfigKey::Region)
+            .is_none()
+        {
+            read_config(
+                &mut builder,
+                &[(
+                    Path::new("~/.aws/config"),
+                    &[("region = (.*)\n", AmazonS3ConfigKey::Region)],
+                )],
+            );
+        }
+
+        if builder
+            .get_config_value(&AmazonS3ConfigKey::AccessKeyId)
+            .is_none()
+            || builder
+                .get_config_value(&AmazonS3ConfigKey::SecretAccessKey)
+                .is_none()
+        {
+            read_config(
+                &mut builder,
+                &[(
+                    Path::new("~/.aws/credentials"),
+                    &[
+                        ("aws_access_key_id = (.*)\n", AmazonS3ConfigKey::AccessKeyId),
+                        (
+                            "aws_secret_access_key = (.*)\n",
+                            AmazonS3ConfigKey::SecretAccessKey,
+                        ),
+                    ],
+                )],
+            );
+        }
 
         if builder
             .get_config_value(&AmazonS3ConfigKey::DefaultRegion)

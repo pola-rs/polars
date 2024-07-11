@@ -90,13 +90,6 @@ impl CloudLocation {
         let (bucket, key) = if is_local {
             ("".into(), parsed.path())
         } else {
-            if parsed.scheme().starts_with("http") {
-                return Ok(CloudLocation {
-                    scheme: parsed.scheme().into(),
-                    ..Default::default()
-                });
-            }
-
             let key = parsed.path();
             let bucket = parsed
                 .host()
