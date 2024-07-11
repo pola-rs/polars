@@ -36,6 +36,8 @@ pub(crate) mod logical;
 pub mod object;
 #[cfg(feature = "random")]
 mod random;
+#[cfg(feature = "dtype-struct")]
+mod struct_;
 #[cfg(any(
     feature = "temporal",
     feature = "dtype-datetime",
@@ -50,6 +52,8 @@ use std::slice::Iter;
 
 use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
 use arrow::legacy::prelude::*;
+#[cfg(feature = "dtype-struct")]
+pub use struct_::StructChunked2;
 
 use self::metadata::{
     IMMetadata, Metadata, MetadataFlags, MetadataMerge, MetadataProperties, MetadataReadGuard,
@@ -179,7 +183,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     ///
     /// If you want to explicitly the `length` and `null_count`, look at
     /// [`ChunkedArray::new_with_dims`]
-    pub fn new_with_compute_len(field: Arc<Field>, chunks: Vec<ArrayRef>) -> Self {
+    fn new_with_compute_len(field: Arc<Field>, chunks: Vec<ArrayRef>) -> Self {
         unsafe {
             let mut chunked_arr = Self::new_with_dims(field, chunks, 0, 0);
             chunked_arr.compute_len();
@@ -188,10 +192,6 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     }
 
     /// Create a new [`ChunkedArray`] and explicitly set its `length` and `null_count`.
-    ///
-    /// If you want to compute the `length` and `null_count`, look at
-    /// [`ChunkedArray::new_with_compute_len`]
-    ///
     /// # Safety
     /// The length and null_count must be correct.
     pub unsafe fn new_with_dims(

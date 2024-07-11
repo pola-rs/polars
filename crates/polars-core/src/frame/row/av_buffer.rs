@@ -615,7 +615,7 @@ impl<'a> AnyValueBufferTrusted<'a> {
                         s
                     })
                     .collect::<Vec<_>>();
-                StructChunked::new("", &v).unwrap().into_series()
+                StructChunked2::from_series("", &v).unwrap().into_series()
             },
             Null(b) => {
                 let mut new = NullChunkedBuilder::new(b.field.name(), 0);

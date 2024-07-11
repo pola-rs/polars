@@ -231,7 +231,7 @@ pub trait SeriesTrait:
 
     /// Shrink the capacity of this array to fit its length.
     fn shrink_to_fit(&mut self) {
-        invalid_operation_panic!(shrink_to_fit, self);
+        // no-op
     }
 
     /// Take `num_elements` from the top as a zero copy view.

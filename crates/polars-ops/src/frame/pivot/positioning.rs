@@ -256,7 +256,7 @@ pub(super) fn compute_col_idx(
         },
         T::Struct(_) => {
             let ca = column_agg_physical.struct_().unwrap();
-            let ca = ca.rows_encode()?;
+            let ca = ca.get_row_encoded(Default::default())?;
             compute_col_idx_gen(&ca)
         },
         T::String => {
@@ -426,7 +426,7 @@ pub(super) fn compute_row_idx(
             },
             T::Struct(_) => {
                 let ca = index_agg_physical.struct_().unwrap();
-                let ca = ca.rows_encode()?;
+                let ca = ca.get_row_encoded(Default::default())?;
                 compute_row_index_struct(index, &index_agg, &ca, count)
             },
             T::String => {
@@ -467,20 +467,21 @@ pub(super) fn compute_row_idx(
     } else {
         let binding = pivot_df.select(index)?;
         let fields = binding.get_columns();
-        let index_struct_series = StructChunked::new("placeholder", fields)?.into_series();
+        let index_struct_series = StructChunked2::from_series("placeholder", fields)?.into_series();
         let index_agg = unsafe { index_struct_series.agg_first(groups) };
         let index_agg_physical = index_agg.to_physical_repr();
         let ca = index_agg_physical.struct_()?;
-        let ca = ca.rows_encode()?;
+        let ca = ca.get_row_encoded(Default::default())?;
         let (row_locations, n_rows, row_index) =
             compute_row_index_struct(index, &index_agg, &ca, count);
         let row_index = row_index.map(|x| {
-            unsafe { x.get_unchecked(0) }
-                .struct_()
-                .unwrap()
-                .fields()
-                .to_vec()
-        });
+             let ca = x.first().unwrap()
+                .struct_().unwrap();
+
+            polars_ensure!(ca.null_count() == 0, InvalidOperation: "outer nullability in struct pivot not yet supported");
+
+            Ok(ca.fields_as_series())
+        }).transpose()?;
         (row_locations, n_rows, row_index)
     };
 

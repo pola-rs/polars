@@ -283,7 +283,7 @@ def test_from_pandas_null_struct_6412() -> None:
     ]
     df_pandas = pd.DataFrame(data)
     assert pl.from_pandas(df_pandas).to_dict(as_series=False) == {
-        "a": [{"b": None}, {"b": None}]
+        "a": [{"b": None}, None]
     }
 
 

@@ -16,8 +16,6 @@ mod duration;
 pub use duration::*;
 #[cfg(feature = "dtype-categorical")]
 pub mod categorical;
-#[cfg(feature = "dtype-struct")]
-mod struct_;
 #[cfg(feature = "dtype-time")]
 mod time;
 
@@ -26,8 +24,6 @@ use std::ops::{Deref, DerefMut};
 
 #[cfg(feature = "dtype-categorical")]
 pub use categorical::*;
-#[cfg(feature = "dtype-struct")]
-pub use struct_::*;
 #[cfg(feature = "dtype-time")]
 pub use time::*;
 

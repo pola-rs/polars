@@ -181,6 +181,24 @@ impl ArrayChunked {
     }
 }
 
+#[cfg(feature = "dtype-struct")]
+#[doc(hidden)]
+impl StructChunked2 {
+    pub fn append(&mut self, other: &Self) -> PolarsResult<()> {
+        let dtype = merge_dtypes(self.dtype(), other.dtype())?;
+        self.field = Arc::new(Field::new(self.name(), dtype));
+
+        let len = self.len();
+
+        self.length += other.length;
+        self.null_count += other.null_count;
+
+        new_chunks(&mut self.chunks, &other.chunks, len);
+        self.set_sorted_flag(IsSorted::Not);
+        Ok(())
+    }
+}
+
 #[cfg(feature = "object")]
 #[doc(hidden)]
 impl<T: PolarsObject> ObjectChunked<T> {

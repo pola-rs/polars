@@ -1,6 +1,6 @@
 use arrow::compute::cast::cast_unchecked as cast;
 use arrow::datatypes::Metadata;
-#[cfg(any(feature = "dtype-struct", feature = "dtype-categorical"))]
+#[cfg(feature = "dtype-categorical")]
 use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
 #[cfg(any(
     feature = "dtype-date",
@@ -102,12 +102,10 @@ impl Series {
             Float64 => Float64Chunked::from_chunks(name, chunks).into_series(),
             BinaryOffset => BinaryOffsetChunked::from_chunks(name, chunks).into_series(),
             #[cfg(feature = "dtype-struct")]
-            Struct(_) => Series::_try_from_arrow_unchecked(
-                name,
-                chunks,
-                &dtype.to_arrow(CompatLevel::newest()),
-            )
-            .unwrap(),
+            Struct(_) => {
+                StructChunked2::from_chunks_and_dtype_unchecked(name, chunks, dtype.clone())
+                    .into_series()
+            },
             #[cfg(feature = "object")]
             Object(_, _) => {
                 assert_eq!(chunks.len(), 1);
@@ -400,61 +398,14 @@ impl Series {
                 Ok(s)
             },
             #[cfg(feature = "dtype-struct")]
-            ArrowDataType::Struct(logical_fields) => {
-                // We don't have to convert inner types, as that already
-                // happens on `Field: Series` construction
-                let arr = if chunks.len() > 1 {
-                    // don't spuriously call this. This triggers a read on memmapped data
-                    concatenate_owned_unchecked(&chunks).unwrap() as ArrayRef
-                } else {
-                    chunks[0].clone()
-                };
-                let mut struct_arr =
-                    std::borrow::Cow::Borrowed(arr.as_any().downcast_ref::<StructArray>().unwrap());
-
-                if let Some(validity) = struct_arr.validity() {
-                    let new_values = struct_arr
-                        .values()
-                        .iter()
-                        .map(|arr| match arr.data_type() {
-                            ArrowDataType::Null => arr.clone(),
-                            _ => match arr.validity() {
-                                None => arr.with_validity(Some(validity.clone())),
-                                Some(arr_validity) => {
-                                    arr.with_validity(Some(arr_validity & validity))
-                                },
-                            },
-                        })
-                        .collect();
-
-                    struct_arr = std::borrow::Cow::Owned(StructArray::new(
-                        struct_arr.data_type().clone(),
-                        new_values,
-                        None,
-                    ));
+            ArrowDataType::Struct(_) => {
+                let (chunks, dtype) = to_physical_and_dtype(chunks, md);
+                unsafe {
+                    Ok(
+                        StructChunked2::from_chunks_and_dtype_unchecked(name, chunks, dtype)
+                            .into_series(),
+                    )
                 }
-
-                // ensure we maintain logical types if proved by the caller
-                let dtype_fields = if logical_fields.is_empty() {
-                    struct_arr.fields()
-                } else {
-                    logical_fields
-                };
-
-                let fields = struct_arr
-                    .values()
-                    .iter()
-                    .zip(dtype_fields)
-                    .map(|(arr, field)| {
-                        Series::_try_from_arrow_unchecked_with_md(
-                            &field.name,
-                            vec![arr.clone()],
-                            &field.data_type,
-                            Some(&field.metadata),
-                        )
-                    })
-                    .collect::<PolarsResult<Vec<_>>>()?;
-                Ok(StructChunked::new_unchecked(name, &fields).into_series())
             },
             ArrowDataType::FixedSizeBinary(_) => {
                 let chunks = cast_chunks(&chunks, &DataType::Binary, CastOptions::NonStrict)?;

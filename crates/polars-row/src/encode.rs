@@ -3,6 +3,7 @@ use arrow::array::{
     StructArray, Utf8ViewArray,
 };
 use arrow::bitmap::utils::ZipValidity;
+use arrow::compute::utils::combine_validities_and;
 use arrow::datatypes::ArrowDataType;
 use arrow::legacy::prelude::{LargeBinaryArray, LargeListArray};
 use arrow::types::NativeType;
@@ -117,8 +118,16 @@ fn get_encoders(arr: &dyn Array, encoders: &mut Vec<Encoder>, field: &EncodingFi
     match arr.data_type() {
         ArrowDataType::Struct(_) => {
             let arr = arr.as_any().downcast_ref::<StructArray>().unwrap();
-            for arr in arr.values() {
-                added += get_encoders(arr.as_ref(), encoders, field);
+            for value_arr in arr.values() {
+                // A hack to make outer validity work.
+                // TODO! improve
+                if arr.null_count() > 0 {
+                    let new_validity = combine_validities_and(arr.validity(), value_arr.validity());
+                    value_arr.with_validity(new_validity);
+                    added += get_encoders(value_arr.as_ref(), encoders, field);
+                } else {
+                    added += get_encoders(value_arr.as_ref(), encoders, field);
+                }
             }
         },
         ArrowDataType::Utf8View => {

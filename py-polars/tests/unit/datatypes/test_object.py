@@ -39,12 +39,8 @@ def test_object_in_struct() -> None:
     np_b = np.array([4, 5, 6])
     df = pl.DataFrame({"A": [1, 2], "B": pl.Series([np_a, np_b], dtype=pl.Object)})
 
-    out = df.select([pl.struct(["B"]).alias("foo")]).to_dict(as_series=False)
-    arr = out["foo"][0]["B"]
-    assert isinstance(arr, np.ndarray)
-    assert (arr == np_a).sum() == 3
-    arr = out["foo"][1]["B"]
-    assert (arr == np_b).sum() == 3
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        df.select([pl.struct(["B"])])
 
 
 def test_nullable_object_13538() -> None:

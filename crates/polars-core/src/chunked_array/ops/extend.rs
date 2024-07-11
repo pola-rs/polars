@@ -172,6 +172,17 @@ impl ArrayChunked {
     }
 }
 
+#[cfg(feature = "dtype-struct")]
+#[doc(hidden)]
+impl StructChunked2 {
+    pub fn extend(&mut self, other: &Self) -> PolarsResult<()> {
+        // TODO! properly implement mutation
+        // this is harder because we don't know the inner type of the list
+        self.set_sorted_flag(IsSorted::Not);
+        self.append(other)
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;

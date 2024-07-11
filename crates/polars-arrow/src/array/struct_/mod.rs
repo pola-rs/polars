@@ -11,6 +11,8 @@ mod mutable;
 pub use mutable::*;
 use polars_error::{polars_bail, PolarsResult};
 
+use crate::compute::utils::combine_validities_and;
+
 /// A [`StructArray`] is a nested [`Array`] with an optional validity representing
 /// multiple [`Array`] with the same number of rows.
 /// # Example
@@ -190,6 +192,27 @@ impl StructArray {
         self.values
             .iter_mut()
             .for_each(|x| x.slice_unchecked(offset, length));
+    }
+
+    /// Set the outer nulls into the inner arrays, and clear the outer validity.
+    pub fn propagate_nulls(&self) -> StructArray {
+        let has_nulls = self.null_count() > 0;
+        let mut out = self.clone();
+        if !has_nulls {
+            return out;
+        };
+
+        for value_arr in &mut out.values {
+            let new = if has_nulls {
+                let new_validity = combine_validities_and(self.validity(), value_arr.validity());
+                value_arr.with_validity(new_validity)
+            } else {
+                value_arr.clone()
+            };
+
+            *value_arr = new;
+        }
+        out.with_validity(None)
     }
 
     impl_sliced!();

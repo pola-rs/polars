@@ -38,6 +38,7 @@ pub(crate) mod unique;
 #[cfg(feature = "zip_with")]
 pub mod zip;
 
+use polars_utils::no_call_const;
 #[cfg(feature = "serde-lazy")]
 use serde::{Deserialize, Serialize};
 pub use sort::options::*;
@@ -324,16 +325,28 @@ pub trait ChunkCompare<Rhs> {
     fn not_equal_missing(&self, rhs: Rhs) -> Self::Item;
 
     /// Greater than comparison.
-    fn gt(&self, rhs: Rhs) -> Self::Item;
+    #[allow(unused_variables)]
+    fn gt(&self, rhs: Rhs) -> Self::Item {
+        no_call_const!()
+    }
 
     /// Greater than or equal comparison.
-    fn gt_eq(&self, rhs: Rhs) -> Self::Item;
+    #[allow(unused_variables)]
+    fn gt_eq(&self, rhs: Rhs) -> Self::Item {
+        no_call_const!()
+    }
 
     /// Less than comparison.
-    fn lt(&self, rhs: Rhs) -> Self::Item;
+    #[allow(unused_variables)]
+    fn lt(&self, rhs: Rhs) -> Self::Item {
+        no_call_const!()
+    }
 
     /// Less than or equal comparison
-    fn lt_eq(&self, rhs: Rhs) -> Self::Item;
+    #[allow(unused_variables)]
+    fn lt_eq(&self, rhs: Rhs) -> Self::Item {
+        no_call_const!()
+    }
 }
 
 /// Get unique values in a `ChunkedArray`
@@ -518,6 +531,32 @@ impl ChunkExpandAtIndex<ListType> for ListChunked {
             },
             None => ListChunked::full_null_with_dtype(self.name(), length, self.inner_dtype()),
         }
+    }
+}
+
+#[cfg(feature = "dtype-struct")]
+impl ChunkExpandAtIndex<StructType> for StructChunked2 {
+    fn new_from_index(&self, length: usize, index: usize) -> ChunkedArray<StructType> {
+        let (chunk_idx, idx) = self.index_to_chunked_index(index);
+        let chunk = self.downcast_chunks().get(chunk_idx).unwrap();
+        let chunk = if chunk.is_null(idx) {
+            new_null_array(chunk.data_type().clone(), length)
+        } else {
+            let values = chunk
+                .values()
+                .iter()
+                .map(|arr| {
+                    let s = Series::try_from(("", arr.clone())).unwrap();
+                    let s = s.new_from_index(idx, length);
+                    s.chunks()[0].clone()
+                })
+                .collect::<Vec<_>>();
+
+            StructArray::new(chunk.data_type().clone(), values, None).boxed()
+        };
+
+        // SAFETY: chunks are from self.
+        unsafe { self.copy_with_chunks(vec![chunk]) }
     }
 }
 

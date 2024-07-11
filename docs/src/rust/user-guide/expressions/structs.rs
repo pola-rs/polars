@@ -113,8 +113,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let ca = s.struct_()?;
 
                         // get the fields as Series
-                        let s_a = &ca.fields()[0];
-                        let s_b = &ca.fields()[1];
+                        let s_a = &ca.fields_as_series()[0];
+                        let s_b = &ca.fields_as_series()[1];
 
                         // downcast the `Series` to their known type
                         let ca_a = s_a.str()?;

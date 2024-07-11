@@ -20,7 +20,7 @@ pub(crate) mod null;
 mod object;
 mod string;
 #[cfg(feature = "dtype-struct")]
-mod struct_;
+mod struct__;
 #[cfg(feature = "dtype-time")]
 mod time;
 

@@ -1,4 +1,5 @@
 use super::*;
+use crate::utils::align_chunks_binary;
 
 pub trait NumOpsDispatchInner: PolarsDataType + Sized {
     fn subtract(lhs: &ChunkedArray<Self>, rhs: &Series) -> PolarsResult<Series> {
@@ -445,23 +446,28 @@ pub fn _struct_arithmetic<F: FnMut(&Series, &Series) -> PolarsResult<Series>>(
 ) -> PolarsResult<Series> {
     let s = s.struct_().unwrap();
     let rhs = rhs.struct_().unwrap();
-    let s_fields = s.fields();
-    let rhs_fields = rhs.fields();
+
+    let s_fields = s.fields_as_series();
+    let rhs_fields = rhs.fields_as_series();
 
     match (s_fields.len(), rhs_fields.len()) {
         (_, 1) => {
-            let rhs = &rhs.fields()[0];
+            let rhs = &rhs.fields_as_series()[0];
             Ok(s.try_apply_fields(|s| func(s, rhs))?.into_series())
         },
         (1, _) => {
-            let s = &s.fields()[0];
+            let s = &s.fields_as_series()[0];
             Ok(rhs.try_apply_fields(|rhs| func(s, rhs))?.into_series())
         },
         _ => {
-            let mut rhs_iter = rhs.fields().iter();
+            let (s, rhs) = align_chunks_binary(s, rhs);
+            let mut s = s.into_owned();
+            s.zip_outer_validity(rhs.as_ref());
+
+            let mut rhs_iter = rhs.fields_as_series().into_iter();
 
             Ok(s.try_apply_fields(|s| match rhs_iter.next() {
-                Some(rhs) => func(s, rhs),
+                Some(rhs) => func(s, &rhs),
                 None => Ok(s.clone()),
             })?
             .into_series())

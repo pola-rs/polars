@@ -166,7 +166,7 @@ pub(super) fn get_by_name(s: &Series, name: Arc<str>) -> PolarsResult<Series> {
 pub(super) fn rename_fields(s: &Series, names: Arc<[String]>) -> PolarsResult<Series> {
     let ca = s.struct_()?;
     let fields = ca
-        .fields()
+        .fields_as_series()
         .iter()
         .zip(names.as_ref())
         .map(|(s, name)| {
@@ -175,13 +175,15 @@ pub(super) fn rename_fields(s: &Series, names: Arc<[String]>) -> PolarsResult<Se
             s
         })
         .collect::<Vec<_>>();
-    StructChunked::new(ca.name(), &fields).map(|ca| ca.into_series())
+    let mut out = StructChunked2::from_series(ca.name(), &fields)?;
+    out.zip_outer_validity(ca);
+    Ok(out.into_series())
 }
 
 pub(super) fn prefix_fields(s: &Series, prefix: Arc<str>) -> PolarsResult<Series> {
     let ca = s.struct_()?;
     let fields = ca
-        .fields()
+        .fields_as_series()
         .iter()
         .map(|s| {
             let mut s = s.clone();
@@ -190,13 +192,15 @@ pub(super) fn prefix_fields(s: &Series, prefix: Arc<str>) -> PolarsResult<Series
             s
         })
         .collect::<Vec<_>>();
-    StructChunked::new(ca.name(), &fields).map(|ca| ca.into_series())
+    let mut out = StructChunked2::from_series(ca.name(), &fields)?;
+    out.zip_outer_validity(ca);
+    Ok(out.into_series())
 }
 
 pub(super) fn suffix_fields(s: &Series, suffix: Arc<str>) -> PolarsResult<Series> {
     let ca = s.struct_()?;
     let fields = ca
-        .fields()
+        .fields_as_series()
         .iter()
         .map(|s| {
             let mut s = s.clone();
@@ -205,7 +209,9 @@ pub(super) fn suffix_fields(s: &Series, suffix: Arc<str>) -> PolarsResult<Series
             s
         })
         .collect::<Vec<_>>();
-    StructChunked::new(ca.name(), &fields).map(|ca| ca.into_series())
+    let mut out = StructChunked2::from_series(ca.name(), &fields)?;
+    out.zip_outer_validity(ca);
+    Ok(out.into_series())
 }
 
 #[cfg(feature = "json")]
@@ -225,11 +231,11 @@ pub(super) fn with_fields(args: &[Series]) -> PolarsResult<Series> {
     let s = &args[0];
 
     let ca = s.struct_()?;
-    let current = ca.fields();
+    let current = ca.fields_as_series();
 
     let mut fields = PlIndexMap::with_capacity(current.len() + s.len() - 1);
 
-    for field in current {
+    for field in current.iter() {
         fields.insert(field.name(), field);
     }
 
@@ -238,5 +244,7 @@ pub(super) fn with_fields(args: &[Series]) -> PolarsResult<Series> {
     }
 
     let new_fields = fields.into_values().cloned().collect::<Vec<_>>();
-    StructChunked::new(ca.name(), &new_fields).map(|ca| ca.into_series())
+    let mut out = StructChunked2::from_series(ca.name(), &new_fields)?;
+    out.zip_outer_validity(ca);
+    Ok(out.into_series())
 }

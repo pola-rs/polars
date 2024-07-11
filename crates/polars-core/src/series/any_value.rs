@@ -1,5 +1,7 @@
 use std::fmt::Write;
 
+use arrow::bitmap::MutableBitmap;
+
 #[cfg(feature = "dtype-categorical")]
 use crate::chunked_array::cast::CastOptions;
 #[cfg(feature = "object")]
@@ -649,11 +651,12 @@ fn any_values_to_struct(
 ) -> PolarsResult<Series> {
     // Fast path for structs with no fields.
     if fields.is_empty() {
-        return Ok(StructChunked::full_null("", values.len()).into_series());
+        return Ok(StructChunked2::full_null("", values.len()).into_series());
     }
 
     // The physical series fields of the struct.
     let mut series_fields = Vec::with_capacity(fields.len());
+    let mut has_outer_validity = false;
     for (i, field) in fields.iter().enumerate() {
         let mut field_avs = Vec::with_capacity(values.len());
 
@@ -701,7 +704,10 @@ fn any_values_to_struct(
                         append_by_search()
                     }
                 },
-                _ => field_avs.push(AnyValue::Null),
+                _ => {
+                    has_outer_validity = true;
+                    field_avs.push(AnyValue::Null)
+                },
             }
         }
         // If the inferred dtype is null, we let auto inference work.
@@ -712,7 +718,19 @@ fn any_values_to_struct(
         };
         series_fields.push(s)
     }
-    StructChunked::new("", &series_fields).map(|ca| ca.into_series())
+
+    let mut out = StructChunked2::from_series("", &series_fields)?;
+    if has_outer_validity {
+        let mut validity = MutableBitmap::new();
+        validity.extend_constant(values.len(), true);
+        for (i, v) in values.iter().enumerate() {
+            if matches!(v, AnyValue::Null) {
+                unsafe { validity.set_unchecked(i, false) }
+            }
+        }
+        out.set_outer_validity(Some(validity.freeze()))
+    }
+    Ok(out.into_series())
 }
 
 #[cfg(feature = "object")]

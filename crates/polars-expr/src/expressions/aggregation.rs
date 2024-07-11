@@ -497,7 +497,7 @@ impl PartitionedAggregation for AggregationExpr {
                         };
                         let mut count_s = series.agg_valid_count(groups);
                         count_s.rename("__POLARS_COUNT");
-                        Ok(StructChunked::new(&new_name, &[agg_s, count_s])
+                        Ok(StructChunked2::from_series(&new_name, &[agg_s, count_s])
                             .unwrap()
                             .into_series())
                     }
@@ -568,8 +568,9 @@ impl PartitionedAggregation for AggregationExpr {
                 match partitioned.dtype() {
                     DataType::Struct(_) => {
                         let ca = partitioned.struct_().unwrap();
-                        let sum = &ca.fields()[0];
-                        let count = &ca.fields()[1];
+                        let fields = ca.fields_as_series();
+                        let sum = &fields[0];
+                        let count = &fields[1];
                         let (agg_count, agg_s) =
                             unsafe { POOL.join(|| count.agg_sum(groups), || sum.agg_sum(groups)) };
                         let agg_s = &agg_s / &agg_count;

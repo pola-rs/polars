@@ -586,7 +586,7 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
 }
 
 #[cfg(feature = "dtype-struct")]
-impl StructChunked {
+impl StructChunked2 {
     pub(crate) fn arg_sort(&self, options: SortOptions) -> IdxCa {
         let bin = _get_rows_encoded_ca(
             self.name(),
@@ -595,6 +595,23 @@ impl StructChunked {
             &[options.nulls_last],
         )
         .unwrap();
+        bin.arg_sort(Default::default())
+    }
+}
+
+#[cfg(feature = "dtype-struct")]
+impl ChunkSort<StructType> for StructChunked2 {
+    fn sort_with(&self, options: SortOptions) -> ChunkedArray<StructType> {
+        let idx = self.arg_sort(options);
+        unsafe { self.take_unchecked(&idx) }
+    }
+
+    fn sort(&self, descending: bool) -> ChunkedArray<StructType> {
+        self.sort_with(SortOptions::new().with_order_descending(descending))
+    }
+
+    fn arg_sort(&self, options: SortOptions) -> IdxCa {
+        let bin = self.get_row_encoded(options).unwrap();
         bin.arg_sort(Default::default())
     }
 }
@@ -687,16 +704,18 @@ pub(crate) fn convert_sort_column_multi_sort(s: &Series) -> PolarsResult<Series>
         Categorical(_, _) | Enum(_, _) => s.rechunk(),
         Binary | Boolean => s.clone(),
         BinaryOffset => s.clone(),
-        String => s.cast(&Binary).unwrap(),
+        String => s.str().unwrap().as_binary().into_series(),
         #[cfg(feature = "dtype-struct")]
         Struct(_) => {
             let ca = s.struct_().unwrap();
             let new_fields = ca
-                .fields()
+                .fields_as_series()
                 .iter()
                 .map(convert_sort_column_multi_sort)
                 .collect::<PolarsResult<Vec<_>>>()?;
-            return StructChunked::new(ca.name(), &new_fields).map(|ca| ca.into_series());
+            let mut out = StructChunked2::from_series(ca.name(), &new_fields)?;
+            out.zip_outer_validity(ca);
+            out.into_series()
         },
         // we could fallback to default branch, but decimal is not numeric dtype for now, so explicit here
         #[cfg(feature = "dtype-decimal")]
