@@ -7,7 +7,6 @@ use std::path::PathBuf;
 mod serde;
 
 pub use exitable::PyInProcessQuery;
-use polars::io::cloud::CloudOptions;
 use polars::io::{HiveOptions, RowIndex};
 use polars::time::*;
 use polars_core::prelude::*;
@@ -159,9 +158,7 @@ impl PyLazyFrame {
                 Default::default()
             };
 
-            if retries > 0 {
-                cloud_options.max_retries = retries;
-            }
+            cloud_options = cloud_options.with_max_retries(retries);
 
             if let Some(file_cache_ttl) = file_cache_ttl {
                 cloud_options.file_cache_ttl = file_cache_ttl;
@@ -262,19 +259,21 @@ impl PyLazyFrame {
                 .ok_or_else(|| PyValueError::new_err("expected a path argument"))?
         };
 
-        let first_path_url = first_path.to_string_lossy();
-        let mut cloud_options = cloud_options
-            .map(|kv| parse_cloud_options(&first_path_url, kv))
-            .transpose()?;
-        if retries > 0 {
-            cloud_options =
-                cloud_options
-                    .or_else(|| Some(CloudOptions::default()))
-                    .map(|mut options| {
-                        options.max_retries = retries;
-                        options
-                    });
-        }
+        #[cfg(feature = "cloud")]
+        let cloud_options = {
+            let first_path_url = first_path.to_string_lossy();
+
+            let mut cloud_options = if let Some(opts) = cloud_options {
+                parse_cloud_options(&first_path_url, opts)?
+            } else {
+                Default::default()
+            };
+
+            cloud_options = cloud_options.with_max_retries(retries);
+
+            Some(cloud_options)
+        };
+
         let row_index = row_index.map(|(name, offset)| RowIndex {
             name: Arc::from(name.as_str()),
             offset,
@@ -349,9 +348,7 @@ impl PyLazyFrame {
                 Default::default()
             };
 
-            if retries > 0 {
-                cloud_options.max_retries = retries;
-            }
+            cloud_options = cloud_options.with_max_retries(retries);
 
             if let Some(file_cache_ttl) = file_cache_ttl {
                 cloud_options.file_cache_ttl = file_cache_ttl;
