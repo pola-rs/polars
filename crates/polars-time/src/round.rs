@@ -1,5 +1,5 @@
 use arrow::legacy::time_zone::Tz;
-use arrow::temporal_conversions::{MILLISECONDS, SECONDS_IN_DAY};
+use arrow::temporal_conversions::MILLISECONDS_IN_DAY;
 use polars_core::prelude::arity::broadcast_try_binary_elementwise;
 use polars_core::prelude::*;
 use polars_utils::cache::FastFixedCache;
@@ -14,29 +14,79 @@ pub trait PolarsRound {
 
 impl PolarsRound for DatetimeChunked {
     fn round(&self, every: &StringChunked, tz: Option<&Tz>) -> PolarsResult<Self> {
-        let mut duration_cache = FastFixedCache::new((every.len() as f64).sqrt() as usize);
+        let time_zone = self.time_zone();
         let offset = Duration::new(0);
-        let out = broadcast_try_binary_elementwise(self, every, |opt_t, opt_every| {
-            match (opt_t, opt_every) {
-                (Some(timestamp), Some(every)) => {
-                    let every =
-                        *duration_cache.get_or_insert_with(every, |every| Duration::parse(every));
 
-                    if every.negative {
-                        polars_bail!(ComputeError: "Cannot round a Datetime to a negative duration")
-                    }
-
-                    let w = Window::new(every, every, offset);
-
-                    let func = match self.time_unit() {
-                        TimeUnit::Nanoseconds => Window::round_ns,
-                        TimeUnit::Microseconds => Window::round_us,
-                        TimeUnit::Milliseconds => Window::round_ms,
+        // Let's check if we can use a fastpath...
+        if every.len() == 1 {
+            if let Some(every) = every.get(0) {
+                let every_parsed = Duration::parse(every);
+                if every_parsed.negative {
+                    polars_bail!(ComputeError: "cannot round a Datetime to a negative duration")
+                }
+                if (time_zone.is_none() || time_zone.as_deref() == Some("UTC"))
+                    && (every_parsed.months() == 0 && every_parsed.weeks() == 0)
+                {
+                    // ... yes we can! Weeks, months, and time zones require extra logic.
+                    // But in this simple case, it's just simple integer arithmetic.
+                    let every = match self.time_unit() {
+                        TimeUnit::Milliseconds => every_parsed.duration_ms(),
+                        TimeUnit::Microseconds => every_parsed.duration_us(),
+                        TimeUnit::Nanoseconds => every_parsed.duration_ns(),
                     };
-                    func(&w, timestamp, tz).map(Some)
-                },
-                _ => Ok(None),
+                    return Ok(self
+                        .apply_values(|t| {
+                            // Round half-way values away from zero
+                            let half_away = t.signum() * every / 2;
+                            t + half_away - (t + half_away) % every
+                        })
+                        .into_datetime(self.time_unit(), time_zone.clone()));
+                } else {
+                    let w = Window::new(every_parsed, every_parsed, offset);
+                    let out = match self.time_unit() {
+                        TimeUnit::Milliseconds => {
+                            self.try_apply_nonnull_values_generic(|t| w.round_ms(t, tz))
+                        },
+                        TimeUnit::Microseconds => {
+                            self.try_apply_nonnull_values_generic(|t| w.round_us(t, tz))
+                        },
+                        TimeUnit::Nanoseconds => {
+                            self.try_apply_nonnull_values_generic(|t| w.round_ns(t, tz))
+                        },
+                    };
+                    return Ok(out?.into_datetime(self.time_unit(), self.time_zone().clone()));
+                }
+            } else {
+                return Ok(Int64Chunked::full_null(self.name(), self.len())
+                    .into_datetime(self.time_unit(), self.time_zone().clone()));
             }
+        }
+
+        // A sqrt(n) cache is not too small, not too large.
+        let mut duration_cache = FastFixedCache::new((every.len() as f64).sqrt() as usize);
+
+        let func = match self.time_unit() {
+            TimeUnit::Nanoseconds => Window::round_ns,
+            TimeUnit::Microseconds => Window::round_us,
+            TimeUnit::Milliseconds => Window::round_ms,
+        };
+
+        let out = broadcast_try_binary_elementwise(self, every, |opt_timestamp, opt_every| match (
+            opt_timestamp,
+            opt_every,
+        ) {
+            (Some(timestamp), Some(every)) => {
+                let every =
+                    *duration_cache.get_or_insert_with(every, |every| Duration::parse(every));
+
+                if every.negative {
+                    polars_bail!(ComputeError: "cannot round a Datetime to a negative duration")
+                }
+
+                let w = Window::new(every, every, offset);
+                func(&w, timestamp, tz).map(Some)
+            },
+            _ => Ok(None),
         });
         Ok(out?.into_datetime(self.time_unit(), self.time_zone().clone()))
     }
@@ -44,26 +94,47 @@ impl PolarsRound for DatetimeChunked {
 
 impl PolarsRound for DateChunked {
     fn round(&self, every: &StringChunked, _tz: Option<&Tz>) -> PolarsResult<Self> {
-        let mut duration_cache = FastFixedCache::new((every.len() as f64).sqrt() as usize);
         let offset = Duration::new(0);
-        const MSECS_IN_DAY: i64 = MILLISECONDS * SECONDS_IN_DAY;
-        let out = broadcast_try_binary_elementwise(&self.0, every, |opt_t, opt_every| {
-            match (opt_t, opt_every) {
-                (Some(t), Some(every)) => {
-                    let every =
-                        *duration_cache.get_or_insert_with(every, |every| Duration::parse(every));
+        let out = match every.len() {
+            1 => {
+                if let Some(every) = every.get(0) {
+                    let every = Duration::parse(every);
                     if every.negative {
-                        polars_bail!(ComputeError: "Cannot round a Date to a negative duration")
+                        polars_bail!(ComputeError: "cannot round a Date to a negative duration")
                     }
-
                     let w = Window::new(every, every, offset);
-                    Ok(Some(
-                        (w.round_ms(MSECS_IN_DAY * t as i64, None)? / MSECS_IN_DAY) as i32,
-                    ))
-                },
-                _ => Ok(None),
-            }
-        });
+                    self.try_apply_nonnull_values_generic(|t| {
+                        Ok(
+                            (w.round_ms(MILLISECONDS_IN_DAY * t as i64, None)?
+                                / MILLISECONDS_IN_DAY) as i32,
+                        )
+                    })
+                } else {
+                    Ok(Int32Chunked::full_null(self.name(), self.len()))
+                }
+            },
+            _ => broadcast_try_binary_elementwise(self, every, |opt_t, opt_every| {
+                // A sqrt(n) cache is not too small, not too large.
+                let mut duration_cache = FastFixedCache::new((every.len() as f64).sqrt() as usize);
+                match (opt_t, opt_every) {
+                    (Some(t), Some(every)) => {
+                        let every = *duration_cache
+                            .get_or_insert_with(every, |every| Duration::parse(every));
+
+                        if every.negative {
+                            polars_bail!(ComputeError: "cannot round a Date to a negative duration")
+                        }
+
+                        let w = Window::new(every, every, offset);
+                        Ok(Some(
+                            (w.round_ms(MILLISECONDS_IN_DAY * t as i64, None)?
+                                / MILLISECONDS_IN_DAY) as i32,
+                        ))
+                    },
+                    _ => Ok(None),
+                }
+            }),
+        };
         Ok(out?.into_date())
     }
 }
