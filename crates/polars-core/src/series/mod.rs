@@ -817,7 +817,7 @@ impl Series {
                 let val = self.mean().map(|m| m as f32);
                 Scalar::new(self.dtype().clone(), val.into())
             },
-            dt if dt.is_numeric() || matches!(dt, DataType::Boolean) => {
+            dt if dt.is_numeric() || dt.is_decimal() || dt.is_bool() => {
                 let val = self.mean();
                 Scalar::new(DataType::Float64, val.into())
             },
