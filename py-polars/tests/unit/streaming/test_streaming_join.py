@@ -177,9 +177,7 @@ def test_join_null_matches(streaming: bool) -> None:
         {"idx_a": [0, 1, 2], "a": [None, 1, 2], "idx_b": [None, 2, 1]}
     )
     assert_frame_equal(
-        df_a.join(df_b, on="a", how="left").collect(streaming=streaming),
-        expected,
-        check_row_order=False,
+        df_a.join(df_b, on="a", how="left").collect(streaming=streaming), expected
     )
     # Full outer
     expected = pl.DataFrame(

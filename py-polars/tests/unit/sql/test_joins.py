@@ -435,7 +435,7 @@ def test_natural_joins_01() -> None:
 
 
 @pytest.mark.parametrize(
-    ("cols_constraint", "expected"),
+    ("cols_constraint", "expect_data"),
     [
         (">= 5", [(8, 8, 6)]),
         ("< 7", [(5, 4, 4)]),
@@ -465,6 +465,4 @@ def test_natural_joins_02(cols_constraint: str, expect_data: list[tuple[int]]) -
     ).collect()
 
     expected = pl.DataFrame(expect_data, schema=actual.columns, orient="row")
-    expected = expected.sort(by=expected.columns)
-    actual = actual.sort(by=actual.columns)
-    assert_frame_equal(actual, expected)
+    assert_frame_equal(actual, expected, check_row_order=False)
