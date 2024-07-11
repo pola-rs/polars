@@ -729,3 +729,15 @@ def test_hive_write_dates(tmp_path: Path) -> None:
         lf.collect(),
         df.with_columns(pl.col("date1", "date2").cast(pl.String)),
     )
+
+
+@pytest.mark.write_disk()
+def test_hive_predicate_dates_14712(
+    tmp_path: Path, monkeypatch: Any, capfd: Any
+) -> None:
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    pl.DataFrame({"a": [datetime(2024, 1, 1)]}).write_parquet_partitioned(
+        tmp_path, ["a"]
+    )
+    pl.scan_parquet(tmp_path).filter(pl.col("a") != datetime(2024, 1, 1)).collect()
+    assert "hive partitioning: skipped 1 files" in capfd.readouterr().err
