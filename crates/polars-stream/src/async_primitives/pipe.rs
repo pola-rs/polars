@@ -225,6 +225,7 @@ impl<T: Send> Sender<T> {
         }
     }
 
+    #[allow(unused)]
     pub fn try_send(&mut self, value: T) -> Result<(), SendError<T>> {
         unsafe { self.pipe.try_send(value) }
     }
@@ -263,6 +264,7 @@ impl<T: Send> Receiver<T> {
         }
     }
 
+    #[allow(unused)]
     pub fn try_recv(&mut self) -> Result<T, RecvError> {
         unsafe { self.pipe.try_recv() }
     }
