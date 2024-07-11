@@ -200,14 +200,12 @@ fn read_config(
         let content = std::str::from_utf8(buf.as_ref()).ok()?;
 
         for (pattern, key) in keys.iter() {
-            let local = std::mem::take(builder);
-
             if builder.get_config_value(key).is_none() {
                 let reg = Regex::new(pattern).unwrap();
                 let cap = reg.captures(content)?;
                 let m = cap.get(1)?;
                 let parsed = m.as_str();
-                *builder = local.with_config(*key, parsed)
+                *builder = std::mem::take(builder).with_config(*key, parsed);
             }
         }
     }
@@ -241,40 +239,26 @@ impl CloudOptions {
             }
         }
 
-        if builder
-            .get_config_value(&AmazonS3ConfigKey::Region)
-            .is_none()
-        {
-            read_config(
-                &mut builder,
-                &[(
-                    Path::new("~/.aws/config"),
-                    &[("region = (.*)\n", AmazonS3ConfigKey::Region)],
-                )],
-            );
-        }
-
-        if builder
-            .get_config_value(&AmazonS3ConfigKey::AccessKeyId)
-            .is_none()
-            || builder
-                .get_config_value(&AmazonS3ConfigKey::SecretAccessKey)
-                .is_none()
-        {
-            read_config(
-                &mut builder,
-                &[(
-                    Path::new("~/.aws/credentials"),
-                    &[
-                        ("aws_access_key_id = (.*)\n", AmazonS3ConfigKey::AccessKeyId),
-                        (
-                            "aws_secret_access_key = (.*)\n",
-                            AmazonS3ConfigKey::SecretAccessKey,
-                        ),
-                    ],
-                )],
-            );
-        }
+        read_config(
+            &mut builder,
+            &[(
+                Path::new("~/.aws/config"),
+                &[("region = (.*)\n", AmazonS3ConfigKey::Region)],
+            )],
+        );
+        read_config(
+            &mut builder,
+            &[(
+                Path::new("~/.aws/credentials"),
+                &[
+                    ("aws_access_key_id = (.*)\n", AmazonS3ConfigKey::AccessKeyId),
+                    (
+                        "aws_secret_access_key = (.*)\n",
+                        AmazonS3ConfigKey::SecretAccessKey,
+                    ),
+                ],
+            )],
+        );
 
         if builder
             .get_config_value(&AmazonS3ConfigKey::DefaultRegion)
