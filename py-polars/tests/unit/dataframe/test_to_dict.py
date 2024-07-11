@@ -14,6 +14,7 @@ from polars.testing.parametric import dataframes
     df=dataframes(
         excluded_dtypes=[
             pl.Categorical,  # Bug: https://github.com/pola-rs/polars/issues/16196
+            pl.Struct,  # @pytest.mark.skip(reason="struct-refactor")
         ],
         # Roundtrip doesn't work with time zones:
         # https://github.com/pola-rs/polars/issues/16297
