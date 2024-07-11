@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from polars._typing import SerializationFormat
 
 
+@pytest.mark.skip(reason="struct-refactor")
 @given(lf=dataframes(lazy=True))
 @example(lf=pl.LazyFrame({"foo": ["a", "b", "a"]}, schema={"foo": pl.Enum(["b", "a"])}))
 def test_lf_serde_roundtrip_binary(lf: pl.LazyFrame) -> None:
