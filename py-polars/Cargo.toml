@@ -44,6 +44,7 @@ workspace = true
 features = [
   "abs",
   "approx_unique",
+  "array_any_all",
   "arg_where",
   "business",
   "concat_str",
@@ -63,6 +64,7 @@ features = [
   "ewma",
   "ewma_by",
   "fmt",
+  "fused",
   "interpolate",
   "interpolate_by",
   "is_first_distinct",

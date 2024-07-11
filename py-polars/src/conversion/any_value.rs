@@ -2,7 +2,9 @@ use std::borrow::Cow;
 
 #[cfg(feature = "object")]
 use polars::chunked_array::object::PolarsObjectSafe;
-use polars::datatypes::{DataType, Field, OwnedObject, PlHashMap, TimeUnit};
+#[cfg(feature = "object")]
+use polars::datatypes::OwnedObject;
+use polars::datatypes::{DataType, Field, PlHashMap, TimeUnit};
 use polars::prelude::{AnyValue, Series};
 use polars_core::export::chrono::{NaiveDate, NaiveDateTime, NaiveTime, TimeDelta, Timelike};
 use polars_core::utils::any_values_to_supertype_and_n_dtypes;
