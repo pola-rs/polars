@@ -132,6 +132,10 @@ pub fn expand_paths(
                                      cloud_options: Option<&CloudOptions>|
              -> PolarsResult<(usize, Vec<PathBuf>)> {
                 crate::pl_async::get_runtime().block_on_potential_spawn(async {
+                    if path.starts_with("http") {
+                        return Ok((0, vec![PathBuf::from(path)]));
+                    }
+
                     let (cloud_location, store) =
                         crate::cloud::build_object_store(path, cloud_options).await?;
 

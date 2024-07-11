@@ -200,14 +200,12 @@ fn read_config(
         let content = std::str::from_utf8(buf.as_ref()).ok()?;
 
         for (pattern, key) in keys.iter() {
-            let local = std::mem::take(builder);
-
             if builder.get_config_value(key).is_none() {
                 let reg = Regex::new(pattern).unwrap();
                 let cap = reg.captures(content)?;
                 let m = cap.get(1)?;
                 let parsed = m.as_str();
-                *builder = local.with_config(*key, parsed)
+                *builder = std::mem::take(builder).with_config(*key, parsed);
             }
         }
     }

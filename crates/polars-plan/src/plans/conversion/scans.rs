@@ -156,7 +156,8 @@ pub(super) fn csv_file_info(
                     paths
                         .iter()
                         .map(|path| Arc::from(path.to_str().unwrap()))
-                        .collect::<Box<[_]>>(),
+                        .collect::<Vec<_>>()
+                        .as_slice(),
                     cloud_options,
                 )?)
             } else {
