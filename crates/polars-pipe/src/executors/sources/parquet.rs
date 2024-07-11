@@ -33,6 +33,7 @@ pub struct ParquetSource {
     processed_paths: usize,
     iter: Range<usize>,
     paths: Arc<[PathBuf]>,
+    total_files_read: usize,
     options: ParquetOptions,
     file_options: FileScanOptions,
     #[allow(dead_code)]
@@ -44,6 +45,7 @@ pub struct ParquetSource {
     run_async: bool,
     prefetch_size: usize,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
+    rows_left_to_read: usize,
 }
 
 impl ParquetSource {
@@ -145,7 +147,11 @@ impl ParquetSource {
     }
 
     #[cfg(feature = "async")]
-    async fn init_reader_async(&self, index: usize) -> PolarsResult<BatchedParquetReader> {
+    async fn init_reader_async(
+        &self,
+        index: usize,
+        n_rows: usize,
+    ) -> PolarsResult<BatchedParquetReader> {
         let metadata = self.metadata.clone();
         let predicate = self.predicate.clone();
         let cloud_options = self.cloud_options.clone();
@@ -156,7 +162,7 @@ impl ParquetSource {
             let uri = path.to_string_lossy();
             ParquetAsyncReader::from_uri(&uri, cloud_options.as_ref(), metadata)
                 .await?
-                .with_n_rows(file_options.n_rows)
+                .with_n_rows(Some(n_rows))
                 .with_row_index(file_options.row_index)
                 .with_projection(projection)
                 .check_schema(
@@ -175,6 +181,30 @@ impl ParquetSource {
                 .await?
         };
         Ok(batched_reader)
+    }
+
+    #[cfg(feature = "async")]
+    async fn num_rows_per_reader(&self, index: usize) -> PolarsResult<usize> {
+        let predicate = self.predicate.clone();
+        let metadata = self.metadata.clone();
+        let cloud_options = self.cloud_options.clone();
+        let (path, options, _file_options, projection, _chunk_size, hive_partitions) =
+            self.prepare_init_reader(index)?;
+
+        let mut reader = {
+            let uri = path.to_string_lossy();
+            ParquetAsyncReader::from_uri(&uri, cloud_options.as_ref(), metadata)
+                .await?
+                .with_projection(projection)
+                .with_predicate(predicate.clone())
+                .use_statistics(options.use_statistics)
+                .with_hive_partition_columns(hive_partitions)
+        };
+        if predicate.is_some() {
+            reader.num_rows_with_predicate().await
+        } else {
+            reader.num_rows().await
+        }
     }
 
     #[allow(unused_variables)]
@@ -199,6 +229,7 @@ impl ParquetSource {
             eprintln!("POLARS PREFETCH_SIZE: {}", prefetch_size)
         }
         let run_async = paths.first().map(is_cloud_url).unwrap_or(false) || config::force_async();
+        let rows_left_to_read = file_options.n_rows.unwrap_or(usize::MAX);
 
         let mut source = ParquetSource {
             batched_readers: VecDeque::new(),
@@ -208,6 +239,7 @@ impl ParquetSource {
             file_options,
             iter,
             paths,
+            total_files_read: 0,
             cloud_options,
             metadata,
             file_info,
@@ -216,6 +248,7 @@ impl ParquetSource {
             run_async,
             prefetch_size,
             predicate,
+            rows_left_to_read,
         };
         // Already start downloading when we deal with cloud urls.
         if run_async {
@@ -231,8 +264,9 @@ impl ParquetSource {
         //
         // It is important we do this for a reasonable batch size, that's why we start this when we
         // have just 2 readers left.
-        if self.batched_readers.len() <= 2 && self.file_options.n_rows.is_none()
-            || self.batched_readers.is_empty()
+        if self.batched_readers.is_empty()
+            && self.rows_left_to_read != 0
+            && self.total_files_read != self.paths.len()
         {
             let range = 0..self.prefetch_size - self.batched_readers.len();
 
@@ -246,7 +280,34 @@ impl ParquetSource {
                         .zip(&mut self.iter)
                         .map(|(_, index)| index)
                         .collect::<Vec<_>>();
-                    let init_iter = range.into_iter().map(|index| self.init_reader_async(index));
+
+                    let num_rows_to_read = range
+                        .clone()
+                        .into_iter()
+                        .map(|index| self.num_rows_per_reader(index));
+
+                    let num_rows_to_read = polars_io::pl_async::get_runtime().block_on(async {
+                        futures::future::try_join_all(num_rows_to_read).await
+                    })?;
+
+                    let num_rows_to_read = num_rows_to_read
+                        .into_iter()
+                        .zip(range)
+                        .map(|(rows_per_reader, index)| {
+                            self.total_files_read += 1;
+                            if self.rows_left_to_read == 0 {
+                                return (index, 0);
+                            }
+                            self.rows_left_to_read =
+                                self.rows_left_to_read.saturating_sub(rows_per_reader);
+                            (index, rows_per_reader)
+                        })
+                        .filter(|(_index, rows_per_reader)| *rows_per_reader != 0)
+                        .collect::<Vec<_>>();
+
+                    let init_iter = num_rows_to_read
+                        .into_iter()
+                        .map(|(index, num_rows)| self.init_reader_async(index, num_rows));
 
                     let batched_readers = polars_io::pl_async::get_runtime()
                         .block_on_potential_spawn(async {
@@ -272,7 +333,9 @@ impl Source for ParquetSource {
         self.prefetch_files()?;
 
         let Some(mut reader) = self.batched_readers.pop_front() else {
-            // If there was no new reader, we depleted all of them and are finished.
+            if self.total_files_read != self.paths.len() && self.rows_left_to_read != 0 {
+                return self.get_batches(_context);
+            }
             return Ok(SourceResult::Finished);
         };
 
@@ -281,10 +344,6 @@ impl Source for ParquetSource {
 
         Ok(match batches {
             None => {
-                if reader.limit_reached() {
-                    return Ok(SourceResult::Finished);
-                }
-
                 // reset the reader
                 self.init_next_reader()?;
                 return self.get_batches(_context);
