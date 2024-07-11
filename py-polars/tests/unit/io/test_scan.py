@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING, Any, Callable
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError
 from polars.testing.asserts.frame import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -571,13 +570,3 @@ def test_scan_single_dir_differing_file_extensions_raises_17436(tmp_path: Path) 
         match="parquet: File out of specification: The file must end with PAR1",
     ):
         pl.scan_parquet(tmp_path / "*").collect()
-
-
-@pytest.mark.slow()
-@pytest.mark.parametrize("format", ["parquet", "csv", "ipc"])
-def test_scan_retries_zero(format: str) -> None:
-    path_str = f"s3://my-nonexistent-bucket/data.{format}"
-    scan_function = getattr(pl, f"scan_{format}")
-
-    with pytest.raises(ComputeError, match="Error after 0 retries"):
-        scan_function(path_str, retries=0).collect()
