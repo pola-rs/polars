@@ -85,8 +85,14 @@ macro_rules! impl_compare {
     }};
 }
 
+#[cfg(feature = "dtype-struct")]
 fn raise_struct(_a: &StructChunked2, _b: &StructChunked2) -> PolarsResult<BooleanChunked> {
     polars_bail!(InvalidOperation: "order comparison not support for struct dtype")
+}
+
+#[cfg(not(feature = "dtype-struct"))]
+fn raise_struct(_a: &(), _b: &()) -> PolarsResult<BooleanChunked> {
+    unimplemented!()
 }
 
 fn validate_types(left: &DataType, right: &DataType) -> PolarsResult<()> {

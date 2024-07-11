@@ -287,7 +287,7 @@ impl StructChunked2 {
             .collect::<PolarsResult<Vec<_>>>()?;
         Self::from_series(self.name(), &fields).map(|mut ca| {
             if self.null_count > 0 {
-                // SAFETY: we don't change types/ lenghts.
+                // SAFETY: we don't change types/ lengths.
                 unsafe {
                     for (new, this) in ca.downcast_iter_mut().zip(self.downcast_iter()) {
                         new.set_validity(this.validity().cloned())
