@@ -5,7 +5,7 @@ use polars_io::cloud::CloudOptions;
 use polars_io::csv::read::{
     infer_file_schema, CommentPrefix, CsvEncoding, CsvParseOptions, CsvReadOptions, NullValues,
 };
-use polars_io::utils::get_reader_bytes;
+use polars_io::utils::{expand_paths, get_reader_bytes};
 use polars_io::RowIndex;
 
 use crate::prelude::*;
@@ -216,7 +216,9 @@ impl LazyCsvReader {
     where
         F: Fn(Schema) -> PolarsResult<Schema>,
     {
-        let paths = self.expand_paths_default()?;
+        // TODO: This should be done when converting to the IR
+        let paths = expand_paths(self.paths(), self.glob(), self.cloud_options())?;
+
         let Some(path) = paths.first() else {
             polars_bail!(ComputeError: "no paths specified for this reader");
         };
@@ -261,13 +263,15 @@ impl LazyCsvReader {
 impl LazyFileListReader for LazyCsvReader {
     /// Get the final [LazyFrame].
     fn finish(self) -> PolarsResult<LazyFrame> {
-        // `expand_paths` respects globs
-        let paths = self.expand_paths_default()?;
-
-        let mut lf: LazyFrame =
-            DslBuilder::scan_csv(paths, self.read_options, self.cache, self.cloud_options)?
-                .build()
-                .into();
+        let mut lf: LazyFrame = DslBuilder::scan_csv(
+            self.paths,
+            self.read_options,
+            self.cache,
+            self.cloud_options,
+            self.glob,
+        )?
+        .build()
+        .into();
         lf.opt_state.file_caching = true;
         Ok(lf)
     }

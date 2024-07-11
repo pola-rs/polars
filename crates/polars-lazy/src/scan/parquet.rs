@@ -3,7 +3,6 @@ use std::path::{Path, PathBuf};
 use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
 use polars_io::parquet::read::ParallelStrategy;
-use polars_io::utils::expanded_from_single_directory;
 use polars_io::{HiveOptions, RowIndex};
 
 use crate::prelude::*;
@@ -57,19 +56,11 @@ impl LazyParquetReader {
 
 impl LazyFileListReader for LazyParquetReader {
     /// Get the final [LazyFrame].
-    fn finish(mut self) -> PolarsResult<LazyFrame> {
-        let (paths, hive_start_idx) =
-            self.expand_paths(self.args.hive_options.enabled.unwrap_or(false))?;
-        self.args.hive_options.enabled =
-            Some(self.args.hive_options.enabled.unwrap_or_else(|| {
-                expanded_from_single_directory(self.paths.as_ref(), paths.as_ref())
-            }));
-        self.args.hive_options.hive_start_idx = hive_start_idx;
-
+    fn finish(self) -> PolarsResult<LazyFrame> {
         let row_index = self.args.row_index;
 
         let mut lf: LazyFrame = DslBuilder::scan_parquet(
-            paths,
+            self.paths,
             self.args.n_rows,
             self.args.cache,
             self.args.parallel,
@@ -79,11 +70,12 @@ impl LazyFileListReader for LazyParquetReader {
             self.args.cloud_options,
             self.args.use_statistics,
             self.args.hive_options,
+            self.args.glob,
         )?
         .build()
         .into();
 
-        // it is a bit hacky, but this row_index function updates the schema
+        // It's a bit hacky, but this row_index function updates the schema.
         if let Some(row_index) = row_index {
             lf = lf.with_row_index(&row_index.name, Some(row_index.offset))
         }

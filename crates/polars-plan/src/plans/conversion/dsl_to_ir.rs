@@ -1,7 +1,16 @@
+#[cfg(any(feature = "ipc", feature = "parquet"))]
+use std::path::PathBuf;
+
 use arrow::datatypes::ArrowSchemaRef;
 use either::Either;
 use expr_expansion::{is_regex_projection, rewrite_projections};
 use hive::{hive_partitions_from_paths, HivePartitions};
+#[cfg(any(feature = "ipc", feature = "parquet"))]
+use polars_io::cloud::CloudOptions;
+#[cfg(any(feature = "csv", feature = "json"))]
+use polars_io::utils::expand_paths;
+#[cfg(any(feature = "ipc", feature = "parquet"))]
+use polars_io::utils::{expand_paths_hive, expanded_from_single_directory};
 
 use super::stack_opt::ConversionOptimizer;
 use super::*;
@@ -90,6 +99,24 @@ pub fn to_alp_impl(
             mut file_options,
             mut scan_type,
         } => {
+            let paths = match &scan_type {
+                #[cfg(feature = "parquet")]
+                FileScan::Parquet {
+                    ref cloud_options, ..
+                } => expand_paths_with_hive_update(paths, &mut file_options, cloud_options)?,
+                #[cfg(feature = "ipc")]
+                FileScan::Ipc {
+                    ref cloud_options, ..
+                } => expand_paths_with_hive_update(paths, &mut file_options, cloud_options)?,
+                #[cfg(feature = "csv")]
+                FileScan::Csv {
+                    ref cloud_options, ..
+                } => expand_paths(&paths, file_options.glob, cloud_options.as_ref())?,
+                #[cfg(feature = "json")]
+                FileScan::NDJson { .. } => expand_paths(&paths, file_options.glob, None)?,
+                FileScan::Anonymous { .. } => paths,
+            };
+
             let mut file_info = if let Some(file_info) = file_info {
                 file_info
             } else {
@@ -660,6 +687,28 @@ pub fn to_alp_impl(
         },
     };
     Ok(lp_arena.add(v))
+}
+
+#[cfg(any(feature = "ipc", feature = "parquet"))]
+fn expand_paths_with_hive_update(
+    paths: Arc<[PathBuf]>,
+    file_options: &mut FileScanOptions,
+    cloud_options: &Option<CloudOptions>,
+) -> PolarsResult<Arc<[PathBuf]>> {
+    let hive_enabled = file_options.hive_options.enabled;
+    let (expanded_paths, hive_start_idx) = expand_paths_hive(
+        &paths,
+        file_options.glob,
+        cloud_options.as_ref(),
+        hive_enabled.unwrap_or(false),
+    )?;
+    let inferred_hive_enabled = hive_enabled
+        .unwrap_or_else(|| expanded_from_single_directory(paths.as_ref(), expanded_paths.as_ref()));
+
+    file_options.hive_options.enabled = Some(inferred_hive_enabled);
+    file_options.hive_options.hive_start_idx = hive_start_idx;
+
+    Ok(expanded_paths)
 }
 
 fn expand_filter(predicate: Expr, input: Node, lp_arena: &Arena<IR>) -> PolarsResult<Expr> {

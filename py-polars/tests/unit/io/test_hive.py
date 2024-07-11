@@ -395,7 +395,9 @@ def test_hive_partition_directory_scan(
         pl.exceptions.InvalidOperationError,
         match="attempted to read from different directory levels with hive partitioning enabled:",
     ):
-        scan([tmp_path / "a=1", tmp_path / "a=22/b=1"], hive_partitioning=True)
+        scan(
+            [tmp_path / "a=1", tmp_path / "a=22/b=1"], hive_partitioning=True
+        ).collect()
 
     if glob:
         out = scan(tmp_path / "**/*.bin", hive_partitioning=True).collect()
