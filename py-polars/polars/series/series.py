@@ -4142,7 +4142,8 @@ class Series:
         allow_copy: bool = True,
         use_pyarrow: bool | None = None,
         zero_copy_only: bool | None = None,
-    ) -> np.ndarray[Any, Any]:
+        masked: bool = False,
+    ) -> np.ndarray[Any, Any] | np.ma.MaskedArray[Any, Any]:
         """
         Convert this Series to a NumPy ndarray.
 
@@ -4182,6 +4183,9 @@ class Series:
             .. deprecated:: 0.20.10
                 Use the `allow_copy` parameter instead, which is the inverse of this
                 one.
+        masked
+            Flag used to determine whether to produce a numpy masked array rather than a
+            a raw array. More info about numpy masked arrays `here <https://numpy.org/doc/stable/reference/maskedarray.generic.html>`_
 
         Examples
         --------
@@ -4253,7 +4257,7 @@ class Series:
                 zero_copy_only=not allow_copy, writable=writable
             )
 
-        return self._s.to_numpy(writable=writable, allow_copy=allow_copy)
+        return self._s.to_numpy(writable=writable, allow_copy=allow_copy, masked=masked)
 
     @unstable()
     def to_jax(self, device: jax.Device | str | None = None) -> jax.Array:

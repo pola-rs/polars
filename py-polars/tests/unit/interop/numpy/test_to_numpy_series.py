@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
+import numpy.ma as ma
 import pytest
 from hypothesis import given, settings
 from numpy.testing import assert_array_equal
@@ -15,6 +16,7 @@ from polars.testing.parametric import series
 
 if TYPE_CHECKING:
     import numpy.typing as npt
+    from numpy.ma import MaskedArray
 
 
 def assert_zero_copy(s: pl.Series, arr: np.ndarray[Any, Any]) -> None:
@@ -461,3 +463,11 @@ def test_to_numpy2(
         # As Null values can't be encoded natively in a numpy array,
         # this array will never be a view.
         assert np_array_with_missing_values.flags.writeable == writable
+
+
+def test_to_masked_numpy_array() -> None:
+    values = [1, 2, 3, 4]
+    s = pl.Series(values)
+    expected: MaskedArray[Any, Any] = ma.masked_array(np.array(values), [0, 0, 0, 0])  # type:ignore[no-untyped-call]
+    result = s.to_numpy(masked=True)
+    assert_array_equal(result, expected)
