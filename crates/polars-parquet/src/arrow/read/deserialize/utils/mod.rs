@@ -1,5 +1,7 @@
 use std::collections::VecDeque;
 
+pub(crate) mod filter;
+
 use arrow::array::{BinaryArray, MutableBinaryViewArray, View};
 use arrow::bitmap::utils::BitmapIter;
 use arrow::bitmap::MutableBitmap;
@@ -246,7 +248,7 @@ impl<'a> OptionalPageValidity<'a> {
                 .unwrap_or_default()
     }
 
-    fn next_limited(&mut self, limit: usize) -> Option<FilteredHybridEncoded<'a>> {
+    pub fn next_limited(&mut self, limit: usize) -> Option<FilteredHybridEncoded<'a>> {
         let (run, offset) = if let Some((run, offset)) = self.current {
             (run, offset)
         } else {

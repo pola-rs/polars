@@ -43,6 +43,25 @@ impl<'a> FilteredHybridEncoded<'a> {
         }
     }
 
+    #[inline]
+    pub fn count_ones(self) -> usize {
+        match self {
+            FilteredHybridEncoded::Bitmap {
+                values,
+                offset,
+                length,
+            } => is_set_count(values, offset, length),
+            FilteredHybridEncoded::Repeated { is_set, length } => {
+                if is_set {
+                    length
+                } else {
+                    0
+                }
+            },
+            FilteredHybridEncoded::Skipped(_) => 0,
+        }
+    }
+
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.len() == 0

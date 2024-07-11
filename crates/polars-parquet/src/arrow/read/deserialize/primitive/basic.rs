@@ -6,40 +6,17 @@ use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
 use polars_error::PolarsResult;
 
-use super::super::utils::{
-    get_selected_rows, FilteredOptionalPageValidity, MaybeNext, OptionalPageValidity,
-};
+use super::super::utils::{MaybeNext, OptionalPageValidity};
 use super::super::{utils, PagesIter};
-use crate::parquet::deserialize::SliceFilteredIter;
 use crate::parquet::encoding::hybrid_rle::DictionaryTranslator;
 use crate::parquet::encoding::{byte_stream_split, hybrid_rle, Encoding};
+use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
 use crate::parquet::types::{decode, NativeType as ParquetNativeType};
-use crate::read::deserialize::utils::TranslatedHybridRle;
-
-#[derive(Debug)]
-pub(super) struct FilteredRequiredValues<'a> {
-    values: SliceFilteredIter<std::slice::ChunksExact<'a, u8>>,
-}
-
-impl<'a> FilteredRequiredValues<'a> {
-    pub fn try_new<P: ParquetNativeType>(page: &'a DataPage) -> PolarsResult<Self> {
-        let values = split_buffer(page)?.values;
-        assert_eq!(values.len() % std::mem::size_of::<P>(), 0);
-
-        let values = values.chunks_exact(std::mem::size_of::<P>());
-
-        let rows = get_selected_rows(page);
-        let values = SliceFilteredIter::new(values, rows);
-
-        Ok(Self { values })
-    }
-
-    #[inline]
-    pub fn len(&self) -> usize {
-        self.values.size_hint().0
-    }
-}
+use crate::read::deserialize::utils::filter::{
+    extend_from_state_with_opt_filter, Filter, SkipInPlace,
+};
+use crate::read::deserialize::utils::{PageState, TranslatedHybridRle};
 
 #[derive(Debug)]
 pub(super) struct Values<'a> {
@@ -80,36 +57,66 @@ impl<'a, T: NativeType> ValuesDictionary<'a, T> {
     }
 }
 
-// The state of a `DataPage` of `Primitive` parquet primitive type
 #[derive(Debug)]
-pub(super) enum State<'a, T>
-where
-    T: NativeType,
-{
-    Optional(OptionalPageValidity<'a>, Values<'a>),
-    Required(Values<'a>),
-    RequiredDictionary(ValuesDictionary<'a, T>),
-    OptionalDictionary(OptionalPageValidity<'a>, ValuesDictionary<'a, T>),
-    FilteredRequired(FilteredRequiredValues<'a>),
-    FilteredOptional(FilteredOptionalPageValidity<'a>, Values<'a>),
-    RequiredByteStreamSplit(byte_stream_split::Decoder<'a>),
-    OptionalByteStreamSplit(OptionalPageValidity<'a>, byte_stream_split::Decoder<'a>),
+pub(super) struct State<'a, T: NativeType> {
+    pub page_validity: Option<OptionalPageValidity<'a>>,
+    pub translation: StateTranslation<'a, T>,
+    pub filter: Option<Filter<'a>>,
 }
 
-impl<'a, T> utils::PageState<'a> for State<'a, T>
-where
-    T: NativeType,
-{
+#[allow(clippy::large_enum_variant)]
+#[derive(Debug)]
+pub(super) enum StateTranslation<'a, T: NativeType> {
+    Unit(Values<'a>),
+    Dictionary(ValuesDictionary<'a, T>),
+    ByteStreamSplit(byte_stream_split::Decoder<'a>),
+}
+
+impl<'a, T: NativeType> SkipInPlace for State<'a, T> {
+    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
+        if n == 0 {
+            return Ok(());
+        }
+
+        let mut num_valid = 0;
+
+        if let Some(page_validity) = self.page_validity.as_mut() {
+            let mut n = n;
+            while n > 0 {
+                let Some(next) = page_validity.next_limited(n) else {
+                    break;
+                };
+
+                num_valid += next.count_ones();
+                n -= next.len();
+            }
+        }
+
+        // @Q: Do we need to do the same we did for Unit for Dictionary and ByteStreamSplit as
+        // well?
+        //
+        // We just throw a `not_implemented` this in `build_state` for now.
+        match &mut self.translation {
+            StateTranslation::Unit(t) if self.page_validity.is_some() => {
+                if num_valid > 0 {
+                    _ = t.values.by_ref().nth(num_valid - 1);
+                }
+            },
+            StateTranslation::Unit(t) => _ = t.values.by_ref().nth(n - 1),
+            StateTranslation::Dictionary(t) => t.values.skip_in_place(n)?,
+            StateTranslation::ByteStreamSplit(t) => _ = t.iter_converted(|_| ()).nth(n - 1),
+        }
+
+        Ok(())
+    }
+}
+
+impl<'a, T: NativeType> PageState<'a> for State<'a, T> {
     fn len(&self) -> usize {
-        match self {
-            State::Optional(optional, _) => optional.len(),
-            State::Required(values) => values.len(),
-            State::RequiredDictionary(values) => values.len(),
-            State::OptionalDictionary(optional, _) => optional.len(),
-            State::FilteredRequired(values) => values.len(),
-            State::FilteredOptional(optional, _) => optional.len(),
-            State::RequiredByteStreamSplit(decoder) => decoder.len(),
-            State::OptionalByteStreamSplit(optional, _) => optional.len(),
+        match &self.translation {
+            StateTranslation::Unit(n) => n.len(),
+            StateTranslation::Dictionary(n) => n.len(),
+            StateTranslation::ByteStreamSplit(n) => n.len(),
         }
     }
 }
@@ -166,46 +173,42 @@ where
         let is_optional = utils::page_is_optional(page);
         let is_filtered = utils::page_is_filtered(page);
 
-        match (page.encoding(), dict, is_optional, is_filtered) {
-            (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict), false, false) => {
-                ValuesDictionary::try_new(page, dict).map(State::RequiredDictionary)
-            },
-            (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict), true, false) => {
-                Ok(State::OptionalDictionary(
-                    OptionalPageValidity::try_new(page)?,
-                    ValuesDictionary::try_new(page, dict)?,
-                ))
-            },
-            (Encoding::Plain, _, true, false) => {
-                let validity = OptionalPageValidity::try_new(page)?;
-                let values = Values::try_new::<P>(page)?;
+        let page_validity = is_optional
+            .then(|| OptionalPageValidity::try_new(page))
+            .transpose()?;
+        let filter = is_filtered.then(|| Filter::new(page)).flatten();
 
-                Ok(State::Optional(validity, values))
+        let translation = match (page.encoding(), dict) {
+            (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict)) => {
+                StateTranslation::Dictionary(ValuesDictionary::try_new(page, dict)?)
             },
-            (Encoding::Plain, _, false, false) => Ok(State::Required(Values::try_new::<P>(page)?)),
-            (Encoding::Plain, _, false, true) => {
-                FilteredRequiredValues::try_new::<P>(page).map(State::FilteredRequired)
-            },
-            (Encoding::Plain, _, true, true) => Ok(State::FilteredOptional(
-                FilteredOptionalPageValidity::try_new(page)?,
-                Values::try_new::<P>(page)?,
-            )),
-            (Encoding::ByteStreamSplit, _, false, false) => {
+            (Encoding::Plain, _) => StateTranslation::Unit(Values::try_new::<P>(page)?),
+            (Encoding::ByteStreamSplit, _) => {
                 let values = split_buffer(page)?.values;
-                Ok(State::RequiredByteStreamSplit(
-                    byte_stream_split::Decoder::try_new(values, std::mem::size_of::<P>())?,
-                ))
+                StateTranslation::ByteStreamSplit(byte_stream_split::Decoder::try_new(
+                    values,
+                    std::mem::size_of::<P>(),
+                )?)
             },
-            (Encoding::ByteStreamSplit, _, true, false) => {
-                let validity = OptionalPageValidity::try_new(page)?;
-                let values = split_buffer(page)?.values;
-                Ok(State::OptionalByteStreamSplit(
-                    validity,
-                    byte_stream_split::Decoder::try_new(values, std::mem::size_of::<P>())?,
-                ))
-            },
-            _ => Err(utils::not_implemented(page)),
+            _ => return Err(utils::not_implemented(page)),
+        };
+
+        // @TODO: For now we just catch this here because I don't really now what to do with this.
+        // See Q in `skip_in_place`.
+        if is_filtered
+            && matches!(
+                translation,
+                StateTranslation::Dictionary(_) | StateTranslation::ByteStreamSplit(_)
+            )
+        {
+            return Err(utils::not_implemented(page));
         }
+
+        Ok(State {
+            page_validity,
+            filter,
+            translation,
+        })
     }
 
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState {
@@ -221,71 +224,66 @@ where
         decoded: &mut Self::DecodedState,
         remaining: usize,
     ) -> PolarsResult<()> {
-        let (values, validity) = decoded;
-        match state {
-            State::Optional(page_validity, page_values) => utils::extend_from_decoder(
-                validity,
-                page_validity,
-                Some(remaining),
-                values,
-                &mut page_values.values.by_ref().map(decode).map(self.op),
-            )?,
-            State::Required(page) => {
-                values.extend(
-                    page.values
-                        .by_ref()
-                        .map(decode)
-                        .map(self.op)
-                        .take(remaining),
-                );
-            },
-            State::OptionalDictionary(page_validity, page_values) => {
-                let translator = DictionaryTranslator(page_values.dict);
-                let translated_hybridrle =
-                    TranslatedHybridRle::new(&mut page_values.values, &translator);
+        let mut filter = state.filter.take();
 
-                utils::extend_from_decoder(
-                    validity,
-                    page_validity,
-                    Some(remaining),
-                    values,
-                    translated_hybridrle,
-                )?;
+        extend_from_state_with_opt_filter(
+            state,
+            &mut filter,
+            remaining,
+            |state: &mut Self::State, n| {
+                let (values, validity) = decoded;
+
+                match (&mut state.translation, &mut state.page_validity) {
+                    (StateTranslation::Unit(page), Some(page_validity)) => {
+                        utils::extend_from_decoder(
+                            validity,
+                            page_validity,
+                            Some(n),
+                            values,
+                            &mut page.values.by_ref().map(decode).map(self.op),
+                        )?
+                    },
+                    (StateTranslation::Unit(page), None) => {
+                        values.extend(page.values.by_ref().map(decode).map(self.op).take(n));
+                    },
+                    (StateTranslation::Dictionary(page), Some(page_validity)) => {
+                        let translator = DictionaryTranslator(page.dict);
+                        let translated_hybridrle =
+                            TranslatedHybridRle::new(&mut page.values, &translator);
+
+                        utils::extend_from_decoder(
+                            validity,
+                            page_validity,
+                            Some(n),
+                            values,
+                            translated_hybridrle,
+                        )?;
+                    },
+                    (StateTranslation::Dictionary(page), None) => {
+                        let translator = DictionaryTranslator(page.dict);
+                        page.values
+                            .translate_and_collect_n_into(values, n, &translator)?;
+                    },
+                    (StateTranslation::ByteStreamSplit(decoder), Some(page_validity)) => {
+                        utils::extend_from_decoder(
+                            validity,
+                            page_validity,
+                            Some(n),
+                            values,
+                            &mut decoder.iter_converted(decode).map(self.op),
+                        )?
+                    },
+                    (StateTranslation::ByteStreamSplit(decoder), None) => {
+                        values.extend(decoder.iter_converted(decode).map(self.op).take(n));
+                    },
+                }
+
+                Ok(())
             },
-            State::RequiredDictionary(page) => {
-                let translator = DictionaryTranslator(page.dict);
-                page.values
-                    .translate_and_collect_n_into(values, remaining, &translator)?;
-            },
-            State::FilteredRequired(page) => {
-                values.extend(
-                    page.values
-                        .by_ref()
-                        .map(decode)
-                        .map(self.op)
-                        .take(remaining),
-                );
-            },
-            State::FilteredOptional(page_validity, page_values) => {
-                utils::extend_from_decoder(
-                    validity,
-                    page_validity,
-                    Some(remaining),
-                    values,
-                    &mut page_values.values.by_ref().map(decode).map(self.op),
-                )?;
-            },
-            State::RequiredByteStreamSplit(decoder) => {
-                values.extend(decoder.iter_converted(decode).map(self.op).take(remaining));
-            },
-            State::OptionalByteStreamSplit(page_validity, decoder) => utils::extend_from_decoder(
-                validity,
-                page_validity,
-                Some(remaining),
-                values,
-                &mut decoder.iter_converted(decode).map(self.op),
-            )?,
-        }
+        )?;
+
+        state.filter = filter;
+
         Ok(())
     }
 
