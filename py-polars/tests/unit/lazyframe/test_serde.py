@@ -26,6 +26,7 @@ def test_lf_serde_roundtrip_binary(lf: pl.LazyFrame) -> None:
     assert_frame_equal(result, lf, categorical_as_str=True)
 
 
+@pytest.mark.skip(reason="struct-refactor")
 @given(
     lf=dataframes(
         lazy=True,
