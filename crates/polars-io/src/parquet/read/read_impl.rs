@@ -722,7 +722,9 @@ impl BatchedParquetReader {
                             use_statistics,
                             hive_partition_columns.as_deref(),
                         );
-                        tx.send((dfs, rows_read, limit)).unwrap();
+
+                        // Don't unwrap send attempt - async task could be cancelled.
+                        let _ = tx.send((dfs, rows_read, limit));
                     };
 
                     // Spawn the task and wait on it asynchronously.
