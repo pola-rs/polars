@@ -52,8 +52,8 @@ pub(super) fn update_last_accessed(file: &std::fs::File) {
     }
 }
 
-pub fn init_entries_from_uri_list<A: AsRef<[Arc<str>]>>(
-    uri_list: A,
+pub fn init_entries_from_uri_list(
+    uri_list: &[Arc<str>],
     cloud_options: Option<&CloudOptions>,
 ) -> PolarsResult<Vec<Arc<FileCacheEntry>>> {
     let uri_list = uri_list.as_ref();
@@ -69,13 +69,27 @@ pub fn init_entries_from_uri_list<A: AsRef<[Arc<str>]>>(
         .unwrap_or_else(get_env_file_cache_ttl);
 
     if is_cloud_url(first_uri) {
-        let (_, object_store) = pl_async::get_runtime()
-            .block_on_potential_spawn(build_object_store(first_uri, cloud_options))?;
-        let object_store = PolarsObjectStore::new(object_store);
+        let object_stores = pl_async::get_runtime().block_on_potential_spawn(async {
+            futures::future::try_join_all(
+                (0..if first_uri.starts_with("http") {
+                    // Object stores for http are tied to the path.
+                    uri_list.len()
+                } else {
+                    1
+                })
+                    .map(|i| async move {
+                        let (_, object_store) =
+                            build_object_store(&uri_list[i], cloud_options).await?;
+                        PolarsResult::Ok(PolarsObjectStore::new(object_store))
+                    }),
+            )
+            .await
+        })?;
 
         uri_list
             .iter()
-            .map(|uri| {
+            .enumerate()
+            .map(|(i, uri)| {
                 FILE_CACHE.init_entry(
                     uri.clone(),
                     || {
@@ -88,7 +102,8 @@ pub fn init_entries_from_uri_list<A: AsRef<[Arc<str>]>>(
                             object_path_from_string(prefix)?
                         };
 
-                        let object_store = object_store.clone();
+                        let object_store =
+                            object_stores[std::cmp::min(i, object_stores.len())].clone();
                         let uri = uri.clone();
 
                         Ok(Arc::new(CloudFileFetcher {
