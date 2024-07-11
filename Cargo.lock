@@ -3510,7 +3510,6 @@ dependencies = [
  "numpy",
  "once_cell",
  "polars",
- "polars-arrow",
  "polars-core",
  "polars-error",
  "polars-io",

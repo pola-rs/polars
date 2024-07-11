@@ -115,6 +115,7 @@ fn try_series_to_numpy_view(
         return None;
     }
     let (s_owned, writable_flag) = handle_chunks(s, allow_rechunk)?;
+
     let array = series_to_numpy_view_recursive(py, s_owned, writable_flag);
     Some((array, writable_flag))
 }
@@ -130,6 +131,7 @@ fn handle_chunks(s: &Series, allow_rechunk: bool) -> Option<(Series, bool)> {
         (false, _) => Some((s.clone(), false)),
     }
 }
+
 /// Create a NumPy view of the given Series without checking for data types, chunks, or nulls.
 fn series_to_numpy_view_recursive(py: Python, s: Series, writable: bool) -> PyObject {
     debug_assert!(s.n_chunks() == 1);
