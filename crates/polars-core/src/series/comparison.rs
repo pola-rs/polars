@@ -1,8 +1,5 @@
 //! Comparison operations on Series.
 
-#[cfg(feature = "dtype-struct")]
-use std::ops::Deref;
-
 use crate::prelude::*;
 use crate::series::arithmetic::coerce_lhs_rhs;
 use crate::series::nulls::replace_non_null;

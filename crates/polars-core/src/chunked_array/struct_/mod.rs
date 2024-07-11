@@ -4,7 +4,6 @@ use arrow::array::StructArray;
 use arrow::legacy::utils::CustomIterTools;
 use polars_error::{polars_ensure, PolarsResult};
 use polars_utils::aliases::PlHashMap;
-use polars_utils::index::NullCount;
 use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::ChunkedArray;
 use crate::prelude::*;
@@ -160,7 +159,7 @@ impl StructChunked2 {
            },
            DataType::String => {
 
-               let mut ca = self.clone();
+               let ca = self.clone();
                ca.rechunk();
 
                let fields = ca.fields_as_series();

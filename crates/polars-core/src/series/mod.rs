@@ -23,7 +23,6 @@ use arrow::offset::Offsets;
 pub use from::*;
 pub use iterator::{SeriesIter, SeriesPhysIter};
 use num_traits::NumCast;
-use arrow::array::Array;
 pub use series_trait::{IsSorted, *};
 
 use crate::chunked_array::cast::CastOptions;

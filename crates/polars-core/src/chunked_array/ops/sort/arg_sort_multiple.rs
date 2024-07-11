@@ -1,4 +1,4 @@
-use arrow::compute::utils::{combine_validities_and, combine_validities_and_many};
+use arrow::compute::utils::{combine_validities_and_many};
 use compare_inner::NullOrderCmp;
 use polars_row::{convert_columns, EncodingField, RowsEncoded};
 use polars_utils::iter::EnumerateIdxTrait;

@@ -60,6 +60,7 @@ pub trait StaticArray:
 
     /// # Safety
     /// It is the callers responsibility that the `idx < self.len()`.
+    #[allow(unused_variables)]
     unsafe fn value_unchecked(&self, idx: usize) -> Self::ValueT<'_> {
         no_call_const!()
     }

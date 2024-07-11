@@ -647,7 +647,6 @@ fn struct_helper<F, R>(a: &StructChunked2, b: &StructChunked2, op: F, reduce: R,
 where F: Fn(&Series, &Series) -> BooleanChunked,
     R: Fn(BooleanChunked, BooleanChunked) -> BooleanChunked
 {
-    use std::ops::BitAnd;
     if a.len() != b.len() || a.struct_fields().len() != b.struct_fields().len() {
         BooleanChunked::full("", value, a.len())
     } else {

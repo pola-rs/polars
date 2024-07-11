@@ -1,5 +1,4 @@
 use arrow::array::*;
-use arrow::bitmap::Bitmap;
 use crate::prelude::*;
 #[cfg(feature = "dtype-struct")]
 use crate::series::iterator::SeriesIter;
@@ -421,6 +420,7 @@ impl<T: PolarsObject> ObjectChunked<T> {
     }
 }
 
+// TODO: STRUCT REFACTOR: REMOVE THIS
 #[cfg(feature = "dtype-struct")]
 impl<'a> IntoIterator for &'a StructChunked2 {
     type Item = Option< &'a [AnyValue<'a>]>;
@@ -434,14 +434,10 @@ impl<'a> IntoIterator for &'a StructChunked2 {
             // SAFETY: this works as the reference is to the heap, and not to the struct.
             unsafe { std::mem::transmute::<SeriesIter<'_>, SeriesIter<'a>>(iter) }
         }).collect();
-        let arr = self.downcast_get(0).unwrap();
-        let validity = arr.validity().cloned();
 
         StructIter2 {
             field_iter,
             buf: vec![],
-            validity,
-            offset: 0
         }
     }
 }
@@ -450,8 +446,6 @@ impl<'a> IntoIterator for &'a StructChunked2 {
 pub struct StructIter2<'a> {
     field_iter: Vec<SeriesIter<'a>>,
     buf: Vec<AnyValue<'a>>,
-    validity: Option<Bitmap>,
-    offset: usize
 }
 
 #[cfg(feature = "dtype-struct")]
@@ -463,15 +457,6 @@ impl<'a> Iterator for StructIter2<'a> {
 
         for it in &mut self.field_iter {
             self.buf.push(it.next()?);
-        }
-        let index = self.offset;
-        self.offset += 1;
-
-        if let Some(validity) = &self.validity {
-            let valid = unsafe { validity.get_bit_unchecked(self.offset) };
-            if !valid {
-                return Some(None)
-            }
         }
 
         // SAFETY:

@@ -2,7 +2,6 @@ use std::ops::Not;
 use arrow::bitmap::Bitmap;
 use crate::chunked_array::StructChunked2;
 use super::*;
-use crate::hashing::series_to_hashes;
 use crate::prelude::*;
 use crate::series::private::{PrivateSeries, PrivateSeriesNumeric};
 
@@ -104,14 +103,12 @@ impl SeriesTrait for SeriesWrap<StructChunked2> {
 
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(self.0.dtype() == other.dtype(), append);
-        self.0.append(other.as_ref().as_ref());
-        Ok(())
+        self.0.append(other.as_ref().as_ref())
     }
 
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(self.0.dtype() == other.dtype(), extend);
-        self.0.extend(other.as_ref().as_ref());
-        Ok(())
+        self.0.extend(other.as_ref().as_ref())
     }
 
     fn filter(&self, _filter: &BooleanChunked) -> PolarsResult<Series> {

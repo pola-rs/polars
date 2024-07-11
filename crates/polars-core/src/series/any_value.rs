@@ -1,6 +1,5 @@
 use std::fmt::Write;
-use arrow::bitmap::{Bitmap, MutableBitmap};
-use arrow::pushable::Pushable;
+use arrow::bitmap::{MutableBitmap};
 #[cfg(feature = "dtype-categorical")]
 use crate::chunked_array::cast::CastOptions;
 #[cfg(feature = "object")]
