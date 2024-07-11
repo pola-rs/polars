@@ -191,7 +191,7 @@ def test_streaming_generic_left_and_inner_join_from_disk(tmp_path: Path) -> None
         assert_frame_equal(
             q.collect(streaming=True),
             q.collect(streaming=False),
-            check_row_order=how != "left",
+            check_row_order=how == "left",
         )
 
 
