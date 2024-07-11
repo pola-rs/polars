@@ -87,8 +87,13 @@ pub struct CloudLocation {
 impl CloudLocation {
     pub fn from_url(parsed: &Url) -> PolarsResult<CloudLocation> {
         let is_local = parsed.scheme() == "file";
+        let key = parsed.path();
         let (bucket, key) = if is_local {
-            ("".into(), parsed.path())
+            ("".into(), key)
+        } else if parsed.scheme() == "hdfs" {
+            // "bucket" in hdfs can be empty example: hdfs:///path/xyz.
+            let host = parsed.host().map_or("".into(), |host| host.to_string());
+            (host, key)
         } else {
             if parsed.scheme().starts_with("http") {
                 return Ok(CloudLocation {
@@ -97,7 +102,6 @@ impl CloudLocation {
                 });
             }
 
-            let key = parsed.path();
             let bucket = parsed
                 .host()
                 .ok_or_else(

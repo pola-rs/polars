@@ -112,6 +112,7 @@ pub enum CloudType {
     File,
     Gcp,
     Http,
+    Hdfs,
 }
 
 impl CloudType {
@@ -123,6 +124,7 @@ impl CloudType {
             "gs" | "gcp" | "gcs" => Self::Gcp,
             "file" => Self::File,
             "http" | "https" => Self::Http,
+            "hdfs" | "webhdfs" => Self::Hdfs,
             _ => polars_bail!(ComputeError: "unknown url scheme"),
         })
     }
@@ -432,6 +434,7 @@ impl CloudOptions {
                     polars_bail!(ComputeError: "'gcp' feature is not enabled");
                 }
             },
+            CloudType::Hdfs => Ok(Self::default()),
         }
     }
 }

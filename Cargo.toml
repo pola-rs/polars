@@ -50,6 +50,8 @@ fast-float = { version = "0.2" }
 flate2 = { version = "1", default-features = false }
 futures = "0.3.25"
 hashbrown = { version = "0.14", features = ["rayon", "ahash", "serde"] }
+hdfs-native = "0.10.0"
+hdfs-native-object-store = "0.11.0"
 hex = "0.4.3"
 indexmap = { version = "2", features = ["std"] }
 itoa = "1.0.6"

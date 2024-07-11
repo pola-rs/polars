@@ -44,7 +44,7 @@ pub fn resolve_homedir(path: &Path) -> PathBuf {
 }
 
 static CLOUD_URL: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^(s3a?|gs|gcs|file|abfss?|azure|az|adl|https?)://").unwrap());
+    Lazy::new(|| Regex::new(r"^(s3a?|gs|gcs|file|abfss?|azure|az|adl|https|hdfs?)://").unwrap());
 
 /// Check if the path is a cloud url.
 pub fn is_cloud_url<P: AsRef<Path>>(p: P) -> bool {
