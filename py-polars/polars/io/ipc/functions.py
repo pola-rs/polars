@@ -311,7 +311,7 @@ def scan_ipc(
     row_index_offset: int = 0,
     storage_options: dict[str, Any] | None = None,
     memory_map: bool = True,
-    retries: int = 0,
+    retries: int = 2,
     file_cache_ttl: int | None = None,
     hive_partitioning: bool | None = None,
     hive_schema: SchemaDict | None = None,

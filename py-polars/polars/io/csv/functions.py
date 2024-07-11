@@ -934,7 +934,7 @@ def scan_csv(
     decimal_comma: bool = False,
     glob: bool = True,
     storage_options: dict[str, Any] | None = None,
-    retries: int = 0,
+    retries: int = 2,
     file_cache_ttl: int | None = None,
 ) -> LazyFrame:
     r"""
@@ -1210,7 +1210,7 @@ def _scan_csv_impl(
     decimal_comma: bool = False,
     glob: bool = True,
     storage_options: dict[str, Any] | None = None,
-    retries: int = 0,
+    retries: int = 2,
     file_cache_ttl: int | None = None,
 ) -> LazyFrame:
     dtype_list: list[tuple[str, PolarsDataType]] | None = None

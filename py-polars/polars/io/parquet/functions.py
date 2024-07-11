@@ -48,7 +48,7 @@ def read_parquet(
     rechunk: bool = False,
     low_memory: bool = False,
     storage_options: dict[str, Any] | None = None,
-    retries: int = 0,
+    retries: int = 2,
     use_pyarrow: bool = False,
     pyarrow_options: dict[str, Any] | None = None,
     memory_map: bool = True,
@@ -303,7 +303,7 @@ def scan_parquet(
     low_memory: bool = False,
     cache: bool = True,
     storage_options: dict[str, Any] | None = None,
-    retries: int = 0,
+    retries: int = 2,
 ) -> LazyFrame:
     """
     Lazily read from a local or cloud-hosted parquet file (or files).
@@ -433,7 +433,7 @@ def _scan_parquet_impl(
     glob: bool = True,
     hive_schema: SchemaDict | None = None,
     try_parse_hive_dates: bool = True,
-    retries: int = 0,
+    retries: int = 2,
 ) -> LazyFrame:
     if isinstance(source, list):
         sources = source
