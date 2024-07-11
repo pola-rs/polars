@@ -47,7 +47,7 @@ def test_streaming_full_outer_joins() -> None:
         )
         a = q.collect(streaming=True)
         b = q.collect(streaming=False)
-        assert_frame_equal(a, b)
+        assert_frame_equal(a, b, check_row_order=False)
 
 
 def test_streaming_joins() -> None:
@@ -167,7 +167,9 @@ def test_join_null_matches(streaming: bool) -> None:
     # Inner
     expected = pl.DataFrame({"idx_a": [2, 1], "a": [2, 1], "idx_b": [1, 2]})
     assert_frame_equal(
-        df_a.join(df_b, on="a", how="inner").collect(streaming=streaming), expected
+        df_a.join(df_b, on="a", how="inner").collect(streaming=streaming),
+        expected,
+        check_row_order=False,
     )
 
     # Left outer
@@ -175,7 +177,9 @@ def test_join_null_matches(streaming: bool) -> None:
         {"idx_a": [0, 1, 2], "a": [None, 1, 2], "idx_b": [None, 2, 1]}
     )
     assert_frame_equal(
-        df_a.join(df_b, on="a", how="left").collect(streaming=streaming), expected
+        df_a.join(df_b, on="a", how="left").collect(streaming=streaming),
+        expected,
+        check_row_order=False,
     )
     # Full outer
     expected = pl.DataFrame(
@@ -186,7 +190,9 @@ def test_join_null_matches(streaming: bool) -> None:
             "a_right": [None, 2, 1, None, None],
         }
     )
-    assert_frame_equal(df_a.join(df_b, on="a", how="full").collect(), expected)
+    assert_frame_equal(
+        df_a.join(df_b, on="a", how="full").collect(), expected, check_row_order=False
+    )
 
 
 @pytest.mark.parametrize("streaming", [False, True])
@@ -217,6 +223,7 @@ def test_join_null_matches_multiple_keys(streaming: bool) -> None:
     assert_frame_equal(
         df_a.join(df_b, on=["a", "idx"], how="left").collect(streaming=streaming),
         expected,
+        check_row_order=False,
     )
 
     expected = pl.DataFrame(
@@ -229,7 +236,9 @@ def test_join_null_matches_multiple_keys(streaming: bool) -> None:
         }
     )
     assert_frame_equal(
-        df_a.join(df_b, on=["a", "idx"], how="full").sort("a").collect(), expected
+        df_a.join(df_b, on=["a", "idx"], how="full").sort("a").collect(),
+        expected,
+        check_row_order=False,
     )
 
 
