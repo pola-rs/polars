@@ -192,10 +192,6 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     }
 
     /// Create a new [`ChunkedArray`] and explicitly set its `length` and `null_count`.
-    ///
-    /// If you want to compute the `length` and `null_count`, look at
-    /// [`ChunkedArray::new_with_compute_len`]
-    ///
     /// # Safety
     /// The length and null_count must be correct.
     pub unsafe fn new_with_dims(
