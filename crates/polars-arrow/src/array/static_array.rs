@@ -1,9 +1,14 @@
 use bytemuck::Zeroable;
 use polars_utils::no_call_const;
+
 use crate::array::binview::BinaryViewValueIter;
 use crate::array::growable::{Growable, GrowableFixedSizeList};
 use crate::array::static_array_collect::ArrayFromIterDtype;
-use crate::array::{Array, ArrayValuesIter, BinaryArray, BinaryValueIter, BinaryViewArray, BooleanArray, FixedSizeListArray, ListArray, ListValuesIter, MutableBinaryViewArray, PrimitiveArray, StructArray, Utf8Array, Utf8ValuesIter, Utf8ViewArray};
+use crate::array::{
+    Array, ArrayValuesIter, BinaryArray, BinaryValueIter, BinaryViewArray, BooleanArray,
+    FixedSizeListArray, ListArray, ListValuesIter, MutableBinaryViewArray, PrimitiveArray,
+    StructArray, Utf8Array, Utf8ValuesIter, Utf8ViewArray,
+};
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::bitmap::Bitmap;
 use crate::datatypes::ArrowDataType;
@@ -362,7 +367,6 @@ impl StaticArray for ListArray<i64> {
     }
 }
 
-
 impl StaticArray for FixedSizeListArray {
     type ValueT<'a> = Box<dyn Array>;
     type ZeroableValueT<'a> = Option<Box<dyn Array>>;
@@ -397,11 +401,10 @@ impl StaticArray for FixedSizeListArray {
     }
 }
 
-
 impl StaticArray for StructArray {
     type ValueT<'a> = ();
     type ZeroableValueT<'a> = ();
-    type ValueIterT<'a>  = std::iter::Repeat<()>;
+    type ValueIterT<'a> = std::iter::Repeat<()>;
 
     fn with_validity_typed(self, validity: Option<Bitmap>) -> Self {
         self.with_validity(validity)

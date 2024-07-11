@@ -1,10 +1,11 @@
 use std::ops::Not;
+
 use arrow::bitmap::Bitmap;
-use crate::chunked_array::StructChunked2;
+
 use super::*;
+use crate::chunked_array::StructChunked2;
 use crate::prelude::*;
 use crate::series::private::{PrivateSeries, PrivateSeriesNumeric};
-
 
 impl PrivateSeriesNumeric for SeriesWrap<StructChunked2> {
     fn bit_repr(&self) -> Option<BitRepr> {
@@ -32,7 +33,9 @@ impl PrivateSeries for SeriesWrap<StructChunked2> {
     fn _set_flags(&mut self, _flags: MetadataFlags) {}
 
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
-        self._apply_fields(|s|s.explode_by_offsets(offsets)).unwrap().into_series()
+        self._apply_fields(|s| s.explode_by_offsets(offsets))
+            .unwrap()
+            .into_series()
     }
 
     // TODO! remove this. Very slow. Asof join should use row-encoding.
@@ -61,14 +64,13 @@ impl PrivateSeries for SeriesWrap<StructChunked2> {
             .zip(other.fields_as_series())
             .map(|(lhs, rhs)| lhs.zip_with_same_type(mask, &rhs))
             .collect::<PolarsResult<Vec<_>>>()?;
-        StructChunked2::from_series(self.0.name(), &fields).map(|ca|ca.into_series())
+        StructChunked2::from_series(self.0.name(), &fields).map(|ca| ca.into_series())
     }
 
     #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
         self.0.agg_list(groups)
     }
-
 }
 
 impl SeriesTrait for SeriesWrap<StructChunked2> {
@@ -124,7 +126,7 @@ impl SeriesTrait for SeriesWrap<StructChunked2> {
     }
 
     fn take_slice(&self, _indices: &[IdxSize]) -> PolarsResult<Series> {
-        self.0.take(_indices).map(|ca|ca.into_series())
+        self.0.take(_indices).map(|ca| ca.into_series())
     }
 
     unsafe fn take_slice_unchecked(&self, _idx: &[IdxSize]) -> Series {
@@ -211,7 +213,7 @@ impl SeriesTrait for SeriesWrap<StructChunked2> {
         let iter = self.downcast_iter().map(|arr| {
             let bitmap = match arr.validity() {
                 Some(valid) => valid.not(),
-                None => Bitmap::new_with_value(false, arr.len())
+                None => Bitmap::new_with_value(false, arr.len()),
             };
             BooleanArray::from_data_default(bitmap, None)
         });
@@ -222,7 +224,7 @@ impl SeriesTrait for SeriesWrap<StructChunked2> {
         let iter = self.downcast_iter().map(|arr| {
             let bitmap = match arr.validity() {
                 Some(valid) => valid.clone(),
-                None => Bitmap::new_with_value(true, arr.len())
+                None => Bitmap::new_with_value(true, arr.len()),
             };
             BooleanArray::from_data_default(bitmap, None)
         });
@@ -234,7 +236,10 @@ impl SeriesTrait for SeriesWrap<StructChunked2> {
     }
 
     fn shift(&self, periods: i64) -> Series {
-        self.0._apply_fields(|s| s.shift(periods)).unwrap().into_series()
+        self.0
+            ._apply_fields(|s| s.shift(periods))
+            .unwrap()
+            .into_series()
     }
 
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {

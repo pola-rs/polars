@@ -1,18 +1,20 @@
 mod frame;
 
+use std::fmt::Write;
+
 use arrow::array::StructArray;
+use arrow::bitmap::Bitmap;
+use arrow::compute::utils::combine_validities_and;
 use arrow::legacy::utils::CustomIterTools;
 use polars_error::{polars_ensure, PolarsResult};
 use polars_utils::aliases::PlHashMap;
+
 use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::ChunkedArray;
+use crate::prelude::sort::arg_sort_multiple::{_get_rows_encoded_arr, _get_rows_encoded_ca};
 use crate::prelude::*;
 use crate::series::Series;
-use crate::utils::{Container, index_to_chunked_index};
-use std::fmt::Write;
-use arrow::bitmap::Bitmap;
-use arrow::compute::utils::combine_validities_and;
-use crate::prelude::sort::arg_sort_multiple::{_get_rows_encoded_arr, _get_rows_encoded_ca};
+use crate::utils::{index_to_chunked_index, Container};
 
 pub type StructChunked2 = ChunkedArray<StructType>;
 
@@ -20,38 +22,42 @@ fn constructor(name: &str, fields: &[Series]) -> PolarsResult<StructChunked2> {
     // Different chunk lengths: rechunk and recurse.
     if !fields.iter().map(|s| s.n_chunks()).all_equal() {
         let fields = fields.iter().map(|s| s.rechunk()).collect::<Vec<_>>();
-        return constructor(name, &fields)
+        return constructor(name, &fields);
     }
 
     let n_chunks = fields[0].n_chunks();
     let dtype = DataType::Struct(fields.iter().map(|s| s.field().into_owned()).collect());
     let arrow_dtype = dtype.to_physical().to_arrow(CompatLevel::newest());
 
-    let chunks = (0..n_chunks).map(|c_i| {
-        let fields = fields.iter().map(|field| {
-            field.chunks()[c_i].clone()
-        }).collect::<Vec<_>>();
+    let chunks = (0..n_chunks)
+        .map(|c_i| {
+            let fields = fields
+                .iter()
+                .map(|field| field.chunks()[c_i].clone())
+                .collect::<Vec<_>>();
 
-        if !fields.iter().map(|arr| arr.len()).all_equal() {
-            return Err(())
-        }
+            if !fields.iter().map(|arr| arr.len()).all_equal() {
+                return Err(());
+            }
 
-        Ok(StructArray::new(arrow_dtype.clone(), fields, None).boxed())
-
-    }).collect::<Result<Vec<_>, ()>>();
+            Ok(StructArray::new(arrow_dtype.clone(), fields, None).boxed())
+        })
+        .collect::<Result<Vec<_>, ()>>();
 
     match chunks {
         Ok(chunks) => {
             // SAFETY: invariants checked above.
             unsafe {
-                Ok(StructChunked2::from_chunks_and_dtype_unchecked(name, chunks, dtype))
+                Ok(StructChunked2::from_chunks_and_dtype_unchecked(
+                    name, chunks, dtype,
+                ))
             }
         },
         // Different chunk lengths: rechunk and recurse.
         Err(_) => {
             let fields = fields.iter().map(|s| s.rechunk()).collect::<Vec<_>>();
             constructor(name, &fields)
-        }
+        },
     }
 }
 
@@ -79,8 +85,10 @@ impl StructChunked2 {
             );
             match s.dtype() {
                 #[cfg(feature = "object")]
-                DataType::Object(_, _) => polars_bail!(InvalidOperation: "nested objects are not allowed"),
-                _ => {}
+                DataType::Object(_, _) => {
+                    polars_bail!(InvalidOperation: "nested objects are not allowed")
+                },
+                _ => {},
             }
         }
 
@@ -110,109 +118,115 @@ impl StructChunked2 {
     }
 
     pub fn struct_fields(&self) -> &[Field] {
-        let DataType::Struct(fields) = self.dtype() else {unreachable!()};
+        let DataType::Struct(fields) = self.dtype() else {
+            unreachable!()
+        };
         fields
     }
 
     pub fn fields_as_series(&self) -> Vec<Series> {
-        dbg!(self.struct_fields());
-        self.struct_fields().iter().enumerate().map(|(i, field)| {
-            let field_chunks = self.downcast_iter().map(|chunk| {
-                chunk.values()[i].clone()
-            }).collect::<Vec<_>>();
+        self.struct_fields()
+            .iter()
+            .enumerate()
+            .map(|(i, field)| {
+                let field_chunks = self
+                    .downcast_iter()
+                    .map(|chunk| chunk.values()[i].clone())
+                    .collect::<Vec<_>>();
 
-            // SAFETY: correct type.
-            unsafe { Series::from_chunks_and_dtype_unchecked(&field.name, field_chunks, &field.dtype) }
-        }).collect()
+                // SAFETY: correct type.
+                unsafe {
+                    Series::from_chunks_and_dtype_unchecked(&field.name, field_chunks, &field.dtype)
+                }
+            })
+            .collect()
     }
 
-   unsafe fn cast_impl(
-       &self,
-       dtype: &DataType,
-       cast_options: CastOptions,
-       unchecked: bool,
-   ) -> PolarsResult<Series> {
-       match dtype {
-           DataType::Struct(dtype_fields) => {
-               let fields = self.fields_as_series();
-               let map = PlHashMap::from_iter(fields.iter().map(|s| (s.name(), s)));
-               let struct_len = self.len();
-               let new_fields = dtype_fields
-                   .iter()
-                   .map(|new_field| match map.get(new_field.name().as_str()) {
-                       Some(s) => {
-                           if unchecked {
-                               s.cast_unchecked(&new_field.dtype)
-                           } else {
-                               s.cast_with_options(&new_field.dtype, cast_options)
-                           }
-                       },
-                       None => Ok(Series::full_null(
-                           new_field.name(),
-                           struct_len,
-                           &new_field.dtype,
-                       )),
-                   })
-                   .collect::<PolarsResult<Vec<_>>>()?;
+    unsafe fn cast_impl(
+        &self,
+        dtype: &DataType,
+        cast_options: CastOptions,
+        unchecked: bool,
+    ) -> PolarsResult<Series> {
+        match dtype {
+            DataType::Struct(dtype_fields) => {
+                let fields = self.fields_as_series();
+                let map = PlHashMap::from_iter(fields.iter().map(|s| (s.name(), s)));
+                let struct_len = self.len();
+                let new_fields = dtype_fields
+                    .iter()
+                    .map(|new_field| match map.get(new_field.name().as_str()) {
+                        Some(s) => {
+                            if unchecked {
+                                s.cast_unchecked(&new_field.dtype)
+                            } else {
+                                s.cast_with_options(&new_field.dtype, cast_options)
+                            }
+                        },
+                        None => Ok(Series::full_null(
+                            new_field.name(),
+                            struct_len,
+                            &new_field.dtype,
+                        )),
+                    })
+                    .collect::<PolarsResult<Vec<_>>>()?;
 
-               Self::from_series(self.name(), &new_fields).map(|ca| ca.into_series())
-           },
-           DataType::String => {
+                Self::from_series(self.name(), &new_fields).map(|ca| ca.into_series())
+            },
+            DataType::String => {
+                let ca = self.clone();
+                ca.rechunk();
 
-               let ca = self.clone();
-               ca.rechunk();
+                let fields = ca.fields_as_series();
+                let mut iters = fields.iter().map(|s| s.iter()).collect::<Vec<_>>();
+                let cap = ca.len();
 
-               let fields = ca.fields_as_series();
-               let mut iters = fields.iter().map(|s| s.iter()).collect::<Vec<_>>();
-               let cap = ca.len();
+                let mut builder = MutablePlString::with_capacity(cap);
+                let mut scratch = String::new();
 
-               let mut builder = MutablePlString::with_capacity(cap);
-               let mut scratch = String::new();
+                for _ in 0..ca.len() {
+                    let mut row_has_nulls = false;
 
-               for _ in 0..ca.len() {
-                   let mut row_has_nulls = false;
+                    write!(scratch, "{{").unwrap();
+                    for iter in &mut iters {
+                        let av = unsafe { iter.next().unwrap_unchecked() };
+                        row_has_nulls |= matches!(&av, AnyValue::Null);
+                        write!(scratch, "{},", av).unwrap();
+                    }
 
-                   write!(scratch, "{{").unwrap();
-                   for iter in &mut iters {
-                       let av = unsafe { iter.next().unwrap_unchecked() };
-                       row_has_nulls |= matches!(&av, AnyValue::Null);
-                       write!(scratch, "{},", av).unwrap();
-                   }
+                    // replace latest comma with '|'
+                    unsafe {
+                        *scratch.as_bytes_mut().last_mut().unwrap_unchecked() = b'}';
+                    }
 
-                   // replace latest comma with '|'
-                   unsafe {
-                       *scratch.as_bytes_mut().last_mut().unwrap_unchecked() = b'}';
-                   }
-
-
-                   // TODO: this seem strange to me. We should use outer mutability to determine this.
-                   // Also we should move this whole cast into arrow logic.
-                   if row_has_nulls {
-                       builder.push_null()
-                   } else {
-                       builder.push_value(scratch.as_str());
-                   }
-                   scratch.clear();
-               }
-               let array = builder.freeze().boxed();
-               Series::try_from((ca.name(), array))
-           }
-           _ => {
-               let fields = self
-                   .fields_as_series()
-                   .iter()
-                   .map(|s| {
-                       if unchecked {
-                           s.cast_unchecked(dtype)
-                       } else {
-                           s.cast_with_options(dtype, cast_options)
-                       }
-                   })
-                   .collect::<PolarsResult<Vec<_>>>()?;
-               Self::from_series(self.name(), &fields).map(|ca| ca.into_series())
-           },
-       }
-   }
+                    // TODO: this seem strange to me. We should use outer mutability to determine this.
+                    // Also we should move this whole cast into arrow logic.
+                    if row_has_nulls {
+                        builder.push_null()
+                    } else {
+                        builder.push_value(scratch.as_str());
+                    }
+                    scratch.clear();
+                }
+                let array = builder.freeze().boxed();
+                Series::try_from((ca.name(), array))
+            },
+            _ => {
+                let fields = self
+                    .fields_as_series()
+                    .iter()
+                    .map(|s| {
+                        if unchecked {
+                            s.cast_unchecked(dtype)
+                        } else {
+                            s.cast_with_options(dtype, cast_options)
+                        }
+                    })
+                    .collect::<PolarsResult<Vec<_>>>()?;
+                Self::from_series(self.name(), &fields).map(|ca| ca.into_series())
+            },
+        }
+    }
 
     pub(crate) unsafe fn cast_unchecked(&self, dtype: &DataType) -> PolarsResult<Series> {
         if dtype == self.dtype() {
@@ -266,7 +280,11 @@ impl StructChunked2 {
     where
         F: FnMut(&Series) -> PolarsResult<Series>,
     {
-        let fields = self.fields_as_series().iter().map(func).collect::<PolarsResult<Vec<_>>>()?;
+        let fields = self
+            .fields_as_series()
+            .iter()
+            .map(func)
+            .collect::<PolarsResult<Vec<_>>>()?;
         Self::from_series(self.name(), &fields).map(|mut ca| {
             if self.null_count > 0 {
                 // SAFETY: we don't change types/ lenghts.
@@ -275,11 +293,9 @@ impl StructChunked2 {
                         new.set_validity(this.validity().cloned())
                     }
                 }
-
             }
             ca
         })
-
     }
 
     pub fn get_row_encoded_array(&self, options: SortOptions) -> PolarsResult<BinaryArray<i64>> {
@@ -289,7 +305,12 @@ impl StructChunked2 {
 
     pub fn get_row_encoded(&self, options: SortOptions) -> PolarsResult<BinaryOffsetChunked> {
         let s = self.clone().into_series();
-        _get_rows_encoded_ca(self.name(), &[s], &[options.descending], &[options.nulls_last])
+        _get_rows_encoded_ca(
+            self.name(),
+            &[s],
+            &[options.descending],
+            &[options.nulls_last],
+        )
     }
 
     /// Set the outer nulls into the inner arrays, and clear the outer validity.
@@ -311,7 +332,7 @@ impl StructChunked2 {
             // SAFETY:
             // We keep length and dtypes the same.
             unsafe {
-                for (a, b ) in self.downcast_iter_mut().zip(other.downcast_iter()) {
+                for (a, b) in self.downcast_iter_mut().zip(other.downcast_iter()) {
                     let new = combine_validities_and(a.validity(), b.validity());
                     a.set_validity(new)
                 }
@@ -334,7 +355,6 @@ impl StructChunked2 {
 
         // SAFETY: invariants for struct are the same
         unsafe { DataFrame::new_no_checks(self.fields_as_series()) }
-
     }
 
     /// Get access to one of this `[StructChunked]`'s fields

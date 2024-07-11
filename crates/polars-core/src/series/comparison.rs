@@ -112,22 +112,42 @@ impl ChunkCompare<&Series> for Series {
 
     /// Create a boolean mask by checking for equality.
     fn equal(&self, rhs: &Series) -> PolarsResult<BooleanChunked> {
-        impl_compare!(self, rhs, equal, |a: &StructChunked2, b: &StructChunked2| PolarsResult::Ok(a.equal(b)))
+        impl_compare!(
+            self,
+            rhs,
+            equal,
+            |a: &StructChunked2, b: &StructChunked2| PolarsResult::Ok(a.equal(b))
+        )
     }
 
     /// Create a boolean mask by checking for equality.
     fn equal_missing(&self, rhs: &Series) -> PolarsResult<BooleanChunked> {
-        impl_compare!(self, rhs, equal_missing, |a: &StructChunked2, b: &StructChunked2| PolarsResult::Ok(a.equal_missing(b)))
+        impl_compare!(
+            self,
+            rhs,
+            equal_missing,
+            |a: &StructChunked2, b: &StructChunked2| PolarsResult::Ok(a.equal_missing(b))
+        )
     }
 
     /// Create a boolean mask by checking for inequality.
     fn not_equal(&self, rhs: &Series) -> PolarsResult<BooleanChunked> {
-        impl_compare!(self, rhs, not_equal, |a: &StructChunked2, b: &StructChunked2| PolarsResult::Ok(a.not_equal(b)))
+        impl_compare!(
+            self,
+            rhs,
+            not_equal,
+            |a: &StructChunked2, b: &StructChunked2| PolarsResult::Ok(a.not_equal(b))
+        )
     }
 
     /// Create a boolean mask by checking for inequality.
     fn not_equal_missing(&self, rhs: &Series) -> PolarsResult<BooleanChunked> {
-        impl_compare!(self, rhs, not_equal_missing, |a: &StructChunked2, b: &StructChunked2| PolarsResult::Ok(a.not_equal_missing(b)))
+        impl_compare!(
+            self,
+            rhs,
+            not_equal_missing,
+            |a: &StructChunked2, b: &StructChunked2| PolarsResult::Ok(a.not_equal_missing(b))
+        )
     }
 
     /// Create a boolean mask by checking if self > rhs.

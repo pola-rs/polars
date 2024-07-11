@@ -77,7 +77,11 @@ impl PySeries {
 
     fn struct_fields(&self) -> PyResult<Vec<&str>> {
         let ca = self.series.struct_().map_err(PyPolarsErr::from)?;
-        Ok(ca.struct_fields().iter().map(|s| s.name().as_str()).collect())
+        Ok(ca
+            .struct_fields()
+            .iter()
+            .map(|s| s.name().as_str())
+            .collect())
     }
 
     fn is_sorted_ascending_flag(&self) -> bool {

@@ -427,7 +427,7 @@ fn is_in_struct_list(ca_in: &StructChunked2, other: &Series) -> PolarsResult<Boo
         polars_ensure!(ca_in.len() == other.len(), ComputeError: "shapes don't match: expected {} elements in 'is_in' comparison, got {}", ca_in.len(), other.len());
 
         // TODO! improve this.
-        let ca= if ca_in.null_count() > 0 {
+        let ca = if ca_in.null_count() > 0 {
             let ca_in = ca_in.rechunk();
             let mut ca = ca_in.get_row_encoded(Default::default())?;
             ca.merge_validities(ca_in.chunks());
@@ -436,8 +436,7 @@ fn is_in_struct_list(ca_in: &StructChunked2, other: &Series) -> PolarsResult<Boo
             ca_in.get_row_encoded(Default::default())?
         };
         {
-            ca
-                .iter()
+            ca.iter()
                 .zip(other.list()?.amortized_iter())
                 .map(|(value, series)| match (value, series) {
                     (val, Some(series)) => {
@@ -473,17 +472,16 @@ fn is_in_struct_array(ca_in: &StructChunked2, other: &Series) -> PolarsResult<Bo
         polars_ensure!(ca_in.len() == other.len(), ComputeError: "shapes don't match: expected {} elements in 'is_in' comparison, got {}", ca_in.len(), other.len());
 
         // TODO! improve this.
-        let ca= if ca_in.null_count() > 0 {
+        let ca = if ca_in.null_count() > 0 {
             let ca_in = ca_in.rechunk();
             let mut ca = ca_in.get_row_encoded(Default::default())?;
             ca.merge_validities(ca_in.chunks());
             ca
         } else {
-           ca_in.get_row_encoded(Default::default())?
+            ca_in.get_row_encoded(Default::default())?
         };
         {
-            ca
-                .iter()
+            ca.iter()
                 .zip(other.array()?.amortized_iter())
                 .map(|(value, series)| match (value, series) {
                     (val, Some(series)) => {
@@ -496,7 +494,6 @@ fn is_in_struct_array(ca_in: &StructChunked2, other: &Series) -> PolarsResult<Bo
                 })
                 .collect()
         }
-
     };
     ca.rename(ca_in.name());
     Ok(ca)
@@ -519,8 +516,16 @@ fn is_in_struct(ca_in: &StructChunked2, other: &Series) -> PolarsResult<BooleanC
             );
 
             // first make sure that the types are equal
-            let ca_in_dtypes: Vec<_> = ca_in.struct_fields().iter().map(|f| f.data_type()).collect();
-            let other_dtypes: Vec<_> = other.struct_fields().iter().map(|f| f.data_type()).collect();
+            let ca_in_dtypes: Vec<_> = ca_in
+                .struct_fields()
+                .iter()
+                .map(|f| f.data_type())
+                .collect();
+            let other_dtypes: Vec<_> = other
+                .struct_fields()
+                .iter()
+                .map(|f| f.data_type())
+                .collect();
             if ca_in_dtypes != other_dtypes {
                 let ca_in_names = ca_in.struct_fields().iter().map(|f| f.name());
                 let other_names = other.struct_fields().iter().map(|f| f.name());

@@ -25,14 +25,7 @@ def test_drop_nulls_parametric(s: pl.Series) -> None:
 
 def test_df_drop_nulls_struct() -> None:
     df = pl.DataFrame(
-        {
-            "x": [
-                {"a": 1, "b": 2},
-                {"a": 1, "b": None},
-                {"a": None, "b": 2},
-                None
-            ]
-        }
+        {"x": [{"a": 1, "b": 2}, {"a": 1, "b": None}, {"a": None, "b": 2}, None]}
     )
 
     result = df.drop_nulls()

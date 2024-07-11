@@ -1,6 +1,6 @@
 use arrow::compute::cast::cast_unchecked as cast;
 use arrow::datatypes::Metadata;
-#[cfg(any(feature = "dtype-struct", feature = "dtype-categorical"))]
+#[cfg(feature = "dtype-categorical")]
 use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
 #[cfg(any(
     feature = "dtype-date",
@@ -102,7 +102,10 @@ impl Series {
             Float64 => Float64Chunked::from_chunks(name, chunks).into_series(),
             BinaryOffset => BinaryOffsetChunked::from_chunks(name, chunks).into_series(),
             #[cfg(feature = "dtype-struct")]
-            Struct(_) => StructChunked2::from_chunks_and_dtype_unchecked(name, chunks, dtype.clone()).into_series(),
+            Struct(_) => {
+                StructChunked2::from_chunks_and_dtype_unchecked(name, chunks, dtype.clone())
+                    .into_series()
+            },
             #[cfg(feature = "object")]
             Object(_, _) => {
                 assert_eq!(chunks.len(), 1);

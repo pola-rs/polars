@@ -36,6 +36,8 @@ pub(crate) mod logical;
 pub mod object;
 #[cfg(feature = "random")]
 mod random;
+#[cfg(feature = "dtype-struct")]
+mod struct_;
 #[cfg(any(
     feature = "temporal",
     feature = "dtype-datetime",
@@ -44,17 +46,14 @@ mod random;
 pub mod temporal;
 mod to_vec;
 mod trusted_len;
-#[cfg(feature = "dtype-struct")]
-mod struct_;
-
-#[cfg(feature = "dtype-struct")]
-pub use struct_::StructChunked2;
 
 use std::mem;
 use std::slice::Iter;
 
 use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
 use arrow::legacy::prelude::*;
+#[cfg(feature = "dtype-struct")]
+pub use struct_::StructChunked2;
 
 use self::metadata::{
     IMMetadata, Metadata, MetadataFlags, MetadataMerge, MetadataProperties, MetadataReadGuard,

@@ -170,7 +170,7 @@ impl Serialize for StructChunked2 {
             if self.null_count() > 0 {
                 return Err(S::Error::custom(
                     "serializing struct with outer validity not yet supported",
-                ))
+                ));
             }
 
             let mut state = serializer.serialize_map(Some(3))?;

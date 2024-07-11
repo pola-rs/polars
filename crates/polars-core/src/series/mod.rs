@@ -608,9 +608,9 @@ impl Series {
 
                 if arr.null_count() > 0 {
                     unsafe {
-                        ca.downcast_iter_mut().zip(arr.downcast_iter().map(|arr| arr.validity())).for_each(|(arr, validity)| {
-                           arr.set_validity(validity.cloned())
-                        })
+                        ca.downcast_iter_mut()
+                            .zip(arr.downcast_iter().map(|arr| arr.validity()))
+                            .for_each(|(arr, validity)| arr.set_validity(validity.cloned()))
                     }
                 }
                 Cow::Owned(ca.into_series())
@@ -947,7 +947,7 @@ fn equal_outer_type<T: 'static + PolarsDataType>(dtype: &DataType) -> bool {
         (DataType::Array(_, _), DataType::Array(_, _)) => true,
         #[cfg(feature = "dtype-struct")]
         (DataType::Struct(_), DataType::Struct(_)) => true,
-        (a, b) => &a == b
+        (a, b) => &a == b,
     }
 }
 
@@ -956,8 +956,13 @@ where
     T: 'static + PolarsDataType,
 {
     fn as_ref(&self) -> &ChunkedArray<T> {
-        let eq = equal_outer_type::<T>(self.dtype()) ;
-        assert!(eq, "implementation error, cannot get ref {:?} from {:?}", T::get_dtype(), self.dtype());
+        let eq = equal_outer_type::<T>(self.dtype());
+        assert!(
+            eq,
+            "implementation error, cannot get ref {:?} from {:?}",
+            T::get_dtype(),
+            self.dtype()
+        );
         // SAFETY: we just checked the type.
         unsafe { &*(self as *const dyn SeriesTrait as *const ChunkedArray<T>) }
     }
@@ -968,8 +973,13 @@ where
     T: 'static + PolarsDataType,
 {
     fn as_mut(&mut self) -> &mut ChunkedArray<T> {
-        let eq = equal_outer_type::<T>(self.dtype()) ;
-        assert!(eq, "implementation error, cannot get ref {:?} from {:?}", T::get_dtype(), self.dtype());
+        let eq = equal_outer_type::<T>(self.dtype());
+        assert!(
+            eq,
+            "implementation error, cannot get ref {:?} from {:?}",
+            T::get_dtype(),
+            self.dtype()
+        );
         unsafe { &mut *(self as *mut dyn SeriesTrait as *mut ChunkedArray<T>) }
     }
 }

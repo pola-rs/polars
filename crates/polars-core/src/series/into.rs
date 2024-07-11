@@ -26,20 +26,24 @@ impl Series {
             dt @ DataType::Struct(fields) => {
                 let ca = self.struct_().unwrap();
                 let arr = ca.downcast_chunks().get(chunk_idx).unwrap();
-                let values = arr.values().iter().zip(fields.iter()).map(|(values, field)|{
-                    let dtype = &field.dtype;
-                    let s = unsafe {
-                        Series::from_chunks_and_dtype_unchecked(
-                            "",
-                            vec![values.clone()],
-                            &dtype.to_physical(),
-                        )
+                let values = arr
+                    .values()
+                    .iter()
+                    .zip(fields.iter())
+                    .map(|(values, field)| {
+                        let dtype = &field.dtype;
+                        let s = unsafe {
+                            Series::from_chunks_and_dtype_unchecked(
+                                "",
+                                vec![values.clone()],
+                                &dtype.to_physical(),
+                            )
                             .cast_unchecked(dtype)
                             .unwrap()
-                    };
-                    s.to_arrow(0, compat_level)
-
-                }).collect::<Vec<_>>();
+                        };
+                        s.to_arrow(0, compat_level)
+                    })
+                    .collect::<Vec<_>>();
                 StructArray::new(dt.to_arrow(compat_level), values, arr.validity().cloned()).boxed()
             },
             // special list branch to

@@ -475,7 +475,7 @@ pub(super) fn compute_row_idx(
         let (row_locations, n_rows, row_index) =
             compute_row_index_struct(index, &index_agg, &ca, count);
         let row_index = row_index.map(|x| {
-             let ca = x.get(0) .unwrap()
+             let ca = x.first().unwrap()
                 .struct_().unwrap();
 
             polars_ensure!(ca.null_count() == 0, InvalidOperation: "outer nullability in struct pivot not yet supported");

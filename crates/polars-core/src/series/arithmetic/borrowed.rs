@@ -1,5 +1,5 @@
-use crate::utils::align_chunks_binary;
 use super::*;
+use crate::utils::align_chunks_binary;
 
 pub trait NumOpsDispatchInner: PolarsDataType + Sized {
     fn subtract(lhs: &ChunkedArray<Self>, rhs: &Series) -> PolarsResult<Series> {

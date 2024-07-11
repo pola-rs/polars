@@ -1,4 +1,5 @@
 use arrow::array::*;
+
 use crate::prelude::*;
 #[cfg(feature = "dtype-struct")]
 use crate::series::iterator::SeriesIter;
@@ -423,17 +424,20 @@ impl<T: PolarsObject> ObjectChunked<T> {
 // TODO: STRUCT REFACTOR: REMOVE THIS
 #[cfg(feature = "dtype-struct")]
 impl<'a> IntoIterator for &'a StructChunked2 {
-    type Item = Option< &'a [AnyValue<'a>]>;
+    type Item = Option<&'a [AnyValue<'a>]>;
     type IntoIter = StructIter2<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
         assert_eq!(self.n_chunks(), 1);
         let fields = self.fields_as_series();
-        let field_iter = fields.iter().map(|s| {
-            let iter = s.iter();
-            // SAFETY: this works as the reference is to the heap, and not to the struct.
-            unsafe { std::mem::transmute::<SeriesIter<'_>, SeriesIter<'a>>(iter) }
-        }).collect();
+        let field_iter = fields
+            .iter()
+            .map(|s| {
+                let iter = s.iter();
+                // SAFETY: this works as the reference is to the heap, and not to the struct.
+                unsafe { std::mem::transmute::<SeriesIter<'_>, SeriesIter<'a>>(iter) }
+            })
+            .collect();
 
         StructIter2 {
             field_iter,

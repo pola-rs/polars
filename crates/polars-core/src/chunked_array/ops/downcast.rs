@@ -2,6 +2,7 @@ use std::marker::PhantomData;
 
 use arrow::array::*;
 use arrow::compute::utils::combine_validities_and;
+
 use crate::prelude::*;
 use crate::utils::{index_to_chunked_index, index_to_chunked_index_rev};
 
@@ -146,7 +147,6 @@ impl<T: PolarsDataType> ChunkedArray<T> {
             index_to_chunked_index_rev(chunk_lens.rev(), index_from_back, self.chunks.len())
         }
     }
-
 
     /// # Panics
     /// Panics if chunks don't align

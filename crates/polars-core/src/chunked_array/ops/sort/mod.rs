@@ -585,7 +585,6 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
     }
 }
 
-
 #[cfg(feature = "dtype-struct")]
 impl StructChunked2 {
     pub(crate) fn arg_sort(&self, options: SortOptions) -> IdxCa {
@@ -595,13 +594,13 @@ impl StructChunked2 {
             &[options.descending],
             &[options.nulls_last],
         )
-            .unwrap();
+        .unwrap();
         bin.arg_sort(Default::default())
     }
 }
 
 #[cfg(feature = "dtype-struct")]
-impl ChunkSort<StructType>  for StructChunked2 {
+impl ChunkSort<StructType> for StructChunked2 {
     fn sort_with(&self, options: SortOptions) -> ChunkedArray<StructType> {
         let idx = self.arg_sort(options);
         unsafe { self.take_unchecked(&idx) }
@@ -612,7 +611,7 @@ impl ChunkSort<StructType>  for StructChunked2 {
     }
 
     fn arg_sort(&self, options: SortOptions) -> IdxCa {
-        let bin=self.get_row_encoded(options).unwrap();
+        let bin = self.get_row_encoded(options).unwrap();
         bin.arg_sort(Default::default())
     }
 }

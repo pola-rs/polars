@@ -2246,7 +2246,10 @@ fn make_dict_arg(py: Python, names: &[&str], vals: &[AnyValue]) -> Py<PyDict> {
 }
 
 fn get_names(ca: &StructChunked2) -> Vec<&str> {
-    ca.struct_fields().iter().map(|s| s.name().as_str()).collect::<Vec<_>>()
+    ca.struct_fields()
+        .iter()
+        .map(|s| s.name().as_str())
+        .collect::<Vec<_>>()
 }
 
 impl<'a> ApplyLambda<'a> for StructChunked2 {

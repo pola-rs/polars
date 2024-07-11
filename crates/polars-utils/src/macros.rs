@@ -20,7 +20,7 @@ macro_rules! unreachable_unchecked_release {
 #[macro_export]
 macro_rules! no_call_const {
     () => {{
-        const { assert!(false, "should not be called")}
+        const { assert!(false, "should not be called") }
         unreachable!()
     }};
 }

@@ -305,7 +305,6 @@ impl AggList for StructChunked2 {
     }
 }
 
-
 unsafe fn agg_list_by_gather_and_offsets<T: PolarsDataType>(
     ca: &ChunkedArray<T>,
     groups: &GroupsProxy,

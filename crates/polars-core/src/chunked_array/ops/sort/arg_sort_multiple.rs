@@ -1,4 +1,4 @@
-use arrow::compute::utils::{combine_validities_and_many};
+use arrow::compute::utils::combine_validities_and_many;
 use compare_inner::NullOrderCmp;
 use polars_row::{convert_columns, EncodingField, RowsEncoded};
 use polars_utils::iter::EnumerateIdxTrait;
@@ -238,8 +238,7 @@ pub fn _get_rows_encoded_arr(
     descending: &[bool],
     nulls_last: &[bool],
 ) -> PolarsResult<BinaryArray<i64>> {
-    _get_rows_encoded(by, descending, nulls_last)
-        .map(|rows| rows.into_array())
+    _get_rows_encoded(by, descending, nulls_last).map(|rows| rows.into_array())
 }
 
 pub fn _get_rows_encoded_ca_unordered(

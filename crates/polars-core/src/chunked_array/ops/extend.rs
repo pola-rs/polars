@@ -1,5 +1,6 @@
 use arrow::compute::concatenate::concatenate;
 use arrow::Either;
+
 use crate::prelude::append::update_sorted_flag_before_append;
 use crate::prelude::*;
 use crate::series::IsSorted;

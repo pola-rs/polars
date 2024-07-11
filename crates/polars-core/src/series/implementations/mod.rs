@@ -19,10 +19,10 @@ pub(crate) mod null;
 #[cfg(feature = "object")]
 mod object;
 mod string;
-#[cfg(feature = "dtype-time")]
-mod time;
 #[cfg(feature = "dtype-struct")]
 mod struct__;
+#[cfg(feature = "dtype-time")]
+mod time;
 
 use std::any::Any;
 use std::borrow::Cow;

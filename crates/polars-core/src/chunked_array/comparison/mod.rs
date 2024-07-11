@@ -10,6 +10,7 @@ use arrow::bitmap::MutableBitmap;
 use arrow::compute;
 use num_traits::{NumCast, ToPrimitive};
 use polars_compute::comparisons::{TotalEqKernel, TotalOrdKernel};
+
 use crate::prelude::*;
 use crate::series::implementations::null::NullChunked;
 use crate::series::IsSorted;
@@ -643,27 +644,33 @@ impl ChunkCompare<&ListChunked> for ListChunked {
 }
 
 #[cfg(feature = "dtype-struct")]
-fn struct_helper<F, R>(a: &StructChunked2, b: &StructChunked2, op: F, reduce: R, value: bool) -> BooleanChunked
-where F: Fn(&Series, &Series) -> BooleanChunked,
-    R: Fn(BooleanChunked, BooleanChunked) -> BooleanChunked
+fn struct_helper<F, R>(
+    a: &StructChunked2,
+    b: &StructChunked2,
+    op: F,
+    reduce: R,
+    value: bool,
+) -> BooleanChunked
+where
+    F: Fn(&Series, &Series) -> BooleanChunked,
+    R: Fn(BooleanChunked, BooleanChunked) -> BooleanChunked,
 {
     if a.len() != b.len() || a.struct_fields().len() != b.struct_fields().len() {
         BooleanChunked::full("", value, a.len())
     } else {
-        let (a, b ) = align_chunks_binary(a, b);
-        let mut out = a.fields_as_series()
+        let (a, b) = align_chunks_binary(a, b);
+        let mut out = a
+            .fields_as_series()
             .iter()
             .zip(b.fields_as_series().iter())
-            .map(|(l, r)| {
-                op(l, r)
-            })
-            .reduce(|lhs, rhs| reduce(lhs, rhs))
+            .map(|(l, r)| op(l, r))
+            .reduce(reduce)
             .unwrap();
         if a.null_count() > 0 || b.null_count() > 0 {
             let mut a = a.into_owned();
             a.zip_outer_validity(&b);
             unsafe {
-                for (arr,a)  in out.downcast_iter_mut().zip(a.downcast_iter())  {
+                for (arr, a) in out.downcast_iter_mut().zip(a.downcast_iter()) {
                     arr.set_validity(a.validity().cloned())
                 }
             }
@@ -676,22 +683,45 @@ where F: Fn(&Series, &Series) -> BooleanChunked,
 impl ChunkCompare<&StructChunked2> for StructChunked2 {
     type Item = BooleanChunked;
     fn equal(&self, rhs: &StructChunked2) -> BooleanChunked {
-        struct_helper(self, rhs, |l, r| l.equal(r).unwrap(), |a, b| a.bitand(b), false)
+        struct_helper(
+            self,
+            rhs,
+            |l, r| l.equal(r).unwrap(),
+            |a, b| a.bitand(b),
+            false,
+        )
     }
 
     fn equal_missing(&self, rhs: &StructChunked2) -> BooleanChunked {
-        struct_helper(self, rhs, |l, r| l.equal_missing(r).unwrap(), |a, b| a.bitand(b), false)
+        struct_helper(
+            self,
+            rhs,
+            |l, r| l.equal_missing(r).unwrap(),
+            |a, b| a.bitand(b),
+            false,
+        )
     }
 
     fn not_equal(&self, rhs: &StructChunked2) -> BooleanChunked {
-        struct_helper(self, rhs, |l, r| l.not_equal(r).unwrap(),|a, b| a.not_equal(&b).unique().unwrap(), true)
+        struct_helper(
+            self,
+            rhs,
+            |l, r| l.not_equal(r).unwrap(),
+            |a, b| a.not_equal(&b).unique().unwrap(),
+            true,
+        )
     }
 
     fn not_equal_missing(&self, rhs: &StructChunked2) -> BooleanChunked {
-        struct_helper(self, rhs, |l, r| l.not_equal_missing(r).unwrap(), |a, b| a.not_equal_missing(&b).unique().unwrap(), true)
+        struct_helper(
+            self,
+            rhs,
+            |l, r| l.not_equal_missing(r).unwrap(),
+            |a, b| a.not_equal_missing(&b).unique().unwrap(),
+            true,
+        )
     }
 }
-
 
 #[cfg(feature = "dtype-array")]
 impl ChunkCompare<&ArrayChunked> for ArrayChunked {

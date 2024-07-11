@@ -38,9 +38,9 @@ pub(crate) mod unique;
 #[cfg(feature = "zip_with")]
 pub mod zip;
 
+use polars_utils::no_call_const;
 #[cfg(feature = "serde-lazy")]
 use serde::{Deserialize, Serialize};
-use polars_utils::no_call_const;
 pub use sort::options::*;
 
 use crate::chunked_array::cast::CastOptions;
@@ -542,11 +542,15 @@ impl ChunkExpandAtIndex<StructType> for StructChunked2 {
         let chunk = if chunk.is_null(idx) {
             new_null_array(chunk.data_type().clone(), length)
         } else {
-            let values = chunk.values().iter().map(|arr| {
-                let s = Series::try_from(("", arr.clone())).unwrap();
-                let s = s.new_from_index(idx, length);
-                s.chunks()[0].clone()
-            }).collect::<Vec<_>>();
+            let values = chunk
+                .values()
+                .iter()
+                .map(|arr| {
+                    let s = Series::try_from(("", arr.clone())).unwrap();
+                    let s = s.new_from_index(idx, length);
+                    s.chunks()[0].clone()
+                })
+                .collect::<Vec<_>>();
 
             StructArray::new(chunk.data_type().clone(), values, None).boxed()
         };
