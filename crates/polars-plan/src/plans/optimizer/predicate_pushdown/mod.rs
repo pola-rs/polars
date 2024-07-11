@@ -16,19 +16,19 @@ use crate::prelude::optimizer::predicate_pushdown::join::process_join;
 use crate::prelude::optimizer::predicate_pushdown::rename::process_rename;
 use crate::utils::{check_input_node, has_aexpr};
 
-pub type HiveEval<'a> =
+pub type ExprEval<'a> =
     Option<&'a dyn Fn(&ExprIR, &Arena<AExpr>) -> Option<Arc<dyn PhysicalIoExpr>>>;
 
 pub struct PredicatePushDown<'a> {
-    hive_partition_eval: HiveEval<'a>,
+    expr_eval: ExprEval<'a>,
     verbose: bool,
     block_at_cache: bool,
 }
 
 impl<'a> PredicatePushDown<'a> {
-    pub fn new(hive_partition_eval: HiveEval<'a>) -> Self {
+    pub fn new(expr_eval: ExprEval<'a>) -> Self {
         Self {
-            hive_partition_eval,
+            expr_eval,
             verbose: verbose(),
             block_at_cache: true,
         }
@@ -333,29 +333,38 @@ impl<'a> PredicatePushDown<'a> {
                 file_options: options,
                 output_schema,
             } => {
-                let local_predicates = match &scan_type {
+                let mut blocked_names = Vec::with_capacity(2);
+
+                if let Some(col) = options.include_file_paths.as_deref() {
+                    blocked_names.push(col);
+                }
+
+                match &scan_type {
                     #[cfg(feature = "parquet")]
-                    FileScan::Parquet { .. } => vec![],
+                    FileScan::Parquet { .. } => {},
                     #[cfg(feature = "ipc")]
-                    FileScan::Ipc { .. } => vec![],
+                    FileScan::Ipc { .. } => {},
                     _ => {
                         // Disallow row index pushdown of other scans as they may
                         // not update the row index properly before applying the
                         // predicate (e.g. FileScan::Csv doesn't).
                         if let Some(ref row_index) = options.row_index {
-                            transfer_to_local_by_name(expr_arena, &mut acc_predicates, |name| {
-                                name == row_index.name
-                            })
-                        } else {
-                            vec![]
-                        }
+                            blocked_names.push(row_index.name.as_ref());
+                        };
                     },
+                };
+
+                let local_predicates = if blocked_names.is_empty() {
+                    vec![]
+                } else {
+                    transfer_to_local_by_name(expr_arena, &mut acc_predicates, |name| {
+                        blocked_names.contains(&name.as_ref())
+                    })
                 };
                 let predicate = predicate_at_scan(acc_predicates, predicate.clone(), expr_arena);
 
                 if let (Some(hive_parts), Some(predicate)) = (&scan_hive_parts, &predicate) {
-                    if let Some(io_expr) = self.hive_partition_eval.unwrap()(predicate, expr_arena)
-                    {
+                    if let Some(io_expr) = self.expr_eval.unwrap()(predicate, expr_arena) {
                         if let Some(stats_evaluator) = io_expr.as_stats_evaluator() {
                             let mut new_paths = Vec::with_capacity(paths.len());
                             let mut new_hive_parts = Vec::with_capacity(paths.len());

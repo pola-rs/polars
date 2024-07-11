@@ -566,6 +566,7 @@ pub struct BatchedParquetReader {
     chunk_size: usize,
     use_statistics: bool,
     hive_partition_columns: Option<Arc<[Series]>>,
+    include_file_path: Option<StringChunked>,
     /// Has returned at least one materialized frame.
     has_returned: bool,
 }
@@ -583,6 +584,7 @@ impl BatchedParquetReader {
         chunk_size: usize,
         use_statistics: bool,
         hive_partition_columns: Option<Vec<Series>>,
+        include_file_path: Option<(Arc<str>, Arc<str>)>,
         mut parallel: ParallelStrategy,
     ) -> PolarsResult<Self> {
         let n_row_groups = metadata.row_groups.len();
@@ -621,6 +623,8 @@ impl BatchedParquetReader {
             chunk_size,
             use_statistics,
             hive_partition_columns: hive_partition_columns.map(Arc::from),
+            include_file_path: include_file_path
+                .map(|(col, path)| StringChunked::full(&col, &path, 1)),
             has_returned: false,
         })
     }
@@ -669,7 +673,7 @@ impl BatchedParquetReader {
                 .fetch_row_groups(row_group_start..row_group_end)
                 .await?;
 
-            let dfs = match store {
+            let mut dfs = match store {
                 ColumnStore::Local(_) => rg_to_dfs(
                     &store,
                     &mut self.rows_read,
@@ -745,17 +749,58 @@ impl BatchedParquetReader {
                 },
             }?;
 
+            if let Some(ca) = self.include_file_path.as_mut() {
+                let mut max_len = 0;
+
+                if self.projection.is_empty() {
+                    max_len = self.metadata.num_rows;
+                } else {
+                    for df in &dfs {
+                        max_len = std::cmp::max(max_len, df.height());
+                    }
+                }
+
+                // Re-use the same ChunkedArray
+                if ca.len() < max_len {
+                    *ca = ca.new_from_index(max_len, 0);
+                }
+
+                for df in &mut dfs {
+                    unsafe {
+                        df.with_column_unchecked(
+                            ca.slice(
+                                0,
+                                if !self.projection.is_empty() {
+                                    df.height()
+                                } else {
+                                    self.metadata.num_rows
+                                },
+                            )
+                            .into_series(),
+                        )
+                    };
+                }
+            }
+
             self.row_group_offset += n;
 
             // case where there is no data in the file
             // the streaming engine needs at least a single chunk
             if self.rows_read == 0 && dfs.is_empty() {
-                return Ok(Some(vec![materialize_empty_df(
-                    Some(&self.projection),
-                    self.schema.as_ref(),
+                let mut df = materialize_empty_df(
+                    Some(self.projection.as_ref()),
+                    &self.schema,
                     self.hive_partition_columns.as_deref(),
                     self.row_index.as_ref(),
-                )]));
+                );
+
+                if let Some(ca) = &self.include_file_path {
+                    unsafe {
+                        df.with_column_unchecked(ca.clear().into_series());
+                    }
+                };
+
+                return Ok(Some(vec![df]));
             }
 
             // TODO! this is slower than it needs to be
@@ -780,12 +825,20 @@ impl BatchedParquetReader {
         if self.chunks_fifo.is_empty() {
             if skipped_all_rgs {
                 self.has_returned = true;
-                Ok(Some(vec![materialize_empty_df(
+                let mut df = materialize_empty_df(
                     Some(self.projection.as_ref()),
                     &self.schema,
                     self.hive_partition_columns.as_deref(),
                     self.row_index.as_ref(),
-                )]))
+                );
+
+                if let Some(ca) = &self.include_file_path {
+                    unsafe {
+                        df.with_column_unchecked(ca.clear().into_series());
+                    }
+                };
+
+                Ok(Some(vec![df]))
             } else {
                 Ok(None)
             }

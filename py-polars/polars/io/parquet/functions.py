@@ -192,6 +192,7 @@ def read_parquet(
         storage_options=storage_options,
         retries=retries,
         glob=glob,
+        include_file_paths=None,
     )
 
     if columns is not None:
@@ -304,6 +305,7 @@ def scan_parquet(
     cache: bool = True,
     storage_options: dict[str, Any] | None = None,
     retries: int = 2,
+    include_file_paths: str | None = None,
 ) -> LazyFrame:
     """
     Lazily read from a local or cloud-hosted parquet file (or files).
@@ -364,6 +366,8 @@ def scan_parquet(
         from environment variables.
     retries
         Number of retries if accessing a cloud instance fails.
+    include_file_paths
+        Include the path of the source file(s) as a column with this name.
 
     See Also
     --------
@@ -414,6 +418,7 @@ def scan_parquet(
         try_parse_hive_dates=try_parse_hive_dates,
         retries=retries,
         glob=glob,
+        include_file_paths=include_file_paths,
     )
 
 
@@ -434,6 +439,7 @@ def _scan_parquet_impl(
     hive_schema: SchemaDict | None = None,
     try_parse_hive_dates: bool = True,
     retries: int = 2,
+    include_file_paths: str | None = None,
 ) -> LazyFrame:
     if isinstance(source, list):
         sources = source
@@ -463,5 +469,6 @@ def _scan_parquet_impl(
         try_parse_hive_dates=try_parse_hive_dates,
         retries=retries,
         glob=glob,
+        include_file_paths=include_file_paths,
     )
     return wrap_ldf(pylf)

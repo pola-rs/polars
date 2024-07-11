@@ -132,6 +132,12 @@ impl ParquetSource {
                 .with_predicate(predicate.clone())
                 .use_statistics(options.use_statistics)
                 .with_hive_partition_columns(hive_partitions)
+                .with_include_file_path(
+                    self.file_options
+                        .include_file_paths
+                        .as_ref()
+                        .map(|x| (x.clone(), Arc::from(path.to_str().unwrap()))),
+                )
                 .batched(chunk_size)?
         };
         self.finish_init_reader(batched_reader)?;
@@ -171,6 +177,12 @@ impl ParquetSource {
                 .with_predicate(predicate.clone())
                 .use_statistics(options.use_statistics)
                 .with_hive_partition_columns(hive_partitions)
+                .with_include_file_path(
+                    self.file_options
+                        .include_file_paths
+                        .as_ref()
+                        .map(|x| (x.clone(), Arc::from(path.to_str().unwrap()))),
+                )
                 .batched(chunk_size)
                 .await?
         };

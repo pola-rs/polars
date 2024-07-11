@@ -107,6 +107,7 @@ impl LazyFileListReader for LazyJsonLineReader {
             file_counter: 0,
             hive_options: Default::default(),
             glob: true,
+            include_file_paths: None,
         };
 
         let options = NDJsonReadOptions {
@@ -140,6 +141,7 @@ impl LazyFileListReader for LazyJsonLineReader {
             file_counter: 0,
             hive_options: Default::default(),
             glob: false,
+            include_file_paths: None,
         };
 
         let options = NDJsonReadOptions {

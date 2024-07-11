@@ -936,6 +936,7 @@ def scan_csv(
     storage_options: dict[str, Any] | None = None,
     retries: int = 2,
     file_cache_ttl: int | None = None,
+    include_file_paths: str | None = None,
 ) -> LazyFrame:
     r"""
     Lazily read from a CSV file or multiple files via glob patterns.
@@ -1052,6 +1053,8 @@ def scan_csv(
         Amount of time to keep downloaded cloud files since their last access time,
         in seconds. Uses the `POLARS_FILE_CACHE_TTL` environment variable
         (which defaults to 1 hour) if not given.
+    include_file_paths
+        Include the path of the source file(s) as a column with this name.
 
     Returns
     -------
@@ -1177,6 +1180,7 @@ def scan_csv(
         retries=retries,
         storage_options=storage_options,
         file_cache_ttl=file_cache_ttl,
+        include_file_paths=include_file_paths,
     )
 
 
@@ -1212,6 +1216,7 @@ def _scan_csv_impl(
     storage_options: dict[str, Any] | None = None,
     retries: int = 2,
     file_cache_ttl: int | None = None,
+    include_file_paths: str | None = None,
 ) -> LazyFrame:
     dtype_list: list[tuple[str, PolarsDataType]] | None = None
     if schema_overrides is not None:
@@ -1263,5 +1268,6 @@ def _scan_csv_impl(
         cloud_options=storage_options,
         retries=retries,
         file_cache_ttl=file_cache_ttl,
+        include_file_paths=include_file_paths,
     )
     return wrap_ldf(pylf)

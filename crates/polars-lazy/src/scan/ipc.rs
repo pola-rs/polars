@@ -16,6 +16,7 @@ pub struct ScanArgsIpc {
     pub memory_map: bool,
     pub cloud_options: Option<CloudOptions>,
     pub hive_options: HiveOptions,
+    pub include_file_paths: Option<Arc<str>>,
 }
 
 impl Default for ScanArgsIpc {
@@ -28,6 +29,7 @@ impl Default for ScanArgsIpc {
             memory_map: true,
             cloud_options: Default::default(),
             hive_options: Default::default(),
+            include_file_paths: None,
         }
     }
 }
@@ -65,6 +67,7 @@ impl LazyFileListReader for LazyIpcReader {
             args.rechunk,
             args.cloud_options,
             args.hive_options,
+            args.include_file_paths,
         )?
         .build()
         .into();

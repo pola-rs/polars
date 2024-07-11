@@ -94,7 +94,13 @@ impl ParquetExec {
                     .set_low_memory(self.options.low_memory)
                     .use_statistics(self.options.use_statistics)
                     .set_rechunk(false)
-                    .with_hive_partition_columns(hive_partitions);
+                    .with_hive_partition_columns(hive_partitions)
+                    .with_include_file_path(
+                        self.file_options
+                            .include_file_paths
+                            .as_ref()
+                            .map(|x| (x.clone(), Arc::from(paths[i].to_str().unwrap()))),
+                    );
 
                 reader
                     .num_rows()
@@ -113,13 +119,16 @@ impl ParquetExec {
             let out = POOL.install(|| {
                 readers_and_metadata
                     .into_par_iter()
-                    .zip(rows_statistics.par_iter())
+                    .zip(rows_statistics.into_par_iter())
+                    .enumerate()
                     .map(
                         |(
-                            (reader, num_rows_this_file, predicate, projection),
-                            (remaining_rows_to_read, cumulative_read),
+                            i,
+                            (
+                                (reader, num_rows_this_file, predicate, projection),
+                                (remaining_rows_to_read, cumulative_read),
+                            ),
                         )| {
-                            let remaining_rows_to_read = *remaining_rows_to_read;
                             let remaining_rows_to_read =
                                 if num_rows_this_file < remaining_rows_to_read {
                                     None
@@ -128,10 +137,10 @@ impl ParquetExec {
                                 };
                             let row_index = base_row_index.as_ref().map(|rc| RowIndex {
                                 name: rc.name.clone(),
-                                offset: rc.offset + *cumulative_read as IdxSize,
+                                offset: rc.offset + cumulative_read as IdxSize,
                             });
 
-                            reader
+                            let mut df = reader
                                 .with_n_rows(remaining_rows_to_read)
                                 .with_row_index(row_index)
                                 .with_predicate(predicate.clone())
@@ -144,7 +153,27 @@ impl ParquetExec {
                                         .unwrap_left()
                                         .as_ref(),
                                 )?
-                                .finish()
+                                .finish()?;
+
+                            if let Some(col) = &self.file_options.include_file_paths {
+                                let path = paths[i].to_str().unwrap();
+                                unsafe {
+                                    df.with_column_unchecked(
+                                        StringChunked::full(
+                                            col,
+                                            path,
+                                            std::cmp::max(
+                                                df.height(),
+                                                remaining_rows_to_read
+                                                    .unwrap_or(num_rows_this_file),
+                                            ),
+                                        )
+                                        .into_series(),
+                                    )
+                                };
+                            }
+
+                            Ok(df)
                         },
                     )
                     .collect::<PolarsResult<Vec<_>>>()
@@ -231,6 +260,7 @@ impl ParquetExec {
             let use_statistics = self.options.use_statistics;
             let predicate = &self.predicate;
             let base_row_index_ref = &base_row_index;
+            let include_file_paths = self.file_options.include_file_paths.as_ref();
 
             if verbose {
                 eprintln!("reading of {}/{} file...", processed, self.paths.len());
@@ -274,7 +304,7 @@ impl ParquetExec {
                             hive_partitions.as_deref(),
                         );
 
-                        reader
+                        let df = reader
                             .with_n_rows(remaining_rows_to_read)
                             .with_row_index(row_index)
                             .with_projection(projection)
@@ -284,23 +314,25 @@ impl ParquetExec {
                             .with_predicate(predicate)
                             .set_rechunk(false)
                             .with_hive_partition_columns(hive_partitions)
+                            .with_include_file_path(
+                                include_file_paths
+                                    .map(|x| (x.clone(), Arc::from(paths[i].to_str().unwrap()))),
+                            )
                             .finish()
-                            .await
-                            .map(Some)
+                            .await?;
+
+                        PolarsResult::Ok(df)
                     }
                 },
             );
 
             let dfs = futures::future::try_join_all(iter).await?;
-            let n_read = dfs
-                .iter()
-                .map(|opt_df| opt_df.as_ref().map(|df| df.height()).unwrap_or(0))
-                .sum();
+            let n_read = dfs.iter().map(|df| df.height()).sum();
             remaining_rows_to_read = remaining_rows_to_read.saturating_sub(n_read);
             if let Some(rc) = &mut base_row_index {
                 rc.offset += n_read as IdxSize;
             }
-            result.extend(dfs.into_iter().flatten())
+            result.extend(dfs.into_iter())
         }
 
         Ok(result)

@@ -89,7 +89,7 @@ impl PyLazyFrame {
         low_memory, comment_prefix, quote_char, null_values, missing_utf8_is_empty_string,
         infer_schema_length, with_schema_modify, rechunk, skip_rows_after_header,
         encoding, row_index, try_parse_dates, eol_char, raise_if_empty, truncate_ragged_lines, decimal_comma, glob, schema,
-        cloud_options, retries, file_cache_ttl
+        cloud_options, retries, file_cache_ttl, include_file_paths
     )
     )]
     fn new_from_csv(
@@ -123,6 +123,7 @@ impl PyLazyFrame {
         cloud_options: Option<Vec<(String, String)>>,
         retries: usize,
         file_cache_ttl: Option<u64>,
+        include_file_paths: Option<String>,
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
         let quote_char = quote_char.map(|s| s.as_bytes()[0]);
@@ -198,7 +199,8 @@ impl PyLazyFrame {
             .with_decimal_comma(decimal_comma)
             .with_glob(glob)
             .with_raise_if_empty(raise_if_empty)
-            .with_cloud_options(cloud_options);
+            .with_cloud_options(cloud_options)
+            .with_include_file_paths(include_file_paths.map(Arc::from));
 
         if let Some(lambda) = with_schema_modify {
             let f = |schema: Schema| {
@@ -229,7 +231,7 @@ impl PyLazyFrame {
     #[cfg(feature = "parquet")]
     #[staticmethod]
     #[pyo3(signature = (path, paths, n_rows, cache, parallel, rechunk, row_index,
-        low_memory, cloud_options, use_statistics, hive_partitioning, hive_schema, try_parse_hive_dates, retries, glob)
+        low_memory, cloud_options, use_statistics, hive_partitioning, hive_schema, try_parse_hive_dates, retries, glob, include_file_paths)
     )]
     fn new_from_parquet(
         path: Option<PathBuf>,
@@ -247,6 +249,7 @@ impl PyLazyFrame {
         try_parse_hive_dates: bool,
         retries: usize,
         glob: bool,
+        include_file_paths: Option<String>,
     ) -> PyResult<Self> {
         let parallel = parallel.0;
         let hive_schema = hive_schema.map(|s| Arc::new(s.0));
@@ -296,6 +299,7 @@ impl PyLazyFrame {
             use_statistics,
             hive_options,
             glob,
+            include_file_paths: include_file_paths.map(Arc::from),
         };
 
         let lf = if path.is_some() {
@@ -309,7 +313,7 @@ impl PyLazyFrame {
 
     #[cfg(feature = "ipc")]
     #[staticmethod]
-    #[pyo3(signature = (path, paths, n_rows, cache, rechunk, row_index, memory_map, cloud_options, hive_partitioning, hive_schema, try_parse_hive_dates, retries, file_cache_ttl))]
+    #[pyo3(signature = (path, paths, n_rows, cache, rechunk, row_index, memory_map, cloud_options, hive_partitioning, hive_schema, try_parse_hive_dates, retries, file_cache_ttl, include_file_paths))]
     fn new_from_ipc(
         path: Option<PathBuf>,
         paths: Vec<PathBuf>,
@@ -324,6 +328,7 @@ impl PyLazyFrame {
         try_parse_hive_dates: bool,
         retries: usize,
         file_cache_ttl: Option<u64>,
+        include_file_paths: Option<String>,
     ) -> PyResult<Self> {
         let row_index = row_index.map(|(name, offset)| RowIndex {
             name: Arc::from(name.as_str()),
@@ -373,6 +378,7 @@ impl PyLazyFrame {
             #[cfg(feature = "cloud")]
             cloud_options,
             hive_options,
+            include_file_paths: include_file_paths.map(Arc::from),
         };
 
         let lf = if let Some(path) = &path {

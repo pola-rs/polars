@@ -38,6 +38,7 @@ fn get_scan_columns(
     acc_projections: &Vec<ColumnNode>,
     expr_arena: &Arena<AExpr>,
     row_index: Option<&RowIndex>,
+    file_path_col: Option<&str>,
 ) -> Option<Arc<[String]>> {
     let mut with_columns = None;
     if !acc_projections.is_empty() {
@@ -46,14 +47,19 @@ fn get_scan_columns(
             let name = column_node_to_name(*expr, expr_arena);
             // we shouldn't project the row-count column, as that is generated
             // in the scan
-            let push = match row_index {
-                Some(rc) if (*name).as_ref() != rc.name.as_ref() => true,
-                None => true,
-                _ => false,
-            };
-            if push {
-                columns.push((**name).to_owned())
+            if let Some(ri) = row_index {
+                if ri.name.as_ref() == name.as_ref() {
+                    continue;
+                }
             }
+
+            if let Some(file_path_col) = file_path_col {
+                if file_path_col == name.as_ref() {
+                    continue;
+                }
+            }
+
+            columns.push((**name).to_owned())
         }
         with_columns = Some(Arc::from(columns));
     }
@@ -378,7 +384,7 @@ impl ProjectionPushDown {
                 mut options,
                 predicate,
             } => {
-                options.with_columns = get_scan_columns(&acc_projections, expr_arena, None);
+                options.with_columns = get_scan_columns(&acc_projections, expr_arena, None, None);
 
                 options.output_schema = if options.with_columns.is_none() {
                     None
@@ -420,6 +426,7 @@ impl ProjectionPushDown {
                         &acc_projections,
                         expr_arena,
                         file_options.row_index.as_ref(),
+                        file_options.include_file_paths.as_deref(),
                     );
 
                     output_schema = if let Some(ref with_columns) = file_options.with_columns {
@@ -470,6 +477,12 @@ impl ProjectionPushDown {
                                 if let Some(dt) = schema.shift_remove(name) {
                                     schema.with_column(name.clone(), dt);
                                 }
+                            }
+                        }
+                        if let Some(ref file_path_col) = file_options.include_file_paths {
+                            if let Some(i) = schema.index_of(file_path_col) {
+                                let (name, dtype) = schema.shift_remove_index(i).unwrap();
+                                schema.insert_at_index(schema.len(), name, dtype)?;
                             }
                         }
                         Some(Arc::new(schema))

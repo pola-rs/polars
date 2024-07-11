@@ -41,7 +41,7 @@ use crate::plans::optimizer::count_star::CountStar;
 use crate::plans::optimizer::cse::prune_unused_caches;
 #[cfg(feature = "cse")]
 use crate::plans::optimizer::cse::CommonSubExprOptimizer;
-use crate::plans::optimizer::predicate_pushdown::HiveEval;
+use crate::plans::optimizer::predicate_pushdown::ExprEval;
 #[cfg(feature = "cse")]
 use crate::plans::visitor::*;
 use crate::prelude::optimizer::collect_members::MemberCollector;
@@ -63,7 +63,7 @@ pub fn optimize(
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     scratch: &mut Vec<Node>,
-    hive_partition_eval: HiveEval<'_>,
+    expr_eval: ExprEval<'_>,
 ) -> PolarsResult<Node> {
     #[allow(dead_code)]
     let verbose = verbose();
@@ -152,7 +152,7 @@ pub fn optimize(
     }
 
     if predicate_pushdown {
-        let predicate_pushdown_opt = PredicatePushDown::new(hive_partition_eval);
+        let predicate_pushdown_opt = PredicatePushDown::new(expr_eval);
         let alp = lp_arena.take(lp_top);
         let alp = predicate_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
         lp_arena.replace(lp_top, alp);
@@ -195,14 +195,7 @@ pub fn optimize(
 
     if members.has_joins_or_unions && members.has_cache && _cse_plan_changed {
         // We only want to run this on cse inserted caches
-        cache_states::set_cache_states(
-            lp_top,
-            lp_arena,
-            expr_arena,
-            scratch,
-            hive_partition_eval,
-            verbose,
-        )?;
+        cache_states::set_cache_states(lp_top, lp_arena, expr_arena, scratch, expr_eval, verbose)?;
     }
 
     // This one should run (nearly) last as this modifies the projections

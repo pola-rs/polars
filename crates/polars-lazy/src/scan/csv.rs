@@ -18,6 +18,7 @@ pub struct LazyCsvReader {
     cache: bool,
     read_options: CsvReadOptions,
     cloud_options: Option<CloudOptions>,
+    include_file_paths: Option<Arc<str>>,
 }
 
 #[cfg(feature = "csv")]
@@ -39,6 +40,7 @@ impl LazyCsvReader {
             cache: true,
             read_options: Default::default(),
             cloud_options: Default::default(),
+            include_file_paths: None,
         }
     }
 
@@ -258,6 +260,11 @@ impl LazyCsvReader {
 
         Ok(self.with_schema(Some(Arc::new(schema))))
     }
+
+    pub fn with_include_file_paths(mut self, include_file_paths: Option<Arc<str>>) -> Self {
+        self.include_file_paths = include_file_paths;
+        self
+    }
 }
 
 impl LazyFileListReader for LazyCsvReader {
@@ -269,6 +276,7 @@ impl LazyFileListReader for LazyCsvReader {
             self.cache,
             self.cloud_options,
             self.glob,
+            self.include_file_paths,
         )?
         .build()
         .into();

@@ -61,13 +61,14 @@ impl CsvExec {
 
         let finish_read =
             |i: usize, options: CsvReadOptions, predicate: Option<Arc<dyn PhysicalIoExpr>>| {
-                if run_async {
+                let path = &self.paths[i];
+                let mut df = if run_async {
                     #[cfg(feature = "cloud")]
                     {
                         options
                             .into_reader_with_file_handle(
                                 polars_io::file_cache::FILE_CACHE
-                                    .get_entry(self.paths.get(i).unwrap().to_str().unwrap())
+                                    .get_entry(path.to_str().unwrap())
                                     // Safety: This was initialized by schema inference.
                                     .unwrap()
                                     .try_open_assume_latest()?,
@@ -81,11 +82,22 @@ impl CsvExec {
                     }
                 } else {
                     options
-                        .try_into_reader_with_file_path(Some(self.paths.get(i).unwrap().clone()))
+                        .try_into_reader_with_file_path(Some(path.clone()))
                         .unwrap()
                         ._with_predicate(predicate.clone())
                         .finish()
+                }?;
+
+                if let Some(col) = &self.file_options.include_file_paths {
+                    let path = path.to_str().unwrap();
+                    unsafe {
+                        df.with_column_unchecked(
+                            StringChunked::full(col, path, df.height()).into_series(),
+                        )
+                    };
                 }
+
+                Ok(df)
             };
 
         let mut df = if n_rows.is_some()
