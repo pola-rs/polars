@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Sequence
 
+from polars._utils.unstable import unstable
 from polars._utils.various import (
     is_str_sequence,
     normalize_filepath,
@@ -14,8 +15,25 @@ class PartitionedWriteOptions:
     Configuration for writing a partitioned dataset.
 
     This is passed to `write_*` functions that support writing partitioned datasets.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
+
+    Parameters
+    ----------
+    path
+        Path to the base directory for the partitioned dataset.
+    partition_by
+        Column(s) to partition by.
+    chunk_size_bytes
+        Approximate size to split DataFrames within a single partition when
+        writing. Note this is calculated using the size of the DataFrame in
+        memory - the size of the output file may differ depending on the
+        file format / compression.
     """
 
+    @unstable()
     def __init__(
         self,
         path: str | Path,
