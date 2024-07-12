@@ -52,6 +52,7 @@ impl DslBuilder {
                 ..Default::default()
             },
             glob: false,
+            include_file_paths: None,
         };
 
         Ok(DslPlan::Scan {
@@ -85,6 +86,7 @@ impl DslBuilder {
         use_statistics: bool,
         hive_options: HiveOptions,
         glob: bool,
+        include_file_paths: Option<Arc<str>>,
     ) -> PolarsResult<Self> {
         let paths = paths.into();
 
@@ -97,6 +99,7 @@ impl DslBuilder {
             file_counter: Default::default(),
             hive_options,
             glob,
+            include_file_paths,
         };
         Ok(DslPlan::Scan {
             paths,
@@ -128,6 +131,7 @@ impl DslBuilder {
         rechunk: bool,
         cloud_options: Option<CloudOptions>,
         hive_options: HiveOptions,
+        include_file_paths: Option<Arc<str>>,
     ) -> PolarsResult<Self> {
         let paths = paths.into();
 
@@ -144,6 +148,7 @@ impl DslBuilder {
                 file_counter: Default::default(),
                 hive_options,
                 glob: true,
+                include_file_paths,
             },
             predicate: None,
             scan_type: FileScan::Ipc {
@@ -163,6 +168,7 @@ impl DslBuilder {
         cache: bool,
         cloud_options: Option<CloudOptions>,
         glob: bool,
+        include_file_paths: Option<Arc<str>>,
     ) -> PolarsResult<Self> {
         let paths = paths.into();
 
@@ -182,6 +188,7 @@ impl DslBuilder {
                 ..Default::default()
             },
             glob,
+            include_file_paths,
         };
         Ok(DslPlan::Scan {
             paths,

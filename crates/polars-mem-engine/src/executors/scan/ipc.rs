@@ -80,6 +80,12 @@ impl IpcExec {
                         .as_ref()
                         .map(|x| x[path_index].materialize_partition_columns()),
                 )
+                .with_include_file_path(self.file_options.include_file_paths.as_ref().map(|x| {
+                    (
+                        x.clone(),
+                        Arc::from(self.paths[path_index].to_str().unwrap().to_string()),
+                    )
+                }))
                 .memory_mapped(
                     self.options
                         .memory_map

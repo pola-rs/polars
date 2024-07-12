@@ -586,3 +586,69 @@ def test_scan_nonexistent_path(format: str) -> None:
     # Upon collection, it should fail
     with pytest.raises(FileNotFoundError):
         result.collect()
+
+
+@pytest.mark.write_disk()
+@pytest.mark.parametrize(
+    ("scan_func", "write_func"),
+    [
+        (pl.scan_parquet, pl.DataFrame.write_parquet),
+        (pl.scan_ipc, pl.DataFrame.write_ipc),
+        (pl.scan_csv, pl.DataFrame.write_csv),
+    ],
+)
+@pytest.mark.parametrize(
+    "streaming",
+    [True, False],
+)
+def test_scan_include_file_name(
+    tmp_path: Path,
+    scan_func: Callable[[Any], pl.LazyFrame],
+    write_func: Callable[[pl.DataFrame, Path], None],
+    streaming: bool,
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    paths: list[Path] = []
+    dfs: list[pl.DataFrame] = []
+
+    for x in ["1", "2"]:
+        paths.append(Path(f"{tmp_path}/{x}.bin").absolute())
+        dfs.append(pl.DataFrame({"x": x}))
+        write_func(dfs[-1], paths[-1])
+
+    df = pl.concat(dfs).with_columns(
+        pl.Series("path", map(str, paths), dtype=pl.String)
+    )
+
+    assert df.columns == ["x", "path"]
+
+    with pytest.raises(
+        pl.exceptions.DuplicateError,
+        match=r'column name for file paths "x" conflicts with column name from file',
+    ):
+        scan_func(tmp_path, include_file_paths="x").collect(streaming=streaming)  # type: ignore[call-arg]
+
+    f = scan_func
+    if scan_func is pl.scan_csv:
+        f = partial(f, schema=df.drop("path").schema)
+
+    lf: pl.LazyFrame = f(tmp_path, include_file_paths="path")  # type: ignore[call-arg]
+    assert_frame_equal(lf.collect(streaming=streaming), df)
+
+    # TODO: Support this with CSV
+    if scan_func is not pl.scan_csv:
+        # Test projecting only the path column
+        assert_frame_equal(
+            lf.select("path").collect(streaming=streaming),
+            df.select("path"),
+        )
+
+    # Test predicates
+    for predicate in [pl.col("path") != pl.col("x"), pl.col("path") != ""]:
+        assert_frame_equal(
+            lf.filter(predicate).collect(streaming=streaming),
+            df,
+        )
+
+    # Test codepaths that materialize empty DataFrames
+    assert_frame_equal(lf.head(0).collect(streaming=streaming), df.head(0))

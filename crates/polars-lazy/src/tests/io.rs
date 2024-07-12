@@ -420,6 +420,7 @@ fn test_ipc_globbing() -> PolarsResult<()> {
             memory_map: true,
             cloud_options: None,
             hive_options: Default::default(),
+            include_file_paths: None,
         },
     )?
     .collect()?;

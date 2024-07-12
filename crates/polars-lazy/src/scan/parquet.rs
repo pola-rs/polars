@@ -20,6 +20,7 @@ pub struct ScanArgsParquet {
     pub cache: bool,
     /// Expand path given via globbing rules.
     pub glob: bool,
+    pub include_file_paths: Option<Arc<str>>,
 }
 
 impl Default for ScanArgsParquet {
@@ -35,6 +36,7 @@ impl Default for ScanArgsParquet {
             low_memory: false,
             cache: true,
             glob: true,
+            include_file_paths: None,
         }
     }
 }
@@ -71,6 +73,7 @@ impl LazyFileListReader for LazyParquetReader {
             self.args.use_statistics,
             self.args.hive_options,
             self.args.glob,
+            self.args.include_file_paths,
         )?
         .build()
         .into();

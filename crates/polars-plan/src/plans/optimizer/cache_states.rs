@@ -121,7 +121,7 @@ pub(super) fn set_cache_states(
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     scratch: &mut Vec<Node>,
-    hive_partition_eval: HiveEval<'_>,
+    expr_eval: ExprEval<'_>,
     verbose: bool,
 ) -> PolarsResult<()> {
     let mut stack = Vec::with_capacity(4);
@@ -294,7 +294,7 @@ pub(super) fn set_cache_states(
     // back to the cache node again
     if !cache_schema_and_children.is_empty() {
         let mut proj_pd = ProjectionPushDown::new();
-        let pred_pd = PredicatePushDown::new(hive_partition_eval).block_at_cache(false);
+        let pred_pd = PredicatePushDown::new(expr_eval).block_at_cache(false);
         for (_cache_id, v) in cache_schema_and_children {
             // # CHECK IF WE NEED TO REMOVE CACHES
             // If we encounter multiple predicates we remove the cache nodes completely as we don't

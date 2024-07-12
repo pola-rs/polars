@@ -81,6 +81,7 @@ pub struct IpcReader<R: MmapBytesReader> {
     pub(super) projection: Option<Vec<usize>>,
     pub(crate) columns: Option<Vec<String>>,
     hive_partition_columns: Option<Vec<Series>>,
+    include_file_path: Option<(Arc<str>, Arc<str>)>,
     pub(super) row_index: Option<RowIndex>,
     // Stores the as key semaphore to make sure we don't write to the memory mapped file.
     pub(super) memory_map: Option<PathBuf>,
@@ -130,6 +131,14 @@ impl<R: MmapBytesReader> IpcReader<R> {
 
     pub fn with_hive_partition_columns(mut self, columns: Option<Vec<Series>>) -> Self {
         self.hive_partition_columns = columns;
+        self
+    }
+
+    pub fn with_include_file_path(
+        mut self,
+        include_file_path: Option<(Arc<str>, Arc<str>)>,
+    ) -> Self {
+        self.include_file_path = include_file_path;
         self
     }
 
@@ -208,6 +217,7 @@ impl<R: MmapBytesReader> SerReader<R> for IpcReader<R> {
             n_rows: None,
             columns: None,
             hive_partition_columns: None,
+            include_file_path: None,
             projection: None,
             row_index: None,
             memory_map: None,
@@ -230,6 +240,7 @@ impl<R: MmapBytesReader> SerReader<R> for IpcReader<R> {
         let reader_schema = reader_schema.as_ref();
 
         let hive_partition_columns = self.hive_partition_columns.take();
+        let include_file_path = self.include_file_path.take();
 
         // In case only hive columns are projected, the df would be empty, but we need the row count
         // of the file in order to project the correct number of rows for the hive columns.
@@ -286,6 +297,12 @@ impl<R: MmapBytesReader> SerReader<R> for IpcReader<R> {
                 row_count,
             );
         };
+
+        if let Some((col, value)) = include_file_path {
+            unsafe {
+                df.with_column_unchecked(StringChunked::full(&col, &value, row_count).into_series())
+            };
+        }
 
         Ok(df)
     }

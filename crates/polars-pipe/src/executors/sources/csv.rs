@@ -22,12 +22,13 @@ pub(crate) struct CsvSource {
     n_threads: usize,
     paths: Arc<[PathBuf]>,
     options: Option<CsvReadOptions>,
-    file_options: Option<FileScanOptions>,
+    file_options: FileScanOptions,
     verbose: bool,
     // state for multi-file reads
     current_path_idx: usize,
     n_rows_read: usize,
     first_schema: Schema,
+    include_file_path: Option<StringChunked>,
 }
 
 impl CsvSource {
@@ -35,7 +36,7 @@ impl CsvSource {
     // otherwise all files would be opened during construction of the pipeline
     // leading to Too many Open files error
     fn init_next_reader(&mut self) -> PolarsResult<()> {
-        let file_options = self.file_options.clone().unwrap();
+        let file_options = self.file_options.clone();
 
         if self.current_path_idx == self.paths.len()
             || (file_options.n_rows.is_some() && file_options.n_rows.unwrap() <= self.n_rows_read)
@@ -115,6 +116,10 @@ impl CsvSource {
                 .try_into_reader_with_file_path(None)?
         };
 
+        if let Some(col) = &file_options.include_file_paths {
+            self.include_file_path = Some(StringChunked::full(col, path.to_str().unwrap(), 1));
+        };
+
         self.reader = Some(reader);
         let reader = self.reader.as_mut().unwrap();
 
@@ -139,11 +144,12 @@ impl CsvSource {
             n_threads: POOL.current_num_threads(),
             paths,
             options: Some(options),
-            file_options: Some(file_options),
+            file_options,
             verbose,
             current_path_idx: 0,
             n_rows_read: 0,
             first_schema: Default::default(),
+            include_file_path: None,
         })
     }
 }
@@ -181,10 +187,12 @@ impl Source for CsvSource {
 
             let index = get_source_index(0);
             let mut n_rows_read = 0;
-            let out = batches
+            let mut max_height = 0;
+            let mut out = batches
                 .into_iter()
                 .enumerate_u32()
                 .map(|(i, data)| {
+                    max_height = max_height.max(data.height());
                     n_rows_read += data.height();
                     DataChunk {
                         chunk_index: (index + i) as IdxSize,
@@ -192,6 +200,24 @@ impl Source for CsvSource {
                     }
                 })
                 .collect::<Vec<_>>();
+
+            if let Some(ca) = &mut self.include_file_path {
+                if ca.len() < max_height {
+                    *ca = ca.new_from_index(max_height, 0);
+                };
+
+                for data_chunk in &mut out {
+                    // The batched reader creates the column containing all nulls because the schema it
+                    // gets passed contains the column.
+                    for s in unsafe { data_chunk.data.get_columns_mut() } {
+                        if s.name() == ca.name() {
+                            *s = ca.slice(0, s.len()).into_series();
+                            break;
+                        }
+                    }
+                }
+            }
+
             self.n_rows_read = self.n_rows_read.saturating_add(n_rows_read);
             get_source_index(out.len() as u32);
 

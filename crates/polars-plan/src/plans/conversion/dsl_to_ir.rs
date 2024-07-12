@@ -193,6 +193,23 @@ pub fn to_alp_impl(
                 file_info.update_schema_with_hive_schema(hive_schema.clone());
             }
 
+            if let Some(ref file_path_col) = file_options.include_file_paths {
+                let schema = Arc::make_mut(&mut file_info.schema);
+
+                if schema.contains(file_path_col) {
+                    polars_bail!(
+                        Duplicate: r#"column name for file paths "{}" conflicts with column name from file"#,
+                        file_path_col
+                    );
+                }
+
+                schema.insert_at_index(
+                    schema.len(),
+                    file_path_col.as_ref().into(),
+                    DataType::String,
+                )?;
+            }
+
             file_options.with_columns = if file_info.reader_schema.is_some() {
                 maybe_init_projection_excluding_hive(
                     file_info.reader_schema.as_ref().unwrap(),

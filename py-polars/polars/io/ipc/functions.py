@@ -316,6 +316,7 @@ def scan_ipc(
     hive_partitioning: bool | None = None,
     hive_schema: SchemaDict | None = None,
     try_parse_hive_dates: bool = True,
+    include_file_paths: str | None = None,
 ) -> LazyFrame:
     """
     Lazily read from an Arrow IPC (Feather v2) file or multiple files via glob patterns.
@@ -374,6 +375,8 @@ def scan_ipc(
             at any point without it being considered a breaking change.
     try_parse_hive_dates
         Whether to try parsing hive values as date/datetime types.
+    include_file_paths
+        Include the path of the source file(s) as a column with this name.
     """
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source, check_not_directory=False)
@@ -398,5 +401,6 @@ def scan_ipc(
         hive_partitioning=hive_partitioning,
         hive_schema=hive_schema,
         try_parse_hive_dates=try_parse_hive_dates,
+        include_file_paths=include_file_paths,
     )
     return wrap_ldf(pylf)
