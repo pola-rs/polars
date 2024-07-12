@@ -47,7 +47,11 @@ class Schema(BaseSchema):
     2
     """
 
-    def __init__(self, schema: Mapping[str, DataType] | Iterable[tuple[str, DataType]]):
+    def __init__(
+        self,
+        schema: Mapping[str, DataType] | Iterable[tuple[str, DataType]] | None = None,
+    ):
+        schema = schema or {}
         super().__init__(schema)
 
     def names(self) -> list[str]:
