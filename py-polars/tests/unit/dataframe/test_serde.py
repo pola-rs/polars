@@ -19,20 +19,23 @@ if TYPE_CHECKING:
     from polars._typing import SerializationFormat
 
 
-@pytest.mark.skip(reason="struct-refactor")
-@given(df=dataframes())
+@given(
+    df=dataframes(
+        excluded_dtypes=[pl.Struct],  # Outer nullability not supported
+    )
+)
 def test_df_serde_roundtrip_binary(df: pl.DataFrame) -> None:
     serialized = df.serialize()
     result = pl.DataFrame.deserialize(io.BytesIO(serialized), format="binary")
     assert_frame_equal(result, df, categorical_as_str=True)
 
 
-@pytest.mark.skip(reason="struct-refactor")
 @given(
     df=dataframes(
         excluded_dtypes=[
             pl.Float32,  # Bug, see: https://github.com/pola-rs/polars/issues/17211
             pl.Float64,  # Bug, see: https://github.com/pola-rs/polars/issues/17211
+            pl.Struct,  # Outer nullability not supported
         ],
     )
 )

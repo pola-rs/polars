@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import pytest
 from hypothesis import example, given
 
 import polars as pl
@@ -16,7 +15,6 @@ from polars.testing.parametric import series
     )
 )
 @example(s=pl.Series(dtype=pl.Array(pl.Date, 1)))
-@pytest.mark.skip(reason="struct-refactor")
 def test_to_list(s: pl.Series) -> None:
     values = s.to_list()
     result = pl.Series(values, dtype=s.dtype)

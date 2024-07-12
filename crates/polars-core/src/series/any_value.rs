@@ -512,9 +512,18 @@ fn any_values_to_list(
     inner_type: &DataType,
     strict: bool,
 ) -> PolarsResult<ListChunked> {
-    let target_dtype = DataType::List(Box::new(inner_type.clone()));
+    let it = match inner_type {
+        // Structs don't support empty fields yet.
+        // We must ensure the data-types match what we do physical
+        #[cfg(feature = "dtype-struct")]
+        DataType::Struct(fields) if fields.is_empty() => {
+            DataType::Struct(vec![Field::new("", DataType::Null)])
+        },
+        _ => inner_type.clone(),
+    };
+    let target_dtype = DataType::List(Box::new(it));
 
-    // This is handled downstream. The builder will choose the first non null type.
+    // This is handled downstream. The builder will choose the first non-null type.
     let mut valid = true;
     #[allow(unused_mut)]
     let mut out: ListChunked = if inner_type == &DataType::Null {
@@ -657,8 +666,9 @@ fn any_values_to_struct(
     // The physical series fields of the struct.
     let mut series_fields = Vec::with_capacity(fields.len());
     let mut has_outer_validity = false;
+    let mut field_avs = Vec::with_capacity(values.len());
     for (i, field) in fields.iter().enumerate() {
-        let mut field_avs = Vec::with_capacity(values.len());
+        field_avs.clear();
 
         for av in values.iter() {
             match av {
@@ -669,29 +679,20 @@ fn any_values_to_struct(
 
                     let mut append_by_search = || {
                         // Search for the name.
-                        let mut pushed = false;
-                        for (av_fld, av_val) in av_fields.iter().zip(av_values) {
-                            if av_fld.name == field.name {
-                                field_avs.push(av_val.clone());
-                                pushed = true;
-                                break;
-                            }
+                        if let Some(i) = av_fields
+                            .iter()
+                            .position(|av_fld| av_fld.name == field.name)
+                        {
+                            field_avs.push(av_values[i].clone());
+                            return;
                         }
-                        if !pushed {
-                            field_avs.push(AnyValue::Null)
-                        }
+                        field_avs.push(AnyValue::Null)
                     };
 
                     // All fields are available in this single value.
                     // We can use the index to get value.
                     if fields.len() == av_fields.len() {
-                        let mut search = false;
-                        for (l, r) in fields.iter().zip(av_fields.iter()) {
-                            if l.name() != r.name() {
-                                search = true;
-                            }
-                        }
-                        if search {
+                        if fields.iter().zip(av_fields.iter()).any(|(l, r)| l != r) {
                             append_by_search()
                         } else {
                             let av_val = av_values.get(i).cloned().unwrap_or(AnyValue::Null);
