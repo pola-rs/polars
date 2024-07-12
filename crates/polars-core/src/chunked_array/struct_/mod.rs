@@ -262,7 +262,12 @@ impl StructChunked2 {
             unsafe {
                 let arr = &**self.chunks.get_unchecked(chunk_idx);
                 let arr = &*(arr as *const dyn Array as *const StructArray);
-                AnyValue::Struct(idx, arr, flds)
+
+                if arr.is_null_unchecked(idx) {
+                    AnyValue::Null
+                } else {
+                    AnyValue::Struct(idx, arr, flds)
+                }
             }
         } else {
             unreachable!()
@@ -348,6 +353,36 @@ impl StructChunked2 {
             arr.set_validity(validity)
         }
         self.compute_len();
+    }
+
+    pub fn with_outer_validity(mut self, validity: Option<Bitmap>) -> Self {
+        self.set_outer_validity(validity);
+        self
+    }
+
+    pub fn with_outer_validity_chunked(mut self, validity: BooleanChunked) -> Self {
+        assert_eq!(self.len(), validity.len());
+        if !self
+            .chunks
+            .iter()
+            .zip(validity.chunks.iter())
+            .map(|(a, b)| a.len() == b.len())
+            .all_equal()
+            || self.chunks.len() != validity.chunks().len()
+        {
+            let ca = self.rechunk();
+            let validity = validity.rechunk();
+            ca.with_outer_validity_chunked(validity)
+        } else {
+            unsafe {
+                for (arr, valid) in self.downcast_iter_mut().zip(validity.downcast_iter()) {
+                    assert!(valid.validity().is_none());
+                    arr.set_validity(Some(valid.values().clone()))
+                }
+            }
+            self.compute_len();
+            self
+        }
     }
 
     pub fn unnest(mut self) -> DataFrame {
