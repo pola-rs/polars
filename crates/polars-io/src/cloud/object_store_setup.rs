@@ -1,6 +1,3 @@
-#[cfg(feature = "hdfs")]
-#[allow(clippy::disallowed_types)]
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use object_store::local::LocalFileSystem;
@@ -127,9 +124,8 @@ pub async fn build_object_store(
         CloudType::Hdfs => {
             #[cfg(feature = "hdfs")]
             {
-                #[allow(clippy::disallowed_types)]
-                let client = hdfs_native::Client::default_with_config(HashMap::new()).unwrap();
-                let store = hdfs_native_object_store::HdfsObjectStore::new(Arc::new(client));
+                let hdfs_url = format!("{}://{}", cloud_location.scheme, cloud_location.bucket);
+                let store = hdfs_native_object_store::HdfsObjectStore::with_url(&hdfs_url)?;
                 Ok::<_, PolarsError>(Arc::new(store) as Arc<dyn ObjectStore>)
             }
             #[cfg(not(feature = "hdfs"))]
