@@ -270,9 +270,8 @@ class ExprDateTimeNameSpace:
         │ 2001-01-01 01:00:00 ┆ 2001-01-01 01:00:00 │
         └─────────────────────┴─────────────────────┘
         """
-        if not isinstance(every, pl.Expr):
+        if isinstance(every, dt.timedelta):
             every = parse_as_duration_string(every)
-
         every = parse_into_expression(every, str_as_lit=True)
         return wrap_expr(self._pyexpr.dt_truncate(every))
 

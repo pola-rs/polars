@@ -1642,7 +1642,7 @@ class DateTimeNameSpace:
         ]
         """
 
-    def truncate(self, every: str | dt.timedelta | Expr) -> Series:
+    def truncate(self, every: str | dt.timedelta | IntoExprColumn) -> Series:
         """
         Divide the date/ datetime range into buckets.
 
