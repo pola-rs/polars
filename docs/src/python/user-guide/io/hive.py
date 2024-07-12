@@ -25,6 +25,7 @@ for df, part in zip(dfs, parts):
     Path(path).parent.mkdir(exist_ok=True, parents=True)
     df.write_parquet(path)
 
+# Make sure the file is not empty because path expansion ignores empty files.
 Path("docs/data/hive_mixed/description.txt").write_text("A")
 
 
