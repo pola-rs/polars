@@ -656,6 +656,7 @@ where
     R: Fn(BooleanChunked, BooleanChunked) -> BooleanChunked,
 {
     if a.len() != b.len() || a.struct_fields().len() != b.struct_fields().len() {
+        // polars_ensure!(a.len() == 1 || b.len() == 1, ShapeMismatch: "length lhs: {}, length rhs: {}", a.len(), b.len());
         BooleanChunked::full("", value, a.len())
     } else {
         let (a, b) = align_chunks_binary(a, b);
@@ -707,7 +708,7 @@ impl ChunkCompare<&StructChunked2> for StructChunked2 {
             self,
             rhs,
             |l, r| l.not_equal(r).unwrap(),
-            |a, b| a.not_equal(&b).unique().unwrap(),
+            |a, b| a | b,
             true,
         )
     }
@@ -717,7 +718,7 @@ impl ChunkCompare<&StructChunked2> for StructChunked2 {
             self,
             rhs,
             |l, r| l.not_equal_missing(r).unwrap(),
-            |a, b| a.not_equal_missing(&b).unique().unwrap(),
+            |a, b| a | b,
             true,
         )
     }
