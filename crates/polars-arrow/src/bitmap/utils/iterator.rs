@@ -143,7 +143,7 @@ impl<'a> BitmapIter<'a> {
         ) {
             while *n > 0 && *word_len > 0 {
                 {
-                    let trailing_ones = word.trailing_ones();
+                    let trailing_ones = u32::min(word.trailing_ones(), *word_len as u32);
                     let shift = u32::min(usize::min(*n, u32::MAX as usize) as u32, trailing_ones);
                     *word = word.wrapping_shr(shift);
                     *word_len -= shift as usize;
@@ -164,8 +164,8 @@ impl<'a> BitmapIter<'a> {
             }
         }
 
-        let mut n = n;
-        bitmap.reserve(usize::min(n, self.num_remaining()));
+        let mut n = usize::min(n, self.num_remaining());
+        bitmap.reserve(n);
 
         collect_word(&mut self.word, &mut self.word_len, bitmap, &mut n);
 
@@ -176,12 +176,20 @@ impl<'a> BitmapIter<'a> {
         let num_words = n / 64;
 
         if num_words > 0 {
-            bitmap.extend_from_slice(self.bytes, 0, num_words * 64);
+            assert!(self.bytes.len() >= num_words * std::mem::size_of::<u64>());
+
+            bitmap.extend_from_slice(self.bytes, 0, num_words * u64::BITS as usize);
 
             self.bytes = unsafe { self.bytes.get_unchecked(num_words * 8..) };
-            self.rest_len -= num_words * 64;
-            n -= num_words * 64;
+            self.rest_len -= num_words * u64::BITS as usize;
+            n -= num_words * u64::BITS as usize;
         }
+
+        if n == 0 {
+            return;
+        }
+
+        assert!(self.bytes.len() >= std::mem::size_of::<u64>());
 
         self.word_len = usize::min(self.rest_len, 64);
         self.rest_len -= self.word_len;
@@ -253,14 +261,87 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_collect_into_17579() {
+        let mut bitmap = MutableBitmap::with_capacity(64);
+        BitmapIter::new(&[0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0], 0, 128)
+            .collect_n_into(&mut bitmap, 129);
+
+        let bitmap = bitmap.freeze();
+
+        assert_eq!(bitmap.set_bits(), 4);
+    }
+
+    #[test]
     #[ignore = "Fuzz test. Too slow"]
-    fn test_leading_ops() {
+    fn test_fuzz_collect_into() {
         for _ in 0..10_000 {
-            let bs = rand::random::<u8>() % 4;
+            let mut set_bits = 0;
+            let mut unset_bits = 0;
 
             let mut length = 0;
             let mut pattern = Vec::new();
             for _ in 0..rand::random::<usize>() % 1024 {
+                let bs = rand::random::<u8>() % 4;
+
+                let word = match bs {
+                    0 => u64::MIN,
+                    1 => u64::MAX,
+                    2 | 3 => rand::random(),
+                    _ => unreachable!(),
+                };
+
+                pattern.extend_from_slice(&word.to_le_bytes());
+                set_bits += word.count_ones();
+                unset_bits += word.count_zeros();
+                length += 64;
+            }
+
+            for _ in 0..rand::random::<usize>() % 7 {
+                let b = rand::random::<u8>();
+                pattern.push(b);
+                set_bits += b.count_ones();
+                unset_bits += b.count_zeros();
+                length += 8;
+            }
+
+            let last_length = rand::random::<usize>() % 8;
+            if last_length != 0 {
+                let b = rand::random::<u8>();
+                pattern.push(b);
+                let ones = (b & ((1 << last_length) - 1)).count_ones();
+                set_bits += ones;
+                unset_bits += last_length as u32 - ones;
+                length += last_length;
+            }
+
+            let mut iter = BitmapIter::new(&pattern, 0, length);
+            let mut bitmap = MutableBitmap::with_capacity(length);
+
+            while iter.num_remaining() > 0 {
+                let len_before = bitmap.len();
+                let n = rand::random::<usize>() % iter.num_remaining();
+                iter.collect_n_into(&mut bitmap, n);
+
+                // Ensure we are booking the progress we expect
+                assert_eq!(bitmap.len(), len_before + n);
+            }
+
+            let bitmap = bitmap.freeze();
+
+            assert_eq!(bitmap.set_bits(), set_bits as usize);
+            assert_eq!(bitmap.unset_bits(), unset_bits as usize);
+        }
+    }
+
+    #[test]
+    #[ignore = "Fuzz test. Too slow"]
+    fn test_fuzz_leading_ops() {
+        for _ in 0..10_000 {
+            let mut length = 0;
+            let mut pattern = Vec::new();
+            for _ in 0..rand::random::<usize>() % 1024 {
+                let bs = rand::random::<u8>() % 4;
+
                 let word = match bs {
                     0 => u64::MIN,
                     1 => u64::MAX,
