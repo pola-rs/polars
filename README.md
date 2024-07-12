@@ -102,49 +102,53 @@ shape: (5, 8)
 ## SQL
 
 ```python
->>> df = pl.scan_ipc("file.arrow")
->>> # create a SQL context, registering the frame as a table
->>> sql = pl.SQLContext(my_table=df)
->>> # create a SQL query to execute
->>> query = """
-...   SELECT sum(v1) as sum_v1, min(v2) as min_v2 FROM my_table
-...   WHERE id1 = 'id016'
-...   LIMIT 10
-... """
+>>> df = pl.scan_csv("docs/data/iris.csv")
 >>> ## OPTION 1
->>> # run the query, materializing as a DataFrame
->>> sql.execute(query, eager=True)
- shape: (1, 2)
- ┌────────┬────────┐
- │ sum_v1 ┆ min_v2 │
- │ ---    ┆ ---    │
- │ i64    ┆ i64    │
- ╞════════╪════════╡
- │ 298268 ┆ 1      │
- └────────┴────────┘
+>>> # run SQL queries on frame-level
+>>> df.sql("""
+...	SELECT species,
+...	  AVG(sepal_length) AS avg_sepal_length
+...	FROM self
+...	GROUP BY species
+...	""").collect()
+shape: (3, 2)
+┌────────────┬──────────────────┐
+│ species    ┆ avg_sepal_length │
+│ ---        ┆ ---              │
+│ str        ┆ f64              │
+╞════════════╪══════════════════╡
+│ Virginica  ┆ 6.588            │
+│ Versicolor ┆ 5.936            │
+│ Setosa     ┆ 5.006            │
+└────────────┴──────────────────┘
 >>> ## OPTION 2
->>> # run the query but don't immediately materialize the result.
->>> # this returns a LazyFrame that you can continue to operate on.
->>> lf = sql.execute(query)
->>> (lf.join(other_table)
-...      .group_by("foo")
-...      .agg(
-...     pl.col("sum_v1").count()
-... ).collect())
+>>> # use pl.sql() to operate on the global context
+>>> df2 = pl.LazyFrame({
+...    "species": ["Setosa", "Versicolor", "Virginica"],
+...    "blooming_season": ["Spring", "Summer", "Fall"]
+...})
+>>> pl.sql("""
+... SELECT df.species,
+...     AVG(df.sepal_length) AS avg_sepal_length,
+...     df2.blooming_season
+... FROM df
+... LEFT JOIN df2 ON df.species = df2.species
+... GROUP BY df.species, df2.blooming_season
+... """).collect()
 ```
 
 SQL commands can also be run directly from your terminal using the Polars CLI:
 
 ```bash
 # run an inline SQL query
-> polars -c "SELECT sum(v1) as sum_v1, min(v2) as min_v2 FROM read_ipc('file.arrow') WHERE id1 = 'id016' LIMIT 10"
+> polars -c "SELECT species, AVG(sepal_length) AS avg_sepal_length, AVG(sepal_width) AS avg_sepal_width FROM read_csv('docs/data/iris.csv') GROUP BY species;"
 
 # run interactively
 > polars
 Polars CLI v0.3.0
 Type .help for help.
 
-> SELECT sum(v1) as sum_v1, min(v2) as min_v2 FROM read_ipc('file.arrow') WHERE id1 = 'id016' LIMIT 10;
+> SELECT species, AVG(sepal_length) AS avg_sepal_length, AVG(sepal_width) AS avg_sepal_width FROM read_csv('docs/data/iris.csv') GROUP BY species;
 ```
 
 Refer to the [Polars CLI repository](https://github.com/pola-rs/polars-cli) for more information.
