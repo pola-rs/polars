@@ -13,7 +13,7 @@ use crate::chunked_array::ChunkedArray;
 use crate::prelude::sort::arg_sort_multiple::{_get_rows_encoded_arr, _get_rows_encoded_ca};
 use crate::prelude::*;
 use crate::series::Series;
-use crate::utils::{index_to_chunked_index, Container};
+use crate::utils::Container;
 
 pub type StructChunked2 = ChunkedArray<StructType>;
 
@@ -253,32 +253,6 @@ impl StructChunked2 {
 
     pub fn cast(&self, dtype: &DataType) -> PolarsResult<Series> {
         self.cast_with_options(dtype, CastOptions::NonStrict)
-    }
-
-    /// Gets AnyValue from LogicalType
-    pub(crate) fn get_any_value(&self, i: usize) -> PolarsResult<AnyValue<'_>> {
-        polars_ensure!(i < self.len(), oob = i, self.len());
-        unsafe { Ok(self.get_any_value_unchecked(i)) }
-    }
-
-    pub(crate) unsafe fn get_any_value_unchecked(&self, i: usize) -> AnyValue<'_> {
-        let (chunk_idx, idx) = index_to_chunked_index(self.chunks.iter().map(|c| c.len()), i);
-        if let DataType::Struct(flds) = self.dtype() {
-            // SAFETY: we already have a single chunk and we are
-            // guarded by the type system.
-            unsafe {
-                let arr = &**self.chunks.get_unchecked(chunk_idx);
-                let arr = &*(arr as *const dyn Array as *const StructArray);
-
-                if arr.is_null_unchecked(idx) {
-                    AnyValue::Null
-                } else {
-                    AnyValue::Struct(idx, arr, flds)
-                }
-            }
-        } else {
-            unreachable!()
-        }
     }
 
     pub fn _apply_fields<F>(&self, mut func: F) -> PolarsResult<Self>

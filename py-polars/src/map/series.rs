@@ -4,7 +4,6 @@ use pyo3::pybacked::PyBackedStr;
 use pyo3::types::{PyBool, PyCFunction, PyFloat, PyList, PyString, PyTuple};
 
 use super::*;
-use crate::conversion::slice_to_wrapped;
 use crate::py_modules::SERIES;
 
 /// Find the output type and dispatch to that implementation.
@@ -2237,28 +2236,16 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
     }
 }
 
-fn make_dict_arg(py: Python, names: &[&str], vals: &[AnyValue]) -> Py<PyDict> {
-    let dict = PyDict::new_bound(py);
-    for (name, val) in names.iter().zip(slice_to_wrapped(vals)) {
-        dict.set_item(name, val).unwrap()
-    }
-    dict.unbind()
-}
-
-fn get_names(ca: &StructChunked2) -> Vec<&str> {
-    ca.struct_fields()
-        .iter()
-        .map(|s| s.name().as_str())
-        .collect::<Vec<_>>()
+fn iter_struct(ca: &StructChunked2) -> impl Iterator<Item = AnyValue> {
+    (0..ca.len()).map(|i| unsafe { ca.get_any_value_unchecked(i) })
 }
 
 impl<'a> ApplyLambda<'a> for StructChunked2 {
     fn apply_lambda_unknown(&'a self, py: Python, lambda: &Bound<'a, PyAny>) -> PyResult<PySeries> {
-        let names = get_names(self);
         let mut null_count = 0;
-        for val in self.into_iter() {
-            let arg = val.map(|val| make_dict_arg(py, &names, val));
-            let out = lambda.call1((arg,))?;
+
+        for val in iter_struct(self) {
+            let out = lambda.call1((Wrap(val),))?;
             if out.is_none() {
                 null_count += 1;
                 continue;
@@ -2272,17 +2259,14 @@ impl<'a> ApplyLambda<'a> for StructChunked2 {
 
     fn apply_to_struct(
         &'a self,
-        py: Python,
+        _py: Python,
         lambda: &Bound<'a, PyAny>,
         init_null_count: usize,
         first_value: AnyValue<'a>,
     ) -> PyResult<PySeries> {
-        let names = get_names(self);
-
         let skip = 1;
-        let it = self.into_iter().skip(init_null_count + skip).map(|val| {
-            let arg = val.map(|val| make_dict_arg(py, &names, val));
-            let out = lambda.call1((arg,)).unwrap();
+        let it = iter_struct(self).skip(init_null_count + skip).map(|val| {
+            let out = lambda.call1((Wrap(val),)).unwrap();
             Some(out)
         });
         iterator_to_struct(it, init_null_count, first_value, self.name(), self.len())
@@ -2299,13 +2283,10 @@ impl<'a> ApplyLambda<'a> for StructChunked2 {
         D: PyArrowPrimitiveType,
         D::Native: ToPyObject + FromPyObject<'a>,
     {
-        let names = get_names(self);
-
         let skip = usize::from(first_value.is_some());
-        let it = self.into_iter().skip(init_null_count + skip).map(|val| {
-            let arg = val.map(|val| make_dict_arg(py, &names, val));
-            call_lambda_and_extract(py, lambda, arg).ok()
-        });
+        let it = iter_struct(self)
+            .skip(init_null_count + skip)
+            .map(|val| call_lambda_and_extract(py, lambda, Wrap(val)).ok());
 
         Ok(iterator_to_primitive(
             it,
@@ -2323,13 +2304,10 @@ impl<'a> ApplyLambda<'a> for StructChunked2 {
         init_null_count: usize,
         first_value: Option<bool>,
     ) -> PyResult<BooleanChunked> {
-        let names = get_names(self);
-
         let skip = usize::from(first_value.is_some());
-        let it = self.into_iter().skip(init_null_count + skip).map(|val| {
-            let arg = val.map(|val| make_dict_arg(py, &names, val));
-            call_lambda_and_extract(py, lambda, arg).ok()
-        });
+        let it = iter_struct(self)
+            .skip(init_null_count + skip)
+            .map(|val| call_lambda_and_extract(py, lambda, Wrap(val)).ok());
 
         Ok(iterator_to_bool(
             it,
@@ -2347,13 +2325,10 @@ impl<'a> ApplyLambda<'a> for StructChunked2 {
         init_null_count: usize,
         first_value: Option<PyBackedStr>,
     ) -> PyResult<StringChunked> {
-        let names = get_names(self);
-
         let skip = usize::from(first_value.is_some());
-        let it = self.into_iter().skip(init_null_count + skip).map(|val| {
-            let arg = val.map(|val| make_dict_arg(py, &names, val));
-            call_lambda_and_extract(py, lambda, arg).ok()
-        });
+        let it = iter_struct(self)
+            .skip(init_null_count + skip)
+            .map(|val| call_lambda_and_extract(py, lambda, Wrap(val)).ok());
 
         Ok(iterator_to_string(
             it,
@@ -2372,14 +2347,10 @@ impl<'a> ApplyLambda<'a> for StructChunked2 {
         dt: &DataType,
     ) -> PyResult<ListChunked> {
         let skip = 1;
-
-        let names = get_names(self);
-
         let lambda = lambda.bind(py);
-        let it = self.into_iter().skip(init_null_count + skip).map(|val| {
-            let arg = val.map(|val| make_dict_arg(py, &names, val));
-            call_lambda_series_out(py, lambda, arg).ok()
-        });
+        let it = iter_struct(self)
+            .skip(init_null_count + skip)
+            .map(|val| call_lambda_series_out(py, lambda, Wrap(val)).ok());
         iterator_to_list(
             dt,
             it,
@@ -2397,14 +2368,12 @@ impl<'a> ApplyLambda<'a> for StructChunked2 {
         init_null_count: usize,
         first_value: AnyValue<'a>,
     ) -> PyResult<Series> {
-        let names = get_names(self);
         let mut avs = Vec::with_capacity(self.len());
         avs.extend(std::iter::repeat(AnyValue::Null).take(init_null_count));
         avs.push(first_value);
 
-        let iter = self.into_iter().skip(init_null_count + 1).map(|val| {
-            let arg = val.map(|val| make_dict_arg(py, &names, val));
-            call_lambda_and_extract::<_, Wrap<AnyValue>>(py, lambda, arg)
+        let iter = iter_struct(self).skip(init_null_count + 1).map(|val| {
+            call_lambda_and_extract::<_, Wrap<AnyValue>>(py, lambda, Wrap(val))
                 .unwrap()
                 .0
         });
@@ -2421,13 +2390,10 @@ impl<'a> ApplyLambda<'a> for StructChunked2 {
         init_null_count: usize,
         first_value: Option<ObjectValue>,
     ) -> PyResult<ObjectChunked<ObjectValue>> {
-        let names = get_names(self);
-
         let skip = usize::from(first_value.is_some());
-        let it = self.into_iter().skip(init_null_count + skip).map(|val| {
-            let arg = val.map(|val| make_dict_arg(py, &names, val));
-            call_lambda_and_extract(py, lambda, arg).ok()
-        });
+        let it = iter_struct(self)
+            .skip(init_null_count + skip)
+            .map(|val| call_lambda_and_extract(py, lambda, Wrap(val)).ok());
 
         Ok(iterator_to_object(
             it,
