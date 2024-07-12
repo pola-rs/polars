@@ -221,7 +221,6 @@ def test_join_null_matches_multiple_keys(streaming: bool) -> None:
     assert_frame_equal(
         df_a.join(df_b, on=["a", "idx"], how="left").collect(streaming=streaming),
         expected,
-        check_row_order=False,
     )
 
     expected = pl.DataFrame(
