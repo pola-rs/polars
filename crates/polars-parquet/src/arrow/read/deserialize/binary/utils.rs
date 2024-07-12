@@ -94,12 +94,25 @@ impl<'a, O: Offset> Pushable<&'a [u8]> for Binary<O> {
 #[derive(Debug)]
 pub struct BinaryIter<'a> {
     values: &'a [u8],
-    num_values: usize,
+
+    /// A maximum number of items that this [`BinaryIter`] may produce.
+    ///
+    /// This equal the length of the iterator i.f.f. the data encoded by the [`BinaryIter`] is not
+    /// nullable.
+    max_num_values: usize,
 }
 
 impl<'a> BinaryIter<'a> {
-    pub fn new(values: &'a [u8], num_values: usize) -> Self {
-        Self { values, num_values }
+    pub fn new(values: &'a [u8], max_num_values: usize) -> Self {
+        Self {
+            values,
+            max_num_values,
+        }
+    }
+
+    /// Return the length of the iterator when the data is not nullable.
+    pub fn len_when_not_nullable(&self) -> usize {
+        self.max_num_values
     }
 }
 
@@ -108,7 +121,7 @@ impl<'a> Iterator for BinaryIter<'a> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        if self.num_values == 0 {
+        if self.max_num_values == 0 {
             assert!(self.values.is_empty());
             return None;
         }
@@ -117,15 +130,13 @@ impl<'a> Iterator for BinaryIter<'a> {
         let length: [u8; 4] = unsafe { length.try_into().unwrap_unchecked() };
         let length = u32::from_le_bytes(length) as usize;
         let (result, remaining) = remaining.split_at(length);
-        self.num_values -= 1;
+        self.max_num_values -= 1;
         self.values = remaining;
         Some(result)
     }
 
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.num_values, Some(self.num_values))
+        (0, Some(self.max_num_values))
     }
 }
-
-impl<'a> ExactSizeIterator for BinaryIter<'a> {}

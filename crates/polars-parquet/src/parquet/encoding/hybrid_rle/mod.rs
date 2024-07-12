@@ -3,7 +3,7 @@ mod bitmap;
 mod buffered;
 mod decoder;
 mod encoder;
-pub mod translator;
+pub mod gatherer;
 
 #[cfg(test)]
 mod fuzz;
@@ -12,13 +12,14 @@ pub use bitmap::{encode_bool as bitpacked_encode, BitmapIter};
 pub use buffered::BufferedBitpacked;
 pub use decoder::Decoder;
 pub use encoder::encode;
-use polars_utils::iter::FallibleIterator;
-use polars_utils::slice::GetSaferUnchecked;
-pub use translator::{
+pub use gatherer::{
     DictionaryTranslator, FnTranslator, Translator, TryFromUsizeTranslator, UnitTranslator,
 };
+use polars_utils::iter::FallibleIterator;
+use polars_utils::slice::GetSaferUnchecked;
 
 use self::buffered::HybridRleBuffered;
+use self::gatherer::HybridRleGatherer;
 use super::{bitpacked, ceil8, uleb128};
 use crate::parquet::encoding::bitpacked::{Unpackable, Unpacked};
 use crate::parquet::encoding::hybrid_rle::buffered::BufferedRle;
@@ -90,7 +91,7 @@ impl<'a> Iterator for HybridRleDecoder<'a> {
         }
 
         let mut buffer = Vec::with_capacity(1);
-        let result = self.translate_and_collect_limited_once(&mut buffer, Some(1), &UnitTranslator);
+        let result = self.gather_limited_once(&mut buffer, Some(1), &UnitTranslator);
 
         match result {
             Ok(_) => Some(buffer[0]),
@@ -121,20 +122,17 @@ impl<'a> HybridRleDecoder<'a> {
         }
     }
 
-    /// Translate and collect at most `limit` items into `target`.
-    ///
-    /// This function expects `num_values > 0` and `num_bits > 0`.
-    fn translate_and_collect_limited_once<O: Clone + Default>(
+    fn gather_limited_once<O: Clone, G: HybridRleGatherer<O>>(
         &mut self,
-        target: &mut Vec<O>,
+        target: &mut G::Target,
         limit: Option<usize>,
-        translator: &impl Translator<O>,
+        gatherer: &G,
     ) -> ParquetResult<usize> {
         if limit == Some(0) {
             return Ok(0);
         }
 
-        let start_target_length = target.len();
+        let start_target_length = gatherer.target_num_elements(target);
         let start_num_values = self.num_values;
 
         // @NOTE:
@@ -142,7 +140,11 @@ impl<'a> HybridRleDecoder<'a> {
         // probably also applies there. In a microbenchmark this collapse did around 3x for this
         // specific piece of code, but I think this actually also makes the code more readable.
 
-        debug_assert!(self.num_values > 0, "{:?}", target.len());
+        debug_assert!(
+            self.num_values > 0,
+            "{:?}",
+            gatherer.target_num_elements(target)
+        );
         debug_assert!(self.num_bits > 0);
 
         let (indicator, consumed) = uleb128::decode(self.data);
@@ -151,7 +153,10 @@ impl<'a> HybridRleDecoder<'a> {
         if consumed == 0 {
             let step_size =
                 limit.map_or(self.num_values, |limit| usize::min(self.num_values, limit));
-            target.resize(target.len() + step_size, translator.translate(0)?);
+            // In this case, we take the value encoded by `0`. For example, if the HybridRle
+            // encodes a dictionary. We should take the 0-th value.
+            let value = gatherer.hybridrle_to_target(0)?;
+            gatherer.gather_repeated(target, value, step_size)?;
             self.num_values -= step_size;
 
             return Ok(step_size);
@@ -167,8 +172,7 @@ impl<'a> HybridRleDecoder<'a> {
             let length = std::cmp::min(packed.len() * 8 / self.num_bits, self.num_values);
             let decoder = bitpacked::Decoder::<u32>::try_new(packed, self.num_bits, length)?;
 
-            let (num_processed, buffered) =
-                translator.translate_bitpacked_decoder(decoder, target, limit)?;
+            let (num_processed, buffered) = gatherer.gather_bitpacked(target, decoder, limit)?;
             debug_assert!(limit.map_or(true, |limit| limit >= num_processed));
             self.buffered = buffered;
 
@@ -193,8 +197,8 @@ impl<'a> HybridRleDecoder<'a> {
                 let num_elements = limit.map_or(run_length, |limit| usize::min(run_length, limit));
 
                 // Only translate once. Then, just do a memset.
-                let translated = translator.translate(value)?;
-                target.resize(target.len() + num_elements, translated);
+                let translated = gatherer.hybridrle_to_target(value)?;
+                gatherer.gather_repeated(target, translated, num_elements)?;
 
                 if let Some(limit) = limit {
                     if run_length > limit {
@@ -214,61 +218,67 @@ impl<'a> HybridRleDecoder<'a> {
         self.num_values -= num_processed;
 
         debug_assert_eq!(num_processed, start_num_values - self.num_values);
-        debug_assert_eq!(num_processed, target.len() - start_target_length);
+        debug_assert_eq!(
+            num_processed,
+            gatherer.target_num_elements(target) - start_target_length
+        );
         debug_assert!(limit.map_or(true, |limit| num_processed <= limit));
 
         Ok(num_processed)
     }
 
-    pub fn translate_and_collect_into<O: Clone + Default>(
+    #[inline(always)]
+    pub fn gather_into<O: Clone, G: HybridRleGatherer<O>>(
         mut self,
-        target: &mut Vec<O>,
-        translator: &impl Translator<O>,
-    ) -> Result<(), ParquetError> {
+        target: &mut G::Target,
+        gatherer: &G,
+    ) -> ParquetResult<()> {
         if self.num_values == 0 {
             return Ok(());
         }
 
+        gatherer.target_reserve(target, self.num_values);
+
         if self.num_bits == 0 {
-            target.resize(target.len() + self.num_values, translator.translate(0)?);
+            let value = gatherer.hybridrle_to_target(0)?;
+            gatherer.gather_repeated(target, value, self.num_values)?;
             return Ok(());
         }
 
-        target.reserve(self.num_values);
         if let Some(buffered) = self.buffered.take() {
-            let num_buffered = buffered.translate_and_collect_into(target, translator)?;
+            let num_buffered = buffered.gather_into(target, gatherer)?;
             self.num_values -= num_buffered;
         }
 
         while self.num_values > 0 {
-            self.translate_and_collect_limited_once(target, None, translator)?;
+            self.gather_limited_once(target, None, gatherer)?;
         }
 
         Ok(())
     }
 
-    pub fn translate_and_collect_n_into<O: Clone + Default>(
+    pub fn gather_n_into<O: Clone, G: HybridRleGatherer<O>>(
         &mut self,
-        target: &mut Vec<O>,
+        target: &mut G::Target,
         n: usize,
-        translator: &impl Translator<O>,
+        gatherer: &G,
     ) -> ParquetResult<()> {
         if self.num_values == 0 || n == 0 {
             return Ok(());
         }
 
         if self.num_bits == 0 {
-            target.resize(target.len() + n, translator.translate(0)?);
+            let value = gatherer.hybridrle_to_target(0)?;
+            gatherer.gather_repeated(target, value, n)?;
             self.num_values -= n;
             return Ok(());
         }
 
-        let target_length = target.len() + n;
-        target.reserve(n);
+        let target_length = gatherer.target_num_elements(target) + n;
+        gatherer.target_reserve(target, n);
 
         if let Some(buffered) = self.buffered.as_mut() {
-            let num_buffered =
-                buffered.translate_and_collect_limited_into(target, n, translator)?;
+            let num_buffered = buffered.gather_limited_into(target, n, gatherer)?;
             debug_assert!(num_buffered <= n);
             self.num_values -= num_buffered;
 
@@ -277,35 +287,64 @@ impl<'a> HybridRleDecoder<'a> {
             }
         }
 
-        while target.len() < target_length && self.num_values > 0 {
-            self.translate_and_collect_limited_once(
+        while gatherer.target_num_elements(target) < target_length && self.num_values > 0 {
+            self.gather_limited_once(
                 target,
-                Some(target_length - target.len()),
-                translator,
+                Some(target_length - gatherer.target_num_elements(target)),
+                gatherer,
             )?;
         }
 
         Ok(())
     }
 
-    pub fn translate_and_collect<O: Clone + Default>(
+    #[inline(always)]
+    pub fn translate_and_collect_into<O: Clone, T: Translator<O>>(
         self,
-        translator: &impl Translator<O>,
-    ) -> ParquetResult<Vec<O>> {
+        target: &mut <T as HybridRleGatherer<O>>::Target,
+        translator: &T,
+    ) -> ParquetResult<()> {
+        self.gather_into(target, translator)
+    }
+
+    pub fn translate_and_collect_n_into<O: Clone, T: Translator<O>>(
+        &mut self,
+        target: &mut <T as HybridRleGatherer<O>>::Target,
+        n: usize,
+        translator: &T,
+    ) -> ParquetResult<()> {
+        self.gather_n_into(target, n, translator)
+    }
+
+    #[inline(always)]
+    pub fn translate_and_collect<O: Clone, T: Translator<O>>(
+        self,
+        translator: &T,
+    ) -> ParquetResult<<T as HybridRleGatherer<O>>::Target> {
         let mut vec = Vec::new();
         self.translate_and_collect_into(&mut vec, translator)?;
         Ok(vec)
     }
 
-    pub fn collect_into(self, target: &mut Vec<u32>) -> Result<(), ParquetError> {
+    #[inline(always)]
+    pub fn collect_into(
+        self,
+        target: &mut <UnitTranslator as HybridRleGatherer<u32>>::Target,
+    ) -> Result<(), ParquetError> {
         self.translate_and_collect_into(target, &UnitTranslator)
     }
 
-    pub fn collect_n_into(&mut self, target: &mut Vec<u32>, n: usize) -> ParquetResult<()> {
+    #[inline(always)]
+    pub fn collect_n_into(
+        &mut self,
+        target: &mut <UnitTranslator as HybridRleGatherer<u32>>::Target,
+        n: usize,
+    ) -> ParquetResult<()> {
         self.translate_and_collect_n_into(target, n, &UnitTranslator)
     }
 
-    pub fn collect(self) -> ParquetResult<Vec<u32>> {
+    #[inline(always)]
+    pub fn collect(self) -> ParquetResult<<UnitTranslator as HybridRleGatherer<u32>>::Target> {
         let mut vec = Vec::new();
         self.collect_into(&mut vec)?;
         Ok(vec)
@@ -409,12 +448,13 @@ impl<'a> HybridRleDecoder<'a> {
                 }
             };
 
-            n -= num_skipped;
             self.num_values -= num_skipped;
 
             debug_assert_eq!(num_skipped, start_num_values - self.num_values);
-            debug_assert!(num_skipped <= n);
-            debug_assert!(num_skipped > 0);
+            debug_assert!(num_skipped <= n, "{num_skipped} <= {n}");
+            debug_assert!(num_skipped > 0, "{num_skipped} > 0");
+
+            n -= num_skipped;
         }
 
         Ok(())

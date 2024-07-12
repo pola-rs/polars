@@ -204,10 +204,6 @@ impl<'a, 'b, 'c, D: NestedDecoder<'a>> BatchableCollector<(), D::DecodedState>
         self.decoder.push_n_nulls(target, n);
         Ok(())
     }
-
-    fn skip_n(&mut self, _n: usize) -> ParquetResult<()> {
-        unreachable!()
-    }
 }
 
 /// A decoder that knows how to map `State` -> Array

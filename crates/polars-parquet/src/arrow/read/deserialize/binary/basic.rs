@@ -14,7 +14,9 @@ use super::super::utils::{extend_from_decoder, next, DecodedState, MaybeNext};
 use super::super::{utils, PagesIter};
 use super::decoders::*;
 use super::utils::*;
+use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{DataPage, DictPage};
+use crate::read::deserialize::utils::StateTranslation;
 use crate::read::PrimitiveLogicalType;
 
 impl<O: Offset> DecodedState for (Binary<O>, MutableBitmap) {
@@ -23,110 +25,57 @@ impl<O: Offset> DecodedState for (Binary<O>, MutableBitmap) {
     }
 }
 
-#[derive(Debug, Default)]
-struct BinaryDecoder<O: Offset> {
-    phantom_o: std::marker::PhantomData<O>,
-    check_utf8: Cell<bool>,
-}
-
-impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
-    type State = BinaryState<'a>;
-    type Dict = BinaryDict;
-    type DecodedState = (Binary<O>, MutableBitmap);
-
-    fn build_state(
-        &self,
+impl<'a, O: Offset> StateTranslation<'a, BinaryDecoder<O>> for BinaryStateTranslation<'a> {
+    fn new(
+        decoder: &BinaryDecoder<O>,
         page: &'a DataPage,
-        dict: Option<&'a Self::Dict>,
-    ) -> PolarsResult<Self::State> {
+        dict: Option<&'a <BinaryDecoder<O> as utils::Decoder>::Dict>,
+        page_validity: Option<&utils::PageValidity<'a>>,
+        filter: Option<&utils::filter::Filter<'a>>,
+    ) -> PolarsResult<Self> {
         let is_string = matches!(
             page.descriptor.primitive_type.logical_type,
             Some(PrimitiveLogicalType::String)
         );
-        self.check_utf8.set(is_string);
-        build_binary_state(page, dict, is_string)
+        decoder.check_utf8.set(is_string);
+        BinaryStateTranslation::new(page, dict, page_validity, filter, is_string)
     }
 
-    fn with_capacity(&self, capacity: usize) -> Self::DecodedState {
-        (
-            Binary::<O>::with_capacity(capacity),
-            MutableBitmap::with_capacity(capacity),
-        )
+    fn len_when_not_nullable(&self) -> usize {
+        BinaryStateTranslation::len_when_not_nullable(self)
+    }
+
+    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
+        BinaryStateTranslation::skip_in_place(self, n)
     }
 
     fn extend_from_state(
-        &self,
-        state: &mut Self::State,
-        decoded: &mut Self::DecodedState,
+        &mut self,
+        decoder: &BinaryDecoder<O>,
+        decoded: &mut <BinaryDecoder<O> as utils::Decoder>::DecodedState,
+        page_validity: &mut Option<utils::PageValidity<'a>>,
         additional: usize,
-    ) -> PolarsResult<()> {
+    ) -> ParquetResult<()> {
         let (values, validity) = decoded;
-        let mut validate_utf8 = self.check_utf8.take();
+
+        let mut validate_utf8 = decoder.check_utf8.take();
         let len_before = values.offsets.len();
-        match state {
-            BinaryState::Optional(page_validity, page_values) => extend_from_decoder(
+
+        use BinaryStateTranslation as T;
+        match (self, page_validity) {
+            (T::Unit(page_values), None) => {
+                for x in page_values.by_ref().take(additional) {
+                    values.push(x)
+                }
+            },
+            (T::Unit(page_values), Some(page_validity)) => extend_from_decoder(
                 validity,
                 page_validity,
                 Some(additional),
                 values,
                 page_values,
             )?,
-            BinaryState::Required(page) => {
-                for x in page.values.by_ref().take(additional) {
-                    values.push(x)
-                }
-            },
-            BinaryState::Delta(page) => {
-                values.extend_lengths(page.lengths.by_ref().take(additional), &mut page.values);
-            },
-            BinaryState::OptionalDelta(page_validity, page_values) => {
-                let Binary {
-                    offsets,
-                    values: values_,
-                } = values;
-
-                let last_offset = *offsets.last();
-                extend_from_decoder(
-                    validity,
-                    page_validity,
-                    Some(additional),
-                    offsets,
-                    page_values.lengths.by_ref(),
-                )?;
-
-                let length = *offsets.last() - last_offset;
-
-                let (consumed, remaining) = page_values.values.split_at(length.to_usize());
-                page_values.values = remaining;
-                values_.extend_from_slice(consumed);
-            },
-            BinaryState::FilteredRequired(page) => {
-                for x in page.values.by_ref().take(additional) {
-                    values.push(x)
-                }
-            },
-            BinaryState::FilteredDelta(page) => {
-                for x in page.values.by_ref().take(additional) {
-                    values.push(x)
-                }
-            },
-            BinaryState::OptionalDictionary(page_validity, page_values) => {
-                // Already done on the dict.
-                validate_utf8 = false;
-                let page_dict = &page_values.dict;
-                extend_from_decoder(
-                    validity,
-                    page_validity,
-                    Some(additional),
-                    values,
-                    &mut page_values
-                        .values
-                        .by_ref()
-                        .map(|index| page_dict.value(index as usize)),
-                )?;
-                page_values.values.get_result()?;
-            },
-            BinaryState::RequiredDictionary(page) => {
+            (T::Dictionary(page), None) => {
                 // Already done on the dict.
                 validate_utf8 = false;
                 let page_dict = &page.dict;
@@ -141,74 +90,86 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
                 }
                 page.values.get_result()?;
             },
-            BinaryState::FilteredOptional(page_validity, page_values) => {
-                extend_from_decoder(
-                    validity,
-                    page_validity,
-                    Some(additional),
-                    values,
-                    page_values.by_ref(),
-                )?;
-            },
-            BinaryState::FilteredOptionalDelta(page_validity, page_values) => {
-                extend_from_decoder(
-                    validity,
-                    page_validity,
-                    Some(additional),
-                    values,
-                    page_values.by_ref(),
-                )?;
-            },
-            BinaryState::FilteredRequiredDictionary(page) => {
+            (T::Dictionary(page), Some(page_validity)) => {
                 // Already done on the dict.
                 validate_utf8 = false;
                 let page_dict = &page.dict;
-                for x in &mut page
-                    .values
-                    .by_ref()
-                    .map(|index| page_dict.value(index as usize))
-                    .take(additional)
-                {
-                    values.push(x)
-                }
-                page.values.iter.get_result()?;
-            },
-            BinaryState::FilteredOptionalDictionary(page_validity, page_values) => {
-                // Already done on the dict.
-                validate_utf8 = false;
-                let page_dict = &page_values.dict;
                 extend_from_decoder(
                     validity,
                     page_validity,
                     Some(additional),
                     values,
-                    &mut page_values
+                    &mut page
                         .values
                         .by_ref()
                         .map(|index| page_dict.value(index as usize)),
                 )?;
-                page_values.values.get_result()?;
+                page.values.get_result()?;
             },
-            BinaryState::OptionalDeltaByteArray(page_validity, page_values) => extend_from_decoder(
+            (T::Delta(page), None) => {
+                values.extend_lengths(page.lengths.by_ref().take(additional), &mut page.values);
+            },
+            (T::Delta(page), Some(page_validity)) => {
+                let Binary {
+                    offsets,
+                    values: values_,
+                } = values;
+
+                let last_offset = *offsets.last();
+                extend_from_decoder(
+                    validity,
+                    page_validity,
+                    Some(additional),
+                    offsets,
+                    page.lengths.by_ref(),
+                )?;
+
+                let length = *offsets.last() - last_offset;
+
+                let (consumed, remaining) = page.values.split_at(length.to_usize());
+                page.values = remaining;
+                values_.extend_from_slice(consumed);
+            },
+            (T::DeltaBytes(page_values), None) => {
+                for x in page_values.take(additional) {
+                    values.push(x)
+                }
+            },
+            (T::DeltaBytes(page_values), Some(page_validity)) => extend_from_decoder(
                 validity,
                 page_validity,
                 Some(additional),
                 values,
                 page_values,
             )?,
-            BinaryState::DeltaByteArray(page_values) => {
-                for x in page_values.take(additional) {
-                    values.push(x)
-                }
-            },
         }
 
         if validate_utf8 {
+            // @TODO: This can report a better error.
             let offsets = &values.offsets.as_slice()[len_before..];
-            try_check_utf8(offsets, &values.values)
+            try_check_utf8(offsets, &values.values).map_err(|_| ParquetError::oos("invalid utf-8"))
         } else {
             Ok(())
         }
+    }
+}
+
+#[derive(Debug, Default)]
+struct BinaryDecoder<O: Offset> {
+    phantom_o: std::marker::PhantomData<O>,
+    check_utf8: Cell<bool>,
+}
+
+impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
+    type Translation = BinaryStateTranslation<'a>;
+    type Dict = BinaryDict;
+    type DecodedState = (Binary<O>, MutableBitmap);
+
+    fn with_capacity(&self, capacity: usize) -> Self::DecodedState {
+        (
+            Binary::<O>::with_capacity(capacity),
+            MutableBitmap::with_capacity(capacity),
+        )
     }
 
     fn deserialize_dict(&self, page: &DictPage) -> Self::Dict {

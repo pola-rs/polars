@@ -2,6 +2,177 @@ use crate::parquet::encoding::bitpacked::{Decoder, Unpackable, Unpacked};
 use crate::parquet::encoding::hybrid_rle::{BufferedBitpacked, HybridRleBuffered};
 use crate::parquet::error::{ParquetError, ParquetResult};
 
+/// Trait that describes what to do with consumed Hybrid-RLE Encoded values.
+///
+/// This is quite a general trait that provides a lot of open space as to how to handle the
+/// Hybrid-RLE encoded values. There is also the [`Translator`] trait that is usually good enough
+/// if you want just want to map values to another set of values and collect them into a vector.
+///
+/// Although, this trait might seem quite over-engineered (it might be), it is very useful for
+/// performance. This allows for usage of the properties that [`HybridRleDecoder`] provides and for
+/// definition of efficient procedures for collecting slices, chunks, repeated elements and
+/// bit-packed elements.
+///
+/// The [`Translator`] doc-comment has a good description of why this trait is needed.
+///
+/// [`HybridRleDecoder`]: super::HybridRleDecoder
+pub trait HybridRleGatherer<O: Clone> {
+    type Target;
+
+    fn target_reserve(&self, target: &mut Self::Target, n: usize);
+    fn target_num_elements(&self, target: &Self::Target) -> usize;
+
+    fn hybridrle_to_target(&self, value: u32) -> ParquetResult<O>;
+    fn gather_one(&self, target: &mut Self::Target, value: O) -> ParquetResult<()>;
+    fn gather_repeated(&self, target: &mut Self::Target, value: O, n: usize) -> ParquetResult<()>;
+    fn gather_slice(&self, target: &mut Self::Target, source: &[u32]) -> ParquetResult<()> {
+        self.target_reserve(target, source.len());
+        for v in source {
+            self.gather_one(target, self.hybridrle_to_target(*v)?)?;
+        }
+        Ok(())
+    }
+    fn gather_chunk(
+        &self,
+        target: &mut Self::Target,
+        source: &<u32 as Unpackable>::Unpacked,
+    ) -> ParquetResult<()> {
+        self.gather_slice(target, source)
+    }
+    fn gather_bitpacked_all(
+        &self,
+        target: &mut Self::Target,
+        mut decoder: Decoder<u32>,
+    ) -> ParquetResult<()> {
+        self.target_reserve(target, decoder.len());
+
+        let mut chunked = decoder.chunked();
+
+        for unpacked in &mut chunked {
+            self.gather_chunk(target, &unpacked)?;
+        }
+
+        if let Some((last, last_length)) = chunked.remainder() {
+            self.gather_slice(target, &last[..last_length])?;
+        }
+
+        Ok(())
+    }
+
+    fn gather_bitpacked_limited<'a>(
+        &self,
+        target: &mut Self::Target,
+        mut decoder: Decoder<'a, u32>,
+        limit: usize,
+    ) -> ParquetResult<BufferedBitpacked<'a>> {
+        assert!(limit < decoder.len());
+
+        const CHUNK_SIZE: usize = <u32 as Unpackable>::Unpacked::LENGTH;
+
+        let mut chunked = decoder.chunked();
+
+        let num_full_chunks = limit / CHUNK_SIZE;
+        for unpacked in (&mut chunked).take(num_full_chunks) {
+            self.gather_chunk(target, &unpacked)?;
+        }
+
+        let (unpacked, unpacked_length) = chunked.next_inexact().unwrap();
+        let unpacked_offset = limit % CHUNK_SIZE;
+        debug_assert!(unpacked_offset < unpacked_length);
+        self.gather_slice(target, &unpacked[..unpacked_offset])?;
+
+        Ok(BufferedBitpacked {
+            unpacked,
+
+            unpacked_start: unpacked_offset,
+            unpacked_end: unpacked_length,
+            decoder,
+        })
+    }
+    fn gather_bitpacked<'a>(
+        &self,
+        target: &mut Self::Target,
+        decoder: Decoder<'a, u32>,
+        limit: Option<usize>,
+    ) -> ParquetResult<(usize, Option<HybridRleBuffered<'a>>)> {
+        let length = decoder.len();
+
+        match limit {
+            None => self
+                .gather_bitpacked_all(target, decoder)
+                .map(|_| (length, None)),
+            Some(limit) if limit >= length => self
+                .gather_bitpacked_all(target, decoder)
+                .map(|_| (length, None)),
+            Some(limit) => self
+                .gather_bitpacked_limited(target, decoder, limit)
+                .map(|b| (limit, Some(HybridRleBuffered::Bitpacked(b)))),
+        }
+    }
+}
+
+#[derive(Default, Clone, Copy)]
+pub struct ZeroCount {
+    pub num_zero: usize,
+    pub num_nonzero: usize,
+}
+pub struct ZeroCountGatherer;
+
+impl HybridRleGatherer<ZeroCount> for ZeroCountGatherer {
+    type Target = ZeroCount;
+
+    #[inline(always)]
+    fn target_reserve(&self, _target: &mut Self::Target, _n: usize) {}
+
+    #[inline]
+    fn target_num_elements(&self, target: &Self::Target) -> usize {
+        target.num_zero + target.num_nonzero
+    }
+
+    #[inline]
+    fn hybridrle_to_target(&self, value: u32) -> ParquetResult<ZeroCount> {
+        Ok(ZeroCount {
+            num_zero: usize::from(value == 0),
+            num_nonzero: usize::from(value != 0),
+        })
+    }
+
+    #[inline]
+    fn gather_one(&self, target: &mut Self::Target, value: ZeroCount) -> ParquetResult<()> {
+        target.num_zero += value.num_zero;
+        target.num_nonzero += value.num_nonzero;
+        Ok(())
+    }
+
+    #[inline]
+    fn gather_repeated(
+        &self,
+        target: &mut Self::Target,
+        value: ZeroCount,
+        n: usize,
+    ) -> ParquetResult<()> {
+        target.num_zero += value.num_zero * n;
+        target.num_nonzero += value.num_nonzero * n;
+        Ok(())
+    }
+
+    #[inline]
+    fn gather_slice(&self, target: &mut Self::Target, source: &[u32]) -> ParquetResult<()> {
+        let mut num_zero = 0;
+        let mut num_nonzero = 0;
+
+        for v in source {
+            num_zero += usize::from(*v == 0);
+            num_nonzero += usize::from(*v != 0);
+        }
+
+        target.num_zero += num_zero;
+        target.num_nonzero += num_nonzero;
+
+        Ok(())
+    }
+}
+
 /// A trait to describe a translation from a HybridRLE encoding to an another format.
 ///
 /// In essence, this is one method ([`Translator::translate`]) that maps an `u32` to the desired
@@ -95,8 +266,8 @@ pub trait Translator<O> {
     fn translate_bitpacked_limited<'a>(
         &self,
         target: &mut Vec<O>,
-        limit: usize,
         mut decoder: Decoder<'a, u32>,
+        limit: usize,
     ) -> ParquetResult<BufferedBitpacked<'a>> {
         assert!(limit < decoder.len());
 
@@ -126,10 +297,10 @@ pub trait Translator<O> {
     /// Translate and collect items in a [`Decoder`] to a `target`.
     ///
     /// This can overwritten to be more optimized.
-    fn translate_bitpacked_decoder<'a>(
+    fn translate_bitpacked<'a>(
         &self,
-        decoder: Decoder<'a, u32>,
         target: &mut Vec<O>,
+        decoder: Decoder<'a, u32>,
         limit: Option<usize>,
     ) -> ParquetResult<(usize, Option<HybridRleBuffered<'a>>)> {
         let length = decoder.len();
@@ -142,9 +313,82 @@ pub trait Translator<O> {
                 .translate_bitpacked_all(target, decoder)
                 .map(|_| (length, None)),
             Some(limit) => self
-                .translate_bitpacked_limited(target, limit, decoder)
+                .translate_bitpacked_limited(target, decoder, limit)
                 .map(|b| (limit, Some(HybridRleBuffered::Bitpacked(b)))),
         }
+    }
+}
+
+impl<O: Clone, T: Translator<O>> HybridRleGatherer<O> for T {
+    type Target = Vec<O>;
+
+    #[inline(always)]
+    fn target_reserve(&self, target: &mut Self::Target, n: usize) {
+        target.reserve(n);
+    }
+    #[inline(always)]
+    fn target_num_elements(&self, target: &Self::Target) -> usize {
+        target.len()
+    }
+
+    #[inline(always)]
+    fn hybridrle_to_target(&self, value: u32) -> ParquetResult<O> {
+        self.translate(value)
+    }
+
+    #[inline(always)]
+    fn gather_one(&self, target: &mut Self::Target, value: O) -> ParquetResult<()> {
+        target.push(value);
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn gather_repeated(&self, target: &mut Self::Target, value: O, n: usize) -> ParquetResult<()> {
+        target.resize(target.len() + n, value);
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn gather_slice(&self, target: &mut Self::Target, source: &[u32]) -> ParquetResult<()> {
+        self.translate_slice(target, source)
+    }
+
+    #[inline(always)]
+    fn gather_chunk(
+        &self,
+        target: &mut Self::Target,
+        source: &<u32 as Unpackable>::Unpacked,
+    ) -> ParquetResult<()> {
+        self.translate_chunk(target, source)
+    }
+
+    #[inline(always)]
+    fn gather_bitpacked_all(
+        &self,
+        target: &mut Self::Target,
+        decoder: Decoder<u32>,
+    ) -> ParquetResult<()> {
+        self.translate_bitpacked_all(target, decoder)
+    }
+
+    #[inline(always)]
+    fn gather_bitpacked_limited<'a>(
+        &self,
+        target: &mut Self::Target,
+        decoder: Decoder<'a, u32>,
+        limit: usize,
+    ) -> ParquetResult<BufferedBitpacked<'a>> {
+        self.translate_bitpacked_limited(target, decoder, limit)
+    }
+
+    #[inline(always)]
+    fn gather_bitpacked<'a>(
+        &self,
+        target: &mut Self::Target,
+        decoder: Decoder<'a, u32>,
+        limit: Option<usize>,
+    ) -> ParquetResult<(usize, Option<HybridRleBuffered<'a>>)> {
+        self.translate_bitpacked(target, decoder, limit)
     }
 }
 
