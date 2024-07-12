@@ -3456,7 +3456,7 @@ class DataFrame:
         file
             File path or writable file-like object to which the result will be written.
             This can also accept `PartitionedWriteOptions` to write a partitioned
-            dataset.
+            dataset (however note this functionality is unstable).
         compression : {'lz4', 'uncompressed', 'snappy', 'gzip', 'lzo', 'brotli', 'zstd'}
             Choose "zstd" for good compression performance.
             Choose "lz4" for fast compression/decompression.
