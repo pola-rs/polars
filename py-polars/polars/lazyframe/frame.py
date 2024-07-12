@@ -2983,28 +2983,38 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Each constraint will behave the same as `pl.col(name).eq(value)`, and
             will be implicitly joined with the other filter conditions using `&`.
 
+        Notes
+        -----
+        If you are transitioning from pandas and performing filter operations based on
+        the comparison of two or more columns, please note that in Polars,
+        any comparison involving null values will always result in null.
+        As a result, these rows will be filtered out.
+        Ensure to handle null values appropriately to avoid unintended filtering
+        (See examples below).
+
         Examples
         --------
         >>> lf = pl.LazyFrame(
         ...     {
-        ...         "foo": [1, 2, 3],
-        ...         "bar": [6, 7, 8],
-        ...         "ham": ["a", "b", "c"],
+        ...         "foo": [1, 2, 3, None, 4, None, 0],
+        ...         "bar": [6, 7, 8, None, None, 9, 0],
+        ...         "ham": ["a", "b", "c", None, "d", "e", "f"],
         ...     }
         ... )
 
         Filter on one condition:
 
         >>> lf.filter(pl.col("foo") > 1).collect()
-        shape: (2, 3)
-        ┌─────┬─────┬─────┐
-        │ foo ┆ bar ┆ ham │
-        │ --- ┆ --- ┆ --- │
-        │ i64 ┆ i64 ┆ str │
-        ╞═════╪═════╪═════╡
-        │ 2   ┆ 7   ┆ b   │
-        │ 3   ┆ 8   ┆ c   │
-        └─────┴─────┴─────┘
+        shape: (3, 3)
+        ┌─────┬──────┬─────┐
+        │ foo ┆ bar  ┆ ham │
+        │ --- ┆ ---  ┆ --- │
+        │ i64 ┆ i64  ┆ str │
+        ╞═════╪══════╪═════╡
+        │ 2   ┆ 7    ┆ b   │
+        │ 3   ┆ 8    ┆ c   │
+        │ 4   ┆ null ┆ d   │
+        └─────┴──────┴─────┘
 
         Filter on multiple conditions:
 
@@ -3057,6 +3067,47 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 1   ┆ 6   ┆ a   │
         │ 3   ┆ 8   ┆ c   │
         └─────┴─────┴─────┘
+
+        Filter by comparing two columns against each other
+
+        >>> lf.filter(pl.col("foo") == pl.col("bar")).collect()
+        shape: (1, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 0   ┆ 0   ┆ f   │
+        └─────┴─────┴─────┘
+
+        >>> lf.filter(pl.col("foo") != pl.col("bar")).collect()
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ 6   ┆ a   │
+        │ 2   ┆ 7   ┆ b   │
+        │ 3   ┆ 8   ┆ c   │
+        └─────┴─────┴─────┘
+
+        Notice how the row with `None` values is filtered out.
+        In order to keep the same behavior as pandas, use:
+
+        >>> lf.filter(pl.col("foo").ne_missing(pl.col("bar"))).collect()
+        shape: (5, 3)
+        ┌──────┬──────┬─────┐
+        │ foo  ┆ bar  ┆ ham │
+        │ ---  ┆ ---  ┆ --- │
+        │ i64  ┆ i64  ┆ str │
+        ╞══════╪══════╪═════╡
+        │ 1    ┆ 6    ┆ a   │
+        │ 2    ┆ 7    ┆ b   │
+        │ 3    ┆ 8    ┆ c   │
+        │ 4    ┆ null ┆ d   │
+        │ null ┆ 9    ┆ e   │
+        └──────┴──────┴─────┘
         """
         all_predicates: list[pl.Expr] = []
         boolean_masks = []

@@ -4381,28 +4381,39 @@ class DataFrame:
             Each constraint will behave the same as `pl.col(name).eq(value)`, and
             will be implicitly joined with the other filter conditions using `&`.
 
+        Notes
+        -----
+        If you are transitioning from pandas and performing filter operations based on
+        the comparison of two or more columns, please note that in Polars,
+        any comparison involving null values will always result in null.
+        As a result, these rows will be filtered out.
+        Ensure to handle null values appropriately to avoid unintended filtering
+        (See examples below).
+
+
         Examples
         --------
         >>> df = pl.DataFrame(
         ...     {
-        ...         "foo": [1, 2, 3],
-        ...         "bar": [6, 7, 8],
-        ...         "ham": ["a", "b", "c"],
+        ...         "foo": [1, 2, 3, None, 4, None, 0],
+        ...         "bar": [6, 7, 8, None, None, 9, 0],
+        ...         "ham": ["a", "b", "c", None, "d", "e", "f"],
         ...     }
         ... )
 
         Filter on one condition:
 
         >>> df.filter(pl.col("foo") > 1)
-        shape: (2, 3)
-        ┌─────┬─────┬─────┐
-        │ foo ┆ bar ┆ ham │
-        │ --- ┆ --- ┆ --- │
-        │ i64 ┆ i64 ┆ str │
-        ╞═════╪═════╪═════╡
-        │ 2   ┆ 7   ┆ b   │
-        │ 3   ┆ 8   ┆ c   │
-        └─────┴─────┴─────┘
+        shape: (3, 3)
+        ┌─────┬──────┬─────┐
+        │ foo ┆ bar  ┆ ham │
+        │ --- ┆ ---  ┆ --- │
+        │ i64 ┆ i64  ┆ str │
+        ╞═════╪══════╪═════╡
+        │ 2   ┆ 7    ┆ b   │
+        │ 3   ┆ 8    ┆ c   │
+        │ 4   ┆ null ┆ d   │
+        └─────┴──────┴─────┘
 
         Filter on multiple conditions, combined with and/or operators:
 
@@ -4433,13 +4444,14 @@ class DataFrame:
         ...     pl.col("foo") <= 2,
         ...     ~pl.col("ham").is_in(["b", "c"]),
         ... )
-        shape: (1, 3)
+        shape: (2, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
         │ --- ┆ --- ┆ --- │
         │ i64 ┆ i64 ┆ str │
         ╞═════╪═════╪═════╡
         │ 1   ┆ 6   ┆ a   │
+        │ 0   ┆ 0   ┆ f   │
         └─────┴─────┴─────┘
 
         Provide multiple filters using `**kwargs` syntax:
@@ -4453,6 +4465,48 @@ class DataFrame:
         ╞═════╪═════╪═════╡
         │ 2   ┆ 7   ┆ b   │
         └─────┴─────┴─────┘
+
+        Filter by comparing two columns against each other
+
+        >>> df.filter(pl.col("foo") == pl.col("bar"))
+        shape: (1, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 0   ┆ 0   ┆ f   │
+        └─────┴─────┴─────┘
+
+        >>> df.filter(pl.col("foo") != pl.col("bar"))
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ 6   ┆ a   │
+        │ 2   ┆ 7   ┆ b   │
+        │ 3   ┆ 8   ┆ c   │
+        └─────┴─────┴─────┘
+
+        Notice how the row with `None` values is filtered out. In order to keep the
+        same behavior as pandas, use:
+
+        >>> df.filter(pl.col("foo").ne_missing(pl.col("bar")))
+        shape: (5, 3)
+        ┌──────┬──────┬─────┐
+        │ foo  ┆ bar  ┆ ham │
+        │ ---  ┆ ---  ┆ --- │
+        │ i64  ┆ i64  ┆ str │
+        ╞══════╪══════╪═════╡
+        │ 1    ┆ 6    ┆ a   │
+        │ 2    ┆ 7    ┆ b   │
+        │ 3    ┆ 8    ┆ c   │
+        │ 4    ┆ null ┆ d   │
+        │ null ┆ 9    ┆ e   │
+        └──────┴──────┴─────┘
+
         """
         return self.lazy().filter(*predicates, **constraints).collect(_eager=True)
 
