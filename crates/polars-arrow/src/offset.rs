@@ -148,6 +148,20 @@ impl<O: Offset> Offsets<O> {
     /// This is safe iff the invariants of this struct are guaranteed in `offsets`.
     #[inline]
     pub unsafe fn new_unchecked(offsets: Vec<O>) -> Self {
+        #[cfg(debug_assertions)]
+        {
+            let mut prev_offset = O::default();
+            let mut is_monotonely_increasing = true;
+            for offset in &offsets {
+                is_monotonely_increasing &= *offset >= prev_offset;
+                prev_offset = *offset;
+            }
+            assert!(
+                is_monotonely_increasing,
+                "Unsafe precondition violated. Invariant of offsets broken."
+            );
+        }
+
         Self(offsets)
     }
 

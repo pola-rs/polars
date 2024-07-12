@@ -7,10 +7,10 @@ use polars_error::PolarsResult;
 
 use super::super::utils::{not_implemented, MaybeNext, PageState};
 use super::utils::FixedSizeBinary;
-use crate::arrow::read::deserialize::fixed_size_binary::basic::{finish, Dict};
+use crate::arrow::read::deserialize::fixed_size_binary::basic::finish;
 use crate::arrow::read::deserialize::nested_utils::{next, NestedDecoder};
 use crate::arrow::read::{InitNested, NestedState, PagesIter};
-use crate::parquet::encoding::hybrid_rle::translator::{SliceDictionaryTranslator, Translator};
+use crate::parquet::encoding::hybrid_rle::gatherer::{SliceDictionaryTranslator, Translator};
 use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use crate::parquet::encoding::Encoding;
 use crate::parquet::error::{ParquetError, ParquetResult};
@@ -52,7 +52,7 @@ struct BinaryDecoder {
 
 impl<'a> NestedDecoder<'a> for BinaryDecoder {
     type State = State<'a>;
-    type Dictionary = Dict;
+    type Dictionary = Vec<u8>;
     type DecodedState = (FixedSizeBinary, MutableBitmap);
 
     fn build_state(
@@ -144,7 +144,7 @@ pub struct NestedIter<I: PagesIter> {
     size: usize,
     init: Vec<InitNested>,
     items: VecDeque<(NestedState, (FixedSizeBinary, MutableBitmap))>,
-    dict: Option<Dict>,
+    dict: Option<Vec<u8>>,
     chunk_size: Option<usize>,
     remaining: usize,
 }

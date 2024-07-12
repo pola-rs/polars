@@ -19,7 +19,7 @@ use crate::array::growable::make_growable;
 use crate::array::Array;
 use crate::bitmap::{Bitmap, MutableBitmap};
 
-/// Concatenate multiple [Array] of the same type into a single [`Array`].
+/// Concatenate multiple [`Array`] of the same type into a single [`Array`].
 pub fn concatenate(arrays: &[&dyn Array]) -> PolarsResult<Box<dyn Array>> {
     if arrays.is_empty() {
         polars_bail!(InvalidOperation: "concat requires input of at least one array")

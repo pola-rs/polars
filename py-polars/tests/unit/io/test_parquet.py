@@ -1083,9 +1083,6 @@ def test_hybrid_rle() -> None:
     assert_frame_equal(pl.read_parquet(f), df)
 
 
-@pytest.mark.skip(
-    reason="This test causes too many panics in other parts of the code base"
-)
 @given(
     df=dataframes(
         allowed_dtypes=[
@@ -1095,8 +1092,8 @@ def test_hybrid_rle() -> None:
             pl.UInt8,
             pl.UInt32,
             pl.Int64,
-            pl.Date,
-            pl.Time,
+            # pl.Date, # Turned off because of issue #17599
+            # pl.Time, # Turned off because of issue #17599
             pl.Binary,
             pl.Float32,
             pl.Float64,
@@ -1113,6 +1110,8 @@ def test_hybrid_rle() -> None:
 def test_roundtrip_parametric(df: pl.DataFrame, tmp_path: Path) -> None:
     # delete if exists
     path = tmp_path / "data.parquet"
+
+    print(df)
 
     df.write_parquet(path)
     result = pl.read_parquet(path)

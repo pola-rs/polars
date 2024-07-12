@@ -5,121 +5,71 @@ use arrow::array::{Array, ArrayRef, BinaryViewArray, MutableBinaryViewArray, Utf
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::datatypes::{ArrowDataType, PhysicalType};
 use polars_error::PolarsResult;
-use polars_utils::iter::FallibleIterator;
 
 use super::super::binary::decoders::*;
 use crate::parquet::encoding::hybrid_rle::DictionaryTranslator;
+use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{DataPage, DictPage};
+use crate::read::deserialize::utils::filter::Filter;
 use crate::read::deserialize::utils::{
-    self, binary_views_dict, extend_from_decoder, next, DecodedState, MaybeNext,
-    TranslatedHybridRle,
+    self, binary_views_dict, extend_from_decoder, next, DecodedState, MaybeNext, PageValidity,
+    StateTranslation, TranslatedHybridRle,
 };
 use crate::read::{PagesIter, PrimitiveLogicalType};
 
 type DecodedStateTuple = (MutableBinaryViewArray<[u8]>, MutableBitmap);
 
-#[derive(Default)]
-struct BinViewDecoder {
-    check_utf8: Cell<bool>,
-}
-
-impl DecodedState for DecodedStateTuple {
-    fn len(&self) -> usize {
-        self.0.len()
-    }
-}
-
-impl<'a> utils::Decoder<'a> for BinViewDecoder {
-    type State = BinaryState<'a>;
-    type Dict = BinaryDict;
-    type DecodedState = DecodedStateTuple;
-
-    fn build_state(
-        &self,
+impl<'a> StateTranslation<'a, BinViewDecoder> for BinaryStateTranslation<'a> {
+    fn new(
+        decoder: &BinViewDecoder,
         page: &'a DataPage,
-        dict: Option<&'a Self::Dict>,
-    ) -> PolarsResult<Self::State> {
+        dict: Option<&'a <BinViewDecoder as utils::Decoder>::Dict>,
+        page_validity: Option<&PageValidity<'a>>,
+        filter: Option<&Filter<'a>>,
+    ) -> PolarsResult<Self> {
         let is_string = matches!(
             page.descriptor.primitive_type.logical_type,
             Some(PrimitiveLogicalType::String)
         );
-        self.check_utf8.set(is_string);
-        build_binary_state(page, dict, is_string)
+        decoder.check_utf8.set(is_string);
+        Self::new(page, dict, page_validity, filter, is_string)
     }
 
-    fn with_capacity(&self, capacity: usize) -> Self::DecodedState {
-        (
-            MutableBinaryViewArray::with_capacity(capacity),
-            MutableBitmap::with_capacity(capacity),
-        )
+    fn len_when_not_nullable(&self) -> usize {
+        Self::len_when_not_nullable(self)
+    }
+
+    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
+        Self::skip_in_place(self, n)
     }
 
     fn extend_from_state(
-        &self,
-        state: &mut Self::State,
-        decoded: &mut Self::DecodedState,
+        &mut self,
+        decoder: &BinViewDecoder,
+        decoded: &mut <BinViewDecoder as utils::Decoder>::DecodedState,
+        page_validity: &mut Option<utils::PageValidity<'a>>,
         additional: usize,
-    ) -> PolarsResult<()> {
+    ) -> ParquetResult<()> {
         let (values, validity) = decoded;
         let views_offset = values.views().len();
         let buffer_offset = values.completed_buffers().len();
-        let mut validate_utf8 = self.check_utf8.take();
 
-        match state {
-            BinaryState::Optional(page_validity, page_values) => extend_from_decoder(
+        let mut validate_utf8 = decoder.check_utf8.take();
+
+        match (self, page_validity) {
+            (Self::Unit(page_values), None) => {
+                for x in page_values.by_ref().take(additional) {
+                    values.push_value_ignore_validity(x)
+                }
+            },
+            (Self::Unit(page_values), Some(page_validity)) => extend_from_decoder(
                 validity,
                 page_validity,
                 Some(additional),
                 values,
                 page_values,
             )?,
-            BinaryState::Required(page) => {
-                for x in page.values.by_ref().take(additional) {
-                    values.push_value_ignore_validity(x)
-                }
-            },
-            BinaryState::Delta(page) => {
-                for value in page {
-                    values.push_value_ignore_validity(value)
-                }
-            },
-            BinaryState::OptionalDelta(page_validity, page_values) => {
-                extend_from_decoder(
-                    validity,
-                    page_validity,
-                    Some(additional),
-                    values,
-                    page_values,
-                )?;
-            },
-            BinaryState::FilteredRequired(page) => {
-                for x in page.values.by_ref().take(additional) {
-                    values.push_value_ignore_validity(x)
-                }
-            },
-            BinaryState::FilteredDelta(page) => {
-                for x in page.values.by_ref().take(additional) {
-                    values.push_value_ignore_validity(x)
-                }
-            },
-            BinaryState::OptionalDictionary(page_validity, page_values) => {
-                // Already done on the dict.
-                validate_utf8 = false;
-
-                let page_dict = &page_values.dict;
-                let views_dict = binary_views_dict(values, page_dict);
-                let translator = DictionaryTranslator(&views_dict);
-                let collector = TranslatedHybridRle::new(&mut page_values.values, &translator);
-
-                utils::extend_from_decoder(
-                    validity,
-                    page_validity,
-                    Some(additional),
-                    values,
-                    collector,
-                )?;
-            },
-            BinaryState::RequiredDictionary(page) => {
+            (Self::Dictionary(page), None) => {
                 // Already done on the dict.
                 validate_utf8 = false;
 
@@ -136,77 +86,75 @@ impl<'a> utils::Decoder<'a> for BinViewDecoder {
                     validity.extend_constant(additional, true);
                 }
             },
-            BinaryState::FilteredOptional(page_validity, page_values) => {
-                extend_from_decoder(
-                    validity,
-                    page_validity,
-                    Some(additional),
-                    values,
-                    page_values.by_ref(),
-                )?;
-            },
-            BinaryState::FilteredOptionalDelta(page_validity, page_values) => {
-                extend_from_decoder(
-                    validity,
-                    page_validity,
-                    Some(additional),
-                    values,
-                    page_values.by_ref(),
-                )?;
-            },
-            BinaryState::FilteredRequiredDictionary(page) => {
-                // TODO! directly set the dict as buffers and only insert the proper views.
-                // This will save a lot of memory.
+            (Self::Dictionary(page), Some(page_validity)) => {
                 // Already done on the dict.
                 validate_utf8 = false;
+
                 let page_dict = &page.dict;
-                for x in page
-                    .values
-                    .by_ref()
-                    .map(|index| page_dict.value(index as usize))
-                    .take(additional)
-                {
-                    values.push_value_ignore_validity(x)
+                let views_dict = binary_views_dict(values, page_dict);
+                let translator = DictionaryTranslator(&views_dict);
+                let collector = TranslatedHybridRle::new(&mut page.values, &translator);
+
+                extend_from_decoder(validity, page_validity, Some(additional), values, collector)?;
+            },
+            (Self::Delta(page_values), None) => {
+                for value in page_values.by_ref().take(additional) {
+                    values.push_value_ignore_validity(value)
                 }
-                page.values.iter.get_result()?;
             },
-            BinaryState::FilteredOptionalDictionary(page_validity, page_values) => {
-                // Already done on the dict.
-                validate_utf8 = false;
-                // TODO! directly set the dict as buffers and only insert the proper views.
-                // This will save a lot of memory.
-                let page_dict = &page_values.dict;
-                extend_from_decoder(
-                    validity,
-                    page_validity,
-                    Some(additional),
-                    values,
-                    &mut page_values
-                        .values
-                        .by_ref()
-                        .map(|index| page_dict.value(index as usize)),
-                )?;
-                page_values.values.get_result()?;
-            },
-            BinaryState::OptionalDeltaByteArray(page_validity, page_values) => extend_from_decoder(
+            (Self::Delta(page_values), Some(page_validity)) => extend_from_decoder(
                 validity,
                 page_validity,
                 Some(additional),
                 values,
                 page_values,
             )?,
-            BinaryState::DeltaByteArray(page_values) => {
+            (Self::DeltaBytes(page_values), None) => {
                 for x in page_values.take(additional) {
                     values.push_value_ignore_validity(x)
                 }
             },
+            (Self::DeltaBytes(page_values), Some(page_validity)) => extend_from_decoder(
+                validity,
+                page_validity,
+                Some(additional),
+                values,
+                page_values,
+            )?,
         }
 
         if validate_utf8 {
-            values.validate_utf8(buffer_offset, views_offset)
+            // @TODO: Better error message
+            values
+                .validate_utf8(buffer_offset, views_offset)
+                .map_err(|_| ParquetError::oos("invalid UTF-8"))
         } else {
             Ok(())
         }
+    }
+}
+
+#[derive(Default)]
+struct BinViewDecoder {
+    check_utf8: Cell<bool>,
+}
+
+impl DecodedState for DecodedStateTuple {
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+}
+
+impl<'a> utils::Decoder<'a> for BinViewDecoder {
+    type Translation = BinaryStateTranslation<'a>;
+    type Dict = BinaryDict;
+    type DecodedState = DecodedStateTuple;
+
+    fn with_capacity(&self, capacity: usize) -> Self::DecodedState {
+        (
+            MutableBinaryViewArray::with_capacity(capacity),
+            MutableBitmap::with_capacity(capacity),
+        )
     }
 
     fn deserialize_dict(&self, page: &DictPage) -> Self::Dict {

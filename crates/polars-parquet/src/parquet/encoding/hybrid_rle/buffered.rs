@@ -1,4 +1,4 @@
-use super::Translator;
+use super::gatherer::HybridRleGatherer;
 use crate::parquet::encoding::bitpacked::{self, Unpackable, Unpacked};
 use crate::parquet::error::ParquetResult;
 
@@ -97,15 +97,15 @@ impl<'a> Iterator for HybridRleBuffered<'a> {
 impl<'a> ExactSizeIterator for HybridRleBuffered<'a> {}
 
 impl<'a> BufferedBitpacked<'a> {
-    fn translate_and_collect_limited_into<O: Clone + Default>(
+    fn gather_limited_into<O: Clone, G: HybridRleGatherer<O>>(
         &mut self,
-        target: &mut Vec<O>,
+        target: &mut G::Target,
         limit: usize,
-        translator: &impl Translator<O>,
+        gatherer: &G,
     ) -> ParquetResult<usize> {
         let unpacked_num_elements = self.unpacked_end - self.unpacked_start;
         if limit <= unpacked_num_elements {
-            translator.translate_slice(
+            gatherer.gather_slice(
                 target,
                 &self.unpacked[self.unpacked_start..self.unpacked_start + limit],
             )?;
@@ -113,7 +113,7 @@ impl<'a> BufferedBitpacked<'a> {
             return Ok(limit);
         }
 
-        translator.translate_slice(
+        gatherer.gather_slice(
             target,
             &self.unpacked[self.unpacked_start..self.unpacked_end],
         )?;
@@ -124,27 +124,27 @@ impl<'a> BufferedBitpacked<'a> {
         let decoder = self.decoder.take();
         let decoder_len = decoder.len();
         if limit >= decoder_len {
-            translator.translate_bitpacked_all(target, decoder)?;
+            gatherer.gather_bitpacked_all(target, decoder)?;
             Ok(unpacked_num_elements + decoder_len)
         } else {
-            let buffered = translator.translate_bitpacked_limited(target, limit, decoder)?;
+            let buffered = gatherer.gather_bitpacked_limited(target, decoder, limit)?;
             *self = buffered;
             Ok(unpacked_num_elements + limit)
         }
     }
 
-    pub fn translate_and_collect_into<O: Clone + Default>(
+    pub fn gather_into<O: Clone, G: HybridRleGatherer<O>>(
         self,
-        target: &mut Vec<O>,
-        translator: &impl Translator<O>,
+        target: &mut G::Target,
+        gatherer: &G,
     ) -> ParquetResult<usize> {
         let unpacked_num_elements = self.unpacked_end - self.unpacked_start;
-        translator.translate_slice(
+        gatherer.gather_slice(
             target,
             &self.unpacked[self.unpacked_start..self.unpacked_end],
         )?;
         let decoder_len = self.decoder.len();
-        translator.translate_bitpacked_all(target, self.decoder)?;
+        gatherer.gather_bitpacked_all(target, self.decoder)?;
         Ok(unpacked_num_elements + decoder_len)
     }
 
@@ -176,26 +176,26 @@ impl<'a> BufferedBitpacked<'a> {
 }
 
 impl BufferedRle {
-    pub fn translate_and_collect_limited_into<O: Clone + Default>(
+    pub fn gather_limited_into<O: Clone, G: HybridRleGatherer<O>>(
         &mut self,
-        target: &mut Vec<O>,
+        target: &mut G::Target,
         limit: usize,
-        translator: &impl Translator<O>,
+        gatherer: &G,
     ) -> ParquetResult<usize> {
-        let value = translator.translate(self.value)?;
+        let value = gatherer.hybridrle_to_target(self.value)?;
         let num_elements = usize::min(self.length, limit);
         self.length -= num_elements;
-        target.resize(target.len() + num_elements, value);
+        gatherer.gather_repeated(target, value, num_elements)?;
         Ok(num_elements)
     }
 
-    pub fn translate_and_collect_into<O: Clone + Default>(
+    pub fn gather_into<O: Clone, A: HybridRleGatherer<O>>(
         self,
-        target: &mut Vec<O>,
-        translator: &impl Translator<O>,
+        target: &mut A::Target,
+        applicator: &A,
     ) -> ParquetResult<usize> {
-        let value = translator.translate(self.value)?;
-        target.resize(target.len() + self.length, value);
+        let value = applicator.hybridrle_to_target(self.value)?;
+        applicator.gather_repeated(target, value, self.length)?;
         Ok(self.length)
     }
 
@@ -207,45 +207,47 @@ impl BufferedRle {
 }
 
 impl<'a> HybridRleBuffered<'a> {
-    pub fn translate_and_collect_limited_into<O: Clone + Default>(
+    pub fn gather_limited_into<O: Clone, G: HybridRleGatherer<O>>(
         &mut self,
-        target: &mut Vec<O>,
+        target: &mut G::Target,
         limit: usize,
-        translator: &impl Translator<O>,
+        gatherer: &G,
     ) -> ParquetResult<usize> {
-        let start_target_length = target.len();
+        let start_target_length = gatherer.target_num_elements(target);
         let start_length = self.len();
 
         let num_processed = match self {
-            HybridRleBuffered::Bitpacked(b) => {
-                b.translate_and_collect_limited_into(target, limit, translator)
-            },
-            HybridRleBuffered::Rle(b) => {
-                b.translate_and_collect_limited_into(target, limit, translator)
-            },
+            HybridRleBuffered::Bitpacked(b) => b.gather_limited_into(target, limit, gatherer),
+            HybridRleBuffered::Rle(b) => b.gather_limited_into(target, limit, gatherer),
         }?;
 
         debug_assert!(num_processed <= limit);
-        debug_assert_eq!(num_processed, target.len() - start_target_length);
+        debug_assert_eq!(
+            num_processed,
+            gatherer.target_num_elements(target) - start_target_length
+        );
         debug_assert_eq!(num_processed, start_length - self.len());
 
         Ok(num_processed)
     }
 
-    pub fn translate_and_collect_into<O: Clone + Default>(
+    pub fn gather_into<O: Clone, G: HybridRleGatherer<O>>(
         self,
-        target: &mut Vec<O>,
-        translator: &impl Translator<O>,
+        target: &mut G::Target,
+        gatherer: &G,
     ) -> ParquetResult<usize> {
-        let start_target_length = target.len();
+        let start_target_length = gatherer.target_num_elements(target);
         let start_length = self.len();
 
         let num_processed = match self {
-            HybridRleBuffered::Bitpacked(b) => b.translate_and_collect_into(target, translator),
-            HybridRleBuffered::Rle(b) => b.translate_and_collect_into(target, translator),
+            HybridRleBuffered::Bitpacked(b) => b.gather_into(target, gatherer),
+            HybridRleBuffered::Rle(b) => b.gather_into(target, gatherer),
         }?;
 
-        debug_assert_eq!(num_processed, target.len() - start_target_length);
+        debug_assert_eq!(
+            num_processed,
+            gatherer.target_num_elements(target) - start_target_length
+        );
         debug_assert_eq!(num_processed, start_length);
 
         Ok(num_processed)

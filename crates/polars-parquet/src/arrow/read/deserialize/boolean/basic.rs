@@ -6,98 +6,164 @@ use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
 use polars_error::PolarsResult;
 
-use super::super::utils::{
-    extend_from_decoder, get_selected_rows, next, DecodedState, Decoder,
-    FilteredOptionalPageValidity, MaybeNext, OptionalPageValidity,
-};
+use super::super::utils::{extend_from_decoder, next, DecodedState, Decoder, MaybeNext};
 use super::super::{utils, PagesIter};
-use crate::parquet::deserialize::{
-    HybridDecoderBitmapIter, HybridRleBooleanIter, SliceFilteredIter,
-};
-use crate::parquet::encoding::{hybrid_rle, Encoding};
+use crate::parquet::encoding::hybrid_rle::gatherer::HybridRleGatherer;
+use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
+use crate::parquet::encoding::Encoding;
+use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
+use crate::read::deserialize::utils::filter::Filter;
+use crate::read::deserialize::utils::{BatchableCollector, PageValidity};
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
-struct Values<'a>(BitmapIter<'a>);
+enum StateTranslation<'a> {
+    Unit(BitmapIter<'a>),
+    Rle(HybridRleDecoder<'a>),
+}
 
-impl<'a> Values<'a> {
-    pub fn try_new(page: &'a DataPage) -> PolarsResult<Self> {
+impl<'a> utils::StateTranslation<'a, BooleanDecoder> for StateTranslation<'a> {
+    fn new(
+        _decoder: &BooleanDecoder,
+        page: &'a DataPage,
+        _dict: Option<&'a <BooleanDecoder as Decoder>::Dict>,
+        page_validity: Option<&PageValidity<'a>>,
+        _filter: Option<&Filter<'a>>,
+    ) -> PolarsResult<Self> {
         let values = split_buffer(page)?.values;
 
-        Ok(Self(BitmapIter::new(values, 0, values.len() * 8)))
-    }
-}
+        match page.encoding() {
+            Encoding::Plain => {
+                let num_values = if page_validity.is_some() {
+                    // @NOTE: We overestimate the amount of values here, but in the V1
+                    // specification we don't really have a way to know the number of valid items.
+                    // Without traversing the list.
+                    values.len() * u8::BITS as usize
+                } else {
+                    page.num_values()
+                };
+                Ok(Self::Unit(BitmapIter::new(values, 0, num_values)))
+            },
+            Encoding::Rle => {
+                // @NOTE: For a nullable list, we might very well overestimate the amount of
+                // values, but we never collect those items. We don't really have a way to now the
+                // number of valid items in the V1 specification.
 
-// The state of a required DataPage with a boolean physical type
-#[derive(Debug)]
-struct Required<'a> {
-    values: &'a [u8],
-    // invariant: offset <= length;
-    offset: usize,
-    length: usize,
-}
-
-impl<'a> Required<'a> {
-    pub fn new(page: &'a DataPage) -> Self {
-        Self {
-            values: page.buffer(),
-            offset: 0,
-            length: page.num_values(),
+                // For RLE boolean values the length in bytes is pre-pended.
+                // https://github.com/apache/parquet-format/blob/e517ac4dbe08d518eb5c2e58576d4c711973db94/Encodings.md#run-length-encoding--bit-packing-hybrid-rle--3
+                let (_len_in_bytes, values) = values.split_at(4);
+                Ok(Self::Rle(HybridRleDecoder::new(
+                    values,
+                    1,
+                    page.num_values(),
+                )))
+            },
+            _ => Err(utils::not_implemented(page)),
         }
     }
-}
 
-#[derive(Debug)]
-struct FilteredRequired<'a> {
-    values: SliceFilteredIter<BitmapIter<'a>>,
-}
-
-impl<'a> FilteredRequired<'a> {
-    pub fn try_new(page: &'a DataPage) -> PolarsResult<Self> {
-        let values = split_buffer(page)?.values;
-        // todo: replace this by an iterator over slices, for faster deserialization
-        let values = BitmapIter::new(values, 0, page.num_values());
-
-        let rows = get_selected_rows(page);
-        let values = SliceFilteredIter::new(values, rows);
-
-        Ok(Self { values })
-    }
-
-    #[inline]
-    pub fn len(&self) -> usize {
-        self.values.size_hint().0
-    }
-}
-
-// The state of a `DataPage` of `Boolean` parquet boolean type
-#[derive(Debug)]
-enum State<'a> {
-    Optional(OptionalPageValidity<'a>, Values<'a>),
-    Required(Required<'a>),
-    FilteredRequired(FilteredRequired<'a>),
-    FilteredOptional(FilteredOptionalPageValidity<'a>, Values<'a>),
-    RleOptional(
-        OptionalPageValidity<'a>,
-        HybridRleBooleanIter<'a, HybridDecoderBitmapIter<'a>>,
-    ),
-}
-
-impl<'a> State<'a> {
-    pub fn len(&self) -> usize {
+    fn len_when_not_nullable(&self) -> usize {
         match self {
-            State::Optional(validity, _) => validity.len(),
-            State::Required(page) => page.length - page.offset,
-            State::FilteredRequired(page) => page.len(),
-            State::FilteredOptional(optional, _) => optional.len(),
-            State::RleOptional(optional, _) => optional.len(),
+            Self::Unit(v) => v.len(),
+            Self::Rle(v) => v.len(),
         }
+    }
+
+    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
+        if n == 0 {
+            return Ok(());
+        }
+
+        // @TODO: Add a skip_in_place on BitmapIter
+        match self {
+            Self::Unit(t) => _ = t.nth(n - 1),
+            Self::Rle(t) => t.skip_in_place(n)?,
+        }
+
+        Ok(())
+    }
+
+    fn extend_from_state(
+        &mut self,
+        _decoder: &BooleanDecoder,
+        decoded: &mut <BooleanDecoder as Decoder>::DecodedState,
+        page_validity: &mut Option<PageValidity<'a>>,
+        additional: usize,
+    ) -> ParquetResult<()> {
+        let (values, validity) = decoded;
+
+        match (self, page_validity) {
+            (Self::Unit(page), None) => page.collect_n_into(values, additional),
+            (Self::Unit(page_values), Some(page_validity)) => extend_from_decoder(
+                validity,
+                page_validity,
+                Some(additional),
+                values,
+                page_values,
+            )?,
+            (Self::Rle(page_values), None) => {
+                page_values.gather_n_into(values, additional, &BitmapGatherer)?
+            },
+            (Self::Rle(page_values), Some(page_validity)) => utils::extend_from_decoder(
+                validity,
+                page_validity,
+                Some(additional),
+                values,
+                BitmapCollector(page_values),
+            )?,
+        }
+
+        Ok(())
     }
 }
 
-impl<'a> utils::PageState<'a> for State<'a> {
-    fn len(&self) -> usize {
-        self.len()
+struct BitmapGatherer;
+impl HybridRleGatherer<u32> for BitmapGatherer {
+    type Target = MutableBitmap;
+
+    fn target_reserve(&self, target: &mut Self::Target, n: usize) {
+        target.reserve(n);
+    }
+
+    fn target_num_elements(&self, target: &Self::Target) -> usize {
+        target.len()
+    }
+
+    fn hybridrle_to_target(&self, value: u32) -> ParquetResult<u32> {
+        Ok(value)
+    }
+
+    fn gather_one(&self, target: &mut Self::Target, value: u32) -> ParquetResult<()> {
+        target.push(value != 0);
+        Ok(())
+    }
+
+    fn gather_repeated(
+        &self,
+        target: &mut Self::Target,
+        value: u32,
+        n: usize,
+    ) -> ParquetResult<()> {
+        target.extend_constant(n, value != 0);
+        Ok(())
+    }
+
+    // @TODO: The slice impl here can speed some stuff up
+}
+struct BitmapCollector<'a, 'b>(&'b mut HybridRleDecoder<'a>);
+impl<'a, 'b> BatchableCollector<u32, MutableBitmap> for BitmapCollector<'a, 'b> {
+    fn reserve(target: &mut MutableBitmap, n: usize) {
+        target.reserve(n);
+    }
+
+    fn push_n(&mut self, target: &mut MutableBitmap, n: usize) -> ParquetResult<()> {
+        self.0.gather_n_into(target, n, &BitmapGatherer)
+    }
+
+    fn push_n_nulls(&mut self, target: &mut MutableBitmap, n: usize) -> ParquetResult<()> {
+        target.extend_constant(n, false);
+        Ok(())
     }
 }
 
@@ -107,102 +173,18 @@ impl DecodedState for (MutableBitmap, MutableBitmap) {
     }
 }
 
-#[derive(Default)]
-struct BooleanDecoder {}
+struct BooleanDecoder;
 
 impl<'a> Decoder<'a> for BooleanDecoder {
-    type State = State<'a>;
+    type Translation = StateTranslation<'a>;
     type Dict = ();
     type DecodedState = (MutableBitmap, MutableBitmap);
-
-    fn build_state(
-        &self,
-        page: &'a DataPage,
-        _: Option<&'a Self::Dict>,
-    ) -> PolarsResult<Self::State> {
-        let is_optional = utils::page_is_optional(page);
-        let is_filtered = utils::page_is_filtered(page);
-
-        match (page.encoding(), is_optional, is_filtered) {
-            (Encoding::Plain, true, false) => Ok(State::Optional(
-                OptionalPageValidity::try_new(page)?,
-                Values::try_new(page)?,
-            )),
-            (Encoding::Plain, false, false) => Ok(State::Required(Required::new(page))),
-            (Encoding::Plain, true, true) => Ok(State::FilteredOptional(
-                FilteredOptionalPageValidity::try_new(page)?,
-                Values::try_new(page)?,
-            )),
-            (Encoding::Plain, false, true) => {
-                Ok(State::FilteredRequired(FilteredRequired::try_new(page)?))
-            },
-            (Encoding::Rle, true, false) => {
-                let optional = OptionalPageValidity::try_new(page)?;
-                let values = split_buffer(page)?.values;
-                // For boolean values the length is pre-pended.
-                let (_len_in_bytes, values) = values.split_at(4);
-                let iter = hybrid_rle::Decoder::new(values, 1);
-                let values = HybridDecoderBitmapIter::new(iter, page.num_values());
-                let values = HybridRleBooleanIter::new(values);
-                Ok(State::RleOptional(optional, values))
-            },
-            _ => Err(utils::not_implemented(page)),
-        }
-    }
 
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState {
         (
             MutableBitmap::with_capacity(capacity),
             MutableBitmap::with_capacity(capacity),
         )
-    }
-
-    fn extend_from_state(
-        &self,
-        state: &mut Self::State,
-        decoded: &mut Self::DecodedState,
-        remaining: usize,
-    ) -> PolarsResult<()> {
-        let (values, validity) = decoded;
-        match state {
-            State::Optional(page_validity, page_values) => extend_from_decoder(
-                validity,
-                page_validity,
-                Some(remaining),
-                values,
-                &mut page_values.0,
-            )?,
-            State::Required(page) => {
-                let remaining = remaining.min(page.length - page.offset);
-                values.extend_from_slice(page.values, page.offset, remaining);
-                page.offset += remaining;
-            },
-            State::FilteredRequired(page) => {
-                values.reserve(remaining);
-                for item in page.values.by_ref().take(remaining) {
-                    values.push(item)
-                }
-            },
-            State::FilteredOptional(page_validity, page_values) => {
-                utils::extend_from_decoder(
-                    validity,
-                    page_validity,
-                    Some(remaining),
-                    values,
-                    page_values.0.by_ref(),
-                )?;
-            },
-            State::RleOptional(page_validity, page_values) => {
-                utils::extend_from_decoder(
-                    validity,
-                    page_validity,
-                    Some(remaining),
-                    values,
-                    &mut *page_values,
-                )?;
-            },
-        }
-        Ok(())
     }
 
     fn deserialize_dict(&self, _: &DictPage) -> Self::Dict {}
@@ -254,7 +236,7 @@ impl<I: PagesIter> Iterator for Iter<I> {
                 &mut None,
                 &mut self.remaining,
                 self.chunk_size,
-                &BooleanDecoder::default(),
+                &BooleanDecoder,
             );
             match maybe_state {
                 MaybeNext::Some(Ok((values, validity))) => {

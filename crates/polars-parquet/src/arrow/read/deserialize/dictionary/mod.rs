@@ -9,88 +9,95 @@ pub use nested::next_dict as nested_next_dict;
 use polars_error::{polars_err, PolarsResult};
 use polars_utils::iter::FallibleIterator;
 
+use super::utils::filter::Filter;
 use super::utils::{
-    self, dict_indices_decoder, extend_from_decoder, get_selected_rows, DecodedState, Decoder,
-    FilteredOptionalPageValidity, MaybeNext, OptionalPageValidity,
+    self, dict_indices_decoder, extend_from_decoder, DecodedState, Decoder, MaybeNext,
+    PageValidity, StateTranslation,
 };
 use super::PagesIter;
-use crate::parquet::deserialize::SliceFilteredIter;
 use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use crate::parquet::encoding::Encoding;
+use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{DataPage, DictPage, Page};
-use crate::parquet::schema::Repetition;
 
-// The state of a `DataPage` of `Primitive` parquet primitive type
-#[derive(Debug)]
-pub enum State<'a> {
-    Optional(Optional<'a>),
-    Required(Required<'a>),
-    FilteredRequired(FilteredRequired<'a>),
-    FilteredOptional(FilteredOptionalPageValidity<'a>, HybridRleDecoder<'a>),
-}
-
-#[derive(Debug)]
-pub struct Required<'a> {
-    values: HybridRleDecoder<'a>,
-}
-
-impl<'a> Required<'a> {
-    fn try_new(page: &'a DataPage) -> PolarsResult<Self> {
-        let values = dict_indices_decoder(page)?;
-        Ok(Self { values })
-    }
-}
-
-#[derive(Debug)]
-pub struct FilteredRequired<'a> {
-    values: SliceFilteredIter<HybridRleDecoder<'a>>,
-}
-
-impl<'a> FilteredRequired<'a> {
-    fn try_new(page: &'a DataPage) -> PolarsResult<Self> {
-        let values = dict_indices_decoder(page)?;
-
-        let rows = get_selected_rows(page);
-        let values = SliceFilteredIter::new(values, rows);
-
-        Ok(Self { values })
-    }
-}
-
-#[derive(Debug)]
-pub struct Optional<'a> {
-    values: HybridRleDecoder<'a>,
-    validity: OptionalPageValidity<'a>,
-}
-
-impl<'a> Optional<'a> {
-    fn try_new(page: &'a DataPage) -> PolarsResult<Self> {
-        let values = dict_indices_decoder(page)?;
-
-        Ok(Self {
-            values,
-            validity: OptionalPageValidity::try_new(page)?,
-        })
-    }
-}
-
-impl<'a> utils::PageState<'a> for State<'a> {
-    fn len(&self) -> usize {
-        match self {
-            State::Optional(optional) => optional.validity.len(),
-            State::Required(required) => required.values.size_hint().0,
-            State::FilteredRequired(required) => required.values.size_hint().0,
-            State::FilteredOptional(validity, _) => validity.len(),
+impl<'a, K: DictionaryKey> StateTranslation<'a, PrimitiveDecoder<K>> for HybridRleDecoder<'a> {
+    fn new(
+        _decoder: &PrimitiveDecoder<K>,
+        page: &'a DataPage,
+        _dict: Option<&'a <PrimitiveDecoder<K> as Decoder<'a>>::Dict>,
+        _page_validity: Option<&PageValidity<'a>>,
+        _filter: Option<&Filter<'a>>,
+    ) -> PolarsResult<Self> {
+        if !matches!(
+            page.encoding(),
+            Encoding::PlainDictionary | Encoding::RleDictionary
+        ) {
+            return Err(utils::not_implemented(page));
         }
+
+        dict_indices_decoder(page)
+    }
+
+    fn len_when_not_nullable(&self) -> usize {
+        self.len()
+    }
+
+    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
+        HybridRleDecoder::skip_in_place(self, n)
+    }
+
+    fn extend_from_state(
+        &mut self,
+        _decoder: &PrimitiveDecoder<K>,
+        decoded: &mut <PrimitiveDecoder<K> as Decoder<'a>>::DecodedState,
+        page_validity: &mut Option<PageValidity<'a>>,
+        additional: usize,
+    ) -> ParquetResult<()> {
+        let (values, validity) = decoded;
+
+        match page_validity {
+            None => {
+                values.extend(
+                    self.by_ref()
+                        .map(|x| {
+                            let x: K = match (x as usize).try_into() {
+                                Ok(key) => key,
+                                // todo: convert this to an error.
+                                Err(_) => {
+                                    panic!("The maximum key is too small")
+                                },
+                            };
+                            x
+                        })
+                        .take(additional),
+                );
+                self.get_result()?;
+            },
+            Some(page_validity) => {
+                extend_from_decoder(
+                    validity,
+                    page_validity,
+                    Some(additional),
+                    values,
+                    &mut self.by_ref().map(|x| {
+                        match (x as usize).try_into() {
+                            Ok(key) => key,
+                            // todo: convert this to an error.
+                            Err(_) => panic!("The maximum key is too small"),
+                        }
+                    }),
+                )?;
+                self.get_result()?;
+            },
+        }
+
+        Ok(())
     }
 }
 
 #[derive(Debug)]
-pub struct PrimitiveDecoder<K>
-where
-    K: DictionaryKey,
-{
-    phantom_k: std::marker::PhantomData<K>,
+pub struct PrimitiveDecoder<K: DictionaryKey> {
+    _pd: std::marker::PhantomData<K>,
 }
 
 impl<K> Default for PrimitiveDecoder<K>
@@ -100,136 +107,21 @@ where
     #[inline]
     fn default() -> Self {
         Self {
-            phantom_k: std::marker::PhantomData,
+            _pd: std::marker::PhantomData,
         }
     }
 }
 
-impl<'a, K> utils::Decoder<'a> for PrimitiveDecoder<K>
-where
-    K: DictionaryKey,
-{
-    type State = State<'a>;
+impl<'a, K: DictionaryKey> utils::Decoder<'a> for PrimitiveDecoder<K> {
+    type Translation = HybridRleDecoder<'a>;
     type Dict = ();
     type DecodedState = (Vec<K>, MutableBitmap);
-
-    fn build_state(
-        &self,
-        page: &'a DataPage,
-        _: Option<&'a Self::Dict>,
-    ) -> PolarsResult<Self::State> {
-        let is_optional =
-            page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
-        let is_filtered = page.selected_rows().is_some();
-
-        match (page.encoding(), is_optional, is_filtered) {
-            (Encoding::PlainDictionary | Encoding::RleDictionary, false, false) => {
-                Required::try_new(page).map(State::Required)
-            },
-            (Encoding::PlainDictionary | Encoding::RleDictionary, true, false) => {
-                Optional::try_new(page).map(State::Optional)
-            },
-            (Encoding::PlainDictionary | Encoding::RleDictionary, false, true) => {
-                FilteredRequired::try_new(page).map(State::FilteredRequired)
-            },
-            (Encoding::PlainDictionary | Encoding::RleDictionary, true, true) => {
-                Ok(State::FilteredOptional(
-                    FilteredOptionalPageValidity::try_new(page)?,
-                    dict_indices_decoder(page)?,
-                ))
-            },
-            _ => Err(utils::not_implemented(page)),
-        }
-    }
 
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState {
         (
             Vec::<K>::with_capacity(capacity),
             MutableBitmap::with_capacity(capacity),
         )
-    }
-
-    fn extend_from_state(
-        &self,
-        state: &mut Self::State,
-        decoded: &mut Self::DecodedState,
-        remaining: usize,
-    ) -> PolarsResult<()> {
-        let (values, validity) = decoded;
-        match state {
-            State::Optional(page) => {
-                extend_from_decoder(
-                    validity,
-                    &mut page.validity,
-                    Some(remaining),
-                    values,
-                    &mut page.values.by_ref().map(|x| {
-                        match (x as usize).try_into() {
-                            Ok(key) => key,
-                            // todo: convert this to an error.
-                            Err(_) => panic!("The maximum key is too small"),
-                        }
-                    }),
-                )?;
-                page.values.get_result()?;
-            },
-            State::Required(page) => {
-                values.extend(
-                    page.values
-                        .by_ref()
-                        .map(|x| {
-                            let x: K = match (x as usize).try_into() {
-                                Ok(key) => key,
-                                // todo: convert this to an error.
-                                Err(_) => {
-                                    panic!("The maximum key is too small")
-                                },
-                            };
-                            x
-                        })
-                        .take(remaining),
-                );
-                page.values.get_result()?;
-            },
-            State::FilteredOptional(page_validity, page_values) => {
-                extend_from_decoder(
-                    validity,
-                    page_validity,
-                    Some(remaining),
-                    values,
-                    &mut page_values.by_ref().map(|x| {
-                        let x: K = match (x as usize).try_into() {
-                            Ok(key) => key,
-                            // todo: convert this to an error.
-                            Err(_) => {
-                                panic!("The maximum key is too small")
-                            },
-                        };
-                        x
-                    }),
-                )?;
-                page_values.get_result()?;
-            },
-            State::FilteredRequired(page) => {
-                values.extend(
-                    page.values
-                        .by_ref()
-                        .map(|x| {
-                            let x: K = match (x as usize).try_into() {
-                                Ok(key) => key,
-                                // todo: convert this to an error.
-                                Err(_) => {
-                                    panic!("The maximum key is too small")
-                                },
-                            };
-                            x
-                        })
-                        .take(remaining),
-                );
-                page.values.iter.get_result()?;
-            },
-        }
-        Ok(())
     }
 
     fn deserialize_dict(&self, _: &DictPage) -> Self::Dict {}
@@ -277,7 +169,7 @@ pub(super) fn next_dict<K: DictionaryKey, I: PagesIter, F: Fn(&DictPage) -> Box<
             };
 
             // there is a new page => consume the page from the start
-            let maybe_page = PrimitiveDecoder::<K>::default().build_state(page, None);
+            let maybe_page = utils::State::new(&PrimitiveDecoder::<K>::default(), page, None);
             let page = match maybe_page {
                 Ok(page) => page,
                 Err(e) => return MaybeNext::Some(Err(e)),

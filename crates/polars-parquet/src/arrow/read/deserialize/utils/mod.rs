@@ -3,20 +3,170 @@ use std::collections::VecDeque;
 pub(crate) mod filter;
 
 use arrow::array::{BinaryArray, MutableBinaryViewArray, View};
-use arrow::bitmap::utils::BitmapIter;
 use arrow::bitmap::MutableBitmap;
 use arrow::pushable::Pushable;
 use polars_error::{polars_err, PolarsError, PolarsResult};
 
+use self::filter::Filter;
 use super::super::PagesIter;
-use crate::parquet::deserialize::{
-    FilteredHybridEncoded, FilteredHybridRleDecoderIter, HybridDecoderBitmapIter, HybridEncoded,
+use crate::parquet::encoding::hybrid_rle::gatherer::{
+    HybridRleGatherer, ZeroCount, ZeroCountGatherer,
 };
 use crate::parquet::encoding::hybrid_rle::{self, HybridRleDecoder, Translator};
 use crate::parquet::error::ParquetResult;
-use crate::parquet::indexes::Interval;
 use crate::parquet::page::{split_buffer, DataPage, DictPage, Page};
 use crate::parquet::schema::Repetition;
+
+#[derive(Debug)]
+pub(crate) struct State<'a, D: Decoder<'a>, T: StateTranslation<'a, D>> {
+    pub(crate) page_validity: Option<PageValidity<'a>>,
+    pub(crate) translation: T,
+    pub(crate) filter: Option<Filter<'a>>,
+    _pd: std::marker::PhantomData<D>,
+}
+
+pub(crate) trait StateTranslation<'a, D: Decoder<'a>>: Sized {
+    fn new(
+        decoder: &D,
+        page: &'a DataPage,
+        dict: Option<&'a D::Dict>,
+        page_validity: Option<&PageValidity<'a>>,
+        filter: Option<&Filter<'a>>,
+    ) -> PolarsResult<Self>;
+    fn len_when_not_nullable(&self) -> usize;
+    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()>;
+
+    /// extends [`Self::DecodedState`] by deserializing items in [`Self::State`].
+    /// It guarantees that the length of `decoded` is at most `decoded.len() + remaining`.
+    fn extend_from_state(
+        &mut self,
+        decoder: &D,
+        decoded: &mut D::DecodedState,
+        page_validity: &mut Option<PageValidity<'a>>,
+        additional: usize,
+    ) -> ParquetResult<()>;
+}
+
+impl<'a, D: Decoder<'a>, T: StateTranslation<'a, D>> State<'a, D, T> {
+    pub fn new(decoder: &D, page: &'a DataPage, dict: Option<&'a D::Dict>) -> PolarsResult<Self> {
+        let is_optional =
+            page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
+        let is_filtered = page.selected_rows().is_some();
+
+        let page_validity = is_optional
+            .then(|| page_validity_decoder(page))
+            .transpose()?;
+        let filter = is_filtered.then(|| Filter::new(page)).flatten();
+
+        let translation = T::new(decoder, page, dict, page_validity.as_ref(), filter.as_ref())?;
+
+        Ok(Self {
+            page_validity,
+            translation,
+            filter,
+            _pd: std::marker::PhantomData,
+        })
+    }
+
+    pub fn len(&self) -> usize {
+        match &self.page_validity {
+            Some(v) => v.len(),
+            None => self.translation.len_when_not_nullable(),
+        }
+    }
+
+    pub fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
+        if n == 0 {
+            return Ok(());
+        }
+
+        let n = self
+            .page_validity
+            .as_mut()
+            .map_or(ParquetResult::Ok(n), |page_validity| {
+                let mut zc = ZeroCount::default();
+                page_validity.gather_n_into(&mut zc, n, &ZeroCountGatherer)?;
+                Ok(zc.num_nonzero)
+            })?;
+
+        self.translation.skip_in_place(n)
+    }
+
+    pub fn extend_from_state(
+        &mut self,
+        decoder: &D,
+        decoded: &mut D::DecodedState,
+        additional: usize,
+    ) -> ParquetResult<()> {
+        // @TODO: Taking the filter here is a bit unfortunate. Since each error leaves the filter
+        // empty.
+        let filter = self.filter.take();
+
+        match filter {
+            None => self.translation.extend_from_state(
+                decoder,
+                decoded,
+                &mut self.page_validity,
+                additional,
+            ),
+            Some(mut filter) => {
+                let mut n = additional;
+                while n > 0 && self.len() > 0 {
+                    let prev_n = n;
+                    let prev_state_len = self.len();
+
+                    // Skip over all intervals that we have already passed or that are length == 0.
+                    while filter
+                        .selected_rows
+                        .get(filter.current_interval)
+                        .is_some_and(|iv| {
+                            iv.length == 0 || iv.start + iv.length <= filter.current_index
+                        })
+                    {
+                        filter.current_interval += 1;
+                    }
+
+                    let Some(iv) = filter.selected_rows.get(filter.current_interval) else {
+                        self.skip_in_place(self.len())?;
+                        self.filter = Some(filter);
+                        return Ok(());
+                    };
+
+                    // Move to at least the start of the interval
+                    if filter.current_index < iv.start {
+                        self.skip_in_place(iv.start - filter.current_index)?;
+                        filter.current_index = iv.start;
+                    }
+
+                    let n_this_round = usize::min(iv.start + iv.length - filter.current_index, n);
+
+                    self.translation.extend_from_state(
+                        decoder,
+                        decoded,
+                        &mut self.page_validity,
+                        n_this_round,
+                    )?;
+
+                    let iv = &filter.selected_rows[filter.current_interval];
+                    filter.current_index += n_this_round;
+                    if filter.current_index >= iv.start + iv.length {
+                        filter.current_interval += 1;
+                    }
+
+                    n -= n_this_round;
+
+                    assert!(
+                        prev_n != n || prev_state_len != self.len(),
+                        "No forward progress was booked in a filtered parquet file."
+                    );
+                }
+
+                self.filter = Some(filter);
+                Ok(())
+            },
+        }
+    }
+}
 
 pub fn not_implemented(page: &DataPage) -> PolarsError {
     let is_optional = page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
@@ -32,16 +182,10 @@ pub fn not_implemented(page: &DataPage) -> PolarsError {
     )
 }
 
-/// The state of a partially deserialized page
-pub(super) trait PageValidity<'a> {
-    fn next_limited(&mut self, limit: usize) -> Option<FilteredHybridEncoded<'a>>;
-}
-
 pub trait BatchableCollector<I, T> {
     fn reserve(target: &mut T, n: usize);
     fn push_n(&mut self, target: &mut T, n: usize) -> ParquetResult<()>;
     fn push_n_nulls(&mut self, target: &mut T, n: usize) -> ParquetResult<()>;
-    fn skip_n(&mut self, n: usize) -> ParquetResult<()>;
 }
 
 /// This batches sequential collect operations to try and prevent unnecessary buffering and
@@ -101,28 +245,6 @@ impl<'a, I, T, C: BatchableCollector<I, T>> BatchedCollector<'a, I, T, C> {
     }
 
     #[inline]
-    pub fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
-        if n == 0 {
-            return Ok(());
-        }
-
-        if self.num_waiting_valids > 0 {
-            self.collector
-                .push_n(self.target, self.num_waiting_valids)?;
-        }
-        if self.num_waiting_invalids > 0 {
-            self.collector
-                .push_n_nulls(self.target, self.num_waiting_invalids)?;
-        }
-        self.collector.skip_n(n)?;
-
-        self.num_waiting_valids = 0;
-        self.num_waiting_invalids = 0;
-
-        Ok(())
-    }
-
-    #[inline]
     pub fn finalize(mut self) -> ParquetResult<()> {
         self.collector
             .push_n(self.target, self.num_waiting_valids)?;
@@ -132,259 +254,104 @@ impl<'a, I, T, C: BatchableCollector<I, T>> BatchedCollector<'a, I, T, C> {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct FilteredOptionalPageValidity<'a> {
-    iter: FilteredHybridRleDecoderIter<'a>,
-    current: Option<(FilteredHybridEncoded<'a>, usize)>,
+pub(crate) type PageValidity<'a> = HybridRleDecoder<'a>;
+pub(crate) fn page_validity_decoder(page: &DataPage) -> ParquetResult<PageValidity> {
+    let validity = split_buffer(page)?.def;
+    let decoder = hybrid_rle::HybridRleDecoder::new(validity, 1, page.num_values());
+    Ok(decoder)
 }
 
-impl<'a> FilteredOptionalPageValidity<'a> {
-    pub fn try_new(page: &'a DataPage) -> PolarsResult<Self> {
-        let validity = split_buffer(page)?.def;
+struct BatchGatherer<'a, I, T, C: BatchableCollector<I, T>>(
+    std::marker::PhantomData<&'a (I, T, C)>,
+);
+impl<'a, I, T, C: BatchableCollector<I, T>> HybridRleGatherer<u32> for BatchGatherer<'a, I, T, C> {
+    type Target = (&'a mut MutableBitmap, BatchedCollector<'a, I, T, C>);
 
-        let iter = hybrid_rle::Decoder::new(validity, 1);
-        let iter = HybridDecoderBitmapIter::new(iter, page.num_values());
-        let selected_rows = get_selected_rows(page);
-        let iter = FilteredHybridRleDecoderIter::new(iter, selected_rows);
+    fn target_reserve(&self, _target: &mut Self::Target, _n: usize) {}
 
-        Ok(Self {
-            iter,
-            current: None,
-        })
+    fn target_num_elements(&self, target: &Self::Target) -> usize {
+        target.0.len()
     }
 
-    pub fn len(&self) -> usize {
-        self.iter.len()
+    fn hybridrle_to_target(&self, value: u32) -> ParquetResult<u32> {
+        Ok(value)
     }
-}
 
-pub fn get_selected_rows(page: &DataPage) -> VecDeque<Interval> {
-    page.selected_rows()
-        .unwrap_or(&[Interval::new(0, page.num_values())])
-        .iter()
-        .copied()
-        .collect()
-}
-
-impl<'a> PageValidity<'a> for FilteredOptionalPageValidity<'a> {
-    fn next_limited(&mut self, limit: usize) -> Option<FilteredHybridEncoded<'a>> {
-        let (run, own_offset) = if let Some((run, offset)) = self.current {
-            (run, offset)
+    fn gather_one(&self, (validity, values): &mut Self::Target, value: u32) -> ParquetResult<()> {
+        if value == 0 {
+            values.push_invalid();
+            validity.extend_constant(1, false);
         } else {
-            // a new run
-            let run = self.iter.next()?; // no run -> None
-            self.current = Some((run, 0));
-            return self.next_limited(limit);
-        };
-
-        match run {
-            FilteredHybridEncoded::Bitmap {
-                values,
-                offset,
-                length,
-            } => {
-                let run_length = length - own_offset;
-
-                let length = limit.min(run_length);
-
-                if length == run_length {
-                    self.current = None;
-                } else {
-                    self.current = Some((run, own_offset + length));
-                }
-
-                Some(FilteredHybridEncoded::Bitmap {
-                    values,
-                    offset,
-                    length,
-                })
-            },
-            FilteredHybridEncoded::Repeated { is_set, length } => {
-                let run_length = length - own_offset;
-
-                let length = limit.min(run_length);
-
-                if length == run_length {
-                    self.current = None;
-                } else {
-                    self.current = Some((run, own_offset + length));
-                }
-
-                Some(FilteredHybridEncoded::Repeated { is_set, length })
-            },
-            FilteredHybridEncoded::Skipped(set) => {
-                self.current = None;
-                Some(FilteredHybridEncoded::Skipped(set))
-            },
+            values.push_valid()?;
+            validity.extend_constant(1, true);
         }
-    }
-}
 
-#[derive(Debug, Clone)]
-pub struct OptionalPageValidity<'a> {
-    iter: HybridDecoderBitmapIter<'a>,
-    current: Option<(HybridEncoded<'a>, usize)>,
-}
-
-impl<'a> OptionalPageValidity<'a> {
-    pub fn try_new(page: &'a DataPage) -> PolarsResult<Self> {
-        let validity = split_buffer(page)?.def;
-
-        let iter = hybrid_rle::Decoder::new(validity, 1);
-        let iter = HybridDecoderBitmapIter::new(iter, page.num_values());
-        Ok(Self {
-            iter,
-            current: None,
-        })
+        Ok(())
     }
 
-    /// Number of items remaining
-    pub fn len(&self) -> usize {
-        self.iter.len()
-            + self
-                .current
-                .as_ref()
-                .map(|(run, offset)| run.len() - offset)
-                .unwrap_or_default()
-    }
-
-    pub fn next_limited(&mut self, limit: usize) -> Option<FilteredHybridEncoded<'a>> {
-        let (run, offset) = if let Some((run, offset)) = self.current {
-            (run, offset)
+    fn gather_repeated(
+        &self,
+        (validity, values): &mut Self::Target,
+        value: u32,
+        n: usize,
+    ) -> ParquetResult<()> {
+        if value == 0 {
+            values.push_n_invalids(n);
+            validity.extend_constant(n, false);
         } else {
-            // a new run
-            let run = self.iter.next()?; // no run -> None
-            self.current = Some((run, 0));
-            return self.next_limited(limit);
-        };
-
-        match run {
-            HybridEncoded::Bitmap(values, length) => {
-                let run_length = length - offset;
-
-                let length = limit.min(run_length);
-
-                if length == run_length {
-                    self.current = None;
-                } else {
-                    self.current = Some((run, offset + length));
-                }
-
-                Some(FilteredHybridEncoded::Bitmap {
-                    values,
-                    offset,
-                    length,
-                })
-            },
-            HybridEncoded::Repeated(is_set, run_length) => {
-                let run_length = run_length - offset;
-
-                let length = limit.min(run_length);
-
-                if length == run_length {
-                    self.current = None;
-                } else {
-                    self.current = Some((run, offset + length));
-                }
-
-                Some(FilteredHybridEncoded::Repeated { is_set, length })
-            },
+            values.push_n_valids(n)?;
+            validity.extend_constant(n, true);
         }
+
+        Ok(())
     }
-}
 
-impl<'a> PageValidity<'a> for OptionalPageValidity<'a> {
-    fn next_limited(&mut self, limit: usize) -> Option<FilteredHybridEncoded<'a>> {
-        self.next_limited(limit)
+    fn gather_slice(&self, target: &mut Self::Target, source: &[u32]) -> ParquetResult<()> {
+        let mut prev = 0u32;
+        let mut len = 0usize;
+
+        for v in source {
+            let v = *v;
+
+            if v == prev {
+                len += 1;
+            } else {
+                if len != 0 {
+                    self.gather_repeated(target, prev, len)?;
+                }
+                prev = v;
+                len = 1;
+            }
+        }
+
+        if len != 0 {
+            self.gather_repeated(target, prev, len)?;
+        }
+
+        Ok(())
     }
-}
-
-fn reserve_pushable_and_validity<'a, I, T, C: BatchableCollector<I, T>>(
-    validity: &mut MutableBitmap,
-    page_validity: &'a mut dyn PageValidity,
-    limit: Option<usize>,
-    target: &mut T,
-) -> Vec<FilteredHybridEncoded<'a>> {
-    let limit = limit.unwrap_or(usize::MAX);
-
-    let mut runs = vec![];
-    let mut remaining = limit;
-    let mut reserve_pushable = 0;
-
-    // first do a scan so that we know how much to reserve up front
-    while remaining > 0 {
-        let run = page_validity.next_limited(remaining);
-        let run = if let Some(run) = run { run } else { break };
-
-        match run {
-            FilteredHybridEncoded::Bitmap { length, .. } => {
-                reserve_pushable += length;
-                remaining -= length;
-            },
-            FilteredHybridEncoded::Repeated { length, .. } => {
-                reserve_pushable += length;
-                remaining -= length;
-            },
-            _ => {},
-        };
-        runs.push(run)
-    }
-    C::reserve(target, reserve_pushable);
-    validity.reserve(reserve_pushable);
-    runs
 }
 
 /// Extends a [`Pushable`] from an iterator of non-null values and an hybrid-rle decoder
 pub(super) fn extend_from_decoder<I, T, C: BatchableCollector<I, T>>(
     validity: &mut MutableBitmap,
-    page_validity: &mut dyn PageValidity,
+    page_validity: &mut PageValidity,
     limit: Option<usize>,
     target: &mut T,
     collector: C,
 ) -> ParquetResult<()> {
-    let runs = reserve_pushable_and_validity::<I, T, C>(validity, page_validity, limit, target);
+    let num_elements = limit.map_or(page_validity.len(), |limit| limit.min(page_validity.len()));
 
-    let mut batched_collector = BatchedCollector::new(collector, target);
+    validity.reserve(num_elements);
+    C::reserve(target, num_elements);
 
-    // then a second loop to really fill the buffers
-    for run in runs {
-        match run {
-            FilteredHybridEncoded::Bitmap {
-                values,
-                offset,
-                length,
-            } => {
-                // consume `length` items
-                let mut validity_iter = BitmapIter::new(values, offset, length);
+    let batched_collector = BatchedCollector::new(collector, target);
+    let mut target = (validity, batched_collector);
+    let gatherer = BatchGatherer(Default::default());
 
-                let mut bit_sum = 0;
-                while validity_iter.num_remaining() != 0 {
-                    let num_valid = validity_iter.take_leading_ones();
-                    bit_sum += num_valid;
-                    batched_collector.push_n_valids(num_valid)?;
+    page_validity.gather_n_into(&mut target, num_elements, &gatherer)?;
 
-                    let num_invalid = validity_iter.take_leading_zeros();
-                    bit_sum += num_invalid;
-                    batched_collector.push_n_invalids(num_invalid);
-                }
-
-                debug_assert_eq!(bit_sum, length);
-
-                validity.extend_from_slice(values, offset, length);
-            },
-            FilteredHybridEncoded::Repeated { is_set, length } => {
-                validity.extend_constant(length, is_set);
-                if is_set {
-                    batched_collector.push_n_valids(length)?;
-                } else {
-                    batched_collector.push_n_invalids(length);
-                }
-            },
-            FilteredHybridEncoded::Skipped(valids) => batched_collector.skip_in_place(valids)?,
-        };
-    }
-
-    batched_collector.finalize()?;
+    target.1.finalize()?;
 
     Ok(())
 }
@@ -437,11 +404,6 @@ where
         target.resize(target.len() + n, O::default());
         Ok(())
     }
-
-    #[inline]
-    fn skip_n(&mut self, n: usize) -> ParquetResult<()> {
-        self.decoder.skip_in_place(n)
-    }
 }
 
 impl<'a, 'b, 'c, T> BatchableCollector<u32, MutableBinaryViewArray<[u8]>>
@@ -475,11 +437,6 @@ where
         target.extend_null(n);
         Ok(())
     }
-
-    #[inline]
-    fn skip_n(&mut self, n: usize) -> ParquetResult<()> {
-        self.decoder.skip_in_place(n)
-    }
 }
 
 impl<T, P: Pushable<T>, I: Iterator<Item = T>> BatchableCollector<T, P> for I {
@@ -499,16 +456,6 @@ impl<T, P: Pushable<T>, I: Iterator<Item = T>> BatchableCollector<T, P> for I {
         target.extend_null_constant(n);
         Ok(())
     }
-
-    #[inline]
-    fn skip_n(&mut self, n: usize) -> ParquetResult<()> {
-        if n == 0 {
-            return Ok(());
-        }
-
-        _ = self.nth(n);
-        Ok(())
-    }
 }
 
 /// The state of a partially deserialized page
@@ -523,39 +470,24 @@ pub(super) trait DecodedState: std::fmt::Debug {
 }
 
 /// A decoder that knows how to map `State` -> Array
-pub(super) trait Decoder<'a> {
+pub(super) trait Decoder<'a>: Sized {
+    // @TODO: Remove Translation
     /// The state that this decoder derives from a [`DataPage`]. This is bound to the page.
-    type State: PageState<'a>;
+    type Translation: StateTranslation<'a, Self>;
     /// The dictionary representation that the decoder uses
     type Dict;
     /// The target state that this Decoder decodes into.
     type DecodedState: DecodedState;
 
-    /// Creates a new `Self::State`
-    fn build_state(
-        &self,
-        page: &'a DataPage,
-        dict: Option<&'a Self::Dict>,
-    ) -> PolarsResult<Self::State>;
-
     /// Initializes a new [`Self::DecodedState`].
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState;
-
-    /// extends [`Self::DecodedState`] by deserializing items in [`Self::State`].
-    /// It guarantees that the length of `decoded` is at most `decoded.len() + remaining`.
-    fn extend_from_state(
-        &self,
-        page: &mut Self::State,
-        decoded: &mut Self::DecodedState,
-        additional: usize,
-    ) -> PolarsResult<()>;
 
     /// Deserializes a [`DictPage`] into [`Self::Dict`].
     fn deserialize_dict(&self, page: &DictPage) -> Self::Dict;
 }
 
 pub(super) fn extend_from_new_page<'a, T: Decoder<'a>>(
-    mut page: T::State,
+    mut page: State<'a, T, T::Translation>,
     chunk_size: Option<usize>,
     items: &mut VecDeque<T::DecodedState>,
     remaining: &mut usize,
@@ -574,7 +506,7 @@ pub(super) fn extend_from_new_page<'a, T: Decoder<'a>>(
 
     let additional = (chunk_size - existing).min(*remaining);
 
-    decoder.extend_from_state(&mut page, &mut decoded, additional)?;
+    page.extend_from_state(decoder, &mut decoded, additional)?;
     *remaining -= decoded.len() - existing;
     items.push_back(decoded);
 
@@ -582,7 +514,12 @@ pub(super) fn extend_from_new_page<'a, T: Decoder<'a>>(
         let additional = chunk_size.min(*remaining);
 
         let mut decoded = decoder.with_capacity(additional);
-        decoder.extend_from_state(&mut page, &mut decoded, additional)?;
+        let len_before = decoded.len();
+        page.extend_from_state(decoder, &mut decoded, additional)?;
+        assert!(
+            len_before != decoded.len() || additional == 0,
+            "No progress booked"
+        );
         *remaining -= decoded.len();
         items.push_back(decoded)
     }
@@ -635,7 +572,7 @@ pub(super) fn next<'a, I: PagesIter, D: Decoder<'a>>(
             };
 
             // there is a new page => consume the page from the start
-            let maybe_page = decoder.build_state(page, dict.as_ref());
+            let maybe_page = State::new(decoder, page, dict.as_ref());
             let page = match maybe_page {
                 Ok(page) => page,
                 Err(e) => return MaybeNext::Some(Err(e)),
