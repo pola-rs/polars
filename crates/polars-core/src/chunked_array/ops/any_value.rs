@@ -319,6 +319,7 @@ impl ChunkAnyValue for NullChunked {
     }
 }
 
+#[cfg(feature = "dtype-struct")]
 impl ChunkAnyValue for StructChunked2 {
     /// Gets AnyValue from LogicalType
     fn get_any_value(&self, i: usize) -> PolarsResult<AnyValue<'_>> {
