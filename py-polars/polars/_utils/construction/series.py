@@ -149,13 +149,26 @@ def sequence_to_pyseries(
         return pyseries
 
     elif dtype == Struct:
+        # This is very bad. Goes via rows? And needs to do outer nullability separate.
+        # It also has two data passes.
+        # TODO: eventually go into struct builder
         struct_schema = dtype.to_schema() if isinstance(dtype, Struct) else None
         empty = {}  # type: ignore[var-annotated]
+
+        data = []
+        invalid = []
+        for i, v in enumerate(values):
+            if v is None:
+                invalid.append(i)
+                data.append(empty)
+            else:
+                data.append(v)
+
         return plc.sequence_to_pydf(
-            data=[(empty if v is None else v) for v in values],
+            data=data,
             schema=struct_schema,
             orient="row",
-        ).to_struct(name)
+        ).to_struct(name, invalid)
 
     if python_dtype is None:
         if value is None:

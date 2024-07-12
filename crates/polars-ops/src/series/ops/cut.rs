@@ -159,7 +159,7 @@ pub fn qcut(
 }
 
 mod test {
-    // STRUCT REFACTOR
+    // This need metadata in fields
     #[ignore]
     #[test]
     fn test_map_cats_fast_unique() {

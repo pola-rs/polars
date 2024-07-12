@@ -1226,15 +1226,15 @@ class ExprStringNameSpace:
         >>> dtype = pl.Struct([pl.Field("a", pl.Int64), pl.Field("b", pl.Boolean)])
         >>> df.with_columns(decoded=pl.col("json").str.json_decode(dtype))
         shape: (3, 2)
-        ┌─────────────────────┬─────────────┐
-        │ json                ┆ decoded     │
-        │ ---                 ┆ ---         │
-        │ str                 ┆ struct[2]   │
-        ╞═════════════════════╪═════════════╡
-        │ {"a":1, "b": true}  ┆ {1,true}    │
-        │ null                ┆ {null,null} │
-        │ {"a":2, "b": false} ┆ {2,false}   │
-        └─────────────────────┴─────────────┘
+        ┌─────────────────────┬───────────┐
+        │ json                ┆ decoded   │
+        │ ---                 ┆ ---       │
+        │ str                 ┆ struct[2] │
+        ╞═════════════════════╪═══════════╡
+        │ {"a":1, "b": true}  ┆ {1,true}  │
+        │ null                ┆ null      │
+        │ {"a":2, "b": false} ┆ {2,false} │
+        └─────────────────────┴───────────┘
         """
         if dtype is not None:
             dtype = parse_into_dtype(dtype)

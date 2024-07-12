@@ -5,6 +5,7 @@ use polars_utils::sync::SyncPtr;
 use crate::chunked_array::object::extension::polars_extension::PolarsExtension;
 use crate::prelude::*;
 use crate::series::implementations::null::NullChunked;
+use crate::utils::index_to_chunked_index;
 
 #[inline]
 #[allow(unused_variables)]
@@ -315,5 +316,34 @@ impl ChunkAnyValue for NullChunked {
 
     fn get_any_value(&self, _index: usize) -> PolarsResult<AnyValue> {
         Ok(AnyValue::Null)
+    }
+}
+
+#[cfg(feature = "dtype-struct")]
+impl ChunkAnyValue for StructChunked2 {
+    /// Gets AnyValue from LogicalType
+    fn get_any_value(&self, i: usize) -> PolarsResult<AnyValue<'_>> {
+        polars_ensure!(i < self.len(), oob = i, self.len());
+        unsafe { Ok(self.get_any_value_unchecked(i)) }
+    }
+
+    unsafe fn get_any_value_unchecked(&self, i: usize) -> AnyValue<'_> {
+        let (chunk_idx, idx) = index_to_chunked_index(self.chunks.iter().map(|c| c.len()), i);
+        if let DataType::Struct(flds) = self.dtype() {
+            // SAFETY: we already have a single chunk and we are
+            // guarded by the type system.
+            unsafe {
+                let arr = &**self.chunks.get_unchecked(chunk_idx);
+                let arr = &*(arr as *const dyn Array as *const StructArray);
+
+                if arr.is_null_unchecked(idx) {
+                    AnyValue::Null
+                } else {
+                    AnyValue::Struct(idx, arr, flds)
+                }
+            }
+        } else {
+            unreachable!()
+        }
     }
 }

@@ -668,7 +668,7 @@ class StringNameSpace:
         Series: 'json' [struct[2]]
         [
                 {1,true}
-                {null,null}
+                null
                 {2,false}
         ]
         """

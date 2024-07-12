@@ -65,11 +65,6 @@ pub(crate) fn reinterpret_vec<T: Transparent>(input: Vec<T>) -> Vec<T::Target> {
     unsafe { Vec::from_raw_parts(ptr, len, cap) }
 }
 
-pub(crate) fn slice_to_wrapped<T>(slice: &[T]) -> &[Wrap<T>] {
-    // SAFETY: Wrap is transparent.
-    unsafe { std::mem::transmute(slice) }
-}
-
 pub(crate) fn vec_extract_wrapped<T>(buf: Vec<Wrap<T>>) -> Vec<T> {
     reinterpret_vec(buf)
 }
