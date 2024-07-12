@@ -17,7 +17,12 @@ if TYPE_CHECKING:
     from polars._typing import SerializationFormat
 
 
-@given(lf=dataframes(lazy=True))
+@given(
+    lf=dataframes(
+        lazy=True,
+        excluded_dtypes=[pl.Struct],
+    )
+)
 @example(lf=pl.LazyFrame({"foo": ["a", "b", "a"]}, schema={"foo": pl.Enum(["b", "a"])}))
 def test_lf_serde_roundtrip_binary(lf: pl.LazyFrame) -> None:
     serialized = lf.serialize(format="binary")
@@ -31,6 +36,7 @@ def test_lf_serde_roundtrip_binary(lf: pl.LazyFrame) -> None:
         excluded_dtypes=[
             pl.Float32,  # Bug, see: https://github.com/pola-rs/polars/issues/17211
             pl.Float64,  # Bug, see: https://github.com/pola-rs/polars/issues/17211
+            pl.Struct,  # Outer nullability not supported
         ],
     )
 )
