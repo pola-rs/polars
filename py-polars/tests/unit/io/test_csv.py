@@ -2242,10 +2242,12 @@ def test_write_csv_raise_on_non_utf8_17328(
 
 
 @pytest.mark.write_disk()
-def test_write_csv_appending_17328(tmp_path: Path) -> None:
+def test_write_csv_appending_17543(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
+    df = pl.DataFrame({"col": ["value"]})
     with (tmp_path / "append.csv").open("w") as f:
         f.write("# test\n")
-        pl.DataFrame({"col": ["value"]}).write_csv(f)
+        df.write_csv(f)
     with (tmp_path / "append.csv").open("r") as f:
-        assert f.read() == "# test\ncol\nvalue\n"
+        assert f.readline() == "# test\n"
+        assert pl.read_csv(f).equals(df)

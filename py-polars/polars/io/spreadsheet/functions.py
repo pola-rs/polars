@@ -169,6 +169,8 @@ def read_excel(
         Path to a file or a file-like object (by "file-like object" we refer to objects
         that have a `read()` method, such as a file handler like the builtin `open`
         function, or a `BytesIO` instance).
+        For file-like objects,
+        stream position may not be updated accordingly after reading.
     sheet_id
         Sheet number(s) to convert (set `0` to load all sheets as DataFrames) and
         return a `{sheetname:frame,}` dict. (Defaults to `1` if neither this nor
@@ -383,6 +385,8 @@ def read_ods(
         Path to a file or a file-like object (by "file-like object" we refer to objects
         that have a `read()` method, such as a file handler like the builtin `open`
         function, or a `BytesIO` instance).
+        For file-like objects,
+        stream position may not be updated accordingly after reading.
     sheet_id
         Sheet number(s) to convert, starting from 1 (set `0` to load *all* worksheets
         as DataFrames) and return a `{sheetname:frame,}` dict. (Defaults to `1` if
