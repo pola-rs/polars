@@ -172,7 +172,7 @@ impl StructChunked2 {
 
                 let mut out = Self::from_series(self.name(), &new_fields)?;
                 if self.null_count > 0 {
-                    out.merge_validities(self.chunks());
+                    out.zip_outer_validity(self);
                 }
                 Ok(out.into_series())
             },
@@ -228,7 +228,7 @@ impl StructChunked2 {
                     .collect::<PolarsResult<Vec<_>>>()?;
                 let mut out = Self::from_series(self.name(), &fields)?;
                 if self.null_count > 0 {
-                    out.merge_validities(self.chunks());
+                    out.zip_outer_validity(self);
                 }
                 Ok(out.into_series())
             },
@@ -311,9 +311,19 @@ impl StructChunked2 {
     }
 
     /// Combine the validities of two structs.
-    /// # Panics
-    /// Panics if the chunks don't align.
     pub fn zip_outer_validity(&mut self, other: &StructChunked2) {
+        if self.chunks.len() != other.chunks.len()
+            || !self
+                .chunks
+                .iter()
+                .zip(other.chunks.iter())
+                .map(|(a, b)| a.len() == b.len())
+                .all_equal()
+        {
+            *self = self.rechunk();
+            let other = other.rechunk();
+            return self.zip_outer_validity(&other);
+        }
         if other.null_count > 0 {
             // SAFETY:
             // We keep length and dtypes the same.
