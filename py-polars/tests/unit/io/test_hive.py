@@ -672,7 +672,7 @@ def test_projection_only_hive_parts_gives_correct_number_of_rows(
 @pytest.mark.write_disk()
 def test_hive_write(tmp_path: Path, df: pl.DataFrame) -> None:
     root = tmp_path
-    df.write_parquet_partitioned(root, ["a", "b"])
+    df.write_parquet(pl.PartitionedWriteOptions(root, ["a", "b"]))
 
     lf = pl.scan_parquet(root)
     assert_frame_equal(lf.collect(), df)
@@ -693,7 +693,9 @@ def test_hive_write_multiple_files(tmp_path: Path) -> None:
     assert n_files > 1, "increase df size or decrease file size"
 
     root = tmp_path
-    df.write_parquet_partitioned(root, ["a"], chunk_size_bytes=chunk_size)
+    df.write_parquet(
+        pl.PartitionedWriteOptions(root, ["a"], chunk_size_bytes=chunk_size)
+    )
 
     assert sum(1 for _ in (root / "a=0").iterdir()) == n_files
     assert_frame_equal(pl.scan_parquet(root).collect(), df)
@@ -721,7 +723,7 @@ def test_hive_write_dates(tmp_path: Path) -> None:
     )
 
     root = tmp_path
-    df.write_parquet_partitioned(root, ["date1", "date2"])
+    df.write_parquet(pl.PartitionedWriteOptions(root, ["date1", "date2"]))
 
     lf = pl.scan_parquet(root)
     assert_frame_equal(lf.collect(), df)
@@ -738,8 +740,8 @@ def test_hive_predicate_dates_14712(
     tmp_path: Path, monkeypatch: Any, capfd: Any
 ) -> None:
     monkeypatch.setenv("POLARS_VERBOSE", "1")
-    pl.DataFrame({"a": [datetime(2024, 1, 1)]}).write_parquet_partitioned(
-        tmp_path, ["a"]
+    pl.DataFrame({"a": [datetime(2024, 1, 1)]}).write_parquet(
+        pl.PartitionedWriteOptions(tmp_path, ["a"])
     )
     pl.scan_parquet(tmp_path).filter(pl.col("a") != datetime(2024, 1, 1)).collect()
     assert "hive partitioning: skipped 1 files" in capfd.readouterr().err

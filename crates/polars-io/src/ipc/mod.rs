@@ -16,4 +16,4 @@ pub use ipc_file::{IpcReader, IpcScanOptions};
 pub use ipc_reader_async::*;
 #[cfg(feature = "ipc_streaming")]
 pub use ipc_stream::*;
-pub use write::{BatchedWriter, IpcCompression, IpcWriter, IpcWriterOption, IpcWriterOptions};
+pub use write::{BatchedWriter, IpcCompression, IpcWriter, IpcWriterOptions};

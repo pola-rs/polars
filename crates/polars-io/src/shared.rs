@@ -1,5 +1,4 @@
 use std::io::{Read, Write};
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use arrow::array::new_empty_array;
@@ -41,9 +40,8 @@ where
     fn finish(&mut self, df: &mut DataFrame) -> PolarsResult<()>;
 }
 
-pub trait WriterFactory {
-    fn create_writer<W: Write + 'static>(&self, writer: W) -> Box<dyn SerWriter<W>>;
-    fn extension(&self) -> PathBuf;
+pub trait WriteDataFrameToFile {
+    fn write_df_to_file<W: std::io::Write>(&self, df: DataFrame, file: W) -> PolarsResult<()>;
 }
 
 pub trait ArrowReader {

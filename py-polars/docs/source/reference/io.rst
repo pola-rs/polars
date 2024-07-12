@@ -107,8 +107,14 @@ Parquet
    read_parquet_schema
    scan_parquet
    DataFrame.write_parquet
-   DataFrame.write_parquet_partitioned
    LazyFrame.sink_parquet
+
+Partitioned Writing
+~~~~~~~~~~~~~~~~~~~
+.. autosummary::
+   :toctree: api/
+
+   PartitionedWriteOptions
 
 PyArrow Datasets
 ~~~~~~~~~~~~~~~~

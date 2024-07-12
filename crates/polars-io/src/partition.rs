@@ -1,8 +1,6 @@
 //! Functionality for writing a DataFrame partitioned into multiple files.
 
-use std::fs::File;
-use std::io::BufWriter;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
@@ -10,135 +8,34 @@ use polars_core::POOL;
 use rayon::prelude::*;
 
 use crate::parquet::write::ParquetWriteOptions;
-use crate::utils::resolve_homedir;
-use crate::WriterFactory;
+use crate::prelude::IpcWriterOptions;
+use crate::{SerWriter, WriteDataFrameToFile};
 
-/// Write a DataFrame with disk partitioning
-///
-/// # Example
-/// ```
-/// use polars_core::prelude::*;
-/// use polars_io::ipc::IpcWriterOption;
-/// use polars_io::partition::PartitionedWriter;
-///
-/// fn example(df: &mut DataFrame) -> PolarsResult<()> {
-///     let option = IpcWriterOption::default();
-///     PartitionedWriter::new(option, "./rootdir", ["a", "b"])
-///         .finish(df)
-/// }
-/// ```
-
-pub struct PartitionedWriter<F> {
-    option: F,
-    rootdir: PathBuf,
-    by: Vec<String>,
-    parallel: bool,
-}
-
-impl<F> PartitionedWriter<F>
-where
-    F: WriterFactory + Send + Sync,
-{
-    pub fn new<P, I, S>(option: F, rootdir: P, by: I) -> Self
-    where
-        P: Into<PathBuf>,
-        I: IntoIterator<Item = S>,
-        S: AsRef<str>,
-    {
-        Self {
-            option,
-            rootdir: rootdir.into(),
-            by: by.into_iter().map(|s| s.as_ref().to_string()).collect(),
-            parallel: true,
-        }
-    }
-
-    /// Write the parquet file in parallel (default).
-    pub fn with_parallel(mut self, parallel: bool) -> Self {
-        self.parallel = parallel;
-        self
-    }
-
-    fn write_partition_df(&self, partition_df: &mut DataFrame, i: usize) -> PolarsResult<()> {
-        let mut path = resolve_partition_dir(&self.rootdir, &self.by, partition_df);
-        std::fs::create_dir_all(&path)?;
-
-        path.push(format!(
-            "data-{:04}.{}",
-            i,
-            self.option.extension().display()
-        ));
-
-        let file = std::fs::File::create(path)?;
-        let writer = BufWriter::new(file);
-
-        self.option
-            .create_writer::<BufWriter<File>>(writer)
-            .finish(partition_df)
-    }
-
-    pub fn finish(self, df: &DataFrame) -> PolarsResult<()> {
-        let groups = df.group_by(self.by.clone())?;
-        let groups = groups.get_groups();
-
-        // don't parallelize this
-        // there is a lot of parallelization in take and this may easily SO
-        POOL.install(|| {
-            match groups {
-                GroupsProxy::Idx(idx) => {
-                    idx.par_iter()
-                        .enumerate()
-                        .map(|(i, (_, group))| {
-                            // groups are in bounds
-                            // and sorted
-                            let mut part_df = unsafe {
-                                df._take_unchecked_slice_sorted(group, false, IsSorted::Ascending)
-                            };
-                            self.write_partition_df(&mut part_df, i)
-                        })
-                        .collect::<PolarsResult<Vec<_>>>()
-                },
-                GroupsProxy::Slice { groups, .. } => groups
-                    .par_iter()
-                    .enumerate()
-                    .map(|(i, [first, len])| {
-                        let mut part_df = df.slice(*first as i64, *len as usize);
-                        self.write_partition_df(&mut part_df, i)
-                    })
-                    .collect::<PolarsResult<Vec<_>>>(),
-            }
-        })?;
-
+impl WriteDataFrameToFile for ParquetWriteOptions {
+    fn write_df_to_file<W: std::io::Write>(&self, mut df: DataFrame, file: W) -> PolarsResult<()> {
+        self.to_writer(file).finish(&mut df)?;
         Ok(())
     }
 }
 
-/// `partition_df` must be created in the same way as `partition_by`.
-fn resolve_partition_dir<I, S>(rootdir: &Path, by: I, partition_df: &DataFrame) -> PathBuf
-where
-    I: IntoIterator<Item = S>,
-    S: AsRef<str>,
-{
-    let mut path = PathBuf::new();
-    path.push(resolve_homedir(rootdir));
-
-    for key in by.into_iter() {
-        let value = partition_df[key.as_ref()].get(0).unwrap().to_string();
-        path.push(format!("{}={}", key.as_ref(), value))
+impl WriteDataFrameToFile for IpcWriterOptions {
+    fn write_df_to_file<W: std::io::Write>(&self, mut df: DataFrame, file: W) -> PolarsResult<()> {
+        self.to_writer(file).finish(&mut df)?;
+        Ok(())
     }
-    path
 }
 
 /// Write a partitioned parquet dataset. This functionality is unstable.
-pub fn write_partitioned_dataset<S>(
+pub fn write_partitioned_dataset<S, O>(
     df: &DataFrame,
     path: &Path,
     partition_by: &[S],
-    file_write_options: &ParquetWriteOptions,
+    file_write_options: &O,
     chunk_size: usize,
 ) -> PolarsResult<()>
 where
     S: AsRef<str>,
+    O: WriteDataFrameToFile + Send + Sync,
 {
     // Note: When adding support for formats other than Parquet, avoid writing the partitioned
     // columns into the file. We write them for parquet because they are encoded efficiently with
@@ -210,9 +107,9 @@ where
         (n_files, rows_per_file)
     };
 
-    let write_part = |mut df: DataFrame, path: &Path| {
+    let write_part = |df: DataFrame, path: &Path| {
         let f = std::fs::File::create(path)?;
-        file_write_options.to_writer(f).finish(&mut df)?;
+        file_write_options.write_df_to_file(df, f)?;
         PolarsResult::Ok(())
     };
 
@@ -258,7 +155,7 @@ where
                     .par_iter()
                     .map(|group| {
                         let df = unsafe {
-                            df._take_unchecked_slice_sorted(group, false, IsSorted::Ascending)
+                            df._take_unchecked_slice_sorted(group, true, IsSorted::Ascending)
                         };
                         finish_part_df(df)
                     })

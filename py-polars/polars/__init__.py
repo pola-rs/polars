@@ -149,6 +149,7 @@ from polars.functions import (
     zeros,
 )
 from polars.io import (
+    PartitionedWriteOptions,
     read_avro,
     read_clipboard,
     read_csv,
@@ -238,6 +239,7 @@ __all__ = [
     "Unknown",
     "Utf8",
     # polars.io
+    "PartitionedWriteOptions",
     "read_avro",
     "read_clipboard",
     "read_csv",

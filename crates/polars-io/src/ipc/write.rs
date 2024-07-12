@@ -1,5 +1,4 @@
 use std::io::Write;
-use std::path::PathBuf;
 
 use arrow::io::ipc::write;
 use arrow::io::ipc::write::WriteOptions;
@@ -8,7 +7,7 @@ use polars_core::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::prelude::*;
-use crate::shared::{schema_to_arrow_checked, WriterFactory};
+use crate::shared::schema_to_arrow_checked;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -17,6 +16,12 @@ pub struct IpcWriterOptions {
     pub compression: Option<IpcCompression>,
     /// maintain the order the data was processed
     pub maintain_order: bool,
+}
+
+impl IpcWriterOptions {
+    pub fn to_writer<W: Write>(&self, writer: W) -> IpcWriter<W> {
+        IpcWriter::new(writer).with_compression(self.compression)
+    }
 }
 
 /// Write a DataFrame to Arrow's IPC format
@@ -151,47 +156,5 @@ impl From<IpcCompression> for write::Compression {
             IpcCompression::LZ4 => write::Compression::LZ4,
             IpcCompression::ZSTD => write::Compression::ZSTD,
         }
-    }
-}
-
-pub struct IpcWriterOption {
-    compression: Option<IpcCompression>,
-    extension: PathBuf,
-}
-
-impl IpcWriterOption {
-    pub fn new() -> Self {
-        Self {
-            compression: None,
-            extension: PathBuf::from(".ipc"),
-        }
-    }
-
-    /// Set the compression used. Defaults to None.
-    pub fn with_compression(mut self, compression: Option<IpcCompression>) -> Self {
-        self.compression = compression;
-        self
-    }
-
-    /// Set the extension. Defaults to ".ipc".
-    pub fn with_extension(mut self, extension: PathBuf) -> Self {
-        self.extension = extension;
-        self
-    }
-}
-
-impl Default for IpcWriterOption {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl WriterFactory for IpcWriterOption {
-    fn create_writer<W: Write + 'static>(&self, writer: W) -> Box<dyn SerWriter<W>> {
-        Box::new(IpcWriter::new(writer).with_compression(self.compression))
-    }
-
-    fn extension(&self) -> PathBuf {
-        self.extension.to_owned()
     }
 }
