@@ -18,7 +18,6 @@ pytest_plugins = ["pytester"]
 
 
 @given(s=series())
-@pytest.mark.skip(reason="struct-refactor")
 def test_assert_series_equal_parametric(s: pl.Series) -> None:
     assert_series_equal(s, s)
 

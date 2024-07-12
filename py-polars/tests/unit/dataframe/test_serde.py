@@ -19,7 +19,6 @@ if TYPE_CHECKING:
     from polars._typing import SerializationFormat
 
 
-@pytest.mark.skip(reason="struct-refactor")
 @given(df=dataframes())
 def test_df_serde_roundtrip_binary(df: pl.DataFrame) -> None:
     serialized = df.serialize()
@@ -27,7 +26,6 @@ def test_df_serde_roundtrip_binary(df: pl.DataFrame) -> None:
     assert_frame_equal(result, df, categorical_as_str=True)
 
 
-@pytest.mark.skip(reason="struct-refactor")
 @given(
     df=dataframes(
         excluded_dtypes=[
