@@ -156,7 +156,9 @@ def test_ndjson_nested_null() -> None:
     # 'bar' represents an empty list of structs; check the schema is correct (eg: picks
     # up that it IS a list of structs), but confirm that list is empty (ref: #11301)
     # We don't support empty structs yet. So Null is closest.
-    assert df.schema == {"foo": pl.Struct([pl.Field("bar", pl.List(pl.Struct({"": pl.Null})))])}
+    assert df.schema == {
+        "foo": pl.Struct([pl.Field("bar", pl.List(pl.Struct({"": pl.Null})))])
+    }
     assert df.to_dict(as_series=False) == {"foo": [{"bar": []}]}
 
 
