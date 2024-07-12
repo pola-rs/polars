@@ -685,8 +685,18 @@ def test_empty_with_schema_struct() -> None:
             assert df.schema == frame_schema
             assert df.unnest("y").columns == ["x", "a", "b", "c"]
             assert df.rows() == [
-                (10, {"a": None, "b": None, "c": None}),
-                (20, {"a": None, "b": None, "c": None}),
+                (
+                    10,
+                    {"a": None, "b": None, "c": None}
+                    if empty_structs[0] is not None  # type: ignore[index]
+                    else None,
+                ),
+                (
+                    20,
+                    {"a": None, "b": None, "c": None}
+                    if empty_structs[1] is not None  # type: ignore[index]
+                    else None,
+                ),
             ]
 
 

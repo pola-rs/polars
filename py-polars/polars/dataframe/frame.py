@@ -10518,7 +10518,7 @@ class DataFrame:
             {5,"five"}
         ]
         """
-        return wrap_s(self._df.to_struct(name))
+        return wrap_s(self._df.to_struct(name, []))
 
     def unnest(
         self,
