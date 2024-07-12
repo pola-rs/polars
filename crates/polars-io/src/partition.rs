@@ -8,6 +8,7 @@ use polars_core::POOL;
 use rayon::prelude::*;
 
 use crate::parquet::write::ParquetWriteOptions;
+#[cfg(feature = "ipc")]
 use crate::prelude::IpcWriterOptions;
 use crate::{SerWriter, WriteDataFrameToFile};
 
@@ -18,6 +19,7 @@ impl WriteDataFrameToFile for ParquetWriteOptions {
     }
 }
 
+#[cfg(feature = "ipc")]
 impl WriteDataFrameToFile for IpcWriterOptions {
     fn write_df_to_file<W: std::io::Write>(&self, mut df: DataFrame, file: W) -> PolarsResult<()> {
         self.to_writer(file).finish(&mut df)?;
