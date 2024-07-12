@@ -23,7 +23,6 @@ mod file;
 mod functions;
 mod gil_once_cell;
 mod interop;
-mod io;
 mod lazyframe;
 mod lazygroupby;
 mod map;
@@ -126,7 +125,6 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<PyBatchedCsv>().unwrap();
     #[cfg(feature = "sql")]
     m.add_class::<PySQLContext>().unwrap();
-    m.add_class::<io::hive::PartitionedWriteOptions>().unwrap();
 
     // Submodules
     // LogicalPlan objects

@@ -83,7 +83,6 @@ python:
   lazy: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.lazy.html
   explain: https://docs.pola.rs/api/python/stable/reference/lazyframe/api/polars.LazyFrame.explain.html
   fetch: https://docs.pola.rs/api/python/stable/reference/lazyframe/api/polars.LazyFrame.fetch.html
-  PartitionedWriteOptions: https://docs.pola.rs/api/python/stable/reference/api/polars.PartitionedWriteOptions.html
   SQLContext: https://docs.pola.rs/api/python/stable/reference/sql
   SQLregister:
     name: register

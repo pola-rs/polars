@@ -171,7 +171,6 @@ if TYPE_CHECKING:
     )
     from polars._utils.various import NoDefault
     from polars.interchange.dataframe import PolarsDataFrame
-    from polars.io import PartitionedWriteOptions
     from polars.ml.torch import PolarsDataset
 
     if sys.version_info >= (3, 10):
@@ -3438,7 +3437,7 @@ class DataFrame:
 
     def write_parquet(
         self,
-        file: str | Path | BytesIO | PartitionedWriteOptions,
+        file: str | Path | BytesIO,
         *,
         compression: ParquetCompression = "zstd",
         compression_level: int | None = None,
@@ -3447,6 +3446,8 @@ class DataFrame:
         data_page_size: int | None = None,
         use_pyarrow: bool = False,
         pyarrow_options: dict[str, Any] | None = None,
+        partition_by: str | Sequence[str] | None = None,
+        partition_chunk_size_bytes: int = 4_294_967_296,
     ) -> None:
         """
         Write to Apache Parquet file.
@@ -3455,8 +3456,7 @@ class DataFrame:
         ----------
         file
             File path or writable file-like object to which the result will be written.
-            This can also accept `PartitionedWriteOptions` to write a partitioned
-            dataset (however note this functionality is unstable).
+            This should be a path to a directory if writing a partitioned dataset.
         compression : {'lz4', 'uncompressed', 'snappy', 'gzip', 'lzo', 'brotli', 'zstd'}
             Choose "zstd" for good compression performance.
             Choose "lz4" for fast compression/decompression.
@@ -3500,6 +3500,14 @@ class DataFrame:
             using `pyarrow.parquet.write_to_dataset`.
             The `partition_cols` parameter leads to write the dataset to a directory.
             Similar to Spark's partitioned datasets.
+        partition_by
+            Column(s) to partition by. A partitioned dataset will be written if this is
+            specified. This parameter is considered unstable and is subject to change.
+        partition_chunk_size_bytes
+            Approximate size to split DataFrames within a single partition when
+            writing. Note this is calculated using the size of the DataFrame in
+            memory - the size of the output file may differ depending on the
+            file format / compression.
 
         Examples
         --------
@@ -3531,15 +3539,14 @@ class DataFrame:
         if compression is None:
             compression = "uncompressed"
         if isinstance(file, (str, Path)):
-            if pyarrow_options is not None and pyarrow_options.get("partition_cols"):
+            if (
+                partition_by is not None
+                or pyarrow_options is not None
+                and pyarrow_options.get("partition_cols")
+            ):
                 file = normalize_filepath(file, check_not_directory=False)
             else:
                 file = normalize_filepath(file)
-
-        from polars.io import PartitionedWriteOptions
-
-        if isinstance(file, PartitionedWriteOptions):
-            file = file._inner
 
         if use_pyarrow:
             if statistics == "full" or isinstance(statistics, dict):
@@ -3602,6 +3609,13 @@ class DataFrame:
                     "null_count": True,
                 }
 
+            if partition_by is not None:
+                msg = "The `partition_by` parameter of `write_parquet` is considered unstable."
+                issue_unstable_warning(msg)
+
+            if isinstance(partition_by, str):
+                partition_by = [partition_by]
+
             self._df.write_parquet(
                 file,
                 compression,
@@ -3609,6 +3623,8 @@ class DataFrame:
                 statistics,
                 row_group_size,
                 data_page_size,
+                partition_by=partition_by,
+                partition_chunk_size_bytes=partition_chunk_size_bytes,
             )
 
     def write_database(

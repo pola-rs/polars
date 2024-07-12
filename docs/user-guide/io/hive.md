@@ -88,7 +88,7 @@ For this example the following DataFrame is used:
 
 We will write it to a hive-partitioned parquet dataset, partitioned by the columns `a` and `b`:
 
-{{code_block('user-guide/io/hive','write_parquet_partitioned',['write_parquet', 'PartitionedWriteOptions'])}}
+{{code_block('user-guide/io/hive','write_parquet_partitioned',['write_parquet'])}}
 
 ```python exec="on" result="text" session="user-guide/io/hive"
 --8<-- "python/user-guide/io/hive.py:write_parquet_partitioned"

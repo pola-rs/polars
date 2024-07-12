@@ -124,7 +124,7 @@ print(df)
 # --8<-- [end:write_parquet_partitioned_show_data]
 
 # --8<-- [start:write_parquet_partitioned]
-df.write_parquet(pl.PartitionedWriteOptions("docs/data/hive_write/", ["a", "b"]))
+df.write_parquet("docs/data/hive_write/", partition_by=["a", "b"])
 # --8<-- [end:write_parquet_partitioned]
 
 # --8<-- [start:write_parquet_partitioned_show_paths]
