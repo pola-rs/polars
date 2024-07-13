@@ -716,56 +716,51 @@ fn expand_scan_paths(
     scan_type: &mut FileScan,
     file_options: &mut FileScanOptions,
 ) -> PolarsResult<Arc<[PathBuf]>> {
-    let lock = paths.as_ref();
+    let mut lock = paths.lock().unwrap();
 
-    let (paths_inner, is_expanded) = lock.into_inner().unwrap();
-    if is_expanded {
-        return Ok(paths_inner);
+    // Return if paths are already expanded
+    if lock.1 {
+        return Ok(lock.0.clone());
     }
-
-    let _guard = lock.lock().unwrap();
-
-    let (mut paths_inner, mut is_expanded) = lock.get_mut().unwrap();
 
     let paths_expanded = match scan_type {
         #[cfg(feature = "parquet")]
         FileScan::Parquet {
             ref cloud_options, ..
-        } => expand_scan_paths_with_hive_update(paths_inner, file_options, cloud_options)?,
+        } => expand_scan_paths_with_hive_update(&lock.0, file_options, cloud_options)?,
         #[cfg(feature = "ipc")]
         FileScan::Ipc {
             ref cloud_options, ..
-        } => expand_scan_paths_with_hive_update(paths_inner, file_options, cloud_options)?,
+        } => expand_scan_paths_with_hive_update(&lock.0, file_options, cloud_options)?,
         #[cfg(feature = "csv")]
         FileScan::Csv {
             ref cloud_options, ..
-        } => expand_paths(&paths_inner, file_options.glob, cloud_options.as_ref())?,
+        } => expand_paths(&lock.0, file_options.glob, cloud_options.as_ref())?,
         #[cfg(feature = "json")]
-        FileScan::NDJson { .. } => expand_paths(&paths_inner, file_options.glob, None)?,
+        FileScan::NDJson { .. } => expand_paths(&lock.0, file_options.glob, None)?,
         FileScan::Anonymous { .. } => unreachable!(), // Anonymous scans are already expanded.
     };
 
-    paths_inner = paths_expanded;
-    is_expanded = true;
+    *lock = (paths_expanded, true);
 
-    Ok(paths_inner)
+    Ok(lock.0.clone())
 }
 
 #[cfg(any(feature = "ipc", feature = "parquet"))]
 fn expand_scan_paths_with_hive_update(
-    paths: Arc<[PathBuf]>,
+    paths: &[PathBuf],
     file_options: &mut FileScanOptions,
     cloud_options: &Option<CloudOptions>,
 ) -> PolarsResult<Arc<[PathBuf]>> {
     let hive_enabled = file_options.hive_options.enabled;
     let (expanded_paths, hive_start_idx) = expand_paths_hive(
-        &paths,
+        paths,
         file_options.glob,
         cloud_options.as_ref(),
         hive_enabled.unwrap_or(false),
     )?;
     let inferred_hive_enabled = hive_enabled
-        .unwrap_or_else(|| expanded_from_single_directory(paths.as_ref(), expanded_paths.as_ref()));
+        .unwrap_or_else(|| expanded_from_single_directory(paths, expanded_paths.as_ref()));
 
     file_options.hive_options.enabled = Some(inferred_hive_enabled);
     file_options.hive_options.hive_start_idx = hive_start_idx;
