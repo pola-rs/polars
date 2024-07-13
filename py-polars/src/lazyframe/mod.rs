@@ -946,11 +946,6 @@ impl PyLazyFrame {
             .into())
     }
 
-    fn with_column(&mut self, expr: PyExpr) -> Self {
-        let ldf = self.ldf.clone();
-        ldf.with_column(expr.inner).into()
-    }
-
     fn with_columns(&mut self, exprs: Vec<PyExpr>) -> Self {
         let ldf = self.ldf.clone();
         ldf.with_columns(exprs.to_exprs()).into()
