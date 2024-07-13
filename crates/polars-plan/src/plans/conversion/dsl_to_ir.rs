@@ -99,23 +99,7 @@ pub fn to_alp_impl(
             mut file_options,
             mut scan_type,
         } => {
-            let paths = match &scan_type {
-                #[cfg(feature = "parquet")]
-                FileScan::Parquet {
-                    ref cloud_options, ..
-                } => expand_paths_with_hive_update(paths, &mut file_options, cloud_options)?,
-                #[cfg(feature = "ipc")]
-                FileScan::Ipc {
-                    ref cloud_options, ..
-                } => expand_paths_with_hive_update(paths, &mut file_options, cloud_options)?,
-                #[cfg(feature = "csv")]
-                FileScan::Csv {
-                    ref cloud_options, ..
-                } => expand_paths(&paths, file_options.glob, cloud_options.as_ref())?,
-                #[cfg(feature = "json")]
-                FileScan::NDJson { .. } => expand_paths(&paths, file_options.glob, None)?,
-                FileScan::Anonymous { .. } => paths,
-            };
+            let paths = expand_scan_paths(paths, &mut scan_type, &mut file_options)?;
 
             let file_info_read = file_info.read().unwrap();
 
@@ -726,8 +710,49 @@ pub fn to_alp_impl(
     Ok(lp_arena.add(v))
 }
 
+/// Expand scan paths if they were not already expanded.
+fn expand_scan_paths(
+    paths: Arc<Mutex<(Arc<[PathBuf]>, bool)>>,
+    scan_type: &mut FileScan,
+    file_options: &mut FileScanOptions,
+) -> PolarsResult<Arc<[PathBuf]>> {
+    let lock = paths.as_ref();
+
+    let (paths_inner, is_expanded) = lock.into_inner().unwrap();
+    if is_expanded {
+        return Ok(paths_inner);
+    }
+
+    let _guard = lock.lock().unwrap();
+
+    let (mut paths_inner, mut is_expanded) = lock.get_mut().unwrap();
+
+    let paths_expanded = match scan_type {
+        #[cfg(feature = "parquet")]
+        FileScan::Parquet {
+            ref cloud_options, ..
+        } => expand_scan_paths_with_hive_update(paths_inner, file_options, cloud_options)?,
+        #[cfg(feature = "ipc")]
+        FileScan::Ipc {
+            ref cloud_options, ..
+        } => expand_scan_paths_with_hive_update(paths_inner, file_options, cloud_options)?,
+        #[cfg(feature = "csv")]
+        FileScan::Csv {
+            ref cloud_options, ..
+        } => expand_paths(&paths_inner, file_options.glob, cloud_options.as_ref())?,
+        #[cfg(feature = "json")]
+        FileScan::NDJson { .. } => expand_paths(&paths_inner, file_options.glob, None)?,
+        FileScan::Anonymous { .. } => unreachable!(), // Anonymous scans are already expanded.
+    };
+
+    paths_inner = paths_expanded;
+    is_expanded = true;
+
+    Ok(paths_inner)
+}
+
 #[cfg(any(feature = "ipc", feature = "parquet"))]
-fn expand_paths_with_hive_update(
+fn expand_scan_paths_with_hive_update(
     paths: Arc<[PathBuf]>,
     file_options: &mut FileScanOptions,
     cloud_options: &Option<CloudOptions>,
