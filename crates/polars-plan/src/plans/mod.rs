@@ -1,7 +1,7 @@
 use std::fmt;
 use std::fmt::Debug;
 use std::path::PathBuf;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 
 use hive::HivePartitions;
 use polars_core::prelude::*;
@@ -78,7 +78,7 @@ pub enum DslPlan {
         cache_hits: u32,
     },
     Scan {
-        paths: Arc<[PathBuf]>,
+        paths: Arc<Mutex<(Arc<[PathBuf]>, bool)>>,
         // Option as this is mostly materialized on the IR phase.
         // During conversion we update the value in the DSL as well
         // This is to cater to use cases where parts of a `LazyFrame`

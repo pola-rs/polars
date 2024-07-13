@@ -1,4 +1,5 @@
-use std::sync::RwLock;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex, RwLock};
 
 use polars_core::prelude::*;
 #[cfg(any(feature = "parquet", feature = "ipc", feature = "csv"))]
@@ -58,7 +59,7 @@ impl DslBuilder {
         };
 
         Ok(DslPlan::Scan {
-            paths: Arc::new([]),
+            paths: Arc::new(Mutex::new((Arc::new([]), true))),
             file_info: Arc::new(RwLock::new(Some(file_info))),
             hive_parts: None,
             predicate: None,
@@ -90,7 +91,7 @@ impl DslBuilder {
         glob: bool,
         include_file_paths: Option<Arc<str>>,
     ) -> PolarsResult<Self> {
-        let paths = paths.into();
+        let paths = init_paths(paths);
 
         let options = FileScanOptions {
             with_columns: None,
@@ -135,7 +136,7 @@ impl DslBuilder {
         hive_options: HiveOptions,
         include_file_paths: Option<Arc<str>>,
     ) -> PolarsResult<Self> {
-        let paths = paths.into();
+        let paths = init_paths(paths);
 
         Ok(DslPlan::Scan {
             paths,
@@ -172,7 +173,7 @@ impl DslBuilder {
         glob: bool,
         include_file_paths: Option<Arc<str>>,
     ) -> PolarsResult<Self> {
-        let paths = paths.into();
+        let paths = init_paths(paths);
 
         // This gets partially moved by FileScanOptions
         let read_options_clone = read_options.clone();
@@ -459,4 +460,12 @@ impl DslBuilder {
         }
         .into()
     }
+}
+
+/// Initialize paths as non-expanded.
+fn init_paths<P>(paths: P) -> Arc<Mutex<(Arc<[PathBuf]>, bool)>>
+where
+    P: Into<Arc<[std::path::PathBuf]>>,
+{
+    Arc::new(Mutex::new((paths.into(), false)))
 }
