@@ -612,12 +612,12 @@ def test_round_expr() -> None:
 def test_round_negative() -> None:
     """Test that rounding to a negative duration gives a helpful error message."""
     with pytest.raises(
-        ComputeError, match="Cannot round a Date to a negative duration"
+        ComputeError, match="cannot round a Date to a negative duration"
     ):
         pl.Series([date(1895, 5, 7)]).dt.round("-1m")
 
     with pytest.raises(
-        ComputeError, match="Cannot round a Datetime to a negative duration"
+        ComputeError, match="cannot round a Datetime to a negative duration"
     ):
         pl.Series([datetime(1895, 5, 7)]).dt.round("-1m")
 
