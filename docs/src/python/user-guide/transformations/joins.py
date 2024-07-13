@@ -36,6 +36,11 @@ df_left_join = df_customers.join(df_orders, on="customer_id", how="left")
 print(df_left_join)
 # --8<-- [end:left]
 
+# --8<-- [start:right]
+df_right_join = df_orders.join(df_customers, on="customer_id", how="right")
+print(df_right_join)
+# --8<-- [end:right]
+
 # --8<-- [start:full]
 df_outer_join = df_customers.join(df_orders, on="customer_id", how="full")
 print(df_outer_join)

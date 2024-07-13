@@ -8,6 +8,7 @@ Polars supports the following join strategies by specifying the `how` argument:
 | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `inner`  | Returns row with matching keys in _both_ frames. Non-matching rows in either the left or right frame are discarded.                                                                                        |
 | `left`   | Returns all rows in the left dataframe, whether or not a match in the right-frame is found. Non-matching rows have their right columns null-filled.                                                        |
+| `right`   | Returns all rows in the right dataframe, whether or not a match in the left-frame is found. Non-matching rows have their left columns null-filled.                                                        |
 | `full`   | Returns all rows from both the left and right dataframe. If no match is found in one frame, columns from the other frame are null-filled.                                                                  |
 | `cross`  | Returns the Cartesian product of all rows from the left frame with all rows from the right frame. Duplicates rows are retained; the table length of `A` cross-joined with `B` is always `len(A) × len(B)`. |
 | `semi`   | Returns all rows from the left frame in which the join key is also present in the right frame.                                                                                                             |
@@ -61,6 +62,22 @@ order or not) we can do a `left` join:
 Notice, that the fields for the customer with the `customer_id` of `3` are null, as there are no orders for this
 customer.
 
+### Right join
+
+The `right` outer join produces a `DataFrame` that contains all the rows from the right `DataFrame` and only the rows from
+the left `DataFrame` where the join key exists in the right `DataFrame`. If we now take the example from above and want
+to have a `DataFrame` with all the customers and their associated orders (regardless of whether they have placed an
+order or not) we can do a `right` join:
+
+{{code_block('user-guide/transformations/joins','right',['join'])}}
+
+```python exec="on" result="text" session="user-guide/transformations/joins"
+--8<-- "python/user-guide/transformations/joins.py:right"
+```
+
+Notice, that the fields for the customer with the `customer_id` of `3` are null, as there are no orders for this
+customer.
+
 ### Outer join
 
 The `full` outer join produces a `DataFrame` that contains all the rows from both `DataFrames`. Columns are null, if the
@@ -109,7 +126,7 @@ We can now create a `DataFrame` containing all possible combinations of the colo
 
 <br>
 
-The `inner`, `left`, `full` and `cross` join strategies are standard amongst dataframe libraries. We provide more
+The `inner`, `left`, `right`, `full` and `cross` join strategies are standard amongst dataframe libraries. We provide more
 details on the less familiar `semi`, `anti` and `asof` join strategies below.
 
 ### Semi join

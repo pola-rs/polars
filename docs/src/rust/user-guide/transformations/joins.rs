@@ -50,6 +50,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{}", &df_left_join);
     // --8<-- [end:left]
 
+    // --8<-- [start:right]
+    let df_right_join = df_orders
+        .clone()
+        .lazy()
+        .join(
+            df_customers.clone().lazy(),
+            [col("customer_id")],
+            [col("customer_id")],
+            JoinArgs::new(JoinType::Right),
+        )
+        .collect()?;
+    println!("{}", &df_right_join);
+    // --8<-- [end:right]
+
     // --8<-- [start:full]
     let df_full_join = df_customers
         .clone()
