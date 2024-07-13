@@ -511,41 +511,47 @@ impl PyLazyFrame {
         nulls_last: Vec<bool>,
         maintain_order: bool,
         multithreaded: bool,
-    ) -> Self {
+    ) -> PyResult<Self> {
         let ldf = self.ldf.clone();
         let exprs = by.to_exprs();
-        ldf.sort_by_exprs(
-            exprs,
-            SortMultipleOptions {
-                descending,
-                nulls_last,
-                maintain_order,
-                multithreaded,
-            },
-        )
-        .into()
+        let out = ldf
+            .sort_by_exprs(
+                exprs,
+                SortMultipleOptions {
+                    descending,
+                    nulls_last,
+                    maintain_order,
+                    multithreaded,
+                },
+            )
+            .map_err(PyPolarsErr::from)?;
+        Ok(out.into())
     }
 
-    fn top_k(&self, k: IdxSize, by: Vec<PyExpr>, reverse: Vec<bool>) -> Self {
+    fn top_k(&self, k: IdxSize, by: Vec<PyExpr>, reverse: Vec<bool>) -> PyResult<Self> {
         let ldf = self.ldf.clone();
         let exprs = by.to_exprs();
-        ldf.top_k(
-            k,
-            exprs,
-            SortMultipleOptions::new().with_order_descending_multi(reverse),
-        )
-        .into()
+        let out = ldf
+            .top_k(
+                k,
+                exprs,
+                SortMultipleOptions::new().with_order_descending_multi(reverse),
+            )
+            .map_err(PyPolarsErr::from)?;
+        Ok(out.into())
     }
 
-    fn bottom_k(&self, k: IdxSize, by: Vec<PyExpr>, reverse: Vec<bool>) -> Self {
+    fn bottom_k(&self, k: IdxSize, by: Vec<PyExpr>, reverse: Vec<bool>) -> PyResult<Self> {
         let ldf = self.ldf.clone();
         let exprs = by.to_exprs();
-        ldf.bottom_k(
-            k,
-            exprs,
-            SortMultipleOptions::new().with_order_descending_multi(reverse),
-        )
-        .into()
+        let out = ldf
+            .bottom_k(
+                k,
+                exprs,
+                SortMultipleOptions::new().with_order_descending_multi(reverse),
+            )
+            .map_err(PyPolarsErr::from)?;
+        Ok(out.into())
     }
 
     fn cache(&self) -> Self {

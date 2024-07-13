@@ -1911,7 +1911,7 @@ fn test_sort_maintain_order_true() -> PolarsResult<()> {
             SortMultipleOptions::default()
                 .with_maintain_order(true)
                 .with_nulls_last(true),
-        )
+        )?
         .slice(0, 3)
         .collect()?;
     println!("{:?}", res);

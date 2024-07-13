@@ -271,6 +271,10 @@ def test_sort() -> None:
     assert_frame_equal(
         df.sort(["a", "b"]), pl.DataFrame({"a": [1, 2, 3], "b": [2, 1, 3]})
     )
+    with pytest.raises(ComputeError):
+        df.sort([1, 2])
+    with pytest.raises(ComputeError):
+        df.sort(1)
 
 
 def test_sort_maintain_order() -> None:
