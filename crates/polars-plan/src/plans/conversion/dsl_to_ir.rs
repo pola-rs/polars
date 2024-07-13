@@ -119,10 +119,11 @@ pub fn to_alp_impl(
 
             let file_info_read = file_info.read().unwrap();
 
-            // We don't want to read the lock, just keep it alive
-            // Somehow rustc/clippy doesn't see that? Hence the leading `_` to silcence that lint.
-            let mut _file_info_write: Option<_> = None;
+            // leading `_` as clippy doesn't understand that you don't want to read from a lock guard
+            // if you want to keep it alive.
+            let mut _file_info_write: Option<_>;
             let mut resolved_file_info = if let Some(file_info) = &*file_info_read {
+                _file_info_write = None;
                 let out = file_info.clone();
                 drop(file_info_read);
                 out
@@ -201,45 +202,47 @@ pub fn to_alp_impl(
                 None
             };
 
-            if let Some(ref hive_parts) = hive_parts {
-                let hive_schema = hive_parts[0].schema();
-                resolved_file_info.update_schema_with_hive_schema(hive_schema.clone());
-            }
-
-            if let Some(ref file_path_col) = file_options.include_file_paths {
-                let schema = Arc::make_mut(&mut resolved_file_info.schema);
-
-                if schema.contains(file_path_col) {
-                    polars_bail!(
-                        Duplicate: r#"column name for file paths "{}" conflicts with column name from file"#,
-                        file_path_col
-                    );
+            // Only if we have a writing file handle we must resolve hive partitions
+            // update schema's etc.
+            if let Some(lock) = &mut _file_info_write {
+                if let Some(ref hive_parts) = hive_parts {
+                    let hive_schema = hive_parts[0].schema();
+                    resolved_file_info.update_schema_with_hive_schema(hive_schema.clone());
                 }
 
-                schema.insert_at_index(
-                    schema.len(),
-                    file_path_col.as_ref().into(),
-                    DataType::String,
-                )?;
-            }
+                if let Some(ref file_path_col) = file_options.include_file_paths {
+                    let schema = Arc::make_mut(&mut resolved_file_info.schema);
 
-            file_options.with_columns = if resolved_file_info.reader_schema.is_some() {
-                maybe_init_projection_excluding_hive(
-                    resolved_file_info.reader_schema.as_ref().unwrap(),
-                    hive_parts.as_ref().map(|x| &x[0]),
-                )
-            } else {
-                None
-            };
+                    if schema.contains(file_path_col) {
+                        polars_bail!(
+                            Duplicate: r#"column name for file paths "{}" conflicts with column name from file"#,
+                            file_path_col
+                        );
+                    }
 
-            if let Some(row_index) = &file_options.row_index {
-                let schema = Arc::make_mut(&mut resolved_file_info.schema);
-                *schema = schema
-                    .new_inserting_at_index(0, row_index.name.as_ref().into(), IDX_DTYPE)
-                    .unwrap();
-            }
+                    schema.insert_at_index(
+                        schema.len(),
+                        file_path_col.as_ref().into(),
+                        DataType::String,
+                    )?;
+                }
 
-            if let Some(lock) = &mut _file_info_write {
+                file_options.with_columns = if resolved_file_info.reader_schema.is_some() {
+                    maybe_init_projection_excluding_hive(
+                        resolved_file_info.reader_schema.as_ref().unwrap(),
+                        hive_parts.as_ref().map(|x| &x[0]),
+                    )
+                } else {
+                    None
+                };
+
+                if let Some(row_index) = &file_options.row_index {
+                    let schema = Arc::make_mut(&mut resolved_file_info.schema);
+                    *schema = schema
+                        .new_inserting_at_index(0, row_index.name.as_ref().into(), IDX_DTYPE)
+                        .unwrap();
+                }
+
                 **lock = Some(resolved_file_info.clone());
             }
 
