@@ -183,22 +183,22 @@ class ExprBinaryNameSpace:
         >>> colors = pl.DataFrame(
         ...     {
         ...         "name": ["black", "yellow", "blue"],
-        ...         "code": [b"\x00\x00\x00", b"\xff\xff\x00", b"\x00\x00\xff"],
+        ...         "encoded": [b"000000", b"ffff00", b"0000ff"],
         ...     }
         ... )
         >>> colors.with_columns(
-        ...     pl.col("code").bin.encode("hex").alias("encoded"),
+        ...     pl.col("encoded").bin.decode("hex").alias("code"),
         ... )
         shape: (3, 3)
-        ┌────────┬─────────────────┬─────────┐
-        │ name   ┆ code            ┆ encoded │
-        │ ---    ┆ ---             ┆ ---     │
-        │ str    ┆ binary          ┆ str     │
-        ╞════════╪═════════════════╪═════════╡
-        │ black  ┆ b"\x00\x00\x00" ┆ 000000  │
-        │ yellow ┆ b"\xff\xff\x00" ┆ ffff00  │
-        │ blue   ┆ b"\x00\x00\xff" ┆ 0000ff  │
-        └────────┴─────────────────┴─────────┘
+        ┌────────┬───────────┬─────────────────┐
+        │ name   ┆ encoded   ┆ code            │
+        │ ---    ┆ ---       ┆ ---             │
+        │ str    ┆ binary    ┆ binary          │
+        ╞════════╪═══════════╪═════════════════╡
+        │ black  ┆ b"000000" ┆ b"\x00\x00\x00" │
+        │ yellow ┆ b"ffff00" ┆ b"\xff\xff\x00" │
+        │ blue   ┆ b"0000ff" ┆ b"\x00\x00\xff" │
+        └────────┴───────────┴─────────────────┘
         """
         if encoding == "hex":
             return wrap_expr(self._pyexpr.bin_hex_decode(strict))
