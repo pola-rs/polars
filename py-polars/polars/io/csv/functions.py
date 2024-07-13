@@ -53,6 +53,7 @@ def read_csv(
     ignore_errors: bool = False,
     try_parse_dates: bool = False,
     n_threads: int | None = None,
+    infer_schema: bool = True,
     infer_schema_length: int | None = N_INFER_DEFAULT,
     batch_size: int = 8192,
     n_rows: int | None = None,
@@ -126,7 +127,7 @@ def read_csv(
         Before using this option, try to increase the number of lines used for schema
         inference with e.g `infer_schema_length=10000` or override automatic dtype
         inference for specific columns with the `schema_overrides` option or use
-        `infer_schema_length=0` to read all columns as `pl.String` to check which
+        `infer_schema=False` to read all columns as `pl.String` to check which
         values might cause an issue.
     try_parse_dates
         Try to automatically parse dates. Most ISO8601-like formats can
@@ -136,10 +137,15 @@ def read_csv(
     n_threads
         Number of threads to use in csv parsing.
         Defaults to the number of physical cpu's of your system.
+    infer_schema
+        When `True`, the schema is inferred from the data using the first
+        `infer_schema_length` rows.
+        When `False`, the schema is not inferred and will be `pl.String` if not
+        specified in `schema` or `schema_overrides`.
     infer_schema_length
         The maximum number of rows to scan for schema inference.
-        If set to `0`, all columns will be read as `pl.String`.
         If set to `None`, the full data may be scanned *(this is slow)*.
+        Set `infer_schema=False` to read all columns as `pl.String`.
     batch_size
         Number of lines to read into the buffer at once.
         Modify this to change performance.
@@ -184,7 +190,7 @@ def read_csv(
         with windows line endings (`\r\n`), one can go with the default `\n`. The extra
         `\r` will be removed when processed.
     raise_if_empty
-        When there is no data in the source,`NoDataError` is raised. If this parameter
+        When there is no data in the source, `NoDataError` is raised. If this parameter
         is set to False, an empty DataFrame (with no columns) is returned instead.
     truncate_ragged_lines
         Truncate lines that are longer than the schema.
@@ -409,6 +415,9 @@ def read_csv(
                 new_to_current.get(column_name, column_name): column_dtype
                 for column_name, column_dtype in schema_overrides.items()
             }
+
+    if not infer_schema:
+        infer_schema_length = 0
 
     with prepare_file_arg(
         source,
