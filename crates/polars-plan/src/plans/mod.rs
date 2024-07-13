@@ -1,7 +1,7 @@
 use std::fmt;
 use std::fmt::Debug;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use hive::HivePartitions;
 use polars_core::prelude::*;
@@ -80,7 +80,11 @@ pub enum DslPlan {
     Scan {
         paths: Arc<[PathBuf]>,
         // Option as this is mostly materialized on the IR phase.
-        file_info: Option<FileInfo>,
+        // During conversion we update the value in the DSL as well
+        // This is to cater to use cases where parts of a `LazyFrame`
+        // are used as base of different queries in a loop. That way
+        // the expensive schema resolving is cached.
+        file_info: Arc<RwLock<Option<FileInfo>>>,
         hive_parts: Option<Arc<[HivePartitions]>>,
         predicate: Option<Expr>,
         file_options: FileScanOptions,
