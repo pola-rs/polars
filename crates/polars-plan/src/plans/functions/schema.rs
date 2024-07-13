@@ -156,8 +156,8 @@ fn unpivot_schema<'a>(
     let mut new_schema = args
         .index
         .iter()
-        .map(|id| Field::new(id, input_schema.get(id).unwrap().clone()))
-        .collect::<Schema>();
+        .map(|id| Ok(Field::new(id, input_schema.try_get(id)?.clone())))
+        .collect::<PolarsResult<Schema>>()?;
     let variable_name = args
         .variable_name
         .as_ref()
@@ -179,13 +179,13 @@ fn unpivot_schema<'a>(
         let id_vars = PlHashSet::from_iter(&args.index);
         for (name, dtype) in input_schema.iter() {
             if !id_vars.contains(name) {
-                supertype = try_get_supertype(&supertype, dtype).unwrap();
+                supertype = try_get_supertype(&supertype, dtype)?;
             }
         }
     } else {
         for name in &args.on {
-            let dtype = input_schema.get(name).unwrap();
-            supertype = try_get_supertype(&supertype, dtype).unwrap();
+            let dtype = input_schema.try_get(name)?;
+            supertype = try_get_supertype(&supertype, dtype)?;
         }
     }
     new_schema.with_column(value_name, supertype);
