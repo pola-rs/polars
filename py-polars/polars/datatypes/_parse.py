@@ -21,6 +21,7 @@ from polars.datatypes.classes import (
     Object,
     String,
     Time,
+    Unknown,
 )
 from polars.datatypes.convert import is_polars_dtype
 
@@ -93,6 +94,9 @@ def parse_py_type_into_dtype(input: PythonDataType | type[object]) -> PolarsData
         return Null()
     elif input is list or input is tuple:
         return List
+    # this is required as pass through. Don't remove
+    elif input == Unknown:
+        return Unknown
 
     elif hasattr(input, "__origin__") and hasattr(input, "__args__"):
         return _parse_generic_into_dtype(input)
