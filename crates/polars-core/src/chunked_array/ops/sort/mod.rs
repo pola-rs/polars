@@ -586,7 +586,7 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
 }
 
 #[cfg(feature = "dtype-struct")]
-impl StructChunked2 {
+impl StructChunked {
     pub(crate) fn arg_sort(&self, options: SortOptions) -> IdxCa {
         let bin = _get_rows_encoded_ca(
             self.name(),
@@ -600,7 +600,7 @@ impl StructChunked2 {
 }
 
 #[cfg(feature = "dtype-struct")]
-impl ChunkSort<StructType> for StructChunked2 {
+impl ChunkSort<StructType> for StructChunked {
     fn sort_with(&self, options: SortOptions) -> ChunkedArray<StructType> {
         let idx = self.arg_sort(options);
         unsafe { self.take_unchecked(&idx) }
@@ -713,7 +713,7 @@ pub(crate) fn convert_sort_column_multi_sort(s: &Series) -> PolarsResult<Series>
                 .iter()
                 .map(convert_sort_column_multi_sort)
                 .collect::<PolarsResult<Vec<_>>>()?;
-            let mut out = StructChunked2::from_series(ca.name(), &new_fields)?;
+            let mut out = StructChunked::from_series(ca.name(), &new_fields)?;
             out.zip_outer_validity(ca);
             out.into_series()
         },

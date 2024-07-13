@@ -53,7 +53,7 @@ use std::slice::Iter;
 use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
 use arrow::legacy::prelude::*;
 #[cfg(feature = "dtype-struct")]
-pub use struct_::StructChunked2;
+pub use struct_::StructChunked;
 
 use self::metadata::{
     IMMetadata, Metadata, MetadataFlags, MetadataMerge, MetadataProperties, MetadataReadGuard,

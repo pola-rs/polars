@@ -86,7 +86,7 @@ macro_rules! impl_compare {
 }
 
 #[cfg(feature = "dtype-struct")]
-fn raise_struct(_a: &StructChunked2, _b: &StructChunked2) -> PolarsResult<BooleanChunked> {
+fn raise_struct(_a: &StructChunked, _b: &StructChunked) -> PolarsResult<BooleanChunked> {
     polars_bail!(InvalidOperation: "order comparison not support for struct dtype")
 }
 
@@ -118,12 +118,9 @@ impl ChunkCompare<&Series> for Series {
 
     /// Create a boolean mask by checking for equality.
     fn equal(&self, rhs: &Series) -> PolarsResult<BooleanChunked> {
-        impl_compare!(
-            self,
-            rhs,
-            equal,
-            |a: &StructChunked2, b: &StructChunked2| PolarsResult::Ok(a.equal(b))
-        )
+        impl_compare!(self, rhs, equal, |a: &StructChunked, b: &StructChunked| {
+            PolarsResult::Ok(a.equal(b))
+        })
     }
 
     /// Create a boolean mask by checking for equality.
@@ -132,7 +129,7 @@ impl ChunkCompare<&Series> for Series {
             self,
             rhs,
             equal_missing,
-            |a: &StructChunked2, b: &StructChunked2| PolarsResult::Ok(a.equal_missing(b))
+            |a: &StructChunked, b: &StructChunked| PolarsResult::Ok(a.equal_missing(b))
         )
     }
 
@@ -142,7 +139,7 @@ impl ChunkCompare<&Series> for Series {
             self,
             rhs,
             not_equal,
-            |a: &StructChunked2, b: &StructChunked2| PolarsResult::Ok(a.not_equal(b))
+            |a: &StructChunked, b: &StructChunked| PolarsResult::Ok(a.not_equal(b))
         )
     }
 
@@ -152,7 +149,7 @@ impl ChunkCompare<&Series> for Series {
             self,
             rhs,
             not_equal_missing,
-            |a: &StructChunked2, b: &StructChunked2| PolarsResult::Ok(a.not_equal_missing(b))
+            |a: &StructChunked, b: &StructChunked| PolarsResult::Ok(a.not_equal_missing(b))
         )
     }
 

@@ -26,7 +26,7 @@ pub fn rle(s: &Series) -> PolarsResult<Series> {
     }
 
     let outvals = vec![Series::from_vec("len", lengths), vals.to_owned()];
-    Ok(StructChunked2::from_series(s.name(), &outvals)?.into_series())
+    Ok(StructChunked::from_series(s.name(), &outvals)?.into_series())
 }
 
 /// Similar to `rle`, but maps values to run IDs.

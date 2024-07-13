@@ -645,8 +645,8 @@ impl ChunkCompare<&ListChunked> for ListChunked {
 
 #[cfg(feature = "dtype-struct")]
 fn struct_helper<F, R>(
-    a: &StructChunked2,
-    b: &StructChunked2,
+    a: &StructChunked,
+    b: &StructChunked,
     op: F,
     reduce: R,
     value: bool,
@@ -681,9 +681,9 @@ where
 }
 
 #[cfg(feature = "dtype-struct")]
-impl ChunkCompare<&StructChunked2> for StructChunked2 {
+impl ChunkCompare<&StructChunked> for StructChunked {
     type Item = BooleanChunked;
-    fn equal(&self, rhs: &StructChunked2) -> BooleanChunked {
+    fn equal(&self, rhs: &StructChunked) -> BooleanChunked {
         struct_helper(
             self,
             rhs,
@@ -693,7 +693,7 @@ impl ChunkCompare<&StructChunked2> for StructChunked2 {
         )
     }
 
-    fn equal_missing(&self, rhs: &StructChunked2) -> BooleanChunked {
+    fn equal_missing(&self, rhs: &StructChunked) -> BooleanChunked {
         struct_helper(
             self,
             rhs,
@@ -703,7 +703,7 @@ impl ChunkCompare<&StructChunked2> for StructChunked2 {
         )
     }
 
-    fn not_equal(&self, rhs: &StructChunked2) -> BooleanChunked {
+    fn not_equal(&self, rhs: &StructChunked) -> BooleanChunked {
         struct_helper(
             self,
             rhs,
@@ -713,7 +713,7 @@ impl ChunkCompare<&StructChunked2> for StructChunked2 {
         )
     }
 
-    fn not_equal_missing(&self, rhs: &StructChunked2) -> BooleanChunked {
+    fn not_equal_missing(&self, rhs: &StructChunked) -> BooleanChunked {
         struct_helper(
             self,
             rhs,

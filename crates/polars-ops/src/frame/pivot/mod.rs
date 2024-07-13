@@ -235,7 +235,7 @@ fn pivot_impl(
             polars_bail!(ComputeError: "cannot use column name {column} that \
             already exists in the DataFrame. Please rename it prior to calling `pivot`.")
         }
-        let columns_struct = StructChunked2::from_series(&column, fields)
+        let columns_struct = StructChunked::from_series(&column, fields)
             .unwrap()
             .into_series();
         let mut binding = pivot_df.clone();

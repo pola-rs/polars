@@ -497,7 +497,7 @@ impl PartitionedAggregation for AggregationExpr {
                         };
                         let mut count_s = series.agg_valid_count(groups);
                         count_s.rename("__POLARS_COUNT");
-                        Ok(StructChunked2::from_series(&new_name, &[agg_s, count_s])
+                        Ok(StructChunked::from_series(&new_name, &[agg_s, count_s])
                             .unwrap()
                             .into_series())
                     }

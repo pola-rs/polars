@@ -183,7 +183,7 @@ impl ArrayChunked {
 
 #[cfg(feature = "dtype-struct")]
 #[doc(hidden)]
-impl StructChunked2 {
+impl StructChunked {
     pub fn append(&mut self, other: &Self) -> PolarsResult<()> {
         let dtype = merge_dtypes(self.dtype(), other.dtype())?;
         self.field = Arc::new(Field::new(self.name(), dtype));

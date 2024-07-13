@@ -202,7 +202,7 @@ mod tests {
         );
         let ca = s.str().unwrap();
 
-        let expected_series = StructChunked2::from_series(
+        let expected_series = StructChunked::from_series(
             "",
             &[
                 Series::new("a", &[None, Some(1), Some(2), None]),

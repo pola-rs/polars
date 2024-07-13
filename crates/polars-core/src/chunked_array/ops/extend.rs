@@ -174,7 +174,7 @@ impl ArrayChunked {
 
 #[cfg(feature = "dtype-struct")]
 #[doc(hidden)]
-impl StructChunked2 {
+impl StructChunked {
     pub fn extend(&mut self, other: &Self) -> PolarsResult<()> {
         // TODO! properly implement mutation
         // this is harder because we don't know the inner type of the list

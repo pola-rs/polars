@@ -32,7 +32,7 @@ pub use crate::chunked_array::temporal::conversion::*;
 pub(crate) use crate::chunked_array::ChunkLenIter;
 pub use crate::chunked_array::ChunkedArray;
 #[cfg(feature = "dtype-struct")]
-pub use crate::chunked_array::StructChunked2;
+pub use crate::chunked_array::StructChunked;
 #[cfg(feature = "dtype-categorical")]
 pub use crate::datatypes::string_cache::StringCacheHolder;
 pub use crate::datatypes::{ArrayCollectIterExt, *};

@@ -280,7 +280,7 @@ impl<I: AsRef<[IdxSize]> + ?Sized> ChunkTakeUnchecked<I> for StringChunked {
 }
 
 #[cfg(feature = "dtype-struct")]
-impl ChunkTakeUnchecked<IdxCa> for StructChunked2 {
+impl ChunkTakeUnchecked<IdxCa> for StructChunked {
     unsafe fn take_unchecked(&self, indices: &IdxCa) -> Self {
         let (a, b) = align_chunks_binary(self, indices);
 
@@ -294,7 +294,7 @@ impl ChunkTakeUnchecked<IdxCa> for StructChunked2 {
 }
 
 #[cfg(feature = "dtype-struct")]
-impl<I: AsRef<[IdxSize]> + ?Sized> ChunkTakeUnchecked<I> for StructChunked2 {
+impl<I: AsRef<[IdxSize]> + ?Sized> ChunkTakeUnchecked<I> for StructChunked {
     unsafe fn take_unchecked(&self, indices: &I) -> Self {
         let idx = IdxCa::mmap_slice("", indices.as_ref());
         self.take_unchecked(&idx)

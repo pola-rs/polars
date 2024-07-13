@@ -410,7 +410,7 @@ fn is_in_boolean(ca_in: &BooleanChunked, other: &Series) -> PolarsResult<Boolean
 }
 
 #[cfg(feature = "dtype-struct")]
-fn is_in_struct_list(ca_in: &StructChunked2, other: &Series) -> PolarsResult<BooleanChunked> {
+fn is_in_struct_list(ca_in: &StructChunked, other: &Series) -> PolarsResult<BooleanChunked> {
     let mut ca: BooleanChunked = if ca_in.len() == 1 && other.len() != 1 {
         let left = ca_in.get_row_encoded(Default::default())?;
         let value = left.get(0).unwrap();
@@ -455,7 +455,7 @@ fn is_in_struct_list(ca_in: &StructChunked2, other: &Series) -> PolarsResult<Boo
 }
 
 #[cfg(all(feature = "dtype-struct", feature = "dtype-array"))]
-fn is_in_struct_array(ca_in: &StructChunked2, other: &Series) -> PolarsResult<BooleanChunked> {
+fn is_in_struct_array(ca_in: &StructChunked, other: &Series) -> PolarsResult<BooleanChunked> {
     let mut ca: BooleanChunked = if ca_in.len() == 1 && other.len() != 1 {
         let left = ca_in.get_row_encoded(Default::default())?;
         let value = left.get(0).unwrap();
@@ -500,7 +500,7 @@ fn is_in_struct_array(ca_in: &StructChunked2, other: &Series) -> PolarsResult<Bo
 }
 
 #[cfg(feature = "dtype-struct")]
-fn is_in_struct(ca_in: &StructChunked2, other: &Series) -> PolarsResult<BooleanChunked> {
+fn is_in_struct(ca_in: &StructChunked, other: &Series) -> PolarsResult<BooleanChunked> {
     match other.dtype() {
         DataType::List(_) => is_in_struct_list(ca_in, other),
         #[cfg(feature = "dtype-array")]
