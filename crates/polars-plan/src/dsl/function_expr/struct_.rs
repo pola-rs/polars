@@ -175,7 +175,7 @@ pub(super) fn rename_fields(s: &Series, names: Arc<[String]>) -> PolarsResult<Se
             s
         })
         .collect::<Vec<_>>();
-    let mut out = StructChunked2::from_series(ca.name(), &fields)?;
+    let mut out = StructChunked::from_series(ca.name(), &fields)?;
     out.zip_outer_validity(ca);
     Ok(out.into_series())
 }
@@ -192,7 +192,7 @@ pub(super) fn prefix_fields(s: &Series, prefix: Arc<str>) -> PolarsResult<Series
             s
         })
         .collect::<Vec<_>>();
-    let mut out = StructChunked2::from_series(ca.name(), &fields)?;
+    let mut out = StructChunked::from_series(ca.name(), &fields)?;
     out.zip_outer_validity(ca);
     Ok(out.into_series())
 }
@@ -209,7 +209,7 @@ pub(super) fn suffix_fields(s: &Series, suffix: Arc<str>) -> PolarsResult<Series
             s
         })
         .collect::<Vec<_>>();
-    let mut out = StructChunked2::from_series(ca.name(), &fields)?;
+    let mut out = StructChunked::from_series(ca.name(), &fields)?;
     out.zip_outer_validity(ca);
     Ok(out.into_series())
 }
@@ -244,7 +244,7 @@ pub(super) fn with_fields(args: &[Series]) -> PolarsResult<Series> {
     }
 
     let new_fields = fields.into_values().cloned().collect::<Vec<_>>();
-    let mut out = StructChunked2::from_series(ca.name(), &new_fields)?;
+    let mut out = StructChunked::from_series(ca.name(), &new_fields)?;
     out.zip_outer_validity(ca);
     Ok(out.into_series())
 }

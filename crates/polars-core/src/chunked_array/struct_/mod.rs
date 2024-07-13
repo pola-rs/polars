@@ -15,9 +15,9 @@ use crate::prelude::*;
 use crate::series::Series;
 use crate::utils::Container;
 
-pub type StructChunked2 = ChunkedArray<StructType>;
+pub type StructChunked = ChunkedArray<StructType>;
 
-fn constructor(name: &str, fields: &[Series]) -> PolarsResult<StructChunked2> {
+fn constructor(name: &str, fields: &[Series]) -> PolarsResult<StructChunked> {
     // Different chunk lengths: rechunk and recurse.
     if !fields.iter().map(|s| s.n_chunks()).all_equal() {
         let fields = fields.iter().map(|s| s.rechunk()).collect::<Vec<_>>();
@@ -47,7 +47,7 @@ fn constructor(name: &str, fields: &[Series]) -> PolarsResult<StructChunked2> {
         Ok(chunks) => {
             // SAFETY: invariants checked above.
             unsafe {
-                Ok(StructChunked2::from_chunks_and_dtype_unchecked(
+                Ok(StructChunked::from_chunks_and_dtype_unchecked(
                     name, chunks, dtype,
                 ))
             }
@@ -60,7 +60,7 @@ fn constructor(name: &str, fields: &[Series]) -> PolarsResult<StructChunked2> {
     }
 }
 
-impl StructChunked2 {
+impl StructChunked {
     pub fn from_series(name: &str, fields: &[Series]) -> PolarsResult<Self> {
         let mut names = PlHashSet::with_capacity(fields.len());
         let first_len = fields.first().map(|s| s.len()).unwrap_or(0);
@@ -311,7 +311,7 @@ impl StructChunked2 {
     }
 
     /// Combine the validities of two structs.
-    pub fn zip_outer_validity(&mut self, other: &StructChunked2) {
+    pub fn zip_outer_validity(&mut self, other: &StructChunked) {
         if self.chunks.len() != other.chunks.len()
             || !self
                 .chunks

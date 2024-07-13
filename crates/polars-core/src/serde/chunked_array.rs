@@ -158,7 +158,7 @@ impl Serialize for CategoricalChunked {
 }
 
 #[cfg(feature = "dtype-struct")]
-impl Serialize for StructChunked2 {
+impl Serialize for StructChunked {
     fn serialize<S>(
         &self,
         serializer: S,

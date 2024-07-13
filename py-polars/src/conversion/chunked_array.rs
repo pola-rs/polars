@@ -28,7 +28,7 @@ impl ToPyObject for Wrap<&BinaryChunked> {
     }
 }
 
-impl ToPyObject for Wrap<&StructChunked2> {
+impl ToPyObject for Wrap<&StructChunked> {
     fn to_object(&self, py: Python) -> PyObject {
         let s = self.0.clone().into_series();
         // todo! iterate its chunks and flatten.

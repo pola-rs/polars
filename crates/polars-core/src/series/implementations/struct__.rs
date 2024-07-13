@@ -3,17 +3,17 @@ use std::ops::Not;
 use arrow::bitmap::Bitmap;
 
 use super::*;
-use crate::chunked_array::StructChunked2;
+use crate::chunked_array::StructChunked;
 use crate::prelude::*;
 use crate::series::private::{PrivateSeries, PrivateSeriesNumeric};
 
-impl PrivateSeriesNumeric for SeriesWrap<StructChunked2> {
+impl PrivateSeriesNumeric for SeriesWrap<StructChunked> {
     fn bit_repr(&self) -> Option<BitRepr> {
         None
     }
 }
 
-impl PrivateSeries for SeriesWrap<StructChunked2> {
+impl PrivateSeries for SeriesWrap<StructChunked> {
     fn _field(&self) -> Cow<Field> {
         Cow::Borrowed(self.0.ref_field())
     }
@@ -64,7 +64,7 @@ impl PrivateSeries for SeriesWrap<StructChunked2> {
             .zip(other.fields_as_series())
             .map(|(lhs, rhs)| lhs.zip_with_same_type(mask, &rhs))
             .collect::<PolarsResult<Vec<_>>>()?;
-        StructChunked2::from_series(self.0.name(), &fields).map(|ca| ca.into_series())
+        StructChunked::from_series(self.0.name(), &fields).map(|ca| ca.into_series())
     }
 
     #[cfg(feature = "algorithm_group_by")]
@@ -73,7 +73,7 @@ impl PrivateSeries for SeriesWrap<StructChunked2> {
     }
 }
 
-impl SeriesTrait for SeriesWrap<StructChunked2> {
+impl SeriesTrait for SeriesWrap<StructChunked> {
     fn rename(&mut self, name: &str) {
         self.0.rename(name)
     }

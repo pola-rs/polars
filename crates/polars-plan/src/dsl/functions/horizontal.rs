@@ -124,7 +124,7 @@ where
                     result.push(acc.clone());
                 }
 
-                StructChunked2::from_series(acc.name(), &result).map(|ca| Some(ca.into_series()))
+                StructChunked::from_series(acc.name(), &result).map(|ca| Some(ca.into_series()))
             },
             None => Err(polars_err!(ComputeError: "`reduce` did not have any expressions to fold")),
         }
@@ -172,7 +172,7 @@ where
             }
         }
 
-        StructChunked2::from_series(acc.name(), &result).map(|ca| Some(ca.into_series()))
+        StructChunked::from_series(acc.name(), &result).map(|ca| Some(ca.into_series()))
     }) as Arc<dyn SeriesUdf>);
 
     Expr::AnonymousFunction {

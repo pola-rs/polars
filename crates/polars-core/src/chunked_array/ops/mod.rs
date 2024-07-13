@@ -535,7 +535,7 @@ impl ChunkExpandAtIndex<ListType> for ListChunked {
 }
 
 #[cfg(feature = "dtype-struct")]
-impl ChunkExpandAtIndex<StructType> for StructChunked2 {
+impl ChunkExpandAtIndex<StructType> for StructChunked {
     fn new_from_index(&self, length: usize, index: usize) -> ChunkedArray<StructType> {
         let (chunk_idx, idx) = self.index_to_chunked_index(index);
         let chunk = self.downcast_chunks().get(chunk_idx).unwrap();

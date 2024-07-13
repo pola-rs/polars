@@ -103,7 +103,7 @@ impl Series {
             BinaryOffset => BinaryOffsetChunked::from_chunks(name, chunks).into_series(),
             #[cfg(feature = "dtype-struct")]
             Struct(_) => {
-                StructChunked2::from_chunks_and_dtype_unchecked(name, chunks, dtype.clone())
+                StructChunked::from_chunks_and_dtype_unchecked(name, chunks, dtype.clone())
                     .into_series()
             },
             #[cfg(feature = "object")]
@@ -402,7 +402,7 @@ impl Series {
                 let (chunks, dtype) = to_physical_and_dtype(chunks, md);
                 unsafe {
                     Ok(
-                        StructChunked2::from_chunks_and_dtype_unchecked(name, chunks, dtype)
+                        StructChunked::from_chunks_and_dtype_unchecked(name, chunks, dtype)
                             .into_series(),
                     )
                 }

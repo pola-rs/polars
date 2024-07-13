@@ -135,7 +135,7 @@ impl ChunkFilter<BinaryType> for BinaryChunked {
 // }
 //
 // #[cfg(feature = "dtype-struct")]
-// impl ChunkFilter<StructType> for StructChunked2 {
+// impl ChunkFilter<StructType> for StructChunked {
 //     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<ChunkedArray<StructType>>
 //     where
 //         Self: Sized

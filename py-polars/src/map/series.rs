@@ -2236,11 +2236,11 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
     }
 }
 
-fn iter_struct(ca: &StructChunked2) -> impl Iterator<Item = AnyValue> {
+fn iter_struct(ca: &StructChunked) -> impl Iterator<Item = AnyValue> {
     (0..ca.len()).map(|i| unsafe { ca.get_any_value_unchecked(i) })
 }
 
-impl<'a> ApplyLambda<'a> for StructChunked2 {
+impl<'a> ApplyLambda<'a> for StructChunked {
     fn apply_lambda_unknown(&'a self, py: Python, lambda: &Bound<'a, PyAny>) -> PyResult<PySeries> {
         let mut null_count = 0;
 

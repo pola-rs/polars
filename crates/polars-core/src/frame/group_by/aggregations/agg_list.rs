@@ -278,7 +278,7 @@ impl<T: PolarsObject> AggList for ObjectChunked<T> {
 }
 
 #[cfg(feature = "dtype-struct")]
-impl AggList for StructChunked2 {
+impl AggList for StructChunked {
     unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
         let ca = self.clone();
         ca.rechunk();

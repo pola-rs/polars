@@ -51,7 +51,7 @@ impl Series {
                     .iter()
                     .map(|fld| Series::full_null(fld.name(), size, fld.data_type()))
                     .collect::<Vec<_>>();
-                StructChunked2::from_series(name, &fields)
+                StructChunked::from_series(name, &fields)
                     .unwrap()
                     .into_series()
             },

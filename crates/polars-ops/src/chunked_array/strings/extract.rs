@@ -48,7 +48,7 @@ pub(super) fn extract_groups(
     let reg = Regex::new(pat)?;
     let n_fields = reg.captures_len();
     if n_fields == 1 {
-        return StructChunked2::from_series(ca.name(), &[Series::new_null(ca.name(), ca.len())])
+        return StructChunked::from_series(ca.name(), &[Series::new_null(ca.name(), ca.len())])
             .map(|ca| ca.into_series());
     }
 

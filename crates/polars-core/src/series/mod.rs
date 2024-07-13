@@ -604,7 +604,7 @@ impl Series {
                     .iter()
                     .map(|s| s.to_physical_repr().into_owned())
                     .collect();
-                let mut ca = StructChunked2::from_series(self.name(), &fields).unwrap();
+                let mut ca = StructChunked::from_series(self.name(), &fields).unwrap();
 
                 if arr.null_count() > 0 {
                     ca.zip_outer_validity(arr);

@@ -60,7 +60,7 @@ pub fn split_to_struct<'a, F, I>(
     n: usize,
     op: F,
     keep_remainder: bool,
-) -> PolarsResult<StructChunked2>
+) -> PolarsResult<StructChunked>
 where
     F: Fn(&'a str, &'a str) -> I,
     I: Iterator<Item = &'a str>,
@@ -147,7 +147,7 @@ where
         })
         .collect::<Vec<_>>();
 
-    StructChunked2::from_series(ca.name(), &fields)
+    StructChunked::from_series(ca.name(), &fields)
 }
 
 pub fn split_helper<'a, F, I>(ca: &'a StringChunked, by: &'a StringChunked, op: F) -> ListChunked

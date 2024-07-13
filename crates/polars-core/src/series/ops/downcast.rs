@@ -156,15 +156,15 @@ impl Series {
 
     /// Unpack to [`ChunkedArray`] of dtype `[DataType::Struct]`
     #[cfg(feature = "dtype-struct")]
-    pub fn struct_(&self) -> PolarsResult<&StructChunked2> {
+    pub fn struct_(&self) -> PolarsResult<&StructChunked> {
         #[cfg(debug_assertions)]
         {
             if let DataType::Struct(_) = self.dtype() {
                 let any = self.as_any();
-                assert!(any.is::<StructChunked2>());
+                assert!(any.is::<StructChunked>());
             }
         }
-        unpack_chunked!(self, DataType::Struct(_) => StructChunked2, "Struct")
+        unpack_chunked!(self, DataType::Struct(_) => StructChunked, "Struct")
     }
 
     /// Unpack to [`ChunkedArray`] of dtype `[DataType::Null]`

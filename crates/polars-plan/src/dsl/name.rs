@@ -75,7 +75,7 @@ impl ExprNameNameSpace {
                         fd
                     })
                     .collect::<Vec<_>>();
-                let mut out = StructChunked2::from_series(s.name(), &fields)?;
+                let mut out = StructChunked::from_series(s.name(), &fields)?;
                 out.zip_outer_validity(s);
                 Ok(Some(out.into_series()))
             },
