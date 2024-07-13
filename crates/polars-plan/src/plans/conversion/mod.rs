@@ -8,6 +8,7 @@ mod scans;
 mod stack_opt;
 
 use std::borrow::Cow;
+use std::sync::RwLock;
 
 pub use dsl_to_ir::*;
 pub use expr_to_ir::*;
@@ -52,7 +53,7 @@ impl IR {
                 file_options: options,
             } => DslPlan::Scan {
                 paths,
-                file_info: Some(file_info),
+                file_info: Arc::new(RwLock::new(Some(file_info))),
                 hive_parts,
                 predicate: predicate.map(|e| e.to_expr(expr_arena)),
                 scan_type,

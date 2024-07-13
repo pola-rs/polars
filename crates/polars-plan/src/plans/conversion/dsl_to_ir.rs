@@ -117,9 +117,23 @@ pub fn to_alp_impl(
                 FileScan::Anonymous { .. } => paths,
             };
 
-            let mut file_info = if let Some(file_info) = file_info {
-                file_info
+            let file_info_read = file_info.read().unwrap();
+
+            // leading `_` as clippy doesn't understand that you don't want to read from a lock guard
+            // if you want to keep it alive.
+            let mut _file_info_write: Option<_>;
+            let mut resolved_file_info = if let Some(file_info) = &*file_info_read {
+                _file_info_write = None;
+                let out = file_info.clone();
+                drop(file_info_read);
+                out
             } else {
+                // Lock so that we don't resolve the same schema in parallel.
+                drop(file_info_read);
+
+                // Set write lock and keep that lock until all fields in `file_info` are resolved.
+                _file_info_write = Some(file_info.write().unwrap());
+
                 match &mut scan_type {
                     #[cfg(feature = "parquet")]
                     FileScan::Parquet {
@@ -166,7 +180,7 @@ pub fn to_alp_impl(
             let hive_parts = if hive_parts.is_some() {
                 hive_parts
             } else if file_options.hive_options.enabled.unwrap()
-                && file_info.reader_schema.is_some()
+                && resolved_file_info.reader_schema.is_some()
             {
                 #[allow(unused_assignments)]
                 let mut owned = None;
@@ -175,7 +189,7 @@ pub fn to_alp_impl(
                     paths.as_ref(),
                     file_options.hive_options.hive_start_idx,
                     file_options.hive_options.schema.clone(),
-                    match file_info.reader_schema.as_ref().unwrap() {
+                    match resolved_file_info.reader_schema.as_ref().unwrap() {
                         Either::Left(v) => {
                             owned = Some(Schema::from(v));
                             owned.as_ref().unwrap()
@@ -188,31 +202,37 @@ pub fn to_alp_impl(
                 None
             };
 
-            if let Some(ref hive_parts) = hive_parts {
-                let hive_schema = hive_parts[0].schema();
-                file_info.update_schema_with_hive_schema(hive_schema.clone());
-            }
-
-            if let Some(ref file_path_col) = file_options.include_file_paths {
-                let schema = Arc::make_mut(&mut file_info.schema);
-
-                if schema.contains(file_path_col) {
-                    polars_bail!(
-                        Duplicate: r#"column name for file paths "{}" conflicts with column name from file"#,
-                        file_path_col
-                    );
+            // Only if we have a writing file handle we must resolve hive partitions
+            // update schema's etc.
+            if let Some(lock) = &mut _file_info_write {
+                if let Some(ref hive_parts) = hive_parts {
+                    let hive_schema = hive_parts[0].schema();
+                    resolved_file_info.update_schema_with_hive_schema(hive_schema.clone());
                 }
 
-                schema.insert_at_index(
-                    schema.len(),
-                    file_path_col.as_ref().into(),
-                    DataType::String,
-                )?;
+                if let Some(ref file_path_col) = file_options.include_file_paths {
+                    let schema = Arc::make_mut(&mut resolved_file_info.schema);
+
+                    if schema.contains(file_path_col) {
+                        polars_bail!(
+                            Duplicate: r#"column name for file paths "{}" conflicts with column name from file"#,
+                            file_path_col
+                        );
+                    }
+
+                    schema.insert_at_index(
+                        schema.len(),
+                        file_path_col.as_ref().into(),
+                        DataType::String,
+                    )?;
+                }
+
+                **lock = Some(resolved_file_info.clone());
             }
 
-            file_options.with_columns = if file_info.reader_schema.is_some() {
+            file_options.with_columns = if resolved_file_info.reader_schema.is_some() {
                 maybe_init_projection_excluding_hive(
-                    file_info.reader_schema.as_ref().unwrap(),
+                    resolved_file_info.reader_schema.as_ref().unwrap(),
                     hive_parts.as_ref().map(|x| &x[0]),
                 )
             } else {
@@ -220,7 +240,7 @@ pub fn to_alp_impl(
             };
 
             if let Some(row_index) = &file_options.row_index {
-                let schema = Arc::make_mut(&mut file_info.schema);
+                let schema = Arc::make_mut(&mut resolved_file_info.schema);
                 *schema = schema
                     .new_inserting_at_index(0, row_index.name.as_ref().into(), IDX_DTYPE)
                     .unwrap();
@@ -228,7 +248,7 @@ pub fn to_alp_impl(
 
             IR::Scan {
                 paths,
-                file_info,
+                file_info: resolved_file_info,
                 hive_parts,
                 output_schema: None,
                 predicate: predicate.map(|expr| to_expr_ir(expr, expr_arena)),
