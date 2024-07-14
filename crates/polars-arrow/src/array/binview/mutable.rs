@@ -1,8 +1,11 @@
 use std::any::Any;
 use std::fmt::{Debug, Formatter};
+use std::ops::Deref;
 use std::sync::Arc;
 
+use hashbrown::hash_map::Entry;
 use polars_error::PolarsResult;
+use polars_utils::aliases::{InitHashMaps, PlHashMap};
 use polars_utils::slice::GetSaferUnchecked;
 
 use crate::array::binview::iterator::MutableBinaryViewValueIter;
@@ -28,6 +31,9 @@ pub struct MutableBinaryViewArray<T: ViewType + ?Sized> {
     pub(super) total_bytes_len: usize,
     /// Total bytes in the buffer (excluding remaining capacity)
     pub(super) total_buffer_len: usize,
+    /// Mapping from `Buffer::deref()` to index in `completed_buffers`.
+    /// Used in `push_view()`.
+    pub(super) stolen_buffers: PlHashMap<usize, u32>,
 }
 
 impl<T: ViewType + ?Sized> Clone for MutableBinaryViewArray<T> {
@@ -40,6 +46,7 @@ impl<T: ViewType + ?Sized> Clone for MutableBinaryViewArray<T> {
             phantom: Default::default(),
             total_bytes_len: self.total_bytes_len,
             total_buffer_len: self.total_buffer_len,
+            stolen_buffers: PlHashMap::new(),
         }
     }
 }
@@ -86,6 +93,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
             phantom: Default::default(),
             total_buffer_len: 0,
             total_bytes_len: 0,
+            stolen_buffers: PlHashMap::new(),
         }
     }
 
@@ -135,8 +143,9 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
     /// # Safety
     /// - caller must allocate enough capacity
     /// - caller must ensure the view and buffers match.
+    /// - The array must not have validity.
     #[inline]
-    pub unsafe fn push_view(&mut self, v: View, buffers: &[Buffer<u8>]) {
+    pub unsafe fn push_view_copied(&mut self, v: View, buffers: &[Buffer<u8>]) {
         let len = v.length;
         self.total_bytes_len += len as usize;
         if len <= 12 {
@@ -149,6 +158,40 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
             let bytes = data.get_unchecked_release(offset..offset + len as usize);
             let t = T::from_bytes_unchecked(bytes);
             self.push_value_ignore_validity(t)
+        }
+    }
+
+    pub fn push_view(&mut self, mut v: View, buffers: &[Buffer<u8>]) {
+        let len = v.length;
+        self.total_bytes_len += len as usize;
+        if len <= 12 {
+            self.views.push(v);
+        } else {
+            // Do no mix use of push_view and push_value_ignore_validity -
+            // it causes fragmentation.
+            self.finish_in_progress();
+
+            let buffer = &buffers[v.buffer_idx as usize];
+            let idx = match self.stolen_buffers.entry(buffer.deref().as_ptr() as usize) {
+                Entry::Occupied(entry) => {
+                    let idx = *entry.get();
+                    let target_buffer = &self.completed_buffers[idx as usize];
+                    debug_assert_eq!(buffer, target_buffer);
+                    idx
+                },
+                Entry::Vacant(entry) => {
+                    let idx = self.completed_buffers.len() as u32;
+                    entry.insert(idx);
+                    self.completed_buffers.push(buffer.clone());
+                    self.total_buffer_len += buffer.len();
+                    idx
+                },
+            };
+            v.buffer_idx = idx;
+            self.views.push(v);
+        }
+        if let Some(validity) = &mut self.validity {
+            validity.push(true)
         }
     }
 

@@ -26,6 +26,7 @@ mod private {
 }
 pub use iterator::BinaryViewValueIter;
 pub use mutable::MutableBinaryViewArray;
+use polars_utils::aliases::{InitHashMaps, PlHashMap};
 use polars_utils::slice::GetSaferUnchecked;
 use private::Sealed;
 
@@ -383,7 +384,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         let buffers = self.buffers.as_ref();
 
         for view in self.views.as_ref() {
-            unsafe { mutable.push_view(*view, buffers) }
+            unsafe { mutable.push_view_copied(*view, buffers) }
         }
         mutable.freeze().with_validity(self.validity)
     }
@@ -437,6 +438,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
             phantom: Default::default(),
             total_bytes_len: self.total_bytes_len.load(Ordering::Relaxed) as usize,
             total_buffer_len: self.total_buffer_len,
+            stolen_buffers: PlHashMap::new(),
         }
     }
 }
