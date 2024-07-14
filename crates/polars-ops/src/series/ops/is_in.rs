@@ -528,7 +528,6 @@ fn is_in_struct(ca_in: &StructChunked, other: &Series) -> PolarsResult<BooleanCh
                 .iter()
                 .map(|f| f.data_type())
                 .collect();
-            dbg!(&ca_in_dtypes, &other_dtypes);
             if ca_in_dtypes != other_dtypes {
                 let ca_in_names = ca_in.struct_fields().iter().map(|f| f.name());
                 let other_names = other.struct_fields().iter().map(|f| f.name());
