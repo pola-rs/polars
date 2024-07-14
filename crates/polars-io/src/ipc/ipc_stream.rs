@@ -42,7 +42,7 @@ use arrow::io::ipc::{read, write};
 use polars_core::prelude::*;
 
 use crate::prelude::*;
-use crate::shared::{finish_reader, ArrowReader, WriterFactory};
+use crate::shared::{finish_reader, ArrowReader};
 
 /// Read Arrows Stream IPC format into a DataFrame
 ///
@@ -288,15 +288,5 @@ impl IpcStreamWriterOption {
 impl Default for IpcStreamWriterOption {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-impl WriterFactory for IpcStreamWriterOption {
-    fn create_writer<W: Write + 'static>(&self, writer: W) -> Box<dyn SerWriter<W>> {
-        Box::new(IpcStreamWriter::new(writer).with_compression(self.compression))
-    }
-
-    fn extension(&self) -> PathBuf {
-        self.extension.to_owned()
     }
 }

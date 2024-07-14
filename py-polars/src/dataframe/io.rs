@@ -378,7 +378,7 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "parquet")]
-    #[pyo3(signature = (py_f, compression, compression_level, statistics, row_group_size, data_page_size))]
+    #[pyo3(signature = (py_f, compression, compression_level, statistics, row_group_size, data_page_size, partition_by, partition_chunk_size_bytes))]
     pub fn write_parquet(
         &mut self,
         py: Python,
@@ -388,8 +388,37 @@ impl PyDataFrame {
         statistics: Wrap<StatisticsOptions>,
         row_group_size: Option<usize>,
         data_page_size: Option<usize>,
+        partition_by: Option<Vec<String>>,
+        partition_chunk_size_bytes: usize,
     ) -> PyResult<()> {
+        use polars_io::partition::write_partitioned_dataset;
+
         let compression = parse_parquet_compression(compression, compression_level)?;
+
+        if let Some(partition_by) = partition_by {
+            let path = py_f.extract::<String>(py)?;
+
+            py.allow_threads(|| {
+                let write_options = ParquetWriteOptions {
+                    compression,
+                    statistics: statistics.0,
+                    row_group_size,
+                    data_page_size,
+                    maintain_order: true,
+                };
+                write_partitioned_dataset(
+                    &self.df,
+                    std::path::Path::new(path.as_str()),
+                    partition_by.as_slice(),
+                    &write_options,
+                    partition_chunk_size_bytes,
+                )
+                .map_err(PyPolarsErr::from)
+            })?;
+
+            return Ok(());
+        };
+
         let buf = get_file_like(py_f, true)?;
         py.allow_threads(|| {
             ParquetWriter::new(buf)
@@ -400,49 +429,6 @@ impl PyDataFrame {
                 .finish(&mut self.df)
                 .map_err(PyPolarsErr::from)
         })?;
-        Ok(())
-    }
-
-    #[cfg(feature = "parquet")]
-    #[pyo3(signature = (py_f, partition_by, chunk_size_bytes, compression, compression_level, statistics, row_group_size, data_page_size))]
-    pub fn write_parquet_partitioned(
-        &mut self,
-        py: Python,
-        py_f: PyObject,
-        partition_by: Vec<String>,
-        chunk_size_bytes: usize,
-        compression: &str,
-        compression_level: Option<i32>,
-        statistics: Wrap<StatisticsOptions>,
-        row_group_size: Option<usize>,
-        data_page_size: Option<usize>,
-    ) -> PyResult<()> {
-        use std::path::Path;
-
-        use polars_io::partition::write_partitioned_dataset;
-
-        let Ok(path) = py_f.extract::<PyBackedStr>(py) else {
-            return Err(PyPolarsErr::from(polars_err!(ComputeError: "expected path-like")).into());
-        };
-        let path = Path::new(&*path);
-        let compression = parse_parquet_compression(compression, compression_level)?;
-
-        let write_options = ParquetWriteOptions {
-            compression,
-            statistics: statistics.0,
-            row_group_size,
-            data_page_size,
-            maintain_order: true,
-        };
-
-        write_partitioned_dataset(
-            &self.df,
-            path,
-            partition_by.as_slice(),
-            &write_options,
-            chunk_size_bytes,
-        )
-        .map_err(PyPolarsErr::from)?;
         Ok(())
     }
 

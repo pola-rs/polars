@@ -26,8 +26,8 @@ path included in the output:
 
 ### Handling mixed files
 
-Passing a directory to `scan_parquet` may not work if there are extra non-data files next to the
-data files.
+Passing a directory to `scan_parquet` may not work if there are files with different extensions in
+the directory.
 
 For this example the following directory structure is used:
 
@@ -80,7 +80,7 @@ Polars supports writing hive partitioned parquet datasets, with planned support 
 
 For this example the following DataFrame is used:
 
-{{code_block('user-guide/io/hive','write_parquet_partitioned_show_data',['write_parquet_partitioned'])}}
+{{code_block('user-guide/io/hive','write_parquet_partitioned_show_data',[])}}
 
 ```python exec="on" result="text" session="user-guide/io/hive"
 --8<-- "python/user-guide/io/hive.py:write_parquet_partitioned_show_data"
@@ -88,7 +88,7 @@ For this example the following DataFrame is used:
 
 We will write it to a hive-partitioned parquet dataset, partitioned by the columns `a` and `b`:
 
-{{code_block('user-guide/io/hive','write_parquet_partitioned',['write_parquet_partitioned'])}}
+{{code_block('user-guide/io/hive','write_parquet_partitioned',['write_parquet'])}}
 
 ```python exec="on" result="text" session="user-guide/io/hive"
 --8<-- "python/user-guide/io/hive.py:write_parquet_partitioned"

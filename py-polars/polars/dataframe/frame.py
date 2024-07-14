@@ -3446,6 +3446,8 @@ class DataFrame:
         data_page_size: int | None = None,
         use_pyarrow: bool = False,
         pyarrow_options: dict[str, Any] | None = None,
+        partition_by: str | Sequence[str] | None = None,
+        partition_chunk_size_bytes: int = 4_294_967_296,
     ) -> None:
         """
         Write to Apache Parquet file.
@@ -3454,6 +3456,7 @@ class DataFrame:
         ----------
         file
             File path or writable file-like object to which the result will be written.
+            This should be a path to a directory if writing a partitioned dataset.
         compression : {'lz4', 'uncompressed', 'snappy', 'gzip', 'lzo', 'brotli', 'zstd'}
             Choose "zstd" for good compression performance.
             Choose "lz4" for fast compression/decompression.
@@ -3497,6 +3500,14 @@ class DataFrame:
             using `pyarrow.parquet.write_to_dataset`.
             The `partition_cols` parameter leads to write the dataset to a directory.
             Similar to Spark's partitioned datasets.
+        partition_by
+            Column(s) to partition by. A partitioned dataset will be written if this is
+            specified. This parameter is considered unstable and is subject to change.
+        partition_chunk_size_bytes
+            Approximate size to split DataFrames within a single partition when
+            writing. Note this is calculated using the size of the DataFrame in
+            memory - the size of the output file may differ depending on the
+            file format / compression.
 
         Examples
         --------
@@ -3528,7 +3539,11 @@ class DataFrame:
         if compression is None:
             compression = "uncompressed"
         if isinstance(file, (str, Path)):
-            if pyarrow_options is not None and pyarrow_options.get("partition_cols"):
+            if (
+                partition_by is not None
+                or pyarrow_options is not None
+                and pyarrow_options.get("partition_cols")
+            ):
                 file = normalize_filepath(file, check_not_directory=False)
             else:
                 file = normalize_filepath(file)
@@ -3594,6 +3609,13 @@ class DataFrame:
                     "null_count": True,
                 }
 
+            if partition_by is not None:
+                msg = "The `partition_by` parameter of `write_parquet` is considered unstable."
+                issue_unstable_warning(msg)
+
+            if isinstance(partition_by, str):
+                partition_by = [partition_by]
+
             self._df.write_parquet(
                 file,
                 compression,
@@ -3601,99 +3623,9 @@ class DataFrame:
                 statistics,
                 row_group_size,
                 data_page_size,
+                partition_by=partition_by,
+                partition_chunk_size_bytes=partition_chunk_size_bytes,
             )
-
-    @unstable()
-    def write_parquet_partitioned(
-        self,
-        path: str | Path,
-        partition_by: str | Collection[str],
-        *,
-        chunk_size_bytes: int = 4_294_967_296,
-        compression: ParquetCompression = "zstd",
-        compression_level: int | None = None,
-        statistics: bool | str | dict[str, bool] = True,
-        row_group_size: int | None = None,
-        data_page_size: int | None = None,
-    ) -> None:
-        """
-        Write a partitioned directory of parquet files.
-
-        Parameters
-        ----------
-        path
-            Path to the base directory for the partitioned dataset.
-        partition_by
-            Columns to partition by.
-        chunk_size_bytes
-            Approximate size to split DataFrames within a single partition when
-            writing. Note this is calculated using the size of the DataFrame in
-            memory - the size of the output file may differ depending on the
-            file format / compression.
-        compression : {'lz4', 'uncompressed', 'snappy', 'gzip', 'lzo', 'brotli', 'zstd'}
-            Choose "zstd" for good compression performance.
-            Choose "lz4" for fast compression/decompression.
-            Choose "snappy" for more backwards compatibility guarantees
-            when you deal with older parquet readers.
-        compression_level
-            The level of compression to use. Higher compression means smaller files on
-            disk.
-
-            - "gzip" : min-level: 0, max-level: 10.
-            - "brotli" : min-level: 0, max-level: 11.
-            - "zstd" : min-level: 1, max-level: 22.
-
-        statistics
-            Write statistics to the parquet headers. This is the default behavior.
-
-            Possible values:
-
-            - `True`: enable default set of statistics (default)
-            - `False`: disable all statistics
-            - "full": calculate and write all available statistics. Cannot be
-              combined with `use_pyarrow`.
-            - `{ "statistic-key": True / False, ... }`. Cannot be combined with
-              `use_pyarrow`. Available keys:
-
-              - "min": column minimum value (default: `True`)
-              - "max": column maximum value (default: `True`)
-              - "distinct_count": number of unique column values (default: `False`)
-              - "null_count": number of null values in column (default: `True`)
-        row_group_size
-            Size of the row groups in number of rows. Defaults to 512^2 rows.
-        data_page_size
-            Size of the data page in bytes. Defaults to 1024^2 bytes.
-        """
-        path = normalize_filepath(path, check_not_directory=False)
-        partition_by = [partition_by] if isinstance(partition_by, str) else partition_by
-
-        if isinstance(statistics, bool) and statistics:
-            statistics = {
-                "min": True,
-                "max": True,
-                "distinct_count": False,
-                "null_count": True,
-            }
-        elif isinstance(statistics, bool) and not statistics:
-            statistics = {}
-        elif statistics == "full":
-            statistics = {
-                "min": True,
-                "max": True,
-                "distinct_count": True,
-                "null_count": True,
-            }
-
-        self._df.write_parquet_partitioned(
-            path,
-            partition_by,
-            chunk_size_bytes,
-            compression,
-            compression_level,
-            statistics,
-            row_group_size,
-            data_page_size,
-        )
 
     def write_database(
         self,

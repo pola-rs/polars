@@ -25,7 +25,8 @@ for df, part in zip(dfs, parts):
     Path(path).parent.mkdir(exist_ok=True, parents=True)
     df.write_parquet(path)
 
-Path("docs/data/hive_mixed/description.txt").touch()
+# Make sure the file is not empty because path expansion ignores empty files.
+Path("docs/data/hive_mixed/description.txt").write_text("A")
 
 
 def print_paths(path: str) -> None:
@@ -123,7 +124,7 @@ print(df)
 # --8<-- [end:write_parquet_partitioned_show_data]
 
 # --8<-- [start:write_parquet_partitioned]
-df.write_parquet_partitioned("docs/data/hive_write/", ["a", "b"])
+df.write_parquet("docs/data/hive_write/", partition_by=["a", "b"])
 # --8<-- [end:write_parquet_partitioned]
 
 # --8<-- [start:write_parquet_partitioned_show_paths]
