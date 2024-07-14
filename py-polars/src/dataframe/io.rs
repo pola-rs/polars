@@ -407,7 +407,7 @@ impl PyDataFrame {
                     maintain_order: true,
                 };
                 write_partitioned_dataset(
-                    &self.df,
+                    &mut self.df,
                     std::path::Path::new(path.as_str()),
                     partition_by.as_slice(),
                     &write_options,

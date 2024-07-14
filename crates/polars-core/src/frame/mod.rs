@@ -2938,6 +2938,9 @@ impl DataFrame {
         POOL.install(|| {
             match groups {
                 GroupsProxy::Idx(idx) => {
+                    // Rechunk as the gather may rechunk for every group #17562.
+                    let mut df = df.clone();
+                    df.as_single_chunk_par();
                     Ok(idx
                         .into_par_iter()
                         .map(|(_, group)| {
