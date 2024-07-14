@@ -934,3 +934,28 @@ def test_struct_wildcard_expansion_and_exclude() -> None:
         df.lazy().select(
             pl.col("meta_data").struct.with_fields(pl.field("*").exclude("user_data"))
         ).collect()
+
+
+def test_struct_chunked_gather_17603() -> None:
+    df = pl.DataFrame(
+        {
+            "id": [0, 0, 1, 1],
+            "a": [0, 1, 2, 3],
+        }
+    ).select("id", pl.struct("a"))
+    df = pl.concat((df, df))
+
+    assert df.select(pl.col("a").map_batches(lambda s: s).over("id")).to_dict(
+        as_series=False
+    ) == {
+        "a": [
+            {"a": 0},
+            {"a": 1},
+            {"a": 2},
+            {"a": 3},
+            {"a": 0},
+            {"a": 1},
+            {"a": 2},
+            {"a": 3},
+        ]
+    }

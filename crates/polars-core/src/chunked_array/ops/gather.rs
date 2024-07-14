@@ -6,7 +6,6 @@ use polars_utils::index::check_bounds;
 
 use crate::prelude::*;
 use crate::series::IsSorted;
-use crate::utils::align_chunks_binary;
 
 const BINARY_SEARCH_LIMIT: usize = 8;
 
@@ -282,11 +281,12 @@ impl<I: AsRef<[IdxSize]> + ?Sized> ChunkTakeUnchecked<I> for StringChunked {
 #[cfg(feature = "dtype-struct")]
 impl ChunkTakeUnchecked<IdxCa> for StructChunked {
     unsafe fn take_unchecked(&self, indices: &IdxCa) -> Self {
-        let (a, b) = align_chunks_binary(self, indices);
+        let a = self.rechunk();
+        let index = indices.rechunk();
 
         let chunks = a
             .downcast_iter()
-            .zip(b.downcast_iter())
+            .zip(index.downcast_iter())
             .map(|(arr, idx)| take_unchecked(arr, idx))
             .collect::<Vec<_>>();
         self.copy_with_chunks(chunks)
