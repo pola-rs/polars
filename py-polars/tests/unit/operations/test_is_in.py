@@ -390,3 +390,17 @@ def test_cat_list_is_in_from_single_str(val: str | None, expected: list[bool]) -
     res = df.select(pl.col("li").list.contains(pl.lit(val, dtype=pl.String)))
     expected_df = pl.DataFrame({"li": expected})
     assert_frame_equal(res, expected_df)
+
+
+def is_in_struct_enum_17618() -> None:
+    df = pl.DataFrame()
+    dtype = pl.Enum(categories=["HBS"])
+    df = df.insert_column(0, pl.Series("category", [], dtype=dtype))
+    assert df.filter(
+        pl.struct("category").is_in(
+            pl.Series(
+                [{"category": "HBS"}],
+                dtype=pl.Struct({"category": df["category"].dtype}),
+            )
+        )
+    ).shape == (0, 1)

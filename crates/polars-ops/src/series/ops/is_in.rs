@@ -506,6 +506,8 @@ fn is_in_struct(ca_in: &StructChunked, other: &Series) -> PolarsResult<BooleanCh
         #[cfg(feature = "dtype-array")]
         DataType::Array(_, _) => is_in_struct_array(ca_in, other),
         _ => {
+            let ca_in = ca_in.cast(&ca_in.dtype().to_physical()).unwrap();
+            let ca_in = ca_in.struct_()?;
             let other = other.cast(&other.dtype().to_physical()).unwrap();
             let other = other.struct_()?;
 
