@@ -29,7 +29,7 @@ impl WriteDataFrameToFile for IpcWriterOptions {
 
 /// Write a partitioned parquet dataset. This functionality is unstable.
 pub fn write_partitioned_dataset<S, O>(
-    df: &DataFrame,
+    df: &mut DataFrame,
     path: &Path,
     partition_by: &[S],
     file_write_options: &O,
@@ -39,6 +39,9 @@ where
     S: AsRef<str>,
     O: WriteDataFrameToFile + Send + Sync,
 {
+    // Ensure we have a single chunk as the gather will otherwise rechunk per group.
+    df.as_single_chunk_par();
+
     // Note: When adding support for formats other than Parquet, avoid writing the partitioned
     // columns into the file. We write them for parquet because they are encoded efficiently with
     // RLE and also gives us a way to get the hive schema from the parquet file for free.
