@@ -353,6 +353,22 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         self.total_buffer_len
     }
 
+    fn total_unshared_buffer_len(&self) -> usize {
+        // XXX: it is O(n), not O(1).
+        // Given this function is only called in `maybe_gc()`,
+        // it may not be worthy to add an extra field for this.
+        self.buffers
+            .iter()
+            .map(|buf| {
+                if buf.shared_count_strong() == 1 {
+                    buf.len()
+                } else {
+                    0
+                }
+            })
+            .sum()
+    }
+
     #[inline(always)]
     pub fn len(&self) -> usize {
         self.views.len()
@@ -383,13 +399,21 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
             return self;
         }
 
+        if Arc::strong_count(&self.buffers) != 1 {
+            // There are multiple holders of this `buffers`.
+            // If we allow gc in this case,
+            // it may end up copying the same content multiple times.
+            return self;
+        }
+
         // Subtract the maximum amount of inlined strings to get a lower bound
         // on the number of buffer bytes needed (assuming no dedup).
         let total_bytes_len = self.total_bytes_len();
         let buffer_req_lower_bound = total_bytes_len.saturating_sub(self.len() * 12);
 
         let lower_bound_mem_usage_post_gc = self.len() * 16 + buffer_req_lower_bound;
-        let cur_mem_usage = self.len() * 16 + self.total_buffer_len();
+        // Use unshared buffer len. Shared buffer won't be freed; no savings.
+        let cur_mem_usage = self.len() * 16 + self.total_unshared_buffer_len();
         let savings_upper_bound = cur_mem_usage.saturating_sub(lower_bound_mem_usage_post_gc);
 
         if savings_upper_bound >= GC_MINIMUM_SAVINGS
