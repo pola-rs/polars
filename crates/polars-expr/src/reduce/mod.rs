@@ -1,22 +1,21 @@
 mod convert;
 mod extrema;
+mod mean;
 mod sum;
 
 use std::any::Any;
 
-use arrow::legacy::error::PolarsResult;
-use polars_core::datatypes::Scalar;
-use polars_core::prelude::Series;
-use polars_utils::IdxSize;
+pub use convert::{can_convert_into_reduction, into_reduction};
+use polars_core::prelude::*;
 
 #[allow(dead_code)]
-trait Reduction: Any {
+pub trait Reduction: Any {
     fn init(&mut self);
 
     fn update(&mut self, batch: &Series) -> PolarsResult<()>;
 
     unsafe fn update_gathered(&mut self, batch: &Series, idx: &[IdxSize]) -> PolarsResult<()> {
-        let batch= batch.take_unchecked_from_slice(idx);
+        let batch = batch.take_unchecked_from_slice(idx);
         self.update(&batch)
     }
 

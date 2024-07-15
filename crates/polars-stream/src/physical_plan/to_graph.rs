@@ -3,8 +3,10 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 use polars_error::PolarsResult;
 use polars_expr::planner::{create_physical_expr, get_expr_depth_limit, ExpressionConversionState};
+use polars_expr::reduce::into_reduction;
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
+use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, Context, IR};
 use polars_utils::arena::Arena;
 use recursive::recursive;
@@ -115,7 +117,39 @@ fn to_graph_rec<'a>(
                 [input_key],
             )
         },
+        Reduce {
+            input,
+            exprs,
+            input_schema,
+            output_schema,
+        } => {
+            let input_key = to_graph_rec(*input, ctx)?;
 
+            let mut reductions = Vec::with_capacity(exprs.len());
+            let mut inputs = Vec::with_capacity(reductions.len());
+
+            for e in exprs {
+                let (red, input_node) =
+                    into_reduction(e.node(), ctx.expr_arena, input_schema.as_ref())?
+                        .expect("invariant");
+                reductions.push(red);
+
+                let input_phys = create_physical_expr(
+                    &ExprIR::from_node(input_node, ctx.expr_arena),
+                    Context::Default,
+                    ctx.expr_arena,
+                    None,
+                    &mut ctx.expr_conversion_state,
+                )?;
+
+                inputs.push(input_phys)
+            }
+
+            ctx.graph.add_node(
+                nodes::reduce::ReduceNode::new(inputs, reductions, output_schema.clone()),
+                [input_key],
+            )
+        },
         SimpleProjection { schema, input } => {
             let input_key = to_graph_rec(*input, ctx)?;
             ctx.graph.add_node(

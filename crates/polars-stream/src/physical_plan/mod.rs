@@ -10,6 +10,7 @@ mod lower_ir;
 mod to_graph;
 
 pub use lower_ir::lower_ir;
+use polars_expr::reduce::Reduction;
 pub use to_graph::physical_plan_to_graph;
 
 slotmap::new_key_type! {
@@ -33,7 +34,12 @@ pub enum PhysNode {
         extend_original: bool,
         output_schema: Arc<Schema>,
     },
-
+    Reduce {
+        input: PhysNodeKey,
+        exprs: Vec<ExprIR>,
+        input_schema: Arc<Schema>,
+        output_schema: Arc<Schema>,
+    },
     StreamingSlice {
         input: PhysNodeKey,
         offset: usize,
