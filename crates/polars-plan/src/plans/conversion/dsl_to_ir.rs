@@ -1,4 +1,3 @@
-#[cfg(any(feature = "ipc", feature = "parquet"))]
 use std::path::PathBuf;
 
 use arrow::datatypes::ArrowSchemaRef;
@@ -711,6 +710,7 @@ pub fn to_alp_impl(
 }
 
 /// Expand scan paths if they were not already expanded.
+#[allow(unused_variables)]
 fn expand_scan_paths(
     paths: Arc<Mutex<(Arc<[PathBuf]>, bool)>>,
     scan_type: &mut FileScan,
@@ -738,7 +738,7 @@ fn expand_scan_paths(
         } => expand_paths(&lock.0, file_options.glob, cloud_options.as_ref())?,
         #[cfg(feature = "json")]
         FileScan::NDJson { .. } => expand_paths(&lock.0, file_options.glob, None)?,
-        FileScan::Anonymous { .. } => unreachable!(), // Anonymous scans are already expanded.
+        FileScan::Anonymous { .. } => lock.0.clone(), // Anonymous scans are already expanded.
     };
 
     *lock = (paths_expanded, true);

@@ -1,3 +1,4 @@
+#[cfg(any(feature = "csv", feature = "ipc", feature = "parquet"))]
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
 
@@ -463,6 +464,7 @@ impl DslBuilder {
 }
 
 /// Initialize paths as non-expanded.
+#[cfg(any(feature = "csv", feature = "ipc", feature = "parquet"))]
 fn init_paths<P>(paths: P) -> Arc<Mutex<(Arc<[PathBuf]>, bool)>>
 where
     P: Into<Arc<[std::path::PathBuf]>>,
