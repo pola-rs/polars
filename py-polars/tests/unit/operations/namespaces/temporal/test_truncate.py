@@ -9,6 +9,7 @@ from hypothesis import given
 
 import polars as pl
 from polars._utils.convert import parse_as_duration_string
+from polars.exceptions import InvalidOperationError
 from polars.testing import assert_series_equal
 
 if TYPE_CHECKING:
@@ -119,3 +120,149 @@ def test_fast_path_vs_slow_path(datetimes: list[datetime], every: str) -> None:
     # Definitely uses slowpath:
     expected = s.dt.truncate(pl.Series([every] * len(datetimes)))
     assert_series_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("time_unit", "every"),
+    [
+        ("ms", "1h"),
+        ("us", "1h0m0s"),
+        ("ns", timedelta(hours=1)),
+    ],
+    ids=["milliseconds", "microseconds", "nanoseconds"],
+)
+def test_truncate(
+    time_unit: TimeUnit,
+    every: str | timedelta,
+) -> None:
+    start, stop = datetime(2022, 1, 1), datetime(2022, 1, 2)
+    s = pl.datetime_range(
+        start,
+        stop,
+        timedelta(minutes=30),
+        time_unit=time_unit,
+        eager=True,
+    ).alias(f"dates[{time_unit}]")
+
+    # can pass strings and time-deltas
+    out = s.dt.truncate(every)
+    assert out.dt[0] == start
+    assert out.dt[1] == start
+    assert out.dt[2] == start + timedelta(hours=1)
+    assert out.dt[3] == start + timedelta(hours=1)
+    # ...
+    assert out.dt[-3] == stop - timedelta(hours=1)
+    assert out.dt[-2] == stop - timedelta(hours=1)
+    assert out.dt[-1] == stop
+
+
+@pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
+def test_truncate_duration(time_unit: TimeUnit) -> None:
+    durations = pl.Series(
+        [
+            timedelta(seconds=21),
+            timedelta(seconds=35),
+            timedelta(seconds=59),
+            None,
+            timedelta(seconds=-35),
+        ]
+    ).dt.cast_time_unit(time_unit)
+
+    expected = pl.Series(
+        [
+            timedelta(seconds=20),
+            timedelta(seconds=30),
+            timedelta(seconds=50),
+            None,
+            timedelta(seconds=-30),
+        ]
+    ).dt.cast_time_unit(time_unit)
+
+    assert_series_equal(durations.dt.truncate("10s"), expected)
+
+
+def test_truncate_duration_zero() -> None:
+    """Truncating to the nearest zero should raise a descriptive error."""
+    durations = pl.Series([timedelta(seconds=21), timedelta(seconds=35)])
+
+    with pytest.raises(
+        InvalidOperationError,
+        match="cannot truncate a Duration to a non-positive Duration",
+    ):
+        durations.dt.truncate("0s")
+
+
+def test_truncate_expressions() -> None:
+    df = pl.DataFrame(
+        {
+            "duration": [
+                timedelta(seconds=20),
+                timedelta(seconds=21),
+                timedelta(seconds=22),
+            ],
+            "every": ["3s", "4s", "5s"],
+        }
+    )
+    result = df.select(pl.col("duration").dt.truncate(pl.col("every")))["duration"]
+    expected = pl.Series(
+        "duration",
+        [timedelta(seconds=18), timedelta(seconds=20), timedelta(seconds=20)],
+    )
+    assert_series_equal(result, expected)
+
+
+@pytest.mark.parametrize("every_unit", ["mo", "q", "y"])
+def test_truncated_duration_non_constant(every_unit: str) -> None:
+    # Duration series can't be truncated to non-constant durations
+    df = pl.DataFrame(
+        {
+            "durations": [timedelta(seconds=1), timedelta(seconds=2)],
+            "every": ["1" + every_unit, "1" + every_unit],
+        }
+    )
+
+    with pytest.raises(InvalidOperationError):
+        df["durations"].dt.truncate("1" + every_unit)
+
+    with pytest.raises(InvalidOperationError):
+        df.select(pl.col("durations").dt.truncate(pl.col("every")))
+
+
+def test_truncate_negative() -> None:
+    """Test that truncating to a negative duration gives a helpful error message."""
+    df = pl.DataFrame(
+        {
+            "date": [date(1895, 5, 7), date(1955, 11, 5)],
+            "datetime": [datetime(1895, 5, 7), datetime(1955, 11, 5)],
+            "duration": [timedelta(minutes=1), timedelta(minutes=-1)],
+            "every": ["-1m", "1m"],
+        }
+    )
+    with pytest.raises(
+        InvalidOperationError, match="cannot truncate a Date to a non-positive Duration"
+    ):
+        df.select(pl.col("date").dt.truncate("-1m"))
+    with pytest.raises(
+        InvalidOperationError,
+        match="cannot truncate a Datetime to a non-positive Duration",
+    ):
+        df.select(pl.col("datetime").dt.truncate("-1m"))
+    with pytest.raises(
+        InvalidOperationError,
+        match="cannot truncate a Duration to a non-positive Duration",
+    ):
+        df.select(pl.col("duration").dt.truncate("-1m"))
+    with pytest.raises(
+        InvalidOperationError, match="cannot truncate a Date to a non-positive Duration"
+    ):
+        df.select(pl.col("date").dt.truncate(pl.col("every")))
+    with pytest.raises(
+        InvalidOperationError,
+        match="cannot truncate a Datetime to a non-positive Duration",
+    ):
+        df.select(pl.col("datetime").dt.truncate(pl.col("every")))
+    with pytest.raises(
+        InvalidOperationError,
+        match="cannot truncate a Duration to a non-positive Duration",
+    ):
+        df.select(pl.col("duration").dt.truncate(pl.col("every")))

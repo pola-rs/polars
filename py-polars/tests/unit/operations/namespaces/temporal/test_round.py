@@ -9,7 +9,8 @@ from hypothesis import given
 
 import polars as pl
 from polars._utils.convert import parse_as_duration_string
-from polars.testing import assert_series_equal
+from polars.exceptions import InvalidOperationError
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
@@ -189,3 +190,174 @@ def test_round_datetime_w_expression(time_unit: TimeUnit) -> None:
     result = df.select(pl.col("a").dt.round(pl.col("b")))["a"]
     assert result[0] == datetime(2020, 1, 1)
     assert result[1] == datetime(2020, 1, 21)
+
+
+@pytest.mark.parametrize(
+    ("time_unit", "every"),
+    [
+        ("ms", "1h"),
+        ("us", "1h0m0s"),
+        ("ns", timedelta(hours=1)),
+    ],
+    ids=["milliseconds", "microseconds", "nanoseconds"],
+)
+def test_round(
+    time_unit: TimeUnit,
+    every: str | timedelta,
+) -> None:
+    start, stop = datetime(2022, 1, 1), datetime(2022, 1, 2)
+    s = pl.datetime_range(
+        start,
+        stop,
+        timedelta(minutes=30),
+        time_unit=time_unit,
+        eager=True,
+    ).alias(f"dates[{time_unit}]")
+
+    # can pass strings and time-deltas
+    out = s.dt.round(every)
+    assert out.dt[0] == start
+    assert out.dt[1] == start + timedelta(hours=1)
+    assert out.dt[2] == start + timedelta(hours=1)
+    assert out.dt[3] == start + timedelta(hours=2)
+    # ...
+    assert out.dt[-3] == stop - timedelta(hours=1)
+    assert out.dt[-2] == stop
+    assert out.dt[-1] == stop
+
+
+@pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
+def test_round_duration(time_unit: TimeUnit) -> None:
+    durations = pl.Series(
+        [
+            timedelta(seconds=21),
+            timedelta(seconds=35),
+            timedelta(seconds=59),
+            None,
+            timedelta(seconds=-35),
+        ]
+    ).dt.cast_time_unit(time_unit)
+
+    expected = pl.Series(
+        [
+            timedelta(seconds=20),
+            timedelta(seconds=40),
+            timedelta(seconds=60),
+            None,
+            timedelta(seconds=-40),
+        ]
+    ).dt.cast_time_unit(time_unit)
+
+    assert_series_equal(durations.dt.round("10s"), expected)
+
+
+def test_round_duration_zero() -> None:
+    """Rounding to the nearest zero should raise a descriptive error."""
+    durations = pl.Series([timedelta(seconds=21), timedelta(seconds=35)])
+
+    with pytest.raises(
+        InvalidOperationError,
+        match="cannot round a Duration to a non-positive Duration",
+    ):
+        durations.dt.round("0s")
+
+
+@pytest.mark.parametrize("every", ["mo", "q", "y"])
+def test_round_duration_non_constant(every: str) -> None:
+    # Duration series can't be rounded to non-constant durations
+    durations = pl.Series([timedelta(seconds=21)])
+
+    with pytest.raises(InvalidOperationError):
+        durations.dt.round("1" + every)
+
+
+@pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
+def test_round_duration_half(time_unit: TimeUnit) -> None:
+    # Values at halfway points should round away from zero
+    durations = pl.Series(
+        [timedelta(minutes=-30), timedelta(minutes=30), timedelta(minutes=90)]
+    ).dt.cast_time_unit(time_unit)
+
+    expected = pl.Series(
+        [timedelta(hours=-1), timedelta(hours=1), timedelta(hours=2)]
+    ).dt.cast_time_unit(time_unit)
+
+    assert_series_equal(durations.dt.round("1h"), expected)
+
+
+def test_round_expr() -> None:
+    df = pl.DataFrame(
+        {
+            "date": [
+                datetime(2022, 11, 14),
+                datetime(2023, 10, 11),
+                datetime(2022, 3, 20, 5, 7, 18),
+                datetime(2022, 4, 3, 13, 30, 32),
+                None,
+                datetime(2022, 12, 1),
+            ],
+            "every": ["1y", "1mo", "1m", "1m", "1mo", None],
+        }
+    )
+
+    output = df.select(
+        all_expr=pl.col("date").dt.round(every=pl.col("every")),
+        date_lit=pl.lit(datetime(2022, 4, 3, 13, 30, 32)).dt.round(
+            every=pl.col("every")
+        ),
+        every_lit=pl.col("date").dt.round("1d"),
+    )
+
+    expected = pl.DataFrame(
+        {
+            "all_expr": [
+                datetime(2023, 1, 1),
+                datetime(2023, 10, 1),
+                datetime(2022, 3, 20, 5, 7),
+                datetime(2022, 4, 3, 13, 31),
+                None,
+                None,
+            ],
+            "date_lit": [
+                datetime(2022, 1, 1),
+                datetime(2022, 4, 1),
+                datetime(2022, 4, 3, 13, 31),
+                datetime(2022, 4, 3, 13, 31),
+                datetime(2022, 4, 1),
+                None,
+            ],
+            "every_lit": [
+                datetime(2022, 11, 14),
+                datetime(2023, 10, 11),
+                datetime(2022, 3, 20),
+                datetime(2022, 4, 4),
+                None,
+                datetime(2022, 12, 1),
+            ],
+        }
+    )
+
+    assert_frame_equal(output, expected)
+
+    all_lit = pl.select(all_lit=pl.lit(datetime(2022, 3, 20, 5, 7)).dt.round("1h"))
+    assert all_lit.to_dict(as_series=False) == {"all_lit": [datetime(2022, 3, 20, 5)]}
+
+
+def test_round_negative() -> None:
+    """Test that rounding to a negative duration gives a helpful error message."""
+    with pytest.raises(
+        InvalidOperationError, match="cannot round a Date to a non-positive Duration"
+    ):
+        pl.Series([date(1895, 5, 7)]).dt.round("-1m")
+
+    with pytest.raises(
+        InvalidOperationError,
+        match="cannot round a Datetime to a non-positive Duration",
+    ):
+        pl.Series([datetime(1895, 5, 7)]).dt.round("-1m")
+
+    with pytest.raises(
+        InvalidOperationError,
+        match="cannot round a Duration to a non-positive Duration",
+    ):
+        pl.Series([timedelta(days=1)]).dt.round("-1m")
