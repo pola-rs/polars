@@ -36,6 +36,18 @@ pub(super) fn subview(s: &str, v: View, start: usize, end: usize) -> View {
     }
 }
 
+pub(super) fn subview_from_str(s: &str, subs: &str, v: View) -> View {
+    let s_start = s.as_ptr() as usize;
+    let s_end = s_start + s.len();
+    let subs_start = subs.as_ptr() as usize;
+    let subs_end = subs_start + subs.len();
+    debug_assert!(subs_start >= s_start);
+    debug_assert!(subs_end <= s_end);
+    let start = subs_start - s_start;
+    let end = subs_end - s_start;
+    subview(s, v, start, end)
+}
+
 pub(super) fn iter_with_view_and_buffers(
     ca: &StringChunked,
 ) -> impl Iterator<Item = (Option<&str>, (&View, &[Buffer<u8>]))> {

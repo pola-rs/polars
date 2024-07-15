@@ -648,9 +648,9 @@ pub(super) fn split(s: &[Series], inclusive: bool) -> PolarsResult<Series> {
     let by = s[1].str()?;
 
     if inclusive {
-        Ok(ca.split_inclusive(by).into_series())
+        Ok(ca.split_inclusive(by)?.into_series())
     } else {
-        Ok(ca.split(by).into_series())
+        Ok(ca.split(by)?.into_series())
     }
 }
 
