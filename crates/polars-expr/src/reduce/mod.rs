@@ -9,7 +9,7 @@ pub use convert::{can_convert_into_reduction, into_reduction};
 use polars_core::prelude::*;
 
 #[allow(dead_code)]
-pub trait Reduction: Any {
+pub trait Reduction: Any + Send {
     fn init(&mut self);
 
     fn update(&mut self, batch: &Series) -> PolarsResult<()>;
