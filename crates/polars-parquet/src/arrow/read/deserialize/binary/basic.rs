@@ -75,7 +75,7 @@ impl<'a, O: Offset> StateTranslation<'a, BinaryDecoder<O>> for BinaryStateTransl
                 values,
                 page_values,
             )?,
-            (T::Dictionary(page), None) => {
+            (T::Dictionary(page, _), None) => {
                 // Already done on the dict.
                 validate_utf8 = false;
                 let page_dict = &page.dict;
@@ -90,7 +90,7 @@ impl<'a, O: Offset> StateTranslation<'a, BinaryDecoder<O>> for BinaryStateTransl
                 }
                 page.values.get_result()?;
             },
-            (T::Dictionary(page), Some(page_validity)) => {
+            (T::Dictionary(page, _), Some(page_validity)) => {
                 // Already done on the dict.
                 validate_utf8 = false;
                 let page_dict = &page.dict;

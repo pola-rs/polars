@@ -2,7 +2,11 @@ use crate::parquet::schema::types::PhysicalType;
 
 /// A physical native representation of a Parquet fixed-sized type.
 pub trait NativeType: std::fmt::Debug + Send + Sync + 'static + Copy + Clone {
-    type Bytes: AsRef<[u8]> + for<'a> TryFrom<&'a [u8], Error = std::array::TryFromSliceError>;
+    type Bytes: AsRef<[u8]>
+        + for<'a> TryFrom<&'a [u8], Error = std::array::TryFromSliceError>
+        + std::fmt::Debug
+        + Clone
+        + Copy;
 
     fn to_le_bytes(&self) -> Self::Bytes;
 
@@ -131,6 +135,17 @@ pub fn ord_binary<'a>(a: &'a [u8], b: &'a [u8]) -> std::cmp::Ordering {
 
 #[inline]
 pub fn decode<T: NativeType>(chunk: &[u8]) -> T {
-    let chunk: <T as NativeType>::Bytes = chunk.try_into().unwrap();
+    assert!(chunk.len() >= std::mem::size_of::<<T as NativeType>::Bytes>());
+    unsafe { decode_unchecked(chunk) }
+}
+
+/// Convert a Little-Endian byte-slice into the `T`
+///
+/// # Safety
+///
+/// This is safe if the length is properly checked.
+#[inline]
+pub unsafe fn decode_unchecked<T: NativeType>(chunk: &[u8]) -> T {
+    let chunk: <T as NativeType>::Bytes = unsafe { chunk.try_into().unwrap_unchecked() };
     T::from_le_bytes(chunk)
 }
