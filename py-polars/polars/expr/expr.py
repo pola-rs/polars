@@ -303,16 +303,15 @@ class Expr:
             # np.divide(pl.col("a"), pl.col("a")); we'll be creating a struct
             # below, and structs can't have duplicate names.
             first_renamable_expr = True
-            new_exprs = []
+            actual_exprs = []
             for inp, is_actual_expr, index in exprs:
                 if is_actual_expr:
                     if first_renamable_expr:
                         first_renamable_expr = False
                     else:
                         inp = inp.alias(f"argument_{index}")
-                new_exprs.append((inp, is_actual_expr, index))
-            exprs = new_exprs
-            root_expr = F.struct(expr[0] for expr in exprs if is_actual_expr)
+                    actual_exprs.append(inp)
+            root_expr = F.struct(actual_exprs)
 
         def function(s: Series) -> Series:  # pragma: no cover
             args = []
