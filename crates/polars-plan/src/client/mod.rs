@@ -22,6 +22,7 @@ pub fn assert_cloud_eligible(dsl: &DslPlan) -> PolarsResult<()> {
                 },
                 _ => {},
             },
+            DslPlan::PythonScan { .. } => return ineligible_error("contains Python scan"),
             DslPlan::Scan {
                 paths, scan_type, ..
             } => {
