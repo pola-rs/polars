@@ -479,6 +479,9 @@ pub fn to_alp_impl(
                 }
                 if turn_off_coalesce {
                     let options = Arc::make_mut(&mut options);
+                    if matches!(options.args.coalesce, JoinCoalesce::CoalesceColumns) {
+                        polars_warn!("Coalescing join requested but not all join keys are column references, turning off key coalescing");
+                    }
                     options.args.coalesce = JoinCoalesce::KeepColumns;
                 }
 
@@ -523,6 +526,14 @@ pub fn to_alp_impl(
             convert.fill_scratch(&left_on, expr_arena);
             convert.fill_scratch(&right_on, expr_arena);
 
+            // Every expression must be elementwise so that we are
+            // guaranteed the keys for a join are all the same length.
+            let all_elementwise =
+                |aexprs: &[ExprIR]| all_streamable(aexprs, &*expr_arena, Context::Default);
+            polars_ensure!(
+                all_elementwise(&left_on) && all_elementwise(&right_on),
+                InvalidOperation: "All join key expressions must be elementwise."
+            );
             let lp = IR::Join {
                 input_left,
                 input_right,
