@@ -480,6 +480,13 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
     }
 
     #[inline]
+    pub fn freeze_with_dtype(self, dtype: ArrowDataType) -> BinaryViewArrayGeneric<T> {
+        let mut arr: BinaryViewArrayGeneric<T> = self.into();
+        arr.data_type = dtype;
+        arr
+    }
+
+    #[inline]
     pub fn value(&self, i: usize) -> &T {
         assert!(i < self.len());
         unsafe { self.value_unchecked(i) }
