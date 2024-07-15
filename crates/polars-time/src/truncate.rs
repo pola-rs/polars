@@ -133,7 +133,7 @@ impl PolarsTruncate for DurationChunked {
             if let Some(every) = every.get(0) {
                 let every_parsed = Duration::parse(every);
                 polars_ensure!(!every_parsed.negative & !every_parsed.is_zero(), InvalidOperation: "cannot truncate a Duration to a non-positive Duration");
-                polars_ensure!(every_parsed.is_constant_duration(None), InvalidOperation:"cannot truncate a Duration to a non-constant duration (i.e. one that involves weeks / months)");
+                polars_ensure!(every_parsed.is_constant_duration(None), InvalidOperation:"cannot truncate a Duration to a non-constant Duration (i.e. one that involves weeks / months)");
                 let every = match self.time_unit() {
                     TimeUnit::Milliseconds => every_parsed.duration_ms(),
                     TimeUnit::Microseconds => every_parsed.duration_us(),
@@ -159,7 +159,7 @@ impl PolarsTruncate for DurationChunked {
                 let every_parsed =
                     *duration_cache.get_or_insert_with(every, |every| Duration::parse(every));
                 polars_ensure!(!every_parsed.negative & !every_parsed.is_zero(), InvalidOperation: "cannot truncate a Duration to a non-positive Duration");
-                polars_ensure!(every_parsed.is_constant_duration(None), InvalidOperation:"cannot truncate a Duration to a non-constant duration (i.e. one that involves weeks / months)");
+                polars_ensure!(every_parsed.is_constant_duration(None), InvalidOperation:"cannot truncate a Duration to a non-constant Duration (i.e. one that involves weeks / months)");
                 let every = match self.time_unit() {
                     TimeUnit::Milliseconds => every_parsed.duration_ms(),
                     TimeUnit::Microseconds => every_parsed.duration_us(),
