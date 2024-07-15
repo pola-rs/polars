@@ -716,6 +716,7 @@ fn expand_scan_paths(
     scan_type: &mut FileScan,
     file_options: &mut FileScanOptions,
 ) -> PolarsResult<Arc<[PathBuf]>> {
+    #[allow(unused_mut)]
     let mut lock = paths.lock().unwrap();
 
     // Return if paths are already expanded
@@ -723,27 +724,32 @@ fn expand_scan_paths(
         return Ok(lock.0.clone());
     }
 
-    let paths_expanded = match scan_type {
-        #[cfg(feature = "parquet")]
-        FileScan::Parquet {
-            ref cloud_options, ..
-        } => expand_scan_paths_with_hive_update(&lock.0, file_options, cloud_options)?,
-        #[cfg(feature = "ipc")]
-        FileScan::Ipc {
-            ref cloud_options, ..
-        } => expand_scan_paths_with_hive_update(&lock.0, file_options, cloud_options)?,
-        #[cfg(feature = "csv")]
-        FileScan::Csv {
-            ref cloud_options, ..
-        } => expand_paths(&lock.0, file_options.glob, cloud_options.as_ref())?,
-        #[cfg(feature = "json")]
-        FileScan::NDJson { .. } => expand_paths(&lock.0, file_options.glob, None)?,
-        FileScan::Anonymous { .. } => lock.0.clone(), // Anonymous scans are already expanded.
-    };
+    {
+        let paths_expanded = match scan_type {
+            #[cfg(feature = "parquet")]
+            FileScan::Parquet {
+                ref cloud_options, ..
+            } => expand_scan_paths_with_hive_update(&lock.0, file_options, cloud_options)?,
+            #[cfg(feature = "ipc")]
+            FileScan::Ipc {
+                ref cloud_options, ..
+            } => expand_scan_paths_with_hive_update(&lock.0, file_options, cloud_options)?,
+            #[cfg(feature = "csv")]
+            FileScan::Csv {
+                ref cloud_options, ..
+            } => expand_paths(&lock.0, file_options.glob, cloud_options.as_ref())?,
+            #[cfg(feature = "json")]
+            FileScan::NDJson { .. } => expand_paths(&lock.0, file_options.glob, None)?,
+            FileScan::Anonymous { .. } => unreachable!(), // Invariant: Anonymous scans are already expanded.
+        };
 
-    *lock = (paths_expanded, true);
+        #[allow(unreachable_code)]
+        {
+            *lock = (paths_expanded, true);
 
-    Ok(lock.0.clone())
+            Ok(lock.0.clone())
+        }
+    }
 }
 
 /// Expand scan paths and update the Hive partition information of `file_options`.
