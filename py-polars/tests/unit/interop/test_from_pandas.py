@@ -15,6 +15,13 @@ if TYPE_CHECKING:
     from polars._typing import PolarsDataType
 
 
+def index_not_silently_excluded() -> None:
+    ddict = {"a": [1, 2, 3], "b": [4, 5, 6]}
+    df = pd.DataFrame(ddict, index=pd.Index([7, 8, 9], name="a"))
+    with pytest.raises(ValueError, match="indices and column names must not overlap"):
+        pl.from_pandas(df, include_index=True)
+
+
 def test_from_pandas() -> None:
     df = pd.DataFrame(
         {
@@ -174,13 +181,19 @@ def test_from_pandas_include_indexes() -> None:
 
 def test_duplicate_cols_diff_types() -> None:
     df = pd.DataFrame([[1, 2, 3, 4], [5, 6, 7, 8]], columns=["0", 0, "1", 1])
-    with pytest.raises(ValueError, match="Polars dataframes must have unique string"):
+    with pytest.raises(
+        ValueError,
+        match="Pandas dataframe contains non-unique indices and/or column names",
+    ):
         pl.from_pandas(df)
 
 
 def test_from_pandas_duplicated_columns() -> None:
     df = pd.DataFrame([[1, 2, 3, 4], [5, 6, 7, 8]], columns=["a", "b", "c", "b"])
-    with pytest.raises(ValueError, match="Polars dataframes must have unique string"):
+    with pytest.raises(
+        ValueError,
+        match="Pandas dataframe contains non-unique indices and/or column names",
+    ):
         pl.from_pandas(df)
 
 
