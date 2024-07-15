@@ -292,34 +292,34 @@ class Expr:
         is_custom_ufunc = getattr(ufunc, "signature") is not None  # noqa: B009
         num_expr = sum(isinstance(inp, Expr) for inp in inputs)
         exprs = [
-            (inp, Expr, i) if isinstance(inp, Expr) else (inp, None, i)
+            (inp, True, i) if isinstance(inp, Expr) else (inp, False, i)
             for i, inp in enumerate(inputs)
         ]
 
         if num_expr == 1:
-            root_expr = next(expr[0] for expr in exprs if expr[1] == Expr)
+            root_expr = next(expr[0] for expr in exprs if expr[1])
         else:
             # We rename all but the first expression in case someone did e.g.
             # np.divide(pl.col("a"), pl.col("a")); we'll be creating a struct
             # below, and structs can't have duplicate names.
             first_renamable_expr = True
             new_exprs = []
-            for inp, inp_type, index in exprs:
-                if inp_type is Expr:
+            for inp, is_actual_expr, index in exprs:
+                if is_actual_expr:
                     if first_renamable_expr:
                         first_renamable_expr = False
                     else:
                         inp = inp.alias(f"argument_{index}")
-                new_exprs.append((inp, inp_type, index))
+                new_exprs.append((inp, is_actual_expr, index))
             exprs = new_exprs
-            root_expr = F.struct(expr[0] for expr in exprs if expr[1] == Expr)
+            root_expr = F.struct(expr[0] for expr in exprs if is_actual_expr)
 
         def function(s: Series) -> Series:  # pragma: no cover
             args = []
             for i, expr in enumerate(exprs):
-                if expr[1] == Expr and num_expr > 1:
+                if expr[1] and num_expr > 1:
                     args.append(s.struct[i])
-                elif expr[1] == Expr:
+                elif expr[1]:
                     args.append(s)
                 else:
                     args.append(expr[0])
