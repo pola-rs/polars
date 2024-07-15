@@ -163,7 +163,7 @@ pub fn to_alp_impl(
 
             let hive_parts = if hive_parts.is_some() {
                 hive_parts
-            } else if file_options.hive_options.enabled.unwrap()
+            } else if file_options.hive_options.enabled.unwrap_or(false)
                 && resolved_file_info.reader_schema.is_some()
             {
                 #[allow(unused_assignments)]
@@ -746,6 +746,7 @@ fn expand_scan_paths(
     Ok(lock.0.clone())
 }
 
+/// Expand scan paths and update the Hive partition information of `file_options`.
 #[cfg(any(feature = "ipc", feature = "parquet"))]
 fn expand_scan_paths_with_hive_update(
     paths: &[PathBuf],
