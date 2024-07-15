@@ -25,23 +25,27 @@ fn can_pushdown_slice_past_projections(exprs: &[ExprIR], arena: &Arena<AExpr>) -
     for expr_ir in exprs.iter() {
         // `select(c = Literal([1, 2, 3])).slice(0, 0)` must block slice pushdown,
         // because `c` projects to a height independent from the input height. We check
-        // this by observing that `c` does not have any columns in its input notes.
+        // this by observing that `c` does not have any columns in its input nodes.
         //
         // TODO: Simply checking that a column node is present does not handle e.g.:
         // `select(c = Literal([1, 2, 3]).is_in(col(a)))`, for functions like `is_in`,
         // `str.contains`, `str.contains_many` etc. - observe a column node is present
         // but the output height is not dependent on it.
-        let mut has_column = false;
-        let mut literals_all_scalar = true;
-        let is_elementwise = arena.iter(expr_ir.node()).all(|(_node, ae)| {
-            has_column |= matches!(ae, AExpr::Column(_));
-            literals_all_scalar &= if let AExpr::Literal(v) = ae {
-                v.projects_as_scalar()
-            } else {
-                true
-            };
-            single_aexpr_is_elementwise(ae)
-        });
+        let is_elementwise = is_streamable(expr_ir.node(), arena, Context::Default);
+        let (has_column, literals_all_scalar) = arena.iter(expr_ir.node()).fold(
+            (false, true),
+            |(has_column, lit_scalar), (_node, ae)| {
+                (
+                    has_column | matches!(ae, AExpr::Column(_)),
+                    lit_scalar
+                        & if let AExpr::Literal(v) = ae {
+                            v.projects_as_scalar()
+                        } else {
+                            true
+                        },
+                )
+            },
+        );
 
         // If there is no column then all literals must be scalar
         if !is_elementwise || !(has_column || literals_all_scalar) {
