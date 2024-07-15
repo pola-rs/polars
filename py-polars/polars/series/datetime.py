@@ -1644,10 +1644,11 @@ class DateTimeNameSpace:
 
     def truncate(self, every: str | dt.timedelta | IntoExprColumn) -> Series:
         """
-        Divide the date/ datetime range into buckets.
+        Divide the dates, datetimes, or durations into buckets.
 
-        Each date/datetime is mapped to the start of its bucket using the corresponding
-        local datetime. Note that weekly buckets start on Monday.
+        For dates or datetimes, each date/datetime is mapped to the start of its bucket
+        using the corresponding local datetime.
+        Note that weekly buckets start on Monday.
         Ambiguous results are localised using the DST offset of the original timestamp -
         for example, truncating `'2022-11-06 01:30:00 CST'` by `'1h'` results in
         `'2022-11-06 01:00:00 CST'`, whereas truncating `'2022-11-06 01:30:00 CDT'` by
@@ -1682,6 +1683,10 @@ class DateTimeNameSpace:
         By "calendar day", we mean the corresponding time on the next day (which may
         not be 24 hours, due to daylight savings). Similarly for "calendar week",
         "calendar month", "calendar quarter", and "calendar year".
+
+        Durations may not be truncated to a period length `every` containing calendar
+        days, weeks, months, quarters, or years, as these are not constant time
+        intervals.
 
         Returns
         -------
@@ -1758,17 +1763,17 @@ class DateTimeNameSpace:
     @unstable()
     def round(self, every: str | dt.timedelta | IntoExprColumn) -> Series:
         """
-        Divide the date/ datetime range into buckets.
+        Divide the dates, datetimes, or durations into buckets.
 
         .. warning::
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
 
-        Each date/datetime in the first half of the interval is mapped to the start of
-        its bucket.
-        Each date/datetime in the second half of the interval is mapped to the end of
-        its bucket.
-        Ambiguous results are localized using the DST offset of the original timestamp -
+        Each date/datetime/duration in the first half of the interval
+        is mapped to the start of its bucket.
+        Each date/datetime/duration in the second half of the interval
+        is mapped to the end of its bucket.
+        Ambiguous results are localised using the DST offset of the original timestamp -
         for example, rounding `'2022-11-06 01:20:00 CST'` by `'1h'` results in
         `'2022-11-06 01:00:00 CST'`, whereas rounding `'2022-11-06 01:20:00 CDT'` by
         `'1h'` results in `'2022-11-06 01:00:00 CDT'`.
@@ -1807,6 +1812,10 @@ class DateTimeNameSpace:
         By "calendar day", we mean the corresponding time on the next day (which may
         not be 24 hours, due to daylight savings). Similarly for "calendar week",
         "calendar month", "calendar quarter", and "calendar year".
+
+        Durations may not be rounded to a period length `every` containing calendar
+        days, weeks, months, quarters, or years, as these are not constant time
+        intervals.
 
         Examples
         --------

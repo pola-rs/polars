@@ -21,9 +21,7 @@ impl PolarsTruncate for DatetimeChunked {
         if every.len() == 1 {
             if let Some(every) = every.get(0) {
                 let every_parsed = Duration::parse(every);
-                if every_parsed.negative {
-                    polars_bail!(ComputeError: "cannot truncate a Datetime to a negative duration")
-                }
+                polars_ensure!(!every_parsed.negative & !every_parsed.is_zero(), InvalidOperation: "cannot truncate a Datetime to a non-positive duration");
                 if (time_zone.is_none() || time_zone.as_deref() == Some("UTC"))
                     && (every_parsed.months() == 0 && every_parsed.weeks() == 0)
                 {
@@ -75,14 +73,11 @@ impl PolarsTruncate for DatetimeChunked {
             opt_every,
         ) {
             (Some(timestamp), Some(every)) => {
-                let every =
+                let every_parsed =
                     *duration_cache.get_or_insert_with(every, |every| Duration::parse(every));
+                polars_ensure!(!every_parsed.negative & !every_parsed.is_zero(), InvalidOperation: "cannot truncate a Datetime to a non-positive duration");
 
-                if every.negative {
-                    polars_bail!(ComputeError: "cannot truncate a Datetime to a negative duration")
-                }
-
-                let w = Window::new(every, every, offset);
+                let w = Window::new(every_parsed, every_parsed, offset);
                 func(&w, timestamp, tz).map(Some)
             },
             _ => Ok(None),
@@ -97,11 +92,9 @@ impl PolarsTruncate for DateChunked {
         let out = match every.len() {
             1 => {
                 if let Some(every) = every.get(0) {
-                    let every = Duration::parse(every);
-                    if every.negative {
-                        polars_bail!(ComputeError: "cannot truncate a Date to a negative duration")
-                    }
-                    let w = Window::new(every, every, offset);
+                    let every_parsed = Duration::parse(every);
+                    polars_ensure!(!every_parsed.negative & !every_parsed.is_zero(), InvalidOperation: "cannot truncate a Date to a non-positive duration");
+                    let w = Window::new(every_parsed, every_parsed, offset);
                     self.try_apply_nonnull_values_generic(|t| {
                         Ok((w.truncate_ms(MILLISECONDS_IN_DAY * t as i64, None)?
                             / MILLISECONDS_IN_DAY) as i32)
@@ -115,14 +108,11 @@ impl PolarsTruncate for DateChunked {
                 let mut duration_cache = FastFixedCache::new((every.len() as f64).sqrt() as usize);
                 match (opt_t, opt_every) {
                     (Some(t), Some(every)) => {
-                        let every = *duration_cache
+                        let every_parsed = *duration_cache
                             .get_or_insert_with(every, |every| Duration::parse(every));
+                        polars_ensure!(!every_parsed.negative & !every_parsed.is_zero(), InvalidOperation: "cannot truncate a Date to a non-positive duration");
 
-                        if every.negative {
-                            polars_bail!(ComputeError: "cannot truncate a Date to a negative duration")
-                        }
-
-                        let w = Window::new(every, every, offset);
+                        let w = Window::new(every_parsed, every_parsed, offset);
                         Ok(Some(
                             (w.truncate_ms(MILLISECONDS_IN_DAY * t as i64, None)?
                                 / MILLISECONDS_IN_DAY) as i32,
@@ -133,5 +123,52 @@ impl PolarsTruncate for DateChunked {
             }),
         };
         Ok(out?.into_date())
+    }
+}
+
+#[cfg(feature = "dtype-duration")]
+impl PolarsTruncate for DurationChunked {
+    fn truncate(&self, _tz: Option<&Tz>, every: &StringChunked) -> PolarsResult<Self> {
+        if every.len() == 1 {
+            if let Some(every) = every.get(0) {
+                let every_parsed = Duration::parse(every);
+                polars_ensure!(!every_parsed.negative & !every_parsed.is_zero(), InvalidOperation: "cannot truncate a Duration to a non-positive duration");
+                polars_ensure!(every_parsed.is_constant_duration(None), InvalidOperation:"cannot truncate a Duration to a non-constant duration (i.e. one that involves weeks / months)");
+                let every = match self.time_unit() {
+                    TimeUnit::Milliseconds => every_parsed.duration_ms(),
+                    TimeUnit::Microseconds => every_parsed.duration_us(),
+                    TimeUnit::Nanoseconds => every_parsed.duration_ns(),
+                };
+                return Ok(self
+                    .apply_values(|t| t - t % every)
+                    .into_duration(self.time_unit()));
+            } else {
+                return Ok(Int64Chunked::full_null(self.name(), self.len())
+                    .into_duration(self.time_unit()));
+            }
+        }
+
+        // A sqrt(n) cache is not too small, not too large.
+        let mut duration_cache = FastFixedCache::new((every.len() as f64).sqrt() as usize);
+
+        let out = broadcast_try_binary_elementwise(self, every, |opt_timestamp, opt_every| match (
+            opt_timestamp,
+            opt_every,
+        ) {
+            (Some(t), Some(every)) => {
+                let every_parsed =
+                    *duration_cache.get_or_insert_with(every, |every| Duration::parse(every));
+                polars_ensure!(!every_parsed.negative & !every_parsed.is_zero(), InvalidOperation: "cannot truncate a Duration to a non-positive duration");
+                polars_ensure!(every_parsed.is_constant_duration(None), InvalidOperation:"cannot truncate a Duration to a non-constant duration (i.e. one that involves weeks / months)");
+                let every = match self.time_unit() {
+                    TimeUnit::Milliseconds => every_parsed.duration_ms(),
+                    TimeUnit::Microseconds => every_parsed.duration_us(),
+                    TimeUnit::Nanoseconds => every_parsed.duration_ns(),
+                };
+                Ok(Some(t - t % every))
+            },
+            _ => Ok(None),
+        });
+        Ok(out?.into_duration(self.time_unit()))
     }
 }
