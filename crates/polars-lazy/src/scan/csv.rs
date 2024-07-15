@@ -5,7 +5,8 @@ use polars_io::cloud::CloudOptions;
 use polars_io::csv::read::{
     infer_file_schema, CommentPrefix, CsvEncoding, CsvParseOptions, CsvReadOptions, NullValues,
 };
-use polars_io::utils::{expand_paths, get_reader_bytes};
+use polars_io::path_utils::expand_paths;
+use polars_io::utils::get_reader_bytes;
 use polars_io::RowIndex;
 
 use crate::prelude::*;

@@ -12,9 +12,10 @@ use super::read_impl::batched::to_batched_owned;
 use super::read_impl::CoreReader;
 use super::{infer_file_schema, BatchedCsvReader, OwnedBatchedCsvReader};
 use crate::mmap::MmapBytesReader;
+use crate::path_utils::resolve_homedir;
 use crate::predicates::PhysicalIoExpr;
 use crate::shared::SerReader;
-use crate::utils::{get_reader_bytes, resolve_homedir};
+use crate::utils::get_reader_bytes;
 
 /// Create a new DataFrame by reading a csv file.
 ///

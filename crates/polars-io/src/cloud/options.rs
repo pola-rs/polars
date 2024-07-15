@@ -37,9 +37,9 @@ use url::Url;
 #[cfg(feature = "file_cache")]
 use crate::file_cache::get_env_file_cache_ttl;
 #[cfg(feature = "aws")]
-use crate::pl_async::with_concurrency_budget;
+use crate::path_utils::resolve_homedir;
 #[cfg(feature = "aws")]
-use crate::utils::resolve_homedir;
+use crate::pl_async::with_concurrency_budget;
 
 #[cfg(feature = "aws")]
 static BUCKET_REGION: Lazy<std::sync::Mutex<FastFixedCache<SmartString, SmartString>>> =

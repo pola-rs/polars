@@ -11,9 +11,8 @@ use super::file_fetcher::{CloudFileFetcher, LocalFileFetcher};
 use crate::cloud::{
     build_object_store, object_path_from_string, CloudLocation, CloudOptions, PolarsObjectStore,
 };
+use crate::path_utils::{ensure_directory_init, is_cloud_url, POLARS_TEMP_DIR_BASE_PATH};
 use crate::pl_async;
-use crate::prelude::{is_cloud_url, POLARS_TEMP_DIR_BASE_PATH};
-use crate::utils::ensure_directory_init;
 
 pub static FILE_CACHE_PREFIX: Lazy<Box<Path>> = Lazy::new(|| {
     let path = POLARS_TEMP_DIR_BASE_PATH

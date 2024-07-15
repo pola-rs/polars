@@ -8,9 +8,9 @@ use hive::{hive_partitions_from_paths, HivePartitions};
 #[cfg(any(feature = "ipc", feature = "parquet"))]
 use polars_io::cloud::CloudOptions;
 #[cfg(any(feature = "csv", feature = "json"))]
-use polars_io::utils::expand_paths;
+use polars_io::path_utils::expand_paths;
 #[cfg(any(feature = "ipc", feature = "parquet"))]
-use polars_io::utils::{expand_paths_hive, expanded_from_single_directory};
+use polars_io::path_utils::{expand_paths_hive, expanded_from_single_directory};
 
 use super::stack_opt::ConversionOptimizer;
 use super::*;
