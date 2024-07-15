@@ -517,7 +517,7 @@ def test_truncate_duration_zero() -> None:
 
     with pytest.raises(
         InvalidOperationError,
-        match="cannot truncate a Duration to a non-positive duration",
+        match="cannot truncate a Duration to a non-positive Duration",
     ):
         durations.dt.truncate("0s")
 
@@ -569,31 +569,31 @@ def test_truncate_negative() -> None:
         }
     )
     with pytest.raises(
-        InvalidOperationError, match="cannot truncate a Date to a non-positive duration"
+        InvalidOperationError, match="cannot truncate a Date to a non-positive Duration"
     ):
         df.select(pl.col("date").dt.truncate("-1m"))
     with pytest.raises(
         InvalidOperationError,
-        match="cannot truncate a Datetime to a non-positive duration",
+        match="cannot truncate a Datetime to a non-positive Duration",
     ):
         df.select(pl.col("datetime").dt.truncate("-1m"))
     with pytest.raises(
         InvalidOperationError,
-        match="cannot truncate a Duration to a non-positive duration",
+        match="cannot truncate a Duration to a non-positive Duration",
     ):
         df.select(pl.col("duration").dt.truncate("-1m"))
     with pytest.raises(
-        InvalidOperationError, match="cannot truncate a Date to a non-positive duration"
+        InvalidOperationError, match="cannot truncate a Date to a non-positive Duration"
     ):
         df.select(pl.col("date").dt.truncate(pl.col("every")))
     with pytest.raises(
         InvalidOperationError,
-        match="cannot truncate a Datetime to a non-positive duration",
+        match="cannot truncate a Datetime to a non-positive Duration",
     ):
         df.select(pl.col("datetime").dt.truncate(pl.col("every")))
     with pytest.raises(
         InvalidOperationError,
-        match="cannot truncate a Duration to a non-positive duration",
+        match="cannot truncate a Duration to a non-positive Duration",
     ):
         df.select(pl.col("duration").dt.truncate(pl.col("every")))
 
@@ -663,7 +663,7 @@ def test_round_duration_zero() -> None:
 
     with pytest.raises(
         InvalidOperationError,
-        match="cannot round a Duration to a non-positive duration",
+        match="cannot round a Duration to a non-positive Duration",
     ):
         durations.dt.round("0s")
 
@@ -752,19 +752,19 @@ def test_round_expr() -> None:
 def test_round_negative() -> None:
     """Test that rounding to a negative duration gives a helpful error message."""
     with pytest.raises(
-        InvalidOperationError, match="cannot round a Date to a non-positive duration"
+        InvalidOperationError, match="cannot round a Date to a non-positive Duration"
     ):
         pl.Series([date(1895, 5, 7)]).dt.round("-1m")
 
     with pytest.raises(
         InvalidOperationError,
-        match="cannot round a Datetime to a non-positive duration",
+        match="cannot round a Datetime to a non-positive Duration",
     ):
         pl.Series([datetime(1895, 5, 7)]).dt.round("-1m")
 
     with pytest.raises(
         InvalidOperationError,
-        match="cannot round a Duration to a non-positive duration",
+        match="cannot round a Duration to a non-positive Duration",
     ):
         pl.Series([timedelta(days=1)]).dt.round("-1m")
 
