@@ -1,6 +1,7 @@
 mod dsl;
 
 use polars_core::error::{polars_err, PolarsResult};
+use polars_io::path_utils::is_cloud_url;
 
 use crate::dsl::Expr;
 use crate::plans::{DslFunction, DslPlan, FileScan, FunctionNode};
@@ -22,9 +23,15 @@ pub fn assert_cloud_eligible(dsl: &DslPlan) -> PolarsResult<()> {
                 _ => {},
             },
             DslPlan::Scan {
-                scan_type: FileScan::Anonymous { .. },
-                ..
-            } => return ineligible_error("contains anonymous scan"),
+                paths, scan_type, ..
+            } => {
+                if matches!(scan_type, FileScan::Anonymous { .. }) {
+                    return ineligible_error("contains anonymous scan");
+                }
+                if paths.lock().unwrap().0.iter().any(|p| !is_cloud_url(p)) {
+                    return ineligible_error("contains scan of local file system");
+                }
+            },
             DslPlan::GroupBy { apply: Some(_), .. } => {
                 return ineligible_error("contains Python function in group by operation")
             },
