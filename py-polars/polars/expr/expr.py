@@ -291,10 +291,15 @@ class Expr:
         # Numpy/Scipy ufuncs have signature None but numba signatures always exists.
         is_custom_ufunc = getattr(ufunc, "signature") is not None  # noqa: B009
         num_expr = sum(isinstance(inp, Expr) for inp in inputs)
+
+        # We rename any expressions in case someone did e.g.
+        # np.divide(pl.col("a"), pl.col("a")); we'll be creating a struct below,
+        # and structs can't have duplicate names.
         exprs = [
-            (inp, Expr, i) if isinstance(inp, Expr) else (inp, None, i)
+            (inp.alias(f"argument_{i}"), Expr, i) if isinstance(inp, Expr) else (inp, None, i)
             for i, inp in enumerate(inputs)
         ]
+
         if num_expr == 1:
             root_expr = next(expr[0] for expr in exprs if expr[1] == Expr)
         else:
