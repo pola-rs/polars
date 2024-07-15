@@ -77,7 +77,7 @@ def _write(df: pl.DataFrame, file_path: Path) -> None:
             ".ndjson"  : pl.DataFrame.write_ndjson,
         }.get(suffix)
     ) is not None:  # fmt: skip
-        return write_func(df, file_path)  # type: ignore[operator]
+        return write_func(df, file_path)  # type: ignore[operator, no-any-return]
 
     msg = f"Unknown suffix {suffix}"
     raise NotImplementedError(msg)
