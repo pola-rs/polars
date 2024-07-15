@@ -652,3 +652,13 @@ def test_scan_include_file_name(
 
     # Test codepaths that materialize empty DataFrames
     assert_frame_equal(lf.head(0).collect(streaming=streaming), df.head(0))
+
+
+@pytest.mark.write_disk()
+def test_async_path_expansion_bracket_17629(tmp_path: Path) -> None:
+    path = tmp_path / "data.parquet"
+
+    df = pl.DataFrame({"x": 1})
+    df.write_parquet(path)
+
+    assert_frame_equal(pl.scan_parquet(tmp_path / "[d]ata.parquet").collect(), df)
