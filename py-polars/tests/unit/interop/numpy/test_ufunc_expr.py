@@ -120,12 +120,10 @@ def test_ufunc_multiple_expressions() -> None:
     assert_series_equal(expected, result)  # type: ignore[arg-type]
 
 
-def test_repeated_name_ufunc_17472():
-    """
-    If a ufunc takes multiple inputs has a repeating name, this works.
-    """
+def test_repeated_name_ufunc_17472() -> None:
+    """If a ufunc takes multiple inputs has a repeating name, this works."""
     df = pl.DataFrame({"a": [6.0]})
-    result = df.select(np.divide(pl.col("a"), pl.col("a")))
+    result = df.select(np.divide(pl.col("a"), pl.col("a")))  # type: ignore[call-overload]
     expected = pl.DataFrame({"a": [1.0]})
     assert_frame_equal(expected, result)
 
