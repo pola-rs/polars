@@ -219,7 +219,8 @@ impl LazyCsvReader {
     where
         F: Fn(Schema) -> PolarsResult<Schema>,
     {
-        // TODO: This should be done when converting to the IR
+        // TODO: Path expansion should happen when converting to the IR
+        // https://github.com/pola-rs/polars/issues/17634
         let paths = expand_paths(self.paths(), self.glob(), self.cloud_options())?;
 
         let Some(path) = paths.first() else {

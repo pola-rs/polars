@@ -1,4 +1,3 @@
-#[cfg(any(feature = "ipc", feature = "parquet"))]
 use std::path::PathBuf;
 
 use arrow::datatypes::ArrowSchemaRef;
@@ -99,23 +98,7 @@ pub fn to_alp_impl(
             mut file_options,
             mut scan_type,
         } => {
-            let paths = match &scan_type {
-                #[cfg(feature = "parquet")]
-                FileScan::Parquet {
-                    ref cloud_options, ..
-                } => expand_paths_with_hive_update(paths, &mut file_options, cloud_options)?,
-                #[cfg(feature = "ipc")]
-                FileScan::Ipc {
-                    ref cloud_options, ..
-                } => expand_paths_with_hive_update(paths, &mut file_options, cloud_options)?,
-                #[cfg(feature = "csv")]
-                FileScan::Csv {
-                    ref cloud_options, ..
-                } => expand_paths(&paths, file_options.glob, cloud_options.as_ref())?,
-                #[cfg(feature = "json")]
-                FileScan::NDJson { .. } => expand_paths(&paths, file_options.glob, None)?,
-                FileScan::Anonymous { .. } => paths,
-            };
+            let paths = expand_scan_paths(paths, &mut scan_type, &mut file_options)?;
 
             let file_info_read = file_info.read().unwrap();
 
@@ -179,7 +162,7 @@ pub fn to_alp_impl(
 
             let hive_parts = if hive_parts.is_some() {
                 hive_parts
-            } else if file_options.hive_options.enabled.unwrap()
+            } else if file_options.hive_options.enabled.unwrap_or(false)
                 && resolved_file_info.reader_schema.is_some()
             {
                 #[allow(unused_assignments)]
@@ -737,21 +720,65 @@ pub fn to_alp_impl(
     Ok(lp_arena.add(v))
 }
 
+/// Expand scan paths if they were not already expanded.
+#[allow(unused_variables)]
+fn expand_scan_paths(
+    paths: Arc<Mutex<(Arc<[PathBuf]>, bool)>>,
+    scan_type: &mut FileScan,
+    file_options: &mut FileScanOptions,
+) -> PolarsResult<Arc<[PathBuf]>> {
+    #[allow(unused_mut)]
+    let mut lock = paths.lock().unwrap();
+
+    // Return if paths are already expanded
+    if lock.1 {
+        return Ok(lock.0.clone());
+    }
+
+    {
+        let paths_expanded = match scan_type {
+            #[cfg(feature = "parquet")]
+            FileScan::Parquet {
+                ref cloud_options, ..
+            } => expand_scan_paths_with_hive_update(&lock.0, file_options, cloud_options)?,
+            #[cfg(feature = "ipc")]
+            FileScan::Ipc {
+                ref cloud_options, ..
+            } => expand_scan_paths_with_hive_update(&lock.0, file_options, cloud_options)?,
+            #[cfg(feature = "csv")]
+            FileScan::Csv {
+                ref cloud_options, ..
+            } => expand_paths(&lock.0, file_options.glob, cloud_options.as_ref())?,
+            #[cfg(feature = "json")]
+            FileScan::NDJson { .. } => expand_paths(&lock.0, file_options.glob, None)?,
+            FileScan::Anonymous { .. } => unreachable!(), // Invariant: Anonymous scans are already expanded.
+        };
+
+        #[allow(unreachable_code)]
+        {
+            *lock = (paths_expanded, true);
+
+            Ok(lock.0.clone())
+        }
+    }
+}
+
+/// Expand scan paths and update the Hive partition information of `file_options`.
 #[cfg(any(feature = "ipc", feature = "parquet"))]
-fn expand_paths_with_hive_update(
-    paths: Arc<[PathBuf]>,
+fn expand_scan_paths_with_hive_update(
+    paths: &[PathBuf],
     file_options: &mut FileScanOptions,
     cloud_options: &Option<CloudOptions>,
 ) -> PolarsResult<Arc<[PathBuf]>> {
     let hive_enabled = file_options.hive_options.enabled;
     let (expanded_paths, hive_start_idx) = expand_paths_hive(
-        &paths,
+        paths,
         file_options.glob,
         cloud_options.as_ref(),
         hive_enabled.unwrap_or(false),
     )?;
     let inferred_hive_enabled = hive_enabled
-        .unwrap_or_else(|| expanded_from_single_directory(paths.as_ref(), expanded_paths.as_ref()));
+        .unwrap_or_else(|| expanded_from_single_directory(paths, expanded_paths.as_ref()));
 
     file_options.hive_options.enabled = Some(inferred_hive_enabled);
     file_options.hive_options.hive_start_idx = hive_start_idx;
