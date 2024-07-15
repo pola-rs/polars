@@ -120,6 +120,16 @@ def test_ufunc_multiple_expressions() -> None:
     assert_series_equal(expected, result)  # type: ignore[arg-type]
 
 
+def test_repeated_name_ufunc_17472():
+    """
+    If a ufunc takes multiple inputs has a repeating name, this works.
+    """
+    df = pl.DataFrame({"a": [6.0]})
+    result = df.select(np.divide(pl.col("a"), pl.col("a")))
+    expected = pl.Series("a", [1.0])
+    assert_series_equal(expected, np.divide(series1, series2))
+
+
 def test_grouped_ufunc() -> None:
     df = pl.DataFrame({"id": ["a", "a", "b", "b"], "values": [0.1, 0.1, -0.1, -0.1]})
     df.group_by("id").agg(pl.col("values").log1p().sum().pipe(np.expm1))
