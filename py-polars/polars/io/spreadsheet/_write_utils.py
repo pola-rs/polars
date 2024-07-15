@@ -41,8 +41,8 @@ def _cluster(iterable: Iterable[Any], n: int = 2) -> Iterable[Any]:
     return zip(*[iter(iterable)] * n)
 
 
-_XL_DEFAULT_FLOAT_FORMAT_ = "#,##0.000;[Red]-#,##0.000"
-_XL_DEFAULT_INTEGER_FORMAT_ = "#,##0;[Red]-#,##0"
+_XL_DEFAULT_FLOAT_FORMAT_ = "#,##0.000;-#,##0.000"
+_XL_DEFAULT_INTEGER_FORMAT_ = "#,##0;-#,##0"
 _XL_DEFAULT_DTYPE_FORMATS_: dict[PolarsDataType, str] = {
     Datetime: "yyyy-mm-dd hh:mm:ss",
     Date: "yyyy-mm-dd;@",
