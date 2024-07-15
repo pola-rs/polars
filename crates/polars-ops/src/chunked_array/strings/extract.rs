@@ -1,14 +1,13 @@
-use std::iter::zip;
+use std::ops::Deref;
 
 #[cfg(feature = "extract_groups")]
 use arrow::array::{Array, StructArray};
 use arrow::array::{MutablePlString, Utf8ViewArray, ValueSize};
 use polars_core::export::regex::Regex;
-use polars_core::prelude::arity::{
-    binary_elementwise_for_each, try_binary_mut_with_options, try_unary_mut_with_options,
-};
+use polars_core::prelude::arity::{try_binary_mut_with_options, try_unary_mut_with_options};
 use polars_utils::cache::FastFixedCache;
 
+use super::utils::{iter_with_view_and_buffers, subview};
 use super::*;
 
 #[cfg(feature = "extract_groups")]
@@ -23,11 +22,19 @@ fn extract_groups_array(
         .collect::<Vec<_>>();
 
     let mut locs = reg.capture_locations();
-    for opt_v in arr {
+    let buffers = arr.data_buffers().deref();
+    for (opt_v, &view) in arr.iter().zip(arr.views().iter()) {
         if let Some(s) = opt_v {
             if reg.captures_read(&mut locs, s).is_some() {
                 for (i, builder) in builders.iter_mut().enumerate() {
-                    builder.push(locs.get(i + 1).map(|(start, stop)| &s[start..stop]));
+                    match locs.get(i + 1) {
+                        Some((start, end)) => {
+                            builder.push_view(subview(s, view, start, end), buffers);
+                        },
+                        None => {
+                            builder.push_null();
+                        },
+                    }
                 }
                 continue;
             }
@@ -80,10 +87,14 @@ fn extract_group_reg_lit(
     let mut builder = MutablePlString::with_capacity(arr.len());
 
     let mut locs = reg.capture_locations();
-    for opt_v in arr {
+    let buffers = arr.data_buffers().deref();
+    for (opt_v, &view) in arr.iter().zip(arr.views().iter()) {
         if let Some(s) = opt_v {
-            if reg.captures_read(&mut locs, s).is_some() {
-                builder.push(locs.get(group_index).map(|(start, stop)| &s[start..stop]));
+            if let Some((start, end)) = reg
+                .captures_read(&mut locs, s)
+                .and_then(|_| locs.get(group_index))
+            {
+                builder.push_view(subview(s, view, start, end), buffers);
                 continue;
             }
         }
@@ -126,17 +137,20 @@ fn extract_group_binary(
 ) -> PolarsResult<Utf8ViewArray> {
     let mut builder = MutablePlString::with_capacity(arr.len());
 
-    for (opt_s, opt_pat) in zip(arr, pat) {
+    let buffers = arr.data_buffers().deref();
+    for ((opt_s, &view), opt_pat) in arr.iter().zip(arr.views().iter()).zip(pat) {
         match (opt_s, opt_pat) {
             (Some(s), Some(pat)) => {
                 let reg = Regex::new(pat)?;
                 let mut locs = reg.capture_locations();
-                if reg.captures_read(&mut locs, s).is_some() {
-                    builder.push(locs.get(group_index).map(|(start, stop)| &s[start..stop]));
-                    continue;
+                if let Some((start, end)) = reg
+                    .captures_read(&mut locs, s)
+                    .and_then(|_| locs.get(group_index))
+                {
+                    builder.push_view(subview(s, view, start, end), buffers);
+                } else {
+                    builder.push_null();
                 }
-                // Push null if there was no match.
-                builder.push_null()
             },
             _ => builder.push_null(),
         }
@@ -183,10 +197,15 @@ pub(super) fn extract_all(ca: &StringChunked, pat: &str) -> PolarsResult<ListChu
 
     let mut builder = ListStringChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
     for arr in ca.downcast_iter() {
-        for opt_s in arr {
+        let buffers = arr.data_buffers().deref();
+        for (opt_s, &view) in arr.iter().zip(arr.views().iter()) {
             match opt_s {
                 None => builder.append_null(),
-                Some(s) => builder.append_values_iter(reg.find_iter(s).map(|m| m.as_str())),
+                Some(s) => builder.append_views_iter(
+                    reg.find_iter(s)
+                        .map(|m| subview(s, view, m.start(), m.end())),
+                    buffers,
+                ),
             }
         }
     }
@@ -206,12 +225,18 @@ pub(super) fn extract_all_many(
     // A sqrt(n) regex cache is not too small, not too large.
     let mut reg_cache = FastFixedCache::new((ca.len() as f64).sqrt() as usize);
     let mut builder = ListStringChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
-    binary_elementwise_for_each(ca, pat, |opt_s, opt_pat| match (opt_s, opt_pat) {
-        (_, None) | (None, _) => builder.append_null(),
-        (Some(s), Some(pat)) => {
-            let reg = reg_cache.get_or_insert_with(pat, |p| Regex::new(p).unwrap());
-            builder.append_values_iter(reg.find_iter(s).map(|m| m.as_str()));
-        },
-    });
+    for ((opt_s, (&view, buffers)), opt_pat) in iter_with_view_and_buffers(ca).zip(pat) {
+        match (opt_s, opt_pat) {
+            (_, None) | (None, _) => builder.append_null(),
+            (Some(s), Some(pat)) => {
+                let reg = reg_cache.get_or_insert_with(pat, |p| Regex::new(p).unwrap());
+                builder.append_views_iter(
+                    reg.find_iter(s)
+                        .map(|m| subview(s, view, m.start(), m.end())),
+                    buffers,
+                );
+            },
+        }
+    }
     Ok(builder.finish())
 }

@@ -1,7 +1,12 @@
+use std::ops::Deref;
+
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder};
-use arrow::array::Utf8ViewArray;
+use arrow::array::{Utf8ViewArray, View};
+use arrow::buffer::Buffer;
 use polars_core::prelude::*;
 use polars_core::utils::align_chunks_binary;
+
+use super::utils::subview;
 
 fn build_ac(patterns: &StringChunked, ascii_case_insensitive: bool) -> PolarsResult<AhoCorasick> {
     AhoCorasickBuilder::new()
@@ -55,15 +60,22 @@ pub fn replace_all(
     Ok(ca.apply_generic(|opt_val| opt_val.map(|val| ac.replace_all(val, replace_with.as_slice()))))
 }
 
-fn push(val: &str, builder: &mut ListStringChunkedBuilder, ac: &AhoCorasick, overlapping: bool) {
+fn push(
+    val: &str,
+    builder: &mut ListStringChunkedBuilder,
+    ac: &AhoCorasick,
+    overlapping: bool,
+    view: View,
+    buffers: &[Buffer<u8>],
+) {
     if overlapping {
         let iter = ac.find_overlapping_iter(val);
-        let iter = iter.map(|m| &val[m.start()..m.end()]);
-        builder.append_values_iter(iter);
+        let iter = iter.map(|m| subview(val, view, m.start(), m.end()));
+        builder.append_views_iter(iter, buffers);
     } else {
         let iter = ac.find_iter(val);
-        let iter = iter.map(|m| &val[m.start()..m.end()]);
-        builder.append_values_iter(iter);
+        let iter = iter.map(|m| subview(val, view, m.start(), m.end()));
+        builder.append_views_iter(iter, buffers);
     }
 }
 
@@ -80,14 +92,15 @@ pub fn extract_many(
             let (ca, patterns) = align_chunks_binary(ca, patterns);
 
             for (arr, pat_arr) in ca.downcast_iter().zip(patterns.downcast_iter()) {
-                for z in arr.into_iter().zip(pat_arr.into_iter()) {
+                let buffers = arr.data_buffers().deref();
+                for z in arr.iter().zip(arr.views().iter()).zip(pat_arr) {
                     match z {
-                        (None, _) | (_, None) => builder.append_null(),
-                        (Some(val), Some(pat)) => {
+                        ((Some(val), &view), Some(pat)) => {
                             let pat = pat.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
                             let ac = build_ac_arr(pat, ascii_case_insensitive)?;
-                            push(val, &mut builder, &ac, overlapping);
+                            push(val, &mut builder, &ac, overlapping, view, buffers);
                         },
+                        _ => builder.append_null(),
                     }
                 }
             }
@@ -99,9 +112,10 @@ pub fn extract_many(
             let mut builder = ListStringChunkedBuilder::new(ca.name(), ca.len(), ca.len() * 2);
 
             for arr in ca.downcast_iter() {
-                for opt_val in arr.into_iter() {
+                let buffers = arr.data_buffers().deref();
+                for (opt_val, &view) in arr.iter().zip(arr.views().iter()) {
                     if let Some(val) = opt_val {
-                        push(val, &mut builder, &ac, overlapping);
+                        push(val, &mut builder, &ac, overlapping, view, buffers);
                     } else {
                         builder.append_null();
                     }
