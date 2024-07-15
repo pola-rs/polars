@@ -205,8 +205,8 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         Ok(IdxCa::from_vec(self.name(), first))
     }
 
-    fn has_validity(&self) -> bool {
-        self.0.has_validity()
+    fn has_nulls(&self) -> bool {
+        self.0.has_nulls()
     }
 
     fn is_null(&self) -> BooleanChunked {
