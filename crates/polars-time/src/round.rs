@@ -12,6 +12,11 @@ pub trait PolarsRound {
         Self: Sized;
 }
 
+fn simple_round(t: i64, every: i64) -> i64 {
+    let half_away = t.signum() * every / 2;
+    t + half_away - (t + half_away) % every
+}
+
 impl PolarsRound for DatetimeChunked {
     fn round(&self, every: &StringChunked, tz: Option<&Tz>) -> PolarsResult<Self> {
         let time_zone = self.time_zone();
@@ -33,11 +38,7 @@ impl PolarsRound for DatetimeChunked {
                         TimeUnit::Nanoseconds => every_parsed.duration_ns(),
                     };
                     return Ok(self
-                        .apply_values(|t| {
-                            // Round half-way values away from zero
-                            let half_away = t.signum() * every / 2;
-                            t + half_away - (t + half_away) % every
-                        })
+                        .apply_values(|t| simple_round(t, every))
                         .into_datetime(self.time_unit(), time_zone.clone()));
                 } else {
                     let w = Window::new(every_parsed, every_parsed, offset);
@@ -143,11 +144,7 @@ impl PolarsRound for DurationChunked {
                     TimeUnit::Nanoseconds => every_parsed.duration_ns(),
                 };
                 return Ok(self
-                    .apply_values(|t| {
-                        // Round half-way values away from zero
-                        let half_away = t.signum() * every / 2;
-                        t + half_away - (t + half_away) % every
-                    })
+                    .apply_values(|t| simple_round(t, every))
                     .into_duration(self.time_unit()));
             } else {
                 return Ok(Int64Chunked::full_null(self.name(), self.len())
@@ -172,9 +169,7 @@ impl PolarsRound for DurationChunked {
                     TimeUnit::Microseconds => every_parsed.duration_us(),
                     TimeUnit::Nanoseconds => every_parsed.duration_ns(),
                 };
-                // Round half-way values away from zero
-                let half_away = t.signum() * every / 2;
-                Ok(Some(t + half_away - (t + half_away) % every))
+                Ok(Some(simple_round(t, every)))
             },
             _ => Ok(None),
         });

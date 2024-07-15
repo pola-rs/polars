@@ -174,7 +174,7 @@ def test_truncate_duration(time_unit: TimeUnit) -> None:
             timedelta(seconds=30),
             timedelta(seconds=50),
             None,
-            timedelta(seconds=-30),
+            timedelta(seconds=-40),
         ]
     ).dt.cast_time_unit(time_unit)
 
