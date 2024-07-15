@@ -291,18 +291,27 @@ class Expr:
         # Numpy/Scipy ufuncs have signature None but numba signatures always exists.
         is_custom_ufunc = getattr(ufunc, "signature") is not None  # noqa: B009
         num_expr = sum(isinstance(inp, Expr) for inp in inputs)
-
-        # We rename any expressions in case someone did e.g.
-        # np.divide(pl.col("a"), pl.col("a")); we'll be creating a struct below,
-        # and structs can't have duplicate names.
         exprs = [
-            (inp.alias(f"argument_{i}"), Expr, i) if isinstance(inp, Expr) else (inp, None, i)
+            (inp, Expr, i) if isinstance(inp, Expr) else (inp, None, i)
             for i, inp in enumerate(inputs)
         ]
 
         if num_expr == 1:
             root_expr = next(expr[0] for expr in exprs if expr[1] == Expr)
         else:
+            # We rename all but the first expression in case someone did e.g.
+            # np.divide(pl.col("a"), pl.col("a")); we'll be creating a struct
+            # below, and structs can't have duplicate names.
+            first_renamable_expr = True
+            new_exprs = []
+            for inp, inp_type, index in exprs:
+                if inp_type is Expr:
+                    if first_renamable_expr:
+                        first_renamable_expr = False
+                    else:
+                        inp = inp.alias(f"argument_{index}")
+                new_exprs.append((inp, inp_type, index))
+            exprs = new_exprs
             root_expr = F.struct(expr[0] for expr in exprs if expr[1] == Expr)
 
         def function(s: Series) -> Series:  # pragma: no cover
@@ -328,10 +337,8 @@ class Expr:
                 CustomUFuncWarning,
                 stacklevel=find_stacklevel(),
             )
-            return root_expr.map_batches(
-                function, is_elementwise=False
-            ).meta.undo_aliases()
-        return root_expr.map_batches(function, is_elementwise=True).meta.undo_aliases()
+            return root_expr.map_batches(function, is_elementwise=False)
+        return root_expr.map_batches(function, is_elementwise=True)
 
     @classmethod
     def deserialize(

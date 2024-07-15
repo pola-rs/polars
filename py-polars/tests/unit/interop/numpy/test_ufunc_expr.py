@@ -126,8 +126,8 @@ def test_repeated_name_ufunc_17472():
     """
     df = pl.DataFrame({"a": [6.0]})
     result = df.select(np.divide(pl.col("a"), pl.col("a")))
-    expected = pl.Series("a", [1.0])
-    assert_series_equal(expected, np.divide(series1, series2))
+    expected = pl.DataFrame({"a": [1.0]})
+    assert_frame_equal(expected, result)
 
 
 def test_grouped_ufunc() -> None:
