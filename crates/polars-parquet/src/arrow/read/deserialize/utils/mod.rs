@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 
+pub(crate) mod array_chunks;
 pub(crate) mod filter;
 
 use arrow::array::{BinaryArray, MutableBinaryViewArray, View};

@@ -3,6 +3,7 @@ use arrow::match_integer_type;
 use ethnum::I256;
 use polars_error::polars_bail;
 
+use self::primitive::{AsDecoderFunction, IntoDecoderFunction, UnitDecoderFunction};
 use super::*;
 
 /// Converts an iterator of arrays to a trait object returning trait objects
@@ -80,7 +81,7 @@ where
                 field.data_type().clone(),
                 num_rows,
                 chunk_size,
-                |x: i32| x as i8,
+                AsDecoderFunction::<i32, i8>::default(),
             ))
         },
         Primitive(Int16) => {
@@ -92,7 +93,7 @@ where
                 field.data_type().clone(),
                 num_rows,
                 chunk_size,
-                |x: i32| x as i16,
+                AsDecoderFunction::<i32, i16>::default(),
             ))
         },
         Primitive(Int32) => {
@@ -104,7 +105,7 @@ where
                 field.data_type().clone(),
                 num_rows,
                 chunk_size,
-                |x: i32| x,
+                UnitDecoderFunction::<i32>::default(),
             ))
         },
         Primitive(Int64) => {
@@ -116,7 +117,7 @@ where
                 field.data_type().clone(),
                 num_rows,
                 chunk_size,
-                |x: i64| x,
+                UnitDecoderFunction::<i64>::default(),
             ))
         },
         Primitive(UInt8) => {
@@ -128,7 +129,7 @@ where
                 field.data_type().clone(),
                 num_rows,
                 chunk_size,
-                |x: i32| x as u8,
+                AsDecoderFunction::<i32, u8>::default(),
             ))
         },
         Primitive(UInt16) => {
@@ -140,7 +141,7 @@ where
                 field.data_type().clone(),
                 num_rows,
                 chunk_size,
-                |x: i32| x as u16,
+                AsDecoderFunction::<i32, u16>::default(),
             ))
         },
         Primitive(UInt32) => {
@@ -153,7 +154,7 @@ where
                     field.data_type().clone(),
                     num_rows,
                     chunk_size,
-                    |x: i32| x as u32,
+                    AsDecoderFunction::<i32, u32>::default(),
                 )),
                 // some implementations of parquet write arrow's u32 into i64.
                 PhysicalType::Int64 => primitive(primitive::NestedIter::new(
@@ -162,7 +163,7 @@ where
                     field.data_type().clone(),
                     num_rows,
                     chunk_size,
-                    |x: i64| x as u32,
+                    AsDecoderFunction::<i64, u32>::default(),
                 )),
                 other => {
                     polars_bail!(ComputeError:
@@ -180,7 +181,7 @@ where
                 field.data_type().clone(),
                 num_rows,
                 chunk_size,
-                |x: i64| x as u64,
+                AsDecoderFunction::<i64, u64>::default(),
             ))
         },
         Primitive(Float32) => {
@@ -192,7 +193,7 @@ where
                 field.data_type().clone(),
                 num_rows,
                 chunk_size,
-                |x: f32| x,
+                UnitDecoderFunction::<f32>::default(),
             ))
         },
         Primitive(Float64) => {
@@ -204,7 +205,7 @@ where
                 field.data_type().clone(),
                 num_rows,
                 chunk_size,
-                |x: f64| x,
+                UnitDecoderFunction::<f64>::default(),
             ))
         },
         BinaryView | Utf8View => {
@@ -283,7 +284,7 @@ where
                         field.data_type.clone(),
                         num_rows,
                         chunk_size,
-                        |x: i32| x as i128,
+                        IntoDecoderFunction::<i32, i128>::default(),
                     )),
                     PhysicalType::Int64 => primitive(primitive::NestedIter::new(
                         columns.pop().unwrap(),
@@ -291,7 +292,7 @@ where
                         field.data_type.clone(),
                         num_rows,
                         chunk_size,
-                        |x: i64| x as i128,
+                        IntoDecoderFunction::<i64, i128>::default(),
                     )),
                     PhysicalType::FixedLenByteArray(n) if n > 16 => {
                         polars_bail!(
@@ -346,7 +347,7 @@ where
                         field.data_type.clone(),
                         num_rows,
                         chunk_size,
-                        |x: i32| i256(I256::new(x as i128)),
+                        decoder_fn!((x) => <i32, i256> => i256(I256::new(x as i128))),
                     )),
                     PhysicalType::Int64 => primitive(primitive::NestedIter::new(
                         columns.pop().unwrap(),
@@ -354,7 +355,7 @@ where
                         field.data_type.clone(),
                         num_rows,
                         chunk_size,
-                        |x: i64| i256(I256::new(x as i128)),
+                        decoder_fn!((x) => <i64, i256> => i256(I256::new(x as i128))),
                     )),
                     PhysicalType::FixedLenByteArray(n) if n <= 16 => {
                         let iter = fixed_size_binary::NestedIter::new(
@@ -501,7 +502,7 @@ fn dict_read<'a, K: DictionaryKey, I: 'a + PagesIter>(
             data_type,
             num_rows,
             chunk_size,
-            |x: i32| x as u8,
+            AsDecoderFunction::<i32, u8>::default(),
         )),
         UInt16 => primitive(primitive::NestedDictIter::<K, _, _, _, _>::new(
             iter,
@@ -509,7 +510,7 @@ fn dict_read<'a, K: DictionaryKey, I: 'a + PagesIter>(
             data_type,
             num_rows,
             chunk_size,
-            |x: i32| x as u16,
+            AsDecoderFunction::<i32, u16>::default(),
         )),
         UInt32 => primitive(primitive::NestedDictIter::<K, _, _, _, _>::new(
             iter,
@@ -517,7 +518,7 @@ fn dict_read<'a, K: DictionaryKey, I: 'a + PagesIter>(
             data_type,
             num_rows,
             chunk_size,
-            |x: i32| x as u32,
+            AsDecoderFunction::<i32, u32>::default(),
         )),
         Int8 => primitive(primitive::NestedDictIter::<K, _, _, _, _>::new(
             iter,
@@ -525,7 +526,7 @@ fn dict_read<'a, K: DictionaryKey, I: 'a + PagesIter>(
             data_type,
             num_rows,
             chunk_size,
-            |x: i32| x as i8,
+            AsDecoderFunction::<i32, i8>::default(),
         )),
         Int16 => primitive(primitive::NestedDictIter::<K, _, _, _, _>::new(
             iter,
@@ -533,7 +534,7 @@ fn dict_read<'a, K: DictionaryKey, I: 'a + PagesIter>(
             data_type,
             num_rows,
             chunk_size,
-            |x: i32| x as i16,
+            AsDecoderFunction::<i32, i16>::default(),
         )),
         Int32 | Date32 | Time32(_) | Interval(IntervalUnit::YearMonth) => {
             primitive(primitive::NestedDictIter::<K, _, _, _, _>::new(
@@ -542,7 +543,7 @@ fn dict_read<'a, K: DictionaryKey, I: 'a + PagesIter>(
                 data_type,
                 num_rows,
                 chunk_size,
-                |x: i32| x,
+                UnitDecoderFunction::<i32>::default(),
             ))
         },
         Int64 | Date64 | Time64(_) | Duration(_) => {
@@ -552,7 +553,7 @@ fn dict_read<'a, K: DictionaryKey, I: 'a + PagesIter>(
                 data_type,
                 num_rows,
                 chunk_size,
-                |x: i64| x as i32,
+                AsDecoderFunction::<i64, i32>::default(),
             ))
         },
         Float32 => primitive(primitive::NestedDictIter::<K, _, _, _, _>::new(
@@ -561,7 +562,7 @@ fn dict_read<'a, K: DictionaryKey, I: 'a + PagesIter>(
             data_type,
             num_rows,
             chunk_size,
-            |x: f32| x,
+            UnitDecoderFunction::<f32>::default(),
         )),
         Float64 => primitive(primitive::NestedDictIter::<K, _, _, _, _>::new(
             iter,
@@ -569,7 +570,7 @@ fn dict_read<'a, K: DictionaryKey, I: 'a + PagesIter>(
             data_type,
             num_rows,
             chunk_size,
-            |x: f64| x,
+            UnitDecoderFunction::<f64>::default(),
         )),
         LargeUtf8 | LargeBinary => primitive(binary::NestedDictIter::<K, i64, _>::new(
             iter, init, data_type, num_rows, chunk_size,

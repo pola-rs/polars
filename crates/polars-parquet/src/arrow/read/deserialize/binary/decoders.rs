@@ -1,5 +1,5 @@
 use arrow::array::specification::try_check_utf8;
-use arrow::array::{BinaryArray, MutableBinaryValuesArray};
+use arrow::array::{BinaryArray, MutableBinaryValuesArray, View};
 use polars_error::PolarsResult;
 
 use super::super::utils;
@@ -140,7 +140,7 @@ impl<'a> ValuesDictionary<'a> {
 #[derive(Debug)]
 pub(crate) enum BinaryStateTranslation<'a> {
     Unit(BinaryIter<'a>),
-    Dictionary(ValuesDictionary<'a>),
+    Dictionary(ValuesDictionary<'a>, Option<Vec<View>>),
     Delta(Delta<'a>),
     DeltaBytes(DeltaBytes<'a>),
 }
@@ -160,6 +160,7 @@ impl<'a> BinaryStateTranslation<'a> {
                 }
                 Ok(BinaryStateTranslation::Dictionary(
                     ValuesDictionary::try_new(page, dict)?,
+                    None,
                 ))
             },
             (Encoding::Plain, _) => {
@@ -180,7 +181,7 @@ impl<'a> BinaryStateTranslation<'a> {
     pub(crate) fn len_when_not_nullable(&self) -> usize {
         match self {
             Self::Unit(v) => v.len_when_not_nullable(),
-            Self::Dictionary(v) => v.len(),
+            Self::Dictionary(v, _) => v.len(),
             Self::Delta(v) => v.len(),
             Self::DeltaBytes(v) => v.size_hint().0,
         }
@@ -193,7 +194,7 @@ impl<'a> BinaryStateTranslation<'a> {
 
         match self {
             Self::Unit(t) => _ = t.by_ref().nth(n - 1),
-            Self::Dictionary(t) => t.values.skip_in_place(n)?,
+            Self::Dictionary(t, _) => t.values.skip_in_place(n)?,
             Self::Delta(t) => _ = t.by_ref().nth(n - 1),
             Self::DeltaBytes(t) => _ = t.by_ref().nth(n - 1),
         }

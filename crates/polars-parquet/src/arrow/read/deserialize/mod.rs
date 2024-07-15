@@ -1,4 +1,20 @@
 //! APIs to read from Parquet format.
+
+macro_rules! decoder_fn {
+    (($x:ident $(, $field:ident:$ty:ty)* $(,)?) => <$p:ty, $t:ty> => $expr:expr) => {{
+        #[derive(Clone, Copy)]
+        struct DecoderFn($($ty),*);
+        impl crate::arrow::read::deserialize::primitive::DecoderFunction<$p, $t> for DecoderFn {
+            #[inline(always)]
+            fn decode(self, $x: $p) -> $t {
+                let Self($($field),*) = self;
+                $expr
+            }
+        }
+        DecoderFn($($field),*)
+    }};
+}
+
 mod binary;
 mod binview;
 mod boolean;

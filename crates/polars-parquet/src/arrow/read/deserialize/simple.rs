@@ -5,6 +5,7 @@ use arrow::types::{days_ms, i256, NativeType};
 use ethnum::I256;
 use polars_error::{polars_bail, PolarsResult};
 
+use self::primitive::UnitDecoderFunction;
 use super::super::{ArrayIter, PagesIter};
 use super::{binary, boolean, fixed_size_binary, null, primitive};
 use crate::parquet::schema::types::{
@@ -12,6 +13,7 @@ use crate::parquet::schema::types::{
 };
 use crate::parquet::types::int96_to_i64_ns;
 use crate::read::deserialize::binview;
+use crate::read::deserialize::primitive::{AsDecoderFunction, IntoDecoderFunction};
 
 /// Converts an iterator of arrays to a trait object returning trait objects
 #[inline]
@@ -72,46 +74,52 @@ pub fn page_iter_to_arrays<'a, I: PagesIter + 'a>(
             data_type,
             num_rows,
             chunk_size,
-            |x: i32| x as u8,
+            AsDecoderFunction::<i32, u8>::default(),
         ))),
         (PhysicalType::Int32, UInt16) => dyn_iter(iden(primitive::IntegerIter::new(
             pages,
             data_type,
             num_rows,
             chunk_size,
-            |x: i32| x as u16,
+            AsDecoderFunction::<i32, u16>::default(),
         ))),
         (PhysicalType::Int32, UInt32) => dyn_iter(iden(primitive::IntegerIter::new(
             pages,
             data_type,
             num_rows,
             chunk_size,
-            |x: i32| x as u32,
+            AsDecoderFunction::<i32, u32>::default(),
         ))),
         (PhysicalType::Int64, UInt32) => dyn_iter(iden(primitive::IntegerIter::new(
             pages,
             data_type,
             num_rows,
             chunk_size,
-            |x: i64| x as u32,
+            AsDecoderFunction::<i64, u32>::default(),
         ))),
         (PhysicalType::Int32, Int8) => dyn_iter(iden(primitive::IntegerIter::new(
             pages,
             data_type,
             num_rows,
             chunk_size,
-            |x: i32| x as i8,
+            AsDecoderFunction::<i32, i8>::default(),
         ))),
         (PhysicalType::Int32, Int16) => dyn_iter(iden(primitive::IntegerIter::new(
             pages,
             data_type,
             num_rows,
             chunk_size,
-            |x: i32| x as i16,
+            AsDecoderFunction::<i32, i16>::default(),
         ))),
-        (PhysicalType::Int32, Int32 | Date32 | Time32(_)) => dyn_iter(iden(
-            primitive::IntegerIter::new(pages, data_type, num_rows, chunk_size, |x: i32| x),
-        )),
+        (PhysicalType::Int32, Int32 | Date32 | Time32(_)) => {
+            dyn_iter(iden(primitive::IntegerIter::new(
+                pages,
+                data_type,
+                num_rows,
+                chunk_size,
+                UnitDecoderFunction::<i32>::default(),
+            )))
+        },
         (PhysicalType::Int64 | PhysicalType::Int96, Timestamp(time_unit, _)) => {
             let time_unit = *time_unit;
             return timestamp(
@@ -182,14 +190,14 @@ pub fn page_iter_to_arrays<'a, I: PagesIter + 'a>(
             data_type,
             num_rows,
             chunk_size,
-            |x: i32| x as i128,
+            IntoDecoderFunction::<i32, i128>::default(),
         ))),
         (PhysicalType::Int64, Decimal(_, _)) => dyn_iter(iden(primitive::IntegerIter::new(
             pages,
             data_type,
             num_rows,
             chunk_size,
-            |x: i64| x as i128,
+            IntoDecoderFunction::<i64, i128>::default(),
         ))),
         (PhysicalType::FixedLenByteArray(n), Decimal(_, _)) if *n > 16 => {
             polars_bail!(ComputeError:
@@ -227,14 +235,14 @@ pub fn page_iter_to_arrays<'a, I: PagesIter + 'a>(
             data_type,
             num_rows,
             chunk_size,
-            |x: i32| i256(I256::new(x as i128)),
+            decoder_fn!((x) => <i32, i256> => i256(I256::new(x as i128))),
         ))),
         (PhysicalType::Int64, Decimal256(_, _)) => dyn_iter(iden(primitive::IntegerIter::new(
             pages,
             data_type,
             num_rows,
             chunk_size,
-            |x: i64| i256(I256::new(x as i128)),
+            decoder_fn!((x) => <i64, i256> => i256(I256::new(x as i128))),
         ))),
         (PhysicalType::FixedLenByteArray(n), Decimal256(_, _)) if *n <= 16 => {
             let n = *n;
@@ -298,38 +306,44 @@ pub fn page_iter_to_arrays<'a, I: PagesIter + 'a>(
             data_type,
             num_rows,
             chunk_size,
-            |x: i32| x as i64 * 86400000,
+            decoder_fn!((x) => <i32, i64> => i64::from(x) * 86400000),
         ))),
         (PhysicalType::Int64, Date64) => dyn_iter(iden(primitive::IntegerIter::new(
             pages,
             data_type,
             num_rows,
             chunk_size,
-            |x: i64| x,
+            UnitDecoderFunction::<i64>::default(),
         ))),
-        (PhysicalType::Int64, Int64 | Time64(_) | Duration(_)) => dyn_iter(iden(
-            primitive::IntegerIter::new(pages, data_type, num_rows, chunk_size, |x: i64| x),
-        )),
+        (PhysicalType::Int64, Int64 | Time64(_) | Duration(_)) => {
+            dyn_iter(iden(primitive::IntegerIter::new(
+                pages,
+                data_type,
+                num_rows,
+                chunk_size,
+                UnitDecoderFunction::<i64>::default(),
+            )))
+        },
         (PhysicalType::Int64, UInt64) => dyn_iter(iden(primitive::IntegerIter::new(
             pages,
             data_type,
             num_rows,
             chunk_size,
-            |x: i64| x as u64,
+            AsDecoderFunction::<i64, u64>::default(),
         ))),
         (PhysicalType::Float, Float32) => dyn_iter(iden(primitive::Iter::new(
             pages,
             data_type,
             num_rows,
             chunk_size,
-            |x: f32| x,
+            UnitDecoderFunction::<f32>::default(),
         ))),
         (PhysicalType::Double, Float64) => dyn_iter(iden(primitive::Iter::new(
             pages,
             data_type,
             num_rows,
             chunk_size,
-            |x: f64| x,
+            UnitDecoderFunction::<f64>::default(),
         ))),
         // Don't compile this code with `i32` as we don't use this in polars
         (PhysicalType::ByteArray, LargeBinary | LargeUtf8) => {
@@ -439,28 +453,28 @@ fn timestamp<'a, I: PagesIter + 'a>(
                 data_type,
                 num_rows,
                 chunk_size,
-                int96_to_i64_ns,
+                decoder_fn!((x) => <[u32; 3], i64> => int96_to_i64_ns(x)),
             )))),
             TimeUnit::Microsecond => Ok(dyn_iter(iden(primitive::Iter::new(
                 pages,
                 data_type,
                 num_rows,
                 chunk_size,
-                int96_to_i64_us,
+                decoder_fn!((x) => <[u32; 3], i64> => int96_to_i64_us(x)),
             )))),
             TimeUnit::Millisecond => Ok(dyn_iter(iden(primitive::Iter::new(
                 pages,
                 data_type,
                 num_rows,
                 chunk_size,
-                int96_to_i64_ms,
+                decoder_fn!((x) => <[u32; 3], i64> => int96_to_i64_ms(x)),
             )))),
             TimeUnit::Second => Ok(dyn_iter(iden(primitive::Iter::new(
                 pages,
                 data_type,
                 num_rows,
                 chunk_size,
-                int96_to_i64_s,
+                decoder_fn!((x) => <[u32; 3], i64> => int96_to_i64_s(x)),
             )))),
         };
     };
@@ -471,7 +485,13 @@ fn timestamp<'a, I: PagesIter + 'a>(
         );
     }
 
-    let iter = primitive::IntegerIter::new(pages, data_type, num_rows, chunk_size, |x: i64| x);
+    let iter = primitive::IntegerIter::new(
+        pages,
+        data_type,
+        num_rows,
+        chunk_size,
+        UnitDecoderFunction::<i64>::default(),
+    );
     let (factor, is_multiplier) = unify_timestamp_unit(logical_type, time_unit);
     match (factor, is_multiplier) {
         (1, _) => Ok(dyn_iter(iden(iter))),
@@ -501,14 +521,14 @@ fn timestamp_dict<'a, K: DictionaryKey, I: PagesIter + 'a>(
                 ArrowDataType::Timestamp(TimeUnit::Nanosecond, None),
                 num_rows,
                 chunk_size,
-                move |x| int96_to_i64_ns(x) * a,
+                decoder_fn!((x, a: i64) => <[u32; 3], i64> => int96_to_i64_ns(x) * a),
             ))),
             (a, false) => Ok(dyn_iter(primitive::DictIter::<K, _, _, _, _>::new(
                 pages,
                 ArrowDataType::Timestamp(TimeUnit::Nanosecond, None),
                 num_rows,
                 chunk_size,
-                move |x| int96_to_i64_ns(x) / a,
+                decoder_fn!((x, a: i64) => <[u32; 3], i64> => int96_to_i64_ns(x) / a),
             ))),
         };
     };
@@ -520,14 +540,14 @@ fn timestamp_dict<'a, K: DictionaryKey, I: PagesIter + 'a>(
             data_type,
             num_rows,
             chunk_size,
-            move |x: i64| x * a,
+            decoder_fn!((x, a: i64) => <i64, i64> => x * a),
         ))),
         (a, false) => Ok(dyn_iter(primitive::DictIter::<K, _, _, _, _>::new(
             pages,
             data_type,
             num_rows,
             chunk_size,
-            move |x: i64| x / a,
+            decoder_fn!((x, a: i64) => <i64, i64> => x / a),
         ))),
     }
 }
@@ -553,42 +573,42 @@ fn dict_read<'a, K: DictionaryKey, I: PagesIter + 'a>(
             data_type,
             num_rows,
             chunk_size,
-            |x: i32| x as u8,
+            AsDecoderFunction::<i32, u8>::default(),
         )),
         (PhysicalType::Int32, UInt16) => dyn_iter(primitive::DictIter::<K, _, _, _, _>::new(
             iter,
             data_type,
             num_rows,
             chunk_size,
-            |x: i32| x as u16,
+            AsDecoderFunction::<i32, u16>::default(),
         )),
         (PhysicalType::Int32, UInt32) => dyn_iter(primitive::DictIter::<K, _, _, _, _>::new(
             iter,
             data_type,
             num_rows,
             chunk_size,
-            |x: i32| x as u32,
+            AsDecoderFunction::<i32, u32>::default(),
         )),
         (PhysicalType::Int64, UInt64) => dyn_iter(primitive::DictIter::<K, _, _, _, _>::new(
             iter,
             data_type,
             num_rows,
             chunk_size,
-            |x: i64| x as u64,
+            AsDecoderFunction::<i64, u64>::default(),
         )),
         (PhysicalType::Int32, Int8) => dyn_iter(primitive::DictIter::<K, _, _, _, _>::new(
             iter,
             data_type,
             num_rows,
             chunk_size,
-            |x: i32| x as i8,
+            AsDecoderFunction::<i32, i8>::default(),
         )),
         (PhysicalType::Int32, Int16) => dyn_iter(primitive::DictIter::<K, _, _, _, _>::new(
             iter,
             data_type,
             num_rows,
             chunk_size,
-            |x: i32| x as i16,
+            AsDecoderFunction::<i32, i16>::default(),
         )),
         (PhysicalType::Int32, Int32 | Date32 | Time32(_) | Interval(IntervalUnit::YearMonth)) => {
             dyn_iter(primitive::DictIter::<K, _, _, _, _>::new(
@@ -596,7 +616,7 @@ fn dict_read<'a, K: DictionaryKey, I: PagesIter + 'a>(
                 data_type,
                 num_rows,
                 chunk_size,
-                |x: i32| x,
+                UnitDecoderFunction::<i32>::default(),
             ))
         },
 
@@ -619,7 +639,7 @@ fn dict_read<'a, K: DictionaryKey, I: PagesIter + 'a>(
                 data_type,
                 num_rows,
                 chunk_size,
-                |x: i64| x,
+                UnitDecoderFunction::<i64>::default(),
             ))
         },
         (PhysicalType::Float, Float32) => dyn_iter(primitive::DictIter::<K, _, _, _, _>::new(
@@ -627,14 +647,14 @@ fn dict_read<'a, K: DictionaryKey, I: PagesIter + 'a>(
             data_type,
             num_rows,
             chunk_size,
-            |x: f32| x,
+            UnitDecoderFunction::<f32>::default(),
         )),
         (PhysicalType::Double, Float64) => dyn_iter(primitive::DictIter::<K, _, _, _, _>::new(
             iter,
             data_type,
             num_rows,
             chunk_size,
-            |x: f64| x,
+            UnitDecoderFunction::<f64>::default(),
         )),
         (PhysicalType::ByteArray, LargeUtf8 | LargeBinary) => dyn_iter(
             binary::DictIter::<K, i64, _>::new(iter, data_type, num_rows, chunk_size),
