@@ -25,6 +25,9 @@ pub fn assert_cloud_eligible(dsl: &DslPlan) -> PolarsResult<()> {
                 scan_type: FileScan::Anonymous { .. },
                 ..
             } => return ineligible_error("contains anonymous scan"),
+            DslPlan::GroupBy { apply: Some(_), .. } => {
+                return ineligible_error("contains Python function in group by operation")
+            },
             plan => {
                 plan.get_expr(&mut expr_stack);
 
@@ -33,6 +36,9 @@ pub fn assert_cloud_eligible(dsl: &DslPlan) -> PolarsResult<()> {
                         match expr_node {
                             Expr::AnonymousFunction { .. } => {
                                 return ineligible_error("contains anonymous function")
+                            },
+                            Expr::RenameAlias { .. } => {
+                                return ineligible_error("contains custom name remapping")
                             },
                             _ => (),
                         }
