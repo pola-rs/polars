@@ -19,8 +19,7 @@ fn extract_prefix_expansion(url: &str) -> PolarsResult<(String, Option<String>)>
     let mut expansion = String::new();
     let mut last_split_was_wildcard = false;
     for split in splits {
-        let has_star = split.contains('*');
-        if expansion.is_empty() && !has_star {
+        if expansion.is_empty() && memchr::memchr2(b'*', b'[', split.as_bytes()).is_none() {
             // We are still gathering splits in the prefix.
             if !prefix.is_empty() {
                 prefix.push(DELIMITER);
@@ -44,7 +43,7 @@ fn extract_prefix_expansion(url: &str) -> PolarsResult<(String, Option<String>)>
             expansion.push(DELIMITER);
         }
         // Handle '.' inside a split.
-        if split.contains('.') || split.contains('*') {
+        if memchr::memchr2(b'.', b'*', split.as_bytes()).is_some() {
             let processed = split.replace('.', "\\.");
             expansion.push_str(&processed.replace('*', "([^/]*)"));
             continue;
