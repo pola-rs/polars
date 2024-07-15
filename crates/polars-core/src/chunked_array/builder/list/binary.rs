@@ -1,3 +1,8 @@
+use std::ops::Deref;
+
+use arrow::bitmap::utils::ZipValidity;
+use arrow::buffer::Buffer;
+
 use super::*;
 
 pub struct ListStringChunkedBuilder {
@@ -43,17 +48,33 @@ impl ListStringChunkedBuilder {
     }
 
     #[inline]
+    pub fn append_views_iter<I: Iterator<Item = View>>(&mut self, iter: I, buffers: &[Buffer<u8>]) {
+        if iter.size_hint().0 == 0 {
+            self.fast_explode = false;
+        }
+        self.builder
+            .mut_values()
+            .extend_non_null_views(iter, buffers);
+        self.builder.try_push_valid().unwrap();
+    }
+
+    #[inline]
     pub(crate) fn append(&mut self, ca: &StringChunked) {
         if ca.is_empty() {
             self.fast_explode = false;
         }
         for arr in ca.downcast_iter() {
+            let buffers = arr.data_buffers().deref();
+            let views_iter = arr.views().iter().cloned();
             if arr.null_count() == 0 {
                 self.builder
                     .mut_values()
-                    .extend_values(arr.non_null_values_iter());
+                    .extend_non_null_views_trusted_len(views_iter, buffers);
             } else {
-                self.builder.mut_values().extend_trusted_len(arr.iter())
+                self.builder.mut_values().extend_views_trusted_len(
+                    ZipValidity::new_with_validity(views_iter, arr.validity()),
+                    buffers,
+                );
             }
         }
         self.builder.try_push_valid().unwrap();
@@ -130,17 +151,34 @@ impl ListBinaryChunkedBuilder {
         self.builder.try_push_valid().unwrap();
     }
 
+    #[inline]
+    pub fn append_views_iter<I: Iterator<Item = View>>(&mut self, iter: I, buffers: &[Buffer<u8>]) {
+        if iter.size_hint().0 == 0 {
+            self.fast_explode = false;
+        }
+        self.builder
+            .mut_values()
+            .extend_non_null_views(iter, buffers);
+        self.builder.try_push_valid().unwrap();
+    }
+
+    #[inline]
     pub(crate) fn append(&mut self, ca: &BinaryChunked) {
         if ca.is_empty() {
             self.fast_explode = false;
         }
         for arr in ca.downcast_iter() {
+            let buffers = arr.data_buffers().deref();
+            let views_iter = arr.views().iter().cloned();
             if arr.null_count() == 0 {
                 self.builder
                     .mut_values()
-                    .extend_values(arr.non_null_values_iter());
+                    .extend_non_null_views_trusted_len(views_iter, buffers);
             } else {
-                self.builder.mut_values().extend_trusted_len(arr.iter())
+                self.builder.mut_values().extend_views_trusted_len(
+                    ZipValidity::new_with_validity(views_iter, arr.validity()),
+                    buffers,
+                );
             }
         }
         self.builder.try_push_valid().unwrap();
