@@ -113,6 +113,19 @@ def test_normalize_filepath(io_files_path: Path) -> None:
     )
 
 
+def test_infer_schema_false() -> None:
+    csv = textwrap.dedent(
+        """\
+        a,b,c
+        1,2,3
+        1,2,3
+        """
+    )
+    f = io.StringIO(csv)
+    df = pl.read_csv(f, infer_schema=False)
+    assert df.dtypes == [pl.String, pl.String, pl.String]
+
+
 def test_csv_null_values() -> None:
     csv = textwrap.dedent(
         """\
