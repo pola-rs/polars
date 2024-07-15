@@ -47,23 +47,23 @@ def _scan(
 
     if (
         scan_func := {
-            ".ipc":     pl.scan_ipc,
-            ".parquet": pl.scan_parquet,
-            ".csv":     pl.scan_csv,
-            ".ndjson":  pl.scan_ndjson,
+            ".ipc"     : pl.scan_ipc,
+            ".parquet" : pl.scan_parquet,
+            ".csv"     : pl.scan_csv,
+            ".ndjson"  : pl.scan_ndjson,
         }.get(suffix)
     ) is not None:  # fmt: skip
         result = scan_func(
             file_path,
             row_index_name=row_index_name,
             row_index_offset=row_index_offset,
-        )
+        )  # type: ignore[operator]
 
     else:
         msg = f"Unknown suffix {suffix}"
         raise NotImplementedError(msg)
 
-    return result
+    return result  # type: ignore[no-any-return]
 
 
 def _write(df: pl.DataFrame, file_path: Path) -> None:
@@ -71,13 +71,13 @@ def _write(df: pl.DataFrame, file_path: Path) -> None:
 
     if (
         write_func := {
-            ".ipc":     pl.DataFrame.write_ipc,
-            ".parquet": pl.DataFrame.write_parquet,
-            ".csv":     pl.DataFrame.write_csv,
-            ".ndjson":  pl.DataFrame.write_ndjson,
+            ".ipc"     : pl.DataFrame.write_ipc,
+            ".parquet" : pl.DataFrame.write_parquet,
+            ".csv"     : pl.DataFrame.write_csv,
+            ".ndjson"  : pl.DataFrame.write_ndjson,
         }.get(suffix)
     ) is not None:  # fmt: skip
-        return write_func(df, file_path)
+        return write_func(df, file_path)  # type: ignore[operator]
 
     msg = f"Unknown suffix {suffix}"
     raise NotImplementedError(msg)
