@@ -12,7 +12,7 @@ use super::buffer::Buffer;
 use super::options::{CommentPrefix, NullValuesCompiled};
 use super::splitfields::SplitFields;
 use super::utils::get_file_chunks;
-use crate::prelude::is_cloud_url;
+use crate::path_utils::is_cloud_url;
 use crate::utils::get_reader_bytes;
 
 /// Read the number of rows without parsing columns

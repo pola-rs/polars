@@ -11,8 +11,7 @@ use super::entry::{FileCacheEntry, DATA_PREFIX, METADATA_PREFIX};
 use super::eviction::EvictionManager;
 use super::file_fetcher::FileFetcher;
 use super::utils::FILE_CACHE_PREFIX;
-use crate::prelude::is_cloud_url;
-use crate::utils::ensure_directory_init;
+use crate::path_utils::{ensure_directory_init, is_cloud_url};
 
 pub static FILE_CACHE: Lazy<FileCache> = Lazy::new(|| {
     let prefix = FILE_CACHE_PREFIX.as_ref();
@@ -101,7 +100,7 @@ impl FileCache {
         #[cfg(debug_assertions)]
         {
             // Local paths must be absolute or else the cache would be wrong.
-            if !crate::utils::is_cloud_url(uri.as_ref()) {
+            if !crate::path_utils::is_cloud_url(uri.as_ref()) {
                 let path = Path::new(uri.as_ref());
                 assert_eq!(path, std::fs::canonicalize(path).unwrap().as_path());
             }

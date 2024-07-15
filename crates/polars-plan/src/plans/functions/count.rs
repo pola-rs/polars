@@ -11,7 +11,7 @@ use polars_io::parquet::read::ParquetReader;
 #[cfg(all(feature = "parquet", feature = "async"))]
 use polars_io::pl_async::{get_runtime, with_concurrency_budget};
 #[cfg(any(feature = "parquet", feature = "ipc"))]
-use polars_io::{utils::is_cloud_url, SerReader};
+use polars_io::{path_utils::is_cloud_url, SerReader};
 
 use super::*;
 

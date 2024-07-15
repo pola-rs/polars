@@ -4,8 +4,8 @@ use hive::HivePartitions;
 use polars_core::config;
 use polars_core::utils::accumulate_dataframes_vertical;
 use polars_io::cloud::CloudOptions;
+use polars_io::path_utils::is_cloud_url;
 use polars_io::predicates::apply_predicate;
-use polars_io::utils::is_cloud_url;
 use rayon::prelude::*;
 
 use super::*;
