@@ -22,18 +22,18 @@ use crate::types::NativeType;
 const DEFAULT_BLOCK_SIZE: usize = 8 * 1024;
 
 pub struct MutableBinaryViewArray<T: ViewType + ?Sized> {
-    pub(super) views: Vec<View>,
-    pub(super) completed_buffers: Vec<Buffer<u8>>,
-    pub(super) in_progress_buffer: Vec<u8>,
-    pub(super) validity: Option<MutableBitmap>,
-    pub(super) phantom: std::marker::PhantomData<T>,
+    pub(crate) views: Vec<View>,
+    pub(crate) completed_buffers: Vec<Buffer<u8>>,
+    pub(crate) in_progress_buffer: Vec<u8>,
+    pub(crate) validity: Option<MutableBitmap>,
+    pub(crate) phantom: std::marker::PhantomData<T>,
     /// Total bytes length if we would concatenate them all.
-    pub(super) total_bytes_len: usize,
+    pub(crate) total_bytes_len: usize,
     /// Total bytes in the buffer (excluding remaining capacity)
-    pub(super) total_buffer_len: usize,
+    pub(crate) total_buffer_len: usize,
     /// Mapping from `Buffer::deref()` to index in `completed_buffers`.
     /// Used in `push_view()`.
-    pub(super) stolen_buffers: PlHashMap<usize, u32>,
+    pub(crate) stolen_buffers: PlHashMap<usize, u32>,
 }
 
 impl<T: ViewType + ?Sized> Clone for MutableBinaryViewArray<T> {
@@ -144,8 +144,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
     /// - caller must allocate enough capacity
     /// - caller must ensure the view and buffers match.
     /// - The array must not have validity.
-    #[inline]
-    pub unsafe fn push_view_copied(&mut self, v: View, buffers: &[Buffer<u8>]) {
+    pub(crate) unsafe fn push_view_copied_unchecked(&mut self, v: View, buffers: &[Buffer<u8>]) {
         let len = v.length;
         self.total_bytes_len += len as usize;
         if len <= 12 {
@@ -158,6 +157,33 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
             let bytes = data.get_unchecked_release(offset..offset + len as usize);
             let t = T::from_bytes_unchecked(bytes);
             self.push_value_ignore_validity(t)
+        }
+    }
+
+    /// # Safety
+    /// - caller must allocate enough capacity
+    /// - caller must ensure the view and buffers match.
+    /// - The array must not have validity.
+    /// - caller must not mix use this function with other push functions.
+    pub unsafe fn push_view_unchecked(&mut self, mut v: View, buffers: &[Buffer<u8>]) {
+        let len = v.length;
+        self.total_bytes_len += len as usize;
+        if len <= 12 {
+            self.views.push_unchecked(v);
+        } else {
+            let buffer = buffers.get_unchecked_release(v.buffer_idx as usize);
+            let idx = match self.stolen_buffers.entry(buffer.deref().as_ptr() as usize) {
+                Entry::Occupied(entry) => *entry.get(),
+                Entry::Vacant(entry) => {
+                    let idx = self.completed_buffers.len() as u32;
+                    entry.insert(idx);
+                    self.completed_buffers.push(buffer.clone());
+                    self.total_buffer_len += buffer.len();
+                    idx
+                },
+            };
+            v.buffer_idx = idx;
+            self.views.push_unchecked(v);
         }
     }
 
@@ -385,6 +411,32 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
         I: TrustedLen<Item = View>,
     {
         self.extend_non_null_views(iterator, buffers);
+    }
+
+    /// # Safety
+    /// Same as `push_view_unchecked()`.
+    #[inline]
+    pub unsafe fn extend_non_null_views_unchecked<I>(&mut self, iterator: I, buffers: &[Buffer<u8>])
+    where
+        I: Iterator<Item = View>,
+    {
+        self.reserve(iterator.size_hint().0);
+        for v in iterator {
+            self.push_view_unchecked(v, buffers);
+        }
+    }
+
+    /// # Safety
+    /// Same as `push_view_unchecked()`.
+    #[inline]
+    pub unsafe fn extend_non_null_views_trusted_len_unchecked<I>(
+        &mut self,
+        iterator: I,
+        buffers: &[Buffer<u8>],
+    ) where
+        I: TrustedLen<Item = View>,
+    {
+        self.extend_non_null_views_unchecked(iterator, buffers);
     }
 
     #[inline]
