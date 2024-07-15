@@ -347,6 +347,47 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
     }
 
     #[inline]
+    pub fn extend_views<I>(&mut self, iterator: I, buffers: &[Buffer<u8>])
+    where
+        I: Iterator<Item = Option<View>>,
+    {
+        self.reserve(iterator.size_hint().0);
+        for p in iterator {
+            match p {
+                Some(v) => self.push_view(v, buffers),
+                None => self.push_null(),
+            }
+        }
+    }
+
+    #[inline]
+    pub fn extend_views_trusted_len<I>(&mut self, iterator: I, buffers: &[Buffer<u8>])
+    where
+        I: TrustedLen<Item = Option<View>>,
+    {
+        self.extend_views(iterator, buffers);
+    }
+
+    #[inline]
+    pub fn extend_non_null_views<I>(&mut self, iterator: I, buffers: &[Buffer<u8>])
+    where
+        I: Iterator<Item = View>,
+    {
+        self.reserve(iterator.size_hint().0);
+        for v in iterator {
+            self.push_view(v, buffers);
+        }
+    }
+
+    #[inline]
+    pub fn extend_non_null_views_trusted_len<I>(&mut self, iterator: I, buffers: &[Buffer<u8>])
+    where
+        I: TrustedLen<Item = View>,
+    {
+        self.extend_non_null_views(iterator, buffers);
+    }
+
+    #[inline]
     pub fn from_iterator<I, P>(iterator: I) -> Self
     where
         I: Iterator<Item = Option<P>>,
