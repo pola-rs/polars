@@ -2606,8 +2606,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Collect a small number of rows for debugging purposes.
 
-        .. deprecated:: 1.0
-            Use :meth:`collect` instead, in conjunction with a call to :meth:`head`.`
+        .. deprecated:: 1.0.0
+            Use :meth:`collect` instead, in conjunction with a call to :meth:`head`.
 
         Notes
         -----
