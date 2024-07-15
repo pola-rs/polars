@@ -27,8 +27,11 @@ def _enable_force_async(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
 
 
-def _assert_force_async(capfd: Any) -> None:
+def _assert_force_async(capfd: Any, data_file_extension: str) -> None:
     """Calls `capfd.readouterr`, consuming the captured output so far."""
+    if data_file_extension == ".ndjson":
+        return
+
     captured = capfd.readouterr().err
     assert captured.count("ASYNC READING FORCED") == 1
 
@@ -42,25 +45,20 @@ def _scan(
     row_index_name = None if row_index is None else row_index.name
     row_index_offset = 0 if row_index is None else row_index.offset
 
-    if suffix == ".ipc":
-        result = pl.scan_ipc(
+    if (
+        scan_func := {
+            ".ipc":     pl.scan_ipc,
+            ".parquet": pl.scan_parquet,
+            ".csv":     pl.scan_csv,
+            ".ndjson":  pl.scan_ndjson,
+        }.get(suffix)
+    ) is not None:  # fmt: skip
+        result = scan_func(
             file_path,
             row_index_name=row_index_name,
             row_index_offset=row_index_offset,
         )
-    elif suffix == ".parquet":
-        result = pl.scan_parquet(
-            file_path,
-            row_index_name=row_index_name,
-            row_index_offset=row_index_offset,
-        )
-    elif suffix == ".csv":
-        result = pl.scan_csv(
-            file_path,
-            schema=schema,
-            row_index_name=row_index_name,
-            row_index_offset=row_index_offset,
-        )
+
     else:
         msg = f"Unknown suffix {suffix}"
         raise NotImplementedError(msg)
@@ -70,19 +68,24 @@ def _scan(
 
 def _write(df: pl.DataFrame, file_path: Path) -> None:
     suffix = file_path.suffix
-    if suffix == ".ipc":
-        return df.write_ipc(file_path)
-    if suffix == ".parquet":
-        return df.write_parquet(file_path)
-    if suffix == ".csv":
-        return df.write_csv(file_path)
+
+    if (
+        write_func := {
+            ".ipc":     pl.DataFrame.write_ipc,
+            ".parquet": pl.DataFrame.write_parquet,
+            ".csv":     pl.DataFrame.write_csv,
+            ".ndjson":  pl.DataFrame.write_ndjson,
+        }.get(suffix)
+    ) is not None:  # fmt: skip
+        return write_func(df, file_path)
+
     msg = f"Unknown suffix {suffix}"
     raise NotImplementedError(msg)
 
 
 @pytest.fixture(
     scope="session",
-    params=["csv", "ipc", "parquet"],
+    params=["csv", "ipc", "parquet", "ndjson"],
 )
 def data_file_extension(request: pytest.FixtureRequest) -> str:
     return f".{request.param}"
@@ -197,7 +200,7 @@ def test_scan(
     df = _scan(data_file.path, data_file.df.schema).collect()
 
     if force_async:
-        _assert_force_async(capfd)
+        _assert_force_async(capfd, data_file.path.suffix)
 
     assert_frame_equal(df, data_file.df)
 
@@ -212,7 +215,7 @@ def test_scan_with_limit(
     df = _scan(data_file.path, data_file.df.schema).limit(4483).collect()
 
     if force_async:
-        _assert_force_async(capfd)
+        _assert_force_async(capfd, data_file.path.suffix)
 
     assert_frame_equal(
         df,
@@ -238,7 +241,7 @@ def test_scan_with_filter(
     )
 
     if force_async:
-        _assert_force_async(capfd)
+        _assert_force_async(capfd, data_file.path.suffix)
 
     assert_frame_equal(
         df,
@@ -265,7 +268,7 @@ def test_scan_with_filter_and_limit(
     )
 
     if force_async:
-        _assert_force_async(capfd)
+        _assert_force_async(capfd, data_file.path.suffix)
 
     assert_frame_equal(
         df,
@@ -292,7 +295,7 @@ def test_scan_with_limit_and_filter(
     )
 
     if force_async:
-        _assert_force_async(capfd)
+        _assert_force_async(capfd, data_file.path.suffix)
 
     assert_frame_equal(
         df,
@@ -318,7 +321,7 @@ def test_scan_with_row_index_and_limit(
     )
 
     if force_async:
-        _assert_force_async(capfd)
+        _assert_force_async(capfd, data_file.path.suffix)
 
     assert_frame_equal(
         df,
@@ -346,7 +349,7 @@ def test_scan_with_row_index_and_filter(
     )
 
     if force_async:
-        _assert_force_async(capfd)
+        _assert_force_async(capfd, data_file.path.suffix)
 
     assert_frame_equal(
         df,
@@ -375,7 +378,7 @@ def test_scan_with_row_index_limit_and_filter(
     )
 
     if force_async:
-        _assert_force_async(capfd)
+        _assert_force_async(capfd, data_file.path.suffix)
 
     assert_frame_equal(
         df,
@@ -407,7 +410,7 @@ def test_scan_with_row_index_projected_out(
     )
 
     if force_async:
-        _assert_force_async(capfd)
+        _assert_force_async(capfd, data_file.path.suffix)
 
     assert_frame_equal(df, data_file.df.select(subset))
 
@@ -430,7 +433,7 @@ def test_scan_with_row_index_filter_and_limit(
     )
 
     if force_async:
-        _assert_force_async(capfd)
+        _assert_force_async(capfd, data_file.path.suffix)
 
     assert_frame_equal(
         df,
