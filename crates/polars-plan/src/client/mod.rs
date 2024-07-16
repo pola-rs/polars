@@ -21,17 +21,17 @@ pub fn assert_cloud_eligible(dsl: &DslPlan) -> PolarsResult<()> {
                 FunctionNode::OpaquePython { .. } => {
                     return ineligible_error("contains Python function")
                 },
-                _ => {},
+                _ => (),
             },
             #[cfg(feature = "python")]
             DslPlan::PythonScan { .. } => return ineligible_error("contains Python scan"),
             DslPlan::GroupBy { apply: Some(_), .. } => {
                 return ineligible_error("contains Python function in group by operation")
             },
-            DslPlan::Scan { paths, .. } => {
-                if paths.lock().unwrap().0.iter().any(|p| !is_cloud_url(p)) {
-                    return ineligible_error("contains scan of local file system");
-                }
+            DslPlan::Scan { paths, .. }
+                if paths.lock().unwrap().0.iter().any(|p| !is_cloud_url(p)) =>
+            {
+                return ineligible_error("contains scan of local file system")
             },
             DslPlan::Sink { payload, .. } => {
                 if !matches!(payload, SinkType::Cloud { .. }) {

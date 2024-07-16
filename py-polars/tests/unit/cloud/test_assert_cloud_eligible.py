@@ -44,10 +44,12 @@ def test_assert_cloud_eligible(lf: pl.LazyFrame) -> None:
         pl.LazyFrame({"a": [1, 2], "b": [3, 4]})
         .group_by("a")
         .agg(pl.col("b").map_batches(lambda x: sum(x))),
+        pl.scan_parquet(CLOUD_PATH).filter(
+            pl.col("a") < pl.lit(1).map_elements(lambda x: x + 1)
+        ),
     ],
 )
 def test_assert_cloud_eligible_fail_on_udf(lf: pl.LazyFrame) -> None:
-    print(lf)
     with pytest.raises(
         AssertionError, match="logical plan ineligible for execution on Polars Cloud"
     ):
