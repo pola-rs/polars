@@ -41,6 +41,9 @@ def test_assert_cloud_eligible(lf: pl.LazyFrame) -> None:
         pl.LazyFrame({"a": [1, 2], "b": [3, 4]})
         .group_by("a")
         .map_groups(lambda x: x, schema={"b": pl.Int64}),
+        pl.LazyFrame({"a": [1, 2], "b": [3, 4]})
+        .group_by("a")
+        .agg(pl.col("b").map_batches(lambda x: sum(x))),
     ],
 )
 def test_assert_cloud_eligible_fail_on_udf(lf: pl.LazyFrame) -> None:
