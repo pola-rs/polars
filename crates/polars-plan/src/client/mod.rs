@@ -4,6 +4,7 @@ use polars_core::error::{polars_err, PolarsResult};
 use polars_io::path_utils::is_cloud_url;
 
 use crate::dsl::Expr;
+use crate::plans::options::SinkType;
 use crate::plans::{DslFunction, DslPlan, FunctionNode};
 
 /// Assert that the given [`DslPlan`] is eligible to be executed on Polars Cloud.
@@ -23,13 +24,18 @@ pub fn assert_cloud_eligible(dsl: &DslPlan) -> PolarsResult<()> {
                 _ => {},
             },
             DslPlan::PythonScan { .. } => return ineligible_error("contains Python scan"),
+            DslPlan::GroupBy { apply: Some(_), .. } => {
+                return ineligible_error("contains Python function in group by operation")
+            },
             DslPlan::Scan { paths, .. } => {
                 if paths.lock().unwrap().0.iter().any(|p| !is_cloud_url(p)) {
                     return ineligible_error("contains scan of local file system");
                 }
             },
-            DslPlan::GroupBy { apply: Some(_), .. } => {
-                return ineligible_error("contains Python function in group by operation")
+            DslPlan::Sink { payload, .. } => {
+                if !matches!(payload, SinkType::Cloud { .. }) {
+                    return ineligible_error("contains sink to non-cloud location");
+                }
             },
             plan => {
                 plan.get_expr(&mut expr_stack);
