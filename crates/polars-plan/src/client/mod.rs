@@ -23,6 +23,7 @@ pub fn assert_cloud_eligible(dsl: &DslPlan) -> PolarsResult<()> {
                 },
                 _ => {},
             },
+            #[cfg(feature = "python")]
             DslPlan::PythonScan { .. } => return ineligible_error("contains Python scan"),
             DslPlan::GroupBy { apply: Some(_), .. } => {
                 return ineligible_error("contains Python function in group by operation")
