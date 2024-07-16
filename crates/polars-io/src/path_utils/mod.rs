@@ -207,11 +207,11 @@ pub fn expand_paths_hive(
                 let path = if glob_start_idx.is_some() {
                     path.clone()
                 } else {
-                    let (i, paths) = expand_path_cloud(path.to_str().unwrap(), cloud_options)?;
+                    let (i, new_paths) = expand_path_cloud(path.to_str().unwrap(), cloud_options)?;
                     if paths.len() == 1 {
                         expand_start_idx = i;
                     }
-                    out_paths.extend_from_slice(&paths);
+                    out_paths.extend_from_slice(&new_paths);
                     continue;
                 };
 
