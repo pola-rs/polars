@@ -397,14 +397,11 @@ impl<'a, 'b> fmt::Write for EscapeLabel<'a, 'b> {
             // This escapes quotes and new lines
             // @NOTE: I am aware this does not work for \" and such. I am ignoring that fact as we
             // are not really using such strings.
-            let f = char_indices
-                .find_map(|(i, c)| {
-                    match c {
-                        '"' => Some((i + 1, r#"\""#)),
-                        '\n' => Some((i + 1, r#"\n"#)),
-                        _ => None,
-                    }
-                });
+            let f = char_indices.find_map(|(i, c)| match c {
+                '"' => Some((i + 1, r#"\""#)),
+                '\n' => Some((i + 1, r#"\n"#)),
+                _ => None,
+            });
 
             let Some((at, to_write)) = f else {
                 break;
