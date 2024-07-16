@@ -58,9 +58,9 @@ def test_assert_cloud_eligible_fail_on_udf(lf: pl.LazyFrame) -> None:
     "lf",
     [
         pl.scan_parquet("data.parquet"),
-        pl.scan_ndjson("data.ndjson"),
-        pl.scan_csv("data.csv"),
-        pl.scan_ipc("data.feather"),
+        pl.scan_ndjson(Path("data.ndjson")),
+        pl.scan_csv("data-*.csv"),
+        pl.scan_ipc(["data-1.feather", "data-2.feather"]),
     ],
 )
 def test_assert_cloud_eligible_fail_on_local_data_source(lf: pl.LazyFrame) -> None:
