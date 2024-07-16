@@ -3357,6 +3357,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ c   ┆ 1   ┆ 1.0 │
         └─────┴─────┴─────┘
         """
+        for _key, value in named_by.items():
+            if not isinstance(value, (str, pl.Expr, pl.Series)):
+                msg = (
+                    f"Expected Polars expression or object convertible to one, got {type(value)}.\n\n"
+                    "Hint: if you tried\n"
+                    f"    group_by(by={value!r})\n"
+                    "then you probably want to use this instead:\n"
+                    f"    group_by({value!r})"
+                )
+                raise TypeError(msg)
         exprs = parse_into_list_of_expressions(*by, **named_by)
         lgb = self._ldf.group_by(exprs, maintain_order)
         return LazyGroupBy(lgb)
