@@ -4,7 +4,6 @@ use super::page::PageIterator;
 use crate::parquet::compression::{self, Compression};
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{CompressedPage, CowBuffer, DataPage, DataPageHeader, DictPage, Page};
-use crate::parquet::FallibleStreamingIterator;
 
 fn decompress_v1(
     compressed: &[u8],
@@ -203,100 +202,119 @@ impl<'a, P: PageIterator<'a>> Decompressor<'a, P> {
     }
 }
 
-impl<'a, P: PageIterator<'a>> FallibleStreamingIterator for Decompressor<'a, P> {
-    type Item = Page<'a>;
-    type Error = ParquetError;
-
-    fn advance(&mut self) -> ParquetResult<()> {
-        if let Some(page) = self.current.as_mut() {
-            if self.was_decompressed {
-                self.buffer = std::mem::take(page.buffer_mut());
-            } else {
-                self.iter.swap_buffer(page.buffer_mut());
-            }
-        }
-
-        let next = self
-            .iter
-            .next()
-            .map(|x| {
-                x.and_then(|x| {
-                    let (page, was_decompressed) =
-                        decompress_reuse(x, &mut self.iter, &mut self.buffer)?;
-                    self.was_decompressed = was_decompressed;
-                    Ok(page)
-                })
-            })
-            .transpose()?;
-        self.current = next;
-        Ok(())
-    }
-
-    fn get(&self) -> Option<&Self::Item> {
-        self.current.as_ref()
-    }
-}
-
-type _Decompressor<'a, I> = streaming_decompression::Decompressor<
-    CompressedPage<'a>,
-    Page<'a>,
-    fn(CompressedPage<'a>, &mut Vec<u8>) -> ParquetResult<Page<'a>>,
-    ParquetError,
-    I,
->;
-
-impl<'a> streaming_decompression::Compressed for CompressedPage<'a> {
-    #[inline]
-    fn is_compressed(&self) -> bool {
-        self.compression() != Compression::Uncompressed
-    }
-}
-
-impl<'a> streaming_decompression::Decompressed for Page<'a> {
-    #[inline]
-    fn buffer_mut(&mut self) -> &mut Vec<u8> {
-        Page::buffer_mut(self)
-    }
-}
+// @TODO: REMOVE
+// impl<'a, P: PageIterator<'a>> FallibleStreamingIterator for Decompressor<'a, P> {
+//     type Item = Page<'a>;
+//     type Error = ParquetError;
+//
+//     fn advance(&mut self) -> ParquetResult<()> {
+//         if let Some(page) = self.current.as_mut() {
+//             if self.was_decompressed {
+//                 self.buffer = std::mem::take(page.buffer_mut());
+//             } else {
+//                 self.iter.swap_buffer(page.buffer_mut());
+//             }
+//         }
+//
+//         let next = self
+//             .iter
+//             .next()
+//             .map(|x| {
+//                 x.and_then(|x| {
+//                     let (page, was_decompressed) =
+//                         decompress_reuse(x, &mut self.iter, &mut self.buffer)?;
+//                     self.was_decompressed = was_decompressed;
+//                     Ok(page)
+//                 })
+//             })
+//             .transpose()?;
+//         self.current = next;
+//         Ok(())
+//     }
+//
+//     fn get(&self) -> Option<&Self::Item> {
+//         self.current.as_ref()
+//     }
+// }
+//
+// type _Decompressor<'a, I> = streaming_decompression::Decompressor<
+//     CompressedPage<'a>,
+//     Page<'a>,
+//     fn(CompressedPage<'a>, &mut Vec<u8>) -> ParquetResult<Page<'a>>,
+//     ParquetError,
+//     I,
+// >;
+//
+// impl<'a> streaming_decompression::Compressed for CompressedPage<'a> {
+//     #[inline]
+//     fn is_compressed(&self) -> bool {
+//         self.compression() != Compression::Uncompressed
+//     }
+// }
+//
+// impl<'a> streaming_decompression::Decompressed for Page<'a> {
+//     #[inline]
+//     fn buffer_mut(&mut self) -> &mut Vec<u8> {
+//         Page::buffer_mut(self)
+//     }
+// }
 
 /// A [`FallibleStreamingIterator`] that decompresses [`CompressedPage`] into [`DataPage`].
 /// # Implementation
 /// This decompressor uses an internal [`Vec<u8>`] to perform decompressions which
 /// is reused across pages, so that a single allocation is required.
 /// If the pages are not compressed, the internal buffer is not used.
-pub struct BasicDecompressor<'a, I: Iterator<Item = ParquetResult<CompressedPage<'a>>>> {
-    iter: _Decompressor<'a, I>,
+pub struct BasicDecompressor<'mmap, I: Iterator<Item = ParquetResult<CompressedPage<'mmap>>>> {
+    iter: I,
+    buffer: Vec<u8>,
 }
 
-impl<'a, I> BasicDecompressor<'a, I>
+impl<'mmap, I> Iterator for BasicDecompressor<'mmap, I>
 where
-    I: Iterator<Item = ParquetResult<CompressedPage<'a>>>,
+    I: Iterator<Item = ParquetResult<CompressedPage<'mmap>>>,
+{
+    type Item = ParquetResult<Page<'mmap>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let compressed = match self.iter.next()? {
+            Ok(c) => c,
+            Err(e) => return Some(Err(e)),
+        };
+
+        let mut buffer = std::mem::take(&mut self.buffer);
+        buffer.clear();
+
+        match decompress(compressed, &mut buffer) {
+            Ok(page) => Some(Ok(page)),
+            Err(e) => Some(Err(e)),
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (0, self.iter.size_hint().1)
+    }
+}
+
+impl<'mmap, I> BasicDecompressor<'mmap, I>
+where
+    I: Iterator<Item = ParquetResult<CompressedPage<'mmap>>>,
 {
     /// Returns a new [`BasicDecompressor`].
     pub fn new(iter: I, buffer: Vec<u8>) -> Self {
         Self {
-            iter: _Decompressor::new(iter, buffer, decompress),
+            iter,
+            buffer,
         }
     }
 
-    /// Returns its internal buffer, consuming itself.
-    pub fn into_inner(self) -> Vec<u8> {
-        self.iter.into_inner()
-    }
-}
-
-impl<'a, I> FallibleStreamingIterator for BasicDecompressor<'a, I>
-where
-    I: Iterator<Item = ParquetResult<CompressedPage<'a>>>,
-{
-    type Item = Page<'a>;
-    type Error = ParquetError;
-
-    fn advance(&mut self) -> ParquetResult<()> {
-        self.iter.advance()
+    pub fn return_buffer(&mut self, buffer: Vec<u8>) {
+        self.buffer = buffer;
     }
 
-    fn get(&self) -> Option<&Self::Item> {
-        self.iter.get()
+    pub fn return_page_buffer(&mut self, page: Page<'mmap>) {
+        match page.into_cow_buffer() {
+            CowBuffer::Borrowed(_) => {},
+            CowBuffer::Owned(vec) => self.buffer = vec,
+        }
     }
 }

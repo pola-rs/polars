@@ -231,6 +231,10 @@ impl<'a> DataPage<'a> {
         &self.header
     }
 
+    pub fn into_cow_buffer(self) -> CowBuffer<'a> {
+        self.buffer
+    }
+
     pub fn buffer(&self) -> &[u8] {
         &self.buffer
     }
@@ -299,6 +303,12 @@ pub enum Page<'a> {
 }
 
 impl<'a> Page<'a> {
+    pub(crate) fn into_cow_buffer(self) -> CowBuffer<'a> {
+        match self {
+            Self::Data(page) => page.buffer.into_cow_buffer(),
+            Self::Dict(page) => page.buffer.into_cow_buffer(),
+        }
+    }
     pub(crate) fn buffer(&mut self) -> &[u8] {
         match self {
             Self::Data(page) => page.buffer.as_ref(),
@@ -387,6 +397,10 @@ impl<'a> DictPage<'a> {
             num_values,
             is_sorted,
         }
+    }
+
+    pub fn into_cow_buffer(self) -> CowBuffer<'a> {
+        self.buffer
     }
 }
 

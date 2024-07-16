@@ -1,5 +1,4 @@
 use std::collections::VecDeque;
-use std::sync::Arc;
 
 pub(crate) mod array_chunks;
 pub(crate) mod filter;
@@ -38,7 +37,7 @@ pub(crate) trait StateTranslation<'pages, 'mmap: 'pages, D: Decoder<'pages, 'mma
 {
     fn new(
         decoder: &D,
-        page: &DataPage<'mmap>,
+        page: &'pages DataPage<'mmap>,
         dict: Option<&'pages D::Dict>,
         page_validity: Option<&PageValidity<'pages>>,
         filter: Option<&Filter<'pages>>,
@@ -596,8 +595,8 @@ impl<
         'pages,
         'mmap: 'pages,
         O,
-        I: PagesIter<'mmap> + 'pages,
-        D: Decoder<'pages, 'mmap>,
+        I: PagesIter<'mmap>,
+        D: Decoder<'pages, 'mmap> + 'pages + 'mmap,
         F: Fn(&ArrowDataType, D::DecodedState) -> PolarsResult<O>,
     > Iterator for BasicDecodeIterator<'pages, 'mmap, O, I, D, F>
 {
@@ -629,7 +628,7 @@ impl<
                     match page {
                         Page::Data(page) => {
                             // there is a new page => consume the page from the start
-                            let maybe_page = State::new(&self.decoder, &page, self.dict.as_ref());
+                            let maybe_page = State::new(&self.decoder, page, self.dict.as_ref());
                             let page = match maybe_page {
                                 Ok(page) => page,
                                 Err(e) => return Some(Err(e)),
@@ -655,7 +654,7 @@ impl<
                                 return Some((self.finish)(&self.data_type, decoded));
                             }
                         },
-                        Page::Dict(ref dict_page) => {
+                        Page::Dict(dict_page) => {
                             self.dict = Some(self.decoder.deserialize_dict(dict_page));
                         },
                     };
