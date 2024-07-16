@@ -387,17 +387,15 @@ def test_hive_partition_directory_scan(
     out = scan(tmp_path, hive_partitioning=True).collect()
     assert_frame_equal(out, df)
 
-    # Accept multiple directories from the same level
     out = scan([tmp_path / "a=1", tmp_path / "a=22"], hive_partitioning=True).collect()
-    assert_frame_equal(out, df.drop("a"))
+    assert_frame_equal(out, df)
 
-    with pytest.raises(
-        pl.exceptions.InvalidOperationError,
-        match="attempted to read from different directory levels with hive partitioning enabled:",
-    ):
-        scan(
-            [tmp_path / "a=1", tmp_path / "a=22/b=1"], hive_partitioning=True
-        ).collect()
+    out = scan(
+        [tmp_path / "a=1", tmp_path / "a=22/b=1"], hive_partitioning=True
+    ).collect()
+    assert_frame_equal(
+        out, df.filter((pl.col("a") == 1) | ((pl.col("a") == 22) & (pl.col("b") == 1)))
+    )
 
     if glob:
         out = scan(tmp_path / "**/*.bin", hive_partitioning=True).collect()

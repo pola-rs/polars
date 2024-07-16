@@ -86,7 +86,7 @@ pub fn expand_paths(
     glob: bool,
     #[allow(unused_variables)] cloud_options: Option<&CloudOptions>,
 ) -> PolarsResult<Arc<[PathBuf]>> {
-    expand_paths_hive(paths, glob, cloud_options, false).map(|x| x.0)
+    expand_paths_hive(paths, glob, cloud_options).map(|x| x.0)
 }
 
 /// Recursively traverses directories and expands globs if `glob` is `true`.
@@ -96,7 +96,6 @@ pub fn expand_paths_hive(
     paths: &[PathBuf],
     glob: bool,
     #[allow(unused_variables)] cloud_options: Option<&CloudOptions>,
-    check_directory_level: bool,
 ) -> PolarsResult<(Arc<[PathBuf]>, usize)> {
     let Some(first_path) = paths.first() else {
         return Ok((vec![].into(), 0));
@@ -105,24 +104,7 @@ pub fn expand_paths_hive(
     let is_cloud = is_cloud_url(first_path);
     let mut out_paths = vec![];
 
-    let expand_start_idx = &mut usize::MAX.clone();
-    let mut update_expand_start_idx = |i, path_idx: usize| {
-        if check_directory_level
-            && ![usize::MAX, i].contains(expand_start_idx)
-            // They could still be the same directory level, just with different name length
-            && (paths[path_idx].parent() != paths[path_idx - 1].parent())
-        {
-            polars_bail!(
-                InvalidOperation:
-                "attempted to read from different directory levels with hive partitioning enabled: first path: {}, second path: {}",
-                paths[path_idx - 1].to_str().unwrap(),
-                paths[path_idx].to_str().unwrap(),
-            )
-        } else {
-            *expand_start_idx = std::cmp::min(*expand_start_idx, i);
-            Ok(())
-        }
-    };
+    let mut expand_start_idx = 0;
 
     if is_cloud || { cfg!(not(target_family = "windows")) && config::force_async() } {
         #[cfg(feature = "cloud")]
@@ -219,20 +201,19 @@ pub fn expand_paths_hive(
                 })
             };
 
-            for (path_idx, path) in paths.iter().enumerate() {
+            for path in paths {
                 let glob_start_idx = get_glob_start_idx(path.to_str().unwrap().as_bytes());
 
                 let path = if glob_start_idx.is_some() {
                     path.clone()
                 } else {
-                    let (expand_start_idx, paths) =
-                        expand_path_cloud(path.to_str().unwrap(), cloud_options)?;
+                    let (i, paths) = expand_path_cloud(path.to_str().unwrap(), cloud_options)?;
+                    if paths.len() == 1 {
+                        expand_start_idx = i;
+                    }
                     out_paths.extend_from_slice(&paths);
-                    update_expand_start_idx(expand_start_idx, path_idx)?;
                     continue;
                 };
-
-                update_expand_start_idx(0, path_idx)?;
 
                 let iter = crate::pl_async::get_runtime().block_on_potential_spawn(
                     crate::async_glob(path.to_str().unwrap(), cloud_options),
@@ -256,9 +237,9 @@ pub fn expand_paths_hive(
             stack.clear();
 
             if path.is_dir() {
-                let i = path.to_str().unwrap().len();
-
-                update_expand_start_idx(i, path_idx)?;
+                if paths.len() == 1 {
+                    expand_start_idx = path.to_str().unwrap().len();
+                }
 
                 stack.push_back(path.clone());
 
@@ -285,8 +266,6 @@ pub fn expand_paths_hive(
             let i = get_glob_start_idx(path.to_str().unwrap().as_bytes());
 
             if glob && i.is_some() {
-                update_expand_start_idx(0, path_idx)?;
-
                 let Ok(paths) = glob::glob(path.to_str().unwrap()) else {
                     polars_bail!(ComputeError: "invalid glob pattern given")
                 };
@@ -298,7 +277,6 @@ pub fn expand_paths_hive(
                     }
                 }
             } else {
-                update_expand_start_idx(0, path_idx)?;
                 out_paths.push(path.clone());
             }
         }
@@ -328,7 +306,7 @@ pub fn expand_paths_hive(
         Arc::<[_]>::from(out_paths)
     };
 
-    Ok((out_paths, *expand_start_idx))
+    Ok((out_paths, expand_start_idx))
 }
 
 /// Ignores errors from `std::fs::create_dir_all` if the directory exists.
