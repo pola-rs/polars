@@ -178,8 +178,8 @@ where
         ObjectChunked::null_count(&self.0)
     }
 
-    fn has_validity(&self) -> bool {
-        ObjectChunked::has_validity(&self.0)
+    fn has_nulls(&self) -> bool {
+        ObjectChunked::has_nulls(&self.0)
     }
 
     fn unique(&self) -> PolarsResult<Series> {

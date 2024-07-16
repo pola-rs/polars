@@ -46,7 +46,7 @@ where
                 .collect::<Vec<_>>();
             group_by_threaded_iter(&keys, n_partitions, sorted)
         }
-    } else if !ca.has_validity() {
+    } else if !ca.has_nulls() {
         group_by(ca.into_no_null_iter(), sorted)
     } else {
         group_by(ca.iter(), sorted)

@@ -69,7 +69,7 @@ where
         // value and collect the indices.
         // because the length of the array is not known, we first collect the null indexes, offset
         // with the insertion of empty rows (as None) and later create a validity bitmap
-        if arr.has_validity() {
+        if arr.null_count() > 0 {
             let validity_values = arr.validity().unwrap();
 
             for &o in &offsets[1..] {

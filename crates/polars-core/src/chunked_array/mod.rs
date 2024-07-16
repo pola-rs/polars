@@ -498,10 +498,9 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     }
 
     #[inline]
-    /// Return if any the chunks in this [`ChunkedArray`] have a validity bitmap.
-    /// no bitmap means no null values.
-    pub fn has_validity(&self) -> bool {
-        self.iter_validities().any(|valid| valid.is_some())
+    /// Return if any the chunks in this [`ChunkedArray`] have nulls.
+    pub fn has_nulls(&self) -> bool {
+        self.null_count > 0
     }
 
     /// Shrink the capacity of this array to fit its length.

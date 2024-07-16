@@ -92,7 +92,7 @@ where
 {
     // This implementation differs from pandas as that boundary None's are not removed.
     // This prevents a lot of errors due to expressions leading to different lengths.
-    if !chunked_arr.has_validity() || chunked_arr.null_count() == chunked_arr.len() {
+    if !chunked_arr.has_nulls() || chunked_arr.null_count() == chunked_arr.len() {
         return Ok(chunked_arr.clone());
     }
 
@@ -174,7 +174,7 @@ where
 {
     // This implementation differs from pandas as that boundary None's are not removed.
     // This prevents a lot of errors due to expressions leading to different lengths.
-    if !ca.has_validity() || ca.null_count() == ca.len() {
+    if !ca.has_nulls() || ca.null_count() == ca.len() {
         return Ok(ca.clone());
     }
 

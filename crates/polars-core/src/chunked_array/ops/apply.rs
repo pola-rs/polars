@@ -500,7 +500,7 @@ impl<'a> ChunkApply<'a, Series> for ListChunked {
             out
         };
         let mut ca: ListChunked = {
-            if !self.has_validity() {
+            if !self.has_nulls() {
                 self.into_no_null_iter()
                     .map(&mut function)
                     .collect_trusted()

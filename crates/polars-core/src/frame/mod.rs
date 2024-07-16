@@ -1072,7 +1072,7 @@ impl DataFrame {
         };
 
         // fast path for no nulls in df
-        if iter.clone().all(|s| !s.has_validity()) {
+        if iter.clone().all(|s| !s.has_nulls()) {
             return Ok(self.clone());
         }
 
