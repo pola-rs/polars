@@ -2,7 +2,8 @@ use std::ffi::CString;
 
 use arrow::ffi;
 use arrow::record_batch::RecordBatch;
-use polars::datatypes::CompatLevel;
+use polars::datatypes::{CompatLevel, DataType, Field};
+use polars::frame::DataFrame;
 use polars::prelude::{ArrayRef, ArrowField};
 use polars::series::Series;
 use polars_core::utils::arrow;
@@ -64,6 +65,29 @@ pub(crate) fn series_to_stream<'py>(
     let field = series.field().to_arrow(CompatLevel::oldest());
     let iter = Box::new(series.chunks().clone().into_iter().map(Ok)) as _;
     let stream = ffi::export_iterator(iter, field);
+    let stream_capsule_name = CString::new("arrow_array_stream").unwrap();
+    PyCapsule::new_bound(py, stream, Some(stream_capsule_name))
+}
+
+pub(crate) fn dataframe_to_stream<'py>(
+    df: &'py DataFrame,
+    py: Python<'py>,
+) -> PyResult<Bound<'py, PyCapsule>> {
+    let schema_fields = df.schema().iter_fields().collect::<Vec<_>>();
+
+    let struct_field =
+        Field::new("", DataType::Struct(schema_fields)).to_arrow(CompatLevel::oldest());
+    let struct_data_type = struct_field.data_type().clone();
+
+    let iter = df
+        .iter_chunks(CompatLevel::oldest(), false)
+        .into_iter()
+        .map(|chunk| {
+            let arrays = chunk.into_arrays();
+            let x = arrow::array::StructArray::new(struct_data_type.clone(), arrays, None);
+            Ok(Box::new(x) as Box<dyn arrow::array::Array>)
+        });
+    let stream = ffi::export_iterator(Box::new(iter), struct_field);
     let stream_capsule_name = CString::new("arrow_array_stream").unwrap();
     PyCapsule::new_bound(py, stream, Some(stream_capsule_name))
 }
