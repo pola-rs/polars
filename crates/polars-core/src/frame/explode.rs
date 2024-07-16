@@ -80,15 +80,6 @@ impl DataFrame {
             Ok(())
         }
 
-        let check_offsets = || {
-            let first_offsets = exploded_columns[0].1.as_slice();
-            for (_, offsets) in &exploded_columns[1..] {
-                polars_ensure!(first_offsets == offsets.as_slice(),
-                    ShapeMismatch: "exploded columns must have matching element counts"
-                )
-            }
-            Ok(())
-        };
         let process_first = || {
             let (exploded, offsets) = &exploded_columns[0];
 
@@ -102,9 +93,8 @@ impl DataFrame {
             process_column(self, &mut df, exploded.clone())?;
             PolarsResult::Ok(df)
         };
-        let (df, result) = POOL.join(process_first, check_offsets);
-        let mut df = df?;
-        result?;
+
+        let mut df = process_first()?;
 
         for (exploded, _) in exploded_columns.into_iter().skip(1) {
             process_column(self, &mut df, exploded)?
