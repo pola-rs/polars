@@ -7,6 +7,9 @@ use polars_core::config;
 use polars_core::error::{polars_bail, to_compute_err, PolarsError, PolarsResult};
 use regex::Regex;
 
+#[cfg(feature = "cloud")]
+mod hugging_face;
+
 use crate::cloud::CloudOptions;
 
 pub static POLARS_TEMP_DIR_BASE_PATH: Lazy<Box<Path>> = Lazy::new(|| {
@@ -44,7 +47,7 @@ pub fn resolve_homedir(path: &Path) -> PathBuf {
 }
 
 static CLOUD_URL: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^(s3a?|gs|gcs|file|abfss?|azure|az|adl|https?)://").unwrap());
+    Lazy::new(|| Regex::new(r"^(s3a?|gs|gcs|file|abfss?|azure|az|adl|https?|hf)://").unwrap());
 
 /// Check if the path is a cloud url.
 pub fn is_cloud_url<P: AsRef<Path>>(p: P) -> bool {
@@ -89,6 +92,35 @@ pub fn expand_paths(
     expand_paths_hive(paths, glob, cloud_options, false).map(|x| x.0)
 }
 
+struct HiveIdxTracker<'a> {
+    idx: usize,
+    paths: &'a [PathBuf],
+    check_directory_level: bool,
+}
+
+impl<'a> HiveIdxTracker<'a> {
+    fn update(&mut self, i: usize, path_idx: usize) -> PolarsResult<()> {
+        let check_directory_level = self.check_directory_level;
+        let paths = self.paths;
+
+        if check_directory_level
+            && ![usize::MAX, i].contains(&self.idx)
+            // They could still be the same directory level, just with different name length
+            && (paths[path_idx].parent() != paths[path_idx - 1].parent())
+        {
+            polars_bail!(
+                InvalidOperation:
+                "attempted to read from different directory levels with hive partitioning enabled: first path: {}, second path: {}",
+                paths[path_idx - 1].to_str().unwrap(),
+                paths[path_idx].to_str().unwrap(),
+            )
+        } else {
+            self.idx = std::cmp::min(self.idx, i);
+            Ok(())
+        }
+    }
+}
+
 /// Recursively traverses directories and expands globs if `glob` is `true`.
 /// Returns the expanded paths and the index at which to start parsing hive
 /// partitions from the path.
@@ -105,29 +137,25 @@ pub fn expand_paths_hive(
     let is_cloud = is_cloud_url(first_path);
     let mut out_paths = vec![];
 
-    let expand_start_idx = &mut usize::MAX.clone();
-    let mut update_expand_start_idx = |i, path_idx: usize| {
-        if check_directory_level
-            && ![usize::MAX, i].contains(expand_start_idx)
-            // They could still be the same directory level, just with different name length
-            && (paths[path_idx].parent() != paths[path_idx - 1].parent())
-        {
-            polars_bail!(
-                InvalidOperation:
-                "attempted to read from different directory levels with hive partitioning enabled: first path: {}, second path: {}",
-                paths[path_idx - 1].to_str().unwrap(),
-                paths[path_idx].to_str().unwrap(),
-            )
-        } else {
-            *expand_start_idx = std::cmp::min(*expand_start_idx, i);
-            Ok(())
-        }
+    let mut hive_idx_tracker = HiveIdxTracker {
+        idx: usize::MAX,
+        paths,
+        check_directory_level,
     };
 
     if is_cloud || { cfg!(not(target_family = "windows")) && config::force_async() } {
         #[cfg(feature = "cloud")]
         {
             use crate::cloud::object_path_from_string;
+
+            if first_path.starts_with("hf://") {
+                let (expand_start_idx, paths) =
+                    crate::pl_async::get_runtime().block_on_potential_spawn(
+                        hugging_face::expand_paths_hf(paths, check_directory_level),
+                    )?;
+
+                return Ok((Arc::from(paths), expand_start_idx));
+            }
 
             let format_path = |scheme: &str, bucket: &str, location: &str| {
                 if is_cloud {
@@ -228,11 +256,11 @@ pub fn expand_paths_hive(
                     let (expand_start_idx, paths) =
                         expand_path_cloud(path.to_str().unwrap(), cloud_options)?;
                     out_paths.extend_from_slice(&paths);
-                    update_expand_start_idx(expand_start_idx, path_idx)?;
+                    hive_idx_tracker.update(expand_start_idx, path_idx)?;
                     continue;
                 };
 
-                update_expand_start_idx(0, path_idx)?;
+                hive_idx_tracker.update(0, path_idx)?;
 
                 let iter = crate::pl_async::get_runtime().block_on_potential_spawn(
                     crate::async_glob(path.to_str().unwrap(), cloud_options),
@@ -258,7 +286,7 @@ pub fn expand_paths_hive(
             if path.is_dir() {
                 let i = path.to_str().unwrap().len();
 
-                update_expand_start_idx(i, path_idx)?;
+                hive_idx_tracker.update(i, path_idx)?;
 
                 stack.push_back(path.clone());
 
@@ -285,7 +313,7 @@ pub fn expand_paths_hive(
             let i = get_glob_start_idx(path.to_str().unwrap().as_bytes());
 
             if glob && i.is_some() {
-                update_expand_start_idx(0, path_idx)?;
+                hive_idx_tracker.update(0, path_idx)?;
 
                 let Ok(paths) = glob::glob(path.to_str().unwrap()) else {
                     polars_bail!(ComputeError: "invalid glob pattern given")
@@ -298,7 +326,7 @@ pub fn expand_paths_hive(
                     }
                 }
             } else {
-                update_expand_start_idx(0, path_idx)?;
+                hive_idx_tracker.update(0, path_idx)?;
                 out_paths.push(path.clone());
             }
         }
@@ -328,7 +356,7 @@ pub fn expand_paths_hive(
         Arc::<[_]>::from(out_paths)
     };
 
-    Ok((out_paths, *expand_start_idx))
+    Ok((out_paths, hive_idx_tracker.idx))
 }
 
 /// Ignores errors from `std::fs::create_dir_all` if the directory exists.
