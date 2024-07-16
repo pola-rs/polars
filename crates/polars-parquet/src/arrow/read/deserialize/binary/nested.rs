@@ -133,7 +133,7 @@ impl<'a, O: Offset> NestedDecoder<'a> for BinaryDecoder<O> {
     }
 }
 
-pub struct NestedIter<O: Offset, I: PagesIter> {
+pub struct NestedIter<'a, O: Offset, I: PagesIter<'a>> {
     iter: I,
     data_type: ArrowDataType,
     init: Vec<InitNested>,
@@ -141,9 +141,10 @@ pub struct NestedIter<O: Offset, I: PagesIter> {
     dict: Option<BinaryDict>,
     chunk_size: Option<usize>,
     remaining: usize,
+    _pd: std::marker::PhantomData<&'a ()>,
 }
 
-impl<O: Offset, I: PagesIter> NestedIter<O, I> {
+impl<'a, O: Offset, I: PagesIter<'a>> NestedIter<'a, O, I> {
     pub fn new(
         iter: I,
         init: Vec<InitNested>,
@@ -159,11 +160,12 @@ impl<O: Offset, I: PagesIter> NestedIter<O, I> {
             dict: None,
             chunk_size,
             remaining: num_rows,
+            _pd: std::marker::PhantomData,
         }
     }
 }
 
-impl<O: Offset, I: PagesIter> Iterator for NestedIter<O, I> {
+impl<'a, O: Offset, I: PagesIter<'a>> Iterator for NestedIter<'a, O, I> {
     type Item = PolarsResult<(NestedState, Box<dyn Array>)>;
 
     fn next(&mut self) -> Option<Self::Item> {

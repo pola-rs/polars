@@ -9,7 +9,7 @@ pub use reader::{PageFilter, PageMetaData, PageReader};
 use crate::parquet::error::ParquetError;
 use crate::parquet::page::CompressedPage;
 
-pub trait PageIterator: Iterator<Item = Result<CompressedPage, ParquetError>> {
+pub trait PageIterator<'a>: Iterator<Item = Result<CompressedPage<'a>, ParquetError>> {
     fn swap_buffer(&mut self, buffer: &mut Vec<u8>);
 }
 

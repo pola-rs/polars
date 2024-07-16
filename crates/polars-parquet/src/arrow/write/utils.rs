@@ -7,7 +7,7 @@ use crate::parquet::compression::CompressionOptions;
 use crate::parquet::encoding::hybrid_rle::encode;
 use crate::parquet::encoding::Encoding;
 use crate::parquet::metadata::Descriptor;
-use crate::parquet::page::{DataPage, DataPageHeader, DataPageHeaderV1, DataPageHeaderV2};
+use crate::parquet::page::{CowBuffer, DataPage, DataPageHeader, DataPageHeaderV1, DataPageHeaderV2};
 use crate::parquet::schema::types::PrimitiveType;
 use crate::parquet::statistics::ParquetStatistics;
 
@@ -67,7 +67,7 @@ pub fn build_plain_page(
     type_: PrimitiveType,
     options: WriteOptions,
     encoding: Encoding,
-) -> PolarsResult<DataPage> {
+) -> PolarsResult<DataPage<'static>> {
     let header = match options.version {
         Version::V1 => DataPageHeader::V1(DataPageHeaderV1 {
             num_values: num_values as i32,
@@ -89,7 +89,7 @@ pub fn build_plain_page(
     };
     Ok(DataPage::new(
         header,
-        buffer,
+        CowBuffer::Owned(buffer),
         Descriptor {
             primitive_type: type_,
             max_def_level: 0,

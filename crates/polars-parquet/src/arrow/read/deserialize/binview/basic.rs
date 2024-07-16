@@ -20,9 +20,9 @@ use crate::read::{PagesIter, PrimitiveLogicalType};
 type DecodedStateTuple = (MutableBinaryViewArray<[u8]>, MutableBitmap);
 
 impl<'a> StateTranslation<'a, BinViewDecoder> for BinaryStateTranslation<'a> {
-    fn new(
+    fn new<'b: 'a>(
         decoder: &BinViewDecoder,
-        page: &'a DataPage,
+        page: &'a DataPage<'b>,
         dict: Option<&'a <BinViewDecoder as utils::Decoder>::Dict>,
         page_validity: Option<&PageValidity<'a>>,
         filter: Option<&Filter<'a>>,
@@ -162,15 +162,16 @@ impl<'a> utils::Decoder<'a> for BinViewDecoder {
     }
 }
 
-pub struct BinaryViewArrayIter<I: PagesIter> {
+pub struct BinaryViewArrayIter<'a, I: PagesIter<'a>> {
     iter: I,
     data_type: ArrowDataType,
     items: VecDeque<DecodedStateTuple>,
     dict: Option<BinaryDict>,
     chunk_size: Option<usize>,
     remaining: usize,
+    _pd: std::marker::PhantomData<&'a ()>,
 }
-impl<I: PagesIter> BinaryViewArrayIter<I> {
+impl<'a, I: PagesIter<'a>> BinaryViewArrayIter<'a, I> {
     pub fn new(
         iter: I,
         data_type: ArrowDataType,
@@ -184,11 +185,12 @@ impl<I: PagesIter> BinaryViewArrayIter<I> {
             dict: None,
             chunk_size,
             remaining: num_rows,
+            _pd: std::marker::PhantomData,
         }
     }
 }
 
-impl<I: PagesIter> Iterator for BinaryViewArrayIter<I> {
+impl<'a, I: PagesIter<'a>> Iterator for BinaryViewArrayIter<'a, I> {
     type Item = PolarsResult<ArrayRef>;
 
     fn next(&mut self) -> Option<Self::Item> {

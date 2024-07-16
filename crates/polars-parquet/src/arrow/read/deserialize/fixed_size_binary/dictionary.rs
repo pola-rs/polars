@@ -13,9 +13,9 @@ use crate::parquet::page::DictPage;
 
 /// An iterator adapter over [`PagesIter`] assumed to be encoded as parquet's dictionary-encoded binary representation
 #[derive(Debug)]
-pub struct DictIter<K, I>
+pub struct DictIter<'a, K, I>
 where
-    I: PagesIter,
+    I: PagesIter<'a>,
     K: DictionaryKey,
 {
     iter: I,
@@ -24,12 +24,13 @@ where
     items: VecDeque<(Vec<K>, MutableBitmap)>,
     remaining: usize,
     chunk_size: Option<usize>,
+    _pd: std::marker::PhantomData<&'a ()>,
 }
 
-impl<K, I> DictIter<K, I>
+impl<'a, K, I> DictIter<'a, K, I>
 where
     K: DictionaryKey,
-    I: PagesIter,
+    I: PagesIter<'a>,
 {
     pub fn new(
         iter: I,
@@ -44,6 +45,7 @@ where
             items: VecDeque::new(),
             remaining: num_rows,
             chunk_size,
+            _pd: std::marker::PhantomData,
         }
     }
 }
@@ -61,9 +63,9 @@ fn read_dict(data_type: ArrowDataType, dict: &DictPage) -> Box<dyn Array> {
         .boxed()
 }
 
-impl<K, I> Iterator for DictIter<K, I>
+impl<'a, K, I> Iterator for DictIter<'a, K, I>
 where
-    I: PagesIter,
+    I: PagesIter<'a>,
     K: DictionaryKey,
 {
     type Item = PolarsResult<DictionaryArray<K>>;
@@ -89,9 +91,9 @@ where
 
 /// An iterator adapter that converts [`DataPages`] into an [`Iterator`] of [`DictionaryArray`].
 #[derive(Debug)]
-pub struct NestedDictIter<K, I>
+pub struct NestedDictIter<'a, K, I>
 where
-    I: PagesIter,
+    I: PagesIter<'a>,
     K: DictionaryKey,
 {
     iter: I,
@@ -101,11 +103,12 @@ where
     items: VecDeque<(NestedState, (Vec<K>, MutableBitmap))>,
     remaining: usize,
     chunk_size: Option<usize>,
+    _pd: std::marker::PhantomData<&'a ()>,
 }
 
-impl<K, I> NestedDictIter<K, I>
+impl<'a, K, I> NestedDictIter<'a, K, I>
 where
-    I: PagesIter,
+    I: PagesIter<'a>,
     K: DictionaryKey,
 {
     pub fn new(
@@ -123,13 +126,14 @@ where
             remaining: num_rows,
             items: VecDeque::new(),
             chunk_size,
+            _pd: std::marker::PhantomData,
         }
     }
 }
 
-impl<K, I> Iterator for NestedDictIter<K, I>
+impl<'a, K, I> Iterator for NestedDictIter<'a, K, I>
 where
-    I: PagesIter,
+    I: PagesIter<'a>,
     K: DictionaryKey,
 {
     type Item = PolarsResult<(NestedState, DictionaryArray<K>)>;

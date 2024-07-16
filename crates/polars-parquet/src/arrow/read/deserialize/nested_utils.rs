@@ -229,7 +229,7 @@ pub(super) trait NestedDecoder<'a> {
     ) -> ParquetResult<()>;
     fn push_n_nulls(&self, decoded: &mut Self::DecodedState, n: usize);
 
-    fn deserialize_dict(&self, page: &DictPage) -> Self::Dictionary;
+    fn deserialize_dict(&self, page: &DictPage<'a>) -> Self::Dictionary;
 }
 
 /// The initial info of nested data types.
@@ -329,8 +329,8 @@ impl NestedState {
 /// reading. It therefore returns a bool indicating:
 /// * true  : the row is fully read
 /// * false : the row may not be fully read
-pub(super) fn extend<'a, D: NestedDecoder<'a>>(
-    page: &'a DataPage,
+pub(super) fn extend<'a, 'b: 'a, D: NestedDecoder<'a>>(
+    page: &'a DataPage<'b>,
     init: &[InitNested],
     items: &mut VecDeque<(NestedState, D::DecodedState)>,
     dict: Option<&'a D::Dictionary>,
@@ -541,7 +541,7 @@ fn extend_offsets2<'a, 'b, 'c, 'd, D: NestedDecoder<'a>>(
 }
 
 #[inline]
-pub(super) fn next<'a, I, D>(
+pub(super) fn next<'a, 'b: 'a, I, D>(
     iter: &'a mut I,
     items: &mut VecDeque<(NestedState, D::DecodedState)>,
     dict: &'a mut Option<D::Dictionary>,
@@ -551,7 +551,7 @@ pub(super) fn next<'a, I, D>(
     decoder: &D,
 ) -> MaybeNext<PolarsResult<(NestedState, D::DecodedState)>>
 where
-    I: PagesIter,
+    I: PagesIter<'b>,
     D: NestedDecoder<'a>,
 {
     // front[a1, a2, a3, ...]back

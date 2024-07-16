@@ -21,7 +21,7 @@ pub use row_group::ColumnOffsetsMetadata;
 use crate::parquet::page::CompressedPage;
 
 pub type RowGroupIterColumns<'a, E> =
-    DynIter<'a, Result<DynStreamingIterator<'a, CompressedPage, E>, E>>;
+    DynIter<'a, Result<DynStreamingIterator<'a, CompressedPage<'a>, E>, E>>;
 
 pub type RowGroupIter<'a, E> = DynIter<'a, RowGroupIterColumns<'a, E>>;
 

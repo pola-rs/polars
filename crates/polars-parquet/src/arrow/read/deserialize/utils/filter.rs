@@ -12,7 +12,7 @@ pub(crate) struct Filter<'a> {
 }
 
 impl<'a> Filter<'a> {
-    pub fn new(page: &'a DataPage) -> Option<Self> {
+    pub fn new(page: &DataPage<'a>) -> Option<Self> {
         let selected_rows = page.selected_rows()?;
 
         Some(Self {

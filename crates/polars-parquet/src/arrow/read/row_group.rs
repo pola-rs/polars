@@ -131,10 +131,10 @@ where
     Ok((meta, chunk))
 }
 
-type Pages = Box<
+type Pages<'a> = Box<
     dyn Iterator<
             Item = std::result::Result<
-                crate::parquet::page::CompressedPage,
+                crate::parquet::page::CompressedPage<'a>,
                 crate::parquet::error::ParquetError,
             >,
         > + Sync

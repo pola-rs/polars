@@ -16,7 +16,7 @@ pub fn array_to_page<'a, T, R>(
     options: WriteOptions,
     type_: PrimitiveType,
     nested: &[Nested],
-) -> PolarsResult<DataPage>
+) -> PolarsResult<DataPage<'static>>
 where
     PrimitiveArray<T>: polars_compute::min_max::MinMaxKernel<Scalar<'a> = T>,
     T: ArrowNativeType,

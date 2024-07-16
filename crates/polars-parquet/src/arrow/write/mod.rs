@@ -262,7 +262,7 @@ pub fn array_to_pages(
     nested: &[Nested],
     options: WriteOptions,
     mut encoding: Encoding,
-) -> PolarsResult<DynIter<'static, PolarsResult<Page>>> {
+) -> PolarsResult<DynIter<'static, PolarsResult<Page<'static>>>> {
     if let ArrowDataType::Dictionary(key_type, _, _) = primitive_array.data_type().to_logical_type()
     {
         return match_integer_type!(key_type, |$T| {
@@ -343,7 +343,7 @@ pub fn array_to_page(
     nested: &[Nested],
     options: WriteOptions,
     encoding: Encoding,
-) -> PolarsResult<Page> {
+) -> PolarsResult<Page<'static>> {
     if nested.len() == 1 {
         // special case where validity == def levels
         return array_to_page_simple(array, type_, options, encoding);
@@ -357,7 +357,7 @@ pub fn array_to_page_simple(
     type_: ParquetPrimitiveType,
     options: WriteOptions,
     encoding: Encoding,
-) -> PolarsResult<Page> {
+) -> PolarsResult<Page<'static>> {
     let data_type = array.data_type();
 
     match data_type.to_logical_type() {
@@ -724,7 +724,7 @@ fn array_to_page_nested(
     nested: &[Nested],
     options: WriteOptions,
     _encoding: Encoding,
-) -> PolarsResult<Page> {
+) -> PolarsResult<Page<'static>> {
     use ArrowDataType::*;
     match array.data_type().to_logical_type() {
         Null => {

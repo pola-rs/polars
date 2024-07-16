@@ -14,7 +14,7 @@ pub fn array_to_page<O>(
     options: WriteOptions,
     type_: PrimitiveType,
     nested: &[Nested],
-) -> PolarsResult<DataPage>
+) -> PolarsResult<DataPage<'static>>
 where
     O: Offset,
 {

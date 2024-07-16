@@ -18,14 +18,14 @@ mod stream;
 /// For primitive fields (e.g. `i64`), [`ColumnIterator`] yields exactly one column.
 /// For complex fields, it yields multiple columns.
 /// `max_page_size` is the maximum number of bytes allowed.
-pub fn get_column_iterator<R: Read + Seek>(
+pub fn get_column_iterator<'a, R: Read + Seek>(
     reader: R,
     row_group: &RowGroupMetaData,
     field_name: &str,
     page_filter: Option<PageFilter>,
     scratch: Vec<u8>,
     max_page_size: usize,
-) -> ColumnIterator<R> {
+) -> ColumnIterator<'a, R> {
     let columns = get_field_columns(row_group.columns(), field_name)
         .cloned()
         .collect::<Vec<_>>();
@@ -53,16 +53,16 @@ pub trait MutStreamingIterator: Sized {
 
 /// A [`MutStreamingIterator`] that reads column chunks one by one,
 /// returning a [`PageReader`] per column.
-pub struct ColumnIterator<R: Read + Seek> {
+pub struct ColumnIterator<'a, R: Read + Seek> {
     reader: Option<R>,
     columns: Vec<ColumnChunkMetaData>,
     page_filter: Option<PageFilter>,
-    current: Option<(PageReader<R>, ColumnChunkMetaData)>,
+    current: Option<(PageReader<'a, R>, ColumnChunkMetaData)>,
     scratch: Vec<u8>,
     max_page_size: usize,
 }
 
-impl<R: Read + Seek> ColumnIterator<R> {
+impl<'a, R: Read + Seek> ColumnIterator<'a, R> {
     /// Returns a new [`ColumnIterator`]
     /// `max_page_size` is the maximum allowed page size
     pub fn new(
@@ -84,8 +84,8 @@ impl<R: Read + Seek> ColumnIterator<R> {
     }
 }
 
-impl<R: Read + Seek> MutStreamingIterator for ColumnIterator<R> {
-    type Item = (PageReader<R>, ColumnChunkMetaData);
+impl<'a, R: Read + Seek> MutStreamingIterator for ColumnIterator<'a, R> {
+    type Item = (PageReader<'a, R>, ColumnChunkMetaData);
     type Error = ParquetError;
 
     fn advance(mut self) -> Result<State<Self>, ParquetError> {
@@ -124,24 +124,24 @@ impl<R: Read + Seek> MutStreamingIterator for ColumnIterator<R> {
 
 /// A [`MutStreamingIterator`] of pre-read column chunks
 #[derive(Debug)]
-pub struct ReadColumnIterator {
+pub struct ReadColumnIterator<'a> {
     field: ParquetType,
     chunks: Vec<(
-        Vec<Result<CompressedPage, ParquetError>>,
+        Vec<Result<CompressedPage<'a>, ParquetError>>,
         ColumnChunkMetaData,
     )>,
     current: Option<(
-        IntoIter<Result<CompressedPage, ParquetError>>,
+        IntoIter<Result<CompressedPage<'a>, ParquetError>>,
         ColumnChunkMetaData,
     )>,
 }
 
-impl ReadColumnIterator {
+impl<'a> ReadColumnIterator<'a> {
     /// Returns a new [`ReadColumnIterator`]
     pub fn new(
         field: ParquetType,
         chunks: Vec<(
-            Vec<Result<CompressedPage, ParquetError>>,
+            Vec<Result<CompressedPage<'a>, ParquetError>>,
             ColumnChunkMetaData,
         )>,
     ) -> Self {
@@ -153,9 +153,9 @@ impl ReadColumnIterator {
     }
 }
 
-impl MutStreamingIterator for ReadColumnIterator {
+impl<'a> MutStreamingIterator for ReadColumnIterator<'a> {
     type Item = (
-        IntoIter<Result<CompressedPage, ParquetError>>,
+        IntoIter<Result<CompressedPage<'a>, ParquetError>>,
         ColumnChunkMetaData,
     );
     type Error = ParquetError;

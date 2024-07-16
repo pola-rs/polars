@@ -13,7 +13,7 @@ pub fn array_to_page(
     options: WriteOptions,
     type_: PrimitiveType,
     nested: &[Nested],
-) -> PolarsResult<DataPage> {
+) -> PolarsResult<DataPage<'static>> {
     let mut buffer = vec![];
     let (repetition_levels_byte_length, definition_levels_byte_length) =
         nested::write_rep_and_def(options.version, nested, &mut buffer)?;

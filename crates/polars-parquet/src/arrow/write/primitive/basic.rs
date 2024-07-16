@@ -79,7 +79,7 @@ pub fn array_to_page_plain<T, P>(
     array: &PrimitiveArray<T>,
     options: WriteOptions,
     type_: PrimitiveType,
-) -> PolarsResult<DataPage>
+) -> PolarsResult<DataPage<'static>>
 where
     T: NativeType,
     P: ParquetNativeType,
@@ -93,7 +93,7 @@ pub fn array_to_page_integer<T, P>(
     options: WriteOptions,
     type_: PrimitiveType,
     encoding: Encoding,
-) -> PolarsResult<Page>
+) -> PolarsResult<Page<'static>>
 where
     T: NativeType,
     P: ParquetNativeType,
@@ -114,7 +114,7 @@ pub fn array_to_page<T, P, F: Fn(&PrimitiveArray<T>, bool, Vec<u8>) -> Vec<u8>>(
     type_: PrimitiveType,
     encoding: Encoding,
     encode: F,
-) -> PolarsResult<DataPage>
+) -> PolarsResult<DataPage<'static>>
 where
     T: NativeType,
     P: ParquetNativeType,

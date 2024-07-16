@@ -21,9 +21,9 @@ use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{DataPage, DictPage, Page};
 
 impl<'a, K: DictionaryKey> StateTranslation<'a, PrimitiveDecoder<K>> for HybridRleDecoder<'a> {
-    fn new(
+    fn new<'b: 'a>(
         _decoder: &PrimitiveDecoder<K>,
-        page: &'a DataPage,
+        page: &'a DataPage<'b>,
         _dict: Option<&'a <PrimitiveDecoder<K> as Decoder<'a>>::Dict>,
         _page_validity: Option<&PageValidity<'a>>,
         _filter: Option<&Filter<'a>>,
@@ -132,7 +132,7 @@ fn finish_key<K: DictionaryKey>(values: Vec<K>, validity: MutableBitmap) -> Prim
 }
 
 #[inline]
-pub(super) fn next_dict<K: DictionaryKey, I: PagesIter, F: Fn(&DictPage) -> Box<dyn Array>>(
+pub(super) fn next_dict<'a, K: DictionaryKey, I: PagesIter<'a>, F: Fn(&DictPage<'a>) -> Box<dyn Array>>(
     iter: &mut I,
     items: &mut VecDeque<(Vec<K>, MutableBitmap)>,
     dict: &mut Option<Box<dyn Array>>,

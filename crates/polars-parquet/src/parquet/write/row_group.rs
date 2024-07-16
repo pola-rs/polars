@@ -143,7 +143,7 @@ pub async fn write_row_group_async<
     writer: &mut W,
     mut offset: u64,
     descriptors: &[ColumnDescriptor],
-    columns: DynIter<'a, std::result::Result<DynStreamingIterator<'a, CompressedPage, E>, E>>,
+    columns: DynIter<'a, std::result::Result<DynStreamingIterator<'a, CompressedPage<'a>, E>, E>>,
     ordinal: usize,
 ) -> ParquetResult<(RowGroup, Vec<Vec<PageWriteSpec>>, u64)>
 where

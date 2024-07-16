@@ -331,7 +331,7 @@ pub fn array_to_columns<A: AsRef<dyn Array> + Send + Sync>(
     type_: ParquetType,
     options: WriteOptions,
     encoding: &[Encoding],
-) -> PolarsResult<Vec<DynIter<'static, PolarsResult<Page>>>> {
+) -> PolarsResult<Vec<DynIter<'static, PolarsResult<Page<'static>>>>> {
     let array = array.as_ref();
     let nested = to_nested(array, &type_)?;
 
@@ -357,7 +357,7 @@ pub fn arrays_to_columns<A: AsRef<dyn Array> + Send + Sync>(
     type_: ParquetType,
     options: WriteOptions,
     encoding: &[Encoding],
-) -> PolarsResult<Vec<DynIter<'static, PolarsResult<Page>>>> {
+) -> PolarsResult<Vec<DynIter<'static, PolarsResult<Page<'static>>>>> {
     let array = arrays[0].as_ref();
     let nested = to_nested(array, &type_)?;
 

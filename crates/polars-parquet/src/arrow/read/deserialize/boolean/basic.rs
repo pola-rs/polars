@@ -24,9 +24,9 @@ enum StateTranslation<'a> {
 }
 
 impl<'a> utils::StateTranslation<'a, BooleanDecoder> for StateTranslation<'a> {
-    fn new(
+    fn new<'b: 'a>(
         _decoder: &BooleanDecoder,
-        page: &'a DataPage,
+        page: &'a DataPage<'b>,
         _dict: Option<&'a <BooleanDecoder as Decoder>::Dict>,
         page_validity: Option<&PageValidity<'a>>,
         _filter: Option<&Filter<'a>>,
@@ -200,15 +200,16 @@ fn finish(
 
 /// An iterator adapter over [`PagesIter`] assumed to be encoded as boolean arrays
 #[derive(Debug)]
-pub struct Iter<I: PagesIter> {
+pub struct Iter<'a, I: PagesIter<'a>> {
     iter: I,
     data_type: ArrowDataType,
     items: VecDeque<(MutableBitmap, MutableBitmap)>,
     chunk_size: Option<usize>,
     remaining: usize,
+    _pd: std::marker::PhantomData<&'a ()>,
 }
 
-impl<I: PagesIter> Iter<I> {
+impl<'a, I: PagesIter<'a>> Iter<'a, I> {
     pub fn new(
         iter: I,
         data_type: ArrowDataType,
@@ -221,11 +222,12 @@ impl<I: PagesIter> Iter<I> {
             items: VecDeque::new(),
             chunk_size,
             remaining: num_rows,
+            _pd: std::marker::PhantomData,
         }
     }
 }
 
-impl<I: PagesIter> Iterator for Iter<I> {
+impl<'a, I: PagesIter<'a>> Iterator for Iter<'a, I> {
     type Item = PolarsResult<BooleanArray>;
 
     fn next(&mut self) -> Option<Self::Item> {

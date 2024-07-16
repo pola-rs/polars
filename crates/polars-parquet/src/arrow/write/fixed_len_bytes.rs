@@ -28,7 +28,7 @@ pub fn array_to_page(
     options: WriteOptions,
     type_: PrimitiveType,
     statistics: Option<FixedLenStatistics>,
-) -> PolarsResult<DataPage> {
+) -> PolarsResult<DataPage<'static>> {
     let is_optional = is_nullable(&type_.field_info);
     let validity = array.validity();
 

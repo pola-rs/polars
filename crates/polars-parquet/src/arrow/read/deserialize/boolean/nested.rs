@@ -95,15 +95,16 @@ impl<'a> NestedDecoder<'a> for BooleanDecoder {
 
 /// An iterator adapter over [`PagesIter`] assumed to be encoded as boolean arrays
 #[derive(Debug)]
-pub struct NestedIter<I: PagesIter> {
+pub struct NestedIter<'a, I: PagesIter<'a>> {
     iter: I,
     init: Vec<InitNested>,
     items: VecDeque<(NestedState, (MutableBitmap, MutableBitmap))>,
     remaining: usize,
     chunk_size: Option<usize>,
+    _pd: std::marker::PhantomData<&'a ()>,
 }
 
-impl<I: PagesIter> NestedIter<I> {
+impl<'a, I: PagesIter<'a>> NestedIter<'a, I> {
     pub fn new(iter: I, init: Vec<InitNested>, num_rows: usize, chunk_size: Option<usize>) -> Self {
         Self {
             iter,
@@ -111,6 +112,7 @@ impl<I: PagesIter> NestedIter<I> {
             items: VecDeque::new(),
             remaining: num_rows,
             chunk_size,
+            _pd: std::marker::PhantomData,
         }
     }
 }
@@ -123,7 +125,7 @@ fn finish(
     BooleanArray::new(data_type.clone(), values.into(), validity.into())
 }
 
-impl<I: PagesIter> Iterator for NestedIter<I> {
+impl<'a, I: PagesIter<'a>> Iterator for NestedIter<'a, I> {
     type Item = PolarsResult<(NestedState, BooleanArray)>;
 
     fn next(&mut self) -> Option<Self::Item> {

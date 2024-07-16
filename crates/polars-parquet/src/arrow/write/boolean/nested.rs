@@ -14,7 +14,7 @@ pub fn array_to_page(
     options: WriteOptions,
     type_: PrimitiveType,
     nested: &[Nested],
-) -> PolarsResult<DataPage> {
+) -> PolarsResult<DataPage<'static>> {
     let is_optional = is_nullable(&type_.field_info);
 
     let mut buffer = vec![];

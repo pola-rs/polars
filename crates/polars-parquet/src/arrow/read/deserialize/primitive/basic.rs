@@ -155,9 +155,9 @@ where
     P: ParquetNativeType,
     D: DecoderFunction<P, T>,
 {
-    fn new(
+    fn new<'b: 'a>(
         _decoder: &PrimitiveDecoder<P, T, D>,
-        page: &'a DataPage,
+        page: &'a DataPage<'b>,
         dict: Option<&'a <PrimitiveDecoder<P, T, D> as utils::Decoder<'a>>::Dict>,
         _page_validity: Option<&PageValidity<'a>>,
         _filter: Option<&Filter<'a>>,
@@ -343,9 +343,9 @@ pub(super) fn finish<T: NativeType>(
 
 /// An [`Iterator`] adapter over [`PagesIter`] assumed to be encoded as primitive arrays
 #[derive(Debug)]
-pub struct Iter<T, I, P, D>
+pub struct Iter<'a, T, I, P, D>
 where
-    I: PagesIter,
+    I: PagesIter<'a>,
     T: NativeType,
     P: ParquetNativeType,
     D: DecoderFunction<P, T>,
@@ -357,12 +357,12 @@ where
     chunk_size: Option<usize>,
     dict: Option<Vec<T>>,
     decoder: D,
-    phantom: std::marker::PhantomData<P>,
+    phantom: std::marker::PhantomData<&'a P>,
 }
 
-impl<T, I, P, D> Iter<T, I, P, D>
+impl<'a, T, I, P, D> Iter<'a, T, I, P, D>
 where
-    I: PagesIter,
+    I: PagesIter<'a>,
     T: NativeType,
 
     P: ParquetNativeType,
@@ -388,9 +388,9 @@ where
     }
 }
 
-impl<T, I, P, D> Iterator for Iter<T, I, P, D>
+impl<'a, T, I, P, D> Iterator for Iter<'a, T, I, P, D>
 where
-    I: PagesIter,
+    I: PagesIter<'a>,
     T: NativeType,
     P: ParquetNativeType,
     D: DecoderFunction<P, T>,

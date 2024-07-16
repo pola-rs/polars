@@ -129,7 +129,7 @@ impl<'a> NestedDecoder<'a> for BinViewDecoder {
     }
 }
 
-pub struct NestedIter<I: PagesIter> {
+pub struct NestedIter<'a, I: PagesIter<'a>> {
     iter: I,
     data_type: ArrowDataType,
     init: Vec<InitNested>,
@@ -137,9 +137,10 @@ pub struct NestedIter<I: PagesIter> {
     dict: Option<BinaryDict>,
     chunk_size: Option<usize>,
     remaining: usize,
+            _pd: std::marker::PhantomData<&'a ()>,
 }
 
-impl<I: PagesIter> NestedIter<I> {
+impl<'a, I: PagesIter<'a>> NestedIter<'a, I> {
     pub fn new(
         iter: I,
         init: Vec<InitNested>,
@@ -155,11 +156,12 @@ impl<I: PagesIter> NestedIter<I> {
             dict: None,
             chunk_size,
             remaining: num_rows,
+            _pd: std::marker::PhantomData,
         }
     }
 }
 
-impl<I: PagesIter> Iterator for NestedIter<I> {
+impl<'a, I: PagesIter<'a>> Iterator for NestedIter<'a, I> {
     type Item = PolarsResult<(NestedState, ArrayRef)>;
 
     fn next(&mut self) -> Option<Self::Item> {

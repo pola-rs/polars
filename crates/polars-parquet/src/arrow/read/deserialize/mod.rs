@@ -152,7 +152,7 @@ fn columns_to_iter_recursive<'a, I>(
     chunk_size: Option<usize>,
 ) -> PolarsResult<NestedArrayIter<'a>>
 where
-    I: 'a + PagesIter,
+    I: 'a + PagesIter<'a>,
 {
     if init.is_empty() && is_primitive(&field.data_type) {
         return Ok(Box::new(
@@ -221,7 +221,7 @@ pub fn column_iter_to_arrays<'a, I>(
     num_rows: usize,
 ) -> PolarsResult<ArrayIter<'a>>
 where
-    I: 'a + PagesIter,
+    I: 'a + PagesIter<'a>,
 {
     Ok(Box::new(
         columns_to_iter_recursive(columns, types, field, vec![], num_rows, chunk_size)?

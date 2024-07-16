@@ -27,13 +27,15 @@ pub(crate) struct State<'a, D: Decoder<'a>, T: StateTranslation<'a, D>> {
 }
 
 pub(crate) trait StateTranslation<'a, D: Decoder<'a>>: Sized {
-    fn new(
+    fn new<'b>(
         decoder: &D,
-        page: &'a DataPage,
-        dict: Option<&'a D::Dict>,
-        page_validity: Option<&PageValidity<'a>>,
-        filter: Option<&Filter<'a>>,
-    ) -> PolarsResult<Self>;
+        page: &'b DataPage<'a>,
+        dict: Option<&'b D::Dict>,
+        page_validity: Option<&PageValidity<'b>>,
+        filter: Option<&Filter<'b>>,
+    ) -> PolarsResult<Self>
+    where
+        'a: 'b;
     fn len_when_not_nullable(&self) -> usize;
     fn skip_in_place(&mut self, n: usize) -> ParquetResult<()>;
 
@@ -49,7 +51,14 @@ pub(crate) trait StateTranslation<'a, D: Decoder<'a>>: Sized {
 }
 
 impl<'a, D: Decoder<'a>, T: StateTranslation<'a, D>> State<'a, D, T> {
-    pub fn new(decoder: &D, page: &'a DataPage, dict: Option<&'a D::Dict>) -> PolarsResult<Self> {
+    pub fn new<'b>(
+        decoder: &D,
+        page: &'b DataPage<'a>,
+        dict: Option<&'b D::Dict>,
+    ) -> PolarsResult<Self>
+    where
+        'a: 'b,
+    {
         let is_optional =
             page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
         let is_filtered = page.selected_rows().is_some();
@@ -256,7 +265,12 @@ impl<'a, I, T, C: BatchableCollector<I, T>> BatchedCollector<'a, I, T, C> {
 }
 
 pub(crate) type PageValidity<'a> = HybridRleDecoder<'a>;
-pub(crate) fn page_validity_decoder(page: &DataPage) -> ParquetResult<PageValidity> {
+pub(crate) fn page_validity_decoder<'a, 'b>(
+    page: &'b DataPage<'a>,
+) -> ParquetResult<PageValidity<'a>>
+where
+    'a: 'b,
+{
     let validity = split_buffer(page)?.def;
     let decoder = hybrid_rle::HybridRleDecoder::new(validity, 1, page.num_values());
     Ok(decoder)
@@ -484,7 +498,7 @@ pub(super) trait Decoder<'a>: Sized {
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState;
 
     /// Deserializes a [`DictPage`] into [`Self::Dict`].
-    fn deserialize_dict(&self, page: &DictPage) -> Self::Dict;
+    fn deserialize_dict(&self, page: &DictPage<'a>) -> Self::Dict;
 }
 
 pub(super) fn extend_from_new_page<'a, T: Decoder<'a>>(
@@ -539,13 +553,13 @@ pub enum MaybeNext<P> {
 }
 
 #[inline]
-pub(super) fn next<'a, I: PagesIter, D: Decoder<'a>>(
+pub(super) fn next<'a, 'b: 'a, I: PagesIter<'b>, D: Decoder<'b>>(
     iter: &'a mut I,
-    items: &'a mut VecDeque<D::DecodedState>,
+    items: &mut VecDeque<D::DecodedState>,
     dict: &'a mut Option<D::Dict>,
-    remaining: &'a mut usize,
+    remaining: &mut usize,
     chunk_size: Option<usize>,
-    decoder: &'a D,
+    decoder: &D,
 ) -> MaybeNext<PolarsResult<D::DecodedState>> {
     // front[a1, a2, a3, ...]back
     if items.len() > 1 {
@@ -605,7 +619,9 @@ pub(super) fn next<'a, I: PagesIter, D: Decoder<'a>>(
 }
 
 #[inline]
-pub(super) fn dict_indices_decoder(page: &DataPage) -> PolarsResult<hybrid_rle::HybridRleDecoder> {
+pub(super) fn dict_indices_decoder<'a>(
+    page: &'a DataPage,
+) -> PolarsResult<hybrid_rle::HybridRleDecoder<'a>> {
     let indices_buffer = split_buffer(page)?.values;
 
     // SPEC: Data page format: the bit width used to encode the entry ids stored as 1 byte (max bit width = 32),

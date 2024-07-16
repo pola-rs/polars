@@ -95,10 +95,10 @@ pub fn write_page<W: Write>(
 
 #[cfg(feature = "async")]
 #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
-pub async fn write_page_async<W: AsyncWrite + Unpin + Send>(
+pub async fn write_page_async<'a, W: AsyncWrite + Unpin + Send>(
     writer: &mut W,
     offset: u64,
-    compressed_page: &CompressedPage,
+    compressed_page: &CompressedPage<'a>,
 ) -> ParquetResult<PageWriteSpec> {
     let num_values = compressed_page.num_values();
     let selected_rows = compressed_page.selected_rows();
@@ -217,12 +217,14 @@ async fn write_page_header_async<W: AsyncWrite + Unpin + Send>(
 
 #[cfg(test)]
 mod tests {
+    use crate::parquet::page::CowBuffer;
+
     use super::*;
 
     #[test]
     fn dict_too_large() {
         let page = CompressedDictPage::new(
-            vec![],
+            CowBuffer::Owned(vec![]),
             Compression::Uncompressed,
             i32::MAX as usize + 1,
             100,
@@ -234,7 +236,7 @@ mod tests {
     #[test]
     fn dict_too_many_values() {
         let page = CompressedDictPage::new(
-            vec![],
+            CowBuffer::Owned(vec![]),
             Compression::Uncompressed,
             0,
             i32::MAX as usize + 1,

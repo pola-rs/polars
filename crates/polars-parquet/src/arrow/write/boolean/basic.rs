@@ -42,7 +42,7 @@ pub fn array_to_page(
     array: &BooleanArray,
     options: WriteOptions,
     type_: PrimitiveType,
-) -> PolarsResult<DataPage> {
+) -> PolarsResult<DataPage<'static>> {
     let is_optional = is_nullable(&type_.field_info);
 
     let validity = array.validity();

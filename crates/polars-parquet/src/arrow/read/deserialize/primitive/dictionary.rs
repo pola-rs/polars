@@ -32,9 +32,9 @@ where
 
 /// An iterator adapter over [`PagesIter`] assumed to be encoded as boolean arrays
 #[derive(Debug)]
-pub struct DictIter<K, T, I, P, D>
+pub struct DictIter<'a, K, T, I, P, D>
 where
-    I: PagesIter,
+    I: PagesIter<'a>,
     T: NativeType,
     K: DictionaryKey,
     P: ParquetNativeType,
@@ -47,13 +47,13 @@ where
     remaining: usize,
     chunk_size: Option<usize>,
     decoder: D,
-    phantom: std::marker::PhantomData<(P, T)>,
+    phantom: std::marker::PhantomData<&'a (P, T)>,
 }
 
-impl<K, T, I, P, D> DictIter<K, T, I, P, D>
+impl<'a, K, T, I, P, D> DictIter<'a, K, T, I, P, D>
 where
     K: DictionaryKey,
-    I: PagesIter,
+    I: PagesIter<'a>,
     T: NativeType,
 
     P: ParquetNativeType,
@@ -79,9 +79,9 @@ where
     }
 }
 
-impl<K, T, I, P, D> Iterator for DictIter<K, T, I, P, D>
+impl<'a, K, T, I, P, D> Iterator for DictIter<'a, K, T, I, P, D>
 where
-    I: PagesIter,
+    I: PagesIter<'a>,
     T: NativeType,
     K: DictionaryKey,
     P: ParquetNativeType,
@@ -110,9 +110,9 @@ where
 
 /// An iterator adapter that converts [`DataPages`] into an [`Iterator`] of [`DictionaryArray`]
 #[derive(Debug)]
-pub struct NestedDictIter<K, T, I, P, D>
+pub struct NestedDictIter<'a, K, T, I, P, D>
 where
-    I: PagesIter,
+    I: PagesIter<'a>,
     T: NativeType,
     K: DictionaryKey,
     P: ParquetNativeType,
@@ -126,13 +126,13 @@ where
     remaining: usize,
     chunk_size: Option<usize>,
     decoder: D,
-    phantom: std::marker::PhantomData<(P, T)>,
+    phantom: std::marker::PhantomData<&'a (P, T)>,
 }
 
-impl<K, T, I, P, D> NestedDictIter<K, T, I, P, D>
+impl<'a, K, T, I, P, D> NestedDictIter<'a, K, T, I, P, D>
 where
     K: DictionaryKey,
-    I: PagesIter,
+    I: PagesIter<'a>,
     T: NativeType,
 
     P: ParquetNativeType,
@@ -160,9 +160,9 @@ where
     }
 }
 
-impl<K, T, I, P, D> Iterator for NestedDictIter<K, T, I, P, D>
+impl<'a, K, T, I, P, D> Iterator for NestedDictIter<'a, K, T, I, P, D>
 where
-    I: PagesIter,
+    I: PagesIter<'a>,
     T: NativeType,
     K: DictionaryKey,
     P: ParquetNativeType,

@@ -19,7 +19,7 @@ pub async fn get_page_stream<'a, RR: AsyncRead + Unpin + Send + AsyncSeek>(
     scratch: Vec<u8>,
     pages_filter: PageFilter,
     max_page_size: usize,
-) -> ParquetResult<impl Stream<Item = ParquetResult<CompressedPage>> + 'a> {
+) -> ParquetResult<impl Stream<Item = ParquetResult<CompressedPage<'a>>> + 'a> {
     get_page_stream_with_page_meta(
         column_metadata.into(),
         reader,
@@ -37,7 +37,7 @@ pub async fn get_page_stream_from_column_start<'a, R: AsyncRead + Unpin + Send>(
     scratch: Vec<u8>,
     pages_filter: PageFilter,
     max_header_size: usize,
-) -> ParquetResult<impl Stream<Item = ParquetResult<CompressedPage>> + 'a> {
+) -> ParquetResult<impl Stream<Item = ParquetResult<CompressedPage<'a>>> + 'a> {
     let page_metadata: PageMetaData = column_metadata.into();
     Ok(_get_page_stream(
         reader,

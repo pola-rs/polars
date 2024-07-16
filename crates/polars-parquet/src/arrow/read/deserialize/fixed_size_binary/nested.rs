@@ -14,7 +14,7 @@ use crate::parquet::encoding::hybrid_rle::gatherer::{SliceDictionaryTranslator, 
 use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use crate::parquet::encoding::Encoding;
 use crate::parquet::error::{ParquetError, ParquetResult};
-use crate::parquet::page::{DataPage, DictPage};
+use crate::parquet::page::{CowBuffer, DataPage, DictPage};
 use crate::parquet::schema::Repetition;
 use crate::read::deserialize::utils::dict_indices_decoder;
 
@@ -52,7 +52,7 @@ struct BinaryDecoder {
 
 impl<'a> NestedDecoder<'a> for BinaryDecoder {
     type State = State<'a>;
-    type Dictionary = Vec<u8>;
+    type Dictionary = CowBuffer<'a>;
     type DecodedState = (FixedSizeBinary, MutableBitmap);
 
     fn build_state(
@@ -133,23 +133,23 @@ impl<'a> NestedDecoder<'a> for BinaryDecoder {
         validity.extend_constant(n, false);
     }
 
-    fn deserialize_dict(&self, page: &DictPage) -> Self::Dictionary {
+    fn deserialize_dict(&self, page: &DictPage<'a>) -> Self::Dictionary {
         page.buffer.clone()
     }
 }
 
-pub struct NestedIter<I: PagesIter> {
+pub struct NestedIter<'a, I: PagesIter<'a>> {
     iter: I,
     data_type: ArrowDataType,
     size: usize,
     init: Vec<InitNested>,
     items: VecDeque<(NestedState, (FixedSizeBinary, MutableBitmap))>,
-    dict: Option<Vec<u8>>,
+    dict: Option<CowBuffer<'a>>,
     chunk_size: Option<usize>,
     remaining: usize,
 }
 
-impl<I: PagesIter> NestedIter<I> {
+impl<'a, I: PagesIter<'a>> NestedIter<'a, I> {
     pub fn new(
         iter: I,
         init: Vec<InitNested>,
@@ -171,7 +171,7 @@ impl<I: PagesIter> NestedIter<I> {
     }
 }
 
-impl<I: PagesIter> Iterator for NestedIter<I> {
+impl<'a, I: PagesIter<'a>> Iterator for NestedIter<'a, I> {
     type Item = PolarsResult<(NestedState, FixedSizeBinaryArray)>;
 
     fn next(&mut self) -> Option<Self::Item> {

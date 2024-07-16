@@ -38,7 +38,7 @@ pub fn array_to_page<O: Offset>(
     options: WriteOptions,
     type_: PrimitiveType,
     encoding: Encoding,
-) -> PolarsResult<Page> {
+) -> PolarsResult<Page<'static>> {
     let validity = array.validity();
     let is_optional = is_nullable(&type_.field_info);
 

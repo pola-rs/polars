@@ -15,7 +15,7 @@ pub fn iter_to_arrays<'a, I>(
     num_rows: usize,
 ) -> ArrayIter<'a>
 where
-    I: 'a + PagesIter,
+    I: 'a + PagesIter<'a>,
 {
     let mut len = 0usize;
 
@@ -64,7 +64,7 @@ mod tests {
     #[allow(unused_imports)]
     use crate::parquet::fallible_streaming_iterator;
     use crate::parquet::metadata::Descriptor;
-    use crate::parquet::page::{DataPage, DataPageHeader, DataPageHeaderV1, Page};
+    use crate::parquet::page::{CowBuffer, DataPage, DataPageHeader, DataPageHeaderV1, Page};
     use crate::parquet::schema::types::{PhysicalType, PrimitiveType};
 
     #[test]
@@ -78,7 +78,7 @@ mod tests {
                     repetition_level_encoding: Encoding::Plain.into(),
                     statistics: None,
                 }),
-                vec![],
+                CowBuffer::Owned(vec![]),
                 Descriptor {
                     primitive_type: PrimitiveType::from_physical(
                         "a".to_string(),

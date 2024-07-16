@@ -26,9 +26,9 @@ impl<O: Offset> DecodedState for (Binary<O>, MutableBitmap) {
 }
 
 impl<'a, O: Offset> StateTranslation<'a, BinaryDecoder<O>> for BinaryStateTranslation<'a> {
-    fn new(
+    fn new<'b: 'a>(
         decoder: &BinaryDecoder<O>,
-        page: &'a DataPage,
+        page: &'a DataPage<'b>,
         dict: Option<&'a <BinaryDecoder<O> as utils::Decoder>::Dict>,
         page_validity: Option<&utils::PageValidity<'a>>,
         filter: Option<&utils::filter::Filter<'a>>,
@@ -209,16 +209,17 @@ pub(super) fn finish<O: Offset>(
     }
 }
 
-pub struct BinaryArrayIter<O: Offset, I: PagesIter> {
+pub struct BinaryArrayIter<'a, O: Offset, I: PagesIter<'a>> {
     iter: I,
     data_type: ArrowDataType,
     items: VecDeque<(Binary<O>, MutableBitmap)>,
     dict: Option<BinaryDict>,
     chunk_size: Option<usize>,
     remaining: usize,
+    _pd: std::marker::PhantomData<&'a ()>,
 }
 
-impl<O: Offset, I: PagesIter> BinaryArrayIter<O, I> {
+impl<'a, O: Offset, I: PagesIter<'a>> BinaryArrayIter<'a, O, I> {
     pub fn new(
         iter: I,
         data_type: ArrowDataType,
@@ -232,11 +233,12 @@ impl<O: Offset, I: PagesIter> BinaryArrayIter<O, I> {
             dict: None,
             chunk_size,
             remaining: num_rows,
+            _pd: std::marker::PhantomData,
         }
     }
 }
 
-impl<O: Offset, I: PagesIter> Iterator for BinaryArrayIter<O, I> {
+impl<'a, O: Offset, I: PagesIter<'a>> Iterator for BinaryArrayIter<'a, O, I> {
     type Item = PolarsResult<ArrayRef>;
 
     fn next(&mut self) -> Option<Self::Item> {

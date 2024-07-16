@@ -44,7 +44,7 @@ pub fn columns_to_iter_recursive<'a, I>(
     chunk_size: Option<usize>,
 ) -> PolarsResult<NestedArrayIter<'a>>
 where
-    I: 'a + PagesIter,
+    I: 'a + PagesIter<'a>,
 {
     use arrow::datatypes::PhysicalType::*;
     use arrow::datatypes::PrimitiveType::*;
@@ -480,7 +480,7 @@ where
     })
 }
 
-fn dict_read<'a, K: DictionaryKey, I: 'a + PagesIter>(
+fn dict_read<'a, K: DictionaryKey, I: 'a + PagesIter<'a>>(
     iter: I,
     init: Vec<InitNested>,
     _type_: &PrimitiveType,

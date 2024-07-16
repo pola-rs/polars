@@ -52,7 +52,7 @@ where
 
 /// An iterator adapter that maps an iterator of Pages into an iterator of Arrays
 /// of [`ArrowDataType`] `data_type` and length `chunk_size`.
-pub fn page_iter_to_arrays<'a, I: PagesIter + 'a>(
+pub fn page_iter_to_arrays<'a, I: PagesIter<'a> + 'a>(
     pages: I,
     type_: &PrimitiveType,
     data_type: ArrowDataType,
@@ -437,7 +437,7 @@ pub fn int96_to_i64_s(value: [u32; 3]) -> i64 {
     day_seconds + seconds
 }
 
-fn timestamp<'a, I: PagesIter + 'a>(
+fn timestamp<'a, I: PagesIter<'a> + 'a>(
     pages: I,
     physical_type: &PhysicalType,
     logical_type: &Option<PrimitiveLogicalType>,
@@ -500,7 +500,7 @@ fn timestamp<'a, I: PagesIter + 'a>(
     }
 }
 
-fn timestamp_dict<'a, K: DictionaryKey, I: PagesIter + 'a>(
+fn timestamp_dict<'a, K: DictionaryKey, I: PagesIter<'a> + 'a>(
     pages: I,
     physical_type: &PhysicalType,
     logical_type: &Option<PrimitiveLogicalType>,
@@ -552,7 +552,7 @@ fn timestamp_dict<'a, K: DictionaryKey, I: PagesIter + 'a>(
     }
 }
 
-fn dict_read<'a, K: DictionaryKey, I: PagesIter + 'a>(
+fn dict_read<'a, K: DictionaryKey, I: PagesIter<'a> + 'a>(
     iter: I,
     physical_type: &PhysicalType,
     logical_type: &Option<PrimitiveLogicalType>,

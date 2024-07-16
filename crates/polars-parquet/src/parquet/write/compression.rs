@@ -1,17 +1,16 @@
 use crate::parquet::compression::CompressionOptions;
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{
-    CompressedDataPage, CompressedDictPage, CompressedPage, DataPage, DataPageHeader, DictPage,
-    Page,
+    CompressedDataPage, CompressedDictPage, CompressedPage, CowBuffer, DataPage, DataPageHeader, DictPage, Page
 };
 use crate::parquet::{compression, FallibleStreamingIterator};
 
 /// Compresses a [`DataPage`] into a [`CompressedDataPage`].
-fn compress_data(
-    page: DataPage,
+fn compress_data<'a>(
+    page: DataPage<'a>,
     mut compressed_buffer: Vec<u8>,
     compression: CompressionOptions,
-) -> ParquetResult<CompressedDataPage> {
+) -> ParquetResult<CompressedDataPage<'a>> {
     let DataPage {
         mut buffer,
         header,
@@ -37,11 +36,11 @@ fn compress_data(
             },
         };
     } else {
-        std::mem::swap(&mut buffer, &mut compressed_buffer);
+        std::mem::swap(buffer.into_mut(), &mut compressed_buffer);
     };
     Ok(CompressedDataPage::new_read(
         header,
-        compressed_buffer,
+        CowBuffer::Owned(compressed_buffer),
         compression.into(),
         uncompressed_page_size,
         descriptor,
@@ -49,11 +48,11 @@ fn compress_data(
     ))
 }
 
-fn compress_dict(
-    page: DictPage,
+fn compress_dict<'a>(
+    page: DictPage<'a>,
     mut compressed_buffer: Vec<u8>,
     compression: CompressionOptions,
-) -> ParquetResult<CompressedDictPage> {
+) -> ParquetResult<CompressedDictPage<'a>> {
     let DictPage {
         mut buffer,
         num_values,
@@ -63,10 +62,10 @@ fn compress_dict(
     if compression != CompressionOptions::Uncompressed {
         compression::compress(compression, &buffer, &mut compressed_buffer)?;
     } else {
-        std::mem::swap(&mut buffer, &mut compressed_buffer);
+        std::mem::swap(buffer.into_mut(), &mut compressed_buffer);
     }
     Ok(CompressedDictPage::new(
-        compressed_buffer,
+        CowBuffer::Owned(compressed_buffer),
         compression.into(),
         uncompressed_page_size,
         num_values,
@@ -98,14 +97,14 @@ pub fn compress(
 
 /// A [`FallibleStreamingIterator`] that consumes [`Page`] and yields [`CompressedPage`]
 /// holding a reusable buffer ([`Vec<u8>`]) for compression.
-pub struct Compressor<I: Iterator<Item = ParquetResult<Page>>> {
+pub struct Compressor<'a, I: Iterator<Item = ParquetResult<Page<'a>>>> {
     iter: I,
     compression: CompressionOptions,
     buffer: Vec<u8>,
-    current: Option<CompressedPage>,
+    current: Option<CompressedPage<'a>>,
 }
 
-impl<I: Iterator<Item = ParquetResult<Page>>> Compressor<I> {
+impl<'a, I: Iterator<Item = ParquetResult<Page<'a>>>> Compressor<'a, I> {
     /// Creates a new [`Compressor`]
     pub fn new(iter: I, compression: CompressionOptions, buffer: Vec<u8>) -> Self {
         Self {
@@ -124,7 +123,7 @@ impl<I: Iterator<Item = ParquetResult<Page>>> Compressor<I> {
     /// Deconstructs itself into its iterator and scratch buffer.
     pub fn into_inner(mut self) -> (I, Vec<u8>) {
         let mut buffer = if let Some(page) = self.current.as_mut() {
-            std::mem::take(page.buffer())
+            std::mem::take(page.buffer_mut())
         } else {
             std::mem::take(&mut self.buffer)
         };
@@ -133,13 +132,13 @@ impl<I: Iterator<Item = ParquetResult<Page>>> Compressor<I> {
     }
 }
 
-impl<I: Iterator<Item = ParquetResult<Page>>> FallibleStreamingIterator for Compressor<I> {
-    type Item = CompressedPage;
+impl<'a, I: Iterator<Item = ParquetResult<Page<'a>>>> FallibleStreamingIterator for Compressor<'a, I> {
+    type Item = CompressedPage<'a>;
     type Error = ParquetError;
 
     fn advance(&mut self) -> std::result::Result<(), Self::Error> {
         let mut compressed_buffer = if let Some(page) = self.current.as_mut() {
-            std::mem::take(page.buffer())
+            std::mem::take(page.buffer_mut())
         } else {
             std::mem::take(&mut self.buffer)
         };

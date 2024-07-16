@@ -68,9 +68,9 @@ impl<'a> NestedDecoder<'a> for NullDecoder {
 
 /// An iterator adapter over [`PagesIter`] assumed to be encoded as null arrays
 #[derive(Debug)]
-pub struct NestedIter<I>
+pub struct NestedIter<'a, I>
 where
-    I: PagesIter,
+    I: PagesIter<'a>,
 {
     iter: I,
     init: Vec<InitNested>,
@@ -79,11 +79,12 @@ where
     remaining: usize,
     chunk_size: Option<usize>,
     decoder: NullDecoder,
+            _pd: std::marker::PhantomData<&'a ()>,
 }
 
-impl<I> NestedIter<I>
+impl<'a, I> NestedIter<'a, I>
 where
-    I: PagesIter,
+    I: PagesIter<'a>,
 {
     pub fn new(
         iter: I,
@@ -100,13 +101,14 @@ where
             chunk_size,
             remaining: num_rows,
             decoder: NullDecoder,
+            _pd: std::marker::PhantomData,
         }
     }
 }
 
-impl<I> Iterator for NestedIter<I>
+impl<'a, I> Iterator for NestedIter<'a, I>
 where
-    I: PagesIter,
+    I: PagesIter<'a>,
 {
     type Item = PolarsResult<(NestedState, NullArray)>;
 

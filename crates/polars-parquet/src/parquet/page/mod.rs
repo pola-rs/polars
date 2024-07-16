@@ -1,3 +1,7 @@
+use std::ops::Deref;
+
+use arrow::buffer::Buffer;
+
 use crate::parquet::compression::Compression;
 use crate::parquet::encoding::{get_length, Encoding};
 use crate::parquet::error::{ParquetError, ParquetResult};
@@ -9,17 +13,70 @@ pub use crate::parquet::thrift_format::{
     DataPageHeader as DataPageHeaderV1, DataPageHeaderV2, PageHeader as ParquetPageHeader,
 };
 
-pub enum PageResult {
-    Single(Page),
-    Two { dict: DictPage, data: DataPage },
+#[derive(Debug, Clone)]
+pub enum CowBuffer<'a> {
+    Borrowed(&'a [u8]),
+    Owned(Vec<u8>),
+}
+
+impl<'a> CowBuffer<'a> {
+    #[inline]
+    pub fn into_vec(self) -> Vec<u8> {
+        match self {
+            CowBuffer::Borrowed(slice) => slice.to_vec(),
+            CowBuffer::Owned(vec) => vec,
+        }
+    }
+
+    #[inline]
+    pub fn into_mut(&mut self) -> &mut Vec<u8> {
+        match self {
+            CowBuffer::Borrowed(slice) => {
+                *self = Self::Owned(slice.to_vec());
+                self.into_mut()
+            },
+            CowBuffer::Owned(ref mut vec) => vec,
+        }
+    }
+}
+
+impl<'a> AsRef<[u8]> for CowBuffer<'a> {
+    fn as_ref(&self) -> &[u8] {
+        &*self
+    }
+}
+
+impl<'a> Deref for CowBuffer<'a> {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            CowBuffer::Borrowed(slice) => slice,
+            CowBuffer::Owned(vec) => vec.as_ref(),
+        }
+    }
+}
+
+impl<'a> Into<Buffer<u8>> for CowBuffer<'a> {
+    fn into(self) -> Buffer<u8> {
+        Buffer::from(self.to_vec())
+    }
+}
+
+pub enum PageResult<'a> {
+    Single(Page<'a>),
+    Two {
+        dict: DictPage<'a>,
+        data: DataPage<'a>,
+    },
 }
 
 /// A [`CompressedDataPage`] is compressed, encoded representation of a Parquet data page.
 /// It holds actual data and thus cloning it is expensive.
 #[derive(Debug)]
-pub struct CompressedDataPage {
+pub struct CompressedDataPage<'a> {
     pub(crate) header: DataPageHeader,
-    pub(crate) buffer: Vec<u8>,
+    pub(crate) buffer: CowBuffer<'a>,
     pub(crate) compression: Compression,
     uncompressed_page_size: usize,
     pub(crate) descriptor: Descriptor,
@@ -28,11 +85,11 @@ pub struct CompressedDataPage {
     pub(crate) selected_rows: Option<Vec<Interval>>,
 }
 
-impl CompressedDataPage {
+impl<'a> CompressedDataPage<'a> {
     /// Returns a new [`CompressedDataPage`].
     pub fn new(
         header: DataPageHeader,
-        buffer: Vec<u8>,
+        buffer: CowBuffer<'a>,
         compression: Compression,
         uncompressed_page_size: usize,
         descriptor: Descriptor,
@@ -51,7 +108,7 @@ impl CompressedDataPage {
     /// Returns a new [`CompressedDataPage`].
     pub(crate) fn new_read(
         header: DataPageHeader,
-        buffer: Vec<u8>,
+        buffer: CowBuffer<'a>,
         compression: Compression,
         uncompressed_page_size: usize,
         descriptor: Descriptor,
@@ -134,17 +191,17 @@ impl DataPageHeader {
 /// A [`DataPage`] is an uncompressed, encoded representation of a Parquet data page. It holds actual data
 /// and thus cloning it is expensive.
 #[derive(Debug, Clone)]
-pub struct DataPage {
+pub struct DataPage<'a> {
     pub(super) header: DataPageHeader,
-    pub(super) buffer: Vec<u8>,
+    pub(super) buffer: CowBuffer<'a>,
     pub descriptor: Descriptor,
     pub selected_rows: Option<Vec<Interval>>,
 }
 
-impl DataPage {
+impl<'a> DataPage<'a> {
     pub fn new(
         header: DataPageHeader,
-        buffer: Vec<u8>,
+        buffer: CowBuffer<'a>,
         descriptor: Descriptor,
         rows: Option<usize>,
     ) -> Self {
@@ -158,7 +215,7 @@ impl DataPage {
 
     pub(crate) fn new_read(
         header: DataPageHeader,
-        buffer: Vec<u8>,
+        buffer: CowBuffer<'a>,
         descriptor: Descriptor,
         selected_rows: Option<Vec<Interval>>,
     ) -> Self {
@@ -180,14 +237,14 @@ impl DataPage {
 
     /// the rows to be selected by this page.
     /// When `None`, all rows are to be considered.
-    pub fn selected_rows(&self) -> Option<&[Interval]> {
-        self.selected_rows.as_deref()
+    pub fn selected_rows<'b>(&'b self) -> Option<&'a [Interval]> where 'a: 'b {
+        self.selected_rows.as_ref()
     }
 
     /// Returns a mutable reference to the internal buffer.
     /// Useful to recover the buffer after the page has been decoded.
     pub fn buffer_mut(&mut self) -> &mut Vec<u8> {
-        &mut self.buffer
+        self.buffer.into_mut()
     }
 
     pub fn num_values(&self) -> usize {
@@ -234,21 +291,27 @@ impl DataPage {
 /// and thus cloning it may be expensive.
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
-pub enum Page {
+pub enum Page<'a> {
     /// A [`DataPage`]
-    Data(DataPage),
+    Data(DataPage<'a>),
     /// A [`DictPage`]
-    Dict(DictPage),
+    Dict(DictPage<'a>),
 }
 
-impl Page {
-    pub(crate) fn buffer(&mut self) -> &mut Vec<u8> {
+impl<'a> Page<'a> {
+    pub(crate) fn buffer(&mut self) -> &[u8] {
         match self {
-            Self::Data(page) => &mut page.buffer,
-            Self::Dict(page) => &mut page.buffer,
+            Self::Data(page) => page.buffer.as_ref(),
+            Self::Dict(page) => page.buffer.as_ref(),
         }
     }
-    pub(crate) fn unwrap_data(self) -> DataPage {
+    pub(crate) fn buffer_mut(&mut self) -> &mut Vec<u8> {
+        match self {
+            Self::Data(page) => page.buffer.into_mut(),
+            Self::Dict(page) => page.buffer.into_mut(),
+        }
+    }
+    pub(crate) fn unwrap_data(self) -> DataPage<'a> {
         match self {
             Self::Data(page) => page,
             _ => panic!(),
@@ -260,16 +323,23 @@ impl Page {
 /// and thus cloning it is expensive.
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
-pub enum CompressedPage {
-    Data(CompressedDataPage),
-    Dict(CompressedDictPage),
+pub enum CompressedPage<'a> {
+    Data(CompressedDataPage<'a>),
+    Dict(CompressedDictPage<'a>),
 }
 
-impl CompressedPage {
-    pub(crate) fn buffer(&mut self) -> &mut Vec<u8> {
+impl<'a> CompressedPage<'a> {
+    pub(crate) fn buffer_mut(&mut self) -> &mut Vec<u8> {
         match self {
-            CompressedPage::Data(page) => &mut page.buffer,
-            CompressedPage::Dict(page) => &mut page.buffer,
+            CompressedPage::Data(page) => page.buffer.into_mut(),
+            CompressedPage::Dict(page) => page.buffer.into_mut(),
+        }
+    }
+
+    pub(crate) fn buffer(&self) -> &[u8] {
+        match self {
+            CompressedPage::Data(page) => page.buffer.as_ref(),
+            CompressedPage::Dict(page) => page.buffer.as_ref(),
         }
     }
 
@@ -304,14 +374,14 @@ impl CompressedPage {
 
 /// An uncompressed, encoded dictionary page.
 #[derive(Debug)]
-pub struct DictPage {
-    pub buffer: Vec<u8>,
+pub struct DictPage<'a> {
+    pub buffer: CowBuffer<'a>,
     pub num_values: usize,
     pub is_sorted: bool,
 }
 
-impl DictPage {
-    pub fn new(buffer: Vec<u8>, num_values: usize, is_sorted: bool) -> Self {
+impl<'a> DictPage<'a> {
+    pub fn new(buffer: CowBuffer<'a>, num_values: usize, is_sorted: bool) -> Self {
         Self {
             buffer,
             num_values,
@@ -322,17 +392,17 @@ impl DictPage {
 
 /// A compressed, encoded dictionary page.
 #[derive(Debug)]
-pub struct CompressedDictPage {
-    pub(crate) buffer: Vec<u8>,
+pub struct CompressedDictPage<'a> {
+    pub(crate) buffer: CowBuffer<'a>,
     compression: Compression,
     pub(crate) num_values: usize,
     pub(crate) uncompressed_page_size: usize,
     pub is_sorted: bool,
 }
 
-impl CompressedDictPage {
+impl<'a> CompressedDictPage<'a> {
     pub fn new(
-        buffer: Vec<u8>,
+        buffer: CowBuffer<'a>,
         compression: Compression,
         uncompressed_page_size: usize,
         num_values: usize,
@@ -425,7 +495,7 @@ pub fn split_buffer_v2(
 }
 
 /// Splits the page buffer into 3 slices corresponding to (encoded rep levels, encoded def levels, encoded values).
-pub fn split_buffer(page: &DataPage) -> ParquetResult<EncodedSplitBuffer> {
+pub fn split_buffer<'a>(page: &'a DataPage) -> ParquetResult<EncodedSplitBuffer<'a>> {
     match page.header() {
         DataPageHeader::V1(_) => split_buffer_v1(
             page.buffer(),

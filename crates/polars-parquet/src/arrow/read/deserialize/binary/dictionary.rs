@@ -16,9 +16,9 @@ use crate::read::deserialize::binary::utils::BinaryIter;
 
 /// An iterator adapter over [`PagesIter`] assumed to be encoded as parquet's dictionary-encoded binary representation
 #[derive(Debug)]
-pub struct DictIter<K, O, I>
+pub struct DictIter<'a, K, O, I>
 where
-    I: PagesIter,
+    I: PagesIter<'a>,
     O: Offset,
     K: DictionaryKey,
 {
@@ -28,14 +28,14 @@ where
     items: VecDeque<(Vec<K>, MutableBitmap)>,
     remaining: usize,
     chunk_size: Option<usize>,
-    phantom: std::marker::PhantomData<O>,
+    phantom: std::marker::PhantomData<&'a O>,
 }
 
-impl<K, O, I> DictIter<K, O, I>
+impl<'a, K, O, I> DictIter<'a, K, O, I>
 where
     K: DictionaryKey,
     O: Offset,
-    I: PagesIter,
+    I: PagesIter<'a>,
 {
     pub fn new(
         iter: I,
@@ -80,9 +80,9 @@ fn read_dict<O: Offset>(data_type: ArrowDataType, dict: &DictPage) -> Box<dyn Ar
     }
 }
 
-impl<K, O, I> Iterator for DictIter<K, O, I>
+impl<'a, K, O, I> Iterator for DictIter<'a, K, O, I>
 where
-    I: PagesIter,
+    I: PagesIter<'a>,
     O: Offset,
     K: DictionaryKey,
 {
@@ -109,9 +109,9 @@ where
 
 /// An iterator adapter that converts [`DataPages`] into an [`Iterator`] of [`DictionaryArray`]
 #[derive(Debug)]
-pub struct NestedDictIter<K, O, I>
+pub struct NestedDictIter<'a, K, O, I>
 where
-    I: PagesIter,
+    I: PagesIter<'a>,
     O: Offset,
     K: DictionaryKey,
 {
@@ -122,12 +122,12 @@ where
     items: VecDeque<(NestedState, (Vec<K>, MutableBitmap))>,
     remaining: usize,
     chunk_size: Option<usize>,
-    phantom: std::marker::PhantomData<O>,
+    phantom: std::marker::PhantomData<&'a O>,
 }
 
-impl<K, O, I> NestedDictIter<K, O, I>
+impl<'a, K, O, I> NestedDictIter<'a, K, O, I>
 where
-    I: PagesIter,
+    I: PagesIter<'a>,
     O: Offset,
     K: DictionaryKey,
 {
@@ -151,9 +151,9 @@ where
     }
 }
 
-impl<K, O, I> Iterator for NestedDictIter<K, O, I>
+impl<'a, K, O, I> Iterator for NestedDictIter<'a, K, O, I>
 where
-    I: PagesIter,
+    I: PagesIter<'a>,
     O: Offset,
     K: DictionaryKey,
 {

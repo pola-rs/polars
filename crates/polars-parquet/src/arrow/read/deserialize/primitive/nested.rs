@@ -183,9 +183,9 @@ fn finish<T: NativeType>(
 
 /// An iterator adapter over [`PagesIter`] assumed to be encoded as boolean arrays
 #[derive(Debug)]
-pub struct NestedIter<T, I, P, D>
+pub struct NestedIter<'a, T, I, P, D>
 where
-    I: PagesIter,
+    I: PagesIter<'a>,
     T: NativeType,
 
     P: ParquetNativeType,
@@ -199,11 +199,12 @@ where
     remaining: usize,
     chunk_size: Option<usize>,
     decoder: PrimitiveDecoder<T, P, D>,
+            _pd: std::marker::PhantomData<&'a ()>,
 }
 
-impl<T, I, P, D> NestedIter<T, I, P, D>
+impl<'a, T, I, P, D> NestedIter<'a, T, I, P, D>
 where
-    I: PagesIter,
+    I: PagesIter<'a>,
     T: NativeType,
 
     P: ParquetNativeType,
@@ -226,13 +227,14 @@ where
             chunk_size,
             remaining: num_rows,
             decoder: PrimitiveDecoder::new(decoder_fn),
+            _pd: std::marker::PhantomData,
         }
     }
 }
 
-impl<T, I, P, D> Iterator for NestedIter<T, I, P, D>
+impl<'a, T, I, P, D> Iterator for NestedIter<'a, T, I, P, D>
 where
-    I: PagesIter,
+    I: PagesIter<'a>,
     T: NativeType,
 
     P: ParquetNativeType,

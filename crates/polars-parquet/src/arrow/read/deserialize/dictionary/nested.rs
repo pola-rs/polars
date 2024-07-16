@@ -117,7 +117,7 @@ impl<'a, K: DictionaryKey> NestedDecoder<'a> for DictionaryDecoder<K> {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn next_dict<K: DictionaryKey, I: PagesIter, F: Fn(&DictPage) -> Box<dyn Array>>(
+pub fn next_dict<'a, K: DictionaryKey, I: PagesIter<'a>, F: Fn(&DictPage<'a>) -> Box<dyn Array>>(
     iter: &mut I,
     items: &mut VecDeque<(NestedState, (Vec<K>, MutableBitmap))>,
     remaining: &mut usize,

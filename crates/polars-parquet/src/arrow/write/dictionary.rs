@@ -18,7 +18,7 @@ use crate::arrow::read::schema::is_nullable;
 use crate::arrow::write::{slice_nested_leaf, utils};
 use crate::parquet::encoding::hybrid_rle::encode;
 use crate::parquet::encoding::Encoding;
-use crate::parquet::page::{DictPage, Page};
+use crate::parquet::page::{CowBuffer, DictPage, Page};
 use crate::parquet::schema::types::PrimitiveType;
 use crate::parquet::statistics::ParquetStatistics;
 use crate::write::DynIter;
@@ -28,7 +28,7 @@ pub(crate) fn encode_as_dictionary_optional(
     nested: &[Nested],
     type_: PrimitiveType,
     options: WriteOptions,
-) -> Option<PolarsResult<DynIter<'static, PolarsResult<Page>>>> {
+) -> Option<PolarsResult<DynIter<'static, PolarsResult<Page<'static>>>>> {
     let dtype = Box::new(array.data_type().clone());
 
     let len_before = array.len();
@@ -130,13 +130,13 @@ fn normalized_validity<K: DictionaryKey>(array: &DictionaryArray<K>) -> Option<B
     }
 }
 
-fn serialize_keys<K: DictionaryKey>(
+fn serialize_keys<'a, K: DictionaryKey>(
     array: &DictionaryArray<K>,
     type_: PrimitiveType,
     nested: &[Nested],
     statistics: Option<ParquetStatistics>,
     options: WriteOptions,
-) -> PolarsResult<Page> {
+) -> PolarsResult<Page<'a>> {
     let mut buffer = vec![];
 
     let (start, len) = slice_nested_leaf(nested);
@@ -202,7 +202,7 @@ macro_rules! dyn_prim {
         } else {
             None
         };
-        (DictPage::new(buffer, values.len(), false), stats)
+        (DictPage::new(CowBuffer::Owned(buffer), values.len(), false), stats)
     }};
 }
 
@@ -212,7 +212,7 @@ pub fn array_to_pages<K: DictionaryKey>(
     nested: &[Nested],
     options: WriteOptions,
     encoding: Encoding,
-) -> PolarsResult<DynIter<'static, PolarsResult<Page>>> {
+) -> PolarsResult<DynIter<'static, PolarsResult<Page<'static>>>> {
     match encoding {
         Encoding::PlainDictionary | Encoding::RleDictionary => {
             // write DictPage
@@ -254,7 +254,7 @@ pub fn array_to_pages<K: DictionaryKey>(
                         } else {
                             None
                         };
-                        (DictPage::new(buffer, array.len(), false), stats)
+                        (DictPage::new(CowBuffer::Owned(buffer), array.len(), false), stats)
                     },
                     ArrowDataType::BinaryView => {
                         let array = array
@@ -274,7 +274,7 @@ pub fn array_to_pages<K: DictionaryKey>(
                         } else {
                             None
                         };
-                        (DictPage::new(buffer, array.len(), false), stats)
+                        (DictPage::new(CowBuffer::Owned(buffer), array.len(), false), stats)
                     },
                     ArrowDataType::Utf8View => {
                         let array = array
@@ -295,7 +295,7 @@ pub fn array_to_pages<K: DictionaryKey>(
                         } else {
                             None
                         };
-                        (DictPage::new(buffer, array.len(), false), stats)
+                        (DictPage::new(CowBuffer::Owned(buffer), array.len(), false), stats)
                     },
                     ArrowDataType::LargeBinary => {
                         let values = array.values().as_any().downcast_ref().unwrap();
@@ -311,7 +311,7 @@ pub fn array_to_pages<K: DictionaryKey>(
                         } else {
                             None
                         };
-                        (DictPage::new(buffer, values.len(), false), stats)
+                        (DictPage::new(CowBuffer::Owned(buffer), values.len(), false), stats)
                     },
                     ArrowDataType::FixedSizeBinary(_) => {
                         let mut buffer = vec![];
@@ -327,7 +327,7 @@ pub fn array_to_pages<K: DictionaryKey>(
                         } else {
                             None
                         };
-                        (DictPage::new(buffer, array.len(), false), stats)
+                        (DictPage::new(CowBuffer::Owned(buffer), array.len(), false), stats)
                     },
                     other => {
                         polars_bail!(nyi =

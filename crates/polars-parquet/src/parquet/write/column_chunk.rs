@@ -58,11 +58,11 @@ where
 
 #[cfg(feature = "async")]
 #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
-pub async fn write_column_chunk_async<W, E>(
+pub async fn write_column_chunk_async<'a, W, E>(
     writer: &mut W,
     mut offset: u64,
     descriptor: &ColumnDescriptor,
-    mut compressed_pages: DynStreamingIterator<'_, CompressedPage, E>,
+    mut compressed_pages: DynStreamingIterator<'_, CompressedPage<'a>, E>,
 ) -> ParquetResult<(ColumnChunk, Vec<PageWriteSpec>, u64)>
 where
     W: AsyncWrite + Unpin + Send,

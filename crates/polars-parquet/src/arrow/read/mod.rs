@@ -45,13 +45,13 @@ pub use crate::parquet::{
 };
 
 /// Trait describing a [`FallibleStreamingIterator`] of [`Page`]
-pub trait PagesIter:
-    FallibleStreamingIterator<Item = Page, Error = ParquetError> + Send + Sync
+pub trait PagesIter<'a>:
+    FallibleStreamingIterator<Item = Page<'a>, Error = ParquetError> + Send + Sync
 {
 }
 
-impl<I: FallibleStreamingIterator<Item = Page, Error = ParquetError> + Send + Sync> PagesIter
-    for I
+impl<'a, I: FallibleStreamingIterator<Item = Page<'a>, Error = ParquetError> + Send + Sync>
+    PagesIter<'a> for I
 {
 }
 
