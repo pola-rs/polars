@@ -1,9 +1,14 @@
+use std::ffi::CString;
+
 use arrow::ffi;
 use arrow::record_batch::RecordBatch;
+use polars::datatypes::CompatLevel;
 use polars::prelude::{ArrayRef, ArrowField};
+use polars::series::Series;
 use polars_core::utils::arrow;
 use pyo3::ffi::Py_uintptr_t;
 use pyo3::prelude::*;
+use pyo3::types::PyCapsule;
 
 /// Arrow array to Python.
 pub(crate) fn to_py_array(
@@ -48,4 +53,17 @@ pub(crate) fn to_py_rb(
         .call_method1("from_arrays", (arrays, names.to_vec()))?;
 
     Ok(record.to_object(py))
+}
+
+/// Export a series to a C stream via a PyCapsule according to the Arrow PyCapsule Interface
+/// https://arrow.apache.org/docs/dev/format/CDataInterface/PyCapsuleInterface.html
+pub(crate) fn series_to_stream<'py>(
+    series: &'py Series,
+    py: Python<'py>,
+) -> PyResult<Bound<'py, PyCapsule>> {
+    let field = series.field().to_arrow(CompatLevel::oldest());
+    let iter = Box::new(series.chunks().clone().into_iter().map(Ok)) as _;
+    let stream = ffi::export_iterator(iter, field);
+    let stream_capsule_name = CString::new("arrow_array_stream").unwrap();
+    PyCapsule::new_bound(py, stream, Some(stream_capsule_name))
 }
