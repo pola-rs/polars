@@ -133,7 +133,8 @@ impl HFAPIResponse {
 }
 
 /// API response is paginated with a `link` header.
-/// https://docs.github.com/en/rest/using-the-rest-api/using-pagination-in-the-rest-api?apiVersion=2022-11-28#using-link-headers
+/// * https://huggingface.co/docs/hub/en/api#get-apidatasets
+/// * https://docs.github.com/en/rest/using-the-rest-api/using-pagination-in-the-rest-api?apiVersion=2022-11-28#using-link-headers
 struct GetPages<'a> {
     client: &'a reqwest::Client,
     uri: Option<String>,
