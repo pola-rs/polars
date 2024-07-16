@@ -19,6 +19,8 @@ impl Drop for ArrowArrayStream {
     }
 }
 
+unsafe impl Send for ArrowArrayStream {}
+
 impl ArrowArrayStream {
     /// Creates an empty [`ArrowArrayStream`] used to import from a producer.
     pub fn empty() -> Self {
