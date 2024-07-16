@@ -232,6 +232,8 @@ optimizations = [
   "streaming",
 ]
 
+polars_cloud = ["polars/polars_cloud"]
+
 all = [
   "optimizations",
   "io",
@@ -244,6 +246,7 @@ all = [
   "sql",
   "binary_encoding",
   "ffi_plugin",
+  "polars_cloud",
   # "new_streaming",
 ]
 

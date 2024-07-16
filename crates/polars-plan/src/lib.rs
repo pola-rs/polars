@@ -12,4 +12,6 @@ pub mod plans;
 pub mod prelude;
 // Activate later
 // mod reduce;
+#[cfg(feature = "polars_cloud")]
+pub mod client;
 pub mod utils;
