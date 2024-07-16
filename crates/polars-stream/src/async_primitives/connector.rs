@@ -9,9 +9,14 @@ use atomic_waker::AtomicWaker;
 use pin_project_lite::pin_project;
 
 /// Single-producer, single-consumer capacity-one channel.
-pub fn pipe<T>() -> (Sender<T>, Receiver<T>) {
-    let pipe = Arc::new(Pipe::default());
-    (Sender { pipe: pipe.clone() }, Receiver { pipe })
+pub fn connector<T>() -> (Sender<T>, Receiver<T>) {
+    let connector = Arc::new(Connector::default());
+    (
+        Sender {
+            connector: connector.clone(),
+        },
+        Receiver { connector },
+    )
 }
 
 /*
@@ -28,14 +33,14 @@ const CLOSED_BIT: u8 = 0b10;
 const WAITING_BIT: u8 = 0b100;
 
 #[repr(align(64))]
-struct Pipe<T> {
+struct Connector<T> {
     send_waker: AtomicWaker,
     recv_waker: AtomicWaker,
     value: UnsafeCell<MaybeUninit<T>>,
     state: AtomicU8,
 }
 
-impl<T> Default for Pipe<T> {
+impl<T> Default for Connector<T> {
     fn default() -> Self {
         Self {
             send_waker: AtomicWaker::new(),
@@ -46,7 +51,7 @@ impl<T> Default for Pipe<T> {
     }
 }
 
-impl<T> Drop for Pipe<T> {
+impl<T> Drop for Connector<T> {
     fn drop(&mut self) {
         if self.state.load(Ordering::Acquire) & FULL_BIT == FULL_BIT {
             unsafe {
@@ -68,7 +73,7 @@ pub enum RecvError {
 
 // SAFETY: all the send methods may only be called from a single sender at a
 // time, and similarly for all the recv methods from a single receiver.
-impl<T> Pipe<T> {
+impl<T> Connector<T> {
     unsafe fn poll_send(&self, value: &mut Option<T>, waker: &Waker) -> Poll<Result<(), T>> {
         if let Some(v) = value.take() {
             let mut state = self.state.load(Ordering::Relaxed);
@@ -173,7 +178,7 @@ impl<T> Pipe<T> {
 
     /// # Safety
     /// After calling close as a sender/receiver, you may not access
-    /// this pipe anymore as that end.
+    /// this connector anymore as that end.
     unsafe fn close(&self) {
         self.state.fetch_or(CLOSED_BIT, Ordering::Relaxed);
         self.send_waker.wake();
@@ -182,32 +187,32 @@ impl<T> Pipe<T> {
 }
 
 pub struct Sender<T> {
-    pipe: Arc<Pipe<T>>,
+    connector: Arc<Connector<T>>,
 }
 
 unsafe impl<T: Send> Send for Sender<T> {}
 
 impl<T> Drop for Sender<T> {
     fn drop(&mut self) {
-        unsafe { self.pipe.close() }
+        unsafe { self.connector.close() }
     }
 }
 
 pub struct Receiver<T> {
-    pipe: Arc<Pipe<T>>,
+    connector: Arc<Connector<T>>,
 }
 
 unsafe impl<T: Send> Send for Receiver<T> {}
 
 impl<T> Drop for Receiver<T> {
     fn drop(&mut self) {
-        unsafe { self.pipe.close() }
+        unsafe { self.connector.close() }
     }
 }
 
 pin_project! {
     pub struct SendFuture<'a, T> {
-        pipe: &'a Pipe<T>,
+        connector: &'a Connector<T>,
         value: Option<T>,
     }
 }
@@ -216,18 +221,18 @@ unsafe impl<'a, T: Send> Send for SendFuture<'a, T> {}
 
 impl<T: Send> Sender<T> {
     /// Returns a future that when awaited will send the value to the [`Receiver`].
-    /// Returns Err(value) if the pipe is closed.
+    /// Returns Err(value) if the connector is closed.
     #[must_use]
     pub fn send(&mut self, value: T) -> SendFuture<'_, T> {
         SendFuture {
-            pipe: &self.pipe,
+            connector: &self.connector,
             value: Some(value),
         }
     }
 
     #[allow(unused)]
     pub fn try_send(&mut self, value: T) -> Result<(), SendError<T>> {
-        unsafe { self.pipe.try_send(value) }
+        unsafe { self.connector.try_send(value) }
     }
 }
 
@@ -237,15 +242,15 @@ impl<T> std::future::Future for SendFuture<'_, T> {
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         assert!(
             self.value.is_some(),
-            "re-poll after Poll::Ready in pipe SendFuture"
+            "re-poll after Poll::Ready in connector SendFuture"
         );
-        unsafe { self.pipe.poll_send(self.project().value, cx.waker()) }
+        unsafe { self.connector.poll_send(self.project().value, cx.waker()) }
     }
 }
 
 pin_project! {
     pub struct RecvFuture<'a, T> {
-        pipe: &'a Pipe<T>,
+        connector: &'a Connector<T>,
         done: bool,
     }
 }
@@ -259,14 +264,14 @@ impl<T: Send> Receiver<T> {
     #[must_use]
     pub fn recv(&mut self) -> RecvFuture<'_, T> {
         RecvFuture {
-            pipe: &self.pipe,
+            connector: &self.connector,
             done: false,
         }
     }
 
     #[allow(unused)]
     pub fn try_recv(&mut self) -> Result<T, RecvError> {
-        unsafe { self.pipe.try_recv() }
+        unsafe { self.connector.try_recv() }
     }
 }
 
@@ -274,7 +279,10 @@ impl<T> std::future::Future for RecvFuture<'_, T> {
     type Output = Result<T, ()>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        assert!(!self.done, "re-poll after Poll::Ready in pipe SendFuture");
-        unsafe { self.pipe.poll_recv(cx.waker()) }
+        assert!(
+            !self.done,
+            "re-poll after Poll::Ready in connector SendFuture"
+        );
+        unsafe { self.connector.poll_recv(cx.waker()) }
     }
 }

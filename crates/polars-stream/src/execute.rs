@@ -6,7 +6,7 @@ use polars_utils::aliases::PlHashSet;
 use slotmap::{SecondaryMap, SparseSecondaryMap};
 
 use crate::async_executor;
-use crate::async_primitives::pipe::{pipe, Receiver, Sender};
+use crate::async_primitives::connector::{connector, Receiver, Sender};
 use crate::graph::{Graph, GraphNodeKey, LogicalPipeKey, PortState};
 use crate::morsel::Morsel;
 
@@ -108,7 +108,7 @@ fn run_subgraph(
     // The first step is to create N physical pipes for every logical pipe in the graph.
     for pipe_key in pipes.iter().copied() {
         let (senders, receivers): (Vec<Sender<Morsel>>, Vec<Receiver<Morsel>>) =
-            (0..num_pipelines).map(|_| pipe()).unzip();
+            (0..num_pipelines).map(|_| connector()).unzip();
 
         physical_senders.insert(pipe_key, senders);
         physical_receivers.insert(pipe_key, receivers);
