@@ -237,8 +237,8 @@ impl<'a> DataPage<'a> {
 
     /// the rows to be selected by this page.
     /// When `None`, all rows are to be considered.
-    pub fn selected_rows<'b>(&'b self) -> Option<&'a [Interval]> where 'a: 'b {
-        self.selected_rows.as_ref()
+    pub fn selected_rows(&self) -> Option<&[Interval]> {
+        self.selected_rows.as_deref()
     }
 
     /// Returns a mutable reference to the internal buffer.

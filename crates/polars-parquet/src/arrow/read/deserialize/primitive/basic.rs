@@ -1,12 +1,9 @@
-use std::collections::VecDeque;
-
 use arrow::array::MutablePrimitiveArray;
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
 use polars_error::PolarsResult;
 
-use super::super::utils::MaybeNext;
 use super::super::{utils, PagesIter};
 use crate::parquet::encoding::hybrid_rle::DictionaryTranslator;
 use crate::parquet::encoding::{byte_stream_split, hybrid_rle, Encoding};
@@ -15,18 +12,19 @@ use crate::parquet::page::{split_buffer, DataPage, DictPage};
 use crate::parquet::types::{decode, NativeType as ParquetNativeType};
 use crate::read::deserialize::utils::array_chunks::ArrayChunks;
 use crate::read::deserialize::utils::filter::Filter;
-use crate::read::deserialize::utils::{BatchableCollector, PageValidity, TranslatedHybridRle};
+use crate::read::deserialize::utils::{
+    BasicDecodeIterator, BatchableCollector, PageValidity, TranslatedHybridRle,
+};
 
 #[derive(Debug)]
-pub(super) struct ValuesDictionary<'a, T: NativeType> {
-    pub values: hybrid_rle::HybridRleDecoder<'a>,
-    pub dict: &'a [T],
+pub(super) struct ValuesDictionary<'pages, T: NativeType> {
+    pub values: hybrid_rle::HybridRleDecoder<'pages>,
+    pub dict: &'pages [T],
 }
 
-impl<'a, T: NativeType> ValuesDictionary<'a, T> {
-    pub fn try_new(page: &'a DataPage, dict: &'a [T]) -> PolarsResult<Self> {
+impl<'pages, T: NativeType> ValuesDictionary<'pages, T> {
+    pub fn try_new(page: &'pages DataPage, dict: &'pages [T]) -> PolarsResult<Self> {
         let values = utils::dict_indices_decoder(page)?;
-
         Ok(Self { dict, values })
     }
 
@@ -142,29 +140,29 @@ where
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
-pub(super) enum StateTranslation<'a, P: ParquetNativeType, T: NativeType> {
-    Unit(ArrayChunks<'a, P>),
-    Dictionary(ValuesDictionary<'a, T>),
-    ByteStreamSplit(byte_stream_split::Decoder<'a>),
+pub(super) enum StateTranslation<'pages, P: ParquetNativeType, T: NativeType> {
+    Unit(ArrayChunks<'pages, P>),
+    Dictionary(ValuesDictionary<'pages, T>),
+    ByteStreamSplit(byte_stream_split::Decoder<'pages>),
 }
 
-impl<'a, P, T, D> utils::StateTranslation<'a, PrimitiveDecoder<P, T, D>>
-    for StateTranslation<'a, P, T>
+impl<'pages, 'mmap: 'pages, P, T, D> utils::StateTranslation<'pages, 'mmap, PrimitiveDecoder<P, T, D>>
+    for StateTranslation<'pages, P, T>
 where
     T: NativeType,
     P: ParquetNativeType,
     D: DecoderFunction<P, T>,
 {
-    fn new<'b: 'a>(
+    fn new(
         _decoder: &PrimitiveDecoder<P, T, D>,
-        page: &'a DataPage<'b>,
-        dict: Option<&'a <PrimitiveDecoder<P, T, D> as utils::Decoder<'a>>::Dict>,
-        _page_validity: Option<&PageValidity<'a>>,
-        _filter: Option<&Filter<'a>>,
+        page: &'pages DataPage<'mmap>,
+        dict: Option<&'pages <PrimitiveDecoder<P, T, D> as utils::Decoder<'pages, 'mmap>>::Dict>,
+        _page_validity: Option<&PageValidity<'pages>>,
+        _filter: Option<&Filter<'pages>>,
     ) -> PolarsResult<Self> {
         match (page.encoding(), dict) {
             (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict)) => {
-                Ok(Self::Dictionary(ValuesDictionary::try_new(page, dict)?))
+                Ok(Self::Dictionary(ValuesDictionary::try_new(page, dict.as_ref())?))
             },
             (Encoding::Plain, _) => {
                 let values = split_buffer(page)?.values;
@@ -206,8 +204,8 @@ where
     fn extend_from_state(
         &mut self,
         decoder: &PrimitiveDecoder<P, T, D>,
-        decoded: &mut <PrimitiveDecoder<P, T, D> as utils::Decoder<'a>>::DecodedState,
-        page_validity: &mut Option<PageValidity<'a>>,
+        decoded: &mut <PrimitiveDecoder<P, T, D> as utils::Decoder<'pages, 'mmap>>::DecodedState,
+        page_validity: &mut Option<PageValidity<'pages>>,
         additional: usize,
     ) -> ParquetResult<()> {
         let (values, validity) = decoded;
@@ -236,12 +234,12 @@ where
                 )?
             },
             (Self::Dictionary(page), None) => {
-                let translator = DictionaryTranslator(page.dict);
+                let translator = DictionaryTranslator(page.dict.as_ref());
                 page.values
                     .translate_and_collect_n_into(values, additional, &translator)?;
             },
             (Self::Dictionary(page), Some(page_validity)) => {
-                let translator = DictionaryTranslator(page.dict);
+                let translator = DictionaryTranslator(page.dict.as_ref());
                 let translated_hybridrle = TranslatedHybridRle::new(&mut page.values, &translator);
 
                 utils::extend_from_decoder(
@@ -306,13 +304,13 @@ impl<T: std::fmt::Debug> utils::DecodedState for (Vec<T>, MutableBitmap) {
     }
 }
 
-impl<'a, P, T, D> utils::Decoder<'a> for PrimitiveDecoder<P, T, D>
+impl<'pages, 'mmap: 'pages, P, T, D> utils::Decoder<'pages, 'mmap> for PrimitiveDecoder<P, T, D>
 where
     T: NativeType,
     P: ParquetNativeType,
     D: DecoderFunction<P, T>,
 {
-    type Translation = StateTranslation<'a, P, T>;
+    type Translation = StateTranslation<'pages, P, T>;
     type Dict = Vec<T>;
     type DecodedState = (Vec<T>, MutableBitmap);
 
@@ -330,92 +328,51 @@ where
 
 pub(super) fn finish<T: NativeType>(
     data_type: &ArrowDataType,
-    values: Vec<T>,
-    validity: MutableBitmap,
-) -> MutablePrimitiveArray<T> {
+    (values, validity): (Vec<T>, MutableBitmap),
+) -> PolarsResult<MutablePrimitiveArray<T>> {
     let validity = if validity.is_empty() {
         None
     } else {
         Some(validity)
     };
-    MutablePrimitiveArray::try_new(data_type.clone(), values, validity).unwrap()
+    Ok(MutablePrimitiveArray::try_new(data_type.clone(), values, validity).unwrap())
 }
 
-/// An [`Iterator`] adapter over [`PagesIter`] assumed to be encoded as primitive arrays
-#[derive(Debug)]
-pub struct Iter<'a, T, I, P, D>
-where
-    I: PagesIter<'a>,
-    T: NativeType,
-    P: ParquetNativeType,
-    D: DecoderFunction<P, T>,
-{
-    iter: I,
-    data_type: ArrowDataType,
-    items: VecDeque<(Vec<T>, MutableBitmap)>,
-    remaining: usize,
-    chunk_size: Option<usize>,
-    dict: Option<Vec<T>>,
-    decoder: D,
-    phantom: std::marker::PhantomData<&'a P>,
-}
+pub struct PrimitiveDecodeIter;
 
-impl<'a, T, I, P, D> Iter<'a, T, I, P, D>
-where
-    I: PagesIter<'a>,
-    T: NativeType,
-
-    P: ParquetNativeType,
-    D: DecoderFunction<P, T>,
-{
-    pub fn new(
+impl PrimitiveDecodeIter {
+    pub fn new<'pages, 'mmap: 'pages, T, I, P, D>(
         iter: I,
         data_type: ArrowDataType,
         num_rows: usize,
         chunk_size: Option<usize>,
         decoder: D,
-    ) -> Self {
-        Self {
+    ) -> BasicDecodeIterator<
+        'pages,
+        'mmap,
+        MutablePrimitiveArray<T>,
+        I,
+        PrimitiveDecoder<P, T, D>,
+        fn(
+            &ArrowDataType,
+            <PrimitiveDecoder<P, T, D> as utils::Decoder<'pages, 'mmap>>::DecodedState,
+        ) -> PolarsResult<MutablePrimitiveArray<T>>,
+    >
+    where
+        I: PagesIter<'mmap>,
+        T: NativeType,
+
+        P: ParquetNativeType,
+        D: DecoderFunction<P, T>,
+    {
+        BasicDecodeIterator::new(
             iter,
             data_type,
-            items: VecDeque::new(),
-            dict: None,
-            remaining: num_rows,
             chunk_size,
-            decoder,
-            phantom: Default::default(),
-        }
-    }
-}
-
-impl<'a, T, I, P, D> Iterator for Iter<'a, T, I, P, D>
-where
-    I: PagesIter<'a>,
-    T: NativeType,
-    P: ParquetNativeType,
-    D: DecoderFunction<P, T>,
-{
-    type Item = PolarsResult<MutablePrimitiveArray<T>>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            let maybe_state = utils::next(
-                &mut self.iter,
-                &mut self.items,
-                &mut self.dict,
-                &mut self.remaining,
-                self.chunk_size,
-                &PrimitiveDecoder::new(self.decoder),
-            );
-            match maybe_state {
-                MaybeNext::Some(Ok((values, validity))) => {
-                    return Some(Ok(finish(&self.data_type, values, validity)))
-                },
-                MaybeNext::Some(Err(e)) => return Some(Err(e)),
-                MaybeNext::None => return None,
-                MaybeNext::More => continue,
-            }
-        }
+            num_rows,
+            PrimitiveDecoder::new(decoder),
+            finish,
+        )
     }
 }
 

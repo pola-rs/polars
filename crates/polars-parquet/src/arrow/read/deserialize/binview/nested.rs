@@ -1,5 +1,3 @@
-use std::collections::VecDeque;
-
 use arrow::array::{ArrayRef, MutableBinaryViewArray, View};
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
@@ -12,9 +10,9 @@ use crate::parquet::page::{split_buffer, DataPage, DictPage};
 use crate::read::deserialize::binary::decoders::{deserialize_plain, BinaryDict, ValuesDictionary};
 use crate::read::deserialize::binary::utils::BinaryIter;
 use crate::read::deserialize::binview::basic::finish;
-use crate::read::deserialize::nested_utils::{next, NestedDecoder};
+use crate::read::deserialize::nested_utils::{NestedDecodeIter, NestedDecoder};
 use crate::read::deserialize::utils::{
-    binary_views_dict, not_implemented, page_is_filtered, page_is_optional, MaybeNext, PageState,
+    binary_views_dict, not_implemented, page_is_filtered, page_is_optional, PageState,
 };
 use crate::read::{InitNested, NestedState, PagesIter};
 
@@ -43,15 +41,15 @@ struct BinViewDecoder;
 
 type DecodedStateTuple = (MutableBinaryViewArray<[u8]>, MutableBitmap);
 
-impl<'a> NestedDecoder<'a> for BinViewDecoder {
-    type State = State<'a>;
+impl<'pages, 'mmap> NestedDecoder<'pages, 'mmap> for BinViewDecoder {
+    type State = State<'pages>;
     type Dictionary = BinaryDict;
     type DecodedState = DecodedStateTuple;
 
     fn build_state(
         &self,
-        page: &'a DataPage,
-        dict: Option<&'a Self::Dictionary>,
+        page: &'pages DataPage,
+        dict: Option<&'pages Self::Dictionary>,
     ) -> PolarsResult<Self::State> {
         let is_optional = page_is_optional(page);
         let is_filtered = page_is_filtered(page);
@@ -129,62 +127,43 @@ impl<'a> NestedDecoder<'a> for BinViewDecoder {
     }
 }
 
-pub struct NestedIter<'a, I: PagesIter<'a>> {
-    iter: I,
-    data_type: ArrowDataType,
-    init: Vec<InitNested>,
-    items: VecDeque<(NestedState, DecodedStateTuple)>,
-    dict: Option<BinaryDict>,
-    chunk_size: Option<usize>,
-    remaining: usize,
-            _pd: std::marker::PhantomData<&'a ()>,
-}
+pub struct NestedBinViewIter;
 
-impl<'a, I: PagesIter<'a>> NestedIter<'a, I> {
-    pub fn new(
+impl NestedBinViewIter {
+    pub fn new<'pages, 'mmap: 'pages, I: PagesIter<'mmap>>(
         iter: I,
-        init: Vec<InitNested>,
         data_type: ArrowDataType,
-        num_rows: usize,
+        init: Vec<InitNested>,
         chunk_size: Option<usize>,
-    ) -> Self {
-        Self {
+        num_rows: usize,
+    ) -> NestedDecodeIter<
+        'pages,
+        'mmap,
+        ArrayRef,
+        I,
+        BinViewDecoder,
+        fn(
+            &ArrowDataType,
+            NestedState,
+            <BinViewDecoder as NestedDecoder>::DecodedState,
+        ) -> PolarsResult<(NestedState, ArrayRef)>,
+    > {
+        fn _finish(
+            dt: &ArrowDataType,
+            nested: NestedState,
+            decoded: DecodedStateTuple,
+        ) -> PolarsResult<(NestedState, ArrayRef)> {
+            finish(dt, decoded).map(|array| (nested, array))
+        }
+
+        NestedDecodeIter::new(
             iter,
             data_type,
             init,
-            items: VecDeque::new(),
-            dict: None,
             chunk_size,
-            remaining: num_rows,
-            _pd: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<'a, I: PagesIter<'a>> Iterator for NestedIter<'a, I> {
-    type Item = PolarsResult<(NestedState, ArrayRef)>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            let maybe_state = next(
-                &mut self.iter,
-                &mut self.items,
-                &mut self.dict,
-                &mut self.remaining,
-                &self.init,
-                self.chunk_size,
-                &BinViewDecoder,
-            );
-            match maybe_state {
-                MaybeNext::Some(Ok((nested, decoded))) => {
-                    return Some(
-                        finish(&self.data_type, decoded.0, decoded.1).map(|array| (nested, array)),
-                    )
-                },
-                MaybeNext::Some(Err(e)) => return Some(Err(e)),
-                MaybeNext::None => return None,
-                MaybeNext::More => continue, // Using continue in a loop instead of calling next helps prevent stack overflow.
-            }
-        }
+            num_rows,
+            BinViewDecoder,
+            _finish,
+        )
     }
 }

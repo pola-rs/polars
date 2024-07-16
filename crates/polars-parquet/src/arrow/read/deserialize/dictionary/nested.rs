@@ -47,15 +47,15 @@ where
     }
 }
 
-impl<'a, K: DictionaryKey> NestedDecoder<'a> for DictionaryDecoder<K> {
-    type State = State<'a>;
+impl<'pages, 'mmap: 'pages, K: DictionaryKey> NestedDecoder<'pages, 'mmap> for DictionaryDecoder<K> {
+    type State = State<'pages>;
     type Dictionary = ();
     type DecodedState = (Vec<K>, MutableBitmap);
 
     fn build_state(
         &self,
-        page: &'a DataPage,
-        _: Option<&'a Self::Dictionary>,
+        page: &'pages DataPage<'mmap>,
+        _: Option<&'pages Self::Dictionary>,
     ) -> PolarsResult<Self::State> {
         let is_optional =
             page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;

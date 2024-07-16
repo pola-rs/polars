@@ -1,10 +1,12 @@
 use std::collections::VecDeque;
+use std::sync::Arc;
 
 pub(crate) mod array_chunks;
 pub(crate) mod filter;
 
 use arrow::array::{BinaryArray, MutableBinaryViewArray, View};
 use arrow::bitmap::MutableBitmap;
+use arrow::datatypes::ArrowDataType;
 use arrow::pushable::Pushable;
 use polars_error::{polars_err, PolarsError, PolarsResult};
 
@@ -19,23 +21,28 @@ use crate::parquet::page::{split_buffer, DataPage, DictPage, Page};
 use crate::parquet::schema::Repetition;
 
 #[derive(Debug)]
-pub(crate) struct State<'a, D: Decoder<'a>, T: StateTranslation<'a, D>> {
-    pub(crate) page_validity: Option<PageValidity<'a>>,
+pub(crate) struct State<
+    'pages,
+    'mmap: 'pages,
+    D: Decoder<'pages, 'mmap>,
+    T: StateTranslation<'pages, 'mmap, D>,
+> {
+    pub(crate) page_validity: Option<PageValidity<'pages>>,
     pub(crate) translation: T,
-    pub(crate) filter: Option<Filter<'a>>,
-    _pd: std::marker::PhantomData<D>,
+    pub(crate) filter: Option<Filter<'pages>>,
+    _pd: std::marker::PhantomData<&'mmap D>,
 }
 
-pub(crate) trait StateTranslation<'a, D: Decoder<'a>>: Sized {
-    fn new<'b>(
+pub(crate) trait StateTranslation<'pages, 'mmap: 'pages, D: Decoder<'pages, 'mmap>>:
+    Sized
+{
+    fn new(
         decoder: &D,
-        page: &'b DataPage<'a>,
-        dict: Option<&'b D::Dict>,
-        page_validity: Option<&PageValidity<'b>>,
-        filter: Option<&Filter<'b>>,
-    ) -> PolarsResult<Self>
-    where
-        'a: 'b;
+        page: &DataPage<'mmap>,
+        dict: Option<&'pages D::Dict>,
+        page_validity: Option<&PageValidity<'pages>>,
+        filter: Option<&Filter<'pages>>,
+    ) -> PolarsResult<Self>;
     fn len_when_not_nullable(&self) -> usize;
     fn skip_in_place(&mut self, n: usize) -> ParquetResult<()>;
 
@@ -45,20 +52,19 @@ pub(crate) trait StateTranslation<'a, D: Decoder<'a>>: Sized {
         &mut self,
         decoder: &D,
         decoded: &mut D::DecodedState,
-        page_validity: &mut Option<PageValidity<'a>>,
+        page_validity: &mut Option<PageValidity<'pages>>,
         additional: usize,
     ) -> ParquetResult<()>;
 }
 
-impl<'a, D: Decoder<'a>, T: StateTranslation<'a, D>> State<'a, D, T> {
-    pub fn new<'b>(
+impl<'pages, 'mmap: 'pages, D: Decoder<'pages, 'mmap>, T: StateTranslation<'pages, 'mmap, D>>
+    State<'pages, 'mmap, D, T>
+{
+    pub fn new(
         decoder: &D,
-        page: &'b DataPage<'a>,
-        dict: Option<&'b D::Dict>,
-    ) -> PolarsResult<Self>
-    where
-        'a: 'b,
-    {
+        page: &'pages DataPage<'mmap>,
+        dict: Option<&'pages D::Dict>,
+    ) -> PolarsResult<Self> {
         let is_optional =
             page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
         let is_filtered = page.selected_rows().is_some();
@@ -264,13 +270,10 @@ impl<'a, I, T, C: BatchableCollector<I, T>> BatchedCollector<'a, I, T, C> {
     }
 }
 
-pub(crate) type PageValidity<'a> = HybridRleDecoder<'a>;
-pub(crate) fn page_validity_decoder<'a, 'b>(
-    page: &'b DataPage<'a>,
-) -> ParquetResult<PageValidity<'a>>
-where
-    'a: 'b,
-{
+pub(crate) type PageValidity<'pages> = HybridRleDecoder<'pages>;
+pub(crate) fn page_validity_decoder<'pages, 'mmap>(
+    page: &'pages DataPage<'mmap>,
+) -> ParquetResult<PageValidity<'pages>> {
     let validity = split_buffer(page)?.def;
     let decoder = hybrid_rle::HybridRleDecoder::new(validity, 1, page.num_values());
     Ok(decoder)
@@ -485,10 +488,10 @@ pub(super) trait DecodedState: std::fmt::Debug {
 }
 
 /// A decoder that knows how to map `State` -> Array
-pub(super) trait Decoder<'a>: Sized {
+pub(super) trait Decoder<'pages, 'mmap: 'pages>: Sized {
     // @TODO: Remove Translation
     /// The state that this decoder derives from a [`DataPage`]. This is bound to the page.
-    type Translation: StateTranslation<'a, Self>;
+    type Translation: StateTranslation<'pages, 'mmap, Self>;
     /// The dictionary representation that the decoder uses
     type Dict;
     /// The target state that this Decoder decodes into.
@@ -498,11 +501,11 @@ pub(super) trait Decoder<'a>: Sized {
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState;
 
     /// Deserializes a [`DictPage`] into [`Self::Dict`].
-    fn deserialize_dict(&self, page: &DictPage<'a>) -> Self::Dict;
+    fn deserialize_dict<'b>(&self, page: &'pages DictPage<'mmap>) -> Self::Dict;
 }
 
-pub(super) fn extend_from_new_page<'a, T: Decoder<'a>>(
-    mut page: State<'a, T, T::Translation>,
+pub(super) fn extend_from_new_page<'pages, 'mmap: 'pages, T: Decoder<'pages, 'mmap>>(
+    mut page: State<'pages, 'mmap, T, T::Translation>,
     chunk_size: Option<usize>,
     items: &mut VecDeque<T::DecodedState>,
     remaining: &mut usize,
@@ -541,80 +544,134 @@ pub(super) fn extend_from_new_page<'a, T: Decoder<'a>>(
     Ok(())
 }
 
-/// Represents what happened when a new page was consumed
-#[derive(Debug)]
-pub enum MaybeNext<P> {
-    /// Whether the page was sufficient to fill `chunk_size`
-    Some(P),
-    /// whether there are no more pages or intermediary decoded states
-    None,
-    /// Whether the page was insufficient to fill `chunk_size` and a new page is required
-    More,
+pub struct BasicDecodeIterator<
+    'pages,
+    'mmap: 'pages,
+    O,
+    I: PagesIter<'mmap> + 'pages,
+    D: Decoder<'pages, 'mmap>,
+    F: Fn(&ArrowDataType, D::DecodedState) -> PolarsResult<O>,
+> {
+    iter: I,
+    data_type: ArrowDataType,
+    items: VecDeque<D::DecodedState>,
+    dict: Option<D::Dict>,
+    chunk_size: Option<usize>,
+    remaining: usize,
+    decoder: D,
+    finish: F,
 }
 
-#[inline]
-pub(super) fn next<'a, 'b: 'a, I: PagesIter<'b>, D: Decoder<'b>>(
-    iter: &'a mut I,
-    items: &mut VecDeque<D::DecodedState>,
-    dict: &'a mut Option<D::Dict>,
-    remaining: &mut usize,
-    chunk_size: Option<usize>,
-    decoder: &D,
-) -> MaybeNext<PolarsResult<D::DecodedState>> {
-    // front[a1, a2, a3, ...]back
-    if items.len() > 1 {
-        return MaybeNext::Some(Ok(items.pop_front().unwrap()));
+impl<
+        'pages,
+        'mmap: 'pages,
+        O,
+        I: PagesIter<'mmap>,
+        D: Decoder<'pages, 'mmap>,
+        F: Fn(&ArrowDataType, D::DecodedState) -> PolarsResult<O>,
+    > BasicDecodeIterator<'pages, 'mmap, O, I, D, F>
+{
+    pub fn new(
+        iter: I,
+        data_type: ArrowDataType,
+        chunk_size: Option<usize>,
+        remaining: usize,
+        decoder: D,
+        finish: F,
+    ) -> Self {
+        Self {
+            iter,
+            data_type,
+            items: VecDeque::new(),
+            dict: None,
+            chunk_size,
+            remaining,
+            decoder,
+            finish,
+        }
     }
-    if (items.len() == 1) && items.front().unwrap().len() == chunk_size.unwrap_or(usize::MAX) {
-        return MaybeNext::Some(Ok(items.pop_front().unwrap()));
-    }
-    if *remaining == 0 {
-        return match items.pop_front() {
-            Some(decoded) => MaybeNext::Some(Ok(decoded)),
-            None => MaybeNext::None,
-        };
-    }
+}
 
-    match iter.next() {
-        Err(e) => MaybeNext::Some(Err(e.into())),
-        Ok(Some(page)) => {
-            let page = match page {
-                Page::Data(ref page) => page,
-                Page::Dict(ref dict_page) => {
-                    *dict = Some(decoder.deserialize_dict(dict_page));
-                    return MaybeNext::More;
-                },
-            };
+impl<
+        'pages,
+        'mmap: 'pages,
+        O,
+        I: PagesIter<'mmap> + 'pages,
+        D: Decoder<'pages, 'mmap>,
+        F: Fn(&ArrowDataType, D::DecodedState) -> PolarsResult<O>,
+    > Iterator for BasicDecodeIterator<'pages, 'mmap, O, I, D, F>
+{
+    type Item = PolarsResult<O>;
 
-            // there is a new page => consume the page from the start
-            let maybe_page = State::new(decoder, page, dict.as_ref());
-            let page = match maybe_page {
-                Ok(page) => page,
-                Err(e) => return MaybeNext::Some(Err(e)),
-            };
-
-            if let Err(e) = extend_from_new_page(page, chunk_size, items, remaining, decoder) {
-                return MaybeNext::Some(Err(e));
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            // front[a1, a2, a3, ...]back
+            if self.items.len() > 1 {
+                let decoded = self.items.pop_front().unwrap();
+                return Some((self.finish)(&self.data_type, decoded));
             }
-
-            if (items.len() == 1) && items.front().unwrap().len() < chunk_size.unwrap_or(usize::MAX)
+            if (self.items.len() == 1)
+                && self.items.front().unwrap().len() == self.chunk_size.unwrap_or(usize::MAX)
             {
-                MaybeNext::More
-            } else {
-                let decoded = items.pop_front().unwrap();
-                MaybeNext::Some(Ok(decoded))
+                let decoded = self.items.pop_front().unwrap();
+                return Some((self.finish)(&self.data_type, decoded));
             }
-        },
-        Ok(None) => {
-            if let Some(decoded) = items.pop_front() {
-                // we have a populated item and no more pages
-                // the only case where an item's length may be smaller than chunk_size
-                debug_assert!(decoded.len() <= chunk_size.unwrap_or(usize::MAX));
-                MaybeNext::Some(Ok(decoded))
-            } else {
-                MaybeNext::None
+            if self.remaining == 0 {
+                match self.items.pop_front() {
+                    Some(decoded) => return Some((self.finish)(&self.data_type, decoded)),
+                    None => return None,
+                };
             }
-        },
+
+            match self.iter.next() {
+                Err(e) => return Some(Err(e.into())),
+                Ok(Some(page)) => {
+                    match page {
+                        Page::Data(page) => {
+                            // there is a new page => consume the page from the start
+                            let maybe_page = State::new(&self.decoder, &page, self.dict.as_ref());
+                            let page = match maybe_page {
+                                Ok(page) => page,
+                                Err(e) => return Some(Err(e)),
+                            };
+
+                            if let Err(e) = extend_from_new_page(
+                                page,
+                                self.chunk_size,
+                                &mut self.items,
+                                &mut self.remaining,
+                                &self.decoder,
+                            ) {
+                                return Some(Err(e));
+                            }
+
+                            if (self.items.len() == 1)
+                                && self.items.front().unwrap().len()
+                                    < self.chunk_size.unwrap_or(usize::MAX)
+                            {
+                                continue;
+                            } else {
+                                let decoded = self.items.pop_front().unwrap();
+                                return Some((self.finish)(&self.data_type, decoded));
+                            }
+                        },
+                        Page::Dict(ref dict_page) => {
+                            self.dict = Some(self.decoder.deserialize_dict(dict_page));
+                        },
+                    };
+                },
+                Ok(None) => {
+                    if let Some(decoded) = self.items.pop_front() {
+                        // we have a populated item and no more pages
+                        // the only case where an item's length may be smaller than chunk_size
+                        debug_assert!(decoded.len() <= self.chunk_size.unwrap_or(usize::MAX));
+                        return Some((self.finish)(&self.data_type, decoded));
+                    } else {
+                        return None;
+                    }
+                },
+            }
+        }
     }
 }
 

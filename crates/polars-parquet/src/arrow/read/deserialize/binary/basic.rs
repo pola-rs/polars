@@ -1,6 +1,6 @@
-use std::cell::Cell;
-use std::collections::VecDeque;
 use std::default::Default;
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
 use arrow::array::specification::try_check_utf8;
 use arrow::array::{Array, ArrayRef, BinaryArray, Utf8Array};
@@ -10,13 +10,13 @@ use arrow::offset::Offset;
 use polars_error::PolarsResult;
 use polars_utils::iter::FallibleIterator;
 
-use super::super::utils::{extend_from_decoder, next, DecodedState, MaybeNext};
+use super::super::utils::{extend_from_decoder, DecodedState};
 use super::super::{utils, PagesIter};
-use super::decoders::*;
+use super::decoders::{deserialize_plain, BinaryDict, BinaryStateTranslation};
 use super::utils::*;
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{DataPage, DictPage};
-use crate::read::deserialize::utils::StateTranslation;
+use crate::read::deserialize::utils::{BasicDecodeIterator, StateTranslation};
 use crate::read::PrimitiveLogicalType;
 
 impl<O: Offset> DecodedState for (Binary<O>, MutableBitmap) {
@@ -25,19 +25,23 @@ impl<O: Offset> DecodedState for (Binary<O>, MutableBitmap) {
     }
 }
 
-impl<'a, O: Offset> StateTranslation<'a, BinaryDecoder<O>> for BinaryStateTranslation<'a> {
-    fn new<'b: 'a>(
+impl<'pages, 'mmap: 'pages, O: Offset> StateTranslation<'pages, 'mmap, BinaryDecoder<O>>
+    for BinaryStateTranslation<'pages>
+{
+    fn new(
         decoder: &BinaryDecoder<O>,
-        page: &'a DataPage<'b>,
-        dict: Option<&'a <BinaryDecoder<O> as utils::Decoder>::Dict>,
-        page_validity: Option<&utils::PageValidity<'a>>,
-        filter: Option<&utils::filter::Filter<'a>>,
+        page: &'pages DataPage<'mmap>,
+        dict: Option<&'pages <BinaryDecoder<O> as utils::Decoder<'pages, 'mmap>>::Dict>,
+        page_validity: Option<&utils::PageValidity<'pages>>,
+        filter: Option<&utils::filter::Filter<'pages>>,
     ) -> PolarsResult<Self> {
         let is_string = matches!(
             page.descriptor.primitive_type.logical_type,
             Some(PrimitiveLogicalType::String)
         );
-        decoder.check_utf8.set(is_string);
+        decoder
+            .check_utf8
+            .store(is_string, std::sync::atomic::Ordering::Relaxed);
         BinaryStateTranslation::new(page, dict, page_validity, filter, is_string)
     }
 
@@ -52,13 +56,15 @@ impl<'a, O: Offset> StateTranslation<'a, BinaryDecoder<O>> for BinaryStateTransl
     fn extend_from_state(
         &mut self,
         decoder: &BinaryDecoder<O>,
-        decoded: &mut <BinaryDecoder<O> as utils::Decoder>::DecodedState,
-        page_validity: &mut Option<utils::PageValidity<'a>>,
+        decoded: &mut <BinaryDecoder<O> as utils::Decoder<'pages, 'mmap>>::DecodedState,
+        page_validity: &mut Option<utils::PageValidity<'pages>>,
         additional: usize,
     ) -> ParquetResult<()> {
         let (values, validity) = decoded;
 
-        let mut validate_utf8 = decoder.check_utf8.take();
+        let mut validate_utf8 = decoder
+            .check_utf8
+            .load(std::sync::atomic::Ordering::Relaxed);
         let len_before = values.offsets.len();
 
         use BinaryStateTranslation as T;
@@ -157,11 +163,11 @@ impl<'a, O: Offset> StateTranslation<'a, BinaryDecoder<O>> for BinaryStateTransl
 #[derive(Debug, Default)]
 struct BinaryDecoder<O: Offset> {
     phantom_o: std::marker::PhantomData<O>,
-    check_utf8: Cell<bool>,
+    check_utf8: AtomicBool,
 }
 
-impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
-    type Translation = BinaryStateTranslation<'a>;
+impl<'pages, 'mmap: 'pages, O: Offset> utils::Decoder<'pages, 'mmap> for BinaryDecoder<O> {
+    type Translation = BinaryStateTranslation<'pages>;
     type Dict = BinaryDict;
     type DecodedState = (Binary<O>, MutableBitmap);
 
@@ -179,8 +185,7 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
 
 pub(super) fn finish<O: Offset>(
     data_type: &ArrowDataType,
-    mut values: Binary<O>,
-    mut validity: MutableBitmap,
+    (mut values, mut validity): (Binary<O>, MutableBitmap),
 ) -> PolarsResult<Box<dyn Array>> {
     values.offsets.shrink_to_fit();
     values.values.shrink_to_fit();
@@ -209,57 +214,32 @@ pub(super) fn finish<O: Offset>(
     }
 }
 
-pub struct BinaryArrayIter<'a, O: Offset, I: PagesIter<'a>> {
-    iter: I,
-    data_type: ArrowDataType,
-    items: VecDeque<(Binary<O>, MutableBitmap)>,
-    dict: Option<BinaryDict>,
-    chunk_size: Option<usize>,
-    remaining: usize,
-    _pd: std::marker::PhantomData<&'a ()>,
-}
+pub struct BinaryArrayIter;
 
-impl<'a, O: Offset, I: PagesIter<'a>> BinaryArrayIter<'a, O, I> {
-    pub fn new(
+impl BinaryArrayIter {
+    pub fn new<'pages, 'mmap: 'pages, O: Offset, I: PagesIter<'mmap>>(
         iter: I,
         data_type: ArrowDataType,
         chunk_size: Option<usize>,
         num_rows: usize,
-    ) -> Self {
-        Self {
+    ) -> BasicDecodeIterator<
+        'pages,
+        'mmap,
+        ArrayRef,
+        I,
+        BinaryDecoder<O>,
+        fn(
+            &ArrowDataType,
+            <BinaryDecoder<O> as utils::Decoder<'pages, 'mmap>>::DecodedState,
+        ) -> PolarsResult<ArrayRef>,
+    > {
+        BasicDecodeIterator::new(
             iter,
             data_type,
-            items: VecDeque::new(),
-            dict: None,
             chunk_size,
-            remaining: num_rows,
-            _pd: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<'a, O: Offset, I: PagesIter<'a>> Iterator for BinaryArrayIter<'a, O, I> {
-    type Item = PolarsResult<ArrayRef>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let decoder = BinaryDecoder::<O>::default();
-        loop {
-            let maybe_state = next(
-                &mut self.iter,
-                &mut self.items,
-                &mut self.dict,
-                &mut self.remaining,
-                self.chunk_size,
-                &decoder,
-            );
-            match maybe_state {
-                MaybeNext::Some(Ok((values, validity))) => {
-                    return Some(finish(&self.data_type, values, validity))
-                },
-                MaybeNext::Some(Err(e)) => return Some(Err(e)),
-                MaybeNext::None => return None,
-                MaybeNext::More => continue,
-            }
-        }
+            num_rows,
+            BinaryDecoder::<O>::default(),
+            finish,
+        )
     }
 }

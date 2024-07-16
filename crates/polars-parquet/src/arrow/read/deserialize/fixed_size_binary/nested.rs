@@ -5,10 +5,10 @@ use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
 use polars_error::PolarsResult;
 
-use super::super::utils::{not_implemented, MaybeNext, PageState};
+use super::super::utils::{not_implemented, PageState};
 use super::utils::FixedSizeBinary;
 use crate::arrow::read::deserialize::fixed_size_binary::basic::finish;
-use crate::arrow::read::deserialize::nested_utils::{next, NestedDecoder};
+use crate::arrow::read::deserialize::nested_utils::NestedDecoder;
 use crate::arrow::read::{InitNested, NestedState, PagesIter};
 use crate::parquet::encoding::hybrid_rle::gatherer::{SliceDictionaryTranslator, Translator};
 use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
@@ -16,6 +16,7 @@ use crate::parquet::encoding::Encoding;
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{CowBuffer, DataPage, DictPage};
 use crate::parquet::schema::Repetition;
+use crate::read::deserialize::nested_utils::NestedDecodeIter;
 use crate::read::deserialize::utils::dict_indices_decoder;
 
 #[derive(Debug)]
@@ -50,15 +51,15 @@ struct BinaryDecoder {
     size: usize,
 }
 
-impl<'a> NestedDecoder<'a> for BinaryDecoder {
-    type State = State<'a>;
-    type Dictionary = CowBuffer<'a>;
+impl<'pages, 'mmap: 'pages> NestedDecoder<'pages, 'mmap> for BinaryDecoder {
+    type State = State<'pages>;
+    type Dictionary = &'pages [u8];
     type DecodedState = (FixedSizeBinary, MutableBitmap);
 
     fn build_state(
         &self,
-        page: &'a DataPage,
-        dict: Option<&'a Self::Dictionary>,
+        page: &'pages DataPage<'mmap>,
+        dict: Option<&'pages Self::Dictionary>,
     ) -> PolarsResult<Self::State> {
         let is_optional =
             page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
@@ -133,66 +134,41 @@ impl<'a> NestedDecoder<'a> for BinaryDecoder {
         validity.extend_constant(n, false);
     }
 
-    fn deserialize_dict(&self, page: &DictPage<'a>) -> Self::Dictionary {
-        page.buffer.clone()
+    fn deserialize_dict(&self, page: &'pages DictPage<'mmap>) -> Self::Dictionary {
+        page.buffer.as_ref()
     }
 }
 
-pub struct NestedIter<'a, I: PagesIter<'a>> {
-    iter: I,
-    data_type: ArrowDataType,
-    size: usize,
-    init: Vec<InitNested>,
-    items: VecDeque<(NestedState, (FixedSizeBinary, MutableBitmap))>,
-    dict: Option<CowBuffer<'a>>,
-    chunk_size: Option<usize>,
-    remaining: usize,
-}
+pub struct NestedBinaryIter;
 
-impl<'a, I: PagesIter<'a>> NestedIter<'a, I> {
-    pub fn new(
+impl NestedBinaryIter {
+    pub fn new<'pages, 'mmap: 'pages, I: PagesIter<'mmap>>(
         iter: I,
-        init: Vec<InitNested>,
         data_type: ArrowDataType,
+        init: Vec<InitNested>,
         num_rows: usize,
         chunk_size: Option<usize>,
-    ) -> Self {
+    ) -> NestedDecodeIter<
+        'pages,
+        'mmap,
+        FixedSizeBinaryArray,
+        I,
+        BinaryDecoder,
+        fn(
+            &ArrowDataType,
+            NestedState,
+            <BinaryDecoder as NestedDecoder<'pages, 'mmap>>::DecodedState,
+        ) -> PolarsResult<(NestedState, FixedSizeBinaryArray)>,
+    > {
         let size = FixedSizeBinaryArray::get_size(&data_type);
-        Self {
+        NestedDecodeIter::new(
             iter,
             data_type,
-            size,
             init,
-            items: VecDeque::new(),
-            dict: None,
             chunk_size,
-            remaining: num_rows,
-        }
-    }
-}
-
-impl<'a, I: PagesIter<'a>> Iterator for NestedIter<'a, I> {
-    type Item = PolarsResult<(NestedState, FixedSizeBinaryArray)>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            let maybe_state = next(
-                &mut self.iter,
-                &mut self.items,
-                &mut self.dict,
-                &mut self.remaining,
-                &self.init,
-                self.chunk_size,
-                &BinaryDecoder { size: self.size },
-            );
-            match maybe_state {
-                MaybeNext::Some(Ok((nested, decoded))) => {
-                    return Some(Ok((nested, finish(&self.data_type, decoded.0, decoded.1))))
-                },
-                MaybeNext::Some(Err(e)) => return Some(Err(e)),
-                MaybeNext::None => return None,
-                MaybeNext::More => continue,
-            }
-        }
+            num_rows,
+            BinaryDecoder { size },
+            |dt, nested, decoded| Ok((nested, finish(dt, decoded).unwrap())),
+        )
     }
 }

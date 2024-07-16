@@ -119,15 +119,14 @@ impl<'a> Iterator for DeltaBytes<'a> {
 }
 
 #[derive(Debug)]
-pub(crate) struct ValuesDictionary<'a> {
-    pub values: hybrid_rle::HybridRleDecoder<'a>,
-    pub dict: &'a BinaryDict,
+pub(crate) struct ValuesDictionary<'pages> {
+    pub values: hybrid_rle::HybridRleDecoder<'pages>,
+    pub dict: &'pages BinaryDict,
 }
 
-impl<'a> ValuesDictionary<'a> {
-    pub fn try_new(page: &'a DataPage, dict: &'a BinaryDict) -> PolarsResult<Self> {
+impl<'pages> ValuesDictionary<'pages> {
+    pub fn try_new(page: &'pages DataPage, dict: &'pages BinaryDict) -> PolarsResult<Self> {
         let values = utils::dict_indices_decoder(page)?;
-
         Ok(Self { dict, values })
     }
 
@@ -138,19 +137,19 @@ impl<'a> ValuesDictionary<'a> {
 }
 
 #[derive(Debug)]
-pub(crate) enum BinaryStateTranslation<'a> {
-    Unit(BinaryIter<'a>),
-    Dictionary(ValuesDictionary<'a>, Option<Vec<View>>),
-    Delta(Delta<'a>),
-    DeltaBytes(DeltaBytes<'a>),
+pub(crate) enum BinaryStateTranslation<'pages> {
+    Unit(BinaryIter<'pages>),
+    Dictionary(ValuesDictionary<'pages>, Option<Vec<View>>),
+    Delta(Delta<'pages>),
+    DeltaBytes(DeltaBytes<'pages>),
 }
 
-impl<'a> BinaryStateTranslation<'a> {
+impl<'pages> BinaryStateTranslation<'pages> {
     pub(crate) fn new(
-        page: &'a DataPage,
-        dict: Option<&'a BinaryDict>,
-        _page_validity: Option<&PageValidity<'a>>,
-        _filter: Option<&Filter<'a>>,
+        page: &'pages DataPage,
+        dict: Option<&'pages BinaryDict>,
+        _page_validity: Option<&PageValidity<'pages>>,
+        _filter: Option<&Filter<'pages>>,
         is_string: bool,
     ) -> PolarsResult<Self> {
         match (page.encoding(), dict) {

@@ -20,13 +20,13 @@ use crate::parquet::encoding::Encoding;
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{DataPage, DictPage, Page};
 
-impl<'a, K: DictionaryKey> StateTranslation<'a, PrimitiveDecoder<K>> for HybridRleDecoder<'a> {
-    fn new<'b: 'a>(
+impl<'pages, 'mmap: 'pages, K: DictionaryKey> StateTranslation<'pages, 'mmap, PrimitiveDecoder<K>> for HybridRleDecoder<'pages> {
+    fn new(
         _decoder: &PrimitiveDecoder<K>,
-        page: &'a DataPage<'b>,
-        _dict: Option<&'a <PrimitiveDecoder<K> as Decoder<'a>>::Dict>,
-        _page_validity: Option<&PageValidity<'a>>,
-        _filter: Option<&Filter<'a>>,
+        page: &'pages DataPage<'mmap>,
+        _dict: Option<&'pages <PrimitiveDecoder<K> as Decoder<'pages, 'mmap>>::Dict>,
+        _page_validity: Option<&PageValidity<'pages>>,
+        _filter: Option<&Filter<'pages>>,
     ) -> PolarsResult<Self> {
         if !matches!(
             page.encoding(),
@@ -49,8 +49,8 @@ impl<'a, K: DictionaryKey> StateTranslation<'a, PrimitiveDecoder<K>> for HybridR
     fn extend_from_state(
         &mut self,
         _decoder: &PrimitiveDecoder<K>,
-        decoded: &mut <PrimitiveDecoder<K> as Decoder<'a>>::DecodedState,
-        page_validity: &mut Option<PageValidity<'a>>,
+        decoded: &mut <PrimitiveDecoder<K> as Decoder<'pages, 'mmap>>::DecodedState,
+        page_validity: &mut Option<PageValidity<'pages>>,
         additional: usize,
     ) -> ParquetResult<()> {
         let (values, validity) = decoded;
@@ -112,8 +112,8 @@ where
     }
 }
 
-impl<'a, K: DictionaryKey> utils::Decoder<'a> for PrimitiveDecoder<K> {
-    type Translation = HybridRleDecoder<'a>;
+impl<'pages, 'mmap: 'pages, K: DictionaryKey> utils::Decoder<'pages, 'mmap> for PrimitiveDecoder<K> {
+    type Translation = HybridRleDecoder<'pages>;
     type Dict = ();
     type DecodedState = (Vec<K>, MutableBitmap);
 

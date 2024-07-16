@@ -1,12 +1,10 @@
-use std::collections::VecDeque;
-
 use arrow::array::BooleanArray;
 use arrow::bitmap::utils::BitmapIter;
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
 use polars_error::PolarsResult;
 
-use super::super::utils::{extend_from_decoder, next, DecodedState, Decoder, MaybeNext};
+use super::super::utils::{extend_from_decoder, DecodedState, Decoder};
 use super::super::{utils, PagesIter};
 use crate::parquet::encoding::hybrid_rle::gatherer::HybridRleGatherer;
 use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
@@ -14,22 +12,22 @@ use crate::parquet::encoding::Encoding;
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
 use crate::read::deserialize::utils::filter::Filter;
-use crate::read::deserialize::utils::{BatchableCollector, PageValidity};
+use crate::read::deserialize::utils::{BasicDecodeIterator, BatchableCollector, PageValidity};
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
-enum StateTranslation<'a> {
-    Unit(BitmapIter<'a>),
-    Rle(HybridRleDecoder<'a>),
+enum StateTranslation<'pages> {
+    Unit(BitmapIter<'pages>),
+    Rle(HybridRleDecoder<'pages>),
 }
 
-impl<'a> utils::StateTranslation<'a, BooleanDecoder> for StateTranslation<'a> {
-    fn new<'b: 'a>(
+impl<'pages, 'mmap: 'pages> utils::StateTranslation<'pages, 'mmap, BooleanDecoder> for StateTranslation<'pages> {
+    fn new(
         _decoder: &BooleanDecoder,
-        page: &'a DataPage<'b>,
-        _dict: Option<&'a <BooleanDecoder as Decoder>::Dict>,
-        page_validity: Option<&PageValidity<'a>>,
-        _filter: Option<&Filter<'a>>,
+        page: &'pages DataPage<'mmap>,
+        _dict: Option<&'pages <BooleanDecoder as Decoder<'pages, 'mmap>>::Dict>,
+        page_validity: Option<&PageValidity<'pages>>,
+        _filter: Option<&Filter<'pages>>,
     ) -> PolarsResult<Self> {
         let values = split_buffer(page)?.values;
 
@@ -88,7 +86,7 @@ impl<'a> utils::StateTranslation<'a, BooleanDecoder> for StateTranslation<'a> {
         &mut self,
         _decoder: &BooleanDecoder,
         decoded: &mut <BooleanDecoder as Decoder>::DecodedState,
-        page_validity: &mut Option<PageValidity<'a>>,
+        page_validity: &mut Option<PageValidity<'pages>>,
         additional: usize,
     ) -> ParquetResult<()> {
         let (values, validity) = decoded;
@@ -175,8 +173,8 @@ impl DecodedState for (MutableBitmap, MutableBitmap) {
 
 struct BooleanDecoder;
 
-impl<'a> Decoder<'a> for BooleanDecoder {
-    type Translation = StateTranslation<'a>;
+impl<'pages, 'mmap: 'pages> Decoder<'pages, 'mmap> for BooleanDecoder {
+    type Translation = StateTranslation<'pages>;
     type Dict = ();
     type DecodedState = (MutableBitmap, MutableBitmap);
 
@@ -192,62 +190,41 @@ impl<'a> Decoder<'a> for BooleanDecoder {
 
 fn finish(
     data_type: &ArrowDataType,
-    values: MutableBitmap,
-    validity: MutableBitmap,
-) -> BooleanArray {
-    BooleanArray::new(data_type.clone(), values.into(), validity.into())
+    (values, validity): (MutableBitmap, MutableBitmap),
+) -> PolarsResult<BooleanArray> {
+    Ok(BooleanArray::new(
+        data_type.clone(),
+        values.into(),
+        validity.into(),
+    ))
 }
 
-/// An iterator adapter over [`PagesIter`] assumed to be encoded as boolean arrays
-#[derive(Debug)]
-pub struct Iter<'a, I: PagesIter<'a>> {
-    iter: I,
-    data_type: ArrowDataType,
-    items: VecDeque<(MutableBitmap, MutableBitmap)>,
-    chunk_size: Option<usize>,
-    remaining: usize,
-    _pd: std::marker::PhantomData<&'a ()>,
-}
+pub struct BooleanDecodeIter;
 
-impl<'a, I: PagesIter<'a>> Iter<'a, I> {
-    pub fn new(
+impl BooleanDecodeIter {
+    pub fn new<'pages, 'mmap: 'pages, I: PagesIter<'mmap>>(
         iter: I,
         data_type: ArrowDataType,
         chunk_size: Option<usize>,
         num_rows: usize,
-    ) -> Self {
-        Self {
+    ) -> BasicDecodeIterator<
+        'pages,
+        'mmap,
+        BooleanArray,
+        I,
+        BooleanDecoder,
+        fn(
+            &ArrowDataType,
+            <BooleanDecoder as utils::Decoder<'pages, 'mmap>>::DecodedState,
+        ) -> PolarsResult<BooleanArray>,
+    > {
+        BasicDecodeIterator::new(
             iter,
             data_type,
-            items: VecDeque::new(),
             chunk_size,
-            remaining: num_rows,
-            _pd: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<'a, I: PagesIter<'a>> Iterator for Iter<'a, I> {
-    type Item = PolarsResult<BooleanArray>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            let maybe_state = next(
-                &mut self.iter,
-                &mut self.items,
-                &mut None,
-                &mut self.remaining,
-                self.chunk_size,
-                &BooleanDecoder,
-            );
-            match maybe_state {
-                MaybeNext::Some(Ok((values, validity))) => {
-                    return Some(Ok(finish(&self.data_type, values, validity)))
-                },
-                MaybeNext::Some(Err(e)) => return Some(Err(e)),
-                MaybeNext::None => return None,
-                MaybeNext::More => continue,
-            }
-        }
+            num_rows,
+            BooleanDecoder,
+            finish,
+        )
     }
 }

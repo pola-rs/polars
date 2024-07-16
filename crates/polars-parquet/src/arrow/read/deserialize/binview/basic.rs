@@ -1,5 +1,4 @@
-use std::cell::Cell;
-use std::collections::VecDeque;
+use std::sync::atomic::AtomicBool;
 
 use arrow::array::{Array, ArrayRef, BinaryViewArray, MutableBinaryViewArray, Utf8ViewArray};
 use arrow::bitmap::{Bitmap, MutableBitmap};
@@ -12,26 +11,30 @@ use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{DataPage, DictPage};
 use crate::read::deserialize::utils::filter::Filter;
 use crate::read::deserialize::utils::{
-    self, binary_views_dict, extend_from_decoder, next, DecodedState, MaybeNext, PageValidity,
+    self, binary_views_dict, extend_from_decoder, BasicDecodeIterator, DecodedState, PageValidity,
     StateTranslation, TranslatedHybridRle,
 };
 use crate::read::{PagesIter, PrimitiveLogicalType};
 
 type DecodedStateTuple = (MutableBinaryViewArray<[u8]>, MutableBitmap);
 
-impl<'a> StateTranslation<'a, BinViewDecoder> for BinaryStateTranslation<'a> {
-    fn new<'b: 'a>(
+impl<'pages, 'mmap: 'pages> StateTranslation<'pages, 'mmap, BinViewDecoder>
+    for BinaryStateTranslation<'pages>
+{
+    fn new(
         decoder: &BinViewDecoder,
-        page: &'a DataPage<'b>,
-        dict: Option<&'a <BinViewDecoder as utils::Decoder>::Dict>,
-        page_validity: Option<&PageValidity<'a>>,
-        filter: Option<&Filter<'a>>,
+        page: &'pages DataPage<'mmap>,
+        dict: Option<&'pages <BinViewDecoder as utils::Decoder<'pages, 'mmap>>::Dict>,
+        page_validity: Option<&PageValidity<'pages>>,
+        filter: Option<&Filter<'pages>>,
     ) -> PolarsResult<Self> {
         let is_string = matches!(
             page.descriptor.primitive_type.logical_type,
             Some(PrimitiveLogicalType::String)
         );
-        decoder.check_utf8.set(is_string);
+        decoder
+            .check_utf8
+            .store(is_string, std::sync::atomic::Ordering::Relaxed);
         Self::new(page, dict, page_validity, filter, is_string)
     }
 
@@ -46,15 +49,17 @@ impl<'a> StateTranslation<'a, BinViewDecoder> for BinaryStateTranslation<'a> {
     fn extend_from_state(
         &mut self,
         decoder: &BinViewDecoder,
-        decoded: &mut <BinViewDecoder as utils::Decoder>::DecodedState,
-        page_validity: &mut Option<utils::PageValidity<'a>>,
+        decoded: &mut <BinViewDecoder as utils::Decoder<'pages, 'mmap>>::DecodedState,
+        page_validity: &mut Option<utils::PageValidity<'pages>>,
         additional: usize,
     ) -> ParquetResult<()> {
         let (values, validity) = decoded;
         let views_offset = values.views().len();
         let buffer_offset = values.completed_buffers().len();
 
-        let mut validate_utf8 = decoder.check_utf8.take();
+        let mut validate_utf8 = decoder
+            .check_utf8
+            .load(std::sync::atomic::Ordering::Relaxed);
 
         match (self, page_validity) {
             (Self::Unit(page_values), None) => {
@@ -136,7 +141,7 @@ impl<'a> StateTranslation<'a, BinViewDecoder> for BinaryStateTranslation<'a> {
 
 #[derive(Default)]
 struct BinViewDecoder {
-    check_utf8: Cell<bool>,
+    check_utf8: AtomicBool,
 }
 
 impl DecodedState for DecodedStateTuple {
@@ -145,8 +150,8 @@ impl DecodedState for DecodedStateTuple {
     }
 }
 
-impl<'a> utils::Decoder<'a> for BinViewDecoder {
-    type Translation = BinaryStateTranslation<'a>;
+impl<'pages, 'mmap: 'pages> utils::Decoder<'pages, 'mmap> for BinViewDecoder {
+    type Translation = BinaryStateTranslation<'pages>;
     type Dict = BinaryDict;
     type DecodedState = DecodedStateTuple;
 
@@ -162,64 +167,39 @@ impl<'a> utils::Decoder<'a> for BinViewDecoder {
     }
 }
 
-pub struct BinaryViewArrayIter<'a, I: PagesIter<'a>> {
-    iter: I,
-    data_type: ArrowDataType,
-    items: VecDeque<DecodedStateTuple>,
-    dict: Option<BinaryDict>,
-    chunk_size: Option<usize>,
-    remaining: usize,
-    _pd: std::marker::PhantomData<&'a ()>,
-}
-impl<'a, I: PagesIter<'a>> BinaryViewArrayIter<'a, I> {
-    pub fn new(
+pub struct BinaryViewArrayIter;
+
+impl BinaryViewArrayIter {
+    pub fn new<'pages, 'mmap: 'pages, I: PagesIter<'mmap>>(
         iter: I,
         data_type: ArrowDataType,
         chunk_size: Option<usize>,
         num_rows: usize,
-    ) -> Self {
-        Self {
+    ) -> BasicDecodeIterator<
+        'pages,
+        'mmap,
+        ArrayRef,
+        I,
+        BinViewDecoder,
+        fn(
+            &ArrowDataType,
+            <BinViewDecoder as utils::Decoder<'pages, 'mmap>>::DecodedState,
+        ) -> PolarsResult<ArrayRef>,
+    > {
+        BasicDecodeIterator::new(
             iter,
             data_type,
-            items: VecDeque::new(),
-            dict: None,
             chunk_size,
-            remaining: num_rows,
-            _pd: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<'a, I: PagesIter<'a>> Iterator for BinaryViewArrayIter<'a, I> {
-    type Item = PolarsResult<ArrayRef>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let decoder = BinViewDecoder::default();
-        loop {
-            let maybe_state = next(
-                &mut self.iter,
-                &mut self.items,
-                &mut self.dict,
-                &mut self.remaining,
-                self.chunk_size,
-                &decoder,
-            );
-            match maybe_state {
-                MaybeNext::Some(Ok((values, validity))) => {
-                    return Some(finish(&self.data_type, values, validity))
-                },
-                MaybeNext::Some(Err(e)) => return Some(Err(e)),
-                MaybeNext::None => return None,
-                MaybeNext::More => continue,
-            }
-        }
+            num_rows,
+            BinViewDecoder::default(),
+            finish,
+        )
     }
 }
 
 pub(super) fn finish(
     data_type: &ArrowDataType,
-    values: MutableBinaryViewArray<[u8]>,
-    validity: MutableBitmap,
+    (values, validity): (MutableBinaryViewArray<[u8]>, MutableBitmap),
 ) -> PolarsResult<Box<dyn Array>> {
     let mut array: BinaryViewArray = values.into();
     let validity: Bitmap = validity.into();

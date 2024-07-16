@@ -28,15 +28,15 @@ impl<'a> utils::PageState<'a> for State<'a> {
 
 struct BooleanDecoder;
 
-impl<'a> NestedDecoder<'a> for BooleanDecoder {
-    type State = State<'a>;
+impl<'pages, 'mmap: 'pages> NestedDecoder<'pages, 'mmap> for BooleanDecoder {
+    type State = State<'pages>;
     type Dictionary = ();
     type DecodedState = (MutableBitmap, MutableBitmap);
 
     fn build_state(
         &self,
-        page: &'a DataPage,
-        _: Option<&'a Self::Dictionary>,
+        page: &'pages DataPage<'mmap>,
+        _: Option<&'pages Self::Dictionary>,
     ) -> PolarsResult<Self::State> {
         let is_optional =
             page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
@@ -93,63 +93,39 @@ impl<'a> NestedDecoder<'a> for BooleanDecoder {
     fn deserialize_dict(&self, _: &DictPage) -> Self::Dictionary {}
 }
 
-/// An iterator adapter over [`PagesIter`] assumed to be encoded as boolean arrays
-#[derive(Debug)]
-pub struct NestedIter<'a, I: PagesIter<'a>> {
-    iter: I,
-    init: Vec<InitNested>,
-    items: VecDeque<(NestedState, (MutableBitmap, MutableBitmap))>,
-    remaining: usize,
-    chunk_size: Option<usize>,
-    _pd: std::marker::PhantomData<&'a ()>,
-}
+pub struct NestedBooleanIter;
 
-impl<'a, I: PagesIter<'a>> NestedIter<'a, I> {
-    pub fn new(iter: I, init: Vec<InitNested>, num_rows: usize, chunk_size: Option<usize>) -> Self {
-        Self {
+impl NestedBooleanIter {
+    pub fn new<'pages, 'mmap: 'pages, I: PagesIter<'mmap>>(
+        iter: I,
+        init: Vec<InitNested>,
+        num_rows: usize,
+        chunk_size: Option<usize>,
+    ) -> NestedDecodeIter<
+        'pages,
+        'mmap,
+        BooleanArray,
+        I,
+        BooleanDecoder,
+        fn(
+            &ArrowDataType,
+            NestedState,
+            <BooleanDecoder as NestedDecoder<'pages, 'mmap>>::DecodedState,
+        ) -> PolarsResult<(NestedState, BooleanArray)>,
+    > {
+        NestedDecodeIter::new(
             iter,
+            ArrowDataType::Boolean,
             init,
-            items: VecDeque::new(),
-            remaining: num_rows,
             chunk_size,
-            _pd: std::marker::PhantomData,
-        }
-    }
-}
-
-fn finish(
-    data_type: &ArrowDataType,
-    values: MutableBitmap,
-    validity: MutableBitmap,
-) -> BooleanArray {
-    BooleanArray::new(data_type.clone(), values.into(), validity.into())
-}
-
-impl<'a, I: PagesIter<'a>> Iterator for NestedIter<'a, I> {
-    type Item = PolarsResult<(NestedState, BooleanArray)>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            let maybe_state = next(
-                &mut self.iter,
-                &mut self.items,
-                &mut None,
-                &mut self.remaining,
-                &self.init,
-                self.chunk_size,
-                &BooleanDecoder,
-            );
-            match maybe_state {
-                MaybeNext::Some(Ok((nested, (values, validity)))) => {
-                    return Some(Ok((
-                        nested,
-                        finish(&ArrowDataType::Boolean, values, validity),
-                    )))
-                },
-                MaybeNext::Some(Err(e)) => return Some(Err(e)),
-                MaybeNext::None => return None,
-                MaybeNext::More => continue,
-            }
-        }
+            num_rows,
+            BooleanDecoder,
+            |_dt, nested, (values, validity)| {
+                Ok((
+                    nested,
+                    BooleanArray::new(ArrowDataType::Boolean, values.into(), validity.into()),
+                ))
+            },
+        )
     }
 }

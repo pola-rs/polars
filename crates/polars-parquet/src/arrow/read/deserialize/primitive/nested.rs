@@ -7,7 +7,6 @@ use arrow::types::NativeType;
 use polars_error::PolarsResult;
 
 use super::super::nested_utils::*;
-use super::super::utils::MaybeNext;
 use super::super::{utils, PagesIter};
 use super::basic::{deserialize_plain, ValuesDictionary};
 use super::DecoderFunction;
@@ -71,20 +70,20 @@ where
     }
 }
 
-impl<'a, T, P, D> NestedDecoder<'a> for PrimitiveDecoder<T, P, D>
+impl<'pages, 'mmap, T, P, D> NestedDecoder<'pages, 'mmap> for PrimitiveDecoder<T, P, D>
 where
     T: NativeType,
     P: ParquetNativeType,
     D: DecoderFunction<P, T>,
 {
-    type State = State<'a, P, T>;
+    type State = State<'pages, P, T>;
     type Dictionary = Vec<T>;
     type DecodedState = (Vec<T>, MutableBitmap);
 
     fn build_state(
         &self,
-        page: &'a DataPage,
-        dict: Option<&'a Self::Dictionary>,
+        page: &'pages DataPage<'mmap>,
+        dict: Option<&'pages Self::Dictionary>,
     ) -> PolarsResult<Self::State> {
         let is_optional =
             page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;

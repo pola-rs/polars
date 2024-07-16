@@ -5,7 +5,6 @@ use arrow::datatypes::ArrowDataType;
 use polars_error::PolarsResult;
 
 use super::super::nested_utils::*;
-use super::super::utils::MaybeNext;
 use super::super::{utils, PagesIter};
 use crate::arrow::read::deserialize::utils::DecodedState;
 use crate::parquet::error::ParquetResult;
@@ -26,15 +25,15 @@ impl DecodedState for usize {
     }
 }
 
-impl<'a> NestedDecoder<'a> for NullDecoder {
+impl<'pages, 'mmap: 'pages> NestedDecoder<'pages, 'mmap> for NullDecoder {
     type State = usize;
     type Dictionary = usize;
     type DecodedState = usize;
 
     fn build_state(
         &self,
-        _page: &'a DataPage,
-        dict: Option<&'a Self::Dictionary>,
+        _page: &'pages DataPage<'mmap>,
+        dict: Option<&'pages Self::Dictionary>,
     ) -> PolarsResult<Self::State> {
         if let Some(n) = dict {
             return Ok(*n);

@@ -3,11 +3,12 @@ use std::iter::{Peekable, Zip};
 
 use arrow::array::Array;
 use arrow::bitmap::MutableBitmap;
+use arrow::datatypes::ArrowDataType;
 use polars_error::{polars_bail, PolarsResult};
 use polars_utils::slice::GetSaferUnchecked;
 
 use super::super::PagesIter;
-use super::utils::{BatchableCollector, DecodedState, MaybeNext, PageState};
+use super::utils::{BatchableCollector, DecodedState};
 use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{split_buffer, DataPage, DictPage, Page};
@@ -184,13 +185,13 @@ impl Nested {
     }
 }
 
-pub struct BatchedNestedDecoder<'a, 'b, 'c, D: NestedDecoder<'a>> {
-    state: &'b mut D::State,
+pub struct BatchedNestedDecoder<'pages, 'mmap: 'pages, 'c, D: NestedDecoder<'pages, 'mmap>> {
+    state: &'c mut D::State,
     decoder: &'c D,
 }
 
-impl<'a, 'b, 'c, D: NestedDecoder<'a>> BatchableCollector<(), D::DecodedState>
-    for BatchedNestedDecoder<'a, 'b, 'c, D>
+impl<'pages, 'mmap: 'pages, 'c, D: NestedDecoder<'pages, 'mmap>>
+    BatchableCollector<(), D::DecodedState> for BatchedNestedDecoder<'pages, 'mmap, 'c, D>
 {
     fn reserve(_target: &mut D::DecodedState, _n: usize) {
         unreachable!()
@@ -207,15 +208,15 @@ impl<'a, 'b, 'c, D: NestedDecoder<'a>> BatchableCollector<(), D::DecodedState>
 }
 
 /// A decoder that knows how to map `State` -> Array
-pub(super) trait NestedDecoder<'a> {
-    type State: PageState<'a>;
+pub(super) trait NestedDecoder<'pages, 'mmap: 'pages> {
+    type State;
     type Dictionary;
     type DecodedState: DecodedState;
 
     fn build_state(
         &self,
-        page: &'a DataPage,
-        dict: Option<&'a Self::Dictionary>,
+        page: &'pages DataPage<'mmap>,
+        dict: Option<&'pages Self::Dictionary>,
     ) -> PolarsResult<Self::State>;
 
     /// Initializes a new state
@@ -229,7 +230,7 @@ pub(super) trait NestedDecoder<'a> {
     ) -> ParquetResult<()>;
     fn push_n_nulls(&self, decoded: &mut Self::DecodedState, n: usize);
 
-    fn deserialize_dict(&self, page: &DictPage<'a>) -> Self::Dictionary;
+    fn deserialize_dict(&self, page: &'pages DictPage<'mmap>) -> Self::Dictionary;
 }
 
 /// The initial info of nested data types.
@@ -329,11 +330,11 @@ impl NestedState {
 /// reading. It therefore returns a bool indicating:
 /// * true  : the row is fully read
 /// * false : the row may not be fully read
-pub(super) fn extend<'a, 'b: 'a, D: NestedDecoder<'a>>(
-    page: &'a DataPage<'b>,
+pub(super) fn extend<'pages, 'mmap: 'pages, D: NestedDecoder<'pages, 'mmap>>(
+    page: &'pages DataPage<'mmap>,
     init: &[InitNested],
     items: &mut VecDeque<(NestedState, D::DecodedState)>,
-    dict: Option<&'a D::Dictionary>,
+    dict: Option<&'pages D::Dictionary>,
     remaining: &mut usize,
     decoder: &D,
     chunk_size: Option<usize>,
@@ -402,13 +403,13 @@ pub(super) fn extend<'a, 'b: 'a, D: NestedDecoder<'a>>(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn extend_offsets2<'a, 'b, 'c, 'd, D: NestedDecoder<'a>>(
-    page: &mut NestedPage<'a>,
+fn extend_offsets2<'pages, 'mmap: 'pages, 'b, 'd, D: NestedDecoder<'pages, 'mmap>>(
+    page: &mut NestedPage<'pages>,
     batched_collector: &mut BatchedCollector<
         'b,
         (),
         D::DecodedState,
-        BatchedNestedDecoder<'a, 'c, 'd, D>,
+        BatchedNestedDecoder<'pages, 'mmap, 'd, D>,
     >,
     nested: &mut [Nested],
     additional: usize,
@@ -540,63 +541,119 @@ fn extend_offsets2<'a, 'b, 'c, 'd, D: NestedDecoder<'a>>(
     }
 }
 
-#[inline]
-pub(super) fn next<'a, 'b: 'a, I, D>(
-    iter: &'a mut I,
-    items: &mut VecDeque<(NestedState, D::DecodedState)>,
-    dict: &'a mut Option<D::Dictionary>,
-    remaining: &mut usize,
-    init: &[InitNested],
+pub struct NestedDecodeIter<
+    'pages,
+    'mmap: 'pages,
+    O,
+    I: PagesIter<'mmap>,
+    D: NestedDecoder<'pages, 'mmap>,
+    F: Fn(&ArrowDataType, NestedState, D::DecodedState) -> PolarsResult<(NestedState, O)>,
+> {
+    iter: I,
+    data_type: ArrowDataType,
+    items: VecDeque<(NestedState, D::DecodedState)>,
+    dict: Option<D::Dictionary>,
     chunk_size: Option<usize>,
-    decoder: &D,
-) -> MaybeNext<PolarsResult<(NestedState, D::DecodedState)>>
-where
-    I: PagesIter<'b>,
-    D: NestedDecoder<'a>,
+    remaining: usize,
+    init: Vec<InitNested>,
+    decoder: D,
+    finish: F,
+}
+
+impl<
+        'pages,
+        'mmap: 'pages,
+        O,
+        I: PagesIter<'mmap>,
+        D: NestedDecoder<'pages, 'mmap>,
+        F: Fn(&ArrowDataType, NestedState, D::DecodedState) -> PolarsResult<(NestedState, O)>,
+    > NestedDecodeIter<'pages, 'mmap, O, I, D, F>
 {
-    // front[a1, a2, a3, ...]back
-    if items.len() > 1 {
-        return MaybeNext::Some(Ok(items.pop_front().unwrap()));
+    pub(crate) fn new(
+        iter: I,
+        data_type: ArrowDataType,
+        init: Vec<InitNested>,
+        chunk_size: Option<usize>,
+        remaining: usize,
+        decoder: D,
+        finish: F,
+    ) -> Self {
+        Self {
+            iter,
+            data_type,
+            items: VecDeque::new(),
+            dict: None,
+            chunk_size,
+            remaining,
+            init,
+            decoder,
+            finish,
+        }
     }
+}
 
-    match iter.next() {
-        Err(e) => MaybeNext::Some(Err(e.into())),
-        Ok(None) => {
-            if let Some(decoded) = items.pop_front() {
-                MaybeNext::Some(Ok(decoded))
-            } else {
-                MaybeNext::None
+impl<
+        'pages,
+        'mmap: 'pages,
+        O,
+        I: PagesIter<'mmap>,
+        D: NestedDecoder<'pages, 'mmap>,
+        F: Fn(&ArrowDataType, NestedState, D::DecodedState) -> PolarsResult<(NestedState, O)>,
+    > Iterator for NestedDecodeIter<'pages, 'mmap, O, I, D, F>
+{
+    type Item = PolarsResult<(NestedState, O)>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            // front[a1, a2, a3, ...]back
+            if self.items.len() > 1 {
+                let (nested, decoded) = self.items.pop_front().unwrap();
+                return Some((self.finish)(&self.data_type, nested, decoded));
             }
-        },
-        Ok(Some(page)) => {
-            let page = match &page {
-                Page::Data(page) => page,
-                Page::Dict(dict_page) => {
-                    *dict = Some(decoder.deserialize_dict(dict_page));
-                    return MaybeNext::More;
+
+            match self.iter.next() {
+                Err(e) => return Some(Err(e.into())),
+                Ok(None) => {
+                    if let Some((nested, decoded)) = self.items.pop_front() {
+                        return Some((self.finish)(&self.data_type, nested, decoded));
+                    } else {
+                        return None;
+                    }
                 },
-            };
+                Ok(Some(page)) => {
+                    let page = match &page {
+                        Page::Data(page) => page,
+                        Page::Dict(dict_page) => {
+                            self.dict = Some(self.decoder.deserialize_dict(dict_page));
+                            continue;
+                        },
+                    };
 
-            // there is a new page => consume the page from the start
-            let is_fully_read = extend(
-                page,
-                init,
-                items,
-                dict.as_ref(),
-                remaining,
-                decoder,
-                chunk_size,
-            );
+                    // there is a new page => consume the page from the start
+                    let is_fully_read = extend(
+                        page,
+                        &self.init,
+                        &mut self.items,
+                        self.dict.as_ref(),
+                        &mut self.remaining,
+                        &mut self.decoder,
+                        self.chunk_size,
+                    );
 
-            match is_fully_read {
-                Ok(true) => MaybeNext::Some(Ok(items.pop_front().unwrap())),
-                Ok(false) => MaybeNext::More,
-                Err(e) => MaybeNext::Some(Err(e)),
+                    match is_fully_read {
+                        Ok(true) => {
+                            let (nested, decoded) = self.items.pop_front().unwrap();
+                            return Some((self.finish)(&self.data_type, nested, decoded));
+                        },
+                        Ok(false) => continue,
+                        Err(e) => return Some(Err(e)),
+                    }
+                },
             }
-        },
+        }
     }
 }
 
 /// Type def for a sharable, boxed dyn [`Iterator`] of NestedStates and arrays
-pub type NestedArrayIter<'a> =
-    Box<dyn Iterator<Item = PolarsResult<(NestedState, Box<dyn Array>)>> + Send + Sync + 'a>;
+pub type NestedArrayIter<'pages> =
+    Box<dyn Iterator<Item = PolarsResult<(NestedState, Box<dyn Array>)>> + Send + Sync + 'pages>;

@@ -8,7 +8,6 @@ use arrow::pushable::Pushable;
 use polars_error::PolarsResult;
 
 use super::super::nested_utils::*;
-use super::super::utils::MaybeNext;
 use super::basic::finish;
 use super::decoders::*;
 use super::utils::*;
@@ -45,15 +44,15 @@ impl<'a> PageState<'a> for State<'a> {
 #[derive(Debug, Default)]
 struct BinaryDecoder<O: Offset>(std::marker::PhantomData<O>);
 
-impl<'a, O: Offset> NestedDecoder<'a> for BinaryDecoder<O> {
-    type State = State<'a>;
+impl<'pages, 'mmap: 'pages, O: Offset> NestedDecoder<'pages, 'mmap> for BinaryDecoder<O> {
+    type State = State<'pages>;
     type Dictionary = BinaryDict;
     type DecodedState = (Binary<O>, MutableBitmap);
 
     fn build_state(
         &self,
-        page: &'a DataPage,
-        dict: Option<&'a Self::Dictionary>,
+        page: &'pages DataPage<'mmap>,
+        dict: Option<&'pages Self::Dictionary>,
     ) -> PolarsResult<Self::State> {
         let is_optional = page_is_optional(page);
         let is_filtered = page_is_filtered(page);
@@ -133,62 +132,35 @@ impl<'a, O: Offset> NestedDecoder<'a> for BinaryDecoder<O> {
     }
 }
 
-pub struct NestedIter<'a, O: Offset, I: PagesIter<'a>> {
-    iter: I,
-    data_type: ArrowDataType,
-    init: Vec<InitNested>,
-    items: VecDeque<(NestedState, (Binary<O>, MutableBitmap))>,
-    dict: Option<BinaryDict>,
-    chunk_size: Option<usize>,
-    remaining: usize,
-    _pd: std::marker::PhantomData<&'a ()>,
-}
+pub struct BinaryNestedIter;
 
-impl<'a, O: Offset, I: PagesIter<'a>> NestedIter<'a, O, I> {
-    pub fn new(
+impl BinaryNestedIter {
+    pub fn new<'pages, 'mmap: 'pages, O: Offset, I: PagesIter<'mmap>>(
         iter: I,
-        init: Vec<InitNested>,
         data_type: ArrowDataType,
-        num_rows: usize,
+        init: Vec<InitNested>,
         chunk_size: Option<usize>,
-    ) -> Self {
-        Self {
+        remaining: usize,
+    ) -> NestedDecodeIter<
+        'pages,
+        'mmap,
+        Box<dyn Array>,
+        I,
+        BinaryDecoder<O>,
+        fn(
+            &ArrowDataType,
+            NestedState,
+            <BinaryDecoder<O> as NestedDecoder<'pages, 'mmap>>::DecodedState,
+        ) -> PolarsResult<(NestedState, Box<dyn Array>)>,
+    > {
+        NestedDecodeIter::new(
             iter,
             data_type,
             init,
-            items: VecDeque::new(),
-            dict: None,
             chunk_size,
-            remaining: num_rows,
-            _pd: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<'a, O: Offset, I: PagesIter<'a>> Iterator for NestedIter<'a, O, I> {
-    type Item = PolarsResult<(NestedState, Box<dyn Array>)>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            let maybe_state = next(
-                &mut self.iter,
-                &mut self.items,
-                &mut self.dict,
-                &mut self.remaining,
-                &self.init,
-                self.chunk_size,
-                &BinaryDecoder::<O>::default(),
-            );
-            match maybe_state {
-                MaybeNext::Some(Ok((nested, decoded))) => {
-                    return Some(
-                        finish(&self.data_type, decoded.0, decoded.1).map(|array| (nested, array)),
-                    )
-                },
-                MaybeNext::Some(Err(e)) => return Some(Err(e)),
-                MaybeNext::None => return None,
-                MaybeNext::More => continue, // Using continue in a loop instead of calling next helps prevent stack overflow.
-            }
-        }
+            remaining,
+            BinaryDecoder::<O>::default(),
+            |dt, nested, decoded| finish(dt, decoded).map(|array| (nested, array)),
+        )
     }
 }

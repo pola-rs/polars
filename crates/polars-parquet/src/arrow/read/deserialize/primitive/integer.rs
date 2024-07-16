@@ -1,5 +1,3 @@
-use std::collections::VecDeque;
-
 use arrow::array::MutablePrimitiveArray;
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
@@ -7,7 +5,6 @@ use arrow::types::NativeType;
 use num_traits::AsPrimitive;
 use polars_error::PolarsResult;
 
-use super::super::utils::MaybeNext;
 use super::super::{utils, PagesIter};
 use super::basic::{finish, DecoderFunction, PrimitiveDecoder, ValuesDictionary};
 use crate::parquet::encoding::hybrid_rle::DictionaryTranslator;
@@ -17,30 +14,31 @@ use crate::parquet::page::{split_buffer, DataPage, DictPage};
 use crate::parquet::types::{decode, NativeType as ParquetNativeType};
 use crate::read::deserialize::utils::array_chunks::ArrayChunks;
 use crate::read::deserialize::utils::filter::Filter;
-use crate::read::deserialize::utils::{PageValidity, TranslatedHybridRle};
+use crate::read::deserialize::utils::{BasicDecodeIterator, PageValidity, TranslatedHybridRle};
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
-pub(super) enum StateTranslation<'a, P: ParquetNativeType, T: NativeType> {
-    Unit(ArrayChunks<'a, P>),
-    Dictionary(ValuesDictionary<'a, T>),
-    ByteStreamSplit(byte_stream_split::Decoder<'a>),
-    DeltaBinaryPacked(delta_bitpacked::Decoder<'a>),
+pub(super) enum StateTranslation<'pages, P: ParquetNativeType, T: NativeType> {
+    Unit(ArrayChunks<'pages, P>),
+    Dictionary(ValuesDictionary<'pages, T>),
+    ByteStreamSplit(byte_stream_split::Decoder<'pages>),
+    DeltaBinaryPacked(delta_bitpacked::Decoder<'pages>),
 }
 
-impl<'a, P, T, D> utils::StateTranslation<'a, IntDecoder<P, T, D>> for StateTranslation<'a, P, T>
+impl<'pages, 'mmap: 'pages, P, T, D> utils::StateTranslation<'pages, 'mmap, IntDecoder<P, T, D>>
+    for StateTranslation<'pages, P, T>
 where
     T: NativeType,
     P: ParquetNativeType,
     i64: num_traits::AsPrimitive<P>,
     D: DecoderFunction<P, T>,
 {
-    fn new<'b: 'a>(
+    fn new(
         _decoder: &IntDecoder<P, T, D>,
-        page: &'a DataPage<'b>,
-        dict: Option<&'a <IntDecoder<P, T, D> as utils::Decoder>::Dict>,
-        _page_validity: Option<&PageValidity<'a>>,
-        _filter: Option<&Filter<'a>>,
+        page: &'pages DataPage<'mmap>,
+        dict: Option<&'pages <IntDecoder<P, T, D> as utils::Decoder>::Dict>,
+        _page_validity: Option<&PageValidity<'pages>>,
+        _filter: Option<&Filter<'pages>>,
     ) -> PolarsResult<Self> {
         match (page.encoding(), dict) {
             (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict)) => {
@@ -94,8 +92,8 @@ where
     fn extend_from_state(
         &mut self,
         decoder: &IntDecoder<P, T, D>,
-        decoded: &mut <IntDecoder<P, T, D> as utils::Decoder>::DecodedState,
-        page_validity: &mut Option<PageValidity<'a>>,
+        decoded: &mut <IntDecoder<P, T, D> as utils::Decoder<'pages, 'mmap>>::DecodedState,
+        page_validity: &mut Option<PageValidity<'pages>>,
         additional: usize,
     ) -> ParquetResult<()> {
         let (values, validity) = decoded;
@@ -196,14 +194,14 @@ where
     }
 }
 
-impl<'a, P, T, D> utils::Decoder<'a> for IntDecoder<P, T, D>
+impl<'pages, 'mmap: 'pages, P, T, D> utils::Decoder<'pages, 'mmap> for IntDecoder<P, T, D>
 where
     T: NativeType,
     P: ParquetNativeType,
     i64: num_traits::AsPrimitive<P>,
     D: DecoderFunction<P, T>,
 {
-    type Translation = StateTranslation<'a, P, T>;
+    type Translation = StateTranslation<'pages, P, T>;
     type Dict = Vec<T>;
     type DecodedState = (Vec<T>, MutableBitmap);
 
@@ -211,87 +209,46 @@ where
         self.0.with_capacity(capacity)
     }
 
-    fn deserialize_dict(&self, page: &DictPage) -> Self::Dict {
+    fn deserialize_dict(&self, page: &'pages DictPage<'mmap>) -> Self::Dict {
         self.0.deserialize_dict(page)
     }
 }
 
-/// An [`Iterator`] adapter over [`PagesIter`] assumed to be encoded as primitive arrays
-/// encoded as parquet integer types
-#[derive(Debug)]
-pub struct IntegerIter<'a, T, I, P, D>
-where
-    I: PagesIter<'a>,
-    T: NativeType,
-    P: ParquetNativeType,
-    D: DecoderFunction<P, T>,
-{
-    iter: I,
-    data_type: ArrowDataType,
-    items: VecDeque<(Vec<T>, MutableBitmap)>,
-    remaining: usize,
-    chunk_size: Option<usize>,
-    dict: Option<Vec<T>>,
-    decoder: D,
-    phantom: std::marker::PhantomData<&'a P>,
-}
+pub struct IntegerDecodeIter;
 
-impl<'a, T, I, P, D> IntegerIter<'a, T, I, P, D>
-where
-    I: PagesIter<'a>,
-    T: NativeType,
-
-    P: ParquetNativeType,
-    D: DecoderFunction<P, T>,
-{
-    pub fn new(
+impl IntegerDecodeIter {
+    pub fn new<'pages, 'mmap: 'pages, T, I, P, D>(
         iter: I,
         data_type: ArrowDataType,
         num_rows: usize,
         chunk_size: Option<usize>,
         decoder: D,
-    ) -> Self {
-        Self {
+    ) -> BasicDecodeIterator<
+        'pages,
+        'mmap,
+        MutablePrimitiveArray<T>,
+        I,
+        IntDecoder<P, T, D>,
+        fn(
+            &ArrowDataType,
+            <IntDecoder<P, T, D> as utils::Decoder<'pages, 'mmap>>::DecodedState,
+        ) -> PolarsResult<MutablePrimitiveArray<T>>,
+    >
+    where
+        I: PagesIter<'mmap>,
+        T: NativeType,
+
+        i64: num_traits::AsPrimitive<P>,
+        P: ParquetNativeType,
+        D: DecoderFunction<P, T>,
+    {
+        BasicDecodeIterator::new(
             iter,
             data_type,
-            items: VecDeque::new(),
-            dict: None,
-            remaining: num_rows,
             chunk_size,
-            decoder,
-            phantom: Default::default(),
-        }
-    }
-}
-
-impl<'a, T, I, P, D> Iterator for IntegerIter<'a, T, I, P, D>
-where
-    I: PagesIter<'a>,
-    T: NativeType,
-    P: ParquetNativeType,
-    i64: num_traits::AsPrimitive<P>,
-    D: DecoderFunction<P, T>,
-{
-    type Item = PolarsResult<MutablePrimitiveArray<T>>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            let maybe_state = utils::next(
-                &mut self.iter,
-                &mut self.items,
-                &mut self.dict,
-                &mut self.remaining,
-                self.chunk_size,
-                &IntDecoder::new(self.decoder),
-            );
-            match maybe_state {
-                MaybeNext::Some(Ok((values, validity))) => {
-                    return Some(Ok(finish(&self.data_type, values, validity)))
-                },
-                MaybeNext::Some(Err(e)) => return Some(Err(e)),
-                MaybeNext::None => return None,
-                MaybeNext::More => continue,
-            }
-        }
+            num_rows,
+            IntDecoder::new(decoder),
+            finish,
+        )
     }
 }

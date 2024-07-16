@@ -6,7 +6,6 @@ use arrow::datatypes::{ArrowDataType, PhysicalType};
 use polars_error::PolarsResult;
 
 use super::super::dictionary::*;
-use super::super::utils::MaybeNext;
 use super::super::PagesIter;
 use crate::arrow::read::deserialize::nested_utils::{InitNested, NestedState};
 use crate::parquet::page::DictPage;
