@@ -68,7 +68,7 @@ def test_assert_cloud_eligible_fail_on_local_data_source(lf: pl.LazyFrame) -> No
 
 
 @pytest.mark.write_disk()
-def test_assert_cloud_eligible_fail_on_anonymous_scan(tmp_path: Path) -> None:
+def test_assert_cloud_eligible_fail_on_python_scan(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
     data_path = tmp_path / "data.parquet"
     pl.DataFrame({"a": [1, 2]}).write_parquet(data_path)
