@@ -111,7 +111,7 @@ async = [
   "polars-error/regex",
   "polars-parquet?/async",
 ]
-cloud = ["object_store", "async", "polars-error/object_store", "url", "serde_json", "serde", "file_cache"]
+cloud = ["object_store", "async", "polars-error/object_store", "url", "serde_json", "serde", "file_cache", "reqwest"]
 file_cache = ["async", "dep:blake3", "dep:fs4"]
 aws = ["object_store/aws", "cloud", "reqwest"]
 azure = ["object_store/azure", "cloud"]

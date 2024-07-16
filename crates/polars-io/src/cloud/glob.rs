@@ -13,7 +13,7 @@ const DELIMITER: char = '/';
 /// Split the url in
 /// 1. the prefix part (all path components until the first one with '*')
 /// 2. a regular expression representation of the rest.
-fn extract_prefix_expansion(url: &str) -> PolarsResult<(String, Option<String>)> {
+pub(crate) fn extract_prefix_expansion(url: &str) -> PolarsResult<(String, Option<String>)> {
     let splits = url.split(DELIMITER);
     let mut prefix = String::new();
     let mut expansion = String::new();
@@ -135,21 +135,20 @@ fn full_url(scheme: &str, bucket: &str, key: Path) -> String {
 
 /// A simple matcher, if more is required consider depending on https://crates.io/crates/globset.
 /// The Cloud list api returns a list of all the file names under a prefix, there is no additional cost of `readdir`.
-struct Matcher {
+pub(crate) struct Matcher {
     prefix: String,
     re: Option<Regex>,
 }
 
 impl Matcher {
     /// Build a Matcher for the given prefix and expansion.
-    fn new(prefix: String, expansion: Option<&str>) -> PolarsResult<Matcher> {
+    pub(crate) fn new(prefix: String, expansion: Option<&str>) -> PolarsResult<Matcher> {
         // Cloud APIs accept a prefix without any expansion, extract it.
         let re = expansion.map(Regex::new).transpose()?;
         Ok(Matcher { prefix, re })
     }
 
-    fn is_matching(&self, key: &Path) -> bool {
-        let key: &str = key.as_ref();
+    pub(crate) fn is_matching(&self, key: &str) -> bool {
         if !key.starts_with(&self.prefix) {
             // Prefix does not match, should not happen.
             return false;
@@ -188,7 +187,8 @@ pub async fn glob(url: &str, cloud_options: Option<&CloudOptions>) -> PolarsResu
     let mut locations = store
         .list(Some(&Path::from(prefix)))
         .try_filter_map(|x| async move {
-            let out = (x.size > 0 && matcher.is_matching(&x.location)).then_some(x.location);
+            let out =
+                (x.size > 0 && matcher.is_matching(x.location.as_ref())).then_some(x.location);
             Ok(out)
         })
         .try_collect::<Vec<_>>()
@@ -271,11 +271,11 @@ mod test {
         let cloud_location = CloudLocation::new("s3://bucket/folder/*.parquet").unwrap();
         let a = Matcher::new(cloud_location.prefix, cloud_location.expansion.as_deref()).unwrap();
         // Regular match.
-        assert!(a.is_matching(&Path::from("folder/1.parquet")));
+        assert!(a.is_matching(Path::from("folder/1.parquet").as_ref()));
         // Require . in the file name.
-        assert!(!a.is_matching(&Path::from("folder/1parquet")));
+        assert!(!a.is_matching(Path::from("folder/1parquet").as_ref()));
         // Intermediary folders are not allowed.
-        assert!(!a.is_matching(&Path::from("folder/other/1.parquet")));
+        assert!(!a.is_matching(Path::from("folder/other/1.parquet").as_ref()));
     }
 
     #[test]
@@ -283,16 +283,16 @@ mod test {
         let cloud_location = CloudLocation::new("s3://bucket/folder/**/*.parquet").unwrap();
         let a = Matcher::new(cloud_location.prefix, cloud_location.expansion.as_deref()).unwrap();
         // Intermediary folders are optional.
-        assert!(a.is_matching(&Path::from("folder/1.parquet")));
+        assert!(a.is_matching(Path::from("folder/1.parquet").as_ref()));
         // Intermediary folders are allowed.
-        assert!(a.is_matching(&Path::from("folder/other/1.parquet")));
+        assert!(a.is_matching(Path::from("folder/other/1.parquet").as_ref()));
         let cloud_location = CloudLocation::new("s3://bucket/folder/**/data/*.parquet").unwrap();
         let a = Matcher::new(cloud_location.prefix, cloud_location.expansion.as_deref()).unwrap();
         // Required folder `data` is missing.
-        assert!(!a.is_matching(&Path::from("folder/1.parquet")));
+        assert!(!a.is_matching(Path::from("folder/1.parquet").as_ref()));
         // Required folder is present.
-        assert!(a.is_matching(&Path::from("folder/data/1.parquet")));
+        assert!(a.is_matching(Path::from("folder/data/1.parquet").as_ref()));
         // Required folder is present and additional folders are allowed.
-        assert!(a.is_matching(&Path::from("folder/other/data/1.parquet")));
+        assert!(a.is_matching(Path::from("folder/other/data/1.parquet").as_ref()));
     }
 }
