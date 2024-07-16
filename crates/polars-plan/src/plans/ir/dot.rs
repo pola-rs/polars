@@ -399,27 +399,19 @@ impl<'a, 'b> fmt::Write for EscapeLabel<'a, 'b> {
             // are not really using such strings.
             let f = char_indices
                 .find_map(|(i, c)| {
-                    (|| match c {
-                        '"' => {
-                            self.0.write_str(&s[..i])?;
-                            self.0.write_str(r#"\""#)?;
-                            Ok(Some(i + 1))
-                        },
-                        '\n' => {
-                            self.0.write_str(&s[..i])?;
-                            self.0.write_str(r#"\n"#)?;
-                            Ok(Some(i + 1))
-                        },
-                        _ => Ok(None),
-                    })()
-                    .transpose()
-                })
-                .transpose()?;
+                    match c {
+                        '"' => Some((i + 1, r#"\""#)),
+                        '\n' => Some((i + 1, r#"\n"#)),
+                        _ => None,
+                    }
+                });
 
-            let Some(at) = f else {
+            let Some((at, to_write)) = f else {
                 break;
             };
 
+            self.0.write_str(&s[..at])?;
+            self.0.write_str(to_write)?;
             s = &s[at..];
         }
 
