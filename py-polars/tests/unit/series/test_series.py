@@ -648,8 +648,9 @@ def test_pycapsule_interface() -> None:
             return self.capsule
 
     a = pl.Series("a", [1, 2, 3, None])
-    out = pa.array(PyCapsuleSeriesHolder(a.__arrow_c_stream__(None)))
-    assert out == pa.array([1, 2, 3, None])
+    out = pa.chunked_array(PyCapsuleSeriesHolder(a.__arrow_c_stream__(None)))
+    out_arr = out.combine_chunks()
+    assert out_arr == pa.array([1, 2, 3, None])
 
 
 def test_get() -> None:
