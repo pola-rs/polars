@@ -749,3 +749,31 @@ def test_compat_level(monkeypatch: pytest.MonkeyPatch) -> None:
     assert len(df.write_ipc_stream(None).getbuffer()) == 544
     assert len(df.write_ipc_stream(None, compat_level=oldest).getbuffer()) == 672
     assert len(df.write_ipc_stream(None, compat_level=newest).getbuffer()) == 544
+
+
+def test_df_pycapsule_interface() -> None:
+    class PyCapsuleStreamHolder:
+        """
+        Hold the Arrow C Stream pycapsule.
+
+        A class that exposes _only_ the Arrow C Stream interface via Arrow PyCapsules.
+        This ensures that pyarrow is seeing _only_ the `__arrow_c_stream__` dunder, and
+        that nothing else (e.g. the dataframe or array interface) is actually being
+        used.
+        """
+
+        capsule: tuple[object, object]
+
+        def __init__(self, capsule: tuple[object, object]):
+            self.capsule = capsule
+
+        def __arrow_c_stream__(self, requested_schema) -> tuple[object, object]:
+            return self.capsule
+
+    df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]})
+    out = pa.table(PyCapsuleStreamHolder(df.__arrow_c_stream__(None)))
+    assert df.shape == out.shape
+    assert df.schema.names() == out.schema.names
+
+    df2 = pl.from_arrow(out)
+    assert df.equals(df2)  # type: ignore
