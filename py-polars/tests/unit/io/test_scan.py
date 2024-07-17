@@ -451,6 +451,33 @@ def test_scan_with_row_index_filter_and_limit(
 @pytest.mark.parametrize(
     ("scan_func", "write_func"),
     [
+        (pl.scan_parquet, pl.DataFrame.write_parquet),
+        (pl.scan_ipc, pl.DataFrame.write_ipc),
+        (pl.scan_csv, pl.DataFrame.write_csv),
+        (pl.scan_ndjson, pl.DataFrame.write_ndjson),
+    ],
+)
+@pytest.mark.parametrize(
+    "streaming",
+    [True, False],
+)
+def test_scan_limit_0_does_not_panic(
+    tmp_path: Path,
+    scan_func: Callable[[Any], pl.LazyFrame],
+    write_func: Callable[[pl.DataFrame, Path], None],
+    streaming: bool,
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    path = tmp_path / "data.bin"
+    df = pl.DataFrame({"x": 1})
+    write_func(df, path)
+    assert_frame_equal(scan_func(path).head(0).collect(streaming=streaming), df.clear())
+
+
+@pytest.mark.write_disk()
+@pytest.mark.parametrize(
+    ("scan_func", "write_func"),
+    [
         (pl.scan_csv, pl.DataFrame.write_csv),
         (pl.scan_parquet, pl.DataFrame.write_parquet),
         (pl.scan_ipc, pl.DataFrame.write_ipc),
@@ -598,6 +625,7 @@ def test_scan_nonexistent_path(format: str) -> None:
         (pl.scan_parquet, pl.DataFrame.write_parquet),
         (pl.scan_ipc, pl.DataFrame.write_ipc),
         (pl.scan_csv, pl.DataFrame.write_csv),
+        (pl.scan_ndjson, pl.DataFrame.write_ndjson),
     ],
 )
 @pytest.mark.parametrize(
@@ -639,7 +667,7 @@ def test_scan_include_file_name(
     assert_frame_equal(lf.collect(streaming=streaming), df)
 
     # TODO: Support this with CSV
-    if scan_func is not pl.scan_csv:
+    if scan_func not in [pl.scan_csv, pl.scan_ndjson]:
         # Test projecting only the path column
         assert_frame_equal(
             lf.select("path").collect(streaming=streaming),

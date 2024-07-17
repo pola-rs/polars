@@ -21,6 +21,7 @@ pub struct LazyJsonLineReader {
     pub(crate) infer_schema_length: Option<NonZeroUsize>,
     pub(crate) n_rows: Option<usize>,
     pub(crate) ignore_errors: bool,
+    pub(crate) include_file_paths: Option<Arc<str>>,
 }
 
 impl LazyJsonLineReader {
@@ -39,6 +40,7 @@ impl LazyJsonLineReader {
             infer_schema_length: NonZeroUsize::new(100),
             ignore_errors: false,
             n_rows: None,
+            include_file_paths: None,
         }
     }
     /// Add a row index column.
@@ -89,6 +91,11 @@ impl LazyJsonLineReader {
         self.batch_size = batch_size;
         self
     }
+
+    pub fn with_include_file_paths(mut self, include_file_paths: Option<Arc<str>>) -> Self {
+        self.include_file_paths = include_file_paths;
+        self
+    }
 }
 
 impl LazyFileListReader for LazyJsonLineReader {
@@ -108,7 +115,7 @@ impl LazyFileListReader for LazyJsonLineReader {
             file_counter: 0,
             hive_options: Default::default(),
             glob: true,
-            include_file_paths: None,
+            include_file_paths: self.include_file_paths,
         };
 
         let options = NDJsonReadOptions {
