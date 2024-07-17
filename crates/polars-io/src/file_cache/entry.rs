@@ -378,7 +378,7 @@ fn get_data_file_path(
             match remote_version {
                 FileVersion::Timestamp(v) => {
                     owned = Some(format!("{:013x}", v));
-                    owned.as_ref().map(String::as_str).unwrap()
+                    owned.as_deref().unwrap()
                 },
                 FileVersion::ETag(v) => v.as_str(),
                 FileVersion::Uninitialized => panic!("impl error: version not initialized"),
