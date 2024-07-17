@@ -2,7 +2,7 @@ use std::iter::zip;
 
 #[cfg(feature = "extract_groups")]
 use arrow::array::{Array, StructArray};
-use arrow::array::{MutableBinaryViewArray, Utf8ViewArray};
+use arrow::array::{MutablePlString, Utf8ViewArray};
 use polars_core::export::regex::Regex;
 use polars_core::prelude::arity::{try_binary_mut_with_options, try_unary_mut_with_options};
 
@@ -16,7 +16,7 @@ fn extract_groups_array(
     data_type: ArrowDataType,
 ) -> PolarsResult<ArrayRef> {
     let mut builders = (0..names.len())
-        .map(|_| MutableBinaryViewArray::<str>::with_capacity(arr.len()))
+        .map(|_| MutablePlString::with_capacity(arr.len()))
         .collect::<Vec<_>>();
 
     let mut locs = reg.capture_locations();
@@ -74,7 +74,7 @@ fn extract_group_reg_lit(
     reg: &Regex,
     group_index: usize,
 ) -> PolarsResult<Utf8ViewArray> {
-    let mut builder = MutableBinaryViewArray::<str>::with_capacity(arr.len());
+    let mut builder = MutablePlString::with_capacity(arr.len());
 
     let mut locs = reg.capture_locations();
     for opt_v in arr {
@@ -97,7 +97,7 @@ fn extract_group_array_lit(
     pat: &Utf8ViewArray,
     group_index: usize,
 ) -> PolarsResult<Utf8ViewArray> {
-    let mut builder = MutableBinaryViewArray::<str>::with_capacity(pat.len());
+    let mut builder = MutablePlString::with_capacity(pat.len());
 
     for opt_pat in pat {
         if let Some(pat) = opt_pat {
@@ -121,7 +121,7 @@ fn extract_group_binary(
     pat: &Utf8ViewArray,
     group_index: usize,
 ) -> PolarsResult<Utf8ViewArray> {
-    let mut builder = MutableBinaryViewArray::<str>::with_capacity(arr.len());
+    let mut builder = MutablePlString::with_capacity(arr.len());
 
     for (opt_s, opt_pat) in zip(arr, pat) {
         match (opt_s, opt_pat) {
