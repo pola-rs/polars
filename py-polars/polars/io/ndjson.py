@@ -57,6 +57,8 @@ def read_ndjson(
 
     Examples
     --------
+    Read from a njdson string.
+
     >>> from io import StringIO
     >>> json_str = '{"foo":1,"bar":6}\n{"foo":2,"bar":7}\n{"foo":3,"bar":8}\n'
     >>> pl.read_ndjson(StringIO(json_str))
@@ -100,7 +102,7 @@ def scan_ndjson(
     row_index_offset: int = 0,
     ignore_errors: bool = False,
 ) -> LazyFrame:
-    """
+    r"""
     Lazily read from a newline delimited JSON file or multiple files via glob patterns.
 
     This allows the query optimizer to push down predicates and projections to the scan
@@ -138,6 +140,22 @@ def scan_ndjson(
         Offset to start the row index column (only use if the name is set)
     ignore_errors
         Return `Null` if parsing fails because of schema mismatches.
+
+    Examples
+    --------
+    >>> from io import StringIO
+    >>> json_str = '{"foo":1,"bar":6}\n{"foo":2,"bar":7}\n{"foo":3,"bar":8}\n'
+    >>> pl.scan_ndjson(StringIO(json_str)).collect()  # doctest: +SKIP
+    shape: (3, 2)
+    ┌─────┬─────┐
+    │ foo ┆ bar │
+    │ --- ┆ --- │
+    │ i64 ┆ i64 │
+    ╞═════╪═════╡
+    │ 1   ┆ 6   │
+    │ 2   ┆ 7   │
+    │ 3   ┆ 8   │
+    └─────┴─────┘
     """
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source)
