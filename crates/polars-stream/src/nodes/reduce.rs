@@ -7,8 +7,8 @@ use polars_error::PolarsResult;
 use polars_expr::prelude::{ExecutionState, PhysicalExpr};
 use polars_expr::reduce::Reduction;
 
+use super::compute_node_prelude::*;
 use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
-use crate::async_primitives::pipe::{Receiver, Sender};
 use crate::graph::PortState;
 use crate::morsel::{Morsel, MorselSeq};
 use crate::nodes::ComputeNode;
@@ -57,6 +57,7 @@ impl ReduceNode {
         _send: &mut [Option<Sender<Morsel>>],
         state: &'s ExecutionState,
     ) -> JoinHandle<PolarsResult<()>> {
+        assert_eq!(recv.len(), 1);
         let ReduceState::Sink {
             inputs, reductions, ..
         } = &self.state
@@ -98,6 +99,7 @@ impl ReduceNode {
         send: &mut [Option<Sender<Morsel>>],
         _state: &'s ExecutionState,
     ) -> JoinHandle<PolarsResult<()>> {
+        assert_eq!(send.len(), 1);
         let ReduceState::Source(df) = &self.state else {
             unreachable!()
         };
@@ -164,11 +166,11 @@ impl ComputeNode for ReduceNode {
                 self.state = ReduceState::Source(Mutex::new(Some(out)));
             },
             // We have fed the source, we are done.
-            ReduceState::Source(..) => {
+            ReduceState::Source(ref df) if df.lock().is_none() => {
                 self.state = ReduceState::Done;
             },
             // Nothing to change.
-            ReduceState::Done | ReduceState::Sink { .. } => {},
+            ReduceState::Done | ReduceState::Sink { .. } | ReduceState::Source(_) => {},
         }
 
         // Communicate state
