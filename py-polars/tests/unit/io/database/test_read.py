@@ -46,12 +46,14 @@ class MockConnection:
         self,
         driver: str,
         batch_size: int | None,
+        exact_batch_size: bool,
         test_data: pa.Table,
         repeat_batch_calls: bool,
     ) -> None:
         self.__class__.__module__ = driver
         self._cursor = MockCursor(
             repeat_batch_calls=repeat_batch_calls,
+            exact_batch_size=exact_batch_size,
             batched=(batch_size is not None),
             test_data=test_data,
         )
@@ -69,10 +71,17 @@ class MockCursor:
     def __init__(
         self,
         batched: bool,
+        exact_batch_size: bool,
         test_data: pa.Table,
         repeat_batch_calls: bool,
     ) -> None:
-        self.resultset = MockResultSet(test_data, batched, repeat_batch_calls)
+        self.resultset = MockResultSet(
+            test_data=test_data,
+            batched=batched,
+            exact_batch_size=exact_batch_size,
+            repeat_batch_calls=repeat_batch_calls,
+        )
+        self.exact_batch_size = exact_batch_size
         self.called: list[str] = []
         self.batched = batched
         self.n_calls = 1
@@ -94,14 +103,21 @@ class MockResultSet:
     """Mock resultset class for databases we can't test in CI."""
 
     def __init__(
-        self, test_data: pa.Table, batched: bool, repeat_batch_calls: bool = False
+        self,
+        test_data: pa.Table,
+        batched: bool,
+        exact_batch_size: bool,
+        repeat_batch_calls: bool = False,
     ):
         self.test_data = test_data
         self.repeat_batched_calls = repeat_batch_calls
+        self.exact_batch_size = exact_batch_size
         self.batched = batched
         self.n_calls = 1
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        if not self.exact_batch_size:
+            assert len(args) == 0
         if self.repeat_batched_calls:
             res = self.test_data[: None if self.n_calls else 0]
             self.n_calls -= 1
@@ -478,13 +494,17 @@ def test_read_database_mocked(
     # since we don't have access to snowflake/databricks/etc from CI we
     # mock them so we can check that we're calling the expected methods
     arrow = pl.DataFrame({"x": [1, 2, 3], "y": ["aa", "bb", "cc"]}).to_arrow()
+
+    reg = ARROW_DRIVER_REGISTRY.get(driver, {})  # type: ignore[var-annotated]
+    exact_batch_size = reg.get("exact_batch_size", False)
+    repeat_batch_calls = reg.get("repeat_batch_calls", False)
+
     mc = MockConnection(
         driver,
         batch_size,
         test_data=arrow,
-        repeat_batch_calls=ARROW_DRIVER_REGISTRY.get(driver, {}).get(  # type: ignore[call-overload]
-            "repeat_batch_calls", False
-        ),
+        repeat_batch_calls=repeat_batch_calls,
+        exact_batch_size=exact_batch_size,  # type: ignore[arg-type]
     )
     res = pl.read_database(
         query="SELECT * FROM test_data",
