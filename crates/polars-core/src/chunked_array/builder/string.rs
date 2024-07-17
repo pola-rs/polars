@@ -1,3 +1,5 @@
+use arrow::buffer::Buffer;
+
 use super::*;
 
 pub struct BinViewChunkedBuilder<T: ViewType + ?Sized> {
@@ -46,6 +48,11 @@ impl<T: ViewType + ?Sized> BinViewChunkedBuilder<T> {
     #[inline]
     pub fn append_option<S: AsRef<T>>(&mut self, opt: Option<S>) {
         self.chunk_builder.push(opt);
+    }
+
+    #[inline]
+    pub fn append_view(&mut self, view: View, buffer: &[Buffer<u8>]) {
+        self.chunk_builder.push_view(view, buffer)
     }
 }
 
