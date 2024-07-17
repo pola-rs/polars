@@ -32,7 +32,10 @@ impl MeanReduce {
 }
 
 impl Reduction for MeanReduce {
-    fn init(&mut self) {
+    fn init_dyn(&self) -> Box<dyn Reduction> {
+        Box::new(Self::new(self.dtype.clone()))
+    }
+    fn reset(&mut self) {
         self.value = None;
         self.len = 0;
     }

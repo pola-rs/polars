@@ -6,12 +6,15 @@ mod sum;
 use std::any::Any;
 
 pub use convert::{can_convert_into_reduction, into_reduction};
-use dyn_clone::DynClone;
 use polars_core::prelude::*;
 
 #[allow(dead_code)]
-pub trait Reduction: Any + Send + DynClone {
-    fn init(&mut self);
+pub trait Reduction: Any + Send {
+    // Creates a fresh reduction.
+    fn init_dyn(&self) -> Box<dyn Reduction>;
+
+    // Resets this reduction to the fresh initial state.
+    fn reset(&mut self);
 
     fn update(&mut self, batch: &Series) -> PolarsResult<()>;
 

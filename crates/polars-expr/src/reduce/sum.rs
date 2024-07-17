@@ -19,7 +19,10 @@ impl SumReduce {
 }
 
 impl Reduction for SumReduce {
-    fn init(&mut self) {
+    fn init_dyn(&self) -> Box<dyn Reduction> {
+        Box::new(Self::new(self.value.dtype().clone()))
+    }
+    fn reset(&mut self) {
         let av = AnyValue::zero(self.value.dtype());
         self.value.update(av);
     }

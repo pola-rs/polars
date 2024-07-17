@@ -30,7 +30,13 @@ impl MinReduce {
 }
 
 impl Reduction for MinReduce {
-    fn init(&mut self) {}
+    fn init_dyn(&self) -> Box<dyn Reduction> {
+        Box::new(Self::new(self.dtype.clone()))
+    }
+
+    fn reset(&mut self) {
+        *self = Self::new(self.dtype.clone());
+    }
 
     fn update(&mut self, batch: &Series) -> PolarsResult<()> {
         let sc = batch.min_reduce()?;
@@ -80,7 +86,12 @@ impl MaxReduce {
 }
 
 impl Reduction for MaxReduce {
-    fn init(&mut self) {}
+    fn init_dyn(&self) -> Box<dyn Reduction> {
+        Box::new(Self::new(self.dtype.clone()))
+    }
+    fn reset(&mut self) {
+        *self = Self::new(self.dtype.clone());
+    }
 
     fn update(&mut self, batch: &Series) -> PolarsResult<()> {
         let sc = batch.max_reduce()?;
@@ -138,7 +149,10 @@ impl<T: PolarsFloatType + Clone> Reduction for MaxNanReduce<T>
 where
     T::Native: MinMax,
 {
-    fn init(&mut self) {
+    fn init_dyn(&self) -> Box<dyn Reduction> {
+        Box::new(Self::new())
+    }
+    fn reset(&mut self) {
         self.value = None;
     }
 
@@ -198,7 +212,10 @@ impl<T: PolarsFloatType + Clone> Reduction for crate::reduce::extrema::MinNanRed
 where
     T::Native: MinMax,
 {
-    fn init(&mut self) {
+    fn init_dyn(&self) -> Box<dyn Reduction> {
+        Box::new(Self::new())
+    }
+    fn reset(&mut self) {
         self.value = None;
     }
 

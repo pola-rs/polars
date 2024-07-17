@@ -72,16 +72,15 @@ impl ReduceNode {
             let mut reductions = reductions
                 .lock()
                 .iter()
-                .map(|d| dyn_clone::clone_box(&**d))
+                .map(|d| d.init_dyn())
                 .collect::<Vec<_>>();
 
             while let Ok(morsel) = recv.recv().await {
                 let df = morsel.into_df();
 
-                for (i, input) in inputs.iter().map(|s| s.evaluate(&df, state)).enumerate() {
-                    let input = input?;
-                    let input = input.to_physical_repr();
-                    reductions[i].update(&input)?;
+                for (i, input) in inputs.iter().enumerate() {
+                    let reduction_input = input.evaluate(&df, state)?;
+                    reductions[i].update(&reduction_input.to_physical_repr())?;
                 }
             }
 
@@ -146,7 +145,7 @@ impl ComputeNode for ReduceNode {
                         }
                         Ok(a)
                     })
-                    .expect("at least on thread");
+                    .expect("expected at least 1 thread running this node");
 
                 // TODO! make `update_state` fallible.
                 let reductions = reductions.unwrap();

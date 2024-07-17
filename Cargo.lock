@@ -3073,7 +3073,6 @@ version = "0.41.3"
 dependencies = [
  "ahash",
  "bitflags",
- "dyn-clone",
  "once_cell",
  "polars-arrow",
  "polars-core",
@@ -3371,7 +3370,6 @@ dependencies = [
  "atomic-waker",
  "crossbeam-deque",
  "crossbeam-utils",
- "dyn-clone",
  "parking_lot",
  "pin-project-lite",
  "polars-core",

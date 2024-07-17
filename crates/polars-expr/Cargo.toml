@@ -12,7 +12,6 @@ description = "Physical expression implementation of the Polars project."
 ahash = { workspace = true }
 arrow = { workspace = true }
 bitflags = { workspace = true }
-dyn-clone = { workspace = true }
 once_cell = { workspace = true }
 polars-core = { workspace = true, features = ["lazy", "zip_with", "random"] }
 polars-io = { workspace = true, features = ["lazy"] }
