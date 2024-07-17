@@ -132,20 +132,22 @@ jobs:
         # IMPORTANT: All features enabled here should also be included in py-polars/polars/_cpu_check.py
         run: |
           if [[ "$IS_LTS_CPU" = true ]]; then
-            FEATURES=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt
-          elif [[ "$IS_MACOS" = true ]]; then
-            FEATURES=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma,+pclmulqdq
+            TUNE_CPU=x86-64-v2
+            FEATURES=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+cmpxchg16b
           else
-            FEATURES=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+avx2,+fma,+bmi1,+bmi2,+lzcnt,+pclmulqdq
+            TUNE_CPU=skylake
+            FEATURES=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+cmpxchg16b,+avx,+avx2,+fma,+bmi1,+bmi2,+lzcnt,+pclmulqdq,+movbe
           fi
           echo "features=$FEATURES" >> $GITHUB_OUTPUT
+          echo "tune_cpu=$TUNE_CPU" >> $GITHUB_OUTPUT
 
       - name: Set RUSTFLAGS for x86-64
         if: matrix.architecture == 'x86-64'
         env:
           FEATURES: ${{ steps.features.outputs.features }}
+          TUNE_CPU: ${{ steps.features.outputs.tune_cpu }}
           CFG: ${{ matrix.package == 'polars-lts-cpu' && '--cfg allocator="default"' || '' }}
-        run: echo "RUSTFLAGS=-C target-feature=${{ steps.features.outputs.features }} $CFG" >> $GITHUB_ENV
+        run: echo "RUSTFLAGS=-C target-feature=$FEATURES -Z tune-cpu=$TUNE_CPU $CFG" >> $GITHUB_ENV
 
       - name: Set variables in CPU check module
         run: |
