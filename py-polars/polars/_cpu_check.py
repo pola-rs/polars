@@ -219,6 +219,7 @@ def _read_cpu_flags() -> dict[str, bool]:
         "sse3": bool(cpuid1.ecx & (1 << 0)),
         "ssse3": bool(cpuid1.ecx & (1 << 9)),
         "fma": bool(cpuid1.ecx & (1 << 12)),
+        "cmpxchg16b": bool(cpuid1.ecx & (1 << 13)),
         "sse4.1": bool(cpuid1.ecx & (1 << 19)),
         "sse4.2": bool(cpuid1.ecx & (1 << 20)),
         "movbe": bool(cpuid1.ecx & (1 << 22)),
