@@ -136,7 +136,7 @@ jobs:
             FEATURES=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt
           else
             TUNE_CPU=skylake
-            FEATURES=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+avx2,+fma,+bmi1,+bmi2,+lzcnt,+pclmulqdq
+            FEATURES=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+avx2,+fma,+bmi1,+bmi2,+lzcnt,+pclmulqdq,+movbe
           fi
           echo "features=$FEATURES" >> $GITHUB_OUTPUT
           echo "tune_cpu=$TUNE_CPU" >> $GITHUB_OUTPUT

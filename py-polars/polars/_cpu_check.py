@@ -221,6 +221,7 @@ def _read_cpu_flags() -> dict[str, bool]:
         "fma": bool(cpuid1.ecx & (1 << 12)),
         "sse4.1": bool(cpuid1.ecx & (1 << 19)),
         "sse4.2": bool(cpuid1.ecx & (1 << 20)),
+        "movbe": bool(cpuid1.ecx & (1 << 22)),
         "popcnt": bool(cpuid1.ecx & (1 << 23)),
         "pclmulqdq": bool(cpuid1.ecx & (1 << 1)),
         "avx": bool(cpuid1.ecx & (1 << 28)),
