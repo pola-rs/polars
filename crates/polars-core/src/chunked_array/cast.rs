@@ -270,19 +270,32 @@ impl ChunkCast for StringChunked {
     ) -> PolarsResult<Series> {
         match data_type {
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(rev_map, ordering) => match rev_map {
-                None => {
-                    // SAFETY: length is correct
-                    let iter =
-                        unsafe { self.downcast_iter().flatten().trust_my_length(self.len()) };
-                    let builder =
-                        CategoricalChunkedBuilder::new(self.name(), self.len(), *ordering);
-                    let ca = builder.drain_iter_and_finish(iter);
-                    Ok(ca.into_series())
-                },
-                Some(_) => {
-                    polars_bail!(InvalidOperation: "casting to a categorical with rev map is not allowed");
-                },
+            DataType::Categorical(rev_map, ordering) => {
+                use std::iter::repeat;
+                use std::ops::Deref;
+
+                use arrow::bitmap::utils::ZipValidity;
+
+                match rev_map {
+                    None => {
+                        let iter = self.downcast_iter().flat_map(|arr| {
+                            ZipValidity::new_with_validity(
+                                arr.views()
+                                    .iter()
+                                    .cloned()
+                                    .zip(repeat(arr.data_buffers().deref())),
+                                arr.validity(),
+                            )
+                        });
+                        let builder =
+                            CategoricalChunkedBuilder::new(self.name(), self.len(), *ordering);
+                        let ca = builder.drain_views_iter_and_finish(iter);
+                        Ok(ca.into_series())
+                    },
+                    Some(_) => {
+                        polars_bail!(InvalidOperation: "casting to a categorical with rev map is not allowed");
+                    },
+                }
             },
             #[cfg(feature = "dtype-categorical")]
             DataType::Enum(rev_map, ordering) => {
