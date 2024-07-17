@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use arrow::array::{Array, DictionaryArray, DictionaryKey, MutableBinaryViewArray};
+use arrow::array::{Array, DictionaryArray, DictionaryKey, MutablePlBinary};
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::{ArrowDataType, PhysicalType};
 use polars_error::PolarsResult;
@@ -57,7 +57,7 @@ fn read_dict(data_type: ArrowDataType, dict: &DictPage) -> Box<dyn Array> {
 
     let values = BinaryIter::new(&dict.buffer, dict.num_values);
 
-    let mut data = MutableBinaryViewArray::<[u8]>::with_capacity(dict.num_values);
+    let mut data = MutablePlBinary::with_capacity(dict.num_values);
     for item in values {
         data.push_value(item)
     }

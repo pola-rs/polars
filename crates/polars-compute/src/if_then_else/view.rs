@@ -2,7 +2,7 @@ use std::mem::MaybeUninit;
 use std::ops::Deref;
 use std::sync::Arc;
 
-use arrow::array::{Array, BinaryViewArray, MutableBinaryViewArray, Utf8ViewArray, View};
+use arrow::array::{Array, BinaryViewArray, MutablePlBinary, Utf8ViewArray, View};
 use arrow::bitmap::Bitmap;
 use arrow::buffer::Buffer;
 use arrow::datatypes::ArrowDataType;
@@ -56,7 +56,7 @@ impl IfThenElseKernel for BinaryViewArray {
 
         let validity = super::if_then_else_validity(mask, if_true.validity(), if_false.validity());
 
-        let mut builder = MutableBinaryViewArray::<[u8]>::with_capacity(views.len());
+        let mut builder = MutablePlBinary::with_capacity(views.len());
         unsafe {
             builder.extend_non_null_views_trusted_len_unchecked(
                 views.into_iter(),
@@ -89,7 +89,7 @@ impl IfThenElseKernel for BinaryViewArray {
 
         let validity = super::if_then_else_validity(mask, None, if_false.validity());
 
-        let mut builder = MutableBinaryViewArray::<[u8]>::with_capacity(views.len());
+        let mut builder = MutablePlBinary::with_capacity(views.len());
         unsafe {
             builder.extend_non_null_views_trusted_len_unchecked(
                 views.into_iter(),
@@ -123,7 +123,7 @@ impl IfThenElseKernel for BinaryViewArray {
 
         let validity = super::if_then_else_validity(mask, if_true.validity(), None);
 
-        let mut builder = MutableBinaryViewArray::<[u8]>::with_capacity(views.len());
+        let mut builder = MutablePlBinary::with_capacity(views.len());
         unsafe {
             builder.extend_non_null_views_trusted_len_unchecked(
                 views.into_iter(),
@@ -150,7 +150,7 @@ impl IfThenElseKernel for BinaryViewArray {
             if_then_else_broadcast_both_scalar_64,
         );
 
-        let mut builder = MutableBinaryViewArray::<[u8]>::with_capacity(views.len());
+        let mut builder = MutablePlBinary::with_capacity(views.len());
         unsafe {
             builder.extend_non_null_views_trusted_len_unchecked(views.into_iter(), buffers.deref())
         };

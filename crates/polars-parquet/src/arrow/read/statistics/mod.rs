@@ -181,8 +181,7 @@ fn make_mutable(data_type: &ArrowDataType, capacity: usize) -> PolarsResult<Box<
             Box::new(MutableNullArray::new(ArrowDataType::Null, 0)) as Box<dyn MutableArray>
         },
         PhysicalType::BinaryView => {
-            Box::new(MutableBinaryViewArray::<[u8]>::with_capacity(capacity))
-                as Box<dyn MutableArray>
+            Box::new(MutablePlBinary::with_capacity(capacity)) as Box<dyn MutableArray>
         },
         PhysicalType::Utf8View => {
             Box::new(MutablePlString::with_capacity(capacity)) as Box<dyn MutableArray>
