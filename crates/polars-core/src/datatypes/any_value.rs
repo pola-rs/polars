@@ -9,40 +9,6 @@ use polars_utils::sync::SyncPtr;
 use polars_utils::total_ord::ToTotalOrd;
 use polars_utils::unwrap::UnwrapUncheckedRelease;
 
-#[derive(Clone)]
-pub struct Scalar {
-    dtype: DataType,
-    value: AnyValue<'static>,
-}
-
-impl Scalar {
-    pub fn new(dtype: DataType, value: AnyValue<'static>) -> Self {
-        Self { dtype, value }
-    }
-
-    pub fn value(&self) -> &AnyValue<'static> {
-        &self.value
-    }
-
-    pub fn as_any_value(&self) -> AnyValue {
-        self.value
-            .strict_cast(&self.dtype)
-            .unwrap_or_else(|| self.value.clone())
-    }
-
-    pub fn into_series(self, name: &str) -> Series {
-        Series::from_any_values_and_dtype(name, &[self.as_any_value()], &self.dtype, true).unwrap()
-    }
-
-    pub fn dtype(&self) -> &DataType {
-        &self.dtype
-    }
-
-    pub fn update(&mut self, value: AnyValue<'static>) {
-        self.value = value;
-    }
-}
-
 use super::*;
 #[cfg(feature = "dtype-struct")]
 use crate::prelude::any_value::arr_to_any_value;
@@ -854,8 +820,8 @@ impl<'a> AnyValue<'a> {
     pub fn add(&self, rhs: &AnyValue) -> AnyValue<'static> {
         use AnyValue::*;
         match (self, rhs) {
-            (Null, _) => Null,
-            (_, Null) => Null,
+            (Null, r) => r.clone().into_static().unwrap(),
+            (l, Null) => l.clone().into_static().unwrap(),
             (Int32(l), Int32(r)) => Int32(l + r),
             (Int64(l), Int64(r)) => Int64(l + r),
             (UInt32(l), UInt32(r)) => UInt32(l + r),
