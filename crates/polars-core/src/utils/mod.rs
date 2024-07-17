@@ -731,6 +731,8 @@ where
 }
 
 /// This takes ownership of the DataFrame so that drop is called earlier.
+/// # Panics
+/// Panics if `dfs` is empty.
 pub fn accumulate_dataframes_vertical<I>(dfs: I) -> PolarsResult<DataFrame>
 where
     I: IntoIterator<Item = DataFrame>,

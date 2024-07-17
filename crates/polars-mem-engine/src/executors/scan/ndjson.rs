@@ -40,6 +40,18 @@ impl JsonExec {
 
         let mut n_rows = self.file_scan_options.n_rows;
 
+        // Avoid panicking
+        if n_rows == Some(0) {
+            let mut df = DataFrame::empty_with_schema(schema);
+            if let Some(col) = &self.file_scan_options.include_file_paths {
+                unsafe { df.with_column_unchecked(StringChunked::full_null(col, 0).into_series()) };
+            }
+            if let Some(row_index) = &self.file_scan_options.row_index {
+                df.with_row_index_mut(row_index.name.as_ref(), Some(row_index.offset));
+            }
+            return Ok(df);
+        }
+
         let dfs = self
             .paths
             .iter()
@@ -67,13 +79,22 @@ impl JsonExec {
                     .with_ignore_errors(self.options.ignore_errors)
                     .finish();
 
-                let df = match df {
+                let mut df = match df {
                     Ok(df) => df,
                     Err(e) => return Some(Err(e)),
                 };
 
                 if let Some(ref mut n_rows) = n_rows {
                     *n_rows -= df.height();
+                }
+
+                if let Some(col) = &self.file_scan_options.include_file_paths {
+                    let path = p.to_str().unwrap();
+                    unsafe {
+                        df.with_column_unchecked(
+                            StringChunked::full(col, path, df.height()).into_series(),
+                        )
+                    };
                 }
 
                 Some(Ok(df))

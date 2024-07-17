@@ -185,6 +185,19 @@ pub fn to_alp_impl(
                 None
             };
 
+            file_options.include_file_paths =
+                file_options.include_file_paths.filter(|_| match scan_type {
+                    #[cfg(feature = "parquet")]
+                    FileScan::Parquet { .. } => true,
+                    #[cfg(feature = "ipc")]
+                    FileScan::Ipc { .. } => true,
+                    #[cfg(feature = "csv")]
+                    FileScan::Csv { .. } => true,
+                    #[cfg(feature = "json")]
+                    FileScan::NDJson { .. } => true,
+                    FileScan::Anonymous { .. } => false,
+                });
+
             // Only if we have a writing file handle we must resolve hive partitions
             // update schema's etc.
             if let Some(lock) = &mut _file_info_write {

@@ -99,6 +99,7 @@ def scan_ndjson(
     row_index_name: str | None = None,
     row_index_offset: int = 0,
     ignore_errors: bool = False,
+    include_file_paths: str | None = None,
 ) -> LazyFrame:
     """
     Lazily read from a newline delimited JSON file or multiple files via glob patterns.
@@ -138,12 +139,16 @@ def scan_ndjson(
         Offset to start the row index column (only use if the name is set)
     ignore_errors
         Return `Null` if parsing fails because of schema mismatches.
+    include_file_paths
+        Include the path of the source file(s) as a column with this name.
     """
     if isinstance(source, (str, Path)):
-        source = normalize_filepath(source)
+        source = normalize_filepath(source, check_not_directory=False)
         sources = []
     else:
-        sources = [normalize_filepath(source) for source in source]
+        sources = [
+            normalize_filepath(source, check_not_directory=False) for source in source
+        ]
         source = None  # type: ignore[assignment]
     if infer_schema_length == 0:
         msg = "'infer_schema_length' should be positive"
@@ -160,5 +165,6 @@ def scan_ndjson(
         rechunk,
         parse_row_index_args(row_index_name, row_index_offset),
         ignore_errors,
+        include_file_paths=include_file_paths,
     )
     return wrap_ldf(pylf)

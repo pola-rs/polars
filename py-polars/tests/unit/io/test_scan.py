@@ -598,6 +598,7 @@ def test_scan_nonexistent_path(format: str) -> None:
         (pl.scan_parquet, pl.DataFrame.write_parquet),
         (pl.scan_ipc, pl.DataFrame.write_ipc),
         (pl.scan_csv, pl.DataFrame.write_csv),
+        (pl.scan_ndjson, pl.DataFrame.write_ndjson),
     ],
 )
 @pytest.mark.parametrize(
@@ -639,7 +640,7 @@ def test_scan_include_file_name(
     assert_frame_equal(lf.collect(streaming=streaming), df)
 
     # TODO: Support this with CSV
-    if scan_func is not pl.scan_csv:
+    if scan_func not in [pl.scan_csv, pl.scan_ndjson]:
         # Test projecting only the path column
         assert_frame_equal(
             lf.select("path").collect(streaming=streaming),
