@@ -3,6 +3,13 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(super) enum FileVersion {
+    Timestamp(u64),
+    ETag(String),
+    Uninitialized,
+}
+
 #[derive(Debug)]
 pub enum LocalCompareError {
     LastModifiedMismatch { expected: u64, actual: u64 },
@@ -18,7 +25,7 @@ pub(super) struct EntryMetadata {
     pub(super) uri: Arc<str>,
     pub(super) local_last_modified: u64,
     pub(super) local_size: u64,
-    pub(super) remote_last_modified: u64,
+    pub(super) remote_version: FileVersion,
     /// TTL since last access, in seconds.
     pub(super) ttl: u64,
 }
@@ -47,7 +54,7 @@ impl EntryMetadata {
             uri,
             local_last_modified: 0,
             local_size: 0,
-            remote_last_modified: 0,
+            remote_version: FileVersion::Uninitialized,
             ttl,
         }
     }

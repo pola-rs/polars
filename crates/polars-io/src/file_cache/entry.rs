@@ -11,7 +11,7 @@ use polars_utils::flatten;
 use super::cache_lock::{self, GLOBAL_FILE_CACHE_LOCK};
 use super::file_fetcher::{FileFetcher, RemoteMetadata};
 use super::file_lock::{FileLock, FileLockAnyGuard};
-use super::metadata::EntryMetadata;
+use super::metadata::{EntryMetadata, FileVersion};
 use super::utils::update_last_accessed;
 
 pub(super) const DATA_PREFIX: u8 = b'd';
@@ -43,8 +43,7 @@ pub struct FileCacheEntry(EntryData);
 
 impl EntryMetadata {
     fn matches_remote_metadata(&self, remote_metadata: &RemoteMetadata) -> bool {
-        self.remote_last_modified == remote_metadata.last_modified
-            && self.local_size == remote_metadata.size
+        self.remote_version == remote_metadata.version && self.local_size == remote_metadata.size
     }
 }
 
@@ -131,9 +130,9 @@ impl Inner {
 
         if verbose {
             eprintln!(
-                "[file_cache::entry] try_open_check_latest: fetching new data file for uri = {}, remote_last_modified = {}, remote_size = {}",
+                "[file_cache::entry] try_open_check_latest: fetching new data file for uri = {}, remote_version = {:?}, remote_size = {}",
                 self.uri.clone(),
-                remote_metadata.last_modified,
+                remote_metadata.version,
                 remote_metadata.size
             );
         }
@@ -141,7 +140,7 @@ impl Inner {
         let data_file_path = &get_data_file_path(
             self.path_prefix.to_str().unwrap().as_bytes(),
             self.uri_hash.as_bytes(),
-            remote_metadata.last_modified,
+            &remote_metadata.version,
         );
         // Remove the file if it exists, since it doesn't match the metadata.
         // This could be left from an aborted process.
@@ -186,7 +185,7 @@ impl Inner {
         let metadata = Arc::make_mut(&mut metadata);
         metadata.local_last_modified = local_last_modified;
         metadata.local_size = local_size;
-        metadata.remote_last_modified = remote_metadata.last_modified;
+        metadata.remote_version = remote_metadata.version.clone();
 
         if let Err(e) = metadata.compare_local_state(data_file_path) {
             panic!("metadata mismatch after file fetch: {}", e);
@@ -259,7 +258,7 @@ impl Inner {
             let data_file_path = get_data_file_path(
                 self.path_prefix.to_str().unwrap().as_bytes(),
                 self.uri_hash.as_bytes(),
-                metadata.remote_last_modified,
+                &metadata.remote_version,
             );
             self.cached_data = Some(CachedData {
                 last_modified,
@@ -365,13 +364,26 @@ fn finish_open<F: FileLockAnyGuard>(data_file_path: &Path, _metadata_guard: &F) 
 }
 
 /// `[prefix]/d/[uri hash][last modified]`
-fn get_data_file_path(path_prefix: &[u8], uri_hash: &[u8], remote_last_modified: u64) -> PathBuf {
+fn get_data_file_path(
+    path_prefix: &[u8],
+    uri_hash: &[u8],
+    remote_version: &FileVersion,
+) -> PathBuf {
+    let owned;
     let path = flatten(
         &[
             path_prefix,
             &[b'/', DATA_PREFIX, b'/'],
             uri_hash,
-            format!("{:013x}", remote_last_modified).as_bytes(),
+            match remote_version {
+                FileVersion::Timestamp(v) => {
+                    owned = Some(format!("{:013x}", v));
+                    owned.as_deref().unwrap()
+                },
+                FileVersion::ETag(v) => v.as_str(),
+                FileVersion::Uninitialized => panic!("impl error: version not initialized"),
+            }
+            .as_bytes(),
         ],
         None,
     );
