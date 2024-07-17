@@ -9,35 +9,36 @@ use polars_error::PolarsResult;
 
 use super::super::utils::MaybeNext;
 use super::super::{utils, PagesIter};
-use super::basic::{finish, PrimitiveDecoder, Values, ValuesDictionary};
+use super::basic::{finish, DecoderFunction, PrimitiveDecoder, ValuesDictionary};
 use crate::parquet::encoding::hybrid_rle::DictionaryTranslator;
 use crate::parquet::encoding::{byte_stream_split, delta_bitpacked, Encoding};
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
 use crate::parquet::types::{decode, NativeType as ParquetNativeType};
+use crate::read::deserialize::utils::array_chunks::ArrayChunks;
 use crate::read::deserialize::utils::filter::Filter;
 use crate::read::deserialize::utils::{PageValidity, TranslatedHybridRle};
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
-pub(super) enum StateTranslation<'a, T: NativeType> {
-    Unit(Values<'a>),
+pub(super) enum StateTranslation<'a, P: ParquetNativeType, T: NativeType> {
+    Unit(ArrayChunks<'a, P>),
     Dictionary(ValuesDictionary<'a, T>),
     ByteStreamSplit(byte_stream_split::Decoder<'a>),
     DeltaBinaryPacked(delta_bitpacked::Decoder<'a>),
 }
 
-impl<'a, T, P, F> utils::StateTranslation<'a, IntDecoder<T, P, F>> for StateTranslation<'a, T>
+impl<'a, P, T, D> utils::StateTranslation<'a, IntDecoder<P, T, D>> for StateTranslation<'a, P, T>
 where
     T: NativeType,
     P: ParquetNativeType,
     i64: num_traits::AsPrimitive<P>,
-    F: Copy + Fn(P) -> T,
+    D: DecoderFunction<P, T>,
 {
     fn new(
-        _decoder: &IntDecoder<T, P, F>,
+        _decoder: &IntDecoder<P, T, D>,
         page: &'a DataPage,
-        dict: Option<&'a <IntDecoder<T, P, F> as utils::Decoder>::Dict>,
+        dict: Option<&'a <IntDecoder<P, T, D> as utils::Decoder>::Dict>,
         _page_validity: Option<&PageValidity<'a>>,
         _filter: Option<&Filter<'a>>,
     ) -> PolarsResult<Self> {
@@ -45,7 +46,10 @@ where
             (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict)) => {
                 Ok(Self::Dictionary(ValuesDictionary::try_new(page, dict)?))
             },
-            (Encoding::Plain, _) => Ok(Self::Unit(Values::try_new::<P>(page)?)),
+            (Encoding::Plain, _) => {
+                let values = split_buffer(page)?.values;
+                Ok(Self::Unit(ArrayChunks::new(values).unwrap()))
+            },
             (Encoding::ByteStreamSplit, _) => {
                 let values = split_buffer(page)?.values;
                 Ok(Self::ByteStreamSplit(byte_stream_split::Decoder::try_new(
@@ -78,7 +82,7 @@ where
         }
 
         match self {
-            Self::Unit(v) => _ = v.values.nth(n - 1),
+            Self::Unit(v) => _ = v.nth(n - 1),
             Self::Dictionary(v) => v.values.skip_in_place(n)?,
             Self::ByteStreamSplit(v) => _ = v.iter_converted(|_| ()).nth(n - 1),
             Self::DeltaBinaryPacked(v) => _ = v.nth(n - 1),
@@ -89,8 +93,8 @@ where
 
     fn extend_from_state(
         &mut self,
-        decoder: &IntDecoder<T, P, F>,
-        decoded: &mut <IntDecoder<T, P, F> as utils::Decoder>::DecodedState,
+        decoder: &IntDecoder<P, T, D>,
+        decoded: &mut <IntDecoder<P, T, D> as utils::Decoder>::DecodedState,
         page_validity: &mut Option<PageValidity<'a>>,
         additional: usize,
     ) -> ParquetResult<()> {
@@ -101,14 +105,14 @@ where
                 page_validity,
                 Some(additional),
                 values,
-                &mut page.values.by_ref().map(decode).map(decoder.0.op),
+                &mut page
+                    .by_ref()
+                    .map(|v| decoder.0.decoder.decode(P::from_le_bytes(*v))),
             )?,
             (Self::Unit(page), None) => {
                 values.extend(
-                    page.values
-                        .by_ref()
-                        .map(decode)
-                        .map(decoder.0.op)
+                    page.by_ref()
+                        .map(|v| decoder.0.decoder.decode(P::from_le_bytes(*v)))
                         .take(additional),
                 );
             },
@@ -135,14 +139,13 @@ where
                     page_validity,
                     Some(additional),
                     values,
-                    &mut page_values.iter_converted(decode).map(decoder.0.op),
+                    &mut page_values.iter_converted(|v| decoder.0.decoder.decode(decode(v))),
                 )?
             },
             (Self::ByteStreamSplit(page_values), None) => {
                 values.extend(
                     page_values
-                        .iter_converted(decode)
-                        .map(decoder.0.op)
+                        .iter_converted(|v| decoder.0.decoder.decode(decode(v)))
                         .take(additional),
                 );
             },
@@ -150,8 +153,7 @@ where
                 values.extend(
                     page_values
                         .by_ref()
-                        .map(|x| x.unwrap().as_())
-                        .map(decoder.0.op)
+                        .map(|x| decoder.0.decoder.decode(x.unwrap().as_()))
                         .take(additional),
                 );
             },
@@ -163,8 +165,7 @@ where
                     values,
                     &mut page_values
                         .by_ref()
-                        .map(|x| x.unwrap().as_())
-                        .map(decoder.0.op),
+                        .map(|x| decoder.0.decoder.decode(x.unwrap().as_())),
                 )?
             },
         }
@@ -175,34 +176,34 @@ where
 
 /// Decoder of integer parquet type
 #[derive(Debug)]
-struct IntDecoder<T, P, F>(PrimitiveDecoder<T, P, F>)
+struct IntDecoder<P, T, D>(PrimitiveDecoder<P, T, D>)
 where
     T: NativeType,
     P: ParquetNativeType,
     i64: num_traits::AsPrimitive<P>,
-    F: Fn(P) -> T;
+    D: DecoderFunction<P, T>;
 
-impl<T, P, F> IntDecoder<T, P, F>
+impl<T, P, D> IntDecoder<P, T, D>
 where
     T: NativeType,
     P: ParquetNativeType,
     i64: num_traits::AsPrimitive<P>,
-    F: Fn(P) -> T,
+    D: DecoderFunction<P, T>,
 {
     #[inline]
-    fn new(op: F) -> Self {
-        Self(PrimitiveDecoder::new(op))
+    fn new(decoder: D) -> Self {
+        Self(PrimitiveDecoder::new(decoder))
     }
 }
 
-impl<'a, T, P, F> utils::Decoder<'a> for IntDecoder<T, P, F>
+impl<'a, P, T, D> utils::Decoder<'a> for IntDecoder<P, T, D>
 where
     T: NativeType,
     P: ParquetNativeType,
     i64: num_traits::AsPrimitive<P>,
-    F: Copy + Fn(P) -> T,
+    D: DecoderFunction<P, T>,
 {
-    type Translation = StateTranslation<'a, T>;
+    type Translation = StateTranslation<'a, P, T>;
     type Dict = Vec<T>;
     type DecodedState = (Vec<T>, MutableBitmap);
 
@@ -218,12 +219,12 @@ where
 /// An [`Iterator`] adapter over [`PagesIter`] assumed to be encoded as primitive arrays
 /// encoded as parquet integer types
 #[derive(Debug)]
-pub struct IntegerIter<T, I, P, F>
+pub struct IntegerIter<T, I, P, D>
 where
     I: PagesIter,
     T: NativeType,
     P: ParquetNativeType,
-    F: Fn(P) -> T,
+    D: DecoderFunction<P, T>,
 {
     iter: I,
     data_type: ArrowDataType,
@@ -231,24 +232,24 @@ where
     remaining: usize,
     chunk_size: Option<usize>,
     dict: Option<Vec<T>>,
-    op: F,
+    decoder: D,
     phantom: std::marker::PhantomData<P>,
 }
 
-impl<T, I, P, F> IntegerIter<T, I, P, F>
+impl<T, I, P, D> IntegerIter<T, I, P, D>
 where
     I: PagesIter,
     T: NativeType,
 
     P: ParquetNativeType,
-    F: Copy + Fn(P) -> T,
+    D: DecoderFunction<P, T>,
 {
     pub fn new(
         iter: I,
         data_type: ArrowDataType,
         num_rows: usize,
         chunk_size: Option<usize>,
-        op: F,
+        decoder: D,
     ) -> Self {
         Self {
             iter,
@@ -257,19 +258,19 @@ where
             dict: None,
             remaining: num_rows,
             chunk_size,
-            op,
+            decoder,
             phantom: Default::default(),
         }
     }
 }
 
-impl<T, I, P, F> Iterator for IntegerIter<T, I, P, F>
+impl<T, I, P, D> Iterator for IntegerIter<T, I, P, D>
 where
     I: PagesIter,
     T: NativeType,
     P: ParquetNativeType,
     i64: num_traits::AsPrimitive<P>,
-    F: Copy + Fn(P) -> T,
+    D: DecoderFunction<P, T>,
 {
     type Item = PolarsResult<MutablePrimitiveArray<T>>;
 
@@ -281,7 +282,7 @@ where
                 &mut self.dict,
                 &mut self.remaining,
                 self.chunk_size,
-                &IntDecoder::new(self.op),
+                &IntDecoder::new(self.decoder),
             );
             match maybe_state {
                 MaybeNext::Some(Ok((values, validity))) => {

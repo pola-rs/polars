@@ -200,8 +200,8 @@ impl SeriesTrait for SeriesWrap<StringChunked> {
         self.0.null_count()
     }
 
-    fn has_validity(&self) -> bool {
-        self.0.has_validity()
+    fn has_nulls(&self) -> bool {
+        self.0.has_nulls()
     }
 
     #[cfg(feature = "algorithm_group_by")]

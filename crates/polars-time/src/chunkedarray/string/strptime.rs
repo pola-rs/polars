@@ -160,7 +160,7 @@ impl StrpTimeState {
                             return None;
                         }
 
-                        if decade < 50 {
+                        if decade < 70 {
                             year = 2000 + decade;
                         } else {
                             year = 1900 + decade;

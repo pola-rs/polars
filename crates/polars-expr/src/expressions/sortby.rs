@@ -58,10 +58,14 @@ pub(super) fn update_groups_sort_by(
     sort_by_s: &Series,
     options: &SortOptions,
 ) -> PolarsResult<GroupsProxy> {
-    let groups = groups
-        .par_iter()
-        .map(|indicator| sort_by_groups_single_by(indicator, sort_by_s, options))
-        .collect::<PolarsResult<_>>()?;
+    // Will trigger a gather for every group, so rechunk before.
+    let sort_by_s = sort_by_s.rechunk();
+    let groups = POOL.install(|| {
+        groups
+            .par_iter()
+            .map(|indicator| sort_by_groups_single_by(indicator, &sort_by_s, options))
+            .collect::<PolarsResult<_>>()
+    })?;
 
     Ok(GroupsProxy::Idx(groups))
 }

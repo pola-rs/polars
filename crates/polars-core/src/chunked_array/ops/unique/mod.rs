@@ -75,7 +75,7 @@ where
 
 macro_rules! arg_unique_ca {
     ($ca:expr) => {{
-        match $ca.has_validity() {
+        match $ca.has_nulls() {
             false => arg_unique($ca.into_no_null_iter(), $ca.len()),
             _ => arg_unique($ca.iter(), $ca.len()),
         }

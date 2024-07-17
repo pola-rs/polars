@@ -1,5 +1,6 @@
 use arrow::array::{Array, PrimitiveArray};
 use arrow::bitmap::Bitmap;
+use arrow::compute::utils::combine_validities_and;
 use arrow::types::NativeType;
 use polars_compute::min_max::MinMaxKernel;
 use polars_core::prelude::*;
@@ -36,16 +37,9 @@ where
 {
     let values = arr.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
     let values = values.values().as_slice();
-    let mut out = min_between_offsets(values, offsets);
-
-    if let Some(validity) = validity {
-        if out.has_validity() {
-            out.apply_validity(|other_validity| validity & &other_validity)
-        } else {
-            out = out.with_validity(Some(validity.clone()));
-        }
-    }
-    Box::new(out)
+    let out = min_between_offsets(values, offsets);
+    let new_validity = combine_validities_and(out.validity(), validity);
+    out.with_validity(new_validity).to_boxed()
 }
 
 fn min_list_numerical(ca: &ListChunked, inner_type: &DataType) -> Series {
@@ -148,7 +142,7 @@ where
     let mut out = max_between_offsets(values, offsets);
 
     if let Some(validity) = validity {
-        if out.has_validity() {
+        if out.null_count() > 0 {
             out.apply_validity(|other_validity| validity & &other_validity)
         } else {
             out = out.with_validity(Some(validity.clone()));

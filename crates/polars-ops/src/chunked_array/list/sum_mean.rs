@@ -2,6 +2,7 @@ use std::ops::Div;
 
 use arrow::array::{Array, PrimitiveArray};
 use arrow::bitmap::Bitmap;
+use arrow::compute::utils::combine_validities_and;
 use arrow::types::NativeType;
 use polars_core::export::num::{NumCast, ToPrimitive};
 
@@ -137,15 +138,9 @@ where
 {
     let values = arr.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
     let values = values.values().as_slice();
-    let mut out = mean_between_offsets::<_, S>(values, offsets);
-    if let Some(validity) = validity {
-        if out.has_validity() {
-            out.apply_validity(|other_validity| validity & &other_validity)
-        } else {
-            out = out.with_validity(Some(validity.clone()));
-        }
-    }
-    Box::new(out)
+    let out = mean_between_offsets::<_, S>(values, offsets);
+    let new_validity = combine_validities_and(out.validity(), validity);
+    out.with_validity(new_validity).to_boxed()
 }
 
 pub(super) fn mean_list_numerical(ca: &ListChunked, inner_type: &DataType) -> Series {

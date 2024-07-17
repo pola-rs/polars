@@ -17,7 +17,7 @@ mod compute_node_prelude {
 
     pub use super::ComputeNode;
     pub use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
-    pub use crate::async_primitives::pipe::{Receiver, Sender};
+    pub use crate::async_primitives::connector::{Receiver, Sender};
     pub use crate::graph::PortState;
     pub use crate::morsel::{Morsel, MorselSeq};
 }

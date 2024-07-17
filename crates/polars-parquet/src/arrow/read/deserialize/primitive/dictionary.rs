@@ -11,33 +11,34 @@ use super::super::nested_utils::{InitNested, NestedState};
 use super::super::utils::MaybeNext;
 use super::super::PagesIter;
 use super::basic::deserialize_plain;
+use super::DecoderFunction;
 use crate::parquet::page::DictPage;
 use crate::parquet::types::NativeType as ParquetNativeType;
 
-fn read_dict<P, T, F>(data_type: ArrowDataType, op: F, dict: &DictPage) -> Box<dyn Array>
+fn read_dict<P, T, D>(data_type: ArrowDataType, dict: &DictPage, decoder: D) -> Box<dyn Array>
 where
     T: NativeType,
     P: ParquetNativeType,
-    F: Copy + Fn(P) -> T,
+    D: DecoderFunction<P, T>,
 {
     let data_type = match data_type {
         ArrowDataType::Dictionary(_, values, _) => *values,
         _ => data_type,
     };
-    let values = deserialize_plain(&dict.buffer, op);
+    let values = deserialize_plain::<P, T, D>(&dict.buffer, decoder);
 
     Box::new(PrimitiveArray::new(data_type, values.into(), None))
 }
 
 /// An iterator adapter over [`PagesIter`] assumed to be encoded as boolean arrays
 #[derive(Debug)]
-pub struct DictIter<K, T, I, P, F>
+pub struct DictIter<K, T, I, P, D>
 where
     I: PagesIter,
     T: NativeType,
     K: DictionaryKey,
     P: ParquetNativeType,
-    F: Fn(P) -> T,
+    D: DecoderFunction<P, T>,
 {
     iter: I,
     data_type: ArrowDataType,
@@ -45,25 +46,25 @@ where
     items: VecDeque<(Vec<K>, MutableBitmap)>,
     remaining: usize,
     chunk_size: Option<usize>,
-    op: F,
-    phantom: std::marker::PhantomData<P>,
+    decoder: D,
+    phantom: std::marker::PhantomData<(P, T)>,
 }
 
-impl<K, T, I, P, F> DictIter<K, T, I, P, F>
+impl<K, T, I, P, D> DictIter<K, T, I, P, D>
 where
     K: DictionaryKey,
     I: PagesIter,
     T: NativeType,
 
     P: ParquetNativeType,
-    F: Copy + Fn(P) -> T,
+    D: DecoderFunction<P, T>,
 {
     pub fn new(
         iter: I,
         data_type: ArrowDataType,
         num_rows: usize,
         chunk_size: Option<usize>,
-        op: F,
+        decoder: D,
     ) -> Self {
         Self {
             iter,
@@ -72,19 +73,19 @@ where
             items: VecDeque::new(),
             chunk_size,
             remaining: num_rows,
-            op,
+            decoder,
             phantom: Default::default(),
         }
     }
 }
 
-impl<K, T, I, P, F> Iterator for DictIter<K, T, I, P, F>
+impl<K, T, I, P, D> Iterator for DictIter<K, T, I, P, D>
 where
     I: PagesIter,
     T: NativeType,
     K: DictionaryKey,
     P: ParquetNativeType,
-    F: Copy + Fn(P) -> T,
+    D: DecoderFunction<P, T>,
 {
     type Item = PolarsResult<DictionaryArray<K>>;
 
@@ -96,7 +97,7 @@ where
             self.data_type.clone(),
             &mut self.remaining,
             self.chunk_size,
-            |dict| read_dict::<P, T, _>(self.data_type.clone(), self.op, dict),
+            |dict| read_dict(self.data_type.clone(), dict, self.decoder),
         );
         match maybe_state {
             MaybeNext::Some(Ok(dict)) => Some(Ok(dict)),
@@ -109,13 +110,13 @@ where
 
 /// An iterator adapter that converts [`DataPages`] into an [`Iterator`] of [`DictionaryArray`]
 #[derive(Debug)]
-pub struct NestedDictIter<K, T, I, P, F>
+pub struct NestedDictIter<K, T, I, P, D>
 where
     I: PagesIter,
     T: NativeType,
     K: DictionaryKey,
     P: ParquetNativeType,
-    F: Fn(P) -> T,
+    D: DecoderFunction<P, T>,
 {
     iter: I,
     init: Vec<InitNested>,
@@ -124,18 +125,18 @@ where
     items: VecDeque<(NestedState, (Vec<K>, MutableBitmap))>,
     remaining: usize,
     chunk_size: Option<usize>,
-    op: F,
-    phantom: std::marker::PhantomData<P>,
+    decoder: D,
+    phantom: std::marker::PhantomData<(P, T)>,
 }
 
-impl<K, T, I, P, F> NestedDictIter<K, T, I, P, F>
+impl<K, T, I, P, D> NestedDictIter<K, T, I, P, D>
 where
     K: DictionaryKey,
     I: PagesIter,
     T: NativeType,
 
     P: ParquetNativeType,
-    F: Copy + Fn(P) -> T,
+    D: DecoderFunction<P, T>,
 {
     pub fn new(
         iter: I,
@@ -143,7 +144,7 @@ where
         data_type: ArrowDataType,
         num_rows: usize,
         chunk_size: Option<usize>,
-        op: F,
+        decoder: D,
     ) -> Self {
         Self {
             iter,
@@ -153,19 +154,19 @@ where
             items: VecDeque::new(),
             remaining: num_rows,
             chunk_size,
-            op,
+            decoder,
             phantom: Default::default(),
         }
     }
 }
 
-impl<K, T, I, P, F> Iterator for NestedDictIter<K, T, I, P, F>
+impl<K, T, I, P, D> Iterator for NestedDictIter<K, T, I, P, D>
 where
     I: PagesIter,
     T: NativeType,
     K: DictionaryKey,
     P: ParquetNativeType,
-    F: Copy + Fn(P) -> T,
+    D: DecoderFunction<P, T>,
 {
     type Item = PolarsResult<(NestedState, DictionaryArray<K>)>;
 
@@ -179,7 +180,7 @@ where
                 &mut self.values,
                 self.data_type.clone(),
                 self.chunk_size,
-                |dict| read_dict::<P, T, _>(self.data_type.clone(), self.op, dict),
+                |dict| read_dict(self.data_type.clone(), dict, self.decoder),
             );
             match maybe_state {
                 MaybeNext::Some(Ok(dict)) => return Some(Ok(dict)),

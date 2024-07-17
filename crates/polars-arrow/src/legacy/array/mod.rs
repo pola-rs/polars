@@ -185,14 +185,6 @@ pub trait ListFromIter {
 }
 impl ListFromIter for ListArray<i64> {}
 
-pub trait PolarsArray: Array {
-    fn has_validity(&self) -> bool {
-        self.validity().is_some()
-    }
-}
-
-impl<A: Array + ?Sized> PolarsArray for A {}
-
 fn is_nested_null(data_type: &ArrowDataType) -> bool {
     match data_type {
         ArrowDataType::Null => true,

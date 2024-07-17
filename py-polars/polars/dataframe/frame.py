@@ -5741,6 +5741,16 @@ class DataFrame:
         │ c   ┆ 3   ┆ 1   │
         └─────┴─────┴─────┘
         """
+        for _key, value in named_by.items():
+            if not isinstance(value, (str, pl.Expr, pl.Series)):
+                msg = (
+                    f"Expected Polars expression or object convertible to one, got {type(value)}.\n\n"
+                    "Hint: if you tried\n"
+                    f"    group_by(by={value!r})\n"
+                    "then you probably want to use this instead:\n"
+                    f"    group_by({value!r})"
+                )
+                raise TypeError(msg)
         return GroupBy(self, *by, **named_by, maintain_order=maintain_order)
 
     @deprecate_renamed_parameter("by", "group_by", version="0.20.14")

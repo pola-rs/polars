@@ -292,20 +292,33 @@ class Expr:
         is_custom_ufunc = getattr(ufunc, "signature") is not None  # noqa: B009
         num_expr = sum(isinstance(inp, Expr) for inp in inputs)
         exprs = [
-            (inp, Expr, i) if isinstance(inp, Expr) else (inp, None, i)
+            (inp, True, i) if isinstance(inp, Expr) else (inp, False, i)
             for i, inp in enumerate(inputs)
         ]
+
         if num_expr == 1:
-            root_expr = next(expr[0] for expr in exprs if expr[1] == Expr)
+            root_expr = next(expr[0] for expr in exprs if expr[1])
         else:
-            root_expr = F.struct(expr[0] for expr in exprs if expr[1] == Expr)
+            # We rename all but the first expression in case someone did e.g.
+            # np.divide(pl.col("a"), pl.col("a")); we'll be creating a struct
+            # below, and structs can't have duplicate names.
+            first_renamable_expr = True
+            actual_exprs = []
+            for inp, is_actual_expr, index in exprs:
+                if is_actual_expr:
+                    if first_renamable_expr:
+                        first_renamable_expr = False
+                    else:
+                        inp = inp.alias(f"argument_{index}")
+                    actual_exprs.append(inp)
+            root_expr = F.struct(actual_exprs)
 
         def function(s: Series) -> Series:  # pragma: no cover
             args = []
             for i, expr in enumerate(exprs):
-                if expr[1] == Expr and num_expr > 1:
+                if expr[1] and num_expr > 1:
                     args.append(s.struct[i])
-                elif expr[1] == Expr:
+                elif expr[1]:
                     args.append(s)
                 else:
                     args.append(expr[0])
@@ -323,10 +336,8 @@ class Expr:
                 CustomUFuncWarning,
                 stacklevel=find_stacklevel(),
             )
-            return root_expr.map_batches(
-                function, is_elementwise=False
-            ).meta.undo_aliases()
-        return root_expr.map_batches(function, is_elementwise=True).meta.undo_aliases()
+            return root_expr.map_batches(function, is_elementwise=False)
+        return root_expr.map_batches(function, is_elementwise=True)
 
     @classmethod
     def deserialize(

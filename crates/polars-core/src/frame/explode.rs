@@ -83,7 +83,18 @@ impl DataFrame {
         let check_offsets = || {
             let first_offsets = exploded_columns[0].1.as_slice();
             for (_, offsets) in &exploded_columns[1..] {
-                polars_ensure!(first_offsets == offsets.as_slice(),
+                let offsets = offsets.as_slice();
+
+                let offset_l = first_offsets[0];
+                let offset_r = offsets[0];
+                let all_equal_len = first_offsets.len() != offsets.len() || {
+                    first_offsets
+                        .iter()
+                        .zip(offsets.iter())
+                        .all(|(l, r)| (*l - offset_l) == (*r - offset_r))
+                };
+
+                polars_ensure!(all_equal_len,
                     ShapeMismatch: "exploded columns must have matching element counts"
                 )
             }

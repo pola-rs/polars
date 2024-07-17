@@ -71,7 +71,7 @@ where
             } else if idx.len() == 1 {
                 ca.get(first as usize)
             } else {
-                match (ca.has_validity(), ca.chunks().len()) {
+                match (ca.has_nulls(), ca.chunks().len()) {
                     (false, 1) => take_agg_no_null_primitive_iter_unchecked(
                         ca.downcast_iter().next().unwrap(),
                         idx.iter().map(|i| *i as usize),
@@ -140,7 +140,7 @@ where
             } else if idx.len() == 1 {
                 ca.get(first as usize)
             } else {
-                match (ca.has_validity(), ca.chunks().len()) {
+                match (ca.has_nulls(), ca.chunks().len()) {
                     (false, 1) => take_agg_no_null_primitive_iter_unchecked(
                         ca.downcast_iter().next().unwrap(),
                         idx.iter().map(|i| *i as usize),

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sys
-from datetime import datetime
+from datetime import date, datetime
 from typing import TYPE_CHECKING
 
 import hypothesis.strategies as st
@@ -187,3 +187,19 @@ def test_to_datetime_aware_values_aware_dtype() -> None:
         dtype=pl.Datetime("us", "Asia/Kathmandu"),
     )
     assert_series_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("inputs", "format", "expected"),
+    [
+        ("01-01-69", "%d-%m-%y", date(2069, 1, 1)),  # Polars' parser
+        ("01-01-70", "%d-%m-%y", date(1970, 1, 1)),  # Polars' parser
+        ("01-January-69", "%d-%B-%y", date(2069, 1, 1)),  # Chrono
+        ("01-January-70", "%d-%B-%y", date(1970, 1, 1)),  # Chrono
+    ],
+)
+def test_to_datetime_two_digit_year_17213(
+    inputs: str, format: str, expected: date
+) -> None:
+    result = pl.Series([inputs]).str.to_date(format=format).item()
+    assert result == expected

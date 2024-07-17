@@ -368,7 +368,7 @@ impl<T: PolarsObject> ObjectChunked<T> {
 
             // todo! use iterators once implemented
             // no_null path
-            if !self.has_validity() {
+            if !self.has_nulls() {
                 for arr in chunks {
                     for idx in 0..arr.len() {
                         builder.append_value(arr.value(idx).clone())

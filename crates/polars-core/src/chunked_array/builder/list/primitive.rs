@@ -119,7 +119,7 @@ where
         let values = self.builder.mut_values();
 
         ca.downcast_iter().for_each(|arr| {
-            if !arr.has_validity() {
+            if arr.null_count() == 0 {
                 values.extend_from_slice(arr.values().as_slice())
             } else {
                 // SAFETY:

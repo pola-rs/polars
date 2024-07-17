@@ -425,7 +425,7 @@ c
     assert_frame_equal(out, expect)
 
 
-@pytest.mark.xfail(reason="Bug: https://github.com/pola-rs/polars/issues/17444")
+@pytest.mark.xfail(reason="Bug: https://github.com/pola-rs/polars/issues/17634")
 def test_scan_csv_with_column_names_nonexistent_file() -> None:
     path_str = "my-nonexistent-data.csv"
     path = Path(path_str)

@@ -322,8 +322,8 @@ impl PySeries {
         Ok(self.series.null_count())
     }
 
-    fn has_validity(&self) -> bool {
-        self.series.has_validity()
+    fn has_nulls(&self) -> bool {
+        self.series.has_nulls()
     }
 
     fn equals(

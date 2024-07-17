@@ -69,13 +69,13 @@ impl<'a> StateTranslation<'a, BinViewDecoder> for BinaryStateTranslation<'a> {
                 values,
                 page_values,
             )?,
-            (Self::Dictionary(page), None) => {
+            (Self::Dictionary(page, views_dict), None) => {
                 // Already done on the dict.
                 validate_utf8 = false;
 
-                let page_dict = &page.dict;
-                let views_dict = binary_views_dict(values, page_dict);
-                let translator = DictionaryTranslator(&views_dict);
+                let views_dict =
+                    views_dict.get_or_insert_with(|| binary_views_dict(values, page.dict));
+                let translator = DictionaryTranslator(views_dict);
 
                 page.values.translate_and_collect_n_into(
                     values.views_mut(),
@@ -86,13 +86,13 @@ impl<'a> StateTranslation<'a, BinViewDecoder> for BinaryStateTranslation<'a> {
                     validity.extend_constant(additional, true);
                 }
             },
-            (Self::Dictionary(page), Some(page_validity)) => {
+            (Self::Dictionary(page, views_dict), Some(page_validity)) => {
                 // Already done on the dict.
                 validate_utf8 = false;
 
-                let page_dict = &page.dict;
-                let views_dict = binary_views_dict(values, page_dict);
-                let translator = DictionaryTranslator(&views_dict);
+                let views_dict =
+                    views_dict.get_or_insert_with(|| binary_views_dict(values, page.dict));
+                let translator = DictionaryTranslator(views_dict);
                 let collector = TranslatedHybridRle::new(&mut page.values, &translator);
 
                 extend_from_decoder(validity, page_validity, Some(additional), values, collector)?;

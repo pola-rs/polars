@@ -1139,3 +1139,10 @@ def test_grouped_slice_literals() -> None:
         ),  # slices a list of 1 element, so remains the same element
         x2=pl.lit(pl.Series([1, 2])).slice(-1, 1),
     ).to_dict(as_series=False) == {"literal": [True], "x": [[1, 2]], "x2": [2]}
+
+
+def test_positional_by_with_list_or_tuple_17540() -> None:
+    with pytest.raises(TypeError, match="Hint: if you"):
+        pl.DataFrame({"a": [1, 2, 3]}).group_by(by=["a"])
+    with pytest.raises(TypeError, match="Hint: if you"):
+        pl.LazyFrame({"a": [1, 2, 3]}).group_by(by=["a"])

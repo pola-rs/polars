@@ -10,12 +10,12 @@ use polars_core::POOL;
 use polars_io::cloud::CloudOptions;
 use polars_io::parquet::metadata::FileMetaDataRef;
 use polars_io::parquet::read::{BatchedParquetReader, ParquetOptions, ParquetReader};
+use polars_io::path_utils::is_cloud_url;
 use polars_io::pl_async::get_runtime;
 use polars_io::predicates::PhysicalIoExpr;
 use polars_io::prelude::materialize_projection;
 #[cfg(feature = "async")]
 use polars_io::prelude::ParquetAsyncReader;
-use polars_io::utils::is_cloud_url;
 use polars_io::SerReader;
 use polars_plan::plans::FileInfo;
 use polars_plan::prelude::hive::HivePartitions;
