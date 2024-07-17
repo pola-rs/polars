@@ -98,16 +98,17 @@ def read_database(
         data returned by the query; this can be useful for processing large resultsets
         in a memory-efficient manner. If supported by the backend, this value is passed
         to the underlying query execution method (note that very low values will
-        typically result in poor performance as it will result in many round-trips to
-        the database as the data is returned). If the backend does not support changing
+        typically result in poor performance as it will cause many round-trips to the
+        database as the data is returned). If the backend does not support changing
         the batch size then a single DataFrame is yielded from the iterator.
     batch_size
         Indicate the size of each batch when `iter_batches` is True (note that you can
         still set this when `iter_batches` is False, in which case the resulting
         DataFrame is constructed internally using batched return before being returned
-        to you. Note that some backends may support batched operation but not allow for
-        an explicit size; in this case you will still receive batches, but their exact
-        size will be determined by the backend (so may not equal the value set here).
+        to you. Note that some backends (such as Snowflake) may support batch operation
+        but not allow for an explicit size to be set; in this case you will still
+        receive batches but their size is determined by the backend (in which case any
+        value set here will be ignored).
     schema_overrides
         A dictionary mapping column names to dtypes, used to override the schema
         inferred from the query cursor or given by the incoming Arrow data (depending
@@ -242,7 +243,7 @@ def read_database(
             connection = ODBCCursorProxy(connection)
         elif "://" in connection:
             # otherwise looks like a mistaken call to read_database_uri
-            msg = "Use of string URI is invalid here; call `read_database_uri` instead"
+            msg = "use of string URI is invalid here; call `read_database_uri` instead"
             raise ValueError(msg)
         else:
             msg = "unable to identify string connection as valid ODBC (no driver)"
