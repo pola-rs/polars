@@ -135,10 +135,11 @@ impl PyDataFrame {
     #[allow(unused_variables)]
     #[pyo3(signature = (requested_schema=None))]
     fn __arrow_c_stream__<'py>(
-        &'py self,
+        &'py mut self,
         py: Python<'py>,
         requested_schema: Option<PyObject>,
     ) -> PyResult<Bound<'py, PyCapsule>> {
-        dataframe_to_stream(&self.df, py)
+        self.df.align_chunks();
+        dataframe_to_stream(self.df.clone(), py)
     }
 }
