@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use polars_error::{PolarsError, PolarsResult};
 
+use super::metadata::FileVersion;
 use super::utils::last_modified_u64;
 use crate::cloud::PolarsObjectStore;
 use crate::pl_async;
@@ -16,7 +17,7 @@ pub trait FileFetcher: Send + Sync {
 
 pub struct RemoteMetadata {
     pub size: u64,
-    pub last_modified: u64,
+    pub(super) version: FileVersion,
 }
 
 /// A struct that fetches data from local disk and stores it into the `cache`.
@@ -59,7 +60,7 @@ impl FileFetcher for LocalFileFetcher {
 
         Ok(RemoteMetadata {
             size: metadata.len(),
-            last_modified: last_modified_u64(&metadata),
+            version: FileVersion::Timestamp(last_modified_u64(&metadata)),
         })
     }
 
@@ -97,7 +98,12 @@ impl FileFetcher for CloudFileFetcher {
 
         Ok(RemoteMetadata {
             size: metadata.size as u64,
-            last_modified: metadata.last_modified.timestamp_millis() as u64,
+            version: metadata
+                .e_tag
+                .map(|x| FileVersion::ETag(blake3::hash(x.as_bytes()).to_hex()[..32].to_string()))
+                .unwrap_or_else(|| {
+                    FileVersion::Timestamp(metadata.last_modified.timestamp_millis() as u64)
+                }),
         })
     }
 

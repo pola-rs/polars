@@ -129,11 +129,7 @@ impl FileCache {
             }
         }
 
-        let uri_hash = blake3::hash(uri.as_bytes())
-            .to_hex()
-            .get(..32)
-            .unwrap()
-            .to_string();
+        let uri_hash = blake3::hash(uri.as_bytes()).to_hex()[..32].to_string();
 
         {
             let mut entries = self.entries.write().unwrap();
