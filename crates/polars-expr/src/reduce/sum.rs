@@ -2,6 +2,7 @@ use polars_core::prelude::{AnyValue, DataType};
 
 use super::*;
 
+#[derive(Clone)]
 pub struct SumReduce {
     value: Scalar,
 }
@@ -31,7 +32,7 @@ impl Reduction for SumReduce {
 
     fn combine(&mut self, other: &dyn Reduction) -> PolarsResult<()> {
         let other = other.as_any().downcast_ref::<Self>().unwrap();
-        self.update_impl(&other.value.value());
+        self.update_impl(other.value.value());
         Ok(())
     }
 

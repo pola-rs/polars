@@ -10,7 +10,6 @@ mod lower_ir;
 mod to_graph;
 
 pub use lower_ir::lower_ir;
-use polars_expr::reduce::Reduction;
 pub use to_graph::physical_plan_to_graph;
 
 slotmap::new_key_type! {

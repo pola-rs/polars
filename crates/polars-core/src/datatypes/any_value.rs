@@ -820,8 +820,8 @@ impl<'a> AnyValue<'a> {
     pub fn add(&self, rhs: &AnyValue) -> AnyValue<'static> {
         use AnyValue::*;
         match (self, rhs) {
-            (Null, _) => Null,
-            (_, Null) => Null,
+            (Null, r) => r.clone().into_static().unwrap(),
+            (l, Null) => l.clone().into_static().unwrap(),
             (Int32(l), Int32(r)) => Int32(l + r),
             (Int64(l), Int64(r)) => Int64(l + r),
             (UInt32(l), UInt32(r)) => UInt32(l + r),

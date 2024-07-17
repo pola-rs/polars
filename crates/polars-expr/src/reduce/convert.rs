@@ -1,3 +1,4 @@
+use polars_core::error::feature_gated;
 use polars_plan::prelude::*;
 use polars_utils::arena::{Arena, Node};
 
@@ -8,13 +9,13 @@ use crate::reduce::mean::MeanReduce;
 
 pub fn can_convert_into_reduction(node: Node, expr_arena: &Arena<AExpr>) -> bool {
     match expr_arena.get(node) {
-        AExpr::Agg(agg) => match agg {
+        AExpr::Agg(agg) => matches!(
+            agg,
             IRAggExpr::Min { .. }
-            | IRAggExpr::Max { .. }
-            | IRAggExpr::Mean { .. }
-            | IRAggExpr::Sum(_) => true,
-            _ => false,
-        },
+                | IRAggExpr::Max { .. }
+                | IRAggExpr::Mean { .. }
+                | IRAggExpr::Sum(_)
+        ),
         _ => false,
     }
 }
@@ -25,7 +26,7 @@ pub fn into_reduction(
     schema: &Schema,
 ) -> PolarsResult<Option<(Box<dyn Reduction>, Node)>> {
     let e = expr_arena.get(node);
-    let field = e.to_field(schema, Context::Default, &expr_arena)?;
+    let field = e.to_field(schema, Context::Default, expr_arena)?;
     let out = match expr_arena.get(node) {
         AExpr::Agg(agg) => match agg {
             IRAggExpr::Sum(node) => (
@@ -37,12 +38,14 @@ pub fn into_reduction(
                 input,
             } => {
                 if *propagate_nans && field.dtype.is_float() {
-                    let out: Box<dyn Reduction> = match field.dtype {
-                        DataType::Float32 => Box::new(MinNanReduce::<Float32Type>::new()),
-                        DataType::Float64 => Box::new(MinNanReduce::<Float64Type>::new()),
-                        _ => unreachable!(),
-                    };
-                    (out, *input)
+                    feature_gated!("propagate_nans", {
+                        let out: Box<dyn Reduction> = match field.dtype {
+                            DataType::Float32 => Box::new(MinNanReduce::<Float32Type>::new()),
+                            DataType::Float64 => Box::new(MinNanReduce::<Float64Type>::new()),
+                            _ => unreachable!(),
+                        };
+                        (out, *input)
+                    })
                 } else {
                     (
                         Box::new(MinReduce::new(field.dtype.clone())) as Box<dyn Reduction>,
@@ -55,12 +58,14 @@ pub fn into_reduction(
                 input,
             } => {
                 if *propagate_nans && field.dtype.is_float() {
-                    let out: Box<dyn Reduction> = match field.dtype {
-                        DataType::Float32 => Box::new(MaxNanReduce::<Float32Type>::new()),
-                        DataType::Float64 => Box::new(MaxNanReduce::<Float64Type>::new()),
-                        _ => unreachable!(),
-                    };
-                    (out, *input)
+                    feature_gated!("propagate_nans", {
+                        let out: Box<dyn Reduction> = match field.dtype {
+                            DataType::Float32 => Box::new(MaxNanReduce::<Float32Type>::new()),
+                            DataType::Float64 => Box::new(MaxNanReduce::<Float64Type>::new()),
+                            _ => unreachable!(),
+                        };
+                        (out, *input)
+                    })
                 } else {
                     (Box::new(MaxReduce::new(field.dtype.clone())) as _, *input)
                 }

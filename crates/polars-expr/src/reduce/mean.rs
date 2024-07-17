@@ -2,6 +2,7 @@ use polars_core::utils::Container;
 
 use super::*;
 
+#[derive(Clone)]
 pub struct MeanReduce {
     value: Option<f64>,
     len: u64,

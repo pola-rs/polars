@@ -1,9 +1,13 @@
+#[cfg(feature = "propagate_nans")]
 use polars_core::datatypes::PolarsFloatType;
+#[cfg(feature = "propagate_nans")]
 use polars_ops::prelude::nan_propagating_aggregate;
+#[cfg(feature = "propagate_nans")]
 use polars_utils::min_max::MinMax;
 
 use super::*;
 
+#[derive(Clone)]
 pub(super) struct MinReduce {
     dtype: DataType,
     value: Option<Scalar>,
@@ -54,6 +58,7 @@ impl Reduction for MinReduce {
         self
     }
 }
+#[derive(Clone)]
 pub(super) struct MaxReduce {
     dtype: DataType,
     value: Option<Scalar>,
@@ -105,10 +110,13 @@ impl Reduction for MaxReduce {
     }
 }
 
+#[cfg(feature = "propagate_nans")]
+#[derive(Clone)]
 pub(super) struct MaxNanReduce<T: PolarsFloatType> {
     value: Option<T::Native>,
 }
 
+#[cfg(feature = "propagate_nans")]
 impl<T: PolarsFloatType> MaxNanReduce<T>
 where
     T::Native: MinMax,
@@ -125,7 +133,8 @@ where
     }
 }
 
-impl<T: PolarsFloatType> Reduction for MaxNanReduce<T>
+#[cfg(feature = "propagate_nans")]
+impl<T: PolarsFloatType + Clone> Reduction for MaxNanReduce<T>
 where
     T::Native: MinMax,
 {
@@ -161,10 +170,13 @@ where
         self
     }
 }
+#[cfg(feature = "propagate_nans")]
+#[derive(Clone)]
 pub(super) struct MinNanReduce<T: PolarsFloatType> {
     value: Option<T::Native>,
 }
 
+#[cfg(feature = "propagate_nans")]
 impl<T: PolarsFloatType> crate::reduce::extrema::MinNanReduce<T>
 where
     T::Native: MinMax,
@@ -181,7 +193,8 @@ where
     }
 }
 
-impl<T: PolarsFloatType> Reduction for crate::reduce::extrema::MinNanReduce<T>
+#[cfg(feature = "propagate_nans")]
+impl<T: PolarsFloatType + Clone> Reduction for crate::reduce::extrema::MinNanReduce<T>
 where
     T::Native: MinMax,
 {

@@ -15,12 +15,12 @@ use crate::nodes::ComputeNode;
 
 // All reductions in a single operation.
 // `select(sum, min) -> vec![sum, min]
-type Reductions = Vec<Box<dyn Reduction>>;
+type ReduceSet = Vec<Box<dyn Reduction>>;
 
 enum ReduceState {
     Sink {
         inputs: Vec<Arc<dyn PhysicalExpr>>,
-        reductions: Reductions,
+        reductions: Arc<Mutex<Vec<Box<dyn Reduction>>>>,
     },
     Source(Mutex<Option<DataFrame>>),
     Done,
@@ -28,7 +28,7 @@ enum ReduceState {
 
 pub struct ReduceNode {
     // Reductions that are ready to finalize
-    full: Mutex<Vec<Reductions>>,
+    full: Arc<Mutex<Vec<ReduceSet>>>,
     state: ReduceState,
     output_schema: SchemaRef,
 }
@@ -36,11 +36,14 @@ pub struct ReduceNode {
 impl ReduceNode {
     pub fn new(
         inputs: Vec<Arc<dyn PhysicalExpr>>,
-        reductions: Vec<Box<dyn Reduction>>,
+        reductions: ReduceSet,
         output_schema: SchemaRef,
     ) -> Self {
         Self {
-            state: ReduceState::Sink { inputs, reductions },
+            state: ReduceState::Sink {
+                inputs,
+                reductions: Arc::new(Mutex::new(reductions)),
+            },
             output_schema,
             full: Default::default(),
         }
@@ -62,20 +65,26 @@ impl ReduceNode {
         };
 
         let mut recv = recv[0].take().unwrap();
+        let full = self.full.clone();
 
         scope.spawn_task(TaskPriority::High, async move {
-            let mut reductions = (*reductions).clone();
+            let mut reductions = reductions
+                .lock()
+                .iter()
+                .map(|d| dyn_clone::clone_box(&**d))
+                .collect::<Vec<_>>();
 
             while let Ok(morsel) = recv.recv().await {
                 let df = morsel.into_df();
 
                 for (i, input) in inputs.iter().map(|s| s.evaluate(&df, state)).enumerate() {
                     let input = input?;
+                    let input = input.to_physical_repr();
                     reductions[i].update(&input)?;
                 }
             }
 
-            self.full.lock().push(reductions);
+            full.lock().push(reductions);
 
             Ok(())
         })
@@ -92,13 +101,14 @@ impl ReduceNode {
         let ReduceState::Source(df) = &self.state else {
             unreachable!()
         };
+        let mut send = send[0].take().unwrap();
 
-        scope.spawn_task(TaskPriority::Low, async move {
-            if let Some(df) = df.lock().take() {
-                let morsel = Morsel::new(df, MorselSeq::new(0));
-                let mut send = send[1].take().unwrap();
-                send.send(morsel).await?;
-            }
+        scope.spawn_task(TaskPriority::High, async move {
+            let Some(df) = df.lock().take() else {
+                return Ok(());
+            };
+            let morsel = Morsel::new(df, MorselSeq::new(0));
+            let _ = send.send(morsel).await;
             Ok(())
         })
     }
@@ -115,11 +125,12 @@ impl ComputeNode for ReduceNode {
         // State transitions
         // If the output doesn't want any more data, transition to being done.
         if send[0] == PortState::Done && !matches!(&self.state, ReduceState::Done) {
-            *self.state = ReduceState::Done;
+            self.state = ReduceState::Done;
         }
 
         match self.state {
-            ReduceState::Sink if matches!(recv[0], PortState::Done) => {
+            // Input is done, we can combine the reductions into a single scalar.
+            ReduceState::Sink { .. } if matches!(recv[0], PortState::Done) => {
                 let reductions = std::mem::take(&mut *self.full.lock());
 
                 let reductions = reductions
@@ -129,7 +140,7 @@ impl ComputeNode for ReduceNode {
                         let mut a = a?;
                         let mut b = b?;
                         for (a, b) in a.iter_mut().zip(b.iter_mut()) {
-                            a.combine(b)?
+                            a.combine(b.as_ref())?
                         }
                         Ok(a)
                     })
@@ -140,23 +151,29 @@ impl ComputeNode for ReduceNode {
 
                 let columns = reductions
                     .into_iter()
-                    .zip(self.output_schema.iter_names())
-                    .map(|(mut r, name)| r.finalize().map(|scalar| scalar.into_series(name)))
+                    .zip(self.output_schema.iter_fields())
+                    .map(|(mut r, field)| {
+                        r.finalize().map(|scalar| {
+                            scalar.into_series(&field.name).cast(&field.dtype).unwrap()
+                        })
+                    })
                     .collect::<PolarsResult<Vec<_>>>()
                     .unwrap();
                 let out = unsafe { DataFrame::new_no_checks(columns) };
 
-                *self.state = ReduceState::Source(Mutex::new(Some(out)));
+                self.state = ReduceState::Source(Mutex::new(Some(out)));
             },
+            // We have fed the source, we are done.
             ReduceState::Source(..) => {
-                *self.state = ReduceState::Done;
+                self.state = ReduceState::Done;
             },
-            ReduceState::Done => {},
+            // Nothing to change.
+            ReduceState::Done | ReduceState::Sink { .. } => {},
         }
 
         // Communicate state
         match &self.state {
-            ReduceState::Sink{..} => {
+            ReduceState::Sink { .. } => {
                 send[0] = PortState::Blocked;
                 recv[0] = PortState::Ready;
             },

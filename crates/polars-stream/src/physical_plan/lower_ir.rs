@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use polars_error::PolarsResult;
-use polars_expr::reduce::{can_convert_into_reduction, into_reduction};
+use polars_expr::reduce::can_convert_into_reduction;
 use polars_plan::plans::{AExpr, Context, IR};
 use polars_plan::prelude::SinkType;
 use polars_utils::arena::{Arena, Node};
@@ -56,14 +56,16 @@ pub fn lower_ir(
             .iter()
             .all(|e| can_convert_into_reduction(e.node(), expr_arena)) =>
         {
-            let input_node = ir_arena.get(*input);
-            let input_schema = input_node.schema(ir_arena).into_owned();
-            let input = lower_ir(*input, ir_arena, expr_arena, phys_sm)?;
+            let exprs = expr.clone();
+            let input_ir_node = ir_arena.get(*input);
+            let input_schema = input_ir_node.schema(ir_arena).into_owned();
+            let output_schema = output_schema.clone();
+            let input_node = lower_ir(*input, ir_arena, expr_arena, phys_sm)?;
             Ok(phys_sm.insert(PhysNode::Reduce {
-                input,
-                exprs: expr.clone(),
+                input: input_node,
+                exprs,
                 input_schema,
-                output_schema: output_schema.clone(),
+                output_schema,
             }))
         },
 
