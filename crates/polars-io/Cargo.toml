@@ -28,6 +28,7 @@ fast-float = { workspace = true, optional = true }
 flate2 = { workspace = true, optional = true }
 futures = { workspace = true, optional = true }
 glob = { version = "0.3" }
+http = { workspace = true, optional = true }
 itoa = { workspace = true, optional = true }
 memchr = { workspace = true }
 memmap = { package = "memmap2", version = "0.7" }
@@ -116,7 +117,7 @@ file_cache = ["async", "dep:blake3", "dep:fs4"]
 aws = ["object_store/aws", "cloud", "reqwest"]
 azure = ["object_store/azure", "cloud"]
 gcp = ["object_store/gcp", "cloud"]
-http = ["object_store/http", "cloud"]
+http = ["object_store/http", "cloud", "dep:http"]
 partition = ["polars-core/partition_by"]
 temporal = ["dtype-datetime", "dtype-date", "dtype-time"]
 simd = []

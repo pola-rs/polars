@@ -3111,6 +3111,7 @@ dependencies = [
  "futures",
  "glob",
  "home",
+ "http 1.1.0",
  "itoa",
  "memchr",
  "memmap2",
