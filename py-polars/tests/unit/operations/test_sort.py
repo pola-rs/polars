@@ -48,10 +48,6 @@ def is_sorted_any(s: pl.Series) -> bool:
     return s.flags["SORTED_ASC"] or s.flags["SORTED_DESC"]
 
 
-def is_not_sorted(s: pl.Series) -> bool:
-    return not is_sorted_any(s)
-
-
 def test_sort_dates_multiples() -> None:
     df = pl.DataFrame(
         [

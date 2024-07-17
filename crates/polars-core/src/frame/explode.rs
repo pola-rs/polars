@@ -316,7 +316,7 @@ impl DataFrame {
         }
 
         // The column name of the variable that is unpivoted
-        let mut variable_col = MutableBinaryViewArray::<str>::with_capacity(len * on.len() + 1);
+        let mut variable_col = MutablePlString::with_capacity(len * on.len() + 1);
         // prepare ids
         let ids_ = self.select_with_schema_unchecked(index, &schema)?;
         let mut ids = ids_.clone();
