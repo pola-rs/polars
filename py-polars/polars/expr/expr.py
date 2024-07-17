@@ -9671,8 +9671,8 @@ class Expr:
                 as the computation is already parallelized per group.
         name
             Give the resulting count column a specific name;
-            if `normalize` is True defaults to "count",
-            otherwise defaults to "proportion".
+            if `normalize` is True defaults to "proportion",
+            otherwise defaults to "count".
         normalize
             If true gives relative frequencies of the unique values
 
