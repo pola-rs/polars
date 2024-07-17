@@ -1401,7 +1401,7 @@ class Series:
             )
             raise NotImplementedError(msg)
 
-    def __arrow_c_stream__(self, requested_schema: object):
+    def __arrow_c_stream__(self, requested_schema: object) -> object:
         """
         Export a Series via the Arrow PyCapsule Interface.
 

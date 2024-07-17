@@ -762,12 +762,12 @@ def test_df_pycapsule_interface() -> None:
         used.
         """
 
-        capsule: tuple[object, object]
+        capsule: object
 
-        def __init__(self, capsule: tuple[object, object]):
+        def __init__(self, capsule: object) -> None:
             self.capsule = capsule
 
-        def __arrow_c_stream__(self, requested_schema) -> tuple[object, object]:
+        def __arrow_c_stream__(self, requested_schema: object) -> object:
             return self.capsule
 
     df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]})
@@ -776,4 +776,5 @@ def test_df_pycapsule_interface() -> None:
     assert df.schema.names() == out.schema.names
 
     df2 = pl.from_arrow(out)
-    assert df.equals(df2)  # type: ignore
+    assert isinstance(df2, pl.DataFrame)
+    assert df.equals(df2)

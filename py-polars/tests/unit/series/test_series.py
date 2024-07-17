@@ -639,12 +639,12 @@ def test_pycapsule_interface() -> None:
         used.
         """
 
-        capsule: tuple[object, object]
+        capsule: object
 
-        def __init__(self, capsule: tuple[object, object]):
+        def __init__(self, capsule: object):
             self.capsule = capsule
 
-        def __arrow_c_stream__(self, requested_schema: object) -> tuple[object, object]:
+        def __arrow_c_stream__(self, requested_schema: object) -> object:
             return self.capsule
 
     a = pl.Series("a", [1, 2, 3, None])
