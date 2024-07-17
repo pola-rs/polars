@@ -60,6 +60,9 @@ jobs:
       - name: Add bigidx feature
         if: matrix.package == 'polars-u64-idx'
         run: tomlq -i -t '.dependencies.polars.features += ["bigidx"]' py-polars/Cargo.toml
+      - name: Update optional dependencies
+        if: matrix.package != 'polars'
+        run: sed $SED_INPLACE 's/polars\[/${{ matrix.package }}\[/' py-polars/pyproject.toml
 
       - name: Create source distribution
         uses: PyO3/maturin-action@v1
