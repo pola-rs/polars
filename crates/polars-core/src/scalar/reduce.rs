@@ -1,5 +1,7 @@
 use crate::datatypes::{AnyValue, TimeUnit};
-use crate::prelude::{DataType, Scalar, MS_IN_DAY};
+#[cfg(feature = "dtype-date")]
+use crate::prelude::MS_IN_DAY;
+use crate::prelude::{DataType, Scalar};
 
 pub fn mean_reduce(value: Option<f64>, dtype: DataType) -> Scalar {
     match dtype {
