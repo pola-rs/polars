@@ -54,10 +54,10 @@ impl ReduceNode {
         scope: &'s TaskScope<'s, 'env>,
         _pipeline: usize,
         recv: &mut [Option<Receiver<Morsel>>],
-        _send: &mut [Option<Sender<Morsel>>],
+        send: &mut [Option<Sender<Morsel>>],
         state: &'s ExecutionState,
     ) -> JoinHandle<PolarsResult<()>> {
-        assert_eq!(recv.len(), 1);
+        assert!(send.len() == 1 && recv.len() == 1);
         let ReduceState::Sink {
             inputs, reductions, ..
         } = &self.state
@@ -94,11 +94,11 @@ impl ReduceNode {
         &'env self,
         scope: &'s TaskScope<'s, 'env>,
         _pipeline: usize,
-        _recv: &mut [Option<Receiver<Morsel>>],
+        recv: &mut [Option<Receiver<Morsel>>],
         send: &mut [Option<Sender<Morsel>>],
         _state: &'s ExecutionState,
     ) -> JoinHandle<PolarsResult<()>> {
-        assert_eq!(send.len(), 1);
+        assert!(send.len() == 1 && recv.len() == 1);
         let ReduceState::Source(df) = &self.state else {
             unreachable!()
         };

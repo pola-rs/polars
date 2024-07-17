@@ -10,7 +10,7 @@ fmt:  ## Run rustfmt and dprint
 
 .PHONY: check
 check:  ## Run cargo check with all features
-	cargo check -p polars --all-features -p polars-stream
+	cargo check -p polars --all-features
 
 .PHONY: clippy
 clippy:  ## Run clippy with all features
