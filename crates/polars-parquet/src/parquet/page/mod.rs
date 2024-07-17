@@ -1,3 +1,5 @@
+use std::ops::Deref;
+
 use crate::parquet::compression::Compression;
 use crate::parquet::encoding::{get_length, Encoding};
 use crate::parquet::error::{ParquetError, ParquetResult};
@@ -9,6 +11,41 @@ pub use crate::parquet::thrift_format::{
     DataPageHeader as DataPageHeaderV1, DataPageHeaderV2, PageHeader as ParquetPageHeader,
 };
 
+#[derive(Debug, Clone)]
+pub enum CowBuffer<'a> {
+    Borrowed(&'a [u8]),
+    Owned(Vec<u8>),
+}
+
+impl<'a> Deref for CowBuffer<'a> {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            CowBuffer::Borrowed(slice) => slice,
+            CowBuffer::Owned(vec) => &vec,
+        }
+    }
+}
+
+impl<'a> AsRef<[u8]> for CowBuffer<'a> {
+    fn as_ref(&self) -> &[u8] {
+        &*self
+    }
+}
+
+impl<'a> CowBuffer<'a> {
+    pub fn to_mut(&mut self) -> &mut Vec<u8> {
+        match self {
+            CowBuffer::Borrowed(slice) => {
+                *self = CowBuffer::Owned(slice.to_vec());
+                self.to_mut()
+            },
+            CowBuffer::Owned(vec) => vec,
+        }
+    }
+}
+
 pub enum PageResult {
     Single(Page),
     Two { dict: DictPage, data: DataPage },
@@ -17,9 +54,9 @@ pub enum PageResult {
 /// A [`CompressedDataPage`] is compressed, encoded representation of a Parquet data page.
 /// It holds actual data and thus cloning it is expensive.
 #[derive(Debug)]
-pub struct CompressedDataPage {
+pub struct CompressedDataPage<'a> {
     pub(crate) header: DataPageHeader,
-    pub(crate) buffer: Vec<u8>,
+    pub(crate) buffer: CowBuffer<'a>,
     pub(crate) compression: Compression,
     uncompressed_page_size: usize,
     pub(crate) descriptor: Descriptor,
@@ -28,11 +65,11 @@ pub struct CompressedDataPage {
     pub(crate) selected_rows: Option<Vec<Interval>>,
 }
 
-impl CompressedDataPage {
+impl<'a> CompressedDataPage<'a> {
     /// Returns a new [`CompressedDataPage`].
     pub fn new(
         header: DataPageHeader,
-        buffer: Vec<u8>,
+        buffer: CowBuffer<'a>,
         compression: Compression,
         uncompressed_page_size: usize,
         descriptor: Descriptor,
@@ -51,7 +88,7 @@ impl CompressedDataPage {
     /// Returns a new [`CompressedDataPage`].
     pub(crate) fn new_read(
         header: DataPageHeader,
-        buffer: Vec<u8>,
+        buffer: CowBuffer<'a>,
         compression: Compression,
         uncompressed_page_size: usize,
         descriptor: Descriptor,
@@ -260,16 +297,22 @@ impl Page {
 /// and thus cloning it is expensive.
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
-pub enum CompressedPage {
-    Data(CompressedDataPage),
-    Dict(CompressedDictPage),
+pub enum CompressedPage<'a> {
+    Data(CompressedDataPage<'a>),
+    Dict(CompressedDictPage<'a>),
 }
 
-impl CompressedPage {
-    pub(crate) fn buffer(&mut self) -> &mut Vec<u8> {
+impl<'a> CompressedPage<'a> {
+    pub(crate) fn buffer_mut(&mut self) -> &mut Vec<u8> {
         match self {
-            CompressedPage::Data(page) => &mut page.buffer,
-            CompressedPage::Dict(page) => &mut page.buffer,
+            CompressedPage::Data(page) => page.buffer.to_mut(),
+            CompressedPage::Dict(page) => page.buffer.to_mut(),
+        }
+    }
+    pub(crate) fn buffer(&self) -> &[u8] {
+        match self {
+            CompressedPage::Data(page) => &page.buffer,
+            CompressedPage::Dict(page) => &page.buffer,
         }
     }
 
@@ -322,17 +365,17 @@ impl DictPage {
 
 /// A compressed, encoded dictionary page.
 #[derive(Debug)]
-pub struct CompressedDictPage {
-    pub(crate) buffer: Vec<u8>,
+pub struct CompressedDictPage<'a> {
+    pub(crate) buffer: CowBuffer<'a>,
     compression: Compression,
     pub(crate) num_values: usize,
     pub(crate) uncompressed_page_size: usize,
     pub is_sorted: bool,
 }
 
-impl CompressedDictPage {
+impl<'a> CompressedDictPage<'a> {
     pub fn new(
-        buffer: Vec<u8>,
+        buffer: CowBuffer<'a>,
         compression: Compression,
         uncompressed_page_size: usize,
         num_values: usize,

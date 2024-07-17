@@ -37,16 +37,17 @@ pub use self::nested_utils::{init_nested, InitNested, NestedArrayIter, NestedSta
 pub use self::struct_::StructIterator;
 use super::*;
 use crate::parquet::read::get_page_iterator as _get_page_iterator;
+use crate::parquet::read::ReadSliced;
 use crate::parquet::schema::types::PrimitiveType;
 
 /// Creates a new iterator of compressed pages.
-pub fn get_page_iterator<R: Read + Seek>(
+pub fn get_page_iterator<'a, R: ReadSliced<'a>>(
     column_metadata: &ColumnChunkMetaData,
     reader: R,
     pages_filter: Option<PageFilter>,
     buffer: Vec<u8>,
     max_header_size: usize,
-) -> PolarsResult<PageReader<R>> {
+) -> PolarsResult<PageReader<'a, R>> {
     Ok(_get_page_iterator(
         column_metadata,
         reader,

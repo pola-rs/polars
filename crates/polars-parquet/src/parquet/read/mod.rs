@@ -7,7 +7,7 @@ mod page;
 #[cfg(feature = "async")]
 mod stream;
 
-use std::io::{Read, Seek, SeekFrom};
+use std::io::SeekFrom;
 use std::sync::Arc;
 
 pub use column::*;
@@ -16,7 +16,7 @@ pub use indexes::{read_columns_indexes, read_pages_locations};
 pub use metadata::{deserialize_metadata, read_metadata, read_metadata_with_size};
 #[cfg(feature = "async")]
 pub use page::{get_page_stream, get_page_stream_from_column_start};
-pub use page::{IndexedPageReader, PageFilter, PageIterator, PageMetaData, PageReader};
+pub use page::{IndexedPageReader, PageFilter, PageIterator, PageMetaData, PageReader, ReadSliced};
 #[cfg(feature = "async")]
 pub use stream::read_metadata as read_metadata_async;
 
@@ -41,13 +41,13 @@ pub fn filter_row_groups(
 }
 
 /// Returns a new [`PageReader`] by seeking `reader` to the beginning of `column_chunk`.
-pub fn get_page_iterator<R: Read + Seek>(
+pub fn get_page_iterator<'a, R: ReadSliced<'a>>(
     column_chunk: &ColumnChunkMetaData,
     mut reader: R,
     pages_filter: Option<PageFilter>,
     scratch: Vec<u8>,
     max_page_size: usize,
-) -> ParquetResult<PageReader<R>> {
+) -> ParquetResult<PageReader<'a, R>> {
     let pages_filter = pages_filter.unwrap_or_else(|| Arc::new(|_, _| true));
 
     let (col_start, _) = column_chunk.byte_range();

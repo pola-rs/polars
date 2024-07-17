@@ -73,7 +73,7 @@ fn read_indexed_page() -> ParquetResult<()> {
 
     let pages = select_pages(intervals, &pages[column], metadata.row_groups[0].num_rows())?;
 
-    let pages = IndexedPageReader::new(reader, &columns[column], pages, vec![], vec![]);
+    let pages = IndexedPageReader::new(reader, &columns[column], pages, vec![], vec![])?;
 
     let pages = BasicDecompressor::new(pages, vec![]);
 

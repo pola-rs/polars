@@ -110,7 +110,7 @@ fn prepare_rg_iter<'a>(
 fn pages_iter_to_compressor(
     encoded_columns: Vec<DynIter<'static, PolarsResult<Page>>>,
     options: WriteOptions,
-) -> Vec<PolarsResult<DynStreamingIterator<'static, CompressedPage, PolarsError>>> {
+) -> Vec<PolarsResult<DynStreamingIterator<'static, CompressedPage<'static>, PolarsError>>> {
     encoded_columns
         .into_iter()
         .map(|encoded_pages| {
@@ -138,7 +138,7 @@ fn array_to_pages_iter(
     type_: &ParquetType,
     encoding: &[Encoding],
     options: WriteOptions,
-) -> Vec<PolarsResult<DynStreamingIterator<'static, CompressedPage, PolarsError>>> {
+) -> Vec<PolarsResult<DynStreamingIterator<'static, CompressedPage<'static>, PolarsError>>> {
     let encoded_columns = array_to_columns(array, type_.clone(), options, encoding).unwrap();
     pages_iter_to_compressor(encoded_columns, options)
 }

@@ -24,7 +24,7 @@ pub fn write_column_chunk<W, E>(
     writer: &mut W,
     mut offset: u64,
     descriptor: &ColumnDescriptor,
-    mut compressed_pages: DynStreamingIterator<'_, CompressedPage, E>,
+    mut compressed_pages: DynStreamingIterator<'_, CompressedPage<'static>, E>,
 ) -> ParquetResult<(ColumnChunk, Vec<PageWriteSpec>, u64)>
 where
     W: Write,
@@ -62,7 +62,7 @@ pub async fn write_column_chunk_async<W, E>(
     writer: &mut W,
     mut offset: u64,
     descriptor: &ColumnDescriptor,
-    mut compressed_pages: DynStreamingIterator<'_, CompressedPage, E>,
+    mut compressed_pages: DynStreamingIterator<'_, CompressedPage<'static>, E>,
 ) -> ParquetResult<(ColumnChunk, Vec<PageWriteSpec>, u64)>
 where
     W: AsyncWrite + Unpin + Send,

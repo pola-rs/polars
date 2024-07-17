@@ -25,8 +25,7 @@ use polars_parquet::parquet::read::get_page_stream;
 #[cfg(feature = "async")]
 use polars_parquet::parquet::read::read_metadata_async;
 use polars_parquet::parquet::read::{
-    get_column_iterator, get_field_columns, read_metadata, BasicDecompressor, MutStreamingIterator,
-    State,
+    get_column_iterator, get_field_columns, read_metadata, BasicDecompressor, MutStreamingIterator, ReadSliced, State
 };
 use polars_parquet::parquet::schema::types::{GroupConvertedType, ParquetType};
 use polars_parquet::parquet::schema::Repetition;
@@ -161,9 +160,9 @@ pub fn collect<I: FallibleStreamingIterator<Item = Page, Error = ParquetError>>(
 
 /// Reads columns into an [`Array`].
 /// This is CPU-intensive: decompress, decode and de-serialize.
-pub fn columns_to_array<II, I>(mut columns: I, field: &ParquetType) -> ParquetResult<Array>
+pub fn columns_to_array<'a, II, I>(mut columns: I, field: &ParquetType) -> ParquetResult<Array>
 where
-    II: Iterator<Item = ParquetResult<CompressedPage>>,
+    II: Iterator<Item = ParquetResult<CompressedPage<'a>>>,
     I: MutStreamingIterator<Item = (II, ColumnChunkMetaData), Error = ParquetError>,
 {
     let mut validity = vec![];
@@ -209,7 +208,7 @@ where
     }
 }
 
-pub fn read_column<R: std::io::Read + std::io::Seek>(
+pub fn read_column<'a, R: ReadSliced<'a>>(
     reader: &mut R,
     row_group: usize,
     field_name: &str,

@@ -131,10 +131,10 @@ where
     Ok((meta, chunk))
 }
 
-type Pages = Box<
+type Pages<'a> = Box<
     dyn Iterator<
             Item = std::result::Result<
-                crate::parquet::page::CompressedPage,
+                crate::parquet::page::CompressedPage<'a>,
                 crate::parquet::error::ParquetError,
             >,
         > + Sync
@@ -163,13 +163,14 @@ pub fn to_deserializer<'a>(
                     .iter_mut()
                     .for_each(|page| page.start -= meta.column_start);
                 meta.column_start = 0;
+                // @TODO: Remove unwrap
                 let pages = IndexedPageReader::new_with_page_meta(
                     std::io::Cursor::new(chunk),
                     meta,
                     pages,
                     vec![],
                     vec![],
-                );
+                ).unwrap();
                 let pages = Box::new(pages) as Pages;
                 (
                     BasicDecompressor::new(pages, vec![]),

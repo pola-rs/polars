@@ -1,4 +1,5 @@
-use std::io::Read;
+use std::io::{Read, Seek};
+use std::marker::PhantomData;
 use std::sync::Arc;
 
 use parquet_format_safe::thrift::protocol::TCompactInputProtocol;
@@ -9,10 +10,65 @@ use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::indexes::Interval;
 use crate::parquet::metadata::{ColumnChunkMetaData, Descriptor};
 use crate::parquet::page::{
-    CompressedDataPage, CompressedDictPage, CompressedPage, DataPageHeader, PageType,
-    ParquetPageHeader,
+    CompressedDataPage, CompressedDictPage, CompressedPage, CowBuffer, DataPageHeader, DictPage, PageType, ParquetPageHeader
 };
 use crate::parquet::parquet_bridge::Encoding;
+
+pub trait ReadSliced<'a>: Read + Seek {
+    fn read_sliced(&mut self, n: usize) -> std::io::Result<CowBuffer<'a>>;
+}
+
+impl<'a, 'b, T: ReadSliced<'a>> ReadSliced<'a> for &'b mut T {
+    fn read_sliced(&mut self, n: usize) -> std::io::Result<CowBuffer<'a>> {
+        T::read_sliced(self, n)
+    }
+}
+
+impl ReadSliced<'static> for std::fs::File {
+    fn read_sliced(&mut self, n: usize) -> std::io::Result<CowBuffer<'static>> {
+        let mut buffer = Vec::with_capacity(n);
+        self.take(n as u64).read_to_end(&mut buffer)?;
+        Ok(CowBuffer::Owned(buffer))
+    }
+}
+
+impl<'a> ReadSliced<'a> for std::io::Cursor<&'a [u8]> {
+    fn read_sliced(&mut self, n: usize) -> std::io::Result<CowBuffer<'a>> {
+        self.seek_relative(n as i64)?;
+        let seek_position = self.position();
+        let slice = *self.get_ref();
+        Ok(CowBuffer::Borrowed(
+            &slice[seek_position as usize - n..seek_position as usize],
+        ))
+    }
+}
+
+impl ReadSliced<'static> for std::io::Cursor<Vec<u8>> {
+    fn read_sliced(&mut self, n: usize) -> std::io::Result<CowBuffer<'static>> {
+        self.seek_relative(n as i64)?;
+        let seek_position = self.position();
+        let slice = self.get_ref();
+        Ok(CowBuffer::Owned(
+            slice[seek_position as usize - n..seek_position as usize].to_vec(),
+        ))
+    }
+}
+
+impl<'a> ReadSliced<'a> for std::io::Cursor<CowBuffer<'a>> {
+    fn read_sliced(&mut self, n: usize) -> std::io::Result<CowBuffer<'a>> {
+        self.seek_relative(n as i64)?;
+        let seek_position = self.position();
+        let slice = self.get_ref();
+        Ok(match slice {
+            CowBuffer::Borrowed(slice) => {
+                CowBuffer::Borrowed(&slice[seek_position as usize - n..seek_position as usize])
+            },
+            CowBuffer::Owned(_) => {
+                CowBuffer::Owned(slice[seek_position as usize - n..seek_position as usize].to_vec())
+            },
+        })
+    }
+}
 
 /// This meta is a small part of [`ColumnChunkMetaData`].
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -63,7 +119,7 @@ pub type PageFilter = Arc<dyn Fn(&Descriptor, &DataPageHeader) -> bool + Send + 
 /// The pages from this iterator always have [`None`] [`crate::parquet::page::CompressedDataPage::selected_rows()`] since
 /// filter pushdown is not supported without a
 /// pre-computed [page index](https://github.com/apache/parquet-format/blob/master/PageIndex.md).
-pub struct PageReader<R: Read> {
+pub struct PageReader<'a, R: ReadSliced<'a>> {
     // The source
     reader: R,
 
@@ -84,9 +140,13 @@ pub struct PageReader<R: Read> {
 
     // Maximum page size (compressed or uncompressed) to limit allocations
     max_page_size: usize,
+
+    dict: Option<DictPage>,
+
+    _pd: PhantomData<&'a ()>,
 }
 
-impl<R: Read> PageReader<R> {
+impl<'a, R: ReadSliced<'a>> PageReader<'a, R> {
     /// Returns a new [`PageReader`].
     ///
     /// It assumes that the reader has been `sought` (`seek`) to the beginning of `column`.
@@ -97,7 +157,7 @@ impl<R: Read> PageReader<R> {
         pages_filter: PageFilter,
         scratch: Vec<u8>,
         max_page_size: usize,
-    ) -> Self {
+    ) -> ParquetResult<Self> {
         Self::new_with_page_meta(reader, column.into(), pages_filter, scratch, max_page_size)
     }
 
@@ -110,7 +170,7 @@ impl<R: Read> PageReader<R> {
         pages_filter: PageFilter,
         scratch: Vec<u8>,
         max_page_size: usize,
-    ) -> Self {
+    ) -> ParquetResult<Self> {
         Self {
             reader,
             total_num_values: reader_meta.num_values,
@@ -120,27 +180,62 @@ impl<R: Read> PageReader<R> {
             pages_filter,
             scratch,
             max_page_size,
-        }
+            dict: None,
+            _pd: PhantomData,
+        }.with_dict()
     }
 
     /// Returns the reader and this Readers' interval buffer
     pub fn into_inner(self) -> (R, Vec<u8>) {
         (self.reader, self.scratch)
     }
+
+    pub fn with_dict(mut self) -> ParquetResult<Self> {
+        // a dictionary page exists iff the first data page is not at the start of
+        // the column
+        let opt_compressed_page_dims = self.pages.front().and_then(|page| {
+            let length = (page.start - self.column_start) as usize;
+            (length > 0).then_some((self.column_start, length))
+        });
+        let Some((start, length)) = opt_compressed_page_dims else {
+            return Ok(self);
+        };
+
+        let compressed_dict_page = read_dict_page(
+            &mut self.reader,
+            start,
+            length,
+            self.compression,
+            &self.descriptor,
+        )?;
+
+        let num_values = compressed_dict_page.num_values;
+        let is_sorted = compressed_dict_page.is_sorted;
+
+        // @NOTE: We could check whether something was actually decompressed here and just reuse
+        // the buffer, but it requires a lot of lifetiming in the rest of the code.
+        let mut buffer = Vec::new();
+        decompress_buffer(&mut CompressedPage::Dict(compressed_dict_page), &mut buffer)?;
+        let dict = DictPage::new(buffer, num_values, is_sorted);
+
+        self.dict = Some(dict);
+
+        Ok(self)
+    }
 }
 
-impl<R: Read> PageIterator for PageReader<R> {
+impl<'a, R: ReadSliced<'a>> PageIterator<'a> for PageReader<'a, R> {
     fn swap_buffer(&mut self, scratch: &mut Vec<u8>) {
         std::mem::swap(&mut self.scratch, scratch)
     }
 }
 
-impl<R: Read> Iterator for PageReader<R> {
-    type Item = ParquetResult<CompressedPage>;
+impl<'a, R: ReadSliced<'a>> Iterator for PageReader<'a, R> {
+    type Item = ParquetResult<CompressedPage<'a>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let mut buffer = std::mem::take(&mut self.scratch);
-        let maybe_maybe_page = next_page(self, &mut buffer).transpose();
+        let maybe_maybe_page = next_page(self).transpose();
         if let Some(ref maybe_page) = maybe_maybe_page {
             if let Ok(CompressedPage::Data(page)) = maybe_page {
                 // check if we should filter it (only valid for data pages)
@@ -159,7 +254,7 @@ impl<R: Read> Iterator for PageReader<R> {
 }
 
 /// Reads Page header from Thrift.
-pub(super) fn read_page_header<R: Read>(
+pub(super) fn read_page_header<'a, R: ReadSliced<'a>>(
     reader: &mut R,
     max_size: usize,
 ) -> ParquetResult<ParquetPageHeader> {
@@ -170,20 +265,18 @@ pub(super) fn read_page_header<R: Read>(
 
 /// This function is lightweight and executes a minimal amount of work so that it is IO bounded.
 // Any un-necessary CPU-intensive tasks SHOULD be executed on individual pages.
-fn next_page<R: Read>(
-    reader: &mut PageReader<R>,
-    buffer: &mut Vec<u8>,
-) -> ParquetResult<Option<CompressedPage>> {
+fn next_page<'a, R: ReadSliced<'a>>(
+    reader: &mut PageReader<'a, R>,
+) -> ParquetResult<Option<CompressedPage<'a>>> {
     if reader.seen_num_values >= reader.total_num_values {
         return Ok(None);
     };
-    build_page(reader, buffer)
+    build_page(reader).map(Some)
 }
 
-pub(super) fn build_page<R: Read>(
-    reader: &mut PageReader<R>,
-    buffer: &mut Vec<u8>,
-) -> ParquetResult<Option<CompressedPage>> {
+pub(super) fn build_page<'a, R: ReadSliced<'a>>(
+    reader: &mut PageReader<'a, R>,
+) -> ParquetResult<CompressedPage<'a>> {
     let page_header = read_page_header(&mut reader.reader, reader.max_page_size)?;
 
     reader.seen_num_values += get_page_header(&page_header)?
@@ -196,19 +289,10 @@ pub(super) fn build_page<R: Read>(
         return Err(ParquetError::WouldOverAllocate);
     }
 
-    buffer.clear();
-    buffer.try_reserve(read_size)?;
-    let bytes_read = reader
+    let buffer = reader
         .reader
-        .by_ref()
-        .take(read_size as u64)
-        .read_to_end(buffer)?;
-
-    if bytes_read != read_size {
-        return Err(ParquetError::oos(
-            "The page header reported the wrong page size",
-        ));
-    }
+        .read_sliced(read_size)
+        .map_err(|_| ParquetError::oos("The page header reported the wrong page size"))?;
 
     finish_page(
         page_header,
@@ -217,16 +301,15 @@ pub(super) fn build_page<R: Read>(
         &reader.descriptor,
         None,
     )
-    .map(Some)
 }
 
-pub(super) fn finish_page(
+pub(super) fn finish_page<'a>(
     page_header: ParquetPageHeader,
-    data: &mut Vec<u8>,
+    data: CowBuffer<'a>,
     compression: Compression,
     descriptor: &Descriptor,
     selected_rows: Option<Vec<Interval>>,
-) -> ParquetResult<CompressedPage> {
+) -> ParquetResult<CompressedPage<'a>> {
     let type_ = page_header.type_.try_into()?;
     let uncompressed_page_size = page_header.uncompressed_page_size.try_into()?;
     match type_ {
@@ -240,7 +323,7 @@ pub(super) fn finish_page(
 
             // move the buffer to `dict_page`
             let page = CompressedDictPage::new(
-                std::mem::take(data),
+                data,
                 compression,
                 uncompressed_page_size,
                 dict_header.num_values.try_into()?,
@@ -258,7 +341,7 @@ pub(super) fn finish_page(
 
             Ok(CompressedPage::Data(CompressedDataPage::new_read(
                 DataPageHeader::V1(header),
-                std::mem::take(data),
+                data,
                 compression,
                 uncompressed_page_size,
                 descriptor.clone(),
@@ -274,7 +357,7 @@ pub(super) fn finish_page(
 
             Ok(CompressedPage::Data(CompressedDataPage::new_read(
                 DataPageHeader::V2(header),
-                std::mem::take(data),
+                data,
                 compression,
                 uncompressed_page_size,
                 descriptor.clone(),

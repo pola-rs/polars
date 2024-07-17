@@ -10,7 +10,7 @@ use super::PageFilter;
 use crate::parquet::compression::Compression;
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::metadata::{ColumnChunkMetaData, Descriptor};
-use crate::parquet::page::{CompressedPage, ParquetPageHeader};
+use crate::parquet::page::{CompressedPage, CowBuffer, ParquetPageHeader};
 
 /// Returns a stream of compressed data pages
 pub async fn get_page_stream<'a, RR: AsyncRead + Unpin + Send + AsyncSeek>(
@@ -19,7 +19,7 @@ pub async fn get_page_stream<'a, RR: AsyncRead + Unpin + Send + AsyncSeek>(
     scratch: Vec<u8>,
     pages_filter: PageFilter,
     max_page_size: usize,
-) -> ParquetResult<impl Stream<Item = ParquetResult<CompressedPage>> + 'a> {
+) -> ParquetResult<impl Stream<Item = ParquetResult<CompressedPage<'a>>> + 'a> {
     get_page_stream_with_page_meta(
         column_metadata.into(),
         reader,
@@ -37,7 +37,7 @@ pub async fn get_page_stream_from_column_start<'a, R: AsyncRead + Unpin + Send>(
     scratch: Vec<u8>,
     pages_filter: PageFilter,
     max_header_size: usize,
-) -> ParquetResult<impl Stream<Item = ParquetResult<CompressedPage>> + 'a> {
+) -> ParquetResult<impl Stream<Item = ParquetResult<CompressedPage<'a>>> + 'a> {
     let page_metadata: PageMetaData = column_metadata.into();
     Ok(_get_page_stream(
         reader,
@@ -76,7 +76,7 @@ fn _get_page_stream<R: AsyncRead + Unpin + Send>(
     total_num_values: i64,
     compression: Compression,
     descriptor: Descriptor,
-    mut scratch: Vec<u8>,
+    mut _scratch: Vec<u8>,
     pages_filter: PageFilter,
     max_page_size: usize,
 ) -> impl Stream<Item = ParquetResult<CompressedPage>> + '_ {
@@ -104,11 +104,10 @@ fn _get_page_stream<R: AsyncRead + Unpin + Send>(
             }
 
             // followed by the buffer
-            scratch.clear();
-            scratch.try_reserve(read_size)?;
+            let mut buffer = Vec::with_capacity(read_size);
             let bytes_read = reader
                 .take(read_size as u64)
-                .read_to_end(&mut scratch).await?;
+                .read_to_end(&mut buffer).await?;
 
             if bytes_read != read_size {
                 Err(ParquetError::oos(
@@ -118,7 +117,7 @@ fn _get_page_stream<R: AsyncRead + Unpin + Send>(
 
             yield finish_page(
                 page_header,
-                &mut scratch,
+                CowBuffer::Owned(buffer),
                 compression,
                 &descriptor,
                 None,

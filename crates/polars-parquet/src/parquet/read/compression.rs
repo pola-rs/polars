@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 use parquet_format_safe::DataPageHeaderV2;
 
 use super::page::PageIterator;
@@ -92,7 +94,7 @@ pub fn decompress_buffer(
     } else {
         // page.buffer is already decompressed => swap it with `buffer`, making `page.buffer` the
         // decompression buffer and `buffer` the decompressed buffer
-        std::mem::swap(compressed_page.buffer(), buffer);
+        std::mem::swap(compressed_page.buffer_mut(), buffer);
         Ok(false)
     }
 }
@@ -124,7 +126,7 @@ pub fn decompress(
     Ok(create_page(compressed_page, std::mem::take(buffer)))
 }
 
-fn decompress_reuse<P: PageIterator>(
+fn decompress_reuse<'a, P: PageIterator<'a>>(
     mut compressed_page: CompressedPage,
     iterator: &mut P,
     buffer: &mut Vec<u8>,
@@ -132,7 +134,7 @@ fn decompress_reuse<P: PageIterator>(
     let was_decompressed = decompress_buffer(&mut compressed_page, buffer)?;
 
     if was_decompressed {
-        iterator.swap_buffer(compressed_page.buffer())
+        iterator.swap_buffer(compressed_page.buffer_mut())
     };
 
     let new_page = create_page(compressed_page, std::mem::take(buffer));
@@ -176,14 +178,15 @@ fn decompress_reuse<P: PageIterator>(
 /// * `PageReader` has its buffer back
 /// * `Decompressor` has its buffer back
 /// * `DecompressedPage` has an empty buffer
-pub struct Decompressor<P: PageIterator> {
+pub struct Decompressor<'a, P: PageIterator<'a>> {
     iter: P,
     buffer: Vec<u8>,
     current: Option<Page>,
     was_decompressed: bool,
+    _pd: PhantomData<&'a ()>,
 }
 
-impl<P: PageIterator> Decompressor<P> {
+impl<'a, P: PageIterator<'a>> Decompressor<'a, P> {
     /// Creates a new [`Decompressor`].
     pub fn new(iter: P, buffer: Vec<u8>) -> Self {
         Self {
@@ -191,6 +194,7 @@ impl<P: PageIterator> Decompressor<P> {
             buffer,
             current: None,
             was_decompressed: false,
+            _pd: PhantomData,
         }
     }
 
@@ -203,7 +207,7 @@ impl<P: PageIterator> Decompressor<P> {
     }
 }
 
-impl<P: PageIterator> FallibleStreamingIterator for Decompressor<P> {
+impl<'a, P: PageIterator<'a>> FallibleStreamingIterator for Decompressor<'a, P> {
     type Item = Page;
     type Error = ParquetError;
 
@@ -237,15 +241,15 @@ impl<P: PageIterator> FallibleStreamingIterator for Decompressor<P> {
     }
 }
 
-type _Decompressor<I> = streaming_decompression::Decompressor<
-    CompressedPage,
+type _Decompressor<'a, I> = streaming_decompression::Decompressor<
+    CompressedPage<'a>,
     Page,
     fn(CompressedPage, &mut Vec<u8>) -> ParquetResult<Page>,
     ParquetError,
     I,
 >;
 
-impl streaming_decompression::Compressed for CompressedPage {
+impl<'a> streaming_decompression::Compressed for CompressedPage<'a> {
     #[inline]
     fn is_compressed(&self) -> bool {
         self.compression() != Compression::Uncompressed
@@ -264,13 +268,13 @@ impl streaming_decompression::Decompressed for Page {
 /// This decompressor uses an internal [`Vec<u8>`] to perform decompressions which
 /// is reused across pages, so that a single allocation is required.
 /// If the pages are not compressed, the internal buffer is not used.
-pub struct BasicDecompressor<I: Iterator<Item = ParquetResult<CompressedPage>>> {
-    iter: _Decompressor<I>,
+pub struct BasicDecompressor<'a, I: Iterator<Item = ParquetResult<CompressedPage<'a>>>> {
+    iter: _Decompressor<'a, I>,
 }
 
-impl<I> BasicDecompressor<I>
+impl<'a, I> BasicDecompressor<'a, I>
 where
-    I: Iterator<Item = ParquetResult<CompressedPage>>,
+    I: Iterator<Item = ParquetResult<CompressedPage<'a>>>,
 {
     /// Returns a new [`BasicDecompressor`].
     pub fn new(iter: I, buffer: Vec<u8>) -> Self {
@@ -285,9 +289,9 @@ where
     }
 }
 
-impl<I> FallibleStreamingIterator for BasicDecompressor<I>
+impl<'a, I> FallibleStreamingIterator for BasicDecompressor<'a, I>
 where
-    I: Iterator<Item = ParquetResult<CompressedPage>>,
+    I: Iterator<Item = ParquetResult<CompressedPage<'a>>>,
 {
     type Item = Page;
     type Error = ParquetError;
