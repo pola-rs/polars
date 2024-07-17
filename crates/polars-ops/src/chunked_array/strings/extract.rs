@@ -2,9 +2,12 @@ use std::iter::zip;
 
 #[cfg(feature = "extract_groups")]
 use arrow::array::{Array, StructArray};
-use arrow::array::{MutablePlString, Utf8ViewArray};
+use arrow::array::{MutablePlString, Utf8ViewArray, ValueSize};
 use polars_core::export::regex::Regex;
-use polars_core::prelude::arity::{try_binary_mut_with_options, try_unary_mut_with_options};
+use polars_core::prelude::arity::{
+    binary_elementwise_for_each, try_binary_mut_with_options, try_unary_mut_with_options,
+};
+use polars_utils::cache::FastFixedCache;
 
 use super::*;
 
@@ -173,4 +176,42 @@ pub(super) fn extract_group(
             polars_bail!(ComputeError: "ca(len: {}) and pat(len: {}) should either broadcast or have the same length", ca.len(), pat.len())
         },
     }
+}
+
+pub(super) fn extract_all(ca: &StringChunked, pat: &str) -> PolarsResult<ListChunked> {
+    let reg = Regex::new(pat)?;
+
+    let mut builder = ListStringChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
+    for arr in ca.downcast_iter() {
+        for opt_s in arr {
+            match opt_s {
+                None => builder.append_null(),
+                Some(s) => builder.append_values_iter(reg.find_iter(s).map(|m| m.as_str())),
+            }
+        }
+    }
+    Ok(builder.finish())
+}
+
+pub(super) fn extract_all_many(
+    ca: &StringChunked,
+    pat: &StringChunked,
+) -> PolarsResult<ListChunked> {
+    polars_ensure!(
+        ca.len() == pat.len(),
+        ComputeError: "pattern's length: {} does not match that of the argument series: {}",
+        pat.len(), ca.len(),
+    );
+
+    // A sqrt(n) regex cache is not too small, not too large.
+    let mut reg_cache = FastFixedCache::new((ca.len() as f64).sqrt() as usize);
+    let mut builder = ListStringChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
+    binary_elementwise_for_each(ca, pat, |opt_s, opt_pat| match (opt_s, opt_pat) {
+        (_, None) | (None, _) => builder.append_null(),
+        (Some(s), Some(pat)) => {
+            let reg = reg_cache.get_or_insert_with(pat, |p| Regex::new(p).unwrap());
+            builder.append_values_iter(reg.find_iter(s).map(|m| m.as_str()));
+        },
+    });
+    Ok(builder.finish())
 }
