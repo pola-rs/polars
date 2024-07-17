@@ -555,13 +555,13 @@ pub(super) fn strip_chars_end(s: &[Series]) -> PolarsResult<Series> {
 pub(super) fn strip_prefix(s: &[Series]) -> PolarsResult<Series> {
     let ca = s[0].str()?;
     let prefix = s[1].str()?;
-    Ok(ca.strip_prefix(prefix).into_series())
+    Ok(ca.strip_prefix(prefix)?.into_series())
 }
 
 pub(super) fn strip_suffix(s: &[Series]) -> PolarsResult<Series> {
     let ca = s[0].str()?;
     let suffix = s[1].str()?;
-    Ok(ca.strip_suffix(suffix).into_series())
+    Ok(ca.strip_suffix(suffix)?.into_series())
 }
 
 pub(super) fn extract_all(args: &[Series]) -> PolarsResult<Series> {

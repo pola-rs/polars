@@ -406,37 +406,40 @@ pub trait StringNameSpaceImpl: AsString {
 
     fn strip_chars(&self, pat: &Series) -> PolarsResult<StringChunked> {
         let ca = self.as_string();
-        if pat.dtype() == &DataType::Null {
-            Ok(ca.apply_generic(|opt_s| opt_s.map(|s| s.trim())))
+        let pat = if pat.dtype() == &DataType::Null {
+            &StringChunked::new("", [None::<&str>])
         } else {
-            Ok(strip_chars(ca, pat.str()?))
-        }
+            pat.str()?
+        };
+        strip_chars(ca, pat)
     }
 
     fn strip_chars_start(&self, pat: &Series) -> PolarsResult<StringChunked> {
         let ca = self.as_string();
-        if pat.dtype() == &DataType::Null {
-            return Ok(ca.apply_generic(|opt_s| opt_s.map(|s| s.trim_start())));
+        let pat = if pat.dtype() == &DataType::Null {
+            &StringChunked::new("", [None::<&str>])
         } else {
-            Ok(strip_chars_start(ca, pat.str()?))
-        }
+            pat.str()?
+        };
+        strip_chars_start(ca, pat)
     }
 
     fn strip_chars_end(&self, pat: &Series) -> PolarsResult<StringChunked> {
         let ca = self.as_string();
-        if pat.dtype() == &DataType::Null {
-            return Ok(ca.apply_generic(|opt_s| opt_s.map(|s| s.trim_end())));
+        let pat = if pat.dtype() == &DataType::Null {
+            &StringChunked::new("", [None::<&str>])
         } else {
-            Ok(strip_chars_end(ca, pat.str()?))
-        }
+            pat.str()?
+        };
+        strip_chars_end(ca, pat)
     }
 
-    fn strip_prefix(&self, prefix: &StringChunked) -> StringChunked {
+    fn strip_prefix(&self, prefix: &StringChunked) -> PolarsResult<StringChunked> {
         let ca = self.as_string();
         strip_prefix(ca, prefix)
     }
 
-    fn strip_suffix(&self, suffix: &StringChunked) -> StringChunked {
+    fn strip_suffix(&self, suffix: &StringChunked) -> PolarsResult<StringChunked> {
         let ca = self.as_string();
         strip_suffix(ca, suffix)
     }
