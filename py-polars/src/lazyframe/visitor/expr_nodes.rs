@@ -414,6 +414,7 @@ impl PyRollingGroupOptions {
             self.inner.period.days().to_object(py),
             self.inner.period.nanoseconds().to_object(py),
             self.inner.period.parsed_int.to_object(py),
+            self.inner.period.negative().to_object(py),
         ]
         .into_py(py);
         Ok(result)
@@ -427,6 +428,7 @@ impl PyRollingGroupOptions {
             self.inner.offset.days().to_object(py),
             self.inner.offset.nanoseconds().to_object(py),
             self.inner.offset.parsed_int.to_object(py),
+            self.inner.offset.negative().to_object(py),
         ]
         .into_py(py);
         Ok(result)
