@@ -62,6 +62,7 @@ impl Morsel {
         }
     }
 
+    #[allow(unused)]
     pub fn into_df(self) -> DataFrame {
         self.df
     }

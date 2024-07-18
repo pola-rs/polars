@@ -213,7 +213,10 @@ impl Executor {
 
             let thread_task_lists = (0..n_threads)
                 .map(|t| {
-                    std::thread::spawn(move || Self::global().runner(t));
+                    std::thread::Builder::new()
+                        .name(format!("async-executor-{t}"))
+                        .spawn(move || Self::global().runner(t))
+                        .unwrap();
 
                     let high_prio_tasks = WorkQueue::new_lifo();
                     CachePadded::new(ThreadLocalTaskList {

@@ -1,17 +1,4 @@
-use parking_lot::Mutex;
-
 use super::compute_node_prelude::*;
-use crate::async_primitives::distributor_channel::{
-    distributor_channel, Receiver as DistrReceiver,
-};
-use crate::utils::linearizer::{Inserter, Linearizer};
-use crate::{DEFAULT_DISTRIBUTOR_BUFFER_SIZE, DEFAULT_LINEARIZER_BUFFER_SIZE};
-
-#[derive(Copy, Clone, Default)]
-struct GlobalState {
-    stream_offset: usize,
-    morsel_seq: MorselSeq,
-}
 
 /// A node that will pass-through up to length rows, starting at start_offset.
 /// Since start_offset must be non-negative this can be done in a streaming
@@ -19,12 +6,8 @@ struct GlobalState {
 pub struct StreamingSliceNode {
     start_offset: usize,
     length: usize,
-
-    global_state: Mutex<GlobalState>,
-
+    stream_offset: usize,
     num_pipelines: usize,
-    #[allow(clippy::type_complexity)]
-    per_pipeline_resources: Mutex<Vec<Option<(Inserter, DistrReceiver<Morsel>)>>>,
 }
 
 impl StreamingSliceNode {
@@ -32,9 +15,8 @@ impl StreamingSliceNode {
         Self {
             start_offset,
             length,
-            global_state: Mutex::default(),
+            stream_offset: 0,
             num_pipelines: 0,
-            per_pipeline_resources: Mutex::default(),
         }
     }
 }
@@ -49,8 +31,7 @@ impl ComputeNode for StreamingSliceNode {
     }
 
     fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) {
-        let global_state = self.global_state.lock();
-        if global_state.stream_offset >= self.start_offset + self.length || self.length == 0 {
+        if self.stream_offset >= self.start_offset + self.length || self.length == 0 {
             recv[0] = PortState::Done;
             send[0] = PortState::Done;
         } else {
@@ -58,96 +39,51 @@ impl ComputeNode for StreamingSliceNode {
         }
     }
 
-    fn spawn_global<'env, 's>(
-        &'env self,
+    fn spawn<'env, 's>(
+        &'env mut self,
         scope: &'s TaskScope<'s, 'env>,
+        recv: &mut [Option<RecvPort<'_>>],
+        send: &mut [Option<SendPort<'_>>],
         _state: &'s ExecutionState,
-    ) -> Option<JoinHandle<PolarsResult<()>>> {
-        let (mut linearizer, inserters) =
-            Linearizer::new(self.num_pipelines, DEFAULT_LINEARIZER_BUFFER_SIZE);
-        let (mut sender, receivers) =
-            distributor_channel(self.num_pipelines, DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
-        {
-            let per_pipeline_resources = &mut *self.per_pipeline_resources.lock();
-            per_pipeline_resources.clear();
-            per_pipeline_resources.extend(inserters.into_iter().zip(receivers).map(Some));
-        }
-
-        Some(scope.spawn_task(TaskPriority::High, async move {
-            let mut global_state = *self.global_state.lock();
+        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
+    ) {
+        assert!(recv.len() == 1 && send.len() == 1);
+        let mut recv = recv[0].take().unwrap().serial();
+        let mut send = send[0].take().unwrap().serial();
+        join_handles.push(scope.spawn_task(TaskPriority::High, async move {
             let stop_offset = self.start_offset + self.length;
 
-            while let Some(morsel) = linearizer.get().await {
-                let mut df = morsel.into_df();
-                let height = df.height();
+            while let Ok(morsel) = recv.recv().await {
+                let morsel = morsel.map(|df| {
+                    let height = df.height();
 
-                // Calculate start/stop offsets within df and update global offset.
-                let relative_start_offset = self
-                    .start_offset
-                    .saturating_sub(global_state.stream_offset)
-                    .min(height);
-                let relative_stop_offset = stop_offset
-                    .saturating_sub(global_state.stream_offset)
-                    .min(height);
-                global_state.stream_offset += height;
+                    // Calculate start/stop offsets within df and update global offset.
+                    let relative_start_offset = self
+                        .start_offset
+                        .saturating_sub(self.stream_offset)
+                        .min(height);
+                    let relative_stop_offset =
+                        stop_offset.saturating_sub(self.stream_offset).min(height);
+                    self.stream_offset += height;
 
-                // Slice within df is non-empty, send new morsel.
-                if relative_start_offset < relative_stop_offset {
-                    let new_height = relative_stop_offset - relative_start_offset;
+                    let new_height = relative_stop_offset.saturating_sub(relative_start_offset);
                     if new_height != height {
-                        df = df.slice(relative_start_offset as i64, new_height);
+                        df.slice(relative_start_offset as i64, new_height)
+                    } else {
+                        df
                     }
+                });
 
-                    let morsel = Morsel::new(df, global_state.morsel_seq);
-                    global_state.morsel_seq = global_state.morsel_seq.successor();
-                    if sender.send(morsel).await.is_err() {
-                        break;
-                    }
+                if !morsel.df().is_empty() && send.send(morsel).await.is_err() {
+                    break;
                 }
 
-                if global_state.stream_offset >= stop_offset {
+                if self.stream_offset >= stop_offset {
                     break;
                 }
             }
 
-            *self.global_state.lock() = global_state;
             Ok(())
         }))
-    }
-
-    fn spawn<'env, 's>(
-        &'env self,
-        scope: &'s TaskScope<'s, 'env>,
-        pipeline: usize,
-        recv: &mut [Option<Receiver<Morsel>>],
-        send: &mut [Option<Sender<Morsel>>],
-        _state: &'s ExecutionState,
-    ) -> JoinHandle<PolarsResult<()>> {
-        assert!(recv.len() == 1 && send.len() == 1);
-        let mut recv = recv[0].take().unwrap();
-        let mut send = send[0].take().unwrap();
-        let (mut inserter, mut distr_recv) =
-            self.per_pipeline_resources.lock()[pipeline].take().unwrap();
-
-        let insert_join = scope.spawn_task(TaskPriority::High, async move {
-            while let Ok(morsel) = recv.recv().await {
-                if inserter.insert(morsel).await.is_err() {
-                    break;
-                }
-            }
-
-            PolarsResult::Ok(())
-        });
-
-        scope.spawn_task(TaskPriority::High, async move {
-            while let Ok(morsel) = distr_recv.recv().await {
-                if send.send(morsel).await.is_err() {
-                    break;
-                }
-            }
-
-            insert_join.await?;
-            Ok(())
-        })
     }
 }
