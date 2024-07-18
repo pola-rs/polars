@@ -1,8 +1,12 @@
+use polars::export::arrow;
 use polars::export::arrow::array::Array;
-use polars::export::arrow::ffi::{ArrowArrayStream, ArrowArrayStreamReader};
-use pyo3::exceptions::PyValueError;
+use polars::export::arrow::ffi;
+use polars::export::arrow::ffi::{
+    ArrowArray, ArrowArrayStream, ArrowArrayStreamReader, ArrowSchema,
+};
+use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyCapsule, PyType};
+use pyo3::types::{PyCapsule, PyTuple, PyType};
 
 use super::*;
 
@@ -24,6 +28,47 @@ fn validate_pycapsule_name(capsule: &Bound<PyCapsule>, expected_name: &str) -> P
     }
 
     Ok(())
+}
+
+/// Import `__arrow_c_array__` across Python boundary
+pub(crate) fn call_arrow_c_array<'py>(
+    ob: &'py Bound<PyAny>,
+) -> PyResult<(Bound<'py, PyCapsule>, Bound<'py, PyCapsule>)> {
+    if !ob.hasattr("__arrow_c_array__")? {
+        return Err(PyValueError::new_err(
+            "Expected an object with dunder __arrow_c_array__",
+        ));
+    }
+
+    let tuple = ob.getattr("__arrow_c_array__")?.call0()?;
+    if !tuple.is_instance_of::<PyTuple>() {
+        return Err(PyTypeError::new_err(
+            "Expected __arrow_c_array__ to return a tuple.",
+        ));
+    }
+
+    let schema_capsule = tuple.get_item(0)?.downcast_into()?;
+    let array_capsule = tuple.get_item(1)?.downcast_into()?;
+    Ok((schema_capsule, array_capsule))
+}
+
+pub(crate) fn import_array_pycapsules(
+    schema_capsule: &Bound<PyCapsule>,
+    array_capsule: &Bound<PyCapsule>,
+) -> PyResult<(arrow::datatypes::Field, Box<dyn Array>)> {
+    validate_pycapsule_name(schema_capsule, "arrow_schema")?;
+    validate_pycapsule_name(array_capsule, "arrow_array")?;
+
+    let schema_ptr = unsafe { schema_capsule.reference::<ArrowSchema>() };
+    let array_ptr = unsafe { std::ptr::replace(array_capsule.pointer() as _, ArrowArray::empty()) };
+
+    let (field, array) = unsafe {
+        let field = ffi::import_field_from_c(schema_ptr).unwrap();
+        let array = ffi::import_array_from_c(array_ptr, field.data_type().clone()).unwrap();
+        (field, array)
+    };
+
+    Ok((field, array))
 }
 
 /// Import `__arrow_c_stream__` across Python boundary.
@@ -61,6 +106,14 @@ pub(crate) fn import_stream_pycapsule(capsule: &Bound<PyCapsule>) -> PyResult<Py
 }
 #[pymethods]
 impl PySeries {
+    #[classmethod]
+    pub fn from_arrow_c_array(_cls: &Bound<PyType>, ob: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let (schema_capsule, array_capsule) = call_arrow_c_array(ob)?;
+        let (field, array) = import_array_pycapsules(&schema_capsule, &array_capsule)?;
+        let s = Series::try_from((&field, array)).unwrap();
+        Ok(PySeries::new(s))
+    }
+
     #[classmethod]
     pub fn from_arrow_c_stream(_cls: &Bound<PyType>, ob: &Bound<'_, PyAny>) -> PyResult<Self> {
         let capsule = call_arrow_c_stream(ob)?;
