@@ -148,6 +148,7 @@ from polars.functions import (
     when,
     zeros,
 )
+from polars.interchange import CompatLevel
 from polars.io import (
     read_avro,
     read_clipboard,
@@ -375,6 +376,7 @@ __all__ = [
     "SQLContext",
     "sql",
     "sql_expr",
+    "CompatLevel",
 ]
 
 

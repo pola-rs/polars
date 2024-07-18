@@ -7,7 +7,7 @@ use super::*;
 #[pymethods]
 impl PySeries {
     #[staticmethod]
-    unsafe fn _import_from_c(
+    unsafe fn _import_arrow_from_c(
         name: &str,
         chunks: Vec<(Py_uintptr_t, Py_uintptr_t)>,
     ) -> PyResult<Self> {
@@ -29,4 +29,32 @@ impl PySeries {
         let s = Series::try_from((name, chunks)).map_err(PyPolarsErr::from)?;
         Ok(s.into())
     }
+
+    unsafe fn _export_arrow_to_c(
+        &self,
+        out_ptr: Py_uintptr_t,
+        out_schema_ptr: Py_uintptr_t,
+    ) -> PyResult<()> {
+        export_chunk(&self.series, out_ptr, out_schema_ptr).map_err(PyPolarsErr::from)?;
+        Ok(())
+    }
+}
+
+unsafe fn export_chunk(
+    s: &Series,
+    out_ptr: Py_uintptr_t,
+    out_schema_ptr: Py_uintptr_t,
+) -> PolarsResult<()> {
+    polars_ensure!(s.chunks().len() == 1, InvalidOperation: "expect a single chunk");
+
+    let c_array = arrow::ffi::export_array_to_c(s.chunks()[0].clone());
+    let out_ptr = out_ptr as *mut arrow::ffi::ArrowArray;
+    *out_ptr = c_array;
+
+    let field = ArrowField::new(s.name(), s.dtype().to_arrow(CompatLevel::newest()), true);
+    let c_schema = arrow::ffi::export_field_to_c(&field);
+
+    let out_schema_ptr = out_schema_ptr as *mut arrow::ffi::ArrowSchema;
+    *out_schema_ptr = c_schema;
+    Ok(())
 }

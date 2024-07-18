@@ -84,6 +84,7 @@ nav:
       - user-guide/misc/visualization.md
       - user-guide/misc/styling.md
       - user-guide/misc/comparison.md
+      - user-guide/misc/arrow.md
 
   - API reference: api/index.md
 
