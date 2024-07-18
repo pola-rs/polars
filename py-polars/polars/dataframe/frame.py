@@ -390,6 +390,9 @@ class DataFrame:
                 nan_to_null=nan_to_null,
             )
 
+        elif hasattr(data, "__arrow_c_stream__"):
+            self._df = PyDataFrame.from_arrow_c_stream(data)
+
         elif _check_for_pyarrow(data) and isinstance(data, pa.Table):
             self._df = arrow_to_pydf(
                 data, schema=schema, schema_overrides=schema_overrides, strict=strict
