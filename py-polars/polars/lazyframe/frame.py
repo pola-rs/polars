@@ -2286,7 +2286,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         simplify_expression: bool = True,
         slice_pushdown: bool = True,
         no_optimization: bool = False,
-    ) -> DataFrame:
+    ) -> None:
         """
         Evaluate the query in streaming mode and write to an IPC file.
 
@@ -2368,7 +2368,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         simplify_expression: bool = True,
         slice_pushdown: bool = True,
         no_optimization: bool = False,
-    ) -> DataFrame:
+    ) -> None:
         """
         Evaluate the query in streaming mode and write to a CSV file.
 
@@ -2504,7 +2504,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         simplify_expression: bool = True,
         slice_pushdown: bool = True,
         no_optimization: bool = False,
-    ) -> DataFrame:
+    ) -> None:
         """
         Evaluate the query in streaming mode and write to an NDJSON file.
 
