@@ -74,3 +74,57 @@ unsafe impl<A: GlobalAlloc> GlobalAlloc for TracemallocAllocator<A> {
         result
     }
 }
+
+#[allow(clippy::manual_bits)]
+fn better_align(layout: std::alloc::Layout) -> std::alloc::Layout {
+    if cfg!(feature = "nightly") && layout.size() >= 1024 {
+        let guessed_cache_line_size = size_of::<usize>() * 8; // it's bytes, not bits
+        layout.align_to(guessed_cache_line_size).unwrap()
+    } else {
+        layout
+    }
+}
+
+pub struct AlignedAllocator<A: GlobalAlloc> {
+    wrapped_alloc: A,
+}
+
+impl<A: GlobalAlloc> AlignedAllocator<A> {
+    pub const fn new(wrapped_alloc: A) -> Self {
+        Self { wrapped_alloc }
+    }
+}
+
+unsafe impl<A: GlobalAlloc> GlobalAlloc for AlignedAllocator<A> {
+    unsafe fn alloc(&self, layout: std::alloc::Layout) -> *mut u8 {
+        let layout = better_align(layout);
+        self.wrapped_alloc.alloc(layout)
+    }
+
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: std::alloc::Layout) {
+        let layout = better_align(layout);
+        self.wrapped_alloc.dealloc(ptr, layout)
+    }
+
+    unsafe fn alloc_zeroed(&self, layout: std::alloc::Layout) -> *mut u8 {
+        let layout = better_align(layout);
+        self.wrapped_alloc.alloc_zeroed(layout)
+    }
+
+    unsafe fn realloc(&self, ptr: *mut u8, layout: std::alloc::Layout, new_size: usize) -> *mut u8 {
+        let new_layout = better_align(std::alloc::Layout::from_size_align_unchecked(
+            new_size,
+            layout.align(),
+        ));
+        if layout.size() < new_size && ptr as usize % new_layout.align() != 0 {
+            let new_ptr = self.alloc(new_layout);
+            if !new_ptr.is_null() {
+                std::ptr::copy_nonoverlapping(ptr, new_ptr, layout.size());
+                self.dealloc(ptr, layout);
+            }
+            new_ptr
+        } else {
+            self.wrapped_alloc.realloc(ptr, layout, new_size)
+        }
+    }
+}

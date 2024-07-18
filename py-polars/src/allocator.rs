@@ -11,6 +11,7 @@ use jemallocator::Jemalloc;
 ))]
 use mimalloc::MiMalloc;
 
+use crate::memory::AlignedAllocator;
 #[cfg(all(
     debug_assertions,
     target_family = "unix",
@@ -26,7 +27,7 @@ use crate::memory::TracemallocAllocator;
     not(allocator = "default"),
     target_family = "unix",
 ))]
-static ALLOC: Jemalloc = Jemalloc;
+static ALLOC: AlignedAllocator<Jemalloc> = AlignedAllocator::new(Jemalloc);
 
 #[global_allocator]
 #[cfg(all(
@@ -34,7 +35,7 @@ static ALLOC: Jemalloc = Jemalloc;
     not(allocator = "default"),
     any(not(target_family = "unix"), allocator = "mimalloc"),
 ))]
-static ALLOC: MiMalloc = MiMalloc;
+static ALLOC: AlignedAllocator<MiMalloc> = AlignedAllocator::new(MiMalloc);
 
 // On Windows tracemalloc does work. However, we build abi3 wheels, and the
 // relevant C APIs are not part of the limited stable CPython API. As a result,
@@ -47,4 +48,5 @@ static ALLOC: MiMalloc = MiMalloc;
     not(allocator = "default"),
     not(allocator = "mimalloc"),
 ))]
-static ALLOC: TracemallocAllocator<Jemalloc> = TracemallocAllocator::new(Jemalloc);
+static ALLOC: AlignedAllocator<TracemallocAllocator<Jemalloc>> =
+    AlignedAllocator::new(TracemallocAllocator::new(Jemalloc));

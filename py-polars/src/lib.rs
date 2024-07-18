@@ -28,7 +28,6 @@ mod interop;
 mod lazyframe;
 mod lazygroupby;
 mod map;
-#[cfg(debug_assertions)]
 mod memory;
 #[cfg(feature = "object")]
 mod object;
