@@ -747,8 +747,12 @@ impl LazyFrame {
             if self.opt_state.new_streaming {
                 return run_on_new_streaming_engine();
             }
-            
-            if std::env::var("POLARS_AUTO_NEW_STREAMING").as_deref().unwrap_or("") == "1" {
+
+            if std::env::var("POLARS_AUTO_NEW_STREAMING")
+                .as_deref()
+                .unwrap_or("")
+                == "1"
+            {
                 match std::panic::catch_unwind(run_on_new_streaming_engine) {
                     Ok(r) => return r,
                     Err(e) => {
@@ -760,7 +764,7 @@ impl LazyFrame {
                             }
                             std::panic::resume_unwind(e);
                         }
-                    }
+                    },
                 }
             }
         }

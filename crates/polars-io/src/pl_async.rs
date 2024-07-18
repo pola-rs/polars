@@ -280,7 +280,7 @@ impl RuntimeManager {
     pub fn spawn_blocking<F, R>(&self, f: F) -> tokio::task::JoinHandle<R>
     where
         F: FnOnce() -> R + Send + 'static,
-        R: Send + 'static
+        R: Send + 'static,
     {
         self.rt.spawn_blocking(f)
     }

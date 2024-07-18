@@ -88,7 +88,7 @@ impl ComputeNode for SelectNode {
                         PolarsResult::Ok(ret)
                     })?;
                     */
-                    
+
                     let (df, seq, consume_token) = morsel.into_inner();
                     let mut selected = Vec::new();
                     for selector in &slf.selectors {
@@ -96,7 +96,10 @@ impl ComputeNode for SelectNode {
                         let selector = selector.clone();
                         let state = state.clone();
                         selected.push(
-                            polars_io::pl_async::get_runtime().spawn_blocking(move || selector.evaluate(&df, &state)).await.unwrap()?
+                            polars_io::pl_async::get_runtime()
+                                .spawn_blocking(move || selector.evaluate(&df, &state))
+                                .await
+                                .unwrap()?,
                         );
                     }
 
@@ -126,7 +129,7 @@ impl ComputeNode for SelectNode {
                     if let Some(token) = consume_token {
                         morsel.set_consume_token(token);
                     }
-                    
+
                     if send.send(morsel).await.is_err() {
                         break;
                     }

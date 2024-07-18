@@ -85,13 +85,13 @@ impl Executor {
         let thread = TLS_THREAD_ID.get();
         let meta = task.metadata();
         let opt_ttl = self.thread_task_lists.get(thread);
-        
+
         let mut use_global_queue = opt_ttl.is_none();
         if meta.freshly_spawned.load(Ordering::Relaxed) {
             use_global_queue = true;
             meta.freshly_spawned.store(false, Ordering::Relaxed);
         }
-        
+
         if use_global_queue {
             // Scheduled from an unknown thread, add to global queue.
             if meta.priority == TaskPriority::High {
