@@ -42,6 +42,7 @@ impl<'a> RecvPort<'a> {
 }
 
 impl<'a> SendPort<'a> {
+    #[allow(unused)]
     pub fn is_receiver_serial(&self) -> bool {
         matches!(self.0, PhysicalPipe::SerialReceiver(..))
     }
