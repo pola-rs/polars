@@ -3253,6 +3253,7 @@ dependencies = [
  "async-stream",
  "base64 0.22.1",
  "brotli",
+ "bytemuck",
  "ethnum",
  "fallible-streaming-iterator",
  "flate2",

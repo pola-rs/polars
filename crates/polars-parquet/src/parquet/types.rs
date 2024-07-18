@@ -3,6 +3,7 @@ use crate::parquet::schema::types::PhysicalType;
 /// A physical native representation of a Parquet fixed-sized type.
 pub trait NativeType: std::fmt::Debug + Send + Sync + 'static + Copy + Clone {
     type Bytes: AsRef<[u8]>
+        + bytemuck::Pod
         + for<'a> TryFrom<&'a [u8], Error = std::array::TryFromSliceError>
         + std::fmt::Debug
         + Clone
