@@ -194,7 +194,7 @@ impl StructArray {
             .for_each(|x| x.slice_unchecked(offset, length));
     }
 
-    /// Set the outer nulls into the inner arrays, and clear the outer validity.
+    /// Set the outer nulls into the inner arrays.
     pub fn propagate_nulls(&self) -> StructArray {
         let has_nulls = self.null_count() > 0;
         let mut out = self.clone();
@@ -203,16 +203,10 @@ impl StructArray {
         };
 
         for value_arr in &mut out.values {
-            let new = if has_nulls {
-                let new_validity = combine_validities_and(self.validity(), value_arr.validity());
-                value_arr.with_validity(new_validity)
-            } else {
-                value_arr.clone()
-            };
-
-            *value_arr = new;
+            let new_validity = combine_validities_and(self.validity(), value_arr.validity());
+            *value_arr = value_arr.with_validity(new_validity);
         }
-        out.with_validity(None)
+        out
     }
 
     impl_sliced!();
