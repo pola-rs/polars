@@ -776,14 +776,14 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     StringFunction::Contains { literal, strict } => {
                         (PyStringFunction::Contains.into_py(py), literal, strict).to_object(py)
                     },
-                    StringFunction::CountMatches(_) => {
-                        (PyStringFunction::CountMatches.into_py(py),).to_object(py)
+                    StringFunction::CountMatches(literal) => {
+                        (PyStringFunction::CountMatches.into_py(py), literal).to_object(py)
                     },
                     StringFunction::EndsWith => {
                         (PyStringFunction::EndsWith.into_py(py),).to_object(py)
                     },
-                    StringFunction::Extract(_) => {
-                        (PyStringFunction::Extract.into_py(py),).to_object(py)
+                    StringFunction::Extract(group_index) => {
+                        (PyStringFunction::Extract.into_py(py), group_index).to_object(py)
                     },
                     StringFunction::ExtractAll => {
                         (PyStringFunction::ExtractAll.into_py(py),).to_object(py)
@@ -798,8 +798,8 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     StringFunction::Find { literal, strict } => {
                         (PyStringFunction::Find.into_py(py), literal, strict).to_object(py)
                     },
-                    StringFunction::ToInteger(_) => {
-                        (PyStringFunction::ToInteger.into_py(py),).to_object(py)
+                    StringFunction::ToInteger(strict) => {
+                        (PyStringFunction::ToInteger.into_py(py), strict).to_object(py)
                     },
                     StringFunction::LenBytes => {
                         (PyStringFunction::LenBytes.into_py(py),).to_object(py)
@@ -837,14 +837,14 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     StringFunction::HexEncode => {
                         (PyStringFunction::HexEncode.into_py(py),).to_object(py)
                     },
-                    StringFunction::HexDecode(_) => {
-                        (PyStringFunction::HexDecode.into_py(py),).to_object(py)
+                    StringFunction::HexDecode(strict) => {
+                        (PyStringFunction::HexDecode.into_py(py), strict).to_object(py)
                     },
                     StringFunction::Base64Encode => {
                         (PyStringFunction::Base64Encode.into_py(py),).to_object(py)
                     },
-                    StringFunction::Base64Decode(_) => {
-                        (PyStringFunction::Base64Decode.into_py(py),).to_object(py)
+                    StringFunction::Base64Decode(strict) => {
+                        (PyStringFunction::Base64Decode.into_py(py), strict).to_object(py)
                     },
                     StringFunction::StartsWith => {
                         (PyStringFunction::StartsWith.into_py(py),).to_object(py)
@@ -867,17 +867,25 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     StringFunction::SplitExact { n, inclusive } => {
                         (PyStringFunction::SplitExact.into_py(py), n, inclusive).to_object(py)
                     },
-                    StringFunction::SplitN(_) => {
-                        (PyStringFunction::SplitN.into_py(py),).to_object(py)
+                    StringFunction::SplitN(n) => {
+                        (PyStringFunction::SplitN.into_py(py), n).to_object(py)
                     },
-                    StringFunction::Strptime(_, _) => {
-                        (PyStringFunction::Strptime.into_py(py),).to_object(py)
+                    StringFunction::Strptime(_, options) => (
+                        PyStringFunction::Strptime.into_py(py),
+                        options
+                            .format
+                            .as_ref()
+                            .map_or_else(|| py.None(), |s| s.to_object(py)),
+                        options.strict,
+                        options.exact,
+                        options.cache,
+                    )
+                        .to_object(py),
+                    StringFunction::Split(inclusive) => {
+                        (PyStringFunction::Split.into_py(py), inclusive).to_object(py)
                     },
-                    StringFunction::Split(_) => {
-                        (PyStringFunction::Split.into_py(py),).to_object(py)
-                    },
-                    StringFunction::ToDecimal(_) => {
-                        (PyStringFunction::ToDecimal.into_py(py),).to_object(py)
+                    StringFunction::ToDecimal(inference_length) => {
+                        (PyStringFunction::ToDecimal.into_py(py), inference_length).to_object(py)
                     },
                     StringFunction::Titlecase => {
                         (PyStringFunction::Titlecase.into_py(py),).to_object(py)
