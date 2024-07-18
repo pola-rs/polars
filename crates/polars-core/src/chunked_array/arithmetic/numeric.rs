@@ -420,3 +420,393 @@ impl<T: PolarsNumericType> ArithmeticChunked for &ChunkedArray<T> {
         })
     }
 }
+
+#[cfg(feature = "nontemporal")]
+mod nontemporal {
+    use polars_compute::arithmetic::NontemporalArithmeticKernel;
+
+    use super::*;
+
+    pub trait NontemporalArithmeticChunked {
+        type Scalar;
+        type Out;
+        type TrueDivOut;
+
+        fn wrapping_abs_nontemporal(self) -> Self::Out;
+        fn wrapping_neg_nontemporal(self) -> Self::Out;
+        fn wrapping_add_nontemporal(self, rhs: Self) -> Self::Out;
+        fn wrapping_sub_nontemporal(self, rhs: Self) -> Self::Out;
+        fn wrapping_mul_nontemporal(self, rhs: Self) -> Self::Out;
+        fn wrapping_floor_div_nontemporal(self, rhs: Self) -> Self::Out;
+        fn wrapping_trunc_div_nontemporal(self, rhs: Self) -> Self::Out;
+        fn wrapping_mod_nontemporal(self, rhs: Self) -> Self::Out;
+
+        fn wrapping_add_scalar_nontemporal(self, rhs: Self::Scalar) -> Self::Out;
+        fn wrapping_sub_scalar_nontemporal(self, rhs: Self::Scalar) -> Self::Out;
+        fn wrapping_sub_scalar_lhs_nontemporal(lhs: Self::Scalar, rhs: Self) -> Self::Out;
+        fn wrapping_mul_scalar_nontemporal(self, rhs: Self::Scalar) -> Self::Out;
+        fn wrapping_floor_div_scalar_nontemporal(self, rhs: Self::Scalar) -> Self::Out;
+        fn wrapping_floor_div_scalar_lhs_nontemporal(lhs: Self::Scalar, rhs: Self) -> Self::Out;
+        fn wrapping_trunc_div_scalar_nontemporal(self, rhs: Self::Scalar) -> Self::Out;
+        fn wrapping_trunc_div_scalar_lhs_nontemporal(lhs: Self::Scalar, rhs: Self) -> Self::Out;
+        fn wrapping_mod_scalar_nontemporal(self, rhs: Self::Scalar) -> Self::Out;
+        fn wrapping_mod_scalar_lhs_nontemporal(lhs: Self::Scalar, rhs: Self) -> Self::Out;
+
+        fn true_div_nontemporal(self, rhs: Self) -> Self::TrueDivOut;
+        fn true_div_scalar_nontemporal(self, rhs: Self::Scalar) -> Self::TrueDivOut;
+        fn true_div_scalar_lhs_nontemporal(lhs: Self::Scalar, rhs: Self) -> Self::TrueDivOut;
+    }
+
+    impl<T: PolarsNumericType> NontemporalArithmeticChunked for ChunkedArray<T> {
+        type Scalar = T::Native;
+        type Out = ChunkedArray<T>;
+        type TrueDivOut = ChunkedArray<<T::Native as NumericNative>::TrueDivPolarsType>;
+
+        fn wrapping_abs_nontemporal(self) -> Self::Out {
+            unary_kernel_owned(self, NontemporalArithmeticKernel::wrapping_abs_nontemporal)
+        }
+
+        fn wrapping_neg_nontemporal(self) -> Self::Out {
+            unary_kernel_owned(self, NontemporalArithmeticKernel::wrapping_neg_nontemporal)
+        }
+
+        fn wrapping_add_nontemporal(self, rhs: Self) -> Self::Out {
+            apply_binary_kernel_broadcast_owned(
+                self,
+                rhs,
+                NontemporalArithmeticKernel::wrapping_add_nontemporal,
+                |l, r| NontemporalArithmeticKernel::wrapping_add_scalar_nontemporal(r, l),
+                NontemporalArithmeticKernel::wrapping_add_scalar_nontemporal,
+            )
+        }
+
+        fn wrapping_sub_nontemporal(self, rhs: Self) -> Self::Out {
+            apply_binary_kernel_broadcast_owned(
+                self,
+                rhs,
+                NontemporalArithmeticKernel::wrapping_sub_nontemporal,
+                NontemporalArithmeticKernel::wrapping_sub_scalar_lhs_nontemporal,
+                NontemporalArithmeticKernel::wrapping_sub_scalar_nontemporal,
+            )
+        }
+
+        fn wrapping_mul_nontemporal(self, rhs: Self) -> Self::Out {
+            apply_binary_kernel_broadcast_owned(
+                self,
+                rhs,
+                NontemporalArithmeticKernel::wrapping_mul_nontemporal,
+                |l, r| NontemporalArithmeticKernel::wrapping_mul_scalar_nontemporal(r, l),
+                NontemporalArithmeticKernel::wrapping_mul_scalar_nontemporal,
+            )
+        }
+
+        fn wrapping_floor_div_nontemporal(self, rhs: Self) -> Self::Out {
+            apply_binary_kernel_broadcast_owned(
+                self,
+                rhs,
+                NontemporalArithmeticKernel::wrapping_floor_div_nontemporal,
+                NontemporalArithmeticKernel::wrapping_floor_div_scalar_lhs_nontemporal,
+                NontemporalArithmeticKernel::wrapping_floor_div_scalar_nontemporal,
+            )
+        }
+
+        fn wrapping_trunc_div_nontemporal(self, rhs: Self) -> Self::Out {
+            apply_binary_kernel_broadcast_owned(
+                self,
+                rhs,
+                NontemporalArithmeticKernel::wrapping_trunc_div_nontemporal,
+                NontemporalArithmeticKernel::wrapping_trunc_div_scalar_lhs_nontemporal,
+                NontemporalArithmeticKernel::wrapping_trunc_div_scalar_nontemporal,
+            )
+        }
+
+        fn wrapping_mod_nontemporal(self, rhs: Self) -> Self::Out {
+            apply_binary_kernel_broadcast_owned(
+                self,
+                rhs,
+                NontemporalArithmeticKernel::wrapping_mod_nontemporal,
+                NontemporalArithmeticKernel::wrapping_mod_scalar_lhs_nontemporal,
+                NontemporalArithmeticKernel::wrapping_mod_scalar_nontemporal,
+            )
+        }
+
+        fn wrapping_add_scalar_nontemporal(self, rhs: Self::Scalar) -> Self::Out {
+            unary_kernel_owned(self, |a| {
+                NontemporalArithmeticKernel::wrapping_add_scalar_nontemporal(a, rhs)
+            })
+        }
+
+        fn wrapping_sub_scalar_nontemporal(self, rhs: Self::Scalar) -> Self::Out {
+            unary_kernel_owned(self, |a| {
+                NontemporalArithmeticKernel::wrapping_sub_scalar_nontemporal(a, rhs)
+            })
+        }
+
+        fn wrapping_sub_scalar_lhs_nontemporal(lhs: Self::Scalar, rhs: Self) -> Self::Out {
+            unary_kernel_owned(rhs, |a| {
+                NontemporalArithmeticKernel::wrapping_sub_scalar_lhs_nontemporal(lhs, a)
+            })
+        }
+
+        fn wrapping_mul_scalar_nontemporal(self, rhs: Self::Scalar) -> Self::Out {
+            unary_kernel_owned(self, |a| {
+                NontemporalArithmeticKernel::wrapping_mul_scalar_nontemporal(a, rhs)
+            })
+        }
+
+        fn wrapping_floor_div_scalar_nontemporal(self, rhs: Self::Scalar) -> Self::Out {
+            unary_kernel_owned(self, |a| {
+                NontemporalArithmeticKernel::wrapping_floor_div_scalar_nontemporal(a, rhs)
+            })
+        }
+
+        fn wrapping_floor_div_scalar_lhs_nontemporal(lhs: Self::Scalar, rhs: Self) -> Self::Out {
+            unary_kernel_owned(rhs, |a| {
+                NontemporalArithmeticKernel::wrapping_floor_div_scalar_lhs_nontemporal(lhs, a)
+            })
+        }
+
+        fn wrapping_trunc_div_scalar_nontemporal(self, rhs: Self::Scalar) -> Self::Out {
+            unary_kernel_owned(self, |a| {
+                NontemporalArithmeticKernel::wrapping_trunc_div_scalar_nontemporal(a, rhs)
+            })
+        }
+
+        fn wrapping_trunc_div_scalar_lhs_nontemporal(lhs: Self::Scalar, rhs: Self) -> Self::Out {
+            unary_kernel_owned(rhs, |a| {
+                NontemporalArithmeticKernel::wrapping_trunc_div_scalar_lhs_nontemporal(lhs, a)
+            })
+        }
+
+        fn wrapping_mod_scalar_nontemporal(self, rhs: Self::Scalar) -> Self::Out {
+            unary_kernel_owned(self, |a| {
+                NontemporalArithmeticKernel::wrapping_mod_scalar_nontemporal(a, rhs)
+            })
+        }
+
+        fn wrapping_mod_scalar_lhs_nontemporal(lhs: Self::Scalar, rhs: Self) -> Self::Out {
+            unary_kernel_owned(rhs, |a| {
+                NontemporalArithmeticKernel::wrapping_mod_scalar_lhs_nontemporal(lhs, a)
+            })
+        }
+
+        fn true_div_nontemporal(self, rhs: Self) -> Self::TrueDivOut {
+            apply_binary_kernel_broadcast_owned(
+                self,
+                rhs,
+                NontemporalArithmeticKernel::true_div_nontemporal,
+                NontemporalArithmeticKernel::true_div_scalar_lhs_nontemporal,
+                NontemporalArithmeticKernel::true_div_scalar_nontemporal,
+            )
+        }
+
+        fn true_div_scalar_nontemporal(self, rhs: Self::Scalar) -> Self::TrueDivOut {
+            unary_kernel_owned(self, |a| {
+                NontemporalArithmeticKernel::true_div_scalar_nontemporal(a, rhs)
+            })
+        }
+
+        fn true_div_scalar_lhs_nontemporal(lhs: Self::Scalar, rhs: Self) -> Self::TrueDivOut {
+            unary_kernel_owned(rhs, |a| {
+                NontemporalArithmeticKernel::true_div_scalar_lhs_nontemporal(lhs, a)
+            })
+        }
+    }
+
+    impl<T: PolarsNumericType> NontemporalArithmeticChunked for &ChunkedArray<T> {
+        type Scalar = T::Native;
+        type Out = ChunkedArray<T>;
+        type TrueDivOut = ChunkedArray<<T::Native as NumericNative>::TrueDivPolarsType>;
+
+        fn wrapping_abs_nontemporal(self) -> Self::Out {
+            unary_kernel(self, |a| {
+                NontemporalArithmeticKernel::wrapping_abs_nontemporal(a.clone())
+            })
+        }
+
+        fn wrapping_neg_nontemporal(self) -> Self::Out {
+            unary_kernel(self, |a| {
+                NontemporalArithmeticKernel::wrapping_neg_nontemporal(a.clone())
+            })
+        }
+
+        fn wrapping_add_nontemporal(self, rhs: Self) -> Self::Out {
+            apply_binary_kernel_broadcast(
+                self,
+                rhs,
+                |l, r| NontemporalArithmeticKernel::wrapping_add_nontemporal(l.clone(), r.clone()),
+                |l, r| NontemporalArithmeticKernel::wrapping_add_scalar_nontemporal(r.clone(), l),
+                |l, r| NontemporalArithmeticKernel::wrapping_add_scalar_nontemporal(l.clone(), r),
+            )
+        }
+
+        fn wrapping_sub_nontemporal(self, rhs: Self) -> Self::Out {
+            apply_binary_kernel_broadcast(
+                self,
+                rhs,
+                |l, r| NontemporalArithmeticKernel::wrapping_sub_nontemporal(l.clone(), r.clone()),
+                |l, r| {
+                    NontemporalArithmeticKernel::wrapping_sub_scalar_lhs_nontemporal(l, r.clone())
+                },
+                |l, r| NontemporalArithmeticKernel::wrapping_sub_scalar_nontemporal(l.clone(), r),
+            )
+        }
+
+        fn wrapping_mul_nontemporal(self, rhs: Self) -> Self::Out {
+            apply_binary_kernel_broadcast(
+                self,
+                rhs,
+                |l, r| NontemporalArithmeticKernel::wrapping_mul_nontemporal(l.clone(), r.clone()),
+                |l, r| NontemporalArithmeticKernel::wrapping_mul_scalar_nontemporal(r.clone(), l),
+                |l, r| NontemporalArithmeticKernel::wrapping_mul_scalar_nontemporal(l.clone(), r),
+            )
+        }
+
+        fn wrapping_floor_div_nontemporal(self, rhs: Self) -> Self::Out {
+            apply_binary_kernel_broadcast(
+                self,
+                rhs,
+                |l, r| {
+                    NontemporalArithmeticKernel::wrapping_floor_div_nontemporal(
+                        l.clone(),
+                        r.clone(),
+                    )
+                },
+                |l, r| {
+                    NontemporalArithmeticKernel::wrapping_floor_div_scalar_lhs_nontemporal(
+                        l,
+                        r.clone(),
+                    )
+                },
+                |l, r| {
+                    NontemporalArithmeticKernel::wrapping_floor_div_scalar_nontemporal(l.clone(), r)
+                },
+            )
+        }
+
+        fn wrapping_trunc_div_nontemporal(self, rhs: Self) -> Self::Out {
+            apply_binary_kernel_broadcast(
+                self,
+                rhs,
+                |l, r| {
+                    NontemporalArithmeticKernel::wrapping_trunc_div_nontemporal(
+                        l.clone(),
+                        r.clone(),
+                    )
+                },
+                |l, r| {
+                    NontemporalArithmeticKernel::wrapping_trunc_div_scalar_lhs_nontemporal(
+                        l,
+                        r.clone(),
+                    )
+                },
+                |l, r| {
+                    NontemporalArithmeticKernel::wrapping_trunc_div_scalar_nontemporal(l.clone(), r)
+                },
+            )
+        }
+
+        fn wrapping_mod_nontemporal(self, rhs: Self) -> Self::Out {
+            apply_binary_kernel_broadcast(
+                self,
+                rhs,
+                |l, r| NontemporalArithmeticKernel::wrapping_mod_nontemporal(l.clone(), r.clone()),
+                |l, r| {
+                    NontemporalArithmeticKernel::wrapping_mod_scalar_lhs_nontemporal(l, r.clone())
+                },
+                |l, r| NontemporalArithmeticKernel::wrapping_mod_scalar_nontemporal(l.clone(), r),
+            )
+        }
+
+        fn wrapping_add_scalar_nontemporal(self, rhs: Self::Scalar) -> Self::Out {
+            unary_kernel(self, |a| {
+                NontemporalArithmeticKernel::wrapping_add_scalar_nontemporal(a.clone(), rhs)
+            })
+        }
+
+        fn wrapping_sub_scalar_nontemporal(self, rhs: Self::Scalar) -> Self::Out {
+            unary_kernel(self, |a| {
+                NontemporalArithmeticKernel::wrapping_sub_scalar_nontemporal(a.clone(), rhs)
+            })
+        }
+
+        fn wrapping_sub_scalar_lhs_nontemporal(lhs: Self::Scalar, rhs: Self) -> Self::Out {
+            unary_kernel(rhs, |a| {
+                NontemporalArithmeticKernel::wrapping_sub_scalar_lhs_nontemporal(lhs, a.clone())
+            })
+        }
+
+        fn wrapping_mul_scalar_nontemporal(self, rhs: Self::Scalar) -> Self::Out {
+            unary_kernel(self, |a| {
+                NontemporalArithmeticKernel::wrapping_mul_scalar_nontemporal(a.clone(), rhs)
+            })
+        }
+
+        fn wrapping_floor_div_scalar_nontemporal(self, rhs: Self::Scalar) -> Self::Out {
+            unary_kernel(self, |a| {
+                NontemporalArithmeticKernel::wrapping_floor_div_scalar_nontemporal(a.clone(), rhs)
+            })
+        }
+
+        fn wrapping_floor_div_scalar_lhs_nontemporal(lhs: Self::Scalar, rhs: Self) -> Self::Out {
+            unary_kernel(rhs, |a| {
+                NontemporalArithmeticKernel::wrapping_floor_div_scalar_lhs_nontemporal(
+                    lhs,
+                    a.clone(),
+                )
+            })
+        }
+
+        fn wrapping_trunc_div_scalar_nontemporal(self, rhs: Self::Scalar) -> Self::Out {
+            unary_kernel(self, |a| {
+                NontemporalArithmeticKernel::wrapping_trunc_div_scalar_nontemporal(a.clone(), rhs)
+            })
+        }
+
+        fn wrapping_trunc_div_scalar_lhs_nontemporal(lhs: Self::Scalar, rhs: Self) -> Self::Out {
+            unary_kernel(rhs, |a| {
+                NontemporalArithmeticKernel::wrapping_trunc_div_scalar_lhs_nontemporal(
+                    lhs,
+                    a.clone(),
+                )
+            })
+        }
+
+        fn wrapping_mod_scalar_nontemporal(self, rhs: Self::Scalar) -> Self::Out {
+            unary_kernel(self, |a| {
+                NontemporalArithmeticKernel::wrapping_mod_scalar_nontemporal(a.clone(), rhs)
+            })
+        }
+
+        fn wrapping_mod_scalar_lhs_nontemporal(lhs: Self::Scalar, rhs: Self) -> Self::Out {
+            unary_kernel(rhs, |a| {
+                NontemporalArithmeticKernel::wrapping_mod_scalar_lhs_nontemporal(lhs, a.clone())
+            })
+        }
+
+        fn true_div_nontemporal(self, rhs: Self) -> Self::TrueDivOut {
+            apply_binary_kernel_broadcast(
+                self,
+                rhs,
+                |l, r| NontemporalArithmeticKernel::true_div_nontemporal(l.clone(), r.clone()),
+                |l, r| NontemporalArithmeticKernel::true_div_scalar_lhs_nontemporal(l, r.clone()),
+                |l, r| NontemporalArithmeticKernel::true_div_scalar_nontemporal(l.clone(), r),
+            )
+        }
+
+        fn true_div_scalar_nontemporal(self, rhs: Self::Scalar) -> Self::TrueDivOut {
+            unary_kernel(self, |a| {
+                NontemporalArithmeticKernel::true_div_scalar_nontemporal(a.clone(), rhs)
+            })
+        }
+
+        fn true_div_scalar_lhs_nontemporal(lhs: Self::Scalar, rhs: Self) -> Self::TrueDivOut {
+            unary_kernel(rhs, |a| {
+                NontemporalArithmeticKernel::true_div_scalar_lhs_nontemporal(lhs, a.clone())
+            })
+        }
+    }
+}
+
+#[cfg(feature = "nontemporal")]
+pub use nontemporal::NontemporalArithmeticChunked;

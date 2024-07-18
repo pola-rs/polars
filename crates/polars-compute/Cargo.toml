@@ -27,3 +27,4 @@ version_check = { workspace = true }
 nightly = []
 simd = ["arrow/simd"]
 dtype-array = []
+nontemporal = []

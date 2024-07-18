@@ -8,6 +8,8 @@ use std::ops::{Add, Div, Mul, Rem, Sub};
 use arrow::compute::utils::combine_validities_and;
 use num_traits::{Num, NumCast, ToPrimitive};
 pub use numeric::ArithmeticChunked;
+#[cfg(feature = "nontemporal")]
+pub use numeric::NontemporalArithmeticChunked;
 
 use crate::prelude::*;
 

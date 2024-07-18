@@ -4,6 +4,8 @@
     all(feature = "simd", target_arch = "x86_64"),
     feature(stdarch_x86_avx512)
 )]
+#![allow(internal_features)]
+#![cfg_attr(feature = "nontemporal", feature(core_intrinsics))]
 
 use arrow::types::NativeType;
 
