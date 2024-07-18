@@ -129,7 +129,9 @@ impl Serialize for AnyValue<'_> {
             AnyValue::BinaryOwned(v) => {
                 serializer.serialize_newtype_variant(name, 14, "BinaryOwned", v)
             },
-            _ => todo!(),
+            _ => Err(serde::ser::Error::custom(
+                "Unknown data type. Cannot serialize",
+            )),
         }
     }
 }
