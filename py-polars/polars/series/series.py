@@ -318,6 +318,9 @@ class Series:
             if dtype is not None:
                 self._s = self.cast(dtype, strict=strict)._s
 
+        elif hasattr(values, "__arrow_c_stream__"):
+            self._s = PySeries.from_arrow_c_stream(values)
+
         elif _check_for_pyarrow(values) and isinstance(
             values, (pa.Array, pa.ChunkedArray)
         ):

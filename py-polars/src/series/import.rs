@@ -1,3 +1,4 @@
+use polars::export::arrow::array::Array;
 use polars::export::arrow::ffi::{ArrowArrayStream, ArrowArrayStreamReader};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -37,7 +38,7 @@ fn call_arrow_c_stream<'py>(ob: &'py Bound<PyAny>) -> PyResult<Bound<'py, PyCaps
     Ok(capsule)
 }
 
-pub(crate) fn import_stream_pycapsule(capsule: &Bound<PyCapsule>) -> PyResult<PyDataFrame> {
+pub(crate) fn import_stream_pycapsule(capsule: &Bound<PyCapsule>) -> PyResult<PySeries> {
     validate_pycapsule_name(capsule, "arrow_array_stream")?;
 
     // Takes ownership of the pointed to ArrowArrayStream
@@ -50,41 +51,16 @@ pub(crate) fn import_stream_pycapsule(capsule: &Bound<PyCapsule>) -> PyResult<Py
             .map_err(|err| PyValueError::new_err(err.to_string()))?
     };
 
-    // For now we'll assume that these are struct arrays to represent record batches
-    let mut produced_arrays = vec![];
+    let mut produced_arrays: Vec<Box<dyn Array>> = vec![];
     while let Some(array) = unsafe { stream.next() } {
-        let arr = array.map_err(|err| PyValueError::new_err(err.to_string()))?;
-        let struct_arr = match arr.data_type() {
-            ArrowDataType::Struct(_) => arr.as_any().downcast_ref::<StructArray>().unwrap().clone(),
-            _ => return Err(PyValueError::new_err("Expected struct data type")),
-        };
-        produced_arrays.push(struct_arr);
+        produced_arrays.push(array.unwrap());
     }
 
-    let stream_field = stream.field();
-    // For now we'll assume that these are struct arrays to represent record batches
-    let struct_fields = match stream_field.data_type() {
-        ArrowDataType::Struct(struct_fields) => struct_fields,
-        _ => return Err(PyValueError::new_err("Expected struct data type")),
-    };
-
-    let mut columns: Vec<Series> = vec![];
-    for (col_idx, column_field) in struct_fields.iter().enumerate() {
-        let column_chunks = produced_arrays
-            .iter()
-            .map(|arr| arr.values()[col_idx].clone())
-            .collect::<Vec<_>>();
-        // TODO: remove unwrap
-        columns.push(Series::try_from((column_field, column_chunks)).unwrap());
-    }
-
-    // TODO: remove unwrap
-    Ok(PyDataFrame::new(
-        polars::frame::DataFrame::new(columns).unwrap(),
-    ))
+    let s = Series::try_from((stream.field(), produced_arrays)).unwrap();
+    Ok(PySeries::new(s))
 }
 #[pymethods]
-impl PyDataFrame {
+impl PySeries {
     #[classmethod]
     pub fn from_arrow_c_stream(_cls: &Bound<PyType>, ob: &Bound<'_, PyAny>) -> PyResult<Self> {
         let capsule = call_arrow_c_stream(ob)?;

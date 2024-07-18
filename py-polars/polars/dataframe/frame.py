@@ -108,7 +108,7 @@ from polars.schema import Schema
 from polars.selectors import _expand_selector_dicts, _expand_selectors
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import PyDataFrame
+    from polars.polars import PyDataFrame, PySeries
     from polars.polars import dtype_str_repr as _dtype_str_repr
     from polars.polars import write_clipboard_string as _write_clipboard_string
 
@@ -391,7 +391,11 @@ class DataFrame:
             )
 
         elif hasattr(data, "__arrow_c_stream__"):
-            self._df = PyDataFrame.from_arrow_c_stream(data)
+            # This uses the fact that PySeries.from_arrow_c_stream will create a
+            # struct-typed Series. Then we unpack that to a DataFrame.
+            tmp_col_name = ""
+            s = wrap_s(PySeries.from_arrow_c_stream(data))
+            self._df = s.to_frame(tmp_col_name).unnest(tmp_col_name)._df
 
         elif _check_for_pyarrow(data) and isinstance(data, pa.Table):
             self._df = arrow_to_pydf(
