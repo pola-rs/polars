@@ -484,7 +484,7 @@ pub(super) trait Decoder<'a>: Sized {
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState;
 
     /// Deserializes a [`DictPage`] into [`Self::Dict`].
-    fn deserialize_dict(&self, page: &DictPage) -> Self::Dict;
+    fn deserialize_dict(&self, page: &'a DictPage) -> Self::Dict;
 }
 
 pub(super) fn extend_from_new_page<'a, T: Decoder<'a>>(

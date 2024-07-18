@@ -8,6 +8,7 @@ use crate::parquet::encoding::hybrid_rle::encode;
 use crate::parquet::encoding::Encoding;
 use crate::parquet::metadata::Descriptor;
 use crate::parquet::page::{DataPage, DataPageHeader, DataPageHeaderV1, DataPageHeaderV2};
+use crate::parquet::read::CowBuffer;
 use crate::parquet::schema::types::PrimitiveType;
 use crate::parquet::statistics::ParquetStatistics;
 
@@ -89,7 +90,7 @@ pub fn build_plain_page(
     };
     Ok(DataPage::new(
         header,
-        buffer,
+        CowBuffer::Owned(buffer),
         Descriptor {
             primitive_type: type_,
             max_def_level: 0,

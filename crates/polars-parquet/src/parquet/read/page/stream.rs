@@ -11,6 +11,7 @@ use crate::parquet::compression::Compression;
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::metadata::{ColumnChunkMetaData, Descriptor};
 use crate::parquet::page::{CompressedPage, ParquetPageHeader};
+use crate::parquet::read::MemReaderSlice;
 
 /// Returns a stream of compressed data pages
 pub async fn get_page_stream<'a, RR: AsyncRead + Unpin + Send + AsyncSeek>(
@@ -118,7 +119,7 @@ fn _get_page_stream<R: AsyncRead + Unpin + Send>(
 
             yield finish_page(
                 page_header,
-                &mut scratch,
+                MemReaderSlice::from_vec(std::mem::take(&mut scratch)),
                 compression,
                 &descriptor,
                 None,

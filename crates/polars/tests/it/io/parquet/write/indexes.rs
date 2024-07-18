@@ -7,7 +7,8 @@ use polars_parquet::parquet::indexes::{
 };
 use polars_parquet::parquet::metadata::SchemaDescriptor;
 use polars_parquet::parquet::read::{
-    read_columns_indexes, read_metadata, read_pages_locations, BasicDecompressor, IndexedPageReader,
+    read_columns_indexes, read_metadata, read_pages_locations, BasicDecompressor,
+    IndexedPageReader, MemReader,
 };
 use polars_parquet::parquet::schema::types::{ParquetType, PhysicalType, PrimitiveType};
 use polars_parquet::parquet::write::{
@@ -59,7 +60,7 @@ fn write_file() -> ParquetResult<Vec<u8>> {
 #[test]
 fn read_indexed_page() -> ParquetResult<()> {
     let data = write_file()?;
-    let mut reader = Cursor::new(data);
+    let mut reader = MemReader::from_vec(data);
 
     let metadata = read_metadata(&mut reader)?;
 

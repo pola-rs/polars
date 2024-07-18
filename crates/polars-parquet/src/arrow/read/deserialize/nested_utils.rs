@@ -229,7 +229,7 @@ pub(super) trait NestedDecoder<'a> {
     ) -> ParquetResult<()>;
     fn push_n_nulls(&self, decoded: &mut Self::DecodedState, n: usize);
 
-    fn deserialize_dict(&self, page: &DictPage) -> Self::Dictionary;
+    fn deserialize_dict(&self, page: &'a DictPage) -> Self::Dictionary;
 }
 
 /// The initial info of nested data types.

@@ -218,11 +218,12 @@ async fn write_page_header_async<W: AsyncWrite + Unpin + Send>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::parquet::read::CowBuffer;
 
     #[test]
     fn dict_too_large() {
         let page = CompressedDictPage::new(
-            vec![],
+            CowBuffer::Owned(vec![]),
             Compression::Uncompressed,
             i32::MAX as usize + 1,
             100,
@@ -234,7 +235,7 @@ mod tests {
     #[test]
     fn dict_too_many_values() {
         let page = CompressedDictPage::new(
-            vec![],
+            CowBuffer::Owned(vec![]),
             Compression::Uncompressed,
             0,
             i32::MAX as usize + 1,

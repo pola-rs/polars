@@ -1,6 +1,7 @@
 use parquet_format_safe::DataPageHeaderV2;
 
 use super::page::PageIterator;
+use super::CowBuffer;
 use crate::parquet::compression::{self, Compression};
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{CompressedPage, DataPage, DataPageHeader, DictPage, Page};
@@ -92,7 +93,7 @@ pub fn decompress_buffer(
     } else {
         // page.buffer is already decompressed => swap it with `buffer`, making `page.buffer` the
         // decompression buffer and `buffer` the decompressed buffer
-        std::mem::swap(compressed_page.buffer(), buffer);
+        std::mem::swap(&mut compressed_page.buffer().to_vec(), buffer);
         Ok(false)
     }
 }
@@ -101,12 +102,12 @@ fn create_page(compressed_page: CompressedPage, buffer: Vec<u8>) -> Page {
     match compressed_page {
         CompressedPage::Data(page) => Page::Data(DataPage::new_read(
             page.header,
-            buffer,
+            CowBuffer::Owned(buffer),
             page.descriptor,
             page.selected_rows,
         )),
         CompressedPage::Dict(page) => Page::Dict(DictPage {
-            buffer,
+            buffer: CowBuffer::Owned(buffer),
             num_values: page.num_values,
             is_sorted: page.is_sorted,
         }),
@@ -132,7 +133,7 @@ fn decompress_reuse<P: PageIterator>(
     let was_decompressed = decompress_buffer(&mut compressed_page, buffer)?;
 
     if was_decompressed {
-        iterator.swap_buffer(compressed_page.buffer())
+        iterator.swap_buffer(&mut compressed_page.buffer().to_vec())
     };
 
     let new_page = create_page(compressed_page, std::mem::take(buffer));
@@ -210,9 +211,9 @@ impl<P: PageIterator> FallibleStreamingIterator for Decompressor<P> {
     fn advance(&mut self) -> ParquetResult<()> {
         if let Some(page) = self.current.as_mut() {
             if self.was_decompressed {
-                self.buffer = std::mem::take(page.buffer());
+                self.buffer = std::mem::take(page.buffer_mut());
             } else {
-                self.iter.swap_buffer(page.buffer());
+                self.iter.swap_buffer(page.buffer_mut());
             }
         }
 
@@ -255,7 +256,7 @@ impl streaming_decompression::Compressed for CompressedPage {
 impl streaming_decompression::Decompressed for Page {
     #[inline]
     fn buffer_mut(&mut self) -> &mut Vec<u8> {
-        self.buffer()
+        self.buffer_mut()
     }
 }
 

@@ -25,8 +25,8 @@ use polars_parquet::parquet::read::get_page_stream;
 #[cfg(feature = "async")]
 use polars_parquet::parquet::read::read_metadata_async;
 use polars_parquet::parquet::read::{
-    get_column_iterator, get_field_columns, read_metadata, BasicDecompressor, MutStreamingIterator,
-    State,
+    get_column_iterator, get_field_columns, read_metadata, BasicDecompressor, MemReader,
+    MutStreamingIterator, State,
 };
 use polars_parquet::parquet::schema::types::{GroupConvertedType, ParquetType};
 use polars_parquet::parquet::schema::Repetition;
@@ -209,12 +209,12 @@ where
     }
 }
 
-pub fn read_column<R: std::io::Read + std::io::Seek>(
-    reader: &mut R,
+pub fn read_column(
+    mut reader: MemReader,
     row_group: usize,
     field_name: &str,
 ) -> ParquetResult<(Array, Option<Statistics>)> {
-    let metadata = read_metadata(reader)?;
+    let metadata = read_metadata(&mut reader)?;
 
     let field = metadata
         .schema()
@@ -278,8 +278,9 @@ pub async fn read_column_async<
 }
 
 fn get_column(path: &str, column: &str) -> ParquetResult<(Array, Option<Statistics>)> {
-    let mut file = File::open(path).unwrap();
-    read_column(&mut file, 0, column)
+    let file = File::open(path).unwrap();
+    let memreader = MemReader::from_reader(file).unwrap();
+    read_column(memreader, 0, column)
 }
 
 fn test_column(column: &str) -> ParquetResult<()> {
