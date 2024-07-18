@@ -16,6 +16,7 @@ description = "Apache Parquet I/O operations for Polars"
 ahash = { workspace = true }
 arrow = { workspace = true, features = ["io_ipc"] }
 base64 = { workspace = true }
+bytemuck = { workspace = true }
 ethnum = { workspace = true }
 fallible-streaming-iterator = { workspace = true, optional = true }
 futures = { workspace = true, optional = true }
