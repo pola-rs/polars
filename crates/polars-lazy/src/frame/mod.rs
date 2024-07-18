@@ -30,7 +30,6 @@ pub use ipc::*;
 pub use ndjson::*;
 #[cfg(feature = "parquet")]
 pub use parquet::*;
-use polars_core::config::verbose;
 use polars_core::prelude::*;
 use polars_expr::{create_physical_expr, ExpressionConversionState};
 use polars_io::RowIndex;
@@ -756,7 +755,7 @@ impl LazyFrame {
                         // Fallback to normal engine if error is due to not being implemented,
                         // otherwise propagate error.
                         if e.downcast_ref::<&str>() != Some(&"not yet implemented") {
-                            if verbose() {
+                            if polars_core::config::verbose() {
                                 eprintln!("caught unimplemented error in new streaming engine, falling back to normal engine");
                             }
                             std::panic::resume_unwind(e);
