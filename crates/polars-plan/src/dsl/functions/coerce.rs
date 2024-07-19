@@ -6,9 +6,10 @@ pub fn as_struct(exprs: Vec<Expr>) -> Expr {
         input: exprs,
         function: FunctionExpr::AsStruct,
         options: FunctionOptions {
-            input_wildcard_expansion: true,
-            pass_name_to_apply: true,
             collect_groups: ApplyOptions::ElementWise,
+            flags: FunctionFlags::default()
+                | FunctionFlags::PASS_NAME_TO_APPLY
+                | FunctionFlags::INPUT_WILDCARD_EXPANSION,
             ..Default::default()
         },
     }

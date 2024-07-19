@@ -544,7 +544,9 @@ fn prepare_excluded(
 fn expand_function_inputs(expr: Expr, schema: &Schema) -> Expr {
     expr.map_expr(|mut e| match &mut e {
         Expr::AnonymousFunction { input, options, .. } | Expr::Function { input, options, .. }
-            if options.input_wildcard_expansion =>
+            if options
+                .flags
+                .contains(FunctionFlags::INPUT_WILDCARD_EXPANSION) =>
         {
             *input = rewrite_projections(core::mem::take(input), schema, &[]).unwrap();
             e

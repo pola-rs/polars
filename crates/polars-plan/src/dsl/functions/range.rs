@@ -15,7 +15,7 @@ pub fn int_range(start: Expr, end: Expr, step: i64, dtype: DataType) -> Expr {
         input,
         function: FunctionExpr::Range(RangeFunction::IntRange { step, dtype }),
         options: FunctionOptions {
-            allow_rename: true,
+            flags: FunctionFlags::default() | FunctionFlags::ALLOW_RENAME,
             ..Default::default()
         },
     }
@@ -29,7 +29,7 @@ pub fn int_ranges(start: Expr, end: Expr, step: Expr) -> Expr {
         input,
         function: FunctionExpr::Range(RangeFunction::IntRanges),
         options: FunctionOptions {
-            allow_rename: true,
+            flags: FunctionFlags::default() | FunctionFlags::ALLOW_RENAME,
             ..Default::default()
         },
     }
@@ -45,7 +45,7 @@ pub fn date_range(start: Expr, end: Expr, interval: Duration, closed: ClosedWind
         function: FunctionExpr::Range(RangeFunction::DateRange { interval, closed }),
         options: FunctionOptions {
             collect_groups: ApplyOptions::GroupWise,
-            allow_rename: true,
+            flags: FunctionFlags::default() | FunctionFlags::ALLOW_RENAME,
             ..Default::default()
         },
     }
@@ -61,7 +61,7 @@ pub fn date_ranges(start: Expr, end: Expr, interval: Duration, closed: ClosedWin
         function: FunctionExpr::Range(RangeFunction::DateRanges { interval, closed }),
         options: FunctionOptions {
             collect_groups: ApplyOptions::GroupWise,
-            allow_rename: true,
+            flags: FunctionFlags::default() | FunctionFlags::ALLOW_RENAME,
             ..Default::default()
         },
     }
@@ -90,7 +90,7 @@ pub fn datetime_range(
         options: FunctionOptions {
             collect_groups: ApplyOptions::GroupWise,
             cast_to_supertypes: Some(Default::default()),
-            allow_rename: true,
+            flags: FunctionFlags::default() | FunctionFlags::ALLOW_RENAME,
             ..Default::default()
         },
     }
@@ -119,7 +119,7 @@ pub fn datetime_ranges(
         options: FunctionOptions {
             collect_groups: ApplyOptions::GroupWise,
             cast_to_supertypes: Some(Default::default()),
-            allow_rename: true,
+            flags: FunctionFlags::default() | FunctionFlags::ALLOW_RENAME,
             ..Default::default()
         },
     }
@@ -135,7 +135,7 @@ pub fn time_range(start: Expr, end: Expr, interval: Duration, closed: ClosedWind
         function: FunctionExpr::Range(RangeFunction::TimeRange { interval, closed }),
         options: FunctionOptions {
             collect_groups: ApplyOptions::GroupWise,
-            allow_rename: true,
+            flags: FunctionFlags::default() | FunctionFlags::ALLOW_RENAME,
             ..Default::default()
         },
     }
@@ -151,7 +151,7 @@ pub fn time_ranges(start: Expr, end: Expr, interval: Duration, closed: ClosedWin
         function: FunctionExpr::Range(RangeFunction::TimeRanges { interval, closed }),
         options: FunctionOptions {
             collect_groups: ApplyOptions::GroupWise,
-            allow_rename: true,
+            flags: FunctionFlags::default() | FunctionFlags::ALLOW_RENAME,
             ..Default::default()
         },
     }

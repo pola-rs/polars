@@ -2,6 +2,7 @@
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
+use bitflags::bitflags;
 use polars_core::prelude::*;
 use polars_core::utils::SuperTypeOptions;
 #[cfg(feature = "csv")]
@@ -108,6 +109,53 @@ impl Default for UnsafeBool {
     }
 }
 
+bitflags!(
+        #[repr(transparent)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+        #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+        pub struct FunctionFlags: u8 {
+            // Raise if use in group by
+            const ALLOW_GROUP_AWARE = 1 << 0;
+            // For example a `unique` or a `slice`
+            const CHANGES_LENGTH = 1 << 1;
+            // The physical expression may rename the output of this function.
+            // If set to `false` the physical engine will ensure the left input
+            // expression is the output name.
+            const ALLOW_RENAME = 1 << 2;
+            // if set, then the `Series` passed to the function in the group_by operation
+            // will ensure the name is set. This is an extra heap allocation per group.
+            const PASS_NAME_TO_APPLY = 1 << 3;
+            /// There can be two ways of expanding wildcards:
+            ///
+            /// Say the schema is 'a', 'b' and there is a function `f`. In this case, `f('*')` can expand
+            /// to:
+            /// 1. `f('a', 'b')`
+            /// 2. `f('a'), f('b')`
+            ///
+            /// Setting this to true, will lead to behavior 1.
+            ///
+            /// This also accounts for regex expansion.
+            const INPUT_WILDCARD_EXPANSION = 1 << 4;
+            /// Automatically explode on unit length if it ran as final aggregation.
+            ///
+            /// this is the case for aggregations like sum, min, covariance etc.
+            /// We need to know this because we cannot see the difference between
+            /// the following functions based on the output type and number of elements:
+            ///
+            /// x: {1, 2, 3}
+            ///
+            /// head_1(x) -> {1}
+            /// sum(x) -> {4}
+            const RETURNS_SCALAR = 1 << 5;
+        }
+);
+
+impl Default for FunctionFlags {
+    fn default() -> Self {
+        Self::from_bits_truncate(0) | Self::ALLOW_GROUP_AWARE
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct FunctionOptions {
@@ -117,47 +165,15 @@ pub struct FunctionOptions {
     // used for formatting, (only for anonymous functions)
     #[cfg_attr(feature = "serde", serde(skip_deserializing))]
     pub fmt_str: &'static str,
-    /// There can be two ways of expanding wildcards:
-    ///
-    /// Say the schema is 'a', 'b' and there is a function `f`. In this case, `f('*')` can expand
-    /// to:
-    /// 1. `f('a', 'b')`
-    /// 2. `f('a'), f('b')`
-    ///
-    /// Setting this to true, will lead to behavior 1.
-    ///
-    /// This also accounts for regex expansion.
-    pub input_wildcard_expansion: bool,
-    /// Automatically explode on unit length if it ran as final aggregation.
-    ///
-    /// this is the case for aggregations like sum, min, covariance etc.
-    /// We need to know this because we cannot see the difference between
-    /// the following functions based on the output type and number of elements:
-    ///
-    /// x: {1, 2, 3}
-    ///
-    /// head_1(x) -> {1}
-    /// sum(x) -> {4}
-    pub returns_scalar: bool,
     // if the expression and its inputs should be cast to supertypes
     // `None` -> Don't cast.
     // `Some` -> cast with given options.
     #[cfg_attr(feature = "serde", serde(skip))]
     pub cast_to_supertypes: Option<SuperTypeOptions>,
-    // The physical expression may rename the output of this function.
-    // If set to `false` the physical engine will ensure the left input
-    // expression is the output name.
-    pub allow_rename: bool,
-    // if set, then the `Series` passed to the function in the group_by operation
-    // will ensure the name is set. This is an extra heap allocation per group.
-    pub pass_name_to_apply: bool,
-    // For example a `unique` or a `slice`
-    pub changes_length: bool,
     // Validate the output of a `map`.
     // this should always be true or we could OOB
     pub check_lengths: UnsafeBool,
-    // Raise if use in group by
-    pub allow_group_aware: bool,
+    pub flags: FunctionFlags,
 }
 
 impl FunctionOptions {
@@ -182,15 +198,10 @@ impl Default for FunctionOptions {
     fn default() -> Self {
         FunctionOptions {
             collect_groups: ApplyOptions::GroupWise,
-            input_wildcard_expansion: false,
-            returns_scalar: false,
             fmt_str: "",
             cast_to_supertypes: None,
-            allow_rename: false,
-            pass_name_to_apply: false,
-            changes_length: false,
             check_lengths: UnsafeBool(true),
-            allow_group_aware: true,
+            flags: Default::default(),
         }
     }
 }
