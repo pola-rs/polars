@@ -1,11 +1,9 @@
 mod indexed_reader;
-mod memreader;
 mod reader;
 #[cfg(feature = "async")]
 mod stream;
 
 pub use indexed_reader::IndexedPageReader;
-pub use memreader::{CowBuffer, MemReader, MemReaderSlice};
 pub use reader::{PageFilter, PageMetaData, PageReader};
 
 use crate::parquet::error::ParquetError;

@@ -1,9 +1,9 @@
 use std::sync::{Arc, OnceLock};
 
 use parquet_format_safe::thrift::protocol::TCompactInputProtocol;
+use polars_utils::mmap::{MemReader, MemSlice};
 
-use super::memreader::MemReader;
-use super::{MemReaderSlice, PageIterator};
+use super::PageIterator;
 use crate::parquet::compression::Compression;
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::indexes::Interval;
@@ -13,7 +13,7 @@ use crate::parquet::page::{
     ParquetPageHeader,
 };
 use crate::parquet::parquet_bridge::Encoding;
-use crate::parquet::read::CowBuffer;
+use crate::parquet::CowBuffer;
 
 /// This meta is a small part of [`ColumnChunkMetaData`].
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -211,7 +211,7 @@ pub(super) fn build_page(reader: &mut PageReader) -> ParquetResult<Option<Compre
 
 pub(super) fn finish_page(
     page_header: ParquetPageHeader,
-    data: MemReaderSlice,
+    data: MemSlice,
     compression: Compression,
     descriptor: &Descriptor,
     selected_rows: Option<Vec<Interval>>,

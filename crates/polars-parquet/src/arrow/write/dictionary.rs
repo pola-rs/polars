@@ -19,9 +19,9 @@ use crate::arrow::write::{slice_nested_leaf, utils};
 use crate::parquet::encoding::hybrid_rle::encode;
 use crate::parquet::encoding::Encoding;
 use crate::parquet::page::{DictPage, Page};
-use crate::parquet::read::CowBuffer;
 use crate::parquet::schema::types::PrimitiveType;
 use crate::parquet::statistics::ParquetStatistics;
+use crate::parquet::CowBuffer;
 use crate::write::DynIter;
 
 pub(crate) fn encode_as_dictionary_optional(

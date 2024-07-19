@@ -218,7 +218,7 @@ async fn write_page_header_async<W: AsyncWrite + Unpin + Send>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parquet::read::CowBuffer;
+    use crate::parquet::CowBuffer;
 
     #[test]
     fn dict_too_large() {

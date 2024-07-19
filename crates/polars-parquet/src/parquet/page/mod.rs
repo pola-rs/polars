@@ -1,4 +1,4 @@
-use super::read::CowBuffer;
+use super::CowBuffer;
 use crate::parquet::compression::Compression;
 use crate::parquet::encoding::{get_length, Encoding};
 use crate::parquet::error::{ParquetError, ParquetResult};

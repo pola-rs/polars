@@ -4,6 +4,7 @@ use async_stream::try_stream;
 use futures::io::{copy, sink};
 use futures::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt, Stream};
 use parquet_format_safe::thrift::protocol::TCompactInputStreamProtocol;
+use polars_utils::mmap::MemSlice;
 
 use super::reader::{finish_page, get_page_header, PageMetaData};
 use super::PageFilter;
@@ -11,7 +12,6 @@ use crate::parquet::compression::Compression;
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::metadata::{ColumnChunkMetaData, Descriptor};
 use crate::parquet::page::{CompressedPage, ParquetPageHeader};
-use crate::parquet::read::MemReaderSlice;
 
 /// Returns a stream of compressed data pages
 pub async fn get_page_stream<'a, RR: AsyncRead + Unpin + Send + AsyncSeek>(
@@ -119,7 +119,7 @@ fn _get_page_stream<R: AsyncRead + Unpin + Send>(
 
             yield finish_page(
                 page_header,
-                MemReaderSlice::from_vec(std::mem::take(&mut scratch)),
+                MemSlice::from_vec(std::mem::take(&mut scratch)),
                 compression,
                 &descriptor,
                 None,

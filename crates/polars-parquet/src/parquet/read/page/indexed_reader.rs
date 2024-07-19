@@ -1,9 +1,9 @@
 use std::collections::VecDeque;
 use std::io::{Seek, SeekFrom};
 
-use super::memreader::MemReader;
+use polars_utils::mmap::{MemReader, MemSlice};
+
 use super::reader::{finish_page, read_page_header, PageMetaData};
-use super::MemReaderSlice;
 use crate::parquet::error::ParquetError;
 use crate::parquet::indexes::{FilteredPage, Interval};
 use crate::parquet::metadata::{ColumnChunkMetaData, Descriptor};
@@ -44,7 +44,7 @@ fn read_page(
     reader: &mut MemReader,
     start: u64,
     length: usize,
-) -> Result<(ParquetPageHeader, MemReaderSlice), ParquetError> {
+) -> Result<(ParquetPageHeader, MemSlice), ParquetError> {
     // seek to the page
     reader.seek(SeekFrom::Start(start))?;
 
