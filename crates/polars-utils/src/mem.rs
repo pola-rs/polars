@@ -17,7 +17,7 @@ pub unsafe fn prefetch_l2(ptr: *const u8) {
         unsafe { _mm_prefetch(ptr as *const _, _MM_HINT_T1) };
     }
 
-    #[cfg(all(target_arch = "aarch64", feature="nightly"))]
+    #[cfg(all(target_arch = "aarch64", feature = "nightly"))]
     {
         use std::arch::aarch64::*;
         unsafe { _prefetch(ptr as *const _, _PREFETCH_READ, _PREFETCH_LOCALITY2) };
