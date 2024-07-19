@@ -15,7 +15,7 @@ fn is_streamable(node: Node, arena: &Arena<AExpr>) -> bool {
 
 fn has_potential_recurring_entrance(node: Node, arena: &Arena<AExpr>) -> bool {
     arena.iter(node).any(|(_n, ae)| match ae {
-        AExpr::Function { options, .. } => {
+        AExpr::Function { options, .. } | AExpr::AnonymousFunction { options, .. } => {
             options.flags.contains(FunctionFlags::OPTIONAL_RE_ENTRANT)
         },
         _ => false,
