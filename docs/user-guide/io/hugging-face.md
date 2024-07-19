@@ -20,12 +20,12 @@ To scan from Hugging Face, a `hf://` path can be passed to the scan functions. T
 
 Example `hf://` paths:
 
-| Path                                                  | Path components                                                                                                                                                                                |
-| ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| hf://datasets/nameexhaustion/polars-docs/iris.csv     | Bucket: datasets<br>Repository: nameexhaustion/polars-docs<br>Branch: main<br>Path: iris.csv<br>[Web URL](https://huggingface.co/datasets/nameexhaustion/polars-docs/tree/main/)               |
-| hf://datasets/nameexhaustion/polars-docs@foods/\*.csv | Bucket: datasets<br>Repository: nameexhaustion/polars-docs<br>Branch: foods<br>Path: \*.csv<br>[Web URL](https://huggingface.co/datasets/nameexhaustion/polars-docs/tree/foods/)               |
-| hf://datasets/nameexhaustion/polars-docs/hive_dates/  | Bucket: datasets<br>Repository: nameexhaustion/polars-docs<br>Branch: main<br>Path: hive_dates/<br>[Web URL](https://huggingface.co/datasets/nameexhaustion/polars-docs/tree/main/hive_dates/) |
-| hf://spaces/nameexhaustion/polars-docs/orders.feather | Bucket: spaces<br>Repository: nameexhaustion/polars-docs<br>Branch: main<br>Path: orders.feather<br>[Web URL](https://huggingface.co/spaces/nameexhaustion/polars-docs/tree/main/)             |
+| Path                                                  | Path components                                                                                                                                                                                 |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| hf://datasets/nameexhaustion/polars-docs/iris.csv     | Bucket: datasets<br>Repository: nameexhaustion/polars-docs<br>Branch: main<br>Path: iris.csv<br> [Web URL](https://huggingface.co/datasets/nameexhaustion/polars-docs/tree/main/)               |
+| hf://datasets/nameexhaustion/polars-docs@foods/\*.csv | Bucket: datasets<br>Repository: nameexhaustion/polars-docs<br>Branch: foods<br>Path: \*.csv<br> [Web URL](https://huggingface.co/datasets/nameexhaustion/polars-docs/tree/foods/)               |
+| hf://datasets/nameexhaustion/polars-docs/hive_dates/  | Bucket: datasets<br>Repository: nameexhaustion/polars-docs<br>Branch: main<br>Path: hive_dates/<br> [Web URL](https://huggingface.co/datasets/nameexhaustion/polars-docs/tree/main/hive_dates/) |
+| hf://spaces/nameexhaustion/polars-docs/orders.feather | Bucket: spaces<br>Repository: nameexhaustion/polars-docs<br>Branch: main<br>Path: orders.feather<br> [Web URL](https://huggingface.co/spaces/nameexhaustion/polars-docs/tree/main/)             |
 
 ### Authentication
 
