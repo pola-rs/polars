@@ -55,7 +55,6 @@ The filtering context filters a `DataFrame` based on one or more expressions tha
 !!! info "Multiple filtering expressions"
 
     When passing multiple expressions into one `.filter()` call, the expressions are all evaluated independently against the full `DataFrame` and only combined afterwards.
-    
 
 ## Group by / aggregation
 
