@@ -25,13 +25,14 @@ use polars_parquet::parquet::read::get_page_stream;
 #[cfg(feature = "async")]
 use polars_parquet::parquet::read::read_metadata_async;
 use polars_parquet::parquet::read::{
-    get_column_iterator, get_field_columns, read_metadata, BasicDecompressor, MemReader,
-    MutStreamingIterator, State,
+    get_column_iterator, get_field_columns, read_metadata, BasicDecompressor, MutStreamingIterator,
+    State,
 };
 use polars_parquet::parquet::schema::types::{GroupConvertedType, ParquetType};
 use polars_parquet::parquet::schema::Repetition;
 use polars_parquet::parquet::types::int96_to_i64_ns;
 use polars_parquet::parquet::FallibleStreamingIterator;
+use polars_utils::mmap::MemReader;
 
 use super::*;
 

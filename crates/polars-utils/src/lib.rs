@@ -38,6 +38,8 @@ pub mod wasm;
 pub mod float;
 pub mod index;
 pub mod io;
+#[cfg(feature = "mmap")]
+pub mod mmap;
 pub mod nulls;
 pub mod ord;
 pub mod partitioned;

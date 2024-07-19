@@ -3417,6 +3417,7 @@ dependencies = [
  "bytemuck",
  "hashbrown",
  "indexmap",
+ "memmap2",
  "num-traits",
  "once_cell",
  "polars-error",

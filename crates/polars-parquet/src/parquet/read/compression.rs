@@ -1,11 +1,10 @@
 use parquet_format_safe::DataPageHeaderV2;
 
 use super::page::PageIterator;
-use super::CowBuffer;
 use crate::parquet::compression::{self, Compression};
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{CompressedPage, DataPage, DataPageHeader, DictPage, Page};
-use crate::parquet::FallibleStreamingIterator;
+use crate::parquet::{CowBuffer, FallibleStreamingIterator};
 
 fn decompress_v1(
     compressed: &[u8],

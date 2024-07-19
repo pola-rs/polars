@@ -14,7 +14,6 @@ use polars_parquet::parquet::compression::{BrotliLevel, CompressionOptions};
 use polars_parquet::parquet::error::ParquetResult;
 use polars_parquet::parquet::metadata::{Descriptor, SchemaDescriptor};
 use polars_parquet::parquet::page::Page;
-use polars_parquet::parquet::read::MemReader;
 use polars_parquet::parquet::schema::types::{ParquetType, PhysicalType};
 use polars_parquet::parquet::statistics::Statistics;
 #[cfg(feature = "async")]
@@ -23,6 +22,7 @@ use polars_parquet::parquet::write::{
     Compressor, DynIter, DynStreamingIterator, FileWriter, Version, WriteOptions,
 };
 use polars_parquet::read::read_metadata;
+use polars_utils::mmap::MemReader;
 use primitive::array_to_page_v1;
 
 use super::{alltypes_plain, alltypes_statistics, Array};

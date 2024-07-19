@@ -7,13 +7,13 @@ use polars_parquet::parquet::indexes::{
 };
 use polars_parquet::parquet::metadata::SchemaDescriptor;
 use polars_parquet::parquet::read::{
-    read_columns_indexes, read_metadata, read_pages_locations, BasicDecompressor,
-    IndexedPageReader, MemReader,
+    read_columns_indexes, read_metadata, read_pages_locations, BasicDecompressor, IndexedPageReader,
 };
 use polars_parquet::parquet::schema::types::{ParquetType, PhysicalType, PrimitiveType};
 use polars_parquet::parquet::write::{
     Compressor, DynIter, DynStreamingIterator, FileWriter, Version, WriteOptions,
 };
+use polars_utils::mmap::MemReader;
 
 use super::super::read::collect;
 use super::primitive::array_to_page_v1;

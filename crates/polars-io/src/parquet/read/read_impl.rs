@@ -8,6 +8,7 @@ use polars_core::prelude::*;
 use polars_core::utils::{accumulate_dataframes_vertical, split_df};
 use polars_core::POOL;
 use polars_parquet::read::{self, ArrayIter, FileMetaData, PhysicalType, RowGroupMetaData};
+use polars_utils::mmap::MemSlice;
 use rayon::prelude::*;
 
 #[cfg(feature = "cloud")]
@@ -446,8 +447,7 @@ pub fn read_parquet<R: MmapBytesReader>(
     }
 
     let reader = ReaderBytes::from(&mut reader);
-    let bytes = reader.deref();
-    let store = mmap::ColumnStore::Local(bytes);
+    let store = mmap::ColumnStore::Local(reader.into_mem_slice());
 
     let dfs = rg_to_dfs(
         &store,
@@ -492,8 +492,12 @@ impl FetchRowGroupsFromMmapReader {
         let reader_bytes = get_reader_bytes(reader_ptr)?;
         Ok(FetchRowGroupsFromMmapReader(reader_bytes))
     }
+
     fn fetch_row_groups(&mut self, _row_groups: Range<usize>) -> PolarsResult<ColumnStore> {
-        Ok(mmap::ColumnStore::Local(self.0.deref()))
+        // @TODO: we can something smarter here with mmap
+        Ok(mmap::ColumnStore::Local(MemSlice::from_slice(
+            self.0.deref(),
+        )))
     }
 }
 
