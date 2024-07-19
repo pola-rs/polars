@@ -44,7 +44,10 @@ impl PyLazyFrame {
     #[staticmethod]
     #[cfg(feature = "json")]
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (path, paths, infer_schema_length, schema, batch_size, n_rows, low_memory, rechunk, row_index, ignore_errors, include_file_paths))]
+    #[pyo3(signature = (
+        path, paths, infer_schema_length, schema, batch_size, n_rows, low_memory, rechunk,
+        row_index, ignore_errors, include_file_paths, cloud_options, retries, file_cache_ttl
+    ))]
     fn new_from_ndjson(
         path: Option<PathBuf>,
         paths: Vec<PathBuf>,
@@ -57,11 +60,41 @@ impl PyLazyFrame {
         row_index: Option<(String, IdxSize)>,
         ignore_errors: bool,
         include_file_paths: Option<String>,
+        cloud_options: Option<Vec<(String, String)>>,
+        retries: usize,
+        file_cache_ttl: Option<u64>,
     ) -> PyResult<Self> {
         let row_index = row_index.map(|(name, offset)| RowIndex {
             name: Arc::from(name.as_str()),
             offset,
         });
+
+        #[cfg(feature = "cloud")]
+        let cloud_options = {
+            let first_path = if let Some(path) = &path {
+                path
+            } else {
+                paths
+                    .first()
+                    .ok_or_else(|| PyValueError::new_err("expected a path argument"))?
+            };
+
+            let first_path_url = first_path.to_string_lossy();
+
+            let mut cloud_options = if let Some(opts) = cloud_options {
+                parse_cloud_options(&first_path_url, opts)?
+            } else {
+                parse_cloud_options(&first_path_url, vec![])?
+            };
+
+            cloud_options = cloud_options.with_max_retries(retries);
+
+            if let Some(file_cache_ttl) = file_cache_ttl {
+                cloud_options.file_cache_ttl = file_cache_ttl;
+            }
+
+            Some(cloud_options)
+        };
 
         let r = if let Some(path) = &path {
             LazyJsonLineReader::new(path)
@@ -79,6 +112,7 @@ impl PyLazyFrame {
             .with_row_index(row_index)
             .with_ignore_errors(ignore_errors)
             .with_include_file_paths(include_file_paths.map(Arc::from))
+            .with_cloud_options(cloud_options)
             .finish()
             .map_err(PyPolarsErr::from)?;
 
