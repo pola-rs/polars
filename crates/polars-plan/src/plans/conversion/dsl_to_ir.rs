@@ -151,10 +151,16 @@ pub fn to_alp_impl(
                             .map_err(|e| e.context(failed_here!(csv scan)))?
                     },
                     #[cfg(feature = "json")]
-                    FileScan::NDJson { options } => {
-                        scans::ndjson_file_info(&paths, &file_options, options)
-                            .map_err(|e| e.context(failed_here!(ndjson scan)))?
-                    },
+                    FileScan::NDJson {
+                        options,
+                        cloud_options,
+                    } => scans::ndjson_file_info(
+                        &paths,
+                        &file_options,
+                        options,
+                        cloud_options.as_ref(),
+                    )
+                    .map_err(|e| e.context(failed_here!(ndjson scan)))?,
                     // FileInfo should be set.
                     FileScan::Anonymous { .. } => unreachable!(),
                 }
@@ -749,21 +755,23 @@ fn expand_scan_paths(
     }
 
     {
-        let paths_expanded = match scan_type {
+        let paths_expanded = match &scan_type {
             #[cfg(feature = "parquet")]
-            FileScan::Parquet {
-                ref cloud_options, ..
-            } => expand_scan_paths_with_hive_update(&lock.0, file_options, cloud_options)?,
+            FileScan::Parquet { cloud_options, .. } => {
+                expand_scan_paths_with_hive_update(&lock.0, file_options, cloud_options)?
+            },
             #[cfg(feature = "ipc")]
-            FileScan::Ipc {
-                ref cloud_options, ..
-            } => expand_scan_paths_with_hive_update(&lock.0, file_options, cloud_options)?,
+            FileScan::Ipc { cloud_options, .. } => {
+                expand_scan_paths_with_hive_update(&lock.0, file_options, cloud_options)?
+            },
             #[cfg(feature = "csv")]
-            FileScan::Csv {
-                ref cloud_options, ..
-            } => expand_paths(&lock.0, file_options.glob, cloud_options.as_ref())?,
+            FileScan::Csv { cloud_options, .. } => {
+                expand_paths(&lock.0, file_options.glob, cloud_options.as_ref())?
+            },
             #[cfg(feature = "json")]
-            FileScan::NDJson { .. } => expand_paths(&lock.0, file_options.glob, None)?,
+            FileScan::NDJson { cloud_options, .. } => {
+                expand_paths(&lock.0, file_options.glob, cloud_options.as_ref())?
+            },
             FileScan::Anonymous { .. } => unreachable!(), // Invariant: Anonymous scans are already expanded.
         };
 

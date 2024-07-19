@@ -34,7 +34,10 @@ pub enum FileScan {
         metadata: Option<arrow::io::ipc::read::FileMetadata>,
     },
     #[cfg(feature = "json")]
-    NDJson { options: NDJsonReadOptions },
+    NDJson {
+        options: NDJsonReadOptions,
+        cloud_options: Option<polars_io::cloud::CloudOptions>,
+    },
     #[cfg_attr(feature = "serde", serde(skip))]
     Anonymous {
         options: Arc<AnonymousScanOptions>,
@@ -83,7 +86,16 @@ impl PartialEq for FileScan {
                 },
             ) => l == r && c_l == c_r,
             #[cfg(feature = "json")]
-            (FileScan::NDJson { options: l }, FileScan::NDJson { options: r }) => l == r,
+            (
+                FileScan::NDJson {
+                    options: l,
+                    cloud_options: c_l,
+                },
+                FileScan::NDJson {
+                    options: r,
+                    cloud_options: c_r,
+                },
+            ) => l == r && c_l == c_r,
             _ => false,
         }
     }
@@ -122,7 +134,13 @@ impl Hash for FileScan {
                 cloud_options.hash(state);
             },
             #[cfg(feature = "json")]
-            FileScan::NDJson { options } => options.hash(state),
+            FileScan::NDJson {
+                options,
+                cloud_options,
+            } => {
+                options.hash(state);
+                cloud_options.hash(state)
+            },
             FileScan::Anonymous { options, .. } => options.hash(state),
         }
     }
