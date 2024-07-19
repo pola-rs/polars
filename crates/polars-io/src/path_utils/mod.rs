@@ -151,7 +151,7 @@ pub fn expand_paths_hive(
             if first_path.starts_with("hf://") {
                 let (expand_start_idx, paths) =
                     crate::pl_async::get_runtime().block_on_potential_spawn(
-                        hugging_face::expand_paths_hf(paths, check_directory_level),
+                        hugging_face::expand_paths_hf(paths, check_directory_level, cloud_options),
                     )?;
 
                 return Ok((Arc::from(paths), expand_start_idx));
