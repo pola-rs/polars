@@ -163,6 +163,6 @@ def test_concat_list_reverse_struct_fields() -> None:
     assert_frame_equal(result1, result2)
 
 
-def test_concat_list_in_agg_16519() -> None:
+def test_concat_list_empty() -> None:
     df = pl.DataFrame({"a": []})
     df.select(pl.concat_list("a"))
