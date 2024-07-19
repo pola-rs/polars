@@ -54,32 +54,33 @@ impl ComputeNode for SelectNode {
         for (mut recv, mut send) in receivers.into_iter().zip(senders) {
             let slf = &*self;
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-                while let Ok(morsel) = recv.recv().await {
-                    let extend_or_create = |df: DataFrame, mut selected: Vec<Series>| {
-                        // Extend or create new dataframe.
-                        let ret = if slf.extend_original {
-                            let mut out = df;
-                            out._add_columns(selected, &slf.schema)?;
-                            out
-                        } else {
-                            // Broadcast scalars.
-                            let max_non_unit_length = selected
-                                .iter()
-                                .map(|s| s.len())
-                                .filter(|l| *l != 1)
-                                .max()
-                                .unwrap_or(1);
-                            for s in &mut selected {
-                                if s.len() != max_non_unit_length {
-                                    assert!(s.len() == 1, "got series of incompatible lengths");
-                                    *s = s.new_from_index(0, max_non_unit_length);
-                                }
+                // Helper to finish the operation.
+                let extend_or_create = |df: DataFrame, mut selected: Vec<Series>| {
+                    // Extend or create new dataframe.
+                    let ret = if slf.extend_original {
+                        let mut out = df;
+                        out._add_columns(selected, &slf.schema)?;
+                        out
+                    } else {
+                        // Broadcast scalars.
+                        let max_non_unit_length = selected
+                            .iter()
+                            .map(|s| s.len())
+                            .filter(|l| *l != 1)
+                            .max()
+                            .unwrap_or(1);
+                        for s in &mut selected {
+                            if s.len() != max_non_unit_length {
+                                assert!(s.len() == 1, "got series of incompatible lengths");
+                                *s = s.new_from_index(0, max_non_unit_length);
                             }
-                            unsafe { DataFrame::new_no_checks(selected) }
-                        };
-                        PolarsResult::Ok(ret)
+                        }
+                        unsafe { DataFrame::new_no_checks(selected) }
                     };
+                    PolarsResult::Ok(ret)
+                };
 
+                while let Ok(morsel) = recv.recv().await {
                     // We need spawn_blocking because evaluate could contain Python UDFs which
                     // recursively call the executor again.
                     let morsel = if slf.maybe_re_entrant {
@@ -104,7 +105,9 @@ impl ComputeNode for SelectNode {
                             morsel.set_consume_token(token);
                         }
                         morsel
-                    } else {
+                    }
+                    // This is the happy path where there are guaranteed to be no re-entrant expressions.
+                    else {
                         morsel.try_map(|df| {
                             // Select columns.
                             let selected: Vec<_> = slf
