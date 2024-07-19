@@ -42,7 +42,7 @@ fn cast_rhs(
         if !matches!(s.dtype(), DataType::List(_)) {
             *s = s.cast(inner_type)?
         }
-        if !matches!(s.dtype(), DataType::List(_)) && s.dtype() == inner_type {
+        if !matches!(s.dtype(), DataType::List(_)) && s.dtype() == inner_type && s.len() != 0 {
             // coerce to list JIT
             *s = s.reshape_list(&[-1, 1]).unwrap();
         }
