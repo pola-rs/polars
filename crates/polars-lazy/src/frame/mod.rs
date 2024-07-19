@@ -734,8 +734,8 @@ impl LazyFrame {
             let run_on_new_streaming_engine = move || {
                 let alp_plan = slf.clone().to_alp_optimized()?;
                 let lp_top = alp_plan.lp_top;
-                let mut ir_arena = alp_plan.lp_arena.clone();
-                let expr_arena = alp_plan.expr_arena.clone();
+                let mut ir_arena = alp_plan.lp_arena;
+                let expr_arena = alp_plan.expr_arena;
 
                 let lp_top = ir_arena.add(IR::Sink {
                     input: lp_top,
