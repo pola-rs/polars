@@ -215,8 +215,7 @@ where
         match (self, page_validity) {
             (Self::Unit(page), None) => {
                 values.extend(
-                    page.by_ref()
-                        .map(|v| decoder.decoder.decode(P::from_le_bytes(*v)))
+                    page.map(|v| decoder.decoder.decode(P::from_le_bytes(*v)))
                         .take(additional),
                 );
             },

@@ -19,6 +19,7 @@ use crate::arrow::write::{slice_nested_leaf, utils};
 use crate::parquet::encoding::hybrid_rle::encode;
 use crate::parquet::encoding::Encoding;
 use crate::parquet::page::{DictPage, Page};
+use crate::parquet::read::CowBuffer;
 use crate::parquet::schema::types::PrimitiveType;
 use crate::parquet::statistics::ParquetStatistics;
 use crate::write::DynIter;
@@ -202,7 +203,10 @@ macro_rules! dyn_prim {
         } else {
             None
         };
-        (DictPage::new(buffer, values.len(), false), stats)
+        (
+            DictPage::new(CowBuffer::Owned(buffer), values.len(), false),
+            stats,
+        )
     }};
 }
 
@@ -254,7 +258,10 @@ pub fn array_to_pages<K: DictionaryKey>(
                         } else {
                             None
                         };
-                        (DictPage::new(buffer, array.len(), false), stats)
+                        (
+                            DictPage::new(CowBuffer::Owned(buffer), array.len(), false),
+                            stats,
+                        )
                     },
                     ArrowDataType::BinaryView => {
                         let array = array
@@ -274,7 +281,10 @@ pub fn array_to_pages<K: DictionaryKey>(
                         } else {
                             None
                         };
-                        (DictPage::new(buffer, array.len(), false), stats)
+                        (
+                            DictPage::new(CowBuffer::Owned(buffer), array.len(), false),
+                            stats,
+                        )
                     },
                     ArrowDataType::Utf8View => {
                         let array = array
@@ -295,7 +305,10 @@ pub fn array_to_pages<K: DictionaryKey>(
                         } else {
                             None
                         };
-                        (DictPage::new(buffer, array.len(), false), stats)
+                        (
+                            DictPage::new(CowBuffer::Owned(buffer), array.len(), false),
+                            stats,
+                        )
                     },
                     ArrowDataType::LargeBinary => {
                         let values = array.values().as_any().downcast_ref().unwrap();
@@ -311,7 +324,10 @@ pub fn array_to_pages<K: DictionaryKey>(
                         } else {
                             None
                         };
-                        (DictPage::new(buffer, values.len(), false), stats)
+                        (
+                            DictPage::new(CowBuffer::Owned(buffer), values.len(), false),
+                            stats,
+                        )
                     },
                     ArrowDataType::FixedSizeBinary(_) => {
                         let mut buffer = vec![];
@@ -327,7 +343,10 @@ pub fn array_to_pages<K: DictionaryKey>(
                         } else {
                             None
                         };
-                        (DictPage::new(buffer, array.len(), false), stats)
+                        (
+                            DictPage::new(CowBuffer::Owned(buffer), array.len(), false),
+                            stats,
+                        )
                     },
                     other => {
                         polars_bail!(nyi =

@@ -4,6 +4,7 @@ use bytes::Bytes;
 #[cfg(feature = "async")]
 use polars_core::datatypes::PlHashMap;
 use polars_error::PolarsResult;
+use polars_parquet::parquet::read::MemReader;
 use polars_parquet::read::{
     column_iter_to_arrays, get_field_columns, ArrayIter, BasicDecompressor, ColumnChunkMetaData,
     PageReader,
@@ -73,7 +74,7 @@ pub(super) fn to_deserializer<'a>(
         .into_iter()
         .map(|(column_meta, chunk)| {
             let pages = PageReader::new(
-                std::io::Cursor::new(chunk),
+                MemReader::from_slice(chunk),
                 column_meta,
                 std::sync::Arc::new(|_, _| true),
                 vec![],

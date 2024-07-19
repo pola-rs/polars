@@ -9,7 +9,9 @@ use super::{ArrayIter, RowGroupMetaData};
 use crate::arrow::read::column_iter_to_arrays;
 use crate::parquet::indexes::FilteredPage;
 use crate::parquet::metadata::ColumnChunkMetaData;
-use crate::parquet::read::{BasicDecompressor, IndexedPageReader, PageMetaData, PageReader};
+use crate::parquet::read::{
+    BasicDecompressor, IndexedPageReader, MemReader, PageMetaData, PageReader,
+};
 
 /// An [`Iterator`] of [`RecordBatchT`] that (dynamically) adapts a vector of iterators of [`Array`] into
 /// an iterator of [`RecordBatchT`].
@@ -164,7 +166,7 @@ pub fn to_deserializer<'a>(
                     .for_each(|page| page.start -= meta.column_start);
                 meta.column_start = 0;
                 let pages = IndexedPageReader::new_with_page_meta(
-                    std::io::Cursor::new(chunk),
+                    MemReader::from_vec(chunk),
                     meta,
                     pages,
                     vec![],
@@ -185,7 +187,7 @@ pub fn to_deserializer<'a>(
             .map(|(column_meta, chunk)| {
                 let len = chunk.len();
                 let pages = PageReader::new(
-                    std::io::Cursor::new(chunk),
+                    MemReader::from_vec(chunk),
                     column_meta,
                     std::sync::Arc::new(|_, _| true),
                     vec![],

@@ -3,6 +3,7 @@ use polars_parquet::parquet::encoding::Encoding;
 use polars_parquet::parquet::error::ParquetResult;
 use polars_parquet::parquet::metadata::Descriptor;
 use polars_parquet::parquet::page::{DataPage, DataPageHeader, DataPageHeaderV1, Page};
+use polars_parquet::parquet::read::CowBuffer;
 use polars_parquet::parquet::statistics::BinaryStatistics;
 use polars_parquet::parquet::types::ord_binary;
 use polars_parquet::parquet::write::WriteOptions;
@@ -80,7 +81,7 @@ pub fn array_to_page_v1(
 
     Ok(Page::Data(DataPage::new(
         DataPageHeader::V1(header),
-        buffer,
+        CowBuffer::Owned(buffer),
         descriptor.clone(),
         Some(array.len()),
     )))
