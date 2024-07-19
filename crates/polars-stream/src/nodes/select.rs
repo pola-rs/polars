@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
 use polars_core::schema::Schema;
-use polars_core::series::Series;
 use polars_expr::prelude::PhysicalExpr;
 
 use super::compute_node_prelude::*;
 
 pub struct SelectNode {
     selectors: Vec<Arc<dyn PhysicalExpr>>,
+    selector_reentrant: Vec<bool>,
     schema: Arc<Schema>,
     extend_original: bool,
 }
@@ -15,11 +15,13 @@ pub struct SelectNode {
 impl SelectNode {
     pub fn new(
         selectors: Vec<Arc<dyn PhysicalExpr>>,
+        selector_reentrant: Vec<bool>,
         schema: Arc<Schema>,
         extend_original: bool,
     ) -> Self {
         Self {
             selectors,
+            selector_reentrant,
             schema,
             extend_original,
         }
@@ -52,38 +54,50 @@ impl ComputeNode for SelectNode {
             let slf = &*self;
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 while let Ok(morsel) = recv.recv().await {
-                    let morsel = morsel.try_map(|df| {
-                        // Select columns.
-                        let mut selected: Vec<Series> = slf
-                            .selectors
-                            .iter()
-                            .map(|s| s.evaluate(&df, state))
-                            .collect::<PolarsResult<_>>()?;
-
-                        // Extend or create new dataframe.
-                        let ret = if slf.extend_original {
-                            let mut out = df.clone();
-                            out._add_columns(selected, &slf.schema)?;
-                            out
+                    let (df, seq, consume_token) = morsel.into_inner();
+                    let mut selected = Vec::new();
+                    for (selector, reentrant) in slf.selectors.iter().zip(&slf.selector_reentrant) {
+                        // We need spawn_blocking because evaluate could contain Python UDFs which
+                        // recursively call the executor again.
+                        let s = if *reentrant {
+                            let df = df.clone();
+                            let selector = selector.clone();
+                            let state = state.clone();
+                            polars_io::pl_async::get_runtime()
+                                .spawn_blocking(move || selector.evaluate(&df, &state))
+                                .await
+                                .unwrap()?
                         } else {
-                            // Broadcast scalars.
-                            let max_non_unit_length = selected
-                                .iter()
-                                .map(|s| s.len())
-                                .filter(|l| *l != 1)
-                                .max()
-                                .unwrap_or(1);
-                            for s in &mut selected {
-                                if s.len() != max_non_unit_length {
-                                    assert!(s.len() == 1, "got series of incompatible lengths");
-                                    *s = s.new_from_index(0, max_non_unit_length);
-                                }
-                            }
-                            unsafe { DataFrame::new_no_checks(selected) }
+                            selector.evaluate(&df, state)?
                         };
+                        selected.push(s);
+                    }
 
-                        PolarsResult::Ok(ret)
-                    })?;
+                    let ret = if slf.extend_original {
+                        let mut out = df;
+                        out._add_columns(selected, &slf.schema)?;
+                        out
+                    } else {
+                        // Broadcast scalars.
+                        let max_non_unit_length = selected
+                            .iter()
+                            .map(|s| s.len())
+                            .filter(|l| *l != 1)
+                            .max()
+                            .unwrap_or(1);
+                        for s in &mut selected {
+                            if s.len() != max_non_unit_length {
+                                assert!(s.len() == 1, "got series of incompatible lengths");
+                                *s = s.new_from_index(0, max_non_unit_length);
+                            }
+                        }
+                        unsafe { DataFrame::new_no_checks(selected) }
+                    };
+
+                    let mut morsel = Morsel::new(ret, seq);
+                    if let Some(token) = consume_token {
+                        morsel.set_consume_token(token);
+                    }
 
                     if send.send(morsel).await.is_err() {
                         break;

@@ -147,6 +147,10 @@ bitflags!(
             /// head_1(x) -> {1}
             /// sum(x) -> {4}
             const RETURNS_SCALAR = 1 << 5;
+            /// This can happen with UDF's that use Polars within the UDF.
+            /// This can lead to recursively entering the engine and sometimes deadlocks.
+            /// This flag must be set to handle that.
+            const OPTIONAL_RE_ENTRANT = 1 << 6;
         }
 );
 

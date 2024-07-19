@@ -63,8 +63,8 @@ impl Morsel {
     }
 
     #[allow(unused)]
-    pub fn into_df(self) -> DataFrame {
-        self.df
+    pub fn into_inner(self) -> (DataFrame, MorselSeq, Option<WaitToken>) {
+        (self.df, self.seq, self.consume_token)
     }
 
     pub fn df(&self) -> &DataFrame {

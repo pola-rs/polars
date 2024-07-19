@@ -261,6 +261,9 @@ pub fn execute_graph(
             break;
         }
         run_subgraph(graph, &nodes, &pipes, num_pipelines)?;
+        if polars_core::config::verbose() {
+            eprintln!("polars-stream: done running graph phase");
+        }
     }
 
     // Ensure everything is done.

@@ -275,6 +275,15 @@ impl RuntimeManager {
     {
         self.rt.spawn(future)
     }
+
+    // See [`tokio::runtime::Runtime::spawn_blocking`].
+    pub fn spawn_blocking<F, R>(&self, f: F) -> tokio::task::JoinHandle<R>
+    where
+        F: FnOnce() -> R + Send + 'static,
+        R: Send + 'static,
+    {
+        self.rt.spawn_blocking(f)
+    }
 }
 
 static RUNTIME: Lazy<RuntimeManager> = Lazy::new(RuntimeManager::new);
