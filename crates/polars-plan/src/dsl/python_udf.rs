@@ -251,6 +251,10 @@ impl Expr {
                 },
             })
         });
+        let mut flags = FunctionFlags::default();
+        if returns_scalar {
+            flags |= FunctionFlags::RETURNS_SCALAR;
+        }
 
         Expr::AnonymousFunction {
             input: vec![self],
@@ -259,7 +263,7 @@ impl Expr {
             options: FunctionOptions {
                 collect_groups,
                 fmt_str: name,
-                returns_scalar,
+                flags,
                 ..Default::default()
             },
         }

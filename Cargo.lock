@@ -3306,6 +3306,7 @@ name = "polars-plan"
 version = "0.41.3"
 dependencies = [
  "ahash",
+ "bitflags",
  "bytemuck",
  "chrono",
  "chrono-tz",

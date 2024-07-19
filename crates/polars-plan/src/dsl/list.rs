@@ -337,7 +337,7 @@ impl ListNameSpace {
                 false,
             )
             .with_function_options(|mut options| {
-                options.input_wildcard_expansion = true;
+                options.flags |= FunctionFlags::INPUT_WILDCARD_EXPANSION;
                 options
             })
     }
@@ -354,7 +354,7 @@ impl ListNameSpace {
                 false,
             )
             .with_function_options(|mut options| {
-                options.input_wildcard_expansion = true;
+                options.flags |= FunctionFlags::INPUT_WILDCARD_EXPANSION;
                 options
             })
     }
@@ -366,9 +366,9 @@ impl ListNameSpace {
             function: FunctionExpr::ListExpr(ListFunction::SetOperation(set_operation)),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ElementWise,
-                returns_scalar: false,
                 cast_to_supertypes: Some(SuperTypeOptions { implode_list: true }),
-                input_wildcard_expansion: true,
+                flags: FunctionFlags::default()
+                    | FunctionFlags::INPUT_WILDCARD_EXPANSION & !FunctionFlags::RETURNS_SCALAR,
                 ..Default::default()
             },
         }

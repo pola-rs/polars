@@ -40,6 +40,20 @@ pub fn register_plugin_function(
         None
     };
 
+    let mut flags = FunctionFlags::from_bits_truncate(0);
+    if changes_length {
+        flags |= FunctionFlags::CHANGES_LENGTH;
+    }
+    if pass_name_to_apply {
+        flags |= FunctionFlags::PASS_NAME_TO_APPLY;
+    }
+    if returns_scalar {
+        flags |= FunctionFlags::RETURNS_SCALAR;
+    }
+    if input_wildcard_expansion {
+        flags |= FunctionFlags::INPUT_WILDCARD_EXPANSION;
+    }
+
     Ok(Expr::Function {
         input: args.to_exprs(),
         function: FunctionExpr::FfiPlugin {
@@ -49,11 +63,8 @@ pub fn register_plugin_function(
         },
         options: FunctionOptions {
             collect_groups,
-            input_wildcard_expansion,
-            returns_scalar,
             cast_to_supertypes,
-            pass_name_to_apply,
-            changes_length,
+            flags,
             ..Default::default()
         },
     }
