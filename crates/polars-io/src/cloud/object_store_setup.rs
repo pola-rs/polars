@@ -67,7 +67,6 @@ pub async fn build_object_store(
         }
     }
 
-    #[cfg(any(feature = "aws", feature = "gcp", feature = "azure"))]
     let options = options.map(std::borrow::Cow::Borrowed).unwrap_or_default();
 
     let cloud_type = CloudType::from_url(&parsed)?;
@@ -111,16 +110,14 @@ pub async fn build_object_store(
                 allow_cache = false;
                 #[cfg(feature = "http")]
                 {
-                    let store = object_store::http::HttpBuilder::new()
-                        .with_url(url)
-                        .with_client_options(super::get_client_options())
-                        .build()?;
-                    Ok::<_, PolarsError>(Arc::new(store) as Arc<dyn ObjectStore>)
+                    let store = options.build_http(url)?;
+                    PolarsResult::Ok(Arc::new(store) as Arc<dyn ObjectStore>)
                 }
             }
             #[cfg(not(feature = "http"))]
             return err_missing_feature("http", &cloud_location.scheme);
         },
+        CloudType::Hf => panic!("impl error: unresolved hf:// path"),
     }?;
     if allow_cache {
         let mut cache = OBJECT_STORE_CACHE.write().await;

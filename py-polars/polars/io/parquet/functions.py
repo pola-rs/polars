@@ -59,12 +59,14 @@ def read_parquet(
     Parameters
     ----------
     source
-        Path to a file or a file-like object (by "file-like object" we refer to objects
+        Path(s) to a file or directory
+        When needing to authenticate for scanning cloud locations, see the
+        `storage_options` parameter.
+
+        File-like objects are supported (by "file-like object" we refer to objects
         that have a `read()` method, such as a file handler like the builtin `open`
-        function, or a `BytesIO` instance). If the path is a directory, files in that
-        directory will all be read.
-        For file-like objects,
-        stream position may not be updated accordingly after reading.
+        function, or a `BytesIO` instance) For file-like objects, stream position
+        may not be updated accordingly after reading.
     columns
         Columns to select. Accepts a list of column indices (starting at zero) or a list
         of column names.
@@ -106,8 +108,6 @@ def read_parquet(
         Reduce memory pressure at the expense of performance.
     storage_options
         Options that indicate how to connect to a cloud provider.
-        If the cloud provider is not supported by Polars, the storage options
-        are passed to `fsspec.open()`.
 
         The cloud providers currently supported are AWS, GCP, and Azure.
         See supported keys here:
@@ -115,6 +115,8 @@ def read_parquet(
         * `aws <https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html>`_
         * `gcp <https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html>`_
         * `azure <https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html>`_
+        * Hugging Face (`hf://`): Accepts an API key under the `token` parameter: \
+          `{'token': '...'}`, or by setting the `HF_TOKEN` environment variable.
 
         If `storage_options` is not provided, Polars will try to infer the information
         from environment variables.
@@ -320,8 +322,9 @@ def scan_parquet(
     Parameters
     ----------
     source
-        Path(s) to a file
-        If a single path is given, it can be a globbing pattern.
+        Path(s) to a file or directory
+        When needing to authenticate for scanning cloud locations, see the
+        `storage_options` parameter.
     n_rows
         Stop reading from parquet file after reading `n_rows`.
     row_index_name
@@ -365,6 +368,8 @@ def scan_parquet(
         * `aws <https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html>`_
         * `gcp <https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html>`_
         * `azure <https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html>`_
+        * Hugging Face (`hf://`): Accepts an API key under the `token` parameter: \
+          `{'token': '...'}`, or by setting the `HF_TOKEN` environment variable.
 
         If `storage_options` is not provided, Polars will try to infer the information
         from environment variables.

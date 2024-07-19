@@ -158,7 +158,7 @@ impl PyLazyFrame {
             let mut cloud_options = if let Some(opts) = cloud_options {
                 parse_cloud_options(&first_path_url, opts)?
             } else {
-                Default::default()
+                parse_cloud_options(&first_path_url, vec![])?
             };
 
             cloud_options = cloud_options.with_max_retries(retries);
@@ -271,7 +271,7 @@ impl PyLazyFrame {
             let mut cloud_options = if let Some(opts) = cloud_options {
                 parse_cloud_options(&first_path_url, opts)?
             } else {
-                Default::default()
+                parse_cloud_options(&first_path_url, vec![])?
             };
 
             cloud_options = cloud_options.with_max_retries(retries);
@@ -352,7 +352,7 @@ impl PyLazyFrame {
             let mut cloud_options = if let Some(opts) = cloud_options {
                 parse_cloud_options(&first_path_url, opts)?
             } else {
-                Default::default()
+                parse_cloud_options(&first_path_url, vec![])?
             };
 
             cloud_options = cloud_options.with_max_retries(retries);
