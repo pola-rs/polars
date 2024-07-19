@@ -99,19 +99,19 @@ where
     }
 }
 
-struct BatchDecoder<'a, 'b, P, T, D>
+pub(crate) struct PlainDecoderFnCollector<'a, 'b, P, T, D>
 where
     T: NativeType,
     P: ParquetNativeType,
     D: DecoderFunction<P, T>,
 {
-    chunks: &'b mut ArrayChunks<'a, P>,
-    decoder: D,
-    _pd: std::marker::PhantomData<T>,
+    pub(crate) chunks: &'b mut ArrayChunks<'a, P>,
+    pub(crate) decoder: D,
+    pub(crate) _pd: std::marker::PhantomData<T>,
 }
 
 impl<'a, 'b, P, T, D: DecoderFunction<P, T>> BatchableCollector<(), Vec<T>>
-    for BatchDecoder<'a, 'b, P, T, D>
+    for PlainDecoderFnCollector<'a, 'b, P, T, D>
 where
     T: NativeType,
     P: ParquetNativeType,
@@ -214,13 +214,15 @@ where
 
         match (self, page_validity) {
             (Self::Unit(page), None) => {
-                values.extend(
-                    page.map(|v| decoder.decoder.decode(P::from_le_bytes(*v)))
-                        .take(additional),
-                );
+                PlainDecoderFnCollector {
+                    chunks: page,
+                    decoder: decoder.decoder,
+                    _pd: std::marker::PhantomData,
+                }
+                .push_n(values, additional)?;
             },
             (Self::Unit(page), Some(page_validity)) => {
-                let batched = BatchDecoder {
+                let collector = PlainDecoderFnCollector {
                     chunks: page,
                     decoder: decoder.decoder,
                     _pd: std::marker::PhantomData,
@@ -231,8 +233,8 @@ where
                     page_validity,
                     Some(additional),
                     values,
-                    batched,
-                )?
+                    collector,
+                )?;
             },
             (Self::Dictionary(page), None) => {
                 let translator = DictionaryTranslator(page.dict);
