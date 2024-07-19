@@ -730,22 +730,19 @@ impl LazyFrame {
     pub fn collect(self) -> PolarsResult<DataFrame> {
         #[cfg(feature = "new_streaming")]
         {
-            let slf = std::panic::AssertUnwindSafe(&self);
-            let run_on_new_streaming_engine = move || {
-                let alp_plan = slf.clone().to_alp_optimized()?;
-                let lp_top = alp_plan.lp_top;
-                let mut ir_arena = alp_plan.lp_arena;
-                let expr_arena = alp_plan.expr_arena;
+            let force_new_streaming = self.opt_state.new_streaming;
+            let mut alp_plan = self.to_alp_optimized()?;
+            let stream_lp_top = alp_plan.lp_arena.add(IR::Sink {
+                input: alp_plan.lp_top,
+                payload: SinkType::Memory,
+            });
 
-                let lp_top = ir_arena.add(IR::Sink {
-                    input: lp_top,
-                    payload: SinkType::Memory,
-                });
-
-                polars_stream::run_query(lp_top, ir_arena, expr_arena)
-            };
-            if self.opt_state.new_streaming {
-                return run_on_new_streaming_engine();
+            if force_new_streaming {
+                return polars_stream::run_query(
+                    stream_lp_top,
+                    alp_plan.lp_arena,
+                    &alp_plan.expr_arena,
+                );
             }
 
             if std::env::var("POLARS_AUTO_NEW_STREAMING")
@@ -753,7 +750,14 @@ impl LazyFrame {
                 .unwrap_or("")
                 == "1"
             {
-                match std::panic::catch_unwind(run_on_new_streaming_engine) {
+                let f = || {
+                    polars_stream::run_query(
+                        stream_lp_top,
+                        alp_plan.lp_arena.clone(),
+                        &alp_plan.expr_arena,
+                    )
+                };
+                match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
                     Ok(r) => return r,
                     Err(e) => {
                         // Fallback to normal engine if error is due to not being implemented,
@@ -767,7 +771,16 @@ impl LazyFrame {
                     },
                 }
             }
+
+            let mut physical_plan = create_physical_plan(
+                alp_plan.lp_top,
+                &mut alp_plan.lp_arena,
+                &alp_plan.expr_arena,
+            )?;
+            let mut state = ExecutionState::new();
+            physical_plan.execute(&mut state)
         }
+        #[cfg(not(feature = "new_streaming"))]
         self._collect_post_opt(|_, _, _| Ok(()))
     }
 
