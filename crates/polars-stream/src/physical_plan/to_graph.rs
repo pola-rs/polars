@@ -94,6 +94,7 @@ fn to_graph_rec<'a>(
             input,
             output_schema,
             extend_original,
+            maybe_re_entrant,
         } => {
             let phys_selectors = selectors
                 .iter()
@@ -113,6 +114,7 @@ fn to_graph_rec<'a>(
                     phys_selectors,
                     output_schema.clone(),
                     *extend_original,
+                    *maybe_re_entrant,
                 ),
                 [input_key],
             )

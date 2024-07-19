@@ -251,7 +251,7 @@ impl Expr {
                 },
             })
         });
-        let mut flags = FunctionFlags::default();
+        let mut flags = FunctionFlags::default() | FunctionFlags::OPTIONAL_RE_ENTRANT;
         if returns_scalar {
             flags |= FunctionFlags::RETURNS_SCALAR;
         }

@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use polars_core::prelude::Series;
 use polars_core::schema::Schema;
 use polars_expr::prelude::PhysicalExpr;
 
@@ -9,6 +10,7 @@ pub struct SelectNode {
     selectors: Vec<Arc<dyn PhysicalExpr>>,
     schema: Arc<Schema>,
     extend_original: bool,
+    maybe_re_entrant: bool,
 }
 
 impl SelectNode {
@@ -16,11 +18,13 @@ impl SelectNode {
         selectors: Vec<Arc<dyn PhysicalExpr>>,
         schema: Arc<Schema>,
         extend_original: bool,
+        maybe_re_entrant: bool,
     ) -> Self {
         Self {
             selectors,
             schema,
             extend_original,
+            maybe_re_entrant,
         }
     }
 }
@@ -51,21 +55,10 @@ impl ComputeNode for SelectNode {
             let slf = &*self;
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 while let Ok(morsel) = recv.recv().await {
-                    // TODO: restore this code instead of using spawn_blocking for everything.
-                    // We need spawn_blocking because evaluate could contain Python UDFs which
-                    // recursively call the executor again.
-                    /*
-                    let morsel = morsel.try_map(|df| {
-                        // Select columns.
-                        let mut selected: Vec<_> = slf
-                            .selectors
-                            .iter()
-                            .map(|s| s.evaluate(&df, state))
-                            .collect::<PolarsResult<_>>()?;
-
+                    let extend_or_create = |df: DataFrame, mut selected: Vec<Series>| {
                         // Extend or create new dataframe.
                         let ret = if slf.extend_original {
-                            let mut out = df.clone();
+                            let mut out = df;
                             out._add_columns(selected, &slf.schema)?;
                             out
                         } else {
@@ -84,51 +77,45 @@ impl ComputeNode for SelectNode {
                             }
                             unsafe { DataFrame::new_no_checks(selected) }
                         };
-
                         PolarsResult::Ok(ret)
-                    })?;
-                    */
-
-                    let (df, seq, consume_token) = morsel.into_inner();
-                    let mut selected = Vec::new();
-                    for selector in &slf.selectors {
-                        let df = df.clone();
-                        let selector = selector.clone();
-                        let state = state.clone();
-                        selected.push(
-                            polars_io::pl_async::get_runtime()
-                                .spawn_blocking(move || selector.evaluate(&df, &state))
-                                .await
-                                .unwrap()?,
-                        );
-                    }
-
-                    // Extend or create new dataframe.
-                    let ret = if slf.extend_original {
-                        let mut out = df.clone();
-                        out._add_columns(selected, &slf.schema)?;
-                        out
-                    } else {
-                        // Broadcast scalars.
-                        let max_non_unit_length = selected
-                            .iter()
-                            .map(|s| s.len())
-                            .filter(|l| *l != 1)
-                            .max()
-                            .unwrap_or(1);
-                        for s in &mut selected {
-                            if s.len() != max_non_unit_length {
-                                assert!(s.len() == 1, "got series of incompatible lengths");
-                                *s = s.new_from_index(0, max_non_unit_length);
-                            }
-                        }
-                        unsafe { DataFrame::new_no_checks(selected) }
                     };
 
-                    let mut morsel = Morsel::new(ret, seq);
-                    if let Some(token) = consume_token {
-                        morsel.set_consume_token(token);
-                    }
+                    // We need spawn_blocking because evaluate could contain Python UDFs which
+                    // recursively call the executor again.
+                    let morsel = if slf.maybe_re_entrant {
+                        let (df, seq, consume_token) = morsel.into_inner();
+                        let mut selected = Vec::new();
+                        for selector in &slf.selectors {
+                            let df = df.clone();
+                            let selector = selector.clone();
+                            let state = state.clone();
+                            selected.push(
+                                polars_io::pl_async::get_runtime()
+                                    .spawn_blocking(move || selector.evaluate(&df, &state))
+                                    .await
+                                    .unwrap()?,
+                            );
+                        }
+
+                        let ret = extend_or_create(df, selected)?;
+
+                        let mut morsel = Morsel::new(ret, seq);
+                        if let Some(token) = consume_token {
+                            morsel.set_consume_token(token);
+                        }
+                        morsel
+                    } else {
+                        morsel.try_map(|df| {
+                            // Select columns.
+                            let selected: Vec<_> = slf
+                                .selectors
+                                .iter()
+                                .map(|s| s.evaluate(&df, state))
+                                .collect::<PolarsResult<_>>()?;
+
+                            extend_or_create(df, selected)
+                        })?
+                    };
 
                     if send.send(morsel).await.is_err() {
                         break;

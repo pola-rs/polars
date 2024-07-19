@@ -531,6 +531,7 @@ impl Expr {
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ElementWise,
                 fmt_str: "map",
+                flags: FunctionFlags::default() | FunctionFlags::OPTIONAL_RE_ENTRANT,
                 ..Default::default()
             },
         }

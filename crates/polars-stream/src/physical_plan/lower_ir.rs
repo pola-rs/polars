@@ -3,7 +3,7 @@ use std::sync::Arc;
 use polars_error::PolarsResult;
 use polars_expr::reduce::can_convert_into_reduction;
 use polars_plan::plans::{AExpr, Context, IR};
-use polars_plan::prelude::SinkType;
+use polars_plan::prelude::{ArenaExprIter, FunctionFlags, SinkType};
 use polars_utils::arena::{Arena, Node};
 use slotmap::SlotMap;
 
@@ -11,6 +11,15 @@ use super::{PhysNode, PhysNodeKey};
 
 fn is_streamable(node: Node, arena: &Arena<AExpr>) -> bool {
     polars_plan::plans::is_streamable(node, arena, Context::Default)
+}
+
+fn has_potential_recurring_entrance(node: Node, arena: &Arena<AExpr>) -> bool {
+    arena.iter(node).any(|(_n, ae)| match ae {
+        AExpr::Function { options, .. } => {
+            options.flags.contains(FunctionFlags::OPTIONAL_RE_ENTRANT)
+        },
+        _ => false,
+    })
 }
 
 #[recursive::recursive]
@@ -35,6 +44,9 @@ pub fn lower_ir(
             schema,
             ..
         } if expr.iter().all(|e| is_streamable(e.node(), expr_arena)) => {
+            let maybe_re_entrant = expr
+                .iter()
+                .any(|e| has_potential_recurring_entrance(e.node(), expr_arena));
             let selectors = expr.clone();
             let output_schema = schema.clone();
             let input = lower_ir(*input, ir_arena, expr_arena, phys_sm)?;
@@ -43,6 +55,7 @@ pub fn lower_ir(
                 selectors,
                 output_schema,
                 extend_original: false,
+                maybe_re_entrant,
             }))
         },
         // TODO: split reductions and streamable selections. E.g. sum(a) + sum(b) should be split
@@ -76,6 +89,9 @@ pub fn lower_ir(
             schema,
             ..
         } if exprs.iter().all(|e| is_streamable(e.node(), expr_arena)) => {
+            let maybe_re_entrant = exprs
+                .iter()
+                .any(|e| has_potential_recurring_entrance(e.node(), expr_arena));
             let selectors = exprs.clone();
             let output_schema = schema.clone();
             let input = lower_ir(*input, ir_arena, expr_arena, phys_sm)?;
@@ -84,6 +100,7 @@ pub fn lower_ir(
                 selectors,
                 output_schema,
                 extend_original: true,
+                maybe_re_entrant,
             }))
         },
 
