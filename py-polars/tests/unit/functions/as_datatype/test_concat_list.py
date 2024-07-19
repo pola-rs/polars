@@ -161,3 +161,8 @@ def test_concat_list_reverse_struct_fields() -> None:
     result1 = df.select(pl.concat_list(["combo", "reverse_combo"]))
     result2 = df.select(pl.concat_list(["combo", "combo"]))
     assert_frame_equal(result1, result2)
+
+
+def test_concat_list_in_agg_16519() -> None:
+    df = pl.DataFrame({"a": []})
+    df.select(pl.concat_list("a"))
