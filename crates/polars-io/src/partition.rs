@@ -10,6 +10,7 @@ use rayon::prelude::*;
 use crate::parquet::write::ParquetWriteOptions;
 #[cfg(feature = "ipc")]
 use crate::prelude::IpcWriterOptions;
+use crate::prelude::URL_ENCODE_CHAR_SET;
 use crate::{SerWriter, WriteDataFrameToFile};
 
 impl WriteDataFrameToFile for ParquetWriteOptions {
@@ -58,12 +59,6 @@ where
             })
             .collect::<PolarsResult<Vec<_>>>()?;
 
-        const CHAR_SET: &percent_encoding::AsciiSet = &percent_encoding::CONTROLS
-            .add(b'/')
-            .add(b'=')
-            .add(b':')
-            .add(b' ');
-
         move |df: &DataFrame| {
             let cols = df.get_columns();
 
@@ -81,7 +76,7 @@ where
                                 .get(0)
                                 .unwrap_or("__HIVE_DEFAULT_PARTITION__")
                                 .as_bytes(),
-                            CHAR_SET
+                            URL_ENCODE_CHAR_SET
                         )
                     )
                 })

@@ -8,6 +8,7 @@ use polars_error::{polars_bail, to_compute_err, PolarsResult};
 use crate::cloud::{extract_prefix_expansion, Matcher};
 use crate::path_utils::HiveIdxTracker;
 use crate::pl_async::with_concurrency_budget;
+use crate::prelude::URL_ENCODE_CHAR_SET;
 
 #[derive(Debug, PartialEq)]
 struct HFPathParts {
@@ -25,6 +26,9 @@ struct HFRepoLocation {
 
 impl HFRepoLocation {
     fn new(bucket: &str, repository: &str, revision: &str) -> Self {
+        let bucket = percent_encode(bucket.as_bytes());
+        let repository = percent_encode(repository.as_bytes());
+
         // "https://huggingface.co/api/ [datasets | spaces] / {username} / {reponame} / tree / {revision} / {path from root}"
         let api_base_path = format!(
             "{}{}{}{}{}{}{}",
@@ -42,11 +46,19 @@ impl HFRepoLocation {
     }
 
     fn get_file_uri(&self, rel_path: &str) -> String {
-        format!("{}{}", self.download_base_path, rel_path)
+        format!(
+            "{}{}",
+            self.download_base_path,
+            percent_encode(rel_path.as_bytes())
+        )
     }
 
     fn get_api_uri(&self, rel_path: &str) -> String {
-        format!("{}{}", self.api_base_path, rel_path)
+        format!(
+            "{}{}",
+            self.api_base_path,
+            percent_encode(rel_path.as_bytes())
+        )
     }
 }
 
@@ -302,6 +314,10 @@ pub(super) async fn expand_paths_hf(
     }
 
     Ok((hive_idx_tracker.idx, out_paths))
+}
+
+fn percent_encode(bytes: &[u8]) -> percent_encoding::PercentEncode {
+    percent_encoding::percent_encode(bytes, URL_ENCODE_CHAR_SET)
 }
 
 mod tests {
