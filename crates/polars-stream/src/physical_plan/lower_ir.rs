@@ -26,7 +26,7 @@ fn has_potential_recurring_entrance(node: Node, arena: &Arena<AExpr>) -> bool {
 pub fn lower_ir(
     node: Node,
     ir_arena: &mut Arena<IR>,
-    expr_arena: &mut Arena<AExpr>,
+    expr_arena: &Arena<AExpr>,
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
 ) -> PolarsResult<PhysNodeKey> {
     let ir_node = ir_arena.get(node);
@@ -44,18 +44,19 @@ pub fn lower_ir(
             schema,
             ..
         } if expr.iter().all(|e| is_streamable(e.node(), expr_arena)) => {
-            let maybe_re_entrant = expr
+            let selector_reentrant = expr
                 .iter()
-                .any(|e| has_potential_recurring_entrance(e.node(), expr_arena));
+                .map(|e| has_potential_recurring_entrance(e.node(), expr_arena))
+                .collect();
             let selectors = expr.clone();
             let output_schema = schema.clone();
             let input = lower_ir(*input, ir_arena, expr_arena, phys_sm)?;
             Ok(phys_sm.insert(PhysNode::Select {
                 input,
                 selectors,
+                selector_reentrant,
                 output_schema,
                 extend_original: false,
-                maybe_re_entrant,
             }))
         },
         // TODO: split reductions and streamable selections. E.g. sum(a) + sum(b) should be split
@@ -89,18 +90,19 @@ pub fn lower_ir(
             schema,
             ..
         } if exprs.iter().all(|e| is_streamable(e.node(), expr_arena)) => {
-            let maybe_re_entrant = exprs
+            let selector_reentrant = exprs
                 .iter()
-                .any(|e| has_potential_recurring_entrance(e.node(), expr_arena));
+                .map(|e| has_potential_recurring_entrance(e.node(), expr_arena))
+                .collect();
             let selectors = exprs.clone();
             let output_schema = schema.clone();
             let input = lower_ir(*input, ir_arena, expr_arena, phys_sm)?;
             Ok(phys_sm.insert(PhysNode::Select {
                 input,
                 selectors,
+                selector_reentrant,
                 output_schema,
                 extend_original: true,
-                maybe_re_entrant,
             }))
         },
 

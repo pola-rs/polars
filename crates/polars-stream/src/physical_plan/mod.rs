@@ -30,8 +30,8 @@ pub enum PhysNode {
     Select {
         input: PhysNodeKey,
         selectors: Vec<ExprIR>,
+        selector_reentrant: Vec<bool>,
         extend_original: bool,
-        maybe_re_entrant: bool,
         output_schema: Arc<Schema>,
     },
     Reduce {

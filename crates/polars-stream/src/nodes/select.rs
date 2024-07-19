@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use polars_core::prelude::Series;
 use polars_core::schema::Schema;
 use polars_expr::prelude::PhysicalExpr;
 
@@ -8,23 +7,23 @@ use super::compute_node_prelude::*;
 
 pub struct SelectNode {
     selectors: Vec<Arc<dyn PhysicalExpr>>,
+    selector_reentrant: Vec<bool>,
     schema: Arc<Schema>,
     extend_original: bool,
-    maybe_re_entrant: bool,
 }
 
 impl SelectNode {
     pub fn new(
         selectors: Vec<Arc<dyn PhysicalExpr>>,
+        selector_reentrant: Vec<bool>,
         schema: Arc<Schema>,
         extend_original: bool,
-        maybe_re_entrant: bool,
     ) -> Self {
         Self {
             selectors,
+            selector_reentrant,
             schema,
             extend_original,
-            maybe_re_entrant,
         }
     }
 }
@@ -54,9 +53,26 @@ impl ComputeNode for SelectNode {
         for (mut recv, mut send) in receivers.into_iter().zip(senders) {
             let slf = &*self;
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-                // Helper to finish the operation.
-                let extend_or_create = |df: DataFrame, mut selected: Vec<Series>| {
-                    // Extend or create new dataframe.
+                while let Ok(morsel) = recv.recv().await {
+                    let (df, seq, consume_token) = morsel.into_inner();
+                    let mut selected = Vec::new();
+                    for (selector, reentrant) in slf.selectors.iter().zip(&slf.selector_reentrant) {
+                        // We need spawn_blocking because evaluate could contain Python UDFs which
+                        // recursively call the executor again.
+                        let s = if *reentrant {
+                            let df = df.clone();
+                            let selector = selector.clone();
+                            let state = state.clone();
+                            polars_io::pl_async::get_runtime()
+                                .spawn_blocking(move || selector.evaluate(&df, &state))
+                                .await
+                                .unwrap()?
+                        } else {
+                            selector.evaluate(&df, state)?
+                        };
+                        selected.push(s);
+                    }
+
                     let ret = if slf.extend_original {
                         let mut out = df;
                         out._add_columns(selected, &slf.schema)?;
@@ -77,48 +93,11 @@ impl ComputeNode for SelectNode {
                         }
                         unsafe { DataFrame::new_no_checks(selected) }
                     };
-                    PolarsResult::Ok(ret)
-                };
 
-                while let Ok(morsel) = recv.recv().await {
-                    // We need spawn_blocking because evaluate could contain Python UDFs which
-                    // recursively call the executor again.
-                    let morsel = if slf.maybe_re_entrant {
-                        let (df, seq, consume_token) = morsel.into_inner();
-                        let mut selected = Vec::new();
-                        for selector in &slf.selectors {
-                            let df = df.clone();
-                            let selector = selector.clone();
-                            let state = state.clone();
-                            selected.push(
-                                polars_io::pl_async::get_runtime()
-                                    .spawn_blocking(move || selector.evaluate(&df, &state))
-                                    .await
-                                    .unwrap()?,
-                            );
-                        }
-
-                        let ret = extend_or_create(df, selected)?;
-
-                        let mut morsel = Morsel::new(ret, seq);
-                        if let Some(token) = consume_token {
-                            morsel.set_consume_token(token);
-                        }
-                        morsel
+                    let mut morsel = Morsel::new(ret, seq);
+                    if let Some(token) = consume_token {
+                        morsel.set_consume_token(token);
                     }
-                    // This is the happy path where there are guaranteed to be no re-entrant expressions.
-                    else {
-                        morsel.try_map(|df| {
-                            // Select columns.
-                            let selected: Vec<_> = slf
-                                .selectors
-                                .iter()
-                                .map(|s| s.evaluate(&df, state))
-                                .collect::<PolarsResult<_>>()?;
-
-                            extend_or_create(df, selected)
-                        })?
-                    };
 
                     if send.send(morsel).await.is_err() {
                         break;
