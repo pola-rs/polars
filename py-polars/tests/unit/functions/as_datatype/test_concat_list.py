@@ -166,3 +166,8 @@ def test_concat_list_reverse_struct_fields() -> None:
 def test_concat_list_empty() -> None:
     df = pl.DataFrame({"a": []})
     df.select(pl.concat_list("a"))
+
+
+def test_concat_list_empty_struct() -> None:
+    df = pl.DataFrame({"a": []}, schema={"a": pl.Struct({"b": pl.Boolean})})
+    df.select(pl.concat_list("a"))
