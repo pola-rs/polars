@@ -28,7 +28,7 @@ struct State<'a, P: ParquetNativeType, T: NativeType> {
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 enum StateTranslation<'a, P: ParquetNativeType, T: NativeType> {
-    Unit(ArrayChunks<'a, P>),
+    Plain(ArrayChunks<'a, P>),
     Dictionary(ValuesDictionary<'a, T>),
     ByteStreamSplit(byte_stream_split::Decoder<'a>),
 }
@@ -36,7 +36,7 @@ enum StateTranslation<'a, P: ParquetNativeType, T: NativeType> {
 impl<'a, P: ParquetNativeType, T: NativeType> utils::PageState<'a> for State<'a, P, T> {
     fn len(&self) -> usize {
         match &self.translation {
-            StateTranslation::Unit(values) => values.len(),
+            StateTranslation::Plain(values) => values.len(),
             StateTranslation::Dictionary(values) => values.len(),
             StateTranslation::ByteStreamSplit(decoder) => decoder.len(),
         }
@@ -97,7 +97,7 @@ where
         let translation = match (page.encoding(), dict) {
             (Encoding::Plain, _) => {
                 let values = split_buffer(page)?.values;
-                StateTranslation::Unit(ArrayChunks::new(values).unwrap())
+                StateTranslation::Plain(ArrayChunks::new(values).unwrap())
             },
             (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict)) => {
                 StateTranslation::Dictionary(ValuesDictionary::try_new(page, dict)?)
@@ -138,7 +138,7 @@ where
         }
 
         match &mut state.translation {
-            StateTranslation::Unit(page_values) => {
+            StateTranslation::Plain(page_values) => {
                 for value in page_values.by_ref().take(n) {
                     values.push(self.decoder.decode(P::from_le_bytes(*value)));
                 }

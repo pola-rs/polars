@@ -19,7 +19,7 @@ use crate::read::deserialize::utils::{BatchableCollector, PageValidity};
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 enum StateTranslation<'a> {
-    Unit(BitmapIter<'a>),
+    Plain(BitmapIter<'a>),
     Rle(HybridRleDecoder<'a>),
 }
 
@@ -43,7 +43,7 @@ impl<'a> utils::StateTranslation<'a, BooleanDecoder> for StateTranslation<'a> {
                 } else {
                     page.num_values()
                 };
-                Ok(Self::Unit(BitmapIter::new(values, 0, num_values)))
+                Ok(Self::Plain(BitmapIter::new(values, 0, num_values)))
             },
             Encoding::Rle => {
                 // @NOTE: For a nullable list, we might very well overestimate the amount of
@@ -65,7 +65,7 @@ impl<'a> utils::StateTranslation<'a, BooleanDecoder> for StateTranslation<'a> {
 
     fn len_when_not_nullable(&self) -> usize {
         match self {
-            Self::Unit(v) => v.len(),
+            Self::Plain(v) => v.len(),
             Self::Rle(v) => v.len(),
         }
     }
@@ -77,7 +77,7 @@ impl<'a> utils::StateTranslation<'a, BooleanDecoder> for StateTranslation<'a> {
 
         // @TODO: Add a skip_in_place on BitmapIter
         match self {
-            Self::Unit(t) => _ = t.nth(n - 1),
+            Self::Plain(t) => _ = t.nth(n - 1),
             Self::Rle(t) => t.skip_in_place(n)?,
         }
 
@@ -94,8 +94,8 @@ impl<'a> utils::StateTranslation<'a, BooleanDecoder> for StateTranslation<'a> {
         let (values, validity) = decoded;
 
         match (self, page_validity) {
-            (Self::Unit(page), None) => page.collect_n_into(values, additional),
-            (Self::Unit(page_values), Some(page_validity)) => extend_from_decoder(
+            (Self::Plain(page), None) => page.collect_n_into(values, additional),
+            (Self::Plain(page_values), Some(page_validity)) => extend_from_decoder(
                 validity,
                 page_validity,
                 Some(additional),

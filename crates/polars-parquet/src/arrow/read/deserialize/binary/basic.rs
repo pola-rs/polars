@@ -63,12 +63,12 @@ impl<'a, O: Offset> StateTranslation<'a, BinaryDecoder<O>> for BinaryStateTransl
 
         use BinaryStateTranslation as T;
         match (self, page_validity) {
-            (T::Unit(page_values), None) => {
+            (T::Plain(page_values), None) => {
                 for x in page_values.by_ref().take(additional) {
                     values.push(x)
                 }
             },
-            (T::Unit(page_values), Some(page_validity)) => extend_from_decoder(
+            (T::Plain(page_values), Some(page_validity)) => extend_from_decoder(
                 validity,
                 page_validity,
                 Some(additional),

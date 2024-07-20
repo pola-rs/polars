@@ -23,7 +23,7 @@ use crate::read::deserialize::utils::{self, PageValidity};
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 enum StateTranslation<'a> {
-    Unit(std::slice::ChunksExact<'a, u8>),
+    Plain(std::slice::ChunksExact<'a, u8>),
     Dictionary(HybridRleDecoder<'a>, &'a [u8]),
 }
 
@@ -47,7 +47,7 @@ impl<'a> utils::StateTranslation<'a, BinaryDecoder> for StateTranslation<'a> {
                     .into());
                 }
                 let values = values.chunks_exact(decoder.size);
-                Ok(Self::Unit(values))
+                Ok(Self::Plain(values))
             },
             (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict)) => {
                 let values = dict_indices_decoder(page)?;
@@ -59,7 +59,7 @@ impl<'a> utils::StateTranslation<'a, BinaryDecoder> for StateTranslation<'a> {
 
     fn len_when_not_nullable(&self) -> usize {
         match self {
-            Self::Unit(v) => v.len(),
+            Self::Plain(v) => v.len(),
             Self::Dictionary(v, _) => v.len(),
         }
     }
@@ -70,7 +70,7 @@ impl<'a> utils::StateTranslation<'a, BinaryDecoder> for StateTranslation<'a> {
         }
 
         match self {
-            Self::Unit(v) => _ = v.nth(n - 1),
+            Self::Plain(v) => _ = v.nth(n - 1),
             Self::Dictionary(v, _) => v.skip_in_place(n)?,
         }
 
@@ -88,13 +88,13 @@ impl<'a> utils::StateTranslation<'a, BinaryDecoder> for StateTranslation<'a> {
 
         use StateTranslation as T;
         match (self, page_validity) {
-            (T::Unit(page_values), None) => {
+            (T::Plain(page_values), None) => {
                 // @TODO: This can be done through a extend
                 for x in page_values.by_ref().take(additional) {
                     values.push(x)
                 }
             },
-            (T::Unit(page_values), Some(page_validity)) => extend_from_decoder(
+            (T::Plain(page_values), Some(page_validity)) => extend_from_decoder(
                 validity,
                 page_validity,
                 Some(additional),

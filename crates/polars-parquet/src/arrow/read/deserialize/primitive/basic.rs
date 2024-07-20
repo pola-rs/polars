@@ -143,7 +143,7 @@ where
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub(super) enum StateTranslation<'a, P: ParquetNativeType, T: NativeType> {
-    Unit(ArrayChunks<'a, P>),
+    Plain(ArrayChunks<'a, P>),
     Dictionary(ValuesDictionary<'a, T>),
     ByteStreamSplit(byte_stream_split::Decoder<'a>),
 }
@@ -168,7 +168,7 @@ where
             },
             (Encoding::Plain, _) => {
                 let values = split_buffer(page)?.values;
-                Ok(Self::Unit(ArrayChunks::new(values).unwrap()))
+                Ok(Self::Plain(ArrayChunks::new(values).unwrap()))
             },
             (Encoding::ByteStreamSplit, _) => {
                 let values = split_buffer(page)?.values;
@@ -183,7 +183,7 @@ where
 
     fn len_when_not_nullable(&self) -> usize {
         match self {
-            Self::Unit(n) => n.len(),
+            Self::Plain(n) => n.len(),
             Self::Dictionary(n) => n.len(),
             Self::ByteStreamSplit(n) => n.len(),
         }
@@ -195,7 +195,7 @@ where
         }
 
         match self {
-            Self::Unit(t) => _ = t.nth(n - 1),
+            Self::Plain(t) => _ = t.nth(n - 1),
             Self::Dictionary(t) => t.values.skip_in_place(n)?,
             Self::ByteStreamSplit(t) => _ = t.iter_converted(|_| ()).nth(n - 1),
         }
@@ -213,7 +213,7 @@ where
         let (values, validity) = decoded;
 
         match (self, page_validity) {
-            (Self::Unit(page), None) => {
+            (Self::Plain(page), None) => {
                 PlainDecoderFnCollector {
                     chunks: page,
                     decoder: decoder.decoder,
@@ -221,7 +221,7 @@ where
                 }
                 .push_n(values, additional)?;
             },
-            (Self::Unit(page), Some(page_validity)) => {
+            (Self::Plain(page), Some(page_validity)) => {
                 let collector = PlainDecoderFnCollector {
                     chunks: page,
                     decoder: decoder.decoder,

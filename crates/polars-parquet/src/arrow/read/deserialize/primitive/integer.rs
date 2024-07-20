@@ -24,7 +24,7 @@ use crate::read::deserialize::utils::{BatchableCollector, PageValidity, Translat
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub(super) enum StateTranslation<'a, P: ParquetNativeType, T: NativeType> {
-    Unit(ArrayChunks<'a, P>),
+    Plain(ArrayChunks<'a, P>),
     Dictionary(ValuesDictionary<'a, T>),
     ByteStreamSplit(byte_stream_split::Decoder<'a>),
     DeltaBinaryPacked(delta_bitpacked::Decoder<'a>),
@@ -50,7 +50,7 @@ where
             },
             (Encoding::Plain, _) => {
                 let values = split_buffer(page)?.values;
-                Ok(Self::Unit(ArrayChunks::new(values).unwrap()))
+                Ok(Self::Plain(ArrayChunks::new(values).unwrap()))
             },
             (Encoding::ByteStreamSplit, _) => {
                 let values = split_buffer(page)?.values;
@@ -71,7 +71,7 @@ where
 
     fn len_when_not_nullable(&self) -> usize {
         match self {
-            Self::Unit(v) => v.len(),
+            Self::Plain(v) => v.len(),
             Self::Dictionary(v) => v.len(),
             Self::ByteStreamSplit(v) => v.len(),
             Self::DeltaBinaryPacked(v) => v.size_hint().0,
@@ -84,7 +84,7 @@ where
         }
 
         match self {
-            Self::Unit(v) => _ = v.nth(n - 1),
+            Self::Plain(v) => _ = v.nth(n - 1),
             Self::Dictionary(v) => v.values.skip_in_place(n)?,
             Self::ByteStreamSplit(v) => _ = v.iter_converted(|_| ()).nth(n - 1),
             Self::DeltaBinaryPacked(v) => _ = v.nth(n - 1),
@@ -102,7 +102,7 @@ where
     ) -> ParquetResult<()> {
         let (values, validity) = decoded;
         match (self, page_validity) {
-            (Self::Unit(page), Some(page_validity)) => {
+            (Self::Plain(page), Some(page_validity)) => {
                 let collector = PlainDecoderFnCollector {
                     chunks: page,
                     decoder: decoder.0.decoder,
@@ -117,7 +117,7 @@ where
                     collector,
                 )?;
             },
-            (Self::Unit(page), None) => {
+            (Self::Plain(page), None) => {
                 PlainDecoderFnCollector {
                     chunks: page,
                     decoder: decoder.0.decoder,

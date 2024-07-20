@@ -27,7 +27,7 @@ struct State<'a> {
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 enum StateTranslation<'a> {
-    Unit(std::slice::ChunksExact<'a, u8>),
+    Plain(std::slice::ChunksExact<'a, u8>),
     Dictionary {
         values: HybridRleDecoder<'a>,
         dict: &'a [u8],
@@ -37,7 +37,7 @@ enum StateTranslation<'a> {
 impl<'a> PageState<'a> for State<'a> {
     fn len(&self) -> usize {
         match &self.translation {
-            StateTranslation::Unit(chunks) => chunks.len(),
+            StateTranslation::Plain(chunks) => chunks.len(),
             StateTranslation::Dictionary {
                 values: decoder, ..
             } => decoder.len(),
@@ -69,7 +69,7 @@ impl<'a> NestedDecoder<'a> for BinaryDecoder {
                 let values = page.buffer();
                 assert_eq!(values.len() % self.size, 0);
                 let values = values.chunks_exact(self.size);
-                StateTranslation::Unit(values)
+                StateTranslation::Plain(values)
             },
             (Encoding::PlainDictionary | Encoding::RleDictionary, Some(&dict), false) => {
                 let values = dict_indices_decoder(page)?;
@@ -104,7 +104,7 @@ impl<'a> NestedDecoder<'a> for BinaryDecoder {
         }
 
         match &mut state.translation {
-            StateTranslation::Unit(page_values) => {
+            StateTranslation::Plain(page_values) => {
                 for value in page_values.by_ref().take(n) {
                     values.push(value);
                 }
