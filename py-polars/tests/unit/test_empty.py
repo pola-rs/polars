@@ -143,3 +143,8 @@ def test_empty_shift_over_16676() -> None:
 def test_empty_list_cat_16405() -> None:
     df = pl.DataFrame(schema={"cat": pl.List(pl.Categorical)})
     df.select(pl.col("cat") == pl.col("cat"))
+
+
+def test_empty_list_concat_16924() -> None:
+    df = pl.DataFrame(schema={"a": pl.Int16, "b": pl.List(pl.String)})
+    df.with_columns(pl.col("b").list.concat([pl.col("a").cast(pl.String)]))
