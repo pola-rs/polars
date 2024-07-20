@@ -268,6 +268,15 @@ impl StringNameSpace {
     }
 
     /// Convert a String column into a Date/Datetime/Time column.
+    ///
+    /// # Arguments
+    /// - `dtype`: Column datatype. Must be [`DataType::Date`], [`DataType::Datetime`] or [`DataType::Time`].
+    /// - `options`: Options for strptime
+    /// - `ambiguous`: A [`DataType::String`] expression that defines how to handle ambiguous datetimes:
+    ///     - `raise`: raise an error
+    ///     - `earliest`: use the earliest datetime
+    ///     - `latest`: use the latest datetime
+    ///     - `null`: set to null   
     #[cfg(feature = "temporal")]
     pub fn strptime(self, dtype: DataType, options: StrptimeOptions, ambiguous: Expr) -> Expr {
         self.0.map_many_private(
@@ -285,6 +294,17 @@ impl StringNameSpace {
     }
 
     /// Convert a String column into a Datetime column.
+    ///
+    ///
+    /// # Arguments
+    /// - `time_unit`: Time unit to use. If set to None, a default time unit is used, unless it can be inferred from the format string.
+    /// - `time_zone`: Time zone of the DateTime.
+    /// - `options`: Options for strptime
+    /// - `ambiguous`: A [`DataType::String`] expression that defines how to handle ambiguous datetimes:
+    ///     - `raise`: raise an error
+    ///     - `earliest`: use the earliest datetime
+    ///     - `latest`: use the latest datetime
+    ///     - `null`: set to null   
     #[cfg(feature = "dtype-datetime")]
     pub fn to_datetime(
         self,

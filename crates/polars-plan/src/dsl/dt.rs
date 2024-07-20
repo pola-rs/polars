@@ -262,6 +262,18 @@ impl DateLikeNameSpace {
         )
     }
 
+    /// Replace timezone for this `DateTime`.
+    ///
+    /// In contrast to [`convert_time_zone`](Self::convert_time_zone), this will modify the underlying timestamp and ignore the original time zone.
+    ///
+    /// # Arguments
+    /// - `time_zone`: Time zone for this `DateTime`. Pass `None` to unset the time zone.
+    /// - `ambiguous`: A [`DataType::String`] expression that defines how to handle ambiguous datetimes:
+    ///     - `raise`: raise an error
+    ///     - `earliest`: use the earliest datetime
+    ///     - `latest`: use the latest datetime
+    ///     - `null`: set to null
+    /// - `non_existent`: Defines how to handle non-existent datetimes.    
     #[cfg(feature = "timezones")]
     pub fn replace_time_zone(
         self,
