@@ -172,6 +172,7 @@ impl<'a, T: 'a + MmapBytesReader> From<&'a mut T> for ReaderBytes<'a> {
                         eprintln!("could not memory map file; read to buffer.")
                     }
                     let mut buf = vec![];
+                    m.seek(std::io::SeekFrom::Start(0));
                     m.read_to_end(&mut buf).expect("could not read");
                     ReaderBytes::Owned(buf)
                 }
