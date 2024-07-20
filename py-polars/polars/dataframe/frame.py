@@ -3203,11 +3203,7 @@ class DataFrame:
                 column_start = [table_start[0] + int(include_header), table_start[1]]
                 for c in df.columns:
                     if c in self.columns:
-                        ws.write_column(
-                            *column_start,
-                            data=df[c].to_list(),
-                            cell_format=column_formats.get(c),
-                        )
+                        ws.write_column(*column_start, data=df[c].to_list())
                     column_start[1] += 1
 
             # apply conditional formats
@@ -3234,6 +3230,7 @@ class DataFrame:
 
         for column in df.columns:
             col_idx, options = table_start[1] + df.get_column_index(column), {}
+            fmt = column_formats.get(column)
             if column in hidden_columns:
                 options = {"hidden": True}
             if column in column_widths:  # type: ignore[operator]
@@ -3241,11 +3238,11 @@ class DataFrame:
                     col_idx,
                     col_idx,
                     column_widths[column],  # type: ignore[index]
-                    None,
+                    fmt,
                     options,
                 )
             elif options:
-                ws.set_column(col_idx, col_idx, None, None, options)
+                ws.set_column(col_idx, col_idx, None, fmt, options)
 
         # finally, inject any sparklines into the table
         for column, params in (sparklines or {}).items():
