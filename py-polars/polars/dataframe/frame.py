@@ -3241,7 +3241,7 @@ class DataFrame:
                     fmt,
                     options,
                 )
-            elif options:
+            elif options or fmt:
                 ws.set_column(col_idx, col_idx, None, fmt, options)
 
         # finally, inject any sparklines into the table
