@@ -26,14 +26,14 @@ pub(crate) struct State<'a> {
 
 #[derive(Debug)]
 pub(crate) enum StateTranslation<'a> {
-    Unit(BinaryIter<'a>),
+    Plain(BinaryIter<'a>),
     Dictionary(ValuesDictionary<'a>, Option<Vec<View>>),
 }
 
 impl<'a> PageState<'a> for State<'a> {
     fn len(&self) -> usize {
         match &self.translation {
-            StateTranslation::Unit(iter) => iter.size_hint().0,
+            StateTranslation::Plain(iter) => iter.size_hint().0,
             StateTranslation::Dictionary(values, _) => values.len(),
         }
     }
@@ -67,7 +67,7 @@ impl<'a> NestedDecoder<'a> for BinViewDecoder {
             (Encoding::Plain, _) => {
                 let values = split_buffer(page)?.values;
                 let values = BinaryIter::new(values, page.num_values());
-                StateTranslation::Unit(values)
+                StateTranslation::Plain(values)
             },
             _ => return Err(not_implemented(page)),
         };
@@ -93,7 +93,7 @@ impl<'a> NestedDecoder<'a> for BinViewDecoder {
     ) -> ParquetResult<()> {
         let (values, validity) = decoded;
         match &mut state.translation {
-            StateTranslation::Unit(page) => {
+            StateTranslation::Plain(page) => {
                 // @TODO: This should probably be optimized to a better loop
                 for value in page.by_ref().take(n) {
                     values.push_value_ignore_validity(value);

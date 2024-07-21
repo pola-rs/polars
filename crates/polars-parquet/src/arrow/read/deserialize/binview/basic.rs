@@ -57,12 +57,12 @@ impl<'a> StateTranslation<'a, BinViewDecoder> for BinaryStateTranslation<'a> {
         let mut validate_utf8 = decoder.check_utf8.take();
 
         match (self, page_validity) {
-            (Self::Unit(page_values), None) => {
+            (Self::Plain(page_values), None) => {
                 for x in page_values.by_ref().take(additional) {
                     values.push_value_ignore_validity(x)
                 }
             },
-            (Self::Unit(page_values), Some(page_validity)) => extend_from_decoder(
+            (Self::Plain(page_values), Some(page_validity)) => extend_from_decoder(
                 validity,
                 page_validity,
                 Some(additional),
