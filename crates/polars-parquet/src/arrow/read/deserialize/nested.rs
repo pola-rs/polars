@@ -41,13 +41,14 @@ pub fn columns_to_iter_recursive<'a, I>(
     field: Field,
     mut init: Vec<InitNested>,
     num_rows: usize,
-    chunk_size: Option<usize>,
 ) -> PolarsResult<NestedArrayIter<'a>>
 where
     I: 'a + CompressedPagesIter,
 {
     use arrow::datatypes::PhysicalType::*;
     use arrow::datatypes::PrimitiveType::*;
+
+    let chunk_size = Some(num_rows);
 
     Ok(match field.data_type().to_physical_type() {
         Null => {
@@ -248,7 +249,6 @@ where
                     inner.as_ref().clone(),
                     init,
                     num_rows,
-                    chunk_size,
                 )?;
                 let iter = iter.map(move |x| {
                     let (mut nested, array) = x?;
@@ -265,7 +265,6 @@ where
                     inner.as_ref().clone(),
                     init,
                     num_rows,
-                    chunk_size,
                 )?;
                 let iter = iter.map(move |x| {
                     let (mut nested, array) = x?;
@@ -447,7 +446,6 @@ where
                             f.clone(),
                             init,
                             num_rows,
-                            chunk_size,
                         )
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
@@ -462,7 +460,6 @@ where
                     inner.as_ref().clone(),
                     init,
                     num_rows,
-                    chunk_size,
                 )?;
                 let iter = iter.map(move |x| {
                     let (mut nested, array) = x?;

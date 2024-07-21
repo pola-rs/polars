@@ -152,7 +152,6 @@ fn read_with_indexes(
         reader,
         row_groups,
         schema,
-        Some(1024 * 8 * 8),
         None,
         Some(pages),
     );

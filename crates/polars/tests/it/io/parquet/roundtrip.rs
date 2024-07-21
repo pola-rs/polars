@@ -57,7 +57,6 @@ fn round_trip(
         reader,
         row_groups,
         schema,
-        Some(1024 * 8 * 8),
         None,
         None,
     );

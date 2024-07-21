@@ -61,11 +61,11 @@ pub fn page_iter_to_arrays<'a, I: CompressedPagesIter + 'a>(
     pages: BasicDecompressor<I>,
     type_: &PrimitiveType,
     data_type: ArrowDataType,
-    chunk_size: Option<usize>,
     num_rows: usize,
 ) -> PolarsResult<ArrayIter<'a>> {
     use ArrowDataType::*;
 
+    let chunk_size = Some(num_rows);
     let physical_type = &type_.physical_type;
     let logical_type = &type_.logical_type;
 
