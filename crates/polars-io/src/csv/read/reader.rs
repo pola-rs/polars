@@ -165,7 +165,7 @@ impl<R: MmapBytesReader> CsvReader<R> {
         let mut process_schema = |schema: &Schema| {
             schema
                 .iter_fields()
-                .filter_map(|mut fld| {
+                .map(|mut fld| {
                     use DataType::*;
 
                     match fld.data_type() {
@@ -173,25 +173,25 @@ impl<R: MmapBytesReader> CsvReader<R> {
                             self.options.fields_to_cast.push(fld.clone());
                             // let inference decide the column type
                             fld.coerce(String);
-                            Some(Ok(fld))
+                            Ok(fld)
                         },
                         #[cfg(feature = "dtype-categorical")]
                         Categorical(_, _) => {
                             _has_categorical = true;
-                            Some(Ok(fld))
+                            Ok(fld)
                         },
                         #[cfg(feature = "dtype-decimal")]
                         Decimal(precision, scale) => match (precision, scale) {
                             (_, Some(_)) => {
                                 self.options.fields_to_cast.push(fld.clone());
                                 fld.coerce(String);
-                                Some(Ok(fld))
+                                Ok(fld)
                             },
-                            _ => Some(Err(PolarsError::ComputeError(
+                            _ => Err(PolarsError::ComputeError(
                                 "'scale' must be set when reading csv column as Decimal".into(),
-                            ))),
+                            )),
                         },
-                        _ => Some(Ok(fld)),
+                        _ => Ok(fld),
                     }
                 })
                 .collect::<PolarsResult<Schema>>()
