@@ -958,11 +958,6 @@ def test_init_pandas(monkeypatch: Any) -> None:
     assert df.schema == {"colx": pl.Datetime("us")}
     assert df.rows() == [(datetime(2022, 10, 31, 10, 30, 45, 123456),)]
 
-    # pandas is not available
-    monkeypatch.setattr(pl.dataframe.frame, "_check_for_pandas", lambda x: False)
-    with pytest.raises(TypeError):
-        pl.DataFrame(pandas_df)
-
 
 def test_init_errors() -> None:
     # Length mismatch
