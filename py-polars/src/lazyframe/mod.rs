@@ -1193,7 +1193,9 @@ impl PyLazyFrame {
     }
 
     fn collect_schema(&mut self, py: Python) -> PyResult<PyObject> {
-        let schema = self.ldf.schema().map_err(PyPolarsErr::from)?;
+        let schema = py
+            .allow_threads(|| self.ldf.schema())
+            .map_err(PyPolarsErr::from)?;
 
         let schema_dict = PyDict::new_bound(py);
         schema.iter_fields().for_each(|fld| {
