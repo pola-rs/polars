@@ -160,8 +160,8 @@ struct BinaryDecoder<O: Offset> {
     check_utf8: Cell<bool>,
 }
 
-impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
-    type Translation = BinaryStateTranslation<'a>;
+impl<O: Offset> utils::Decoder for BinaryDecoder<O> {
+    type Translation<'a> = BinaryStateTranslation<'a>;
     type Dict = BinaryDict;
     type DecodedState = (Binary<O>, MutableBitmap);
 
@@ -172,7 +172,7 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
         )
     }
 
-    fn deserialize_dict(&self, page: &DictPage) -> Self::Dict {
+    fn deserialize_dict(&self, page: DictPage) -> Self::Dict {
         deserialize_plain(&page.buffer, page.num_values)
     }
 }

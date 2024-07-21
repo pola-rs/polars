@@ -24,7 +24,7 @@ impl<'a, K: DictionaryKey> StateTranslation<'a, PrimitiveDecoder<K>> for HybridR
     fn new(
         _decoder: &PrimitiveDecoder<K>,
         page: &'a DataPage,
-        _dict: Option<&'a <PrimitiveDecoder<K> as Decoder<'a>>::Dict>,
+        _dict: Option<&'a <PrimitiveDecoder<K> as Decoder>::Dict>,
         _page_validity: Option<&PageValidity<'a>>,
         _filter: Option<&Filter<'a>>,
     ) -> PolarsResult<Self> {
@@ -49,7 +49,7 @@ impl<'a, K: DictionaryKey> StateTranslation<'a, PrimitiveDecoder<K>> for HybridR
     fn extend_from_state(
         &mut self,
         _decoder: &PrimitiveDecoder<K>,
-        decoded: &mut <PrimitiveDecoder<K> as Decoder<'a>>::DecodedState,
+        decoded: &mut <PrimitiveDecoder<K> as Decoder>::DecodedState,
         page_validity: &mut Option<PageValidity<'a>>,
         additional: usize,
     ) -> ParquetResult<()> {
@@ -112,8 +112,8 @@ where
     }
 }
 
-impl<'a, K: DictionaryKey> utils::Decoder<'a> for PrimitiveDecoder<K> {
-    type Translation = HybridRleDecoder<'a>;
+impl<K: DictionaryKey> utils::Decoder for PrimitiveDecoder<K> {
+    type Translation<'a> = HybridRleDecoder<'a>;
     type Dict = ();
     type DecodedState = (Vec<K>, MutableBitmap);
 
@@ -124,7 +124,7 @@ impl<'a, K: DictionaryKey> utils::Decoder<'a> for PrimitiveDecoder<K> {
         )
     }
 
-    fn deserialize_dict(&self, _: &DictPage) -> Self::Dict {}
+    fn deserialize_dict(&self, _: DictPage) -> Self::Dict {}
 }
 
 fn finish_key<K: DictionaryKey>(values: Vec<K>, validity: MutableBitmap) -> PrimitiveArray<K> {

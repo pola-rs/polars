@@ -19,14 +19,13 @@ use crate::parquet::page::{split_buffer, DataPage, DictPage, Page};
 use crate::parquet::schema::Repetition;
 
 #[derive(Debug)]
-pub(crate) struct State<'a, D: Decoder<'a>, T: StateTranslation<'a, D>> {
+pub(crate) struct State<'a, D: Decoder> {
     pub(crate) page_validity: Option<PageValidity<'a>>,
-    pub(crate) translation: T,
+    pub(crate) translation: D::Translation<'a>,
     pub(crate) filter: Option<Filter<'a>>,
-    _pd: std::marker::PhantomData<D>,
 }
 
-pub(crate) trait StateTranslation<'a, D: Decoder<'a>>: Sized {
+pub(crate) trait StateTranslation<'a, D: Decoder>: Sized {
     fn new(
         decoder: &D,
         page: &'a DataPage,
@@ -48,7 +47,7 @@ pub(crate) trait StateTranslation<'a, D: Decoder<'a>>: Sized {
     ) -> ParquetResult<()>;
 }
 
-impl<'a, D: Decoder<'a>, T: StateTranslation<'a, D>> State<'a, D, T> {
+impl<'a, D: Decoder> State<'a, D> {
     pub fn new(decoder: &D, page: &'a DataPage, dict: Option<&'a D::Dict>) -> PolarsResult<Self> {
         let is_optional =
             page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
@@ -59,13 +58,12 @@ impl<'a, D: Decoder<'a>, T: StateTranslation<'a, D>> State<'a, D, T> {
             .transpose()?;
         let filter = is_filtered.then(|| Filter::new(page)).flatten();
 
-        let translation = T::new(decoder, page, dict, page_validity.as_ref(), filter.as_ref())?;
+        let translation = D::Translation::new(decoder, page, dict, page_validity.as_ref(), filter.as_ref())?;
 
         Ok(Self {
             page_validity,
             translation,
             filter,
-            _pd: std::marker::PhantomData,
         })
     }
 
@@ -471,10 +469,9 @@ pub(super) trait DecodedState: std::fmt::Debug {
 }
 
 /// A decoder that knows how to map `State` -> Array
-pub(super) trait Decoder<'a>: Sized {
-    // @TODO: Remove Translation
+pub(super) trait Decoder: Sized {
     /// The state that this decoder derives from a [`DataPage`]. This is bound to the page.
-    type Translation: StateTranslation<'a, Self>;
+    type Translation<'a>: StateTranslation<'a, Self>;
     /// The dictionary representation that the decoder uses
     type Dict;
     /// The target state that this Decoder decodes into.
@@ -484,11 +481,11 @@ pub(super) trait Decoder<'a>: Sized {
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState;
 
     /// Deserializes a [`DictPage`] into [`Self::Dict`].
-    fn deserialize_dict(&self, page: &'a DictPage) -> Self::Dict;
+    fn deserialize_dict(&self, page: DictPage) -> Self::Dict;
 }
 
-pub(super) fn extend_from_new_page<'a, T: Decoder<'a>>(
-    mut page: State<'a, T, T::Translation>,
+pub(super) fn extend_from_new_page<'a, T: Decoder>(
+    mut page: State<'a, T>,
     chunk_size: Option<usize>,
     items: &mut VecDeque<T::DecodedState>,
     remaining: &mut usize,
@@ -539,13 +536,13 @@ pub enum MaybeNext<P> {
 }
 
 #[inline]
-pub(super) fn next<'a, I: PagesIter, D: Decoder<'a>>(
-    iter: &'a mut I,
-    items: &'a mut VecDeque<D::DecodedState>,
-    dict: &'a mut Option<D::Dict>,
-    remaining: &'a mut usize,
+pub(super) fn next<'a, I: PagesIter, D: Decoder>(
+    iter: &mut I,
+    items: &mut VecDeque<D::DecodedState>,
+    dict: &mut Option<D::Dict>,
+    remaining: &mut usize,
     chunk_size: Option<usize>,
-    decoder: &'a D,
+    decoder: &D,
 ) -> MaybeNext<PolarsResult<D::DecodedState>> {
     // front[a1, a2, a3, ...]back
     if items.len() > 1 {
@@ -566,8 +563,9 @@ pub(super) fn next<'a, I: PagesIter, D: Decoder<'a>>(
         Ok(Some(page)) => {
             let page = match page {
                 Page::Data(ref page) => page,
-                Page::Dict(ref dict_page) => {
-                    *dict = Some(decoder.deserialize_dict(dict_page));
+                Page::Dict(dict_page) => {
+                    // @TODO: Remove this clone
+                    *dict = Some(decoder.deserialize_dict(dict_page.clone()));
                     return MaybeNext::More;
                 },
             };

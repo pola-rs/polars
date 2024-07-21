@@ -175,8 +175,8 @@ impl DecodedState for (MutableBitmap, MutableBitmap) {
 
 struct BooleanDecoder;
 
-impl<'a> Decoder<'a> for BooleanDecoder {
-    type Translation = StateTranslation<'a>;
+impl Decoder for BooleanDecoder {
+    type Translation<'a> = StateTranslation<'a>;
     type Dict = ();
     type DecodedState = (MutableBitmap, MutableBitmap);
 
@@ -187,7 +187,7 @@ impl<'a> Decoder<'a> for BooleanDecoder {
         )
     }
 
-    fn deserialize_dict(&self, _: &DictPage) -> Self::Dict {}
+    fn deserialize_dict(&self, _: DictPage) -> Self::Dict {}
 }
 
 fn finish(

@@ -145,8 +145,8 @@ impl DecodedState for DecodedStateTuple {
     }
 }
 
-impl<'a> utils::Decoder<'a> for BinViewDecoder {
-    type Translation = BinaryStateTranslation<'a>;
+impl utils::Decoder for BinViewDecoder {
+    type Translation<'a> = BinaryStateTranslation<'a>;
     type Dict = BinaryDict;
     type DecodedState = DecodedStateTuple;
 
@@ -157,7 +157,7 @@ impl<'a> utils::Decoder<'a> for BinViewDecoder {
         )
     }
 
-    fn deserialize_dict(&self, page: &DictPage) -> Self::Dict {
+    fn deserialize_dict(&self, page: DictPage) -> Self::Dict {
         deserialize_plain(&page.buffer, page.num_values)
     }
 }

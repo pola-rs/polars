@@ -144,9 +144,9 @@ impl DecodedState for (FixedSizeBinary, MutableBitmap) {
     }
 }
 
-impl<'a> Decoder<'a> for BinaryDecoder {
-    type Translation = StateTranslation<'a>;
-    type Dict = &'a [u8];
+impl Decoder for BinaryDecoder {
+    type Translation<'a> = StateTranslation<'a>;
+    type Dict = Vec<u8>;
     type DecodedState = (FixedSizeBinary, MutableBitmap);
 
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState {
@@ -156,8 +156,8 @@ impl<'a> Decoder<'a> for BinaryDecoder {
         )
     }
 
-    fn deserialize_dict(&self, page: &'a DictPage) -> Self::Dict {
-        page.buffer.as_ref()
+    fn deserialize_dict(&self, page: DictPage) -> Self::Dict {
+        page.buffer.into_vec()
     }
 }
 
@@ -207,7 +207,7 @@ impl<I: PagesIter> Iterator for Iter<I> {
             let maybe_state = next(
                 &mut self.iter,
                 &mut self.items,
-                &mut self.dict.as_deref(),
+                &mut self.dict,
                 &mut self.remaining,
                 self.chunk_size,
                 &BinaryDecoder { size: self.size },

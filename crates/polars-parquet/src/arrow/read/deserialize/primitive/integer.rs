@@ -205,14 +205,14 @@ where
     }
 }
 
-impl<'a, P, T, D> utils::Decoder<'a> for IntDecoder<P, T, D>
+impl<P, T, D> utils::Decoder for IntDecoder<P, T, D>
 where
     T: NativeType,
     P: ParquetNativeType,
     i64: num_traits::AsPrimitive<P>,
     D: DecoderFunction<P, T>,
 {
-    type Translation = StateTranslation<'a, P, T>;
+    type Translation<'a> = StateTranslation<'a, P, T>;
     type Dict = Vec<T>;
     type DecodedState = (Vec<T>, MutableBitmap);
 
@@ -220,7 +220,7 @@ where
         self.0.with_capacity(capacity)
     }
 
-    fn deserialize_dict(&self, page: &DictPage) -> Self::Dict {
+    fn deserialize_dict(&self, page: DictPage) -> Self::Dict {
         self.0.deserialize_dict(page)
     }
 }

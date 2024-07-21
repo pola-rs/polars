@@ -158,7 +158,7 @@ where
     fn new(
         _decoder: &PrimitiveDecoder<P, T, D>,
         page: &'a DataPage,
-        dict: Option<&'a <PrimitiveDecoder<P, T, D> as utils::Decoder<'a>>::Dict>,
+        dict: Option<&'a <PrimitiveDecoder<P, T, D> as utils::Decoder>::Dict>,
         _page_validity: Option<&PageValidity<'a>>,
         _filter: Option<&Filter<'a>>,
     ) -> PolarsResult<Self> {
@@ -206,7 +206,7 @@ where
     fn extend_from_state(
         &mut self,
         decoder: &PrimitiveDecoder<P, T, D>,
-        decoded: &mut <PrimitiveDecoder<P, T, D> as utils::Decoder<'a>>::DecodedState,
+        decoded: &mut <PrimitiveDecoder<P, T, D> as utils::Decoder>::DecodedState,
         page_validity: &mut Option<PageValidity<'a>>,
         additional: usize,
     ) -> ParquetResult<()> {
@@ -307,13 +307,13 @@ impl<T: std::fmt::Debug> utils::DecodedState for (Vec<T>, MutableBitmap) {
     }
 }
 
-impl<'a, P, T, D> utils::Decoder<'a> for PrimitiveDecoder<P, T, D>
+impl<P, T, D> utils::Decoder for PrimitiveDecoder<P, T, D>
 where
     T: NativeType,
     P: ParquetNativeType,
     D: DecoderFunction<P, T>,
 {
-    type Translation = StateTranslation<'a, P, T>;
+    type Translation<'a> = StateTranslation<'a, P, T>;
     type Dict = Vec<T>;
     type DecodedState = (Vec<T>, MutableBitmap);
 
@@ -324,7 +324,7 @@ where
         )
     }
 
-    fn deserialize_dict(&self, page: &DictPage) -> Self::Dict {
+    fn deserialize_dict(&self, page: DictPage) -> Self::Dict {
         deserialize_plain::<P, T, D>(&page.buffer, self.decoder)
     }
 }
