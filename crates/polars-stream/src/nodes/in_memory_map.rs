@@ -84,16 +84,18 @@ impl ComputeNode for InMemoryMapNode {
     }
 
     fn spawn<'env, 's>(
-        &'env self,
+        &'env mut self,
         scope: &'s TaskScope<'s, 'env>,
-        pipeline: usize,
-        recv: &mut [Option<Receiver<Morsel>>],
-        send: &mut [Option<Sender<Morsel>>],
+        recv: &mut [Option<RecvPort<'_>>],
+        send: &mut [Option<SendPort<'_>>],
         state: &'s ExecutionState,
-    ) -> JoinHandle<PolarsResult<()>> {
+        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
+    ) {
         match self {
-            Self::Sink { sink_node, .. } => sink_node.spawn(scope, pipeline, recv, &mut [], state),
-            Self::Source(source) => source.spawn(scope, pipeline, &mut [], send, state),
+            Self::Sink { sink_node, .. } => {
+                sink_node.spawn(scope, recv, &mut [], state, join_handles)
+            },
+            Self::Source(source) => source.spawn(scope, &mut [], send, state, join_handles),
             Self::Done => unreachable!(),
         }
     }

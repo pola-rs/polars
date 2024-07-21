@@ -4,6 +4,7 @@ use arrow::array::Array;
 use arrow::datatypes::Field;
 use arrow::record_batch::RecordBatchT;
 use polars_error::PolarsResult;
+use polars_utils::mmap::MemReader;
 
 use super::{ArrayIter, RowGroupMetaData};
 use crate::arrow::read::column_iter_to_arrays;
@@ -164,7 +165,7 @@ pub fn to_deserializer<'a>(
                     .for_each(|page| page.start -= meta.column_start);
                 meta.column_start = 0;
                 let pages = IndexedPageReader::new_with_page_meta(
-                    std::io::Cursor::new(chunk),
+                    MemReader::from_vec(chunk),
                     meta,
                     pages,
                     vec![],
@@ -185,7 +186,7 @@ pub fn to_deserializer<'a>(
             .map(|(column_meta, chunk)| {
                 let len = chunk.len();
                 let pages = PageReader::new(
-                    std::io::Cursor::new(chunk),
+                    MemReader::from_vec(chunk),
                     column_meta,
                     std::sync::Arc::new(|_, _| true),
                     vec![],

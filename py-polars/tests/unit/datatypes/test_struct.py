@@ -959,3 +959,9 @@ def test_struct_chunked_gather_17603() -> None:
             {"a": 3},
         ]
     }
+
+
+def test_struct_out_nullability_from_arrow() -> None:
+    df = pl.DataFrame(pd.DataFrame({"abc": [{"a": 1.0, "b": pd.NA}, pd.NA]}))
+    res = df.select(a=pl.col("abc").struct.field("a"))
+    assert res.to_dicts() == [{"a": 1.0}, {"a": None}]

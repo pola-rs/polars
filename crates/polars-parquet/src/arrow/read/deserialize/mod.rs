@@ -31,6 +31,7 @@ mod utils;
 use arrow::array::{Array, DictionaryKey, FixedSizeListArray, ListArray, MapArray};
 use arrow::datatypes::{ArrowDataType, Field, IntervalUnit};
 use arrow::offset::Offsets;
+use polars_utils::mmap::MemReader;
 use simple::page_iter_to_arrays;
 
 pub use self::nested_utils::{init_nested, InitNested, NestedArrayIter, NestedState};
@@ -40,13 +41,13 @@ use crate::parquet::read::get_page_iterator as _get_page_iterator;
 use crate::parquet::schema::types::PrimitiveType;
 
 /// Creates a new iterator of compressed pages.
-pub fn get_page_iterator<R: Read + Seek>(
+pub fn get_page_iterator(
     column_metadata: &ColumnChunkMetaData,
-    reader: R,
+    reader: MemReader,
     pages_filter: Option<PageFilter>,
     buffer: Vec<u8>,
     max_header_size: usize,
-) -> PolarsResult<PageReader<R>> {
+) -> PolarsResult<PageReader> {
     Ok(_get_page_iterator(
         column_metadata,
         reader,

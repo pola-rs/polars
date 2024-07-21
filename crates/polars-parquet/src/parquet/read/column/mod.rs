@@ -1,7 +1,7 @@
 use std::io::{Read, Seek};
 use std::vec::IntoIter;
 
-use super::{get_field_columns, get_page_iterator, PageFilter, PageReader};
+use super::{get_field_columns, get_page_iterator, MemReader, PageFilter, PageReader};
 use crate::parquet::error::ParquetError;
 use crate::parquet::metadata::{ColumnChunkMetaData, RowGroupMetaData};
 use crate::parquet::page::CompressedPage;
@@ -18,14 +18,14 @@ mod stream;
 /// For primitive fields (e.g. `i64`), [`ColumnIterator`] yields exactly one column.
 /// For complex fields, it yields multiple columns.
 /// `max_page_size` is the maximum number of bytes allowed.
-pub fn get_column_iterator<R: Read + Seek>(
-    reader: R,
+pub fn get_column_iterator(
+    reader: MemReader,
     row_group: &RowGroupMetaData,
     field_name: &str,
     page_filter: Option<PageFilter>,
     scratch: Vec<u8>,
     max_page_size: usize,
-) -> ColumnIterator<R> {
+) -> ColumnIterator {
     let columns = get_field_columns(row_group.columns(), field_name)
         .cloned()
         .collect::<Vec<_>>();
@@ -53,20 +53,20 @@ pub trait MutStreamingIterator: Sized {
 
 /// A [`MutStreamingIterator`] that reads column chunks one by one,
 /// returning a [`PageReader`] per column.
-pub struct ColumnIterator<R: Read + Seek> {
-    reader: Option<R>,
+pub struct ColumnIterator {
+    reader: Option<MemReader>,
     columns: Vec<ColumnChunkMetaData>,
     page_filter: Option<PageFilter>,
-    current: Option<(PageReader<R>, ColumnChunkMetaData)>,
+    current: Option<(PageReader, ColumnChunkMetaData)>,
     scratch: Vec<u8>,
     max_page_size: usize,
 }
 
-impl<R: Read + Seek> ColumnIterator<R> {
+impl ColumnIterator {
     /// Returns a new [`ColumnIterator`]
     /// `max_page_size` is the maximum allowed page size
     pub fn new(
-        reader: R,
+        reader: MemReader,
         mut columns: Vec<ColumnChunkMetaData>,
         page_filter: Option<PageFilter>,
         scratch: Vec<u8>,
@@ -84,8 +84,8 @@ impl<R: Read + Seek> ColumnIterator<R> {
     }
 }
 
-impl<R: Read + Seek> MutStreamingIterator for ColumnIterator<R> {
-    type Item = (PageReader<R>, ColumnChunkMetaData);
+impl MutStreamingIterator for ColumnIterator {
+    type Item = (PageReader, ColumnChunkMetaData);
     type Error = ParquetError;
 
     fn advance(mut self) -> Result<State<Self>, ParquetError> {

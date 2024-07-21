@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use polars_core::config;
 use polars_core::utils::accumulate_dataframes_vertical;
 
 use super::*;
@@ -38,6 +39,14 @@ impl JsonExec {
             .as_ref()
             .unwrap_right();
 
+        let verbose = config::verbose();
+        let force_async = config::force_async();
+        let run_async = force_async || is_cloud_url(self.paths.first().unwrap());
+
+        if force_async && verbose {
+            eprintln!("ASYNC READING FORCED");
+        }
+
         let mut n_rows = self.file_scan_options.n_rows;
 
         // Avoid panicking
@@ -60,9 +69,30 @@ impl JsonExec {
                     return None;
                 }
 
-                let reader = match JsonLineReader::from_path(p) {
-                    Ok(r) => r,
-                    Err(e) => return Some(Err(e)),
+                let reader = if run_async {
+                    JsonLineReader::new({
+                        #[cfg(feature = "cloud")]
+                        {
+                            match polars_io::file_cache::FILE_CACHE
+                                .get_entry(p.to_str().unwrap())
+                                // Safety: This was initialized by schema inference.
+                                .unwrap()
+                                .try_open_assume_latest()
+                            {
+                                Ok(v) => v,
+                                Err(e) => return Some(Err(e)),
+                            }
+                        }
+                        #[cfg(not(feature = "cloud"))]
+                        {
+                            panic!("required feature `cloud` is not enabled")
+                        }
+                    })
+                } else {
+                    match JsonLineReader::from_path(p) {
+                        Ok(r) => r,
+                        Err(e) => return Some(Err(e)),
+                    }
                 };
 
                 let row_index = self.file_scan_options.row_index.as_mut();

@@ -3,6 +3,7 @@ mod frame;
 use std::fmt::Write;
 
 use arrow::array::StructArray;
+use arrow::bitmap::Bitmap;
 use arrow::compute::utils::combine_validities_and;
 use arrow::legacy::utils::CustomIterTools;
 use polars_error::{polars_ensure, PolarsResult};
@@ -301,11 +302,13 @@ impl StructChunked {
 
     /// Set the outer nulls into the inner arrays, and clear the outer validity.
     pub(crate) fn propagate_nulls(&mut self) {
-        // SAFETY:
-        // We keep length and dtypes the same.
-        unsafe {
-            for arr in self.downcast_iter_mut() {
-                *arr = arr.propagate_nulls()
+        if self.null_count > 0 {
+            // SAFETY:
+            // We keep length and dtypes the same.
+            unsafe {
+                for arr in self.downcast_iter_mut() {
+                    *arr = arr.propagate_nulls()
+                }
             }
         }
     }
@@ -335,11 +338,10 @@ impl StructChunked {
             }
         }
         self.compute_len();
+        self.propagate_nulls();
     }
 
-    pub fn unnest(mut self) -> DataFrame {
-        self.propagate_nulls();
-
+    pub fn unnest(self) -> DataFrame {
         // SAFETY: invariants for struct are the same
         unsafe { DataFrame::new_no_checks(self.fields_as_series()) }
     }
@@ -350,5 +352,45 @@ impl StructChunked {
             .into_iter()
             .find(|s| s.name() == name)
             .ok_or_else(|| polars_err!(StructFieldNotFound: "{}", name))
+    }
+    pub(crate) fn set_outer_validity(&mut self, validity: Option<Bitmap>) {
+        assert_eq!(self.chunks().len(), 1);
+        unsafe {
+            let arr = self.chunks_mut().iter_mut().next().unwrap();
+            *arr = arr.with_validity(validity);
+        }
+        self.compute_len();
+        self.propagate_nulls();
+    }
+
+    pub fn with_outer_validity(mut self, validity: Option<Bitmap>) -> Self {
+        self.set_outer_validity(validity);
+        self
+    }
+
+    pub fn with_outer_validity_chunked(mut self, validity: BooleanChunked) -> Self {
+        assert_eq!(self.len(), validity.len());
+        if !self
+            .chunks
+            .iter()
+            .zip(validity.chunks.iter())
+            .map(|(a, b)| a.len() == b.len())
+            .all_equal()
+            || self.chunks.len() != validity.chunks().len()
+        {
+            let ca = self.rechunk();
+            let validity = validity.rechunk();
+            ca.with_outer_validity_chunked(validity)
+        } else {
+            unsafe {
+                for (arr, valid) in self.chunks_mut().iter_mut().zip(validity.downcast_iter()) {
+                    assert!(valid.validity().is_none());
+                    *arr = arr.with_validity(Some(valid.values().clone()))
+                }
+            }
+            self.compute_len();
+            self.propagate_nulls();
+            self
+        }
     }
 }

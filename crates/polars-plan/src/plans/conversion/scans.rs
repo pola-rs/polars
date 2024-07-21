@@ -9,7 +9,7 @@ use polars_io::RowIndex;
 
 use super::*;
 
-fn get_path(paths: &[PathBuf]) -> PolarsResult<&PathBuf> {
+fn get_first_path(paths: &[PathBuf]) -> PolarsResult<&PathBuf> {
     // Use first path to get schema.
     paths
         .first()
@@ -42,7 +42,7 @@ pub(super) fn parquet_file_info(
     file_options: &FileScanOptions,
     cloud_options: Option<&polars_io::cloud::CloudOptions>,
 ) -> PolarsResult<(FileInfo, Option<FileMetaDataRef>)> {
-    let path = get_path(paths)?;
+    let path = get_first_path(paths)?;
 
     let (schema, reader_schema, num_rows, metadata) = if is_cloud_url(path) {
         #[cfg(not(feature = "cloud"))]
@@ -92,7 +92,7 @@ pub(super) fn ipc_file_info(
     file_options: &FileScanOptions,
     cloud_options: Option<&polars_io::cloud::CloudOptions>,
 ) -> PolarsResult<(FileInfo, arrow::io::ipc::read::FileMetadata)> {
-    let path = get_path(paths)?;
+    let path = get_first_path(paths)?;
 
     let metadata = if is_cloud_url(path) {
         #[cfg(not(feature = "cloud"))]
@@ -145,7 +145,7 @@ pub(super) fn csv_file_info(
     // * See if we can do this without downloading the entire file
 
     // prints the error message if paths is empty.
-    let first_path = get_path(paths)?;
+    let first_path = get_first_path(paths)?;
     let run_async = is_cloud_url(first_path) || config::force_async();
 
     let cache_entries = {
@@ -177,7 +177,7 @@ pub(super) fn csv_file_info(
             #[cfg(feature = "cloud")]
             {
                 let entry: &Arc<polars_io::file_cache::FileCacheEntry> =
-                    cache_entries.as_ref().unwrap().get(i).unwrap();
+                    &cache_entries.as_ref().unwrap()[i];
                 entry.try_open_check_latest()?
             }
             #[cfg(not(feature = "cloud"))]
@@ -279,10 +279,50 @@ pub(super) fn ndjson_file_info(
     paths: &[PathBuf],
     file_options: &FileScanOptions,
     ndjson_options: &mut NDJsonReadOptions,
+    cloud_options: Option<&polars_io::cloud::CloudOptions>,
 ) -> PolarsResult<FileInfo> {
-    let path = get_path(paths)?;
+    use polars_core::config;
 
-    let f = polars_utils::open_file(path)?;
+    let run_async = !paths.is_empty() && is_cloud_url(&paths[0]) || config::force_async();
+
+    let cache_entries = {
+        #[cfg(feature = "cloud")]
+        {
+            if run_async {
+                Some(polars_io::file_cache::init_entries_from_uri_list(
+                    paths
+                        .iter()
+                        .map(|path| Arc::from(path.to_str().unwrap()))
+                        .collect::<Vec<_>>()
+                        .as_slice(),
+                    cloud_options,
+                )?)
+            } else {
+                None
+            }
+        }
+        #[cfg(not(feature = "cloud"))]
+        {
+            if run_async {
+                panic!("required feature `cloud` is not enabled")
+            }
+        }
+    };
+
+    let first_path = get_first_path(paths)?;
+
+    let f = if run_async {
+        #[cfg(feature = "cloud")]
+        {
+            cache_entries.unwrap()[0].try_open_check_latest()?
+        }
+        #[cfg(not(feature = "cloud"))]
+        {
+            panic!("required feature `cloud` is not enabled")
+        }
+    } else {
+        polars_utils::open_file(first_path)?
+    };
     let mut reader = std::io::BufReader::new(f);
 
     let (reader_schema, schema) = if let Some(schema) = ndjson_options.schema.take() {

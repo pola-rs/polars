@@ -1,3 +1,7 @@
+#![cfg_attr(
+    all(target_arch = "aarch64", feature = "nightly"),
+    feature(stdarch_aarch64_prefetch)
+)]
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
 pub mod abs_diff;
 pub mod arena;
@@ -38,6 +42,8 @@ pub mod wasm;
 pub mod float;
 pub mod index;
 pub mod io;
+#[cfg(feature = "mmap")]
+pub mod mmap;
 pub mod nulls;
 pub mod ord;
 pub mod partitioned;

@@ -481,6 +481,7 @@ def test_scan_limit_0_does_not_panic(
         (pl.scan_csv, pl.DataFrame.write_csv),
         (pl.scan_parquet, pl.DataFrame.write_parquet),
         (pl.scan_ipc, pl.DataFrame.write_ipc),
+        (pl.scan_ndjson, pl.DataFrame.write_ndjson),
     ],
 )
 @pytest.mark.parametrize(
@@ -515,7 +516,7 @@ def test_scan_directory(
 
     scan = scan_func
 
-    if scan_func is pl.scan_csv:
+    if scan_func in [pl.scan_csv, pl.scan_ndjson]:
         scan = partial(scan, schema=df.schema)
 
     if scan_func is pl.scan_parquet:
@@ -660,7 +661,7 @@ def test_scan_include_file_name(
         scan_func(tmp_path, include_file_paths="x").collect(streaming=streaming)  # type: ignore[call-arg]
 
     f = scan_func
-    if scan_func is pl.scan_csv:
+    if scan_func in [pl.scan_csv, pl.scan_ndjson]:
         f = partial(f, schema=df.drop("path").schema)
 
     lf: pl.LazyFrame = f(tmp_path, include_file_paths="path")  # type: ignore[call-arg]

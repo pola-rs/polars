@@ -5,7 +5,7 @@ use std::cell::{Cell, UnsafeCell};
 use std::future::Future;
 use std::marker::PhantomData;
 use std::panic::AssertUnwindSafe;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock, Weak};
 
 use crossbeam_deque::{Injector, Steal, Stealer, Worker as WorkQueue};
@@ -44,6 +44,7 @@ pub enum TaskPriority {
 /// Metadata associated with a task to help schedule it and clean it up.
 struct TaskMetadata {
     priority: TaskPriority,
+    freshly_spawned: AtomicBool,
 
     task_key: TaskKey,
     completed_tasks: Weak<Mutex<Vec<TaskKey>>>,
@@ -82,12 +83,29 @@ struct Executor {
 impl Executor {
     fn schedule_task(&self, task: ReadyTask) {
         let thread = TLS_THREAD_ID.get();
-        let priority = task.metadata().priority;
-        if let Some(ttl) = self.thread_task_lists.get(thread) {
+        let meta = task.metadata();
+        let opt_ttl = self.thread_task_lists.get(thread);
+
+        let mut use_global_queue = opt_ttl.is_none();
+        if meta.freshly_spawned.load(Ordering::Relaxed) {
+            use_global_queue = true;
+            meta.freshly_spawned.store(false, Ordering::Relaxed);
+        }
+
+        if use_global_queue {
+            // Scheduled from an unknown thread, add to global queue.
+            if meta.priority == TaskPriority::High {
+                self.global_high_prio_task_queue.push(task);
+            } else {
+                self.global_low_prio_task_queue.push(task);
+            }
+            self.park_group.unpark_one();
+        } else {
+            let ttl = opt_ttl.unwrap();
             // SAFETY: this slot may only be accessed from the local thread, which we are.
             let slot = unsafe { &mut *ttl.local_slot.get() };
 
-            if priority == TaskPriority::High {
+            if meta.priority == TaskPriority::High {
                 // Insert new task into thread local slot, taking out the old task.
                 let Some(task) = slot.replace(task) else {
                     // We pushed a task into our local slot which was empty. Since
@@ -107,14 +125,6 @@ impl Executor {
                     self.park_group.unpark_one();
                 }
             }
-        } else {
-            // Scheduled from an unknown thread, add to global queue.
-            if priority == TaskPriority::High {
-                self.global_high_prio_task_queue.push(task);
-            } else {
-                self.global_low_prio_task_queue.push(task);
-            }
-            self.park_group.unpark_one();
         }
     }
 
@@ -213,7 +223,10 @@ impl Executor {
 
             let thread_task_lists = (0..n_threads)
                 .map(|t| {
-                    std::thread::spawn(move || Self::global().runner(t));
+                    std::thread::Builder::new()
+                        .name(format!("async-executor-{t}"))
+                        .spawn(move || Self::global().runner(t))
+                        .unwrap();
 
                     let high_prio_tasks = WorkQueue::new_lifo();
                     CachePadded::new(ThreadLocalTaskList {
@@ -285,6 +298,7 @@ impl<'scope, 'env> TaskScope<'scope, 'env> {
                     TaskMetadata {
                         task_key,
                         priority,
+                        freshly_spawned: AtomicBool::new(true),
                         completed_tasks: Arc::downgrade(&self.completed_tasks),
                     },
                 )

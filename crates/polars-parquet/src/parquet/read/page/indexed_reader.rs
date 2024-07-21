@@ -1,5 +1,7 @@
 use std::collections::VecDeque;
-use std::io::{Cursor, Read, Seek, SeekFrom};
+use std::io::{Seek, SeekFrom};
+
+use polars_utils::mmap::{MemReader, MemSlice};
 
 use super::reader::{finish_page, read_page_header, PageMetaData};
 use crate::parquet::error::ParquetError;
@@ -17,9 +19,9 @@ enum State {
 /// A fallible [`Iterator`] of [`CompressedPage`]. This iterator leverages page indexes
 /// to skip pages that are not needed. Consequently, the pages from this
 /// iterator always have [`Some`] [`crate::parquet::page::CompressedDataPage::selected_rows()`]
-pub struct IndexedPageReader<R: Read + Seek> {
+pub struct IndexedPageReader {
     // The source
-    reader: R,
+    reader: MemReader,
 
     column_start: u64,
     compression: Compression,
@@ -38,43 +40,34 @@ pub struct IndexedPageReader<R: Read + Seek> {
     state: State,
 }
 
-fn read_page<R: Read + Seek>(
-    reader: &mut R,
+fn read_page(
+    reader: &mut MemReader,
     start: u64,
     length: usize,
-    buffer: &mut Vec<u8>,
-    data: &mut Vec<u8>,
-) -> Result<ParquetPageHeader, ParquetError> {
+) -> Result<(ParquetPageHeader, MemSlice), ParquetError> {
     // seek to the page
     reader.seek(SeekFrom::Start(start))?;
 
-    // read [header][data] to buffer
-    buffer.clear();
-    buffer.try_reserve(length)?;
-    reader.by_ref().take(length as u64).read_to_end(buffer)?;
+    let start_position = reader.position();
 
     // deserialize [header]
-    let mut reader = Cursor::new(buffer);
-    let page_header = read_page_header(&mut reader, 1024 * 1024)?;
-    let header_size = reader.stream_position().unwrap() as usize;
-    let buffer = reader.into_inner();
+    let page_header = read_page_header(reader, 1024 * 1024)?;
+    let header_size = reader.position() - start_position;
 
     // copy [data]
-    data.clear();
-    data.extend_from_slice(&buffer[header_size..]);
-    Ok(page_header)
+    let data = reader.read_slice(length - header_size);
+
+    Ok((page_header, data))
 }
 
-fn read_dict_page<R: Read + Seek>(
-    reader: &mut R,
+fn read_dict_page(
+    reader: &mut MemReader,
     start: u64,
     length: usize,
-    buffer: &mut Vec<u8>,
-    data: &mut Vec<u8>,
     compression: Compression,
     descriptor: &Descriptor,
 ) -> Result<CompressedDictPage, ParquetError> {
-    let page_header = read_page(reader, start, length, buffer, data)?;
+    let (page_header, data) = read_page(reader, start, length)?;
 
     let page = finish_page(page_header, data, compression, descriptor, None)?;
     if let CompressedPage::Dict(page) = page {
@@ -86,10 +79,10 @@ fn read_dict_page<R: Read + Seek>(
     }
 }
 
-impl<R: Read + Seek> IndexedPageReader<R> {
+impl IndexedPageReader {
     /// Returns a new [`IndexedPageReader`].
     pub fn new(
-        reader: R,
+        reader: MemReader,
         column: &ColumnChunkMetaData,
         pages: Vec<FilteredPage>,
         buffer: Vec<u8>,
@@ -100,7 +93,7 @@ impl<R: Read + Seek> IndexedPageReader<R> {
 
     /// Returns a new [`IndexedPageReader`] with [`PageMetaData`].
     pub fn new_with_page_meta(
-        reader: R,
+        reader: MemReader,
         column: PageMetaData,
         pages: Vec<FilteredPage>,
         buffer: Vec<u8>,
@@ -120,7 +113,7 @@ impl<R: Read + Seek> IndexedPageReader<R> {
     }
 
     /// consumes self into the reader and the two internal buffers
-    pub fn into_inner(self) -> (R, Vec<u8>, Vec<u8>) {
+    pub fn into_inner(self) -> (MemReader, Vec<u8>, Vec<u8>) {
         (self.reader, self.buffer, self.data_buffer)
     }
 
@@ -130,14 +123,11 @@ impl<R: Read + Seek> IndexedPageReader<R> {
         length: usize,
         selected_rows: Vec<Interval>,
     ) -> Result<CompressedPage, ParquetError> {
-        // it will be read - take buffer
-        let mut data = std::mem::take(&mut self.data_buffer);
-
-        let page_header = read_page(&mut self.reader, start, length, &mut self.buffer, &mut data)?;
+        let (page_header, data) = read_page(&mut self.reader, start, length)?;
 
         finish_page(
             page_header,
-            &mut data,
+            data,
             self.compression,
             &self.descriptor,
             Some(selected_rows),
@@ -159,15 +149,10 @@ impl<R: Read + Seek> IndexedPageReader<R> {
             None => return None,
         };
 
-        // it will be read - take buffer
-        let mut data = std::mem::take(&mut self.data_buffer);
-
         let maybe_page = read_dict_page(
             &mut self.reader,
             start,
             length,
-            &mut self.buffer,
-            &mut data,
             self.compression,
             &self.descriptor,
         );
@@ -175,7 +160,7 @@ impl<R: Read + Seek> IndexedPageReader<R> {
     }
 }
 
-impl<R: Read + Seek> Iterator for IndexedPageReader<R> {
+impl Iterator for IndexedPageReader {
     type Item = Result<CompressedPage, ParquetError>;
 
     fn next(&mut self) -> Option<Self::Item> {

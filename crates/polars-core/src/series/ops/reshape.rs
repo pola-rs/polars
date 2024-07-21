@@ -202,7 +202,7 @@ impl Series {
                 let mut cols = dimensions[1];
 
                 if s_ref.len() == 0_usize {
-                    if (rows == -1 || rows == 0) && (cols == -1 || cols == 0) {
+                    if (rows == -1 || rows == 0) && (cols == -1 || cols == 0 || cols == 1) {
                         let s = reshape_fast_path(s.name(), s_ref);
                         return Ok(s);
                     } else {

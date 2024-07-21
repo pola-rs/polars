@@ -9,7 +9,9 @@ use polars_error::PolarsResult;
 
 use super::super::utils::MaybeNext;
 use super::super::{utils, PagesIter};
-use super::basic::{finish, DecoderFunction, PrimitiveDecoder, ValuesDictionary};
+use super::basic::{
+    finish, DecoderFunction, PlainDecoderFnCollector, PrimitiveDecoder, ValuesDictionary,
+};
 use crate::parquet::encoding::hybrid_rle::DictionaryTranslator;
 use crate::parquet::encoding::{byte_stream_split, delta_bitpacked, Encoding};
 use crate::parquet::error::ParquetResult;
@@ -17,7 +19,7 @@ use crate::parquet::page::{split_buffer, DataPage, DictPage};
 use crate::parquet::types::{decode, NativeType as ParquetNativeType};
 use crate::read::deserialize::utils::array_chunks::ArrayChunks;
 use crate::read::deserialize::utils::filter::Filter;
-use crate::read::deserialize::utils::{PageValidity, TranslatedHybridRle};
+use crate::read::deserialize::utils::{BatchableCollector, PageValidity, TranslatedHybridRle};
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
@@ -100,21 +102,28 @@ where
     ) -> ParquetResult<()> {
         let (values, validity) = decoded;
         match (self, page_validity) {
-            (Self::Unit(page), Some(page_validity)) => utils::extend_from_decoder(
-                validity,
-                page_validity,
-                Some(additional),
-                values,
-                &mut page
-                    .by_ref()
-                    .map(|v| decoder.0.decoder.decode(P::from_le_bytes(*v))),
-            )?,
+            (Self::Unit(page), Some(page_validity)) => {
+                let collector = PlainDecoderFnCollector {
+                    chunks: page,
+                    decoder: decoder.0.decoder,
+                    _pd: Default::default(),
+                };
+
+                utils::extend_from_decoder(
+                    validity,
+                    page_validity,
+                    Some(additional),
+                    values,
+                    collector,
+                )?;
+            },
             (Self::Unit(page), None) => {
-                values.extend(
-                    page.by_ref()
-                        .map(|v| decoder.0.decoder.decode(P::from_le_bytes(*v)))
-                        .take(additional),
-                );
+                PlainDecoderFnCollector {
+                    chunks: page,
+                    decoder: decoder.0.decoder,
+                    _pd: Default::default(),
+                }
+                .push_n(values, additional)?;
             },
             (Self::Dictionary(page), Some(page_validity)) => {
                 let translator = DictionaryTranslator(page.dict);

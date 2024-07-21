@@ -103,8 +103,10 @@ impl Series {
             BinaryOffset => BinaryOffsetChunked::from_chunks(name, chunks).into_series(),
             #[cfg(feature = "dtype-struct")]
             Struct(_) => {
-                StructChunked::from_chunks_and_dtype_unchecked(name, chunks, dtype.clone())
-                    .into_series()
+                let mut ca =
+                    StructChunked::from_chunks_and_dtype_unchecked(name, chunks, dtype.clone());
+                ca.propagate_nulls();
+                ca.into_series()
             },
             #[cfg(feature = "object")]
             Object(_, _) => {
@@ -400,11 +402,12 @@ impl Series {
             #[cfg(feature = "dtype-struct")]
             ArrowDataType::Struct(_) => {
                 let (chunks, dtype) = to_physical_and_dtype(chunks, md);
+
                 unsafe {
-                    Ok(
-                        StructChunked::from_chunks_and_dtype_unchecked(name, chunks, dtype)
-                            .into_series(),
-                    )
+                    let mut ca =
+                        StructChunked::from_chunks_and_dtype_unchecked(name, chunks, dtype);
+                    ca.propagate_nulls();
+                    Ok(ca.into_series())
                 }
             },
             ArrowDataType::FixedSizeBinary(_) => {

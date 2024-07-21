@@ -91,6 +91,7 @@ fn to_graph_rec<'a>(
 
         Select {
             selectors,
+            selector_reentrant,
             input,
             output_schema,
             extend_original,
@@ -111,6 +112,7 @@ fn to_graph_rec<'a>(
             ctx.graph.add_node(
                 nodes::select::SelectNode::new(
                     phys_selectors,
+                    selector_reentrant.clone(),
                     output_schema.clone(),
                     *extend_original,
                 ),

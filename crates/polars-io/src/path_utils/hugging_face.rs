@@ -3,11 +3,15 @@
 use std::collections::VecDeque;
 use std::path::PathBuf;
 
-use polars_error::{polars_bail, to_compute_err, PolarsResult};
+use polars_error::{polars_bail, polars_err, to_compute_err, PolarsResult};
 
-use crate::cloud::{extract_prefix_expansion, Matcher};
+use crate::cloud::{
+    extract_prefix_expansion, try_build_http_header_map_from_items_slice, CloudConfig,
+    CloudOptions, Matcher,
+};
 use crate::path_utils::HiveIdxTracker;
 use crate::pl_async::with_concurrency_budget;
+use crate::prelude::URL_ENCODE_CHAR_SET;
 
 #[derive(Debug, PartialEq)]
 struct HFPathParts {
@@ -25,6 +29,9 @@ struct HFRepoLocation {
 
 impl HFRepoLocation {
     fn new(bucket: &str, repository: &str, revision: &str) -> Self {
+        let bucket = percent_encode(bucket.as_bytes());
+        let repository = percent_encode(repository.as_bytes());
+
         // "https://huggingface.co/api/ [datasets | spaces] / {username} / {reponame} / tree / {revision} / {path from root}"
         let api_base_path = format!(
             "{}{}{}{}{}{}{}",
@@ -42,11 +49,19 @@ impl HFRepoLocation {
     }
 
     fn get_file_uri(&self, rel_path: &str) -> String {
-        format!("{}{}", self.download_base_path, rel_path)
+        format!(
+            "{}{}",
+            self.download_base_path,
+            percent_encode(rel_path.as_bytes())
+        )
     }
 
     fn get_api_uri(&self, rel_path: &str) -> String {
-        format!("{}{}", self.api_base_path, rel_path)
+        format!(
+            "{}{}",
+            self.api_base_path,
+            percent_encode(rel_path.as_bytes())
+        )
     }
 }
 
@@ -198,14 +213,25 @@ impl<'a> GetPages<'a> {
 pub(super) async fn expand_paths_hf(
     paths: &[PathBuf],
     check_directory_level: bool,
+    cloud_options: Option<&CloudOptions>,
 ) -> PolarsResult<(usize, Vec<PathBuf>)> {
     assert!(!paths.is_empty());
 
-    let client = &reqwest::ClientBuilder::new()
-        .http1_only()
-        .https_only(true)
-        .build()
-        .unwrap();
+    let client = reqwest::ClientBuilder::new().http1_only().https_only(true);
+
+    let client = if let Some(CloudOptions {
+        config: Some(CloudConfig::Http { headers }),
+        ..
+    }) = cloud_options
+    {
+        client.default_headers(try_build_http_header_map_from_items_slice(
+            headers.as_slice(),
+        )?)
+    } else {
+        client
+    };
+
+    let client = &client.build().unwrap();
 
     let mut out_paths = vec![];
     let mut stack = VecDeque::new();
@@ -263,26 +289,26 @@ pub(super) async fn expand_paths_hf(
                 client,
             };
 
+            fn try_parse_api_response(bytes: &[u8]) -> PolarsResult<Vec<HFAPIResponse>> {
+                serde_json::from_slice::<Vec<HFAPIResponse>>(bytes).map_err(
+                    |e| polars_err!(ComputeError: "failed to parse API response as JSON: error: {}, value: {}", e, std::str::from_utf8(bytes).unwrap()),
+                )
+            }
+
             if let Some(matcher) = expansion_matcher {
                 while let Some(bytes) = gp.next().await {
                     let bytes = bytes?;
                     let bytes = bytes.as_ref();
-                    entries.extend(
-                        serde_json::from_slice::<Vec<HFAPIResponse>>(bytes)
-                            .map_err(to_compute_err)?
-                            .into_iter()
-                            .filter(|x| {
-                                matcher.is_matching(x.path.as_str()) && (!x.is_file() || x.size > 0)
-                            }),
-                    );
+                    entries.extend(try_parse_api_response(bytes)?.into_iter().filter(|x| {
+                        matcher.is_matching(x.path.as_str()) && (!x.is_file() || x.size > 0)
+                    }));
                 }
             } else {
                 while let Some(bytes) = gp.next().await {
                     let bytes = bytes?;
                     let bytes = bytes.as_ref();
                     entries.extend(
-                        serde_json::from_slice::<Vec<HFAPIResponse>>(bytes)
-                            .map_err(to_compute_err)?
+                        try_parse_api_response(bytes)?
                             .into_iter()
                             .filter(|x| !x.is_file() || x.size > 0),
                     );
@@ -302,6 +328,10 @@ pub(super) async fn expand_paths_hf(
     }
 
     Ok((hive_idx_tracker.idx, out_paths))
+}
+
+fn percent_encode(bytes: &[u8]) -> percent_encoding::PercentEncode {
+    percent_encoding::percent_encode(bytes, URL_ENCODE_CHAR_SET)
 }
 
 mod tests {

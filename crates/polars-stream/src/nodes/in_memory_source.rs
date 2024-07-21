@@ -55,36 +55,40 @@ impl ComputeNode for InMemorySourceNode {
     }
 
     fn spawn<'env, 's>(
-        &'env self,
+        &'env mut self,
         scope: &'s TaskScope<'s, 'env>,
-        _pipeline: usize,
-        recv: &mut [Option<Receiver<Morsel>>],
-        send: &mut [Option<Sender<Morsel>>],
+        recv: &mut [Option<RecvPort<'_>>],
+        send: &mut [Option<SendPort<'_>>],
         _state: &'s ExecutionState,
-    ) -> JoinHandle<PolarsResult<()>> {
+        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
+    ) {
         assert!(recv.is_empty() && send.len() == 1);
-        let mut send = send[0].take().unwrap();
+        let senders = send[0].take().unwrap().parallel();
         let source = self.source.as_ref().unwrap();
 
-        scope.spawn_task(TaskPriority::Low, async move {
-            let wait_group = WaitGroup::default();
-            loop {
-                let seq = self.seq.fetch_add(1, Ordering::Relaxed);
-                let offset = (seq as usize * self.morsel_size) as i64;
-                let df = source.slice(offset, self.morsel_size);
-                if df.is_empty() {
-                    break;
+        // TODO: can this just be serial, using the work distributor?
+        for mut send in senders {
+            let slf = &*self;
+            join_handles.push(scope.spawn_task(TaskPriority::Low, async move {
+                let wait_group = WaitGroup::default();
+                loop {
+                    let seq = slf.seq.fetch_add(1, Ordering::Relaxed);
+                    let offset = (seq as usize * slf.morsel_size) as i64;
+                    let df = source.slice(offset, slf.morsel_size);
+                    if df.is_empty() {
+                        break;
+                    }
+
+                    let mut morsel = Morsel::new(df, MorselSeq::new(seq));
+                    morsel.set_consume_token(wait_group.token());
+                    if send.send(morsel).await.is_err() {
+                        break;
+                    }
+                    wait_group.wait().await;
                 }
 
-                let mut morsel = Morsel::new(df, MorselSeq::new(seq));
-                morsel.set_consume_token(wait_group.token());
-                if send.send(morsel).await.is_err() {
-                    break;
-                }
-                wait_group.wait().await;
-            }
-
-            Ok(())
-        })
+                Ok(())
+            }));
+        }
     }
 }

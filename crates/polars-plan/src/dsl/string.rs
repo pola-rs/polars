@@ -339,7 +339,7 @@ impl StringNameSpace {
                 .into(),
             )
             .with_function_options(|mut options| {
-                options.returns_scalar = true;
+                options.flags |= FunctionFlags::RETURNS_SCALAR;
                 options.collect_groups = ApplyOptions::GroupWise;
                 options
             })

@@ -11,3 +11,4 @@ Reading and writing your data is crucial for a DataFrame library. In this chapte
 - [Database](database.md)
 - [Cloud storage](cloud-storage.md)
 - [Google Big Query](bigquery.md)
+- [Hugging Face][hugging-face.md]

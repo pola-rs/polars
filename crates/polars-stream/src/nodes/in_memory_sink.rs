@@ -42,26 +42,29 @@ impl ComputeNode for InMemorySinkNode {
     }
 
     fn spawn<'env, 's>(
-        &'env self,
+        &'env mut self,
         scope: &'s TaskScope<'s, 'env>,
-        _pipeline: usize,
-        recv: &mut [Option<Receiver<Morsel>>],
-        send: &mut [Option<Sender<Morsel>>],
+        recv: &mut [Option<RecvPort<'_>>],
+        send: &mut [Option<SendPort<'_>>],
         _state: &'s ExecutionState,
-    ) -> JoinHandle<PolarsResult<()>> {
+        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
+    ) {
         assert!(recv.len() == 1 && send.is_empty());
-        let mut recv = recv[0].take().unwrap();
+        let receivers = recv[0].take().unwrap().parallel();
 
-        scope.spawn_task(TaskPriority::High, async move {
-            let mut morsels = Vec::new();
-            while let Ok(mut morsel) = recv.recv().await {
-                morsel.take_consume_token();
-                morsels.push(morsel);
-            }
+        for mut recv in receivers {
+            let slf = &*self;
+            join_handles.push(scope.spawn_task(TaskPriority::High, async move {
+                let mut morsels = Vec::new();
+                while let Ok(mut morsel) = recv.recv().await {
+                    morsel.take_consume_token();
+                    morsels.push(morsel);
+                }
 
-            self.morsels_per_pipe.lock().push(morsels);
-            Ok(())
-        })
+                slf.morsels_per_pipe.lock().push(morsels);
+                Ok(())
+            }));
+        }
     }
 
     fn get_output(&mut self) -> PolarsResult<Option<DataFrame>> {

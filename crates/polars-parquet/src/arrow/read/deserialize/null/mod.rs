@@ -61,11 +61,11 @@ mod tests {
     use super::iter_to_arrays;
     use crate::parquet::encoding::Encoding;
     use crate::parquet::error::ParquetError;
-    #[allow(unused_imports)]
-    use crate::parquet::fallible_streaming_iterator;
     use crate::parquet::metadata::Descriptor;
     use crate::parquet::page::{DataPage, DataPageHeader, DataPageHeaderV1, Page};
     use crate::parquet::schema::types::{PhysicalType, PrimitiveType};
+    #[allow(unused_imports)]
+    use crate::parquet::{fallible_streaming_iterator, CowBuffer};
 
     #[test]
     fn limit() {
@@ -78,7 +78,7 @@ mod tests {
                     repetition_level_encoding: Encoding::Plain.into(),
                     statistics: None,
                 }),
-                vec![],
+                CowBuffer::Owned(vec![]),
                 Descriptor {
                     primitive_type: PrimitiveType::from_physical(
                         "a".to_string(),

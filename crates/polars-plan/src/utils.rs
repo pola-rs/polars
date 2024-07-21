@@ -113,7 +113,7 @@ pub(crate) fn has_leaf_literal(e: &Expr) -> bool {
 pub(crate) fn all_return_scalar(e: &Expr) -> bool {
     match e {
         Expr::Literal(lv) => lv.projects_as_scalar(),
-        Expr::Function { options: opt, .. } => opt.returns_scalar,
+        Expr::Function { options: opt, .. } => opt.flags.contains(FunctionFlags::RETURNS_SCALAR),
         Expr::Agg(_) => true,
         Expr::Column(_) | Expr::Wildcard => false,
         _ => {

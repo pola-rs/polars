@@ -344,7 +344,8 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                 #[cfg(feature = "ipc")]
                 FileScan::Ipc { .. } => return Err(PyNotImplementedError::new_err("ipc scan")),
                 #[cfg(feature = "json")]
-                FileScan::NDJson { options } => {
+                FileScan::NDJson { options, .. } => {
+                    // TODO: Also pass cloud_options
                     let options = serde_json::to_string(options)
                         .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
                     ("ndjson", options).into_py(py)

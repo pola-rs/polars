@@ -46,8 +46,9 @@ where
         output_type: GetOutput::super_type(),
         options: FunctionOptions {
             collect_groups: ApplyOptions::GroupWise,
-            input_wildcard_expansion: true,
-            returns_scalar: true,
+            flags: FunctionFlags::default()
+                | FunctionFlags::INPUT_WILDCARD_EXPANSION
+                | FunctionFlags::RETURNS_SCALAR,
             fmt_str: "fold",
             ..Default::default()
         },
@@ -90,8 +91,9 @@ where
         output_type: GetOutput::super_type(),
         options: FunctionOptions {
             collect_groups: ApplyOptions::GroupWise,
-            input_wildcard_expansion: true,
-            returns_scalar: true,
+            flags: FunctionFlags::default()
+                | FunctionFlags::INPUT_WILDCARD_EXPANSION
+                | FunctionFlags::RETURNS_SCALAR,
             fmt_str: "reduce",
             ..Default::default()
         },
@@ -136,8 +138,9 @@ where
         output_type: cum_fold_dtype(),
         options: FunctionOptions {
             collect_groups: ApplyOptions::GroupWise,
-            input_wildcard_expansion: true,
-            returns_scalar: true,
+            flags: FunctionFlags::default()
+                | FunctionFlags::INPUT_WILDCARD_EXPANSION
+                | FunctionFlags::RETURNS_SCALAR,
             fmt_str: "cum_reduce",
             ..Default::default()
         },
@@ -181,8 +184,9 @@ where
         output_type: cum_fold_dtype(),
         options: FunctionOptions {
             collect_groups: ApplyOptions::GroupWise,
-            input_wildcard_expansion: true,
-            returns_scalar: true,
+            flags: FunctionFlags::default()
+                | FunctionFlags::INPUT_WILDCARD_EXPANSION
+                | FunctionFlags::RETURNS_SCALAR,
             fmt_str: "cum_fold",
             ..Default::default()
         },
@@ -200,7 +204,7 @@ pub fn all_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
         input: exprs,
         function: FunctionExpr::Boolean(BooleanFunction::AllHorizontal),
         options: FunctionOptions {
-            input_wildcard_expansion: true,
+            flags: FunctionFlags::default() | FunctionFlags::INPUT_WILDCARD_EXPANSION,
             ..Default::default()
         },
     })
@@ -217,7 +221,7 @@ pub fn any_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
         input: exprs,
         function: FunctionExpr::Boolean(BooleanFunction::AnyHorizontal),
         options: FunctionOptions {
-            input_wildcard_expansion: true,
+            flags: FunctionFlags::default() | FunctionFlags::INPUT_WILDCARD_EXPANSION,
             ..Default::default()
         },
     })
@@ -235,9 +239,9 @@ pub fn max_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
         function: FunctionExpr::MaxHorizontal,
         options: FunctionOptions {
             collect_groups: ApplyOptions::ElementWise,
-            input_wildcard_expansion: true,
-            returns_scalar: false,
-            allow_rename: true,
+            flags: FunctionFlags::default()
+                | FunctionFlags::INPUT_WILDCARD_EXPANSION & !FunctionFlags::RETURNS_SCALAR
+                | FunctionFlags::ALLOW_RENAME,
             ..Default::default()
         },
     })
@@ -255,9 +259,9 @@ pub fn min_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
         function: FunctionExpr::MinHorizontal,
         options: FunctionOptions {
             collect_groups: ApplyOptions::ElementWise,
-            input_wildcard_expansion: true,
-            returns_scalar: false,
-            allow_rename: true,
+            flags: FunctionFlags::default()
+                | FunctionFlags::INPUT_WILDCARD_EXPANSION & !FunctionFlags::RETURNS_SCALAR
+                | FunctionFlags::ALLOW_RENAME,
             ..Default::default()
         },
     })
@@ -273,8 +277,8 @@ pub fn sum_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
         function: FunctionExpr::SumHorizontal,
         options: FunctionOptions {
             collect_groups: ApplyOptions::ElementWise,
-            input_wildcard_expansion: true,
-            returns_scalar: false,
+            flags: FunctionFlags::default()
+                | FunctionFlags::INPUT_WILDCARD_EXPANSION & !FunctionFlags::RETURNS_SCALAR,
             cast_to_supertypes: None,
             ..Default::default()
         },
@@ -291,8 +295,8 @@ pub fn mean_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
         function: FunctionExpr::MeanHorizontal,
         options: FunctionOptions {
             collect_groups: ApplyOptions::ElementWise,
-            input_wildcard_expansion: true,
-            returns_scalar: false,
+            flags: FunctionFlags::default()
+                | FunctionFlags::INPUT_WILDCARD_EXPANSION & !FunctionFlags::RETURNS_SCALAR,
             cast_to_supertypes: None,
             ..Default::default()
         },
@@ -310,7 +314,7 @@ pub fn coalesce(exprs: &[Expr]) -> Expr {
         options: FunctionOptions {
             collect_groups: ApplyOptions::ElementWise,
             cast_to_supertypes: Some(Default::default()),
-            input_wildcard_expansion: true,
+            flags: FunctionFlags::default() | FunctionFlags::INPUT_WILDCARD_EXPANSION,
             ..Default::default()
         },
     }

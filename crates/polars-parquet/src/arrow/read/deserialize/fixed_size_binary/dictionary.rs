@@ -56,7 +56,7 @@ fn read_dict(data_type: ArrowDataType, dict: &DictPage) -> Box<dyn Array> {
 
     let values = dict.buffer.clone();
 
-    FixedSizeBinaryArray::try_new(data_type, values.into(), None)
+    FixedSizeBinaryArray::try_new(data_type, values.to_vec().into(), None)
         .unwrap()
         .boxed()
 }

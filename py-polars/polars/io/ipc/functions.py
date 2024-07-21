@@ -333,7 +333,9 @@ def scan_ipc(
     Parameters
     ----------
     source
-        Path to a IPC file.
+        Path(s) to a file or directory
+        When needing to authenticate for scanning cloud locations, see the
+        `storage_options` parameter.
     n_rows
         Stop reading from IPC file after reading `n_rows`.
     cache
@@ -354,6 +356,8 @@ def scan_ipc(
         * `aws <https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html>`_
         * `gcp <https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html>`_
         * `azure <https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html>`_
+        * Hugging Face (`hf://`): Accepts an API key under the `token` parameter: \
+          `{'token': '...'}`, or by setting the `HF_TOKEN` environment variable.
 
         If `storage_options` is not provided, Polars will try to infer the information
         from environment variables.

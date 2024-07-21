@@ -69,6 +69,7 @@ python:
   read_parquet: https://docs.pola.rs/api/python/stable/reference/api/polars.read_parquet.html
   write_parquet: https://docs.pola.rs/api/python/stable/reference/api/polars.DataFrame.write_parquet.html
   scan_parquet: https://docs.pola.rs/api/python/stable/reference/api/polars.scan_parquet.html
+  scan_ipc: https://docs.pola.rs/api/python/stable/reference/api/polars.scan_ipc.html
   read_json: https://docs.pola.rs/api/python/stable/reference/api/polars.read_json.html
   read_ndjson: https://docs.pola.rs/api/python/stable/reference/api/polars.read_ndjson.html
   write_ndjson: https://docs.pola.rs/api/python/stable/reference/api/polars.DataFrame.write_ndjson.html

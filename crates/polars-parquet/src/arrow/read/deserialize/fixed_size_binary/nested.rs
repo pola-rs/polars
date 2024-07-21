@@ -52,7 +52,7 @@ struct BinaryDecoder {
 
 impl<'a> NestedDecoder<'a> for BinaryDecoder {
     type State = State<'a>;
-    type Dictionary = Vec<u8>;
+    type Dictionary = &'a [u8];
     type DecodedState = (FixedSizeBinary, MutableBitmap);
 
     fn build_state(
@@ -71,7 +71,7 @@ impl<'a> NestedDecoder<'a> for BinaryDecoder {
                 let values = values.chunks_exact(self.size);
                 StateTranslation::Unit(values)
             },
-            (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict), false) => {
+            (Encoding::PlainDictionary | Encoding::RleDictionary, Some(&dict), false) => {
                 let values = dict_indices_decoder(page)?;
                 StateTranslation::Dictionary { values, dict }
             },
@@ -133,8 +133,8 @@ impl<'a> NestedDecoder<'a> for BinaryDecoder {
         validity.extend_constant(n, false);
     }
 
-    fn deserialize_dict(&self, page: &DictPage) -> Self::Dictionary {
-        page.buffer.clone()
+    fn deserialize_dict(&self, page: &'a DictPage) -> Self::Dictionary {
+        page.buffer.as_ref()
     }
 }
 
@@ -179,7 +179,7 @@ impl<I: PagesIter> Iterator for NestedIter<I> {
             let maybe_state = next(
                 &mut self.iter,
                 &mut self.items,
-                &mut self.dict,
+                &mut self.dict.as_deref(),
                 &mut self.remaining,
                 &self.init,
                 self.chunk_size,

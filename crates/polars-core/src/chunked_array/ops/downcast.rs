@@ -1,7 +1,6 @@
 use std::marker::PhantomData;
 
 use arrow::array::*;
-use arrow::bitmap::Bitmap;
 use arrow::compute::utils::combine_validities_and;
 
 use crate::prelude::*;
@@ -160,44 +159,5 @@ impl<T: PolarsDataType> ChunkedArray<T> {
             }
         }
         self.compute_len();
-    }
-
-    pub(crate) fn set_outer_validity(&mut self, validity: Option<Bitmap>) {
-        assert_eq!(self.chunks().len(), 1);
-        unsafe {
-            let arr = self.chunks_mut().iter_mut().next().unwrap();
-            *arr = arr.with_validity(validity);
-        }
-        self.compute_len();
-    }
-
-    pub fn with_outer_validity(mut self, validity: Option<Bitmap>) -> Self {
-        self.set_outer_validity(validity);
-        self
-    }
-
-    pub fn with_outer_validity_chunked(mut self, validity: BooleanChunked) -> Self {
-        assert_eq!(self.len(), validity.len());
-        if !self
-            .chunks
-            .iter()
-            .zip(validity.chunks.iter())
-            .map(|(a, b)| a.len() == b.len())
-            .all_equal()
-            || self.chunks.len() != validity.chunks().len()
-        {
-            let ca = self.rechunk();
-            let validity = validity.rechunk();
-            ca.with_outer_validity_chunked(validity)
-        } else {
-            unsafe {
-                for (arr, valid) in self.chunks_mut().iter_mut().zip(validity.downcast_iter()) {
-                    assert!(valid.validity().is_none());
-                    *arr = arr.with_validity(Some(valid.values().clone()))
-                }
-            }
-            self.compute_len();
-            self
-        }
     }
 }

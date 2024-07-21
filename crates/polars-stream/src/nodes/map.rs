@@ -26,26 +26,29 @@ impl ComputeNode for MapNode {
     }
 
     fn spawn<'env, 's>(
-        &'env self,
+        &'env mut self,
         scope: &'s TaskScope<'s, 'env>,
-        _pipeline: usize,
-        recv: &mut [Option<Receiver<Morsel>>],
-        send: &mut [Option<Sender<Morsel>>],
+        recv: &mut [Option<RecvPort<'_>>],
+        send: &mut [Option<SendPort<'_>>],
         _state: &'s ExecutionState,
-    ) -> JoinHandle<PolarsResult<()>> {
+        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
+    ) {
         assert!(recv.len() == 1 && send.len() == 1);
-        let mut recv = recv[0].take().unwrap();
-        let mut send = send[0].take().unwrap();
+        let receivers = recv[0].take().unwrap().parallel();
+        let senders = send[0].take().unwrap().parallel();
 
-        scope.spawn_task(TaskPriority::High, async move {
-            while let Ok(morsel) = recv.recv().await {
-                let morsel = morsel.try_map(|df| self.map.call_udf(df))?;
-                if send.send(morsel).await.is_err() {
-                    break;
+        for (mut recv, mut send) in receivers.into_iter().zip(senders) {
+            let slf = &*self;
+            join_handles.push(scope.spawn_task(TaskPriority::High, async move {
+                while let Ok(morsel) = recv.recv().await {
+                    let morsel = morsel.try_map(|df| slf.map.call_udf(df))?;
+                    if send.send(morsel).await.is_err() {
+                        break;
+                    }
                 }
-            }
 
-            Ok(())
-        })
+                Ok(())
+            }));
+        }
     }
 }

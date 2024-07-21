@@ -304,7 +304,7 @@ impl Expr {
     pub fn arg_min(self) -> Self {
         let options = FunctionOptions {
             collect_groups: ApplyOptions::GroupWise,
-            returns_scalar: true,
+            flags: FunctionFlags::default() | FunctionFlags::RETURNS_SCALAR,
             fmt_str: "arg_min",
             ..Default::default()
         };
@@ -325,7 +325,7 @@ impl Expr {
     pub fn arg_max(self) -> Self {
         let options = FunctionOptions {
             collect_groups: ApplyOptions::GroupWise,
-            returns_scalar: true,
+            flags: FunctionFlags::default() | FunctionFlags::RETURNS_SCALAR,
             fmt_str: "arg_max",
             ..Default::default()
         };
@@ -366,7 +366,7 @@ impl Expr {
             function: FunctionExpr::SearchSorted(side),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::GroupWise,
-                returns_scalar: true,
+                flags: FunctionFlags::default() | FunctionFlags::RETURNS_SCALAR,
                 fmt_str: "search_sorted",
                 cast_to_supertypes: Some(Default::default()),
                 ..Default::default()
@@ -531,6 +531,7 @@ impl Expr {
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ElementWise,
                 fmt_str: "map",
+                flags: FunctionFlags::default() | FunctionFlags::OPTIONAL_RE_ENTRANT,
                 ..Default::default()
             },
         }
@@ -691,12 +692,17 @@ impl Expr {
             None
         };
 
+        let mut flags = FunctionFlags::default();
+        if returns_scalar {
+            flags |= FunctionFlags::RETURNS_SCALAR;
+        }
+
         Expr::Function {
             input,
             function: function_expr,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::GroupWise,
-                returns_scalar,
+                flags,
                 cast_to_supertypes,
                 ..Default::default()
             },
@@ -719,13 +725,17 @@ impl Expr {
         } else {
             None
         };
+        let mut flags = FunctionFlags::default();
+        if returns_scalar {
+            flags |= FunctionFlags::RETURNS_SCALAR;
+        }
 
         Expr::Function {
             input,
             function: function_expr,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ElementWise,
-                returns_scalar,
+                flags,
                 cast_to_supertypes,
                 ..Default::default()
             },
@@ -803,7 +813,7 @@ impl Expr {
     pub fn product(self) -> Self {
         let options = FunctionOptions {
             collect_groups: ApplyOptions::GroupWise,
-            returns_scalar: true,
+            flags: FunctionFlags::default() | FunctionFlags::RETURNS_SCALAR,
             fmt_str: "product",
             ..Default::default()
         };
@@ -1084,7 +1094,7 @@ impl Expr {
     pub fn approx_n_unique(self) -> Self {
         self.apply_private(FunctionExpr::ApproxNUnique)
             .with_function_options(|mut options| {
-                options.returns_scalar = true;
+                options.flags |= FunctionFlags::RETURNS_SCALAR;
                 options
             })
     }
@@ -1578,7 +1588,7 @@ impl Expr {
             include_breaks,
         })
         .with_function_options(|mut opt| {
-            opt.pass_name_to_apply = true;
+            opt.flags |= FunctionFlags::PASS_NAME_TO_APPLY;
             opt
         })
     }
@@ -1601,7 +1611,7 @@ impl Expr {
             include_breaks,
         })
         .with_function_options(|mut opt| {
-            opt.pass_name_to_apply = true;
+            opt.flags |= FunctionFlags::PASS_NAME_TO_APPLY;
             opt
         })
     }
@@ -1625,7 +1635,7 @@ impl Expr {
             include_breaks,
         })
         .with_function_options(|mut opt| {
-            opt.pass_name_to_apply = true;
+            opt.flags |= FunctionFlags::PASS_NAME_TO_APPLY;
             opt
         })
     }
@@ -1667,7 +1677,7 @@ impl Expr {
     pub fn skew(self, bias: bool) -> Expr {
         self.apply_private(FunctionExpr::Skew(bias))
             .with_function_options(|mut options| {
-                options.returns_scalar = true;
+                options.flags |= FunctionFlags::RETURNS_SCALAR;
                 options
             })
     }
@@ -1683,7 +1693,7 @@ impl Expr {
     pub fn kurtosis(self, fisher: bool, bias: bool) -> Expr {
         self.apply_private(FunctionExpr::Kurtosis(fisher, bias))
             .with_function_options(|mut options| {
-                options.returns_scalar = true;
+                options.flags |= FunctionFlags::RETURNS_SCALAR;
                 options
             })
     }
@@ -1742,7 +1752,7 @@ impl Expr {
     pub fn any(self, ignore_nulls: bool) -> Self {
         self.apply_private(BooleanFunction::Any { ignore_nulls }.into())
             .with_function_options(|mut opt| {
-                opt.returns_scalar = true;
+                opt.flags |= FunctionFlags::RETURNS_SCALAR;
                 opt
             })
     }
@@ -1757,7 +1767,7 @@ impl Expr {
     pub fn all(self, ignore_nulls: bool) -> Self {
         self.apply_private(BooleanFunction::All { ignore_nulls }.into())
             .with_function_options(|mut opt| {
-                opt.returns_scalar = true;
+                opt.flags |= FunctionFlags::RETURNS_SCALAR;
                 opt
             })
     }
@@ -1780,7 +1790,7 @@ impl Expr {
             normalize,
         })
         .with_function_options(|mut opts| {
-            opts.pass_name_to_apply = true;
+            opts.flags |= FunctionFlags::PASS_NAME_TO_APPLY;
             opts
         })
     }
@@ -1817,7 +1827,7 @@ impl Expr {
     pub fn entropy(self, base: f64, normalize: bool) -> Self {
         self.apply_private(FunctionExpr::Entropy { base, normalize })
             .with_function_options(|mut options| {
-                options.returns_scalar = true;
+                options.flags |= FunctionFlags::RETURNS_SCALAR;
                 options
             })
     }
@@ -1825,7 +1835,7 @@ impl Expr {
     pub fn null_count(self) -> Expr {
         self.apply_private(FunctionExpr::NullCount)
             .with_function_options(|mut options| {
-                options.returns_scalar = true;
+                options.flags |= FunctionFlags::RETURNS_SCALAR;
                 options
             })
     }
@@ -1963,8 +1973,8 @@ where
         output_type,
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyList,
-            returns_scalar: true,
             fmt_str: "",
+            flags: FunctionFlags::default() | FunctionFlags::RETURNS_SCALAR,
             ..Default::default()
         },
     }
@@ -1990,6 +2000,10 @@ where
     E: AsRef<[Expr]>,
 {
     let input = expr.as_ref().to_vec();
+    let mut flags = FunctionFlags::default();
+    if returns_scalar {
+        flags |= FunctionFlags::RETURNS_SCALAR;
+    }
 
     Expr::AnonymousFunction {
         input,
@@ -1999,8 +2013,8 @@ where
             collect_groups: ApplyOptions::GroupWise,
             // don't set this to true
             // this is for the caller to decide
-            returns_scalar,
             fmt_str: "",
+            flags,
             ..Default::default()
         },
     }

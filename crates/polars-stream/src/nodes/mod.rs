@@ -17,14 +17,14 @@ mod compute_node_prelude {
 
     pub use super::ComputeNode;
     pub use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
-    pub use crate::async_primitives::connector::{Receiver, Sender};
     pub use crate::graph::PortState;
     pub use crate::morsel::{Morsel, MorselSeq};
+    pub use crate::pipe::{RecvPort, SendPort};
 }
 
 use compute_node_prelude::*;
 
-pub trait ComputeNode: Send + Sync {
+pub trait ComputeNode: Send {
     /// The name of this node.
     fn name(&self) -> &str;
 
@@ -51,26 +51,16 @@ pub trait ComputeNode: Send + Sync {
         false
     }
 
-    /// Opportunity to spawn task(s) without being beholden to a specific
-    /// pipeline. Called once per execution phase.
-    fn spawn_global<'env, 's>(
-        &'env self,
-        _scope: &'s TaskScope<'s, 'env>,
-        _state: &'s ExecutionState,
-    ) -> Option<JoinHandle<PolarsResult<()>>> {
-        None
-    }
-
-    /// Spawn a task that should receive input(s), process it and send to its
-    /// output(s). Called once for each pipeline per execution phase.
+    /// Spawn the tasks that this compute node needs to receive input(s),
+    /// process it and send to its output(s). Called once per execution phase.
     fn spawn<'env, 's>(
-        &'env self,
+        &'env mut self,
         scope: &'s TaskScope<'s, 'env>,
-        _pipeline: usize,
-        recv: &mut [Option<Receiver<Morsel>>],
-        send: &mut [Option<Sender<Morsel>>],
+        recv: &mut [Option<RecvPort<'_>>],
+        send: &mut [Option<SendPort<'_>>],
         state: &'s ExecutionState,
-    ) -> JoinHandle<PolarsResult<()>>;
+        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
+    );
 
     /// Called once after the last execution phase to extract output from
     /// in-memory nodes.
