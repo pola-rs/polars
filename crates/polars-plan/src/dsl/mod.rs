@@ -186,7 +186,15 @@ impl Expr {
 
     /// Drop null values.
     pub fn drop_nulls(self) -> Self {
-        self.apply_private(FunctionExpr::DropNulls)
+        Expr::Function {
+            input: vec![self],
+            function: FunctionExpr::DropNulls,
+            options: FunctionOptions {
+                collect_groups: ApplyOptions::GroupWise,
+                flags: FunctionFlags::default() | FunctionFlags::ALLOW_EMPTY_INPUTS,
+                ..Default::default()
+            },
+        }
     }
 
     /// Drop NaN values.

@@ -148,3 +148,14 @@ def test_empty_list_cat_16405() -> None:
 def test_empty_list_concat_16924() -> None:
     df = pl.DataFrame(schema={"a": pl.Int16, "b": pl.List(pl.String)})
     df.with_columns(pl.col("b").list.concat([pl.col("a").cast(pl.String)]))
+
+
+def test_empty_input_expansion() -> None:
+    df = pl.DataFrame({"A": [1], "B": [2]})
+
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        (
+            df.select("A", "B").with_columns(
+                pl.col("B").sort_by(pl.struct(pl.exclude("A", "B")))
+            )
+        )
