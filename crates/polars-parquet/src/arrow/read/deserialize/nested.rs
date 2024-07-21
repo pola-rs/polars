@@ -440,13 +440,7 @@ where
                         let n = n_columns(&f.data_type);
                         let columns = columns.drain(columns.len() - n..).collect();
                         let types = types.drain(types.len() - n..).collect();
-                        columns_to_iter_recursive(
-                            columns,
-                            types,
-                            f.clone(),
-                            init,
-                            num_rows,
-                        )
+                        columns_to_iter_recursive(columns, types, f.clone(), init, num_rows)
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
                 let columns = columns.into_iter().rev().collect();

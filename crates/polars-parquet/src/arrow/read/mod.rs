@@ -46,7 +46,10 @@ pub use crate::parquet::{
     FallibleStreamingIterator,
 };
 
-pub trait CompressedPagesIter: Iterator<Item = ParquetResult<CompressedPage>> + Send + Sync {}
+pub trait CompressedPagesIter:
+    Iterator<Item = ParquetResult<CompressedPage>> + Send + Sync
+{
+}
 
 impl<I: Iterator<Item = ParquetResult<CompressedPage>> + Send + Sync> CompressedPagesIter for I {}
 

@@ -235,9 +235,7 @@ pub fn read_columns_many<'a, R: Read + Seek>(
             .into_iter()
             .zip(fields)
             .zip(pages)
-            .map(|((columns, field), pages)| {
-                to_deserializer(columns, field, num_rows, Some(pages))
-            })
+            .map(|((columns, field), pages)| to_deserializer(columns, field, num_rows, Some(pages)))
             .collect()
     } else {
         field_columns

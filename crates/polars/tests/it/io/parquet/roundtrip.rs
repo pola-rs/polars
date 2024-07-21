@@ -53,13 +53,7 @@ fn round_trip(
         .collect();
 
     // we can then read the row groups into chunks
-    let chunks = polars_parquet::read::FileReader::new(
-        reader,
-        row_groups,
-        schema,
-        None,
-        None,
-    );
+    let chunks = polars_parquet::read::FileReader::new(reader, row_groups, schema, None, None);
 
     let mut arrays = vec![];
     for chunk in chunks {

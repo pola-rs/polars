@@ -241,13 +241,7 @@ fn rg_to_dfs_optionally_par_over_columns(
                 projection
                     .par_iter()
                     .map(|column_i| {
-                        column_idx_to_series(
-                            *column_i,
-                            md,
-                            projection_height,
-                            schema,
-                            store,
-                        )
+                        column_idx_to_series(*column_i, md, projection_height, schema, store)
                     })
                     .collect::<PolarsResult<Vec<_>>>()
             })?
@@ -255,13 +249,7 @@ fn rg_to_dfs_optionally_par_over_columns(
             projection
                 .iter()
                 .map(|column_i| {
-                    column_idx_to_series(
-                        *column_i,
-                        md,
-                        projection_height,
-                        schema,
-                        store,
-                    )
+                    column_idx_to_series(*column_i, md, projection_height, schema, store)
                 })
                 .collect::<PolarsResult<Vec<_>>>()?
         };
@@ -348,13 +336,7 @@ fn rg_to_dfs_par_over_rg(
                 let columns = projection
                     .iter()
                     .map(|column_i| {
-                        column_idx_to_series(
-                            *column_i,
-                            md,
-                            projection_height,
-                            schema,
-                            store,
-                        )
+                        column_idx_to_series(*column_i, md, projection_height, schema, store)
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
 

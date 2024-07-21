@@ -31,8 +31,7 @@ impl<R: Read + Seek> FileReader<R> {
         limit: Option<usize>,
         page_indexes: Option<Vec<Vec<Vec<Vec<FilteredPage>>>>>,
     ) -> Self {
-        let row_groups =
-            RowGroupReader::new(reader, schema, row_groups, limit, page_indexes);
+        let row_groups = RowGroupReader::new(reader, schema, row_groups, limit, page_indexes);
 
         Self {
             row_groups,

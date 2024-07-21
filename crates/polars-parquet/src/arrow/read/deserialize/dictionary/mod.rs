@@ -144,7 +144,11 @@ fn finish_key<K: DictionaryKey>(values: Vec<K>, validity: MutableBitmap) -> Prim
 }
 
 #[inline]
-pub(super) fn next_dict<K: DictionaryKey, I: CompressedPagesIter, F: Fn(&DictPage) -> Box<dyn Array>>(
+pub(super) fn next_dict<
+    K: DictionaryKey,
+    I: CompressedPagesIter,
+    F: Fn(&DictPage) -> Box<dyn Array>,
+>(
     iter: &mut BasicDecompressor<I>,
     items: &mut VecDeque<(Vec<K>, MutableBitmap)>,
     dict: &mut Option<Box<dyn Array>>,

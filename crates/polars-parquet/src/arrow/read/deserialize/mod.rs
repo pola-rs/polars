@@ -222,7 +222,6 @@ where
     I: 'a + CompressedPagesIter,
 {
     Ok(Box::new(
-        columns_to_iter_recursive(columns, types, field, vec![], num_rows)?
-            .map(|x| x.map(|x| x.1)),
+        columns_to_iter_recursive(columns, types, field, vec![], num_rows)?.map(|x| x.map(|x| x.1)),
     ))
 }
