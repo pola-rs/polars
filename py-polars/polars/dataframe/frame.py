@@ -390,20 +390,6 @@ class DataFrame:
                 nan_to_null=nan_to_null,
             )
 
-        elif hasattr(data, "__arrow_c_array__"):
-            # This uses the fact that PySeries.from_arrow_c_array will create a
-            # struct-typed Series. Then we unpack that to a DataFrame.
-            tmp_col_name = ""
-            s = wrap_s(PySeries.from_arrow_c_array(data))
-            self._df = s.to_frame(tmp_col_name).unnest(tmp_col_name)._df
-
-        elif hasattr(data, "__arrow_c_stream__"):
-            # This uses the fact that PySeries.from_arrow_c_stream will create a
-            # struct-typed Series. Then we unpack that to a DataFrame.
-            tmp_col_name = ""
-            s = wrap_s(PySeries.from_arrow_c_stream(data))
-            self._df = s.to_frame(tmp_col_name).unnest(tmp_col_name)._df
-
         elif _check_for_pyarrow(data) and isinstance(data, pa.Table):
             self._df = arrow_to_pydf(
                 data, schema=schema, schema_overrides=schema_overrides, strict=strict
@@ -428,6 +414,21 @@ class DataFrame:
             self._df = dataframe_to_pydf(
                 data, schema=schema, schema_overrides=schema_overrides, strict=strict
             )
+
+        elif hasattr(data, "__arrow_c_array__"):
+            # This uses the fact that PySeries.from_arrow_c_array will create a
+            # struct-typed Series. Then we unpack that to a DataFrame.
+            tmp_col_name = ""
+            s = wrap_s(PySeries.from_arrow_c_array(data))
+            self._df = s.to_frame(tmp_col_name).unnest(tmp_col_name)._df
+
+        elif hasattr(data, "__arrow_c_stream__"):
+            # This uses the fact that PySeries.from_arrow_c_stream will create a
+            # struct-typed Series. Then we unpack that to a DataFrame.
+            tmp_col_name = ""
+            s = wrap_s(PySeries.from_arrow_c_stream(data))
+            self._df = s.to_frame(tmp_col_name).unnest(tmp_col_name)._df
+
         else:
             msg = (
                 f"DataFrame constructor called with unsupported type {type(data).__name__!r}"

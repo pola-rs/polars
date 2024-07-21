@@ -318,12 +318,6 @@ class Series:
             if dtype is not None:
                 self._s = self.cast(dtype, strict=strict)._s
 
-        elif hasattr(values, "__arrow_c_array__"):
-            self._s = PySeries.from_arrow_c_array(values)
-
-        elif hasattr(values, "__arrow_c_stream__"):
-            self._s = PySeries.from_arrow_c_stream(values)
-
         elif _check_for_pyarrow(values) and isinstance(
             values, (pa.Array, pa.ChunkedArray)
         ):
@@ -346,6 +340,12 @@ class Series:
             self._s = dataframe_to_pyseries(
                 original_name, values, dtype=dtype, strict=strict
             )
+
+        elif hasattr(values, "__arrow_c_array__"):
+            self._s = PySeries.from_arrow_c_array(values)
+
+        elif hasattr(values, "__arrow_c_stream__"):
+            self._s = PySeries.from_arrow_c_stream(values)
 
         else:
             msg = (
