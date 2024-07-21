@@ -170,9 +170,10 @@ impl<R: MmapBytesReader> CsvReader<R> {
 
                     match fld.data_type() {
                         Time => {
-                            self.options.fields_to_cast.push(fld);
+                            self.options.fields_to_cast.push(fld.clone());
                             // let inference decide the column type
-                            None
+                            fld.coerce(String);
+                            Some(Ok(fld))
                         },
                         #[cfg(feature = "dtype-categorical")]
                         Categorical(_, _) => {

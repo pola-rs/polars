@@ -2269,7 +2269,6 @@ def test_write_csv_raise_on_non_utf8_17328(
     with pytest.raises(InvalidOperationError, match="file encoding is not UTF-8"):
         df_no_lists.write_csv((tmp_path / "dangling.csv").open("w", encoding="gbk"))
 
-
 @pytest.mark.write_disk()
 def test_write_csv_appending_17543(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
@@ -2280,3 +2279,29 @@ def test_write_csv_appending_17543(tmp_path: Path) -> None:
     with (tmp_path / "append.csv").open("r") as f:
         assert f.readline() == "# test\n"
         assert pl.read_csv(f).equals(df)
+
+@pytest.mark.parametrize(
+    ("dtype", "df"),
+    [
+        (pl.Decimal(scale=2), pl.DataFrame({"x": ["0.1"]}).cast(pl.Decimal(scale=2))),
+        (pl.Categorical, pl.DataFrame({"x": ["A"]})),
+        (
+            pl.Time,
+            pl.DataFrame({"x": ["12:15:00"]}).with_columns(
+                pl.col("x").str.strptime(pl.Time)
+            )
+        ),
+    ]
+)
+def test_read_csv_cast_unparsable_later(
+    tmp_path: Path,
+    dtype: pl.Decimal | pl.Categorical | pl.Time,
+    df: pl.DataFrame
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    with (tmp_path / "append.csv").open("w") as f:
+        df.write_csv(f)
+    with (tmp_path / "append.csv").open("r") as f:
+        assert df.equals(
+            pl.read_csv(f, schema={"x": dtype})
+        )
