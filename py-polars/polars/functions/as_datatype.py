@@ -598,7 +598,7 @@ def struct(
     pyexprs = parse_into_list_of_expressions(*exprs, **named_exprs)
 
     if schema:
-        if not exprs:
+        if not exprs and not named_exprs:
             # no columns or expressions provided; create one from schema keys
             expr = wrap_expr(
                 plr.as_struct(parse_into_list_of_expressions(list(schema.keys())))
