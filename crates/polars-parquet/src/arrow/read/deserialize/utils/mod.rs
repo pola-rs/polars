@@ -492,8 +492,8 @@ pub(super) trait Decoder: Sized {
     ) -> ParquetResult<Box<dyn Array>>;
 }
 
-pub(super) fn extend_from_new_page<'a, T: Decoder>(
-    mut page: State<'a, T>,
+pub(super) fn extend_from_new_page<T: Decoder>(
+    mut page: State<T>,
     chunk_size: Option<usize>,
     items: &mut VecDeque<T::DecodedState>,
     remaining: &mut usize,
@@ -625,7 +625,7 @@ impl<I: CompressedPagesIter, D: Decoder> PageDecoder<I, D> {
                 unreachable!();
             };
 
-            let mut state = State::new(&self.decoder, &page, self.dict.as_ref())?;
+            let mut state = State::new(&self.decoder, page, self.dict.as_ref())?;
             let start_length = target.len();
             state.extend_from_state(&self.decoder, target, limit)?;
             let end_length = target.len();
@@ -640,7 +640,7 @@ impl<I: CompressedPagesIter, D: Decoder> PageDecoder<I, D> {
 }
 
 #[inline]
-pub(super) fn next<'a, I: CompressedPagesIter, D: Decoder>(
+pub(super) fn next<I: CompressedPagesIter, D: Decoder>(
     iter: &mut BasicDecompressor<I>,
     items: &mut VecDeque<D::DecodedState>,
     dict: &mut Option<D::Dict>,
