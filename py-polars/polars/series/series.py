@@ -355,7 +355,10 @@ class Series:
         return series
 
     @classmethod
-    @deprecate_function("use _import_arrow_from_c", version="1.3")
+    @deprecate_function(
+        "use _import_arrow_from_c; if you are using an extension, please compile it with latest 'pyo3-polars'",
+        version="1.3",
+    )
     def _import_from_c(cls, name: str, pointers: list[tuple[int, int]]) -> Self:
         return cls._from_pyseries(PySeries._import_arrow_from_c(name, pointers))
 
