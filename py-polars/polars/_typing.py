@@ -37,6 +37,21 @@ if TYPE_CHECKING:
     else:
         from typing_extensions import TypeAlias
 
+
+class ArrowArrayExportable(Protocol):
+    """Type protocol for Arrow C Data Interface via Arrow PyCapsule Interface."""
+
+    def __arrow_c_array__(
+        self, requested_schema: object | None = None
+    ) -> tuple[object, object]: ...
+
+
+class ArrowStreamExportable(Protocol):
+    """Type protocol for Arrow C Stream Interface via Arrow PyCapsule Interface."""
+
+    def __arrow_c_stream__(self, requested_schema: object | None = None) -> object: ...
+
+
 # Data types
 PolarsDataType: TypeAlias = Union["DataTypeClass", "DataType"]
 PolarsTemporalType: TypeAlias = Union[Type["TemporalType"], "TemporalType"]
@@ -178,6 +193,8 @@ FrameInitTypes: TypeAlias = Union[
     "np.ndarray[Any, Any]",
     "pa.Table",
     "pd.DataFrame",
+    "ArrowArrayExportable",
+    "ArrowStreamExportable",
 ]
 
 # Excel IO

@@ -121,6 +121,8 @@ if TYPE_CHECKING:
 
     from polars import DataFrame, DataType, Expr
     from polars._typing import (
+        ArrowArrayExportable,
+        ArrowStreamExportable,
         BufferInfo,
         ClosedInterval,
         ComparisonOperator,
@@ -161,6 +163,8 @@ ArrayLike = Union[
     "np.ndarray[Any, Any]",
     "pd.Series[Any]",
     "pd.DatetimeIndex",
+    "ArrowArrayExportable",
+    "ArrowStreamExportable",
 ]
 
 
