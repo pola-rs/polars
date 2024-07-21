@@ -14,7 +14,7 @@ use super::utils::{
     self, dict_indices_decoder, extend_from_decoder, DecodedState, Decoder, MaybeNext,
     PageValidity, StateTranslation,
 };
-use super::PagesIter;
+use super::{BasicDecompressor, CompressedPagesIter};
 use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use crate::parquet::encoding::Encoding;
 use crate::parquet::error::ParquetResult;
@@ -125,6 +125,18 @@ impl<K: DictionaryKey> utils::Decoder for PrimitiveDecoder<K> {
     }
 
     fn deserialize_dict(&self, _: DictPage) -> Self::Dict {}
+
+    fn finalize(
+        &self,
+        _data_type: ArrowDataType,
+        (values, validity): Self::DecodedState,
+    ) -> ParquetResult<Box<dyn Array>> {
+        Ok(Box::new(PrimitiveArray::new(
+            K::PRIMITIVE.into(),
+            values.into(),
+            validity.into(),
+        )))
+    }
 }
 
 fn finish_key<K: DictionaryKey>(values: Vec<K>, validity: MutableBitmap) -> PrimitiveArray<K> {
@@ -132,8 +144,8 @@ fn finish_key<K: DictionaryKey>(values: Vec<K>, validity: MutableBitmap) -> Prim
 }
 
 #[inline]
-pub(super) fn next_dict<K: DictionaryKey, I: PagesIter, F: Fn(&DictPage) -> Box<dyn Array>>(
-    iter: &mut I,
+pub(super) fn next_dict<K: DictionaryKey, I: CompressedPagesIter, F: Fn(&DictPage) -> Box<dyn Array>>(
+    iter: &mut BasicDecompressor<I>,
     items: &mut VecDeque<(Vec<K>, MutableBitmap)>,
     dict: &mut Option<Box<dyn Array>>,
     data_type: ArrowDataType,
@@ -141,6 +153,8 @@ pub(super) fn next_dict<K: DictionaryKey, I: PagesIter, F: Fn(&DictPage) -> Box<
     chunk_size: Option<usize>,
     read_dict: F,
 ) -> MaybeNext<PolarsResult<DictionaryArray<K>>> {
+    use streaming_decompression::FallibleStreamingIterator;
+
     if items.len() > 1 {
         let (values, validity) = items.pop_front().unwrap();
         let keys = finish_key(values, validity);

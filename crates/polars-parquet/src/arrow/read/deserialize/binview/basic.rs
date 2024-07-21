@@ -1,7 +1,7 @@
 use std::cell::Cell;
 use std::collections::VecDeque;
 
-use arrow::array::{Array, ArrayRef, BinaryViewArray, MutableBinaryViewArray, Utf8ViewArray};
+use arrow::array::{Array, BinaryViewArray, MutableBinaryViewArray, Utf8ViewArray};
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::datatypes::{ArrowDataType, PhysicalType};
 use polars_error::PolarsResult;
@@ -10,12 +10,13 @@ use super::super::binary::decoders::*;
 use crate::parquet::encoding::hybrid_rle::DictionaryTranslator;
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{DataPage, DictPage};
+use crate::parquet::read::BasicDecompressor;
 use crate::read::deserialize::utils::filter::Filter;
 use crate::read::deserialize::utils::{
     self, binary_views_dict, extend_from_decoder, next, DecodedState, MaybeNext, PageValidity,
     StateTranslation, TranslatedHybridRle,
 };
-use crate::read::{PagesIter, PrimitiveLogicalType};
+use crate::read::{CompressedPagesIter, PrimitiveLogicalType};
 
 type DecodedStateTuple = (MutableBinaryViewArray<[u8]>, MutableBitmap);
 
@@ -135,7 +136,7 @@ impl<'a> StateTranslation<'a, BinViewDecoder> for BinaryStateTranslation<'a> {
 }
 
 #[derive(Default)]
-struct BinViewDecoder {
+pub(super) struct BinViewDecoder {
     check_utf8: Cell<bool>,
 }
 
@@ -160,19 +161,51 @@ impl utils::Decoder for BinViewDecoder {
     fn deserialize_dict(&self, page: DictPage) -> Self::Dict {
         deserialize_plain(&page.buffer, page.num_values)
     }
+
+    fn finalize(
+        &self,
+        data_type: ArrowDataType,
+        (values, validity): Self::DecodedState,
+    ) -> ParquetResult<Box<dyn Array>> {
+        let mut array: BinaryViewArray = values.into();
+        let validity: Bitmap = validity.into();
+
+        if validity.unset_bits() != validity.len() {
+            array = array.with_validity(Some(validity))
+        }
+
+        match data_type.to_physical_type() {
+            PhysicalType::BinaryView => Ok(array.boxed()),
+            PhysicalType::Utf8View => {
+                // SAFETY: we already checked utf8
+                unsafe {
+                    Ok(Utf8ViewArray::new_unchecked(
+                        data_type.clone(),
+                        array.views().clone(),
+                        array.data_buffers().clone(),
+                        array.validity().cloned(),
+                        array.total_bytes_len(),
+                        array.total_buffer_len(),
+                    )
+                    .boxed())
+                }
+            },
+            _ => unreachable!(),
+        }
+    }
 }
 
-pub struct BinaryViewArrayIter<I: PagesIter> {
-    iter: I,
+pub struct BinaryViewArrayIter<I: CompressedPagesIter> {
+    iter: BasicDecompressor<I>,
     data_type: ArrowDataType,
     items: VecDeque<DecodedStateTuple>,
     dict: Option<BinaryDict>,
     chunk_size: Option<usize>,
     remaining: usize,
 }
-impl<I: PagesIter> BinaryViewArrayIter<I> {
+impl<I: CompressedPagesIter> BinaryViewArrayIter<I> {
     pub fn new(
-        iter: I,
+        iter: BasicDecompressor<I>,
         data_type: ArrowDataType,
         chunk_size: Option<usize>,
         num_rows: usize,
@@ -188,11 +221,14 @@ impl<I: PagesIter> BinaryViewArrayIter<I> {
     }
 }
 
-impl<I: PagesIter> Iterator for BinaryViewArrayIter<I> {
-    type Item = PolarsResult<ArrayRef>;
+impl<I: CompressedPagesIter> Iterator for BinaryViewArrayIter<I> {
+    type Item = PolarsResult<Box<dyn Array>>;
 
     fn next(&mut self) -> Option<Self::Item> {
+        use utils::Decoder;
+
         let decoder = BinViewDecoder::default();
+
         loop {
             let maybe_state = next(
                 &mut self.iter,
@@ -203,45 +239,17 @@ impl<I: PagesIter> Iterator for BinaryViewArrayIter<I> {
                 &decoder,
             );
             match maybe_state {
-                MaybeNext::Some(Ok((values, validity))) => {
-                    return Some(finish(&self.data_type, values, validity))
+                MaybeNext::Some(Ok(decoded)) => {
+                    return Some(
+                        decoder
+                            .finalize(self.data_type.clone(), decoded)
+                            .map_err(Into::into),
+                    )
                 },
                 MaybeNext::Some(Err(e)) => return Some(Err(e)),
                 MaybeNext::None => return None,
                 MaybeNext::More => continue,
             }
         }
-    }
-}
-
-pub(super) fn finish(
-    data_type: &ArrowDataType,
-    values: MutableBinaryViewArray<[u8]>,
-    validity: MutableBitmap,
-) -> PolarsResult<Box<dyn Array>> {
-    let mut array: BinaryViewArray = values.into();
-    let validity: Bitmap = validity.into();
-
-    if validity.unset_bits() != validity.len() {
-        array = array.with_validity(Some(validity))
-    }
-
-    match data_type.to_physical_type() {
-        PhysicalType::BinaryView => Ok(array.boxed()),
-        PhysicalType::Utf8View => {
-            // SAFETY: we already checked utf8
-            unsafe {
-                Ok(Utf8ViewArray::new_unchecked(
-                    data_type.clone(),
-                    array.views().clone(),
-                    array.data_buffers().clone(),
-                    array.validity().cloned(),
-                    array.total_bytes_len(),
-                    array.total_buffer_len(),
-                )
-                .boxed())
-            }
-        },
-        _ => unreachable!(),
     }
 }

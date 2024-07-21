@@ -10,14 +10,15 @@ use arrow::offset::Offset;
 use polars_error::PolarsResult;
 use polars_utils::iter::FallibleIterator;
 
+use super::super::utils;
 use super::super::utils::{extend_from_decoder, next, DecodedState, MaybeNext};
-use super::super::{utils, PagesIter};
 use super::decoders::*;
 use super::utils::*;
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{DataPage, DictPage};
+use crate::parquet::read::BasicDecompressor;
 use crate::read::deserialize::utils::StateTranslation;
-use crate::read::PrimitiveLogicalType;
+use crate::read::{CompressedPagesIter, PrimitiveLogicalType};
 
 impl<O: Offset> DecodedState for (Binary<O>, MutableBitmap) {
     fn len(&self) -> usize {
@@ -175,6 +176,38 @@ impl<O: Offset> utils::Decoder for BinaryDecoder<O> {
     fn deserialize_dict(&self, page: DictPage) -> Self::Dict {
         deserialize_plain(&page.buffer, page.num_values)
     }
+
+    fn finalize(
+        &self,
+        data_type: ArrowDataType,
+        (mut values, mut validity): Self::DecodedState,
+    ) -> ParquetResult<Box<dyn Array>> {
+        values.offsets.shrink_to_fit();
+        values.values.shrink_to_fit();
+        validity.shrink_to_fit();
+
+        match data_type.to_physical_type() {
+            PhysicalType::Binary | PhysicalType::LargeBinary => unsafe {
+                Ok(BinaryArray::<O>::new_unchecked(
+                    data_type,
+                    values.offsets.into(),
+                    values.values.into(),
+                    validity.into(),
+                )
+                .boxed())
+            },
+            PhysicalType::Utf8 | PhysicalType::LargeUtf8 => unsafe {
+                Ok(Utf8Array::<O>::new_unchecked(
+                    data_type,
+                    values.offsets.into(),
+                    values.values.into(),
+                    validity.into(),
+                )
+                .boxed())
+            },
+            _ => unreachable!(),
+        }
+    }
 }
 
 pub(super) fn finish<O: Offset>(
@@ -209,8 +242,8 @@ pub(super) fn finish<O: Offset>(
     }
 }
 
-pub struct BinaryArrayIter<O: Offset, I: PagesIter> {
-    iter: I,
+pub struct BinaryArrayIter<O: Offset, I: CompressedPagesIter> {
+    iter: BasicDecompressor<I>,
     data_type: ArrowDataType,
     items: VecDeque<(Binary<O>, MutableBitmap)>,
     dict: Option<BinaryDict>,
@@ -218,9 +251,9 @@ pub struct BinaryArrayIter<O: Offset, I: PagesIter> {
     remaining: usize,
 }
 
-impl<O: Offset, I: PagesIter> BinaryArrayIter<O, I> {
+impl<O: Offset, I: CompressedPagesIter> BinaryArrayIter<O, I> {
     pub fn new(
-        iter: I,
+        iter: BasicDecompressor<I>,
         data_type: ArrowDataType,
         chunk_size: Option<usize>,
         num_rows: usize,
@@ -236,7 +269,7 @@ impl<O: Offset, I: PagesIter> BinaryArrayIter<O, I> {
     }
 }
 
-impl<O: Offset, I: PagesIter> Iterator for BinaryArrayIter<O, I> {
+impl<O: Offset, I: CompressedPagesIter> Iterator for BinaryArrayIter<O, I> {
     type Item = PolarsResult<ArrayRef>;
 
     fn next(&mut self) -> Option<Self::Item> {

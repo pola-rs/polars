@@ -6,15 +6,17 @@ use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
 use polars_error::PolarsResult;
 
+use super::super::utils;
 use super::super::utils::{extend_from_decoder, next, DecodedState, Decoder, MaybeNext};
-use super::super::{utils, PagesIter};
 use crate::parquet::encoding::hybrid_rle::gatherer::HybridRleGatherer;
 use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use crate::parquet::encoding::Encoding;
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
+use crate::parquet::read::BasicDecompressor;
 use crate::read::deserialize::utils::filter::Filter;
 use crate::read::deserialize::utils::{BatchableCollector, PageValidity};
+use crate::read::CompressedPagesIter;
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
@@ -188,6 +190,18 @@ impl Decoder for BooleanDecoder {
     }
 
     fn deserialize_dict(&self, _: DictPage) -> Self::Dict {}
+
+    fn finalize(
+        &self,
+        data_type: ArrowDataType,
+        (values, validity): Self::DecodedState,
+    ) -> ParquetResult<Box<dyn arrow::array::Array>> {
+        Ok(Box::new(BooleanArray::new(
+            data_type,
+            values.into(),
+            validity.into(),
+        )))
+    }
 }
 
 fn finish(
@@ -199,18 +213,17 @@ fn finish(
 }
 
 /// An iterator adapter over [`PagesIter`] assumed to be encoded as boolean arrays
-#[derive(Debug)]
-pub struct Iter<I: PagesIter> {
-    iter: I,
+pub struct Iter<I: CompressedPagesIter> {
+    iter: BasicDecompressor<I>,
     data_type: ArrowDataType,
     items: VecDeque<(MutableBitmap, MutableBitmap)>,
     chunk_size: Option<usize>,
     remaining: usize,
 }
 
-impl<I: PagesIter> Iter<I> {
+impl<I: CompressedPagesIter> Iter<I> {
     pub fn new(
-        iter: I,
+        iter: BasicDecompressor<I>,
         data_type: ArrowDataType,
         chunk_size: Option<usize>,
         num_rows: usize,
@@ -225,7 +238,7 @@ impl<I: PagesIter> Iter<I> {
     }
 }
 
-impl<I: PagesIter> Iterator for Iter<I> {
+impl<I: CompressedPagesIter> Iterator for Iter<I> {
     type Item = PolarsResult<BooleanArray>;
 
     fn next(&mut self) -> Option<Self::Item> {

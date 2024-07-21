@@ -1,24 +1,26 @@
 use std::collections::VecDeque;
 
-use arrow::array::MutablePrimitiveArray;
+use arrow::array::{Array, MutablePrimitiveArray};
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
 use polars_error::PolarsResult;
 
+use super::super::utils;
 use super::super::utils::MaybeNext;
-use super::super::{utils, PagesIter};
 use crate::parquet::encoding::hybrid_rle::DictionaryTranslator;
 use crate::parquet::encoding::{byte_stream_split, hybrid_rle, Encoding};
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
+use crate::parquet::read::BasicDecompressor;
 use crate::parquet::types::{decode, NativeType as ParquetNativeType};
 use crate::read::deserialize::utils::array_chunks::ArrayChunks;
 use crate::read::deserialize::utils::filter::Filter;
 use crate::read::deserialize::utils::{BatchableCollector, PageValidity, TranslatedHybridRle};
+use crate::read::CompressedPagesIter;
 
 #[derive(Debug)]
-pub(super) struct ValuesDictionary<'a, T: NativeType> {
+pub(crate) struct ValuesDictionary<'a, T: NativeType> {
     pub values: hybrid_rle::HybridRleDecoder<'a>,
     pub dict: &'a [T],
 }
@@ -142,7 +144,7 @@ where
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
-pub(super) enum StateTranslation<'a, P: ParquetNativeType, T: NativeType> {
+pub(crate) enum StateTranslation<'a, P: ParquetNativeType, T: NativeType> {
     Plain(ArrayChunks<'a, P>),
     Dictionary(ValuesDictionary<'a, T>),
     ByteStreamSplit(byte_stream_split::Decoder<'a>),
@@ -276,7 +278,7 @@ where
 }
 
 #[derive(Debug)]
-pub(super) struct PrimitiveDecoder<P, T, D>
+pub(crate) struct PrimitiveDecoder<P, T, D>
 where
     T: NativeType,
     P: ParquetNativeType,
@@ -293,7 +295,7 @@ where
     D: DecoderFunction<P, T>,
 {
     #[inline]
-    pub(super) fn new(decoder: D) -> Self {
+    pub(crate) fn new(decoder: D) -> Self {
         Self {
             decoder,
             _pd: std::marker::PhantomData,
@@ -327,6 +329,24 @@ where
     fn deserialize_dict(&self, page: DictPage) -> Self::Dict {
         deserialize_plain::<P, T, D>(&page.buffer, self.decoder)
     }
+
+    fn finalize(
+        &self,
+        data_type: ArrowDataType,
+        (values, validity): Self::DecodedState,
+    ) -> ParquetResult<Box<dyn Array>> {
+        let validity = if validity.is_empty() {
+            None
+        } else {
+            Some(validity)
+        };
+
+        Ok(Box::new(
+            MutablePrimitiveArray::try_new(data_type, values, validity)
+                .unwrap()
+                .freeze(),
+        ))
+    }
 }
 
 pub(super) fn finish<T: NativeType>(
@@ -339,19 +359,19 @@ pub(super) fn finish<T: NativeType>(
     } else {
         Some(validity)
     };
+
     MutablePrimitiveArray::try_new(data_type.clone(), values, validity).unwrap()
 }
 
 /// An [`Iterator`] adapter over [`PagesIter`] assumed to be encoded as primitive arrays
-#[derive(Debug)]
 pub struct Iter<T, I, P, D>
 where
-    I: PagesIter,
+    I: CompressedPagesIter,
     T: NativeType,
     P: ParquetNativeType,
     D: DecoderFunction<P, T>,
 {
-    iter: I,
+    iter: BasicDecompressor<I>,
     data_type: ArrowDataType,
     items: VecDeque<(Vec<T>, MutableBitmap)>,
     remaining: usize,
@@ -363,14 +383,14 @@ where
 
 impl<T, I, P, D> Iter<T, I, P, D>
 where
-    I: PagesIter,
+    I: CompressedPagesIter,
     T: NativeType,
 
     P: ParquetNativeType,
     D: DecoderFunction<P, T>,
 {
     pub fn new(
-        iter: I,
+        iter: BasicDecompressor<I>,
         data_type: ArrowDataType,
         num_rows: usize,
         chunk_size: Option<usize>,
@@ -391,7 +411,7 @@ where
 
 impl<T, I, P, D> Iterator for Iter<T, I, P, D>
 where
-    I: PagesIter,
+    I: CompressedPagesIter,
     T: NativeType,
     P: ParquetNativeType,
     D: DecoderFunction<P, T>,

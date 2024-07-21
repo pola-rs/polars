@@ -6,14 +6,19 @@ use ethnum::I256;
 use polars_error::{polars_bail, PolarsResult};
 
 use self::primitive::UnitDecoderFunction;
-use super::super::{ArrayIter, PagesIter};
-use super::{binary, boolean, fixed_size_binary, null, primitive};
+use super::super::ArrayIter;
+use super::{
+    binary, boolean, fixed_size_binary, null, primitive, BasicDecompressor, CompressedPagesIter,
+};
 use crate::parquet::schema::types::{
     PhysicalType, PrimitiveLogicalType, PrimitiveType, TimeUnit as ParquetTimeUnit,
 };
 use crate::parquet::types::int96_to_i64_ns;
 use crate::read::deserialize::binview;
-use crate::read::deserialize::primitive::{AsDecoderFunction, IntoDecoderFunction};
+use crate::read::deserialize::primitive::{
+    AsDecoderFunction, IntoDecoderFunction, PrimitiveDecoder,
+};
+use crate::read::deserialize::utils::PageDecodeIter;
 
 /// Converts an iterator of arrays to a trait object returning trait objects
 #[inline]
@@ -52,8 +57,8 @@ where
 
 /// An iterator adapter that maps an iterator of Pages into an iterator of Arrays
 /// of [`ArrowDataType`] `data_type` and length `chunk_size`.
-pub fn page_iter_to_arrays<'a, I: PagesIter + 'a>(
-    pages: I,
+pub fn page_iter_to_arrays<'a, I: CompressedPagesIter + 'a>(
+    pages: BasicDecompressor<I>,
     type_: &PrimitiveType,
     data_type: ArrowDataType,
     chunk_size: Option<usize>,
@@ -331,13 +336,13 @@ pub fn page_iter_to_arrays<'a, I: PagesIter + 'a>(
             chunk_size,
             AsDecoderFunction::<i64, u64>::default(),
         ))),
-        (PhysicalType::Float, Float32) => dyn_iter(iden(primitive::Iter::new(
+        (PhysicalType::Float, Float32) => Box::new(PageDecodeIter::new(
             pages,
+            None,
             data_type,
             num_rows,
-            chunk_size,
-            UnitDecoderFunction::<f32>::default(),
-        ))),
+            PrimitiveDecoder::new(UnitDecoderFunction::<f32>::default()),
+        )),
         (PhysicalType::Double, Float64) => dyn_iter(iden(primitive::Iter::new(
             pages,
             data_type,
@@ -437,8 +442,8 @@ pub fn int96_to_i64_s(value: [u32; 3]) -> i64 {
     day_seconds + seconds
 }
 
-fn timestamp<'a, I: PagesIter + 'a>(
-    pages: I,
+fn timestamp<'a, I: CompressedPagesIter + 'a>(
+    pages: BasicDecompressor<I>,
     physical_type: &PhysicalType,
     logical_type: &Option<PrimitiveLogicalType>,
     data_type: ArrowDataType,
@@ -500,8 +505,8 @@ fn timestamp<'a, I: PagesIter + 'a>(
     }
 }
 
-fn timestamp_dict<'a, K: DictionaryKey, I: PagesIter + 'a>(
-    pages: I,
+fn timestamp_dict<'a, K: DictionaryKey, I: CompressedPagesIter + 'a>(
+    pages: BasicDecompressor<I>,
     physical_type: &PhysicalType,
     logical_type: &Option<PrimitiveLogicalType>,
     data_type: ArrowDataType,
@@ -552,8 +557,8 @@ fn timestamp_dict<'a, K: DictionaryKey, I: PagesIter + 'a>(
     }
 }
 
-fn dict_read<'a, K: DictionaryKey, I: PagesIter + 'a>(
-    iter: I,
+fn dict_read<'a, K: DictionaryKey, I: CompressedPagesIter + 'a>(
+    iter: BasicDecompressor<I>,
     physical_type: &PhysicalType,
     logical_type: &Option<PrimitiveLogicalType>,
     data_type: ArrowDataType,

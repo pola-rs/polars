@@ -9,11 +9,12 @@ use polars_error::PolarsResult;
 use super::super::dictionary::*;
 use super::super::nested_utils::{InitNested, NestedState};
 use super::super::utils::MaybeNext;
-use super::super::PagesIter;
 use super::basic::deserialize_plain;
 use super::DecoderFunction;
 use crate::parquet::page::DictPage;
+use crate::parquet::read::BasicDecompressor;
 use crate::parquet::types::NativeType as ParquetNativeType;
+use crate::read::CompressedPagesIter;
 
 fn read_dict<P, T, D>(data_type: ArrowDataType, dict: &DictPage, decoder: D) -> Box<dyn Array>
 where
@@ -31,16 +32,15 @@ where
 }
 
 /// An iterator adapter over [`PagesIter`] assumed to be encoded as boolean arrays
-#[derive(Debug)]
 pub struct DictIter<K, T, I, P, D>
 where
-    I: PagesIter,
+    I: CompressedPagesIter,
     T: NativeType,
     K: DictionaryKey,
     P: ParquetNativeType,
     D: DecoderFunction<P, T>,
 {
-    iter: I,
+    iter: BasicDecompressor<I>,
     data_type: ArrowDataType,
     values: Option<Box<dyn Array>>,
     items: VecDeque<(Vec<K>, MutableBitmap)>,
@@ -53,14 +53,14 @@ where
 impl<K, T, I, P, D> DictIter<K, T, I, P, D>
 where
     K: DictionaryKey,
-    I: PagesIter,
+    I: CompressedPagesIter,
     T: NativeType,
 
     P: ParquetNativeType,
     D: DecoderFunction<P, T>,
 {
     pub fn new(
-        iter: I,
+        iter: BasicDecompressor<I>,
         data_type: ArrowDataType,
         num_rows: usize,
         chunk_size: Option<usize>,
@@ -81,7 +81,7 @@ where
 
 impl<K, T, I, P, D> Iterator for DictIter<K, T, I, P, D>
 where
-    I: PagesIter,
+    I: CompressedPagesIter,
     T: NativeType,
     K: DictionaryKey,
     P: ParquetNativeType,
@@ -109,16 +109,15 @@ where
 }
 
 /// An iterator adapter that converts [`DataPages`] into an [`Iterator`] of [`DictionaryArray`]
-#[derive(Debug)]
 pub struct NestedDictIter<K, T, I, P, D>
 where
-    I: PagesIter,
+    I: CompressedPagesIter,
     T: NativeType,
     K: DictionaryKey,
     P: ParquetNativeType,
     D: DecoderFunction<P, T>,
 {
-    iter: I,
+    iter: BasicDecompressor<I>,
     init: Vec<InitNested>,
     data_type: ArrowDataType,
     values: Option<Box<dyn Array>>,
@@ -132,14 +131,14 @@ where
 impl<K, T, I, P, D> NestedDictIter<K, T, I, P, D>
 where
     K: DictionaryKey,
-    I: PagesIter,
+    I: CompressedPagesIter,
     T: NativeType,
 
     P: ParquetNativeType,
     D: DecoderFunction<P, T>,
 {
     pub fn new(
-        iter: I,
+        iter: BasicDecompressor<I>,
         init: Vec<InitNested>,
         data_type: ArrowDataType,
         num_rows: usize,
@@ -162,7 +161,7 @@ where
 
 impl<K, T, I, P, D> Iterator for NestedDictIter<K, T, I, P, D>
 where
-    I: PagesIter,
+    I: CompressedPagesIter,
     T: NativeType,
     K: DictionaryKey,
     P: ParquetNativeType,

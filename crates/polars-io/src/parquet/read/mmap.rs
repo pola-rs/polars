@@ -66,6 +66,8 @@ pub(super) fn to_deserializer<'a>(
     columns: Vec<(&ColumnChunkMetaData, MemSlice)>,
     field: Field,
     num_rows: usize,
+    
+    // @TODO: Remove the `chunk_size`
     chunk_size: Option<usize>,
 ) -> PolarsResult<ArrayIter<'a>> {
     let chunk_size = chunk_size.unwrap_or(usize::MAX).min(num_rows);

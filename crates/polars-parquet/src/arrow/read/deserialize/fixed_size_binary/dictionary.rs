@@ -7,18 +7,18 @@ use polars_error::PolarsResult;
 
 use super::super::dictionary::*;
 use super::super::utils::MaybeNext;
-use super::super::PagesIter;
 use crate::arrow::read::deserialize::nested_utils::{InitNested, NestedState};
 use crate::parquet::page::DictPage;
+use crate::parquet::read::BasicDecompressor;
+use crate::read::CompressedPagesIter;
 
 /// An iterator adapter over [`PagesIter`] assumed to be encoded as parquet's dictionary-encoded binary representation
-#[derive(Debug)]
 pub struct DictIter<K, I>
 where
-    I: PagesIter,
+    I: CompressedPagesIter,
     K: DictionaryKey,
 {
-    iter: I,
+    iter: BasicDecompressor<I>,
     data_type: ArrowDataType,
     values: Option<Box<dyn Array>>,
     items: VecDeque<(Vec<K>, MutableBitmap)>,
@@ -29,10 +29,10 @@ where
 impl<K, I> DictIter<K, I>
 where
     K: DictionaryKey,
-    I: PagesIter,
+    I: CompressedPagesIter,
 {
     pub fn new(
-        iter: I,
+        iter: BasicDecompressor<I>,
         data_type: ArrowDataType,
         num_rows: usize,
         chunk_size: Option<usize>,
@@ -63,7 +63,7 @@ fn read_dict(data_type: ArrowDataType, dict: &DictPage) -> Box<dyn Array> {
 
 impl<K, I> Iterator for DictIter<K, I>
 where
-    I: PagesIter,
+    I: CompressedPagesIter,
     K: DictionaryKey,
 {
     type Item = PolarsResult<DictionaryArray<K>>;
@@ -88,13 +88,12 @@ where
 }
 
 /// An iterator adapter that converts [`DataPages`] into an [`Iterator`] of [`DictionaryArray`].
-#[derive(Debug)]
 pub struct NestedDictIter<K, I>
 where
-    I: PagesIter,
+    I: CompressedPagesIter,
     K: DictionaryKey,
 {
-    iter: I,
+    iter: BasicDecompressor<I>,
     init: Vec<InitNested>,
     data_type: ArrowDataType,
     values: Option<Box<dyn Array>>,
@@ -105,11 +104,11 @@ where
 
 impl<K, I> NestedDictIter<K, I>
 where
-    I: PagesIter,
+    I: CompressedPagesIter,
     K: DictionaryKey,
 {
     pub fn new(
-        iter: I,
+        iter: BasicDecompressor<I>,
         init: Vec<InitNested>,
         data_type: ArrowDataType,
         num_rows: usize,
@@ -129,7 +128,7 @@ where
 
 impl<K, I> Iterator for NestedDictIter<K, I>
 where
-    I: PagesIter,
+    I: CompressedPagesIter,
     K: DictionaryKey,
 {
     type Item = PolarsResult<(NestedState, DictionaryArray<K>)>;

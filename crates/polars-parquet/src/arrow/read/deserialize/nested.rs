@@ -36,7 +36,7 @@ where
 }
 
 pub fn columns_to_iter_recursive<'a, I>(
-    mut columns: Vec<I>,
+    mut columns: Vec<BasicDecompressor<I>>,
     mut types: Vec<&PrimitiveType>,
     field: Field,
     mut init: Vec<InitNested>,
@@ -44,7 +44,7 @@ pub fn columns_to_iter_recursive<'a, I>(
     chunk_size: Option<usize>,
 ) -> PolarsResult<NestedArrayIter<'a>>
 where
-    I: 'a + PagesIter,
+    I: 'a + CompressedPagesIter,
 {
     use arrow::datatypes::PhysicalType::*;
     use arrow::datatypes::PrimitiveType::*;
@@ -480,8 +480,8 @@ where
     })
 }
 
-fn dict_read<'a, K: DictionaryKey, I: 'a + PagesIter>(
-    iter: I,
+fn dict_read<'a, K: DictionaryKey, I: 'a + CompressedPagesIter>(
+    iter: BasicDecompressor<I>,
     init: Vec<InitNested>,
     _type_: &PrimitiveType,
     data_type: ArrowDataType,

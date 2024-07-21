@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use arrow::array::FixedSizeBinaryArray;
+use arrow::array::{Array, FixedSizeBinaryArray};
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
 use arrow::pushable::Pushable;
@@ -11,14 +11,15 @@ use super::super::utils::{
     dict_indices_decoder, extend_from_decoder, next, not_implemented, DecodedState, Decoder,
     MaybeNext,
 };
-use super::super::PagesIter;
 use super::utils::FixedSizeBinary;
 use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use crate::parquet::encoding::Encoding;
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
+use crate::parquet::read::BasicDecompressor;
 use crate::read::deserialize::utils::filter::Filter;
 use crate::read::deserialize::utils::{self, PageValidity};
+use crate::read::CompressedPagesIter;
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
@@ -159,6 +160,18 @@ impl Decoder for BinaryDecoder {
     fn deserialize_dict(&self, page: DictPage) -> Self::Dict {
         page.buffer.into_vec()
     }
+
+    fn finalize(
+        &self,
+        data_type: ArrowDataType,
+        (values, validity): Self::DecodedState,
+    ) -> ParquetResult<Box<dyn Array>> {
+        Ok(Box::new(FixedSizeBinaryArray::new(
+            data_type,
+            values.values.into(),
+            validity.into(),
+        )))
+    }
 }
 
 pub fn finish(
@@ -169,8 +182,8 @@ pub fn finish(
     FixedSizeBinaryArray::new(data_type.clone(), values.values.into(), validity.into())
 }
 
-pub struct Iter<I: PagesIter> {
-    iter: I,
+pub struct Iter<I: CompressedPagesIter> {
+    iter: BasicDecompressor<I>,
     data_type: ArrowDataType,
     size: usize,
     items: VecDeque<(FixedSizeBinary, MutableBitmap)>,
@@ -179,9 +192,9 @@ pub struct Iter<I: PagesIter> {
     remaining: usize,
 }
 
-impl<I: PagesIter> Iter<I> {
+impl<I: CompressedPagesIter> Iter<I> {
     pub fn new(
-        iter: I,
+        iter: BasicDecompressor<I>,
         data_type: ArrowDataType,
         num_rows: usize,
         chunk_size: Option<usize>,
@@ -199,7 +212,7 @@ impl<I: PagesIter> Iter<I> {
     }
 }
 
-impl<I: PagesIter> Iterator for Iter<I> {
+impl<I: CompressedPagesIter> Iterator for Iter<I> {
     type Item = PolarsResult<FixedSizeBinaryArray>;
 
     fn next(&mut self) -> Option<Self::Item> {

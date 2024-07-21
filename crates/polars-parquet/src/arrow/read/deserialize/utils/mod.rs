@@ -3,13 +3,14 @@ use std::collections::VecDeque;
 pub(crate) mod array_chunks;
 pub(crate) mod filter;
 
-use arrow::array::{BinaryArray, MutableBinaryViewArray, View};
+use arrow::array::{Array, BinaryArray, MutableBinaryViewArray, View};
 use arrow::bitmap::MutableBitmap;
+use arrow::datatypes::ArrowDataType;
 use arrow::pushable::Pushable;
 use polars_error::{polars_err, PolarsError, PolarsResult};
 
 use self::filter::Filter;
-use super::super::PagesIter;
+use super::{BasicDecompressor, CompressedPagesIter};
 use crate::parquet::encoding::hybrid_rle::gatherer::{
     HybridRleGatherer, ZeroCount, ZeroCountGatherer,
 };
@@ -58,7 +59,8 @@ impl<'a, D: Decoder> State<'a, D> {
             .transpose()?;
         let filter = is_filtered.then(|| Filter::new(page)).flatten();
 
-        let translation = D::Translation::new(decoder, page, dict, page_validity.as_ref(), filter.as_ref())?;
+        let translation =
+            D::Translation::new(decoder, page, dict, page_validity.as_ref(), filter.as_ref())?;
 
         Ok(Self {
             page_validity,
@@ -482,6 +484,12 @@ pub(super) trait Decoder: Sized {
 
     /// Deserializes a [`DictPage`] into [`Self::Dict`].
     fn deserialize_dict(&self, page: DictPage) -> Self::Dict;
+
+    fn finalize(
+        &self,
+        data_type: ArrowDataType,
+        decoded: Self::DecodedState,
+    ) -> ParquetResult<Box<dyn Array>>;
 }
 
 pub(super) fn extend_from_new_page<'a, T: Decoder>(
@@ -535,15 +543,112 @@ pub enum MaybeNext<P> {
     More,
 }
 
+pub struct PageDecodeIter<I: CompressedPagesIter, D: Decoder> {
+    pub num_rows: usize,
+    pub data_type: ArrowDataType,
+    pub page_decoder: PageDecoder<I, D>,
+}
+
+pub struct PageDecoder<I: CompressedPagesIter, D: Decoder> {
+    pub iter: BasicDecompressor<I>,
+    pub dict: Option<D::Dict>,
+    pub decoder: D,
+}
+
+impl<I: CompressedPagesIter, D: Decoder> PageDecodeIter<I, D> {
+    pub fn new(
+        iter: BasicDecompressor<I>,
+        dict: Option<DictPage>,
+        data_type: ArrowDataType,
+        num_rows: usize,
+        decoder: D,
+    ) -> Self {
+        let dict = dict.map(|d| decoder.deserialize_dict(d));
+
+        Self {
+            num_rows,
+            data_type,
+            page_decoder: PageDecoder {
+                iter,
+                dict,
+                decoder,
+            },
+        }
+    }
+}
+
+impl<I: CompressedPagesIter, D: Decoder> Iterator for PageDecodeIter<I, D> {
+    type Item = PolarsResult<Box<dyn Array>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.num_rows == 0 {
+            return None;
+        }
+
+        let mut target = self.page_decoder.decoder.with_capacity(self.num_rows);
+        if let Err(e) = self.page_decoder.collect_n_into(&mut target, self.num_rows) {
+            return Some(Err(e.into()));
+        }
+
+        self.num_rows = 0;
+
+        Some(
+            self.page_decoder
+                .decoder
+                .finalize(self.data_type.clone(), target)
+                .map_err(Into::into),
+        )
+    }
+}
+
+impl<I: CompressedPagesIter, D: Decoder> PageDecoder<I, D> {
+    pub fn collect_n_into(
+        &mut self,
+        target: &mut D::DecodedState,
+        mut limit: usize,
+    ) -> ParquetResult<usize> {
+        use streaming_decompression::FallibleStreamingIterator;
+
+        if limit == 0 {
+            return Ok(0);
+        }
+
+        let start_limit = limit;
+
+        while limit > 0 {
+            let Some(page) = self.iter.next()? else {
+                return Ok(start_limit - limit);
+            };
+
+            let Page::Data(page) = page else {
+                // @TODO This should be removed
+                unreachable!();
+            };
+
+            let mut state = State::new(&self.decoder, &page, self.dict.as_ref())?;
+            let start_length = target.len();
+            state.extend_from_state(&self.decoder, target, limit)?;
+            let end_length = target.len();
+
+            limit -= end_length - start_length;
+
+            debug_assert!(state.len() == 0 || limit == 0);
+        }
+
+        Ok(start_limit - limit)
+    }
+}
+
 #[inline]
-pub(super) fn next<'a, I: PagesIter, D: Decoder>(
-    iter: &mut I,
+pub(super) fn next<'a, I: CompressedPagesIter, D: Decoder>(
+    iter: &mut BasicDecompressor<I>,
     items: &mut VecDeque<D::DecodedState>,
     dict: &mut Option<D::Dict>,
     remaining: &mut usize,
     chunk_size: Option<usize>,
     decoder: &D,
 ) -> MaybeNext<PolarsResult<D::DecodedState>> {
+    use streaming_decompression::FallibleStreamingIterator;
     // front[a1, a2, a3, ...]back
     if items.len() > 1 {
         return MaybeNext::Some(Ok(items.pop_front().unwrap()));

@@ -5,11 +5,13 @@ use arrow::datatypes::ArrowDataType;
 use polars_error::PolarsResult;
 
 use super::super::nested_utils::*;
+use super::super::utils;
 use super::super::utils::MaybeNext;
-use super::super::{utils, PagesIter};
 use crate::arrow::read::deserialize::utils::DecodedState;
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{DataPage, DictPage};
+use crate::parquet::read::BasicDecompressor;
+use crate::read::CompressedPagesIter;
 
 impl<'a> utils::PageState<'a> for usize {
     fn len(&self) -> usize {
@@ -67,12 +69,8 @@ impl<'a> NestedDecoder<'a> for NullDecoder {
 }
 
 /// An iterator adapter over [`PagesIter`] assumed to be encoded as null arrays
-#[derive(Debug)]
-pub struct NestedIter<I>
-where
-    I: PagesIter,
-{
-    iter: I,
+pub struct NestedIter<I: CompressedPagesIter> {
+    iter: BasicDecompressor<I>,
     init: Vec<InitNested>,
     data_type: ArrowDataType,
     items: VecDeque<(NestedState, usize)>,
@@ -81,12 +79,9 @@ where
     decoder: NullDecoder,
 }
 
-impl<I> NestedIter<I>
-where
-    I: PagesIter,
-{
+impl<I: CompressedPagesIter> NestedIter<I> {
     pub fn new(
-        iter: I,
+        iter: BasicDecompressor<I>,
         init: Vec<InitNested>,
         data_type: ArrowDataType,
         num_rows: usize,
@@ -104,10 +99,7 @@ where
     }
 }
 
-impl<I> Iterator for NestedIter<I>
-where
-    I: PagesIter,
-{
+impl<I: CompressedPagesIter> Iterator for NestedIter<I> {
     type Item = PolarsResult<(NestedState, NullArray)>;
 
     fn next(&mut self) -> Option<Self::Item> {

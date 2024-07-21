@@ -8,21 +8,21 @@ use polars_error::PolarsResult;
 
 use super::super::dictionary::*;
 use super::super::utils::MaybeNext;
-use super::super::PagesIter;
 use super::utils::Binary;
 use crate::arrow::read::deserialize::nested_utils::{InitNested, NestedState};
 use crate::parquet::page::DictPage;
+use crate::parquet::read::BasicDecompressor;
 use crate::read::deserialize::binary::utils::BinaryIter;
+use crate::read::CompressedPagesIter;
 
 /// An iterator adapter over [`PagesIter`] assumed to be encoded as parquet's dictionary-encoded binary representation
-#[derive(Debug)]
 pub struct DictIter<K, O, I>
 where
-    I: PagesIter,
+    I: CompressedPagesIter,
     O: Offset,
     K: DictionaryKey,
 {
-    iter: I,
+    iter: BasicDecompressor<I>,
     data_type: ArrowDataType,
     values: Option<Box<dyn Array>>,
     items: VecDeque<(Vec<K>, MutableBitmap)>,
@@ -35,10 +35,10 @@ impl<K, O, I> DictIter<K, O, I>
 where
     K: DictionaryKey,
     O: Offset,
-    I: PagesIter,
+    I: CompressedPagesIter,
 {
     pub fn new(
-        iter: I,
+        iter: BasicDecompressor<I>,
         data_type: ArrowDataType,
         num_rows: usize,
         chunk_size: Option<usize>,
@@ -82,7 +82,7 @@ fn read_dict<O: Offset>(data_type: ArrowDataType, dict: &DictPage) -> Box<dyn Ar
 
 impl<K, O, I> Iterator for DictIter<K, O, I>
 where
-    I: PagesIter,
+    I: CompressedPagesIter,
     O: Offset,
     K: DictionaryKey,
 {
@@ -108,14 +108,13 @@ where
 }
 
 /// An iterator adapter that converts [`DataPages`] into an [`Iterator`] of [`DictionaryArray`]
-#[derive(Debug)]
 pub struct NestedDictIter<K, O, I>
 where
-    I: PagesIter,
+    I: CompressedPagesIter,
     O: Offset,
     K: DictionaryKey,
 {
-    iter: I,
+    iter: BasicDecompressor<I>,
     init: Vec<InitNested>,
     data_type: ArrowDataType,
     values: Option<Box<dyn Array>>,
@@ -127,12 +126,12 @@ where
 
 impl<K, O, I> NestedDictIter<K, O, I>
 where
-    I: PagesIter,
+    I: CompressedPagesIter,
     O: Offset,
     K: DictionaryKey,
 {
     pub fn new(
-        iter: I,
+        iter: BasicDecompressor<I>,
         init: Vec<InitNested>,
         data_type: ArrowDataType,
         num_rows: usize,
@@ -153,7 +152,7 @@ where
 
 impl<K, O, I> Iterator for NestedDictIter<K, O, I>
 where
-    I: PagesIter,
+    I: CompressedPagesIter,
     O: Offset,
     K: DictionaryKey,
 {

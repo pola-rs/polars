@@ -4,7 +4,7 @@ mod integer;
 mod nested;
 
 pub(crate) use basic::{
-    AsDecoderFunction, DecoderFunction, IntoDecoderFunction, Iter, UnitDecoderFunction,
+    AsDecoderFunction, DecoderFunction, IntoDecoderFunction, PrimitiveDecoder, UnitDecoderFunction, Iter,
 };
 pub use dictionary::{DictIter, NestedDictIter};
 pub use integer::IntegerIter;
