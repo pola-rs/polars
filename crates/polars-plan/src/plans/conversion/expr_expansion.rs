@@ -541,17 +541,18 @@ fn prepare_excluded(
 }
 
 // functions can have col(["a", "b"]) or col(String) as inputs
-fn expand_function_inputs(expr: Expr, schema: &Schema) -> Expr {
-    expr.map_expr(|mut e| match &mut e {
+fn expand_function_inputs(expr: Expr, schema: &Schema) -> PolarsResult<Expr> {
+    expr.try_map_expr(|mut e| match &mut e {
         Expr::AnonymousFunction { input, options, .. } | Expr::Function { input, options, .. }
             if options
                 .flags
                 .contains(FunctionFlags::INPUT_WILDCARD_EXPANSION) =>
         {
             *input = rewrite_projections(core::mem::take(input), schema, &[]).unwrap();
-            e
+            polars_ensure!(!input.is_empty(), InvalidOperation: "expected at least 1 input in {}", options.fmt_str);
+            Ok(e)
         },
-        _ => e,
+        _ => Ok(e),
     })
 }
 
@@ -648,7 +649,7 @@ pub(crate) fn rewrite_projections(
         let result_offset = result.len();
 
         // Functions can have col(["a", "b"]) or col(String) as inputs.
-        expr = expand_function_inputs(expr, schema);
+        expr = expand_function_inputs(expr, schema)?;
 
         let mut flags = find_flags(&expr)?;
         if flags.has_selector {
