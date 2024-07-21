@@ -1668,7 +1668,12 @@ def test_pycapsule_interface(df: pl.DataFrame) -> None:
     # Array via C data interface
     pyarrow_array = pyarrow_table["bools"].chunk(0)
     round_trip_series = pl.Series(PyCapsuleArrayHolder(pyarrow_array))
-    df["bools"].equals(round_trip_series, check_dtypes=True, check_names=False)
+    assert df["bools"].equals(round_trip_series, check_dtypes=True, check_names=False)
+
+    # empty Array via C data interface
+    empty_pyarrow_array = pa.array([], type=pyarrow_array.type)
+    round_trip_series = pl.Series(PyCapsuleArrayHolder(empty_pyarrow_array))
+    assert df["bools"].dtype == round_trip_series.dtype
 
     # RecordBatch via C array interface
     pyarrow_record_batch = pyarrow_table.to_batches()[0]
@@ -1678,15 +1683,29 @@ def test_pycapsule_interface(df: pl.DataFrame) -> None:
     # ChunkedArray via C stream interface
     pyarrow_chunked_array = pyarrow_table["bools"]
     round_trip_series = pl.Series(PyCapsuleStreamHolder(pyarrow_chunked_array))
-    df["bools"].equals(round_trip_series, check_dtypes=True, check_names=False)
+    assert df["bools"].equals(round_trip_series, check_dtypes=True, check_names=False)
+
+    # empty ChunkedArray via C stream interface
+    empty_chunked_array = pa.chunked_array([], type=pyarrow_chunked_array.type)
+    round_trip_series = pl.Series(PyCapsuleStreamHolder(empty_chunked_array))
+    assert df["bools"].dtype == round_trip_series.dtype
 
     # Table via C stream interface
     round_trip_df = pl.DataFrame(PyCapsuleStreamHolder(pyarrow_table))
     assert df.equals(round_trip_df)
 
     # empty Table via C stream interface
-    # empty_df = df[:0].to_arrow()
-    # round_trip_df = pl.DataFrame(PyCapsuleStreamHolder(empty_df))
+    empty_df = df[:0].to_arrow()
+    round_trip_df = pl.DataFrame(PyCapsuleStreamHolder(empty_df))
+    orig_schema = df.schema
+    round_trip_schema = round_trip_df.schema
+
+    # The "enum" schema is not preserved because categories are lost via C data
+    # interface
+    orig_schema.pop("enum")
+    round_trip_schema.pop("enum")
+
+    assert orig_schema == round_trip_schema
 
     # RecordBatchReader via C stream interface
     pyarrow_reader = pa.RecordBatchReader.from_batches(
