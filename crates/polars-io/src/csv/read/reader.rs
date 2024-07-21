@@ -270,10 +270,10 @@ where
         let schema_overwrite = self.options.schema_overwrite.clone();
         let low_memory = self.options.low_memory;
 
-        let has_cat = self.prepare_schema()?;
+        let _has_cat = self.prepare_schema()?;
 
         #[cfg(feature = "dtype-categorical")]
-        let mut _cat_lock = if has_cat {
+        let mut _cat_lock = if _has_cat {
             Some(polars_core::StringCacheHolder::hold())
         } else {
             None
