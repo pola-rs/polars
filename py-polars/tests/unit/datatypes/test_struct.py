@@ -968,5 +968,5 @@ def test_struct_out_nullability_from_arrow() -> None:
 
 
 def test_empty_struct_raise() -> None:
-    with pytest.raises(pl.exceptions.InvalidOperationError):
+    with pytest.raises(ValueError):
         pl.struct()

@@ -549,7 +549,11 @@ fn expand_function_inputs(expr: Expr, schema: &Schema) -> PolarsResult<Expr> {
                 .contains(FunctionFlags::INPUT_WILDCARD_EXPANSION) =>
         {
             *input = rewrite_projections(core::mem::take(input), schema, &[]).unwrap();
-            polars_ensure!(!input.is_empty() && !options.flags.contains(FunctionFlags::ALLOW_EMPTY_INPUTS), InvalidOperation: "expected at least 1 input in {}", e);
+            if input.is_empty() && !options.flags.contains(FunctionFlags::ALLOW_EMPTY_INPUTS) {
+                // Needed to visualize the error
+                *input = vec![Expr::Literal(LiteralValue::Null)];
+                polars_bail!(InvalidOperation: "expected at least 1 input in {}", e)
+            }
             Ok(e)
         },
         _ => Ok(e),

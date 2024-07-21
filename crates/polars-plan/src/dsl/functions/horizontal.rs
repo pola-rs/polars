@@ -204,7 +204,9 @@ pub fn all_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
         input: exprs,
         function: FunctionExpr::Boolean(BooleanFunction::AllHorizontal),
         options: FunctionOptions {
-            flags: FunctionFlags::default() | FunctionFlags::INPUT_WILDCARD_EXPANSION,
+            flags: FunctionFlags::default()
+                | FunctionFlags::INPUT_WILDCARD_EXPANSION
+                | FunctionFlags::ALLOW_EMPTY_INPUTS,
             ..Default::default()
         },
     })
@@ -221,7 +223,9 @@ pub fn any_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
         input: exprs,
         function: FunctionExpr::Boolean(BooleanFunction::AnyHorizontal),
         options: FunctionOptions {
-            flags: FunctionFlags::default() | FunctionFlags::INPUT_WILDCARD_EXPANSION,
+            flags: FunctionFlags::default()
+                | FunctionFlags::INPUT_WILDCARD_EXPANSION
+                | FunctionFlags::ALLOW_EMPTY_INPUTS,
             ..Default::default()
         },
     })
