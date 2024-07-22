@@ -6,9 +6,7 @@ use num_traits::AsPrimitive;
 use polars_error::PolarsResult;
 
 use super::super::utils;
-use super::basic::{
-    DecoderFunction, PlainDecoderFnCollector, PrimitiveDecoder, ValuesDictionary,
-};
+use super::basic::{DecoderFunction, PlainDecoderFnCollector, PrimitiveDecoder, ValuesDictionary};
 use crate::parquet::encoding::hybrid_rle::DictionaryTranslator;
 use crate::parquet::encoding::{byte_stream_split, delta_bitpacked, Encoding};
 use crate::parquet::error::ParquetResult;

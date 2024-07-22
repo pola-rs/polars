@@ -792,12 +792,13 @@ impl<I: CompressedPagesIter, K: DictionaryKey, D: DictArrayDecoder<K>>
         );
         self.collect_n_into(&mut target, limit)?;
         let (values, validity) = target;
-        let validity = if validity.len() > 0 {
+        let validity = if !validity.is_empty() {
             Some(validity.freeze())
         } else {
             None
         };
-        self.decoder.finalize(self.data_type, self.dict, (values, validity))
+        self.decoder
+            .finalize(self.data_type, self.dict, (values, validity))
     }
 
     pub fn collect_n_into(

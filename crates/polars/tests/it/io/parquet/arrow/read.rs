@@ -73,7 +73,10 @@ fn all_types_chunked() -> PolarsResult<()> {
         .as_any()
         .downcast_ref::<Float32Array>()
         .unwrap();
-    assert_eq!(result, &Float32Array::from_slice([0.0, 1.1, 0.0, 1.1, 0.0, 1.1, 0.0, 1.1]));
+    assert_eq!(
+        result,
+        &Float32Array::from_slice([0.0, 1.1, 0.0, 1.1, 0.0, 1.1, 0.0, 1.1])
+    );
 
     let result = batches[0].columns()[9]
         .as_any()

@@ -57,7 +57,7 @@ impl<K: DictionaryKey> Translator<K> for DictArrayTranslator {
         }
 
         // SAFETY: value for sure fits in K
-        Ok(unsafe { K::from_usize_unchecked(value as usize) })
+        Ok(unsafe { K::from_usize_unchecked(value) })
     }
 
     fn translate_slice(&self, target: &mut Vec<K>, source: &[u32]) -> ParquetResult<()> {

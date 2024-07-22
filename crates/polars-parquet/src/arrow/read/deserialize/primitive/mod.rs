@@ -6,6 +6,6 @@ mod nested;
 pub(crate) use basic::{
     AsDecoderFunction, DecoderFunction, IntoDecoderFunction, PrimitiveDecoder, UnitDecoderFunction,
 };
-pub(crate) use dictionary::{PrimitiveDictArrayDecoder, NestedDictIter};
+pub(crate) use dictionary::{NestedDictIter, PrimitiveDictArrayDecoder};
 pub(crate) use integer::IntDecoder;
 pub use nested::NestedIter;

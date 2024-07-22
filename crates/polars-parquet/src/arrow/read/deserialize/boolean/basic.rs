@@ -18,7 +18,6 @@ use crate::read::deserialize::utils::{BatchableCollector, PageValidity};
 #[derive(Debug)]
 pub(crate) enum StateTranslation<'a> {
     Plain(BitmapIter<'a>),
-    Unit(BitmapIter<'a>),
     Rle(HybridRleDecoder<'a>),
 }
 

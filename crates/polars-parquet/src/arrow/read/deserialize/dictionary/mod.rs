@@ -4,13 +4,12 @@ use arrow::array::{Array, DictionaryKey, PrimitiveArray};
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
 pub use nested::next_dict as nested_next_dict;
-use polars_error::{PolarsResult};
+use polars_error::PolarsResult;
 use polars_utils::iter::FallibleIterator;
 
 use super::utils::filter::Filter;
 use super::utils::{
-    self, dict_indices_decoder, extend_from_decoder,  Decoder,
-    PageValidity, StateTranslation,
+    self, dict_indices_decoder, extend_from_decoder, Decoder, PageValidity, StateTranslation,
 };
 use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use crate::parquet::encoding::Encoding;
