@@ -169,10 +169,6 @@ pub fn expand_paths_hive(
                                      cloud_options: Option<&CloudOptions>|
              -> PolarsResult<(usize, Vec<PathBuf>)> {
                 crate::pl_async::get_runtime().block_on_potential_spawn(async {
-                    if path.starts_with("http") {
-                        return Ok((0, vec![PathBuf::from(path)]));
-                    }
-
                     let (cloud_location, store) =
                         crate::cloud::build_object_store(path, cloud_options).await?;
 
@@ -248,6 +244,12 @@ pub fn expand_paths_hive(
             };
 
             for (path_idx, path) in paths.iter().enumerate() {
+                if path.to_str().unwrap().starts_with("http") {
+                    out_paths.push(path.clone());
+                    hive_idx_tracker.update(0, path_idx)?;
+                    continue;
+                }
+
                 let glob_start_idx = get_glob_start_idx(path.to_str().unwrap().as_bytes());
 
                 let path = if glob_start_idx.is_some() {
@@ -413,5 +415,19 @@ mod tests {
         assert_eq!(resolved[1].file_name(), paths[1].file_name());
         assert!(resolved[1].is_absolute());
         assert!(resolved[2].is_absolute());
+    }
+
+    #[test]
+    fn test_http_path_with_query_parameters_is_not_expanded_as_glob() {
+        // Don't confuse HTTP URL's with query parameters for globs.
+        // See https://github.com/pola-rs/polars/pull/17774
+        use std::path::PathBuf;
+
+        use super::expand_paths;
+
+        let path = "https://pola.rs/test.csv?token=bear";
+        let paths = &[PathBuf::from(path)];
+        let out = expand_paths(paths, true, None).unwrap();
+        assert_eq!(out.as_ref(), paths);
     }
 }
