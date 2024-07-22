@@ -522,3 +522,10 @@ def test_projection_empty_frame_len_16904() -> None:
 
     expect = pl.DataFrame({"len": [0]}, schema_overrides={"len": pl.UInt32()})
     assert_frame_equal(q.collect(), expect)
+
+
+def test_projection_literal_no_alias_17739() -> None:
+    df = pl.LazyFrame({})
+    assert df.select(pl.lit(False)).select("literal").collect().to_dict(
+        as_series=False
+    ) == {"literal": [False]}
