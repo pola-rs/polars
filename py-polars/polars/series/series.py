@@ -3703,9 +3703,19 @@ class Series:
         ]
         """
 
-    def is_in(self, other: Series | Collection[Any]) -> Series:
+    def is_in(self, other: Series | Collection[Any], *, strict: bool = True) -> Series:
         """
         Check if elements of this Series are in the other Series.
+
+        Parameters
+        ----------
+        other
+            Series or sequence to test membership of.
+        strict
+            If a python collection is given, `strict`
+            will be passed to the `Series` constructor
+            and indicates how different types should be
+            handled.
 
         Returns
         -------
