@@ -416,4 +416,18 @@ mod tests {
         assert!(resolved[1].is_absolute());
         assert!(resolved[2].is_absolute());
     }
+
+    #[test]
+    fn test_http_path_with_query_parameters_is_not_expanded_as_glob() {
+        // Don't confuse HTTP URL's with query parameters for globs.
+        // See https://github.com/pola-rs/polars/pull/17774
+        use std::path::PathBuf;
+
+        use super::expand_paths;
+
+        let path = "https://pola.rs/test.csv?token=bear";
+        let paths = &[PathBuf::from(path)];
+        let out = expand_paths(paths, true, None).unwrap();
+        assert_eq!(out.as_ref(), paths);
+    }
 }
