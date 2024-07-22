@@ -145,30 +145,30 @@ fn is_primitive(data_type: &ArrowDataType) -> bool {
 }
 
 fn columns_to_iter_recursive<'a, I>(
-    mut columns: Vec<I>,
+    mut columns: Vec<BasicDecompressor<I>>,
     mut types: Vec<&PrimitiveType>,
     field: Field,
     init: Vec<InitNested>,
     num_rows: usize,
-    chunk_size: Option<usize>,
 ) -> PolarsResult<NestedArrayIter<'a>>
 where
-    I: 'a + PagesIter,
+    I: 'a + CompressedPagesIter,
 {
     if init.is_empty() && is_primitive(&field.data_type) {
-        return Ok(Box::new(
-            page_iter_to_arrays(
-                columns.pop().unwrap(),
-                types.pop().unwrap(),
-                field.data_type,
-                chunk_size,
-                num_rows,
-            )?
-            .map(|x| Ok((NestedState::default(), x?))),
-        ));
+        let array = page_iter_to_arrays(
+            columns.pop().unwrap(),
+            types.pop().unwrap(),
+            field.data_type,
+            num_rows,
+        )?;
+
+        return Ok(Box::new(std::iter::once(Ok((
+            NestedState::default(),
+            array,
+        )))));
     }
 
-    nested::columns_to_iter_recursive(columns, types, field, init, num_rows, chunk_size)
+    nested::columns_to_iter_recursive(columns, types, field, init, num_rows)
 }
 
 /// Returns the number of (parquet) columns that a [`ArrowDataType`] contains.
@@ -215,17 +215,15 @@ pub fn n_columns(data_type: &ArrowDataType) -> usize {
 ///
 /// The arrays are guaranteed to be at most of size `chunk_size` and data type `field.data_type`.
 pub fn column_iter_to_arrays<'a, I>(
-    columns: Vec<I>,
+    columns: Vec<BasicDecompressor<I>>,
     types: Vec<&PrimitiveType>,
     field: Field,
-    chunk_size: Option<usize>,
     num_rows: usize,
 ) -> PolarsResult<ArrayIter<'a>>
 where
-    I: 'a + PagesIter,
+    I: 'a + CompressedPagesIter,
 {
     Ok(Box::new(
-        columns_to_iter_recursive(columns, types, field, vec![], num_rows, chunk_size)?
-            .map(|x| x.map(|x| x.1)),
+        columns_to_iter_recursive(columns, types, field, vec![], num_rows)?.map(|x| x.map(|x| x.1)),
     ))
 }

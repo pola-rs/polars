@@ -1,7 +1,6 @@
-use std::cell::Cell;
-use std::collections::VecDeque;
+use std::sync::atomic::{AtomicBool, Ordering};
 
-use arrow::array::{Array, ArrayRef, BinaryViewArray, MutableBinaryViewArray, Utf8ViewArray};
+use arrow::array::{Array, BinaryViewArray, MutableBinaryViewArray, Utf8ViewArray};
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::datatypes::{ArrowDataType, PhysicalType};
 use polars_error::PolarsResult;
@@ -12,10 +11,10 @@ use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{DataPage, DictPage};
 use crate::read::deserialize::utils::filter::Filter;
 use crate::read::deserialize::utils::{
-    self, binary_views_dict, extend_from_decoder, next, DecodedState, MaybeNext, PageValidity,
-    StateTranslation, TranslatedHybridRle,
+    self, binary_views_dict, extend_from_decoder, DecodedState, PageValidity, StateTranslation,
+    TranslatedHybridRle,
 };
-use crate::read::{PagesIter, PrimitiveLogicalType};
+use crate::read::PrimitiveLogicalType;
 
 type DecodedStateTuple = (MutableBinaryViewArray<[u8]>, MutableBitmap);
 
@@ -31,7 +30,7 @@ impl<'a> StateTranslation<'a, BinViewDecoder> for BinaryStateTranslation<'a> {
             page.descriptor.primitive_type.logical_type,
             Some(PrimitiveLogicalType::String)
         );
-        decoder.check_utf8.set(is_string);
+        decoder.check_utf8.store(is_string, Ordering::Relaxed);
         Self::new(page, dict, page_validity, filter, is_string)
     }
 
@@ -54,7 +53,7 @@ impl<'a> StateTranslation<'a, BinViewDecoder> for BinaryStateTranslation<'a> {
         let views_offset = values.views().len();
         let buffer_offset = values.completed_buffers().len();
 
-        let mut validate_utf8 = decoder.check_utf8.take();
+        let mut validate_utf8 = decoder.check_utf8.load(Ordering::Relaxed);
 
         match (self, page_validity) {
             (Self::Plain(page_values), None) => {
@@ -135,8 +134,8 @@ impl<'a> StateTranslation<'a, BinViewDecoder> for BinaryStateTranslation<'a> {
 }
 
 #[derive(Default)]
-struct BinViewDecoder {
-    check_utf8: Cell<bool>,
+pub(crate) struct BinViewDecoder {
+    check_utf8: AtomicBool,
 }
 
 impl DecodedState for DecodedStateTuple {
@@ -145,8 +144,8 @@ impl DecodedState for DecodedStateTuple {
     }
 }
 
-impl<'a> utils::Decoder<'a> for BinViewDecoder {
-    type Translation = BinaryStateTranslation<'a>;
+impl utils::Decoder for BinViewDecoder {
+    type Translation<'a> = BinaryStateTranslation<'a>;
     type Dict = BinaryDict;
     type DecodedState = DecodedStateTuple;
 
@@ -157,91 +156,39 @@ impl<'a> utils::Decoder<'a> for BinViewDecoder {
         )
     }
 
-    fn deserialize_dict(&self, page: &DictPage) -> Self::Dict {
+    fn deserialize_dict(&self, page: DictPage) -> Self::Dict {
         deserialize_plain(&page.buffer, page.num_values)
     }
-}
 
-pub struct BinaryViewArrayIter<I: PagesIter> {
-    iter: I,
-    data_type: ArrowDataType,
-    items: VecDeque<DecodedStateTuple>,
-    dict: Option<BinaryDict>,
-    chunk_size: Option<usize>,
-    remaining: usize,
-}
-impl<I: PagesIter> BinaryViewArrayIter<I> {
-    pub fn new(
-        iter: I,
+    fn finalize(
+        &self,
         data_type: ArrowDataType,
-        chunk_size: Option<usize>,
-        num_rows: usize,
-    ) -> Self {
-        Self {
-            iter,
-            data_type,
-            items: VecDeque::new(),
-            dict: None,
-            chunk_size,
-            remaining: num_rows,
+        (values, validity): Self::DecodedState,
+    ) -> ParquetResult<Box<dyn Array>> {
+        let mut array: BinaryViewArray = values.into();
+        let validity: Bitmap = validity.into();
+
+        if validity.unset_bits() != validity.len() {
+            array = array.with_validity(Some(validity))
         }
-    }
-}
 
-impl<I: PagesIter> Iterator for BinaryViewArrayIter<I> {
-    type Item = PolarsResult<ArrayRef>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let decoder = BinViewDecoder::default();
-        loop {
-            let maybe_state = next(
-                &mut self.iter,
-                &mut self.items,
-                &mut self.dict,
-                &mut self.remaining,
-                self.chunk_size,
-                &decoder,
-            );
-            match maybe_state {
-                MaybeNext::Some(Ok((values, validity))) => {
-                    return Some(finish(&self.data_type, values, validity))
-                },
-                MaybeNext::Some(Err(e)) => return Some(Err(e)),
-                MaybeNext::None => return None,
-                MaybeNext::More => continue,
-            }
+        match data_type.to_physical_type() {
+            PhysicalType::BinaryView => Ok(array.boxed()),
+            PhysicalType::Utf8View => {
+                // SAFETY: we already checked utf8
+                unsafe {
+                    Ok(Utf8ViewArray::new_unchecked(
+                        data_type.clone(),
+                        array.views().clone(),
+                        array.data_buffers().clone(),
+                        array.validity().cloned(),
+                        array.total_bytes_len(),
+                        array.total_buffer_len(),
+                    )
+                    .boxed())
+                }
+            },
+            _ => unreachable!(),
         }
-    }
-}
-
-pub(super) fn finish(
-    data_type: &ArrowDataType,
-    values: MutableBinaryViewArray<[u8]>,
-    validity: MutableBitmap,
-) -> PolarsResult<Box<dyn Array>> {
-    let mut array: BinaryViewArray = values.into();
-    let validity: Bitmap = validity.into();
-
-    if validity.unset_bits() != validity.len() {
-        array = array.with_validity(Some(validity))
-    }
-
-    match data_type.to_physical_type() {
-        PhysicalType::BinaryView => Ok(array.boxed()),
-        PhysicalType::Utf8View => {
-            // SAFETY: we already checked utf8
-            unsafe {
-                Ok(Utf8ViewArray::new_unchecked(
-                    data_type.clone(),
-                    array.views().clone(),
-                    array.data_buffers().clone(),
-                    array.validity().cloned(),
-                    array.total_bytes_len(),
-                    array.total_buffer_len(),
-                )
-                .boxed())
-            }
-        },
-        _ => unreachable!(),
     }
 }
