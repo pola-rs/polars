@@ -976,5 +976,5 @@ def test_named_exprs() -> None:
     df = pl.DataFrame({"a": 1})
     schema = {"b": pl.Int64}
     res = df.select(pl.struct(schema=schema, b=pl.col("a")))
-    expected = df.select(pl.struct(pl.col("a").alias("b"), schema=schema))
-    assert_frame_equal(res, expected)
+    assert res.to_dict(as_series=False) == {"b": [{"b": 1}]}
+    assert res.schema["b"] == pl.Struct(schema)
