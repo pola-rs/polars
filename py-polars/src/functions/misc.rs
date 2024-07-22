@@ -41,18 +41,13 @@ pub fn register_plugin_function(
     };
 
     let mut flags = FunctionFlags::from_bits_truncate(0);
-    if changes_length {
-        flags |= FunctionFlags::CHANGES_LENGTH;
-    }
-    if pass_name_to_apply {
-        flags |= FunctionFlags::PASS_NAME_TO_APPLY;
-    }
-    if returns_scalar {
-        flags |= FunctionFlags::RETURNS_SCALAR;
-    }
-    if input_wildcard_expansion {
-        flags |= FunctionFlags::INPUT_WILDCARD_EXPANSION;
-    }
+    flags.set(FunctionFlags::CHANGES_LENGTH, changes_length);
+    flags.set(FunctionFlags::PASS_NAME_TO_APPLY, pass_name_to_apply);
+    flags.set(FunctionFlags::RETURNS_SCALAR, returns_scalar);
+    flags.set(
+        FunctionFlags::INPUT_WILDCARD_EXPANSION,
+        input_wildcard_expansion,
+    );
 
     Ok(Expr::Function {
         input: args.to_exprs(),

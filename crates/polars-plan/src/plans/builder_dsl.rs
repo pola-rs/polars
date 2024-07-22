@@ -427,9 +427,9 @@ impl DslBuilder {
             function: DslFunction::FunctionNode(FunctionNode::OpaquePython {
                 function,
                 schema,
-                predicate_pd: optimizations.predicate_pushdown,
-                projection_pd: optimizations.projection_pushdown,
-                streamable: optimizations.streaming,
+                predicate_pd: optimizations.contains(OptState::PREDICATE_PUSHDOWN),
+                projection_pd: optimizations.contains(OptState::PROJECTION_PUSHDOWN),
+                streamable: optimizations.contains(OptState::STREAMING),
                 validate_output,
             }),
         }
@@ -453,9 +453,9 @@ impl DslBuilder {
             function: DslFunction::FunctionNode(FunctionNode::Opaque {
                 function,
                 schema,
-                predicate_pd: optimizations.predicate_pushdown,
-                projection_pd: optimizations.projection_pushdown,
-                streamable: optimizations.streaming,
+                predicate_pd: optimizations.contains(OptState::PREDICATE_PUSHDOWN),
+                projection_pd: optimizations.contains(OptState::PROJECTION_PUSHDOWN),
+                streamable: optimizations.contains(OptState::STREAMING),
                 fmt_str: name,
             }),
         }
