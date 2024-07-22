@@ -1,22 +1,20 @@
 mod nested;
 
-use arrow::array::NullArray;
+use arrow::array::{Array, NullArray};
 use arrow::datatypes::ArrowDataType;
 pub(super) use nested::NestedIter;
 
-use super::super::ArrayIter;
 use super::{BasicDecompressor, CompressedPagesIter};
 use crate::parquet::page::Page;
 
 /// Converts [`PagesIter`] to an [`ArrayIter`]
-pub fn iter_to_arrays<'a, I>(
+pub fn iter_to_arrays<I>(
     mut iter: BasicDecompressor<I>,
     data_type: ArrowDataType,
-    chunk_size: Option<usize>,
     num_rows: usize,
-) -> ArrayIter<'a>
+) -> Box<dyn Array>
 where
-    I: 'a + CompressedPagesIter,
+    I: CompressedPagesIter,
 {
     use streaming_decompression::FallibleStreamingIterator;
 
@@ -35,24 +33,7 @@ where
         }
     }
 
-    if len == 0 {
-        return Box::new(std::iter::empty());
-    }
-
-    let chunk_size = chunk_size.unwrap_or(len);
-
-    let complete_chunks = len / chunk_size;
-
-    let remainder = len - (complete_chunks * chunk_size);
-    let i_data_type = data_type.clone();
-    let complete = (0..complete_chunks)
-        .map(move |_| Ok(NullArray::new(i_data_type.clone(), chunk_size).boxed()));
-    if len % chunk_size == 0 {
-        Box::new(complete)
-    } else {
-        let array = NullArray::new(data_type, remainder);
-        Box::new(complete.chain(std::iter::once(Ok(array.boxed()))))
-    }
+    Box::new(NullArray::new(data_type, len))
 }
 
 #[cfg(test)]

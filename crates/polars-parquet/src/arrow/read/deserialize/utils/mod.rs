@@ -543,65 +543,38 @@ pub enum MaybeNext<P> {
     More,
 }
 
-pub struct PageDecodeIter<I: CompressedPagesIter, D: Decoder> {
-    pub num_rows: usize,
-    pub data_type: ArrowDataType,
-    pub page_decoder: PageDecoder<I, D>,
-}
-
 pub struct PageDecoder<I: CompressedPagesIter, D: Decoder> {
     pub iter: BasicDecompressor<I>,
+    pub data_type: ArrowDataType,
     pub dict: Option<D::Dict>,
     pub decoder: D,
 }
 
-impl<I: CompressedPagesIter, D: Decoder> PageDecodeIter<I, D> {
+impl<I: CompressedPagesIter, D: Decoder> PageDecoder<I, D> {
     pub fn new(
         mut iter: BasicDecompressor<I>,
         data_type: ArrowDataType,
-        num_rows: usize,
         decoder: D,
     ) -> ParquetResult<Self> {
         let dict_page = iter.read_dict_page()?;
         let dict = dict_page.map(|d| decoder.deserialize_dict(d));
 
         Ok(Self {
-            num_rows,
+            iter,
             data_type,
-            page_decoder: PageDecoder {
-                iter,
-                dict,
-                decoder,
-            },
+            dict,
+            decoder,
         })
     }
 }
 
-impl<I: CompressedPagesIter, D: Decoder> Iterator for PageDecodeIter<I, D> {
-    type Item = PolarsResult<Box<dyn Array>>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.num_rows == 0 {
-            return None;
-        }
-
-        let mut target = self.page_decoder.decoder.with_capacity(self.num_rows);
-        if let Err(e) = self.page_decoder.collect_n_into(&mut target, self.num_rows) {
-            return Some(Err(e.into()));
-        }
-
-        self.num_rows = 0;
-
-        Some(
-            self.page_decoder
-                .decoder
-                .finalize(self.data_type.clone(), target)
-                .map_err(Into::into),
-        )
-    }
-}
-
 impl<I: CompressedPagesIter, D: Decoder> PageDecoder<I, D> {
+    pub fn collect_n(mut self, limit: usize) -> ParquetResult<Box<dyn Array>> {
+        let mut target = self.decoder.with_capacity(limit);
+        self.collect_n_into(&mut target, limit)?;
+        self.decoder.finalize(self.data_type, target)
+    }
+
     pub fn collect_n_into(
         &mut self,
         target: &mut D::DecodedState,

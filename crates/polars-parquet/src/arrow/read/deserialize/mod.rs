@@ -155,15 +155,17 @@ where
     I: 'a + CompressedPagesIter,
 {
     if init.is_empty() && is_primitive(&field.data_type) {
-        return Ok(Box::new(
-            page_iter_to_arrays(
-                columns.pop().unwrap(),
-                types.pop().unwrap(),
-                field.data_type,
-                num_rows,
-            )?
-            .map(|x| Ok((NestedState::default(), x?))),
-        ));
+        let array = page_iter_to_arrays(
+            columns.pop().unwrap(),
+            types.pop().unwrap(),
+            field.data_type,
+            num_rows,
+        )?;
+
+        return Ok(Box::new(std::iter::once(Ok((
+            NestedState::default(),
+            array,
+        )))));
     }
 
     nested::columns_to_iter_recursive(columns, types, field, init, num_rows)
