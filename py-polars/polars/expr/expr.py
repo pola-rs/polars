@@ -4402,7 +4402,8 @@ class Expr:
         │ 0   ┆ 3   │
         └─────┴─────┘
 
-        Call a function that takes multiple arguments.
+        Call a function that takes multiple arguments by creating a `struct` and
+        referencing its fields inside the function call.
 
         >>> df = pl.DataFrame(
         ...     {
