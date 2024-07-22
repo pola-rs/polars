@@ -169,10 +169,6 @@ pub fn expand_paths_hive(
                                      cloud_options: Option<&CloudOptions>|
              -> PolarsResult<(usize, Vec<PathBuf>)> {
                 crate::pl_async::get_runtime().block_on_potential_spawn(async {
-                    if path.starts_with("http") {
-                        return Ok((0, vec![PathBuf::from(path)]));
-                    }
-
                     let (cloud_location, store) =
                         crate::cloud::build_object_store(path, cloud_options).await?;
 
@@ -248,6 +244,12 @@ pub fn expand_paths_hive(
             };
 
             for (path_idx, path) in paths.iter().enumerate() {
+                if path.starts_with("http") {
+                    out_paths.push(PathBuf::from(path));
+                    hive_idx_tracker.update(0, path_idx)?;
+                    continue;
+                }
+
                 let glob_start_idx = get_glob_start_idx(path.to_str().unwrap().as_bytes());
 
                 let path = if glob_start_idx.is_some() {
