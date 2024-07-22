@@ -156,8 +156,3 @@ def test_is_first_last_distinct_all_null(dtypes: PolarsDataType) -> None:
     s = pl.Series([None, None, None], dtype=dtypes)
     assert s.is_first_distinct().to_list() == [True, False, False]
     assert s.is_last_distinct().to_list() == [False, False, True]
-
-
-def test_is_in_non_strict() -> None:
-    s = pl.Series([1, 2, 3, 4])
-    assert s.is_in([2, 2.5], strict=False).to_list() == [False, True, False, False]
