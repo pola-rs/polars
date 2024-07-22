@@ -244,8 +244,8 @@ pub fn expand_paths_hive(
             };
 
             for (path_idx, path) in paths.iter().enumerate() {
-                if path.starts_with("http") {
-                    out_paths.push(PathBuf::from(path));
+                if path.to_str().unwrap().starts_with("http") {
+                    out_paths.push(path.clone());
                     hive_idx_tracker.update(0, path_idx)?;
                     continue;
                 }
