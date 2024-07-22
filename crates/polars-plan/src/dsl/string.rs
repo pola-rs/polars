@@ -299,7 +299,7 @@ impl StringNameSpace {
     /// # Arguments
     /// - `time_unit`: Time unit to use. If set to None, a default time unit is used, unless it can be inferred from the format string.
     /// - `time_zone`: Time zone of the DateTime.
-    /// - `options`: Options for strptime
+    /// - `options`: Options for to_datetime
     /// - `ambiguous`: A [`DataType::String`] expression that defines how to handle ambiguous datetimes:
     ///     - `raise`: raise an error
     ///     - `earliest`: use the earliest datetime
