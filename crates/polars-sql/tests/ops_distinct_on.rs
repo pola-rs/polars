@@ -1,11 +1,10 @@
 use polars_core::chunked_array::ops::SortMultipleOptions;
 use polars_core::df;
-use polars_error::PolarsResult;
 use polars_lazy::prelude::*;
 use polars_sql::*;
 
 #[test]
-fn test_distinct_on() -> PolarsResult<()> {
+fn test_distinct_on() {
     let df = df! {
       "Name" => ["Bob", "Pete", "Pete", "Pete", "Martha", "Martha"],
       "Record Date" => [1, 1, 2, 4, 1, 3],
@@ -34,10 +33,9 @@ fn test_distinct_on() -> PolarsResult<()> {
             SortMultipleOptions::default()
                 .with_order_descending_multi([false, true])
                 .with_maintain_order(true),
-        )?
+        )
         .group_by_stable(vec![col("Name")])
         .agg(vec![col("*").first()]);
     let expected = expected.collect().unwrap();
-    assert!(actual.equals(&expected));
-    Ok(())
+    assert!(actual.equals(&expected))
 }

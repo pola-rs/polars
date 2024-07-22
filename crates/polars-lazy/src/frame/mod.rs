@@ -342,28 +342,20 @@ impl LazyFrame {
     /// fn example(df: DataFrame) -> LazyFrame {
     ///       df.lazy()
     ///         .sort_by_exprs(vec![col("sepal_width")], Default::default())
-    ///         .unwrap()
     /// }
     /// ```
     pub fn sort_by_exprs<E: AsRef<[Expr]>>(
         self,
         by_exprs: E,
         sort_options: SortMultipleOptions,
-    ) -> PolarsResult<Self> {
+    ) -> Self {
         let by_exprs = by_exprs.as_ref().to_vec();
         if by_exprs.is_empty() {
-            Ok(self)
+            self
         } else {
-            let is_include_literal = by_exprs.iter().any(|expr| matches!(expr, Expr::Literal(_)));
-
-            polars_ensure!(
-                !is_include_literal,
-                ComputeError: "literal expressions are not allowed for sorting"
-            );
-
             let opt_state = self.get_opt_state();
             let lp = self.get_plan_builder().sort(by_exprs, sort_options).build();
-            Ok(Self::from_logical_plan(lp, opt_state))
+            Self::from_logical_plan(lp, opt_state)
         }
     }
 
@@ -372,14 +364,13 @@ impl LazyFrame {
         k: IdxSize,
         by_exprs: E,
         sort_options: SortMultipleOptions,
-    ) -> PolarsResult<Self> {
+    ) -> Self {
         // this will optimize to top-k
-        Ok(self
-            .sort_by_exprs(
-                by_exprs,
-                sort_options.with_order_reversed().with_nulls_last(true),
-            )?
-            .slice(0, k))
+        self.sort_by_exprs(
+            by_exprs,
+            sort_options.with_order_reversed().with_nulls_last(true),
+        )
+        .slice(0, k)
     }
 
     pub fn bottom_k<E: AsRef<[Expr]>>(
@@ -387,11 +378,10 @@ impl LazyFrame {
         k: IdxSize,
         by_exprs: E,
         sort_options: SortMultipleOptions,
-    ) -> PolarsResult<Self> {
+    ) -> Self {
         // this will optimize to bottom-k
-        Ok(self
-            .sort_by_exprs(by_exprs, sort_options.with_nulls_last(true))?
-            .slice(0, k))
+        self.sort_by_exprs(by_exprs, sort_options.with_nulls_last(true))
+            .slice(0, k)
     }
 
     /// Reverse the `DataFrame` from top to bottom.
