@@ -820,3 +820,12 @@ def test_sort_by_unequal_lengths_7207() -> None:
     df = pl.DataFrame({"a": [0, 1, 1, 0], "b": [3, 2, 3, 2]})
     with pytest.raises(pl.exceptions.ComputeError):
         df.select(pl.col.a.sort_by(["a", 1]))
+
+
+def test_sort_literals() -> None:
+    df = pl.DataFrame({"foo": [1, 2, 3]})
+    s = pl.Series([3, 2, 1])
+    assert df.sort([s])["foo"].to_list() == [3, 2, 1]
+
+    with pytest.raises(pl.exceptions.ShapeError):
+        df.sort(pl.Series(values=[1, 2]))

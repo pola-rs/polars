@@ -16,6 +16,8 @@ impl SortExec {
         state.should_stop()?;
         df.as_single_chunk_par();
 
+        let height = df.height();
+
         let by_columns = self
             .by_column
             .iter()
@@ -29,6 +31,7 @@ impl SortExec {
                 if !matches!(e.as_expression(), Some(&Expr::Column(_))) {
                     s.rename(&format!("_POLARS_SORT_BY_{i}"));
                 }
+                polars_ensure!(s.len() == height, ShapeMismatch: "sort expressions must have same length as DataFrame, got DataFrame height: {} and Series length: {}", height, s.len());
                 Ok(s)
             })
             .collect::<PolarsResult<Vec<_>>>()?;
