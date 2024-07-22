@@ -1,4 +1,4 @@
-use arrow::array::{Array, DictionaryKey, FixedSizeBinaryArray, PrimitiveArray};
+use arrow::array::{Array, DictionaryArray, DictionaryKey, FixedSizeBinaryArray, PrimitiveArray};
 use arrow::datatypes::{ArrowDataType, IntervalUnit, TimeUnit};
 use arrow::match_integer_type;
 use arrow::types::{days_ms, i256};
@@ -6,29 +6,24 @@ use ethnum::I256;
 use polars_error::{polars_bail, PolarsResult};
 
 use self::primitive::UnitDecoderFunction;
-use super::super::ArrayIter;
+use super::primitive::PrimitiveDictArrayDecoder;
+use super::utils::PageDictArrayDecoder;
 use super::{
     binary, boolean, fixed_size_binary, null, primitive, BasicDecompressor, CompressedPagesIter,
+    ParquetResult,
 };
+use crate::parquet::error::ParquetError;
 use crate::parquet::schema::types::{
     PhysicalType, PrimitiveLogicalType, PrimitiveType, TimeUnit as ParquetTimeUnit,
 };
 use crate::parquet::types::int96_to_i64_ns;
-use crate::read::deserialize::binview;
+use crate::read::deserialize::binary::BinaryDictArrayDecoder;
+use crate::read::deserialize::binview::{self, BinViewDictArrayDecoder};
+use crate::read::deserialize::fixed_size_binary::FixedSizeBinaryDictArrayDecoder;
 use crate::read::deserialize::primitive::{
     AsDecoderFunction, IntoDecoderFunction, PrimitiveDecoder,
 };
 use crate::read::deserialize::utils::PageDecoder;
-
-/// Converts an iterator of arrays to a trait object returning trait objects
-#[inline]
-fn dyn_iter<'a, A, I>(iter: I) -> ArrayIter<'a>
-where
-    A: Array,
-    I: Iterator<Item = PolarsResult<A>> + Send + Sync + 'a,
-{
-    Box::new(iter.map(|x| x.map(|x| Box::new(x) as Box<dyn Array>)))
-}
 
 /// An iterator adapter that maps an iterator of Pages into an iterator of Arrays
 /// of [`ArrowDataType`] `data_type` and length `chunk_size`.
@@ -330,8 +325,8 @@ pub fn page_iter_to_arrays<'a, I: CompressedPagesIter + 'a>(
         },
         (_, Dictionary(key_type, _, _)) => {
             return match_integer_type!(key_type, |$K| {
-                dict_read::<$K, _>(pages, physical_type, logical_type, data_type, num_rows)
-            })
+                dict_read::<$K, _>(pages, physical_type, logical_type, data_type, num_rows).map(|v| Box::new(v) as Box<_>)
+            }).map_err(Into::into)
         },
         (from, to) => {
             polars_bail!(ComputeError:
@@ -483,9 +478,7 @@ fn timestamp_dict<K: DictionaryKey, I: CompressedPagesIter>(
     data_type: ArrowDataType,
     num_rows: usize,
     time_unit: TimeUnit,
-) -> PolarsResult<Box<dyn Array>> {
-    let chunk_size = Some(num_rows);
-
+) -> ParquetResult<DictionaryArray<K>> {
     if physical_type == &PhysicalType::Int96 {
         let logical_type = PrimitiveLogicalType::Timestamp {
             unit: ParquetTimeUnit::Nanoseconds,
@@ -493,57 +486,49 @@ fn timestamp_dict<K: DictionaryKey, I: CompressedPagesIter>(
         };
         let (factor, is_multiplier) = unify_timestamp_unit(&Some(logical_type), time_unit);
         return match (factor, is_multiplier) {
-            (a, true) => Ok(dyn_iter(primitive::DictIter::<K, _, _, _, _>::new(
+            (a, true) => PageDictArrayDecoder::<_, K, _>::new(
                 pages,
                 ArrowDataType::Timestamp(TimeUnit::Nanosecond, None),
-                num_rows,
-                chunk_size,
-                decoder_fn!((x, a: i64) => <[u32; 3], i64> => int96_to_i64_ns(x) * a),
-            ))
-            .next()
-            .unwrap()?),
-            (a, false) => Ok(dyn_iter(primitive::DictIter::<K, _, _, _, _>::new(
+                PrimitiveDictArrayDecoder::new(
+                    decoder_fn!((x, a: i64) => <[u32; 3], i64> => int96_to_i64_ns(x) * a),
+                ),
+            )?
+            .collect_n(num_rows),
+            (a, false) => PageDictArrayDecoder::<_, K, _>::new(
                 pages,
                 ArrowDataType::Timestamp(TimeUnit::Nanosecond, None),
-                num_rows,
-                chunk_size,
-                decoder_fn!((x, a: i64) => <[u32; 3], i64> => int96_to_i64_ns(x) / a),
-            ))
-            .next()
-            .unwrap()?),
+                PrimitiveDictArrayDecoder::new(
+                    decoder_fn!((x, a: i64) => <[u32; 3], i64> => int96_to_i64_ns(x) / a),
+                ),
+            )?
+            .collect_n(num_rows),
         };
     };
 
     let (factor, is_multiplier) = unify_timestamp_unit(logical_type, time_unit);
     match (factor, is_multiplier) {
-        (a, true) => Ok(dyn_iter(primitive::DictIter::<K, _, _, _, _>::new(
+        (a, true) => PageDictArrayDecoder::<_, K, _>::new(
             pages,
             data_type,
-            num_rows,
-            chunk_size,
-            decoder_fn!((x, a: i64) => <i64, i64> => x * a),
-        ))
-        .next()
-        .unwrap()?),
-        (a, false) => Ok(dyn_iter(primitive::DictIter::<K, _, _, _, _>::new(
+            PrimitiveDictArrayDecoder::new(decoder_fn!((x, a: i64) => <i64, i64> => x * a)),
+        )?
+        .collect_n(num_rows),
+        (a, false) => PageDictArrayDecoder::<_, K, _>::new(
             pages,
             data_type,
-            num_rows,
-            chunk_size,
-            decoder_fn!((x, a: i64) => <i64, i64> => x / a),
-        ))
-        .next()
-        .unwrap()?),
+            PrimitiveDictArrayDecoder::new(decoder_fn!((x, a: i64) => <i64, i64> => x / a)),
+        )?
+        .collect_n(num_rows),
     }
 }
 
-fn dict_read<'a, K: DictionaryKey, I: CompressedPagesIter + 'a>(
+fn dict_read<K: DictionaryKey, I: CompressedPagesIter>(
     iter: BasicDecompressor<I>,
     physical_type: &PhysicalType,
     logical_type: &Option<PrimitiveLogicalType>,
     data_type: ArrowDataType,
     num_rows: usize,
-) -> PolarsResult<Box<dyn Array>> {
+) -> ParquetResult<DictionaryArray<K>> {
     use ArrowDataType::*;
     let values_data_type = if let Dictionary(_, v, _) = &data_type {
         v.as_ref()
@@ -551,59 +536,50 @@ fn dict_read<'a, K: DictionaryKey, I: CompressedPagesIter + 'a>(
         panic!()
     };
 
-    let chunk_size = Some(num_rows);
-
     Ok(match (physical_type, values_data_type.to_logical_type()) {
-        (PhysicalType::Int32, UInt8) => dyn_iter(primitive::DictIter::<K, _, _, _, _>::new(
+        (PhysicalType::Int32, UInt8) => PageDictArrayDecoder::<_, K, _>::new(
             iter,
             data_type,
-            num_rows,
-            chunk_size,
-            AsDecoderFunction::<i32, u8>::default(),
-        )),
-        (PhysicalType::Int32, UInt16) => dyn_iter(primitive::DictIter::<K, _, _, _, _>::new(
+            PrimitiveDictArrayDecoder::new(AsDecoderFunction::<i32, u8>::default()),
+        )?
+        .collect_n(num_rows)?,
+        (PhysicalType::Int32, UInt16) => PageDictArrayDecoder::<_, K, _>::new(
             iter,
             data_type,
-            num_rows,
-            chunk_size,
-            AsDecoderFunction::<i32, u16>::default(),
-        )),
-        (PhysicalType::Int32, UInt32) => dyn_iter(primitive::DictIter::<K, _, _, _, _>::new(
+            PrimitiveDictArrayDecoder::new(AsDecoderFunction::<i32, u16>::default()),
+        )?
+        .collect_n(num_rows)?,
+        (PhysicalType::Int32, UInt32) => PageDictArrayDecoder::<_, K, _>::new(
             iter,
             data_type,
-            num_rows,
-            chunk_size,
-            AsDecoderFunction::<i32, u32>::default(),
-        )),
-        (PhysicalType::Int64, UInt64) => dyn_iter(primitive::DictIter::<K, _, _, _, _>::new(
+            PrimitiveDictArrayDecoder::new(AsDecoderFunction::<i32, u32>::default()),
+        )?
+        .collect_n(num_rows)?,
+        (PhysicalType::Int64, UInt64) => PageDictArrayDecoder::<_, K, _>::new(
             iter,
             data_type,
-            num_rows,
-            chunk_size,
-            AsDecoderFunction::<i64, u64>::default(),
-        )),
-        (PhysicalType::Int32, Int8) => dyn_iter(primitive::DictIter::<K, _, _, _, _>::new(
+            PrimitiveDictArrayDecoder::new(AsDecoderFunction::<i64, u64>::default()),
+        )?
+        .collect_n(num_rows)?,
+        (PhysicalType::Int32, Int8) => PageDictArrayDecoder::<_, K, _>::new(
             iter,
             data_type,
-            num_rows,
-            chunk_size,
-            AsDecoderFunction::<i32, i8>::default(),
-        )),
-        (PhysicalType::Int32, Int16) => dyn_iter(primitive::DictIter::<K, _, _, _, _>::new(
+            PrimitiveDictArrayDecoder::new(AsDecoderFunction::<i32, i8>::default()),
+        )?
+        .collect_n(num_rows)?,
+        (PhysicalType::Int32, Int16) => PageDictArrayDecoder::<_, K, _>::new(
             iter,
             data_type,
-            num_rows,
-            chunk_size,
-            AsDecoderFunction::<i32, i16>::default(),
-        )),
+            PrimitiveDictArrayDecoder::new(AsDecoderFunction::<i32, i16>::default()),
+        )?
+        .collect_n(num_rows)?,
         (PhysicalType::Int32, Int32 | Date32 | Time32(_) | Interval(IntervalUnit::YearMonth)) => {
-            dyn_iter(primitive::DictIter::<K, _, _, _, _>::new(
+            PageDictArrayDecoder::<_, K, _>::new(
                 iter,
                 data_type,
-                num_rows,
-                chunk_size,
-                UnitDecoderFunction::<i32>::default(),
-            ))
+                PrimitiveDictArrayDecoder::new(UnitDecoderFunction::<i32>::default()),
+            )?
+            .collect_n(num_rows)?
         },
 
         (PhysicalType::Int64, Timestamp(time_unit, _)) => {
@@ -619,43 +595,47 @@ fn dict_read<'a, K: DictionaryKey, I: CompressedPagesIter + 'a>(
         },
 
         (PhysicalType::Int64, Int64 | Date64 | Time64(_) | Duration(_)) => {
-            dyn_iter(primitive::DictIter::<K, _, _, _, _>::new(
+            PageDictArrayDecoder::<_, K, _>::new(
                 iter,
                 data_type,
-                num_rows,
-                chunk_size,
-                UnitDecoderFunction::<i64>::default(),
-            ))
+                PrimitiveDictArrayDecoder::new(UnitDecoderFunction::<i64>::default()),
+            )?
+            .collect_n(num_rows)?
         },
-        (PhysicalType::Float, Float32) => dyn_iter(primitive::DictIter::<K, _, _, _, _>::new(
+        (PhysicalType::Float, Float32) => PageDictArrayDecoder::<_, K, _>::new(
             iter,
             data_type,
-            num_rows,
-            chunk_size,
-            UnitDecoderFunction::<f32>::default(),
-        )),
-        (PhysicalType::Double, Float64) => dyn_iter(primitive::DictIter::<K, _, _, _, _>::new(
+            PrimitiveDictArrayDecoder::new(UnitDecoderFunction::<f32>::default()),
+        )?
+        .collect_n(num_rows)?,
+        (PhysicalType::Double, Float64) => PageDictArrayDecoder::<_, K, _>::new(
             iter,
             data_type,
-            num_rows,
-            chunk_size,
-            UnitDecoderFunction::<f64>::default(),
-        )),
-        (PhysicalType::ByteArray, LargeUtf8 | LargeBinary) => dyn_iter(
-            binary::DictIter::<K, i64, _>::new(iter, data_type, num_rows, chunk_size),
-        ),
-        (PhysicalType::ByteArray, Utf8View | BinaryView) => dyn_iter(
-            binview::DictIter::<K, _>::new(iter, data_type, num_rows, chunk_size),
-        ),
-        (PhysicalType::FixedLenByteArray(_), FixedSizeBinary(_)) => dyn_iter(
-            fixed_size_binary::DictIter::<K, _>::new(iter, data_type, num_rows, chunk_size),
-        ),
+            PrimitiveDictArrayDecoder::new(UnitDecoderFunction::<f64>::default()),
+        )?
+        .collect_n(num_rows)?,
+        (PhysicalType::ByteArray, LargeUtf8 | LargeBinary) => PageDictArrayDecoder::<_, K, _>::new(
+            iter,
+            data_type,
+            BinaryDictArrayDecoder::<i64>::default(),
+        )?
+        .collect_n(num_rows)?,
+        (PhysicalType::ByteArray, Utf8View | BinaryView) => {
+            PageDictArrayDecoder::<_, K, _>::new(iter, data_type, BinViewDictArrayDecoder)?
+                .collect_n(num_rows)?
+        },
+        (PhysicalType::FixedLenByteArray(size), FixedSizeBinary(_)) => {
+            PageDictArrayDecoder::<_, K, _>::new(
+                iter,
+                data_type,
+                FixedSizeBinaryDictArrayDecoder { size: *size },
+            )?
+            .collect_n(num_rows)?
+        },
         other => {
-            polars_bail!(ComputeError:
-                "not implemented: reading dictionaries of type {other:?}"
-            )
+            return Err(ParquetError::FeatureNotSupported(format!(
+                "Reading dictionaries of type {other:?}"
+            )));
         },
-    }
-    .next()
-    .unwrap()?)
+    })
 }

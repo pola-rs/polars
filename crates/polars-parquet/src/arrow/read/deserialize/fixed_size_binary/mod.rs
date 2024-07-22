@@ -4,5 +4,5 @@ mod nested;
 mod utils;
 
 pub(crate) use basic::BinaryDecoder;
-pub use dictionary::{DictIter, NestedDictIter};
-pub use nested::NestedIter;
+pub(crate) use dictionary::{FixedSizeBinaryDictArrayDecoder, NestedDictIter};
+pub(crate) use nested::NestedIter;
