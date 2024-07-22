@@ -1,5 +1,3 @@
-use std::collections::VecDeque;
-
 use arrow::array::{Array, MutablePrimitiveArray};
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
@@ -8,24 +6,21 @@ use num_traits::AsPrimitive;
 use polars_error::PolarsResult;
 
 use super::super::utils;
-use super::super::utils::MaybeNext;
 use super::basic::{
-    finish, DecoderFunction, PlainDecoderFnCollector, PrimitiveDecoder, ValuesDictionary,
+    DecoderFunction, PlainDecoderFnCollector, PrimitiveDecoder, ValuesDictionary,
 };
 use crate::parquet::encoding::hybrid_rle::DictionaryTranslator;
 use crate::parquet::encoding::{byte_stream_split, delta_bitpacked, Encoding};
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
-use crate::parquet::read::BasicDecompressor;
 use crate::parquet::types::{decode, NativeType as ParquetNativeType};
 use crate::read::deserialize::utils::array_chunks::ArrayChunks;
 use crate::read::deserialize::utils::filter::Filter;
 use crate::read::deserialize::utils::{BatchableCollector, PageValidity, TranslatedHybridRle};
-use crate::read::CompressedPagesIter;
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
-pub(super) enum StateTranslation<'a, P: ParquetNativeType, T: NativeType> {
+pub(crate) enum StateTranslation<'a, P: ParquetNativeType, T: NativeType> {
     Plain(ArrayChunks<'a, P>),
     Dictionary(ValuesDictionary<'a, T>),
     ByteStreamSplit(byte_stream_split::Decoder<'a>),
@@ -187,7 +182,7 @@ where
 
 /// Decoder of integer parquet type
 #[derive(Debug)]
-struct IntDecoder<P, T, D>(PrimitiveDecoder<P, T, D>)
+pub(crate) struct IntDecoder<P, T, D>(PrimitiveDecoder<P, T, D>)
 where
     T: NativeType,
     P: ParquetNativeType,
@@ -202,7 +197,7 @@ where
     D: DecoderFunction<P, T>,
 {
     #[inline]
-    fn new(decoder: D) -> Self {
+    pub(crate) fn new(decoder: D) -> Self {
         Self(PrimitiveDecoder::new(decoder))
     }
 }
@@ -242,84 +237,5 @@ where
                 .unwrap()
                 .freeze(),
         ))
-    }
-}
-
-/// An [`Iterator`] adapter over [`PagesIter`] assumed to be encoded as primitive arrays
-/// encoded as parquet integer types
-pub struct IntegerIter<T, I, P, D>
-where
-    I: CompressedPagesIter,
-    T: NativeType,
-    P: ParquetNativeType,
-    D: DecoderFunction<P, T>,
-{
-    iter: BasicDecompressor<I>,
-    data_type: ArrowDataType,
-    items: VecDeque<(Vec<T>, MutableBitmap)>,
-    remaining: usize,
-    chunk_size: Option<usize>,
-    dict: Option<Vec<T>>,
-    decoder: D,
-    phantom: std::marker::PhantomData<P>,
-}
-
-impl<T, I, P, D> IntegerIter<T, I, P, D>
-where
-    I: CompressedPagesIter,
-    T: NativeType,
-
-    P: ParquetNativeType,
-    D: DecoderFunction<P, T>,
-{
-    pub fn new(
-        iter: BasicDecompressor<I>,
-        data_type: ArrowDataType,
-        num_rows: usize,
-        chunk_size: Option<usize>,
-        decoder: D,
-    ) -> Self {
-        Self {
-            iter,
-            data_type,
-            items: VecDeque::new(),
-            dict: None,
-            remaining: num_rows,
-            chunk_size,
-            decoder,
-            phantom: Default::default(),
-        }
-    }
-}
-
-impl<T, I, P, D> Iterator for IntegerIter<T, I, P, D>
-where
-    I: CompressedPagesIter,
-    T: NativeType,
-    P: ParquetNativeType,
-    i64: num_traits::AsPrimitive<P>,
-    D: DecoderFunction<P, T>,
-{
-    type Item = PolarsResult<MutablePrimitiveArray<T>>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            let maybe_state = utils::next(
-                &mut self.iter,
-                &mut self.items,
-                &mut self.dict,
-                &mut self.remaining,
-                self.chunk_size,
-                &IntDecoder::new(self.decoder),
-            );
-            match maybe_state {
-                MaybeNext::Some(Ok((values, validity))) => {
-                    return Some(Ok(finish(&self.data_type, values, validity)))
-                },
-                MaybeNext::Some(Err(e)) => return Some(Err(e)),
-                MaybeNext::None => return None,
-                MaybeNext::More => continue,
-            }
-        }
     }
 }

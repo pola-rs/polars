@@ -557,15 +557,15 @@ pub struct PageDecoder<I: CompressedPagesIter, D: Decoder> {
 
 impl<I: CompressedPagesIter, D: Decoder> PageDecodeIter<I, D> {
     pub fn new(
-        iter: BasicDecompressor<I>,
-        dict: Option<DictPage>,
+        mut iter: BasicDecompressor<I>,
         data_type: ArrowDataType,
         num_rows: usize,
         decoder: D,
-    ) -> Self {
-        let dict = dict.map(|d| decoder.deserialize_dict(d));
+    ) -> ParquetResult<Self> {
+        let dict_page = iter.read_dict_page()?;
+        let dict = dict_page.map(|d| decoder.deserialize_dict(d));
 
-        Self {
+        Ok(Self {
             num_rows,
             data_type,
             page_decoder: PageDecoder {
@@ -573,7 +573,7 @@ impl<I: CompressedPagesIter, D: Decoder> PageDecodeIter<I, D> {
                 dict,
                 decoder,
             },
-        }
+        })
     }
 }
 

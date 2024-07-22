@@ -35,7 +35,7 @@ pub use crate::parquet::{
     page::{CompressedDataPage, DataPageHeader, Page},
     read::{
         decompress, get_column_iterator, read_columns_indexes as _read_columns_indexes,
-        read_metadata as _read_metadata, read_pages_locations, BasicDecompressor, Decompressor,
+        read_metadata as _read_metadata, read_pages_locations, BasicDecompressor,
         MutStreamingIterator, PageFilter, PageReader, ReadColumnIterator, State,
     },
     schema::types::{
