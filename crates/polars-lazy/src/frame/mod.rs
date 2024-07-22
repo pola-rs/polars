@@ -129,7 +129,7 @@ impl LazyFrame {
 
     /// Turn off all optimizations.
     pub fn without_optimizations(self) -> Self {
-        self.with_optimizations(OptState::from_bits_truncate(0))
+        self.with_optimizations(OptState::from_bits_truncate(0) | OptState::TYPE_COERCION)
     }
 
     /// Toggle projection pushdown optimization.
