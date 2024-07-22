@@ -547,47 +547,41 @@ impl PyLazyFrame {
         nulls_last: Vec<bool>,
         maintain_order: bool,
         multithreaded: bool,
-    ) -> PyResult<Self> {
+    ) -> Self {
         let ldf = self.ldf.clone();
         let exprs = by.to_exprs();
-        let out = ldf
-            .sort_by_exprs(
-                exprs,
-                SortMultipleOptions {
-                    descending,
-                    nulls_last,
-                    maintain_order,
-                    multithreaded,
-                },
-            )
-            .map_err(PyPolarsErr::from)?;
-        Ok(out.into())
+        ldf.sort_by_exprs(
+            exprs,
+            SortMultipleOptions {
+                descending,
+                nulls_last,
+                maintain_order,
+                multithreaded,
+            },
+        )
+        .into()
     }
 
-    fn top_k(&self, k: IdxSize, by: Vec<PyExpr>, reverse: Vec<bool>) -> PyResult<Self> {
+    fn top_k(&self, k: IdxSize, by: Vec<PyExpr>, reverse: Vec<bool>) -> Self {
         let ldf = self.ldf.clone();
         let exprs = by.to_exprs();
-        let out = ldf
-            .top_k(
-                k,
-                exprs,
-                SortMultipleOptions::new().with_order_descending_multi(reverse),
-            )
-            .map_err(PyPolarsErr::from)?;
-        Ok(out.into())
+        ldf.top_k(
+            k,
+            exprs,
+            SortMultipleOptions::new().with_order_descending_multi(reverse),
+        )
+        .into()
     }
 
-    fn bottom_k(&self, k: IdxSize, by: Vec<PyExpr>, reverse: Vec<bool>) -> PyResult<Self> {
+    fn bottom_k(&self, k: IdxSize, by: Vec<PyExpr>, reverse: Vec<bool>) -> Self {
         let ldf = self.ldf.clone();
         let exprs = by.to_exprs();
-        let out = ldf
-            .bottom_k(
-                k,
-                exprs,
-                SortMultipleOptions::new().with_order_descending_multi(reverse),
-            )
-            .map_err(PyPolarsErr::from)?;
-        Ok(out.into())
+        ldf.bottom_k(
+            k,
+            exprs,
+            SortMultipleOptions::new().with_order_descending_multi(reverse),
+        )
+        .into()
     }
 
     fn cache(&self) -> Self {
