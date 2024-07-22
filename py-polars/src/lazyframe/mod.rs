@@ -1143,13 +1143,11 @@ impl PyLazyFrame {
         schema: Option<Wrap<Schema>>,
         validate_output: bool,
     ) -> Self {
-        let opt = AllowedOptimizations {
-            predicate_pushdown,
-            projection_pushdown,
-            slice_pushdown,
-            streaming: streamable,
-            ..Default::default()
-        };
+        let mut opt = OptState::default();
+        opt.set(OptState::PREDICATE_PUSHDOWN, predicate_pushdown);
+        opt.set(OptState::PROJECTION_PUSHDOWN, projection_pushdown);
+        opt.set(OptState::SLICE_PUSHDOWN, slice_pushdown);
+        opt.set(OptState::STREAMING, streamable);
 
         self.ldf
             .clone()
