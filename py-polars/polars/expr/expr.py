@@ -4402,6 +4402,32 @@ class Expr:
         │ 0   ┆ 3   │
         └─────┴─────┘
 
+        Call a function that takes multiple arguments by creating a `struct` and
+        referencing its fields inside the function call.
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [5, 1, 0, 3],
+        ...         "b": [4, 2, 3, 4],
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     a_times_b=pl.struct("a", "b").map_batches(
+        ...         lambda x: np.multiply(x.struct.field("a"), x.struct.field("b"))
+        ...     )
+        ... )
+        shape: (4, 3)
+        ┌─────┬─────┬───────────┐
+        │ a   ┆ b   ┆ a_times_b │
+        │ --- ┆ --- ┆ ---       │
+        │ i64 ┆ i64 ┆ i64       │
+        ╞═════╪═════╪═══════════╡
+        │ 5   ┆ 4   ┆ 20        │
+        │ 1   ┆ 2   ┆ 2         │
+        │ 0   ┆ 3   ┆ 0         │
+        │ 3   ┆ 4   ┆ 12        │
+        └─────┴─────┴───────────┘
+
         """
         if return_dtype is not None:
             return_dtype = parse_into_dtype(return_dtype)
