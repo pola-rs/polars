@@ -5698,14 +5698,21 @@ class Expr:
         """
         return self.__xor__(other)
 
-    def is_in(self, other: Expr | Collection[Any] | Series) -> Expr:
+    def is_in(
+        self, other: Expr | Collection[Any] | Series, *, strict: bool = True
+    ) -> Expr:
         """
         Check if elements of this expression are present in the other Series.
 
         Parameters
         ----------
         other
-            Series or sequence of primitive type.
+            Series or sequence to test membership of.
+        strict
+            If a python collection is given, `strict`
+            will be passed to the `Series` constructor
+            and indicates how different types should be
+            handled.
 
         Returns
         -------
@@ -5732,7 +5739,7 @@ class Expr:
         if isinstance(other, Collection) and not isinstance(other, str):
             if isinstance(other, (Set, FrozenSet)):
                 other = list(other)
-            other = F.lit(pl.Series(other))._pyexpr
+            other = F.lit(pl.Series(other, strict=strict))._pyexpr
         else:
             other = parse_into_expression(other)
         return self._from_pyexpr(self._pyexpr.is_in(other))
