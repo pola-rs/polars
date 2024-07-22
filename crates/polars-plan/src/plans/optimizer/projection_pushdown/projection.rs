@@ -28,10 +28,15 @@ fn check_double_projection(
     ) {
         acc_projections.retain(|node| column_node_to_name(*node, expr_arena).as_ref() != name);
     }
-    if let Some(name) = expr.get_alias_or_field() {
-        if projected_names.remove(name) {
-            prune_projections_by_name(acc_projections, name.as_ref(), expr_arena)
-        }
+
+    // If the expression name is not derived from a column we check if it is added in this node.
+    match expr.output_name_inner() {
+        OutputName::Alias(name) | OutputName::LiteralLhs(name) | OutputName::Field(name) => {
+            if projected_names.remove(name) {
+                prune_projections_by_name(acc_projections, name.as_ref(), expr_arena)
+            }
+        },
+        _ => {},
     }
 
     for (_, ae) in (&*expr_arena).iter(expr.node()) {
