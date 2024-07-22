@@ -174,10 +174,13 @@ pub fn expand_paths_hive(
 
                     let prefix = object_path_from_string(cloud_location.prefix.clone())?;
 
-                    let out = if !path.ends_with("/")
-                        && cloud_location.expansion.is_none()
-                        && store.head(&prefix).await.is_ok()
-                    {
+                    let out = if !path.ends_with("/") && cloud_location.expansion.is_none() && {
+                        // We need to check if it is a directory for local paths (we can be here due
+                        // to FORCE_ASYNC). For cloud paths the convention is that the user must add
+                        // a trailing slash `/` to scan directories. We don't infer it as that would
+                        // mean sending one network request per path serially (very slow).
+                        is_cloud || PathBuf::from(path).is_file()
+                    } {
                         (
                             0,
                             vec![PathBuf::from(format_path(
