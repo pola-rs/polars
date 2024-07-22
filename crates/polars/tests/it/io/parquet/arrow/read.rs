@@ -59,28 +59,21 @@ fn all_types_chunked() -> PolarsResult<()> {
     let reader = FileReader::new(reader, metadata.row_groups, schema, None, None);
 
     let batches = reader.collect::<PolarsResult<Vec<_>>>()?;
-    assert_eq!(batches.len(), 2);
+    assert_eq!(batches.len(), 1);
 
-    assert_eq!(batches[0].len(), 5);
-    assert_eq!(batches[1].len(), 3);
+    assert_eq!(batches[0].len(), 8);
 
     let result = batches[0].columns()[0]
         .as_any()
         .downcast_ref::<Int32Array>()
         .unwrap();
-    assert_eq!(result, &Int32Array::from_slice([4, 5, 6, 7, 2]));
-
-    let result = batches[1].columns()[0]
-        .as_any()
-        .downcast_ref::<Int32Array>()
-        .unwrap();
-    assert_eq!(result, &Int32Array::from_slice([3, 0, 1]));
+    assert_eq!(result, &Int32Array::from_slice([4, 5, 6, 7, 2, 3, 0, 1]));
 
     let result = batches[0].columns()[6]
         .as_any()
         .downcast_ref::<Float32Array>()
         .unwrap();
-    assert_eq!(result, &Float32Array::from_slice([0.0, 1.1, 0.0, 1.1, 0.0]));
+    assert_eq!(result, &Float32Array::from_slice([0.0, 1.1, 0.0, 1.1, 0.0, 1.1, 0.0, 1.1]));
 
     let result = batches[0].columns()[9]
         .as_any()
@@ -88,16 +81,7 @@ fn all_types_chunked() -> PolarsResult<()> {
         .unwrap();
     assert_eq!(
         result,
-        &BinaryViewArray::from_slice_values([[48], [49], [48], [49], [48]])
-    );
-
-    let result = batches[1].columns()[9]
-        .as_any()
-        .downcast_ref::<BinaryViewArray>()
-        .unwrap();
-    assert_eq!(
-        result,
-        &BinaryViewArray::from_slice_values([[49], [48], [49]])
+        &BinaryViewArray::from_slice_values([[48], [49], [48], [49], [48], [49], [48], [49]])
     );
 
     Ok(())
