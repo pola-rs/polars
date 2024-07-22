@@ -181,7 +181,7 @@ pub(super) fn process_asof_join(
         expr_arena,
     )?;
 
-    Ok(resolve_join_suffixes(
+    resolve_join_suffixes(
         input_left,
         input_right,
         left_on,
@@ -190,7 +190,7 @@ pub(super) fn process_asof_join(
         lp_arena,
         expr_arena,
         &local_projection,
-    ))
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -365,7 +365,7 @@ pub(super) fn process_join(
         expr_arena,
     )?;
 
-    Ok(resolve_join_suffixes(
+    resolve_join_suffixes(
         input_left,
         input_right,
         left_on,
@@ -374,7 +374,7 @@ pub(super) fn process_join(
         lp_arena,
         expr_arena,
         &local_projection,
-    ))
+    )
 }
 
 fn process_projection(
@@ -469,13 +469,14 @@ fn resolve_join_suffixes(
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     local_projection: &[ColumnNode],
-) -> IR {
+) -> PolarsResult<IR> {
     let suffix = options.args.suffix();
     let alp = IRBuilder::new(input_left, expr_arena, lp_arena)
         .join(input_right, left_on, right_on, options.clone())
         .build();
     let schema_after_join = alp.schema(lp_arena);
 
+    let mut all_columns = true;
     let projections = local_projection
         .iter()
         .map(|proj| {
@@ -484,6 +485,7 @@ fn resolve_join_suffixes(
                 let downstream_name = &name.as_ref()[..name.len() - suffix.len()];
                 let col = AExpr::Column(ColumnName::from(downstream_name));
                 let node = expr_arena.add(col);
+                all_columns = false;
                 ExprIR::new(node, OutputName::Alias(name.clone()))
             } else {
                 ExprIR::new(proj.0, OutputName::ColumnLhs(name.clone()))
@@ -491,7 +493,12 @@ fn resolve_join_suffixes(
         })
         .collect::<Vec<_>>();
 
-    IRBuilder::from_lp(alp, expr_arena, lp_arena)
-        .project(projections, Default::default())
-        .build()
+    let builder = IRBuilder::from_lp(alp, expr_arena, lp_arena);
+    Ok(if all_columns {
+        builder
+            .project_simple(projections.iter().map(|e| e.output_name()))?
+            .build()
+    } else {
+        builder.project(projections, Default::default()).build()
+    })
 }

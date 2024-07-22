@@ -12,7 +12,7 @@ use super::*;
 ///
 /// The schema reported after this optimization is also
 pub(super) struct SimpleProjectionAndCollapse {
-    /// keep track of nodes that are already processed when they
+    /// Keep track of nodes that are already processed when they
     /// can be expensive. Schema materialization can be for instance.
     processed: BTreeSet<Node>,
     eager: bool,
@@ -39,12 +39,14 @@ impl OptimizationRule for SimpleProjectionAndCollapse {
 
         match lp {
             Select { input, expr, .. } => {
-                if !matches!(lp_arena.get(*input), ExtContext { .. }) && self.processed.insert(node)
+                if !matches!(lp_arena.get(*input), ExtContext { .. })
+                    && !self.processed.contains(&node)
                 {
                     // First check if we can apply the optimization before we allocate.
                     if !expr.iter().all(|e| {
                         matches!(expr_arena.get(e.node()), AExpr::Column(_)) && !e.has_alias()
                     }) {
+                        self.processed.insert(node);
                         return None;
                     }
 
@@ -59,6 +61,7 @@ impl OptimizationRule for SimpleProjectionAndCollapse {
 
                     Some(alp)
                 } else {
+                    self.processed.insert(node);
                     None
                 }
             },
@@ -73,7 +76,7 @@ impl OptimizationRule for SimpleProjectionAndCollapse {
                     }),
                     // Cleanup projections set in projection pushdown just above caches
                     // they are not needed.
-                    cache_lp @ Cache { .. } if self.processed.insert(node) => {
+                    cache_lp @ Cache { .. } if self.processed.contains(&node) => {
                         let cache_schema = cache_lp.schema(lp_arena);
                         if cache_schema.len() == columns.len()
                             && cache_schema.iter_names().zip(columns.iter_names()).all(
@@ -92,6 +95,7 @@ impl OptimizationRule for SimpleProjectionAndCollapse {
                         if *input_schema.as_ref() == *columns {
                             Some(other.clone())
                         } else {
+                            self.processed.insert(node);
                             None
                         }
                     },
