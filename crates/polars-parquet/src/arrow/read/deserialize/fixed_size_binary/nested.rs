@@ -7,7 +7,6 @@ use polars_error::PolarsResult;
 
 use super::super::utils::{not_implemented, MaybeNext, PageState};
 use super::utils::FixedSizeBinary;
-use crate::arrow::read::deserialize::fixed_size_binary::basic::finish;
 use crate::arrow::read::deserialize::nested_utils::{next, NestedDecoder};
 use crate::arrow::read::{InitNested, NestedState};
 use crate::parquet::encoding::hybrid_rle::gatherer::{SliceDictionaryTranslator, Translator};
@@ -171,6 +170,14 @@ impl<I: CompressedPagesIter> NestedIter<I> {
             remaining: num_rows,
         }
     }
+}
+
+pub fn finish(
+    data_type: &ArrowDataType,
+    values: FixedSizeBinary,
+    validity: MutableBitmap,
+) -> FixedSizeBinaryArray {
+    FixedSizeBinaryArray::new(data_type.clone(), values.values.into(), validity.into())
 }
 
 impl<I: CompressedPagesIter> Iterator for NestedIter<I> {

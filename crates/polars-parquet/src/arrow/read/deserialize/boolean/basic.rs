@@ -1,5 +1,3 @@
-use std::collections::VecDeque;
-
 use arrow::array::BooleanArray;
 use arrow::bitmap::utils::BitmapIter;
 use arrow::bitmap::MutableBitmap;
@@ -7,21 +5,20 @@ use arrow::datatypes::ArrowDataType;
 use polars_error::PolarsResult;
 
 use super::super::utils;
-use super::super::utils::{extend_from_decoder, next, DecodedState, Decoder, MaybeNext};
+use super::super::utils::{extend_from_decoder, DecodedState, Decoder};
 use crate::parquet::encoding::hybrid_rle::gatherer::HybridRleGatherer;
 use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use crate::parquet::encoding::Encoding;
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
-use crate::parquet::read::BasicDecompressor;
 use crate::read::deserialize::utils::filter::Filter;
 use crate::read::deserialize::utils::{BatchableCollector, PageValidity};
-use crate::read::CompressedPagesIter;
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
-enum StateTranslation<'a> {
+pub(crate) enum StateTranslation<'a> {
     Plain(BitmapIter<'a>),
+    Unit(BitmapIter<'a>),
     Rle(HybridRleDecoder<'a>),
 }
 
@@ -175,7 +172,7 @@ impl DecodedState for (MutableBitmap, MutableBitmap) {
     }
 }
 
-struct BooleanDecoder;
+pub(crate) struct BooleanDecoder;
 
 impl Decoder for BooleanDecoder {
     type Translation<'a> = StateTranslation<'a>;
@@ -201,64 +198,5 @@ impl Decoder for BooleanDecoder {
             values.into(),
             validity.into(),
         )))
-    }
-}
-
-fn finish(
-    data_type: &ArrowDataType,
-    values: MutableBitmap,
-    validity: MutableBitmap,
-) -> BooleanArray {
-    BooleanArray::new(data_type.clone(), values.into(), validity.into())
-}
-
-/// An iterator adapter over [`PagesIter`] assumed to be encoded as boolean arrays
-pub struct Iter<I: CompressedPagesIter> {
-    iter: BasicDecompressor<I>,
-    data_type: ArrowDataType,
-    items: VecDeque<(MutableBitmap, MutableBitmap)>,
-    chunk_size: Option<usize>,
-    remaining: usize,
-}
-
-impl<I: CompressedPagesIter> Iter<I> {
-    pub fn new(
-        iter: BasicDecompressor<I>,
-        data_type: ArrowDataType,
-        chunk_size: Option<usize>,
-        num_rows: usize,
-    ) -> Self {
-        Self {
-            iter,
-            data_type,
-            items: VecDeque::new(),
-            chunk_size,
-            remaining: num_rows,
-        }
-    }
-}
-
-impl<I: CompressedPagesIter> Iterator for Iter<I> {
-    type Item = PolarsResult<BooleanArray>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            let maybe_state = next(
-                &mut self.iter,
-                &mut self.items,
-                &mut None,
-                &mut self.remaining,
-                self.chunk_size,
-                &BooleanDecoder,
-            );
-            match maybe_state {
-                MaybeNext::Some(Ok((values, validity))) => {
-                    return Some(Ok(finish(&self.data_type, values, validity)))
-                },
-                MaybeNext::Some(Err(e)) => return Some(Err(e)),
-                MaybeNext::None => return None,
-                MaybeNext::More => continue,
-            }
-        }
     }
 }

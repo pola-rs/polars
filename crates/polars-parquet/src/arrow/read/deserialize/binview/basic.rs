@@ -1,5 +1,4 @@
-use std::cell::Cell;
-use std::collections::VecDeque;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use arrow::array::{Array, BinaryViewArray, MutableBinaryViewArray, Utf8ViewArray};
 use arrow::bitmap::{Bitmap, MutableBitmap};
@@ -10,13 +9,12 @@ use super::super::binary::decoders::*;
 use crate::parquet::encoding::hybrid_rle::DictionaryTranslator;
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{DataPage, DictPage};
-use crate::parquet::read::BasicDecompressor;
 use crate::read::deserialize::utils::filter::Filter;
 use crate::read::deserialize::utils::{
-    self, binary_views_dict, extend_from_decoder, next, DecodedState, MaybeNext, PageValidity,
-    StateTranslation, TranslatedHybridRle,
+    self, binary_views_dict, extend_from_decoder, DecodedState, PageValidity, StateTranslation,
+    TranslatedHybridRle,
 };
-use crate::read::{CompressedPagesIter, PrimitiveLogicalType};
+use crate::read::PrimitiveLogicalType;
 
 type DecodedStateTuple = (MutableBinaryViewArray<[u8]>, MutableBitmap);
 
@@ -32,7 +30,7 @@ impl<'a> StateTranslation<'a, BinViewDecoder> for BinaryStateTranslation<'a> {
             page.descriptor.primitive_type.logical_type,
             Some(PrimitiveLogicalType::String)
         );
-        decoder.check_utf8.set(is_string);
+        decoder.check_utf8.store(is_string, Ordering::Relaxed);
         Self::new(page, dict, page_validity, filter, is_string)
     }
 
@@ -55,7 +53,7 @@ impl<'a> StateTranslation<'a, BinViewDecoder> for BinaryStateTranslation<'a> {
         let views_offset = values.views().len();
         let buffer_offset = values.completed_buffers().len();
 
-        let mut validate_utf8 = decoder.check_utf8.take();
+        let mut validate_utf8 = decoder.check_utf8.load(Ordering::Relaxed);
 
         match (self, page_validity) {
             (Self::Plain(page_values), None) => {
@@ -136,8 +134,8 @@ impl<'a> StateTranslation<'a, BinViewDecoder> for BinaryStateTranslation<'a> {
 }
 
 #[derive(Default)]
-pub(super) struct BinViewDecoder {
-    check_utf8: Cell<bool>,
+pub(crate) struct BinViewDecoder {
+    check_utf8: AtomicBool,
 }
 
 impl DecodedState for DecodedStateTuple {
@@ -191,65 +189,6 @@ impl utils::Decoder for BinViewDecoder {
                 }
             },
             _ => unreachable!(),
-        }
-    }
-}
-
-pub struct BinaryViewArrayIter<I: CompressedPagesIter> {
-    iter: BasicDecompressor<I>,
-    data_type: ArrowDataType,
-    items: VecDeque<DecodedStateTuple>,
-    dict: Option<BinaryDict>,
-    chunk_size: Option<usize>,
-    remaining: usize,
-}
-impl<I: CompressedPagesIter> BinaryViewArrayIter<I> {
-    pub fn new(
-        iter: BasicDecompressor<I>,
-        data_type: ArrowDataType,
-        chunk_size: Option<usize>,
-        num_rows: usize,
-    ) -> Self {
-        Self {
-            iter,
-            data_type,
-            items: VecDeque::new(),
-            dict: None,
-            chunk_size,
-            remaining: num_rows,
-        }
-    }
-}
-
-impl<I: CompressedPagesIter> Iterator for BinaryViewArrayIter<I> {
-    type Item = PolarsResult<Box<dyn Array>>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        use utils::Decoder;
-
-        let decoder = BinViewDecoder::default();
-
-        loop {
-            let maybe_state = next(
-                &mut self.iter,
-                &mut self.items,
-                &mut self.dict,
-                &mut self.remaining,
-                self.chunk_size,
-                &decoder,
-            );
-            match maybe_state {
-                MaybeNext::Some(Ok(decoded)) => {
-                    return Some(
-                        decoder
-                            .finalize(self.data_type.clone(), decoded)
-                            .map_err(Into::into),
-                    )
-                },
-                MaybeNext::Some(Err(e)) => return Some(Err(e)),
-                MaybeNext::None => return None,
-                MaybeNext::More => continue,
-            }
         }
     }
 }

@@ -1,5 +1,3 @@
-use std::collections::VecDeque;
-
 use arrow::array::{Array, FixedSizeBinaryArray};
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
@@ -8,22 +6,19 @@ use polars_error::PolarsResult;
 use polars_utils::iter::FallibleIterator;
 
 use super::super::utils::{
-    dict_indices_decoder, extend_from_decoder, next, not_implemented, DecodedState, Decoder,
-    MaybeNext,
+    dict_indices_decoder, extend_from_decoder, not_implemented, DecodedState, Decoder,
 };
 use super::utils::FixedSizeBinary;
 use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use crate::parquet::encoding::Encoding;
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
-use crate::parquet::read::BasicDecompressor;
 use crate::read::deserialize::utils::filter::Filter;
 use crate::read::deserialize::utils::{self, PageValidity};
-use crate::read::CompressedPagesIter;
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
-enum StateTranslation<'a> {
+pub(crate) enum StateTranslation<'a> {
     Plain(std::slice::ChunksExact<'a, u8>),
     Dictionary(HybridRleDecoder<'a>, &'a [u8]),
 }
@@ -135,8 +130,8 @@ impl<'a> utils::StateTranslation<'a, BinaryDecoder> for StateTranslation<'a> {
     }
 }
 
-struct BinaryDecoder {
-    size: usize,
+pub(crate) struct BinaryDecoder {
+    pub(crate) size: usize,
 }
 
 impl DecodedState for (FixedSizeBinary, MutableBitmap) {
@@ -171,68 +166,5 @@ impl Decoder for BinaryDecoder {
             values.values.into(),
             validity.into(),
         )))
-    }
-}
-
-pub fn finish(
-    data_type: &ArrowDataType,
-    values: FixedSizeBinary,
-    validity: MutableBitmap,
-) -> FixedSizeBinaryArray {
-    FixedSizeBinaryArray::new(data_type.clone(), values.values.into(), validity.into())
-}
-
-pub struct Iter<I: CompressedPagesIter> {
-    iter: BasicDecompressor<I>,
-    data_type: ArrowDataType,
-    size: usize,
-    items: VecDeque<(FixedSizeBinary, MutableBitmap)>,
-    dict: Option<Vec<u8>>,
-    chunk_size: Option<usize>,
-    remaining: usize,
-}
-
-impl<I: CompressedPagesIter> Iter<I> {
-    pub fn new(
-        iter: BasicDecompressor<I>,
-        data_type: ArrowDataType,
-        num_rows: usize,
-        chunk_size: Option<usize>,
-    ) -> Self {
-        let size = FixedSizeBinaryArray::get_size(&data_type);
-        Self {
-            iter,
-            data_type,
-            size,
-            items: VecDeque::new(),
-            dict: None,
-            chunk_size,
-            remaining: num_rows,
-        }
-    }
-}
-
-impl<I: CompressedPagesIter> Iterator for Iter<I> {
-    type Item = PolarsResult<FixedSizeBinaryArray>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            let maybe_state = next(
-                &mut self.iter,
-                &mut self.items,
-                &mut self.dict,
-                &mut self.remaining,
-                self.chunk_size,
-                &BinaryDecoder { size: self.size },
-            );
-            match maybe_state {
-                MaybeNext::Some(Ok((values, validity))) => {
-                    return Some(Ok(finish(&self.data_type, values, validity)))
-                },
-                MaybeNext::Some(Err(e)) => return Some(Err(e)),
-                MaybeNext::None => return None,
-                MaybeNext::More => continue,
-            }
-        }
     }
 }

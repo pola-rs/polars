@@ -1,4 +1,4 @@
-use arrow::array::{Array, DictionaryKey, PrimitiveArray};
+use arrow::array::{Array, DictionaryKey, FixedSizeBinaryArray, PrimitiveArray};
 use arrow::datatypes::{ArrowDataType, IntervalUnit, TimeUnit};
 use arrow::match_integer_type;
 use arrow::types::{days_ms, i256};
@@ -46,9 +46,12 @@ pub fn page_iter_to_arrays<'a, I: CompressedPagesIter + 'a>(
 
     Ok(match (physical_type, data_type.to_logical_type()) {
         (_, Null) => null::iter_to_arrays(pages, data_type, chunk_size, num_rows),
-        (PhysicalType::Boolean, Boolean) => {
-            dyn_iter(boolean::Iter::new(pages, data_type, chunk_size, num_rows))
-        },
+        (PhysicalType::Boolean, Boolean) => Box::new(PageDecodeIter::new(
+            pages,
+            data_type,
+            num_rows,
+            boolean::BooleanDecoder,
+        )?),
         (PhysicalType::Int32, UInt8) => Box::new(PageDecodeIter::new(
             pages,
             data_type,
@@ -102,21 +105,33 @@ pub fn page_iter_to_arrays<'a, I: CompressedPagesIter + 'a>(
                 time_unit,
             );
         },
-        (PhysicalType::FixedLenByteArray(_), FixedSizeBinary(_)) => dyn_iter(
-            fixed_size_binary::Iter::new(pages, data_type, num_rows, chunk_size),
-        ),
+        (PhysicalType::FixedLenByteArray(_), FixedSizeBinary(_)) => {
+            let size = FixedSizeBinaryArray::get_size(&data_type);
+
+            Box::new(PageDecodeIter::new(
+                pages,
+                data_type,
+                num_rows,
+                fixed_size_binary::BinaryDecoder { size },
+            )?)
+        },
         (PhysicalType::FixedLenByteArray(12), Interval(IntervalUnit::YearMonth)) => {
+            // @TODO: Make a separate decoder for this
+
             let n = 12;
-            let pages = fixed_size_binary::Iter::new(
+            let pages = PageDecodeIter::new(
                 pages,
                 ArrowDataType::FixedSizeBinary(n),
                 num_rows,
-                chunk_size,
-            );
+                fixed_size_binary::BinaryDecoder { size: n },
+            )?;
 
             let pages = pages.map(move |maybe_array| {
                 let array = maybe_array?;
                 let values = array
+                    .as_any()
+                    .downcast_ref::<FixedSizeBinaryArray>()
+                    .unwrap()
                     .values()
                     .chunks_exact(n)
                     .map(|value: &[u8]| i32::from_le_bytes(value[..4].try_into().unwrap()))
@@ -131,17 +146,22 @@ pub fn page_iter_to_arrays<'a, I: CompressedPagesIter + 'a>(
             Box::new(arrays) as _
         },
         (PhysicalType::FixedLenByteArray(12), Interval(IntervalUnit::DayTime)) => {
+            // @TODO: Make a separate decoder for this
+
             let n = 12;
-            let pages = fixed_size_binary::Iter::new(
+            let pages = PageDecodeIter::new(
                 pages,
                 ArrowDataType::FixedSizeBinary(n),
                 num_rows,
-                chunk_size,
-            );
+                fixed_size_binary::BinaryDecoder { size: n },
+            )?;
 
             let pages = pages.map(move |maybe_array| {
                 let array = maybe_array?;
                 let values = array
+                    .as_any()
+                    .downcast_ref::<FixedSizeBinaryArray>()
+                    .unwrap()
                     .values()
                     .chunks_exact(n)
                     .map(super::super::convert_days_ms)
@@ -173,18 +193,23 @@ pub fn page_iter_to_arrays<'a, I: CompressedPagesIter + 'a>(
             )
         },
         (PhysicalType::FixedLenByteArray(n), Decimal(_, _)) => {
+            // @TODO: Make a separate decoder for this
+
             let n = *n;
 
-            let pages = fixed_size_binary::Iter::new(
+            let pages = PageDecodeIter::new(
                 pages,
                 ArrowDataType::FixedSizeBinary(n),
                 num_rows,
-                chunk_size,
-            );
+                fixed_size_binary::BinaryDecoder { size: n },
+            )?;
 
             let pages = pages.map(move |maybe_array| {
                 let array = maybe_array?;
                 let values = array
+                    .as_any()
+                    .downcast_ref::<FixedSizeBinaryArray>()
+                    .unwrap()
                     .values()
                     .chunks_exact(n)
                     .map(|value: &[u8]| super::super::convert_i128(value, n))
@@ -215,18 +240,23 @@ pub fn page_iter_to_arrays<'a, I: CompressedPagesIter + 'a>(
             ),
         )?),
         (PhysicalType::FixedLenByteArray(n), Decimal256(_, _)) if *n <= 16 => {
+            // @TODO: Make a separate decoder for this
+
             let n = *n;
 
-            let pages = fixed_size_binary::Iter::new(
+            let pages = PageDecodeIter::new(
                 pages,
                 ArrowDataType::FixedSizeBinary(n),
                 num_rows,
-                chunk_size,
-            );
+                fixed_size_binary::BinaryDecoder { size: n },
+            )?;
 
             let pages = pages.map(move |maybe_array| {
                 let array = maybe_array?;
                 let values = array
+                    .as_any()
+                    .downcast_ref::<FixedSizeBinaryArray>()
+                    .unwrap()
                     .values()
                     .chunks_exact(n)
                     .map(|value: &[u8]| i256(I256::new(super::super::convert_i128(value, n))))
@@ -241,18 +271,23 @@ pub fn page_iter_to_arrays<'a, I: CompressedPagesIter + 'a>(
             Box::new(arrays) as _
         },
         (PhysicalType::FixedLenByteArray(n), Decimal256(_, _)) if *n <= 32 => {
+            // @TODO: Make a separate decoder for this
+
             let n = *n;
 
-            let pages = fixed_size_binary::Iter::new(
+            let pages = PageDecodeIter::new(
                 pages,
                 ArrowDataType::FixedSizeBinary(n),
                 num_rows,
-                chunk_size,
-            );
+                fixed_size_binary::BinaryDecoder { size: n },
+            )?;
 
             let pages = pages.map(move |maybe_array| {
                 let array = maybe_array?;
                 let values = array
+                    .as_any()
+                    .downcast_ref::<FixedSizeBinaryArray>()
+                    .unwrap()
                     .values()
                     .chunks_exact(n)
                     .map(super::super::convert_i256)
@@ -308,15 +343,18 @@ pub fn page_iter_to_arrays<'a, I: CompressedPagesIter + 'a>(
             PrimitiveDecoder::new(UnitDecoderFunction::<f64>::default()),
         )?),
         // Don't compile this code with `i32` as we don't use this in polars
-        (PhysicalType::ByteArray, LargeBinary | LargeUtf8) => {
-            Box::new(binary::BinaryArrayIter::<i64, _>::new(
-                pages, data_type, chunk_size, num_rows,
-            ))
-        },
-        (PhysicalType::ByteArray, BinaryView | Utf8View) => Box::new(
-            binview::BinaryViewArrayIter::new(pages, data_type, chunk_size, num_rows),
-        ),
-
+        (PhysicalType::ByteArray, LargeBinary | LargeUtf8) => Box::new(PageDecodeIter::new(
+            pages,
+            data_type,
+            num_rows,
+            binary::BinaryDecoder::<i64>::default(),
+        )?),
+        (PhysicalType::ByteArray, BinaryView | Utf8View) => Box::new(PageDecodeIter::new(
+            pages,
+            data_type,
+            num_rows,
+            binview::BinViewDecoder::default(),
+        )?),
         (_, Dictionary(key_type, _, _)) => {
             return match_integer_type!(key_type, |$K| {
                 dict_read::<$K, _>(pages, physical_type, logical_type, data_type, num_rows, chunk_size)
