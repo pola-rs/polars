@@ -174,7 +174,9 @@ pub fn expand_paths_hive(
 
                     let prefix = object_path_from_string(cloud_location.prefix.clone())?;
 
-                    let out = if !path.ends_with("/") && cloud_location.expansion.is_none() {
+                    let out = if !path.ends_with("/") && cloud_location.expansion.is_none() && {
+                        is_cloud || PathBuf::from(path).is_file()
+                    } {
                         (
                             0,
                             vec![PathBuf::from(format_path(
