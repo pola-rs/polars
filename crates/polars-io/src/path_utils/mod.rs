@@ -174,10 +174,7 @@ pub fn expand_paths_hive(
 
                     let prefix = object_path_from_string(cloud_location.prefix.clone())?;
 
-                    let out = if !path.ends_with("/")
-                        && cloud_location.expansion.is_none()
-                        && store.head(&prefix).await.is_ok()
-                    {
+                    let out = if !path.ends_with("/") && cloud_location.expansion.is_none() {
                         (
                             0,
                             vec![PathBuf::from(format_path(
