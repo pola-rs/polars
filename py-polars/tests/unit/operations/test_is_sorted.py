@@ -407,3 +407,14 @@ def test_sorted_flag_group_by_dynamic() -> None:
 
 def test_is_sorted_rle_id() -> None:
     assert pl.Series([12, 3345, 12, 3, 4, 4, 1, 12]).rle_id().flags["SORTED_ASC"]
+
+
+def test_is_sorted_chunked_select() -> None:
+    df = pl.DataFrame({
+        "a": np.ones(14)
+    })
+
+    assert (pl.concat([df, df, df], rechunk=False)
+            .set_sorted("a")
+            .select(pl.col("a").alias("b"))
+            )["b"].flags["SORTED_ASC"]
