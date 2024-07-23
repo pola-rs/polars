@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pytest
+from packaging.version import parse as parse_version
 from pydantic import BaseModel, Field, TypeAdapter
 
 import polars as pl
@@ -957,6 +958,19 @@ def test_init_pandas(monkeypatch: Any) -> None:
     )
     assert df.schema == {"colx": pl.Datetime("us")}
     assert df.rows() == [(datetime(2022, 10, 31, 10, 30, 45, 123456),)]
+
+    # pandas is not available
+    monkeypatch.setattr(pl.dataframe.frame, "_check_for_pandas", lambda x: False)
+
+    # pandas 2.2 and higher implement the Arrow PyCapsule Interface, so the constructor
+    # will still work even without using pandas APIs
+    if parse_version(pd.__version__) >= parse_version("2.2.0"):
+        df = pl.DataFrame(pandas_df)
+        assert_frame_equal(df, expected)
+
+    else:
+        with pytest.raises(TypeError):
+            pl.DataFrame(pandas_df)
 
 
 def test_init_errors() -> None:
