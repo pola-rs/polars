@@ -105,7 +105,7 @@ def read_ipc(
         # change to the `storage_options` parameter.
     ):
         if is_hf and use_pyarrow:
-            msg = f"`use_pyarrow=True` is not supported for Hugging Face"
+            msg = "`use_pyarrow=True` is not supported for Hugging Face"
             raise ValueError(msg)
 
         lf = scan_ipc(
