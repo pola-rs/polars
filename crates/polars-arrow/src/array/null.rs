@@ -31,7 +31,11 @@ impl NullArray {
 
         let validity = Bitmap::new_zeroed(length);
 
-        Ok(Self { data_type, validity, length })
+        Ok(Self {
+            data_type,
+            validity,
+            length,
+        })
     }
 
     /// Returns a new [`NullArray`].
