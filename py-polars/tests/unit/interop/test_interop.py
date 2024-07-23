@@ -753,7 +753,13 @@ def test_compat_level(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_df_pycapsule_interface() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]})
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3],
+            "b": ["a", "b", "c"],
+            "c": ["fooooooooooooooooooooo", "bar", "looooooooooooooooong string"],
+        }
+    )
     out = pa.table(PyCapsuleStreamHolder(df))
     assert df.shape == out.shape
     assert df.schema.names() == out.schema.names
