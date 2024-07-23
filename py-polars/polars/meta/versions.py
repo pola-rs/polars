@@ -28,7 +28,7 @@ def show_versions() -> None:
     gevent:               24.2.1
     hvplot:               0.9.2
     matplotlib:           3.8.4
-    nest_asyncio:         1.6.0
+    greenlet:             3.0.3
     numpy:                1.26.4
     openpyxl:             3.1.2
     pandas:               2.2.2
@@ -72,7 +72,7 @@ def _get_dependency_info() -> dict[str, str]:
         "great_tables",
         "hvplot",
         "matplotlib",
-        "nest_asyncio",
+        "greenlet",
         "numpy",
         "openpyxl",
         "pandas",

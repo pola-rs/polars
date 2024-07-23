@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from polars.convert import from_arrow
 from polars.dependencies import import_optional
@@ -15,6 +15,8 @@ if TYPE_CHECKING:
     else:
         from typing_extensions import TypeAlias
 
+    import greenlet
+
     from polars import DataFrame
     from polars._typing import SchemaDict
 
@@ -23,10 +25,29 @@ if TYPE_CHECKING:
     except ImportError:
         Selectable: TypeAlias = Any  # type: ignore[no-redef]
 
+    T_co = TypeVar("T_co", covariant=True)
 
-def _run_async(co: Coroutine[Any, Any, Any]) -> Any:
+
+def _check_is_sa_greenlet(green: greenlet.greenlet) -> bool:
+    return getattr(green, "__sqlalchemy_greenlet_provider__", False)
+
+
+def _greenlet_wait(co: Coroutine[Any, Any, T_co]) -> T_co:
+    """Compotable with sqlalchemy."""
+    from polars.dependencies import import_optional
+
+    if TYPE_CHECKING:
+        from sqlalchemy import util as sa_util
+    else:
+        sa_util = import_optional("sqlalchemy.util")
+
+    return sa_util.await_only(co)
+
+
+def _run_async(co: Coroutine[Any, Any, T_co]) -> T_co:
     """Run asynchronous code as if it was synchronous."""
     import asyncio
+    from concurrent.futures import ThreadPoolExecutor, wait
 
     from polars._utils.unstable import issue_unstable_warning
     from polars.dependencies import import_optional
@@ -35,9 +56,20 @@ def _run_async(co: Coroutine[Any, Any, Any]) -> Any:
         "Use of asynchronous connections is currently considered unstable "
         "and unexpected issues may arise; if this happens, please report them."
     )
-    nest_asyncio = import_optional("nest_asyncio")
-    nest_asyncio.apply()
-    return asyncio.run(co)
+
+    if TYPE_CHECKING:
+        import greenlet
+    else:
+        greenlet = import_optional("greenlet")
+
+    current = greenlet.getcurrent()
+    if _check_is_sa_greenlet(current):
+        return _greenlet_wait(co)
+
+    with ThreadPoolExecutor(1) as executor:
+        future = executor.submit(asyncio.run, co)
+        wait([future], return_when="ALL_COMPLETED")
+        return future.result()
 
 
 def _read_sql_connectorx(
