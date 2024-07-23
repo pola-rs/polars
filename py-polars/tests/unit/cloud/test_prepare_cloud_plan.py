@@ -6,6 +6,7 @@ import pytest
 
 import polars as pl
 from polars._utils.cloud import prepare_cloud_plan
+from polars.exceptions import InvalidOperationError
 
 CLOUD_SOURCE = "s3://my-nonexistent-bucket/dataset"
 CLOUD_SINK = "s3://my-nonexistent-bucket/result"
@@ -80,7 +81,8 @@ def test_prepare_cloud_plan_optimization_toggle() -> None:
 )
 def test_prepare_cloud_plan_fail_on_udf(lf: pl.LazyFrame) -> None:
     with pytest.raises(
-        ValueError, match="logical plan ineligible for execution on Polars Cloud"
+        InvalidOperationError,
+        match="logical plan ineligible for execution on Polars Cloud",
     ):
         prepare_cloud_plan(lf, CLOUD_SINK)
 
@@ -96,7 +98,8 @@ def test_prepare_cloud_plan_fail_on_udf(lf: pl.LazyFrame) -> None:
 )
 def test_prepare_cloud_plan_fail_on_local_data_source(lf: pl.LazyFrame) -> None:
     with pytest.raises(
-        ValueError, match="logical plan ineligible for execution on Polars Cloud"
+        InvalidOperationError,
+        match="logical plan ineligible for execution on Polars Cloud",
     ):
         prepare_cloud_plan(lf, CLOUD_SINK)
 
@@ -110,6 +113,7 @@ def test_prepare_cloud_plan_fail_on_python_scan(tmp_path: Path) -> None:
 
     lf = pl.scan_pyarrow_dataset(dataset)
     with pytest.raises(
-        ValueError, match="logical plan ineligible for execution on Polars Cloud"
+        InvalidOperationError,
+        match="logical plan ineligible for execution on Polars Cloud",
     ):
         prepare_cloud_plan(lf, CLOUD_SINK)
