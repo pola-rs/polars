@@ -97,13 +97,17 @@ def read_ipc(
         isinstance(v := source, (str, Path))
     ) and (
         # HuggingFace only for now ⊂( ◜◒◝ )⊃
-        str(v).startswith("hf://")
+        (is_hf := str(v).startswith("hf://"))
         # Also dispatch on FORCE_ASYNC, so that this codepath gets run
         # through by our test suite during CI.
         or os.getenv("POLARS_FORCE_ASYNC") == "1"
         # TODO: Dispatch all paths to `scan_ipc` - this will need a breaking
         # change to the `storage_options` parameter.
     ):
+        if is_hf and use_pyarrow:
+            msg = f"`use_pyarrow=True` is not supported for Hugging Face"
+            raise ValueError(msg)
+
         lf = scan_ipc(
             source,  # type: ignore[arg-type]
             n_rows=n_rows,
