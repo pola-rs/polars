@@ -748,12 +748,10 @@ class Series:
         return self._from_pyseries(f(other))
 
     @overload  # type: ignore[override]
-    def __eq__(self, other: Expr) -> Expr:
-        ...  # type: ignore[overload-overlap]
+    def __eq__(self, other: Expr) -> Expr: ...  # type: ignore[overload-overlap]
 
     @overload
-    def __eq__(self, other: Any) -> Series:
-        ...
+    def __eq__(self, other: Any) -> Series: ...
 
     def __eq__(self, other: Any) -> Series | Expr:
         warn_null_comparison(other)
@@ -766,8 +764,7 @@ class Series:
         ...
 
     @overload
-    def __ne__(self, other: Any) -> Series:
-        ...
+    def __ne__(self, other: Any) -> Series: ...
 
     def __ne__(self, other: Any) -> Series | Expr:
         warn_null_comparison(other)
@@ -780,8 +777,7 @@ class Series:
         ...
 
     @overload
-    def __gt__(self, other: Any) -> Series:
-        ...
+    def __gt__(self, other: Any) -> Series: ...
 
     def __gt__(self, other: Any) -> Series | Expr:
         warn_null_comparison(other)
@@ -794,8 +790,7 @@ class Series:
         ...
 
     @overload
-    def __lt__(self, other: Any) -> Series:
-        ...
+    def __lt__(self, other: Any) -> Series: ...
 
     def __lt__(self, other: Any) -> Series | Expr:
         warn_null_comparison(other)
@@ -808,8 +803,7 @@ class Series:
         ...
 
     @overload
-    def __ge__(self, other: Any) -> Series:
-        ...
+    def __ge__(self, other: Any) -> Series: ...
 
     def __ge__(self, other: Any) -> Series | Expr:
         warn_null_comparison(other)
@@ -822,8 +816,7 @@ class Series:
         ...
 
     @overload
-    def __le__(self, other: Any) -> Series:
-        ...
+    def __le__(self, other: Any) -> Series: ...
 
     def __le__(self, other: Any) -> Series | Expr:
         warn_null_comparison(other)
@@ -836,8 +829,7 @@ class Series:
         ...
 
     @overload
-    def le(self, other: Any) -> Series:
-        ...
+    def le(self, other: Any) -> Series: ...
 
     def le(self, other: Any) -> Series | Expr:
         """Method equivalent of operator expression `series <= other`."""
@@ -848,8 +840,7 @@ class Series:
         ...
 
     @overload
-    def lt(self, other: Any) -> Series:
-        ...
+    def lt(self, other: Any) -> Series: ...
 
     def lt(self, other: Any) -> Series | Expr:
         """Method equivalent of operator expression `series < other`."""
@@ -860,8 +851,7 @@ class Series:
         ...
 
     @overload
-    def eq(self, other: Any) -> Series:
-        ...
+    def eq(self, other: Any) -> Series: ...
 
     def eq(self, other: Any) -> Series | Expr:
         """Method equivalent of operator expression `series == other`."""
@@ -872,8 +862,7 @@ class Series:
         ...
 
     @overload
-    def eq_missing(self, other: Any) -> Series:
-        ...
+    def eq_missing(self, other: Any) -> Series: ...
 
     def eq_missing(self, other: Any) -> Series | Expr:
         """
@@ -921,8 +910,7 @@ class Series:
         ...
 
     @overload
-    def ne(self, other: Any) -> Series:
-        ...
+    def ne(self, other: Any) -> Series: ...
 
     def ne(self, other: Any) -> Series | Expr:
         """Method equivalent of operator expression `series != other`."""
@@ -933,8 +921,7 @@ class Series:
         ...
 
     @overload
-    def ne_missing(self, other: Any) -> Series:
-        ...
+    def ne_missing(self, other: Any) -> Series: ...
 
     def ne_missing(self, other: Any) -> Series | Expr:
         """
@@ -982,8 +969,7 @@ class Series:
         ...
 
     @overload
-    def ge(self, other: Any) -> Series:
-        ...
+    def ge(self, other: Any) -> Series: ...
 
     def ge(self, other: Any) -> Series | Expr:
         """Method equivalent of operator expression `series >= other`."""
@@ -994,8 +980,7 @@ class Series:
         ...
 
     @overload
-    def gt(self, other: Any) -> Series:
-        ...
+    def gt(self, other: Any) -> Series: ...
 
     def gt(self, other: Any) -> Series | Expr:
         """Method equivalent of operator expression `series > other`."""
@@ -1053,8 +1038,7 @@ class Series:
         ...
 
     @overload
-    def __add__(self, other: Any) -> Self:
-        ...
+    def __add__(self, other: Any) -> Self: ...
 
     def __add__(self, other: Any) -> Self | DataFrame | Expr:
         if isinstance(other, str):
@@ -1070,8 +1054,7 @@ class Series:
         ...
 
     @overload
-    def __sub__(self, other: Any) -> Self:
-        ...
+    def __sub__(self, other: Any) -> Self: ...
 
     def __sub__(self, other: Any) -> Self | Expr:
         if isinstance(other, pl.Expr):
@@ -1100,8 +1083,7 @@ class Series:
         ...
 
     @overload
-    def __truediv__(self, other: Any) -> Series:
-        ...
+    def __truediv__(self, other: Any) -> Series: ...
 
     def __truediv__(self, other: Any) -> Series | Expr:
         if isinstance(other, pl.Expr):
@@ -1123,8 +1105,7 @@ class Series:
         ...
 
     @overload
-    def __floordiv__(self, other: Any) -> Series:
-        ...
+    def __floordiv__(self, other: Any) -> Series: ...
 
     def __floordiv__(self, other: Any) -> Series | Expr:
         if isinstance(other, pl.Expr):
@@ -1149,8 +1130,7 @@ class Series:
         ...
 
     @overload
-    def __mul__(self, other: Any) -> Series:
-        ...
+    def __mul__(self, other: Any) -> Series: ...
 
     def __mul__(self, other: Any) -> Series | DataFrame | Expr:
         if isinstance(other, pl.Expr):
@@ -1168,8 +1148,7 @@ class Series:
         ...
 
     @overload
-    def __mod__(self, other: Any) -> Series:
-        ...
+    def __mod__(self, other: Any) -> Series: ...
 
     def __mod__(self, other: Any) -> Series | Expr:
         if isinstance(other, pl.Expr):
@@ -1272,12 +1251,10 @@ class Series:
                 yield from self.slice(offset, buffer_size).to_list()
 
     @overload
-    def __getitem__(self, key: SingleIndexSelector) -> Any:
-        ...
+    def __getitem__(self, key: SingleIndexSelector) -> Any: ...
 
     @overload
-    def __getitem__(self, key: MultiIndexSelector) -> Series:
-        ...
+    def __getitem__(self, key: MultiIndexSelector) -> Series: ...
 
     def __getitem__(
         self, key: SingleIndexSelector | MultiIndexSelector
@@ -1605,12 +1582,10 @@ class Series:
         """
 
     @overload
-    def any(self, *, ignore_nulls: Literal[True] = ...) -> bool:
-        ...
+    def any(self, *, ignore_nulls: Literal[True] = ...) -> bool: ...
 
     @overload
-    def any(self, *, ignore_nulls: bool) -> bool | None:
-        ...
+    def any(self, *, ignore_nulls: bool) -> bool | None: ...
 
     def any(self, *, ignore_nulls: bool = True) -> bool | None:
         """
@@ -1649,12 +1624,10 @@ class Series:
         return self._s.any(ignore_nulls=ignore_nulls)
 
     @overload
-    def all(self, *, ignore_nulls: Literal[True] = ...) -> bool:
-        ...
+    def all(self, *, ignore_nulls: Literal[True] = ...) -> bool: ...
 
     @overload
-    def all(self, *, ignore_nulls: bool) -> bool | None:
-        ...
+    def all(self, *, ignore_nulls: bool) -> bool | None: ...
 
     def all(self, *, ignore_nulls: bool = True) -> bool | None:
         """
@@ -3396,16 +3369,14 @@ class Series:
     @overload
     def search_sorted(
         self, element: NonNestedLiteral | None, side: SearchSortedSide = ...
-    ) -> int:
-        ...
+    ) -> int: ...
 
     @overload
     def search_sorted(
         self,
         element: list[NonNestedLiteral | None] | np.ndarray[Any, Any] | Expr | Series,
         side: SearchSortedSide = ...,
-    ) -> Series:
-        ...
+    ) -> Series: ...
 
     def search_sorted(
         self,
