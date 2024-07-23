@@ -38,6 +38,14 @@ def test_prepare_cloud_plan_sink_added() -> None:
     assert "SINK (cloud)" in deserialized.explain()
 
 
+def test_prepare_cloud_plan_invalid_sink_uri() -> None:
+    lf = pl.LazyFrame({"a": [1, 2], "b": [3, 4]})
+    local_path = "~/local/result.parquet"
+
+    with pytest.raises(InvalidOperationError, match="non-cloud paths not supported"):
+        prepare_cloud_plan(lf, local_path)
+
+
 def test_prepare_cloud_plan_optimization_toggle() -> None:
     lf = pl.LazyFrame({"a": [1, 2], "b": [3, 4]})
 
