@@ -237,7 +237,7 @@ impl StringNameSpace {
         )
     }
 
-    /// Find the index of a substring defined by a regular expressons within another string value.
+    /// Find the index of a substring defined by a regular expressions within another string value.
     #[cfg(feature = "regex")]
     pub fn find(self, pat: Expr, strict: bool) -> Expr {
         self.0.map_many_private(

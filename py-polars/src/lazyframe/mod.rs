@@ -599,12 +599,12 @@ impl PyLazyFrame {
         Ok((df.into(), time_df.into()))
     }
 
-    fn collect(&self, py: Python, lamdba_post_opt: Option<PyObject>) -> PyResult<PyDataFrame> {
+    fn collect(&self, py: Python, lambda_post_opt: Option<PyObject>) -> PyResult<PyDataFrame> {
         // if we don't allow threads and we have udfs trying to acquire the gil from different
         // threads we deadlock.
         let df = py.allow_threads(|| {
             let ldf = self.ldf.clone();
-            if let Some(lambda) = lamdba_post_opt {
+            if let Some(lambda) = lambda_post_opt {
                 ldf._collect_post_opt(|root, lp_arena, expr_arena| {
                     Python::with_gil(|py| {
                         let nt = NodeTraverser::new(
