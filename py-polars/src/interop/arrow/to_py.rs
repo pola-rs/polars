@@ -71,7 +71,10 @@ pub(crate) fn series_to_stream<'py>(
     PyCapsule::new_bound(py, stream, Some(stream_capsule_name))
 }
 
-pub(crate) fn dataframe_to_stream(df: DataFrame, py: Python) -> PyResult<Bound<'_, PyCapsule>> {
+pub(crate) fn dataframe_to_stream<'py>(
+    df: &'py DataFrame,
+    py: Python<'py>,
+) -> PyResult<Bound<'py, PyCapsule>> {
     let iter = Box::new(DataFrameStreamIterator::new(df));
     let field = iter.field();
     let stream = ffi::export_iterator(iter, field);
@@ -87,7 +90,7 @@ pub struct DataFrameStreamIterator {
 }
 
 impl DataFrameStreamIterator {
-    fn new(df: DataFrame) -> Self {
+    fn new(df: &DataFrame) -> Self {
         let schema = df.schema().to_arrow(CompatLevel::newest());
         let data_type = ArrowDataType::Struct(schema.fields);
 

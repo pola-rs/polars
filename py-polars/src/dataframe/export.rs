@@ -140,6 +140,6 @@ impl PyDataFrame {
         requested_schema: Option<PyObject>,
     ) -> PyResult<Bound<'py, PyCapsule>> {
         self.df.align_chunks();
-        dataframe_to_stream(self.df.clone(), py)
+        dataframe_to_stream(&self.df, py)
     }
 }
