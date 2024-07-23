@@ -421,26 +421,27 @@ def read_csv(
     if not infer_schema:
         infer_schema_length = 0
 
+    # TODO: scan_csv doesn't support a "dtype slice" (i.e. list[DataType])
+    schema_overrides_is_list = isinstance(schema_overrides, Sequence)
+
     if (
-        # TODO: scan_csv doesn't support a "dtype slice" (i.e. list[DataType])
-        schema_overrides is None or isinstance(schema_overrides, dict)
+        # Check that it is not a BytesIO object
+        isinstance(v := source, (str, Path))
     ) and (
-        (
-            # Check that it is not a BytesIO object
-            isinstance(v := source, (str, Path))
-        )
-        and (
-            # HuggingFace only for now ⊂( ◜◒◝ )⊃
-            str(v).startswith("hf://")
-            # Also dispatch on FORCE_ASYNC, so that this codepath gets run
-            # through by our test suite during CI.
-            or os.getenv("POLARS_FORCE_ASYNC") == "1"
-            # TODO: We can't dispatch this for all paths due to a few reasons:
-            # * `scan_csv` does not support compressed files
-            # * The `storage_options` configuration keys are different between
-            #   fsspec and object_store (would require a breaking change)
-        )
+        # HuggingFace only for now ⊂( ◜◒◝ )⊃
+        str(v).startswith("hf://")
+        # Also dispatch on FORCE_ASYNC, so that this codepath gets run
+        # through by our test suite during CI.
+        or (os.getenv("POLARS_FORCE_ASYNC") == "1" and not schema_overrides_is_list)
+        # TODO: We can't dispatch this for all paths due to a few reasons:
+        # * `scan_csv` does not support compressed files
+        # * The `storage_options` configuration keys are different between
+        #   fsspec and object_store (would require a breaking change)
     ):
+        if schema_overrides_is_list:
+            msg = "passing a list to `schema_overrides` is unsupported for hf:// paths"
+            raise ValueError(msg)
+
         lf = _scan_csv_impl(
             source,  # type: ignore[arg-type]
             has_header=has_header,
