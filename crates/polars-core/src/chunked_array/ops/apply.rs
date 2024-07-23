@@ -116,7 +116,7 @@ where
         ChunkedArray::try_from_chunk_iter(self.name(), iter)
     }
 
-    pub fn apply_to_buffer_generic<'a, F>(&'a self, mut f: F) -> StringChunked
+    pub fn apply_to_string_amortized<'a, F>(&'a self, mut f: F) -> StringChunked
     where
         F: FnMut(T::Physical<'a>, &mut String),
     {
@@ -139,7 +139,7 @@ where
         ChunkedArray::from_chunk_iter(self.name(), chunks)
     }
 
-    pub fn try_apply_to_buffer_generic<'a, F, E>(&'a self, mut f: F) -> Result<StringChunked, E>
+    pub fn try_apply_to_string_amortized<'a, F, E>(&'a self, mut f: F) -> Result<StringChunked, E>
     where
         F: FnMut(T::Physical<'a>, &mut String) -> Result<(), E>,
     {
@@ -148,7 +148,7 @@ where
             .downcast_iter()
             .map(|arr| {
                 let mut mutarr = MutablePlString::with_capacity(arr.len());
-                arr.iter().try_for_each(|opt| {
+                for opt in arr.iter() {
                     match opt {
                         None => mutarr.push_null(),
                         Some(v) => {
@@ -157,8 +157,7 @@ where
                             mutarr.push_value(&buf)
                         },
                     };
-                    Ok::<(), E>(())
-                })?;
+                }
                 Ok(mutarr.freeze())
             })
             .collect::<Vec<_>>();
