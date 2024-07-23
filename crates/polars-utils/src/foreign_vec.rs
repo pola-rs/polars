@@ -1,5 +1,4 @@
 /// This is pulled out of https://github.com/DataEngineeringLabs/foreign_vec
-
 use std::mem::ManuallyDrop;
 use std::ops::DerefMut;
 use std::vec::Vec;
@@ -66,11 +65,11 @@ impl<D, T> Drop for ForeignVec<D, T> {
         match self.allocation {
             Allocation::Foreign(_) => {
                 // the foreign is dropped via its `Drop`
-            }
+            },
             Allocation::Native => {
                 let data = core::mem::take(&mut self.data);
                 let _ = ManuallyDrop::into_inner(data);
-            }
+            },
         }
     }
 }

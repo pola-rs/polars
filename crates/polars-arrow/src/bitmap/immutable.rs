@@ -410,15 +410,15 @@ impl Bitmap {
         });
 
         let zero_bytes = rwlock_zero_bytes.upgradable_read();
-        let bytes = if zero_bytes.len() * 8 < length {
+        let bytes = if zero_bytes.len() * 8 >= length {
+            zero_bytes.clone()
+        } else {
             let bytes = Arc::new(Bytes::from(vec![0; length.div_ceil(8)]));
 
             let mut zero_bytes = RwLockUpgradableReadGuard::upgrade(zero_bytes);
             *zero_bytes = bytes.clone();
 
             bytes
-        } else {
-            zero_bytes.clone()
         };
 
         Bitmap {
