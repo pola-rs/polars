@@ -32,12 +32,14 @@ def prepare_cloud_plan(
 
     Raises
     ------
-    ValueError
+    InvalidOperationError
         If the given LazyFrame is not eligible to be run on Polars Cloud.
         The following conditions will disqualify a LazyFrame from being eligible:
 
         - Contains a user-defined function
         - Scans or sinks to a local filesystem
+    ComputeError
+        If the given LazyFrame cannot be serialized.
     """
     uri = normalize_filepath(uri)
     pylf = lf._set_sink_optimizations(**optimizations)
