@@ -13,6 +13,7 @@ import polars as pl
 from polars.exceptions import ComputeError, UnstableWarning
 from polars.interchange.protocol import CompatLevel
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.utils.pycapsule_utils import PyCapsuleStreamHolder
 
 
 def test_arrow_list_roundtrip() -> None:
@@ -752,26 +753,8 @@ def test_compat_level(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_df_pycapsule_interface() -> None:
-    class PyCapsuleStreamHolder:
-        """
-        Hold the Arrow C Stream pycapsule.
-
-        A class that exposes _only_ the Arrow C Stream interface via Arrow PyCapsules.
-        This ensures that pyarrow is seeing _only_ the `__arrow_c_stream__` dunder, and
-        that nothing else (e.g. the dataframe or array interface) is actually being
-        used.
-        """
-
-        capsule: object
-
-        def __init__(self, capsule: object) -> None:
-            self.capsule = capsule
-
-        def __arrow_c_stream__(self, requested_schema: object) -> object:
-            return self.capsule
-
     df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]})
-    out = pa.table(PyCapsuleStreamHolder(df.__arrow_c_stream__(None)))
+    out = pa.table(PyCapsuleStreamHolder(df))
     assert df.shape == out.shape
     assert df.schema.names() == out.schema.names
 

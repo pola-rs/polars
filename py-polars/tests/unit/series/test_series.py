@@ -29,6 +29,7 @@ from polars.exceptions import (
     ShapeError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.utils.pycapsule_utils import PyCapsuleStreamHolder
 
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
@@ -629,26 +630,8 @@ def test_arrow() -> None:
 
 
 def test_pycapsule_interface() -> None:
-    class PyCapsuleSeriesHolder:
-        """
-        Hold the Arrow C Stream pycapsule.
-
-        A class that exposes _only_ the Arrow C Stream interface via Arrow PyCapsules.
-        This ensures that pyarrow is seeing _only_ the `__arrow_c_stream__` dunder, and
-        that nothing else (e.g. the dataframe or array interface) is actually being
-        used.
-        """
-
-        capsule: object
-
-        def __init__(self, capsule: object):
-            self.capsule = capsule
-
-        def __arrow_c_stream__(self, requested_schema: object) -> object:
-            return self.capsule
-
     a = pl.Series("a", [1, 2, 3, None])
-    out = pa.chunked_array(PyCapsuleSeriesHolder(a.__arrow_c_stream__(None)))
+    out = pa.chunked_array(PyCapsuleStreamHolder(a))
     out_arr = out.combine_chunks()
     assert out_arr == pa.array([1, 2, 3, None])
 
