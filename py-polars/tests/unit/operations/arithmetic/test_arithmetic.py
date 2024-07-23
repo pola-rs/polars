@@ -605,6 +605,51 @@ def test_array_arithmetic_same_size(
     )
 
 
+@pytest.mark.parametrize(
+    ("expected", "expr", "column_names"),
+    [
+        ([[2, 4], [6]], lambda a, b: a + b, ("a", "a")),
+        ([[0, 0], [0]], lambda a, b: a - b, ("a", "a")),
+        ([[1, 4], [9]], lambda a, b: a * b, ("a", "a")),
+        ([[1.0, 1.0], [1.0]], lambda a, b: a / b, ("a", "a")),
+        ([[0, 0], [0]], lambda a, b: a % b, ("a", "a")),
+        (
+            [[3, 4], [7]],
+            lambda a, b: a + b,
+            ("a", "uint8"),
+        ),
+        (
+            [[[2, 4]], [[6]]],
+            lambda a, b: a + b,
+            ("nested", "nested"),
+        ),
+    ],
+)
+def test_list_arithmetic_same_size(
+    expected: Any,
+    expr: Callable[[pl.Series | pl.Expr, pl.Series | pl.Expr], pl.Series],
+    column_names: tuple[str, str],
+) -> None:
+    print(expected)
+    df = pl.DataFrame(
+        [
+            pl.Series("a", [[1, 2], [3]]),
+            pl.Series("uint8", [[2, 2], [4]]),
+            pl.Series("nested", [[[1, 2]], [[3]]]),
+        ]
+    )
+    # Expr-based arithmetic:
+    assert_frame_equal(
+        df.select(expr(pl.col(column_names[0]), pl.col(column_names[1]))),
+        pl.Series(column_names[0], expected).to_frame(),
+    )
+    # Direct arithmetic on the Series:
+    assert_series_equal(
+        expr(df[column_names[0]], df[column_names[1]]),
+        pl.Series(column_names[0], expected),
+    )
+
+
 def test_schema_owned_arithmetic_5669() -> None:
     df = (
         pl.LazyFrame({"A": [1, 2, 3]})
