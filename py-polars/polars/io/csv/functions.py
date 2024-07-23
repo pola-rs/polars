@@ -423,6 +423,7 @@ def read_csv(
 
     # TODO: scan_csv doesn't support a "dtype slice" (i.e. list[DataType])
     schema_overrides_is_list = isinstance(schema_overrides, Sequence)
+    encoding_supported_in_lazy = encoding in {"utf8", "utf8-lossy"}
 
     if (
         # Check that it is not a BytesIO object
@@ -432,7 +433,11 @@ def read_csv(
         str(v).startswith("hf://")
         # Also dispatch on FORCE_ASYNC, so that this codepath gets run
         # through by our test suite during CI.
-        or (os.getenv("POLARS_FORCE_ASYNC") == "1" and not schema_overrides_is_list)
+        or (
+            os.getenv("POLARS_FORCE_ASYNC") == "1"
+            and not schema_overrides_is_list
+            and encoding_supported_in_lazy
+        )
         # TODO: We can't dispatch this for all paths due to a few reasons:
         # * `scan_csv` does not support compressed files
         # * The `storage_options` configuration keys are different between
@@ -440,6 +445,9 @@ def read_csv(
     ):
         if schema_overrides_is_list:
             msg = "passing a list to `schema_overrides` is unsupported for hf:// paths"
+            raise ValueError(msg)
+        if not encoding_supported_in_lazy:
+            msg = f"unsupported encoding {encoding} for hf:// paths"
             raise ValueError(msg)
 
         lf = _scan_csv_impl(
@@ -449,7 +457,7 @@ def read_csv(
             comment_prefix=comment_prefix,
             quote_char=quote_char,
             skip_rows=skip_rows,
-            schema_overrides=schema_overrides,
+            schema_overrides=schema_overrides,  # type: ignore[arg-type]
             schema=schema,
             null_values=null_values,
             missing_utf8_is_empty_string=missing_utf8_is_empty_string,

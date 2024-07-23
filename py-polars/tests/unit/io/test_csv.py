@@ -2013,7 +2013,11 @@ def test_invalid_csv_raise() -> None:
 
 
 @pytest.mark.write_disk()
-def test_partial_read_compressed_file(tmp_path: Path) -> None:
+def test_partial_read_compressed_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("POLARS_FORCE_ASYNC", "0")
+
     df = pl.DataFrame(
         {"idx": range(1_000), "dt": date(2025, 12, 31), "txt": "hello world"}
     )
