@@ -189,8 +189,7 @@ impl ListChunked {
             let a = a_owner.as_ref();
             let b = b_owner.as_ref();
             polars_ensure!(a.len() == b.len(), InvalidOperation: "can only do arithmetic operations on lists of the same size; got {} and {}", a.len(), b.len());
-            let result = op(a, b).and_then(|s| s.implode()).map(|ca|Series::from(ca));
-            result
+            op(a, b).and_then(|s| s.implode()).map(Series::from)
         });
         for c in combined.into_iter() {
             result.append(c?.list()?)?;
