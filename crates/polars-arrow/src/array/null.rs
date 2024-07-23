@@ -12,6 +12,10 @@ use crate::ffi;
 #[derive(Clone)]
 pub struct NullArray {
     data_type: ArrowDataType,
+
+    /// Validity mask. This is always all-zeroes.
+    validity: Bitmap,
+
     length: usize,
 }
 
@@ -25,7 +29,9 @@ impl NullArray {
             polars_bail!(ComputeError: "NullArray can only be initialized with a DataType whose physical type is Null");
         }
 
-        Ok(Self { data_type, length })
+        let validity = Bitmap::new_zeroed(length);
+
+        Ok(Self { data_type, validity, length })
     }
 
     /// Returns a new [`NullArray`].
@@ -80,7 +86,7 @@ impl Array for NullArray {
     impl_common_array!();
 
     fn validity(&self) -> Option<&Bitmap> {
-        None
+        Some(&self.validity)
     }
 
     fn with_validity(&self, _: Option<Bitmap>) -> Box<dyn Array> {
@@ -179,13 +185,17 @@ impl Splitable for NullArray {
     }
 
     unsafe fn _split_at_unchecked(&self, offset: usize) -> (Self, Self) {
+        let (lhs, rhs) = self.validity.split_at(offset);
+
         (
             Self {
                 data_type: self.data_type.clone(),
+                validity: lhs,
                 length: offset,
             },
             Self {
                 data_type: self.data_type.clone(),
+                validity: rhs,
                 length: self.len() - offset,
             },
         )
