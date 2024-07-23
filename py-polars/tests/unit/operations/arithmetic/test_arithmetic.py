@@ -562,11 +562,15 @@ def test_power_series() -> None:
 @pytest.mark.parametrize(
     ("expected", "expr", "column_names"),
     [
-        (np.array([[2, 4], [6, 8]]), lambda a, b: a + b, ("a", "a")),
-        (np.array([[0, 0], [0, 0]]), lambda a, b: a - b, ("a", "a")),
-        (np.array([[1, 4], [9, 16]]), lambda a, b: a * b, ("a", "a")),
-        (np.array([[1.0, 1.0], [1.0, 1.0]]), lambda a, b: a / b, ("a", "a")),
-        (np.array([[0, 0], [0, 0]]), lambda a, b: a % b, ("a", "a")),
+        (np.array([[2, 4], [6, 8]], dtype=np.int64), lambda a, b: a + b, ("a", "a")),
+        (np.array([[0, 0], [0, 0]], dtype=np.int64), lambda a, b: a - b, ("a", "a")),
+        (np.array([[1, 4], [9, 16]], dtype=np.int64), lambda a, b: a * b, ("a", "a")),
+        (
+            np.array([[1.0, 1.0], [1.0, 1.0]], dtype=np.float64),
+            lambda a, b: a / b,
+            ("a", "a"),
+        ),
+        (np.array([[0, 0], [0, 0]], dtype=np.int64), lambda a, b: a % b, ("a", "a")),
         (
             np.array([[3, 4], [7, 8]], dtype=np.int64),
             lambda a, b: a + b,
