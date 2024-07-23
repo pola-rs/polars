@@ -1,8 +1,9 @@
 use std::ops::Deref;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use either::Either;
+use parking_lot::RwLockUpgradableReadGuard;
 use polars_error::{polars_bail, PolarsResult};
 
 use super::utils::{count_zeros, fmt, get_bit, get_bit_unchecked, BitChunk, BitChunks, BitmapIter};
@@ -399,7 +400,33 @@ impl Bitmap {
     /// Initializes an new [`Bitmap`] filled with unset values.
     #[inline]
     pub fn new_zeroed(length: usize) -> Self {
-        Self::new_with_value(false, length)
+        // There are quite some situations where we just want a zeroed out Bitmap, since that would
+        // constantly need to reallocate we make a static that contains the largest allocation.
+        // Then, we can just take an Arc::clone of that slice everytime or grow it if needed.
+        static GLOBAL_ZERO_BYTES: OnceLock<parking_lot::RwLock<Arc<Bytes<u8>>>> = OnceLock::new();
+
+        let rwlock_zero_bytes = GLOBAL_ZERO_BYTES.get_or_init(|| {
+            parking_lot::RwLock::new(Arc::new(Bytes::from(vec![0; length.div_ceil(8)])))
+        });
+
+        let zero_bytes = rwlock_zero_bytes.upgradable_read();
+        let bytes = if zero_bytes.len() * 8 < length {
+            let bytes = Arc::new(Bytes::from(vec![0; length.div_ceil(8)]));
+
+            let mut zero_bytes = RwLockUpgradableReadGuard::upgrade(zero_bytes);
+            *zero_bytes = bytes.clone();
+
+            bytes
+        } else {
+            zero_bytes.clone()
+        };
+
+        Bitmap {
+            bytes,
+            offset: 0,
+            length,
+            unset_bit_count_cache: AtomicU64::new(length as u64),
+        }
     }
 
     /// Initializes an new [`Bitmap`] filled with the given value.
