@@ -487,7 +487,7 @@ impl PyLazyFrame {
         type_coercion: bool,
         predicate_pushdown: bool,
         projection_pushdown: bool,
-        simplify_expr: bool,
+        simplify_expression: bool,
         slice_pushdown: bool,
         comm_subplan_elim: bool,
         comm_subexpr_elim: bool,
@@ -500,7 +500,7 @@ impl PyLazyFrame {
         let mut ldf = ldf
             .with_type_coercion(type_coercion)
             .with_predicate_pushdown(predicate_pushdown)
-            .with_simplify_expr(simplify_expr)
+            .with_simplify_expr(simplify_expression)
             .with_slice_pushdown(slice_pushdown)
             .with_cluster_with_columns(cluster_with_columns)
             .with_streaming(streaming)

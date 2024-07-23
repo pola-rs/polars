@@ -11,7 +11,7 @@ pub use polars_ops::prelude::{JoinArgs, JoinType, JoinValidation};
 #[cfg(feature = "rank")]
 pub use polars_ops::prelude::{RankMethod, RankOptions};
 #[cfg(feature = "polars_cloud")]
-pub use polars_plan::client::assert_cloud_eligible;
+pub use polars_plan::client::prepare_cloud_plan;
 pub use polars_plan::plans::{
     AnonymousScan, AnonymousScanArgs, AnonymousScanOptions, DslPlan, Literal, LiteralValue, Null,
     NULL,
