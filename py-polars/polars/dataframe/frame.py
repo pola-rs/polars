@@ -3223,7 +3223,6 @@ class DataFrame:
 
         for column in df.columns:
             col_idx, options = table_start[1] + df.get_column_index(column), {}
-            fmt = column_formats.get(column)
             if column in hidden_columns:
                 options = {"hidden": True}
             if column in column_widths:  # type: ignore[operator]
@@ -3231,11 +3230,9 @@ class DataFrame:
                     col_idx,
                     col_idx,
                     column_widths[column],  # type: ignore[index]
-                    fmt,
+                    None,
                     options,
                 )
-            elif options or fmt:
-                ws.set_column(col_idx, col_idx, None, fmt, options)
 
         # finally, inject any sparklines into the table
         for column, params in (sparklines or {}).items():
