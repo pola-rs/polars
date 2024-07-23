@@ -2947,7 +2947,6 @@ dependencies = [
  "ethnum",
  "fast-float",
  "flate2",
- "foreign_vec",
  "futures",
  "getrandom",
  "hashbrown",

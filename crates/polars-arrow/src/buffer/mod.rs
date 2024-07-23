@@ -19,7 +19,7 @@ pub(crate) enum BytesAllocator {
     #[allow(dead_code)]
     Arrow(arrow_buffer::Buffer),
 }
-pub(crate) type BytesInner<T> = foreign_vec::ForeignVec<BytesAllocator, T>;
+pub(crate) type BytesInner<T> = polars_utils::foreign_vec::ForeignVec<BytesAllocator, T>;
 
 /// Bytes representation.
 #[repr(transparent)]
