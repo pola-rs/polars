@@ -570,6 +570,14 @@ def test_power_series() -> None:
             lambda a, b: a + b,
             ("a", "uint8"),
         ),
+        # This fails because the code is buggy, see
+        # https://github.com/pola-rs/polars/issues/17820
+        #
+        # (
+        #     np.array([[[2, 4]], [[6, 8]]], dtype=np.int64),
+        #     lambda a, b: a + b,
+        #     ("nested", "nested"),
+        # ),
     ],
 )
 def test_array_arithmetic_same_size(
@@ -581,17 +589,19 @@ def test_array_arithmetic_same_size(
         [
             pl.Series("a", np.array([[1, 2], [3, 4]], dtype=np.int64)),
             pl.Series("uint8", np.array([[2, 2], [4, 4]], dtype=np.uint8)),
+            pl.Series("nested", np.array([[[1, 2]], [[3, 4]]], dtype=np.int64)),
         ]
     )
+    print(df.select(expr(pl.col(column_names[0]), pl.col(column_names[1]))))
     # Expr-based arithmetic:
     assert_frame_equal(
         df.select(expr(pl.col(column_names[0]), pl.col(column_names[1]))),
-        pl.Series("a", expected).to_frame(),
+        pl.Series(column_names[0], expected).to_frame(),
     )
     # Direct arithmetic on the Series:
     assert_series_equal(
         expr(df[column_names[0]], df[column_names[1]]),
-        pl.Series("a", expected),
+        pl.Series(column_names[0], expected),
     )
 
 
