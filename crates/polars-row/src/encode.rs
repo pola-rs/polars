@@ -296,7 +296,7 @@ fn allocate_rows_buf(
     columns: &mut [Encoder],
     fields: &[EncodingField],
     values: &mut Vec<u8>,
-    offsets: &mut Vec<usize>,
+    offsets: &mut Vec<u64>,
 ) -> usize {
     let has_variable = columns.iter().any(|enc| enc.is_variable());
 
@@ -371,11 +371,11 @@ fn allocate_rows_buf(
                         for opt_val in iter {
                             unsafe {
                                 lengths.push_unchecked(
-                                    row_size_fixed
+                                    (row_size_fixed
                                         + crate::variable::encoded_len(
                                             opt_val,
                                             &EncodingField::new_unsorted(),
-                                        ),
+                                        )) as u64,
                                 );
                             }
                         }
@@ -384,7 +384,7 @@ fn allocate_rows_buf(
                             *row_length += crate::variable::encoded_len(
                                 opt_val,
                                 &EncodingField::new_unsorted(),
-                            )
+                            ) as u64
                         }
                     }
                     processed_count += 1;
@@ -397,8 +397,9 @@ fn allocate_rows_buf(
                                 for opt_val in array.into_iter() {
                                     unsafe {
                                         lengths.push_unchecked(
-                                            row_size_fixed
-                                                + crate::variable::encoded_len(opt_val, enc_field),
+                                            (row_size_fixed
+                                                + crate::variable::encoded_len(opt_val, enc_field))
+                                                as u64,
                                         );
                                     }
                                 }
@@ -406,7 +407,8 @@ fn allocate_rows_buf(
                                 for (opt_val, row_length) in
                                     array.into_iter().zip(lengths.iter_mut())
                                 {
-                                    *row_length += crate::variable::encoded_len(opt_val, enc_field)
+                                    *row_length +=
+                                        crate::variable::encoded_len(opt_val, enc_field) as u64
                                 }
                             }
                             processed_count += 1;
@@ -417,8 +419,9 @@ fn allocate_rows_buf(
                                 for opt_val in array.into_iter() {
                                     unsafe {
                                         lengths.push_unchecked(
-                                            row_size_fixed
-                                                + crate::variable::encoded_len(opt_val, enc_field),
+                                            (row_size_fixed
+                                                + crate::variable::encoded_len(opt_val, enc_field))
+                                                as u64,
                                         );
                                     }
                                 }
@@ -426,7 +429,8 @@ fn allocate_rows_buf(
                                 for (opt_val, row_length) in
                                     array.into_iter().zip(lengths.iter_mut())
                                 {
-                                    *row_length += crate::variable::encoded_len(opt_val, enc_field)
+                                    *row_length +=
+                                        crate::variable::encoded_len(opt_val, enc_field) as u64
                                 }
                             }
                             processed_count += 1;
@@ -444,14 +448,16 @@ fn allocate_rows_buf(
                                 for opt_val in iter {
                                     unsafe {
                                         lengths.push_unchecked(
-                                            row_size_fixed
-                                                + crate::variable::encoded_len(opt_val, enc_field),
+                                            (row_size_fixed
+                                                + crate::variable::encoded_len(opt_val, enc_field))
+                                                as u64,
                                         )
                                     }
                                 }
                             } else {
                                 for (opt_val, row_length) in iter.zip(lengths.iter_mut()) {
-                                    *row_length += crate::variable::encoded_len(opt_val, enc_field)
+                                    *row_length +=
+                                        crate::variable::encoded_len(opt_val, enc_field) as u64
                                 }
                             }
                             processed_count += 1;
@@ -472,12 +478,12 @@ fn allocate_rows_buf(
         for length in offsets.iter_mut() {
             let to_write = lagged_offset;
             lagged_offset = current_offset;
-            current_offset += *length;
+            current_offset += *length as usize;
 
-            *length = to_write;
+            *length = to_write as u64;
         }
         // ensure we have len + 1 offsets
-        offsets.push(lagged_offset);
+        offsets.push(lagged_offset as u64);
 
         // Only reserve. The init will be done later
         values.reserve(current_offset);
@@ -505,10 +511,10 @@ fn allocate_rows_buf(
         // 0, 2, 4, 6
         offsets.clear();
         offsets.reserve(num_rows + 1);
-        let mut current_offset = 0;
-        offsets.push(current_offset);
+        let mut current_offset = 0_usize;
+        offsets.push(current_offset as u64);
         for _ in 0..num_rows {
-            offsets.push(current_offset);
+            offsets.push(current_offset as u64);
             current_offset += row_size;
         }
         n_bytes

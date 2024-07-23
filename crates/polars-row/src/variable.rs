@@ -203,19 +203,21 @@ pub(crate) unsafe fn encode_iter<'a, I: Iterator<Item = Option<&'a [u8]>>>(
 
     if field.no_order {
         for (offset, opt_value) in out.offsets.iter_mut().skip(1).zip(input) {
-            let dst = values.get_unchecked_release_mut(*offset..);
+            let dst: &mut [MaybeUninit<u8>] =
+                values.get_unchecked_release_mut((*offset as usize)..);
             let written_len = encode_one_no_order(dst, opt_value.map(|v| v.as_uninit()), field);
-            *offset += written_len;
+            *offset += written_len as u64;
         }
     } else {
         for (offset, opt_value) in out.offsets.iter_mut().skip(1).zip(input) {
-            let dst = values.get_unchecked_release_mut(*offset..);
+            let dst: &mut [MaybeUninit<u8>] =
+                values.get_unchecked_release_mut((*offset as usize)..);
             let written_len = encode_one(dst, opt_value.map(|v| v.as_uninit()), field);
-            *offset += written_len;
+            *offset += written_len as u64;
         }
     }
     let offset = out.offsets.last().unwrap();
-    let dst = values.get_unchecked_release_mut(*offset..);
+    let dst: &mut [MaybeUninit<u8>] = values.get_unchecked_release_mut((*offset as usize)..);
     // write remainder as zeros
     dst.fill(MaybeUninit::new(0));
     out.values.set_len(out.values.capacity())
