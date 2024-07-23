@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import operator
 from collections import OrderedDict
 from datetime import date, datetime, timedelta
@@ -650,7 +652,7 @@ def test_list_arithmetic_same_size(
     )
 
 
-def test_list_arithmetic_error_cases():
+def test_list_arithmetic_error_cases() -> None:
     # Different series length:
     with pytest.raises(
         InvalidOperationError, match="Series of the same size; got 1 and 2"

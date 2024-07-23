@@ -1063,18 +1063,17 @@ class Series:
 
     def _recursive_cast_to_float64(self) -> Series:
         """
-        Traverse dtype recursively, eventually converting leaf integer dtypes
-        to Float64 dtypes.
+        Convert leaf dtypes to Float64 dtypes.
 
         This is equivalent to logic in DataType::cast_leaf() in Rust.
         """
 
-        def convert_to_float64(dtype: DataType) -> DataType:
+        def convert_to_float64(dtype: PolarsDataType) -> PolarsDataType:
             if isinstance(dtype, Array):
                 return Array(convert_to_float64(dtype.inner), shape=dtype.shape)
             if isinstance(dtype, List):
                 return List(convert_to_float64(dtype.inner))
-            return Float64
+            return Float64()
 
         return self.cast(convert_to_float64(self.dtype))
 
