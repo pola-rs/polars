@@ -15,6 +15,8 @@ if TYPE_CHECKING:
     else:
         from typing_extensions import TypeAlias
 
+    from concurrent.futures import Future
+
     import greenlet
 
     from polars import DataFrame
@@ -67,7 +69,7 @@ def _run_async(co: Coroutine[Any, Any, T_co]) -> T_co:
         return _greenlet_wait(co)
 
     with ThreadPoolExecutor(1) as executor:
-        future = executor.submit(asyncio.run, co)
+        future: Future[T_co] = executor.submit(asyncio.run, co)
         wait([future], return_when="ALL_COMPLETED")
         return future.result()
 
