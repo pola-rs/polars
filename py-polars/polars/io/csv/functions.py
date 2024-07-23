@@ -465,7 +465,7 @@ def read_csv(
             try_parse_dates=try_parse_dates,
             infer_schema_length=infer_schema_length,
             n_rows=n_rows,
-            encoding=encoding if encoding == "utf8-lossy" else "utf8",
+            encoding=encoding,
             low_memory=low_memory,
             rechunk=rechunk,
             skip_rows_after_header=skip_rows_after_header,
