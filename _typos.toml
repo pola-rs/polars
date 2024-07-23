@@ -1,15 +1,15 @@
 [files]
 extend-exclude = [
-    ".git/",
-    "*.csv",
-    "*.gz",
-    "dists.dss",
+  ".git/",
+  "*.csv",
+  "*.gz",
+  "dists.dss",
 ]
 ignore-hidden = false
 
 [default]
 extend-ignore-re = [
-    '"Theatre": \[.+\],',
+  '"Theatre": \[.+\],',
 ]
 
 [default.extend-words]
