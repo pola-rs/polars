@@ -406,26 +406,51 @@ impl Bitmap {
         static GLOBAL_ZERO_BYTES: OnceLock<parking_lot::RwLock<Arc<Bytes<u8>>>> = OnceLock::new();
 
         let rwlock_zero_bytes = GLOBAL_ZERO_BYTES.get_or_init(|| {
-            parking_lot::RwLock::new(Arc::new(Bytes::from(vec![0; length.div_ceil(8)])))
+            let byte_length = length.div_ceil(8).next_power_of_two();
+            parking_lot::RwLock::new(Arc::new(Bytes::from(vec![0; byte_length])))
         });
 
+        let unset_bit_count_cache = AtomicU64::new(length as u64);
+
         let zero_bytes = rwlock_zero_bytes.upgradable_read();
-        let bytes = if zero_bytes.len() * 8 >= length {
-            zero_bytes.clone()
-        } else {
-            let bytes = Arc::new(Bytes::from(vec![0; length.div_ceil(8)]));
+        if zero_bytes.len() * 8 >= length {
+            let bytes = zero_bytes.clone();
+            return Bitmap {
+                bytes,
+                offset: 0,
+                length,
+                unset_bit_count_cache,
+            };
+        }
 
-            let mut zero_bytes = RwLockUpgradableReadGuard::upgrade(zero_bytes);
-            *zero_bytes = bytes.clone();
+        let mut zero_bytes = RwLockUpgradableReadGuard::upgrade(zero_bytes);
 
-            bytes
-        };
+        // Race Condition:
+        // By the time we got here, another Guard could have been upgraded, and the buffer
+        // could have been expanded already. So we want to check again whether we cannot just take
+        // that buffer.
+        if zero_bytes.len() * 8 >= length {
+            let bytes = zero_bytes.clone();
+            return Bitmap {
+                bytes,
+                offset: 0,
+                length,
+                unset_bit_count_cache,
+            };
+        }
+
+        // Let do exponential increases so that we are not constantly allocating new
+        // buffers.
+        let byte_length = length.div_ceil(8).next_power_of_two();
+
+        let bytes = Arc::new(Bytes::from(vec![0; byte_length]));
+        *zero_bytes = bytes.clone();
 
         Bitmap {
             bytes,
             offset: 0,
             length,
-            unset_bit_count_cache: AtomicU64::new(length as u64),
+            unset_bit_count_cache,
         }
     }
 
