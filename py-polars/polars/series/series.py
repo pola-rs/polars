@@ -1061,6 +1061,22 @@ class Series:
             return F.lit(self) - other
         return self._arithmetic(other, "sub", "sub_<>")
 
+    def _recursive_cast_to_float64(self) -> Series:
+        """
+        Traverse dtype recursively, eventually converting leaf integer dtypes
+        to Float64 dtypes.
+        """
+
+        def convert_to_float64(dtype: DataType) -> DataType:
+            if isinstance(dtype, Array):
+                return Array(convert_to_float64(dtype.inner), shape=dtype.shape)
+            if isinstance(dtype, List):
+                return List(convert_to_float64(dtype.inner))
+            # TODO are there other types to handle? Struct?
+            return Float64
+
+        return self.cast(convert_to_float64(self.dtype))
+
     @overload
     def __truediv__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
         ...
@@ -1077,9 +1093,11 @@ class Series:
 
         # this branch is exactly the floordiv function without rounding the floats
         if self.dtype.is_float() or self.dtype == Decimal:
-            return self._arithmetic(other, "div", "div_<>")
+            as_float = self
+        else:
+            as_float = self._recursive_cast_to_float64()
 
-        return self.cast(Float64) / other
+        return as_float._arithmetic(other, "div", "div_<>")
 
     @overload
     def __floordiv__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
