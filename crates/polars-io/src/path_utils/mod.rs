@@ -146,6 +146,8 @@ pub fn expand_paths_hive(
     if is_cloud || { cfg!(not(target_family = "windows")) && config::force_async() } {
         #[cfg(feature = "cloud")]
         {
+            use polars_utils::_limit_path_len_io_err;
+
             use crate::cloud::object_path_from_string;
 
             if first_path.starts_with("hf://") {
@@ -199,14 +201,8 @@ pub fn expand_paths_hive(
                             // indistinguishable from an empty directory.
                             let path = PathBuf::from(path);
                             if !path.is_dir() {
-                                path.metadata().map_err(|err| {
-                                    let msg =
-                                        Some(format!("{}: {}", err, path.to_str().unwrap()).into());
-                                    PolarsError::IO {
-                                        error: err.into(),
-                                        msg,
-                                    }
-                                })?;
+                                path.metadata()
+                                    .map_err(|err| _limit_path_len_io_err(&path, err))?;
                             }
                         }
 

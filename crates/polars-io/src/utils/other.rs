@@ -168,10 +168,7 @@ pub(crate) fn update_row_counts3(dfs: &mut [DataFrame], heights: &[IdxSize], off
 }
 
 #[cfg(feature = "json")]
-pub(crate) fn overwrite_schema(
-    schema: &mut Schema,
-    overwriting_schema: &Schema,
-) -> PolarsResult<()> {
+pub fn overwrite_schema(schema: &mut Schema, overwriting_schema: &Schema) -> PolarsResult<()> {
     for (k, value) in overwriting_schema.iter() {
         *schema.try_get_mut(k)? = value.clone();
     }

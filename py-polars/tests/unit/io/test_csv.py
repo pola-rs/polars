@@ -527,7 +527,9 @@ def test_column_rename_and_dtype_overwrite() -> None:
     assert df.dtypes == [pl.String, pl.Int64, pl.Float32]
 
 
-def test_compressed_csv(io_files_path: Path) -> None:
+def test_compressed_csv(io_files_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("POLARS_FORCE_ASYNC", "0")
+
     # gzip compression
     csv = textwrap.dedent(
         """\
@@ -868,18 +870,24 @@ def test_csv_globbing(io_files_path: Path) -> None:
     df = pl.read_csv(path)
     assert df.shape == (135, 4)
 
-    with pytest.raises(ValueError):
-        _ = pl.read_csv(path, columns=[0, 1])
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setenv("POLARS_FORCE_ASYNC", "0")
+
+        with pytest.raises(ValueError):
+            _ = pl.read_csv(path, columns=[0, 1])
 
     df = pl.read_csv(path, columns=["category", "sugars_g"])
     assert df.shape == (135, 2)
     assert df.row(-1) == ("seafood", 1)
     assert df.row(0) == ("vegetables", 2)
 
-    with pytest.raises(ValueError):
-        _ = pl.read_csv(
-            path, schema_overrides=[pl.String, pl.Int64, pl.Int64, pl.Int64]
-        )
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setenv("POLARS_FORCE_ASYNC", "0")
+
+        with pytest.raises(ValueError):
+            _ = pl.read_csv(
+                path, schema_overrides=[pl.String, pl.Int64, pl.Int64, pl.Int64]
+            )
 
     dtypes = {
         "category": pl.String,
@@ -2170,14 +2178,18 @@ def test_csv_float_decimal() -> None:
         pl.read_csv(floats, decimal_comma=True)
 
 
-def test_fsspec_not_available(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("polars.io._utils._FSSPEC_AVAILABLE", False)
-    with pytest.raises(
-        ImportError, match=r"`fsspec` is required for `storage_options` argument"
-    ):
-        pl.read_csv(
-            "s3://foods/cabbage.csv", storage_options={"key": "key", "secret": "secret"}
-        )
+def test_fsspec_not_available() -> None:
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setenv("POLARS_FORCE_ASYNC", "0")
+        mp.setattr("polars.io._utils._FSSPEC_AVAILABLE", False)
+
+        with pytest.raises(
+            ImportError, match=r"`fsspec` is required for `storage_options` argument"
+        ):
+            pl.read_csv(
+                "s3://foods/cabbage.csv",
+                storage_options={"key": "key", "secret": "secret"},
+            )
 
 
 @pytest.mark.write_disk()
