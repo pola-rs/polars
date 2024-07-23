@@ -4,6 +4,7 @@ use arrow::array::Array;
 use arrow::datatypes::Field;
 use arrow::record_batch::RecordBatchT;
 use polars_error::PolarsResult;
+use polars_utils::mmap::MemReader;
 
 use super::{ArrayIter, RowGroupMetaData};
 use crate::arrow::read::column_iter_to_arrays;
@@ -147,11 +148,8 @@ pub fn to_deserializer<'a>(
     columns: Vec<(&ColumnChunkMetaData, Vec<u8>)>,
     field: Field,
     num_rows: usize,
-    chunk_size: Option<usize>,
     pages: Option<Vec<Vec<FilteredPage>>>,
 ) -> PolarsResult<ArrayIter<'a>> {
-    let chunk_size = chunk_size.map(|c| c.min(num_rows));
-
     let (columns, types) = if let Some(pages) = pages {
         let (columns, types): (Vec<_>, Vec<_>) = columns
             .into_iter()
@@ -164,7 +162,7 @@ pub fn to_deserializer<'a>(
                     .for_each(|page| page.start -= meta.column_start);
                 meta.column_start = 0;
                 let pages = IndexedPageReader::new_with_page_meta(
-                    std::io::Cursor::new(chunk),
+                    MemReader::from_vec(chunk),
                     meta,
                     pages,
                     vec![],
@@ -185,7 +183,7 @@ pub fn to_deserializer<'a>(
             .map(|(column_meta, chunk)| {
                 let len = chunk.len();
                 let pages = PageReader::new(
-                    std::io::Cursor::new(chunk),
+                    MemReader::from_vec(chunk),
                     column_meta,
                     std::sync::Arc::new(|_, _| true),
                     vec![],
@@ -202,7 +200,7 @@ pub fn to_deserializer<'a>(
         (columns, types)
     };
 
-    column_iter_to_arrays(columns, types, field, chunk_size, num_rows)
+    column_iter_to_arrays(columns, types, field, num_rows)
 }
 
 /// Returns a vector of iterators of [`Array`] ([`ArrayIter`]) corresponding to the top
@@ -219,7 +217,6 @@ pub fn read_columns_many<'a, R: Read + Seek>(
     reader: &mut R,
     row_group: &RowGroupMetaData,
     fields: Vec<Field>,
-    chunk_size: Option<usize>,
     limit: Option<usize>,
     pages: Option<Vec<Vec<Vec<FilteredPage>>>>,
 ) -> PolarsResult<Vec<ArrayIter<'a>>> {
@@ -238,15 +235,13 @@ pub fn read_columns_many<'a, R: Read + Seek>(
             .into_iter()
             .zip(fields)
             .zip(pages)
-            .map(|((columns, field), pages)| {
-                to_deserializer(columns, field, num_rows, chunk_size, Some(pages))
-            })
+            .map(|((columns, field), pages)| to_deserializer(columns, field, num_rows, Some(pages)))
             .collect()
     } else {
         field_columns
             .into_iter()
             .zip(fields)
-            .map(|(columns, field)| to_deserializer(columns, field, num_rows, chunk_size, None))
+            .map(|(columns, field)| to_deserializer(columns, field, num_rows, None))
             .collect()
     }
 }

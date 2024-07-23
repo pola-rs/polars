@@ -406,7 +406,7 @@ fn create_physical_expr_inner(
                         I::Std(_, ddof) => GBM::Std(*ddof),
                         I::Var(_, ddof) => GBM::Var(*ddof),
                         I::AggGroups(_) => {
-                            panic!("agg groups expression only supported in aggregation context")
+                            polars_bail!(InvalidOperation: "agg groups expression only supported in aggregation context")
                         },
                     };
 
@@ -496,8 +496,8 @@ fn create_physical_expr_inner(
                     .ok()
             });
 
-            let is_reducing_aggregation =
-                options.returns_scalar && matches!(options.collect_groups, ApplyOptions::GroupWise);
+            let is_reducing_aggregation = options.flags.contains(FunctionFlags::RETURNS_SCALAR)
+                && matches!(options.collect_groups, ApplyOptions::GroupWise);
             // Will be reset in the function so get that here.
             let has_window = state.local.has_window;
             let input = create_physical_expressions_check_state(
@@ -534,8 +534,8 @@ fn create_physical_expr_inner(
                     .to_dtype(schema, Context::Default, expr_arena)
                     .ok()
             });
-            let is_reducing_aggregation =
-                options.returns_scalar && matches!(options.collect_groups, ApplyOptions::GroupWise);
+            let is_reducing_aggregation = options.flags.contains(FunctionFlags::RETURNS_SCALAR)
+                && matches!(options.collect_groups, ApplyOptions::GroupWise);
             // Will be reset in the function so get that here.
             let has_window = state.local.has_window;
             let input = create_physical_expressions_check_state(

@@ -71,6 +71,18 @@ impl PrivateSeries for SeriesWrap<StructChunked> {
     unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
         self.0.agg_list(groups)
     }
+
+    fn vec_hash(&self, build_hasher: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
+        let mut fields = self.0.fields_as_series().into_iter();
+
+        if let Some(s) = fields.next() {
+            s.vec_hash(build_hasher.clone(), buf)?
+        };
+        for s in fields {
+            s.vec_hash_combine(build_hasher.clone(), buf)?
+        }
+        Ok(())
+    }
 }
 
 impl SeriesTrait for SeriesWrap<StructChunked> {

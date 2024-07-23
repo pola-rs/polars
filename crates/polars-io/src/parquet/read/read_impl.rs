@@ -8,6 +8,7 @@ use polars_core::prelude::*;
 use polars_core::utils::{accumulate_dataframes_vertical, split_df};
 use polars_core::POOL;
 use polars_parquet::read::{self, ArrayIter, FileMetaData, PhysicalType, RowGroupMetaData};
+use polars_utils::mmap::MemSlice;
 use rayon::prelude::*;
 
 #[cfg(feature = "cloud")]
@@ -56,7 +57,6 @@ fn column_idx_to_series(
     remaining_rows: usize,
     file_schema: &ArrowSchema,
     store: &mmap::ColumnStore,
-    chunk_size: usize,
 ) -> PolarsResult<Series> {
     let field = &file_schema.fields[column_i];
 
@@ -66,7 +66,7 @@ fn column_idx_to_series(
     }
 
     let columns = mmap_columns(store, md.columns(), &field.name);
-    let iter = mmap::to_deserializer(columns, field.clone(), remaining_rows, Some(chunk_size))?;
+    let iter = mmap::to_deserializer(columns, field.clone(), remaining_rows)?;
 
     let mut series = if remaining_rows < md.num_rows() {
         array_iter_to_series(iter, field, Some(remaining_rows))
@@ -236,20 +236,12 @@ fn rg_to_dfs_optionally_par_over_columns(
         }
 
         let projection_height = (*remaining_rows).min(md.num_rows());
-        let chunk_size = md.num_rows();
         let columns = if let ParallelStrategy::Columns = parallel {
             POOL.install(|| {
                 projection
                     .par_iter()
                     .map(|column_i| {
-                        column_idx_to_series(
-                            *column_i,
-                            md,
-                            projection_height,
-                            schema,
-                            store,
-                            chunk_size,
-                        )
+                        column_idx_to_series(*column_i, md, projection_height, schema, store)
                     })
                     .collect::<PolarsResult<Vec<_>>>()
             })?
@@ -257,14 +249,7 @@ fn rg_to_dfs_optionally_par_over_columns(
             projection
                 .iter()
                 .map(|column_i| {
-                    column_idx_to_series(
-                        *column_i,
-                        md,
-                        projection_height,
-                        schema,
-                        store,
-                        chunk_size,
-                    )
+                    column_idx_to_series(*column_i, md, projection_height, schema, store)
                 })
                 .collect::<PolarsResult<Vec<_>>>()?
         };
@@ -348,18 +333,10 @@ fn rg_to_dfs_par_over_rg(
                     assert!(std::env::var("POLARS_PANIC_IF_PARQUET_PARSED").is_err())
                 }
 
-                let chunk_size = md.num_rows();
                 let columns = projection
                     .iter()
                     .map(|column_i| {
-                        column_idx_to_series(
-                            *column_i,
-                            md,
-                            projection_height,
-                            schema,
-                            store,
-                            chunk_size,
-                        )
+                        column_idx_to_series(*column_i, md, projection_height, schema, store)
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
 
@@ -446,8 +423,7 @@ pub fn read_parquet<R: MmapBytesReader>(
     }
 
     let reader = ReaderBytes::from(&mut reader);
-    let bytes = reader.deref();
-    let store = mmap::ColumnStore::Local(bytes);
+    let store = mmap::ColumnStore::Local(reader.into_mem_slice());
 
     let dfs = rg_to_dfs(
         &store,
@@ -492,8 +468,12 @@ impl FetchRowGroupsFromMmapReader {
         let reader_bytes = get_reader_bytes(reader_ptr)?;
         Ok(FetchRowGroupsFromMmapReader(reader_bytes))
     }
+
     fn fetch_row_groups(&mut self, _row_groups: Range<usize>) -> PolarsResult<ColumnStore> {
-        Ok(mmap::ColumnStore::Local(self.0.deref()))
+        // @TODO: we can something smarter here with mmap
+        Ok(mmap::ColumnStore::Local(MemSlice::from_slice(
+            self.0.deref(),
+        )))
     }
 }
 

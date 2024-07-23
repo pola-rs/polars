@@ -8,6 +8,7 @@ use polars_parquet::read::{
     column_iter_to_arrays, get_field_columns, ArrayIter, BasicDecompressor, ColumnChunkMetaData,
     PageReader,
 };
+use polars_utils::mmap::{MemReader, MemSlice};
 
 /// Store columns data in two scenarios:
 /// 1. a local memory mapped file
@@ -20,8 +21,8 @@ use polars_parquet::read::{
 ///    b. asynchronously fetch them in parallel, for example using object_store
 ///    c. store the data in this data structure
 ///    d. when all the data is available deserialize on multiple threads, for example using rayon
-pub enum ColumnStore<'a> {
-    Local(&'a [u8]),
+pub enum ColumnStore {
+    Local(MemSlice),
     #[cfg(feature = "async")]
     Fetched(PlHashMap<u64, Bytes>),
 }
@@ -32,7 +33,7 @@ pub(super) fn mmap_columns<'a>(
     store: &'a ColumnStore,
     columns: &'a [ColumnChunkMetaData],
     field_name: &str,
-) -> Vec<(&'a ColumnChunkMetaData, &'a [u8])> {
+) -> Vec<(&'a ColumnChunkMetaData, MemSlice)> {
     get_field_columns(columns, field_name)
         .into_iter()
         .map(|meta| _mmap_single_column(store, meta))
@@ -42,10 +43,10 @@ pub(super) fn mmap_columns<'a>(
 fn _mmap_single_column<'a>(
     store: &'a ColumnStore,
     meta: &'a ColumnChunkMetaData,
-) -> (&'a ColumnChunkMetaData, &'a [u8]) {
+) -> (&'a ColumnChunkMetaData, MemSlice) {
     let (start, len) = meta.byte_range();
     let chunk = match store {
-        ColumnStore::Local(file) => &file[start as usize..(start + len) as usize],
+        ColumnStore::Local(mem_slice) => mem_slice.slice(start as usize, (start + len) as usize),
         #[cfg(all(feature = "async", feature = "parquet"))]
         ColumnStore::Fetched(fetched) => {
             let entry = fetched.get(&start).unwrap_or_else(|| {
@@ -53,7 +54,7 @@ fn _mmap_single_column<'a>(
                     "mmap_columns: column with start {start} must be prefetched in ColumnStore.\n"
                 )
             });
-            entry.as_ref()
+            MemSlice::from_slice(entry.as_ref())
         },
     };
     (meta, chunk)
@@ -62,18 +63,18 @@ fn _mmap_single_column<'a>(
 // similar to arrow2 serializer, except this accepts a slice instead of a vec.
 // this allows us to memory map
 pub(super) fn to_deserializer<'a>(
-    columns: Vec<(&ColumnChunkMetaData, &'a [u8])>,
+    columns: Vec<(&ColumnChunkMetaData, MemSlice)>,
     field: Field,
     num_rows: usize,
-    chunk_size: Option<usize>,
 ) -> PolarsResult<ArrayIter<'a>> {
-    let chunk_size = chunk_size.unwrap_or(usize::MAX).min(num_rows);
-
     let (columns, types): (Vec<_>, Vec<_>) = columns
         .into_iter()
         .map(|(column_meta, chunk)| {
+            // Advise fetching the data for the column chunk
+            chunk.prefetch();
+
             let pages = PageReader::new(
-                std::io::Cursor::new(chunk),
+                MemReader::new(chunk),
                 column_meta,
                 std::sync::Arc::new(|_, _| true),
                 vec![],
@@ -86,5 +87,5 @@ pub(super) fn to_deserializer<'a>(
         })
         .unzip();
 
-    column_iter_to_arrays(columns, types, field, Some(chunk_size), num_rows)
+    column_iter_to_arrays(columns, types, field, num_rows)
 }

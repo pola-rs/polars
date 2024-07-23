@@ -11,7 +11,7 @@ impl StructNameSpace {
                 index,
             )))
             .with_function_options(|mut options| {
-                options.allow_rename = true;
+                options.flags |= FunctionFlags::ALLOW_RENAME;
                 options
             })
     }
@@ -33,7 +33,7 @@ impl StructNameSpace {
                 names,
             )))
             .with_function_options(|mut options| {
-                options.allow_rename = true;
+                options.flags |= FunctionFlags::ALLOW_RENAME;
                 options
             })
     }
@@ -49,7 +49,7 @@ impl StructNameSpace {
                 ColumnName::from(name),
             )))
             .with_function_options(|mut options| {
-                options.allow_rename = true;
+                options.flags |= FunctionFlags::ALLOW_RENAME;
                 options
             })
     }
@@ -98,9 +98,9 @@ impl StructNameSpace {
             function: FunctionExpr::StructExpr(StructFunction::WithFields),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ElementWise,
-                pass_name_to_apply: true,
-                allow_group_aware: false,
-                input_wildcard_expansion: true,
+                flags: FunctionFlags::default() & !FunctionFlags::ALLOW_GROUP_AWARE
+                    | FunctionFlags::PASS_NAME_TO_APPLY
+                    | FunctionFlags::INPUT_WILDCARD_EXPANSION,
                 ..Default::default()
             },
         })

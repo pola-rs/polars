@@ -152,7 +152,7 @@ impl ArrayNameSpace {
                 false,
             )
             .with_function_options(|mut options| {
-                options.input_wildcard_expansion = true;
+                options.flags |= FunctionFlags::INPUT_WILDCARD_EXPANSION;
                 options
             })
     }

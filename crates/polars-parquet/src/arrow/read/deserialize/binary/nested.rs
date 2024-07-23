@@ -12,14 +12,15 @@ use super::super::utils::MaybeNext;
 use super::basic::finish;
 use super::decoders::*;
 use super::utils::*;
-use crate::arrow::read::PagesIter;
 use crate::parquet::encoding::hybrid_rle::{DictionaryTranslator, Translator};
 use crate::parquet::encoding::Encoding;
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
+use crate::parquet::read::BasicDecompressor;
 use crate::read::deserialize::utils::{
     not_implemented, page_is_filtered, page_is_optional, PageState,
 };
+use crate::read::CompressedPagesIter;
 
 #[derive(Debug)]
 pub struct State<'a> {
@@ -29,14 +30,14 @@ pub struct State<'a> {
 
 #[derive(Debug)]
 pub enum StateTranslation<'a> {
-    Unit(BinaryIter<'a>),
+    Plain(BinaryIter<'a>),
     Dictionary(ValuesDictionary<'a>, Option<Vec<&'a [u8]>>),
 }
 
 impl<'a> PageState<'a> for State<'a> {
     fn len(&self) -> usize {
         match &self.translation {
-            StateTranslation::Unit(iter) => iter.size_hint().0,
+            StateTranslation::Plain(iter) => iter.size_hint().0,
             StateTranslation::Dictionary(values, _) => values.len(),
         }
     }
@@ -69,7 +70,7 @@ impl<'a, O: Offset> NestedDecoder<'a> for BinaryDecoder<O> {
             (Encoding::Plain, _) => {
                 let values = split_buffer(page)?.values;
                 let values = BinaryIter::new(values, page.num_values());
-                StateTranslation::Unit(values)
+                StateTranslation::Plain(values)
             },
             _ => return Err(not_implemented(page)),
         };
@@ -96,7 +97,7 @@ impl<'a, O: Offset> NestedDecoder<'a> for BinaryDecoder<O> {
         let (values, validity) = decoded;
 
         match &mut state.translation {
-            StateTranslation::Unit(page) => {
+            StateTranslation::Plain(page) => {
                 // @TODO: This can be optimized to not be a constantly polling
                 for value in page.by_ref().take(n) {
                     values.push(value);
@@ -133,8 +134,8 @@ impl<'a, O: Offset> NestedDecoder<'a> for BinaryDecoder<O> {
     }
 }
 
-pub struct NestedIter<O: Offset, I: PagesIter> {
-    iter: I,
+pub struct NestedIter<O: Offset, I: CompressedPagesIter> {
+    iter: BasicDecompressor<I>,
     data_type: ArrowDataType,
     init: Vec<InitNested>,
     items: VecDeque<(NestedState, (Binary<O>, MutableBitmap))>,
@@ -143,9 +144,9 @@ pub struct NestedIter<O: Offset, I: PagesIter> {
     remaining: usize,
 }
 
-impl<O: Offset, I: PagesIter> NestedIter<O, I> {
+impl<O: Offset, I: CompressedPagesIter> NestedIter<O, I> {
     pub fn new(
-        iter: I,
+        iter: BasicDecompressor<I>,
         init: Vec<InitNested>,
         data_type: ArrowDataType,
         num_rows: usize,
@@ -163,7 +164,7 @@ impl<O: Offset, I: PagesIter> NestedIter<O, I> {
     }
 }
 
-impl<O: Offset, I: PagesIter> Iterator for NestedIter<O, I> {
+impl<O: Offset, I: CompressedPagesIter> Iterator for NestedIter<O, I> {
     type Item = PolarsResult<(NestedState, Box<dyn Array>)>;
 
     fn next(&mut self) -> Option<Self::Item> {

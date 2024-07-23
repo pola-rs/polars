@@ -22,6 +22,7 @@ use polars_parquet::parquet::write::{
     Compressor, DynIter, DynStreamingIterator, FileWriter, Version, WriteOptions,
 };
 use polars_parquet::read::read_metadata;
+use polars_utils::mmap::MemReader;
 use primitive::array_to_page_v1;
 
 use super::{alltypes_plain, alltypes_statistics, Array};
@@ -44,7 +45,8 @@ pub fn array_to_page(
 }
 
 fn read_column<R: Read + Seek>(reader: &mut R) -> ParquetResult<(Array, Option<Statistics>)> {
-    let (a, statistics) = super::read::read_column(reader, 0, "col")?;
+    let memreader = MemReader::from_reader(reader)?;
+    let (a, statistics) = super::read::read_column(memreader, 0, "col")?;
     Ok((a, statistics))
 }
 

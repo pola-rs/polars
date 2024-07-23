@@ -69,3 +69,16 @@ def test_count_ipc(io_files_path: Path, path: str, n_rows: int) -> None:
     # Check if we are using our fast count star
     assert "FAST COUNT(*)" in lf.explain()
     assert_frame_equal(lf.collect(), expected)
+
+
+@pytest.mark.parametrize(
+    ("path", "n_rows"), [("foods1.ndjson", 27), ("foods*.ndjson", 27 * 2)]
+)
+def test_count_ndjson(io_files_path: Path, path: str, n_rows: int) -> None:
+    lf = pl.scan_ndjson(io_files_path / path).select(pl.len())
+
+    expected = pl.DataFrame(pl.Series("len", [n_rows], dtype=pl.UInt32))
+
+    # Check if we are using our fast count star
+    assert "FAST COUNT(*)" in lf.explain()
+    assert_frame_equal(lf.collect(), expected)

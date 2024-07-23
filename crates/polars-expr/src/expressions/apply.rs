@@ -39,7 +39,9 @@ impl ApplyExpr {
         output_dtype: Option<DataType>,
     ) -> Self {
         #[cfg(debug_assertions)]
-        if matches!(options.collect_groups, ApplyOptions::ElementWise) && options.returns_scalar {
+        if matches!(options.collect_groups, ApplyOptions::ElementWise)
+            && options.flags.contains(FunctionFlags::RETURNS_SCALAR)
+        {
             panic!("expr {:?} is not implemented correctly. 'returns_scalar' and 'elementwise' are mutually exclusive", expr)
         }
 
@@ -48,13 +50,13 @@ impl ApplyExpr {
             function,
             expr,
             collect_groups: options.collect_groups,
-            returns_scalar: options.returns_scalar,
-            allow_rename: options.allow_rename,
-            pass_name_to_apply: options.pass_name_to_apply,
+            returns_scalar: options.flags.contains(FunctionFlags::RETURNS_SCALAR),
+            allow_rename: options.flags.contains(FunctionFlags::ALLOW_RENAME),
+            pass_name_to_apply: options.flags.contains(FunctionFlags::PASS_NAME_TO_APPLY),
             input_schema,
             allow_threading,
             check_lengths: options.check_lengths(),
-            allow_group_aware: options.allow_group_aware,
+            allow_group_aware: options.flags.contains(FunctionFlags::ALLOW_GROUP_AWARE),
             output_dtype,
         }
     }

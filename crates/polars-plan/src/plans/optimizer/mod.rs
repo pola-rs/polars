@@ -68,27 +68,27 @@ pub fn optimize(
     #[allow(dead_code)]
     let verbose = verbose();
     // get toggle values
-    let cluster_with_columns = opt_state.cluster_with_columns;
-    let predicate_pushdown = opt_state.predicate_pushdown;
-    let projection_pushdown = opt_state.projection_pushdown;
-    let type_coercion = opt_state.type_coercion;
-    let simplify_expr = opt_state.simplify_expr;
-    let slice_pushdown = opt_state.slice_pushdown;
-    let streaming = opt_state.streaming;
-    let fast_projection = opt_state.fast_projection;
+    let cluster_with_columns = opt_state.contains(OptState::CLUSTER_WITH_COLUMNS);
+    let predicate_pushdown = opt_state.contains(OptState::PREDICATE_PUSHDOWN);
+    let projection_pushdown = opt_state.contains(OptState::PROJECTION_PUSHDOWN);
+    let type_coercion = opt_state.contains(OptState::TYPE_COERCION);
+    let simplify_expr = opt_state.contains(OptState::SIMPLIFY_EXPR);
+    let slice_pushdown = opt_state.contains(OptState::SLICE_PUSHDOWN);
+    let streaming = opt_state.contains(OptState::STREAMING);
+    let fast_projection = opt_state.contains(OptState::FAST_PROJECTION);
     // Don't run optimizations that don't make sense on a single node.
     // This keeps eager execution more snappy.
-    let eager = opt_state.eager;
+    let eager = opt_state.contains(OptState::EAGER);
     #[cfg(feature = "cse")]
-    let comm_subplan_elim = opt_state.comm_subplan_elim && !eager;
+    let comm_subplan_elim = opt_state.contains(OptState::COMM_SUBPLAN_ELIM) && !eager;
 
     #[cfg(feature = "cse")]
-    let comm_subexpr_elim = opt_state.comm_subexpr_elim;
+    let comm_subexpr_elim = opt_state.contains(OptState::COMM_SUBEXPR_ELIM) && !eager;
     #[cfg(not(feature = "cse"))]
     let comm_subexpr_elim = false;
 
     #[allow(unused_variables)]
-    let agg_scan_projection = opt_state.file_caching && !streaming && !eager;
+    let agg_scan_projection = opt_state.contains(OptState::FILE_CACHING) && !streaming && !eager;
 
     // Gradually fill the rules passed to the optimizer
     let opt = StackOptimizer {};

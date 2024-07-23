@@ -8,6 +8,7 @@ use memmap::Mmap;
 use once_cell::sync::Lazy;
 use polars_core::config::verbose;
 use polars_error::{polars_bail, PolarsResult};
+use polars_utils::mmap::{MemSlice, MmapSlice};
 
 // Keep track of memory mapped files so we don't write to them while reading
 // Use a btree as it uses less memory than a hashmap and this thing never shrinks.
@@ -139,6 +140,16 @@ impl std::ops::Deref for ReaderBytes<'_> {
             Self::Borrowed(ref_bytes) => ref_bytes,
             Self::Owned(vec) => vec,
             Self::Mapped(mmap, _) => mmap,
+        }
+    }
+}
+
+impl<'a> ReaderBytes<'a> {
+    pub fn into_mem_slice(self) -> MemSlice {
+        match self {
+            ReaderBytes::Borrowed(v) => MemSlice::from_slice(v),
+            ReaderBytes::Owned(v) => MemSlice::from_vec(v),
+            ReaderBytes::Mapped(v, _) => MemSlice::from_mmap(MmapSlice::new(v)),
         }
     }
 }

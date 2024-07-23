@@ -6,9 +6,8 @@ use polars_utils::aliases::PlHashSet;
 use slotmap::{SecondaryMap, SparseSecondaryMap};
 
 use crate::async_executor;
-use crate::async_primitives::connector::{connector, Receiver, Sender};
-use crate::graph::{Graph, GraphNodeKey, LogicalPipeKey, PortState};
-use crate::morsel::Morsel;
+use crate::graph::{Graph, GraphNode, GraphNodeKey, LogicalPipeKey, PortState};
+use crate::pipe::PhysicalPipe;
 
 /// Finds all runnable pipeline blockers in the graph, that is, nodes which:
 ///  - Only have blocked output ports.
@@ -93,6 +92,13 @@ fn find_runnable_subgraph(graph: &mut Graph) -> (PlHashSet<GraphNodeKey>, Vec<Lo
     expand_ready_subgraph(graph, to_run)
 }
 
+/// Re-uses the memory for a vec while clearing it. Allows casting the type of
+/// the vec at the same time. The stdlib specializes collect() to re-use the
+/// memory.
+fn reuse_vec<T, U>(v: Vec<T>) -> Vec<U> {
+    v.into_iter().filter_map(|_| None).collect()
+}
+
 /// Runs the given subgraph. Assumes the set of pipes is correct for the subgraph.
 fn run_subgraph(
     graph: &mut Graph,
@@ -100,72 +106,118 @@ fn run_subgraph(
     pipes: &[LogicalPipeKey],
     num_pipelines: usize,
 ) -> PolarsResult<()> {
-    // Construct pipes.
-    let mut physical_senders = SecondaryMap::new();
-    let mut physical_receivers = SecondaryMap::new();
-
-    // For morsel-driven parallelism we create N independent pipelines, where N is the number of threads.
-    // The first step is to create N physical pipes for every logical pipe in the graph.
+    // Construct physical pipes for the logical pipes we'll use.
+    let mut physical_pipes = SecondaryMap::new();
     for pipe_key in pipes.iter().copied() {
-        let (senders, receivers): (Vec<Sender<Morsel>>, Vec<Receiver<Morsel>>) =
-            (0..num_pipelines).map(|_| connector()).unzip();
+        physical_pipes.insert(pipe_key, PhysicalPipe::new(num_pipelines));
+    }
 
-        physical_senders.insert(pipe_key, senders);
-        physical_receivers.insert(pipe_key, receivers);
+    // We do a topological sort of the graph: we want to spawn each node,
+    // starting with the sinks and moving backwards. This order is important
+    // for the initialization of physical pipes - the receive port must be
+    // initialized first.
+    let mut ready = Vec::new();
+    let mut num_send_ports_not_yet_ready = SecondaryMap::new();
+    for node_key in nodes {
+        let node = &graph.nodes[*node_key];
+        let num_outputs_in_subgraph = node
+            .outputs
+            .iter()
+            .filter(|o| physical_pipes.contains_key(**o))
+            .count();
+        num_send_ports_not_yet_ready.insert(*node_key, num_outputs_in_subgraph);
+        if num_outputs_in_subgraph == 0 {
+            ready.push(*node_key);
+        }
     }
 
     let execution_state = ExecutionState::default();
     async_executor::task_scope(|scope| {
+        // Using SlotMap::iter_mut we can get simultaneous mutable references. By storing them and
+        // removing the references from the secondary map as we do our topological sort we ensure
+        // they are unique.
+        let mut node_refs: SecondaryMap<GraphNodeKey, &mut GraphNode> =
+            graph.nodes.iter_mut().collect();
+
         // Initialize tasks.
-        // This traverses the graph in arbitrary order. The order does not matter as the tasks will
-        // simply wait for the input from their pipes until that input is ready.
         let mut join_handles = Vec::new();
-        let mut phys_recv = Vec::new();
-        let mut phys_send = Vec::new();
-        for (node_key, node) in graph.nodes.iter_mut() {
-            // We can't directly loop over nodes because we need iter_mut to get
-            // multiple mutable references without the compiler complaining about
-            // borrowing graph.nodes while it was borrowed previous iteration.
-            if !nodes.contains(&node_key) {
-                continue;
+        let mut input_pipes = Vec::new();
+        let mut output_pipes = Vec::new();
+        let mut recv_ports = Vec::new();
+        let mut send_ports = Vec::new();
+        while let Some(node_key) = ready.pop() {
+            let node = node_refs.remove(node_key).unwrap();
+
+            // Temporarily remove the physical pipes from the SecondaryMap so that we can mutably
+            // borrow them simultaneously.
+            for input in &node.inputs {
+                input_pipes.push(physical_pipes.remove(*input));
+            }
+            for output in &node.outputs {
+                output_pipes.push(physical_pipes.remove(*output));
             }
 
-            // Scatter inputs/outputs per pipeline.
-            let num_inputs = node.inputs.len();
-            let num_outputs = node.outputs.len();
-            phys_recv.resize_with(num_inputs * num_pipelines, || None);
-            for (input_idx, input) in node.inputs.iter().copied().enumerate() {
-                if let Some(receivers) = physical_receivers.remove(input) {
-                    for (recv_idx, recv) in receivers.into_iter().enumerate() {
-                        phys_recv[recv_idx * num_inputs + input_idx] = Some(recv);
-                    }
-                }
+            // Construct the receive/send ports.
+            for input_pipe in &mut input_pipes {
+                recv_ports.push(input_pipe.as_mut().map(|p| p.recv_port()));
             }
-
-            phys_send.resize_with(num_outputs * num_pipelines, || None);
-            for (output_idx, output) in node.outputs.iter().copied().enumerate() {
-                if let Some(senders) = physical_senders.remove(output) {
-                    for (send_idx, send) in senders.into_iter().enumerate() {
-                        phys_send[send_idx * num_outputs + output_idx] = Some(send);
-                    }
-                }
-            }
-
-            // Spawn the global task, if any.
-            if let Some(handle) = node.compute.spawn_global(scope, &execution_state) {
-                join_handles.push(handle);
+            for output_pipe in &mut output_pipes {
+                send_ports.push(output_pipe.as_mut().map(|p| p.send_port()));
             }
 
             // Spawn a task per pipeline.
-            for pipeline in 0..num_pipelines {
-                join_handles.push(node.compute.spawn(
-                    scope,
-                    pipeline,
-                    &mut phys_recv[num_inputs * pipeline..num_inputs * (pipeline + 1)],
-                    &mut phys_send[num_outputs * pipeline..num_outputs * (pipeline + 1)],
-                    &execution_state,
-                ));
+            node.compute.spawn(
+                scope,
+                &mut recv_ports[..],
+                &mut send_ports[..],
+                &execution_state,
+                &mut join_handles,
+            );
+
+            // Ensure the ports were consumed.
+            assert!(recv_ports.iter().all(|p| p.is_none()));
+            assert!(send_ports.iter().all(|p| p.is_none()));
+
+            // Reuse the port vectors, clearing the borrow it has on input_/output_pipes.
+            recv_ports = reuse_vec(recv_ports);
+            send_ports = reuse_vec(send_ports);
+
+            // Re-insert the physical pipes into the SecondaryMap.
+            for (input, input_pipe) in node.inputs.iter().zip(input_pipes.drain(..)) {
+                if let Some(pipe) = input_pipe {
+                    physical_pipes.insert(*input, pipe);
+                }
             }
+            for (output, output_pipe) in node.outputs.iter().zip(output_pipes.drain(..)) {
+                if let Some(pipe) = output_pipe {
+                    physical_pipes.insert(*output, pipe);
+                }
+            }
+
+            // Reuse the pipe vectors, clearing the borrow it has for next iteration.
+            input_pipes = reuse_vec(input_pipes);
+            output_pipes = reuse_vec(output_pipes);
+
+            // For all the receive ports we just initialized inside spawn(), decrement
+            // the num_send_ports_not_yet_ready for the node it was connected to and mark
+            // the node as ready to spawn if all its send ports are connected to
+            // initialized recv ports.
+            for input in &node.inputs {
+                let sender = graph.pipes[*input].sender;
+                if let Some(count) = num_send_ports_not_yet_ready.get_mut(sender) {
+                    assert!(*count > 0);
+                    *count -= 1;
+                    if *count == 0 {
+                        ready.push(sender);
+                    }
+                }
+            }
+        }
+
+        // Spawn tasks for all the physical pipes (no-op on most, but needed for
+        // those with distributors or linearizers).
+        for pipe in physical_pipes.values_mut() {
+            pipe.spawn(scope, &mut join_handles);
         }
 
         // Wait until all tasks are done.
@@ -209,6 +261,9 @@ pub fn execute_graph(
             break;
         }
         run_subgraph(graph, &nodes, &pipes, num_pipelines)?;
+        if polars_core::config::verbose() {
+            eprintln!("polars-stream: done running graph phase");
+        }
     }
 
     // Ensure everything is done.

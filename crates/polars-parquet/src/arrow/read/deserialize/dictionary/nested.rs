@@ -5,7 +5,6 @@ use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
 use polars_error::{polars_err, PolarsResult};
 
-use super::super::super::PagesIter;
 use super::super::nested_utils::*;
 use super::super::utils::{dict_indices_decoder, not_implemented, MaybeNext, PageState};
 use super::finish_key;
@@ -13,7 +12,9 @@ use crate::parquet::encoding::hybrid_rle::{HybridRleDecoder, TryFromUsizeTransla
 use crate::parquet::encoding::Encoding;
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{DataPage, DictPage, Page};
+use crate::parquet::read::BasicDecompressor;
 use crate::parquet::schema::Repetition;
+use crate::read::CompressedPagesIter;
 
 #[derive(Debug)]
 pub struct State<'a> {
@@ -117,8 +118,8 @@ impl<'a, K: DictionaryKey> NestedDecoder<'a> for DictionaryDecoder<K> {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn next_dict<K: DictionaryKey, I: PagesIter, F: Fn(&DictPage) -> Box<dyn Array>>(
-    iter: &mut I,
+pub fn next_dict<K: DictionaryKey, I: CompressedPagesIter, F: Fn(&DictPage) -> Box<dyn Array>>(
+    iter: &mut BasicDecompressor<I>,
     items: &mut VecDeque<(NestedState, (Vec<K>, MutableBitmap))>,
     remaining: &mut usize,
     init: &[InitNested],
@@ -127,6 +128,7 @@ pub fn next_dict<K: DictionaryKey, I: PagesIter, F: Fn(&DictPage) -> Box<dyn Arr
     chunk_size: Option<usize>,
     read_dict: F,
 ) -> MaybeNext<PolarsResult<(NestedState, DictionaryArray<K>)>> {
+    use streaming_decompression::FallibleStreamingIterator;
     if items.len() > 1 {
         let (nested, (values, validity)) = items.pop_front().unwrap();
         let keys = finish_key(values, validity);

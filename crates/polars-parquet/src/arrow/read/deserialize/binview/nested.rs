@@ -9,14 +9,15 @@ use crate::parquet::encoding::hybrid_rle::DictionaryTranslator;
 use crate::parquet::encoding::Encoding;
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
+use crate::parquet::read::BasicDecompressor;
 use crate::read::deserialize::binary::decoders::{deserialize_plain, BinaryDict, ValuesDictionary};
 use crate::read::deserialize::binary::utils::BinaryIter;
-use crate::read::deserialize::binview::basic::finish;
 use crate::read::deserialize::nested_utils::{next, NestedDecoder};
 use crate::read::deserialize::utils::{
-    binary_views_dict, not_implemented, page_is_filtered, page_is_optional, MaybeNext, PageState,
+    self, binary_views_dict, not_implemented, page_is_filtered, page_is_optional, MaybeNext,
+    PageState,
 };
-use crate::read::{InitNested, NestedState, PagesIter};
+use crate::read::{CompressedPagesIter, InitNested, NestedState};
 
 #[derive(Debug)]
 pub(crate) struct State<'a> {
@@ -26,14 +27,14 @@ pub(crate) struct State<'a> {
 
 #[derive(Debug)]
 pub(crate) enum StateTranslation<'a> {
-    Unit(BinaryIter<'a>),
+    Plain(BinaryIter<'a>),
     Dictionary(ValuesDictionary<'a>, Option<Vec<View>>),
 }
 
 impl<'a> PageState<'a> for State<'a> {
     fn len(&self) -> usize {
         match &self.translation {
-            StateTranslation::Unit(iter) => iter.size_hint().0,
+            StateTranslation::Plain(iter) => iter.size_hint().0,
             StateTranslation::Dictionary(values, _) => values.len(),
         }
     }
@@ -67,7 +68,7 @@ impl<'a> NestedDecoder<'a> for BinViewDecoder {
             (Encoding::Plain, _) => {
                 let values = split_buffer(page)?.values;
                 let values = BinaryIter::new(values, page.num_values());
-                StateTranslation::Unit(values)
+                StateTranslation::Plain(values)
             },
             _ => return Err(not_implemented(page)),
         };
@@ -93,7 +94,7 @@ impl<'a> NestedDecoder<'a> for BinViewDecoder {
     ) -> ParquetResult<()> {
         let (values, validity) = decoded;
         match &mut state.translation {
-            StateTranslation::Unit(page) => {
+            StateTranslation::Plain(page) => {
                 // @TODO: This should probably be optimized to a better loop
                 for value in page.by_ref().take(n) {
                     values.push_value_ignore_validity(value);
@@ -129,8 +130,8 @@ impl<'a> NestedDecoder<'a> for BinViewDecoder {
     }
 }
 
-pub struct NestedIter<I: PagesIter> {
-    iter: I,
+pub struct NestedIter<I: CompressedPagesIter> {
+    iter: BasicDecompressor<I>,
     data_type: ArrowDataType,
     init: Vec<InitNested>,
     items: VecDeque<(NestedState, DecodedStateTuple)>,
@@ -139,9 +140,9 @@ pub struct NestedIter<I: PagesIter> {
     remaining: usize,
 }
 
-impl<I: PagesIter> NestedIter<I> {
+impl<I: CompressedPagesIter> NestedIter<I> {
     pub fn new(
-        iter: I,
+        iter: BasicDecompressor<I>,
         init: Vec<InitNested>,
         data_type: ArrowDataType,
         num_rows: usize,
@@ -159,11 +160,13 @@ impl<I: PagesIter> NestedIter<I> {
     }
 }
 
-impl<I: PagesIter> Iterator for NestedIter<I> {
+impl<I: CompressedPagesIter> Iterator for NestedIter<I> {
     type Item = PolarsResult<(NestedState, ArrayRef)>;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
+            use utils::Decoder;
+
             let maybe_state = next(
                 &mut self.iter,
                 &mut self.items,
@@ -176,7 +179,10 @@ impl<I: PagesIter> Iterator for NestedIter<I> {
             match maybe_state {
                 MaybeNext::Some(Ok((nested, decoded))) => {
                     return Some(
-                        finish(&self.data_type, decoded.0, decoded.1).map(|array| (nested, array)),
+                        super::basic::BinViewDecoder::default()
+                            .finalize(self.data_type.clone(), decoded)
+                            .map(|array| (nested, array))
+                            .map_err(Into::into),
                     )
                 },
                 MaybeNext::Some(Err(e)) => return Some(Err(e)),

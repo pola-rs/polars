@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 from io import BytesIO, StringIO
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from polars._utils.deprecation import deprecate_renamed_parameter
 from polars._utils.various import normalize_filepath
@@ -99,6 +99,10 @@ def scan_ndjson(
     row_index_name: str | None = None,
     row_index_offset: int = 0,
     ignore_errors: bool = False,
+    storage_options: dict[str, Any] | None = None,
+    retries: int = 2,
+    file_cache_ttl: int | None = None,
+    include_file_paths: str | None = None,
 ) -> LazyFrame:
     """
     Lazily read from a newline delimited JSON file or multiple files via glob patterns.
@@ -138,16 +142,46 @@ def scan_ndjson(
         Offset to start the row index column (only use if the name is set)
     ignore_errors
         Return `Null` if parsing fails because of schema mismatches.
+    storage_options
+        Options that indicate how to connect to a cloud provider.
+
+        The cloud providers currently supported are AWS, GCP, and Azure.
+        See supported keys here:
+
+        * `aws <https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html>`_
+        * `gcp <https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html>`_
+        * `azure <https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html>`_
+        * Hugging Face (`hf://`): Accepts an API key under the `token` parameter: \
+          `{'token': '...'}`, or by setting the `HF_TOKEN` environment variable.
+
+        If `storage_options` is not provided, Polars will try to infer the information
+        from environment variables.
+    retries
+        Number of retries if accessing a cloud instance fails.
+    file_cache_ttl
+        Amount of time to keep downloaded cloud files since their last access time,
+        in seconds. Uses the `POLARS_FILE_CACHE_TTL` environment variable
+        (which defaults to 1 hour) if not given.
+    include_file_paths
+        Include the path of the source file(s) as a column with this name.
     """
     if isinstance(source, (str, Path)):
-        source = normalize_filepath(source)
+        source = normalize_filepath(source, check_not_directory=False)
         sources = []
     else:
-        sources = [normalize_filepath(source) for source in source]
+        sources = [
+            normalize_filepath(source, check_not_directory=False) for source in source
+        ]
         source = None  # type: ignore[assignment]
     if infer_schema_length == 0:
         msg = "'infer_schema_length' should be positive"
         raise ValueError(msg)
+
+    if storage_options:
+        storage_options = list(storage_options.items())  # type: ignore[assignment]
+    else:
+        # Handle empty dict input
+        storage_options = None
 
     pylf = PyLazyFrame.new_from_ndjson(
         source,
@@ -160,5 +194,9 @@ def scan_ndjson(
         rechunk,
         parse_row_index_args(row_index_name, row_index_offset),
         ignore_errors,
+        include_file_paths=include_file_paths,
+        retries=retries,
+        cloud_options=storage_options,
+        file_cache_ttl=file_cache_ttl,
     )
     return wrap_ldf(pylf)

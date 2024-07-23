@@ -7,16 +7,17 @@ use polars_error::PolarsResult;
 
 use super::super::utils::{not_implemented, MaybeNext, PageState};
 use super::utils::FixedSizeBinary;
-use crate::arrow::read::deserialize::fixed_size_binary::basic::finish;
 use crate::arrow::read::deserialize::nested_utils::{next, NestedDecoder};
-use crate::arrow::read::{InitNested, NestedState, PagesIter};
+use crate::arrow::read::{InitNested, NestedState};
 use crate::parquet::encoding::hybrid_rle::gatherer::{SliceDictionaryTranslator, Translator};
 use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use crate::parquet::encoding::Encoding;
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{DataPage, DictPage};
+use crate::parquet::read::BasicDecompressor;
 use crate::parquet::schema::Repetition;
 use crate::read::deserialize::utils::dict_indices_decoder;
+use crate::read::CompressedPagesIter;
 
 #[derive(Debug)]
 struct State<'a> {
@@ -27,7 +28,7 @@ struct State<'a> {
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 enum StateTranslation<'a> {
-    Unit(std::slice::ChunksExact<'a, u8>),
+    Plain(std::slice::ChunksExact<'a, u8>),
     Dictionary {
         values: HybridRleDecoder<'a>,
         dict: &'a [u8],
@@ -37,7 +38,7 @@ enum StateTranslation<'a> {
 impl<'a> PageState<'a> for State<'a> {
     fn len(&self) -> usize {
         match &self.translation {
-            StateTranslation::Unit(chunks) => chunks.len(),
+            StateTranslation::Plain(chunks) => chunks.len(),
             StateTranslation::Dictionary {
                 values: decoder, ..
             } => decoder.len(),
@@ -52,7 +53,7 @@ struct BinaryDecoder {
 
 impl<'a> NestedDecoder<'a> for BinaryDecoder {
     type State = State<'a>;
-    type Dictionary = Vec<u8>;
+    type Dictionary = &'a [u8];
     type DecodedState = (FixedSizeBinary, MutableBitmap);
 
     fn build_state(
@@ -69,9 +70,9 @@ impl<'a> NestedDecoder<'a> for BinaryDecoder {
                 let values = page.buffer();
                 assert_eq!(values.len() % self.size, 0);
                 let values = values.chunks_exact(self.size);
-                StateTranslation::Unit(values)
+                StateTranslation::Plain(values)
             },
-            (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict), false) => {
+            (Encoding::PlainDictionary | Encoding::RleDictionary, Some(&dict), false) => {
                 let values = dict_indices_decoder(page)?;
                 StateTranslation::Dictionary { values, dict }
             },
@@ -104,7 +105,7 @@ impl<'a> NestedDecoder<'a> for BinaryDecoder {
         }
 
         match &mut state.translation {
-            StateTranslation::Unit(page_values) => {
+            StateTranslation::Plain(page_values) => {
                 for value in page_values.by_ref().take(n) {
                     values.push(value);
                 }
@@ -133,13 +134,13 @@ impl<'a> NestedDecoder<'a> for BinaryDecoder {
         validity.extend_constant(n, false);
     }
 
-    fn deserialize_dict(&self, page: &DictPage) -> Self::Dictionary {
-        page.buffer.clone()
+    fn deserialize_dict(&self, page: &'a DictPage) -> Self::Dictionary {
+        page.buffer.as_ref()
     }
 }
 
-pub struct NestedIter<I: PagesIter> {
-    iter: I,
+pub struct NestedIter<I: CompressedPagesIter> {
+    iter: BasicDecompressor<I>,
     data_type: ArrowDataType,
     size: usize,
     init: Vec<InitNested>,
@@ -149,9 +150,9 @@ pub struct NestedIter<I: PagesIter> {
     remaining: usize,
 }
 
-impl<I: PagesIter> NestedIter<I> {
+impl<I: CompressedPagesIter> NestedIter<I> {
     pub fn new(
-        iter: I,
+        iter: BasicDecompressor<I>,
         init: Vec<InitNested>,
         data_type: ArrowDataType,
         num_rows: usize,
@@ -171,7 +172,15 @@ impl<I: PagesIter> NestedIter<I> {
     }
 }
 
-impl<I: PagesIter> Iterator for NestedIter<I> {
+pub fn finish(
+    data_type: &ArrowDataType,
+    values: FixedSizeBinary,
+    validity: MutableBitmap,
+) -> FixedSizeBinaryArray {
+    FixedSizeBinaryArray::new(data_type.clone(), values.values.into(), validity.into())
+}
+
+impl<I: CompressedPagesIter> Iterator for NestedIter<I> {
     type Item = PolarsResult<(NestedState, FixedSizeBinaryArray)>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -179,7 +188,7 @@ impl<I: PagesIter> Iterator for NestedIter<I> {
             let maybe_state = next(
                 &mut self.iter,
                 &mut self.items,
-                &mut self.dict,
+                &mut self.dict.as_deref(),
                 &mut self.remaining,
                 &self.init,
                 self.chunk_size,

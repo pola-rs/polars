@@ -4,7 +4,7 @@ use crate::parquet::page::{
     CompressedDataPage, CompressedDictPage, CompressedPage, DataPage, DataPageHeader, DictPage,
     Page,
 };
-use crate::parquet::{compression, FallibleStreamingIterator};
+use crate::parquet::{compression, CowBuffer, FallibleStreamingIterator};
 
 /// Compresses a [`DataPage`] into a [`CompressedDataPage`].
 fn compress_data(
@@ -37,11 +37,12 @@ fn compress_data(
             },
         };
     } else {
-        std::mem::swap(&mut buffer, &mut compressed_buffer);
-    };
+        std::mem::swap(buffer.to_mut(), &mut compressed_buffer);
+    }
+
     Ok(CompressedDataPage::new_read(
         header,
-        compressed_buffer,
+        CowBuffer::Owned(compressed_buffer),
         compression.into(),
         uncompressed_page_size,
         descriptor,
@@ -55,16 +56,19 @@ fn compress_dict(
     compression: CompressionOptions,
 ) -> ParquetResult<CompressedDictPage> {
     let DictPage {
-        mut buffer,
+        buffer,
         num_values,
         is_sorted,
     } = page;
+
     let uncompressed_page_size = buffer.len();
-    if compression != CompressionOptions::Uncompressed {
+    let compressed_buffer = if compression != CompressionOptions::Uncompressed {
         compression::compress(compression, &buffer, &mut compressed_buffer)?;
+        CowBuffer::Owned(compressed_buffer)
     } else {
-        std::mem::swap(&mut buffer, &mut compressed_buffer);
-    }
+        buffer
+    };
+
     Ok(CompressedDictPage::new(
         compressed_buffer,
         compression.into(),
@@ -124,7 +128,7 @@ impl<I: Iterator<Item = ParquetResult<Page>>> Compressor<I> {
     /// Deconstructs itself into its iterator and scratch buffer.
     pub fn into_inner(mut self) -> (I, Vec<u8>) {
         let mut buffer = if let Some(page) = self.current.as_mut() {
-            std::mem::take(page.buffer())
+            std::mem::take(page.buffer_mut())
         } else {
             std::mem::take(&mut self.buffer)
         };
@@ -139,7 +143,7 @@ impl<I: Iterator<Item = ParquetResult<Page>>> FallibleStreamingIterator for Comp
 
     fn advance(&mut self) -> std::result::Result<(), Self::Error> {
         let mut compressed_buffer = if let Some(page) = self.current.as_mut() {
-            std::mem::take(page.buffer())
+            std::mem::take(page.buffer_mut())
         } else {
             std::mem::take(&mut self.buffer)
         };

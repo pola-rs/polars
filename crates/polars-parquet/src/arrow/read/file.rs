@@ -28,12 +28,10 @@ impl<R: Read + Seek> FileReader<R> {
         reader: R,
         row_groups: Vec<RowGroupMetaData>,
         schema: ArrowSchema,
-        chunk_size: Option<usize>,
         limit: Option<usize>,
         page_indexes: Option<Vec<Vec<Vec<Vec<FilteredPage>>>>>,
     ) -> Self {
-        let row_groups =
-            RowGroupReader::new(reader, schema, row_groups, chunk_size, limit, page_indexes);
+        let row_groups = RowGroupReader::new(reader, schema, row_groups, limit, page_indexes);
 
         Self {
             row_groups,
@@ -114,7 +112,6 @@ pub struct RowGroupReader<R: Read + Seek> {
     reader: R,
     schema: ArrowSchema,
     row_groups: std::vec::IntoIter<RowGroupMetaData>,
-    chunk_size: Option<usize>,
     remaining_rows: usize,
     page_indexes: Option<std::vec::IntoIter<Vec<Vec<Vec<FilteredPage>>>>>,
 }
@@ -125,7 +122,6 @@ impl<R: Read + Seek> RowGroupReader<R> {
         reader: R,
         schema: ArrowSchema,
         row_groups: Vec<RowGroupMetaData>,
-        chunk_size: Option<usize>,
         limit: Option<usize>,
         page_indexes: Option<Vec<Vec<Vec<Vec<FilteredPage>>>>>,
     ) -> Self {
@@ -136,7 +132,6 @@ impl<R: Read + Seek> RowGroupReader<R> {
             reader,
             schema,
             row_groups: row_groups.into_iter(),
-            chunk_size,
             remaining_rows: limit.unwrap_or(usize::MAX),
             page_indexes: page_indexes.map(|pages| pages.into_iter()),
         }
@@ -181,7 +176,6 @@ impl<R: Read + Seek> RowGroupReader<R> {
             &mut self.reader,
             &row_group,
             self.schema.fields.clone(),
-            self.chunk_size,
             Some(self.remaining_rows),
             pages,
         )?;

@@ -744,3 +744,24 @@ def test_hash_empty_series_16577() -> None:
     s = pl.Series(values=None)
     out = pl.LazyFrame().select(s).collect()
     assert out.equals(s.to_frame())
+
+
+def test_cse_non_scalar_length_mismatch_17732() -> None:
+    df = pl.LazyFrame({"a": pl.Series(range(30), dtype=pl.Int32)})
+    got = (
+        df.lazy()
+        .with_columns(
+            pl.col("a").head(5).min().alias("b"),
+            pl.col("a").head(5).max().alias("c"),
+        )
+        .collect(comm_subexpr_elim=True)
+    )
+    expect = pl.DataFrame(
+        {
+            "a": pl.Series(range(30), dtype=pl.Int32),
+            "b": pl.Series([0] * 30, dtype=pl.Int32),
+            "c": pl.Series([4] * 30, dtype=pl.Int32),
+        }
+    )
+
+    assert_frame_equal(expect, got)

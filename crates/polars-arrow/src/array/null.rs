@@ -84,7 +84,8 @@ impl Array for NullArray {
     }
 
     fn with_validity(&self, _: Option<Bitmap>) -> Box<dyn Array> {
-        panic!("cannot set validity of a null array")
+        // Nulls with invalid nulls are also nulls.
+        self.clone().boxed()
     }
 }
 

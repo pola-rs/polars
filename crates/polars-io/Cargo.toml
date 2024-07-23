@@ -14,7 +14,7 @@ polars-error = { workspace = true }
 polars-json = { workspace = true, optional = true }
 polars-parquet = { workspace = true, optional = true }
 polars-time = { workspace = true, features = [], optional = true }
-polars-utils = { workspace = true }
+polars-utils = { workspace = true, features = ['mmap'] }
 
 ahash = { workspace = true }
 arrow = { workspace = true }
@@ -30,7 +30,7 @@ futures = { workspace = true, optional = true }
 glob = { version = "0.3" }
 itoa = { workspace = true, optional = true }
 memchr = { workspace = true }
-memmap = { package = "memmap2", version = "0.7" }
+memmap = { workspace = true }
 num-traits = { workspace = true }
 object_store = { workspace = true, optional = true }
 once_cell = { workspace = true }
@@ -111,7 +111,17 @@ async = [
   "polars-error/regex",
   "polars-parquet?/async",
 ]
-cloud = ["object_store", "async", "polars-error/object_store", "url", "serde_json", "serde", "file_cache", "reqwest"]
+cloud = [
+  "object_store",
+  "async",
+  "polars-error/object_store",
+  "url",
+  "serde_json",
+  "serde",
+  "file_cache",
+  "reqwest",
+  "http",
+]
 file_cache = ["async", "dep:blake3", "dep:fs4"]
 aws = ["object_store/aws", "cloud", "reqwest"]
 azure = ["object_store/azure", "cloud"]

@@ -30,10 +30,16 @@ pub enum PhysNode {
     Select {
         input: PhysNodeKey,
         selectors: Vec<ExprIR>,
+        selector_reentrant: Vec<bool>,
         extend_original: bool,
         output_schema: Arc<Schema>,
     },
-
+    Reduce {
+        input: PhysNodeKey,
+        exprs: Vec<ExprIR>,
+        input_schema: Arc<Schema>,
+        output_schema: Arc<Schema>,
+    },
     StreamingSlice {
         input: PhysNodeKey,
         offset: usize,

@@ -69,6 +69,7 @@ nav:
       - user-guide/io/database.md
       - user-guide/io/cloud-storage.md
       - user-guide/io/bigquery.md
+      - user-guide/io/hugging-face.md
     - SQL:
       - user-guide/sql/intro.md
       - user-guide/sql/show.md
@@ -84,6 +85,7 @@ nav:
       - user-guide/misc/visualization.md
       - user-guide/misc/styling.md
       - user-guide/misc/comparison.md
+      - user-guide/misc/arrow.md
 
   - API reference: api/index.md
 

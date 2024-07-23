@@ -4,6 +4,7 @@ use async_stream::try_stream;
 use futures::io::{copy, sink};
 use futures::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt, Stream};
 use parquet_format_safe::thrift::protocol::TCompactInputStreamProtocol;
+use polars_utils::mmap::MemSlice;
 
 use super::reader::{finish_page, get_page_header, PageMetaData};
 use super::PageFilter;
@@ -118,7 +119,7 @@ fn _get_page_stream<R: AsyncRead + Unpin + Send>(
 
             yield finish_page(
                 page_header,
-                &mut scratch,
+                MemSlice::from_vec(std::mem::take(&mut scratch)),
                 compression,
                 &descriptor,
                 None,

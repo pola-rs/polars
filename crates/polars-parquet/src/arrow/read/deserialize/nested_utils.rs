@@ -6,8 +6,8 @@ use arrow::bitmap::MutableBitmap;
 use polars_error::{polars_bail, PolarsResult};
 use polars_utils::slice::GetSaferUnchecked;
 
-use super::super::PagesIter;
 use super::utils::{BatchableCollector, DecodedState, MaybeNext, PageState};
+use super::{BasicDecompressor, CompressedPagesIter};
 use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{split_buffer, DataPage, DictPage, Page};
@@ -229,7 +229,7 @@ pub(super) trait NestedDecoder<'a> {
     ) -> ParquetResult<()>;
     fn push_n_nulls(&self, decoded: &mut Self::DecodedState, n: usize);
 
-    fn deserialize_dict(&self, page: &DictPage) -> Self::Dictionary;
+    fn deserialize_dict(&self, page: &'a DictPage) -> Self::Dictionary;
 }
 
 /// The initial info of nested data types.
@@ -542,7 +542,7 @@ fn extend_offsets2<'a, 'b, 'c, 'd, D: NestedDecoder<'a>>(
 
 #[inline]
 pub(super) fn next<'a, I, D>(
-    iter: &'a mut I,
+    iter: &'a mut BasicDecompressor<I>,
     items: &mut VecDeque<(NestedState, D::DecodedState)>,
     dict: &'a mut Option<D::Dictionary>,
     remaining: &mut usize,
@@ -551,9 +551,11 @@ pub(super) fn next<'a, I, D>(
     decoder: &D,
 ) -> MaybeNext<PolarsResult<(NestedState, D::DecodedState)>>
 where
-    I: PagesIter,
+    I: CompressedPagesIter,
     D: NestedDecoder<'a>,
 {
+    use streaming_decompression::FallibleStreamingIterator;
+
     // front[a1, a2, a3, ...]back
     if items.len() > 1 {
         return MaybeNext::Some(Ok(items.pop_front().unwrap()));

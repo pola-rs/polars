@@ -13,6 +13,7 @@ use polars_parquet::parquet::schema::types::{ParquetType, PhysicalType, Primitiv
 use polars_parquet::parquet::write::{
     Compressor, DynIter, DynStreamingIterator, FileWriter, Version, WriteOptions,
 };
+use polars_utils::mmap::MemReader;
 
 use super::super::read::collect;
 use super::primitive::array_to_page_v1;
@@ -59,7 +60,7 @@ fn write_file() -> ParquetResult<Vec<u8>> {
 #[test]
 fn read_indexed_page() -> ParquetResult<()> {
     let data = write_file()?;
-    let mut reader = Cursor::new(data);
+    let mut reader = MemReader::from_vec(data);
 
     let metadata = read_metadata(&mut reader)?;
 

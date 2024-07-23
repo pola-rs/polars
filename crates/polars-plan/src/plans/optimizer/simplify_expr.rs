@@ -413,8 +413,9 @@ fn string_addition_to_linear_concat(
                     .into(),
                     options: FunctionOptions {
                         collect_groups: ApplyOptions::ElementWise,
-                        input_wildcard_expansion: true,
-                        returns_scalar: false,
+                        flags: FunctionFlags::default()
+                            | FunctionFlags::INPUT_WILDCARD_EXPANSION
+                                & !FunctionFlags::RETURNS_SCALAR,
                         ..Default::default()
                     },
                 }),

@@ -1,60 +1,48 @@
+use bitflags::bitflags;
+
+bitflags! {
 #[derive(Copy, Clone, Debug)]
-/// State of the allowed optimizations
-pub struct OptState {
-    /// Only read columns that are used later in the query.
-    pub projection_pushdown: bool,
-    /// Apply predicates/filters as early as possible.
-    pub predicate_pushdown: bool,
-    /// Cluster sequential `with_columns` calls to independent calls.
-    pub cluster_with_columns: bool,
-    /// Run many type coercion optimization rules until fixed point.
-    pub type_coercion: bool,
-    /// Run many expression optimization rules until fixed point.
-    pub simplify_expr: bool,
-    /// Cache file reads.
-    pub file_caching: bool,
-    /// Pushdown slices/limits.
-    pub slice_pushdown: bool,
-    #[cfg(feature = "cse")]
-    /// Run common-subplan-elimination. This elides duplicate plans and caches their
-    /// outputs.
-    pub comm_subplan_elim: bool,
-    #[cfg(feature = "cse")]
-    /// Run common-subexpression-elimination. This elides duplicate expressions and caches their
-    /// outputs.
-    pub comm_subexpr_elim: bool,
-    /// Run nodes that are capably of doing so on the streaming engine.
-    pub streaming: bool,
-    /// Run every node eagerly. This turns off multi-node optimizations.
-    pub eager: bool,
-    /// Replace simple projections with a faster inlined projection that skips the expression engine.
-    pub fast_projection: bool,
-    /// Try to estimate the number of rows so that joins can determine which side to keep in memory.
-    pub row_estimate: bool,
-    pub new_streaming: bool,
+    /// Allowed optimizations.
+    pub struct OptState: u32 {
+        /// Only read columns that are used later in the query.
+        const PROJECTION_PUSHDOWN = 1;
+        /// Apply predicates/filters as early as possible.
+        const PREDICATE_PUSHDOWN = 1 << 2;
+        /// Cluster sequential `with_columns` calls to independent calls.
+        const CLUSTER_WITH_COLUMNS = 1 << 3;
+        /// Run many type coercion optimization rules until fixed point.
+        const TYPE_COERCION = 1 << 4;
+        /// Run many expression optimization rules until fixed point.
+        const SIMPLIFY_EXPR = 1 << 5;
+        /// Cache file reads.
+        const FILE_CACHING = 1 << 6;
+        /// Pushdown slices/limits.
+        const SLICE_PUSHDOWN = 1 << 7;
+        #[cfg(feature = "cse")]
+        /// Run common-subplan-elimination. This elides duplicate plans and caches their
+        /// outputs.
+        const COMM_SUBPLAN_ELIM = 1 << 8;
+        #[cfg(feature = "cse")]
+        /// Run common-subexpression-elimination. This elides duplicate expressions and caches their
+        /// outputs.
+        const COMM_SUBEXPR_ELIM = 1 << 9;
+        /// Run nodes that are capably of doing so on the streaming engine.
+        const STREAMING = 1 << 10;
+        const NEW_STREAMING = 1 << 11;
+        /// Run every node eagerly. This turns off multi-node optimizations.
+        const EAGER = 1 << 12;
+        /// Try to estimate the number of rows so that joins can determine which side to keep in memory.
+        const ROW_ESTIMATE = 1 << 13;
+        /// Replace simple projections with a faster inlined projection that skips the expression engine.
+        const FAST_PROJECTION = 1 << 14;
+    }
 }
 
 impl Default for OptState {
     fn default() -> Self {
-        OptState {
-            projection_pushdown: true,
-            predicate_pushdown: true,
-            cluster_with_columns: true,
-            type_coercion: true,
-            simplify_expr: true,
-            slice_pushdown: true,
+        Self::from_bits_truncate(u32::MAX) & !Self::NEW_STREAMING & !Self::STREAMING & !Self::EAGER
             // will be toggled by a scan operation such as csv scan or parquet scan
-            file_caching: false,
-            #[cfg(feature = "cse")]
-            comm_subplan_elim: true,
-            #[cfg(feature = "cse")]
-            comm_subexpr_elim: true,
-            streaming: false,
-            fast_projection: true,
-            eager: false,
-            row_estimate: true,
-            new_streaming: false,
-        }
+            & !Self::FILE_CACHING
     }
 }
 

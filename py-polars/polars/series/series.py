@@ -355,16 +355,62 @@ class Series:
         return series
 
     @classmethod
+    @deprecate_function(
+        "use _import_arrow_from_c; if you are using an extension, please compile it with latest 'pyo3-polars'",
+        version="1.3",
+    )
     def _import_from_c(cls, name: str, pointers: list[tuple[int, int]]) -> Self:
+        return cls._from_pyseries(PySeries._import_arrow_from_c(name, pointers))
+
+    @classmethod
+    def _import_arrow_from_c(cls, name: str, pointers: list[tuple[int, int]]) -> Self:
         """
         Construct a Series from Arrows C interface.
+
+        Parameters
+        ----------
+        name
+            The name that should be given to the `Series`.
+        pointers
+            A list with tuples containing two entries:
+             - The raw pointer to a C ArrowArray struct
+             - The raw pointer to a C ArrowSchema struct
 
         Warning
         -------
         This will read the `array` pointer without moving it. The host process should
         garbage collect the heap pointer, but not its contents.
         """
-        return cls._from_pyseries(PySeries._import_from_c(name, pointers))
+        return cls._from_pyseries(PySeries._import_arrow_from_c(name, pointers))
+
+    def _export_arrow_to_c(self, out_ptr: int, out_schema_ptr: int) -> None:
+        """
+        Export to a C ArrowArray and C ArrowSchema struct, given their pointers.
+
+        Parameters
+        ----------
+        out_ptr: int
+            The raw pointer to a C ArrowArray struct.
+        out_schema_ptr: int (optional)
+            The raw pointer to a C ArrowSchema struct.
+
+        Notes
+        -----
+        The series should only contain a single chunk. If you want to export all chunks,
+        first call `Series.get_chunks` to give you a list of chunks.
+
+        Warning
+        -------
+        Safety
+        This function will write to the pointers given in `out_ptr` and `out_schema_ptr`
+        and thus is highly unsafe.
+
+        Leaking
+        If you don't pass the ArrowArray struct to a consumer,
+        array memory will leak.  This is a low-level function intended for
+        expert users.
+        """
+        self._s._export_arrow_to_c(out_ptr, out_schema_ptr)
 
     def _get_buffer_info(self) -> BufferInfo:
         """
@@ -2437,8 +2483,8 @@ class Series:
                 as the computation is already parallelized per group.
         name
             Give the resulting count column a specific name;
-            if `normalize` is True defaults to "count",
-            otherwise defaults to "proportion".
+            if `normalize` is True defaults to "proportion",
+            otherwise defaults to "count".
         normalize
             If true gives relative frequencies of the unique values
 
@@ -3665,9 +3711,19 @@ class Series:
         ]
         """
 
-    def is_in(self, other: Series | Collection[Any]) -> Series:
+    def is_in(self, other: Series | Collection[Any], *, strict: bool = True) -> Series:
         """
         Check if elements of this Series are in the other Series.
+
+        Parameters
+        ----------
+        other
+            Series or sequence to test membership of.
+        strict
+            If a python collection is given, `strict`
+            will be passed to the `Series` constructor
+            and indicates how different types should be
+            handled.
 
         Returns
         -------

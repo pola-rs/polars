@@ -808,41 +808,7 @@ impl Series {
     }
 
     pub fn mean_reduce(&self) -> Scalar {
-        match self.dtype() {
-            DataType::Float32 => {
-                let val = self.mean().map(|m| m as f32);
-                Scalar::new(self.dtype().clone(), val.into())
-            },
-            dt if dt.is_numeric() || dt.is_decimal() || dt.is_bool() => {
-                let val = self.mean();
-                Scalar::new(DataType::Float64, val.into())
-            },
-            #[cfg(feature = "dtype-date")]
-            DataType::Date => {
-                let val = self.mean().map(|v| (v * MS_IN_DAY as f64) as i64);
-                let av: AnyValue = val.into();
-                Scalar::new(DataType::Datetime(TimeUnit::Milliseconds, None), av)
-            },
-            #[cfg(feature = "dtype-datetime")]
-            dt @ DataType::Datetime(_, _) => {
-                let val = self.mean().map(|v| v as i64);
-                let av: AnyValue = val.into();
-                Scalar::new(dt.clone(), av)
-            },
-            #[cfg(feature = "dtype-duration")]
-            dt @ DataType::Duration(_) => {
-                let val = self.mean().map(|v| v as i64);
-                let av: AnyValue = val.into();
-                Scalar::new(dt.clone(), av)
-            },
-            #[cfg(feature = "dtype-time")]
-            dt @ DataType::Time => {
-                let val = self.mean().map(|v| v as i64);
-                let av: AnyValue = val.into();
-                Scalar::new(dt.clone(), av)
-            },
-            dt => Scalar::new(dt.clone(), AnyValue::Null),
-        }
+        crate::scalar::reduce::mean_reduce(self.mean(), self.dtype().clone())
     }
 
     /// Compute the unique elements, but maintain order. This requires more work

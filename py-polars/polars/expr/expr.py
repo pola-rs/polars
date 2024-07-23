@@ -4402,6 +4402,32 @@ class Expr:
         │ 0   ┆ 3   │
         └─────┴─────┘
 
+        Call a function that takes multiple arguments by creating a `struct` and
+        referencing its fields inside the function call.
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [5, 1, 0, 3],
+        ...         "b": [4, 2, 3, 4],
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     a_times_b=pl.struct("a", "b").map_batches(
+        ...         lambda x: np.multiply(x.struct.field("a"), x.struct.field("b"))
+        ...     )
+        ... )
+        shape: (4, 3)
+        ┌─────┬─────┬───────────┐
+        │ a   ┆ b   ┆ a_times_b │
+        │ --- ┆ --- ┆ ---       │
+        │ i64 ┆ i64 ┆ i64       │
+        ╞═════╪═════╪═══════════╡
+        │ 5   ┆ 4   ┆ 20        │
+        │ 1   ┆ 2   ┆ 2         │
+        │ 0   ┆ 3   ┆ 0         │
+        │ 3   ┆ 4   ┆ 12        │
+        └─────┴─────┴───────────┘
+
         """
         if return_dtype is not None:
             return_dtype = parse_into_dtype(return_dtype)
@@ -5698,14 +5724,21 @@ class Expr:
         """
         return self.__xor__(other)
 
-    def is_in(self, other: Expr | Collection[Any] | Series) -> Expr:
+    def is_in(
+        self, other: Expr | Collection[Any] | Series, *, strict: bool = True
+    ) -> Expr:
         """
         Check if elements of this expression are present in the other Series.
 
         Parameters
         ----------
         other
-            Series or sequence of primitive type.
+            Series or sequence to test membership of.
+        strict
+            If a python collection is given, `strict`
+            will be passed to the `Series` constructor
+            and indicates how different types should be
+            handled.
 
         Returns
         -------
@@ -5732,7 +5765,7 @@ class Expr:
         if isinstance(other, Collection) and not isinstance(other, str):
             if isinstance(other, (Set, FrozenSet)):
                 other = list(other)
-            other = F.lit(pl.Series(other))._pyexpr
+            other = F.lit(pl.Series(other, strict=strict))._pyexpr
         else:
             other = parse_into_expression(other)
         return self._from_pyexpr(self._pyexpr.is_in(other))
@@ -9682,8 +9715,8 @@ class Expr:
                 as the computation is already parallelized per group.
         name
             Give the resulting count column a specific name;
-            if `normalize` is True defaults to "count",
-            otherwise defaults to "proportion".
+            if `normalize` is True defaults to "proportion",
+            otherwise defaults to "count".
         normalize
             If true gives relative frequencies of the unique values
 

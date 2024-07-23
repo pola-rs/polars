@@ -1,13 +1,10 @@
-use std::collections::VecDeque;
-
-use arrow::array::MutablePrimitiveArray;
+use arrow::array::{Array, MutablePrimitiveArray};
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
 use polars_error::PolarsResult;
 
-use super::super::utils::MaybeNext;
-use super::super::{utils, PagesIter};
+use super::super::utils;
 use crate::parquet::encoding::hybrid_rle::DictionaryTranslator;
 use crate::parquet::encoding::{byte_stream_split, hybrid_rle, Encoding};
 use crate::parquet::error::ParquetResult;
@@ -18,7 +15,7 @@ use crate::read::deserialize::utils::filter::Filter;
 use crate::read::deserialize::utils::{BatchableCollector, PageValidity, TranslatedHybridRle};
 
 #[derive(Debug)]
-pub(super) struct ValuesDictionary<'a, T: NativeType> {
+pub(crate) struct ValuesDictionary<'a, T: NativeType> {
     pub values: hybrid_rle::HybridRleDecoder<'a>,
     pub dict: &'a [T],
 }
@@ -99,19 +96,19 @@ where
     }
 }
 
-struct BatchDecoder<'a, 'b, P, T, D>
+pub(crate) struct PlainDecoderFnCollector<'a, 'b, P, T, D>
 where
     T: NativeType,
     P: ParquetNativeType,
     D: DecoderFunction<P, T>,
 {
-    chunks: &'b mut ArrayChunks<'a, P>,
-    decoder: D,
-    _pd: std::marker::PhantomData<T>,
+    pub(crate) chunks: &'b mut ArrayChunks<'a, P>,
+    pub(crate) decoder: D,
+    pub(crate) _pd: std::marker::PhantomData<T>,
 }
 
 impl<'a, 'b, P, T, D: DecoderFunction<P, T>> BatchableCollector<(), Vec<T>>
-    for BatchDecoder<'a, 'b, P, T, D>
+    for PlainDecoderFnCollector<'a, 'b, P, T, D>
 where
     T: NativeType,
     P: ParquetNativeType,
@@ -142,8 +139,8 @@ where
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
-pub(super) enum StateTranslation<'a, P: ParquetNativeType, T: NativeType> {
-    Unit(ArrayChunks<'a, P>),
+pub(crate) enum StateTranslation<'a, P: ParquetNativeType, T: NativeType> {
+    Plain(ArrayChunks<'a, P>),
     Dictionary(ValuesDictionary<'a, T>),
     ByteStreamSplit(byte_stream_split::Decoder<'a>),
 }
@@ -158,7 +155,7 @@ where
     fn new(
         _decoder: &PrimitiveDecoder<P, T, D>,
         page: &'a DataPage,
-        dict: Option<&'a <PrimitiveDecoder<P, T, D> as utils::Decoder<'a>>::Dict>,
+        dict: Option<&'a <PrimitiveDecoder<P, T, D> as utils::Decoder>::Dict>,
         _page_validity: Option<&PageValidity<'a>>,
         _filter: Option<&Filter<'a>>,
     ) -> PolarsResult<Self> {
@@ -168,7 +165,7 @@ where
             },
             (Encoding::Plain, _) => {
                 let values = split_buffer(page)?.values;
-                Ok(Self::Unit(ArrayChunks::new(values).unwrap()))
+                Ok(Self::Plain(ArrayChunks::new(values).unwrap()))
             },
             (Encoding::ByteStreamSplit, _) => {
                 let values = split_buffer(page)?.values;
@@ -183,7 +180,7 @@ where
 
     fn len_when_not_nullable(&self) -> usize {
         match self {
-            Self::Unit(n) => n.len(),
+            Self::Plain(n) => n.len(),
             Self::Dictionary(n) => n.len(),
             Self::ByteStreamSplit(n) => n.len(),
         }
@@ -195,7 +192,7 @@ where
         }
 
         match self {
-            Self::Unit(t) => _ = t.nth(n - 1),
+            Self::Plain(t) => _ = t.nth(n - 1),
             Self::Dictionary(t) => t.values.skip_in_place(n)?,
             Self::ByteStreamSplit(t) => _ = t.iter_converted(|_| ()).nth(n - 1),
         }
@@ -206,22 +203,23 @@ where
     fn extend_from_state(
         &mut self,
         decoder: &PrimitiveDecoder<P, T, D>,
-        decoded: &mut <PrimitiveDecoder<P, T, D> as utils::Decoder<'a>>::DecodedState,
+        decoded: &mut <PrimitiveDecoder<P, T, D> as utils::Decoder>::DecodedState,
         page_validity: &mut Option<PageValidity<'a>>,
         additional: usize,
     ) -> ParquetResult<()> {
         let (values, validity) = decoded;
 
         match (self, page_validity) {
-            (Self::Unit(page), None) => {
-                values.extend(
-                    page.by_ref()
-                        .map(|v| decoder.decoder.decode(P::from_le_bytes(*v)))
-                        .take(additional),
-                );
+            (Self::Plain(page), None) => {
+                PlainDecoderFnCollector {
+                    chunks: page,
+                    decoder: decoder.decoder,
+                    _pd: std::marker::PhantomData,
+                }
+                .push_n(values, additional)?;
             },
-            (Self::Unit(page), Some(page_validity)) => {
-                let batched = BatchDecoder {
+            (Self::Plain(page), Some(page_validity)) => {
+                let collector = PlainDecoderFnCollector {
                     chunks: page,
                     decoder: decoder.decoder,
                     _pd: std::marker::PhantomData,
@@ -232,8 +230,8 @@ where
                     page_validity,
                     Some(additional),
                     values,
-                    batched,
-                )?
+                    collector,
+                )?;
             },
             (Self::Dictionary(page), None) => {
                 let translator = DictionaryTranslator(page.dict);
@@ -275,7 +273,7 @@ where
 }
 
 #[derive(Debug)]
-pub(super) struct PrimitiveDecoder<P, T, D>
+pub(crate) struct PrimitiveDecoder<P, T, D>
 where
     T: NativeType,
     P: ParquetNativeType,
@@ -292,7 +290,7 @@ where
     D: DecoderFunction<P, T>,
 {
     #[inline]
-    pub(super) fn new(decoder: D) -> Self {
+    pub(crate) fn new(decoder: D) -> Self {
         Self {
             decoder,
             _pd: std::marker::PhantomData,
@@ -306,13 +304,13 @@ impl<T: std::fmt::Debug> utils::DecodedState for (Vec<T>, MutableBitmap) {
     }
 }
 
-impl<'a, P, T, D> utils::Decoder<'a> for PrimitiveDecoder<P, T, D>
+impl<P, T, D> utils::Decoder for PrimitiveDecoder<P, T, D>
 where
     T: NativeType,
     P: ParquetNativeType,
     D: DecoderFunction<P, T>,
 {
-    type Translation = StateTranslation<'a, P, T>;
+    type Translation<'a> = StateTranslation<'a, P, T>;
     type Dict = Vec<T>;
     type DecodedState = (Vec<T>, MutableBitmap);
 
@@ -323,99 +321,26 @@ where
         )
     }
 
-    fn deserialize_dict(&self, page: &DictPage) -> Self::Dict {
+    fn deserialize_dict(&self, page: DictPage) -> Self::Dict {
         deserialize_plain::<P, T, D>(&page.buffer, self.decoder)
     }
-}
 
-pub(super) fn finish<T: NativeType>(
-    data_type: &ArrowDataType,
-    values: Vec<T>,
-    validity: MutableBitmap,
-) -> MutablePrimitiveArray<T> {
-    let validity = if validity.is_empty() {
-        None
-    } else {
-        Some(validity)
-    };
-    MutablePrimitiveArray::try_new(data_type.clone(), values, validity).unwrap()
-}
-
-/// An [`Iterator`] adapter over [`PagesIter`] assumed to be encoded as primitive arrays
-#[derive(Debug)]
-pub struct Iter<T, I, P, D>
-where
-    I: PagesIter,
-    T: NativeType,
-    P: ParquetNativeType,
-    D: DecoderFunction<P, T>,
-{
-    iter: I,
-    data_type: ArrowDataType,
-    items: VecDeque<(Vec<T>, MutableBitmap)>,
-    remaining: usize,
-    chunk_size: Option<usize>,
-    dict: Option<Vec<T>>,
-    decoder: D,
-    phantom: std::marker::PhantomData<P>,
-}
-
-impl<T, I, P, D> Iter<T, I, P, D>
-where
-    I: PagesIter,
-    T: NativeType,
-
-    P: ParquetNativeType,
-    D: DecoderFunction<P, T>,
-{
-    pub fn new(
-        iter: I,
+    fn finalize(
+        &self,
         data_type: ArrowDataType,
-        num_rows: usize,
-        chunk_size: Option<usize>,
-        decoder: D,
-    ) -> Self {
-        Self {
-            iter,
-            data_type,
-            items: VecDeque::new(),
-            dict: None,
-            remaining: num_rows,
-            chunk_size,
-            decoder,
-            phantom: Default::default(),
-        }
-    }
-}
+        (values, validity): Self::DecodedState,
+    ) -> ParquetResult<Box<dyn Array>> {
+        let validity = if validity.is_empty() {
+            None
+        } else {
+            Some(validity)
+        };
 
-impl<T, I, P, D> Iterator for Iter<T, I, P, D>
-where
-    I: PagesIter,
-    T: NativeType,
-    P: ParquetNativeType,
-    D: DecoderFunction<P, T>,
-{
-    type Item = PolarsResult<MutablePrimitiveArray<T>>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            let maybe_state = utils::next(
-                &mut self.iter,
-                &mut self.items,
-                &mut self.dict,
-                &mut self.remaining,
-                self.chunk_size,
-                &PrimitiveDecoder::new(self.decoder),
-            );
-            match maybe_state {
-                MaybeNext::Some(Ok((values, validity))) => {
-                    return Some(Ok(finish(&self.data_type, values, validity)))
-                },
-                MaybeNext::Some(Err(e)) => return Some(Err(e)),
-                MaybeNext::None => return None,
-                MaybeNext::More => continue,
-            }
-        }
+        Ok(Box::new(
+            MutablePrimitiveArray::try_new(data_type, values, validity)
+                .unwrap()
+                .freeze(),
+        ))
     }
 }
 

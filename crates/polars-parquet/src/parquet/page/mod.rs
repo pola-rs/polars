@@ -1,3 +1,4 @@
+use super::CowBuffer;
 use crate::parquet::compression::Compression;
 use crate::parquet::encoding::{get_length, Encoding};
 use crate::parquet::error::{ParquetError, ParquetResult};
@@ -19,7 +20,7 @@ pub enum PageResult {
 #[derive(Debug)]
 pub struct CompressedDataPage {
     pub(crate) header: DataPageHeader,
-    pub(crate) buffer: Vec<u8>,
+    pub(crate) buffer: CowBuffer,
     pub(crate) compression: Compression,
     uncompressed_page_size: usize,
     pub(crate) descriptor: Descriptor,
@@ -32,7 +33,7 @@ impl CompressedDataPage {
     /// Returns a new [`CompressedDataPage`].
     pub fn new(
         header: DataPageHeader,
-        buffer: Vec<u8>,
+        buffer: CowBuffer,
         compression: Compression,
         uncompressed_page_size: usize,
         descriptor: Descriptor,
@@ -51,7 +52,7 @@ impl CompressedDataPage {
     /// Returns a new [`CompressedDataPage`].
     pub(crate) fn new_read(
         header: DataPageHeader,
-        buffer: Vec<u8>,
+        buffer: CowBuffer,
         compression: Compression,
         uncompressed_page_size: usize,
         descriptor: Descriptor,
@@ -114,6 +115,10 @@ impl CompressedDataPage {
     pub fn select_rows(&mut self, selected_rows: Vec<Interval>) {
         self.selected_rows = Some(selected_rows);
     }
+
+    pub fn slice_mut(&mut self) -> &mut CowBuffer {
+        &mut self.buffer
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -136,7 +141,7 @@ impl DataPageHeader {
 #[derive(Debug, Clone)]
 pub struct DataPage {
     pub(super) header: DataPageHeader,
-    pub(super) buffer: Vec<u8>,
+    pub(super) buffer: CowBuffer,
     pub descriptor: Descriptor,
     pub selected_rows: Option<Vec<Interval>>,
 }
@@ -144,7 +149,7 @@ pub struct DataPage {
 impl DataPage {
     pub fn new(
         header: DataPageHeader,
-        buffer: Vec<u8>,
+        buffer: CowBuffer,
         descriptor: Descriptor,
         rows: Option<usize>,
     ) -> Self {
@@ -158,7 +163,7 @@ impl DataPage {
 
     pub(crate) fn new_read(
         header: DataPageHeader,
-        buffer: Vec<u8>,
+        buffer: CowBuffer,
         descriptor: Descriptor,
         selected_rows: Option<Vec<Interval>>,
     ) -> Self {
@@ -187,7 +192,7 @@ impl DataPage {
     /// Returns a mutable reference to the internal buffer.
     /// Useful to recover the buffer after the page has been decoded.
     pub fn buffer_mut(&mut self) -> &mut Vec<u8> {
-        &mut self.buffer
+        self.buffer.to_mut()
     }
 
     pub fn num_values(&self) -> usize {
@@ -242,12 +247,13 @@ pub enum Page {
 }
 
 impl Page {
-    pub(crate) fn buffer(&mut self) -> &mut Vec<u8> {
+    pub(crate) fn buffer_mut(&mut self) -> &mut Vec<u8> {
         match self {
-            Self::Data(page) => &mut page.buffer,
-            Self::Dict(page) => &mut page.buffer,
+            Self::Data(page) => page.buffer.to_mut(),
+            Self::Dict(page) => page.buffer.to_mut(),
         }
     }
+
     pub(crate) fn unwrap_data(self) -> DataPage {
         match self {
             Self::Data(page) => page,
@@ -266,10 +272,17 @@ pub enum CompressedPage {
 }
 
 impl CompressedPage {
-    pub(crate) fn buffer(&mut self) -> &mut Vec<u8> {
+    pub(crate) fn buffer(&self) -> &[u8] {
         match self {
-            CompressedPage::Data(page) => &mut page.buffer,
-            CompressedPage::Dict(page) => &mut page.buffer,
+            CompressedPage::Data(page) => &page.buffer,
+            CompressedPage::Dict(page) => &page.buffer,
+        }
+    }
+
+    pub(crate) fn buffer_mut(&mut self) -> &mut Vec<u8> {
+        match self {
+            CompressedPage::Data(page) => page.buffer.to_mut(),
+            CompressedPage::Dict(page) => page.buffer.to_mut(),
         }
     }
 
@@ -303,15 +316,15 @@ impl CompressedPage {
 }
 
 /// An uncompressed, encoded dictionary page.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DictPage {
-    pub buffer: Vec<u8>,
+    pub buffer: CowBuffer,
     pub num_values: usize,
     pub is_sorted: bool,
 }
 
 impl DictPage {
-    pub fn new(buffer: Vec<u8>, num_values: usize, is_sorted: bool) -> Self {
+    pub fn new(buffer: CowBuffer, num_values: usize, is_sorted: bool) -> Self {
         Self {
             buffer,
             num_values,
@@ -323,7 +336,7 @@ impl DictPage {
 /// A compressed, encoded dictionary page.
 #[derive(Debug)]
 pub struct CompressedDictPage {
-    pub(crate) buffer: Vec<u8>,
+    pub(crate) buffer: CowBuffer,
     compression: Compression,
     pub(crate) num_values: usize,
     pub(crate) uncompressed_page_size: usize,
@@ -332,7 +345,7 @@ pub struct CompressedDictPage {
 
 impl CompressedDictPage {
     pub fn new(
-        buffer: Vec<u8>,
+        buffer: CowBuffer,
         compression: Compression,
         uncompressed_page_size: usize,
         num_values: usize,

@@ -20,9 +20,7 @@ impl<'a, P: ParquetNativeType> ArrayChunks<'a, P> {
             return None;
         }
 
-        // SAFETY:
-        // We know that that the alignment, size and provenance are the same.
-        let bytes = unsafe { std::mem::transmute::<&[u8], &[P::Bytes]>(bytes) };
+        let bytes = bytemuck::cast_slice(bytes);
 
         Some(Self { bytes })
     }

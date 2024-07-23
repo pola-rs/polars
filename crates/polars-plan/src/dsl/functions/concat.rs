@@ -15,8 +15,8 @@ pub fn concat_str<E: AsRef<[Expr]>>(s: E, separator: &str, ignore_nulls: bool) -
         .into(),
         options: FunctionOptions {
             collect_groups: ApplyOptions::ElementWise,
-            input_wildcard_expansion: true,
-            returns_scalar: false,
+            flags: FunctionFlags::default()
+                | FunctionFlags::INPUT_WILDCARD_EXPANSION & !FunctionFlags::RETURNS_SCALAR,
             ..Default::default()
         },
     }
@@ -63,7 +63,7 @@ pub fn concat_list<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(s: E) -> PolarsResult
         function: FunctionExpr::ListExpr(ListFunction::Concat),
         options: FunctionOptions {
             collect_groups: ApplyOptions::ElementWise,
-            input_wildcard_expansion: true,
+            flags: FunctionFlags::default() | FunctionFlags::INPUT_WILDCARD_EXPANSION,
             ..Default::default()
         },
     })
@@ -81,7 +81,7 @@ pub fn concat_expr<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(
         function: FunctionExpr::ConcatExpr(rechunk),
         options: FunctionOptions {
             collect_groups: ApplyOptions::ElementWise,
-            input_wildcard_expansion: true,
+            flags: FunctionFlags::default() | FunctionFlags::INPUT_WILDCARD_EXPANSION,
             cast_to_supertypes: Some(Default::default()),
             ..Default::default()
         },

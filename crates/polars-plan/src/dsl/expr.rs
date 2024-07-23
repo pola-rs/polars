@@ -393,7 +393,7 @@ impl Operator {
         )
     }
 
-    pub(crate) fn is_arithmetic(&self) -> bool {
+    pub fn is_arithmetic(&self) -> bool {
         !(self.is_comparison())
     }
 }

@@ -392,7 +392,7 @@ def test_cat_list_is_in_from_single_str(val: str | None, expected: list[bool]) -
     assert_frame_equal(res, expected_df)
 
 
-def is_in_struct_enum_17618() -> None:
+def test_is_in_struct_enum_17618() -> None:
     df = pl.DataFrame()
     dtype = pl.Enum(categories=["HBS"])
     df = df.insert_column(0, pl.Series("category", [], dtype=dtype))

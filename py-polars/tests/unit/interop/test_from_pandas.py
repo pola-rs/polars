@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from polars._typing import PolarsDataType
 
 
-def index_not_silently_excluded() -> None:
+def test_index_not_silently_excluded() -> None:
     ddict = {"a": [1, 2, 3], "b": [4, 5, 6]}
     df = pd.DataFrame(ddict, index=pd.Index([7, 8, 9], name="a"))
     with pytest.raises(ValueError, match="indices and column names must not overlap"):

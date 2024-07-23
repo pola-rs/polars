@@ -6,6 +6,7 @@ use polars_parquet::parquet::page::{DataPage, DataPageHeader, DataPageHeaderV1, 
 use polars_parquet::parquet::statistics::BinaryStatistics;
 use polars_parquet::parquet::types::ord_binary;
 use polars_parquet::parquet::write::WriteOptions;
+use polars_parquet::parquet::CowBuffer;
 
 fn unzip_option(array: &[Option<Vec<u8>>]) -> ParquetResult<(Vec<u8>, Vec<u8>)> {
     // leave the first 4 bytes announcing the length of the def level
@@ -80,7 +81,7 @@ pub fn array_to_page_v1(
 
     Ok(Page::Data(DataPage::new(
         DataPageHeader::V1(header),
-        buffer,
+        CowBuffer::Owned(buffer),
         descriptor.clone(),
         Some(array.len()),
     )))

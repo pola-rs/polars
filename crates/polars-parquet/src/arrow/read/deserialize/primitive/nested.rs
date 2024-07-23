@@ -7,17 +7,19 @@ use arrow::types::NativeType;
 use polars_error::PolarsResult;
 
 use super::super::nested_utils::*;
+use super::super::utils;
 use super::super::utils::MaybeNext;
-use super::super::{utils, PagesIter};
 use super::basic::{deserialize_plain, ValuesDictionary};
 use super::DecoderFunction;
 use crate::parquet::encoding::hybrid_rle::DictionaryTranslator;
 use crate::parquet::encoding::{byte_stream_split, Encoding};
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
+use crate::parquet::read::BasicDecompressor;
 use crate::parquet::schema::Repetition;
 use crate::parquet::types::{decode, NativeType as ParquetNativeType};
 use crate::read::deserialize::utils::array_chunks::ArrayChunks;
+use crate::read::CompressedPagesIter;
 
 #[derive(Debug)]
 struct State<'a, P: ParquetNativeType, T: NativeType> {
@@ -28,7 +30,7 @@ struct State<'a, P: ParquetNativeType, T: NativeType> {
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 enum StateTranslation<'a, P: ParquetNativeType, T: NativeType> {
-    Unit(ArrayChunks<'a, P>),
+    Plain(ArrayChunks<'a, P>),
     Dictionary(ValuesDictionary<'a, T>),
     ByteStreamSplit(byte_stream_split::Decoder<'a>),
 }
@@ -36,7 +38,7 @@ enum StateTranslation<'a, P: ParquetNativeType, T: NativeType> {
 impl<'a, P: ParquetNativeType, T: NativeType> utils::PageState<'a> for State<'a, P, T> {
     fn len(&self) -> usize {
         match &self.translation {
-            StateTranslation::Unit(values) => values.len(),
+            StateTranslation::Plain(values) => values.len(),
             StateTranslation::Dictionary(values) => values.len(),
             StateTranslation::ByteStreamSplit(decoder) => decoder.len(),
         }
@@ -97,7 +99,7 @@ where
         let translation = match (page.encoding(), dict) {
             (Encoding::Plain, _) => {
                 let values = split_buffer(page)?.values;
-                StateTranslation::Unit(ArrayChunks::new(values).unwrap())
+                StateTranslation::Plain(ArrayChunks::new(values).unwrap())
             },
             (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict)) => {
                 StateTranslation::Dictionary(ValuesDictionary::try_new(page, dict)?)
@@ -138,7 +140,7 @@ where
         }
 
         match &mut state.translation {
-            StateTranslation::Unit(page_values) => {
+            StateTranslation::Plain(page_values) => {
                 for value in page_values.by_ref().take(n) {
                     values.push(self.decoder.decode(P::from_le_bytes(*value)));
                 }
@@ -182,16 +184,15 @@ fn finish<T: NativeType>(
 }
 
 /// An iterator adapter over [`PagesIter`] assumed to be encoded as boolean arrays
-#[derive(Debug)]
 pub struct NestedIter<T, I, P, D>
 where
-    I: PagesIter,
+    I: CompressedPagesIter,
     T: NativeType,
 
     P: ParquetNativeType,
     D: DecoderFunction<P, T>,
 {
-    iter: I,
+    iter: BasicDecompressor<I>,
     init: Vec<InitNested>,
     data_type: ArrowDataType,
     items: VecDeque<(NestedState, (Vec<T>, MutableBitmap))>,
@@ -203,14 +204,14 @@ where
 
 impl<T, I, P, D> NestedIter<T, I, P, D>
 where
-    I: PagesIter,
+    I: CompressedPagesIter,
     T: NativeType,
 
     P: ParquetNativeType,
     D: DecoderFunction<P, T>,
 {
     pub fn new(
-        iter: I,
+        iter: BasicDecompressor<I>,
         init: Vec<InitNested>,
         data_type: ArrowDataType,
         num_rows: usize,
@@ -232,7 +233,7 @@ where
 
 impl<T, I, P, D> Iterator for NestedIter<T, I, P, D>
 where
-    I: PagesIter,
+    I: CompressedPagesIter,
     T: NativeType,
 
     P: ParquetNativeType,

@@ -37,6 +37,7 @@ use crate::array::dictionary::typed_iterator::{
 pub unsafe trait DictionaryKey: NativeType + TryInto<usize> + TryFrom<usize> + Hash {
     /// The corresponding [`IntegerType`] of this key
     const KEY_TYPE: IntegerType;
+    const MAX_USIZE_VALUE: usize;
 
     /// Represents this key as a `usize`.
     ///
@@ -50,6 +51,16 @@ pub unsafe trait DictionaryKey: NativeType + TryInto<usize> + TryFrom<usize> + H
         }
     }
 
+    /// Create a key from a `usize` without checking bounds.
+    ///
+    /// # Safety
+    /// The caller _must_ have checked that the value can be created from a `usize`.
+    #[inline]
+    unsafe fn from_usize_unchecked(x: usize) -> Self {
+        debug_assert!(Self::try_from(x).is_ok());
+        unsafe { Self::try_from(x).unwrap_unchecked() }
+    }
+
     /// If the key type always can be converted to `usize`.
     fn always_fits_usize() -> bool {
         false
@@ -58,18 +69,23 @@ pub unsafe trait DictionaryKey: NativeType + TryInto<usize> + TryFrom<usize> + H
 
 unsafe impl DictionaryKey for i8 {
     const KEY_TYPE: IntegerType = IntegerType::Int8;
+    const MAX_USIZE_VALUE: usize = i8::MAX as usize;
 }
 unsafe impl DictionaryKey for i16 {
     const KEY_TYPE: IntegerType = IntegerType::Int16;
+    const MAX_USIZE_VALUE: usize = i16::MAX as usize;
 }
 unsafe impl DictionaryKey for i32 {
     const KEY_TYPE: IntegerType = IntegerType::Int32;
+    const MAX_USIZE_VALUE: usize = i32::MAX as usize;
 }
 unsafe impl DictionaryKey for i64 {
     const KEY_TYPE: IntegerType = IntegerType::Int64;
+    const MAX_USIZE_VALUE: usize = i64::MAX as usize;
 }
 unsafe impl DictionaryKey for u8 {
     const KEY_TYPE: IntegerType = IntegerType::UInt8;
+    const MAX_USIZE_VALUE: usize = u8::MAX as usize;
 
     fn always_fits_usize() -> bool {
         true
@@ -77,6 +93,7 @@ unsafe impl DictionaryKey for u8 {
 }
 unsafe impl DictionaryKey for u16 {
     const KEY_TYPE: IntegerType = IntegerType::UInt16;
+    const MAX_USIZE_VALUE: usize = u16::MAX as usize;
 
     fn always_fits_usize() -> bool {
         true
@@ -84,6 +101,7 @@ unsafe impl DictionaryKey for u16 {
 }
 unsafe impl DictionaryKey for u32 {
     const KEY_TYPE: IntegerType = IntegerType::UInt32;
+    const MAX_USIZE_VALUE: usize = u32::MAX as usize;
 
     fn always_fits_usize() -> bool {
         true
@@ -91,6 +109,7 @@ unsafe impl DictionaryKey for u32 {
 }
 unsafe impl DictionaryKey for u64 {
     const KEY_TYPE: IntegerType = IntegerType::UInt64;
+    const MAX_USIZE_VALUE: usize = u64::MAX as usize;
 
     #[cfg(target_pointer_width = "64")]
     fn always_fits_usize() -> bool {

@@ -11,7 +11,7 @@ use polars_core::frame::group_by::aggregations::{
 use polars_core::prelude::*;
 use polars_utils::min_max::MinMax;
 
-fn ca_nan_agg<T, Agg>(ca: &ChunkedArray<T>, min_or_max_fn: Agg) -> Option<T::Native>
+pub fn ca_nan_agg<T, Agg>(ca: &ChunkedArray<T>, min_or_max_fn: Agg) -> Option<T::Native>
 where
     T: PolarsFloatType,
     Agg: Fn(T::Native, T::Native) -> T::Native + Copy,

@@ -19,6 +19,7 @@ mod named_from;
 pub mod prelude;
 #[cfg(feature = "random")]
 pub mod random;
+pub mod scalar;
 pub mod schema;
 #[cfg(feature = "serde")]
 pub mod serde;

@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use polars_core::config;
 use polars_core::utils::accumulate_dataframes_vertical;
 
 use super::*;
@@ -38,7 +39,27 @@ impl JsonExec {
             .as_ref()
             .unwrap_right();
 
+        let verbose = config::verbose();
+        let force_async = config::force_async();
+        let run_async = force_async || is_cloud_url(self.paths.first().unwrap());
+
+        if force_async && verbose {
+            eprintln!("ASYNC READING FORCED");
+        }
+
         let mut n_rows = self.file_scan_options.n_rows;
+
+        // Avoid panicking
+        if n_rows == Some(0) {
+            let mut df = DataFrame::empty_with_schema(schema);
+            if let Some(col) = &self.file_scan_options.include_file_paths {
+                unsafe { df.with_column_unchecked(StringChunked::full_null(col, 0).into_series()) };
+            }
+            if let Some(row_index) = &self.file_scan_options.row_index {
+                df.with_row_index_mut(row_index.name.as_ref(), Some(row_index.offset));
+            }
+            return Ok(df);
+        }
 
         let dfs = self
             .paths
@@ -48,9 +69,30 @@ impl JsonExec {
                     return None;
                 }
 
-                let reader = match JsonLineReader::from_path(p) {
-                    Ok(r) => r,
-                    Err(e) => return Some(Err(e)),
+                let reader = if run_async {
+                    JsonLineReader::new({
+                        #[cfg(feature = "cloud")]
+                        {
+                            match polars_io::file_cache::FILE_CACHE
+                                .get_entry(p.to_str().unwrap())
+                                // Safety: This was initialized by schema inference.
+                                .unwrap()
+                                .try_open_assume_latest()
+                            {
+                                Ok(v) => v,
+                                Err(e) => return Some(Err(e)),
+                            }
+                        }
+                        #[cfg(not(feature = "cloud"))]
+                        {
+                            panic!("required feature `cloud` is not enabled")
+                        }
+                    })
+                } else {
+                    match JsonLineReader::from_path(p) {
+                        Ok(r) => r,
+                        Err(e) => return Some(Err(e)),
+                    }
                 };
 
                 let row_index = self.file_scan_options.row_index.as_mut();
@@ -67,13 +109,22 @@ impl JsonExec {
                     .with_ignore_errors(self.options.ignore_errors)
                     .finish();
 
-                let df = match df {
+                let mut df = match df {
                     Ok(df) => df,
                     Err(e) => return Some(Err(e)),
                 };
 
                 if let Some(ref mut n_rows) = n_rows {
                     *n_rows -= df.height();
+                }
+
+                if let Some(col) = &self.file_scan_options.include_file_paths {
+                    let path = p.to_str().unwrap();
+                    unsafe {
+                        df.with_column_unchecked(
+                            StringChunked::full(col, path, df.height()).into_series(),
+                        )
+                    };
                 }
 
                 Some(Ok(df))

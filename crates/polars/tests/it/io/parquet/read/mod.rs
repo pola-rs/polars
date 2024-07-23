@@ -32,6 +32,7 @@ use polars_parquet::parquet::schema::types::{GroupConvertedType, ParquetType};
 use polars_parquet::parquet::schema::Repetition;
 use polars_parquet::parquet::types::int96_to_i64_ns;
 use polars_parquet::parquet::FallibleStreamingIterator;
+use polars_utils::mmap::MemReader;
 
 use super::*;
 
@@ -209,12 +210,12 @@ where
     }
 }
 
-pub fn read_column<R: std::io::Read + std::io::Seek>(
-    reader: &mut R,
+pub fn read_column(
+    mut reader: MemReader,
     row_group: usize,
     field_name: &str,
 ) -> ParquetResult<(Array, Option<Statistics>)> {
-    let metadata = read_metadata(reader)?;
+    let metadata = read_metadata(&mut reader)?;
 
     let field = metadata
         .schema()
@@ -278,8 +279,9 @@ pub async fn read_column_async<
 }
 
 fn get_column(path: &str, column: &str) -> ParquetResult<(Array, Option<Statistics>)> {
-    let mut file = File::open(path).unwrap();
-    read_column(&mut file, 0, column)
+    let file = File::open(path).unwrap();
+    let memreader = MemReader::from_reader(file).unwrap();
+    read_column(memreader, 0, column)
 }
 
 fn test_column(column: &str) -> ParquetResult<()> {
