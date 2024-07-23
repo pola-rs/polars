@@ -435,8 +435,7 @@ def read_csv(
             # Also dispatch on FORCE_ASYNC, so that this codepath gets run
             # through by our test suite during CI.
             or os.getenv("POLARS_FORCE_ASYNC") == "1"
-            # TODO:
-            # We can't dispatch this for all paths due to a few reasons:
+            # TODO: We can't dispatch this for all paths due to a few reasons:
             # * `scan_csv` does not support compressed files
             # * The `storage_options` configuration keys are different between
             #   fsspec and object_store (would require a breaking change)
