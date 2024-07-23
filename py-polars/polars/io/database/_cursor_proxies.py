@@ -83,7 +83,7 @@ class SurrealDBCursorProxy:
     @staticmethod
     async def _unpack_result(
         result: Coroutine[Any, Any, list[dict[str, Any]]],
-    ) -> Coroutine[Any, Any, list[dict[str, Any]]]:
+    ) -> list[dict[str, Any]]:
         """Unpack the async query result."""
         response = (await result)[0]
         if response["status"] != "OK":
