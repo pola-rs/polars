@@ -17,7 +17,7 @@ def prepare_cloud_plan(
     **optimizations: bool,
 ) -> bytes:
     """
-    Prepare the given LazyFrame for execution on the Polars Cloud.
+    Prepare the given LazyFrame for execution on Polars Cloud.
 
     Parameters
     ----------
