@@ -410,11 +410,10 @@ def test_is_sorted_rle_id() -> None:
 
 
 def test_is_sorted_chunked_select() -> None:
-    df = pl.DataFrame({
-        "a": np.ones(14)
-    })
+    df = pl.DataFrame({"a": np.ones(14)})
 
-    assert (pl.concat([df, df, df], rechunk=False)
-            .set_sorted("a")
-            .select(pl.col("a").alias("b"))
-            )["b"].flags["SORTED_ASC"]
+    assert (
+        pl.concat([df, df, df], rechunk=False)
+        .set_sorted("a")
+        .select(pl.col("a").alias("b"))
+    )["b"].flags["SORTED_ASC"]
