@@ -31,6 +31,8 @@ if TYPE_CHECKING:
     from polars._typing import SchemaDict
 
 
+@deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
+@deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
 def read_ipc(
     source: str | Path | IO[bytes] | bytes,
     *,
@@ -341,6 +343,8 @@ def read_ipc_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, DataTyp
     return _read_ipc_schema(source)
 
 
+@deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
+@deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
 def scan_ipc(
     source: str | Path | list[str] | list[Path],
     *,
