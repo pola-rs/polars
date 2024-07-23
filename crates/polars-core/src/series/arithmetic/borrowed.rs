@@ -179,7 +179,6 @@ impl ListChunked {
     ) -> PolarsResult<Series> {
         polars_ensure!(self.len() == rhs.len(), InvalidOperation: "can only do arithmetic operations on Series of the same size; got {} and {}", self.len(), rhs.len());
 
-        // TODO ensure same dtype?
         let mut result = self.clear();
         let combined = self.amortized_iter().zip(rhs.list()?.amortized_iter()).map(|(a, b)| {
             // We ensured the original Series are the same length, so we can
