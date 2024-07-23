@@ -124,7 +124,7 @@ impl<'a, K: DictionaryKey, D: DictArrayDecoder<K>> utils::DictArrayStateTranslat
     fn extend_from_state(
         &mut self,
         _decoder: &D,
-        decoded: &mut (Vec<K>, MutableBitmap),
+        (values, validity): &mut (Vec<K>, MutableBitmap),
         dict: &'a <D as DictArrayDecoder<K>>::Dict,
         page_validity: &mut Option<utils::PageValidity<'a>>,
         additional: usize,
@@ -139,10 +139,10 @@ impl<'a, K: DictionaryKey, D: DictArrayDecoder<K>> utils::DictArrayStateTranslat
                 };
 
                 utils::extend_from_decoder(
-                    &mut decoded.1,
+                    validity,
                     page_validity,
                     Some(additional),
-                    &mut decoded.0,
+                    values,
                     collector,
                 )?;
             },
@@ -151,11 +151,8 @@ impl<'a, K: DictionaryKey, D: DictArrayDecoder<K>> utils::DictArrayStateTranslat
                     dict_size: dict.len(),
                 };
 
-                self.values.translate_and_collect_n_into(
-                    &mut decoded.0,
-                    additional,
-                    &translator,
-                )?;
+                self.values
+                    .translate_and_collect_n_into(values, additional, &translator)?;
             },
         }
 

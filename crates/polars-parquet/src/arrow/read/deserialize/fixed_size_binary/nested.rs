@@ -39,9 +39,7 @@ impl<'a> PageState<'a> for State<'a> {
     fn len(&self) -> usize {
         match &self.translation {
             StateTranslation::Plain(chunks) => chunks.len(),
-            StateTranslation::Dictionary {
-                values: decoder, ..
-            } => decoder.len(),
+            StateTranslation::Dictionary { values, .. } => values.len(),
         }
     }
 }
@@ -51,16 +49,16 @@ struct BinaryDecoder {
     size: usize,
 }
 
-impl<'a> NestedDecoder<'a> for BinaryDecoder {
-    type State = State<'a>;
-    type Dictionary = &'a [u8];
+impl NestedDecoder for BinaryDecoder {
+    type State<'a> = State<'a>;
+    type Dict = Vec<u8>;
     type DecodedState = (FixedSizeBinary, MutableBitmap);
 
-    fn build_state(
+    fn build_state<'a>(
         &self,
         page: &'a DataPage,
-        dict: Option<&'a Self::Dictionary>,
-    ) -> PolarsResult<Self::State> {
+        dict: Option<&'a Self::Dict>,
+    ) -> PolarsResult<Self::State<'a>> {
         let is_optional =
             page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
         let is_filtered = page.selected_rows().is_some();
@@ -72,9 +70,12 @@ impl<'a> NestedDecoder<'a> for BinaryDecoder {
                 let values = values.chunks_exact(self.size);
                 StateTranslation::Plain(values)
             },
-            (Encoding::PlainDictionary | Encoding::RleDictionary, Some(&dict), false) => {
+            (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict), false) => {
                 let values = dict_indices_decoder(page)?;
-                StateTranslation::Dictionary { values, dict }
+                StateTranslation::Dictionary {
+                    values,
+                    dict: &dict[..],
+                }
             },
             _ => return Err(not_implemented(page)),
         };
@@ -94,7 +95,7 @@ impl<'a> NestedDecoder<'a> for BinaryDecoder {
 
     fn push_n_valid(
         &self,
-        state: &mut Self::State,
+        state: &mut Self::State<'_>,
         decoded: &mut Self::DecodedState,
         n: usize,
     ) -> ParquetResult<()> {
@@ -134,8 +135,26 @@ impl<'a> NestedDecoder<'a> for BinaryDecoder {
         validity.extend_constant(n, false);
     }
 
-    fn deserialize_dict(&self, page: &'a DictPage) -> Self::Dictionary {
-        page.buffer.as_ref()
+    fn deserialize_dict(&self, page: DictPage) -> Self::Dict {
+        page.buffer.into_vec()
+    }
+
+    fn finalize(
+        &self,
+        data_type: ArrowDataType,
+        (values, validity): Self::DecodedState,
+    ) -> ParquetResult<Box<dyn arrow::array::Array>> {
+        let validity = if validity.is_empty() {
+            None
+        } else {
+            Some(validity.freeze())
+        };
+
+        Ok(Box::new(FixedSizeBinaryArray::new(
+            data_type.clone(),
+            values.values.into(),
+            validity,
+        )))
     }
 }
 
@@ -188,7 +207,7 @@ impl<I: CompressedPagesIter> Iterator for NestedIter<I> {
             let maybe_state = next(
                 &mut self.iter,
                 &mut self.items,
-                &mut self.dict.as_deref(),
+                &mut self.dict,
                 &mut self.remaining,
                 &self.init,
                 self.chunk_size,

@@ -3,6 +3,7 @@ use std::iter::{Peekable, Zip};
 
 use arrow::array::Array;
 use arrow::bitmap::MutableBitmap;
+use arrow::datatypes::ArrowDataType;
 use polars_error::{polars_bail, PolarsResult};
 use polars_utils::slice::GetSaferUnchecked;
 
@@ -184,12 +185,12 @@ impl Nested {
     }
 }
 
-pub struct BatchedNestedDecoder<'a, 'b, 'c, D: NestedDecoder<'a>> {
-    state: &'b mut D::State,
+pub struct BatchedNestedDecoder<'a, 'b, 'c, D: NestedDecoder> {
+    state: &'b mut D::State<'a>,
     decoder: &'c D,
 }
 
-impl<'a, 'b, 'c, D: NestedDecoder<'a>> BatchableCollector<(), D::DecodedState>
+impl<'a, 'b, 'c, D: NestedDecoder> BatchableCollector<(), D::DecodedState>
     for BatchedNestedDecoder<'a, 'b, 'c, D>
 {
     fn reserve(_target: &mut D::DecodedState, _n: usize) {
@@ -207,29 +208,35 @@ impl<'a, 'b, 'c, D: NestedDecoder<'a>> BatchableCollector<(), D::DecodedState>
 }
 
 /// A decoder that knows how to map `State` -> Array
-pub(super) trait NestedDecoder<'a> {
-    type State: PageState<'a>;
-    type Dictionary;
+pub(super) trait NestedDecoder {
+    type State<'a>: PageState<'a>;
+    type Dict;
     type DecodedState: DecodedState;
 
-    fn build_state(
+    fn build_state<'a>(
         &self,
         page: &'a DataPage,
-        dict: Option<&'a Self::Dictionary>,
-    ) -> PolarsResult<Self::State>;
+        dict: Option<&'a Self::Dict>,
+    ) -> PolarsResult<Self::State<'a>>;
 
     /// Initializes a new state
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState;
 
-    fn push_n_valid(
+    fn push_n_valid<'a>(
         &self,
-        state: &mut Self::State,
+        state: &mut Self::State<'a>,
         decoded: &mut Self::DecodedState,
         n: usize,
     ) -> ParquetResult<()>;
     fn push_n_nulls(&self, decoded: &mut Self::DecodedState, n: usize);
 
-    fn deserialize_dict(&self, page: &'a DictPage) -> Self::Dictionary;
+    fn deserialize_dict(&self, page: DictPage) -> Self::Dict;
+
+    fn finalize(
+        &self,
+        data_type: ArrowDataType,
+        decoded: Self::DecodedState,
+    ) -> ParquetResult<Box<dyn Array>>;
 }
 
 /// The initial info of nested data types.
@@ -329,14 +336,13 @@ impl NestedState {
 /// reading. It therefore returns a bool indicating:
 /// * true  : the row is fully read
 /// * false : the row may not be fully read
-pub(super) fn extend<'a, D: NestedDecoder<'a>>(
-    page: &'a DataPage,
+pub(super) fn extend<D: NestedDecoder>(
+    page: &DataPage,
     init: &[InitNested],
     items: &mut VecDeque<(NestedState, D::DecodedState)>,
-    dict: Option<&'a D::Dictionary>,
+    dict: Option<&D::Dict>,
     remaining: &mut usize,
     decoder: &D,
-    chunk_size: Option<usize>,
 ) -> PolarsResult<bool> {
     let mut values_page = decoder.build_state(page, dict)?;
     let mut page = NestedPage::try_new(page)?;
@@ -346,7 +352,7 @@ pub(super) fn extend<'a, D: NestedDecoder<'a>>(
         "Should have yielded already completed item before reading more."
     );
 
-    let chunk_size = chunk_size.unwrap_or(usize::MAX);
+    let additional = *remaining;
     let mut first_item_is_fully_read = false;
     // Amortize the allocations.
     let mut def_levels = vec![];
@@ -355,7 +361,6 @@ pub(super) fn extend<'a, D: NestedDecoder<'a>>(
     loop {
         if let Some((mut nested, mut decoded)) = items.pop_back() {
             let existing = nested.len();
-            let additional = (chunk_size - existing).min(*remaining);
 
             let mut batched_collector = BatchedCollector::new(
                 BatchedNestedDecoder {
@@ -393,7 +398,7 @@ pub(super) fn extend<'a, D: NestedDecoder<'a>>(
         // * There are more pages.
         // * The remaining rows have not been fully read.
         // * The deque is empty, or the last item already holds completed data.
-        let nested = init_nested(init, chunk_size.min(*remaining));
+        let nested = init_nested(init, *remaining);
         let decoded = decoder.with_capacity(0);
         items.push_back((nested, decoded));
     }
@@ -402,7 +407,7 @@ pub(super) fn extend<'a, D: NestedDecoder<'a>>(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn extend_offsets2<'a, 'b, 'c, 'd, D: NestedDecoder<'a>>(
+fn extend_offsets2<'a, 'b, 'c, 'd, D: NestedDecoder>(
     page: &mut NestedPage<'a>,
     batched_collector: &mut BatchedCollector<
         'b,
@@ -540,11 +545,105 @@ fn extend_offsets2<'a, 'b, 'c, 'd, D: NestedDecoder<'a>>(
     }
 }
 
+pub struct PageNestedDecoder<I: CompressedPagesIter, D: NestedDecoder> {
+    pub iter: BasicDecompressor<I>,
+    pub data_type: ArrowDataType,
+    pub dict: Option<D::Dict>,
+    pub decoder: D,
+    pub init: Vec<InitNested>,
+}
+
+impl<I: CompressedPagesIter, D: NestedDecoder> PageNestedDecoder<I, D> {
+    pub fn new(
+        mut iter: BasicDecompressor<I>,
+        data_type: ArrowDataType,
+        decoder: D,
+        init: Vec<InitNested>,
+    ) -> ParquetResult<Self> {
+        let dict_page = iter.read_dict_page()?;
+        let dict = dict_page.map(|d| decoder.deserialize_dict(d));
+
+        Ok(Self {
+            iter,
+            data_type,
+            dict,
+            decoder,
+            init,
+        })
+    }
+
+    pub fn collect_n(mut self, limit: usize) -> ParquetResult<(NestedState, Box<dyn Array>)> {
+        use streaming_decompression::FallibleStreamingIterator;
+
+        let mut target = self.decoder.with_capacity(limit);
+        // @TODO: Self capacity
+        let mut nested_state = init_nested(&self.init, 0);
+
+        dbg!(&nested_state);
+
+        if limit == 0 {
+            return Ok((nested_state, self.decoder.finalize(self.data_type, target)?));
+        }
+
+        let mut limit = limit;
+
+        // Amortize the allocations.
+        let mut def_levels = vec![];
+        let mut rep_levels = vec![];
+
+        while limit > 0 {
+            let Some(page) = self.iter.next()? else {
+                break;
+            };
+
+            let Page::Data(page) = page else {
+                // @TODO This should be removed
+                unreachable!();
+            };
+
+            let mut values_page = self.decoder.build_state(page, self.dict.as_ref())?;
+            let mut page = NestedPage::try_new(page)?;
+
+
+            let start_length = nested_state.len();
+
+            // @TODO: move this to outside the loop.
+            let mut batched_collector = BatchedCollector::new(
+                BatchedNestedDecoder {
+                    state: &mut values_page,
+                    decoder: &self.decoder,
+                },
+                &mut target,
+            );
+
+            extend_offsets2(
+                &mut page,
+                &mut batched_collector,
+                &mut nested_state.nested,
+                limit,
+                &mut def_levels,
+                &mut rep_levels,
+            )?;
+
+            batched_collector.finalize()?;
+
+            let num_done = nested_state.len() - start_length;
+            limit -= num_done;
+
+            debug_assert!(values_page.len() == 0 || limit == 0);
+        }
+
+        let array = self.decoder.finalize(self.data_type, target)?;
+
+        Ok((nested_state, array))
+    }
+}
+
 #[inline]
 pub(super) fn next<'a, I, D>(
     iter: &'a mut BasicDecompressor<I>,
     items: &mut VecDeque<(NestedState, D::DecodedState)>,
-    dict: &'a mut Option<D::Dictionary>,
+    dict: &'a mut Option<D::Dict>,
     remaining: &mut usize,
     init: &[InitNested],
     chunk_size: Option<usize>,
@@ -552,7 +651,7 @@ pub(super) fn next<'a, I, D>(
 ) -> MaybeNext<PolarsResult<(NestedState, D::DecodedState)>>
 where
     I: CompressedPagesIter,
-    D: NestedDecoder<'a>,
+    D: NestedDecoder,
 {
     use streaming_decompression::FallibleStreamingIterator;
 
@@ -574,21 +673,13 @@ where
             let page = match &page {
                 Page::Data(page) => page,
                 Page::Dict(dict_page) => {
-                    *dict = Some(decoder.deserialize_dict(dict_page));
+                    *dict = Some(decoder.deserialize_dict(dict_page.clone()));
                     return MaybeNext::More;
                 },
             };
 
             // there is a new page => consume the page from the start
-            let is_fully_read = extend(
-                page,
-                init,
-                items,
-                dict.as_ref(),
-                remaining,
-                decoder,
-                chunk_size,
-            );
+            let is_fully_read = extend(page, init, items, dict.as_ref(), remaining, decoder);
 
             match is_fully_read {
                 Ok(true) => MaybeNext::Some(Ok(items.pop_front().unwrap())),

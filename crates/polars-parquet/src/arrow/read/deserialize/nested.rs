@@ -1,8 +1,9 @@
-use arrow::array::PrimitiveArray;
+use arrow::array::{PrimitiveArray, StructArray};
 use arrow::match_integer_type;
 use ethnum::I256;
 use polars_error::polars_bail;
 
+use self::nested_utils::PageNestedDecoder;
 use self::primitive::{AsDecoderFunction, IntoDecoderFunction, UnitDecoderFunction};
 use super::*;
 
@@ -35,15 +36,15 @@ where
     }))
 }
 
-pub fn columns_to_iter_recursive<'a, I>(
+pub fn columns_to_iter_recursive<I>(
     mut columns: Vec<BasicDecompressor<I>>,
     mut types: Vec<&PrimitiveType>,
     field: Field,
     mut init: Vec<InitNested>,
     num_rows: usize,
-) -> PolarsResult<NestedArrayIter<'a>>
+) -> PolarsResult<(NestedState, Box<dyn Array>)>
 where
-    I: 'a + CompressedPagesIter,
+    I: CompressedPagesIter,
 {
     use arrow::datatypes::PhysicalType::*;
     use arrow::datatypes::PrimitiveType::*;
@@ -62,6 +63,8 @@ where
                 num_rows,
                 chunk_size,
             ))
+            .next()
+            .unwrap()?
         },
         Boolean => {
             init.push(InitNested::Primitive(field.is_nullable));
@@ -72,100 +75,94 @@ where
                 num_rows,
                 chunk_size,
             ))
+            .next()
+            .unwrap()?
         },
         Primitive(Int8) => {
             init.push(InitNested::Primitive(field.is_nullable));
             types.pop();
-            primitive(primitive::NestedIter::new(
+            PageNestedDecoder::new(
                 columns.pop().unwrap(),
-                init,
                 field.data_type().clone(),
-                num_rows,
-                chunk_size,
-                AsDecoderFunction::<i32, i8>::default(),
-            ))
+                primitive::PrimitiveDecoder::new(AsDecoderFunction::<i32, i8>::default()),
+                init,
+            )?
+            .collect_n(num_rows)?
         },
         Primitive(Int16) => {
             init.push(InitNested::Primitive(field.is_nullable));
             types.pop();
-            primitive(primitive::NestedIter::new(
+            PageNestedDecoder::new(
                 columns.pop().unwrap(),
-                init,
                 field.data_type().clone(),
-                num_rows,
-                chunk_size,
-                AsDecoderFunction::<i32, i16>::default(),
-            ))
+                primitive::PrimitiveDecoder::new(AsDecoderFunction::<i32, i16>::default()),
+                init,
+            )?
+            .collect_n(num_rows)?
         },
         Primitive(Int32) => {
             init.push(InitNested::Primitive(field.is_nullable));
             types.pop();
-            primitive(primitive::NestedIter::new(
+            PageNestedDecoder::new(
                 columns.pop().unwrap(),
-                init,
                 field.data_type().clone(),
-                num_rows,
-                chunk_size,
-                UnitDecoderFunction::<i32>::default(),
-            ))
+                primitive::PrimitiveDecoder::new(UnitDecoderFunction::<i32>::default()),
+                init,
+            )?
+            .collect_n(num_rows)?
         },
         Primitive(Int64) => {
             init.push(InitNested::Primitive(field.is_nullable));
             types.pop();
-            primitive(primitive::NestedIter::new(
+            PageNestedDecoder::new(
                 columns.pop().unwrap(),
-                init,
                 field.data_type().clone(),
-                num_rows,
-                chunk_size,
-                UnitDecoderFunction::<i64>::default(),
-            ))
+                primitive::PrimitiveDecoder::new(UnitDecoderFunction::<i64>::default()),
+                init,
+            )?
+            .collect_n(num_rows)?
         },
         Primitive(UInt8) => {
             init.push(InitNested::Primitive(field.is_nullable));
             types.pop();
-            primitive(primitive::NestedIter::new(
+            PageNestedDecoder::new(
                 columns.pop().unwrap(),
-                init,
                 field.data_type().clone(),
-                num_rows,
-                chunk_size,
-                AsDecoderFunction::<i32, u8>::default(),
-            ))
+                primitive::PrimitiveDecoder::new(AsDecoderFunction::<i32, u8>::default()),
+                init,
+            )?
+            .collect_n(num_rows)?
         },
         Primitive(UInt16) => {
             init.push(InitNested::Primitive(field.is_nullable));
             types.pop();
-            primitive(primitive::NestedIter::new(
+            PageNestedDecoder::new(
                 columns.pop().unwrap(),
-                init,
                 field.data_type().clone(),
-                num_rows,
-                chunk_size,
-                AsDecoderFunction::<i32, u16>::default(),
-            ))
+                primitive::PrimitiveDecoder::new(AsDecoderFunction::<i32, u16>::default()),
+                init,
+            )?
+            .collect_n(num_rows)?
         },
         Primitive(UInt32) => {
             init.push(InitNested::Primitive(field.is_nullable));
             let type_ = types.pop().unwrap();
             match type_.physical_type {
-                PhysicalType::Int32 => primitive(primitive::NestedIter::new(
+                PhysicalType::Int32 => PageNestedDecoder::new(
                     columns.pop().unwrap(),
-                    init,
                     field.data_type().clone(),
-                    num_rows,
-                    chunk_size,
-                    AsDecoderFunction::<i32, u32>::default(),
-                )),
+                    primitive::PrimitiveDecoder::new(AsDecoderFunction::<i32, u32>::default()),
+                    init,
+                )?
+                .collect_n(num_rows)?,
                 // some implementations of parquet write arrow's u32 into i64.
-                PhysicalType::Int64 => primitive(primitive::NestedIter::new(
+                PhysicalType::Int64 => PageNestedDecoder::new(
                     columns.pop().unwrap(),
-                    init,
                     field.data_type().clone(),
-                    num_rows,
-                    chunk_size,
-                    AsDecoderFunction::<i64, u32>::default(),
-                )),
+                    primitive::PrimitiveDecoder::new(AsDecoderFunction::<i64, u32>::default()),
+                    init,
+                )?
+                .collect_n(num_rows)?,
                 other => {
                     polars_bail!(ComputeError:
                         "deserializing UInt32 from {other:?}'s parquet"
@@ -176,38 +173,35 @@ where
         Primitive(UInt64) => {
             init.push(InitNested::Primitive(field.is_nullable));
             types.pop();
-            primitive(primitive::NestedIter::new(
+            PageNestedDecoder::new(
                 columns.pop().unwrap(),
-                init,
                 field.data_type().clone(),
-                num_rows,
-                chunk_size,
-                AsDecoderFunction::<i64, u64>::default(),
-            ))
+                primitive::PrimitiveDecoder::new(AsDecoderFunction::<i64, u64>::default()),
+                init,
+            )?
+            .collect_n(num_rows)?
         },
         Primitive(Float32) => {
             init.push(InitNested::Primitive(field.is_nullable));
             types.pop();
-            primitive(primitive::NestedIter::new(
+            PageNestedDecoder::new(
                 columns.pop().unwrap(),
-                init,
                 field.data_type().clone(),
-                num_rows,
-                chunk_size,
-                UnitDecoderFunction::<f32>::default(),
-            ))
+                primitive::PrimitiveDecoder::new(UnitDecoderFunction::<f32>::default()),
+                init,
+            )?
+            .collect_n(num_rows)?
         },
         Primitive(Float64) => {
             init.push(InitNested::Primitive(field.is_nullable));
             types.pop();
-            primitive(primitive::NestedIter::new(
+            PageNestedDecoder::new(
                 columns.pop().unwrap(),
-                init,
                 field.data_type().clone(),
-                num_rows,
-                chunk_size,
-                UnitDecoderFunction::<f64>::default(),
-            ))
+                primitive::PrimitiveDecoder::new(UnitDecoderFunction::<f64>::default()),
+                init,
+            )?
+            .collect_n(num_rows)?
         },
         BinaryView | Utf8View => {
             init.push(InitNested::Primitive(field.is_nullable));
@@ -219,6 +213,8 @@ where
                 num_rows,
                 chunk_size,
             ))
+            .next()
+            .unwrap()?
         },
         LargeBinary | LargeUtf8 => {
             init.push(InitNested::Primitive(field.is_nullable));
@@ -230,6 +226,8 @@ where
                 num_rows,
                 chunk_size,
             ))
+            .next()
+            .unwrap()?
         },
         _ => match field.data_type().to_logical_type() {
             ArrowDataType::Dictionary(key_type, _, _) => {
@@ -240,59 +238,55 @@ where
                 match_integer_type!(key_type, |$K| {
                     dict_read::<$K, _>(iter, init, type_, data_type, num_rows, chunk_size)
                 })?
+                .next()
+                .unwrap()?
             },
             ArrowDataType::List(inner) | ArrowDataType::LargeList(inner) => {
                 init.push(InitNested::List(field.is_nullable));
-                let iter = columns_to_iter_recursive(
+                let (mut nested, array) = columns_to_iter_recursive(
                     columns,
                     types,
                     inner.as_ref().clone(),
                     init,
                     num_rows,
                 )?;
-                let iter = iter.map(move |x| {
-                    let (mut nested, array) = x?;
-                    let array = create_list(field.data_type().clone(), &mut nested, array);
-                    Ok((nested, array))
-                });
-                Box::new(iter) as _
+                let array = create_list(field.data_type().clone(), &mut nested, array);
+                (nested, array)
             },
             ArrowDataType::FixedSizeList(inner, width) => {
                 init.push(InitNested::FixedSizeList(field.is_nullable, *width));
-                let iter = columns_to_iter_recursive(
+                let (mut nested, array) = columns_to_iter_recursive(
                     columns,
                     types,
                     inner.as_ref().clone(),
                     init,
                     num_rows,
                 )?;
-                let iter = iter.map(move |x| {
-                    let (mut nested, array) = x?;
-                    let array = create_list(field.data_type().clone(), &mut nested, array);
-                    Ok((nested, array))
-                });
-                Box::new(iter) as _
+                let array = create_list(field.data_type().clone(), &mut nested, array);
+                (nested, array)
             },
             ArrowDataType::Decimal(_, _) => {
                 init.push(InitNested::Primitive(field.is_nullable));
                 let type_ = types.pop().unwrap();
                 match type_.physical_type {
-                    PhysicalType::Int32 => primitive(primitive::NestedIter::new(
+                    PhysicalType::Int32 => PageNestedDecoder::new(
                         columns.pop().unwrap(),
-                        init,
                         field.data_type.clone(),
-                        num_rows,
-                        chunk_size,
-                        IntoDecoderFunction::<i32, i128>::default(),
-                    )),
-                    PhysicalType::Int64 => primitive(primitive::NestedIter::new(
+                        primitive::PrimitiveDecoder::new(
+                            IntoDecoderFunction::<i32, i128>::default(),
+                        ),
+                        init,
+                    )?
+                    .collect_n(num_rows)?,
+                    PhysicalType::Int64 => PageNestedDecoder::new(
                         columns.pop().unwrap(),
-                        init,
                         field.data_type.clone(),
-                        num_rows,
-                        chunk_size,
-                        IntoDecoderFunction::<i64, i128>::default(),
-                    )),
+                        primitive::PrimitiveDecoder::new(
+                            IntoDecoderFunction::<i64, i128>::default(),
+                        ),
+                        init,
+                    )?
+                    .collect_n(num_rows)?,
                     PhysicalType::FixedLenByteArray(n) if n > 16 => {
                         polars_bail!(
                             ComputeError: "Can't decode Decimal128 type from `FixedLenByteArray` of len {n}"
@@ -307,7 +301,7 @@ where
                             chunk_size,
                         );
                         // Convert the fixed length byte array to Decimal.
-                        let iter = iter.map(move |x| {
+                        let mut iter = iter.map(move |x| {
                             let (mut nested, array) = x?;
                             let values = array
                                 .values()
@@ -324,9 +318,9 @@ where
 
                             let _ = nested.pop().unwrap(); // the primitive
 
-                            Ok((nested, array))
+                            ParquetResult::Ok((nested, array))
                         });
-                        Box::new(iter)
+                        iter.next().unwrap()?
                     },
                     _ => {
                         polars_bail!(ComputeError:
@@ -340,22 +334,24 @@ where
                 init.push(InitNested::Primitive(field.is_nullable));
                 let type_ = types.pop().unwrap();
                 match type_.physical_type {
-                    PhysicalType::Int32 => primitive(primitive::NestedIter::new(
+                    PhysicalType::Int32 => PageNestedDecoder::new(
                         columns.pop().unwrap(),
-                        init,
                         field.data_type.clone(),
-                        num_rows,
-                        chunk_size,
-                        decoder_fn!((x) => <i32, i256> => i256(I256::new(x as i128))),
-                    )),
-                    PhysicalType::Int64 => primitive(primitive::NestedIter::new(
+                        primitive::PrimitiveDecoder::new(
+                            decoder_fn!((x) => <i32, i256> => i256(I256::new(x as i128))),
+                        ),
+                        init,
+                    )?
+                    .collect_n(num_rows)?,
+                    PhysicalType::Int64 => PageNestedDecoder::new(
                         columns.pop().unwrap(),
-                        init,
                         field.data_type.clone(),
-                        num_rows,
-                        chunk_size,
-                        decoder_fn!((x) => <i64, i256> => i256(I256::new(x as i128))),
-                    )),
+                        primitive::PrimitiveDecoder::new(
+                            decoder_fn!((x) => <i64, i256> => i256(I256::new(x as i128))),
+                        ),
+                        init,
+                    )?
+                    .collect_n(num_rows)?,
                     PhysicalType::FixedLenByteArray(n) if n <= 16 => {
                         let iter = fixed_size_binary::NestedIter::new(
                             columns.pop().unwrap(),
@@ -365,7 +361,7 @@ where
                             chunk_size,
                         );
                         // Convert the fixed length byte array to Decimal.
-                        let iter = iter.map(move |x| {
+                        let mut iter = iter.map(move |x| {
                             let (mut nested, array) = x?;
                             let values = array
                                 .values()
@@ -382,9 +378,9 @@ where
 
                             let _ = nested.pop().unwrap(); // the primitive
 
-                            Ok((nested, array))
+                            ParquetResult::Ok((nested, array))
                         });
-                        Box::new(iter) as _
+                        iter.next().unwrap()?
                     },
 
                     PhysicalType::FixedLenByteArray(n) if n <= 32 => {
@@ -396,7 +392,7 @@ where
                             chunk_size,
                         );
                         // Convert the fixed length byte array to Decimal.
-                        let iter = iter.map(move |x| {
+                        let mut iter = iter.map(move |x| {
                             let (mut nested, array) = x?;
                             let values = array
                                 .values()
@@ -413,9 +409,9 @@ where
 
                             let _ = nested.pop().unwrap(); // the primitive
 
-                            Ok((nested, array))
+                            ParquetResult::Ok((nested, array))
                         });
-                        Box::new(iter) as _
+                        iter.next().unwrap()?
                     },
                     PhysicalType::FixedLenByteArray(n) => {
                         polars_bail!(ComputeError:
@@ -442,25 +438,40 @@ where
                         let types = types.drain(types.len() - n..).collect();
                         columns_to_iter_recursive(columns, types, f.clone(), init, num_rows)
                     })
-                    .collect::<PolarsResult<Vec<_>>>()?;
-                let columns = columns.into_iter().rev().collect();
-                Box::new(struct_::StructIterator::new(columns, fields.clone()))
+                    .collect::<PolarsResult<Vec<(NestedState, Box<dyn Array>)>>>()?;
+
+                // @TODO: This is overcomplicated
+
+                let mut nested = vec![];
+                let mut new_values = vec![];
+                for (nest, values) in columns.into_iter().rev() {
+                    new_values.push(values);
+                    nested.push(nest);
+                }
+
+                let mut nested = nested.pop().unwrap();
+                let (_, validity) = nested.pop().unwrap();
+
+                (
+                    nested,
+                    Box::new(StructArray::new(
+                        ArrowDataType::Struct(fields.clone()),
+                        new_values,
+                        validity.and_then(|x| x.into()),
+                    )),
+                )
             },
             ArrowDataType::Map(inner, _) => {
                 init.push(InitNested::List(field.is_nullable));
-                let iter = columns_to_iter_recursive(
+                let (mut nested, array) = columns_to_iter_recursive(
                     columns,
                     types,
                     inner.as_ref().clone(),
                     init,
                     num_rows,
                 )?;
-                let iter = iter.map(move |x| {
-                    let (mut nested, array) = x?;
-                    let array = create_map(field.data_type().clone(), &mut nested, array);
-                    Ok((nested, array))
-                });
-                Box::new(iter) as _
+                let array = create_map(field.data_type().clone(), &mut nested, array);
+                (nested, array)
             },
             other => {
                 polars_bail!(ComputeError:

@@ -705,9 +705,7 @@ impl<I: CompressedPagesIter, D: Decoder> PageDecoder<I, D> {
             decoder,
         })
     }
-}
 
-impl<I: CompressedPagesIter, D: Decoder> PageDecoder<I, D> {
     pub fn collect_n(mut self, limit: usize) -> ParquetResult<Box<dyn Array>> {
         let mut target = self.decoder.with_capacity(limit);
         self.collect_n_into(&mut target, limit)?;

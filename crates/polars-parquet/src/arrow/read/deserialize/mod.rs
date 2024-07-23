@@ -32,7 +32,7 @@ use arrow::array::{Array, DictionaryKey, FixedSizeListArray, ListArray, MapArray
 use arrow::datatypes::{ArrowDataType, Field, IntervalUnit};
 use arrow::offset::Offsets;
 use polars_utils::mmap::MemReader;
-use simple::page_iter_to_arrays;
+use simple::page_iter_to_array;
 
 pub use self::nested_utils::{init_nested, InitNested, NestedArrayIter, NestedState};
 pub use self::struct_::StructIterator;
@@ -150,22 +150,19 @@ fn columns_to_iter_recursive<'a, I>(
     field: Field,
     init: Vec<InitNested>,
     num_rows: usize,
-) -> PolarsResult<NestedArrayIter<'a>>
+) -> PolarsResult<(NestedState, Box<dyn Array>)>
 where
     I: 'a + CompressedPagesIter,
 {
     if init.is_empty() && is_primitive(&field.data_type) {
-        let array = page_iter_to_arrays(
+        let array = page_iter_to_array(
             columns.pop().unwrap(),
             types.pop().unwrap(),
             field.data_type,
             num_rows,
         )?;
 
-        return Ok(Box::new(std::iter::once(Ok((
-            NestedState::default(),
-            array,
-        )))));
+        return Ok((NestedState::default(), array));
     }
 
     nested::columns_to_iter_recursive(columns, types, field, init, num_rows)
@@ -223,7 +220,12 @@ pub fn column_iter_to_arrays<'a, I>(
 where
     I: 'a + CompressedPagesIter,
 {
-    Ok(Box::new(
-        columns_to_iter_recursive(columns, types, field, vec![], num_rows)?.map(|x| x.map(|x| x.1)),
-    ))
+    Ok(Box::new(std::iter::once(Ok(columns_to_iter_recursive(
+        columns,
+        types,
+        field,
+        vec![],
+        num_rows,
+    )?
+    .1))))
 }

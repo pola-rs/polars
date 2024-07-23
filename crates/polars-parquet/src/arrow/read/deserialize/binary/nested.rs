@@ -9,7 +9,6 @@ use polars_error::PolarsResult;
 
 use super::super::nested_utils::*;
 use super::super::utils::MaybeNext;
-use super::basic::finish;
 use super::decoders::*;
 use super::utils::*;
 use crate::parquet::encoding::hybrid_rle::{DictionaryTranslator, Translator};
@@ -46,16 +45,16 @@ impl<'a> PageState<'a> for State<'a> {
 #[derive(Debug, Default)]
 struct BinaryDecoder<O: Offset>(std::marker::PhantomData<O>);
 
-impl<'a, O: Offset> NestedDecoder<'a> for BinaryDecoder<O> {
-    type State = State<'a>;
-    type Dictionary = BinaryDict;
+impl<O: Offset> NestedDecoder for BinaryDecoder<O> {
+    type State<'a> = State<'a>;
+    type Dict = BinaryDict;
     type DecodedState = (Binary<O>, MutableBitmap);
 
-    fn build_state(
+    fn build_state<'a>(
         &self,
         page: &'a DataPage,
-        dict: Option<&'a Self::Dictionary>,
-    ) -> PolarsResult<Self::State> {
+        dict: Option<&'a Self::Dict>,
+    ) -> PolarsResult<Self::State<'a>> {
         let is_optional = page_is_optional(page);
         let is_filtered = page_is_filtered(page);
 
@@ -88,9 +87,9 @@ impl<'a, O: Offset> NestedDecoder<'a> for BinaryDecoder<O> {
         )
     }
 
-    fn push_n_valid(
+    fn push_n_valid<'a>(
         &self,
-        state: &mut Self::State,
+        state: &mut Self::State<'a>,
         decoded: &mut Self::DecodedState,
         n: usize,
     ) -> ParquetResult<()> {
@@ -129,8 +128,16 @@ impl<'a, O: Offset> NestedDecoder<'a> for BinaryDecoder<O> {
         validity.extend_constant(n, false);
     }
 
-    fn deserialize_dict(&self, page: &DictPage) -> Self::Dictionary {
+    fn deserialize_dict(&self, page: DictPage) -> Self::Dict {
         deserialize_plain(&page.buffer, page.num_values)
+    }
+
+    fn finalize(
+        &self,
+        data_type: ArrowDataType,
+        (values, validity): Self::DecodedState,
+    ) -> ParquetResult<Box<dyn Array>> {
+        super::finalize(data_type, values, validity)
     }
 }
 
@@ -179,11 +186,11 @@ impl<O: Offset, I: CompressedPagesIter> Iterator for NestedIter<O, I> {
                 &BinaryDecoder::<O>::default(),
             );
             match maybe_state {
-                MaybeNext::Some(Ok((nested, decoded))) => {
-                    return Some(
-                        finish(&self.data_type, decoded.0, decoded.1).map(|array| (nested, array)),
-                    )
-                },
+                MaybeNext::Some(Ok((_nested, _decoded))) => todo!(),
+                //     return Some(
+                //         finish(&self.data_type, decoded.0, decoded.1).map(|array| (nested, array)),
+                //     )
+                // },
                 MaybeNext::Some(Err(e)) => return Some(Err(e)),
                 MaybeNext::None => return None,
                 MaybeNext::More => continue, // Using continue in a loop instead of calling next helps prevent stack overflow.

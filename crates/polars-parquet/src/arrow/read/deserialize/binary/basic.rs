@@ -2,9 +2,9 @@ use std::default::Default;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use arrow::array::specification::try_check_utf8;
-use arrow::array::{Array, BinaryArray, Utf8Array};
+use arrow::array::Array;
 use arrow::bitmap::MutableBitmap;
-use arrow::datatypes::{ArrowDataType, PhysicalType};
+use arrow::datatypes::ArrowDataType;
 use arrow::offset::Offset;
 use polars_error::PolarsResult;
 use polars_utils::iter::FallibleIterator;
@@ -178,64 +178,8 @@ impl<O: Offset> utils::Decoder for BinaryDecoder<O> {
     fn finalize(
         &self,
         data_type: ArrowDataType,
-        (mut values, mut validity): Self::DecodedState,
+        (values, validity): Self::DecodedState,
     ) -> ParquetResult<Box<dyn Array>> {
-        values.offsets.shrink_to_fit();
-        values.values.shrink_to_fit();
-        validity.shrink_to_fit();
-
-        match data_type.to_physical_type() {
-            PhysicalType::Binary | PhysicalType::LargeBinary => unsafe {
-                Ok(BinaryArray::<O>::new_unchecked(
-                    data_type,
-                    values.offsets.into(),
-                    values.values.into(),
-                    validity.into(),
-                )
-                .boxed())
-            },
-            PhysicalType::Utf8 | PhysicalType::LargeUtf8 => unsafe {
-                Ok(Utf8Array::<O>::new_unchecked(
-                    data_type,
-                    values.offsets.into(),
-                    values.values.into(),
-                    validity.into(),
-                )
-                .boxed())
-            },
-            _ => unreachable!(),
-        }
-    }
-}
-
-pub(super) fn finish<O: Offset>(
-    data_type: &ArrowDataType,
-    mut values: Binary<O>,
-    mut validity: MutableBitmap,
-) -> PolarsResult<Box<dyn Array>> {
-    values.offsets.shrink_to_fit();
-    values.values.shrink_to_fit();
-    validity.shrink_to_fit();
-
-    match data_type.to_physical_type() {
-        PhysicalType::Binary | PhysicalType::LargeBinary => unsafe {
-            Ok(BinaryArray::<O>::new_unchecked(
-                data_type.clone(),
-                values.offsets.into(),
-                values.values.into(),
-                validity.into(),
-            )
-            .boxed())
-        },
-        PhysicalType::Utf8 | PhysicalType::LargeUtf8 => unsafe {
-            Ok(Utf8Array::<O>::new_unchecked(
-                data_type.clone(),
-                values.offsets.into(),
-                values.values.into(),
-                validity.into(),
-            )
-            .boxed())
-        },
-        _ => unreachable!(),
+        super::finalize(data_type, values, validity)
     }
 }

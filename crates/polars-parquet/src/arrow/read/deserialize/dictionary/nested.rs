@@ -48,16 +48,16 @@ where
     }
 }
 
-impl<'a, K: DictionaryKey> NestedDecoder<'a> for DictionaryDecoder<K> {
-    type State = State<'a>;
-    type Dictionary = ();
+impl<K: DictionaryKey> NestedDecoder for DictionaryDecoder<K> {
+    type State<'a> = State<'a>;
+    type Dict = ();
     type DecodedState = (Vec<K>, MutableBitmap);
 
-    fn build_state(
+    fn build_state<'a>(
         &self,
         page: &'a DataPage,
-        _: Option<&'a Self::Dictionary>,
-    ) -> PolarsResult<Self::State> {
+        _: Option<&'a Self::Dict>,
+    ) -> PolarsResult<Self::State<'a>> {
         let is_optional =
             page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
         let is_filtered = page.selected_rows().is_some();
@@ -86,7 +86,7 @@ impl<'a, K: DictionaryKey> NestedDecoder<'a> for DictionaryDecoder<K> {
 
     fn push_n_valid(
         &self,
-        state: &mut Self::State,
+        state: &mut Self::State<'_>,
         decoded: &mut Self::DecodedState,
         n: usize,
     ) -> ParquetResult<()> {
@@ -114,7 +114,16 @@ impl<'a, K: DictionaryKey> NestedDecoder<'a> for DictionaryDecoder<K> {
         validity.extend_constant(n, false);
     }
 
-    fn deserialize_dict(&self, _: &DictPage) -> Self::Dictionary {}
+    fn deserialize_dict(&self, _: DictPage) -> Self::Dict {}
+
+    fn finalize(
+        &self,
+        _data_type: ArrowDataType,
+        _decoded: Self::DecodedState,
+    ) -> ParquetResult<Box<dyn Array>> {
+        dbg!("remove before commit");
+        todo!()
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -160,7 +169,6 @@ pub fn next_dict<K: DictionaryKey, I: CompressedPagesIter, F: Fn(&DictPage) -> B
                 None,
                 remaining,
                 &DictionaryDecoder::<K>::default(),
-                chunk_size,
             );
             match error {
                 Ok(_) => {},

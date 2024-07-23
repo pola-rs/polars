@@ -25,9 +25,9 @@ use crate::read::deserialize::primitive::{
 };
 use crate::read::deserialize::utils::PageDecoder;
 
-/// An iterator adapter that maps an iterator of Pages into an iterator of Arrays
-/// of [`ArrowDataType`] `data_type` and length `chunk_size`.
-pub fn page_iter_to_arrays<'a, I: CompressedPagesIter + 'a>(
+/// An iterator adapter that maps an iterator of Pages a boxed [`Array`] of [`ArrowDataType`]
+/// `data_type` with a maximum of `num_rows` elements.
+pub fn page_iter_to_array<'a, I: CompressedPagesIter + 'a>(
     pages: BasicDecompressor<I>,
     type_: &PrimitiveType,
     data_type: ArrowDataType,

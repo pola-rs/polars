@@ -8,4 +8,3 @@ pub(crate) use basic::{
 };
 pub(crate) use dictionary::{NestedDictIter, PrimitiveDictArrayDecoder};
 pub(crate) use integer::IntDecoder;
-pub use nested::NestedIter;
