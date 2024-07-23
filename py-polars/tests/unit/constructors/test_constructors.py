@@ -1631,16 +1631,21 @@ def test_array_construction() -> None:
     assert df.rows() == [("a", [1, 2, 3]), ("b", [2, 3, 4])]
 
 
-def test_init_list_of_dicts_with_timezone() -> None:
-    dt1 = datetime(2023, 1, 1, 0, 0, 0, 0, ZoneInfo("Asia/Tokyo"))
-    dt2 = datetime(2023, 1, 2, 0, 0, 0, 0, ZoneInfo("UTC"))
-    dt3 = datetime(2023, 1, 2, 0, 0, 0, 0, tzinfo=timezone.utc)
-    df = pl.DataFrame([{"dt1": dt1}, {"dt1": dt1}])
-    expected = pl.DataFrame({"dt1": [dt1, dt1]})
+@pytest.mark.parametrize(
+    "tz",
+    [
+        None,
+        ZoneInfo("Asia/Tokyo"),
+        ZoneInfo("Europe/Amsterdam"),
+        ZoneInfo("UTC"),
+        timezone.utc,
+    ],
+)
+def test_init_list_of_dicts_with_timezone(tz: Any) -> None:
+    dt = datetime(2023, 1, 1, 0, 0, 0, 0, tzinfo=tz)
+
+    df = pl.DataFrame([{"dt": dt}, {"dt": dt}])
+    expected = pl.DataFrame({"dt": [dt, dt]})
     assert_frame_equal(df, expected)
-    df = pl.DataFrame([{"dt2": dt2}, {"dt2": dt2}])
-    expected = pl.DataFrame({"dt2": [dt2, dt2]})
-    assert_frame_equal(df, expected)
-    df = pl.DataFrame([{"dt3": dt3}, {"dt3": dt3}])
-    expected = pl.DataFrame({"dt3": [dt3, dt3]})
-    assert_frame_equal(df, expected)
+
+    assert df.schema == {"dt": pl.Datetime("us", time_zone=tz and "UTC")}
