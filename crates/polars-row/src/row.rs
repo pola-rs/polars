@@ -66,7 +66,7 @@ impl RowsEncoded {
 
     pub fn iter(&self) -> RowsEncodedIter {
         let iter = self.offsets[1..].iter();
-        let offset = self.offsets[0];
+        let offset = self.offsets[0] as usize;
         RowsEncodedIter {
             offset,
             end: iter,
@@ -111,7 +111,7 @@ impl RowsEncoded {
 }
 
 pub struct RowsEncodedIter<'a> {
-    offset: u64,
+    offset: usize,
     end: std::slice::Iter<'a, u64>,
     values: &'a [u8],
 }
@@ -120,11 +120,8 @@ impl<'a> Iterator for RowsEncodedIter<'a> {
     type Item = &'a [u8];
 
     fn next(&mut self) -> Option<Self::Item> {
-        let new_offset = *self.end.next()?;
-        let payload = unsafe {
-            self.values
-                .get_unchecked((self.offset as usize)..(new_offset as usize))
-        };
+        let new_offset = *self.end.next()? as usize;
+        let payload = unsafe { self.values.get_unchecked(self.offset..new_offset) };
         self.offset = new_offset;
         Some(payload)
     }
