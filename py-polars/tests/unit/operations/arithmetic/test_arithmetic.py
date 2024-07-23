@@ -650,6 +650,26 @@ def test_list_arithmetic_same_size(
     )
 
 
+def test_list_arithmetic_error_cases():
+    # Different series length:
+    with pytest.raises(
+        InvalidOperationError, match="Series of the same size; got 1 and 2"
+    ):
+        _ = pl.Series("a", [[1, 2]]) / pl.Series("b", [[1, 2], [3, 4]])
+
+    # Different list length:
+    # Different series length:
+    with pytest.raises(
+        InvalidOperationError, match="lists of the same size; got 2 and 1"
+    ):
+        _ = pl.Series("a", [[1, 2]]) / pl.Series("b", [[1]])
+
+    # Wrong types:
+    # Different series length:
+    with pytest.raises(InvalidOperationError, match="cannot cast List type"):
+        _ = pl.Series("a", [[1, 2]]) + pl.Series("b", ["hello"])
+
+
 def test_schema_owned_arithmetic_5669() -> None:
     df = (
         pl.LazyFrame({"A": [1, 2, 3]})
