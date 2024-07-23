@@ -59,10 +59,15 @@ pub(crate) fn import_array_pycapsules(
     validate_pycapsule_name(schema_capsule, "arrow_schema")?;
     validate_pycapsule_name(array_capsule, "arrow_array")?;
 
-    let schema_ptr = unsafe { schema_capsule.reference::<ArrowSchema>() };
-    let array_ptr = unsafe { std::ptr::replace(array_capsule.pointer() as _, ArrowArray::empty()) };
-
+    // # Safety
+    // schema_capsule holds a valid C ArrowSchema pointer, as defined by the Arrow PyCapsule
+    // Interface
+    // array_capsule holds a valid C ArrowArray pointer, as defined by the Arrow PyCapsule
+    // Interface
     let (field, array) = unsafe {
+        let schema_ptr = schema_capsule.reference::<ArrowSchema>();
+        let array_ptr = std::ptr::replace(array_capsule.pointer() as _, ArrowArray::empty());
+
         let field = ffi::import_field_from_c(schema_ptr).unwrap();
         let array = ffi::import_array_from_c(array_ptr, field.data_type().clone()).unwrap();
         (field, array)
@@ -86,12 +91,16 @@ fn call_arrow_c_stream<'py>(ob: &'py Bound<PyAny>) -> PyResult<Bound<'py, PyCaps
 pub(crate) fn import_stream_pycapsule(capsule: &Bound<PyCapsule>) -> PyResult<PySeries> {
     validate_pycapsule_name(capsule, "arrow_array_stream")?;
 
-    // Takes ownership of the pointed to ArrowArrayStream
-    // This acts to move the data out of the capsule pointer, setting the release callback to NULL
-    let stream_ptr =
-        Box::new(unsafe { std::ptr::replace(capsule.pointer() as _, ArrowArrayStream::empty()) });
-
+    // # Safety
+    // capsule holds a valid C ArrowArrayStream pointer, as defined by the Arrow PyCapsule
+    // Interface
     let mut stream = unsafe {
+        // Takes ownership of the pointed to ArrowArrayStream
+        // This acts to move the data out of the capsule pointer, setting the release callback to NULL
+        let stream_ptr = Box::new(std::ptr::replace(
+            capsule.pointer() as _,
+            ArrowArrayStream::empty(),
+        ));
         ArrowArrayStreamReader::try_new(stream_ptr)
             .map_err(|err| PyValueError::new_err(err.to_string()))?
     };
