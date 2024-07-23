@@ -1230,7 +1230,7 @@ def test_read_byte_stream_split_arrays(
 def test_parquet_nested_null_array_17795(tmp_path: Path) -> None:
     filename = tmp_path / "nested_null.parquet"
 
-    pl.DataFrame([ {"struct": {"field": None}} ]).write_parquet(filename)
+    pl.DataFrame([{"struct": {"field": None}}]).write_parquet(filename)
     pq.read_table(filename)
 
 
