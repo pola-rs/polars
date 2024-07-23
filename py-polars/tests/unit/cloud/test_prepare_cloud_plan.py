@@ -34,7 +34,7 @@ def test_prepare_cloud_plan_sink_added() -> None:
     result = prepare_cloud_plan(lf, CLOUD_SINK)
 
     deserialized = pl.LazyFrame.deserialize(BytesIO(result))
-    assert "SINK (cloud)" in str(deserialized)
+    assert "SINK (cloud)" in deserialized.explain()
 
 
 def test_prepare_cloud_plan_optimization_toggle() -> None:
