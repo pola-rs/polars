@@ -1,7 +1,7 @@
 import operator
 from collections import OrderedDict
 from datetime import date, datetime, timedelta
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 import pytest
@@ -558,32 +558,40 @@ def test_power_series() -> None:
 
 
 @pytest.mark.parametrize(
-    ("expected", "expr"),
+    ("expected", "expr", "column_names"),
     [
+        (np.array([[2, 4], [6, 8]]), lambda a, b: a + b, ("a", "a")),
+        (np.array([[0, 0], [0, 0]]), lambda a, b: a - b, ("a", "a")),
+        (np.array([[1, 4], [9, 16]]), lambda a, b: a * b, ("a", "a")),
+        (np.array([[1.0, 1.0], [1.0, 1.0]]), lambda a, b: a / b, ("a", "a")),
+        (np.array([[0, 0], [0, 0]]), lambda a, b: a % b, ("a", "a")),
         (
-            np.array([[2, 4], [6, 8]]),
-            pl.col("a") + pl.col("a"),
-        ),
-        (
-            np.array([[0, 0], [0, 0]]),
-            pl.col("a") - pl.col("a"),
-        ),
-        (
-            np.array([[1, 4], [9, 16]]),
-            pl.col("a") * pl.col("a"),
-        ),
-        (
-            np.array([[1.0, 1.0], [1.0, 1.0]]),
-            pl.col("a") / pl.col("a"),
+            np.array([[3, 4], [7, 8]], dtype=np.int64),
+            lambda a, b: a + b,
+            ("a", "uint8"),
         ),
     ],
 )
-def test_array_arithmetic_same_size(expected: Any, expr: pl.Expr) -> None:
-    df = pl.Series("a", np.array([[1, 2], [3, 4]])).to_frame()
-
+def test_array_arithmetic_same_size(
+    expected: Any,
+    expr: Callable[[pl.Series | pl.Expr, pl.Series | pl.Expr], pl.Series],
+    column_names: tuple[str, str],
+) -> None:
+    df = pl.DataFrame(
+        [
+            pl.Series("a", np.array([[1, 2], [3, 4]], dtype=np.int64)),
+            pl.Series("uint8", np.array([[2, 2], [4, 4]], dtype=np.uint8)),
+        ]
+    )
+    # Expr-based arithmetic:
     assert_frame_equal(
-        df.select(expr),
+        df.select(expr(pl.col(column_names[0]), pl.col(column_names[1]))),
         pl.Series("a", expected).to_frame(),
+    )
+    # Direct arithmetic on the Series:
+    assert_series_equal(
+        expr(df[column_names[0]], df[column_names[1]]),
+        pl.Series("a", expected),
     )
 
 
