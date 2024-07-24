@@ -1031,7 +1031,6 @@ def test_supertype_timezones_4174() -> None:
     df.with_columns(df["dt_London"].shift(fill_value=date_to_fill))
 
 
-@pytest.mark.skip(reason="from_dicts cannot yet infer timezones")
 def test_from_dict_tu_consistency() -> None:
     tz = ZoneInfo("PRC")
     dt = datetime(2020, 8, 1, 12, 0, 0, tzinfo=tz)

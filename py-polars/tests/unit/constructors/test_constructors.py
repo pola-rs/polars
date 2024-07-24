@@ -1629,3 +1629,23 @@ def test_array_construction() -> None:
     df = pl.from_dicts(rows, schema=schema)
     assert df.schema == schema
     assert df.rows() == [("a", [1, 2, 3]), ("b", [2, 3, 4])]
+
+
+@pytest.mark.parametrize(
+    "tz",
+    [
+        None,
+        ZoneInfo("Asia/Tokyo"),
+        ZoneInfo("Europe/Amsterdam"),
+        ZoneInfo("UTC"),
+        timezone.utc,
+    ],
+)
+def test_init_list_of_dicts_with_timezone(tz: Any) -> None:
+    dt = datetime(2023, 1, 1, 0, 0, 0, 0, tzinfo=tz)
+
+    df = pl.DataFrame([{"dt": dt}, {"dt": dt}])
+    expected = pl.DataFrame({"dt": [dt, dt]})
+    assert_frame_equal(df, expected)
+
+    assert df.schema == {"dt": pl.Datetime("us", time_zone=tz and "UTC")}
