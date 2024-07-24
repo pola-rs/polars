@@ -116,7 +116,7 @@ where
         ChunkedArray::try_from_chunk_iter(self.name(), iter)
     }
 
-    pub fn apply_to_string_amortized<'a, F>(&'a self, mut f: F) -> StringChunked
+    pub fn apply_into_string_amortized<'a, F>(&'a self, mut f: F) -> StringChunked
     where
         F: FnMut(T::Physical<'a>, &mut String),
     {
@@ -139,7 +139,7 @@ where
         ChunkedArray::from_chunk_iter(self.name(), chunks)
     }
 
-    pub fn try_apply_to_string_amortized<'a, F, E>(&'a self, mut f: F) -> Result<StringChunked, E>
+    pub fn try_apply_into_string_amortized<'a, F, E>(&'a self, mut f: F) -> Result<StringChunked, E>
     where
         F: FnMut(T::Physical<'a>, &mut String) -> Result<(), E>,
     {

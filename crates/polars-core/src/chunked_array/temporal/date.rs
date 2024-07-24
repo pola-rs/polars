@@ -34,7 +34,7 @@ impl DateChunked {
     /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
     pub fn to_string(&self, format: &str) -> PolarsResult<StringChunked> {
         let datefmt_f = |ndt: NaiveDate| ndt.format(format);
-        self.try_apply_to_string_amortized(|val, buf| {
+        self.try_apply_into_string_amortized(|val, buf| {
             let ndt = date32_to_date(val);
             write!(buf, "{}", datefmt_f(ndt))
         })
