@@ -1227,6 +1227,14 @@ def test_read_byte_stream_split_arrays(
 
 
 @pytest.mark.write_disk()
+def test_parquet_nested_null_array_17795(tmp_path: Path) -> None:
+    filename = tmp_path / "nested_null.parquet"
+
+    pl.DataFrame([{"struct": {"field": None}}]).write_parquet(filename)
+    pq.read_table(filename)
+
+
+@pytest.mark.write_disk()
 def test_parquet_record_batches_pyarrow_fixed_size_list_16614(tmp_path: Path) -> None:
     filename = tmp_path / "a.parquet"
 
