@@ -2296,10 +2296,8 @@ def test_write_csv_appending_17543(tmp_path: Path) -> None:
     ],
 )
 def test_read_csv_cast_unparsable_later(
-    tmp_path: Path, dtype: pl.Decimal | pl.Categorical | pl.Time, df: pl.DataFrame
+    dtype: pl.Decimal | pl.Categorical | pl.Time, df: pl.DataFrame
 ) -> None:
-    tmp_path.mkdir(exist_ok=True)
-    with (tmp_path / "append.csv").open("w") as f:
-        df.write_csv(f)
-    with (tmp_path / "append.csv").open("r") as f:
-        assert df.equals(pl.read_csv(f, schema={"x": dtype}))
+    f = io.BytesIO()
+    df.write_csv(f)
+    assert df.equals(pl.read_csv(f, schema={"x": dtype}))

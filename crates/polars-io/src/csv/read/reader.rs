@@ -171,7 +171,6 @@ impl<R: MmapBytesReader> CsvReader<R> {
                     match fld.data_type() {
                         Time => {
                             self.options.fields_to_cast.push(fld.clone());
-                            // let inference decide the column type
                             fld.coerce(String);
                             Ok(fld)
                         },
