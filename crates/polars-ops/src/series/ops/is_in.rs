@@ -721,6 +721,7 @@ pub fn is_in(s: &Series, other: &Series) -> PolarsResult<BooleanChunked> {
             let ca = series_bool.bool().unwrap();
             Ok(ca.clone())
         },
+        #[cfg(feature = "dtype-decimal")]
         DataType::Decimal(_, _) => {
             let s = s.decimal()?;
             let other = other.decimal()?;
