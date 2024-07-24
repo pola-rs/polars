@@ -21,10 +21,10 @@ use super::schema_inference::{check_decimal_comma, infer_file_schema};
 #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
 use super::utils::decompress;
 use super::utils::get_file_chunks;
-#[cfg(not(any(feature = "decompress", feature = "decompress-fast")))]
-use super::utils::is_compressed;
 use crate::mmap::ReaderBytes;
 use crate::predicates::PhysicalIoExpr;
+#[cfg(not(any(feature = "decompress", feature = "decompress-fast")))]
+use crate::utils::is_compressed;
 use crate::utils::update_row_counts;
 use crate::RowIndex;
 
