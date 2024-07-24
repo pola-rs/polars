@@ -263,6 +263,33 @@ def test_from_arrow(monkeypatch: Any) -> None:
         pl.from_arrow(data=(x for x in (1, 2, 3)))
 
 
+@pytest.mark.parametrize(
+    "data",
+    [
+        pa.Table.from_pydict(
+            {
+                "struct": pa.array(
+                    [{"a": 1}, {"a": 2}], pa.struct([pa.field("a", pa.int32())])
+                ),
+            }
+        ),
+        pa.Table.from_pydict(
+            {
+                "struct": pa.chunked_array(
+                    [[{"a": 1}], [{"a": 2}]], pa.struct([pa.field("a", pa.int32())])
+                ),
+            }
+        ),
+    ],
+)
+def test_from_arrow_struct_column(data: pa.Table):
+    df = pl.from_arrow(data=data)
+    expected_schema = pl.Schema({"struct": pl.Struct({"a": pl.Int32()})})
+    expected_data = [({"a": 1},), ({"a": 2},)]
+    assert df.schema == expected_schema
+    assert df.rows() == expected_data
+
+
 def test_dataframe_membership_operator() -> None:
     # cf. issue #4032
     df = pl.DataFrame({"name": ["Jane", "John"], "age": [20, 30]})
@@ -2104,7 +2131,9 @@ def test_fill_null_limits() -> None:
     ).select(
         pl.all().fill_null(strategy="forward", limit=2),
         pl.all().fill_null(strategy="backward", limit=2).name.suffix("_backward"),
-    ).to_dict(as_series=False) == {
+    ).to_dict(
+        as_series=False
+    ) == {
         "a": [1, 1, 1, None, 5, 6, 6, 6, None, 10],
         "b": ["a", "a", "a", None, "b", "c", "c", "c", None, "d"],
         "c": [True, True, True, None, False, True, True, True, None, False],
