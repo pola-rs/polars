@@ -2,12 +2,15 @@
 
 ## Scanning datasets from Huggging Face
 
-All cloud-enabled scan functions also transparently support scanning from Hugging Face:
+All cloud-enabled scan functions, and their `read_` counterparts transparently support scanning from
+Hugging Face:
 
-- [scan_parquet](https://docs.pola.rs/api/python/stable/reference/api/polars.scan_parquet.html)
-- [scan_csv](https://docs.pola.rs/api/python/stable/reference/api/polars.scan_csv.html)
-- [scan_ipc](https://docs.pola.rs/api/python/stable/reference/api/polars.scan_ipc.html)
-- [scan_ndjson](https://docs.pola.rs/api/python/stable/reference/api/polars.scan_ndjson.html)
+| Scan                                                                                          | Read                                                                                          |
+| --------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| [scan_parquet](https://docs.pola.rs/api/python/stable/reference/api/polars.scan_parquet.html) | [read_parquet](https://docs.pola.rs/api/python/stable/reference/api/polars.read_parquet.html) |
+| [scan_csv](https://docs.pola.rs/api/python/stable/reference/api/polars.scan_csv.html)         | [read_csv](https://docs.pola.rs/api/python/stable/reference/api/polars.read_csv.html)         |
+| [scan_ndjson](https://docs.pola.rs/api/python/stable/reference/api/polars.scan_ndjson.html)   | [read_ndjson](https://docs.pola.rs/api/python/stable/reference/api/polars.read_ndjson.html)   |
+| [scan_ipc](https://docs.pola.rs/api/python/stable/reference/api/polars.scan_ipc.html)         | [read_ipc](https://docs.pola.rs/api/python/stable/reference/api/polars.read_ipc.html)         |
 
 ### Path format
 
@@ -45,7 +48,7 @@ A Hugging Face API key can be passed to Polars to access private locations using
 {{code_block('user-guide/io/hugging-face','scan_iris_csv',['scan_csv'])}}
 
 ```python exec="on" result="text" session="user-guide/io/hugging-face"
---8<-- "python/user-guide/io/hugging-face.py:scan_iris_csv"
+--8<-- "python/user-guide/io/hugging-face.py:scan_iris_repr"
 ```
 
 See this file at [https://huggingface.co/datasets/nameexhaustion/polars-docs/blob/main/iris.csv](https://huggingface.co/datasets/nameexhaustion/polars-docs/blob/main/iris.csv)
@@ -55,7 +58,7 @@ See this file at [https://huggingface.co/datasets/nameexhaustion/polars-docs/blo
 {{code_block('user-guide/io/hugging-face','scan_iris_ndjson',['scan_ndjson'])}}
 
 ```python exec="on" result="text" session="user-guide/io/hugging-face"
---8<-- "python/user-guide/io/hugging-face.py:scan_iris_ndjson"
+--8<-- "python/user-guide/io/hugging-face.py:scan_iris_repr"
 ```
 
 See this file at [https://huggingface.co/datasets/nameexhaustion/polars-docs/blob/main/iris.jsonl](https://huggingface.co/datasets/nameexhaustion/polars-docs/blob/main/iris.jsonl)
@@ -65,7 +68,7 @@ See this file at [https://huggingface.co/datasets/nameexhaustion/polars-docs/blo
 {{code_block('user-guide/io/hugging-face','scan_parquet_hive',['scan_parquet'])}}
 
 ```python exec="on" result="text" session="user-guide/io/hugging-face"
---8<-- "python/user-guide/io/hugging-face.py:scan_parquet_hive"
+--8<-- "python/user-guide/io/hugging-face.py:scan_parquet_hive_repr"
 ```
 
 See this folder at [https://huggingface.co/datasets/nameexhaustion/polars-docs/tree/main/hive_dates/](https://huggingface.co/datasets/nameexhaustion/polars-docs/tree/main/hive_dates/)
@@ -75,7 +78,7 @@ See this folder at [https://huggingface.co/datasets/nameexhaustion/polars-docs/t
 {{code_block('user-guide/io/hugging-face','scan_ipc',['scan_ipc'])}}
 
 ```python exec="on" result="text" session="user-guide/io/hugging-face"
---8<-- "python/user-guide/io/hugging-face.py:scan_ipc"
+--8<-- "python/user-guide/io/hugging-face.py:scan_ipc_repr"
 ```
 
 See this file at [https://huggingface.co/spaces/nameexhaustion/polars-docs/blob/main/orders.feather](https://huggingface.co/spaces/nameexhaustion/polars-docs/blob/main/orders.feather)

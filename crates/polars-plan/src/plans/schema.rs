@@ -249,7 +249,7 @@ pub(crate) fn det_join_schema(
             let mut arena = Arena::with_capacity(8);
             let mut join_on_left: PlHashSet<_> = PlHashSet::with_capacity(left_on.len());
             for e in left_on {
-                let field = e.to_field_amortized(schema_right, Context::Default, &mut arena)?;
+                let field = e.to_field_amortized(schema_left, Context::Default, &mut arena)?;
                 join_on_left.insert(field.name);
             }
 

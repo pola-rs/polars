@@ -1244,3 +1244,21 @@ def test_parquet_record_batches_pyarrow_fixed_size_list_16614(tmp_path: Path) ->
 
     assert b["x"].shape[0] == n
     assert_frame_equal(b, x)
+
+
+@pytest.mark.write_disk()
+def test_parquet_list_element_field_name(tmp_path: Path) -> None:
+    filename = tmp_path / "list.parquet"
+
+    (
+        pl.DataFrame(
+            {
+                "a": [[1, 2], [1, 1, 1]],
+            },
+            schema={"a": pl.List(pl.Int64)},
+        ).write_parquet(filename, use_pyarrow=False)
+    )
+
+    schema_str = str(pq.read_schema(filename))
+    assert "<element: int64>" in schema_str
+    assert "child 0, element: int64" in schema_str

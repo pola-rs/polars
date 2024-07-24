@@ -359,4 +359,5 @@ pub struct NDJsonReadOptions {
     pub low_memory: bool,
     pub ignore_errors: bool,
     pub schema: Option<SchemaRef>,
+    pub schema_overwrite: Option<SchemaRef>,
 }

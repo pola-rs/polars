@@ -7,17 +7,19 @@ use arrow::types::NativeType;
 use polars_error::PolarsResult;
 
 use super::super::nested_utils::*;
+use super::super::utils;
 use super::super::utils::MaybeNext;
-use super::super::{utils, PagesIter};
 use super::basic::{deserialize_plain, ValuesDictionary};
 use super::DecoderFunction;
 use crate::parquet::encoding::hybrid_rle::DictionaryTranslator;
 use crate::parquet::encoding::{byte_stream_split, Encoding};
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
+use crate::parquet::read::BasicDecompressor;
 use crate::parquet::schema::Repetition;
 use crate::parquet::types::{decode, NativeType as ParquetNativeType};
 use crate::read::deserialize::utils::array_chunks::ArrayChunks;
+use crate::read::CompressedPagesIter;
 
 #[derive(Debug)]
 struct State<'a, P: ParquetNativeType, T: NativeType> {
@@ -182,16 +184,15 @@ fn finish<T: NativeType>(
 }
 
 /// An iterator adapter over [`PagesIter`] assumed to be encoded as boolean arrays
-#[derive(Debug)]
 pub struct NestedIter<T, I, P, D>
 where
-    I: PagesIter,
+    I: CompressedPagesIter,
     T: NativeType,
 
     P: ParquetNativeType,
     D: DecoderFunction<P, T>,
 {
-    iter: I,
+    iter: BasicDecompressor<I>,
     init: Vec<InitNested>,
     data_type: ArrowDataType,
     items: VecDeque<(NestedState, (Vec<T>, MutableBitmap))>,
@@ -203,14 +204,14 @@ where
 
 impl<T, I, P, D> NestedIter<T, I, P, D>
 where
-    I: PagesIter,
+    I: CompressedPagesIter,
     T: NativeType,
 
     P: ParquetNativeType,
     D: DecoderFunction<P, T>,
 {
     pub fn new(
-        iter: I,
+        iter: BasicDecompressor<I>,
         init: Vec<InitNested>,
         data_type: ArrowDataType,
         num_rows: usize,
@@ -232,7 +233,7 @@ where
 
 impl<T, I, P, D> Iterator for NestedIter<T, I, P, D>
 where
-    I: PagesIter,
+    I: CompressedPagesIter,
     T: NativeType,
 
     P: ParquetNativeType,

@@ -57,4 +57,11 @@ impl CowBuffer {
             CowBuffer::Owned(v) => v,
         }
     }
+
+    pub fn into_vec(self) -> Vec<u8> {
+        match self {
+            CowBuffer::Borrowed(v) => v.to_vec(),
+            CowBuffer::Owned(v) => v,
+        }
+    }
 }

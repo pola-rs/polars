@@ -2570,11 +2570,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             slice_pushdown = False
 
         return self._ldf.optimization_toggle(
-            type_coercion,
-            predicate_pushdown,
-            projection_pushdown,
-            simplify_expression,
-            slice_pushdown,
+            type_coercion=type_coercion,
+            predicate_pushdown=predicate_pushdown,
+            projection_pushdown=projection_pushdown,
+            simplify_expression=simplify_expression,
+            slice_pushdown=slice_pushdown,
             comm_subplan_elim=False,
             comm_subexpr_elim=False,
             cluster_with_columns=False,

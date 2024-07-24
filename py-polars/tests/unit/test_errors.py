@@ -691,3 +691,8 @@ def test_no_panic_pandas_nat() -> None:
     # we don't want to support pd.nat, but don't want to panic.
     with pytest.raises(Exception):  # noqa: B017
         pl.DataFrame({"x": [pd.NaT]})
+
+
+def test_list_to_struct_invalid_type() -> None:
+    with pytest.raises(pl.exceptions.SchemaError):
+        pl.DataFrame({"a": 1}).select(pl.col("a").list.to_struct())

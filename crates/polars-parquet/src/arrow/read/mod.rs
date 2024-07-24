@@ -23,6 +23,8 @@ use polars_error::PolarsResult;
 pub use row_group::*;
 pub use schema::{infer_schema, FileMetaData};
 
+use super::write::CompressedPage;
+use crate::parquet::error::ParquetResult;
 #[cfg(feature = "async")]
 pub use crate::parquet::read::{get_page_stream, read_metadata_async as _read_metadata_async};
 // re-exports of crate::parquet's relevant APIs
@@ -33,7 +35,7 @@ pub use crate::parquet::{
     page::{CompressedDataPage, DataPageHeader, Page},
     read::{
         decompress, get_column_iterator, read_columns_indexes as _read_columns_indexes,
-        read_metadata as _read_metadata, read_pages_locations, BasicDecompressor, Decompressor,
+        read_metadata as _read_metadata, read_pages_locations, BasicDecompressor,
         MutStreamingIterator, PageFilter, PageReader, ReadColumnIterator, State,
     },
     schema::types::{
@@ -44,16 +46,12 @@ pub use crate::parquet::{
     FallibleStreamingIterator,
 };
 
-/// Trait describing a [`FallibleStreamingIterator`] of [`Page`]
-pub trait PagesIter:
-    FallibleStreamingIterator<Item = Page, Error = ParquetError> + Send + Sync
+pub trait CompressedPagesIter:
+    Iterator<Item = ParquetResult<CompressedPage>> + Send + Sync
 {
 }
 
-impl<I: FallibleStreamingIterator<Item = Page, Error = ParquetError> + Send + Sync> PagesIter
-    for I
-{
-}
+impl<I: Iterator<Item = ParquetResult<CompressedPage>> + Send + Sync> CompressedPagesIter for I {}
 
 /// Type def for a sharable, boxed dyn [`Iterator`] of arrays
 pub type ArrayIter<'a> = Box<dyn Iterator<Item = PolarsResult<Box<dyn Array>>> + Send + Sync + 'a>;

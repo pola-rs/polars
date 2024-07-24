@@ -18,6 +18,7 @@ pub struct LazyJsonLineReader {
     pub(crate) low_memory: bool,
     pub(crate) rechunk: bool,
     pub(crate) schema: Option<SchemaRef>,
+    pub(crate) schema_overwrite: Option<SchemaRef>,
     pub(crate) row_index: Option<RowIndex>,
     pub(crate) infer_schema_length: Option<NonZeroUsize>,
     pub(crate) n_rows: Option<usize>,
@@ -38,6 +39,7 @@ impl LazyJsonLineReader {
             low_memory: false,
             rechunk: false,
             schema: None,
+            schema_overwrite: None,
             row_index: None,
             infer_schema_length: NonZeroUsize::new(100),
             ignore_errors: false,
@@ -79,6 +81,13 @@ impl LazyJsonLineReader {
     #[must_use]
     pub fn with_schema(mut self, schema: Option<SchemaRef>) -> Self {
         self.schema = schema;
+        self
+    }
+
+    /// Set the JSON file's schema
+    #[must_use]
+    pub fn with_schema_overwrite(mut self, schema_overwrite: Option<SchemaRef>) -> Self {
+        self.schema_overwrite = schema_overwrite;
         self
     }
 
@@ -129,6 +138,7 @@ impl LazyFileListReader for LazyJsonLineReader {
             low_memory: self.low_memory,
             ignore_errors: self.ignore_errors,
             schema: self.schema,
+            schema_overwrite: self.schema_overwrite,
         };
 
         let scan_type = FileScan::NDJson {

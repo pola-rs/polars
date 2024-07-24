@@ -3,6 +3,6 @@ mod dictionary;
 mod nested;
 mod utils;
 
-pub use basic::Iter;
-pub use dictionary::{DictIter, NestedDictIter};
-pub use nested::NestedIter;
+pub(crate) use basic::BinaryDecoder;
+pub(crate) use dictionary::{FixedSizeBinaryDictArrayDecoder, NestedDictIter};
+pub(crate) use nested::NestedIter;

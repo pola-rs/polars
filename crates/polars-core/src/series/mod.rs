@@ -195,6 +195,22 @@ impl Series {
     // TODO! this probably can now be removed, now we don't have special case for structs.
     pub fn select_chunk(&self, i: usize) -> Self {
         let mut new = self.clear();
+        let flags = self.get_flags();
+
+        let mut new_flags = MetadataFlags::empty();
+        new_flags.set(
+            MetadataFlags::SORTED_ASC,
+            flags.contains(MetadataFlags::SORTED_ASC),
+        );
+        new_flags.set(
+            MetadataFlags::SORTED_DSC,
+            flags.contains(MetadataFlags::SORTED_DSC),
+        );
+        new_flags.set(
+            MetadataFlags::FAST_EXPLODE_LIST,
+            flags.contains(MetadataFlags::FAST_EXPLODE_LIST),
+        );
+
         // Assign mut so we go through arc only once.
         let mut_new = new._get_inner_mut();
         let chunks = unsafe { mut_new.chunks_mut() };
@@ -202,6 +218,7 @@ impl Series {
         chunks.clear();
         chunks.push(chunk);
         mut_new.compute_len();
+        mut_new._set_flags(new_flags);
         new
     }
 
