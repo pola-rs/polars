@@ -55,11 +55,7 @@ pub unsafe fn maybe_decompress_bytes<'a>(
     if is_compressed {
         #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
         {
-            const GZIP: [u8; 2] = [31, 139];
-            const ZLIB0: [u8; 2] = [0x78, 0x01];
-            const ZLIB1: [u8; 2] = [0x78, 0x9C];
-            const ZLIB2: [u8; 2] = [0x78, 0xDA];
-            const ZSTD: [u8; 4] = [0x28, 0xB5, 0x2F, 0xFD];
+            use crate::utils::compression::magic::*;
 
             if bytes.starts_with(&GZIP) {
                 flate2::read::MultiGzDecoder::new(bytes)
