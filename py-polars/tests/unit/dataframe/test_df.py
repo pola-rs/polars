@@ -164,6 +164,9 @@ def test_from_arrow(monkeypatch: Any) -> None:
             "d": pa.array([1, 2], pa.timestamp("ns")),
             "e": pa.array([1, 2], pa.int32()),
             "decimal1": pa.array([1, 2], pa.decimal128(2, 1)),
+            "struct": pa.array(
+                [{"a": 1}, {"a": 2}], pa.struct([pa.field("a", pa.int32())])
+            ),
         }
     )
     record_batches = tbl.to_batches(max_chunksize=1)
@@ -174,6 +177,7 @@ def test_from_arrow(monkeypatch: Any) -> None:
         "d": pl.Datetime("ns"),
         "e": pl.Int32,
         "decimal1": pl.Decimal(2, 1),
+        "struct": pl.Struct({"a": pl.Int32()}),
     }
     expected_data = [
         (
@@ -183,6 +187,7 @@ def test_from_arrow(monkeypatch: Any) -> None:
             datetime(1970, 1, 1, 0, 0),
             1,
             Decimal("1.0"),
+            {"a": 1},
         ),
         (
             datetime(1970, 1, 1, 0, 0, 2),
@@ -191,6 +196,7 @@ def test_from_arrow(monkeypatch: Any) -> None:
             datetime(1970, 1, 1, 0, 0),
             2,
             Decimal("2.0"),
+            {"a": 2},
         ),
     ]
     for arrow_data in (tbl, record_batches, (rb for rb in record_batches)):

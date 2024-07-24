@@ -125,9 +125,11 @@ def dict_to_pydf(
                         zip(
                             column_names,
                             pool.map(
-                                lambda t: pl.Series(t[0], t[1], nan_to_null=nan_to_null)
-                                if isinstance(t[1], np.ndarray)
-                                else t[1],
+                                lambda t: (
+                                    pl.Series(t[0], t[1], nan_to_null=nan_to_null)
+                                    if isinstance(t[1], np.ndarray)
+                                    else t[1]
+                                ),
                                 list(data.items()),
                             ),
                         )
@@ -931,9 +933,7 @@ def _include_unknowns(
 ) -> MutableMapping[str, PolarsDataType]:
     """Complete partial schema dict by including Unknown type."""
     return {
-        col: (
-            schema.get(col, Unknown) or Unknown  # type: ignore[truthy-bool]
-        )
+        col: (schema.get(col, Unknown) or Unknown)  # type: ignore[truthy-bool]
         for col in cols
     }
 
@@ -1168,7 +1168,11 @@ def arrow_to_pydf(
         if pa.types.is_dictionary(column.type):
             ps = plc.arrow_to_pyseries(name, column, rechunk=rechunk)
             dictionary_cols[i] = wrap_s(ps)
-        elif isinstance(column.type, pa.StructType) and column.num_chunks > 1:
+        elif (
+            isinstance(column.type, pa.StructType)
+            and hasattr(column, "num_chunks")
+            and column.num_chunks > 1
+        ):
             ps = plc.arrow_to_pyseries(name, column, rechunk=rechunk)
             struct_cols[i] = wrap_s(ps)
         else:
