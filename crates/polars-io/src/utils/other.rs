@@ -53,30 +53,37 @@ pub unsafe fn maybe_decompress_bytes<'a>(
     let is_compressed = bytes.len() >= 4 && is_compressed(bytes);
 
     if is_compressed {
-        const GZIP: [u8; 2] = [31, 139];
-        const ZLIB0: [u8; 2] = [0x78, 0x01];
-        const ZLIB1: [u8; 2] = [0x78, 0x9C];
-        const ZLIB2: [u8; 2] = [0x78, 0xDA];
-        const ZSTD: [u8; 4] = [0x28, 0xB5, 0x2F, 0xFD];
-
-        if bytes.starts_with(&GZIP) {
-            flate2::read::MultiGzDecoder::new(bytes)
-                .read_to_end(out)
-                .map_err(to_compute_err)?;
-        } else if bytes.starts_with(&ZLIB0)
-            || bytes.starts_with(&ZLIB1)
-            || bytes.starts_with(&ZLIB2)
+        #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
         {
-            flate2::read::ZlibDecoder::new(bytes)
-                .read_to_end(out)
-                .map_err(to_compute_err)?;
-        } else if bytes.starts_with(&ZSTD) {
-            zstd::Decoder::new(bytes)?.read_to_end(out)?;
-        } else {
-            polars_bail!(ComputeError: "unimplemented compression format")
-        }
+            const GZIP: [u8; 2] = [31, 139];
+            const ZLIB0: [u8; 2] = [0x78, 0x01];
+            const ZLIB1: [u8; 2] = [0x78, 0x9C];
+            const ZLIB2: [u8; 2] = [0x78, 0xDA];
+            const ZSTD: [u8; 4] = [0x28, 0xB5, 0x2F, 0xFD];
 
-        Ok(out)
+            if bytes.starts_with(&GZIP) {
+                flate2::read::MultiGzDecoder::new(bytes)
+                    .read_to_end(out)
+                    .map_err(to_compute_err)?;
+            } else if bytes.starts_with(&ZLIB0)
+                || bytes.starts_with(&ZLIB1)
+                || bytes.starts_with(&ZLIB2)
+            {
+                flate2::read::ZlibDecoder::new(bytes)
+                    .read_to_end(out)
+                    .map_err(to_compute_err)?;
+            } else if bytes.starts_with(&ZSTD) {
+                zstd::Decoder::new(bytes)?.read_to_end(out)?;
+            } else {
+                polars_bail!(ComputeError: "unimplemented compression format")
+            }
+
+            Ok(out)
+        }
+        #[cfg(not(any(feature = "decompress", feature = "decompress-fast")))]
+        {
+            panic!("cannot decompress without 'decompress' or 'decompress-fast' feature")
+        }
     } else {
         Ok(bytes)
     }
