@@ -231,21 +231,30 @@ pub fn map_err<E: Error>(error: E) -> PolarsError {
 #[macro_export]
 macro_rules! polars_err {
     ($variant:ident: $fmt:literal $(, $arg:expr)* $(,)?) => {
-        $crate::__private::must_use(
-            $crate::PolarsError::$variant(format!($fmt, $($arg),*).into())
-        )
+        {
+            $crate::__private::maybe_abort();
+            $crate::__private::must_use(
+                $crate::PolarsError::$variant(format!($fmt, $($arg),*).into())
+            )
+        }
     };
     ($variant:ident: $err:expr $(,)?) => {
-        $crate::__private::must_use(
-            $crate::PolarsError::$variant($err.into())
-        )
+        {
+            $crate::__private::maybe_abort();
+            $crate::__private::must_use(
+                $crate::PolarsError::$variant($err.into())
+            )
+        }
     };
     (expr = $expr:expr, $variant:ident: $err:expr $(,)?) => {
-        $crate::__private::must_use(
-            $crate::PolarsError::$variant(
-                format!("{}\n\nError originated in expression: '{:?}'", $err, $expr).into()
+        {
+            $crate::__private::maybe_abort();
+            $crate::__private::must_use(
+                $crate::PolarsError::$variant(
+                    format!("{}\n\nError originated in expression: '{:?}'", $err, $expr).into()
+                )
             )
-        )
+        }
     };
     (expr = $expr:expr, $variant:ident: $fmt:literal, $($arg:tt)+) => {
         polars_err!(expr = $expr, $variant: format!($fmt, $($arg)+))
@@ -393,4 +402,23 @@ pub mod __private {
     pub fn must_use(error: crate::PolarsError) -> crate::PolarsError {
         error
     }
+
+    /// Support aborting-on-error in debug mode, where it's useful for jumping
+    /// into a debugger on errors.
+    #[cfg(debug_assertions)]
+    #[doc(hidden)]
+    #[inline(never)] // <-- for faster compilation, hopefully
+    pub fn maybe_abort() {
+        use std::sync::OnceLock;
+
+        static ABORT_ON_ERROR: OnceLock<bool> = OnceLock::new();
+        if *ABORT_ON_ERROR.get_or_init(|| std::env::var("POLARS_ABORT_ON_ERROR").is_ok()) {
+            std::process::abort();
+        }
+    }
+
+    #[cfg(not(debug_assertions))]
+    #[doc(hidden)]
+    #[inline]
+    pub fn maybe_abort() {}
 }
