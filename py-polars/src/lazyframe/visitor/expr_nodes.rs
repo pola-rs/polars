@@ -1134,8 +1134,8 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     return Err(PyNotImplementedError::new_err("shift and fill"))
                 },
                 FunctionExpr::Shift => ("shift",).to_object(py),
-                FunctionExpr::DropNans => ("dropnan",).to_object(py),
-                FunctionExpr::DropNulls => ("dropnull",).to_object(py),
+                FunctionExpr::DropNans => ("drop_nans",).to_object(py),
+                FunctionExpr::DropNulls => ("drop_nulls",).to_object(py),
                 FunctionExpr::Mode => ("mode",).to_object(py),
                 FunctionExpr::Skew(_) => return Err(PyNotImplementedError::new_err("skew")),
                 FunctionExpr::Kurtosis(_, _) => {
@@ -1146,7 +1146,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 },
                 #[cfg(feature = "repeat_by")]
                 FunctionExpr::RepeatBy => ("repeat_by",).to_object(py),
-                FunctionExpr::ArgUnique => ("argunique",).to_object(py),
+                FunctionExpr::ArgUnique => ("arg_unique",).to_object(py),
                 FunctionExpr::Rank {
                     options: _,
                     seed: _,
@@ -1158,12 +1158,12 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 FunctionExpr::AsStruct => return Err(PyNotImplementedError::new_err("as struct")),
                 #[cfg(feature = "top_k")]
                 FunctionExpr::TopK { descending } => ("top_k", descending).to_object(py),
-                FunctionExpr::CumCount { reverse } => ("cumcount", reverse).to_object(py),
-                FunctionExpr::CumSum { reverse } => ("cumsum", reverse).to_object(py),
-                FunctionExpr::CumProd { reverse } => ("cumprod", reverse).to_object(py),
-                FunctionExpr::CumMin { reverse } => ("cummin", reverse).to_object(py),
-                FunctionExpr::CumMax { reverse } => ("cummax", reverse).to_object(py),
-                FunctionExpr::Reverse => return Err(PyNotImplementedError::new_err("reverse")),
+                FunctionExpr::CumCount { reverse } => ("cum_count", reverse).to_object(py),
+                FunctionExpr::CumSum { reverse } => ("cum_sum", reverse).to_object(py),
+                FunctionExpr::CumProd { reverse } => ("cum_prod", reverse).to_object(py),
+                FunctionExpr::CumMin { reverse } => ("cum_min", reverse).to_object(py),
+                FunctionExpr::CumMax { reverse } => ("cum_max", reverse).to_object(py),
+                FunctionExpr::Reverse => ("reverse",).to_object(py),
                 FunctionExpr::ValueCounts {
                     sort: _,
                     parallel: _,
@@ -1229,7 +1229,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     return Err(PyNotImplementedError::new_err("random"))
                 },
                 FunctionExpr::SetSortedFlag(sorted) => (
-                    "setsorted",
+                    "set_sorted",
                     match sorted {
                         IsSorted::Ascending => "ascending",
                         IsSorted::Descending => "descending",
