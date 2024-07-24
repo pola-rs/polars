@@ -297,6 +297,7 @@ impl ListNameSpace {
                 },
                 // we don't yet know the fields
                 GetOutput::map_dtype(move |dt: &DataType| {
+                    polars_ensure!(matches!(dt, DataType::List(_)), SchemaMismatch: "expected 'List' as input to 'list.to_struct' got {}", dt);
                     let out = out_dtype.read().unwrap();
                     match out.as_ref() {
                         // dtype already set
