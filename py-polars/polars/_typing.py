@@ -193,7 +193,7 @@ ConditionalFormatDict: TypeAlias = Mapping[
 ]
 ColumnTotalsDefinition: TypeAlias = Union[
     # dict of colname(s) to str, a collection of str, or a boolean
-    Mapping[Union[str, Collection[str]], str],
+    Mapping[Union[ColumnNameOrSelector, Tuple[ColumnNameOrSelector]], str],
     Sequence[str],
     bool,
 ]
