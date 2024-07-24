@@ -282,8 +282,8 @@ def test_from_arrow(monkeypatch: Any) -> None:
         ),
     ],
 )
-def test_from_arrow_struct_column(data: pa.Table):
-    df = pl.from_arrow(data=data)
+def test_from_arrow_struct_column(data: pa.Table) -> None:
+    df = cast(pl.DataFrame, pl.from_arrow(data=data))
     expected_schema = pl.Schema({"struct": pl.Struct({"a": pl.Int32()})})
     expected_data = [({"a": 1},), ({"a": 2},)]
     assert df.schema == expected_schema
@@ -2131,7 +2131,9 @@ def test_fill_null_limits() -> None:
     ).select(
         pl.all().fill_null(strategy="forward", limit=2),
         pl.all().fill_null(strategy="backward", limit=2).name.suffix("_backward"),
-    ).to_dict(as_series=False) == {
+    ).to_dict(
+        as_series=False
+    ) == {
         "a": [1, 1, 1, None, 5, 6, 6, 6, None, 10],
         "b": ["a", "a", "a", None, "b", "c", "c", "c", None, "d"],
         "c": [True, True, True, None, False, True, True, True, None, False],
