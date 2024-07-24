@@ -91,7 +91,7 @@ impl CsvReadOptions {
         );
 
         let path = resolve_homedir(self.path.as_ref().unwrap());
-        let reader = polars_utils::open_file(path)?;
+        let reader = polars_utils::open_file(&path)?;
         let options = self;
 
         Ok(CsvReader {

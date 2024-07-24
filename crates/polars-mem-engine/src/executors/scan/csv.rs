@@ -65,14 +65,18 @@ impl CsvExec {
                 let mut df = if run_async {
                     #[cfg(feature = "cloud")]
                     {
+                        let file = polars_io::file_cache::FILE_CACHE
+                            .get_entry(path.to_str().unwrap())
+                            // Safety: This was initialized by schema inference.
+                            .unwrap()
+                            .try_open_assume_latest()?;
+                        let owned = &mut vec![];
+                        let mmap = unsafe { memmap::Mmap::map(&file).unwrap() };
+
                         options
-                            .into_reader_with_file_handle(
-                                polars_io::file_cache::FILE_CACHE
-                                    .get_entry(path.to_str().unwrap())
-                                    // Safety: This was initialized by schema inference.
-                                    .unwrap()
-                                    .try_open_assume_latest()?,
-                            )
+                            .into_reader_with_file_handle(std::io::Cursor::new(unsafe {
+                                maybe_decompress_bytes(mmap.as_ref(), owned)
+                            }?))
                             ._with_predicate(predicate.clone())
                             .finish()
                     }
@@ -81,9 +85,14 @@ impl CsvExec {
                         panic!("required feature `cloud` is not enabled")
                     }
                 } else {
+                    let file = polars_utils::open_file(path)?;
+                    let mmap = unsafe { memmap::Mmap::map(&file).unwrap() };
+                    let owned = &mut vec![];
+
                     options
-                        .try_into_reader_with_file_path(Some(path.clone()))
-                        .unwrap()
+                        .into_reader_with_file_handle(std::io::Cursor::new(unsafe {
+                            maybe_decompress_bytes(mmap.as_ref(), owned)
+                        }?))
                         ._with_predicate(predicate.clone())
                         .finish()
                 }?;

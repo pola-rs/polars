@@ -32,6 +32,7 @@ ciborium = { workspace = true, optional = true }
 either = { workspace = true }
 futures = { workspace = true, optional = true }
 hashbrown = { workspace = true }
+memmap = { workspace = true }
 once_cell = { workspace = true }
 percent-encoding = { workspace = true }
 pyo3 = { workspace = true, optional = true }

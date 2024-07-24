@@ -69,31 +69,39 @@ impl JsonExec {
                     return None;
                 }
 
-                let reader = if run_async {
-                    JsonLineReader::new({
-                        #[cfg(feature = "cloud")]
+                let file = if run_async {
+                    #[cfg(feature = "cloud")]
+                    {
+                        match polars_io::file_cache::FILE_CACHE
+                            .get_entry(p.to_str().unwrap())
+                            // Safety: This was initialized by schema inference.
+                            .unwrap()
+                            .try_open_assume_latest()
                         {
-                            match polars_io::file_cache::FILE_CACHE
-                                .get_entry(p.to_str().unwrap())
-                                // Safety: This was initialized by schema inference.
-                                .unwrap()
-                                .try_open_assume_latest()
-                            {
-                                Ok(v) => v,
-                                Err(e) => return Some(Err(e)),
-                            }
+                            Ok(v) => v,
+                            Err(e) => return Some(Err(e)),
                         }
-                        #[cfg(not(feature = "cloud"))]
-                        {
-                            panic!("required feature `cloud` is not enabled")
-                        }
-                    })
+                    }
+                    #[cfg(not(feature = "cloud"))]
+                    {
+                        panic!("required feature `cloud` is not enabled")
+                    }
                 } else {
-                    match JsonLineReader::from_path(p) {
-                        Ok(r) => r,
+                    match polars_utils::open_file(p.as_ref()) {
+                        Ok(v) => v,
                         Err(e) => return Some(Err(e)),
                     }
                 };
+
+                let mmap = unsafe { memmap::Mmap::map(&file).unwrap() };
+                let owned = &mut vec![];
+                let curs = std::io::Cursor::new(
+                    match unsafe { maybe_decompress_bytes(mmap.as_ref(), owned) } {
+                        Ok(v) => v,
+                        Err(e) => return Some(Err(e)),
+                    },
+                );
+                let reader = JsonLineReader::new(curs);
 
                 let row_index = self.file_scan_options.row_index.as_mut();
 

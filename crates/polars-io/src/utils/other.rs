@@ -6,9 +6,11 @@ use once_cell::sync::Lazy;
 use polars_core::prelude::*;
 #[cfg(any(feature = "ipc_streaming", feature = "parquet"))]
 use polars_core::utils::{accumulate_dataframes_vertical_unchecked, split_df_as_ref};
+use polars_error::to_compute_err;
 use regex::{Regex, RegexBuilder};
 
 use crate::mmap::{MmapBytesReader, ReaderBytes};
+use crate::prelude::is_compressed;
 
 pub fn get_reader_bytes<'a, R: Read + MmapBytesReader + ?Sized>(
     reader: &'a mut R,
@@ -38,6 +40,45 @@ pub fn get_reader_bytes<'a, R: Read + MmapBytesReader + ?Sized>(
             reader.read_to_end(&mut bytes)?;
             Ok(ReaderBytes::Owned(bytes))
         }
+    }
+}
+
+/// # Safety
+/// The `out` vec outlives `bytes`.
+pub unsafe fn maybe_decompress_bytes<'a>(
+    bytes: &'a [u8],
+    out: &'a mut Vec<u8>,
+) -> PolarsResult<&'a [u8]> {
+    assert!(out.is_empty());
+    let is_compressed = bytes.len() >= 4 && is_compressed(bytes);
+
+    if is_compressed {
+        const GZIP: [u8; 2] = [31, 139];
+        const ZLIB0: [u8; 2] = [0x78, 0x01];
+        const ZLIB1: [u8; 2] = [0x78, 0x9C];
+        const ZLIB2: [u8; 2] = [0x78, 0xDA];
+        const ZSTD: [u8; 4] = [0x28, 0xB5, 0x2F, 0xFD];
+
+        if bytes.starts_with(&GZIP) {
+            flate2::read::MultiGzDecoder::new(bytes)
+                .read_to_end(out)
+                .map_err(to_compute_err)?;
+        } else if bytes.starts_with(&ZLIB0)
+            || bytes.starts_with(&ZLIB1)
+            || bytes.starts_with(&ZLIB2)
+        {
+            flate2::read::ZlibDecoder::new(bytes)
+                .read_to_end(out)
+                .map_err(to_compute_err)?;
+        } else if bytes.starts_with(&ZSTD) {
+            zstd::Decoder::new(bytes)?.read_to_end(out)?;
+        } else {
+            polars_bail!(ComputeError: "unimplemented compression format")
+        }
+
+        Ok(out)
+    } else {
+        Ok(bytes)
     }
 }
 

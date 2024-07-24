@@ -23,6 +23,7 @@ polars-utils = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 rayon = { workspace = true }
 tokio = { workspace = true, optional = true }
+memmap = { workspace = true }
 
 [features]
 async = [
