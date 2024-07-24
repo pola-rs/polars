@@ -6681,13 +6681,13 @@ class DataFrame:
                 Returns all rows from the right table, and the matched rows from the
                 left table
             * *full*
-                 Returns all rows when there is a match in either left or right table
+                Returns all rows when there is a match in either left or right table
             * *cross*
-                 Returns the Cartesian product of rows from both tables
+                Returns the Cartesian product of rows from both tables
             * *semi*
-                 Filter rows that have a match in the right table.
+                Returns rows from the left table that have a match in the right table.
             * *anti*
-                 Filter rows that do not have a match in the right table.
+                Returns rows from the left table that have no match in the right table.
 
             .. note::
                 A left join preserves the row order of the left DataFrame.
