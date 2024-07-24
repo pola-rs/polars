@@ -225,6 +225,12 @@ impl OptimizationRule for TypeCoercionRule {
                         return Ok(None)
                     },
                     #[cfg(feature = "dtype-decimal")]
+                    (DataType::Decimal(_, _), dt) if dt.is_numeric() => AExpr::Cast {
+                        expr: other_e.node(),
+                        data_type: type_left,
+                        options: CastOptions::NonStrict,
+                    },
+                    #[cfg(feature = "dtype-decimal")]
                     (DataType::Decimal(_, _), _) | (_, DataType::Decimal(_, _)) => {
                         polars_bail!(InvalidOperation: "`is_in` cannot check for {:?} values in {:?} data", &type_other, &type_left)
                     },

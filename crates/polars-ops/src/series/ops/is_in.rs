@@ -716,17 +716,26 @@ pub fn is_in(s: &Series, other: &Series) -> PolarsResult<BooleanChunked> {
             let ca = s.bool().unwrap();
             is_in_boolean(ca, other)
         },
+        DataType::Null => {
+            let series_bool = s.cast(&DataType::Boolean)?;
+            let ca = series_bool.bool().unwrap();
+            Ok(ca.clone())
+        },
+        DataType::Decimal(_, _) => {
+            let s = s.decimal()?;
+            let other = other.decimal()?;
+            let scale = s.scale().max(other.scale());
+            let s = s.to_scale(scale)?;
+            let other = other.to_scale(scale)?.into_owned().into_series();
+
+            is_in_numeric(s.physical(), &other)
+        },
         dt if dt.to_physical().is_numeric() => {
             let s = s.to_physical_repr();
             with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                 is_in_numeric(ca, other)
             })
-        },
-        DataType::Null => {
-            let series_bool = s.cast(&DataType::Boolean)?;
-            let ca = series_bool.bool().unwrap();
-            Ok(ca.clone())
         },
         dt => polars_bail!(opq = is_in, dt),
     }
