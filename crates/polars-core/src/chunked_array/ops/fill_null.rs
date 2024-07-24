@@ -90,7 +90,9 @@ impl Series {
                         fill_null_numeric(ca, strategy).map(|ca| ca.into_series())
                 })
             },
-            _ => todo!(),
+            dt => {
+                polars_bail!(InvalidOperation: "fill null strategy not yet supported for dtype: {}", dt)
+            },
         }?;
         unsafe { out.cast_unchecked(logical_type) }
     }
