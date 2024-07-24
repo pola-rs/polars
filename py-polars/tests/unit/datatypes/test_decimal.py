@@ -515,3 +515,10 @@ def test_decimal_dynamic_float_st() -> None:
     assert pl.LazyFrame({"a": [D("2.0"), D("0.5")]}).filter(
         pl.col("a").is_between(0.45, 0.9)
     ).collect().to_dict(as_series=False) == {"a": [D("0.5")]}
+
+
+def test_decimal_strict_scale_inference_17770() -> None:
+    values = [D("0.1"), D("0.10"), D("1.0121")]
+    s = pl.Series(values, strict=True)
+    assert s.dtype == pl.Decimal(precision=None, scale=4)
+    assert s.to_list() == values
