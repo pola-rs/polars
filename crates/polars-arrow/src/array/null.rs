@@ -76,8 +76,9 @@ impl NullArray {
     ///
     /// # Safety
     /// The caller must ensure that `offset + length < self.len()`.
-    pub unsafe fn slice_unchecked(&mut self, _offset: usize, length: usize) {
+    pub unsafe fn slice_unchecked(&mut self, offset: usize, length: usize) {
         self.length = length;
+        self.validity.slice_unchecked(offset, length);
     }
 
     #[inline]
