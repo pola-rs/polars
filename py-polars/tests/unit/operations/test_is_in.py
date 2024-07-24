@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal as D
 from typing import TYPE_CHECKING
 
 import pytest
@@ -404,3 +405,15 @@ def test_is_in_struct_enum_17618() -> None:
             )
         )
     ).shape == (0, 1)
+
+
+def test_is_in_decimal() -> None:
+    assert pl.DataFrame({"a": [D("0.0"), D("0.2"), D("0.1")]}).select(
+        pl.col("a").is_in([0.0, 0.1])
+    )["a"].to_list() == [True, False, True]
+    assert pl.DataFrame({"a": [D("0.0"), D("0.2"), D("0.1")]}).select(
+        pl.col("a").is_in([D("0.0"), D("0.1")])
+    )["a"].to_list() == [True, False, True]
+    assert pl.DataFrame({"a": [D("0.0"), D("0.2"), D("0.1")]}).select(
+        pl.col("a").is_in([1, 0, 2])
+    )["a"].to_list() == [True, False, False]

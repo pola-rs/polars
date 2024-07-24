@@ -127,7 +127,7 @@ impl DecimalChunked {
         }
     }
 
-    pub(crate) fn to_scale(&self, scale: usize) -> PolarsResult<Cow<'_, Self>> {
+    pub fn to_scale(&self, scale: usize) -> PolarsResult<Cow<'_, Self>> {
         if self.scale() == scale {
             return Ok(Cow::Borrowed(self));
         }
