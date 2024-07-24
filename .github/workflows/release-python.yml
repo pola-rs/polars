@@ -35,6 +35,9 @@ jobs:
       matrix:
         package: [polars, polars-lts-cpu, polars-u64-idx]
 
+    env:
+      SED_INPLACE: ${{ matrix.os == 'macos-13' && '-i ''''' || '-i'}}
+
     steps:
       - uses: actions/checkout@v4
         with:
@@ -60,6 +63,9 @@ jobs:
       - name: Add bigidx feature
         if: matrix.package == 'polars-u64-idx'
         run: tomlq -i -t '.dependencies.polars.features += ["bigidx"]' py-polars/Cargo.toml
+      - name: Update optional dependencies
+        if: matrix.package != 'polars'
+        run: sed $SED_INPLACE 's/polars\[/${{ matrix.package }}\[/' py-polars/pyproject.toml
 
       - name: Create source distribution
         uses: PyO3/maturin-action@v1
@@ -122,6 +128,9 @@ jobs:
       - name: Add bigidx feature
         if: matrix.package == 'polars-u64-idx'
         run: tomlq -i -t '.dependencies.polars.features += ["bigidx"]' py-polars/Cargo.toml
+      - name: Update optional dependencies
+        if: matrix.package != 'polars'
+        run: sed $SED_INPLACE 's/polars\[/${{ matrix.package }}\[/' py-polars/pyproject.toml
 
       - name: Determine CPU features for x86-64
         id: features
