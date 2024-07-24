@@ -10,7 +10,6 @@ use polars_error::to_compute_err;
 use regex::{Regex, RegexBuilder};
 
 use crate::mmap::{MmapBytesReader, ReaderBytes};
-use crate::prelude::is_compressed;
 
 pub fn get_reader_bytes<'a, R: Read + MmapBytesReader + ?Sized>(
     reader: &'a mut R,
@@ -50,6 +49,7 @@ pub unsafe fn maybe_decompress_bytes<'a>(
     out: &'a mut Vec<u8>,
 ) -> PolarsResult<&'a [u8]> {
     assert!(out.is_empty());
+    use crate::prelude::is_compressed;
     let is_compressed = bytes.len() >= 4 && is_compressed(bytes);
 
     if is_compressed {
