@@ -142,7 +142,7 @@ where
         (values, validity): Self::DecodedState,
     ) -> ParquetResult<Box<dyn arrow::array::Array>> {
         Ok(Box::new(PrimitiveArray::new(
-            data_type.clone(),
+            data_type,
             values.into(),
             validity.into(),
         )))

@@ -220,12 +220,7 @@ pub fn column_iter_to_arrays<'a, I>(
 where
     I: 'a + CompressedPagesIter,
 {
-    Ok(Box::new(std::iter::once(Ok(columns_to_iter_recursive(
-        columns,
-        types,
-        field,
-        vec![],
-        num_rows,
-    )?
-    .1))))
+    let (_, array) = columns_to_iter_recursive(columns, types, field, vec![], num_rows)?;
+
+    Ok(Box::new(std::iter::once(Ok(array))))
 }

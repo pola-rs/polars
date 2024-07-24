@@ -151,7 +151,7 @@ impl NestedDecoder for BinaryDecoder {
         };
 
         Ok(Box::new(FixedSizeBinaryArray::new(
-            data_type.clone(),
+            data_type,
             values.values.into(),
             validity,
         )))

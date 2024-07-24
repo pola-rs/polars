@@ -370,13 +370,31 @@ pub(super) fn extend<D: NestedDecoder>(
                 &mut decoded,
             );
 
+            let depth = nested.nested.len();
+
+            def_levels.clear();
+            rep_levels.clear();
+
+            def_levels.push(0);
+            rep_levels.push(0);
+
+            for i in 0..depth {
+                let nest = &nested.nested[i];
+
+                let def_delta = nest.is_nullable() as u32 + nest.is_repeated() as u32;
+                let rep_delta = nest.is_repeated() as u32;
+
+                def_levels.push(def_levels[i] + def_delta);
+                rep_levels.push(rep_levels[i] + rep_delta);
+            }
+
             let is_fully_read = extend_offsets2(
                 &mut page,
                 &mut batched_collector,
                 &mut nested.nested,
                 additional,
-                &mut def_levels,
-                &mut rep_levels,
+                &def_levels,
+                &rep_levels,
             )?;
 
             batched_collector.finalize()?;
@@ -418,28 +436,10 @@ fn extend_offsets2<'a, 'b, 'c, 'd, D: NestedDecoder>(
     nested: &mut [Nested],
     additional: usize,
     // Amortized allocations
-    def_levels: &mut Vec<u32>,
-    rep_levels: &mut Vec<u32>,
+    def_levels: &[u32],
+    rep_levels: &[u32],
 ) -> PolarsResult<bool> {
     let max_depth = nested.len();
-
-    def_levels.resize(max_depth + 1, 0);
-    rep_levels.resize(max_depth + 1, 0);
-    for (i, nest) in nested.iter().enumerate() {
-        let delta = nest.is_nullable() as u32 + nest.is_repeated() as u32;
-        unsafe {
-            *def_levels.get_unchecked_release_mut(i + 1) =
-                *def_levels.get_unchecked_release(i) + delta;
-        }
-    }
-
-    for (i, nest) in nested.iter().enumerate() {
-        let delta = nest.is_repeated() as u32;
-        unsafe {
-            *rep_levels.get_unchecked_release_mut(i + 1) =
-                *rep_levels.get_unchecked_release(i) + delta;
-        }
-    }
 
     let mut rows = 0;
     loop {
@@ -579,8 +579,6 @@ impl<I: CompressedPagesIter, D: NestedDecoder> PageNestedDecoder<I, D> {
         // @TODO: Self capacity
         let mut nested_state = init_nested(&self.init, 0);
 
-        dbg!(&nested_state);
-
         if limit == 0 {
             return Ok((nested_state, self.decoder.finalize(self.data_type, target)?));
         }
@@ -588,10 +586,25 @@ impl<I: CompressedPagesIter, D: NestedDecoder> PageNestedDecoder<I, D> {
         let mut limit = limit;
 
         // Amortize the allocations.
-        let mut def_levels = vec![];
-        let mut rep_levels = vec![];
+        let depth = nested_state.nested.len();
 
-        while limit > 0 {
+        let mut def_levels = Vec::with_capacity(depth + 1);
+        let mut rep_levels = Vec::with_capacity(depth + 1);
+
+        def_levels.push(0);
+        rep_levels.push(0);
+
+        for i in 0..depth {
+            let nest = &nested_state.nested[i];
+
+            let def_delta = nest.is_nullable() as u32 + nest.is_repeated() as u32;
+            let rep_delta = nest.is_repeated() as u32;
+
+            def_levels.push(def_levels[i] + def_delta);
+            rep_levels.push(rep_levels[i] + rep_delta);
+        }
+
+        loop {
             let Some(page) = self.iter.next()? else {
                 break;
             };
@@ -604,7 +617,6 @@ impl<I: CompressedPagesIter, D: NestedDecoder> PageNestedDecoder<I, D> {
             let mut values_page = self.decoder.build_state(page, self.dict.as_ref())?;
             let mut page = NestedPage::try_new(page)?;
 
-
             let start_length = nested_state.len();
 
             // @TODO: move this to outside the loop.
@@ -616,13 +628,13 @@ impl<I: CompressedPagesIter, D: NestedDecoder> PageNestedDecoder<I, D> {
                 &mut target,
             );
 
-            extend_offsets2(
+            let is_fully_read = extend_offsets2(
                 &mut page,
                 &mut batched_collector,
                 &mut nested_state.nested,
                 limit,
-                &mut def_levels,
-                &mut rep_levels,
+                &def_levels,
+                &rep_levels,
             )?;
 
             batched_collector.finalize()?;
@@ -631,7 +643,15 @@ impl<I: CompressedPagesIter, D: NestedDecoder> PageNestedDecoder<I, D> {
             limit -= num_done;
 
             debug_assert!(values_page.len() == 0 || limit == 0);
+
+            if is_fully_read {
+                break;
+            }
         }
+
+        // we pop the primitive off here.
+        debug_assert!(matches!(nested_state.nested.last().unwrap().content, NestedContent::Primitive));
+        _ = nested_state.pop().unwrap();
 
         let array = self.decoder.finalize(self.data_type, target)?;
 
