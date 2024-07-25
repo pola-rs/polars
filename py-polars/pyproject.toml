@@ -75,6 +75,9 @@ plot = ["hvplot >= 0.9.1", "polars[pandas]"]
 style = ["great-tables >= 0.8.0"]
 timezone = ["backports.zoneinfo; python_version < '3.9'", "tzdata; platform_system == 'Windows'"]
 
+# GPU Engine
+gpu = ["cudf-polars-cu12"]
+
 # All
 all = [
   "polars[async,cloudpickle,database,deltalake,excel,fsspec,graph,iceberg,numpy,pandas,plot,pyarrow,pydantic,style,timezone]",

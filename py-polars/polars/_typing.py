@@ -30,6 +30,7 @@ if TYPE_CHECKING:
     from polars.dependencies import numpy as np
     from polars.dependencies import pandas as pd
     from polars.dependencies import pyarrow as pa
+    from polars.lazyframe.engine_config import GPUEngine
     from polars.selectors import _selector_proxy_
 
     if sys.version_info >= (3, 10):
@@ -293,3 +294,6 @@ BooleanMask: TypeAlias = Union[
 ]
 SingleColSelector: TypeAlias = Union[SingleIndexSelector, SingleNameSelector]
 MultiColSelector: TypeAlias = Union[MultiIndexSelector, MultiNameSelector, BooleanMask]
+
+# LazyFrame engine selection
+EngineType: TypeAlias = Union[Literal["cpu", "gpu"], "GPUEngine"]
