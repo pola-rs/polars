@@ -443,8 +443,6 @@ impl<I: CompressedPagesIter, D: utils::NestedDecoder> PageNestedDecoder<I, D> {
         let dict_page = iter.read_dict_page()?;
         let dict = dict_page.map(|d| decoder.deserialize_dict(d));
 
-        dbg!(&init);
-
         Ok(Self {
             iter,
             data_type,
