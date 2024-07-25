@@ -181,6 +181,7 @@ fn utf8view_serializer<'a>(
 
 fn struct_serializer<'a>(
     array: &'a StructArray,
+    ignore_nulls: bool,
     offset: usize,
     take: usize,
 ) -> Box<dyn StreamingIterator<Item = [u8]> + 'a + Send + Sync> {
@@ -195,7 +196,7 @@ fn struct_serializer<'a>(
         .values()
         .iter()
         .map(|x| x.as_ref())
-        .map(|arr| new_serializer(arr, offset, take))
+        .map(|arr| new_serializer(arr, ignore_nulls, offset, take))
         .collect::<Vec<_>>();
 
     Box::new(BufStreamingIterator::new(
@@ -211,6 +212,7 @@ fn struct_serializer<'a>(
                             .map(|serializer| serializer.next().unwrap()),
                     ),
                     true,
+                    ignore_nulls,
                 );
             } else {
                 serializers.iter_mut().for_each(|iter| {
@@ -237,7 +239,7 @@ fn list_serializer<'a, O: Offset>(
     let offsets = array.offsets().as_slice();
     let start = offsets[0].to_usize();
     let end = offsets.last().unwrap().to_usize();
-    let mut serializer = new_serializer(array.values().as_ref(), start, end - start);
+    let mut serializer = new_serializer(array.values().as_ref(), false, start, end - start);
 
     let f = move |offset: Option<&[O]>, buf: &mut Vec<u8>| {
         if let Some(offset) = offset {
@@ -267,7 +269,7 @@ fn fixed_size_list_serializer<'a>(
     offset: usize,
     take: usize,
 ) -> Box<dyn StreamingIterator<Item = [u8]> + 'a + Send + Sync> {
-    let mut serializer = new_serializer(array.values().as_ref(), offset, take);
+    let mut serializer = new_serializer(array.values().as_ref(), false, offset, take);
 
     Box::new(BufStreamingIterator::new(
         ZipValidity::new(0..array.len(), array.validity().map(|x| x.iter())),
@@ -403,6 +405,7 @@ fn timestamp_tz_serializer<'a>(
 
 pub(crate) fn new_serializer<'a>(
     array: &'a dyn Array,
+    ignore_nulls: bool,
     offset: usize,
     take: usize,
 ) -> Box<dyn StreamingIterator<Item = [u8]> + 'a + Send + Sync> {
@@ -450,9 +453,12 @@ pub(crate) fn new_serializer<'a>(
         ArrowDataType::Utf8View => {
             utf8view_serializer(array.as_any().downcast_ref().unwrap(), offset, take)
         },
-        ArrowDataType::Struct(_) => {
-            struct_serializer(array.as_any().downcast_ref().unwrap(), offset, take)
-        },
+        ArrowDataType::Struct(_) => struct_serializer(
+            array.as_any().downcast_ref().unwrap(),
+            ignore_nulls,
+            offset,
+            take,
+        ),
         ArrowDataType::FixedSizeList(_, _) => {
             fixed_size_list_serializer(array.as_any().downcast_ref().unwrap(), offset, take)
         },
@@ -522,6 +528,7 @@ fn serialize_item<'a>(
     buffer: &mut Vec<u8>,
     record: impl Iterator<Item = (&'a str, &'a [u8])>,
     is_first_row: bool,
+    ignore_nulls: bool,
 ) {
     if !is_first_row {
         buffer.push(b',');
@@ -529,6 +536,9 @@ fn serialize_item<'a>(
     buffer.push(b'{');
     let mut first_item = true;
     for (key, value) in record {
+        if ignore_nulls && value == b"null" {
+            continue;
+        }
         if !first_item {
             buffer.push(b',');
         }
@@ -544,7 +554,7 @@ fn serialize_item<'a>(
 /// # Implementation
 /// This operation is CPU-bounded
 pub(crate) fn serialize(array: &dyn Array, buffer: &mut Vec<u8>) {
-    let mut serializer = new_serializer(array, 0, usize::MAX);
+    let mut serializer = new_serializer(array, false, 0, usize::MAX);
 
     (0..array.len()).for_each(|i| {
         if i != 0 {

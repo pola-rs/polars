@@ -88,7 +88,7 @@ impl<'a> RecordSerializer<'a> {
         let iterators = chunk
             .arrays()
             .iter()
-            .map(|arr| new_serializer(arr.as_ref(), 0, usize::MAX))
+            .map(|arr| new_serializer(arr.as_ref(), false, 0, usize::MAX))
             .collect();
 
         Self {

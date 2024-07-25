@@ -12,7 +12,9 @@ pub enum StructFunction {
     PrefixFields(Arc<str>),
     SuffixFields(Arc<str>),
     #[cfg(feature = "json")]
-    JsonEncode,
+    JsonEncode {
+        ignore_nulls: bool,
+    },
     WithFields,
     MultipleFields(Arc<[ColumnName]>),
 }
@@ -91,7 +93,7 @@ impl StructFunction {
                 _ => polars_bail!(op = "suffix_fields", got = dt, expected = "Struct"),
             }),
             #[cfg(feature = "json")]
-            JsonEncode => mapper.with_dtype(DataType::String),
+            JsonEncode { .. } => mapper.with_dtype(DataType::String),
             WithFields => {
                 let args = mapper.args();
                 let struct_ = &args[0];
@@ -134,7 +136,7 @@ impl Display for StructFunction {
             PrefixFields(_) => write!(f, "name.prefix_fields"),
             SuffixFields(_) => write!(f, "name.suffixFields"),
             #[cfg(feature = "json")]
-            JsonEncode => write!(f, "struct.to_json"),
+            JsonEncode { .. } => write!(f, "struct.to_json"),
             WithFields => write!(f, "with_fields"),
             MultipleFields(_) => write!(f, "multiple_fields"),
         }
@@ -151,7 +153,7 @@ impl From<StructFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             PrefixFields(prefix) => map!(prefix_fields, prefix.clone()),
             SuffixFields(suffix) => map!(suffix_fields, suffix.clone()),
             #[cfg(feature = "json")]
-            JsonEncode => map!(to_json),
+            JsonEncode { ignore_nulls } => map!(to_json, ignore_nulls),
             WithFields => map_as_slice!(with_fields),
             MultipleFields(_) => unimplemented!(),
         }
@@ -215,13 +217,13 @@ pub(super) fn suffix_fields(s: &Series, suffix: Arc<str>) -> PolarsResult<Series
 }
 
 #[cfg(feature = "json")]
-pub(super) fn to_json(s: &Series) -> PolarsResult<Series> {
+pub(super) fn to_json(s: &Series, ignore_nulls: bool) -> PolarsResult<Series> {
     let ca = s.struct_()?;
     let dtype = ca.dtype().to_arrow(CompatLevel::newest());
 
     let iter = ca.chunks().iter().map(|arr| {
         let arr = arrow::compute::cast::cast_unchecked(arr.as_ref(), &dtype).unwrap();
-        polars_json::json::write::serialize_to_utf8(arr.as_ref())
+        polars_json::json::write::serialize_to_utf8(arr.as_ref(), ignore_nulls)
     });
 
     Ok(StringChunked::from_chunk_iter(ca.name(), iter).into_series())
