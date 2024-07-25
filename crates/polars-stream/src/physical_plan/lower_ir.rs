@@ -32,9 +32,15 @@ pub fn lower_ir(
     let ir_node = ir_arena.get(node);
     match ir_node {
         IR::SimpleProjection { input, columns } => {
-            let schema = columns.clone();
+            let input_ir_node = ir_arena.get(*input);
+            let input_schema = input_ir_node.schema(ir_arena).into_owned();
+            let columns = columns.iter_names().map(|s| s.to_string()).collect();
             let input = lower_ir(*input, ir_arena, expr_arena, phys_sm)?;
-            Ok(phys_sm.insert(PhysNode::SimpleProjection { input, schema }))
+            Ok(phys_sm.insert(PhysNode::SimpleProjection {
+                input,
+                columns,
+                input_schema,
+            }))
         },
 
         // TODO: split partially streamable selections to avoid fallback as much as possible.
@@ -131,6 +137,7 @@ pub fn lower_ir(
             df,
             output_schema,
             filter,
+            schema: input_schema,
             ..
         } => {
             if let Some(filter) = filter {
@@ -144,7 +151,8 @@ pub fn lower_ir(
             if let Some(schema) = output_schema {
                 phys_node = phys_sm.insert(PhysNode::SimpleProjection {
                     input: phys_node,
-                    schema: schema.clone(),
+                    input_schema: input_schema.clone(),
+                    columns: schema.iter_names().map(|s| s.to_string()).collect(),
                 })
             }
 

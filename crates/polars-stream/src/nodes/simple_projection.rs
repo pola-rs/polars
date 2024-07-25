@@ -5,12 +5,16 @@ use polars_core::schema::Schema;
 use super::compute_node_prelude::*;
 
 pub struct SimpleProjectionNode {
-    schema: Arc<Schema>,
+    columns: Vec<String>,
+    input_schema: Arc<Schema>,
 }
 
 impl SimpleProjectionNode {
-    pub fn new(schema: Arc<Schema>) -> Self {
-        Self { schema }
+    pub fn new(columns: Vec<String>, input_schema: Arc<Schema>) -> Self {
+        Self {
+            columns,
+            input_schema,
+        }
     }
 }
 
@@ -42,7 +46,7 @@ impl ComputeNode for SimpleProjectionNode {
                 while let Ok(morsel) = recv.recv().await {
                     let morsel = morsel.try_map(|df| {
                         // TODO: can this be unchecked?
-                        df.select_with_schema(slf.schema.iter_names(), &slf.schema)
+                        df.select_with_schema(&slf.columns, &slf.input_schema)
                     })?;
 
                     if send.send(morsel).await.is_err() {
