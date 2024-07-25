@@ -39,6 +39,36 @@ def test_except_intersect() -> None:
         assert_frame_equal(pl.DataFrame({"x": [2], "y": [2]}), res)
 
 
+def test_except_intersect_by_name() -> None:
+    df1 = pl.DataFrame(  # noqa: F841
+        {
+            "x": [1, 9, 1, 1],
+            "y": [2, 3, 4, 4],
+            "z": [5, 5, 5, 5],
+        }
+    )
+    df2 = pl.DataFrame(  # noqa: F841
+        {
+            "y": [2, None, 4],
+            "w": ["?", "!", "%"],
+            "z": [7, 6, 5],
+            "x": [1, 9, 1],
+        }
+    )
+    res_e = pl.sql(
+        "SELECT x, y, z FROM df1 EXCEPT BY NAME SELECT * FROM df2",
+        eager=True,
+    )
+    res_i = pl.sql(
+        "SELECT * FROM df1 INTERSECT BY NAME SELECT * FROM df2",
+        eager=True,
+    )
+    assert sorted(res_e.rows()) == [(1, 2, 5), (9, 3, 5)]
+    assert sorted(res_i.rows()) == [(1, 4, 5)]
+    assert res_e.columns == ["x", "y", "z"]
+    assert res_i.columns == ["x", "y", "z"]
+
+
 @pytest.mark.parametrize("op", ["EXCEPT", "INTERSECT", "UNION"])
 def test_except_intersect_errors(op: str) -> None:
     df1 = pl.DataFrame({"x": [1, 9, 1, 1], "y": [2, 3, 4, 4], "z": [5, 5, 5, 5]})  # noqa: F841

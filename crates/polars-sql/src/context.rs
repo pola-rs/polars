@@ -9,9 +9,9 @@ use polars_ops::frame::JoinCoalesce;
 use polars_plan::dsl::function_expr::StructFunction;
 use polars_plan::prelude::*;
 use sqlparser::ast::{
-    BinaryOperator, Distinct, ExcludeSelectItem, Expr as SQLExpr, FunctionArg, GroupByExpr, Ident,
-    JoinConstraint, JoinOperator, ObjectName, ObjectType, Offset, OrderByExpr, Query,
-    RenameSelectItem, Select, SelectItem, SetExpr, SetOperator, SetQuantifier, Statement,
+    BinaryOperator, CreateTable, Distinct, ExcludeSelectItem, Expr as SQLExpr, FunctionArg,
+    GroupByExpr, Ident, JoinConstraint, JoinOperator, ObjectName, ObjectType, Offset, OrderBy,
+    Query, RenameSelectItem, Select, SelectItem, SetExpr, SetOperator, SetQuantifier, Statement,
     TableAlias, TableFactor, TableWithJoins, UnaryOperator, Value as SQLValue, Values,
     WildcardAdditionalOptions,
 };
@@ -382,10 +382,7 @@ impl SQLContext {
         let lf_schema = self.get_frame_schema(&mut lf)?;
         let lf_cols: Vec<_> = lf_schema.iter_names().map(|nm| col(nm)).collect();
         let joined_tbl = match quantifier {
-            SetQuantifier::ByName | SetQuantifier::AllByName => {
-                // note: 'BY NAME' is pending https://github.com/sqlparser-rs/sqlparser-rs/pull/1309
-                join.on(lf_cols).finish()
-            },
+            SetQuantifier::ByName | SetQuantifier::AllByName => join.on(lf_cols).finish(),
             SetQuantifier::Distinct | SetQuantifier::None => {
                 let rf_schema = self.get_frame_schema(&mut rf)?;
                 let rf_cols: Vec<_> = rf_schema.iter_names().map(|nm| col(nm)).collect();
@@ -658,7 +655,10 @@ impl SQLContext {
         let mut group_by_keys: Vec<Expr> = Vec::new();
         match &select_stmt.group_by {
             // Standard "GROUP BY x, y, z" syntax (also recognising ordinal values)
-            GroupByExpr::Expressions(group_by_exprs) => {
+            GroupByExpr::Expressions(group_by_exprs, modifiers) => {
+                if !modifiers.is_empty() {
+                    polars_bail!(SQLInterface: "GROUP BY does not support CUBE, ROLLUP, or TOTALS modifiers")
+                }
                 // translate the group expressions, allowing ordinal values
                 group_by_keys = group_by_exprs
                     .iter()
@@ -675,7 +675,10 @@ impl SQLContext {
             },
             // "GROUP BY ALL" syntax; automatically adds expressions that do not contain
             // nested agg/window funcs to the group key (also ignores literals).
-            GroupByExpr::All => {
+            GroupByExpr::All(modifiers) => {
+                if !modifiers.is_empty() {
+                    polars_bail!(SQLInterface: "GROUP BY does not support CUBE, ROLLUP, or TOTALS modifiers")
+                }
                 projections.iter().for_each(|expr| match expr {
                     // immediately match the most common cases (col|agg|len|lit, optionally aliased).
                     Expr::Agg(_) | Expr::Len | Expr::Literal(_) => (),
@@ -704,7 +707,7 @@ impl SQLContext {
         lf = if group_by_keys.is_empty() {
             // Final/selected cols, accounting for 'SELECT *' modifiers
             let mut retained_cols = Vec::with_capacity(projections.len());
-            let have_order_by = !query.order_by.is_empty();
+            let have_order_by = query.order_by.is_some();
 
             // Note: if there is an 'order by' then we project everything (original cols
             // and new projections) and *then* select the final cols; the retained cols
@@ -736,9 +739,8 @@ impl SQLContext {
             if !select_modifiers.rename.is_empty() {
                 lf = lf.with_columns(select_modifiers.renamed_cols());
             }
-            if have_order_by {
-                lf = self.process_order_by(lf, &query.order_by, Some(&retained_cols))?
-            }
+
+            lf = self.process_order_by(lf, &query.order_by, Some(&retained_cols))?;
             lf = lf.select(retained_cols);
 
             if !select_modifiers.rename.is_empty() {
@@ -779,9 +781,7 @@ impl SQLContext {
                     .collect::<PolarsResult<Vec<_>>>()?;
 
                 // DISTINCT ON has to apply the ORDER BY before the operation.
-                if !query.order_by.is_empty() {
-                    lf = self.process_order_by(lf, &query.order_by, None)?;
-                }
+                lf = self.process_order_by(lf, &query.order_by, None)?;
                 return Ok(lf.unique_stable(Some(cols), UniqueKeepStrategy::First));
             },
             None => lf,
@@ -903,12 +903,12 @@ impl SQLContext {
     }
 
     fn execute_create_table(&mut self, stmt: &Statement) -> PolarsResult<LazyFrame> {
-        if let Statement::CreateTable {
+        if let Statement::CreateTable(CreateTable {
             if_not_exists,
             name,
             query,
             ..
-        } = stmt
+        }) = stmt
         {
             let tbl_name = name.0.first().unwrap().value.as_str();
             // CREATE TABLE IF NOT EXISTS
@@ -976,6 +976,7 @@ impl SQLContext {
                 array_exprs,
                 with_offset,
                 with_offset_alias: _,
+                ..
             } => {
                 if let Some(alias) = alias {
                     let table_name = alias.name.value.clone();
@@ -1021,8 +1022,8 @@ impl SQLContext {
 
                     let lf = DataFrame::new(column_series)?.lazy();
                     if *with_offset {
-                        // TODO: make a PR to `sqlparser-rs` to support 'ORDINALITY'
-                        //  (note that 'OFFSET' is BigQuery-specific syntax, not PostgreSQL)
+                        // TODO: support 'WITH ORDINALITY' modifier.
+                        //  (note that 'WITH OFFSET' is BigQuery-specific syntax, not PostgreSQL)
                         polars_bail!(SQLInterface: "UNNEST tables do not (yet) support WITH OFFSET/ORDINALITY");
                     }
                     self.table_map.insert(table_name.clone(), lf.clone());
@@ -1058,12 +1059,16 @@ impl SQLContext {
     fn process_order_by(
         &mut self,
         mut lf: LazyFrame,
-        order_by: &[OrderByExpr],
+        order_by: &Option<OrderBy>,
         selected: Option<&[Expr]>,
     ) -> PolarsResult<LazyFrame> {
+        if order_by.as_ref().map_or(true, |ob| ob.exprs.is_empty()) {
+            return Ok(lf);
+        }
         let schema = self.get_frame_schema(&mut lf)?;
         let columns_iter = schema.iter_names().map(|e| col(e));
 
+        let order_by = order_by.as_ref().unwrap().exprs.clone();
         let mut descending = Vec::with_capacity(order_by.len());
         let mut nulls_last = Vec::with_capacity(order_by.len());
         let mut by: Vec<Expr> = Vec::with_capacity(order_by.len());
@@ -1262,9 +1267,6 @@ impl SQLContext {
             polars_bail!(SQLInterface: "EXCLUDE and EXCEPT wildcard options cannot be used together (prefer EXCLUDE)")
         } else if options.opt_exclude.is_some() && options.opt_ilike.is_some() {
             polars_bail!(SQLInterface: "EXCLUDE and ILIKE wildcard options cannot be used together")
-        } else if options.opt_rename.is_some() && options.opt_replace.is_some() {
-            // pending an upstream fix: https://github.com/sqlparser-rs/sqlparser-rs/pull/1321
-            polars_bail!(SQLInterface: "RENAME and REPLACE wildcard options cannot (yet) be used together")
         }
 
         // SELECT * EXCLUDE

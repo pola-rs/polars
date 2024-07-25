@@ -115,11 +115,13 @@ pub(crate) fn map_sql_polars_datatype(data_type: &SQLDataType) -> PolarsResult<D
         // unsigned integer: the following do not map to PostgreSQL types/syntax, but
         // are enabled for wider compatibility (eg: "CAST(col AS BIGINT UNSIGNED)").
         // ---------------------------------
+        SQLDataType::UnsignedTinyInt(_) => DataType::UInt8, // see also: "custom" types below
         SQLDataType::UnsignedInt(_) | SQLDataType::UnsignedInteger(_) => DataType::UInt32,
         SQLDataType::UnsignedInt2(_) | SQLDataType::UnsignedSmallInt(_) => DataType::UInt16,
         SQLDataType::UnsignedInt4(_) | SQLDataType::UnsignedMediumInt(_) => DataType::UInt32,
-        SQLDataType::UnsignedInt8(_) | SQLDataType::UnsignedBigInt(_) => DataType::UInt64,
-        SQLDataType::UnsignedTinyInt(_) => DataType::UInt8, // see also: "custom" types below
+        SQLDataType::UnsignedInt8(_) | SQLDataType::UnsignedBigInt(_) | SQLDataType::UInt8 => {
+            DataType::UInt64
+        },
 
         // ---------------------------------
         // float
@@ -562,18 +564,34 @@ impl SQLExprVisitor<'_> {
 
                 match left_dtype {
                     DataType::Time if is_iso_time(s) => {
-                        right.clone().strict_cast(left_dtype.clone())
+                        right.clone().str().to_time(StrptimeOptions {
+                            strict: true,
+                            ..Default::default()
+                        })
                     },
                     DataType::Date if is_iso_date(s) => {
-                        right.clone().strict_cast(left_dtype.clone())
+                        right.clone().str().to_date(StrptimeOptions {
+                            strict: true,
+                            ..Default::default()
+                        })
                     },
-                    DataType::Datetime(_, _) if is_iso_datetime(s) || is_iso_date(s) => {
+                    DataType::Datetime(tu, tz) if is_iso_datetime(s) || is_iso_date(s) => {
                         if s.len() == 10 {
                             // handle upcast from ISO date string (10 chars) to datetime
-                            lit(format!("{}T00:00:00", s)).strict_cast(left_dtype.clone())
+                            lit(format!("{}T00:00:00", s))
                         } else {
-                            lit(s.replacen(' ', "T", 1)).strict_cast(left_dtype.clone())
+                            lit(s.replacen(' ', "T", 1))
                         }
+                        .str()
+                        .to_datetime(
+                            Some(*tu),
+                            tz.clone(),
+                            StrptimeOptions {
+                                strict: true,
+                                ..Default::default()
+                            },
+                            lit("latest"),
+                        )
                     },
                     _ => right.clone(),
                 }
@@ -834,13 +852,17 @@ impl SQLExprVisitor<'_> {
             (dtype_expr_match, self.active_schema.as_ref())
         {
             if elems.dtype() == &DataType::String {
-                if let Some(DataType::Date | DataType::Time | DataType::Datetime(_, _)) =
-                    schema.get(name)
-                {
-                    elems = elems.strict_cast(&schema.get(name).unwrap().clone())?;
+                if let Some(dtype) = schema.get(name) {
+                    if matches!(
+                        dtype,
+                        DataType::Date | DataType::Time | DataType::Datetime(_, _)
+                    ) {
+                        elems = elems.strict_cast(dtype)?;
+                    }
                 }
             }
         }
+
         // if we are parsing the list as an element in a series, implode.
         // otherwise, return the series as-is.
         let res = if result_as_element {

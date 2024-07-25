@@ -196,6 +196,9 @@ def test_extract_century_millennium(dt: date, expected: list[int]) -> None:
         ("dtm > '2006-01-01'", [0, 1, 2]),  # << implies '2006-01-01 00:00:00'
         ("dtm <= '2006-01-01'", []),  # << implies '2006-01-01 00:00:00'
         ("dt != '1960-01-07'", [0, 1]),
+        ("tm != '22:10:30'", [0, 2]),
+        ("tm >= '11:00:00' AND tm < '22:00:00'", [0]),
+        ("tm BETWEEN '12:00:00' AND '23:59:58'", [0, 1]),
         ("dt BETWEEN '2050-01-01' AND '2100-12-31'", [1]),
         ("dt::datetime = '1960-01-07'", [2]),
         ("dt::datetime = '1960-01-07 00:00:00'", [2]),
@@ -220,6 +223,11 @@ def test_implicit_temporal_strings(constraint: str, expected: list[int]) -> None
                 date(2020, 12, 30),
                 date(2077, 1, 1),
                 date(1960, 1, 7),
+            ],
+            "tm": [
+                time(17, 30, 45),
+                time(22, 10, 30),
+                time(10, 25, 15),
             ],
         }
     )
@@ -447,6 +455,6 @@ def test_timestamp_time_unit_errors() -> None:
 
         with pytest.raises(
             SQLInterfaceError,
-            match="sql parser error: Expected literal int, found: - ",
+            match="sql parser error: Expected: literal int, found: - ",
         ):
             ctx.execute("SELECT ts::timestamp(-3) FROM frame_data")
