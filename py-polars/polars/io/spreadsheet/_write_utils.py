@@ -330,6 +330,7 @@ def _xl_setup_table_columns(
     row_totals: RowTotalsDefinition | None = None,
     float_precision: int = 3,
     table_style: dict[str, Any] | str | None = None,
+    autofilter: bool = True,  # noqa: FBT001
 ) -> tuple[list[dict[str, Any]], dict[str | tuple[str, ...], str], DataFrame]:
     """Setup and unify all column-related formatting/defaults."""
 
@@ -450,13 +451,22 @@ def _xl_setup_table_columns(
         dtype_formats[tp] = fmt
 
     # associate formats/functions with specific columns
+    header_dict = header_format or {}
+    add_align = "align" not in header_dict
+    header_alignment = {"align": "right"} | ({"indent": 2} if autofilter else {})
+    col_header_format = {}
     for col, tp in df.schema.items():
         base_type = tp.base_type()
+        header_fmt = header_format
         if base_type in dtype_formats:
             fmt = dtype_formats.get(tp, dtype_formats[base_type])
             column_formats.setdefault(col, fmt)
+            if add_align and base_type in [*FLOAT_DTYPES, *INTEGER_DTYPES]:
+                header_fmt = header_dict | header_alignment
         if col not in column_formats:
             column_formats[col] = fmt_default
+
+        col_header_format[col] = format_cache.get(header_fmt) if header_fmt else None
 
     # ensure externally supplied formats are made available
     for col, fmt in column_formats.items():  # type: ignore[assignment]
@@ -473,9 +483,6 @@ def _xl_setup_table_columns(
                 fmt["valign"] = "vcenter"
             column_formats[col] = format_cache.get(fmt)
 
-    # optional custom header format
-    col_header_format = format_cache.get(header_format) if header_format else None
-
     # assemble table columns
     table_columns = [
         {
@@ -483,7 +490,7 @@ def _xl_setup_table_columns(
             for k, v in {
                 "header": col,
                 "format": column_formats[col],
-                "header_format": col_header_format,
+                "header_format": col_header_format.get(col),
                 "total_function": column_total_funcs.get(col),
                 "formula": (
                     row_total_funcs.get(col)

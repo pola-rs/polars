@@ -3190,6 +3190,7 @@ class DataFrame:
             row_totals=row_totals,
             sparklines=sparklines,
             formulas=formulas,
+            autofilter=autofilter,
         )
 
         # normalise cell refs (eg: "B3" => (2,1)) and establish table start/finish,
