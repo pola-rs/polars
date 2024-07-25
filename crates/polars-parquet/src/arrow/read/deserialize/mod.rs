@@ -1,20 +1,5 @@
 //! APIs to read from Parquet format.
 
-macro_rules! decoder_fn {
-    (($x:ident $(, $field:ident:$ty:ty)* $(,)?) => <$p:ty, $t:ty> => $expr:expr) => {{
-        #[derive(Clone, Copy)]
-        struct DecoderFn($($ty),*);
-        impl crate::arrow::read::deserialize::primitive::DecoderFunction<$p, $t> for DecoderFn {
-            #[inline(always)]
-            fn decode(self, $x: $p) -> $t {
-                let Self($($field),*) = self;
-                $expr
-            }
-        }
-        DecoderFn($($field),*)
-    }};
-}
-
 mod binary;
 mod binview;
 mod boolean;
@@ -25,7 +10,6 @@ mod nested_utils;
 mod null;
 mod primitive;
 mod simple;
-mod struct_;
 mod utils;
 
 use arrow::array::{Array, DictionaryKey, FixedSizeListArray, ListArray, MapArray};
@@ -35,7 +19,6 @@ use polars_utils::mmap::MemReader;
 use simple::page_iter_to_array;
 
 pub use self::nested_utils::{init_nested, InitNested, NestedArrayIter, NestedState};
-pub use self::struct_::StructIterator;
 use super::*;
 use crate::parquet::read::get_page_iterator as _get_page_iterator;
 use crate::parquet::schema::types::PrimitiveType;

@@ -48,15 +48,11 @@ where
 }
 
 #[derive(Default, Clone, Copy)]
-pub(crate) struct IntoDecoderFunction<P, T>(std::marker::PhantomData<(P, T)>);
-impl<P: Into<T>, T> DecoderFunction<P, T> for IntoDecoderFunction<P, T>
-where
-    P: ParquetNativeType,
-    T: NativeType,
-{
+pub(crate) struct UnitDecoderFunction<T>(std::marker::PhantomData<T>);
+impl<T: NativeType + ParquetNativeType> DecoderFunction<T, T> for UnitDecoderFunction<T> {
     #[inline(always)]
-    fn decode(self, x: P) -> T {
-        x.into()
+    fn decode(self, x: T) -> T {
+        x
     }
 }
 
@@ -87,14 +83,29 @@ as_decoder_impl![
 ];
 
 #[derive(Default, Clone, Copy)]
-pub(crate) struct UnitDecoderFunction<T>(std::marker::PhantomData<T>);
-impl<T> DecoderFunction<T, T> for UnitDecoderFunction<T>
+pub(crate) struct IntoDecoderFunction<P, T>(std::marker::PhantomData<(P, T)>);
+impl<P, T> DecoderFunction<P, T> for IntoDecoderFunction<P, T>
 where
-    T: NativeType + ParquetNativeType,
+    P: ParquetNativeType + Into<T>,
+    T: NativeType,
 {
     #[inline(always)]
-    fn decode(self, x: T) -> T {
-        x
+    fn decode(self, x: P) -> T {
+        x.into()
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct ClosureDecoderFunction<P, T, F>(F, std::marker::PhantomData<(P, T)>);
+impl<P, T, F> DecoderFunction<P, T> for ClosureDecoderFunction<P, T, F>
+where
+    P: ParquetNativeType,
+    T: NativeType,
+    F: Copy + Fn(P) -> T,
+{
+    #[inline(always)]
+    fn decode(self, x: P) -> T {
+        (self.0)(x)
     }
 }
 
@@ -254,8 +265,8 @@ where
 #[derive(Debug)]
 pub(crate) struct PrimitiveDecoder<P, T, D>
 where
-    T: NativeType,
     P: ParquetNativeType,
+    T: NativeType,
     D: DecoderFunction<P, T>,
 {
     pub(crate) decoder: D,
@@ -264,16 +275,59 @@ where
 
 impl<P, T, D> PrimitiveDecoder<P, T, D>
 where
-    T: NativeType,
     P: ParquetNativeType,
+    T: NativeType,
     D: DecoderFunction<P, T>,
 {
     #[inline]
-    pub(crate) fn new(decoder: D) -> Self {
+    fn new(decoder: D) -> Self {
         Self {
             decoder,
             _pd: std::marker::PhantomData,
         }
+    }
+}
+
+impl<T> PrimitiveDecoder<T, T, UnitDecoderFunction<T>>
+where
+    T: NativeType + ParquetNativeType,
+    UnitDecoderFunction<T>: Default + DecoderFunction<T, T>,
+{
+    pub(crate) fn unit() -> Self {
+        Self::new(UnitDecoderFunction::<T>::default())
+    }
+}
+
+impl<P, T> PrimitiveDecoder<P, T, AsDecoderFunction<P, T>>
+where
+    P: ParquetNativeType,
+    T: NativeType,
+    AsDecoderFunction<P, T>: Default + DecoderFunction<P, T>,
+{
+    pub(crate) fn cast_as() -> Self {
+        Self::new(AsDecoderFunction::<P, T>::default())
+    }
+}
+
+impl<P, T> PrimitiveDecoder<P, T, IntoDecoderFunction<P, T>>
+where
+    P: ParquetNativeType,
+    T: NativeType,
+    IntoDecoderFunction<P, T>: Default + DecoderFunction<P, T>,
+{
+    pub(crate) fn cast_into() -> Self {
+        Self::new(IntoDecoderFunction::<P, T>::default())
+    }
+}
+
+impl<P, T, F> PrimitiveDecoder<P, T, ClosureDecoderFunction<P, T, F>>
+where
+    P: ParquetNativeType,
+    T: NativeType,
+    F: Copy + Fn(P) -> T,
+{
+    pub(crate) fn closure(f: F) -> Self {
+        Self::new(ClosureDecoderFunction(f, std::marker::PhantomData))
     }
 }
 
@@ -412,11 +466,20 @@ where
     P: ParquetNativeType,
     D: DecoderFunction<P, T>,
 {
-    fn validity_extend((_, validity): &mut Self::DecodedState, value: bool, n: usize) {
+    fn validity_extend(
+        _: &mut utils::State<'_, Self>,
+        (_, validity): &mut Self::DecodedState,
+        value: bool,
+        n: usize,
+    ) {
         validity.extend_constant(n, value);
     }
 
-    fn values_extend_nulls((values, _): &mut Self::DecodedState, n: usize) {
+    fn values_extend_nulls(
+        _: &mut utils::State<'_, Self>,
+        (values, _): &mut Self::DecodedState,
+        n: usize,
+    ) {
         values.resize(values.len() + n, T::default());
     }
 }

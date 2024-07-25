@@ -202,7 +202,7 @@ impl<'a, 'b, 'c, D: utils::NestedDecoder> BatchableCollector<(), D::DecodedState
     }
 
     fn push_n_nulls(&mut self, target: &mut D::DecodedState, n: usize) -> ParquetResult<()> {
-        self.decoder.push_n_nulls(target, n);
+        self.decoder.push_n_nulls(self.state, target, n);
         Ok(())
     }
 }
@@ -438,6 +438,8 @@ impl<I: CompressedPagesIter, D: utils::NestedDecoder> PageNestedDecoder<I, D> {
     ) -> ParquetResult<Self> {
         let dict_page = iter.read_dict_page()?;
         let dict = dict_page.map(|d| decoder.deserialize_dict(d));
+        
+        dbg!(&init);
 
         Ok(Self {
             iter,

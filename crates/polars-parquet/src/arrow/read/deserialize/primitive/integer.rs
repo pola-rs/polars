@@ -6,7 +6,7 @@ use num_traits::AsPrimitive;
 use polars_error::PolarsResult;
 
 use super::super::utils;
-use super::basic::{DecoderFunction, PlainDecoderFnCollector, PrimitiveDecoder, ValuesDictionary};
+use super::basic::{ClosureDecoderFunction, DecoderFunction, PlainDecoderFnCollector, PrimitiveDecoder, ValuesDictionary, AsDecoderFunction, IntoDecoderFunction, UnitDecoderFunction};
 use crate::parquet::encoding::hybrid_rle::{self, DictionaryTranslator};
 use crate::parquet::encoding::{byte_stream_split, delta_bitpacked, Encoding};
 use crate::parquet::error::ParquetResult;
@@ -174,16 +174,63 @@ where
     i64: num_traits::AsPrimitive<P>,
     D: DecoderFunction<P, T>;
 
-impl<T, P, D> IntDecoder<P, T, D>
+impl<P, T, D> IntDecoder<P, T, D>
 where
-    T: NativeType,
     P: ParquetNativeType,
+    T: NativeType,
     i64: num_traits::AsPrimitive<P>,
     D: DecoderFunction<P, T>,
 {
     #[inline]
-    pub(crate) fn new(decoder: D) -> Self {
-        Self(PrimitiveDecoder::new(decoder))
+    fn new(decoder: PrimitiveDecoder<P, T, D>) -> Self {
+        Self(decoder)
+    }
+}
+
+impl<T> IntDecoder<T, T, UnitDecoderFunction<T>>
+where
+    T: NativeType + ParquetNativeType,
+    i64: num_traits::AsPrimitive<T>,
+    UnitDecoderFunction<T>: Default + DecoderFunction<T, T>,
+{
+    pub(crate) fn unit() -> Self {
+        Self::new(PrimitiveDecoder::unit())
+    }
+}
+
+impl<P, T> IntDecoder<P, T, AsDecoderFunction<P, T>>
+where
+    P: ParquetNativeType,
+    T: NativeType,
+    i64: num_traits::AsPrimitive<P>,
+    AsDecoderFunction<P, T>: Default + DecoderFunction<P, T>,
+{
+    pub(crate) fn cast_as() -> Self {
+        Self::new(PrimitiveDecoder::cast_as())
+    }
+}
+
+impl<P, T> IntDecoder<P, T, IntoDecoderFunction<P, T>>
+where
+    P: ParquetNativeType,
+    T: NativeType,
+    i64: num_traits::AsPrimitive<P>,
+    IntoDecoderFunction<P, T>: Default + DecoderFunction<P, T>,
+{
+    pub(crate) fn cast_into() -> Self {
+        Self::new(PrimitiveDecoder::cast_into())
+    }
+}
+
+impl<P, T, F> IntDecoder<P, T, ClosureDecoderFunction<P, T, F>>
+where
+    P: ParquetNativeType,
+    T: NativeType,
+    i64: num_traits::AsPrimitive<P>,
+    F: Copy + Fn(P) -> T,
+{
+    pub(crate) fn closure(f: F) -> Self {
+        Self::new(PrimitiveDecoder::closure(f))
     }
 }
 
@@ -315,11 +362,11 @@ where
     i64: num_traits::AsPrimitive<P>,
     D: DecoderFunction<P, T>,
 {
-    fn validity_extend((_, validity): &mut Self::DecodedState, value: bool, n: usize) {
+    fn validity_extend(_: &mut utils::State<'_, Self>, (_, validity): &mut Self::DecodedState, value: bool, n: usize) {
         validity.extend_constant(n, value);
     }
 
-    fn values_extend_nulls((values, _): &mut Self::DecodedState, n: usize) {
+    fn values_extend_nulls(_: &mut utils::State<'_, Self>, (values, _): &mut Self::DecodedState, n: usize) {
         values.resize(values.len() + n, T::default());
     }
 }

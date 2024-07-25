@@ -268,11 +268,11 @@ impl<O: Offset> utils::Decoder for BinaryDecoder<O> {
 }
 
 impl<O: Offset> utils::NestedDecoder for BinaryDecoder<O> {
-    fn validity_extend((_, validity): &mut Self::DecodedState, value: bool, n: usize) {
+    fn validity_extend(_: &mut utils::State<'_, Self>, (_, validity): &mut Self::DecodedState, value: bool, n: usize) {
         validity.extend_constant(n, value);
     }
 
-    fn values_extend_nulls((values, _): &mut Self::DecodedState, n: usize) {
+    fn values_extend_nulls(_: &mut utils::State<'_, Self>, (values, _): &mut Self::DecodedState, n: usize) {
         values.extend_constant(n);
     }
 }

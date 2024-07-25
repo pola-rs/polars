@@ -515,8 +515,8 @@ pub(super) trait Decoder: Sized {
 }
 
 pub(crate) trait NestedDecoder: Decoder {
-    fn validity_extend(decoded: &mut Self::DecodedState, value: bool, n: usize);
-    fn values_extend_nulls(decoded: &mut Self::DecodedState, n: usize);
+    fn validity_extend(state: &mut State<'_, Self>, decoded: &mut Self::DecodedState, value: bool, n: usize);
+    fn values_extend_nulls(state: &mut State<'_, Self>, decoded: &mut Self::DecodedState, n: usize);
 
     fn push_n_valids(
         &mut self,
@@ -527,14 +527,14 @@ pub(crate) trait NestedDecoder: Decoder {
         _ = state.page_validity.take();
 
         state.extend_from_state(self, decoded, n)?;
-        Self::validity_extend(decoded, true, n);
+        Self::validity_extend(state, decoded, true, n);
 
         Ok(())
     }
 
-    fn push_n_nulls(&self, decoded: &mut Self::DecodedState, n: usize) {
-        Self::validity_extend(decoded, false, n);
-        Self::values_extend_nulls(decoded, n);
+    fn push_n_nulls(&self, state: &mut State<'_, Self>, decoded: &mut Self::DecodedState, n: usize) {
+        Self::validity_extend(state, decoded, false, n);
+        Self::values_extend_nulls(state, decoded, n);
     }
 }
 

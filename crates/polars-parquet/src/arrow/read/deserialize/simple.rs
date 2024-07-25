@@ -5,7 +5,6 @@ use arrow::types::{days_ms, i256};
 use ethnum::I256;
 use polars_error::{polars_bail, PolarsResult};
 
-use self::primitive::UnitDecoderFunction;
 use super::utils::PageDictArrayDecoder;
 use super::{
     binary, boolean, fixed_size_binary, null, primitive, BasicDecompressor, CompressedPagesIter,
@@ -17,9 +16,6 @@ use crate::parquet::schema::types::{
 };
 use crate::parquet::types::int96_to_i64_ns;
 use crate::read::deserialize::binview::{self, BinViewDecoder};
-use crate::read::deserialize::primitive::{
-    AsDecoderFunction, IntoDecoderFunction, PrimitiveDecoder,
-};
 use crate::read::deserialize::utils::PageDecoder;
 
 /// An iterator adapter that maps an iterator of Pages a boxed [`Array`] of [`ArrowDataType`]
@@ -43,43 +39,43 @@ pub fn page_iter_to_array<'a, I: CompressedPagesIter + 'a>(
         (PhysicalType::Int32, UInt8) => PageDecoder::new(
             pages,
             data_type,
-            primitive::IntDecoder::new(AsDecoderFunction::<i32, u8>::default()),
+            primitive::IntDecoder::<i32, u8, _>::cast_as(),
         )?
         .collect_n(num_rows)?,
         (PhysicalType::Int32, UInt16) => PageDecoder::new(
             pages,
             data_type,
-            primitive::IntDecoder::new(AsDecoderFunction::<i32, u16>::default()),
+            primitive::IntDecoder::<i32, u16, _>::cast_as(),
         )?
         .collect_n(num_rows)?,
         (PhysicalType::Int32, UInt32) => PageDecoder::new(
             pages,
             data_type,
-            primitive::IntDecoder::new(AsDecoderFunction::<i32, u32>::default()),
+            primitive::IntDecoder::<i32, u32, _>::cast_as(),
         )?
         .collect_n(num_rows)?,
         (PhysicalType::Int64, UInt32) => PageDecoder::new(
             pages,
             data_type,
-            primitive::IntDecoder::new(AsDecoderFunction::<i64, u32>::default()),
+            primitive::IntDecoder::<i64, u32, _>::cast_as(),
         )?
         .collect_n(num_rows)?,
         (PhysicalType::Int32, Int8) => PageDecoder::new(
             pages,
             data_type,
-            primitive::IntDecoder::new(AsDecoderFunction::<i32, i8>::default()),
+            primitive::IntDecoder::<i32, i8, _>::cast_as(),
         )?
         .collect_n(num_rows)?,
         (PhysicalType::Int32, Int16) => PageDecoder::new(
             pages,
             data_type,
-            primitive::IntDecoder::new(AsDecoderFunction::<i32, i16>::default()),
+            primitive::IntDecoder::<i32, i16, _>::cast_as(),
         )?
         .collect_n(num_rows)?,
         (PhysicalType::Int32, Int32 | Date32 | Time32(_)) => PageDecoder::new(
             pages,
             data_type,
-            primitive::IntDecoder::new(UnitDecoderFunction::<i32>::default()),
+            primitive::IntDecoder::<i32, _, _>::unit(),
         )?
         .collect_n(num_rows)?,
         (PhysicalType::Int64 | PhysicalType::Int96, Timestamp(time_unit, _)) => {
@@ -156,13 +152,13 @@ pub fn page_iter_to_array<'a, I: CompressedPagesIter + 'a>(
         (PhysicalType::Int32, Decimal(_, _)) => PageDecoder::new(
             pages,
             data_type,
-            primitive::IntDecoder::new(IntoDecoderFunction::<i32, i128>::default()),
+            primitive::IntDecoder::<i32, i128, _>::cast_into(),
         )?
         .collect_n(num_rows)?,
         (PhysicalType::Int64, Decimal(_, _)) => PageDecoder::new(
             pages,
             data_type,
-            primitive::IntDecoder::new(IntoDecoderFunction::<i64, i128>::default()),
+            primitive::IntDecoder::<i64, i128, _>::cast_into(),
         )?
         .collect_n(num_rows)?,
         (PhysicalType::FixedLenByteArray(n), Decimal(_, _)) if *n > 16 => {
@@ -201,17 +197,13 @@ pub fn page_iter_to_array<'a, I: CompressedPagesIter + 'a>(
         (PhysicalType::Int32, Decimal256(_, _)) => PageDecoder::new(
             pages,
             data_type,
-            primitive::IntDecoder::new(
-                decoder_fn!((x) => <i32, i256> => i256(I256::new(x as i128))),
-            ),
+            primitive::IntDecoder::closure(|x: i32| i256(I256::new(x as i128))),
         )?
         .collect_n(num_rows)?,
         (PhysicalType::Int64, Decimal256(_, _)) => PageDecoder::new(
             pages,
             data_type,
-            primitive::IntDecoder::new(
-                decoder_fn!((x) => <i64, i256> => i256(I256::new(x as i128))),
-            ),
+            primitive::IntDecoder::closure(|x: i64| i256(I256::new(x as i128))),
         )?
         .collect_n(num_rows)?,
         (PhysicalType::FixedLenByteArray(n), Decimal256(_, _)) if *n <= 16 => {
@@ -278,37 +270,37 @@ pub fn page_iter_to_array<'a, I: CompressedPagesIter + 'a>(
         (PhysicalType::Int32, Date64) => PageDecoder::new(
             pages,
             data_type,
-            primitive::IntDecoder::new(decoder_fn!((x) => <i32, i64> => i64::from(x) * 86400000)),
+            primitive::IntDecoder::closure(|x: i32| i64::from(x) * 86400000),
         )?
         .collect_n(num_rows)?,
         (PhysicalType::Int64, Date64) => PageDecoder::new(
             pages,
             data_type,
-            primitive::IntDecoder::new(UnitDecoderFunction::<i64>::default()),
+            primitive::IntDecoder::<i64, _, _>::unit(),
         )?
         .collect_n(num_rows)?,
         (PhysicalType::Int64, Int64 | Time64(_) | Duration(_)) => PageDecoder::new(
             pages,
             data_type,
-            primitive::IntDecoder::new(UnitDecoderFunction::<i64>::default()),
+            primitive::IntDecoder::<i64, _, _>::unit(),
         )?
         .collect_n(num_rows)?,
         (PhysicalType::Int64, UInt64) => PageDecoder::new(
             pages,
             data_type,
-            primitive::IntDecoder::new(AsDecoderFunction::<i64, u64>::default()),
+            primitive::IntDecoder::<i64, u64, _>::cast_as(),
         )?
         .collect_n(num_rows)?,
         (PhysicalType::Float, Float32) => PageDecoder::new(
             pages,
             data_type,
-            PrimitiveDecoder::new(UnitDecoderFunction::<f32>::default()),
+            primitive::PrimitiveDecoder::<f32, _, _>::unit(),
         )?
         .collect_n(num_rows)?,
         (PhysicalType::Double, Float64) => PageDecoder::new(
             pages,
             data_type,
-            PrimitiveDecoder::new(UnitDecoderFunction::<f64>::default()),
+            primitive::PrimitiveDecoder::<f64, _, _>::unit(),
         )?
         .collect_n(num_rows)?,
         // Don't compile this code with `i32` as we don't use this in polars
@@ -415,25 +407,25 @@ fn timestamp<I: CompressedPagesIter>(
             TimeUnit::Nanosecond => Ok(PageDecoder::new(
                 pages,
                 data_type,
-                PrimitiveDecoder::new(decoder_fn!((x) => <[u32; 3], i64> => int96_to_i64_ns(x))),
+                primitive::PrimitiveDecoder::closure(|x: [u32; 3]| int96_to_i64_ns(x)),
             )?
             .collect_n(num_rows)?),
             TimeUnit::Microsecond => Ok(PageDecoder::new(
                 pages,
                 data_type,
-                PrimitiveDecoder::new(decoder_fn!((x) => <[u32; 3], i64> => int96_to_i64_us(x))),
+                primitive::PrimitiveDecoder::closure(|x: [u32; 3]| int96_to_i64_us(x)),
             )?
             .collect_n(num_rows)?),
             TimeUnit::Millisecond => Ok(PageDecoder::new(
                 pages,
                 data_type,
-                PrimitiveDecoder::new(decoder_fn!((x) => <[u32; 3], i64> => int96_to_i64_ms(x))),
+                primitive::PrimitiveDecoder::closure(|x: [u32; 3]| int96_to_i64_ms(x)),
             )?
             .collect_n(num_rows)?),
             TimeUnit::Second => Ok(PageDecoder::new(
                 pages,
                 data_type,
-                PrimitiveDecoder::new(decoder_fn!((x) => <[u32; 3], i64> => int96_to_i64_s(x))),
+                primitive::PrimitiveDecoder::closure(|x: [u32; 3]| int96_to_i64_s(x)),
             )?
             .collect_n(num_rows)?),
         };
@@ -447,22 +439,18 @@ fn timestamp<I: CompressedPagesIter>(
 
     let (factor, is_multiplier) = unify_timestamp_unit(logical_type, time_unit);
     Ok(match (factor, is_multiplier) {
-        (1, _) => PageDecoder::new(
-            pages,
-            data_type,
-            primitive::IntDecoder::new(UnitDecoderFunction::<i64>::default()),
-        )?
-        .collect_n(num_rows)?,
+        (1, _) => PageDecoder::new(pages, data_type, primitive::IntDecoder::<i64, _, _>::unit())?
+            .collect_n(num_rows)?,
         (a, true) => PageDecoder::new(
             pages,
             data_type,
-            primitive::IntDecoder::new(decoder_fn!((x, a: i64) => <i64, i64> => x * a)),
+            primitive::IntDecoder::closure(|x: i64| x * a),
         )?
         .collect_n(num_rows)?,
         (a, false) => PageDecoder::new(
             pages,
             data_type,
-            primitive::IntDecoder::new(decoder_fn!((x, a: i64) => <i64, i64> => x / a)),
+            primitive::IntDecoder::closure(|x: i64| x / a),
         )?
         .collect_n(num_rows)?,
     })
@@ -486,17 +474,13 @@ fn timestamp_dict<K: DictionaryKey, I: CompressedPagesIter>(
             (a, true) => PageDictArrayDecoder::<_, K, _>::new(
                 pages,
                 ArrowDataType::Timestamp(TimeUnit::Nanosecond, None),
-                PrimitiveDecoder::new(
-                    decoder_fn!((x, a: i64) => <[u32; 3], i64> => int96_to_i64_ns(x) * a),
-                ),
+                primitive::PrimitiveDecoder::closure(|x: [u32; 3]| int96_to_i64_ns(x) * a),
             )?
             .collect_n(num_rows),
             (a, false) => PageDictArrayDecoder::<_, K, _>::new(
                 pages,
                 ArrowDataType::Timestamp(TimeUnit::Nanosecond, None),
-                PrimitiveDecoder::new(
-                    decoder_fn!((x, a: i64) => <[u32; 3], i64> => int96_to_i64_ns(x) / a),
-                ),
+                primitive::PrimitiveDecoder::closure(|x: [u32; 3]| int96_to_i64_ns(x) / a),
             )?
             .collect_n(num_rows),
         };
@@ -507,13 +491,13 @@ fn timestamp_dict<K: DictionaryKey, I: CompressedPagesIter>(
         (a, true) => PageDictArrayDecoder::<_, K, _>::new(
             pages,
             data_type,
-            PrimitiveDecoder::new(decoder_fn!((x, a: i64) => <i64, i64> => x * a)),
+            primitive::PrimitiveDecoder::closure(|x: i64| x * a),
         )?
         .collect_n(num_rows),
         (a, false) => PageDictArrayDecoder::<_, K, _>::new(
             pages,
             data_type,
-            PrimitiveDecoder::new(decoder_fn!((x, a: i64) => <i64, i64> => x / a)),
+            primitive::PrimitiveDecoder::closure(|x: i64| x / a),
         )?
         .collect_n(num_rows),
     }
@@ -537,44 +521,44 @@ fn dict_read<K: DictionaryKey, I: CompressedPagesIter>(
         (PhysicalType::Int32, UInt8) => PageDictArrayDecoder::<_, K, _>::new(
             iter,
             data_type,
-            PrimitiveDecoder::new(AsDecoderFunction::<i32, u8>::default()),
+            primitive::PrimitiveDecoder::<i32, u8, _>::cast_as(),
         )?
         .collect_n(num_rows)?,
         (PhysicalType::Int32, UInt16) => PageDictArrayDecoder::<_, K, _>::new(
             iter,
             data_type,
-            PrimitiveDecoder::new(AsDecoderFunction::<i32, u16>::default()),
+            primitive::PrimitiveDecoder::<i32, u16, _>::cast_as(),
         )?
         .collect_n(num_rows)?,
         (PhysicalType::Int32, UInt32) => PageDictArrayDecoder::<_, K, _>::new(
             iter,
             data_type,
-            PrimitiveDecoder::new(AsDecoderFunction::<i32, u32>::default()),
+            primitive::PrimitiveDecoder::<i32, u32, _>::cast_as(),
         )?
         .collect_n(num_rows)?,
         (PhysicalType::Int64, UInt64) => PageDictArrayDecoder::<_, K, _>::new(
             iter,
             data_type,
-            PrimitiveDecoder::new(AsDecoderFunction::<i64, u64>::default()),
+            primitive::PrimitiveDecoder::<i64, u64, _>::cast_as(),
         )?
         .collect_n(num_rows)?,
         (PhysicalType::Int32, Int8) => PageDictArrayDecoder::<_, K, _>::new(
             iter,
             data_type,
-            PrimitiveDecoder::new(AsDecoderFunction::<i32, i8>::default()),
+            primitive::PrimitiveDecoder::<i32, i8, _>::cast_as(),
         )?
         .collect_n(num_rows)?,
         (PhysicalType::Int32, Int16) => PageDictArrayDecoder::<_, K, _>::new(
             iter,
             data_type,
-            PrimitiveDecoder::new(AsDecoderFunction::<i32, i16>::default()),
+            primitive::PrimitiveDecoder::<i32, i16, _>::cast_as(),
         )?
         .collect_n(num_rows)?,
         (PhysicalType::Int32, Int32 | Date32 | Time32(_) | Interval(IntervalUnit::YearMonth)) => {
             PageDictArrayDecoder::<_, K, _>::new(
                 iter,
                 data_type,
-                PrimitiveDecoder::new(UnitDecoderFunction::<i32>::default()),
+                primitive::PrimitiveDecoder::<i32, _, _>::unit(),
             )?
             .collect_n(num_rows)?
         },
@@ -595,20 +579,20 @@ fn dict_read<K: DictionaryKey, I: CompressedPagesIter>(
             PageDictArrayDecoder::<_, K, _>::new(
                 iter,
                 data_type,
-                PrimitiveDecoder::new(UnitDecoderFunction::<i64>::default()),
+            primitive::PrimitiveDecoder::<i64, _, _>::unit(),
             )?
             .collect_n(num_rows)?
         },
         (PhysicalType::Float, Float32) => PageDictArrayDecoder::<_, K, _>::new(
             iter,
             data_type,
-            PrimitiveDecoder::new(UnitDecoderFunction::<f32>::default()),
+            primitive::PrimitiveDecoder::<f32, _, _>::unit(),
         )?
         .collect_n(num_rows)?,
         (PhysicalType::Double, Float64) => PageDictArrayDecoder::<_, K, _>::new(
             iter,
             data_type,
-            PrimitiveDecoder::new(UnitDecoderFunction::<f64>::default()),
+            primitive::PrimitiveDecoder::<f64, _, _>::unit(),
         )?
         .collect_n(num_rows)?,
         (PhysicalType::ByteArray, LargeUtf8 | LargeBinary) => PageDictArrayDecoder::<_, K, _>::new(

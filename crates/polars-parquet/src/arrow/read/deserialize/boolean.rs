@@ -4,8 +4,8 @@ use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
 use polars_error::PolarsResult;
 
-use super::super::utils;
-use super::super::utils::{extend_from_decoder, Decoder, ExactSize};
+use super::utils;
+use super::utils::{extend_from_decoder, Decoder, ExactSize};
 use crate::parquet::encoding::hybrid_rle::gatherer::HybridRleGatherer;
 use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use crate::parquet::encoding::Encoding;
@@ -245,11 +245,20 @@ impl Decoder for BooleanDecoder {
 }
 
 impl utils::NestedDecoder for BooleanDecoder {
-    fn validity_extend((_, validity): &mut Self::DecodedState, value: bool, n: usize) {
+    fn validity_extend(
+        _: &mut utils::State<'_, Self>,
+        (_, validity): &mut Self::DecodedState,
+        value: bool,
+        n: usize,
+    ) {
         validity.extend_constant(n, value);
     }
 
-    fn values_extend_nulls((values, _): &mut Self::DecodedState, n: usize) {
+    fn values_extend_nulls(
+        _: &mut utils::State<'_, Self>,
+        (values, _): &mut Self::DecodedState,
+        n: usize,
+    ) {
         values.extend_constant(n, false);
     }
 }

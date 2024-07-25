@@ -5,7 +5,7 @@ use polars_error::polars_bail;
 
 use self::nested::deserialize::nested_utils::PageNestedDictArrayDecoder;
 use self::nested_utils::PageNestedDecoder;
-use self::primitive::{self, AsDecoderFunction, IntoDecoderFunction, UnitDecoderFunction};
+use self::primitive::{self};
 use super::*;
 
 pub fn columns_to_iter_recursive<I>(
@@ -51,7 +51,7 @@ where
             PageNestedDecoder::new(
                 columns.pop().unwrap(),
                 field.data_type().clone(),
-                primitive::PrimitiveDecoder::new(AsDecoderFunction::<i32, i8>::default()),
+                primitive::PrimitiveDecoder::<i32, i8, _>::cast_as(),
                 init,
             )?
             .collect_n(num_rows)?
@@ -62,7 +62,7 @@ where
             PageNestedDecoder::new(
                 columns.pop().unwrap(),
                 field.data_type().clone(),
-                primitive::PrimitiveDecoder::new(AsDecoderFunction::<i32, i16>::default()),
+                primitive::PrimitiveDecoder::<i32, i16, _>::cast_as(),
                 init,
             )?
             .collect_n(num_rows)?
@@ -73,7 +73,7 @@ where
             PageNestedDecoder::new(
                 columns.pop().unwrap(),
                 field.data_type().clone(),
-                primitive::PrimitiveDecoder::new(UnitDecoderFunction::<i32>::default()),
+                primitive::PrimitiveDecoder::<i32, _, _>::unit(),
                 init,
             )?
             .collect_n(num_rows)?
@@ -84,7 +84,7 @@ where
             PageNestedDecoder::new(
                 columns.pop().unwrap(),
                 field.data_type().clone(),
-                primitive::PrimitiveDecoder::new(UnitDecoderFunction::<i64>::default()),
+                primitive::PrimitiveDecoder::<i64, _, _>::unit(),
                 init,
             )?
             .collect_n(num_rows)?
@@ -95,7 +95,7 @@ where
             PageNestedDecoder::new(
                 columns.pop().unwrap(),
                 field.data_type().clone(),
-                primitive::PrimitiveDecoder::new(AsDecoderFunction::<i32, u8>::default()),
+                primitive::PrimitiveDecoder::<i32, u8, _>::cast_as(),
                 init,
             )?
             .collect_n(num_rows)?
@@ -106,7 +106,7 @@ where
             PageNestedDecoder::new(
                 columns.pop().unwrap(),
                 field.data_type().clone(),
-                primitive::PrimitiveDecoder::new(AsDecoderFunction::<i32, u16>::default()),
+                primitive::PrimitiveDecoder::<i32, u16, _>::cast_as(),
                 init,
             )?
             .collect_n(num_rows)?
@@ -118,7 +118,7 @@ where
                 PhysicalType::Int32 => PageNestedDecoder::new(
                     columns.pop().unwrap(),
                     field.data_type().clone(),
-                    primitive::PrimitiveDecoder::new(AsDecoderFunction::<i32, u32>::default()),
+                    primitive::PrimitiveDecoder::<i32, u32, _>::cast_as(),
                     init,
                 )?
                 .collect_n(num_rows)?,
@@ -126,7 +126,7 @@ where
                 PhysicalType::Int64 => PageNestedDecoder::new(
                     columns.pop().unwrap(),
                     field.data_type().clone(),
-                    primitive::PrimitiveDecoder::new(AsDecoderFunction::<i64, u32>::default()),
+                    primitive::PrimitiveDecoder::<i64, u32, _>::cast_as(),
                     init,
                 )?
                 .collect_n(num_rows)?,
@@ -143,7 +143,7 @@ where
             PageNestedDecoder::new(
                 columns.pop().unwrap(),
                 field.data_type().clone(),
-                primitive::PrimitiveDecoder::new(AsDecoderFunction::<i64, u64>::default()),
+                primitive::PrimitiveDecoder::<i64, u64, _>::cast_as(),
                 init,
             )?
             .collect_n(num_rows)?
@@ -154,7 +154,7 @@ where
             PageNestedDecoder::new(
                 columns.pop().unwrap(),
                 field.data_type().clone(),
-                primitive::PrimitiveDecoder::new(UnitDecoderFunction::<f32>::default()),
+                primitive::PrimitiveDecoder::<f32, _, _>::unit(),
                 init,
             )?
             .collect_n(num_rows)?
@@ -165,7 +165,7 @@ where
             PageNestedDecoder::new(
                 columns.pop().unwrap(),
                 field.data_type().clone(),
-                primitive::PrimitiveDecoder::new(UnitDecoderFunction::<f64>::default()),
+                primitive::PrimitiveDecoder::<f64, _, _>::unit(),
                 init,
             )?
             .collect_n(num_rows)?
@@ -234,18 +234,14 @@ where
                     PhysicalType::Int32 => PageNestedDecoder::new(
                         columns.pop().unwrap(),
                         field.data_type.clone(),
-                        primitive::PrimitiveDecoder::new(
-                            IntoDecoderFunction::<i32, i128>::default(),
-                        ),
+                        primitive::PrimitiveDecoder::<i32, i128, _>::cast_into(),
                         init,
                     )?
                     .collect_n(num_rows)?,
                     PhysicalType::Int64 => PageNestedDecoder::new(
                         columns.pop().unwrap(),
                         field.data_type.clone(),
-                        primitive::PrimitiveDecoder::new(
-                            IntoDecoderFunction::<i64, i128>::default(),
-                        ),
+                        primitive::PrimitiveDecoder::<i64, i128, _>::cast_into(),
                         init,
                     )?
                     .collect_n(num_rows)?,
@@ -302,18 +298,14 @@ where
                     PhysicalType::Int32 => PageNestedDecoder::new(
                         columns.pop().unwrap(),
                         field.data_type.clone(),
-                        primitive::PrimitiveDecoder::new(
-                            decoder_fn!((x) => <i32, i256> => i256(I256::new(x as i128))),
-                        ),
+                        primitive::PrimitiveDecoder::closure(|x: i32| i256(I256::new(x as i128))),
                         init,
                     )?
                     .collect_n(num_rows)?,
                     PhysicalType::Int64 => PageNestedDecoder::new(
                         columns.pop().unwrap(),
                         field.data_type.clone(),
-                        primitive::PrimitiveDecoder::new(
-                            decoder_fn!((x) => <i64, i256> => i256(I256::new(x as i128))),
-                        ),
+                        primitive::PrimitiveDecoder::closure(|x: i64| i256(I256::new(x as i128))),
                         init,
                     )?
                     .collect_n(num_rows)?,
@@ -471,35 +463,35 @@ fn dict_read<'a, K: DictionaryKey, I: 'a + CompressedPagesIter>(
         UInt8 => PageNestedDictArrayDecoder::<_, K, _>::new(
             iter,
             data_type,
-            primitive::PrimitiveDecoder::new(AsDecoderFunction::<i32, u8>::default()),
+            primitive::PrimitiveDecoder::<i32, u8, _>::cast_as(),
             init,
         )?
         .collect_n(num_rows)?,
         UInt16 => PageNestedDictArrayDecoder::<_, K, _>::new(
             iter,
             data_type,
-            primitive::PrimitiveDecoder::new(AsDecoderFunction::<i32, u16>::default()),
+            primitive::PrimitiveDecoder::<i32, u16, _>::cast_as(),
             init,
         )?
         .collect_n(num_rows)?,
         UInt32 => PageNestedDictArrayDecoder::<_, K, _>::new(
             iter,
             data_type,
-            primitive::PrimitiveDecoder::new(AsDecoderFunction::<i32, u32>::default()),
+            primitive::PrimitiveDecoder::<i32, u32, _>::cast_as(),
             init,
         )?
         .collect_n(num_rows)?,
         Int8 => PageNestedDictArrayDecoder::<_, K, _>::new(
             iter,
             data_type,
-            primitive::PrimitiveDecoder::new(AsDecoderFunction::<i32, i8>::default()),
+            primitive::PrimitiveDecoder::<i32, i8, _>::cast_as(),
             init,
         )?
         .collect_n(num_rows)?,
         Int16 => PageNestedDictArrayDecoder::<_, K, _>::new(
             iter,
             data_type,
-            primitive::PrimitiveDecoder::new(AsDecoderFunction::<i32, i16>::default()),
+            primitive::PrimitiveDecoder::<i32, i16, _>::cast_as(),
             init,
         )?
         .collect_n(num_rows)?,
@@ -507,7 +499,7 @@ fn dict_read<'a, K: DictionaryKey, I: 'a + CompressedPagesIter>(
             PageNestedDictArrayDecoder::<_, K, _>::new(
                 iter,
                 data_type,
-                primitive::PrimitiveDecoder::new(UnitDecoderFunction::<i32>::default()),
+                primitive::PrimitiveDecoder::<i32, _, _>::unit(),
                 init,
             )?
             .collect_n(num_rows)?
@@ -515,21 +507,21 @@ fn dict_read<'a, K: DictionaryKey, I: 'a + CompressedPagesIter>(
         Int64 | Date64 | Time64(_) | Duration(_) => PageNestedDictArrayDecoder::<_, K, _>::new(
             iter,
             data_type,
-            primitive::PrimitiveDecoder::new(AsDecoderFunction::<i64, i32>::default()),
+            primitive::PrimitiveDecoder::<i64, i32, _>::cast_as(),
             init,
         )?
         .collect_n(num_rows)?,
         Float32 => PageNestedDictArrayDecoder::<_, K, _>::new(
             iter,
             data_type,
-            primitive::PrimitiveDecoder::new(UnitDecoderFunction::<f32>::default()),
+            primitive::PrimitiveDecoder::<f32, _, _>::unit(),
             init,
         )?
         .collect_n(num_rows)?,
         Float64 => PageNestedDictArrayDecoder::<_, K, _>::new(
             iter,
             data_type,
-            primitive::PrimitiveDecoder::new(UnitDecoderFunction::<f64>::default()),
+            primitive::PrimitiveDecoder::<f64, _, _>::unit(),
             init,
         )?
         .collect_n(num_rows)?,
