@@ -139,7 +139,7 @@ def test_no_glob(
     char: str,
     tmp_path: Path,
 ) -> None:
-    if sys.platform == "win32" and char != "[":
+    if sys.platform == "win32" and char in ["*", "?"]:
         pytest.skip("unsupported glob char for windows")
 
     tmp_path.mkdir(exist_ok=True)
