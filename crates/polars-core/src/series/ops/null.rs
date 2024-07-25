@@ -1,3 +1,5 @@
+#[cfg(feature = "object")]
+use crate::chunked_array::object::registry::get_object_builder;
 use crate::prelude::*;
 
 impl Series {
@@ -59,6 +61,14 @@ impl Series {
             DataType::Unknown(kind) => {
                 let dtype = kind.materialize().expect("expected known type");
                 Series::full_null(name, size, &dtype)
+            },
+            #[cfg(feature = "object")]
+            DataType::Object(_, _) => {
+                let mut builder = get_object_builder(name, size);
+                for _ in 0..size {
+                    builder.append_null();
+                }
+                builder.to_series()
             },
             _ => {
                 macro_rules! primitive {
