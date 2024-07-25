@@ -3211,6 +3211,7 @@ class DataFrame:
                 *table_start,
                 *table_finish,
                 {
+                    "data": df.rows(),
                     "style": table_style,
                     "columns": table_columns,
                     "header_row": include_header,
@@ -3220,18 +3221,6 @@ class DataFrame:
                     **table_options,
                 },
             )
-
-            # write data into the table range, column-wise
-            if not is_empty:
-                column_start = [table_start[0] + int(include_header), table_start[1]]
-                for c in df.columns:
-                    if c in self.columns:
-                        ws.write_column(
-                            *column_start,
-                            data=df[c].to_list(),
-                            cell_format=column_formats.get(c),
-                        )
-                    column_start[1] += 1
 
             # apply conditional formats
             if conditional_formats:
@@ -3267,8 +3256,6 @@ class DataFrame:
                     None,
                     options,
                 )
-            elif options:
-                ws.set_column(col_idx, col_idx, None, None, options)
 
         # finally, inject any sparklines into the table
         for column, params in (sparklines or {}).items():
