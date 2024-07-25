@@ -8,6 +8,7 @@ pub mod reduce;
 pub mod select;
 pub mod simple_projection;
 pub mod streaming_slice;
+pub mod zip;
 
 /// The imports you'll always need for implementing a ComputeNode.
 mod compute_node_prelude {

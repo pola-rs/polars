@@ -86,4 +86,8 @@ pub enum PhysNode {
     OrderedUnion {
         inputs: Vec<PhysNodeKey>,
     },
+
+    Zip {
+        inputs: Vec<PhysNodeKey>,
+    },
 }

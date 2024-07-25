@@ -226,6 +226,19 @@ pub fn lower_ir(
             Ok(phys_sm.insert(PhysNode::OrderedUnion { inputs }))
         },
 
+        IR::HConcat {
+            inputs,
+            schema: _,
+            options: _,
+        } => {
+            let inputs = inputs
+                .clone() // Needed to borrow ir_arena mutably.
+                .into_iter()
+                .map(|input| lower_ir(input, ir_arena, expr_arena, phys_sm))
+                .collect::<Result<_, _>>()?;
+            Ok(phys_sm.insert(PhysNode::Zip { inputs }))
+        },
+
         _ => todo!(),
     }
 }

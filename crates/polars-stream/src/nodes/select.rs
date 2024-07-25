@@ -54,7 +54,7 @@ impl ComputeNode for SelectNode {
             let slf = &*self;
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 while let Ok(morsel) = recv.recv().await {
-                    let (df, seq, consume_token) = morsel.into_inner();
+                    let (df, seq, source_token, consume_token) = morsel.into_inner();
                     let mut selected = Vec::new();
                     for (selector, reentrant) in slf.selectors.iter().zip(&slf.selector_reentrant) {
                         // We need spawn_blocking because evaluate could contain Python UDFs which
@@ -94,7 +94,7 @@ impl ComputeNode for SelectNode {
                         unsafe { DataFrame::new_no_checks(selected) }
                     };
 
-                    let mut morsel = Morsel::new(ret, seq);
+                    let mut morsel = Morsel::new(ret, seq, source_token);
                     if let Some(token) = consume_token {
                         morsel.set_consume_token(token);
                     }

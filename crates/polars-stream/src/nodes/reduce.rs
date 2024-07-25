@@ -5,6 +5,7 @@ use polars_expr::prelude::PhysicalExpr;
 use polars_expr::reduce::Reduction;
 
 use super::compute_node_prelude::*;
+use crate::morsel::SourceToken;
 
 enum ReduceState {
     Sink {
@@ -84,7 +85,7 @@ impl ReduceNode {
     ) {
         let mut send = send.serial();
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-            let morsel = Morsel::new(df.take().unwrap(), MorselSeq::new(0));
+            let morsel = Morsel::new(df.take().unwrap(), MorselSeq::new(0), SourceToken::new());
             let _ = send.send(morsel).await;
             Ok(())
         }));
