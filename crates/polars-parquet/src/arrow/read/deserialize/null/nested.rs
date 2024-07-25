@@ -4,7 +4,6 @@ use polars_error::PolarsResult;
 
 use super::super::nested_utils::*;
 use super::super::utils;
-use crate::arrow::read::deserialize::utils::DecodedState;
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{DataPage, DictPage};
 
@@ -17,7 +16,7 @@ impl<'a> utils::PageState<'a> for usize {
 #[derive(Debug)]
 pub(crate) struct NullDecoder;
 
-impl DecodedState for usize {
+impl utils::ExactSize for usize {
     fn len(&self) -> usize {
         *self
     }

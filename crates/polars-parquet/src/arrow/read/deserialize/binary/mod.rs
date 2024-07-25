@@ -9,7 +9,7 @@ use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::{ArrowDataType, PhysicalType};
 use arrow::types::Offset;
 pub(crate) use basic::BinaryDecoder;
-pub(crate) use dictionary::{BinaryDictArrayDecoder, NestedDictIter};
+pub(crate) use dictionary::NestedDictIter;
 
 use self::utils::Binary;
 use super::ParquetResult;

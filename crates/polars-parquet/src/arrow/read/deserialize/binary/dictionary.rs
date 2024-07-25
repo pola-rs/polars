@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 
-use arrow::array::{Array, BinaryArray, DictionaryArray, DictionaryKey, PrimitiveArray, Utf8Array};
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::array::{Array, BinaryArray, DictionaryArray, DictionaryKey, Utf8Array};
+use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::{ArrowDataType, PhysicalType};
 use arrow::offset::Offset;
 use polars_error::PolarsResult;
@@ -10,73 +10,10 @@ use super::super::dictionary::*;
 use super::super::utils::MaybeNext;
 use super::utils::Binary;
 use crate::arrow::read::deserialize::nested_utils::{InitNested, NestedState};
-use crate::parquet::error::ParquetResult;
 use crate::parquet::page::DictPage;
 use crate::parquet::read::BasicDecompressor;
 use crate::read::deserialize::binary::utils::BinaryIter;
-use crate::read::deserialize::utils::{self, DictArrayDecoder};
 use crate::read::CompressedPagesIter;
-
-#[derive(Default)]
-pub(crate) struct BinaryDictArrayDecoder<O: Offset>(std::marker::PhantomData<O>);
-
-impl<O: Offset> utils::ExactSize for Binary<O> {
-    fn len(&self) -> usize {
-        Binary::len(self)
-    }
-}
-
-impl<O: Offset, K: DictionaryKey> DictArrayDecoder<K> for BinaryDictArrayDecoder<O> {
-    type Translation<'a> = super::super::primitive::dictionary::StateTranslation<'a, K, Self>;
-    type Dict = Binary<O>;
-
-    fn deserialize_dict(&self, page: DictPage) -> Self::Dict {
-        let values = BinaryIter::new(&page.buffer, page.num_values);
-
-        let mut data = Binary::<O>::with_capacity(page.num_values);
-        data.values = Vec::with_capacity(page.buffer.len() - 4 * page.num_values);
-        for item in values {
-            data.push(item)
-        }
-
-        data
-    }
-
-    fn finalize(
-        &self,
-        data_type: ArrowDataType,
-        dict: Self::Dict,
-        (values, validity): (Vec<K>, Option<Bitmap>),
-    ) -> ParquetResult<DictionaryArray<K>> {
-        let value_data_type = match data_type.clone() {
-            ArrowDataType::Dictionary(_, values, _) => *values,
-            v => v,
-        };
-
-        let dict = match value_data_type.to_physical_type() {
-            PhysicalType::Utf8 | PhysicalType::LargeUtf8 => Utf8Array::<O>::new(
-                value_data_type,
-                dict.offsets.into(),
-                dict.values.into(),
-                None,
-            )
-            .boxed(),
-            PhysicalType::Binary | PhysicalType::LargeBinary => BinaryArray::<O>::new(
-                value_data_type,
-                dict.offsets.into(),
-                dict.values.into(),
-                None,
-            )
-            .boxed(),
-            _ => unreachable!(),
-        };
-
-        let indices = PrimitiveArray::new(K::PRIMITIVE.into(), values.into(), validity);
-
-        // @TODO: Is this datatype correct?
-        Ok(DictionaryArray::try_new(data_type, indices, dict).unwrap())
-    }
-}
 
 fn read_dict<O: Offset>(data_type: ArrowDataType, dict: &DictPage) -> Box<dyn Array> {
     let data_type = match data_type {

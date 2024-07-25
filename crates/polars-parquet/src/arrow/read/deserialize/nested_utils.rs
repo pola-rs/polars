@@ -6,7 +6,7 @@ use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
 use polars_error::{polars_bail, PolarsResult};
 
-use super::utils::{BatchableCollector, DecodedState, PageState};
+use super::utils::{BatchableCollector, ExactSize, PageState};
 use super::{BasicDecompressor, CompressedPagesIter};
 use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use crate::parquet::error::ParquetResult;
@@ -210,7 +210,7 @@ impl<'a, 'b, 'c, D: NestedDecoder> BatchableCollector<(), D::DecodedState>
 pub(super) trait NestedDecoder {
     type State<'a>: PageState<'a>;
     type Dict;
-    type DecodedState: DecodedState;
+    type DecodedState: ExactSize;
 
     fn build_state<'a>(
         &self,

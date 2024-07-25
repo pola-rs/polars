@@ -5,7 +5,7 @@ use arrow::datatypes::ArrowDataType;
 use polars_error::PolarsResult;
 
 use super::super::utils;
-use super::super::utils::{extend_from_decoder, DecodedState, Decoder};
+use super::super::utils::{extend_from_decoder, ExactSize, Decoder};
 use crate::parquet::encoding::hybrid_rle::gatherer::HybridRleGatherer;
 use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use crate::parquet::encoding::Encoding;
@@ -22,6 +22,8 @@ pub(crate) enum StateTranslation<'a> {
 }
 
 impl<'a> utils::StateTranslation<'a, BooleanDecoder> for StateTranslation<'a> {
+    type PlainDecoder = BitmapIter<'a>;
+
     fn new(
         _decoder: &BooleanDecoder,
         page: &'a DataPage,
@@ -84,32 +86,31 @@ impl<'a> utils::StateTranslation<'a, BooleanDecoder> for StateTranslation<'a> {
 
     fn extend_from_state(
         &mut self,
-        _decoder: &BooleanDecoder,
+        decoder: &mut BooleanDecoder,
         decoded: &mut <BooleanDecoder as Decoder>::DecodedState,
         page_validity: &mut Option<PageValidity<'a>>,
         additional: usize,
     ) -> ParquetResult<()> {
-        let (values, validity) = decoded;
-
-        match (self, page_validity) {
-            (Self::Plain(page), None) => page.collect_n_into(values, additional),
-            (Self::Plain(page_values), Some(page_validity)) => extend_from_decoder(
-                validity,
-                page_validity,
-                Some(additional),
-                values,
+        match self {
+            Self::Plain(page_values) => decoder.decode_plain_encoded(
+                decoded,
                 page_values,
+                page_validity.as_mut(),
+                additional,
             )?,
-            (Self::Rle(page_values), None) => {
-                page_values.gather_n_into(values, additional, &BitmapGatherer)?
+            Self::Rle(page_values) => {
+                let (values, validity) = decoded;
+                match page_validity {
+                    None => page_values.gather_n_into(values, additional, &BitmapGatherer)?,
+                    Some(page_validity) => utils::extend_from_decoder(
+                        validity,
+                        page_validity,
+                        Some(additional),
+                        values,
+                        BitmapCollector(page_values),
+                    )?,
+                }
             },
-            (Self::Rle(page_values), Some(page_validity)) => utils::extend_from_decoder(
-                validity,
-                page_validity,
-                Some(additional),
-                values,
-                BitmapCollector(page_values),
-            )?,
         }
 
         Ok(())
@@ -165,9 +166,15 @@ impl<'a, 'b> BatchableCollector<u32, MutableBitmap> for BitmapCollector<'a, 'b> 
     }
 }
 
-impl DecodedState for (MutableBitmap, MutableBitmap) {
+impl ExactSize for (MutableBitmap, MutableBitmap) {
     fn len(&self) -> usize {
         self.0.len()
+    }
+}
+
+impl ExactSize for () {
+    fn len(&self) -> usize {
+        0
     }
 }
 
@@ -187,6 +194,34 @@ impl Decoder for BooleanDecoder {
 
     fn deserialize_dict(&self, _: DictPage) -> Self::Dict {}
 
+    fn decode_plain_encoded<'a>(
+        &mut self,
+        (values, validity): &mut Self::DecodedState,
+        page_values: &mut <Self::Translation<'a> as utils::StateTranslation<'a, Self>>::PlainDecoder,
+        page_validity: Option<&mut PageValidity<'a>>,
+        limit: usize,
+    ) -> ParquetResult<()> {
+        match page_validity {
+            None => page_values.collect_n_into(values, limit),
+            Some(page_validity) => {
+                extend_from_decoder(validity, page_validity, Some(limit), values, page_values)?
+            },
+        }
+
+        Ok(())
+    }
+
+    fn decode_dictionary_encoded<'a>(
+        &mut self,
+        _decoded: &mut Self::DecodedState,
+        _page_values: &mut HybridRleDecoder<'a>,
+        _page_validity: Option<&mut PageValidity<'a>>,
+        _dict: &Self::Dict,
+        _limit: usize,
+    ) -> ParquetResult<()> {
+        unimplemented!()
+    }
+
     fn finalize(
         &self,
         data_type: ArrowDataType,
@@ -197,5 +232,14 @@ impl Decoder for BooleanDecoder {
             values.into(),
             validity.into(),
         )))
+    }
+
+    fn finalize_dict_array<K: arrow::array::DictionaryKey>(
+        &self,
+        _data_type: ArrowDataType,
+        _dict: Self::Dict,
+        _decoded: (Vec<K>, Option<arrow::bitmap::Bitmap>),
+    ) -> ParquetResult<arrow::array::DictionaryArray<K>> {
+        unimplemented!()
     }
 }

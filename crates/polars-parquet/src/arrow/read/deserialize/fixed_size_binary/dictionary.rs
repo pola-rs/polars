@@ -1,54 +1,16 @@
 use std::collections::VecDeque;
 
-use arrow::array::{Array, DictionaryArray, DictionaryKey, FixedSizeBinaryArray, PrimitiveArray};
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::array::{Array, DictionaryArray, DictionaryKey, FixedSizeBinaryArray};
+use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
 use polars_error::PolarsResult;
 
 use super::super::dictionary::*;
 use super::super::utils::MaybeNext;
 use crate::arrow::read::deserialize::nested_utils::{InitNested, NestedState};
-use crate::parquet::error::ParquetResult;
 use crate::parquet::page::DictPage;
 use crate::parquet::read::BasicDecompressor;
-use crate::read::deserialize::utils::{DictArrayDecoder, ExactSize};
 use crate::read::CompressedPagesIter;
-
-impl ExactSize for FixedSizeBinaryArray {
-    fn len(&self) -> usize {
-        FixedSizeBinaryArray::len(self)
-    }
-}
-
-pub(crate) struct FixedSizeBinaryDictArrayDecoder {
-    pub(crate) size: usize,
-}
-
-impl<K: DictionaryKey> DictArrayDecoder<K> for FixedSizeBinaryDictArrayDecoder {
-    type Translation<'a> = super::super::primitive::dictionary::StateTranslation<'a, K, Self>;
-    type Dict = FixedSizeBinaryArray;
-
-    fn deserialize_dict(&self, page: DictPage) -> Self::Dict {
-        let values = page.buffer.into_vec();
-
-        FixedSizeBinaryArray::try_new(
-            ArrowDataType::FixedSizeBinary(self.size),
-            values.into(),
-            None,
-        )
-        .unwrap()
-    }
-
-    fn finalize(
-        &self,
-        data_type: ArrowDataType,
-        dict: Self::Dict,
-        (values, validity): (Vec<K>, Option<Bitmap>),
-    ) -> ParquetResult<DictionaryArray<K>> {
-        let array = PrimitiveArray::<K>::new(K::PRIMITIVE.into(), values.into(), validity);
-        Ok(DictionaryArray::try_new(data_type, array, Box::new(dict)).unwrap())
-    }
-}
 
 fn read_dict(data_type: ArrowDataType, dict: &DictPage) -> Box<dyn Array> {
     let data_type = match data_type {
