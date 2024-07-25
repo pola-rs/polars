@@ -410,6 +410,55 @@ where
     }
 }
 
+pub struct GatheredHybridRle<'a, 'b, 'c, O, G>
+where
+    O: Clone,
+    G: HybridRleGatherer<O>,
+{
+    decoder: &'a mut HybridRleDecoder<'b>,
+    gatherer: &'c G,
+    null_value: O,
+    _pd: std::marker::PhantomData<O>,
+}
+
+impl<'a, 'b, 'c, O, G> GatheredHybridRle<'a, 'b, 'c, O, G>
+where
+    O: Clone,
+    G: HybridRleGatherer<O>,
+{
+    pub fn new(decoder: &'a mut HybridRleDecoder<'b>, gatherer: &'c G, null_value: O) -> Self {
+        Self {
+            decoder,
+            gatherer,
+            null_value,
+            _pd: Default::default(),
+        }
+    }
+}
+
+impl<'a, 'b, 'c, O, G> BatchableCollector<u8, Vec<u8>> for GatheredHybridRle<'a, 'b, 'c, O, G>
+where
+    O: Clone + Default,
+    G: HybridRleGatherer<O, Target = Vec<u8>>,
+{
+    #[inline]
+    fn reserve(target: &mut Vec<u8>, n: usize) {
+        target.reserve(n);
+    }
+
+    #[inline]
+    fn push_n(&mut self, target: &mut Vec<u8>, n: usize) -> ParquetResult<()> {
+        self.decoder.gather_n_into(target, n, self.gatherer)?;
+        Ok(())
+    }
+
+    #[inline]
+    fn push_n_nulls(&mut self, target: &mut Vec<u8>, n: usize) -> ParquetResult<()> {
+        self.gatherer.gather_repeated(target, self.null_value.clone(), n)?;
+        Ok(())
+    }
+}
+
 impl<'a, 'b, 'c, T> BatchableCollector<u32, MutableBinaryViewArray<[u8]>>
     for TranslatedHybridRle<'a, 'b, 'c, View, T>
 where
@@ -515,7 +564,12 @@ pub(super) trait Decoder: Sized {
 }
 
 pub(crate) trait NestedDecoder: Decoder {
-    fn validity_extend(state: &mut State<'_, Self>, decoded: &mut Self::DecodedState, value: bool, n: usize);
+    fn validity_extend(
+        state: &mut State<'_, Self>,
+        decoded: &mut Self::DecodedState,
+        value: bool,
+        n: usize,
+    );
     fn values_extend_nulls(state: &mut State<'_, Self>, decoded: &mut Self::DecodedState, n: usize);
 
     fn push_n_valids(
@@ -532,7 +586,12 @@ pub(crate) trait NestedDecoder: Decoder {
         Ok(())
     }
 
-    fn push_n_nulls(&self, state: &mut State<'_, Self>, decoded: &mut Self::DecodedState, n: usize) {
+    fn push_n_nulls(
+        &self,
+        state: &mut State<'_, Self>,
+        decoded: &mut Self::DecodedState,
+        n: usize,
+    ) {
         Self::validity_extend(state, decoded, false, n);
         Self::values_extend_nulls(state, decoded, n);
     }
