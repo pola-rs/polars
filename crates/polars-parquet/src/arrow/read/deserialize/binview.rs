@@ -290,11 +290,20 @@ impl utils::Decoder for BinViewDecoder {
 }
 
 impl utils::NestedDecoder for BinViewDecoder {
-    fn validity_extend(_: &mut utils::State<'_, Self>, (_, validity): &mut Self::DecodedState, value: bool, n: usize) {
+    fn validity_extend(
+        _: &mut utils::State<'_, Self>,
+        (_, validity): &mut Self::DecodedState,
+        value: bool,
+        n: usize,
+    ) {
         validity.extend_constant(n, value);
     }
 
-    fn values_extend_nulls(_: &mut utils::State<'_, Self>, (values, _): &mut Self::DecodedState, n: usize) {
+    fn values_extend_nulls(
+        _: &mut utils::State<'_, Self>,
+        (values, _): &mut Self::DecodedState,
+        n: usize,
+    ) {
         values.extend_constant(n, <Option<&[u8]>>::None);
     }
 }

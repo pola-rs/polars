@@ -420,7 +420,11 @@ pub struct PageNestedDecoder<I: CompressedPagesIter, D: utils::NestedDecoder> {
     pub init: Vec<InitNested>,
 }
 
-pub struct PageNestedDictArrayDecoder<I: CompressedPagesIter, K: DictionaryKey, D: utils::NestedDecoder> {
+pub struct PageNestedDictArrayDecoder<
+    I: CompressedPagesIter,
+    K: DictionaryKey,
+    D: utils::NestedDecoder,
+> {
     pub iter: BasicDecompressor<I>,
     pub data_type: ArrowDataType,
     pub dict: D::Dict,
@@ -438,7 +442,7 @@ impl<I: CompressedPagesIter, D: utils::NestedDecoder> PageNestedDecoder<I, D> {
     ) -> ParquetResult<Self> {
         let dict_page = iter.read_dict_page()?;
         let dict = dict_page.map(|d| decoder.deserialize_dict(d));
-        
+
         dbg!(&init);
 
         Ok(Self {
@@ -673,9 +677,9 @@ impl<I: CompressedPagesIter, K: DictionaryKey, D: utils::NestedDecoder>
         } else {
             None
         };
-        let array = self
-            .decoder
-            .finalize_dict_array(self.data_type, self.dict, (values, validity))?;
+        let array =
+            self.decoder
+                .finalize_dict_array(self.data_type, self.dict, (values, validity))?;
 
         Ok((nested_state, array))
     }

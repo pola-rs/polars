@@ -579,7 +579,7 @@ fn dict_read<K: DictionaryKey, I: CompressedPagesIter>(
             PageDictArrayDecoder::<_, K, _>::new(
                 iter,
                 data_type,
-            primitive::PrimitiveDecoder::<i64, _, _>::unit(),
+                primitive::PrimitiveDecoder::<i64, _, _>::unit(),
             )?
             .collect_n(num_rows)?
         },

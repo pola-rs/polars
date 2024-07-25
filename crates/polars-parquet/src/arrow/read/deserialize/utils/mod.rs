@@ -454,7 +454,8 @@ where
 
     #[inline]
     fn push_n_nulls(&mut self, target: &mut Vec<u8>, n: usize) -> ParquetResult<()> {
-        self.gatherer.gather_repeated(target, self.null_value.clone(), n)?;
+        self.gatherer
+            .gather_repeated(target, self.null_value.clone(), n)?;
         Ok(())
     }
 }

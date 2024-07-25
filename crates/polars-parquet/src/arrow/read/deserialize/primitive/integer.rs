@@ -6,7 +6,10 @@ use num_traits::AsPrimitive;
 use polars_error::PolarsResult;
 
 use super::super::utils;
-use super::basic::{ClosureDecoderFunction, DecoderFunction, PlainDecoderFnCollector, PrimitiveDecoder, ValuesDictionary, AsDecoderFunction, IntoDecoderFunction, UnitDecoderFunction};
+use super::basic::{
+    AsDecoderFunction, ClosureDecoderFunction, DecoderFunction, IntoDecoderFunction,
+    PlainDecoderFnCollector, PrimitiveDecoder, UnitDecoderFunction, ValuesDictionary,
+};
 use crate::parquet::encoding::hybrid_rle::{self, DictionaryTranslator};
 use crate::parquet::encoding::{byte_stream_split, delta_bitpacked, Encoding};
 use crate::parquet::error::ParquetResult;
@@ -362,11 +365,20 @@ where
     i64: num_traits::AsPrimitive<P>,
     D: DecoderFunction<P, T>,
 {
-    fn validity_extend(_: &mut utils::State<'_, Self>, (_, validity): &mut Self::DecodedState, value: bool, n: usize) {
+    fn validity_extend(
+        _: &mut utils::State<'_, Self>,
+        (_, validity): &mut Self::DecodedState,
+        value: bool,
+        n: usize,
+    ) {
         validity.extend_constant(n, value);
     }
 
-    fn values_extend_nulls(_: &mut utils::State<'_, Self>, (values, _): &mut Self::DecodedState, n: usize) {
+    fn values_extend_nulls(
+        _: &mut utils::State<'_, Self>,
+        (values, _): &mut Self::DecodedState,
+        n: usize,
+    ) {
         values.resize(values.len() + n, T::default());
     }
 }
