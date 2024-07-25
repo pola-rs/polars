@@ -453,7 +453,9 @@ def _xl_setup_table_columns(
     # associate formats/functions with specific columns
     header_dict = header_format or {}
     add_align = "align" not in header_dict
-    header_alignment = {"align": "right"} | ({"indent": 2} if autofilter else {})
+    header_alignment = {"align": "right"}
+    if autofilter:
+        header_alignment["indent"] = 2  # type: ignore[assignment]
     col_header_format = {}
     for col, tp in df.schema.items():
         base_type = tp.base_type()
@@ -462,7 +464,7 @@ def _xl_setup_table_columns(
             fmt = dtype_formats.get(tp, dtype_formats[base_type])
             column_formats.setdefault(col, fmt)
             if add_align and base_type in [*FLOAT_DTYPES, *INTEGER_DTYPES]:
-                header_fmt = header_dict | header_alignment
+                header_fmt = {**header_dict, **header_alignment}
         if col not in column_formats:
             column_formats[col] = fmt_default
 
