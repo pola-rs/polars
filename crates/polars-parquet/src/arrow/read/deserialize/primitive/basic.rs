@@ -406,6 +406,21 @@ where
     }
 }
 
+impl<P, T, D> utils::NestedDecoder for PrimitiveDecoder<P, T, D>
+where
+    T: NativeType,
+    P: ParquetNativeType,
+    D: DecoderFunction<P, T>,
+{
+    fn validity_extend((_, validity): &mut Self::DecodedState, value: bool, n: usize) {
+        validity.extend_constant(n, value);
+    }
+
+    fn values_extend_nulls((values, _): &mut Self::DecodedState, n: usize) {
+        values.resize(values.len() + n, T::default());
+    }
+}
+
 pub(super) fn deserialize_plain<P, T, D>(values: &[u8], decoder: D) -> Vec<T>
 where
     T: NativeType,

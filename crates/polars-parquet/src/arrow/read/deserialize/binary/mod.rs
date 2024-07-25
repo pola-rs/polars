@@ -1,7 +1,5 @@
 mod basic;
 pub(super) mod decoders;
-mod dictionary;
-mod nested;
 pub(super) mod utils;
 
 use arrow::array::{Array, BinaryArray, Utf8Array};
@@ -9,7 +7,6 @@ use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::{ArrowDataType, PhysicalType};
 use arrow::types::Offset;
 pub(crate) use basic::BinaryDecoder;
-pub(crate) use dictionary::NestedDictIter;
 
 use self::utils::Binary;
 use super::ParquetResult;

@@ -266,3 +266,13 @@ impl<O: Offset> utils::Decoder for BinaryDecoder<O> {
         Ok(DictionaryArray::try_new(data_type, indices, dict).unwrap())
     }
 }
+
+impl<O: Offset> utils::NestedDecoder for BinaryDecoder<O> {
+    fn validity_extend((_, validity): &mut Self::DecodedState, value: bool, n: usize) {
+        validity.extend_constant(n, value);
+    }
+
+    fn values_extend_nulls((values, _): &mut Self::DecodedState, n: usize) {
+        values.extend_constant(n);
+    }
+}

@@ -462,11 +462,6 @@ impl<T, P: Pushable<T>, I: Iterator<Item = T>> BatchableCollector<T, P> for I {
     }
 }
 
-/// The state of a partially deserialized page
-pub(super) trait PageState<'a>: std::fmt::Debug {
-    fn len(&self) -> usize;
-}
-
 /// An item with a known size
 pub(super) trait ExactSize {
     /// The number of items in the container
@@ -519,15 +514,28 @@ pub(super) trait Decoder: Sized {
     ) -> ParquetResult<DictionaryArray<K>>;
 }
 
-/// Represents what happened when a new page was consumed
-#[derive(Debug)]
-pub enum MaybeNext<P> {
-    /// Whether the page was sufficient to fill `chunk_size`
-    Some(P),
-    /// whether there are no more pages or intermediary decoded states
-    None,
-    /// Whether the page was insufficient to fill `chunk_size` and a new page is required
-    More,
+pub(crate) trait NestedDecoder: Decoder {
+    fn validity_extend(decoded: &mut Self::DecodedState, value: bool, n: usize);
+    fn values_extend_nulls(decoded: &mut Self::DecodedState, n: usize);
+
+    fn push_n_valids(
+        &mut self,
+        state: &mut State<'_, Self>,
+        decoded: &mut Self::DecodedState,
+        n: usize,
+    ) -> ParquetResult<()> {
+        _ = state.page_validity.take();
+
+        state.extend_from_state(self, decoded, n)?;
+        Self::validity_extend(decoded, true, n);
+
+        Ok(())
+    }
+
+    fn push_n_nulls(&self, decoded: &mut Self::DecodedState, n: usize) {
+        Self::validity_extend(decoded, false, n);
+        Self::values_extend_nulls(decoded, n);
+    }
 }
 
 pub struct PageDecoder<I: CompressedPagesIter, D: Decoder> {
@@ -626,9 +634,7 @@ impl<I: CompressedPagesIter, K: DictionaryKey, D: Decoder> PageDictArrayDecoder<
             _pd: std::marker::PhantomData,
         })
     }
-}
 
-impl<I: CompressedPagesIter, K: DictionaryKey, D: Decoder> PageDictArrayDecoder<I, K, D> {
     pub fn collect_n(mut self, limit: usize) -> ParquetResult<DictionaryArray<K>> {
         let mut target = (
             Vec::with_capacity(limit),
@@ -734,12 +740,4 @@ pub(super) fn binary_views_dict(
             }
         })
         .collect()
-}
-
-pub(super) fn page_is_optional(page: &DataPage) -> bool {
-    page.descriptor.primitive_type.field_info.repetition == Repetition::Optional
-}
-
-pub(super) fn page_is_filtered(page: &DataPage) -> bool {
-    page.selected_rows().is_some()
 }

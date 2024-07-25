@@ -307,3 +307,19 @@ where
         Ok(DictionaryArray::try_new(data_type, array, dict).unwrap())
     }
 }
+
+impl<P, T, D> utils::NestedDecoder for IntDecoder<P, T, D>
+where
+    T: NativeType,
+    P: ParquetNativeType,
+    i64: num_traits::AsPrimitive<P>,
+    D: DecoderFunction<P, T>,
+{
+    fn validity_extend((_, validity): &mut Self::DecodedState, value: bool, n: usize) {
+        validity.extend_constant(n, value);
+    }
+
+    fn values_extend_nulls((values, _): &mut Self::DecodedState, n: usize) {
+        values.resize(values.len() + n, T::default());
+    }
+}

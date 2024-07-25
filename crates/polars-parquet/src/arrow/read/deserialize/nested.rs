@@ -1,26 +1,12 @@
-use arrow::array::{FixedSizeBinaryArray, PrimitiveArray, StructArray};
+use arrow::array::{DictionaryArray, FixedSizeBinaryArray, PrimitiveArray, StructArray};
 use arrow::match_integer_type;
 use ethnum::I256;
 use polars_error::polars_bail;
 
+use self::nested::deserialize::nested_utils::PageNestedDictArrayDecoder;
 use self::nested_utils::PageNestedDecoder;
-use self::primitive::{AsDecoderFunction, IntoDecoderFunction, UnitDecoderFunction};
+use self::primitive::{self, AsDecoderFunction, IntoDecoderFunction, UnitDecoderFunction};
 use super::*;
-
-/// Converts an iterator of arrays to a trait object returning trait objects
-#[inline]
-fn primitive<'a, A, I>(iter: I) -> NestedArrayIter<'a>
-where
-    A: Array,
-    I: Iterator<Item = PolarsResult<(NestedState, A)>> + Send + Sync + 'a,
-{
-    Box::new(iter.map(|x| {
-        x.map(|(mut nested, array)| {
-            let _ = nested.pop().unwrap(); // the primitive
-            (nested, Box::new(array) as _)
-        })
-    }))
-}
 
 pub fn columns_to_iter_recursive<I>(
     mut columns: Vec<BasicDecompressor<I>>,
@@ -34,8 +20,6 @@ where
 {
     use arrow::datatypes::PhysicalType::*;
     use arrow::datatypes::PrimitiveType::*;
-
-    let chunk_size = Some(num_rows);
 
     Ok(match field.data_type().to_physical_type() {
         Null => {
@@ -214,11 +198,10 @@ where
                 let type_ = types.pop().unwrap();
                 let iter = columns.pop().unwrap();
                 let data_type = field.data_type().clone();
+
                 match_integer_type!(key_type, |$K| {
-                    dict_read::<$K, _>(iter, init, type_, data_type, num_rows, chunk_size)
+                    dict_read::<$K, _>(iter, init, type_, data_type, num_rows).map(|(s, arr)| (s, Box::new(arr) as Box<_>))
                 })?
-                .next()
-                .unwrap()?
             },
             ArrowDataType::List(inner) | ArrowDataType::LargeList(inner) => {
                 init.push(InitNested::List(field.is_nullable));
@@ -476,8 +459,7 @@ fn dict_read<'a, K: DictionaryKey, I: 'a + CompressedPagesIter>(
     _type_: &PrimitiveType,
     data_type: ArrowDataType,
     num_rows: usize,
-    chunk_size: Option<usize>,
-) -> PolarsResult<NestedArrayIter<'a>> {
+) -> PolarsResult<(NestedState, DictionaryArray<K>)> {
     use ArrowDataType::*;
     let values_data_type = if let Dictionary(_, v, _) = &data_type {
         v.as_ref()
@@ -486,91 +468,95 @@ fn dict_read<'a, K: DictionaryKey, I: 'a + CompressedPagesIter>(
     };
 
     Ok(match values_data_type.to_logical_type() {
-        UInt8 => primitive(primitive::NestedDictIter::<K, _, _, _, _>::new(
+        UInt8 => PageNestedDictArrayDecoder::<_, K, _>::new(
             iter,
-            init,
             data_type,
-            num_rows,
-            chunk_size,
-            AsDecoderFunction::<i32, u8>::default(),
-        )),
-        UInt16 => primitive(primitive::NestedDictIter::<K, _, _, _, _>::new(
+            primitive::PrimitiveDecoder::new(AsDecoderFunction::<i32, u8>::default()),
+            init,
+        )?
+        .collect_n(num_rows)?,
+        UInt16 => PageNestedDictArrayDecoder::<_, K, _>::new(
             iter,
-            init,
             data_type,
-            num_rows,
-            chunk_size,
-            AsDecoderFunction::<i32, u16>::default(),
-        )),
-        UInt32 => primitive(primitive::NestedDictIter::<K, _, _, _, _>::new(
+            primitive::PrimitiveDecoder::new(AsDecoderFunction::<i32, u16>::default()),
+            init,
+        )?
+        .collect_n(num_rows)?,
+        UInt32 => PageNestedDictArrayDecoder::<_, K, _>::new(
             iter,
-            init,
             data_type,
-            num_rows,
-            chunk_size,
-            AsDecoderFunction::<i32, u32>::default(),
-        )),
-        Int8 => primitive(primitive::NestedDictIter::<K, _, _, _, _>::new(
+            primitive::PrimitiveDecoder::new(AsDecoderFunction::<i32, u32>::default()),
+            init,
+        )?
+        .collect_n(num_rows)?,
+        Int8 => PageNestedDictArrayDecoder::<_, K, _>::new(
             iter,
-            init,
             data_type,
-            num_rows,
-            chunk_size,
-            AsDecoderFunction::<i32, i8>::default(),
-        )),
-        Int16 => primitive(primitive::NestedDictIter::<K, _, _, _, _>::new(
+            primitive::PrimitiveDecoder::new(AsDecoderFunction::<i32, i8>::default()),
+            init,
+        )?
+        .collect_n(num_rows)?,
+        Int16 => PageNestedDictArrayDecoder::<_, K, _>::new(
             iter,
-            init,
             data_type,
-            num_rows,
-            chunk_size,
-            AsDecoderFunction::<i32, i16>::default(),
-        )),
+            primitive::PrimitiveDecoder::new(AsDecoderFunction::<i32, i16>::default()),
+            init,
+        )?
+        .collect_n(num_rows)?,
         Int32 | Date32 | Time32(_) | Interval(IntervalUnit::YearMonth) => {
-            primitive(primitive::NestedDictIter::<K, _, _, _, _>::new(
+            PageNestedDictArrayDecoder::<_, K, _>::new(
                 iter,
-                init,
                 data_type,
-                num_rows,
-                chunk_size,
-                UnitDecoderFunction::<i32>::default(),
-            ))
+                primitive::PrimitiveDecoder::new(UnitDecoderFunction::<i32>::default()),
+                init,
+            )?
+            .collect_n(num_rows)?
         },
-        Int64 | Date64 | Time64(_) | Duration(_) => {
-            primitive(primitive::NestedDictIter::<K, _, _, _, _>::new(
+        Int64 | Date64 | Time64(_) | Duration(_) => PageNestedDictArrayDecoder::<_, K, _>::new(
+            iter,
+            data_type,
+            primitive::PrimitiveDecoder::new(AsDecoderFunction::<i64, i32>::default()),
+            init,
+        )?
+        .collect_n(num_rows)?,
+        Float32 => PageNestedDictArrayDecoder::<_, K, _>::new(
+            iter,
+            data_type,
+            primitive::PrimitiveDecoder::new(UnitDecoderFunction::<f32>::default()),
+            init,
+        )?
+        .collect_n(num_rows)?,
+        Float64 => PageNestedDictArrayDecoder::<_, K, _>::new(
+            iter,
+            data_type,
+            primitive::PrimitiveDecoder::new(UnitDecoderFunction::<f64>::default()),
+            init,
+        )?
+        .collect_n(num_rows)?,
+        LargeUtf8 | LargeBinary => PageNestedDictArrayDecoder::<_, K, _>::new(
+            iter,
+            data_type,
+            binary::BinaryDecoder::<i64>::default(),
+            init,
+        )?
+        .collect_n(num_rows)?,
+        Utf8View | BinaryView => PageNestedDictArrayDecoder::<_, K, _>::new(
+            iter,
+            data_type,
+            binview::BinViewDecoder::default(),
+            init,
+        )?
+        .collect_n(num_rows)?,
+        FixedSizeBinary(size) => {
+            let size = *size;
+            PageNestedDictArrayDecoder::<_, K, _>::new(
                 iter,
-                init,
                 data_type,
-                num_rows,
-                chunk_size,
-                AsDecoderFunction::<i64, i32>::default(),
-            ))
+                fixed_size_binary::BinaryDecoder { size },
+                init,
+            )?
+            .collect_n(num_rows)?
         },
-        Float32 => primitive(primitive::NestedDictIter::<K, _, _, _, _>::new(
-            iter,
-            init,
-            data_type,
-            num_rows,
-            chunk_size,
-            UnitDecoderFunction::<f32>::default(),
-        )),
-        Float64 => primitive(primitive::NestedDictIter::<K, _, _, _, _>::new(
-            iter,
-            init,
-            data_type,
-            num_rows,
-            chunk_size,
-            UnitDecoderFunction::<f64>::default(),
-        )),
-        LargeUtf8 | LargeBinary => primitive(binary::NestedDictIter::<K, i64, _>::new(
-            iter, init, data_type, num_rows, chunk_size,
-        )),
-        Utf8View | BinaryView => primitive(binview::NestedDictIter::<K, _>::new(
-            iter, init, data_type, num_rows, chunk_size,
-        )),
-        FixedSizeBinary(_) => primitive(fixed_size_binary::NestedDictIter::<K, _>::new(
-            iter, init, data_type, num_rows, chunk_size,
-        )),
         /*
 
         Timestamp(time_unit, _) => {

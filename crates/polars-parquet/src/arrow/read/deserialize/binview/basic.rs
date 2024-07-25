@@ -288,3 +288,13 @@ impl utils::Decoder for BinViewDecoder {
         Ok(DictionaryArray::try_new(data_type, array, dict).unwrap())
     }
 }
+
+impl utils::NestedDecoder for BinViewDecoder {
+    fn validity_extend((_, validity): &mut Self::DecodedState, value: bool, n: usize) {
+        validity.extend_constant(n, value);
+    }
+
+    fn values_extend_nulls((values, _): &mut Self::DecodedState, n: usize) {
+        values.extend_constant(n, <Option<&[u8]>>::None);
+    }
+}

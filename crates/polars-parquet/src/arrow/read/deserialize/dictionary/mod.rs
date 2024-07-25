@@ -1,9 +1,6 @@
-mod nested;
-
 use arrow::array::{Array, DictionaryKey, PrimitiveArray};
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
-pub use nested::next_dict as nested_next_dict;
 use polars_error::PolarsResult;
 
 use super::utils::filter::Filter;
@@ -142,8 +139,14 @@ impl<K: DictionaryKey> utils::Decoder for DictionaryDecoder<K> {
     }
 }
 
-fn finish_key<K: DictionaryKey>(values: Vec<K>, validity: MutableBitmap) -> PrimitiveArray<K> {
-    PrimitiveArray::new(K::PRIMITIVE.into(), values.into(), validity.into())
+impl<K: DictionaryKey> utils::NestedDecoder for DictionaryDecoder<K> {
+    fn validity_extend((_, validity): &mut Self::DecodedState, value: bool, n: usize) {
+        validity.extend_constant(n, value);
+    }
+
+    fn values_extend_nulls((values, _): &mut Self::DecodedState, n: usize) {
+        values.resize(values.len() + n, K::default());
+    }
 }
 
 pub(crate) struct DictArrayCollector<'a, 'b> {
