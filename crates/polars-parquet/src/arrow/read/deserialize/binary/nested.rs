@@ -1,5 +1,3 @@
-use std::collections::VecDeque;
-
 use arrow::array::Array;
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
@@ -8,18 +6,16 @@ use arrow::pushable::Pushable;
 use polars_error::PolarsResult;
 
 use super::super::nested_utils::*;
-use super::super::utils::MaybeNext;
 use super::decoders::*;
 use super::utils::*;
+use super::BinaryDecoder;
 use crate::parquet::encoding::hybrid_rle::{DictionaryTranslator, Translator};
 use crate::parquet::encoding::Encoding;
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
-use crate::parquet::read::BasicDecompressor;
 use crate::read::deserialize::utils::{
     not_implemented, page_is_filtered, page_is_optional, PageState,
 };
-use crate::read::CompressedPagesIter;
 
 #[derive(Debug)]
 pub struct State<'a> {
@@ -41,9 +37,6 @@ impl<'a> PageState<'a> for State<'a> {
         }
     }
 }
-
-#[derive(Debug, Default)]
-struct BinaryDecoder<O: Offset>(std::marker::PhantomData<O>);
 
 impl<O: Offset> NestedDecoder for BinaryDecoder<O> {
     type State<'a> = State<'a>;
@@ -138,63 +131,5 @@ impl<O: Offset> NestedDecoder for BinaryDecoder<O> {
         (values, validity): Self::DecodedState,
     ) -> ParquetResult<Box<dyn Array>> {
         super::finalize(data_type, values, validity)
-    }
-}
-
-pub struct NestedIter<O: Offset, I: CompressedPagesIter> {
-    iter: BasicDecompressor<I>,
-    data_type: ArrowDataType,
-    init: Vec<InitNested>,
-    items: VecDeque<(NestedState, (Binary<O>, MutableBitmap))>,
-    dict: Option<BinaryDict>,
-    chunk_size: Option<usize>,
-    remaining: usize,
-}
-
-impl<O: Offset, I: CompressedPagesIter> NestedIter<O, I> {
-    pub fn new(
-        iter: BasicDecompressor<I>,
-        init: Vec<InitNested>,
-        data_type: ArrowDataType,
-        num_rows: usize,
-        chunk_size: Option<usize>,
-    ) -> Self {
-        Self {
-            iter,
-            data_type,
-            init,
-            items: VecDeque::new(),
-            dict: None,
-            chunk_size,
-            remaining: num_rows,
-        }
-    }
-}
-
-impl<O: Offset, I: CompressedPagesIter> Iterator for NestedIter<O, I> {
-    type Item = PolarsResult<(NestedState, Box<dyn Array>)>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            let maybe_state = next(
-                &mut self.iter,
-                &mut self.items,
-                &mut self.dict,
-                &mut self.remaining,
-                &self.init,
-                self.chunk_size,
-                &BinaryDecoder::<O>::default(),
-            );
-            match maybe_state {
-                MaybeNext::Some(Ok((_nested, _decoded))) => todo!(),
-                //     return Some(
-                //         finish(&self.data_type, decoded.0, decoded.1).map(|array| (nested, array)),
-                //     )
-                // },
-                MaybeNext::Some(Err(e)) => return Some(Err(e)),
-                MaybeNext::None => return None,
-                MaybeNext::More => continue, // Using continue in a loop instead of calling next helps prevent stack overflow.
-            }
-        }
     }
 }

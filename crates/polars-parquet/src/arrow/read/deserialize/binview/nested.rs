@@ -1,6 +1,4 @@
-use std::collections::VecDeque;
-
-use arrow::array::{ArrayRef, MutableBinaryViewArray, View};
+use arrow::array::{MutableBinaryViewArray, View};
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
 use polars_error::PolarsResult;
@@ -9,15 +7,12 @@ use crate::parquet::encoding::hybrid_rle::DictionaryTranslator;
 use crate::parquet::encoding::Encoding;
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
-use crate::parquet::read::BasicDecompressor;
 use crate::read::deserialize::binary::decoders::{deserialize_plain, BinaryDict, ValuesDictionary};
 use crate::read::deserialize::binary::utils::BinaryIter;
-use crate::read::deserialize::nested_utils::{next, NestedDecoder};
+use crate::read::deserialize::nested_utils::NestedDecoder;
 use crate::read::deserialize::utils::{
-    self, binary_views_dict, not_implemented, page_is_filtered, page_is_optional, MaybeNext,
-    PageState,
+    self, binary_views_dict, not_implemented, page_is_filtered, page_is_optional, PageState,
 };
-use crate::read::{CompressedPagesIter, InitNested, NestedState};
 
 #[derive(Debug)]
 pub(crate) struct State<'a> {
@@ -40,11 +35,9 @@ impl<'a> PageState<'a> for State<'a> {
     }
 }
 
-struct BinViewDecoder;
-
 type DecodedStateTuple = (MutableBinaryViewArray<[u8]>, MutableBitmap);
 
-impl NestedDecoder for BinViewDecoder {
+impl NestedDecoder for super::BinViewDecoder {
     type State<'a> = State<'a>;
     type Dict = BinaryDict;
     type DecodedState = DecodedStateTuple;
@@ -134,70 +127,6 @@ impl NestedDecoder for BinViewDecoder {
         data_type: ArrowDataType,
         decoded: Self::DecodedState,
     ) -> ParquetResult<Box<dyn arrow::array::Array>> {
-        use utils::Decoder;
-        super::basic::BinViewDecoder::default().finalize(data_type, decoded)
-    }
-}
-
-pub struct NestedIter<I: CompressedPagesIter> {
-    iter: BasicDecompressor<I>,
-    data_type: ArrowDataType,
-    init: Vec<InitNested>,
-    items: VecDeque<(NestedState, DecodedStateTuple)>,
-    dict: Option<BinaryDict>,
-    chunk_size: Option<usize>,
-    remaining: usize,
-}
-
-impl<I: CompressedPagesIter> NestedIter<I> {
-    pub fn new(
-        iter: BasicDecompressor<I>,
-        init: Vec<InitNested>,
-        data_type: ArrowDataType,
-        num_rows: usize,
-        chunk_size: Option<usize>,
-    ) -> Self {
-        Self {
-            iter,
-            data_type,
-            init,
-            items: VecDeque::new(),
-            dict: None,
-            chunk_size,
-            remaining: num_rows,
-        }
-    }
-}
-
-impl<I: CompressedPagesIter> Iterator for NestedIter<I> {
-    type Item = PolarsResult<(NestedState, ArrayRef)>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            use utils::Decoder;
-
-            let maybe_state = next(
-                &mut self.iter,
-                &mut self.items,
-                &mut self.dict,
-                &mut self.remaining,
-                &self.init,
-                self.chunk_size,
-                &BinViewDecoder,
-            );
-            match maybe_state {
-                MaybeNext::Some(Ok((nested, decoded))) => {
-                    return Some(
-                        super::basic::BinViewDecoder::default()
-                            .finalize(self.data_type.clone(), decoded)
-                            .map(|array| (nested, array))
-                            .map_err(Into::into),
-                    )
-                },
-                MaybeNext::Some(Err(e)) => return Some(Err(e)),
-                MaybeNext::None => return None,
-                MaybeNext::More => continue, // Using continue in a loop instead of calling next helps prevent stack overflow.
-            }
-        }
+        <Self as utils::Decoder>::finalize(self, data_type, decoded)
     }
 }

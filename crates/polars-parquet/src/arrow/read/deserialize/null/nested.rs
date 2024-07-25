@@ -1,17 +1,12 @@
-use std::collections::VecDeque;
-
 use arrow::array::NullArray;
 use arrow::datatypes::ArrowDataType;
 use polars_error::PolarsResult;
 
 use super::super::nested_utils::*;
 use super::super::utils;
-use super::super::utils::MaybeNext;
 use crate::arrow::read::deserialize::utils::DecodedState;
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{DataPage, DictPage};
-use crate::parquet::read::BasicDecompressor;
-use crate::read::CompressedPagesIter;
 
 impl<'a> utils::PageState<'a> for usize {
     fn len(&self) -> usize {
@@ -20,7 +15,7 @@ impl<'a> utils::PageState<'a> for usize {
 }
 
 #[derive(Debug)]
-struct NullDecoder;
+pub(crate) struct NullDecoder;
 
 impl DecodedState for usize {
     fn len(&self) -> usize {
@@ -73,62 +68,5 @@ impl NestedDecoder for NullDecoder {
         decoded: Self::DecodedState,
     ) -> ParquetResult<Box<dyn arrow::array::Array>> {
         Ok(Box::new(NullArray::new(data_type, decoded)))
-    }
-}
-
-/// An iterator adapter over [`PagesIter`] assumed to be encoded as null arrays
-pub struct NestedIter<I: CompressedPagesIter> {
-    iter: BasicDecompressor<I>,
-    init: Vec<InitNested>,
-    data_type: ArrowDataType,
-    items: VecDeque<(NestedState, usize)>,
-    remaining: usize,
-    chunk_size: Option<usize>,
-    decoder: NullDecoder,
-}
-
-impl<I: CompressedPagesIter> NestedIter<I> {
-    pub fn new(
-        iter: BasicDecompressor<I>,
-        init: Vec<InitNested>,
-        data_type: ArrowDataType,
-        num_rows: usize,
-        chunk_size: Option<usize>,
-    ) -> Self {
-        Self {
-            iter,
-            init,
-            data_type,
-            items: VecDeque::new(),
-            chunk_size,
-            remaining: num_rows,
-            decoder: NullDecoder,
-        }
-    }
-}
-
-impl<I: CompressedPagesIter> Iterator for NestedIter<I> {
-    type Item = PolarsResult<(NestedState, NullArray)>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            let maybe_state = next(
-                &mut self.iter,
-                &mut self.items,
-                &mut None,
-                &mut self.remaining,
-                &self.init,
-                self.chunk_size,
-                &self.decoder,
-            );
-            match maybe_state {
-                MaybeNext::Some(Ok((nested, state))) => {
-                    return Some(Ok((nested, NullArray::new(self.data_type.clone(), state))))
-                },
-                MaybeNext::Some(Err(e)) => return Some(Err(e)),
-                MaybeNext::None => return None,
-                MaybeNext::More => continue,
-            }
-        }
     }
 }

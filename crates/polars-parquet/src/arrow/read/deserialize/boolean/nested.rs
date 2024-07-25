@@ -1,5 +1,3 @@
-use std::collections::VecDeque;
-
 use arrow::array::BooleanArray;
 use arrow::bitmap::utils::BitmapIter;
 use arrow::bitmap::MutableBitmap;
@@ -8,16 +6,13 @@ use polars_error::PolarsResult;
 
 use super::super::nested_utils::*;
 use super::super::utils;
-use super::super::utils::MaybeNext;
 use crate::parquet::encoding::Encoding;
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
-use crate::parquet::read::BasicDecompressor;
 use crate::parquet::schema::Repetition;
-use crate::read::CompressedPagesIter;
 
 #[derive(Debug)]
-struct State<'a> {
+pub(crate) struct State<'a> {
     is_optional: bool,
     iterator: BitmapIter<'a>,
 }
@@ -28,9 +23,7 @@ impl<'a> utils::PageState<'a> for State<'a> {
     }
 }
 
-struct BooleanDecoder;
-
-impl NestedDecoder for BooleanDecoder {
+impl NestedDecoder for super::BooleanDecoder {
     type State<'a> = State<'a>;
     type Dict = ();
     type DecodedState = (MutableBitmap, MutableBitmap);
@@ -110,68 +103,5 @@ impl NestedDecoder for BooleanDecoder {
             values.into(),
             validity,
         )))
-    }
-}
-
-/// An iterator adapter over [`PagesIter`] assumed to be encoded as boolean arrays
-pub struct NestedIter<I: CompressedPagesIter> {
-    iter: BasicDecompressor<I>,
-    init: Vec<InitNested>,
-    items: VecDeque<(NestedState, (MutableBitmap, MutableBitmap))>,
-    remaining: usize,
-    chunk_size: Option<usize>,
-}
-
-impl<I: CompressedPagesIter> NestedIter<I> {
-    pub fn new(
-        iter: BasicDecompressor<I>,
-        init: Vec<InitNested>,
-        num_rows: usize,
-        chunk_size: Option<usize>,
-    ) -> Self {
-        Self {
-            iter,
-            init,
-            items: VecDeque::new(),
-            remaining: num_rows,
-            chunk_size,
-        }
-    }
-}
-
-fn finish(
-    data_type: &ArrowDataType,
-    values: MutableBitmap,
-    validity: MutableBitmap,
-) -> BooleanArray {
-    BooleanArray::new(data_type.clone(), values.into(), validity.into())
-}
-
-impl<I: CompressedPagesIter> Iterator for NestedIter<I> {
-    type Item = PolarsResult<(NestedState, BooleanArray)>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            let maybe_state = next(
-                &mut self.iter,
-                &mut self.items,
-                &mut None,
-                &mut self.remaining,
-                &self.init,
-                self.chunk_size,
-                &BooleanDecoder,
-            );
-            match maybe_state {
-                MaybeNext::Some(Ok((nested, (values, validity)))) => {
-                    return Some(Ok((
-                        nested,
-                        finish(&ArrowDataType::Boolean, values, validity),
-                    )))
-                },
-                MaybeNext::Some(Err(e)) => return Some(Err(e)),
-                MaybeNext::None => return None,
-                MaybeNext::More => continue,
-            }
-        }
     }
 }

@@ -5,9 +5,8 @@ use arrow::array::Array;
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
 use polars_error::{polars_bail, PolarsResult};
-use polars_utils::slice::GetSaferUnchecked;
 
-use super::utils::{BatchableCollector, DecodedState, MaybeNext, PageState};
+use super::utils::{BatchableCollector, DecodedState, PageState};
 use super::{BasicDecompressor, CompressedPagesIter};
 use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use crate::parquet::error::ParquetResult;
@@ -354,6 +353,7 @@ pub(super) fn extend<D: NestedDecoder>(
 
     let additional = *remaining;
     let mut first_item_is_fully_read = false;
+
     // Amortize the allocations.
     let mut def_levels = vec![];
     let mut rep_levels = vec![];
@@ -656,57 +656,6 @@ impl<I: CompressedPagesIter, D: NestedDecoder> PageNestedDecoder<I, D> {
         let array = self.decoder.finalize(self.data_type, target)?;
 
         Ok((nested_state, array))
-    }
-}
-
-#[inline]
-pub(super) fn next<'a, I, D>(
-    iter: &'a mut BasicDecompressor<I>,
-    items: &mut VecDeque<(NestedState, D::DecodedState)>,
-    dict: &'a mut Option<D::Dict>,
-    remaining: &mut usize,
-    init: &[InitNested],
-    chunk_size: Option<usize>,
-    decoder: &D,
-) -> MaybeNext<PolarsResult<(NestedState, D::DecodedState)>>
-where
-    I: CompressedPagesIter,
-    D: NestedDecoder,
-{
-    use streaming_decompression::FallibleStreamingIterator;
-
-    // front[a1, a2, a3, ...]back
-    if items.len() > 1 {
-        return MaybeNext::Some(Ok(items.pop_front().unwrap()));
-    }
-
-    match iter.next() {
-        Err(e) => MaybeNext::Some(Err(e.into())),
-        Ok(None) => {
-            if let Some(decoded) = items.pop_front() {
-                MaybeNext::Some(Ok(decoded))
-            } else {
-                MaybeNext::None
-            }
-        },
-        Ok(Some(page)) => {
-            let page = match &page {
-                Page::Data(page) => page,
-                Page::Dict(dict_page) => {
-                    *dict = Some(decoder.deserialize_dict(dict_page.clone()));
-                    return MaybeNext::More;
-                },
-            };
-
-            // there is a new page => consume the page from the start
-            let is_fully_read = extend(page, init, items, dict.as_ref(), remaining, decoder);
-
-            match is_fully_read {
-                Ok(true) => MaybeNext::Some(Ok(items.pop_front().unwrap())),
-                Ok(false) => MaybeNext::More,
-                Err(e) => MaybeNext::Some(Err(e)),
-            }
-        },
     }
 }
 

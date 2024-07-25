@@ -1086,6 +1086,7 @@ def test_hybrid_rle() -> None:
 @given(
     df=dataframes(
         allowed_dtypes=[
+            pl.Null,
             pl.List,
             pl.Array,
             pl.Int8,

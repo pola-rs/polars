@@ -1,4 +1,4 @@
-use arrow::array::{PrimitiveArray, StructArray};
+use arrow::array::{FixedSizeBinaryArray, PrimitiveArray, StructArray};
 use arrow::match_integer_type;
 use ethnum::I256;
 use polars_error::polars_bail;
@@ -6,20 +6,6 @@ use polars_error::polars_bail;
 use self::nested_utils::PageNestedDecoder;
 use self::primitive::{AsDecoderFunction, IntoDecoderFunction, UnitDecoderFunction};
 use super::*;
-
-/// Converts an iterator of arrays to a trait object returning trait objects
-#[inline]
-fn remove_nested<'a, I>(iter: I) -> NestedArrayIter<'a>
-where
-    I: Iterator<Item = PolarsResult<(NestedState, Box<dyn Array>)>> + Send + Sync + 'a,
-{
-    Box::new(iter.map(|x| {
-        x.map(|(mut nested, array)| {
-            let _ = nested.pop().unwrap(); // the primitive
-            (nested, array)
-        })
-    }))
-}
 
 /// Converts an iterator of arrays to a trait object returning trait objects
 #[inline]
@@ -56,27 +42,24 @@ where
             // physical type is i32
             init.push(InitNested::Primitive(field.is_nullable));
             types.pop();
-            primitive(null::NestedIter::new(
+            PageNestedDecoder::new(
                 columns.pop().unwrap(),
-                init,
                 field.data_type().clone(),
-                num_rows,
-                chunk_size,
-            ))
-            .next()
-            .unwrap()?
+                null::NullDecoder,
+                init,
+            )?
+            .collect_n(num_rows)?
         },
         Boolean => {
             init.push(InitNested::Primitive(field.is_nullable));
             types.pop();
-            primitive(boolean::NestedIter::new(
+            PageNestedDecoder::new(
                 columns.pop().unwrap(),
+                ArrowDataType::Boolean,
+                boolean::BooleanDecoder,
                 init,
-                num_rows,
-                chunk_size,
-            ))
-            .next()
-            .unwrap()?
+            )?
+            .collect_n(num_rows)?
         },
         Primitive(Int8) => {
             init.push(InitNested::Primitive(field.is_nullable));
@@ -206,28 +189,24 @@ where
         BinaryView | Utf8View => {
             init.push(InitNested::Primitive(field.is_nullable));
             types.pop();
-            remove_nested(binview::NestedIter::new(
+            PageNestedDecoder::new(
                 columns.pop().unwrap(),
-                init,
                 field.data_type().clone(),
-                num_rows,
-                chunk_size,
-            ))
-            .next()
-            .unwrap()?
+                binview::BinViewDecoder::default(),
+                init,
+            )?
+            .collect_n(num_rows)?
         },
         LargeBinary | LargeUtf8 => {
             init.push(InitNested::Primitive(field.is_nullable));
             types.pop();
-            remove_nested(binary::NestedIter::<i64, _>::new(
+            PageNestedDecoder::new(
                 columns.pop().unwrap(),
-                init,
                 field.data_type().clone(),
-                num_rows,
-                chunk_size,
-            ))
-            .next()
-            .unwrap()?
+                binary::BinaryDecoder::<i64>::default(),
+                init,
+            )?
+            .collect_n(num_rows)?
         },
         _ => match field.data_type().to_logical_type() {
             ArrowDataType::Dictionary(key_type, _, _) => {
@@ -292,35 +271,38 @@ where
                             ComputeError: "Can't decode Decimal128 type from `FixedLenByteArray` of len {n}"
                         )
                     },
-                    PhysicalType::FixedLenByteArray(n) => {
-                        let iter = fixed_size_binary::NestedIter::new(
+                    PhysicalType::FixedLenByteArray(size) => {
+                        let (mut nested, array) = PageNestedDecoder::new(
                             columns.pop().unwrap(),
+                            field.data_type().clone(),
+                            fixed_size_binary::BinaryDecoder { size },
                             init,
-                            ArrowDataType::FixedSizeBinary(n),
-                            num_rows,
-                            chunk_size,
-                        );
+                        )?
+                        .collect_n(num_rows)?;
+
+                        let array = array
+                            .as_any()
+                            .downcast_ref::<FixedSizeBinaryArray>()
+                            .unwrap();
+
                         // Convert the fixed length byte array to Decimal.
-                        let mut iter = iter.map(move |x| {
-                            let (mut nested, array) = x?;
-                            let values = array
-                                .values()
-                                .chunks_exact(n)
-                                .map(|value: &[u8]| super::super::convert_i128(value, n))
-                                .collect::<Vec<_>>();
-                            let validity = array.validity().cloned();
+                        let values = array
+                            .values()
+                            .chunks_exact(size)
+                            .map(|value: &[u8]| super::super::convert_i128(value, size))
+                            .collect::<Vec<_>>();
+                        let validity = array.validity().cloned();
 
-                            let array: Box<dyn Array> = Box::new(PrimitiveArray::<i128>::try_new(
-                                field.data_type.clone(),
-                                values.into(),
-                                validity,
-                            )?);
+                        let array: Box<dyn Array> = Box::new(PrimitiveArray::<i128>::try_new(
+                            field.data_type.clone(),
+                            values.into(),
+                            validity,
+                        )?);
 
-                            let _ = nested.pop().unwrap(); // the primitive
+                        // @TODO: I am pretty sure this does not work
+                        let _ = nested.pop().unwrap(); // the primitive
 
-                            ParquetResult::Ok((nested, array))
-                        });
-                        iter.next().unwrap()?
+                        (nested, array)
                     },
                     _ => {
                         polars_bail!(ComputeError:
@@ -352,66 +334,72 @@ where
                         init,
                     )?
                     .collect_n(num_rows)?,
-                    PhysicalType::FixedLenByteArray(n) if n <= 16 => {
-                        let iter = fixed_size_binary::NestedIter::new(
+                    PhysicalType::FixedLenByteArray(size) if size <= 16 => {
+                        let (mut nested, array) = PageNestedDecoder::new(
                             columns.pop().unwrap(),
+                            field.data_type().clone(),
+                            fixed_size_binary::BinaryDecoder { size },
                             init,
-                            ArrowDataType::FixedSizeBinary(n),
-                            num_rows,
-                            chunk_size,
-                        );
+                        )?
+                        .collect_n(num_rows)?;
+
+                        let array = array
+                            .as_any()
+                            .downcast_ref::<FixedSizeBinaryArray>()
+                            .unwrap();
+
                         // Convert the fixed length byte array to Decimal.
-                        let mut iter = iter.map(move |x| {
-                            let (mut nested, array) = x?;
-                            let values = array
-                                .values()
-                                .chunks_exact(n)
-                                .map(|value| i256(I256::new(super::super::convert_i128(value, n))))
-                                .collect::<Vec<_>>();
-                            let validity = array.validity().cloned();
+                        let values = array
+                            .values()
+                            .chunks_exact(size)
+                            .map(|value| i256(I256::new(super::super::convert_i128(value, size))))
+                            .collect::<Vec<_>>();
+                        let validity = array.validity().cloned();
 
-                            let array: Box<dyn Array> = Box::new(PrimitiveArray::<i256>::try_new(
-                                field.data_type.clone(),
-                                values.into(),
-                                validity,
-                            )?);
+                        let array: Box<dyn Array> = Box::new(PrimitiveArray::<i256>::try_new(
+                            field.data_type.clone(),
+                            values.into(),
+                            validity,
+                        )?);
 
-                            let _ = nested.pop().unwrap(); // the primitive
+                        // @TODO: I am pretty sure this is not needed
+                        let _ = nested.pop().unwrap(); // the primitive
 
-                            ParquetResult::Ok((nested, array))
-                        });
-                        iter.next().unwrap()?
+                        (nested, array)
                     },
 
-                    PhysicalType::FixedLenByteArray(n) if n <= 32 => {
-                        let iter = fixed_size_binary::NestedIter::new(
+                    PhysicalType::FixedLenByteArray(size) if size <= 32 => {
+                        let (mut nested, array) = PageNestedDecoder::new(
                             columns.pop().unwrap(),
+                            field.data_type().clone(),
+                            fixed_size_binary::BinaryDecoder { size },
                             init,
-                            ArrowDataType::FixedSizeBinary(n),
-                            num_rows,
-                            chunk_size,
-                        );
+                        )?
+                        .collect_n(num_rows)?;
+
+                        let array = array
+                            .as_any()
+                            .downcast_ref::<FixedSizeBinaryArray>()
+                            .unwrap();
+
                         // Convert the fixed length byte array to Decimal.
-                        let mut iter = iter.map(move |x| {
-                            let (mut nested, array) = x?;
-                            let values = array
-                                .values()
-                                .chunks_exact(n)
-                                .map(super::super::convert_i256)
-                                .collect::<Vec<_>>();
-                            let validity = array.validity().cloned();
+                        let values = array
+                            .values()
+                            .chunks_exact(size)
+                            .map(super::super::convert_i256)
+                            .collect::<Vec<_>>();
+                        let validity = array.validity().cloned();
 
-                            let array: Box<dyn Array> = Box::new(PrimitiveArray::<i256>::try_new(
-                                field.data_type.clone(),
-                                values.into(),
-                                validity,
-                            )?);
+                        let array: Box<dyn Array> = Box::new(PrimitiveArray::<i256>::try_new(
+                            field.data_type.clone(),
+                            values.into(),
+                            validity,
+                        )?);
 
-                            let _ = nested.pop().unwrap(); // the primitive
+                        // @TODO: I am pretty sure this is not needed
+                        let _ = nested.pop().unwrap(); // the primitive
 
-                            ParquetResult::Ok((nested, array))
-                        });
-                        iter.next().unwrap()?
+                        (nested, array)
                     },
                     PhysicalType::FixedLenByteArray(n) => {
                         polars_bail!(ComputeError:
