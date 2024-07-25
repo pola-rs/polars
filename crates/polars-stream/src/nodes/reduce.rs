@@ -4,9 +4,8 @@ use polars_core::schema::Schema;
 use polars_expr::prelude::PhysicalExpr;
 use polars_expr::reduce::Reduction;
 
-use crate::morsel::SourceToken;
-
 use super::compute_node_prelude::*;
+use crate::morsel::SourceToken;
 
 enum ReduceState {
     Sink {

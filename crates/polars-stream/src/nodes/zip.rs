@@ -26,15 +26,19 @@ impl ComputeNode for ZipNode {
 
     fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) {
         assert!(send.len() == 1);
-        assert!(recv.len() >= 1);
+        assert!(!recv.is_empty());
 
         let any_input_blocked = recv.iter().any(|s| *s == PortState::Blocked);
-        
+
         let mut all_done = true;
         let mut at_least_one_done = false;
         let mut at_least_one_nonempty = false;
         for (recv_idx, recv_state) in recv.iter().enumerate() {
-            let is_empty = self.input_heads.get(recv_idx).map(|h| h.is_empty()).unwrap_or(true);
+            let is_empty = self
+                .input_heads
+                .get(recv_idx)
+                .map(|h| h.is_empty())
+                .unwrap_or(true);
             at_least_one_nonempty |= !is_empty;
             if *recv_state == PortState::Done {
                 all_done &= is_empty;
@@ -43,7 +47,7 @@ impl ComputeNode for ZipNode {
                 all_done = false;
             }
         }
-        
+
         assert!(
             !(at_least_one_done && at_least_one_nonempty),
             "zip received non-equal length inputs"
@@ -79,12 +83,11 @@ impl ComputeNode for ZipNode {
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
         assert!(send.len() == 1);
-        assert!(recv.len() >= 1);
+        assert!(!recv.is_empty());
         let mut sender = send[0].take().unwrap().serial();
         let mut receivers: Vec<_> = recv.iter_mut().map(|r| Some(r.take()?.serial())).collect();
 
-        self.input_heads
-            .resize_with(receivers.len(), || VecDeque::new());
+        self.input_heads.resize_with(receivers.len(), VecDeque::new);
 
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
             let mut out = Vec::new();
@@ -115,7 +118,7 @@ impl ComputeNode for ZipNode {
                 let common_size = self
                     .input_heads
                     .iter()
-                    .map(|h| h.get(0).map(|m| m.df().height()).unwrap_or(0))
+                    .map(|h| h.front().map(|m| m.df().height()).unwrap_or(0))
                     .min()
                     .unwrap();
                 if common_size == 0 {

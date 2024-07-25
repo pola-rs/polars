@@ -236,8 +236,7 @@ fn to_graph_rec<'a>(
                 .iter()
                 .map(|i| to_graph_rec(*i, ctx))
                 .collect::<Result<Vec<_>, _>>()?;
-            ctx.graph
-                .add_node(nodes::zip::ZipNode::new(), input_keys)
+            ctx.graph.add_node(nodes::zip::ZipNode::new(), input_keys)
         },
     };
 

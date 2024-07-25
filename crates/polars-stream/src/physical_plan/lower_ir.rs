@@ -218,7 +218,11 @@ pub fn lower_ir(
             Ok(phys_sm.insert(PhysNode::OrderedUnion { inputs }))
         },
 
-        IR::HConcat { inputs, schema: _, options: _ } => {
+        IR::HConcat {
+            inputs,
+            schema: _,
+            options: _,
+        } => {
             let inputs = inputs
                 .clone() // Needed to borrow ir_arena mutably.
                 .into_iter()

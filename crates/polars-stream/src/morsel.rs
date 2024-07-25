@@ -52,13 +52,15 @@ pub struct SourceToken {
 
 impl SourceToken {
     pub fn new() -> Self {
-        Self { stop: Arc::new(AtomicBool::new(false)) }
+        Self {
+            stop: Arc::new(AtomicBool::new(false)),
+        }
     }
-    
+
     pub fn stop(&self) {
         self.stop.store(true, Ordering::Relaxed);
     }
-    
+
     pub fn stop_requested(&self) -> bool {
         self.stop.load(Ordering::Relaxed)
     }
@@ -71,7 +73,7 @@ pub struct Morsel {
     /// The sequence number of this morsel. May only stay equal or increase
     /// within a pipeline.
     seq: MorselSeq,
-    
+
     /// A token that indicates which source this morsel originates from.
     source_token: SourceToken,
 
@@ -93,7 +95,7 @@ impl Morsel {
     pub fn into_inner(self) -> (DataFrame, MorselSeq, SourceToken, Option<WaitToken>) {
         (self.df, self.seq, self.source_token, self.consume_token)
     }
-    
+
     pub fn into_df(self) -> DataFrame {
         self.df
     }
@@ -101,7 +103,7 @@ impl Morsel {
     pub fn df(&self) -> &DataFrame {
         &self.df
     }
-    
+
     pub fn df_mut(&mut self) -> &mut DataFrame {
         &mut self.df
     }
@@ -135,7 +137,7 @@ impl Morsel {
     pub fn take_consume_token(&mut self) -> Option<WaitToken> {
         self.consume_token.take()
     }
-    
+
     pub fn source_token(&self) -> &SourceToken {
         &self.source_token
     }
