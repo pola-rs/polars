@@ -152,4 +152,4 @@ def test_no_glob(
     write_func(df, paths[1])
 
     for func in scan_funcs:
-        assert_frame_equal(func(paths[0], glob=False).lazy().collect(), df)
+        assert_frame_equal(func(paths[0], glob=False).lazy().collect(), df)  # type: ignore[call-arg]

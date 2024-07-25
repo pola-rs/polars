@@ -174,8 +174,12 @@ pub fn expand_paths_hive(
                     let (cloud_location, store) =
                         crate::cloud::build_object_store(path, cloud_options).await?;
 
-                    let prefix =
-                        object_path_from_str(if glob { &cloud_location.prefix } else { path })?;
+                    let prefix = object_path_from_str(if glob {
+                        &cloud_location.prefix
+                    } else {
+                        // No-glob requested, we need to keep the glob chars
+                        path
+                    })?;
 
                     let out = if !path.ends_with("/")
                         && (!glob || cloud_location.expansion.is_none())
