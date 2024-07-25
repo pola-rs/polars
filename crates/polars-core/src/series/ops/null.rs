@@ -1,3 +1,4 @@
+#[cfg(feature = "object")]
 use crate::chunked_array::object::registry::get_object_builder;
 use crate::prelude::*;
 
