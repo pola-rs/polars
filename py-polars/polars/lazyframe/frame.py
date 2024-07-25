@@ -1859,7 +1859,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             polars CPU engine. If set to `"gpu"`, the GPU engine is
             used. Fine-grained control over the GPU engine, for
             example which device to use on a system with multiple
-            devices, is possible by providing a `GPUEngine` object
+            devices, is possible by providing a :class:`GPUEngine` object
             with configuration options.
 
             .. note::
@@ -1930,6 +1930,36 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ b   ┆ 11  ┆ 10  │
         │ c   ┆ 6   ┆ 1   │
         └─────┴─────┴─────┘
+
+        Collect in GPU mode
+
+        >>> lf.group_by("a").agg(pl.all().sum()).collect(engine="gpu")  # doctest: +SKIP
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ b   ┆ 11  ┆ 10  │
+        │ a   ┆ 4   ┆ 10  │
+        │ c   ┆ 6   ┆ 1   │
+        └─────┴─────┴─────┘
+
+        With control over the device used
+
+        >>> lf.group_by("a").agg(pl.all().sum()).collect(
+        ...     engine=pl.GPUEngine(device=1)
+        ... )  # doctest: +SKIP
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ b   ┆ 11  ┆ 10  │
+        │ a   ┆ 4   ┆ 10  │
+        │ c   ┆ 6   ┆ 1   │
+        └─────┴─────┴─────┘
         """
         new_streaming = _kwargs.get("new_streaming", False)
 
@@ -1945,6 +1975,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             issue_unstable_warning("Streaming mode is considered unstable.")
 
         is_gpu = (is_config_obj := isinstance(engine, GPUEngine)) or engine == "gpu"
+        if not (is_config_obj or engine in ("cpu", "gpu")):
+            msg = f"Invalid engine argument {engine=}"
+            raise ValueError(msg)
         if (streaming or background or new_streaming) and is_gpu:
             issue_warning(
                 "GPU engine does not support streaming or background collection, "
