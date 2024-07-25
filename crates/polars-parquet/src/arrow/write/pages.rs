@@ -1,7 +1,8 @@
+use std::collections::VecDeque;
 use std::fmt::Debug;
 
 use arrow::array::{Array, FixedSizeListArray, ListArray, MapArray, StructArray};
-use arrow::bitmap::Bitmap;
+use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::datatypes::PhysicalType;
 use arrow::offset::{Offset, OffsetsBuffer};
 use polars_error::{polars_bail, PolarsResult};
@@ -268,42 +269,206 @@ fn to_nested_recursive(
     Ok(())
 }
 
-/// Convert [`Array`] to `Vec<&dyn Array>` leaves in DFS order.
-pub fn to_leaves(array: &dyn Array) -> Vec<&dyn Array> {
-    let mut leaves = vec![];
-    to_leaves_recursive(array, &mut leaves);
-    leaves
+fn expand_list_validity<'a, O: Offset>(
+    array: &'a ListArray<O>,
+    validity: BitmapState,
+    array_stack: &mut VecDeque<(&'a dyn Array, BitmapState)>,
+) {
+    let BitmapState::SomeSet(list_validity) = validity else {
+        array_stack.push_back((
+            array.values().as_ref(),
+            match validity {
+                BitmapState::AllSet => BitmapState::AllSet,
+                BitmapState::SomeSet(_) => unreachable!(),
+                BitmapState::AllUnset(_) => BitmapState::AllUnset(array.values().len()),
+            },
+        ));
+        return;
+    };
+
+    let offsets = array.offsets().buffer();
+    let mut validity = MutableBitmap::with_capacity(array.values().len());
+    let mut list_validity_iter = list_validity.iter();
+
+    let mut idx = 0;
+    while list_validity_iter.num_remaining() > 0 {
+        let num_ones = list_validity_iter.take_leading_ones();
+        let num_elements = offsets[idx + num_ones] - offsets[idx];
+        validity.extend_constant(num_elements.to_usize(), true);
+
+        idx += num_ones;
+
+        let num_zeros = list_validity_iter.take_leading_zeros();
+        let num_elements = offsets[idx + num_zeros] - offsets[idx];
+        validity.extend_constant(num_elements.to_usize(), false);
+
+        idx += num_zeros;
+    }
+
+    debug_assert_eq!(idx, array.len());
+
+    let validity = validity.freeze();
+
+    array_stack.push_back((array.values().as_ref(), BitmapState::SomeSet(validity)));
 }
 
-fn to_leaves_recursive<'a>(array: &'a dyn Array, leaves: &mut Vec<&'a dyn Array>) {
-    use PhysicalType::*;
-    match array.data_type().to_physical_type() {
-        Struct => {
-            let array = array.as_any().downcast_ref::<StructArray>().unwrap();
-            array
-                .values()
-                .iter()
-                .for_each(|a| to_leaves_recursive(a.as_ref(), leaves));
-        },
-        List => {
-            let array = array.as_any().downcast_ref::<ListArray<i32>>().unwrap();
-            to_leaves_recursive(array.values().as_ref(), leaves);
-        },
-        LargeList => {
-            let array = array.as_any().downcast_ref::<ListArray<i64>>().unwrap();
-            to_leaves_recursive(array.values().as_ref(), leaves);
-        },
-        FixedSizeList => {
-            let array = array.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
-            to_leaves_recursive(array.values().as_ref(), leaves);
-        },
-        Map => {
-            let array = array.as_any().downcast_ref::<MapArray>().unwrap();
-            to_leaves_recursive(array.field().as_ref(), leaves);
-        },
-        Null | Boolean | Primitive(_) | Binary | FixedSizeBinary | LargeBinary | Utf8
-        | LargeUtf8 | Dictionary(_) | BinaryView | Utf8View => leaves.push(array),
-        other => todo!("Writing {:?} to parquet not yet implemented", other),
+#[derive(Clone)]
+enum BitmapState {
+    AllSet,
+    SomeSet(Bitmap),
+    AllUnset(usize),
+}
+
+impl From<Option<&Bitmap>> for BitmapState {
+    fn from(bm: Option<&Bitmap>) -> Self {
+        let Some(bm) = bm else {
+            return Self::AllSet;
+        };
+
+        let null_count = bm.unset_bits();
+
+        if null_count == 0 {
+            Self::AllSet
+        } else if null_count == bm.len() {
+            Self::AllUnset(bm.len())
+        } else {
+            Self::SomeSet(bm.clone())
+        }
+    }
+}
+
+impl From<BitmapState> for Option<Bitmap> {
+    fn from(bms: BitmapState) -> Self {
+        match bms {
+            BitmapState::AllSet => None,
+            BitmapState::SomeSet(bm) => Some(bm),
+            BitmapState::AllUnset(len) => Some(Bitmap::new_zeroed(len)),
+        }
+    }
+}
+
+impl std::ops::BitAnd for &BitmapState {
+    type Output = BitmapState;
+
+    fn bitand(self, rhs: Self) -> Self::Output {
+        use BitmapState as B;
+        match (self, rhs) {
+            (B::AllSet, B::AllSet) => B::AllSet,
+            (B::AllSet, B::SomeSet(v)) | (B::SomeSet(v), B::AllSet) => B::SomeSet(v.clone()),
+            (B::SomeSet(lhs), B::SomeSet(rhs)) => {
+                let result = lhs & rhs;
+                let null_count = result.unset_bits();
+
+                if null_count == 0 {
+                    B::AllSet
+                } else if null_count == result.len() {
+                    B::AllUnset(result.len())
+                } else {
+                    B::SomeSet(result)
+                }
+            },
+            (B::AllUnset(len), _) | (_, B::AllUnset(len)) => B::AllUnset(*len),
+        }
+    }
+}
+
+/// Convert [`Array`] to a `Vec<Box<dyn Array>>` leaves in DFS order.
+///
+/// Each leaf array has the validity propagated from the nesting levels above.
+pub fn to_leaves(array: &dyn Array, leaves: &mut Vec<Box<dyn Array>>) {
+    use PhysicalType as P;
+
+    leaves.clear();
+    let mut array_stack: VecDeque<(&dyn Array, BitmapState)> = VecDeque::new();
+
+    array_stack.push_back((array, BitmapState::AllSet));
+
+    while let Some((array, parent_validity)) = array_stack.pop_front() {
+        let child_validity = BitmapState::from(array.validity());
+        let validity = (&child_validity) & (&parent_validity);
+
+        match array.data_type().to_physical_type() {
+            P::Struct => {
+                let array = array.as_any().downcast_ref::<StructArray>().unwrap();
+
+                leaves.reserve(array.len().saturating_sub(1));
+                array_stack.extend(
+                    array
+                        .values()
+                        .iter()
+                        .map(|field| (field.as_ref(), validity.clone())),
+                );
+            },
+            P::List => {
+                let array = array.as_any().downcast_ref::<ListArray<i32>>().unwrap();
+                expand_list_validity(array, validity, &mut array_stack);
+            },
+            P::LargeList => {
+                let array = array.as_any().downcast_ref::<ListArray<i64>>().unwrap();
+                expand_list_validity(array, validity, &mut array_stack);
+            },
+            P::FixedSizeList => {
+                let array = array.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
+
+                let BitmapState::SomeSet(fsl_validity) = validity else {
+                    array_stack.push_back((
+                        array.values().as_ref(),
+                        match validity {
+                            BitmapState::AllSet => BitmapState::AllSet,
+                            BitmapState::SomeSet(_) => unreachable!(),
+                            BitmapState::AllUnset(_) => BitmapState::AllUnset(array.values().len()),
+                        },
+                    ));
+                    continue;
+                };
+
+                let num_values = array.values().len();
+                let size = array.size();
+
+                let mut validity = MutableBitmap::with_capacity(num_values);
+                let mut fsl_validity_iter = fsl_validity.iter();
+
+                let mut idx = 0;
+                while fsl_validity_iter.num_remaining() > 0 {
+                    let num_ones = fsl_validity_iter.take_leading_ones();
+                    let num_elements = num_ones * size;
+                    validity.extend_constant(num_elements, true);
+
+                    idx += num_ones;
+
+                    let num_zeros = fsl_validity_iter.take_leading_zeros();
+                    let num_elements = num_zeros * size;
+                    validity.extend_constant(num_elements, false);
+
+                    idx += num_zeros;
+                }
+
+                debug_assert_eq!(idx, array.len());
+
+                let validity = BitmapState::SomeSet(validity.freeze());
+
+                array_stack.push_back((array.values().as_ref(), validity));
+            },
+            P::Map => {
+                let array = array.as_any().downcast_ref::<MapArray>().unwrap();
+                array_stack.push_back((array.field().as_ref(), validity));
+            },
+            P::Null
+            | P::Boolean
+            | P::Primitive(_)
+            | P::Binary
+            | P::FixedSizeBinary
+            | P::LargeBinary
+            | P::Utf8
+            | P::LargeUtf8
+            | P::Dictionary(_)
+            | P::BinaryView
+            | P::Utf8View => {
+                leaves.push(array.with_validity(validity.into()));
+            },
+
+            other => todo!("Writing {:?} to parquet not yet implemented", other),
+        }
     }
 }
 
@@ -333,11 +498,13 @@ pub fn array_to_columns<A: AsRef<dyn Array> + Send + Sync>(
     encoding: &[Encoding],
 ) -> PolarsResult<Vec<DynIter<'static, PolarsResult<Page>>>> {
     let array = array.as_ref();
+
     let nested = to_nested(array, &type_)?;
 
     let types = to_parquet_leaves(type_);
 
-    let values = to_leaves(array);
+    let mut values = Vec::new();
+    to_leaves(array, &mut values);
 
     assert_eq!(encoding.len(), types.len());
 
@@ -347,7 +514,7 @@ pub fn array_to_columns<A: AsRef<dyn Array> + Send + Sync>(
         .zip(types)
         .zip(encoding.iter())
         .map(|(((values, nested), type_), encoding)| {
-            array_to_pages(*values, type_, &nested, options, *encoding)
+            array_to_pages(values.as_ref(), type_, &nested, options, *encoding)
         })
         .collect()
 }
@@ -370,9 +537,8 @@ pub fn arrays_to_columns<A: AsRef<dyn Array> + Send + Sync>(
     // Ensure we transpose the leaves. So that all the leaves from the same columns are at the same level vec.
     let mut scratch = vec![];
     for arr in arrays {
-        scratch.clear();
-        to_leaves_recursive(arr.as_ref(), &mut scratch);
-        for (i, leave) in scratch.iter().copied().enumerate() {
+        to_leaves(arr.as_ref(), &mut scratch);
+        for (i, leave) in std::mem::take(&mut scratch).into_iter().enumerate() {
             while i < leaves.len() {
                 leaves.push(vec![]);
             }
@@ -387,7 +553,13 @@ pub fn arrays_to_columns<A: AsRef<dyn Array> + Send + Sync>(
         .zip(encoding.iter())
         .map(move |(((values, nested), type_), encoding)| {
             let iter = values.into_iter().map(|leave_values| {
-                array_to_pages(leave_values, type_.clone(), &nested, options, *encoding)
+                array_to_pages(
+                    leave_values.as_ref(),
+                    type_.clone(),
+                    &nested,
+                    options,
+                    *encoding,
+                )
             });
 
             // Need a scratch to bubble up the error :/

@@ -1270,3 +1270,28 @@ def test_parquet_list_element_field_name(tmp_path: Path) -> None:
     schema_str = str(pq.read_schema(filename))
     assert "<element: int64>" in schema_str
     assert "child 0, element: int64" in schema_str
+
+
+@pytest.mark.parametrize(
+    ("s", "elem"),
+    [
+        (pl.Series(["", "hello", "hi", ""], dtype=pl.String), ""),
+        (pl.Series([0, 1, 2, 0], dtype=pl.Int64), 0),
+        (pl.Series([[0], [1], [2], [0]], dtype=pl.Array(pl.Int64, 1)), [0]),
+        (
+            pl.Series([[0, 1], [1, 2], [2, 3], [0, 1]], dtype=pl.Array(pl.Int64, 2)),
+            [0, 1],
+        ),
+    ],
+)
+def test_parquet_high_nested_null_17805(
+    s: pl.Series, elem: str | int | list[int]
+) -> None:
+    test_round_trip(
+        pl.DataFrame({"a": s}).select(
+            pl.when(pl.col("a") == elem)
+            .then(pl.lit(None))
+            .otherwise(pl.concat_list(pl.col("a").alias("b")))
+            .alias("c")
+        )
+    )
