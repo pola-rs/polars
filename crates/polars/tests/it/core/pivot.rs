@@ -42,7 +42,7 @@ fn test_pivot_date_() -> PolarsResult<()> {
     )?;
     out.try_apply("1", |s| {
         let ca = s.date()?;
-        Ok(ca.to_string("%Y-%d-%m"))
+        ca.to_string("%Y-%d-%m")
     })?;
 
     let expected = df![

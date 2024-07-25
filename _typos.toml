@@ -1,34 +1,33 @@
-[default]
-extend-ignore-identifiers-re = [
-  "splitted.*",
+[files]
+extend-exclude = [
+  ".git/",
+  "*.csv",
+  "*.gz",
+  "dists.dss",
 ]
+ignore-hidden = false
 
-[default.extend-identifiers]
-bck = "bck"
-Fo = "Fo"
-ND = "ND"
-ba = "ba"
-nd = "nd"
-opt_nd = "opt_nd"
-ANDed = "ANDed"
-ody = "ody"
+[default]
+extend-ignore-re = [
+  '"Theatre": \[.+\],',
+]
 
 [default.extend-words]
 arange = "arange"
-strat = "strat"
-'"r0ot"' = "r0ot"
-wee = "wee"
 ser = "ser"
-ND = "ND"
+splitted = "splitted"
+strat = "strat"
+
+[type.py.extend-identifiers]
+ba = "ba"
 ody = "ody"
 
-[type.csv]
-extend-glob = ["*.csv"]
-check-file = false
-
-[type.gz]
-extend-glob = ["*.gz"]
-check-file = false
-
-[files]
-extend-exclude = ["_typos.toml", "dists.dss"]
+[type.rust.extend-identifiers]
+ANDed = "ANDed"
+bck = "bck"
+Fo = "Fo"
+ND = "ND"
+nd = "nd"
+NDJson = "NDJson"
+NDJsonReadOptions = "NDJsonReadOptions"
+opt_nd = "opt_nd"

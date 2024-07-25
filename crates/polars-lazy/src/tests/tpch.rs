@@ -81,7 +81,7 @@ fn test_q2() -> PolarsResult<()> {
             SortMultipleOptions::default()
                 .with_order_descending_multi([true, false, false, false])
                 .with_maintain_order(true),
-        )?
+        )
         .limit(100)
         .with_comm_subplan_elim(true);
 

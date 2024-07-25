@@ -36,18 +36,19 @@ where
 }
 
 pub fn columns_to_iter_recursive<'a, I>(
-    mut columns: Vec<I>,
+    mut columns: Vec<BasicDecompressor<I>>,
     mut types: Vec<&PrimitiveType>,
     field: Field,
     mut init: Vec<InitNested>,
     num_rows: usize,
-    chunk_size: Option<usize>,
 ) -> PolarsResult<NestedArrayIter<'a>>
 where
-    I: 'a + PagesIter,
+    I: 'a + CompressedPagesIter,
 {
     use arrow::datatypes::PhysicalType::*;
     use arrow::datatypes::PrimitiveType::*;
+
+    let chunk_size = Some(num_rows);
 
     Ok(match field.data_type().to_physical_type() {
         Null => {
@@ -248,7 +249,6 @@ where
                     inner.as_ref().clone(),
                     init,
                     num_rows,
-                    chunk_size,
                 )?;
                 let iter = iter.map(move |x| {
                     let (mut nested, array) = x?;
@@ -265,7 +265,6 @@ where
                     inner.as_ref().clone(),
                     init,
                     num_rows,
-                    chunk_size,
                 )?;
                 let iter = iter.map(move |x| {
                     let (mut nested, array) = x?;
@@ -441,14 +440,7 @@ where
                         let n = n_columns(&f.data_type);
                         let columns = columns.drain(columns.len() - n..).collect();
                         let types = types.drain(types.len() - n..).collect();
-                        columns_to_iter_recursive(
-                            columns,
-                            types,
-                            f.clone(),
-                            init,
-                            num_rows,
-                            chunk_size,
-                        )
+                        columns_to_iter_recursive(columns, types, f.clone(), init, num_rows)
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
                 let columns = columns.into_iter().rev().collect();
@@ -462,7 +454,6 @@ where
                     inner.as_ref().clone(),
                     init,
                     num_rows,
-                    chunk_size,
                 )?;
                 let iter = iter.map(move |x| {
                     let (mut nested, array) = x?;
@@ -480,8 +471,8 @@ where
     })
 }
 
-fn dict_read<'a, K: DictionaryKey, I: 'a + PagesIter>(
-    iter: I,
+fn dict_read<'a, K: DictionaryKey, I: 'a + CompressedPagesIter>(
+    iter: BasicDecompressor<I>,
     init: Vec<InitNested>,
     _type_: &PrimitiveType,
     data_type: ArrowDataType,

@@ -20,6 +20,7 @@ pub mod explode;
 mod from;
 #[cfg(feature = "algorithm_group_by")]
 pub mod group_by;
+pub(crate) mod horizontal;
 #[cfg(any(feature = "rows", feature = "object"))]
 pub mod row;
 mod top_k;
@@ -775,51 +776,6 @@ impl DataFrame {
     /// ```
     pub fn is_empty(&self) -> bool {
         self.height() == 0
-    }
-
-    /// Add columns horizontally.
-    ///
-    /// # Safety
-    /// The caller must ensure:
-    /// - the length of all [`Series`] is equal to the height of this [`DataFrame`]
-    /// - the columns names are unique
-    pub unsafe fn hstack_mut_unchecked(&mut self, columns: &[Series]) -> &mut Self {
-        self.columns.extend_from_slice(columns);
-        self
-    }
-
-    /// Add multiple [`Series`] to a [`DataFrame`].
-    /// The added `Series` are required to have the same length.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use polars_core::prelude::*;
-    /// fn stack(df: &mut DataFrame, columns: &[Series]) {
-    ///     df.hstack_mut(columns);
-    /// }
-    /// ```
-    pub fn hstack_mut(&mut self, columns: &[Series]) -> PolarsResult<&mut Self> {
-        let mut names = self
-            .columns
-            .iter()
-            .map(|c| c.name())
-            .collect::<PlHashSet<_>>();
-        // first loop check validity. We don't do this in a single pass otherwise
-        // this DataFrame is already modified when an error occurs.
-        for col in columns {
-            polars_ensure!(
-                col.len() == self.height() || self.is_empty(),
-                ShapeMismatch: "unable to hstack Series of length {} and DataFrame of height {}",
-                col.len(), self.height(),
-            );
-            polars_ensure!(
-                names.insert(col.name()),
-                Duplicate: "unable to hstack, column with name {:?} already exists", col.name(),
-            );
-        }
-        drop(names);
-        Ok(unsafe { self.hstack_mut_unchecked(columns) })
     }
 
     /// Add multiple [`Series`] to a [`DataFrame`].

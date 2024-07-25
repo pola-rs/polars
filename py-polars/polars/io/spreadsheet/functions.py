@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any, Callable, NoReturn, Sequence, overload
 
 import polars._reexport as pl
+from polars import from_arrow
 from polars import functions as F
 from polars._utils.deprecation import (
     deprecate_renamed_parameter,
@@ -882,8 +883,12 @@ def _read_spreadsheet_calamine(
 
         read_options["dtypes"] = parser_dtypes
 
-    ws = parser.load_sheet_by_name(name=sheet_name, **read_options)
-    df = ws.to_polars()
+    if fastexcel_version < (0, 11, 2):
+        ws = parser.load_sheet_by_name(name=sheet_name, **read_options)
+        df = ws.to_polars()
+    else:
+        ws_arrow = parser.load_sheet_eager(sheet_name, **read_options)
+        df = from_arrow(ws_arrow)
 
     # note: even if we applied parser dtypes we still re-apply schema_overrides
     # natively as we can refine integer/float types, temporal precision, etc.

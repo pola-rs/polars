@@ -151,6 +151,8 @@ bitflags!(
             /// This can lead to recursively entering the engine and sometimes deadlocks.
             /// This flag must be set to handle that.
             const OPTIONAL_RE_ENTRANT = 1 << 6;
+            /// Whether this function allows no inputs.
+            const ALLOW_EMPTY_INPUTS = 1 << 7;
         }
 );
 
@@ -357,4 +359,5 @@ pub struct NDJsonReadOptions {
     pub low_memory: bool,
     pub ignore_errors: bool,
     pub schema: Option<SchemaRef>,
+    pub schema_overwrite: Option<SchemaRef>,
 }

@@ -164,6 +164,9 @@ def test_from_arrow(monkeypatch: Any) -> None:
             "d": pa.array([1, 2], pa.timestamp("ns")),
             "e": pa.array([1, 2], pa.int32()),
             "decimal1": pa.array([1, 2], pa.decimal128(2, 1)),
+            "struct": pa.array(
+                [{"a": 1}, {"a": 2}], pa.struct([pa.field("a", pa.int32())])
+            ),
         }
     )
     record_batches = tbl.to_batches(max_chunksize=1)
@@ -174,6 +177,7 @@ def test_from_arrow(monkeypatch: Any) -> None:
         "d": pl.Datetime("ns"),
         "e": pl.Int32,
         "decimal1": pl.Decimal(2, 1),
+        "struct": pl.Struct({"a": pl.Int32()}),
     }
     expected_data = [
         (
@@ -183,6 +187,7 @@ def test_from_arrow(monkeypatch: Any) -> None:
             datetime(1970, 1, 1, 0, 0),
             1,
             Decimal("1.0"),
+            {"a": 1},
         ),
         (
             datetime(1970, 1, 1, 0, 0, 2),
@@ -191,6 +196,7 @@ def test_from_arrow(monkeypatch: Any) -> None:
             datetime(1970, 1, 1, 0, 0),
             2,
             Decimal("2.0"),
+            {"a": 2},
         ),
     ]
     for arrow_data in (tbl, record_batches, (rb for rb in record_batches)):
@@ -257,6 +263,33 @@ def test_from_arrow(monkeypatch: Any) -> None:
         pl.from_arrow(data=(x for x in (1, 2, 3)))
 
 
+@pytest.mark.parametrize(
+    "data",
+    [
+        pa.Table.from_pydict(
+            {
+                "struct": pa.array(
+                    [{"a": 1}, {"a": 2}], pa.struct([pa.field("a", pa.int32())])
+                ),
+            }
+        ),
+        pa.Table.from_pydict(
+            {
+                "struct": pa.chunked_array(
+                    [[{"a": 1}], [{"a": 2}]], pa.struct([pa.field("a", pa.int32())])
+                ),
+            }
+        ),
+    ],
+)
+def test_from_arrow_struct_column(data: pa.Table) -> None:
+    df = cast(pl.DataFrame, pl.from_arrow(data=data))
+    expected_schema = pl.Schema({"struct": pl.Struct({"a": pl.Int32()})})
+    expected_data = [({"a": 1},), ({"a": 2},)]
+    assert df.schema == expected_schema
+    assert df.rows() == expected_data
+
+
 def test_dataframe_membership_operator() -> None:
     # cf. issue #4032
     df = pl.DataFrame({"name": ["Jane", "John"], "age": [20, 30]})
@@ -271,10 +304,6 @@ def test_sort() -> None:
     assert_frame_equal(
         df.sort(["a", "b"]), pl.DataFrame({"a": [1, 2, 3], "b": [2, 1, 3]})
     )
-    with pytest.raises(ComputeError):
-        df.sort([1, 2])
-    with pytest.raises(ComputeError):
-        df.sort(1)
 
 
 def test_sort_maintain_order() -> None:

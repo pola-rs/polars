@@ -17,7 +17,7 @@ from polars.datatypes import (
 from polars.datatypes.group import FLOAT_DTYPES, INTEGER_DTYPES
 from polars.dependencies import json
 from polars.exceptions import DuplicateError
-from polars.selectors import _expand_selector_dicts, _expand_selectors
+from polars.selectors import _expand_selector_dicts, _expand_selectors, numeric
 
 if TYPE_CHECKING:
     from typing import Literal
@@ -346,22 +346,28 @@ def _xl_setup_table_columns(
     if cast_cols:
         df = df.with_columns(cast_cols)
 
+    # expand/normalise column totals
+    if column_totals is True:
+        column_totals = {numeric(): "sum"}
+    elif isinstance(column_totals, str):
+        column_totals = {numeric(): column_totals.lower()}
+
     column_totals = _unpack_multi_column_dict(  # type: ignore[assignment]
         _expand_selector_dicts(df, column_totals, expand_keys=True, expand_values=False)
         if isinstance(column_totals, dict)
         else _expand_selectors(df, column_totals)
     )
-    column_formats = _unpack_multi_column_dict(  # type: ignore[assignment]
-        _expand_selector_dicts(
-            df, column_formats, expand_keys=True, expand_values=False, tuple_keys=True
-        )
-    )
-
-    # normalise column totals
     column_total_funcs = (
         {col: "sum" for col in column_totals}
         if isinstance(column_totals, Sequence)
         else (column_totals.copy() if isinstance(column_totals, dict) else {})
+    )
+
+    # expand/normalise column formats
+    column_formats = _unpack_multi_column_dict(  # type: ignore[assignment]
+        _expand_selector_dicts(
+            df, column_formats, expand_keys=True, expand_values=False, tuple_keys=True
+        )
     )
 
     # normalise row totals
@@ -444,11 +450,6 @@ def _xl_setup_table_columns(
         if base_type in dtype_formats:
             fmt = dtype_formats.get(tp, dtype_formats[base_type])
             column_formats.setdefault(col, fmt)
-        if base_type.is_numeric():
-            if column_totals is True:
-                column_total_funcs.setdefault(col, "sum")
-            elif isinstance(column_totals, str):
-                column_total_funcs.setdefault(col, column_totals.lower())
         if col not in column_formats:
             column_formats[col] = fmt_default
 

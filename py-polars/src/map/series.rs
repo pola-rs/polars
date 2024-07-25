@@ -83,7 +83,7 @@ fn infer_and_finish<'a, A: ApplyLambda<'a>>(
         }
     } else if out.is_instance_of::<PyDict>() {
         let first = out.extract::<Wrap<AnyValue<'_>>>()?;
-        applyer.apply_to_struct(py, lambda, null_count, first.0)
+        applyer.apply_into_struct(py, lambda, null_count, first.0)
     }
     // this succeeds for numpy ints as well, where checking if it is pyint fails
     // we do this later in the chain so that we don't extract integers from string chars.
@@ -128,7 +128,7 @@ pub trait ApplyLambda<'a> {
     ) -> PyResult<PySeries>;
 
     // Used to store a struct type
-    fn apply_to_struct(
+    fn apply_into_struct(
         &'a self,
         py: Python,
         lambda: &Bound<'a, PyAny>,
@@ -253,7 +253,7 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
             .into())
     }
 
-    fn apply_to_struct(
+    fn apply_into_struct(
         &'a self,
         py: Python,
         lambda: &Bound<'a, PyAny>,
@@ -546,7 +546,7 @@ where
             .into())
     }
 
-    fn apply_to_struct(
+    fn apply_into_struct(
         &'a self,
         py: Python,
         lambda: &Bound<'a, PyAny>,
@@ -832,7 +832,7 @@ impl<'a> ApplyLambda<'a> for StringChunked {
             .into())
     }
 
-    fn apply_to_struct(
+    fn apply_into_struct(
         &'a self,
         py: Python,
         lambda: &Bound<'a, PyAny>,
@@ -1155,7 +1155,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
             .into())
     }
 
-    fn apply_to_struct(
+    fn apply_into_struct(
         &'a self,
         py: Python,
         lambda: &Bound<'a, PyAny>,
@@ -1570,7 +1570,7 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
             .into())
     }
 
-    fn apply_to_struct(
+    fn apply_into_struct(
         &'a self,
         py: Python,
         lambda: &Bound<'a, PyAny>,
@@ -1976,7 +1976,7 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
             .into())
     }
 
-    fn apply_to_struct(
+    fn apply_into_struct(
         &'a self,
         _py: Python,
         lambda: &Bound<'a, PyAny>,
@@ -2257,7 +2257,7 @@ impl<'a> ApplyLambda<'a> for StructChunked {
         Ok(self.clone().into_series().into())
     }
 
-    fn apply_to_struct(
+    fn apply_into_struct(
         &'a self,
         _py: Python,
         lambda: &Bound<'a, PyAny>,

@@ -1,13 +1,11 @@
-use std::collections::VecDeque;
-
 use arrow::array::BooleanArray;
 use arrow::bitmap::utils::BitmapIter;
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
 use polars_error::PolarsResult;
 
-use super::super::utils::{extend_from_decoder, next, DecodedState, Decoder, MaybeNext};
-use super::super::{utils, PagesIter};
+use super::super::utils;
+use super::super::utils::{extend_from_decoder, DecodedState, Decoder};
 use crate::parquet::encoding::hybrid_rle::gatherer::HybridRleGatherer;
 use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use crate::parquet::encoding::Encoding;
@@ -18,8 +16,8 @@ use crate::read::deserialize::utils::{BatchableCollector, PageValidity};
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
-enum StateTranslation<'a> {
-    Unit(BitmapIter<'a>),
+pub(crate) enum StateTranslation<'a> {
+    Plain(BitmapIter<'a>),
     Rle(HybridRleDecoder<'a>),
 }
 
@@ -43,7 +41,7 @@ impl<'a> utils::StateTranslation<'a, BooleanDecoder> for StateTranslation<'a> {
                 } else {
                     page.num_values()
                 };
-                Ok(Self::Unit(BitmapIter::new(values, 0, num_values)))
+                Ok(Self::Plain(BitmapIter::new(values, 0, num_values)))
             },
             Encoding::Rle => {
                 // @NOTE: For a nullable list, we might very well overestimate the amount of
@@ -65,7 +63,7 @@ impl<'a> utils::StateTranslation<'a, BooleanDecoder> for StateTranslation<'a> {
 
     fn len_when_not_nullable(&self) -> usize {
         match self {
-            Self::Unit(v) => v.len(),
+            Self::Plain(v) => v.len(),
             Self::Rle(v) => v.len(),
         }
     }
@@ -77,7 +75,7 @@ impl<'a> utils::StateTranslation<'a, BooleanDecoder> for StateTranslation<'a> {
 
         // @TODO: Add a skip_in_place on BitmapIter
         match self {
-            Self::Unit(t) => _ = t.nth(n - 1),
+            Self::Plain(t) => _ = t.nth(n - 1),
             Self::Rle(t) => t.skip_in_place(n)?,
         }
 
@@ -94,8 +92,8 @@ impl<'a> utils::StateTranslation<'a, BooleanDecoder> for StateTranslation<'a> {
         let (values, validity) = decoded;
 
         match (self, page_validity) {
-            (Self::Unit(page), None) => page.collect_n_into(values, additional),
-            (Self::Unit(page_values), Some(page_validity)) => extend_from_decoder(
+            (Self::Plain(page), None) => page.collect_n_into(values, additional),
+            (Self::Plain(page_values), Some(page_validity)) => extend_from_decoder(
                 validity,
                 page_validity,
                 Some(additional),
@@ -173,10 +171,10 @@ impl DecodedState for (MutableBitmap, MutableBitmap) {
     }
 }
 
-struct BooleanDecoder;
+pub(crate) struct BooleanDecoder;
 
-impl<'a> Decoder<'a> for BooleanDecoder {
-    type Translation = StateTranslation<'a>;
+impl Decoder for BooleanDecoder {
+    type Translation<'a> = StateTranslation<'a>;
     type Dict = ();
     type DecodedState = (MutableBitmap, MutableBitmap);
 
@@ -187,65 +185,17 @@ impl<'a> Decoder<'a> for BooleanDecoder {
         )
     }
 
-    fn deserialize_dict(&self, _: &DictPage) -> Self::Dict {}
-}
+    fn deserialize_dict(&self, _: DictPage) -> Self::Dict {}
 
-fn finish(
-    data_type: &ArrowDataType,
-    values: MutableBitmap,
-    validity: MutableBitmap,
-) -> BooleanArray {
-    BooleanArray::new(data_type.clone(), values.into(), validity.into())
-}
-
-/// An iterator adapter over [`PagesIter`] assumed to be encoded as boolean arrays
-#[derive(Debug)]
-pub struct Iter<I: PagesIter> {
-    iter: I,
-    data_type: ArrowDataType,
-    items: VecDeque<(MutableBitmap, MutableBitmap)>,
-    chunk_size: Option<usize>,
-    remaining: usize,
-}
-
-impl<I: PagesIter> Iter<I> {
-    pub fn new(
-        iter: I,
+    fn finalize(
+        &self,
         data_type: ArrowDataType,
-        chunk_size: Option<usize>,
-        num_rows: usize,
-    ) -> Self {
-        Self {
-            iter,
+        (values, validity): Self::DecodedState,
+    ) -> ParquetResult<Box<dyn arrow::array::Array>> {
+        Ok(Box::new(BooleanArray::new(
             data_type,
-            items: VecDeque::new(),
-            chunk_size,
-            remaining: num_rows,
-        }
-    }
-}
-
-impl<I: PagesIter> Iterator for Iter<I> {
-    type Item = PolarsResult<BooleanArray>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            let maybe_state = next(
-                &mut self.iter,
-                &mut self.items,
-                &mut None,
-                &mut self.remaining,
-                self.chunk_size,
-                &BooleanDecoder,
-            );
-            match maybe_state {
-                MaybeNext::Some(Ok((values, validity))) => {
-                    return Some(Ok(finish(&self.data_type, values, validity)))
-                },
-                MaybeNext::Some(Err(e)) => return Some(Err(e)),
-                MaybeNext::None => return None,
-                MaybeNext::More => continue,
-            }
-        }
+            values.into(),
+            validity.into(),
+        )))
     }
 }

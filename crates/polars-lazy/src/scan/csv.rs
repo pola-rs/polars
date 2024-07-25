@@ -282,7 +282,7 @@ impl LazyFileListReader for LazyCsvReader {
         )?
         .build()
         .into();
-        lf.opt_state.file_caching = true;
+        lf.opt_state |= OptState::FILE_CACHING;
         Ok(lf)
     }
 

@@ -2,11 +2,12 @@ use polars::export::arrow::record_batch::RecordBatch;
 use polars_core::export::arrow::datatypes::IntegerType;
 use polars_core::utils::arrow::compute::cast::CastOptionsImpl;
 use pyo3::prelude::*;
-use pyo3::types::{PyList, PyTuple};
+use pyo3::types::{PyCapsule, PyList, PyTuple};
 
 use super::*;
 use crate::conversion::{ObjectValue, Wrap};
 use crate::interop;
+use crate::interop::arrow::to_py::dataframe_to_stream;
 use crate::prelude::PyCompatLevel;
 
 #[pymethods]
@@ -129,5 +130,16 @@ impl PyDataFrame {
                 .collect::<PyResult<_>>()?;
             Ok(rbs)
         })
+    }
+
+    #[allow(unused_variables)]
+    #[pyo3(signature = (requested_schema=None))]
+    fn __arrow_c_stream__<'py>(
+        &'py mut self,
+        py: Python<'py>,
+        requested_schema: Option<PyObject>,
+    ) -> PyResult<Bound<'py, PyCapsule>> {
+        self.df.align_chunks();
+        dataframe_to_stream(&self.df, py)
     }
 }

@@ -1031,7 +1031,6 @@ def test_supertype_timezones_4174() -> None:
     df.with_columns(df["dt_London"].shift(fill_value=date_to_fill))
 
 
-@pytest.mark.skip(reason="from_dicts cannot yet infer timezones")
 def test_from_dict_tu_consistency() -> None:
     tz = ZoneInfo("PRC")
     dt = datetime(2020, 8, 1, 12, 0, 0, tzinfo=tz)
@@ -1652,11 +1651,15 @@ def test_tz_aware_truncate() -> None:
 def test_to_string_invalid_format() -> None:
     tz_naive = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime)
     with pytest.raises(
-        ComputeError, match="cannot format NaiveDateTime with format '%z'"
+        ComputeError, match="cannot format timezone-naive Datetime with format '%z'"
     ):
         tz_naive.dt.to_string("%z")
-    with pytest.raises(ComputeError, match="cannot format DateTime with format '%q'"):
+    with pytest.raises(
+        ComputeError, match="cannot format timezone-aware Datetime with format '%q'"
+    ):
         tz_naive.dt.replace_time_zone("UTC").dt.to_string("%q")
+    with pytest.raises(ComputeError, match="cannot format Date with format '%q'"):
+        tz_naive.dt.date().dt.to_string("%q")
 
 
 def test_tz_aware_to_string() -> None:

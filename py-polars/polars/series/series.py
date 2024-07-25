@@ -365,7 +365,10 @@ class Series:
         return series
 
     @classmethod
-    @deprecate_function("use _import_arrow_from_c", version="1.3")
+    @deprecate_function(
+        "use _import_arrow_from_c; if you are using an extension, please compile it with latest 'pyo3-polars'",
+        version="1.3",
+    )
     def _import_from_c(cls, name: str, pointers: list[tuple[int, int]]) -> Self:
         return cls._from_pyseries(PySeries._import_arrow_from_c(name, pointers))
 
@@ -1453,6 +1456,14 @@ class Series:
                 f"`{method!r}`"
             )
             raise NotImplementedError(msg)
+
+    def __arrow_c_stream__(self, requested_schema: object) -> object:
+        """
+        Export a Series via the Arrow PyCapsule Interface.
+
+        https://arrow.apache.org/docs/dev/format/CDataInterface/PyCapsuleInterface.html
+        """
+        return self._s.__arrow_c_stream__(requested_schema)
 
     def _repr_html_(self) -> str:
         """Format output data in HTML for display in Jupyter Notebooks."""

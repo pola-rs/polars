@@ -105,7 +105,7 @@ fn test_streaming_multiple_keys_aggregate() -> PolarsResult<()> {
         .sort_by_exprs(
             [col("sugars_g"), col("calories")],
             SortMultipleOptions::default().with_order_descending_multi([false, false]),
-        )?;
+        );
 
     assert_streaming_with_default(q, true, false);
     Ok(())
@@ -138,7 +138,7 @@ fn test_streaming_unique() -> PolarsResult<()> {
         .sort_by_exprs(
             [cols(["sugars_g", "calories"])],
             SortMultipleOptions::default(),
-        )?;
+        );
 
     assert_streaming_with_default(q, true, false);
     Ok(())
@@ -392,7 +392,7 @@ fn test_sort_maintain_order_streaming() -> PolarsResult<()> {
             SortMultipleOptions::default()
                 .with_nulls_last(true)
                 .with_maintain_order(true),
-        )?
+        )
         .slice(0, 3)
         .with_streaming(true)
         .collect()?;
@@ -419,7 +419,7 @@ fn test_streaming_full_outer_join() -> PolarsResult<()> {
 
     let q = lf_left
         .full_join(lf_right, col("a"), col("a"))
-        .sort_by_exprs([all()], SortMultipleOptions::default())?;
+        .sort_by_exprs([all()], SortMultipleOptions::default());
 
     // Toggle so that the join order is swapped.
     for toggle in [true, true] {

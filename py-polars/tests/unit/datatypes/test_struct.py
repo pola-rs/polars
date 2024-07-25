@@ -965,3 +965,16 @@ def test_struct_out_nullability_from_arrow() -> None:
     df = pl.DataFrame(pd.DataFrame({"abc": [{"a": 1.0, "b": pd.NA}, pd.NA]}))
     res = df.select(a=pl.col("abc").struct.field("a"))
     assert res.to_dicts() == [{"a": 1.0}, {"a": None}]
+
+
+def test_empty_struct_raise() -> None:
+    with pytest.raises(ValueError):
+        pl.struct()
+
+
+def test_named_exprs() -> None:
+    df = pl.DataFrame({"a": 1})
+    schema = {"b": pl.Int64}
+    res = df.select(pl.struct(schema=schema, b=pl.col("a")))
+    assert res.to_dict(as_series=False) == {"b": [{"b": 1}]}
+    assert res.schema["b"] == pl.Struct(schema)

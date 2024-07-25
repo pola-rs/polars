@@ -316,7 +316,7 @@ impl CompressedPage {
 }
 
 /// An uncompressed, encoded dictionary page.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DictPage {
     pub buffer: CowBuffer,
     pub num_values: usize,

@@ -1,6 +1,4 @@
-use std::collections::VecDeque;
-
-use arrow::array::FixedSizeBinaryArray;
+use arrow::array::{Array, FixedSizeBinaryArray};
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
 use arrow::pushable::Pushable;
@@ -8,10 +6,8 @@ use polars_error::PolarsResult;
 use polars_utils::iter::FallibleIterator;
 
 use super::super::utils::{
-    dict_indices_decoder, extend_from_decoder, next, not_implemented, DecodedState, Decoder,
-    MaybeNext,
+    dict_indices_decoder, extend_from_decoder, not_implemented, DecodedState, Decoder,
 };
-use super::super::PagesIter;
 use super::utils::FixedSizeBinary;
 use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use crate::parquet::encoding::Encoding;
@@ -22,8 +18,8 @@ use crate::read::deserialize::utils::{self, PageValidity};
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
-enum StateTranslation<'a> {
-    Unit(std::slice::ChunksExact<'a, u8>),
+pub(crate) enum StateTranslation<'a> {
+    Plain(std::slice::ChunksExact<'a, u8>),
     Dictionary(HybridRleDecoder<'a>, &'a [u8]),
 }
 
@@ -47,7 +43,7 @@ impl<'a> utils::StateTranslation<'a, BinaryDecoder> for StateTranslation<'a> {
                     .into());
                 }
                 let values = values.chunks_exact(decoder.size);
-                Ok(Self::Unit(values))
+                Ok(Self::Plain(values))
             },
             (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict)) => {
                 let values = dict_indices_decoder(page)?;
@@ -59,7 +55,7 @@ impl<'a> utils::StateTranslation<'a, BinaryDecoder> for StateTranslation<'a> {
 
     fn len_when_not_nullable(&self) -> usize {
         match self {
-            Self::Unit(v) => v.len(),
+            Self::Plain(v) => v.len(),
             Self::Dictionary(v, _) => v.len(),
         }
     }
@@ -70,7 +66,7 @@ impl<'a> utils::StateTranslation<'a, BinaryDecoder> for StateTranslation<'a> {
         }
 
         match self {
-            Self::Unit(v) => _ = v.nth(n - 1),
+            Self::Plain(v) => _ = v.nth(n - 1),
             Self::Dictionary(v, _) => v.skip_in_place(n)?,
         }
 
@@ -88,13 +84,13 @@ impl<'a> utils::StateTranslation<'a, BinaryDecoder> for StateTranslation<'a> {
 
         use StateTranslation as T;
         match (self, page_validity) {
-            (T::Unit(page_values), None) => {
+            (T::Plain(page_values), None) => {
                 // @TODO: This can be done through a extend
                 for x in page_values.by_ref().take(additional) {
                     values.push(x)
                 }
             },
-            (T::Unit(page_values), Some(page_validity)) => extend_from_decoder(
+            (T::Plain(page_values), Some(page_validity)) => extend_from_decoder(
                 validity,
                 page_validity,
                 Some(additional),
@@ -134,8 +130,8 @@ impl<'a> utils::StateTranslation<'a, BinaryDecoder> for StateTranslation<'a> {
     }
 }
 
-struct BinaryDecoder {
-    size: usize,
+pub(crate) struct BinaryDecoder {
+    pub(crate) size: usize,
 }
 
 impl DecodedState for (FixedSizeBinary, MutableBitmap) {
@@ -144,9 +140,9 @@ impl DecodedState for (FixedSizeBinary, MutableBitmap) {
     }
 }
 
-impl<'a> Decoder<'a> for BinaryDecoder {
-    type Translation = StateTranslation<'a>;
-    type Dict = &'a [u8];
+impl Decoder for BinaryDecoder {
+    type Translation<'a> = StateTranslation<'a>;
+    type Dict = Vec<u8>;
     type DecodedState = (FixedSizeBinary, MutableBitmap);
 
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState {
@@ -156,70 +152,19 @@ impl<'a> Decoder<'a> for BinaryDecoder {
         )
     }
 
-    fn deserialize_dict(&self, page: &'a DictPage) -> Self::Dict {
-        page.buffer.as_ref()
+    fn deserialize_dict(&self, page: DictPage) -> Self::Dict {
+        page.buffer.into_vec()
     }
-}
 
-pub fn finish(
-    data_type: &ArrowDataType,
-    values: FixedSizeBinary,
-    validity: MutableBitmap,
-) -> FixedSizeBinaryArray {
-    FixedSizeBinaryArray::new(data_type.clone(), values.values.into(), validity.into())
-}
-
-pub struct Iter<I: PagesIter> {
-    iter: I,
-    data_type: ArrowDataType,
-    size: usize,
-    items: VecDeque<(FixedSizeBinary, MutableBitmap)>,
-    dict: Option<Vec<u8>>,
-    chunk_size: Option<usize>,
-    remaining: usize,
-}
-
-impl<I: PagesIter> Iter<I> {
-    pub fn new(
-        iter: I,
+    fn finalize(
+        &self,
         data_type: ArrowDataType,
-        num_rows: usize,
-        chunk_size: Option<usize>,
-    ) -> Self {
-        let size = FixedSizeBinaryArray::get_size(&data_type);
-        Self {
-            iter,
+        (values, validity): Self::DecodedState,
+    ) -> ParquetResult<Box<dyn Array>> {
+        Ok(Box::new(FixedSizeBinaryArray::new(
             data_type,
-            size,
-            items: VecDeque::new(),
-            dict: None,
-            chunk_size,
-            remaining: num_rows,
-        }
-    }
-}
-
-impl<I: PagesIter> Iterator for Iter<I> {
-    type Item = PolarsResult<FixedSizeBinaryArray>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            let maybe_state = next(
-                &mut self.iter,
-                &mut self.items,
-                &mut self.dict.as_deref(),
-                &mut self.remaining,
-                self.chunk_size,
-                &BinaryDecoder { size: self.size },
-            );
-            match maybe_state {
-                MaybeNext::Some(Ok((values, validity))) => {
-                    return Some(Ok(finish(&self.data_type, values, validity)))
-                },
-                MaybeNext::Some(Err(e)) => return Some(Err(e)),
-                MaybeNext::None => return None,
-                MaybeNext::More => continue,
-            }
-        }
+            values.values.into(),
+            validity.into(),
+        )))
     }
 }

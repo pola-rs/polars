@@ -68,7 +68,7 @@ impl Series {
 
         // TODO: Remove this when Decimal data type equality is implemented.
         #[cfg(feature = "dtype-decimal")]
-        if !strict && dtype.is_decimal() {
+        if dtype.is_decimal() {
             let dtype = DataType::Decimal(None, None);
             return Self::from_any_values_and_dtype(name, values, &dtype, strict);
         }
@@ -488,7 +488,17 @@ fn any_values_to_decimal(
     let mut builder = PrimitiveChunkedBuilder::<Int128Type>::new("", values.len());
     for av in values {
         match av {
-            AnyValue::Decimal(v, s) if *s == scale => builder.append_value(*v),
+            // Allow equal or less scale. We do want to support different scales even in 'strict' mode.
+            AnyValue::Decimal(v, s) if *s <= scale => {
+                if *s == scale {
+                    builder.append_value(*v)
+                } else {
+                    match av.strict_cast(&target_dtype) {
+                        Some(AnyValue::Decimal(i, _)) => builder.append_value(i),
+                        _ => builder.append_null(),
+                    }
+                }
+            },
             AnyValue::Null => builder.append_null(),
             av => {
                 if strict {

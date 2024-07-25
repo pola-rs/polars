@@ -325,7 +325,7 @@ pub(super) fn ndjson_file_info(
     };
     let mut reader = std::io::BufReader::new(f);
 
-    let (reader_schema, schema) = if let Some(schema) = ndjson_options.schema.take() {
+    let (mut reader_schema, schema) = if let Some(schema) = ndjson_options.schema.take() {
         if file_options.row_index.is_none() {
             (schema.clone(), schema.clone())
         } else {
@@ -339,6 +339,11 @@ pub(super) fn ndjson_file_info(
             polars_io::ndjson::infer_schema(&mut reader, ndjson_options.infer_schema_length)?;
         prepare_schemas(schema, file_options.row_index.as_ref())
     };
+
+    if let Some(overwriting_schema) = &ndjson_options.schema_overwrite {
+        let schema = Arc::make_mut(&mut reader_schema);
+        overwrite_schema(schema, overwriting_schema)?;
+    }
 
     Ok(FileInfo::new(
         schema,

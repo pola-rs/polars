@@ -406,7 +406,7 @@ fn create_physical_expr_inner(
                         I::Std(_, ddof) => GBM::Std(*ddof),
                         I::Var(_, ddof) => GBM::Var(*ddof),
                         I::AggGroups(_) => {
-                            panic!("agg groups expression only supported in aggregation context")
+                            polars_bail!(InvalidOperation: "agg groups expression only supported in aggregation context")
                         },
                     };
 

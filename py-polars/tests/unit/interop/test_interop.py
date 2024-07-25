@@ -13,6 +13,7 @@ import polars as pl
 from polars.exceptions import ComputeError, UnstableWarning
 from polars.interchange.protocol import CompatLevel
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.utils.pycapsule_utils import PyCapsuleStreamHolder
 
 
 def test_arrow_list_roundtrip() -> None:
@@ -749,3 +750,20 @@ def test_compat_level(monkeypatch: pytest.MonkeyPatch) -> None:
     assert len(df.write_ipc_stream(None).getbuffer()) == 544
     assert len(df.write_ipc_stream(None, compat_level=oldest).getbuffer()) == 672
     assert len(df.write_ipc_stream(None, compat_level=newest).getbuffer()) == 544
+
+
+def test_df_pycapsule_interface() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3],
+            "b": ["a", "b", "c"],
+            "c": ["fooooooooooooooooooooo", "bar", "looooooooooooooooong string"],
+        }
+    )
+    out = pa.table(PyCapsuleStreamHolder(df))
+    assert df.shape == out.shape
+    assert df.schema.names() == out.schema.names
+
+    df2 = pl.from_arrow(out)
+    assert isinstance(df2, pl.DataFrame)
+    assert df.equals(df2)

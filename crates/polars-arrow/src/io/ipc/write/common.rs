@@ -265,6 +265,22 @@ fn set_variadic_buffer_counts(counts: &mut Vec<i64>, array: &dyn Array) {
     }
 }
 
+fn gc_bin_view<'a, T: ViewType + ?Sized>(
+    arr: &'a Box<dyn Array>,
+    concrete_arr: &'a BinaryViewArrayGeneric<T>,
+) -> Cow<'a, Box<dyn Array>> {
+    let bytes_len = concrete_arr.total_bytes_len();
+    let buffer_len = concrete_arr.total_buffer_len();
+    let extra_len = buffer_len.saturating_sub(bytes_len);
+    if extra_len < bytes_len.min(1024) {
+        // We can afford some tiny waste.
+        Cow::Borrowed(arr)
+    } else {
+        // Force GC it.
+        Cow::Owned(concrete_arr.clone().gc().boxed())
+    }
+}
+
 /// Write [`RecordBatchT`] into two sets of bytes, one for the header (ipc::Schema::Message) and the
 /// other for the batch's data
 fn chunk_to_bytes_amortized(
@@ -284,19 +300,11 @@ fn chunk_to_bytes_amortized(
         let array = match array.data_type() {
             ArrowDataType::BinaryView => {
                 let concrete_arr = array.as_any().downcast_ref::<BinaryViewArray>().unwrap();
-                if concrete_arr.is_sliced() {
-                    Cow::Owned(concrete_arr.clone().maybe_gc().boxed())
-                } else {
-                    Cow::Borrowed(array)
-                }
+                gc_bin_view(array, concrete_arr)
             },
             ArrowDataType::Utf8View => {
                 let concrete_arr = array.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
-                if concrete_arr.is_sliced() {
-                    Cow::Owned(concrete_arr.clone().maybe_gc().boxed())
-                } else {
-                    Cow::Borrowed(array)
-                }
+                gc_bin_view(array, concrete_arr)
             },
             _ => Cow::Borrowed(array),
         };
