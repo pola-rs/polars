@@ -5,6 +5,7 @@ mod c_interface;
 mod comparison;
 mod construction;
 mod export;
+mod import;
 mod numpy_ufunc;
 mod scatter;
 

@@ -121,6 +121,8 @@ if TYPE_CHECKING:
 
     from polars import DataFrame, DataType, Expr
     from polars._typing import (
+        ArrowArrayExportable,
+        ArrowStreamExportable,
         BufferInfo,
         ClosedInterval,
         ComparisonOperator,
@@ -161,6 +163,8 @@ ArrayLike = Union[
     "np.ndarray[Any, Any]",
     "pd.Series[Any]",
     "pd.DatetimeIndex",
+    "ArrowArrayExportable",
+    "ArrowStreamExportable",
 ]
 
 
@@ -340,6 +344,12 @@ class Series:
             self._s = dataframe_to_pyseries(
                 original_name, values, dtype=dtype, strict=strict
             )
+
+        elif hasattr(values, "__arrow_c_array__"):
+            self._s = PySeries.from_arrow_c_array(values)
+
+        elif hasattr(values, "__arrow_c_stream__"):
+            self._s = PySeries.from_arrow_c_stream(values)
 
         else:
             msg = (

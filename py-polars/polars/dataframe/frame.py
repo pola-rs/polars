@@ -108,7 +108,7 @@ from polars.schema import Schema
 from polars.selectors import _expand_selector_dicts, _expand_selectors
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import PyDataFrame
+    from polars.polars import PyDataFrame, PySeries
     from polars.polars import dtype_str_repr as _dtype_str_repr
     from polars.polars import write_clipboard_string as _write_clipboard_string
 
@@ -414,6 +414,21 @@ class DataFrame:
             self._df = dataframe_to_pydf(
                 data, schema=schema, schema_overrides=schema_overrides, strict=strict
             )
+
+        elif hasattr(data, "__arrow_c_array__"):
+            # This uses the fact that PySeries.from_arrow_c_array will create a
+            # struct-typed Series. Then we unpack that to a DataFrame.
+            tmp_col_name = ""
+            s = wrap_s(PySeries.from_arrow_c_array(data))
+            self._df = s.to_frame(tmp_col_name).unnest(tmp_col_name)._df
+
+        elif hasattr(data, "__arrow_c_stream__"):
+            # This uses the fact that PySeries.from_arrow_c_stream will create a
+            # struct-typed Series. Then we unpack that to a DataFrame.
+            tmp_col_name = ""
+            s = wrap_s(PySeries.from_arrow_c_stream(data))
+            self._df = s.to_frame(tmp_col_name).unnest(tmp_col_name)._df
+
         else:
             msg = (
                 f"DataFrame constructor called with unsupported type {type(data).__name__!r}"
