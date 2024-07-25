@@ -15,9 +15,7 @@ use tokio::sync::Mutex;
 use super::mmap::ColumnStore;
 use super::predicates::read_this_row_group;
 use super::read_impl::compute_row_group_range;
-use crate::cloud::{
-    build_object_store, object_path_from_string, CloudLocation, CloudOptions, PolarsObjectStore,
-};
+use crate::cloud::{build_object_store, object_path_from_str, CloudOptions, PolarsObjectStore};
 use crate::parquet::metadata::FileMetaDataRef;
 use crate::pl_async::get_runtime;
 use crate::predicates::PhysicalIoExpr;
@@ -39,17 +37,9 @@ impl ParquetObjectStore {
         options: Option<&CloudOptions>,
         metadata: Option<FileMetaDataRef>,
     ) -> PolarsResult<Self> {
-        let (
-            CloudLocation {
-                prefix, expansion, ..
-            },
-            store,
-        ) = build_object_store(uri, options).await?;
+        let (_, store) = build_object_store(uri, options).await?;
 
-        // Any wildcards should already have been resolved here. Without this assertion they would
-        // be ignored.
-        debug_assert!(expansion.is_none(), "path should not contain wildcards");
-        let path = object_path_from_string(prefix)?;
+        let path = object_path_from_str(uri)?;
 
         Ok(ParquetObjectStore {
             store: PolarsObjectStore::new(store),

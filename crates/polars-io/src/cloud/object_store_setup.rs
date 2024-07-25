@@ -41,7 +41,7 @@ fn url_and_creds_to_key(url: &Url, options: Option<&CloudOptions>) -> String {
 }
 
 /// Construct an object_store `Path` from a string without any encoding/decoding.
-pub fn object_path_from_string(path: String) -> PolarsResult<object_store::path::Path> {
+pub fn object_path_from_str(path: &str) -> PolarsResult<object_store::path::Path> {
     object_store::path::Path::parse(path).map_err(to_compute_err)
 }
 
@@ -132,11 +132,11 @@ pub async fn build_object_store(
 
 mod test {
     #[test]
-    fn test_object_path_from_string() {
-        use super::object_path_from_string;
+    fn test_object_path_from_str() {
+        use super::object_path_from_str;
 
         let path = "%25";
-        let out = object_path_from_string(path.to_string()).unwrap();
+        let out = object_path_from_str(path).unwrap();
 
         assert_eq!(out.as_ref(), path);
     }

@@ -122,3 +122,34 @@ def test_unit_io_subdir_has_no_init() -> None:
     assert not (
         io_dir / "__init__.py"
     ).exists(), "Found undesirable '__init__.py' in the 'unit.io' tests subdirectory"
+
+
+@pytest.mark.write_disk()
+@pytest.mark.parametrize(
+    ("scan_funcs", "write_func"),
+    [
+        ([pl.scan_parquet, pl.read_parquet], pl.DataFrame.write_parquet),
+        ([pl.scan_csv, pl.read_csv], pl.DataFrame.write_csv),
+    ],
+)
+@pytest.mark.parametrize("char", ["[", "*", "?"])
+def test_no_glob(
+    scan_funcs: list[Callable[[Any], pl.LazyFrame | pl.DataFrame]],
+    write_func: Callable[[pl.DataFrame, Path], None],
+    char: str,
+    tmp_path: Path,
+) -> None:
+    if sys.platform == "win32" and char != "[":
+        pytest.skip("unsupported glob char for windows")
+
+    tmp_path.mkdir(exist_ok=True)
+
+    df = pl.DataFrame({"x": 1})
+
+    paths = [tmp_path / f"{char}", tmp_path / f"{char}1"]
+
+    write_func(df, paths[0])
+    write_func(df, paths[1])
+
+    for func in scan_funcs:
+        assert_frame_equal(func(paths[0], glob=False).lazy().collect(), df)

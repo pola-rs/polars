@@ -8,9 +8,7 @@ use polars_error::{PolarsError, PolarsResult};
 use super::cache::{get_env_file_cache_ttl, FILE_CACHE};
 use super::entry::FileCacheEntry;
 use super::file_fetcher::{CloudFileFetcher, LocalFileFetcher};
-use crate::cloud::{
-    build_object_store, object_path_from_string, CloudLocation, CloudOptions, PolarsObjectStore,
-};
+use crate::cloud::{build_object_store, object_path_from_str, CloudOptions, PolarsObjectStore};
 use crate::path_utils::{ensure_directory_init, is_cloud_url, POLARS_TEMP_DIR_BASE_PATH};
 use crate::pl_async;
 
@@ -90,14 +88,7 @@ pub fn init_entries_from_uri_list(
                 FILE_CACHE.init_entry(
                     uri.clone(),
                     || {
-                        let CloudLocation {
-                            prefix, expansion, ..
-                        } = CloudLocation::new(uri.as_ref()).unwrap();
-
-                        let cloud_path = {
-                            assert!(expansion.is_none(), "path should not contain wildcards");
-                            object_path_from_string(prefix)?
-                        };
+                        let cloud_path = object_path_from_str(uri)?;
 
                         let object_store =
                             object_stores[std::cmp::min(i, object_stores.len())].clone();
