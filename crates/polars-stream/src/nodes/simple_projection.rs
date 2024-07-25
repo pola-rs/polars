@@ -11,7 +11,10 @@ pub struct SimpleProjectionNode {
 
 impl SimpleProjectionNode {
     pub fn new(columns: Vec<String>, input_schema: Arc<Schema>) -> Self {
-        Self { columns, input_schema }
+        Self {
+            columns,
+            input_schema,
+        }
     }
 }
 
