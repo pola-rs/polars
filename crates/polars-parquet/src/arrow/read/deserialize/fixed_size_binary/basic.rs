@@ -5,9 +5,7 @@ use arrow::pushable::Pushable;
 use polars_error::PolarsResult;
 use polars_utils::iter::FallibleIterator;
 
-use super::super::utils::{
-    dict_indices_decoder, extend_from_decoder, not_implemented, Decoder,
-};
+use super::super::utils::{dict_indices_decoder, extend_from_decoder, not_implemented, Decoder};
 use super::utils::FixedSizeBinary;
 use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use crate::parquet::encoding::Encoding;

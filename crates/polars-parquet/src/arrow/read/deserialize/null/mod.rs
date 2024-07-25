@@ -2,7 +2,6 @@ mod nested;
 
 use arrow::array::{Array, NullArray};
 use arrow::datatypes::ArrowDataType;
-
 pub(crate) use nested::NullDecoder;
 
 use super::{BasicDecompressor, CompressedPagesIter};

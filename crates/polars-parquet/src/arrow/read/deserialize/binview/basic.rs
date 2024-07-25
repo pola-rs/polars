@@ -1,6 +1,9 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use arrow::array::{Array, BinaryViewArray, DictionaryArray, DictionaryKey, MutableBinaryViewArray, PrimitiveArray, Utf8ViewArray, View};
+use arrow::array::{
+    Array, BinaryViewArray, DictionaryArray, DictionaryKey, MutableBinaryViewArray, PrimitiveArray,
+    Utf8ViewArray, View,
+};
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::datatypes::{ArrowDataType, PhysicalType};
 use polars_error::PolarsResult;
@@ -12,8 +15,8 @@ use crate::parquet::page::{DataPage, DictPage};
 use crate::read::deserialize::binary::utils::BinaryIter;
 use crate::read::deserialize::utils::filter::Filter;
 use crate::read::deserialize::utils::{
-    self, binary_views_dict, extend_from_decoder, Decoder, PageValidity,
-    StateTranslation, TranslatedHybridRle,
+    self, binary_views_dict, extend_from_decoder, Decoder, PageValidity, StateTranslation,
+    TranslatedHybridRle,
 };
 use crate::read::PrimitiveLogicalType;
 
@@ -55,22 +58,32 @@ impl<'a> StateTranslation<'a, BinViewDecoder> for BinaryStateTranslation<'a> {
         let views_offset = decoded.0.views().len();
         let buffer_offset = decoded.0.completed_buffers().len();
 
-        dbg!(&self);
+        let mut validate_utf8 = decoder.check_utf8.load(Ordering::Relaxed);
 
         match self {
-            Self::Plain(page_values) => decoder.decode_plain_encoded(
-                decoded,
-                page_values,
-                page_validity.as_mut(),
-                additional,
-            )?,
-            Self::Dictionary(page) => decoder.decode_dictionary_encoded(
-                decoded,
-                &mut page.values,
-                page_validity.as_mut(),
-                page.dict,
-                additional,
-            )?,
+            Self::Plain(page_values) => {
+                decoder.decode_plain_encoded(
+                    decoded,
+                    page_values,
+                    page_validity.as_mut(),
+                    additional,
+                )?;
+
+                // Already done in decode_plain_encoded
+                validate_utf8 = false;
+            },
+            Self::Dictionary(page) => {
+                decoder.decode_dictionary_encoded(
+                    decoded,
+                    &mut page.values,
+                    page_validity.as_mut(),
+                    page.dict,
+                    additional,
+                )?;
+
+                // Already done in decode_plain_encoded
+                validate_utf8 = false;
+            },
             Self::Delta(page_values) => {
                 let (values, validity) = decoded;
                 match page_validity {
@@ -109,15 +122,11 @@ impl<'a> StateTranslation<'a, BinViewDecoder> for BinaryStateTranslation<'a> {
             },
         }
 
-        dbg!(decoded.0.clone().freeze());
-
-        // @TODO: Remove double validation
-        if decoder.check_utf8.load(Ordering::Relaxed) {
-            // @TODO: Better error message
+        if validate_utf8 {
             decoded
                 .0
                 .validate_utf8(buffer_offset, views_offset)
-                .map_err(|_| ParquetError::oos("invalid UTF-8"))?
+                .map_err(|_| ParquetError::oos("Binary view contained invalid UTF-8"))?
         }
 
         Ok(())
@@ -177,7 +186,7 @@ impl utils::Decoder for BinViewDecoder {
             // @TODO: Better error message
             values
                 .validate_utf8(buffer_offset, views_offset)
-                .map_err(|_| ParquetError::oos("invalid UTF-8"))?;
+                .map_err(|_| ParquetError::oos("Binary view contained invalid UTF-8"))?
         }
 
         Ok(())
@@ -191,6 +200,14 @@ impl utils::Decoder for BinViewDecoder {
         dict: &Self::Dict,
         limit: usize,
     ) -> ParquetResult<()> {
+        let validate_utf8 = self.check_utf8.load(Ordering::Relaxed);
+
+        if validate_utf8 && simdutf8::basic::from_utf8(dict.values()).is_err() {
+            return Err(ParquetError::oos(
+                "Binary view dictionary contained invalid UTF-8",
+            ));
+        }
+
         let views_dict = self
             .views_dict
             .get_or_insert_with(|| binary_views_dict(values, dict));
@@ -217,8 +234,8 @@ impl utils::Decoder for BinViewDecoder {
         data_type: ArrowDataType,
         (values, validity): Self::DecodedState,
     ) -> ParquetResult<Box<dyn Array>> {
-        let mut array: BinaryViewArray = values.into();
-        let validity: Bitmap = validity.into();
+        let mut array: BinaryViewArray = values.freeze();
+        let validity: Bitmap = validity.freeze();
 
         if validity.unset_bits() != validity.len() {
             array = array.with_validity(Some(validity))
@@ -230,7 +247,7 @@ impl utils::Decoder for BinViewDecoder {
                 // SAFETY: we already checked utf8
                 unsafe {
                     Ok(Utf8ViewArray::new_unchecked(
-                        data_type.clone(),
+                        data_type,
                         array.views().clone(),
                         array.data_buffers().clone(),
                         array.validity().cloned(),

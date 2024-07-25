@@ -723,12 +723,14 @@ pub(super) fn binary_views_dict(
             if value.len() <= View::MAX_INLINE_SIZE as usize {
                 View::new_inline(value)
             } else {
-                let (offset, _) = dict.offsets().start_end(i);
+                let (offset_start, offset_end) = dict.offsets().start_end(i);
+                debug_assert_eq!(value.len(), offset_end - offset_start);
+
                 let buffer_idx =
                     buffer_idx.get_or_insert_with(|| values.push_buffer(dict.values().clone()));
 
-                debug_assert!(offset <= u32::MAX as usize);
-                View::new_from_bytes(value, *buffer_idx, offset as u32)
+                debug_assert!(offset_start <= u32::MAX as usize);
+                View::new_from_bytes(value, *buffer_idx, offset_start as u32)
             }
         })
         .collect()

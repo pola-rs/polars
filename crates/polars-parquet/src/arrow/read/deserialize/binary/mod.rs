@@ -34,7 +34,7 @@ fn finalize<O: Offset>(
                 data_type,
                 values.offsets.into(),
                 values.values.into(),
-                validity.into(),
+                validity,
             )
             .boxed())
         },
@@ -43,7 +43,7 @@ fn finalize<O: Offset>(
                 data_type,
                 values.offsets.into(),
                 values.values.into(),
-                validity.into(),
+                validity,
             )
             .boxed())
         },

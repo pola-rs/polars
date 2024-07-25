@@ -1112,8 +1112,6 @@ def test_roundtrip_parametric(df: pl.DataFrame, tmp_path: Path) -> None:
     # delete if exists
     path = tmp_path / "data.parquet"
 
-    print(df)
-
     df.write_parquet(path)
     result = pl.read_parquet(path)
 

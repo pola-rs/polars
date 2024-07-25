@@ -5,7 +5,7 @@ use arrow::datatypes::ArrowDataType;
 use polars_error::PolarsResult;
 
 use super::super::utils;
-use super::super::utils::{extend_from_decoder, ExactSize, Decoder};
+use super::super::utils::{extend_from_decoder, Decoder, ExactSize};
 use crate::parquet::encoding::hybrid_rle::gatherer::HybridRleGatherer;
 use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use crate::parquet::encoding::Encoding;

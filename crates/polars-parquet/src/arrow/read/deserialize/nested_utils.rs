@@ -221,9 +221,9 @@ pub(super) trait NestedDecoder {
     /// Initializes a new state
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState;
 
-    fn push_n_valid<'a>(
+    fn push_n_valid(
         &self,
-        state: &mut Self::State<'a>,
+        state: &mut Self::State<'_>,
         decoded: &mut Self::DecodedState,
         n: usize,
     ) -> ParquetResult<()>;
@@ -425,13 +425,13 @@ pub(super) fn extend<D: NestedDecoder>(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn extend_offsets2<'a, 'b, 'c, 'd, D: NestedDecoder>(
+fn extend_offsets2<'a, D: NestedDecoder>(
     page: &mut NestedPage<'a>,
     batched_collector: &mut BatchedCollector<
-        'b,
+        '_,
         (),
         D::DecodedState,
-        BatchedNestedDecoder<'a, 'c, 'd, D>,
+        BatchedNestedDecoder<'a, '_, '_, D>,
     >,
     nested: &mut [Nested],
     additional: usize,
@@ -650,7 +650,10 @@ impl<I: CompressedPagesIter, D: NestedDecoder> PageNestedDecoder<I, D> {
         }
 
         // we pop the primitive off here.
-        debug_assert!(matches!(nested_state.nested.last().unwrap().content, NestedContent::Primitive));
+        debug_assert!(matches!(
+            nested_state.nested.last().unwrap().content,
+            NestedContent::Primitive
+        ));
         _ = nested_state.pop().unwrap();
 
         let array = self.decoder.finalize(self.data_type, target)?;

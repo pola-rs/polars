@@ -79,9 +79,9 @@ impl NestedDecoder for super::BinViewDecoder {
         )
     }
 
-    fn push_n_valid<'a>(
+    fn push_n_valid(
         &self,
-        state: &mut Self::State<'a>,
+        state: &mut Self::State<'_>,
         decoded: &mut Self::DecodedState,
         n: usize,
     ) -> ParquetResult<()> {
