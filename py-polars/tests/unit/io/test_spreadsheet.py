@@ -545,7 +545,7 @@ def test_read_excel_all_sheets_with_sheet_name(path_xlsx: Path, engine: str) -> 
         # basic formatting
         {
             "autofit": True,
-            "table_style": "Table Style Light 16",
+            "table_style": "Table Style Dark 2",
             "column_totals": True,
             "float_precision": 0,
         },
