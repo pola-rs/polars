@@ -152,10 +152,10 @@ fn to_graph_rec<'a>(
                 [input_key],
             )
         },
-        SimpleProjection { schema, input } => {
+        SimpleProjection { input, columns, input_schema } => {
             let input_key = to_graph_rec(*input, ctx)?;
             ctx.graph.add_node(
-                nodes::simple_projection::SimpleProjectionNode::new(schema.clone()),
+                nodes::simple_projection::SimpleProjectionNode::new(columns.clone(), input_schema.clone()),
                 [input_key],
             )
         },

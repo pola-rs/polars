@@ -34,12 +34,14 @@ pub enum PhysNode {
         extend_original: bool,
         output_schema: Arc<Schema>,
     },
+
     Reduce {
         input: PhysNodeKey,
         exprs: Vec<ExprIR>,
         input_schema: Arc<Schema>,
         output_schema: Arc<Schema>,
     },
+
     StreamingSlice {
         input: PhysNodeKey,
         offset: usize,
@@ -53,7 +55,8 @@ pub enum PhysNode {
 
     SimpleProjection {
         input: PhysNodeKey,
-        schema: Arc<Schema>,
+        input_schema: Arc<Schema>,
+        columns: Vec<String>,
     },
 
     InMemorySink {
