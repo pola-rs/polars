@@ -115,6 +115,54 @@ where
 
         ChunkedArray::try_from_chunk_iter(self.name(), iter)
     }
+
+    pub fn apply_into_string_amortized<'a, F>(&'a self, mut f: F) -> StringChunked
+    where
+        F: FnMut(T::Physical<'a>, &mut String),
+    {
+        let mut buf = String::new();
+        let chunks = self
+            .downcast_iter()
+            .map(|arr| {
+                let mut mutarr = MutablePlString::with_capacity(arr.len());
+                arr.iter().for_each(|opt| match opt {
+                    None => mutarr.push_null(),
+                    Some(v) => {
+                        buf.clear();
+                        f(v, &mut buf);
+                        mutarr.push_value(&buf)
+                    },
+                });
+                mutarr.freeze()
+            })
+            .collect::<Vec<_>>();
+        ChunkedArray::from_chunk_iter(self.name(), chunks)
+    }
+
+    pub fn try_apply_into_string_amortized<'a, F, E>(&'a self, mut f: F) -> Result<StringChunked, E>
+    where
+        F: FnMut(T::Physical<'a>, &mut String) -> Result<(), E>,
+    {
+        let mut buf = String::new();
+        let chunks = self
+            .downcast_iter()
+            .map(|arr| {
+                let mut mutarr = MutablePlString::with_capacity(arr.len());
+                for opt in arr.iter() {
+                    match opt {
+                        None => mutarr.push_null(),
+                        Some(v) => {
+                            buf.clear();
+                            f(v, &mut buf)?;
+                            mutarr.push_value(&buf)
+                        },
+                    };
+                }
+                Ok(mutarr.freeze())
+            })
+            .collect::<Vec<_>>();
+        ChunkedArray::try_from_chunk_iter(self.name(), chunks)
+    }
 }
 
 fn apply_in_place_impl<S, F>(name: &str, chunks: Vec<ArrayRef>, f: F) -> ChunkedArray<S>

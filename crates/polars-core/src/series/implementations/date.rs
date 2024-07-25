@@ -242,7 +242,7 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
                 .into_series()
                 .date()
                 .unwrap()
-                .to_string("%Y-%m-%d")
+                .to_string("%Y-%m-%d")?
                 .into_series()),
             #[cfg(feature = "dtype-datetime")]
             DataType::Datetime(_, _) => {
