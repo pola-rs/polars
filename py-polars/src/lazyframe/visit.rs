@@ -37,6 +37,8 @@ impl From<&ExprIR> for PyExprIR {
     }
 }
 
+type Version = (u16, u16);
+
 #[pyclass]
 pub(crate) struct NodeTraverser {
     root: Node,
@@ -48,6 +50,12 @@ pub(crate) struct NodeTraverser {
 }
 
 impl NodeTraverser {
+    // Versioning for IR, (major, minor)
+    // Incremement major on breaking changes to the IR (e.g. renaming
+    // fields, reordering tuples), minor on backwards compatible
+    // changes (e.g. exposing a new expression node).
+    const VERSION: Version = (0, 0);
+
     pub(crate) fn new(root: Node, lp_arena: Arena<IR>, expr_arena: Arena<AExpr>) -> Self {
         Self {
             root,
@@ -109,6 +117,11 @@ impl NodeTraverser {
     fn get_inputs(&mut self) -> PyObject {
         self.fill_inputs();
         self.scratch_to_list()
+    }
+
+    /// The current version of the IR
+    fn version(&self) -> Version {
+        NodeTraverser::VERSION
     }
 
     /// Get Schema of current node as python dict<str, pl.DataType>
