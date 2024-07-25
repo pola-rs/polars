@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use super::compute_node_prelude::*;
 use crate::async_primitives::wait_group::WaitGroup;
-use crate::morsel::{get_ideal_morsel_size, MorselSeq};
+use crate::morsel::{get_ideal_morsel_size, MorselSeq, SourceToken};
 
 pub struct InMemorySourceNode {
     source: Option<Arc<DataFrame>>,
@@ -28,9 +28,9 @@ impl ComputeNode for InMemorySourceNode {
 
     fn initialize(&mut self, num_pipelines: usize) {
         let len = self.source.as_ref().unwrap().height();
-        let ideal_block_count = (len / get_ideal_morsel_size()).max(1);
-        let block_count = ideal_block_count.next_multiple_of(num_pipelines);
-        self.morsel_size = len.div_ceil(block_count).max(1);
+        let ideal_morsel_count = (len / get_ideal_morsel_size()).max(1);
+        let morsel_count = ideal_morsel_count.next_multiple_of(num_pipelines);
+        self.morsel_size = len.div_ceil(morsel_count).max(1);
         self.seq = AtomicU64::new(0);
     }
 
@@ -71,6 +71,7 @@ impl ComputeNode for InMemorySourceNode {
             let slf = &*self;
             join_handles.push(scope.spawn_task(TaskPriority::Low, async move {
                 let wait_group = WaitGroup::default();
+                let source_token = SourceToken::new();
                 loop {
                     let seq = slf.seq.fetch_add(1, Ordering::Relaxed);
                     let offset = (seq as usize * slf.morsel_size) as i64;
@@ -79,12 +80,16 @@ impl ComputeNode for InMemorySourceNode {
                         break;
                     }
 
-                    let mut morsel = Morsel::new(df, MorselSeq::new(seq));
+                    let mut morsel = Morsel::new(df, MorselSeq::new(seq), source_token.clone());
                     morsel.set_consume_token(wait_group.token());
                     if send.send(morsel).await.is_err() {
                         break;
                     }
+
                     wait_group.wait().await;
+                    if source_token.stop_requested() {
+                        break;
+                    }
                 }
 
                 Ok(())

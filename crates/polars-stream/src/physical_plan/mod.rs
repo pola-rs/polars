@@ -34,6 +34,7 @@ pub enum PhysNode {
         extend_original: bool,
         output_schema: Arc<Schema>,
     },
+
     Reduce {
         input: PhysNodeKey,
         exprs: Vec<ExprIR>,
@@ -81,6 +82,10 @@ pub enum PhysNode {
     },
 
     OrderedUnion {
+        inputs: Vec<PhysNodeKey>,
+    },
+    
+    Zip {
         inputs: Vec<PhysNodeKey>,
     },
 }

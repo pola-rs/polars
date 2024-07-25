@@ -230,6 +230,15 @@ fn to_graph_rec<'a>(
             ctx.graph
                 .add_node(nodes::ordered_union::OrderedUnionNode::new(), input_keys)
         },
+
+        Zip { inputs } => {
+            let input_keys = inputs
+                .iter()
+                .map(|i| to_graph_rec(*i, ctx))
+                .collect::<Result<Vec<_>, _>>()?;
+            ctx.graph
+                .add_node(nodes::zip::ZipNode::new(), input_keys)
+        },
     };
 
     ctx.phys_to_graph.insert(phys_node_key, graph_key);
