@@ -1264,6 +1264,14 @@ class DataFrame:
     def _ipython_key_completions_(self) -> list[str]:
         return self.columns
 
+    def __arrow_c_stream__(self, requested_schema: object) -> object:
+        """
+        Export a DataFrame via the Arrow PyCapsule Interface.
+
+        https://arrow.apache.org/docs/dev/format/CDataInterface/PyCapsuleInterface.html
+        """
+        return self._df.__arrow_c_stream__(requested_schema)
+
     def _repr_html_(self, *, _from_series: bool = False) -> str:
         """
         Format output data in HTML for display in Jupyter Notebooks.

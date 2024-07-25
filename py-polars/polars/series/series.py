@@ -1447,6 +1447,14 @@ class Series:
             )
             raise NotImplementedError(msg)
 
+    def __arrow_c_stream__(self, requested_schema: object) -> object:
+        """
+        Export a Series via the Arrow PyCapsule Interface.
+
+        https://arrow.apache.org/docs/dev/format/CDataInterface/PyCapsuleInterface.html
+        """
+        return self._s.__arrow_c_stream__(requested_schema)
+
     def _repr_html_(self) -> str:
         """Format output data in HTML for display in Jupyter Notebooks."""
         return self.to_frame()._repr_html_(_from_series=True)
