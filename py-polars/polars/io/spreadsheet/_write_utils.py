@@ -48,8 +48,6 @@ _XL_DEFAULT_DTYPE_FORMATS_: dict[PolarsDataType, str] = {
     Date: "yyyy-mm-dd;@",
     Time: "hh:mm:ss;@",
 }
-for tp in INTEGER_DTYPES:
-    _XL_DEFAULT_DTYPE_FORMATS_[tp] = _XL_DEFAULT_INTEGER_FORMAT_
 
 
 class _XLFormatCache:
@@ -331,6 +329,7 @@ def _xl_setup_table_columns(
     formulas: dict[str, str | dict[str, str]] | None = None,
     row_totals: RowTotalsDefinition | None = None,
     float_precision: int = 3,
+    table_style: dict[str, Any] | str | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str | tuple[str, ...], str], DataFrame]:
     """Setup and unify all column-related formatting/defaults."""
 
@@ -428,13 +427,19 @@ def _xl_setup_table_columns(
     # seed format cache with default fallback format
     fmt_default = format_cache.get({"valign": "vcenter"})
 
-    # default float format
+    # default float format; account for dark styles
+    if table_style is None or "table style dark" not in str(table_style).lower():
+        int_base_fmt = _XL_DEFAULT_INTEGER_FORMAT_
+        flt_base_fmt = _XL_DEFAULT_FLOAT_FORMAT_
+    else:
+        int_base_fmt = _XL_DEFAULT_INTEGER_FORMAT_.split(";", 1)[0]
+        flt_base_fmt = _XL_DEFAULT_FLOAT_FORMAT_.split(";", 1)[0]
+
+    for tp in INTEGER_DTYPES:
+        _XL_DEFAULT_DTYPE_FORMATS_[tp] = int_base_fmt
+
     zeros = "0" * float_precision
-    fmt_float = (
-        _XL_DEFAULT_INTEGER_FORMAT_
-        if not zeros
-        else _XL_DEFAULT_FLOAT_FORMAT_.replace(".000", f".{zeros}")
-    )
+    fmt_float = int_base_fmt if not zeros else flt_base_fmt.replace(".000", f".{zeros}")
 
     # assign default dtype formats
     for tp, fmt in _XL_DEFAULT_DTYPE_FORMATS_.items():

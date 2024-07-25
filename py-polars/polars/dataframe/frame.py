@@ -3186,6 +3186,7 @@ class DataFrame:
             dtype_formats=dtype_formats,
             header_format=header_format,
             float_precision=float_precision,
+            table_style=table_style,
             row_totals=row_totals,
             sparklines=sparklines,
             formulas=formulas,
