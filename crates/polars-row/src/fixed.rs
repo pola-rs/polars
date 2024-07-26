@@ -198,11 +198,12 @@ pub(crate) unsafe fn encode_iter<I: Iterator<Item = Option<T>>, T: FixedLengthEn
         if let Some(value) = opt_value {
             encode_value(&value, offset, field.descending, values);
         } else {
+            let usize_offset = *offset as usize;
             unsafe {
-                *values.get_unchecked_release_mut(*offset as usize) =
+                *values.get_unchecked_release_mut(usize_offset) =
                     MaybeUninit::new(get_null_sentinel(field))
             };
-            let usize_offset = *offset as usize;
+
             let end_offset = usize_offset + T::ENCODED_LEN;
 
             // initialize remaining bytes

@@ -39,7 +39,7 @@ pub struct RowsEncoded {
     // This vector is in practice a vec of usize's.
     // However, since the vec is eventually passed to arrow as i64's,
     // we need to make sure the right number of bytes are reserved.
-    // Usize's take 4 bytes of memory, whereas i64 takes 8 bytes.
+    // Usize's take 4 bytes of memory on 32bit systems, whereas i64 takes 8 bytes.
     pub(crate) offsets: Vec<u64>,
 }
 

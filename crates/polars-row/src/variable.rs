@@ -216,8 +216,8 @@ pub(crate) unsafe fn encode_iter<'a, I: Iterator<Item = Option<&'a [u8]>>>(
             *offset += written_len as u64;
         }
     }
-    let offset = out.offsets.last().unwrap();
-    let dst: &mut [MaybeUninit<u8>] = values.get_unchecked_release_mut((*offset as usize)..);
+    let offset = *out.offsets.last().unwrap() as usize;
+    let dst: &mut [MaybeUninit<u8>] = values.get_unchecked_release_mut(offset..);
     // write remainder as zeros
     dst.fill(MaybeUninit::new(0));
     out.values.set_len(out.values.capacity())
