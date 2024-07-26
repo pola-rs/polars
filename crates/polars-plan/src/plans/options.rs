@@ -238,6 +238,10 @@ pub struct PythonOptions {
     pub n_rows: Option<usize>,
 }
 
+pub enum PythonPredicate{
+    
+}
+
 #[derive(Clone, PartialEq, Eq, Debug, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct AnonymousScanOptions {
