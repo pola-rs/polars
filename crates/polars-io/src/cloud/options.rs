@@ -502,7 +502,7 @@ impl CloudOptions {
 
                     if token.is_none() {
                         token = (|| {
-                            let hf_home = std::env::var("HF_TOKEN");
+                            let hf_home = std::env::var("HF_HOME");
                             let hf_home = hf_home.as_deref();
                             let hf_home = hf_home.unwrap_or("~/.cache/huggingface");
                             let hf_home = resolve_homedir(std::path::Path::new(&hf_home));
