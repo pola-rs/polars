@@ -291,7 +291,7 @@ async fn test_column_async(column: &str, compression: CompressionOptions) -> Par
 #[test]
 fn test_parquet() {
     // In CI: This test will be skipped because the file does not exist.
-    if let Ok(r) = polars_utils::open_file("data/simple.parquet") {
+    if let Ok(r) = polars_utils::open_file("data/simple.parquet".as_ref()) {
         let reader = ParquetReader::new(r);
         let df = reader.finish().unwrap();
         assert_eq!(df.get_column_names(), ["a", "b"]);

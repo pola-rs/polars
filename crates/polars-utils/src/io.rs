@@ -19,16 +19,10 @@ pub fn _limit_path_len_io_err(path: &Path, err: io::Error) -> PolarsError {
     io::Error::new(err.kind(), msg).into()
 }
 
-pub fn open_file<P>(path: P) -> PolarsResult<File>
-where
-    P: AsRef<Path>,
-{
-    File::open(&path).map_err(|err| _limit_path_len_io_err(path.as_ref(), err))
+pub fn open_file(path: &Path) -> PolarsResult<File> {
+    File::open(path).map_err(|err| _limit_path_len_io_err(path, err))
 }
 
-pub fn create_file<P>(path: P) -> PolarsResult<File>
-where
-    P: AsRef<Path>,
-{
-    File::create(&path).map_err(|err| _limit_path_len_io_err(path.as_ref(), err))
+pub fn create_file(path: &Path) -> PolarsResult<File> {
+    File::create(path).map_err(|err| _limit_path_len_io_err(path, err))
 }

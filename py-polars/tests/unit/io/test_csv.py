@@ -579,11 +579,8 @@ def test_compressed_csv(io_files_path: Path, monkeypatch: pytest.MonkeyPatch) ->
 
     # zstd compressed file
     csv_file = io_files_path / "zstd_compressed.csv.zst"
-    with pytest.raises(
-        ComputeError,
-        match="cannot scan compressed csv; use `read_csv` for compressed data",
-    ):
-        pl.scan_csv(csv_file).collect()
+    out = pl.scan_csv(csv_file, truncate_ragged_lines=True).collect()
+    assert_frame_equal(out, expected)
     out = pl.read_csv(str(csv_file), truncate_ragged_lines=True)
     assert_frame_equal(out, expected)
 

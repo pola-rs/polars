@@ -64,7 +64,7 @@ impl Source for GroupBySource {
         if partition_dir.exists() {
             for file in std::fs::read_dir(partition_dir).expect("should be there") {
                 let spilled = file.unwrap().path();
-                let file = polars_utils::open_file(spilled)?;
+                let file = polars_utils::open_file(&spilled)?;
                 let reader = IpcReader::new(file);
                 let spilled = reader.finish().unwrap();
                 if spilled.n_chunks() > 1 {

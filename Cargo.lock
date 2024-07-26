@@ -3185,6 +3185,7 @@ name = "polars-mem-engine"
 version = "0.41.3"
 dependencies = [
  "futures",
+ "memmap2",
  "polars-arrow",
  "polars-core",
  "polars-error",
@@ -3305,6 +3306,7 @@ dependencies = [
  "futures",
  "hashbrown",
  "libloading",
+ "memmap2",
  "once_cell",
  "percent-encoding",
  "polars-arrow",
