@@ -154,7 +154,11 @@ impl CloudType {
 #[cfg(feature = "cloud")]
 pub(crate) fn parse_url(input: &str) -> std::result::Result<url::Url, url::ParseError> {
     Ok(if input.contains("://") {
-        url::Url::parse(input)?
+        if input.starts_with("http://") || input.starts_with("https://") {
+            url::Url::parse(input)
+        } else {
+            url::Url::parse(&input.replace("%", "%25"))
+        }?
     } else {
         let path = std::path::Path::new(input);
         let mut tmp;

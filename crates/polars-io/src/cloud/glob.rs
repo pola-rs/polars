@@ -6,7 +6,7 @@ use polars_error::PolarsResult;
 use regex::Regex;
 use url::Url;
 
-use super::CloudOptions;
+use super::{parse_url, CloudOptions};
 
 const DELIMITER: char = '/';
 
@@ -129,7 +129,7 @@ impl CloudLocation {
 
     /// Parse a CloudLocation from an url.
     pub fn new(url: &str, glob: bool) -> PolarsResult<CloudLocation> {
-        let parsed = Url::parse(url).map_err(to_compute_err)?;
+        let parsed = parse_url(url).map_err(to_compute_err)?;
         Self::from_url(&parsed, glob)
     }
 }
@@ -315,5 +315,36 @@ mod test {
                 expansion: None,
             },
         )
+    }
+
+    #[test]
+    fn test_cloud_location_percentages() {
+        use super::CloudLocation;
+
+        let path = "s3://bucket/%25";
+        let cloud_location = CloudLocation::new(path, true).unwrap();
+
+        assert_eq!(
+            cloud_location,
+            CloudLocation {
+                scheme: "s3".into(),
+                bucket: "bucket".into(),
+                prefix: "%25".into(),
+                expansion: None,
+            }
+        );
+
+        let path = "https://pola.rs/%25";
+        let cloud_location = CloudLocation::new(path, true).unwrap();
+
+        assert_eq!(
+            cloud_location,
+            CloudLocation {
+                scheme: "https".into(),
+                bucket: "".into(),
+                prefix: "".into(),
+                expansion: None,
+            }
+        );
     }
 }
