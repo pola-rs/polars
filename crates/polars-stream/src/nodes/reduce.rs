@@ -1,15 +1,15 @@
 use std::sync::Arc;
 
 use polars_core::schema::Schema;
-use polars_expr::prelude::PhysicalExpr;
 use polars_expr::reduce::Reduction;
 
 use super::compute_node_prelude::*;
+use crate::expression::StreamExpr;
 use crate::morsel::SourceToken;
 
 enum ReduceState {
     Sink {
-        selectors: Vec<Arc<dyn PhysicalExpr>>,
+        selectors: Vec<StreamExpr>,
         reductions: Vec<Box<dyn Reduction>>,
     },
     Source(Option<DataFrame>),
@@ -23,7 +23,7 @@ pub struct ReduceNode {
 
 impl ReduceNode {
     pub fn new(
-        selectors: Vec<Arc<dyn PhysicalExpr>>,
+        selectors: Vec<StreamExpr>,
         reductions: Vec<Box<dyn Reduction>>,
         output_schema: Arc<Schema>,
     ) -> Self {
@@ -37,7 +37,7 @@ impl ReduceNode {
     }
 
     fn spawn_sink<'env, 's>(
-        selectors: &'env [Arc<dyn PhysicalExpr>],
+        selectors: &'env [StreamExpr],
         reductions: &'env mut [Box<dyn Reduction>],
         scope: &'s TaskScope<'s, 'env>,
         recv: RecvPort<'_>,
@@ -55,7 +55,7 @@ impl ReduceNode {
                     while let Ok(morsel) = recv.recv().await {
                         for (reduction, selector) in local_reductions.iter_mut().zip(selectors) {
                             // TODO: don't convert to physical representation here.
-                            let input = selector.evaluate(morsel.df(), state)?;
+                            let input = selector.evaluate(morsel.df(), state).await?;
                             reduction.update(&input.to_physical_repr())?;
                         }
                     }

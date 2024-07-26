@@ -161,26 +161,6 @@ impl ExpressionConversionState {
     }
 }
 
-pub fn create_physical_expr_streaming(
-    expr_ir: &ExprIR,
-    expr_arena: &Arena<AExpr>,
-    schema: Option<&SchemaRef>,
-    state: &mut ExpressionConversionState,
-) -> PolarsResult<Arc<dyn PhysicalExpr>> {
-    let phys_expr =
-        create_physical_expr_inner(expr_ir.node(), Context::Default, expr_arena, schema, state)?;
-
-    if let Some(name) = expr_ir.get_alias() {
-        Ok(Arc::new(AliasExpr::new(
-            phys_expr,
-            name.clone(),
-            node_to_expr(expr_ir.node(), expr_arena),
-        )))
-    } else {
-        Ok(phys_expr)
-    }
-}
-
 pub fn create_physical_expr(
     expr_ir: &ExprIR,
     ctxt: Context,
