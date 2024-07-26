@@ -7,16 +7,16 @@ use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::datatypes::{ArrowDataType, PhysicalType};
 use arrow::offset::Offset;
 use polars_error::PolarsResult;
-use polars_utils::iter::FallibleIterator;
 
 use super::super::utils;
 use super::super::utils::extend_from_decoder;
 use super::decoders::*;
 use super::utils::*;
+use crate::parquet::encoding::hybrid_rle::gatherer::HybridRleGatherer;
 use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{DataPage, DictPage};
-use crate::read::deserialize::utils::{Decoder, StateTranslation};
+use crate::read::deserialize::utils::{Decoder, GatheredHybridRle, StateTranslation};
 use crate::read::PrimitiveLogicalType;
 
 impl<O: Offset> utils::ExactSize for (Binary<O>, MutableBitmap) {
@@ -203,27 +203,66 @@ impl<O: Offset> utils::Decoder for BinaryDecoder<O> {
         dict: &Self::Dict,
         limit: usize,
     ) -> ParquetResult<()> {
+        struct BinaryGatherer<'a, O> {
+            dict: &'a BinaryDict,
+            _pd: std::marker::PhantomData<O>,
+        }
+
+        impl<'a, O: Offset> HybridRleGatherer<&'a [u8]> for BinaryGatherer<'a, O> {
+            type Target = Binary<O>;
+
+            fn target_reserve(&self, target: &mut Self::Target, n: usize) {
+                // @NOTE: This is an estimation for the reservation. It will probably not be
+                // accurate, but then it is a lot better than not allocating.
+                target.offsets.reserve(n);
+                target.values.reserve(n);
+            }
+
+            fn target_num_elements(&self, target: &Self::Target) -> usize {
+                target.offsets.len_proxy()
+            }
+
+            fn hybridrle_to_target(&self, value: u32) -> ParquetResult<&'a [u8]> {
+                let value = value as usize;
+
+                if value >= self.dict.len() {
+                    return Err(ParquetError::oos("Binary dictionary index out-of-range"));
+                }
+
+                Ok(self.dict.value(value))
+            }
+
+            fn gather_one(&self, target: &mut Self::Target, value: &'a [u8]) -> ParquetResult<()> {
+                target.push(value);
+                Ok(())
+            }
+
+            fn gather_repeated(
+                &self,
+                target: &mut Self::Target,
+                value: &'a [u8],
+                n: usize,
+            ) -> ParquetResult<()> {
+                for _ in 0..n {
+                    target.push(value);
+                }
+                Ok(())
+            }
+        }
+
+        let gatherer = BinaryGatherer {
+            dict,
+            _pd: std::marker::PhantomData,
+        };
+
         match page_validity {
             None => {
-                // @TODO: Make this into a gatherer
-                for x in page_values
-                    .by_ref()
-                    .map(|index| dict.value(index as usize))
-                    .take(limit)
-                {
-                    values.push(x)
-                }
-                page_values.get_result()?;
+                page_values.gather_n_into(values, limit, &gatherer)?;
             },
             Some(page_validity) => {
-                extend_from_decoder(
-                    validity,
-                    page_validity,
-                    Some(limit),
-                    values,
-                    &mut page_values.by_ref().map(|index| dict.value(index as usize)),
-                )?;
-                page_values.get_result()?;
+                let collector = GatheredHybridRle::new(page_values, &gatherer, &[]);
+
+                extend_from_decoder(validity, page_validity, Some(limit), values, collector)?;
             },
         }
 

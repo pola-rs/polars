@@ -35,14 +35,19 @@ impl<'a> utils::StateTranslation<'a, BooleanDecoder> for StateTranslation<'a> {
 
         match page.encoding() {
             Encoding::Plain => {
+                let max_num_values = values.len() * u8::BITS as usize;
                 let num_values = if page_validity.is_some() {
                     // @NOTE: We overestimate the amount of values here, but in the V1
                     // specification we don't really have a way to know the number of valid items.
                     // Without traversing the list.
-                    values.len() * u8::BITS as usize
+                    max_num_values
                 } else {
-                    page.num_values()
+                    // @NOTE: We cannot really trust the value from this as it might relate to the
+                    // number of top-level nested values. Therefore, we do a `min` with the maximum
+                    // number of possible values.
+                    usize::min(page.num_values(), max_num_values)
                 };
+
                 Ok(Self::Plain(BitmapIter::new(values, 0, num_values)))
             },
             Encoding::Rle => {

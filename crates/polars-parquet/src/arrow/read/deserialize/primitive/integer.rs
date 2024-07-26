@@ -52,7 +52,8 @@ where
             },
             (Encoding::Plain, _) => {
                 let values = split_buffer(page)?.values;
-                Ok(Self::Plain(ArrayChunks::new(values).unwrap()))
+                let chunks = ArrayChunks::new(values).unwrap();
+                Ok(Self::Plain(chunks))
             },
             (Encoding::ByteStreamSplit, _) => {
                 let values = split_buffer(page)?.values;

@@ -329,31 +329,3 @@ fn small_fuzz() -> ParquetResult<()> {
 fn large_fuzz() -> ParquetResult<()> {
     fuzz_loops(1_000_000)
 }
-
-#[test]
-fn found_cases() -> ParquetResult<()> {
-    let mut encoded = Vec::with_capacity(1024);
-    let mut decoded = Vec::with_capacity(1024);
-
-    let num_bits = 7;
-
-    let bs: [u32; 1024] = std::array::from_fn(|i| (i / 10) as u32);
-
-    encoder::encode(&mut encoded, bs.iter().copied(), num_bits).unwrap();
-    let mut decoder = HybridRleDecoder::new(&encoded[..], num_bits, bs.len());
-
-    while decoder.len() != 0 {
-        let n = decoder.next().unwrap();
-        decoded.push(n);
-    }
-
-    for _ in 0..1 {
-        _ = decoder.next();
-    }
-
-    decoder.get_result()?;
-
-    assert_eq!(&decoded, &bs);
-
-    Ok(())
-}

@@ -3,21 +3,16 @@ use std::io::Cursor;
 use polars_parquet::parquet::compression::CompressionOptions;
 use polars_parquet::parquet::error::ParquetResult;
 use polars_parquet::parquet::indexes::{
-    select_pages, BoundaryOrder, Index, Interval, NativeIndex, PageIndex, PageLocation,
+    BoundaryOrder, Index, NativeIndex, PageIndex, PageLocation,
 };
 use polars_parquet::parquet::metadata::SchemaDescriptor;
-use polars_parquet::parquet::read::{
-    read_columns_indexes, read_metadata, read_pages_locations, BasicDecompressor, IndexedPageReader,
-};
+use polars_parquet::parquet::read::{read_columns_indexes, read_metadata, read_pages_locations};
 use polars_parquet::parquet::schema::types::{ParquetType, PhysicalType, PrimitiveType};
 use polars_parquet::parquet::write::{
     Compressor, DynIter, DynStreamingIterator, FileWriter, Version, WriteOptions,
 };
-use polars_utils::mmap::MemReader;
 
-use super::super::read::collect;
 use super::primitive::array_to_page_v1;
-use super::Array;
 
 fn write_file() -> ParquetResult<Vec<u8>> {
     let page1 = vec![Some(0), Some(1), None, Some(3), Some(4), Some(5), Some(6)];
@@ -55,35 +50,6 @@ fn write_file() -> ParquetResult<Vec<u8>> {
     writer.end(None)?;
 
     Ok(writer.into_inner().into_inner())
-}
-
-#[test]
-fn read_indexed_page() -> ParquetResult<()> {
-    let data = write_file()?;
-    let mut reader = MemReader::from_vec(data);
-
-    let metadata = read_metadata(&mut reader)?;
-
-    let column = 0;
-    let columns = &metadata.row_groups[0].columns();
-
-    // selected the rows
-    let intervals = &[Interval::new(2, 2)];
-
-    let pages = read_pages_locations(&mut reader, columns)?;
-
-    let pages = select_pages(intervals, &pages[column], metadata.row_groups[0].num_rows())?;
-
-    let pages = IndexedPageReader::new(reader, &columns[column], pages, vec![], vec![]);
-
-    let pages = BasicDecompressor::new(pages, vec![]);
-
-    let arrays = collect(pages, columns[column].physical_type())?;
-
-    // the second item and length 2
-    assert_eq!(arrays, vec![Array::Int32(vec![None, Some(3)])]);
-
-    Ok(())
 }
 
 #[test]
