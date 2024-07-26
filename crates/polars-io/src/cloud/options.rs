@@ -22,6 +22,7 @@ use object_store::ClientOptions;
 use object_store::{BackoffConfig, RetryConfig};
 #[cfg(feature = "aws")]
 use once_cell::sync::Lazy;
+use polars_core::config;
 use polars_error::*;
 #[cfg(feature = "aws")]
 use polars_utils::cache::FastFixedCache;
@@ -475,23 +476,60 @@ impl CloudOptions {
                 #[cfg(feature = "http")]
                 {
                     let mut this = Self::default();
+                    let mut token = None;
+                    let verbose = config::verbose();
 
                     if let Ok(v) = std::env::var("HF_TOKEN") {
-                        this.config = Some(CloudConfig::Http {
-                            headers: vec![("Authorization".into(), format!("Bearer {}", v))],
-                        })
+                        if verbose {
+                            eprintln!("HF token sourced from HF_TOKEN env var");
+                        }
+                        token = Some(v);
                     }
 
                     for (i, (k, v)) in config.into_iter().enumerate() {
                         let (k, v) = (k.as_ref(), v.into());
 
                         if i == 0 && k == "token" {
-                            this.config = Some(CloudConfig::Http {
-                                headers: vec![("Authorization".into(), format!("Bearer {}", v))],
-                            })
+                            if verbose {
+                                eprintln!("HF token sourced from storage_options");
+                            }
+                            token = Some(v);
                         } else {
                             polars_bail!(ComputeError: "unknown configuration key: {}", k)
                         }
+                    }
+
+                    if token.is_none() {
+                        token = (|| {
+                            let hf_home = std::env::var("HF_TOKEN");
+                            let hf_home = hf_home.as_deref();
+                            let hf_home = hf_home.unwrap_or("~/.cache/huggingface");
+                            let hf_home = resolve_homedir(std::path::Path::new(&hf_home));
+                            let cached_token_path = hf_home.join("token");
+
+                            let v = std::string::String::from_utf8(
+                                std::fs::read(&cached_token_path).ok()?,
+                            )
+                            .ok()?;
+
+                            if v.is_empty() {
+                                None
+                            } else {
+                                if verbose {
+                                    eprintln!(
+                                        "HF token sourced from {}",
+                                        cached_token_path.to_str().unwrap()
+                                    );
+                                }
+                                Some(v)
+                            }
+                        })();
+                    }
+
+                    if let Some(v) = token {
+                        this.config = Some(CloudConfig::Http {
+                            headers: vec![("Authorization".into(), format!("Bearer {}", v))],
+                        })
                     }
 
                     Ok(this)
