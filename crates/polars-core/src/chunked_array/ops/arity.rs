@@ -74,10 +74,17 @@ where
     F: UnaryFnMut<Option<T::Physical<'a>>>,
     V::Array: ArrayFromIter<<F as UnaryFnMut<Option<T::Physical<'a>>>>::Ret>,
 {
-    let iter = ca
-        .downcast_iter()
-        .map(|arr| arr.iter().map(&mut op).collect_arr());
-    ChunkedArray::from_chunk_iter(ca.name(), iter)
+    if ca.null_count == 0 {
+        let iter = ca
+            .downcast_iter()
+            .map(|arr| arr.values_iter().map(|x| op(Some(x))).collect_arr());
+        ChunkedArray::from_chunk_iter(ca.name(), iter)
+    } else {
+        let iter = ca
+            .downcast_iter()
+            .map(|arr| arr.iter().map(&mut op).collect_arr());
+        ChunkedArray::from_chunk_iter(ca.name(), iter)
+    }
 }
 
 #[inline]

@@ -265,7 +265,7 @@ pub trait StringNameSpaceImpl: AsString {
         let res_reg = Regex::new(pat);
         let opt_reg = if strict { Some(res_reg?) } else { res_reg.ok() };
         let out: BooleanChunked = if let Some(reg) = opt_reg {
-            ca.apply_values_generic(|s| reg.is_match(s))
+            unary_elementwise_values(ca, |s| reg.is_match(s))
         } else {
             BooleanChunked::full_null(ca.name(), ca.len())
         };
@@ -289,11 +289,9 @@ pub trait StringNameSpaceImpl: AsString {
     fn find(&self, pat: &str, strict: bool) -> PolarsResult<UInt32Chunked> {
         let ca = self.as_string();
         match Regex::new(pat) {
-            Ok(rx) => {
-                Ok(ca.apply_generic(|opt_s| {
-                    opt_s.and_then(|s| rx.find(s)).map(|m| m.start() as u32)
-                }))
-            },
+            Ok(rx) => Ok(unary_elementwise(ca, |opt_s| {
+                opt_s.and_then(|s| rx.find(s)).map(|m| m.start() as u32)
+            })),
             Err(_) if !strict => Ok(UInt32Chunked::full_null(ca.name(), ca.len())),
             Err(e) => Err(PolarsError::ComputeError(
                 format!("Invalid regular expression: {}", e).into(),
@@ -419,7 +417,7 @@ pub trait StringNameSpaceImpl: AsString {
     fn strip_chars(&self, pat: &Series) -> PolarsResult<StringChunked> {
         let ca = self.as_string();
         if pat.dtype() == &DataType::Null {
-            Ok(ca.apply_generic(|opt_s| opt_s.map(|s| s.trim())))
+            Ok(unary_elementwise(ca, |opt_s| opt_s.map(|s| s.trim())))
         } else {
             Ok(strip_chars(ca, pat.str()?))
         }
@@ -428,7 +426,7 @@ pub trait StringNameSpaceImpl: AsString {
     fn strip_chars_start(&self, pat: &Series) -> PolarsResult<StringChunked> {
         let ca = self.as_string();
         if pat.dtype() == &DataType::Null {
-            return Ok(ca.apply_generic(|opt_s| opt_s.map(|s| s.trim_start())));
+            return Ok(unary_elementwise(ca, |opt_s| opt_s.map(|s| s.trim_start())));
         } else {
             Ok(strip_chars_start(ca, pat.str()?))
         }
@@ -437,7 +435,7 @@ pub trait StringNameSpaceImpl: AsString {
     fn strip_chars_end(&self, pat: &Series) -> PolarsResult<StringChunked> {
         let ca = self.as_string();
         if pat.dtype() == &DataType::Null {
-            return Ok(ca.apply_generic(|opt_s| opt_s.map(|s| s.trim_end())));
+            return Ok(unary_elementwise(ca, |opt_s| opt_s.map(|s| s.trim_end())));
         } else {
             Ok(strip_chars_end(ca, pat.str()?))
         }
@@ -524,7 +522,9 @@ pub trait StringNameSpaceImpl: AsString {
             Regex::new(pat)?
         };
 
-        Ok(ca.apply_generic(|opt_s| opt_s.map(|s| reg.find_iter(s).count() as u32)))
+        Ok(unary_elementwise(ca, |opt_s| {
+            opt_s.map(|s| reg.find_iter(s).count() as u32)
+        }))
     }
 
     /// Count all successive non-overlapping regex matches.

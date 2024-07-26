@@ -1,6 +1,7 @@
 //! Implementations of the ChunkApply Trait.
 use std::borrow::Cow;
 
+use crate::chunked_array::arity::{unary_elementwise, unary_elementwise_values};
 use crate::chunked_array::cast::CastOptions;
 use crate::prelude::*;
 use crate::series::IsSorted;
@@ -9,23 +10,6 @@ impl<T> ChunkedArray<T>
 where
     T: PolarsDataType,
 {
-    // Applies a function to all elements, regardless of whether they
-    // are null or not, after which the null mask is copied from the
-    // original array.
-    pub fn apply_values_generic<'a, U, K, F>(&'a self, mut op: F) -> ChunkedArray<U>
-    where
-        U: PolarsDataType,
-        F: FnMut(T::Physical<'a>) -> K,
-        U::Array: ArrayFromIter<K>,
-    {
-        let iter = self.downcast_iter().map(|arr| {
-            let out: U::Array = arr.values_iter().map(&mut op).collect_arr();
-            out.with_validity_typed(arr.validity().cloned())
-        });
-
-        ChunkedArray::from_chunk_iter(self.name(), iter)
-    }
-
     /// Applies a function only to the non-null elements, propagating nulls.
     pub fn apply_nonnull_values_generic<'a, U, K, F>(
         &'a self,
@@ -78,39 +62,6 @@ where
                 out.with_validity_typed(arr.validity().cloned())
             };
             Ok(arr)
-        });
-
-        ChunkedArray::try_from_chunk_iter(self.name(), iter)
-    }
-
-    pub fn apply_generic<'a, U, K, F>(&'a self, mut op: F) -> ChunkedArray<U>
-    where
-        U: PolarsDataType,
-        F: FnMut(Option<T::Physical<'a>>) -> Option<K>,
-        U::Array: ArrayFromIter<Option<K>>,
-    {
-        if self.null_count() == 0 {
-            let iter = self
-                .downcast_iter()
-                .map(|arr| arr.values_iter().map(|x| op(Some(x))).collect_arr());
-            ChunkedArray::from_chunk_iter(self.name(), iter)
-        } else {
-            let iter = self
-                .downcast_iter()
-                .map(|arr| arr.iter().map(&mut op).collect_arr());
-            ChunkedArray::from_chunk_iter(self.name(), iter)
-        }
-    }
-
-    pub fn try_apply_generic<'a, U, K, F, E>(&'a self, op: F) -> Result<ChunkedArray<U>, E>
-    where
-        U: PolarsDataType,
-        F: FnMut(Option<T::Physical<'a>>) -> Result<Option<K>, E> + Copy,
-        U::Array: ArrayFromIter<Option<K>>,
-    {
-        let iter = self.downcast_iter().map(|arr| {
-            let array: U::Array = arr.iter().map(op).try_collect_arr()?;
-            Ok(array.with_validity_typed(arr.validity().cloned()))
         });
 
         ChunkedArray::try_from_chunk_iter(self.name(), iter)
@@ -329,7 +280,7 @@ impl<'a> ChunkApply<'a, bool> for BooleanChunked {
     where
         F: Fn(Option<bool>) -> Option<bool> + Copy,
     {
-        self.apply_generic(f)
+        unary_elementwise(self, f)
     }
 
     fn apply_to_slice<F, T>(&'a self, f: F, slice: &mut [T])
@@ -386,14 +337,14 @@ impl<'a> ChunkApply<'a, &'a str> for StringChunked {
     where
         F: Fn(&'a str) -> Cow<'a, str> + Copy,
     {
-        ChunkedArray::apply_values_generic(self, f)
+        unary_elementwise_values(self, f)
     }
 
     fn apply<F>(&'a self, f: F) -> Self
     where
         F: Fn(Option<&'a str>) -> Option<Cow<'a, str>> + Copy,
     {
-        self.apply_generic(f)
+        unary_elementwise(self, f)
     }
 
     fn apply_to_slice<F, T>(&'a self, f: F, slice: &mut [T])
@@ -422,14 +373,14 @@ impl<'a> ChunkApply<'a, &'a [u8]> for BinaryChunked {
     where
         F: Fn(&'a [u8]) -> Cow<'a, [u8]> + Copy,
     {
-        self.apply_values_generic(f)
+        unary_elementwise_values(self, f)
     }
 
     fn apply<F>(&'a self, f: F) -> Self
     where
         F: Fn(Option<&'a [u8]>) -> Option<Cow<'a, [u8]>> + Copy,
     {
-        self.apply_generic(f)
+        unary_elementwise(self, f)
     }
 
     fn apply_to_slice<F, T>(&'a self, f: F, slice: &mut [T])
