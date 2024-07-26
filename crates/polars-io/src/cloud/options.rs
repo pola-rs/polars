@@ -297,7 +297,7 @@ impl CloudOptions {
                 .get_config_value(&AmazonS3ConfigKey::Region)
                 .is_none()
         {
-            let bucket = crate::cloud::CloudLocation::new(url)?.bucket;
+            let bucket = crate::cloud::CloudLocation::new(url, false)?.bucket;
             let region = {
                 let bucket_region = BUCKET_REGION.lock().unwrap();
                 bucket_region.get(bucket.as_str()).cloned()

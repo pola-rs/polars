@@ -40,28 +40,8 @@ fn url_and_creds_to_key(url: &Url, options: Option<&CloudOptions>) -> String {
     )
 }
 
-/// Construct an object_store `Path` from a string:
-/// * Cloud paths have `fs://` removed - i.e. `s3://data/1.csv` -> `data/1.csv`
-/// * Local paths have leading slashes removed - i.e. `/data/1.csv` -> `data/1.csv`
-/// * HTTP paths return an empty `Path` - i.e. `https://pola.rs/1.csv` -> ""
-///   * This is because for HTTP, the path is bound to the object store.
-pub fn new_object_path(path: &str) -> PolarsResult<object_store::path::Path> {
-    let path = if let Some(i) = path.find("://") {
-        // This is hit because the user requests `glob=False`, the raw path is
-        // given and we need to strip the leading `://`.
-        if path.starts_with("http://") || path.starts_with("https://") {
-            ""
-        } else {
-            &path[i + 3..]
-        }
-    } else if let Some(v) = path.strip_prefix('/') {
-        // `glob=False` and `FORCE_ASYNC`.
-        v
-    } else {
-        // `glob=True`, the caller context gave us a parsed CloudLocation prefix.
-        path
-    };
-
+/// Construct an object_store `Path` from a string without any encoding/decoding.
+pub fn object_path_from_str(path: &str) -> PolarsResult<object_store::path::Path> {
     object_store::path::Path::parse(path).map_err(to_compute_err)
 }
 
@@ -73,9 +53,10 @@ pub async fn build_object_store(
         allow(unused_variables)
     )]
     options: Option<&CloudOptions>,
+    glob: bool,
 ) -> BuildResult {
     let parsed = parse_url(url).map_err(to_compute_err)?;
-    let cloud_location = CloudLocation::from_url(&parsed)?;
+    let cloud_location = CloudLocation::from_url(&parsed, glob)?;
 
     let key = url_and_creds_to_key(&parsed, options);
     let mut allow_cache = true;
@@ -152,11 +133,11 @@ pub async fn build_object_store(
 
 mod test {
     #[test]
-    fn test_new_object_path() {
-        use super::new_object_path;
+    fn test_object_path_from_str() {
+        use super::object_path_from_str;
 
         let path = "%25";
-        let out = new_object_path(path).unwrap();
+        let out = object_path_from_str(path).unwrap();
 
         assert_eq!(out.as_ref(), path);
     }

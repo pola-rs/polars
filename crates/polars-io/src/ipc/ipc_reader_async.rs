@@ -8,7 +8,9 @@ use polars_core::frame::DataFrame;
 use polars_core::schema::Schema;
 use polars_error::{polars_bail, polars_err, to_compute_err, PolarsResult};
 
-use crate::cloud::{build_object_store, new_object_path, CloudOptions, PolarsObjectStore};
+use crate::cloud::{
+    build_object_store, object_path_from_str, CloudLocation, CloudOptions, PolarsObjectStore,
+};
 use crate::file_cache::{init_entries_from_uri_list, FileCacheEntry};
 use crate::predicates::PhysicalIoExpr;
 use crate::prelude::{materialize_projection, IpcReader};
@@ -65,9 +67,10 @@ impl IpcReaderAsync {
         cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<IpcReaderAsync> {
         let cache_entry = init_entries_from_uri_list(&[Arc::from(uri)], cloud_options)?[0].clone();
-        let (_, store) = build_object_store(uri, cloud_options).await?;
+        let (CloudLocation { prefix, .. }, store) =
+            build_object_store(uri, cloud_options, false).await?;
 
-        let path = new_object_path(uri)?;
+        let path = object_path_from_str(&prefix)?;
 
         Ok(Self {
             store: PolarsObjectStore::new(store),
