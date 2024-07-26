@@ -148,8 +148,9 @@ fn encode_value<T: FixedLengthEncoding>(
     descending: bool,
     buf: &mut [MaybeUninit<u8>],
 ) {
-    let end_offset = *offset as usize + T::ENCODED_LEN;
-    let dst = unsafe { buf.get_unchecked_release_mut((*offset as usize)..end_offset) };
+    let usize_offset = *offset as usize;
+    let end_offset = usize_offset + T::ENCODED_LEN;
+    let dst = unsafe { buf.get_unchecked_release_mut(usize_offset..end_offset) };
     // set valid
     dst[0] = MaybeUninit::new(1);
     let mut encoded = value.encode();
@@ -201,10 +202,11 @@ pub(crate) unsafe fn encode_iter<I: Iterator<Item = Option<T>>, T: FixedLengthEn
                 *values.get_unchecked_release_mut(*offset as usize) =
                     MaybeUninit::new(get_null_sentinel(field))
             };
-            let end_offset = *offset as usize + T::ENCODED_LEN;
+            let usize_offset = *offset as usize;
+            let end_offset = usize_offset + T::ENCODED_LEN;
 
             // initialize remaining bytes
-            let remainder = values.get_unchecked_release_mut((*offset as usize) + 1..end_offset);
+            let remainder = values.get_unchecked_release_mut(usize_offset + 1..end_offset);
             remainder.fill(MaybeUninit::new(0));
 
             *offset = end_offset as u64;
