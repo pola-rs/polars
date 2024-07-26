@@ -15,7 +15,7 @@ use tokio::sync::Mutex;
 use super::mmap::ColumnStore;
 use super::predicates::read_this_row_group;
 use super::read_impl::compute_row_group_range;
-use crate::cloud::{build_object_store, object_path_from_str, CloudOptions, PolarsObjectStore};
+use crate::cloud::{build_object_store, new_object_path, CloudOptions, PolarsObjectStore};
 use crate::parquet::metadata::FileMetaDataRef;
 use crate::pl_async::get_runtime;
 use crate::predicates::PhysicalIoExpr;
@@ -39,7 +39,7 @@ impl ParquetObjectStore {
     ) -> PolarsResult<Self> {
         let (_, store) = build_object_store(uri, options).await?;
 
-        let path = object_path_from_str(uri)?;
+        let path = new_object_path(uri)?;
 
         Ok(ParquetObjectStore {
             store: PolarsObjectStore::new(store),

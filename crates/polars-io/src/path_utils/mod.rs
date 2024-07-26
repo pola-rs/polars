@@ -148,7 +148,7 @@ pub fn expand_paths_hive(
         {
             use polars_utils::_limit_path_len_io_err;
 
-            use crate::cloud::object_path_from_str;
+            use crate::cloud::new_object_path;
 
             if first_path.starts_with("hf://") {
                 let (expand_start_idx, paths) =
@@ -174,7 +174,7 @@ pub fn expand_paths_hive(
                     let (cloud_location, store) =
                         crate::cloud::build_object_store(path, cloud_options).await?;
 
-                    let prefix = object_path_from_str(if glob {
+                    let prefix = new_object_path(if glob {
                         &cloud_location.prefix
                     } else {
                         // No-glob requested, we need to keep the glob chars
