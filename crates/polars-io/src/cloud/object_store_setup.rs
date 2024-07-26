@@ -54,9 +54,9 @@ pub fn new_object_path(path: &str) -> PolarsResult<object_store::path::Path> {
         } else {
             &path[i + 3..]
         }
-    } else if path.starts_with('/') {
+    } else if let Some(v) = path.strip_prefix('/') {
         // `glob=False` and `FORCE_ASYNC`.
-        &path[1..]
+        v
     } else {
         // `glob=True`, the caller context gave us a parsed CloudLocation prefix.
         path
