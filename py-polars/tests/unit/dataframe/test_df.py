@@ -2848,5 +2848,5 @@ def test_get_column_index() -> None:
     assert df.get_column_index("actual") == 0
     assert df.get_column_index("expected") == 1
 
-    with pytest.raises(ColumnNotFoundError, match="'missing' not found in DataFrame"):
+    with pytest.raises(ColumnNotFoundError, match="missing"):
         df.get_column_index("missing")

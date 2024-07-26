@@ -4755,12 +4755,9 @@ class DataFrame:
         >>> df.get_column_index("ham")
         2
         >>> df.get_column_index("sandwich")  # doctest: +SKIP
-        ColumnNotFoundError: 'sandwich' not found in DataFrame
+        ColumnNotFoundError: sandwich
         """
-        if (idx := self._df.get_column_index(name)) is None:
-            msg = f"{name!r} not found in DataFrame"
-            raise ColumnNotFoundError(msg)
-        return idx
+        return self._df.get_column_index(name)
 
     def replace_column(self, index: int, column: Series) -> DataFrame:
         """
