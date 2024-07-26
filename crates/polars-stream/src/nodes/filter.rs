@@ -1,16 +1,14 @@
-use std::sync::Arc;
-
 use polars_error::polars_err;
-use polars_expr::prelude::PhysicalExpr;
 
 use super::compute_node_prelude::*;
+use crate::expression::StreamExpr;
 
 pub struct FilterNode {
-    predicate: Arc<dyn PhysicalExpr>,
+    predicate: StreamExpr,
 }
 
 impl FilterNode {
-    pub fn new(predicate: Arc<dyn PhysicalExpr>) -> Self {
+    pub fn new(predicate: StreamExpr) -> Self {
         Self { predicate }
     }
 }
@@ -41,8 +39,9 @@ impl ComputeNode for FilterNode {
             let slf = &*self;
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 while let Ok(morsel) = recv.recv().await {
-                    let morsel = morsel.try_map(|df| {
-                        let mask = slf.predicate.evaluate(&df, state)?;
+
+                    let morsel = morsel.async_try_map(|df| async move {
+                        let mask = slf.predicate.evaluate(&df, state).await?;
                         let mask = mask.bool().map_err(|_| {
                             polars_err!(
                                 ComputeError: "filter predicate must be of type `Boolean`, got `{}`", mask.dtype()
@@ -51,7 +50,7 @@ impl ComputeNode for FilterNode {
 
                         // We already parallelize, call the sequential filter.
                         df._filter_seq(mask)
-                    })?;
+                    }).await?;
 
                     if morsel.df().is_empty() {
                         continue;

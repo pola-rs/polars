@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 
@@ -127,6 +128,15 @@ impl Morsel {
         f: F,
     ) -> Result<Self, E> {
         self.df = f(self.df)?;
+        Ok(self)
+    }
+
+    pub async fn async_try_map<E, M, F>(mut self, f: M) -> Result<Self, E>
+    where
+        M: FnOnce(DataFrame) -> F,
+        F: Future<Output = Result<DataFrame, E>>,
+    {
+        self.df = f(self.df).await?;
         Ok(self)
     }
 
