@@ -37,14 +37,16 @@ impl<T: GetSize, E: Error> GetSize for Result<T, E> {
     }
 }
 
+#[cfg(feature = "cloud")]
 pub(crate) struct Size(u64);
 
+#[cfg(feature = "cloud")]
 impl GetSize for Size {
     fn size(&self) -> u64 {
         self.0
     }
 }
-
+#[cfg(feature = "cloud")]
 impl From<u64> for Size {
     fn from(value: u64) -> Self {
         Self(value)

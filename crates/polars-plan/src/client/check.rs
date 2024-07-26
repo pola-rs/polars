@@ -153,10 +153,9 @@ impl<'a> Iterator for DslPlanIter<'a> {
     type Item = &'a DslPlan;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.stack.pop().map(|next| {
-            next.inputs(&mut self.stack);
-            next
-        })
+        self.stack
+            .pop()
+            .inspect(|next| next.inputs(&mut self.stack))
     }
 }
 
