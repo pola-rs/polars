@@ -7,9 +7,11 @@ use arrow::array::{
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::datatypes::ArrowDataType;
 use arrow::pushable::Pushable;
+use arrow::types::Offset;
 use polars_error::{polars_err, PolarsError, PolarsResult};
 
 use self::filter::Filter;
+use super::binary::utils::Binary;
 use super::{BasicDecompressor, CompressedPagesIter, ParquetError};
 use crate::parquet::encoding::hybrid_rle::gatherer::{
     HybridRleGatherer, ZeroCount, ZeroCountGatherer,
@@ -69,6 +71,20 @@ impl<'a, D: Decoder> State<'a, D> {
             page_validity,
             translation,
             filter,
+        })
+    }
+
+    pub fn new_nested(
+        decoder: &D,
+        page: &'a DataPage,
+        dict: Option<&'a D::Dict>,
+    ) -> PolarsResult<Self> {
+        let translation = D::Translation::new(decoder, page, dict, None, None)?;
+
+        Ok(Self {
+            translation,
+            page_validity: None,
+            filter: None,
         })
     }
 
@@ -438,7 +454,7 @@ where
 
 impl<'a, 'b, 'c, O, G> BatchableCollector<u8, Vec<u8>> for GatheredHybridRle<'a, 'b, 'c, O, G>
 where
-    O: Clone + Default,
+    O: Clone,
     G: HybridRleGatherer<O, Target = Vec<u8>>,
 {
     #[inline]
@@ -454,6 +470,33 @@ where
 
     #[inline]
     fn push_n_nulls(&mut self, target: &mut Vec<u8>, n: usize) -> ParquetResult<()> {
+        self.gatherer
+            .gather_repeated(target, self.null_value.clone(), n)?;
+        Ok(())
+    }
+}
+
+impl<'a, 'b, 'c, O, Out, G> BatchableCollector<u8, Binary<O>>
+    for GatheredHybridRle<'a, 'b, 'c, Out, G>
+where
+    O: Offset,
+    Out: Clone,
+    G: HybridRleGatherer<Out, Target = Binary<O>>,
+{
+    #[inline]
+    fn reserve(target: &mut Binary<O>, n: usize) {
+        target.offsets.reserve(n);
+        target.values.reserve(n);
+    }
+
+    #[inline]
+    fn push_n(&mut self, target: &mut Binary<O>, n: usize) -> ParquetResult<()> {
+        self.decoder.gather_n_into(target, n, self.gatherer)?;
+        Ok(())
+    }
+
+    #[inline]
+    fn push_n_nulls(&mut self, target: &mut Binary<O>, n: usize) -> ParquetResult<()> {
         self.gatherer
             .gather_repeated(target, self.null_value.clone(), n)?;
         Ok(())
@@ -579,8 +622,6 @@ pub(crate) trait NestedDecoder: Decoder {
         decoded: &mut Self::DecodedState,
         n: usize,
     ) -> ParquetResult<()> {
-        _ = state.page_validity.take();
-
         state.extend_from_state(self, decoded, n)?;
         Self::validity_extend(state, decoded, true, n);
 

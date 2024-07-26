@@ -3,7 +3,6 @@ mod binary;
 /// In comparison to Arrow, this in-memory format does not leverage logical types nor SIMD operations,
 /// but OTOH it has no external dependencies and is very familiar to Rust developers.
 mod boolean;
-mod deserialize;
 mod dictionary;
 mod fixed_binary;
 mod indexes;
@@ -17,6 +16,7 @@ use std::fs::File;
 use dictionary::{deserialize as deserialize_dict, DecodedDictPage};
 #[cfg(feature = "async")]
 use futures::StreamExt;
+use polars_parquet::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use polars_parquet::parquet::error::{ParquetError, ParquetResult};
 use polars_parquet::parquet::metadata::ColumnChunkMetaData;
 use polars_parquet::parquet::page::{CompressedPage, DataPage, Page};
@@ -35,6 +35,10 @@ use polars_parquet::parquet::FallibleStreamingIterator;
 use polars_utils::mmap::MemReader;
 
 use super::*;
+
+pub fn hybrid_rle_iter(d: HybridRleDecoder) -> ParquetResult<std::vec::IntoIter<u32>> {
+    Ok(d.collect()?.into_iter())
+}
 
 pub fn get_path() -> PathBuf {
     let dir = env!("CARGO_MANIFEST_DIR");

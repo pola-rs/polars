@@ -6,7 +6,7 @@ use polars_parquet::parquet::read::levels::get_bit_width;
 use polars_parquet::parquet::types::NativeType;
 
 use super::dictionary::PrimitivePageDict;
-use super::Array;
+use super::{hybrid_rle_iter, Array};
 
 fn read_buffer<T: NativeType>(values: &[u8]) -> impl Iterator<Item = T> + '_ {
     let chunks = values.chunks_exact(std::mem::size_of::<T>());
@@ -88,7 +88,7 @@ fn read_array_impl<I: Iterator<Item = i64>>(
             let num_bits = get_bit_width(rep_level_encoding.1);
             let rep_levels = HybridRleDecoder::new(rep_levels, num_bits, length);
             compose_array(
-                rep_levels,
+                hybrid_rle_iter(rep_levels)?,
                 std::iter::repeat(0).take(length),
                 max_rep_level,
                 max_def_level,
@@ -100,7 +100,7 @@ fn read_array_impl<I: Iterator<Item = i64>>(
             let def_levels = HybridRleDecoder::new(def_levels, num_bits, length);
             compose_array(
                 std::iter::repeat(0).take(length),
-                def_levels,
+                hybrid_rle_iter(def_levels)?,
                 max_rep_level,
                 max_def_level,
                 values,
@@ -111,7 +111,13 @@ fn read_array_impl<I: Iterator<Item = i64>>(
                 HybridRleDecoder::new(rep_levels, get_bit_width(rep_level_encoding.1), length);
             let def_levels =
                 HybridRleDecoder::new(def_levels, get_bit_width(def_level_encoding.1), length);
-            compose_array(rep_levels, def_levels, max_rep_level, max_def_level, values)
+            compose_array(
+                hybrid_rle_iter(rep_levels)?,
+                hybrid_rle_iter(def_levels)?,
+                max_rep_level,
+                max_def_level,
+                values,
+            )
         },
         _ => todo!(),
     }
