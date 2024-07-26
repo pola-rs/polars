@@ -39,8 +39,6 @@ use url::Url;
 #[cfg(feature = "file_cache")]
 use crate::file_cache::get_env_file_cache_ttl;
 #[cfg(feature = "aws")]
-use crate::path_utils::resolve_homedir;
-#[cfg(feature = "aws")]
 use crate::pl_async::with_concurrency_budget;
 
 #[cfg(feature = "aws")]
@@ -211,6 +209,8 @@ fn read_config(
     builder: &mut AmazonS3Builder,
     items: &[(&Path, &[(&str, AmazonS3ConfigKey)])],
 ) -> Option<()> {
+    use crate::path_utils::resolve_homedir;
+
     for (path, keys) in items {
         if keys
             .iter()
@@ -475,6 +475,8 @@ impl CloudOptions {
                 #[cfg(feature = "http")]
                 {
                     use polars_core::config;
+
+                    use crate::path_utils::resolve_homedir;
 
                     let mut this = Self::default();
                     let mut token = None;
