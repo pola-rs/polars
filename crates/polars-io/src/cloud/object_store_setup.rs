@@ -41,9 +41,9 @@ fn url_and_creds_to_key(url: &Url, options: Option<&CloudOptions>) -> String {
 }
 
 /// Construct an object_store `Path` from a string:
-/// * Local paths have leading slashes removed - i.e. `/data/1.csv` -> `data/1.csv`
 /// * Cloud paths have `fs://` removed - i.e. `s3://data/1.csv` -> `data/1.csv`
-/// * HTTP paths return an empty `Path` - i.e. `https://pola.rs/1.csv` -> ``
+/// * Local paths have leading slashes removed - i.e. `/data/1.csv` -> `data/1.csv`
+/// * HTTP paths return an empty `Path` - i.e. `https://pola.rs/1.csv` -> ""
 ///   * This is because for HTTP, the path is bound to the object store.
 pub fn new_object_path(path: &str) -> PolarsResult<object_store::path::Path> {
     let path = if let Some(i) = path.find("://") {
