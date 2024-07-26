@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import gzip
 import io
-import os
 import sys
 import textwrap
 import zlib
@@ -2194,23 +2193,6 @@ def test_fsspec_not_available() -> None:
                 "s3://foods/cabbage.csv",
                 storage_options={"key": "key", "secret": "secret"},
             )
-
-
-@pytest.mark.write_disk()
-@pytest.mark.skipif(
-    os.environ.get("POLARS_FORCE_ASYNC") == "1" or sys.platform == "win32",
-    reason="only local",
-)
-def test_read_csv_no_glob(tmpdir: Path) -> None:
-    df = pl.DataFrame({"foo": 1})
-
-    p = tmpdir / "*.csv"
-    df.write_csv(str(p))
-    p = tmpdir / "*1.csv"
-    df.write_csv(str(p))
-
-    p = tmpdir / "*.csv"
-    assert_frame_equal(pl.read_csv(str(p), glob=False), df)
 
 
 def test_read_csv_dtypes_deprecated() -> None:

@@ -148,7 +148,7 @@ pub fn expand_paths_hive(
         {
             use polars_utils::_limit_path_len_io_err;
 
-            use crate::cloud::object_path_from_string;
+            use crate::cloud::object_path_from_str;
 
             if first_path.starts_with("hf://") {
                 let (expand_start_idx, paths) =
@@ -172,23 +172,24 @@ pub fn expand_paths_hive(
              -> PolarsResult<(usize, Vec<PathBuf>)> {
                 crate::pl_async::get_runtime().block_on_potential_spawn(async {
                     let (cloud_location, store) =
-                        crate::cloud::build_object_store(path, cloud_options).await?;
+                        crate::cloud::build_object_store(path, cloud_options, glob).await?;
+                    let prefix = object_path_from_str(&cloud_location.prefix)?;
 
-                    let prefix = object_path_from_string(cloud_location.prefix.clone())?;
-
-                    let out = if !path.ends_with("/") && cloud_location.expansion.is_none() && {
-                        // We need to check if it is a directory for local paths (we can be here due
-                        // to FORCE_ASYNC). For cloud paths the convention is that the user must add
-                        // a trailing slash `/` to scan directories. We don't infer it as that would
-                        // mean sending one network request per path serially (very slow).
-                        is_cloud || PathBuf::from(path).is_file()
-                    } {
+                    let out = if !path.ends_with("/")
+                        && (!glob || cloud_location.expansion.is_none())
+                        && {
+                            // We need to check if it is a directory for local paths (we can be here due
+                            // to FORCE_ASYNC). For cloud paths the convention is that the user must add
+                            // a trailing slash `/` to scan directories. We don't infer it as that would
+                            // mean sending one network request per path serially (very slow).
+                            is_cloud || PathBuf::from(path).is_file()
+                        } {
                         (
                             0,
                             vec![PathBuf::from(format_path(
                                 &cloud_location.scheme,
                                 &cloud_location.bucket,
-                                &cloud_location.prefix,
+                                prefix.as_ref(),
                             ))],
                         )
                     } else {
@@ -251,7 +252,7 @@ pub fn expand_paths_hive(
 
                 let glob_start_idx = get_glob_start_idx(path.to_str().unwrap().as_bytes());
 
-                let path = if glob_start_idx.is_some() {
+                let path = if glob && glob_start_idx.is_some() {
                     path.clone()
                 } else {
                     let (expand_start_idx, paths) =

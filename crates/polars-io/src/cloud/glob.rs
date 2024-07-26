@@ -84,7 +84,7 @@ pub struct CloudLocation {
 }
 
 impl CloudLocation {
-    pub fn from_url(parsed: &Url) -> PolarsResult<CloudLocation> {
+    pub fn from_url(parsed: &Url, glob: bool) -> PolarsResult<CloudLocation> {
         let is_local = parsed.scheme() == "file";
         let (bucket, key) = if is_local {
             ("".into(), parsed.path())
@@ -109,10 +109,16 @@ impl CloudLocation {
         let key = percent_encoding::percent_decode_str(key)
             .decode_utf8()
             .map_err(to_compute_err)?;
-        let (mut prefix, expansion) = extract_prefix_expansion(&key)?;
-        if is_local && key.starts_with(DELIMITER) {
-            prefix.insert(0, DELIMITER);
-        }
+        let (prefix, expansion) = if glob {
+            let (mut prefix, expansion) = extract_prefix_expansion(&key)?;
+            if is_local && key.starts_with(DELIMITER) {
+                prefix.insert(0, DELIMITER);
+            }
+            (prefix, expansion)
+        } else {
+            (key.to_string(), None)
+        };
+
         Ok(CloudLocation {
             scheme: parsed.scheme().into(),
             bucket,
@@ -122,9 +128,9 @@ impl CloudLocation {
     }
 
     /// Parse a CloudLocation from an url.
-    pub fn new(url: &str) -> PolarsResult<CloudLocation> {
+    pub fn new(url: &str, glob: bool) -> PolarsResult<CloudLocation> {
         let parsed = Url::parse(url).map_err(to_compute_err)?;
-        Self::from_url(&parsed)
+        Self::from_url(&parsed, glob)
     }
 }
 
@@ -173,7 +179,7 @@ pub async fn glob(url: &str, cloud_options: Option<&CloudOptions>) -> PolarsResu
             expansion,
         },
         store,
-    ) = super::build_object_store(url, cloud_options).await?;
+    ) = super::build_object_store(url, cloud_options, true).await?;
     let matcher = &Matcher::new(
         if scheme == "file" {
             // For local paths the returned location has the leading slash stripped.
@@ -209,7 +215,7 @@ mod test {
     #[test]
     fn test_cloud_location() {
         assert_eq!(
-            CloudLocation::new("s3://a/b").unwrap(),
+            CloudLocation::new("s3://a/b", true).unwrap(),
             CloudLocation {
                 scheme: "s3".into(),
                 bucket: "a".into(),
@@ -218,7 +224,7 @@ mod test {
             }
         );
         assert_eq!(
-            CloudLocation::new("s3://a/b/*.c").unwrap(),
+            CloudLocation::new("s3://a/b/*.c", true).unwrap(),
             CloudLocation {
                 scheme: "s3".into(),
                 bucket: "a".into(),
@@ -227,7 +233,7 @@ mod test {
             }
         );
         assert_eq!(
-            CloudLocation::new("file:///a/b").unwrap(),
+            CloudLocation::new("file:///a/b", true).unwrap(),
             CloudLocation {
                 scheme: "file".into(),
                 bucket: "".into(),
@@ -268,7 +274,7 @@ mod test {
 
     #[test]
     fn test_matcher_file_name() {
-        let cloud_location = CloudLocation::new("s3://bucket/folder/*.parquet").unwrap();
+        let cloud_location = CloudLocation::new("s3://bucket/folder/*.parquet", true).unwrap();
         let a = Matcher::new(cloud_location.prefix, cloud_location.expansion.as_deref()).unwrap();
         // Regular match.
         assert!(a.is_matching(Path::from("folder/1.parquet").as_ref()));
@@ -280,13 +286,14 @@ mod test {
 
     #[test]
     fn test_matcher_folders() {
-        let cloud_location = CloudLocation::new("s3://bucket/folder/**/*.parquet").unwrap();
+        let cloud_location = CloudLocation::new("s3://bucket/folder/**/*.parquet", true).unwrap();
         let a = Matcher::new(cloud_location.prefix, cloud_location.expansion.as_deref()).unwrap();
         // Intermediary folders are optional.
         assert!(a.is_matching(Path::from("folder/1.parquet").as_ref()));
         // Intermediary folders are allowed.
         assert!(a.is_matching(Path::from("folder/other/1.parquet").as_ref()));
-        let cloud_location = CloudLocation::new("s3://bucket/folder/**/data/*.parquet").unwrap();
+        let cloud_location =
+            CloudLocation::new("s3://bucket/folder/**/data/*.parquet", true).unwrap();
         let a = Matcher::new(cloud_location.prefix, cloud_location.expansion.as_deref()).unwrap();
         // Required folder `data` is missing.
         assert!(!a.is_matching(Path::from("folder/1.parquet").as_ref()));
@@ -294,5 +301,19 @@ mod test {
         assert!(a.is_matching(Path::from("folder/data/1.parquet").as_ref()));
         // Required folder is present and additional folders are allowed.
         assert!(a.is_matching(Path::from("folder/other/data/1.parquet").as_ref()));
+    }
+
+    #[test]
+    fn test_cloud_location_no_glob() {
+        let cloud_location = CloudLocation::new("s3://bucket/[*", false).unwrap();
+        assert_eq!(
+            cloud_location,
+            CloudLocation {
+                scheme: "s3".into(),
+                bucket: "bucket".into(),
+                prefix: "/[*".into(),
+                expansion: None,
+            },
+        )
     }
 }
