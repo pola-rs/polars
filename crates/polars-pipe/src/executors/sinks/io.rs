@@ -40,7 +40,7 @@ fn get_spill_dir(operation_name: &'static str) -> PolarsResult<PathBuf> {
     let id = uuid::Uuid::new_v4();
 
     let mut dir = std::path::PathBuf::from(get_base_temp_dir());
-    dir.push(&format!("polars/{operation_name}/{id}"));
+    dir.push(format!("polars/{operation_name}/{id}"));
 
     if !dir.exists() {
         fs::create_dir_all(&dir).map_err(|err| {
@@ -77,7 +77,7 @@ fn gc_thread(operation_name: &'static str, rx: Receiver<PathBuf>) {
     let _ = std::thread::spawn(move || {
         // First clean all existing
         let mut dir = std::path::PathBuf::from(get_base_temp_dir());
-        dir.push(&format!("polars/{operation_name}"));
+        dir.push(format!("polars/{operation_name}"));
 
         // if the directory does not exist, there is nothing to clean
         let rd = match std::fs::read_dir(&dir) {
