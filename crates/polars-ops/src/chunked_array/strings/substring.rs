@@ -67,17 +67,17 @@ fn tail_binary(opt_str_val: Option<&str>, opt_n: Option<i64>) -> Option<&str> {
     }
 }
 
-fn substring_ternary(
+fn substring_ternary_offsets(
     opt_str_val: Option<&str>,
     opt_offset: Option<i64>,
     opt_length: Option<u64>,
-) -> Option<&str> {
+) -> Option<(usize, usize)> {
     let str_val = opt_str_val?;
     let offset = opt_offset?;
 
     // Fast-path: always empty string.
     if opt_length == Some(0) || offset >= str_val.len() as i64 {
-        return Some("");
+        return Some((0, 0));
     }
 
     let mut indices = str_val.char_indices().map(|(o, _)| o);
@@ -107,7 +107,16 @@ fn substring_ternary(
     let stop_byte_offset = opt_length
         .and_then(|l| indices.nth((l as usize).saturating_sub(length_reduction)))
         .unwrap_or(str_val.len());
-    Some(&str_val[..stop_byte_offset])
+    Some((start_byte_offset, stop_byte_offset + start_byte_offset))
+}
+
+fn substring_ternary(
+    opt_str_val: Option<&str>,
+    opt_offset: Option<i64>,
+    opt_length: Option<u64>,
+) -> Option<&str> {
+    let (start, end) = substring_ternary_offsets(opt_str_val, opt_offset, opt_length)?;
+    unsafe { opt_str_val.map(|str_val| str_val.get_unchecked(start..end)) }
 }
 
 pub(super) fn substring(
