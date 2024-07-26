@@ -54,30 +54,6 @@ impl<'a> DefLevelsDecoder<'a> {
     }
 }
 
-/// Iterator adapter to convert an iterator of non-null values and an iterator over validity
-/// into an iterator of optional values.
-#[derive(Debug, Clone)]
-pub struct OptionalValues<T, V: Iterator<Item = bool>, I: Iterator<Item = T>> {
-    validity: V,
-    values: I,
-}
-
-impl<T, V: Iterator<Item = bool>, I: Iterator<Item = T>> Iterator for OptionalValues<T, V, I> {
-    type Item = Option<T>;
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        self.validity
-            .next()
-            .map(|x| if x { self.values.next() } else { None })
-    }
-
-    #[inline]
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.validity.size_hint()
-    }
-}
-
 pub fn deserialize_optional<C: Clone, I: Iterator<Item = ParquetResult<C>>>(
     validity: DefLevelsDecoder,
     values: I,

@@ -213,7 +213,7 @@ impl<O: Offset> utils::Decoder for BinaryDecoder<O> {
 
             fn target_reserve(&self, target: &mut Self::Target, n: usize) {
                 // @NOTE: This is an estimation for the reservation. It will probably not be
-                // accurate, but then it is a lot better then not allocating.
+                // accurate, but then it is a lot better than not allocating.
                 target.offsets.reserve(n);
                 target.values.reserve(n);
             }

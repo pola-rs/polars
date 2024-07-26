@@ -567,7 +567,7 @@ pub struct PageNestedDictArrayDecoder<
     _pd: std::marker::PhantomData<K>,
 }
 
-/// Return the defintion and repetition level iterators for this page.
+/// Return the definition and repetition level iterators for this page.
 fn level_iters(page: &DataPage) -> ParquetResult<(HybridRleDecoder, HybridRleDecoder)> {
     let split = split_buffer(page)?;
     let def = split.def;
