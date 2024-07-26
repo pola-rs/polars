@@ -57,10 +57,9 @@ impl CsvSource {
         let options = self.options.clone().unwrap();
         let mut with_columns = file_options.with_columns;
         let mut projected_len = 0;
-        with_columns.as_ref().map(|columns| {
-            projected_len = columns.len();
-            columns
-        });
+        with_columns
+            .as_ref()
+            .inspect(|columns| projected_len = columns.len());
 
         if projected_len == 0 {
             with_columns = None;

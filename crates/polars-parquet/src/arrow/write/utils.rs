@@ -129,10 +129,7 @@ impl<T, I: Iterator<Item = T>> Iterator for ExactSizedIter<T, I> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next().map(|x| {
-            self.remaining -= 1;
-            x
-        })
+        self.iter.next().inspect(|_| self.remaining -= 1)
     }
 
     #[inline]

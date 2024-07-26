@@ -31,10 +31,9 @@ impl FixedSizeListScalar {
     pub fn new(data_type: ArrowDataType, values: Option<Box<dyn Array>>) -> Self {
         let (field, size) = FixedSizeListArray::get_child_and_size(&data_type);
         let inner_data_type = field.data_type();
-        let values = values.map(|x| {
+        let values = values.inspect(|x| {
             assert_eq!(inner_data_type, x.data_type());
             assert_eq!(size, x.len());
-            x
         });
         Self { values, data_type }
     }

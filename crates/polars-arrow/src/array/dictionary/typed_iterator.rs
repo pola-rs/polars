@@ -37,13 +37,12 @@ impl<O: Offset> DictValue for Utf8Array<O> {
             .ok_or_else(
                 || polars_err!(InvalidOperation: "could not convert array to dictionary value"),
             )
-            .map(|arr| {
+            .inspect(|arr| {
                 assert_eq!(
                     arr.null_count(),
                     0,
                     "null values in values not supported in iteration"
-                );
-                arr
+                )
             })
     }
 }
@@ -65,13 +64,12 @@ impl DictValue for Utf8ViewArray {
             .ok_or_else(
                 || polars_err!(InvalidOperation: "could not convert array to dictionary value"),
             )
-            .map(|arr| {
+            .inspect(|arr| {
                 assert_eq!(
                     arr.null_count(),
                     0,
                     "null values in values not supported in iteration"
-                );
-                arr
+                )
             })
     }
 }
