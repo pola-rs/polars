@@ -136,6 +136,8 @@ pub enum IR {
         inputs: Vec<Node>,
         options: UnionOptions,
     },
+    /// Horizontal concatenation
+    /// - Invariant: the names will be unique
     HConcat {
         inputs: Vec<Node>,
         schema: SchemaRef,

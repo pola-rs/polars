@@ -30,7 +30,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "r2"=> &[7, 8],
             "r3"=> &[9, 10],
     )?;
-    let df_horizontal_concat = polars::functions::concat_df_horizontal(&[df_h1, df_h2])?;
+    let df_horizontal_concat = polars::functions::concat_df_horizontal(&[df_h1, df_h2], true)?;
     println!("{}", &df_horizontal_concat);
     // --8<-- [end:horizontal]
     //
@@ -43,7 +43,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "r1"=> &[5, 6, 7],
             "r2"=> &[8, 9, 10],
     )?;
-    let df_horizontal_concat = polars::functions::concat_df_horizontal(&[df_h1, df_h2])?;
+    let df_horizontal_concat = polars::functions::concat_df_horizontal(&[df_h1, df_h2], true)?;
     println!("{}", &df_horizontal_concat);
     // --8<-- [end:horizontal_different_lengths]
 

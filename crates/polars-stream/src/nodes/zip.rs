@@ -136,7 +136,7 @@ impl ComputeNode for ZipNode {
                     }
                 }
 
-                let out_df = concat_df_horizontal(&out)?;
+                let out_df = concat_df_horizontal(&out, false)?;
                 out.clear();
 
                 let morsel = Morsel::new(out_df, self.out_seq, source_token.clone());
