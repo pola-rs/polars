@@ -480,13 +480,6 @@ impl CloudOptions {
                     let mut token = None;
                     let verbose = config::verbose();
 
-                    if let Ok(v) = std::env::var("HF_TOKEN") {
-                        if verbose {
-                            eprintln!("HF token sourced from HF_TOKEN env var");
-                        }
-                        token = Some(v);
-                    }
-
                     for (i, (k, v)) in config.into_iter().enumerate() {
                         let (k, v) = (k.as_ref(), v.into());
 
@@ -496,12 +489,19 @@ impl CloudOptions {
                             }
                             token = Some(v);
                         } else {
-                            polars_bail!(ComputeError: "unknown configuration key: {}", k)
+                            polars_bail!(ComputeError: "unknown configuration key for HF: {}", k)
                         }
                     }
 
-                    if token.is_none() {
-                        token = (|| {
+                    token = token
+                        .or_else(|| {
+                            let v = std::env::var("HF_TOKEN").ok();
+                            if v.is_some() && verbose {
+                                eprintln!("HF token sourced from HF_TOKEN env var");
+                            }
+                            v
+                        })
+                        .or_else(|| {
                             let hf_home = std::env::var("HF_HOME");
                             let hf_home = hf_home.as_deref();
                             let hf_home = hf_home.unwrap_or("~/.cache/huggingface");
@@ -511,21 +511,18 @@ impl CloudOptions {
                             let v = std::string::String::from_utf8(
                                 std::fs::read(&cached_token_path).ok()?,
                             )
-                            .ok()?;
+                            .ok()
+                            .filter(|x| !x.is_empty());
 
-                            if v.is_empty() {
-                                None
-                            } else {
-                                if verbose {
-                                    eprintln!(
-                                        "HF token sourced from {}",
-                                        cached_token_path.to_str().unwrap()
-                                    );
-                                }
-                                Some(v)
+                            if v.is_some() && verbose {
+                                eprintln!(
+                                    "HF token sourced from {}",
+                                    cached_token_path.to_str().unwrap()
+                                );
                             }
-                        })();
-                    }
+
+                            v
+                        });
 
                     if let Some(v) = token {
                         this.config = Some(CloudConfig::Http {
