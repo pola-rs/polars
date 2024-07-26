@@ -22,7 +22,6 @@ use object_store::ClientOptions;
 use object_store::{BackoffConfig, RetryConfig};
 #[cfg(feature = "aws")]
 use once_cell::sync::Lazy;
-use polars_core::config;
 use polars_error::*;
 #[cfg(feature = "aws")]
 use polars_utils::cache::FastFixedCache;
@@ -475,6 +474,8 @@ impl CloudOptions {
             CloudType::Hf => {
                 #[cfg(feature = "http")]
                 {
+                    use polars_core::config;
+
                     let mut this = Self::default();
                     let mut token = None;
                     let verbose = config::verbose();
