@@ -4754,6 +4754,8 @@ class DataFrame:
         ... )
         >>> df.get_column_index("ham")
         2
+        >>> df.get_column_index("sandwich")  # doctest: +SKIP
+        ColumnNotFoundError: sandwich
         """
         return self._df.get_column_index(name)
 

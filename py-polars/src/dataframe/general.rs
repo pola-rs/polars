@@ -226,8 +226,11 @@ impl PyDataFrame {
         }
     }
 
-    pub fn get_column_index(&self, name: &str) -> Option<usize> {
-        self.df.get_column_index(name)
+    pub fn get_column_index(&self, name: &str) -> PyResult<usize> {
+        Ok(self
+            .df
+            .try_get_column_index(name)
+            .map_err(PyPolarsErr::from)?)
     }
 
     pub fn get_column(&self, name: &str) -> PyResult<PySeries> {

@@ -2832,7 +2832,6 @@ def test_from_records_u64_12329() -> None:
 
 def test_negative_slice_12642() -> None:
     df = pl.DataFrame({"x": range(5)})
-
     assert_frame_equal(df.slice(-2, 1), df.tail(2).head(1))
 
 
@@ -2841,3 +2840,13 @@ def test_iter_columns() -> None:
     iter_columns = df.iter_columns()
     assert_series_equal(next(iter_columns), pl.Series("a", [1, 1, 2]))
     assert_series_equal(next(iter_columns), pl.Series("b", [4, 5, 6]))
+
+
+def test_get_column_index() -> None:
+    df = pl.DataFrame({"actual": [1001], "expected": [1000]})
+
+    assert df.get_column_index("actual") == 0
+    assert df.get_column_index("expected") == 1
+
+    with pytest.raises(ColumnNotFoundError, match="missing"):
+        df.get_column_index("missing")
