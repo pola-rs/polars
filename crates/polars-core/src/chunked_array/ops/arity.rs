@@ -1,12 +1,12 @@
 use std::error::Error;
 
-use arrow::array::{Array, StaticArray};
+use arrow::array::{Array, MutablePlString, StaticArray};
 use arrow::compute::utils::combine_validities_and;
 use polars_error::PolarsResult;
 
 use crate::chunked_array::metadata::MetadataProperties;
 use crate::datatypes::{ArrayCollectIterExt, ArrayFromIter};
-use crate::prelude::{ChunkedArray, CompatLevel, PolarsDataType, Series};
+use crate::prelude::{ChunkedArray, CompatLevel, PolarsDataType, Series, StringChunked};
 use crate::utils::{align_chunks_binary, align_chunks_binary_owned, align_chunks_ternary};
 
 // We need this helper because for<'a> notation can't yet be applied properly
@@ -328,6 +328,39 @@ where
 
             let array: V::Array = element_iter.collect_arr();
             array.with_validity_typed(validity)
+        });
+    ChunkedArray::from_chunk_iter(lhs.name(), iter)
+}
+
+pub fn binary_elementwise_into_string_amortized<T, U, F>(
+    lhs: &ChunkedArray<T>,
+    rhs: &ChunkedArray<U>,
+    mut op: F,
+) -> StringChunked
+where
+    T: PolarsDataType,
+    U: PolarsDataType,
+    F: for<'a> FnMut(T::Physical<'a>, U::Physical<'a>, &mut String),
+{
+    let (lhs, rhs) = align_chunks_binary(lhs, rhs);
+    let mut buf = String::new();
+    let iter = lhs
+        .downcast_iter()
+        .zip(rhs.downcast_iter())
+        .map(|(lhs_arr, rhs_arr)| {
+            let mut mutarr = MutablePlString::with_capacity(lhs_arr.len());
+            lhs_arr
+                .iter()
+                .zip(rhs_arr.iter())
+                .for_each(|(lhs_opt, rhs_opt)| match (lhs_opt, rhs_opt) {
+                    (None, _) | (_, None) => mutarr.push_null(),
+                    (Some(lhs_val), Some(rhs_val)) => {
+                        buf.clear();
+                        op(lhs_val, rhs_val, &mut buf);
+                        mutarr.push_value(&buf)
+                    },
+                });
+            mutarr.freeze()
         });
     ChunkedArray::from_chunk_iter(lhs.name(), iter)
 }
