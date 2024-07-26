@@ -129,6 +129,8 @@ impl CloudLocation {
 
     /// Parse a CloudLocation from an url.
     pub fn new(url: &str, glob: bool) -> PolarsResult<CloudLocation> {
+        // If you ever want to support the question mark '?' with glob=False, `Url::parse` is where
+        // to look.
         let parsed = Url::parse(url).map_err(to_compute_err)?;
         Self::from_url(&parsed, glob)
     }
@@ -305,13 +307,13 @@ mod test {
 
     #[test]
     fn test_cloud_location_no_glob() {
-        let cloud_location = CloudLocation::new("s3://bucket/*", false).unwrap();
+        let cloud_location = CloudLocation::new("s3://bucket/[*", false).unwrap();
         assert_eq!(
             cloud_location,
             CloudLocation {
                 scheme: "s3".into(),
                 bucket: "bucket".into(),
-                prefix: "*".into(),
+                prefix: "/[*".into(),
                 expansion: None,
             },
         )

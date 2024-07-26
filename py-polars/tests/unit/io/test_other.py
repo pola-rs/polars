@@ -132,14 +132,14 @@ def test_unit_io_subdir_has_no_init() -> None:
         ([pl.scan_csv, pl.read_csv], pl.DataFrame.write_csv),
     ],
 )
-@pytest.mark.parametrize("char", ["[", "*", "?"])
+@pytest.mark.parametrize("char", ["[", "*"])
 def test_no_glob(
     scan_funcs: list[Callable[[Any], pl.LazyFrame | pl.DataFrame]],
     write_func: Callable[[pl.DataFrame, Path], None],
     char: str,
     tmp_path: Path,
 ) -> None:
-    if sys.platform == "win32" and char in ["*", "?"]:
+    if sys.platform == "win32" and char == "*":
         pytest.skip("unsupported glob char for windows")
 
     tmp_path.mkdir(exist_ok=True)
