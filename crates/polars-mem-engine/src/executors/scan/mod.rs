@@ -7,8 +7,6 @@ mod ndjson;
 #[cfg(feature = "parquet")]
 mod parquet;
 
-#[cfg(feature = "ipc")]
-mod support;
 use std::mem;
 
 #[cfg(feature = "csv")]
