@@ -1,5 +1,3 @@
-use polars_core::chunked_array::cast::CastOptions;
-
 use super::*;
 
 pub(super) fn optimize_functions(
@@ -62,17 +60,6 @@ pub(super) fn optimize_functions(
                     input: new_inputs,
                     function: function.clone(),
                     options: *options,
-                })
-            } else {
-                None
-            }
-        },
-        FunctionExpr::Boolean(BooleanFunction::AllHorizontal | BooleanFunction::AnyHorizontal) => {
-            if input.len() == 1 {
-                Some(AExpr::Cast {
-                    expr: input[0].node(),
-                    data_type: DataType::Boolean,
-                    options: CastOptions::NonStrict,
                 })
             } else {
                 None

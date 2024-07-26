@@ -66,7 +66,7 @@ impl DataFrame {
 }
 /// Concat [`DataFrame`]s horizontally.
 /// Concat horizontally and extend with null values if lengths don't match
-pub fn concat_df_horizontal(dfs: &[DataFrame]) -> PolarsResult<DataFrame> {
+pub fn concat_df_horizontal(dfs: &[DataFrame], check_duplicates: bool) -> PolarsResult<DataFrame> {
     let max_len = dfs
         .iter()
         .map(|df| df.height())
@@ -99,18 +99,26 @@ pub fn concat_df_horizontal(dfs: &[DataFrame]) -> PolarsResult<DataFrame> {
     let height = first_df.height();
     let is_empty = first_df.is_empty();
 
-    let columns = first_df
-        .columns
-        .iter()
-        .map(|s| SmartString::from(s.name()))
-        .collect::<Vec<_>>();
+    let columns;
+    let mut names = if check_duplicates {
+        columns = first_df
+            .columns
+            .iter()
+            .map(|s| SmartString::from(s.name()))
+            .collect::<Vec<_>>();
 
-    let mut names = columns.iter().map(|n| n.as_str()).collect::<PlHashSet<_>>();
+        columns.iter().map(|n| n.as_str()).collect::<PlHashSet<_>>()
+    } else {
+        Default::default()
+    };
 
     for df in &dfs[1..] {
         let cols = df.get_columns();
-        for col in cols {
-            check_hstack(col, &mut names, height, is_empty)?;
+
+        if check_duplicates {
+            for col in cols {
+                check_hstack(col, &mut names, height, is_empty)?;
+            }
         }
 
         unsafe { first_df.hstack_mut_unchecked(cols) };
