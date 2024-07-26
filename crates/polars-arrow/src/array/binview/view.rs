@@ -114,7 +114,7 @@ impl View {
     /// Assumes that this view is valid for the given buffers.
     pub unsafe fn get_slice_unchecked<'a>(&'a self, buffers: &'a [Buffer<u8>]) -> &'a [u8] {
         unsafe {
-            if self.length <= 12 {
+            if self.length <= Self::MAX_INLINE_SIZE {
                 let ptr = self as *const View as *const u8;
                 std::slice::from_raw_parts(ptr.add(4), self.length as usize)
             } else {

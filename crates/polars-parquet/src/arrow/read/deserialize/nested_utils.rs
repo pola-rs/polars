@@ -1,17 +1,17 @@
-use std::collections::VecDeque;
 use std::iter::{Peekable, Zip};
 
-use arrow::array::Array;
+use arrow::array::{Array, DictionaryArray, DictionaryKey};
 use arrow::bitmap::MutableBitmap;
+use arrow::datatypes::ArrowDataType;
 use polars_error::{polars_bail, PolarsResult};
-use polars_utils::slice::GetSaferUnchecked;
 
-use super::utils::{BatchableCollector, DecodedState, MaybeNext, PageState};
-use super::{BasicDecompressor, CompressedPagesIter};
+use super::utils::{self, BatchableCollector};
+use super::{BasicDecompressor, CompressedPagesIter, ParquetError};
 use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use crate::parquet::error::ParquetResult;
-use crate::parquet::page::{split_buffer, DataPage, DictPage, Page};
+use crate::parquet::page::{split_buffer, DataPage, Page};
 use crate::parquet::read::levels::get_bit_width;
+use crate::read::deserialize::dictionary::DictionaryDecoder;
 use crate::read::deserialize::utils::BatchedCollector;
 
 #[derive(Debug)]
@@ -184,12 +184,12 @@ impl Nested {
     }
 }
 
-pub struct BatchedNestedDecoder<'a, 'b, 'c, D: NestedDecoder<'a>> {
-    state: &'b mut D::State,
-    decoder: &'c D,
+pub struct BatchedNestedDecoder<'a, 'b, 'c, D: utils::NestedDecoder> {
+    state: &'b mut utils::State<'a, D>,
+    decoder: &'c mut D,
 }
 
-impl<'a, 'b, 'c, D: NestedDecoder<'a>> BatchableCollector<(), D::DecodedState>
+impl<'a, 'b, 'c, D: utils::NestedDecoder> BatchableCollector<(), D::DecodedState>
     for BatchedNestedDecoder<'a, 'b, 'c, D>
 {
     fn reserve(_target: &mut D::DecodedState, _n: usize) {
@@ -197,39 +197,14 @@ impl<'a, 'b, 'c, D: NestedDecoder<'a>> BatchableCollector<(), D::DecodedState>
     }
 
     fn push_n(&mut self, target: &mut D::DecodedState, n: usize) -> ParquetResult<()> {
-        self.decoder.push_n_valid(self.state, target, n)
+        self.decoder.push_n_valids(self.state, target, n)?;
+        Ok(())
     }
 
     fn push_n_nulls(&mut self, target: &mut D::DecodedState, n: usize) -> ParquetResult<()> {
-        self.decoder.push_n_nulls(target, n);
+        self.decoder.push_n_nulls(self.state, target, n);
         Ok(())
     }
-}
-
-/// A decoder that knows how to map `State` -> Array
-pub(super) trait NestedDecoder<'a> {
-    type State: PageState<'a>;
-    type Dictionary;
-    type DecodedState: DecodedState;
-
-    fn build_state(
-        &self,
-        page: &'a DataPage,
-        dict: Option<&'a Self::Dictionary>,
-    ) -> PolarsResult<Self::State>;
-
-    /// Initializes a new state
-    fn with_capacity(&self, capacity: usize) -> Self::DecodedState;
-
-    fn push_n_valid(
-        &self,
-        state: &mut Self::State,
-        decoded: &mut Self::DecodedState,
-        n: usize,
-    ) -> ParquetResult<()>;
-    fn push_n_nulls(&self, decoded: &mut Self::DecodedState, n: usize);
-
-    fn deserialize_dict(&self, page: &'a DictPage) -> Self::Dictionary;
 }
 
 /// The initial info of nested data types.
@@ -290,11 +265,6 @@ impl<'a> NestedPage<'a> {
 
         Ok(Self { iter })
     }
-
-    // number of values (!= number of rows)
-    pub fn len(&self) -> usize {
-        self.iter.size_hint().0
-    }
 }
 
 /// The state of nested data types.
@@ -321,120 +291,22 @@ impl NestedState {
     }
 }
 
-/// Extends `items` by consuming `page`, first trying to complete the last `item`
-/// and extending it if more are needed.
-///
-/// Note that as the page iterator being passed does not guarantee it reads to
-/// the end, this function cannot always determine whether it has finished
-/// reading. It therefore returns a bool indicating:
-/// * true  : the row is fully read
-/// * false : the row may not be fully read
-pub(super) fn extend<'a, D: NestedDecoder<'a>>(
-    page: &'a DataPage,
-    init: &[InitNested],
-    items: &mut VecDeque<(NestedState, D::DecodedState)>,
-    dict: Option<&'a D::Dictionary>,
-    remaining: &mut usize,
-    decoder: &D,
-    chunk_size: Option<usize>,
-) -> PolarsResult<bool> {
-    let mut values_page = decoder.build_state(page, dict)?;
-    let mut page = NestedPage::try_new(page)?;
-
-    debug_assert!(
-        items.len() < 2,
-        "Should have yielded already completed item before reading more."
-    );
-
-    let chunk_size = chunk_size.unwrap_or(usize::MAX);
-    let mut first_item_is_fully_read = false;
-    // Amortize the allocations.
-    let mut def_levels = vec![];
-    let mut rep_levels = vec![];
-
-    loop {
-        if let Some((mut nested, mut decoded)) = items.pop_back() {
-            let existing = nested.len();
-            let additional = (chunk_size - existing).min(*remaining);
-
-            let mut batched_collector = BatchedCollector::new(
-                BatchedNestedDecoder {
-                    state: &mut values_page,
-                    decoder,
-                },
-                &mut decoded,
-            );
-
-            let is_fully_read = extend_offsets2(
-                &mut page,
-                &mut batched_collector,
-                &mut nested.nested,
-                additional,
-                &mut def_levels,
-                &mut rep_levels,
-            )?;
-
-            batched_collector.finalize()?;
-
-            first_item_is_fully_read |= is_fully_read;
-            *remaining -= nested.len() - existing;
-            items.push_back((nested, decoded));
-
-            if page.len() == 0 {
-                break;
-            }
-
-            if is_fully_read && *remaining == 0 {
-                break;
-            };
-        };
-
-        // At this point:
-        // * There are more pages.
-        // * The remaining rows have not been fully read.
-        // * The deque is empty, or the last item already holds completed data.
-        let nested = init_nested(init, chunk_size.min(*remaining));
-        let decoded = decoder.with_capacity(0);
-        items.push_back((nested, decoded));
-    }
-
-    Ok(first_item_is_fully_read)
-}
-
 #[allow(clippy::too_many_arguments)]
-fn extend_offsets2<'a, 'b, 'c, 'd, D: NestedDecoder<'a>>(
+fn extend_offsets2<'a, D: utils::NestedDecoder>(
     page: &mut NestedPage<'a>,
     batched_collector: &mut BatchedCollector<
-        'b,
+        '_,
         (),
         D::DecodedState,
-        BatchedNestedDecoder<'a, 'c, 'd, D>,
+        BatchedNestedDecoder<'a, '_, '_, D>,
     >,
     nested: &mut [Nested],
     additional: usize,
     // Amortized allocations
-    def_levels: &mut Vec<u32>,
-    rep_levels: &mut Vec<u32>,
+    def_levels: &[u32],
+    rep_levels: &[u32],
 ) -> PolarsResult<bool> {
     let max_depth = nested.len();
-
-    def_levels.resize(max_depth + 1, 0);
-    rep_levels.resize(max_depth + 1, 0);
-    for (i, nest) in nested.iter().enumerate() {
-        let delta = nest.is_nullable() as u32 + nest.is_repeated() as u32;
-        unsafe {
-            *def_levels.get_unchecked_release_mut(i + 1) =
-                *def_levels.get_unchecked_release(i) + delta;
-        }
-    }
-
-    for (i, nest) in nested.iter().enumerate() {
-        let delta = nest.is_repeated() as u32;
-        unsafe {
-            *rep_levels.get_unchecked_release_mut(i + 1) =
-                *rep_levels.get_unchecked_release(i) + delta;
-        }
-    }
 
     let mut rows = 0;
     loop {
@@ -540,62 +412,274 @@ fn extend_offsets2<'a, 'b, 'c, 'd, D: NestedDecoder<'a>>(
     }
 }
 
-#[inline]
-pub(super) fn next<'a, I, D>(
-    iter: &'a mut BasicDecompressor<I>,
-    items: &mut VecDeque<(NestedState, D::DecodedState)>,
-    dict: &'a mut Option<D::Dictionary>,
-    remaining: &mut usize,
-    init: &[InitNested],
-    chunk_size: Option<usize>,
-    decoder: &D,
-) -> MaybeNext<PolarsResult<(NestedState, D::DecodedState)>>
-where
-    I: CompressedPagesIter,
-    D: NestedDecoder<'a>,
-{
-    use streaming_decompression::FallibleStreamingIterator;
+pub struct PageNestedDecoder<I: CompressedPagesIter, D: utils::NestedDecoder> {
+    pub iter: BasicDecompressor<I>,
+    pub data_type: ArrowDataType,
+    pub dict: Option<D::Dict>,
+    pub decoder: D,
+    pub init: Vec<InitNested>,
+}
 
-    // front[a1, a2, a3, ...]back
-    if items.len() > 1 {
-        return MaybeNext::Some(Ok(items.pop_front().unwrap()));
+pub struct PageNestedDictArrayDecoder<
+    I: CompressedPagesIter,
+    K: DictionaryKey,
+    D: utils::NestedDecoder,
+> {
+    pub iter: BasicDecompressor<I>,
+    pub data_type: ArrowDataType,
+    pub dict: D::Dict,
+    pub decoder: D,
+    pub init: Vec<InitNested>,
+    _pd: std::marker::PhantomData<K>,
+}
+
+impl<I: CompressedPagesIter, D: utils::NestedDecoder> PageNestedDecoder<I, D> {
+    pub fn new(
+        mut iter: BasicDecompressor<I>,
+        data_type: ArrowDataType,
+        decoder: D,
+        init: Vec<InitNested>,
+    ) -> ParquetResult<Self> {
+        let dict_page = iter.read_dict_page()?;
+        let dict = dict_page.map(|d| decoder.deserialize_dict(d));
+
+        Ok(Self {
+            iter,
+            data_type,
+            dict,
+            decoder,
+            init,
+        })
     }
 
-    match iter.next() {
-        Err(e) => MaybeNext::Some(Err(e.into())),
-        Ok(None) => {
-            if let Some(decoded) = items.pop_front() {
-                MaybeNext::Some(Ok(decoded))
-            } else {
-                MaybeNext::None
-            }
-        },
-        Ok(Some(page)) => {
-            let page = match &page {
-                Page::Data(page) => page,
-                Page::Dict(dict_page) => {
-                    *dict = Some(decoder.deserialize_dict(dict_page));
-                    return MaybeNext::More;
-                },
+    pub fn collect_n(mut self, limit: usize) -> ParquetResult<(NestedState, Box<dyn Array>)> {
+        use streaming_decompression::FallibleStreamingIterator;
+
+        let mut target = self.decoder.with_capacity(limit);
+        // @TODO: Self capacity
+        let mut nested_state = init_nested(&self.init, 0);
+
+        if limit == 0 {
+            return Ok((nested_state, self.decoder.finalize(self.data_type, target)?));
+        }
+
+        let mut limit = limit;
+
+        // Amortize the allocations.
+        let depth = nested_state.nested.len();
+
+        let mut def_levels = Vec::with_capacity(depth + 1);
+        let mut rep_levels = Vec::with_capacity(depth + 1);
+
+        def_levels.push(0);
+        rep_levels.push(0);
+
+        for i in 0..depth {
+            let nest = &nested_state.nested[i];
+
+            let def_delta = nest.is_nullable() as u32 + nest.is_repeated() as u32;
+            let rep_delta = nest.is_repeated() as u32;
+
+            def_levels.push(def_levels[i] + def_delta);
+            rep_levels.push(rep_levels[i] + rep_delta);
+        }
+
+        loop {
+            let Some(page) = self.iter.next()? else {
+                break;
             };
 
-            // there is a new page => consume the page from the start
-            let is_fully_read = extend(
-                page,
-                init,
-                items,
-                dict.as_ref(),
-                remaining,
-                decoder,
-                chunk_size,
+            let Page::Data(page) = page else {
+                // @TODO This should be removed
+                unreachable!();
+            };
+
+            let mut values_page = utils::State::new(&self.decoder, page, self.dict.as_ref())?;
+            values_page.page_validity = None;
+            let mut page = NestedPage::try_new(page)?;
+
+            let start_length = nested_state.len();
+
+            // @TODO: move this to outside the loop.
+            let mut batched_collector = BatchedCollector::new(
+                BatchedNestedDecoder {
+                    state: &mut values_page,
+                    decoder: &mut self.decoder,
+                },
+                &mut target,
             );
 
-            match is_fully_read {
-                Ok(true) => MaybeNext::Some(Ok(items.pop_front().unwrap())),
-                Ok(false) => MaybeNext::More,
-                Err(e) => MaybeNext::Some(Err(e)),
+            let is_fully_read = extend_offsets2(
+                &mut page,
+                &mut batched_collector,
+                &mut nested_state.nested,
+                limit,
+                &def_levels,
+                &rep_levels,
+            )?;
+
+            batched_collector.finalize()?;
+
+            let num_done = nested_state.len() - start_length;
+            limit -= num_done;
+
+            debug_assert!(values_page.len() == 0 || limit == 0);
+
+            if is_fully_read {
+                break;
             }
-        },
+        }
+
+        // we pop the primitive off here.
+        debug_assert!(matches!(
+            nested_state.nested.last().unwrap().content,
+            NestedContent::Primitive
+        ));
+        _ = nested_state.pop().unwrap();
+
+        let array = self.decoder.finalize(self.data_type, target)?;
+
+        Ok((nested_state, array))
+    }
+}
+
+impl<I: CompressedPagesIter, K: DictionaryKey, D: utils::NestedDecoder>
+    PageNestedDictArrayDecoder<I, K, D>
+{
+    pub fn new(
+        mut iter: BasicDecompressor<I>,
+        data_type: ArrowDataType,
+        decoder: D,
+        init: Vec<InitNested>,
+    ) -> ParquetResult<Self> {
+        let dict_page = iter
+            .read_dict_page()?
+            .ok_or(ParquetError::FeatureNotSupported(
+                "Dictionary array without a dictionary page".to_string(),
+            ))?;
+        let dict = decoder.deserialize_dict(dict_page);
+
+        Ok(Self {
+            iter,
+            data_type,
+            dict,
+            decoder,
+            init,
+            _pd: std::marker::PhantomData,
+        })
+    }
+
+    pub fn collect_n(mut self, limit: usize) -> ParquetResult<(NestedState, DictionaryArray<K>)> {
+        use streaming_decompression::FallibleStreamingIterator;
+
+        let mut target = (
+            Vec::with_capacity(limit),
+            MutableBitmap::with_capacity(limit),
+        );
+        // @TODO: Self capacity
+        let mut nested_state = init_nested(&self.init, 0);
+
+        if limit == 0 {
+            let (values, validity) = target;
+            let validity = if !validity.is_empty() {
+                Some(validity.freeze())
+            } else {
+                None
+            };
+            return Ok((
+                nested_state,
+                self.decoder
+                    .finalize_dict_array(self.data_type, self.dict, (values, validity))?,
+            ));
+        }
+
+        let mut limit = limit;
+
+        // Amortize the allocations.
+        let depth = nested_state.nested.len();
+
+        let mut def_levels = Vec::with_capacity(depth + 1);
+        let mut rep_levels = Vec::with_capacity(depth + 1);
+
+        def_levels.push(0);
+        rep_levels.push(0);
+
+        for i in 0..depth {
+            let nest = &nested_state.nested[i];
+
+            let def_delta = nest.is_nullable() as u32 + nest.is_repeated() as u32;
+            let rep_delta = nest.is_repeated() as u32;
+
+            def_levels.push(def_levels[i] + def_delta);
+            rep_levels.push(rep_levels[i] + rep_delta);
+        }
+
+        loop {
+            let Some(page) = self.iter.next()? else {
+                break;
+            };
+
+            let Page::Data(page) = page else {
+                // @TODO This should be removed
+                unreachable!();
+            };
+
+            use utils::ExactSize;
+            let mut dictionary_decoder = DictionaryDecoder::new(self.dict.len());
+            let mut values_page = utils::State::new(&dictionary_decoder, page, Some(&()))?;
+            values_page.page_validity = None;
+            let mut page = NestedPage::try_new(page)?;
+
+            let start_length = nested_state.len();
+
+            // @TODO: move this to outside the loop.
+            let mut batched_collector = BatchedCollector::new(
+                BatchedNestedDecoder {
+                    state: &mut values_page,
+                    decoder: &mut dictionary_decoder,
+                },
+                &mut target,
+            );
+
+            let is_fully_read = extend_offsets2(
+                &mut page,
+                &mut batched_collector,
+                &mut nested_state.nested,
+                limit,
+                &def_levels,
+                &rep_levels,
+            )?;
+
+            batched_collector.finalize()?;
+
+            let num_done = nested_state.len() - start_length;
+            limit -= num_done;
+
+            debug_assert!(values_page.len() == 0 || limit == 0);
+
+            if is_fully_read {
+                break;
+            }
+        }
+
+        // we pop the primitive off here.
+        debug_assert!(matches!(
+            nested_state.nested.last().unwrap().content,
+            NestedContent::Primitive
+        ));
+        _ = nested_state.pop().unwrap();
+
+        let (values, validity) = target;
+        let validity = if !validity.is_empty() {
+            Some(validity.freeze())
+        } else {
+            None
+        };
+        let array =
+            self.decoder
+                .finalize_dict_array(self.data_type, self.dict, (values, validity))?;
+
+        Ok((nested_state, array))
     }
 }
 

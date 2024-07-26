@@ -1,20 +1,5 @@
 //! APIs to read from Parquet format.
 
-macro_rules! decoder_fn {
-    (($x:ident $(, $field:ident:$ty:ty)* $(,)?) => <$p:ty, $t:ty> => $expr:expr) => {{
-        #[derive(Clone, Copy)]
-        struct DecoderFn($($ty),*);
-        impl crate::arrow::read::deserialize::primitive::DecoderFunction<$p, $t> for DecoderFn {
-            #[inline(always)]
-            fn decode(self, $x: $p) -> $t {
-                let Self($($field),*) = self;
-                $expr
-            }
-        }
-        DecoderFn($($field),*)
-    }};
-}
-
 mod binary;
 mod binview;
 mod boolean;
@@ -25,17 +10,15 @@ mod nested_utils;
 mod null;
 mod primitive;
 mod simple;
-mod struct_;
 mod utils;
 
 use arrow::array::{Array, DictionaryKey, FixedSizeListArray, ListArray, MapArray};
 use arrow::datatypes::{ArrowDataType, Field, IntervalUnit};
 use arrow::offset::Offsets;
 use polars_utils::mmap::MemReader;
-use simple::page_iter_to_arrays;
+use simple::page_iter_to_array;
 
 pub use self::nested_utils::{init_nested, InitNested, NestedArrayIter, NestedState};
-pub use self::struct_::StructIterator;
 use super::*;
 use crate::parquet::read::get_page_iterator as _get_page_iterator;
 use crate::parquet::schema::types::PrimitiveType;
@@ -150,22 +133,19 @@ fn columns_to_iter_recursive<'a, I>(
     field: Field,
     init: Vec<InitNested>,
     num_rows: usize,
-) -> PolarsResult<NestedArrayIter<'a>>
+) -> PolarsResult<(NestedState, Box<dyn Array>)>
 where
     I: 'a + CompressedPagesIter,
 {
     if init.is_empty() && is_primitive(&field.data_type) {
-        let array = page_iter_to_arrays(
+        let array = page_iter_to_array(
             columns.pop().unwrap(),
             types.pop().unwrap(),
             field.data_type,
             num_rows,
         )?;
 
-        return Ok(Box::new(std::iter::once(Ok((
-            NestedState::default(),
-            array,
-        )))));
+        return Ok((NestedState::default(), array));
     }
 
     nested::columns_to_iter_recursive(columns, types, field, init, num_rows)
@@ -223,7 +203,7 @@ pub fn column_iter_to_arrays<'a, I>(
 where
     I: 'a + CompressedPagesIter,
 {
-    Ok(Box::new(
-        columns_to_iter_recursive(columns, types, field, vec![], num_rows)?.map(|x| x.map(|x| x.1)),
-    ))
+    let (_, array) = columns_to_iter_recursive(columns, types, field, vec![], num_rows)?;
+
+    Ok(Box::new(std::iter::once(Ok(array))))
 }

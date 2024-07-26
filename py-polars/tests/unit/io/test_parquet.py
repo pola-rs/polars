@@ -1086,6 +1086,7 @@ def test_hybrid_rle() -> None:
 @given(
     df=dataframes(
         allowed_dtypes=[
+            pl.Null,
             pl.List,
             pl.Array,
             pl.Int8,
@@ -1110,8 +1111,6 @@ def test_hybrid_rle() -> None:
 def test_roundtrip_parametric(df: pl.DataFrame, tmp_path: Path) -> None:
     # delete if exists
     path = tmp_path / "data.parquet"
-
-    print(df)
 
     df.write_parquet(path)
     result = pl.read_parquet(path)

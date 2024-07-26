@@ -14,7 +14,7 @@ use arrow::array::Array;
 use arrow::types::{i256, NativeType};
 pub use deserialize::{
     column_iter_to_arrays, create_list, create_map, get_page_iterator, init_nested, n_columns,
-    InitNested, NestedArrayIter, NestedState, StructIterator,
+    InitNested, NestedArrayIter, NestedState,
 };
 pub use file::{FileReader, RowGroupReader};
 #[cfg(feature = "async")]
