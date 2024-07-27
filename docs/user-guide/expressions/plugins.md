@@ -63,10 +63,14 @@ fn pig_latin_str(value: &str, output: &mut String) {
 #[polars_expr(output_type=String)]
 fn pig_latinnify(inputs: &[Series]) -> PolarsResult<Series> {
     let ca = inputs[0].str()?;
-    let out: StringChunked = ca.apply_to_buffer(pig_latin_str);
+    let out: StringChunked = ca.apply_into_string_amortized(pig_latin_str);
     Ok(out.into_series())
 }
 ```
+
+Note that we use `apply_into_string_amortized`, as opposed to `apply_values`, to avoid allocating a new string for
+each row. If your plugin takes in multiple inputs, operates elementwise, and produces a `String` output,
+then you may want to look at the `binary_elementwise_into_string_amortized` utility function in `polars::prelude::arity`.
 
 This is all that is needed on the Rust side. On the Python side we must setup a folder with the same name as defined in
 the `Cargo.toml`, in this case "expression_lib". We will create a folder in the same directory as our Rust `src` folder
@@ -160,7 +164,7 @@ fn append_kwargs(input: &[Series], kwargs: MyKwargs) -> PolarsResult<Series> {
     let ca = input.str().unwrap();
 
     Ok(ca
-        .apply_to_buffer(|val, buf| {
+        .apply_into_string_amortized(|val, buf| {
             write!(
                 buf,
                 "{}-{}-{}-{}-{}",

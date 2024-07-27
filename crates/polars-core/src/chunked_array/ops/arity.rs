@@ -332,6 +332,10 @@ where
     ChunkedArray::from_chunk_iter(lhs.name(), iter)
 }
 
+/// Apply elementwise binary function which produces string, amortising allocations.
+///
+/// Currently unused within Polars itself, but it's a useful utility for plugin authors.
+#[inline]
 pub fn binary_elementwise_into_string_amortized<T, U, F>(
     lhs: &ChunkedArray<T>,
     rhs: &ChunkedArray<U>,
