@@ -98,6 +98,6 @@ def _scan_pyarrow_dataset_impl(
         common_params["batch_size"] = batch_size
 
     if n_rows:
-        return from_arrow(ds.head(n_rows, **common_params))  # type: ignore[return-value]
+        yield from_arrow(ds.head(n_rows, **common_params))  # type: ignore[return-value]
 
-    return from_arrow(ds.to_table(**common_params))  # type: ignore[return-value]
+    yield from_arrow(ds.to_table(**common_params))  # type: ignore[return-value]

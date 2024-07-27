@@ -228,6 +228,8 @@ pub struct LogicalPlanUdfOptions {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg(feature = "python")]
 pub struct PythonOptions {
+    /// A function that returns a Python Generator.
+    /// The generator should produce Polars DataFrame's.
     pub scan_fn: Option<PythonFunction>,
     /// Schema of the file.
     pub schema: SchemaRef,
