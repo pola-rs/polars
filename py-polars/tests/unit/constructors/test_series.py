@@ -15,6 +15,28 @@ if TYPE_CHECKING:
     from polars._typing import PolarsDataType
 
 
+def test_dtype_array_uses_inner_dtype() -> None:
+    """Issue 17743 saw passing an array dtype allow for coercion."""
+    a1 = np.zeros((10, 5), dtype="float32")
+    a1[0, 0] = 1e9
+    with pytest.raises(
+        ValueError,
+        match="Cannot cast integer array to floating point.",
+    ):
+        pl.Series("some uint16s", a1, dtype=pl.Array(pl.UInt16, 5))
+
+    a2 = np.zeros((10, 5), dtype="float32")
+    with pytest.raises(
+        ValueError,
+        match="Cannot cast integer array to floating point.",
+    ):
+        pl.Series("some uint16s", a2, dtype=pl.Array(pl.UInt16, 5))
+
+    # expect no error
+    a3 = np.zeros((10, 5), dtype="float64")
+    pl.Series("this should work", a3, dtype=pl.Array(pl.Float64, 5))
+
+
 def test_series_mixed_dtypes_list() -> None:
     values = [[0.1, 1]]
 

@@ -78,6 +78,7 @@ from polars.datatypes import (
     UInt32,
     UInt64,
     Unknown,
+    classes,
     is_polars_dtype,
     maybe_cast,
     numpy_char_code_to_dtype,
@@ -274,6 +275,9 @@ class Series:
         elif dtype is not None and not is_polars_dtype(dtype):
             dtype = parse_into_dtype(dtype)
 
+        if isinstance(dtype, classes.Array):
+            self._check_inner_array_is_compatible(dtype, values)
+
         # Handle case where values are passed as the first argument
         original_name: str | None = None
         if name is None:
@@ -363,6 +367,14 @@ class Series:
         series = cls.__new__(cls)
         series._s = pyseries
         return series
+
+    @staticmethod
+    def _check_inner_array_is_compatible(pl_arr: Array, target: ArrayLike) -> None:
+        inner = pl_arr.inner
+        if isinstance(target, np.ndarray):
+            if inner.is_integer() and np.issubdtype(target.dtype, np.floating):
+                msg = "Cannot cast integer array to floating point."
+                raise ValueError(msg)
 
     @classmethod
     @deprecate_function(
