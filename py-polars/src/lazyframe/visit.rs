@@ -168,7 +168,6 @@ impl NodeTraverser {
                 predicate: Default::default(),
                 n_rows: None,
             },
-            predicate: None,
         };
         lp_arena.replace(self.root, ir);
     }

@@ -657,18 +657,15 @@ impl<'a> PredicatePushDown<'a> {
                 }
             },
             #[cfg(feature = "python")]
-            PythonScan {
-                mut options,
-                predicate,
-            } => {
-                if options.is_pyarrow {
-                    let predicate = predicate_at_scan(acc_predicates, predicate, expr_arena);
+            PythonScan { mut options } => {
+                let predicate = predicate_at_scan(acc_predicates, None, expr_arena);
 
-                    if let Some(predicate) = predicate.clone() {
-                        // simplify expressions before we translate them to pyarrow
+                if options.is_pyarrow {
+                    if let Some(predicate) = predicate {
+                        // Simplify expressions before we translate them to pyarrow
+                        options.predicate = PythonPredicate::Polars(predicate);
                         let lp = PythonScan {
                             options: options.clone(),
-                            predicate: Some(predicate),
                         };
                         let lp_top = lp_arena.add(lp);
                         let stack_opt = StackOptimizer {};
@@ -680,11 +677,10 @@ impl<'a> PredicatePushDown<'a> {
                                 lp_top,
                             )
                             .unwrap();
-                        let PythonScan {
-                            options: _,
-                            predicate: Some(predicate),
-                        } = lp_arena.take(lp_top)
-                        else {
+                        let PythonScan { mut options } = lp_arena.take(lp_top) else {
+                            unreachable!()
+                        };
+                        let PythonPredicate::Polars(predicate) = &options.predicate else {
                             unreachable!()
                         };
 
@@ -693,34 +689,23 @@ impl<'a> PredicatePushDown<'a> {
                             expr_arena,
                             Default::default(),
                         ) {
-                            // We were able to create a pyarrow string, mutate the options
+                            // We were able to create a pyarrow string, mutate the options.
                             Some(eval_str) => {
                                 options.predicate = PythonPredicate::PyArrow(eval_str)
                             },
-                            // we were not able to translate the predicate
-                            // apply here
+                            // We were not able to translate the predicate apply on the rust side in the scan.
                             None => {
-                                let lp = PythonScan {
-                                    options,
-                                    predicate: None,
-                                };
-                                return Ok(self.optional_apply_predicate(
-                                    lp,
-                                    vec![predicate],
-                                    lp_arena,
-                                    expr_arena,
-                                ));
+                                let lp = PythonScan { options };
+                                return Ok(lp);
                             },
                         }
                     }
-                    Ok(PythonScan { options, predicate })
+                    Ok(PythonScan { options })
                 } else {
-                    self.no_pushdown_restart_opt(
-                        PythonScan { options, predicate },
-                        acc_predicates,
-                        lp_arena,
-                        expr_arena,
-                    )
+                    if let Some(predicate) = predicate {
+                        options.predicate = PythonPredicate::Polars(predicate);
+                    }
+                    Ok(PythonScan { options })
                 }
             },
             Invalid => unreachable!(),

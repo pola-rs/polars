@@ -158,7 +158,21 @@ fn create_physical_plan_impl(
     let logical_plan = lp_arena.take(root);
     match logical_plan {
         #[cfg(feature = "python")]
-        PythonScan { options, .. } => Ok(Box::new(executors::PythonScanExec { options })),
+        PythonScan { options } => {
+            let predicate = if let PythonPredicate::Polars(e) = &options.predicate {
+                let mut state = ExpressionConversionState::new(true, state.expr_depth);
+                Some(create_physical_expr(
+                    e,
+                    Context::Default,
+                    expr_arena,
+                    Some(&options.schema),
+                    &mut state,
+                )?)
+            } else {
+                None
+            };
+            Ok(Box::new(executors::PythonScanExec { options, predicate }))
+        },
         Sink { payload, .. } => match payload {
             SinkType::Memory => {
                 polars_bail!(InvalidOperation: "memory sink not supported in the standard engine")

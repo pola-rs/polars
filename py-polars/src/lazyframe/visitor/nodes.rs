@@ -14,8 +14,6 @@ use crate::PyDataFrame;
 pub struct PythonScan {
     #[pyo3(get)]
     options: PyObject,
-    #[pyo3(get)]
-    predicate: Option<PyExprIR>,
 }
 
 #[pyclass]
@@ -257,7 +255,7 @@ pub struct Sink {
 
 pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
     let result = match plan {
-        IR::PythonScan { options, predicate } => PythonScan {
+        IR::PythonScan { options } => PythonScan {
             options: (
                 options
                     .scan_fn
@@ -282,7 +280,6 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                     .map_or_else(|| py.None(), |s| s.to_object(py)),
             )
                 .to_object(py),
-            predicate: predicate.as_ref().map(|e| e.into()),
         }
         .into_py(py),
         IR::Slice { input, offset, len } => Slice {

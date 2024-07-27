@@ -8,6 +8,7 @@ use super::*;
 
 pub(crate) struct PythonScanExec {
     pub(crate) options: PythonOptions,
+    pub(crate) predicate: Option<Arc<dyn PhysicalExpr>>,
 }
 
 fn python_df_to_rust(py: Python, df: Bound<PyAny>) -> PolarsResult<DataFrame> {
@@ -51,7 +52,12 @@ impl Executor for PythonScanExec {
             let predicate = match &self.options.predicate {
                 PythonPredicate::PyArrow(s) => s.into_py(py),
                 PythonPredicate::None => (None::<()>).into_py(py),
-                PythonPredicate::Polars(_) => todo!(),
+                // Still todo, currently we apply the predicate on this side.
+                PythonPredicate::Polars(_) => {
+                    assert!(self.predicate.is_some(), "should be set");
+
+                    (None::<()>).into_py(py)
+                },
             };
 
             let generator = callable
@@ -60,14 +66,24 @@ impl Executor for PythonScanExec {
 
             // This isn't a generator, but a `DataFrame`.
             if generator.getattr(intern!(py, "_df")).is_ok() {
-                return python_df_to_rust(py, generator);
+                let df = python_df_to_rust(py, generator)?;
+                return if let Some(pred) = &self.predicate {
+                    let mask = pred.evaluate(&df, state)?;
+                    df.filter(mask.bool()?)
+                } else {
+                    Ok(df)
+                };
             }
 
             let mut chunks = vec![];
             loop {
                 match generator.call_method0(intern!(py, "__next__")) {
                     Ok(out) => {
-                        let df = python_df_to_rust(py, out)?;
+                        let mut df = python_df_to_rust(py, out)?;
+                        if let Some(pred) = &self.predicate {
+                            let mask = pred.evaluate(&df, state)?;
+                            df = df.filter(mask.bool()?)?;
+                        }
                         chunks.push(df)
                     },
                     Err(err) if err.matches(py, PyStopIteration::type_object_bound(py)) => break,

@@ -19,10 +19,9 @@ use polars_time::{DynamicGroupOptions, RollingGroupOptions};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+use crate::plans::ExprIR;
 #[cfg(feature = "python")]
 use crate::prelude::python_udf::PythonFunction;
-#[cfg(feature = "python")]
-use crate::prelude::Expr;
 
 pub type FileCount = u32;
 
@@ -240,19 +239,18 @@ pub struct PythonOptions {
     // Whether this is a pyarrow dataset source or a Polars source.
     pub is_pyarrow: bool,
     /// Optional predicate the reader must apply.
+    #[cfg_attr(feature = "serde", serde(skip))]
     pub predicate: PythonPredicate,
     /// A `head` call passed to the reader.
     pub n_rows: Option<usize>,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg(feature = "python")]
 pub enum PythonPredicate {
     // A pyarrow predicate python expression
     // can be evaluated with python.eval
     PyArrow(String),
-    Polars(Expr),
+    Polars(ExprIR),
     #[default]
     None,
 }

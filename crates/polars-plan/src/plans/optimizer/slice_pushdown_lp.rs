@@ -153,15 +153,13 @@ impl SlicePushDown {
             #[cfg(feature = "python")]
             (PythonScan {
                 mut options,
-                predicate,
             },
             // TODO! we currently skip slice pushdown if there is a predicate.
             // we can modify the readers to only limit after predicates have been applied
-                Some(state)) if state.offset == 0 && predicate.is_none() => {
+                Some(state)) if state.offset == 0 && matches!(options.predicate, PythonPredicate::None) => {
                 options.n_rows = Some(state.len as usize);
                 let lp = PythonScan {
                     options,
-                    predicate
                 };
                 Ok(lp)
             }

@@ -380,10 +380,7 @@ impl ProjectionPushDown {
                 Ok(lp)
             },
             #[cfg(feature = "python")]
-            PythonScan {
-                mut options,
-                predicate,
-            } => {
+            PythonScan { mut options } => {
                 options.with_columns = get_scan_columns(&acc_projections, expr_arena, None, None);
 
                 options.output_schema = if options.with_columns.is_none() {
@@ -396,7 +393,7 @@ impl ProjectionPushDown {
                         true,
                     )?))
                 };
-                Ok(PythonScan { options, predicate })
+                Ok(PythonScan { options })
             },
             Scan {
                 paths,
