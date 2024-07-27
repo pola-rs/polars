@@ -21,6 +21,8 @@ use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "python")]
 use crate::prelude::python_udf::PythonFunction;
+#[cfg(feature = "python")]
+use crate::prelude::Expr;
 
 pub type FileCount = u32;
 
@@ -227,19 +229,30 @@ pub struct LogicalPlanUdfOptions {
 #[cfg(feature = "python")]
 pub struct PythonOptions {
     pub scan_fn: Option<PythonFunction>,
+    /// Schema of the file.
     pub schema: SchemaRef,
+    /// Schema the reader will produce when the file is read.
     pub output_schema: Option<SchemaRef>,
+    // Projected column names.
     pub with_columns: Option<Arc<[String]>>,
-    pub pyarrow: bool,
-    // a pyarrow predicate python expression
-    // can be evaluated with python.eval
-    pub predicate: Option<String>,
-    // a `head` call passed to pyarrow
+    // Whether this is a pyarrow dataset source or a Polars source.
+    pub is_pyarrow: bool,
+    /// Optional predicate the reader must apply.
+    pub predicate: PythonPredicate,
+    /// A `head` call passed to the reader.
     pub n_rows: Option<usize>,
 }
 
-pub enum PythonPredicate{
-    
+#[derive(Clone, PartialEq, Eq, Debug, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg(feature = "python")]
+pub enum PythonPredicate {
+    // A pyarrow predicate python expression
+    // can be evaluated with python.eval
+    PyArrow(String),
+    Polars(Expr),
+    #[default]
+    None,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Default, Hash)]

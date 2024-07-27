@@ -17,7 +17,6 @@ impl Executor for PythonScanExec {
             }
         }
         let with_columns = self.options.with_columns.take();
-        let pyarrow_predicate = self.options.predicate.take();
         let n_rows = self.options.n_rows.take();
         Python::with_gil(|py| {
             let pl = PyModule::import_bound(py, "polars").unwrap();
@@ -28,13 +27,14 @@ impl Executor for PythonScanExec {
 
             let with_columns = with_columns.map(|cols| cols.iter().cloned().collect::<Vec<_>>());
 
+            let predicate = match &self.options.predicate {
+                PythonPredicate::PyArrow(s) => s.into_py(py),
+                PythonPredicate::None => (None::<()>).into_py(py),
+                PythonPredicate::Polars(_) => todo!(),
+            };
+
             let out = callable
-                .call1((
-                    python_scan_function,
-                    with_columns,
-                    pyarrow_predicate,
-                    n_rows,
-                ))
+                .call1((python_scan_function, with_columns, predicate, n_rows))
                 .map_err(to_compute_err)?;
             let pydf = out.getattr("_df").unwrap();
             let raw_parts = pydf.call_method0("into_raw_parts").unwrap();

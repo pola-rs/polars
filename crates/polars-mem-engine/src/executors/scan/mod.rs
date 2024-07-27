@@ -6,6 +6,8 @@ mod ipc;
 mod ndjson;
 #[cfg(feature = "parquet")]
 mod parquet;
+#[cfg(feature = "python")]
+mod python_scan;
 
 use std::mem;
 
@@ -23,6 +25,8 @@ use polars_io::predicates::PhysicalIoExpr;
 use polars_io::prelude::*;
 use polars_plan::global::_set_n_rows_for_scan;
 
+#[cfg(feature = "python")]
+pub(crate) use self::python_scan::*;
 use super::*;
 use crate::prelude::*;
 

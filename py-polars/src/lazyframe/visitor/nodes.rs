@@ -1,7 +1,7 @@
 use polars_core::prelude::{IdxSize, UniqueKeepStrategy};
 use polars_ops::prelude::JoinType;
 use polars_plan::plans::IR;
-use polars_plan::prelude::{FileCount, FileScan, FileScanOptions, FunctionNode};
+use polars_plan::prelude::{FileCount, FileScan, FileScanOptions, FunctionNode, PythonPredicate};
 use pyo3::exceptions::{PyNotImplementedError, PyValueError};
 use pyo3::prelude::*;
 
@@ -267,11 +267,12 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                     .with_columns
                     .as_ref()
                     .map_or_else(|| py.None(), |cols| cols.to_object(py)),
-                options.pyarrow,
-                options
-                    .predicate
-                    .as_ref()
-                    .map_or_else(|| py.None(), |s| s.to_object(py)),
+                options.is_pyarrow,
+                match &options.predicate {
+                    PythonPredicate::None => py.None(),
+                    PythonPredicate::PyArrow(s) => s.to_object(py),
+                    PythonPredicate::Polars(_) => return Err(PyNotImplementedError::new_err("polars native predicates not yet supported")),
+                },
                 options
                     .n_rows
                     .map_or_else(|| py.None(), |s| s.to_object(py)),

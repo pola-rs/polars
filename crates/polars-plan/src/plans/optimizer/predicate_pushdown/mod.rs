@@ -661,7 +661,7 @@ impl<'a> PredicatePushDown<'a> {
                 mut options,
                 predicate,
             } => {
-                if options.pyarrow {
+                if options.is_pyarrow {
                     let predicate = predicate_at_scan(acc_predicates, predicate, expr_arena);
 
                     if let Some(predicate) = predicate.clone() {
@@ -693,8 +693,10 @@ impl<'a> PredicatePushDown<'a> {
                             expr_arena,
                             Default::default(),
                         ) {
-                            // we we able to create a pyarrow string, mutate the options
-                            Some(eval_str) => options.predicate = Some(eval_str),
+                            // We were able to create a pyarrow string, mutate the options
+                            Some(eval_str) => {
+                                options.predicate = PythonPredicate::PyArrow(eval_str)
+                            },
                             // we were not able to translate the predicate
                             // apply here
                             None => {

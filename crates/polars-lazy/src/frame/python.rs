@@ -9,7 +9,7 @@ impl LazyFrame {
             options: PythonOptions {
                 scan_fn: Some(scan_fn.into()),
                 schema: Arc::new(schema),
-                pyarrow,
+                is_pyarrow: pyarrow,
                 ..Default::default()
             },
         }
