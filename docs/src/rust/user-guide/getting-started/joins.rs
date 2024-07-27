@@ -8,7 +8,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let df: DataFrame = df!(
         "a" => 0..8,
         "b"=> (0..8).map(|_| rng.gen::<f64>()).collect::<Vec<f64>>(),
-        "d"=> [Some(1.0), Some(2.0), None, None, Some(0.0), Some(-5.0), Some(-42.), None]
+        "d"=> [Some(1.0), Some(2.0), Some(f64::NAN), Some(f64::NAN), Some(0.0), Some(-5.0), Some(-42.), None]
     )
     .unwrap();
     let df2: DataFrame = df!(
