@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import gzip
 import io
+import lzma
 import sys
 import textwrap
 import zlib
@@ -566,6 +567,14 @@ def test_compressed_csv(io_files_path: Path, monkeypatch: pytest.MonkeyPatch) ->
 
     # zlib compression
     csv_bytes = zlib.compress(csv.encode())
+    out = pl.read_csv(csv_bytes)
+    expected = pl.DataFrame(
+        {"a": [1, 2, 3], "b": ["a", "b", "c"], "c": [1.0, 2.0, 3.0]}
+    )
+    assert_frame_equal(out, expected)
+
+    # lzma (.xz) compression
+    csv_bytes = lzma.compress(csv.encode())
     out = pl.read_csv(csv_bytes)
     expected = pl.DataFrame(
         {"a": [1, 2, 3], "b": ["a", "b", "c"], "c": [1.0, 2.0, 3.0]}

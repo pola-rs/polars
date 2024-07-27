@@ -92,6 +92,7 @@ url = "2.4"
 uuid = { version = "1.7.0", features = ["v4"] }
 version_check = "0.9.4"
 xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
+xz2 = "0.1.7"
 zstd = "0.13"
 
 polars = { version = "0.41.3", path = "crates/polars", default-features = false }
