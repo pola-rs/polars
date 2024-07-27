@@ -13,7 +13,6 @@ use crate::parquet::encoding::hybrid_rle::{self, DictionaryTranslator};
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{DataPage, DictPage};
 use crate::read::deserialize::binary::utils::BinaryIter;
-use crate::read::deserialize::utils::filter::Filter;
 use crate::read::deserialize::utils::{
     self, binary_views_dict, extend_from_decoder, Decoder, PageValidity, StateTranslation,
     TranslatedHybridRle,
@@ -30,14 +29,13 @@ impl<'a> StateTranslation<'a, BinViewDecoder> for BinaryStateTranslation<'a> {
         page: &'a DataPage,
         dict: Option<&'a <BinViewDecoder as utils::Decoder>::Dict>,
         page_validity: Option<&PageValidity<'a>>,
-        filter: Option<&Filter<'a>>,
     ) -> PolarsResult<Self> {
         let is_string = matches!(
             page.descriptor.primitive_type.logical_type,
             Some(PrimitiveLogicalType::String)
         );
         decoder.check_utf8.store(is_string, Ordering::Relaxed);
-        Self::new(page, dict, page_validity, filter, is_string)
+        Self::new(page, dict, page_validity, is_string)
     }
 
     fn len_when_not_nullable(&self) -> usize {

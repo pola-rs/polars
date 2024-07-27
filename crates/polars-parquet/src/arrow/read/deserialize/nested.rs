@@ -13,7 +13,7 @@ pub fn columns_to_iter_recursive<I>(
     mut types: Vec<&PrimitiveType>,
     field: Field,
     mut init: Vec<InitNested>,
-    num_rows: usize,
+    filter: Option<Filter>,
 ) -> PolarsResult<(NestedState, Box<dyn Array>)>
 where
     I: CompressedPagesIter,
@@ -32,7 +32,7 @@ where
                 null::NullDecoder,
                 init,
             )?
-            .collect_n(num_rows)?
+            .collect_n(filter)?
         },
         Boolean => {
             init.push(InitNested::Primitive(field.is_nullable));
@@ -43,7 +43,7 @@ where
                 boolean::BooleanDecoder,
                 init,
             )?
-            .collect_n(num_rows)?
+            .collect_n(filter)?
         },
         Primitive(Int8) => {
             init.push(InitNested::Primitive(field.is_nullable));
@@ -54,7 +54,7 @@ where
                 primitive::PrimitiveDecoder::<i32, i8, _>::cast_as(),
                 init,
             )?
-            .collect_n(num_rows)?
+            .collect_n(filter)?
         },
         Primitive(Int16) => {
             init.push(InitNested::Primitive(field.is_nullable));
@@ -65,7 +65,7 @@ where
                 primitive::PrimitiveDecoder::<i32, i16, _>::cast_as(),
                 init,
             )?
-            .collect_n(num_rows)?
+            .collect_n(filter)?
         },
         Primitive(Int32) => {
             init.push(InitNested::Primitive(field.is_nullable));
@@ -76,7 +76,7 @@ where
                 primitive::PrimitiveDecoder::<i32, _, _>::unit(),
                 init,
             )?
-            .collect_n(num_rows)?
+            .collect_n(filter)?
         },
         Primitive(Int64) => {
             init.push(InitNested::Primitive(field.is_nullable));
@@ -87,7 +87,7 @@ where
                 primitive::PrimitiveDecoder::<i64, _, _>::unit(),
                 init,
             )?
-            .collect_n(num_rows)?
+            .collect_n(filter)?
         },
         Primitive(UInt8) => {
             init.push(InitNested::Primitive(field.is_nullable));
@@ -98,7 +98,7 @@ where
                 primitive::PrimitiveDecoder::<i32, u8, _>::cast_as(),
                 init,
             )?
-            .collect_n(num_rows)?
+            .collect_n(filter)?
         },
         Primitive(UInt16) => {
             init.push(InitNested::Primitive(field.is_nullable));
@@ -109,7 +109,7 @@ where
                 primitive::PrimitiveDecoder::<i32, u16, _>::cast_as(),
                 init,
             )?
-            .collect_n(num_rows)?
+            .collect_n(filter)?
         },
         Primitive(UInt32) => {
             init.push(InitNested::Primitive(field.is_nullable));
@@ -121,7 +121,7 @@ where
                     primitive::PrimitiveDecoder::<i32, u32, _>::cast_as(),
                     init,
                 )?
-                .collect_n(num_rows)?,
+                .collect_n(filter)?,
                 // some implementations of parquet write arrow's u32 into i64.
                 PhysicalType::Int64 => PageNestedDecoder::new(
                     columns.pop().unwrap(),
@@ -129,7 +129,7 @@ where
                     primitive::PrimitiveDecoder::<i64, u32, _>::cast_as(),
                     init,
                 )?
-                .collect_n(num_rows)?,
+                .collect_n(filter)?,
                 other => {
                     polars_bail!(ComputeError:
                         "deserializing UInt32 from {other:?}'s parquet"
@@ -146,7 +146,7 @@ where
                 primitive::PrimitiveDecoder::<i64, u64, _>::cast_as(),
                 init,
             )?
-            .collect_n(num_rows)?
+            .collect_n(filter)?
         },
         Primitive(Float32) => {
             init.push(InitNested::Primitive(field.is_nullable));
@@ -157,7 +157,7 @@ where
                 primitive::PrimitiveDecoder::<f32, _, _>::unit(),
                 init,
             )?
-            .collect_n(num_rows)?
+            .collect_n(filter)?
         },
         Primitive(Float64) => {
             init.push(InitNested::Primitive(field.is_nullable));
@@ -168,7 +168,7 @@ where
                 primitive::PrimitiveDecoder::<f64, _, _>::unit(),
                 init,
             )?
-            .collect_n(num_rows)?
+            .collect_n(filter)?
         },
         BinaryView | Utf8View => {
             init.push(InitNested::Primitive(field.is_nullable));
@@ -179,7 +179,7 @@ where
                 binview::BinViewDecoder::default(),
                 init,
             )?
-            .collect_n(num_rows)?
+            .collect_n(filter)?
         },
         LargeBinary | LargeUtf8 => {
             init.push(InitNested::Primitive(field.is_nullable));
@@ -190,7 +190,7 @@ where
                 binary::BinaryDecoder::<i64>::default(),
                 init,
             )?
-            .collect_n(num_rows)?
+            .collect_n(filter)?
         },
         _ => match field.data_type().to_logical_type() {
             ArrowDataType::Dictionary(key_type, _, _) => {
@@ -200,7 +200,7 @@ where
                 let data_type = field.data_type().clone();
 
                 match_integer_type!(key_type, |$K| {
-                    dict_read::<$K, _>(iter, init, type_, data_type, num_rows).map(|(s, arr)| (s, Box::new(arr) as Box<_>))
+                    dict_read::<$K, _>(iter, init, type_, data_type, filter).map(|(s, arr)| (s, Box::new(arr) as Box<_>))
                 })?
             },
             ArrowDataType::List(inner) | ArrowDataType::LargeList(inner) => {
@@ -210,7 +210,7 @@ where
                     types,
                     inner.as_ref().clone(),
                     init,
-                    num_rows,
+                    filter,
                 )?;
                 let array = create_list(field.data_type().clone(), &mut nested, array);
                 (nested, array)
@@ -222,7 +222,7 @@ where
                     types,
                     inner.as_ref().clone(),
                     init,
-                    num_rows,
+                    filter,
                 )?;
                 let array = create_list(field.data_type().clone(), &mut nested, array);
                 (nested, array)
@@ -237,14 +237,14 @@ where
                         primitive::PrimitiveDecoder::<i32, i128, _>::cast_into(),
                         init,
                     )?
-                    .collect_n(num_rows)?,
+                    .collect_n(filter)?,
                     PhysicalType::Int64 => PageNestedDecoder::new(
                         columns.pop().unwrap(),
                         field.data_type.clone(),
                         primitive::PrimitiveDecoder::<i64, i128, _>::cast_into(),
                         init,
                     )?
-                    .collect_n(num_rows)?,
+                    .collect_n(filter)?,
                     PhysicalType::FixedLenByteArray(n) if n > 16 => {
                         polars_bail!(
                             ComputeError: "Can't decode Decimal128 type from `FixedLenByteArray` of len {n}"
@@ -257,7 +257,7 @@ where
                             fixed_size_binary::BinaryDecoder { size },
                             init,
                         )?
-                        .collect_n(num_rows)?;
+                        .collect_n(filter)?;
 
                         let array = array
                             .as_any()
@@ -301,14 +301,14 @@ where
                         primitive::PrimitiveDecoder::closure(|x: i32| i256(I256::new(x as i128))),
                         init,
                     )?
-                    .collect_n(num_rows)?,
+                    .collect_n(filter)?,
                     PhysicalType::Int64 => PageNestedDecoder::new(
                         columns.pop().unwrap(),
                         field.data_type.clone(),
                         primitive::PrimitiveDecoder::closure(|x: i64| i256(I256::new(x as i128))),
                         init,
                     )?
-                    .collect_n(num_rows)?,
+                    .collect_n(filter)?,
                     PhysicalType::FixedLenByteArray(size) if size <= 16 => {
                         let (mut nested, array) = PageNestedDecoder::new(
                             columns.pop().unwrap(),
@@ -316,7 +316,7 @@ where
                             fixed_size_binary::BinaryDecoder { size },
                             init,
                         )?
-                        .collect_n(num_rows)?;
+                        .collect_n(filter)?;
 
                         let array = array
                             .as_any()
@@ -350,7 +350,7 @@ where
                             fixed_size_binary::BinaryDecoder { size },
                             init,
                         )?
-                        .collect_n(num_rows)?;
+                        .collect_n(filter)?;
 
                         let array = array
                             .as_any()
@@ -399,7 +399,7 @@ where
                         let n = n_columns(&f.data_type);
                         let columns = columns.drain(columns.len() - n..).collect();
                         let types = types.drain(types.len() - n..).collect();
-                        columns_to_iter_recursive(columns, types, f.clone(), init, num_rows)
+                        columns_to_iter_recursive(columns, types, f.clone(), init, filter.clone())
                     })
                     .collect::<PolarsResult<Vec<(NestedState, Box<dyn Array>)>>>()?;
 
@@ -431,7 +431,7 @@ where
                     types,
                     inner.as_ref().clone(),
                     init,
-                    num_rows,
+                    filter,
                 )?;
                 let array = create_map(field.data_type().clone(), &mut nested, array);
                 (nested, array)
@@ -450,7 +450,7 @@ fn dict_read<'a, K: DictionaryKey, I: 'a + CompressedPagesIter>(
     init: Vec<InitNested>,
     _type_: &PrimitiveType,
     data_type: ArrowDataType,
-    num_rows: usize,
+    filter: Option<Filter>,
 ) -> PolarsResult<(NestedState, DictionaryArray<K>)> {
     use ArrowDataType::*;
     let values_data_type = if let Dictionary(_, v, _) = &data_type {
@@ -466,35 +466,35 @@ fn dict_read<'a, K: DictionaryKey, I: 'a + CompressedPagesIter>(
             primitive::PrimitiveDecoder::<i32, u8, _>::cast_as(),
             init,
         )?
-        .collect_n(num_rows)?,
+        .collect_n(filter)?,
         UInt16 => PageNestedDictArrayDecoder::<_, K, _>::new(
             iter,
             data_type,
             primitive::PrimitiveDecoder::<i32, u16, _>::cast_as(),
             init,
         )?
-        .collect_n(num_rows)?,
+        .collect_n(filter)?,
         UInt32 => PageNestedDictArrayDecoder::<_, K, _>::new(
             iter,
             data_type,
             primitive::PrimitiveDecoder::<i32, u32, _>::cast_as(),
             init,
         )?
-        .collect_n(num_rows)?,
+        .collect_n(filter)?,
         Int8 => PageNestedDictArrayDecoder::<_, K, _>::new(
             iter,
             data_type,
             primitive::PrimitiveDecoder::<i32, i8, _>::cast_as(),
             init,
         )?
-        .collect_n(num_rows)?,
+        .collect_n(filter)?,
         Int16 => PageNestedDictArrayDecoder::<_, K, _>::new(
             iter,
             data_type,
             primitive::PrimitiveDecoder::<i32, i16, _>::cast_as(),
             init,
         )?
-        .collect_n(num_rows)?,
+        .collect_n(filter)?,
         Int32 | Date32 | Time32(_) | Interval(IntervalUnit::YearMonth) => {
             PageNestedDictArrayDecoder::<_, K, _>::new(
                 iter,
@@ -502,7 +502,7 @@ fn dict_read<'a, K: DictionaryKey, I: 'a + CompressedPagesIter>(
                 primitive::PrimitiveDecoder::<i32, _, _>::unit(),
                 init,
             )?
-            .collect_n(num_rows)?
+            .collect_n(filter)?
         },
         Int64 | Date64 | Time64(_) | Duration(_) => PageNestedDictArrayDecoder::<_, K, _>::new(
             iter,
@@ -510,35 +510,35 @@ fn dict_read<'a, K: DictionaryKey, I: 'a + CompressedPagesIter>(
             primitive::PrimitiveDecoder::<i64, i32, _>::cast_as(),
             init,
         )?
-        .collect_n(num_rows)?,
+        .collect_n(filter)?,
         Float32 => PageNestedDictArrayDecoder::<_, K, _>::new(
             iter,
             data_type,
             primitive::PrimitiveDecoder::<f32, _, _>::unit(),
             init,
         )?
-        .collect_n(num_rows)?,
+        .collect_n(filter)?,
         Float64 => PageNestedDictArrayDecoder::<_, K, _>::new(
             iter,
             data_type,
             primitive::PrimitiveDecoder::<f64, _, _>::unit(),
             init,
         )?
-        .collect_n(num_rows)?,
+        .collect_n(filter)?,
         LargeUtf8 | LargeBinary => PageNestedDictArrayDecoder::<_, K, _>::new(
             iter,
             data_type,
             binary::BinaryDecoder::<i64>::default(),
             init,
         )?
-        .collect_n(num_rows)?,
+        .collect_n(filter)?,
         Utf8View | BinaryView => PageNestedDictArrayDecoder::<_, K, _>::new(
             iter,
             data_type,
             binview::BinViewDecoder::default(),
             init,
         )?
-        .collect_n(num_rows)?,
+        .collect_n(filter)?,
         FixedSizeBinary(size) => {
             let size = *size;
             PageNestedDictArrayDecoder::<_, K, _>::new(
@@ -547,7 +547,7 @@ fn dict_read<'a, K: DictionaryKey, I: 'a + CompressedPagesIter>(
                 fixed_size_binary::BinaryDecoder { size },
                 init,
             )?
-            .collect_n(num_rows)?
+            .collect_n(filter)?
         },
         /*
 

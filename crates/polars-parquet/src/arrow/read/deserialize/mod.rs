@@ -19,6 +19,7 @@ use polars_utils::mmap::MemReader;
 use simple::page_iter_to_array;
 
 pub use self::nested_utils::{init_nested, InitNested, NestedArrayIter, NestedState};
+pub use self::utils::filter::Filter;
 use super::*;
 use crate::parquet::read::get_page_iterator as _get_page_iterator;
 use crate::parquet::schema::types::PrimitiveType;
@@ -132,7 +133,7 @@ fn columns_to_iter_recursive<'a, I>(
     mut types: Vec<&PrimitiveType>,
     field: Field,
     init: Vec<InitNested>,
-    num_rows: usize,
+    filter: Option<Filter>,
 ) -> PolarsResult<(NestedState, Box<dyn Array>)>
 where
     I: 'a + CompressedPagesIter,
@@ -142,13 +143,13 @@ where
             columns.pop().unwrap(),
             types.pop().unwrap(),
             field.data_type,
-            num_rows,
+            filter,
         )?;
 
         return Ok((NestedState::default(), array));
     }
 
-    nested::columns_to_iter_recursive(columns, types, field, init, num_rows)
+    nested::columns_to_iter_recursive(columns, types, field, init, filter)
 }
 
 /// Returns the number of (parquet) columns that a [`ArrowDataType`] contains.
@@ -198,12 +199,12 @@ pub fn column_iter_to_arrays<'a, I>(
     columns: Vec<BasicDecompressor<I>>,
     types: Vec<&PrimitiveType>,
     field: Field,
-    num_rows: usize,
+    filter: Option<Filter>,
 ) -> PolarsResult<ArrayIter<'a>>
 where
     I: 'a + CompressedPagesIter,
 {
-    let (_, array) = columns_to_iter_recursive(columns, types, field, vec![], num_rows)?;
+    let (_, array) = columns_to_iter_recursive(columns, types, field, vec![], filter)?;
 
     Ok(Box::new(std::iter::once(Ok(array))))
 }

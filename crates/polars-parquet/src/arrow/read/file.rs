@@ -5,6 +5,7 @@ use arrow::datatypes::ArrowSchema;
 use arrow::record_batch::RecordBatchT;
 use polars_error::PolarsResult;
 
+use super::deserialize::Filter;
 use super::{RowGroupDeserializer, RowGroupMetaData};
 use crate::arrow::read::read_columns_many;
 use crate::parquet::indexes::FilteredPage;
@@ -176,7 +177,7 @@ impl<R: Read + Seek> RowGroupReader<R> {
             &mut self.reader,
             &row_group,
             self.schema.fields.clone(),
-            Some(self.remaining_rows),
+            Some(Filter::new_limited(self.remaining_rows)),
             pages,
         )?;
 

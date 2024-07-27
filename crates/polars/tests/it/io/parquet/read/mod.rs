@@ -176,7 +176,7 @@ where
     let mut arrays = vec![];
     while let State::Some(mut new_iter) = columns.advance()? {
         if let Some((pages, column)) = new_iter.get() {
-            let mut iterator = BasicDecompressor::new(pages, vec![]);
+            let mut iterator = BasicDecompressor::new(pages, column.num_values() as usize, vec![]);
 
             let mut dict = None;
             while let Some(page) = iterator.next()? {
@@ -275,7 +275,7 @@ pub async fn read_column_async<
 
     let pages = pages.collect::<Vec<_>>().await;
 
-    let iterator = BasicDecompressor::new(pages.into_iter(), vec![]);
+    let iterator = BasicDecompressor::new(pages.into_iter(), column.num_values() as usize, vec![]);
 
     let mut arrays = collect(iterator, column.physical_type())?;
 

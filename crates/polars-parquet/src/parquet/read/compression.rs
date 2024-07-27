@@ -151,6 +151,7 @@ impl streaming_decompression::Decompressed for Page {
 /// is reused across pages, so that a single allocation is required.
 /// If the pages are not compressed, the internal buffer is not used.
 pub struct BasicDecompressor<I: Iterator<Item = ParquetResult<CompressedPage>>> {
+    total_num_rows: usize,
     iter: _Decompressor<I>,
     peeked: Option<Page>,
 }
@@ -160,11 +161,16 @@ where
     I: Iterator<Item = ParquetResult<CompressedPage>>,
 {
     /// Returns a new [`BasicDecompressor`].
-    pub fn new(iter: I, buffer: Vec<u8>) -> Self {
+    pub fn new(iter: I, total_num_rows: usize, buffer: Vec<u8>) -> Self {
         Self {
+            total_num_rows,
             iter: _Decompressor::new(iter, buffer, decompress),
             peeked: None,
         }
+    }
+
+    pub fn total_num_rows(&self) -> usize {
+        self.total_num_rows
     }
 
     /// Returns its internal buffer, consuming itself.

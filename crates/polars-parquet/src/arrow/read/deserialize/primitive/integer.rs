@@ -16,7 +16,6 @@ use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
 use crate::parquet::types::{decode, NativeType as ParquetNativeType};
 use crate::read::deserialize::utils::array_chunks::ArrayChunks;
-use crate::read::deserialize::utils::filter::Filter;
 use crate::read::deserialize::utils::{
     BatchableCollector, Decoder, PageValidity, TranslatedHybridRle,
 };
@@ -44,7 +43,6 @@ where
         page: &'a DataPage,
         dict: Option<&'a <IntDecoder<P, T, D> as utils::Decoder>::Dict>,
         _page_validity: Option<&PageValidity<'a>>,
-        _filter: Option<&Filter<'a>>,
     ) -> PolarsResult<Self> {
         match (page.encoding(), dict) {
             (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict)) => {

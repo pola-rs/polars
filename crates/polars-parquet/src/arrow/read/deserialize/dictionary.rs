@@ -3,7 +3,6 @@ use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
 use polars_error::PolarsResult;
 
-use super::utils::filter::Filter;
 use super::utils::{
     self, dict_indices_decoder, extend_from_decoder, BatchableCollector, Decoder, PageValidity,
     StateTranslation,
@@ -22,7 +21,6 @@ impl<'a, K: DictionaryKey> StateTranslation<'a, DictionaryDecoder<K>> for Hybrid
         page: &'a DataPage,
         _dict: Option<&'a <DictionaryDecoder<K> as Decoder>::Dict>,
         _page_validity: Option<&PageValidity<'a>>,
-        _filter: Option<&Filter<'a>>,
     ) -> PolarsResult<Self> {
         if !matches!(
             page.encoding(),

@@ -33,14 +33,13 @@ impl<'a, O: Offset> StateTranslation<'a, BinaryDecoder<O>> for BinaryStateTransl
         page: &'a DataPage,
         dict: Option<&'a <BinaryDecoder<O> as utils::Decoder>::Dict>,
         page_validity: Option<&utils::PageValidity<'a>>,
-        filter: Option<&utils::filter::Filter<'a>>,
     ) -> PolarsResult<Self> {
         let is_string = matches!(
             page.descriptor.primitive_type.logical_type,
             Some(PrimitiveLogicalType::String)
         );
         decoder.check_utf8.store(is_string, Ordering::Relaxed);
-        BinaryStateTranslation::new(page, dict, page_validity, filter, is_string)
+        BinaryStateTranslation::new(page, dict, page_validity, is_string)
     }
 
     fn len_when_not_nullable(&self) -> usize {

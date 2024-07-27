@@ -11,7 +11,6 @@ use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use crate::parquet::encoding::Encoding;
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
-use crate::read::deserialize::utils::filter::Filter;
 use crate::read::deserialize::utils::{BatchableCollector, PageValidity};
 
 #[allow(clippy::large_enum_variant)]
@@ -29,7 +28,6 @@ impl<'a> utils::StateTranslation<'a, BooleanDecoder> for StateTranslation<'a> {
         page: &'a DataPage,
         _dict: Option<&'a <BooleanDecoder as Decoder>::Dict>,
         page_validity: Option<&PageValidity<'a>>,
-        _filter: Option<&Filter<'a>>,
     ) -> PolarsResult<Self> {
         let values = split_buffer(page)?.values;
 

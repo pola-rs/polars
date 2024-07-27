@@ -6,7 +6,7 @@ use polars_core::datatypes::PlHashMap;
 use polars_error::PolarsResult;
 use polars_parquet::read::{
     column_iter_to_arrays, get_field_columns, ArrayIter, BasicDecompressor, ColumnChunkMetaData,
-    PageReader,
+    Filter, PageReader,
 };
 use polars_utils::mmap::{MemReader, MemSlice};
 
@@ -81,11 +81,11 @@ pub(super) fn to_deserializer<'a>(
                 usize::MAX,
             );
             (
-                BasicDecompressor::new(pages, vec![]),
+                BasicDecompressor::new(pages, column_meta.num_values() as usize, vec![]),
                 &column_meta.descriptor().descriptor.primitive_type,
             )
         })
         .unzip();
 
-    column_iter_to_arrays(columns, types, field, num_rows)
+    column_iter_to_arrays(columns, types, field, Some(Filter::new_limited(num_rows)))
 }

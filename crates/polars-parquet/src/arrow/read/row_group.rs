@@ -8,6 +8,7 @@ use polars_utils::mmap::MemReader;
 
 use super::{ArrayIter, RowGroupMetaData};
 use crate::arrow::read::column_iter_to_arrays;
+use crate::arrow::read::deserialize::Filter;
 use crate::parquet::indexes::FilteredPage;
 use crate::parquet::metadata::ColumnChunkMetaData;
 use crate::parquet::read::{BasicDecompressor, IndexedPageReader, PageMetaData, PageReader};
@@ -147,7 +148,7 @@ type Pages = Box<
 pub fn to_deserializer<'a>(
     columns: Vec<(&ColumnChunkMetaData, Vec<u8>)>,
     field: Field,
-    num_rows: usize,
+    filter: Option<Filter>,
     pages: Option<Vec<Vec<FilteredPage>>>,
 ) -> PolarsResult<ArrayIter<'a>> {
     let (columns, types) = if let Some(pages) = pages {
@@ -161,6 +162,7 @@ pub fn to_deserializer<'a>(
                     .iter_mut()
                     .for_each(|page| page.start -= meta.column_start);
                 meta.column_start = 0;
+                let num_values = meta.num_values;
                 let pages = IndexedPageReader::new_with_page_meta(
                     MemReader::from_vec(chunk),
                     meta,
@@ -170,7 +172,7 @@ pub fn to_deserializer<'a>(
                 );
                 let pages = Box::new(pages) as Pages;
                 (
-                    BasicDecompressor::new(pages, vec![]),
+                    BasicDecompressor::new(pages, num_values as usize, vec![]),
                     &column_meta.descriptor().descriptor.primitive_type,
                 )
             })
@@ -191,7 +193,7 @@ pub fn to_deserializer<'a>(
                 );
                 let pages = Box::new(pages) as Pages;
                 (
-                    BasicDecompressor::new(pages, vec![]),
+                    BasicDecompressor::new(pages, column_meta.num_values() as usize, vec![]),
                     &column_meta.descriptor().descriptor.primitive_type,
                 )
             })
@@ -200,7 +202,7 @@ pub fn to_deserializer<'a>(
         (columns, types)
     };
 
-    column_iter_to_arrays(columns, types, field, num_rows)
+    column_iter_to_arrays(columns, types, field, filter)
 }
 
 /// Returns a vector of iterators of [`Array`] ([`ArrayIter`]) corresponding to the top
@@ -217,12 +219,9 @@ pub fn read_columns_many<'a, R: Read + Seek>(
     reader: &mut R,
     row_group: &RowGroupMetaData,
     fields: Vec<Field>,
-    limit: Option<usize>,
+    filter: Option<Filter>,
     pages: Option<Vec<Vec<Vec<FilteredPage>>>>,
 ) -> PolarsResult<Vec<ArrayIter<'a>>> {
-    let num_rows = row_group.num_rows();
-    let num_rows = limit.map(|limit| limit.min(num_rows)).unwrap_or(num_rows);
-
     // reads all the necessary columns for all fields from the row group
     // This operation is IO-bounded `O(C)` where C is the number of columns in the row group
     let field_columns = fields
@@ -235,13 +234,15 @@ pub fn read_columns_many<'a, R: Read + Seek>(
             .into_iter()
             .zip(fields)
             .zip(pages)
-            .map(|((columns, field), pages)| to_deserializer(columns, field, num_rows, Some(pages)))
+            .map(|((columns, field), pages)| {
+                to_deserializer(columns, field, filter.clone(), Some(pages))
+            })
             .collect()
     } else {
         field_columns
             .into_iter()
             .zip(fields)
-            .map(|(columns, field)| to_deserializer(columns, field, num_rows, None))
+            .map(|(columns, field)| to_deserializer(columns, field, filter.clone(), None))
             .collect()
     }
 }
