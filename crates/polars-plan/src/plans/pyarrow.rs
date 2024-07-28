@@ -6,7 +6,7 @@ use polars_core::prelude::{TimeUnit, TimeZone};
 use crate::prelude::*;
 
 #[derive(Default, Copy, Clone)]
-pub(super) struct Args {
+pub struct PyarrowArgs {
     // pyarrow doesn't allow `filter([True, False])`
     // but does allow `filter(field("a").isin([True, False]))`
     allow_literal_series: bool,
@@ -22,10 +22,10 @@ fn to_py_datetime(v: i64, tu: &TimeUnit, tz: Option<&TimeZone>) -> String {
 }
 
 // convert to a pyarrow expression that can be evaluated with pythons eval
-pub(super) fn predicate_to_pa(
+pub fn predicate_to_pa(
     predicate: Node,
     expr_arena: &Arena<AExpr>,
-    args: Args,
+    args: PyarrowArgs,
 ) -> Option<String> {
     match expr_arena.get(predicate) {
         AExpr::BinaryExpr { left, right, op } => {

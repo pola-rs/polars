@@ -659,54 +659,21 @@ impl<'a> PredicatePushDown<'a> {
             #[cfg(feature = "python")]
             PythonScan { mut options } => {
                 let predicate = predicate_at_scan(acc_predicates, None, expr_arena);
-
-                if options.is_pyarrow {
-                    if let Some(predicate) = predicate {
-                        // Simplify expressions before we translate them to pyarrow
-                        options.predicate = PythonPredicate::Polars(predicate);
-                        let lp = PythonScan {
-                            options: options.clone(),
-                        };
-                        let lp_top = lp_arena.add(lp);
-                        let stack_opt = StackOptimizer {};
-                        let lp_top = stack_opt
-                            .optimize_loop(
-                                &mut [Box::new(SimplifyExprRule {})],
-                                expr_arena,
-                                lp_arena,
-                                lp_top,
-                            )
-                            .unwrap();
-                        let PythonScan { mut options } = lp_arena.take(lp_top) else {
-                            unreachable!()
-                        };
-                        let PythonPredicate::Polars(predicate) = &options.predicate else {
-                            unreachable!()
-                        };
-
-                        match super::super::pyarrow::predicate_to_pa(
-                            predicate.node(),
+                if let Some(predicate) = predicate {
+                    // Only accept streamable expressions as we want to apply the predicates to the batches.
+                    if !is_streamable(predicate.node(), expr_arena, Context::Default) {
+                        let lp = PythonScan { options };
+                        return Ok(self.optional_apply_predicate(
+                            lp,
+                            vec![predicate],
+                            lp_arena,
                             expr_arena,
-                            Default::default(),
-                        ) {
-                            // We were able to create a pyarrow string, mutate the options.
-                            Some(eval_str) => {
-                                options.predicate = PythonPredicate::PyArrow(eval_str)
-                            },
-                            // We were not able to translate the predicate apply on the rust side in the scan.
-                            None => {
-                                let lp = PythonScan { options };
-                                return Ok(lp);
-                            },
-                        }
+                        ));
                     }
-                    Ok(PythonScan { options })
-                } else {
-                    if let Some(predicate) = predicate {
-                        options.predicate = PythonPredicate::Polars(predicate);
-                    }
-                    Ok(PythonScan { options })
+
+                    options.predicate = PythonPredicate::Polars(predicate);
                 }
+                Ok(PythonScan { options })
             },
             Invalid => unreachable!(),
         }

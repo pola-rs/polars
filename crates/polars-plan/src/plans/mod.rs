@@ -29,7 +29,7 @@ mod lit;
 pub(crate) mod optimizer;
 pub(crate) mod options;
 #[cfg(feature = "python")]
-mod pyarrow;
+pub mod pyarrow;
 mod schema;
 pub mod visitor;
 
