@@ -20,6 +20,7 @@ pub enum BinaryFunction {
     Base64Decode(bool),
     #[cfg(feature = "binary_encoding")]
     Base64Encode,
+    Size,
 }
 
 impl BinaryFunction {
@@ -32,6 +33,7 @@ impl BinaryFunction {
             HexDecode(_) | Base64Decode(_) => mapper.with_same_dtype(),
             #[cfg(feature = "binary_encoding")]
             HexEncode | Base64Encode => mapper.with_dtype(DataType::String),
+            Size => mapper.with_dtype(DataType::UInt32),
         }
     }
 }
@@ -51,6 +53,7 @@ impl Display for BinaryFunction {
             Base64Decode(_) => "base64_decode",
             #[cfg(feature = "binary_encoding")]
             Base64Encode => "base64_encode",
+            Size => "size_bytes",
         };
         write!(f, "bin.{s}")
     }
@@ -77,6 +80,7 @@ impl From<BinaryFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Base64Decode(strict) => map!(base64_decode, strict),
             #[cfg(feature = "binary_encoding")]
             Base64Encode => map!(base64_encode),
+            Size => map!(size_bytes),
         }
     }
 }
@@ -105,6 +109,11 @@ pub(super) fn starts_with(s: &[Series]) -> PolarsResult<Series> {
         .starts_with_chunked(prefix)
         .with_name(ca.name())
         .into_series())
+}
+
+pub(super) fn size_bytes(s: &Series) -> PolarsResult<Series> {
+    let ca = s.binary()?;
+    Ok(ca.size_bytes().into_series())
 }
 
 #[cfg(feature = "binary_encoding")]

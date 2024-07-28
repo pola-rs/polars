@@ -1,6 +1,7 @@
 #[cfg(feature = "binary_encoding")]
 use std::borrow::Cow;
 
+use arrow::legacy::kernels::binary::*;
 #[cfg(feature = "binary_encoding")]
 use base64::engine::general_purpose;
 #[cfg(feature = "binary_encoding")]
@@ -67,6 +68,12 @@ pub trait BinaryNameSpaceImpl: AsBinary {
             },
             _ => broadcast_binary_elementwise_values(ca, suffix, |s, sub| s.ends_with(sub)),
         }
+    }
+
+    /// Get the size of the binary values in bytes.
+    fn size_bytes(&self) -> UInt32Chunked {
+        let ca = self.as_binary();
+        ca.apply_kernel_cast(&binary_size_bytes)
     }
 
     #[cfg(feature = "binary_encoding")]
