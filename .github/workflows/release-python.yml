@@ -160,8 +160,13 @@ jobs:
           CC_FEATURES: ${{ steps.features.outputs.cc_features }}
           CFG: ${{ matrix.package == 'polars-lts-cpu' && '--cfg allocator="default"' || '' }}
         run: |
-          echo "RUSTFLAGS=-C target-feature=$FEATURES -Z tune-cpu=$TUNE_CPU $CFG" >> $GITHUB_ENV
-          echo "CFLAGS=$CC_FEATURES -mtune=$TUNE_CPU" >> $GITHUB_ENV
+          if [[ -z "${TUNE_CPU}" ]]; then
+            echo "RUSTFLAGS=-C target-feature=$FEATURES -Z $CFG" >> $GITHUB_ENV
+            echo "CFLAGS=$CC_FEATURES >> $GITHUB_ENV
+          else
+            echo "RUSTFLAGS=-C target-feature=$FEATURES -Z tune-cpu=$TUNE_CPU $CFG" >> $GITHUB_ENV
+            echo "CFLAGS=$CC_FEATURES -mtune=$TUNE_CPU" >> $GITHUB_ENV
+          fi
 
       - name: Set variables in CPU check module
         run: |
