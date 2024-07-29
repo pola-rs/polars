@@ -1,3 +1,4 @@
+use std::io::Seek;
 use std::sync::{Arc, OnceLock};
 
 use parquet_format_safe::thrift::protocol::TCompactInputProtocol;
@@ -127,6 +128,54 @@ impl PageReader {
     /// Returns the reader and this Readers' interval buffer
     pub fn into_inner(self) -> (MemReader, Vec<u8>) {
         (self.reader, self.scratch)
+    }
+
+    pub fn total_num_values(&self) -> usize {
+        debug_assert!(self.total_num_values >= 0);
+        self.total_num_values as usize
+    }
+
+    pub fn read_dict(&mut self) -> ParquetResult<Option<CompressedDictPage>> {
+        // a dictionary page exists iff the first data page is not at the start of
+        // the column
+        let seek_offset = self.reader.position();
+        let page_header = read_page_header(&mut self.reader, self.max_page_size)?;
+        let page_type = page_header.type_.try_into()?;
+
+        if !matches!(page_type, PageType::DictionaryPage) {
+            self.reader
+                .seek(std::io::SeekFrom::Start(seek_offset as u64))?;
+            return Ok(None);
+        }
+
+        let read_size: usize = page_header.compressed_page_size.try_into()?;
+
+        if read_size > self.max_page_size {
+            return Err(ParquetError::WouldOverAllocate);
+        }
+
+        let buffer = self.reader.read_slice(read_size);
+
+        if buffer.len() != read_size {
+            return Err(ParquetError::oos(
+                "The page header reported the wrong page size",
+            ));
+        }
+
+        finish_page(
+            page_header,
+            buffer,
+            self.compression,
+            &self.descriptor,
+            None,
+        )
+        .map(|p| {
+            if let CompressedPage::Dict(d) = p {
+                Some(d)
+            } else {
+                unreachable!()
+            }
+        })
     }
 }
 

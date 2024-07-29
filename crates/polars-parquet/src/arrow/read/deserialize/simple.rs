@@ -7,7 +7,7 @@ use polars_error::{polars_bail, PolarsResult};
 
 use super::utils::filter::Filter;
 use super::{
-    binary, boolean, dictionary, fixed_size_binary, null, primitive, BasicDecompressor, PageReader, ParquetResult
+    binary, boolean, dictionary, fixed_size_binary, null, primitive, BasicDecompressor, ParquetResult
 };
 use crate::parquet::error::ParquetError;
 use crate::parquet::schema::types::{
@@ -20,7 +20,7 @@ use crate::read::deserialize::utils::PageDecoder;
 /// An iterator adapter that maps an iterator of Pages a boxed [`Array`] of [`ArrowDataType`]
 /// `data_type` with a maximum of `num_rows` elements.
 pub fn page_iter_to_array(
-    pages: BasicDecompressor<PageReader>,
+    pages: BasicDecompressor,
     type_: &PrimitiveType,
     data_type: ArrowDataType,
     filter: Option<Filter>,
@@ -379,7 +379,7 @@ pub fn int96_to_i64_s(value: [u32; 3]) -> i64 {
 }
 
 fn timestamp(
-    pages: BasicDecompressor<PageReader>,
+    pages: BasicDecompressor,
     physical_type: &PhysicalType,
     logical_type: &Option<PrimitiveLogicalType>,
     data_type: ArrowDataType,
@@ -441,7 +441,7 @@ fn timestamp(
 }
 
 fn timestamp_dict<K: DictionaryKey>(
-    pages: BasicDecompressor<PageReader>,
+    pages: BasicDecompressor,
     physical_type: &PhysicalType,
     logical_type: &Option<PrimitiveLogicalType>,
     data_type: ArrowDataType,
@@ -496,7 +496,7 @@ fn timestamp_dict<K: DictionaryKey>(
 }
 
 fn dict_read<K: DictionaryKey>(
-    iter: BasicDecompressor<PageReader>,
+    iter: BasicDecompressor,
     physical_type: &PhysicalType,
     logical_type: &Option<PrimitiveLogicalType>,
     data_type: ArrowDataType,

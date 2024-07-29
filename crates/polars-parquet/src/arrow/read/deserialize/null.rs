@@ -6,7 +6,7 @@ use arrow::array::{Array, NullArray};
 use arrow::datatypes::ArrowDataType;
 use polars_error::PolarsResult;
 
-use super::{utils, PageReader};
+use super::utils;
 use super::utils::filter::Filter;
 use crate::parquet::encoding::hybrid_rle;
 use crate::parquet::error::ParquetResult;
@@ -118,28 +118,22 @@ impl utils::NestedDecoder for NullDecoder {
 }
 
 use super::BasicDecompressor;
-use crate::parquet::page::Page;
 
 /// Converts [`PagesIter`] to an [`ArrayIter`]
 pub fn iter_to_arrays(
-    mut iter: BasicDecompressor<PageReader>,
+    mut iter: BasicDecompressor,
     data_type: ArrowDataType,
     mut filter: Option<Filter>,
 ) -> ParquetResult<Box<dyn Array>> {
-    use streaming_decompression::FallibleStreamingIterator;
     let num_rows = Filter::opt_num_rows(&filter, iter.total_num_values());
 
     let mut len = 0usize;
 
     while len < num_rows {
-        let Some(page) = iter.next()? else {
+        let Some(page) = iter.next() else {
             break;
         };
-
-        let Page::Data(page) = page else {
-            // @TODO: remove
-            unreachable!();
-        };
+        let page = page?;
 
         let rows = page.num_values();
         let page_filter;
@@ -151,6 +145,8 @@ pub fn iter_to_arrays(
         };
 
         len = (len + num_rows).min(num_rows);
+
+        iter.reuse_page_buffer(page);
     }
 
     Ok(Box::new(NullArray::new(data_type, len)))

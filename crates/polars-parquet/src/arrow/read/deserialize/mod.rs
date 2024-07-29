@@ -129,7 +129,7 @@ fn is_primitive(data_type: &ArrowDataType) -> bool {
 }
 
 fn columns_to_iter_recursive(
-    mut columns: Vec<BasicDecompressor<PageReader>>,
+    mut columns: Vec<BasicDecompressor>,
     mut types: Vec<&PrimitiveType>,
     field: Field,
     init: Vec<InitNested>,
@@ -193,7 +193,7 @@ pub fn n_columns(data_type: &ArrowDataType) -> usize {
 ///
 /// The arrays are guaranteed to be at most of size `chunk_size` and data type `field.data_type`.
 pub fn column_iter_to_arrays<'a>(
-    columns: Vec<BasicDecompressor<PageReader>>,
+    columns: Vec<BasicDecompressor>,
     types: Vec<&PrimitiveType>,
     field: Field,
     filter: Option<Filter>,

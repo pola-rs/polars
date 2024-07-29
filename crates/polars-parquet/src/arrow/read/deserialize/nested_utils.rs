@@ -3,13 +3,13 @@ use arrow::datatypes::ArrowDataType;
 use polars_error::PolarsResult;
 
 use super::utils::{self, BatchableCollector};
-use super::{BasicDecompressor, Filter, PageReader};
+use super::{BasicDecompressor, Filter};
 use crate::parquet::encoding::hybrid_rle::gatherer::{
     HybridRleGatherer, ZeroCount, ZeroCountGatherer,
 };
 use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use crate::parquet::error::ParquetResult;
-use crate::parquet::page::{split_buffer, DataPage, Page};
+use crate::parquet::page::{split_buffer, DataPage};
 use crate::parquet::read::levels::get_bit_width;
 use crate::read::deserialize::utils::BatchedCollector;
 
@@ -640,7 +640,7 @@ fn extend_offsets_limited<'a, D: utils::NestedDecoder>(
 }
 
 pub struct PageNestedDecoder<D: utils::NestedDecoder> {
-    pub iter: BasicDecompressor<PageReader>,
+    pub iter: BasicDecompressor,
     pub data_type: ArrowDataType,
     pub dict: Option<D::Dict>,
     pub decoder: D,
@@ -664,7 +664,7 @@ fn level_iters(page: &DataPage) -> ParquetResult<(HybridRleDecoder, HybridRleDec
 
 impl<D: utils::NestedDecoder> PageNestedDecoder<D> {
     pub fn new(
-        mut iter: BasicDecompressor<PageReader>,
+        mut iter: BasicDecompressor,
         data_type: ArrowDataType,
         decoder: D,
         init: Vec<InitNested>,
@@ -681,12 +681,7 @@ impl<D: utils::NestedDecoder> PageNestedDecoder<D> {
         })
     }
 
-    pub fn collect_n(
-        mut self,
-        filter: Option<Filter>,
-    ) -> ParquetResult<(NestedState, D::Output)> {
-        use streaming_decompression::FallibleStreamingIterator;
-
+    pub fn collect_n(mut self, filter: Option<Filter>) -> ParquetResult<(NestedState, D::Output)> {
         // @TODO: We should probably count the filter so that we don't overallocate
         let mut target = self.decoder.with_capacity(self.iter.total_num_values());
         // @TODO: Self capacity
@@ -697,15 +692,15 @@ impl<D: utils::NestedDecoder> PageNestedDecoder<D> {
 
         match filter {
             None => {
-                while let Some(page) = self.iter.next()? {
-                    let Page::Data(page) = page else {
-                        // @TODO This should be removed
-                        unreachable!();
+                loop {
+                    let Some(page) = self.iter.next() else {
+                        break;
                     };
+                    let page = page?;
 
                     let mut state =
-                        utils::State::new_nested(&self.decoder, page, self.dict.as_ref())?;
-                    let (def_iter, rep_iter) = level_iters(page)?;
+                        utils::State::new_nested(&self.decoder, &page, self.dict.as_ref())?;
+                    let (def_iter, rep_iter) = level_iters(&page)?;
 
                     // @TODO: move this to outside the loop.
                     let mut batched_collector = BatchedCollector::new(
@@ -727,24 +722,23 @@ impl<D: utils::NestedDecoder> PageNestedDecoder<D> {
                     )?;
 
                     batched_collector.finalize()?;
+
+                    drop(state);
+                    self.iter.reuse_page_buffer(page);
                 }
             },
             Some(mut filter) => {
                 let mut num_rows_remaining = filter.num_rows();
 
                 loop {
-                    let Some(page) = self.iter.next()? else {
+                    let Some(page) = self.iter.next() else {
                         break;
                     };
-
-                    let Page::Data(page) = page else {
-                        // @TODO This should be removed
-                        unreachable!();
-                    };
+                    let page = page?;
 
                     let mut state =
-                        utils::State::new_nested(&self.decoder, page, self.dict.as_ref())?;
-                    let (def_iter, rep_iter) = level_iters(page)?;
+                        utils::State::new_nested(&self.decoder, &page, self.dict.as_ref())?;
+                    let (def_iter, rep_iter) = level_iters(&page)?;
 
                     let mut count = ZeroCount::default();
                     rep_iter
@@ -787,6 +781,9 @@ impl<D: utils::NestedDecoder> PageNestedDecoder<D> {
                     debug_assert!(num_done <= num_rows_remaining);
                     debug_assert!(num_done <= count.num_zero);
                     num_rows_remaining -= num_done;
+
+                    drop(state);
+                    self.iter.reuse_page_buffer(page);
 
                     if is_fully_read {
                         break;

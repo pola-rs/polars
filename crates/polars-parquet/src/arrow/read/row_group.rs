@@ -151,7 +151,7 @@ pub fn to_deserializer<'a>(
                 len * 2 + 1024,
             );
             (
-                BasicDecompressor::new(pages, column_meta.num_values() as usize, vec![]),
+                BasicDecompressor::new(pages, vec![]),
                 &column_meta.descriptor().descriptor.primitive_type,
             )
         })

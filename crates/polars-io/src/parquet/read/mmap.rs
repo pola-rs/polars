@@ -81,7 +81,7 @@ pub(super) fn to_deserializer<'a>(
                 usize::MAX,
             );
             (
-                BasicDecompressor::new(pages, column_meta.num_values() as usize, vec![]),
+                BasicDecompressor::new(pages, vec![]),
                 &column_meta.descriptor().descriptor.primitive_type,
             )
         })

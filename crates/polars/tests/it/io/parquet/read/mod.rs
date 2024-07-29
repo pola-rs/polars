@@ -20,10 +20,6 @@ use polars_parquet::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use polars_parquet::parquet::error::{ParquetError, ParquetResult};
 use polars_parquet::parquet::metadata::ColumnChunkMetaData;
 use polars_parquet::parquet::page::{CompressedPage, DataPage, Page};
-#[cfg(feature = "async")]
-use polars_parquet::parquet::read::get_page_stream;
-#[cfg(feature = "async")]
-use polars_parquet::parquet::read::read_metadata_async;
 use polars_parquet::parquet::read::{
     get_column_iterator, get_field_columns, read_metadata, BasicDecompressor, MutStreamingIterator,
     State,
@@ -176,7 +172,7 @@ where
     let mut arrays = vec![];
     while let State::Some(mut new_iter) = columns.advance()? {
         if let Some((pages, column)) = new_iter.get() {
-            let mut iterator = BasicDecompressor::new(pages, column.num_values() as usize, vec![]);
+            let mut iterator = BasicDecompressor::new(pages, vec![]);
 
             let mut dict = None;
             while let Some(page) = iterator.next()? {
@@ -244,42 +240,6 @@ pub fn read_column(
     let array = columns_to_array(columns, field)?;
 
     Ok((array, statistics.pop().unwrap()))
-}
-
-#[cfg(feature = "async")]
-pub async fn read_column_async<
-    R: futures::AsyncRead + futures::AsyncSeek + Send + std::marker::Unpin,
->(
-    reader: &mut R,
-    row_group: usize,
-    field_name: &str,
-) -> ParquetResult<(Array, Option<Statistics>)> {
-    let metadata = read_metadata_async(reader).await?;
-
-    let field = metadata
-        .schema()
-        .fields()
-        .iter()
-        .find(|field| field.name() == field_name)
-        .ok_or_else(|| ParquetError::OutOfSpec("column does not exist".to_string()))?;
-
-    let column = get_field_columns(metadata.row_groups[row_group].columns(), field.name())
-        .next()
-        .unwrap();
-
-    let pages = get_page_stream(column, reader, vec![], Arc::new(|_, _| true), usize::MAX).await?;
-
-    let mut statistics = get_field_columns(metadata.row_groups[row_group].columns(), field.name())
-        .map(|column_meta| column_meta.statistics().transpose())
-        .collect::<ParquetResult<Vec<_>>>()?;
-
-    let pages = pages.collect::<Vec<_>>().await;
-
-    let iterator = BasicDecompressor::new(pages.into_iter(), column.num_values() as usize, vec![]);
-
-    let mut arrays = collect(iterator, column.physical_type())?;
-
-    Ok((arrays.pop().unwrap(), statistics.pop().unwrap()))
 }
 
 fn get_column(path: &str, column: &str) -> ParquetResult<(Array, Option<Statistics>)> {

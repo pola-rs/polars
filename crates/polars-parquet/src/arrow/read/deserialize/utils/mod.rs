@@ -12,13 +12,13 @@ use polars_error::{polars_err, PolarsError, PolarsResult};
 
 use self::filter::Filter;
 use super::binary::utils::Binary;
-use super::{BasicDecompressor, PageReader};
+use super::BasicDecompressor;
 use crate::parquet::encoding::hybrid_rle::gatherer::{
     HybridRleGatherer, ZeroCount, ZeroCountGatherer,
 };
 use crate::parquet::encoding::hybrid_rle::{self, HybridRleDecoder, Translator};
 use crate::parquet::error::ParquetResult;
-use crate::parquet::page::{split_buffer, DataPage, DictPage, Page};
+use crate::parquet::page::{split_buffer, DataPage, DictPage};
 use crate::parquet::schema::Repetition;
 
 #[derive(Debug)]
@@ -626,7 +626,7 @@ pub trait DictDecodable: Decoder {
 }
 
 pub struct PageDecoder<D: Decoder> {
-    pub iter: BasicDecompressor<PageReader>,
+    pub iter: BasicDecompressor,
     pub data_type: ArrowDataType,
     pub dict: Option<D::Dict>,
     pub decoder: D,
@@ -634,7 +634,7 @@ pub struct PageDecoder<D: Decoder> {
 
 impl<D: Decoder> PageDecoder<D> {
     pub fn new(
-        mut iter: BasicDecompressor<PageReader>,
+        mut iter: BasicDecompressor,
         data_type: ArrowDataType,
         decoder: D,
     ) -> ParquetResult<Self> {
@@ -652,20 +652,15 @@ impl<D: Decoder> PageDecoder<D> {
     pub fn collect_n(mut self, mut filter: Option<Filter>) -> ParquetResult<D::Output> {
         let mut num_rows_remaining = Filter::opt_num_rows(&filter, self.iter.total_num_values());
 
-        use streaming_decompression::FallibleStreamingIterator;
         let mut target = self.decoder.with_capacity(num_rows_remaining);
 
         while num_rows_remaining > 0 {
-            let Some(page) = self.iter.next()? else {
+            let Some(page) = self.iter.next() else {
                 return self.decoder.finalize(self.data_type, self.dict, target);
             };
+            let page = page?;
 
-            let Page::Data(page) = page else {
-                // @TODO This should be removed
-                unreachable!();
-            };
-
-            let mut state = State::new(&self.decoder, page, self.dict.as_ref())?;
+            let mut state = State::new(&self.decoder, &page, self.dict.as_ref())?;
             let state_len = state.len();
 
             let state_filter;
@@ -678,6 +673,9 @@ impl<D: Decoder> PageDecoder<D> {
             num_rows_remaining -= end_length - start_length;
 
             debug_assert!(state.len() == 0 || num_rows_remaining == 0);
+
+            drop(state);
+            self.iter.reuse_page_buffer(page);
         }
 
         self.decoder.finalize(self.data_type, self.dict, target)

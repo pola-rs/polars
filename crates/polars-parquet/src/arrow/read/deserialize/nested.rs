@@ -8,7 +8,7 @@ use self::primitive::{self};
 use super::*;
 
 pub fn columns_to_iter_recursive(
-    mut columns: Vec<BasicDecompressor<PageReader>>,
+    mut columns: Vec<BasicDecompressor>,
     mut types: Vec<&PrimitiveType>,
     field: Field,
     mut init: Vec<InitNested>,
@@ -444,7 +444,7 @@ pub fn columns_to_iter_recursive(
 }
 
 fn dict_read<'a, K: DictionaryKey>(
-    iter: BasicDecompressor<PageReader>,
+    iter: BasicDecompressor,
     init: Vec<InitNested>,
     _type_: &PrimitiveType,
     data_type: ArrowDataType,
