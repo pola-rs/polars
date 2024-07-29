@@ -701,6 +701,7 @@ impl<I: CompressedPagesIter, D: utils::NestedDecoder> PageNestedDecoder<I, D> {
     ) -> ParquetResult<(NestedState, Box<dyn Array>)> {
         use streaming_decompression::FallibleStreamingIterator;
 
+        // @TODO: We should probably count the filter so that we don't overallocate
         let mut target = self.decoder.with_capacity(self.iter.total_num_rows());
         // @TODO: Self capacity
         let mut nested_state = init_nested(&self.init, 0);
@@ -850,13 +851,12 @@ impl<I: CompressedPagesIter, K: DictionaryKey, D: utils::NestedDecoder>
         mut self,
         mut filter: Option<Filter>,
     ) -> ParquetResult<(NestedState, DictionaryArray<K>)> {
-        let mut num_rows_remaining = Filter::opt_num_rows(&filter, self.iter.total_num_rows());
-
         use streaming_decompression::FallibleStreamingIterator;
 
+        // @TODO: We should probably count the filter so that we don't overallocate
         let mut target = (
-            Vec::with_capacity(num_rows_remaining),
-            MutableBitmap::with_capacity(num_rows_remaining),
+            Vec::with_capacity(self.iter.total_num_rows()),
+            MutableBitmap::with_capacity(self.iter.total_num_rows()),
         );
         // @TODO: Self capacity
         let mut nested_state = init_nested(&self.init, 0);
@@ -864,51 +864,105 @@ impl<I: CompressedPagesIter, K: DictionaryKey, D: utils::NestedDecoder>
         // Amortize the allocations.
         let (def_levels, rep_levels) = nested_state.levels();
 
-        while num_rows_remaining > 0 {
-            let Some(page) = self.iter.next()? else {
-                break;
-            };
+        match filter {
+            None => {
+                while let Some(page) = self.iter.next()? {
+                    let Page::Data(page) = page else {
+                        // @TODO This should be removed
+                        unreachable!();
+                    };
 
-            let Page::Data(page) = page else {
-                // @TODO This should be removed
-                unreachable!();
-            };
+                    use utils::ExactSize;
+                    let mut dictionary_decoder = DictionaryDecoder::new(self.dict.len());
+                    let mut state = utils::State::new_nested(&dictionary_decoder, page, Some(&()))?;
+                    let (def_iter, rep_iter) = level_iters(page)?;
 
-            use utils::ExactSize;
-            let mut dictionary_decoder = DictionaryDecoder::new(self.dict.len());
-            let mut state = utils::State::new_nested(&dictionary_decoder, page, Some(&()))?;
-            let (def_iter, rep_iter) = level_iters(page)?;
+                    // @TODO: move this to outside the loop.
+                    let mut batched_collector = BatchedCollector::new(
+                        BatchedNestedDecoder {
+                            state: &mut state,
+                            decoder: &mut dictionary_decoder,
+                        },
+                        &mut target,
+                    );
 
-            let state_filter = Filter::opt_head(&filter, page.num_values());
+                    extend_offsets2(
+                        def_iter,
+                        rep_iter,
+                        &mut batched_collector,
+                        &mut nested_state.nested,
+                        None,
+                        &def_levels,
+                        &rep_levels,
+                    )?;
 
-            let start_length = nested_state.len();
+                    batched_collector.finalize()?;
+                }
+            },
+            Some(ref mut filter) => {
+                let mut num_rows_remaining = match &filter.slice {
+                    FilterSlice::Range(start, end) => end - start,
+                    FilterSlice::Mask(bm) => bm.set_bits(),
+                };
 
-            // @TODO: move this to outside the loop.
-            let mut batched_collector = BatchedCollector::new(
-                BatchedNestedDecoder {
-                    state: &mut state,
-                    decoder: &mut dictionary_decoder,
-                },
-                &mut target,
-            );
+                loop {
+                    let Some(page) = self.iter.next()? else {
+                        break;
+                    };
 
-            extend_offsets2(
-                def_iter,
-                rep_iter,
-                &mut batched_collector,
-                &mut nested_state.nested,
-                state_filter,
-                &def_levels,
-                &rep_levels,
-            )?;
+                    let Page::Data(page) = page else {
+                        // @TODO This should be removed
+                        unreachable!();
+                    };
 
-            batched_collector.finalize()?;
+                    use utils::ExactSize;
+                    let mut dictionary_decoder = DictionaryDecoder::new(self.dict.len());
+                    let mut state = utils::State::new_nested(&dictionary_decoder, page, Some(&()))?;
+                    let (def_iter, rep_iter) = level_iters(page)?;
 
-            let num_done = nested_state.len() - start_length;
-            debug_assert!(num_done <= num_rows_remaining);
-            num_rows_remaining -= num_done;
+                    let mut count = ZeroCount::default();
+                    rep_iter
+                        .clone()
+                        .gather_into(&mut count, &ZeroCountGatherer)?;
 
-            Filter::opt_advance_by(&mut filter, page.num_values(), num_done);
+                    let is_fully_read = count.num_zero > num_rows_remaining;
+                    let state_filter = (count.num_zero > 0).then(|| filter.head(count.num_zero));
+
+                    let start_length = nested_state.len();
+
+                    // @TODO: move this to outside the loop.
+                    let mut batched_collector = BatchedCollector::new(
+                        BatchedNestedDecoder {
+                            state: &mut state,
+                            decoder: &mut dictionary_decoder,
+                        },
+                        &mut target,
+                    );
+
+                    extend_offsets2(
+                        def_iter,
+                        rep_iter,
+                        &mut batched_collector,
+                        &mut nested_state.nested,
+                        state_filter,
+                        &def_levels,
+                        &rep_levels,
+                    )?;
+
+                    batched_collector.finalize()?;
+
+                    let num_done = nested_state.len() - start_length;
+                    debug_assert!(num_done <= num_rows_remaining);
+                    debug_assert!(num_done <= count.num_zero);
+                    num_rows_remaining -= num_done;
+
+                    filter.advance_by(count.num_zero, num_done);
+
+                    if is_fully_read {
+                        break;
+                    }
+                }
+            },
         }
 
         // we pop the primitive off here.
