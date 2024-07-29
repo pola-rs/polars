@@ -6,7 +6,7 @@ use polars_core::datatypes::PlHashMap;
 use polars_error::PolarsResult;
 use polars_parquet::read::{
     column_iter_to_arrays, get_field_columns, ArrayIter, BasicDecompressor, ColumnChunkMetaData,
-    PageReader,
+    Filter, PageReader,
 };
 use polars_utils::mmap::{MemReader, MemSlice};
 
@@ -87,5 +87,5 @@ pub(super) fn to_deserializer<'a>(
         })
         .unzip();
 
-    column_iter_to_arrays(columns, types, field, num_rows)
+    column_iter_to_arrays(columns, types, field, Some(Filter::new_limited(num_rows)))
 }

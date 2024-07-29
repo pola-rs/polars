@@ -1,5 +1,5 @@
-use arrow::array::{Array, DictionaryArray, DictionaryKey, FixedSizeBinaryArray, PrimitiveArray};
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::array::{DictionaryArray, DictionaryKey, FixedSizeBinaryArray, PrimitiveArray};
+use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
 use polars_error::PolarsResult;
 
@@ -8,7 +8,6 @@ use crate::parquet::encoding::hybrid_rle::gatherer::HybridRleGatherer;
 use crate::parquet::encoding::{hybrid_rle, Encoding};
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
-use crate::read::deserialize::utils::filter::Filter;
 use crate::read::deserialize::utils::{self, BatchableCollector, GatheredHybridRle, PageValidity};
 
 #[allow(clippy::large_enum_variant)]
@@ -31,7 +30,6 @@ impl<'a> utils::StateTranslation<'a, BinaryDecoder> for StateTranslation<'a> {
         page: &'a DataPage,
         dict: Option<&'a <BinaryDecoder as Decoder>::Dict>,
         _page_validity: Option<&PageValidity<'a>>,
-        _filter: Option<&Filter<'a>>,
     ) -> PolarsResult<Self> {
         match (page.encoding(), dict) {
             (Encoding::Plain, _) => {
@@ -122,6 +120,7 @@ impl Decoder for BinaryDecoder {
     type Translation<'a> = StateTranslation<'a>;
     type Dict = Vec<u8>;
     type DecodedState = (FixedSizeBinary, MutableBitmap);
+    type Output = FixedSizeBinaryArray;
 
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState {
         let size = self.size;
@@ -272,25 +271,27 @@ impl Decoder for BinaryDecoder {
     fn finalize(
         &self,
         data_type: ArrowDataType,
+        _dict: Option<Self::Dict>,
         (values, validity): Self::DecodedState,
-    ) -> ParquetResult<Box<dyn Array>> {
-        Ok(Box::new(FixedSizeBinaryArray::new(
+    ) -> ParquetResult<Self::Output> {
+        Ok(FixedSizeBinaryArray::new(
             data_type,
             values.values.into(),
             validity.into(),
-        )))
+        ))
     }
+}
 
+impl utils::DictDecodable for BinaryDecoder {
     fn finalize_dict_array<K: DictionaryKey>(
         &self,
         data_type: ArrowDataType,
         dict: Self::Dict,
-        (values, validity): (Vec<K>, Option<Bitmap>),
+        keys: PrimitiveArray<K>,
     ) -> ParquetResult<DictionaryArray<K>> {
         let dict =
             FixedSizeBinaryArray::new(ArrowDataType::FixedSizeBinary(self.size), dict.into(), None);
-        let array = PrimitiveArray::<K>::new(K::PRIMITIVE.into(), values.into(), validity);
-        Ok(DictionaryArray::try_new(data_type, array, Box::new(dict)).unwrap())
+        Ok(DictionaryArray::try_new(data_type, keys, Box::new(dict)).unwrap())
     }
 }
 

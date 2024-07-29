@@ -7,7 +7,6 @@ use super::utils::*;
 use crate::parquet::encoding::{delta_bitpacked, delta_length_byte_array, hybrid_rle, Encoding};
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{split_buffer, DataPage};
-use crate::read::deserialize::utils::filter::Filter;
 use crate::read::deserialize::utils::PageValidity;
 
 pub(crate) type BinaryDict = BinaryArray<i64>;
@@ -150,7 +149,6 @@ impl<'a> BinaryStateTranslation<'a> {
         page: &'a DataPage,
         dict: Option<&'a BinaryDict>,
         _page_validity: Option<&PageValidity<'a>>,
-        _filter: Option<&Filter<'a>>,
         is_string: bool,
     ) -> PolarsResult<Self> {
         match (page.encoding(), dict) {

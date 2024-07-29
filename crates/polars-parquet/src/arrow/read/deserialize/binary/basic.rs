@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use arrow::array::specification::try_check_utf8;
 use arrow::array::{Array, BinaryArray, DictionaryArray, DictionaryKey, PrimitiveArray, Utf8Array};
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::{ArrowDataType, PhysicalType};
 use arrow::offset::Offset;
 use polars_error::PolarsResult;
@@ -33,14 +33,13 @@ impl<'a, O: Offset> StateTranslation<'a, BinaryDecoder<O>> for BinaryStateTransl
         page: &'a DataPage,
         dict: Option<&'a <BinaryDecoder<O> as utils::Decoder>::Dict>,
         page_validity: Option<&utils::PageValidity<'a>>,
-        filter: Option<&utils::filter::Filter<'a>>,
     ) -> PolarsResult<Self> {
         let is_string = matches!(
             page.descriptor.primitive_type.logical_type,
             Some(PrimitiveLogicalType::String)
         );
         decoder.check_utf8.store(is_string, Ordering::Relaxed);
-        BinaryStateTranslation::new(page, dict, page_validity, filter, is_string)
+        BinaryStateTranslation::new(page, dict, page_validity, is_string)
     }
 
     fn len_when_not_nullable(&self) -> usize {
@@ -154,6 +153,7 @@ impl<O: Offset> utils::Decoder for BinaryDecoder<O> {
     type Translation<'a> = BinaryStateTranslation<'a>;
     type Dict = BinaryDict;
     type DecodedState = (Binary<O>, MutableBitmap);
+    type Output = Box<dyn Array>;
 
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState {
         (
@@ -272,16 +272,19 @@ impl<O: Offset> utils::Decoder for BinaryDecoder<O> {
     fn finalize(
         &self,
         data_type: ArrowDataType,
+        _dict: Option<Self::Dict>,
         (values, validity): Self::DecodedState,
     ) -> ParquetResult<Box<dyn Array>> {
         super::finalize(data_type, values, validity)
     }
+}
 
+impl<O: Offset> utils::DictDecodable for BinaryDecoder<O> {
     fn finalize_dict_array<K: DictionaryKey>(
         &self,
         data_type: ArrowDataType,
         dict: Self::Dict,
-        (values, validity): (Vec<K>, Option<Bitmap>),
+        keys: PrimitiveArray<K>,
     ) -> ParquetResult<DictionaryArray<K>> {
         let value_data_type = match data_type.clone() {
             ArrowDataType::Dictionary(_, values, _) => *values,
@@ -299,10 +302,8 @@ impl<O: Offset> utils::Decoder for BinaryDecoder<O> {
             _ => unreachable!(),
         };
 
-        let indices = PrimitiveArray::new(K::PRIMITIVE.into(), values.into(), validity);
-
         // @TODO: Is this datatype correct?
-        Ok(DictionaryArray::try_new(data_type, indices, dict).unwrap())
+        Ok(DictionaryArray::try_new(data_type, keys, dict).unwrap())
     }
 }
 

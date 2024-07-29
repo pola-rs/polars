@@ -16,7 +16,7 @@ pub use indexes::{read_columns_indexes, read_pages_locations};
 pub use metadata::{deserialize_metadata, read_metadata, read_metadata_with_size};
 #[cfg(feature = "async")]
 pub use page::{get_page_stream, get_page_stream_from_column_start};
-pub use page::{IndexedPageReader, PageFilter, PageIterator, PageMetaData, PageReader};
+pub use page::{PageFilter, PageIterator, PageMetaData, PageReader};
 use polars_utils::mmap::MemReader;
 #[cfg(feature = "async")]
 pub use stream::read_metadata as read_metadata_async;

@@ -11,7 +11,6 @@ use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use crate::parquet::encoding::Encoding;
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
-use crate::read::deserialize::utils::filter::Filter;
 use crate::read::deserialize::utils::{BatchableCollector, PageValidity};
 
 #[allow(clippy::large_enum_variant)]
@@ -29,7 +28,6 @@ impl<'a> utils::StateTranslation<'a, BooleanDecoder> for StateTranslation<'a> {
         page: &'a DataPage,
         _dict: Option<&'a <BooleanDecoder as Decoder>::Dict>,
         page_validity: Option<&PageValidity<'a>>,
-        _filter: Option<&Filter<'a>>,
     ) -> PolarsResult<Self> {
         let values = split_buffer(page)?.values;
 
@@ -189,6 +187,7 @@ impl Decoder for BooleanDecoder {
     type Translation<'a> = StateTranslation<'a>;
     type Dict = ();
     type DecodedState = (MutableBitmap, MutableBitmap);
+    type Output = BooleanArray;
 
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState {
         (
@@ -230,22 +229,10 @@ impl Decoder for BooleanDecoder {
     fn finalize(
         &self,
         data_type: ArrowDataType,
+        _dict: Option<Self::Dict>,
         (values, validity): Self::DecodedState,
-    ) -> ParquetResult<Box<dyn arrow::array::Array>> {
-        Ok(Box::new(BooleanArray::new(
-            data_type,
-            values.into(),
-            validity.into(),
-        )))
-    }
-
-    fn finalize_dict_array<K: arrow::array::DictionaryKey>(
-        &self,
-        _data_type: ArrowDataType,
-        _dict: Self::Dict,
-        _decoded: (Vec<K>, Option<arrow::bitmap::Bitmap>),
-    ) -> ParquetResult<arrow::array::DictionaryArray<K>> {
-        unimplemented!()
+    ) -> ParquetResult<Self::Output> {
+        Ok(BooleanArray::new(data_type, values.into(), validity.into()))
     }
 }
 

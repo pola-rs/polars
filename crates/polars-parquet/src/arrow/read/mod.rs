@@ -14,7 +14,7 @@ use arrow::array::Array;
 use arrow::types::{i256, NativeType};
 pub use deserialize::{
     column_iter_to_arrays, create_list, create_map, get_page_iterator, init_nested, n_columns,
-    InitNested, NestedArrayIter, NestedState,
+    Filter, InitNested, NestedState,
 };
 pub use file::{FileReader, RowGroupReader};
 #[cfg(feature = "async")]
@@ -23,7 +23,6 @@ use polars_error::PolarsResult;
 pub use row_group::*;
 pub use schema::{infer_schema, FileMetaData};
 
-use super::write::CompressedPage;
 use crate::parquet::error::ParquetResult;
 #[cfg(feature = "async")]
 pub use crate::parquet::read::{get_page_stream, read_metadata_async as _read_metadata_async};
@@ -45,13 +44,6 @@ pub use crate::parquet::{
     types::int96_to_i64_ns,
     FallibleStreamingIterator,
 };
-
-pub trait CompressedPagesIter:
-    Iterator<Item = ParquetResult<CompressedPage>> + Send + Sync
-{
-}
-
-impl<I: Iterator<Item = ParquetResult<CompressedPage>> + Send + Sync> CompressedPagesIter for I {}
 
 /// Type def for a sharable, boxed dyn [`Iterator`] of arrays
 pub type ArrayIter<'a> = Box<dyn Iterator<Item = PolarsResult<Box<dyn Array>>> + Send + Sync + 'a>;

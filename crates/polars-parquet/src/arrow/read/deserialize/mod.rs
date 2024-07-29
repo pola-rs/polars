@@ -18,7 +18,8 @@ use arrow::offset::Offsets;
 use polars_utils::mmap::MemReader;
 use simple::page_iter_to_array;
 
-pub use self::nested_utils::{init_nested, InitNested, NestedArrayIter, NestedState};
+pub use self::nested_utils::{init_nested, InitNested, NestedState};
+pub use self::utils::filter::Filter;
 use super::*;
 use crate::parquet::read::get_page_iterator as _get_page_iterator;
 use crate::parquet::schema::types::PrimitiveType;
@@ -127,28 +128,25 @@ fn is_primitive(data_type: &ArrowDataType) -> bool {
     )
 }
 
-fn columns_to_iter_recursive<'a, I>(
-    mut columns: Vec<BasicDecompressor<I>>,
+fn columns_to_iter_recursive(
+    mut columns: Vec<BasicDecompressor>,
     mut types: Vec<&PrimitiveType>,
     field: Field,
     init: Vec<InitNested>,
-    num_rows: usize,
-) -> PolarsResult<(NestedState, Box<dyn Array>)>
-where
-    I: 'a + CompressedPagesIter,
-{
+    filter: Option<Filter>,
+) -> PolarsResult<(NestedState, Box<dyn Array>)> {
     if init.is_empty() && is_primitive(&field.data_type) {
         let array = page_iter_to_array(
             columns.pop().unwrap(),
             types.pop().unwrap(),
             field.data_type,
-            num_rows,
+            filter,
         )?;
 
         return Ok((NestedState::default(), array));
     }
 
-    nested::columns_to_iter_recursive(columns, types, field, init, num_rows)
+    nested::columns_to_iter_recursive(columns, types, field, init, filter)
 }
 
 /// Returns the number of (parquet) columns that a [`ArrowDataType`] contains.
@@ -194,16 +192,13 @@ pub fn n_columns(data_type: &ArrowDataType) -> usize {
 /// For nested types, `columns` must be composed by all parquet columns with associated types `types`.
 ///
 /// The arrays are guaranteed to be at most of size `chunk_size` and data type `field.data_type`.
-pub fn column_iter_to_arrays<'a, I>(
-    columns: Vec<BasicDecompressor<I>>,
+pub fn column_iter_to_arrays<'a>(
+    columns: Vec<BasicDecompressor>,
     types: Vec<&PrimitiveType>,
     field: Field,
-    num_rows: usize,
-) -> PolarsResult<ArrayIter<'a>>
-where
-    I: 'a + CompressedPagesIter,
-{
-    let (_, array) = columns_to_iter_recursive(columns, types, field, vec![], num_rows)?;
+    filter: Option<Filter>,
+) -> PolarsResult<ArrayIter<'a>> {
+    let (_, array) = columns_to_iter_recursive(columns, types, field, vec![], filter)?;
 
     Ok(Box::new(std::iter::once(Ok(array))))
 }

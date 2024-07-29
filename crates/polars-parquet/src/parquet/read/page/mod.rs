@@ -1,9 +1,7 @@
-mod indexed_reader;
 mod reader;
 #[cfg(feature = "async")]
 mod stream;
 
-pub use indexed_reader::IndexedPageReader;
 pub use reader::{PageFilter, PageMetaData, PageReader};
 
 use crate::parquet::error::ParquetError;
