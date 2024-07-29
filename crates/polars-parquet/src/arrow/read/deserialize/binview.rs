@@ -147,6 +147,7 @@ impl utils::Decoder for BinViewDecoder {
     type Translation<'a> = BinaryStateTranslation<'a>;
     type Dict = BinaryDict;
     type DecodedState = DecodedStateTuple;
+    type Output = Box<dyn Array>;
 
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState {
         (
@@ -230,6 +231,7 @@ impl utils::Decoder for BinViewDecoder {
     fn finalize(
         &self,
         data_type: ArrowDataType,
+        _dict: Option<Self::Dict>,
         (values, validity): Self::DecodedState,
     ) -> ParquetResult<Box<dyn Array>> {
         let mut array: BinaryViewArray = values.freeze();
@@ -258,12 +260,14 @@ impl utils::Decoder for BinViewDecoder {
             _ => unreachable!(),
         }
     }
+}
 
+impl utils::DictDecodable for BinViewDecoder {
     fn finalize_dict_array<K: DictionaryKey>(
         &self,
         data_type: ArrowDataType,
         dict: Self::Dict,
-        (values, validity): (Vec<K>, Option<Bitmap>),
+        keys: PrimitiveArray<K>,
     ) -> ParquetResult<DictionaryArray<K>> {
         let value_data_type = match &data_type {
             ArrowDataType::Dictionary(_, values, _) => values.as_ref().clone(),
@@ -276,14 +280,13 @@ impl utils::Decoder for BinViewDecoder {
         }
         let view_dict = view_dict.freeze();
 
-        let array = PrimitiveArray::<K>::new(K::PRIMITIVE.into(), values.into(), validity);
         let dict = match value_data_type.to_physical_type() {
             PhysicalType::Utf8View => view_dict.to_utf8view().unwrap().boxed(),
             PhysicalType::BinaryView => view_dict.boxed(),
             _ => unreachable!(),
         };
 
-        Ok(DictionaryArray::try_new(data_type, array, dict).unwrap())
+        Ok(DictionaryArray::try_new(data_type, keys, dict).unwrap())
     }
 }
 

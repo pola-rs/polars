@@ -187,6 +187,7 @@ impl Decoder for BooleanDecoder {
     type Translation<'a> = StateTranslation<'a>;
     type Dict = ();
     type DecodedState = (MutableBitmap, MutableBitmap);
+    type Output = BooleanArray;
 
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState {
         (
@@ -228,22 +229,14 @@ impl Decoder for BooleanDecoder {
     fn finalize(
         &self,
         data_type: ArrowDataType,
+        _dict: Option<Self::Dict>,
         (values, validity): Self::DecodedState,
-    ) -> ParquetResult<Box<dyn arrow::array::Array>> {
-        Ok(Box::new(BooleanArray::new(
+    ) -> ParquetResult<Self::Output> {
+        Ok(BooleanArray::new(
             data_type,
             values.into(),
             validity.into(),
-        )))
-    }
-
-    fn finalize_dict_array<K: arrow::array::DictionaryKey>(
-        &self,
-        _data_type: ArrowDataType,
-        _dict: Self::Dict,
-        _decoded: (Vec<K>, Option<arrow::bitmap::Bitmap>),
-    ) -> ParquetResult<arrow::array::DictionaryArray<K>> {
-        unimplemented!()
+        ))
     }
 }
 

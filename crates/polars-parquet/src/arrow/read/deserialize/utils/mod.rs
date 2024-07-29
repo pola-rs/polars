@@ -2,17 +2,17 @@ pub(crate) mod array_chunks;
 pub(crate) mod filter;
 
 use arrow::array::{
-    Array, BinaryArray, DictionaryArray, DictionaryKey, MutableBinaryViewArray, View,
+    BinaryArray, DictionaryArray, DictionaryKey, MutableBinaryViewArray, PrimitiveArray, View,
 };
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
 use arrow::pushable::Pushable;
 use arrow::types::Offset;
 use polars_error::{polars_err, PolarsError, PolarsResult};
 
-use self::filter::{Filter, FilterSlice};
+use self::filter::Filter;
 use super::binary::utils::Binary;
-use super::{BasicDecompressor, CompressedPagesIter, ParquetError};
+use super::{BasicDecompressor, CompressedPagesIter};
 use crate::parquet::encoding::hybrid_rle::gatherer::{
     HybridRleGatherer, ZeroCount, ZeroCountGatherer,
 };
@@ -20,7 +20,6 @@ use crate::parquet::encoding::hybrid_rle::{self, HybridRleDecoder, Translator};
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{split_buffer, DataPage, DictPage, Page};
 use crate::parquet::schema::Repetition;
-use crate::read::deserialize::dictionary::DictionaryDecoder;
 
 #[derive(Debug)]
 pub(crate) struct State<'a, D: Decoder> {
@@ -109,7 +108,7 @@ impl<'a, D: Decoder> State<'a, D> {
         &mut self,
         decoder: &mut D,
         decoded: &mut D::DecodedState,
-        filter: Option<FilterSlice>,
+        filter: Option<Filter>,
     ) -> ParquetResult<()> {
         match filter {
             None => {
@@ -122,7 +121,10 @@ impl<'a, D: Decoder> State<'a, D> {
                 )
             },
             Some(filter) => match filter {
-                FilterSlice::Range(start, end) => {
+                Filter::Range(range) => {
+                    let start = range.start;
+                    let end = range.end;
+
                     self.skip_in_place(start)?;
                     debug_assert!(end - start <= self.len());
                     self.translation.extend_from_state(
@@ -133,7 +135,7 @@ impl<'a, D: Decoder> State<'a, D> {
                     )?;
                     Ok(())
                 },
-                FilterSlice::Mask(bitmap) => {
+                Filter::Mask(bitmap) => {
                     debug_assert!(bitmap.len() == self.len());
 
                     let mut iter = bitmap.iter();
@@ -550,6 +552,8 @@ pub(super) trait Decoder: Sized {
     /// The target state that this Decoder decodes into.
     type DecodedState: ExactSize;
 
+    type Output;
+
     /// Initializes a new [`Self::DecodedState`].
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState;
 
@@ -575,16 +579,9 @@ pub(super) trait Decoder: Sized {
     fn finalize(
         &self,
         data_type: ArrowDataType,
+        dict: Option<Self::Dict>,
         decoded: Self::DecodedState,
-    ) -> ParquetResult<Box<dyn Array>>;
-
-    /// Turn the collected arrays into the final dictionary array.
-    fn finalize_dict_array<K: DictionaryKey>(
-        &self,
-        data_type: ArrowDataType,
-        dict: Self::Dict,
-        decoded: (Vec<K>, Option<Bitmap>),
-    ) -> ParquetResult<DictionaryArray<K>>;
+    ) -> ParquetResult<Self::Output>;
 }
 
 pub(crate) trait NestedDecoder: Decoder {
@@ -602,7 +599,7 @@ pub(crate) trait NestedDecoder: Decoder {
         decoded: &mut Self::DecodedState,
         n: usize,
     ) -> ParquetResult<()> {
-        state.extend_from_state(self, decoded, Some(FilterSlice::Range(0, n)))?;
+        state.extend_from_state(self, decoded, Some(Filter::new_limited(n)))?;
         Self::validity_extend(state, decoded, true, n);
 
         Ok(())
@@ -617,6 +614,15 @@ pub(crate) trait NestedDecoder: Decoder {
         Self::validity_extend(state, decoded, false, n);
         Self::values_extend_nulls(state, decoded, n);
     }
+}
+
+pub trait DictDecodable: Decoder {
+    fn finalize_dict_array<K: DictionaryKey>(
+        &self,
+        data_type: ArrowDataType,
+        dict: Self::Dict,
+        keys: PrimitiveArray<K>,
+    ) -> ParquetResult<DictionaryArray<K>>;
 }
 
 pub struct PageDecoder<I: CompressedPagesIter, D: Decoder> {
@@ -643,15 +649,15 @@ impl<I: CompressedPagesIter, D: Decoder> PageDecoder<I, D> {
         })
     }
 
-    pub fn collect_n(mut self, mut filter: Option<Filter>) -> ParquetResult<Box<dyn Array>> {
-        let mut num_rows_remaining = Filter::opt_num_rows(&filter, self.iter.total_num_rows());
+    pub fn collect_n(mut self, mut filter: Option<Filter>) -> ParquetResult<D::Output> {
+        let mut num_rows_remaining = Filter::opt_num_rows(&filter, self.iter.total_num_values());
 
         use streaming_decompression::FallibleStreamingIterator;
         let mut target = self.decoder.with_capacity(num_rows_remaining);
 
         while num_rows_remaining > 0 {
             let Some(page) = self.iter.next()? else {
-                return self.decoder.finalize(self.data_type, target);
+                return self.decoder.finalize(self.data_type, self.dict, target);
             };
 
             let Page::Data(page) = page else {
@@ -662,108 +668,19 @@ impl<I: CompressedPagesIter, D: Decoder> PageDecoder<I, D> {
             let mut state = State::new(&self.decoder, page, self.dict.as_ref())?;
             let state_len = state.len();
 
-            let state_filter = Filter::opt_head(&filter, state_len);
+            let state_filter;
+            (state_filter, filter) = Filter::opt_split_at(&filter, state_len);
 
             let start_length = target.len();
             state.extend_from_state(&mut self.decoder, &mut target, state_filter)?;
             let end_length = target.len();
 
-            Filter::opt_advance_by(&mut filter, state_len, end_length - start_length);
-
             num_rows_remaining -= end_length - start_length;
 
             debug_assert!(state.len() == 0 || num_rows_remaining == 0);
         }
 
-        self.decoder.finalize(self.data_type, target)
-    }
-}
-
-pub struct PageDictArrayDecoder<I: CompressedPagesIter, K: DictionaryKey, D: Decoder> {
-    pub iter: BasicDecompressor<I>,
-    pub data_type: ArrowDataType,
-    pub dict: D::Dict,
-    pub decoder: D,
-    _pd: std::marker::PhantomData<K>,
-}
-
-impl<I: CompressedPagesIter, K: DictionaryKey, D: Decoder> PageDictArrayDecoder<I, K, D> {
-    pub fn new(
-        mut iter: BasicDecompressor<I>,
-        data_type: ArrowDataType,
-        decoder: D,
-    ) -> ParquetResult<Self> {
-        let dict_page = iter
-            .read_dict_page()?
-            .ok_or(ParquetError::FeatureNotSupported(
-                "Dictionary array without a dictionary page".to_string(),
-            ))?;
-        let dict = decoder.deserialize_dict(dict_page);
-
-        Ok(Self {
-            iter,
-            data_type,
-            dict,
-            decoder,
-            _pd: std::marker::PhantomData,
-        })
-    }
-
-    pub fn collect_n(mut self, mut filter: Option<Filter>) -> ParquetResult<DictionaryArray<K>> {
-        let mut num_rows_remaining = Filter::opt_num_rows(&filter, self.iter.total_num_rows());
-
-        let mut target = (
-            Vec::with_capacity(num_rows_remaining),
-            MutableBitmap::with_capacity(num_rows_remaining),
-        );
-
-        use streaming_decompression::FallibleStreamingIterator;
-
-        while num_rows_remaining > 0 {
-            let Some(page) = self.iter.next()? else {
-                let (values, validity) = target;
-                let validity = if !validity.is_empty() {
-                    Some(validity.freeze())
-                } else {
-                    None
-                };
-                return self.decoder.finalize_dict_array(
-                    self.data_type,
-                    self.dict,
-                    (values, validity),
-                );
-            };
-
-            let Page::Data(page) = page else {
-                // @TODO This should be removed
-                unreachable!();
-            };
-
-            let mut dictionary_decoder = DictionaryDecoder::new(self.dict.len());
-            let mut state = State::new(&dictionary_decoder, page, Some(&()))?;
-            let state_len = state.len();
-
-            let state_filter = Filter::opt_head(&filter, state_len);
-
-            let start_length = target.len();
-            state.extend_from_state(&mut dictionary_decoder, &mut target, state_filter)?;
-            let end_length = target.len();
-
-            Filter::opt_advance_by(&mut filter, state_len, end_length - start_length);
-
-            num_rows_remaining -= end_length - start_length;
-
-            debug_assert!(state.len() == 0 || num_rows_remaining == 0);
-        }
-
-        let (values, validity) = target;
-        let validity = if !validity.is_empty() {
-            Some(validity.freeze())
-        } else {
-            None
-        };
-        self.decoder
-            .finalize_dict_array(self.data_type, self.dict, (values, validity))
+        self.decoder.finalize(self.data_type, self.dict, target)
     }
 }
 

@@ -13,7 +13,7 @@ fn all_types() -> PolarsResult<()> {
 
     let metadata = read_metadata(&mut reader)?;
     let schema = infer_schema(&metadata)?;
-    let reader = FileReader::new(reader, metadata.row_groups, schema, None, None);
+    let reader = FileReader::new(reader, metadata.row_groups, schema, None);
 
     let batches = reader.collect::<PolarsResult<Vec<_>>>()?;
     assert_eq!(batches.len(), 1);
@@ -56,7 +56,7 @@ fn all_types_chunked() -> PolarsResult<()> {
     let metadata = read_metadata(&mut reader)?;
     let schema = infer_schema(&metadata)?;
     // chunk it in 5 (so, (5,3))
-    let reader = FileReader::new(reader, metadata.row_groups, schema, None, None);
+    let reader = FileReader::new(reader, metadata.row_groups, schema, None);
 
     let batches = reader.collect::<PolarsResult<Vec<_>>>()?;
     assert_eq!(batches.len(), 1);
@@ -128,7 +128,7 @@ fn read_int96_timestamps() -> PolarsResult<()> {
             )],
             metadata: BTreeMap::new(),
         };
-        let reader = FileReader::new(reader, metadata.row_groups, schema, None, None);
+        let reader = FileReader::new(reader, metadata.row_groups, schema, None);
         reader.collect::<PolarsResult<Vec<_>>>()
     };
 

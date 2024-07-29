@@ -11,7 +11,6 @@ use super::utils::filter::Filter;
 use crate::parquet::encoding::hybrid_rle;
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{DataPage, DictPage};
-use crate::read::deserialize::utils::filter::FilterSlice;
 
 pub(crate) struct NullDecoder;
 pub(crate) struct NullArrayLength {
@@ -60,6 +59,7 @@ impl utils::Decoder for NullDecoder {
     type Translation<'a> = ();
     type Dict = ();
     type DecodedState = NullArrayLength;
+    type Output = NullArray;
 
     /// Initializes a new state
     fn with_capacity(&self, _: usize) -> Self::DecodedState {
@@ -92,18 +92,10 @@ impl utils::Decoder for NullDecoder {
     fn finalize(
         &self,
         data_type: ArrowDataType,
+        _dict: Option<Self::Dict>,
         decoded: Self::DecodedState,
-    ) -> ParquetResult<Box<dyn arrow::array::Array>> {
-        Ok(Box::new(NullArray::new(data_type, decoded.length)))
-    }
-
-    fn finalize_dict_array<K: arrow::array::DictionaryKey>(
-        &self,
-        _data_type: ArrowDataType,
-        _dict: Self::Dict,
-        _decoded: (Vec<K>, Option<arrow::bitmap::Bitmap>),
-    ) -> ParquetResult<arrow::array::DictionaryArray<K>> {
-        unimplemented!()
+    ) -> ParquetResult<Self::Output> {
+        Ok(NullArray::new(data_type, decoded.length))
     }
 }
 
@@ -138,7 +130,7 @@ where
     I: CompressedPagesIter,
 {
     use streaming_decompression::FallibleStreamingIterator;
-    let num_rows = Filter::opt_num_rows(&filter, iter.total_num_rows());
+    let num_rows = Filter::opt_num_rows(&filter, iter.total_num_values());
 
     let mut len = 0usize;
 
@@ -153,17 +145,15 @@ where
         };
 
         let rows = page.num_values();
-        let page_filter = Filter::opt_head(&filter, rows);
+        let page_filter;
+        (page_filter, filter) = Filter::opt_split_at(&filter, rows);
 
-        let num_values = match page_filter {
+        let num_rows = match page_filter {
             None => rows,
-            Some(FilterSlice::Range(start, end)) => end - start,
-            Some(FilterSlice::Mask(bitmap)) => bitmap.set_bits(),
+            Some(filter) => filter.num_rows(),
         };
 
-        len = (len + num_values).min(num_rows);
-
-        Filter::opt_advance_by(&mut filter, rows, num_values)
+        len = (len + num_rows).min(num_rows);
     }
 
     Ok(Box::new(NullArray::new(data_type, len)))

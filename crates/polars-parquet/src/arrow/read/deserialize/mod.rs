@@ -18,7 +18,7 @@ use arrow::offset::Offsets;
 use polars_utils::mmap::MemReader;
 use simple::page_iter_to_array;
 
-pub use self::nested_utils::{init_nested, InitNested, NestedArrayIter, NestedState};
+pub use self::nested_utils::{init_nested, InitNested, NestedState};
 pub use self::utils::filter::Filter;
 use super::*;
 use crate::parquet::read::get_page_iterator as _get_page_iterator;

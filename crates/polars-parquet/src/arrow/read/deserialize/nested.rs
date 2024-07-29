@@ -1,9 +1,8 @@
-use arrow::array::{DictionaryArray, FixedSizeBinaryArray, PrimitiveArray, StructArray};
+use arrow::array::{DictionaryArray, PrimitiveArray, StructArray};
 use arrow::match_integer_type;
 use ethnum::I256;
 use polars_error::polars_bail;
 
-use self::nested::deserialize::nested_utils::PageNestedDictArrayDecoder;
 use self::nested_utils::PageNestedDecoder;
 use self::primitive::{self};
 use super::*;
@@ -32,7 +31,8 @@ where
                 null::NullDecoder,
                 init,
             )?
-            .collect_n(filter)?
+            .collect_n(filter)
+            .map(|(s, a)| (s, Box::new(a) as Box<_>))?
         },
         Boolean => {
             init.push(InitNested::Primitive(field.is_nullable));
@@ -43,7 +43,8 @@ where
                 boolean::BooleanDecoder,
                 init,
             )?
-            .collect_n(filter)?
+            .collect_n(filter)
+            .map(|(s, a)| (s, Box::new(a) as Box<_>))?
         },
         Primitive(Int8) => {
             init.push(InitNested::Primitive(field.is_nullable));
@@ -54,7 +55,8 @@ where
                 primitive::PrimitiveDecoder::<i32, i8, _>::cast_as(),
                 init,
             )?
-            .collect_n(filter)?
+            .collect_n(filter)
+            .map(|(s, a)| (s, Box::new(a) as Box<_>))?
         },
         Primitive(Int16) => {
             init.push(InitNested::Primitive(field.is_nullable));
@@ -65,7 +67,8 @@ where
                 primitive::PrimitiveDecoder::<i32, i16, _>::cast_as(),
                 init,
             )?
-            .collect_n(filter)?
+            .collect_n(filter)
+            .map(|(s, a)| (s, Box::new(a) as Box<_>))?
         },
         Primitive(Int32) => {
             init.push(InitNested::Primitive(field.is_nullable));
@@ -76,7 +79,8 @@ where
                 primitive::PrimitiveDecoder::<i32, _, _>::unit(),
                 init,
             )?
-            .collect_n(filter)?
+            .collect_n(filter)
+            .map(|(s, a)| (s, Box::new(a) as Box<_>))?
         },
         Primitive(Int64) => {
             init.push(InitNested::Primitive(field.is_nullable));
@@ -87,7 +91,8 @@ where
                 primitive::PrimitiveDecoder::<i64, _, _>::unit(),
                 init,
             )?
-            .collect_n(filter)?
+            .collect_n(filter)
+            .map(|(s, a)| (s, Box::new(a) as Box<_>))?
         },
         Primitive(UInt8) => {
             init.push(InitNested::Primitive(field.is_nullable));
@@ -98,7 +103,8 @@ where
                 primitive::PrimitiveDecoder::<i32, u8, _>::cast_as(),
                 init,
             )?
-            .collect_n(filter)?
+            .collect_n(filter)
+            .map(|(s, a)| (s, Box::new(a) as Box<_>))?
         },
         Primitive(UInt16) => {
             init.push(InitNested::Primitive(field.is_nullable));
@@ -109,7 +115,8 @@ where
                 primitive::PrimitiveDecoder::<i32, u16, _>::cast_as(),
                 init,
             )?
-            .collect_n(filter)?
+            .collect_n(filter)
+            .map(|(s, a)| (s, Box::new(a) as Box<_>))?
         },
         Primitive(UInt32) => {
             init.push(InitNested::Primitive(field.is_nullable));
@@ -121,7 +128,8 @@ where
                     primitive::PrimitiveDecoder::<i32, u32, _>::cast_as(),
                     init,
                 )?
-                .collect_n(filter)?,
+                .collect_n(filter)
+                .map(|(s, a)| (s, Box::new(a) as Box<_>))?,
                 // some implementations of parquet write arrow's u32 into i64.
                 PhysicalType::Int64 => PageNestedDecoder::new(
                     columns.pop().unwrap(),
@@ -129,7 +137,8 @@ where
                     primitive::PrimitiveDecoder::<i64, u32, _>::cast_as(),
                     init,
                 )?
-                .collect_n(filter)?,
+                .collect_n(filter)
+                .map(|(s, a)| (s, Box::new(a) as Box<_>))?,
                 other => {
                     polars_bail!(ComputeError:
                         "deserializing UInt32 from {other:?}'s parquet"
@@ -146,7 +155,8 @@ where
                 primitive::PrimitiveDecoder::<i64, u64, _>::cast_as(),
                 init,
             )?
-            .collect_n(filter)?
+            .collect_n(filter)
+            .map(|(s, a)| (s, Box::new(a) as Box<_>))?
         },
         Primitive(Float32) => {
             init.push(InitNested::Primitive(field.is_nullable));
@@ -157,7 +167,8 @@ where
                 primitive::PrimitiveDecoder::<f32, _, _>::unit(),
                 init,
             )?
-            .collect_n(filter)?
+            .collect_n(filter)
+            .map(|(s, a)| (s, Box::new(a) as Box<_>))?
         },
         Primitive(Float64) => {
             init.push(InitNested::Primitive(field.is_nullable));
@@ -168,7 +179,8 @@ where
                 primitive::PrimitiveDecoder::<f64, _, _>::unit(),
                 init,
             )?
-            .collect_n(filter)?
+            .collect_n(filter)
+            .map(|(s, a)| (s, Box::new(a) as Box<_>))?
         },
         BinaryView | Utf8View => {
             init.push(InitNested::Primitive(field.is_nullable));
@@ -237,14 +249,16 @@ where
                         primitive::PrimitiveDecoder::<i32, i128, _>::cast_into(),
                         init,
                     )?
-                    .collect_n(filter)?,
+                    .collect_n(filter)
+                    .map(|(s, a)| (s, Box::new(a) as Box<_>))?,
                     PhysicalType::Int64 => PageNestedDecoder::new(
                         columns.pop().unwrap(),
                         field.data_type.clone(),
                         primitive::PrimitiveDecoder::<i64, i128, _>::cast_into(),
                         init,
                     )?
-                    .collect_n(filter)?,
+                    .collect_n(filter)
+                    .map(|(s, a)| (s, Box::new(a) as Box<_>))?,
                     PhysicalType::FixedLenByteArray(n) if n > 16 => {
                         polars_bail!(
                             ComputeError: "Can't decode Decimal128 type from `FixedLenByteArray` of len {n}"
@@ -258,11 +272,6 @@ where
                             init,
                         )?
                         .collect_n(filter)?;
-
-                        let array = array
-                            .as_any()
-                            .downcast_ref::<FixedSizeBinaryArray>()
-                            .unwrap();
 
                         // Convert the fixed length byte array to Decimal.
                         let values = array
@@ -301,14 +310,16 @@ where
                         primitive::PrimitiveDecoder::closure(|x: i32| i256(I256::new(x as i128))),
                         init,
                     )?
-                    .collect_n(filter)?,
+                    .collect_n(filter)
+                    .map(|(s, a)| (s, Box::new(a) as Box<_>))?,
                     PhysicalType::Int64 => PageNestedDecoder::new(
                         columns.pop().unwrap(),
                         field.data_type.clone(),
                         primitive::PrimitiveDecoder::closure(|x: i64| i256(I256::new(x as i128))),
                         init,
                     )?
-                    .collect_n(filter)?,
+                    .collect_n(filter)
+                    .map(|(s, a)| (s, Box::new(a) as Box<_>))?,
                     PhysicalType::FixedLenByteArray(size) if size <= 16 => {
                         let (mut nested, array) = PageNestedDecoder::new(
                             columns.pop().unwrap(),
@@ -317,11 +328,6 @@ where
                             init,
                         )?
                         .collect_n(filter)?;
-
-                        let array = array
-                            .as_any()
-                            .downcast_ref::<FixedSizeBinaryArray>()
-                            .unwrap();
 
                         // Convert the fixed length byte array to Decimal.
                         let values = array
@@ -351,11 +357,6 @@ where
                             init,
                         )?
                         .collect_n(filter)?;
-
-                        let array = array
-                            .as_any()
-                            .downcast_ref::<FixedSizeBinaryArray>()
-                            .unwrap();
 
                         // Convert the fixed length byte array to Decimal.
                         let values = array
@@ -460,91 +461,105 @@ fn dict_read<'a, K: DictionaryKey, I: 'a + CompressedPagesIter>(
     };
 
     Ok(match values_data_type.to_logical_type() {
-        UInt8 => PageNestedDictArrayDecoder::<_, K, _>::new(
-            iter,
-            data_type,
-            primitive::PrimitiveDecoder::<i32, u8, _>::cast_as(),
-            init,
-        )?
-        .collect_n(filter)?,
-        UInt16 => PageNestedDictArrayDecoder::<_, K, _>::new(
-            iter,
-            data_type,
-            primitive::PrimitiveDecoder::<i32, u16, _>::cast_as(),
-            init,
-        )?
-        .collect_n(filter)?,
-        UInt32 => PageNestedDictArrayDecoder::<_, K, _>::new(
-            iter,
-            data_type,
-            primitive::PrimitiveDecoder::<i32, u32, _>::cast_as(),
-            init,
-        )?
-        .collect_n(filter)?,
-        Int8 => PageNestedDictArrayDecoder::<_, K, _>::new(
-            iter,
-            data_type,
-            primitive::PrimitiveDecoder::<i32, i8, _>::cast_as(),
-            init,
-        )?
-        .collect_n(filter)?,
-        Int16 => PageNestedDictArrayDecoder::<_, K, _>::new(
-            iter,
-            data_type,
-            primitive::PrimitiveDecoder::<i32, i16, _>::cast_as(),
-            init,
-        )?
-        .collect_n(filter)?,
-        Int32 | Date32 | Time32(_) | Interval(IntervalUnit::YearMonth) => {
-            PageNestedDictArrayDecoder::<_, K, _>::new(
+        UInt8 => {
+            PageNestedDecoder::new(
                 iter,
                 data_type,
-                primitive::PrimitiveDecoder::<i32, _, _>::unit(),
+                dictionary::DictionaryDecoder::new(
+                    primitive::PrimitiveDecoder::<i32, u8, _>::cast_as(),
+                ),
                 init,
             )?
             .collect_n(filter)?
         },
-        Int64 | Date64 | Time64(_) | Duration(_) => PageNestedDictArrayDecoder::<_, K, _>::new(
+        UInt16 => PageNestedDecoder::new(
             iter,
             data_type,
-            primitive::PrimitiveDecoder::<i64, i32, _>::cast_as(),
+            dictionary::DictionaryDecoder::new(
+                primitive::PrimitiveDecoder::<i32, u16, _>::cast_as(),
+            ),
             init,
         )?
         .collect_n(filter)?,
-        Float32 => PageNestedDictArrayDecoder::<_, K, _>::new(
+        UInt32 => PageNestedDecoder::new(
             iter,
             data_type,
-            primitive::PrimitiveDecoder::<f32, _, _>::unit(),
+            dictionary::DictionaryDecoder::new(
+                primitive::PrimitiveDecoder::<i32, u32, _>::cast_as(),
+            ),
             init,
         )?
         .collect_n(filter)?,
-        Float64 => PageNestedDictArrayDecoder::<_, K, _>::new(
+        Int8 => {
+            PageNestedDecoder::new(
+                iter,
+                data_type,
+                dictionary::DictionaryDecoder::new(
+                    primitive::PrimitiveDecoder::<i32, i8, _>::cast_as(),
+                ),
+                init,
+            )?
+            .collect_n(filter)?
+        },
+        Int16 => PageNestedDecoder::new(
             iter,
             data_type,
-            primitive::PrimitiveDecoder::<f64, _, _>::unit(),
+            dictionary::DictionaryDecoder::new(
+                primitive::PrimitiveDecoder::<i32, i16, _>::cast_as(),
+            ),
             init,
         )?
         .collect_n(filter)?,
-        LargeUtf8 | LargeBinary => PageNestedDictArrayDecoder::<_, K, _>::new(
+        Int32 | Date32 | Time32(_) | Interval(IntervalUnit::YearMonth) => PageNestedDecoder::new(
             iter,
             data_type,
-            binary::BinaryDecoder::<i64>::default(),
+            dictionary::DictionaryDecoder::new(primitive::PrimitiveDecoder::<i32, _, _>::unit()),
             init,
         )?
         .collect_n(filter)?,
-        Utf8View | BinaryView => PageNestedDictArrayDecoder::<_, K, _>::new(
+        Int64 | Date64 | Time64(_) | Duration(_) => PageNestedDecoder::new(
             iter,
             data_type,
-            binview::BinViewDecoder::default(),
+            dictionary::DictionaryDecoder::new(
+                primitive::PrimitiveDecoder::<i64, i32, _>::cast_as(),
+            ),
+            init,
+        )?
+        .collect_n(filter)?,
+        Float32 => PageNestedDecoder::new(
+            iter,
+            data_type,
+            dictionary::DictionaryDecoder::new(primitive::PrimitiveDecoder::<f32, _, _>::unit()),
+            init,
+        )?
+        .collect_n(filter)?,
+        Float64 => PageNestedDecoder::new(
+            iter,
+            data_type,
+            dictionary::DictionaryDecoder::new(primitive::PrimitiveDecoder::<f64, _, _>::unit()),
+            init,
+        )?
+        .collect_n(filter)?,
+        LargeUtf8 | LargeBinary => PageNestedDecoder::new(
+            iter,
+            data_type,
+            dictionary::DictionaryDecoder::new(binary::BinaryDecoder::<i64>::default()),
+            init,
+        )?
+        .collect_n(filter)?,
+        Utf8View | BinaryView => PageNestedDecoder::new(
+            iter,
+            data_type,
+            dictionary::DictionaryDecoder::new(binview::BinViewDecoder::default()),
             init,
         )?
         .collect_n(filter)?,
         FixedSizeBinary(size) => {
             let size = *size;
-            PageNestedDictArrayDecoder::<_, K, _>::new(
+            PageNestedDecoder::new(
                 iter,
                 data_type,
-                fixed_size_binary::BinaryDecoder { size },
+                dictionary::DictionaryDecoder::new(fixed_size_binary::BinaryDecoder { size }),
                 init,
             )?
             .collect_n(filter)?

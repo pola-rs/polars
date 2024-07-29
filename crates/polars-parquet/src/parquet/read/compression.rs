@@ -151,7 +151,12 @@ impl streaming_decompression::Decompressed for Page {
 /// is reused across pages, so that a single allocation is required.
 /// If the pages are not compressed, the internal buffer is not used.
 pub struct BasicDecompressor<I: Iterator<Item = ParquetResult<CompressedPage>>> {
-    total_num_rows: usize,
+    /// The total number of values is given from the `ColumnChunk` metadata.
+    ///
+    /// - If the column is nested, this is equal to the number of non-null values at the lowest
+    /// nesting level.
+    /// - If the column is not nested this is equal to the number of non-null rows.
+    total_num_values: usize,
     iter: _Decompressor<I>,
     peeked: Option<Page>,
 }
@@ -160,17 +165,28 @@ impl<I> BasicDecompressor<I>
 where
     I: Iterator<Item = ParquetResult<CompressedPage>>,
 {
-    /// Returns a new [`BasicDecompressor`].
-    pub fn new(iter: I, total_num_rows: usize, buffer: Vec<u8>) -> Self {
+    /// Create a new [`BasicDecompressor`]
+    ///
+    /// The total number of values is given from the `ColumnChunk` metadata.
+    ///
+    /// - If the column is nested, this is equal to the number of non-null values at the lowest
+    /// nesting level.
+    /// - If the column is not nested this is equal to the number of non-null rows.
+    pub fn new(iter: I, total_num_values: usize, buffer: Vec<u8>) -> Self {
         Self {
-            total_num_rows,
+            total_num_values,
             iter: _Decompressor::new(iter, buffer, decompress),
             peeked: None,
         }
     }
 
-    pub fn total_num_rows(&self) -> usize {
-        self.total_num_rows
+    /// The total number of values is given from the `ColumnChunk` metadata.
+    ///
+    /// - If the column is nested, this is equal to the number of non-null values at the lowest
+    /// nesting level.
+    /// - If the column is not nested this is equal to the number of non-null rows.
+    pub fn total_num_values(&self) -> usize {
+        self.total_num_values
     }
 
     /// Returns its internal buffer, consuming itself.
