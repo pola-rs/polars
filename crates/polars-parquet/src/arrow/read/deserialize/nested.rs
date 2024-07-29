@@ -7,16 +7,13 @@ use self::nested_utils::PageNestedDecoder;
 use self::primitive::{self};
 use super::*;
 
-pub fn columns_to_iter_recursive<I>(
-    mut columns: Vec<BasicDecompressor<I>>,
+pub fn columns_to_iter_recursive(
+    mut columns: Vec<BasicDecompressor<PageReader>>,
     mut types: Vec<&PrimitiveType>,
     field: Field,
     mut init: Vec<InitNested>,
     filter: Option<Filter>,
-) -> PolarsResult<(NestedState, Box<dyn Array>)>
-where
-    I: CompressedPagesIter,
-{
+) -> PolarsResult<(NestedState, Box<dyn Array>)> {
     use arrow::datatypes::PhysicalType::*;
     use arrow::datatypes::PrimitiveType::*;
 
@@ -212,7 +209,7 @@ where
                 let data_type = field.data_type().clone();
 
                 match_integer_type!(key_type, |$K| {
-                    dict_read::<$K, _>(iter, init, type_, data_type, filter).map(|(s, arr)| (s, Box::new(arr) as Box<_>))
+                    dict_read::<$K>(iter, init, type_, data_type, filter).map(|(s, arr)| (s, Box::new(arr) as Box<_>))
                 })?
             },
             ArrowDataType::List(inner) | ArrowDataType::LargeList(inner) => {
@@ -446,8 +443,8 @@ where
     })
 }
 
-fn dict_read<'a, K: DictionaryKey, I: 'a + CompressedPagesIter>(
-    iter: BasicDecompressor<I>,
+fn dict_read<'a, K: DictionaryKey>(
+    iter: BasicDecompressor<PageReader>,
     init: Vec<InitNested>,
     _type_: &PrimitiveType,
     data_type: ArrowDataType,

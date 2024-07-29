@@ -132,16 +132,6 @@ where
     Ok((meta, chunk))
 }
 
-type Pages = Box<
-    dyn Iterator<
-            Item = std::result::Result<
-                crate::parquet::page::CompressedPage,
-                crate::parquet::error::ParquetError,
-            >,
-        > + Sync
-        + Send,
->;
-
 /// Converts a vector of columns associated with the parquet field whose name is [`Field`]
 /// to an iterator of [`Array`], [`ArrayIter`] of chunk size `chunk_size`.
 pub fn to_deserializer<'a>(
@@ -160,7 +150,6 @@ pub fn to_deserializer<'a>(
                 vec![],
                 len * 2 + 1024,
             );
-            let pages = Box::new(pages) as Pages;
             (
                 BasicDecompressor::new(pages, column_meta.num_values() as usize, vec![]),
                 &column_meta.descriptor().descriptor.primitive_type,

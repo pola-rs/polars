@@ -12,7 +12,7 @@ use polars_error::{polars_err, PolarsError, PolarsResult};
 
 use self::filter::Filter;
 use super::binary::utils::Binary;
-use super::{BasicDecompressor, CompressedPagesIter};
+use super::{BasicDecompressor, PageReader};
 use crate::parquet::encoding::hybrid_rle::gatherer::{
     HybridRleGatherer, ZeroCount, ZeroCountGatherer,
 };
@@ -625,16 +625,16 @@ pub trait DictDecodable: Decoder {
     ) -> ParquetResult<DictionaryArray<K>>;
 }
 
-pub struct PageDecoder<I: CompressedPagesIter, D: Decoder> {
-    pub iter: BasicDecompressor<I>,
+pub struct PageDecoder<D: Decoder> {
+    pub iter: BasicDecompressor<PageReader>,
     pub data_type: ArrowDataType,
     pub dict: Option<D::Dict>,
     pub decoder: D,
 }
 
-impl<I: CompressedPagesIter, D: Decoder> PageDecoder<I, D> {
+impl<D: Decoder> PageDecoder<D> {
     pub fn new(
-        mut iter: BasicDecompressor<I>,
+        mut iter: BasicDecompressor<PageReader>,
         data_type: ArrowDataType,
         decoder: D,
     ) -> ParquetResult<Self> {

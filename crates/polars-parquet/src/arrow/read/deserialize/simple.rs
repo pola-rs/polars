@@ -7,8 +7,7 @@ use polars_error::{polars_bail, PolarsResult};
 
 use super::utils::filter::Filter;
 use super::{
-    binary, boolean, dictionary, fixed_size_binary, null, primitive, BasicDecompressor,
-    CompressedPagesIter, ParquetResult,
+    binary, boolean, dictionary, fixed_size_binary, null, primitive, BasicDecompressor, PageReader, ParquetResult
 };
 use crate::parquet::error::ParquetError;
 use crate::parquet::schema::types::{
@@ -20,8 +19,8 @@ use crate::read::deserialize::utils::PageDecoder;
 
 /// An iterator adapter that maps an iterator of Pages a boxed [`Array`] of [`ArrowDataType`]
 /// `data_type` with a maximum of `num_rows` elements.
-pub fn page_iter_to_array<'a, I: CompressedPagesIter + 'a>(
-    pages: BasicDecompressor<I>,
+pub fn page_iter_to_array(
+    pages: BasicDecompressor<PageReader>,
     type_: &PrimitiveType,
     data_type: ArrowDataType,
     filter: Option<Filter>,
@@ -299,7 +298,7 @@ pub fn page_iter_to_array<'a, I: CompressedPagesIter + 'a>(
         },
         (_, Dictionary(key_type, _, _)) => {
             return match_integer_type!(key_type, |$K| {
-                dict_read::<$K, _>(pages, physical_type, logical_type, data_type, filter).map(|v| Box::new(v) as Box<_>)
+                dict_read::<$K>(pages, physical_type, logical_type, data_type, filter).map(|v| Box::new(v) as Box<_>)
             }).map_err(Into::into)
         },
         (from, to) => {
@@ -379,8 +378,8 @@ pub fn int96_to_i64_s(value: [u32; 3]) -> i64 {
     day_seconds + seconds
 }
 
-fn timestamp<I: CompressedPagesIter>(
-    pages: BasicDecompressor<I>,
+fn timestamp(
+    pages: BasicDecompressor<PageReader>,
     physical_type: &PhysicalType,
     logical_type: &Option<PrimitiveLogicalType>,
     data_type: ArrowDataType,
@@ -441,8 +440,8 @@ fn timestamp<I: CompressedPagesIter>(
     })
 }
 
-fn timestamp_dict<K: DictionaryKey, I: CompressedPagesIter>(
-    pages: BasicDecompressor<I>,
+fn timestamp_dict<K: DictionaryKey>(
+    pages: BasicDecompressor<PageReader>,
     physical_type: &PhysicalType,
     logical_type: &Option<PrimitiveLogicalType>,
     data_type: ArrowDataType,
@@ -496,8 +495,8 @@ fn timestamp_dict<K: DictionaryKey, I: CompressedPagesIter>(
     }
 }
 
-fn dict_read<K: DictionaryKey, I: CompressedPagesIter>(
-    iter: BasicDecompressor<I>,
+fn dict_read<K: DictionaryKey>(
+    iter: BasicDecompressor<PageReader>,
     physical_type: &PhysicalType,
     logical_type: &Option<PrimitiveLogicalType>,
     data_type: ArrowDataType,
@@ -576,7 +575,7 @@ fn dict_read<K: DictionaryKey, I: CompressedPagesIter>(
 
             (PhysicalType::Int64, Timestamp(time_unit, _)) => {
                 let time_unit = *time_unit;
-                return timestamp_dict::<K, _>(
+                return timestamp_dict::<K>(
                     iter,
                     physical_type,
                     logical_type,

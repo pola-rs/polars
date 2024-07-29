@@ -128,16 +128,13 @@ fn is_primitive(data_type: &ArrowDataType) -> bool {
     )
 }
 
-fn columns_to_iter_recursive<'a, I>(
-    mut columns: Vec<BasicDecompressor<I>>,
+fn columns_to_iter_recursive(
+    mut columns: Vec<BasicDecompressor<PageReader>>,
     mut types: Vec<&PrimitiveType>,
     field: Field,
     init: Vec<InitNested>,
     filter: Option<Filter>,
-) -> PolarsResult<(NestedState, Box<dyn Array>)>
-where
-    I: 'a + CompressedPagesIter,
-{
+) -> PolarsResult<(NestedState, Box<dyn Array>)> {
     if init.is_empty() && is_primitive(&field.data_type) {
         let array = page_iter_to_array(
             columns.pop().unwrap(),
@@ -195,15 +192,12 @@ pub fn n_columns(data_type: &ArrowDataType) -> usize {
 /// For nested types, `columns` must be composed by all parquet columns with associated types `types`.
 ///
 /// The arrays are guaranteed to be at most of size `chunk_size` and data type `field.data_type`.
-pub fn column_iter_to_arrays<'a, I>(
-    columns: Vec<BasicDecompressor<I>>,
+pub fn column_iter_to_arrays<'a>(
+    columns: Vec<BasicDecompressor<PageReader>>,
     types: Vec<&PrimitiveType>,
     field: Field,
     filter: Option<Filter>,
-) -> PolarsResult<ArrayIter<'a>>
-where
-    I: 'a + CompressedPagesIter,
-{
+) -> PolarsResult<ArrayIter<'a>> {
     let (_, array) = columns_to_iter_recursive(columns, types, field, vec![], filter)?;
 
     Ok(Box::new(std::iter::once(Ok(array))))

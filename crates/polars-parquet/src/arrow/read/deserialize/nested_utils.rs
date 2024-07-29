@@ -3,7 +3,7 @@ use arrow::datatypes::ArrowDataType;
 use polars_error::PolarsResult;
 
 use super::utils::{self, BatchableCollector};
-use super::{BasicDecompressor, CompressedPagesIter, Filter};
+use super::{BasicDecompressor, Filter, PageReader};
 use crate::parquet::encoding::hybrid_rle::gatherer::{
     HybridRleGatherer, ZeroCount, ZeroCountGatherer,
 };
@@ -639,8 +639,8 @@ fn extend_offsets_limited<'a, D: utils::NestedDecoder>(
     Ok(())
 }
 
-pub struct PageNestedDecoder<I: CompressedPagesIter, D: utils::NestedDecoder> {
-    pub iter: BasicDecompressor<I>,
+pub struct PageNestedDecoder<D: utils::NestedDecoder> {
+    pub iter: BasicDecompressor<PageReader>,
     pub data_type: ArrowDataType,
     pub dict: Option<D::Dict>,
     pub decoder: D,
@@ -662,9 +662,9 @@ fn level_iters(page: &DataPage) -> ParquetResult<(HybridRleDecoder, HybridRleDec
     Ok((def_iter, rep_iter))
 }
 
-impl<I: CompressedPagesIter, D: utils::NestedDecoder> PageNestedDecoder<I, D> {
+impl<D: utils::NestedDecoder> PageNestedDecoder<D> {
     pub fn new(
-        mut iter: BasicDecompressor<I>,
+        mut iter: BasicDecompressor<PageReader>,
         data_type: ArrowDataType,
         decoder: D,
         init: Vec<InitNested>,
