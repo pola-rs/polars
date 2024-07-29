@@ -1,8 +1,8 @@
-use arrow::array::ValueSize;
-#[cfg(feature = "dtype-struct")]
-use arrow::array::{MutableArray, MutableUtf8Array};
-use polars_core::chunked_array::ops::arity::binary_elementwise_for_each;
+use std::iter::repeat;
 
+use arrow::array::ValueSize;
+
+use super::utils::{iter_with_view_and_buffers, subview_from_str};
 use super::*;
 
 pub struct SplitNChars<'a> {
@@ -66,129 +66,103 @@ where
     I: Iterator<Item = &'a str>,
 {
     let mut arrs = (0..n)
-        .map(|_| MutableUtf8Array::<i64>::with_capacity(ca.len()))
+        .map(|i| StringChunkedBuilder::new(format!("field_{i}").as_str(), ca.len()))
         .collect::<Vec<_>>();
 
-    if by.len() == 1 {
-        if let Some(by) = by.get(0) {
-            if by.is_empty() {
-                ca.for_each(|opt_s| match opt_s {
-                    None => {
-                        for arr in &mut arrs {
-                            arr.push_null()
-                        }
-                    },
-                    Some(s) => {
-                        let mut arr_iter = arrs.iter_mut();
-                        splitn_chars(s, n, keep_remainder)
-                            .zip(&mut arr_iter)
-                            .for_each(|(splitted, arr)| arr.push(Some(splitted)));
-                        // fill the remaining with null
-                        for arr in arr_iter {
-                            arr.push_null()
-                        }
-                    },
-                });
-            } else {
-                ca.for_each(|opt_s| match opt_s {
-                    None => {
-                        for arr in &mut arrs {
-                            arr.push_null()
-                        }
-                    },
-                    Some(s) => {
-                        let mut arr_iter = arrs.iter_mut();
-                        op(s, by)
-                            .zip(&mut arr_iter)
-                            .for_each(|(splitted, arr)| arr.push(Some(splitted)));
-                        // fill the remaining with null
-                        for arr in arr_iter {
-                            arr.push_null()
-                        }
-                    },
-                });
-            }
-        } else {
-            for arr in &mut arrs {
-                arr.push_null()
-            }
-        }
-    } else {
-        binary_elementwise_for_each(ca, by, |opt_s, opt_by| match (opt_s, opt_by) {
+    if by.len() != 1 {
+        polars_ensure!(
+            ca.len() == by.len(),
+            ComputeError: "by's length: {} does not match that of the argument series: {}",
+            by.len(), ca.len(),
+        );
+    }
+
+    for ((opt_s, (&view, buffers)), opt_by) in
+        iter_with_view_and_buffers(ca).zip(repeat(by).flatten())
+    {
+        match (opt_s, opt_by) {
             (Some(s), Some(by)) => {
                 let mut arr_iter = arrs.iter_mut();
                 if by.is_empty() {
                     splitn_chars(s, n, keep_remainder)
                         .zip(&mut arr_iter)
-                        .for_each(|(splitted, arr)| arr.push(Some(splitted)));
+                        .for_each(|(splitted, arr)| {
+                            arr.append_view(subview_from_str(s, splitted, view), buffers)
+                        });
                 } else {
-                    op(s, by)
-                        .zip(&mut arr_iter)
-                        .for_each(|(splitted, arr)| arr.push(Some(splitted)));
+                    op(s, by).zip(&mut arr_iter).for_each(|(splitted, arr)| {
+                        arr.append_view(subview_from_str(s, splitted, view), buffers)
+                    });
                 };
                 // fill the remaining with null
                 for arr in arr_iter {
-                    arr.push_null()
+                    arr.append_null()
                 }
             },
             _ => {
                 for arr in &mut arrs {
-                    arr.push_null()
+                    arr.append_null()
                 }
             },
-        })
+        }
     }
 
     let fields = arrs
         .into_iter()
-        .enumerate()
-        .map(|(i, mut arr)| {
-            Series::try_from((format!("field_{i}").as_str(), arr.as_box())).unwrap()
-        })
+        .map(StringChunkedBuilder::finish)
+        .map(StringChunked::into_series)
         .collect::<Vec<_>>();
 
     StructChunked::from_series(ca.name(), &fields)
 }
 
-pub fn split_helper<'a, F, I>(ca: &'a StringChunked, by: &'a StringChunked, op: F) -> ListChunked
+pub fn split_helper<'a, F, I>(
+    ca: &'a StringChunked,
+    by: &'a StringChunked,
+    op: F,
+) -> PolarsResult<ListChunked>
 where
     F: Fn(&'a str, &'a str) -> I,
     I: Iterator<Item = &'a str>,
 {
     if by.len() == 1 {
-        if let Some(by) = by.get(0) {
-            let mut builder =
-                ListStringChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
-
-            if by.is_empty() {
-                ca.for_each(|opt_s| match opt_s {
-                    Some(s) => builder.append_values_iter(split_chars(s)),
-                    _ => builder.append_null(),
-                });
-            } else {
-                ca.for_each(|opt_s| match opt_s {
-                    Some(s) => builder.append_values_iter(op(s, by)),
-                    _ => builder.append_null(),
-                });
-            }
-            builder.finish()
-        } else {
-            ListChunked::full_null_with_dtype(ca.name(), ca.len(), &DataType::String)
+        if by.get(0).is_none() {
+            return Ok(ListChunked::full_null_with_dtype(
+                ca.name(),
+                ca.len(),
+                &DataType::String,
+            ));
         }
     } else {
-        let mut builder = ListStringChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
+        polars_ensure!(
+            ca.len() == by.len(),
+            ComputeError: "by's length: {} does not match that of the argument series: {}",
+            by.len(), ca.len(),
+        );
+    }
 
-        binary_elementwise_for_each(ca, by, |opt_s, opt_by| match (opt_s, opt_by) {
+    let mut builder = ListStringChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
+
+    for ((opt_s, (&view, buffers)), opt_by) in
+        iter_with_view_and_buffers(ca).zip(repeat(by).flatten())
+    {
+        match (opt_s, opt_by) {
             (Some(s), Some(by)) => {
                 if by.is_empty() {
-                    builder.append_values_iter(split_chars(s))
+                    builder.append_views_iter(
+                        split_chars(s).map(|subs| subview_from_str(s, subs, view)),
+                        buffers,
+                    );
                 } else {
-                    builder.append_values_iter(op(s, by))
+                    builder.append_views_iter(
+                        op(s, by).map(|subs| subview_from_str(s, subs, view)),
+                        buffers,
+                    );
                 }
             },
             _ => builder.append_null(),
-        });
-
-        builder.finish()
+        }
     }
+
+    Ok(builder.finish())
 }

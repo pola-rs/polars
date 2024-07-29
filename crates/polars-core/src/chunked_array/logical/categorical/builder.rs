@@ -1,5 +1,7 @@
 use arrow::array::*;
+use arrow::buffer::Buffer;
 use arrow::legacy::trusted_len::TrustedLenPush;
+use either::Either;
 use hashbrown::hash_map::Entry;
 use polars_utils::iter::EnumerateIdxTrait;
 
@@ -34,7 +36,7 @@ impl CategoricalChunkedBuilder {
         }
     }
 
-    fn get_cat_idx(&mut self, s: &str, h: u64) -> (u32, bool) {
+    fn get_cat_idx(&mut self, s: &str, h: u64, vb: Option<(View, &[Buffer<u8>])>) -> (u32, bool) {
         let len = self.local_mapping.len() as u32;
 
         // Custom hashing / equality functions for comparing the &str to the idx
@@ -56,7 +58,11 @@ impl CategoricalChunkedBuilder {
                 (unsafe { v.as_ref().0 .0 }, false)
             },
             Err(e) => {
-                self.categories.push(Some(s));
+                if let Some((view, buffers)) = vb {
+                    self.categories.push_view(view, buffers);
+                } else {
+                    self.categories.push_value(s);
+                }
                 // SAFETY: No mutations in hashmap since find_or_find_insert_slot call
                 unsafe {
                     self.local_mapping
@@ -68,19 +74,44 @@ impl CategoricalChunkedBuilder {
         }
     }
 
+    pub fn register_value_internal(&mut self, s: &str) -> (u32, Option<u64>) {
+        let h = self.local_mapping.hasher().hash_one(s);
+        let (cat_idx, new) = self.get_cat_idx(s, h, None);
+        (cat_idx, new.then_some(h))
+    }
+
     /// Registers a value to a categorical index without pushing it.
     /// Returns the index and if the value was new.
     #[inline]
     pub fn register_value(&mut self, s: &str) -> (u32, bool) {
-        let h = self.local_mapping.hasher().hash_one(s);
-        self.get_cat_idx(s, h)
+        let (i, h) = self.register_value_internal(s);
+        (i, h.is_some())
     }
 
     #[inline]
     pub fn append_value(&mut self, s: &str) {
+        let cat_idx = self.register_value(s).0;
+        self.cat_builder.push_value(cat_idx);
+    }
+
+    fn register_view_internal(&mut self, view: View, buffers: &[Buffer<u8>]) -> (u32, Option<u64>) {
+        assert!(view.length <= 12 || (view.buffer_idx as usize) < buffers.len());
+        let s = unsafe { std::str::from_utf8_unchecked(view.get_slice_unchecked(buffers)) };
         let h = self.local_mapping.hasher().hash_one(s);
-        let idx = self.get_cat_idx(s, h).0;
-        self.cat_builder.push(Some(idx));
+        let (cat_idx, new) = self.get_cat_idx(s, h, Some((view, buffers)));
+        (cat_idx, new.then_some(h))
+    }
+
+    #[inline]
+    pub fn register_view(&mut self, view: View, buffers: &[Buffer<u8>]) -> (u32, bool) {
+        let (i, h) = self.register_view_internal(view, buffers);
+        (i, h.is_some())
+    }
+
+    #[inline]
+    pub fn append_view(&mut self, view: View, buffers: &[Buffer<u8>]) {
+        let cat_idx = self.register_view(view, buffers).0;
+        self.cat_builder.push_value(cat_idx);
     }
 
     #[inline]
@@ -98,10 +129,17 @@ impl CategoricalChunkedBuilder {
 
     fn drain_iter<'a, I>(&mut self, i: I)
     where
-        I: IntoIterator<Item = Option<&'a str>>,
+        I: IntoIterator<Item = Option<Either<&'a str, (View, &'a [Buffer<u8>])>>>,
     {
         for opt_s in i.into_iter() {
-            self.append(opt_s);
+            if let Some(s) = opt_s {
+                match s {
+                    Either::Left(s) => self.append_value(s),
+                    Either::Right((view, buffers)) => self.append_view(view, buffers),
+                }
+            } else {
+                self.append_null();
+            }
         }
     }
 
@@ -109,7 +147,7 @@ impl CategoricalChunkedBuilder {
     /// altering the keys in place.
     fn drain_iter_global_and_finish<'a, I>(&mut self, i: I) -> CategoricalChunked
     where
-        I: IntoIterator<Item = Option<&'a str>>,
+        I: IntoIterator<Item = Option<Either<&'a str, (View, &'a [Buffer<u8>])>>>,
     {
         let iter = i.into_iter();
         // Save hashes for later when inserting into the global hashmap.
@@ -122,10 +160,14 @@ impl CategoricalChunkedBuilder {
             match opt_s {
                 None => self.append_null(),
                 Some(s) => {
-                    let hash = self.local_mapping.hasher().hash_one(s);
-                    let (cat_idx, new) = self.get_cat_idx(s, hash);
-                    self.cat_builder.push(Some(cat_idx));
-                    if new {
+                    let (cat_idx, hash) = match s {
+                        Either::Left(s) => self.register_value_internal(s),
+                        Either::Right((view, buffers)) => {
+                            self.register_view_internal(view, buffers)
+                        },
+                    };
+                    self.cat_builder.push_value(cat_idx);
+                    if let Some(hash) = hash {
                         // We appended a value to the map.
                         hashes.push(hash);
                     }
@@ -184,10 +226,24 @@ impl CategoricalChunkedBuilder {
     where
         I: IntoIterator<Item = Option<&'a str>>,
     {
+        let iter = i.into_iter().map(|s| s.map(Either::Left));
         if using_string_cache() {
-            self.drain_iter_global_and_finish(i)
+            self.drain_iter_global_and_finish(iter)
         } else {
-            self.drain_iter(i);
+            self.drain_iter(iter);
+            self.finish()
+        }
+    }
+
+    pub fn drain_views_iter_and_finish<'a, I>(mut self, i: I) -> CategoricalChunked
+    where
+        I: IntoIterator<Item = Option<(View, &'a [Buffer<u8>])>>,
+    {
+        let iter = i.into_iter().map(|vb| vb.map(Either::Right));
+        if using_string_cache() {
+            self.drain_iter_global_and_finish(iter)
+        } else {
+            self.drain_iter(iter);
             self.finish()
         }
     }

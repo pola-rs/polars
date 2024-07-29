@@ -339,15 +339,20 @@ impl LogicalType for CategoricalChunked {
 
                 let mut builder = StringChunkedBuilder::new(self.physical.name(), self.len());
 
-                let f = |idx: u32| mapping.get(idx);
+                let f = |idx: u32| *mapping.get_view(idx);
+                let buffers = mapping.get_categories().data_buffers().deref();
 
                 if !self.physical.has_nulls() {
                     self.physical
                         .into_no_null_iter()
-                        .for_each(|idx| builder.append_value(f(idx)));
+                        .for_each(|idx| builder.append_view(f(idx), buffers));
                 } else {
                     self.physical.into_iter().for_each(|opt_idx| {
-                        builder.append_option(opt_idx.map(f));
+                        if let Some(idx) = opt_idx {
+                            builder.append_view(f(idx), buffers);
+                        } else {
+                            builder.append_null();
+                        }
                     });
                 }
 

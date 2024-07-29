@@ -1,4 +1,3 @@
-use arrow::array::ValueSize;
 use arrow::legacy::kernels::string::*;
 #[cfg(feature = "string_encoding")]
 use base64::engine::general_purpose;
@@ -402,53 +401,45 @@ pub trait StringNameSpaceImpl: AsString {
     /// Extract each successive non-overlapping regex match in an individual string as an array.
     fn extract_all(&self, pat: &str) -> PolarsResult<ListChunked> {
         let ca = self.as_string();
-        let reg = Regex::new(pat)?;
-
-        let mut builder = ListStringChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
-        for arr in ca.downcast_iter() {
-            for opt_s in arr {
-                match opt_s {
-                    None => builder.append_null(),
-                    Some(s) => builder.append_values_iter(reg.find_iter(s).map(|m| m.as_str())),
-                }
-            }
-        }
-        Ok(builder.finish())
+        super::extract::extract_all(ca, pat)
     }
 
     fn strip_chars(&self, pat: &Series) -> PolarsResult<StringChunked> {
         let ca = self.as_string();
-        if pat.dtype() == &DataType::Null {
-            Ok(ca.apply_generic(|opt_s| opt_s.map(|s| s.trim())))
+        let pat = if pat.dtype() == &DataType::Null {
+            &StringChunked::new("", [None::<&str>])
         } else {
-            Ok(strip_chars(ca, pat.str()?))
-        }
+            pat.str()?
+        };
+        strip_chars(ca, pat)
     }
 
     fn strip_chars_start(&self, pat: &Series) -> PolarsResult<StringChunked> {
         let ca = self.as_string();
-        if pat.dtype() == &DataType::Null {
-            return Ok(ca.apply_generic(|opt_s| opt_s.map(|s| s.trim_start())));
+        let pat = if pat.dtype() == &DataType::Null {
+            &StringChunked::new("", [None::<&str>])
         } else {
-            Ok(strip_chars_start(ca, pat.str()?))
-        }
+            pat.str()?
+        };
+        strip_chars_start(ca, pat)
     }
 
     fn strip_chars_end(&self, pat: &Series) -> PolarsResult<StringChunked> {
         let ca = self.as_string();
-        if pat.dtype() == &DataType::Null {
-            return Ok(ca.apply_generic(|opt_s| opt_s.map(|s| s.trim_end())));
+        let pat = if pat.dtype() == &DataType::Null {
+            &StringChunked::new("", [None::<&str>])
         } else {
-            Ok(strip_chars_end(ca, pat.str()?))
-        }
+            pat.str()?
+        };
+        strip_chars_end(ca, pat)
     }
 
-    fn strip_prefix(&self, prefix: &StringChunked) -> StringChunked {
+    fn strip_prefix(&self, prefix: &StringChunked) -> PolarsResult<StringChunked> {
         let ca = self.as_string();
         strip_prefix(ca, prefix)
     }
 
-    fn strip_suffix(&self, suffix: &StringChunked) -> StringChunked {
+    fn strip_suffix(&self, suffix: &StringChunked) -> PolarsResult<StringChunked> {
         let ca = self.as_string();
         strip_suffix(ca, suffix)
     }
@@ -474,13 +465,13 @@ pub trait StringNameSpaceImpl: AsString {
         split_to_struct(ca, by, n, |s, by| s.splitn(n, by), true)
     }
 
-    fn split(&self, by: &StringChunked) -> ListChunked {
+    fn split(&self, by: &StringChunked) -> PolarsResult<ListChunked> {
         let ca = self.as_string();
 
         split_helper(ca, by, str::split)
     }
 
-    fn split_inclusive(&self, by: &StringChunked) -> ListChunked {
+    fn split_inclusive(&self, by: &StringChunked) -> PolarsResult<ListChunked> {
         let ca = self.as_string();
 
         split_helper(ca, by, str::split_inclusive)
@@ -489,23 +480,7 @@ pub trait StringNameSpaceImpl: AsString {
     /// Extract each successive non-overlapping regex match in an individual string as an array.
     fn extract_all_many(&self, pat: &StringChunked) -> PolarsResult<ListChunked> {
         let ca = self.as_string();
-        polars_ensure!(
-            ca.len() == pat.len(),
-            ComputeError: "pattern's length: {} does not match that of the argument series: {}",
-            pat.len(), ca.len(),
-        );
-
-        // A sqrt(n) regex cache is not too small, not too large.
-        let mut reg_cache = FastFixedCache::new((ca.len() as f64).sqrt() as usize);
-        let mut builder = ListStringChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
-        binary_elementwise_for_each(ca, pat, |opt_s, opt_pat| match (opt_s, opt_pat) {
-            (_, None) | (None, _) => builder.append_null(),
-            (Some(s), Some(pat)) => {
-                let reg = reg_cache.get_or_insert_with(pat, |p| Regex::new(p).unwrap());
-                builder.append_values_iter(reg.find_iter(s).map(|m| m.as_str()));
-            },
-        });
-        Ok(builder.finish())
+        super::extract::extract_all_many(ca, pat)
     }
 
     #[cfg(feature = "extract_groups")]
@@ -610,7 +585,7 @@ pub trait StringNameSpaceImpl: AsString {
         // We strict cast, otherwise negative value will be treated as a valid length.
         let length = length.strict_cast(&DataType::UInt64)?;
 
-        Ok(substring::substring(ca, offset.i64()?, length.u64()?))
+        substring::substring(ca, offset.i64()?, length.u64()?)
     }
 
     /// Slice the first `n` values of the string.
@@ -622,7 +597,7 @@ pub trait StringNameSpaceImpl: AsString {
         let ca = self.as_string();
         let n = n.strict_cast(&DataType::Int64)?;
 
-        Ok(substring::head(ca, n.i64()?))
+        substring::head(ca, n.i64()?)
     }
 
     /// Slice the last `n` values of the string.
@@ -633,7 +608,7 @@ pub trait StringNameSpaceImpl: AsString {
         let ca = self.as_string();
         let n = n.strict_cast(&DataType::Int64)?;
 
-        Ok(substring::tail(ca, n.i64()?))
+        substring::tail(ca, n.i64()?)
     }
 }
 

@@ -20,6 +20,8 @@ mod split;
 mod strip;
 #[cfg(feature = "strings")]
 mod substring;
+#[cfg(any(feature = "strings", feature = "find_many"))]
+mod utils;
 
 #[cfg(all(not(feature = "nightly"), feature = "strings"))]
 mod unicode_internals;

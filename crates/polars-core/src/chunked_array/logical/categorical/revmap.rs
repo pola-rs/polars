@@ -1,5 +1,6 @@
 use std::fmt::{Debug, Formatter};
 use std::hash::{BuildHasher, Hash, Hasher};
+use std::ops::Deref;
 
 use ahash::RandomState;
 use arrow::array::*;
@@ -98,22 +99,31 @@ impl RevMapping {
     ///
     /// [`Categorical`]: crate::datatypes::DataType::Categorical
     pub fn get(&self, idx: u32) -> &str {
-        match self {
-            Self::Global(map, a, _) => {
-                let idx = *map.get(&idx).unwrap();
-                a.value(idx as usize)
-            },
-            Self::Local(a, _) => a.value(idx as usize),
-        }
+        self.get_optional(idx).unwrap()
     }
 
     pub fn get_optional(&self, idx: u32) -> Option<&str> {
-        match self {
-            Self::Global(map, a, _) => {
-                let idx = *map.get(&idx)?;
-                a.get(idx as usize)
-            },
-            Self::Local(a, _) => a.get(idx as usize),
+        let view = self.get_view_optional(idx)?;
+        Some(unsafe {
+            std::str::from_utf8_unchecked(
+                view.get_slice_unchecked(self.get_categories().data_buffers().deref()),
+            )
+        })
+    }
+
+    pub fn get_view(&self, idx: u32) -> &View {
+        self.get_view_optional(idx).unwrap()
+    }
+
+    pub fn get_view_optional(&self, idx: u32) -> Option<&View> {
+        let (a, idx) = match self {
+            Self::Global(map, a, _) => (a, *map.get(&idx)? as usize),
+            Self::Local(a, _) => (a, idx as usize),
+        };
+        if idx < a.len() && !unsafe { a.is_null_unchecked(idx) } {
+            Some(unsafe { a.views().get_unchecked(idx) })
+        } else {
+            None
         }
     }
 
