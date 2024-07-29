@@ -443,7 +443,7 @@ pub fn columns_to_iter_recursive(
     })
 }
 
-fn dict_read<'a, K: DictionaryKey>(
+fn dict_read<K: DictionaryKey>(
     iter: BasicDecompressor,
     init: Vec<InitNested>,
     _type_: &PrimitiveType,

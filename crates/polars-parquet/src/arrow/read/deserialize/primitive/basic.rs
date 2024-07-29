@@ -348,7 +348,6 @@ where
     type Output = PrimitiveArray<T>;
 
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState {
-        dbg!(capacity);
         (
             Vec::<T>::with_capacity(capacity),
             MutableBitmap::with_capacity(capacity),

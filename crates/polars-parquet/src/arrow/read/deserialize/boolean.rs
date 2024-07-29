@@ -232,11 +232,7 @@ impl Decoder for BooleanDecoder {
         _dict: Option<Self::Dict>,
         (values, validity): Self::DecodedState,
     ) -> ParquetResult<Self::Output> {
-        Ok(BooleanArray::new(
-            data_type,
-            values.into(),
-            validity.into(),
-        ))
+        Ok(BooleanArray::new(data_type, values.into(), validity.into()))
     }
 }
 

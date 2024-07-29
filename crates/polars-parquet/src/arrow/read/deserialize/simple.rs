@@ -7,7 +7,8 @@ use polars_error::{polars_bail, PolarsResult};
 
 use super::utils::filter::Filter;
 use super::{
-    binary, boolean, dictionary, fixed_size_binary, null, primitive, BasicDecompressor, ParquetResult
+    binary, boolean, dictionary, fixed_size_binary, null, primitive, BasicDecompressor,
+    ParquetResult,
 };
 use crate::parquet::error::ParquetError;
 use crate::parquet::schema::types::{
@@ -388,30 +389,38 @@ fn timestamp(
 ) -> PolarsResult<Box<dyn Array>> {
     if physical_type == &PhysicalType::Int96 {
         return match time_unit {
-            TimeUnit::Nanosecond => Ok(Box::new(PageDecoder::new(
-                pages,
-                data_type,
-                primitive::PrimitiveDecoder::closure(|x: [u32; 3]| int96_to_i64_ns(x)),
-            )?
-            .collect_n(filter)?)),
-            TimeUnit::Microsecond => Ok(Box::new(PageDecoder::new(
-                pages,
-                data_type,
-                primitive::PrimitiveDecoder::closure(|x: [u32; 3]| int96_to_i64_us(x)),
-            )?
-            .collect_n(filter)?)),
-            TimeUnit::Millisecond => Ok(Box::new(PageDecoder::new(
-                pages,
-                data_type,
-                primitive::PrimitiveDecoder::closure(|x: [u32; 3]| int96_to_i64_ms(x)),
-            )?
-            .collect_n(filter)?)),
-            TimeUnit::Second => Ok(Box::new(PageDecoder::new(
-                pages,
-                data_type,
-                primitive::PrimitiveDecoder::closure(|x: [u32; 3]| int96_to_i64_s(x)),
-            )?
-            .collect_n(filter)?)),
+            TimeUnit::Nanosecond => Ok(Box::new(
+                PageDecoder::new(
+                    pages,
+                    data_type,
+                    primitive::PrimitiveDecoder::closure(|x: [u32; 3]| int96_to_i64_ns(x)),
+                )?
+                .collect_n(filter)?,
+            )),
+            TimeUnit::Microsecond => Ok(Box::new(
+                PageDecoder::new(
+                    pages,
+                    data_type,
+                    primitive::PrimitiveDecoder::closure(|x: [u32; 3]| int96_to_i64_us(x)),
+                )?
+                .collect_n(filter)?,
+            )),
+            TimeUnit::Millisecond => Ok(Box::new(
+                PageDecoder::new(
+                    pages,
+                    data_type,
+                    primitive::PrimitiveDecoder::closure(|x: [u32; 3]| int96_to_i64_ms(x)),
+                )?
+                .collect_n(filter)?,
+            )),
+            TimeUnit::Second => Ok(Box::new(
+                PageDecoder::new(
+                    pages,
+                    data_type,
+                    primitive::PrimitiveDecoder::closure(|x: [u32; 3]| int96_to_i64_s(x)),
+                )?
+                .collect_n(filter)?,
+            )),
         };
     };
 
@@ -423,20 +432,26 @@ fn timestamp(
 
     let (factor, is_multiplier) = unify_timestamp_unit(logical_type, time_unit);
     Ok(match (factor, is_multiplier) {
-        (1, _) => Box::new(PageDecoder::new(pages, data_type, primitive::IntDecoder::<i64, _, _>::unit())?
-            .collect_n(filter)?),
-        (a, true) => Box::new(PageDecoder::new(
-            pages,
-            data_type,
-            primitive::IntDecoder::closure(|x: i64| x * a),
-        )?
-        .collect_n(filter)?),
-        (a, false) => Box::new(PageDecoder::new(
-            pages,
-            data_type,
-            primitive::IntDecoder::closure(|x: i64| x / a),
-        )?
-        .collect_n(filter)?),
+        (1, _) => Box::new(
+            PageDecoder::new(pages, data_type, primitive::IntDecoder::<i64, _, _>::unit())?
+                .collect_n(filter)?,
+        ),
+        (a, true) => Box::new(
+            PageDecoder::new(
+                pages,
+                data_type,
+                primitive::IntDecoder::closure(|x: i64| x * a),
+            )?
+            .collect_n(filter)?,
+        ),
+        (a, false) => Box::new(
+            PageDecoder::new(
+                pages,
+                data_type,
+                primitive::IntDecoder::closure(|x: i64| x / a),
+            )?
+            .collect_n(filter)?,
+        ),
     })
 }
 
@@ -508,8 +523,6 @@ fn dict_read<K: DictionaryKey>(
     } else {
         panic!()
     };
-
-    dbg!(physical_type, logical_type);
 
     Ok(
         match (physical_type, values_data_type.to_logical_type()) {

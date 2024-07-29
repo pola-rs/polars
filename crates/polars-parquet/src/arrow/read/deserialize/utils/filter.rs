@@ -51,9 +51,11 @@ impl Filter {
         }
     }
 
-    pub(crate) fn opt_split_at(filter: &Option<Self>, at: usize) -> (Option<Filter>, Option<Filter>) {
-        let Some(filter) = filter else 
-        {
+    pub(crate) fn opt_split_at(
+        filter: &Option<Self>,
+        at: usize,
+    ) -> (Option<Filter>, Option<Filter>) {
+        let Some(filter) = filter else {
             return (None, None);
         };
 

@@ -164,9 +164,8 @@ impl BasicDecompressor {
 
     /// The total number of values is given from the `ColumnChunk` metadata.
     ///
-    /// - If the column is nested, this is equal to the number of non-null values at the lowest
-    /// nesting level.
-    /// - If the column is not nested this is equal to the number of non-null rows.
+    /// - Nested column: equal to the number of non-null values at the lowest nesting level.
+    /// - Unnested column: equal to the number of non-null rows.
     pub fn total_num_values(&self) -> usize {
         self.reader.total_num_values()
     }
@@ -178,10 +177,11 @@ impl BasicDecompressor {
 
     pub fn read_dict_page(&mut self) -> ParquetResult<Option<DictPage>> {
         match self.reader.read_dict()? {
-            None => return Ok(None),
+            None => Ok(None),
             Some(p) => {
                 let num_values = p.num_values;
-                let page = decompress(CompressedPage::Dict(p), &mut Vec::with_capacity(num_values))?;
+                let page =
+                    decompress(CompressedPage::Dict(p), &mut Vec::with_capacity(num_values))?;
 
                 match page {
                     Page::Dict(d) => Ok(Some(d)),
