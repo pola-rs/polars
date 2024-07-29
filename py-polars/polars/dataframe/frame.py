@@ -1279,7 +1279,7 @@ class DataFrame:
     def _ipython_key_completions_(self) -> list[str]:
         return self.columns
 
-    def __arrow_c_stream__(self, requested_schema: object) -> object:
+    def __arrow_c_stream__(self, requested_schema: object | None = None) -> object:
         """
         Export a DataFrame via the Arrow PyCapsule Interface.
 
