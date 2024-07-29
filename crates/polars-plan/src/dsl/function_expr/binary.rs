@@ -2,9 +2,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::*;
-#[cfg(feature = "binary_encoding")]
-use crate::map;
-use crate::map_as_slice;
+use crate::{map, map_as_slice};
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
