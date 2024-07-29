@@ -739,7 +739,12 @@ def test_utc_timezone_normalization_13670(tmp_path: Path) -> None:
     """'+00:00' timezones becomes 'UTC' timezone."""
     utc_path = tmp_path / "utc.parquet"
     zero_path = tmp_path / "00_00.parquet"
-    for tz, path in [("+00:00", zero_path), ("UTC", utc_path)]:
+    utc_lowercase_path = tmp_path / "utc_lowercase.parquet"
+    for tz, path in [
+        ("+00:00", zero_path),
+        ("UTC", utc_path),
+        ("utc", utc_lowercase_path),
+    ]:
         pq.write_table(
             pa.table(
                 {"c1": [1234567890123] * 10},
@@ -751,6 +756,8 @@ def test_utc_timezone_normalization_13670(tmp_path: Path) -> None:
     df = pl.scan_parquet([utc_path, zero_path]).head(5).collect()
     assert cast(pl.Datetime, df.schema["c1"]).time_zone == "UTC"
     df = pl.scan_parquet([zero_path, utc_path]).head(5).collect()
+    assert cast(pl.Datetime, df.schema["c1"]).time_zone == "UTC"
+    df = pl.scan_parquet([zero_path, utc_lowercase_path]).head(5).collect()
     assert cast(pl.Datetime, df.schema["c1"]).time_zone == "UTC"
 
 
