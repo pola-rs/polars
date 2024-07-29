@@ -118,7 +118,7 @@ impl<K: DictionaryKey, D: utils::DictDecodable> utils::Decoder for DictionaryDec
         dict: Option<Self::Dict>,
         (values, validity): Self::DecodedState,
     ) -> ParquetResult<DictionaryArray<K>> {
-        let validity = if validity.is_empty() || validity.set_bits() == 0 {
+        let validity = if validity.is_empty() || validity.unset_bits() == 0 {
             None
         } else {
             Some(validity.freeze())

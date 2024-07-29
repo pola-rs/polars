@@ -2,7 +2,7 @@ use std::io::{Read, Seek};
 use std::vec::IntoIter;
 
 use super::{get_field_columns, get_page_iterator, MemReader, PageFilter, PageReader};
-use crate::parquet::error::ParquetError;
+use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::metadata::{ColumnChunkMetaData, RowGroupMetaData};
 use crate::parquet::page::CompressedPage;
 use crate::parquet::schema::types::ParquetType;
@@ -23,14 +23,13 @@ pub fn get_column_iterator(
     row_group: &RowGroupMetaData,
     field_name: &str,
     page_filter: Option<PageFilter>,
-    scratch: Vec<u8>,
     max_page_size: usize,
 ) -> ColumnIterator {
     let columns = get_field_columns(row_group.columns(), field_name)
         .cloned()
         .collect::<Vec<_>>();
 
-    ColumnIterator::new(reader, columns, page_filter, scratch, max_page_size)
+    ColumnIterator::new(reader, columns, page_filter, max_page_size)
 }
 
 /// State of [`MutStreamingIterator`].
@@ -54,11 +53,9 @@ pub trait MutStreamingIterator: Sized {
 /// A [`MutStreamingIterator`] that reads column chunks one by one,
 /// returning a [`PageReader`] per column.
 pub struct ColumnIterator {
-    reader: Option<MemReader>,
+    reader: MemReader,
     columns: Vec<ColumnChunkMetaData>,
     page_filter: Option<PageFilter>,
-    current: Option<(PageReader, ColumnChunkMetaData)>,
-    scratch: Vec<u8>,
     max_page_size: usize,
 }
 
@@ -69,56 +66,38 @@ impl ColumnIterator {
         reader: MemReader,
         mut columns: Vec<ColumnChunkMetaData>,
         page_filter: Option<PageFilter>,
-        scratch: Vec<u8>,
         max_page_size: usize,
     ) -> Self {
         columns.reverse();
         Self {
-            reader: Some(reader),
-            scratch,
+            reader,
             columns,
             page_filter,
-            current: None,
             max_page_size,
         }
     }
 }
 
-impl MutStreamingIterator for ColumnIterator {
-    type Item = (PageReader, ColumnChunkMetaData);
-    type Error = ParquetError;
+impl Iterator for ColumnIterator {
+    type Item = ParquetResult<(PageReader, ColumnChunkMetaData)>;
 
-    fn advance(mut self) -> Result<State<Self>, ParquetError> {
-        let (reader, scratch) = if let Some((iter, _)) = self.current {
-            iter.into_inner()
-        } else {
-            (self.reader.unwrap(), self.scratch)
-        };
+    fn next(&mut self) -> Option<Self::Item> {
         if self.columns.is_empty() {
-            return Ok(State::Finished(scratch));
+            return None;
         };
         let column = self.columns.pop().unwrap();
 
-        let iter = get_page_iterator(
+        let iter = match get_page_iterator(
             &column,
-            reader,
+            self.reader.clone(),
             self.page_filter.clone(),
-            scratch,
+            Vec::new(),
             self.max_page_size,
-        )?;
-        let current = Some((iter, column));
-        Ok(State::Some(Self {
-            reader: None,
-            columns: self.columns,
-            page_filter: self.page_filter,
-            current,
-            scratch: vec![],
-            max_page_size: self.max_page_size,
-        }))
-    }
-
-    fn get(&mut self) -> Option<&mut Self::Item> {
-        self.current.as_mut()
+        ) {
+            Err(e) => return Some(Err(e)),
+            Ok(v) => v,
+        };
+        Some(Ok((iter, column)))
     }
 }
 

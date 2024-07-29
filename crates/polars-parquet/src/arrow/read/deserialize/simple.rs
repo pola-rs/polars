@@ -509,6 +509,8 @@ fn dict_read<K: DictionaryKey>(
         panic!()
     };
 
+    dbg!(physical_type, logical_type);
+
     Ok(
         match (physical_type, values_data_type.to_logical_type()) {
             (PhysicalType::Int32, UInt8) => PageDecoder::new(
