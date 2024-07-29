@@ -1,12 +1,12 @@
 #[cfg(feature = "binary_encoding")]
 use std::borrow::Cow;
 
-use arrow::legacy::kernels::binary::*;
 #[cfg(feature = "binary_encoding")]
 use base64::engine::general_purpose;
 #[cfg(feature = "binary_encoding")]
 use base64::Engine as _;
 use memchr::memmem::find;
+use polars_compute::size::binary_size_bytes;
 use polars_core::prelude::arity::{broadcast_binary_elementwise_values, unary_elementwise_values};
 
 use super::*;

@@ -3,7 +3,6 @@ use std::iter::Enumerate;
 use crate::array::BooleanArray;
 use crate::bitmap::utils::BitChunks;
 pub mod atan2;
-pub mod binary;
 pub mod concatenate;
 pub mod ewm;
 #[cfg(feature = "compute_take")]

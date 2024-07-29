@@ -1,6 +1,6 @@
-use crate::array::{Array, ArrayRef, BinaryViewArray, UInt32Array};
-use crate::buffer::Buffer;
-use crate::datatypes::ArrowDataType;
+use arrow::array::{Array, ArrayRef, BinaryViewArray, UInt32Array};
+use arrow::buffer::Buffer;
+use arrow::datatypes::ArrowDataType;
 
 pub fn binary_size_bytes(array: &BinaryViewArray) -> ArrayRef {
     let values: Buffer<_> = array.len_iter().collect();
