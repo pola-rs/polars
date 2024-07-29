@@ -35,7 +35,7 @@ def _check_is_sa_greenlet(green: greenlet.greenlet) -> bool:
 
 
 def _greenlet_wait(co: Coroutine[Any, Any, T_co]) -> T_co:
-    """Compotable with sqlalchemy."""
+    """Compatible with sqlalchemy."""
     from polars.dependencies import import_optional
 
     if TYPE_CHECKING:
