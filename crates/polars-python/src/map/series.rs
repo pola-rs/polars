@@ -2246,7 +2246,9 @@ impl<'a> ApplyLambda<'a> for StructChunked {
 
         for val in iter_struct(self) {
             let out = lambda.call1((Wrap(val),))?;
-            if out.is_none() {
+            // check whether a structchunk consists of all None elements
+            let chunk_with_all_nones = out.iter()?.filter(|l| !l.as_ref().unwrap().is_none()).count() == 0;
+            if out.is_none() || chunk_with_all_nones {
                 null_count += 1;
                 continue;
             }
