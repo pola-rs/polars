@@ -130,7 +130,7 @@ If you're developing a library that you wish to integrate with Polars, it's sugg
 ## Using Polars directly
 
 Polars can also consume and export to and import from the [Arrow C Data Interface](https://arrow.apache.org/docs/format/CDataInterface.html)
-directly. This is recommended for library maintainers that want to interop with Polars without requiring a pyarrow installation.
+directly. This is recommended for libraries that don't support the Arrow PyCapsule Interface and want to interop with Polars without requiring a pyarrow installation.
 
 - To export `ArrowArray` C structs, Polars exposes: `Series._export_arrow_to_c`.
 - To import an `ArrowArray` C struct, Polars exposes `Series._import_arrow_from_c`.
