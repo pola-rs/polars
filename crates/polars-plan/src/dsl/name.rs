@@ -1,6 +1,6 @@
-use polars_utils::format_pl_smallstr;
 #[cfg(feature = "dtype-struct")]
 use polars_utils::pl_str::PlSmallStr;
+#[cfg(feature = "regex")]
 use regex::Regex;
 
 use super::*;
@@ -51,6 +51,7 @@ impl ExprNameNameSpace {
     }
 
     /// Replace matching string pattern in the root column name with a new value.
+    #[cfg(feature = "regex")]
     pub fn replace(self, pattern: &str, value: &str, literal: bool) -> Expr {
         let value = value.to_string();
         let pattern = pattern.to_string();
