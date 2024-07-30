@@ -7,6 +7,7 @@ use chrono::ParseError;
 pub use patterns::Pattern;
 #[cfg(feature = "dtype-time")]
 use polars_core::chunked_array::temporal::time_to_time64ns;
+use polars_core::prelude::arity::unary_elementwise;
 use polars_utils::cache::FastCachedFunc;
 
 use super::*;
@@ -106,7 +107,7 @@ pub trait StringMethods: AsString {
             },
             (string_ca.len() as f64).sqrt() as usize,
         );
-        let ca = string_ca.apply_generic(|opt_s| convert.eval(opt_s?, use_cache));
+        let ca = unary_elementwise(string_ca, |opt_s| convert.eval(opt_s?, use_cache));
         Ok(ca.with_name(string_ca.name()).into())
     }
 
@@ -120,7 +121,7 @@ pub trait StringMethods: AsString {
             Some(fmt) => fmt,
             None => sniff_fmt_date(string_ca)?,
         };
-        let ca = string_ca.apply_generic(|opt_s| {
+        let ca = unary_elementwise(string_ca, |opt_s| {
             let mut s = opt_s?;
             let fmt_len = fmt.len();
 
@@ -169,38 +170,37 @@ pub trait StringMethods: AsString {
             TimeUnit::Milliseconds => datetime_to_timestamp_ms,
         };
 
-        let ca = string_ca
-            .apply_generic(|opt_s| {
-                let mut s = opt_s?;
-                let fmt_len = fmt.len();
+        let ca = unary_elementwise(string_ca, |opt_s| {
+            let mut s = opt_s?;
+            let fmt_len = fmt.len();
 
-                for i in 1..(s.len().saturating_sub(fmt_len)) {
-                    if s.is_empty() {
-                        return None;
-                    }
-                    let timestamp = if tz_aware {
-                        DateTime::parse_from_str(s, fmt).map(|dt| func(dt.naive_utc()))
-                    } else {
-                        NaiveDateTime::parse_from_str(s, fmt).map(func)
-                    };
-                    match timestamp {
-                        Ok(ts) => return Some(ts),
-                        Err(e) => {
-                            let e: ParseErrorByteCopy = e.into();
-                            match e.0 {
-                                ParseErrorKind::TooLong => {
-                                    s = &s[..s.len() - 1];
-                                },
-                                _ => {
-                                    s = &s[i..];
-                                },
-                            }
-                        },
-                    }
+            for i in 1..(s.len().saturating_sub(fmt_len)) {
+                if s.is_empty() {
+                    return None;
                 }
-                None
-            })
-            .with_name(string_ca.name());
+                let timestamp = if tz_aware {
+                    DateTime::parse_from_str(s, fmt).map(|dt| func(dt.naive_utc()))
+                } else {
+                    NaiveDateTime::parse_from_str(s, fmt).map(func)
+                };
+                match timestamp {
+                    Ok(ts) => return Some(ts),
+                    Err(e) => {
+                        let e: ParseErrorByteCopy = e.into();
+                        match e.0 {
+                            ParseErrorKind::TooLong => {
+                                s = &s[..s.len() - 1];
+                            },
+                            _ => {
+                                s = &s[i..];
+                            },
+                        }
+                    },
+                }
+            }
+            None
+        })
+        .with_name(string_ca.name());
         match (tz_aware, tz) {
             #[cfg(feature = "timezones")]
             (false, Some(tz)) => polars_ops::prelude::replace_time_zone(
@@ -241,7 +241,7 @@ pub trait StringMethods: AsString {
                 },
                 (string_ca.len() as f64).sqrt() as usize,
             );
-            string_ca.apply_generic(|val| convert.eval(val?, use_cache))
+            unary_elementwise(string_ca, |val| convert.eval(val?, use_cache))
         } else {
             let mut convert = FastCachedFunc::new(
                 |s| {
@@ -250,7 +250,7 @@ pub trait StringMethods: AsString {
                 },
                 (string_ca.len() as f64).sqrt() as usize,
             );
-            string_ca.apply_generic(|val| convert.eval(val?, use_cache))
+            unary_elementwise(string_ca, |val| convert.eval(val?, use_cache))
         };
 
         Ok(ca.with_name(string_ca.name()).into())
@@ -291,13 +291,14 @@ pub trait StringMethods: AsString {
                     },
                     (string_ca.len() as f64).sqrt() as usize,
                 );
-                Ok(string_ca
-                    .apply_generic(|opt_s| convert.eval(opt_s?, use_cache))
-                    .with_name(string_ca.name())
-                    .into_datetime(
-                        tu,
-                        Some(tz.map(|x| x.to_string()).unwrap_or("UTC".to_string())),
-                    ))
+                Ok(
+                    unary_elementwise(string_ca, |opt_s| convert.eval(opt_s?, use_cache))
+                        .with_name(string_ca.name())
+                        .into_datetime(
+                            tu,
+                            Some(tz.map(|x| x.to_string()).unwrap_or("UTC".to_string())),
+                        ),
+                )
             }
             #[cfg(not(feature = "timezones"))]
             {
@@ -323,13 +324,13 @@ pub trait StringMethods: AsString {
                     },
                     (string_ca.len() as f64).sqrt() as usize,
                 );
-                string_ca.apply_generic(|opt_s| convert.eval(opt_s?, use_cache))
+                unary_elementwise(string_ca, |opt_s| convert.eval(opt_s?, use_cache))
             } else {
                 let mut convert = FastCachedFunc::new(
                     |s| transform(s, &fmt),
                     (string_ca.len() as f64).sqrt() as usize,
                 );
-                string_ca.apply_generic(|opt_s| convert.eval(opt_s?, use_cache))
+                unary_elementwise(string_ca, |opt_s| convert.eval(opt_s?, use_cache))
             };
             let dt = ca.with_name(string_ca.name()).into_datetime(tu, None);
             match tz {
