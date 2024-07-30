@@ -236,13 +236,22 @@ pub struct PythonOptions {
     pub output_schema: Option<SchemaRef>,
     // Projected column names.
     pub with_columns: Option<Arc<[String]>>,
-    // Whether this is a pyarrow dataset source or a Polars source.
-    pub is_pyarrow: bool,
+    // Which interface is the python function.
+    pub python_source: PythonScanSource,
     /// Optional predicate the reader must apply.
     #[cfg_attr(feature = "serde", serde(skip))]
     pub predicate: PythonPredicate,
     /// A `head` call passed to the reader.
     pub n_rows: Option<usize>,
+}
+
+#[derive(Clone, PartialEq, Eq, Debug, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub enum PythonScanSource {
+    Pyarrow,
+    Cuda,
+    #[default]
+    IOPlugin,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Default)]

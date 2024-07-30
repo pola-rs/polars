@@ -64,7 +64,10 @@ impl Executor for PythonScanExec {
                 },
             };
 
-            let generator_init = if self.options.is_pyarrow {
+            let generator_init = if matches!(
+                self.options.python_source,
+                PythonScanSource::Pyarrow | PythonScanSource::Cuda
+            ) {
                 let args = (python_scan_function, with_columns, predicate, n_rows);
                 callable.call1(args).map_err(to_compute_err)
             } else {
@@ -86,6 +89,7 @@ impl Executor for PythonScanExec {
             }?;
 
             // This isn't a generator, but a `DataFrame`.
+            // This is the pyarrow and the CuDF path.
             if generator_init.getattr(intern!(py, "_df")).is_ok() {
                 let df = python_df_to_rust(py, generator_init)?;
                 return if let Some(pred) = &self.predicate {
@@ -96,6 +100,7 @@ impl Executor for PythonScanExec {
                 };
             }
 
+            // This is the IO plugin path.
             let generator = generator_init
                 .get_item(0)
                 .map_err(|_| polars_err!(ComputeError: "expected tuple got {}", generator_init))?;

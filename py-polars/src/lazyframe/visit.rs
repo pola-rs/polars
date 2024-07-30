@@ -2,7 +2,7 @@ use std::sync::Mutex;
 
 use polars_plan::plans::{to_aexpr, Context, IR};
 use polars_plan::prelude::expr_ir::ExprIR;
-use polars_plan::prelude::{AExpr, PythonOptions};
+use polars_plan::prelude::{AExpr, PythonOptions, PythonScanSource};
 use polars_utils::arena::{Arena, Node};
 use pyo3::prelude::*;
 use visitor::{expr_nodes, nodes};
@@ -164,7 +164,7 @@ impl NodeTraverser {
                 schema,
                 output_schema: None,
                 with_columns: None,
-                is_pyarrow: false,
+                python_source: PythonScanSource::Cuda,
                 predicate: Default::default(),
                 n_rows: None,
             },

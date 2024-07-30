@@ -10,7 +10,11 @@ impl LazyFrame {
                 // Should be a python function that returns a generator
                 scan_fn: Some(scan_fn.into()),
                 schema: Arc::new(schema),
-                is_pyarrow: pyarrow,
+                python_source: if pyarrow {
+                    PythonScanSource::Pyarrow
+                } else {
+                    PythonScanSource::IOPlugin
+                },
                 ..Default::default()
             },
         }
