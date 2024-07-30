@@ -6736,7 +6736,7 @@ class DataFrame:
             DataFrame to join with.
         on
             Name(s) of the join columns in both DataFrames.
-        how : {'inner', 'left', 'right', 'full', 'semi', 'anti', 'cross'}
+        how : {'inner', 'left', 'right', 'full', 'semi', 'anti', 'cross', 'outer'}
             Join strategy.
 
             * *inner*
@@ -6755,6 +6755,11 @@ class DataFrame:
                 Returns rows from the left table that have a match in the right table.
             * *anti*
                 Returns rows from the left table that have no match in the right table.
+            * *outer*
+                Returns all rows from both tables, with matching rows from both sides
+                where available.
+                Non-matching rows will have nulls in the columns from the table that
+                does not have a match.
 
             .. note::
                 A left join preserves the row order of the left DataFrame.
