@@ -336,6 +336,52 @@ class ExprNameNameSpace:
         """
         return self._from_pyexpr(self._pyexpr.name_prefix_fields(prefix))
 
+    def replace(self, pattern: str, value: str, *, literal: bool = False) -> Expr:
+        """
+        Replace matching regex/literal substring in the name with a new value.
+
+        Parameters
+        ----------
+        pattern
+            A valid regular expression pattern, compatible with the `regex crate
+            <https://docs.rs/regex/latest/regex/>`_.
+        value
+            String that will replace the matched substring.
+        literal
+            Treat `pattern` as a literal string, not a regex.
+
+        Notes
+        -----
+        This will undo any previous renaming operations on the expression.
+
+        Due to implementation constraints, this method can only be called as the last
+        expression in a chain. Only one name operation per expression will work.
+        Consider using `.name.map` for advanced renaming.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "n_foo": [1, 2, 3],
+        ...         "n_bar": ["x", "y", "z"],
+        ...     }
+        ... )
+        >>> df.select(pl.all().name.replace("^n_", "col_"))
+        shape: (3, 2)
+        ┌─────────┬─────────┐
+        │ col_foo ┆ col_bar │
+        │ ---     ┆ ---     │
+        │ i64     ┆ str     │
+        ╞═════════╪═════════╡
+        │ 1       ┆ x       │
+        │ 2       ┆ y       │
+        │ 3       ┆ z       │
+        └─────────┴─────────┘
+        >>> df.select(pl.all().name.replace("(a|e|i|o|u)", "@")).schema
+        Schema([('n_f@@', Int64), ('n_b@r', String)])
+        """
+        return self._from_pyexpr(self._pyexpr.name_replace(pattern, value, literal))
+
     def suffix_fields(self, suffix: str) -> Expr:
         """
         Add a suffix to all field names of a struct.
