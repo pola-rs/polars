@@ -277,12 +277,8 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                     python_src,
                     match &options.predicate {
                         PythonPredicate::None => py.None(),
-                        PythonPredicate::PyArrow(s) => s.to_object(py),
-                        PythonPredicate::Polars(_) => {
-                            return Err(PyNotImplementedError::new_err(
-                                "polars native predicates not yet supported",
-                            ))
-                        },
+                        PythonPredicate::PyArrow(s) => ("pyarrow", s).to_object(py),
+                        PythonPredicate::Polars(e) => ("polars", e.node().0).to_object(py),
                     },
                     options
                         .n_rows

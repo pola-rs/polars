@@ -38,11 +38,10 @@ def register_io_source(
                 Materialize only n rows from the source.
                 The reader can stop when `n_rows` are read.
             batch_size
-                A hint of the ideal batch size the readers
+                A hint of the ideal batch size the reader's
                 generator must produce.
-            returns
-                A DataFrame batch and whether it was able to deserialize
-                and apply the predicate
+        The function should return a DataFrame batch
+        (an iterator over individual DataFrames).
     schema
         Schema that the reader will produce before projection pushdown.
 
