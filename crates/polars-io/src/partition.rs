@@ -53,7 +53,7 @@ where
             .iter()
             .map(|x| {
                 let Some(i) = schema.index_of(x.as_ref()) else {
-                    polars_bail!(ColumnNotFound: "{}", x.as_ref())
+                    polars_bail!(ColumnNotFound: "{:?}", x.as_ref())
                 };
                 Ok(i)
             })

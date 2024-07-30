@@ -306,6 +306,52 @@ def test_sort() -> None:
     )
 
 
+def test_sort_multi_output() -> None:
+    df = pl.DataFrame(
+        {
+            "dts": [date(2077, 10, 3), date(2077, 10, 2), date(2077, 10, 2)],
+            "strs": ["abc", "def", "ghi"],
+            "vals": [10.5, 20.3, 15.7],
+        }
+    )
+
+    expected = pl.DataFrame(
+        {
+            "dts": [date(2077, 10, 2), date(2077, 10, 2), date(2077, 10, 3)],
+            "strs": ["ghi", "def", "abc"],
+            "vals": [15.7, 20.3, 10.5],
+        }
+    )
+    assert_frame_equal(expected, df.sort(pl.col("^(d|v).*$")))
+    assert_frame_equal(expected, df.sort(cs.temporal() | cs.numeric()))
+    assert_frame_equal(expected, df.sort(cs.temporal(), cs.numeric(), cs.binary()))
+
+    expected = pl.DataFrame(
+        {
+            "dts": [date(2077, 10, 3), date(2077, 10, 2), date(2077, 10, 2)],
+            "strs": ["abc", "def", "ghi"],
+            "vals": [10.5, 20.3, 15.7],
+        }
+    )
+    assert_frame_equal(expected, df.sort(pl.col("^(d|v).*$"), descending=[True]))
+    assert_frame_equal(
+        expected, df.sort(cs.temporal() | cs.numeric(), descending=[True])
+    )
+    assert_frame_equal(
+        expected, df.sort(cs.temporal(), cs.numeric(), descending=[True, True])
+    )
+
+    with pytest.raises(ComputeError, match="No columns selected for sorting"):
+        df.sort(pl.col("^xxx$"))
+
+    with pytest.raises(
+        InvalidOperationError,
+        match="Cannot set mixed per-column `descending` or "
+        "`nulls_last` when `by` contains multi-output expressions",
+    ):
+        df.sort(cs.temporal(), cs.numeric(), descending=[True, False])
+
+
 def test_sort_maintain_order() -> None:
     l1 = (
         pl.LazyFrame({"A": [1] * 4, "B": ["A", "B", "C", "D"]})

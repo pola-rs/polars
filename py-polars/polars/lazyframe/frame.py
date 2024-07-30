@@ -41,6 +41,7 @@ from polars._utils.various import (
     _in_notebook,
     _is_generator,
     extend_bool,
+    has_multiple_outputs,
     is_bool_sequence,
     is_sequence,
     issue_warning,
@@ -77,7 +78,7 @@ from polars.datatypes import (
 )
 from polars.datatypes.group import DataTypeGroup
 from polars.dependencies import import_optional, subprocess
-from polars.exceptions import PerformanceWarning
+from polars.exceptions import InvalidOperationError, PerformanceWarning
 from polars.lazyframe.engine_config import GPUEngine
 from polars.lazyframe.group_by import LazyGroupBy
 from polars.lazyframe.in_process import InProcessQuery
@@ -1366,8 +1367,18 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             )
 
         by = parse_into_list_of_expressions(by, *more_by)
-        descending = extend_bool(descending, len(by), "descending", "by")
-        nulls_last = extend_bool(nulls_last, len(by), "nulls_last", "by")
+        descending = extend_bool(descending, len(by), "descending", "by", condense=True)
+        nulls_last = extend_bool(nulls_last, len(by), "nulls_last", "by", condense=True)
+
+        if (len(descending) > 1 or len(nulls_last) > 1) and any(
+            has_multiple_outputs(x) for x in by
+        ):
+            msg = (
+                "Cannot set mixed per-column `descending` or `nulls_last` "
+                "when `by` contains multi-output expressions"
+            )
+            raise InvalidOperationError(msg)
+
         return self._from_pyldf(
             self._ldf.sort_by_exprs(
                 by, descending, nulls_last, maintain_order, multithreaded

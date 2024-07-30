@@ -308,7 +308,7 @@ impl DataFrame {
         let mut iter = on.iter().map(|v| {
             schema
                 .get(v)
-                .ok_or_else(|| polars_err!(ColumnNotFound: "{}", v))
+                .ok_or_else(|| polars_err!(ColumnNotFound: "{:?}", v))
         });
         let mut st = iter.next().unwrap()?.clone();
         for dt in iter {

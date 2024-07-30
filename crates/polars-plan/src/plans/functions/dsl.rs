@@ -69,7 +69,7 @@ impl DslFunction {
                             polars_bail!(InvalidOperation: "expected column expression")
                         };
 
-                        polars_ensure!(input_schema.contains(name), ColumnNotFound: "{name}");
+                        polars_ensure!(input_schema.contains(name), ColumnNotFound: "{:?}", name);
 
                         Ok(name.clone())
                     })
