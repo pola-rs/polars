@@ -1,3 +1,4 @@
+#[cfg(feature = "regex")]
 use regex::Regex;
 #[cfg(feature = "dtype-struct")]
 use smartstring::alias::String as SmartString;
@@ -50,6 +51,7 @@ impl ExprNameNameSpace {
     }
 
     /// Replace matching string pattern in the root column name with a new value.
+    #[cfg(feature = "regex")]
     pub fn replace(self, pattern: &str, value: &str, literal: bool) -> Expr {
         let value = value.to_string();
         let pattern = pattern.to_string();
