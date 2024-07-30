@@ -64,21 +64,26 @@ impl Executor for PythonScanExec {
                 },
             };
 
-            let batch_size = if self.options.is_pyarrow {
-                None
+            let generator_init = if self.options.is_pyarrow {
+                let args = (python_scan_function, with_columns, predicate, n_rows);
+                callable.call1(args).map_err(to_compute_err)
             } else {
-                Some(100_000usize)
-            };
-
-            let generator_init = callable
-                .call1((
+                // If there are filters, take smaller chunks to ensure we can keep memory
+                // pressure low.
+                let batch_size = if self.predicate.is_some() {
+                    Some(100_000usize)
+                } else {
+                    None
+                };
+                let args = (
                     python_scan_function,
                     with_columns,
                     predicate,
                     n_rows,
                     batch_size,
-                ))
-                .map_err(to_compute_err)?;
+                );
+                callable.call1(args).map_err(to_compute_err)
+            }?;
 
             // This isn't a generator, but a `DataFrame`.
             if generator_init.getattr(intern!(py, "_df")).is_ok() {
