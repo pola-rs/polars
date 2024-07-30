@@ -123,7 +123,7 @@ If you're developing a library that you wish to integrate with Polars, it's sugg
 
 - Zero-copy exchange for both Polars Series and DataFrame
 - No required dependency on pyarrow.
-- No direct dependency on polars.
+- No direct dependency on Polars.
 - Harder to cause memory leaks than handling pointers as raw integers.
 - Automatic zero-copy integration other PyCapsule Interface-supported libraries.
 
