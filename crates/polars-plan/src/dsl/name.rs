@@ -1,5 +1,7 @@
+use polars_utils::format_pl_smallstr;
 #[cfg(feature = "dtype-struct")]
 use polars_utils::pl_str::PlSmallStr;
+use regex::Regex;
 
 use super::*;
 
@@ -45,6 +47,18 @@ impl ExprNameNameSpace {
         Expr::RenameAlias {
             expr: Arc::new(self.0),
             function: RenameAliasFn::Suffix(suffix.into()),
+        }
+    }
+
+    /// Replace matching string pattern in the root column name with a new value.
+    pub fn replace(self, pattern: &str, value: &str, literal: bool) -> Expr {
+        let value = value.to_string();
+        let pattern = pattern.to_string();
+        if literal {
+            self.map(move |name| Ok(name.replace(&pattern, &value)))
+        } else {
+            let rx = Regex::new(&pattern);
+            self.map(move |name| Ok(rx.clone()?.replace_all(name, &value).to_string()))
         }
     }
 
