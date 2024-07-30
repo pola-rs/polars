@@ -378,7 +378,7 @@ class ExprNameNameSpace:
         │ 3       ┆ z       │
         └─────────┴─────────┘
         >>> df.select(pl.all().name.replace("(a|e|i|o|u)", "@")).schema
-        Schema([('n_f@@', Int64), ('n_b@r', String)])
+        Schema({'n_f@@': Int64, 'n_b@r': String})
         """
         return self._from_pyexpr(self._pyexpr.name_replace(pattern, value, literal))
 
