@@ -159,12 +159,15 @@ fn create_physical_plan_impl(
     match logical_plan {
         #[cfg(feature = "python")]
         PythonScan { mut options } => {
+            let mut predicate_serialized = None;
             let predicate = if let PythonPredicate::Polars(e) = &options.predicate {
                 // Convert to a pyarrow eval string.
                 if options.is_pyarrow {
-                    if let Some(eval_str) =
-                        pyarrow::predicate_to_pa(e.node(), expr_arena, Default::default())
-                    {
+                    if let Some(eval_str) = polars_plan::plans::python::pyarrow::predicate_to_pa(
+                        e.node(),
+                        expr_arena,
+                        Default::default(),
+                    ) {
                         options.predicate = PythonPredicate::PyArrow(eval_str)
                     }
 
@@ -173,6 +176,10 @@ fn create_physical_plan_impl(
                 }
                 // Convert to physical expression for the case the reader cannot consume the predicate.
                 else {
+                    let dsl_expr = e.to_expr(expr_arena);
+                    predicate_serialized =
+                        polars_plan::plans::python::predicate::serialize(&dsl_expr)?;
+
                     let mut state = ExpressionConversionState::new(true, state.expr_depth);
                     Some(create_physical_expr(
                         e,
@@ -185,7 +192,11 @@ fn create_physical_plan_impl(
             } else {
                 None
             };
-            Ok(Box::new(executors::PythonScanExec { options, predicate }))
+            Ok(Box::new(executors::PythonScanExec {
+                options,
+                predicate,
+                predicate_serialized,
+            }))
         },
         Sink { payload, .. } => match payload {
             SinkType::Memory => {

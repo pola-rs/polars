@@ -2,6 +2,7 @@ use polars_core::error::to_compute_err;
 use polars_core::utils::accumulate_dataframes_vertical;
 use pyo3::exceptions::PyStopIteration;
 use pyo3::prelude::*;
+use pyo3::types::PyBytes;
 use pyo3::{intern, PyTypeInfo};
 
 use super::*;
@@ -9,6 +10,7 @@ use super::*;
 pub(crate) struct PythonScanExec {
     pub(crate) options: PythonOptions,
     pub(crate) predicate: Option<Arc<dyn PhysicalExpr>>,
+    pub(crate) predicate_serialized: Option<Vec<u8>>,
 }
 
 fn python_df_to_rust(py: Python, df: Bound<PyAny>) -> PolarsResult<DataFrame> {
@@ -51,22 +53,36 @@ impl Executor for PythonScanExec {
 
             let predicate = match &self.options.predicate {
                 PythonPredicate::PyArrow(s) => s.into_py(py),
-                PythonPredicate::None => (None::<()>).into_py(py),
-                // Still todo, currently we apply the predicate on this side.
+                PythonPredicate::None => None::<()>.into_py(py),
                 PythonPredicate::Polars(_) => {
                     assert!(self.predicate.is_some(), "should be set");
 
-                    (None::<()>).into_py(py)
+                    match &self.predicate_serialized {
+                        None => None::<()>.into_py(py),
+                        Some(buf) => PyBytes::new_bound(py, buf).to_object(py),
+                    }
                 },
             };
 
-            let generator = callable
-                .call1((python_scan_function, with_columns, predicate, n_rows))
+            let batch_size = if self.options.is_pyarrow {
+                None
+            } else {
+                Some(100_000usize)
+            };
+
+            let generator_init = callable
+                .call1((
+                    python_scan_function,
+                    with_columns,
+                    predicate,
+                    n_rows,
+                    batch_size,
+                ))
                 .map_err(to_compute_err)?;
 
             // This isn't a generator, but a `DataFrame`.
-            if generator.getattr(intern!(py, "_df")).is_ok() {
-                let df = python_df_to_rust(py, generator)?;
+            if generator_init.getattr(intern!(py, "_df")).is_ok() {
+                let df = python_df_to_rust(py, generator_init)?;
                 return if let Some(pred) = &self.predicate {
                     let mask = pred.evaluate(&df, state)?;
                     df.filter(mask.bool()?)
@@ -75,12 +91,22 @@ impl Executor for PythonScanExec {
                 };
             }
 
+            let generator = generator_init
+                .get_item(0)
+                .map_err(|_| polars_err!(ComputeError: "expected tuple got {}", generator_init))?;
+            let can_parse_predicate = generator_init
+                .get_item(1)
+                .map_err(|_| polars_err!(ComputeError: "expected tuple got {}", generator))?;
+            let can_parse_predicate = can_parse_predicate.extract::<bool>().map_err(
+                |_| polars_err!(ComputeError: "expected bool got {}", can_parse_predicate),
+            )?;
+
             let mut chunks = vec![];
             loop {
                 match generator.call_method0(intern!(py, "__next__")) {
                     Ok(out) => {
                         let mut df = python_df_to_rust(py, out)?;
-                        if let Some(pred) = &self.predicate {
+                        if let (Some(pred), false) = (&self.predicate, can_parse_predicate) {
                             let mask = pred.evaluate(&df, state)?;
                             df = df.filter(mask.bool()?)?;
                         }
@@ -88,7 +114,7 @@ impl Executor for PythonScanExec {
                     },
                     Err(err) if err.matches(py, PyStopIteration::type_object_bound(py)) => break,
                     Err(err) => {
-                        polars_bail!(ComputeError: "catched exception during execution of a Python source, exception: {}", err)
+                        polars_bail!(ComputeError: "caught exception during execution of a Python source, exception: {}", err)
                     },
                 }
             }

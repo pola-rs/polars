@@ -341,7 +341,10 @@ class Expr:
 
     @classmethod
     def deserialize(
-        cls, source: str | Path | IOBase, *, format: SerializationFormat = "binary"
+        cls,
+        source: str | Path | IOBase | bytes,
+        *,
+        format: SerializationFormat = "binary",
     ) -> Expr:
         """
         Read a serialized expression from a file.
@@ -385,6 +388,8 @@ class Expr:
             source = BytesIO(source.getvalue().encode())
         elif isinstance(source, (str, Path)):
             source = normalize_filepath(source)
+        elif isinstance(source, bytes):
+            source = BytesIO(source)
 
         if format == "binary":
             deserializer = PyExpr.deserialize_binary

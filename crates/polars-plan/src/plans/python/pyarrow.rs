@@ -38,7 +38,6 @@ pub fn predicate_to_pa(
             }
         },
         AExpr::Column(name) => Some(format!("pa.compute.field('{}')", name.as_ref())),
-        AExpr::Alias(input, _) => predicate_to_pa(*input, expr_arena, args),
         AExpr::Literal(LiteralValue::Series(s)) => {
             if !args.allow_literal_series || s.is_empty() || s.len() > 100 {
                 None
@@ -115,33 +114,6 @@ pub fn predicate_to_pa(
                 },
             }
         },
-        AExpr::Function {
-            function: FunctionExpr::Boolean(BooleanFunction::Not),
-            input,
-            ..
-        } => {
-            let input = input.first().unwrap().node();
-            let input = predicate_to_pa(input, expr_arena, args)?;
-            Some(format!("~({input})"))
-        },
-        AExpr::Function {
-            function: FunctionExpr::Boolean(BooleanFunction::IsNull),
-            input,
-            ..
-        } => {
-            let input = input.first().unwrap().node();
-            let input = predicate_to_pa(input, expr_arena, args)?;
-            Some(format!("({input}).is_null()"))
-        },
-        AExpr::Function {
-            function: FunctionExpr::Boolean(BooleanFunction::IsNotNull),
-            input,
-            ..
-        } => {
-            let input = input.first().unwrap().node();
-            let input = predicate_to_pa(input, expr_arena, args)?;
-            Some(format!("~({input}).is_null()"))
-        },
         #[cfg(feature = "is_in")]
         AExpr::Function {
             function: FunctionExpr::Boolean(BooleanFunction::IsIn),
@@ -180,6 +152,23 @@ pub fn predicate_to_pa(
                 Some(format!(
                     "(({col} {left_cmp_op} {lower}) & ({col} {right_cmp_op} {upper}))"
                 ))
+            }
+        },
+        AExpr::Function {
+            function, input, ..
+        } => {
+            let input = input.first().unwrap().node();
+            let input = predicate_to_pa(input, expr_arena, args)?;
+
+            match function {
+                FunctionExpr::Boolean(BooleanFunction::Not) => Some(format!("~({input})")),
+                FunctionExpr::Boolean(BooleanFunction::IsNull) => {
+                    Some(format!("({input}).is_null()"))
+                },
+                FunctionExpr::Boolean(BooleanFunction::IsNotNull) => {
+                    Some(format!("~({input}).is_null()"))
+                },
+                _ => None,
             }
         },
         _ => None,
