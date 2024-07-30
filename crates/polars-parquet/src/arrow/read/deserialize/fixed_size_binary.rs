@@ -224,6 +224,12 @@ impl Decoder for BinaryDecoder {
             }
 
             fn gather_one(&self, target: &mut Self::Target, value: &'a [u8]) -> ParquetResult<()> {
+                // We make the null value length 0, which allows us to do this.
+                if value.is_empty() {
+                    target.resize(target.len() + self.size, 0);
+                    return Ok(());
+                }
+
                 target.extend_from_slice(value);
                 Ok(())
             }
@@ -234,9 +240,17 @@ impl Decoder for BinaryDecoder {
                 value: &'a [u8],
                 n: usize,
             ) -> ParquetResult<()> {
+                // We make the null value length 0, which allows us to do this.
+                if value.is_empty() {
+                    target.resize(target.len() + n * self.size, 0);
+                    return Ok(());
+                }
+
+                debug_assert_eq!(value.len(), self.size);
                 for _ in 0..n {
                     target.extend(value);
                 }
+
                 Ok(())
             }
         }
@@ -246,7 +260,10 @@ impl Decoder for BinaryDecoder {
             size: self.size,
         };
 
-        let null_value = &dict[..self.size];
+        // @NOTE:
+        // This is a special case in our gatherer. If the length of the value is 0, then we just
+        // resize with the appropriate size. Important is that this also works for FSL with size=0.
+        let null_value = &[];
 
         match page_validity {
             None => {
