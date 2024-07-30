@@ -450,3 +450,28 @@ def test_parquet_schema_mismatch_panic_17067(tmp_path: Path, streaming: bool) ->
 
     with pytest.raises(pl.exceptions.SchemaError):
         pl.scan_parquet(tmp_path).collect(streaming=streaming)
+
+
+@pytest.mark.write_disk()
+def test_predicate_push_down_categorical_17744(tmp_path: Path) -> None:
+    path = tmp_path / "1"
+
+    df = pl.DataFrame(
+        data={
+            "n": [1, 2, 3],
+            "ccy": ["USD", "JPY", "EUR"],
+        },
+        schema_overrides={"ccy": pl.Categorical("lexical")},
+    )
+    df.write_parquet(path)
+    expect = df.head(1).with_columns(pl.col(pl.Categorical).cast(pl.String))
+
+    lf = pl.scan_parquet(path)
+
+    for predicate in [pl.col("ccy") == "USD", pl.col("ccy").is_in(["USD"])]:
+        assert_frame_equal(
+            lf.filter(predicate)
+            .with_columns(pl.col(pl.Categorical).cast(pl.String))
+            .collect(),
+            expect,
+        )
