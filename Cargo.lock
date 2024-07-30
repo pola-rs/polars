@@ -3323,6 +3323,7 @@ dependencies = [
  "recursive",
  "regex",
  "serde",
+ "serde_json",
  "smartstring",
  "strum_macros 0.26.4",
  "version_check",

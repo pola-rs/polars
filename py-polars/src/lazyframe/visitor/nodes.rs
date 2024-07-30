@@ -1,7 +1,9 @@
 use polars_core::prelude::{IdxSize, UniqueKeepStrategy};
 use polars_ops::prelude::JoinType;
 use polars_plan::plans::IR;
-use polars_plan::prelude::{FileCount, FileScan, FileScanOptions, FunctionNode};
+use polars_plan::prelude::{
+    FileCount, FileScan, FileScanOptions, FunctionNode, PythonPredicate, PythonScanSource,
+};
 use pyo3::exceptions::{PyNotImplementedError, PyValueError};
 use pyo3::prelude::*;
 
@@ -14,8 +16,6 @@ use crate::PyDataFrame;
 pub struct PythonScan {
     #[pyo3(get)]
     options: PyObject,
-    #[pyo3(get)]
-    predicate: Option<PyExprIR>,
 }
 
 #[pyclass]
@@ -257,29 +257,37 @@ pub struct Sink {
 
 pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
     let result = match plan {
-        IR::PythonScan { options, predicate } => PythonScan {
-            options: (
-                options
-                    .scan_fn
-                    .as_ref()
-                    .map_or_else(|| py.None(), |s| s.0.clone()),
-                options
-                    .with_columns
-                    .as_ref()
-                    .map_or_else(|| py.None(), |cols| cols.to_object(py)),
-                options.pyarrow,
-                options
-                    .predicate
-                    .as_ref()
-                    .map_or_else(|| py.None(), |s| s.to_object(py)),
-                options
-                    .n_rows
-                    .map_or_else(|| py.None(), |s| s.to_object(py)),
-            )
-                .to_object(py),
-            predicate: predicate.as_ref().map(|e| e.into()),
-        }
-        .into_py(py),
+        IR::PythonScan { options } => {
+            let python_src = match options.python_source {
+                PythonScanSource::Pyarrow => "pyarrow",
+                PythonScanSource::Cuda => "cuda",
+                PythonScanSource::IOPlugin => "io_plugin",
+            };
+
+            PythonScan {
+                options: (
+                    options
+                        .scan_fn
+                        .as_ref()
+                        .map_or_else(|| py.None(), |s| s.0.clone()),
+                    options
+                        .with_columns
+                        .as_ref()
+                        .map_or_else(|| py.None(), |cols| cols.to_object(py)),
+                    python_src,
+                    match &options.predicate {
+                        PythonPredicate::None => py.None(),
+                        PythonPredicate::PyArrow(s) => ("pyarrow", s).to_object(py),
+                        PythonPredicate::Polars(e) => ("polars", e.node().0).to_object(py),
+                    },
+                    options
+                        .n_rows
+                        .map_or_else(|| py.None(), |s| s.to_object(py)),
+                )
+                    .to_object(py),
+            }
+            .into_py(py)
+        },
         IR::Slice { input, offset, len } => Slice {
             input: input.0,
             offset: *offset,

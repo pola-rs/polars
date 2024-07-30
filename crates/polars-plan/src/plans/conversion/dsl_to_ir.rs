@@ -259,10 +259,7 @@ pub fn to_alp_impl(
             }
         },
         #[cfg(feature = "python")]
-        DslPlan::PythonScan { options } => IR::PythonScan {
-            options,
-            predicate: None,
-        },
+        DslPlan::PythonScan { options } => IR::PythonScan { options },
         DslPlan::Union { inputs, args } => {
             let mut inputs = inputs
                 .into_iter()

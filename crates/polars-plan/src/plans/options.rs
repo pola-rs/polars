@@ -19,6 +19,7 @@ use polars_time::{DynamicGroupOptions, RollingGroupOptions};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+use crate::plans::ExprIR;
 #[cfg(feature = "python")]
 use crate::prelude::python_udf::PythonFunction;
 
@@ -226,16 +227,41 @@ pub struct LogicalPlanUdfOptions {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg(feature = "python")]
 pub struct PythonOptions {
+    /// A function that returns a Python Generator.
+    /// The generator should produce Polars DataFrame's.
     pub scan_fn: Option<PythonFunction>,
+    /// Schema of the file.
     pub schema: SchemaRef,
+    /// Schema the reader will produce when the file is read.
     pub output_schema: Option<SchemaRef>,
+    // Projected column names.
     pub with_columns: Option<Arc<[String]>>,
-    pub pyarrow: bool,
-    // a pyarrow predicate python expression
-    // can be evaluated with python.eval
-    pub predicate: Option<String>,
-    // a `head` call passed to pyarrow
+    // Which interface is the python function.
+    pub python_source: PythonScanSource,
+    /// Optional predicate the reader must apply.
+    #[cfg_attr(feature = "serde", serde(skip))]
+    pub predicate: PythonPredicate,
+    /// A `head` call passed to the reader.
     pub n_rows: Option<usize>,
+}
+
+#[derive(Clone, PartialEq, Eq, Debug, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub enum PythonScanSource {
+    Pyarrow,
+    Cuda,
+    #[default]
+    IOPlugin,
+}
+
+#[derive(Clone, PartialEq, Eq, Debug, Default)]
+pub enum PythonPredicate {
+    // A pyarrow predicate python expression
+    // can be evaluated with python.eval
+    PyArrow(String),
+    Polars(ExprIR),
+    #[default]
+    None,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Default, Hash)]

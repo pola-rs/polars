@@ -158,7 +158,52 @@ fn create_physical_plan_impl(
     let logical_plan = lp_arena.take(root);
     match logical_plan {
         #[cfg(feature = "python")]
-        PythonScan { options, .. } => Ok(Box::new(executors::PythonScanExec { options })),
+        PythonScan { mut options } => {
+            let mut predicate_serialized = None;
+
+            let predicate = if let PythonPredicate::Polars(e) = &options.predicate {
+                let phys_expr = || {
+                    let mut state = ExpressionConversionState::new(true, state.expr_depth);
+                    create_physical_expr(
+                        e,
+                        Context::Default,
+                        expr_arena,
+                        Some(&options.schema),
+                        &mut state,
+                    )
+                };
+
+                // Convert to a pyarrow eval string.
+                if matches!(options.python_source, PythonScanSource::Pyarrow) {
+                    if let Some(eval_str) = polars_plan::plans::python::pyarrow::predicate_to_pa(
+                        e.node(),
+                        expr_arena,
+                        Default::default(),
+                    ) {
+                        options.predicate = PythonPredicate::PyArrow(eval_str);
+                        // We don't have to use a physical expression as pyarrow deals with the filter.
+                        None
+                    } else {
+                        Some(phys_expr()?)
+                    }
+                }
+                // Convert to physical expression for the case the reader cannot consume the predicate.
+                else {
+                    let dsl_expr = e.to_expr(expr_arena);
+                    predicate_serialized =
+                        polars_plan::plans::python::predicate::serialize(&dsl_expr)?;
+
+                    Some(phys_expr()?)
+                }
+            } else {
+                None
+            };
+            Ok(Box::new(executors::PythonScanExec {
+                options,
+                predicate,
+                predicate_serialized,
+            }))
+        },
         Sink { payload, .. } => match payload {
             SinkType::Memory => {
                 polars_bail!(InvalidOperation: "memory sink not supported in the standard engine")

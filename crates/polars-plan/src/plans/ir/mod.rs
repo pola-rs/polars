@@ -37,7 +37,6 @@ pub enum IR {
     #[cfg(feature = "python")]
     PythonScan {
         options: PythonOptions,
-        predicate: Option<ExprIR>,
     },
     Slice {
         input: Node,

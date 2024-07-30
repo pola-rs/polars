@@ -154,7 +154,7 @@ impl<'a> IRDisplay<'a> {
 
         match self.root() {
             #[cfg(feature = "python")]
-            PythonScan { options, predicate } => {
+            PythonScan { options } => {
                 let total_columns = options.schema.len();
                 let n_columns = options
                     .with_columns
@@ -162,7 +162,11 @@ impl<'a> IRDisplay<'a> {
                     .map(|s| s.len() as i64)
                     .unwrap_or(-1);
 
-                let predicate = predicate.as_ref().map(|p| self.display_expr(p));
+                let predicate = match &options.predicate {
+                    PythonPredicate::Polars(e) => Some(self.display_expr(e)),
+                    PythonPredicate::PyArrow(_) => None,
+                    PythonPredicate::None => None,
+                };
 
                 write_scan(
                     f,
