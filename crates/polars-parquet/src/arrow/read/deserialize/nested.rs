@@ -264,7 +264,7 @@ pub fn columns_to_iter_recursive(
                     PhysicalType::FixedLenByteArray(size) => {
                         let (mut nested, array) = PageNestedDecoder::new(
                             columns.pop().unwrap(),
-                            field.data_type().clone(),
+                            ArrowDataType::FixedSizeBinary(size),
                             fixed_size_binary::BinaryDecoder { size },
                             init,
                         )?
@@ -320,7 +320,7 @@ pub fn columns_to_iter_recursive(
                     PhysicalType::FixedLenByteArray(size) if size <= 16 => {
                         let (mut nested, array) = PageNestedDecoder::new(
                             columns.pop().unwrap(),
-                            field.data_type().clone(),
+                            ArrowDataType::FixedSizeBinary(size),
                             fixed_size_binary::BinaryDecoder { size },
                             init,
                         )?
@@ -349,7 +349,7 @@ pub fn columns_to_iter_recursive(
                     PhysicalType::FixedLenByteArray(size) if size <= 32 => {
                         let (mut nested, array) = PageNestedDecoder::new(
                             columns.pop().unwrap(),
-                            field.data_type().clone(),
+                            ArrowDataType::FixedSizeBinary(size),
                             fixed_size_binary::BinaryDecoder { size },
                             init,
                         )?
