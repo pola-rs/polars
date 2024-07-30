@@ -33,7 +33,7 @@ def register_io_source(
                 project these columns if applied
             predicate
                 Polars expression. The reader must filter
-                there rows accordingly.
+                their rows accordingly.
             n_rows:
                 Materialize only n rows from the source.
                 The reader can stop when `n_rows` are read.
