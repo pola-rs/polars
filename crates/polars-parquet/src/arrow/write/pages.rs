@@ -275,7 +275,7 @@ fn expand_list_validity<'a, O: Offset>(
     array_stack: &mut VecDeque<(&'a dyn Array, BitmapState)>,
 ) {
     let BitmapState::SomeSet(list_validity) = validity else {
-        array_stack.push_back((
+        array_stack.push_front((
             array.values().as_ref(),
             match validity {
                 BitmapState::AllSet => BitmapState::AllSet,
@@ -309,7 +309,7 @@ fn expand_list_validity<'a, O: Offset>(
 
     let validity = validity.freeze();
 
-    array_stack.push_back((array.values().as_ref(), BitmapState::SomeSet(validity)));
+    array_stack.push_front((array.values().as_ref(), BitmapState::SomeSet(validity)));
 }
 
 #[derive(Clone)]
@@ -392,12 +392,11 @@ pub fn to_leaves(array: &dyn Array, leaves: &mut Vec<Box<dyn Array>>) {
                 let array = array.as_any().downcast_ref::<StructArray>().unwrap();
 
                 leaves.reserve(array.len().saturating_sub(1));
-                array_stack.extend(
-                    array
-                        .values()
-                        .iter()
-                        .map(|field| (field.as_ref(), validity.clone())),
-                );
+                array
+                    .values()
+                    .iter()
+                    .rev()
+                    .for_each(|field| array_stack.push_front((field.as_ref(), validity.clone())));
             },
             P::List => {
                 let array = array.as_any().downcast_ref::<ListArray<i32>>().unwrap();
@@ -447,11 +446,11 @@ pub fn to_leaves(array: &dyn Array, leaves: &mut Vec<Box<dyn Array>>) {
 
                 let validity = BitmapState::SomeSet(validity.freeze());
 
-                array_stack.push_back((array.values().as_ref(), validity));
+                array_stack.push_front((array.values().as_ref(), validity));
             },
             P::Map => {
                 let array = array.as_any().downcast_ref::<MapArray>().unwrap();
-                array_stack.push_back((array.field().as_ref(), validity));
+                array_stack.push_front((array.field().as_ref(), validity));
             },
             P::Null
             | P::Boolean
