@@ -300,9 +300,6 @@ where
 
 pub fn interpolate_by(s: &Series, by: &Series, by_is_sorted: bool, extrapolate_flat: bool) -> PolarsResult<Series> {
     
-    let s_len: usize = s.len();
-    let by_len: usize = by.len();
-
     polars_ensure!(s.len() == by.len(), InvalidOperation: "`by` column must be the same length as Series ({}), got {}", s.len(), by.len());
 
     fn func<T, F>(
