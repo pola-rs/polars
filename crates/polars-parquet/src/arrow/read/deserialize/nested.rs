@@ -3,7 +3,8 @@ use arrow::match_integer_type;
 use ethnum::I256;
 use polars_error::polars_bail;
 
-use self::nested_utils::PageNestedDecoder;
+use self::nested::deserialize::utils::freeze_validity;
+use self::nested_utils::{NestedContent, PageNestedDecoder};
 use self::primitive::{self};
 use super::*;
 
@@ -262,7 +263,7 @@ pub fn columns_to_iter_recursive(
                         )
                     },
                     PhysicalType::FixedLenByteArray(size) => {
-                        let (mut nested, array) = PageNestedDecoder::new(
+                        let (nested, array) = PageNestedDecoder::new(
                             columns.pop().unwrap(),
                             ArrowDataType::FixedSizeBinary(size),
                             fixed_size_binary::BinaryDecoder { size },
@@ -283,9 +284,6 @@ pub fn columns_to_iter_recursive(
                             values.into(),
                             validity,
                         )?);
-
-                        // @TODO: I am pretty sure this does not work
-                        let _ = nested.pop().unwrap(); // the primitive
 
                         (nested, array)
                     },
@@ -318,7 +316,7 @@ pub fn columns_to_iter_recursive(
                     .collect_n(filter)
                     .map(|(s, a)| (s, Box::new(a) as Box<_>))?,
                     PhysicalType::FixedLenByteArray(size) if size <= 16 => {
-                        let (mut nested, array) = PageNestedDecoder::new(
+                        let (nested, array) = PageNestedDecoder::new(
                             columns.pop().unwrap(),
                             ArrowDataType::FixedSizeBinary(size),
                             fixed_size_binary::BinaryDecoder { size },
@@ -340,14 +338,11 @@ pub fn columns_to_iter_recursive(
                             validity,
                         )?);
 
-                        // @TODO: I am pretty sure this is not needed
-                        let _ = nested.pop().unwrap(); // the primitive
-
                         (nested, array)
                     },
 
                     PhysicalType::FixedLenByteArray(size) if size <= 32 => {
-                        let (mut nested, array) = PageNestedDecoder::new(
+                        let (nested, array) = PageNestedDecoder::new(
                             columns.pop().unwrap(),
                             ArrowDataType::FixedSizeBinary(size),
                             fixed_size_binary::BinaryDecoder { size },
@@ -369,9 +364,6 @@ pub fn columns_to_iter_recursive(
                             validity,
                         )?);
 
-                        // @TODO: I am pretty sure this is not needed
-                        let _ = nested.pop().unwrap(); // the primitive
-
                         (nested, array)
                     },
                     PhysicalType::FixedLenByteArray(n) => {
@@ -388,37 +380,68 @@ pub fn columns_to_iter_recursive(
                 }
             },
             ArrowDataType::Struct(fields) => {
-                let columns = fields
-                    .iter()
-                    .rev()
-                    .map(|f| {
-                        let mut init = init.clone();
+                // @NOTE:
+                // We go back to front here, because we constantly split off the end of the array
+                // to grab the relevant columns and types.
+                //
+                // Is this inefficient? Yes. Is this how we are going to do it for now? Yes.
+
+                let Some(last_field) = fields.last() else {
+                    return Err(ParquetError::not_supported("Struct has zero fields").into());
+                };
+
+                let field_to_nested_array =
+                    |mut init: Vec<InitNested>,
+                     columns: &mut Vec<BasicDecompressor>,
+                     types: &mut Vec<&PrimitiveType>,
+                     field: &Field| {
                         init.push(InitNested::Struct(field.is_nullable));
-                        let n = n_columns(&f.data_type);
-                        let columns = columns.drain(columns.len() - n..).collect();
-                        let types = types.drain(types.len() - n..).collect();
-                        columns_to_iter_recursive(columns, types, f.clone(), init, filter.clone())
-                    })
-                    .collect::<PolarsResult<Vec<(NestedState, Box<dyn Array>)>>>()?;
+                        let n = n_columns(&field.data_type);
+                        let columns = columns.split_off(columns.len() - n);
+                        let types = types.split_off(types.len() - n);
 
-                // @TODO: This is overcomplicated
+                        columns_to_iter_recursive(
+                            columns,
+                            types,
+                            field.clone(),
+                            init,
+                            filter.clone(),
+                        )
+                    };
 
-                let mut nested = vec![];
-                let mut new_values = vec![];
-                for (nest, values) in columns.into_iter().rev() {
-                    new_values.push(values);
-                    nested.push(nest);
+                let (mut nested, first_array) =
+                    field_to_nested_array(init.clone(), &mut columns, &mut types, &last_field)?;
+                debug_assert!(matches!(nested.last().unwrap(), NestedContent::Struct));
+                let (_, struct_validity) = nested.pop().unwrap();
+
+                let mut field_arrays = Vec::<Box<dyn Array>>::with_capacity(fields.len());
+                field_arrays.push(first_array);
+
+                for field in fields.iter().rev().skip(1) {
+                    let (mut _nested, array) =
+                        field_to_nested_array(init.clone(), &mut columns, &mut types, field)?;
+
+                    #[cfg(debug_assertions)]
+                    {
+                        debug_assert!(matches!(_nested.last().unwrap(), NestedContent::Struct));
+                        debug_assert_eq!(
+                            _nested.pop().unwrap().1.and_then(|v| freeze_validity(v)),
+                            struct_validity.clone().and_then(|v| freeze_validity(v)),
+                        );
+                    }
+
+                    field_arrays.push(array);
                 }
 
-                let mut nested = nested.pop().unwrap();
-                let (_, validity) = nested.pop().unwrap();
+                field_arrays.reverse();
+                let struct_validity = struct_validity.and_then(|v| freeze_validity(v));
 
                 (
                     nested,
                     Box::new(StructArray::new(
                         ArrowDataType::Struct(fields.clone()),
-                        new_values,
-                        validity.and_then(|x| x.into()),
+                        field_arrays,
+                        struct_validity,
                     )),
                 )
             },

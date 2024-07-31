@@ -3,7 +3,7 @@ use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
 use polars_error::PolarsResult;
 
-use super::utils::{dict_indices_decoder, extend_from_decoder, not_implemented, Decoder};
+use super::utils::{dict_indices_decoder, extend_from_decoder, freeze_validity, not_implemented, Decoder};
 use crate::parquet::encoding::hybrid_rle::gatherer::HybridRleGatherer;
 use crate::parquet::encoding::{hybrid_rle, Encoding};
 use crate::parquet::error::{ParquetError, ParquetResult};
@@ -291,10 +291,11 @@ impl Decoder for BinaryDecoder {
         _dict: Option<Self::Dict>,
         (values, validity): Self::DecodedState,
     ) -> ParquetResult<Self::Output> {
+        let validity = freeze_validity(validity);
         Ok(FixedSizeBinaryArray::new(
             data_type,
             values.values.into(),
-            validity.into(),
+            validity,
         ))
     }
 }

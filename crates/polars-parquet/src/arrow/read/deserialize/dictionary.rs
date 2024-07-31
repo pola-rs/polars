@@ -6,8 +6,7 @@ use arrow::datatypes::ArrowDataType;
 use polars_error::PolarsResult;
 
 use super::utils::{
-    self, dict_indices_decoder, extend_from_decoder, BatchableCollector, Decoder, DictDecodable,
-    ExactSize, PageValidity, StateTranslation,
+    self, dict_indices_decoder, extend_from_decoder, freeze_validity, BatchableCollector, Decoder, DictDecodable, ExactSize, PageValidity, StateTranslation
 };
 use super::ParquetError;
 use crate::parquet::encoding::hybrid_rle::{self, HybridRleDecoder, Translator};
@@ -118,12 +117,7 @@ impl<K: DictionaryKey, D: utils::DictDecodable> utils::Decoder for DictionaryDec
         dict: Option<Self::Dict>,
         (values, validity): Self::DecodedState,
     ) -> ParquetResult<DictionaryArray<K>> {
-        let validity = if validity.is_empty() || validity.unset_bits() == 0 {
-            None
-        } else {
-            Some(validity.freeze())
-        };
-
+        let validity = freeze_validity(validity);
         let dict = dict.unwrap();
         let keys = PrimitiveArray::new(K::PRIMITIVE.into(), values.into(), validity);
 

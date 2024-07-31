@@ -17,7 +17,7 @@ use crate::parquet::page::{split_buffer, DataPage, DictPage};
 use crate::parquet::types::{decode, NativeType as ParquetNativeType};
 use crate::read::deserialize::utils::array_chunks::ArrayChunks;
 use crate::read::deserialize::utils::{
-    BatchableCollector, Decoder, PageValidity, TranslatedHybridRle,
+    freeze_validity, BatchableCollector, Decoder, PageValidity, TranslatedHybridRle,
 };
 
 #[allow(clippy::large_enum_variant)]
@@ -328,15 +328,8 @@ where
         _dict: Option<Self::Dict>,
         (values, validity): Self::DecodedState,
     ) -> ParquetResult<Self::Output> {
-        let validity = if validity.is_empty() {
-            None
-        } else {
-            Some(validity)
-        };
-
-        Ok(MutablePrimitiveArray::try_new(data_type, values, validity)
-            .unwrap()
-            .freeze())
+        let validity = freeze_validity(validity);
+        Ok(PrimitiveArray::try_new(data_type, values.into(), validity).unwrap())
     }
 }
 

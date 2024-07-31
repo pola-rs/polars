@@ -4,7 +4,7 @@ use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
 use polars_error::PolarsResult;
 
-use super::utils;
+use super::utils::{self, freeze_validity};
 use super::utils::{extend_from_decoder, Decoder, ExactSize};
 use crate::parquet::encoding::hybrid_rle::gatherer::HybridRleGatherer;
 use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
@@ -50,7 +50,7 @@ impl<'a> utils::StateTranslation<'a, BooleanDecoder> for StateTranslation<'a> {
             },
             Encoding::Rle => {
                 // @NOTE: For a nullable list, we might very well overestimate the amount of
-                // values, but we never collect those items. We don't really have a way to now the
+                // values, but we never collect those items. We don't really have a way to know the
                 // number of valid items in the V1 specification.
 
                 // For RLE boolean values the length in bytes is pre-pended.
@@ -232,7 +232,8 @@ impl Decoder for BooleanDecoder {
         _dict: Option<Self::Dict>,
         (values, validity): Self::DecodedState,
     ) -> ParquetResult<Self::Output> {
-        Ok(BooleanArray::new(data_type, values.into(), validity.into()))
+        let validity = freeze_validity(validity);
+        Ok(BooleanArray::new(data_type, values.into(), validity))
     }
 }
 
