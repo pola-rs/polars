@@ -567,7 +567,7 @@ def _handle_null_probability_deprecation(
     null_probability: float | Mapping[str, float],
 ) -> bool | dict[str, bool]:
     issue_deprecation_warning(
-        "`null_probability` is deprecated. Use `include_nulls` instead.",
+        "`null_probability` is deprecated. Use `allow_null` instead.",
         version="0.20.26",
     )
 
