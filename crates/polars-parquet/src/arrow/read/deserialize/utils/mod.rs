@@ -8,11 +8,10 @@ use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::datatypes::ArrowDataType;
 use arrow::pushable::Pushable;
 use arrow::types::Offset;
-use polars_error::{polars_err, PolarsError, PolarsResult};
 
 use self::filter::Filter;
 use super::binary::utils::Binary;
-use super::BasicDecompressor;
+use super::{BasicDecompressor, ParquetError};
 use crate::parquet::encoding::hybrid_rle::gatherer::{
     HybridRleGatherer, ZeroCount, ZeroCountGatherer,
 };
@@ -35,7 +34,7 @@ pub(crate) trait StateTranslation<'a, D: Decoder>: Sized {
         page: &'a DataPage,
         dict: Option<&'a D::Dict>,
         page_validity: Option<&PageValidity<'a>>,
-    ) -> PolarsResult<Self>;
+    ) -> ParquetResult<Self>;
     fn len_when_not_nullable(&self) -> usize;
     fn skip_in_place(&mut self, n: usize) -> ParquetResult<()>;
 
@@ -51,7 +50,7 @@ pub(crate) trait StateTranslation<'a, D: Decoder>: Sized {
 }
 
 impl<'a, D: Decoder> State<'a, D> {
-    pub fn new(decoder: &D, page: &'a DataPage, dict: Option<&'a D::Dict>) -> PolarsResult<Self> {
+    pub fn new(decoder: &D, page: &'a DataPage, dict: Option<&'a D::Dict>) -> ParquetResult<Self> {
         let is_optional =
             page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
 
@@ -71,7 +70,7 @@ impl<'a, D: Decoder> State<'a, D> {
         decoder: &D,
         page: &'a DataPage,
         dict: Option<&'a D::Dict>,
-    ) -> PolarsResult<Self> {
+    ) -> ParquetResult<Self> {
         let translation = D::Translation::new(decoder, page, dict, None)?;
 
         Ok(Self {
@@ -170,18 +169,16 @@ impl<'a, D: Decoder> State<'a, D> {
     }
 }
 
-pub fn not_implemented(page: &DataPage) -> PolarsError {
+pub fn not_implemented(page: &DataPage) -> ParquetError {
     let is_optional = page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
     let is_filtered = page.selected_rows().is_some();
     let required = if is_optional { "optional" } else { "required" };
     let is_filtered = if is_filtered { ", index-filtered" } else { "" };
-    polars_err!(ComputeError:
-        "Decoding {:?} \"{:?}\"-encoded {} {} parquet pages not yet implemented",
+    ParquetError::not_supported(format!(
+        "Decoding {:?} \"{:?}\"-encoded {required}{is_filtered} parquet pages not yet supported",
         page.descriptor.primitive_type.physical_type,
-        page.encoding(),
-        required,
-        is_filtered,
-    )
+        page.encoding()
+    ))
 }
 
 pub trait BatchableCollector<I, T> {
