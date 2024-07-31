@@ -305,7 +305,7 @@ pub(super) async fn expand_paths_hf(
                     let bytes = bytes?;
                     let bytes = bytes.as_ref();
                     entries.extend(try_parse_api_response(bytes)?.into_iter().filter(|x| {
-                        matcher.is_matching(x.path.as_str()) && (!x.is_file() || x.size > 0)
+                        !x.is_file() || (x.size > 0 && matcher.is_matching(x.path.as_str()))
                     }));
                 }
             } else {
