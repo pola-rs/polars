@@ -9,21 +9,17 @@ use arrow::types::Offset;
 pub(crate) use basic::BinaryDecoder;
 
 use self::utils::Binary;
+use super::utils::freeze_validity;
 use super::ParquetResult;
 
 fn finalize<O: Offset>(
     data_type: ArrowDataType,
     mut values: Binary<O>,
-    mut validity: MutableBitmap,
+    validity: MutableBitmap,
 ) -> ParquetResult<Box<dyn Array>> {
     values.offsets.shrink_to_fit();
     values.values.shrink_to_fit();
-    let validity = if validity.is_empty() {
-        None
-    } else {
-        validity.shrink_to_fit();
-        Some(validity.freeze())
-    };
+    let validity = freeze_validity(validity);
 
     match data_type.to_physical_type() {
         PhysicalType::Binary | PhysicalType::LargeBinary => unsafe {

@@ -20,6 +20,7 @@ use simple::page_iter_to_array;
 
 pub use self::nested_utils::{init_nested, InitNested, NestedState};
 pub use self::utils::filter::Filter;
+use self::utils::freeze_validity;
 use super::*;
 use crate::parquet::read::get_page_iterator as _get_page_iterator;
 use crate::parquet::schema::types::PrimitiveType;
@@ -48,6 +49,7 @@ pub fn create_list(
     values: Box<dyn Array>,
 ) -> Box<dyn Array> {
     let (mut offsets, validity) = nested.pop().unwrap();
+    let validity = validity.and_then(freeze_validity);
     match data_type.to_logical_type() {
         ArrowDataType::List(_) => {
             offsets.push(values.len() as i64);
@@ -62,7 +64,7 @@ pub fn create_list(
                 data_type,
                 offsets.into(),
                 values,
-                validity.and_then(|x| x.into()),
+                validity,
             ))
         },
         ArrowDataType::LargeList(_) => {
@@ -72,14 +74,12 @@ pub fn create_list(
                 data_type,
                 offsets.try_into().expect("List too large"),
                 values,
-                validity.and_then(|x| x.into()),
+                validity,
             ))
         },
-        ArrowDataType::FixedSizeList(_, _) => Box::new(FixedSizeListArray::new(
-            data_type,
-            values,
-            validity.and_then(|x| x.into()),
-        )),
+        ArrowDataType::FixedSizeList(_, _) => {
+            Box::new(FixedSizeListArray::new(data_type, values, validity))
+        },
         _ => unreachable!(),
     }
 }
@@ -104,7 +104,7 @@ pub fn create_map(
                 data_type,
                 offsets.into(),
                 values,
-                validity.and_then(|x| x.into()),
+                validity.and_then(freeze_validity),
             ))
         },
         _ => unreachable!(),

@@ -33,6 +33,15 @@ def test_round_trip(df: pl.DataFrame) -> None:
     assert_frame_equal(pl.read_parquet(f), df)
 
 
+def test_scan_round_trip(tmp_path: Path, df: pl.DataFrame) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    f = tmp_path / "test.parquet"
+
+    df.write_parquet(f)
+    assert_frame_equal(pl.scan_parquet(f).collect(), df)
+    assert_frame_equal(pl.scan_parquet(f).head().collect(), df.head())
+
+
 COMPRESSIONS = [
     "lz4",
     "uncompressed",
@@ -1243,6 +1252,96 @@ def test_parquet_list_element_field_name(tmp_path: Path) -> None:
     assert "child 0, element: int64" in schema_str
 
 
+def test_nested_decimal() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [
+                {"f0": None},
+                None,
+            ]
+        },
+        schema={"a": pl.Struct({"f0": pl.Decimal(precision=38, scale=8)})},
+    )
+    test_round_trip(df)
+
+
+def test_nested_non_uniform_primitive() -> None:
+    df = pl.DataFrame(
+        {"a": [{"x": 0, "y": None}]},
+        schema={
+            "a": pl.Struct(
+                {
+                    "x": pl.Int16,
+                    "y": pl.Int64,
+                }
+            )
+        },
+    )
+    test_round_trip(df)
+
+
+def test_parquet_lexical_categorical() -> None:
+    # @TODO: This should be fixed
+    # This test shows that we don't handle saving the ordering properly in
+    # parquet files
+    df = pl.DataFrame({"a": [None]}, schema={"a": pl.Categorical(ordering="lexical")})
+
+    with pytest.raises(AssertionError):
+        test_round_trip(df)
+
+
+def test_parquet_nested_struct_17933() -> None:
+    df = pl.DataFrame(
+        {"a": [{"x": {"u": None}, "y": True}]},
+        schema={
+            "a": pl.Struct(
+                {
+                    "x": pl.Struct({"u": pl.String}),
+                    "y": pl.Boolean(),
+                }
+            )
+        },
+    )
+    test_round_trip(df)
+
+
+def test_parquet_pyarrow_map() -> None:
+    xs = [
+        [
+            (0, 5),
+            (1, 10),
+            (2, 19),
+            (3, 96),
+        ]
+    ]
+
+    table = pa.table(
+        [xs],
+        schema=pa.schema(
+            [
+                ("x", pa.map_(pa.int32(), pa.int32(), keys_sorted=True)),
+            ]
+        ),
+    )
+
+    f = io.BytesIO()
+    pq.write_table(table, f)
+
+    expected = pl.DataFrame(
+        {
+            "x": [
+                {"key": 0, "value": 5},
+                {"key": 1, "value": 10},
+                {"key": 2, "value": 19},
+                {"key": 3, "value": 96},
+            ]
+        },
+        schema={"x": pl.Struct({"key": pl.Int32, "value": pl.Int32})},
+    )
+    f.seek(0)
+    assert_frame_equal(pl.read_parquet(f).explode(["x"]), expected)
+
+
 @pytest.mark.parametrize(
     ("s", "elem"),
     [
@@ -1266,3 +1365,25 @@ def test_parquet_high_nested_null_17805(
             .alias("c")
         )
     )
+
+
+@pytest.mark.write_disk()
+def test_struct_plain_encoded_statistics(tmp_path: Path) -> None:
+    df = pl.DataFrame(
+        {
+            "a": [None, None, None, None, {"x": None, "y": 0}],
+        },
+        schema={"a": pl.Struct({"x": pl.Int8, "y": pl.Int8})},
+    )
+
+    test_scan_round_trip(tmp_path, df)
+
+
+@given(df=dataframes(min_size=5, excluded_dtypes=[pl.Decimal, pl.Categorical]))
+@settings(
+    max_examples=100,
+    deadline=None,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
+def test_scan_round_trip_parametric(tmp_path: Path, df: pl.DataFrame) -> None:
+    test_scan_round_trip(tmp_path, df)
