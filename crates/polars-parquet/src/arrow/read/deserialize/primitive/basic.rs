@@ -1,4 +1,4 @@
-use arrow::array::{DictionaryArray, DictionaryKey, MutablePrimitiveArray, PrimitiveArray};
+use arrow::array::{DictionaryArray, DictionaryKey, PrimitiveArray};
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;

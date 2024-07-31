@@ -49,7 +49,7 @@ pub fn create_list(
     values: Box<dyn Array>,
 ) -> Box<dyn Array> {
     let (mut offsets, validity) = nested.pop().unwrap();
-    let validity = validity.and_then(|x| freeze_validity(x));
+    let validity = validity.and_then(freeze_validity);
     match data_type.to_logical_type() {
         ArrowDataType::List(_) => {
             offsets.push(values.len() as i64);
@@ -104,7 +104,7 @@ pub fn create_map(
                 data_type,
                 offsets.into(),
                 values,
-                validity.and_then(|x| freeze_validity(x)),
+                validity.and_then(freeze_validity),
             ))
         },
         _ => unreachable!(),

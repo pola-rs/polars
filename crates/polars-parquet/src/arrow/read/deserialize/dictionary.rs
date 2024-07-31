@@ -6,7 +6,8 @@ use arrow::datatypes::ArrowDataType;
 use polars_error::PolarsResult;
 
 use super::utils::{
-    self, dict_indices_decoder, extend_from_decoder, freeze_validity, BatchableCollector, Decoder, DictDecodable, ExactSize, PageValidity, StateTranslation
+    self, dict_indices_decoder, extend_from_decoder, freeze_validity, BatchableCollector, Decoder,
+    DictDecodable, ExactSize, PageValidity, StateTranslation,
 };
 use super::ParquetError;
 use crate::parquet::encoding::hybrid_rle::{self, HybridRleDecoder, Translator};

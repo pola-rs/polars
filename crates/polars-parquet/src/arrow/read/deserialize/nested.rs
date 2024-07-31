@@ -410,7 +410,7 @@ pub fn columns_to_iter_recursive(
                     };
 
                 let (mut nested, first_array) =
-                    field_to_nested_array(init.clone(), &mut columns, &mut types, &last_field)?;
+                    field_to_nested_array(init.clone(), &mut columns, &mut types, last_field)?;
                 debug_assert!(matches!(nested.last().unwrap(), NestedContent::Struct));
                 let (_, struct_validity) = nested.pop().unwrap();
 
@@ -425,8 +425,8 @@ pub fn columns_to_iter_recursive(
                     {
                         debug_assert!(matches!(_nested.last().unwrap(), NestedContent::Struct));
                         debug_assert_eq!(
-                            _nested.pop().unwrap().1.and_then(|v| freeze_validity(v)),
-                            struct_validity.clone().and_then(|v| freeze_validity(v)),
+                            _nested.pop().unwrap().1.and_then(freeze_validity),
+                            struct_validity.clone().and_then(freeze_validity),
                         );
                     }
 
@@ -434,7 +434,7 @@ pub fn columns_to_iter_recursive(
                 }
 
                 field_arrays.reverse();
-                let struct_validity = struct_validity.and_then(|v| freeze_validity(v));
+                let struct_validity = struct_validity.and_then(freeze_validity);
 
                 (
                     nested,

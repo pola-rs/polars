@@ -4,8 +4,7 @@ use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
 use polars_error::PolarsResult;
 
-use super::utils::{self, freeze_validity};
-use super::utils::{extend_from_decoder, Decoder, ExactSize};
+use super::utils::{self, extend_from_decoder, freeze_validity, Decoder, ExactSize};
 use crate::parquet::encoding::hybrid_rle::gatherer::HybridRleGatherer;
 use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use crate::parquet::encoding::Encoding;
