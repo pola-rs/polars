@@ -189,7 +189,7 @@ impl DataFrame {
     /// Get the index of the column.
     fn check_name_to_idx(&self, name: &str) -> PolarsResult<usize> {
         self.get_column_index(name)
-            .ok_or_else(|| polars_err!(ColumnNotFound: "{:?}", name))
+            .ok_or_else(|| polars_err!(col_not_found = name))
     }
 
     fn check_already_present(&self, name: &str) -> PolarsResult<()> {
@@ -1361,7 +1361,7 @@ impl DataFrame {
     /// Get column index of a [`Series`] by name.
     pub fn try_get_column_index(&self, name: &str) -> PolarsResult<usize> {
         self.get_column_index(name)
-            .ok_or_else(|| polars_err!(ColumnNotFound: "{:?}", name))
+            .ok_or_else(|| polars_err!(col_not_found = name))
     }
 
     /// Select a single column by name.
@@ -1560,7 +1560,7 @@ impl DataFrame {
                 .map(|name| {
                     let idx = *name_to_idx
                         .get(name.as_str())
-                        .ok_or_else(|| polars_err!(ColumnNotFound: "{:?}", name))?;
+                        .ok_or_else(|| polars_err!(col_not_found = name))?;
                     Ok(self
                         .select_at_idx(idx)
                         .unwrap()
@@ -1588,7 +1588,7 @@ impl DataFrame {
                 .map(|name| {
                     let idx = *name_to_idx
                         .get(name.as_str())
-                        .ok_or_else(|| polars_err!(ColumnNotFound: "{:?}", name))?;
+                        .ok_or_else(|| polars_err!(col_not_found = name))?;
                     Ok(self.select_at_idx(idx).unwrap().clone())
                 })
                 .collect::<PolarsResult<Vec<_>>>()?
@@ -1696,7 +1696,7 @@ impl DataFrame {
     /// ```
     pub fn rename(&mut self, column: &str, name: &str) -> PolarsResult<&mut Self> {
         self.select_mut(column)
-            .ok_or_else(|| polars_err!(ColumnNotFound: "{:?}", column))
+            .ok_or_else(|| polars_err!(col_not_found = column))
             .map(|s| s.rename(name))?;
         let unique_names: AHashSet<&str, ahash::RandomState> =
             AHashSet::from_iter(self.columns.iter().map(|s| s.name()));
@@ -2968,7 +2968,7 @@ impl DataFrame {
             for col in cols {
                 let _ = schema
                     .get(&col)
-                    .ok_or_else(|| polars_err!(ColumnNotFound: "{:?}", col))?;
+                    .ok_or_else(|| polars_err!(col_not_found = col))?;
             }
         }
         DataFrame::new(new_cols)
