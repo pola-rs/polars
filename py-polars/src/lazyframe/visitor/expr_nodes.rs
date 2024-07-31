@@ -1186,7 +1186,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 FunctionExpr::Interpolate(_) => {
                     return Err(PyNotImplementedError::new_err("interpolate"))
                 },
-                FunctionExpr::InterpolateBy => {
+                FunctionExpr::InterpolateBy {extrapolate_flat: _} => {
                     return Err(PyNotImplementedError::new_err("interpolate_by"))
                 },
                 FunctionExpr::Entropy {

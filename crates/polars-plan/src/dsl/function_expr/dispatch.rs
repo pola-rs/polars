@@ -25,10 +25,10 @@ pub(super) fn interpolate(s: &Series, method: InterpolationMethod) -> PolarsResu
 }
 
 #[cfg(feature = "interpolate_by")]
-pub(super) fn interpolate_by(s: &[Series]) -> PolarsResult<Series> {
+pub(super) fn interpolate_by(s: &[Series], extrapolate_flat: bool) -> PolarsResult<Series> {
     let by = &s[1];
     let by_is_sorted = by.is_sorted(Default::default())?;
-    polars_ops::prelude::interpolate_by(&s[0], by, by_is_sorted)
+    polars_ops::prelude::interpolate_by(&s[0], by, by_is_sorted, extrapolate_flat)
 }
 
 pub(super) fn to_physical(s: &Series) -> PolarsResult<Series> {

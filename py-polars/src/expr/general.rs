@@ -734,8 +734,8 @@ impl PyExpr {
     fn interpolate(&self, method: Wrap<InterpolationMethod>) -> Self {
         self.inner.clone().interpolate(method.0).into()
     }
-    fn interpolate_by(&self, by: PyExpr) -> Self {
-        self.inner.clone().interpolate_by(by.inner).into()
+    fn interpolate_by(&self, by: PyExpr, extrapolate_flat: bool) -> Self {
+        self.inner.clone().interpolate_by(by.inner, extrapolate_flat).into()
     }
 
     fn lower_bound(&self) -> Self {
