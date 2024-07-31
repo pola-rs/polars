@@ -394,28 +394,28 @@ pub fn columns_to_iter_recursive(
                     |mut init: Vec<InitNested>,
                      columns: &mut Vec<BasicDecompressor>,
                      types: &mut Vec<&PrimitiveType>,
-                     field: &Field| {
+                     struct_field: &Field| {
                         init.push(InitNested::Struct(field.is_nullable));
-                        let n = n_columns(&field.data_type);
+                        let n = n_columns(&struct_field.data_type);
                         let columns = columns.split_off(columns.len() - n);
                         let types = types.split_off(types.len() - n);
 
                         columns_to_iter_recursive(
                             columns,
                             types,
-                            field.clone(),
+                            struct_field.clone(),
                             init,
                             filter.clone(),
                         )
                     };
 
-                let (mut nested, first_array) =
+                let (mut nested, last_array) =
                     field_to_nested_array(init.clone(), &mut columns, &mut types, last_field)?;
                 debug_assert!(matches!(nested.last().unwrap(), NestedContent::Struct));
                 let (_, struct_validity) = nested.pop().unwrap();
 
                 let mut field_arrays = Vec::<Box<dyn Array>>::with_capacity(fields.len());
-                field_arrays.push(first_array);
+                field_arrays.push(last_array);
 
                 for field in fields.iter().rev().skip(1) {
                     let (mut _nested, array) =

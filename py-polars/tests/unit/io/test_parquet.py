@@ -1305,7 +1305,6 @@ def test_parquet_nested_struct_17933() -> None:
     test_round_trip(df)
 
 
-@pytest.mark.skip()
 def test_parquet_pyarrow_map() -> None:
     xs = [
         [
@@ -1324,7 +1323,9 @@ def test_parquet_pyarrow_map() -> None:
             ]
         ),
     )
-    pq.write_table(table, "test.parquet")
+
+    f = io.BytesIO()
+    pq.write_table(table, f)
 
     expected = pl.DataFrame(
         {
@@ -1337,7 +1338,8 @@ def test_parquet_pyarrow_map() -> None:
         },
         schema={"x": pl.Struct({"key": pl.Int32, "value": pl.Int32})},
     )
-    assert_frame_equal(pl.read_parquet("test.parquet").explode(["x"]), expected)
+    f.seek(0)
+    assert_frame_equal(pl.read_parquet(f).explode(["x"]), expected)
 
 
 @pytest.mark.parametrize(
