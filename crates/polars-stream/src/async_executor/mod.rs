@@ -313,6 +313,33 @@ impl<'scope, 'env> TaskScope<'scope, 'env> {
     }
 }
 
+pub struct ExecutorScope<'scope, 'env>(TaskScope<'scope, 'env>);
+
+impl<'scope, 'env> ExecutorScope<'scope, 'env> {
+    pub fn new() -> Self {
+        let scope = TaskScope {
+            cancel_handles: Mutex::default(),
+            completed_tasks: Arc::new(Mutex::default()),
+            scope: PhantomData,
+            env: PhantomData,
+        };
+        Self(scope)
+    }
+}
+
+impl<'scope, 'env> Drop for ExecutorScope<'scope, 'env> {
+    fn drop(&mut self) {
+        self.0.destroy();
+    }
+}
+
+impl<'scope, 'env> std::ops::Deref for ExecutorScope<'scope, 'env> {
+    type Target = TaskScope<'scope, 'env>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 pub fn task_scope<'env, F, T>(f: F) -> T
 where
     F: for<'scope> FnOnce(&'scope TaskScope<'scope, 'env>) -> T,

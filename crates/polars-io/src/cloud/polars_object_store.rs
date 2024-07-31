@@ -16,6 +16,7 @@ use crate::pl_async::{
 /// concurrent requests for the entire application.
 #[derive(Debug, Clone)]
 pub struct PolarsObjectStore(Arc<dyn ObjectStore>);
+pub type ObjectStorePath = object_store::path::Path;
 
 impl PolarsObjectStore {
     pub fn new(store: Arc<dyn ObjectStore>) -> Self {
