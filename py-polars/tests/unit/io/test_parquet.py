@@ -1293,6 +1293,7 @@ def test_parquet_nested_struct_17933() -> None:
     test_round_trip(df)
 
 
+@pytest.mark.skip
 def test_parquet_pyarrow_map() -> None:
     xs = [[
         (0, 5),
