@@ -34,6 +34,7 @@ from tests.unit.conftest import INTEGER_DTYPES
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
 
+    from polars import Expr
     from polars._typing import JoinStrategy, UniqueKeepStrategy
 else:
     from polars._utils.convert import string_to_zoneinfo as ZoneInfo
@@ -369,7 +370,10 @@ def test_sort_multi_output_exprs_01() -> None:
     ],
 )
 def test_sort_multi_output_exprs_02(
-    by_explicit, desc_explicit, by_multi, desc_multi
+    by_explicit: list[str],
+    desc_explicit: list[bool],
+    by_multi: list[Expr],
+    desc_multi: list[bool],
 ) -> None:
     df = pl.DataFrame(
         {

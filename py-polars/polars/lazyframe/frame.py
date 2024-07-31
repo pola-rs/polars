@@ -1275,8 +1275,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Parameters
         ----------
         by
-            Column(s) to sort by. Accepts expression input. Strings are parsed as column
-            names.
+            Column(s) to sort by. Accepts expression input, including selectors. Strings
+            are parsed as column names.
         *more_by
             Additional columns to sort by, specified as positional arguments.
         descending
@@ -1356,11 +1356,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ null ┆ 4.0 ┆ b   │
         │ 2    ┆ 5.0 ┆ c   │
         └──────┴─────┴─────┘
-
-        Note that selectors are supported in the `by` parameter.
-
-        >>>
-        >>> lf.sort(cs.).collect()
         """
         # Fast path for sorting by a single existing column
         if isinstance(by, str) and not more_by:

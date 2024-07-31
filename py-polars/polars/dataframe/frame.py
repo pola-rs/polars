@@ -4814,8 +4814,8 @@ class DataFrame:
         Parameters
         ----------
         by
-            Column(s) to sort by. Accepts expression input. Strings are parsed as column
-            names.
+            Column(s) to sort by. Accepts expression input, including selectors. Strings
+            are parsed as column names.
         *more_by
             Additional columns to sort by, specified as positional arguments.
         descending
