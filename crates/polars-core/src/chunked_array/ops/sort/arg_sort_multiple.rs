@@ -16,7 +16,7 @@ pub(crate) fn args_validate<T: PolarsDataType>(
     }
     polars_ensure!(other.len() == (descending.len() - 1),
         ComputeError:
-        "the amount of ordering booleans: {} does not match the number of series: {}",
+        "the number of ordering booleans: {} does not match the number of series: {}",
         descending.len(), other.len() + 1,
     );
     Ok(())

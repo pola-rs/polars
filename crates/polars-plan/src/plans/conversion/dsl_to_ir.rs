@@ -393,10 +393,36 @@ pub fn to_alp_impl(
         } => {
             let input = to_alp_impl(owned(input), expr_arena, lp_arena, convert)
                 .map_err(|e| e.context(failed_input!(sort)))?;
-            let by_column = expand_expressions(input, by_column, lp_arena, expr_arena)
-                .map_err(|e| e.context(failed_here!(sort)))?;
 
-            convert.fill_scratch(&by_column, expr_arena);
+            let mut expanded_cols = Vec::new();
+            let mut nulls_last = Vec::new();
+            let mut descending = Vec::new();
+
+            // note: nulls_last/descending need to be matched to expanded multi-output expressions.
+            // when one of nulls_last/descending has not been updated from the default (single
+            // value true/false), 'cycle' ensures that "by_column" iter is not truncated.
+            for (c, (&n, &d)) in by_column.into_iter().zip(
+                sort_options
+                    .nulls_last
+                    .iter()
+                    .cycle()
+                    .zip(sort_options.descending.iter().cycle()),
+            ) {
+                let exprs = expand_expressions(input, vec![c], lp_arena, expr_arena)
+                    .map_err(|e| e.context(failed_here!(sort)))?;
+
+                nulls_last.extend(std::iter::repeat(n).take(exprs.len()));
+                descending.extend(std::iter::repeat(d).take(exprs.len()));
+                expanded_cols.extend(exprs);
+            }
+            let sort_options = sort_options
+                .clone()
+                .with_nulls_last_multi(nulls_last.clone())
+                .with_order_descending_multi(descending.clone());
+
+            convert.fill_scratch(&expanded_cols, expr_arena);
+            let by_column = expanded_cols;
+
             let lp = IR::Sort {
                 input,
                 by_column,
@@ -479,7 +505,7 @@ pub fn to_alp_impl(
                 if turn_off_coalesce {
                     let options = Arc::make_mut(&mut options);
                     if matches!(options.args.coalesce, JoinCoalesce::CoalesceColumns) {
-                        polars_warn!("Coalescing join requested but not all join keys are column references, turning off key coalescing");
+                        polars_warn!("coalescing join requested but not all join keys are column references, turning off key coalescing");
                     }
                     options.args.coalesce = JoinCoalesce::KeepColumns;
                 }

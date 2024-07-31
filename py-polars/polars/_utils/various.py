@@ -533,8 +533,6 @@ def extend_bool(
     n_match: int,
     value_name: str,
     match_name: str,
-    *,
-    condense: bool = False,
 ) -> Sequence[bool]:
     """Ensure the given bool or sequence of bools is the correct length."""
     values = [value] * n_match if isinstance(value, bool) else value
@@ -544,9 +542,6 @@ def extend_bool(
             f"does not match the length of `{match_name}` ({n_match})"
         )
         raise ValueError(msg)
-
-    if condense and len(set(values)) == 1:
-        return [values[0]]
     return values
 
 
@@ -605,13 +600,3 @@ def re_escape(s: str) -> str:
     # escapes _only_ those metachars with meaning to the rust regex crate
     re_rust_metachars = r"\\?()|\[\]{}^$#&~.+*-"
     return re.sub(f"([{re_rust_metachars}])", r"\\\1", s)
-
-
-def has_multiple_outputs(x: Any) -> bool:
-    """Check if the given input is an Expr/PyExpr that could return multiple outputs."""
-    from polars.expr import Expr
-    from polars.polars import PyExpr
-
-    return (isinstance(x, Expr) and x.meta.has_multiple_outputs()) or (
-        isinstance(x, PyExpr) and x.meta_has_multiple_outputs()
-    )

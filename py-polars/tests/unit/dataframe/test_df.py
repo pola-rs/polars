@@ -306,7 +306,7 @@ def test_sort() -> None:
     )
 
 
-def test_sort_multi_output() -> None:
+def test_sort_multi_output_exprs_01() -> None:
     df = pl.DataFrame(
         {
             "dts": [date(2077, 10, 3), date(2077, 10, 2), date(2077, 10, 2)],
@@ -344,12 +344,44 @@ def test_sort_multi_output() -> None:
     with pytest.raises(ComputeError, match="No columns selected for sorting"):
         df.sort(pl.col("^xxx$"))
 
-    with pytest.raises(
-        InvalidOperationError,
-        match="Cannot set mixed per-column `descending` or "
-        "`nulls_last` when `by` contains multi-output expressions",
-    ):
-        df.sort(cs.temporal(), cs.numeric(), descending=[True, False])
+
+@pytest.mark.parametrize(
+    ("by_explicit", "desc_explicit", "by_multi", "desc_multi"),
+    [
+        (
+            ["w", "x", "y", "z"],
+            [False, False, True, True],
+            [cs.integer(), cs.string()],
+            [False, True],
+        ),
+        (
+            ["w", "y", "z"],
+            [True, True, False],
+            [pl.col("^(w|y)$"), pl.col("^z.*$")],
+            [True, False],
+        ),
+        (
+            ["z", "w", "x"],
+            [True, False, False],
+            [pl.col("z"), cs.numeric()],
+            [True, False],
+        ),
+    ],
+)
+def test_sort_multi_output_exprs_02(
+    by_explicit, desc_explicit, by_multi, desc_multi
+) -> None:
+    df = pl.DataFrame(
+        {
+            "w": [100, 100, 100, 100, 200, 200, 200, 200],
+            "x": [888, 888, 444, 444, 888, 888, 444, 888],
+            "y": ["b", "b", "a", "a", "b", "b", "a", "a"],
+            "z": ["x", "y", "x", "y", "x", "y", "x", "y"],
+        }
+    )
+    res1 = df.sort(*by_explicit, descending=desc_explicit)
+    res2 = df.sort(*by_multi, descending=desc_multi)
+    assert_frame_equal(res1, res2)
 
 
 def test_sort_maintain_order() -> None:
