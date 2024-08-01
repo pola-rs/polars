@@ -573,3 +573,15 @@ where
         });
     }
 }
+
+impl StringChunked {
+    /// # Safety
+    /// Update the views. All invariants of the views apply.
+    pub unsafe fn apply_views<F: FnMut(View, &str) -> View + Copy>(&self, update_view: F) -> Self {
+        let mut out = self.clone();
+        for arr in out.downcast_iter_mut() {
+            *arr = arr.apply_views(update_view);
+        }
+        out
+    }
+}
