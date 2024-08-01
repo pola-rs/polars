@@ -7804,7 +7804,8 @@ class DataFrame:
             If None, all remaining columns not specified on `on` and `values` will be used. At least one
             of `index` and `values` must be specified.
         values
-            The existing column(s) of values which will be moved under the new columns from index.
+            The existing column(s) of values which will be moved under the new columns from index. If an
+            aggregation is specified, these are the values on which the aggregation will be computed.
             If None, all remaining columns not specified on `on` and `index` will be used.
             At least one of `index` and `values` must be specified.
         aggregate_function
