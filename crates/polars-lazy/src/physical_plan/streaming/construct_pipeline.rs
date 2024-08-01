@@ -26,6 +26,10 @@ impl PhysicalIoExpr for Wrap {
         };
         h.evaluate_io(df)
     }
+    fn live_variables(&self) -> PolarsResult<Vec<Arc<str>>> {
+        // @TODO: This should not unwrap
+        Ok(expr_to_leaf_column_names(self.0.as_expression().unwrap()))
+    }
     fn as_stats_evaluator(&self) -> Option<&dyn StatsEvaluator> {
         self.0.as_stats_evaluator()
     }

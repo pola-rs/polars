@@ -150,7 +150,7 @@ impl<'a, D: Decoder> State<'a, D> {
                             num_ones,
                         )?;
 
-                        if self.len() == 0 {
+                        if iter.num_remaining() == 0 || self.len() == 0 {
                             break;
                         }
 
