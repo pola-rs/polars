@@ -11,10 +11,10 @@ mod private {
 
     use crate::mem::prefetch_l2;
 
-    /// A read-only reference to a slice of memory.
+    /// A read-only reference to a slice of memory that can potentially be memory-mapped.
     ///
-    /// This maintains a reference count to the underlying buffer to ensure the memory is kept
-    /// alive. [`MemSlice::slice`] can be used to slice the memory in a zero-copy manner.
+    /// A reference count to the underlying buffer to ensure the memory is kept alive.
+    /// [`MemSlice::slice`] can be used to slice the memory in a zero-copy manner.
     ///
     /// This still owns the all the original memory and therefore should probably not be a long-lasting
     /// structure.
