@@ -144,6 +144,8 @@ impl std::ops::Deref for ReaderBytes<'_> {
     }
 }
 
+/// Require 'static to force the caller to do any transmute as it's usually much
+/// clearer to see there whether it's sound.
 impl ReaderBytes<'static> {
     pub fn into_mem_slice(self) -> MemSlice {
         match self {
