@@ -5067,7 +5067,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         --------
         >>> lf = pl.LazyFrame(
         ...     {
-        ...         "a": [1, 3, 5],
+        ...         "a": [1, 5, 3],
         ...         "b": [2, 4, 6],
         ...     }
         ... )
@@ -5078,7 +5078,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ --- ┆ --- │
         │ i64 ┆ i64 │
         ╞═════╪═════╡
-        │ 5   ┆ 6   │
+        │ 3   ┆ 6   │
         └─────┴─────┘
         """
         return self.tail(1)

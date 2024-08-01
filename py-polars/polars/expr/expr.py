@@ -3360,7 +3360,7 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [1, 1, 2]})
+        >>> df = pl.DataFrame({"a": [1, 3, 2]})
         >>> df.select(pl.col("a").last())
         shape: (1, 1)
         ┌─────┐
