@@ -104,7 +104,7 @@ def test_read_spreadsheet(
 ) -> None:
     sheet_params: dict[str, Any]
 
-    for sheet_params in (  # type: ignore[assignment]
+    for sheet_params in (
         {"sheet_name": None, "sheet_id": None},
         {"sheet_name": "test1"},
         {"sheet_id": 1},
@@ -643,7 +643,7 @@ def test_excel_round_trip(write_params: dict[str, Any]) -> None:
     )
 
     engine: ExcelSpreadsheetEngine
-    for engine in ("calamine", "xlsx2csv"):  # type: ignore[assignment]
+    for engine in ("calamine", "xlsx2csv"):
         read_options = (
             {}
             if write_params.get("include_header", True)
@@ -930,7 +930,7 @@ def test_excel_type_inference_with_nulls(engine: ExcelSpreadsheetEngine) -> None
 
     reversed_cols = list(reversed(df.columns))
     read_cols: Sequence[str] | Sequence[int]
-    for read_cols in (  # type: ignore[assignment]
+    for read_cols in (
         reversed_cols,
         [5, 4, 3, 2, 1, 0],
     ):

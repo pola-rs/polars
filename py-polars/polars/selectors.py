@@ -87,10 +87,7 @@ __all__ = [
 
 
 @overload
-def is_selector(obj: _selector_proxy_) -> Literal[True]:  # type: ignore[overload-overlap]
-    ...
-
-
+def is_selector(obj: _selector_proxy_) -> Literal[True]: ...
 @overload
 def is_selector(obj: Any) -> Literal[False]: ...
 

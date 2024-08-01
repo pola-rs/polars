@@ -305,7 +305,7 @@ def test_read_parquet_hive_schema_with_pyarrow() -> None:
 )
 def test_hive_partition_directory_scan(
     tmp_path: Path,
-    scan_func: Callable[[Any], pl.LazyFrame],
+    scan_func: Callable[..., pl.LazyFrame],
     write_func: Callable[[pl.DataFrame, Path], None],
     glob: bool,
 ) -> None:
