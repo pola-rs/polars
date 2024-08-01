@@ -9,15 +9,16 @@ use crate::utils::_split_offsets;
 pub(crate) fn args_validate<T: PolarsDataType>(
     ca: &ChunkedArray<T>,
     other: &[Series],
-    descending: &[bool],
+    param_value: &[bool],
+    param_name: &str,
 ) -> PolarsResult<()> {
     for s in other {
         assert_eq!(ca.len(), s.len());
     }
-    polars_ensure!(other.len() == (descending.len() - 1),
+    polars_ensure!(other.len() == (param_value.len() - 1),
         ComputeError:
-        "the number of ordering booleans: {} does not match the number of series: {}",
-        descending.len(), other.len() + 1,
+        "the length of `{}` ({}) does not match the number of series ({})",
+        param_name, param_value.len(), other.len() + 1,
     );
     Ok(())
 }

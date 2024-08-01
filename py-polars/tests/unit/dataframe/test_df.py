@@ -334,15 +334,35 @@ def test_sort_multi_output_exprs_01() -> None:
             "vals": [10.5, 20.3, 15.7],
         }
     )
-    assert_frame_equal(expected, df.sort(pl.col("^(d|v).*$"), descending=[True]))
     assert_frame_equal(
-        expected, df.sort(cs.temporal() | cs.numeric(), descending=[True])
+        expected,
+        df.sort(pl.col("^(d|v).*$"), descending=[True]),
     )
     assert_frame_equal(
-        expected, df.sort(cs.temporal(), cs.numeric(), descending=[True, True])
+        expected,
+        df.sort(cs.temporal() | cs.numeric(), descending=[True]),
+    )
+    assert_frame_equal(
+        expected,
+        df.sort(cs.temporal(), cs.numeric(), descending=[True, True]),
     )
 
-    with pytest.raises(ComputeError, match="No columns selected for sorting"):
+    with pytest.raises(
+        ValueError,
+        match=r"the length of `descending` \(2\) does not match the length of `by` \(1\)",
+    ):
+        df.sort(by=[cs.temporal()], descending=[True, False])
+
+    with pytest.raises(
+        ValueError,
+        match=r"the length of `nulls_last` \(3\) does not match the length of `by` \(2\)",
+    ):
+        df.sort("dts", "strs", nulls_last=[True, False, True])
+
+    with pytest.raises(
+        ComputeError,
+        match="No columns selected for sorting",
+    ):
         df.sort(pl.col("^xxx$"))
 
 

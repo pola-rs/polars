@@ -389,8 +389,28 @@ pub fn to_alp_impl(
             input,
             by_column,
             slice,
-            sort_options,
+            mut sort_options,
         } => {
+            // note: if given an Expr::Columns, count the individual cols
+            let n_by_exprs = if by_column.len() == 1 {
+                match &by_column[0] {
+                    Expr::Columns(cols) => cols.len(),
+                    _ => 1,
+                }
+            } else {
+                by_column.len()
+            };
+            let n_desc = sort_options.descending.len();
+            polars_ensure!(
+                n_desc == n_by_exprs || n_desc == 1,
+                ComputeError: "the length of `descending` ({}) does not match the length of `by` ({})", n_desc, by_column.len()
+            );
+            let n_nulls_last = sort_options.nulls_last.len();
+            polars_ensure!(
+                n_nulls_last == n_by_exprs || n_nulls_last == 1,
+                ComputeError: "the length of `nulls_last` ({}) does not match the length of `by` ({})", n_nulls_last, by_column.len()
+            );
+
             let input = to_alp_impl(owned(input), expr_arena, lp_arena, convert)
                 .map_err(|e| e.context(failed_input!(sort)))?;
 
@@ -415,10 +435,8 @@ pub fn to_alp_impl(
                 descending.extend(std::iter::repeat(d).take(exprs.len()));
                 expanded_cols.extend(exprs);
             }
-            let sort_options = sort_options
-                .clone()
-                .with_nulls_last_multi(nulls_last.clone())
-                .with_order_descending_multi(descending.clone());
+            sort_options.nulls_last = nulls_last;
+            sort_options.descending = descending;
 
             convert.fill_scratch(&expanded_cols, expr_arena);
             let by_column = expanded_cols;
