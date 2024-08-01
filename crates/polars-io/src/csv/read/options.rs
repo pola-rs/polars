@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use polars_core::datatypes::DataType;
+use polars_core::datatypes::{DataType, Field};
 use polars_core::schema::{IndexOfSchema, Schema, SchemaRef};
 use polars_error::PolarsResult;
 #[cfg(feature = "serde")]
@@ -36,6 +36,7 @@ pub struct CsvReadOptions {
     pub infer_schema_length: Option<usize>,
     pub raise_if_empty: bool,
     pub ignore_errors: bool,
+    pub fields_to_cast: Vec<Field>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -80,6 +81,7 @@ impl Default for CsvReadOptions {
             infer_schema_length: Some(100),
             raise_if_empty: true,
             ignore_errors: false,
+            fields_to_cast: vec![],
         }
     }
 }
@@ -94,7 +96,6 @@ impl Default for CsvParseOptions {
             encoding: Default::default(),
             null_values: None,
             missing_is_null: true,
-
             truncate_ragged_lines: false,
             comment_prefix: None,
             try_parse_dates: false,
