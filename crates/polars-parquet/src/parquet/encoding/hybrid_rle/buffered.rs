@@ -171,7 +171,12 @@ impl<'a> BufferedBitpacked<'a> {
             return unpacked_num_elements + n;
         }
 
-        self.decoder.len() + unpacked_num_elements
+        // We skip the entire decoder. Essentially, just zero it out.
+        let decoder = self.decoder.take();
+        self.unpacked_start = 0;
+        self.unpacked_end = 0;
+
+        decoder.len() + unpacked_num_elements
     }
 }
 
