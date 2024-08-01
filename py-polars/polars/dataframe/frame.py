@@ -7799,8 +7799,8 @@ class DataFrame:
             The column(s) whose values will be used as the new columns of the output
             DataFrame.
         index
-            One or multiple columns to group by. These are the columns which will remain from the input
-            in to the output DataFrame.
+            The column(s) that remain from the input to the output. The output DataFrame will have one row
+            for each unique combination of the `index`'s values.
             If None, all remaining columns not specified on `on` and `values` will be used. At least one
             of `index` and `values` must be specified.
         values
