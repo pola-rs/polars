@@ -152,6 +152,8 @@ def get_person() -> pl.Expr:
     return pl.col("first_name") + pl.lit(" ") + pl.col("last_name")
 
 
+g
+
 q = (
     dataset.lazy()
     .sort("birthday", descending=True)
