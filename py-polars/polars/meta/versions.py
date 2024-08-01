@@ -20,13 +20,13 @@ def show_versions() -> None:
     Python:               3.11.8 (main, Feb  6 2024, 21:21:21) [Clang 15.0.0 (clang-1500.1.0.2.5)]
     ----Optional dependencies----
     adbc_driver_manager:  0.11.0
+    altair:               5.3.0
     cloudpickle:          3.0.0
     connectorx:           0.3.2
     deltalake:            0.17.1
     fastexcel:            0.10.4
     fsspec:               2023.12.2
     gevent:               24.2.1
-    hvplot:               0.9.2
     matplotlib:           3.8.4
     nest_asyncio:         1.6.0
     numpy:                1.26.4
@@ -63,6 +63,7 @@ def _get_dependency_info() -> dict[str, str]:
     # see the list of dependencies in pyproject.toml
     opt_deps = [
         "adbc_driver_manager",
+        "altair",
         "cloudpickle",
         "connectorx",
         "deltalake",
@@ -70,7 +71,6 @@ def _get_dependency_info() -> dict[str, str]:
         "fsspec",
         "gevent",
         "great_tables",
-        "hvplot",
         "matplotlib",
         "nest_asyncio",
         "numpy",

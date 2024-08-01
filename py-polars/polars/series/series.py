@@ -86,12 +86,10 @@ from polars.datatypes import (
 )
 from polars.datatypes._utils import dtype_to_init_repr
 from polars.dependencies import (
-    _HVPLOT_AVAILABLE,
     _PYARROW_AVAILABLE,
     _check_for_numpy,
     _check_for_pandas,
     _check_for_pyarrow,
-    hvplot,
     import_optional,
 )
 from polars.dependencies import numpy as np
@@ -117,7 +115,6 @@ if TYPE_CHECKING:
     import jax
     import numpy.typing as npt
     import torch
-    from hvplot.plotting.core import hvPlotTabularPolars
 
     from polars import DataFrame, DataType, Expr
     from polars._typing import (
@@ -7377,44 +7374,6 @@ class Series:
     def struct(self) -> StructNameSpace:
         """Create an object namespace of all struct related methods."""
         return StructNameSpace(self)
-
-    @property
-    @unstable()
-    def plot(self) -> hvPlotTabularPolars:
-        """
-        Create a plot namespace.
-
-        .. warning::
-            This functionality is currently considered **unstable**. It may be
-            changed at any point without it being considered a breaking change.
-
-        Polars does not implement plotting logic itself, but instead defers to
-        hvplot. Please see the `hvplot reference gallery <https://hvplot.holoviz.org/reference/index.html>`_
-        for more information and documentation.
-
-        Examples
-        --------
-        Histogram:
-
-        >>> s = pl.Series("values", [1, 4, 2])
-        >>> s.plot.hist()  # doctest: +SKIP
-
-        KDE plot (note: in addition to ``hvplot``, this one also requires ``scipy``):
-
-        >>> s.plot.kde()  # doctest: +SKIP
-
-        For more info on what you can pass, you can use ``hvplot.help``:
-
-        >>> import hvplot  # doctest: +SKIP
-        >>> hvplot.help("hist")  # doctest: +SKIP
-        """
-        if not _HVPLOT_AVAILABLE or parse_version(hvplot.__version__) < parse_version(
-            "0.9.1"
-        ):
-            msg = "hvplot>=0.9.1 is required for `.plot`"
-            raise ModuleUpgradeRequiredError(msg)
-        hvplot.post_patch()
-        return hvplot.plotting.core.hvPlotTabularPolars(self)
 
 
 def _resolve_temporal_dtype(
