@@ -1,11 +1,18 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable, Mapping, TypeAlias, Union
+from typing import TYPE_CHECKING, Any, Callable, Mapping, Union
 
 if TYPE_CHECKING:
+    import sys
+
     import altair as alt
 
     from polars import DataFrame
+
+    if sys.version_info >= (3, 10):
+        from typing import TypeAlias
+    else:
+        from typing_extensions import TypeAlias
 
     ChannelType: TypeAlias = Union[str, Mapping[str, Any], Any]
 
