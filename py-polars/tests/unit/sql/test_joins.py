@@ -467,6 +467,7 @@ def test_natural_joins_02(cols_constraint: str, expect_data: list[tuple[int]]) -
     expected = pl.DataFrame(expect_data, schema=actual.columns, orient="row")
     assert_frame_equal(actual, expected, check_row_order=False)
 
+
 @pytest.mark.parametrize(
     "join_clause",
     [
@@ -513,7 +514,7 @@ def test_nested_join(join_clause: str) -> None:
             "Drone": ["Flere-Imsaho", "Skaffen-Amtiskaw", "Eccentric", "Psychopath"],
         }
     )
- 
+
     with pl.SQLContext(
         {"df1": df1, "df2": df2, "df3": df3, "df4": df4}, eager=True
     ) as ctx:
@@ -538,5 +539,5 @@ def test_nested_join(join_clause: str) -> None:
                 "FirstName": "Cheradenine",
                 "Role": "Protagonist",
                 "Species": "Human",
-            }
+            },
         ]
