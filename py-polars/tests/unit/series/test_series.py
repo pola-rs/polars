@@ -2165,3 +2165,9 @@ def test_series_from_numpy_with_dtye() -> None:
     s = pl.Series("foo", np.array([-1, 2, 3]), dtype=pl.UInt8, strict=False)
     assert s.to_list() == [None, 2, 3]
     assert s.dtype == pl.UInt8
+
+def test_error_on_nested_list() -> None:
+    a = []
+    a.append(a)
+    with pytest.raises(Exception):
+        pl.Series("a",a)

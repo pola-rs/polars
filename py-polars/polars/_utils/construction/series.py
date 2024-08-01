@@ -10,6 +10,7 @@ from typing import (
     Generator,
     Iterable,
     Iterator,
+    Optional,
     Sequence,
 )
 
@@ -316,6 +317,22 @@ def _construct_series_with_fallbacks(
             )
 
 
+def contains_self_reference(lst: list[Any], seen: Optional[set[Any]]=None):
+    if seen is None:
+        seen = set()
+    
+    if id(lst) in seen:
+        return True
+    
+    seen.add(id(lst))
+    
+    for item in lst:
+        if isinstance(item, list):
+            if contains_self_reference(item, seen):
+                return True
+    
+    return False
+
 def iterable_to_pyseries(
     name: str,
     values: Iterable[Any],
@@ -329,6 +346,7 @@ def iterable_to_pyseries(
         values = iter(values)
 
     def to_series_chunk(values: list[Any], dtype: PolarsDataType | None) -> Series:
+        assert not contains_self_reference(values)
         return pl.Series(
             name=name,
             values=values,
