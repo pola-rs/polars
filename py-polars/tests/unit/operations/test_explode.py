@@ -230,7 +230,7 @@ def test_explode_array() -> None:
     )
     expected = pl.DataFrame({"a": [1, 2, 2, 3], "b": [1, 1, 2, 2]})
     for ex in ("a", ~cs.integer()):
-        out = df.explode(ex).collect()  # type: ignore[arg-type]
+        out = df.explode(ex).collect()
         assert_frame_equal(out, expected)
 
 

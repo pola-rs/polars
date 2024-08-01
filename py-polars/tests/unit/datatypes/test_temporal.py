@@ -39,8 +39,8 @@ def test_fill_null() -> None:
     dtm = datetime.strptime("2021-01-01", "%Y-%m-%d")
     s = pl.Series("A", [dtm, None])
 
-    for fill_val in (dtm, pl.lit(dtm)):
-        out = s.fill_null(fill_val)
+    for fill_val_datetime in (dtm, pl.lit(dtm)):
+        out = s.fill_null(fill_val_datetime)
 
         assert out.null_count() == 0
         assert out.dt[0] == dtm
@@ -53,8 +53,8 @@ def test_fill_null() -> None:
     s = pl.Series("a", [dt1, dt2, dt3, None])
     dt_2 = date(2001, 1, 4)
 
-    for fill_val in (dt_2, pl.lit(dt_2)):
-        out = s.fill_null(fill_val)
+    for fill_val_date in (dt_2, pl.lit(dt_2)):
+        out = s.fill_null(fill_val_date)
 
         assert out.null_count() == 0
         assert out.dt[0] == dt1
@@ -597,7 +597,7 @@ def test_rolling_mean_3020() -> None:
     ).with_columns(pl.col("Date").str.strptime(pl.Date).set_sorted())
 
     period: str | timedelta
-    for period in ("1w", timedelta(days=7)):  # type: ignore[assignment]
+    for period in ("1w", timedelta(days=7)):
         result = df.rolling(index_column="Date", period=period).agg(
             pl.col("val").mean().alias("val_mean")
         )

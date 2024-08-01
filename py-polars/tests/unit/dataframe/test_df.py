@@ -50,14 +50,15 @@ def test_null_count() -> None:
     assert df.null_count().row(np.int64(0)) == (0, 1)  # type: ignore[call-overload]
 
 
-def test_init_empty() -> None:
+@pytest.mark.parametrize("input", [None, (), [], {}, pa.Table.from_arrays([])])
+def test_init_empty(input: Any) -> None:
     # test various flavours of empty init
-    for empty in (None, (), [], {}, pa.Table.from_arrays([])):
-        df = pl.DataFrame(empty)
-        assert df.shape == (0, 0)
-        assert df.is_empty()
+    df = pl.DataFrame(input)
+    assert df.shape == (0, 0)
+    assert df.is_empty()
 
-    # note: cannot use df (empty or otherwise) in boolean context
+
+def test_df_bool_ambiguous() -> None:
     empty_df = pl.DataFrame()
     with pytest.raises(TypeError, match="ambiguous"):
         not empty_df
@@ -1185,7 +1186,7 @@ def test_from_rows_of_dicts() -> None:
         {"id": 2, "value": 101, "_meta": "b"},
     ]
     df_init: Callable[..., Any]
-    for df_init in (pl.from_dicts, pl.DataFrame):  # type:ignore[assignment]
+    for df_init in (pl.from_dicts, pl.DataFrame):
         df1 = df_init(records)
         assert df1.rows() == [(1, 100, "a"), (2, 101, "b")]
 
@@ -2168,12 +2169,12 @@ def test_selection_misc() -> None:
 
     # literal values (as scalar/list)
     for zero in (0, [0]):
-        assert df.select(zero)["literal"].to_list() == [0]  # type: ignore[arg-type]
+        assert df.select(zero)["literal"].to_list() == [0]
     assert df.select(literal=0)["literal"].to_list() == [0]
 
     # expect string values to be interpreted as cols
     for x in ("x", ["x"], pl.col("x")):
-        assert df.select(x).rows() == [("abc",)]  # type: ignore[arg-type]
+        assert df.select(x).rows() == [("abc",)]
 
     # string col + lit
     assert df.with_columns(["x", 0]).to_dicts() == [{"x": "abc", "literal": 0}]
@@ -2476,7 +2477,7 @@ def test_init_datetimes_with_timezone() -> None:
                 }
             },
         ):
-            result = pl.DataFrame(  # type: ignore[arg-type]
+            result = pl.DataFrame(
                 data={
                     "d1": [dtm.replace(tzinfo=ZoneInfo(tz_us))],
                     "d2": [dtm.replace(tzinfo=ZoneInfo(tz_europe))],
@@ -2739,7 +2740,7 @@ def test_unstack() -> None:
         assert df.unstack(
             step=3,
             how="horizontal",
-            columns=column_subset,  # type: ignore[arg-type]
+            columns=column_subset,
         ).to_dict(as_series=False) == {
             "col2_0": [0, 3, 6],
             "col2_1": [1, 4, 7],
