@@ -3408,6 +3408,7 @@ version = "0.41.3"
 dependencies = [
  "ahash",
  "bytemuck",
+ "bytes",
  "hashbrown",
  "indexmap",
  "memmap2",

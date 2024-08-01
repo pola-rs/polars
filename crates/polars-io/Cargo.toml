@@ -21,7 +21,7 @@ arrow = { workspace = true }
 async-trait = { version = "0.1.59", optional = true }
 atoi_simd = { workspace = true, optional = true }
 blake3 = { version = "1.5.1", optional = true }
-bytes = { version = "1.3" }
+bytes = { workspace = true }
 chrono = { workspace = true, optional = true }
 chrono-tz = { workspace = true, optional = true }
 fast-float = { workspace = true, optional = true }
