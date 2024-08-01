@@ -2170,4 +2170,4 @@ def test_error_on_nested_list() -> None:
     a = []
     a.append(a)
     with pytest.raises(Exception):
-        pl.Series("a",a)
+        pl.Series("a",a) 
