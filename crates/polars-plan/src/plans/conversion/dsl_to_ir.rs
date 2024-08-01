@@ -389,14 +389,58 @@ pub fn to_alp_impl(
             input,
             by_column,
             slice,
-            sort_options,
+            mut sort_options,
         } => {
+            // note: if given an Expr::Columns, count the individual cols
+            let n_by_exprs = if by_column.len() == 1 {
+                match &by_column[0] {
+                    Expr::Columns(cols) => cols.len(),
+                    _ => 1,
+                }
+            } else {
+                by_column.len()
+            };
+            let n_desc = sort_options.descending.len();
+            polars_ensure!(
+                n_desc == n_by_exprs || n_desc == 1,
+                ComputeError: "the length of `descending` ({}) does not match the length of `by` ({})", n_desc, by_column.len()
+            );
+            let n_nulls_last = sort_options.nulls_last.len();
+            polars_ensure!(
+                n_nulls_last == n_by_exprs || n_nulls_last == 1,
+                ComputeError: "the length of `nulls_last` ({}) does not match the length of `by` ({})", n_nulls_last, by_column.len()
+            );
+
             let input = to_alp_impl(owned(input), expr_arena, lp_arena, convert)
                 .map_err(|e| e.context(failed_input!(sort)))?;
-            let by_column = expand_expressions(input, by_column, lp_arena, expr_arena)
-                .map_err(|e| e.context(failed_here!(sort)))?;
 
-            convert.fill_scratch(&by_column, expr_arena);
+            let mut expanded_cols = Vec::new();
+            let mut nulls_last = Vec::new();
+            let mut descending = Vec::new();
+
+            // note: nulls_last/descending need to be matched to expanded multi-output expressions.
+            // when one of nulls_last/descending has not been updated from the default (single
+            // value true/false), 'cycle' ensures that "by_column" iter is not truncated.
+            for (c, (&n, &d)) in by_column.into_iter().zip(
+                sort_options
+                    .nulls_last
+                    .iter()
+                    .cycle()
+                    .zip(sort_options.descending.iter().cycle()),
+            ) {
+                let exprs = expand_expressions(input, vec![c], lp_arena, expr_arena)
+                    .map_err(|e| e.context(failed_here!(sort)))?;
+
+                nulls_last.extend(std::iter::repeat(n).take(exprs.len()));
+                descending.extend(std::iter::repeat(d).take(exprs.len()));
+                expanded_cols.extend(exprs);
+            }
+            sort_options.nulls_last = nulls_last;
+            sort_options.descending = descending;
+
+            convert.fill_scratch(&expanded_cols, expr_arena);
+            let by_column = expanded_cols;
+
             let lp = IR::Sort {
                 input,
                 by_column,
@@ -479,7 +523,7 @@ pub fn to_alp_impl(
                 if turn_off_coalesce {
                     let options = Arc::make_mut(&mut options);
                     if matches!(options.args.coalesce, JoinCoalesce::CoalesceColumns) {
-                        polars_warn!("Coalescing join requested but not all join keys are column references, turning off key coalescing");
+                        polars_warn!("coalescing join requested but not all join keys are column references, turning off key coalescing");
                     }
                     options.args.coalesce = JoinCoalesce::KeepColumns;
                 }
@@ -604,7 +648,10 @@ pub fn to_alp_impl(
                 DslFunction::Drop(DropFunction { to_drop, strict }) => {
                     if strict {
                         for col_name in to_drop.iter() {
-                            polars_ensure!(input_schema.contains(col_name), ColumnNotFound: "{col_name}");
+                            polars_ensure!(
+                                input_schema.contains(col_name),
+                                col_not_found = col_name
+                            );
                         }
                     }
 

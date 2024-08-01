@@ -68,9 +68,7 @@ impl DslFunction {
                         let Expr::Column(name) = e else {
                             polars_bail!(InvalidOperation: "expected column expression")
                         };
-
-                        polars_ensure!(input_schema.contains(name), ColumnNotFound: "{name}");
-
+                        polars_ensure!(input_schema.contains(name), col_not_found = name);
                         Ok(name.clone())
                     })
                     .collect::<PolarsResult<Arc<[Arc<str>]>>>()?;

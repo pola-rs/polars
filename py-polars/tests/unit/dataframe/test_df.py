@@ -34,6 +34,7 @@ from tests.unit.conftest import INTEGER_DTYPES
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
 
+    from polars import Expr
     from polars._typing import JoinStrategy, UniqueKeepStrategy
 else:
     from polars._utils.convert import string_to_zoneinfo as ZoneInfo
@@ -304,6 +305,107 @@ def test_sort() -> None:
     assert_frame_equal(
         df.sort(["a", "b"]), pl.DataFrame({"a": [1, 2, 3], "b": [2, 1, 3]})
     )
+
+
+def test_sort_multi_output_exprs_01() -> None:
+    df = pl.DataFrame(
+        {
+            "dts": [date(2077, 10, 3), date(2077, 10, 2), date(2077, 10, 2)],
+            "strs": ["abc", "def", "ghi"],
+            "vals": [10.5, 20.3, 15.7],
+        }
+    )
+
+    expected = pl.DataFrame(
+        {
+            "dts": [date(2077, 10, 2), date(2077, 10, 2), date(2077, 10, 3)],
+            "strs": ["ghi", "def", "abc"],
+            "vals": [15.7, 20.3, 10.5],
+        }
+    )
+    assert_frame_equal(expected, df.sort(pl.col("^(d|v).*$")))
+    assert_frame_equal(expected, df.sort(cs.temporal() | cs.numeric()))
+    assert_frame_equal(expected, df.sort(cs.temporal(), cs.numeric(), cs.binary()))
+
+    expected = pl.DataFrame(
+        {
+            "dts": [date(2077, 10, 3), date(2077, 10, 2), date(2077, 10, 2)],
+            "strs": ["abc", "def", "ghi"],
+            "vals": [10.5, 20.3, 15.7],
+        }
+    )
+    assert_frame_equal(
+        expected,
+        df.sort(pl.col("^(d|v).*$"), descending=[True]),
+    )
+    assert_frame_equal(
+        expected,
+        df.sort(cs.temporal() | cs.numeric(), descending=[True]),
+    )
+    assert_frame_equal(
+        expected,
+        df.sort(cs.temporal(), cs.numeric(), descending=[True, True]),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"the length of `descending` \(2\) does not match the length of `by` \(1\)",
+    ):
+        df.sort(by=[cs.temporal()], descending=[True, False])
+
+    with pytest.raises(
+        ValueError,
+        match=r"the length of `nulls_last` \(3\) does not match the length of `by` \(2\)",
+    ):
+        df.sort("dts", "strs", nulls_last=[True, False, True])
+
+    with pytest.raises(
+        ComputeError,
+        match="No columns selected for sorting",
+    ):
+        df.sort(pl.col("^xxx$"))
+
+
+@pytest.mark.parametrize(
+    ("by_explicit", "desc_explicit", "by_multi", "desc_multi"),
+    [
+        (
+            ["w", "x", "y", "z"],
+            [False, False, True, True],
+            [cs.integer(), cs.string()],
+            [False, True],
+        ),
+        (
+            ["w", "y", "z"],
+            [True, True, False],
+            [pl.col("^(w|y)$"), pl.col("^z.*$")],
+            [True, False],
+        ),
+        (
+            ["z", "w", "x"],
+            [True, False, False],
+            [pl.col("z"), cs.numeric()],
+            [True, False],
+        ),
+    ],
+)
+def test_sort_multi_output_exprs_02(
+    by_explicit: list[str],
+    desc_explicit: list[bool],
+    by_multi: list[Expr],
+    desc_multi: list[bool],
+) -> None:
+    df = pl.DataFrame(
+        {
+            "w": [100, 100, 100, 100, 200, 200, 200, 200],
+            "x": [888, 888, 444, 444, 888, 888, 444, 888],
+            "y": ["b", "b", "a", "a", "b", "b", "a", "a"],
+            "z": ["x", "y", "x", "y", "x", "y", "x", "y"],
+        }
+    )
+    res1 = df.sort(*by_explicit, descending=desc_explicit)
+    res2 = df.sort(*by_multi, descending=desc_multi)
+    assert_frame_equal(res1, res2)
 
 
 def test_sort_maintain_order() -> None:
