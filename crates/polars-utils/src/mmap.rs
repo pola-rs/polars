@@ -1,90 +1,145 @@
-use std::ops::Deref;
+use std::io;
 use std::sync::Arc;
-use std::{fmt, io};
 
 pub use memmap::Mmap;
 
-use crate::mem::prefetch_l2;
+mod private {
+    use std::ops::Deref;
+    use std::sync::Arc;
 
-/// A read-only slice over an [`Mmap`]
-pub struct MmapSlice {
-    // We keep the Mmap around to ensure it is still valid.
-    mmap: Arc<Mmap>,
-    ptr: *const u8,
-    len: usize,
+    pub use memmap::Mmap;
+
+    use crate::mem::prefetch_l2;
+
+    /// A read-only reference to a slice of memory.
+    ///
+    /// This maintains a reference count to the underlying buffer to ensure the memory is kept
+    /// alive. [`MemSlice::slice`] can be used to slice the memory in a zero-copy manner.
+    ///
+    /// This still owns the all the original memory and therefore should probably not be a long-lasting
+    /// structure.
+    #[derive(Clone, Debug)]
+    pub struct MemSlice {
+        // Store the `&[u8]` to make the `Deref` free.
+        // `slice` is not 'static - it is backed by `inner`. This is safe as long as `slice` is not
+        // directly accessed, and we are in a private module to guarantee that. Access should only
+        // be done through `Deref<Target = [u8]>`, which automatically gives the correct lifetime.
+        slice: &'static [u8],
+        #[allow(unused)]
+        inner: MemSliceInner,
+    }
+
+    /// Keeps the underlying buffer alive. This should be cheaply cloneable.
+    #[derive(Clone, Debug)]
+    #[allow(unused)]
+    enum MemSliceInner {
+        Vec(Arc<Vec<u8>>),
+        Bytes(bytes::Bytes),
+        Mmap(Arc<Mmap>),
+        Unbacked,
+    }
+
+    impl Deref for MemSlice {
+        type Target = [u8];
+
+        #[inline(always)]
+        fn deref(&self) -> &Self::Target {
+            self.slice
+        }
+    }
+
+    impl Default for MemSlice {
+        fn default() -> Self {
+            Self {
+                slice: &[],
+                inner: MemSliceInner::Unbacked,
+            }
+        }
+    }
+
+    impl MemSlice {
+        /// Copy the contents into a new owned `Vec`
+        #[inline(always)]
+        pub fn to_vec(self) -> Vec<u8> {
+            <[u8]>::to_vec(self.deref())
+        }
+
+        /// Construct a `MemSlice` from an existing `Vec<u8>`. This is zero-copy.
+        #[inline]
+        pub fn from_vec(v: Vec<u8>) -> Self {
+            let arc_vec = Arc::new(v);
+
+            Self {
+                slice: unsafe { std::mem::transmute::<&[u8], &'static [u8]>(arc_vec.as_slice()) },
+                inner: MemSliceInner::Vec(arc_vec),
+            }
+        }
+
+        /// Construct a `MemSlice` from [`bytes::Bytes`]. This is zero-copy.
+        #[inline]
+        pub fn from_bytes(bytes: bytes::Bytes) -> Self {
+            Self {
+                slice: unsafe { std::mem::transmute::<&[u8], &'static [u8]>(bytes.as_ref()) },
+                inner: MemSliceInner::Bytes(bytes),
+            }
+        }
+
+        #[inline]
+        pub fn from_mmap(mmap: Arc<Mmap>) -> Self {
+            Self {
+                slice: unsafe {
+                    std::mem::transmute::<&[u8], &'static [u8]>(mmap.as_ref().as_ref())
+                },
+                inner: MemSliceInner::Mmap(mmap),
+            }
+        }
+
+        /// Construct a `MemSlice` that simply wraps around a `&[u8]`.
+        #[inline]
+        pub fn from_slice(slice: &'static [u8]) -> Self {
+            Self {
+                slice,
+                inner: MemSliceInner::Unbacked,
+            }
+        }
+
+        /// Attempt to prefetch the memory belonging to to this [`MemSlice`]
+        #[inline]
+        pub fn prefetch(&self) {
+            if self.len() == 0 {
+                return;
+            }
+
+            // @TODO: We can play a bit more with this prefetching. Maybe introduce a maximum number of
+            // prefetches as to not overwhelm the processor. The linear prefetcher should pick it up
+            // at a certain point.
+
+            const PAGE_SIZE: usize = 4096;
+            for i in 0..self.len() / PAGE_SIZE {
+                unsafe { prefetch_l2(self[i * PAGE_SIZE..].as_ptr()) };
+            }
+            unsafe { prefetch_l2(self[self.len() - 1..].as_ptr()) }
+        }
+
+        /// # Panics
+        /// Panics if range is not in bounds.
+        #[inline]
+        #[track_caller]
+        pub fn slice(&self, range: std::ops::Range<usize>) -> Self {
+            let mut out = self.clone();
+            out.slice = &out.slice[range];
+            out
+        }
+    }
 }
+
+pub use private::MemSlice;
 
 /// A cursor over a [`MemSlice`].
 #[derive(Debug, Clone)]
 pub struct MemReader {
     data: MemSlice,
     position: usize,
-}
-
-/// A read-only reference to a slice of memory.
-///
-/// This memory can either be heap-allocated or be mmap-ed into memory.
-///
-/// This still owns the all the original memory and therefore should probably not be a long-lasting
-/// structure.
-#[derive(Clone)]
-pub struct MemSlice(MemSliceInner);
-
-#[derive(Clone)]
-enum MemSliceInner {
-    Mmap(MmapSlice),
-    Allocated(AllocatedSlice),
-}
-
-#[derive(Clone)]
-struct AllocatedSlice {
-    data: Arc<[u8]>,
-    start: usize,
-    end: usize,
-}
-
-impl Deref for MmapSlice {
-    type Target = [u8];
-
-    fn deref(&self) -> &Self::Target {
-        // SAFETY: Invariant of MmapSlice
-        unsafe { std::slice::from_raw_parts(self.ptr, self.len) }
-    }
-}
-
-impl Deref for MemSlice {
-    type Target = [u8];
-
-    #[inline(always)]
-    fn deref(&self) -> &Self::Target {
-        match &self.0 {
-            MemSliceInner::Mmap(v) => v.deref(),
-            MemSliceInner::Allocated(v) => &v.data[v.start..v.end],
-        }
-    }
-}
-
-impl Default for AllocatedSlice {
-    fn default() -> Self {
-        let slice: &[u8] = &[];
-        Self {
-            data: Arc::from(slice),
-            start: 0,
-            end: 0,
-        }
-    }
-}
-
-impl fmt::Debug for MemSlice {
-    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt.debug_tuple("MemSlice").field(&self.deref()).finish()
-    }
-}
-
-impl Default for MemSlice {
-    fn default() -> Self {
-        Self(MemSliceInner::Allocated(AllocatedSlice::default()))
-    }
 }
 
 impl MemReader {
@@ -107,14 +162,28 @@ impl MemReader {
         self.position
     }
 
+    /// Construct a `MemSlice` from an existing `Vec<u8>`. This is zero-copy.
     #[inline(always)]
-    pub fn from_slice(data: &[u8]) -> Self {
-        Self::new(MemSlice::from_slice(data))
+    pub fn from_vec(v: Vec<u8>) -> Self {
+        Self::new(MemSlice::from_vec(v))
+    }
+
+    /// Construct a `MemSlice` from [`bytes::Bytes`]. This is zero-copy.
+    #[inline(always)]
+    pub fn from_bytes(bytes: bytes::Bytes) -> Self {
+        Self::new(MemSlice::from_bytes(bytes))
     }
 
     #[inline(always)]
-    pub fn from_vec(data: Vec<u8>) -> Self {
-        Self::new(MemSlice::from_vec(data))
+    pub fn from_mmap(mmap: Arc<Mmap>) -> Self {
+        Self::new(MemSlice::from_mmap(mmap))
+    }
+
+    // Construct a `MemSlice` that simply wraps around a `&[u8]`. The caller must ensure the
+    /// slice outlives the returned `MemSlice`.
+    #[inline]
+    pub fn from_slice(slice: &'static [u8]) -> Self {
+        Self::new(MemSlice::from_slice(slice))
     }
 
     #[inline(always)]
@@ -129,7 +198,13 @@ impl MemReader {
         let start = self.position;
         let end = usize::min(self.position + n, self.data.len());
         self.position = end;
-        self.data.slice(start, end)
+        self.data.slice(start..end)
+    }
+}
+
+impl From<MemSlice> for MemReader {
+    fn from(data: MemSlice) -> Self {
+        Self { data, position: 0 }
     }
 }
 
@@ -174,127 +249,73 @@ impl io::Seek for MemReader {
     }
 }
 
-impl MemSlice {
-    #[inline(always)]
-    pub fn to_vec(self) -> Vec<u8> {
-        <[u8]>::to_vec(self.deref())
-    }
+mod tests {
 
-    #[inline]
-    pub fn from_vec(v: Vec<u8>) -> Self {
-        let end = v.len();
+    #[test]
+    fn test_mem_slice_zero_copy() {
+        use std::sync::Arc;
 
-        Self(MemSliceInner::Allocated(AllocatedSlice {
-            data: v.into_boxed_slice().into(),
-            start: 0,
-            end,
-        }))
-    }
+        use super::MemSlice;
 
-    #[inline]
-    pub fn from_slice(slice: &[u8]) -> Self {
-        let end = slice.len();
-        Self(MemSliceInner::Allocated(AllocatedSlice {
-            data: slice.into(),
-            start: 0,
-            end,
-        }))
-    }
+        {
+            let vec = vec![1u8, 2, 3, 4, 5];
+            let ptr = vec.as_ptr();
 
-    /// Attempt to prefetch the memory belonging to to this [`MemSlice`]
-    #[inline]
-    pub fn prefetch(&self) {
-        if self.len() == 0 {
-            return;
+            let mem_slice = MemSlice::from_vec(vec);
+            let ptr_out = mem_slice.as_ptr();
+
+            assert_eq!(ptr_out, ptr);
         }
 
-        // @TODO: We can play a bit more with this prefetching. Maybe introduce a maximum number of
-        // prefetches as to not overwhelm the processor. The linear prefetcher should pick it up
-        // at a certain point.
+        {
+            let bytes = bytes::Bytes::from(vec![1u8, 2, 3, 4, 5]);
+            let ptr = bytes.as_ptr();
 
-        const PAGE_SIZE: usize = 4096;
-        for i in 0..self.len() / PAGE_SIZE {
-            unsafe { prefetch_l2(self[i * PAGE_SIZE..].as_ptr()) };
+            let mem_slice = MemSlice::from_bytes(bytes);
+            let ptr_out = mem_slice.as_ptr();
+
+            assert_eq!(ptr_out, ptr);
         }
-        unsafe { prefetch_l2(self[self.len() - 1..].as_ptr()) }
-    }
 
-    #[inline]
-    pub fn from_mmap(mmap: MmapSlice) -> Self {
-        Self(MemSliceInner::Mmap(mmap))
-    }
+        {
+            let path = "../../examples/datasets/foods1.csv";
+            let file = std::fs::File::open(path).unwrap();
+            let mmap = unsafe { memmap::Mmap::map(&file) }.unwrap();
+            let ptr = mmap.as_ptr();
 
-    #[inline]
-    #[track_caller]
-    pub fn slice(&self, start: usize, end: usize) -> Self {
-        Self(match &self.0 {
-            MemSliceInner::Mmap(v) => MemSliceInner::Mmap(v.slice(start, end)),
-            MemSliceInner::Allocated(v) => MemSliceInner::Allocated({
-                let len = v.end - v.start;
+            let mem_slice = MemSlice::from_mmap(Arc::new(mmap));
+            let ptr_out = mem_slice.as_ptr();
 
-                assert!(start <= end);
-                assert!(start <= len);
-                assert!(end <= len);
+            assert_eq!(ptr_out, ptr);
+        }
 
-                AllocatedSlice {
-                    data: v.data.clone(),
-                    start: v.start + start,
-                    end: v.start + end,
-                }
-            }),
-        })
-    }
-}
+        {
+            let vec = vec![1u8, 2, 3, 4, 5];
+            let slice = vec.as_slice();
+            let ptr = slice.as_ptr();
 
-// SAFETY: This structure is read-only and does not contain any non-sync or non-send data.
-unsafe impl Sync for MmapSlice {}
-unsafe impl Send for MmapSlice {}
+            let mem_slice =
+                MemSlice::from_slice(unsafe { std::mem::transmute::<&[u8], &'static [u8]>(slice) });
+            let ptr_out = mem_slice.as_ptr();
 
-impl fmt::Debug for MmapSlice {
-    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt.debug_tuple("MmapSlice").field(&self.deref()).finish()
-    }
-}
-
-impl Clone for MmapSlice {
-    fn clone(&self) -> Self {
-        Self {
-            mmap: self.mmap.clone(),
-            ptr: self.ptr,
-            len: self.len,
+            assert_eq!(ptr_out, ptr);
         }
     }
-}
 
-impl MmapSlice {
-    #[inline]
-    pub fn new(mmap: Mmap) -> Self {
-        let slice: &[u8] = &mmap;
+    #[test]
+    fn test_mem_slice_slicing() {
+        use super::MemSlice;
 
-        let ptr = slice as *const [u8] as *const u8;
-        let len = slice.len();
+        {
+            let vec = vec![1u8, 2, 3, 4, 5];
+            let slice = vec.as_slice();
 
-        let mmap = Arc::new(mmap);
+            let mem_slice =
+                MemSlice::from_slice(unsafe { std::mem::transmute::<&[u8], &'static [u8]>(slice) });
 
-        Self { mmap, ptr, len }
-    }
-
-    /// Take a slice of the current [`MmapSlice`]
-    #[inline]
-    #[track_caller]
-    pub fn slice(&self, start: usize, end: usize) -> Self {
-        assert!(start <= end);
-        assert!(start <= self.len());
-        assert!(end <= self.len());
-
-        // SAFETY: Start and end are within the slice
-        let ptr = unsafe { self.ptr.add(start) };
-        let len = end - start;
-
-        Self {
-            mmap: self.mmap.clone(),
-            ptr,
-            len,
+            let out = &*mem_slice.slice(3..5);
+            assert_eq!(out, &slice[3..5]);
+            assert_eq!(out.as_ptr(), slice[3..5].as_ptr());
         }
     }
 }
