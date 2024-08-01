@@ -163,6 +163,7 @@ impl<'a> BufferedBitpacked<'a> {
             let unpacked_offset = n % <u32 as Unpackable>::Unpacked::LENGTH;
             self.decoder.skip_chunks(num_chunks);
             let (unpacked, unpacked_length) = self.decoder.chunked().next_inexact().unwrap();
+            debug_assert!(unpacked_offset < unpacked_length);
 
             self.unpacked = unpacked;
             self.unpacked_start = unpacked_offset;
@@ -267,7 +268,12 @@ impl<'a> HybridRleBuffered<'a> {
         };
 
         debug_assert!(num_skipped <= n);
-        debug_assert_eq!(num_skipped, start_length - self.len());
+        debug_assert_eq!(
+            num_skipped,
+            start_length - self.len(),
+            "{self:?}: {num_skipped} != {start_length} - {}",
+            self.len()
+        );
 
         num_skipped
     }

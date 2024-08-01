@@ -264,8 +264,6 @@ fn rg_to_dfs_new(
 
     let live_variables = predicate.live_variables()?;
 
-    dbg!(&live_variables);
-
     let mut live_indices = Vec::with_capacity(live_variables.len());
     let live_variables = live_variables
         .iter()
@@ -299,7 +297,7 @@ fn rg_to_dfs_new(
             .collect::<PolarsResult<Vec<_>>>()
     })?;
 
-    let mut df_columns = vec![Vec::with_capacity(live_indices.len()); num_row_groups];
+    let mut df_columns = vec![Vec::with_capacity(live_indices.len()); included_row_groups.len()];
     for (i, col) in pred_columns.into_iter().enumerate() {
         df_columns[i / live_indices.len()].push(col);
     }
@@ -335,10 +333,25 @@ fn rg_to_dfs_new(
             let bitmap = bitmap.freeze();
 
             debug_assert_eq!(df.height(), bitmap.set_bits());
+            debug_assert_eq!(md.num_rows(), bitmap.len());
             Ok((bitmap, df))
         })
-        .filter(|v| v.as_ref().is_ok_and(|(bm, _)| bm.set_bits() > 0))
         .collect::<PolarsResult<Vec<(Bitmap, DataFrame)>>>()?;
+
+    let mut num_removed = 0;
+    let dfs: Vec<(Bitmap, DataFrame)> = dfs
+        .into_iter()
+        .enumerate()
+        .filter_map(|(i, (mask, df))| {
+            if mask.set_bits() == 0 {
+                included_row_groups.remove(i - num_removed);
+                num_removed += 1;
+                return None;
+            }
+
+            Some((mask, df))
+        })
+        .collect();
 
     // @TODO
     // *previous_row_count += df.height() as IdxSize;
@@ -358,6 +371,7 @@ fn rg_to_dfs_new(
                 let (mask, _) = &dfs[i / num_unloaded_columns];
 
                 let md = &file_metadata.row_groups[rg_idx];
+                debug_assert_eq!(md.num_rows(), mask.len());
                 column_idx_to_series(
                     col_idx,
                     md,
