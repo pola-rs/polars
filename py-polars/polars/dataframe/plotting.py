@@ -20,11 +20,11 @@ class Plot:
 
     def line(
         self,
-        x: str | Any|None=None,
-        y: str | Any|None=None,
-        color: str | Any|None=None,
-        order: str | Any|None=None,
-        tooltip: str | Any|None=None,
+        x: str | Any | None = None,
+        y: str | Any | None = None,
+        color: str | Any | None = None,
+        order: str | Any | None = None,
+        tooltip: str | Any | None = None,
         *args: Any,
         **kwargs: Any,
     ) -> alt.Chart:
@@ -89,11 +89,11 @@ class Plot:
 
     def point(
         self,
-        x: str | Any |None= None,
-        y: str | Any |None= None,
-        color: str | Any|None = None,
-        size: str | Any |None= None,
-        tooltip: str | Any |None= None,
+        x: str | Any | None = None,
+        y: str | Any | None = None,
+        color: str | Any | None = None,
+        size: str | Any | None = None,
+        tooltip: str | Any | None = None,
         *args: Any,
         **kwargs: Any,
     ) -> alt.Chart:
