@@ -71,7 +71,7 @@ iceberg = ["pyiceberg >= 0.5.0"]
 async = ["gevent"]
 cloudpickle = ["cloudpickle"]
 graph = ["matplotlib"]
-plot = ["hvplot >= 0.9.1", "polars[pandas]"]
+plot = ["altair >= 5.3.0"]
 style = ["great-tables >= 0.8.0"]
 timezone = ["backports.zoneinfo; python_version < '3.9'", "tzdata; platform_system == 'Windows'"]
 
@@ -103,6 +103,7 @@ module = [
   "IPython.*",
   "adbc_driver_manager.*",
   "adbc_driver_sqlite.*",
+  "altair.*",
   "arrow_odbc",
   "backports",
   "connectorx",
@@ -110,7 +111,6 @@ module = [
   "fsspec.*",
   "gevent",
   "great_tables",
-  "hvplot.*",
   "jax.*",
   "kuzu",
   "matplotlib.*",
