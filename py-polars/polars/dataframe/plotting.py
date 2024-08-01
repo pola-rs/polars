@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable, Mapping, TypeAlias, Union
 
 if TYPE_CHECKING:
     import altair as alt
 
     from polars import DataFrame
+
+    ChannelType: TypeAlias = Union[str, Mapping[str, Any], Any]
 
 
 class Plot:
@@ -18,13 +20,75 @@ class Plot:
 
         self.chart = alt.Chart(df)
 
+    def bar(
+        self,
+        x: ChannelType | None = None,
+        y: ChannelType | None = None,
+        color: ChannelType | None = None,
+        tooltip: ChannelType | None = None,
+        *args: Any,
+        **kwargs: Any,
+    ) -> alt.Chart:
+        """
+        Draw bar plot.
+
+        Polars does not implement plottinng logic itself but instead defers to Altair.
+        `df.plot.bar(*args, **kwargs)` is shorthand for
+        `alt.Chart(df).mark_bar().encode(*args, **kwargs).interactive()`,
+        as is intended for convenience - for full customisatibility, use a plotting
+        library directly.
+
+        .. versionchanged:: 1.4.0
+            In prior versions of Polars, HvPlot was the plotting backend. If you would
+            like to restore the previous plotting functionality, all you need to do
+            add `import hvplot.polars` at the top of your script and replace
+            `df.plot` with `df.hvplot`.
+
+        Parameters
+        ----------
+        x
+            Column with x-coordinates of bars.
+        y
+            Column with y-coordinates of bars.
+        color
+            Column to color bars by.
+        tooltip
+            Columns to show values of when hovering over points with pointer.
+        *args, **kwargs
+            Additional arguments and keyword arguments passed to Altair.
+
+        Examples
+        --------
+        >>> from datetime import date
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "date": [date(2020, 1, 2), date(2020, 1, 3), date(2020, 1, 4)] * 2,
+        ...         "price": [1, 4, 6, 1, 5, 2],
+        ...         "stock": ["a", "a", "a", "b", "b", "b"],
+        ...     }
+        ... )
+        >>> df.plot.line(x="date", y="price", color="stock")  # doctest: +SKIP
+        """
+        encodings = {}
+        if x is not None:
+            encodings["x"] = x
+        if y is not None:
+            encodings["y"] = y
+        if color is not None:
+            encodings["color"] = color
+        if tooltip is not None:
+            encodings["tooltip"] = tooltip
+        return (
+            self.chart.mark_bar().encode(*args, **{**encodings, **kwargs}).interactive()
+        )
+
     def line(
         self,
-        x: str | Any | None = None,
-        y: str | Any | None = None,
-        color: str | Any | None = None,
-        order: str | Any | None = None,
-        tooltip: str | Any | None = None,
+        x: ChannelType | None = None,
+        y: ChannelType | None = None,
+        color: ChannelType | None = None,
+        order: ChannelType | None = None,
+        tooltip: ChannelType | None = None,
         *args: Any,
         **kwargs: Any,
     ) -> alt.Chart:
@@ -89,11 +153,11 @@ class Plot:
 
     def point(
         self,
-        x: str | Any | None = None,
-        y: str | Any | None = None,
-        color: str | Any | None = None,
-        size: str | Any | None = None,
-        tooltip: str | Any | None = None,
+        x: ChannelType | None = None,
+        y: ChannelType | None = None,
+        color: ChannelType | None = None,
+        size: ChannelType | None = None,
+        tooltip: ChannelType | None = None,
         *args: Any,
         **kwargs: Any,
     ) -> alt.Chart:
@@ -155,7 +219,9 @@ class Plot:
             .interactive()
         )
 
-    def __getattr__(self, attr: str, *args: Any, **kwargs: Any) -> alt.Chart:
+    def __getattr__(
+        self, attr: str, *args: Any, **kwargs: Any
+    ) -> Callable[..., alt.Chart]:
         method = self.chart.getattr(f"mark_{attr}", None)
         if method is None:
             msg = "Altair has no method 'mark_{attr}'"

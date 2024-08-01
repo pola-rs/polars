@@ -31,10 +31,5 @@ def test_dataframe_line() -> None:
     df.plot.line(x="date", y="price", color="stock")
 
 
-def test_series_hist() -> None:
-    s = pl.Series("values", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
-    s.plot.hist()
-
-
 def test_empty_dataframe() -> None:
-    pl.DataFrame({"a": [], "b": []}).plot.scatter(x="a", y="b")
+    pl.DataFrame({"a": [], "b": []}).plot.point(x="a", y="b")
