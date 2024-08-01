@@ -33,10 +33,8 @@ mod private {
     #[derive(Clone, Debug)]
     #[allow(unused)]
     enum MemSliceInner {
-        Vec(Arc<Vec<u8>>),
         Bytes(bytes::Bytes),
         Mmap(Arc<Mmap>),
-        Unbacked,
     }
 
     impl Deref for MemSlice {
@@ -50,10 +48,7 @@ mod private {
 
     impl Default for MemSlice {
         fn default() -> Self {
-            Self {
-                slice: &[],
-                inner: MemSliceInner::Unbacked,
-            }
+            Self::from_bytes(bytes::Bytes::new())
         }
     }
 
@@ -67,12 +62,7 @@ mod private {
         /// Construct a `MemSlice` from an existing `Vec<u8>`. This is zero-copy.
         #[inline]
         pub fn from_vec(v: Vec<u8>) -> Self {
-            let arc_vec = Arc::new(v);
-
-            Self {
-                slice: unsafe { std::mem::transmute::<&[u8], &'static [u8]>(arc_vec.as_slice()) },
-                inner: MemSliceInner::Vec(arc_vec),
-            }
+            Self::from_bytes(bytes::Bytes::from(v))
         }
 
         /// Construct a `MemSlice` from [`bytes::Bytes`]. This is zero-copy.
@@ -97,10 +87,7 @@ mod private {
         /// Construct a `MemSlice` that simply wraps around a `&[u8]`.
         #[inline]
         pub fn from_slice(slice: &'static [u8]) -> Self {
-            Self {
-                slice,
-                inner: MemSliceInner::Unbacked,
-            }
+            Self::from_bytes(bytes::Bytes::from_static(slice))
         }
 
         /// Attempt to prefetch the memory belonging to to this [`MemSlice`]
@@ -259,6 +246,17 @@ mod tests {
 
         {
             let vec = vec![1u8, 2, 3, 4, 5];
+            let ptr = vec.as_ptr();
+
+            let mem_slice = MemSlice::from_vec(vec);
+            let ptr_out = mem_slice.as_ptr();
+
+            assert_eq!(ptr_out, ptr);
+        }
+
+        {
+            let mut vec = vec![1u8, 2, 3, 4, 5];
+            vec.truncate(2);
             let ptr = vec.as_ptr();
 
             let mem_slice = MemSlice::from_vec(vec);
