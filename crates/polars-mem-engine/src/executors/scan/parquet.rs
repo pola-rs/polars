@@ -69,10 +69,17 @@ impl ParquetExec {
             if slice.0 >= 0 {
                 (slice.0 as usize, slice.1.saturating_add(slice.0 as usize))
             } else {
+                // Walk the files in reverse until we find the first file, and then translate the
+                // slice into a positive-offset equivalent.
                 let n_from_end = -slice.0 as usize;
                 let mut cum_rows = 0;
+                let chunk_size = 8;
                 POOL.install(|| {
-                    for path_indexes in (0..self.paths.len()).rev().collect::<Vec<_>>().chunks(8) {
+                    for path_indexes in (0..self.paths.len())
+                        .rev()
+                        .collect::<Vec<_>>()
+                        .chunks(chunk_size)
+                    {
                         let row_counts = path_indexes
                             .into_par_iter()
                             .map(|i| {
@@ -247,6 +254,8 @@ impl ParquetExec {
             if slice.0 >= 0 {
                 (slice.0 as usize, slice.1.saturating_add(slice.0 as usize))
             } else {
+                // Walk the files in reverse until we find the first file, and then translate the
+                // slice into a positive-offset equivalent.
                 let n_from_end = -slice.0 as usize;
                 let mut cum_rows = 0;
 

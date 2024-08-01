@@ -321,6 +321,8 @@ impl ParquetAsyncReader {
         self.reader.num_rows().await
     }
 
+    /// Only positive offsets are supported for simplicity - the caller should
+    /// translate negative offsets into the positive equivalent.
     pub fn with_slice(mut self, slice: Option<(usize, usize)>) -> Self {
         self.slice = slice.unwrap_or((0, usize::MAX));
         self
