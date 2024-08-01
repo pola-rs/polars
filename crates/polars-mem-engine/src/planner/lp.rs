@@ -284,7 +284,12 @@ fn create_physical_plan_impl(
             predicate,
             mut file_options,
         } => {
-            file_options.n_rows = _set_n_rows_for_scan(file_options.n_rows);
+            file_options.slice = if let Some((off, len)) = file_options.slice {
+                Some((off, _set_n_rows_for_scan(Some(len)).unwrap()))
+            } else {
+                _set_n_rows_for_scan(None).map(|x| (0, x))
+            };
+
             let mut state = ExpressionConversionState::new(true, state.expr_depth);
             let predicate = predicate
                 .map(|pred| {

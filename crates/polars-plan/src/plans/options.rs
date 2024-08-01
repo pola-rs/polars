@@ -29,7 +29,7 @@ pub type FileCount = u32;
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 /// Generic options for all file types.
 pub struct FileScanOptions {
-    pub n_rows: Option<usize>,
+    pub slice: Option<(i64, usize)>,
     pub with_columns: Option<Arc<[String]>>,
     pub cache: bool,
     pub row_index: Option<RowIndex>,

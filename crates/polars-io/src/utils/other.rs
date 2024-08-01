@@ -88,30 +88,6 @@ pub unsafe fn maybe_decompress_bytes<'a>(
     }
 }
 
-/// Compute `remaining_rows_to_read` to be taken per file up front, so we can actually read
-/// concurrently/parallel
-///
-/// This takes an iterator over the number of rows per file.
-pub fn get_sequential_row_statistics<I>(
-    iter: I,
-    mut total_rows_to_read: usize,
-) -> Vec<(usize, usize)>
-where
-    I: Iterator<Item = usize>,
-{
-    let mut cumulative_read = 0;
-    iter.map(|rows_this_file| {
-        let remaining_rows_to_read = total_rows_to_read;
-        total_rows_to_read = total_rows_to_read.saturating_sub(rows_this_file);
-
-        let current_cumulative_read = cumulative_read;
-        cumulative_read += rows_this_file;
-
-        (remaining_rows_to_read, current_cumulative_read)
-    })
-    .collect()
-}
-
 #[cfg(any(
     feature = "ipc",
     feature = "ipc_streaming",

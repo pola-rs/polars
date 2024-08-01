@@ -50,7 +50,7 @@ impl PyFileOptions {
     fn n_rows(&self, py: Python<'_>) -> PyResult<PyObject> {
         Ok(self
             .inner
-            .n_rows
+            .slice
             .map_or_else(|| py.None(), |n| n.into_py(py)))
     }
     #[getter]

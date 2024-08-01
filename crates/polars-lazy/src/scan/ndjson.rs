@@ -120,7 +120,7 @@ impl LazyFileListReader for LazyJsonLineReader {
         let paths = Arc::new(Mutex::new((self.paths, false)));
 
         let file_options = FileScanOptions {
-            n_rows: self.n_rows,
+            slice: self.n_rows.map(|x| (0, x)),
             with_columns: None,
             cache: false,
             row_index: self.row_index,
