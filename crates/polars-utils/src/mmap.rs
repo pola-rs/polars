@@ -21,9 +21,9 @@ mod private {
     #[derive(Clone, Debug)]
     pub struct MemSlice {
         // Store the `&[u8]` to make the `Deref` free.
-        // `slice` is not 'static - it is backed by `keep_alive`. This is safe as long as `slice` is
-        // not directly accessed, and we are in a private module to guarantee that. Access should
-        // only be done through `Deref<Target = [u8]>`, which automatically gives the correct lifetime.
+        // `slice` is not 'static - it is backed by `inner`. This is safe as long as `slice` is not
+        // directly accessed, and we are in a private module to guarantee that. Access should only
+        // be done through `Deref<Target = [u8]>`, which automatically gives the correct lifetime.
         slice: &'static [u8],
         #[allow(unused)]
         inner: MemSliceInner,
