@@ -44,7 +44,7 @@ impl DslBuilder {
 
         let file_info = FileInfo::new(schema.clone(), None, (n_rows, n_rows.unwrap_or(usize::MAX)));
         let file_options = FileScanOptions {
-            n_rows,
+            slice: n_rows.map(|x| (0, x)),
             with_columns: None,
             cache: false,
             row_index: None,
@@ -97,7 +97,7 @@ impl DslBuilder {
         let options = FileScanOptions {
             with_columns: None,
             cache,
-            n_rows,
+            slice: n_rows.map(|x| (0, x)),
             rechunk,
             row_index,
             file_counter: Default::default(),
@@ -146,7 +146,7 @@ impl DslBuilder {
             file_options: FileScanOptions {
                 with_columns: None,
                 cache,
-                n_rows,
+                slice: n_rows.map(|x| (0, x)),
                 rechunk,
                 row_index,
                 file_counter: Default::default(),
@@ -182,7 +182,7 @@ impl DslBuilder {
         let options = FileScanOptions {
             with_columns: None,
             cache,
-            n_rows: read_options_clone.n_rows,
+            slice: read_options_clone.n_rows.map(|x| (0, x)),
             rechunk: read_options_clone.rechunk,
             row_index: read_options_clone.row_index,
             file_counter: Default::default(),

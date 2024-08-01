@@ -409,7 +409,7 @@ impl<'a> PredicatePushDown<'a> {
 
                 let mut do_optimization = match &scan_type {
                     #[cfg(feature = "csv")]
-                    FileScan::Csv { .. } => options.n_rows.is_none(),
+                    FileScan::Csv { .. } => options.slice.is_none(),
                     FileScan::Anonymous { function, .. } => function.allows_predicate_pushdown(),
                     #[cfg(feature = "json")]
                     FileScan::NDJson { .. } => true,

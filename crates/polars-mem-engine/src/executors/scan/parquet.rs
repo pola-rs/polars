@@ -8,6 +8,7 @@ use polars_core::utils::accumulate_dataframes_vertical;
 use polars_io::cloud::CloudOptions;
 use polars_io::parquet::metadata::FileMetaDataRef;
 use polars_io::path_utils::is_cloud_url;
+use polars_io::utils::slice::split_slice_at_file;
 use polars_io::RowIndex;
 
 use super::*;
@@ -59,17 +60,67 @@ impl ParquetExec {
 
         let mut result = vec![];
 
-        let mut remaining_rows_to_read = self.file_options.n_rows.unwrap_or(usize::MAX);
-        let mut base_row_index = self.file_options.row_index.take();
-        // Limit no. of files at a time to prevent open file limits.
         let step = std::cmp::min(POOL.current_num_threads(), 128);
+        // Modified if we have a negative slice
+        let mut first_file = 0;
 
-        for i in (0..self.paths.len()).step_by(step) {
+        // (offset, end)
+        let (slice_offset, slice_end) = if let Some(slice) = self.file_options.slice {
+            if slice.0 >= 0 {
+                (slice.0 as usize, slice.1.saturating_add(slice.0 as usize))
+            } else {
+                // Walk the files in reverse until we find the first file, and then translate the
+                // slice into a positive-offset equivalent.
+                let n_from_end = -slice.0 as usize;
+                let mut cum_rows = 0;
+                let chunk_size = 8;
+                POOL.install(|| {
+                    for path_indexes in (0..self.paths.len())
+                        .rev()
+                        .collect::<Vec<_>>()
+                        .chunks(chunk_size)
+                    {
+                        let row_counts = path_indexes
+                            .into_par_iter()
+                            .map(|i| {
+                                ParquetReader::new(std::fs::File::open(&self.paths[*i])?).num_rows()
+                            })
+                            .collect::<PolarsResult<Vec<_>>>()?;
+
+                        for (path_idx, rc) in path_indexes.iter().zip(row_counts) {
+                            cum_rows += rc;
+
+                            if cum_rows >= n_from_end {
+                                first_file = *path_idx;
+                                break;
+                            }
+                        }
+
+                        if first_file > 0 {
+                            break;
+                        }
+                    }
+
+                    PolarsResult::Ok(())
+                })?;
+
+                let start = cum_rows - n_from_end;
+                (start, start + slice.1)
+            }
+        } else {
+            (0, usize::MAX)
+        };
+
+        let mut current_offset = 0;
+        let base_row_index = self.file_options.row_index.take();
+        // Limit no. of files at a time to prevent open file limits.
+
+        for i in (first_file..self.paths.len()).step_by(step) {
             let end = std::cmp::min(i.saturating_add(step), self.paths.len());
             let paths = &self.paths[i..end];
             let hive_parts = self.hive_parts.as_ref().map(|x| &x[i..end]);
 
-            if remaining_rows_to_read == 0 && !result.is_empty() {
+            if current_offset >= slice_end && !result.is_empty() {
                 return Ok(result);
             }
 
@@ -110,38 +161,32 @@ impl ParquetExec {
             // We do this in parallel because wide tables can take a long time deserializing metadata.
             let readers_and_metadata = POOL.install(|| iter.collect::<PolarsResult<Vec<_>>>())?;
 
-            let iter = readers_and_metadata
+            let current_offset_ref = &mut current_offset;
+            let row_statistics = readers_and_metadata
                 .iter()
-                .map(|(_, num_rows, _, _)| *num_rows);
-
-            let rows_statistics = get_sequential_row_statistics(iter, remaining_rows_to_read);
+                .map(|(_, num_rows, _, _)| {
+                    let cum_rows = *current_offset_ref;
+                    (
+                        cum_rows,
+                        split_slice_at_file(current_offset_ref, *num_rows, slice_offset, slice_end),
+                    )
+                })
+                .collect::<Vec<_>>();
 
             let out = POOL.install(|| {
                 readers_and_metadata
                     .into_par_iter()
-                    .zip(rows_statistics.into_par_iter())
+                    .zip(row_statistics.into_par_iter())
                     .enumerate()
                     .map(
-                        |(
-                            i,
-                            (
-                                (reader, num_rows_this_file, predicate, projection),
-                                (remaining_rows_to_read, cumulative_read),
-                            ),
-                        )| {
-                            let remaining_rows_to_read =
-                                if num_rows_this_file < remaining_rows_to_read {
-                                    None
-                                } else {
-                                    Some(remaining_rows_to_read)
-                                };
+                        |(i, ((reader, _, predicate, projection), (cumulative_read, slice)))| {
                             let row_index = base_row_index.as_ref().map(|rc| RowIndex {
                                 name: rc.name.clone(),
                                 offset: rc.offset + cumulative_read as IdxSize,
                             });
 
                             let mut df = reader
-                                .with_n_rows(remaining_rows_to_read)
+                                .with_slice(Some(slice))
                                 .with_row_index(row_index)
                                 .with_predicate(predicate.clone())
                                 .with_projection(projection.clone())
@@ -162,11 +207,7 @@ impl ParquetExec {
                                         StringChunked::full(
                                             col,
                                             path,
-                                            std::cmp::max(
-                                                df.height(),
-                                                remaining_rows_to_read
-                                                    .unwrap_or(num_rows_this_file),
-                                            ),
+                                            std::cmp::max(df.height(), slice.1),
                                         )
                                         .into_series(),
                                     )
@@ -179,11 +220,6 @@ impl ParquetExec {
                     .collect::<PolarsResult<Vec<_>>>()
             })?;
 
-            let n_read = out.iter().map(|df| df.height()).sum();
-            remaining_rows_to_read = remaining_rows_to_read.saturating_sub(n_read);
-            if let Some(rc) = &mut base_row_index {
-                rc.offset += n_read as IdxSize;
-            }
             if result.is_empty() {
                 result = out;
             } else {
@@ -195,6 +231,10 @@ impl ParquetExec {
 
     #[cfg(feature = "cloud")]
     async fn read_async(&mut self) -> PolarsResult<Vec<DataFrame>> {
+        use futures::{stream, StreamExt};
+        use polars_io::pl_async;
+        use polars_io::utils::slice::split_slice_at_file;
+
         let verbose = verbose();
         let first_metadata = &self.metadata;
         let cloud_options = self.cloud_options.as_ref();
@@ -206,16 +246,73 @@ impl ParquetExec {
             eprintln!("POLARS PREFETCH_SIZE: {}", batch_size)
         }
 
-        let mut remaining_rows_to_read = self.file_options.n_rows.unwrap_or(usize::MAX);
-        let mut base_row_index = self.file_options.row_index.take();
+        // Modified if we have a negative slice
+        let mut first_file_idx = 0;
+
+        // (offset, end)
+        let (slice_offset, slice_end) = if let Some(slice) = self.file_options.slice {
+            if slice.0 >= 0 {
+                (slice.0 as usize, slice.1.saturating_add(slice.0 as usize))
+            } else {
+                // Walk the files in reverse until we find the first file, and then translate the
+                // slice into a positive-offset equivalent.
+                let n_from_end = -slice.0 as usize;
+                let mut cum_rows = 0;
+
+                let paths = &self.paths;
+                let cloud_options = Arc::new(self.cloud_options.clone());
+
+                let paths = paths.clone();
+                let cloud_options = cloud_options.clone();
+
+                let mut iter = stream::iter((0..self.paths.len()).rev().map(|i| {
+                    let paths = paths.clone();
+                    let cloud_options = cloud_options.clone();
+
+                    pl_async::get_runtime().spawn(async move {
+                        PolarsResult::Ok((
+                            i,
+                            ParquetAsyncReader::from_uri(
+                                paths[i].to_str().unwrap(),
+                                cloud_options.as_ref().as_ref(),
+                                None,
+                            )
+                            .await?
+                            .num_rows()
+                            .await?,
+                        ))
+                    })
+                }))
+                .buffered(8);
+
+                while let Some(v) = iter.next().await {
+                    let (path_idx, num_rows) = v.unwrap()?;
+
+                    cum_rows += num_rows;
+
+                    if cum_rows >= n_from_end {
+                        first_file_idx = path_idx;
+                        break;
+                    }
+                }
+
+                let start = cum_rows - n_from_end;
+                (start, start + slice.1)
+            }
+        } else {
+            (0, usize::MAX)
+        };
+
+        let mut current_offset = 0;
+        let base_row_index = self.file_options.row_index.take();
         let mut processed = 0;
 
-        for batch_start in (0..self.paths.len()).step_by(batch_size) {
+        for batch_start in (first_file_idx..self.paths.len()).step_by(batch_size) {
             let end = std::cmp::min(batch_start.saturating_add(batch_size), self.paths.len());
             let paths = &self.paths[batch_start..end];
             let hive_parts = self.hive_parts.as_ref().map(|x| &x[batch_start..end]);
 
-            if remaining_rows_to_read == 0 && !result.is_empty() {
+            if current_offset >= slice_end && !result.is_empty() {
                 return Ok(result);
             }
             processed += paths.len();
@@ -245,14 +342,20 @@ impl ParquetExec {
             });
             let readers_and_metadata = futures::future::try_join_all(iter).await?;
 
+            let current_offset_ref = &mut current_offset;
+
             // Then compute `n_rows` to be taken per file up front, so we can actually read concurrently
             // after this.
-            let iter = readers_and_metadata
+            let row_statistics = readers_and_metadata
                 .iter()
-                .map(|(num_rows, _)| num_rows)
-                .copied();
-
-            let rows_statistics = get_sequential_row_statistics(iter, remaining_rows_to_read);
+                .map(|(num_rows, _)| {
+                    let cum_rows = *current_offset_ref;
+                    (
+                        cum_rows,
+                        split_slice_at_file(current_offset_ref, *num_rows, slice_offset, slice_end),
+                    )
+                })
+                .collect::<Vec<_>>();
 
             // Now read the actual data.
             let file_info = &self.file_info;
@@ -266,9 +369,11 @@ impl ParquetExec {
                 eprintln!("reading of {}/{} file...", processed, self.paths.len());
             }
 
-            let iter = readers_and_metadata.into_iter().enumerate().map(
-                |(i, (num_rows_this_file, reader))| {
-                    let (remaining_rows_to_read, cumulative_read) = &rows_statistics[i];
+            let iter = readers_and_metadata
+                .into_iter()
+                .enumerate()
+                .map(|(i, (_, reader))| {
+                    let (cumulative_read, slice) = row_statistics[i];
                     let hive_partitions = hive_parts
                         .as_ref()
                         .map(|x| x[i].materialize_partition_columns());
@@ -284,16 +389,9 @@ impl ParquetExec {
 
                     async move {
                         let file_info = file_info.clone();
-                        let remaining_rows_to_read = *remaining_rows_to_read;
-                        let remaining_rows_to_read = if num_rows_this_file < remaining_rows_to_read
-                        {
-                            None
-                        } else {
-                            Some(remaining_rows_to_read)
-                        };
                         let row_index = base_row_index_ref.as_ref().map(|rc| RowIndex {
                             name: rc.name.clone(),
-                            offset: rc.offset + *cumulative_read as IdxSize,
+                            offset: rc.offset + cumulative_read as IdxSize,
                         });
 
                         let (projection, predicate) = prepare_scan_args(
@@ -305,7 +403,7 @@ impl ParquetExec {
                         );
 
                         let df = reader
-                            .with_n_rows(remaining_rows_to_read)
+                            .with_slice(Some(slice))
                             .with_row_index(row_index)
                             .with_projection(projection)
                             .check_schema(schema.as_ref())
@@ -323,15 +421,9 @@ impl ParquetExec {
 
                         PolarsResult::Ok(df)
                     }
-                },
-            );
+                });
 
             let dfs = futures::future::try_join_all(iter).await?;
-            let n_read = dfs.iter().map(|df| df.height()).sum();
-            remaining_rows_to_read = remaining_rows_to_read.saturating_sub(n_read);
-            if let Some(rc) = &mut base_row_index {
-                rc.offset += n_read as IdxSize;
-            }
             result.extend(dfs.into_iter())
         }
 
