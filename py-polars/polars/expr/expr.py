@@ -4290,9 +4290,6 @@ class Expr:
         A reasonable use case for `map` functions is transforming the values
         represented by an expression using a third-party library.
 
-        If your function returns a scalar, for example a float, use
-        :func:`map_to_scalar` instead.
-
         Parameters
         ----------
         function
