@@ -4,10 +4,12 @@ import io
 from datetime import date, datetime, time, timedelta, timezone
 from typing import TYPE_CHECKING, Any, cast
 
+import hypothesis.strategies as st
 import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pytest
+from hypothesis import given
 
 import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS
@@ -2280,3 +2282,30 @@ def test_misc_precision_any_value_conversion(time_zone: Any) -> None:
 def test_pytime_conversion(tm: time) -> None:
     s = pl.Series("tm", [tm])
     assert s.to_list() == [tm]
+
+
+@given(
+    value=st.datetimes(min_value=datetime(1800, 1, 1), max_value=datetime(2100, 1, 1)),
+    time_zone=st.sampled_from(["UTC", "Asia/Kathmandu", "Europe/Amsterdam", None]),
+    time_unit=st.sampled_from(["ms", "us", "ns"]),
+)
+def test_weekday_vs_stdlib_datetime(
+    value: datetime, time_zone: str, time_unit: TimeUnit
+) -> None:
+    result = (
+        pl.Series([value], dtype=pl.Datetime(time_unit))
+        .dt.replace_time_zone(time_zone)
+        .dt.weekday()
+        .item()
+    )
+    expected = value.isoweekday()
+    assert result == expected
+
+
+@given(
+    value=st.dates(),
+)
+def test_weekday_vs_stdlib_date(value: date) -> None:
+    result = pl.Series([value]).dt.weekday().item()
+    expected = value.isoweekday()
+    assert result == expected
