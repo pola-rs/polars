@@ -137,7 +137,10 @@ def test_hive_partitioned_predicate_pushdown_skips_correct_number_of_files(
 
 @pytest.mark.xdist_group("streaming")
 @pytest.mark.write_disk()
-def test_hive_partitioned_slice_pushdown(io_files_path: Path, tmp_path: Path) -> None:
+@pytest.mark.parametrize("streaming", [True, False])
+def test_hive_partitioned_slice_pushdown(
+    io_files_path: Path, tmp_path: Path, streaming: bool
+) -> None:
     df = pl.read_ipc(io_files_path / "*.ipc")
 
     root = tmp_path / "partitioned_data"
@@ -152,21 +155,18 @@ def test_hive_partitioned_slice_pushdown(io_files_path: Path, tmp_path: Path) ->
     )
 
     q = pl.scan_parquet(root / "**/*.parquet", hive_partitioning=True)
+    schema = q.collect_schema()
+    expect_count = pl.select(pl.lit(1, dtype=pl.UInt32).alias(x) for x in schema)
 
-    # tests: 11682
-    for streaming in [True, False]:
-        assert (
-            q.head(1)
-            .collect(streaming=streaming)
-            .select(pl.all_horizontal(pl.all().count() == 1))
-            .item()
-        )
-        assert q.head(0).collect(streaming=streaming).columns == [
-            "calories",
-            "sugars_g",
-            "category",
-            "fats_g",
-        ]
+    assert_frame_equal(
+        q.head(1).collect(streaming=streaming).select(pl.all().len()), expect_count
+    )
+    assert q.head(0).collect(streaming=streaming).columns == [
+        "calories",
+        "sugars_g",
+        "category",
+        "fats_g",
+    ]
 
 
 @pytest.mark.xdist_group("streaming")

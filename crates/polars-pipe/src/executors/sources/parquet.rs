@@ -296,7 +296,7 @@ impl ParquetSource {
             }
         } else {
             for _ in 0..self.prefetch_size - self.batched_readers.len() {
-                self.init_next_reader()?
+                self.init_next_reader_sync()?
             }
         }
         Ok(())
