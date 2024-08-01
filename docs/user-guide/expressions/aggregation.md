@@ -16,9 +16,7 @@ Per GROUP `"first_name"` we
 
 <!-- dprint-ignore-start -->
 
-- count the number of rows in the group:
-    - short form: `pl.count("party")`
-    - full form: `pl.col("party").count()`
+- count the number of rows in the group: `pl.len()`
 - aggregate the gender values groups:
     - full form: `pl.col("gender")`
 - get the first value of column `"last_name"` in the group:
