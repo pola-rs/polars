@@ -109,6 +109,7 @@ polars-ops = { version = "0.41.3", path = "crates/polars-ops", default-features 
 polars-parquet = { version = "0.41.3", path = "crates/polars-parquet", default-features = false }
 polars-pipe = { version = "0.41.3", path = "crates/polars-pipe", default-features = false }
 polars-plan = { version = "0.41.3", path = "crates/polars-plan", default-features = false }
+polars-python = { version = "0.41.3", path = "crates/polars-python", default-features = false }
 polars-row = { version = "0.41.3", path = "crates/polars-row", default-features = false }
 polars-sql = { version = "0.41.3", path = "crates/polars-sql", default-features = false }
 polars-stream = { version = "0.41.3", path = "crates/polars-stream", default-features = false }

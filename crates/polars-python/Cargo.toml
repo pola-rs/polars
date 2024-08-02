@@ -1,0 +1,9 @@
+[package]
+name = "polars-python"
+version = { workspace = true }
+authors = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+description = "Enable running Polars workloads in Python"

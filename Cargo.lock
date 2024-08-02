@@ -3341,6 +3341,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "polars-python"
+version = "0.41.3"
+
+[[package]]
 name = "polars-row"
 version = "0.41.3"
 dependencies = [
