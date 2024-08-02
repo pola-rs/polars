@@ -541,3 +541,91 @@ def test_nested_join(join_clause: str) -> None:
                 "Species": "Human",
             },
         ]
+
+
+@pytest.mark.parametrize(
+    "join_clause",
+    [
+        """
+        df1 INNER JOIN df2 ON df1.CharacterID=df2.CharacterID
+        INNER JOIN df3 ON df1.CharacterID=df3.CharacterID
+        INNER JOIN df4 ON df1.CharacterID=df4.CharacterID
+        WHERE df1.Type=df2.Type AND df3.Type=df4.Type
+        """,
+        """
+        df1 INNER JOIN df3 ON df1.CharacterID=df3.CharacterID
+        INNER JOIN (df2 INNER JOIN df4 ON df2.CharacterID=df4.CharacterID) ON df1.CharacterID=df2.CharacterID
+        AND df1.Type = df2.Type AND df3.Type = df4.Type
+        """,
+    ],
+)
+def test_repeated_join_key(join_clause) -> None:
+    df1 = pl.DataFrame(
+        {
+            "CharacterID": [1, 2, 3, 4],
+            "FirstName": ["Jernau Morat", "Cheradenine", "Byr", "Diziet"],
+            "LastName": ["Gurgeh", "Zakalwe", "Genar-Hofoen", "Sma"],
+            "Type": ["A", "C", "B", "C"],
+        }
+    )
+    df2 = pl.DataFrame(
+        {
+            "CharacterID": [1, 2, 3, 5],
+            "Role": ["Protagonist", "Protagonist", "Protagonist", "Antagonist"],
+            "Book": [
+                "Player of Games",
+                "Use of Weapons",
+                "Excession",
+                "Consider Phlebas",
+            ],
+            "Type": ["A", "C", "C", "B"],
+        }
+    )
+    df3 = pl.DataFrame(
+        {
+            "CharacterID": [1, 2, 5, 6],
+            "Affiliation": ["Culture", "Culture", "Culture", "Shellworld"],
+            "Species": ["Pan-human", "Human", "Human", "Oct"],
+            "Type": ["S", "M", "L", "XL"],
+        }
+    )
+    df4 = pl.DataFrame(
+        {
+            "CharacterID": [1, 2, 3, 6],
+            "Ship": [
+                "Limiting Factor",
+                "Xenophobe",
+                "Grey Area",
+                "Falling Outside The Normal Moral Constraints",
+            ],
+            "Drone": ["Flere-Imsaho", "Skaffen-Amtiskaw", "Eccentric", "Psychopath"],
+            "Type": ["S", "M", "XS", "XL"],
+        }
+    )
+
+    with pl.SQLContext(
+        {"df1": df1, "df2": df2, "df3": df3, "df4": df4}, eager=True
+    ) as ctx:
+        res = ctx.execute(
+            f"""
+            SELECT df1.CharacterID, df1.Type, df1.FirstName, df2.Role, df3.Species
+            FROM {join_clause}
+            ORDER BY ALL
+            """
+        )
+        assert res.rows(named=True) == [
+            {
+                "CharacterID": 1,
+                "Type": "A",
+                "FirstName": "Jernau Morat",
+                "Role": "Protagonist",
+                "Species": "Pan-human",
+            },
+            {
+                "CharacterID": 2,
+                "Type": "C",
+                "FirstName": "Cheradenine",
+                "Role": "Protagonist",
+                "Species": "Human",
+            },
+        ]
