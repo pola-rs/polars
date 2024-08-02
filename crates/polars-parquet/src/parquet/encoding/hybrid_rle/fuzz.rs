@@ -2,7 +2,6 @@
 /// complex to facilitate performance. We create this small fuzzer
 use std::collections::VecDeque;
 
-use arrow::pushable::Pushable;
 use rand::Rng;
 
 use super::*;
@@ -382,7 +381,6 @@ fn skip_fuzz() -> ParquetResult<()> {
         encoder::encode(&mut encoded, bs.iter().copied(), num_bits).unwrap();
         let mut decoder = HybridRleDecoder::new(&encoded, num_bits, filled);
 
-        dbg!(&skips);
         for s in &skips {
             decoder.skip_in_place(*s).unwrap();
         }

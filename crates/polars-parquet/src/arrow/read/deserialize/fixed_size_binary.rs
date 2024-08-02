@@ -2,9 +2,7 @@ use arrow::array::{DictionaryArray, DictionaryKey, FixedSizeBinaryArray, Primiti
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
 
-use super::utils::{
-    dict_indices_decoder, extend_from_decoder, freeze_validity, Decoder,
-};
+use super::utils::{dict_indices_decoder, extend_from_decoder, freeze_validity, Decoder};
 use crate::parquet::encoding::hybrid_rle::gatherer::HybridRleGatherer;
 use crate::parquet::encoding::{hybrid_rle, Encoding};
 use crate::parquet::error::{ParquetError, ParquetResult};
@@ -40,8 +38,7 @@ impl<'a> utils::StateTranslation<'a, BinaryDecoder> for StateTranslation<'a> {
                         "Fixed size binary data length {} is not divisible by size {}",
                         values.len(),
                         decoder.size
-                    ))
-                    .into());
+                    )));
                 }
                 Ok(Self::Plain(values, decoder.size))
             },

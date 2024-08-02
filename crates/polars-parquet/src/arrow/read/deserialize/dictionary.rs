@@ -32,7 +32,7 @@ impl<'a, K: DictionaryKey, D: utils::DictDecodable> StateTranslation<'a, Diction
             return Err(utils::not_implemented(page));
         }
 
-        Ok(dict_indices_decoder(page)?)
+        dict_indices_decoder(page)
     }
 
     fn len_when_not_nullable(&self) -> usize {
