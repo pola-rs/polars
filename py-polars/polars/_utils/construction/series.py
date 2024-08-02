@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import enum
 from datetime import date, datetime, time, timedelta
 from itertools import islice
 from typing import (
@@ -12,7 +13,7 @@ from typing import (
     Iterator,
     Sequence,
 )
-import enum
+
 import polars._reexport as pl
 import polars._utils.construction as plc
 from polars._utils.construction.utils import (

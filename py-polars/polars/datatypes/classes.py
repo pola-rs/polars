@@ -514,14 +514,9 @@ class Enum(DataType):
             " It is a work-in-progress feature and may not always work as expected."
         )
         if isinstance(categories, enum.EnumMeta):
-            # If the values are ints then infer that we want the name otherwise
-            # take the values
-            enum_keys = categories.__members__.keys()
-            enum_values = [x.value for x in categories.__members__.values()]
-            if all(isinstance(x, str) for x in enum_values):
-                categories = pl.Series(values=enum_values)
-            else:
-                categories = pl.Series(values=enum_keys)
+            from polars.datatypes._utils import _extract_enum_values
+
+            categories = pl.Series(values=_extract_enum_values(categories))
         if not isinstance(categories, pl.Series):
             categories = pl.Series(values=categories)
 

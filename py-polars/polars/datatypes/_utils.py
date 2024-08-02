@@ -1,7 +1,14 @@
 """Utility functions for handling and processing of datatypes."""
 
-from polars._typing import PolarsDataType
+from __future__ import annotations
+
+import enum
+from typing import TYPE_CHECKING, Iterable, cast
+
 from polars.datatypes.classes import Array, List, Struct
+
+if TYPE_CHECKING:
+    from polars._typing import PolarsDataType
 
 
 def dtype_to_init_repr(dtype: PolarsDataType, prefix: str = "pl.") -> str:
@@ -46,3 +53,13 @@ def _dtype_to_init_repr_struct(dtype: Struct, prefix: str) -> str:
     inner_repr = "{" + ", ".join(inner_list) + "}"
     init_repr = f"{prefix}{class_name}({inner_repr})"
     return init_repr
+
+
+def _extract_enum_values(pyenum: enum.EnumMeta) -> list[str]:
+    enum_keys = list(pyenum.__members__.keys())
+    enum_values = [x.value for x in cast(Iterable[enum.Enum], pyenum)]
+
+    if all(isinstance(x, str) for x in enum_values):
+        return enum_values
+    else:
+        return enum_keys
