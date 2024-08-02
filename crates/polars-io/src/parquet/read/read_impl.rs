@@ -360,7 +360,7 @@ fn rg_to_dfs_prefiltered(
             *previous_row_count += df.height() as IdxSize;
         }
 
-        // @TODO: Incorperate this if we how we can properly use it. The problem here is that
+        // @TODO: Incorporate this if we how we can properly use it. The problem here is that
         // different columns really have a different cost when it comes to collecting them. We
         // would need a cost model to properly estimate this.
         //
