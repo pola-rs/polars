@@ -1,10 +1,9 @@
 use arrow::array::{DictionaryArray, DictionaryKey, FixedSizeBinaryArray, PrimitiveArray};
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
-use polars_error::PolarsResult;
 
 use super::utils::{
-    dict_indices_decoder, extend_from_decoder, freeze_validity, not_implemented, Decoder,
+    dict_indices_decoder, extend_from_decoder, freeze_validity, Decoder,
 };
 use crate::parquet::encoding::hybrid_rle::gatherer::HybridRleGatherer;
 use crate::parquet::encoding::{hybrid_rle, Encoding};
@@ -32,7 +31,7 @@ impl<'a> utils::StateTranslation<'a, BinaryDecoder> for StateTranslation<'a> {
         page: &'a DataPage,
         dict: Option<&'a <BinaryDecoder as Decoder>::Dict>,
         _page_validity: Option<&PageValidity<'a>>,
-    ) -> PolarsResult<Self> {
+    ) -> ParquetResult<Self> {
         match (page.encoding(), dict) {
             (Encoding::Plain, _) => {
                 let values = split_buffer(page)?.values;
@@ -50,7 +49,7 @@ impl<'a> utils::StateTranslation<'a, BinaryDecoder> for StateTranslation<'a> {
                 let values = dict_indices_decoder(page)?;
                 Ok(Self::Dictionary(values, dict))
             },
-            _ => Err(not_implemented(page)),
+            _ => Err(utils::not_implemented(page)),
         }
     }
 

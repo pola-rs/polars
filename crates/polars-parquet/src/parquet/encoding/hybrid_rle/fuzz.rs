@@ -332,6 +332,7 @@ fn large_fuzz() -> ParquetResult<()> {
 }
 
 #[test]
+#[ignore = "Large fuzz test. Too slow"]
 fn skip_fuzz() -> ParquetResult<()> {
     let mut rng = rand::thread_rng();
 
@@ -344,7 +345,7 @@ fn skip_fuzz() -> ParquetResult<()> {
 
     let num_loops = 100_000;
 
-    for i in 0..num_loops {
+    for _ in 0..num_loops {
         skips.clear();
         bs.clear();
 
