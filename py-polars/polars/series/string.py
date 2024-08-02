@@ -484,7 +484,7 @@ class StringNameSpace:
 
         Examples
         --------
-        >>> s = pl.Series("txt", ["Crab", "Lobster", None, "Crustaceon"])
+        >>> s = pl.Series("txt", ["Crab", "Lobster", None, "Crustacean"])
 
         Find the index of the first substring matching a regex pattern:
 

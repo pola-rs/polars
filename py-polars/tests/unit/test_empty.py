@@ -105,7 +105,7 @@ def test_empty_set_union() -> None:
     assert_series_equal(full.rename("empty"), empty.list.set_union(full))
 
 
-def test_empty_set_symteric_difference() -> None:
+def test_empty_set_symmetric_difference() -> None:
     full = pl.Series("full", [[1, 2, 3]], pl.List(pl.UInt32))
     empty = pl.Series("empty", [[]], pl.List(pl.UInt32))
 
