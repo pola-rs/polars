@@ -242,6 +242,7 @@ def sequence_to_pyseries(
             )
 
     elif python_dtype in (list, tuple):
+        assert not contains_self_reference(values)
         if dtype is None:
             return PySeries.new_from_any_values(name, values, strict=strict)
         elif dtype == Object:
@@ -346,7 +347,6 @@ def iterable_to_pyseries(
         values = iter(values)
 
     def to_series_chunk(values: list[Any], dtype: PolarsDataType | None) -> Series:
-        assert not contains_self_reference(values)
         return pl.Series(
             name=name,
             values=values,
