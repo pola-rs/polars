@@ -2167,7 +2167,10 @@ def test_series_from_numpy_with_dtye() -> None:
     assert s.dtype == pl.UInt8
 
 def test_error_on_nested_list() -> None:
+    from polars._utils.construction.series import contains_self_reference
     a = []
+    assert not contains_self_reference(a)
     a.append(a)
+    assert contains_self_reference(a)
     with pytest.raises(Exception):
         pl.Series("a",a) 
