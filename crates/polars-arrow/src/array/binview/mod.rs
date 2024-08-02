@@ -232,6 +232,29 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         )
     }
 
+    /// Apply a function over the views. This can be used to update views in operations like slicing.
+    ///
+    /// # Safety
+    /// Update the views. All invariants of the views apply.
+    pub unsafe fn apply_views<F: FnMut(View, &T) -> View>(&self, mut update_view: F) -> Self {
+        let arr = self.clone();
+        let (views, buffers, validity, total_bytes_len, total_buffer_len) = arr.into_inner();
+
+        let mut views = views.make_mut();
+        for v in views.iter_mut() {
+            let str_slice = T::from_bytes_unchecked(v.get_slice_unchecked(&buffers));
+            *v = update_view(*v, str_slice);
+        }
+        Self::new_unchecked(
+            self.data_type.clone(),
+            views.into(),
+            buffers,
+            validity,
+            total_bytes_len,
+            total_buffer_len,
+        )
+    }
+
     pub fn try_new(
         data_type: ArrowDataType,
         views: Buffer<View>,

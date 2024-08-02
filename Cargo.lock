@@ -3512,11 +3512,12 @@ dependencies = [
 
 [[package]]
 name = "py-polars"
-version = "1.3.0"
+version = "1.4.0"
 dependencies = [
  "ahash",
  "arboard",
  "built",
+ "bytemuck",
  "ciborium",
  "either",
  "itoa",

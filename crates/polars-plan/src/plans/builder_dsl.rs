@@ -219,7 +219,7 @@ impl DslBuilder {
         .into()
     }
 
-    pub fn drop(self, to_drop: PlHashSet<String>, strict: bool) -> Self {
+    pub fn drop(self, to_drop: Vec<Selector>, strict: bool) -> Self {
         self.map_private(DslFunction::Drop(DropFunction { to_drop, strict }))
     }
 
