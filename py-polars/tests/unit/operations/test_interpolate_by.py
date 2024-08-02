@@ -147,7 +147,7 @@ def test_interpolate_by_trailing_nulls() -> None:
 @given(data=st.data())
 @pytest.mark.parametrize("x_dtype", [pl.Date, pl.Float64])
 def test_interpolate_vs_numpy(data: st.DataObject, x_dtype) -> None:
-    
+
     dataframe = (
         data.draw(
             dataframes(
@@ -170,7 +170,7 @@ def test_interpolate_vs_numpy(data: st.DataObject, x_dtype) -> None:
         .fill_nan(None)
         .unique("ts")
     )
-    
+
     if x_dtype == pl.Float64:
         assume(not dataframe['ts'].is_nan().any())
         assume(not dataframe['ts'].is_null().any())
@@ -184,7 +184,7 @@ def test_interpolate_vs_numpy(data: st.DataObject, x_dtype) -> None:
     result = dataframe.select(pl.col("value").interpolate_by("ts"))["value"]
 
     mask = dataframe["value"].is_not_null()
-    
+
     np_dtype = "int64" if x_dtype == pl.Date else 'float64'
     x = dataframe["ts"].to_numpy().astype(np_dtype)
     xp = dataframe["ts"].filter(mask).to_numpy().astype(np_dtype)
