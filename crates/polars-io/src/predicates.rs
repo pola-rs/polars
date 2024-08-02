@@ -7,7 +7,7 @@ pub trait PhysicalIoExpr: Send + Sync {
     /// as a predicate mask
     fn evaluate_io(&self, df: &DataFrame) -> PolarsResult<Series>;
 
-    fn live_variables(&self) -> PolarsResult<Vec<Arc<str>>>;
+    fn live_variables(&self) -> Option<Vec<Arc<str>>>;
 
     /// Can take &dyn Statistics and determine of a file should be
     /// read -> `true`

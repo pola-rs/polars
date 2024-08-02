@@ -613,9 +613,8 @@ impl PhysicalIoExpr for PhysicalIoHelper {
         self.expr.evaluate(df, &state)
     }
 
-    fn live_variables(&self) -> PolarsResult<Vec<Arc<str>>> {
-        // @TODO: This should not unwrap
-        Ok(expr_to_leaf_column_names(self.expr.as_expression().unwrap()))
+    fn live_variables(&self) -> Option<Vec<Arc<str>>> {
+        Some(expr_to_leaf_column_names(self.expr.as_expression()?))
     }
 
     #[cfg(feature = "parquet")]

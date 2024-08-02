@@ -5,14 +5,12 @@ use std::ops::{Deref, Range};
 use arrow::array::new_empty_array;
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::datatypes::ArrowSchemaRef;
-use arrow::pushable::Pushable;
 use polars_core::prelude::*;
 use polars_core::utils::{accumulate_dataframes_vertical, split_df};
 use polars_core::POOL;
 use polars_parquet::read::{self, ArrayIter, FileMetaData, Filter, PhysicalType, RowGroupMetaData};
 use polars_utils::mmap::MemSlice;
 use rayon::prelude::*;
-use simd_json::prelude::ArrayMut;
 
 #[cfg(feature = "cloud")]
 use super::async_impl::FetchRowGroupsFromObjectStore;
@@ -262,7 +260,42 @@ fn rg_to_dfs_new(
         included_row_groups.push(rg_idx);
     }
 
-    let live_variables = predicate.live_variables()?;
+    // If we cannot get the live variables fall back to old methods
+    let Some(live_variables) = predicate.live_variables() else {
+        let mut remaining_rows = usize::MAX;
+        return if let ParallelStrategy::Columns | ParallelStrategy::None = parallel {
+            rg_to_dfs_optionally_par_over_columns(
+                store,
+                previous_row_count,
+                row_group_start,
+                row_group_end,
+                &mut remaining_rows,
+                file_metadata,
+                schema,
+                Some(predicate),
+                row_index,
+                parallel,
+                projection,
+                use_statistics,
+                hive_partition_columns,
+            )
+        } else {
+            rg_to_dfs_par_over_rg(
+                store,
+                row_group_start,
+                row_group_end,
+                previous_row_count,
+                &mut remaining_rows,
+                file_metadata,
+                schema,
+                Some(predicate),
+                row_index,
+                projection,
+                use_statistics,
+                hive_partition_columns,
+            )
+        };
+    };
 
     let mut live_indices = Vec::with_capacity(live_variables.len());
     let live_variables = live_variables

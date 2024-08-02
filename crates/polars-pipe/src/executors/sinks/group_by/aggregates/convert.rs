@@ -31,8 +31,8 @@ impl PhysicalIoExpr for Len {
         unimplemented!()
     }
 
-    fn live_variables(&self) -> PolarsResult<Vec<Arc<str>>> {
-        Ok(vec![])
+    fn live_variables(&self) -> Option<Vec<Arc<str>>> {
+        Some(vec![])
     }
 }
 impl PhysicalPipedExpr for Len {

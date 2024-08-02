@@ -131,8 +131,8 @@ where
                                     self.p.evaluate_io(df)
                                 }
 
-                                fn live_variables(&self) -> PolarsResult<Vec<Arc<str>>> {
-                                    todo!()
+                                fn live_variables(&self) -> Option<Vec<Arc<str>>> {
+                                    None
                                 }
 
                                 fn as_stats_evaluator(&self) -> Option<&dyn StatsEvaluator> {
