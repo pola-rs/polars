@@ -13,6 +13,7 @@ use polars_io::path_utils::{expand_paths_hive, expanded_from_single_directory};
 
 use super::stack_opt::ConversionOptimizer;
 use super::*;
+use crate::plans::conversion::expr_expansion::expand_selectors;
 
 fn expand_expressions(
     input: Node,
@@ -646,6 +647,9 @@ pub fn to_alp_impl(
                     return run_conversion(lp, lp_arena, expr_arena, convert, "fill_nan");
                 },
                 DslFunction::Drop(DropFunction { to_drop, strict }) => {
+                    let to_drop = expand_selectors(to_drop, &input_schema, &[])?;
+                    let to_drop = to_drop.iter().map(|s| s.as_ref()).collect::<PlHashSet<_>>();
+
                     if strict {
                         for col_name in to_drop.iter() {
                             polars_ensure!(

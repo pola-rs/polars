@@ -3517,6 +3517,7 @@ dependencies = [
  "ahash",
  "arboard",
  "built",
+ "bytemuck",
  "ciborium",
  "either",
  "itoa",

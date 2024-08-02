@@ -4719,7 +4719,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 8.0 │
         └─────┘
         """
-        drop_cols = _expand_selectors(self, *columns)
+        drop_cols = parse_into_list_of_expressions(*columns)
         return self._from_pyldf(self._ldf.drop(drop_cols, strict=strict))
 
     def rename(self, mapping: dict[str, str] | Callable[[str], str]) -> LazyFrame:

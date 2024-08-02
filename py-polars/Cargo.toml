@@ -23,6 +23,7 @@ polars-stream = { workspace = true }
 
 ahash = { workspace = true }
 arboard = { workspace = true, optional = true }
+bytemuck = { workspace = true }
 ciborium = { workspace = true }
 either = { workspace = true }
 itoa = { workspace = true }
