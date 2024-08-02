@@ -242,7 +242,11 @@ def sequence_to_pyseries(
             )
 
     elif python_dtype in (list, tuple):
-        assert not contains_self_reference(values)
+        print(f"{python_dtype}")
+        print(f"{values=}")
+        print(f"{repr(values)}")
+        print(f"{type(values)=}")
+        assert not contains_self_reference(values), "values must not contain a self-reference"
         if dtype is None:
             return PySeries.new_from_any_values(name, values, strict=strict)
         elif dtype == Object:
@@ -318,7 +322,10 @@ def _construct_series_with_fallbacks(
             )
 
 
-def contains_self_reference(lst: list[Any], seen: Optional[set[Any]]=None):
+def contains_self_reference(lst: list[Any] | tuple[Any], seen: Optional[set[Any]]=None):
+    if not (isinstance(lst, list) or isinstance(lst, tuple)):
+        return false
+
     if seen is None:
         seen = set()
     
@@ -328,7 +335,7 @@ def contains_self_reference(lst: list[Any], seen: Optional[set[Any]]=None):
     seen.add(id(lst))
     
     for item in lst:
-        if isinstance(item, list):
+        if isinstance(item, list) or isinstance(item, tuple):
             if contains_self_reference(item, seen):
                 return True
     
