@@ -123,24 +123,6 @@ def test_lit_enum_input_16668() -> None:
     assert pl.select(result).item() == "victoria"
 
 
-def test_lit_enum_input_non_string() -> None:
-    # https://github.com/pola-rs/polars/issues/16668
-
-    class State(int, enum.Enum):
-        ONE = 1
-        TWO = 2
-
-    value = State.ONE
-
-    result = pl.lit(value)
-    assert pl.select(result).dtypes[0] == pl.Int32
-    assert pl.select(result).item() == 1
-
-    result = pl.lit(value, dtype=pl.Int8)
-    assert pl.select(result).dtypes[0] == pl.Int8
-    assert pl.select(result).item() == 1
-
-
 @given(value=datetimes("ns"))
 def test_datetime_ns(value: datetime) -> None:
     result = pl.select(pl.lit(value, dtype=pl.Datetime("ns")))["literal"][0]

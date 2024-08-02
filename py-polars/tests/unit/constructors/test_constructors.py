@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import OrderedDict, namedtuple
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
+from enum import Enum, auto
 from random import shuffle
 from typing import TYPE_CHECKING, Any, List, Literal, NamedTuple
 
@@ -86,6 +87,17 @@ class _TestBarNT(NamedTuple):
 class _TestFooNT(NamedTuple):
     x: int
     y: _TestBarNT
+
+
+class Color(Enum):  # noqa: D101
+    red = auto()
+    green = auto()
+    blue = auto()
+
+
+class State(str, Enum):  # noqa: D101
+    VIC = "victoria"
+    NSW = "new south wales"
 
 
 # --------------------------------------------------------------------------------
@@ -1747,3 +1759,15 @@ def test_init_list_of_dicts_with_timezone(tz: Any) -> None:
     assert_frame_equal(df, expected)
 
     assert df.schema == {"dt": pl.Datetime("us", time_zone=tz and "UTC")}
+
+
+def python_enum() -> None:
+    colors = [Color.red, Color.green, Color.blue]
+    states = [State.VIC, State.NSW]
+    colors_enum = pl.Enum(["red", "green", "blue"])
+    states_enum = pl.Enum(["victoria", "new south wales"])
+    df = pl.DataFrame({"color": colors * 2, "states": states * 3})
+    assert df["color"].dtype == colors_enum
+    assert df["states"].dtype == states_enum
+    assert df.filter(pl.col("states") == State.VIC)["states"][0] == "victoria"
+    assert df.filter(pl.col("color") == Color.red)["color"][0] == "red"

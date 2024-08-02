@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import enum
 from collections import OrderedDict
 from datetime import timezone
 from inspect import isclass
@@ -503,7 +504,7 @@ class Enum(DataType):
 
     categories: Series
 
-    def __init__(self, categories: Series | Iterable[str]):
+    def __init__(self, categories: Series | Iterable[str] | enum.EnumMeta):
         # Issuing the warning on `__init__` does not trigger when the class is used
         # without being instantiated, but it's better than nothing
         from polars._utils.unstable import issue_unstable_warning
@@ -512,7 +513,15 @@ class Enum(DataType):
             "The Enum data type is considered unstable."
             " It is a work-in-progress feature and may not always work as expected."
         )
-
+        if isinstance(categories, enum.EnumMeta):
+            # If the values are ints then infer that we want the name otherwise
+            # take the values
+            enum_keys = categories.__members__.keys()
+            enum_values = [x.value for x in categories.__members__.values()]
+            if all(isinstance(x, str) for x in enum_values):
+                categories = pl.Series(values=enum_values)
+            else:
+                categories = pl.Series(values=enum_keys)
         if not isinstance(categories, pl.Series):
             categories = pl.Series(values=categories)
 
