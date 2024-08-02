@@ -146,7 +146,7 @@ def test_interpolate_by_trailing_nulls() -> None:
 
 @given(data=st.data())
 @pytest.mark.parametrize("x_dtype", [pl.Date, pl.Float64])
-def test_interpolate_vs_numpy(data: st.DataObject, x_dtype) -> None:
+def test_interpolate_vs_numpy(data: st.DataObject, x_dtype: pl.DataType) -> None:
 
     dataframe = (
         data.draw(
