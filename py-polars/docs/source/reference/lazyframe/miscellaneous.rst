@@ -10,6 +10,7 @@ Miscellaneous
     LazyFrame.collect
     LazyFrame.collect_async
     LazyFrame.collect_schema
+    LazyFrame.fetch
     LazyFrame.lazy
     LazyFrame.map_batches
     LazyFrame.pipe
