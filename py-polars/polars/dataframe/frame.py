@@ -3161,7 +3161,7 @@ class DataFrame:
         categories is strongly recommended so that you do not have to calculate
         cell positions with respect to the frame data and worksheet:
 
-        >>> with Workbook("basic_chart.xlsx") as wb:
+        >>> with Workbook("basic_chart.xlsx") as wb:  # doctest: +SKIP
         ...     # create worksheet object and write frame data to it
         ...     ws = wb.add_worksheet("demo")
         ...     df.write_excel(
