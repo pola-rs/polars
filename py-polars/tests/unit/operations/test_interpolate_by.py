@@ -29,7 +29,7 @@ if TYPE_CHECKING:
         pl.UInt64,
         pl.UInt32,
         pl.Float32,
-        pl.Float64
+        pl.Float64,
     ],
 )
 @pytest.mark.parametrize(
@@ -147,7 +147,6 @@ def test_interpolate_by_trailing_nulls() -> None:
 @given(data=st.data())
 @pytest.mark.parametrize("x_dtype", [pl.Date, pl.Float64])
 def test_interpolate_vs_numpy(data: st.DataObject, x_dtype: pl.DataType) -> None:
-
     dataframe = (
         data.draw(
             dataframes(
@@ -172,20 +171,20 @@ def test_interpolate_vs_numpy(data: st.DataObject, x_dtype: pl.DataType) -> None
     )
 
     if x_dtype == pl.Float64:
-        assume(not dataframe['ts'].is_nan().any())
-        assume(not dataframe['ts'].is_null().any())
+        assume(not dataframe["ts"].is_nan().any())
+        assume(not dataframe["ts"].is_null().any())
         assume(not dataframe["ts"].is_in([float("-inf"), float("inf")]).any())
 
     assume(not dataframe["value"].is_null().all())
     assume(not dataframe["value"].is_in([float("-inf"), float("inf")]).any())
 
-    dataframe = dataframe.sort('ts')
+    dataframe = dataframe.sort("ts")
 
     result = dataframe.select(pl.col("value").interpolate_by("ts"))["value"]
 
     mask = dataframe["value"].is_not_null()
 
-    np_dtype = "int64" if x_dtype == pl.Date else 'float64'
+    np_dtype = "int64" if x_dtype == pl.Date else "float64"
     x = dataframe["ts"].to_numpy().astype(np_dtype)
     xp = dataframe["ts"].filter(mask).to_numpy().astype(np_dtype)
     yp = dataframe["value"].filter(mask).to_numpy().astype("float64")
