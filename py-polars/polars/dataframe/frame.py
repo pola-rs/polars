@@ -124,7 +124,7 @@ if TYPE_CHECKING:
     import torch
     from great_tables import GT
     from hvplot.plotting.core import hvPlotTabularPolars
-    from xlsxwriter import Workbook
+    from xlsxwriter import Workbook, Worksheet
 
     from polars import DataType, Expr, LazyFrame, Series
     from polars._typing import (
@@ -2802,8 +2802,8 @@ class DataFrame:
 
     def write_excel(
         self,
-        workbook: Workbook | IO[bytes] | Path | str | None = None,
-        worksheet: str | None = None,
+        workbook: str | Workbook | IO[bytes] | Path | None = None,
+        worksheet: str | Worksheet | None = None,
         *,
         position: tuple[int, int] | str = "A1",
         table_style: str | dict[str, Any] | None = None,
@@ -2838,14 +2838,15 @@ class DataFrame:
 
         Parameters
         ----------
-        workbook : Workbook
+        workbook : {str, Workbook}
             String name or path of the workbook to create, BytesIO object to write
             into, or an open `xlsxwriter.Workbook` object that has not been closed.
             If None, writes to a `dataframe.xlsx` workbook in the working directory.
-        worksheet : str
-            Name of target worksheet; if None, writes to "Sheet1" when creating a new
-            workbook (note that writing to an existing workbook requires a valid
-            existing -or new- worksheet name).
+        worksheet : {str, Worksheet}
+            Name of target worksheet or an `xlsxwriter.Worksheet` object (in which
+            case `workbook` must be the parent `xlsxwriter.Workbook` object); if None,
+            writes to "Sheet1" when creating a new workbook (note that writing to an
+            existing workbook requires a valid existing -or new- worksheet name).
         position : {str, tuple}
             Table position in Excel notation (eg: "A1"), or a (row,col) integer tuple.
         table_style : {str, dict}
@@ -3154,6 +3155,37 @@ class DataFrame:
         ...     hide_gridlines=True,
         ...     sheet_zoom=125,
         ... )
+
+        Create and reference a Worksheet object directly, adding a basic chart.
+        Taking advantage of structured references to set chart series values and
+        categories is strongly recommended so that you do not have to calculate
+        cell positions with respect to the frame data and worksheet:
+
+        >>> with Workbook("basic_chart.xlsx") as wb:
+        ...     # create worksheet object and write frame data to it
+        ...     ws = wb.add_worksheet("demo")
+        ...     df.write_excel(
+        ...         workbook=wb,
+        ...         worksheet=ws,
+        ...         table_name="DataTable",
+        ...         table_style="Table Style Medium 26",
+        ...         hide_gridlines=True,
+        ...     )
+        ...     # create chart object, point to the written table
+        ...     # data using structured references, and style it
+        ...     chart = wb.add_chart({"type": "column"})
+        ...     chart.set_title({"name": "Example Chart"})
+        ...     chart.set_legend({"none": True})
+        ...     chart.set_style(38)
+        ...     chart.add_series(
+        ...         {  # note the use of structured references
+        ...             "values": "=DataTable[points]",
+        ...             "categories": "=DataTable[id]",
+        ...             "data_labels": {"value": True},
+        ...         }
+        ...     )
+        ...     # add chart to the worksheet
+        ...     ws.insert_chart("D1", chart)
         """  # noqa: W505
         from polars.io.spreadsheet._write_utils import (
             _unpack_multi_column_dict,
