@@ -30,9 +30,8 @@ use crate::parquet::statistics::ParquetStatistics;
 use crate::parquet::CowBuffer;
 use crate::write::DynIter;
 
-trait MinMaxThreshold: std::cmp::Ord {
+trait MinMaxThreshold {
     const DELTA_THRESHOLD: Self;
-    fn clamp(self, min: Self, max: Self) -> Self;
 }
 
 macro_rules! minmaxthreshold_impls {
@@ -40,10 +39,6 @@ macro_rules! minmaxthreshold_impls {
         $(
         impl MinMaxThreshold for $t {
             const DELTA_THRESHOLD: Self = $threshold;
-            #[inline(always)]
-            fn clamp(self, min: Self, max: Self) -> Self {
-                std::cmp::Ord::clamp(self, min, max + 1)
-            }
         }
         )+
     };
@@ -65,7 +60,12 @@ fn min_max_integer_encode_as_dictionary_optional<'a, E, T>(
 ) -> Option<DictionaryArray<u32>>
 where
     E: std::fmt::Debug,
-    T: NativeType + MinMaxThreshold + TryInto<u32, Error = E> + num_traits::WrappingSub,
+    T: NativeType
+        + MinMaxThreshold
+        + std::cmp::Ord
+        + TryInto<u32, Error = E>
+        + std::ops::Sub<T, Output = T>
+        + num_traits::CheckedSub,
     std::ops::RangeInclusive<T>: Iterator<Item = T>,
     PrimitiveArray<T>: MinMaxKernel<Scalar<'a> = T>,
 {
@@ -74,8 +74,11 @@ where
         array.as_any().downcast_ref().unwrap(),
     )?;
 
-    debug_assert!(max >= min);
-    if max.wrapping_sub(&min) > T::DELTA_THRESHOLD {
+    debug_assert!(max >= min, "{max} >= {min}");
+    if !max
+        .checked_sub(&min)
+        .is_some_and(|v| v <= T::DELTA_THRESHOLD)
+    {
         return None;
     }
 
@@ -84,7 +87,6 @@ where
     let values = PrimitiveArray::new(DT::from(T::PRIMITIVE), (min..=max).collect(), None);
     let values = Box::new(values);
 
-    let delta = max.wrapping_sub(&min);
     let keys: Buffer<u32> = array
         .as_any()
         .downcast_ref::<PrimitiveArray<T>>()
@@ -97,7 +99,7 @@ where
             // clamp the values to between the min and max value. This way, they will still
             // be valid dictionary keys. This is mostly to make the
             // unwrap_unchecked_release not produce any unsafety.
-            MinMaxThreshold::clamp(v.wrapping_sub(&min), T::zeroed(), delta)
+            (*v.clamp(&min, &max) - min)
                 .try_into()
                 .unwrap_unchecked_release()
         })
