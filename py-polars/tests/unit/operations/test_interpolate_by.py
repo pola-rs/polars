@@ -122,28 +122,31 @@ def test_interpolate_by_leading_nulls() -> None:
 def test_interpolate_by_trailing_nulls(dataset: str) -> None:
     input_data = {
         "dates": pl.DataFrame(
-        {
-            "times": [
-                date(2020, 1, 1),
-                date(2020, 1, 3),
-                date(2020, 1, 10),
-                date(2020, 1, 11),
-                date(2020, 1, 12),
-                date(2020, 1, 13),
-            ],
-            "values": [1, None, None, 5, None, None],
-        }),
+            {
+                "times": [
+                    date(2020, 1, 1),
+                    date(2020, 1, 3),
+                    date(2020, 1, 10),
+                    date(2020, 1, 11),
+                    date(2020, 1, 12),
+                    date(2020, 1, 13),
+                ],
+                "values": [1, None, None, 5, None, None],
+            }
+        ),
         "floats": pl.DataFrame(
-        {
-            "times": [0.2, 0.4, 0.5, 0.6, 0.9, 1.1],
-            "values": [1, None, None, 5, None, None],
-        }
-        )
+            {
+                "times": [0.2, 0.4, 0.5, 0.6, 0.9, 1.1],
+                "values": [1, None, None, 5, None, None],
+            }
+        ),
     }
 
     expected_data = {
-        "dates": pl.DataFrame({"values": [1.0, 1.7999999999999998, 4.6, 5.0, None, None]}),
-        "floats": pl.DataFrame({"values": [1.0, 3.0, 4.0, 5.0, None, None]})
+        "dates": pl.DataFrame(
+            {"values": [1.0, 1.7999999999999998, 4.6, 5.0, None, None]}
+        ),
+        "floats": pl.DataFrame({"values": [1.0, 3.0, 4.0, 5.0, None, None]}),
     }
 
     df = input_data[dataset]
