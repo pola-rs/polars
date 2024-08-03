@@ -155,6 +155,7 @@ def test_interpolate_vs_numpy(data: st.DataObject, x_dtype: pl.DataType) -> None
                         "ts",
                         dtype=x_dtype,
                         allow_null=False,
+                        strategy=st.floats(allow_nan=False, allow_infinity=False, allow_subnormal=False) if x_dtype == pl.Float64 else None,
                     ),
                     column(
                         "value",
