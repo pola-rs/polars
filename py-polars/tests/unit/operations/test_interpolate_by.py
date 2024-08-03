@@ -148,7 +148,9 @@ def test_interpolate_by_trailing_nulls() -> None:
 @pytest.mark.parametrize("x_dtype", [pl.Date, pl.Float64])
 def test_interpolate_vs_numpy(data: st.DataObject, x_dtype: pl.DataType) -> None:
     if x_dtype == pl.Float64:
-        by_strategy = st.floats(allow_nan=False, allow_infinity=False, allow_subnormal=False)
+        by_strategy = st.floats(
+            allow_nan=False, allow_infinity=False, allow_subnormal=False
+        )
     else:
         by_strategy = None
 
