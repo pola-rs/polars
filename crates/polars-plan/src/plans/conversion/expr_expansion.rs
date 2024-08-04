@@ -854,11 +854,18 @@ pub(super) fn expand_selectors(
 ) -> PolarsResult<Arc<[ColumnName]>> {
     let mut columns = vec![];
 
+    // Skip the column fast paths.
+    fn skip(name: &str) -> bool {
+        is_regex_projection(name) || name == "*"
+    }
+
     for s in s {
         match s {
             Selector::Root(e) => match *e {
-                Expr::Column(name) => columns.push(name),
-                Expr::Columns(names) => columns.extend_from_slice(names.as_ref()),
+                Expr::Column(name) if !skip(name.as_ref()) => columns.push(name),
+                Expr::Columns(names) if names.iter().all(|n| !skip(n.as_ref())) => {
+                    columns.extend_from_slice(names.as_ref())
+                },
                 Expr::Selector(s) => {
                     let names = expand_selector(s, schema, keys)?;
                     columns.extend_from_slice(names.as_ref());
