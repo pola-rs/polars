@@ -517,3 +517,11 @@ def test_parquet_slice_pushdown_non_zero_offset(
         assert_frame_equal(
             pl.scan_parquet(paths[1:]).slice(-99, 1).collect(), df.clear()
         )
+
+        path = tmp_path / "data"
+        df = pl.select(x=pl.int_range(0, 50))
+        df.write_parquet(path)
+        assert_frame_equal(pl.scan_parquet(path).slice(-100, 75).collect(), df.head(25))
+        assert_frame_equal(
+            pl.scan_parquet(path).slice(-1, (1 << 32) - 1).collect(), df.tail(1)
+        )

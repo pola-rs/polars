@@ -72,7 +72,6 @@ impl ParquetExec {
                 // Walk the files in reverse until we find the first file, and then translate the
                 // slice into a positive-offset equivalent.
                 let slice_start_as_n_from_end = -slice.0 as usize;
-                let slice_end_as_n_from_end = slice_start_as_n_from_end.saturating_sub(slice.1);
                 let mut cum_rows = 0;
                 let chunk_size = 8;
                 POOL.install(|| {
@@ -105,12 +104,17 @@ impl ParquetExec {
                     PolarsResult::Ok(())
                 })?;
 
-                let start = cum_rows.saturating_sub(slice_start_as_n_from_end);
-                let end = if slice_end_as_n_from_end >= cum_rows {
-                    0
+                let (start, len) = if slice_start_as_n_from_end > cum_rows {
+                    // We need to trim the slice, e.g. SLICE[offset: -100, len: 75] on a file of 50
+                    // rows should only give the first 25 rows.
+                    let first_file_position = slice_start_as_n_from_end - cum_rows;
+                    (0, slice.1.saturating_sub(first_file_position))
                 } else {
-                    start + slice.1
+                    (cum_rows - slice_start_as_n_from_end, slice.1)
                 };
+
+                let end = start.saturating_add(len);
+
                 (start, end)
             }
         } else {
@@ -263,7 +267,6 @@ impl ParquetExec {
                 // Walk the files in reverse until we find the first file, and then translate the
                 // slice into a positive-offset equivalent.
                 let slice_start_as_n_from_end = -slice.0 as usize;
-                let slice_end_as_n_from_end = slice_start_as_n_from_end.saturating_sub(slice.1);
                 let mut cum_rows = 0;
 
                 let paths = &self.paths;
@@ -303,12 +306,17 @@ impl ParquetExec {
                     }
                 }
 
-                let start = cum_rows.saturating_sub(slice_start_as_n_from_end);
-                let end = if slice_end_as_n_from_end >= cum_rows {
-                    0
+                let (start, len) = if slice_start_as_n_from_end > cum_rows {
+                    // We need to trim the slice, e.g. SLICE[offset: -100, len: 75] on a file of 50
+                    // rows should only give the first 25 rows.
+                    let first_file_position = slice_start_as_n_from_end - cum_rows;
+                    (0, slice.1.saturating_sub(first_file_position))
                 } else {
-                    start + slice.1
+                    (cum_rows - slice_start_as_n_from_end, slice.1)
                 };
+
+                let end = start.saturating_add(len);
+
                 (start, end)
             }
         } else {
