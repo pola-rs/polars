@@ -479,7 +479,9 @@ def test_predicate_push_down_categorical_17744(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("streaming", [True, False])
-def test_parquet_slice_pushdown_nonzero_offset(tmp_path: Path, streaming: bool) -> None:
+def test_parquet_slice_pushdown_non_zero_offset(
+    tmp_path: Path, streaming: bool
+) -> None:
     paths = [tmp_path / "1", tmp_path / "2", tmp_path / "3"]
     dfs = [pl.DataFrame({"x": i}) for i in range(len(paths))]
 
@@ -512,3 +514,6 @@ def test_parquet_slice_pushdown_nonzero_offset(tmp_path: Path, streaming: bool) 
     if not streaming:
         assert_frame_equal(pl.scan_parquet(paths).slice(-2, 1).collect(), df)
         assert_frame_equal(pl.scan_parquet(paths[:2]).tail(1).collect(), df)
+        assert_frame_equal(
+            pl.scan_parquet(paths[1:]).slice(-99, 1).collect(), df.clear()
+        )
