@@ -35,6 +35,7 @@ if TYPE_CHECKING:
         PolarsDataType,
         RowTotalsDefinition,
     )
+    from polars.expr import Expr
 
 
 def _cluster(iterable: Iterable[Any], n: int = 2) -> Iterable[Any]:
@@ -218,14 +219,18 @@ def _xl_column_multi_range(
 
 
 def _xl_inject_dummy_table_columns(
-    df: DataFrame, options: dict[str, Any], dtype: PolarsDataType | None = None
+    df: DataFrame,
+    coldefs: dict[str, Any],
+    *,
+    dtype: PolarsDataType | None = None,
+    expr: Expr | None = None,
 ) -> DataFrame:
     """Insert dummy frame columns in order to create empty/named table columns."""
     df_original_columns = set(df.columns)
     df_select_cols = df.columns.copy()
     cast_lookup = {}
 
-    for col, definition in options.items():
+    for col, definition in coldefs.items():
         if col in df_original_columns:
             msg = f"cannot create a second {col!r} column"
             raise DuplicateError(msg)
@@ -246,16 +251,17 @@ def _xl_inject_dummy_table_columns(
                 )
                 df_select_cols.insert(insert_idx, col)
 
+    expr = F.lit(None) if expr is None else expr
     df = df.select(
         (
             col
             if col in df_original_columns
             else (
-                F.lit(None).cast(
+                expr.cast(
                     cast_lookup.get(col, dtype)  # type:ignore[arg-type]
                 )
                 if dtype or (col in cast_lookup and cast_lookup[col] is not None)
-                else F.lit(None)
+                else expr
             ).alias(col)
         )
         for col in df_select_cols
@@ -345,23 +351,6 @@ def _xl_setup_table_columns(
     if cast_cols:
         df = df.with_columns(cast_cols)
 
-    # expand/normalise column totals
-    if column_totals is True:
-        column_totals = {numeric(): "sum"}
-    elif isinstance(column_totals, str):
-        column_totals = {numeric(): column_totals.lower()}
-
-    column_totals = _unpack_multi_column_dict(  # type: ignore[assignment]
-        _expand_selector_dicts(df, column_totals, expand_keys=True, expand_values=False)
-        if isinstance(column_totals, dict)
-        else _expand_selectors(df, column_totals)
-    )
-    column_total_funcs = (
-        {col: "sum" for col in column_totals}
-        if isinstance(column_totals, Sequence)
-        else (column_totals.copy() if isinstance(column_totals, dict) else {})
-    )
-
     # expand/normalise column formats
     column_formats = _unpack_multi_column_dict(  # type: ignore[assignment]
         _expand_selector_dicts(
@@ -387,6 +376,7 @@ def _xl_setup_table_columns(
             n_ucase = sum((c[0] if c else "").isupper() for c in df.columns)
             total = f"{'T' if (n_ucase > len(df.columns) // 2) else 't'}otal"
             row_total_funcs = {total: _xl_table_formula(df, sum_cols, "sum")}
+            row_totals = [total]
         else:
             row_totals = _expand_selector_dicts(
                 df, row_totals, expand_keys=False, expand_values=True
@@ -397,6 +387,24 @@ def _xl_setup_table_columns(
                 )
                 for name, cols in row_totals.items()
             }
+
+    # expand/normalise column totals
+    if column_totals is True:
+        column_totals = {numeric(): "sum", **{t: "sum" for t in row_totals or ()}}
+    elif isinstance(column_totals, str):
+        fn = column_totals.lower()
+        column_totals = {numeric(): fn, **{t: fn for t in row_totals or ()}}
+
+    column_totals = _unpack_multi_column_dict(  # type: ignore[assignment]
+        _expand_selector_dicts(df, column_totals, expand_keys=True, expand_values=False)
+        if isinstance(column_totals, dict)
+        else _expand_selectors(df, column_totals)
+    )
+    column_total_funcs = (
+        {col: "sum" for col in column_totals}
+        if isinstance(column_totals, Sequence)
+        else (column_totals.copy() if isinstance(column_totals, dict) else {})
+    )
 
     # normalise formulas
     column_formulas = {
@@ -427,11 +435,12 @@ def _xl_setup_table_columns(
     # seed format cache with default fallback format
     fmt_default = format_cache.get({"valign": "vcenter"})
 
-    # default float format; account for dark styles
-    if table_style is None or "table style dark" not in str(table_style).lower():
+    if table_style is None:
+        # no table style; apply default black (+ve) & red (-ve) numeric formatting
         int_base_fmt = _XL_DEFAULT_INTEGER_FORMAT_
         flt_base_fmt = _XL_DEFAULT_FLOAT_FORMAT_
     else:
+        # if we have a table style, defer the colours to that style
         int_base_fmt = _XL_DEFAULT_INTEGER_FORMAT_.split(";", 1)[0]
         flt_base_fmt = _XL_DEFAULT_FLOAT_FORMAT_.split(";", 1)[0]
 
