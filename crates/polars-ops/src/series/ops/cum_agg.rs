@@ -1,5 +1,6 @@
 use std::ops::{Add, AddAssign, Mul};
 
+use arity::unary_elementwise_values;
 use num_traits::{Bounded, One, Zero};
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
@@ -216,7 +217,7 @@ pub fn cum_count(s: &Series, reverse: bool) -> PolarsResult<Series> {
         let out: IdxCa = if reverse {
             let mut count = (s.len() - s.null_count()) as IdxSize;
             let mut prev = false;
-            ca.apply_values_generic(|v: bool| {
+            unary_elementwise_values(&ca, |v: bool| {
                 if prev {
                     count -= 1;
                 }
@@ -225,7 +226,7 @@ pub fn cum_count(s: &Series, reverse: bool) -> PolarsResult<Series> {
             })
         } else {
             let mut count = 0 as IdxSize;
-            ca.apply_values_generic(|v: bool| {
+            unary_elementwise_values(&ca, |v: bool| {
                 if v {
                     count += 1;
                 }

@@ -9,7 +9,7 @@ mod fuzz;
 
 pub use bitmap::{encode_bool as bitpacked_encode, BitmapIter};
 pub use buffered::BufferedBitpacked;
-pub use encoder::encode;
+pub use encoder::{encode, Encoder};
 pub use gatherer::{
     DictionaryTranslator, FnTranslator, Translator, TryFromUsizeTranslator, UnitTranslator,
 };

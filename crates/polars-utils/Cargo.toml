@@ -13,6 +13,7 @@ polars-error = { workspace = true }
 
 ahash = { workspace = true }
 bytemuck = { workspace = true }
+bytes = { workspace = true }
 hashbrown = { workspace = true }
 indexmap = { workspace = true }
 memmap = { workspace = true, optional = true }
@@ -22,7 +23,7 @@ raw-cpuid = { workspace = true }
 rayon = { workspace = true }
 smartstring = { workspace = true }
 stacker = { workspace = true }
-sysinfo = { version = "0.30", default-features = false, optional = true }
+sysinfo = { version = "0.31", default-features = false, features = ["system"], optional = true }
 
 [dev-dependencies]
 rand = { workspace = true }

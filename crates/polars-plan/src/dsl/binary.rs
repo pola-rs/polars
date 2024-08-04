@@ -33,6 +33,12 @@ impl BinaryNameSpace {
         )
     }
 
+    /// Return the size (number of bytes) in each element.
+    pub fn size_bytes(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::BinaryExpr(BinaryFunction::Size))
+    }
+
     #[cfg(feature = "binary_encoding")]
     pub fn hex_decode(self, strict: bool) -> Expr {
         self.0

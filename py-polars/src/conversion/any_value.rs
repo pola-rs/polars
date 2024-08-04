@@ -274,13 +274,18 @@ pub(crate) fn py_object_to_any_value<'py>(
     }
 
     fn get_list(ob: &Bound<'_, PyAny>, strict: bool) -> PyResult<AnyValue<'static>> {
-        fn get_list_with_constructor(ob: &Bound<'_, PyAny>) -> PyResult<AnyValue<'static>> {
+        fn get_list_with_constructor(
+            ob: &Bound<'_, PyAny>,
+            strict: bool,
+        ) -> PyResult<AnyValue<'static>> {
             // Use the dedicated constructor.
             // This constructor is able to go via dedicated type constructors
             // so it can be much faster.
             let py = ob.py();
-            let s = SERIES.call1(py, (ob,))?;
-            get_list_from_series(s.bind(py), true)
+            let kwargs = PyDict::new_bound(py);
+            kwargs.set_item("strict", strict)?;
+            let s = SERIES.call_bound(py, (ob,), Some(&kwargs))?;
+            get_list_from_series(s.bind(py), strict)
         }
 
         if ob.is_empty()? {
@@ -303,7 +308,7 @@ pub(crate) fn py_object_to_any_value<'py>(
 
             // This path is only taken if there is no question about the data type.
             if dtype.is_primitive() && n_dtypes == 1 {
-                get_list_with_constructor(ob)
+                get_list_with_constructor(ob, strict)
             } else {
                 // Push the rest.
                 let length = list.len()?;
@@ -325,7 +330,7 @@ pub(crate) fn py_object_to_any_value<'py>(
             }
         } else {
             // range will take this branch
-            get_list_with_constructor(ob)
+            get_list_with_constructor(ob, strict)
         }
     }
 

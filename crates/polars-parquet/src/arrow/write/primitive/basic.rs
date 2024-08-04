@@ -26,20 +26,47 @@ where
     T: num_traits::AsPrimitive<P>,
 {
     if is_optional {
-        buffer.reserve(std::mem::size_of::<P>() * (array.len() - array.null_count()));
         // append the non-null values
-        for x in array.non_null_values_iter() {
-            let parquet_native: P = x.as_();
-            buffer.extend_from_slice(parquet_native.to_le_bytes().as_ref())
+        let validity = array.validity();
+
+        if let Some(validity) = validity {
+            let null_count = validity.unset_bits();
+
+            if null_count > 0 {
+                let values = array.values().as_slice();
+                let mut iter = validity.iter();
+
+                buffer.reserve(std::mem::size_of::<P>() * (array.len() - null_count));
+
+                let mut offset = 0;
+                let mut remaining_valid = array.len() - null_count;
+                while remaining_valid > 0 {
+                    let num_valid = iter.take_leading_ones();
+                    buffer.extend(
+                        values[offset..offset + num_valid]
+                            .iter()
+                            .flat_map(|value| value.as_().to_le_bytes()),
+                    );
+                    remaining_valid -= num_valid;
+                    offset += num_valid;
+
+                    let num_invalid = iter.take_leading_zeros();
+                    offset += num_invalid;
+                }
+
+                return buffer;
+            }
         }
-    } else {
-        buffer.reserve(std::mem::size_of::<P>() * array.len());
-        // append all values
-        array.values().iter().for_each(|x| {
-            let parquet_native: P = x.as_();
-            buffer.extend_from_slice(parquet_native.to_le_bytes().as_ref())
-        });
     }
+
+    buffer.reserve(std::mem::size_of::<P>() * array.len());
+    buffer.extend(
+        array
+            .values()
+            .iter()
+            .flat_map(|value| value.as_().to_le_bytes()),
+    );
+
     buffer
 }
 
@@ -168,31 +195,44 @@ where
     P: ParquetNativeType,
     T: num_traits::AsPrimitive<P>,
 {
+    let (min_value, max_value) = match (options.min_value, options.max_value) {
+        (true, true) => {
+            match polars_compute::min_max::dyn_array_min_max_propagate_nan(array as &dyn Array) {
+                None => (None, None),
+                Some((l, r)) => (Some(l), Some(r)),
+            }
+        },
+        (true, false) => (
+            polars_compute::min_max::dyn_array_min_propagate_nan(array as &dyn Array),
+            None,
+        ),
+        (false, true) => (
+            None,
+            polars_compute::min_max::dyn_array_max_propagate_nan(array as &dyn Array),
+        ),
+        (false, false) => (None, None),
+    };
+
+    let min_value = min_value.and_then(|s| {
+        s.as_any()
+            .downcast_ref::<PrimitiveScalar<T>>()
+            .unwrap()
+            .value()
+            .map(|x| x.as_())
+    });
+    let max_value = max_value.and_then(|s| {
+        s.as_any()
+            .downcast_ref::<PrimitiveScalar<T>>()
+            .unwrap()
+            .value()
+            .map(|x| x.as_())
+    });
+
     PrimitiveStatistics::<P> {
         primitive_type,
         null_count: options.null_count.then_some(array.null_count() as i64),
         distinct_count: None,
-        max_value: options
-            .max_value
-            .then(|| {
-                let scalar =
-                    polars_compute::min_max::dyn_array_max_propagate_nan(array as &dyn Array);
-                scalar.and_then(|s| {
-                    let s = s.as_any().downcast_ref::<PrimitiveScalar<T>>().unwrap();
-                    s.value().map(|x| x.as_())
-                })
-            })
-            .flatten(),
-        min_value: options
-            .min_value
-            .then(|| {
-                let scalar =
-                    polars_compute::min_max::dyn_array_min_propagate_nan(array as &dyn Array);
-                scalar.and_then(|s| {
-                    let s = s.as_any().downcast_ref::<PrimitiveScalar<T>>().unwrap();
-                    s.value().map(|x| x.as_())
-                })
-            })
-            .flatten(),
+        max_value,
+        min_value,
     }
 }

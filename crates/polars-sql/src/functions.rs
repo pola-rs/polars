@@ -1,3 +1,5 @@
+use std::ops::Sub;
+
 use polars_core::chunked_array::ops::{SortMultipleOptions, SortOptions};
 use polars_core::export::regex;
 use polars_core::prelude::{polars_bail, polars_err, DataType, PolarsResult, Schema, TimeUnit};
@@ -1573,7 +1575,7 @@ impl SQLFunctionVisitor<'_> {
             (true, [FunctionArgExpr::Expr(sql_expr)]) => {
                 let expr = parse_sql_expr(sql_expr, self.ctx, self.active_schema)?;
                 let expr = self.apply_window_spec(expr, &self.func.over)?;
-                Ok(expr.n_unique())
+                Ok(expr.clone().n_unique().sub(expr.null_count().gt(lit(0))))
             },
             _ => self.not_supported_error(),
         }

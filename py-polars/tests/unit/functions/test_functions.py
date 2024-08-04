@@ -511,7 +511,7 @@ def test_count() -> None:
         pl.count("b", "a"),
         [pl.count("b"), pl.count("a")],
     ):
-        out = df.select(count_expr)  # type: ignore[arg-type]
+        out = df.select(count_expr)
         assert out.rows() == [(2, 3)]
 
 

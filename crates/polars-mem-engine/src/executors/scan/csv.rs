@@ -25,7 +25,10 @@ impl CsvExec {
             // Interpret selecting no columns as selecting all columns.
             .filter(|columns| !columns.is_empty());
 
-        let n_rows = _set_n_rows_for_scan(self.file_options.n_rows);
+        let n_rows = _set_n_rows_for_scan(self.file_options.slice.map(|x| {
+            assert_eq!(x.0, 0);
+            x.1
+        }));
         let predicate = self.predicate.clone().map(phys_expr_to_io_expr);
         let options_base = self
             .options

@@ -341,7 +341,10 @@ class Expr:
 
     @classmethod
     def deserialize(
-        cls, source: str | Path | IOBase, *, format: SerializationFormat = "binary"
+        cls,
+        source: str | Path | IOBase | bytes,
+        *,
+        format: SerializationFormat = "binary",
     ) -> Expr:
         """
         Read a serialized expression from a file.
@@ -385,6 +388,8 @@ class Expr:
             source = BytesIO(source.getvalue().encode())
         elif isinstance(source, (str, Path)):
             source = normalize_filepath(source)
+        elif isinstance(source, bytes):
+            source = BytesIO(source)
 
         if format == "binary":
             deserializer = PyExpr.deserialize_binary
@@ -3355,7 +3360,7 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [1, 1, 2]})
+        >>> df = pl.DataFrame({"a": [1, 3, 2]})
         >>> df.select(pl.col("a").last())
         shape: (1, 1)
         ┌─────┐
@@ -4284,9 +4289,6 @@ class Expr:
         custom function elementwise over single values, see :func:`map_elements`.
         A reasonable use case for `map` functions is transforming the values
         represented by an expression using a third-party library.
-
-        If your function returns a scalar, for example a float, use
-        :func:`map_to_scalar` instead.
 
         Parameters
         ----------

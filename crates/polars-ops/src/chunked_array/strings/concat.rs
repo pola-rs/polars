@@ -1,5 +1,6 @@
 use arrow::array::{Utf8Array, ValueSize};
 use arrow::compute::cast::utf8_to_utf8view;
+use polars_core::prelude::arity::unary_elementwise;
 use polars_core::prelude::*;
 
 // Vertically concatenate all strings in a StringChunked.
@@ -67,7 +68,7 @@ pub fn hor_str_concat(
         return if !ignore_nulls || ca.null_count() == 0 {
             Ok(ca.clone())
         } else {
-            Ok(ca.apply_generic(|val| Some(val.unwrap_or(""))))
+            Ok(unary_elementwise(ca, |val| Some(val.unwrap_or(""))))
         };
     }
 

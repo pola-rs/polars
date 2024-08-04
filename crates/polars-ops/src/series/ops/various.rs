@@ -1,4 +1,5 @@
 use num_traits::Bounded;
+use polars_core::prelude::arity::unary_elementwise_values;
 #[cfg(feature = "dtype-struct")]
 use polars_core::prelude::sort::arg_sort_multiple::_get_rows_encoded_ca;
 use polars_core::prelude::*;
@@ -30,7 +31,8 @@ pub trait SeriesMethods: SeriesSealed {
 
         let counts = if normalize {
             let len = s.len() as f64;
-            let counts: Float64Chunked = counts.apply_values_generic(|count| count as f64 / len);
+            let counts: Float64Chunked =
+                unary_elementwise_values(&counts, |count| count as f64 / len);
             counts.into_series()
         } else {
             counts.into_series()

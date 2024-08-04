@@ -1,5 +1,6 @@
 use num_traits::{Signed, Zero};
 use polars_core::error::{polars_ensure, PolarsResult};
+use polars_core::prelude::arity::unary_elementwise_values;
 use polars_core::prelude::{ChunkedArray, DataType, IdxCa, PolarsIntegerType, Series, IDX_DTYPE};
 use polars_utils::index::ToIdx;
 
@@ -9,7 +10,7 @@ where
     T::Native: ToIdx,
 {
     let target_len = target_len as u64;
-    Ok(ca.apply_values_generic(|v| v.to_idx(target_len)))
+    Ok(unary_elementwise_values(ca, |v| v.to_idx(target_len)))
 }
 
 pub fn convert_to_unsigned_index(s: &Series, target_len: usize) -> PolarsResult<IdxCa> {

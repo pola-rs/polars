@@ -18,6 +18,7 @@ from typing import (
     Literal,
     Sequence,
     TypeVar,
+    overload,
 )
 
 import polars as pl
@@ -39,7 +40,7 @@ from polars.dependencies import numpy as np
 if TYPE_CHECKING:
     from collections.abc import Iterator, Reversible
 
-    from polars import DataFrame
+    from polars import DataFrame, Expr
     from polars._typing import PolarsDataType, SizeUnit
 
     if sys.version_info >= (3, 13):
@@ -221,7 +222,15 @@ def ordered_unique(values: Sequence[Any]) -> list[Any]:
     return [v for v in values if not (v in seen or add_(v))]
 
 
-def scale_bytes(sz: int, unit: SizeUnit) -> int | float:
+@overload
+def scale_bytes(sz: int, unit: SizeUnit) -> int | float: ...
+
+
+@overload
+def scale_bytes(sz: Expr, unit: SizeUnit) -> Expr: ...
+
+
+def scale_bytes(sz: int | Expr, unit: SizeUnit) -> int | float | Expr:
     """Scale size in bytes to other size units (eg: "kb", "mb", "gb", "tb")."""
     if unit in {"b", "bytes"}:
         return sz

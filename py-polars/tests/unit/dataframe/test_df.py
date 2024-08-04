@@ -34,6 +34,7 @@ from tests.unit.conftest import INTEGER_DTYPES
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
 
+    from polars import Expr
     from polars._typing import JoinStrategy, UniqueKeepStrategy
 else:
     from polars._utils.convert import string_to_zoneinfo as ZoneInfo
@@ -50,14 +51,15 @@ def test_null_count() -> None:
     assert df.null_count().row(np.int64(0)) == (0, 1)  # type: ignore[call-overload]
 
 
-def test_init_empty() -> None:
+@pytest.mark.parametrize("input", [None, (), [], {}, pa.Table.from_arrays([])])
+def test_init_empty(input: Any) -> None:
     # test various flavours of empty init
-    for empty in (None, (), [], {}, pa.Table.from_arrays([])):
-        df = pl.DataFrame(empty)
-        assert df.shape == (0, 0)
-        assert df.is_empty()
+    df = pl.DataFrame(input)
+    assert df.shape == (0, 0)
+    assert df.is_empty()
 
-    # note: cannot use df (empty or otherwise) in boolean context
+
+def test_df_bool_ambiguous() -> None:
     empty_df = pl.DataFrame()
     with pytest.raises(TypeError, match="ambiguous"):
         not empty_df
@@ -304,6 +306,107 @@ def test_sort() -> None:
     assert_frame_equal(
         df.sort(["a", "b"]), pl.DataFrame({"a": [1, 2, 3], "b": [2, 1, 3]})
     )
+
+
+def test_sort_multi_output_exprs_01() -> None:
+    df = pl.DataFrame(
+        {
+            "dts": [date(2077, 10, 3), date(2077, 10, 2), date(2077, 10, 2)],
+            "strs": ["abc", "def", "ghi"],
+            "vals": [10.5, 20.3, 15.7],
+        }
+    )
+
+    expected = pl.DataFrame(
+        {
+            "dts": [date(2077, 10, 2), date(2077, 10, 2), date(2077, 10, 3)],
+            "strs": ["ghi", "def", "abc"],
+            "vals": [15.7, 20.3, 10.5],
+        }
+    )
+    assert_frame_equal(expected, df.sort(pl.col("^(d|v).*$")))
+    assert_frame_equal(expected, df.sort(cs.temporal() | cs.numeric()))
+    assert_frame_equal(expected, df.sort(cs.temporal(), cs.numeric(), cs.binary()))
+
+    expected = pl.DataFrame(
+        {
+            "dts": [date(2077, 10, 3), date(2077, 10, 2), date(2077, 10, 2)],
+            "strs": ["abc", "def", "ghi"],
+            "vals": [10.5, 20.3, 15.7],
+        }
+    )
+    assert_frame_equal(
+        expected,
+        df.sort(pl.col("^(d|v).*$"), descending=[True]),
+    )
+    assert_frame_equal(
+        expected,
+        df.sort(cs.temporal() | cs.numeric(), descending=[True]),
+    )
+    assert_frame_equal(
+        expected,
+        df.sort(cs.temporal(), cs.numeric(), descending=[True, True]),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"the length of `descending` \(2\) does not match the length of `by` \(1\)",
+    ):
+        df.sort(by=[cs.temporal()], descending=[True, False])
+
+    with pytest.raises(
+        ValueError,
+        match=r"the length of `nulls_last` \(3\) does not match the length of `by` \(2\)",
+    ):
+        df.sort("dts", "strs", nulls_last=[True, False, True])
+
+    with pytest.raises(
+        ComputeError,
+        match="No columns selected for sorting",
+    ):
+        df.sort(pl.col("^xxx$"))
+
+
+@pytest.mark.parametrize(
+    ("by_explicit", "desc_explicit", "by_multi", "desc_multi"),
+    [
+        (
+            ["w", "x", "y", "z"],
+            [False, False, True, True],
+            [cs.integer(), cs.string()],
+            [False, True],
+        ),
+        (
+            ["w", "y", "z"],
+            [True, True, False],
+            [pl.col("^(w|y)$"), pl.col("^z.*$")],
+            [True, False],
+        ),
+        (
+            ["z", "w", "x"],
+            [True, False, False],
+            [pl.col("z"), cs.numeric()],
+            [True, False],
+        ),
+    ],
+)
+def test_sort_multi_output_exprs_02(
+    by_explicit: list[str],
+    desc_explicit: list[bool],
+    by_multi: list[Expr],
+    desc_multi: list[bool],
+) -> None:
+    df = pl.DataFrame(
+        {
+            "w": [100, 100, 100, 100, 200, 200, 200, 200],
+            "x": [888, 888, 444, 444, 888, 888, 444, 888],
+            "y": ["b", "b", "a", "a", "b", "b", "a", "a"],
+            "z": ["x", "y", "x", "y", "x", "y", "x", "y"],
+        }
+    )
+    res1 = df.sort(*by_explicit, descending=desc_explicit)
+    res2 = df.sort(*by_multi, descending=desc_multi)
+    assert_frame_equal(res1, res2)
 
 
 def test_sort_maintain_order() -> None:
@@ -1185,7 +1288,7 @@ def test_from_rows_of_dicts() -> None:
         {"id": 2, "value": 101, "_meta": "b"},
     ]
     df_init: Callable[..., Any]
-    for df_init in (pl.from_dicts, pl.DataFrame):  # type:ignore[assignment]
+    for df_init in (pl.from_dicts, pl.DataFrame):
         df1 = df_init(records)
         assert df1.rows() == [(1, 100, "a"), (2, 101, "b")]
 
@@ -2168,12 +2271,12 @@ def test_selection_misc() -> None:
 
     # literal values (as scalar/list)
     for zero in (0, [0]):
-        assert df.select(zero)["literal"].to_list() == [0]  # type: ignore[arg-type]
+        assert df.select(zero)["literal"].to_list() == [0]
     assert df.select(literal=0)["literal"].to_list() == [0]
 
     # expect string values to be interpreted as cols
     for x in ("x", ["x"], pl.col("x")):
-        assert df.select(x).rows() == [("abc",)]  # type: ignore[arg-type]
+        assert df.select(x).rows() == [("abc",)]
 
     # string col + lit
     assert df.with_columns(["x", 0]).to_dicts() == [{"x": "abc", "literal": 0}]
@@ -2476,7 +2579,7 @@ def test_init_datetimes_with_timezone() -> None:
                 }
             },
         ):
-            result = pl.DataFrame(  # type: ignore[arg-type]
+            result = pl.DataFrame(
                 data={
                     "d1": [dtm.replace(tzinfo=ZoneInfo(tz_us))],
                     "d2": [dtm.replace(tzinfo=ZoneInfo(tz_europe))],
@@ -2739,7 +2842,7 @@ def test_unstack() -> None:
         assert df.unstack(
             step=3,
             how="horizontal",
-            columns=column_subset,  # type: ignore[arg-type]
+            columns=column_subset,
         ).to_dict(as_series=False) == {
             "col2_0": [0, 3, 6],
             "col2_1": [1, 4, 7],

@@ -53,6 +53,60 @@ def test_any_all() -> None:
     }
 
 
+def test_count() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3, 4, 5],
+            "b": [1, 1, 22, 22, 333],
+            "c": [1, 1, None, None, 2],
+        }
+    )
+    res = df.sql(
+        """
+        SELECT
+          -- count
+          COUNT(a) AS count_a,
+          COUNT(b) AS count_b,
+          COUNT(c) AS count_c,
+          COUNT(*) AS count_star,
+          COUNT(NULL) AS count_null,
+          -- count distinct
+          COUNT(DISTINCT a) AS count_unique_a,
+          COUNT(DISTINCT b) AS count_unique_b,
+          COUNT(DISTINCT c) AS count_unique_c,
+          COUNT(DISTINCT NULL) AS count_unique_null,
+        FROM self
+        """,
+    )
+    assert res.to_dict(as_series=False) == {
+        "count_a": [5],
+        "count_b": [5],
+        "count_c": [3],
+        "count_star": [5],
+        "count_null": [0],
+        "count_unique_a": [5],
+        "count_unique_b": [3],
+        "count_unique_c": [2],
+        "count_unique_null": [0],
+    }
+
+    df = pl.DataFrame({"x": [None, None, None]})
+    res = df.sql(
+        """
+        SELECT
+          COUNT(x) AS count_x,
+          COUNT(*) AS count_star,
+          COUNT(DISTINCT x) AS count_unique_x
+        FROM self
+        """
+    )
+    assert res.to_dict(as_series=False) == {
+        "count_x": [0],
+        "count_star": [3],
+        "count_unique_x": [0],
+    }
+
+
 def test_distinct() -> None:
     df = pl.DataFrame(
         {

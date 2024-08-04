@@ -153,11 +153,14 @@ impl<'a> IRDotDisplay<'a> {
                 write_label(f, id, |f| write!(f, "FILTER BY {pred}"))?;
             },
             #[cfg(feature = "python")]
-            PythonScan { predicate, options } => {
-                let predicate = predicate.as_ref().map(|e| self.display_expr(e));
+            PythonScan { options } => {
+                let predicate = match &options.predicate {
+                    PythonPredicate::Polars(e) => format!("{}", self.display_expr(e)),
+                    PythonPredicate::PyArrow(s) => s.clone(),
+                    PythonPredicate::None => "none".to_string(),
+                };
                 let with_columns = NumColumns(options.with_columns.as_ref().map(|s| s.as_ref()));
                 let total_columns = options.schema.len();
-                let predicate = OptionExprIRDisplay(predicate);
 
                 write_label(f, id, |f| {
                     write!(

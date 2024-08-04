@@ -13,4 +13,5 @@ The following methods are available under the `expr.bin` attribute.
     Expr.bin.decode
     Expr.bin.encode
     Expr.bin.ends_with
+    Expr.bin.size
     Expr.bin.starts_with

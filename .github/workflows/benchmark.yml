@@ -69,7 +69,7 @@ jobs:
         run: maturin develop --release -- -C codegen-units=8 -C lto=thin -C target-cpu=native
 
       - name: Run benchmark tests
-        uses: CodSpeedHQ/action@v2
+        uses: CodSpeedHQ/action@v3
         with:
           working-directory: py-polars
           run: pytest -m benchmark --codspeed -v

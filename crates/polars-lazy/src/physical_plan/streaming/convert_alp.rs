@@ -234,7 +234,11 @@ pub(crate) fn insert_streaming_nodes(
                     )
                 }
             },
-            Scan { scan_type, .. } if scan_type.streamable() => {
+            Scan {
+                scan_type,
+                file_options: FileScanOptions { slice, .. },
+                ..
+            } if scan_type.streamable() && slice.map(|slice| slice.0 >= 0).unwrap_or(true) => {
                 if state.streamable {
                     state.sources.push(root);
                     pipeline_trees[current_idx].push(state)

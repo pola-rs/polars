@@ -317,7 +317,7 @@ def test_single_element_broadcast(
     # Given that the lengths of the mask, truthy and falsy are all either:
     # - Length 1
     # - Equal length to the maximum length of the 3.
-    # This test checks that all length-1 exprs are broadcasted to the max length.
+    # This test checks that all length-1 exprs are broadcast to the max length.
     result = df.select(
         pl.when(mask_expr).then(truthy_expr.alias("x")).otherwise(falsy_expr)
     )

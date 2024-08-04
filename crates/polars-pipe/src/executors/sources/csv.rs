@@ -38,8 +38,13 @@ impl CsvSource {
     fn init_next_reader(&mut self) -> PolarsResult<()> {
         let file_options = self.file_options.clone();
 
+        let n_rows = file_options.slice.map(|x| {
+            assert_eq!(x.0, 0);
+            x.1
+        });
+
         if self.current_path_idx == self.paths.len()
-            || (file_options.n_rows.is_some() && file_options.n_rows.unwrap() <= self.n_rows_read)
+            || (n_rows.is_some() && n_rows.unwrap() <= self.n_rows_read)
         {
             return Ok(());
         }
@@ -72,7 +77,11 @@ impl CsvSource {
         };
         let n_rows = _set_n_rows_for_scan(
             file_options
-                .n_rows
+                .slice
+                .map(|x| {
+                    assert_eq!(x.0, 0);
+                    x.1
+                })
                 .map(|n| n.saturating_sub(self.n_rows_read)),
         );
         let row_index = file_options.row_index.map(|mut ri| {

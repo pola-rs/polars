@@ -4,7 +4,7 @@ pub(crate) mod filter;
 use arrow::array::{
     BinaryArray, DictionaryArray, DictionaryKey, MutableBinaryViewArray, PrimitiveArray, View,
 };
-use arrow::bitmap::MutableBitmap;
+use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::datatypes::ArrowDataType;
 use arrow::pushable::Pushable;
 use arrow::types::Offset;
@@ -733,4 +733,21 @@ pub(super) fn binary_views_dict(
             }
         })
         .collect()
+}
+
+/// Freeze a [`MutableBitmap`] into a `Option<Bitmap>`.
+///
+/// This will turn the several instances where `None` (representing "all valid") suffices.
+pub fn freeze_validity(validity: MutableBitmap) -> Option<Bitmap> {
+    if validity.is_empty() {
+        return None;
+    }
+
+    let validity = validity.freeze();
+
+    if validity.unset_bits() == 0 {
+        return None;
+    }
+
+    Some(validity)
 }

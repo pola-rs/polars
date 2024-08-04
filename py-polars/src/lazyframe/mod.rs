@@ -1162,8 +1162,9 @@ impl PyLazyFrame {
             .into()
     }
 
-    fn drop(&self, columns: Vec<String>, strict: bool) -> Self {
+    fn drop(&self, columns: Vec<PyExpr>, strict: bool) -> Self {
         let ldf = self.ldf.clone();
+        let columns = columns.to_exprs();
         if strict {
             ldf.drop(columns)
         } else {

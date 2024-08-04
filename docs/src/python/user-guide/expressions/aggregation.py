@@ -160,9 +160,7 @@ q = (
         get_person().first().alias("youngest"),
         get_person().last().alias("oldest"),
         get_person().sort().first().alias("alphabetical_first"),
-        pl.col("gender")
-        .sort_by(pl.col("first_name").cast(pl.Categorical("lexical")))
-        .first(),
+        pl.col("gender").sort_by(get_person()).first(),
     )
     .sort("state")
     .limit(5)

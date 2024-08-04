@@ -12,6 +12,8 @@ mod serde;
 mod string;
 mod r#struct;
 
+use std::mem::ManuallyDrop;
+
 use polars::lazy::dsl::Expr;
 use pyo3::prelude::*;
 
@@ -35,7 +37,14 @@ pub(crate) trait ToExprs {
 impl ToExprs for Vec<PyExpr> {
     fn to_exprs(self) -> Vec<Expr> {
         // SAFETY: repr is transparent.
-        unsafe { std::mem::transmute(self) }
+        unsafe {
+            let length = self.len();
+            let capacity = self.capacity();
+            let mut manual_drop_vec = ManuallyDrop::new(self);
+            let vec_ptr: *mut PyExpr = manual_drop_vec.as_mut_ptr();
+            let ptr: *mut Expr = vec_ptr as *mut Expr;
+            Vec::from_raw_parts(ptr, length, capacity)
+        }
     }
 }
 
@@ -46,6 +55,13 @@ pub(crate) trait ToPyExprs {
 impl ToPyExprs for Vec<Expr> {
     fn to_pyexprs(self) -> Vec<PyExpr> {
         // SAFETY: repr is transparent.
-        unsafe { std::mem::transmute(self) }
+        unsafe {
+            let length = self.len();
+            let capacity = self.capacity();
+            let mut manual_drop_vec = ManuallyDrop::new(self);
+            let vec_ptr: *mut Expr = manual_drop_vec.as_mut_ptr();
+            let ptr: *mut PyExpr = vec_ptr as *mut PyExpr;
+            Vec::from_raw_parts(ptr, length, capacity)
+        }
     }
 }

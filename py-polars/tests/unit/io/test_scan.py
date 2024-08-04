@@ -490,7 +490,7 @@ def test_scan_limit_0_does_not_panic(
 )
 def test_scan_directory(
     tmp_path: Path,
-    scan_func: Callable[[Any], pl.LazyFrame],
+    scan_func: Callable[..., pl.LazyFrame],
     write_func: Callable[[pl.DataFrame, Path], None],
     glob: bool,
 ) -> None:
@@ -635,7 +635,7 @@ def test_scan_nonexistent_path(format: str) -> None:
 )
 def test_scan_include_file_name(
     tmp_path: Path,
-    scan_func: Callable[[Any], pl.LazyFrame],
+    scan_func: Callable[..., pl.LazyFrame],
     write_func: Callable[[pl.DataFrame, Path], None],
     streaming: bool,
 ) -> None:
@@ -658,13 +658,13 @@ def test_scan_include_file_name(
         pl.exceptions.DuplicateError,
         match=r'column name for file paths "x" conflicts with column name from file',
     ):
-        scan_func(tmp_path, include_file_paths="x").collect(streaming=streaming)  # type: ignore[call-arg]
+        scan_func(tmp_path, include_file_paths="x").collect(streaming=streaming)
 
     f = scan_func
     if scan_func in [pl.scan_csv, pl.scan_ndjson]:
         f = partial(f, schema=df.drop("path").schema)
 
-    lf: pl.LazyFrame = f(tmp_path, include_file_paths="path")  # type: ignore[call-arg]
+    lf: pl.LazyFrame = f(tmp_path, include_file_paths="path")
     assert_frame_equal(lf.collect(streaming=streaming), df)
 
     # TODO: Support this with CSV

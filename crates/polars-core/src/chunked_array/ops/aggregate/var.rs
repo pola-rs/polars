@@ -1,3 +1,5 @@
+use arity::unary_elementwise_values;
+
 use super::*;
 
 pub trait VarAggSeries {
@@ -19,7 +21,7 @@ where
         }
 
         let mean = self.mean()?;
-        let squared: Float64Chunked = ChunkedArray::apply_values_generic(self, |value| {
+        let squared: Float64Chunked = unary_elementwise_values(self, |value| {
             let tmp = value.to_f64().unwrap() - mean;
             tmp * tmp
         });

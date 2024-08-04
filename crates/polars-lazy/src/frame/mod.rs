@@ -426,12 +426,9 @@ impl LazyFrame {
     fn _drop<I, T>(self, columns: I, strict: bool) -> Self
     where
         I: IntoIterator<Item = T>,
-        T: AsRef<str>,
+        T: Into<Selector>,
     {
-        let to_drop = columns
-            .into_iter()
-            .map(|s| s.as_ref().to_string())
-            .collect::<PlHashSet<_>>();
+        let to_drop = columns.into_iter().map(|c| c.into()).collect();
 
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().drop(to_drop, strict).build();
@@ -444,11 +441,10 @@ impl LazyFrame {
     ///
     /// Any given columns that are not in the schema will give a [`PolarsError::ColumnNotFound`]
     /// error while materializing the [`LazyFrame`].
-    #[inline]
     pub fn drop<I, T>(self, columns: I) -> Self
     where
         I: IntoIterator<Item = T>,
-        T: AsRef<str>,
+        T: Into<Selector>,
     {
         self._drop(columns, true)
     }
@@ -458,11 +454,10 @@ impl LazyFrame {
     /// and let the projection pushdown optimize away the unneeded columns.
     ///
     /// If a column name does not exist in the schema, it will quietly be ignored.
-    #[inline]
     pub fn drop_no_validate<I, T>(self, columns: I) -> Self
     where
         I: IntoIterator<Item = T>,
-        T: AsRef<str>,
+        T: Into<Selector>,
     {
         self._drop(columns, false)
     }

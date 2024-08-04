@@ -347,6 +347,9 @@ def test_selector_drop(df: pl.DataFrame) -> None:
     dfd = df.drop(cs.numeric(), cs.temporal())
     assert dfd.columns == ["eee", "fgg", "qqR"]
 
+    df = pl.DataFrame([["x"], [1]], schema={"foo": pl.String, "foo_right": pl.Int8})
+    assert df.drop(cs.ends_with("_right")).schema == {"foo": pl.String()}
+
 
 def test_selector_duration(df: pl.DataFrame) -> None:
     assert df.select(cs.duration("ms")).columns == []

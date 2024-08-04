@@ -2,7 +2,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::time::Duration;
 
-use fs4::FileExt;
+use fs4::fs_std::FileExt;
 use once_cell::sync::Lazy;
 
 use super::utils::FILE_CACHE_PREFIX;

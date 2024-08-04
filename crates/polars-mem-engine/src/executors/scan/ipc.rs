@@ -57,7 +57,10 @@ impl IpcExec {
         if config::verbose() {
             eprintln!("executing ipc read sync with row_index = {:?}, n_rows = {:?}, predicate = {:?} for paths {:?}",
                 self.file_options.row_index.as_ref(),
-                self.file_options.n_rows.as_ref(),
+                self.file_options.slice.map(|x| {
+                    assert_eq!(x.0, 0);
+                    x.1
+                }).as_ref(),
                 self.predicate.is_some(),
                 self.paths
             );
@@ -94,7 +97,10 @@ impl IpcExec {
                 .finish()
         };
 
-        let mut dfs = if let Some(mut n_rows) = self.file_options.n_rows {
+        let mut dfs = if let Some(mut n_rows) = self.file_options.slice.map(|x| {
+            assert_eq!(x.0, 0);
+            x.1
+        }) {
             let mut out = Vec::with_capacity(self.paths.len());
 
             for i in 0..self.paths.len() {

@@ -43,6 +43,12 @@ pub(crate) fn cast_columns(
                 .as_date(None, false)
                 .map(|ca| ca.into_series()),
             #[cfg(feature = "temporal")]
+            (DataType::String, DataType::Time) => s
+                .str()
+                .unwrap()
+                .as_time(None, false)
+                .map(|ca| ca.into_series()),
+            #[cfg(feature = "temporal")]
             (DataType::String, DataType::Datetime(tu, _)) => s
                 .str()
                 .unwrap()

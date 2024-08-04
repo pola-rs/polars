@@ -47,7 +47,10 @@ impl JsonExec {
             eprintln!("ASYNC READING FORCED");
         }
 
-        let mut n_rows = self.file_scan_options.n_rows;
+        let mut n_rows = self.file_scan_options.slice.map(|x| {
+            assert_eq!(x.0, 0);
+            x.1
+        });
 
         // Avoid panicking
         if n_rows == Some(0) {

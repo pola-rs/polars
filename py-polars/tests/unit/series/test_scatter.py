@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from typing import Any
 
 import numpy as np
 import pytest
@@ -8,19 +9,24 @@ from polars.exceptions import ComputeError, InvalidOperationError, OutOfBoundsEr
 from polars.testing import assert_series_equal
 
 
-def test_scatter() -> None:
-    s = pl.Series("s", [1, 2, 3])
-
-    # no-op (empty sequences)
-    for x in (
+@pytest.mark.parametrize(
+    "input",
+    [
         (),
         [],
         pl.Series(),
         pl.Series(dtype=pl.Int8),
         np.array([]),
-    ):
-        s.scatter(x, 8)  # type: ignore[arg-type]
-        assert s.to_list() == [1, 2, 3]
+    ],
+)
+def test_scatter_noop(input: Any) -> None:
+    s = pl.Series("s", [1, 2, 3])
+    s.scatter(input, 8)
+    assert s.to_list() == [1, 2, 3]
+
+
+def test_scatter() -> None:
+    s = pl.Series("s", [1, 2, 3])
 
     # set new values, one index at a time
     s.scatter(0, 8)

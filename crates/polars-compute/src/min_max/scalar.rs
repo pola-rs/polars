@@ -6,6 +6,20 @@ use polars_utils::min_max::MinMax;
 
 use super::MinMaxKernel;
 
+fn min_max_ignore_nan<T: NativeType>((cur_min, cur_max): (T, T), (min, max): (T, T)) -> (T, T) {
+    (
+        MinMax::min_ignore_nan(cur_min, min),
+        MinMax::max_ignore_nan(cur_max, max),
+    )
+}
+
+fn min_max_propagate_nan<T: NativeType>((cur_min, cur_max): (T, T), (min, max): (T, T)) -> (T, T) {
+    (
+        MinMax::min_propagate_nan(cur_min, min),
+        MinMax::max_propagate_nan(cur_max, max),
+    )
+}
+
 fn reduce_vals<T, F>(v: &PrimitiveArray<T>, f: F) -> Option<T>
 where
     T: NativeType,
@@ -15,6 +29,18 @@ where
         v.values_iter().copied().reduce(f)
     } else {
         v.non_null_values_iter().reduce(f)
+    }
+}
+
+fn reduce_tuple_vals<T, F>(v: &PrimitiveArray<T>, f: F) -> Option<(T, T)>
+where
+    T: NativeType,
+    F: Fn((T, T), (T, T)) -> (T, T),
+{
+    if v.null_count() == 0 {
+        v.values_iter().copied().map(|v| (v, v)).reduce(f)
+    } else {
+        v.non_null_values_iter().map(|v| (v, v)).reduce(f)
     }
 }
 
@@ -29,12 +55,20 @@ impl<T: NativeType + MinMax + super::NotSimdPrimitive> MinMaxKernel for Primitiv
         reduce_vals(self, MinMax::max_ignore_nan)
     }
 
+    fn min_max_ignore_nan_kernel(&self) -> Option<(Self::Scalar<'_>, Self::Scalar<'_>)> {
+        reduce_tuple_vals(self, min_max_ignore_nan)
+    }
+
     fn min_propagate_nan_kernel(&self) -> Option<Self::Scalar<'_>> {
         reduce_vals(self, MinMax::min_propagate_nan)
     }
 
     fn max_propagate_nan_kernel(&self) -> Option<Self::Scalar<'_>> {
         reduce_vals(self, MinMax::max_propagate_nan)
+    }
+
+    fn min_max_propagate_nan_kernel(&self) -> Option<(Self::Scalar<'_>, Self::Scalar<'_>)> {
+        reduce_tuple_vals(self, min_max_propagate_nan)
     }
 }
 
@@ -49,12 +83,26 @@ impl<T: NativeType + MinMax + super::NotSimdPrimitive> MinMaxKernel for [T] {
         self.iter().copied().reduce(MinMax::max_ignore_nan)
     }
 
+    fn min_max_ignore_nan_kernel(&self) -> Option<(Self::Scalar<'_>, Self::Scalar<'_>)> {
+        self.iter()
+            .copied()
+            .map(|v| (v, v))
+            .reduce(min_max_ignore_nan)
+    }
+
     fn min_propagate_nan_kernel(&self) -> Option<Self::Scalar<'_>> {
         self.iter().copied().reduce(MinMax::min_propagate_nan)
     }
 
     fn max_propagate_nan_kernel(&self) -> Option<Self::Scalar<'_>> {
         self.iter().copied().reduce(MinMax::max_propagate_nan)
+    }
+
+    fn min_max_propagate_nan_kernel(&self) -> Option<(Self::Scalar<'_>, Self::Scalar<'_>)> {
+        self.iter()
+            .copied()
+            .map(|v| (v, v))
+            .reduce(min_max_propagate_nan)
     }
 }
 

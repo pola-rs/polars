@@ -28,7 +28,7 @@ def helper_dataset_test(
 
 
 @pytest.mark.write_disk()
-def test_dataset_foo(df: pl.DataFrame, tmp_path: Path) -> None:
+def test_pyarrow_dataset_source(df: pl.DataFrame, tmp_path: Path) -> None:
     file_path = tmp_path / "small.ipc"
     df.write_ipc(file_path)
 

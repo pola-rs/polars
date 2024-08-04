@@ -4,11 +4,12 @@ use arrow::array::{
     Array, BinaryViewArray, DictionaryArray, DictionaryKey, MutableBinaryViewArray, PrimitiveArray,
     Utf8ViewArray, View,
 };
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::{ArrowDataType, PhysicalType};
 use polars_error::PolarsResult;
 
 use super::binary::decoders::*;
+use super::utils::freeze_validity;
 use crate::parquet::encoding::hybrid_rle::{self, DictionaryTranslator};
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{DataPage, DictPage};
@@ -235,11 +236,9 @@ impl utils::Decoder for BinViewDecoder {
         (values, validity): Self::DecodedState,
     ) -> ParquetResult<Box<dyn Array>> {
         let mut array: BinaryViewArray = values.freeze();
-        let validity: Bitmap = validity.freeze();
 
-        if validity.unset_bits() != validity.len() {
-            array = array.with_validity(Some(validity))
-        }
+        let validity = freeze_validity(validity);
+        array = array.with_validity(validity);
 
         match data_type.to_physical_type() {
             PhysicalType::BinaryView => Ok(array.boxed()),

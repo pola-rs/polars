@@ -80,7 +80,8 @@ impl CategoricalChunked {
         options: &SortMultipleOptions,
     ) -> PolarsResult<IdxCa> {
         if self.uses_lexical_ordering() {
-            args_validate(self.physical(), by, &options.descending)?;
+            args_validate(self.physical(), by, &options.descending, "descending")?;
+            args_validate(self.physical(), by, &options.nulls_last, "nulls_last")?;
             let mut count: IdxSize = 0;
 
             // we use bytes to save a monomorphisized str impl

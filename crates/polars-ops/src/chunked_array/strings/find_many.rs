@@ -1,5 +1,6 @@
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder};
 use arrow::array::Utf8ViewArray;
+use polars_core::prelude::arity::unary_elementwise;
 use polars_core::prelude::*;
 use polars_core::utils::align_chunks_binary;
 
@@ -27,7 +28,9 @@ pub fn contains_any(
 ) -> PolarsResult<BooleanChunked> {
     let ac = build_ac(patterns, ascii_case_insensitive)?;
 
-    Ok(ca.apply_generic(|opt_val| opt_val.map(|val| ac.find(val).is_some())))
+    Ok(unary_elementwise(ca, |opt_val| {
+        opt_val.map(|val| ac.find(val).is_some())
+    }))
 }
 
 pub fn replace_all(
@@ -52,7 +55,9 @@ pub fn replace_all(
 
     let ac = build_ac(patterns, ascii_case_insensitive)?;
 
-    Ok(ca.apply_generic(|opt_val| opt_val.map(|val| ac.replace_all(val, replace_with.as_slice()))))
+    Ok(unary_elementwise(ca, |opt_val| {
+        opt_val.map(|val| ac.replace_all(val, replace_with.as_slice()))
+    }))
 }
 
 fn push(val: &str, builder: &mut ListStringChunkedBuilder, ac: &AhoCorasick, overlapping: bool) {

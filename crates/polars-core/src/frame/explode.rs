@@ -305,11 +305,9 @@ impl DataFrame {
 
         // values will all be placed in single column, so we must find their supertype
         let schema = self.schema();
-        let mut iter = on.iter().map(|v| {
-            schema
-                .get(v)
-                .ok_or_else(|| polars_err!(ColumnNotFound: "{}", v))
-        });
+        let mut iter = on
+            .iter()
+            .map(|v| schema.get(v).ok_or_else(|| polars_err!(col_not_found = v)));
         let mut st = iter.next().unwrap()?.clone();
         for dt in iter {
             st = try_get_supertype(&st, dt?)?;

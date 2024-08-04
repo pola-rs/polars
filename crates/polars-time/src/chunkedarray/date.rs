@@ -49,13 +49,6 @@ pub trait DateMethods: AsDate {
         ca.apply_kernel_cast::<Int8Type>(&date_to_month)
     }
 
-    /// Extract ISO weekday from underlying NaiveDate representation.
-    /// Returns the weekday number where monday = 1 and sunday = 7
-    fn weekday(&self) -> Int8Chunked {
-        let ca = self.as_date();
-        ca.apply_kernel_cast::<Int8Type>(&date_to_iso_weekday)
-    }
-
     /// Returns the ISO week number starting from 1.
     /// The return value ranges from 1 to 53. (The last week of year differs by years.)
     fn week(&self) -> Int8Chunked {

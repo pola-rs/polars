@@ -247,6 +247,7 @@
 //!
 //! ```
 //! use polars::prelude::*;
+//! use polars::prelude::arity::unary_elementwise_values;
 //! # fn example() -> PolarsResult<()> {
 //!
 //! // apply a closure over all values
@@ -255,7 +256,7 @@
 //!
 //! // count string lengths
 //! let s = Series::new("foo", &["foo", "bar", "foobar"]);
-//! s.str()?.apply_values_generic(|str_val| str_val.len() as u64);
+//! unary_elementwise_values(s.str()?, |str_val| str_val.len() as u64);
 //!
 //! # Ok(())
 //! # }

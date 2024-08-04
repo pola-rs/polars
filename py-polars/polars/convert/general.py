@@ -708,7 +708,7 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
         if el in headers:
             idx = headers.index(el)
             for table_elem in (headers, dtypes):
-                table_elem.pop(idx)  # type: ignore[attr-defined]
+                table_elem.pop(idx)
             if coldata:
                 coldata.pop(idx)
 

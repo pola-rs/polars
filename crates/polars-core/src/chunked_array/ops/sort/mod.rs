@@ -238,7 +238,8 @@ fn arg_sort_multiple_numeric<T: PolarsNumericType>(
     by: &[Series],
     options: &SortMultipleOptions,
 ) -> PolarsResult<IdxCa> {
-    args_validate(ca, by, &options.descending)?;
+    args_validate(ca, by, &options.descending, "descending")?;
+    args_validate(ca, by, &options.nulls_last, "nulls_last")?;
     let mut count: IdxSize = 0;
 
     let no_nulls = ca.null_count() == 0;
@@ -426,8 +427,8 @@ impl ChunkSort<BinaryType> for BinaryChunked {
         by: &[Series],
         options: &SortMultipleOptions,
     ) -> PolarsResult<IdxCa> {
-        args_validate(self, by, &options.descending)?;
-
+        args_validate(self, by, &options.descending, "descending")?;
+        args_validate(self, by, &options.nulls_last, "nulls_last")?;
         let mut count: IdxSize = 0;
 
         let mut vals = Vec::with_capacity(self.len());
@@ -568,8 +569,8 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
         by: &[Series],
         options: &SortMultipleOptions,
     ) -> PolarsResult<IdxCa> {
-        args_validate(self, by, &options.descending)?;
-
+        args_validate(self, by, &options.descending, "descending")?;
+        args_validate(self, by, &options.nulls_last, "nulls_last")?;
         let mut count: IdxSize = 0;
 
         let mut vals = Vec::with_capacity(self.len());

@@ -2259,3 +2259,24 @@ def test_write_csv_appending_17543(tmp_path: Path) -> None:
     with (tmp_path / "append.csv").open("r") as f:
         assert f.readline() == "# test\n"
         assert pl.read_csv(f).equals(df)
+
+
+@pytest.mark.parametrize(
+    ("dtype", "df"),
+    [
+        (pl.Decimal(scale=2), pl.DataFrame({"x": ["0.1"]}).cast(pl.Decimal(scale=2))),
+        (pl.Categorical, pl.DataFrame({"x": ["A"]})),
+        (
+            pl.Time,
+            pl.DataFrame({"x": ["12:15:00"]}).with_columns(
+                pl.col("x").str.strptime(pl.Time)
+            ),
+        ),
+    ],
+)
+def test_read_csv_cast_unparsable_later(
+    dtype: pl.Decimal | pl.Categorical | pl.Time, df: pl.DataFrame
+) -> None:
+    f = io.BytesIO()
+    df.write_csv(f)
+    assert df.equals(pl.read_csv(f, schema={"x": dtype}))

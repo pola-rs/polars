@@ -65,6 +65,16 @@ impl OptimizationRule for FusedArithmetic {
         lp_arena: &Arena<IR>,
         lp_node: Node,
     ) -> PolarsResult<Option<AExpr>> {
+        // We don't want to fuse arithmetic that we send to pyarrow.
+        #[cfg(feature = "python")]
+        if let IR::PythonScan { options } = lp_arena.get(lp_node) {
+            if matches!(
+                options.python_source,
+                PythonScanSource::Pyarrow | PythonScanSource::IOPlugin
+            ) {
+                return Ok(None);
+            }
+        };
         let expr = expr_arena.get(expr_node);
 
         use AExpr::*;

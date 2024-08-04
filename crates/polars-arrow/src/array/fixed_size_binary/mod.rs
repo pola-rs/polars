@@ -211,8 +211,8 @@ impl FixedSizeBinaryArray {
                 polars_ensure!(*size != 0, ComputeError: "FixedSizeBinaryArray expects a positive size");
                 Ok(*size)
             },
-            _ => {
-                polars_bail!(ComputeError: "FixedSizeBinaryArray expects DataType::FixedSizeBinary")
+            other => {
+                polars_bail!(ComputeError: "FixedSizeBinaryArray expects DataType::FixedSizeBinary. found {other:?}")
             },
         }
     }

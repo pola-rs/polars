@@ -51,7 +51,7 @@ impl IR {
         use IR::*;
         let schema = match self {
             #[cfg(feature = "python")]
-            PythonScan { options, .. } => &options.schema,
+            PythonScan { options } => &options.schema,
             DataFrameScan { schema, .. } => schema,
             Scan { file_info, .. } => &file_info.schema,
             node => {
@@ -68,7 +68,7 @@ impl IR {
         use IR::*;
         let schema = match self {
             #[cfg(feature = "python")]
-            PythonScan { options, .. } => options.output_schema.as_ref().unwrap_or(&options.schema),
+            PythonScan { options } => options.output_schema.as_ref().unwrap_or(&options.schema),
             Union { inputs, .. } => return arena.get(inputs[0]).schema(arena),
             HConcat { schema, .. } => schema,
             Cache { input, .. } => return arena.get(*input).schema(arena),

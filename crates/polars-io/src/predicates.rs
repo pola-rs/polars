@@ -190,7 +190,8 @@ impl ColumnStats {
 
 /// Returns whether the [`DataType`] supports minimum/maximum operations.
 fn use_min_max(dtype: &DataType) -> bool {
-    dtype.to_physical().is_numeric()
+    dtype.is_numeric()
+        || dtype.is_temporal()
         || matches!(
             dtype,
             DataType::String | DataType::Binary | DataType::Boolean

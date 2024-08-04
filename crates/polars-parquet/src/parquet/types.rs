@@ -4,6 +4,7 @@ use crate::parquet::schema::types::PhysicalType;
 pub trait NativeType: std::fmt::Debug + Send + Sync + 'static + Copy + Clone {
     type Bytes: AsRef<[u8]>
         + bytemuck::Pod
+        + IntoIterator<Item = u8>
         + for<'a> TryFrom<&'a [u8], Error = std::array::TryFromSliceError>
         + std::fmt::Debug
         + Clone

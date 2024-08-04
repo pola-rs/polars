@@ -40,7 +40,7 @@ pub fn register_plugin_function(
         None
     };
 
-    let mut flags = FunctionFlags::from_bits_truncate(0);
+    let mut flags = FunctionFlags::default();
     flags.set(FunctionFlags::CHANGES_LENGTH, changes_length);
     flags.set(FunctionFlags::PASS_NAME_TO_APPLY, pass_name_to_apply);
     flags.set(FunctionFlags::RETURNS_SCALAR, returns_scalar);

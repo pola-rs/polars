@@ -2,13 +2,13 @@ use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::{BufReader, Cursor, Read, Seek};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use memmap::Mmap;
 use once_cell::sync::Lazy;
 use polars_core::config::verbose;
 use polars_error::{polars_bail, PolarsResult};
-use polars_utils::mmap::{MemSlice, MmapSlice};
+use polars_utils::mmap::MemSlice;
 
 // Keep track of memory mapped files so we don't write to them while reading
 // Use a btree as it uses less memory than a hashmap and this thing never shrinks.
@@ -144,12 +144,14 @@ impl std::ops::Deref for ReaderBytes<'_> {
     }
 }
 
-impl<'a> ReaderBytes<'a> {
+/// Require 'static to force the caller to do any transmute as it's usually much
+/// clearer to see there whether it's sound.
+impl ReaderBytes<'static> {
     pub fn into_mem_slice(self) -> MemSlice {
         match self {
             ReaderBytes::Borrowed(v) => MemSlice::from_slice(v),
             ReaderBytes::Owned(v) => MemSlice::from_vec(v),
-            ReaderBytes::Mapped(v, _) => MemSlice::from_mmap(MmapSlice::new(v)),
+            ReaderBytes::Mapped(v, _) => MemSlice::from_mmap(Arc::new(v)),
         }
     }
 }

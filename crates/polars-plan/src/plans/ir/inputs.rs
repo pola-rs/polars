@@ -7,9 +7,8 @@ impl IR {
 
         match self {
             #[cfg(feature = "python")]
-            PythonScan { options, predicate } => PythonScan {
+            PythonScan { options } => PythonScan {
                 options: options.clone(),
-                predicate: predicate.clone(),
             },
             Union { options, .. } => Union {
                 inputs,

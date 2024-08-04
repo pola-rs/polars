@@ -256,6 +256,10 @@ impl NestedState {
         Some(self.nested.pop()?.take())
     }
 
+    pub fn last(&self) -> Option<&NestedContent> {
+        self.nested.last().map(|v| &v.content)
+    }
+
     /// The number of rows in this state
     pub fn len(&self) -> usize {
         // outermost is the number of rows

@@ -75,8 +75,8 @@ pub type ChunkLenIter<'a> = std::iter::Map<std::slice::Iter<'a, ArrayRef>, fn(&A
 ///
 /// ```rust
 /// # use polars_core::prelude::*;
-/// fn apply_cosine_and_cast(ca: &Float32Chunked) -> Float64Chunked {
-///     ca.apply_values_generic(|v| v.cos() as f64)
+/// fn apply_cosine_and_cast(ca: &Float32Chunked) -> Float32Chunked {
+///     ca.apply_values(|v| v.cos())
 /// }
 /// ```
 ///

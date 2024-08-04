@@ -1032,6 +1032,16 @@ impl SQLContext {
                     polars_bail!(SQLSyntax: "UNNEST table must have an alias");
                 }
             },
+            TableFactor::NestedJoin {
+                table_with_joins,
+                alias,
+            } => {
+                let lf = self.execute_from_statement(table_with_joins)?;
+                match alias {
+                    Some(a) => Ok((a.name.value.clone(), lf)),
+                    None => Ok(("".to_string(), lf)),
+                }
+            },
             // Support bare table, optionally with an alias, for now
             _ => polars_bail!(SQLInterface: "not yet implemented: {}", relation),
         }

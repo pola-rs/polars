@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from functools import reduce
 from operator import or_
-from typing import TYPE_CHECKING, Callable, TypeVar
+from typing import TYPE_CHECKING, Callable, Generic, TypeVar
 from warnings import warn
 
 import polars._reexport as pl
@@ -10,8 +10,6 @@ from polars._utils.various import find_stacklevel
 
 if TYPE_CHECKING:
     from polars import DataFrame, Expr, LazyFrame, Series
-
-    NS = TypeVar("NS")
 
 
 __all__ = [
@@ -24,14 +22,14 @@ __all__ = [
 # do not allow override of polars' own namespaces (as registered by '_accessors')
 _reserved_namespaces: set[str] = reduce(
     or_,
-    (
-        cls._accessors  # type: ignore[attr-defined]
-        for cls in (pl.DataFrame, pl.Expr, pl.LazyFrame, pl.Series)
-    ),
+    (cls._accessors for cls in (pl.DataFrame, pl.Expr, pl.LazyFrame, pl.Series)),
 )
 
 
-class NameSpace:
+NS = TypeVar("NS")
+
+
+class NameSpace(Generic[NS]):
     """Establish property-like namespace object for user-defined functionality."""
 
     def __init__(self, name: str, namespace: type[NS]) -> None:
