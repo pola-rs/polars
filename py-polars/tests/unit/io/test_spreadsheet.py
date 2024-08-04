@@ -775,21 +775,19 @@ def test_excel_sparklines(engine: ExcelSpreadsheetEngine) -> None:
 def test_excel_write_multiple_tables() -> None:
     from xlsxwriter import Workbook
 
-    # note: checks that empty tables don't error on write
-    df1 = pl.DataFrame(schema={"colx": pl.Date, "coly": pl.String, "colz": pl.Float64})
-    df2 = pl.DataFrame(schema={"colx": pl.Date, "coly": pl.String, "colz": pl.Float64})
-    df3 = pl.DataFrame(schema={"colx": pl.Date, "coly": pl.String, "colz": pl.Float64})
-    df4 = pl.DataFrame(schema={"colx": pl.Date, "coly": pl.String, "colz": pl.Float64})
+    # note: also checks that empty tables don't error on write
+    df = pl.DataFrame(schema={"colx": pl.Date, "coly": pl.String, "colz": pl.Float64})
 
+    # write multiple frames to multiple worksheets
     xls = BytesIO()
     with Workbook(xls) as wb:
-        df1.write_excel(workbook=wb, worksheet="sheet1", position="A1")
-        df2.write_excel(workbook=wb, worksheet="sheet1", position="A6")
-        df3.write_excel(workbook=wb, worksheet="sheet2", position="A1")
+        df.write_excel(workbook=wb, worksheet="sheet1", position="A1")
+        df.write_excel(workbook=wb, worksheet="sheet1", position="A6")
+        df.write_excel(workbook=wb, worksheet="sheet2", position="A1")
 
         # validate integration of externally-added formats
         fmt = wb.add_format({"bg_color": "#ffff00"})
-        df4.write_excel(
+        df.write_excel(
             workbook=wb,
             worksheet="sheet3",
             position="A1",
@@ -809,6 +807,34 @@ def test_excel_write_multiple_tables() -> None:
         )
     assert table_names == {f"Frame{n}" for n in range(4)}
     assert pl.read_excel(xls, sheet_name="sheet3").rows() == []
+
+
+def test_excel_write_worksheet_object() -> None:
+    # write to worksheet object
+    from xlsxwriter import Workbook
+
+    df = pl.DataFrame({"colx": ["aaa", "bbb", "ccc"], "coly": [-1234, 0, 5678]})
+
+    with Workbook(xls := BytesIO()) as wb:
+        ws = wb.add_worksheet("frame_data")
+        df.write_excel(wb, worksheet=ws)
+        ws.hide_zero()
+
+    assert_frame_equal(df, pl.read_excel(xls, sheet_name="frame_data"))
+
+    with pytest.raises(  # noqa: SIM117
+        ValueError,
+        match="the given workbook object .* is not the parent of worksheet 'frame_data'",
+    ):
+        with Workbook(BytesIO()) as wb:
+            df.write_excel(wb, worksheet=ws)
+
+    with pytest.raises(  # noqa: SIM117
+        TypeError,
+        match="worksheet object requires the parent workbook object; found workbook=None",
+    ):
+        with Workbook(BytesIO()) as wb:
+            df.write_excel(None, worksheet=ws)
 
 
 def test_excel_freeze_panes() -> None:

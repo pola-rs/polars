@@ -522,15 +522,36 @@ def _xl_setup_table_options(
     return table_style, table_options
 
 
+def _xl_worksheet_in_workbook(
+    wb: Workbook, ws: Worksheet, *, return_worksheet: bool = False
+) -> bool | Worksheet:
+    if any(ws is sheet for sheet in wb.worksheets()):
+        return ws if return_worksheet else True
+    msg = f"the given workbook object {wb.filename!r} is not the parent of worksheet {ws.name!r}"
+    raise ValueError(msg)
+
+
 def _xl_setup_workbook(
-    workbook: Workbook | BytesIO | Path | str | None, worksheet: str | None = None
+    workbook: Workbook | BytesIO | Path | str | None,
+    worksheet: str | Worksheet | None = None,
 ) -> tuple[Workbook, Worksheet, bool]:
     """Establish the target excel workbook and worksheet."""
     from xlsxwriter import Workbook
+    from xlsxwriter.worksheet import Worksheet
 
     if isinstance(workbook, Workbook):
         wb, can_close = workbook, False
-        ws = wb.get_worksheet_by_name(name=worksheet)
+        ws = (
+            worksheet
+            if (
+                isinstance(worksheet, Worksheet)
+                and _xl_worksheet_in_workbook(wb, worksheet)
+            )
+            else wb.get_worksheet_by_name(name=worksheet)
+        )
+    elif isinstance(worksheet, Worksheet):
+        msg = f"worksheet object requires the parent workbook object; found workbook={workbook!r}"
+        raise TypeError(msg)
     else:
         workbook_options = {
             "nan_inf_to_errors": True,
@@ -550,7 +571,10 @@ def _xl_setup_workbook(
             ws, can_close = None, True
 
     if ws is None:
-        ws = wb.add_worksheet(name=worksheet)
+        if isinstance(worksheet, Worksheet):
+            ws = _xl_worksheet_in_workbook(wb, worksheet, return_worksheet=True)
+        else:
+            ws = wb.add_worksheet(name=worksheet)
     return wb, ws, can_close
 
 
