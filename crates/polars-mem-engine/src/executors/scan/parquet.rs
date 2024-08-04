@@ -71,7 +71,7 @@ impl ParquetExec {
             } else {
                 // Walk the files in reverse until we find the first file, and then translate the
                 // slice into a positive-offset equivalent.
-                let n_from_end = -slice.0 as usize;
+                let slice_start_as_n_from_end = -slice.0 as usize;
                 let mut cum_rows = 0;
                 let chunk_size = 8;
                 POOL.install(|| {
@@ -90,7 +90,7 @@ impl ParquetExec {
                         for (path_idx, rc) in path_indexes.iter().zip(row_counts) {
                             cum_rows += rc;
 
-                            if cum_rows >= n_from_end {
+                            if cum_rows >= slice_start_as_n_from_end {
                                 first_file = *path_idx;
                                 break;
                             }
@@ -104,8 +104,18 @@ impl ParquetExec {
                     PolarsResult::Ok(())
                 })?;
 
-                let start = cum_rows - n_from_end;
-                (start, start + slice.1)
+                let (start, len) = if slice_start_as_n_from_end > cum_rows {
+                    // We need to trim the slice, e.g. SLICE[offset: -100, len: 75] on a file of 50
+                    // rows should only give the first 25 rows.
+                    let first_file_position = slice_start_as_n_from_end - cum_rows;
+                    (0, slice.1.saturating_sub(first_file_position))
+                } else {
+                    (cum_rows - slice_start_as_n_from_end, slice.1)
+                };
+
+                let end = start.saturating_add(len);
+
+                (start, end)
             }
         } else {
             (0, usize::MAX)
@@ -256,7 +266,7 @@ impl ParquetExec {
             } else {
                 // Walk the files in reverse until we find the first file, and then translate the
                 // slice into a positive-offset equivalent.
-                let n_from_end = -slice.0 as usize;
+                let slice_start_as_n_from_end = -slice.0 as usize;
                 let mut cum_rows = 0;
 
                 let paths = &self.paths;
@@ -290,14 +300,24 @@ impl ParquetExec {
 
                     cum_rows += num_rows;
 
-                    if cum_rows >= n_from_end {
+                    if cum_rows >= slice_start_as_n_from_end {
                         first_file_idx = path_idx;
                         break;
                     }
                 }
 
-                let start = cum_rows - n_from_end;
-                (start, start + slice.1)
+                let (start, len) = if slice_start_as_n_from_end > cum_rows {
+                    // We need to trim the slice, e.g. SLICE[offset: -100, len: 75] on a file of 50
+                    // rows should only give the first 25 rows.
+                    let first_file_position = slice_start_as_n_from_end - cum_rows;
+                    (0, slice.1.saturating_sub(first_file_position))
+                } else {
+                    (cum_rows - slice_start_as_n_from_end, slice.1)
+                };
+
+                let end = start.saturating_add(len);
+
+                (start, end)
             }
         } else {
             (0, usize::MAX)
