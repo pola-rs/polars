@@ -17,24 +17,19 @@ def test_dataframe_scatter() -> None:
             "species": ["setosa", "setosa", "versicolor"],
         }
     )
-    df.plot.scatter(x="length", y="width", by="species")
+    df.plot.point(x="length", y="width", color="species")
 
 
 def test_dataframe_line() -> None:
     df = pl.DataFrame(
         {
-            "date": [date(2020, 1, 2), date(2020, 1, 3), date(2020, 1, 3)],
-            "stock_1": [1, 4, 6],
-            "stock_2": [1, 5, 2],
+            "date": [date(2020, 1, 2), date(2020, 1, 3), date(2020, 1, 4)] * 2,
+            "price": [1, 4, 6, 1, 5, 2],
+            "stock": ["a", "a", "a", "b", "b", "b"],
         }
     )
-    df.plot.line(x="date", y=["stock_1", "stock_2"])
-
-
-def test_series_hist() -> None:
-    s = pl.Series("values", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
-    s.plot.hist()
+    df.plot.line(x="date", y="price", color="stock")
 
 
 def test_empty_dataframe() -> None:
-    pl.DataFrame({"a": [], "b": []}).plot.scatter(x="a", y="b")
+    pl.DataFrame({"a": [], "b": []}).plot.point(x="a", y="b")
