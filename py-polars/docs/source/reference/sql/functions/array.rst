@@ -175,7 +175,7 @@ Returns the mean of all values in an array.
 **Example:**
 
 .. code-block:: python
-    
+
     df = pl.DataFrame({"foo": [[1, 2], [4, 3, -1]]})
     df.sql("""
       SELECT foo, ARRAY_MEAN(foo) AS foo_mean FROM self

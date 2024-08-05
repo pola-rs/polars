@@ -23,15 +23,15 @@
 #
 # <token> | <weight> # comment
 #
-# Distributions are used to bias the selection of a token 
-# based on its associated weight. The list of tokens and values 
+# Distributions are used to bias the selection of a token
+# based on its associated weight. The list of tokens and values
 # between the keywords BEGIN and END define the distribution named after
 # the BEGIN. A uniformly random value from [0, sum(weights)]
 # will be chosen and the first token whose cumulative weight is greater than
 # or equal to the result will be returned. In essence, the weights for each
 # token represent its relative weight within a distribution.
 #
-# one special token is defined: count (number of data points in the 
+# one special token is defined: count (number of data points in the
 #  distribution). It MUST be defined for each named distribution.
 #-----------------------------------------------------------------------
 # currently defined distributions and their use:
@@ -49,11 +49,11 @@
 #  rflag      lineitems.returnflag
 #  types      parts.type
 #  colors     embedded string creation; CANNOT BE USED FOR pick_str(), agg_str() perturbs order
-#  articles   comment generation 
-#  nouns      
-#  verbs      
-#  adverbs    
-#  auxillaries 
+#  articles   comment generation
+#  nouns
+#  verbs
+#  adverbs
+#  auxillaries
 #  prepositions
 #  terminators
 #  grammar    sentence formation
@@ -693,7 +693,7 @@ near|1
 of|1
 on|1
 outside|1
-over|1 
+over|1
 past|1
 since|1
 through|1
@@ -702,7 +702,7 @@ to|1
 toward|1
 under|1
 until|1
-up|1 
+up|1
 upon|1
 whithout|1
 with|1
@@ -794,7 +794,7 @@ N P V P T|1
 END grammar
 ###
 # NP
-# second level grammar. Noun phrases. N=noun, A=article, 
+# second level grammar. Noun phrases. N=noun, A=article,
 # J=adjective, D=adverb
 ##
 BEGIN np
@@ -806,7 +806,7 @@ D J N|50
 END np
 ###
 # VP
-# second level grammar. Verb phrases. V=verb, X=auxiallary, 
+# second level grammar. Verb phrases. V=verb, X=auxiallary,
 # D=adverb
 ##
 BEGIN vp
@@ -818,7 +818,7 @@ X V D|1
 END vp
 ###
 # Q13
-# Substitution parameters for Q13 
+# Substitution parameters for Q13
 ##
 BEGIN Q13a
 COUNT|4

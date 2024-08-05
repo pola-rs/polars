@@ -2299,7 +2299,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             If not set defaults to 1024 * 1024 bytes
         maintain_order
             Maintain the order in which data is processed.
-            Setting this to `False` will  be slightly faster.
+            Setting this to `False` will be slightly faster.
         type_coercion
             Do type coercion optimization.
         predicate_pushdown
@@ -2390,7 +2390,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Choose "lz4" for fast compression/decompression.
         maintain_order
             Maintain the order in which data is processed.
-            Setting this to `False` will  be slightly faster.
+            Setting this to `False` will be slightly faster.
         type_coercion
             Do type coercion optimization.
         predicate_pushdown
@@ -2520,7 +2520,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
               necessary.
         maintain_order
             Maintain the order in which data is processed.
-            Setting this to `False` will  be slightly faster.
+            Setting this to `False` will be slightly faster.
         type_coercion
             Do type coercion optimization.
         predicate_pushdown

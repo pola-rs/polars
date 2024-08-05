@@ -51,7 +51,7 @@ pub(crate) struct NodeTraverser {
 
 impl NodeTraverser {
     // Versioning for IR, (major, minor)
-    // Incremement major on breaking changes to the IR (e.g. renaming
+    // Increment major on breaking changes to the IR (e.g. renaming
     // fields, reordering tuples), minor on backwards compatible
     // changes (e.g. exposing a new expression node).
     const VERSION: Version = (1, 0);

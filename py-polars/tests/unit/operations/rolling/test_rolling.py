@@ -938,7 +938,7 @@ def test_rolling_min_periods(
     )["value"]
     assert_series_equal(result, pl.Series("value", expected, pl.Int64))
 
-    # Startig with unsorted data
+    # Starting with unsorted data
     result = (
         df.sort("date", descending=True)
         .with_columns(

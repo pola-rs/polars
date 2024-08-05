@@ -172,7 +172,7 @@ pub(crate) fn py_object_to_any_value<'py>(
         // with abi3 for versions older than Python 3.10, the APIs that purport
         // to return &str actually just encode to UTF-8 as a newly allocated
         // PyBytes object, and then return reference to that. So what we're
-        // doing here isn't any different fundamantelly, and the APIs to for
+        // doing here isn't any different fundamentally, and the APIs to for
         // converting to &str are deprecated in PyO3 0.21.
         //
         // Once Python 3.10 is the minimum supported version, converting to &str

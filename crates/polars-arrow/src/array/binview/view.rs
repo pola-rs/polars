@@ -62,15 +62,15 @@ impl View {
         unsafe { std::mem::transmute(self) }
     }
 
-    /// Create a new inline view
+    /// Create a new inline view without verifying the length
     ///
-    /// # Panics
+    /// # Safety
     ///
-    /// Panics if the `bytes.len() > View::MAX_INLINE_SIZE`.
+    /// It needs to hold that `bytes.len() <= View::MAX_INLINE_SIZE`.
     #[inline]
-    pub fn new_inline(bytes: &[u8]) -> Self {
+    pub unsafe fn new_inline_unchecked(bytes: &[u8]) -> Self {
         debug_assert!(bytes.len() <= u32::MAX as usize);
-        assert!(bytes.len() as u32 <= Self::MAX_INLINE_SIZE);
+        debug_assert!(bytes.len() as u32 <= Self::MAX_INLINE_SIZE);
 
         let mut view = Self {
             length: bytes.len() as u32,
@@ -92,18 +92,47 @@ impl View {
         view
     }
 
+    /// Create a new inline view
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `bytes.len() > View::MAX_INLINE_SIZE`.
+    #[inline]
+    pub fn new_inline(bytes: &[u8]) -> Self {
+        assert!(bytes.len() as u32 <= Self::MAX_INLINE_SIZE);
+        unsafe { Self::new_inline_unchecked(bytes) }
+    }
+
+    /// Create a new inline view
+    ///
+    /// # Safety
+    ///
+    /// It needs to hold that `bytes.len() > View::MAX_INLINE_SIZE`.
+    #[inline]
+    pub unsafe fn new_noninline_unchecked(bytes: &[u8], buffer_idx: u32, offset: u32) -> Self {
+        debug_assert!(bytes.len() <= u32::MAX as usize);
+        debug_assert!(bytes.len() as u32 > View::MAX_INLINE_SIZE);
+
+        // SAFETY: The invariant of this function guarantees that this is safe.
+        let prefix = unsafe { u32::from_le_bytes(bytes[0..4].try_into().unwrap_unchecked()) };
+        Self {
+            length: bytes.len() as u32,
+            prefix,
+            buffer_idx,
+            offset,
+        }
+    }
+
     #[inline]
     pub fn new_from_bytes(bytes: &[u8], buffer_idx: u32, offset: u32) -> Self {
         debug_assert!(bytes.len() <= u32::MAX as usize);
 
-        if bytes.len() as u32 <= Self::MAX_INLINE_SIZE {
-            Self::new_inline(bytes)
-        } else {
-            Self {
-                length: bytes.len() as u32,
-                prefix: u32::from_le_bytes(bytes[0..4].try_into().unwrap()),
-                buffer_idx,
-                offset,
+        // SAFETY: We verify the invariant with the outer if statement
+        unsafe {
+            if bytes.len() as u32 <= Self::MAX_INLINE_SIZE {
+                Self::new_inline_unchecked(bytes)
+            } else {
+                Self::new_noninline_unchecked(bytes, buffer_idx, offset)
             }
         }
     }

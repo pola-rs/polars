@@ -2155,7 +2155,7 @@ def test_series_from_pyarrow_with_dtype() -> None:
     assert s.dtype == pl.UInt8
 
 
-def test_series_from_numpy_with_dtye() -> None:
+def test_series_from_numpy_with_dtype() -> None:
     s = pl.Series("foo", np.array([-1, 2, 3]), pl.Int8)
     assert_series_equal(s, pl.Series("foo", [-1, 2, 3], dtype=pl.Int8))
 

@@ -71,7 +71,7 @@ exclude_patterns = ["Thumbs.db", ".DS_Store"]
 overloads_location = ["bottom"]
 
 
-# -- Extension settings  -----------------------------------------------------
+# -- Extension settings ------------------------------------------------------
 
 # sphinx.ext.intersphinx - link to other projects' documentation
 # https://www.sphinx-doc.org/en/master/usage/extensions/intersphinx.html
