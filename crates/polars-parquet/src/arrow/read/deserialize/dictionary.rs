@@ -3,7 +3,6 @@ use std::sync::atomic::AtomicUsize;
 use arrow::array::{DictionaryArray, DictionaryKey, PrimitiveArray};
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
-use polars_error::PolarsResult;
 
 use super::utils::{
     self, dict_indices_decoder, extend_from_decoder, freeze_validity, BatchableCollector, Decoder,
@@ -25,7 +24,7 @@ impl<'a, K: DictionaryKey, D: utils::DictDecodable> StateTranslation<'a, Diction
         page: &'a DataPage,
         _dict: Option<&'a <DictionaryDecoder<K, D> as Decoder>::Dict>,
         _page_validity: Option<&PageValidity<'a>>,
-    ) -> PolarsResult<Self> {
+    ) -> ParquetResult<Self> {
         if !matches!(
             page.encoding(),
             Encoding::PlainDictionary | Encoding::RleDictionary
@@ -33,7 +32,7 @@ impl<'a, K: DictionaryKey, D: utils::DictDecodable> StateTranslation<'a, Diction
             return Err(utils::not_implemented(page));
         }
 
-        Ok(dict_indices_decoder(page)?)
+        dict_indices_decoder(page)
     }
 
     fn len_when_not_nullable(&self) -> usize {

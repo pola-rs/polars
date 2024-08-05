@@ -171,7 +171,7 @@ where
         page: &'a DataPage,
         dict: Option<&'a <PrimitiveDecoder<P, T, D> as utils::Decoder>::Dict>,
         _page_validity: Option<&PageValidity<'a>>,
-    ) -> PolarsResult<Self> {
+    ) -> ParquetResult<Self> {
         match (page.encoding(), dict) {
             (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict)) => {
                 Ok(Self::Dictionary(ValuesDictionary::try_new(page, dict)?))

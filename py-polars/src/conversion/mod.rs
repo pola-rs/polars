@@ -871,10 +871,11 @@ impl<'py> FromPyObject<'py> for Wrap<ParallelStrategy> {
             "auto" => ParallelStrategy::Auto,
             "columns" => ParallelStrategy::Columns,
             "row_groups" => ParallelStrategy::RowGroups,
+            "prefiltered" => ParallelStrategy::Prefiltered,
             "none" => ParallelStrategy::None,
             v => {
                 return Err(PyValueError::new_err(format!(
-                "`parallel` must be one of {{'auto', 'columns', 'row_groups', 'none'}}, got {v}",
+                "`parallel` must be one of {{'auto', 'columns', 'row_groups', 'prefiltered', 'none'}}, got {v}",
             )))
             },
         };
