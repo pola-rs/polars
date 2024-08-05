@@ -2339,7 +2339,7 @@ class DataFrame:
 
     def to_init_repr(self, n: int = 1000) -> str:
         """
-        Convert DataFrame to instantiatable string representation.
+        Convert DataFrame to instantiable string representation.
 
         Parameters
         ----------

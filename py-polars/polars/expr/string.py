@@ -1025,7 +1025,7 @@ class ExprStringNameSpace:
         --------
         >>> df = pl.DataFrame(
         ...     {
-        ...         "txt": ["Crab", "Lobster", None, "Crustaceon"],
+        ...         "txt": ["Crab", "Lobster", None, "Crustacean"],
         ...         "pat": ["a[bc]", "b.t", "[aeiuo]", "(?i)A[BC]"],
         ...     }
         ... )
@@ -1046,7 +1046,7 @@ class ExprStringNameSpace:
         │ Crab       ┆ 2           ┆ null    │
         │ Lobster    ┆ 5           ┆ 5       │
         │ null       ┆ null        ┆ null    │
-        │ Crustaceon ┆ 5           ┆ 7       │
+        │ Crustacean ┆ 5           ┆ 7       │
         └────────────┴─────────────┴─────────┘
 
         Match against a pattern found in another column or (expression):
@@ -1061,7 +1061,7 @@ class ExprStringNameSpace:
         │ Crab       ┆ a[bc]     ┆ 2        │
         │ Lobster    ┆ b.t       ┆ 2        │
         │ null       ┆ [aeiuo]   ┆ null     │
-        │ Crustaceon ┆ (?i)A[BC] ┆ 5        │
+        │ Crustacean ┆ (?i)A[BC] ┆ 5        │
         └────────────┴───────────┴──────────┘
         """
         pattern = parse_into_expression(pattern, str_as_lit=True)

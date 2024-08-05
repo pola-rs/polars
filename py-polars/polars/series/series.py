@@ -417,7 +417,7 @@ class Series:
 
         Leaking
         If you don't pass the ArrowArray struct to a consumer,
-        array memory will leak.  This is a low-level function intended for
+        array memory will leak. This is a low-level function intended for
         expert users.
         """
         self._s._export_arrow_to_c(out_ptr, out_schema_ptr)
@@ -4507,7 +4507,7 @@ class Series:
 
     def to_init_repr(self, n: int = 1000) -> str:
         """
-        Convert Series to instantiatable string representation.
+        Convert Series to instantiable string representation.
 
         Parameters
         ----------
@@ -6373,7 +6373,7 @@ class Series:
 
         is the biased sample :math:`i\texttt{th}` central moment, and
         :math:`\bar{x}` is
-        the sample mean.  If `bias` is False, the calculations are
+        the sample mean. If `bias` is False, the calculations are
         corrected for bias and the value computed is the adjusted
         Fisher-Pearson standardized moment coefficient, i.e.
 
@@ -7182,7 +7182,7 @@ class Series:
         Parameters
         ----------
         value
-            A constant literal value or a unit expressioin with which to extend the
+            A constant literal value or a unit expression with which to extend the
             expression result Series; can pass None to extend with nulls.
         n
             The number of additional values that will be added.
