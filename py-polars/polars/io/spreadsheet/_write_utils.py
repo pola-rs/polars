@@ -396,7 +396,11 @@ def _xl_setup_table_columns(
                 df, row_totals, expand_keys=False, expand_values=True
             )
             row_totals_dtype = {  # type: ignore[assignment]
-                nm: (Int64 if _all_integer_cols(cols, schema) else Float64)
+                nm: (
+                    Int64
+                    if _all_integer_cols(numeric_cols if cols is True else cols, schema)
+                    else Float64
+                )
                 for nm, cols in row_totals.items()
             }
             row_total_funcs = {
