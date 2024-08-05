@@ -1,5 +1,5 @@
 use super::{Packed, Unpackable, Unpacked};
-use crate::parquet::error::ParquetError;
+use crate::parquet::error::{ParquetError, ParquetResult};
 
 /// An [`Iterator`] of [`Unpackable`] unpacked from a bitpacked slice of bytes.
 /// # Implementation
@@ -14,29 +14,47 @@ pub struct Decoder<'a, T: Unpackable> {
 }
 
 #[derive(Debug)]
-pub struct DecoderIter<T: Unpackable> {
-    buffer: Vec<T>,
-    idx: usize,
+pub struct DecoderIter<'a, T: Unpackable> {
+    decoder: Decoder<'a, T>,
+    buffered: T::Unpacked,
+    unpacked_start: usize,
+    unpacked_end: usize,
 }
 
-impl<T: Unpackable> Iterator for DecoderIter<T> {
+impl<'a, T: Unpackable> Iterator for DecoderIter<'a, T> {
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.idx >= self.buffer.len() {
-            return None;
+        if self.unpacked_end <= self.unpacked_start {
+            let length;
+            (self.buffered, length) = self.decoder.chunked().next_inexact()?;
+            debug_assert!(length > 0);
+            self.unpacked_start = 1;
+            self.unpacked_end = length;
+            return Some(self.buffered[0]);
         }
 
-        let value = self.buffer[self.idx];
-        self.idx += 1;
-
-        Some(value)
+        let v = self.buffered[self.unpacked_start];
+        self.unpacked_start += 1;
+        Some(v)
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let len = self.buffer.len() - self.idx;
-
+        let len = self.decoder.len() + self.unpacked_end - self.unpacked_start;
         (len, Some(len))
+    }
+}
+
+impl<'a, T: Unpackable> ExactSizeIterator for DecoderIter<'a, T> {}
+
+impl<'a, T: Unpackable> DecoderIter<'a, T> {
+    pub fn new(packed: &'a [u8], num_bits: usize, length: usize) -> ParquetResult<Self> {
+        Ok(Self {
+            decoder: Decoder::try_new(packed, num_bits, length)?,
+            buffered: T::Unpacked::zero(),
+            unpacked_start: 0,
+            unpacked_end: 0,
+        })
     }
 }
 
@@ -57,18 +75,12 @@ impl<'a, T: Unpackable> Decoder<'a, T> {
         Self::try_new(packed, num_bits, length).unwrap()
     }
 
-    pub fn collect_into_iter(self) -> DecoderIter<T> {
-        let mut buffer = Vec::new();
-        self.collect_into(&mut buffer);
-        DecoderIter { buffer, idx: 0 }
-    }
-
     pub fn num_bits(&self) -> usize {
         self.num_bits
     }
 
     /// Returns a [`Decoder`] with `T` encoded in `packed` with `num_bits`.
-    pub fn try_new(packed: &'a [u8], num_bits: usize, length: usize) -> Result<Self, ParquetError> {
+    pub fn try_new(packed: &'a [u8], num_bits: usize, length: usize) -> ParquetResult<Self> {
         let block_size = std::mem::size_of::<T>() * num_bits;
 
         if num_bits == 0 {
@@ -96,6 +108,7 @@ impl<'a, T: Unpackable> Decoder<'a, T> {
 /// A iterator over the exact chunks in a [`Decoder`].
 ///
 /// The remainder can be accessed using `remainder` or `next_inexact`.
+#[derive(Debug)]
 pub struct ChunkedDecoder<'a, 'b, T: Unpackable> {
     pub(crate) decoder: &'b mut Decoder<'a, T>,
 }

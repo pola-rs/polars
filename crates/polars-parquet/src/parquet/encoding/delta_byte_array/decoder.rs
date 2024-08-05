@@ -13,7 +13,7 @@ pub struct Decoder<'a> {
 
 impl<'a> Decoder<'a> {
     pub fn try_new(values: &'a [u8]) -> Result<Self, ParquetError> {
-        let prefix_lengths = delta_bitpacked::Decoder::try_new(values)?;
+        let (prefix_lengths, _) = delta_bitpacked::Decoder::try_new(values)?;
         Ok(Self {
             values,
             prefix_lengths,
