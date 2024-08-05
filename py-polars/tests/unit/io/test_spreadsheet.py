@@ -688,24 +688,25 @@ def test_excel_write_column_and_row_totals(engine: ExcelSpreadsheetEngine) -> No
             "q4": [75, 55, 25, -10, -55],
         }
     )
-    xls = BytesIO()
-    df.write_excel(
-        xls,
-        worksheet="misc",
-        sparklines={"trend": ["q1", "q2", "q3", "q4"]},
-        row_totals={
-            # add semiannual row total columns
-            "h1": ("q1", "q2"),
-            "h2": ("q3", "q4"),
-        },
-        column_totals=True,
-    )
+    for fn_sum in (True, "sum", "SUM"):
+        xls = BytesIO()
+        df.write_excel(
+            xls,
+            worksheet="misc",
+            sparklines={"trend": ["q1", "q2", "q3", "q4"]},
+            row_totals={
+                # add semiannual row total columns
+                "h1": ("q1", "q2"),
+                "h2": ("q3", "q4"),
+            },
+            column_totals=fn_sum,
+        )
 
-    # note that the row totals are written as formulae, so we won't
-    # actually have the calculated values in the dataframe (yet)
-    xldf = pl.read_excel(xls, sheet_name="misc", engine=engine)
-    assert xldf.columns == ["id", "q1", "q2", "q3", "q4", "trend", "h1", "h2"]
-    assert xldf.row(-1) == (None, 0.0, 0.0, 0, 0, None, 0.0, 0)
+        # note that the totals are written as formulae, so we
+        # won't have the calculated values in the dataframe
+        xldf = pl.read_excel(xls, sheet_name="misc", engine=engine)
+        assert xldf.columns == ["id", "q1", "q2", "q3", "q4", "trend", "h1", "h2"]
+        assert xldf.row(-1) == (None, 0.0, 0.0, 0, 0, None, 0.0, 0)
 
 
 @pytest.mark.parametrize("engine", ["xlsx2csv", "openpyxl", "calamine"])

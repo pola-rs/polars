@@ -9,6 +9,7 @@ from polars.datatypes import (
     Date,
     Datetime,
     Float64,
+    Int64,
     List,
     Object,
     Struct,
@@ -26,7 +27,7 @@ if TYPE_CHECKING:
     from xlsxwriter.format import Format
     from xlsxwriter.worksheet import Worksheet
 
-    from polars import DataFrame, Series
+    from polars import DataFrame, Schema, Series
     from polars._typing import (
         ColumnFormatDict,
         ColumnTotalsDefinition,
@@ -84,6 +85,11 @@ def _adjacent_cols(df: DataFrame, cols: Iterable[str], min_max: dict[str, Any]) 
         min_max["min"] = {"idx": idxs[0], "name": columns[idxs[0]]}
         min_max["max"] = {"idx": idxs[-1], "name": columns[idxs[-1]]}
         return True
+
+
+def _all_integer_cols(cols: Iterable[str], schema: Schema) -> bool:
+    """Indicate if the given columns are all integer-typed."""
+    return all(schema[col].is_integer() for col in cols)
 
 
 def _unpack_multi_column_dict(
@@ -222,7 +228,7 @@ def _xl_inject_dummy_table_columns(
     df: DataFrame,
     coldefs: dict[str, Any],
     *,
-    dtype: PolarsDataType | None = None,
+    dtype: dict[str, PolarsDataType] | PolarsDataType | None = None,
     expr: Expr | None = None,
 ) -> DataFrame:
     """Insert dummy frame columns in order to create empty/named table columns."""
@@ -258,9 +264,12 @@ def _xl_inject_dummy_table_columns(
             if col in df_original_columns
             else (
                 expr.cast(
-                    cast_lookup.get(col, dtype)  # type:ignore[arg-type]
+                    cast_lookup.get(  # type:ignore[arg-type]
+                        col,
+                        dtype.get(col, Float64) if isinstance(dtype, dict) else dtype,
+                    )
                 )
-                if dtype or (col in cast_lookup and cast_lookup[col] is not None)
+                if dtype or (cast_lookup.get(col) is not None)
                 else expr
             ).alias(col)
         )
@@ -360,10 +369,15 @@ def _xl_setup_table_columns(
 
     # normalise row totals
     if not row_totals:
+        row_totals_dtype = None
         row_total_funcs = {}
     else:
-        numeric_cols = {col for col, tp in df.schema.items() if tp.is_numeric()}
+        schema = df.schema
+        numeric_cols = {col for col, tp in schema.items() if tp.is_numeric()}
         if not isinstance(row_totals, dict):
+            row_totals_dtype = (
+                Int64 if _all_integer_cols(numeric_cols, schema) else Float64
+            )
             sum_cols = (
                 numeric_cols
                 if row_totals is True
@@ -381,9 +395,13 @@ def _xl_setup_table_columns(
             row_totals = _expand_selector_dicts(
                 df, row_totals, expand_keys=False, expand_values=True
             )
+            row_totals_dtype = {  # type: ignore[assignment]
+                nm: (Int64 if _all_integer_cols(cols, schema) else Float64)
+                for nm, cols in row_totals.items()
+            }
             row_total_funcs = {
                 name: _xl_table_formula(
-                    df, numeric_cols if cols is True else cols, "sum"
+                    df, (numeric_cols if cols is True else cols), "sum"
                 )
                 for name, cols in row_totals.items()
             }
@@ -430,7 +448,7 @@ def _xl_setup_table_columns(
     if column_formulas:
         df = _xl_inject_dummy_table_columns(df, column_formulas)
     if row_totals:
-        df = _xl_inject_dummy_table_columns(df, row_total_funcs, dtype=Float64)
+        df = _xl_inject_dummy_table_columns(df, row_total_funcs, dtype=row_totals_dtype)
 
     # seed format cache with default fallback format
     fmt_default = format_cache.get({"valign": "vcenter"})
