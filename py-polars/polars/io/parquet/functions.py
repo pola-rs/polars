@@ -336,7 +336,7 @@ def scan_parquet(
         This determines the direction and strategy of parallelism. 'auto' will
         try to determine the optimal direction.
 
-        The `prefiltered` setting first evaluates the pushed-down predicates in
+        The `prefiltered` strategy first evaluates the pushed-down predicates in
         parallel and determines a mask of which rows to read. Then, it
         parallelizes over both the columns and the row groups while filtering
         out rows that do not need to be read. This can provide significant
@@ -346,6 +346,11 @@ def scan_parquet(
 
         The `prefiltered` settings falls back to `auto` if no predicate is
         given.
+
+        .. warning::
+            The `prefiltered` strategy is considered **unstable**. It may be
+            changed at any point without it being considered a breaking change.
+
     use_statistics
         Use statistics in the parquet to determine if pages
         can be skipped from reading.

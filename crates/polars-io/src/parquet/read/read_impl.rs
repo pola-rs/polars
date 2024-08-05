@@ -71,11 +71,7 @@ fn column_idx_to_series(
     let columns = mmap_columns(store, md.columns(), &field.name);
     let iter = mmap::to_deserializer(columns, field.clone(), filter)?;
 
-    // let mut series = if remaining_rows < md.num_rows() {
-    //     array_iter_to_series(iter, field, Some(remaining_rows))
-    // } else {
     let mut series = array_iter_to_series(iter, field, None)?;
-    // }?;
 
     // See if we can find some statistics for this series. If we cannot find anything just return
     // the series as is.
