@@ -1255,9 +1255,9 @@ impl SQLFunctionVisitor<'_> {
             Median => self.visit_unary(Expr::median),
             Quantile => {
                 let args = extract_args(function)?;
-                let getValue = |e: Expr| match e {
+                let get_value = |e: Expr| match e {
                     Expr::Literal(LiteralValue::Float(f)) => {
-                        if f >= 0.0 && f <= 1.0 {
+                        if (0.0..=1.0).contains(&f) {
                             Ok(Expr::from(f))
                         } else {
                             polars_bail!(SQLSyntax: "QUANTILE value must be between 0 and 1 ({})", args[1])
@@ -1268,11 +1268,11 @@ impl SQLFunctionVisitor<'_> {
 
                 match args.len() {
                     2 => self.try_visit_binary(|e, q| {
-                        Ok(e.quantile(getValue(q)?, QuantileInterpolOptions::Nearest))
+                        Ok(e.quantile(get_value(q)?, QuantileInterpolOptions::Nearest))
                     }),
                     3 => self.try_visit_ternary(|e, q, opt| {
                         Ok(e.quantile(
-                            getValue(q)?,
+                            get_value(q)?,
                             match opt {
                                 Expr::Literal(LiteralValue::String(s)) => {
                                     QuantileInterpolOptions::from_str(&s)?
