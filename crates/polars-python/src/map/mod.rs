@@ -250,19 +250,11 @@ fn iterator_to_string<S: AsRef<str>>(
 fn iterator_to_list(
     dt: &DataType,
     it: impl Iterator<Item = Option<Series>>,
-    init_null_count: usize,
-    first_value: Option<&Series>,
     name: &str,
     capacity: usize,
 ) -> PyResult<ListChunked> {
     let mut builder =
         get_list_builder(dt, capacity * 5, capacity, name).map_err(PyPolarsErr::from)?;
-    for _ in 0..init_null_count {
-        builder.append_null()
-    }
-    builder
-        .append_opt_series(first_value)
-        .map_err(PyPolarsErr::from)?;
     for opt_val in it {
         match opt_val {
             None => builder.append_null(),
@@ -270,6 +262,10 @@ fn iterator_to_list(
                 if s.len() == 0 && s.dtype() != dt {
                     builder
                         .append_series(&Series::full_null("", 0, dt))
+                        .unwrap()
+                } else if s.len() > 0 && s.dtype() == &DataType::Null {
+                    builder
+                        .append_series(&Series::full_null(s.name(), s.len(), dt))
                         .unwrap()
                 } else {
                     builder.append_series(&s).map_err(PyPolarsErr::from)?
