@@ -422,24 +422,12 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
                 .into_no_null_iter()
                 .map(|val| call_lambda_series_out(py, lambda, val).ok());
 
-            iterator_to_list(
-                dt,
-                it,
-                self.name(),
-                self.len(),
-            )
+            iterator_to_list(dt, it, self.name(), self.len())
         } else {
-            let it = self
-                .into_iter()
-                .map(|opt_val| {
-                    opt_val.and_then(|val| call_lambda_series_out(py, lambda, val).ok())
-                });
-            iterator_to_list(
-                dt,
-                it,
-                self.name(),
-                self.len(),
-            )
+            let it = self.into_iter().map(|opt_val| {
+                opt_val.and_then(|val| call_lambda_series_out(py, lambda, val).ok())
+            });
+            iterator_to_list(dt, it, self.name(), self.len())
         }
     }
 
@@ -706,24 +694,12 @@ where
                 .into_no_null_iter()
                 .map(|val| call_lambda_series_out(py, lambda, val).ok());
 
-            iterator_to_list(
-                dt,
-                it,
-                self.name(),
-                self.len(),
-            )
+            iterator_to_list(dt, it, self.name(), self.len())
         } else {
-            let it = self
-                .into_iter()
-                .map(|opt_val| {
-                    opt_val.and_then(|val| call_lambda_series_out(py, lambda, val).ok())
-                });
-            iterator_to_list(
-                dt,
-                it,
-                self.name(),
-                self.len(),
-            )
+            let it = self.into_iter().map(|opt_val| {
+                opt_val.and_then(|val| call_lambda_series_out(py, lambda, val).ok())
+            });
+            iterator_to_list(dt, it, self.name(), self.len())
         }
     }
 
@@ -984,24 +960,12 @@ impl<'a> ApplyLambda<'a> for StringChunked {
                 .into_no_null_iter()
                 .map(|val| call_lambda_series_out(py, lambda, val).ok());
 
-            iterator_to_list(
-                dt,
-                it,
-                self.name(),
-                self.len(),
-            )
+            iterator_to_list(dt, it, self.name(), self.len())
         } else {
-            let it = self
-                .into_iter()
-                .map(|opt_val| {
-                    opt_val.and_then(|val| call_lambda_series_out(py, lambda, val).ok())
-                });
-            iterator_to_list(
-                dt,
-                it,
-                self.name(),
-                self.len(),
-            )
+            let it = self.into_iter().map(|opt_val| {
+                opt_val.and_then(|val| call_lambda_series_out(py, lambda, val).ok())
+            });
+            iterator_to_list(dt, it, self.name(), self.len())
         }
     }
 
@@ -1390,22 +1354,12 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                 .into_no_null_iter()
                 .map(|val| call_series_lambda(&pypolars, lambda, val));
 
-            iterator_to_list(
-                dt,
-                it,
-                self.name(),
-                self.len(),
-            )
+            iterator_to_list(dt, it, self.name(), self.len())
         } else {
             let it = self
                 .into_iter()
                 .map(|opt_val| opt_val.and_then(|val| call_series_lambda(&pypolars, lambda, val)));
-            iterator_to_list(
-                dt,
-                it,
-                self.name(),
-                self.len(),
-            )
+            iterator_to_list(dt, it, self.name(), self.len())
         }
     }
 
@@ -1798,22 +1752,12 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
                 .into_no_null_iter()
                 .map(|val| call_series_lambda(&pypolars, lambda, val));
 
-            iterator_to_list(
-                dt,
-                it,
-                self.name(),
-                self.len(),
-            )
+            iterator_to_list(dt, it, self.name(), self.len())
         } else {
             let it = self
                 .into_iter()
                 .map(|opt_val| opt_val.and_then(|val| call_series_lambda(&pypolars, lambda, val)));
-            iterator_to_list(
-                dt,
-                it,
-                self.name(),
-                self.len(),
-            )
+            iterator_to_list(dt, it, self.name(), self.len())
         }
     }
 
@@ -2103,24 +2047,12 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
                 .into_no_null_iter()
                 .map(|val| call_lambda_series_out(py, lambda, val).ok());
 
-            iterator_to_list(
-                dt,
-                it,
-                self.name(),
-                self.len(),
-            )
+            iterator_to_list(dt, it, self.name(), self.len())
         } else {
-            let it = self
-                .into_iter()
-                .map(|opt_val| {
-                    opt_val.and_then(|val| call_lambda_series_out(py, lambda, val).ok())
-                });
-            iterator_to_list(
-                dt,
-                it,
-                self.name(),
-                self.len(),
-            )
+            let it = self.into_iter().map(|opt_val| {
+                opt_val.and_then(|val| call_lambda_series_out(py, lambda, val).ok())
+            });
+            iterator_to_list(dt, it, self.name(), self.len())
         }
     }
 
@@ -2311,14 +2243,8 @@ impl<'a> ApplyLambda<'a> for StructChunked {
     ) -> PyResult<ListChunked> {
         let _skip = 1;
         let lambda = lambda.bind(py);
-        let it = iter_struct(self)
-            .map(|val| call_lambda_series_out(py, lambda, Wrap(val)).ok());
-        iterator_to_list(
-            dt,
-            it,
-            self.name(),
-            self.len(),
-        )
+        let it = iter_struct(self).map(|val| call_lambda_series_out(py, lambda, Wrap(val)).ok());
+        iterator_to_list(dt, it, self.name(), self.len())
     }
 
     fn apply_extract_any_values(

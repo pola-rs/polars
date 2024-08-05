@@ -199,8 +199,9 @@ def test_map_elements_first_element_null() -> None:
 
     assert df.select(
         pl.struct(["a"]).map_elements(
-            lambda row: some_map[row["a"]], return_dtype=pl.List(pl.Float64)) 
-        ).to_dict(as_series=False) == {"a": [[None], [9.0], [10.0]]}
+            lambda row: some_map[row["a"]], return_dtype=pl.List(pl.Float64)
+        )
+    ).to_dict(as_series=False) == {"a": [[None], [9.0], [10.0]]}
 
 
 def test_map_elements_object_dtypes() -> None:
