@@ -218,12 +218,12 @@ pub fn apply_lambda_with_list_out_type<'a>(
     first_value: Option<&Series>,
     dt: &DataType,
 ) -> PyResult<ListChunked> {
-    let skip = usize::from(first_value.is_some());
+    let _skip = usize::from(first_value.is_some());
     if init_null_count == df.height() {
         Ok(ChunkedArray::full_null("map", df.height()))
     } else {
-        let mut iters = get_iters_skip(df, init_null_count + skip);
-        let iter = ((init_null_count + skip)..df.height()).map(|_| {
+        let mut iters = get_iters_skip(df, 0);
+        let iter = (0..df.height()).map(|_| {
             let iter = iters.iter_mut().map(|it| Wrap(it.next().unwrap()));
             let tpl = (PyTuple::new_bound(py, iter),);
             match lambda.call1(tpl) {
@@ -240,7 +240,7 @@ pub fn apply_lambda_with_list_out_type<'a>(
                 Err(e) => panic!("python function failed {e}"),
             }
         });
-        iterator_to_list(dt, iter, init_null_count, first_value, "map", df.height())
+        iterator_to_list(dt, iter, "map", df.height())
     }
 }
 
