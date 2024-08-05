@@ -89,6 +89,6 @@ Here we run a background query and cancel the query if it took more than
 
 !!! warning "background mode is **unstable**"
 
-    Background mode may be changed at any point as a breaking change.
+    Background mode may be changed at any point without it being considered a breaking change.
 
 {{code_block('user-guide/lazy/execution','background',['scan_csv','collect'])}}
