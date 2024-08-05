@@ -11,6 +11,11 @@ use crate::read::deserialize::utils::PageValidity;
 
 pub(crate) type BinaryDict = BinaryArray<i64>;
 
+/// *Delta-length byte array* encoding
+///
+/// This implements the `DELTA_LENGTH_BYTE_ARRAY` encoding that is used in parquet. A reference to
+/// it can be found at
+/// <https://github.com/apache/parquet-format/blob/master/Encodings.md#delta-length-byte-array-delta_length_byte_array--6>
 #[derive(Debug)]
 pub(crate) struct Delta<'a> {
     pub lengths: std::vec::IntoIter<usize>,
@@ -69,18 +74,20 @@ pub(crate) struct DeltaBytes<'a> {
 impl<'a> DeltaBytes<'a> {
     pub fn try_new(page: &'a DataPage) -> PolarsResult<Self> {
         let values = split_buffer(page)?.values;
-        let mut decoder = delta_bitpacked::Decoder::try_new(values)?;
+        let values_len = values.len();
+        let (mut decoder, data) = delta_bitpacked::Decoder::try_new(values)?;
         let prefix = (&mut decoder)
             .take(page.num_values())
             .map(|r| r.map(|v| v as i32).unwrap())
             .collect::<Vec<_>>();
 
-        let mut data_offset = decoder.consumed_bytes();
-        let mut decoder = delta_bitpacked::Decoder::try_new(&values[decoder.consumed_bytes()..])?;
+        let mut data_offset = values_len - data.len();
+        let values_len = values.len();
+        let (mut decoder, data) = delta_bitpacked::Decoder::try_new(data)?;
         let suffix = (&mut decoder)
             .map(|r| r.map(|v| v as i32).unwrap())
             .collect::<Vec<_>>();
-        data_offset += decoder.consumed_bytes();
+        data_offset += values_len - data.len();
 
         Ok(Self {
             prefix: prefix.into_iter(),
