@@ -193,6 +193,16 @@ def test_map_elements_skip_nulls() -> None:
         ).to_list() == ["a", "b"]
 
 
+def test_map_elements_first_element_null() -> None:
+    some_map = {1: [None], 2: [9.0], 3: [10.0]}
+    df = pl.DataFrame({"a": [1, 2, 3]})
+
+    assert df.select(
+        pl.struct(["a"]).map_elements(
+            lambda row: some_map[row["a"]], return_dtype=pl.List(pl.Float64)) 
+        ).to_dict(as_series=False) == {"a": [[None], [9.0], [10.0]]}
+
+
 def test_map_elements_object_dtypes() -> None:
     with pytest.warns(
         PolarsInefficientMapWarning,
