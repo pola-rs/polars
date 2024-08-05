@@ -675,10 +675,41 @@ def test_excel_round_trip(write_params: dict[str, Any]) -> None:
         assert_frame_equal(df, xldf)
 
 
+@pytest.mark.parametrize("engine", ["xlsx2csv", "calamine"])
+def test_excel_write_column_and_row_totals(engine: ExcelSpreadsheetEngine) -> None:
+    df = pl.DataFrame(
+        {
+            "id": ["aaa", "bbb", "ccc", "ddd", "eee"],
+            # float cols
+            "q1": [100.0, 55.5, -20.0, 0.5, 35.0],
+            "q2": [30.5, -10.25, 15.0, 60.0, 20.5],
+            # int cols
+            "q3": [-50, 0, 40, 80, 80],
+            "q4": [75, 55, 25, -10, -55],
+        }
+    )
+    xls = BytesIO()
+    df.write_excel(
+        xls,
+        worksheet="misc",
+        sparklines={"trend": ["q1", "q2", "q3", "q4"]},
+        row_totals={
+            # add semiannual row total columns
+            "h1": ("q1", "q2"),
+            "h2": ("q3", "q4"),
+        },
+        column_totals=True,
+    )
+
+    # note that the row totals are written as formulae, so we won't
+    # actually have the calculated values in the dataframe (yet)
+    xldf = pl.read_excel(xls, sheet_name="misc", engine=engine)
+    assert xldf.columns == ["id", "q1", "q2", "q3", "q4", "trend", "h1", "h2"]
+    assert xldf.row(-1) == (None, 0.0, 0.0, 0, 0, None, 0.0, 0)
+
+
 @pytest.mark.parametrize("engine", ["xlsx2csv", "openpyxl", "calamine"])
-def test_excel_compound_types(
-    engine: ExcelSpreadsheetEngine,
-) -> None:
+def test_excel_write_compound_types(engine: ExcelSpreadsheetEngine) -> None:
     df = pl.DataFrame(
         {"x": [[1, 2], [3, 4], [5, 6]], "y": ["a", "b", "c"], "z": [9, 8, 7]}
     ).select("x", pl.struct(["y", "z"]))
@@ -686,6 +717,7 @@ def test_excel_compound_types(
     xls = BytesIO()
     df.write_excel(xls, worksheet="data")
 
+    # expect string conversion (only scalar values are supported)
     xldf = pl.read_excel(xls, sheet_name="data", engine=engine)
     assert xldf.rows() == [
         ("[1, 2]", "{'y': 'a', 'z': 9}"),
@@ -695,7 +727,7 @@ def test_excel_compound_types(
 
 
 @pytest.mark.parametrize("engine", ["xlsx2csv", "openpyxl", "calamine"])
-def test_excel_sparklines(engine: ExcelSpreadsheetEngine) -> None:
+def test_excel_write_sparklines(engine: ExcelSpreadsheetEngine) -> None:
     from xlsxwriter import Workbook
 
     # note that we don't (quite) expect sparkline export to round-trip as we
@@ -748,6 +780,7 @@ def test_excel_sparklines(engine: ExcelSpreadsheetEngine) -> None:
     assert "Frame0" in tables
 
     with warnings.catch_warnings():
+        # ignore an openpyxl user warning about sparklines
         warnings.simplefilter("ignore", UserWarning)
         xldf = pl.read_excel(xls, sheet_name="frame_data", engine=engine)
 
