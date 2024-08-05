@@ -15,7 +15,7 @@ mod tests {
 
         let mut buffer = vec![];
         encode(data.clone().into_iter(), &mut buffer);
-        let iter = Decoder::try_new(&buffer)?;
+        let (iter, _) = Decoder::try_new(&buffer)?;
 
         let result = iter.collect::<Result<Vec<_>, _>>()?;
         assert_eq!(result, data);
@@ -28,7 +28,7 @@ mod tests {
 
         let mut buffer = vec![];
         encode(data.clone().into_iter(), &mut buffer);
-        let iter = Decoder::try_new(&buffer)?;
+        let (iter, _) = Decoder::try_new(&buffer)?;
 
         let result = iter.collect::<Result<Vec<_>, _>>()?;
         assert_eq!(result, data);
@@ -49,7 +49,7 @@ mod tests {
 
         let mut buffer = vec![];
         encode(data.clone().into_iter(), &mut buffer);
-        let iter = Decoder::try_new(&buffer)?;
+        let (iter, _) = Decoder::try_new(&buffer)?;
 
         let result = iter.collect::<Result<Vec<_>, ParquetError>>()?;
         assert_eq!(result, data);
@@ -65,7 +65,7 @@ mod tests {
 
         let mut buffer = vec![];
         encode(data.clone().into_iter(), &mut buffer);
-        let iter = Decoder::try_new(&buffer)?;
+        let (iter, _) = Decoder::try_new(&buffer)?;
 
         let result = iter.collect::<Result<Vec<_>, _>>()?;
         assert_eq!(result, data);
@@ -79,7 +79,7 @@ mod tests {
         let mut buffer = vec![];
         encode(data.clone().into_iter(), &mut buffer);
         let len = buffer.len();
-        let mut iter = Decoder::try_new(&buffer)?;
+        let (mut iter, _) = Decoder::try_new(&buffer)?;
 
         let result = iter.by_ref().collect::<Result<Vec<_>, _>>()?;
         assert_eq!(result, data);
