@@ -3,13 +3,11 @@ mod min_max;
 mod quantile;
 mod sum;
 mod variance;
-use std::fmt::{Debug, Display};
-use std::str::FromStr;
+use std::fmt::Debug;
 
 pub use mean::*;
 pub use min_max::*;
 use num_traits::{Float, Num, NumCast};
-use polars_error::PolarsError;
 pub use quantile::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -80,41 +78,6 @@ pub enum QuantileInterpolOptions {
     Higher,
     Midpoint,
     Linear,
-}
-
-impl Display for QuantileInterpolOptions {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.as_str())
-    }
-}
-
-impl QuantileInterpolOptions {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            QuantileInterpolOptions::Nearest => "nearest",
-            QuantileInterpolOptions::Lower => "lower",
-            QuantileInterpolOptions::Higher => "higher",
-            QuantileInterpolOptions::Midpoint => "midpoint",
-            QuantileInterpolOptions::Linear => "linear",
-        }
-    }
-}
-
-impl FromStr for QuantileInterpolOptions {
-    type Err = PolarsError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "nearest" => Ok(QuantileInterpolOptions::Nearest),
-            "lower" => Ok(QuantileInterpolOptions::Lower),
-            "higher" => Ok(QuantileInterpolOptions::Higher),
-            "midpoint" => Ok(QuantileInterpolOptions::Midpoint),
-            "linear" => Ok(QuantileInterpolOptions::Linear),
-            _ => Err(PolarsError::InvalidOperation(
-                "not a valid quantile interpolation".into(),
-            )),
-        }
-    }
 }
 
 pub(super) fn rolling_apply_weights<T, Fo, Fa>(
