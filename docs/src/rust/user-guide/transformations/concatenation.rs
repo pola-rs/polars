@@ -20,6 +20,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{}", &df_vertical_concat);
     // --8<-- [end:vertical]
 
+    // --8<-- [start:vertical_relaxed]
+    let df_v1 = df!(
+            "a"=> &[1.0],
+            "b"=> &[3],
+    )?;
+    let df_v2 = df!(
+            "a"=> &[2],
+            "b"=> &[4],
+    )?;
+    let df_vertical_relaxed_concat = concat(
+        [df_v1.clone().lazy(), df_v2.clone().lazy()],
+        UnionArgs::default(),
+    )?
+    .collect()?;
+    println!("{}", &df_vertical_relaxed_concat);
+    // --8<-- [end:vertical_relaxed]
+
     // --8<-- [start:horizontal]
     let df_h1 = df!(
             "l1"=> &[1, 2],
@@ -46,6 +63,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let df_horizontal_concat = polars::functions::concat_df_horizontal(&[df_h1, df_h2], true)?;
     println!("{}", &df_horizontal_concat);
     // --8<-- [end:horizontal_different_lengths]
+
+    // --8<-- [start:horizontal_align]
+    println!("Not available in Rust");
+
+    // --8<-- [end:horizontal_align]
 
     // --8<-- [start:cross]
     let df_d1 = df!(
