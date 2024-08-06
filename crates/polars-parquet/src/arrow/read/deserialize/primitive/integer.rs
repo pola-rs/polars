@@ -61,9 +61,9 @@ where
             },
             (Encoding::DeltaBinaryPacked, _) => {
                 let values = split_buffer(page)?.values;
-                Ok(Self::DeltaBinaryPacked(delta_bitpacked::Decoder::try_new(
-                    values,
-                )?.0))
+                Ok(Self::DeltaBinaryPacked(
+                    delta_bitpacked::Decoder::try_new(values)?.0,
+                ))
             },
             _ => Err(utils::not_implemented(page)),
         }

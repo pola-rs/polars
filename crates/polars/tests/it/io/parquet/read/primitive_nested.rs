@@ -188,8 +188,7 @@ fn read_dict_array(
     let (_, consumed) = uleb128::decode(values);
     let values = &values[consumed..];
 
-    let indices = bitpacked::Decoder::<u32>::try_new(values, bit_width as usize, length as usize)?
-        .collect_into_iter();
+    let indices = bitpacked::DecoderIter::<u32>::new(values, bit_width as usize, length as usize)?;
 
     let values = indices.map(|id| dict_values[id as usize]);
 

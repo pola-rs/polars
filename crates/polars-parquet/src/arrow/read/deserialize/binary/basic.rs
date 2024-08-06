@@ -13,14 +13,73 @@ use super::decoders::*;
 use super::utils::*;
 use crate::parquet::encoding::hybrid_rle::gatherer::HybridRleGatherer;
 use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
+use crate::parquet::encoding::{delta_byte_array, delta_length_byte_array};
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{DataPage, DictPage};
-use crate::read::deserialize::utils::{Decoder, GatheredHybridRle, StateTranslation};
+use crate::read::deserialize::utils::{
+    BatchableCollector, Decoder, GatheredHybridRle, StateTranslation,
+};
 use crate::read::PrimitiveLogicalType;
 
 impl<O: Offset> utils::ExactSize for (Binary<O>, MutableBitmap) {
     fn len(&self) -> usize {
         self.0.len()
+    }
+}
+
+pub(crate) struct DeltaCollector<'a, 'b, O: Offset> {
+    pub(crate) decoder: &'b mut delta_length_byte_array::Decoder<'a>,
+    pub(crate) _pd: std::marker::PhantomData<O>,
+}
+
+pub(crate) struct DeltaBytesCollector<'a, 'b, O: Offset> {
+    pub(crate) decoder: &'b mut delta_byte_array::Decoder<'a>,
+    pub(crate) _pd: std::marker::PhantomData<O>,
+}
+
+impl<'a, 'b, O: Offset> BatchableCollector<(), Binary<O>> for DeltaCollector<'a, 'b, O> {
+    fn reserve(target: &mut Binary<O>, n: usize) {
+        target.offsets.reserve(n);
+    }
+
+    fn push_n(&mut self, target: &mut Binary<O>, n: usize) -> ParquetResult<()> {
+        let start = target.offsets.last().to_usize();
+        let mut gatherer = OffsetGatherer::default();
+        self.decoder
+            .lengths
+            .gather_n_into(&mut target.offsets, n, &mut gatherer)?;
+        let end = target.offsets.last().to_usize();
+
+        target.values.extend_from_slice(
+            &self.decoder.values[self.decoder.offset..self.decoder.offset + end - start],
+        );
+        self.decoder.offset += end - start;
+
+        Ok(())
+    }
+
+    fn push_n_nulls(&mut self, target: &mut Binary<O>, n: usize) -> ParquetResult<()> {
+        target.extend_constant(n);
+        Ok(())
+    }
+}
+
+impl<'a, 'b, O: Offset> BatchableCollector<(), Binary<O>> for DeltaBytesCollector<'a, 'b, O> {
+    fn reserve(target: &mut Binary<O>, n: usize) {
+        target.offsets.reserve(n);
+    }
+
+    fn push_n(&mut self, target: &mut Binary<O>, n: usize) -> ParquetResult<()> {
+        for x in self.decoder.take(n) {
+            target.push(&(x?))
+        }
+
+        Ok(())
+    }
+
+    fn push_n_nulls(&mut self, target: &mut Binary<O>, n: usize) -> ParquetResult<()> {
+        target.extend_constant(n);
+        Ok(())
     }
 }
 
@@ -73,53 +132,42 @@ impl<'a, O: Offset> StateTranslation<'a, BinaryDecoder<O>> for BinaryStateTransl
                 page.dict,
                 additional,
             )?,
-            T::Delta(page) => {
+            T::Delta(ref mut page) => {
                 let (values, validity) = decoded;
 
+                let mut collector = DeltaCollector {
+                    decoder: page,
+                    _pd: std::marker::PhantomData,
+                };
+
                 match page_validity {
-                    None => values
-                        .extend_lengths(page.lengths.by_ref().take(additional), &mut page.values),
-                    Some(page_validity) => {
-                        let Binary {
-                            offsets,
-                            values: values_,
-                        } = values;
-
-                        let last_offset = *offsets.last();
-                        extend_from_decoder(
-                            validity,
-                            page_validity,
-                            Some(additional),
-                            offsets,
-                            page.lengths.by_ref(),
-                        )?;
-
-                        let length = *offsets.last() - last_offset;
-
-                        let (consumed, remaining) = page.values.split_at(length.to_usize());
-                        page.values = remaining;
-                        values_.extend_from_slice(consumed);
-                    },
+                    None => collector.push_n(values, additional)?,
+                    Some(page_validity) => extend_from_decoder(
+                        validity,
+                        page_validity,
+                        Some(additional),
+                        values,
+                        collector,
+                    )?,
                 }
             },
-            T::DeltaBytes(page_values) => {
+            T::DeltaBytes(ref mut page_values) => {
+                let mut collector = DeltaBytesCollector {
+                    decoder: page_values,
+                    _pd: std::marker::PhantomData,
+                };
+
                 let (values, validity) = decoded;
 
                 match page_validity {
-                    None => {
-                        for x in page_values.take(additional) {
-                            values.push(x)
-                        }
-                    },
-                    Some(page_validity) => {
-                        extend_from_decoder(
-                            validity,
-                            page_validity,
-                            Some(additional),
-                            values,
-                            page_values,
-                        )?;
-                    },
+                    None => collector.push_n(values, additional)?,
+                    Some(page_validity) => extend_from_decoder(
+                        validity,
+                        page_validity,
+                        Some(additional),
+                        values,
+                        collector,
+                    )?,
                 }
             },
         }

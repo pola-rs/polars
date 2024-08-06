@@ -5,76 +5,51 @@ use crate::parquet::error::ParquetError;
 /// lengths and values.
 /// # Implementation
 /// This struct does not allocate on the heap.
-/// # Example
-/// ```
-/// use polars_parquet::parquet::encoding::delta_length_byte_array::Decoder;
-///
-/// let expected = &["Hello", "World"];
-/// let expected_lengths = expected.iter().map(|x| x.len() as i32).collect::<Vec<_>>();
-/// let expected_values = expected.join("");
-/// let expected_values = expected_values.as_bytes();
-/// let data = &[
-///     128, 1, 4, 2, 10, 0, 0, 0, 0, 0, 72, 101, 108, 108, 111, 87, 111, 114, 108, 100,
-/// ];
-///
-/// let mut decoder = Decoder::try_new(data).unwrap();
-///
-/// // Extract the lengths
-/// let lengths = decoder.by_ref().collect::<Result<Vec<_>, _>>().unwrap();
-/// assert_eq!(lengths, expected_lengths);
-///
-/// // Extract the values. This _must_ be called after consuming all lengths by reference (see above).
-/// let values = decoder.into_values();
-///
-/// assert_eq!(values, expected_values);
 #[derive(Debug)]
 pub struct Decoder<'a> {
-    values: &'a [u8],
-    lengths: delta_bitpacked::Decoder<'a>,
-    total_length: u32,
+    pub(crate) lengths: delta_bitpacked::Decoder<'a>,
+    pub(crate) values: &'a [u8],
+    pub(crate) offset: usize,
 }
 
 impl<'a> Decoder<'a> {
     pub fn try_new(values: &'a [u8]) -> Result<Self, ParquetError> {
-        let (lengths, _) = delta_bitpacked::Decoder::try_new(values)?;
+        let (lengths, values) = delta_bitpacked::Decoder::try_new(values)?;
         Ok(Self {
-            values,
             lengths,
-            total_length: 0,
+            values,
+            offset: 0,
         })
     }
 
-    /// Consumes this decoder and returns the slice of concatenated values.
-    /// # Panics
-    /// This function panics if this iterator has not been fully consumed.
-    pub fn into_values(self) -> &'a [u8] {
-        assert_eq!(self.lengths.size_hint().0, 0);
-        let start = self.lengths.consumed_bytes();
-        &self.values[start..start + self.total_length as usize]
+    /// Returns the slice of concatenated values.
+    pub fn lengths(&mut self) -> &mut delta_bitpacked::Decoder<'a> {
+        &mut self.lengths
     }
 
     /// Returns the slice of concatenated values.
-    /// # Panics
-    /// This function panics if this iterator has not yet been fully consumed.
     pub fn values(&self) -> &'a [u8] {
-        assert_eq!(self.lengths.size_hint().0, 0);
-        let start = self.lengths.consumed_bytes();
-        &self.values[start..start + self.total_length as usize]
+        self.values
+    }
+
+    pub fn len(&self) -> usize {
+        self.lengths.len()
     }
 }
 
 impl<'a> Iterator for Decoder<'a> {
-    type Item = Result<i32, ParquetError>;
+    type Item = Result<&'a [u8], ParquetError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let result = self.lengths.next();
-        match result {
-            Some(Ok(v)) => {
-                self.total_length += v as u32;
-                Some(Ok(v as i32))
+        let length = self.lengths.next()?;
+        Some(match length {
+            Ok(length) => {
+                let length = length as usize;
+                let value = &self.values[self.offset..self.offset + length];
+                self.offset += length;
+                Ok(value)
             },
-            Some(Err(error)) => Some(Err(error)),
-            None => None,
-        }
+            Err(error) => Err(error),
+        })
     }
 }

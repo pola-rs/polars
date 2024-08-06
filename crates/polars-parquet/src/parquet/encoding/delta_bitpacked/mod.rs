@@ -1,7 +1,8 @@
 mod decoder;
 mod encoder;
+mod fuzz;
 
-pub use decoder::Decoder;
+pub use decoder::{Decoder, DeltaGatherer};
 pub use encoder::encode;
 
 #[cfg(test)]
@@ -78,13 +79,11 @@ mod tests {
 
         let mut buffer = vec![];
         encode(data.clone().into_iter(), &mut buffer);
-        let len = buffer.len();
         let (mut iter, _) = Decoder::try_new(&buffer)?;
 
         let result = iter.by_ref().collect::<Result<Vec<_>, _>>()?;
         assert_eq!(result, data);
 
-        assert_eq!(iter.consumed_bytes(), len);
         Ok(())
     }
 }

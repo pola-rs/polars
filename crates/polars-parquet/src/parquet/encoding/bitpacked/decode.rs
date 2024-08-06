@@ -9,23 +9,30 @@ pub struct Decoder<'a, T: Unpackable> {
     packed: std::slice::Chunks<'a, u8>,
     num_bits: usize,
     /// number of items
-    length: usize,
+    pub(crate) length: usize,
     _pd: std::marker::PhantomData<T>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DecoderIter<'a, T: Unpackable> {
-    decoder: Decoder<'a, T>,
-    buffered: T::Unpacked,
-    unpacked_start: usize,
-    unpacked_end: usize,
+    pub(crate) decoder: Decoder<'a, T>,
+    pub(crate) buffered: T::Unpacked,
+    pub(crate) unpacked_start: usize,
+    pub(crate) unpacked_end: usize,
 }
 
 impl<'a, T: Unpackable> Iterator for DecoderIter<'a, T> {
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.unpacked_end <= self.unpacked_start {
+        if self.decoder.num_bits == 0 {
+            return (self.decoder.length > 0).then(|| {
+                self.decoder.length -= 1;
+                T::default()
+            });
+        }
+
+        if self.unpacked_start >= self.unpacked_end {
             let length;
             (self.buffered, length) = self.decoder.chunked().next_inexact()?;
             debug_assert!(length > 0);
@@ -50,7 +57,16 @@ impl<'a, T: Unpackable> ExactSizeIterator for DecoderIter<'a, T> {}
 impl<'a, T: Unpackable> DecoderIter<'a, T> {
     pub fn new(packed: &'a [u8], num_bits: usize, length: usize) -> ParquetResult<Self> {
         Ok(Self {
-            decoder: Decoder::try_new(packed, num_bits, length)?,
+            decoder: if num_bits == 0 {
+                Decoder {
+                    packed: [].chunks(1),
+                    num_bits: 0,
+                    length,
+                    _pd: std::marker::PhantomData,
+                }
+            } else {
+                Decoder::try_new(packed, num_bits, length)?
+            },
             buffered: T::Unpacked::zero(),
             unpacked_start: 0,
             unpacked_end: 0,
@@ -73,10 +89,6 @@ impl<'a, T: Unpackable> Decoder<'a, T> {
     /// Returns a [`Decoder`] with `T` encoded in `packed` with `num_bits`.
     pub fn new(packed: &'a [u8], num_bits: usize, length: usize) -> Self {
         Self::try_new(packed, num_bits, length).unwrap()
-    }
-
-    pub fn num_bits(&self) -> usize {
-        self.num_bits
     }
 
     /// Returns a [`Decoder`] with `T` encoded in `packed` with `num_bits`.
@@ -102,6 +114,10 @@ impl<'a, T: Unpackable> Decoder<'a, T> {
             num_bits,
             _pd: Default::default(),
         })
+    }
+
+    pub fn num_bits(&self) -> usize {
+        self.num_bits
     }
 }
 

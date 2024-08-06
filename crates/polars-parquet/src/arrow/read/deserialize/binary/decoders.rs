@@ -1,128 +1,19 @@
 use arrow::array::specification::try_check_utf8;
 use arrow::array::{BinaryArray, MutableBinaryValuesArray};
+use arrow::offset::Offsets;
+use arrow::types::Offset;
 use polars_error::PolarsResult;
 
 use super::super::utils;
 use super::utils::*;
-use crate::parquet::encoding::{delta_bitpacked, delta_length_byte_array, hybrid_rle, Encoding};
-use crate::parquet::error::ParquetResult;
+use crate::parquet::encoding::{
+    delta_bitpacked, delta_byte_array, delta_length_byte_array, hybrid_rle, Encoding,
+};
+use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{split_buffer, DataPage};
 use crate::read::deserialize::utils::PageValidity;
 
 pub(crate) type BinaryDict = BinaryArray<i64>;
-
-/// *Delta-length byte array* encoding
-///
-/// This implements the `DELTA_LENGTH_BYTE_ARRAY` encoding that is used in parquet. A reference to
-/// it can be found at
-/// <https://github.com/apache/parquet-format/blob/master/Encodings.md#delta-length-byte-array-delta_length_byte_array--6>
-#[derive(Debug)]
-pub(crate) struct Delta<'a> {
-    pub lengths: std::vec::IntoIter<usize>,
-    pub values: &'a [u8],
-}
-
-impl<'a> Delta<'a> {
-    pub fn try_new(page: &'a DataPage) -> PolarsResult<Self> {
-        let values = split_buffer(page)?.values;
-
-        let mut lengths_iter = delta_length_byte_array::Decoder::try_new(values)?;
-
-        #[allow(clippy::needless_collect)] // we need to consume it to get the values
-        let lengths = lengths_iter
-            .by_ref()
-            .map(|x| x.map(|x| x as usize))
-            .collect::<ParquetResult<Vec<_>>>()?;
-
-        let values = lengths_iter.into_values();
-        Ok(Self {
-            lengths: lengths.into_iter(),
-            values,
-        })
-    }
-
-    pub fn len(&self) -> usize {
-        self.lengths.size_hint().0
-    }
-}
-
-impl<'a> Iterator for Delta<'a> {
-    type Item = &'a [u8];
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        let length = self.lengths.next()?;
-        let (item, remaining) = self.values.split_at(length);
-        self.values = remaining;
-        Some(item)
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.lengths.size_hint()
-    }
-}
-
-#[derive(Debug)]
-pub(crate) struct DeltaBytes<'a> {
-    prefix: std::vec::IntoIter<i32>,
-    suffix: std::vec::IntoIter<i32>,
-    data: &'a [u8],
-    data_offset: usize,
-    last_value: Vec<u8>,
-}
-
-impl<'a> DeltaBytes<'a> {
-    pub fn try_new(page: &'a DataPage) -> PolarsResult<Self> {
-        let values = split_buffer(page)?.values;
-        let values_len = values.len();
-        let (mut decoder, data) = delta_bitpacked::Decoder::try_new(values)?;
-        let prefix = (&mut decoder)
-            .take(page.num_values())
-            .map(|r| r.map(|v| v as i32).unwrap())
-            .collect::<Vec<_>>();
-
-        let mut data_offset = values_len - data.len();
-        let values_len = values.len();
-        let (mut decoder, data) = delta_bitpacked::Decoder::try_new(data)?;
-        let suffix = (&mut decoder)
-            .map(|r| r.map(|v| v as i32).unwrap())
-            .collect::<Vec<_>>();
-        data_offset += values_len - data.len();
-
-        Ok(Self {
-            prefix: prefix.into_iter(),
-            suffix: suffix.into_iter(),
-            data: values,
-            data_offset,
-            last_value: vec![],
-        })
-    }
-}
-
-impl<'a> Iterator for DeltaBytes<'a> {
-    type Item = &'a [u8];
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        let prefix_len = self.prefix.next()? as usize;
-        let suffix_len = self.suffix.next()? as usize;
-
-        self.last_value.truncate(prefix_len);
-        self.last_value
-            .extend_from_slice(&self.data[self.data_offset..self.data_offset + suffix_len]);
-        self.data_offset += suffix_len;
-
-        // SAFETY: the consumer will only keep one value around per iteration.
-        // We need a different API for this to work with safe code.
-        let extend_lifetime =
-            unsafe { std::mem::transmute::<&[u8], &'a [u8]>(self.last_value.as_slice()) };
-        Some(extend_lifetime)
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.prefix.size_hint()
-    }
-}
 
 #[derive(Debug)]
 pub(crate) struct ValuesDictionary<'a> {
@@ -143,12 +34,13 @@ impl<'a> ValuesDictionary<'a> {
     }
 }
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub(crate) enum BinaryStateTranslation<'a> {
     Plain(BinaryIter<'a>),
     Dictionary(ValuesDictionary<'a>),
-    Delta(Delta<'a>),
-    DeltaBytes(DeltaBytes<'a>),
+    Delta(delta_length_byte_array::Decoder<'a>),
+    DeltaBytes(delta_byte_array::Decoder<'a>),
 }
 
 impl<'a> BinaryStateTranslation<'a> {
@@ -174,11 +66,17 @@ impl<'a> BinaryStateTranslation<'a> {
                 Ok(BinaryStateTranslation::Plain(values))
             },
             (Encoding::DeltaLengthByteArray, _) => {
-                Ok(BinaryStateTranslation::Delta(Delta::try_new(page)?))
+                let values = split_buffer(page)?.values;
+                Ok(BinaryStateTranslation::Delta(
+                    delta_length_byte_array::Decoder::try_new(values)?,
+                ))
             },
-            (Encoding::DeltaByteArray, _) => Ok(BinaryStateTranslation::DeltaBytes(
-                DeltaBytes::try_new(page)?,
-            )),
+            (Encoding::DeltaByteArray, _) => {
+                let values = split_buffer(page)?.values;
+                Ok(BinaryStateTranslation::DeltaBytes(
+                    delta_byte_array::Decoder::try_new(values)?,
+                ))
+            },
             _ => Err(utils::not_implemented(page)),
         }
     }
@@ -217,4 +115,36 @@ pub(crate) fn deserialize_plain(values: &[u8], num_values: usize) -> BinaryDict 
     }
 
     dict_values.into()
+}
+
+#[derive(Default)]
+pub(crate) struct OffsetGatherer<O: Offset> {
+    _pd: std::marker::PhantomData<O>,
+}
+
+impl<O: Offset> delta_bitpacked::DeltaGatherer for OffsetGatherer<O> {
+    type Target = Offsets<O>;
+
+    fn target_len(&self, target: &Self::Target) -> usize {
+        target.len()
+    }
+
+    fn target_reserve(&self, target: &mut Self::Target, n: usize) {
+        target.reserve(n);
+    }
+
+    fn gather_one(&mut self, target: &mut Self::Target, v: i64) -> ParquetResult<()> {
+        target.try_push(v.try_into().unwrap()).unwrap();
+        Ok(())
+    }
+    fn gather_slice(&mut self, target: &mut Self::Target, slice: &[i64]) -> ParquetResult<()> {
+        target
+            .try_extend_from_lengths(slice.iter().copied().map(|i| i.try_into().unwrap()))
+            .map_err(|_| ParquetError::oos("Invalid length in delta encoding"))
+    }
+    fn gather_chunk(&mut self, target: &mut Self::Target, chunk: &[i64; 64]) -> ParquetResult<()> {
+        target
+            .try_extend_from_lengths(chunk.iter().copied().map(|i| i.try_into().unwrap()))
+            .map_err(|_| ParquetError::oos("Invalid length in delta encoding"))
+    }
 }
