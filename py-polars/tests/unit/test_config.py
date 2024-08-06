@@ -931,6 +931,7 @@ def test_warn_unstable(recwarn: pytest.WarningsRecorder) -> None:
         ("POLARS_TABLE_WIDTH", "set_tbl_width_chars", 80, "80"),
         ("POLARS_VERBOSE", "set_verbose", True, "1"),
         ("POLARS_WARN_UNSTABLE", "warn_unstable", True, "1"),
+        ("POLARS_TEMP_DIR", "set_temp_dir", "/other/tmp", "/other/tmp"),
     ],
 )
 def test_unset_config_env_vars(

@@ -69,6 +69,7 @@ _POLARS_CFG_ENV_VARS = {
     "POLARS_FMT_TABLE_ROUNDED_CORNERS",
     "POLARS_STREAMING_CHUNK_SIZE",
     "POLARS_TABLE_WIDTH",
+    "POLARS_TEMP_DIR",
     "POLARS_VERBOSE",
     "POLARS_MAX_EXPR_DEPTH",
 }
@@ -515,6 +516,39 @@ class Config(contextlib.ContextDecorator):
             msg = f"`separator` must be a single character; found {separator!r}"
             raise ValueError(msg)
         plr.set_decimal_separator(sep=separator)
+        return cls
+
+    @classmethod
+    def set_temp_dir(cls, path: str | Path | None = None) -> type[Config]:
+        """
+        Set the directory to use for any temporary files created by Polars.
+
+        Notes
+        -----
+        * Temporary files may be created in several situations; for example,
+          a streaming mode operation may spill intermediate results to disk,
+          cloud-based files may need local caching on download, and sink ops
+          may also require temporary storage.
+
+        * If not explicitly set the temporary directory is determined using
+          the Rust `std::env::temp_dir` function. See the Rust documentation
+          for details: https://doc.rust-lang.org/std/env/fn.temp_dir.html.
+
+        Parameters
+        ----------
+        path : str, Path, None
+            Path to a directory to use for Polars' temporary files, such as
+            where streaming operations may spill to disk. Set `None` to use
+            the default temp directory.
+
+        Examples
+        --------
+        >>> pl.Config(temp_dir="/tmp/my_subdir/")  # doctest: +SKIP
+        """
+        if path is None:
+            os.environ.pop("POLARS_TEMP_DIR", None)
+        else:
+            os.environ["POLARS_TEMP_DIR"] = str(path)
         return cls
 
     @classmethod
