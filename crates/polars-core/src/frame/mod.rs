@@ -1,6 +1,7 @@
 //! DataFrame module.
 #[cfg(feature = "zip_with")]
 use std::borrow::Cow;
+use std::cmp::min;
 use std::{mem, ops};
 
 use polars_utils::itertools::Itertools;
@@ -26,6 +27,7 @@ pub mod row;
 mod top_k;
 mod upstream_traits;
 
+use arrow::bitmap::MutableBitmap;
 use arrow::record_batch::RecordBatch;
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
@@ -3001,6 +3003,274 @@ impl DataFrame {
         }
         DataFrame::new(new_cols)
     }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn ie_join(
+        &self,
+        other: &DataFrame,
+        col1: &str,
+        op1: &str,
+        other_col1: &str,
+        col2: &str,
+        op2: &str,
+        other_col2: &str,
+    ) -> PolarsResult<Self> {
+        let total_height = self.height() + other.height();
+        // TODO: Use a Vec of structs rather than a DataFrame for better cache use
+        let l1_series: Vec<Series> = self.columns([col1, col2])?.into_iter().cloned().collect();
+        let mut l1 = DataFrame::new(l1_series)?
+            .rename(col1, "x")?
+            .rename(col2, "y")?
+            .clone();
+        let l1_other_series: Vec<Series> = other
+            .columns([other_col1, other_col2])?
+            .into_iter()
+            .cloned()
+            .collect();
+        let mut l1_other = DataFrame::new(l1_other_series)?;
+        l1_other.rename(other_col1, "x")?.rename(other_col2, "y")?;
+        l1.extend(&l1_other)?;
+
+        // Compute array of 1 or -1 based row ids, where positive ids are from the left (self) DataFrame,
+        // and negative ids are from the right (other) DataFrame.
+        let mut rid_builder = PrimitiveChunkedBuilder::<Int64Type>::new("row_id", total_height);
+        for i in 0..self.height() {
+            rid_builder.append_value((i + 1) as i64);
+        }
+        for i in 0..other.height() {
+            rid_builder.append_value(-(i as i64) - 1);
+        }
+        let l1_row_ids = rid_builder.finish().into_series();
+        l1.insert_column(2, l1_row_ids)?;
+
+        // Determine the sort order based on the comparison operators used.
+        // We want to sort L1 so that "x[i] op1 x[j]" is true for j > i,
+        // and L2 so that "y[i] op2 y[j]" is true for j < i (ignoring duplicates for now).
+        // Note that the algorithms published in Khayyat et. al. 2015 have incorrect logic for
+        // determining whether to sort descending.
+        let l1_descending = op1 == ">" || op1 == ">=";
+        let l2_descending = op2 == "<" || op2 == "<=";
+
+        let l1_sort_options = SortMultipleOptions::default()
+            .with_maintain_order(true)
+            .with_order_descending(l1_descending);
+        l1.sort_in_place(["x"], l1_sort_options)?;
+
+        let mut l2 = DataFrame::new(vec![l1.column("y")?.clone()])?;
+        let l2_p =
+            ChunkedArray::<UInt64Type>::from_iter_values("p", 0..total_height as u64).into_series();
+        l2.insert_column(1, l2_p)?;
+
+        let l2_sort_options = SortMultipleOptions::default()
+            .with_maintain_order(true)
+            .with_order_descending(l2_descending);
+        l2.sort_in_place(["y"], l2_sort_options)?;
+
+        // Create a bitmap with order corresponding to L1 denoting which
+        // entries have been visited while traversing L2.
+        let mut bit_array = FilteredBitArray::from_len_zeroed(total_height);
+
+        let mut left_row_ids = PrimitiveChunkedBuilder::<IdxType>::new("left_indices", 0);
+        let mut right_row_ids = PrimitiveChunkedBuilder::<IdxType>::new("right_indices", 0);
+
+        let l2_p = l2.column("p")?;
+        let l2_y = l2.column("y")?;
+        let l1_rid = l1.column("row_id")?;
+        let l1_x = l1.column("x")?;
+
+        if op2 == ">" || op2 == "<" {
+            // For exclusive comparisons, we rely on using a stable sort of l2 so that
+            // p values only increase as we traverse a run of equal y values.
+            // To handle inclusive comparisons in x and duplicate x values we also need the
+            // sort of l1 to be stable, so that the left hand side entries come before the right
+            // hand side entries.
+            for i in 0..total_height {
+                let p = match l2_p.get(i)? {
+                    AnyValue::UInt64(p) => p,
+                    _ => unreachable!(),
+                };
+                let row_index = match l1_rid.get(p as usize)? {
+                    AnyValue::Int64(rid) => rid,
+                    _ => unreachable!(),
+                };
+                let from_lhs = row_index > 0;
+                if from_lhs {
+                    // This entry comes from the left hand side DataFrame.
+                    // Find all following entries in L1 (meaning they satisfy the first operator)
+                    // that have already been visited (so satisfy the second operator).
+                    // Because we use a stable sort for l2, we know that we won't find any
+                    // matches for duplicate y values when traversing forwards in l1.
+                    let start_index = Self::find_l1_search_start(l1_x, p as usize, op1)?;
+                    bit_array.on_set_bits(start_index, |set_bit: usize| {
+                        let right_row_index = unsafe {
+                            // SAFETY: set_bit must be < l1_rid.len()
+                            match l1_rid.get_unchecked(set_bit) {
+                                AnyValue::Int64(rid) => rid,
+                                _ => unreachable!(),
+                            }
+                        };
+
+                        left_row_ids.append_value(row_index as IdxSize - 1);
+                        debug_assert!(right_row_index < 0);
+                        right_row_ids.append_value((-right_row_index) as IdxSize - 1);
+                    });
+                } else {
+                    bit_array.set_bit(p as usize);
+                }
+            }
+        } else {
+            // For inclusive comparisons in l2, we need to track runs of equal y values and only
+            // mark all l1 entries visited after we reach the end of the run and have checked
+            // for matches.
+            let mut run_start = 0;
+            for i in 0..total_height {
+                let y = match l2_y.get(i)? {
+                    AnyValue::Int64(y) => y,
+                    _ => {
+                        return Err(
+                            polars_err!(InvalidOperation: "Only int64 data currently supported for IEJoin"),
+                        )
+                    },
+                };
+                let end_of_run =
+                    i == total_height - 1 || !unsafe { Self::series_value_equals(l2_y, i + 1, y) };
+                if end_of_run {
+                    for j in run_start..(i + 1) {
+                        let p = match l2_p.get(j)? {
+                            AnyValue::UInt64(p) => p,
+                            _ => unreachable!(),
+                        };
+                        let row_index = match l1_rid.get(p as usize)? {
+                            AnyValue::Int64(rid) => rid,
+                            _ => unreachable!(),
+                        };
+                        let from_lhs = row_index > 0;
+                        if !from_lhs {
+                            bit_array.set_bit(p as usize);
+                        }
+                    }
+                    for j in run_start..(i + 1) {
+                        let p = match l2_p.get(j)? {
+                            AnyValue::UInt64(p) => p,
+                            _ => unreachable!(),
+                        };
+                        let row_index = match l1_rid.get(p as usize)? {
+                            AnyValue::Int64(rid) => rid,
+                            _ => unreachable!(),
+                        };
+                        let from_lhs = row_index > 0;
+                        if from_lhs {
+                            let start_index = Self::find_l1_search_start(l1_x, p as usize, op1)?;
+                            bit_array.on_set_bits(start_index, |set_bit: usize| {
+                                let right_row_index = unsafe {
+                                    // SAFETY: set_bit must be < l1_rid.len()
+                                    match l1_rid.get_unchecked(set_bit) {
+                                        AnyValue::Int64(rid) => rid,
+                                        _ => unreachable!(),
+                                    }
+                                };
+
+                                left_row_ids.append_value(row_index as IdxSize - 1);
+                                debug_assert!(right_row_index < 0);
+                                right_row_ids.append_value((-right_row_index) as IdxSize - 1);
+                            });
+                        }
+                    }
+                    run_start = i + 1;
+                }
+            }
+        }
+
+        let left_rows = self.take(&left_row_ids.finish())?;
+        let mut right_rows = other.take(&right_row_ids.finish())?;
+
+        let left_col_names = PlHashSet::from_iter(left_rows.get_column_names_owned());
+        let right_col_names = right_rows.get_column_names_owned();
+        for column_name in right_col_names {
+            if left_col_names.contains(&column_name) {
+                let new_name = column_name.clone() + "_right";
+                right_rows.rename(&column_name, &new_name)?;
+            }
+        }
+        left_rows.hstack(&right_rows.columns)
+    }
+
+    fn find_l1_search_start(
+        x_values: &Series,
+        l1_position: usize,
+        operator: &str,
+    ) -> PolarsResult<usize> {
+        let value = match x_values.get(l1_position)? {
+            AnyValue::Int64(x) => x,
+            _ => {
+                return Err(
+                    polars_err!(InvalidOperation: "Only int64 data currently supported for IEJoin"),
+                )
+            },
+        };
+
+        if operator == ">" || operator == "<" {
+            // Search forward until we find a value not equal to the current x value
+            let mut left_bound = l1_position;
+            let mut right_bound = l1_position + 1;
+            let mut step_size = 1;
+            while right_bound < x_values.len()
+                && unsafe { Self::series_value_equals(x_values, right_bound, value) }
+            {
+                left_bound = right_bound;
+                right_bound = min(right_bound + step_size, x_values.len());
+                step_size *= 2;
+            }
+            // Now binary search to find the first value not equal to the current x value
+            while right_bound - left_bound > 1 {
+                let mid = left_bound + (right_bound - left_bound) / 2;
+                if unsafe { Self::series_value_equals(x_values, mid, value) } {
+                    left_bound = mid;
+                } else {
+                    right_bound = mid;
+                }
+            }
+            Ok(right_bound)
+        } else {
+            // Search backwards to find the first value equal to the current x value
+            let mut left_bound = if l1_position > 0 { l1_position - 1 } else { 0 };
+            let mut right_bound = l1_position;
+            let mut step_size = 1;
+            while left_bound > 0
+                && unsafe { Self::series_value_equals(x_values, left_bound, value) }
+            {
+                right_bound = left_bound;
+                left_bound = if left_bound > step_size {
+                    left_bound - step_size
+                } else {
+                    0
+                };
+                step_size *= 2
+            }
+
+            if unsafe { Self::series_value_equals(x_values, left_bound, value) } {
+                return Ok(left_bound);
+            }
+
+            // Now binary search to find the first value equal to the current x value
+            while right_bound - left_bound > 1 {
+                let mid = left_bound + (right_bound - left_bound) / 2;
+                if unsafe { Self::series_value_equals(x_values, mid, value) } {
+                    right_bound = mid;
+                } else {
+                    left_bound = mid;
+                }
+            }
+            Ok(right_bound)
+        }
+    }
+
+    unsafe fn series_value_equals(series: &Series, index: usize, test_value: i64) -> bool {
+        match series.get_unchecked(index) {
+            AnyValue::Int64(x) => x == test_value,
+            _ => false,
+        }
+    }
 }
 
 pub struct RecordBatchIter<'a> {
@@ -3087,6 +3357,51 @@ fn ensure_can_extend(left: &Series, right: &Series) -> PolarsResult<()> {
         left.name(), right.name(),
     );
     Ok(())
+}
+
+struct FilteredBitArray {
+    bit_array: MutableBitmap,
+    filter: MutableBitmap,
+}
+
+impl FilteredBitArray {
+    const CHUNK_SIZE: usize = 1024;
+
+    pub fn from_len_zeroed(len: usize) -> Self {
+        Self {
+            bit_array: MutableBitmap::from_len_zeroed(len),
+            filter: MutableBitmap::from_len_zeroed(len.div_ceil(Self::CHUNK_SIZE)),
+        }
+    }
+
+    pub fn set_bit(&mut self, index: usize) {
+        self.bit_array.set(index, true);
+        self.filter.set(index / Self::CHUNK_SIZE, true);
+    }
+
+    pub fn on_set_bits<F>(&self, start: usize, mut action: F)
+    where
+        F: FnMut(usize),
+    {
+        let start_chunk = start / Self::CHUNK_SIZE;
+        let mut chunk_offset = start % Self::CHUNK_SIZE;
+        for chunk_idx in start_chunk..self.filter.len() {
+            if self.filter.get(chunk_idx) {
+                // There are some set bits in this chunk
+                let start = chunk_idx * Self::CHUNK_SIZE + chunk_offset;
+                let end = min((chunk_idx + 1) * Self::CHUNK_SIZE, self.bit_array.len());
+                for bit_idx in start..end {
+                    unsafe {
+                        // SAFETY: `bit_idx` is always less than `self.bit_array.len()`
+                        if self.bit_array.get_unchecked(bit_idx) {
+                            action(bit_idx);
+                        }
+                    }
+                }
+            }
+            chunk_offset = 0;
+        }
+    }
 }
 
 #[cfg(test)]

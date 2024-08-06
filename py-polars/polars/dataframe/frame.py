@@ -7085,6 +7085,21 @@ class DataFrame:
             .collect(_eager=True)
         )
 
+    def ie_join(
+        self,
+        other: DataFrame,
+        col1: str,
+        op1: str,
+        other_col1: str,
+        col2: str,
+        op2: str,
+        other_col2: str,
+    ) -> DataFrame:
+        """Join matching using two inequality comparisons."""
+        return self._from_pydf(
+            self._df.ie_join(other._df, col1, op1, other_col1, col2, op2, other_col2)
+        )
+
     def map_rows(
         self,
         function: Callable[[tuple[Any, ...]], Any],
