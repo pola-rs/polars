@@ -2,21 +2,23 @@
 
 use std::sync::Arc;
 
+use object_store::buffered::BufWriter;
 use object_store::path::Path;
-use object_store::{MultipartUpload, ObjectStore, PutPayload};
+use object_store::ObjectStore;
 use polars_error::{to_compute_err, PolarsResult};
+use tokio::io::AsyncWriteExt;
 
 use super::CloudOptions;
 use crate::pl_async::get_runtime;
 
-/// Adaptor which wraps the asynchronous interface of [ObjectStore::put_multipart](https://docs.rs/object_store/latest/object_store/trait.ObjectStore.html#tymethod.put_multipart)
+/// Adaptor which wraps the interface of [ObjectStore::BufWriter](https://docs.rs/object_store/latest/object_store/buffered/struct.BufWriter.html)
 /// exposing a synchronous interface which implements `std::io::Write`.
 ///
 /// This allows it to be used in sync code which would otherwise write to a simple File or byte stream,
 /// such as with `polars::prelude::CsvWriter`.
 pub struct CloudWriter {
     // Internal writer, constructed at creation
-    writer: Box<dyn MultipartUpload>,
+    writer: BufWriter,
 }
 
 impl CloudWriter {
@@ -29,7 +31,7 @@ impl CloudWriter {
         object_store: Arc<dyn ObjectStore>,
         path: Path,
     ) -> PolarsResult<Self> {
-        let writer = object_store.put_multipart(&path).await?;
+        let writer = BufWriter::new(object_store, path);
         Ok(CloudWriter { writer })
     }
 
@@ -55,28 +57,28 @@ impl std::io::Write for CloudWriter {
         // async runtime here
         let buf = unsafe { std::mem::transmute::<&[u8], &'static [u8]>(buf) };
         get_runtime().block_on(async {
-            let res = self.writer.put_part(PutPayload::from_static(buf)).await;
+            let res = self.writer.write_all(buf).await;
             if res.is_err() {
                 let _ = self.abort().await;
             }
-            Ok(buf.len())
+            res.map(|_t| buf.len())
         })
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
         get_runtime().block_on(async {
-            let res = self.writer.complete().await;
+            let res = self.writer.flush().await;
             if res.is_err() {
                 let _ = self.abort().await;
             }
-            Ok(())
+            res
         })
     }
 }
 
 impl Drop for CloudWriter {
     fn drop(&mut self) {
-        let _ = get_runtime().block_on(self.writer.complete());
+        let _ = get_runtime().block_on(self.writer.shutdown());
     }
 }
 
