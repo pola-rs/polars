@@ -8,9 +8,9 @@ use crossbeam_channel::{bounded, unbounded, Receiver, Sender};
 use polars_core::error::ErrString;
 use polars_core::prelude::*;
 use polars_core::utils::arrow::temporal_conversions::SECONDS_IN_DAY;
+use polars_io::path_utils::POLARS_TEMP_DIR_BASE_PATH;
 use polars_io::prelude::*;
 
-use crate::executors::sinks::get_base_temp_dir;
 use crate::pipeline::morsels_per_sink;
 
 pub(in crate::executors::sinks) type DfIter =
@@ -38,20 +38,23 @@ fn get_lockfile_path(dir: &Path) -> PathBuf {
 
 fn get_spill_dir(operation_name: &'static str) -> PolarsResult<PathBuf> {
     let id = uuid::Uuid::new_v4();
-
-    let mut dir = std::path::PathBuf::from(get_base_temp_dir());
-    dir.push(format!("polars/{operation_name}/{id}"));
+    let dir = POLARS_TEMP_DIR_BASE_PATH.join(format!("{operation_name}/{id}"));
 
     if !dir.exists() {
         fs::create_dir_all(&dir).map_err(|err| {
             PolarsError::ComputeError(ErrString::from(format!(
-                "Failed to create spill directory: {}",
+                "Failed to create spill directory: {:?}\n {}",
+                dir.to_str(),
                 err
             )))
         })?;
     } else if !dir.is_dir() {
         return Err(PolarsError::ComputeError(
-            "Specified spill path is not a directory".into(),
+            format!(
+                "Specified spill path is not a directory: {:?}",
+                dir.to_str()
+            )
+            .into(),
         ));
     }
 
@@ -76,8 +79,7 @@ fn clean_after_delay(time: Option<SystemTime>, secs: u64, path: &Path) {
 fn gc_thread(operation_name: &'static str, rx: Receiver<PathBuf>) {
     let _ = std::thread::spawn(move || {
         // First clean all existing
-        let mut dir = std::path::PathBuf::from(get_base_temp_dir());
-        dir.push(format!("polars/{operation_name}"));
+        let dir = POLARS_TEMP_DIR_BASE_PATH.join(operation_name);
 
         // if the directory does not exist, there is nothing to clean
         let rd = match std::fs::read_dir(&dir) {
