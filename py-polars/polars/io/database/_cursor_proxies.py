@@ -90,8 +90,6 @@ class SurrealDBCursorProxy:
         self.query = query
         return self
 
-    def _client_query(self) -> list[dict[str, Any]]: ...
-
     def fetchall(self) -> list[dict[str, Any]]:
         """Fetch all results (as a list of dictionaries)."""
         return _read_surreal_query_sync(
