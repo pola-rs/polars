@@ -2,11 +2,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Iterable
 
-from polars.io.database._utils import _run_async
+from polars.io.database._utils import _read_surreal_query_sync
 
 if TYPE_CHECKING:
     import sys
-    from collections.abc import Coroutine
 
     import pyarrow as pa
 
@@ -80,16 +79,6 @@ class SurrealDBCursorProxy:
         self.execute_options: dict[str, Any] = {}
         self.query: str = None  # type: ignore[assignment]
 
-    @staticmethod
-    async def _unpack_result(
-        result: Coroutine[Any, Any, list[dict[str, Any]]],
-    ) -> list[dict[str, Any]]:
-        """Unpack the async query result."""
-        response = (await result)[0]
-        if response["status"] != "OK":
-            raise RuntimeError(response["result"])
-        return response["result"]
-
     def close(self) -> None:
         """Close the cursor."""
         # no-op; never close a user's Surreal session
@@ -101,15 +90,14 @@ class SurrealDBCursorProxy:
         self.query = query
         return self
 
+    def _client_query(self) -> list[dict[str, Any]]: ...
+
     def fetchall(self) -> list[dict[str, Any]]:
         """Fetch all results (as a list of dictionaries)."""
-        return _run_async(
-            self._unpack_result(
-                result=self.client.query(
-                    sql=self.query,
-                    vars=(self.execute_options or None),
-                ),
-            )
+        return _read_surreal_query_sync(
+            client=self.client,
+            query=self.query,
+            vars=(self.execute_options or None),
         )
 
     def fetchmany(self, size: int) -> list[dict[str, Any]]:
