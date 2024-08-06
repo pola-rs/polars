@@ -50,31 +50,23 @@ fn test_median() {
 }
 
 #[test]
-fn test_quantiles() {
+fn test_quantile_disc() {
     for &q in &[0.25, 0.5, 0.75] {
-        for &interpol in &[
-            QuantileInterpolOptions::Linear,
-            QuantileInterpolOptions::Lower,
-            QuantileInterpolOptions::Higher,
-            QuantileInterpolOptions::Nearest,
-            QuantileInterpolOptions::Midpoint,
-        ] {
-            let expr = col("Sales").quantile(lit(q), interpol);
+        let expr = col("Sales").quantile(lit(q), QuantileInterpolOptions::Lower);
 
-            let sql_expr = format!("QUANTILE(Sales, {}, '{}')", q, interpol);
-            let (expected, actual) = create_expected(expr, &sql_expr);
+        let sql_expr = format!("QUANTILE_DISC(Sales, {})", q);
+        let (expected, actual) = create_expected(expr, &sql_expr);
 
-            assert!(expected.equals(&actual))
-        }
+        assert!(expected.equals(&actual))
     }
 }
 
 #[test]
-fn test_quantile_default_nearest() {
+fn test_quantile_cont() {
     for &q in &[0.25, 0.5, 0.75] {
-        let expr = col("Sales").quantile(lit(q), QuantileInterpolOptions::Nearest);
+        let expr = col("Sales").quantile(lit(q), QuantileInterpolOptions::Linear);
 
-        let sql_expr = format!("QUANTILE(Sales, {})", q);
+        let sql_expr = format!("QUANTILE_CONT(Sales, {})", q);
         let (expected, actual) = create_expected(expr, &sql_expr);
 
         assert!(expected.equals(&actual))
