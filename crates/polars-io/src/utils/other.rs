@@ -44,9 +44,6 @@ pub fn get_reader_bytes<'a, R: Read + MmapBytesReader + ?Sized>(
 
 /// Decompress `bytes` if compression is detected, otherwise simply return it.
 /// An `out` vec must be given for ownership of the decompressed data.
-///
-/// # Safety
-/// The `out` vec outlives `bytes` (declare `out` first).
 pub fn maybe_decompress_bytes<'a, 'b: 'a>(
     bytes: &'a [u8],
     out: &'b mut Vec<u8>,
