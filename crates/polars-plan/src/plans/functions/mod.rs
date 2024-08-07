@@ -53,7 +53,7 @@ pub enum FunctionNode {
         fmt_str: &'static str,
     },
     Count {
-        paths: Arc<[PathBuf]>,
+        paths: Arc<Vec<PathBuf>>,
         scan_type: FileScan,
         alias: Option<Arc<str>>,
     },

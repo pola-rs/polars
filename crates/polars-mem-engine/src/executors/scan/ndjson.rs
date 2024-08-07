@@ -6,7 +6,7 @@ use polars_core::utils::accumulate_dataframes_vertical;
 use super::*;
 
 pub struct JsonExec {
-    paths: Arc<[PathBuf]>,
+    paths: Arc<Vec<PathBuf>>,
     options: NDJsonReadOptions,
     file_scan_options: FileScanOptions,
     file_info: FileInfo,
@@ -15,7 +15,7 @@ pub struct JsonExec {
 
 impl JsonExec {
     pub fn new(
-        paths: Arc<[PathBuf]>,
+        paths: Arc<Vec<PathBuf>>,
         options: NDJsonReadOptions,
         file_scan_options: FileScanOptions,
         file_info: FileInfo,

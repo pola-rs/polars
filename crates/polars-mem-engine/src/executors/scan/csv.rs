@@ -9,7 +9,7 @@ use polars_core::utils::{
 use super::*;
 
 pub struct CsvExec {
-    pub paths: Arc<[PathBuf]>,
+    pub paths: Arc<Vec<PathBuf>>,
     pub file_info: FileInfo,
     pub options: CsvReadOptions,
     pub file_options: FileScanOptions,

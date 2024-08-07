@@ -88,7 +88,7 @@ pub fn expand_paths(
     paths: &[PathBuf],
     glob: bool,
     #[allow(unused_variables)] cloud_options: Option<&CloudOptions>,
-) -> PolarsResult<Arc<[PathBuf]>> {
+) -> PolarsResult<Arc<Vec<PathBuf>>> {
     expand_paths_hive(paths, glob, cloud_options, false).map(|x| x.0)
 }
 
@@ -129,7 +129,7 @@ pub fn expand_paths_hive(
     glob: bool,
     #[allow(unused_variables)] cloud_options: Option<&CloudOptions>,
     check_directory_level: bool,
-) -> PolarsResult<(Arc<[PathBuf]>, usize)> {
+) -> PolarsResult<(Arc<Vec<PathBuf>>, usize)> {
     let Some(first_path) = paths.first() else {
         return Ok((vec![].into(), 0));
     };
@@ -356,12 +356,12 @@ pub fn expand_paths_hive(
 
                 Ok(path)
             })
-            .collect::<PolarsResult<Arc<[_]>>>()?
+            .collect::<PolarsResult<Vec<_>>>()?
     } else {
-        Arc::<[_]>::from(out_paths)
+        out_paths
     };
 
-    Ok((out_paths, hive_idx_tracker.idx))
+    Ok((Arc::new(out_paths), hive_idx_tracker.idx))
 }
 
 /// Ignores errors from `std::fs::create_dir_all` if the directory exists.

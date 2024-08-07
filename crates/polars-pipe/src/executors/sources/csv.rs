@@ -20,7 +20,7 @@ pub(crate) struct CsvSource {
     batched_reader: Option<BatchedCsvReader<'static>>,
     reader: Option<CsvReader<File>>,
     n_threads: usize,
-    paths: Arc<[PathBuf]>,
+    paths: Arc<Vec<PathBuf>>,
     options: Option<CsvReadOptions>,
     file_options: FileScanOptions,
     verbose: bool,
@@ -139,7 +139,7 @@ impl CsvSource {
     }
 
     pub(crate) fn new(
-        paths: Arc<[PathBuf]>,
+        paths: Arc<Vec<PathBuf>>,
         schema: SchemaRef,
         options: CsvReadOptions,
         file_options: FileScanOptions,

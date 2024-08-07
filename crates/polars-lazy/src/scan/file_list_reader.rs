@@ -27,7 +27,7 @@ pub trait LazyFileListReader: Clone {
                     .with_n_rows(None)
                     // Each individual reader should not apply a row index.
                     .with_row_index(None)
-                    .with_paths(Arc::new([path.clone()]))
+                    .with_paths(Arc::new(vec![path.clone()]))
                     .with_rechunk(false)
                     .finish_no_glob()
                     .map_err(|e| {
@@ -83,7 +83,7 @@ pub trait LazyFileListReader: Clone {
 
     /// Set paths of the scanned files.
     #[must_use]
-    fn with_paths(self, paths: Arc<[PathBuf]>) -> Self;
+    fn with_paths(self, paths: Arc<Vec<PathBuf>>) -> Self;
 
     /// Configure the row limit.
     fn with_n_rows(self, n_rows: impl Into<Option<usize>>) -> Self;

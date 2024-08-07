@@ -790,10 +790,10 @@ pub fn to_alp_impl(
 /// Expand scan paths if they were not already expanded.
 #[allow(unused_variables)]
 fn expand_scan_paths(
-    paths: Arc<Mutex<(Arc<[PathBuf]>, bool)>>,
+    paths: Arc<Mutex<(Arc<Vec<PathBuf>>, bool)>>,
     scan_type: &mut FileScan,
     file_options: &mut FileScanOptions,
-) -> PolarsResult<Arc<[PathBuf]>> {
+) -> PolarsResult<Arc<Vec<PathBuf>>> {
     #[allow(unused_mut)]
     let mut lock = paths.lock().unwrap();
 
@@ -838,7 +838,7 @@ fn expand_scan_paths_with_hive_update(
     paths: &[PathBuf],
     file_options: &mut FileScanOptions,
     cloud_options: &Option<CloudOptions>,
-) -> PolarsResult<Arc<[PathBuf]>> {
+) -> PolarsResult<Arc<Vec<PathBuf>>> {
     let hive_enabled = file_options.hive_options.enabled;
     let (expanded_paths, hive_start_idx) = expand_paths_hive(
         paths,
