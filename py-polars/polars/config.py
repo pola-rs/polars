@@ -445,7 +445,13 @@ class Config(contextlib.ContextDecorator):
     @classmethod
     def set_temp_dir(cls, path: str | Path | None = None) -> type[Config]:
         """
-        Set the directory to use for temporary files.
+        Set the directory to use for any temporary files created by Polars.
+
+        Notes
+        -----
+        Temporary files may be created in several situations; for example, a
+        streaming mode operation may spill intermediate results to disk, or
+        cloud-based files may need local caching on download.
 
         Parameters
         ----------
