@@ -47,9 +47,9 @@ pub fn get_reader_bytes<'a, R: Read + MmapBytesReader + ?Sized>(
 ///
 /// # Safety
 /// The `out` vec outlives `bytes` (declare `out` first).
-pub unsafe fn maybe_decompress_bytes<'a>(
+pub fn maybe_decompress_bytes<'a, 'b: 'a>(
     bytes: &'a [u8],
-    out: &'a mut Vec<u8>,
+    out: &'b mut Vec<u8>,
 ) -> PolarsResult<&'a [u8]> {
     assert!(out.is_empty());
     use crate::prelude::is_compressed;

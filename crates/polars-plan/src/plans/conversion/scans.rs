@@ -191,8 +191,7 @@ pub(super) fn csv_file_info(
         let mmap = unsafe { memmap::Mmap::map(&file).unwrap() };
         let owned = &mut vec![];
 
-        let mut curs =
-            std::io::Cursor::new(unsafe { maybe_decompress_bytes(mmap.as_ref(), owned) }?);
+        let mut curs = std::io::Cursor::new(maybe_decompress_bytes(mmap.as_ref(), owned)?);
 
         if curs.read(&mut [0; 4])? < 2 && csv_options.raise_if_empty {
             polars_bail!(NoData: "empty CSV")
@@ -324,8 +323,7 @@ pub(super) fn ndjson_file_info(
     let owned = &mut vec![];
     let mmap = unsafe { memmap::Mmap::map(&f).unwrap() };
 
-    let mut reader =
-        std::io::BufReader::new(unsafe { maybe_decompress_bytes(mmap.as_ref(), owned) }?);
+    let mut reader = std::io::BufReader::new(maybe_decompress_bytes(mmap.as_ref(), owned)?);
 
     let (mut reader_schema, schema) = if let Some(schema) = ndjson_options.schema.take() {
         if file_options.row_index.is_none() {

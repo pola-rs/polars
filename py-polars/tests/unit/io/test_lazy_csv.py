@@ -438,3 +438,18 @@ def test_scan_csv_with_column_names_nonexistent_file() -> None:
     # Upon collection, it should fail
     with pytest.raises(FileNotFoundError):
         result.collect()
+
+
+def test_scan_csv_compressed_row_count_18057(io_files_path: Path) -> None:
+    csv_file = io_files_path / "gzipped.csv.gz"
+
+    expected = pl.DataFrame(
+        {"a": [1, 2, 3], "b": ["a", "b", "c"], "c": [1.0, 2.0, 3.0]}
+    )
+    lf = pl.scan_csv(csv_file, truncate_ragged_lines=True)
+    out = lf.collect()
+    assert_frame_equal(out, expected)
+    # This also tests:
+    # #18070 "CSV count_rows does not skip empty lines at file start"
+    # as the file has an empty line at the beginning.
+    assert lf.select(pl.len()).collect().item() == 3
