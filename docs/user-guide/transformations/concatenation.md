@@ -56,5 +56,5 @@ When the dataframe shapes do not match and we have an overlapping semantic key t
 
 ## Rechunking
 
-Before a concatenation we have two dataframes `df1` and `df2`. Each column in `df1` and `df2` is in one or more chunks in memory. By default, during concatenation the chunks in each column are copied to a single new chunk - this is known as **rechunking**. Rechunking is an expensive operation, but is often worth it because future operations will be faster.
-If you do not want Polars to rechunk the concatenated `DataFrame` you specify `rechunk = False` when doing the concatenation.
+Before a concatenation we have two dataframes `df1` and `df2`. Each column in `df1` and `df2` is in one or more chunks in memory. By default, during concatenation the chunks in each column are not made contiguous. This makes the concat operation faster and consume less memory but it may slow down future operations that would benefit from having the data be in contiguous memory. The process of copying the fragmented chunks into a single new chunk is known as **rechunking**. Rechunking is an expensive operation. Prior to version 0.20.26, the default was to perform a rechunk but in new versions, the default is not to.
+If you do want Polars to rechunk the concatenated `DataFrame` you specify `rechunk = True` when doing the concatenation.
