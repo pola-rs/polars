@@ -290,7 +290,12 @@ fn expand_list_validity<'a, O: Offset>(
     let mut validity = MutableBitmap::with_capacity(array.values().len());
     let mut list_validity_iter = list_validity.iter();
 
+    // @NOTE: We need to take into account here that the list might only point to a slice of the
+    // values, therefore we need to extend the validity mask with dummy values to match the length
+    // of the values array.
+
     let mut idx = 0;
+    validity.extend_constant(offsets[0].to_usize(), false);
     while list_validity_iter.num_remaining() > 0 {
         let num_ones = list_validity_iter.take_leading_ones();
         let num_elements = offsets[idx + num_ones] - offsets[idx];
@@ -304,6 +309,7 @@ fn expand_list_validity<'a, O: Offset>(
 
         idx += num_zeros;
     }
+    validity.extend_constant(array.values().len() - validity.len(), false);
 
     debug_assert_eq!(idx, array.len());
 
