@@ -191,6 +191,7 @@ from polars.string_cache import (
     enable_string_cache,
     using_string_cache,
 )
+from polars.datasets import datasets
 
 __version__: str = _get_polars_version()
 del _get_polars_version
