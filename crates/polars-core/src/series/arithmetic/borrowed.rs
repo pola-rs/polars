@@ -1,3 +1,5 @@
+use arrow::array::Array;
+
 use super::*;
 use crate::utils::align_chunks_binary;
 
@@ -171,6 +173,22 @@ impl NumOpsDispatchInner for FixedSizeListType {
     }
 }
 
+/// Given an ArrayRef with some primitive values, wrap it in list(s) until it
+/// matches the requested shape.
+fn reshape_based_on(data: &ArrayRef, shape: &ArrayRef) -> PolarsResult<ArrayRef> {
+    if let Some(list_chunk) = shape.as_any().downcast_ref::<LargeListArray>() {
+        let result = LargeListArray::try_new(
+            list_chunk.data_type().clone(),
+            list_chunk.offsets().clone(),
+            reshape_based_on(data, list_chunk.values())?,
+            list_chunk.validity().cloned(),
+        )?;
+        Ok(Box::new(result))
+    } else {
+        Ok(data.clone())
+    }
+}
+
 impl ListChunked {
     fn arithm_helper(
         &self,
@@ -178,22 +196,26 @@ impl ListChunked {
         op: &dyn Fn(&Series, &Series) -> PolarsResult<Series>,
     ) -> PolarsResult<Series> {
         polars_ensure!(self.len() == rhs.len(), InvalidOperation: "can only do arithmetic operations on Series of the same size; got {} and {}", self.len(), rhs.len());
+        // TODO make sure the list shapes the same
+        let l_rechunked = self.rechunk().into_series();
+        let l_leaf_array = l_rechunked.get_leaf_array();
+        let r_leaf_array = rhs.rechunk().get_leaf_array();
+        let result = op(&l_leaf_array, &r_leaf_array)?;
 
-        let mut result = self.clear();
-        let combined = self.amortized_iter().zip(rhs.list()?.amortized_iter()).map(|(a, b)| {
-            // We ensured the original Series are the same length, so we can
-            // assume no None:
-            let a_owner = a.unwrap();
-            let b_owner = b.unwrap();
-            let a = a_owner.as_ref();
-            let b = b_owner.as_ref();
-            polars_ensure!(a.len() == b.len(), InvalidOperation: "can only do arithmetic operations on lists of the same size; got {} and {}", a.len(), b.len());
-            op(a, b).and_then(|s| s.implode()).map(Series::from)
-        });
-        for c in combined.into_iter() {
-            result.append(c?.list()?)?;
+        // We now need to wrap the Arrow arrays with the metadata that turns
+        // them into lists:
+        // TODO is there a way to do this without cloning the underlying data?
+        let result_chunks = result.chunks();
+        assert_eq!(result_chunks.len(), 1);
+        let left_chunk = &l_rechunked.chunks()[0];
+        let result_chunk = reshape_based_on(&result_chunks[0], left_chunk)?;
+
+        unsafe {
+            let mut result =
+                ListChunked::new_with_dims(self.field.clone(), vec![result_chunk], 0, 0);
+            result.compute_len();
+            Ok(result.into())
         }
-        Ok(result.into())
     }
 }
 
