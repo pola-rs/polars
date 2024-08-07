@@ -440,7 +440,7 @@ impl ProjectionPushDown {
                                     &with_columns.iter().cloned().collect::<PlHashSet<_>>(),
                                 );
 
-                            Some(
+                            Some(Arc::new(
                                 hive_parts
                                     .iter()
                                     .cloned()
@@ -451,8 +451,8 @@ impl ProjectionPushDown {
                                         );
                                         hp
                                     })
-                                    .collect::<Arc<[_]>>(),
-                            )
+                                    .collect::<Vec<_>>(),
+                            ))
                         } else {
                             None
                         };

@@ -11,12 +11,12 @@ use rayon::prelude::*;
 use super::*;
 
 pub struct IpcExec {
-    pub(crate) paths: Arc<[PathBuf]>,
+    pub(crate) paths: Arc<Vec<PathBuf>>,
     pub(crate) file_info: FileInfo,
     pub(crate) predicate: Option<Arc<dyn PhysicalExpr>>,
     pub(crate) options: IpcScanOptions,
     pub(crate) file_options: FileScanOptions,
-    pub(crate) hive_parts: Option<Arc<[HivePartitions]>>,
+    pub(crate) hive_parts: Option<Arc<Vec<HivePartitions>>>,
     pub(crate) cloud_options: Option<CloudOptions>,
 }
 
