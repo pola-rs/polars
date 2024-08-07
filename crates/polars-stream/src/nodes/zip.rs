@@ -15,7 +15,7 @@ struct InputHead {
     schema: Arc<Schema>,
 
     // None when it is unknown whether this input stream is a broadcasting input or not.
-    is_broadcast: Option<bool>, 
+    is_broadcast: Option<bool>,
 
     // True when there are no more morsels after the ones in the head.
     stream_exhausted: bool,
@@ -41,7 +41,7 @@ impl InputHead {
     fn add_morsel(&mut self, mut morsel: Morsel) {
         self.total_len += morsel.df().height();
 
-        if self.is_broadcast == None {
+        if self.is_broadcast.is_none() {
             if self.total_len > 1 {
                 self.is_broadcast = Some(false);
             } else {
@@ -57,7 +57,7 @@ impl InputHead {
     }
 
     fn notify_no_more_morsels(&mut self) {
-        if self.is_broadcast == None {
+        if self.is_broadcast.is_none() {
             self.is_broadcast = Some(self.total_len == 1);
         }
         self.stream_exhausted = true;
@@ -69,7 +69,7 @@ impl InputHead {
 
     fn min_len(&self) -> Option<usize> {
         if self.is_broadcast == Some(false) {
-            self.morsels.get(0).map(|m| m.df().height())
+            self.morsels.front().map(|m| m.df().height())
         } else {
             None
         }
@@ -92,7 +92,10 @@ impl InputHead {
                 head
             }
         } else {
-            self.schema.iter().map(|(name, dtype)| Series::full_null(name, len, dtype)).collect()
+            self.schema
+                .iter()
+                .map(|(name, dtype)| Series::full_null(name, len, dtype))
+                .collect()
         }
     }
 
@@ -102,7 +105,7 @@ impl InputHead {
         self.clear();
         out
     }
-    
+
     fn clear(&mut self) {
         self.total_len = 0;
         self.is_broadcast = Some(false);
@@ -118,7 +121,10 @@ pub struct ZipNode {
 
 impl ZipNode {
     pub fn new(null_extend: bool, schemas: Vec<Arc<Schema>>) -> Self {
-        let input_heads = schemas.into_iter().map(|s| InputHead::new(s, !null_extend)).collect();
+        let input_heads = schemas
+            .into_iter()
+            .map(|s| InputHead::new(s, !null_extend))
+            .collect();
         Self {
             null_extend,
             out_seq: MorselSeq::new(0),
