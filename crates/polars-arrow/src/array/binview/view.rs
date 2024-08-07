@@ -153,6 +153,127 @@ impl View {
             }
         }
     }
+
+    /// Extend a `Vec<View>` with inline views slices of `src` with `width`.
+    ///
+    /// This tries to use SIMD to optimize the copying and can be massively faster than doing a
+    /// `views.extend(src.chunks_exact(stride).map(View::new_inline))`.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if `src.len()` is not divisible by `width` or if `width >
+    /// View::MAX_INLINE_SIZE`.
+    pub fn extend_with_inlinable_strided(views: &mut Vec<Self>, src: &[u8], width: u8) {
+        macro_rules! dispatch {
+            ($n:ident = $match:ident in [$($v:literal),+ $(,)?] => $block:block, otherwise = $otherwise:expr) => {
+                match $match {
+                    $(
+                        $v => {
+                            const $n: usize = $v;
+
+                            $block
+                        }
+                    )+
+                    _ => $otherwise,
+                }
+            }
+        }
+
+        let width = width as usize;
+        assert_eq!(src.len() % width, 0);
+        assert!(width <= View::MAX_INLINE_SIZE as usize);
+        let num_values = src.len() / width;
+
+        views.reserve(num_values);
+
+        if width == 0 {
+            views.resize(views.len() + num_values, View::new_inline(&[]));
+            return;
+        }
+
+        #[allow(unused_mut)]
+        let mut src = src;
+
+        dispatch! {
+            N = width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] => {
+                #[cfg(feature = "simd")]
+                {
+                    macro_rules! repeat_with {
+                        ($i:ident = [$($v:literal),+ $(,)?] => $block:block) => {
+                            $({
+                                const $i: usize = $v;
+
+                                $block
+                            })+
+                        }
+                    }
+
+                    use std::simd::*;
+
+                    // SAFETY: This is always allowed, since views.len() is always in the Vec
+                    // buffer.
+                    let mut dst = unsafe { views.as_mut_ptr().add(views.len()).cast::<u8>() };
+
+                    let length_mask = u8x16::from_array([N as u8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+
+                    const BLOCKS_PER_LOAD: usize = 16 / N;
+                    const BYTES_PER_LOOP: usize = N * BLOCKS_PER_LOAD;
+
+                    let num_loops = (src.len() / BYTES_PER_LOOP).saturating_sub(1);
+
+                    for _ in 0..num_loops {
+                        // SAFETY: The num_loops calculates how many times we can do this.
+                        let loaded = u8x16::from_array(unsafe {
+                            src.get_unchecked(..16).try_into().unwrap()
+                        });
+                        src = unsafe { src.get_unchecked(BYTES_PER_LOOP..) };
+
+                        // This way we can reuse the same load for multiple views.
+                        repeat_with!(
+                            I = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15] => {
+                                if I < BLOCKS_PER_LOAD {
+                                    let zero = u8x16::default();
+                                    const SWIZZLE: [usize; 16] = const {
+                                        let mut swizzle = [16usize; 16];
+
+                                        let mut i = 0;
+                                        while i < N {
+                                            let idx = i + I * N;
+                                            if idx < 16 {
+                                                swizzle[4+i] = idx;
+                                            }
+                                            i += 1;
+                                        }
+
+                                        swizzle
+                                    };
+
+                                    let scattered = simd_swizzle!(loaded, zero, SWIZZLE);
+                                    let view_bytes = (scattered | length_mask).to_array();
+
+                                    // SAFETY: dst has the capacity reserved and view_bytes is 16
+                                    // bytes long.
+                                    unsafe {
+                                        core::ptr::copy_nonoverlapping(view_bytes.as_ptr(), dst, 16);
+                                        dst = dst.add(16);
+                                    }
+                                }
+                            }
+                        );
+                    }
+
+                    unsafe {
+                        views.set_len(views.len() + num_loops * BLOCKS_PER_LOAD);
+                    }
+                }
+
+                views.extend(src.chunks_exact(N).map(|slice| unsafe {
+                    View::new_inline_unchecked(slice)
+                }));
+            },
+            otherwise = unreachable!()
+        }
+    }
 }
 
 impl IsNull for View {
