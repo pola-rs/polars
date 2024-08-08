@@ -48,9 +48,9 @@ pub enum IR {
         predicate: ExprIR,
     },
     Scan {
-        paths: Arc<[PathBuf]>,
+        paths: Arc<Vec<PathBuf>>,
         file_info: FileInfo,
-        hive_parts: Option<Arc<[HivePartitions]>>,
+        hive_parts: Option<Arc<Vec<HivePartitions>>>,
         predicate: Option<ExprIR>,
         /// schema of the projected file
         output_schema: Option<SchemaRef>,

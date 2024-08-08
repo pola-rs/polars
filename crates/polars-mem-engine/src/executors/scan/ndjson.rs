@@ -6,7 +6,7 @@ use polars_core::utils::accumulate_dataframes_vertical;
 use super::*;
 
 pub struct JsonExec {
-    paths: Arc<[PathBuf]>,
+    paths: Arc<Vec<PathBuf>>,
     options: NDJsonReadOptions,
     file_scan_options: FileScanOptions,
     file_info: FileInfo,
@@ -15,7 +15,7 @@ pub struct JsonExec {
 
 impl JsonExec {
     pub fn new(
-        paths: Arc<[PathBuf]>,
+        paths: Arc<Vec<PathBuf>>,
         options: NDJsonReadOptions,
         file_scan_options: FileScanOptions,
         file_info: FileInfo,
@@ -98,12 +98,11 @@ impl JsonExec {
 
                 let mmap = unsafe { memmap::Mmap::map(&file).unwrap() };
                 let owned = &mut vec![];
-                let curs = std::io::Cursor::new(
-                    match unsafe { maybe_decompress_bytes(mmap.as_ref(), owned) } {
+                let curs =
+                    std::io::Cursor::new(match maybe_decompress_bytes(mmap.as_ref(), owned) {
                         Ok(v) => v,
                         Err(e) => return Some(Err(e)),
-                    },
-                );
+                    });
                 let reader = JsonLineReader::new(curs);
 
                 let row_index = self.file_scan_options.row_index.as_mut();

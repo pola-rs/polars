@@ -46,7 +46,7 @@ impl MorselSeq {
 /// A token indicating which source this morsel originated from, and a way to
 /// pass information/signals to it. Currently it's only used to request a source
 /// to stop with passing new morsels this execution phase.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SourceToken {
     stop: Arc<AtomicBool>,
 }
@@ -67,6 +67,7 @@ impl SourceToken {
     }
 }
 
+#[derive(Debug)]
 pub struct Morsel {
     /// The data contained in this morsel.
     df: DataFrame,

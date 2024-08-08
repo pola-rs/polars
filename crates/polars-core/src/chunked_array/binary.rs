@@ -38,9 +38,10 @@ where
     #[allow(clippy::needless_lifetimes)]
     pub fn to_bytes_hashes<'a>(
         &'a self,
-        multithreaded: bool,
+        mut multithreaded: bool,
         hb: RandomState,
     ) -> Vec<Vec<BytesHash<'a>>> {
+        multithreaded &= POOL.current_num_threads() > 1;
         let null_h = get_null_hash_value(&hb);
 
         if multithreaded {

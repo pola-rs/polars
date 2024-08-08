@@ -4,7 +4,6 @@
 
 use arrow::array::{Array, NullArray};
 use arrow::datatypes::ArrowDataType;
-use polars_error::PolarsResult;
 
 use super::utils;
 use super::utils::filter::Filter;
@@ -31,7 +30,7 @@ impl<'a> utils::StateTranslation<'a, NullDecoder> for () {
         _page: &'a DataPage,
         _dict: Option<&'a <NullDecoder as utils::Decoder>::Dict>,
         _page_validity: Option<&utils::PageValidity<'a>>,
-    ) -> PolarsResult<Self> {
+    ) -> ParquetResult<Self> {
         Ok(())
     }
 

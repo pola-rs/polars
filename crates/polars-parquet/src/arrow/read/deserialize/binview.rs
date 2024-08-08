@@ -6,7 +6,6 @@ use arrow::array::{
 };
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::{ArrowDataType, PhysicalType};
-use polars_error::PolarsResult;
 
 use super::binary::decoders::*;
 use super::utils::freeze_validity;
@@ -30,7 +29,7 @@ impl<'a> StateTranslation<'a, BinViewDecoder> for BinaryStateTranslation<'a> {
         page: &'a DataPage,
         dict: Option<&'a <BinViewDecoder as utils::Decoder>::Dict>,
         page_validity: Option<&PageValidity<'a>>,
-    ) -> PolarsResult<Self> {
+    ) -> ParquetResult<Self> {
         let is_string = matches!(
             page.descriptor.primitive_type.logical_type,
             Some(PrimitiveLogicalType::String)

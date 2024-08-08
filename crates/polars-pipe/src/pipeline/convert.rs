@@ -130,6 +130,11 @@ where
                                 fn evaluate_io(&self, df: &DataFrame) -> PolarsResult<Series> {
                                     self.p.evaluate_io(df)
                                 }
+
+                                fn live_variables(&self) -> Option<Vec<Arc<str>>> {
+                                    None
+                                }
+
                                 fn as_stats_evaluator(&self) -> Option<&dyn StatsEvaluator> {
                                     self.p.as_stats_evaluator()
                                 }

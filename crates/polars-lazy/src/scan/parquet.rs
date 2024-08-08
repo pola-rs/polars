@@ -44,14 +44,14 @@ impl Default for ScanArgsParquet {
 #[derive(Clone)]
 struct LazyParquetReader {
     args: ScanArgsParquet,
-    paths: Arc<[PathBuf]>,
+    paths: Arc<Vec<PathBuf>>,
 }
 
 impl LazyParquetReader {
     fn new(args: ScanArgsParquet) -> Self {
         Self {
             args,
-            paths: Arc::new([]),
+            paths: Arc::new(vec![]),
         }
     }
 }
@@ -99,7 +99,7 @@ impl LazyFileListReader for LazyParquetReader {
         &self.paths
     }
 
-    fn with_paths(mut self, paths: Arc<[PathBuf]>) -> Self {
+    fn with_paths(mut self, paths: Arc<Vec<PathBuf>>) -> Self {
         self.paths = paths;
         self
     }
@@ -140,12 +140,15 @@ impl LazyFrame {
     /// Create a LazyFrame directly from a parquet scan.
     pub fn scan_parquet(path: impl AsRef<Path>, args: ScanArgsParquet) -> PolarsResult<Self> {
         LazyParquetReader::new(args)
-            .with_paths(Arc::new([path.as_ref().to_path_buf()]))
+            .with_paths(Arc::new(vec![path.as_ref().to_path_buf()]))
             .finish()
     }
 
     /// Create a LazyFrame directly from a parquet scan.
-    pub fn scan_parquet_files(paths: Arc<[PathBuf]>, args: ScanArgsParquet) -> PolarsResult<Self> {
+    pub fn scan_parquet_files(
+        paths: Arc<Vec<PathBuf>>,
+        args: ScanArgsParquet,
+    ) -> PolarsResult<Self> {
         LazyParquetReader::new(args).with_paths(paths).finish()
     }
 }

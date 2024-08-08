@@ -49,7 +49,7 @@ struct CountStarExpr {
     // Top node of the projection to replace
     node: Node,
     // Paths to the input files
-    paths: Arc<[PathBuf]>,
+    paths: Arc<Vec<PathBuf>>,
     // File Type
     scan_type: FileScan,
     // Column Alias

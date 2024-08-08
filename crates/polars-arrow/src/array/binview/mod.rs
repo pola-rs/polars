@@ -563,6 +563,13 @@ impl<T: ViewType + ?Sized> Array for BinaryViewArrayGeneric<T> {
     }
 
     fn with_validity(&self, validity: Option<Bitmap>) -> Box<dyn Array> {
+        debug_assert!(
+            validity.as_ref().map_or(true, |v| v.len() == self.len()),
+            "{} != {}",
+            validity.as_ref().unwrap().len(),
+            self.len()
+        );
+
         let mut new = self.clone();
         new.validity = validity;
         Box::new(new)

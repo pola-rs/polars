@@ -98,8 +98,8 @@ pub(crate) fn get_lf(obj: &Bound<'_, PyAny>) -> PyResult<LazyFrame> {
 }
 
 pub(crate) fn get_series(obj: &Bound<'_, PyAny>) -> PyResult<Series> {
-    let pydf = obj.getattr(intern!(obj.py(), "_s"))?;
-    Ok(pydf.extract::<PySeries>()?.series)
+    let s = obj.getattr(intern!(obj.py(), "_s"))?;
+    Ok(s.extract::<PySeries>()?.series)
 }
 
 pub(crate) fn to_series(py: Python, s: PySeries) -> PyObject {
@@ -871,10 +871,11 @@ impl<'py> FromPyObject<'py> for Wrap<ParallelStrategy> {
             "auto" => ParallelStrategy::Auto,
             "columns" => ParallelStrategy::Columns,
             "row_groups" => ParallelStrategy::RowGroups,
+            "prefiltered" => ParallelStrategy::Prefiltered,
             "none" => ParallelStrategy::None,
             v => {
                 return Err(PyValueError::new_err(format!(
-                "`parallel` must be one of {{'auto', 'columns', 'row_groups', 'none'}}, got {v}",
+                "`parallel` must be one of {{'auto', 'columns', 'row_groups', 'prefiltered', 'none'}}, got {v}",
             )))
             },
         };

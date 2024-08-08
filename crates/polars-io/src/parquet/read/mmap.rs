@@ -65,7 +65,7 @@ fn _mmap_single_column<'a>(
 pub(super) fn to_deserializer<'a>(
     columns: Vec<(&ColumnChunkMetaData, MemSlice)>,
     field: Field,
-    num_rows: usize,
+    filter: Option<Filter>,
 ) -> PolarsResult<ArrayIter<'a>> {
     let (columns, types): (Vec<_>, Vec<_>) = columns
         .into_iter()
@@ -87,5 +87,5 @@ pub(super) fn to_deserializer<'a>(
         })
         .unzip();
 
-    column_iter_to_arrays(columns, types, field, Some(Filter::new_limited(num_rows)))
+    column_iter_to_arrays(columns, types, field, filter)
 }

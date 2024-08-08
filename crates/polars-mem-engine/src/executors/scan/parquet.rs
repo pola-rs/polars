@@ -14,9 +14,9 @@ use polars_io::RowIndex;
 use super::*;
 
 pub struct ParquetExec {
-    paths: Arc<[PathBuf]>,
+    paths: Arc<Vec<PathBuf>>,
     file_info: FileInfo,
-    hive_parts: Option<Arc<[HivePartitions]>>,
+    hive_parts: Option<Arc<Vec<HivePartitions>>>,
     predicate: Option<Arc<dyn PhysicalExpr>>,
     options: ParquetOptions,
     #[allow(dead_code)]
@@ -29,9 +29,9 @@ pub struct ParquetExec {
 impl ParquetExec {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
-        paths: Arc<[PathBuf]>,
+        paths: Arc<Vec<PathBuf>>,
         file_info: FileInfo,
-        hive_parts: Option<Arc<[HivePartitions]>>,
+        hive_parts: Option<Arc<Vec<HivePartitions>>>,
         predicate: Option<Arc<dyn PhysicalExpr>>,
         options: ParquetOptions,
         cloud_options: Option<CloudOptions>,

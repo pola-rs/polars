@@ -216,10 +216,11 @@ where
     }
 }
 
-fn arg_sort_numeric<T>(ca: &ChunkedArray<T>, options: SortOptions) -> IdxCa
+fn arg_sort_numeric<T>(ca: &ChunkedArray<T>, mut options: SortOptions) -> IdxCa
 where
     T: PolarsNumericType,
 {
+    options.multithreaded &= POOL.current_num_threads() > 1;
     if ca.null_count() == 0 {
         let iter = ca
             .downcast_iter()
@@ -271,7 +272,8 @@ impl<T> ChunkSort<T> for ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
-    fn sort_with(&self, options: SortOptions) -> ChunkedArray<T> {
+    fn sort_with(&self, mut options: SortOptions) -> ChunkedArray<T> {
+        options.multithreaded &= POOL.current_num_threads() > 1;
         sort_with_numeric(self, options)
     }
 
@@ -355,7 +357,8 @@ impl ChunkSort<StringType> for StringChunked {
 }
 
 impl ChunkSort<BinaryType> for BinaryChunked {
-    fn sort_with(&self, options: SortOptions) -> ChunkedArray<BinaryType> {
+    fn sort_with(&self, mut options: SortOptions) -> ChunkedArray<BinaryType> {
+        options.multithreaded &= POOL.current_num_threads() > 1;
         sort_with_fast_path!(self, options);
         // We will sort by the views and reconstruct with sorted views. We leave the buffers as is.
         // We must rechunk to ensure that all views point into the proper buffers.
@@ -445,7 +448,8 @@ impl ChunkSort<BinaryType> for BinaryChunked {
 }
 
 impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
-    fn sort_with(&self, options: SortOptions) -> BinaryOffsetChunked {
+    fn sort_with(&self, mut options: SortOptions) -> BinaryOffsetChunked {
+        options.multithreaded &= POOL.current_num_threads() > 1;
         sort_with_fast_path!(self, options);
 
         let mut v: Vec<&[u8]> = Vec::with_capacity(self.len());
@@ -532,7 +536,8 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
         })
     }
 
-    fn arg_sort(&self, options: SortOptions) -> IdxCa {
+    fn arg_sort(&self, mut options: SortOptions) -> IdxCa {
+        options.multithreaded &= POOL.current_num_threads() > 1;
         let ca = self.rechunk();
         let arr = ca.downcast_into_array();
         let mut idx = (0..(arr.len() as IdxSize)).collect::<Vec<_>>();
@@ -602,7 +607,8 @@ impl StructChunked {
 
 #[cfg(feature = "dtype-struct")]
 impl ChunkSort<StructType> for StructChunked {
-    fn sort_with(&self, options: SortOptions) -> ChunkedArray<StructType> {
+    fn sort_with(&self, mut options: SortOptions) -> ChunkedArray<StructType> {
+        options.multithreaded &= POOL.current_num_threads() > 1;
         let idx = self.arg_sort(options);
         unsafe { self.take_unchecked(&idx) }
     }
@@ -618,7 +624,8 @@ impl ChunkSort<StructType> for StructChunked {
 }
 
 impl ChunkSort<BooleanType> for BooleanChunked {
-    fn sort_with(&self, options: SortOptions) -> ChunkedArray<BooleanType> {
+    fn sort_with(&self, mut options: SortOptions) -> ChunkedArray<BooleanType> {
+        options.multithreaded &= POOL.current_num_threads() > 1;
         sort_with_fast_path!(self, options);
         assert!(
             !options.nulls_last,

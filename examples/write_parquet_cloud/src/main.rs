@@ -2,7 +2,6 @@ use awscreds::Credentials;
 use cloud::AmazonS3ConfigKey as Key;
 use polars::prelude::*;
 
-// Login to your aws account and then copy the ../datasets/foods1.parquet file to your own bucket.
 // Adjust the link below.
 const TEST_S3_LOCATION: &str = "s3://polarstesting/polars_write_example_cloud.parquet";
 

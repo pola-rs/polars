@@ -14,7 +14,7 @@ use crate::prelude::*;
 #[derive(Clone)]
 #[cfg(feature = "csv")]
 pub struct LazyCsvReader {
-    paths: Arc<[PathBuf]>,
+    paths: Arc<Vec<PathBuf>>,
     glob: bool,
     cache: bool,
     read_options: CsvReadOptions,
@@ -30,13 +30,13 @@ impl LazyCsvReader {
         self
     }
 
-    pub fn new_paths(paths: Arc<[PathBuf]>) -> Self {
+    pub fn new_paths(paths: Arc<Vec<PathBuf>>) -> Self {
         Self::new("").with_paths(paths)
     }
 
     pub fn new(path: impl AsRef<Path>) -> Self {
         LazyCsvReader {
-            paths: Arc::new([path.as_ref().to_path_buf()]),
+            paths: Arc::new(vec![path.as_ref().to_path_buf()]),
             glob: true,
             cache: true,
             read_options: Default::default(),
@@ -298,7 +298,7 @@ impl LazyFileListReader for LazyCsvReader {
         &self.paths
     }
 
-    fn with_paths(mut self, paths: Arc<[PathBuf]>) -> Self {
+    fn with_paths(mut self, paths: Arc<Vec<PathBuf>>) -> Self {
         self.paths = paths;
         self
     }

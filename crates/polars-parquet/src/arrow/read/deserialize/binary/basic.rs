@@ -6,7 +6,6 @@ use arrow::array::{Array, BinaryArray, DictionaryArray, DictionaryKey, Primitive
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::{ArrowDataType, PhysicalType};
 use arrow::offset::Offset;
-use polars_error::PolarsResult;
 
 use super::super::utils;
 use super::super::utils::extend_from_decoder;
@@ -33,7 +32,7 @@ impl<'a, O: Offset> StateTranslation<'a, BinaryDecoder<O>> for BinaryStateTransl
         page: &'a DataPage,
         dict: Option<&'a <BinaryDecoder<O> as utils::Decoder>::Dict>,
         page_validity: Option<&utils::PageValidity<'a>>,
-    ) -> PolarsResult<Self> {
+    ) -> ParquetResult<Self> {
         let is_string = matches!(
             page.descriptor.primitive_type.logical_type,
             Some(PrimitiveLogicalType::String)

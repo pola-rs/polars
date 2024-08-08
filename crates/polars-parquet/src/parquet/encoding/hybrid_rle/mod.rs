@@ -399,7 +399,7 @@ impl<'a> HybridRleDecoder<'a> {
 
             debug_assert_eq!(num_skipped, start_num_values - self.num_values);
             debug_assert!(num_skipped <= n, "{num_skipped} <= {n}");
-            debug_assert!(num_skipped > 0, "{num_skipped} > 0");
+            debug_assert!(indicator >> 1 == 0 || num_skipped > 0);
 
             n -= num_skipped;
         }

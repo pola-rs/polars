@@ -34,14 +34,14 @@ pub struct ParquetSource {
     processed_paths: usize,
     processed_rows: usize,
     iter: Range<usize>,
-    paths: Arc<[PathBuf]>,
+    paths: Arc<Vec<PathBuf>>,
     options: ParquetOptions,
     file_options: FileScanOptions,
     #[allow(dead_code)]
     cloud_options: Option<CloudOptions>,
     metadata: Option<FileMetaDataRef>,
     file_info: FileInfo,
-    hive_parts: Option<Arc<[HivePartitions]>>,
+    hive_parts: Option<Arc<Vec<HivePartitions>>>,
     verbose: bool,
     run_async: bool,
     prefetch_size: usize,
@@ -217,13 +217,13 @@ impl ParquetSource {
     #[allow(unused_variables)]
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
-        paths: Arc<[PathBuf]>,
+        paths: Arc<Vec<PathBuf>>,
         options: ParquetOptions,
         cloud_options: Option<CloudOptions>,
         metadata: Option<FileMetaDataRef>,
         file_options: FileScanOptions,
         file_info: FileInfo,
-        hive_parts: Option<Arc<[HivePartitions]>>,
+        hive_parts: Option<Arc<Vec<HivePartitions>>>,
         verbose: bool,
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
     ) -> PolarsResult<Self> {

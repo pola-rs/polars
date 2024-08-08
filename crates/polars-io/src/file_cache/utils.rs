@@ -95,7 +95,7 @@ pub fn init_entries_from_uri_list(
                         let cloud_path = object_path_from_str(&prefix)?;
 
                         let object_store =
-                            object_stores[std::cmp::min(i, object_stores.len())].clone();
+                            object_stores[std::cmp::min(i, object_stores.len() - 1)].clone();
                         let uri = uri.clone();
 
                         Ok(Arc::new(CloudFileFetcher {

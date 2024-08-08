@@ -150,7 +150,7 @@ impl<'a> BinaryStateTranslation<'a> {
         dict: Option<&'a BinaryDict>,
         _page_validity: Option<&PageValidity<'a>>,
         is_string: bool,
-    ) -> PolarsResult<Self> {
+    ) -> ParquetResult<Self> {
         match (page.encoding(), dict) {
             (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict)) => {
                 if is_string {

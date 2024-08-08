@@ -16,7 +16,7 @@ use polars_io::{path_utils::is_cloud_url, SerReader};
 use super::*;
 
 #[allow(unused_variables)]
-pub fn count_rows(paths: &Arc<[PathBuf]>, scan_type: &FileScan) -> PolarsResult<DataFrame> {
+pub fn count_rows(paths: &Arc<Vec<PathBuf>>, scan_type: &FileScan) -> PolarsResult<DataFrame> {
     #[cfg(not(any(
         feature = "parquet",
         feature = "ipc",
@@ -89,7 +89,7 @@ pub fn count_rows(paths: &Arc<[PathBuf]>, scan_type: &FileScan) -> PolarsResult<
 }
 #[cfg(feature = "parquet")]
 pub(super) fn count_rows_parquet(
-    paths: &Arc<[PathBuf]>,
+    paths: &Arc<Vec<PathBuf>>,
     cloud_options: Option<&CloudOptions>,
 ) -> PolarsResult<usize> {
     if paths.is_empty() {
@@ -119,7 +119,7 @@ pub(super) fn count_rows_parquet(
 
 #[cfg(all(feature = "parquet", feature = "async"))]
 async fn count_rows_cloud_parquet(
-    paths: &Arc<[PathBuf]>,
+    paths: &Arc<Vec<PathBuf>>,
     cloud_options: Option<&CloudOptions>,
 ) -> PolarsResult<usize> {
     let collection = paths.iter().map(|path| {
@@ -136,7 +136,7 @@ async fn count_rows_cloud_parquet(
 
 #[cfg(feature = "ipc")]
 pub(super) fn count_rows_ipc(
-    paths: &Arc<[PathBuf]>,
+    paths: &Arc<Vec<PathBuf>>,
     #[cfg(feature = "cloud")] cloud_options: Option<&CloudOptions>,
     metadata: Option<&arrow::io::ipc::read::FileMetadata>,
 ) -> PolarsResult<usize> {
@@ -166,7 +166,7 @@ pub(super) fn count_rows_ipc(
 
 #[cfg(all(feature = "ipc", feature = "async"))]
 async fn count_rows_cloud_ipc(
-    paths: &Arc<[PathBuf]>,
+    paths: &Arc<Vec<PathBuf>>,
     cloud_options: Option<&CloudOptions>,
     metadata: Option<&arrow::io::ipc::read::FileMetadata>,
 ) -> PolarsResult<usize> {
@@ -185,7 +185,7 @@ async fn count_rows_cloud_ipc(
 
 #[cfg(feature = "json")]
 pub(super) fn count_rows_ndjson(
-    paths: &Arc<[PathBuf]>,
+    paths: &Arc<Vec<PathBuf>>,
     cloud_options: Option<&CloudOptions>,
 ) -> PolarsResult<usize> {
     use polars_core::config;

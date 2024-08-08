@@ -65,7 +65,7 @@ pub fn hive_partitions_from_paths(
     schema: Option<SchemaRef>,
     reader_schema: &Schema,
     try_parse_dates: bool,
-) -> PolarsResult<Option<Arc<[HivePartitions]>>> {
+) -> PolarsResult<Option<Arc<Vec<HivePartitions>>>> {
     let Some(path) = paths.first() else {
         return Ok(None);
     };

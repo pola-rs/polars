@@ -195,10 +195,13 @@ pub fn fixed_size_binary_to_binview(from: &FixedSizeBinaryArray) -> BinaryViewAr
         // This is really slow, and I don't think it has to be.
 
         // SAFETY: We checked that slice.len() <= View::MAX_INLINE_SIZE before
-        let views = from
-            .values_iter()
-            .map(|slice| unsafe { View::new_inline_unchecked(slice) })
-            .collect::<Buffer<_>>();
+        let mut views = Vec::new();
+        View::extend_with_inlinable_strided(
+            &mut views,
+            from.values().as_slice(),
+            from.size() as u8,
+        );
+        let views = Buffer::from(views);
         return BinaryViewArray::try_new(datatype, views, Arc::default(), from.validity().cloned())
             .unwrap();
     }
