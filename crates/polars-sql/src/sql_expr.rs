@@ -115,11 +115,13 @@ pub(crate) fn map_sql_polars_datatype(data_type: &SQLDataType) -> PolarsResult<D
         // unsigned integer: the following do not map to PostgreSQL types/syntax, but
         // are enabled for wider compatibility (eg: "CAST(col AS BIGINT UNSIGNED)").
         // ---------------------------------
+        SQLDataType::UnsignedTinyInt(_) => DataType::UInt8, // see also: "custom" types below
         SQLDataType::UnsignedInt(_) | SQLDataType::UnsignedInteger(_) => DataType::UInt32,
         SQLDataType::UnsignedInt2(_) | SQLDataType::UnsignedSmallInt(_) => DataType::UInt16,
         SQLDataType::UnsignedInt4(_) | SQLDataType::UnsignedMediumInt(_) => DataType::UInt32,
-        SQLDataType::UnsignedInt8(_) | SQLDataType::UnsignedBigInt(_) => DataType::UInt64,
-        SQLDataType::UnsignedTinyInt(_) => DataType::UInt8, // see also: "custom" types below
+        SQLDataType::UnsignedInt8(_) | SQLDataType::UnsignedBigInt(_) | SQLDataType::UInt8 => {
+            DataType::UInt64
+        },
 
         // ---------------------------------
         // float
@@ -562,18 +564,34 @@ impl SQLExprVisitor<'_> {
 
                 match left_dtype {
                     DataType::Time if is_iso_time(s) => {
-                        right.clone().strict_cast(left_dtype.clone())
+                        right.clone().str().to_time(StrptimeOptions {
+                            strict: true,
+                            ..Default::default()
+                        })
                     },
                     DataType::Date if is_iso_date(s) => {
-                        right.clone().strict_cast(left_dtype.clone())
+                        right.clone().str().to_date(StrptimeOptions {
+                            strict: true,
+                            ..Default::default()
+                        })
                     },
-                    DataType::Datetime(_, _) if is_iso_datetime(s) || is_iso_date(s) => {
+                    DataType::Datetime(tu, tz) if is_iso_datetime(s) || is_iso_date(s) => {
                         if s.len() == 10 {
                             // handle upcast from ISO date string (10 chars) to datetime
-                            lit(format!("{}T00:00:00", s)).strict_cast(left_dtype.clone())
+                            lit(format!("{}T00:00:00", s))
                         } else {
-                            lit(s.replacen(' ', "T", 1)).strict_cast(left_dtype.clone())
+                            lit(s.replacen(' ', "T", 1))
                         }
+                        .str()
+                        .to_datetime(
+                            Some(*tu),
+                            tz.clone(),
+                            StrptimeOptions {
+                                strict: true,
+                                ..Default::default()
+                            },
+                            lit("latest"),
+                        )
                     },
                     _ => right.clone(),
                 }
@@ -834,13 +852,17 @@ impl SQLExprVisitor<'_> {
             (dtype_expr_match, self.active_schema.as_ref())
         {
             if elems.dtype() == &DataType::String {
-                if let Some(DataType::Date | DataType::Time | DataType::Datetime(_, _)) =
-                    schema.get(name)
-                {
-                    elems = elems.strict_cast(&schema.get(name).unwrap().clone())?;
+                if let Some(dtype) = schema.get(name) {
+                    if matches!(
+                        dtype,
+                        DataType::Date | DataType::Time | DataType::Datetime(_, _)
+                    ) {
+                        elems = elems.strict_cast(dtype)?;
+                    }
                 }
             }
         }
+
         // if we are parsing the list as an element in a series, implode.
         // otherwise, return the series as-is.
         let res = if result_as_element {
@@ -885,9 +907,10 @@ impl SQLExprVisitor<'_> {
     ///
     /// See [SQLValue] and [LiteralValue] for more details
     fn visit_literal(&self, value: &SQLValue) -> PolarsResult<Expr> {
+        // note: double-quoted strings will be parsed as identifiers, not literals
         Ok(match value {
             SQLValue::Boolean(b) => lit(*b),
-            SQLValue::DoubleQuotedString(s) => lit(s.clone()),
+            SQLValue::DollarQuotedString(s) => lit(s.value.clone()),
             #[cfg(feature = "binary_encoding")]
             SQLValue::HexStringLiteral(x) => {
                 if x.len() % 2 != 0 {
@@ -907,12 +930,14 @@ impl SQLExprVisitor<'_> {
             },
             SQLValue::SingleQuotedByteStringLiteral(b) => {
                 // note: for PostgreSQL this represents a BIT string literal (eg: b'10101') not a BYTE string
-                // literal (see https://www.postgresql.org/docs/current/datatype-bit.html), but sqlparser
+                // literal (see https://www.postgresql.org/docs/current/datatype-bit.html), but sqlparser-rs
                 // patterned the token name after BigQuery (where b'str' really IS a byte string)
                 bitstring_to_bytes_literal(b)?
             },
             SQLValue::SingleQuotedString(s) => lit(s.clone()),
-            other => polars_bail!(SQLInterface: "value {:?} is not supported", other),
+            other => {
+                polars_bail!(SQLInterface: "value {:?} is not a supported literal type", other)
+            },
         })
     }
 
@@ -924,6 +949,14 @@ impl SQLExprVisitor<'_> {
     ) -> PolarsResult<AnyValue> {
         Ok(match value {
             SQLValue::Boolean(b) => AnyValue::Boolean(*b),
+            SQLValue::DollarQuotedString(s) => AnyValue::StringOwned(s.clone().value.into()),
+            #[cfg(feature = "binary_encoding")]
+            SQLValue::HexStringLiteral(x) => {
+                if x.len() % 2 != 0 {
+                    polars_bail!(SQLSyntax: "hex string literal must have an even number of digits; found '{}'", x)
+                };
+                AnyValue::BinaryOwned(hex::decode(x.clone()).unwrap())
+            },
             SQLValue::Null => AnyValue::Null,
             SQLValue::Number(s, _) => {
                 let negate = match op {
@@ -946,13 +979,6 @@ impl SQLExprVisitor<'_> {
                 }
                 .map_err(|_| polars_err!(SQLInterface: "cannot parse literal: {:?}", s))?
             },
-            #[cfg(feature = "binary_encoding")]
-            SQLValue::HexStringLiteral(x) => {
-                if x.len() % 2 != 0 {
-                    polars_bail!(SQLSyntax: "hex string literal must have an even number of digits; found '{}'", x)
-                };
-                AnyValue::BinaryOwned(hex::decode(x.clone()).unwrap())
-            },
             SQLValue::SingleQuotedByteStringLiteral(b) => {
                 // note: for PostgreSQL this represents a BIT literal (eg: b'10101') not BYTE
                 let bytes_literal = bitstring_to_bytes_literal(b)?;
@@ -963,9 +989,7 @@ impl SQLExprVisitor<'_> {
                     },
                 }
             },
-            SQLValue::SingleQuotedString(s) | SQLValue::DoubleQuotedString(s) => {
-                AnyValue::StringOwned(s.into())
-            },
+            SQLValue::SingleQuotedString(s) => AnyValue::StringOwned(s.into()),
             other => polars_bail!(SQLInterface: "value {:?} is not currently supported", other),
         })
     }

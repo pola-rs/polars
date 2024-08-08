@@ -135,7 +135,6 @@ pub(super) fn csv_file_info(
     use std::io::{Read, Seek};
 
     use polars_core::{config, POOL};
-    use polars_io::csv::read::is_compressed;
     use polars_io::csv::read::schema_inference::SchemaInferenceResult;
     use polars_io::utils::get_reader_bytes;
     use rayon::iter::{IntoParallelIterator, ParallelIterator};
@@ -173,7 +172,7 @@ pub(super) fn csv_file_info(
     };
 
     let infer_schema_func = |i| {
-        let mut file = if run_async {
+        let file = if run_async {
             #[cfg(feature = "cloud")]
             {
                 let entry: &Arc<polars_io::file_cache::FileCacheEntry> =
@@ -185,24 +184,21 @@ pub(super) fn csv_file_info(
                 panic!("required feature `cloud` is not enabled")
             }
         } else {
-            polars_utils::open_file(paths.get(i).unwrap())?
+            let p: &PathBuf = &paths[i];
+            polars_utils::open_file(p.as_ref())?
         };
 
-        let mut magic_nr = [0u8; 4];
-        let res_len = file.read(&mut magic_nr)?;
-        if res_len < 2 {
-            if csv_options.raise_if_empty {
-                polars_bail!(NoData: "empty CSV")
-            }
-        } else {
-            polars_ensure!(
-            !is_compressed(&magic_nr),
-            ComputeError: "cannot scan compressed csv; use `read_csv` for compressed data",
-            );
-        }
+        let mmap = unsafe { memmap::Mmap::map(&file).unwrap() };
+        let owned = &mut vec![];
 
-        file.rewind()?;
-        let reader_bytes = get_reader_bytes(&mut file).expect("could not mmap file");
+        let mut curs = std::io::Cursor::new(maybe_decompress_bytes(mmap.as_ref(), owned)?);
+
+        if curs.read(&mut [0; 4])? < 2 && csv_options.raise_if_empty {
+            polars_bail!(NoData: "empty CSV")
+        }
+        curs.rewind()?;
+
+        let reader_bytes = get_reader_bytes(&mut curs).expect("could not mmap file");
 
         // this needs a way to estimated bytes/rows.
         let si_result =
@@ -323,9 +319,13 @@ pub(super) fn ndjson_file_info(
     } else {
         polars_utils::open_file(first_path)?
     };
-    let mut reader = std::io::BufReader::new(f);
 
-    let (reader_schema, schema) = if let Some(schema) = ndjson_options.schema.take() {
+    let owned = &mut vec![];
+    let mmap = unsafe { memmap::Mmap::map(&f).unwrap() };
+
+    let mut reader = std::io::BufReader::new(maybe_decompress_bytes(mmap.as_ref(), owned)?);
+
+    let (mut reader_schema, schema) = if let Some(schema) = ndjson_options.schema.take() {
         if file_options.row_index.is_none() {
             (schema.clone(), schema.clone())
         } else {
@@ -339,6 +339,11 @@ pub(super) fn ndjson_file_info(
             polars_io::ndjson::infer_schema(&mut reader, ndjson_options.infer_schema_length)?;
         prepare_schemas(schema, file_options.row_index.as_ref())
     };
+
+    if let Some(overwriting_schema) = &ndjson_options.schema_overwrite {
+        let schema = Arc::make_mut(&mut reader_schema);
+        overwrite_schema(schema, overwriting_schema)?;
+    }
 
     Ok(FileInfo::new(
         schema,

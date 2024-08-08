@@ -30,12 +30,28 @@ if TYPE_CHECKING:
     from polars.dependencies import numpy as np
     from polars.dependencies import pandas as pd
     from polars.dependencies import pyarrow as pa
+    from polars.lazyframe.engine_config import GPUEngine
     from polars.selectors import _selector_proxy_
 
     if sys.version_info >= (3, 10):
         from typing import TypeAlias
     else:
         from typing_extensions import TypeAlias
+
+
+class ArrowArrayExportable(Protocol):
+    """Type protocol for Arrow C Data Interface via Arrow PyCapsule Interface."""
+
+    def __arrow_c_array__(
+        self, requested_schema: object | None = None
+    ) -> tuple[object, object]: ...
+
+
+class ArrowStreamExportable(Protocol):
+    """Type protocol for Arrow C Stream Interface via Arrow PyCapsule Interface."""
+
+    def __arrow_c_stream__(self, requested_schema: object | None = None) -> object: ...
+
 
 # Data types
 PolarsDataType: TypeAlias = Union["DataTypeClass", "DataType"]
@@ -97,7 +113,9 @@ JoinValidation: TypeAlias = Literal["m:m", "m:1", "1:m", "1:1"]
 Label: TypeAlias = Literal["left", "right", "datapoint"]
 NonExistent: TypeAlias = Literal["raise", "null"]
 NullBehavior: TypeAlias = Literal["ignore", "drop"]
-ParallelStrategy: TypeAlias = Literal["auto", "columns", "row_groups", "none"]
+ParallelStrategy: TypeAlias = Literal[
+    "auto", "columns", "row_groups", "prefiltered", "none"
+]
 ParquetCompression: TypeAlias = Literal[
     "lz4", "uncompressed", "snappy", "gzip", "lzo", "brotli", "zstd"
 ]
@@ -178,6 +196,8 @@ FrameInitTypes: TypeAlias = Union[
     "np.ndarray[Any, Any]",
     "pa.Table",
     "pd.DataFrame",
+    "ArrowArrayExportable",
+    "ArrowStreamExportable",
 ]
 
 # Excel IO
@@ -193,7 +213,7 @@ ConditionalFormatDict: TypeAlias = Mapping[
 ]
 ColumnTotalsDefinition: TypeAlias = Union[
     # dict of colname(s) to str, a collection of str, or a boolean
-    Mapping[Union[str, Collection[str]], str],
+    Mapping[Union[ColumnNameOrSelector, Tuple[ColumnNameOrSelector]], str],
     Sequence[str],
     bool,
 ]
@@ -276,3 +296,6 @@ BooleanMask: TypeAlias = Union[
 ]
 SingleColSelector: TypeAlias = Union[SingleIndexSelector, SingleNameSelector]
 MultiColSelector: TypeAlias = Union[MultiIndexSelector, MultiNameSelector, BooleanMask]
+
+# LazyFrame engine selection
+EngineType: TypeAlias = Union[Literal["cpu", "gpu"], "GPUEngine"]

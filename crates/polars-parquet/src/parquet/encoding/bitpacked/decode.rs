@@ -63,6 +63,10 @@ impl<'a, T: Unpackable> Decoder<'a, T> {
         DecoderIter { buffer, idx: 0 }
     }
 
+    pub fn num_bits(&self) -> usize {
+        self.num_bits
+    }
+
     /// Returns a [`Decoder`] with `T` encoded in `packed` with `num_bits`.
     pub fn try_new(packed: &'a [u8], num_bits: usize, length: usize) -> Result<Self, ParquetError> {
         let block_size = std::mem::size_of::<T>() * num_bits;
@@ -113,12 +117,8 @@ impl<'a, 'b, T: Unpackable> Iterator for ChunkedDecoder<'a, 'b, T> {
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let is_exact = self.decoder.len() % T::Unpacked::LENGTH == 0;
-        let (low, high) = self.decoder.packed.size_hint();
-
-        let delta = usize::from(!is_exact);
-
-        (low - delta, high.map(|h| h - delta))
+        let len = self.decoder.len() / T::Unpacked::LENGTH;
+        (len, Some(len))
     }
 }
 
@@ -160,7 +160,10 @@ impl<'a, T: Unpackable> Decoder<'a, T> {
     }
 
     pub fn skip_chunks(&mut self, n: usize) {
+        debug_assert!(n * T::Unpacked::LENGTH <= self.length);
+
         for _ in (&mut self.packed).take(n) {}
+        self.length -= n * T::Unpacked::LENGTH;
     }
 
     pub fn take(&mut self) -> Self {
@@ -168,8 +171,6 @@ impl<'a, T: Unpackable> Decoder<'a, T> {
         let packed = std::mem::replace(&mut self.packed, [].chunks(block_size));
         let length = self.length;
         self.length = 0;
-
-        debug_assert_eq!(self.len(), 0);
 
         Self {
             packed,

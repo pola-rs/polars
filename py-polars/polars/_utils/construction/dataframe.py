@@ -37,6 +37,7 @@ from polars._utils.wrap import wrap_df, wrap_s
 from polars.datatypes import (
     N_INFER_DEFAULT,
     Categorical,
+    Datetime,
     Enum,
     String,
     Struct,
@@ -125,9 +126,11 @@ def dict_to_pydf(
                         zip(
                             column_names,
                             pool.map(
-                                lambda t: pl.Series(t[0], t[1], nan_to_null=nan_to_null)
-                                if isinstance(t[1], np.ndarray)
-                                else t[1],
+                                lambda t: (
+                                    pl.Series(t[0], t[1], nan_to_null=nan_to_null)
+                                    if isinstance(t[1], np.ndarray)
+                                    else t[1]
+                                ),
                                 list(data.items()),
                             ),
                         )
@@ -677,7 +680,7 @@ def _sequence_of_tuple_to_pydf(
 
 @_sequence_to_pydf_dispatcher.register(dict)
 def _sequence_of_dict_to_pydf(
-    first_element: Any,
+    first_element: dict[str, Any],
     data: Sequence[Any],
     schema: SchemaDefinition | None,
     *,
@@ -694,6 +697,20 @@ def _sequence_of_dict_to_pydf(
         if column_names
         else None
     )
+    tz_overrides = {
+        column_name: Datetime("us", time_zone="UTC")
+        for column_name, first_value in first_element.items()
+        if (
+            isinstance(first_value, datetime)
+            and hasattr(first_value, "tzinfo")
+            and first_value.tzinfo is not None
+            and column_name not in schema_overrides
+            and (schema is None or column_name not in schema)
+        )
+    }
+    if tz_overrides:
+        schema_overrides = {**schema_overrides, **tz_overrides}
+
     pydf = PyDataFrame.from_dicts(
         data,
         dicts_schema,
@@ -931,9 +948,7 @@ def _include_unknowns(
 ) -> MutableMapping[str, PolarsDataType]:
     """Complete partial schema dict by including Unknown type."""
     return {
-        col: (
-            schema.get(col, Unknown) or Unknown  # type: ignore[truthy-bool]
-        )
+        col: (schema.get(col, Unknown) or Unknown)  # type: ignore[truthy-bool]
         for col in cols
     }
 
@@ -1168,7 +1183,11 @@ def arrow_to_pydf(
         if pa.types.is_dictionary(column.type):
             ps = plc.arrow_to_pyseries(name, column, rechunk=rechunk)
             dictionary_cols[i] = wrap_s(ps)
-        elif isinstance(column.type, pa.StructType) and column.num_chunks > 1:
+        elif (
+            isinstance(column.type, pa.StructType)
+            and hasattr(column, "num_chunks")
+            and column.num_chunks > 1
+        ):
             ps = plc.arrow_to_pyseries(name, column, rechunk=rechunk)
             struct_cols[i] = wrap_s(ps)
         else:

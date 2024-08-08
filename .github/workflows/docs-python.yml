@@ -51,7 +51,7 @@ jobs:
         run: make html
 
       - name: Deploy Python docs for latest development version
-        if: ${{ github.ref_name == 'main' }}
+        if: github.event_name == 'push' && github.ref_name == 'main'
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           folder: py-polars/docs/build/html
@@ -84,3 +84,14 @@ jobs:
           folder: py-polars/docs/build/html
           target-folder: api/python/stable
           single-commit: true
+
+      # Build global docs _after_ this workflow to avoid contention on the gh-pages branch
+      - name: Trigger global docs workflow
+        if: github.event_name == 'repository_dispatch'
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          event-type: python-release-docs
+          client-payload: >
+            {
+              "sha": "${{ github.event.client_payload.sha }}"
+            }

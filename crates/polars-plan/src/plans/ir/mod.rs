@@ -37,7 +37,6 @@ pub enum IR {
     #[cfg(feature = "python")]
     PythonScan {
         options: PythonOptions,
-        predicate: Option<ExprIR>,
     },
     Slice {
         input: Node,
@@ -49,9 +48,9 @@ pub enum IR {
         predicate: ExprIR,
     },
     Scan {
-        paths: Arc<[PathBuf]>,
+        paths: Arc<Vec<PathBuf>>,
         file_info: FileInfo,
-        hive_parts: Option<Arc<[HivePartitions]>>,
+        hive_parts: Option<Arc<Vec<HivePartitions>>>,
         predicate: Option<ExprIR>,
         /// schema of the projected file
         output_schema: Option<SchemaRef>,
@@ -136,6 +135,8 @@ pub enum IR {
         inputs: Vec<Node>,
         options: UnionOptions,
     },
+    /// Horizontal concatenation
+    /// - Invariant: the names will be unique
     HConcat {
         inputs: Vec<Node>,
         schema: SchemaRef,

@@ -414,6 +414,7 @@ impl PyRollingGroupOptions {
             self.inner.period.days().to_object(py),
             self.inner.period.nanoseconds().to_object(py),
             self.inner.period.parsed_int.to_object(py),
+            self.inner.period.negative().to_object(py),
         ]
         .into_py(py);
         Ok(result)
@@ -427,6 +428,7 @@ impl PyRollingGroupOptions {
             self.inner.offset.days().to_object(py),
             self.inner.offset.nanoseconds().to_object(py),
             self.inner.offset.parsed_int.to_object(py),
+            self.inner.offset.negative().to_object(py),
         ]
         .into_py(py);
         Ok(result)
@@ -774,14 +776,14 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     StringFunction::Contains { literal, strict } => {
                         (PyStringFunction::Contains.into_py(py), literal, strict).to_object(py)
                     },
-                    StringFunction::CountMatches(_) => {
-                        (PyStringFunction::CountMatches.into_py(py),).to_object(py)
+                    StringFunction::CountMatches(literal) => {
+                        (PyStringFunction::CountMatches.into_py(py), literal).to_object(py)
                     },
                     StringFunction::EndsWith => {
                         (PyStringFunction::EndsWith.into_py(py),).to_object(py)
                     },
-                    StringFunction::Extract(_) => {
-                        (PyStringFunction::Extract.into_py(py),).to_object(py)
+                    StringFunction::Extract(group_index) => {
+                        (PyStringFunction::Extract.into_py(py), group_index).to_object(py)
                     },
                     StringFunction::ExtractAll => {
                         (PyStringFunction::ExtractAll.into_py(py),).to_object(py)
@@ -796,8 +798,8 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     StringFunction::Find { literal, strict } => {
                         (PyStringFunction::Find.into_py(py), literal, strict).to_object(py)
                     },
-                    StringFunction::ToInteger(_) => {
-                        (PyStringFunction::ToInteger.into_py(py),).to_object(py)
+                    StringFunction::ToInteger(strict) => {
+                        (PyStringFunction::ToInteger.into_py(py), strict).to_object(py)
                     },
                     StringFunction::LenBytes => {
                         (PyStringFunction::LenBytes.into_py(py),).to_object(py)
@@ -835,14 +837,14 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     StringFunction::HexEncode => {
                         (PyStringFunction::HexEncode.into_py(py),).to_object(py)
                     },
-                    StringFunction::HexDecode(_) => {
-                        (PyStringFunction::HexDecode.into_py(py),).to_object(py)
+                    StringFunction::HexDecode(strict) => {
+                        (PyStringFunction::HexDecode.into_py(py), strict).to_object(py)
                     },
                     StringFunction::Base64Encode => {
                         (PyStringFunction::Base64Encode.into_py(py),).to_object(py)
                     },
-                    StringFunction::Base64Decode(_) => {
-                        (PyStringFunction::Base64Decode.into_py(py),).to_object(py)
+                    StringFunction::Base64Decode(strict) => {
+                        (PyStringFunction::Base64Decode.into_py(py), strict).to_object(py)
                     },
                     StringFunction::StartsWith => {
                         (PyStringFunction::StartsWith.into_py(py),).to_object(py)
@@ -865,17 +867,25 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     StringFunction::SplitExact { n, inclusive } => {
                         (PyStringFunction::SplitExact.into_py(py), n, inclusive).to_object(py)
                     },
-                    StringFunction::SplitN(_) => {
-                        (PyStringFunction::SplitN.into_py(py),).to_object(py)
+                    StringFunction::SplitN(n) => {
+                        (PyStringFunction::SplitN.into_py(py), n).to_object(py)
                     },
-                    StringFunction::Strptime(_, _) => {
-                        (PyStringFunction::Strptime.into_py(py),).to_object(py)
+                    StringFunction::Strptime(_, options) => (
+                        PyStringFunction::Strptime.into_py(py),
+                        options
+                            .format
+                            .as_ref()
+                            .map_or_else(|| py.None(), |s| s.to_object(py)),
+                        options.strict,
+                        options.exact,
+                        options.cache,
+                    )
+                        .to_object(py),
+                    StringFunction::Split(inclusive) => {
+                        (PyStringFunction::Split.into_py(py), inclusive).to_object(py)
                     },
-                    StringFunction::Split(_) => {
-                        (PyStringFunction::Split.into_py(py),).to_object(py)
-                    },
-                    StringFunction::ToDecimal(_) => {
-                        (PyStringFunction::ToDecimal.into_py(py),).to_object(py)
+                    StringFunction::ToDecimal(inference_length) => {
+                        (PyStringFunction::ToDecimal.into_py(py), inference_length).to_object(py)
                     },
                     StringFunction::Titlecase => {
                         (PyStringFunction::Titlecase.into_py(py),).to_object(py)
@@ -1124,8 +1134,8 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     return Err(PyNotImplementedError::new_err("shift and fill"))
                 },
                 FunctionExpr::Shift => ("shift",).to_object(py),
-                FunctionExpr::DropNans => ("dropnan",).to_object(py),
-                FunctionExpr::DropNulls => ("dropnull",).to_object(py),
+                FunctionExpr::DropNans => ("drop_nans",).to_object(py),
+                FunctionExpr::DropNulls => ("drop_nulls",).to_object(py),
                 FunctionExpr::Mode => ("mode",).to_object(py),
                 FunctionExpr::Skew(_) => return Err(PyNotImplementedError::new_err("skew")),
                 FunctionExpr::Kurtosis(_, _) => {
@@ -1136,7 +1146,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 },
                 #[cfg(feature = "repeat_by")]
                 FunctionExpr::RepeatBy => ("repeat_by",).to_object(py),
-                FunctionExpr::ArgUnique => ("argunique",).to_object(py),
+                FunctionExpr::ArgUnique => ("arg_unique",).to_object(py),
                 FunctionExpr::Rank {
                     options: _,
                     seed: _,
@@ -1148,12 +1158,12 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 FunctionExpr::AsStruct => return Err(PyNotImplementedError::new_err("as struct")),
                 #[cfg(feature = "top_k")]
                 FunctionExpr::TopK { descending } => ("top_k", descending).to_object(py),
-                FunctionExpr::CumCount { reverse } => ("cumcount", reverse).to_object(py),
-                FunctionExpr::CumSum { reverse } => ("cumsum", reverse).to_object(py),
-                FunctionExpr::CumProd { reverse } => ("cumprod", reverse).to_object(py),
-                FunctionExpr::CumMin { reverse } => ("cummin", reverse).to_object(py),
-                FunctionExpr::CumMax { reverse } => ("cummax", reverse).to_object(py),
-                FunctionExpr::Reverse => return Err(PyNotImplementedError::new_err("reverse")),
+                FunctionExpr::CumCount { reverse } => ("cum_count", reverse).to_object(py),
+                FunctionExpr::CumSum { reverse } => ("cum_sum", reverse).to_object(py),
+                FunctionExpr::CumProd { reverse } => ("cum_prod", reverse).to_object(py),
+                FunctionExpr::CumMin { reverse } => ("cum_min", reverse).to_object(py),
+                FunctionExpr::CumMax { reverse } => ("cum_max", reverse).to_object(py),
+                FunctionExpr::Reverse => ("reverse",).to_object(py),
                 FunctionExpr::ValueCounts {
                     sort: _,
                     parallel: _,
@@ -1219,7 +1229,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     return Err(PyNotImplementedError::new_err("random"))
                 },
                 FunctionExpr::SetSortedFlag(sorted) => (
-                    "setsorted",
+                    "set_sorted",
                     match sorted {
                         IsSorted::Ascending => "ascending",
                         IsSorted::Descending => "descending",

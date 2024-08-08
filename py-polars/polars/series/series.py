@@ -121,6 +121,8 @@ if TYPE_CHECKING:
 
     from polars import DataFrame, DataType, Expr
     from polars._typing import (
+        ArrowArrayExportable,
+        ArrowStreamExportable,
         BufferInfo,
         ClosedInterval,
         ComparisonOperator,
@@ -161,6 +163,8 @@ ArrayLike = Union[
     "np.ndarray[Any, Any]",
     "pd.Series[Any]",
     "pd.DatetimeIndex",
+    "ArrowArrayExportable",
+    "ArrowStreamExportable",
 ]
 
 
@@ -341,6 +345,12 @@ class Series:
                 original_name, values, dtype=dtype, strict=strict
             )
 
+        elif hasattr(values, "__arrow_c_array__"):
+            self._s = PySeries.from_arrow_c_array(values)
+
+        elif hasattr(values, "__arrow_c_stream__"):
+            self._s = PySeries.from_arrow_c_stream(values)
+
         else:
             msg = (
                 f"Series constructor called with unsupported type {type(values).__name__!r}"
@@ -355,7 +365,10 @@ class Series:
         return series
 
     @classmethod
-    @deprecate_function("use _import_arrow_from_c", version="1.3")
+    @deprecate_function(
+        "use _import_arrow_from_c; if you are using an extension, please compile it with latest 'pyo3-polars'",
+        version="1.3",
+    )
     def _import_from_c(cls, name: str, pointers: list[tuple[int, int]]) -> Self:
         return cls._from_pyseries(PySeries._import_arrow_from_c(name, pointers))
 
@@ -404,7 +417,7 @@ class Series:
 
         Leaking
         If you don't pass the ArrowArray struct to a consumer,
-        array memory will leak.  This is a low-level function intended for
+        array memory will leak. This is a low-level function intended for
         expert users.
         """
         self._s._export_arrow_to_c(out_ptr, out_schema_ptr)
@@ -748,7 +761,7 @@ class Series:
         return self._from_pyseries(f(other))
 
     @overload  # type: ignore[override]
-    def __eq__(self, other: Expr) -> Expr: ...  # type: ignore[overload-overlap]
+    def __eq__(self, other: Expr) -> Expr: ...
 
     @overload
     def __eq__(self, other: Any) -> Series: ...
@@ -760,8 +773,7 @@ class Series:
         return self._comp(other, "eq")
 
     @overload  # type: ignore[override]
-    def __ne__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def __ne__(self, other: Expr) -> Expr: ...
 
     @overload
     def __ne__(self, other: Any) -> Series: ...
@@ -773,8 +785,7 @@ class Series:
         return self._comp(other, "neq")
 
     @overload
-    def __gt__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def __gt__(self, other: Expr) -> Expr: ...
 
     @overload
     def __gt__(self, other: Any) -> Series: ...
@@ -786,8 +797,7 @@ class Series:
         return self._comp(other, "gt")
 
     @overload
-    def __lt__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def __lt__(self, other: Expr) -> Expr: ...
 
     @overload
     def __lt__(self, other: Any) -> Series: ...
@@ -799,8 +809,7 @@ class Series:
         return self._comp(other, "lt")
 
     @overload
-    def __ge__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def __ge__(self, other: Expr) -> Expr: ...
 
     @overload
     def __ge__(self, other: Any) -> Series: ...
@@ -812,8 +821,7 @@ class Series:
         return self._comp(other, "gt_eq")
 
     @overload
-    def __le__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def __le__(self, other: Expr) -> Expr: ...
 
     @overload
     def __le__(self, other: Any) -> Series: ...
@@ -825,8 +833,7 @@ class Series:
         return self._comp(other, "lt_eq")
 
     @overload
-    def le(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def le(self, other: Expr) -> Expr: ...
 
     @overload
     def le(self, other: Any) -> Series: ...
@@ -836,8 +843,7 @@ class Series:
         return self.__le__(other)
 
     @overload
-    def lt(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def lt(self, other: Expr) -> Expr: ...
 
     @overload
     def lt(self, other: Any) -> Series: ...
@@ -847,8 +853,7 @@ class Series:
         return self.__lt__(other)
 
     @overload
-    def eq(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def eq(self, other: Expr) -> Expr: ...
 
     @overload
     def eq(self, other: Any) -> Series: ...
@@ -858,8 +863,7 @@ class Series:
         return self.__eq__(other)
 
     @overload
-    def eq_missing(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def eq_missing(self, other: Expr) -> Expr: ...
 
     @overload
     def eq_missing(self, other: Any) -> Series: ...
@@ -906,8 +910,7 @@ class Series:
         return self.to_frame().select(F.col(self.name).eq_missing(other)).to_series()
 
     @overload
-    def ne(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def ne(self, other: Expr) -> Expr: ...
 
     @overload
     def ne(self, other: Any) -> Series: ...
@@ -917,8 +920,7 @@ class Series:
         return self.__ne__(other)
 
     @overload
-    def ne_missing(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def ne_missing(self, other: Expr) -> Expr: ...
 
     @overload
     def ne_missing(self, other: Any) -> Series: ...
@@ -965,8 +967,7 @@ class Series:
         return self.to_frame().select(F.col(self.name).ne_missing(other)).to_series()
 
     @overload
-    def ge(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def ge(self, other: Expr) -> Expr: ...
 
     @overload
     def ge(self, other: Any) -> Series: ...
@@ -976,8 +977,7 @@ class Series:
         return self.__ge__(other)
 
     @overload
-    def gt(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def gt(self, other: Expr) -> Expr: ...
 
     @overload
     def gt(self, other: Any) -> Series: ...
@@ -1030,12 +1030,10 @@ class Series:
         return self._from_pyseries(f(other))
 
     @overload
-    def __add__(self, other: DataFrame) -> DataFrame:  # type: ignore[overload-overlap]
-        ...
+    def __add__(self, other: DataFrame) -> DataFrame: ...
 
     @overload
-    def __add__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def __add__(self, other: Expr) -> Expr: ...
 
     @overload
     def __add__(self, other: Any) -> Self: ...
@@ -1050,8 +1048,7 @@ class Series:
         return self._arithmetic(other, "add", "add_<>")
 
     @overload
-    def __sub__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def __sub__(self, other: Expr) -> Expr: ...
 
     @overload
     def __sub__(self, other: Any) -> Self: ...
@@ -1078,8 +1075,7 @@ class Series:
         return self.cast(convert_to_float64(self.dtype))
 
     @overload
-    def __truediv__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def __truediv__(self, other: Expr) -> Expr: ...
 
     @overload
     def __truediv__(self, other: Any) -> Series: ...
@@ -1100,8 +1096,7 @@ class Series:
         return as_float._arithmetic(other, "div", "div_<>")
 
     @overload
-    def __floordiv__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def __floordiv__(self, other: Expr) -> Expr: ...
 
     @overload
     def __floordiv__(self, other: Any) -> Series: ...
@@ -1121,12 +1116,10 @@ class Series:
         return self.not_()
 
     @overload
-    def __mul__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def __mul__(self, other: Expr) -> Expr: ...
 
     @overload
-    def __mul__(self, other: DataFrame) -> DataFrame:  # type: ignore[overload-overlap]
-        ...
+    def __mul__(self, other: DataFrame) -> DataFrame: ...
 
     @overload
     def __mul__(self, other: Any) -> Series: ...
@@ -1143,8 +1136,7 @@ class Series:
             return self._arithmetic(other, "mul", "mul_<>")
 
     @overload
-    def __mod__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def __mod__(self, other: Expr) -> Expr: ...
 
     @overload
     def __mod__(self, other: Any) -> Series: ...
@@ -1461,6 +1453,14 @@ class Series:
                 f"`{method!r}`"
             )
             raise NotImplementedError(msg)
+
+    def __arrow_c_stream__(self, requested_schema: object | None = None) -> object:
+        """
+        Export a Series via the Arrow PyCapsule Interface.
+
+        https://arrow.apache.org/docs/dev/format/CDataInterface/PyCapsuleInterface.html
+        """
+        return self._s.__arrow_c_stream__(requested_schema)
 
     def _repr_html_(self) -> str:
         """Format output data in HTML for display in Jupyter Notebooks."""
@@ -4525,7 +4525,7 @@ class Series:
 
     def to_init_repr(self, n: int = 1000) -> str:
         """
-        Convert Series to instantiatable string representation.
+        Convert Series to instantiable string representation.
 
         Parameters
         ----------
@@ -6391,7 +6391,7 @@ class Series:
 
         is the biased sample :math:`i\texttt{th}` central moment, and
         :math:`\bar{x}` is
-        the sample mean.  If `bias` is False, the calculations are
+        the sample mean. If `bias` is False, the calculations are
         corrected for bias and the value computed is the adjusted
         Fisher-Pearson standardized moment coefficient, i.e.
 
@@ -7200,7 +7200,7 @@ class Series:
         Parameters
         ----------
         value
-            A constant literal value or a unit expressioin with which to extend the
+            A constant literal value or a unit expression with which to extend the
             expression result Series; can pass None to extend with nulls.
         n
             The number of additional values that will be added.

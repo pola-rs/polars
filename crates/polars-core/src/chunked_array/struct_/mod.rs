@@ -301,7 +301,7 @@ impl StructChunked {
     }
 
     /// Set the outer nulls into the inner arrays, and clear the outer validity.
-    fn propagate_nulls(&mut self) {
+    pub(crate) fn propagate_nulls(&mut self) {
         if self.null_count > 0 {
             // SAFETY:
             // We keep length and dtypes the same.

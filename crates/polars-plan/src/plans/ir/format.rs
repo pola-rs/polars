@@ -61,7 +61,7 @@ fn write_scan(
     n_columns: i64,
     total_columns: usize,
     predicate: &Option<ExprIRDisplay<'_>>,
-    n_rows: Option<usize>,
+    slice: Option<(i64, usize)>,
     row_index: Option<&RowIndex>,
 ) -> fmt::Result {
     write!(f, "{:indent$}{name} SCAN {}", "", PathsDisplay(path))?;
@@ -79,8 +79,8 @@ fn write_scan(
     if let Some(predicate) = predicate {
         write!(f, "\n{:indent$}SELECTION: {predicate}", "")?;
     }
-    if let Some(n_rows) = n_rows {
-        write!(f, "\n{:indent$}N_ROWS: {n_rows}", "")?;
+    if let Some(slice) = slice {
+        write!(f, "\n{:indent$}SLICE: {slice:?}", "")?;
     }
     if let Some(row_index) = row_index {
         write!(f, "\n{:indent$}ROW_INDEX: {}", "", row_index.name)?;
@@ -154,7 +154,7 @@ impl<'a> IRDisplay<'a> {
 
         match self.root() {
             #[cfg(feature = "python")]
-            PythonScan { options, predicate } => {
+            PythonScan { options } => {
                 let total_columns = options.schema.len();
                 let n_columns = options
                     .with_columns
@@ -162,7 +162,11 @@ impl<'a> IRDisplay<'a> {
                     .map(|s| s.len() as i64)
                     .unwrap_or(-1);
 
-                let predicate = predicate.as_ref().map(|p| self.display_expr(p));
+                let predicate = match &options.predicate {
+                    PythonPredicate::Polars(e) => Some(self.display_expr(e)),
+                    PythonPredicate::PyArrow(_) => None,
+                    PythonPredicate::None => None,
+                };
 
                 write_scan(
                     f,
@@ -172,7 +176,7 @@ impl<'a> IRDisplay<'a> {
                     n_columns,
                     total_columns,
                     &predicate,
-                    options.n_rows,
+                    options.n_rows.map(|x| (0, x)),
                     None,
                 )
             },
@@ -240,7 +244,7 @@ impl<'a> IRDisplay<'a> {
                     n_columns,
                     file_info.schema.len(),
                     &predicate,
-                    file_options.n_rows,
+                    file_options.slice,
                     file_options.row_index.as_ref(),
                 )
             },

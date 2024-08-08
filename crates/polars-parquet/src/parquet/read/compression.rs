@@ -1,10 +1,10 @@
 use parquet_format_safe::DataPageHeaderV2;
 
-use super::page::PageIterator;
+use super::PageReader;
 use crate::parquet::compression::{self, Compression};
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{CompressedPage, DataPage, DataPageHeader, DictPage, Page};
-use crate::parquet::{CowBuffer, FallibleStreamingIterator};
+use crate::parquet::CowBuffer;
 
 fn decompress_v1(
     compressed: &[u8],
@@ -124,119 +124,6 @@ pub fn decompress(
     Ok(create_page(compressed_page, std::mem::take(buffer)))
 }
 
-fn decompress_reuse<P: PageIterator>(
-    mut compressed_page: CompressedPage,
-    iterator: &mut P,
-    buffer: &mut Vec<u8>,
-) -> ParquetResult<(Page, bool)> {
-    let was_decompressed = decompress_buffer(&mut compressed_page, buffer)?;
-
-    if was_decompressed {
-        iterator.swap_buffer(&mut compressed_page.buffer().to_vec())
-    };
-
-    let new_page = create_page(compressed_page, std::mem::take(buffer));
-
-    Ok((new_page, was_decompressed))
-}
-
-/// Decompressor that allows re-using the page buffer of [`PageIterator`].
-///
-/// # Implementation
-///
-/// The implementation depends on whether a page is compressed or not.
-///
-/// > `PageReader(a)`, `CompressedPage(b)`, `Decompressor(c)`, `DecompressedPage(d)`
-///
-/// ### un-compressed pages:
-///
-/// > page iter: `a` is swapped with `b`
-/// > decompress iter: `b` is swapped with `d`, `b` is swapped with `a`
-///
-/// therefore:
-/// * `PageReader` has its buffer back
-/// * `Decompressor`'s buffer is un-used
-/// * `DecompressedPage` has the same data as `CompressedPage` had
-///
-/// ### compressed pages:
-///
-/// > page iter: `a` is swapped with `b`
-/// > decompress iter:
-/// > * `b` is decompressed into `c`
-/// > * `b` is swapped with `a`
-/// > * `c` is moved to `d`
-/// > * (next iteration): `d` is moved to `c`
-///
-/// therefore, while the page is available:
-/// * `PageReader` has its buffer back
-/// * `Decompressor`'s buffer empty
-/// * `DecompressedPage` has the decompressed buffer
-///
-/// after the page is used:
-/// * `PageReader` has its buffer back
-/// * `Decompressor` has its buffer back
-/// * `DecompressedPage` has an empty buffer
-pub struct Decompressor<P: PageIterator> {
-    iter: P,
-    buffer: Vec<u8>,
-    current: Option<Page>,
-    was_decompressed: bool,
-}
-
-impl<P: PageIterator> Decompressor<P> {
-    /// Creates a new [`Decompressor`].
-    pub fn new(iter: P, buffer: Vec<u8>) -> Self {
-        Self {
-            iter,
-            buffer,
-            current: None,
-            was_decompressed: false,
-        }
-    }
-
-    /// Returns two buffers: the first buffer corresponds to the page buffer,
-    /// the second to the decompression buffer.
-    pub fn into_buffers(mut self) -> (Vec<u8>, Vec<u8>) {
-        let mut page_buffer = vec![];
-        self.iter.swap_buffer(&mut page_buffer);
-        (page_buffer, self.buffer)
-    }
-}
-
-impl<P: PageIterator> FallibleStreamingIterator for Decompressor<P> {
-    type Item = Page;
-    type Error = ParquetError;
-
-    fn advance(&mut self) -> ParquetResult<()> {
-        if let Some(page) = self.current.as_mut() {
-            if self.was_decompressed {
-                self.buffer = std::mem::take(page.buffer_mut());
-            } else {
-                self.iter.swap_buffer(page.buffer_mut());
-            }
-        }
-
-        let next = self
-            .iter
-            .next()
-            .map(|x| {
-                x.and_then(|x| {
-                    let (page, was_decompressed) =
-                        decompress_reuse(x, &mut self.iter, &mut self.buffer)?;
-                    self.was_decompressed = was_decompressed;
-                    Ok(page)
-                })
-            })
-            .transpose()?;
-        self.current = next;
-        Ok(())
-    }
-
-    fn get(&self) -> Option<&Self::Item> {
-        self.current.as_ref()
-    }
-}
-
 type _Decompressor<I> = streaming_decompression::Decompressor<
     CompressedPage,
     Page,
@@ -264,39 +151,80 @@ impl streaming_decompression::Decompressed for Page {
 /// This decompressor uses an internal [`Vec<u8>`] to perform decompressions which
 /// is reused across pages, so that a single allocation is required.
 /// If the pages are not compressed, the internal buffer is not used.
-pub struct BasicDecompressor<I: Iterator<Item = ParquetResult<CompressedPage>>> {
-    iter: _Decompressor<I>,
+pub struct BasicDecompressor {
+    reader: PageReader,
+    buffer: Vec<u8>,
 }
 
-impl<I> BasicDecompressor<I>
-where
-    I: Iterator<Item = ParquetResult<CompressedPage>>,
-{
-    /// Returns a new [`BasicDecompressor`].
-    pub fn new(iter: I, buffer: Vec<u8>) -> Self {
-        Self {
-            iter: _Decompressor::new(iter, buffer, decompress),
-        }
+impl BasicDecompressor {
+    /// Create a new [`BasicDecompressor`]
+    pub fn new(reader: PageReader, buffer: Vec<u8>) -> Self {
+        Self { reader, buffer }
+    }
+
+    /// The total number of values is given from the `ColumnChunk` metadata.
+    ///
+    /// - Nested column: equal to the number of non-null values at the lowest nesting level.
+    /// - Unnested column: equal to the number of non-null rows.
+    pub fn total_num_values(&self) -> usize {
+        self.reader.total_num_values()
     }
 
     /// Returns its internal buffer, consuming itself.
     pub fn into_inner(self) -> Vec<u8> {
-        self.iter.into_inner()
+        self.buffer
+    }
+
+    pub fn read_dict_page(&mut self) -> ParquetResult<Option<DictPage>> {
+        match self.reader.read_dict()? {
+            None => Ok(None),
+            Some(p) => {
+                let num_values = p.num_values;
+                let page =
+                    decompress(CompressedPage::Dict(p), &mut Vec::with_capacity(num_values))?;
+
+                match page {
+                    Page::Dict(d) => Ok(Some(d)),
+                    Page::Data(_) => unreachable!(),
+                }
+            },
+        }
+    }
+
+    pub fn reuse_page_buffer(&mut self, page: DataPage) {
+        let buffer = match page.buffer {
+            CowBuffer::Borrowed(_) => return,
+            CowBuffer::Owned(vec) => vec,
+        };
+
+        if self.buffer.capacity() > buffer.capacity() {
+            return;
+        };
+
+        self.buffer = buffer;
     }
 }
 
-impl<I> FallibleStreamingIterator for BasicDecompressor<I>
-where
-    I: Iterator<Item = ParquetResult<CompressedPage>>,
-{
-    type Item = Page;
-    type Error = ParquetError;
+impl Iterator for BasicDecompressor {
+    type Item = ParquetResult<DataPage>;
 
-    fn advance(&mut self) -> ParquetResult<()> {
-        self.iter.advance()
+    fn next(&mut self) -> Option<Self::Item> {
+        let page = match self.reader.next() {
+            None => return None,
+            Some(Err(e)) => return Some(Err(e)),
+            Some(Ok(p)) => p,
+        };
+
+        Some(decompress(page, &mut self.buffer).map(|p| {
+            if let Page::Data(p) = p {
+                p
+            } else {
+                panic!("Found compressed page in the middle of the pages")
+            }
+        }))
     }
 
-    fn get(&self) -> Option<&Self::Item> {
-        self.iter.get()
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.reader.size_hint()
     }
 }

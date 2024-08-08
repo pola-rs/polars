@@ -1,7 +1,6 @@
 // See https://github.com/apache/parquet-format/blob/master/Encodings.md#run-length-encoding--bit-packing-hybrid-rle--3
 mod bitmap;
 mod buffered;
-mod decoder;
 mod encoder;
 pub mod gatherer;
 
@@ -10,12 +9,10 @@ mod fuzz;
 
 pub use bitmap::{encode_bool as bitpacked_encode, BitmapIter};
 pub use buffered::BufferedBitpacked;
-pub use decoder::Decoder;
-pub use encoder::encode;
+pub use encoder::{encode, Encoder};
 pub use gatherer::{
     DictionaryTranslator, FnTranslator, Translator, TryFromUsizeTranslator, UnitTranslator,
 };
-use polars_utils::iter::FallibleIterator;
 use polars_utils::slice::GetSaferUnchecked;
 
 use self::buffered::HybridRleBuffered;
@@ -52,62 +49,7 @@ pub struct HybridRleDecoder<'a> {
     num_values: usize,
 
     buffered: Option<HybridRleBuffered<'a>>,
-    /// The result after iterating.
-    ///
-    /// This is only needed because we iterate over individual elements.
-    result: Option<ParquetError>,
 }
-
-impl<'a> FallibleIterator<ParquetError> for HybridRleDecoder<'a> {
-    fn get_result(&mut self) -> Result<(), ParquetError> {
-        match self.result.take() {
-            None => Ok(()),
-            Some(err) => Err(err),
-        }
-    }
-}
-
-impl<'a> Iterator for HybridRleDecoder<'a> {
-    type Item = u32;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.num_values == 0 {
-            return None;
-        }
-
-        if self.num_bits == 0 {
-            self.num_values -= 1;
-            return Some(0);
-        }
-
-        if let Some(buffered) = self.buffered.as_mut() {
-            match buffered.next() {
-                None => self.buffered = None,
-                Some(value) => {
-                    self.num_values -= 1;
-                    return Some(value);
-                },
-            }
-        }
-
-        let mut buffer = Vec::with_capacity(1);
-        let result = self.gather_limited_once(&mut buffer, Some(1), &UnitTranslator);
-
-        match result {
-            Ok(_) => Some(buffer[0]),
-            Err(err) => {
-                self.result = Some(err);
-                None
-            },
-        }
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.num_values, Some(self.num_values))
-    }
-}
-
-impl<'a> ExactSizeIterator for HybridRleDecoder<'a> {}
 
 impl<'a> HybridRleDecoder<'a> {
     /// Returns a new [`HybridRleDecoder`]
@@ -118,8 +60,11 @@ impl<'a> HybridRleDecoder<'a> {
             num_values,
 
             buffered: None,
-            result: None,
         }
+    }
+
+    pub fn len(&self) -> usize {
+        self.num_values
     }
 
     fn gather_limited_once<O: Clone, G: HybridRleGatherer<O>>(
@@ -268,6 +213,8 @@ impl<'a> HybridRleDecoder<'a> {
         }
 
         if self.num_bits == 0 {
+            let n = usize::min(n, self.num_values);
+
             let value = gatherer.hybridrle_to_target(0)?;
             gatherer.gather_repeated(target, value, n)?;
             self.num_values -= n;
@@ -452,7 +399,7 @@ impl<'a> HybridRleDecoder<'a> {
 
             debug_assert_eq!(num_skipped, start_num_values - self.num_values);
             debug_assert!(num_skipped <= n, "{num_skipped} <= {n}");
-            debug_assert!(num_skipped > 0, "{num_skipped} > 0");
+            debug_assert!(indicator >> 1 == 0 || num_skipped > 0);
 
             n -= num_skipped;
         }
@@ -561,11 +508,7 @@ mod tests {
         let decoder = HybridRleDecoder::new(&data, num_bits, 1000);
         let result = decoder.collect()?;
 
-        let mut decoder = HybridRleDecoder::new(&data, num_bits, 1000);
-        let iterator_result: Vec<_> = Iterator::collect(&mut decoder);
-
         assert_eq!(result, (0..1000).collect::<Vec<_>>());
-        assert_eq!(iterator_result, (0..1000).collect::<Vec<_>>());
         Ok(())
     }
 

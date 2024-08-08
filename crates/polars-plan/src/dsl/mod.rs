@@ -63,7 +63,7 @@ use polars_core::prelude::*;
 use polars_core::series::ops::NullBehavior;
 use polars_core::series::IsSorted;
 use polars_core::utils::try_get_supertype;
-pub(crate) use selector::Selector;
+pub use selector::Selector;
 #[cfg(feature = "dtype-struct")]
 pub use struct_::*;
 pub use udf::UserDefinedFunction;
@@ -186,7 +186,15 @@ impl Expr {
 
     /// Drop null values.
     pub fn drop_nulls(self) -> Self {
-        self.apply_private(FunctionExpr::DropNulls)
+        Expr::Function {
+            input: vec![self],
+            function: FunctionExpr::DropNulls,
+            options: FunctionOptions {
+                collect_groups: ApplyOptions::GroupWise,
+                flags: FunctionFlags::default() | FunctionFlags::ALLOW_EMPTY_INPUTS,
+                ..Default::default()
+            },
+        }
     }
 
     /// Drop NaN values.

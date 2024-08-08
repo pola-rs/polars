@@ -1,3 +1,4 @@
+use std::io::Seek;
 use std::sync::{Arc, OnceLock};
 
 use parquet_format_safe::thrift::protocol::TCompactInputProtocol;
@@ -12,7 +13,6 @@ use crate::parquet::page::{
     CompressedDataPage, CompressedDictPage, CompressedPage, DataPageHeader, PageType,
     ParquetPageHeader,
 };
-use crate::parquet::parquet_bridge::Encoding;
 use crate::parquet::CowBuffer;
 
 /// This meta is a small part of [`ColumnChunkMetaData`].
@@ -128,6 +128,54 @@ impl PageReader {
     pub fn into_inner(self) -> (MemReader, Vec<u8>) {
         (self.reader, self.scratch)
     }
+
+    pub fn total_num_values(&self) -> usize {
+        debug_assert!(self.total_num_values >= 0);
+        self.total_num_values as usize
+    }
+
+    pub fn read_dict(&mut self) -> ParquetResult<Option<CompressedDictPage>> {
+        // a dictionary page exists iff the first data page is not at the start of
+        // the column
+        let seek_offset = self.reader.position();
+        let page_header = read_page_header(&mut self.reader, self.max_page_size)?;
+        let page_type = page_header.type_.try_into()?;
+
+        if !matches!(page_type, PageType::DictionaryPage) {
+            self.reader
+                .seek(std::io::SeekFrom::Start(seek_offset as u64))?;
+            return Ok(None);
+        }
+
+        let read_size: usize = page_header.compressed_page_size.try_into()?;
+
+        if read_size > self.max_page_size {
+            return Err(ParquetError::WouldOverAllocate);
+        }
+
+        let buffer = self.reader.read_slice(read_size);
+
+        if buffer.len() != read_size {
+            return Err(ParquetError::oos(
+                "The page header reported the wrong page size",
+            ));
+        }
+
+        finish_page(
+            page_header,
+            buffer,
+            self.compression,
+            &self.descriptor,
+            None,
+        )
+        .map(|p| {
+            if let CompressedPage::Dict(d) = p {
+                Some(d)
+            } else {
+                unreachable!()
+            }
+        })
+    }
 }
 
 impl PageIterator for PageReader {
@@ -181,9 +229,7 @@ fn next_page(reader: &mut PageReader) -> ParquetResult<Option<CompressedPage>> {
 pub(super) fn build_page(reader: &mut PageReader) -> ParquetResult<Option<CompressedPage>> {
     let page_header = read_page_header(&mut reader.reader, reader.max_page_size)?;
 
-    reader.seen_num_values += get_page_header(&page_header)?
-        .map(|x| x.num_values() as i64)
-        .unwrap_or_default();
+    reader.seen_num_values += get_page_num_values(&page_header)? as i64;
 
     let read_size: usize = page_header.compressed_page_size.try_into()?;
 
@@ -296,30 +342,31 @@ pub(super) fn finish_page(
     }
 }
 
-pub(super) fn get_page_header(header: &ParquetPageHeader) -> ParquetResult<Option<DataPageHeader>> {
+pub(super) fn get_page_num_values(header: &ParquetPageHeader) -> ParquetResult<i32> {
     let type_ = header.type_.try_into()?;
     Ok(match type_ {
         PageType::DataPage => {
-            let header = header.data_page_header.clone().ok_or_else(|| {
-                ParquetError::oos(
-                    "The page header type is a v1 data page but the v1 header is empty",
-                )
-            })?;
-            let _: Encoding = header.encoding.try_into()?;
-            let _: Encoding = header.repetition_level_encoding.try_into()?;
-            let _: Encoding = header.definition_level_encoding.try_into()?;
-
-            Some(DataPageHeader::V1(header))
+            header
+                .data_page_header
+                .as_ref()
+                .ok_or_else(|| {
+                    ParquetError::oos(
+                        "The page header type is a v1 data page but the v1 header is empty",
+                    )
+                })?
+                .num_values
         },
         PageType::DataPageV2 => {
-            let header = header.data_page_header_v2.clone().ok_or_else(|| {
-                ParquetError::oos(
-                    "The page header type is a v1 data page but the v1 header is empty",
-                )
-            })?;
-            let _: Encoding = header.encoding.try_into()?;
-            Some(DataPageHeader::V2(header))
+            header
+                .data_page_header_v2
+                .as_ref()
+                .ok_or_else(|| {
+                    ParquetError::oos(
+                        "The page header type is a v1 data page but the v1 header is empty",
+                    )
+                })?
+                .num_values
         },
-        _ => None,
+        _ => 0,
     })
 }

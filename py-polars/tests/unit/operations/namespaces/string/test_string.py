@@ -857,6 +857,52 @@ def test_contains_expr() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    ("pattern", "case_insensitive", "expected"),
+    [
+        (["me"], False, True),
+        (["Me"], False, False),
+        (["Me"], True, True),
+        (pl.Series(["me", "they"]), False, True),
+        (pl.Series(["Me", "they"]), False, False),
+        (pl.Series(["Me", "they"]), True, True),
+        (["me", "they"], False, True),
+        (["Me", "they"], False, False),
+        (["Me", "they"], True, True),
+    ],
+)
+def test_contains_any(
+    pattern: pl.Series | list[str],
+    case_insensitive: bool,
+    expected: bool,
+) -> None:
+    df = pl.DataFrame({"text": ["Tell me what you want"]})
+    # series
+    assert (
+        expected
+        == df["text"]
+        .str.contains_any(pattern, ascii_case_insensitive=case_insensitive)
+        .item()
+    )
+    # expr
+    assert (
+        expected
+        == df.select(
+            pl.col("text").str.contains_any(
+                pattern, ascii_case_insensitive=case_insensitive
+            )
+        )["text"].item()
+    )
+    # frame filter
+    assert int(expected) == len(
+        df.filter(
+            pl.col("text").str.contains_any(
+                pattern, ascii_case_insensitive=case_insensitive
+            )
+        )
+    )
+
+
 def test_replace() -> None:
     df = pl.DataFrame(
         data=[(1, "* * text"), (2, "(with) special\n * chars **etc...?$")],
@@ -969,6 +1015,50 @@ def test_replace_expressions() -> None:
     assert out.to_dict(as_series=False) == {
         "foo": ["value bla valuevalue asd", "xyz valuet"]
     }
+
+
+@pytest.mark.parametrize(
+    ("pattern", "replacement", "case_insensitive", "expected"),
+    [
+        (["say"], "", False, "Tell me what you want"),
+        (["me"], ["them"], False, "Tell them what you want"),
+        (["who"], ["them"], False, "Tell me what you want"),
+        (["me", "you"], "it", False, "Tell it what it want"),
+        (["Me", "you"], "it", False, "Tell me what it want"),
+        (["me", "you"], ["it"], False, "Tell it what it want"),
+        (["me", "you"], ["you", "me"], False, "Tell you what me want"),
+        (["me", "You", "them"], "it", False, "Tell it what you want"),
+        (["Me", "you"], "it", True, "Tell it what it want"),
+        (["me", "YOU"], ["you", "me"], True, "Tell you what me want"),
+        (pl.Series(["me", "YOU"]), ["you", "me"], False, "Tell you what you want"),
+        (pl.Series(["me", "YOU"]), ["you", "me"], True, "Tell you what me want"),
+    ],
+)
+def test_replace_many(
+    pattern: pl.Series | list[str],
+    replacement: pl.Series | list[str] | str,
+    case_insensitive: bool,
+    expected: str,
+) -> None:
+    df = pl.DataFrame({"text": ["Tell me what you want"]})
+    # series
+    assert (
+        expected
+        == df["text"]
+        .str.replace_many(pattern, replacement, ascii_case_insensitive=case_insensitive)
+        .item()
+    )
+    # expr
+    assert (
+        expected
+        == df.select(
+            pl.col("text").str.replace_many(
+                pattern,
+                replacement,
+                ascii_case_insensitive=case_insensitive,
+            )
+        ).item()
+    )
 
 
 def test_extract_all_count() -> None:
@@ -1471,7 +1561,7 @@ def test_string_reverse() -> None:
 
 
 @pytest.mark.parametrize(
-    ("data", "expected_dat"),
+    ("data", "expected_data"),
     [
         (["", None, "a"], ["", None, "b"]),
         ([None, None, "a"], [None, None, "b"]),
@@ -1481,11 +1571,11 @@ def test_string_reverse() -> None:
     ],
 )
 def test_replace_lit_n_char_13385(
-    data: list[str | None], expected_dat: list[str | None]
+    data: list[str | None], expected_data: list[str | None]
 ) -> None:
     s = pl.Series(data, dtype=pl.String)
     res = s.str.replace("a", "b", literal=True)
-    expected_s = pl.Series(expected_dat, dtype=pl.String)
+    expected_s = pl.Series(expected_data, dtype=pl.String)
     assert_series_equal(res, expected_s)
 
 

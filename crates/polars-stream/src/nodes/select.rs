@@ -1,27 +1,20 @@
 use std::sync::Arc;
 
 use polars_core::schema::Schema;
-use polars_expr::prelude::PhysicalExpr;
 
 use super::compute_node_prelude::*;
+use crate::expression::StreamExpr;
 
 pub struct SelectNode {
-    selectors: Vec<Arc<dyn PhysicalExpr>>,
-    selector_reentrant: Vec<bool>,
+    selectors: Vec<StreamExpr>,
     schema: Arc<Schema>,
     extend_original: bool,
 }
 
 impl SelectNode {
-    pub fn new(
-        selectors: Vec<Arc<dyn PhysicalExpr>>,
-        selector_reentrant: Vec<bool>,
-        schema: Arc<Schema>,
-        extend_original: bool,
-    ) -> Self {
+    pub fn new(selectors: Vec<StreamExpr>, schema: Arc<Schema>, extend_original: bool) -> Self {
         Self {
             selectors,
-            selector_reentrant,
             schema,
             extend_original,
         }
@@ -54,22 +47,10 @@ impl ComputeNode for SelectNode {
             let slf = &*self;
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 while let Ok(morsel) = recv.recv().await {
-                    let (df, seq, consume_token) = morsel.into_inner();
+                    let (df, seq, source_token, consume_token) = morsel.into_inner();
                     let mut selected = Vec::new();
-                    for (selector, reentrant) in slf.selectors.iter().zip(&slf.selector_reentrant) {
-                        // We need spawn_blocking because evaluate could contain Python UDFs which
-                        // recursively call the executor again.
-                        let s = if *reentrant {
-                            let df = df.clone();
-                            let selector = selector.clone();
-                            let state = state.clone();
-                            polars_io::pl_async::get_runtime()
-                                .spawn_blocking(move || selector.evaluate(&df, &state))
-                                .await
-                                .unwrap()?
-                        } else {
-                            selector.evaluate(&df, state)?
-                        };
+                    for selector in slf.selectors.iter() {
+                        let s = selector.evaluate(&df, state).await?;
                         selected.push(s);
                     }
 
@@ -94,7 +75,7 @@ impl ComputeNode for SelectNode {
                         unsafe { DataFrame::new_no_checks(selected) }
                     };
 
-                    let mut morsel = Morsel::new(ret, seq);
+                    let mut morsel = Morsel::new(ret, seq, source_token);
                     if let Some(token) = consume_token {
                         morsel.set_consume_token(token);
                     }

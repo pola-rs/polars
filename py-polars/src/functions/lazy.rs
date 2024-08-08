@@ -1,7 +1,7 @@
 use polars::lazy::dsl;
 use polars::prelude::*;
 use polars_plan::prelude::UnionArgs;
-use pyo3::exceptions::PyTypeError;
+use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyBytes, PyFloat, PyInt, PyString};
 
@@ -85,9 +85,14 @@ pub fn arg_where(condition: PyExpr) -> PyExpr {
 }
 
 #[pyfunction]
-pub fn as_struct(exprs: Vec<PyExpr>) -> PyExpr {
+pub fn as_struct(exprs: Vec<PyExpr>) -> PyResult<PyExpr> {
     let exprs = exprs.to_exprs();
-    dsl::as_struct(exprs).into()
+    if exprs.is_empty() {
+        return Err(PyValueError::new_err(
+            "expected at least 1 expression in 'as_struct'",
+        ));
+    }
+    Ok(dsl::as_struct(exprs).into())
 }
 
 #[pyfunction]

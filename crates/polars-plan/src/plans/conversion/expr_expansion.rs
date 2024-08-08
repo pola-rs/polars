@@ -541,17 +541,22 @@ fn prepare_excluded(
 }
 
 // functions can have col(["a", "b"]) or col(String) as inputs
-fn expand_function_inputs(expr: Expr, schema: &Schema) -> Expr {
-    expr.map_expr(|mut e| match &mut e {
+fn expand_function_inputs(expr: Expr, schema: &Schema) -> PolarsResult<Expr> {
+    expr.try_map_expr(|mut e| match &mut e {
         Expr::AnonymousFunction { input, options, .. } | Expr::Function { input, options, .. }
             if options
                 .flags
                 .contains(FunctionFlags::INPUT_WILDCARD_EXPANSION) =>
         {
             *input = rewrite_projections(core::mem::take(input), schema, &[]).unwrap();
-            e
+            if input.is_empty() && !options.flags.contains(FunctionFlags::ALLOW_EMPTY_INPUTS) {
+                // Needed to visualize the error
+                *input = vec![Expr::Literal(LiteralValue::Null)];
+                polars_bail!(InvalidOperation: "expected at least 1 input in {}", e)
+            }
+            Ok(e)
         },
-        _ => e,
+        _ => Ok(e),
     })
 }
 
@@ -648,7 +653,7 @@ pub(crate) fn rewrite_projections(
         let result_offset = result.len();
 
         // Functions can have col(["a", "b"]) or col(String) as inputs.
-        expr = expand_function_inputs(expr, schema);
+        expr = expand_function_inputs(expr, schema)?;
 
         let mut flags = find_flags(&expr)?;
         if flags.has_selector {
@@ -835,32 +840,77 @@ fn replace_selector(expr: Expr, schema: &Schema, keys: &[Expr]) -> PolarsResult<
             let mut swapped = Selector::Root(Box::new(Expr::Wildcard));
             std::mem::swap(&mut s, &mut swapped);
 
-            let mut members = PlIndexSet::new();
-            replace_selector_inner(swapped, &mut members, &mut vec![], schema, keys)?;
-
-            if members.len() <= 1 {
-                Ok(Expr::Columns(
-                    members
-                        .into_iter()
-                        .map(|e| {
-                            let Expr::Column(name) = e else {
-                                unreachable!()
-                            };
-                            name
-                        })
-                        .collect(),
-                ))
-            } else {
-                // Ensure that multiple columns returned from combined/nested selectors remain in schema order
-                let selected = schema
-                    .iter_fields()
-                    .map(|field| ColumnName::from(field.name().as_ref()))
-                    .filter(|field_name| members.contains(&Expr::Column(field_name.clone())))
-                    .collect();
-
-                Ok(Expr::Columns(selected))
-            }
+            let cols = expand_selector(swapped, schema, keys)?;
+            Ok(Expr::Columns(cols))
         },
         e => Ok(e),
     })
+}
+
+pub(super) fn expand_selectors(
+    s: Vec<Selector>,
+    schema: &Schema,
+    keys: &[Expr],
+) -> PolarsResult<Arc<[ColumnName]>> {
+    let mut columns = vec![];
+
+    // Skip the column fast paths.
+    fn skip(name: &str) -> bool {
+        is_regex_projection(name) || name == "*"
+    }
+
+    for s in s {
+        match s {
+            Selector::Root(e) => match *e {
+                Expr::Column(name) if !skip(name.as_ref()) => columns.push(name),
+                Expr::Columns(names) if names.iter().all(|n| !skip(n.as_ref())) => {
+                    columns.extend_from_slice(names.as_ref())
+                },
+                Expr::Selector(s) => {
+                    let names = expand_selector(s, schema, keys)?;
+                    columns.extend_from_slice(names.as_ref());
+                },
+                e => {
+                    let names = expand_selector(Selector::new(e), schema, keys)?;
+                    columns.extend_from_slice(names.as_ref());
+                },
+            },
+            other => {
+                let names = expand_selector(other, schema, keys)?;
+                columns.extend_from_slice(names.as_ref());
+            },
+        }
+    }
+
+    Ok(Arc::from(columns))
+}
+
+pub(super) fn expand_selector(
+    s: Selector,
+    schema: &Schema,
+    keys: &[Expr],
+) -> PolarsResult<Arc<[ColumnName]>> {
+    let mut members = PlIndexSet::new();
+    replace_selector_inner(s, &mut members, &mut vec![], schema, keys)?;
+
+    if members.len() <= 1 {
+        Ok(members
+            .into_iter()
+            .map(|e| {
+                let Expr::Column(name) = e else {
+                    unreachable!()
+                };
+                name
+            })
+            .collect())
+    } else {
+        // Ensure that multiple columns returned from combined/nested selectors remain in schema order
+        let selected = schema
+            .iter_fields()
+            .map(|field| ColumnName::from(field.name().as_ref()))
+            .filter(|field_name| members.contains(&Expr::Column(field_name.clone())))
+            .collect();
+
+        Ok(selected)
+    }
 }

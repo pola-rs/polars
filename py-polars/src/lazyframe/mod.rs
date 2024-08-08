@@ -45,7 +45,7 @@ impl PyLazyFrame {
     #[cfg(feature = "json")]
     #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (
-        path, paths, infer_schema_length, schema, batch_size, n_rows, low_memory, rechunk,
+        path, paths, infer_schema_length, schema, schema_overrides, batch_size, n_rows, low_memory, rechunk,
         row_index, ignore_errors, include_file_paths, cloud_options, retries, file_cache_ttl
     ))]
     fn new_from_ndjson(
@@ -53,6 +53,7 @@ impl PyLazyFrame {
         paths: Vec<PathBuf>,
         infer_schema_length: Option<usize>,
         schema: Option<Wrap<Schema>>,
+        schema_overrides: Option<Wrap<Schema>>,
         batch_size: Option<NonZeroUsize>,
         n_rows: Option<usize>,
         low_memory: bool,
@@ -109,6 +110,7 @@ impl PyLazyFrame {
             .low_memory(low_memory)
             .with_rechunk(rechunk)
             .with_schema(schema.map(|schema| Arc::new(schema.0)))
+            .with_schema_overwrite(schema_overrides.map(|x| Arc::new(x.0)))
             .with_row_index(row_index)
             .with_ignore_errors(ignore_errors)
             .with_include_file_paths(include_file_paths.map(Arc::from))
@@ -485,7 +487,7 @@ impl PyLazyFrame {
         type_coercion: bool,
         predicate_pushdown: bool,
         projection_pushdown: bool,
-        simplify_expr: bool,
+        simplify_expression: bool,
         slice_pushdown: bool,
         comm_subplan_elim: bool,
         comm_subexpr_elim: bool,
@@ -498,7 +500,7 @@ impl PyLazyFrame {
         let mut ldf = ldf
             .with_type_coercion(type_coercion)
             .with_predicate_pushdown(predicate_pushdown)
-            .with_simplify_expr(simplify_expr)
+            .with_simplify_expr(simplify_expression)
             .with_slice_pushdown(slice_pushdown)
             .with_cluster_with_columns(cluster_with_columns)
             .with_streaming(streaming)
@@ -547,47 +549,41 @@ impl PyLazyFrame {
         nulls_last: Vec<bool>,
         maintain_order: bool,
         multithreaded: bool,
-    ) -> PyResult<Self> {
+    ) -> Self {
         let ldf = self.ldf.clone();
         let exprs = by.to_exprs();
-        let out = ldf
-            .sort_by_exprs(
-                exprs,
-                SortMultipleOptions {
-                    descending,
-                    nulls_last,
-                    maintain_order,
-                    multithreaded,
-                },
-            )
-            .map_err(PyPolarsErr::from)?;
-        Ok(out.into())
+        ldf.sort_by_exprs(
+            exprs,
+            SortMultipleOptions {
+                descending,
+                nulls_last,
+                maintain_order,
+                multithreaded,
+            },
+        )
+        .into()
     }
 
-    fn top_k(&self, k: IdxSize, by: Vec<PyExpr>, reverse: Vec<bool>) -> PyResult<Self> {
+    fn top_k(&self, k: IdxSize, by: Vec<PyExpr>, reverse: Vec<bool>) -> Self {
         let ldf = self.ldf.clone();
         let exprs = by.to_exprs();
-        let out = ldf
-            .top_k(
-                k,
-                exprs,
-                SortMultipleOptions::new().with_order_descending_multi(reverse),
-            )
-            .map_err(PyPolarsErr::from)?;
-        Ok(out.into())
+        ldf.top_k(
+            k,
+            exprs,
+            SortMultipleOptions::new().with_order_descending_multi(reverse),
+        )
+        .into()
     }
 
-    fn bottom_k(&self, k: IdxSize, by: Vec<PyExpr>, reverse: Vec<bool>) -> PyResult<Self> {
+    fn bottom_k(&self, k: IdxSize, by: Vec<PyExpr>, reverse: Vec<bool>) -> Self {
         let ldf = self.ldf.clone();
         let exprs = by.to_exprs();
-        let out = ldf
-            .bottom_k(
-                k,
-                exprs,
-                SortMultipleOptions::new().with_order_descending_multi(reverse),
-            )
-            .map_err(PyPolarsErr::from)?;
-        Ok(out.into())
+        ldf.bottom_k(
+            k,
+            exprs,
+            SortMultipleOptions::new().with_order_descending_multi(reverse),
+        )
+        .into()
     }
 
     fn cache(&self) -> Self {
@@ -605,12 +601,12 @@ impl PyLazyFrame {
         Ok((df.into(), time_df.into()))
     }
 
-    fn collect(&self, py: Python, lamdba_post_opt: Option<PyObject>) -> PyResult<PyDataFrame> {
+    fn collect(&self, py: Python, lambda_post_opt: Option<PyObject>) -> PyResult<PyDataFrame> {
         // if we don't allow threads and we have udfs trying to acquire the gil from different
         // threads we deadlock.
         let df = py.allow_threads(|| {
             let ldf = self.ldf.clone();
-            if let Some(lambda) = lamdba_post_opt {
+            if let Some(lambda) = lambda_post_opt {
                 ldf._collect_post_opt(|root, lp_arena, expr_arena| {
                     Python::with_gil(|py| {
                         let nt = NodeTraverser::new(
@@ -1149,13 +1145,11 @@ impl PyLazyFrame {
         schema: Option<Wrap<Schema>>,
         validate_output: bool,
     ) -> Self {
-        let opt = AllowedOptimizations {
-            predicate_pushdown,
-            projection_pushdown,
-            slice_pushdown,
-            streaming: streamable,
-            ..Default::default()
-        };
+        let mut opt = OptState::default();
+        opt.set(OptState::PREDICATE_PUSHDOWN, predicate_pushdown);
+        opt.set(OptState::PROJECTION_PUSHDOWN, projection_pushdown);
+        opt.set(OptState::SLICE_PUSHDOWN, slice_pushdown);
+        opt.set(OptState::STREAMING, streamable);
 
         self.ldf
             .clone()
@@ -1168,8 +1162,9 @@ impl PyLazyFrame {
             .into()
     }
 
-    fn drop(&self, columns: Vec<String>, strict: bool) -> Self {
+    fn drop(&self, columns: Vec<PyExpr>, strict: bool) -> Self {
         let ldf = self.ldf.clone();
+        let columns = columns.to_exprs();
         if strict {
             ldf.drop(columns)
         } else {
@@ -1193,7 +1188,9 @@ impl PyLazyFrame {
     }
 
     fn collect_schema(&mut self, py: Python) -> PyResult<PyObject> {
-        let schema = self.ldf.schema().map_err(PyPolarsErr::from)?;
+        let schema = py
+            .allow_threads(|| self.ldf.schema())
+            .map_err(PyPolarsErr::from)?;
 
         let schema_dict = PyDict::new_bound(py);
         schema.iter_fields().for_each(|fld| {

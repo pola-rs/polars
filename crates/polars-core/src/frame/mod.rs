@@ -20,6 +20,7 @@ pub mod explode;
 mod from;
 #[cfg(feature = "algorithm_group_by")]
 pub mod group_by;
+pub(crate) mod horizontal;
 #[cfg(any(feature = "rows", feature = "object"))]
 pub mod row;
 mod top_k;
@@ -188,7 +189,7 @@ impl DataFrame {
     /// Get the index of the column.
     fn check_name_to_idx(&self, name: &str) -> PolarsResult<usize> {
         self.get_column_index(name)
-            .ok_or_else(|| polars_err!(ColumnNotFound: "{}", name))
+            .ok_or_else(|| polars_err!(col_not_found = name))
     }
 
     fn check_already_present(&self, name: &str) -> PolarsResult<()> {
@@ -777,51 +778,6 @@ impl DataFrame {
         self.height() == 0
     }
 
-    /// Add columns horizontally.
-    ///
-    /// # Safety
-    /// The caller must ensure:
-    /// - the length of all [`Series`] is equal to the height of this [`DataFrame`]
-    /// - the columns names are unique
-    pub unsafe fn hstack_mut_unchecked(&mut self, columns: &[Series]) -> &mut Self {
-        self.columns.extend_from_slice(columns);
-        self
-    }
-
-    /// Add multiple [`Series`] to a [`DataFrame`].
-    /// The added `Series` are required to have the same length.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use polars_core::prelude::*;
-    /// fn stack(df: &mut DataFrame, columns: &[Series]) {
-    ///     df.hstack_mut(columns);
-    /// }
-    /// ```
-    pub fn hstack_mut(&mut self, columns: &[Series]) -> PolarsResult<&mut Self> {
-        let mut names = self
-            .columns
-            .iter()
-            .map(|c| c.name())
-            .collect::<PlHashSet<_>>();
-        // first loop check validity. We don't do this in a single pass otherwise
-        // this DataFrame is already modified when an error occurs.
-        for col in columns {
-            polars_ensure!(
-                col.len() == self.height() || self.is_empty(),
-                ShapeMismatch: "unable to hstack Series of length {} and DataFrame of height {}",
-                col.len(), self.height(),
-            );
-            polars_ensure!(
-                names.insert(col.name()),
-                Duplicate: "unable to hstack, column with name {:?} already exists", col.name(),
-            );
-        }
-        drop(names);
-        Ok(unsafe { self.hstack_mut_unchecked(columns) })
-    }
-
     /// Add multiple [`Series`] to a [`DataFrame`].
     /// The added `Series` are required to have the same length.
     ///
@@ -1405,7 +1361,7 @@ impl DataFrame {
     /// Get column index of a [`Series`] by name.
     pub fn try_get_column_index(&self, name: &str) -> PolarsResult<usize> {
         self.get_column_index(name)
-            .ok_or_else(|| polars_err!(ColumnNotFound: "{}", name))
+            .ok_or_else(|| polars_err!(col_not_found = name))
     }
 
     /// Select a single column by name.
@@ -1604,7 +1560,7 @@ impl DataFrame {
                 .map(|name| {
                     let idx = *name_to_idx
                         .get(name.as_str())
-                        .ok_or_else(|| polars_err!(ColumnNotFound: "{}", name))?;
+                        .ok_or_else(|| polars_err!(col_not_found = name))?;
                     Ok(self
                         .select_at_idx(idx)
                         .unwrap()
@@ -1632,7 +1588,7 @@ impl DataFrame {
                 .map(|name| {
                     let idx = *name_to_idx
                         .get(name.as_str())
-                        .ok_or_else(|| polars_err!(ColumnNotFound: "{}", name))?;
+                        .ok_or_else(|| polars_err!(col_not_found = name))?;
                     Ok(self.select_at_idx(idx).unwrap().clone())
                 })
                 .collect::<PolarsResult<Vec<_>>>()?
@@ -1740,7 +1696,7 @@ impl DataFrame {
     /// ```
     pub fn rename(&mut self, column: &str, name: &str) -> PolarsResult<&mut Self> {
         self.select_mut(column)
-            .ok_or_else(|| polars_err!(ColumnNotFound: "{}", column))
+            .ok_or_else(|| polars_err!(col_not_found = column))
             .map(|s| s.rename(name))?;
         let unique_names: AHashSet<&str, ahash::RandomState> =
             AHashSet::from_iter(self.columns.iter().map(|s| s.name()));
@@ -1772,11 +1728,13 @@ impl DataFrame {
         mut sort_options: SortMultipleOptions,
         slice: Option<(i64, usize)>,
     ) -> PolarsResult<Self> {
+        if by_column.is_empty() {
+            polars_bail!(ComputeError: "No columns selected for sorting");
+        }
         // note that the by_column argument also contains evaluated expression from
-        // polars-lazy that may not even be present in this dataframe.
-
-        // therefore when we try to set the first columns as sorted, we ignore the error
-        // as expressions are not present (they are renamed to _POLARS_SORT_COLUMN_i.
+        // polars-lazy that may not even be present in this dataframe. therefore
+        // when we try to set the first columns as sorted, we ignore the error as
+        // expressions are not present (they are renamed to _POLARS_SORT_COLUMN_i.
         let first_descending = sort_options.descending[0];
         let first_by_column = by_column[0].name().to_string();
 
@@ -3010,7 +2968,7 @@ impl DataFrame {
             for col in cols {
                 let _ = schema
                     .get(&col)
-                    .ok_or_else(|| polars_err!(ColumnNotFound: "{}", col))?;
+                    .ok_or_else(|| polars_err!(col_not_found = col))?;
             }
         }
         DataFrame::new(new_cols)

@@ -23,24 +23,24 @@ fn convert_field(field: Field) -> Field {
 }
 
 fn convert_data_type(data_type: ArrowDataType) -> ArrowDataType {
-    use ArrowDataType::*;
+    use ArrowDataType as D;
     match data_type {
-        LargeList(field) => LargeList(Box::new(convert_field(*field))),
-        Struct(mut fields) => {
+        D::LargeList(field) => D::LargeList(Box::new(convert_field(*field))),
+        D::Struct(mut fields) => {
             for field in &mut fields {
                 *field = convert_field(std::mem::take(field))
             }
-            Struct(fields)
+            D::Struct(fields)
         },
-        BinaryView => LargeBinary,
-        Utf8View => LargeUtf8,
-        Dictionary(it, data_type, sorted) => {
+        D::BinaryView => D::LargeBinary,
+        D::Utf8View => D::LargeUtf8,
+        D::Dictionary(it, data_type, sorted) => {
             let dtype = convert_data_type(*data_type);
-            Dictionary(it, Box::new(dtype), sorted)
+            D::Dictionary(it, Box::new(dtype), sorted)
         },
-        Extension(name, data_type, metadata) => {
+        D::Extension(name, data_type, metadata) => {
             let data_type = convert_data_type(*data_type);
-            Extension(name, Box::new(data_type), metadata)
+            D::Extension(name, Box::new(data_type), metadata)
         },
         dt => dt,
     }
@@ -390,21 +390,26 @@ pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
         )?),
         ArrowDataType::List(f)
         | ArrowDataType::FixedSizeList(f, _)
-        | ArrowDataType::LargeList(f) => Ok(ParquetType::from_group(
-            name,
-            repetition,
-            Some(GroupConvertedType::List),
-            Some(GroupLogicalType::List),
-            vec![ParquetType::from_group(
-                "list".to_string(),
-                Repetition::Repeated,
+        | ArrowDataType::LargeList(f) => {
+            let mut f = f.clone();
+            f.name = "element".to_string();
+
+            Ok(ParquetType::from_group(
+                name,
+                repetition,
+                Some(GroupConvertedType::List),
+                Some(GroupLogicalType::List),
+                vec![ParquetType::from_group(
+                    "list".to_string(),
+                    Repetition::Repeated,
+                    None,
+                    None,
+                    vec![to_parquet_type(&f)?],
+                    None,
+                )],
                 None,
-                None,
-                vec![to_parquet_type(f)?],
-                None,
-            )],
-            None,
-        )),
+            ))
+        },
         ArrowDataType::Map(f, _) => Ok(ParquetType::from_group(
             name,
             repetition,

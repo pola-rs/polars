@@ -144,15 +144,15 @@ where
     W: std::io::Write,
     I: FallibleStreamingIterator<Item = [u8], Error = PolarsError>,
 {
-    writer.write_all(&[b'['])?;
+    writer.write_all(b"[")?;
     let mut is_first_row = true;
     while let Some(block) = blocks.next()? {
         if !is_first_row {
-            writer.write_all(&[b','])?;
+            writer.write_all(b",")?;
         }
         is_first_row = false;
         writer.write_all(block)?;
     }
-    writer.write_all(&[b']'])?;
+    writer.write_all(b"]")?;
     Ok(())
 }

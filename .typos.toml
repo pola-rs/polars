@@ -1,0 +1,33 @@
+[files]
+extend-exclude = [
+  ".git/",
+  "*.csv",
+  "*.gz",
+  "dists.dss",
+]
+ignore-hidden = false
+
+[default]
+extend-ignore-re = [
+  '"Theatre": \[.+\],',
+]
+
+[default.extend-words]
+arange = "arange"
+ser = "ser"
+splitted = "splitted"
+strat = "strat"
+
+[type.py.extend-identifiers]
+ba = "ba"
+ody = "ody"
+
+[type.rust.extend-identifiers]
+ANDed = "ANDed"
+bck = "bck"
+Fo = "Fo"
+ND = "ND"
+nd = "nd"
+NDJson = "NDJson"
+NDJsonReadOptions = "NDJsonReadOptions"
+opt_nd = "opt_nd"

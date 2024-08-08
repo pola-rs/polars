@@ -14,7 +14,7 @@ use arrow::array::Array;
 use arrow::types::{i256, NativeType};
 pub use deserialize::{
     column_iter_to_arrays, create_list, create_map, get_page_iterator, init_nested, n_columns,
-    InitNested, NestedArrayIter, NestedState, StructIterator,
+    Filter, InitNested, NestedState,
 };
 pub use file::{FileReader, RowGroupReader};
 #[cfg(feature = "async")]
@@ -23,6 +23,7 @@ use polars_error::PolarsResult;
 pub use row_group::*;
 pub use schema::{infer_schema, FileMetaData};
 
+use crate::parquet::error::ParquetResult;
 #[cfg(feature = "async")]
 pub use crate::parquet::read::{get_page_stream, read_metadata_async as _read_metadata_async};
 // re-exports of crate::parquet's relevant APIs
@@ -33,7 +34,7 @@ pub use crate::parquet::{
     page::{CompressedDataPage, DataPageHeader, Page},
     read::{
         decompress, get_column_iterator, read_columns_indexes as _read_columns_indexes,
-        read_metadata as _read_metadata, read_pages_locations, BasicDecompressor, Decompressor,
+        read_metadata as _read_metadata, read_pages_locations, BasicDecompressor,
         MutStreamingIterator, PageFilter, PageReader, ReadColumnIterator, State,
     },
     schema::types::{
@@ -43,17 +44,6 @@ pub use crate::parquet::{
     types::int96_to_i64_ns,
     FallibleStreamingIterator,
 };
-
-/// Trait describing a [`FallibleStreamingIterator`] of [`Page`]
-pub trait PagesIter:
-    FallibleStreamingIterator<Item = Page, Error = ParquetError> + Send + Sync
-{
-}
-
-impl<I: FallibleStreamingIterator<Item = Page, Error = ParquetError> + Send + Sync> PagesIter
-    for I
-{
-}
 
 /// Type def for a sharable, boxed dyn [`Iterator`] of arrays
 pub type ArrayIter<'a> = Box<dyn Iterator<Item = PolarsResult<Box<dyn Array>>> + Send + Sync + 'a>;

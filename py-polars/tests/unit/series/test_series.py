@@ -29,6 +29,7 @@ from polars.exceptions import (
     ShapeError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.utils.pycapsule_utils import PyCapsuleStreamHolder
 
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
@@ -626,6 +627,13 @@ def test_arrow() -> None:
             assert_series_equal(
                 pl.Series("arr", [], dtype=pl.Categorical), pl.Series("arr", arr)
             )
+
+
+def test_pycapsule_interface() -> None:
+    a = pl.Series("a", [1, 2, 3, None])
+    out = pa.chunked_array(PyCapsuleStreamHolder(a))
+    out_arr = out.combine_chunks()
+    assert out_arr == pa.array([1, 2, 3, None])
 
 
 def test_get() -> None:
@@ -2147,7 +2155,7 @@ def test_series_from_pyarrow_with_dtype() -> None:
     assert s.dtype == pl.UInt8
 
 
-def test_series_from_numpy_with_dtye() -> None:
+def test_series_from_numpy_with_dtype() -> None:
     s = pl.Series("foo", np.array([-1, 2, 3]), pl.Int8)
     assert_series_equal(s, pl.Series("foo", [-1, 2, 3], dtype=pl.Int8))
 

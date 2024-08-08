@@ -563,8 +563,10 @@ impl MutableBinaryViewArray<[u8]> {
             )?
         }
         // Restore in-progress buffer as we don't want to get too small buffers
-        if let (true, Some(last)) = (pushed, self.completed_buffers.pop()) {
-            self.in_progress_buffer = last.into_mut().right().unwrap();
+        if pushed {
+            if let Some(last) = self.completed_buffers.pop() {
+                self.in_progress_buffer = last.into_mut().right().unwrap();
+            }
         }
         Ok(())
     }

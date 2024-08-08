@@ -1,3 +1,7 @@
+#![cfg_attr(
+    all(target_arch = "aarch64", feature = "nightly"),
+    feature(stdarch_aarch64_prefetch)
+)]
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
 pub mod abs_diff;
 pub mod arena;
@@ -10,6 +14,7 @@ pub mod contention_pool;
 pub mod cpuid;
 mod error;
 pub mod floor_divmod;
+pub mod foreign_vec;
 pub mod functions;
 pub mod hashing;
 pub mod idx_vec;

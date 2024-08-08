@@ -3,7 +3,6 @@ pub mod error;
 #[cfg(feature = "bloom_filter")]
 pub mod bloom_filter;
 pub mod compression;
-pub mod deserialize;
 pub mod encoding;
 pub mod indexes;
 pub mod metadata;
@@ -54,6 +53,13 @@ impl CowBuffer {
                 *self = Self::Owned(v.clone().to_vec());
                 self.to_mut()
             },
+            CowBuffer::Owned(v) => v,
+        }
+    }
+
+    pub fn into_vec(self) -> Vec<u8> {
+        match self {
+            CowBuffer::Borrowed(v) => v.to_vec(),
             CowBuffer::Owned(v) => v,
         }
     }

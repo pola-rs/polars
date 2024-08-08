@@ -16,8 +16,7 @@ pub enum Selector {
 }
 
 impl Selector {
-    #[cfg(feature = "meta")]
-    pub(crate) fn new(e: Expr) -> Self {
+    pub fn new(e: Expr) -> Self {
         Self::Root(Box::new(e))
     }
 }
@@ -54,5 +53,29 @@ impl Sub for Selector {
     #[allow(clippy::suspicious_arithmetic_impl)]
     fn sub(self, rhs: Self) -> Self::Output {
         Selector::Sub(Box::new(self), Box::new(rhs))
+    }
+}
+
+impl From<&str> for Selector {
+    fn from(value: &str) -> Self {
+        Selector::new(col(value))
+    }
+}
+
+impl From<String> for Selector {
+    fn from(value: String) -> Self {
+        Selector::new(col(value.as_ref()))
+    }
+}
+
+impl From<ColumnName> for Selector {
+    fn from(value: ColumnName) -> Self {
+        Selector::new(Expr::Column(value))
+    }
+}
+
+impl From<Expr> for Selector {
+    fn from(value: Expr) -> Self {
+        Selector::new(value)
     }
 }

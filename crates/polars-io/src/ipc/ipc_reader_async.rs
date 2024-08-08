@@ -9,7 +9,7 @@ use polars_core::schema::Schema;
 use polars_error::{polars_bail, polars_err, to_compute_err, PolarsResult};
 
 use crate::cloud::{
-    build_object_store, object_path_from_string, CloudLocation, CloudOptions, PolarsObjectStore,
+    build_object_store, object_path_from_str, CloudLocation, CloudOptions, PolarsObjectStore,
 };
 use crate::file_cache::{init_entries_from_uri_list, FileCacheEntry};
 use crate::predicates::PhysicalIoExpr;
@@ -67,19 +67,10 @@ impl IpcReaderAsync {
         cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<IpcReaderAsync> {
         let cache_entry = init_entries_from_uri_list(&[Arc::from(uri)], cloud_options)?[0].clone();
-        let (
-            CloudLocation {
-                prefix, expansion, ..
-            },
-            store,
-        ) = build_object_store(uri, cloud_options).await?;
+        let (CloudLocation { prefix, .. }, store) =
+            build_object_store(uri, cloud_options, false).await?;
 
-        let path = {
-            // Any wildcards should already have been resolved here. Without this assertion they would
-            // be ignored.
-            debug_assert!(expansion.is_none(), "path should not contain wildcards");
-            object_path_from_string(prefix)?
-        };
+        let path = object_path_from_str(&prefix)?;
 
         Ok(Self {
             store: PolarsObjectStore::new(store),

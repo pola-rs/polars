@@ -5,6 +5,7 @@ mod skeleton;
 pub use skeleton::run_query;
 
 mod execute;
+pub(crate) mod expression;
 mod graph;
 mod morsel;
 mod nodes;

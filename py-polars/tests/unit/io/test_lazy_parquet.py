@@ -9,6 +9,7 @@ import pandas as pd
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -450,3 +451,77 @@ def test_parquet_schema_mismatch_panic_17067(tmp_path: Path, streaming: bool) ->
 
     with pytest.raises(pl.exceptions.SchemaError):
         pl.scan_parquet(tmp_path).collect(streaming=streaming)
+
+
+@pytest.mark.write_disk()
+def test_predicate_push_down_categorical_17744(tmp_path: Path) -> None:
+    path = tmp_path / "1"
+
+    df = pl.DataFrame(
+        data={
+            "n": [1, 2, 3],
+            "ccy": ["USD", "JPY", "EUR"],
+        },
+        schema_overrides={"ccy": pl.Categorical("lexical")},
+    )
+    df.write_parquet(path)
+    expect = df.head(1).with_columns(pl.col(pl.Categorical).cast(pl.String))
+
+    lf = pl.scan_parquet(path)
+
+    for predicate in [pl.col("ccy") == "USD", pl.col("ccy").is_in(["USD"])]:
+        assert_frame_equal(
+            lf.filter(predicate)
+            .with_columns(pl.col(pl.Categorical).cast(pl.String))
+            .collect(),
+            expect,
+        )
+
+
+@pytest.mark.parametrize("streaming", [True, False])
+def test_parquet_slice_pushdown_non_zero_offset(
+    tmp_path: Path, streaming: bool
+) -> None:
+    paths = [tmp_path / "1", tmp_path / "2", tmp_path / "3"]
+    dfs = [pl.DataFrame({"x": i}) for i in range(len(paths))]
+
+    for df, p in zip(dfs, paths):
+        df.write_parquet(p)
+
+    # Parquet files containing only the metadata - i.e. the data parts are removed.
+    # Used to test that a reader doesn't try to read any data.
+    def trim_to_metadata(path: str | Path) -> None:
+        path = Path(path)
+        v = path.read_bytes()
+        metadata_and_footer_len = 8 + int.from_bytes(v[-8:][:4], "little")
+        path.write_bytes(v[-metadata_and_footer_len:])
+
+    trim_to_metadata(paths[0])
+    trim_to_metadata(paths[2])
+
+    # Check baseline:
+    # * Metadata can be read without error
+    assert pl.read_parquet_schema(paths[0]) == dfs[0].schema
+    # * Attempting to read any data will error
+    with pytest.raises(ComputeError):
+        pl.scan_parquet(paths[0]).collect()
+
+    df = dfs[1]
+    assert_frame_equal(pl.scan_parquet(paths).slice(1, 1).collect(), df)
+    assert_frame_equal(pl.scan_parquet(paths[1:]).head(1).collect(), df)
+
+    # Negative slice unsupported in streaming
+    if not streaming:
+        assert_frame_equal(pl.scan_parquet(paths).slice(-2, 1).collect(), df)
+        assert_frame_equal(pl.scan_parquet(paths[:2]).tail(1).collect(), df)
+        assert_frame_equal(
+            pl.scan_parquet(paths[1:]).slice(-99, 1).collect(), df.clear()
+        )
+
+        path = tmp_path / "data"
+        df = pl.select(x=pl.int_range(0, 50))
+        df.write_parquet(path)
+        assert_frame_equal(pl.scan_parquet(path).slice(-100, 75).collect(), df.head(25))
+        assert_frame_equal(
+            pl.scan_parquet(path).slice(-1, (1 << 32) - 1).collect(), df.tail(1)
+        )

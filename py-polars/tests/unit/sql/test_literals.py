@@ -72,7 +72,7 @@ def test_bit_hex_errors() -> None:
 
         with pytest.raises(
             SQLInterfaceError,
-            match=r'NationalStringLiteral\("hmmm"\) is not supported',
+            match=r'NationalStringLiteral\("hmmm"\) is not a supported literal',
         ):
             pl.sql_expr("N'hmmm'")
 
@@ -91,6 +91,22 @@ def test_bit_hex_membership() -> None:
     ):
         dff = df.filter(pl.sql_expr(f"x IN ({values})"))
         assert dff["y"].to_list() == [1, 4]
+
+
+def test_dollar_quoted_literals() -> None:
+    df = pl.sql(
+        """
+        SELECT
+          $$xyz$$ AS dq1,
+          $q$xyz$q$ AS dq2,
+          $tag$xyz$tag$ AS dq3,
+          $QUOTE$xyz$QUOTE$ AS dq4,
+        """
+    ).collect()
+    assert df.to_dict(as_series=False) == {f"dq{n}": ["xyz"] for n in range(1, 5)}
+
+    df = pl.sql("SELECT $$x$z$$ AS dq").collect()
+    assert df.item() == "x$z"
 
 
 def test_intervals() -> None:

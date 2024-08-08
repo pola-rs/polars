@@ -249,7 +249,7 @@ pub(crate) fn det_join_schema(
             let mut arena = Arena::with_capacity(8);
             let mut join_on_left: PlHashSet<_> = PlHashSet::with_capacity(left_on.len());
             for e in left_on {
-                let field = e.to_field_amortized(schema_right, Context::Default, &mut arena)?;
+                let field = e.to_field_amortized(schema_left, Context::Default, &mut arena)?;
                 join_on_left.insert(field.name);
             }
 
@@ -329,26 +329,23 @@ pub(crate) fn det_join_schema(
                 join_on_right.insert(field.name);
             }
 
-            // Asof joins are special, if the names are equal they will not be coalesced.
             for (name, dtype) in schema_right.iter() {
-                if !join_on_right.contains(name.as_str()) || (!should_coalesce)
-                // The names that are joined on are merged
-                {
-                    if schema_left.contains(name.as_str()) {
-                        #[cfg(feature = "asof_join")]
-                        if let JoinType::AsOf(asof_options) = &options.args.how {
-                            if let (Some(left_by), Some(right_by)) =
-                                (&asof_options.left_by, &asof_options.right_by)
+                if !join_on_right.contains(name.as_str()) || (!should_coalesce) {
+                    // Asof join by columns are coalesced
+                    #[cfg(feature = "asof_join")]
+                    if let JoinType::AsOf(asof_options) = &options.args.how {
+                        if let Some(right_by) = &asof_options.right_by {
                             {
-                                {
-                                    // Do not add suffix. The column of the left table will be used
-                                    if left_by.contains(name) && right_by.contains(name) {
-                                        continue;
-                                    }
+                                // Do not add suffix. The column of the left table will be used
+                                if right_by.contains(name) {
+                                    continue;
                                 }
                             }
                         }
+                    }
 
+                    // The names that are joined on are merged
+                    if schema_left.contains(name.as_str()) {
                         let new_name = format_smartstring!("{}{}", name, options.args.suffix());
                         new_schema.with_column(new_name, dtype.clone());
                     } else {

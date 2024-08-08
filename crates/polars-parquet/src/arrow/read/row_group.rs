@@ -8,9 +8,9 @@ use polars_utils::mmap::MemReader;
 
 use super::{ArrayIter, RowGroupMetaData};
 use crate::arrow::read::column_iter_to_arrays;
-use crate::parquet::indexes::FilteredPage;
+use crate::arrow::read::deserialize::Filter;
 use crate::parquet::metadata::ColumnChunkMetaData;
-use crate::parquet::read::{BasicDecompressor, IndexedPageReader, PageMetaData, PageReader};
+use crate::parquet::read::{BasicDecompressor, PageReader};
 
 /// An [`Iterator`] of [`RecordBatchT`] that (dynamically) adapts a vector of iterators of [`Array`] into
 /// an iterator of [`RecordBatchT`].
@@ -132,78 +132,32 @@ where
     Ok((meta, chunk))
 }
 
-type Pages = Box<
-    dyn Iterator<
-            Item = std::result::Result<
-                crate::parquet::page::CompressedPage,
-                crate::parquet::error::ParquetError,
-            >,
-        > + Sync
-        + Send,
->;
-
 /// Converts a vector of columns associated with the parquet field whose name is [`Field`]
 /// to an iterator of [`Array`], [`ArrayIter`] of chunk size `chunk_size`.
 pub fn to_deserializer<'a>(
     columns: Vec<(&ColumnChunkMetaData, Vec<u8>)>,
     field: Field,
-    num_rows: usize,
-    chunk_size: Option<usize>,
-    pages: Option<Vec<Vec<FilteredPage>>>,
+    filter: Option<Filter>,
 ) -> PolarsResult<ArrayIter<'a>> {
-    let chunk_size = chunk_size.map(|c| c.min(num_rows));
+    let (columns, types): (Vec<_>, Vec<_>) = columns
+        .into_iter()
+        .map(|(column_meta, chunk)| {
+            let len = chunk.len();
+            let pages = PageReader::new(
+                MemReader::from_vec(chunk),
+                column_meta,
+                std::sync::Arc::new(|_, _| true),
+                vec![],
+                len * 2 + 1024,
+            );
+            (
+                BasicDecompressor::new(pages, vec![]),
+                &column_meta.descriptor().descriptor.primitive_type,
+            )
+        })
+        .unzip();
 
-    let (columns, types) = if let Some(pages) = pages {
-        let (columns, types): (Vec<_>, Vec<_>) = columns
-            .into_iter()
-            .zip(pages)
-            .map(|((column_meta, chunk), mut pages)| {
-                // de-offset the start, since we read in chunks (and offset is from start of file)
-                let mut meta: PageMetaData = column_meta.into();
-                pages
-                    .iter_mut()
-                    .for_each(|page| page.start -= meta.column_start);
-                meta.column_start = 0;
-                let pages = IndexedPageReader::new_with_page_meta(
-                    MemReader::from_vec(chunk),
-                    meta,
-                    pages,
-                    vec![],
-                    vec![],
-                );
-                let pages = Box::new(pages) as Pages;
-                (
-                    BasicDecompressor::new(pages, vec![]),
-                    &column_meta.descriptor().descriptor.primitive_type,
-                )
-            })
-            .unzip();
-
-        (columns, types)
-    } else {
-        let (columns, types): (Vec<_>, Vec<_>) = columns
-            .into_iter()
-            .map(|(column_meta, chunk)| {
-                let len = chunk.len();
-                let pages = PageReader::new(
-                    MemReader::from_vec(chunk),
-                    column_meta,
-                    std::sync::Arc::new(|_, _| true),
-                    vec![],
-                    len * 2 + 1024,
-                );
-                let pages = Box::new(pages) as Pages;
-                (
-                    BasicDecompressor::new(pages, vec![]),
-                    &column_meta.descriptor().descriptor.primitive_type,
-                )
-            })
-            .unzip();
-
-        (columns, types)
-    };
-
-    column_iter_to_arrays(columns, types, field, chunk_size, num_rows)
+    column_iter_to_arrays(columns, types, field, filter)
 }
 
 /// Returns a vector of iterators of [`Array`] ([`ArrayIter`]) corresponding to the top
@@ -220,13 +174,8 @@ pub fn read_columns_many<'a, R: Read + Seek>(
     reader: &mut R,
     row_group: &RowGroupMetaData,
     fields: Vec<Field>,
-    chunk_size: Option<usize>,
-    limit: Option<usize>,
-    pages: Option<Vec<Vec<Vec<FilteredPage>>>>,
+    filter: Option<Filter>,
 ) -> PolarsResult<Vec<ArrayIter<'a>>> {
-    let num_rows = row_group.num_rows();
-    let num_rows = limit.map(|limit| limit.min(num_rows)).unwrap_or(num_rows);
-
     // reads all the necessary columns for all fields from the row group
     // This operation is IO-bounded `O(C)` where C is the number of columns in the row group
     let field_columns = fields
@@ -234,20 +183,9 @@ pub fn read_columns_many<'a, R: Read + Seek>(
         .map(|field| read_columns(reader, row_group.columns(), &field.name))
         .collect::<PolarsResult<Vec<_>>>()?;
 
-    if let Some(pages) = pages {
-        field_columns
-            .into_iter()
-            .zip(fields)
-            .zip(pages)
-            .map(|((columns, field), pages)| {
-                to_deserializer(columns, field, num_rows, chunk_size, Some(pages))
-            })
-            .collect()
-    } else {
-        field_columns
-            .into_iter()
-            .zip(fields)
-            .map(|(columns, field)| to_deserializer(columns, field, num_rows, chunk_size, None))
-            .collect()
-    }
+    field_columns
+        .into_iter()
+        .zip(fields)
+        .map(|(columns, field)| to_deserializer(columns, field, filter.clone()))
+        .collect()
 }

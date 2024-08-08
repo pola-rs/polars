@@ -92,6 +92,9 @@ impl<K: PolarsDataType, T: PolarsDataType> Logical<K, T>
 where
     Self: LogicalType,
 {
+    pub fn physical(&self) -> &ChunkedArray<T> {
+        &self.0
+    }
     pub fn field(&self) -> Field {
         let name = self.0.ref_field().name();
         Field::new(name, LogicalType::dtype(self).clone())

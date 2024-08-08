@@ -11,8 +11,6 @@ mod join;
 mod projection;
 mod projection_simple;
 mod projection_utils;
-#[cfg(feature = "python")]
-mod python_scan;
 mod scan;
 mod slice;
 mod sort;
@@ -43,8 +41,6 @@ pub(super) use self::hconcat::*;
 pub(super) use self::join::*;
 pub(super) use self::projection::*;
 pub(super) use self::projection_simple::*;
-#[cfg(feature = "python")]
-pub(super) use self::python_scan::*;
 pub(super) use self::scan::*;
 pub(super) use self::slice::*;
 pub(super) use self::sort::*;

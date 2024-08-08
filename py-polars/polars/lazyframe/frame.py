@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import os
 from datetime import date, datetime, time, timedelta
-from functools import lru_cache, reduce
+from functools import lru_cache, partial, reduce
 from io import BytesIO, StringIO
 from operator import and_
 from pathlib import Path
@@ -78,6 +78,7 @@ from polars.datatypes import (
 from polars.datatypes.group import DataTypeGroup
 from polars.dependencies import import_optional, subprocess
 from polars.exceptions import PerformanceWarning
+from polars.lazyframe.engine_config import GPUEngine
 from polars.lazyframe.group_by import LazyGroupBy
 from polars.lazyframe.in_process import InProcessQuery
 from polars.schema import Schema
@@ -99,6 +100,7 @@ if TYPE_CHECKING:
         ClosedInterval,
         ColumnNameOrSelector,
         CsvQuoteStyle,
+        EngineType,
         ExplainFormat,
         FillNullStrategy,
         FrameInitTypes,
@@ -1273,8 +1275,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Parameters
         ----------
         by
-            Column(s) to sort by. Accepts expression input. Strings are parsed as column
-            names.
+            Column(s) to sort by. Accepts expression input, including selectors. Strings
+            are parsed as column names.
         *more_by
             Additional columns to sort by, specified as positional arguments.
         descending
@@ -1366,6 +1368,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         by = parse_into_list_of_expressions(by, *more_by)
         descending = extend_bool(descending, len(by), "descending", "by")
         nulls_last = extend_bool(nulls_last, len(by), "nulls_last", "by")
+
         return self._from_pyldf(
             self._ldf.sort_by_exprs(
                 by, descending, nulls_last, maintain_order, multithreaded
@@ -1771,6 +1774,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         cluster_with_columns: bool = True,
         no_optimization: bool = False,
         streaming: bool = False,
+        engine: EngineType = "cpu",
         background: Literal[True],
         _eager: bool = False,
     ) -> InProcessQuery: ...
@@ -1789,6 +1793,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         cluster_with_columns: bool = True,
         no_optimization: bool = False,
         streaming: bool = False,
+        engine: EngineType = "cpu",
         background: Literal[False] = False,
         _eager: bool = False,
     ) -> DataFrame: ...
@@ -1806,6 +1811,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         cluster_with_columns: bool = True,
         no_optimization: bool = False,
         streaming: bool = False,
+        engine: EngineType = "cpu",
         background: bool = False,
         _eager: bool = False,
         **_kwargs: Any,
@@ -1848,6 +1854,27 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             .. note::
                 Use :func:`explain` to see if Polars can process the query in streaming
                 mode.
+        engine
+            Select the engine used to process the query, optional.
+            If set to `"cpu"` (default), the query is run using the
+            polars CPU engine. If set to `"gpu"`, the GPU engine is
+            used. Fine-grained control over the GPU engine, for
+            example which device to use on a system with multiple
+            devices, is possible by providing a :class:`GPUEngine` object
+            with configuration options.
+
+            .. note::
+               GPU mode is considered **unstable**. Not all queries will run
+               successfully on the GPU, however, they should fall back transparently
+               to the default engine if execution is not supported.
+
+               Running with `POLARS_VERBOSE=1` will provide information if a query
+               falls back (and why).
+
+            .. note::
+               The GPU engine does not support streaming, or running in the
+               background. If either are enabled, then GPU execution is switched off.
+
         background
             Run the query in the background and get a handle to the query.
             This handle can be used to fetch the result or cancel the query.
@@ -1904,6 +1931,36 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ b   ┆ 11  ┆ 10  │
         │ c   ┆ 6   ┆ 1   │
         └─────┴─────┴─────┘
+
+        Collect in GPU mode
+
+        >>> lf.group_by("a").agg(pl.all().sum()).collect(engine="gpu")  # doctest: +SKIP
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ b   ┆ 11  ┆ 10  │
+        │ a   ┆ 4   ┆ 10  │
+        │ c   ┆ 6   ┆ 1   │
+        └─────┴─────┴─────┘
+
+        With control over the device used
+
+        >>> lf.group_by("a").agg(pl.all().sum()).collect(
+        ...     engine=pl.GPUEngine(device=1)
+        ... )  # doctest: +SKIP
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ b   ┆ 11  ┆ 10  │
+        │ a   ┆ 4   ┆ 10  │
+        │ c   ┆ 6   ┆ 1   │
+        └─────┴─────┴─────┘
         """
         new_streaming = _kwargs.get("new_streaming", False)
 
@@ -1917,6 +1974,21 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         if streaming:
             issue_unstable_warning("Streaming mode is considered unstable.")
+
+        is_gpu = (is_config_obj := isinstance(engine, GPUEngine)) or engine == "gpu"
+        if not (is_config_obj or engine in ("cpu", "gpu")):
+            msg = f"Invalid engine argument {engine=}"
+            raise ValueError(msg)
+        if (streaming or background or new_streaming) and is_gpu:
+            issue_warning(
+                "GPU engine does not support streaming or background collection, "
+                "disabling GPU engine.",
+                category=UserWarning,
+            )
+            is_gpu = False
+        if _eager:
+            # Don't run on GPU in _eager mode (but don't warn)
+            is_gpu = False
 
         ldf = self._ldf.optimization_toggle(
             type_coercion,
@@ -1936,9 +2008,22 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             issue_unstable_warning("Background mode is considered unstable.")
             return InProcessQuery(ldf.collect_concurrently())
 
-        # Only for testing purposes atm.
-        callback = _kwargs.get("post_opt_callback")
-
+        callback = None
+        if is_gpu:
+            cudf_polars = import_optional(
+                "cudf_polars",
+                err_prefix="GPU engine requested, but required package",
+                install_message=(
+                    "Please install using the command `pip install cudf-polars-cu12` "
+                    "(or `pip install cudf-polars-cu11` if your system has a "
+                    "CUDA 11 driver)."
+                ),
+            )
+            if not is_config_obj:
+                engine = GPUEngine()
+            callback = partial(cudf_polars.execute_with_cudf, config=engine)
+        # Only for testing purposes
+        callback = _kwargs.get("post_opt_callback", callback)
         return wrap_df(ldf.collect(callback))
 
     @overload
@@ -2214,7 +2299,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             If not set defaults to 1024 * 1024 bytes
         maintain_order
             Maintain the order in which data is processed.
-            Setting this to `False` will  be slightly faster.
+            Setting this to `False` will be slightly faster.
         type_coercion
             Do type coercion optimization.
         predicate_pushdown
@@ -2305,7 +2390,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Choose "lz4" for fast compression/decompression.
         maintain_order
             Maintain the order in which data is processed.
-            Setting this to `False` will  be slightly faster.
+            Setting this to `False` will be slightly faster.
         type_coercion
             Do type coercion optimization.
         predicate_pushdown
@@ -2435,7 +2520,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
               necessary.
         maintain_order
             Maintain the order in which data is processed.
-            Setting this to `False` will  be slightly faster.
+            Setting this to `False` will be slightly faster.
         type_coercion
             Do type coercion optimization.
         predicate_pushdown
@@ -2570,11 +2655,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             slice_pushdown = False
 
         return self._ldf.optimization_toggle(
-            type_coercion,
-            predicate_pushdown,
-            projection_pushdown,
-            simplify_expression,
-            slice_pushdown,
+            type_coercion=type_coercion,
+            predicate_pushdown=predicate_pushdown,
+            projection_pushdown=projection_pushdown,
+            simplify_expression=simplify_expression,
+            slice_pushdown=slice_pushdown,
             comm_subplan_elim=False,
             comm_subexpr_elim=False,
             cluster_with_columns=False,
@@ -2983,28 +3068,38 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Each constraint will behave the same as `pl.col(name).eq(value)`, and
             will be implicitly joined with the other filter conditions using `&`.
 
+        Notes
+        -----
+        If you are transitioning from pandas and performing filter operations based on
+        the comparison of two or more columns, please note that in Polars,
+        any comparison involving null values will always result in null.
+        As a result, these rows will be filtered out.
+        Ensure to handle null values appropriately to avoid unintended filtering
+        (See examples below).
+
         Examples
         --------
         >>> lf = pl.LazyFrame(
         ...     {
-        ...         "foo": [1, 2, 3],
-        ...         "bar": [6, 7, 8],
-        ...         "ham": ["a", "b", "c"],
+        ...         "foo": [1, 2, 3, None, 4, None, 0],
+        ...         "bar": [6, 7, 8, None, None, 9, 0],
+        ...         "ham": ["a", "b", "c", None, "d", "e", "f"],
         ...     }
         ... )
 
         Filter on one condition:
 
         >>> lf.filter(pl.col("foo") > 1).collect()
-        shape: (2, 3)
-        ┌─────┬─────┬─────┐
-        │ foo ┆ bar ┆ ham │
-        │ --- ┆ --- ┆ --- │
-        │ i64 ┆ i64 ┆ str │
-        ╞═════╪═════╪═════╡
-        │ 2   ┆ 7   ┆ b   │
-        │ 3   ┆ 8   ┆ c   │
-        └─────┴─────┴─────┘
+        shape: (3, 3)
+        ┌─────┬──────┬─────┐
+        │ foo ┆ bar  ┆ ham │
+        │ --- ┆ ---  ┆ --- │
+        │ i64 ┆ i64  ┆ str │
+        ╞═════╪══════╪═════╡
+        │ 2   ┆ 7    ┆ b   │
+        │ 3   ┆ 8    ┆ c   │
+        │ 4   ┆ null ┆ d   │
+        └─────┴──────┴─────┘
 
         Filter on multiple conditions:
 
@@ -3057,6 +3152,47 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 1   ┆ 6   ┆ a   │
         │ 3   ┆ 8   ┆ c   │
         └─────┴─────┴─────┘
+
+        Filter by comparing two columns against each other
+
+        >>> lf.filter(pl.col("foo") == pl.col("bar")).collect()
+        shape: (1, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 0   ┆ 0   ┆ f   │
+        └─────┴─────┴─────┘
+
+        >>> lf.filter(pl.col("foo") != pl.col("bar")).collect()
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ 6   ┆ a   │
+        │ 2   ┆ 7   ┆ b   │
+        │ 3   ┆ 8   ┆ c   │
+        └─────┴─────┴─────┘
+
+        Notice how the row with `None` values is filtered out.
+        In order to keep the same behavior as pandas, use:
+
+        >>> lf.filter(pl.col("foo").ne_missing(pl.col("bar"))).collect()
+        shape: (5, 3)
+        ┌──────┬──────┬─────┐
+        │ foo  ┆ bar  ┆ ham │
+        │ ---  ┆ ---  ┆ --- │
+        │ i64  ┆ i64  ┆ str │
+        ╞══════╪══════╪═════╡
+        │ 1    ┆ 6    ┆ a   │
+        │ 2    ┆ 7    ┆ b   │
+        │ 3    ┆ 8    ┆ c   │
+        │ 4    ┆ null ┆ d   │
+        │ null ┆ 9    ┆ e   │
+        └──────┴──────┴─────┘
         """
         all_predicates: list[pl.Expr] = []
         boolean_masks = []
@@ -4074,13 +4210,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 Returns all rows from the right table, and the matched rows from the
                 left table
             * *full*
-                 Returns all rows when there is a match in either left or right table
+                Returns all rows when there is a match in either left or right table
             * *cross*
-                 Returns the Cartesian product of rows from both tables
+                Returns the Cartesian product of rows from both tables
             * *semi*
-                 Filter rows that have a match in the right table.
+                Returns rows from the left table that have a match in the right table.
             * *anti*
-                 Filter rows that not have a match in the right table.
+                Returns rows from the left table that have no match in the right table.
 
             .. note::
                 A left join preserves the row order of the left DataFrame.
@@ -4583,7 +4719,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 8.0 │
         └─────┘
         """
-        drop_cols = _expand_selectors(self, *columns)
+        drop_cols = parse_into_list_of_expressions(*columns)
         return self._from_pyldf(self._ldf.drop(drop_cols, strict=strict))
 
     def rename(self, mapping: dict[str, str] | Callable[[str], str]) -> LazyFrame:
@@ -4932,7 +5068,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         --------
         >>> lf = pl.LazyFrame(
         ...     {
-        ...         "a": [1, 3, 5],
+        ...         "a": [1, 5, 3],
         ...         "b": [2, 4, 6],
         ...     }
         ... )
@@ -4943,7 +5079,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ --- ┆ --- │
         │ i64 ┆ i64 │
         ╞═════╪═════╡
-        │ 5   ┆ 6   │
+        │ 3   ┆ 6   │
         └─────┴─────┘
         """
         return self.tail(1)

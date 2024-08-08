@@ -1,16 +1,15 @@
-use std::collections::VecDeque;
-use std::iter::{Peekable, Zip};
-
-use arrow::array::Array;
 use arrow::bitmap::MutableBitmap;
-use polars_error::{polars_bail, PolarsResult};
-use polars_utils::slice::GetSaferUnchecked;
+use arrow::datatypes::ArrowDataType;
+use polars_error::PolarsResult;
 
-use super::super::PagesIter;
-use super::utils::{BatchableCollector, DecodedState, MaybeNext, PageState};
+use super::utils::{self, BatchableCollector};
+use super::{BasicDecompressor, Filter};
+use crate::parquet::encoding::hybrid_rle::gatherer::{
+    HybridRleGatherer, ZeroCount, ZeroCountGatherer,
+};
 use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use crate::parquet::error::ParquetResult;
-use crate::parquet::page::{split_buffer, DataPage, DictPage, Page};
+use crate::parquet::page::{split_buffer, DataPage};
 use crate::parquet::read::levels::get_bit_width;
 use crate::read::deserialize::utils::BatchedCollector;
 
@@ -184,12 +183,12 @@ impl Nested {
     }
 }
 
-pub struct BatchedNestedDecoder<'a, 'b, 'c, D: NestedDecoder<'a>> {
-    state: &'b mut D::State,
-    decoder: &'c D,
+pub struct BatchedNestedDecoder<'a, 'b, 'c, D: utils::NestedDecoder> {
+    state: &'b mut utils::State<'a, D>,
+    decoder: &'c mut D,
 }
 
-impl<'a, 'b, 'c, D: NestedDecoder<'a>> BatchableCollector<(), D::DecodedState>
+impl<'a, 'b, 'c, D: utils::NestedDecoder> BatchableCollector<(), D::DecodedState>
     for BatchedNestedDecoder<'a, 'b, 'c, D>
 {
     fn reserve(_target: &mut D::DecodedState, _n: usize) {
@@ -197,39 +196,14 @@ impl<'a, 'b, 'c, D: NestedDecoder<'a>> BatchableCollector<(), D::DecodedState>
     }
 
     fn push_n(&mut self, target: &mut D::DecodedState, n: usize) -> ParquetResult<()> {
-        self.decoder.push_n_valid(self.state, target, n)
+        self.decoder.push_n_valids(self.state, target, n)?;
+        Ok(())
     }
 
     fn push_n_nulls(&mut self, target: &mut D::DecodedState, n: usize) -> ParquetResult<()> {
-        self.decoder.push_n_nulls(target, n);
+        self.decoder.push_n_nulls(self.state, target, n);
         Ok(())
     }
-}
-
-/// A decoder that knows how to map `State` -> Array
-pub(super) trait NestedDecoder<'a> {
-    type State: PageState<'a>;
-    type Dictionary;
-    type DecodedState: DecodedState;
-
-    fn build_state(
-        &self,
-        page: &'a DataPage,
-        dict: Option<&'a Self::Dictionary>,
-    ) -> PolarsResult<Self::State>;
-
-    /// Initializes a new state
-    fn with_capacity(&self, capacity: usize) -> Self::DecodedState;
-
-    fn push_n_valid(
-        &self,
-        state: &mut Self::State,
-        decoded: &mut Self::DecodedState,
-        n: usize,
-    ) -> ParquetResult<()>;
-    fn push_n_nulls(&self, decoded: &mut Self::DecodedState, n: usize);
-
-    fn deserialize_dict(&self, page: &'a DictPage) -> Self::Dictionary;
 }
 
 /// The initial info of nested data types.
@@ -265,38 +239,6 @@ pub fn init_nested(init: &[InitNested], capacity: usize) -> NestedState {
     NestedState::new(container)
 }
 
-pub struct NestedPage<'a> {
-    iter: Peekable<Zip<HybridRleDecoder<'a>, HybridRleDecoder<'a>>>,
-}
-
-impl<'a> NestedPage<'a> {
-    pub fn try_new(page: &'a DataPage) -> PolarsResult<Self> {
-        let split = split_buffer(page)?;
-        let rep_levels = split.rep;
-        let def_levels = split.def;
-
-        let max_rep_level = page.descriptor.max_rep_level;
-        let max_def_level = page.descriptor.max_def_level;
-
-        let reps =
-            HybridRleDecoder::new(rep_levels, get_bit_width(max_rep_level), page.num_values());
-        let defs =
-            HybridRleDecoder::new(def_levels, get_bit_width(max_def_level), page.num_values());
-
-        let reps = reps.into_iter();
-        let defs = defs.into_iter();
-
-        let iter = reps.zip(defs).peekable();
-
-        Ok(Self { iter })
-    }
-
-    // number of values (!= number of rows)
-    pub fn len(&self) -> usize {
-        self.iter.size_hint().0
-    }
-}
-
 /// The state of nested data types.
 #[derive(Debug, Default)]
 pub struct NestedState {
@@ -314,289 +256,555 @@ impl NestedState {
         Some(self.nested.pop()?.take())
     }
 
+    pub fn last(&self) -> Option<&NestedContent> {
+        self.nested.last().map(|v| &v.content)
+    }
+
     /// The number of rows in this state
     pub fn len(&self) -> usize {
         // outermost is the number of rows
         self.nested[0].len()
     }
+
+    /// Returns the definition and repetition levels for each nesting level
+    fn levels(&self) -> (Vec<u16>, Vec<u16>) {
+        let depth = self.nested.len();
+
+        let mut def_levels = Vec::with_capacity(depth + 1);
+        let mut rep_levels = Vec::with_capacity(depth + 1);
+
+        def_levels.push(0);
+        rep_levels.push(0);
+
+        for i in 0..depth {
+            let nest = &self.nested[i];
+
+            let def_delta = nest.is_nullable() as u16 + nest.is_repeated() as u16;
+            let rep_delta = nest.is_repeated() as u16;
+
+            def_levels.push(def_levels[i] + def_delta);
+            rep_levels.push(rep_levels[i] + rep_delta);
+        }
+
+        (def_levels, rep_levels)
+    }
 }
 
-/// Extends `items` by consuming `page`, first trying to complete the last `item`
-/// and extending it if more are needed.
-///
-/// Note that as the page iterator being passed does not guarantee it reads to
-/// the end, this function cannot always determine whether it has finished
-/// reading. It therefore returns a bool indicating:
-/// * true  : the row is fully read
-/// * false : the row may not be fully read
-pub(super) fn extend<'a, D: NestedDecoder<'a>>(
-    page: &'a DataPage,
-    init: &[InitNested],
-    items: &mut VecDeque<(NestedState, D::DecodedState)>,
-    dict: Option<&'a D::Dictionary>,
-    remaining: &mut usize,
-    decoder: &D,
-    chunk_size: Option<usize>,
-) -> PolarsResult<bool> {
-    let mut values_page = decoder.build_state(page, dict)?;
-    let mut page = NestedPage::try_new(page)?;
-
-    debug_assert!(
-        items.len() < 2,
-        "Should have yielded already completed item before reading more."
-    );
-
-    let chunk_size = chunk_size.unwrap_or(usize::MAX);
-    let mut first_item_is_fully_read = false;
-    // Amortize the allocations.
-    let mut def_levels = vec![];
-    let mut rep_levels = vec![];
-
-    loop {
-        if let Some((mut nested, mut decoded)) = items.pop_back() {
-            let existing = nested.len();
-            let additional = (chunk_size - existing).min(*remaining);
-
-            let mut batched_collector = BatchedCollector::new(
-                BatchedNestedDecoder {
-                    state: &mut values_page,
-                    decoder,
-                },
-                &mut decoded,
-            );
-
-            let is_fully_read = extend_offsets2(
-                &mut page,
-                &mut batched_collector,
-                &mut nested.nested,
-                additional,
-                &mut def_levels,
-                &mut rep_levels,
-            )?;
-
-            batched_collector.finalize()?;
-
-            first_item_is_fully_read |= is_fully_read;
-            *remaining -= nested.len() - existing;
-            items.push_back((nested, decoded));
-
-            if page.len() == 0 {
-                break;
-            }
-
-            if is_fully_read && *remaining == 0 {
-                break;
-            };
-        };
-
-        // At this point:
-        // * There are more pages.
-        // * The remaining rows have not been fully read.
-        // * The deque is empty, or the last item already holds completed data.
-        let nested = init_nested(init, chunk_size.min(*remaining));
-        let decoded = decoder.with_capacity(0);
-        items.push_back((nested, decoded));
+fn idx_to_limit(rep_iter: &HybridRleDecoder<'_>, idx: usize) -> ParquetResult<usize> {
+    struct RowIdxOffsetGatherer;
+    struct RowIdxOffsetState {
+        num_elements_seen: usize,
+        top_level_limit: usize,
+        found: Option<usize>,
     }
 
-    Ok(first_item_is_fully_read)
+    impl HybridRleGatherer<bool> for RowIdxOffsetGatherer {
+        type Target = RowIdxOffsetState;
+
+        fn target_reserve(&self, _target: &mut Self::Target, _n: usize) {}
+
+        fn target_num_elements(&self, target: &Self::Target) -> usize {
+            target.num_elements_seen
+        }
+
+        fn hybridrle_to_target(&self, value: u32) -> ParquetResult<bool> {
+            Ok(value == 0)
+        }
+
+        fn gather_one(&self, target: &mut Self::Target, value: bool) -> ParquetResult<()> {
+            let idx = target.num_elements_seen;
+            target.num_elements_seen += 1;
+
+            if !value || target.found.is_some() {
+                return Ok(());
+            }
+
+            if target.top_level_limit > 0 {
+                target.top_level_limit -= 1;
+                return Ok(());
+            }
+
+            target.found = Some(idx);
+
+            Ok(())
+        }
+
+        fn gather_repeated(
+            &self,
+            target: &mut Self::Target,
+            value: bool,
+            n: usize,
+        ) -> ParquetResult<()> {
+            let idx = target.num_elements_seen;
+            target.num_elements_seen += n;
+
+            if !value || target.found.is_some() {
+                return Ok(());
+            }
+
+            if target.top_level_limit >= n {
+                target.top_level_limit -= n;
+                return Ok(());
+            }
+
+            target.found = Some(idx + target.top_level_limit);
+            target.top_level_limit = 0;
+
+            Ok(())
+        }
+
+        // @TODO: Add specialization for other methods
+    }
+
+    let mut state = RowIdxOffsetState {
+        num_elements_seen: 0,
+        top_level_limit: idx,
+        found: None,
+    };
+
+    const ROW_IDX_BATCH_SIZE: usize = 1024;
+
+    let mut row_idx_iter = rep_iter.clone();
+    while row_idx_iter.len() > 0 && state.found.is_none() {
+        row_idx_iter.gather_n_into(&mut state, ROW_IDX_BATCH_SIZE, &RowIdxOffsetGatherer)?;
+    }
+
+    Ok(state.found.unwrap_or(rep_iter.len()))
 }
 
 #[allow(clippy::too_many_arguments)]
-fn extend_offsets2<'a, 'b, 'c, 'd, D: NestedDecoder<'a>>(
-    page: &mut NestedPage<'a>,
+fn extend_offsets2<'a, D: utils::NestedDecoder>(
+    mut def_iter: HybridRleDecoder<'a>,
+    mut rep_iter: HybridRleDecoder<'a>,
     batched_collector: &mut BatchedCollector<
-        'b,
+        '_,
         (),
         D::DecodedState,
-        BatchedNestedDecoder<'a, 'c, 'd, D>,
+        BatchedNestedDecoder<'a, '_, '_, D>,
     >,
     nested: &mut [Nested],
-    additional: usize,
+    filter: Option<Filter>,
     // Amortized allocations
-    def_levels: &mut Vec<u32>,
-    rep_levels: &mut Vec<u32>,
-) -> PolarsResult<bool> {
+    def_levels: &[u16],
+    rep_levels: &[u16],
+) -> PolarsResult<()> {
+    match filter {
+        None => {
+            extend_offsets_limited(
+                &mut def_iter,
+                &mut rep_iter,
+                batched_collector,
+                nested,
+                usize::MAX,
+                def_levels,
+                rep_levels,
+            )?;
+
+            debug_assert_eq!(def_iter.len(), rep_iter.len());
+            debug_assert_eq!(def_iter.len(), 0);
+
+            Ok(())
+        },
+        Some(Filter::Range(range)) => {
+            let start = range.start;
+            let end = range.end;
+
+            if start > 0 {
+                let start_cell = idx_to_limit(&rep_iter, start)?;
+
+                rep_iter.skip_in_place(start_cell)?;
+                def_iter.skip_in_place(start_cell)?;
+            }
+
+            if end - start > 0 {
+                let limit = idx_to_limit(&rep_iter, end - start)?;
+
+                extend_offsets_limited(
+                    &mut def_iter,
+                    &mut rep_iter,
+                    batched_collector,
+                    nested,
+                    limit,
+                    def_levels,
+                    rep_levels,
+                )?;
+            }
+
+            // @NOTE: This is kind of unused
+            let last_skip = def_iter.len();
+            rep_iter.skip_in_place(last_skip)?;
+            def_iter.skip_in_place(last_skip)?;
+
+            Ok(())
+        },
+        Some(Filter::Mask(bitmap)) => {
+            let mut iter = bitmap.iter();
+            while iter.num_remaining() > 0 {
+                let num_zeros = iter.take_leading_zeros();
+                if num_zeros > 0 {
+                    let offset = idx_to_limit(&rep_iter, num_zeros)?;
+                    rep_iter.skip_in_place(offset)?;
+                    def_iter.skip_in_place(offset)?;
+                }
+
+                let num_ones = iter.take_leading_ones();
+                if num_ones > 0 {
+                    let limit = idx_to_limit(&rep_iter, num_ones)?;
+                    extend_offsets_limited(
+                        &mut def_iter,
+                        &mut rep_iter,
+                        batched_collector,
+                        nested,
+                        limit,
+                        def_levels,
+                        rep_levels,
+                    )?;
+                }
+            }
+            Ok(())
+        },
+    }
+}
+
+fn extend_offsets_limited<'a, D: utils::NestedDecoder>(
+    def_iter: &mut HybridRleDecoder<'a>,
+    rep_iter: &mut HybridRleDecoder<'a>,
+    batched_collector: &mut BatchedCollector<
+        '_,
+        (),
+        D::DecodedState,
+        BatchedNestedDecoder<'a, '_, '_, D>,
+    >,
+    nested: &mut [Nested],
+    mut limit: usize,
+    // Amortized allocations
+    def_levels: &[u16],
+    rep_levels: &[u16],
+) -> PolarsResult<()> {
+    #[derive(Default)]
+    struct LevelGatherer<'a>(std::marker::PhantomData<&'a ()>);
+    struct LevelGathererState<'a> {
+        offset: usize,
+        slice: &'a mut [u16],
+    }
+
+    impl<'a> HybridRleGatherer<u16> for LevelGatherer<'a> {
+        type Target = LevelGathererState<'a>;
+
+        fn target_reserve(&self, _target: &mut Self::Target, _n: usize) {}
+
+        fn target_num_elements(&self, target: &Self::Target) -> usize {
+            target.offset
+        }
+
+        fn hybridrle_to_target(&self, value: u32) -> ParquetResult<u16> {
+            debug_assert!(value <= u16::MAX as u32);
+            Ok(value as u16)
+        }
+
+        fn gather_one(&self, target: &mut Self::Target, value: u16) -> ParquetResult<()> {
+            debug_assert!(target.offset < target.slice.len());
+
+            target.slice[target.offset] = value;
+            target.offset += 1;
+
+            Ok(())
+        }
+
+        fn gather_repeated(
+            &self,
+            target: &mut Self::Target,
+            value: u16,
+            n: usize,
+        ) -> ParquetResult<()> {
+            debug_assert!(target.offset + n <= target.slice.len());
+
+            for i in 0..n {
+                target.slice[target.offset + i] = value;
+            }
+            target.offset += n;
+
+            Ok(())
+        }
+
+        // @TODO: Add specialization for other methods
+    }
+
+    let mut def_values = [0u16; DECODE_BATCH_SIZE];
+    let mut rep_values = [0u16; DECODE_BATCH_SIZE];
+
     let max_depth = nested.len();
 
-    def_levels.resize(max_depth + 1, 0);
-    rep_levels.resize(max_depth + 1, 0);
-    for (i, nest) in nested.iter().enumerate() {
-        let delta = nest.is_nullable() as u32 + nest.is_repeated() as u32;
-        unsafe {
-            *def_levels.get_unchecked_release_mut(i + 1) =
-                *def_levels.get_unchecked_release(i) + delta;
-        }
-    }
+    const DECODE_BATCH_SIZE: usize = 1024;
+    while def_iter.len() > 0 && limit > 0 {
+        let additional = usize::min(limit, DECODE_BATCH_SIZE);
 
-    for (i, nest) in nested.iter().enumerate() {
-        let delta = nest.is_repeated() as u32;
-        unsafe {
-            *rep_levels.get_unchecked_release_mut(i + 1) =
-                *rep_levels.get_unchecked_release(i) + delta;
-        }
-    }
-
-    let mut rows = 0;
-    loop {
-        // SAFETY: page.iter is always non-empty on first loop.
-        // The current function gets called multiple times with iterators that
-        // yield batches of pages. This means e.g. it could be that the very
-        // first page is a new row, and the existing nested state has already
-        // contains all data from the additional rows.
-        if page.iter.peek().unwrap().0 == 0 {
-            if rows == additional {
-                return Ok(true);
-            }
-            rows += 1;
-        }
-
-        // The errors of the FallibleIterators use in this zipped not checked yet.
-        // If one of them errors, the iterator returns None, and this `unwrap` will panic.
-        let Some((rep, def)) = page.iter.next() else {
-            polars_bail!(ComputeError: "cannot read rep/def levels")
+        let mut def_state = LevelGathererState {
+            offset: 0,
+            slice: &mut def_values,
+        };
+        let mut rep_state = LevelGathererState {
+            offset: 0,
+            slice: &mut rep_values,
         };
 
-        let mut is_required = false;
+        def_iter.gather_n_into(&mut def_state, additional, &LevelGatherer::default())?;
+        rep_iter.gather_n_into(&mut rep_state, additional, &LevelGatherer::default())?;
 
-        for depth in 0..max_depth {
-            // Defines whether this element is defined at `depth`
-            //
-            // e.g. [ [ [ 1 ] ] ] is defined at [ ... ], [ [ ... ] ], [ [ [ ... ] ] ] and
-            // [ [ [ 1 ] ] ].
-            let is_defined_at_this_depth = rep <= rep_levels[depth] && def >= def_levels[depth];
+        debug_assert_eq!(def_state.offset, rep_state.offset);
+        debug_assert_eq!(def_state.offset, additional);
 
-            let length = nested
-                .get(depth + 1)
-                .map(|x| x.len() as i64)
-                // the last depth is the leaf, which is always increased by 1
-                .unwrap_or(1);
+        for i in 0..additional {
+            let def = def_values[i];
+            let rep = rep_values[i];
 
-            let nest = &mut nested[depth];
+            let mut is_required = false;
 
-            let is_valid = !nest.is_nullable() || def > def_levels[depth];
+            for depth in 0..max_depth {
+                // Defines whether this element is defined at `depth`
+                //
+                // e.g. [ [ [ 1 ] ] ] is defined at [ ... ], [ [ ... ] ], [ [ [ ... ] ] ] and
+                // [ [ [ 1 ] ] ].
+                let is_defined_at_this_depth = rep <= rep_levels[depth] && def >= def_levels[depth];
 
-            if is_defined_at_this_depth && !is_valid {
-                let mut num_elements = 1;
+                let length = nested
+                    .get(depth + 1)
+                    .map(|x| x.len() as i64)
+                    // the last depth is the leaf, which is always increased by 1
+                    .unwrap_or(1);
 
-                nest.push(length, is_valid);
+                let nest = &mut nested[depth];
 
-                for embed_depth in depth..max_depth {
-                    let embed_length = nested
-                        .get(embed_depth + 1)
-                        .map(|x| x.len() as i64)
-                        // the last depth is the leaf, which is always increased by 1
-                        .unwrap_or(1);
+                let is_valid = !nest.is_nullable() || def > def_levels[depth];
 
-                    let embed_nest = &mut nested[embed_depth];
+                if is_defined_at_this_depth && !is_valid {
+                    let mut num_elements = 1;
 
-                    if embed_depth > depth {
-                        for _ in 0..num_elements {
-                            embed_nest.push_default(embed_length);
+                    nest.push(length, is_valid);
+
+                    for embed_depth in depth..max_depth {
+                        let embed_length = nested
+                            .get(embed_depth + 1)
+                            .map(|x| x.len() as i64)
+                            // the last depth is the leaf, which is always increased by 1
+                            .unwrap_or(1);
+
+                        let embed_nest = &mut nested[embed_depth];
+
+                        if embed_depth > depth {
+                            for _ in 0..num_elements {
+                                embed_nest.push_default(embed_length);
+                            }
                         }
+
+                        if embed_depth == max_depth - 1 {
+                            for _ in 0..num_elements {
+                                batched_collector.push_invalid();
+                            }
+
+                            break;
+                        }
+
+                        let embed_num_values = embed_nest.invalid_num_values();
+
+                        if embed_num_values == 0 {
+                            break;
+                        }
+
+                        num_elements *= embed_num_values;
                     }
 
-                    if embed_depth == max_depth - 1 {
-                        for _ in 0..num_elements {
+                    break;
+                }
+
+                if is_required || is_defined_at_this_depth {
+                    nest.push(length, is_valid);
+
+                    if depth == max_depth - 1 {
+                        // the leaf / primitive
+                        let is_valid = (def != def_levels[depth]) || !nest.is_nullable();
+
+                        if is_valid {
+                            batched_collector.push_valid()?;
+                        } else {
                             batched_collector.push_invalid();
                         }
-
-                        break;
                     }
-
-                    let embed_num_values = embed_nest.invalid_num_values();
-
-                    if embed_num_values == 0 {
-                        break;
-                    }
-
-                    num_elements *= embed_num_values;
                 }
 
-                break;
+                is_required =
+                    (is_required || is_defined_at_this_depth) && nest.is_required() && !is_valid;
             }
+        }
 
-            if is_required || is_defined_at_this_depth {
-                nest.push(length, is_valid);
+        limit -= additional;
+    }
 
-                if depth == max_depth - 1 {
-                    // the leaf / primitive
-                    let is_valid = (def != def_levels[depth]) || !nest.is_nullable();
+    Ok(())
+}
 
-                    if is_valid {
-                        batched_collector.push_valid()?;
+pub struct PageNestedDecoder<D: utils::NestedDecoder> {
+    pub iter: BasicDecompressor,
+    pub data_type: ArrowDataType,
+    pub dict: Option<D::Dict>,
+    pub decoder: D,
+    pub init: Vec<InitNested>,
+}
+
+/// Return the definition and repetition level iterators for this page.
+fn level_iters(page: &DataPage) -> ParquetResult<(HybridRleDecoder, HybridRleDecoder)> {
+    let split = split_buffer(page)?;
+    let def = split.def;
+    let rep = split.rep;
+
+    let max_def_level = page.descriptor.max_def_level;
+    let max_rep_level = page.descriptor.max_rep_level;
+
+    let def_iter = HybridRleDecoder::new(def, get_bit_width(max_def_level), page.num_values());
+    let rep_iter = HybridRleDecoder::new(rep, get_bit_width(max_rep_level), page.num_values());
+
+    Ok((def_iter, rep_iter))
+}
+
+impl<D: utils::NestedDecoder> PageNestedDecoder<D> {
+    pub fn new(
+        mut iter: BasicDecompressor,
+        data_type: ArrowDataType,
+        decoder: D,
+        init: Vec<InitNested>,
+    ) -> ParquetResult<Self> {
+        let dict_page = iter.read_dict_page()?;
+        let dict = dict_page.map(|d| decoder.deserialize_dict(d));
+
+        Ok(Self {
+            iter,
+            data_type,
+            dict,
+            decoder,
+            init,
+        })
+    }
+
+    pub fn collect_n(mut self, filter: Option<Filter>) -> ParquetResult<(NestedState, D::Output)> {
+        // @TODO: We should probably count the filter so that we don't overallocate
+        let mut target = self.decoder.with_capacity(self.iter.total_num_values());
+        // @TODO: Self capacity
+        let mut nested_state = init_nested(&self.init, 0);
+
+        // Amortize the allocations.
+        let (def_levels, rep_levels) = nested_state.levels();
+
+        match filter {
+            None => {
+                loop {
+                    let Some(page) = self.iter.next() else {
+                        break;
+                    };
+                    let page = page?;
+
+                    let mut state =
+                        utils::State::new_nested(&self.decoder, &page, self.dict.as_ref())?;
+                    let (def_iter, rep_iter) = level_iters(&page)?;
+
+                    // @TODO: move this to outside the loop.
+                    let mut batched_collector = BatchedCollector::new(
+                        BatchedNestedDecoder {
+                            state: &mut state,
+                            decoder: &mut self.decoder,
+                        },
+                        &mut target,
+                    );
+
+                    extend_offsets2(
+                        def_iter,
+                        rep_iter,
+                        &mut batched_collector,
+                        &mut nested_state.nested,
+                        None,
+                        &def_levels,
+                        &rep_levels,
+                    )?;
+
+                    batched_collector.finalize()?;
+
+                    drop(state);
+                    self.iter.reuse_page_buffer(page);
+                }
+            },
+            Some(mut filter) => {
+                let mut num_rows_remaining = filter.num_rows();
+
+                loop {
+                    let Some(page) = self.iter.next() else {
+                        break;
+                    };
+                    let page = page?;
+
+                    let mut state =
+                        utils::State::new_nested(&self.decoder, &page, self.dict.as_ref())?;
+                    let (def_iter, rep_iter) = level_iters(&page)?;
+
+                    let mut count = ZeroCount::default();
+                    rep_iter
+                        .clone()
+                        .gather_into(&mut count, &ZeroCountGatherer)?;
+
+                    let is_fully_read = count.num_zero > num_rows_remaining;
+                    let state_filter;
+                    (state_filter, filter) = Filter::split_at(&filter, count.num_zero);
+                    let state_filter = if count.num_zero > 0 {
+                        Some(state_filter)
                     } else {
-                        batched_collector.push_invalid();
+                        None
+                    };
+
+                    let start_length = nested_state.len();
+
+                    // @TODO: move this to outside the loop.
+                    let mut batched_collector = BatchedCollector::new(
+                        BatchedNestedDecoder {
+                            state: &mut state,
+                            decoder: &mut self.decoder,
+                        },
+                        &mut target,
+                    );
+
+                    extend_offsets2(
+                        def_iter,
+                        rep_iter,
+                        &mut batched_collector,
+                        &mut nested_state.nested,
+                        state_filter,
+                        &def_levels,
+                        &rep_levels,
+                    )?;
+
+                    batched_collector.finalize()?;
+
+                    let num_done = nested_state.len() - start_length;
+                    debug_assert!(num_done <= num_rows_remaining);
+                    debug_assert!(num_done <= count.num_zero);
+                    num_rows_remaining -= num_done;
+
+                    drop(state);
+                    self.iter.reuse_page_buffer(page);
+
+                    if is_fully_read {
+                        break;
                     }
                 }
-            }
-
-            is_required =
-                (is_required || is_defined_at_this_depth) && nest.is_required() && !is_valid;
+            },
         }
 
-        if page.iter.len() == 0 {
-            return Ok(false);
-        }
+        // we pop the primitive off here.
+        debug_assert!(matches!(
+            nested_state.nested.last().unwrap().content,
+            NestedContent::Primitive
+        ));
+        _ = nested_state.pop().unwrap();
+
+        let array = self.decoder.finalize(self.data_type, self.dict, target)?;
+
+        Ok((nested_state, array))
     }
 }
-
-#[inline]
-pub(super) fn next<'a, I, D>(
-    iter: &'a mut I,
-    items: &mut VecDeque<(NestedState, D::DecodedState)>,
-    dict: &'a mut Option<D::Dictionary>,
-    remaining: &mut usize,
-    init: &[InitNested],
-    chunk_size: Option<usize>,
-    decoder: &D,
-) -> MaybeNext<PolarsResult<(NestedState, D::DecodedState)>>
-where
-    I: PagesIter,
-    D: NestedDecoder<'a>,
-{
-    // front[a1, a2, a3, ...]back
-    if items.len() > 1 {
-        return MaybeNext::Some(Ok(items.pop_front().unwrap()));
-    }
-
-    match iter.next() {
-        Err(e) => MaybeNext::Some(Err(e.into())),
-        Ok(None) => {
-            if let Some(decoded) = items.pop_front() {
-                MaybeNext::Some(Ok(decoded))
-            } else {
-                MaybeNext::None
-            }
-        },
-        Ok(Some(page)) => {
-            let page = match &page {
-                Page::Data(page) => page,
-                Page::Dict(dict_page) => {
-                    *dict = Some(decoder.deserialize_dict(dict_page));
-                    return MaybeNext::More;
-                },
-            };
-
-            // there is a new page => consume the page from the start
-            let is_fully_read = extend(
-                page,
-                init,
-                items,
-                dict.as_ref(),
-                remaining,
-                decoder,
-                chunk_size,
-            );
-
-            match is_fully_read {
-                Ok(true) => MaybeNext::Some(Ok(items.pop_front().unwrap())),
-                Ok(false) => MaybeNext::More,
-                Err(e) => MaybeNext::Some(Err(e)),
-            }
-        },
-    }
-}
-
-/// Type def for a sharable, boxed dyn [`Iterator`] of NestedStates and arrays
-pub type NestedArrayIter<'a> =
-    Box<dyn Iterator<Item = PolarsResult<(NestedState, Box<dyn Array>)>> + Send + Sync + 'a>;

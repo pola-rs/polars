@@ -36,6 +36,7 @@ avro-schema = { version = "0.3" }
 base64 = "0.22.0"
 bitflags = "2"
 bytemuck = { version = "1.11", features = ["derive", "extern_crate_alloc"] }
+bytes = { version = "1.7" }
 chrono = { version = "0.4.31", default-features = false, features = ["std"] }
 chrono-tz = "0.8.1"
 ciborium = "0.2"
@@ -79,7 +80,7 @@ simd-json = { version = "0.13", features = ["known-key"] }
 simdutf8 = "0.1.4"
 slotmap = "1"
 smartstring = "1"
-sqlparser = "0.47"
+sqlparser = "0.49"
 stacker = "0.1"
 streaming-iterator = "0.1.9"
 strength_reduce = "0.2"

@@ -88,6 +88,6 @@ pub fn concat_df_horizontal(dfs: &Bound<'_, PyAny>) -> PyResult<PyDataFrame> {
         })
         .collect::<PyResult<Vec<_>>>()?;
 
-    let df = functions::concat_df_horizontal(&dfs).map_err(PyPolarsErr::from)?;
+    let df = functions::concat_df_horizontal(&dfs, true).map_err(PyPolarsErr::from)?;
     Ok(df.into())
 }

@@ -13,11 +13,12 @@ use crate::scan::file_list_reader::LazyFileListReader;
 
 #[derive(Clone)]
 pub struct LazyJsonLineReader {
-    pub(crate) paths: Arc<[PathBuf]>,
+    pub(crate) paths: Arc<Vec<PathBuf>>,
     pub(crate) batch_size: Option<NonZeroUsize>,
     pub(crate) low_memory: bool,
     pub(crate) rechunk: bool,
     pub(crate) schema: Option<SchemaRef>,
+    pub(crate) schema_overwrite: Option<SchemaRef>,
     pub(crate) row_index: Option<RowIndex>,
     pub(crate) infer_schema_length: Option<NonZeroUsize>,
     pub(crate) n_rows: Option<usize>,
@@ -27,17 +28,18 @@ pub struct LazyJsonLineReader {
 }
 
 impl LazyJsonLineReader {
-    pub fn new_paths(paths: Arc<[PathBuf]>) -> Self {
+    pub fn new_paths(paths: Arc<Vec<PathBuf>>) -> Self {
         Self::new(PathBuf::new()).with_paths(paths)
     }
 
     pub fn new(path: impl AsRef<Path>) -> Self {
         LazyJsonLineReader {
-            paths: Arc::new([path.as_ref().to_path_buf()]),
+            paths: Arc::new(vec![path.as_ref().to_path_buf()]),
             batch_size: None,
             low_memory: false,
             rechunk: false,
             schema: None,
+            schema_overwrite: None,
             row_index: None,
             infer_schema_length: NonZeroUsize::new(100),
             ignore_errors: false,
@@ -82,6 +84,13 @@ impl LazyJsonLineReader {
         self
     }
 
+    /// Set the JSON file's schema
+    #[must_use]
+    pub fn with_schema_overwrite(mut self, schema_overwrite: Option<SchemaRef>) -> Self {
+        self.schema_overwrite = schema_overwrite;
+        self
+    }
+
     /// Reduce memory usage at the expense of performance
     #[must_use]
     pub fn low_memory(mut self, toggle: bool) -> Self {
@@ -111,7 +120,7 @@ impl LazyFileListReader for LazyJsonLineReader {
         let paths = Arc::new(Mutex::new((self.paths, false)));
 
         let file_options = FileScanOptions {
-            n_rows: self.n_rows,
+            slice: self.n_rows.map(|x| (0, x)),
             with_columns: None,
             cache: false,
             row_index: self.row_index,
@@ -129,6 +138,7 @@ impl LazyFileListReader for LazyJsonLineReader {
             low_memory: self.low_memory,
             ignore_errors: self.ignore_errors,
             schema: self.schema,
+            schema_overwrite: self.schema_overwrite,
         };
 
         let scan_type = FileScan::NDJson {
@@ -154,7 +164,7 @@ impl LazyFileListReader for LazyJsonLineReader {
         &self.paths
     }
 
-    fn with_paths(mut self, paths: Arc<[PathBuf]>) -> Self {
+    fn with_paths(mut self, paths: Arc<Vec<PathBuf>>) -> Self {
         self.paths = paths;
         self
     }

@@ -19,6 +19,7 @@ use polars_time::{DynamicGroupOptions, RollingGroupOptions};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+use crate::plans::ExprIR;
 #[cfg(feature = "python")]
 use crate::prelude::python_udf::PythonFunction;
 
@@ -28,7 +29,7 @@ pub type FileCount = u32;
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 /// Generic options for all file types.
 pub struct FileScanOptions {
-    pub n_rows: Option<usize>,
+    pub slice: Option<(i64, usize)>,
     pub with_columns: Option<Arc<[String]>>,
     pub cache: bool,
     pub row_index: Option<RowIndex>,
@@ -151,6 +152,8 @@ bitflags!(
             /// This can lead to recursively entering the engine and sometimes deadlocks.
             /// This flag must be set to handle that.
             const OPTIONAL_RE_ENTRANT = 1 << 6;
+            /// Whether this function allows no inputs.
+            const ALLOW_EMPTY_INPUTS = 1 << 7;
         }
 );
 
@@ -224,16 +227,41 @@ pub struct LogicalPlanUdfOptions {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg(feature = "python")]
 pub struct PythonOptions {
+    /// A function that returns a Python Generator.
+    /// The generator should produce Polars DataFrame's.
     pub scan_fn: Option<PythonFunction>,
+    /// Schema of the file.
     pub schema: SchemaRef,
+    /// Schema the reader will produce when the file is read.
     pub output_schema: Option<SchemaRef>,
+    // Projected column names.
     pub with_columns: Option<Arc<[String]>>,
-    pub pyarrow: bool,
-    // a pyarrow predicate python expression
-    // can be evaluated with python.eval
-    pub predicate: Option<String>,
-    // a `head` call passed to pyarrow
+    // Which interface is the python function.
+    pub python_source: PythonScanSource,
+    /// Optional predicate the reader must apply.
+    #[cfg_attr(feature = "serde", serde(skip))]
+    pub predicate: PythonPredicate,
+    /// A `head` call passed to the reader.
     pub n_rows: Option<usize>,
+}
+
+#[derive(Clone, PartialEq, Eq, Debug, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub enum PythonScanSource {
+    Pyarrow,
+    Cuda,
+    #[default]
+    IOPlugin,
+}
+
+#[derive(Clone, PartialEq, Eq, Debug, Default)]
+pub enum PythonPredicate {
+    // A pyarrow predicate python expression
+    // can be evaluated with python.eval
+    PyArrow(String),
+    Polars(ExprIR),
+    #[default]
+    None,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Default, Hash)]
@@ -357,4 +385,5 @@ pub struct NDJsonReadOptions {
     pub low_memory: bool,
     pub ignore_errors: bool,
     pub schema: Option<SchemaRef>,
+    pub schema_overwrite: Option<SchemaRef>,
 }

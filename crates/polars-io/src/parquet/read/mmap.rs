@@ -6,7 +6,7 @@ use polars_core::datatypes::PlHashMap;
 use polars_error::PolarsResult;
 use polars_parquet::read::{
     column_iter_to_arrays, get_field_columns, ArrayIter, BasicDecompressor, ColumnChunkMetaData,
-    PageReader,
+    Filter, PageReader,
 };
 use polars_utils::mmap::{MemReader, MemSlice};
 
@@ -46,7 +46,7 @@ fn _mmap_single_column<'a>(
 ) -> (&'a ColumnChunkMetaData, MemSlice) {
     let (start, len) = meta.byte_range();
     let chunk = match store {
-        ColumnStore::Local(mem_slice) => mem_slice.slice(start as usize, (start + len) as usize),
+        ColumnStore::Local(mem_slice) => mem_slice.slice((start as usize)..(start + len) as usize),
         #[cfg(all(feature = "async", feature = "parquet"))]
         ColumnStore::Fetched(fetched) => {
             let entry = fetched.get(&start).unwrap_or_else(|| {
@@ -54,7 +54,7 @@ fn _mmap_single_column<'a>(
                     "mmap_columns: column with start {start} must be prefetched in ColumnStore.\n"
                 )
             });
-            MemSlice::from_slice(entry.as_ref())
+            MemSlice::from_bytes(entry.clone())
         },
     };
     (meta, chunk)
@@ -65,11 +65,8 @@ fn _mmap_single_column<'a>(
 pub(super) fn to_deserializer<'a>(
     columns: Vec<(&ColumnChunkMetaData, MemSlice)>,
     field: Field,
-    num_rows: usize,
-    chunk_size: Option<usize>,
+    filter: Option<Filter>,
 ) -> PolarsResult<ArrayIter<'a>> {
-    let chunk_size = chunk_size.unwrap_or(usize::MAX).min(num_rows);
-
     let (columns, types): (Vec<_>, Vec<_>) = columns
         .into_iter()
         .map(|(column_meta, chunk)| {
@@ -90,5 +87,5 @@ pub(super) fn to_deserializer<'a>(
         })
         .unzip();
 
-    column_iter_to_arrays(columns, types, field, Some(chunk_size), num_rows)
+    column_iter_to_arrays(columns, types, field, filter)
 }

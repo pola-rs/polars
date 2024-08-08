@@ -1,5 +1,4 @@
 mod read;
-mod read_indexes;
 mod write;
 
 use std::io::{Cursor, Read, Seek};
@@ -53,7 +52,7 @@ pub fn read_column<R: Read + Seek>(mut reader: R, column: &str) -> PolarsResult<
 
     let statistics = deserialize(field, row_group)?;
 
-    let mut reader = p_read::FileReader::new(reader, metadata.row_groups, schema, None, None, None);
+    let mut reader = p_read::FileReader::new(reader, metadata.row_groups, schema, None);
 
     let array = reader.next().unwrap()?.into_arrays().pop().unwrap();
 
@@ -1307,9 +1306,7 @@ fn integration_read(data: &[u8], limit: Option<usize>) -> PolarsResult<Integrati
         Cursor::new(data),
         metadata.row_groups,
         schema.clone(),
-        None,
         limit,
-        None,
     );
 
     let batches = reader.collect::<PolarsResult<Vec<_>>>()?;
@@ -1647,7 +1644,7 @@ fn filter_chunk() -> PolarsResult<()> {
         .map(|(_, row_group)| row_group)
         .collect();
 
-    let reader = p_read::FileReader::new(reader, row_groups, schema, None, None, None);
+    let reader = p_read::FileReader::new(reader, row_groups, schema, None);
 
     let new_chunks = reader.collect::<PolarsResult<Vec<_>>>()?;
 

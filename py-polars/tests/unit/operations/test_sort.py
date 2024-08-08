@@ -611,18 +611,8 @@ def test_arg_sort_struct() -> None:
             "b": [5, 5, 6, 7, 8, 1, 1, 2, 2, 3],
         }
     )
-    assert df.select(pl.struct("a", "b").arg_sort()).to_series().to_list() == [
-        5,
-        0,
-        2,
-        7,
-        3,
-        4,
-        6,
-        1,
-        8,
-        9,
-    ]
+    expected = [5, 0, 2, 7, 3, 4, 6, 1, 8, 9]
+    assert df.select(pl.struct("a", "b").arg_sort()).to_series().to_list() == expected
 
 
 def test_sort_top_k_fast_path() -> None:
@@ -820,3 +810,12 @@ def test_sort_by_unequal_lengths_7207() -> None:
     df = pl.DataFrame({"a": [0, 1, 1, 0], "b": [3, 2, 3, 2]})
     with pytest.raises(pl.exceptions.ComputeError):
         df.select(pl.col.a.sort_by(["a", 1]))
+
+
+def test_sort_literals() -> None:
+    df = pl.DataFrame({"foo": [1, 2, 3]})
+    s = pl.Series([3, 2, 1])
+    assert df.sort([s])["foo"].to_list() == [3, 2, 1]
+
+    with pytest.raises(pl.exceptions.ShapeError):
+        df.sort(pl.Series(values=[1, 2]))

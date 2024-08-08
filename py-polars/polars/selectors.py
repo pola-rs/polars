@@ -87,8 +87,7 @@ __all__ = [
 
 
 @overload
-def is_selector(obj: _selector_proxy_) -> Literal[True]:  # type: ignore[overload-overlap]
-    ...
+def is_selector(obj: _selector_proxy_) -> Literal[True]: ...
 
 
 @overload
@@ -112,6 +111,8 @@ def is_selector(obj: Any) -> bool:
     return isinstance(obj, _selector_proxy_) and hasattr(obj, "_attrs")
 
 
+# TODO: Don't use this as it collects a schema (can be very expensive for LazyFrame).
+#  This should move to IR conversion / Rust.
 def expand_selector(
     target: DataFrame | LazyFrame | Mapping[str, PolarsDataType],
     selector: SelectorType | Expr,
@@ -191,6 +192,8 @@ def expand_selector(
     return tuple(target.select(selector).collect_schema())
 
 
+# TODO: Don't use this as it collects a schema (can be very expensive for LazyFrame).
+#  This should move to IR conversion / Rust.
 def _expand_selectors(frame: DataFrame | LazyFrame, *items: Any) -> list[Any]:
     """
     Internal function that expands any selectors to column names in the given input.

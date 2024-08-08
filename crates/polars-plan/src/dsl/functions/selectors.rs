@@ -20,7 +20,7 @@ use super::*;
 /// ```
 ///
 /// ```ignore
-/// // select specific column by writing a regular expression that starts with `^` and ends with `$`
+/// // select specific columns by writing a regular expression that starts with `^` and ends with `$`
 /// // only if regex features is activated
 /// col("^foo.*$")
 /// ```

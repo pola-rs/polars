@@ -1,8 +1,9 @@
 use std::ops::Deref;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use either::Either;
+use parking_lot::RwLockUpgradableReadGuard;
 use polars_error::{polars_bail, PolarsResult};
 
 use super::utils::{count_zeros, fmt, get_bit, get_bit_unchecked, BitChunk, BitChunks, BitmapIter};
@@ -399,7 +400,58 @@ impl Bitmap {
     /// Initializes an new [`Bitmap`] filled with unset values.
     #[inline]
     pub fn new_zeroed(length: usize) -> Self {
-        Self::new_with_value(false, length)
+        // There are quite some situations where we just want a zeroed out Bitmap, since that would
+        // constantly need to reallocate we make a static that contains the largest allocation.
+        // Then, we can just take an Arc::clone of that slice everytime or grow it if needed.
+        static GLOBAL_ZERO_BYTES: OnceLock<parking_lot::RwLock<Arc<Bytes<u8>>>> = OnceLock::new();
+
+        let rwlock_zero_bytes = GLOBAL_ZERO_BYTES.get_or_init(|| {
+            let byte_length = length.div_ceil(8).next_power_of_two();
+            parking_lot::RwLock::new(Arc::new(Bytes::from(vec![0; byte_length])))
+        });
+
+        let unset_bit_count_cache = AtomicU64::new(length as u64);
+
+        let zero_bytes = rwlock_zero_bytes.upgradable_read();
+        if zero_bytes.len() * 8 >= length {
+            let bytes = zero_bytes.clone();
+            return Bitmap {
+                bytes,
+                offset: 0,
+                length,
+                unset_bit_count_cache,
+            };
+        }
+
+        let mut zero_bytes = RwLockUpgradableReadGuard::upgrade(zero_bytes);
+
+        // Race Condition:
+        // By the time we got here, another Guard could have been upgraded, and the buffer
+        // could have been expanded already. So we want to check again whether we cannot just take
+        // that buffer.
+        if zero_bytes.len() * 8 >= length {
+            let bytes = zero_bytes.clone();
+            return Bitmap {
+                bytes,
+                offset: 0,
+                length,
+                unset_bit_count_cache,
+            };
+        }
+
+        // Let do exponential increases so that we are not constantly allocating new
+        // buffers.
+        let byte_length = length.div_ceil(8).next_power_of_two();
+
+        let bytes = Arc::new(Bytes::from(vec![0; byte_length]));
+        *zero_bytes = bytes.clone();
+
+        Bitmap {
+            bytes,
+            offset: 0,
+            length,
+            unset_bit_count_cache,
+        }
     }
 
     /// Initializes an new [`Bitmap`] filled with the given value.

@@ -30,16 +30,17 @@ pub enum PhysNode {
     Select {
         input: PhysNodeKey,
         selectors: Vec<ExprIR>,
-        selector_reentrant: Vec<bool>,
         extend_original: bool,
         output_schema: Arc<Schema>,
     },
+
     Reduce {
         input: PhysNodeKey,
         exprs: Vec<ExprIR>,
         input_schema: Arc<Schema>,
         output_schema: Arc<Schema>,
     },
+
     StreamingSlice {
         input: PhysNodeKey,
         offset: usize,
@@ -53,7 +54,8 @@ pub enum PhysNode {
 
     SimpleProjection {
         input: PhysNodeKey,
-        schema: Arc<Schema>,
+        input_schema: Arc<Schema>,
+        columns: Vec<String>,
     },
 
     InMemorySink {
@@ -82,5 +84,14 @@ pub enum PhysNode {
 
     OrderedUnion {
         inputs: Vec<PhysNodeKey>,
+    },
+
+    Zip {
+        inputs: Vec<PhysNodeKey>,
+        input_schemas: Vec<Arc<Schema>>,
+        /// If true shorter inputs are extended with nulls to the longest input,
+        /// if false all inputs must be the same length, or have length 1 in
+        /// which case they are broadcast.
+        null_extend: bool,
     },
 }

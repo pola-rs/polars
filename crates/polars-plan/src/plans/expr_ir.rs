@@ -174,11 +174,13 @@ impl ExprIR {
         }
     }
 
-    pub fn get_alias_or_field(&self) -> Option<&ColumnName> {
+    /// Gets any name except one deriving from `Column`.
+    pub(crate) fn get_non_projected_name(&self) -> Option<&ColumnName> {
         match &self.output_name {
             OutputName::Alias(name) => Some(name),
             #[cfg(feature = "dtype-struct")]
             OutputName::Field(name) => Some(name),
+            OutputName::LiteralLhs(name) => Some(name),
             _ => None,
         }
     }

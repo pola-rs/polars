@@ -74,6 +74,13 @@ impl ComputeNode for StreamingSliceNode {
                     }
                 });
 
+                // Technically not necessary, but it's nice to already tell the
+                // source to stop producing more morsels as we won't be
+                // interested in the results anyway.
+                if self.stream_offset >= stop_offset {
+                    morsel.source_token().stop();
+                }
+
                 if !morsel.df().is_empty() && send.send(morsel).await.is_err() {
                     break;
                 }

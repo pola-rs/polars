@@ -484,7 +484,7 @@ class StringNameSpace:
 
         Examples
         --------
-        >>> s = pl.Series("txt", ["Crab", "Lobster", None, "Crustaceon"])
+        >>> s = pl.Series("txt", ["Crab", "Lobster", None, "Crustacean"])
 
         Find the index of the first substring matching a regex pattern:
 
@@ -1813,7 +1813,7 @@ class StringNameSpace:
         patterns
             String patterns to search.
         ascii_case_insensitive
-            Enable ASCII-aware case insensitive matching.
+            Enable ASCII-aware case-insensitive matching.
             When this option is enabled, searching will be performed without respect
             to case for ASCII letters (a-z and A-Z) only.
 
@@ -1854,9 +1854,9 @@ class StringNameSpace:
             String patterns to search and replace.
         replace_with
             Strings to replace where a pattern was a match.
-            This can be broadcasted. So it supports many:one and many:many.
+            This can be broadcast, so it supports many:one and many:many.
         ascii_case_insensitive
-            Enable ASCII-aware case insensitive matching.
+            Enable ASCII-aware case-insensitive matching.
             When this option is enabled, searching will be performed without respect
             to case for ASCII letters (a-z and A-Z) only.
 
@@ -1897,7 +1897,7 @@ class StringNameSpace:
         patterns
             String patterns to search.
         ascii_case_insensitive
-            Enable ASCII-aware case insensitive matching.
+            Enable ASCII-aware case-insensitive matching.
             When this option is enabled, searching will be performed without respect
             to case for ASCII letters (a-z and A-Z) only.
         overlapping
