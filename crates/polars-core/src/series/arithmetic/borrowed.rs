@@ -1,3 +1,5 @@
+use std::cell::Cell;
+
 use arrow::array::Array;
 
 use super::*;
@@ -193,9 +195,6 @@ fn reshape_list_based_on(data: &ArrayRef, shape: &ArrayRef) -> PolarsResult<Arra
 /// more nulls.
 fn maybe_list_has_nulls(data: &ArrayRef) -> bool {
     if let Some(list_chunk) = data.as_any().downcast_ref::<LargeListArray>() {
-        println!("BITMAP UNSET BITS {:?}", list_chunk
-                 .validity()
-                 .map(|bitmap| bitmap.unset_bits()));
         if list_chunk
             .validity()
             .map(|bitmap| bitmap.unset_bits() > 0)
@@ -215,6 +214,7 @@ fn maybe_list_has_nulls(data: &ArrayRef) -> bool {
 //     let right_as_list = right.as_any().downcast_ref::<LargeListArray>();
 //     match
 // }
+
 impl ListChunked {
     fn arithm_helper(
         &self,
@@ -223,11 +223,19 @@ impl ListChunked {
     ) -> PolarsResult<Series> {
         polars_ensure!(self.len() == rhs.len(), InvalidOperation: "can only do arithmetic operations on Series of the same size; got {} and {}", self.len(), rhs.len());
 
-        let mut has_nulls = false;
-        for chunk in self.chunks().iter() {
-            if maybe_list_has_nulls(chunk) {
-                has_nulls = true;
-                break;
+        thread_local!{
+            static HAS_NULLS: Cell<bool> = const { Cell::new(false) };
+        };
+
+        let orig_has_nulls = HAS_NULLS.get();
+
+        let mut has_nulls = orig_has_nulls;
+        if !has_nulls {
+            for chunk in self.chunks().iter() {
+                if maybe_list_has_nulls(chunk) {
+                    has_nulls = true;
+                    break;
+                }
             }
         }
         if !has_nulls {
@@ -242,6 +250,14 @@ impl ListChunked {
             // A slower implementation since we can't just add the underlying
             // values Arrow arrays. Given nulls, the two values arrays might not
             // line up the way we expect.
+
+            // This can be recursive, so preserve the knowledge that there
+            // were nulls. Unfortunately get_leaf_array() and explode()
+            // don't work on the Series that come out of amortized_iter(),
+            // so we need to stick to this code path.
+            HAS_NULLS.set(true);
+            scopeguard::defer!{ HAS_NULLS.set(orig_has_nulls); };
+
             let mut result = self.clear();
             let combined = self.amortized_iter().zip(rhs.list()?.amortized_iter()).map(|(a, b)| {
                 let (Some(a_owner), Some(b_owner)) = (a, b) else {
@@ -251,7 +267,6 @@ impl ListChunked {
                 let a = a_owner.as_ref();
                 let b = b_owner.as_ref();
                 polars_ensure!(a.len() == b.len(), InvalidOperation: "can only do arithmetic operations on lists of the same size; got {} and {}", a.len(), b.len());
-                println!("SLOW {a:?} {b:?}");
                 op(a, b).and_then(|s| s.implode()).map(Series::from)
             });
             for c in combined.into_iter() {
@@ -259,12 +274,9 @@ impl ListChunked {
             }
             return Ok(result.into());
         }
-        println!("FAST INPUTS {self:?} {rhs:?}");
         let l_rechunked = self.clone().rechunk().into_series();
-        println!("FAST L_RECHUNKED {l_rechunked:?}");
-        let l_leaf_array = l_rechunked.explode()?;
-        let r_leaf_array = rhs.rechunk().explode()?;
-        println!("FAST LEAF ARRAY {l_leaf_array:?} {r_leaf_array:?}");
+        let l_leaf_array = l_rechunked.get_leaf_array();
+        let r_leaf_array = rhs.rechunk().get_leaf_array();
 
         let result = op(&l_leaf_array, &r_leaf_array)?;
 
