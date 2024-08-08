@@ -658,9 +658,9 @@ def test_list_arithmetic_same_size(
 @pytest.mark.parametrize(
     ("a", "b", "expected"),
     [
-        ([[2, 3]], [[None, 5]], [[None, 8]]),
+        ([[1, 2, 3]], [[1, None, 5]], [[2, None, 8]]),
         ([[2], None, [5]], [None, [3], [2]], [None, None, [7]]),
-        ([[[2]], [None]], [[[3]], [[6]]], [[[5]], [None]]),
+        ([[[2]], [None], [[4]]], [[[3]], [[6]], [[8]]], [[[5]], [None], [[12]]]),
     ],
 )
 def test_list_arithmetic_nulls(a: list[Any], b: list[Any], expected: list[Any]) -> None:
@@ -676,18 +676,28 @@ def test_list_arithmetic_error_cases() -> None:
         InvalidOperationError, match="Series of the same size; got 1 and 2"
     ):
         _ = pl.Series("a", [[1, 2]]) / pl.Series("b", [[1, 2], [3, 4]])
+    with pytest.raises(
+        InvalidOperationError, match="Series of the same size; got 1 and 2"
+    ):
+        _ = pl.Series("a", [[1, 2]]) / pl.Series("b", [[1, 2], None])
 
     # Different list length:
-    # Different series length:
     with pytest.raises(
         InvalidOperationError, match="lists of the same size; got 2 and 1"
     ):
         _ = pl.Series("a", [[1, 2]]) / pl.Series("b", [[1]])
+    with pytest.raises(
+        InvalidOperationError, match="lists of the same size; got 2 and 1"
+    ):
+        _ = pl.Series("a", [[1, 2], [2, 3]]) / pl.Series("b", [[1], None])
 
     # Wrong types:
-    # Different series length:
     with pytest.raises(InvalidOperationError, match="cannot cast List type"):
         _ = pl.Series("a", [[1, 2]]) + pl.Series("b", ["hello"])
+
+    # Different nesting:
+    with pytest.raises(InvalidOperationError, match="TODO"):
+        _ = pl.Series("a", [[1]]) / pl.Series("b", [[[1]]])
 
 
 def test_schema_owned_arithmetic_5669() -> None:

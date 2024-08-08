@@ -175,12 +175,12 @@ impl NumOpsDispatchInner for FixedSizeListType {
 
 /// Given an ArrayRef with some primitive values, wrap it in list(s) until it
 /// matches the requested shape.
-fn reshape_based_on(data: &ArrayRef, shape: &ArrayRef) -> PolarsResult<ArrayRef> {
+fn reshape_list_based_on(data: &ArrayRef, shape: &ArrayRef) -> PolarsResult<ArrayRef> {
     if let Some(list_chunk) = shape.as_any().downcast_ref::<LargeListArray>() {
         let result = LargeListArray::try_new(
             list_chunk.data_type().clone(),
             list_chunk.offsets().clone(),
-            reshape_based_on(data, list_chunk.values())?,
+            reshape_list_based_on(data, list_chunk.values())?,
             list_chunk.validity().cloned(),
         )?;
         Ok(Box::new(result))
@@ -189,6 +189,32 @@ fn reshape_based_on(data: &ArrayRef, shape: &ArrayRef) -> PolarsResult<ArrayRef>
     }
 }
 
+/// Given an ArrayRef, return true if it's a LargeListArrays and it has one or
+/// more nulls.
+fn maybe_list_has_nulls(data: &ArrayRef) -> bool {
+    if let Some(list_chunk) = data.as_any().downcast_ref::<LargeListArray>() {
+        println!("BITMAP UNSET BITS {:?}", list_chunk
+                 .validity()
+                 .map(|bitmap| bitmap.unset_bits()));
+        if list_chunk
+            .validity()
+            .map(|bitmap| bitmap.unset_bits() > 0)
+            .unwrap_or(false)
+        {
+            true
+        } else {
+            maybe_list_has_nulls(list_chunk.values())
+        }
+    } else {
+        false
+    }
+}
+
+// fn same_shapes(left: &ArrayRef, right: &ArrayRef) -> bool {
+//     let left_as_list = left.as_any().downcast_ref::<LargeListArray>();
+//     let right_as_list = right.as_any().downcast_ref::<LargeListArray>();
+//     match
+// }
 impl ListChunked {
     fn arithm_helper(
         &self,
@@ -196,9 +222,23 @@ impl ListChunked {
         op: &dyn Fn(&Series, &Series) -> PolarsResult<Series>,
     ) -> PolarsResult<Series> {
         polars_ensure!(self.len() == rhs.len(), InvalidOperation: "can only do arithmetic operations on Series of the same size; got {} and {}", self.len(), rhs.len());
-        // TODO make sure the list shapes the same
 
-        if self.null_count() > 0 || rhs.null_count() > 0 {
+        let mut has_nulls = false;
+        for chunk in self.chunks().iter() {
+            if maybe_list_has_nulls(chunk) {
+                has_nulls = true;
+                break;
+            }
+        }
+        if !has_nulls {
+            for chunk in rhs.chunks().iter() {
+                if maybe_list_has_nulls(chunk) {
+                    has_nulls = true;
+                    break;
+                }
+            }
+        }
+        if has_nulls {
             // A slower implementation since we can't just add the underlying
             // values Arrow arrays. Given nulls, the two values arrays might not
             // line up the way we expect.
@@ -211,6 +251,7 @@ impl ListChunked {
                 let a = a_owner.as_ref();
                 let b = b_owner.as_ref();
                 polars_ensure!(a.len() == b.len(), InvalidOperation: "can only do arithmetic operations on lists of the same size; got {} and {}", a.len(), b.len());
+                println!("SLOW {a:?} {b:?}");
                 op(a, b).and_then(|s| s.implode()).map(Series::from)
             });
             for c in combined.into_iter() {
@@ -218,10 +259,12 @@ impl ListChunked {
             }
             return Ok(result.into());
         }
-
-        let l_rechunked = self.rechunk().into_series();
-        let l_leaf_array = l_rechunked.get_leaf_array();
-        let r_leaf_array = rhs.rechunk().get_leaf_array();
+        println!("FAST INPUTS {self:?} {rhs:?}");
+        let l_rechunked = self.clone().rechunk().into_series();
+        println!("FAST L_RECHUNKED {l_rechunked:?}");
+        let l_leaf_array = l_rechunked.explode()?;
+        let r_leaf_array = rhs.rechunk().explode()?;
+        println!("FAST LEAF ARRAY {l_leaf_array:?} {r_leaf_array:?}");
 
         let result = op(&l_leaf_array, &r_leaf_array)?;
 
@@ -231,7 +274,7 @@ impl ListChunked {
         let result_chunks = result.chunks();
         assert_eq!(result_chunks.len(), 1);
         let left_chunk = &l_rechunked.chunks()[0];
-        let result_chunk = reshape_based_on(&result_chunks[0], left_chunk)?;
+        let result_chunk = reshape_list_based_on(&result_chunks[0], left_chunk)?;
 
         unsafe {
             let mut result =
