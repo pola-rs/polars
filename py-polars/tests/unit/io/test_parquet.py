@@ -1387,3 +1387,16 @@ def test_struct_plain_encoded_statistics(tmp_path: Path) -> None:
 )
 def test_scan_round_trip_parametric(tmp_path: Path, df: pl.DataFrame) -> None:
     test_scan_round_trip(tmp_path, df)
+
+
+def test_write_sliced_lists_18069() -> None:
+    f = io.BytesIO()
+    a = pl.Series(3 * [None, ["$"] * 3], dtype=pl.List(pl.String))
+
+    before = pl.DataFrame({"a": a}).slice(4, 2)
+    before.write_parquet(f)
+
+    f.seek(0)
+    after = pl.read_parquet(f)
+
+    assert_frame_equal(before, after)
