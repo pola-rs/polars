@@ -5,7 +5,7 @@ FROM mcr.microsoft.com/devcontainers/rust:latest
 RUN apt-get update
 
 # Install Python and other necessary packages
-RUN apt-get install -y python3 python3-pip pkg-config build-essential zlib1g-dev
+RUN apt-get install -y python3 python3-pip pkg-config build-essential zlib1g-dev cmake
 
 # Set the working directory
 WORKDIR /workspace

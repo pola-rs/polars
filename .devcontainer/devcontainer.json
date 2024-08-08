@@ -33,6 +33,6 @@
         }
     },
     "forwardPorts": [],
-    "postCreateCommand": "pip install maturin",
+    "postCreateCommand": "pip install maturin[patchelf]",
     "remoteUser": "root"
 }
