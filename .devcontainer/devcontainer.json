@@ -1,0 +1,38 @@
+{
+    "name": "Polars Development",
+    "dockerFile": "Dockerfile",
+    "features": {
+        "ghcr.io/devcontainers/features/rust:1": {
+            "version": "latest"
+        },
+        "ghcr.io/devcontainers/features/python:1": {
+            "version": "3.12"
+        },
+        "docker-in-docker": "latest",
+        "ghcr.io/devcontainers-contrib/features/dprint-asdf:2": {}
+    },
+    "customizations": {
+        "vscode": {
+            "settings": {
+                "terminal.integrated.shell.linux": "/bin/bash",
+                "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+                "python.linting.enabled": true,
+                "python.linting.pylintEnabled": true,
+                "rust-analyzer.checkOnSave.command": "clippy",
+                "editor.formatOnSave": true,
+                "python.formatting.provider": "black"
+            },
+            "extensions": [
+                "rust-lang.rust-analyzer",
+                "serayuzgur.crates",
+                "ms-python.python",
+                "ms-python.vscode-pylance",
+                "dprint.dprint",
+                "ms-python.black-formatter"
+            ]
+        }
+    },
+    "forwardPorts": [],
+    "postCreateCommand": "pip install maturin",
+    "remoteUser": "root"
+}
