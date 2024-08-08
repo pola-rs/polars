@@ -1,3 +1,6 @@
+#![allow(internal_features)]
+#![feature(core_intrinsics)]
+
 pub mod constants;
 mod warning;
 
@@ -19,9 +22,14 @@ where
     T: Into<Cow<'static, str>>,
 {
     fn from(msg: T) -> Self {
-        if env::var("POLARS_PANIC_ON_ERR").as_deref().unwrap_or("") == "1" {
+        let panic = env::var("POLARS_PANIC_ON_ERR");
+        let panic_on_err = panic.as_deref().unwrap_or("");
+        if panic_on_err == "1" {
             panic!("{}", msg.into())
         } else {
+            if panic_on_err == "breakpoint" {
+                unsafe { std::intrinsics::breakpoint(); }
+            }
             ErrString(msg.into())
         }
     }
