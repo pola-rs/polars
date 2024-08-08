@@ -209,11 +209,19 @@ fn maybe_list_has_nulls(data: &ArrayRef) -> bool {
     }
 }
 
-// fn same_shapes(left: &ArrayRef, right: &ArrayRef) -> bool {
-//     let left_as_list = left.as_any().downcast_ref::<LargeListArray>();
-//     let right_as_list = right.as_any().downcast_ref::<LargeListArray>();
-//     match
-// }
+/// Return whether the left and right have the same shape. We assume neither has
+/// any nulls, recursively.
+fn lists_same_shapes(left: &ArrayRef, right: &ArrayRef) -> bool {
+    let left_as_list = left.as_any().downcast_ref::<LargeListArray>();
+    let right_as_list = right.as_any().downcast_ref::<LargeListArray>();
+    match (left_as_list, right_as_list) {
+        (Some(left), Some(right)) => {
+            left.offsets() == right.offsets() && lists_same_shapes(left.values(), right.values())
+        },
+        (None, None) => left.len() == right.len(),
+        _ => false,
+    }
+}
 
 impl ListChunked {
     fn arithm_helper(
@@ -221,9 +229,14 @@ impl ListChunked {
         rhs: &Series,
         op: &dyn Fn(&Series, &Series) -> PolarsResult<Series>,
     ) -> PolarsResult<Series> {
-        polars_ensure!(self.len() == rhs.len(), InvalidOperation: "can only do arithmetic operations on Series of the same size; got {} and {}", self.len(), rhs.len());
+        polars_ensure!(
+            self.len() == rhs.len(),
+            InvalidOperation: "can only do arithmetic operations on Series of the same size; got {} and {}",
+            self.len(),
+            rhs.len()
+        );
 
-        thread_local!{
+        thread_local! {
             static HAS_NULLS: Cell<bool> = const { Cell::new(false) };
         };
 
@@ -256,7 +269,7 @@ impl ListChunked {
             // don't work on the Series that come out of amortized_iter(),
             // so we need to stick to this code path.
             HAS_NULLS.set(true);
-            scopeguard::defer!{ HAS_NULLS.set(orig_has_nulls); };
+            scopeguard::defer! { HAS_NULLS.set(orig_has_nulls); };
 
             let mut result = self.clear();
             let combined = self.amortized_iter().zip(rhs.list()?.amortized_iter()).map(|(a, b)| {
@@ -266,7 +279,12 @@ impl ListChunked {
                 };
                 let a = a_owner.as_ref();
                 let b = b_owner.as_ref();
-                polars_ensure!(a.len() == b.len(), InvalidOperation: "can only do arithmetic operations on lists of the same size; got {} and {}", a.len(), b.len());
+                polars_ensure!(
+                    a.len() == b.len(),
+                    InvalidOperation: "can only do arithmetic operations on lists of the same size; got {} and {}",
+                    a.len(),
+                    b.len()
+                );
                 op(a, b).and_then(|s| s.implode()).map(Series::from)
             });
             for c in combined.into_iter() {
@@ -277,6 +295,10 @@ impl ListChunked {
         let l_rechunked = self.clone().rechunk().into_series();
         let l_leaf_array = l_rechunked.get_leaf_array();
         let r_leaf_array = rhs.rechunk().get_leaf_array();
+        polars_ensure!(
+            lists_same_shapes(&l_leaf_array.chunks()[0], &r_leaf_array.chunks()[0]),
+            InvalidOperation: "can only do arithmetic operations on lists of the same size"
+        );
 
         let result = op(&l_leaf_array, &r_leaf_array)?;
 

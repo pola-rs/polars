@@ -21,7 +21,7 @@ from polars import (
     UInt32,
     UInt64,
 )
-from polars.exceptions import ColumnNotFoundError, InvalidOperationError
+from polars.exceptions import ColumnNotFoundError, InvalidOperationError, SchemaError
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import INTEGER_DTYPES, NUMERIC_DTYPES
 
@@ -682,9 +682,7 @@ def test_list_arithmetic_error_cases() -> None:
         _ = pl.Series("a", [[1, 2]]) / pl.Series("b", [[1, 2], None])
 
     # Different list length:
-    with pytest.raises(
-        InvalidOperationError, match="lists of the same size; got 2 and 1"
-    ):
+    with pytest.raises(InvalidOperationError, match="lists of the same size"):
         _ = pl.Series("a", [[1, 2]]) / pl.Series("b", [[1]])
     with pytest.raises(
         InvalidOperationError, match="lists of the same size; got 2 and 1"
@@ -696,8 +694,8 @@ def test_list_arithmetic_error_cases() -> None:
         _ = pl.Series("a", [[1, 2]]) + pl.Series("b", ["hello"])
 
     # Different nesting:
-    with pytest.raises(InvalidOperationError, match="TODO"):
-        _ = pl.Series("a", [[1]]) / pl.Series("b", [[[1]]])
+    with pytest.raises(SchemaError, match="failed to determine supertype"):
+        _ = pl.Series("a", [[1]]) + pl.Series("b", [[[1]]])
 
 
 def test_schema_owned_arithmetic_5669() -> None:
