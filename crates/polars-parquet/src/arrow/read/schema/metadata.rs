@@ -51,7 +51,7 @@ fn convert_data_type(data_type: ArrowDataType) -> ArrowDataType {
             // Polars doesn't support Map.
             // A map is physically a `List<Struct<K, V>>`
             // So we read as list.
-            LargeList(field)
+            LargeList(Box::new(convert_field(*field)))
         },
         dt => dt,
     }
