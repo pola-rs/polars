@@ -197,9 +197,32 @@ impl ListChunked {
     ) -> PolarsResult<Series> {
         polars_ensure!(self.len() == rhs.len(), InvalidOperation: "can only do arithmetic operations on Series of the same size; got {} and {}", self.len(), rhs.len());
         // TODO make sure the list shapes the same
+
+        if self.null_count() > 0 || rhs.null_count() > 0 {
+            // A slower implementation since we can't just add the underlying
+            // values Arrow arrays. Given nulls, the two values arrays might not
+            // line up the way we expect.
+            let mut result = self.clear();
+            let combined = self.amortized_iter().zip(rhs.list()?.amortized_iter()).map(|(a, b)| {
+                let (Some(a_owner), Some(b_owner)) = (a, b) else {
+                    // Operations with nulls always result in nulls:
+                    return Ok(Series::full_null(self.name(), 1, self.dtype()));
+                };
+                let a = a_owner.as_ref();
+                let b = b_owner.as_ref();
+                polars_ensure!(a.len() == b.len(), InvalidOperation: "can only do arithmetic operations on lists of the same size; got {} and {}", a.len(), b.len());
+                op(a, b).and_then(|s| s.implode()).map(Series::from)
+            });
+            for c in combined.into_iter() {
+                result.append(c?.list()?)?;
+            }
+            return Ok(result.into());
+        }
+
         let l_rechunked = self.rechunk().into_series();
         let l_leaf_array = l_rechunked.get_leaf_array();
         let r_leaf_array = rhs.rechunk().get_leaf_array();
+
         let result = op(&l_leaf_array, &r_leaf_array)?;
 
         // We now need to wrap the Arrow arrays with the metadata that turns

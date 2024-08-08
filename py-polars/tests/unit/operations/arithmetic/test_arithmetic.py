@@ -636,7 +636,6 @@ def test_list_arithmetic_same_size(
     expr: Callable[[pl.Series | pl.Expr, pl.Series | pl.Expr], pl.Series],
     column_names: tuple[str, str],
 ) -> None:
-    print(expected)
     df = pl.DataFrame(
         [
             pl.Series("a", [[1, 2], [3]]),
@@ -653,6 +652,21 @@ def test_list_arithmetic_same_size(
     assert_series_equal(
         expr(df[column_names[0]], df[column_names[1]]),
         pl.Series(column_names[0], expected),
+    )
+
+
+@pytest.mark.parametrize(
+    ("a", "b", "expected"),
+    [
+        ([[2, 3]], [[None, 5]], [[None, 8]]),
+        ([[2], None, [5]], [None, [3], [2]], [None, None, [7]]),
+        ([[[2]], [None]], [[[3]], [[6]]], [[[5]], [None]]),
+    ],
+)
+def test_list_arithmetic_nulls(a: list[Any], b: list[Any], expected: list[Any]) -> None:
+    assert_series_equal(
+        pl.Series(a) + pl.Series(b),
+        pl.Series(expected),
     )
 
 
