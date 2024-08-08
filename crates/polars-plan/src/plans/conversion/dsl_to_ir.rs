@@ -556,16 +556,6 @@ pub fn to_alp_impl(
 
             let left_on = to_expr_irs_ignore_alias(left_on, expr_arena);
             let right_on = to_expr_irs_ignore_alias(right_on, expr_arena);
-            let mut joined_on = PlHashSet::new();
-            for (l, r) in left_on.iter().zip(right_on.iter()) {
-                polars_ensure!(
-                    joined_on.insert((l.output_name(), r.output_name())),
-                    InvalidOperation: "joining with repeated key names; already joined on {} and {}",
-                    l.output_name(),
-                    r.output_name()
-                )
-            }
-            drop(joined_on);
 
             convert.fill_scratch(&left_on, expr_arena);
             convert.fill_scratch(&right_on, expr_arena);
