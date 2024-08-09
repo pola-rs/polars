@@ -124,6 +124,8 @@ pub fn iter_to_arrays(
     data_type: ArrowDataType,
     mut filter: Option<Filter>,
 ) -> ParquetResult<Box<dyn Array>> {
+    _ = iter.read_dict_page()?;
+
     let num_rows = Filter::opt_num_rows(&filter, iter.total_num_values());
 
     let mut len = 0usize;

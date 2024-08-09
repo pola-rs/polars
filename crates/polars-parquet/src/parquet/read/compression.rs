@@ -215,12 +215,14 @@ impl Iterator for BasicDecompressor {
             Some(Ok(p)) => p,
         };
 
-        Some(decompress(page, &mut self.buffer).map(|p| {
-            if let Page::Data(p) = p {
-                p
-            } else {
-                panic!("Found compressed page in the middle of the pages")
-            }
+        Some(decompress(page, &mut self.buffer).and_then(|p| {
+            let Page::Data(p) = p else {
+                return Err(ParquetError::oos(
+                    "Found dictionary page beyond the first page of a column chunk",
+                ));
+            };
+
+            Ok(p)
         }))
     }
 
