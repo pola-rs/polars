@@ -269,12 +269,6 @@ impl AExpr {
                 function.get_field(schema, Context::Default, &fields)
             },
             Slice { input, .. } => arena.get(*input).to_field_impl(schema, arena, nested),
-            Wildcard => {
-                polars_bail!(ComputeError: "wildcard column selection not supported at this point")
-            },
-            Nth(n) => {
-                polars_bail!(ComputeError: "nth column selection not supported at this point (n={})", n)
-            },
         }
     }
 }

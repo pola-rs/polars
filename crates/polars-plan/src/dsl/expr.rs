@@ -318,7 +318,7 @@ impl Expr {
         ctxt: Context,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<Field> {
-        let root = to_aexpr(self.clone(), expr_arena);
+        let root = to_aexpr(self.clone(), expr_arena)?;
         expr_arena.get(root).to_field(schema, ctxt, expr_arena)
     }
 }
