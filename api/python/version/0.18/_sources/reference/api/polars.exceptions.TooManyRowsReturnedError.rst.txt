@@ -1,0 +1,6 @@
+﻿polars.exceptions.TooManyRowsReturnedError
+==========================================
+
+.. currentmodule:: polars.exceptions
+
+.. autoexception:: TooManyRowsReturnedError

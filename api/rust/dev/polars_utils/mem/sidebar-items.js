@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["prefetch_l2","to_mutable_slice"]};

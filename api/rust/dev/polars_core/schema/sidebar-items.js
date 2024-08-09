@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["ensure_matching_schema"],"struct":["Schema"],"trait":["IndexOfSchema","SchemaNamesAndDtypes"],"type":["SchemaRef"]};

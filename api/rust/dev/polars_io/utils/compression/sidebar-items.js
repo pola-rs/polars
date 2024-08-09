@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["is_compressed"],"mod":["magic"]};

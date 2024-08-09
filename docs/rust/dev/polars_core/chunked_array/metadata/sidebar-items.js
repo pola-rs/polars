@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["MetadataMerge"],"struct":["Metadata","MetadataEnv","MetadataFlags","MetadataProperties"],"trait":["MetadataCollectable"]};

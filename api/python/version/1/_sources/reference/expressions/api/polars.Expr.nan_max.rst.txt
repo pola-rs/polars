@@ -1,0 +1,6 @@
+﻿polars.Expr.nan\_max
+====================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.nan_max
