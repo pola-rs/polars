@@ -2,7 +2,9 @@ use std::ops::Sub;
 
 use polars_core::chunked_array::ops::{SortMultipleOptions, SortOptions};
 use polars_core::export::regex;
-use polars_core::prelude::{polars_bail, polars_err, DataType, PolarsResult, Schema, TimeUnit};
+use polars_core::prelude::{
+    polars_bail, polars_err, DataType, PolarsResult, QuantileInterpolOptions, Schema, TimeUnit,
+};
 use polars_lazy::dsl::Expr;
 #[cfg(feature = "list_eval")]
 use polars_lazy::dsl::ListNameSpaceExtension;
@@ -503,6 +505,20 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT MEDIAN(column_1) FROM df;
     /// ```
     Median,
+    /// SQL 'quantile_disc' function
+    /// Returns the discrete quantile element from the grouping
+    /// (greatest value from the set less or equal to the actual quantile).
+    /// ```sql
+    /// SELECT QUANTILE_DISC(column_1) FROM df;
+    /// ```
+    QuantileDisc,
+    /// SQL 'quantile_cont' function
+    /// Returns the continuous quantile element from the grouping
+    /// (interpolated value between two closest values).
+    /// ```sql
+    /// SELECT QUANTILE_CONT(column_1) FROM df;
+    /// ```
+    QuantileCont,
     /// SQL 'min' function
     /// Returns the smallest (minimum) of all the elements in the grouping.
     /// ```sql
@@ -685,6 +701,7 @@ impl PolarsSQLFunctions {
             "pi",
             "pow",
             "power",
+            "quantile",
             "radians",
             "regexp_like",
             "replace",
@@ -817,6 +834,8 @@ impl PolarsSQLFunctions {
             "last" => Self::Last,
             "max" => Self::Max,
             "median" => Self::Median,
+            "quantile_disc" => Self::QuantileDisc,
+            "quantile_cont" => Self::QuantileCont,
             "min" => Self::Min,
             "stdev" | "stddev" | "stdev_samp" | "stddev_samp" => Self::StdDev,
             "sum" => Self::Sum,
@@ -1242,6 +1261,44 @@ impl SQLFunctionVisitor<'_> {
             Last => self.visit_unary(Expr::last),
             Max => self.visit_unary_with_opt_cumulative(Expr::max, Expr::cum_max),
             Median => self.visit_unary(Expr::median),
+            QuantileDisc => {
+                let args = extract_args(function)?;
+                match args.len() {
+                    2 => self.try_visit_binary(|e, q| {
+                        let value = match q {
+                            Expr::Literal(LiteralValue::Float(f)) => {
+                                if (0.0..=1.0).contains(&f) {
+                                    Expr::from(f)
+                                } else {
+                                    polars_bail!(SQLSyntax: "QUANTILE_DISC value must be between 0 and 1 ({})", args[1])
+                                }
+                            },
+                            _ => polars_bail!(SQLSyntax: "invalid value for QUANTILE_DISC ({})", args[1])
+                        };
+                        Ok(e.quantile(value, QuantileInterpolOptions::Lower))
+                    }),
+                    _ => polars_bail!(SQLSyntax: "QUANTILE_DISC expects 2 arguments (found {})", args.len()),
+                }
+            },
+            QuantileCont => {
+                let args = extract_args(function)?;
+                match args.len() {
+                    2 => self.try_visit_binary(|e, q| {
+                        let value = match q {
+                            Expr::Literal(LiteralValue::Float(f)) => {
+                                if (0.0..=1.0).contains(&f) {
+                                    Expr::from(f)
+                                } else {
+                                    polars_bail!(SQLSyntax: "QUANTILE_CONT value must be between 0 and 1 ({})", args[1])
+                                }
+                            },
+                            _ => polars_bail!(SQLSyntax: "invalid value for QUANTILE_CONT ({})", args[1])
+                        };
+                        Ok(e.quantile(value, QuantileInterpolOptions::Linear))
+                    }),
+                    _ => polars_bail!(SQLSyntax: "QUANTILE_CONT expects 2 arguments (found {})", args.len()),
+                }
+            },
             Min => self.visit_unary_with_opt_cumulative(Expr::min, Expr::cum_min),
             StdDev => self.visit_unary(|e| e.std(1)),
             Sum => self.visit_unary_with_opt_cumulative(Expr::sum, Expr::cum_sum),
