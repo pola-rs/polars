@@ -65,6 +65,10 @@ pub fn maybe_decompress_bytes<'a>(bytes: &'a [u8], out: &'a mut Vec<u8>) -> Pola
                 flate2::read::ZlibDecoder::new(bytes)
                     .read_to_end(out)
                     .map_err(to_compute_err)?;
+            } else if bytes.starts_with(&LZMA) {
+                xz2::read::XzDecoder::new(bytes)
+                    .read_to_end(out)
+                    .map_err(to_compute_err)?;
             } else if bytes.starts_with(&ZSTD) {
                 zstd::Decoder::new(bytes)?.read_to_end(out)?;
             } else {
