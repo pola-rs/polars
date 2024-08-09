@@ -346,7 +346,7 @@ impl DslBuilder {
         .into()
     }
 
-    pub fn explode(self, columns: Vec<Expr>) -> Self {
+    pub fn explode(self, columns: Vec<Selector>) -> Self {
         DslPlan::MapFunction {
             input: Arc::new(self.0),
             function: DslFunction::Explode { columns },
@@ -354,7 +354,7 @@ impl DslBuilder {
         .into()
     }
 
-    pub fn unpivot(self, args: UnpivotArgs) -> Self {
+    pub fn unpivot(self, args: UnpivotArgsDSL) -> Self {
         DslPlan::MapFunction {
             input: Arc::new(self.0),
             function: DslFunction::Unpivot { args },

@@ -86,7 +86,7 @@ pub enum FunctionNode {
         schema: CachedSchema,
     },
     Explode {
-        columns: Arc<[Arc<str>]>,
+        columns: Arc<[ColumnName]>,
         #[cfg_attr(feature = "serde", serde(skip))]
         schema: CachedSchema,
     },

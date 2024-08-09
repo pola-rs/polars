@@ -1512,7 +1512,7 @@ impl LazyFrame {
     }
 
     /// Apply explode operation. [See eager explode](polars_core::frame::DataFrame::explode).
-    pub fn explode<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(self, columns: E) -> LazyFrame {
+    pub fn explode<E: AsRef<[IE]>, IE: Into<Selector> + Clone>(self, columns: E) -> LazyFrame {
         let columns = columns
             .as_ref()
             .iter()
@@ -1621,7 +1621,7 @@ impl LazyFrame {
     /// Unpivot the DataFrame from wide to long format.
     ///
     /// See [`UnpivotArgs`] for information on how to unpivot a DataFrame.
-    pub fn unpivot(self, args: UnpivotArgs) -> LazyFrame {
+    pub fn unpivot(self, args: UnpivotArgsDSL) -> LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().unpivot(args).build();
         Self::from_logical_plan(lp, opt_state)

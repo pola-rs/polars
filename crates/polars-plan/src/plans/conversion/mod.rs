@@ -18,7 +18,7 @@ use polars_utils::vec::ConvertVec;
 use recursive::recursive;
 pub(crate) mod type_coercion;
 
-pub(crate) use expr_expansion::{is_regex_projection, prepare_projection, rewrite_projections};
+pub(crate) use expr_expansion::{expand_selectors, is_regex_projection, prepare_projection};
 
 use crate::constants::get_len_name;
 use crate::prelude::*;

@@ -847,7 +847,7 @@ fn replace_selector(expr: Expr, schema: &Schema, keys: &[Expr]) -> PolarsResult<
     })
 }
 
-pub(super) fn expand_selectors(
+pub(crate) fn expand_selectors(
     s: Vec<Selector>,
     schema: &Schema,
     keys: &[Expr],

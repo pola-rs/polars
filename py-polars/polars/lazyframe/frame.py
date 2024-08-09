@@ -5783,9 +5783,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ c       ┆ 8       │
         └─────────┴─────────┘
         """
-        columns = parse_into_list_of_expressions(
-            *_expand_selectors(self, columns, *more_columns)
-        )
+        columns = parse_into_list_of_expressions(columns, *more_columns)
         return self._from_pyldf(self._ldf.explode(columns))
 
     def unique(
@@ -5971,7 +5969,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └──────┴─────┴──────┘
         """
         if subset is not None:
-            subset = _expand_selectors(self, subset)
+            subset = parse_into_list_of_expressions(subset)
         return self._from_pyldf(self._ldf.drop_nulls(subset))
 
     def unpivot(
@@ -6040,8 +6038,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ z   ┆ c        ┆ 6     │
         └─────┴──────────┴───────┘
         """
-        on = [] if on is None else _expand_selectors(self, on)
-        index = [] if index is None else _expand_selectors(self, index)
+        on = [] if on is None else parse_into_list_of_expressions(on)
+        index = [] if index is None else parse_into_list_of_expressions(index)
 
         return self._from_pyldf(
             self._ldf.unpivot(on, index, value_name, variable_name, streamable)

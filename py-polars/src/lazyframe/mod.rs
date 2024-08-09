@@ -1092,10 +1092,10 @@ impl PyLazyFrame {
         .into()
     }
 
-    fn drop_nulls(&self, subset: Option<Vec<String>>) -> Self {
+    fn drop_nulls(&self, subset: Option<Vec<PyExpr>>) -> Self {
         let ldf = self.ldf.clone();
-        ldf.drop_nulls(subset.map(|v| v.into_iter().map(|s| col(&s)).collect()))
-            .into()
+        let subset = subset.map(|e| e.to_exprs());
+        ldf.drop_nulls(subset).into()
     }
 
     fn slice(&self, offset: i64, len: Option<IdxSize>) -> Self {
@@ -1111,15 +1111,15 @@ impl PyLazyFrame {
     #[pyo3(signature = (on, index, value_name, variable_name, streamable))]
     fn unpivot(
         &self,
-        on: Vec<String>,
-        index: Vec<String>,
+        on: Vec<Expr>,
+        index: Vec<Expr>,
         value_name: Option<String>,
         variable_name: Option<String>,
         streamable: bool,
     ) -> Self {
-        let args = UnpivotArgs {
-            on: strings_to_smartstrings(on),
-            index: strings_to_smartstrings(index),
+        let args = UnpivotArgsDSL {
+            on: on.into_iter().map(|e| e.into()).collect(),
+            index: index.into_iter().map(|e| e.into()).collect(),
             value_name: value_name.map(|s| s.into()),
             variable_name: variable_name.map(|s| s.into()),
             streamable,
