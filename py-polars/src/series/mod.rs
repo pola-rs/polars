@@ -393,6 +393,13 @@ impl PySeries {
         }
 
         let output_type = output_type.map(|dt| dt.0);
+        if output_type.is_none() {
+
+            eprintln!("apply lambda none output type")
+        }
+        else {
+            eprintln!("Apply lambda output type: {}", output_type.clone().unwrap());
+        }
 
         macro_rules! dispatch_apply {
             ($self:expr, $method:ident, $($args:expr),*) => {

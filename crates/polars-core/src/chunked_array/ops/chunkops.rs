@@ -1,6 +1,6 @@
 use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
 use polars_error::constants::LENGTH_LIMIT_MSG;
-
+use polars_error::PolarsWarning::UserWarning;
 use super::*;
 use crate::chunked_array::metadata::MetadataProperties;
 #[cfg(feature = "object")]
@@ -54,6 +54,19 @@ pub(crate) fn slice(
     let mut new_chunks = Vec::with_capacity(1);
     let (raw_offset, slice_len) = slice_offsets(offset, slice_length, own_length);
 
+    chunks.iter().for_each(|x|{
+        eprintln!("{}", x.len());
+        let stack_check = 1;
+
+        eprintln!("Stack: {:p}", &stack_check);
+        unsafe {
+
+            eprintln!("Starts: {:p}", &x.get_unchecked(0));
+            eprintln!("Starts: {:p}", &x.get_unchecked(1));
+
+        }
+        eprintln!("location {:p}", &x);
+    });
     let mut remaining_length = slice_len;
     let mut remaining_offset = raw_offset;
     let mut new_len = 0;
@@ -241,7 +254,17 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         // A normal slice, slice the buffers and thus keep the whole memory allocated.
         let exec = || {
             let (chunks, len) = slice(&self.chunks, offset, length, self.len());
+            chunks.iter().for_each(|x|{
+                unsafe {
+
+                    eprintln!("Starts: {:p}", &x.get_unchecked(0));
+
+                }
+                eprintln!("location {:p}", x)
+            });
             let mut out = unsafe { self.copy_with_chunks(chunks) };
+            polars_warn!(UserWarning, "Conpying");
+            eprintln!("Conpying {}", &out.len());
 
             use MetadataProperties as P;
             let mut properties = P::SORTED | P::FAST_EXPLODE_LIST;
@@ -292,6 +315,8 @@ impl<T: PolarsDataType> ChunkedArray<T> {
             out.copy_metadata(self, properties);
             out.length = len as IdxSize;
 
+            eprintln!("Slice, size {}", out.length);
+
             out
         };
 
@@ -320,6 +345,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     where
         Self: Sized,
     {
+
         match length {
             Some(len) => self.slice(0, std::cmp::min(len, self.len())),
             None => self.slice(0, std::cmp::min(10, self.len())),
