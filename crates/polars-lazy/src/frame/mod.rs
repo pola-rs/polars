@@ -1621,7 +1621,7 @@ impl LazyFrame {
     /// Unpivot the DataFrame from wide to long format.
     ///
     /// See [`UnpivotArgs`] for information on how to unpivot a DataFrame.
-    pub fn unpivot(self, args: UnpivotArgs) -> LazyFrame {
+    pub fn unpivot(self, args: UnpivotArgsDSL) -> LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().unpivot(args).build();
         Self::from_logical_plan(lp, opt_state)

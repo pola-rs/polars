@@ -6038,8 +6038,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ z   ┆ c        ┆ 6     │
         └─────┴──────────┴───────┘
         """
-        on = [] if on is None else _expand_selectors(self, on)
-        index = [] if index is None else _expand_selectors(self, index)
+        on = [] if on is None else parse_into_list_of_expressions(on)
+        index = [] if index is None else parse_into_list_of_expressions(index)
 
         return self._from_pyldf(
             self._ldf.unpivot(on, index, value_name, variable_name, streamable)

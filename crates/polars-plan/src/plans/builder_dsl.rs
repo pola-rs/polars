@@ -354,7 +354,7 @@ impl DslBuilder {
         .into()
     }
 
-    pub fn unpivot(self, args: UnpivotArgs) -> Self {
+    pub fn unpivot(self, args: UnpivotArgsDSL) -> Self {
         DslPlan::MapFunction {
             input: Arc::new(self.0),
             function: DslFunction::Unpivot { args },
