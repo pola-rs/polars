@@ -1,4 +1,7 @@
+from collections import OrderedDict
+
 import polars as pl
+from polars import StringCache
 from polars.testing import assert_frame_equal
 
 
@@ -81,7 +84,7 @@ def test_categorical_get_categories() -> None:
     ).cat.get_categories().to_list() == ["foo", "bar", "ham"]
 
 
-def test_cat_to_local() -> None:
+def test_cat_series_to_local() -> None:
     with pl.StringCache():
         s1 = pl.Series(["a", "b", "a"], dtype=pl.Categorical)
         s2 = pl.Series(["c", "b", "d"], dtype=pl.Categorical)
@@ -103,7 +106,36 @@ def test_cat_to_local() -> None:
     assert s2.to_list() == ["c", "b", "d"]
 
 
-def test_cat_to_local_missing_values() -> None:
+def test_cat_expr_to_local() -> None:
+    with pl.StringCache():
+        df = pl.DataFrame(
+            {
+                "s1": pl.Series(["a", "b", "a"], dtype=pl.Categorical),
+                "s2": pl.Series(["c", "b", "d"], dtype=pl.Categorical),
+            }
+        )
+
+    # s2 physical starts after s1
+    assert df["s1"].to_physical().to_list() == [0, 1, 0]
+    assert df["s2"].to_physical().to_list() == [2, 1, 3]
+
+    out = df.select(pl.col("s1", "s2").cat.to_local())
+
+    # Physical has changed and now starts at 0, string values are the same
+    assert out["s1"].cat.is_local()
+    assert out["s2"].cat.is_local()
+    assert out["s1"].to_physical().to_list() == [0, 1, 0]
+    assert out["s2"].to_physical().to_list() == [0, 1, 2]
+    assert out["s1"].to_list() == ["a", "b", "a"]
+    assert out["s2"].to_list() == ["c", "b", "d"]
+
+    # s2 should be unchanged after the operation
+    assert not df["s2"].cat.is_local()
+    assert df["s2"].to_physical().to_list() == [2, 1, 3]
+    assert df["s2"].to_list() == ["c", "b", "d"]
+
+
+def test_cat_series_to_local_missing_values() -> None:
     with pl.StringCache():
         _ = pl.Series(["a", "b"], dtype=pl.Categorical)
         s = pl.Series(["c", "b", None, "d"], dtype=pl.Categorical)
@@ -112,7 +144,20 @@ def test_cat_to_local_missing_values() -> None:
     assert out.to_physical().to_list() == [0, 1, None, 2]
 
 
-def test_cat_to_local_already_local() -> None:
+def test_cat_expr_to_local_missing_values() -> None:
+    with pl.StringCache():
+        _ = pl.Series(["a", "b"], dtype=pl.Categorical)
+        df = pl.DataFrame(
+            {
+                "s": pl.Series(["c", "b", None, "d"], dtype=pl.Categorical),
+            }
+        )
+
+    out = df.select(pl.col("s").cat.to_local())
+    assert out["s"].to_physical().to_list() == [0, 1, None, 2]
+
+
+def test_cat_series_to_local_already_local() -> None:
     s = pl.Series(["a", "c", "a", "b"], dtype=pl.Categorical)
 
     assert s.cat.is_local()
@@ -122,13 +167,46 @@ def test_cat_to_local_already_local() -> None:
     assert out.to_list() == ["a", "c", "a", "b"]
 
 
-def test_cat_is_local() -> None:
+def test_cat_expr_to_local_already_local() -> None:
+    df = pl.DataFrame({"s": pl.Series(["a", "c", "a", "b"], dtype=pl.Categorical)})
+
+    assert df["s"].cat.is_local()
+    out = df.select(pl.col("s").cat.to_local())
+
+    assert out["s"].to_physical().to_list() == [0, 1, 0, 2]
+    assert out["s"].to_list() == ["a", "c", "a", "b"]
+
+
+@StringCache()
+def test_cat_global_to_local_schema() -> None:
+    _ = pl.Series(["a", "b", "c"], dtype=pl.Categorical)
+    schema = (
+        pl.LazyFrame({"s": pl.Series(["c", "b", "d"], dtype=pl.Categorical)})
+        .select(pl.col("s").cat.to_local())
+        .collect_schema()
+    )
+
+    assert schema == OrderedDict([("s", pl.Categorical(ordering="physical"))])
+
+
+def test_cat_series_is_local() -> None:
     s = pl.Series(["a", "c", "a", "b"], dtype=pl.Categorical)
     assert s.cat.is_local()
 
     with pl.StringCache():
         s2 = pl.Series(["a", "b", "a"], dtype=pl.Categorical)
     assert not s2.cat.is_local()
+
+
+def test_cat_expr_is_local() -> None:
+    df = pl.DataFrame({"s": pl.Series(["a", "c", "a", "b"], dtype=pl.Categorical)})
+    assert df["s"].cat.is_local()
+
+    with pl.StringCache():
+        df = df.with_columns(
+            pl.Series(["a", "b", "a", "c"], dtype=pl.Categorical).alias("s2")
+        )
+    assert not df["s2"].cat.is_local()
 
 
 def test_cat_uses_lexical_ordering() -> None:
