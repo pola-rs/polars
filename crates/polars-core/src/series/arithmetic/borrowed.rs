@@ -1,3 +1,7 @@
+use std::cell::Cell;
+
+use arrow::array::Array;
+
 use super::*;
 use crate::utils::align_chunks_binary;
 
@@ -168,6 +172,168 @@ impl NumOpsDispatchInner for FixedSizeListType {
     }
     fn remainder(lhs: &ArrayChunked, rhs: &Series) -> PolarsResult<Series> {
         lhs.arithm_helper(rhs, &|l, r| l.remainder(&r))
+    }
+}
+
+/// Given an ArrayRef with some primitive values, wrap it in list(s) until it
+/// matches the requested shape.
+fn reshape_list_based_on(data: &ArrayRef, shape: &ArrayRef) -> PolarsResult<ArrayRef> {
+    if let Some(list_chunk) = shape.as_any().downcast_ref::<LargeListArray>() {
+        let result = LargeListArray::try_new(
+            list_chunk.data_type().clone(),
+            list_chunk.offsets().clone(),
+            reshape_list_based_on(data, list_chunk.values())?,
+            list_chunk.validity().cloned(),
+        )?;
+        Ok(Box::new(result))
+    } else {
+        Ok(data.clone())
+    }
+}
+
+/// Given an ArrayRef, return true if it's a LargeListArrays and it has one or
+/// more nulls.
+fn maybe_list_has_nulls(data: &ArrayRef) -> bool {
+    if let Some(list_chunk) = data.as_any().downcast_ref::<LargeListArray>() {
+        if list_chunk
+            .validity()
+            .map(|bitmap| bitmap.unset_bits() > 0)
+            .unwrap_or(false)
+        {
+            true
+        } else {
+            maybe_list_has_nulls(list_chunk.values())
+        }
+    } else {
+        false
+    }
+}
+
+/// Return whether the left and right have the same shape. We assume neither has
+/// any nulls, recursively.
+fn lists_same_shapes(left: &ArrayRef, right: &ArrayRef) -> bool {
+    let left_as_list = left.as_any().downcast_ref::<LargeListArray>();
+    let right_as_list = right.as_any().downcast_ref::<LargeListArray>();
+    match (left_as_list, right_as_list) {
+        (Some(left), Some(right)) => {
+            left.offsets() == right.offsets() && lists_same_shapes(left.values(), right.values())
+        },
+        (None, None) => left.len() == right.len(),
+        _ => false,
+    }
+}
+
+impl ListChunked {
+    fn arithm_helper(
+        &self,
+        rhs: &Series,
+        op: &dyn Fn(&Series, &Series) -> PolarsResult<Series>,
+    ) -> PolarsResult<Series> {
+        polars_ensure!(
+            self.len() == rhs.len(),
+            InvalidOperation: "can only do arithmetic operations on Series of the same size; got {} and {}",
+            self.len(),
+            rhs.len()
+        );
+
+        thread_local! {
+            static HAS_NULLS: Cell<bool> = const { Cell::new(false) };
+        };
+
+        let orig_has_nulls = HAS_NULLS.get();
+
+        let mut has_nulls = orig_has_nulls;
+        if !has_nulls {
+            for chunk in self.chunks().iter() {
+                if maybe_list_has_nulls(chunk) {
+                    has_nulls = true;
+                    break;
+                }
+            }
+        }
+        if !has_nulls {
+            for chunk in rhs.chunks().iter() {
+                if maybe_list_has_nulls(chunk) {
+                    has_nulls = true;
+                    break;
+                }
+            }
+        }
+        if has_nulls {
+            // A slower implementation since we can't just add the underlying
+            // values Arrow arrays. Given nulls, the two values arrays might not
+            // line up the way we expect.
+
+            // This can be recursive, so preserve the knowledge that there
+            // were nulls. Unfortunately get_leaf_array() and explode()
+            // don't work on the Series that come out of amortized_iter(),
+            // so we need to stick to this code path.
+            HAS_NULLS.set(true);
+            scopeguard::defer! { HAS_NULLS.set(orig_has_nulls); };
+
+            let mut result = self.clear();
+            let combined = self.amortized_iter().zip(rhs.list()?.amortized_iter()).map(|(a, b)| {
+                let (Some(a_owner), Some(b_owner)) = (a, b) else {
+                    // Operations with nulls always result in nulls:
+                    return Ok(Series::full_null(self.name(), 1, self.dtype()));
+                };
+                let a = a_owner.as_ref();
+                let b = b_owner.as_ref();
+                polars_ensure!(
+                    a.len() == b.len(),
+                    InvalidOperation: "can only do arithmetic operations on lists of the same size; got {} and {}",
+                    a.len(),
+                    b.len()
+                );
+                op(a, b).and_then(|s| s.implode()).map(Series::from)
+            });
+            for c in combined.into_iter() {
+                result.append(c?.list()?)?;
+            }
+            return Ok(result.into());
+        }
+        let l_rechunked = self.clone().rechunk().into_series();
+        let l_leaf_array = l_rechunked.get_leaf_array();
+        let r_leaf_array = rhs.rechunk().get_leaf_array();
+        polars_ensure!(
+            lists_same_shapes(&l_leaf_array.chunks()[0], &r_leaf_array.chunks()[0]),
+            InvalidOperation: "can only do arithmetic operations on lists of the same size"
+        );
+
+        let result = op(&l_leaf_array, &r_leaf_array)?;
+
+        // We now need to wrap the Arrow arrays with the metadata that turns
+        // them into lists:
+        // TODO is there a way to do this without cloning the underlying data?
+        let result_chunks = result.chunks();
+        assert_eq!(result_chunks.len(), 1);
+        let left_chunk = &l_rechunked.chunks()[0];
+        let result_chunk = reshape_list_based_on(&result_chunks[0], left_chunk)?;
+
+        unsafe {
+            let mut result =
+                ListChunked::new_with_dims(self.field.clone(), vec![result_chunk], 0, 0);
+            result.compute_len();
+            Ok(result.into())
+        }
+    }
+}
+
+impl NumOpsDispatchInner for ListType {
+    fn add_to(lhs: &ListChunked, rhs: &Series) -> PolarsResult<Series> {
+        lhs.arithm_helper(rhs, &|l, r| l.add_to(r))
+    }
+    fn subtract(lhs: &ListChunked, rhs: &Series) -> PolarsResult<Series> {
+        lhs.arithm_helper(rhs, &|l, r| l.subtract(r))
+    }
+    fn multiply(lhs: &ListChunked, rhs: &Series) -> PolarsResult<Series> {
+        lhs.arithm_helper(rhs, &|l, r| l.multiply(r))
+    }
+    fn divide(lhs: &ListChunked, rhs: &Series) -> PolarsResult<Series> {
+        lhs.arithm_helper(rhs, &|l, r| l.divide(r))
+    }
+    fn remainder(lhs: &ListChunked, rhs: &Series) -> PolarsResult<Series> {
+        lhs.arithm_helper(rhs, &|l, r| l.remainder(r))
     }
 }
 
