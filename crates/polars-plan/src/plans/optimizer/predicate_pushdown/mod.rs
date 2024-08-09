@@ -133,7 +133,7 @@ impl<'a> PredicatePushDown<'a> {
                             },
                             e => e,
                         });
-                        let predicate = to_aexpr(new_expr, expr_arena);
+                        let predicate = to_aexpr(new_expr, expr_arena)?;
                         e.set_node(predicate);
                     }
                 }

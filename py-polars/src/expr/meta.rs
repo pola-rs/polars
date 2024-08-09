@@ -10,8 +10,9 @@ impl PyExpr {
         self.inner == other.inner
     }
 
-    fn meta_pop(&self) -> Vec<Self> {
-        self.inner.clone().meta().pop().to_pyexprs()
+    fn meta_pop(&self) -> PyResult<Vec<Self>> {
+        let exprs = self.inner.clone().meta().pop().map_err(PyPolarsErr::from)?;
+        Ok(exprs.to_pyexprs())
     }
 
     fn meta_root_names(&self) -> Vec<String> {
