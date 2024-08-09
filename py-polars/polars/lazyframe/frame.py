@@ -5783,9 +5783,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ c       ┆ 8       │
         └─────────┴─────────┘
         """
-        columns = parse_into_list_of_expressions(
-            *_expand_selectors(self, columns, *more_columns)
-        )
+        columns = parse_into_list_of_expressions(columns, *more_columns)
         return self._from_pyldf(self._ldf.explode(columns))
 
     def unique(

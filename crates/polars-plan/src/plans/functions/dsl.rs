@@ -1,5 +1,4 @@
 use super::*;
-use crate::plans::conversion::rewrite_projections;
 
 // Except for Opaque functions, this only has the DSL name of the function.
 #[derive(Clone)]
@@ -7,7 +6,7 @@ use crate::plans::conversion::rewrite_projections;
 pub enum DslFunction {
     FunctionNode(FunctionNode),
     Explode {
-        columns: Vec<Expr>,
+        columns: Vec<Selector>,
     },
     Unpivot {
         args: UnpivotArgs,
@@ -60,18 +59,10 @@ impl DslFunction {
     pub(crate) fn into_function_node(self, input_schema: &Schema) -> PolarsResult<FunctionNode> {
         let function = match self {
             DslFunction::Explode { columns } => {
-                let columns = rewrite_projections(columns, input_schema, &[])?;
-                // columns to string
-                let columns = columns
-                    .iter()
-                    .map(|e| {
-                        let Expr::Column(name) = e else {
-                            polars_bail!(InvalidOperation: "expected column expression")
-                        };
-                        polars_ensure!(input_schema.contains(name), col_not_found = name);
-                        Ok(name.clone())
-                    })
-                    .collect::<PolarsResult<Arc<[Arc<str>]>>>()?;
+                let columns = expand_selectors(columns, input_schema, &[])?;
+                for c in columns.as_ref() {
+                    polars_ensure!(input_schema.contains(c.as_ref()), ColumnNotFound: "'explode' on column: '{}' is invalid\n\nSchema at this point: {:?}", c.as_ref(), input_schema)
+                }
                 FunctionNode::Explode {
                     columns,
                     schema: Default::default(),

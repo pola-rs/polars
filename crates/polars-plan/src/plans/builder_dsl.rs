@@ -346,7 +346,7 @@ impl DslBuilder {
         .into()
     }
 
-    pub fn explode(self, columns: Vec<Expr>) -> Self {
+    pub fn explode(self, columns: Vec<Selector>) -> Self {
         DslPlan::MapFunction {
             input: Arc::new(self.0),
             function: DslFunction::Explode { columns },
