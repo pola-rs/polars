@@ -163,3 +163,40 @@ class TestIcebergExpressions:
 
         expr = _to_ast("(pa.compute.field('ts') <= '2023-08-08')")
         assert _convert_predicate(expr) == LessThanOrEqual("ts", "2023-08-08")
+
+
+@pytest.mark.slow()
+@pytest.mark.write_disk()
+@pytest.mark.filterwarnings(
+    "ignore:No preferred file implementation for scheme*:UserWarning"
+)
+def test_write_iceberg(tmp_path: Path) -> None:
+    df = pl.DataFrame(
+        {
+            "foo": [1, 2, 3, 4, 5],
+            "bar": [6, 7, 8, 9, 10],
+            "ham": ["a", "b", "c", "d", "e"],
+        }
+    )
+
+    from pyiceberg.catalog.sql import SqlCatalog
+
+    catalog = SqlCatalog(
+        "default", uri="sqlite:///:memory:", warehouse=f"file://{tmp_path}"
+    )
+    catalog.create_namespace("default")
+    table = catalog.create_table(
+        "default.table",
+        schema=df.to_arrow().schema,
+    )
+
+    df.write_iceberg(table, mode="overwrite")
+    new_df = pl.scan_iceberg(table).collect()
+    assert df.schema == new_df.schema
+    assert len(df) == len(new_df)
+    assert df.equals(new_df)
+
+    df.write_iceberg(table, mode="append")
+    new_df = pl.scan_iceberg(table).collect()
+    assert df.schema == new_df.schema
+    assert 2 * len(df) == len(new_df)
