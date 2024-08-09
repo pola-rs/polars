@@ -349,6 +349,12 @@ impl ChunkCast for StringChunked {
                 };
                 out
             },
+            #[cfg(feature = "dtype-time")]
+            DataType::Time => {
+                let result = cast_chunks(&self.chunks, data_type, options)?;
+                let out = Series::try_from((self.name(), result))?;
+                Ok(out)
+            },
             _ => cast_impl(self.name(), &self.chunks, data_type, options),
         }
     }
