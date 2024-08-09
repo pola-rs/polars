@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from collections import OrderedDict
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -235,6 +236,70 @@ class TestWriteDatabase:
             match="unrecognised connection type",
         ):
             df.write_database(connection=True, table_name="misc")  # type: ignore[arg-type]
+
+    def test_write_database_adbc_incompatible_dtypes(
+        self, engine: DbWriteEngine, uri_connection: bool, tmp_path: Path
+    ) -> None:
+        # Note: this test currently does not cover code intended for this test, as it
+        # applies to postgres connections only.
+        if engine != "adbc" or uri_connection is True:
+            pytest.skip()
+
+        # Replace the following with a postgres connection once available.
+        test_db_uri = f"sqlite:///{tmp_path}/test_adbc_incompat_dtypes.db"
+        conn = self._get_connection(test_db_uri, "adbc", uri_connection=False)
+        df = pl.DataFrame(
+            {
+                "i8": pl.Series([-128, 2, 127], dtype=pl.Int8),
+                "i16": pl.Series([-32768, 2, 32767], dtype=pl.Int16),
+                "i32": pl.Series([-2147483648, 0, 2147483647], dtype=pl.Int32),
+                "i64": pl.Series(
+                    [-9223372036854775808, 1, 9223372036854775807], dtype=pl.Int64
+                ),
+                "u8": pl.Series([0, 1, 255], dtype=pl.UInt8),
+                "u16": pl.Series([0, 1, 65535], dtype=pl.UInt16),
+                "u32": pl.Series([0, 1, 4294967295], dtype=pl.UInt32),
+                "u64": pl.Series([0, 1, 9223372036854775807], dtype=pl.UInt64),
+                # "time": pl.Series([time(1), time(2), time(3)], dtype=pl.Time),
+            }
+        )
+        table_name = "test_adbc_incompat_dtypes"
+        df.write_database(
+            connection=conn,
+            table_name=table_name,
+            if_table_exists="replace",
+            engine="adbc",
+        )
+        df_out = pl.read_database(f"SELECT * FROM {table_name}", conn)
+        vendor = conn.adbc_get_info().get("vendor_name")
+        conn.close()
+        if vendor == "PostgresSQL":
+            expected = OrderedDict(
+                [
+                    ("i8", pl.Int16),
+                    ("i16", pl.Int16),
+                    ("i32", pl.Int32),
+                    ("i64", pl.Int64),
+                    ("u8", pl.Int16),
+                    ("u16", pl.Int32),
+                    ("u32", pl.Int64),
+                    ("u64", pl.Int64),
+                ]
+            )
+        elif vendor == "SQLite":
+            expected = OrderedDict(
+                [
+                    ("i8", pl.Int64),
+                    ("i16", pl.Int64),
+                    ("i32", pl.Int64),
+                    ("i64", pl.Int64),
+                    ("u8", pl.Int64),
+                    ("u16", pl.Int64),
+                    ("u32", pl.Int64),
+                    ("u64", pl.Int64),
+                ]
+            )
+        assert df_out.schema == expected
 
 
 @pytest.mark.write_disk()
