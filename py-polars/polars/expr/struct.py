@@ -214,9 +214,20 @@ class ExprStructNameSpace:
         """
         return wrap_expr(self._pyexpr.struct_rename_fields(names))
 
-    def json_encode(self) -> Expr:
+    def json_encode(self, *, ignore_nulls: bool = False) -> Expr:
         """
         Convert this struct to a string column with json values.
+
+        Parameters
+        ----------
+        ignore_nulls
+            Ignore missing values in the struct when serializing.
+
+                - When `ignore_nulls=False`, the values in the struct are included even
+                  if they are null
+
+                - When `ignore_nulls=True`, the values in the struct are skipped if they
+                  are null
 
         Examples
         --------
@@ -232,8 +243,22 @@ class ExprStructNameSpace:
         │ {[1, 2],[45]}    ┆ {"a":[1,2],"b":[45]}   │
         │ {[9, 1, 3],null} ┆ {"a":[9,1,3],"b":null} │
         └──────────────────┴────────────────────────┘
+        >>> pl.DataFrame(
+        ...     {"a": [{"a": [1, 2], "b": [45]}, {"a": [9, 1, 3], "b": None}]}
+        ... ).with_columns(
+        ...     pl.col("a").struct.json_encode(ignore_nulls=True).alias("encoded")
+        ... )
+        shape: (2, 2)
+        ┌──────────────────┬────────────────────────┐
+        │ a                ┆ encoded                │
+        │ ---              ┆ ---                    │
+        │ struct[2]        ┆ str                    │
+        ╞══════════════════╪════════════════════════╡
+        │ {[1, 2],[45]}    ┆ {"a":[1,2],"b":[45]}   │
+        │ {[9, 1, 3],null} ┆ {"a":[9,1,3]}          │
+        └──────────────────┴────────────────────────┘
         """
-        return wrap_expr(self._pyexpr.struct_json_encode())
+        return wrap_expr(self._pyexpr.struct_json_encode(ignore_nulls))
 
     def with_fields(
         self,

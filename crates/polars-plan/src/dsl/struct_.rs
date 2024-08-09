@@ -63,9 +63,11 @@ impl StructNameSpace {
     }
 
     #[cfg(feature = "json")]
-    pub fn json_encode(self) -> Expr {
+    pub fn json_encode(self, ignore_nulls: bool) -> Expr {
         self.0
-            .map_private(FunctionExpr::StructExpr(StructFunction::JsonEncode))
+            .map_private(FunctionExpr::StructExpr(StructFunction::JsonEncode {
+                ignore_nulls,
+            }))
     }
 
     pub fn with_fields(self, fields: Vec<Expr>) -> PolarsResult<Expr> {
