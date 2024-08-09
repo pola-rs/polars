@@ -95,16 +95,27 @@ def operators() -> SearchStrategy[str]:
 
 
 @st.composite
-def east_df(draw: DrawFn, with_nulls: bool = False) -> pl.DataFrame:
+def east_df(
+    draw: DrawFn, with_nulls: bool = False, use_floats: bool = False
+) -> pl.DataFrame:
     height = draw(st.integers(min_value=0, max_value=20))
 
-    dur_strategy: SearchStrategy[Any] = st.integers(min_value=100, max_value=105)
-    rev_strategy: SearchStrategy[Any] = st.integers(min_value=9, max_value=13)
-    cores_strategy = st.integers(min_value=1, max_value=10)
+    if use_floats:
+        dur_strategy: SearchStrategy[Any] = st.floats(allow_nan=True)
+        rev_strategy: SearchStrategy[Any] = st.floats(allow_nan=True)
+        dur_dtype: type[pl.DataType] = pl.Float32
+        rev_dtype: type[pl.DataType] = pl.Float32
+    else:
+        dur_strategy = st.integers(min_value=100, max_value=105)
+        rev_strategy = st.integers(min_value=9, max_value=13)
+        dur_dtype = pl.Int64
+        rev_dtype = pl.Int64
 
     if with_nulls:
         dur_strategy = dur_strategy | st.none()
         rev_strategy = rev_strategy | st.none()
+
+    cores_strategy = st.integers(min_value=1, max_value=10)
 
     ids = np.arange(0, height)
     dur = draw(st.lists(dur_strategy, min_size=height, max_size=height))
@@ -114,24 +125,35 @@ def east_df(draw: DrawFn, with_nulls: bool = False) -> pl.DataFrame:
     return pl.DataFrame(
         [
             pl.Series("id", ids, dtype=pl.Int64),
-            pl.Series("dur", dur, dtype=pl.Int64),
-            pl.Series("rev", rev, dtype=pl.Int64),
+            pl.Series("dur", dur, dtype=dur_dtype),
+            pl.Series("rev", rev, dtype=rev_dtype),
             pl.Series("cores", cores, dtype=pl.Int64),
         ]
     )
 
 
 @st.composite
-def west_df(draw: DrawFn, with_nulls: bool = False) -> pl.DataFrame:
+def west_df(
+    draw: DrawFn, with_nulls: bool = False, use_floats: bool = False
+) -> pl.DataFrame:
     height = draw(st.integers(min_value=0, max_value=20))
 
-    time_strategy: SearchStrategy[Any] = st.integers(min_value=100, max_value=105)
-    cost_strategy: SearchStrategy[Any] = st.integers(min_value=9, max_value=13)
-    cores_strategy = st.integers(min_value=1, max_value=10)
+    if use_floats:
+        time_strategy: SearchStrategy[Any] = st.floats(allow_nan=True)
+        cost_strategy: SearchStrategy[Any] = st.floats(allow_nan=True)
+        time_dtype: type[pl.DataType] = pl.Float32
+        cost_dtype: type[pl.DataType] = pl.Float32
+    else:
+        time_strategy = st.integers(min_value=100, max_value=105)
+        cost_strategy = st.integers(min_value=9, max_value=13)
+        time_dtype = pl.Int64
+        cost_dtype = pl.Int64
 
     if with_nulls:
         time_strategy = time_strategy | st.none()
         cost_strategy = cost_strategy | st.none()
+
+    cores_strategy = st.integers(min_value=1, max_value=10)
 
     t_id = np.arange(100, 100 + height)
     time = draw(st.lists(time_strategy, min_size=height, max_size=height))
@@ -141,8 +163,8 @@ def west_df(draw: DrawFn, with_nulls: bool = False) -> pl.DataFrame:
     return pl.DataFrame(
         [
             pl.Series("t_id", t_id, dtype=pl.Int64),
-            pl.Series("time", time, dtype=pl.Int64),
-            pl.Series("cost", cost, dtype=pl.Int64),
+            pl.Series("time", time, dtype=time_dtype),
+            pl.Series("cost", cost, dtype=cost_dtype),
             pl.Series("cores", cores, dtype=pl.Int64),
         ]
     )
@@ -170,6 +192,23 @@ def test_ie_join(east: pl.DataFrame, west: pl.DataFrame, op1: str, op2: str) -> 
     op2=operators(),
 )
 def test_ie_join_with_nulls(
+    east: pl.DataFrame, west: pl.DataFrame, op1: str, op2: str
+) -> None:
+    actual = east.ie_join(west, "dur", op1, "time", "rev", op2, "cost")
+
+    expected = east.join(west, how="cross").filter(
+        _filter_expression("dur", op1, "time") & _filter_expression("rev", op2, "cost")
+    )
+    assert_frame_equal(actual, expected, check_row_order=False, check_exact=True)
+
+
+@given(
+    east=east_df(use_floats=True),
+    west=west_df(use_floats=True),
+    op1=operators(),
+    op2=operators(),
+)
+def test_ie_join_with_floats(
     east: pl.DataFrame, west: pl.DataFrame, op1: str, op2: str
 ) -> None:
     actual = east.ie_join(west, "dur", op1, "time", "rev", op2, "cost")
