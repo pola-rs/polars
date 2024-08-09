@@ -1,3 +1,5 @@
+#[cfg(feature = "regex")]
+use regex::Regex;
 #[cfg(feature = "dtype-struct")]
 use smartstring::alias::String as SmartString;
 
@@ -46,6 +48,19 @@ impl ExprNameNameSpace {
     pub fn suffix(self, suffix: &str) -> Expr {
         let suffix = suffix.to_string();
         self.map(move |name| Ok(format!("{name}{suffix}")))
+    }
+
+    /// Replace matching string pattern in the root column name with a new value.
+    #[cfg(feature = "regex")]
+    pub fn replace(self, pattern: &str, value: &str, literal: bool) -> Expr {
+        let value = value.to_string();
+        let pattern = pattern.to_string();
+        if literal {
+            self.map(move |name| Ok(name.replace(&pattern, &value)))
+        } else {
+            let rx = Regex::new(&pattern);
+            self.map(move |name| Ok(rx.clone()?.replace_all(name, &value).to_string()))
+        }
     }
 
     /// Update the root column name to use lowercase characters.
