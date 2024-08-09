@@ -447,7 +447,7 @@ class ExprStringNameSpace:
 
     def to_uppercase(self) -> Expr:
         """
-        Transform to uppercase variant.
+        Modify strings to their uppercase equivalent.
 
         Examples
         --------
@@ -467,7 +467,7 @@ class ExprStringNameSpace:
 
     def to_lowercase(self) -> Expr:
         """
-        Transform to lowercase variant.
+        Modify strings to their lowercase equivalent.
 
         Examples
         --------
@@ -487,22 +487,37 @@ class ExprStringNameSpace:
 
     def to_titlecase(self) -> Expr:
         """
-        Transform to titlecase variant.
+        Modify strings to their titlecase equivalent.
+
+        Notes
+        -----
+        This is a form of case transform where the first letter of each word is
+        capitalized, with the rest of the word in lowercase. Non-alphanumeric
+        characters define the word boundaries.
 
         Examples
         --------
         >>> df = pl.DataFrame(
-        ...     {"sing": ["welcome to my world", "THERE'S NO TURNING BACK"]}
+        ...     {
+        ...         "quotes": [
+        ...             "'e.t. phone home'",
+        ...             "you talkin' to me?",
+        ...             "to infinity,and BEYOND!",
+        ...         ]
+        ...     }
         ... )
-        >>> df.with_columns(foo_title=pl.col("sing").str.to_titlecase())
-        shape: (2, 2)
+        >>> df.with_columns(
+        ...     quotes_title=pl.col("quotes").str.to_titlecase(),
+        ... )
+        shape: (3, 2)
         ┌─────────────────────────┬─────────────────────────┐
-        │ sing                    ┆ foo_title               │
+        │ quotes                  ┆ quotes_title            │
         │ ---                     ┆ ---                     │
         │ str                     ┆ str                     │
         ╞═════════════════════════╪═════════════════════════╡
-        │ welcome to my world     ┆ Welcome To My World     │
-        │ THERE'S NO TURNING BACK ┆ There's No Turning Back │
+        │ 'e.t. phone home'       ┆ 'E.T. Phone Home'       │
+        │ you talkin' to me?      ┆ You Talkin' To Me?      │
+        │ to infinity,and BEYOND! ┆ To Infinity,And Beyond! │
         └─────────────────────────┴─────────────────────────┘
         """
         return wrap_expr(self._pyexpr.str_to_titlecase())
