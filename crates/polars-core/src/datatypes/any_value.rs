@@ -536,17 +536,41 @@ impl<'a> AnyValue<'a> {
             (AnyValue::Float64(v), DataType::Boolean) => AnyValue::Boolean(*v != f64::default()),
 
             // to string
-            (AnyValue::UInt8(_v), DataType::String) => AnyValue::StringOwned(format_smartstring!("{}", self.extract::<u8>()?)),
-            (AnyValue::UInt16(_v), DataType::String) => AnyValue::StringOwned(format_smartstring!("{}", self.extract::<u16>()?)),
-            (AnyValue::UInt32(_v), DataType::String) => AnyValue::StringOwned(format_smartstring!("{}", self.extract::<u32>()?)),
-            (AnyValue::UInt64(_v), DataType::String) => AnyValue::StringOwned(format_smartstring!("{}",  self.extract::<u64>()?)),
-            (AnyValue::Int8(_v), DataType::String) => AnyValue::StringOwned(format_smartstring!("{}", self.extract::<i8>()?)),
-            (AnyValue::Int16(_v), DataType::String) => AnyValue::StringOwned(format_smartstring!("{}", self.extract::<i16>()?)),
-            (AnyValue::Int32(_v), DataType::String) => AnyValue::StringOwned(format_smartstring!("{}", self.extract::<i32>()?)),
-            (AnyValue::Int64(_v), DataType::String) => AnyValue::StringOwned(format_smartstring!("{}", self.extract::<i64>()?)),
-            (AnyValue::Float32(_v), DataType::String) => AnyValue::StringOwned(format_smartstring!("{}", self.extract::<f32>()?)),
-            (AnyValue::Float64(_v), DataType::String) => AnyValue::StringOwned(format_smartstring!("{}", self.extract::<f64>()?)),
-            (av, DataType::String) => AnyValue::StringOwned(format_smartstring!("{}", av)),
+            (AnyValue::UInt8(_v), DataType::String) => {
+                AnyValue::StringOwned(format_smartstring!("{}", self.extract::<u8>()?))
+            },
+            (AnyValue::UInt16(_v), DataType::String) => {
+                AnyValue::StringOwned(format_smartstring!("{}", self.extract::<u16>()?))
+            },
+            (AnyValue::UInt32(_v), DataType::String) => {
+                AnyValue::StringOwned(format_smartstring!("{}", self.extract::<u32>()?))
+            },
+            (AnyValue::UInt64(_v), DataType::String) => {
+                AnyValue::StringOwned(format_smartstring!("{}", self.extract::<u64>()?))
+            },
+            (AnyValue::Int8(_v), DataType::String) => {
+                AnyValue::StringOwned(format_smartstring!("{}", self.extract::<i8>()?))
+            },
+            (AnyValue::Int16(_v), DataType::String) => {
+                AnyValue::StringOwned(format_smartstring!("{}", self.extract::<i16>()?))
+            },
+            (AnyValue::Int32(_v), DataType::String) => {
+                AnyValue::StringOwned(format_smartstring!("{}", self.extract::<i32>()?))
+            },
+            (AnyValue::Int64(_v), DataType::String) => {
+                AnyValue::StringOwned(format_smartstring!("{}", self.extract::<i64>()?))
+            },
+            (AnyValue::Float32(_v), DataType::String) => {
+                AnyValue::StringOwned(format_smartstring!("{}", self.extract::<f32>()?))
+            },
+            (AnyValue::Float64(_v), DataType::String) => {
+                AnyValue::StringOwned(format_smartstring!("{}", self.extract::<f64>()?))
+            },
+            // this is needed other types
+            // if this isn't present then tests: agg, max, min break for other types
+            (_, DataType::String) => {
+                AnyValue::StringOwned(format_smartstring!("{}", self.extract::<i64>()?))
+            },
 
             // to binary
             (AnyValue::String(v), DataType::Binary) => AnyValue::Binary(v.as_bytes()),
