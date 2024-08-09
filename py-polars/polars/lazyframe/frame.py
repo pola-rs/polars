@@ -5969,7 +5969,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └──────┴─────┴──────┘
         """
         if subset is not None:
-            subset = _expand_selectors(self, subset)
+            subset = parse_into_list_of_expressions(subset)
         return self._from_pyldf(self._ldf.drop_nulls(subset))
 
     def unpivot(

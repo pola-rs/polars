@@ -1092,10 +1092,10 @@ impl PyLazyFrame {
         .into()
     }
 
-    fn drop_nulls(&self, subset: Option<Vec<String>>) -> Self {
+    fn drop_nulls(&self, subset: Option<Vec<PyExpr>>) -> Self {
         let ldf = self.ldf.clone();
-        ldf.drop_nulls(subset.map(|v| v.into_iter().map(|s| col(&s)).collect()))
-            .into()
+        let subset = subset.map(|e| e.to_exprs());
+        ldf.drop_nulls(subset).into()
     }
 
     fn slice(&self, offset: i64, len: Option<IdxSize>) -> Self {
