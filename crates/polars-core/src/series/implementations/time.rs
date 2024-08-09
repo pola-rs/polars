@@ -304,6 +304,15 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
         Ok(Scalar::new(self.dtype().clone(), av))
     }
 
+    fn quantile_reduce(
+        &self,
+        quantile: f64,
+        interpol: QuantileInterpolOptions,
+    ) -> PolarsResult<Scalar> {
+        let v = self.0.quantile_reduce(quantile, interpol)?;
+        Ok(Scalar::new(self.dtype().clone(), v.value().clone()))
+    }
+
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }
