@@ -26,13 +26,13 @@ numba
 backports.zoneinfo; python_version < '3.9'
 tzdata; platform_system == 'Windows'
 # Database
-sqlalchemy
+sqlalchemy[asyncio]
 adbc-driver-manager; python_version >= '3.9' and platform_system != 'Windows'
 adbc-driver-sqlite; python_version >= '3.9' and platform_system != 'Windows'
 aiosqlite
 connectorx
 kuzu
-nest-asyncio
+greenlet
 # Cloud
 cloudpickle
 fsspec
@@ -74,3 +74,4 @@ flask-cors
 # Stub files
 pandas-stubs
 boto3-stubs
+types-greenlet

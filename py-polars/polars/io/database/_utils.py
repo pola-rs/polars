@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from polars.convert import from_arrow
 from polars.dependencies import import_optional
@@ -11,9 +11,17 @@ if TYPE_CHECKING:
     from collections.abc import Coroutine
 
     if sys.version_info >= (3, 10):
-        from typing import TypeAlias
+        from typing import ParamSpec, TypeAlias
     else:
-        from typing_extensions import TypeAlias
+        from typing_extensions import ParamSpec, TypeAlias
+
+    if sys.version_info >= (3, 9):
+        from collections.abc import Callable
+    else:
+        from typing import Callable
+    from concurrent.futures import Future
+
+    import greenlet
 
     from polars import DataFrame
     from polars._typing import SchemaDict
@@ -23,10 +31,57 @@ if TYPE_CHECKING:
     except ImportError:
         Selectable: TypeAlias = Any  # type: ignore[no-redef]
 
+    P = ParamSpec("P")
+    T_co = TypeVar("T_co", covariant=True)
 
-def _run_async(co: Coroutine[Any, Any, Any]) -> Any:
+
+def _check_is_sa_greenlet(green: greenlet.greenlet) -> bool:
+    return getattr(green, "__sqlalchemy_greenlet_provider__", False)
+
+
+def _greenlet_wait(co: Coroutine[Any, Any, T_co]) -> T_co:
+    """Compatible with sqlalchemy."""
+    from polars.dependencies import import_optional
+
+    if TYPE_CHECKING:
+        from sqlalchemy import util as sa_util
+    else:
+        sa_util = import_optional("sqlalchemy.util")
+
+    return sa_util.await_only(co)
+
+
+def _run_asyncio_func(
+    func: Callable[P, Coroutine[Any, Any, T_co]], *args: P.args, **kwargs: P.kwargs
+) -> T_co:
+    import asyncio
+
+    return asyncio.run(func(*args, **kwargs))
+
+
+def _run_async_func(
+    func: Callable[P, Coroutine[Any, Any, T_co]], *args: P.args, **kwargs: P.kwargs
+) -> T_co:
+    """Run asynchronous func as if it was synchronous."""
+    from concurrent.futures import ThreadPoolExecutor, wait
+
+    from polars._utils.unstable import issue_unstable_warning
+
+    issue_unstable_warning(
+        "Use of asynchronous connections is currently considered unstable "
+        "and unexpected issues may arise; if this happens, please report them."
+    )
+
+    with ThreadPoolExecutor(1) as executor:
+        future = executor.submit(_run_asyncio_func, func, *args, **kwargs)  # type: ignore[arg-type]
+        wait([future], return_when="ALL_COMPLETED")
+        return future.result()
+
+
+def _run_async(co: Coroutine[Any, Any, T_co]) -> T_co:
     """Run asynchronous code as if it was synchronous."""
     import asyncio
+    from concurrent.futures import ThreadPoolExecutor, wait
 
     from polars._utils.unstable import issue_unstable_warning
     from polars.dependencies import import_optional
@@ -35,9 +90,20 @@ def _run_async(co: Coroutine[Any, Any, Any]) -> Any:
         "Use of asynchronous connections is currently considered unstable "
         "and unexpected issues may arise; if this happens, please report them."
     )
-    nest_asyncio = import_optional("nest_asyncio")
-    nest_asyncio.apply()
-    return asyncio.run(co)
+
+    if TYPE_CHECKING:
+        import greenlet
+    else:
+        greenlet = import_optional("greenlet")
+
+    current = greenlet.getcurrent()
+    if _check_is_sa_greenlet(current):
+        return _greenlet_wait(co)
+
+    with ThreadPoolExecutor(1) as executor:
+        future: Future[T_co] = executor.submit(asyncio.run, co)
+        wait([future], return_when="ALL_COMPLETED")
+        return future.result()
 
 
 def _read_sql_connectorx(
@@ -78,6 +144,29 @@ def _read_sql_adbc(
         cursor.execute(query, **(execute_options or {}))
         tbl = cursor.fetch_arrow_table()
     return from_arrow(tbl, schema_overrides=schema_overrides)  # type: ignore[return-value]
+
+
+def _unpack_surreal_result(
+    result: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Unpack the async query result."""
+    response = result[0]
+    if response["status"] != "OK":
+        raise RuntimeError(response["result"])
+    return response["result"]
+
+
+async def _read_surreal_query_async(
+    client: Any, query: str, vars: dict[str, Any] | None
+) -> list[dict[str, Any]]:
+    fetch = await client.query(sql=query, vars=vars)
+    return _unpack_surreal_result(fetch)
+
+
+def _read_surreal_query_sync(
+    client: Any, query: str, vars: dict[str, Any] | None
+) -> list[dict[str, Any]]:
+    return _run_async_func(_read_surreal_query_async, client, query, vars)
 
 
 def _open_adbc_connection(connection_uri: str) -> Any:

@@ -57,8 +57,8 @@ excel = ["polars[calamine,openpyxl,xlsx2csv,xlsxwriter]"]
 # Database
 adbc = ["adbc-driver-manager[dbapi]", "adbc-driver-sqlite[dbapi]"]
 connectorx = ["connectorx >= 0.3.2"]
-sqlalchemy = ["sqlalchemy", "polars[pandas]"]
-database = ["polars[adbc,connectorx,sqlalchemy]", "nest-asyncio"]
+sqlalchemy = ["sqlalchemy[asyncio]", "polars[pandas]"]
+database = ["polars[adbc,connectorx,sqlalchemy]", "greenlet"]
 
 # Cloud
 fsspec = ["fsspec"]
@@ -115,7 +115,6 @@ module = [
   "kuzu",
   "matplotlib.*",
   "moto.server",
-  "nest_asyncio",
   "openpyxl",
   "polars.polars",
   "pyarrow.*",
