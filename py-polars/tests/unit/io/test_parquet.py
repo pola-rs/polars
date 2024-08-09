@@ -1400,3 +1400,17 @@ def test_write_sliced_lists_18069() -> None:
     after = pl.read_parquet(f)
 
     assert_frame_equal(before, after)
+
+
+def test_null_array_dict_pages_18085() -> None:
+    test = pd.DataFrame(
+        [
+            {"A": float("NaN"), "B": 3, "C": None},
+            {"A": float("NaN"), "B": None, "C": None},
+        ]
+    )
+
+    f = io.BytesIO()
+    test.to_parquet(f)
+    f.seek(0)
+    pl.read_parquet(f)
