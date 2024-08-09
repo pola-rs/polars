@@ -265,7 +265,7 @@ pub(crate) fn rename_matching_aexpr_leaf_names(
             Expr::Column(name) if &*name == current => Expr::Column(ColumnName::from(new_name)),
             e => e,
         });
-        to_aexpr(new_expr, arena)
+        to_aexpr(new_expr, arena).expect("infallible")
     } else {
         node
     }

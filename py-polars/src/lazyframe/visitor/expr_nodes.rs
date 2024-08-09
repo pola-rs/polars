@@ -1330,7 +1330,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
             }
             .into_py(py)
         },
-        AExpr::Wildcard => return Err(PyNotImplementedError::new_err("wildcard")),
         AExpr::Slice {
             input,
             offset,
@@ -1341,7 +1340,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
             length: length.0,
         }
         .into_py(py),
-        AExpr::Nth(_) => return Err(PyNotImplementedError::new_err("nth")),
         AExpr::Len => Len {}.into_py(py),
     };
     Ok(result)

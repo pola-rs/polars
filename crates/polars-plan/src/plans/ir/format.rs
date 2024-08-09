@@ -482,7 +482,6 @@ impl<'a> Display for ExprIRDisplay<'a> {
                     },
                 }
             },
-            Nth(i) => write!(f, "nth({i})"),
             Len => write!(f, "len()"),
             Explode(expr) => {
                 let expr = self.with_root(expr);
@@ -639,7 +638,6 @@ impl<'a> Display for ExprIRDisplay<'a> {
 
                 write!(f, "{input}.slice(offset={offset}, length={length})")
             },
-            Wildcard => write!(f, "*"),
         }?;
 
         match self.output_name {
