@@ -38,6 +38,13 @@ pub struct DatetimeArgs {
     pub microsecond: Expr,
     pub time_unit: TimeUnit,
     pub time_zone: Option<TimeZone>,
+    /// DST (Daylight Saving Time) may cause some local times to occur more than once on the same day.
+    /// `ambiguous` is a  [`DataType::String`] expression that defines how to handle ambiguous datetimes:
+    ///
+    /// - `raise`: (default) raise an error
+    /// - `earliest`: use the earliest datetime
+    /// - `latest`: use the latest datetime
+    /// - `null`: set to null
     pub ambiguous: Expr,
 }
 
@@ -103,6 +110,14 @@ impl DatetimeArgs {
     pub fn with_time_zone(self, time_zone: Option<TimeZone>) -> Self {
         Self { time_zone, ..self }
     }
+    /// # Ambiguous Datetimes
+    /// DST (Daylight Saving Time) may cause some local times to occur more than once on the same day.
+    /// `ambiguous` is a  [`DataType::String`] expression that defines how to handle ambiguous datetimes:
+    ///
+    /// - `raise`: (default) raise an error
+    /// - `earliest`: use the earliest datetime
+    /// - `latest`: use the latest datetime
+    /// - `null`: set to null
     #[cfg(feature = "timezones")]
     pub fn with_ambiguous(self, ambiguous: Expr) -> Self {
         Self { ambiguous, ..self }
