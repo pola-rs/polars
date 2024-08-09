@@ -3254,6 +3254,7 @@ trait L1Array {
 fn find_search_start_index<T>(l1_array: &[L1Item<T>], index: usize, operator: &str) -> usize
 where
     T: NumericNative,
+    T: TotalOrd,
 {
     let value = l1_array[index].value;
 
@@ -3262,7 +3263,7 @@ where
         let mut left_bound = index;
         let mut right_bound = index + 1;
         let mut step_size = 1;
-        while right_bound < l1_array.len() && l1_array[right_bound].value == value {
+        while right_bound < l1_array.len() && l1_array[right_bound].value.tot_eq(&value) {
             left_bound = right_bound;
             right_bound = min(right_bound + step_size, l1_array.len());
             step_size *= 2;
@@ -3270,7 +3271,7 @@ where
         // Now binary search to find the first value not equal to the current x value
         while right_bound - left_bound > 1 {
             let mid = left_bound + (right_bound - left_bound) / 2;
-            if l1_array[mid].value == value {
+            if l1_array[mid].value.tot_eq(&value) {
                 left_bound = mid;
             } else {
                 right_bound = mid;
@@ -3282,7 +3283,7 @@ where
         let mut left_bound = if index > 0 { index - 1 } else { 0 };
         let mut right_bound = index;
         let mut step_size = 1;
-        while left_bound > 0 && l1_array[left_bound].value == value {
+        while left_bound > 0 && l1_array[left_bound].value.tot_eq(&value) {
             right_bound = left_bound;
             left_bound = if left_bound > step_size {
                 left_bound - step_size
@@ -3292,14 +3293,14 @@ where
             step_size *= 2
         }
 
-        if l1_array[left_bound].value == value {
+        if l1_array[left_bound].value.tot_eq(&value) {
             return left_bound;
         }
 
         // Now binary search to find the first value equal to the current x value
         while right_bound - left_bound > 1 {
             let mid = left_bound + (right_bound - left_bound) / 2;
-            if l1_array[mid].value == value {
+            if l1_array[mid].value.tot_eq(&value) {
                 right_bound = mid;
             } else {
                 left_bound = mid;
@@ -3397,6 +3398,7 @@ where
 fn build_l2_array<T>(ca: &ChunkedArray<T>, order: &IdxCa) -> PolarsResult<Vec<L2Item>>
 where
     T: PolarsNumericType,
+    T::Native: TotalOrd,
 {
     let mut array = Vec::with_capacity(ca.len());
     let mut prev_index = 0;
@@ -3409,7 +3411,7 @@ where
         if i > 0 {
             array.push(L2Item {
                 l1_index: prev_index,
-                run_end: value != prev_value,
+                run_end: value.tot_ne(&prev_value),
             });
         }
         prev_index = l1_index;
