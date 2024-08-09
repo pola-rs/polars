@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import hypothesis.strategies as st
 import numpy as np
@@ -10,7 +10,7 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
-    from hypothesis.strategies import DrawFn
+    from hypothesis.strategies import DrawFn, SearchStrategy
 
 
 def test_self_join() -> None:
@@ -89,18 +89,22 @@ def _filter_expression(col1: str, op: str, col2: str) -> pl.Expr:
         raise ValueError(message)
 
 
-def operators() -> st.SearchStrategy[str]:
+def operators() -> SearchStrategy[str]:
     valid_operators = ["<", "<=", ">", ">="]
     return st.sampled_from(valid_operators)
 
 
 @st.composite
-def east_df(draw: DrawFn) -> pl.DataFrame:
+def east_df(draw: DrawFn, with_nulls: bool = False) -> pl.DataFrame:
     height = draw(st.integers(min_value=0, max_value=20))
 
-    dur_strategy = st.integers(min_value=100, max_value=105)
-    rev_strategy = st.integers(min_value=9, max_value=13)
+    dur_strategy: SearchStrategy[Any] = st.integers(min_value=100, max_value=105)
+    rev_strategy: SearchStrategy[Any] = st.integers(min_value=9, max_value=13)
     cores_strategy = st.integers(min_value=1, max_value=10)
+
+    if with_nulls:
+        dur_strategy = dur_strategy | st.none()
+        rev_strategy = rev_strategy | st.none()
 
     ids = np.arange(0, height)
     dur = draw(st.lists(dur_strategy, min_size=height, max_size=height))
@@ -118,12 +122,16 @@ def east_df(draw: DrawFn) -> pl.DataFrame:
 
 
 @st.composite
-def west_df(draw: DrawFn) -> pl.DataFrame:
+def west_df(draw: DrawFn, with_nulls: bool = False) -> pl.DataFrame:
     height = draw(st.integers(min_value=0, max_value=20))
 
-    time_strategy = st.integers(min_value=100, max_value=105)
-    cost_strategy = st.integers(min_value=9, max_value=13)
+    time_strategy: SearchStrategy[Any] = st.integers(min_value=100, max_value=105)
+    cost_strategy: SearchStrategy[Any] = st.integers(min_value=9, max_value=13)
     cores_strategy = st.integers(min_value=1, max_value=10)
+
+    if with_nulls:
+        time_strategy = time_strategy | st.none()
+        cost_strategy = cost_strategy | st.none()
 
     t_id = np.arange(100, 100 + height)
     time = draw(st.lists(time_strategy, min_size=height, max_size=height))
@@ -147,6 +155,23 @@ def west_df(draw: DrawFn) -> pl.DataFrame:
     op2=operators(),
 )
 def test_ie_join(east: pl.DataFrame, west: pl.DataFrame, op1: str, op2: str) -> None:
+    actual = east.ie_join(west, "dur", op1, "time", "rev", op2, "cost")
+
+    expected = east.join(west, how="cross").filter(
+        _filter_expression("dur", op1, "time") & _filter_expression("rev", op2, "cost")
+    )
+    assert_frame_equal(actual, expected, check_row_order=False, check_exact=True)
+
+
+@given(
+    east=east_df(with_nulls=True),
+    west=west_df(with_nulls=True),
+    op1=operators(),
+    op2=operators(),
+)
+def test_ie_join_with_nulls(
+    east: pl.DataFrame, west: pl.DataFrame, op1: str, op2: str
+) -> None:
     actual = east.ie_join(west, "dur", op1, "time", "rev", op2, "cost")
 
     expected = east.join(west, how="cross").filter(

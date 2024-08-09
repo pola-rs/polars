@@ -3015,8 +3015,6 @@ impl DataFrame {
         op2: &str,
         other_col2: &str,
     ) -> PolarsResult<Self> {
-        let total_height = self.height() + other.height();
-
         let mut x = self.column(col1)?.to_physical_repr().into_owned();
         x.extend(&other.column(other_col1)?.to_physical_repr())?;
 
@@ -3033,23 +3031,31 @@ impl DataFrame {
 
         let l1_sort_options = SortOptions::default()
             .with_maintain_order(true)
+            .with_nulls_last(false)
             .with_order_descending(l1_descending);
-        let l1_order = x.arg_sort(l1_sort_options);
+        // Get ordering of x, skipping any null entries as these cannot be matches
+        let l1_order = x
+            .arg_sort(l1_sort_options)
+            .slice(x.null_count() as i64, x.len() - x.null_count());
 
         let l1_array = with_match_physical_numeric_polars_type!(x.dtype(), |$T| {
             let ca: &ChunkedArray<$T> = x.as_ref().as_ref().as_ref();
             build_l1_array(ca, &l1_order, self.height() as IdxSize)
         })?;
 
-        let y_in_l1_order = y.take(&l1_order)?;
+        let y_ordered = y.take(&l1_order)?;
         let l2_sort_options = SortOptions::default()
             .with_maintain_order(true)
+            .with_nulls_last(false)
             .with_order_descending(l2_descending);
-        let l2_order = y_in_l1_order.arg_sort(l2_sort_options);
+        let l2_order = y_ordered.arg_sort(l2_sort_options).slice(
+            y_ordered.null_count() as i64,
+            y_ordered.len() - y_ordered.null_count(),
+        );
 
         // Create a bitmap with order corresponding to L1 denoting which
         // entries have been visited while traversing L2.
-        let mut bit_array = FilteredBitArray::from_len_zeroed(total_height);
+        let mut bit_array = FilteredBitArray::from_len_zeroed(l1_order.len());
 
         let mut left_row_ids = PrimitiveChunkedBuilder::<IdxType>::new("left_indices", 0);
         let mut right_row_ids = PrimitiveChunkedBuilder::<IdxType>::new("right_indices", 0);
@@ -3071,14 +3077,14 @@ impl DataFrame {
             }
         } else {
             let l2_array = with_match_physical_numeric_polars_type!(y.dtype(), |$T| {
-                let ca: &ChunkedArray<$T> = y_in_l1_order.as_ref().as_ref().as_ref();
+                let ca: &ChunkedArray<$T> = y_ordered.as_ref().as_ref().as_ref();
                 build_l2_array(ca, &l2_order)
             })?;
             // For inclusive comparisons in l2, we need to track runs of equal y values and only
             // check for matches after we reach the end of the run and have marked all rhs entries
             // as visited.
             let mut run_start = 0;
-            for i in 0..total_height {
+            for i in 0..l2_array.len() {
                 let p = l2_array[i].l1_index;
                 l1_array.mark_visited(p as usize, &mut bit_array);
                 if l2_array[i].run_end {
@@ -3366,11 +3372,11 @@ where
     T: PolarsNumericType,
 {
     let mut array: Vec<L1Item<T::Native>> = Vec::with_capacity(ca.len());
-    debug_assert!(ca.len() == order.len());
     for index in order.into_no_null_iter() {
         let value = ca
             .get(index as usize)
-            .ok_or_else(|| polars_err!(InvalidOperation: "IEJoin doesn't handle null values"))?;
+            // Nulls should have been skipped over
+            .ok_or_else(|| polars_err!(ComputeError: "Unexpected null value in IEJoin data"))?;
         let row_index = if index < right_df_offset {
             index as i64 + 1
         } else {
@@ -3386,14 +3392,13 @@ where
     T: PolarsNumericType,
 {
     let mut array = Vec::with_capacity(ca.len());
-    debug_assert!(ca.len() == order.len());
-    debug_assert!(order.null_count() == 0);
     let mut prev_index = 0;
     let mut prev_value = T::Native::default();
     for (i, l1_index) in order.into_no_null_iter().enumerate() {
         let value = ca
             .get(l1_index as usize)
-            .ok_or_else(|| polars_err!(InvalidOperation: "IEJoin doesn't handle null values"))?;
+            // Nulls should have been skipped over
+            .ok_or_else(|| polars_err!(ComputeError: "Unexpected null value in IEJoin data"))?;
         if i > 0 {
             array.push(L2Item {
                 l1_index: prev_index,
