@@ -1111,15 +1111,15 @@ impl PyLazyFrame {
     #[pyo3(signature = (on, index, value_name, variable_name, streamable))]
     fn unpivot(
         &self,
-        on: Vec<String>,
-        index: Vec<String>,
+        on: Vec<PyExpr>,
+        index: Vec<PyExpr>,
         value_name: Option<String>,
         variable_name: Option<String>,
         streamable: bool,
     ) -> Self {
-        let args = UnpivotArgs {
-            on: strings_to_smartstrings(on),
-            index: strings_to_smartstrings(index),
+        let args = UnpivotArgsDSL {
+            on: on.into_iter().map(|e| e.inner.into()).collect(),
+            index: index.into_iter().map(|e| e.inner.into()).collect(),
             value_name: value_name.map(|s| s.into()),
             variable_name: variable_name.map(|s| s.into()),
             streamable,

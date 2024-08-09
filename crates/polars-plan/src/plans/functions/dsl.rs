@@ -9,7 +9,7 @@ pub enum DslFunction {
         columns: Vec<Selector>,
     },
     Unpivot {
-        args: UnpivotArgs,
+        args: UnpivotArgsDSL,
     },
     RowIndex {
         name: Arc<str>,
@@ -68,9 +68,22 @@ impl DslFunction {
                     schema: Default::default(),
                 }
             },
-            DslFunction::Unpivot { args } => FunctionNode::Unpivot {
-                args: Arc::new(args),
-                schema: Default::default(),
+            DslFunction::Unpivot { args } => {
+                let on = expand_selectors(args.on, input_schema, &[])?;
+                let index = expand_selectors(args.index, input_schema, &[])?;
+
+                let args = UnpivotArgs {
+                    on: on.iter().map(|s| s.as_ref().into()).collect(),
+                    index: index.iter().map(|s| s.as_ref().into()).collect(),
+                    variable_name: args.variable_name.map(|s| s.as_ref().into()),
+                    value_name: args.value_name.map(|s| s.as_ref().into()),
+                    streamable: args.streamable,
+                };
+
+                FunctionNode::Unpivot {
+                    args: Arc::new(args),
+                    schema: Default::default(),
+                }
             },
             DslFunction::FunctionNode(func) => func,
             DslFunction::RowIndex { name, offset } => FunctionNode::RowIndex {
