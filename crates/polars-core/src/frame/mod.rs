@@ -3004,6 +3004,10 @@ impl DataFrame {
         DataFrame::new(new_cols)
     }
 
+    /// Inequality join. Matches rows from this DataFrame with rows from another DataFrame
+    /// using two inequality operators (one of [<, <=, >, >=]).
+    /// Based on Khayyat et al. 2015, "Lightning Fast and Space Efficient Inequality Joins"
+    /// and extended to work with duplicate values.
     #[allow(clippy::too_many_arguments)]
     pub fn ie_join(
         &self,
@@ -3023,8 +3027,9 @@ impl DataFrame {
 
         // Determine the sort order based on the comparison operators used.
         // We want to sort L1 so that "x[i] op1 x[j]" is true for j > i,
-        // and L2 so that "y[i] op2 y[j]" is true for j < i (ignoring duplicates for now).
-        // Note that the algorithms published in Khayyat et. al. 2015 have incorrect logic for
+        // and L2 so that "y[i] op2 y[j]" is true for j < i
+        // (except in the case of duplicates and strict inequalities).
+        // Note that the algorithms published in Khayyat et al. have incorrect logic for
         // determining whether to sort descending.
         let l1_descending = op1 == ">" || op1 == ">=";
         let l2_descending = op2 == "<" || op2 == "<=";
@@ -3048,20 +3053,22 @@ impl DataFrame {
             .with_maintain_order(true)
             .with_nulls_last(false)
             .with_order_descending(l2_descending);
+        // Get the indexes into l1, ordered by y values.
+        // l2_order is the same as "p" from Khayyat et al.
         let l2_order = y_ordered.arg_sort(l2_sort_options).slice(
             y_ordered.null_count() as i64,
             y_ordered.len() - y_ordered.null_count(),
         );
 
-        // Create a bitmap with order corresponding to L1 denoting which
-        // entries have been visited while traversing L2.
+        // Create a bit array with order corresponding to L1,
+        // denoting which entries have been visited while traversing L2.
         let mut bit_array = FilteredBitArray::from_len_zeroed(l1_order.len());
 
         let mut left_row_ids = PrimitiveChunkedBuilder::<IdxType>::new("left_indices", 0);
         let mut right_row_ids = PrimitiveChunkedBuilder::<IdxType>::new("right_indices", 0);
 
         if op2 == ">" || op2 == "<" {
-            // For exclusive comparisons, we rely on using a stable sort of l2 so that
+            // For strict inequalities, we rely on using a stable sort of l2 so that
             // p values only increase as we traverse a run of equal y values.
             // To handle inclusive comparisons in x and duplicate x values we also need the
             // sort of l1 to be stable, so that the left hand side entries come before the right
@@ -3080,9 +3087,9 @@ impl DataFrame {
                 let ca: &ChunkedArray<$T> = y_ordered.as_ref().as_ref().as_ref();
                 build_l2_array(ca, &l2_order)
             })?;
-            // For inclusive comparisons in l2, we need to track runs of equal y values and only
+            // For non-strict inequalities in l2, we need to track runs of equal y values and only
             // check for matches after we reach the end of the run and have marked all rhs entries
-            // as visited.
+            // in the run as visited.
             let mut run_start = 0;
             for i in 0..l2_array.len() {
                 let p = l2_array[i].l1_index;
@@ -3417,6 +3424,8 @@ where
     Ok(array)
 }
 
+/// Bit array with a filter to speed up searching for set bits,
+/// based on section 4.1 in Khayyat et al.
 struct FilteredBitArray {
     bit_array: MutableBitmap,
     filter: MutableBitmap,
