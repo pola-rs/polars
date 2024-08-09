@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import enum
 from datetime import date, datetime, time, timedelta
 from itertools import islice
 from typing import (
@@ -108,6 +109,12 @@ def sequence_to_pyseries(
             return pl.DataFrame(values).to_struct(name)._s
         elif isinstance(value, range) and dtype is None:
             values = [range_to_series("", v) for v in values]
+        elif isinstance(value, enum.Enum) and dtype is None:
+            dtype = Enum(value.__class__)
+            if all(isinstance(x.value, str) for x in values):
+                values = [x.value for x in values]
+            else:
+                values = [x.name for x in values]
         else:
             # for temporal dtypes:
             # * if the values are integer, we take the physical branch.

@@ -128,9 +128,12 @@ def lit(
         return lit(pl.Series("literal", [value], dtype=dtype))
 
     elif isinstance(value, enum.Enum):
-        lit_value = value.value
-        if dtype is None and isinstance(value, str):
-            dtype = Enum(m.value for m in type(value))
+        if isinstance(value.value, str):
+            lit_value = value.value
+        else:
+            lit_value = value.name
+        if dtype is None:
+            dtype = Enum(type(value))
         return lit(lit_value, dtype=dtype)
 
     if dtype:
