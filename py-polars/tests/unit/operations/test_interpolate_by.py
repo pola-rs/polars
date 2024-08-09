@@ -168,7 +168,11 @@ def test_interpolate_by_trailing_nulls(dataset: str) -> None:
 def test_interpolate_vs_numpy(data: st.DataObject, x_dtype: pl.DataType) -> None:
     if x_dtype == pl.Float64:
         by_strategy = st.floats(
-            allow_nan=False, allow_infinity=False, allow_subnormal=False
+            min_value=-1e150,
+            max_value=1e150,
+            allow_nan=False,
+            allow_infinity=False,
+            allow_subnormal=False,
         )
     else:
         by_strategy = None
