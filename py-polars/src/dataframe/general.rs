@@ -1,3 +1,5 @@
+use std::mem::ManuallyDrop;
+
 use either::Either;
 use polars::export::arrow::bitmap::MutableBitmap;
 use polars::prelude::*;
@@ -608,7 +610,10 @@ impl PyDataFrame {
         // underneath of you, so don't use this anywhere else.
         let mut df = std::mem::take(&mut self.df);
         let cols = unsafe { std::mem::take(df.get_columns_mut()) };
-        let (ptr, len, cap) = cols.into_raw_parts();
+        let mut md_cols = ManuallyDrop::new(cols);
+        let ptr = md_cols.as_mut_ptr();
+        let len = md_cols.len();
+        let cap = md_cols.capacity();
         (ptr as usize, len, cap)
     }
 }

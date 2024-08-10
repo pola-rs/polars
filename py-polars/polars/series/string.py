@@ -1481,7 +1481,7 @@ class StringNameSpace:
 
     def to_lowercase(self) -> Series:
         """
-        Modify the strings to their lowercase equivalent.
+        Modify strings to their lowercase equivalent.
 
         Examples
         --------
@@ -1497,7 +1497,7 @@ class StringNameSpace:
 
     def to_uppercase(self) -> Series:
         """
-        Modify the strings to their uppercase equivalent.
+        Modify strings to their uppercase equivalent.
 
         Examples
         --------
@@ -1513,17 +1513,31 @@ class StringNameSpace:
 
     def to_titlecase(self) -> Series:
         """
-        Modify the strings to their titlecase equivalent.
+        Modify strings to their titlecase equivalent.
+
+        Notes
+        -----
+        This is a form of case transform where the first letter of each word is
+        capitalized, with the rest of the word in lowercase. Non-alphanumeric
+        characters define the word boundaries.
 
         Examples
         --------
-        >>> s = pl.Series("sing", ["welcome to my world", "THERE'S NO TURNING BACK"])
+        >>> s = pl.Series(
+        ...     "quotes",
+        ...     [
+        ...         "'e.t. phone home'",
+        ...         "you talkin' to me?",
+        ...         "to infinity,and BEYOND!",
+        ...     ],
+        ... )
         >>> s.str.to_titlecase()
-        shape: (2,)
-        Series: 'sing' [str]
+        shape: (3,)
+        Series: 'quotes' [str]
         [
-            "Welcome To My World"
-            "There's No Turning Back"
+            "'E.T. Phone Home'"
+            "You Talkin' To Me?"
+            "To Infinity,And Beyond!"
         ]
         """
 
