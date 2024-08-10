@@ -525,14 +525,9 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
         IR::MapFunction { input, function } => MapFunction {
             input: input.0,
             function: match function {
-                FunctionIR::OpaquePython {
-                    function: _,
-                    schema: _,
-                    predicate_pd: _,
-                    projection_pd: _,
-                    streamable: _,
-                    validate_output: _,
-                } => return Err(PyNotImplementedError::new_err("opaque python mapfunction")),
+                FunctionIR::OpaquePython(_) => {
+                    return Err(PyNotImplementedError::new_err("opaque python mapfunction"))
+                },
                 FunctionIR::Opaque {
                     function: _,
                     schema: _,
