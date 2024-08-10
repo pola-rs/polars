@@ -11,12 +11,12 @@ pub(super) fn assert_cloud_eligible(dsl: &DslPlan) -> PolarsResult<()> {
     for plan_node in dsl.into_iter() {
         match plan_node {
             DslPlan::MapFunction {
-                function: DslFunction::FunctionIR(function),
+                function,
                 ..
             } => match function {
-                FunctionIR::Opaque { .. } => return ineligible_error("contains opaque function"),
+                DslFunction::FunctionIR(FunctionIR::Opaque {..})=> return ineligible_error("contains opaque function"),
                 #[cfg(feature = "python")]
-                FunctionIR::OpaquePython { .. } => {
+                DslFunction::OpaquePython { .. } => {
                     return ineligible_error("contains Python function")
                 },
                 _ => (),
