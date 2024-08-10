@@ -373,7 +373,7 @@ impl DslBuilder {
         .into()
     }
 
-    pub fn distinct(self, options: DistinctOptions) -> Self {
+    pub fn distinct(self, options: DistinctOptionsDSL) -> Self {
         DslPlan::Distinct {
             input: Arc::new(self.0),
             options,
@@ -424,7 +424,7 @@ impl DslBuilder {
     ) -> Self {
         DslPlan::MapFunction {
             input: Arc::new(self.0),
-            function: DslFunction::FunctionNode(FunctionNode::OpaquePython {
+            function: DslFunction::FunctionIR(FunctionIR::OpaquePython {
                 function,
                 schema,
                 predicate_pd: optimizations.contains(OptState::PREDICATE_PUSHDOWN),
@@ -450,7 +450,7 @@ impl DslBuilder {
 
         DslPlan::MapFunction {
             input: Arc::new(self.0),
-            function: DslFunction::FunctionNode(FunctionNode::Opaque {
+            function: DslFunction::FunctionIR(FunctionIR::Opaque {
                 function,
                 schema,
                 predicate_pd: optimizations.contains(OptState::PREDICATE_PUSHDOWN),

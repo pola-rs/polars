@@ -456,7 +456,7 @@ impl<'a> PredicatePushDown<'a> {
                     let subset = subset.clone();
                     let mut names_set = PlHashSet::<&str>::with_capacity(subset.len());
                     for name in subset.iter() {
-                        names_set.insert(name.as_str());
+                        names_set.insert(name.as_ref());
                     }
 
                     let condition = |name: Arc<str>| !names_set.contains(name.as_ref());
@@ -493,7 +493,7 @@ impl<'a> PredicatePushDown<'a> {
             MapFunction { ref function, .. } => {
                 if function.allow_predicate_pd() {
                     match function {
-                        FunctionNode::Rename { existing, new, .. } => {
+                        FunctionIR::Rename { existing, new, .. } => {
                             let local_predicates =
                                 process_rename(&mut acc_predicates, expr_arena, existing, new)?;
                             let lp = self.pushdown_and_continue(
@@ -510,7 +510,7 @@ impl<'a> PredicatePushDown<'a> {
                                 expr_arena,
                             ))
                         },
-                        FunctionNode::Explode { columns, .. } => {
+                        FunctionIR::Explode { columns, .. } => {
                             let condition =
                                 |name: Arc<str>| columns.iter().any(|s| s.as_ref() == &*name);
 
@@ -535,7 +535,7 @@ impl<'a> PredicatePushDown<'a> {
                                 expr_arena,
                             ))
                         },
-                        FunctionNode::Unpivot { args, .. } => {
+                        FunctionIR::Unpivot { args, .. } => {
                             let variable_name = args.variable_name.as_deref().unwrap_or("variable");
                             let value_name = args.value_name.as_deref().unwrap_or("value");
 

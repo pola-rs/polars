@@ -3,7 +3,7 @@ use polars_io::path_utils::is_cloud_url;
 
 use crate::dsl::Expr;
 use crate::plans::options::SinkType;
-use crate::plans::{DslFunction, DslPlan, FileScan, FunctionNode};
+use crate::plans::{DslFunction, DslPlan, FileScan, FunctionIR};
 
 /// Assert that the given [`DslPlan`] is eligible to be executed on Polars Cloud.
 pub(super) fn assert_cloud_eligible(dsl: &DslPlan) -> PolarsResult<()> {
@@ -11,12 +11,12 @@ pub(super) fn assert_cloud_eligible(dsl: &DslPlan) -> PolarsResult<()> {
     for plan_node in dsl.into_iter() {
         match plan_node {
             DslPlan::MapFunction {
-                function: DslFunction::FunctionNode(function),
+                function: DslFunction::FunctionIR(function),
                 ..
             } => match function {
-                FunctionNode::Opaque { .. } => return ineligible_error("contains opaque function"),
+                FunctionIR::Opaque { .. } => return ineligible_error("contains opaque function"),
                 #[cfg(feature = "python")]
-                FunctionNode::OpaquePython { .. } => {
+                FunctionIR::OpaquePython { .. } => {
                     return ineligible_error("contains Python function")
                 },
                 _ => (),

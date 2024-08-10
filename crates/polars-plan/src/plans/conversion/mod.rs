@@ -232,6 +232,15 @@ impl IR {
             },
             IR::Distinct { input, options } => {
                 let i = convert_to_lp(input, lp_arena);
+                let options = DistinctOptionsDSL {
+                    subset: options.subset.map(|s| {
+                        s.iter()
+                            .map(|name| Expr::Column(name.clone()).into())
+                            .collect()
+                    }),
+                    maintain_order: options.maintain_order,
+                    keep_strategy: options.keep_strategy,
+                };
                 DslPlan::Distinct {
                     input: Arc::new(i),
                     options,

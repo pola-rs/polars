@@ -117,8 +117,4 @@ pub struct UnpivotArgsDSL {
     pub index: Vec<Selector>,
     pub variable_name: Option<Arc<str>>,
     pub value_name: Option<Arc<str>>,
-    /// Whether the unpivot may be done
-    /// in the streaming engine
-    /// This will not have a stable ordering
-    pub streamable: bool,
 }

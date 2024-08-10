@@ -385,8 +385,8 @@ impl SlicePushDown {
             // other blocking nodes
             | m @ (DataFrameScan {..}, _)
             | m @ (Sort {..}, _)
-            | m @ (MapFunction {function: FunctionNode::Explode {..}, ..}, _)
-            | m @ (MapFunction {function: FunctionNode::Unpivot {..}, ..}, _)
+            | m @ (MapFunction {function: FunctionIR::Explode {..}, ..}, _)
+            | m @ (MapFunction {function: FunctionIR::Unpivot {..}, ..}, _)
             | m @ (Cache {..}, _)
             | m @ (Distinct {..}, _)
             | m @ (GroupBy{..},_)

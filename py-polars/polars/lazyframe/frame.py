@@ -5872,7 +5872,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴─────┴─────┘
         """
         if subset is not None:
-            subset = _expand_selectors(self, subset)
+            subset = parse_into_list_of_expressions(subset)
         return self._from_pyldf(self._ldf.unique(maintain_order, subset, keep))
 
     def drop_nulls(
@@ -6003,9 +6003,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         value_name
             Name to give to the `value` column. Defaults to "value"
         streamable
-            Allow this node to run in the streaming engine.
-            If this runs in streaming, the output of the unpivot operation
-            will not have a stable ordering.
+            deprecated
 
         Notes
         -----
@@ -6038,12 +6036,17 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ z   ┆ c        ┆ 6     │
         └─────┴──────────┴───────┘
         """
+        if not streamable:
+            issue_deprecation_warning(
+                "The `streamable` parameter for `LazyFrame.unpivot` is deprecated"
+                "This parameter has no effect",
+                version="1.5.0",
+            )
+
         on = [] if on is None else parse_into_list_of_expressions(on)
         index = [] if index is None else parse_into_list_of_expressions(index)
 
-        return self._from_pyldf(
-            self._ldf.unpivot(on, index, value_name, variable_name, streamable)
-        )
+        return self._from_pyldf(self._ldf.unpivot(on, index, value_name, variable_name))
 
     def map_batches(
         self,

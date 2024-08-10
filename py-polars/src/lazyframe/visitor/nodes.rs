@@ -2,7 +2,7 @@ use polars_core::prelude::{IdxSize, UniqueKeepStrategy};
 use polars_ops::prelude::JoinType;
 use polars_plan::plans::IR;
 use polars_plan::prelude::{
-    FileCount, FileScan, FileScanOptions, FunctionNode, PythonPredicate, PythonScanSource,
+    FileCount, FileScan, FileScanOptions, FunctionIR, PythonPredicate, PythonScanSource,
 };
 use pyo3::exceptions::{PyNotImplementedError, PyValueError};
 use pyo3::prelude::*;
@@ -507,10 +507,15 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                     UniqueKeepStrategy::None => "none",
                     UniqueKeepStrategy::Any => "any",
                 },
-                options
-                    .subset
-                    .as_ref()
-                    .map_or_else(|| py.None(), |f| f.to_object(py)),
+                options.subset.as_ref().map_or_else(
+                    || py.None(),
+                    |f| {
+                        f.iter()
+                            .map(|s| s.as_ref())
+                            .collect::<Vec<&str>>()
+                            .to_object(py)
+                    },
+                ),
                 options.maintain_order,
                 options.slice,
             )
@@ -520,7 +525,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
         IR::MapFunction { input, function } => MapFunction {
             input: input.0,
             function: match function {
-                FunctionNode::OpaquePython {
+                FunctionIR::OpaquePython {
                     function: _,
                     schema: _,
                     predicate_pd: _,
@@ -528,7 +533,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                     streamable: _,
                     validate_output: _,
                 } => return Err(PyNotImplementedError::new_err("opaque python mapfunction")),
-                FunctionNode::Opaque {
+                FunctionIR::Opaque {
                     function: _,
                     schema: _,
                     predicate_pd: _,
@@ -536,22 +541,22 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                     streamable: _,
                     fmt_str: _,
                 } => return Err(PyNotImplementedError::new_err("opaque rust mapfunction")),
-                FunctionNode::Pipeline {
+                FunctionIR::Pipeline {
                     function: _,
                     schema: _,
                     original: _,
                 } => return Err(PyNotImplementedError::new_err("pipeline mapfunction")),
-                FunctionNode::Unnest { columns } => (
+                FunctionIR::Unnest { columns } => (
                     "unnest",
                     columns.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
                 )
                     .to_object(py),
-                FunctionNode::Rechunk => ("rechunk",).to_object(py),
+                FunctionIR::Rechunk => ("rechunk",).to_object(py),
                 #[cfg(feature = "merge_sorted")]
-                FunctionNode::MergeSorted { column } => {
+                FunctionIR::MergeSorted { column } => {
                     ("merge_sorted", column.to_string()).to_object(py)
                 },
-                FunctionNode::Rename {
+                FunctionIR::Rename {
                     existing,
                     new,
                     swapping,
@@ -563,12 +568,12 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                     *swapping,
                 )
                     .to_object(py),
-                FunctionNode::Explode { columns, schema: _ } => (
+                FunctionIR::Explode { columns, schema: _ } => (
                     "explode",
                     columns.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
                 )
                     .to_object(py),
-                FunctionNode::Unpivot { args, schema: _ } => (
+                FunctionIR::Unpivot { args, schema: _ } => (
                     "unpivot",
                     args.index.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
                     args.on.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
@@ -580,12 +585,12 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                         .map_or_else(|| py.None(), |s| s.as_str().to_object(py)),
                 )
                     .to_object(py),
-                FunctionNode::RowIndex {
+                FunctionIR::RowIndex {
                     name,
                     schema: _,
                     offset,
                 } => ("row_index", name.to_string(), offset.unwrap_or(0)).to_object(py),
-                FunctionNode::Count {
+                FunctionIR::Count {
                     paths: _,
                     scan_type: _,
                     alias: _,

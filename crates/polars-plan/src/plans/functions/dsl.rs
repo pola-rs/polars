@@ -4,7 +4,9 @@ use super::*;
 #[derive(Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum DslFunction {
-    FunctionNode(FunctionNode),
+    // Function that is already converted to IR.
+    #[cfg_attr(feature = "serde", serde(skip))]
+    FunctionIR(FunctionIR),
     Explode {
         columns: Vec<Selector>,
     },
@@ -56,14 +58,14 @@ pub enum StatsFunction {
 }
 
 impl DslFunction {
-    pub(crate) fn into_function_node(self, input_schema: &Schema) -> PolarsResult<FunctionNode> {
+    pub(crate) fn into_function_node(self, input_schema: &Schema) -> PolarsResult<FunctionIR> {
         let function = match self {
             DslFunction::Explode { columns } => {
                 let columns = expand_selectors(columns, input_schema, &[])?;
                 for c in columns.as_ref() {
                     polars_ensure!(input_schema.contains(c.as_ref()), ColumnNotFound: "'explode' on column: '{}' is invalid\n\nSchema at this point: {:?}", c.as_ref(), input_schema)
                 }
-                FunctionNode::Explode {
+                FunctionIR::Explode {
                     columns,
                     schema: Default::default(),
                 }
@@ -72,21 +74,20 @@ impl DslFunction {
                 let on = expand_selectors(args.on, input_schema, &[])?;
                 let index = expand_selectors(args.index, input_schema, &[])?;
 
-                let args = UnpivotArgs {
+                let args = UnpivotArgsIR {
                     on: on.iter().map(|s| s.as_ref().into()).collect(),
                     index: index.iter().map(|s| s.as_ref().into()).collect(),
                     variable_name: args.variable_name.map(|s| s.as_ref().into()),
                     value_name: args.value_name.map(|s| s.as_ref().into()),
-                    streamable: args.streamable,
                 };
 
-                FunctionNode::Unpivot {
+                FunctionIR::Unpivot {
                     args: Arc::new(args),
                     schema: Default::default(),
                 }
             },
-            DslFunction::FunctionNode(func) => func,
-            DslFunction::RowIndex { name, offset } => FunctionNode::RowIndex {
+            DslFunction::FunctionIR(func) => func,
+            DslFunction::RowIndex { name, offset } => FunctionIR::RowIndex {
                 name,
                 offset,
                 schema: Default::default(),
@@ -99,7 +100,7 @@ impl DslFunction {
                     let _ = input_schema.try_get(name)?;
                 }
 
-                FunctionNode::Rename {
+                FunctionIR::Rename {
                     existing,
                     new,
                     swapping,
@@ -125,7 +126,7 @@ impl Display for DslFunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use DslFunction::*;
         match self {
-            FunctionNode(inner) => write!(f, "{inner}"),
+            FunctionIR(inner) => write!(f, "{inner}"),
             Explode { .. } => write!(f, "EXPLODE"),
             Unpivot { .. } => write!(f, "UNPIVOT"),
             RowIndex { .. } => write!(f, "WITH ROW INDEX"),
@@ -137,8 +138,8 @@ impl Display for DslFunction {
     }
 }
 
-impl From<FunctionNode> for DslFunction {
-    fn from(value: FunctionNode) -> Self {
-        DslFunction::FunctionNode(value)
+impl From<FunctionIR> for DslFunction {
+    fn from(value: FunctionIR) -> Self {
+        DslFunction::FunctionIR(value)
     }
 }
