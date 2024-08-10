@@ -18,6 +18,7 @@ use polars_core::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use smartstring::alias::String as SmartString;
+use strum_macros::IntoStaticStr;
 
 #[cfg(feature = "python")]
 use crate::dsl::python_udf::PythonFunction;
@@ -25,19 +26,11 @@ use crate::dsl::python_udf::PythonFunction;
 use crate::plans::functions::merge_sorted::merge_sorted;
 use crate::prelude::*;
 
-#[derive(Clone)]
+#[derive(Clone, IntoStaticStr)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 pub enum FunctionIR {
     #[cfg(feature = "python")]
-    OpaquePython {
-        function: PythonFunction,
-        schema: Option<SchemaRef>,
-        ///  allow predicate pushdown optimizations
-        predicate_pd: bool,
-        ///  allow projection pushdown optimizations
-        projection_pd: bool,
-        streamable: bool,
-        validate_output: bool,
-    },
+    OpaquePython(OpaquePythonUdf),
     Opaque {
         function: Arc<dyn DataFrameUdf>,
         schema: Option<Arc<dyn UdfSchema>>,
@@ -49,7 +42,7 @@ pub enum FunctionIR {
         // used for formatting
         fmt_str: &'static str,
     },
-    Count {
+    FastCount {
         paths: Arc<Vec<PathBuf>>,
         scan_type: FileScan,
         alias: Option<Arc<str>>,
@@ -103,7 +96,9 @@ impl PartialEq for FunctionIR {
         use FunctionIR::*;
         match (self, other) {
             (Rechunk, Rechunk) => true,
-            (Count { paths: paths_l, .. }, Count { paths: paths_r, .. }) => paths_l == paths_r,
+            (FastCount { paths: paths_l, .. }, FastCount { paths: paths_r, .. }) => {
+                paths_l == paths_r
+            },
             (
                 Rename {
                     existing: existing_l,
@@ -133,7 +128,7 @@ impl Hash for FunctionIR {
             #[cfg(feature = "python")]
             FunctionIR::OpaquePython { .. } => {},
             FunctionIR::Opaque { fmt_str, .. } => fmt_str.hash(state),
-            FunctionIR::Count {
+            FunctionIR::FastCount {
                 paths,
                 scan_type,
                 alias,
@@ -178,11 +173,11 @@ impl FunctionIR {
             Rechunk | Pipeline { .. } => false,
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => false,
-            Count { .. } | Unnest { .. } | Rename { .. } | Explode { .. } => true,
+            FastCount { .. } | Unnest { .. } | Rename { .. } | Explode { .. } => true,
             Unpivot { .. } => true,
             Opaque { streamable, .. } => *streamable,
             #[cfg(feature = "python")]
-            OpaquePython { streamable, .. } => *streamable,
+            OpaquePython(OpaquePythonUdf { streamable, .. }) => *streamable,
             RowIndex { .. } => false,
         }
     }
@@ -203,11 +198,11 @@ impl FunctionIR {
         match self {
             Opaque { predicate_pd, .. } => *predicate_pd,
             #[cfg(feature = "python")]
-            OpaquePython { predicate_pd, .. } => *predicate_pd,
+            OpaquePython(OpaquePythonUdf { predicate_pd, .. }) => *predicate_pd,
             Rechunk | Unnest { .. } | Rename { .. } | Explode { .. } | Unpivot { .. } => true,
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => true,
-            RowIndex { .. } | Count { .. } => false,
+            RowIndex { .. } | FastCount { .. } => false,
             Pipeline { .. } => unimplemented!(),
         }
     }
@@ -217,9 +212,9 @@ impl FunctionIR {
         match self {
             Opaque { projection_pd, .. } => *projection_pd,
             #[cfg(feature = "python")]
-            OpaquePython { projection_pd, .. } => *projection_pd,
+            OpaquePython(OpaquePythonUdf { projection_pd, .. }) => *projection_pd,
             Rechunk
-            | Count { .. }
+            | FastCount { .. }
             | Unnest { .. }
             | Rename { .. }
             | Explode { .. }
@@ -247,13 +242,13 @@ impl FunctionIR {
         match self {
             Opaque { function, .. } => function.call_udf(df),
             #[cfg(feature = "python")]
-            OpaquePython {
+            OpaquePython(OpaquePythonUdf {
                 function,
                 validate_output,
                 schema,
                 ..
-            } => python_udf::call_python_udf(function, df, *validate_output, schema.as_deref()),
-            Count {
+            }) => python_udf::call_python_udf(function, df, *validate_output, schema.as_deref()),
+            FastCount {
                 paths, scan_type, ..
             } => count::count_rows(paths, scan_type),
             Rechunk => {
@@ -320,17 +315,11 @@ impl Display for FunctionIR {
         use FunctionIR::*;
         match self {
             Opaque { fmt_str, .. } => write!(f, "{fmt_str}"),
-            #[cfg(feature = "python")]
-            OpaquePython { .. } => write!(f, "python dataframe udf"),
-            Rechunk => write!(f, "RECHUNK"),
-            Count { .. } => write!(f, "FAST COUNT(*)"),
             Unnest { columns } => {
                 write!(f, "UNNEST by:")?;
                 let columns = columns.as_ref();
                 fmt_column_delimited(f, columns, "[", "]")
             },
-            #[cfg(feature = "merge_sorted")]
-            MergeSorted { .. } => write!(f, "MERGE SORTED"),
             Pipeline { original, .. } => {
                 if let Some(original) = original {
                     let ir_display = original.as_ref().display();
@@ -343,10 +332,10 @@ impl Display for FunctionIR {
                     write!(f, "STREAMING")
                 }
             },
-            Rename { .. } => write!(f, "RENAME"),
-            Explode { .. } => write!(f, "EXPLODE"),
-            Unpivot { .. } => write!(f, "UNPIVOT"),
-            RowIndex { .. } => write!(f, "WITH ROW INDEX"),
+            v => {
+                let s: &str = v.into();
+                write!(f, "{s}")
+            },
         }
     }
 }

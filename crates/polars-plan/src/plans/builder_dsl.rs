@@ -424,7 +424,7 @@ impl DslBuilder {
     ) -> Self {
         DslPlan::MapFunction {
             input: Arc::new(self.0),
-            function: DslFunction::FunctionIR(FunctionIR::OpaquePython {
+            function: DslFunction::OpaquePython(OpaquePythonUdf {
                 function,
                 schema,
                 predicate_pd: optimizations.contains(OptState::PREDICATE_PUSHDOWN),

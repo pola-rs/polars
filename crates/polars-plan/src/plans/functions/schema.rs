@@ -33,12 +33,12 @@ impl FunctionIR {
                 },
             },
             #[cfg(feature = "python")]
-            OpaquePython { schema, .. } => Ok(schema
+            OpaquePython(OpaquePythonUdf { schema, .. }) => Ok(schema
                 .as_ref()
                 .map(|schema| Cow::Owned(schema.clone()))
                 .unwrap_or_else(|| Cow::Borrowed(input_schema))),
             Pipeline { schema, .. } => Ok(Cow::Owned(schema.clone())),
-            Count { alias, .. } => {
+            FastCount { alias, .. } => {
                 let mut schema: Schema = Schema::with_capacity(1);
                 let name = SmartString::from(
                     alias

@@ -2,6 +2,20 @@ use strum_macros::IntoStaticStr;
 
 use super::*;
 
+#[cfg(feature = "python")]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone)]
+pub struct OpaquePythonUdf {
+    pub function: PythonFunction,
+    pub schema: Option<SchemaRef>,
+    ///  allow predicate pushdown optimizations
+    pub predicate_pd: bool,
+    ///  allow projection pushdown optimizations
+    pub projection_pd: bool,
+    pub streamable: bool,
+    pub validate_output: bool,
+}
+
 // Except for Opaque functions, this only has the DSL name of the function.
 #[derive(Clone, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -10,6 +24,9 @@ pub enum DslFunction {
     // Function that is already converted to IR.
     #[cfg_attr(feature = "serde", serde(skip))]
     FunctionIR(FunctionIR),
+    // This is both in DSL and IR because we want to be able to serialize it.
+    #[cfg(feature = "python")]
+    OpaquePython(OpaquePythonUdf),
     Explode {
         columns: Vec<Selector>,
     },
@@ -123,6 +140,8 @@ impl DslFunction {
                 validate_columns(columns.as_ref(), input_schema, "explode")?;
                 FunctionIR::Unnest { columns }
             },
+            #[cfg(feature = "python")]
+            DslFunction::OpaquePython(inner) => FunctionIR::OpaquePython(inner),
             DslFunction::Stats(_) | DslFunction::FillNan(_) | DslFunction::Drop(_) => {
                 // We should not reach this.
                 panic!("impl error")
@@ -144,7 +163,7 @@ impl Display for DslFunction {
         match self {
             FunctionIR(inner) => write!(f, "{inner}"),
             v => {
-                let s: &'static str = v.into();
+                let s: &str = v.into();
                 write!(f, "{s}")
             },
         }

@@ -590,7 +590,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                     schema: _,
                     offset,
                 } => ("row_index", name.to_string(), offset.unwrap_or(0)).to_object(py),
-                FunctionIR::Count {
+                FunctionIR::FastCount {
                     paths: _,
                     scan_type: _,
                     alias: _,
