@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import time
 from datetime import date
 from pathlib import Path
@@ -70,8 +69,8 @@ def test_streaming_streamable_functions(monkeypatch: Any, capfd: Any) -> None:
         "b": [1, 2, 3],
     }
 
-    (_, err) = capfd.readouterr()
-    assert "df -> function -> ordered_sink" in err
+        (_, err) = capfd.readouterr()
+        assert "df -> function -> ordered_sink" in err
 
 
 @pytest.mark.slow
@@ -123,15 +122,15 @@ def test_streaming_apply(monkeypatch: Any, capfd: Any) -> None:
     monkeypatch.setenv("POLARS_VERBOSE", "1")
 
     q = pl.DataFrame({"a": [1, 2]}).lazy()
-
-    with pytest.warns(PolarsInefficientMapWarning, match="with this one instead"):
-        (
-            q.select(
-                pl.col("a").map_elements(lambda x: x * 2, return_dtype=pl.Int64)
-            ).collect(streaming=True)
-        )
-        (_, err) = capfd.readouterr()
-        assert "df -> projection -> ordered_sink" in err
+    with pl.Config(verbose=True):  # noqa: SIM117
+        with pytest.warns(PolarsInefficientMapWarning, match="with this one instead"):
+            (
+                q.select(
+                    pl.col("a").map_elements(lambda x: x * 2, return_dtype=pl.Int64)
+                ).collect(streaming=True)
+            )
+            (_, err) = capfd.readouterr()
+            assert "df -> projection -> ordered_sink" in err
 
 
 def test_streaming_ternary() -> None:

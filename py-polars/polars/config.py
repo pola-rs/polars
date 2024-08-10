@@ -28,27 +28,26 @@ if TYPE_CHECKING:
 __all__ = ["Config"]
 
 TableFormatNames: TypeAlias = Literal[
-    "ASCII_FULL",
-    "ASCII_FULL_CONDENSED",
-    "ASCII_NO_BORDERS",
     "ASCII_BORDERS_ONLY",
     "ASCII_BORDERS_ONLY_CONDENSED",
+    "ASCII_FULL",
+    "ASCII_FULL_CONDENSED",
     "ASCII_HORIZONTAL_ONLY",
     "ASCII_MARKDOWN",
+    "ASCII_NO_BORDERS",
     "MARKDOWN",
+    "NOTHING",
+    "UTF8_BORDERS_ONLY",
     "UTF8_FULL",
     "UTF8_FULL_CONDENSED",
-    "UTF8_NO_BORDERS",
-    "UTF8_BORDERS_ONLY",
     "UTF8_HORIZONTAL_ONLY",
-    "NOTHING",
+    "UTF8_NO_BORDERS",
 ]
 
 # note: register all Config-specific environment variable names here; need to constrain
 # which 'POLARS_' environment variables are recognized, as there are other lower-level
 # and/or unstable settings that should not be saved or reset with the Config vars.
 _POLARS_CFG_ENV_VARS = {
-    "POLARS_WARN_UNSTABLE",
     "POLARS_AUTO_STRUCTIFY",
     "POLARS_FMT_MAX_COLS",
     "POLARS_FMT_MAX_ROWS",
@@ -67,11 +66,12 @@ _POLARS_CFG_ENV_VARS = {
     "POLARS_FMT_TABLE_HIDE_DATAFRAME_SHAPE_INFORMATION",
     "POLARS_FMT_TABLE_INLINE_COLUMN_DATA_TYPE",
     "POLARS_FMT_TABLE_ROUNDED_CORNERS",
+    "POLARS_MAX_EXPR_DEPTH",
     "POLARS_STREAMING_CHUNK_SIZE",
     "POLARS_TABLE_WIDTH",
     "POLARS_TEMP_DIR",
     "POLARS_VERBOSE",
-    "POLARS_MAX_EXPR_DEPTH",
+    "POLARS_WARN_UNSTABLE",
 }
 
 # vars that set the rust env directly should declare themselves here as the Config
@@ -525,6 +525,10 @@ class Config(contextlib.ContextDecorator):
 
         Notes
         -----
+        * This method sets the "POLARS_TEMP_DIR" environment variable, which
+          is only read once per session (on first use). Any subsequent changes
+          to this variable will *not* be picked up.
+
         * Temporary files may be created in several situations; for example,
           a streaming mode operation may spill intermediate results to disk,
           cloud-based files may need local caching on download, and sink ops
@@ -538,12 +542,11 @@ class Config(contextlib.ContextDecorator):
         ----------
         path : str, Path, None
             Path to a directory to use for Polars' temporary files, such as
-            where streaming operations may spill to disk. Set `None` to use
-            the default temp directory.
+            where streaming operations may spill to disk.
 
         Examples
         --------
-        >>> pl.Config(temp_dir="/tmp/my_subdir/")  # doctest: +SKIP
+        >>> pl.Config(temp_dir="/tmp/custom_directory/")  # doctest: +SKIP
         """
         if path is None:
             os.environ.pop("POLARS_TEMP_DIR", None)
