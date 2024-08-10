@@ -1,38 +1,53 @@
 {
     "name": "Polars Development",
-    "dockerFile": "Dockerfile",
-    "features": {
-        "ghcr.io/devcontainers/features/rust:1": {
-            "version": "latest"
-        },
-        "ghcr.io/devcontainers/features/python:1": {
-            "version": "3.12"
-        },
-        "docker-in-docker": "latest",
-        "ghcr.io/devcontainers-contrib/features/dprint-asdf:2": {}
+    "build": {
+        "dockerfile": "Dockerfile"
     },
     "customizations": {
         "vscode": {
             "settings": {
                 "terminal.integrated.shell.linux": "/bin/bash",
-                "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
-                "python.linting.enabled": true,
-                "python.linting.pylintEnabled": true,
+                "python.defaultInterpreterPath": "/usr/local/python",
+                "python.analysis.typeCheckingMode": "standard",
+                "editor.formatOnSaveMode": "file",
                 "rust-analyzer.checkOnSave.command": "clippy",
+                "[rust]": {
+                    "editor.defaultFormatter": "rust-lang.rust-analyzer"
+                },
                 "editor.formatOnSave": true,
-                "python.formatting.provider": "black"
+                "mypy-type-checker.cwd": "${workspaceFolder}/py-polars",
+                "mypy-type-checker.importStrategy": "fromEnvironment",
+                "[python]": {
+                    "diffEditor.ignoreTrimWhitespace": false,
+                    "editor.formatOnType": true,
+                    "editor.wordBasedSuggestions": "off",
+                    "editor.formatOnSave": true,
+                    "editor.defaultFormatter": "charliermarsh.ruff"
+                },
+                "[dockerfile]": {
+                    "editor.defaultFormatter": "ms-azuretools.vscode-docker"
+                },
+                "[json]": {
+                    "editor.quickSuggestions": {
+                        "strings": true
+                    },
+                    "editor.suggest.insertMode": "replace",
+                    "editor.defaultFormatter": "vscode.json-language-features"
+                }
             },
             "extensions": [
                 "rust-lang.rust-analyzer",
                 "serayuzgur.crates",
                 "ms-python.python",
                 "ms-python.vscode-pylance",
-                "dprint.dprint",
-                "ms-python.black-formatter"
+                "ms-python.mypy-type-checker",
+                "ms-azuretools.vscode-docker",
+                "charliermarsh.ruff",
+                "ms-vscode.makefile-tools",
+                "vscode.json-language-features"
             ]
         }
     },
     "forwardPorts": [],
-    "postCreateCommand": "pip install maturin[patchelf]",
     "remoteUser": "root"
 }
