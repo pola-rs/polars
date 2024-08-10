@@ -1765,10 +1765,17 @@ impl LazyFrame {
     /// Unnest the given `Struct` columns: the fields of the `Struct` type will be
     /// inserted as columns.
     #[cfg(feature = "dtype-struct")]
-    pub fn unnest<I: IntoIterator<Item = S>, S: AsRef<str>>(self, cols: I) -> Self {
-        self.map_private(DslFunction::FunctionIR(FunctionIR::Unnest {
-            columns: cols.into_iter().map(|s| Arc::from(s.as_ref())).collect(),
-        }))
+    pub fn unnest<E, IE>(self, cols: E) -> Self
+    where
+        E: AsRef<[IE]>,
+        IE: Into<Selector> + Clone,
+    {
+        let cols = cols
+            .as_ref()
+            .iter()
+            .map(|ie| ie.clone().into())
+            .collect::<Vec<_>>();
+        self.map_private(DslFunction::Unnest(cols))
     }
 
     #[cfg(feature = "merge_sorted")]

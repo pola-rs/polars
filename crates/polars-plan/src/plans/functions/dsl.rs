@@ -1,8 +1,11 @@
+use strum_macros::IntoStaticStr;
+
 use super::*;
 
 // Except for Opaque functions, this only has the DSL name of the function.
-#[derive(Clone)]
+#[derive(Clone, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 pub enum DslFunction {
     // Function that is already converted to IR.
     #[cfg_attr(feature = "serde", serde(skip))]
@@ -21,6 +24,7 @@ pub enum DslFunction {
         existing: Arc<[SmartString]>,
         new: Arc<[SmartString]>,
     },
+    Unnest(Vec<Selector>),
     Stats(StatsFunction),
     /// FillValue
     FillNan(Expr),
@@ -57,14 +61,23 @@ pub enum StatsFunction {
     Max,
 }
 
+fn validate_columns<S: AsRef<str>>(
+    columns: &[S],
+    input_schema: &Schema,
+    operation_name: &str,
+) -> PolarsResult<()> {
+    for c in columns {
+        polars_ensure!(input_schema.contains(c.as_ref()), ColumnNotFound: "'{}' on column: '{}' is invalid\n\nSchema at this point: {:?}", operation_name, c.as_ref(), input_schema)
+    }
+    Ok(())
+}
+
 impl DslFunction {
-    pub(crate) fn into_function_node(self, input_schema: &Schema) -> PolarsResult<FunctionIR> {
+    pub(crate) fn into_function_ir(self, input_schema: &Schema) -> PolarsResult<FunctionIR> {
         let function = match self {
             DslFunction::Explode { columns } => {
                 let columns = expand_selectors(columns, input_schema, &[])?;
-                for c in columns.as_ref() {
-                    polars_ensure!(input_schema.contains(c.as_ref()), ColumnNotFound: "'explode' on column: '{}' is invalid\n\nSchema at this point: {:?}", c.as_ref(), input_schema)
-                }
+                validate_columns(columns.as_ref(), input_schema, "explode")?;
                 FunctionIR::Explode {
                     columns,
                     schema: Default::default(),
@@ -73,6 +86,8 @@ impl DslFunction {
             DslFunction::Unpivot { args } => {
                 let on = expand_selectors(args.on, input_schema, &[])?;
                 let index = expand_selectors(args.index, input_schema, &[])?;
+                validate_columns(on.as_ref(), input_schema, "unpivot")?;
+                validate_columns(index.as_ref(), input_schema, "unpivot")?;
 
                 let args = UnpivotArgsIR {
                     on: on.iter().map(|s| s.as_ref().into()).collect(),
@@ -94,11 +109,7 @@ impl DslFunction {
             },
             DslFunction::Rename { existing, new } => {
                 let swapping = new.iter().any(|name| input_schema.get(name).is_some());
-
-                // Check if the name exists.
-                for name in existing.iter() {
-                    let _ = input_schema.try_get(name)?;
-                }
+                validate_columns(existing.as_ref(), input_schema, "rename")?;
 
                 FunctionIR::Rename {
                     existing,
@@ -106,6 +117,11 @@ impl DslFunction {
                     swapping,
                     schema: Default::default(),
                 }
+            },
+            DslFunction::Unnest(selectors) => {
+                let columns = expand_selectors(selectors, input_schema, &[])?;
+                validate_columns(columns.as_ref(), input_schema, "explode")?;
+                FunctionIR::Unnest { columns }
             },
             DslFunction::Stats(_) | DslFunction::FillNan(_) | DslFunction::Drop(_) => {
                 // We should not reach this.
@@ -127,13 +143,10 @@ impl Display for DslFunction {
         use DslFunction::*;
         match self {
             FunctionIR(inner) => write!(f, "{inner}"),
-            Explode { .. } => write!(f, "EXPLODE"),
-            Unpivot { .. } => write!(f, "UNPIVOT"),
-            RowIndex { .. } => write!(f, "WITH ROW INDEX"),
-            Stats(_) => write!(f, "STATS"),
-            FillNan(_) => write!(f, "FILL NAN"),
-            Drop(_) => write!(f, "DROP"),
-            Rename { .. } => write!(f, "RENAME"),
+            v => {
+                let s: &'static str = v.into();
+                write!(f, "{s}")
+            },
         }
     }
 }

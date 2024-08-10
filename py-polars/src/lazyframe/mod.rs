@@ -1200,7 +1200,8 @@ impl PyLazyFrame {
         Ok(schema_dict.to_object(py))
     }
 
-    fn unnest(&self, columns: Vec<String>) -> Self {
+    fn unnest(&self, columns: Vec<PyExpr>) -> Self {
+        let columns = columns.to_exprs();
         self.ldf.clone().unnest(columns).into()
     }
 

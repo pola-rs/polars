@@ -758,7 +758,7 @@ pub fn to_alp_impl(
                     return run_conversion(lp, lp_arena, expr_arena, convert, "stats");
                 },
                 _ => {
-                    let function = function.into_function_node(&input_schema)?;
+                    let function = function.into_function_ir(&input_schema)?;
                     IR::MapFunction { input, function }
                 },
             }

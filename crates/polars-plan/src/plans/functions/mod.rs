@@ -61,7 +61,7 @@ pub enum FunctionIR {
         original: Option<Arc<IRPlan>>,
     },
     Unnest {
-        columns: Arc<[Arc<str>]>,
+        columns: Arc<[ColumnName]>,
     },
     Rechunk,
     // The two DataFrames are temporary concatenated
