@@ -10,11 +10,10 @@ pub(super) fn assert_cloud_eligible(dsl: &DslPlan) -> PolarsResult<()> {
     let mut expr_stack = vec![];
     for plan_node in dsl.into_iter() {
         match plan_node {
-            DslPlan::MapFunction {
-                function,
-                ..
-            } => match function {
-                DslFunction::FunctionIR(FunctionIR::Opaque {..})=> return ineligible_error("contains opaque function"),
+            DslPlan::MapFunction { function, .. } => match function {
+                DslFunction::FunctionIR(FunctionIR::Opaque { .. }) => {
+                    return ineligible_error("contains opaque function")
+                },
                 #[cfg(feature = "python")]
                 DslFunction::OpaquePython { .. } => {
                     return ineligible_error("contains Python function")
