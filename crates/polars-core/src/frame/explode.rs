@@ -1,8 +1,6 @@
 use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
 use arrow::offset::OffsetsBuffer;
 use rayon::prelude::*;
-#[cfg(feature = "serde-lazy")]
-use serde::{Deserialize, Serialize};
 use smartstring::alias::String as SmartString;
 
 use crate::chunked_array::ops::explode::offsets_to_indexes;
@@ -22,16 +20,11 @@ fn get_exploded(series: &Series) -> PolarsResult<(Series, OffsetsBuffer<i64>)> {
 
 /// Arguments for `[DataFrame::unpivot]` function
 #[derive(Clone, Default, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
-pub struct UnpivotArgs {
+pub struct UnpivotArgsIR {
     pub on: Vec<SmartString>,
     pub index: Vec<SmartString>,
     pub variable_name: Option<SmartString>,
     pub value_name: Option<SmartString>,
-    /// Whether the unpivot may be done
-    /// in the streaming engine
-    /// This will not have a stable ordering
-    pub streamable: bool,
 }
 
 impl DataFrame {
@@ -257,7 +250,7 @@ impl DataFrame {
     {
         let index = index.into_vec();
         let on = on.into_vec();
-        self.unpivot2(UnpivotArgs {
+        self.unpivot2(UnpivotArgsIR {
             on,
             index,
             ..Default::default()
@@ -266,7 +259,7 @@ impl DataFrame {
 
     /// Similar to unpivot, but without generics. This may be easier if you want to pass
     /// an empty `index` or empty `on`.
-    pub fn unpivot2(&self, args: UnpivotArgs) -> PolarsResult<Self> {
+    pub fn unpivot2(&self, args: UnpivotArgsIR) -> PolarsResult<Self> {
         let index = args.index;
         let mut on = args.on;
 
@@ -456,7 +449,7 @@ mod test {
             &[Some(10), Some(11), Some(12), Some(2), Some(4), Some(6)]
         );
 
-        let args = UnpivotArgs {
+        let args = UnpivotArgsIR {
             on: vec![],
             index: vec![],
             ..Default::default()
@@ -472,7 +465,7 @@ mod test {
             &["a", "b", "a", "1", "3", "5", "10", "11", "12", "2", "4", "6"]
         );
 
-        let args = UnpivotArgs {
+        let args = UnpivotArgsIR {
             on: vec![],
             index: vec!["A".into()],
             ..Default::default()

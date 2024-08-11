@@ -614,6 +614,19 @@ pub fn to_alp_impl(
         DslPlan::Distinct { input, options } => {
             let input = to_alp_impl(owned(input), expr_arena, lp_arena, convert)
                 .map_err(|e| e.context(failed_input!(unique)))?;
+            let input_schema = lp_arena.get(input).schema(lp_arena);
+
+            let subset = options
+                .subset
+                .map(|s| expand_selectors(s, input_schema.as_ref(), &[]))
+                .transpose()?;
+            let options = DistinctOptionsIR {
+                subset,
+                maintain_order: options.maintain_order,
+                keep_strategy: options.keep_strategy,
+                slice: None,
+            };
+
             IR::Distinct { input, options }
         },
         DslPlan::MapFunction { input, function } => {
@@ -745,7 +758,7 @@ pub fn to_alp_impl(
                     return run_conversion(lp, lp_arena, expr_arena, convert, "stats");
                 },
                 _ => {
-                    let function = function.into_function_node(&input_schema)?;
+                    let function = function.into_function_ir(&input_schema)?;
                     IR::MapFunction { input, function }
                 },
             }

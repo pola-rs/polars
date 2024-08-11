@@ -4,7 +4,7 @@ use super::*;
 pub(super) fn process_unpivot(
     proj_pd: &mut ProjectionPushDown,
     lp: IR,
-    args: &Arc<UnpivotArgs>,
+    args: &Arc<UnpivotArgsIR>,
     input: Node,
     acc_projections: Vec<ColumnNode>,
     projections_seen: usize,

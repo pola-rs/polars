@@ -65,7 +65,7 @@ pub(crate) fn is_pipeline(q: LazyFrame) -> bool {
     matches!(
         lp_arena.get(lp),
         IR::MapFunction {
-            function: FunctionNode::Pipeline { .. },
+            function: FunctionIR::Pipeline { .. },
             ..
         }
     )
@@ -79,7 +79,7 @@ pub(crate) fn has_pipeline(q: LazyFrame) -> bool {
         matches!(
             lp,
             IR::MapFunction {
-                function: FunctionNode::Pipeline { .. },
+                function: FunctionIR::Pipeline { .. },
                 ..
             }
         )

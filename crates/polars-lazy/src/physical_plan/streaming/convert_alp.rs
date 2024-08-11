@@ -212,7 +212,7 @@ pub(crate) fn insert_streaming_nodes(
             // Rechunks are ignored
             MapFunction {
                 input,
-                function: FunctionNode::Rechunk,
+                function: FunctionIR::Rechunk,
             } => {
                 state.streamable = true;
                 stack.push(StackFrame::new(*input, state, current_idx))
@@ -294,7 +294,7 @@ pub(crate) fn insert_streaming_nodes(
                         Scan { .. } => true,
                         MapFunction {
                             input,
-                            function: FunctionNode::Rechunk,
+                            function: FunctionIR::Rechunk,
                         } => matches!(lp_arena.get(*input), Scan { .. }),
                         _ => false,
                     }) =>

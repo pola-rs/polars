@@ -250,7 +250,7 @@ fn get_pipeline_node(
     });
 
     IR::MapFunction {
-        function: FunctionNode::Pipeline {
+        function: FunctionIR::Pipeline {
             function: Arc::new(Mutex::new(move |_df: DataFrame| {
                 let state = ExecutionState::new();
                 if state.verbose() {

@@ -19,7 +19,8 @@ use polars_time::{DynamicGroupOptions, RollingGroupOptions};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-use crate::plans::ExprIR;
+use crate::dsl::Selector;
+use crate::plans::{ColumnName, ExprIR};
 #[cfg(feature = "python")]
 use crate::prelude::python_udf::PythonFunction;
 
@@ -71,9 +72,22 @@ pub struct GroupbyOptions {
 
 #[derive(Clone, Debug, Eq, PartialEq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct DistinctOptions {
+pub struct DistinctOptionsDSL {
     /// Subset of columns that will be taken into account.
-    pub subset: Option<Arc<Vec<String>>>,
+    pub subset: Option<Vec<Selector>>,
+    /// This will maintain the order of the input.
+    /// Note that this is more expensive.
+    /// `maintain_order` is not supported in the streaming
+    /// engine.
+    pub maintain_order: bool,
+    /// Which rows to keep.
+    pub keep_strategy: UniqueKeepStrategy,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct DistinctOptionsIR {
+    /// Subset of columns that will be taken into account.
+    pub subset: Option<Arc<[ColumnName]>>,
     /// This will maintain the order of the input.
     /// Note that this is more expensive.
     /// `maintain_order` is not supported in the streaming

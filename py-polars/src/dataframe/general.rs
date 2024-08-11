@@ -379,12 +379,11 @@ impl PyDataFrame {
         value_name: Option<&str>,
         variable_name: Option<&str>,
     ) -> PyResult<Self> {
-        let args = UnpivotArgs {
+        let args = UnpivotArgsIR {
             on: strings_to_smartstrings(on),
             index: strings_to_smartstrings(index),
             value_name: value_name.map(|s| s.into()),
             variable_name: variable_name.map(|s| s.into()),
-            streamable: false,
         };
 
         let df = self.df.unpivot2(args).map_err(PyPolarsErr::from)?;

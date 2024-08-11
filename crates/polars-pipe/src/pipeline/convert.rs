@@ -404,11 +404,10 @@ where
                     let keys = keys
                         .iter()
                         .map(|key| {
-                            let (_, name, dtype) = input_schema.get_full(key.as_str()).unwrap();
+                            let (_, name, dtype) = input_schema.get_full(key.as_ref()).unwrap();
                             group_by_out_schema.with_column(name.clone(), dtype.clone());
-                            let name: Arc<str> = Arc::from(key.as_str());
-                            let node = expr_arena.add(AExpr::Column(name.clone()));
-                            ExprIR::new(node, OutputName::Alias(name))
+                            let node = expr_arena.add(AExpr::Column(key.clone()));
+                            ExprIR::new(node, OutputName::Alias(key.clone()))
                         })
                         .collect::<Vec<_>>();
 
