@@ -154,7 +154,7 @@ pub(super) fn to_titlecase<'a>(ca: &'a StringChunked) -> StringChunked {
             } else {
                 s.push(c);
             }
-            next_is_upper = c.is_whitespace();
+            next_is_upper = !c.is_alphanumeric();
         }
 
         // Put buf back for next iteration.

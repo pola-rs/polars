@@ -69,10 +69,8 @@ impl fmt::Display for TreeFmtAExpr<'_> {
             },
             AExpr::Function { function, .. } => return write!(f, "function: {function}"),
             AExpr::Window { .. } => "window",
-            AExpr::Wildcard => "*",
             AExpr::Slice { .. } => "slice",
             AExpr::Len => constants::LEN,
-            AExpr::Nth(v) => return write!(f, "nth({})", v),
         };
 
         write!(f, "{s}")

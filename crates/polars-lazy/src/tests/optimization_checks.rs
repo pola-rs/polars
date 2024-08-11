@@ -65,7 +65,7 @@ pub(crate) fn is_pipeline(q: LazyFrame) -> bool {
     matches!(
         lp_arena.get(lp),
         IR::MapFunction {
-            function: FunctionNode::Pipeline { .. },
+            function: FunctionIR::Pipeline { .. },
             ..
         }
     )
@@ -79,7 +79,7 @@ pub(crate) fn has_pipeline(q: LazyFrame) -> bool {
         matches!(
             lp,
             IR::MapFunction {
-                function: FunctionNode::Pipeline { .. },
+                function: FunctionIR::Pipeline { .. },
                 ..
             }
         )
@@ -93,7 +93,7 @@ fn slice_at_scan(q: LazyFrame) -> bool {
     (&lp_arena).iter(lp).any(|(_, lp)| {
         use IR::*;
         match lp {
-            Scan { file_options, .. } => file_options.n_rows.is_some(),
+            Scan { file_options, .. } => file_options.slice.is_some(),
             _ => false,
         }
     })

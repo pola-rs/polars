@@ -88,5 +88,10 @@ pub enum PhysNode {
 
     Zip {
         inputs: Vec<PhysNodeKey>,
+        input_schemas: Vec<Arc<Schema>>,
+        /// If true shorter inputs are extended with nulls to the longest input,
+        /// if false all inputs must be the same length, or have length 1 in
+        /// which case they are broadcast.
+        null_extend: bool,
     },
 }

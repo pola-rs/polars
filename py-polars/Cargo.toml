@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "1.2.1"
+version = "1.4.1"
 edition = "2021"
 
 [lib]
@@ -23,6 +23,7 @@ polars-stream = { workspace = true }
 
 ahash = { workspace = true }
 arboard = { workspace = true, optional = true }
+bytemuck = { workspace = true }
 ciborium = { workspace = true }
 either = { workspace = true }
 itoa = { workspace = true }

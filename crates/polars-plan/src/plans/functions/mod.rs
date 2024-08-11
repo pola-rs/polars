@@ -18,6 +18,7 @@ use polars_core::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use smartstring::alias::String as SmartString;
+use strum_macros::IntoStaticStr;
 
 #[cfg(feature = "python")]
 use crate::dsl::python_udf::PythonFunction;
@@ -25,21 +26,11 @@ use crate::dsl::python_udf::PythonFunction;
 use crate::plans::functions::merge_sorted::merge_sorted;
 use crate::prelude::*;
 
-#[derive(Clone)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub enum FunctionNode {
+#[derive(Clone, IntoStaticStr)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+pub enum FunctionIR {
     #[cfg(feature = "python")]
-    OpaquePython {
-        function: PythonFunction,
-        schema: Option<SchemaRef>,
-        ///  allow predicate pushdown optimizations
-        predicate_pd: bool,
-        ///  allow projection pushdown optimizations
-        projection_pd: bool,
-        streamable: bool,
-        validate_output: bool,
-    },
-    #[cfg_attr(feature = "serde", serde(skip))]
+    OpaquePython(OpaquePythonUdf),
     Opaque {
         function: Arc<dyn DataFrameUdf>,
         schema: Option<Arc<dyn UdfSchema>>,
@@ -49,15 +40,13 @@ pub enum FunctionNode {
         projection_pd: bool,
         streamable: bool,
         // used for formatting
-        #[cfg_attr(feature = "serde", serde(skip))]
         fmt_str: &'static str,
     },
-    Count {
-        paths: Arc<[PathBuf]>,
+    FastCount {
+        paths: Arc<Vec<PathBuf>>,
         scan_type: FileScan,
         alias: Option<Arc<str>>,
     },
-    #[cfg_attr(feature = "serde", serde(skip))]
     /// Streaming engine pipeline
     Pipeline {
         function: Arc<Mutex<dyn DataFrameUdfMut>>,
@@ -65,7 +54,7 @@ pub enum FunctionNode {
         original: Option<Arc<IRPlan>>,
     },
     Unnest {
-        columns: Arc<[Arc<str>]>,
+        columns: Arc<[ColumnName]>,
     },
     Rechunk,
     // The two DataFrames are temporary concatenated
@@ -82,36 +71,34 @@ pub enum FunctionNode {
         new: Arc<[SmartString]>,
         // A column name gets swapped with an existing column
         swapping: bool,
-        #[cfg_attr(feature = "serde", serde(skip))]
         schema: CachedSchema,
     },
     Explode {
-        columns: Arc<[Arc<str>]>,
-        #[cfg_attr(feature = "serde", serde(skip))]
+        columns: Arc<[ColumnName]>,
         schema: CachedSchema,
     },
     Unpivot {
-        args: Arc<UnpivotArgs>,
-        #[cfg_attr(feature = "serde", serde(skip))]
+        args: Arc<UnpivotArgsIR>,
         schema: CachedSchema,
     },
     RowIndex {
         name: Arc<str>,
         // Might be cached.
-        #[cfg_attr(feature = "serde", serde(skip))]
         schema: CachedSchema,
         offset: Option<IdxSize>,
     },
 }
 
-impl Eq for FunctionNode {}
+impl Eq for FunctionIR {}
 
-impl PartialEq for FunctionNode {
+impl PartialEq for FunctionIR {
     fn eq(&self, other: &Self) -> bool {
-        use FunctionNode::*;
+        use FunctionIR::*;
         match (self, other) {
             (Rechunk, Rechunk) => true,
-            (Count { paths: paths_l, .. }, Count { paths: paths_r, .. }) => paths_l == paths_r,
+            (FastCount { paths: paths_l, .. }, FastCount { paths: paths_r, .. }) => {
+                paths_l == paths_r
+            },
             (
                 Rename {
                     existing: existing_l,
@@ -134,14 +121,14 @@ impl PartialEq for FunctionNode {
     }
 }
 
-impl Hash for FunctionNode {
+impl Hash for FunctionIR {
     fn hash<H: Hasher>(&self, state: &mut H) {
         std::mem::discriminant(self).hash(state);
         match self {
             #[cfg(feature = "python")]
-            FunctionNode::OpaquePython { .. } => {},
-            FunctionNode::Opaque { fmt_str, .. } => fmt_str.hash(state),
-            FunctionNode::Count {
+            FunctionIR::OpaquePython { .. } => {},
+            FunctionIR::Opaque { fmt_str, .. } => fmt_str.hash(state),
+            FunctionIR::FastCount {
                 paths,
                 scan_type,
                 alias,
@@ -150,12 +137,12 @@ impl Hash for FunctionNode {
                 scan_type.hash(state);
                 alias.hash(state);
             },
-            FunctionNode::Pipeline { .. } => {},
-            FunctionNode::Unnest { columns } => columns.hash(state),
-            FunctionNode::Rechunk => {},
+            FunctionIR::Pipeline { .. } => {},
+            FunctionIR::Unnest { columns } => columns.hash(state),
+            FunctionIR::Rechunk => {},
             #[cfg(feature = "merge_sorted")]
-            FunctionNode::MergeSorted { column } => column.hash(state),
-            FunctionNode::Rename {
+            FunctionIR::MergeSorted { column } => column.hash(state),
+            FunctionIR::Rename {
                 existing,
                 new,
                 swapping: _,
@@ -164,9 +151,9 @@ impl Hash for FunctionNode {
                 existing.hash(state);
                 new.hash(state);
             },
-            FunctionNode::Explode { columns, schema: _ } => columns.hash(state),
-            FunctionNode::Unpivot { args, schema: _ } => args.hash(state),
-            FunctionNode::RowIndex {
+            FunctionIR::Explode { columns, schema: _ } => columns.hash(state),
+            FunctionIR::Unpivot { args, schema: _ } => args.hash(state),
+            FunctionIR::RowIndex {
                 name,
                 schema: _,
                 offset,
@@ -178,26 +165,26 @@ impl Hash for FunctionNode {
     }
 }
 
-impl FunctionNode {
+impl FunctionIR {
     /// Whether this function can run on batches of data at a time.
     pub fn is_streamable(&self) -> bool {
-        use FunctionNode::*;
+        use FunctionIR::*;
         match self {
             Rechunk | Pipeline { .. } => false,
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => false,
-            Count { .. } | Unnest { .. } | Rename { .. } | Explode { .. } => true,
-            Unpivot { args, .. } => args.streamable,
+            FastCount { .. } | Unnest { .. } | Rename { .. } | Explode { .. } => true,
+            Unpivot { .. } => true,
             Opaque { streamable, .. } => *streamable,
             #[cfg(feature = "python")]
-            OpaquePython { streamable, .. } => *streamable,
+            OpaquePython(OpaquePythonUdf { streamable, .. }) => *streamable,
             RowIndex { .. } => false,
         }
     }
 
     /// Whether this function will increase the number of rows
     pub fn expands_rows(&self) -> bool {
-        use FunctionNode::*;
+        use FunctionIR::*;
         match self {
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => true,
@@ -207,27 +194,27 @@ impl FunctionNode {
     }
 
     pub(crate) fn allow_predicate_pd(&self) -> bool {
-        use FunctionNode::*;
+        use FunctionIR::*;
         match self {
             Opaque { predicate_pd, .. } => *predicate_pd,
             #[cfg(feature = "python")]
-            OpaquePython { predicate_pd, .. } => *predicate_pd,
+            OpaquePython(OpaquePythonUdf { predicate_pd, .. }) => *predicate_pd,
             Rechunk | Unnest { .. } | Rename { .. } | Explode { .. } | Unpivot { .. } => true,
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => true,
-            RowIndex { .. } | Count { .. } => false,
+            RowIndex { .. } | FastCount { .. } => false,
             Pipeline { .. } => unimplemented!(),
         }
     }
 
     pub(crate) fn allow_projection_pd(&self) -> bool {
-        use FunctionNode::*;
+        use FunctionIR::*;
         match self {
             Opaque { projection_pd, .. } => *projection_pd,
             #[cfg(feature = "python")]
-            OpaquePython { projection_pd, .. } => *projection_pd,
+            OpaquePython(OpaquePythonUdf { projection_pd, .. }) => *projection_pd,
             Rechunk
-            | Count { .. }
+            | FastCount { .. }
             | Unnest { .. }
             | Rename { .. }
             | Explode { .. }
@@ -240,7 +227,7 @@ impl FunctionNode {
     }
 
     pub(crate) fn additional_projection_pd_columns(&self) -> Cow<[Arc<str>]> {
-        use FunctionNode::*;
+        use FunctionIR::*;
         match self {
             Unnest { columns } => Cow::Borrowed(columns.as_ref()),
             Explode { columns, .. } => Cow::Borrowed(columns.as_ref()),
@@ -251,17 +238,17 @@ impl FunctionNode {
     }
 
     pub fn evaluate(&self, mut df: DataFrame) -> PolarsResult<DataFrame> {
-        use FunctionNode::*;
+        use FunctionIR::*;
         match self {
             Opaque { function, .. } => function.call_udf(df),
             #[cfg(feature = "python")]
-            OpaquePython {
+            OpaquePython(OpaquePythonUdf {
                 function,
                 validate_output,
                 schema,
                 ..
-            } => python_udf::call_python_udf(function, df, *validate_output, schema.as_deref()),
-            Count {
+            }) => python_udf::call_python_udf(function, df, *validate_output, schema.as_deref()),
+            FastCount {
                 paths, scan_type, ..
             } => count::count_rows(paths, scan_type),
             Rechunk => {
@@ -317,28 +304,22 @@ impl FunctionNode {
     }
 }
 
-impl Debug for FunctionNode {
+impl Debug for FunctionIR {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{self}")
     }
 }
 
-impl Display for FunctionNode {
+impl Display for FunctionIR {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        use FunctionNode::*;
+        use FunctionIR::*;
         match self {
             Opaque { fmt_str, .. } => write!(f, "{fmt_str}"),
-            #[cfg(feature = "python")]
-            OpaquePython { .. } => write!(f, "python dataframe udf"),
-            Rechunk => write!(f, "RECHUNK"),
-            Count { .. } => write!(f, "FAST COUNT(*)"),
             Unnest { columns } => {
                 write!(f, "UNNEST by:")?;
                 let columns = columns.as_ref();
                 fmt_column_delimited(f, columns, "[", "]")
             },
-            #[cfg(feature = "merge_sorted")]
-            MergeSorted { .. } => write!(f, "MERGE SORTED"),
             Pipeline { original, .. } => {
                 if let Some(original) = original {
                     let ir_display = original.as_ref().display();
@@ -351,10 +332,10 @@ impl Display for FunctionNode {
                     write!(f, "STREAMING")
                 }
             },
-            Rename { .. } => write!(f, "RENAME"),
-            Explode { .. } => write!(f, "EXPLODE"),
-            Unpivot { .. } => write!(f, "UNPIVOT"),
-            RowIndex { .. } => write!(f, "WITH ROW INDEX"),
+            v => {
+                let s: &str = v.into();
+                write!(f, "{s}")
+            },
         }
     }
 }

@@ -119,10 +119,10 @@ def test_struct_unnesting() -> None:
         }
     )
     for cols in ("foo", cs.ends_with("oo")):
-        out_eager = df.unnest(cols)  # type: ignore[arg-type]
+        out_eager = df.unnest(cols)
         assert_frame_equal(out_eager, expected)
 
-        out_lazy = df.lazy().unnest(cols)  # type: ignore[arg-type]
+        out_lazy = df.lazy().unnest(cols)
         assert_frame_equal(out_lazy, expected.lazy())
 
     out = (
@@ -653,7 +653,16 @@ def test_empty_series_nested_dtype(dtype: PolarsDataType) -> None:
     assert s.to_list() == []
 
 
-def test_empty_with_schema_struct() -> None:
+@pytest.mark.parametrize(
+    "data",
+    [
+        [{}, {}],
+        [{}, None],
+        [None, {}],
+        [None, None],
+    ],
+)
+def test_empty_with_schema_struct(data: list[dict[str, object] | None]) -> None:
     # Empty structs, with schema
     struct_schema = {"a": pl.Date, "b": pl.Boolean, "c": pl.Float64}
     frame_schema = {"x": pl.Int8, "y": pl.Struct(struct_schema)}
@@ -661,42 +670,31 @@ def test_empty_with_schema_struct() -> None:
     @dataclass
     class TestData:
         x: int
-        y: dict  # type: ignore[type-arg]
+        y: dict[str, object] | None
 
-    # validate empty struct, null, and a mix of both
-    for empty_structs in (
-        [{}, {}],
-        [{}, None],
-        [None, {}],
-        [None, None],
-    ):
-        # test init from rows, dicts, and dataclasses
-        dict_data = {"x": [10, 20], "y": empty_structs}
-        dataclass_data = [
-            TestData(10, empty_structs[0]),  # type: ignore[index]
-            TestData(20, empty_structs[1]),  # type: ignore[index]
+    # test init from rows, dicts, and dataclasses
+    dict_data = {"x": [10, 20], "y": data}
+    dataclass_data = [
+        TestData(10, data[0]),
+        TestData(20, data[1]),
+    ]
+    for frame_data in (dict_data, dataclass_data):
+        df = pl.DataFrame(
+            data=frame_data,
+            schema=frame_schema,  # type: ignore[arg-type]
+        )
+        assert df.schema == frame_schema
+        assert df.unnest("y").columns == ["x", "a", "b", "c"]
+        assert df.rows() == [
+            (
+                10,
+                {"a": None, "b": None, "c": None} if data[0] is not None else None,
+            ),
+            (
+                20,
+                {"a": None, "b": None, "c": None} if data[1] is not None else None,
+            ),
         ]
-        for frame_data in (dict_data, dataclass_data):
-            df = pl.DataFrame(
-                data=frame_data,
-                schema=frame_schema,  # type: ignore[arg-type]
-            )
-            assert df.schema == frame_schema
-            assert df.unnest("y").columns == ["x", "a", "b", "c"]
-            assert df.rows() == [
-                (
-                    10,
-                    {"a": None, "b": None, "c": None}
-                    if empty_structs[0] is not None  # type: ignore[index]
-                    else None,
-                ),
-                (
-                    20,
-                    {"a": None, "b": None, "c": None}
-                    if empty_structs[1] is not None  # type: ignore[index]
-                    else None,
-                ),
-            ]
 
 
 def test_struct_null_cast() -> None:

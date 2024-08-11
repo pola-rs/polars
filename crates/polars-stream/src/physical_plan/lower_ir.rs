@@ -212,12 +212,24 @@ pub fn lower_ir(
             schema: _,
             options: _,
         } => {
+            let input_schemas = inputs
+                .iter()
+                .map(|input| {
+                    let input_ir_node = ir_arena.get(*input);
+                    input_ir_node.schema(ir_arena).into_owned()
+                })
+                .collect();
+
             let inputs = inputs
                 .clone() // Needed to borrow ir_arena mutably.
                 .into_iter()
                 .map(|input| lower_ir(input, ir_arena, expr_arena, phys_sm))
                 .collect::<Result<_, _>>()?;
-            Ok(phys_sm.insert(PhysNode::Zip { inputs }))
+            Ok(phys_sm.insert(PhysNode::Zip {
+                inputs,
+                input_schemas,
+                null_extend: true,
+            }))
         },
 
         _ => todo!(),

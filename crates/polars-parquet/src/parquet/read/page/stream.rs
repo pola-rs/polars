@@ -6,12 +6,13 @@ use futures::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt, Stream};
 use parquet_format_safe::thrift::protocol::TCompactInputStreamProtocol;
 use polars_utils::mmap::MemSlice;
 
-use super::reader::{finish_page, get_page_header, PageMetaData};
+use super::reader::{finish_page, PageMetaData};
 use super::PageFilter;
 use crate::parquet::compression::Compression;
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::metadata::{ColumnChunkMetaData, Descriptor};
-use crate::parquet::page::{CompressedPage, ParquetPageHeader};
+use crate::parquet::page::{CompressedPage, DataPageHeader, ParquetPageHeader};
+use crate::parquet::parquet_bridge::{Encoding, PageType};
 
 /// Returns a stream of compressed data pages
 pub async fn get_page_stream<'a, RR: AsyncRead + Unpin + Send + AsyncSeek>(
@@ -136,4 +137,32 @@ async fn read_page_header<R: AsyncRead + Unpin + Send>(
     let mut prot = TCompactInputStreamProtocol::new(reader, max_page_size);
     let page_header = ParquetPageHeader::stream_from_in_protocol(&mut prot).await?;
     Ok(page_header)
+}
+
+pub(super) fn get_page_header(header: &ParquetPageHeader) -> ParquetResult<Option<DataPageHeader>> {
+    let type_ = header.type_.try_into()?;
+    Ok(match type_ {
+        PageType::DataPage => {
+            let header = header.data_page_header.clone().ok_or_else(|| {
+                ParquetError::oos(
+                    "The page header type is a v1 data page but the v1 header is empty",
+                )
+            })?;
+            let _: Encoding = header.encoding.try_into()?;
+            let _: Encoding = header.repetition_level_encoding.try_into()?;
+            let _: Encoding = header.definition_level_encoding.try_into()?;
+
+            Some(DataPageHeader::V1(header))
+        },
+        PageType::DataPageV2 => {
+            let header = header.data_page_header_v2.clone().ok_or_else(|| {
+                ParquetError::oos(
+                    "The page header type is a v1 data page but the v1 header is empty",
+                )
+            })?;
+            let _: Encoding = header.encoding.try_into()?;
+            Some(DataPageHeader::V2(header))
+        },
+        _ => None,
+    })
 }

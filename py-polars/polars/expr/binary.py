@@ -3,11 +3,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from polars._utils.parse import parse_into_expression
+from polars._utils.various import scale_bytes
 from polars._utils.wrap import wrap_expr
 
 if TYPE_CHECKING:
     from polars import Expr
-    from polars._typing import IntoExpr, TransferEncoding
+    from polars._typing import IntoExpr, SizeUnit, TransferEncoding
 
 
 class ExprBinaryNameSpace:
@@ -251,3 +252,36 @@ class ExprBinaryNameSpace:
         else:
             msg = f"`encoding` must be one of {{'hex', 'base64'}}, got {encoding!r}"
             raise ValueError(msg)
+
+    def size(self, unit: SizeUnit = "b") -> Expr:
+        r"""
+        Get the size of binary values in the given unit.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`UInt32`.
+
+        Examples
+        --------
+        >>> from os import urandom
+        >>> df = pl.DataFrame({"data": [urandom(n) for n in (512, 256, 2560, 1024)]})
+        >>> df.with_columns(  # doctest: +IGNORE_RESULT
+        ...     n_bytes=pl.col("data").bin.size(),
+        ...     n_kilobytes=pl.col("data").bin.size("kb"),
+        ... )
+        shape: (4, 3)
+        ┌─────────────────────────────────┬─────────┬─────────────┐
+        │ data                            ┆ n_bytes ┆ n_kilobytes │
+        │ ---                             ┆ ---     ┆ ---         │
+        │ binary                          ┆ u32     ┆ f64         │
+        ╞═════════════════════════════════╪═════════╪═════════════╡
+        │ b"y?~B\x83\xf4V\x07\xd3\xfb\xb… ┆ 512     ┆ 0.5         │
+        │ b"\xee$4@f\xc14\x07\x8e\x88\x1… ┆ 256     ┆ 0.25        │
+        │ b"~\x17\x9c\xb1\xf4\xdb?\xe9\x… ┆ 2560    ┆ 2.5         │
+        │ b"\x80\xbd\xb9nEq;2\x99$\xf9\x… ┆ 1024    ┆ 1.0         │
+        └─────────────────────────────────┴─────────┴─────────────┘
+        """
+        sz = wrap_expr(self._pyexpr.bin_size_bytes())
+        sz = scale_bytes(sz, unit)
+        return sz

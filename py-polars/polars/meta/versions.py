@@ -88,7 +88,7 @@ def _get_dependency_info() -> dict[str, str]:
 
 
 def _get_dependency_version(dep_name: str) -> str:
-    # note: we import 'importlib' here as a significiant optimisation for initial import
+    # note: we import 'importlib' here as a significant optimisation for initial import
     import importlib
     import importlib.metadata
 

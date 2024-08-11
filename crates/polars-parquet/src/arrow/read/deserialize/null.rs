@@ -4,9 +4,9 @@
 
 use arrow::array::{Array, NullArray};
 use arrow::datatypes::ArrowDataType;
-use polars_error::PolarsResult;
 
 use super::utils;
+use super::utils::filter::Filter;
 use crate::parquet::encoding::hybrid_rle;
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{DataPage, DictPage};
@@ -30,8 +30,7 @@ impl<'a> utils::StateTranslation<'a, NullDecoder> for () {
         _page: &'a DataPage,
         _dict: Option<&'a <NullDecoder as utils::Decoder>::Dict>,
         _page_validity: Option<&utils::PageValidity<'a>>,
-        _filter: Option<&utils::filter::Filter<'a>>,
-    ) -> PolarsResult<Self> {
+    ) -> ParquetResult<Self> {
         Ok(())
     }
 
@@ -59,6 +58,7 @@ impl utils::Decoder for NullDecoder {
     type Translation<'a> = ();
     type Dict = ();
     type DecodedState = NullArrayLength;
+    type Output = NullArray;
 
     /// Initializes a new state
     fn with_capacity(&self, _: usize) -> Self::DecodedState {
@@ -91,18 +91,10 @@ impl utils::Decoder for NullDecoder {
     fn finalize(
         &self,
         data_type: ArrowDataType,
+        _dict: Option<Self::Dict>,
         decoded: Self::DecodedState,
-    ) -> ParquetResult<Box<dyn arrow::array::Array>> {
-        Ok(Box::new(NullArray::new(data_type, decoded.length)))
-    }
-
-    fn finalize_dict_array<K: arrow::array::DictionaryKey>(
-        &self,
-        _data_type: ArrowDataType,
-        _dict: Self::Dict,
-        _decoded: (Vec<K>, Option<arrow::bitmap::Bitmap>),
-    ) -> ParquetResult<arrow::array::DictionaryArray<K>> {
-        unimplemented!()
+    ) -> ParquetResult<Self::Output> {
+        Ok(NullArray::new(data_type, decoded.length))
     }
 }
 
@@ -124,34 +116,39 @@ impl utils::NestedDecoder for NullDecoder {
     }
 }
 
-use super::{BasicDecompressor, CompressedPagesIter};
-use crate::parquet::page::Page;
+use super::BasicDecompressor;
 
 /// Converts [`PagesIter`] to an [`ArrayIter`]
-pub fn iter_to_arrays<I>(
-    mut iter: BasicDecompressor<I>,
+pub fn iter_to_arrays(
+    mut iter: BasicDecompressor,
     data_type: ArrowDataType,
-    num_rows: usize,
-) -> Box<dyn Array>
-where
-    I: CompressedPagesIter,
-{
-    use streaming_decompression::FallibleStreamingIterator;
+    mut filter: Option<Filter>,
+) -> ParquetResult<Box<dyn Array>> {
+    _ = iter.read_dict_page()?;
+
+    let num_rows = Filter::opt_num_rows(&filter, iter.total_num_values());
 
     let mut len = 0usize;
 
-    while let Ok(Some(page)) = iter.next() {
-        match page {
-            Page::Dict(_) => continue,
-            Page::Data(page) => {
-                let rows = page.num_values();
-                len = (len + rows).min(num_rows);
-                if len == num_rows {
-                    break;
-                }
-            },
-        }
+    while len < num_rows {
+        let Some(page) = iter.next() else {
+            break;
+        };
+        let page = page?;
+
+        let rows = page.num_values();
+        let page_filter;
+        (page_filter, filter) = Filter::opt_split_at(&filter, rows);
+
+        let num_rows = match page_filter {
+            None => rows,
+            Some(filter) => filter.num_rows(),
+        };
+
+        len = (len + num_rows).min(num_rows);
+
+        iter.reuse_page_buffer(page);
     }
 
-    Box::new(NullArray::new(data_type, len))
+    Ok(Box::new(NullArray::new(data_type, len)))
 }

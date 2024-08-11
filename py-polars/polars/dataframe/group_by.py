@@ -533,7 +533,7 @@ class GroupBy:
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [1, 2, 2, 3, 4, 5],
-        ...         "b": [0.5, 0.5, 4, 10, 13, 14],
+        ...         "b": [0.5, 0.5, 4, 10, 14, 13],
         ...         "c": [True, True, True, False, False, True],
         ...         "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
         ...     }
@@ -547,7 +547,7 @@ class GroupBy:
         ╞════════╪═════╪══════╪═══════╡
         │ Apple  ┆ 3   ┆ 10.0 ┆ false │
         │ Orange ┆ 2   ┆ 0.5  ┆ true  │
-        │ Banana ┆ 5   ┆ 14.0 ┆ true  │
+        │ Banana ┆ 5   ┆ 13.0 ┆ true  │
         └────────┴─────┴──────┴───────┘
         """
         return self.agg(F.all().last())

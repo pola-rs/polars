@@ -42,7 +42,7 @@ impl<O: Offset> DictValue for Utf8Array<O> {
                     arr.null_count(),
                     0,
                     "null values in values not supported in iteration"
-                )
+                );
             })
     }
 }
@@ -69,7 +69,7 @@ impl DictValue for Utf8ViewArray {
                     arr.null_count(),
                     0,
                     "null values in values not supported in iteration"
-                )
+                );
             })
     }
 }

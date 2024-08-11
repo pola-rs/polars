@@ -18,7 +18,7 @@ use polars_utils::vec::ConvertVec;
 use recursive::recursive;
 pub(crate) mod type_coercion;
 
-pub(crate) use expr_expansion::{is_regex_projection, prepare_projection, rewrite_projections};
+pub(crate) use expr_expansion::{expand_selectors, is_regex_projection, prepare_projection};
 
 use crate::constants::get_len_name;
 use crate::prelude::*;
@@ -232,6 +232,15 @@ impl IR {
             },
             IR::Distinct { input, options } => {
                 let i = convert_to_lp(input, lp_arena);
+                let options = DistinctOptionsDSL {
+                    subset: options.subset.map(|s| {
+                        s.iter()
+                            .map(|name| Expr::Column(name.clone()).into())
+                            .collect()
+                    }),
+                    maintain_order: options.maintain_order,
+                    keep_strategy: options.keep_strategy,
+                };
                 DslPlan::Distinct {
                     input: Arc::new(i),
                     options,
