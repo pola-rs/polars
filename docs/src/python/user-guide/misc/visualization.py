@@ -3,30 +3,33 @@ import polars as pl
 
 path = "docs/data/iris.csv"
 
-df = pl.scan_csv(path).group_by("species").agg(pl.col("petal_length").mean()).collect()
+df = pl.read_csv(path)
 print(df)
 # --8<-- [end:dataframe]
 
 """
 # --8<-- [start:hvplot_show_plot]
-df.plot.bar(
-    x="species",
-    y="petal_length",
+import hvplot.polars
+df.hvplot.scatter(
+    x="sepal_width",
+    y="sepal_length",
+    by="species",
     width=650,
 )
 # --8<-- [end:hvplot_show_plot]
 """
 
 # --8<-- [start:hvplot_make_plot]
-import hvplot
+import hvplot.polars
 
-plot = df.plot.bar(
-    x="species",
-    y="petal_length",
+plot = df.hvplot.scatter(
+    x="sepal_width",
+    y="sepal_length",
+    by="species",
     width=650,
 )
-hvplot.save(plot, "docs/images/hvplot_bar.html")
-with open("docs/images/hvplot_bar.html", "r") as f:
+hvplot.save(plot, "docs/images/hvplot_scatter.html")
+with open("docs/images/hvplot_scatter.html", "r") as f:
     chart_html = f.read()
     print(f"{chart_html}")
 # --8<-- [end:hvplot_make_plot]
@@ -35,7 +38,12 @@ with open("docs/images/hvplot_bar.html", "r") as f:
 # --8<-- [start:matplotlib_show_plot]
 import matplotlib.pyplot as plt
 
-plt.bar(x=df["species"], height=df["petal_length"])
+fig, ax = plt.subplots()
+ax.scatter(
+    x=df["sepal_width"],
+    y=df["sepal_length"],
+    c=df["species"].cast(pl.Categorical).to_physical(),
+)
 # --8<-- [end:matplotlib_show_plot]
 """
 
@@ -44,9 +52,14 @@ import base64
 
 import matplotlib.pyplot as plt
 
-plt.bar(x=df["species"], height=df["petal_length"])
-plt.savefig("docs/images/matplotlib_bar.png")
-with open("docs/images/matplotlib_bar.png", "rb") as f:
+fig, ax = plt.subplots()
+ax.scatter(
+    x=df["sepal_width"],
+    y=df["sepal_length"],
+    c=df["species"].cast(pl.Categorical).to_physical(),
+)
+fig.savefig("docs/images/matplotlib_scatter.png")
+with open("docs/images/matplotlib_scatter.png", "rb") as f:
     png = base64.b64encode(f.read()).decode()
     print(f'<img src="data:image/png;base64, {png}"/>')
 # --8<-- [end:matplotlib_make_plot]
@@ -54,24 +67,28 @@ with open("docs/images/matplotlib_bar.png", "rb") as f:
 """
 # --8<-- [start:seaborn_show_plot]
 import seaborn as sns
-sns.barplot(
+sns.scatterplot(
     df,
-    x="species",
-    y="petal_length",
+    x="sepal_width",
+    y="sepal_length",
+    hue="species",
 )
 # --8<-- [end:seaborn_show_plot]
 """
 
 # --8<-- [start:seaborn_make_plot]
 import seaborn as sns
+import matplotlib.pyplot as plt
 
-sns.barplot(
+fig, ax = plt.subplots()
+ax = sns.scatterplot(
     df,
-    x="species",
-    y="petal_length",
+    x="sepal_width",
+    y="sepal_length",
+    hue="species",
 )
-plt.savefig("docs/images/seaborn_bar.png")
-with open("docs/images/seaborn_bar.png", "rb") as f:
+fig.savefig("docs/images/seaborn_scatter.png")
+with open("docs/images/seaborn_scatter.png", "rb") as f:
     png = base64.b64encode(f.read()).decode()
     print(f'<img src="data:image/png;base64, {png}"/>')
 # --8<-- [end:seaborn_make_plot]
@@ -80,11 +97,12 @@ with open("docs/images/seaborn_bar.png", "rb") as f:
 # --8<-- [start:plotly_show_plot]
 import plotly.express as px
 
-px.bar(
+px.scatter(
     df,
-    x="species",
-    y="petal_length",
-    width=400,
+    x="sepal_width",
+    y="sepal_length",
+    color="species",
+    width=650,
 )
 # --8<-- [end:plotly_show_plot]
 """
@@ -92,39 +110,45 @@ px.bar(
 # --8<-- [start:plotly_make_plot]
 import plotly.express as px
 
-fig = px.bar(
+fig = px.scatter(
     df,
-    x="species",
-    y="petal_length",
+    x="sepal_width",
+    y="sepal_length",
+    color="species",
     width=650,
 )
-fig.write_html("docs/images/plotly_bar.html", full_html=False, include_plotlyjs="cdn")
-with open("docs/images/plotly_bar.html", "r") as f:
+fig.write_html("docs/images/plotly_scatter.html", full_html=False, include_plotlyjs="cdn")
+with open("docs/images/plotly_scatter.html", "r") as f:
     chart_html = f.read()
     print(f"{chart_html}")
 # --8<-- [end:plotly_make_plot]
 
 """
 # --8<-- [start:altair_show_plot]
-import altair as alt
-
-alt.Chart(df, width=700).mark_bar().encode(x="species:N", y="petal_length:Q")
+(
+    df.plot.point(
+        x="sepal_length",
+        y="sepal_width",
+        color="species",
+    )
+    .properties(width=500)
+    .configure_scale(zero=False)
+)
 # --8<-- [end:altair_show_plot]
 """
 
 # --8<-- [start:altair_make_plot]
-import altair as alt
-
 chart = (
-    alt.Chart(df, width=600)
-    .mark_bar()
-    .encode(
-        x="species:N",
-        y="petal_length:Q",
+    df.plot.point(
+        x="sepal_length",
+        y="sepal_width",
+        color="species",
     )
+    .properties(width=500)
+    .configure_scale(zero=False)
 )
-chart.save("docs/images/altair_bar.html")
-with open("docs/images/altair_bar.html", "r") as f:
+chart.save("docs/images/altair_scatter.html")
+with open("docs/images/altair_scatter.html", "r") as f:
     chart_html = f.read()
     print(f"{chart_html}")
 # --8<-- [end:altair_make_plot]
