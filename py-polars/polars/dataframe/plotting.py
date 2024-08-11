@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable, Mapping, Union
+from typing import TYPE_CHECKING, Any, Callable, Dict, Mapping, Union
 
 if TYPE_CHECKING:
     import sys
@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 
     ChannelType: TypeAlias = Union[str, Mapping[str, Any], Any]
 
-    Encodings: TypeAlias = dict[
+    Encodings: TypeAlias = Dict[
         str,
         Union[
             ChannelX, ChannelY, ChannelColor, ChannelOrder, ChannelSize, ChannelTooltip
