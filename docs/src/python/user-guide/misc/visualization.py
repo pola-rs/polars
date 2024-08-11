@@ -117,7 +117,9 @@ fig = px.scatter(
     color="species",
     width=650,
 )
-fig.write_html("docs/images/plotly_scatter.html", full_html=False, include_plotlyjs="cdn")
+fig.write_html(
+    "docs/images/plotly_scatter.html", full_html=False, include_plotlyjs="cdn"
+)
 with open("docs/images/plotly_scatter.html", "r") as f:
     chart_html = f.read()
     print(f"{chart_html}")

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable, Mapping, TypeAlias, Union, Unpack
+from typing import TYPE_CHECKING, Any, Callable, Mapping, Union, Unpack
 
 if TYPE_CHECKING:
     import sys

@@ -11,7 +11,7 @@ plot one column against another, colored by a yet another column.
 --8<-- "python/user-guide/misc/visualization.py:dataframe"
 ```
 
-### Built-in plotting with Altair
+## Built-in plotting with Altair
 
 Polars has a `plot` method to create plots using [Altair](https://altair-viz.github.io/):
 
