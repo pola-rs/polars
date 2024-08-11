@@ -31,12 +31,9 @@ if TYPE_CHECKING:
 
     Encodings: TypeAlias = dict[
         str,
-        ChannelX
-        | ChannelY
-        | ChannelColor
-        | ChannelOrder
-        | ChannelSize
-        | ChannelTooltip,
+        Union[
+            ChannelX, ChannelY, ChannelColor, ChannelOrder, ChannelSize, ChannelTooltip
+        ],
     ]
 
 
