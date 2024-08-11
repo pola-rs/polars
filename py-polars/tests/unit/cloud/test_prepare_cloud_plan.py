@@ -28,20 +28,6 @@ def test_prepare_cloud_plan(lf: pl.LazyFrame) -> None:
     assert isinstance(deserialized, pl.LazyFrame)
 
 
-def test_prepare_cloud_plan_optimization_toggle() -> None:
-    lf = pl.LazyFrame({"a": [1, 2], "b": [3, 4]})
-
-    with pytest.raises(TypeError, match="unexpected keyword argument"):
-        prepare_cloud_plan(lf, nonexistent_optimization=False)
-
-    result = prepare_cloud_plan(lf, projection_pushdown=False)
-    assert isinstance(result, bytes)
-
-    # TODO: How to check that this optimization was toggled correctly?
-    deserialized = pl.LazyFrame.deserialize(BytesIO(result))
-    assert isinstance(deserialized, pl.LazyFrame)
-
-
 @pytest.mark.parametrize(
     "lf",
     [
@@ -69,12 +55,26 @@ def test_prepare_cloud_plan_optimization_toggle() -> None:
         ),
     ],
 )
-def test_prepare_cloud_plan_fail_on_udf(lf: pl.LazyFrame) -> None:
-    with pytest.raises(
-        InvalidOperationError,
-        match="logical plan ineligible for execution on Polars Cloud",
-    ):
-        prepare_cloud_plan(lf)
+def test_prepare_cloud_plan_udf(lf: pl.LazyFrame) -> None:
+    result = prepare_cloud_plan(lf)
+    assert isinstance(result, bytes)
+
+    deserialized = pl.LazyFrame.deserialize(BytesIO(result))
+    assert isinstance(deserialized, pl.LazyFrame)
+
+
+def test_prepare_cloud_plan_optimization_toggle() -> None:
+    lf = pl.LazyFrame({"a": [1, 2], "b": [3, 4]})
+
+    with pytest.raises(TypeError, match="unexpected keyword argument"):
+        prepare_cloud_plan(lf, nonexistent_optimization=False)
+
+    result = prepare_cloud_plan(lf, projection_pushdown=False)
+    assert isinstance(result, bytes)
+
+    # TODO: How to check that this optimization was toggled correctly?
+    deserialized = pl.LazyFrame.deserialize(BytesIO(result))
+    assert isinstance(deserialized, pl.LazyFrame)
 
 
 @pytest.mark.parametrize(
