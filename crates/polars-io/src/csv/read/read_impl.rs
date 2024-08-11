@@ -15,7 +15,7 @@ use super::buffer::init_buffers;
 use super::options::{CommentPrefix, CsvEncoding, NullValues, NullValuesCompiled};
 use super::parser::{
     get_line_stats, is_comment_line, next_line_position, next_line_position_naive, parse_lines,
-    skip_bom, skip_line_ending, skip_this_line, skip_whitespace_exclude,
+    skip_bom, skip_line_ending, skip_this_line,
 };
 use super::schema_inference::{check_decimal_comma, infer_file_schema};
 #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
@@ -278,8 +278,9 @@ impl<'a> CoreReader<'a> {
     ) -> PolarsResult<(&'b [u8], Option<usize>)> {
         let starting_point_offset = bytes.as_ptr() as usize;
 
-        // Skip all leading white space and the occasional utf8-bom
-        bytes = skip_whitespace_exclude(skip_bom(bytes), self.separator);
+        // Skip utf8 byte-order-mark (BOM)
+        bytes = skip_bom(bytes);
+
         // \n\n can be a empty string row of a single column
         // in other cases we skip it.
         if self.schema.len() > 1 {
