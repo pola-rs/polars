@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable, Mapping, Union, Unpack
+from typing import TYPE_CHECKING, Any, Callable, Mapping, Union
 
 if TYPE_CHECKING:
     import sys
@@ -22,6 +22,10 @@ if TYPE_CHECKING:
         from typing import TypeAlias
     else:
         from typing_extensions import TypeAlias
+    if sys.version_info >= (3, 11):
+        from typing import Unpack
+    else:
+        from typing_extensions import Unpack
 
     ChannelType: TypeAlias = Union[str, Mapping[str, Any], Any]
 
