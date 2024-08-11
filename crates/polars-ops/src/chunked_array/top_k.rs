@@ -1,9 +1,9 @@
 use arrow::array::{BinaryViewArray, BooleanArray, PrimitiveArray, StaticArray, View};
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_core::chunked_array::ops::sort::arg_bottom_k::_arg_bottom_k;
-use polars_core::downcast_as_macro_arg_physical;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
+use polars_core::{downcast_as_macro_arg_physical, POOL};
 use polars_utils::total_ord::TotalOrd;
 
 fn first_n_valid_mask(num_valid: usize, out_len: usize) -> Option<Bitmap> {
@@ -277,7 +277,7 @@ fn top_k_by_impl(
         return Ok(src.clone());
     }
 
-    let multithreaded = k >= 10000;
+    let multithreaded = k >= 10000 && POOL.current_num_threads() > 1;
     let mut sort_options = SortMultipleOptions {
         descending: descending.into_iter().map(|x| !x).collect(),
         nulls_last: vec![true; by.len()],

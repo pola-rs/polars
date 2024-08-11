@@ -4,7 +4,6 @@
 
 use arrow::array::{Array, NullArray};
 use arrow::datatypes::ArrowDataType;
-use polars_error::PolarsResult;
 
 use super::utils;
 use super::utils::filter::Filter;
@@ -31,7 +30,7 @@ impl<'a> utils::StateTranslation<'a, NullDecoder> for () {
         _page: &'a DataPage,
         _dict: Option<&'a <NullDecoder as utils::Decoder>::Dict>,
         _page_validity: Option<&utils::PageValidity<'a>>,
-    ) -> PolarsResult<Self> {
+    ) -> ParquetResult<Self> {
         Ok(())
     }
 
@@ -125,6 +124,8 @@ pub fn iter_to_arrays(
     data_type: ArrowDataType,
     mut filter: Option<Filter>,
 ) -> ParquetResult<Box<dyn Array>> {
+    _ = iter.read_dict_page()?;
+
     let num_rows = Filter::opt_num_rows(&filter, iter.total_num_values());
 
     let mut len = 0usize;

@@ -302,12 +302,12 @@ class Expr:
             # We rename all but the first expression in case someone did e.g.
             # np.divide(pl.col("a"), pl.col("a")); we'll be creating a struct
             # below, and structs can't have duplicate names.
-            first_renamable_expr = True
+            first_renameable_expr = True
             actual_exprs = []
             for inp, is_actual_expr, index in exprs:
                 if is_actual_expr:
-                    if first_renamable_expr:
-                        first_renamable_expr = False
+                    if first_renameable_expr:
+                        first_renameable_expr = False
                     else:
                         inp = inp.alias(f"argument_{index}")
                     actual_exprs.append(inp)
@@ -4289,9 +4289,6 @@ class Expr:
         custom function elementwise over single values, see :func:`map_elements`.
         A reasonable use case for `map` functions is transforming the values
         represented by an expression using a third-party library.
-
-        If your function returns a scalar, for example a float, use
-        :func:`map_to_scalar` instead.
 
         Parameters
         ----------
@@ -8579,7 +8576,7 @@ class Expr:
 
         is the biased sample :math:`i\texttt{th}` central moment, and
         :math:`\bar{x}` is
-        the sample mean.  If `bias` is False, the calculations are
+        the sample mean. If `bias` is False, the calculations are
         corrected for bias and the value computed is the adjusted
         Fisher-Pearson standardized moment coefficient, i.e.
 
@@ -9663,7 +9660,7 @@ class Expr:
         Parameters
         ----------
         value
-            A constant literal value or a unit expressioin with which to extend the
+            A constant literal value or a unit expression with which to extend the
             expression result Series; can pass None to extend with nulls.
         n
             The number of additional values that will be added.

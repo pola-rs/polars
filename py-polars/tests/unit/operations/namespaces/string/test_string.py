@@ -857,6 +857,52 @@ def test_contains_expr() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    ("pattern", "case_insensitive", "expected"),
+    [
+        (["me"], False, True),
+        (["Me"], False, False),
+        (["Me"], True, True),
+        (pl.Series(["me", "they"]), False, True),
+        (pl.Series(["Me", "they"]), False, False),
+        (pl.Series(["Me", "they"]), True, True),
+        (["me", "they"], False, True),
+        (["Me", "they"], False, False),
+        (["Me", "they"], True, True),
+    ],
+)
+def test_contains_any(
+    pattern: pl.Series | list[str],
+    case_insensitive: bool,
+    expected: bool,
+) -> None:
+    df = pl.DataFrame({"text": ["Tell me what you want"]})
+    # series
+    assert (
+        expected
+        == df["text"]
+        .str.contains_any(pattern, ascii_case_insensitive=case_insensitive)
+        .item()
+    )
+    # expr
+    assert (
+        expected
+        == df.select(
+            pl.col("text").str.contains_any(
+                pattern, ascii_case_insensitive=case_insensitive
+            )
+        )["text"].item()
+    )
+    # frame filter
+    assert int(expected) == len(
+        df.filter(
+            pl.col("text").str.contains_any(
+                pattern, ascii_case_insensitive=case_insensitive
+            )
+        )
+    )
+
+
 def test_replace() -> None:
     df = pl.DataFrame(
         data=[(1, "* * text"), (2, "(with) special\n * chars **etc...?$")],
@@ -969,6 +1015,50 @@ def test_replace_expressions() -> None:
     assert out.to_dict(as_series=False) == {
         "foo": ["value bla valuevalue asd", "xyz valuet"]
     }
+
+
+@pytest.mark.parametrize(
+    ("pattern", "replacement", "case_insensitive", "expected"),
+    [
+        (["say"], "", False, "Tell me what you want"),
+        (["me"], ["them"], False, "Tell them what you want"),
+        (["who"], ["them"], False, "Tell me what you want"),
+        (["me", "you"], "it", False, "Tell it what it want"),
+        (["Me", "you"], "it", False, "Tell me what it want"),
+        (["me", "you"], ["it"], False, "Tell it what it want"),
+        (["me", "you"], ["you", "me"], False, "Tell you what me want"),
+        (["me", "You", "them"], "it", False, "Tell it what you want"),
+        (["Me", "you"], "it", True, "Tell it what it want"),
+        (["me", "YOU"], ["you", "me"], True, "Tell you what me want"),
+        (pl.Series(["me", "YOU"]), ["you", "me"], False, "Tell you what you want"),
+        (pl.Series(["me", "YOU"]), ["you", "me"], True, "Tell you what me want"),
+    ],
+)
+def test_replace_many(
+    pattern: pl.Series | list[str],
+    replacement: pl.Series | list[str] | str,
+    case_insensitive: bool,
+    expected: str,
+) -> None:
+    df = pl.DataFrame({"text": ["Tell me what you want"]})
+    # series
+    assert (
+        expected
+        == df["text"]
+        .str.replace_many(pattern, replacement, ascii_case_insensitive=case_insensitive)
+        .item()
+    )
+    # expr
+    assert (
+        expected
+        == df.select(
+            pl.col("text").str.replace_many(
+                pattern,
+                replacement,
+                ascii_case_insensitive=case_insensitive,
+            )
+        ).item()
+    )
 
 
 def test_extract_all_count() -> None:
@@ -1399,23 +1489,52 @@ def test_splitn_expr() -> None:
 def test_titlecase() -> None:
     df = pl.DataFrame(
         {
-            "sing": [
+            "misc": [
                 "welcome to my world",
-                "THERE'S NO TURNING BACK",
                 "double  space",
                 "and\ta\t tab",
+                "by jean-paul sartre, 'esq'",
+                "SOMETIMES/life/gives/you/a/2nd/chance",
+            ],
+        }
+    )
+    expected = [
+        "Welcome To My World",
+        "Double  Space",
+        "And\tA\t Tab",
+        "By Jean-Paul Sartre, 'Esq'",
+        "Sometimes/Life/Gives/You/A/2nd/Chance",
+    ]
+    actual = df.select(pl.col("misc").str.to_titlecase()).to_series()
+    for ex, act in zip(expected, actual):
+        assert ex == act, f"{ex} != {act}"
+
+    df = pl.DataFrame(
+        {
+            "quotes": [
+                "'e.t. phone home'",
+                "you talkin' to me?",
+                "i feel the need--the need for speed",
+                "to infinity,and BEYOND!",
+                "say 'what' again!i dare you - I\u00a0double-dare you!",
+                "What.we.got.here... is#failure#to#communicate",
             ]
         }
     )
-
-    assert df.select(pl.col("sing").str.to_titlecase()).to_dict(as_series=False) == {
-        "sing": [
-            "Welcome To My World",
-            "There's No Turning Back",
-            "Double  Space",
-            "And\tA\t Tab",
-        ]
-    }
+    expected_str = [
+        "'E.T. Phone Home'",
+        "You Talkin' To Me?",
+        "I Feel The Need--The Need For Speed",
+        "To Infinity,And Beyond!",
+        "Say 'What' Again!I Dare You - I\u00a0Double-Dare You!",
+        "What.We.Got.Here... Is#Failure#To#Communicate",
+    ]
+    expected_py = [s.title() for s in df["quotes"].to_list()]
+    for ex_str, ex_py, act in zip(
+        expected_str, expected_py, df["quotes"].str.to_titlecase()
+    ):
+        assert ex_str == act, f"{ex_str} != {act}"
+        assert ex_py == act, f"{ex_py} != {act}"
 
 
 def test_string_replace_with_nulls_10124() -> None:
@@ -1471,7 +1590,7 @@ def test_string_reverse() -> None:
 
 
 @pytest.mark.parametrize(
-    ("data", "expected_dat"),
+    ("data", "expected_data"),
     [
         (["", None, "a"], ["", None, "b"]),
         ([None, None, "a"], [None, None, "b"]),
@@ -1481,11 +1600,11 @@ def test_string_reverse() -> None:
     ],
 )
 def test_replace_lit_n_char_13385(
-    data: list[str | None], expected_dat: list[str | None]
+    data: list[str | None], expected_data: list[str | None]
 ) -> None:
     s = pl.Series(data, dtype=pl.String)
     res = s.str.replace("a", "b", literal=True)
-    expected_s = pl.Series(expected_dat, dtype=pl.String)
+    expected_s = pl.Series(expected_data, dtype=pl.String)
     assert_series_equal(res, expected_s)
 
 

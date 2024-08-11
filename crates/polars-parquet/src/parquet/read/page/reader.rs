@@ -13,7 +13,6 @@ use crate::parquet::page::{
     CompressedDataPage, CompressedDictPage, CompressedPage, DataPageHeader, PageType,
     ParquetPageHeader,
 };
-use crate::parquet::parquet_bridge::Encoding;
 use crate::parquet::CowBuffer;
 
 /// This meta is a small part of [`ColumnChunkMetaData`].
@@ -230,9 +229,7 @@ fn next_page(reader: &mut PageReader) -> ParquetResult<Option<CompressedPage>> {
 pub(super) fn build_page(reader: &mut PageReader) -> ParquetResult<Option<CompressedPage>> {
     let page_header = read_page_header(&mut reader.reader, reader.max_page_size)?;
 
-    reader.seen_num_values += get_page_header(&page_header)?
-        .map(|x| x.num_values() as i64)
-        .unwrap_or_default();
+    reader.seen_num_values += get_page_num_values(&page_header)? as i64;
 
     let read_size: usize = page_header.compressed_page_size.try_into()?;
 
@@ -345,30 +342,31 @@ pub(super) fn finish_page(
     }
 }
 
-pub(super) fn get_page_header(header: &ParquetPageHeader) -> ParquetResult<Option<DataPageHeader>> {
+pub(super) fn get_page_num_values(header: &ParquetPageHeader) -> ParquetResult<i32> {
     let type_ = header.type_.try_into()?;
     Ok(match type_ {
         PageType::DataPage => {
-            let header = header.data_page_header.clone().ok_or_else(|| {
-                ParquetError::oos(
-                    "The page header type is a v1 data page but the v1 header is empty",
-                )
-            })?;
-            let _: Encoding = header.encoding.try_into()?;
-            let _: Encoding = header.repetition_level_encoding.try_into()?;
-            let _: Encoding = header.definition_level_encoding.try_into()?;
-
-            Some(DataPageHeader::V1(header))
+            header
+                .data_page_header
+                .as_ref()
+                .ok_or_else(|| {
+                    ParquetError::oos(
+                        "The page header type is a v1 data page but the v1 header is empty",
+                    )
+                })?
+                .num_values
         },
         PageType::DataPageV2 => {
-            let header = header.data_page_header_v2.clone().ok_or_else(|| {
-                ParquetError::oos(
-                    "The page header type is a v1 data page but the v1 header is empty",
-                )
-            })?;
-            let _: Encoding = header.encoding.try_into()?;
-            Some(DataPageHeader::V2(header))
+            header
+                .data_page_header_v2
+                .as_ref()
+                .ok_or_else(|| {
+                    ParquetError::oos(
+                        "The page header type is a v1 data page but the v1 header is empty",
+                    )
+                })?
+                .num_values
         },
-        _ => None,
+        _ => 0,
     })
 }

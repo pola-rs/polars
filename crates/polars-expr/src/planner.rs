@@ -576,11 +576,5 @@ fn create_physical_expr_inner(
                 node_to_expr(*input, expr_arena),
             )))
         },
-        Wildcard => {
-            polars_bail!(ComputeError: "wildcard column selection not supported at this point")
-        },
-        Nth(n) => {
-            polars_bail!(ComputeError: "nth column selection not supported at this point (n={})", n)
-        },
     }
 }

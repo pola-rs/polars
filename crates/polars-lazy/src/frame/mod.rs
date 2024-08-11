@@ -426,12 +426,9 @@ impl LazyFrame {
     fn _drop<I, T>(self, columns: I, strict: bool) -> Self
     where
         I: IntoIterator<Item = T>,
-        T: AsRef<str>,
+        T: Into<Selector>,
     {
-        let to_drop = columns
-            .into_iter()
-            .map(|s| s.as_ref().to_string())
-            .collect::<PlHashSet<_>>();
+        let to_drop = columns.into_iter().map(|c| c.into()).collect();
 
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().drop(to_drop, strict).build();
@@ -444,11 +441,10 @@ impl LazyFrame {
     ///
     /// Any given columns that are not in the schema will give a [`PolarsError::ColumnNotFound`]
     /// error while materializing the [`LazyFrame`].
-    #[inline]
     pub fn drop<I, T>(self, columns: I) -> Self
     where
         I: IntoIterator<Item = T>,
-        T: AsRef<str>,
+        T: Into<Selector>,
     {
         self._drop(columns, true)
     }
@@ -458,11 +454,10 @@ impl LazyFrame {
     /// and let the projection pushdown optimize away the unneeded columns.
     ///
     /// If a column name does not exist in the schema, it will quietly be ignored.
-    #[inline]
     pub fn drop_no_validate<I, T>(self, columns: I) -> Self
     where
         I: IntoIterator<Item = T>,
-        T: AsRef<str>,
+        T: Into<Selector>,
     {
         self._drop(columns, false)
     }
@@ -1517,7 +1512,7 @@ impl LazyFrame {
     }
 
     /// Apply explode operation. [See eager explode](polars_core::frame::DataFrame::explode).
-    pub fn explode<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(self, columns: E) -> LazyFrame {
+    pub fn explode<E: AsRef<[IE]>, IE: Into<Selector> + Clone>(self, columns: E) -> LazyFrame {
         let columns = columns
             .as_ref()
             .iter()
@@ -1542,12 +1537,30 @@ impl LazyFrame {
         subset: Option<Vec<String>>,
         keep_strategy: UniqueKeepStrategy,
     ) -> LazyFrame {
+        self.unique_stable_generic(subset, keep_strategy)
+    }
+
+    pub fn unique_stable_generic<E, IE>(
+        self,
+        subset: Option<E>,
+        keep_strategy: UniqueKeepStrategy,
+    ) -> LazyFrame
+    where
+        E: AsRef<[IE]>,
+        IE: Into<Selector> + Clone,
+    {
+        let subset = subset.map(|s| {
+            s.as_ref()
+                .iter()
+                .map(|e| e.clone().into())
+                .collect::<Vec<_>>()
+        });
+
         let opt_state = self.get_opt_state();
-        let options = DistinctOptions {
-            subset: subset.map(Arc::new),
+        let options = DistinctOptionsDSL {
+            subset,
             maintain_order: true,
             keep_strategy,
-            ..Default::default()
         };
         let lp = self.get_plan_builder().distinct(options).build();
         Self::from_logical_plan(lp, opt_state)
@@ -1565,12 +1578,25 @@ impl LazyFrame {
         subset: Option<Vec<String>>,
         keep_strategy: UniqueKeepStrategy,
     ) -> LazyFrame {
+        self.unique_generic(subset, keep_strategy)
+    }
+
+    pub fn unique_generic<E: AsRef<[IE]>, IE: Into<Selector> + Clone>(
+        self,
+        subset: Option<E>,
+        keep_strategy: UniqueKeepStrategy,
+    ) -> LazyFrame {
+        let subset = subset.map(|s| {
+            s.as_ref()
+                .iter()
+                .map(|e| e.clone().into())
+                .collect::<Vec<_>>()
+        });
         let opt_state = self.get_opt_state();
-        let options = DistinctOptions {
-            subset: subset.map(Arc::new),
+        let options = DistinctOptionsDSL {
+            subset,
             maintain_order: false,
             keep_strategy,
-            ..Default::default()
         };
         let lp = self.get_plan_builder().distinct(options).build();
         Self::from_logical_plan(lp, opt_state)
@@ -1625,8 +1651,8 @@ impl LazyFrame {
 
     /// Unpivot the DataFrame from wide to long format.
     ///
-    /// See [`UnpivotArgs`] for information on how to unpivot a DataFrame.
-    pub fn unpivot(self, args: UnpivotArgs) -> LazyFrame {
+    /// See [`UnpivotArgsIR`] for information on how to unpivot a DataFrame.
+    pub fn unpivot(self, args: UnpivotArgsDSL) -> LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().unpivot(args).build();
         Self::from_logical_plan(lp, opt_state)
@@ -1739,10 +1765,17 @@ impl LazyFrame {
     /// Unnest the given `Struct` columns: the fields of the `Struct` type will be
     /// inserted as columns.
     #[cfg(feature = "dtype-struct")]
-    pub fn unnest<I: IntoIterator<Item = S>, S: AsRef<str>>(self, cols: I) -> Self {
-        self.map_private(DslFunction::FunctionNode(FunctionNode::Unnest {
-            columns: cols.into_iter().map(|s| Arc::from(s.as_ref())).collect(),
-        }))
+    pub fn unnest<E, IE>(self, cols: E) -> Self
+    where
+        E: AsRef<[IE]>,
+        IE: Into<Selector> + Clone,
+    {
+        let cols = cols
+            .as_ref()
+            .iter()
+            .map(|ie| ie.clone().into())
+            .collect::<Vec<_>>();
+        self.map_private(DslFunction::Unnest(cols))
     }
 
     #[cfg(feature = "merge_sorted")]
@@ -1751,7 +1784,7 @@ impl LazyFrame {
         // this indicates until which chunk the data is from the left df
         // this trick allows us to reuse the `Union` architecture to get map over
         // two DataFrames
-        let left = self.map_private(DslFunction::FunctionNode(FunctionNode::Rechunk));
+        let left = self.map_private(DslFunction::FunctionIR(FunctionIR::Rechunk));
         let q = concat(
             &[left, other],
             UnionArgs {
@@ -1761,7 +1794,7 @@ impl LazyFrame {
             },
         )?;
         Ok(
-            q.map_private(DslFunction::FunctionNode(FunctionNode::MergeSorted {
+            q.map_private(DslFunction::FunctionIR(FunctionIR::MergeSorted {
                 column: Arc::from(key),
             })),
         )

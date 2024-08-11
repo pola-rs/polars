@@ -1,5 +1,7 @@
 use std::ops::{Deref, Div};
 
+use arrow::temporal_conversions::{MICROSECONDS_IN_DAY, MILLISECONDS_IN_DAY, NANOSECONDS_IN_DAY};
+use polars_core::prelude::arity::unary_elementwise_values;
 use polars_core::prelude::*;
 
 use crate::chunkedarray::*;
@@ -86,9 +88,32 @@ pub trait TemporalMethods: AsSeries {
         let s = self.as_series();
         match s.dtype() {
             #[cfg(feature = "dtype-date")]
-            DataType::Date => s.date().map(|ca| ca.weekday()),
+            DataType::Date => s.date().map(|ca| {
+                // Closed formula to find weekday, no need to go via Chrono.
+                // The 4 comes from the fact that 1970-01-01 was a Thursday.
+                // We do an extra `+ 7` then `% 7` to ensure the result is non-negative.
+                unary_elementwise_values(ca, |t| (((t - 4) % 7 + 7) % 7 + 1) as i8)
+            }),
             #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime(_, _) => s.datetime().map(|ca| ca.weekday()),
+            DataType::Datetime(time_unit, time_zone) => s.datetime().map(|ca| {
+                match time_zone.as_deref() {
+                    Some("UTC") | None => {
+                        // fastpath!
+                        // Same idea as above, but we need to subtract 1 for dates
+                        // before 1970-01-01 with non-zero sub-daily components.
+                        let divisor = match time_unit {
+                            TimeUnit::Milliseconds => MILLISECONDS_IN_DAY,
+                            TimeUnit::Microseconds => MICROSECONDS_IN_DAY,
+                            TimeUnit::Nanoseconds => NANOSECONDS_IN_DAY,
+                        };
+                        unary_elementwise_values(ca, |t| {
+                            let t = t / divisor - ((t < 0 && t % divisor != 0) as i64);
+                            (((t - 4) % 7 + 7) % 7 + 1) as i8
+                        })
+                    },
+                    _ => ca.weekday(),
+                }
+            }),
             dt => polars_bail!(opq = weekday, dt),
         }
     }

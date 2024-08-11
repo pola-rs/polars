@@ -1,3 +1,5 @@
+use std::mem::ManuallyDrop;
+
 use either::Either;
 use polars::export::arrow::bitmap::MutableBitmap;
 use polars::prelude::*;
@@ -377,12 +379,11 @@ impl PyDataFrame {
         value_name: Option<&str>,
         variable_name: Option<&str>,
     ) -> PyResult<Self> {
-        let args = UnpivotArgs {
+        let args = UnpivotArgsIR {
             on: strings_to_smartstrings(on),
             index: strings_to_smartstrings(index),
             value_name: value_name.map(|s| s.into()),
             variable_name: variable_name.map(|s| s.into()),
-            streamable: false,
         };
 
         let df = self.df.unpivot2(args).map_err(PyPolarsErr::from)?;
@@ -608,7 +609,10 @@ impl PyDataFrame {
         // underneath of you, so don't use this anywhere else.
         let mut df = std::mem::take(&mut self.df);
         let cols = unsafe { std::mem::take(df.get_columns_mut()) };
-        let (ptr, len, cap) = cols.into_raw_parts();
+        let mut md_cols = ManuallyDrop::new(cols);
+        let ptr = md_cols.as_mut_ptr();
+        let len = md_cols.len();
+        let cap = md_cols.capacity();
         (ptr as usize, len, cap)
     }
 }

@@ -2,9 +2,9 @@ use polars_core::utils::try_get_supertype;
 
 use super::*;
 
-impl FunctionNode {
+impl FunctionIR {
     pub(crate) fn clear_cached_schema(&self) {
-        use FunctionNode::*;
+        use FunctionIR::*;
         // We will likely add more branches later
         #[allow(clippy::single_match)]
         match self {
@@ -23,7 +23,7 @@ impl FunctionNode {
         &self,
         input_schema: &'a SchemaRef,
     ) -> PolarsResult<Cow<'a, SchemaRef>> {
-        use FunctionNode::*;
+        use FunctionIR::*;
         match self {
             Opaque { schema, .. } => match schema {
                 None => Ok(Cow::Borrowed(input_schema)),
@@ -33,12 +33,12 @@ impl FunctionNode {
                 },
             },
             #[cfg(feature = "python")]
-            OpaquePython { schema, .. } => Ok(schema
+            OpaquePython(OpaquePythonUdf { schema, .. }) => Ok(schema
                 .as_ref()
                 .map(|schema| Cow::Owned(schema.clone()))
                 .unwrap_or_else(|| Cow::Borrowed(input_schema))),
             Pipeline { schema, .. } => Ok(Cow::Owned(schema.clone())),
-            Count { alias, .. } => {
+            FastCount { alias, .. } => {
                 let mut schema: Schema = Schema::with_capacity(1);
                 let name = SmartString::from(
                     alias
@@ -144,7 +144,7 @@ fn explode_schema<'a>(
 }
 
 fn unpivot_schema<'a>(
-    args: &UnpivotArgs,
+    args: &UnpivotArgsIR,
     cached_schema: &CachedSchema,
     input_schema: &'a Schema,
 ) -> PolarsResult<Cow<'a, SchemaRef>> {

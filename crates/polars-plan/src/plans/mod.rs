@@ -78,14 +78,14 @@ pub enum DslPlan {
         cache_hits: u32,
     },
     Scan {
-        paths: Arc<Mutex<(Arc<[PathBuf]>, bool)>>,
+        paths: Arc<Mutex<(Arc<Vec<PathBuf>>, bool)>>,
         // Option as this is mostly materialized on the IR phase.
         // During conversion we update the value in the DSL as well
         // This is to cater to use cases where parts of a `LazyFrame`
         // are used as base of different queries in a loop. That way
         // the expensive schema resolving is cached.
         file_info: Arc<RwLock<Option<FileInfo>>>,
-        hive_parts: Option<Arc<[HivePartitions]>>,
+        hive_parts: Option<Arc<Vec<HivePartitions>>>,
         predicate: Option<Expr>,
         file_options: FileScanOptions,
         scan_type: FileScan,
@@ -132,7 +132,7 @@ pub enum DslPlan {
     /// Remove duplicates from the table
     Distinct {
         input: Arc<DslPlan>,
-        options: DistinctOptions,
+        options: DistinctOptionsDSL,
     },
     /// Sort the table
     Sort {

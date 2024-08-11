@@ -1,4 +1,3 @@
-use std::collections::VecDeque;
 use std::fmt::Debug;
 
 use arrow::array::{Array, FixedSizeListArray, ListArray, MapArray, StructArray};
@@ -272,10 +271,10 @@ fn to_nested_recursive(
 fn expand_list_validity<'a, O: Offset>(
     array: &'a ListArray<O>,
     validity: BitmapState,
-    array_stack: &mut VecDeque<(&'a dyn Array, BitmapState)>,
+    array_stack: &mut Vec<(&'a dyn Array, BitmapState)>,
 ) {
     let BitmapState::SomeSet(list_validity) = validity else {
-        array_stack.push_front((
+        array_stack.push((
             array.values().as_ref(),
             match validity {
                 BitmapState::AllSet => BitmapState::AllSet,
@@ -290,7 +289,12 @@ fn expand_list_validity<'a, O: Offset>(
     let mut validity = MutableBitmap::with_capacity(array.values().len());
     let mut list_validity_iter = list_validity.iter();
 
+    // @NOTE: We need to take into account here that the list might only point to a slice of the
+    // values, therefore we need to extend the validity mask with dummy values to match the length
+    // of the values array.
+
     let mut idx = 0;
+    validity.extend_constant(offsets[0].to_usize(), false);
     while list_validity_iter.num_remaining() > 0 {
         let num_ones = list_validity_iter.take_leading_ones();
         let num_elements = offsets[idx + num_ones] - offsets[idx];
@@ -304,12 +308,13 @@ fn expand_list_validity<'a, O: Offset>(
 
         idx += num_zeros;
     }
+    validity.extend_constant(array.values().len() - validity.len(), false);
 
     debug_assert_eq!(idx, array.len());
-
     let validity = validity.freeze();
 
-    array_stack.push_front((array.values().as_ref(), BitmapState::SomeSet(validity)));
+    debug_assert_eq!(validity.len(), array.values().len());
+    array_stack.push((array.values().as_ref(), BitmapState::SomeSet(validity)));
 }
 
 #[derive(Clone)]
@@ -379,13 +384,13 @@ pub fn to_leaves(array: &dyn Array, leaves: &mut Vec<Box<dyn Array>>) {
     use PhysicalType as P;
 
     leaves.clear();
-    let mut array_stack: VecDeque<(&dyn Array, BitmapState)> = VecDeque::new();
+    let mut array_stack: Vec<(&dyn Array, BitmapState)> = Vec::new();
 
-    array_stack.push_back((array, BitmapState::AllSet));
+    array_stack.push((array, BitmapState::AllSet));
 
-    while let Some((array, parent_validity)) = array_stack.pop_front() {
+    while let Some((array, inherited_validity)) = array_stack.pop() {
         let child_validity = BitmapState::from(array.validity());
-        let validity = (&child_validity) & (&parent_validity);
+        let validity = (&child_validity) & (&inherited_validity);
 
         match array.data_type().to_physical_type() {
             P::Struct => {
@@ -396,7 +401,7 @@ pub fn to_leaves(array: &dyn Array, leaves: &mut Vec<Box<dyn Array>>) {
                     .values()
                     .iter()
                     .rev()
-                    .for_each(|field| array_stack.push_front((field.as_ref(), validity.clone())));
+                    .for_each(|field| array_stack.push((field.as_ref(), validity.clone())));
             },
             P::List => {
                 let array = array.as_any().downcast_ref::<ListArray<i32>>().unwrap();
@@ -410,7 +415,7 @@ pub fn to_leaves(array: &dyn Array, leaves: &mut Vec<Box<dyn Array>>) {
                 let array = array.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
 
                 let BitmapState::SomeSet(fsl_validity) = validity else {
-                    array_stack.push_back((
+                    array_stack.push((
                         array.values().as_ref(),
                         match validity {
                             BitmapState::AllSet => BitmapState::AllSet,
@@ -446,11 +451,11 @@ pub fn to_leaves(array: &dyn Array, leaves: &mut Vec<Box<dyn Array>>) {
 
                 let validity = BitmapState::SomeSet(validity.freeze());
 
-                array_stack.push_front((array.values().as_ref(), validity));
+                array_stack.push((array.values().as_ref(), validity));
             },
             P::Map => {
                 let array = array.as_any().downcast_ref::<MapArray>().unwrap();
-                array_stack.push_front((array.field().as_ref(), validity));
+                array_stack.push((array.field().as_ref(), validity));
             },
             P::Null
             | P::Boolean

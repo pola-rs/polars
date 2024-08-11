@@ -173,7 +173,7 @@ impl SlicePushDown {
                 predicate,
                 scan_type: FileScan::Csv { options, cloud_options },
             }, Some(state)) if predicate.is_none() && state.offset >= 0 =>  {
-                file_options.n_rows = Some(state.offset as usize + state.len as usize);
+                file_options.slice = Some((0, state.offset as usize + state.len as usize));
 
                 let lp = Scan {
                     paths,
@@ -187,6 +187,30 @@ impl SlicePushDown {
 
                 self.no_pushdown_finish_opt(lp, Some(state), lp_arena)
             },
+            #[cfg(feature = "parquet")]
+            (Scan {
+                paths,
+                file_info,
+                hive_parts,
+                output_schema,
+                mut file_options,
+                predicate,
+                scan_type: scan_type @ FileScan::Parquet { .. },
+            }, Some(state)) if predicate.is_none() =>  {
+                file_options.slice = Some((state.offset, state.len as usize));
+
+                let lp = Scan {
+                    paths,
+                    file_info,
+                    hive_parts,
+                    output_schema,
+                    scan_type,
+                    file_options,
+                    predicate,
+                };
+
+                Ok(lp)
+            },
             // TODO! we currently skip slice pushdown if there is a predicate.
             (Scan {
                 paths,
@@ -197,7 +221,8 @@ impl SlicePushDown {
                 predicate,
                 scan_type
             }, Some(state)) if state.offset == 0 && predicate.is_none() => {
-                options.n_rows = Some(state.len as usize);
+                options.slice = Some((0, state.len as usize));
+
                 let lp = Scan {
                     paths,
                     file_info,
@@ -360,8 +385,8 @@ impl SlicePushDown {
             // other blocking nodes
             | m @ (DataFrameScan {..}, _)
             | m @ (Sort {..}, _)
-            | m @ (MapFunction {function: FunctionNode::Explode {..}, ..}, _)
-            | m @ (MapFunction {function: FunctionNode::Unpivot {..}, ..}, _)
+            | m @ (MapFunction {function: FunctionIR::Explode {..}, ..}, _)
+            | m @ (MapFunction {function: FunctionIR::Unpivot {..}, ..}, _)
             | m @ (Cache {..}, _)
             | m @ (Distinct {..}, _)
             | m @ (GroupBy{..},_)

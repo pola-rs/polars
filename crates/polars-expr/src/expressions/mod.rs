@@ -613,6 +613,10 @@ impl PhysicalIoExpr for PhysicalIoHelper {
         self.expr.evaluate(df, &state)
     }
 
+    fn live_variables(&self) -> Option<Vec<Arc<str>>> {
+        Some(expr_to_leaf_column_names(self.expr.as_expression()?))
+    }
+
     #[cfg(feature = "parquet")]
     fn as_stats_evaluator(&self) -> Option<&dyn polars_io::predicates::StatsEvaluator> {
         self.expr.as_stats_evaluator()

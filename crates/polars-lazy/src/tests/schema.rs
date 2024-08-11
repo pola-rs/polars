@@ -27,7 +27,7 @@ fn test_schema_update_after_projection_pd() -> PolarsResult<()> {
     assert!(matches!(
         lp,
         IR::MapFunction {
-            function: FunctionNode::Explode { .. },
+            function: FunctionIR::Explode { .. },
             ..
         }
     ));

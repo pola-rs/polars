@@ -17,9 +17,8 @@ Per GROUP `"first_name"` we
 <!-- dprint-ignore-start -->
 
 - count the number of rows in the group:
-    - short form: `pl.count("party")`
-    - full form: `pl.col("party").count()`
-- aggregate the gender values groups:
+    - full form: `pl.len()`
+- combine the values of gender into a list by omitting an aggregate function:
     - full form: `pl.col("gender")`
 - get the first value of column `"last_name"` in the group:
     - short form: `pl.first("last_name")` (not available in Rust)
@@ -94,7 +93,7 @@ However, **if** we also want to sort the names alphabetically, this breaks. Luck
 --8<-- "python/user-guide/expressions/aggregation.py:sort2"
 ```
 
-We can even sort by another column in the `group_by` context. If we want to know if the alphabetically sorted name is male or female we could add: `pl.col("gender").sort_by("first_name").first().alias("gender")`
+We can even sort by another column in the `group_by` context. If we want to know if the alphabetically sorted name is male or female we could add: `pl.col("gender").sort_by(get_person()).first()`
 
 {{code_block('user-guide/expressions/aggregation','sort3',['group_by'])}}
 

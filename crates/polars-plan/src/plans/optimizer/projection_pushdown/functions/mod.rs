@@ -8,14 +8,14 @@ use super::*;
 pub(super) fn process_functions(
     proj_pd: &mut ProjectionPushDown,
     input: Node,
-    function: FunctionNode,
+    function: FunctionIR,
     mut acc_projections: Vec<ColumnNode>,
     mut projected_names: PlHashSet<Arc<str>>,
     projections_seen: usize,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<IR> {
-    use FunctionNode::*;
+    use FunctionIR::*;
     match function {
         Rename {
             ref existing,
@@ -95,7 +95,7 @@ pub(super) fn process_functions(
                         expr_arena,
                     )
                 }
-                let expands_schema = matches!(function, FunctionNode::Unnest { .. });
+                let expands_schema = matches!(function, FunctionIR::Unnest { .. });
 
                 let local_projections = proj_pd.pushdown_and_assign_check_schema(
                     input,

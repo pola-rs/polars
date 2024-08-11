@@ -328,6 +328,9 @@ on startup."#.trim_start())
     (duplicate = $name:expr) => {
         polars_err!(Duplicate: "column with name '{}' has more than one occurrences", $name)
     };
+    (col_not_found = $name:expr) => {
+        polars_err!(ColumnNotFound: "{:?} not found", $name)
+    };
     (oob = $idx:expr, $len:expr) => {
         polars_err!(OutOfBounds: "index {} is out of bounds for sequence of length {}", $idx, $len)
     };

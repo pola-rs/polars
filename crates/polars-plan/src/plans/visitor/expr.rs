@@ -166,7 +166,6 @@ impl AExpr {
             (Alias(_, l), Alias(_, r)) => l == r,
             (Column(l), Column(r)) => l == r,
             (Literal(l), Literal(r)) => l == r,
-            (Nth(l), Nth(r)) => l == r,
             (Window { options: l, .. }, Window { options: r, .. }) => l == r,
             (
                 Cast {

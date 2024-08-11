@@ -63,7 +63,7 @@ Returns the greatest value in the list of expressions.
 
     df = pl.DataFrame(
       {
-        "foo": [100, 200, 300, 400], 
+        "foo": [100, 200, 300, 400],
         "bar": [20, 10, 30, 40]
       }
     )

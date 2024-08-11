@@ -9,7 +9,7 @@ use polars_core::utils::{
 use super::*;
 
 pub struct CsvExec {
-    pub paths: Arc<[PathBuf]>,
+    pub paths: Arc<Vec<PathBuf>>,
     pub file_info: FileInfo,
     pub options: CsvReadOptions,
     pub file_options: FileScanOptions,
@@ -25,7 +25,10 @@ impl CsvExec {
             // Interpret selecting no columns as selecting all columns.
             .filter(|columns| !columns.is_empty());
 
-        let n_rows = _set_n_rows_for_scan(self.file_options.n_rows);
+        let n_rows = _set_n_rows_for_scan(self.file_options.slice.map(|x| {
+            assert_eq!(x.0, 0);
+            x.1
+        }));
         let predicate = self.predicate.clone().map(phys_expr_to_io_expr);
         let options_base = self
             .options
@@ -74,9 +77,9 @@ impl CsvExec {
                         let mmap = unsafe { memmap::Mmap::map(&file).unwrap() };
 
                         options
-                            .into_reader_with_file_handle(std::io::Cursor::new(unsafe {
-                                maybe_decompress_bytes(mmap.as_ref(), owned)
-                            }?))
+                            .into_reader_with_file_handle(std::io::Cursor::new(
+                                maybe_decompress_bytes(mmap.as_ref(), owned)?,
+                            ))
                             ._with_predicate(predicate.clone())
                             .finish()
                     }
@@ -90,9 +93,10 @@ impl CsvExec {
                     let owned = &mut vec![];
 
                     options
-                        .into_reader_with_file_handle(std::io::Cursor::new(unsafe {
-                            maybe_decompress_bytes(mmap.as_ref(), owned)
-                        }?))
+                        .into_reader_with_file_handle(std::io::Cursor::new(maybe_decompress_bytes(
+                            mmap.as_ref(),
+                            owned,
+                        )?))
                         ._with_predicate(predicate.clone())
                         .finish()
                 }?;

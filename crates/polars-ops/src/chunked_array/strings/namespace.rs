@@ -622,7 +622,7 @@ pub trait StringNameSpaceImpl: AsString {
         let ca = self.as_string();
         let n = n.strict_cast(&DataType::Int64)?;
 
-        Ok(substring::head(ca, n.i64()?))
+        substring::head(ca, n.i64()?)
     }
 
     /// Slice the last `n` values of the string.
@@ -633,7 +633,7 @@ pub trait StringNameSpaceImpl: AsString {
         let ca = self.as_string();
         let n = n.strict_cast(&DataType::Int64)?;
 
-        Ok(substring::tail(ca, n.i64()?))
+        substring::tail(ca, n.i64()?)
     }
 }
 

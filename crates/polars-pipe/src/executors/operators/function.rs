@@ -13,11 +13,11 @@ pub struct FunctionOperator {
     n_threads: usize,
     chunk_size: usize,
     offsets: VecDeque<(usize, usize)>,
-    function: FunctionNode,
+    function: FunctionIR,
 }
 
 impl FunctionOperator {
-    pub(crate) fn new(function: FunctionNode) -> Self {
+    pub(crate) fn new(function: FunctionIR) -> Self {
         FunctionOperator {
             n_threads: POOL.current_num_threads(),
             function,

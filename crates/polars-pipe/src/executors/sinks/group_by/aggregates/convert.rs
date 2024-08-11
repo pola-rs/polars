@@ -30,6 +30,10 @@ impl PhysicalIoExpr for Len {
     fn evaluate_io(&self, _df: &DataFrame) -> PolarsResult<Series> {
         unimplemented!()
     }
+
+    fn live_variables(&self) -> Option<Vec<Arc<str>>> {
+        Some(vec![])
+    }
 }
 impl PhysicalPipedExpr for Len {
     fn evaluate(&self, chunk: &DataChunk, _lazy_state: &ExecutionState) -> PolarsResult<Series> {

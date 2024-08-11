@@ -51,7 +51,7 @@ pub(crate) struct NodeTraverser {
 
 impl NodeTraverser {
     // Versioning for IR, (major, minor)
-    // Incremement major on breaking changes to the IR (e.g. renaming
+    // Increment major on breaking changes to the IR (e.g. renaming
     // fields, reordering tuples), minor on backwards compatible
     // changes (e.g. exposing a new expression node).
     const VERSION: Version = (1, 0);
@@ -195,8 +195,12 @@ impl NodeTraverser {
         Ok((
             expressions
                 .into_iter()
-                .map(|e| to_aexpr(e.inner, &mut expr_arena).0)
-                .collect(),
+                .map(|e| {
+                    to_aexpr(e.inner, &mut expr_arena)
+                        .map_err(PyPolarsErr::from)
+                        .map(|v| v.0)
+                })
+                .collect::<Result<_, PyPolarsErr>>()?,
             expr_arena.len(),
         ))
     }
