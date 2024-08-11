@@ -1,11 +1,20 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable, Mapping, Union
+from typing import TYPE_CHECKING, Any, Callable, Mapping, TypeAlias, Union, Unpack
 
 if TYPE_CHECKING:
     import sys
 
     import altair as alt
+    from altair.typing import (
+        ChannelColor,
+        ChannelOrder,
+        ChannelSize,
+        ChannelTooltip,
+        ChannelX,
+        ChannelY,
+        EncodeKwds,
+    )
 
     from polars import DataFrame
 
@@ -15,6 +24,16 @@ if TYPE_CHECKING:
         from typing_extensions import TypeAlias
 
     ChannelType: TypeAlias = Union[str, Mapping[str, Any], Any]
+
+    Encodings: TypeAlias = dict[
+        str,
+        ChannelX
+        | ChannelY
+        | ChannelColor
+        | ChannelOrder
+        | ChannelSize
+        | ChannelTooltip,
+    ]
 
 
 class Plot:
@@ -29,23 +48,23 @@ class Plot:
 
     def bar(
         self,
-        x: ChannelType | None = None,
-        y: ChannelType | None = None,
-        color: ChannelType | None = None,
-        tooltip: ChannelType | None = None,
-        *args: Any,
-        **kwargs: Any,
+        x: ChannelX | None = None,
+        y: ChannelY | None = None,
+        color: ChannelColor | None = None,
+        tooltip: ChannelTooltip | None = None,
+        /,
+        **kwargs: Unpack[EncodeKwds],
     ) -> alt.Chart:
         """
         Draw bar plot.
 
-        Polars does not implement plottinng logic itself but instead defers to Altair.
+        Polars does not implement plotting logic itself but instead defers to Altair.
         `df.plot.bar(*args, **kwargs)` is shorthand for
         `alt.Chart(df).mark_bar().encode(*args, **kwargs).interactive()`,
         as is intended for convenience - for full customisatibility, use a plotting
         library directly.
 
-        .. versionchanged:: 1.4.0
+        .. versionchanged:: 1.5.0
             In prior versions of Polars, HvPlot was the plotting backend. If you would
             like to restore the previous plotting functionality, all you need to do
             add `import hvplot.polars` at the top of your script and replace
@@ -76,7 +95,7 @@ class Plot:
         ... )
         >>> df.plot.line(x="date", y="price", color="stock")  # doctest: +SKIP
         """
-        encodings = {}
+        encodings: Encodings = {}
         if x is not None:
             encodings["x"] = x
         if y is not None:
@@ -86,29 +105,29 @@ class Plot:
         if tooltip is not None:
             encodings["tooltip"] = tooltip
         return (
-            self.chart.mark_bar().encode(*args, **{**encodings, **kwargs}).interactive()
+            self.chart.mark_bar().encode(**{**encodings, **kwargs}).interactive()  # type: ignore[arg-type]
         )
 
     def line(
         self,
-        x: ChannelType | None = None,
-        y: ChannelType | None = None,
-        color: ChannelType | None = None,
-        order: ChannelType | None = None,
-        tooltip: ChannelType | None = None,
-        *args: Any,
-        **kwargs: Any,
+        x: ChannelX | None = None,
+        y: ChannelY | None = None,
+        color: ChannelColor | None = None,
+        order: ChannelOrder | None = None,
+        tooltip: ChannelTooltip | None = None,
+        /,
+        **kwargs: Unpack[EncodeKwds],
     ) -> alt.Chart:
         """
         Draw line plot.
 
-        Polars does not implement plottinng logic itself but instead defers to Altair.
+        Polars does not implement plotting logic itself but instead defers to Altair.
         `df.plot.line(*args, **kwargs)` is shorthand for
         `alt.Chart(df).mark_line().encode(*args, **kwargs).interactive()`,
         as is intended for convenience - for full customisatibility, use a plotting
         library directly.
 
-        .. versionchanged:: 1.4.0
+        .. versionchanged:: 1.5.0
             In prior versions of Polars, HvPlot was the plotting backend. If you would
             like to restore the previous plotting functionality, all you need to do
             add `import hvplot.polars` at the top of your script and replace
@@ -141,7 +160,7 @@ class Plot:
         ... )
         >>> df.plot.line(x="date", y="price", color="stock")  # doctest: +SKIP
         """
-        encodings = {}
+        encodings: Encodings = {}
         if x is not None:
             encodings["x"] = x
         if y is not None:
@@ -154,30 +173,30 @@ class Plot:
             encodings["tooltip"] = tooltip
         return (
             self.chart.mark_line()
-            .encode(*args, **{**encodings, **kwargs})
+            .encode(**{**encodings, **kwargs})  # type: ignore[arg-type]
             .interactive()
         )
 
     def point(
         self,
-        x: ChannelType | None = None,
-        y: ChannelType | None = None,
-        color: ChannelType | None = None,
-        size: ChannelType | None = None,
-        tooltip: ChannelType | None = None,
+        x: ChannelX | None = None,
+        y: ChannelY | None = None,
+        color: ChannelColor | None = None,
+        size: ChannelSize | None = None,
+        tooltip: ChannelTooltip | None = None,
         *args: Any,
         **kwargs: Any,
     ) -> alt.Chart:
         """
         Draw scatter plot.
 
-        Polars does not implement plottinng logic itself but instead defers to Altair.
+        Polars does not implement plotting logic itself but instead defers to Altair.
         `df.plot.point(*args, **kwargs)` is shorthand for
         `alt.Chart(df).mark_point().encode(*args, **kwargs).interactive()`,
         as is intended for convenience - for full customisatibility, use a plotting
         library directly.
 
-        .. versionchanged:: 1.4.0
+        .. versionchanged:: 1.5.0
             In prior versions of Polars, HvPlot was the plotting backend. If you would
             like to restore the previous plotting functionality, all you need to do
             add `import hvplot.polars` at the top of your script and replace
@@ -209,7 +228,7 @@ class Plot:
         ... )
         >>> df.plot.point(x="length", y="width", color="species")  # doctest: +SKIP
         """
-        encodings = {}
+        encodings: Encodings = {}
         if x is not None:
             encodings["x"] = x
         if y is not None:
@@ -227,7 +246,7 @@ class Plot:
         )
 
     def __getattr__(
-        self, attr: str, *args: Any, **kwargs: Any
+        self, attr: str, *args: EncodeKwds, **kwargs: EncodeKwds
     ) -> Callable[..., alt.Chart]:
         method = self.chart.getattr(f"mark_{attr}", None)
         if method is None:

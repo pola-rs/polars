@@ -20,7 +20,7 @@ def show_versions() -> None:
     Python:               3.11.8 (main, Feb  6 2024, 21:21:21) [Clang 15.0.0 (clang-1500.1.0.2.5)]
     ----Optional dependencies----
     adbc_driver_manager:  0.11.0
-    altair:               5.3.0
+    altair:               5.4.0
     cloudpickle:          3.0.0
     connectorx:           0.3.2
     deltalake:            0.17.1

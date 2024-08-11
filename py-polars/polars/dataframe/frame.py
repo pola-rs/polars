@@ -611,7 +611,7 @@ class DataFrame:
             This functionality is currently considered **unstable**. It may be
             changed at any point without it being considered a breaking change.
 
-        .. versionchanged:: 1.4.0
+        .. versionchanged:: 1.5.0
             In prior versions of Polars, HvPlot was the plotting backend. If you would
             like to restore the previous plotting functionality, all you need to do
             add `import hvplot.polars` at the top of your script and replace
@@ -652,9 +652,14 @@ class DataFrame:
         ...     }
         ... )
         >>> df.plot.line(x="date", y="price", color="stock")  # doctest: +SKIP
+
+        Histogram:
+
+        >>> df = pl.DataFrame({"rating": [1, 3, 3, 3, 2, 3, 3, 2, 1, 4]})
+        >>> df.plot.bar(x="rating", y="count()")  # doctest: +SKIP
         """
-        if not _ALTAIR_AVAILABLE or parse_version(altair.__version__) < (5, 3, 0):
-            msg = "altair>=5.3.0 is required for `.plot`"
+        if not _ALTAIR_AVAILABLE or parse_version(altair.__version__) < (5, 4, 0):
+            msg = "altair>=5.4.0 is required for `.plot`"
             raise ModuleUpgradeRequiredError(msg)
         return Plot(self)
 
