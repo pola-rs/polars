@@ -24,6 +24,7 @@ env:
   SCCACHE_GHA_ENABLED: 'true'
   RUSTC_WRAPPER: sccache
   RUST_BACKTRACE: 1
+  UV_INDEX_STRATEGY: unsafe-best-match
 
 jobs:
   main:
@@ -48,7 +49,7 @@ jobs:
 
       - name: Install Python dependencies
         working-directory: py-polars
-        run: uv pip install --compile-bytecode -r requirements-dev.txt --extra-index-url https://download.pytorch.org/whl/cpu torch -r requirements-ci.txt --verbose
+        run: uv pip install --compile-bytecode -r requirements-dev.txt -r requirements-ci.txt --verbose
 
       - name: Set up Rust
         run: rustup show

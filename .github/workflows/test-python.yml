@@ -26,6 +26,7 @@ env:
   RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
   RUST_BACKTRACE: 1
   PYTHONUTF8: 1
+  UV_INDEX_STRATEGY: unsafe-best-match
 
 defaults:
   run:
@@ -66,7 +67,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           pip install uv
-          uv pip install --compile-bytecode -r requirements-dev.txt --extra-index-url https://download.pytorch.org/whl/cpu torch -r requirements-ci.txt --verbose
+          uv pip install --compile-bytecode -r requirements-dev.txt -r requirements-ci.txt --verbose
 
       - name: Set up Rust
         run: rustup show
