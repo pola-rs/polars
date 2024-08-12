@@ -3,6 +3,7 @@
 # (installable via `make requirements-all`)
 # -------------------------------------------------------
 --extra-index-url https://download.pytorch.org/whl/cpu
+Cython
 torch
 jax[cpu]
 pyiceberg>=0.5.0
