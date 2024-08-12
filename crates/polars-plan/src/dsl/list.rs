@@ -5,6 +5,8 @@ use polars_core::prelude::*;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
 #[cfg(feature = "list_sets")]
+use polars_core::utils::SuperTypeFlags;
+#[cfg(feature = "list_sets")]
 use polars_core::utils::SuperTypeOptions;
 
 use crate::prelude::function_expr::ListFunction;
@@ -367,7 +369,9 @@ impl ListNameSpace {
             function: FunctionExpr::ListExpr(ListFunction::SetOperation(set_operation)),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ElementWise,
-                cast_to_supertypes: Some(SuperTypeOptions { implode_list: true }),
+                cast_to_supertypes: Some(SuperTypeOptions {
+                    flags: SuperTypeFlags::default() | SuperTypeFlags::ALLOW_IMPLODE_LIST,
+                }),
                 flags: FunctionFlags::default()
                     | FunctionFlags::INPUT_WILDCARD_EXPANSION & !FunctionFlags::RETURNS_SCALAR,
                 ..Default::default()
