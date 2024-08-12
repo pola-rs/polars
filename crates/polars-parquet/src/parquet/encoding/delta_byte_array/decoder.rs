@@ -57,9 +57,13 @@ mod tests {
     use super::*;
 
     impl<'a> Iterator for Decoder<'a> {
-        type Item = Result<Vec<u8>, ParquetError>;
+        type Item = ParquetResult<Vec<u8>>;
 
         fn next(&mut self) -> Option<Self::Item> {
+            if self.len() == 0 {
+                return None;
+            }
+
             let mut prefix_length = vec![];
             let mut suffix_length = vec![];
             if let Err(e) = self.prefix_lengths.collect_n(&mut prefix_length, 1) {

@@ -30,7 +30,7 @@ mod tests {
             ]
         );
 
-        let result = iter.values();
+        let result = iter.values;
         assert_eq!(result, b"aabbbaaab".as_ref());
         Ok(())
     }

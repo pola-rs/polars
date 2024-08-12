@@ -38,18 +38,20 @@ impl<'a> Decoder<'a> {
 
 #[cfg(test)]
 impl<'a> Iterator for Decoder<'a> {
-    type Item = Result<&'a [u8], ParquetError>;
+    type Item = ParquetResult<&'a [u8]>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let length = self.lengths.next()?;
-        Some(match length {
-            Ok(length) => {
-                let length = length as usize;
-                let value = &self.values[self.offset..self.offset + length];
-                self.offset += length;
-                Ok(value)
-            },
-            Err(error) => Err(error),
-        })
+        if self.lengths.len() == 0 {
+            return None;
+        }
+
+        let mut length = vec![];
+        if let Err(e) = self.lengths.collect_n(&mut length, 1) {
+            return Some(Err(e));
+        }
+        let length = length[0] as usize;
+        let value = &self.values[self.offset..self.offset + length];
+        self.offset += length;
+        Some(Ok(value))
     }
 }

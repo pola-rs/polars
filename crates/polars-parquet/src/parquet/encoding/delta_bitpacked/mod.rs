@@ -8,14 +8,14 @@ pub(crate) use encoder::encode;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parquet::error::ParquetError;
+    use crate::parquet::error::{ParquetError, ParquetResult};
 
     #[test]
     fn basic() -> Result<(), ParquetError> {
         let data = vec![1, 3, 1, 2, 3];
 
         let mut buffer = vec![];
-        encode(data.clone().into_iter(), &mut buffer);
+        encode(data.clone().into_iter(), &mut buffer, 1);
         let (iter, _) = Decoder::try_new(&buffer)?;
 
         let result = iter.collect::<Vec<_>>()?;
@@ -28,7 +28,7 @@ mod tests {
         let data = vec![1, 3, -1, 2, 3];
 
         let mut buffer = vec![];
-        encode(data.clone().into_iter(), &mut buffer);
+        encode(data.clone().into_iter(), &mut buffer, 1);
         let (iter, _) = Decoder::try_new(&buffer)?;
 
         let result = iter.collect::<Vec<_>>()?;
@@ -49,7 +49,7 @@ mod tests {
         ];
 
         let mut buffer = vec![];
-        encode(data.clone().into_iter(), &mut buffer);
+        encode(data.clone().into_iter(), &mut buffer, 1);
         let (iter, _) = Decoder::try_new(&buffer)?;
 
         let result = iter.collect::<Vec<_>>()?;
@@ -65,7 +65,7 @@ mod tests {
         }
 
         let mut buffer = vec![];
-        encode(data.clone().into_iter(), &mut buffer);
+        encode(data.clone().into_iter(), &mut buffer, 1);
         let (iter, _) = Decoder::try_new(&buffer)?;
 
         let result = iter.collect::<Vec<_>>()?;
@@ -78,7 +78,42 @@ mod tests {
         let data = vec![2, 3, 1, 2, 1];
 
         let mut buffer = vec![];
-        encode(data.clone().into_iter(), &mut buffer);
+        encode(data.clone().into_iter(), &mut buffer, 1);
+        let (iter, _) = Decoder::try_new(&buffer)?;
+
+        let result = iter.collect::<Vec<_>>()?;
+        assert_eq!(result, data);
+
+        Ok(())
+    }
+
+    #[test]
+    fn overflow_constant() -> ParquetResult<()> {
+        let data = vec![i64::MIN, i64::MAX, i64::MIN, i64::MAX];
+
+        let mut buffer = vec![];
+        encode(data.clone().into_iter(), &mut buffer, 1);
+        let (iter, _) = Decoder::try_new(&buffer)?;
+
+        let result = iter.collect::<Vec<_>>()?;
+        assert_eq!(result, data);
+
+        Ok(())
+    }
+
+    #[test]
+    fn overflow_vary() -> ParquetResult<()> {
+        let data = vec![
+            0,
+            i64::MAX,
+            i64::MAX - 1,
+            i64::MIN + 1,
+            i64::MAX,
+            i64::MIN + 2,
+        ];
+
+        let mut buffer = vec![];
+        encode(data.clone().into_iter(), &mut buffer, 1);
         let (iter, _) = Decoder::try_new(&buffer)?;
 
         let result = iter.collect::<Vec<_>>()?;

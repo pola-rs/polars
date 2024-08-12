@@ -89,7 +89,7 @@ where
             integer
         });
         let iterator = ExactSizedIter::new(iterator, array.len() - array.null_count());
-        encode(iterator, &mut buffer)
+        encode(iterator, &mut buffer, 1)
     } else {
         // append all values
         let iterator = array.values().iter().map(|x| {
@@ -97,7 +97,7 @@ where
             let integer: i64 = parquet_native.as_();
             integer
         });
-        encode(iterator, &mut buffer)
+        encode(iterator, &mut buffer, 1)
     }
     buffer
 }

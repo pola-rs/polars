@@ -25,8 +25,8 @@ fn fuzz_test_delta_encoding() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    const MIN_VALUES: usize = 125;
-    const MAX_VALUES: usize = 135;
+    const MIN_VALUES: usize = 1;
+    const MAX_VALUES: usize = 1000;
 
     const MIN: i64 = -512;
     const MAX: i64 = 512;
@@ -40,7 +40,7 @@ fn fuzz_test_delta_encoding() -> Result<(), Box<dyn std::error::Error>> {
     let mut decoded = Vec::with_capacity(MAX_VALUES);
     let mut gatherer = SimpleGatherer;
 
-    for _ in 0..NUM_ITERATIONS {
+    for i in 0..NUM_ITERATIONS {
         values.clear();
 
         let num_values = rng.gen_range(MIN_VALUES..=MAX_VALUES);
@@ -48,8 +48,8 @@ fn fuzz_test_delta_encoding() -> Result<(), Box<dyn std::error::Error>> {
 
         encoded.clear();
         decoded.clear();
-
-        super::encode(values.iter().copied(), &mut encoded);
+        
+        super::encode(values.iter().copied(), &mut encoded, 1 << rng.gen_range(0..=2));
         let (mut decoder, rem) = super::Decoder::try_new(&encoded)?;
 
         assert!(rem.is_empty());
@@ -62,6 +62,10 @@ fn fuzz_test_delta_encoding() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         assert_eq!(values, decoded);
+
+        if i % 1000 == 999 {
+            eprintln!("[INFO]: {} iterations done.", i + 1);
+        }
     }
 
     Ok(())
@@ -69,7 +73,16 @@ fn fuzz_test_delta_encoding() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn breakage() -> Result<(), Box<dyn std::error::Error>> {
-    let values: &[i64] = &[-476];
+    let values: &[i64] = &[
+        447, 224, 201, -404, -187, -350, -301, -409, 425, 506, -287, -470, 480, -30, 373, -495,
+        288, -337, -196, 188, 488, -53, 336, -163, 392, -255, 41, 465, 47, 91, -437, -259, -69,
+        251, 237, -197, -508, -356, 119, 242, 63, -339, 450, -27, -176, 472, -449, 298, -303, -463,
+        101, 267, 165, -195, 467, 301, 268, -199, -247, -285, 404, -227, -30, 242, 91, 219, 450,
+        -402, -300, -473, -199, 491, -512, -425, 211, -88, -302, 316, 126, 207, 215, -322, -92,
+        462, 280, 374, 21, -490, 159, 434, 372, 205, -211, 59, -213, -222, 193, -297, -449, -5,
+        -241, -320, 218, 50, 177, -80, -468, -366, 286, -214, -353, -453, -390, 429, -484, -351,
+        -195, 261, 508, -483, -396, 56, 209, 1, -335, 398, -317, 379, -217, -347,
+    ];
 
     use super::DeltaGatherer;
     use crate::parquet::error::ParquetResult;
@@ -96,9 +109,9 @@ fn breakage() -> Result<(), Box<dyn std::error::Error>> {
     let mut gatherer = SimpleGatherer;
     let mut encoded = Vec::new();
     let mut decoded = Vec::new();
-    let gathers = vec![0, 1, 0];
+    let gathers = vec![100, 28, 1, 1];
 
-    super::encode(values.iter().copied(), &mut encoded);
+    super::encode(values.iter().copied(), &mut encoded, 2);
     let (mut decoder, rem) = super::Decoder::try_new(&encoded)?;
 
     assert!(rem.is_empty());

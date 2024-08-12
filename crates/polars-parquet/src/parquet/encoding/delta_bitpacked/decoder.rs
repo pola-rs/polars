@@ -13,6 +13,7 @@ pub struct Decoder<'a> {
     values_remaining: usize,
 
     next_value: i64,
+
     values: &'a [u8],
 
     block: Block<'a>,
@@ -303,8 +304,8 @@ impl<'a> Decoder<'a> {
 
         let mut rem = values;
         if total_count > 1 {
-            let mut num_values_read = total_count - 1;
-            while num_values_read > 0 {
+            let mut num_values_left = total_count - 1;
+            while num_values_left > 0 {
                 // If the number of values is does not need all the miniblocks anymore, we need to
                 // ignore the later miniblocks and regard them as having bitwidth = 0.
                 //
@@ -319,7 +320,7 @@ impl<'a> Decoder<'a> {
                 // > the number of values read.
                 let num_remaining_mini_blocks = usize::min(
                     num_miniblocks_per_block,
-                    num_values_read.div_ceil(values_per_miniblock),
+                    num_values_left.div_ceil(values_per_miniblock),
                 );
 
                 // block:
@@ -359,7 +360,7 @@ impl<'a> Decoder<'a> {
                         "Not enough bytes for all bitpacked values in delta encoding",
                     ))?;
 
-                num_values_read = num_values_read.saturating_sub(values_per_block);
+                num_values_left = num_values_left.saturating_sub(values_per_block);
             }
         }
 
@@ -385,7 +386,6 @@ impl<'a> Decoder<'a> {
             },
         };
 
-        // If we only have one value (first_value), there are no blocks.
         if total_count > 1 {
             decoder.consume_block()?;
         }
@@ -398,7 +398,7 @@ impl<'a> Decoder<'a> {
 
         let values_per_miniblock = self.values_per_miniblock();
 
-        let length = usize::min(self.values_remaining, self.values_per_block);
+        let length = usize::min(self.num_deltas_remaining(), self.values_per_block);
         let actual_num_miniblocks = usize::min(
             self.num_miniblocks_per_block,
             length.div_ceil(values_per_miniblock),
@@ -672,16 +672,19 @@ impl<'a> Decoder<'a> {
         mut n: usize,
         gatherer: &mut G,
     ) -> ParquetResult<()> {
+        dbg!(self.next_value);
+        dbg!(self.len());
+
         n = usize::min(n, self.len());
 
         if n == 0 {
             return Ok(());
         }
 
+        // Handle the first value
         if self.len() == 1 {
             gatherer.gather_one(target, self.next_value)?;
-            self.block.values_remaining = 0;
-            self.values_remaining = 0;
+            self.values_remaining -= 1;
             return Ok(());
         }
 
@@ -698,7 +701,7 @@ impl<'a> Decoder<'a> {
         self.gather_block_n_into(target, self.block.values_remaining, gatherer)?;
         debug_assert_eq!(self.block.values_remaining, 0);
 
-        while n >= self.values_per_block {
+        while usize::min(n, self.num_deltas_remaining()) >= self.values_per_block {
             self.values = gather_block(
                 target,
                 self.num_miniblocks_per_block,
@@ -711,20 +714,26 @@ impl<'a> Decoder<'a> {
             self.values_remaining -= self.values_per_block;
         }
 
-        if self.values_remaining == 0 {
+        if n == 0 {
             return Ok(());
         }
 
-        if self.values_remaining == 1 {
+        // Handle the first value
+        if self.len() == 1 {
             gatherer.gather_one(target, self.next_value)?;
-            self.block.values_remaining = 0;
-            self.values_remaining = 0;
+            self.values_remaining -= 1;
             return Ok(());
         }
 
         self.consume_block()?;
-        let num_gather_values = usize::min(self.block.values_remaining, n);
-        self.gather_block_n_into(target, num_gather_values, gatherer)?;
+        self.gather_block_n_into(target, n, gatherer)?;
+
+        // Handle the first value
+        if n > 0 && self.len() == 1 {
+            gatherer.gather_one(target, self.next_value)?;
+            self.values_remaining -= 1;
+            return Ok(());
+        }
 
         Ok(())
     }
@@ -769,6 +778,10 @@ impl<'a> Decoder<'a> {
 
     pub fn len(&self) -> usize {
         self.values_remaining + self.block.values_remaining
+    }
+
+    pub fn num_deltas_remaining(&self) -> usize {
+        (self.values_remaining + self.block.values_remaining).saturating_sub(1)
     }
 
     fn values_per_miniblock(&self) -> usize {
@@ -849,7 +862,7 @@ mod tests {
             1, 2, 3,
         ];
 
-        let (mut decoder, rem) = Decoder::try_new(data).unwrap();
+        let (decoder, rem) = Decoder::try_new(data).unwrap();
         let r = decoder.collect::<Vec<_>>().unwrap();
 
         assert_eq!(expected, r);

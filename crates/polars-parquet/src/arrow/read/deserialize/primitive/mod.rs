@@ -92,7 +92,17 @@ where
     }
 
     fn push_n(&mut self, target: &mut Vec<T>, n: usize) -> ParquetResult<()> {
-        self.decoder.gather_n_into(target, n, &mut self.gatherer)
+        let start_length = target.len();
+        let start_num_elems = self.decoder.len();
+
+        self.decoder.gather_n_into(target, n, &mut self.gatherer)?;
+
+        let consumed_elements = usize::min(n, start_num_elems);
+
+        debug_assert_eq!(self.decoder.len(), start_num_elems - consumed_elements);
+        debug_assert_eq!(target.len(), start_length + consumed_elements);
+        
+        Ok(())
     }
 
     fn push_n_nulls(&mut self, target: &mut Vec<T>, n: usize) -> ParquetResult<()> {
