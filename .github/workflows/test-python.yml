@@ -67,7 +67,10 @@ jobs:
         run: |
           pip install uv
           uv pip install --compile-bytecode -r requirements-dev.txt --verbose
-          uv pip install --compile-bytecode -r requirements-ci.txt --verbose
+          if [ "$(uname)" = "Linux" ]; then
+            uv pip install --compile-bytecode --extra-index-url https://download.pytorch.org/whl/cpu -r requirements-ci.txt --verbose
+          else
+            uv pip install --compile-bytecode -r requirements-ci.txt --verbose
 
       - name: Set up Rust
         run: rustup show
