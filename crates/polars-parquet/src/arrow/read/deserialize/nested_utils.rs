@@ -388,14 +388,18 @@ fn extend_offsets2<'a, D: utils::NestedDecoder>(
     def_levels: &[u16],
     rep_levels: &[u16],
 ) -> PolarsResult<()> {
+    debug_assert_eq!(def_iter.len(), rep_iter.len());
+
     match filter {
         None => {
+            let limit = def_iter.len();
+
             extend_offsets_limited(
                 &mut def_iter,
                 &mut rep_iter,
                 batched_collector,
                 nested,
-                usize::MAX,
+                limit,
                 def_levels,
                 rep_levels,
             )?;
