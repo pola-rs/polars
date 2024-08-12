@@ -21,7 +21,6 @@ if TYPE_CHECKING:
 
 __all__ = ["Config"]
 
-
 TableFormatNames: TypeAlias = Literal[
     "ASCII_FULL",
     "ASCII_FULL_CONDENSED",
@@ -177,7 +176,7 @@ class Config(contextlib.ContextDecorator):
         self._original_state = ""
 
     @classmethod
-    def load(cls, cfg: str) -> type[Config]:
+    def load(cls, cfg: str) -> Config:
         """
         Load (and set) previously saved Config options from a JSON string.
 
@@ -197,14 +196,21 @@ class Config(contextlib.ContextDecorator):
             msg = "invalid Config string (did you mean to use `load_from_file`?)"
             raise ValueError(msg) from err
 
-        os.environ.update(options.get("environment", {}))
+        cfg_load = Config()
+        opts = options.get("environment", {})
+        for key, opt in opts.items():
+            if opt is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = opt
+
         for cfg_methodname, value in options.get("direct", {}).items():
-            if hasattr(cls, cfg_methodname):
-                getattr(cls, cfg_methodname)(value)
-        return cls
+            if hasattr(cfg_load, cfg_methodname):
+                getattr(cfg_load, cfg_methodname)(value)
+        return cfg_load
 
     @classmethod
-    def load_from_file(cls, file: Path | str) -> type[Config]:
+    def load_from_file(cls, file: Path | str) -> Config:
         """
         Load (and set) previously saved Config options from file.
 
@@ -251,9 +257,15 @@ class Config(contextlib.ContextDecorator):
         return cls
 
     @classmethod
-    def save(cls) -> str:
+    def save(cls, *, if_set: bool = False) -> str:
         """
         Save the current set of Config options as a JSON string.
+
+        Parameters
+        ----------
+        if_set
+            By default this will save the state of all configuration options; set
+            to `False` to save only those that have been set to a non-default value.
 
         See Also
         --------
@@ -263,7 +275,7 @@ class Config(contextlib.ContextDecorator):
 
         Examples
         --------
-        >>> json_str = pl.Config.save()
+        >>> json_state = pl.Config.save()
 
         Returns
         -------
@@ -271,9 +283,9 @@ class Config(contextlib.ContextDecorator):
             JSON string containing current Config options.
         """
         environment_vars = {
-            key: os.environ[key]
+            key: os.environ.get(key)
             for key in sorted(_POLARS_CFG_ENV_VARS)
-            if (key in os.environ)
+            if not if_set or (os.environ.get(key) is not None)
         }
         direct_vars = {
             cfg_methodname: get_value()
