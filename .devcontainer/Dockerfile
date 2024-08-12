@@ -13,6 +13,7 @@ RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain stable
 ENV PATH="/root/.cargo/bin:${PATH}"
 
 # Install the nightly toolchain
+COPY rust-toolchain.toml .
 RUN rustup toolchain install nightly && rustup default nightly && rustup component add miri --toolchain nightly
 
 # Verify the installation of Rust and Cargo
