@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 def test_run_on_pandas() -> None:
     # Simple join example, missing multiple columns, slices, etc.
     def join(
-        inputs: list[Callable[[], pd.DataFrame]], obj: Any, _node_traverer: Any
+        inputs: list[Callable[[], pd.DataFrame]], obj: Any, _node_traverser: Any
     ) -> Callable[[], pd.DataFrame]:
         assert len(obj.left_on) == 1
         assert len(obj.right_on) == 1

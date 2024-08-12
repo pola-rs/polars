@@ -611,18 +611,8 @@ def test_arg_sort_struct() -> None:
             "b": [5, 5, 6, 7, 8, 1, 1, 2, 2, 3],
         }
     )
-    assert df.select(pl.struct("a", "b").arg_sort()).to_series().to_list() == [
-        5,
-        0,
-        2,
-        7,
-        3,
-        4,
-        6,
-        1,
-        8,
-        9,
-    ]
+    expected = [5, 0, 2, 7, 3, 4, 6, 1, 8, 9]
+    assert df.select(pl.struct("a", "b").arg_sort()).to_series().to_list() == expected
 
 
 def test_sort_top_k_fast_path() -> None:

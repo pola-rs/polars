@@ -435,10 +435,10 @@ mod stats {
                 // Default: read the file
                 _ => Ok(true),
             };
-            out.inspect(|read| {
-                if state.verbose() && *read {
+            out.inspect(|&read| {
+                if state.verbose() && read {
                     eprintln!("parquet file must be read, statistics not sufficient for predicate.")
-                } else if state.verbose() && !*read {
+                } else if state.verbose() && !read {
                     eprintln!("parquet file can be skipped, the statistics were sufficient to apply the predicate.")
                 }
             })

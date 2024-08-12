@@ -1,6 +1,6 @@
 # Hugging Face
 
-## Scanning datasets from Huggging Face
+## Scanning datasets from Hugging Face
 
 All cloud-enabled scan functions, and their `read_` counterparts transparently support scanning from
 Hugging Face:

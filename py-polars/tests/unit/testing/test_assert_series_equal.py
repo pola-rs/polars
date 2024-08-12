@@ -764,7 +764,7 @@ def test_series_data_type_fail():
     assert "polars/py-polars/polars/testing" not in stdout
 
     # The above should catch any polars testing functions that appear in the
-    # stack trace.  But we keep the following checks (for specific function
+    # stack trace. But we keep the following checks (for specific function
     # names) just to double-check.
 
     assert "def assert_series_equal" not in stdout

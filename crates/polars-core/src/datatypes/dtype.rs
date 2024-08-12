@@ -156,7 +156,7 @@ impl DataType {
         match tz.as_deref() {
             Some("") => None,
             #[cfg(feature = "timezones")]
-            Some("+00:00") | Some("00:00") => Some("UTC"),
+            Some("+00:00") | Some("00:00") | Some("utc") => Some("UTC"),
             _ => tz.as_deref(),
         }
         .map(|s| s.to_string())

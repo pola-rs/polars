@@ -6,6 +6,8 @@ mod ipc;
 mod ndjson;
 #[cfg(feature = "parquet")]
 mod parquet;
+#[cfg(feature = "python")]
+mod python_scan;
 
 use std::mem;
 
@@ -23,6 +25,8 @@ use polars_io::predicates::PhysicalIoExpr;
 use polars_io::prelude::*;
 use polars_plan::global::_set_n_rows_for_scan;
 
+#[cfg(feature = "python")]
+pub(crate) use self::python_scan::*;
 use super::*;
 use crate::prelude::*;
 
@@ -106,7 +110,10 @@ pub(crate) struct AnonymousScanExec {
 impl Executor for AnonymousScanExec {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         let mut args = AnonymousScanArgs {
-            n_rows: self.file_options.n_rows,
+            n_rows: self.file_options.slice.map(|x| {
+                assert_eq!(x.0, 0);
+                x.1
+            }),
             with_columns: self.file_options.with_columns.clone(),
             schema: self.file_info.schema.clone(),
             output_schema: self.output_schema.clone(),

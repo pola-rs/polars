@@ -16,6 +16,7 @@ use polars_io::predicates::PhysicalIoExpr;
 use polars_io::prelude::materialize_projection;
 #[cfg(feature = "async")]
 use polars_io::prelude::ParquetAsyncReader;
+use polars_io::utils::slice::split_slice_at_file;
 use polars_io::SerReader;
 use polars_plan::plans::FileInfo;
 use polars_plan::prelude::hive::HivePartitions;
@@ -31,15 +32,16 @@ pub struct ParquetSource {
     batched_readers: VecDeque<BatchedParquetReader>,
     n_threads: usize,
     processed_paths: usize,
+    processed_rows: usize,
     iter: Range<usize>,
-    paths: Arc<[PathBuf]>,
+    paths: Arc<Vec<PathBuf>>,
     options: ParquetOptions,
     file_options: FileScanOptions,
     #[allow(dead_code)]
     cloud_options: Option<CloudOptions>,
     metadata: Option<FileMetaDataRef>,
     file_info: FileInfo,
-    hive_parts: Option<Arc<[HivePartitions]>>,
+    hive_parts: Option<Arc<Vec<HivePartitions>>>,
     verbose: bool,
     run_async: bool,
     prefetch_size: usize,
@@ -111,13 +113,19 @@ impl ParquetSource {
         let Some(index) = self.iter.next() else {
             return Ok(());
         };
+        if let Some(slice) = self.file_options.slice {
+            if self.processed_rows >= slice.0 as usize + slice.1 {
+                return Ok(());
+            }
+        }
+
         let predicate = self.predicate.clone();
         let (path, options, file_options, projection, chunk_size, hive_partitions) =
             self.prepare_init_reader(index)?;
 
         let batched_reader = {
             let file = std::fs::File::open(path).unwrap();
-            ParquetReader::new(file)
+            let mut reader = ParquetReader::new(file)
                 .with_projection(projection)
                 .check_schema(
                     self.file_info
@@ -127,7 +135,6 @@ impl ParquetSource {
                         .as_ref()
                         .unwrap_left(),
                 )?
-                .with_n_rows(file_options.n_rows)
                 .with_row_index(file_options.row_index)
                 .with_predicate(predicate.clone())
                 .use_statistics(options.use_statistics)
@@ -137,8 +144,25 @@ impl ParquetSource {
                         .include_file_paths
                         .as_ref()
                         .map(|x| (x.clone(), Arc::from(path.to_str().unwrap()))),
+                );
+
+            let n_rows_this_file = reader.num_rows().unwrap();
+
+            let slice = file_options.slice.map(|slice| {
+                assert!(slice.0 >= 0);
+                let slice_start = slice.0 as usize;
+                let slice_end = slice_start + slice.1;
+                split_slice_at_file(
+                    &mut self.processed_rows.clone(),
+                    n_rows_this_file,
+                    slice_start,
+                    slice_end,
                 )
-                .batched(chunk_size)?
+            });
+
+            self.processed_rows += n_rows_this_file;
+            reader = reader.with_slice(slice);
+            reader.batched(chunk_size)?
         };
         self.finish_init_reader(batched_reader)?;
         Ok(())
@@ -158,11 +182,12 @@ impl ParquetSource {
         let (path, options, file_options, projection, chunk_size, hive_partitions) =
             self.prepare_init_reader(index)?;
 
+        assert_eq!(file_options.slice, None);
+
         let batched_reader = {
             let uri = path.to_string_lossy();
             ParquetAsyncReader::from_uri(&uri, cloud_options.as_ref(), metadata)
                 .await?
-                .with_n_rows(file_options.n_rows)
                 .with_row_index(file_options.row_index)
                 .with_projection(projection)
                 .check_schema(
@@ -192,13 +217,13 @@ impl ParquetSource {
     #[allow(unused_variables)]
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
-        paths: Arc<[PathBuf]>,
+        paths: Arc<Vec<PathBuf>>,
         options: ParquetOptions,
         cloud_options: Option<CloudOptions>,
         metadata: Option<FileMetaDataRef>,
         file_options: FileScanOptions,
         file_info: FileInfo,
-        hive_parts: Option<Arc<[HivePartitions]>>,
+        hive_parts: Option<Arc<Vec<HivePartitions>>>,
         verbose: bool,
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
     ) -> PolarsResult<Self> {
@@ -216,6 +241,7 @@ impl ParquetSource {
             batched_readers: VecDeque::new(),
             n_threads,
             processed_paths: 0,
+            processed_rows: 0,
             options,
             file_options,
             iter,
@@ -243,36 +269,34 @@ impl ParquetSource {
         //
         // It is important we do this for a reasonable batch size, that's why we start this when we
         // have just 2 readers left.
-        if self.batched_readers.len() <= 2 && self.file_options.n_rows.is_none()
-            || self.batched_readers.is_empty()
+        if self.file_options.slice.is_none()
+            && self.run_async
+            && (self.batched_readers.len() <= 2 || self.batched_readers.is_empty())
         {
-            let range = 0..self.prefetch_size - self.batched_readers.len();
+            #[cfg(not(feature = "async"))]
+            panic!("activate 'async' feature");
 
-            if self.run_async {
-                #[cfg(not(feature = "async"))]
-                panic!("activate 'async' feature");
+            #[cfg(feature = "async")]
+            {
+                let range = 0..self.prefetch_size - self.batched_readers.len();
+                let range = range
+                    .zip(&mut self.iter)
+                    .map(|(_, index)| index)
+                    .collect::<Vec<_>>();
+                let init_iter = range.into_iter().map(|index| self.init_reader_async(index));
 
-                #[cfg(feature = "async")]
-                {
-                    let range = range
-                        .zip(&mut self.iter)
-                        .map(|(_, index)| index)
-                        .collect::<Vec<_>>();
-                    let init_iter = range.into_iter().map(|index| self.init_reader_async(index));
+                let batched_readers =
+                    polars_io::pl_async::get_runtime().block_on_potential_spawn(async {
+                        futures::future::try_join_all(init_iter).await
+                    })?;
 
-                    let batched_readers = polars_io::pl_async::get_runtime()
-                        .block_on_potential_spawn(async {
-                            futures::future::try_join_all(init_iter).await
-                        })?;
-
-                    for r in batched_readers {
-                        self.finish_init_reader(r)?;
-                    }
+                for r in batched_readers {
+                    self.finish_init_reader(r)?;
                 }
-            } else {
-                for _ in 0..self.prefetch_size - self.batched_readers.len() {
-                    self.init_next_reader()?
-                }
+            }
+        } else {
+            for _ in 0..self.prefetch_size - self.batched_readers.len() {
+                self.init_next_reader_sync()?
             }
         }
         Ok(())
@@ -293,10 +317,6 @@ impl Source for ParquetSource {
 
         Ok(match batches {
             None => {
-                if reader.limit_reached() {
-                    return Ok(SourceResult::Finished);
-                }
-
                 // reset the reader
                 self.init_next_reader()?;
                 return self.get_batches(_context);
@@ -306,16 +326,9 @@ impl Source for ParquetSource {
                 let out = batches
                     .into_iter()
                     .enumerate_u32()
-                    .map(|(i, data)| {
-                        // Keep the row limit updated so the next reader will have a correct limit.
-                        if let Some(n_rows) = &mut self.file_options.n_rows {
-                            *n_rows = n_rows.saturating_sub(data.height())
-                        }
-
-                        DataChunk {
-                            chunk_index: (idx_offset + i) as IdxSize,
-                            data,
-                        }
+                    .map(|(i, data)| DataChunk {
+                        chunk_index: (idx_offset + i) as IdxSize,
+                        data,
                     })
                     .collect::<Vec<_>>();
                 get_source_index(out.len() as u32);

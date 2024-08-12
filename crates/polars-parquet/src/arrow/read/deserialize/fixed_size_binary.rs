@@ -1,14 +1,12 @@
-use arrow::array::{Array, DictionaryArray, DictionaryKey, FixedSizeBinaryArray, PrimitiveArray};
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::array::{DictionaryArray, DictionaryKey, FixedSizeBinaryArray, PrimitiveArray};
+use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
-use polars_error::PolarsResult;
 
-use super::utils::{dict_indices_decoder, extend_from_decoder, not_implemented, Decoder};
+use super::utils::{dict_indices_decoder, extend_from_decoder, freeze_validity, Decoder};
 use crate::parquet::encoding::hybrid_rle::gatherer::HybridRleGatherer;
 use crate::parquet::encoding::{hybrid_rle, Encoding};
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
-use crate::read::deserialize::utils::filter::Filter;
 use crate::read::deserialize::utils::{self, BatchableCollector, GatheredHybridRle, PageValidity};
 
 #[allow(clippy::large_enum_variant)]
@@ -31,8 +29,7 @@ impl<'a> utils::StateTranslation<'a, BinaryDecoder> for StateTranslation<'a> {
         page: &'a DataPage,
         dict: Option<&'a <BinaryDecoder as Decoder>::Dict>,
         _page_validity: Option<&PageValidity<'a>>,
-        _filter: Option<&Filter<'a>>,
-    ) -> PolarsResult<Self> {
+    ) -> ParquetResult<Self> {
         match (page.encoding(), dict) {
             (Encoding::Plain, _) => {
                 let values = split_buffer(page)?.values;
@@ -41,8 +38,7 @@ impl<'a> utils::StateTranslation<'a, BinaryDecoder> for StateTranslation<'a> {
                         "Fixed size binary data length {} is not divisible by size {}",
                         values.len(),
                         decoder.size
-                    ))
-                    .into());
+                    )));
                 }
                 Ok(Self::Plain(values, decoder.size))
             },
@@ -50,7 +46,7 @@ impl<'a> utils::StateTranslation<'a, BinaryDecoder> for StateTranslation<'a> {
                 let values = dict_indices_decoder(page)?;
                 Ok(Self::Dictionary(values, dict))
             },
-            _ => Err(not_implemented(page)),
+            _ => Err(utils::not_implemented(page)),
         }
     }
 
@@ -122,6 +118,7 @@ impl Decoder for BinaryDecoder {
     type Translation<'a> = StateTranslation<'a>;
     type Dict = Vec<u8>;
     type DecodedState = (FixedSizeBinary, MutableBitmap);
+    type Output = FixedSizeBinaryArray;
 
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState {
         let size = self.size;
@@ -225,6 +222,12 @@ impl Decoder for BinaryDecoder {
             }
 
             fn gather_one(&self, target: &mut Self::Target, value: &'a [u8]) -> ParquetResult<()> {
+                // We make the null value length 0, which allows us to do this.
+                if value.is_empty() {
+                    target.resize(target.len() + self.size, 0);
+                    return Ok(());
+                }
+
                 target.extend_from_slice(value);
                 Ok(())
             }
@@ -235,9 +238,17 @@ impl Decoder for BinaryDecoder {
                 value: &'a [u8],
                 n: usize,
             ) -> ParquetResult<()> {
+                // We make the null value length 0, which allows us to do this.
+                if value.is_empty() {
+                    target.resize(target.len() + n * self.size, 0);
+                    return Ok(());
+                }
+
+                debug_assert_eq!(value.len(), self.size);
                 for _ in 0..n {
                     target.extend(value);
                 }
+
                 Ok(())
             }
         }
@@ -247,7 +258,10 @@ impl Decoder for BinaryDecoder {
             size: self.size,
         };
 
-        let null_value = &dict[..self.size];
+        // @NOTE:
+        // This is a special case in our gatherer. If the length of the value is 0, then we just
+        // resize with the appropriate size. Important is that this also works for FSL with size=0.
+        let null_value = &[];
 
         match page_validity {
             None => {
@@ -272,25 +286,28 @@ impl Decoder for BinaryDecoder {
     fn finalize(
         &self,
         data_type: ArrowDataType,
+        _dict: Option<Self::Dict>,
         (values, validity): Self::DecodedState,
-    ) -> ParquetResult<Box<dyn Array>> {
-        Ok(Box::new(FixedSizeBinaryArray::new(
+    ) -> ParquetResult<Self::Output> {
+        let validity = freeze_validity(validity);
+        Ok(FixedSizeBinaryArray::new(
             data_type,
             values.values.into(),
-            validity.into(),
-        )))
+            validity,
+        ))
     }
+}
 
+impl utils::DictDecodable for BinaryDecoder {
     fn finalize_dict_array<K: DictionaryKey>(
         &self,
         data_type: ArrowDataType,
         dict: Self::Dict,
-        (values, validity): (Vec<K>, Option<Bitmap>),
+        keys: PrimitiveArray<K>,
     ) -> ParquetResult<DictionaryArray<K>> {
         let dict =
             FixedSizeBinaryArray::new(ArrowDataType::FixedSizeBinary(self.size), dict.into(), None);
-        let array = PrimitiveArray::<K>::new(K::PRIMITIVE.into(), values.into(), validity);
-        Ok(DictionaryArray::try_new(data_type, array, Box::new(dict)).unwrap())
+        Ok(DictionaryArray::try_new(data_type, keys, Box::new(dict)).unwrap())
     }
 }
 

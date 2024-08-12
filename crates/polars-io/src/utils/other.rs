@@ -44,13 +44,7 @@ pub fn get_reader_bytes<'a, R: Read + MmapBytesReader + ?Sized>(
 
 /// Decompress `bytes` if compression is detected, otherwise simply return it.
 /// An `out` vec must be given for ownership of the decompressed data.
-///
-/// # Safety
-/// The `out` vec outlives `bytes` (declare `out` first).
-pub unsafe fn maybe_decompress_bytes<'a>(
-    bytes: &'a [u8],
-    out: &'a mut Vec<u8>,
-) -> PolarsResult<&'a [u8]> {
+pub fn maybe_decompress_bytes<'a>(bytes: &'a [u8], out: &'a mut Vec<u8>) -> PolarsResult<&'a [u8]> {
     assert!(out.is_empty());
     use crate::prelude::is_compressed;
     let is_compressed = bytes.len() >= 4 && is_compressed(bytes);
@@ -86,30 +80,6 @@ pub unsafe fn maybe_decompress_bytes<'a>(
     } else {
         Ok(bytes)
     }
-}
-
-/// Compute `remaining_rows_to_read` to be taken per file up front, so we can actually read
-/// concurrently/parallel
-///
-/// This takes an iterator over the number of rows per file.
-pub fn get_sequential_row_statistics<I>(
-    iter: I,
-    mut total_rows_to_read: usize,
-) -> Vec<(usize, usize)>
-where
-    I: Iterator<Item = usize>,
-{
-    let mut cumulative_read = 0;
-    iter.map(|rows_this_file| {
-        let remaining_rows_to_read = total_rows_to_read;
-        total_rows_to_read = total_rows_to_read.saturating_sub(rows_this_file);
-
-        let current_cumulative_read = cumulative_read;
-        cumulative_read += rows_this_file;
-
-        (remaining_rows_to_read, current_cumulative_read)
-    })
-    .collect()
 }
 
 #[cfg(any(

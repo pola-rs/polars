@@ -7,7 +7,6 @@ use super::utils::*;
 use crate::parquet::encoding::{delta_bitpacked, delta_length_byte_array, hybrid_rle, Encoding};
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{split_buffer, DataPage};
-use crate::read::deserialize::utils::filter::Filter;
 use crate::read::deserialize::utils::PageValidity;
 
 pub(crate) type BinaryDict = BinaryArray<i64>;
@@ -150,9 +149,8 @@ impl<'a> BinaryStateTranslation<'a> {
         page: &'a DataPage,
         dict: Option<&'a BinaryDict>,
         _page_validity: Option<&PageValidity<'a>>,
-        _filter: Option<&Filter<'a>>,
         is_string: bool,
-    ) -> PolarsResult<Self> {
+    ) -> ParquetResult<Self> {
         match (page.encoding(), dict) {
             (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict)) => {
                 if is_string {
@@ -203,10 +201,11 @@ impl<'a> BinaryStateTranslation<'a> {
 }
 
 pub(crate) fn deserialize_plain(values: &[u8], num_values: usize) -> BinaryDict {
-    let all = BinaryIter::new(values, num_values).collect::<Vec<_>>();
-    let values_size = all.iter().map(|v| v.len()).sum::<usize>();
-    let mut dict_values = MutableBinaryValuesArray::<i64>::with_capacities(all.len(), values_size);
-    for v in all {
+    // Each value is prepended by the length which is 4 bytes.
+    let num_bytes = values.len() - 4 * num_values;
+
+    let mut dict_values = MutableBinaryValuesArray::<i64>::with_capacities(num_values, num_bytes);
+    for v in BinaryIter::new(values, num_values) {
         dict_values.push(v)
     }
 

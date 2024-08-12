@@ -67,7 +67,7 @@ lint: .venv  ## Run lint checks (only)
 fmt: .venv  ## Run autoformatting (and lint)
 	$(VENV_BIN)/ruff check
 	$(VENV_BIN)/ruff format
-	$(VENV_BIN)/typos
+	$(VENV_BIN)/typos ..
 	cargo fmt --all
 	-dprint fmt
 	-$(VENV_BIN)/mypy

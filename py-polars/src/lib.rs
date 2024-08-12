@@ -1,4 +1,3 @@
-#![feature(vec_into_raw_parts)]
 #![allow(clippy::nonstandard_macro_braces)] // Needed because clippy does not understand proc macro of PyO3
 #![allow(clippy::transmute_undefined_repr)]
 #![allow(non_local_definitions)]
@@ -44,6 +43,7 @@ mod utils;
 use pyo3::prelude::*;
 use pyo3::{wrap_pyfunction, wrap_pymodule};
 
+use crate::allocator::create_allocator_capsule;
 #[cfg(feature = "csv")]
 use crate::batched_csv::PyBatchedCsv;
 use crate::conversion::Wrap;
@@ -418,6 +418,9 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     #[cfg(feature = "ffi_plugin")]
     m.add_wrapped(wrap_pyfunction!(functions::register_plugin_function))
         .unwrap();
+
+    // Capsules
+    m.add("_allocator", create_allocator_capsule(py)?)?;
 
     Ok(())
 }

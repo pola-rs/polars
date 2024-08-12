@@ -25,7 +25,7 @@ impl LateMaterializedDataFrame {
             fmt_str: "LateMaterializedDataFrame",
         });
         IR::Scan {
-            paths: Arc::new([]),
+            paths: Arc::new(vec![]),
             file_info: FileInfo::new(schema, None, (None, usize::MAX)),
             hive_parts: None,
             predicate: None,

@@ -61,7 +61,7 @@ hypothesis
 # TOOLING
 # -------
 
-pytest==8.2.2
+pytest==8.3.2
 pytest-codspeed==2.2.1
 pytest-cov==5.0.0
 pytest-xdist==3.6.1

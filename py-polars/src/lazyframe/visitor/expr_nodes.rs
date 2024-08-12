@@ -4,7 +4,6 @@ use polars_core::series::IsSorted;
 use polars_ops::prelude::ClosedInterval;
 use polars_plan::dsl::function_expr::rolling::RollingFunction;
 use polars_plan::dsl::function_expr::rolling_by::RollingFunctionBy;
-use polars_plan::dsl::function_expr::trigonometry::TrigonometricFunction;
 use polars_plan::dsl::{BooleanFunction, StringFunction, TemporalFunction};
 use polars_plan::prelude::{
     AExpr, FunctionExpr, GroupbyOptions, IRAggExpr, LiteralValue, Operator, PowFunction,
@@ -773,6 +772,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                         ignore_nulls,
                     )
                         .to_object(py),
+                    #[cfg(feature = "regex")]
                     StringFunction::Contains { literal, strict } => {
                         (PyStringFunction::Contains.into_py(py), literal, strict).to_object(py)
                     },
@@ -795,6 +795,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                         pat,
                     )
                         .to_object(py),
+                    #[cfg(feature = "regex")]
                     StringFunction::Find { literal, strict } => {
                         (PyStringFunction::Find.into_py(py), literal, strict).to_object(py)
                     },
@@ -819,6 +820,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     StringFunction::JsonPathMatch => {
                         (PyStringFunction::JsonPathMatch.into_py(py),).to_object(py)
                     },
+                    #[cfg(feature = "regex")]
                     StringFunction::Replace { n, literal } => {
                         (PyStringFunction::Replace.into_py(py), n, literal).to_object(py)
                     },
@@ -837,12 +839,14 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     StringFunction::HexEncode => {
                         (PyStringFunction::HexEncode.into_py(py),).to_object(py)
                     },
+                    #[cfg(feature = "binary_encoding")]
                     StringFunction::HexDecode(strict) => {
                         (PyStringFunction::HexDecode.into_py(py), strict).to_object(py)
                     },
                     StringFunction::Base64Encode => {
                         (PyStringFunction::Base64Encode.into_py(py),).to_object(py)
                     },
+                    #[cfg(feature = "binary_encoding")]
                     StringFunction::Base64Decode(strict) => {
                         (PyStringFunction::Base64Decode.into_py(py), strict).to_object(py)
                     },
@@ -887,6 +891,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     StringFunction::ToDecimal(inference_length) => {
                         (PyStringFunction::ToDecimal.into_py(py), inference_length).to_object(py)
                     },
+                    #[cfg(feature = "nightly")]
                     StringFunction::Titlecase => {
                         (PyStringFunction::Titlecase.into_py(py),).to_object(py)
                     },
@@ -968,6 +973,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     TemporalFunction::WithTimeUnit(time_unit) => {
                         (PyTemporalFunction::WithTimeUnit, Wrap(*time_unit)).into_py(py)
                     },
+                    #[cfg(feature = "timezones")]
                     TemporalFunction::ConvertTimeZone(time_zone) => {
                         (PyTemporalFunction::ConvertTimeZone, time_zone).into_py(py)
                     },
@@ -978,11 +984,14 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     TemporalFunction::OffsetBy => (PyTemporalFunction::OffsetBy,).into_py(py),
                     TemporalFunction::MonthStart => (PyTemporalFunction::MonthStart,).into_py(py),
                     TemporalFunction::MonthEnd => (PyTemporalFunction::MonthEnd,).into_py(py),
+                    #[cfg(feature = "timezones")]
                     TemporalFunction::BaseUtcOffset => {
                         (PyTemporalFunction::BaseUtcOffset,).into_py(py)
                     },
+                    #[cfg(feature = "timezones")]
                     TemporalFunction::DSTOffset => (PyTemporalFunction::DSTOffset,).into_py(py),
                     TemporalFunction::Round => (PyTemporalFunction::Round,).into_py(py),
+                    #[cfg(feature = "timezones")]
                     TemporalFunction::ReplaceTimeZone(time_zone, non_existent) => (
                         PyTemporalFunction::ReplaceTimeZone,
                         time_zone
@@ -1033,6 +1042,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     BooleanFunction::IsBetween { closed } => {
                         (PyBooleanFunction::IsBetween, Wrap(*closed)).into_py(py)
                     },
+                    #[cfg(feature = "is_in")]
                     BooleanFunction::IsIn => (PyBooleanFunction::IsIn,).into_py(py),
                     BooleanFunction::AllHorizontal => {
                         (PyBooleanFunction::AllHorizontal,).into_py(py)
@@ -1060,25 +1070,32 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     return Err(PyNotImplementedError::new_err("search sorted"))
                 },
                 FunctionExpr::Range(_) => return Err(PyNotImplementedError::new_err("range")),
-                FunctionExpr::Trigonometry(trigfun) => match trigfun {
-                    TrigonometricFunction::Cos => ("cos",),
-                    TrigonometricFunction::Cot => ("cot",),
-                    TrigonometricFunction::Sin => ("sin",),
-                    TrigonometricFunction::Tan => ("tan",),
-                    TrigonometricFunction::ArcCos => ("arccos",),
-                    TrigonometricFunction::ArcSin => ("arcsin",),
-                    TrigonometricFunction::ArcTan => ("arctan",),
-                    TrigonometricFunction::Cosh => ("cosh",),
-                    TrigonometricFunction::Sinh => ("sinh",),
-                    TrigonometricFunction::Tanh => ("tanh",),
-                    TrigonometricFunction::ArcCosh => ("arccosh",),
-                    TrigonometricFunction::ArcSinh => ("arcsinh",),
-                    TrigonometricFunction::ArcTanh => ("arctanh",),
-                    TrigonometricFunction::Degrees => ("degrees",),
-                    TrigonometricFunction::Radians => ("radians",),
-                }
-                .to_object(py),
+                #[cfg(feature = "trigonometry")]
+                FunctionExpr::Trigonometry(trigfun) => {
+                    use polars_plan::dsl::function_expr::trigonometry::TrigonometricFunction;
+
+                    match trigfun {
+                        TrigonometricFunction::Cos => ("cos",),
+                        TrigonometricFunction::Cot => ("cot",),
+                        TrigonometricFunction::Sin => ("sin",),
+                        TrigonometricFunction::Tan => ("tan",),
+                        TrigonometricFunction::ArcCos => ("arccos",),
+                        TrigonometricFunction::ArcSin => ("arcsin",),
+                        TrigonometricFunction::ArcTan => ("arctan",),
+                        TrigonometricFunction::Cosh => ("cosh",),
+                        TrigonometricFunction::Sinh => ("sinh",),
+                        TrigonometricFunction::Tanh => ("tanh",),
+                        TrigonometricFunction::ArcCosh => ("arccosh",),
+                        TrigonometricFunction::ArcSinh => ("arcsinh",),
+                        TrigonometricFunction::ArcTanh => ("arctanh",),
+                        TrigonometricFunction::Degrees => ("degrees",),
+                        TrigonometricFunction::Radians => ("radians",),
+                    }
+                    .to_object(py)
+                },
+                #[cfg(feature = "trigonometry")]
                 FunctionExpr::Atan2 => ("atan2",).to_object(py),
+                #[cfg(feature = "sign")]
                 FunctionExpr::Sign => ("sign",).to_object(py),
                 FunctionExpr::FillNull => ("fill_null",).to_object(py),
                 FunctionExpr::RollingExpr(rolling) => match rolling {
@@ -1330,7 +1347,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
             }
             .into_py(py)
         },
-        AExpr::Wildcard => return Err(PyNotImplementedError::new_err("wildcard")),
         AExpr::Slice {
             input,
             offset,
@@ -1341,7 +1357,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
             length: length.0,
         }
         .into_py(py),
-        AExpr::Nth(_) => return Err(PyNotImplementedError::new_err("nth")),
         AExpr::Len => Len {}.into_py(py),
     };
     Ok(result)

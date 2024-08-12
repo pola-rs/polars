@@ -1,5 +1,6 @@
 use std::hash::Hash;
 
+use polars_core::prelude::arity::unary_elementwise_values;
 use polars_core::prelude::*;
 use polars_core::utils::{try_get_supertype, CustomIterTools};
 use polars_core::with_match_physical_numeric_polars_type;
@@ -24,9 +25,7 @@ where
             }
         })
     });
-    Ok(ca
-        .apply_values_generic(|val| set.contains(&val.to_total_ord()))
-        .with_name(ca.name()))
+    Ok(unary_elementwise_values(ca, |val| set.contains(&val.to_total_ord())).with_name(ca.name()))
 }
 
 fn is_in_helper<'a, T>(ca: &'a ChunkedArray<T>, other: &Series) -> PolarsResult<BooleanChunked>
@@ -623,10 +622,10 @@ fn is_in_cat(ca_in: &CategoricalChunked, other: &Series) -> PolarsResult<Boolean
                 },
             }
 
-            Ok(ca_in
-                .physical()
-                .apply_values_generic(|val| set.contains(&val.to_total_ord()))
-                .with_name(ca_in.name()))
+            Ok(
+                unary_elementwise_values(ca_in.physical(), |val| set.contains(&val.to_total_ord()))
+                    .with_name(ca_in.name()),
+            )
         },
 
         DataType::List(dt)

@@ -63,7 +63,7 @@ use polars_core::prelude::*;
 use polars_core::series::ops::NullBehavior;
 use polars_core::series::IsSorted;
 use polars_core::utils::try_get_supertype;
-pub(crate) use selector::Selector;
+pub use selector::Selector;
 #[cfg(feature = "dtype-struct")]
 pub use struct_::*;
 pub use udf::UserDefinedFunction;

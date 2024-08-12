@@ -332,9 +332,25 @@ def scan_parquet(
         DataFrame
     row_index_offset
         Offset to start the row index column (only used if the name is set)
-    parallel : {'auto', 'columns', 'row_groups', 'none'}
-        This determines the direction of parallelism. 'auto' will try to determine the
-        optimal direction.
+    parallel : {'auto', 'columns', 'row_groups', 'prefiltered', 'none'}
+        This determines the direction and strategy of parallelism. 'auto' will
+        try to determine the optimal direction.
+
+        The `prefiltered` strategy first evaluates the pushed-down predicates in
+        parallel and determines a mask of which rows to read. Then, it
+        parallelizes over both the columns and the row groups while filtering
+        out rows that do not need to be read. This can provide significant
+        speedups for large files (i.e. many row-groups) with a predicate that
+        filters clustered rows or filters heavily. In other cases,
+        `prefiltered` may slow down the scan compared other strategies.
+
+        The `prefiltered` settings falls back to `auto` if no predicate is
+        given.
+
+        .. warning::
+            The `prefiltered` strategy is considered **unstable**. It may be
+            changed at any point without it being considered a breaking change.
+
     use_statistics
         Use statistics in the parquet to determine if pages
         can be skipped from reading.

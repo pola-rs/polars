@@ -4,16 +4,15 @@ use arrow::array::{
     Array, BinaryViewArray, DictionaryArray, DictionaryKey, MutableBinaryViewArray, PrimitiveArray,
     Utf8ViewArray, View,
 };
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::{ArrowDataType, PhysicalType};
-use polars_error::PolarsResult;
 
 use super::binary::decoders::*;
+use super::utils::freeze_validity;
 use crate::parquet::encoding::hybrid_rle::{self, DictionaryTranslator};
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{DataPage, DictPage};
 use crate::read::deserialize::binary::utils::BinaryIter;
-use crate::read::deserialize::utils::filter::Filter;
 use crate::read::deserialize::utils::{
     self, binary_views_dict, extend_from_decoder, Decoder, PageValidity, StateTranslation,
     TranslatedHybridRle,
@@ -30,14 +29,13 @@ impl<'a> StateTranslation<'a, BinViewDecoder> for BinaryStateTranslation<'a> {
         page: &'a DataPage,
         dict: Option<&'a <BinViewDecoder as utils::Decoder>::Dict>,
         page_validity: Option<&PageValidity<'a>>,
-        filter: Option<&Filter<'a>>,
-    ) -> PolarsResult<Self> {
+    ) -> ParquetResult<Self> {
         let is_string = matches!(
             page.descriptor.primitive_type.logical_type,
             Some(PrimitiveLogicalType::String)
         );
         decoder.check_utf8.store(is_string, Ordering::Relaxed);
-        Self::new(page, dict, page_validity, filter, is_string)
+        Self::new(page, dict, page_validity, is_string)
     }
 
     fn len_when_not_nullable(&self) -> usize {
@@ -149,6 +147,7 @@ impl utils::Decoder for BinViewDecoder {
     type Translation<'a> = BinaryStateTranslation<'a>;
     type Dict = BinaryDict;
     type DecodedState = DecodedStateTuple;
+    type Output = Box<dyn Array>;
 
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState {
         (
@@ -232,14 +231,13 @@ impl utils::Decoder for BinViewDecoder {
     fn finalize(
         &self,
         data_type: ArrowDataType,
+        _dict: Option<Self::Dict>,
         (values, validity): Self::DecodedState,
     ) -> ParquetResult<Box<dyn Array>> {
         let mut array: BinaryViewArray = values.freeze();
-        let validity: Bitmap = validity.freeze();
 
-        if validity.unset_bits() != validity.len() {
-            array = array.with_validity(Some(validity))
-        }
+        let validity = freeze_validity(validity);
+        array = array.with_validity(validity);
 
         match data_type.to_physical_type() {
             PhysicalType::BinaryView => Ok(array.boxed()),
@@ -260,12 +258,14 @@ impl utils::Decoder for BinViewDecoder {
             _ => unreachable!(),
         }
     }
+}
 
+impl utils::DictDecodable for BinViewDecoder {
     fn finalize_dict_array<K: DictionaryKey>(
         &self,
         data_type: ArrowDataType,
         dict: Self::Dict,
-        (values, validity): (Vec<K>, Option<Bitmap>),
+        keys: PrimitiveArray<K>,
     ) -> ParquetResult<DictionaryArray<K>> {
         let value_data_type = match &data_type {
             ArrowDataType::Dictionary(_, values, _) => values.as_ref().clone(),
@@ -278,14 +278,13 @@ impl utils::Decoder for BinViewDecoder {
         }
         let view_dict = view_dict.freeze();
 
-        let array = PrimitiveArray::<K>::new(K::PRIMITIVE.into(), values.into(), validity);
         let dict = match value_data_type.to_physical_type() {
             PhysicalType::Utf8View => view_dict.to_utf8view().unwrap().boxed(),
             PhysicalType::BinaryView => view_dict.boxed(),
             _ => unreachable!(),
         };
 
-        Ok(DictionaryArray::try_new(data_type, array, dict).unwrap())
+        Ok(DictionaryArray::try_new(data_type, keys, dict).unwrap())
     }
 }
 

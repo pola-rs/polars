@@ -1,7 +1,10 @@
+use std::sync::Arc;
+
 use polars_error::PolarsResult;
 
 use super::CastOptionsImpl;
 use crate::array::*;
+use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
 use crate::offset::{Offset, Offsets};
 use crate::types::NativeType;
@@ -179,8 +182,69 @@ pub fn fixed_size_binary_binary<O: Offset>(
 }
 
 pub fn fixed_size_binary_to_binview(from: &FixedSizeBinaryArray) -> BinaryViewArray {
-    let mutable = MutableBinaryViewArray::from_values_iter(from.values_iter());
-    mutable.freeze().with_validity(from.validity().cloned())
+    let datatype = <[u8] as ViewType>::DATA_TYPE;
+
+    // Fast path: all the views are inlineable
+    if from.size() <= View::MAX_INLINE_SIZE as usize {
+        // @NOTE: There is something with the code-generation of `View::new_inline_unchecked` that
+        // prevents it from properly SIMD-ing this loop. It insists on memcpying while it should
+        // know that the size is really small. Dispatching over the `from.size()` and making it
+        // constant does make loop SIMD, but it does not actually speed anything up and the code it
+        // generates is still horrible.
+        //
+        // This is really slow, and I don't think it has to be.
+
+        // SAFETY: We checked that slice.len() <= View::MAX_INLINE_SIZE before
+        let mut views = Vec::new();
+        View::extend_with_inlinable_strided(
+            &mut views,
+            from.values().as_slice(),
+            from.size() as u8,
+        );
+        let views = Buffer::from(views);
+        return BinaryViewArray::try_new(datatype, views, Arc::default(), from.validity().cloned())
+            .unwrap();
+    }
+
+    const MAX_BYTES_PER_BUFFER: usize = u32::MAX as usize;
+
+    let size = from.size();
+    let num_bytes = from.len() * size;
+    let num_buffers = num_bytes.div_ceil(MAX_BYTES_PER_BUFFER);
+    assert!(num_buffers < u32::MAX as usize);
+
+    let num_elements_per_buffer = MAX_BYTES_PER_BUFFER / size;
+    // This is NOT equal to MAX_BYTES_PER_BUFFER because of integer division
+    let split_point = num_elements_per_buffer * size;
+
+    // This is zero-copy for the buffer since split just increases the the data since
+    let mut buffer = from.values().clone();
+    let mut buffers = Vec::with_capacity(num_buffers);
+    for _ in 0..num_buffers - 1 {
+        let slice;
+        (slice, buffer) = buffer.split_at(split_point);
+        buffers.push(slice);
+    }
+    buffers.push(buffer);
+
+    let mut iter = from.values_iter();
+    let iter = iter.by_ref();
+    let mut views = Vec::with_capacity(from.len());
+    for buffer_idx in 0..num_buffers {
+        views.extend(
+            iter.take(num_elements_per_buffer)
+                .enumerate()
+                .map(|(i, slice)| {
+                    // SAFETY: We checked that slice.len() > View::MAX_INLINE_SIZE before
+                    unsafe {
+                        View::new_noninline_unchecked(slice, buffer_idx as u32, (i * size) as u32)
+                    }
+                }),
+        );
+    }
+    let views = views.into();
+
+    BinaryViewArray::try_new(datatype, views, buffers.into(), from.validity().cloned()).unwrap()
 }
 
 /// Conversion of binary

@@ -82,7 +82,7 @@ from polars.lazyframe.engine_config import GPUEngine
 from polars.lazyframe.group_by import LazyGroupBy
 from polars.lazyframe.in_process import InProcessQuery
 from polars.schema import Schema
-from polars.selectors import _expand_selectors, by_dtype, expand_selector
+from polars.selectors import by_dtype, expand_selector
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyLazyFrame
@@ -1275,8 +1275,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Parameters
         ----------
         by
-            Column(s) to sort by. Accepts expression input. Strings are parsed as column
-            names.
+            Column(s) to sort by. Accepts expression input, including selectors. Strings
+            are parsed as column names.
         *more_by
             Additional columns to sort by, specified as positional arguments.
         descending
@@ -1368,6 +1368,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         by = parse_into_list_of_expressions(by, *more_by)
         descending = extend_bool(descending, len(by), "descending", "by")
         nulls_last = extend_bool(nulls_last, len(by), "nulls_last", "by")
+
         return self._from_pyldf(
             self._ldf.sort_by_exprs(
                 by, descending, nulls_last, maintain_order, multithreaded
@@ -2298,7 +2299,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             If not set defaults to 1024 * 1024 bytes
         maintain_order
             Maintain the order in which data is processed.
-            Setting this to `False` will  be slightly faster.
+            Setting this to `False` will be slightly faster.
         type_coercion
             Do type coercion optimization.
         predicate_pushdown
@@ -2389,7 +2390,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Choose "lz4" for fast compression/decompression.
         maintain_order
             Maintain the order in which data is processed.
-            Setting this to `False` will  be slightly faster.
+            Setting this to `False` will be slightly faster.
         type_coercion
             Do type coercion optimization.
         predicate_pushdown
@@ -2519,7 +2520,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
               necessary.
         maintain_order
             Maintain the order in which data is processed.
-            Setting this to `False` will  be slightly faster.
+            Setting this to `False` will be slightly faster.
         type_coercion
             Do type coercion optimization.
         predicate_pushdown
@@ -4718,7 +4719,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 8.0 │
         └─────┘
         """
-        drop_cols = _expand_selectors(self, *columns)
+        drop_cols = parse_into_list_of_expressions(*columns)
         return self._from_pyldf(self._ldf.drop(drop_cols, strict=strict))
 
     def rename(self, mapping: dict[str, str] | Callable[[str], str]) -> LazyFrame:
@@ -5067,7 +5068,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         --------
         >>> lf = pl.LazyFrame(
         ...     {
-        ...         "a": [1, 3, 5],
+        ...         "a": [1, 5, 3],
         ...         "b": [2, 4, 6],
         ...     }
         ... )
@@ -5078,7 +5079,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ --- ┆ --- │
         │ i64 ┆ i64 │
         ╞═════╪═════╡
-        │ 5   ┆ 6   │
+        │ 3   ┆ 6   │
         └─────┴─────┘
         """
         return self.tail(1)
@@ -5782,9 +5783,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ c       ┆ 8       │
         └─────────┴─────────┘
         """
-        columns = parse_into_list_of_expressions(
-            *_expand_selectors(self, columns, *more_columns)
-        )
+        columns = parse_into_list_of_expressions(columns, *more_columns)
         return self._from_pyldf(self._ldf.explode(columns))
 
     def unique(
@@ -5873,7 +5872,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴─────┴─────┘
         """
         if subset is not None:
-            subset = _expand_selectors(self, subset)
+            subset = parse_into_list_of_expressions(subset)
         return self._from_pyldf(self._ldf.unique(maintain_order, subset, keep))
 
     def drop_nulls(
@@ -5970,7 +5969,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └──────┴─────┴──────┘
         """
         if subset is not None:
-            subset = _expand_selectors(self, subset)
+            subset = parse_into_list_of_expressions(subset)
         return self._from_pyldf(self._ldf.drop_nulls(subset))
 
     def unpivot(
@@ -6004,9 +6003,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         value_name
             Name to give to the `value` column. Defaults to "value"
         streamable
-            Allow this node to run in the streaming engine.
-            If this runs in streaming, the output of the unpivot operation
-            will not have a stable ordering.
+            deprecated
 
         Notes
         -----
@@ -6039,12 +6036,17 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ z   ┆ c        ┆ 6     │
         └─────┴──────────┴───────┘
         """
-        on = [] if on is None else _expand_selectors(self, on)
-        index = [] if index is None else _expand_selectors(self, index)
+        if not streamable:
+            issue_deprecation_warning(
+                "The `streamable` parameter for `LazyFrame.unpivot` is deprecated"
+                "This parameter has no effect",
+                version="1.5.0",
+            )
 
-        return self._from_pyldf(
-            self._ldf.unpivot(on, index, value_name, variable_name, streamable)
-        )
+        on = [] if on is None else parse_into_list_of_expressions(on)
+        index = [] if index is None else parse_into_list_of_expressions(index)
+
+        return self._from_pyldf(self._ldf.unpivot(on, index, value_name, variable_name))
 
     def map_batches(
         self,
@@ -6223,7 +6225,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ bar    ┆ 2   ┆ b   ┆ null ┆ [3]       ┆ womp  │
         └────────┴─────┴─────┴──────┴───────────┴───────┘
         """
-        columns = _expand_selectors(self, columns, *more_columns)
+        columns = parse_into_list_of_expressions(columns)
         return self._from_pyldf(self._ldf.unnest(columns))
 
     def merge_sorted(self, other: LazyFrame, key: str) -> LazyFrame:

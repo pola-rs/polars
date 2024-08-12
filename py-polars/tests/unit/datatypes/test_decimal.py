@@ -60,7 +60,7 @@ def test_frame_from_pydecimal_and_ints(
         row_data = [(d,) for d in data]
         for cls in (X, Y):
             for ctor in (pl.DataFrame, pl.from_records):
-                df = ctor(data=list(map(cls, data)))  # type: ignore[operator]
+                df = ctor(data=list(map(cls, data)))
                 assert df.schema == {
                     "a": pl.Decimal(scale=7),
                 }
