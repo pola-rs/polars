@@ -29,7 +29,6 @@ env:
   CARGO_LLVM_COV: 1
   CARGO_LLVM_COV_SHOW_ENV: 1
   CARGO_LLVM_COV_TARGET_DIR: ${{ github.workspace }}/target
-  UV_INDEX_STRATEGY: unsafe-best-match
 
 jobs:
   coverage-rust:
@@ -104,7 +103,9 @@ jobs:
 
       - name: Install Python dependencies
         working-directory: py-polars
-        run: uv pip install --compile-bytecode -r requirements-dev.txt -r requirements-ci.txt --verbose
+        run: |
+          uv pip install --compile-bytecode -r requirements-dev.txt
+          uv pip install --compile-bytecode -r requirements-ci.txt --verbose --index-strategy unsafe-best-match
 
       - name: Set up Rust
         run: rustup component add llvm-tools-preview

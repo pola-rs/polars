@@ -23,7 +23,6 @@ concurrency:
 env:
   RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
   RUST_BACKTRACE: 1
-  UV_INDEX_STRATEGY: unsafe-best-match
 
 jobs:
   test:
