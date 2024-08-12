@@ -2,8 +2,8 @@ mod decoder;
 mod encoder;
 mod fuzz;
 
-pub use decoder::{Decoder, DeltaGatherer};
-pub use encoder::encode;
+pub(crate) use decoder::{Decoder, DeltaGatherer, SumGatherer};
+pub(crate) use encoder::encode;
 
 #[cfg(test)]
 mod tests {
@@ -18,7 +18,7 @@ mod tests {
         encode(data.clone().into_iter(), &mut buffer);
         let (iter, _) = Decoder::try_new(&buffer)?;
 
-        let result = iter.collect::<Result<Vec<_>, _>>()?;
+        let result = iter.collect::<Vec<_>>()?;
         assert_eq!(result, data);
         Ok(())
     }
@@ -31,7 +31,7 @@ mod tests {
         encode(data.clone().into_iter(), &mut buffer);
         let (iter, _) = Decoder::try_new(&buffer)?;
 
-        let result = iter.collect::<Result<Vec<_>, _>>()?;
+        let result = iter.collect::<Vec<_>>()?;
         assert_eq!(result, data);
         Ok(())
     }
@@ -52,7 +52,7 @@ mod tests {
         encode(data.clone().into_iter(), &mut buffer);
         let (iter, _) = Decoder::try_new(&buffer)?;
 
-        let result = iter.collect::<Result<Vec<_>, ParquetError>>()?;
+        let result = iter.collect::<Vec<_>>()?;
         assert_eq!(result, data);
         Ok(())
     }
@@ -68,7 +68,7 @@ mod tests {
         encode(data.clone().into_iter(), &mut buffer);
         let (iter, _) = Decoder::try_new(&buffer)?;
 
-        let result = iter.collect::<Result<Vec<_>, _>>()?;
+        let result = iter.collect::<Vec<_>>()?;
         assert_eq!(result, data);
         Ok(())
     }
@@ -79,9 +79,9 @@ mod tests {
 
         let mut buffer = vec![];
         encode(data.clone().into_iter(), &mut buffer);
-        let (mut iter, _) = Decoder::try_new(&buffer)?;
+        let (iter, _) = Decoder::try_new(&buffer)?;
 
-        let result = iter.by_ref().collect::<Result<Vec<_>, _>>()?;
+        let result = iter.collect::<Vec<_>>()?;
         assert_eq!(result, data);
 
         Ok(())

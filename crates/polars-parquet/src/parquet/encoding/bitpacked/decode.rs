@@ -13,64 +13,14 @@ pub struct Decoder<'a, T: Unpackable> {
     _pd: std::marker::PhantomData<T>,
 }
 
-#[derive(Debug, Clone)]
-pub struct DecoderIter<'a, T: Unpackable> {
-    pub(crate) decoder: Decoder<'a, T>,
-    pub(crate) buffered: T::Unpacked,
-    pub(crate) unpacked_start: usize,
-    pub(crate) unpacked_end: usize,
-}
-
-impl<'a, T: Unpackable> Iterator for DecoderIter<'a, T> {
-    type Item = T;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.decoder.num_bits == 0 {
-            return (self.decoder.length > 0).then(|| {
-                self.decoder.length -= 1;
-                T::default()
-            });
+impl<'a, T: Unpackable> Default for Decoder<'a, T> {
+    fn default() -> Self {
+        Self {
+            packed: [].chunks(1),
+            num_bits: 0,
+            length: 0,
+            _pd: std::marker::PhantomData,
         }
-
-        if self.unpacked_start >= self.unpacked_end {
-            let length;
-            (self.buffered, length) = self.decoder.chunked().next_inexact()?;
-            debug_assert!(length > 0);
-            self.unpacked_start = 1;
-            self.unpacked_end = length;
-            return Some(self.buffered[0]);
-        }
-
-        let v = self.buffered[self.unpacked_start];
-        self.unpacked_start += 1;
-        Some(v)
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let len = self.decoder.len() + self.unpacked_end - self.unpacked_start;
-        (len, Some(len))
-    }
-}
-
-impl<'a, T: Unpackable> ExactSizeIterator for DecoderIter<'a, T> {}
-
-impl<'a, T: Unpackable> DecoderIter<'a, T> {
-    pub fn new(packed: &'a [u8], num_bits: usize, length: usize) -> ParquetResult<Self> {
-        Ok(Self {
-            decoder: if num_bits == 0 {
-                Decoder {
-                    packed: [].chunks(1),
-                    num_bits: 0,
-                    length,
-                    _pd: std::marker::PhantomData,
-                }
-            } else {
-                Decoder::try_new(packed, num_bits, length)?
-            },
-            buffered: T::Unpacked::zero(),
-            unpacked_start: 0,
-            unpacked_end: 0,
-        })
     }
 }
 
@@ -89,6 +39,28 @@ impl<'a, T: Unpackable> Decoder<'a, T> {
     /// Returns a [`Decoder`] with `T` encoded in `packed` with `num_bits`.
     pub fn new(packed: &'a [u8], num_bits: usize, length: usize) -> Self {
         Self::try_new(packed, num_bits, length).unwrap()
+    }
+
+    /// Returns a [`Decoder`] with `T` encoded in `packed` with `num_bits`.
+    pub fn try_new_allow_zero(packed: &'a [u8], num_bits: usize, length: usize) -> ParquetResult<Self> {
+        let block_size = std::mem::size_of::<T>() * num_bits;
+
+        if packed.len() * 8 < length * num_bits {
+            return Err(ParquetError::oos(format!(
+                "Unpacking {length} items with a number of bits {num_bits} requires at least {} bytes.",
+                length * num_bits / 8
+            )));
+        }
+
+        debug_assert!(num_bits != 0 || packed.is_empty());
+        let packed = packed.chunks(block_size.max(1));
+
+        Ok(Self {
+            length,
+            packed,
+            num_bits,
+            _pd: Default::default(),
+        })
     }
 
     /// Returns a [`Decoder`] with `T` encoded in `packed` with `num_bits`.

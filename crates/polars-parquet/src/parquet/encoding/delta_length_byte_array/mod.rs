@@ -1,8 +1,8 @@
 mod decoder;
 mod encoder;
 
-pub use decoder::Decoder;
-pub use encoder::encode;
+pub(crate) use decoder::Decoder;
+pub(crate) use encoder::encode;
 
 #[cfg(test)]
 mod tests {

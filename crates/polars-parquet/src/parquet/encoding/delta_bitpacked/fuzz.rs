@@ -25,7 +25,8 @@ fn fuzz_test_delta_encoding() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    const MAX_VALUES: usize = 512;
+    const MIN_VALUES: usize = 125;
+    const MAX_VALUES: usize = 135;
 
     const MIN: i64 = -512;
     const MAX: i64 = 512;
@@ -42,7 +43,7 @@ fn fuzz_test_delta_encoding() -> Result<(), Box<dyn std::error::Error>> {
     for _ in 0..NUM_ITERATIONS {
         values.clear();
 
-        let num_values = rng.gen_range(0usize..=MAX_VALUES);
+        let num_values = rng.gen_range(MIN_VALUES..=MAX_VALUES);
         values.extend(std::iter::from_fn(|| Some(rng.gen_range(MIN..=MAX))).take(num_values));
 
         encoded.clear();

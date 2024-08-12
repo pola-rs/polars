@@ -65,7 +65,7 @@ fn write_miniblock(buffer: &mut Vec<u8>, num_bits: usize, deltas: [u64; 128]) {
         let start = buffer.len();
 
         // bitpack encode all (deltas.len = 128 which is a multiple of 32)
-        let bytes_needed = start + ceil8(deltas.len() * num_bits);
+        let bytes_needed = start + dbg!(ceil8(deltas.len() * num_bits));
         buffer.resize(bytes_needed, 0);
         bitpacked::encode(deltas.as_ref(), num_bits, &mut buffer[start..]);
 

@@ -85,7 +85,7 @@ impl<'a> BinaryStateTranslation<'a> {
             Self::Plain(v) => v.len_when_not_nullable(),
             Self::Dictionary(v) => v.len(),
             Self::Delta(v) => v.len(),
-            Self::DeltaBytes(v) => v.size_hint().0,
+            Self::DeltaBytes(v) => v.len(),
         }
     }
 
@@ -97,8 +97,8 @@ impl<'a> BinaryStateTranslation<'a> {
         match self {
             Self::Plain(t) => _ = t.by_ref().nth(n - 1),
             Self::Dictionary(t) => t.values.skip_in_place(n)?,
-            Self::Delta(t) => _ = t.by_ref().nth(n - 1),
-            Self::DeltaBytes(t) => _ = t.by_ref().nth(n - 1),
+            Self::Delta(t) => t.skip_in_place(n)?,
+            Self::DeltaBytes(t) => t.skip_in_place(n)?,
         }
 
         Ok(())

@@ -1,3 +1,4 @@
+use std::mem::MaybeUninit;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use arrow::array::{
@@ -211,8 +212,72 @@ impl<'a, 'b> BatchableCollector<(), MutableBinaryViewArray<[u8]>> for DeltaBytes
     }
 
     fn push_n(&mut self, target: &mut MutableBinaryViewArray<[u8]>, n: usize) -> ParquetResult<()> {
-        for x in self.decoder.take(n) {
-            target.push(Some(&x?))
+        struct MaybeUninitCollector(usize);
+
+        impl DeltaGatherer for MaybeUninitCollector {
+            type Target = [MaybeUninit<usize>; BATCH_SIZE];
+
+            fn target_len(&self, _target: &Self::Target) -> usize {
+                self.0
+            }
+
+            fn target_reserve(&self, _target: &mut Self::Target, _n: usize) {}
+
+            fn gather_one(&mut self, target: &mut Self::Target, v: i64) -> ParquetResult<()> {
+                target[self.0] = MaybeUninit::new(v as usize);
+                self.0 += 1;
+                Ok(())
+            }
+        }
+
+        let decoder_len = self.decoder.len();
+        let mut n = usize::min(n, decoder_len);
+
+        if n == 0 {
+            return Ok(());
+        }
+
+        let mut buffer = Vec::new();
+        target.views_mut().reserve(n);
+
+        const BATCH_SIZE: usize = 4096;
+
+        let mut prefix_lengths = [const { MaybeUninit::<usize>::uninit() }; BATCH_SIZE];
+        let mut suffix_lengths = [const { MaybeUninit::<usize>::uninit() }; BATCH_SIZE];
+
+        while n > 0 {
+            let num_elems = usize::min(n, BATCH_SIZE);
+            n -= num_elems;
+
+            self.decoder.prefix_lengths.gather_n_into(
+                &mut prefix_lengths,
+                num_elems,
+                &mut MaybeUninitCollector(0),
+            )?;
+            self.decoder.suffix_lengths.gather_n_into(
+                &mut suffix_lengths,
+                num_elems,
+                &mut MaybeUninitCollector(0),
+            )?;
+
+            for i in 0..num_elems {
+                let prefix_length = unsafe { prefix_lengths[i].assume_init() };
+                let suffix_length = unsafe { suffix_lengths[i].assume_init() };
+
+                buffer.clear();
+
+                buffer.extend_from_slice(&self.decoder.last[..prefix_length]);
+                buffer.extend_from_slice(
+                    &self.decoder.values[self.decoder.offset..self.decoder.offset + suffix_length],
+                );
+
+                target.push_value(&buffer);
+
+                self.decoder.last.clear();
+                std::mem::swap(&mut self.decoder.last, &mut buffer);
+
+                self.decoder.offset += suffix_length;
+            }
         }
 
         Ok(())

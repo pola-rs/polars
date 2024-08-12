@@ -1,5 +1,6 @@
 use super::super::delta_bitpacked;
-use crate::parquet::error::{ParquetError, ParquetResult};
+use crate::parquet::encoding::delta_bitpacked::SumGatherer;
+use crate::parquet::error::ParquetResult;
 
 /// Decodes according to [Delta strings](https://github.com/apache/parquet-format/blob/master/Encodings.md#delta-strings-delta_byte_array--7),
 /// prefixes, lengths and values
@@ -7,12 +8,12 @@ use crate::parquet::error::{ParquetError, ParquetResult};
 /// This struct does not allocate on the heap.
 #[derive(Debug)]
 pub struct Decoder<'a> {
-    prefix_lengths: delta_bitpacked::Decoder<'a>,
-    suffix_lengths: delta_bitpacked::Decoder<'a>,
-    values: &'a [u8],
+    pub(crate) prefix_lengths: delta_bitpacked::Decoder<'a>,
+    pub(crate) suffix_lengths: delta_bitpacked::Decoder<'a>,
+    pub(crate) values: &'a [u8],
 
-    offset: usize,
-    last: Vec<u8>,
+    pub(crate) offset: usize,
+    pub(crate) last: Vec<u8>,
 }
 
 impl<'a> Decoder<'a> {
@@ -33,40 +34,59 @@ impl<'a> Decoder<'a> {
     pub fn values(&self) -> &'a [u8] {
         self.values
     }
-}
 
-impl<'a> Iterator for Decoder<'a> {
-    type Item = Result<Vec<u8>, ParquetError>;
+    pub fn len(&self) -> usize {
+        debug_assert_eq!(self.prefix_lengths.len(), self.suffix_lengths.len());
+        self.prefix_lengths.len()
+    }
 
-    fn next(&mut self) -> Option<Self::Item> {
-        let prefix_length = self.prefix_lengths.next()?;
-        let suffix_length = self.suffix_lengths.next()?;
-
-        match (prefix_length, suffix_length) {
-            (Ok(prefix_length), Ok(suffix_length)) => {
-                let prefix_length = prefix_length as usize;
-                let suffix_length = suffix_length as usize;
-
-                let mut value = Vec::with_capacity(prefix_length + suffix_length);
-
-                value.extend_from_slice(&self.last[..prefix_length]);
-                value.extend_from_slice(&self.values[self.offset..self.offset + suffix_length]);
-
-                self.last.clear();
-                self.last.extend_from_slice(&value);
-
-                self.offset += suffix_length;
-
-                Some(Ok(value))
-            },
-            (Err(e), _) | (_, Err(e)) => Some(Err(e)),
-        }
+    pub fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
+        let mut prefix_sum = 0usize;
+        self.prefix_lengths
+            .gather_n_into(&mut prefix_sum, n, &mut SumGatherer(0))?;
+        let mut suffix_sum = 0usize;
+        self.suffix_lengths
+            .gather_n_into(&mut suffix_sum, n, &mut SumGatherer(0))?;
+        self.offset += prefix_sum + suffix_sum;
+        Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    impl<'a> Iterator for Decoder<'a> {
+        type Item = Result<Vec<u8>, ParquetError>;
+
+        fn next(&mut self) -> Option<Self::Item> {
+            let mut prefix_length = vec![];
+            let mut suffix_length = vec![];
+            if let Err(e) = self.prefix_lengths.collect_n(&mut prefix_length, 1) {
+                return Some(Err(e));
+            }
+            if let Err(e) = self.suffix_lengths.collect_n(&mut suffix_length, 1) {
+                return Some(Err(e));
+            }
+            let prefix_length = prefix_length[0];
+            let suffix_length = suffix_length[0];
+
+            let prefix_length = prefix_length as usize;
+            let suffix_length = suffix_length as usize;
+
+            let mut value = Vec::with_capacity(prefix_length + suffix_length);
+
+            value.extend_from_slice(&self.last[..prefix_length]);
+            value.extend_from_slice(&self.values[self.offset..self.offset + suffix_length]);
+
+            self.last.clear();
+            self.last.extend_from_slice(&value);
+
+            self.offset += suffix_length;
+
+            Some(Ok(value))
+        }
+    }
 
     #[test]
     fn test_bla() -> ParquetResult<()> {
