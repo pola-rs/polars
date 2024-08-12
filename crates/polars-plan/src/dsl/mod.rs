@@ -63,6 +63,8 @@ use polars_core::prelude::*;
 use polars_core::series::ops::NullBehavior;
 use polars_core::series::IsSorted;
 use polars_core::utils::try_get_supertype;
+#[cfg(feature = "search_sorted")]
+use polars_core::utils::SuperTypeFlags;
 pub use selector::Selector;
 #[cfg(feature = "dtype-struct")]
 pub use struct_::*;
@@ -376,7 +378,9 @@ impl Expr {
                 collect_groups: ApplyOptions::GroupWise,
                 flags: FunctionFlags::default() | FunctionFlags::RETURNS_SCALAR,
                 fmt_str: "search_sorted",
-                cast_to_supertypes: Some(Default::default()),
+                cast_to_supertypes: Some(
+                    (SuperTypeFlags::default() & !SuperTypeFlags::ALLOW_PRIMITIVE_TO_STRING).into(),
+                ),
                 ..Default::default()
             },
         }

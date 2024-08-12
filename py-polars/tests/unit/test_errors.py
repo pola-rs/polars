@@ -587,7 +587,7 @@ def test_invalid_is_in_dtypes(
     if expected is None:
         with pytest.raises(
             InvalidOperationError,
-            match="`is_in` cannot check for .*? values in .*? data",
+            match="'is_in' cannot check for .*? values in .*? data",
         ):
             df.select(pl.col(colname).is_in(values))
     else:
