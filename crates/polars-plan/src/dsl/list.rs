@@ -53,7 +53,7 @@ impl ListNameSpace {
             }),
             &[n],
             false,
-            false,
+            None,
         )
     }
 
@@ -74,7 +74,7 @@ impl ListNameSpace {
             }),
             &[fraction],
             false,
-            false,
+            None,
         )
     }
 
@@ -160,7 +160,7 @@ impl ListNameSpace {
             FunctionExpr::ListExpr(ListFunction::Get(null_on_oob)),
             &[index],
             false,
-            false,
+            None,
         )
     }
 
@@ -175,7 +175,7 @@ impl ListNameSpace {
             FunctionExpr::ListExpr(ListFunction::Gather(null_on_oob)),
             &[index],
             false,
-            false,
+            None,
         )
     }
 
@@ -185,7 +185,7 @@ impl ListNameSpace {
             FunctionExpr::ListExpr(ListFunction::GatherEvery),
             &[n, offset],
             false,
-            false,
+            None,
         )
     }
 
@@ -207,7 +207,7 @@ impl ListNameSpace {
             FunctionExpr::ListExpr(ListFunction::Join(ignore_nulls)),
             &[separator],
             false,
-            false,
+            None,
         )
     }
 
@@ -239,7 +239,7 @@ impl ListNameSpace {
             FunctionExpr::ListExpr(ListFunction::Shift),
             &[periods],
             false,
-            false,
+            None,
         )
     }
 
@@ -249,7 +249,7 @@ impl ListNameSpace {
             FunctionExpr::ListExpr(ListFunction::Slice),
             &[offset, length],
             false,
-            false,
+            None,
         )
     }
 
@@ -337,7 +337,7 @@ impl ListNameSpace {
                 FunctionExpr::ListExpr(ListFunction::Contains),
                 &[other],
                 false,
-                false,
+                None,
             )
             .with_function_options(|mut options| {
                 options.flags |= FunctionFlags::INPUT_WILDCARD_EXPANSION;
@@ -354,7 +354,7 @@ impl ListNameSpace {
                 FunctionExpr::ListExpr(ListFunction::CountMatches),
                 &[other],
                 false,
-                false,
+                None,
             )
             .with_function_options(|mut options| {
                 options.flags |= FunctionFlags::INPUT_WILDCARD_EXPANSION;

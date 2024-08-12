@@ -380,27 +380,6 @@ impl OptimizationRule for TypeCoercionRule {
                 let (self_ae, type_self) =
                     unpack!(get_aexpr_and_type(expr_arena, self_e.node(), &input_schema));
 
-                let raise_st = || {
-                    let allowed = options.cast_to_supertypes.unwrap();
-                    let dtypes = input
-                        .iter()
-                        .map(|e| {
-                            let ae = expr_arena.get(e.node());
-                            ae.to_dtype(&input_schema, Context::Default, expr_arena)
-                        })
-                        .collect::<PolarsResult<Vec<_>>>()?;
-
-                    if allowed.allow_primitive_to_string()
-                        && dtypes.contains(&DataType::String)
-                        && dtypes.iter().any(|dt| dt.is_numeric() | dt.is_bool())
-                    {
-                        polars_bail!(InvalidOperation: "could not determine supertype of: {} in expression '{}'\
-                        \n\nConsider explicitly casting the inputs to matching types.", format_list!(&dtypes), function);
-                    }
-
-                    polars_bail!(InvalidOperation: "could not determine supertype of: {} in expression '{}'\
-                        \n\nIt might also be the case that the type combination isn't allowed in this specific operation.", format_list!(&dtypes), function);
-                };
                 let mut super_type = type_self.clone();
                 for other in &input[1..] {
                     let (other, type_other) =
@@ -411,7 +390,8 @@ impl OptimizationRule for TypeCoercionRule {
                         &type_other,
                         options.cast_to_supertypes.unwrap(),
                     ) else {
-                        return raise_st();
+                        raise_supertype(function, input, &input_schema, expr_arena)?;
+                        unreachable!()
                     };
                     if input.len() == 2 {
                         // modify_supertype is a bit more conservative of casting columns
@@ -425,7 +405,8 @@ impl OptimizationRule for TypeCoercionRule {
                 }
 
                 if matches!(super_type, DataType::Unknown(UnknownKind::Any)) {
-                    return raise_st();
+                    raise_supertype(function, input, &input_schema, expr_arena)?;
+                    unreachable!()
                 }
 
                 let function = function.clone();
@@ -584,6 +565,37 @@ fn early_escape(type_self: &DataType, type_other: &DataType) -> Option<()> {
     match (type_self, type_other) {
         (lhs, rhs) if lhs == rhs => None,
         _ => Some(()),
+    }
+}
+
+fn raise_supertype(
+    function: &FunctionExpr,
+    inputs: &[ExprIR],
+    input_schema: &Schema,
+    expr_arena: &Arena<AExpr>,
+) -> PolarsResult<()> {
+    let dtypes = inputs
+        .iter()
+        .map(|e| {
+            let ae = expr_arena.get(e.node());
+            ae.to_dtype(input_schema, Context::Default, expr_arena)
+        })
+        .collect::<PolarsResult<Vec<_>>>()?;
+
+    let st = dtypes
+        .iter()
+        .cloned()
+        .map(Some)
+        .reduce(|a, b| get_supertype(&a?, &b?))
+        .expect("always at least 2 inputs");
+    // We could get a supertype with the default options, so the input types are not allowed for this
+    // specific operation.
+    if st.is_some() {
+        polars_bail!(InvalidOperation: "got invalid or ambiguous dtypes: '{}' in expression '{}'\
+                        \n\nConsider explicitly casting your input types to resolve potential ambiguity.", format_list!(&dtypes), function);
+    } else {
+        polars_bail!(InvalidOperation: "could not determine supertype of: {} in expression '{}'\
+                        \n\nIt might also be the case that the type combination isn't allowed in this specific operation.", format_list!(&dtypes), function);
     }
 }
 

@@ -2165,3 +2165,8 @@ def test_series_from_numpy_with_dtype() -> None:
     s = pl.Series("foo", np.array([-1, 2, 3]), dtype=pl.UInt8, strict=False)
     assert s.to_list() == [None, 2, 3]
     assert s.dtype == pl.UInt8
+
+
+def test_raise_invalid_is_between() -> None:
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.select(pl.lit(2).is_between(pl.lit("11"), pl.lit("33")))
