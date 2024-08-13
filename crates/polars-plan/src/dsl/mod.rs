@@ -62,7 +62,9 @@ use polars_core::prelude::*;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
 use polars_core::series::IsSorted;
-use polars_core::utils::try_get_supertype;
+#[cfg(any(feature = "search_sorted", feature = "is_between"))]
+use polars_core::utils::SuperTypeFlags;
+use polars_core::utils::{try_get_supertype, SuperTypeOptions};
 pub use selector::Selector;
 #[cfg(feature = "dtype-struct")]
 pub use struct_::*;
@@ -376,7 +378,9 @@ impl Expr {
                 collect_groups: ApplyOptions::GroupWise,
                 flags: FunctionFlags::default() | FunctionFlags::RETURNS_SCALAR,
                 fmt_str: "search_sorted",
-                cast_to_supertypes: Some(Default::default()),
+                cast_to_supertypes: Some(
+                    (SuperTypeFlags::default() & !SuperTypeFlags::ALLOW_PRIMITIVE_TO_STRING).into(),
+                ),
                 ..Default::default()
             },
         }
@@ -722,17 +726,12 @@ impl Expr {
         function_expr: FunctionExpr,
         arguments: &[Expr],
         returns_scalar: bool,
-        cast_to_supertypes: bool,
+        cast_to_supertypes: Option<SuperTypeOptions>,
     ) -> Self {
         let mut input = Vec::with_capacity(arguments.len() + 1);
         input.push(self);
         input.extend_from_slice(arguments);
 
-        let cast_to_supertypes = if cast_to_supertypes {
-            Some(Default::default())
-        } else {
-            None
-        };
         let mut flags = FunctionFlags::default();
         if returns_scalar {
             flags |= FunctionFlags::RETURNS_SCALAR;
@@ -891,7 +890,7 @@ impl Expr {
             },
             &[min, max],
             false,
-            false,
+            None,
         )
     }
 
@@ -905,7 +904,7 @@ impl Expr {
             },
             &[max],
             false,
-            false,
+            None,
         )
     }
 
@@ -919,7 +918,7 @@ impl Expr {
             },
             &[min],
             false,
-            false,
+            None,
         )
     }
 
@@ -1086,7 +1085,7 @@ impl Expr {
             BooleanFunction::IsBetween { closed }.into(),
             &[lower.into(), upper.into()],
             false,
-            true,
+            Some((SuperTypeFlags::default() & !SuperTypeFlags::ALLOW_PRIMITIVE_TO_STRING).into()),
         )
     }
 
@@ -1163,7 +1162,7 @@ impl Expr {
                 BooleanFunction::IsIn.into(),
                 arguments,
                 returns_scalar,
-                true,
+                Some(Default::default()),
             )
         } else {
             self.apply_many_private(
@@ -1537,7 +1536,7 @@ impl Expr {
         let args = [old, new];
 
         if literal_searchers {
-            self.map_many_private(FunctionExpr::Replace, &args, false, false)
+            self.map_many_private(FunctionExpr::Replace, &args, false, None)
         } else {
             self.apply_many_private(FunctionExpr::Replace, &args, false, false)
         }
@@ -1568,7 +1567,7 @@ impl Expr {
                 FunctionExpr::ReplaceStrict { return_dtype },
                 &args,
                 false,
-                false,
+                None,
             )
         } else {
             self.apply_many_private(

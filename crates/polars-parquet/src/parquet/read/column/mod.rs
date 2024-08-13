@@ -1,7 +1,7 @@
 use std::io::{Read, Seek};
 use std::vec::IntoIter;
 
-use super::{get_field_columns, get_page_iterator, MemReader, PageFilter, PageReader};
+use super::{get_field_columns, get_page_iterator, MemReader, PageReader};
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::metadata::{ColumnChunkMetaData, RowGroupMetaData};
 use crate::parquet::page::CompressedPage;
@@ -22,14 +22,13 @@ pub fn get_column_iterator(
     reader: MemReader,
     row_group: &RowGroupMetaData,
     field_name: &str,
-    page_filter: Option<PageFilter>,
     max_page_size: usize,
 ) -> ColumnIterator {
     let columns = get_field_columns(row_group.columns(), field_name)
         .cloned()
         .collect::<Vec<_>>();
 
-    ColumnIterator::new(reader, columns, page_filter, max_page_size)
+    ColumnIterator::new(reader, columns, max_page_size)
 }
 
 /// State of [`MutStreamingIterator`].
@@ -55,7 +54,6 @@ pub trait MutStreamingIterator: Sized {
 pub struct ColumnIterator {
     reader: MemReader,
     columns: Vec<ColumnChunkMetaData>,
-    page_filter: Option<PageFilter>,
     max_page_size: usize,
 }
 
@@ -65,14 +63,12 @@ impl ColumnIterator {
     pub fn new(
         reader: MemReader,
         mut columns: Vec<ColumnChunkMetaData>,
-        page_filter: Option<PageFilter>,
         max_page_size: usize,
     ) -> Self {
         columns.reverse();
         Self {
             reader,
             columns,
-            page_filter,
             max_page_size,
         }
     }
@@ -87,16 +83,11 @@ impl Iterator for ColumnIterator {
         };
         let column = self.columns.pop().unwrap();
 
-        let iter = match get_page_iterator(
-            &column,
-            self.reader.clone(),
-            self.page_filter.clone(),
-            Vec::new(),
-            self.max_page_size,
-        ) {
-            Err(e) => return Some(Err(e)),
-            Ok(v) => v,
-        };
+        let iter =
+            match get_page_iterator(&column, self.reader.clone(), Vec::new(), self.max_page_size) {
+                Err(e) => return Some(Err(e)),
+                Ok(v) => v,
+            };
         Some(Ok((iter, column)))
     }
 }

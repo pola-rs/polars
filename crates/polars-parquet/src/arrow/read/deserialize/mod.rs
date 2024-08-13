@@ -29,14 +29,12 @@ use crate::parquet::schema::types::PrimitiveType;
 pub fn get_page_iterator(
     column_metadata: &ColumnChunkMetaData,
     reader: MemReader,
-    pages_filter: Option<PageFilter>,
     buffer: Vec<u8>,
     max_header_size: usize,
 ) -> PolarsResult<PageReader> {
     Ok(_get_page_iterator(
         column_metadata,
         reader,
-        pages_filter,
         buffer,
         max_header_size,
     )?)

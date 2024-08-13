@@ -660,8 +660,11 @@ impl<'a> PredicatePushDown<'a> {
             PythonScan { mut options } => {
                 let predicate = predicate_at_scan(acc_predicates, None, expr_arena);
                 if let Some(predicate) = predicate {
-                    // Only accept streamable expressions as we want to apply the predicates to the batches.
-                    if !is_streamable(predicate.node(), expr_arena, Context::Default) {
+                    // For IO plugins we only accept streamable expressions as
+                    // we want to apply the predicates to the batches.
+                    if !is_streamable(predicate.node(), expr_arena, Context::Default)
+                        && matches!(options.python_source, PythonScanSource::IOPlugin)
+                    {
                         let lp = PythonScan { options };
                         return Ok(self.optional_apply_predicate(
                             lp,

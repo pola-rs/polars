@@ -200,7 +200,6 @@ pub fn read_column(
         reader,
         &metadata.row_groups[row_group],
         field.name(),
-        None,
         usize::MAX,
     );
 

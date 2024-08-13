@@ -93,13 +93,15 @@ class GroupBy:
         │ b   ┆ 3   │
         └─────┴─────┘
         """
+        # Every group gather can trigger a rechunk, so do early.
+        self.df = self.df.rechunk()
         temp_col = "__POLARS_GB_GROUP_INDICES"
         groups_df = (
             self.df.lazy()
             .group_by(*self.by, **self.named_by, maintain_order=self.maintain_order)
             .agg(F.first().agg_groups().alias(temp_col))
             .collect(no_optimization=True)
-        ).rechunk()
+        )
 
         self._group_names = groups_df.select(F.all().exclude(temp_col)).iter_rows()
         self._group_indices = groups_df.select(temp_col).to_series()
