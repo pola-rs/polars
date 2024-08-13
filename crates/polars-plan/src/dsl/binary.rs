@@ -9,7 +9,7 @@ impl BinaryNameSpace {
             FunctionExpr::BinaryExpr(BinaryFunction::Contains),
             &[pat],
             false,
-            true,
+            Some(Default::default()),
         )
     }
 
@@ -19,7 +19,7 @@ impl BinaryNameSpace {
             FunctionExpr::BinaryExpr(BinaryFunction::EndsWith),
             &[sub],
             false,
-            true,
+            Some(Default::default()),
         )
     }
 
@@ -29,7 +29,7 @@ impl BinaryNameSpace {
             FunctionExpr::BinaryExpr(BinaryFunction::StartsWith),
             &[sub],
             false,
-            true,
+            Some(Default::default()),
         )
     }
 

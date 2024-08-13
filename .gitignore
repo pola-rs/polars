@@ -29,7 +29,6 @@ __pycache__/
 .coverage
 
 # Rust
-.cargo/
 target/
 
 # Data

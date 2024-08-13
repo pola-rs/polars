@@ -113,7 +113,11 @@ built = { version = "0.7", features = ["chrono", "git2", "cargo-lock"], optional
 [target.'cfg(all(any(not(target_family = "unix"), allocator = "mimalloc"), not(allocator = "default")))'.dependencies]
 mimalloc = { version = "0.1", default-features = false }
 
-[target.'cfg(all(target_family = "unix", not(allocator = "mimalloc"), not(allocator = "default")))'.dependencies]
+# Feature background_threads is unsupported on MacOS (https://github.com/jemalloc/jemalloc/issues/843).
+[target.'cfg(all(target_family = "unix", not(target_os = "macos"), not(allocator = "mimalloc"), not(allocator = "default")))'.dependencies]
+jemallocator = { version = "0.5", features = ["disable_initial_exec_tls", "background_threads"] }
+
+[target.'cfg(all(target_family = "unix", target_os = "macos", not(allocator = "mimalloc"), not(allocator = "default")))'.dependencies]
 jemallocator = { version = "0.5", features = ["disable_initial_exec_tls"] }
 
 [features]
