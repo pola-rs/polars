@@ -11,8 +11,6 @@ mod build {
 
 use polars_python::allocator::create_allocator_capsule;
 #[cfg(feature = "csv")]
-use polars_python::batched_csv;
-#[cfg(feature = "csv")]
 use polars_python::batched_csv::PyBatchedCsv;
 #[cfg(feature = "polars_cloud")]
 use polars_python::cloud;
@@ -22,12 +20,8 @@ use polars_python::functions::PyStringCacheHolder;
 use polars_python::lazyframe::{PyInProcessQuery, PyLazyFrame};
 use polars_python::lazygroupby::PyLazyGroupBy;
 #[cfg(feature = "object")]
-use polars_python::object;
-#[cfg(feature = "object")]
 use polars_python::on_startup;
 use polars_python::series::PySeries;
-#[cfg(feature = "sql")]
-use polars_python::sql;
 #[cfg(feature = "sql")]
 use polars_python::sql::PySQLContext;
 use polars_python::{exceptions, functions};

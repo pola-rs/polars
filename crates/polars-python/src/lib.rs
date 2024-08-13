@@ -2,6 +2,7 @@
 #![allow(clippy::transmute_undefined_repr)]
 #![allow(non_local_definitions)]
 #![allow(clippy::too_many_arguments)] // Python functions can have many arguments due to default arguments
+#![allow(clippy::disallowed_types)]
 
 pub mod allocator;
 #[cfg(feature = "csv")]

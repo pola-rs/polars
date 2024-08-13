@@ -368,6 +368,7 @@ impl PyDataFrame {
         Ok(df.into())
     }
 
+    #[allow(clippy::should_implement_trait)]
     pub fn clone(&self) -> Self {
         PyDataFrame::new(self.df.clone())
     }
