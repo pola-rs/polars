@@ -407,7 +407,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         let buffers = self.buffers.as_ref();
 
         for view in self.views.as_ref() {
-            unsafe { mutable.push_view_copied_unchecked(*view, buffers) }
+            unsafe { mutable.push_view_unchecked(*view, buffers) }
         }
         mutable.freeze().with_validity(self.validity)
     }
