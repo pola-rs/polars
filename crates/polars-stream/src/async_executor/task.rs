@@ -312,8 +312,7 @@ impl CancelHandle {
     }
 }
 
-#[allow(unused)]
-pub fn spawn<F, S, M>(future: F, schedule: S, metadata: M) -> JoinHandle<F::Output>
+pub fn spawn<F, S, M>(future: F, schedule: S, metadata: M) -> (Runnable<M>, JoinHandle<F::Output>)
 where
     F: Future + Send + 'static,
     F::Output: Send + 'static,
@@ -321,7 +320,7 @@ where
     M: Send + Sync + 'static,
 {
     let task = unsafe { Task::spawn(future, schedule, metadata) };
-    JoinHandle(Some(task))
+    (task.clone().into_runnable(), task.into_join_handle())
 }
 
 /// Takes a future and turns it into a runnable task with associated metadata.
