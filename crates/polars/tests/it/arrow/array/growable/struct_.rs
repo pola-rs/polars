@@ -1,5 +1,5 @@
 use arrow::array::growable::{Growable, GrowableStruct};
-use arrow::array::{Array, PrimitiveArray, StructArray, Utf8Array, Utf8ViewArray};
+use arrow::array::{Array, PrimitiveArray, StructArray, Utf8ViewArray};
 use arrow::bitmap::Bitmap;
 use arrow::datatypes::{ArrowDataType, Field};
 
@@ -115,7 +115,7 @@ fn many() {
     assert_eq!(mutable.len(), 5);
     let result = mutable.as_box();
 
-    let expected_string: Box<dyn Array> = Box::new(Utf8Array::<i32>::from([
+    let expected_string: Box<dyn Array> = Box::new(Utf8ViewArray::from_slice([
         Some("aa"),
         None,
         Some("a"),

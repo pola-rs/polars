@@ -7,7 +7,7 @@ fn test_single() -> PolarsResult<()> {
     let original_data = vec![Some("a"), Some("b"), Some("a")];
 
     let data = original_data.clone();
-    let mut array = MutableDictionaryArray::<i32, MutableUtf8Array<i64>>::new();
+    let mut array = MutableDictionaryArray::<i32, MutableBinaryViewArray<str>>::new();
     array.try_extend(data)?;
     let array = array.into();
 
