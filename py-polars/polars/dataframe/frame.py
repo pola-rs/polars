@@ -5810,7 +5810,7 @@ class DataFrame:
         >>> for name, data in df.group_by("a"):  # doctest: +SKIP
         ...     print(name)
         ...     print(data)
-        a
+        ('a',)
         shape: (2, 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
@@ -5820,7 +5820,7 @@ class DataFrame:
         │ a   ┆ 1   ┆ 5   │
         │ a   ┆ 1   ┆ 3   │
         └─────┴─────┴─────┘
-        b
+        ('b',)
         shape: (2, 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
@@ -5830,7 +5830,7 @@ class DataFrame:
         │ b   ┆ 2   ┆ 4   │
         │ b   ┆ 3   ┆ 2   │
         └─────┴─────┴─────┘
-        c
+        ('c',)
         shape: (1, 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
