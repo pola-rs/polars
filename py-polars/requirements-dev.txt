@@ -47,6 +47,7 @@ deltalake>=0.15.0
 # Csv
 zstandard
 # Plotting
+altair>=5.4.0
 hvplot>=0.9.1
 # Styling
 great-tables>=0.8.0; python_version >= '3.9'
