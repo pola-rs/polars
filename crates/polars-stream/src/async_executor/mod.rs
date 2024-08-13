@@ -346,10 +346,7 @@ where
 }
 
 #[allow(unused)]
-pub fn spawn<F: Future + Send + 'static>(
-    priority: TaskPriority,
-    fut: F,
-) -> JoinHandle<F::Output>
+pub fn spawn<F: Future + Send + 'static>(priority: TaskPriority, fut: F) -> JoinHandle<F::Output>
 where
     <F as Future>::Output: Send + 'static,
 {
