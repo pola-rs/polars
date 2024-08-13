@@ -14,6 +14,12 @@ pub use warning::*;
 #[derive(Debug)]
 pub struct ErrString(Cow<'static, str>);
 
+impl ErrString {
+    pub const fn new_static(s: &'static str) -> Self {
+        Self(Cow::Borrowed(s))
+    }
+}
+
 impl<T> From<T> for ErrString
 where
     T: Into<Cow<'static, str>>,
