@@ -1,3 +1,5 @@
+use arrow::bitmap::Bitmap;
+
 #[cfg(feature = "object")]
 use crate::chunked_array::object::registry::get_object_builder;
 use crate::prelude::*;
@@ -53,9 +55,14 @@ impl Series {
                     .iter()
                     .map(|fld| Series::full_null(fld.name(), size, fld.data_type()))
                     .collect::<Vec<_>>();
-                StructChunked::from_series(name, &fields)
-                    .unwrap()
-                    .into_series()
+                let ca = StructChunked::from_series(name, &fields).unwrap();
+
+                if !fields.is_empty() {
+                    ca.with_outer_validity(Some(Bitmap::new_zeroed(size)))
+                        .into_series()
+                } else {
+                    ca.into_series()
+                }
             },
             DataType::Null => Series::new_null(name, size),
             DataType::Unknown(kind) => {

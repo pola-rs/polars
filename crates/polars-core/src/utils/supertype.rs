@@ -1,3 +1,4 @@
+use bitflags::bitflags;
 use num_traits::Signed;
 
 use super::*;
@@ -11,9 +12,43 @@ pub fn try_get_supertype(l: &DataType, r: &DataType) -> PolarsResult<DataType> {
     )
 }
 
+bitflags! {
+    #[repr(transparent)]
+    #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
+    pub struct SuperTypeFlags: u8 {
+        /// Implode lists to match nesting types.
+        const ALLOW_IMPLODE_LIST = 1 << 0;
+        /// Allow casting of primitive types (numeric, bools) to strings
+        const ALLOW_PRIMITIVE_TO_STRING = 1 << 1;
+    }
+}
+
+impl Default for SuperTypeFlags {
+    fn default() -> Self {
+        SuperTypeFlags::from_bits_truncate(0) | SuperTypeFlags::ALLOW_PRIMITIVE_TO_STRING
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Default)]
 pub struct SuperTypeOptions {
-    pub implode_list: bool,
+    pub flags: SuperTypeFlags,
+}
+
+impl From<SuperTypeFlags> for SuperTypeOptions {
+    fn from(flags: SuperTypeFlags) -> Self {
+        SuperTypeOptions { flags }
+    }
+}
+
+impl SuperTypeOptions {
+    pub fn allow_implode_list(&self) -> bool {
+        self.flags.contains(SuperTypeFlags::ALLOW_IMPLODE_LIST)
+    }
+
+    pub fn allow_primitive_to_string(&self) -> bool {
+        self.flags
+            .contains(SuperTypeFlags::ALLOW_PRIMITIVE_TO_STRING)
+    }
 }
 
 pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
@@ -209,11 +244,9 @@ pub fn get_supertype_with_options(
             #[cfg(feature = "dtype-time")]
             (Time, Float64) => Some(Float64),
 
-            // every known type can be casted to a string except binary
-            (dt, String) if !matches!(dt, DataType::Unknown(UnknownKind::Any)) && dt != &DataType::Binary => Some(String),
-
-            (dt, String) if !matches!(dt, DataType::Unknown(UnknownKind::Any)) => Some(String),
-
+            // Every known type can be cast to a string except binary
+            (dt, String) if !matches!(dt, Unknown(UnknownKind::Any)) && dt != &Binary && options.allow_primitive_to_string() || !dt.to_physical().is_primitive() => Some(String),
+            (String, Binary) => Some(Binary),
             (dt, Null) => Some(dt.clone()),
 
             #[cfg(all(feature = "dtype-duration", feature = "dtype-datetime"))]
@@ -258,7 +291,7 @@ pub fn get_supertype_with_options(
                 let st = get_supertype(inner_left, inner_right)?;
                 Some(Array(Box::new(st), *width_left))
             }
-            (List(inner), other) | (other, List(inner)) if options.implode_list => {
+            (List(inner), other) | (other, List(inner)) if options.allow_implode_list() => {
                 let st = get_supertype(inner, other)?;
                 Some(List(Box::new(st)))
             }
@@ -276,8 +309,15 @@ pub fn get_supertype_with_options(
             },
             (dt, Unknown(kind)) => {
                 match kind {
+                    UnknownKind::Float | UnknownKind::Int(_) if  dt.is_string() => {
+                        if options.allow_primitive_to_string() {
+                            Some(dt.clone())
+                        } else {
+                            None
+                        }
+                    },
                     // numeric vs float|str -> always float|str|decimal
-                    UnknownKind::Float | UnknownKind::Int(_) if dt.is_float() | dt.is_string() | dt.is_decimal() => Some(dt.clone()),
+                    UnknownKind::Float | UnknownKind::Int(_) if dt.is_float() | dt.is_decimal() => Some(dt.clone()),
                     UnknownKind::Float if dt.is_integer() => Some(Unknown(UnknownKind::Float)),
                     // Materialize float to float or decimal
                     UnknownKind::Float if dt.is_float() | dt.is_decimal() => Some(dt.clone()),

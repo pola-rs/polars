@@ -1389,6 +1389,20 @@ def test_scan_round_trip_parametric(tmp_path: Path, df: pl.DataFrame) -> None:
     test_scan_round_trip(tmp_path, df)
 
 
+def test_empty_rg_no_dict_page_18146() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [],
+        },
+        schema={"a": pl.String},
+    )
+
+    f = io.BytesIO()
+    pq.write_table(df.to_arrow(), f, compression="NONE", use_dictionary=False)
+    f.seek(0)
+    assert_frame_equal(pl.read_parquet(f), df)
+
+
 def test_write_sliced_lists_18069() -> None:
     f = io.BytesIO()
     a = pl.Series(3 * [None, ["$"] * 3], dtype=pl.List(pl.String))

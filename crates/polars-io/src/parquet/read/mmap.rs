@@ -73,13 +73,7 @@ pub(super) fn to_deserializer<'a>(
             // Advise fetching the data for the column chunk
             chunk.prefetch();
 
-            let pages = PageReader::new(
-                MemReader::new(chunk),
-                column_meta,
-                std::sync::Arc::new(|_, _| true),
-                vec![],
-                usize::MAX,
-            );
+            let pages = PageReader::new(MemReader::new(chunk), column_meta, vec![], usize::MAX);
             (
                 BasicDecompressor::new(pages, vec![]),
                 &column_meta.descriptor().descriptor.primitive_type,

@@ -1,6 +1,6 @@
 use arrow::bitmap::Bitmap;
 use arrow::compute::utils::{combine_validities_and, combine_validities_and_not};
-use polars_compute::if_then_else::IfThenElseKernel;
+use polars_compute::if_then_else::{if_then_else_validity, IfThenElseKernel};
 
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectArray;
@@ -62,7 +62,7 @@ fn combine_validities_chunked<
 
 impl<T> ChunkZip<T> for ChunkedArray<T>
 where
-    T: PolarsDataType,
+    T: PolarsDataType<IsStruct = FalseT>,
     T::Array: for<'a> IfThenElseKernel<Scalar<'a> = T::Physical<'a>>,
     ChunkedArray<T>: ChunkExpandAtIndex<T>,
 {
@@ -204,5 +204,106 @@ impl<T: PolarsObject> IfThenElseKernel for ObjectArray<T> {
         mask.iter()
             .map(|m| if m { if_true } else { if_false })
             .collect_arr()
+    }
+}
+
+#[cfg(feature = "dtype-struct")]
+impl ChunkZip<StructType> for StructChunked {
+    fn zip_with(
+        &self,
+        mask: &BooleanChunked,
+        other: &ChunkedArray<StructType>,
+    ) -> PolarsResult<ChunkedArray<StructType>> {
+        let (l, r, mask) = align_chunks_ternary(self, other, mask);
+
+        // Prepare the boolean arrays such that Null maps to false.
+        // This prevents every field doing that.
+        // # SAFETY
+        // We don't modify the length and update the null count.
+        let mut mask = mask.into_owned();
+        unsafe {
+            for arr in mask.downcast_iter_mut() {
+                let bm = bool_null_to_false(arr);
+                *arr = BooleanArray::from_data_default(bm, None);
+            }
+            mask.set_null_count(0);
+        }
+
+        // Zip all the fields.
+        let fields = l
+            .fields_as_series()
+            .iter()
+            .zip(r.fields_as_series())
+            .map(|(lhs, rhs)| lhs.zip_with_same_type(&mask, &rhs))
+            .collect::<PolarsResult<Vec<_>>>()?;
+
+        let mut out = StructChunked::from_series(self.name(), &fields)?;
+
+        // Zip the validities.
+        if (l.null_count + r.null_count) > 0 {
+            let validities = l
+                .chunks()
+                .iter()
+                .zip(r.chunks())
+                .map(|(l, r)| (l.validity(), r.validity()));
+
+            fn broadcast(v: Option<&Bitmap>, arr: &ArrayRef) -> Bitmap {
+                if v.unwrap().get(0).unwrap() {
+                    Bitmap::new_with_value(true, arr.len())
+                } else {
+                    Bitmap::new_zeroed(arr.len())
+                }
+            }
+
+            // # SAFETY
+            // We don't modify the length and update the null count.
+            unsafe {
+                for ((arr, (lv, rv)), mask) in out
+                    .chunks_mut()
+                    .iter_mut()
+                    .zip(validities)
+                    .zip(mask.downcast_iter())
+                {
+                    // TODO! we can optimize this and use a kernel that is able to broadcast wo/ allocating.
+                    let (lv, rv) = match (lv.map(|b| b.len()), rv.map(|b| b.len())) {
+                        (Some(1), Some(1)) if arr.len() != 1 => {
+                            let lv = broadcast(lv, arr);
+                            let rv = broadcast(rv, arr);
+                            (Some(lv), Some(rv))
+                        },
+                        (Some(a), Some(b)) if a == b => (lv.cloned(), rv.cloned()),
+                        (Some(1), _) => {
+                            let lv = broadcast(lv, arr);
+                            (Some(lv), rv.cloned())
+                        },
+                        (_, Some(1)) => {
+                            let rv = broadcast(rv, arr);
+                            (lv.cloned(), Some(rv))
+                        },
+                        (None, Some(_)) | (Some(_), None) | (None, None) => {
+                            (lv.cloned(), rv.cloned())
+                        },
+                        (Some(a), Some(b)) => {
+                            polars_bail!(InvalidOperation: "got different sizes in 'zip' operation, got length: {a} and {b}")
+                        },
+                    };
+
+                    // broadcast mask
+                    let validity = if mask.len() != arr.len() && mask.len() == 1 {
+                        if mask.get(0).unwrap() {
+                            lv
+                        } else {
+                            rv
+                        }
+                    } else {
+                        if_then_else_validity(mask.values(), lv.as_ref(), rv.as_ref())
+                    };
+
+                    *arr = arr.with_validity(validity);
+                }
+            }
+            out.compute_len();
+        }
+        Ok(out)
     }
 }

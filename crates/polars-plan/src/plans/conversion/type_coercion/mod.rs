@@ -232,7 +232,7 @@ impl OptimizationRule for TypeCoercionRule {
                     },
                     #[cfg(feature = "dtype-decimal")]
                     (DataType::Decimal(_, _), _) | (_, DataType::Decimal(_, _)) => {
-                        polars_bail!(InvalidOperation: "`is_in` cannot check for {:?} values in {:?} data", &type_other, &type_left)
+                        polars_bail!(InvalidOperation: "'is_in' cannot check for {:?} values in {:?} data", &type_other, &type_left)
                     },
                     // can't check for more granular time_unit in less-granular time_unit data,
                     // or we'll cast away valid/necessary precision (eg: nanosecs to millisecs)
@@ -240,14 +240,14 @@ impl OptimizationRule for TypeCoercionRule {
                         if lhs_unit <= rhs_unit {
                             return Ok(None);
                         } else {
-                            polars_bail!(InvalidOperation: "`is_in` cannot check for {:?} precision values in {:?} Datetime data", &rhs_unit, &lhs_unit)
+                            polars_bail!(InvalidOperation: "'is_in' cannot check for {:?} precision values in {:?} Datetime data", &rhs_unit, &lhs_unit)
                         }
                     },
                     (DataType::Duration(lhs_unit), DataType::Duration(rhs_unit)) => {
                         if lhs_unit <= rhs_unit {
                             return Ok(None);
                         } else {
-                            polars_bail!(InvalidOperation: "`is_in` cannot check for {:?} precision values in {:?} Duration data", &rhs_unit, &lhs_unit)
+                            polars_bail!(InvalidOperation: "'is_in' cannot check for {:?} precision values in {:?} Duration data", &rhs_unit, &lhs_unit)
                         }
                     },
                     (_, DataType::List(other_inner)) => {
@@ -258,7 +258,7 @@ impl OptimizationRule for TypeCoercionRule {
                         {
                             return Ok(None);
                         }
-                        polars_bail!(InvalidOperation: "`is_in` cannot check for {:?} values in {:?} data", &type_left, &type_other)
+                        polars_bail!(InvalidOperation: "'is_in' cannot check for {:?} values in {:?} data", &type_left, &type_other)
                     },
                     #[cfg(feature = "dtype-array")]
                     (_, DataType::Array(other_inner, _)) => {
@@ -269,7 +269,7 @@ impl OptimizationRule for TypeCoercionRule {
                         {
                             return Ok(None);
                         }
-                        polars_bail!(InvalidOperation: "`is_in` cannot check for {:?} values in {:?} data", &type_left, &type_other)
+                        polars_bail!(InvalidOperation: "'is_in' cannot check for {:?} values in {:?} data", &type_left, &type_other)
                     },
                     #[cfg(feature = "dtype-struct")]
                     (DataType::Struct(_), _) | (_, DataType::Struct(_)) => return Ok(None),
@@ -280,7 +280,7 @@ impl OptimizationRule for TypeCoercionRule {
                         if (a.is_numeric() && b.is_numeric()) || (a == &DataType::Null) {
                             return Ok(None);
                         }
-                        polars_bail!(InvalidOperation: "`is_in` cannot check for {:?} values in {:?} data", &type_other, &type_left)
+                        polars_bail!(InvalidOperation: "'is_in' cannot check for {:?} values in {:?} data", &type_other, &type_left)
                     },
                 };
                 let mut input = input.clone();
@@ -390,7 +390,8 @@ impl OptimizationRule for TypeCoercionRule {
                         &type_other,
                         options.cast_to_supertypes.unwrap(),
                     ) else {
-                        polars_bail!(InvalidOperation: "could not determine supertype of: {}", format_list!(dtypes));
+                        raise_supertype(function, input, &input_schema, expr_arena)?;
+                        unreachable!()
                     };
                     if input.len() == 2 {
                         // modify_supertype is a bit more conservative of casting columns
@@ -404,7 +405,8 @@ impl OptimizationRule for TypeCoercionRule {
                 }
 
                 if matches!(super_type, DataType::Unknown(UnknownKind::Any)) {
-                    polars_bail!(InvalidOperation: "could not determine supertype of: {}", format_list!(dtypes));
+                    raise_supertype(function, input, &input_schema, expr_arena)?;
+                    unreachable!()
                 }
 
                 let function = function.clone();
@@ -454,10 +456,10 @@ impl OptimizationRule for TypeCoercionRule {
                 let input_schema = get_schema(lp_arena, lp_node);
                 let (_, offset_dtype) =
                     unpack!(get_aexpr_and_type(expr_arena, offset, &input_schema));
-                polars_ensure!(offset_dtype.is_integer(), InvalidOperation: "offset must be integral for slice, not {}", offset_dtype);
+                polars_ensure!(offset_dtype.is_integer(), InvalidOperation: "offset must be integral for slice expression, not {}", offset_dtype);
                 let (_, length_dtype) =
                     unpack!(get_aexpr_and_type(expr_arena, length, &input_schema));
-                polars_ensure!(length_dtype.is_integer() || length_dtype.is_null(), InvalidOperation: "length must be integral for slice, not {}", length_dtype);
+                polars_ensure!(length_dtype.is_integer() || length_dtype.is_null(), InvalidOperation: "length must be integral for slice expression, not {}", length_dtype);
                 None
             },
             _ => None,
@@ -563,6 +565,37 @@ fn early_escape(type_self: &DataType, type_other: &DataType) -> Option<()> {
     match (type_self, type_other) {
         (lhs, rhs) if lhs == rhs => None,
         _ => Some(()),
+    }
+}
+
+fn raise_supertype(
+    function: &FunctionExpr,
+    inputs: &[ExprIR],
+    input_schema: &Schema,
+    expr_arena: &Arena<AExpr>,
+) -> PolarsResult<()> {
+    let dtypes = inputs
+        .iter()
+        .map(|e| {
+            let ae = expr_arena.get(e.node());
+            ae.to_dtype(input_schema, Context::Default, expr_arena)
+        })
+        .collect::<PolarsResult<Vec<_>>>()?;
+
+    let st = dtypes
+        .iter()
+        .cloned()
+        .map(Some)
+        .reduce(|a, b| get_supertype(&a?, &b?))
+        .expect("always at least 2 inputs");
+    // We could get a supertype with the default options, so the input types are not allowed for this
+    // specific operation.
+    if st.is_some() {
+        polars_bail!(InvalidOperation: "got invalid or ambiguous dtypes: '{}' in expression '{}'\
+                        \n\nConsider explicitly casting your input types to resolve potential ambiguity.", format_list!(&dtypes), function);
+    } else {
+        polars_bail!(InvalidOperation: "could not determine supertype of: {} in expression '{}'\
+                        \n\nIt might also be the case that the type combination isn't allowed in this specific operation.", format_list!(&dtypes), function);
     }
 }
 
