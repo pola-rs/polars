@@ -1,3 +1,32 @@
+//! This module implements the `DELTA_BINARY_PACKED` encoding.
+//!
+//! For performance reasons this is done without iterators. Instead, we have `gather_n` functions
+//! and a `DeltaGatherer` trait. These allow efficient decoding and mapping of the decoded values.
+//!
+//! Full information on the delta encoding can be found on the Apache Parquet Format repository.
+//!
+//! <https://github.com/apache/parquet-format/blob/e517ac4dbe08d518eb5c2e58576d4c711973db94/Encodings.md#delta-encoding-delta_binary_packed--5>
+//!
+//! Delta encoding compresses sequential integer values by encoding the first value and the
+//! differences between consequentive values. This variant encodes the data into `Block`s and
+//! `MiniBlock`s.
+//!
+//! - A `Block` contains a minimum delta, bitwidths and one or more miniblocks.
+//! - A `MiniBlock` contains many deltas that are encoded in [`bitpacked`] encoding.
+//!
+//! The decoder keeps track of the last value and calculates a new value with the following
+//! function.
+//!
+//! ```text
+//! NextValue(Delta) = {
+//!     Value = Decoder.LastValue + Delta + Block.MinDelta
+//!     Decoder.LastValue = Value
+//!     return Value
+//! }
+//! ```
+//!
+//! Note that all these additions need to be wrapping.
+
 use super::super::{bitpacked, uleb128, zigzag_leb128};
 use crate::parquet::encoding::bitpacked::{Unpackable, Unpacked};
 use crate::parquet::error::{ParquetError, ParquetResult};
@@ -12,7 +41,7 @@ pub struct Decoder<'a> {
 
     values_remaining: usize,
 
-    next_value: i64,
+    last_value: i64,
 
     values: &'a [u8],
 
@@ -22,6 +51,10 @@ pub struct Decoder<'a> {
 #[derive(Debug)]
 struct Block<'a> {
     min_delta: i64,
+
+    /// Bytes that give the `num_bits` for the [`bitpacked::Decoder`].
+    ///
+    /// Invariant: `bitwidth[i] <= MAX_BITWIDTH` for all `i`
     bitwidths: &'a [u8],
     values_remaining: usize,
     miniblock: MiniBlock<'a>,
@@ -39,12 +72,17 @@ struct SkipGatherer;
 pub(crate) struct SumGatherer(pub(crate) usize);
 
 pub trait DeltaGatherer {
-    type Target;
+    type Target: std::fmt::Debug;
 
     fn target_len(&self, target: &Self::Target) -> usize;
     fn target_reserve(&self, target: &mut Self::Target, n: usize);
 
+    /// Gather one element with value `v` into `target`.
     fn gather_one(&mut self, target: &mut Self::Target, v: i64) -> ParquetResult<()>;
+
+    /// Gather `num_repeats` elements into `target`.
+    ///
+    /// The first value is `v` and the `n`-th value is `v + (n-1)*delta`.
     fn gather_constant(
         &mut self,
         target: &mut Self::Target,
@@ -57,12 +95,14 @@ pub trait DeltaGatherer {
         }
         Ok(())
     }
+    /// Gather a `slice` of elements into `target`.
     fn gather_slice(&mut self, target: &mut Self::Target, slice: &[i64]) -> ParquetResult<()> {
         for &v in slice {
             self.gather_one(target, v)?;
         }
         Ok(())
     }
+    /// Gather a `chunk` of elements into `target`.
     fn gather_chunk(&mut self, target: &mut Self::Target, chunk: &[i64; 64]) -> ParquetResult<()> {
         self.gather_slice(target, chunk)
     }
@@ -127,7 +167,7 @@ impl DeltaGatherer for SumGatherer {
         num_repeats: usize,
     ) -> ParquetResult<()> {
         if v < 0 || (delta < 0 && num_repeats as i64 * delta + v < 0) {
-            return Err(ParquetError::oos(format!("Invalid delta encoding length")));
+            return Err(ParquetError::oos("Invalid delta encoding length"));
         }
 
         let base = v * num_repeats as i64;
@@ -164,19 +204,21 @@ impl DeltaGatherer for SumGatherer {
     }
 }
 
+/// Gather the rest of the [`bitpacked::Decoder`] into `target`
 fn gather_bitpacked<G: DeltaGatherer>(
     target: &mut G::Target,
     min_delta: i64,
-    next_value: &mut i64,
+    last_value: &mut i64,
     mut decoder: bitpacked::Decoder<u64>,
     gatherer: &mut G,
 ) -> ParquetResult<()> {
     let mut chunked = decoder.chunked();
     for mut chunk in &mut chunked {
         for value in &mut chunk {
-            let v = *value;
-            *value = *next_value as u64;
-            *next_value += (v as i64) + min_delta;
+            *last_value = last_value
+                .wrapping_add(*value as i64)
+                .wrapping_add(min_delta);
+            *value = *last_value as u64;
         }
 
         let chunk = bytemuck::cast_ref(&chunk);
@@ -187,9 +229,10 @@ fn gather_bitpacked<G: DeltaGatherer>(
         let slice = &mut chunk[..length];
 
         for value in slice.iter_mut() {
-            let v = *value;
-            *value = *next_value as u64;
-            *next_value += (v as i64) + min_delta;
+            *last_value = last_value
+                .wrapping_add(*value as i64)
+                .wrapping_add(min_delta);
+            *value = *last_value as u64;
         }
 
         let slice = bytemuck::cast_slice(slice);
@@ -199,13 +242,14 @@ fn gather_bitpacked<G: DeltaGatherer>(
     Ok(())
 }
 
+/// Gather an entire [`MiniBlock`] into `target`
 fn gather_miniblock<G: DeltaGatherer>(
     target: &mut G::Target,
     min_delta: i64,
     bitwidth: u8,
     values: &[u8],
     values_per_miniblock: usize,
-    next_value: &mut i64,
+    last_value: &mut i64,
     gatherer: &mut G,
 ) -> ParquetResult<()> {
     let bitwidth = bitwidth as usize;
@@ -217,7 +261,7 @@ fn gather_miniblock<G: DeltaGatherer>(
     gather_bitpacked(
         target,
         min_delta,
-        next_value,
+        last_value,
         bitpacked::Decoder::new(values, bitwidth, values_per_miniblock),
         gatherer,
     )?;
@@ -228,12 +272,13 @@ fn gather_miniblock<G: DeltaGatherer>(
     Ok(())
 }
 
+/// Gather an entire [`Block`] into `target`
 fn gather_block<'a, G: DeltaGatherer>(
     target: &mut G::Target,
     num_miniblocks: usize,
     values_per_miniblock: usize,
     mut values: &'a [u8],
-    next_value: &mut i64,
+    last_value: &mut i64,
     gatherer: &mut G,
 ) -> ParquetResult<&'a [u8]> {
     let (min_delta, consumed) = zigzag_leb128::decode(values);
@@ -259,7 +304,7 @@ fn gather_block<'a, G: DeltaGatherer>(
             bitwidth,
             miniblock,
             values_per_miniblock,
-            next_value,
+            last_value,
             gatherer,
         )?;
     }
@@ -366,19 +411,25 @@ impl<'a> Decoder<'a> {
 
         let values = &values[..values.len() - rem.len()];
 
-        let mut decoder = Self {
+        let decoder = Self {
             num_miniblocks_per_block,
             values_per_block,
-            values_remaining: total_count,
-            next_value: first_value,
+            values_remaining: total_count.saturating_sub(1),
+            last_value: first_value,
             values,
 
             block: Block {
-                values_remaining: 0,
+                // @NOTE:
+                // We add one delta=0 into the buffered block which allows us to
+                // prepend like the `first_value` is just any normal value.
+                //
+                // This is a bit of a hack, but makes the rest of the logic
+                // **A LOT** simpler.
+                values_remaining: usize::from(total_count > 0),
                 min_delta: 0,
                 bitwidths: &[],
                 miniblock: MiniBlock {
-                    decoder: bitpacked::Decoder::default(),
+                    decoder: bitpacked::Decoder::try_new_allow_zero(&[], 0, 1)?,
                     buffered: <u64 as Unpackable>::Unpacked::zero(),
                     unpacked_start: 0,
                     unpacked_end: 0,
@@ -386,19 +437,18 @@ impl<'a> Decoder<'a> {
             },
         };
 
-        if total_count > 1 {
-            decoder.consume_block()?;
-        }
-
         Ok((decoder, rem))
     }
 
-    fn consume_block(&mut self) -> ParquetResult<()> {
+    /// Consume a new [`Block`] from `self.values`.
+    fn consume_block(&mut self) {
+        // @NOTE: All the panics here should be prevented in the `Decoder::try_new`.
+
         debug_assert!(!self.values.is_empty());
 
         let values_per_miniblock = self.values_per_miniblock();
 
-        let length = usize::min(self.num_deltas_remaining(), self.values_per_block);
+        let length = usize::min(self.values_remaining, self.values_per_block);
         let actual_num_miniblocks = usize::min(
             self.num_miniblocks_per_block,
             length.div_ceil(values_per_miniblock),
@@ -411,46 +461,21 @@ impl<'a> Decoder<'a> {
         let (min_delta, consumed) = zigzag_leb128::decode(self.values);
 
         self.values = &self.values[consumed..];
-        let Some((bitwidths, remainder)) =
-            self.values.split_at_checked(self.num_miniblocks_per_block)
-        else {
-            return Err(ParquetError::oos(
-                "Not enough bitwidths available in delta encoding",
-            ));
-        };
+        let (bitwidths, remainder) = self.values.split_at(self.num_miniblocks_per_block);
 
-        let bitwidths = bitwidths
-            .get(..actual_num_miniblocks)
-            .expect("actual_num_miniblocks <= num_miniblocks");
-        // @NOTE: This never panics because the actual_num_miniblocks == 0 check above.
         let first_bitwidth = bitwidths[0];
-        let bitwidths = &bitwidths[1..];
-
-        if first_bitwidth > MAX_BITWIDTH {
-            return Err(ParquetError::oos(format!(
-                "Delta encoding bitwidth '{first_bitwidth}' is larger than maximum {MAX_BITWIDTH})"
-            )));
-        }
-
+        let bitwidths = &bitwidths[1..actual_num_miniblocks];
+        debug_assert!(first_bitwidth <= MAX_BITWIDTH);
         let first_bitwidth = first_bitwidth as usize;
 
         let values_in_first_miniblock = usize::min(length, values_per_miniblock);
         let num_allocated_bytes = (first_bitwidth * values_per_miniblock).div_ceil(8);
         let num_actual_bytes = (first_bitwidth * values_in_first_miniblock).div_ceil(8);
-        let Some((bytes, remainder)) = remainder.split_at_checked(num_allocated_bytes) else {
-            return Err(ParquetError::oos(
-                "Not enough bytes for miniblock in delta encoding",
-            ));
-        };
-        let bytes = bytes
-            .get(..num_actual_bytes)
-            .expect("num_actual_bytes <= num_bytes");
+        let (bytes, remainder) = remainder.split_at(num_allocated_bytes);
+        let bytes = &bytes[..num_actual_bytes];
 
-        let decoder = bitpacked::Decoder::try_new_allow_zero(
-            bytes,
-            first_bitwidth,
-            values_in_first_miniblock,
-        )?;
+        let decoder =
+            bitpacked::Decoder::new_allow_zero(bytes, first_bitwidth, values_in_first_miniblock);
 
         self.block = Block {
             min_delta,
@@ -467,10 +492,9 @@ impl<'a> Decoder<'a> {
 
         self.values_remaining -= length;
         self.values = remainder;
-
-        Ok(())
     }
 
+    /// Gather `n` elements from the current [`MiniBlock`] to `target`
     fn gather_miniblock_n_into<G: DeltaGatherer>(
         &mut self,
         target: &mut G::Target,
@@ -480,11 +504,15 @@ impl<'a> Decoder<'a> {
         debug_assert!(n > 0);
         debug_assert!(self.miniblock_len() >= n);
 
+        // If the `num_bits == 0`, the delta is constant and equal to `min_delta`. The
+        // `bitpacked::Decoder` basically only keeps track of the length.
         if self.block.miniblock.decoder.num_bits() == 0 {
             let num_repeats = usize::min(self.miniblock_len(), n);
-            let v = self.next_value;
+            let v = self.last_value.wrapping_add(self.block.min_delta);
             gatherer.gather_constant(target, v, self.block.min_delta, num_repeats)?;
-            self.next_value = v.wrapping_add(self.block.min_delta * num_repeats as i64);
+            self.last_value = self
+                .last_value
+                .wrapping_add(self.block.min_delta * num_repeats as i64);
             self.block.miniblock.decoder.length -= num_repeats;
             return Ok(());
         }
@@ -498,12 +526,11 @@ impl<'a> Decoder<'a> {
                 [self.block.miniblock.unpacked_start..self.block.miniblock.unpacked_start + length]
                 .iter_mut()
                 .for_each(|v| {
-                    let value = self.next_value;
-                    self.next_value = self
-                        .next_value
+                    self.last_value = self
+                        .last_value
                         .wrapping_add(*v as i64)
                         .wrapping_add(self.block.min_delta);
-                    *v = value as u64;
+                    *v = self.last_value as u64;
                 });
             gatherer.gather_slice(
                 target,
@@ -524,12 +551,11 @@ impl<'a> Decoder<'a> {
         for _ in 0..n / ITEMS_PER_PACK {
             let mut chunk = self.block.miniblock.decoder.chunked().next().unwrap();
             chunk.iter_mut().for_each(|v| {
-                let value = self.next_value;
-                self.next_value = self
-                    .next_value
+                self.last_value = self
+                    .last_value
                     .wrapping_add(*v as i64)
                     .wrapping_add(self.block.min_delta);
-                *v = value as u64;
+                *v = self.last_value as u64;
             });
             gatherer.gather_chunk(target, bytemuck::cast_ref(&chunk))?;
             n -= ITEMS_PER_PACK;
@@ -556,12 +582,11 @@ impl<'a> Decoder<'a> {
             self.block.miniblock.buffered[..length]
                 .iter_mut()
                 .for_each(|v| {
-                    let value = self.next_value;
-                    self.next_value = self
-                        .next_value
+                    self.last_value = self
+                        .last_value
                         .wrapping_add(*v as i64)
                         .wrapping_add(self.block.min_delta);
-                    *v = value as u64;
+                    *v = self.last_value as u64;
                 });
             gatherer.gather_slice(
                 target,
@@ -573,6 +598,7 @@ impl<'a> Decoder<'a> {
         Ok(())
     }
 
+    /// Gather `n` elements from the current [`Block`] to `target`
     fn gather_block_n_into<G: DeltaGatherer>(
         &mut self,
         target: &mut G::Target,
@@ -619,7 +645,7 @@ impl<'a> Decoder<'a> {
                 bitwidth,
                 miniblock,
                 values_per_miniblock,
-                &mut self.next_value,
+                &mut self.last_value,
                 gatherer,
             )?;
             n -= values_per_miniblock;
@@ -640,14 +666,21 @@ impl<'a> Decoder<'a> {
                 )));
             }
 
-            let miniblock;
-            (miniblock, self.values) = self
-                .values
-                .split_at_checked((bitwidth as usize * values_per_miniblock).div_ceil(8))
-                .ok_or(ParquetError::oos(
-                    "Not enough space for delta encoded miniblock",
-                ))?;
             let length = usize::min(values_per_miniblock, self.block.values_remaining);
+
+            let num_allocated_bytes = (bitwidth as usize * values_per_miniblock).div_ceil(8);
+            let num_actual_bytes = (bitwidth as usize * length).div_ceil(8);
+
+            let miniblock;
+            (miniblock, self.values) =
+                self.values
+                    .split_at_checked(num_allocated_bytes)
+                    .ok_or(ParquetError::oos(
+                        "Not enough space for delta encoded miniblock",
+                    ))?;
+
+            let miniblock = &miniblock[..num_actual_bytes];
+
             let decoder =
                 bitpacked::Decoder::try_new_allow_zero(miniblock, bitwidth as usize, length)?;
             self.block.miniblock = MiniBlock {
@@ -666,25 +699,16 @@ impl<'a> Decoder<'a> {
         Ok(())
     }
 
+    /// Gather `n` elements to `target`
     pub fn gather_n_into<G: DeltaGatherer>(
         &mut self,
         target: &mut G::Target,
         mut n: usize,
         gatherer: &mut G,
     ) -> ParquetResult<()> {
-        dbg!(self.next_value);
-        dbg!(self.len());
-
         n = usize::min(n, self.len());
 
         if n == 0 {
-            return Ok(());
-        }
-
-        // Handle the first value
-        if self.len() == 1 {
-            gatherer.gather_one(target, self.next_value)?;
-            self.values_remaining -= 1;
             return Ok(());
         }
 
@@ -701,13 +725,13 @@ impl<'a> Decoder<'a> {
         self.gather_block_n_into(target, self.block.values_remaining, gatherer)?;
         debug_assert_eq!(self.block.values_remaining, 0);
 
-        while usize::min(n, self.num_deltas_remaining()) >= self.values_per_block {
+        while usize::min(n, self.values_remaining) >= self.values_per_block {
             self.values = gather_block(
                 target,
                 self.num_miniblocks_per_block,
                 values_per_miniblock,
                 self.values,
-                &mut self.next_value,
+                &mut self.last_value,
                 gatherer,
             )?;
             n -= self.values_per_block;
@@ -718,22 +742,8 @@ impl<'a> Decoder<'a> {
             return Ok(());
         }
 
-        // Handle the first value
-        if self.len() == 1 {
-            gatherer.gather_one(target, self.next_value)?;
-            self.values_remaining -= 1;
-            return Ok(());
-        }
-
-        self.consume_block()?;
+        self.consume_block();
         self.gather_block_n_into(target, n, gatherer)?;
-
-        // Handle the first value
-        if n > 0 && self.len() == 1 {
-            gatherer.gather_one(target, self.next_value)?;
-            self.values_remaining -= 1;
-            return Ok(());
-        }
 
         Ok(())
     }
@@ -744,10 +754,16 @@ impl<'a> Decoder<'a> {
     }
 
     #[cfg(test)]
-    pub(crate) fn collect_n<E: Extend<i64>>(&mut self, e: &mut E, n: usize) -> ParquetResult<()> {
-        struct ExtendGatherer<'a, E: Extend<i64>>(std::marker::PhantomData<&'a E>);
+    pub(crate) fn collect_n<E: std::fmt::Debug + Extend<i64>>(
+        &mut self,
+        e: &mut E,
+        n: usize,
+    ) -> ParquetResult<()> {
+        struct ExtendGatherer<'a, E: std::fmt::Debug + Extend<i64>>(
+            std::marker::PhantomData<&'a E>,
+        );
 
-        impl<'a, E: Extend<i64>> DeltaGatherer for ExtendGatherer<'a, E> {
+        impl<'a, E: std::fmt::Debug + Extend<i64>> DeltaGatherer for ExtendGatherer<'a, E> {
             type Target = (usize, &'a mut E);
 
             fn target_len(&self, target: &Self::Target) -> usize {
@@ -770,7 +786,9 @@ impl<'a> Decoder<'a> {
     }
 
     #[cfg(test)]
-    pub(crate) fn collect<E: Extend<i64> + Default>(mut self) -> ParquetResult<E> {
+    pub(crate) fn collect<E: std::fmt::Debug + Extend<i64> + Default>(
+        mut self,
+    ) -> ParquetResult<E> {
         let mut e = E::default();
         self.collect_n(&mut e, self.len())?;
         Ok(e)
@@ -778,10 +796,6 @@ impl<'a> Decoder<'a> {
 
     pub fn len(&self) -> usize {
         self.values_remaining + self.block.values_remaining
-    }
-
-    pub fn num_deltas_remaining(&self) -> usize {
-        (self.values_remaining + self.block.values_remaining).saturating_sub(1)
     }
 
     fn values_per_miniblock(&self) -> usize {

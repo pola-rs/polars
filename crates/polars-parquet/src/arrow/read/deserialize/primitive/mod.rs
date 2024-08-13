@@ -32,7 +32,7 @@ where
     i64: AsPrimitive<P>,
     D: DecoderFunction<P, T>,
 {
-    decoder: &'b mut delta_bitpacked::Decoder<'a>, 
+    decoder: &'b mut delta_bitpacked::Decoder<'a>,
     gatherer: DeltaTranslator<P, T, D>,
 }
 
@@ -101,7 +101,7 @@ where
 
         debug_assert_eq!(self.decoder.len(), start_num_elems - consumed_elements);
         debug_assert_eq!(target.len(), start_length + consumed_elements);
-        
+
         Ok(())
     }
 

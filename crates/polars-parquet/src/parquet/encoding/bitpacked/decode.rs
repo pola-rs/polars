@@ -42,7 +42,20 @@ impl<'a, T: Unpackable> Decoder<'a, T> {
     }
 
     /// Returns a [`Decoder`] with `T` encoded in `packed` with `num_bits`.
-    pub fn try_new_allow_zero(packed: &'a [u8], num_bits: usize, length: usize) -> ParquetResult<Self> {
+    ///
+    /// `num_bits` is allowed to be `0`.
+    pub fn new_allow_zero(packed: &'a [u8], num_bits: usize, length: usize) -> Self {
+        Self::try_new_allow_zero(packed, num_bits, length).unwrap()
+    }
+
+    /// Returns a [`Decoder`] with `T` encoded in `packed` with `num_bits`.
+    ///
+    /// `num_bits` is allowed to be `0`.
+    pub fn try_new_allow_zero(
+        packed: &'a [u8],
+        num_bits: usize,
+        length: usize,
+    ) -> ParquetResult<Self> {
         let block_size = std::mem::size_of::<T>() * num_bits;
 
         if packed.len() * 8 < length * num_bits {

@@ -62,8 +62,8 @@ pub fn encode<I: ExactSizeIterator<Item = i64>>(
 
         // one miniblock => 1 byte
         let mut values_remaining = consumed;
-        buffer.extend_from_slice(&num_bits[..num_miniblocks_per_block as usize]);
-        for i in 0..num_miniblocks_per_block as usize {
+        buffer.extend_from_slice(&num_bits[..num_miniblocks_per_block]);
+        for i in 0..num_miniblocks_per_block {
             if values_remaining == 0 {
                 break;
             }

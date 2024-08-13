@@ -481,52 +481,38 @@ fn dict_read<K: DictionaryKey>(
     };
 
     Ok(match values_data_type.to_logical_type() {
-        UInt8 => {
-            PageNestedDecoder::new(
-                iter,
-                data_type,
-                dictionary::DictionaryDecoder::new(
-                    primitive::IntDecoder::<i32, u8, _>::cast_as(),
-                ),
-                init,
-            )?
-            .collect_n(filter)?
-        },
+        UInt8 => PageNestedDecoder::new(
+            iter,
+            data_type,
+            dictionary::DictionaryDecoder::new(primitive::IntDecoder::<i32, u8, _>::cast_as()),
+            init,
+        )?
+        .collect_n(filter)?,
         UInt16 => PageNestedDecoder::new(
             iter,
             data_type,
-            dictionary::DictionaryDecoder::new(
-                primitive::IntDecoder::<i32, u16, _>::cast_as(),
-            ),
+            dictionary::DictionaryDecoder::new(primitive::IntDecoder::<i32, u16, _>::cast_as()),
             init,
         )?
         .collect_n(filter)?,
         UInt32 => PageNestedDecoder::new(
             iter,
             data_type,
-            dictionary::DictionaryDecoder::new(
-                primitive::IntDecoder::<i32, u32, _>::cast_as(),
-            ),
+            dictionary::DictionaryDecoder::new(primitive::IntDecoder::<i32, u32, _>::cast_as()),
             init,
         )?
         .collect_n(filter)?,
-        Int8 => {
-            PageNestedDecoder::new(
-                iter,
-                data_type,
-                dictionary::DictionaryDecoder::new(
-                    primitive::IntDecoder::<i32, i8, _>::cast_as(),
-                ),
-                init,
-            )?
-            .collect_n(filter)?
-        },
+        Int8 => PageNestedDecoder::new(
+            iter,
+            data_type,
+            dictionary::DictionaryDecoder::new(primitive::IntDecoder::<i32, i8, _>::cast_as()),
+            init,
+        )?
+        .collect_n(filter)?,
         Int16 => PageNestedDecoder::new(
             iter,
             data_type,
-            dictionary::DictionaryDecoder::new(
-                primitive::IntDecoder::<i32, i16, _>::cast_as(),
-            ),
+            dictionary::DictionaryDecoder::new(primitive::IntDecoder::<i32, i16, _>::cast_as()),
             init,
         )?
         .collect_n(filter)?,
@@ -540,9 +526,7 @@ fn dict_read<K: DictionaryKey>(
         Int64 | Date64 | Time64(_) | Duration(_) => PageNestedDecoder::new(
             iter,
             data_type,
-            dictionary::DictionaryDecoder::new(
-                primitive::IntDecoder::<i64, i32, _>::cast_as(),
-            ),
+            dictionary::DictionaryDecoder::new(primitive::IntDecoder::<i64, i32, _>::cast_as()),
             init,
         )?
         .collect_n(filter)?,
