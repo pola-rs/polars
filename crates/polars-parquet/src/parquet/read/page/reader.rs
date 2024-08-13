@@ -135,6 +135,12 @@ impl PageReader {
     }
 
     pub fn read_dict(&mut self) -> ParquetResult<Option<CompressedDictPage>> {
+        // If there are no pages, we cannot check if the first page is a dictionary page. Just
+        // return the fact there is no dictionary page.
+        if self.reader.remaining_len() == 0 {
+            return Ok(None);
+        }
+
         // a dictionary page exists iff the first data page is not at the start of
         // the column
         let seek_offset = self.reader.position();
