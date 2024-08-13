@@ -146,7 +146,6 @@ pub fn to_deserializer<'a>(
             let pages = PageReader::new(
                 MemReader::from_vec(chunk),
                 column_meta,
-                std::sync::Arc::new(|_, _| true),
                 vec![],
                 len * 2 + 1024,
             );

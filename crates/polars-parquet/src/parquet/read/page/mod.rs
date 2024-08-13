@@ -2,7 +2,7 @@ mod reader;
 #[cfg(feature = "async")]
 mod stream;
 
-pub use reader::{PageFilter, PageMetaData, PageReader};
+pub use reader::{PageMetaData, PageReader};
 
 use crate::parquet::error::ParquetError;
 use crate::parquet::page::CompressedPage;
