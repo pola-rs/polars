@@ -207,6 +207,7 @@ impl<T: PolarsObject> IfThenElseKernel for ObjectArray<T> {
     }
 }
 
+#[cfg(feature = "dtype-struct")]
 impl ChunkZip<StructType> for StructChunked {
     fn zip_with(
         &self,
