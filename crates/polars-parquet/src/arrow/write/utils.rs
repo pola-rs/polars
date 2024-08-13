@@ -134,6 +134,8 @@ impl<T, I: Iterator<Item = T>> Iterator for ExactSizedIter<T, I> {
     }
 }
 
+impl<T, I: Iterator<Item = T>> std::iter::ExactSizeIterator for ExactSizedIter<T, I> {}
+
 /// Returns the number of bits needed to bitpack `max`
 #[inline]
 pub fn get_bit_width(max: u64) -> u32 {

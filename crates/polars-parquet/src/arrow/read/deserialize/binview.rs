@@ -1,3 +1,4 @@
+use std::mem::MaybeUninit;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use arrow::array::{
@@ -8,8 +9,10 @@ use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::{ArrowDataType, PhysicalType};
 
 use super::binary::decoders::*;
-use super::utils::freeze_validity;
+use super::utils::{freeze_validity, BatchableCollector};
+use crate::parquet::encoding::delta_bitpacked::DeltaGatherer;
 use crate::parquet::encoding::hybrid_rle::{self, DictionaryTranslator};
+use crate::parquet::encoding::{delta_byte_array, delta_length_byte_array};
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{DataPage, DictPage};
 use crate::read::deserialize::binary::utils::BinaryIter;
@@ -82,39 +85,39 @@ impl<'a> StateTranslation<'a, BinViewDecoder> for BinaryStateTranslation<'a> {
                 // Already done in decode_plain_encoded
                 validate_utf8 = false;
             },
-            Self::Delta(page_values) => {
+            Self::Delta(ref mut page_values) => {
                 let (values, validity) = decoded;
+
+                let mut collector = DeltaCollector {
+                    decoder: page_values,
+                };
+
                 match page_validity {
-                    None => {
-                        for value in page_values.by_ref().take(additional) {
-                            values.push_value_ignore_validity(value)
-                        }
-                    },
-                    Some(page_validity) => {
-                        extend_from_decoder(
-                            validity,
-                            page_validity,
-                            Some(additional),
-                            values,
-                            page_values,
-                        )?;
-                    },
-                }
-            },
-            Self::DeltaBytes(page_values) => {
-                let (values, validity) = decoded;
-                match page_validity {
-                    None => {
-                        for x in page_values.take(additional) {
-                            values.push_value_ignore_validity(x)
-                        }
-                    },
+                    None => collector.push_n(values, additional)?,
                     Some(page_validity) => extend_from_decoder(
                         validity,
                         page_validity,
                         Some(additional),
                         values,
-                        page_values,
+                        collector,
+                    )?,
+                }
+            },
+            Self::DeltaBytes(ref mut page_values) => {
+                let (values, validity) = decoded;
+
+                let mut collector = DeltaBytesCollector {
+                    decoder: page_values,
+                };
+
+                match page_validity {
+                    None => collector.push_n(values, additional)?,
+                    Some(page_validity) => extend_from_decoder(
+                        validity,
+                        page_validity,
+                        Some(additional),
+                        values,
+                        collector,
                     )?,
                 }
             },
@@ -140,6 +143,153 @@ pub(crate) struct BinViewDecoder {
 impl utils::ExactSize for DecodedStateTuple {
     fn len(&self) -> usize {
         self.0.len()
+    }
+}
+
+pub(crate) struct DeltaCollector<'a, 'b> {
+    pub(crate) decoder: &'b mut delta_length_byte_array::Decoder<'a>,
+}
+
+pub(crate) struct DeltaBytesCollector<'a, 'b> {
+    pub(crate) decoder: &'b mut delta_byte_array::Decoder<'a>,
+}
+
+pub(crate) struct ViewGatherer<'a, 'b> {
+    values: &'a [u8],
+    offset: &'b mut usize,
+}
+
+impl<'a, 'b> DeltaGatherer for ViewGatherer<'a, 'b> {
+    type Target = MutableBinaryViewArray<[u8]>;
+
+    fn target_len(&self, target: &Self::Target) -> usize {
+        target.len()
+    }
+
+    fn target_reserve(&self, target: &mut Self::Target, n: usize) {
+        target.views_mut().reserve(n)
+    }
+
+    fn gather_one(&mut self, target: &mut Self::Target, v: i64) -> ParquetResult<()> {
+        let v = v as usize;
+        let s = &self.values[*self.offset..*self.offset + v];
+        *self.offset += v;
+        target.push(Some(s));
+        Ok(())
+    }
+}
+
+impl<'a, 'b> BatchableCollector<(), MutableBinaryViewArray<[u8]>> for DeltaCollector<'a, 'b> {
+    fn reserve(target: &mut MutableBinaryViewArray<[u8]>, n: usize) {
+        target.views_mut().reserve(n);
+    }
+
+    fn push_n(&mut self, target: &mut MutableBinaryViewArray<[u8]>, n: usize) -> ParquetResult<()> {
+        let mut gatherer = ViewGatherer {
+            values: self.decoder.values,
+            offset: &mut self.decoder.offset,
+        };
+        self.decoder
+            .lengths
+            .gather_n_into(target, n, &mut gatherer)?;
+
+        Ok(())
+    }
+
+    fn push_n_nulls(
+        &mut self,
+        target: &mut MutableBinaryViewArray<[u8]>,
+        n: usize,
+    ) -> ParquetResult<()> {
+        target.extend_constant(n, <Option<&[u8]>>::None);
+        Ok(())
+    }
+}
+
+impl<'a, 'b> BatchableCollector<(), MutableBinaryViewArray<[u8]>> for DeltaBytesCollector<'a, 'b> {
+    fn reserve(target: &mut MutableBinaryViewArray<[u8]>, n: usize) {
+        target.views_mut().reserve(n);
+    }
+
+    fn push_n(&mut self, target: &mut MutableBinaryViewArray<[u8]>, n: usize) -> ParquetResult<()> {
+        struct MaybeUninitCollector(usize);
+
+        impl DeltaGatherer for MaybeUninitCollector {
+            type Target = [MaybeUninit<usize>; BATCH_SIZE];
+
+            fn target_len(&self, _target: &Self::Target) -> usize {
+                self.0
+            }
+
+            fn target_reserve(&self, _target: &mut Self::Target, _n: usize) {}
+
+            fn gather_one(&mut self, target: &mut Self::Target, v: i64) -> ParquetResult<()> {
+                target[self.0] = MaybeUninit::new(v as usize);
+                self.0 += 1;
+                Ok(())
+            }
+        }
+
+        let decoder_len = self.decoder.len();
+        let mut n = usize::min(n, decoder_len);
+
+        if n == 0 {
+            return Ok(());
+        }
+
+        let mut buffer = Vec::new();
+        target.views_mut().reserve(n);
+
+        const BATCH_SIZE: usize = 4096;
+
+        let mut prefix_lengths = [const { MaybeUninit::<usize>::uninit() }; BATCH_SIZE];
+        let mut suffix_lengths = [const { MaybeUninit::<usize>::uninit() }; BATCH_SIZE];
+
+        while n > 0 {
+            let num_elems = usize::min(n, BATCH_SIZE);
+            n -= num_elems;
+
+            self.decoder.prefix_lengths.gather_n_into(
+                &mut prefix_lengths,
+                num_elems,
+                &mut MaybeUninitCollector(0),
+            )?;
+            self.decoder.suffix_lengths.gather_n_into(
+                &mut suffix_lengths,
+                num_elems,
+                &mut MaybeUninitCollector(0),
+            )?;
+
+            for i in 0..num_elems {
+                let prefix_length = unsafe { prefix_lengths[i].assume_init() };
+                let suffix_length = unsafe { suffix_lengths[i].assume_init() };
+
+                buffer.clear();
+
+                buffer.extend_from_slice(&self.decoder.last[..prefix_length]);
+                buffer.extend_from_slice(
+                    &self.decoder.values[self.decoder.offset..self.decoder.offset + suffix_length],
+                );
+
+                target.push_value(&buffer);
+
+                self.decoder.last.clear();
+                std::mem::swap(&mut self.decoder.last, &mut buffer);
+
+                self.decoder.offset += suffix_length;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn push_n_nulls(
+        &mut self,
+        target: &mut MutableBinaryViewArray<[u8]>,
+        n: usize,
+    ) -> ParquetResult<()> {
+        target.extend_constant(n, <Option<&[u8]>>::None);
+        Ok(())
     }
 }
 

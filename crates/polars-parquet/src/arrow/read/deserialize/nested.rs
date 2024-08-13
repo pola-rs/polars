@@ -50,7 +50,7 @@ pub fn columns_to_iter_recursive(
             PageNestedDecoder::new(
                 columns.pop().unwrap(),
                 field.data_type().clone(),
-                primitive::PrimitiveDecoder::<i32, i8, _>::cast_as(),
+                primitive::IntDecoder::<i32, i8, _>::cast_as(),
                 init,
             )?
             .collect_n(filter)
@@ -62,7 +62,7 @@ pub fn columns_to_iter_recursive(
             PageNestedDecoder::new(
                 columns.pop().unwrap(),
                 field.data_type().clone(),
-                primitive::PrimitiveDecoder::<i32, i16, _>::cast_as(),
+                primitive::IntDecoder::<i32, i16, _>::cast_as(),
                 init,
             )?
             .collect_n(filter)
@@ -74,7 +74,7 @@ pub fn columns_to_iter_recursive(
             PageNestedDecoder::new(
                 columns.pop().unwrap(),
                 field.data_type().clone(),
-                primitive::PrimitiveDecoder::<i32, _, _>::unit(),
+                primitive::IntDecoder::<i32, _, _>::unit(),
                 init,
             )?
             .collect_n(filter)
@@ -86,7 +86,7 @@ pub fn columns_to_iter_recursive(
             PageNestedDecoder::new(
                 columns.pop().unwrap(),
                 field.data_type().clone(),
-                primitive::PrimitiveDecoder::<i64, _, _>::unit(),
+                primitive::IntDecoder::<i64, _, _>::unit(),
                 init,
             )?
             .collect_n(filter)
@@ -98,7 +98,7 @@ pub fn columns_to_iter_recursive(
             PageNestedDecoder::new(
                 columns.pop().unwrap(),
                 field.data_type().clone(),
-                primitive::PrimitiveDecoder::<i32, u8, _>::cast_as(),
+                primitive::IntDecoder::<i32, u8, _>::cast_as(),
                 init,
             )?
             .collect_n(filter)
@@ -110,7 +110,7 @@ pub fn columns_to_iter_recursive(
             PageNestedDecoder::new(
                 columns.pop().unwrap(),
                 field.data_type().clone(),
-                primitive::PrimitiveDecoder::<i32, u16, _>::cast_as(),
+                primitive::IntDecoder::<i32, u16, _>::cast_as(),
                 init,
             )?
             .collect_n(filter)
@@ -123,7 +123,7 @@ pub fn columns_to_iter_recursive(
                 PhysicalType::Int32 => PageNestedDecoder::new(
                     columns.pop().unwrap(),
                     field.data_type().clone(),
-                    primitive::PrimitiveDecoder::<i32, u32, _>::cast_as(),
+                    primitive::IntDecoder::<i32, u32, _>::cast_as(),
                     init,
                 )?
                 .collect_n(filter)
@@ -132,7 +132,7 @@ pub fn columns_to_iter_recursive(
                 PhysicalType::Int64 => PageNestedDecoder::new(
                     columns.pop().unwrap(),
                     field.data_type().clone(),
-                    primitive::PrimitiveDecoder::<i64, u32, _>::cast_as(),
+                    primitive::IntDecoder::<i64, u32, _>::cast_as(),
                     init,
                 )?
                 .collect_n(filter)
@@ -150,7 +150,7 @@ pub fn columns_to_iter_recursive(
             PageNestedDecoder::new(
                 columns.pop().unwrap(),
                 field.data_type().clone(),
-                primitive::PrimitiveDecoder::<i64, u64, _>::cast_as(),
+                primitive::IntDecoder::<i64, u64, _>::cast_as(),
                 init,
             )?
             .collect_n(filter)
@@ -244,7 +244,7 @@ pub fn columns_to_iter_recursive(
                     PhysicalType::Int32 => PageNestedDecoder::new(
                         columns.pop().unwrap(),
                         field.data_type.clone(),
-                        primitive::PrimitiveDecoder::<i32, i128, _>::cast_into(),
+                        primitive::IntDecoder::<i32, i128, _>::cast_into(),
                         init,
                     )?
                     .collect_n(filter)
@@ -252,7 +252,7 @@ pub fn columns_to_iter_recursive(
                     PhysicalType::Int64 => PageNestedDecoder::new(
                         columns.pop().unwrap(),
                         field.data_type.clone(),
-                        primitive::PrimitiveDecoder::<i64, i128, _>::cast_into(),
+                        primitive::IntDecoder::<i64, i128, _>::cast_into(),
                         init,
                     )?
                     .collect_n(filter)
@@ -302,7 +302,7 @@ pub fn columns_to_iter_recursive(
                     PhysicalType::Int32 => PageNestedDecoder::new(
                         columns.pop().unwrap(),
                         field.data_type.clone(),
-                        primitive::PrimitiveDecoder::closure(|x: i32| i256(I256::new(x as i128))),
+                        primitive::IntDecoder::closure(|x: i32| i256(I256::new(x as i128))),
                         init,
                     )?
                     .collect_n(filter)
@@ -310,7 +310,7 @@ pub fn columns_to_iter_recursive(
                     PhysicalType::Int64 => PageNestedDecoder::new(
                         columns.pop().unwrap(),
                         field.data_type.clone(),
-                        primitive::PrimitiveDecoder::closure(|x: i64| i256(I256::new(x as i128))),
+                        primitive::IntDecoder::closure(|x: i64| i256(I256::new(x as i128))),
                         init,
                     )?
                     .collect_n(filter)
@@ -481,68 +481,52 @@ fn dict_read<K: DictionaryKey>(
     };
 
     Ok(match values_data_type.to_logical_type() {
-        UInt8 => {
-            PageNestedDecoder::new(
-                iter,
-                data_type,
-                dictionary::DictionaryDecoder::new(
-                    primitive::PrimitiveDecoder::<i32, u8, _>::cast_as(),
-                ),
-                init,
-            )?
-            .collect_n(filter)?
-        },
+        UInt8 => PageNestedDecoder::new(
+            iter,
+            data_type,
+            dictionary::DictionaryDecoder::new(primitive::IntDecoder::<i32, u8, _>::cast_as()),
+            init,
+        )?
+        .collect_n(filter)?,
         UInt16 => PageNestedDecoder::new(
             iter,
             data_type,
-            dictionary::DictionaryDecoder::new(
-                primitive::PrimitiveDecoder::<i32, u16, _>::cast_as(),
-            ),
+            dictionary::DictionaryDecoder::new(primitive::IntDecoder::<i32, u16, _>::cast_as()),
             init,
         )?
         .collect_n(filter)?,
         UInt32 => PageNestedDecoder::new(
             iter,
             data_type,
-            dictionary::DictionaryDecoder::new(
-                primitive::PrimitiveDecoder::<i32, u32, _>::cast_as(),
-            ),
+            dictionary::DictionaryDecoder::new(primitive::IntDecoder::<i32, u32, _>::cast_as()),
             init,
         )?
         .collect_n(filter)?,
-        Int8 => {
-            PageNestedDecoder::new(
-                iter,
-                data_type,
-                dictionary::DictionaryDecoder::new(
-                    primitive::PrimitiveDecoder::<i32, i8, _>::cast_as(),
-                ),
-                init,
-            )?
-            .collect_n(filter)?
-        },
+        Int8 => PageNestedDecoder::new(
+            iter,
+            data_type,
+            dictionary::DictionaryDecoder::new(primitive::IntDecoder::<i32, i8, _>::cast_as()),
+            init,
+        )?
+        .collect_n(filter)?,
         Int16 => PageNestedDecoder::new(
             iter,
             data_type,
-            dictionary::DictionaryDecoder::new(
-                primitive::PrimitiveDecoder::<i32, i16, _>::cast_as(),
-            ),
+            dictionary::DictionaryDecoder::new(primitive::IntDecoder::<i32, i16, _>::cast_as()),
             init,
         )?
         .collect_n(filter)?,
         Int32 | Date32 | Time32(_) | Interval(IntervalUnit::YearMonth) => PageNestedDecoder::new(
             iter,
             data_type,
-            dictionary::DictionaryDecoder::new(primitive::PrimitiveDecoder::<i32, _, _>::unit()),
+            dictionary::DictionaryDecoder::new(primitive::IntDecoder::<i32, _, _>::unit()),
             init,
         )?
         .collect_n(filter)?,
         Int64 | Date64 | Time64(_) | Duration(_) => PageNestedDecoder::new(
             iter,
             data_type,
-            dictionary::DictionaryDecoder::new(
-                primitive::PrimitiveDecoder::<i64, i32, _>::cast_as(),
-            ),
+            dictionary::DictionaryDecoder::new(primitive::IntDecoder::<i64, i32, _>::cast_as()),
             init,
         )?
         .collect_n(filter)?,
