@@ -7,3 +7,260 @@ homepage = { workspace = true }
 license = { workspace = true }
 repository = { workspace = true }
 description = "Enable running Polars workloads in Python"
+
+[dependencies]
+polars-core = { workspace = true, features = ["python"] }
+polars-error = { workspace = true }
+polars-io = { workspace = true }
+polars-lazy = { workspace = true, features = ["python"] }
+polars-ops = { workspace = true }
+polars-parquet = { workspace = true, optional = true }
+polars-plan = { workspace = true }
+polars-time = { workspace = true }
+polars-utils = { workspace = true }
+
+# TODO! remove this once truly activated. This is required to make sdist building work
+polars-stream = { workspace = true }
+
+ahash = { workspace = true }
+arboard = { workspace = true, optional = true }
+bytemuck = { workspace = true }
+ciborium = { workspace = true }
+either = { workspace = true }
+itoa = { workspace = true }
+libc = "0.2"
+ndarray = { workspace = true }
+num-traits = { workspace = true }
+# TODO: Pin to released version once NumPy 2.0 support is merged
+# https://github.com/PyO3/rust-numpy/issues/409
+numpy = { git = "https://github.com/stinodego/rust-numpy.git", rev = "9ba9962ae57ba26e35babdce6f179edf5fe5b9c8", default-features = false }
+once_cell = { workspace = true }
+pyo3 = { workspace = true, features = ["abi3-py38", "chrono", "extension-module", "multiple-pymethods"] }
+recursive = { workspace = true }
+serde_json = { workspace = true, optional = true }
+smartstring = { workspace = true }
+thiserror = { workspace = true }
+
+[dependencies.polars]
+workspace = true
+features = [
+  "abs",
+  "approx_unique",
+  "array_any_all",
+  "arg_where",
+  "business",
+  "concat_str",
+  "cum_agg",
+  "cumulative_eval",
+  "dataframe_arithmetic",
+  "month_start",
+  "month_end",
+  "offset_by",
+  "diagonal_concat",
+  "diff",
+  "dot_diagram",
+  "dot_product",
+  "dtype-categorical",
+  "dtype-full",
+  "dynamic_group_by",
+  "ewma",
+  "ewma_by",
+  "fmt",
+  "fused",
+  "interpolate",
+  "interpolate_by",
+  "is_first_distinct",
+  "is_last_distinct",
+  "is_unique",
+  "is_between",
+  "lazy",
+  "list_eval",
+  "list_to_struct",
+  "array_to_struct",
+  "log",
+  "mode",
+  "moment",
+  "ndarray",
+  "partition_by",
+  "product",
+  "random",
+  "range",
+  "rank",
+  "reinterpret",
+  "replace",
+  "rolling_window",
+  "rolling_window_by",
+  "round_series",
+  "row_hash",
+  "rows",
+  "semi_anti_join",
+  "serde-lazy",
+  "string_encoding",
+  "string_reverse",
+  "string_to_integer",
+  "string_pad",
+  "strings",
+  "temporal",
+  "to_dummies",
+  "true_div",
+  "unique_counts",
+  "zip_with",
+  "cov",
+]
+
+[build-dependencies]
+built = { version = "0.7", features = ["chrono", "git2", "cargo-lock"], optional = true }
+
+[target.'cfg(all(any(not(target_family = "unix"), allocator = "mimalloc"), not(allocator = "default")))'.dependencies]
+mimalloc = { version = "0.1", default-features = false }
+
+# Feature background_threads is unsupported on MacOS (https://github.com/jemalloc/jemalloc/issues/843).
+[target.'cfg(all(target_family = "unix", not(target_os = "macos"), not(allocator = "mimalloc"), not(allocator = "default")))'.dependencies]
+jemallocator = { version = "0.5", features = ["disable_initial_exec_tls", "background_threads"] }
+
+[target.'cfg(all(target_family = "unix", target_os = "macos", not(allocator = "mimalloc"), not(allocator = "default")))'.dependencies]
+jemallocator = { version = "0.5", features = ["disable_initial_exec_tls"] }
+
+[features]
+# Features below are only there to enable building a slim binary during development.
+avro = ["polars/avro"]
+parquet = ["polars/parquet", "polars-parquet"]
+ipc = ["polars/ipc"]
+ipc_streaming = ["polars/ipc_streaming"]
+is_in = ["polars/is_in"]
+json = ["polars/serde", "serde_json", "polars/json"]
+trigonometry = ["polars/trigonometry"]
+sign = ["polars/sign"]
+asof_join = ["polars/asof_join"]
+cross_join = ["polars/cross_join"]
+pct_change = ["polars/pct_change"]
+repeat_by = ["polars/repeat_by"]
+# also includes simd
+nightly = ["polars/nightly"]
+streaming = ["polars/streaming"]
+meta = ["polars/meta"]
+search_sorted = ["polars/search_sorted"]
+decompress = ["polars/decompress-fast"]
+regex = ["polars/regex"]
+csv = ["polars/csv"]
+clipboard = ["arboard"]
+extract_jsonpath = ["polars/extract_jsonpath"]
+pivot = ["polars/pivot"]
+top_k = ["polars/top_k"]
+propagate_nans = ["polars/propagate_nans"]
+sql = ["polars/sql"]
+build_info = ["dep:built"]
+performant = ["polars/performant"]
+timezones = ["polars/timezones"]
+cse = ["polars/cse"]
+merge_sorted = ["polars/merge_sorted"]
+list_gather = ["polars/list_gather"]
+list_count = ["polars/list_count"]
+array_count = ["polars/array_count", "polars/dtype-array"]
+binary_encoding = ["polars/binary_encoding"]
+list_sets = ["polars-lazy/list_sets"]
+list_any_all = ["polars/list_any_all"]
+array_any_all = ["polars/array_any_all", "polars/dtype-array"]
+list_drop_nulls = ["polars/list_drop_nulls"]
+list_sample = ["polars/list_sample"]
+cutqcut = ["polars/cutqcut"]
+rle = ["polars/rle"]
+extract_groups = ["polars/extract_groups"]
+ffi_plugin = ["polars-plan/ffi_plugin"]
+cloud = ["polars/cloud", "polars/aws", "polars/gcp", "polars/azure", "polars/http"]
+peaks = ["polars/peaks"]
+hist = ["polars/hist"]
+find_many = ["polars/find_many"]
+new_streaming = ["polars-lazy/new_streaming"]
+
+dtype-i8 = []
+dtype-i16 = []
+dtype-u8 = []
+dtype-u16 = []
+dtype-array = []
+object = ["polars/object"]
+
+dtypes = [
+  "dtype-array",
+  "dtype-i16",
+  "dtype-i8",
+  "dtype-u16",
+  "dtype-u8",
+  "object",
+]
+
+operations = [
+  "array_any_all",
+  "array_count",
+  "is_in",
+  "repeat_by",
+  "trigonometry",
+  "sign",
+  "performant",
+  "list_gather",
+  "list_count",
+  "list_sets",
+  "list_any_all",
+  "list_drop_nulls",
+  "list_sample",
+  "cutqcut",
+  "rle",
+  "extract_groups",
+  "pivot",
+  "extract_jsonpath",
+  "asof_join",
+  "cross_join",
+  "pct_change",
+  "search_sorted",
+  "merge_sorted",
+  "top_k",
+  "propagate_nans",
+  "timezones",
+  "peaks",
+  "hist",
+  "find_many",
+]
+
+io = [
+  "json",
+  "parquet",
+  "ipc",
+  "ipc_streaming",
+  "avro",
+  "csv",
+  "cloud",
+  "clipboard",
+]
+
+optimizations = [
+  "cse",
+  "polars/fused",
+  "streaming",
+]
+
+polars_cloud = ["polars/polars_cloud"]
+
+all = [
+  "optimizations",
+  "io",
+  "operations",
+  "dtypes",
+  "meta",
+  "decompress",
+  "regex",
+  "build_info",
+  "sql",
+  "binary_encoding",
+  "ffi_plugin",
+  "polars_cloud",
+  # "new_streaming",
+]
+
+# we cannot conditionally activate simd
+# https://github.com/rust-lang/cargo/issues/1197
+# so we have an indirection and compile
+# with --no-default-features --features=all for targets without simd
+default = [
+  "all",
+  "nightly",
+]
