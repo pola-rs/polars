@@ -1,7 +1,8 @@
 use polars_core::prelude::PlHashMap;
 use polars_error::PolarsResult;
 use polars_plan::plans::expr_ir::ExprIR;
-use polars_plan::plans::{AExpr, IR};
+use polars_plan::plans::{AExpr, LiteralValue, IR};
+use polars_plan::prelude::FunctionFlags;
 use polars_utils::arena::{Arena, Node};
 use slotmap::SlotMap;
 
@@ -19,7 +20,7 @@ fn is_streamable_rec(expr_key: IRNodeKey, arena: &Arena<AExpr>, cache: &mut PlHa
         AExpr::Explode(_) => false,
         AExpr::Alias(inner, _) => is_streamable_rec(*inner, arena, cache),
         AExpr::Column(_) => true,
-        AExpr::Literal(_) => true, // TODO: literals not always streamable.
+        AExpr::Literal(lit) => !matches!(lit, LiteralValue::Series(_) | LiteralValue::Range { .. }),
         AExpr::BinaryExpr { left, op: _, right } => is_streamable_rec(*left, arena, cache) && is_streamable_rec(*right, arena, cache),
         AExpr::Cast {
             expr,
@@ -39,7 +40,7 @@ fn is_streamable_rec(expr_key: IRNodeKey, arena: &Arena<AExpr>, cache: &mut PlHa
             function: _,
             output_type: _,
             options,
-        } => options.flags.
+        } => options.flags & FunctionFlags::CHANGES_LENGTH,
         AExpr::Function {
             input,
             function,
@@ -51,14 +52,12 @@ fn is_streamable_rec(expr_key: IRNodeKey, arena: &Arena<AExpr>, cache: &mut PlHa
             order_by,
             options,
         } => todo!(),
-        AExpr::Wildcard => todo!(),
         AExpr::Slice {
             input,
             offset,
             length,
         } => todo!(),
         AExpr::Len => false,
-        AExpr::Nth(_) => false,
     };
 
     cache.insert(expr_key, ret);
@@ -148,7 +147,6 @@ fn is_input_independent_rec(expr_key: IRNodeKey, arena: &Arena<AExpr>, cache: &m
             partition_by.iter().all(|expr| is_input_independent_rec(*expr, arena, cache)) &&
             order_by.iter().all(|(expr, _options)| is_input_independent_rec(*expr, arena, cache))
         }
-        AExpr::Wildcard => false,
         AExpr::Slice {
             input,
             offset,
@@ -157,7 +155,6 @@ fn is_input_independent_rec(expr_key: IRNodeKey, arena: &Arena<AExpr>, cache: &m
             is_input_independent_rec(*input, arena, cache) && is_input_independent_rec(*offset, arena, cache) && is_input_independent_rec(*length, arena, cache)
         },
         AExpr::Len => false,
-        AExpr::Nth(_) => false,
     };
 
     cache.insert(expr_key, ret);
