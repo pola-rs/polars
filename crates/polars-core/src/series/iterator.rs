@@ -207,4 +207,12 @@ mod test {
             .into_iter()
             .map(|opt_v| opt_v.map(|v| v * 2));
     }
+
+    #[test]
+    fn test_iter_string() {
+        let data = [Some("John"), Some("Doe"), None];
+        let a: Series = data.into_iter().collect();
+        let b = Series::new("", data);
+        assert_eq!(a, b);
+    }
 }
