@@ -39,6 +39,11 @@ pub fn encode<I: ExactSizeIterator<Item = i64>>(
         let mut min_delta = i64::MAX;
         let mut max_delta = i64::MIN;
         for (i, integer) in iterator.by_ref().enumerate().take(BLOCK_SIZE) {
+            if i % values_per_miniblock == 0 {
+                min_delta = i64::MAX;
+                max_delta = i64::MIN
+            }
+
             let delta = integer.wrapping_sub(prev);
             min_delta = min_delta.min(delta);
             max_delta = max_delta.max(delta);
@@ -99,8 +104,8 @@ mod tests {
 
     #[test]
     fn constant_delta() {
-        // header: [128, 1, 1, 5, 2]:
-        //  block size: 128    <=u> 128, 1
+        // header: [128, 2, 1, 5, 2]:
+        //  block size: 256    <=u> 128, 2
         //  mini-blocks: 1     <=u> 1
         //  elements: 5        <=u> 5
         //  first_value: 2     <=z> 1
@@ -108,7 +113,7 @@ mod tests {
         //  min_delta: 1        <=z> 2
         //  bitwidth: 0
         let data = 1..=5;
-        let expected = vec![128u8, 1, 1, 5, 2, 2, 0];
+        let expected = vec![128u8, 2, 1, 5, 2, 2, 0];
 
         let mut buffer = vec![];
         encode(data.collect::<Vec<_>>().into_iter(), &mut buffer, 1);
@@ -119,8 +124,8 @@ mod tests {
     fn negative_min_delta() {
         // max - min = 1 - -4 = 5
         let data = vec![1, 2, 3, 4, 5, 1];
-        // header: [128, 1, 4, 6, 2]
-        //  block size: 128    <=u> 128, 1
+        // header: [128, 2, 4, 6, 2]
+        //  block size: 256    <=u> 128, 2
         //  mini-blocks: 1     <=u> 1
         //  elements: 6        <=u> 5
         //  first_value: 2     <=z> 1
@@ -131,8 +136,8 @@ mod tests {
         //      0b01101101
         //      0b00001011
         // ]
-        let mut expected = vec![128u8, 1, 1, 6, 2, 7, 3, 0b01101101, 0b00001011];
-        expected.extend(std::iter::repeat(0).take(128 * 3 / 8 - 2)); // 128 values, 3 bits, 2 already used
+        let mut expected = vec![128u8, 2, 1, 6, 2, 7, 3, 0b01101101, 0b00001011];
+        expected.extend(std::iter::repeat(0).take(256 * 3 / 8 - 2)); // 128 values, 3 bits, 2 already used
 
         let mut buffer = vec![];
         encode(data.into_iter(), &mut buffer, 1);
