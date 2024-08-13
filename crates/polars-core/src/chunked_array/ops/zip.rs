@@ -247,6 +247,14 @@ impl ChunkZip<StructType> for StructChunked {
                 .zip(r.chunks())
                 .map(|(l, r)| (l.validity(), r.validity()));
 
+            fn broadcast(v: Option<&Bitmap>, arr: &ArrayRef) -> Bitmap {
+                if v.unwrap().get(0).unwrap() {
+                    Bitmap::new_with_value(true, arr.len())
+                } else {
+                    Bitmap::new_zeroed(arr.len())
+                }
+            }
+
             // # SAFETY
             // We don't modify the length and update the null count.
             unsafe {
@@ -256,31 +264,41 @@ impl ChunkZip<StructType> for StructChunked {
                     .zip(validities)
                     .zip(mask.downcast_iter())
                 {
+                    // TODO! we can optimize this and use a kernel that is able to broadcast wo/ allocating.
                     let (lv, rv) = match (lv.map(|b| b.len()), rv.map(|b| b.len())) {
+                        (Some(1), Some(1)) if arr.len() != 1 => {
+                            let lv = broadcast(lv, arr);
+                            let rv = broadcast(rv, arr);
+                            (Some(lv), Some(rv))
+                        },
                         (Some(a), Some(b)) if a == b => (lv.cloned(), rv.cloned()),
                         (Some(1), _) => {
-                            // broadcast true
-                            let lv = if lv.unwrap().get(0).unwrap() {
-                                Bitmap::new_with_value(true, arr.len())
-                            } else {
-                                Bitmap::new_zeroed(arr.len())
-                            };
+                            let lv = broadcast(lv, arr);
                             (Some(lv), rv.cloned())
                         },
                         (_, Some(1)) => {
-                            // broadcast true
-                            let rv = if rv.unwrap().get(0).unwrap() {
-                                Bitmap::new_with_value(true, arr.len())
-                            } else {
-                                Bitmap::new_zeroed(arr.len())
-                            };
+                            let rv = broadcast(rv, arr);
                             (lv.cloned(), Some(rv))
                         },
-                        (None, None) => (lv.cloned(), rv.cloned()),
-                        _ => polars_bail!(ComputeError: "lengths don't match"),
+                        (None, Some(_)) | (Some(_), None) | (None, None) => {
+                            (lv.cloned(), rv.cloned())
+                        },
+                        (Some(a), Some(b)) => {
+                            polars_bail!(InvalidOperation: "got different sizes in 'zip' operation, got length: {a} and {b}")
+                        },
                     };
 
-                    let validity = if_then_else_validity(mask.values(), lv.as_ref(), rv.as_ref());
+                    // broadcast mask
+                    let validity = if mask.len() != arr.len() && mask.len() == 1 {
+                        if mask.get(0).unwrap() {
+                            lv
+                        } else {
+                            rv
+                        }
+                    } else {
+                        if_then_else_validity(mask.values(), lv.as_ref(), rv.as_ref())
+                    };
+
                     *arr = arr.with_validity(validity);
                 }
             }
