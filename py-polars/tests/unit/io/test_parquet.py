@@ -13,6 +13,7 @@ import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 import pytest
 from hypothesis import HealthCheck, given, settings
+from hypothesis import strategies as st
 
 import polars as pl
 from polars.exceptions import ComputeError
@@ -1389,6 +1390,20 @@ def test_scan_round_trip_parametric(tmp_path: Path, df: pl.DataFrame) -> None:
     test_scan_round_trip(tmp_path, df)
 
 
+def test_empty_rg_no_dict_page_18146() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [],
+        },
+        schema={"a": pl.String},
+    )
+
+    f = io.BytesIO()
+    pq.write_table(df.to_arrow(), f, compression="NONE", use_dictionary=False)
+    f.seek(0)
+    assert_frame_equal(pl.read_parquet(f), df)
+
+
 def test_write_sliced_lists_18069() -> None:
     f = io.BytesIO()
     a = pl.Series(3 * [None, ["$"] * 3], dtype=pl.List(pl.String))
@@ -1414,3 +1429,84 @@ def test_null_array_dict_pages_18085() -> None:
     test.to_parquet(f)
     f.seek(0)
     pl.read_parquet(f)
+
+
+@given(
+    df=dataframes(
+        min_size=1,
+        max_size=1000,
+        allowed_dtypes=[
+            pl.List,
+            pl.Int8,
+            pl.Int16,
+            pl.Int32,
+            pl.Int64,
+            pl.UInt8,
+            pl.UInt16,
+            pl.UInt32,
+            pl.UInt64,
+        ],
+    ),
+    row_group_size=st.integers(min_value=10, max_value=1000),
+)
+def test_delta_encoding_roundtrip(df: pl.DataFrame, row_group_size: int) -> None:
+    print(df.schema)
+    print(df)
+
+    f = io.BytesIO()
+    pq.write_table(
+        df.to_arrow(),
+        f,
+        compression="NONE",
+        use_dictionary=False,
+        column_encoding="DELTA_BINARY_PACKED",
+        write_statistics=False,
+        row_group_size=row_group_size,
+    )
+
+    f.seek(0)
+    assert_frame_equal(pl.read_parquet(f), df)
+
+
+@given(
+    df=dataframes(min_size=1, max_size=1000, allowed_dtypes=[pl.String, pl.Binary]),
+    row_group_size=st.integers(min_value=10, max_value=1000),
+)
+def test_delta_length_byte_array_encoding_roundtrip(
+    df: pl.DataFrame, row_group_size: int
+) -> None:
+    f = io.BytesIO()
+    pq.write_table(
+        df.to_arrow(),
+        f,
+        compression="NONE",
+        use_dictionary=False,
+        column_encoding="DELTA_LENGTH_BYTE_ARRAY",
+        write_statistics=False,
+        row_group_size=row_group_size,
+    )
+
+    f.seek(0)
+    assert_frame_equal(pl.read_parquet(f), df)
+
+
+@given(
+    df=dataframes(min_size=1, max_size=1000, allowed_dtypes=[pl.String, pl.Binary]),
+    row_group_size=st.integers(min_value=10, max_value=1000),
+)
+def test_delta_strings_encoding_roundtrip(
+    df: pl.DataFrame, row_group_size: int
+) -> None:
+    f = io.BytesIO()
+    pq.write_table(
+        df.to_arrow(),
+        f,
+        compression="NONE",
+        use_dictionary=False,
+        column_encoding="DELTA_BYTE_ARRAY",
+        write_statistics=False,
+        row_group_size=row_group_size,
+    )
+
+    f.seek(0)
+    assert_frame_equal(pl.read_parquet(f), df)
