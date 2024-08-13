@@ -12,7 +12,9 @@
         "python.analysis.typeCheckingMode": "standard",
         "editor.formatOnSaveMode": "file",
         "rust-analyzer.checkOnSave.command": "clippy",
-        "rust-analyzer.cargo.features": ["all"],
+        "rust-analyzer.cargo.features": [
+          "all"
+        ],
         "ruff.importStrategy": "fromEnvironment",
         "editor.formatOnSave": true,
         "mypy-type-checker.cwd": "${workspaceFolder}/py-polars",
@@ -44,7 +46,8 @@
         "ms-azuretools.vscode-docker",
         "charliermarsh.ruff",
         "ms-vscode.makefile-tools",
-        "vscode.json-language-features"
+        "vscode.json-language-features",
+        "vadimcn.vscode-lldb"
       ]
     }
   },
