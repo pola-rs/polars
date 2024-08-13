@@ -209,9 +209,17 @@ mod test {
     }
 
     #[test]
-    fn test_iter_string() {
+    fn test_iter_str() {
         let data = [Some("John"), Some("Doe"), None];
         let a: Series = data.into_iter().collect();
+        let b = Series::new("", data);
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn test_iter_string() {
+        let data = [Some("John".to_string()), Some("Doe".to_string()), None];
+        let a: Series = data.clone().into_iter().collect();
         let b = Series::new("", data);
         assert_eq!(a, b);
     }
