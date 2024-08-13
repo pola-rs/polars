@@ -105,7 +105,7 @@ impl Series {
             Struct(_) => {
                 let mut ca =
                     StructChunked::from_chunks_and_dtype_unchecked(name, chunks, dtype.clone());
-                ca.propagate_nulls_inner();
+                ca.propagate_nulls();
                 ca.into_series()
             },
             #[cfg(feature = "object")]
@@ -406,7 +406,7 @@ impl Series {
                 unsafe {
                     let mut ca =
                         StructChunked::from_chunks_and_dtype_unchecked(name, chunks, dtype);
-                    ca.propagate_nulls_inner();
+                    ca.propagate_nulls();
                     Ok(ca.into_series())
                 }
             },
