@@ -435,7 +435,10 @@ pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool) -> PyResult<PyExpr> {
         Ok(dsl::lit(Null {}).into())
     } else if let Ok(value) = value.downcast::<PyBytes>() {
         Ok(dsl::lit(value.as_bytes()).into())
-    } else if value.get_type().qualname().unwrap() == "Decimal" {
+    } else if matches!(
+        value.get_type().qualname().unwrap().as_str(),
+        "date" | "datetime" | "Decimal"
+    ) {
         let av = py_object_to_any_value(value, true)?;
         Ok(Expr::Literal(LiteralValue::try_from(av).unwrap()).into())
     } else if allow_object {

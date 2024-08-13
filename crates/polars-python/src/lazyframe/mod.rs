@@ -1,6 +1,6 @@
 mod exitable;
-mod visit;
-pub(crate) mod visitor;
+pub mod visit;
+pub mod visitor;
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
@@ -16,7 +16,6 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::types::{PyDict, PyList};
-pub(crate) use visit::PyExprIR;
 
 use crate::error::PyPolarsErr;
 use crate::expr::ToExprs;
