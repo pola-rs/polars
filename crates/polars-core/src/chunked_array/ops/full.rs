@@ -1,4 +1,4 @@
-use arrow::bitmap::MutableBitmap;
+use arrow::bitmap::{Bitmap, MutableBitmap};
 
 use crate::chunked_array::builder::get_list_builder;
 use crate::prelude::*;
@@ -189,7 +189,9 @@ impl ListChunked {
 impl ChunkFullNull for StructChunked {
     fn full_null(name: &str, length: usize) -> StructChunked {
         let s = vec![Series::new_null("", length)];
-        StructChunked::from_series(name, &s).unwrap()
+        StructChunked::from_series(name, &s)
+            .unwrap()
+            .with_outer_validity(Some(Bitmap::new_zeroed(length)))
     }
 }
 
