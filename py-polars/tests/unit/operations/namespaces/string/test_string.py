@@ -4,7 +4,12 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
-from polars.exceptions import ComputeError, InvalidOperationError
+from polars.exceptions import (
+    ColumnNotFoundError,
+    ComputeError,
+    InvalidOperationError,
+    SchemaError,
+)
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -1059,6 +1064,76 @@ def test_replace_many(
             )
         ).item()
     )
+
+
+@pytest.mark.parametrize(
+    ("mapping", "case_insensitive", "expected"),
+    [
+        ({}, False, "Tell me what you want"),
+        ({"me": "them"}, False, "Tell them what you want"),
+        ({"who": "them"}, False, "Tell me what you want"),
+        ({"me": "it", "you": "it"}, False, "Tell it what it want"),
+        ({"Me": "it", "you": "it"}, False, "Tell me what it want"),
+        ({"me": "you", "you": "me"}, False, "Tell you what me want"),
+        ({}, True, "Tell me what you want"),
+        ({"Me": "it", "you": "it"}, True, "Tell it what it want"),
+        ({"me": "you", "YOU": "me"}, True, "Tell you what me want"),
+    ],
+)
+def test_replace_many_mapping(
+    mapping: dict[str, str],
+    case_insensitive: bool,
+    expected: str,
+) -> None:
+    df = pl.DataFrame({"text": ["Tell me what you want"]})
+    # series
+    assert (
+        expected
+        == df["text"]
+        .str.replace_many(mapping, ascii_case_insensitive=case_insensitive)
+        .item()
+    )
+    # expr
+    assert (
+        expected
+        == df.select(
+            pl.col("text").str.replace_many(
+                mapping,
+                ascii_case_insensitive=case_insensitive,
+            )
+        ).item()
+    )
+
+
+def test_replace_many_invalid_inputs() -> None:
+    df = pl.DataFrame({"text": ["Tell me what you want"]})
+
+    # Ensure a string as the first argument is parsed as a column name.
+    with pytest.raises(ColumnNotFoundError, match="me"):
+        df.select(pl.col("text").str.replace_many("me", "you"))
+
+    with pytest.raises(SchemaError):
+        df.select(pl.col("text").str.replace_many(1, 2))
+
+    with pytest.raises(SchemaError):
+        df.select(pl.col("text").str.replace_many([1], [2]))
+
+    with pytest.raises(
+        InvalidOperationError,
+        match="expected the same amount of patterns as replacement strings",
+    ):
+        df.select(pl.col("text").str.replace_many(["a"], ["b", "c"]))
+
+    s = df.to_series()
+
+    with pytest.raises(ColumnNotFoundError, match="me"):
+        s.str.replace_many("me", "you")  # type: ignore[arg-type]
+
+    with pytest.raises(
+        InvalidOperationError,
+        match="expected the same amount of patterns as replacement strings",
+    ):
+        s.str.replace_many(["a"], ["b", "c"])
 
 
 def test_extract_all_count() -> None:
