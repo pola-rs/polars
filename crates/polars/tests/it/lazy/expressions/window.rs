@@ -164,6 +164,7 @@ fn test_sort_by_in_groups() -> PolarsResult<()> {
     Ok(())
 }
 #[test]
+#[cfg(feature = "cum_agg")]
 fn test_literal_window_fn() -> PolarsResult<()> {
     let df = df![
         "chars" => ["a", "a", "b"]

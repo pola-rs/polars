@@ -106,6 +106,7 @@ fn test_many_aliasing_projections_5070() -> PolarsResult<()> {
 }
 
 #[test]
+#[cfg(feature = "cum_agg")]
 fn test_projection_5086() -> PolarsResult<()> {
     let df = df![
         "a" => ["a", "a", "a", "b"],

@@ -1,3 +1,6 @@
+#[cfg(feature = "temporal")]
+use chrono::{Datelike, Timelike};
+
 use super::*;
 
 macro_rules! impl_unit_setter {
@@ -107,11 +110,81 @@ impl DatetimeArgs {
     pub fn with_ambiguous(self, ambiguous: Expr) -> Self {
         Self { ambiguous, ..self }
     }
+
+    fn all_literal(&self) -> bool {
+        use Expr::*;
+        [
+            &self.year,
+            &self.month,
+            &self.day,
+            &self.hour,
+            &self.minute,
+            &self.second,
+            &self.microsecond,
+        ]
+        .iter()
+        .all(|e| matches!(e, Literal(_)))
+    }
+
+    fn as_literal(&self) -> Option<Expr> {
+        if self.time_zone.is_some() || !self.all_literal() {
+            return None;
+        };
+        let Expr::Literal(lv) = &self.year else {
+            unreachable!()
+        };
+        let year = lv.to_any_value()?.extract()?;
+        let Expr::Literal(lv) = &self.month else {
+            unreachable!()
+        };
+        let month = lv.to_any_value()?.extract()?;
+        let Expr::Literal(lv) = &self.day else {
+            unreachable!()
+        };
+        let day = lv.to_any_value()?.extract()?;
+        let Expr::Literal(lv) = &self.hour else {
+            unreachable!()
+        };
+        let hour = lv.to_any_value()?.extract()?;
+        let Expr::Literal(lv) = &self.minute else {
+            unreachable!()
+        };
+        let minute = lv.to_any_value()?.extract()?;
+        let Expr::Literal(lv) = &self.second else {
+            unreachable!()
+        };
+        let second = lv.to_any_value()?.extract()?;
+        let Expr::Literal(lv) = &self.microsecond else {
+            unreachable!()
+        };
+        let ms: u32 = lv.to_any_value()?.extract()?;
+
+        let dt = chrono::NaiveDateTime::default()
+            .with_year(year)?
+            .with_month(month)?
+            .with_day(day)?
+            .with_hour(hour)?
+            .with_minute(minute)?
+            .with_second(second)?
+            .with_nanosecond(ms * 1000)?;
+
+        let ts = match self.time_unit {
+            TimeUnit::Milliseconds => dt.and_utc().timestamp_millis(),
+            TimeUnit::Microseconds => dt.and_utc().timestamp_micros(),
+            TimeUnit::Nanoseconds => dt.and_utc().timestamp_nanos_opt()?,
+        };
+
+        Some(Expr::Literal(LiteralValue::DateTime(ts, self.time_unit, None)).alias("datetime"))
+    }
 }
 
 /// Construct a column of `Datetime` from the provided [`DatetimeArgs`].
 #[cfg(feature = "temporal")]
 pub fn datetime(args: DatetimeArgs) -> Expr {
+    if let Some(e) = args.as_literal() {
+        return e;
+    }
+
     let year = args.year;
     let month = args.month;
     let day = args.day;
