@@ -36,6 +36,28 @@ trigonometry = ["polars-python/trigonometry"]
 parquet = ["polars-python/parquet"]
 ipc = ["polars-python/ipc"]
 
+all = [
+    "build_info",
+    "ffi_plugin",
+    "csv",
+    "polars_cloud",
+    "object",
+    "clipboard",
+    "sql",
+    "trigonometry",
+    "parquet",
+    "ipc",
+]
+
+# we cannot conditionally activate simd
+# https://github.com/rust-lang/cargo/issues/1197
+# so we have an indirection and compile
+# with --no-default-features --features=all for targets without simd
+default = [
+  "all",
+#   "nightly",
+]
+
 # # Features below are only there to enable building a slim binary during development.
 # avro = ["polars/avro"]
 # ipc_streaming = ["polars/ipc_streaming"]
@@ -162,11 +184,3 @@ ipc = ["polars-python/ipc"]
 #   # "new_streaming",
 # ]
 
-# # we cannot conditionally activate simd
-# # https://github.com/rust-lang/cargo/issues/1197
-# # so we have an indirection and compile
-# # with --no-default-features --features=all for targets without simd
-# default = [
-#   "all",
-#   "nightly",
-# ]
