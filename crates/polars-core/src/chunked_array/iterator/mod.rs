@@ -458,7 +458,7 @@ mod test {
     fn out_of_bounds() {
         let mut a = UInt32Chunked::from_slice("a", &[1, 2, 3]);
         let b = UInt32Chunked::from_slice("a", &[1, 2, 3]);
-        a.append(&b);
+        a.append(&b).unwrap();
 
         let v = a.into_iter().collect::<Vec<_>>();
         assert_eq!(
@@ -624,7 +624,7 @@ mod test {
             fn $test_name() {
                 let mut a = <$ca_type>::from_slice("test", &[$first_val, $second_val]);
                 let a_b = <$ca_type>::from_slice("", &[$third_val]);
-                a.append(&a_b);
+                a.append(&a_b).unwrap();
 
                 // normal iterator
                 let mut it = a.into_iter();
@@ -687,7 +687,7 @@ mod test {
             fn $test_name() {
                 let mut a = <$ca_type>::new("test", &[$first_val, $second_val]);
                 let a_b = <$ca_type>::new("", &[$third_val]);
-                a.append(&a_b);
+                a.append(&a_b).unwrap();
 
                 // normal iterator
                 let mut it = a.into_iter();
@@ -841,7 +841,7 @@ mod test {
             fn $test_name() {
                 let mut a = <$ca_type>::from_slice("test", &[$first_val, $second_val]);
                 let a_b = <$ca_type>::from_slice("", &[$third_val]);
-                a.append(&a_b);
+                a.append(&a_b).unwrap();
 
                 // normal iterator
                 let mut it = a.into_no_null_iter();
@@ -960,14 +960,14 @@ mod test {
     impl_test_iter_skip!(utf8_iter_many_chunk_skip, 18, Some("0"), Some("9"), {
         let mut a = StringChunked::from_slice("test", &generate_utf8_vec(SKIP_ITERATOR_SIZE));
         let a_b = StringChunked::from_slice("test", &generate_utf8_vec(SKIP_ITERATOR_SIZE));
-        a.append(&a_b);
+        a.append(&a_b).unwrap();
         a
     });
 
     impl_test_iter_skip!(utf8_iter_many_chunk_null_check_skip, 18, Some("0"), None, {
         let mut a = StringChunked::new("test", &generate_opt_utf8_vec(SKIP_ITERATOR_SIZE));
         let a_b = StringChunked::new("test", &generate_opt_utf8_vec(SKIP_ITERATOR_SIZE));
-        a.append(&a_b);
+        a.append(&a_b).unwrap();
         a
     });
 
@@ -997,14 +997,14 @@ mod test {
     impl_test_iter_skip!(bool_iter_many_chunk_skip, 18, Some(true), Some(false), {
         let mut a = BooleanChunked::from_slice("test", &generate_boolean_vec(SKIP_ITERATOR_SIZE));
         let a_b = BooleanChunked::from_slice("test", &generate_boolean_vec(SKIP_ITERATOR_SIZE));
-        a.append(&a_b);
+        a.append(&a_b).unwrap();
         a
     });
 
     impl_test_iter_skip!(bool_iter_many_chunk_null_check_skip, 18, None, None, {
         let mut a = BooleanChunked::new("test", &generate_opt_boolean_vec(SKIP_ITERATOR_SIZE));
         let a_b = BooleanChunked::new("test", &generate_opt_boolean_vec(SKIP_ITERATOR_SIZE));
-        a.append(&a_b);
+        a.append(&a_b).unwrap();
         a
     });
 }

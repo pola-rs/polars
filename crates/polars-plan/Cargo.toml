@@ -67,6 +67,7 @@ ipc = ["polars-io/ipc"]
 json = ["polars-io/json", "polars-json"]
 csv = ["polars-io/csv"]
 temporal = [
+  "chrono",
   "polars-core/temporal",
   "polars-core/dtype-date",
   "polars-core/dtype-datetime",

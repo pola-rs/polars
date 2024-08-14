@@ -1,5 +1,5 @@
 // used only if feature="is_in", feature="dtype-categorical"
-#[allow(unused_imports)]
+#[cfg(all(feature = "is_in", feature = "dtype-categorical"))]
 use polars_core::{disable_string_cache, StringCacheHolder, SINGLE_LOCK};
 
 use super::*;

@@ -40,12 +40,16 @@ impl private::PrivateSeries for SeriesWrap<StringChunked> {
         (&self.0).into_total_ord_inner()
     }
 
-    fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
+    fn vec_hash(&self, random_state: PlRandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
         self.0.vec_hash(random_state, buf)?;
         Ok(())
     }
 
-    fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) -> PolarsResult<()> {
+    fn vec_hash_combine(
+        &self,
+        build_hasher: PlRandomState,
+        hashes: &mut [u64],
+    ) -> PolarsResult<()> {
         self.0.vec_hash_combine(build_hasher, hashes)?;
         Ok(())
     }
@@ -130,7 +134,7 @@ impl SeriesTrait for SeriesWrap<StringChunked> {
             SchemaMismatch: "cannot extend Series: data types don't match",
         );
         // todo! add object
-        self.0.append(other.as_ref().as_ref());
+        self.0.append(other.as_ref().as_ref())?;
         Ok(())
     }
 
@@ -139,7 +143,7 @@ impl SeriesTrait for SeriesWrap<StringChunked> {
             self.0.dtype() == other.dtype(),
             SchemaMismatch: "cannot extend Series: data types don't match",
         );
-        self.0.extend(other.as_ref().as_ref());
+        self.0.extend(other.as_ref().as_ref())?;
         Ok(())
     }
 

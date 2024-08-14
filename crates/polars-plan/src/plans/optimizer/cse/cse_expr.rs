@@ -7,7 +7,6 @@ use crate::prelude::visitor::AexprNode;
 
 const SERIES_LIMIT: usize = 1000;
 
-use ahash::RandomState;
 use polars_core::hashing::_boost_hash_combine;
 
 #[derive(Debug, Clone)]
@@ -45,7 +44,7 @@ impl ProjectionExprs {
 pub(super) struct Identifier {
     inner: Option<u64>,
     last_node: Option<AexprNode>,
-    hb: RandomState,
+    hb: PlRandomState,
 }
 
 impl Identifier {
@@ -53,7 +52,7 @@ impl Identifier {
         Self {
             inner: None,
             last_node: None,
-            hb: RandomState::with_seed(0),
+            hb: PlRandomState::with_seed(0),
         }
     }
 

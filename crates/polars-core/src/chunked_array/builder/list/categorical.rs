@@ -1,5 +1,3 @@
-use ahash::RandomState;
-
 use super::*;
 
 pub fn create_categorical_chunked_listbuilder(
@@ -88,8 +86,8 @@ struct KeyWrapper(u32);
 
 impl ListLocalCategoricalChunkedBuilder {
     #[inline]
-    pub fn get_hash_builder() -> RandomState {
-        RandomState::with_seed(0)
+    pub fn get_hash_builder() -> PlRandomState {
+        PlRandomState::with_seed(0)
     }
 
     pub(super) fn new(

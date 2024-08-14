@@ -3,7 +3,6 @@ pub(crate) mod vector_hasher;
 
 use std::hash::{BuildHasher, BuildHasherDefault, Hash, Hasher};
 
-use ahash::RandomState;
 use hashbrown::hash_map::RawEntryMut;
 use hashbrown::HashMap;
 pub use identity::*;

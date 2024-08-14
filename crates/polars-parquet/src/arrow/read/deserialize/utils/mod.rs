@@ -663,6 +663,11 @@ impl<D: Decoder> PageDecoder<D> {
             let state_filter;
             (state_filter, filter) = Filter::opt_split_at(&filter, state_len);
 
+            // Skip the whole page if we don't need any rows from it
+            if state_filter.as_ref().is_some_and(|f| f.num_rows() == 0) {
+                continue;
+            }
+
             let start_length = target.len();
             state.extend_from_state(&mut self.decoder, &mut target, state_filter)?;
             let end_length = target.len();

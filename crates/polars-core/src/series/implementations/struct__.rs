@@ -66,7 +66,7 @@ impl PrivateSeries for SeriesWrap<StructChunked> {
         self.0.agg_list(groups)
     }
 
-    fn vec_hash(&self, build_hasher: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
+    fn vec_hash(&self, build_hasher: PlRandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
         let mut fields = self.0.fields_as_series().into_iter();
 
         if let Some(s) = fields.next() {
@@ -242,10 +242,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
     }
 
     fn shift(&self, periods: i64) -> Series {
-        self.0
-            ._apply_fields(|s| s.shift(periods))
-            .unwrap()
-            .into_series()
+        self.0.shift(periods).into_series()
     }
 
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {

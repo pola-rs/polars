@@ -51,12 +51,16 @@ impl private::PrivateSeries for SeriesWrap<TimeChunked> {
             .map(|ca| ca.into_time().into_series())
     }
 
-    fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
+    fn vec_hash(&self, random_state: PlRandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
         self.0.vec_hash(random_state, buf)?;
         Ok(())
     }
 
-    fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) -> PolarsResult<()> {
+    fn vec_hash_combine(
+        &self,
+        build_hasher: PlRandomState,
+        hashes: &mut [u64],
+    ) -> PolarsResult<()> {
         self.0.vec_hash_combine(build_hasher, hashes)?;
         Ok(())
     }
@@ -160,7 +164,7 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
         // ref Cow
         // ref SeriesTrait
         // ref ChunkedArray
-        self.0.append(other.as_ref().as_ref().as_ref());
+        self.0.append(other.as_ref().as_ref().as_ref())?;
         Ok(())
     }
 
@@ -171,7 +175,7 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
         // ref SeriesTrait
         // ref ChunkedArray
         let other = other.to_physical_repr();
-        self.0.extend(other.as_ref().as_ref().as_ref());
+        self.0.extend(other.as_ref().as_ref().as_ref())?;
         Ok(())
     }
 

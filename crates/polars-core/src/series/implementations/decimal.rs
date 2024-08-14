@@ -126,12 +126,16 @@ impl private::PrivateSeries for SeriesWrap<DecimalChunked> {
         (&self.0).into_total_ord_inner()
     }
 
-    fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
+    fn vec_hash(&self, random_state: PlRandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
         self.0.vec_hash(random_state, buf)?;
         Ok(())
     }
 
-    fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) -> PolarsResult<()> {
+    fn vec_hash_combine(
+        &self,
+        build_hasher: PlRandomState,
+        hashes: &mut [u64],
+    ) -> PolarsResult<()> {
         self.0.vec_hash_combine(build_hasher, hashes)?;
         Ok(())
     }
@@ -227,14 +231,14 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(self.0.dtype() == other.dtype(), append);
         let other = other.decimal()?;
-        self.0.append(&other.0);
+        self.0.append(&other.0)?;
         Ok(())
     }
 
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(self.0.dtype() == other.dtype(), extend);
         let other = other.decimal()?;
-        self.0.extend(&other.0);
+        self.0.extend(&other.0)?;
         Ok(())
     }
 

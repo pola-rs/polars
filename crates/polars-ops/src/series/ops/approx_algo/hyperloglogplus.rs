@@ -20,7 +20,7 @@
 use std::hash::Hash;
 use std::marker::PhantomData;
 
-use polars_core::export::ahash::RandomState;
+use polars_utils::aliases::PlRandomStateQuality;
 
 /// The greater is P, the smaller the error.
 const HLL_P: usize = 14_usize;
@@ -54,7 +54,7 @@ where
 /// shared across cluster, this SEED will have to be consistent across all
 /// parties otherwise we might have corruption. So ideally for later this seed
 /// shall be part of the serialized form (or stay unchanged across versions).
-const SEED: RandomState = RandomState::with_seeds(
+const SEED: PlRandomStateQuality = PlRandomStateQuality::with_seeds(
     0x885f6cab121d01a3_u64,
     0x71e4379f2976ad8f_u64,
     0xbf30173dd28a8816_u64,
@@ -81,9 +81,6 @@ where
         }
     }
 
-    /// choice of hash function: ahash is already an dependency
-    /// and it fits the requirements of being a 64bit hash with
-    /// reasonable performance.
     #[inline]
     fn hash_value(&self, obj: &T) -> u64 {
         SEED.hash_one(obj)

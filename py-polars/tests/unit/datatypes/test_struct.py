@@ -996,3 +996,30 @@ def test_struct_outer_nullability_zip_18119() -> None:
             {"a": True, "b": False},
         ],
     }
+
+
+def test_struct_group_by_shift_18107() -> None:
+    df_in = pl.DataFrame(
+        {
+            "group": [1, 1, 1, 2, 2, 2],
+            "id": [1, 2, 3, 4, 5, 6],
+            "value": [
+                {"lon": 20, "lat": 10},
+                {"lon": 30, "lat": 20},
+                {"lon": 40, "lat": 30},
+                {"lon": 50, "lat": 40},
+                {"lon": 60, "lat": 50},
+                {"lon": 70, "lat": 60},
+            ],
+        }
+    )
+
+    assert df_in.group_by("group", maintain_order=True).agg(
+        pl.col("value").shift(-1)
+    ).to_dict(as_series=False) == {
+        "group": [1, 2],
+        "value": [
+            [{"lon": 30, "lat": 20}, {"lon": 40, "lat": 30}, None],
+            [{"lon": 60, "lat": 50}, {"lon": 70, "lat": 60}, None],
+        ],
+    }
