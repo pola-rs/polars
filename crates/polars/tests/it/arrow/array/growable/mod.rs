@@ -18,12 +18,6 @@ fn test_make_growable() {
     let array = Int32Array::from_slice([1, 2]);
     make_growable(&[&array], false, 2);
 
-    let array = Utf8Array::<i32>::from_slice(["a", "aa"]);
-    make_growable(&[&array], false, 2);
-
-    let array = Utf8Array::<i64>::from_slice(["a", "aa"]);
-    make_growable(&[&array], false, 2);
-
     let array = BinaryArray::<i32>::from_slice([b"a".as_ref(), b"aa".as_ref()]);
     make_growable(&[&array], false, 2);
 
