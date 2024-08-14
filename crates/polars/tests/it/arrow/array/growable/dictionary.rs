@@ -7,14 +7,14 @@ fn test_single() -> PolarsResult<()> {
     let original_data = vec![Some("a"), Some("b"), Some("a")];
 
     let data = original_data.clone();
-    let mut array = MutableDictionaryArray::<i32, MutableUtf8Array<i64>>::new();
+    let mut array = MutableDictionaryArray::<i32, MutableBinaryViewArray<str>>::new();
     array.try_extend(data)?;
     let array = array.into();
 
     // same values, less keys
     let expected = DictionaryArray::try_from_keys(
         PrimitiveArray::from_vec(vec![1, 0]),
-        Box::new(Utf8Array::<i64>::from(&original_data)),
+        Box::new(Utf8ViewArray::from_slice(&original_data)),
     )
     .unwrap();
 
@@ -39,11 +39,11 @@ fn test_multi() -> PolarsResult<()> {
     let data1 = original_data1.clone();
     let data2 = original_data2.clone();
 
-    let mut array1 = MutableDictionaryArray::<i32, MutableUtf8Array<i64>>::new();
+    let mut array1 = MutableDictionaryArray::<i32, MutableBinaryViewArray<str>>::new();
     array1.try_extend(data1)?;
     let array1: DictionaryArray<i32> = array1.into();
 
-    let mut array2 = MutableDictionaryArray::<i32, MutableUtf8Array<i64>>::new();
+    let mut array2 = MutableDictionaryArray::<i32, MutableBinaryViewArray<str>>::new();
     array2.try_extend(data2)?;
     let array2: DictionaryArray<i32> = array2.into();
 
@@ -51,7 +51,7 @@ fn test_multi() -> PolarsResult<()> {
     original_data1.extend(original_data2.iter().cloned());
     let expected = DictionaryArray::try_from_keys(
         PrimitiveArray::from(&[Some(1), None, Some(3), None]),
-        Utf8Array::<i64>::from_slice(["a", "b", "c", "b", "a"]).boxed(),
+        Utf8ViewArray::from_slice_values(["a", "b", "c", "b", "a"]).boxed(),
     )
     .unwrap();
 

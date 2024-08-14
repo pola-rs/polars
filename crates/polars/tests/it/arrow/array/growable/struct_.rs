@@ -1,10 +1,10 @@
 use arrow::array::growable::{Growable, GrowableStruct};
-use arrow::array::{Array, PrimitiveArray, StructArray, Utf8Array};
+use arrow::array::{Array, PrimitiveArray, StructArray, Utf8ViewArray};
 use arrow::bitmap::Bitmap;
 use arrow::datatypes::{ArrowDataType, Field};
 
 fn some_values() -> (ArrowDataType, Vec<Box<dyn Array>>) {
-    let strings: Box<dyn Array> = Box::new(Utf8Array::<i32>::from([
+    let strings: Box<dyn Array> = Box::new(Utf8ViewArray::from_slice([
         Some("a"),
         Some("aa"),
         None,
@@ -19,7 +19,7 @@ fn some_values() -> (ArrowDataType, Vec<Box<dyn Array>>) {
         Some(5),
     ]));
     let fields = vec![
-        Field::new("f1", ArrowDataType::Utf8, true),
+        Field::new("f1", ArrowDataType::Utf8View, true),
         Field::new("f2", ArrowDataType::Int32, true),
     ];
     (ArrowDataType::Struct(fields), vec![strings, ints])
@@ -115,7 +115,7 @@ fn many() {
     assert_eq!(mutable.len(), 5);
     let result = mutable.as_box();
 
-    let expected_string: Box<dyn Array> = Box::new(Utf8Array::<i32>::from([
+    let expected_string: Box<dyn Array> = Box::new(Utf8ViewArray::from_slice([
         Some("aa"),
         None,
         Some("a"),
