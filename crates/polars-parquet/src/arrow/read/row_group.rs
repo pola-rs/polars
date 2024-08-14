@@ -160,7 +160,7 @@ pub fn to_deserializer(
 /// This operation is single-threaded. For readers with stronger invariants
 /// (e.g. implement [`Clone`]) you can use [`read_columns`] to read multiple columns at once
 /// and convert them to [`ArrayIter`] via [`to_deserializer`].
-pub fn read_columns_many<'a, R: Read + Seek>(
+pub fn read_columns_many<R: Read + Seek>(
     reader: &mut R,
     row_group: &RowGroupMetaData,
     fields: Vec<Field>,
