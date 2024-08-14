@@ -10,7 +10,6 @@ pub mod statistics;
 
 use std::io::{Read, Seek};
 
-use arrow::array::Array;
 use arrow::types::{i256, NativeType};
 pub use deserialize::{
     column_iter_to_arrays, create_list, create_map, get_page_iterator, init_nested, n_columns,
@@ -44,9 +43,6 @@ pub use crate::parquet::{
     types::int96_to_i64_ns,
     FallibleStreamingIterator,
 };
-
-/// Type def for a sharable, boxed dyn [`Iterator`] of arrays
-pub type ArrayIter<'a> = Box<dyn Iterator<Item = PolarsResult<Box<dyn Array>>> + Send + Sync + 'a>;
 
 /// Reads parquets' metadata synchronously.
 pub fn read_metadata<R: Read + Seek>(reader: &mut R) -> PolarsResult<FileMetaData> {

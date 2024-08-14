@@ -1,3 +1,4 @@
+use arrow::array::Array;
 use arrow::datatypes::Field;
 #[cfg(feature = "async")]
 use bytes::Bytes;
@@ -5,7 +6,7 @@ use bytes::Bytes;
 use polars_core::datatypes::PlHashMap;
 use polars_error::PolarsResult;
 use polars_parquet::read::{
-    column_iter_to_arrays, get_field_columns, ArrayIter, BasicDecompressor, ColumnChunkMetaData,
+    column_iter_to_arrays, get_field_columns, BasicDecompressor, ColumnChunkMetaData,
     Filter, PageReader,
 };
 use polars_utils::mmap::{MemReader, MemSlice};
@@ -66,7 +67,7 @@ pub(super) fn to_deserializer<'a>(
     columns: Vec<(&ColumnChunkMetaData, MemSlice)>,
     field: Field,
     filter: Option<Filter>,
-) -> PolarsResult<ArrayIter<'a>> {
+) -> PolarsResult<Box<dyn Array>> {
     let (columns, types): (Vec<_>, Vec<_>) = columns
         .into_iter()
         .map(|(column_meta, chunk)| {
