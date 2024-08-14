@@ -324,10 +324,85 @@ impl DurationArgs {
     impl_unit_setter!(with_milliseconds(milliseconds));
     impl_unit_setter!(with_microseconds(microseconds));
     impl_unit_setter!(with_nanoseconds(nanoseconds));
+
+    fn all_literal(&self) -> bool {
+        use Expr::*;
+        [
+            &self.weeks,
+            &self.days,
+            &self.hours,
+            &self.seconds,
+            &self.minutes,
+            &self.milliseconds,
+            &self.microseconds,
+            &self.nanoseconds,
+        ]
+        .iter()
+        .all(|e| matches!(e, Literal(_)))
+    }
+
+    fn as_literal(&self) -> Option<Expr> {
+        if !self.all_literal() {
+            return None;
+        };
+        let Expr::Literal(lv) = &self.weeks else {
+            unreachable!()
+        };
+        let weeks = lv.to_any_value()?.extract()?;
+        let Expr::Literal(lv) = &self.days else {
+            unreachable!()
+        };
+        let days = lv.to_any_value()?.extract()?;
+        let Expr::Literal(lv) = &self.hours else {
+            unreachable!()
+        };
+        let hours = lv.to_any_value()?.extract()?;
+        let Expr::Literal(lv) = &self.seconds else {
+            unreachable!()
+        };
+        let seconds = lv.to_any_value()?.extract()?;
+        let Expr::Literal(lv) = &self.minutes else {
+            unreachable!()
+        };
+        let minutes = lv.to_any_value()?.extract()?;
+        let Expr::Literal(lv) = &self.milliseconds else {
+            unreachable!()
+        };
+        let milliseconds = lv.to_any_value()?.extract()?;
+        let Expr::Literal(lv) = &self.microseconds else {
+            unreachable!()
+        };
+        let microseconds = lv.to_any_value()?.extract()?;
+        let Expr::Literal(lv) = &self.nanoseconds else {
+            unreachable!()
+        };
+        let nanoseconds = lv.to_any_value()?.extract()?;
+
+        type D = chrono::Duration;
+        let delta = D::weeks(weeks)
+            + D::days(days)
+            + D::hours(hours)
+            + D::seconds(seconds)
+            + D::minutes(minutes)
+            + D::milliseconds(milliseconds)
+            + D::microseconds(microseconds)
+            + D::nanoseconds(nanoseconds);
+
+        let d = match self.time_unit {
+            TimeUnit::Milliseconds => delta.num_milliseconds(),
+            TimeUnit::Microseconds => delta.num_microseconds()?,
+            TimeUnit::Nanoseconds => delta.num_nanoseconds()?,
+        };
+
+        Some(Expr::Literal(LiteralValue::Duration(d, self.time_unit)).alias("duration"))
+    }
 }
 
 /// Construct a column of [`Duration`] from the provided [`DurationArgs`]
 pub fn duration(args: DurationArgs) -> Expr {
+    if let Some(e) = args.as_literal() {
+        return e;
+    }
     Expr::Function {
         input: vec![
             args.weeks,

@@ -338,6 +338,10 @@ impl DataType {
         matches!(self, DataType::Binary)
     }
 
+    pub fn is_date(&self) -> bool {
+        matches!(self, DataType::Date)
+    }
+
     pub fn is_object(&self) -> bool {
         #[cfg(feature = "object")]
         {
