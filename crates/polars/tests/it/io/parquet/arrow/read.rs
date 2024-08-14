@@ -3,9 +3,12 @@ use std::path::PathBuf;
 use polars_parquet::arrow::read::*;
 
 use super::*;
+use crate::io::parquet::read::file::FileReader;
 #[cfg(feature = "parquet")]
 #[test]
 fn all_types() -> PolarsResult<()> {
+    use crate::io::parquet::read::file::FileReader;
+
     let dir = env!("CARGO_MANIFEST_DIR");
     let path = PathBuf::from(dir).join("../../docs/data/alltypes_plain.parquet");
 
@@ -49,6 +52,8 @@ fn all_types() -> PolarsResult<()> {
 #[test]
 fn all_types_chunked() -> PolarsResult<()> {
     // this has one batch with 8 elements
+
+    use crate::io::parquet::read::file::FileReader;
     let dir = env!("CARGO_MANIFEST_DIR");
     let path = PathBuf::from(dir).join("../../docs/data/alltypes_plain.parquet");
     let mut reader = std::fs::File::open(path)?;

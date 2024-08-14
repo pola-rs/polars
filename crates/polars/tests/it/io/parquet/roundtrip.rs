@@ -10,6 +10,8 @@ use polars_parquet::write::{
     CompressionOptions, Encoding, RowGroupIterator, StatisticsOptions, Version,
 };
 
+use crate::io::parquet::read::file::FileReader;
+
 fn round_trip(
     array: &ArrayRef,
     version: Version,
@@ -53,7 +55,7 @@ fn round_trip(
         .collect();
 
     // we can then read the row groups into chunks
-    let chunks = polars_parquet::read::FileReader::new(reader, row_groups, schema, None);
+    let chunks = FileReader::new(reader, row_groups, schema, None);
 
     let mut arrays = vec![];
     for chunk in chunks {
