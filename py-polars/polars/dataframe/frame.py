@@ -8581,17 +8581,15 @@ class DataFrame:
         """
         Start a lazy query from this point. This returns a `LazyFrame` object.
 
-        Operations on a `LazyFrame` are not executed until this is requested by either
-        calling:
+        Operations on a `LazyFrame` are not executed until this is triggered
+        by calling one of:
 
         * :meth:`.collect() <polars.LazyFrame.collect>`
             (run on all data)
-        * :meth:`.describe_plan() <polars.LazyFrame.describe_plan>`
-            (print unoptimized query plan)
-        * :meth:`.describe_optimized_plan() <polars.LazyFrame.describe_optimized_plan>`
-            (print optimized query plan)
+        * :meth:`.explain() <polars.LazyFrame.explain>`
+            (print the query plan)
         * :meth:`.show_graph() <polars.LazyFrame.show_graph>`
-            (show (un)optimized query plan as graphviz graph)
+            (show the query plan as graphviz graph)
         * :meth:`.collect_schema() <polars.LazyFrame.collect_schema>`
             (return the final frame schema)
 
