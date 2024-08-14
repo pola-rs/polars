@@ -611,7 +611,7 @@ class DataFrame:
             This functionality is currently considered **unstable**. It may be
             changed at any point without it being considered a breaking change.
 
-        .. versionchanged:: 1.5.0
+        .. versionchanged:: 1.6.0
             In prior versions of Polars, HvPlot was the plotting backend. If you would
             like to restore the previous plotting functionality, all you need to do
             add `import hvplot.polars` at the top of your script and replace

@@ -63,7 +63,7 @@ class Plot:
         as is intended for convenience - for full customisatibility, use a plotting
         library directly.
 
-        .. versionchanged:: 1.5.0
+        .. versionchanged:: 1.6.0
             In prior versions of Polars, HvPlot was the plotting backend. If you would
             like to restore the previous plotting functionality, all you need to do
             add `import hvplot.polars` at the top of your script and replace
@@ -126,7 +126,7 @@ class Plot:
         as is intended for convenience - for full customisatibility, use a plotting
         library directly.
 
-        .. versionchanged:: 1.5.0
+        .. versionchanged:: 1.6.0
             In prior versions of Polars, HvPlot was the plotting backend. If you would
             like to restore the previous plotting functionality, all you need to do
             add `import hvplot.polars` at the top of your script and replace
@@ -195,7 +195,7 @@ class Plot:
         as is intended for convenience - for full customisatibility, use a plotting
         library directly.
 
-        .. versionchanged:: 1.5.0
+        .. versionchanged:: 1.6.0
             In prior versions of Polars, HvPlot was the plotting backend. If you would
             like to restore the previous plotting functionality, all you need to do
             add `import hvplot.polars` at the top of your script and replace
