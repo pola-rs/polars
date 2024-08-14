@@ -4,13 +4,11 @@ use arrow::array::Array;
 use arrow::datatypes::Field;
 use arrow::record_batch::RecordBatchT;
 use polars_error::PolarsResult;
+use polars_parquet::arrow::read::{column_iter_to_arrays, Filter};
+use polars_parquet::parquet::metadata::ColumnChunkMetaData;
+use polars_parquet::parquet::read::{get_field_columns, BasicDecompressor, PageReader};
+use polars_parquet::read::RowGroupMetaData;
 use polars_utils::mmap::MemReader;
-
-use super::RowGroupMetaData;
-use crate::arrow::read::column_iter_to_arrays;
-use crate::arrow::read::deserialize::Filter;
-use crate::parquet::metadata::ColumnChunkMetaData;
-use crate::parquet::read::{BasicDecompressor, PageReader};
 
 /// An [`Iterator`] of [`RecordBatchT`] that (dynamically) adapts a vector of iterators of [`Array`] into
 /// an iterator of [`RecordBatchT`].
@@ -65,33 +63,6 @@ impl Iterator for RowGroupDeserializer {
     }
 }
 
-/// Returns all [`ColumnChunkMetaData`] associated to `field_name`.
-/// For non-nested parquet types, this returns a single column
-pub fn get_field_columns<'a>(
-    columns: &'a [ColumnChunkMetaData],
-    field_name: &str,
-) -> Vec<&'a ColumnChunkMetaData> {
-    columns
-        .iter()
-        .filter(|x| x.descriptor().path_in_schema[0] == field_name)
-        .collect()
-}
-
-/// Returns all [`ColumnChunkMetaData`] associated to `field_name`.
-/// For non-nested parquet types, this returns a single column
-pub fn get_field_pages<'a, T>(
-    columns: &'a [ColumnChunkMetaData],
-    items: &'a [T],
-    field_name: &str,
-) -> Vec<&'a T> {
-    columns
-        .iter()
-        .zip(items)
-        .filter(|(metadata, _)| metadata.descriptor().path_in_schema[0] == field_name)
-        .map(|(_, item)| item)
-        .collect()
-}
-
 /// Reads all columns that are part of the parquet field `field_name`
 /// # Implementation
 /// This operation is IO-bounded `O(C)` where C is the number of columns associated to
@@ -99,10 +70,9 @@ pub fn get_field_pages<'a, T>(
 pub fn read_columns<'a, R: Read + Seek>(
     reader: &mut R,
     columns: &'a [ColumnChunkMetaData],
-    field_name: &str,
+    field_name: &'a str,
 ) -> PolarsResult<Vec<(&'a ColumnChunkMetaData, Vec<u8>)>> {
     get_field_columns(columns, field_name)
-        .into_iter()
         .map(|meta| _read_single_column(reader, meta))
         .collect()
 }
@@ -175,7 +145,7 @@ pub fn read_columns_many<R: Read + Seek>(
 
     field_columns
         .into_iter()
-        .zip(fields)
-        .map(|(columns, field)| to_deserializer(columns, field, filter.clone()))
+        .zip(fields.clone())
+        .map(|(columns, field)| to_deserializer(columns.clone(), field, filter.clone()))
         .collect()
 }

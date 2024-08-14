@@ -2,9 +2,7 @@
 #![allow(clippy::type_complexity)]
 
 mod deserialize;
-mod file;
 pub mod indexes;
-mod row_group;
 pub mod schema;
 pub mod statistics;
 
@@ -15,11 +13,9 @@ pub use deserialize::{
     column_iter_to_arrays, create_list, create_map, get_page_iterator, init_nested, n_columns,
     Filter, InitNested, NestedState,
 };
-pub use file::{FileReader, RowGroupReader};
 #[cfg(feature = "async")]
 use futures::{AsyncRead, AsyncSeek};
 use polars_error::PolarsResult;
-pub use row_group::*;
 pub use schema::{infer_schema, FileMetaData};
 
 use crate::parquet::error::ParquetResult;
@@ -43,6 +39,33 @@ pub use crate::parquet::{
     types::int96_to_i64_ns,
     FallibleStreamingIterator,
 };
+
+/// Returns all [`ColumnChunkMetaData`] associated to `field_name`.
+/// For non-nested parquet types, this returns a single column
+pub fn get_field_columns<'a>(
+    columns: &'a [ColumnChunkMetaData],
+    field_name: &str,
+) -> Vec<&'a ColumnChunkMetaData> {
+    columns
+        .iter()
+        .filter(|x| x.descriptor().path_in_schema[0] == field_name)
+        .collect()
+}
+
+/// Returns all [`ColumnChunkMetaData`] associated to `field_name`.
+/// For non-nested parquet types, this returns a single column
+pub fn get_field_pages<'a, T>(
+    columns: &'a [ColumnChunkMetaData],
+    items: &'a [T],
+    field_name: &str,
+) -> Vec<&'a T> {
+    columns
+        .iter()
+        .zip(items)
+        .filter(|(metadata, _)| metadata.descriptor().path_in_schema[0] == field_name)
+        .map(|(_, item)| item)
+        .collect()
+}
 
 /// Reads parquets' metadata synchronously.
 pub fn read_metadata<R: Read + Seek>(reader: &mut R) -> PolarsResult<FileMetaData> {

@@ -15,6 +15,8 @@ use polars_parquet::read as p_read;
 use polars_parquet::read::statistics::*;
 use polars_parquet::write::*;
 
+use super::read::file::FileReader;
+
 type ArrayStats = (Box<dyn Array>, Statistics);
 
 fn new_struct(
@@ -52,7 +54,7 @@ pub fn read_column<R: Read + Seek>(mut reader: R, column: &str) -> PolarsResult<
 
     let statistics = deserialize(field, row_group)?;
 
-    let mut reader = p_read::FileReader::new(reader, metadata.row_groups, schema, None);
+    let mut reader = FileReader::new(reader, metadata.row_groups, schema, None);
 
     let array = reader.next().unwrap()?.into_arrays().pop().unwrap();
 
@@ -1302,7 +1304,7 @@ fn integration_read(data: &[u8], limit: Option<usize>) -> PolarsResult<Integrati
         let mut _statistics = deserialize(field, row_group)?;
     }
 
-    let reader = p_read::FileReader::new(
+    let reader = FileReader::new(
         Cursor::new(data),
         metadata.row_groups,
         schema.clone(),
@@ -1644,7 +1646,7 @@ fn filter_chunk() -> PolarsResult<()> {
         .map(|(_, row_group)| row_group)
         .collect();
 
-    let reader = p_read::FileReader::new(reader, row_groups, schema, None);
+    let reader = FileReader::new(reader, row_groups, schema, None);
 
     let new_chunks = reader.collect::<PolarsResult<Vec<_>>>()?;
 
