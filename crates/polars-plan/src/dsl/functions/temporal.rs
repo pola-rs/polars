@@ -1,4 +1,3 @@
-#[cfg(feature = "temporal")]
 use chrono::{Datelike, Timelike};
 
 use super::*;
@@ -179,7 +178,6 @@ impl DatetimeArgs {
 }
 
 /// Construct a column of `Datetime` from the provided [`DatetimeArgs`].
-#[cfg(feature = "temporal")]
 pub fn datetime(args: DatetimeArgs) -> Expr {
     if let Some(e) = args.as_literal() {
         return e;
@@ -329,7 +327,6 @@ impl DurationArgs {
 }
 
 /// Construct a column of [`Duration`] from the provided [`DurationArgs`]
-#[cfg(feature = "temporal")]
 pub fn duration(args: DurationArgs) -> Expr {
     Expr::Function {
         input: vec![
