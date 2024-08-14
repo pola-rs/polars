@@ -740,19 +740,9 @@ where
     let mut iter = dfs.into_iter();
     let additional = iter.size_hint().0;
     let mut acc_df = iter.next().unwrap();
-    let mut acc_height = acc_df.height();
     acc_df.reserve_chunks(additional);
     for df in iter {
-        acc_height += df.height();
         acc_df.vstack_mut(&df)?;
-    }
-
-    if acc_height > IdxSize::MAX as usize {
-        polars_bail!(
-            ComputeError: "DataFrame vertical accumulate read produces more than pow(2, 32) rows; \
-            consider compiling with polars-bigidx feature (polars-u64-idx package on python), or \
-            set 'streaming'"
-        );
     }
 
     Ok(acc_df)
@@ -1186,12 +1176,12 @@ mod test {
     }
 
     #[test]
-    fn test_align_chunks() {
+    fn test_align_chunks() -> PolarsResult<()> {
         let a = Int32Chunked::new("", &[1, 2, 3, 4]);
         let mut b = Int32Chunked::new("", &[1]);
         let b2 = Int32Chunked::new("", &[2, 3, 4]);
 
-        b.append(&b2);
+        b.append(&b2)?;
         let (a, b) = align_chunks_binary(&a, &b);
         assert_eq!(
             a.chunk_lengths().collect::<Vec<_>>(),
@@ -1201,13 +1191,15 @@ mod test {
         let a = Int32Chunked::new("", &[1, 2, 3, 4]);
         let mut b = Int32Chunked::new("", &[1]);
         let b1 = b.clone();
-        b.append(&b1);
-        b.append(&b1);
-        b.append(&b1);
+        b.append(&b1)?;
+        b.append(&b1)?;
+        b.append(&b1)?;
         let (a, b) = align_chunks_binary(&a, &b);
         assert_eq!(
             a.chunk_lengths().collect::<Vec<_>>(),
             b.chunk_lengths().collect::<Vec<_>>()
         );
+
+        Ok(())
     }
 }

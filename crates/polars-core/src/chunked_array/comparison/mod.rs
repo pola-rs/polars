@@ -916,7 +916,7 @@ mod test {
         let mut a1 = Int32Chunked::new("a", &[1, 2, 3]);
         let a2 = Int32Chunked::new("a", &[4, 5, 6]);
         let a3 = Int32Chunked::new("a", &[1, 2, 3, 4, 5, 6]);
-        a1.append(&a2);
+        a1.append(&a2).unwrap();
         (a1, a3)
     }
 
@@ -1049,7 +1049,9 @@ mod test {
         let a2: Int32Chunked = [Some(1), Some(2), Some(3)].iter().copied().collect();
 
         let mut a2_2chunks: Int32Chunked = [Some(1), Some(2)].iter().copied().collect();
-        a2_2chunks.append(&[Some(3)].iter().copied().collect());
+        a2_2chunks
+            .append(&[Some(3)].iter().copied().collect())
+            .unwrap();
 
         assert_eq!(
             a1.equal(&a2).into_iter().collect::<Vec<_>>(),

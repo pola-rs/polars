@@ -22,10 +22,10 @@ macro_rules! impl_shift_fill {
         };
 
         if $periods < 0 {
-            slice.append(&fill);
+            slice.append(&fill).unwrap();
             slice
         } else {
-            fill.append(&slice);
+            fill.append(&slice).unwrap();
             fill
         }
     }};

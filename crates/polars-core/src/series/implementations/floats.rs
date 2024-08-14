@@ -201,13 +201,13 @@ macro_rules! impl_dyn_series {
 
             fn append(&mut self, other: &Series) -> PolarsResult<()> {
                 polars_ensure!(self.0.dtype() == other.dtype(), append);
-                self.0.append(other.as_ref().as_ref());
+                self.0.append(other.as_ref().as_ref())?;
                 Ok(())
             }
 
             fn extend(&mut self, other: &Series) -> PolarsResult<()> {
                 polars_ensure!(self.0.dtype() == other.dtype(), extend);
-                self.0.extend(other.as_ref().as_ref());
+                self.0.extend(other.as_ref().as_ref())?;
                 Ok(())
             }
 

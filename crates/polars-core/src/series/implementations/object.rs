@@ -117,7 +117,7 @@ where
         if self.dtype() != other.dtype() {
             polars_bail!(append);
         }
-        ObjectChunked::append(&mut self.0, other.as_ref().as_ref());
+        ObjectChunked::append(&mut self.0, other.as_ref().as_ref())?;
         Ok(())
     }
 
