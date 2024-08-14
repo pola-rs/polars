@@ -80,7 +80,7 @@ class Plot:
         color
             Column to color bars by.
         tooltip
-            Columns to show values of when hovering over points with pointer.
+            Columns to show values of when hovering over bars with pointer.
         *args, **kwargs
             Additional arguments and keyword arguments passed to Altair.
 
@@ -94,7 +94,7 @@ class Plot:
         ...         "stock": ["a", "a", "a", "b", "b", "b"],
         ...     }
         ... )
-        >>> df.plot.line(x="date", y="price", color="stock")  # doctest: +SKIP
+        >>> df.plot.bar(x="price", y="count()")  # doctest: +SKIP
         """
         encodings: Encodings = {}
         if x is not None:
@@ -145,7 +145,7 @@ class Plot:
         order
             Column to use for order of data points in lines.
         tooltip
-            Columns to show values of when hovering over points with pointer.
+            Columns to show values of when hovering over lines with pointer.
         *args, **kwargs
             Additional arguments and keyword arguments passed to Altair.
 

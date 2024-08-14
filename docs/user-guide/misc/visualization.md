@@ -57,6 +57,9 @@ To create a scatter plot we can pass columns of a `DataFrame` directly to Matplo
 Matplotlib does not have explicit support for Polars objects but can accept a Polars `Series` by
 converting it to a NumPy array (which is zero-copy for numeric data without null values).
 
+Note that because the column `'species'` isn't numeric, we need to first convert it to numeric values so that
+it can be passed as an argument to `c`.
+
 {{code_block('user-guide/misc/visualization','matplotlib_show_plot',[])}}
 
 ```python exec="on" session="user-guide/misc/visualization"
