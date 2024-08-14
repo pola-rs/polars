@@ -535,6 +535,7 @@ impl<'a> PredicatePushDown<'a> {
                                 expr_arena,
                             ))
                         },
+                        #[cfg(feature = "pivot")]
                         FunctionIR::Unpivot { args, .. } => {
                             let variable_name = args.variable_name.as_deref().unwrap_or("variable");
                             let value_name = args.value_name.as_deref().unwrap_or("value");

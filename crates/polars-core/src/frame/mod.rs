@@ -575,6 +575,11 @@ impl DataFrame {
         &mut self.columns
     }
 
+    /// Take ownership of the underlying columns vec.
+    pub fn take_columns(self) -> Vec<Series> {
+        self.columns
+    }
+
     /// Iterator over the columns as [`Series`].
     ///
     /// # Example
@@ -926,8 +931,13 @@ impl DataFrame {
         Ok(self)
     }
 
-    /// Does not check if schema is correct
-    pub(crate) fn vstack_mut_unchecked(&mut self, other: &DataFrame) {
+    /// Concatenate a [`DataFrame`] to this [`DataFrame`]
+    ///
+    /// If many `vstack` operations are done, it is recommended to call [`DataFrame::align_chunks`].
+    ///
+    /// # Panics
+    /// Panics if the schema's don't match.
+    pub fn vstack_mut_unchecked(&mut self, other: &DataFrame) {
         self.columns
             .iter_mut()
             .zip(other.columns.iter())

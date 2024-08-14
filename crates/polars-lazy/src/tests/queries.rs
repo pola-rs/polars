@@ -46,6 +46,7 @@ fn test_lazy_alias() {
 }
 
 #[test]
+#[cfg(feature = "pivot")]
 fn test_lazy_unpivot() {
     let df = get_df();
 

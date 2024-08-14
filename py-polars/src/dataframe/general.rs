@@ -372,6 +372,7 @@ impl PyDataFrame {
         PyDataFrame::new(self.df.clone())
     }
 
+    #[cfg(feature = "pivot")]
     pub fn unpivot(
         &self,
         on: Vec<PyBackedStr>,
@@ -379,6 +380,7 @@ impl PyDataFrame {
         value_name: Option<&str>,
         variable_name: Option<&str>,
     ) -> PyResult<Self> {
+        use polars_ops::pivot::UnpivotDF;
         let args = UnpivotArgsIR {
             on: strings_to_smartstrings(on),
             index: strings_to_smartstrings(index),

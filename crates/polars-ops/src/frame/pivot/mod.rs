@@ -1,4 +1,5 @@
 mod positioning;
+mod unpivot;
 
 use std::borrow::Cow;
 
@@ -7,6 +8,7 @@ use polars_core::frame::group_by::expr::PhysicalAggExpr;
 use polars_core::prelude::*;
 use polars_core::utils::_split_offsets;
 use polars_core::{downcast_as_macro_arg_physical, POOL};
+pub use unpivot::UnpivotDF;
 
 const HASHMAP_INIT_SIZE: usize = 512;
 

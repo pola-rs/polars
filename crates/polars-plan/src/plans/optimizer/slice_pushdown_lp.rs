@@ -386,7 +386,6 @@ impl SlicePushDown {
             | m @ (DataFrameScan {..}, _)
             | m @ (Sort {..}, _)
             | m @ (MapFunction {function: FunctionIR::Explode {..}, ..}, _)
-            | m @ (MapFunction {function: FunctionIR::Unpivot {..}, ..}, _)
             | m @ (Cache {..}, _)
             | m @ (Distinct {..}, _)
             | m @ (GroupBy{..},_)
@@ -395,7 +394,12 @@ impl SlicePushDown {
             => {
                 let (lp, state) = m;
                 self.no_pushdown_restart_opt(lp, state, lp_arena, expr_arena)
-            }
+            },
+            #[cfg(feature = "pivot")]
+             m @ (MapFunction {function: FunctionIR::Unpivot {..}, ..}, _) => {
+                let (lp, state) = m;
+                self.no_pushdown_restart_opt(lp, state, lp_arena, expr_arena)
+            },
             // [Pushdown]
             (MapFunction {input, function}, _) if function.allow_predicate_pd() => {
                 let lp = MapFunction {input, function};

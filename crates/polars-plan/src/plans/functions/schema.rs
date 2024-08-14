@@ -1,3 +1,4 @@
+#[cfg(feature = "pivot")]
 use polars_core::utils::try_get_supertype;
 
 use super::*;
@@ -8,10 +9,12 @@ impl FunctionIR {
         // We will likely add more branches later
         #[allow(clippy::single_match)]
         match self {
-            RowIndex { schema, .. }
-            | Explode { schema, .. }
-            | Rename { schema, .. }
-            | Unpivot { schema, .. } => {
+            #[cfg(feature = "pivot")]
+            Unpivot { schema, .. } => {
+                let mut guard = schema.lock().unwrap();
+                *guard = None;
+            },
+            RowIndex { schema, .. } | Explode { schema, .. } | Rename { schema, .. } => {
                 let mut guard = schema.lock().unwrap();
                 *guard = None;
             },
@@ -98,6 +101,7 @@ impl FunctionIR {
                 Ok(Cow::Owned(row_index_schema(schema, input_schema, name)))
             },
             Explode { schema, columns } => explode_schema(schema, input_schema, columns),
+            #[cfg(feature = "pivot")]
             Unpivot { schema, args } => unpivot_schema(args, schema, input_schema),
         }
     }
@@ -143,6 +147,7 @@ fn explode_schema<'a>(
     Ok(Cow::Owned(schema))
 }
 
+#[cfg(feature = "pivot")]
 fn unpivot_schema<'a>(
     args: &UnpivotArgsIR,
     cached_schema: &CachedSchema,
