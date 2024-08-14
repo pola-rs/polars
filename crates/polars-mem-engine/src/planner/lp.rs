@@ -375,7 +375,8 @@ fn create_physical_plan_impl(
                 state.expr_depth,
             );
 
-            let streamable = all_streamable(&expr, expr_arena, Context::Default);
+            let streamable =
+                options.should_broadcast && all_streamable(&expr, expr_arena, Context::Default);
             let phys_expr = create_physical_expressions_from_irs(
                 &expr,
                 Context::Default,
@@ -629,7 +630,8 @@ fn create_physical_plan_impl(
             let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
             let input = create_physical_plan_impl(input, lp_arena, expr_arena, state)?;
 
-            let streamable = all_streamable(&exprs, expr_arena, Context::Default);
+            let streamable =
+                options.should_broadcast && all_streamable(&exprs, expr_arena, Context::Default);
 
             let mut state = ExpressionConversionState::new(
                 POOL.current_num_threads() > exprs.len(),
