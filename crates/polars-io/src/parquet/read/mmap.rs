@@ -1,3 +1,4 @@
+use arrow::array::Array;
 use arrow::datatypes::Field;
 #[cfg(feature = "async")]
 use bytes::Bytes;
@@ -5,8 +6,8 @@ use bytes::Bytes;
 use polars_core::datatypes::PlHashMap;
 use polars_error::PolarsResult;
 use polars_parquet::read::{
-    column_iter_to_arrays, get_field_columns, ArrayIter, BasicDecompressor, ColumnChunkMetaData,
-    Filter, PageReader,
+    column_iter_to_arrays, get_field_columns, BasicDecompressor, ColumnChunkMetaData, Filter,
+    PageReader,
 };
 use polars_utils::mmap::{MemReader, MemSlice};
 
@@ -62,11 +63,11 @@ fn _mmap_single_column<'a>(
 
 // similar to arrow2 serializer, except this accepts a slice instead of a vec.
 // this allows us to memory map
-pub(super) fn to_deserializer<'a>(
+pub(super) fn to_deserializer(
     columns: Vec<(&ColumnChunkMetaData, MemSlice)>,
     field: Field,
     filter: Option<Filter>,
-) -> PolarsResult<ArrayIter<'a>> {
+) -> PolarsResult<Box<dyn Array>> {
     let (columns, types): (Vec<_>, Vec<_>) = columns
         .into_iter()
         .map(|(column_meta, chunk)| {
