@@ -242,10 +242,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
     }
 
     fn shift(&self, periods: i64) -> Series {
-        self.0
-            ._apply_fields(|s| s.shift(periods))
-            .unwrap()
-            .into_series()
+        self.0.shift(periods).into_series()
     }
 
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
