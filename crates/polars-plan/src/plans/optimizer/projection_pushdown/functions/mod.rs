@@ -1,5 +1,7 @@
+#[cfg(feature = "pivot")]
 mod unpivot;
 
+#[cfg(feature = "pivot")]
 use unpivot::process_unpivot;
 
 use super::*;
@@ -64,6 +66,7 @@ pub(super) fn process_functions(
                 .explode(columns.clone())
                 .build())
         },
+        #[cfg(feature = "pivot")]
         Unpivot { ref args, .. } => {
             let lp = IR::MapFunction {
                 input,

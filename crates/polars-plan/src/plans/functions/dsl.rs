@@ -30,6 +30,7 @@ pub enum DslFunction {
     Explode {
         columns: Vec<Selector>,
     },
+    #[cfg(feature = "pivot")]
     Unpivot {
         args: UnpivotArgsDSL,
     },
@@ -100,6 +101,7 @@ impl DslFunction {
                     schema: Default::default(),
                 }
             },
+            #[cfg(feature = "pivot")]
             DslFunction::Unpivot { args } => {
                 let on = expand_selectors(args.on, input_schema, &[])?;
                 let index = expand_selectors(args.index, input_schema, &[])?;

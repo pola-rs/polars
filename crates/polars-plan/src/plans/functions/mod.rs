@@ -77,6 +77,7 @@ pub enum FunctionIR {
         columns: Arc<[ColumnName]>,
         schema: CachedSchema,
     },
+    #[cfg(feature = "pivot")]
     Unpivot {
         args: Arc<UnpivotArgsIR>,
         schema: CachedSchema,
@@ -112,6 +113,7 @@ impl PartialEq for FunctionIR {
                 },
             ) => existing_l == existing_r && new_l == new_r,
             (Explode { columns: l, .. }, Explode { columns: r, .. }) => l == r,
+            #[cfg(feature = "pivot")]
             (Unpivot { args: l, .. }, Unpivot { args: r, .. }) => l == r,
             (RowIndex { name: l, .. }, RowIndex { name: r, .. }) => l == r,
             #[cfg(feature = "merge_sorted")]
@@ -152,6 +154,7 @@ impl Hash for FunctionIR {
                 new.hash(state);
             },
             FunctionIR::Explode { columns, schema: _ } => columns.hash(state),
+            #[cfg(feature = "pivot")]
             FunctionIR::Unpivot { args, schema: _ } => args.hash(state),
             FunctionIR::RowIndex {
                 name,
@@ -174,6 +177,7 @@ impl FunctionIR {
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => false,
             FastCount { .. } | Unnest { .. } | Rename { .. } | Explode { .. } => true,
+            #[cfg(feature = "pivot")]
             Unpivot { .. } => true,
             Opaque { streamable, .. } => *streamable,
             #[cfg(feature = "python")]
@@ -188,7 +192,9 @@ impl FunctionIR {
         match self {
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => true,
-            Explode { .. } | Unpivot { .. } => true,
+            #[cfg(feature = "pivot")]
+            Unpivot { .. } => true,
+            Explode { .. } => true,
             _ => false,
         }
     }
@@ -199,7 +205,9 @@ impl FunctionIR {
             Opaque { predicate_pd, .. } => *predicate_pd,
             #[cfg(feature = "python")]
             OpaquePython(OpaquePythonUdf { predicate_pd, .. }) => *predicate_pd,
-            Rechunk | Unnest { .. } | Rename { .. } | Explode { .. } | Unpivot { .. } => true,
+            #[cfg(feature = "pivot")]
+            Unpivot { .. } => true,
+            Rechunk | Unnest { .. } | Rename { .. } | Explode { .. } => true,
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => true,
             RowIndex { .. } | FastCount { .. } => false,
@@ -213,12 +221,9 @@ impl FunctionIR {
             Opaque { projection_pd, .. } => *projection_pd,
             #[cfg(feature = "python")]
             OpaquePython(OpaquePythonUdf { projection_pd, .. }) => *projection_pd,
-            Rechunk
-            | FastCount { .. }
-            | Unnest { .. }
-            | Rename { .. }
-            | Explode { .. }
-            | Unpivot { .. } => true,
+            Rechunk | FastCount { .. } | Unnest { .. } | Rename { .. } | Explode { .. } => true,
+            #[cfg(feature = "pivot")]
+            Unpivot { .. } => true,
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => true,
             RowIndex { .. } => true,
@@ -282,7 +287,9 @@ impl FunctionIR {
             },
             Rename { existing, new, .. } => rename::rename_impl(df, existing, new),
             Explode { columns, .. } => df.explode(columns.as_ref()),
+            #[cfg(feature = "pivot")]
             Unpivot { args, .. } => {
+                use polars_ops::pivot::UnpivotDF;
                 let args = (**args).clone();
                 df.unpivot2(args)
             },
