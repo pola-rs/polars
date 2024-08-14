@@ -195,8 +195,12 @@ impl NodeTraverser {
         Ok((
             expressions
                 .into_iter()
-                .map(|e| to_aexpr(e.inner, &mut expr_arena).0)
-                .collect(),
+                .map(|e| {
+                    to_aexpr(e.inner, &mut expr_arena)
+                        .map_err(PyPolarsErr::from)
+                        .map(|v| v.0)
+                })
+                .collect::<Result<_, PyPolarsErr>>()?,
             expr_arena.len(),
         ))
     }

@@ -40,17 +40,6 @@ impl<O: Offset> Binary<O> {
     pub fn len(&self) -> usize {
         self.offsets.len_proxy()
     }
-
-    #[inline]
-    pub fn extend_lengths<I: Iterator<Item = usize>>(&mut self, lengths: I, values: &mut &[u8]) {
-        let current_offset = *self.offsets.last();
-        self.offsets.try_extend_from_lengths(lengths).unwrap();
-        let new_offset = *self.offsets.last();
-        let length = new_offset.to_usize() - current_offset.to_usize();
-        let (consumed, remaining) = values.split_at(length);
-        *values = remaining;
-        self.values.extend_from_slice(consumed);
-    }
 }
 
 impl<'a, O: Offset> Pushable<&'a [u8]> for Binary<O> {

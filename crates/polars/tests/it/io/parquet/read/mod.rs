@@ -4,10 +4,12 @@ mod binary;
 /// but OTOH it has no external dependencies and is very familiar to Rust developers.
 mod boolean;
 mod dictionary;
+pub(crate) mod file;
 mod fixed_binary;
 mod indexes;
 mod primitive;
 mod primitive_nested;
+pub(crate) mod row_group;
 mod struct_;
 mod utils;
 
@@ -200,7 +202,6 @@ pub fn read_column(
         reader,
         &metadata.row_groups[row_group],
         field.name(),
-        None,
         usize::MAX,
     );
 

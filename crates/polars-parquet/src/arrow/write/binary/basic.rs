@@ -126,14 +126,14 @@ pub(crate) fn encode_delta<O: Offset>(
             let length = offsets.len() - 1 - validity.unset_bits();
             let lengths = utils::ExactSizedIter::new(lengths, length);
 
-            delta_bitpacked::encode(lengths, buffer);
+            delta_bitpacked::encode(lengths, buffer, 1);
         } else {
             let lengths = offsets.windows(2).map(|w| (w[1] - w[0]).to_usize() as i64);
-            delta_bitpacked::encode(lengths, buffer);
+            delta_bitpacked::encode(lengths, buffer, 1);
         }
     } else {
         let lengths = offsets.windows(2).map(|w| (w[1] - w[0]).to_usize() as i64);
-        delta_bitpacked::encode(lengths, buffer);
+        delta_bitpacked::encode(lengths, buffer, 1);
     }
 
     buffer.extend_from_slice(

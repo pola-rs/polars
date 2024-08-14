@@ -8,7 +8,7 @@ struct CategoricalAppend;
 impl CategoricalMergeOperation for CategoricalAppend {
     fn finish(self, lhs: &UInt32Chunked, rhs: &UInt32Chunked) -> PolarsResult<UInt32Chunked> {
         let mut lhs_mut = lhs.clone();
-        lhs_mut.append(rhs);
+        lhs_mut.append(rhs)?;
         Ok(lhs_mut)
     }
 }

@@ -587,7 +587,7 @@ def test_invalid_is_in_dtypes(
     if expected is None:
         with pytest.raises(
             InvalidOperationError,
-            match="`is_in` cannot check for .*? values in .*? data",
+            match="'is_in' cannot check for .*? values in .*? data",
         ):
             df.select(pl.col(colname).is_in(values))
     else:
@@ -650,7 +650,7 @@ def test_invalid_product_type() -> None:
 
 def test_fill_null_invalid_supertype() -> None:
     df = pl.DataFrame({"date": [date(2022, 1, 1), None]})
-    with pytest.raises(InvalidOperationError, match="could not determine supertype of"):
+    with pytest.raises(InvalidOperationError, match="got invalid or ambiguous"):
         df.select(pl.col("date").fill_null(1.0))
 
 

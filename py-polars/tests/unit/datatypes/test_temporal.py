@@ -2294,12 +2294,13 @@ def test_weekday_vs_stdlib_datetime(
 ) -> None:
     result = (
         pl.Series([value], dtype=pl.Datetime(time_unit))
-        .dt.replace_time_zone(time_zone)
+        .dt.replace_time_zone(time_zone, non_existent="null")
         .dt.weekday()
         .item()
     )
-    expected = value.isoweekday()
-    assert result == expected
+    if result is not None:
+        expected = value.isoweekday()
+        assert result == expected
 
 
 @given(

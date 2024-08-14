@@ -4,7 +4,6 @@ use super::*;
 use crate::prelude::visitor::IRNode;
 
 mod identifier_impl {
-    use ahash::RandomState;
     use polars_core::hashing::_boost_hash_combine;
 
     use super::*;
@@ -17,7 +16,7 @@ mod identifier_impl {
     pub(super) struct Identifier {
         inner: Option<u64>,
         last_node: Option<IRNode>,
-        hb: RandomState,
+        hb: PlRandomState,
     }
 
     impl Identifier {
@@ -48,7 +47,7 @@ mod identifier_impl {
             Self {
                 inner: None,
                 last_node: None,
-                hb: RandomState::with_seed(0),
+                hb: PlRandomState::with_seed(0),
             }
         }
 

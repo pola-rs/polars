@@ -88,12 +88,16 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
         }
     }
 
-    fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
+    fn vec_hash(&self, random_state: PlRandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
         self.0.physical().vec_hash(random_state, buf)?;
         Ok(())
     }
 
-    fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) -> PolarsResult<()> {
+    fn vec_hash_combine(
+        &self,
+        build_hasher: PlRandomState,
+        hashes: &mut [u64],
+    ) -> PolarsResult<()> {
         self.0.physical().vec_hash_combine(build_hasher, hashes)?;
         Ok(())
     }
@@ -176,7 +180,7 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
             (RevMapping::Global(_, _, idl), RevMapping::Global(_, _, idr)) if idl == idr => {
                 let mut rev_map_merger = GlobalRevMapMerger::new(rev_map_self.clone());
                 rev_map_merger.merge_map(rev_map_other)?;
-                self.0.physical_mut().extend(other_ca.physical());
+                self.0.physical_mut().extend(other_ca.physical())?;
                 // SAFETY: rev_maps are merged
                 unsafe { self.0.set_rev_map(rev_map_merger.finish(), false) };
                 Ok(())

@@ -98,8 +98,8 @@ pub(crate) fn get_lf(obj: &Bound<'_, PyAny>) -> PyResult<LazyFrame> {
 }
 
 pub(crate) fn get_series(obj: &Bound<'_, PyAny>) -> PyResult<Series> {
-    let pydf = obj.getattr(intern!(obj.py(), "_s"))?;
-    Ok(pydf.extract::<PySeries>()?.series)
+    let s = obj.getattr(intern!(obj.py(), "_s"))?;
+    Ok(s.extract::<PySeries>()?.series)
 }
 
 pub(crate) fn to_series(py: Python, s: PySeries) -> PyObject {

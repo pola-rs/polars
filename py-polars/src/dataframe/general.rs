@@ -1,3 +1,5 @@
+use std::mem::ManuallyDrop;
+
 use either::Either;
 use polars::export::arrow::bitmap::MutableBitmap;
 use polars::prelude::*;
@@ -370,6 +372,7 @@ impl PyDataFrame {
         PyDataFrame::new(self.df.clone())
     }
 
+    #[cfg(feature = "pivot")]
     pub fn unpivot(
         &self,
         on: Vec<PyBackedStr>,
@@ -377,12 +380,12 @@ impl PyDataFrame {
         value_name: Option<&str>,
         variable_name: Option<&str>,
     ) -> PyResult<Self> {
-        let args = UnpivotArgs {
+        use polars_ops::pivot::UnpivotDF;
+        let args = UnpivotArgsIR {
             on: strings_to_smartstrings(on),
             index: strings_to_smartstrings(index),
             value_name: value_name.map(|s| s.into()),
             variable_name: variable_name.map(|s| s.into()),
-            streamable: false,
         };
 
         let df = self.df.unpivot2(args).map_err(PyPolarsErr::from)?;
@@ -534,7 +537,7 @@ impl PyDataFrame {
     }
 
     pub fn hash_rows(&mut self, k0: u64, k1: u64, k2: u64, k3: u64) -> PyResult<PySeries> {
-        let hb = ahash::RandomState::with_seeds(k0, k1, k2, k3);
+        let hb = PlRandomState::with_seeds(k0, k1, k2, k3);
         let hash = self.df.hash_rows(Some(hb)).map_err(PyPolarsErr::from)?;
         Ok(hash.into_series().into())
     }
@@ -608,7 +611,10 @@ impl PyDataFrame {
         // underneath of you, so don't use this anywhere else.
         let mut df = std::mem::take(&mut self.df);
         let cols = unsafe { std::mem::take(df.get_columns_mut()) };
-        let (ptr, len, cap) = cols.into_raw_parts();
+        let mut md_cols = ManuallyDrop::new(cols);
+        let ptr = md_cols.as_mut_ptr();
+        let len = md_cols.len();
+        let cap = md_cols.capacity();
         (ptr as usize, len, cap)
     }
 }

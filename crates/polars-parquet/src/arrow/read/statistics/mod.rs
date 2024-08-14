@@ -329,6 +329,7 @@ fn push(
                 .as_mut_any()
                 .downcast_mut::<struct_::DynMutableStructArray>()
                 .unwrap();
+
             return min
                 .inner
                 .iter_mut()

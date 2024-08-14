@@ -29,14 +29,12 @@ use crate::parquet::schema::types::PrimitiveType;
 pub fn get_page_iterator(
     column_metadata: &ColumnChunkMetaData,
     reader: MemReader,
-    pages_filter: Option<PageFilter>,
     buffer: Vec<u8>,
     max_header_size: usize,
 ) -> PolarsResult<PageReader> {
     Ok(_get_page_iterator(
         column_metadata,
         reader,
-        pages_filter,
         buffer,
         max_header_size,
     )?)
@@ -192,13 +190,12 @@ pub fn n_columns(data_type: &ArrowDataType) -> usize {
 /// For nested types, `columns` must be composed by all parquet columns with associated types `types`.
 ///
 /// The arrays are guaranteed to be at most of size `chunk_size` and data type `field.data_type`.
-pub fn column_iter_to_arrays<'a>(
+pub fn column_iter_to_arrays(
     columns: Vec<BasicDecompressor>,
     types: Vec<&PrimitiveType>,
     field: Field,
     filter: Option<Filter>,
-) -> PolarsResult<ArrayIter<'a>> {
+) -> PolarsResult<Box<dyn Array>> {
     let (_, array) = columns_to_iter_recursive(columns, types, field, vec![], filter)?;
-
-    Ok(Box::new(std::iter::once(Ok(array))))
+    Ok(array)
 }

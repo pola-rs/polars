@@ -4,10 +4,9 @@ use arrow::array::Array;
 use arrow::datatypes::ArrowSchema;
 use arrow::record_batch::RecordBatchT;
 use polars_error::PolarsResult;
+use polars_parquet::read::{Filter, RowGroupMetaData};
 
-use super::deserialize::Filter;
-use super::{RowGroupDeserializer, RowGroupMetaData};
-use crate::arrow::read::read_columns_many;
+use super::row_group::{read_columns_many, RowGroupDeserializer};
 
 /// An iterator of [`RecordBatchT`]s coming from row groups of a parquet file.
 ///

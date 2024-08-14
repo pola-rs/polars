@@ -132,7 +132,7 @@ pub enum DslPlan {
     /// Remove duplicates from the table
     Distinct {
         input: Arc<DslPlan>,
-        options: DistinctOptions,
+        options: DistinctOptionsDSL,
     },
     /// Sort the table
     Sort {

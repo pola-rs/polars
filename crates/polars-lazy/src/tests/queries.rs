@@ -46,10 +46,11 @@ fn test_lazy_alias() {
 }
 
 #[test]
+#[cfg(feature = "pivot")]
 fn test_lazy_unpivot() {
     let df = get_df();
 
-    let args = UnpivotArgs {
+    let args = UnpivotArgsDSL {
         on: vec!["sepal_length".into(), "sepal_width".into()],
         index: vec!["petal_width".into(), "petal_length".into()],
         ..Default::default()

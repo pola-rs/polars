@@ -23,7 +23,7 @@ fn expand_expressions(
 ) -> PolarsResult<Vec<ExprIR>> {
     let schema = lp_arena.get(input).schema(lp_arena);
     let exprs = rewrite_projections(exprs, &schema, &[])?;
-    Ok(to_expr_irs(exprs, expr_arena))
+    to_expr_irs(exprs, expr_arena)
 }
 
 fn empty_df() -> IR {
@@ -254,7 +254,9 @@ pub fn to_alp_impl(
                 file_info: resolved_file_info,
                 hive_parts,
                 output_schema: None,
-                predicate: predicate.map(|expr| to_expr_ir(expr, expr_arena)),
+                predicate: predicate
+                    .map(|expr| to_expr_ir(expr, expr_arena))
+                    .transpose()?,
                 scan_type,
                 file_options,
             }
@@ -269,7 +271,7 @@ pub fn to_alp_impl(
                 .map_err(|e| e.context(failed_input!(vertical concat)))?;
 
             if args.diagonal {
-                inputs = convert_utils::convert_diagonal_concat(inputs, lp_arena, expr_arena);
+                inputs = convert_utils::convert_diagonal_concat(inputs, lp_arena, expr_arena)?;
             }
 
             if args.to_supertypes {
@@ -300,7 +302,7 @@ pub fn to_alp_impl(
             let predicate = expand_filter(predicate, input, lp_arena)
                 .map_err(|e| e.context(failed_here!(filter)))?;
 
-            let predicate_ae = to_expr_ir(predicate.clone(), expr_arena);
+            let predicate_ae = to_expr_ir(predicate.clone(), expr_arena)?;
 
             return if is_streamable(predicate_ae.node(), expr_arena, Context::Default) {
                 // Split expression that are ANDed into multiple Filter nodes as the optimizer can then
@@ -327,7 +329,7 @@ pub fn to_alp_impl(
                 }
 
                 for predicate in predicates {
-                    let predicate = to_expr_ir(predicate, expr_arena);
+                    let predicate = to_expr_ir(predicate, expr_arena)?;
                     convert.push_scratch(predicate.node(), expr_arena);
                     let lp = IR::Filter { input, predicate };
                     input = run_conversion(lp, lp_arena, expr_arena, convert, "filter")?;
@@ -356,7 +358,9 @@ pub fn to_alp_impl(
             df,
             schema,
             output_schema,
-            filter: selection.map(|expr| to_expr_ir(expr, expr_arena)),
+            filter: selection
+                .map(|expr| to_expr_ir(expr, expr_arena))
+                .transpose()?,
         },
         DslPlan::Select {
             expr,
@@ -374,7 +378,7 @@ pub fn to_alp_impl(
             }
 
             let schema = Arc::new(schema);
-            let eirs = to_expr_irs(exprs, expr_arena);
+            let eirs = to_expr_irs(exprs, expr_arena)?;
             convert.fill_scratch(&eirs, expr_arena);
 
             let lp = IR::Select {
@@ -554,8 +558,8 @@ pub fn to_alp_impl(
                 det_join_schema(&schema_left, &schema_right, &left_on, &right_on, &options)
                     .map_err(|e| e.context(failed_here!(join schema resolving)))?;
 
-            let left_on = to_expr_irs_ignore_alias(left_on, expr_arena);
-            let right_on = to_expr_irs_ignore_alias(right_on, expr_arena);
+            let left_on = to_expr_irs_ignore_alias(left_on, expr_arena)?;
+            let right_on = to_expr_irs_ignore_alias(right_on, expr_arena)?;
             let mut joined_on = PlHashSet::new();
             for (l, r) in left_on.iter().zip(right_on.iter()) {
                 polars_ensure!(
@@ -610,6 +614,19 @@ pub fn to_alp_impl(
         DslPlan::Distinct { input, options } => {
             let input = to_alp_impl(owned(input), expr_arena, lp_arena, convert)
                 .map_err(|e| e.context(failed_input!(unique)))?;
+            let input_schema = lp_arena.get(input).schema(lp_arena);
+
+            let subset = options
+                .subset
+                .map(|s| expand_selectors(s, input_schema.as_ref(), &[]))
+                .transpose()?;
+            let options = DistinctOptionsIR {
+                subset,
+                maintain_order: options.maintain_order,
+                keep_strategy: options.keep_strategy,
+                slice: None,
+            };
+
             IR::Distinct { input, options }
         },
         DslPlan::MapFunction { input, function } => {
@@ -725,7 +742,7 @@ pub fn to_alp_impl(
                         &input_schema,
                         Context::Default,
                     )?);
-                    let eirs = to_expr_irs(exprs, expr_arena);
+                    let eirs = to_expr_irs(exprs, expr_arena)?;
 
                     convert.fill_scratch(&eirs, expr_arena);
 
@@ -741,7 +758,7 @@ pub fn to_alp_impl(
                     return run_conversion(lp, lp_arena, expr_arena, convert, "stats");
                 },
                 _ => {
-                    let function = function.into_function_node(&input_schema)?;
+                    let function = function.into_function_ir(&input_schema)?;
                     IR::MapFunction { input, function }
                 },
             }
@@ -941,7 +958,7 @@ fn resolve_with_columns(
         arena.clear();
     }
 
-    let eirs = to_expr_irs(exprs, expr_arena);
+    let eirs = to_expr_irs(exprs, expr_arena)?;
     Ok((eirs, Arc::new(new_schema)))
 }
 
@@ -1003,8 +1020,8 @@ fn resolve_group_by(
             polars_ensure!(names.insert(name.clone()), duplicate = name)
         }
     }
-    let aggs = to_expr_irs(aggs, expr_arena);
-    let keys = keys.convert(|e| to_expr_ir(e.clone(), expr_arena));
+    let aggs = to_expr_irs(aggs, expr_arena)?;
+    let keys = to_expr_irs(keys, expr_arena)?;
 
     Ok((keys, aggs, Arc::new(schema)))
 }

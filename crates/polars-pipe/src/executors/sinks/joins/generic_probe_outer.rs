@@ -1,7 +1,6 @@
 use std::sync::atomic::Ordering;
 
 use arrow::array::{Array, BinaryArray, MutablePrimitiveArray};
-use polars_core::export::ahash::RandomState;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_ops::chunked_array::DfTake;
@@ -33,7 +32,7 @@ pub struct GenericFullOuterJoinProbe<K: ExtraPayload> {
     ///      * end = (offset + n_join_keys)
     materialized_join_cols: Arc<[BinaryArray<i64>]>,
     suffix: Arc<str>,
-    hb: RandomState,
+    hb: PlRandomState,
     /// partitioned tables that will be used for probing.
     /// stores the key and the chunk_idx, df_idx of the left table.
     hash_tables: Arc<PartitionedMap<K>>,
@@ -64,7 +63,7 @@ impl<K: ExtraPayload> GenericFullOuterJoinProbe<K> {
         df_a: DataFrame,
         materialized_join_cols: Arc<[BinaryArray<i64>]>,
         suffix: Arc<str>,
-        hb: RandomState,
+        hb: PlRandomState,
         hash_tables: Arc<PartitionedMap<K>>,
         join_columns_right: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
         swapped: bool,

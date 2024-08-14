@@ -324,16 +324,6 @@ pub fn primitive_to_dictionary<T: NativeType + Eq + Hash, K: DictionaryKey>(
     Ok(array.into())
 }
 
-/// Get the time unit as a multiple of a second
-const fn time_unit_multiple(unit: TimeUnit) -> i64 {
-    match unit {
-        TimeUnit::Second => 1,
-        TimeUnit::Millisecond => MILLISECONDS,
-        TimeUnit::Microsecond => MICROSECONDS,
-        TimeUnit::Nanosecond => NANOSECONDS,
-    }
-}
-
 /// Conversion of dates
 pub fn date32_to_date64(from: &PrimitiveArray<i32>) -> PrimitiveArray<i64> {
     unary(

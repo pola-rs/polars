@@ -2,13 +2,14 @@ use std::borrow::Cow;
 use std::collections::VecDeque;
 use std::ops::{Deref, Range};
 
-use arrow::array::new_empty_array;
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::datatypes::ArrowSchemaRef;
 use polars_core::prelude::*;
 use polars_core::utils::{accumulate_dataframes_vertical, split_df};
 use polars_core::POOL;
-use polars_parquet::read::{self, ArrayIter, FileMetaData, Filter, PhysicalType, RowGroupMetaData};
+use polars_parquet::parquet::error::ParquetResult;
+use polars_parquet::parquet::statistics::Statistics;
+use polars_parquet::read::{self, FileMetaData, Filter, PhysicalType, RowGroupMetaData};
 use polars_utils::mmap::MemSlice;
 use polars_utils::vec::inplace_zip_filtermap;
 use rayon::prelude::*;
@@ -23,6 +24,7 @@ use super::{mmap, ParallelStrategy};
 use crate::hive::materialize_hive_partitions;
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 use crate::parquet::metadata::FileMetaDataRef;
+use crate::parquet::read::ROW_COUNT_OVERFLOW_ERR;
 use crate::predicates::{apply_predicate, PhysicalIoExpr};
 use crate::utils::get_reader_bytes;
 use crate::utils::slice::split_slice_at_file;
@@ -69,13 +71,25 @@ fn column_idx_to_series(
     }
 
     let columns = mmap_columns(store, md.columns(), &field.name);
-    let iter = mmap::to_deserializer(columns, field.clone(), filter)?;
+    let stats = columns
+        .iter()
+        .map(|(col_md, _)| col_md.statistics().transpose())
+        .collect::<ParquetResult<Vec<Option<Statistics>>>>();
+    let array = mmap::to_deserializer(columns, field.clone(), filter)?;
+    let mut series = Series::try_from((field, array))?;
 
-    let mut series = array_iter_to_series(iter, field, None)?;
+    // We cannot really handle nested metadata at the moment. Just skip it.
+    use ArrowDataType as AD;
+    match field.data_type() {
+        AD::List(_) | AD::LargeList(_) | AD::Struct(_) | AD::FixedSizeList(_, _) => {
+            return Ok(series)
+        },
+        _ => {},
+    }
 
     // See if we can find some statistics for this series. If we cannot find anything just return
     // the series as is.
-    let Some(Ok(stats)) = md.columns()[column_i].statistics() else {
+    let Ok(Some(stats)) = stats.map(|mut s| s.pop().flatten()) else {
         return Ok(series);
     };
 
@@ -115,38 +129,6 @@ fn column_idx_to_series(
     }
 
     Ok(series)
-}
-
-pub(super) fn array_iter_to_series(
-    iter: ArrayIter,
-    field: &ArrowField,
-    num_rows: Option<usize>,
-) -> PolarsResult<Series> {
-    let mut total_count = 0;
-    let chunks = match num_rows {
-        None => iter.collect::<PolarsResult<Vec<_>>>()?,
-        Some(n) => {
-            let mut out = Vec::with_capacity(2);
-
-            for arr in iter {
-                let arr = arr?;
-                let len = arr.len();
-                out.push(arr);
-
-                total_count += len;
-                if total_count >= n {
-                    break;
-                }
-            }
-            out
-        },
-    };
-    if chunks.is_empty() {
-        let arr = new_empty_array(field.data_type.clone());
-        Series::try_from((field, arr))
-    } else {
-        Series::try_from((field, chunks))
-    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -353,7 +335,10 @@ fn rg_to_dfs_prefiltered(
         });
 
         for (_, df) in &dfs {
-            *previous_row_count += df.height() as IdxSize;
+            let height = IdxSize::try_from(df.height()).map_err(|_| ROW_COUNT_OVERFLOW_ERR)?;
+            *previous_row_count = previous_row_count
+                .checked_add(height)
+                .ok_or(ROW_COUNT_OVERFLOW_ERR)?;
         }
 
         // @TODO: Incorporate this if we how we can properly use it. The problem here is that
@@ -523,7 +508,13 @@ fn rg_to_dfs_optionally_par_over_columns(
         materialize_hive_partitions(&mut df, schema.as_ref(), hive_partition_columns, rg_slice.1);
         apply_predicate(&mut df, predicate, true)?;
 
-        *previous_row_count += current_row_count;
+        *previous_row_count = previous_row_count.checked_add(current_row_count).ok_or(
+            polars_err!(
+                ComputeError: "Parquet file produces more than pow(2, 32) rows; \
+                consider compiling with polars-bigidx feature (polars-u64-idx package on python), \
+                or set 'streaming'"
+            ),
+        )?;
         dfs.push(df);
 
         if *previous_row_count as usize >= slice_end {
@@ -563,7 +554,9 @@ fn rg_to_dfs_par_over_rg(
         let rg_md = &file_metadata.row_groups[i];
         let rg_slice =
             split_slice_at_file(&mut n_rows_processed, rg_md.num_rows(), slice.0, slice_end);
-        *previous_row_count += rg_slice.1 as IdxSize;
+        *previous_row_count = previous_row_count
+            .checked_add(rg_slice.1 as IdxSize)
+            .ok_or(ROW_COUNT_OVERFLOW_ERR)?;
 
         if rg_slice.1 == 0 {
             continue;

@@ -2,13 +2,13 @@ use arrow::array::{DictionaryArray, DictionaryKey, PrimitiveArray};
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
-use num_traits::AsPrimitive;
 
 use super::super::utils;
 use super::basic::{
     AsDecoderFunction, ClosureDecoderFunction, DecoderFunction, IntoDecoderFunction,
     PlainDecoderFnCollector, PrimitiveDecoder, UnitDecoderFunction, ValuesDictionary,
 };
+use super::{DeltaCollector, DeltaTranslator};
 use crate::parquet::encoding::hybrid_rle::{self, DictionaryTranslator};
 use crate::parquet::encoding::{byte_stream_split, delta_bitpacked, Encoding};
 use crate::parquet::error::ParquetResult;
@@ -61,9 +61,9 @@ where
             },
             (Encoding::DeltaBinaryPacked, _) => {
                 let values = split_buffer(page)?.values;
-                Ok(Self::DeltaBinaryPacked(delta_bitpacked::Decoder::try_new(
-                    values,
-                )?))
+                Ok(Self::DeltaBinaryPacked(
+                    delta_bitpacked::Decoder::try_new(values)?.0,
+                ))
             },
             _ => Err(utils::not_implemented(page)),
         }
@@ -74,7 +74,7 @@ where
             Self::Plain(v) => v.len(),
             Self::Dictionary(v) => v.len(),
             Self::ByteStreamSplit(v) => v.len(),
-            Self::DeltaBinaryPacked(v) => v.size_hint().0,
+            Self::DeltaBinaryPacked(v) => v.len(),
         }
     }
 
@@ -87,7 +87,7 @@ where
             Self::Plain(v) => _ = v.nth(n - 1),
             Self::Dictionary(v) => v.values.skip_in_place(n)?,
             Self::ByteStreamSplit(v) => _ = v.iter_converted(|_| ()).nth(n - 1),
-            Self::DeltaBinaryPacked(v) => _ = v.nth(n - 1),
+            Self::DeltaBinaryPacked(v) => v.skip_in_place(n)?,
         }
 
         Ok(())
@@ -140,23 +140,22 @@ where
             Self::DeltaBinaryPacked(page_values) => {
                 let (values, validity) = decoded;
 
+                let mut gatherer = DeltaTranslator {
+                    dfn: decoder.0.decoder,
+                    _pd: std::marker::PhantomData,
+                };
+
                 match page_validity {
-                    None => {
-                        values.extend(
-                            page_values
-                                .by_ref()
-                                .map(|x| decoder.0.decoder.decode(x.unwrap().as_()))
-                                .take(additional),
-                        );
-                    },
+                    None => page_values.gather_n_into(values, additional, &mut gatherer)?,
                     Some(page_validity) => utils::extend_from_decoder(
                         validity,
                         page_validity,
                         Some(additional),
                         values,
-                        &mut page_values
-                            .by_ref()
-                            .map(|x| decoder.0.decoder.decode(x.unwrap().as_())),
+                        DeltaCollector {
+                            decoder: page_values,
+                            gatherer,
+                        },
                     )?,
                 }
             },

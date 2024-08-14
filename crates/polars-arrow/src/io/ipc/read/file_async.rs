@@ -1,12 +1,12 @@
 //! Async reader for Arrow IPC files
 use std::io::SeekFrom;
 
-use ahash::AHashMap;
 use arrow_format::ipc::planus::ReadAsRoot;
 use arrow_format::ipc::{Block, MessageHeaderRef};
 use futures::stream::BoxStream;
 use futures::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt, Stream, StreamExt};
 use polars_error::{polars_bail, polars_err, PolarsResult};
+use polars_utils::aliases::PlHashMap;
 
 use super::common::{apply_projection, prepare_projection, read_dictionary, read_record_batch};
 use super::file::{deserialize_footer, get_record_batch};
@@ -70,7 +70,7 @@ impl<'a> FileStream<'a> {
         mut reader: R,
         mut dictionaries: Option<Dictionaries>,
         metadata: FileMetadata,
-        projection: Option<(Vec<usize>, AHashMap<usize, usize>)>,
+        projection: Option<(Vec<usize>, PlHashMap<usize, usize>)>,
         limit: Option<usize>,
     ) -> BoxStream<'a, PolarsResult<RecordBatchT<Box<dyn Array>>>>
     where

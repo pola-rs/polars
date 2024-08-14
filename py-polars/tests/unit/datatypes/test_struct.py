@@ -623,7 +623,7 @@ def test_struct_categorical_5843() -> None:
 def test_empty_struct() -> None:
     # List<struct>
     df = pl.DataFrame({"a": [[{}]]})
-    assert df.to_dict(as_series=False) == {"a": [[{"": None}]]}
+    assert df.to_dict(as_series=False) == {"a": [[None]]}
 
     # Struct one not empty
     df = pl.DataFrame({"a": [[{}, {"a": 10}]]})
@@ -631,7 +631,7 @@ def test_empty_struct() -> None:
 
     # Empty struct
     df = pl.DataFrame({"a": [{}]})
-    assert df.to_dict(as_series=False) == {"a": [{"": None}]}
+    assert df.to_dict(as_series=False) == {"a": [None]}
 
 
 @pytest.mark.parametrize(
@@ -710,7 +710,7 @@ def test_struct_null_cast() -> None:
         .lazy()
         .select([pl.lit(None, dtype=pl.Null).cast(dtype, strict=True)])
         .collect()
-    ).to_dict(as_series=False) == {"literal": [{"a": None, "b": None, "c": None}]}
+    ).to_dict(as_series=False) == {"literal": [None]}
 
 
 def test_nested_struct_in_lists_cast() -> None:
@@ -976,3 +976,50 @@ def test_named_exprs() -> None:
     res = df.select(pl.struct(schema=schema, b=pl.col("a")))
     assert res.to_dict(as_series=False) == {"b": [{"b": 1}]}
     assert res.schema["b"] == pl.Struct(schema)
+
+
+def test_struct_outer_nullability_zip_18119() -> None:
+    df = pl.Series("int", [0, 1, 2, 3], dtype=pl.Int64).to_frame()
+    assert df.lazy().with_columns(
+        result=pl.when(pl.col("int") >= 1).then(
+            pl.struct(
+                a=pl.when(pl.col("int") % 2 == 1).then(True),
+                b=pl.when(pl.col("int") >= 2).then(False),
+            )
+        )
+    ).collect().to_dict(as_series=False) == {
+        "int": [0, 1, 2, 3],
+        "result": [
+            None,
+            {"a": True, "b": None},
+            {"a": None, "b": False},
+            {"a": True, "b": False},
+        ],
+    }
+
+
+def test_struct_group_by_shift_18107() -> None:
+    df_in = pl.DataFrame(
+        {
+            "group": [1, 1, 1, 2, 2, 2],
+            "id": [1, 2, 3, 4, 5, 6],
+            "value": [
+                {"lon": 20, "lat": 10},
+                {"lon": 30, "lat": 20},
+                {"lon": 40, "lat": 30},
+                {"lon": 50, "lat": 40},
+                {"lon": 60, "lat": 50},
+                {"lon": 70, "lat": 60},
+            ],
+        }
+    )
+
+    assert df_in.group_by("group", maintain_order=True).agg(
+        pl.col("value").shift(-1)
+    ).to_dict(as_series=False) == {
+        "group": [1, 2],
+        "value": [
+            [{"lon": 30, "lat": 20}, {"lon": 40, "lat": 30}, None],
+            [{"lon": 60, "lat": 50}, {"lon": 70, "lat": 60}, None],
+        ],
+    }

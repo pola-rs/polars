@@ -52,14 +52,18 @@ macro_rules! impl_dyn_series {
                 (&self.0).into_total_ord_inner()
             }
 
-            fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
+            fn vec_hash(
+                &self,
+                random_state: PlRandomState,
+                buf: &mut Vec<u64>,
+            ) -> PolarsResult<()> {
                 self.0.vec_hash(random_state, buf)?;
                 Ok(())
             }
 
             fn vec_hash_combine(
                 &self,
-                build_hasher: RandomState,
+                build_hasher: PlRandomState,
                 hashes: &mut [u64],
             ) -> PolarsResult<()> {
                 self.0.vec_hash_combine(build_hasher, hashes)?;
@@ -201,13 +205,13 @@ macro_rules! impl_dyn_series {
 
             fn append(&mut self, other: &Series) -> PolarsResult<()> {
                 polars_ensure!(self.0.dtype() == other.dtype(), append);
-                self.0.append(other.as_ref().as_ref());
+                self.0.append(other.as_ref().as_ref())?;
                 Ok(())
             }
 
             fn extend(&mut self, other: &Series) -> PolarsResult<()> {
                 polars_ensure!(self.0.dtype() == other.dtype(), extend);
-                self.0.extend(other.as_ref().as_ref());
+                self.0.extend(other.as_ref().as_ref())?;
                 Ok(())
             }
 

@@ -1,8 +1,8 @@
 use std::collections::VecDeque;
 use std::io::{Read, Seek};
 
-use ahash::AHashMap;
 use polars_error::{polars_bail, polars_err, PolarsResult};
+use polars_utils::aliases::PlHashMap;
 
 use super::deserialize::{read, skip};
 use super::Dictionaries;
@@ -306,14 +306,14 @@ pub fn read_dictionary<R: Read + Seek>(
 pub fn prepare_projection(
     fields: &[Field],
     mut projection: Vec<usize>,
-) -> (Vec<usize>, AHashMap<usize, usize>, Vec<Field>) {
+) -> (Vec<usize>, PlHashMap<usize, usize>, Vec<Field>) {
     let fields = projection.iter().map(|x| fields[*x].clone()).collect();
 
     // todo: find way to do this more efficiently
     let mut indices = (0..projection.len()).collect::<Vec<_>>();
     indices.sort_unstable_by_key(|&i| &projection[i]);
     let map = indices.iter().copied().enumerate().fold(
-        AHashMap::default(),
+        PlHashMap::default(),
         |mut acc, (index, new_index)| {
             acc.insert(index, new_index);
             acc
@@ -339,7 +339,7 @@ pub fn prepare_projection(
 
 pub fn apply_projection(
     chunk: RecordBatchT<Box<dyn Array>>,
-    map: &AHashMap<usize, usize>,
+    map: &PlHashMap<usize, usize>,
 ) -> RecordBatchT<Box<dyn Array>> {
     // re-order according to projection
     let arrays = chunk.into_arrays();

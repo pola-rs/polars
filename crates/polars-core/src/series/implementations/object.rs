@@ -1,8 +1,6 @@
 use std::any::Any;
 use std::borrow::Cow;
 
-use ahash::RandomState;
-
 use super::{BitRepr, MetadataFlags};
 use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::object::PolarsObjectSafe;
@@ -56,12 +54,16 @@ where
         (&self.0).into_total_eq_inner()
     }
 
-    fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
+    fn vec_hash(&self, random_state: PlRandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
         self.0.vec_hash(random_state, buf)?;
         Ok(())
     }
 
-    fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) -> PolarsResult<()> {
+    fn vec_hash_combine(
+        &self,
+        build_hasher: PlRandomState,
+        hashes: &mut [u64],
+    ) -> PolarsResult<()> {
         self.0.vec_hash_combine(build_hasher, hashes)?;
         Ok(())
     }
@@ -117,7 +119,7 @@ where
         if self.dtype() != other.dtype() {
             polars_bail!(append);
         }
-        ObjectChunked::append(&mut self.0, other.as_ref().as_ref());
+        ObjectChunked::append(&mut self.0, other.as_ref().as_ref())?;
         Ok(())
     }
 

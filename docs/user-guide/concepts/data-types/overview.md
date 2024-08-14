@@ -18,6 +18,7 @@ from Arrow, with the exception of `String` (this is actually `LargeUtf8`), `Cate
 |          | `Float64`     | 64-bit floating point.                                                                                                               |
 | Nested   | `Struct`      | A struct array is represented as a `Vec<Series>` and is useful to pack multiple/heterogeneous values in a single column.             |
 |          | `List`        | A list array contains a child array containing the list values and an offset array. (this is actually Arrow `LargeList` internally). |
+|          | `Array`       | A fixed-size multidimensional array.                                                                                                 |
 | Temporal | `Date`        | Date representation, internally represented as days since UNIX epoch encoded by a 32-bit signed integer.                             |
 |          | `Datetime`    | Datetime representation, internally represented as microseconds since UNIX epoch encoded by a 64-bit signed integer.                 |
 |          | `Duration`    | A timedelta type, internally represented as microseconds. Created when subtracting `Date/Datetime`.                                  |

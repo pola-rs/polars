@@ -2,9 +2,9 @@ use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
-use ahash::RandomState;
 use hashbrown::hash_map::RawEntryMut;
 use once_cell::sync::Lazy;
+use polars_utils::aliases::PlRandomState;
 use smartstring::{LazyCompact, SmartString};
 
 use crate::datatypes::{InitHashMaps2, PlIdHashMap};
@@ -219,8 +219,8 @@ impl StringCache {
     /// The global `StringCache` will always use a predictable seed. This allows local builders to mimic
     /// the hashes in case of contention.
     #[inline]
-    pub(crate) fn get_hash_builder() -> RandomState {
-        RandomState::with_seed(0)
+    pub(crate) fn get_hash_builder() -> PlRandomState {
+        PlRandomState::with_seed(0)
     }
 
     /// Lock the string cache

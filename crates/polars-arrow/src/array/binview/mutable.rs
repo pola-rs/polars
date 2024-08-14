@@ -144,7 +144,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
     /// - caller must allocate enough capacity
     /// - caller must ensure the view and buffers match.
     /// - The array must not have validity.
-    pub(crate) unsafe fn push_view_copied_unchecked(&mut self, v: View, buffers: &[Buffer<u8>]) {
+    pub(crate) unsafe fn push_view_unchecked(&mut self, v: View, buffers: &[Buffer<u8>]) {
         let len = v.length;
         self.total_bytes_len += len as usize;
         if len <= 12 {
@@ -165,7 +165,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
     /// - caller must ensure the view and buffers match.
     /// - The array must not have validity.
     /// - caller must not mix use this function with other push functions.
-    pub unsafe fn push_view_unchecked(&mut self, mut v: View, buffers: &[Buffer<u8>]) {
+    pub unsafe fn push_view_unchecked_dedupe(&mut self, mut v: View, buffers: &[Buffer<u8>]) {
         let len = v.length;
         self.total_bytes_len += len as usize;
         if len <= 12 {
@@ -438,14 +438,17 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
     /// # Safety
     /// Same as `push_view_unchecked()`.
     #[inline]
-    pub unsafe fn extend_non_null_views_trusted_len_unchecked<I>(
+    pub unsafe fn extend_non_null_views_unchecked_dedupe<I>(
         &mut self,
         iterator: I,
         buffers: &[Buffer<u8>],
     ) where
-        I: TrustedLen<Item = View>,
+        I: Iterator<Item = View>,
     {
-        self.extend_non_null_views_unchecked(iterator, buffers);
+        self.reserve(iterator.size_hint().0);
+        for v in iterator {
+            self.push_view_unchecked_dedupe(v, buffers);
+        }
     }
 
     #[inline]

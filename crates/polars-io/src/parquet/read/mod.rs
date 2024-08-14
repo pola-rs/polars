@@ -24,7 +24,15 @@ mod reader;
 mod to_metadata;
 mod utils;
 
+const ROW_COUNT_OVERFLOW_ERR: PolarsError = PolarsError::ComputeError(ErrString::new_static(
+    "\
+Parquet file produces more than pow(2, 32) rows; \
+consider compiling with polars-bigidx feature (polars-u64-idx package on python), \
+or set 'streaming'",
+));
+
 pub use options::{ParallelStrategy, ParquetOptions};
+use polars_error::{ErrString, PolarsError};
 #[cfg(feature = "cloud")]
 pub use reader::ParquetAsyncReader;
 pub use reader::{BatchedParquetReader, ParquetReader};

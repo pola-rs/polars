@@ -537,7 +537,13 @@ impl<'a> AnyValue<'a> {
 
             // to string
             (av, DataType::String) => {
-                AnyValue::StringOwned(format_smartstring!("{}", av.extract::<i64>()?))
+                if av.is_unsigned_integer() {
+                    AnyValue::StringOwned(format_smartstring!("{}", av.extract::<u64>()?))
+                } else if av.is_float() {
+                    AnyValue::StringOwned(format_smartstring!("{}", av.extract::<f64>()?))
+                } else {
+                    AnyValue::StringOwned(format_smartstring!("{}", av.extract::<i64>()?))
+                }
             },
 
             // to binary

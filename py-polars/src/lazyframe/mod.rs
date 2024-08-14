@@ -1081,21 +1081,22 @@ impl PyLazyFrame {
     fn unique(
         &self,
         maintain_order: bool,
-        subset: Option<Vec<String>>,
+        subset: Option<Vec<PyExpr>>,
         keep: Wrap<UniqueKeepStrategy>,
     ) -> Self {
         let ldf = self.ldf.clone();
+        let subset = subset.map(|e| e.to_exprs());
         match maintain_order {
-            true => ldf.unique_stable(subset, keep.0),
-            false => ldf.unique(subset, keep.0),
+            true => ldf.unique_stable_generic(subset, keep.0),
+            false => ldf.unique_generic(subset, keep.0),
         }
         .into()
     }
 
-    fn drop_nulls(&self, subset: Option<Vec<String>>) -> Self {
+    fn drop_nulls(&self, subset: Option<Vec<PyExpr>>) -> Self {
         let ldf = self.ldf.clone();
-        ldf.drop_nulls(subset.map(|v| v.into_iter().map(|s| col(&s)).collect()))
-            .into()
+        let subset = subset.map(|e| e.to_exprs());
+        ldf.drop_nulls(subset).into()
     }
 
     fn slice(&self, offset: i64, len: Option<IdxSize>) -> Self {
@@ -1108,21 +1109,19 @@ impl PyLazyFrame {
         ldf.tail(n).into()
     }
 
-    #[pyo3(signature = (on, index, value_name, variable_name, streamable))]
+    #[pyo3(signature = (on, index, value_name, variable_name))]
     fn unpivot(
         &self,
-        on: Vec<String>,
-        index: Vec<String>,
+        on: Vec<PyExpr>,
+        index: Vec<PyExpr>,
         value_name: Option<String>,
         variable_name: Option<String>,
-        streamable: bool,
     ) -> Self {
-        let args = UnpivotArgs {
-            on: strings_to_smartstrings(on),
-            index: strings_to_smartstrings(index),
+        let args = UnpivotArgsDSL {
+            on: on.into_iter().map(|e| e.inner.into()).collect(),
+            index: index.into_iter().map(|e| e.inner.into()).collect(),
             value_name: value_name.map(|s| s.into()),
             variable_name: variable_name.map(|s| s.into()),
-            streamable,
         };
 
         let ldf = self.ldf.clone();
@@ -1201,7 +1200,8 @@ impl PyLazyFrame {
         Ok(schema_dict.to_object(py))
     }
 
-    fn unnest(&self, columns: Vec<String>) -> Self {
+    fn unnest(&self, columns: Vec<PyExpr>) -> Self {
+        let columns = columns.to_exprs();
         self.ldf.clone().unnest(columns).into()
     }
 

@@ -1,6 +1,7 @@
 use num_traits::{abs, clamp};
 
 use crate::prelude::*;
+use crate::series::implementations::null::NullChunked;
 
 macro_rules! impl_shift_fill {
     ($self:ident, $periods:expr, $fill_value:expr) => {{
@@ -22,10 +23,10 @@ macro_rules! impl_shift_fill {
         };
 
         if $periods < 0 {
-            slice.append(&fill);
+            slice.append(&fill).unwrap();
             slice
         } else {
-            fill.append(&slice);
+            fill.append(&slice).unwrap();
             fill
         }
     }};
@@ -180,6 +181,34 @@ impl<T: PolarsObject> ChunkShiftFill<ObjectType<T>, Option<ObjectType<T>>> for O
 impl<T: PolarsObject> ChunkShift<ObjectType<T>> for ObjectChunked<T> {
     fn shift(&self, periods: i64) -> Self {
         self.shift_and_fill(periods, None)
+    }
+}
+
+#[cfg(feature = "dtype-struct")]
+impl ChunkShift<StructType> for StructChunked {
+    fn shift(&self, periods: i64) -> ChunkedArray<StructType> {
+        // This has its own implementation because a ArrayChunked cannot have a full-null without
+        // knowing the inner type
+        let periods = clamp(periods, -(self.len() as i64), self.len() as i64);
+        let slice_offset = (-periods).max(0);
+        let length = self.len() - abs(periods) as usize;
+        let mut slice = self.slice(slice_offset, length);
+
+        let fill_length = abs(periods) as usize;
+
+        // Go via null, so the cast creates the proper struct type.
+        let fill = NullChunked::new(self.name().into(), fill_length)
+            .cast(self.dtype(), Default::default())
+            .unwrap();
+        let mut fill = fill.struct_().unwrap().clone();
+
+        if periods < 0 {
+            slice.append(&fill).unwrap();
+            slice
+        } else {
+            fill.append(&slice).unwrap();
+            fill
+        }
     }
 }
 

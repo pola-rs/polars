@@ -1,9 +1,13 @@
+use std::sync::Arc;
+
 use polars_ops::prelude::{JoinArgs, JoinType};
 #[cfg(feature = "dynamic_group_by")]
 use polars_time::RollingGroupOptions;
 use polars_utils::IdxSize;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+
+use crate::dsl::Selector;
 
 #[derive(Copy, Clone, PartialEq, Debug, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -104,4 +108,13 @@ pub enum NestedType {
     #[cfg(feature = "dtype-array")]
     Array,
     List,
+}
+
+#[derive(Clone, Default, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct UnpivotArgsDSL {
+    pub on: Vec<Selector>,
+    pub index: Vec<Selector>,
+    pub variable_name: Option<Arc<str>>,
+    pub value_name: Option<Arc<str>>,
 }

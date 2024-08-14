@@ -1,7 +1,7 @@
 use std::io::{Read, Seek};
 
-use ahash::AHashMap;
 use polars_error::PolarsResult;
+use polars_utils::aliases::PlHashMap;
 
 use super::common::*;
 use super::{read_batch, read_file_dictionaries, Dictionaries, FileMetadata};
@@ -16,7 +16,7 @@ pub struct FileReader<R: Read + Seek> {
     // the dictionaries are going to be read
     dictionaries: Option<Dictionaries>,
     current_block: usize,
-    projection: Option<(Vec<usize>, AHashMap<usize, usize>, ArrowSchema)>,
+    projection: Option<(Vec<usize>, PlHashMap<usize, usize>, ArrowSchema)>,
     remaining: usize,
     data_scratch: Vec<u8>,
     message_scratch: Vec<u8>,

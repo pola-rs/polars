@@ -346,7 +346,7 @@ impl DslBuilder {
         .into()
     }
 
-    pub fn explode(self, columns: Vec<Expr>) -> Self {
+    pub fn explode(self, columns: Vec<Selector>) -> Self {
         DslPlan::MapFunction {
             input: Arc::new(self.0),
             function: DslFunction::Explode { columns },
@@ -354,7 +354,8 @@ impl DslBuilder {
         .into()
     }
 
-    pub fn unpivot(self, args: UnpivotArgs) -> Self {
+    #[cfg(feature = "pivot")]
+    pub fn unpivot(self, args: UnpivotArgsDSL) -> Self {
         DslPlan::MapFunction {
             input: Arc::new(self.0),
             function: DslFunction::Unpivot { args },
@@ -373,7 +374,7 @@ impl DslBuilder {
         .into()
     }
 
-    pub fn distinct(self, options: DistinctOptions) -> Self {
+    pub fn distinct(self, options: DistinctOptionsDSL) -> Self {
         DslPlan::Distinct {
             input: Arc::new(self.0),
             options,
@@ -424,7 +425,7 @@ impl DslBuilder {
     ) -> Self {
         DslPlan::MapFunction {
             input: Arc::new(self.0),
-            function: DslFunction::FunctionNode(FunctionNode::OpaquePython {
+            function: DslFunction::OpaquePython(OpaquePythonUdf {
                 function,
                 schema,
                 predicate_pd: optimizations.contains(OptState::PREDICATE_PUSHDOWN),
@@ -450,7 +451,7 @@ impl DslBuilder {
 
         DslPlan::MapFunction {
             input: Arc::new(self.0),
-            function: DslFunction::FunctionNode(FunctionNode::Opaque {
+            function: DslFunction::FunctionIR(FunctionIR::Opaque {
                 function,
                 schema,
                 predicate_pd: optimizations.contains(OptState::PREDICATE_PUSHDOWN),
