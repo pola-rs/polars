@@ -130,7 +130,7 @@ impl SeriesTrait for SeriesWrap<StringChunked> {
             SchemaMismatch: "cannot extend Series: data types don't match",
         );
         // todo! add object
-        self.0.append(other.as_ref().as_ref());
+        self.0.append(other.as_ref().as_ref())?;
         Ok(())
     }
 
@@ -139,7 +139,7 @@ impl SeriesTrait for SeriesWrap<StringChunked> {
             self.0.dtype() == other.dtype(),
             SchemaMismatch: "cannot extend Series: data types don't match",
         );
-        self.0.extend(other.as_ref().as_ref());
+        self.0.extend(other.as_ref().as_ref())?;
         Ok(())
     }
 

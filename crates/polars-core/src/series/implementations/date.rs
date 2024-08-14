@@ -185,7 +185,7 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
         // ref Cow
         // ref SeriesTrait
         // ref ChunkedArray
-        self.0.append(other.as_ref().as_ref().as_ref());
+        self.0.append(other.as_ref().as_ref().as_ref())?;
         Ok(())
     }
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {
@@ -195,7 +195,7 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
         // ref SeriesTrait
         // ref ChunkedArray
         let other = other.to_physical_repr();
-        self.0.extend(other.as_ref().as_ref().as_ref());
+        self.0.extend(other.as_ref().as_ref().as_ref())?;
         Ok(())
     }
 

@@ -176,7 +176,7 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
             (RevMapping::Global(_, _, idl), RevMapping::Global(_, _, idr)) if idl == idr => {
                 let mut rev_map_merger = GlobalRevMapMerger::new(rev_map_self.clone());
                 rev_map_merger.merge_map(rev_map_other)?;
-                self.0.physical_mut().extend(other_ca.physical());
+                self.0.physical_mut().extend(other_ca.physical())?;
                 // SAFETY: rev_maps are merged
                 unsafe { self.0.set_rev_map(rev_map_merger.finish(), false) };
                 Ok(())

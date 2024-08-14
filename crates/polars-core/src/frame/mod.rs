@@ -2401,7 +2401,6 @@ impl DataFrame {
     #[must_use]
     pub fn shift(&self, periods: i64) -> Self {
         let col = self._apply_columns_par(&|s| s.shift(periods));
-
         unsafe { DataFrame::new_no_checks(col) }
     }
 
@@ -2826,7 +2825,7 @@ impl DataFrame {
         let mut iter = cas.into_iter();
         let mut acc_ca = iter.next().unwrap();
         for ca in iter {
-            acc_ca.append(&ca);
+            acc_ca.append(&ca)?;
         }
         Ok(acc_ca.rechunk())
     }

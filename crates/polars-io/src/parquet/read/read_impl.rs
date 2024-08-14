@@ -23,6 +23,7 @@ use super::{mmap, ParallelStrategy};
 use crate::hive::materialize_hive_partitions;
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 use crate::parquet::metadata::FileMetaDataRef;
+use crate::parquet::read::ROW_COUNT_OVERFLOW_ERR;
 use crate::predicates::{apply_predicate, PhysicalIoExpr};
 use crate::utils::get_reader_bytes;
 use crate::utils::slice::split_slice_at_file;
@@ -353,7 +354,10 @@ fn rg_to_dfs_prefiltered(
         });
 
         for (_, df) in &dfs {
-            *previous_row_count += df.height() as IdxSize;
+            let height = IdxSize::try_from(df.height()).map_err(|_| ROW_COUNT_OVERFLOW_ERR)?;
+            *previous_row_count = previous_row_count
+                .checked_add(height)
+                .ok_or(ROW_COUNT_OVERFLOW_ERR)?;
         }
 
         // @TODO: Incorporate this if we how we can properly use it. The problem here is that
@@ -523,7 +527,13 @@ fn rg_to_dfs_optionally_par_over_columns(
         materialize_hive_partitions(&mut df, schema.as_ref(), hive_partition_columns, rg_slice.1);
         apply_predicate(&mut df, predicate, true)?;
 
-        *previous_row_count += current_row_count;
+        *previous_row_count = previous_row_count.checked_add(current_row_count).ok_or(
+            polars_err!(
+                ComputeError: "Parquet file produces more than pow(2, 32) rows; \
+                consider compiling with polars-bigidx feature (polars-u64-idx package on python), \
+                or set 'streaming'"
+            ),
+        )?;
         dfs.push(df);
 
         if *previous_row_count as usize >= slice_end {
@@ -563,7 +573,9 @@ fn rg_to_dfs_par_over_rg(
         let rg_md = &file_metadata.row_groups[i];
         let rg_slice =
             split_slice_at_file(&mut n_rows_processed, rg_md.num_rows(), slice.0, slice_end);
-        *previous_row_count += rg_slice.1 as IdxSize;
+        *previous_row_count = previous_row_count
+            .checked_add(rg_slice.1 as IdxSize)
+            .ok_or(ROW_COUNT_OVERFLOW_ERR)?;
 
         if rg_slice.1 == 0 {
             continue;
