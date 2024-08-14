@@ -27,8 +27,6 @@ if TYPE_CHECKING:
     else:
         from typing_extensions import Unpack
 
-    ChannelType: TypeAlias = Union[str, Mapping[str, Any], Any]
-
     Encodings: TypeAlias = Dict[
         str,
         Union[
