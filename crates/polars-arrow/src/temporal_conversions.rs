@@ -338,6 +338,16 @@ pub fn parse_offset_tz(timezone: &str) -> PolarsResult<chrono_tz::Tz> {
         .map_err(|_| polars_err!(InvalidOperation: "timezone \"{timezone}\" cannot be parsed"))
 }
 
+/// Get the time unit as a multiple of a second
+pub const fn time_unit_multiple(unit: TimeUnit) -> i64 {
+    match unit {
+        TimeUnit::Second => 1,
+        TimeUnit::Millisecond => MILLISECONDS,
+        TimeUnit::Microsecond => MICROSECONDS,
+        TimeUnit::Nanosecond => NANOSECONDS,
+    }
+}
+
 #[cfg(feature = "chrono-tz")]
 #[cfg_attr(docsrs, doc(cfg(feature = "chrono-tz")))]
 fn chrono_tz_utf_to_timestamp(
