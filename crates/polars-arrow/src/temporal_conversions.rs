@@ -8,6 +8,12 @@ use crate::array::{PrimitiveArray, Utf8ViewArray};
 use crate::datatypes::{ArrowDataType, TimeUnit};
 
 /// Number of seconds in a day
+pub const SECONDS_IN_MINUTE: i64 = 60;
+/// Number of seconds in a day
+pub const MINUTES_IN_HOUR: i64 = 60;
+/// Number of seconds in a day
+pub const HOURS_IN_DAY: i64 = 24;
+/// Number of seconds in a day
 pub const SECONDS_IN_DAY: i64 = 86_400;
 /// Number of milliseconds in a second
 pub const MILLISECONDS: i64 = 1_000;
