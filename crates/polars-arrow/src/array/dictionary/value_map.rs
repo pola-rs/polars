@@ -1,10 +1,11 @@
 use std::borrow::Borrow;
 use std::fmt::{self, Debug};
-use std::hash::{BuildHasher, BuildHasherDefault, Hash, Hasher};
+use std::hash::{BuildHasherDefault, Hash, Hasher};
 
 use hashbrown::hash_map::RawEntryMut;
 use hashbrown::HashMap;
 use polars_error::{polars_bail, polars_err, PolarsResult};
+use polars_utils::aliases::PlRandomState;
 
 use super::DictionaryKey;
 use crate::array::indexable::{AsIndexed, Indexable};
@@ -41,11 +42,6 @@ pub struct Hashed<K> {
     key: K,
 }
 
-#[inline]
-fn ahash_hash<T: Hash + ?Sized>(value: &T) -> u64 {
-    BuildHasherDefault::<ahash::AHasher>::default().hash_one(value)
-}
-
 impl<K> Hash for Hashed<K> {
     #[inline]
     fn hash<H: Hasher>(&self, state: &mut H) {
@@ -57,6 +53,7 @@ impl<K> Hash for Hashed<K> {
 pub struct ValueMap<K: DictionaryKey, M: MutableArray> {
     pub values: M,
     pub map: HashMap<Hashed<K>, (), BuildHasherDefault<PassthroughHasher>>, // NB: *only* use insert_hashed_nocheck() and no other hashmap API
+    random_state: PlRandomState,
 }
 
 impl<K: DictionaryKey, M: MutableArray> ValueMap<K, M> {
@@ -67,6 +64,7 @@ impl<K: DictionaryKey, M: MutableArray> ValueMap<K, M> {
         Ok(Self {
             values,
             map: HashMap::default(),
+            random_state: PlRandomState::default(),
         })
     }
 
@@ -79,11 +77,12 @@ impl<K: DictionaryKey, M: MutableArray> ValueMap<K, M> {
             values.len(),
             BuildHasherDefault::<PassthroughHasher>::default(),
         );
+        let random_state = PlRandomState::default();
         for index in 0..values.len() {
             let key = K::try_from(index).map_err(|_| polars_err!(ComputeError: "overflow"))?;
             // SAFETY: we only iterate within bounds
             let value = unsafe { values.value_unchecked_at(index) };
-            let hash = ahash_hash(value.borrow());
+            let hash = random_state.hash_one(value.borrow());
 
             let entry = map.raw_entry_mut().from_hash(hash, |item| {
                 // SAFETY: invariant of the struct, it's always in bounds since we maintain it
@@ -100,7 +99,11 @@ impl<K: DictionaryKey, M: MutableArray> ValueMap<K, M> {
                 },
             }
         }
-        Ok(Self { values, map })
+        Ok(Self {
+            values,
+            map,
+            random_state,
+        })
     }
 
     pub fn data_type(&self) -> &ArrowDataType {
@@ -133,7 +136,7 @@ impl<K: DictionaryKey, M: MutableArray> ValueMap<K, M> {
         V: AsIndexed<M>,
         M::Type: Eq + Hash,
     {
-        let hash = ahash_hash(value.as_indexed());
+        let hash = self.random_state.hash_one(value.as_indexed());
         let entry = self.map.raw_entry_mut().from_hash(hash, |item| {
             // SAFETY: we've already checked (the inverse) when we pushed it, so it should be ok?
             let index = unsafe { item.key.as_usize() };

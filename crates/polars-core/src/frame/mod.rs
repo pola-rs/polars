@@ -3,7 +3,6 @@
 use std::borrow::Cow;
 use std::{mem, ops};
 
-use ahash::AHashSet;
 use rayon::prelude::*;
 
 #[cfg(feature = "algorithm_group_by")]
@@ -637,8 +636,8 @@ impl DataFrame {
             ShapeMismatch: "{} column names provided for a DataFrame of width {}",
             names.len(), self.width()
         );
-        let unique_names: AHashSet<&str, ahash::RandomState> =
-            AHashSet::from_iter(names.iter().map(|name| name.as_ref()));
+        let unique_names: PlHashSet<&str> =
+            PlHashSet::from_iter(names.iter().map(|name| name.as_ref()));
         polars_ensure!(
             unique_names.len() == self.width(),
             Duplicate: "duplicate column names found"
@@ -1708,12 +1707,13 @@ impl DataFrame {
         self.select_mut(column)
             .ok_or_else(|| polars_err!(col_not_found = column))
             .map(|s| s.rename(name))?;
-        let unique_names: AHashSet<&str, ahash::RandomState> =
-            AHashSet::from_iter(self.columns.iter().map(|s| s.name()));
+        let unique_names: PlHashSet<&str> =
+            PlHashSet::from_iter(self.columns.iter().map(|s| s.name()));
         polars_ensure!(
             unique_names.len() == self.width(),
             Duplicate: "duplicate column names found"
         );
+        drop(unique_names);
         Ok(self)
     }
 
@@ -2817,7 +2817,7 @@ impl DataFrame {
     #[cfg(feature = "row_hash")]
     pub fn hash_rows(
         &mut self,
-        hasher_builder: Option<ahash::RandomState>,
+        hasher_builder: Option<PlRandomState>,
     ) -> PolarsResult<UInt64Chunked> {
         let dfs = split_df(self, POOL.current_num_threads(), false);
         let (cas, _) = _df_rows_to_hashes_threaded_vertical(&dfs, hasher_builder)?;

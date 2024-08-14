@@ -17,7 +17,6 @@ use std::borrow::Cow;
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 
-use ahash::RandomState;
 use arrow::compute::aggregate::estimated_bytes_size;
 use arrow::offset::Offsets;
 pub use from::*;
@@ -142,7 +141,7 @@ impl Eq for Wrap<Series> {}
 
 impl Hash for Wrap<Series> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        let rs = RandomState::with_seeds(0, 0, 0, 0);
+        let rs = PlRandomState::with_seeds(0, 0, 0, 0);
         let mut h = vec![];
         if self.0.vec_hash(rs, &mut h).is_ok() {
             let h = h.into_iter().fold(0, |a: u64, b| a.wrapping_add(b));

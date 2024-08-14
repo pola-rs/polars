@@ -4,6 +4,7 @@ use std::hash::{Hash, Hasher};
 use arrow::datatypes::ArrowSchemaRef;
 use indexmap::map::MutableKeys;
 use indexmap::IndexMap;
+use polars_utils::aliases::PlRandomState;
 #[cfg(feature = "serde-lazy")]
 use serde::{Deserialize, Serialize};
 use smartstring::alias::String as SmartString;
@@ -55,7 +56,7 @@ where
     fn from_iter<T: IntoIterator<Item = F>>(iter: T) -> Self {
         let iter = iter.into_iter();
         let mut map: PlIndexMap<_, _> =
-            IndexMap::with_capacity_and_hasher(iter.size_hint().0, ahash::RandomState::default());
+            IndexMap::with_capacity_and_hasher(iter.size_hint().0, PlRandomState::default());
         for fld in iter {
             let fld = fld.into();
             map.insert(fld.name, fld.dtype);
@@ -77,7 +78,7 @@ impl Schema {
     /// ahead of time.
     pub fn with_capacity(capacity: usize) -> Self {
         let map: PlIndexMap<_, _> =
-            IndexMap::with_capacity_and_hasher(capacity, ahash::RandomState::default());
+            IndexMap::with_capacity_and_hasher(capacity, PlRandomState::default());
         Self { inner: map }
     }
 
