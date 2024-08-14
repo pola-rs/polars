@@ -1,8 +1,8 @@
 use std::collections::VecDeque;
 use std::io::{Read, Seek};
 
-use ahash::HashSet;
 use polars_error::{polars_bail, polars_err, PolarsResult};
+use polars_utils::aliases::PlHashSet;
 
 use super::super::{Compression, Dictionaries, IpcBuffer, Node};
 use super::{read_primitive, skip_primitive};
@@ -34,7 +34,7 @@ where
     let values = dictionaries
         .get(&id)
         .ok_or_else(|| {
-            let valid_ids = dictionaries.keys().collect::<HashSet<_>>();
+            let valid_ids = dictionaries.keys().collect::<PlHashSet<_>>();
             polars_err!(ComputeError:
                 "Dictionary id {id} not found. Valid ids: {valid_ids:?}"
             )

@@ -537,7 +537,7 @@ impl PyDataFrame {
     }
 
     pub fn hash_rows(&mut self, k0: u64, k1: u64, k2: u64, k3: u64) -> PyResult<PySeries> {
-        let hb = ahash::RandomState::with_seeds(k0, k1, k2, k3);
+        let hb = PlRandomState::with_seeds(k0, k1, k2, k3);
         let hash = self.df.hash_rows(Some(hb)).map_err(PyPolarsErr::from)?;
         Ok(hash.into_series().into())
     }

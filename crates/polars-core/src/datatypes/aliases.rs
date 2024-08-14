@@ -1,5 +1,7 @@
 pub use arrow::legacy::index::IdxArr;
-pub use polars_utils::aliases::{InitHashMaps, PlHashMap, PlHashSet, PlIndexMap, PlIndexSet};
+pub use polars_utils::aliases::{
+    InitHashMaps, PlHashMap, PlHashSet, PlIndexMap, PlIndexSet, PlRandomState,
+};
 
 use super::*;
 use crate::hashing::IdBuildHasher;

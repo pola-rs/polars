@@ -2,7 +2,6 @@ use std::any::Any;
 
 use arrow::array::BinaryArray;
 use hashbrown::hash_map::RawEntryMut;
-use polars_core::export::ahash::RandomState;
 use polars_core::prelude::*;
 use polars_core::utils::{_set_partition_size, accumulate_dataframes_vertical_unchecked};
 use polars_ops::prelude::JoinArgs;
@@ -34,7 +33,7 @@ pub struct GenericBuild<K: ExtraPayload> {
     //      * end = (offset + n_join_keys)
     materialized_join_cols: Vec<BinaryArray<i64>>,
     suffix: Arc<str>,
-    hb: RandomState,
+    hb: PlRandomState,
     join_args: JoinArgs,
     // partitioned tables that will be used for probing
     // stores the key and the chunk_idx, df_idx of the left table
@@ -70,7 +69,7 @@ impl<K: ExtraPayload> GenericBuild<K> {
         key_names_right: Arc<[SmartString]>,
         placeholder: PlaceHolder,
     ) -> Self {
-        let hb: RandomState = Default::default();
+        let hb: PlRandomState = Default::default();
         let partitions = _set_partition_size();
         let hash_tables = PartitionedHashMap::new(load_vec(partitions, || {
             PlIdHashMap::with_capacity(HASHMAP_INIT_SIZE)

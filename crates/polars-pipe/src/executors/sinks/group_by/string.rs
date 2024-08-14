@@ -4,7 +4,6 @@ use std::sync::Mutex;
 
 use hashbrown::hash_map::RawEntryMut;
 use num_traits::NumCast;
-use polars_core::export::ahash::RandomState;
 use polars_core::frame::row::AnyValueBuffer;
 use polars_core::prelude::*;
 use polars_core::utils::_set_partition_size;
@@ -68,7 +67,7 @@ pub struct StringGroupbySink {
     key_column: Arc<dyn PhysicalPipedExpr>,
     // the columns that will be aggregated
     aggregation_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
-    hb: RandomState,
+    hb: PlRandomState,
     // Initializing Aggregation functions. If we aggregate by 2 columns
     // this vec will have two functions. We will use these functions
     // to populate the buffer where the hashmap points to
