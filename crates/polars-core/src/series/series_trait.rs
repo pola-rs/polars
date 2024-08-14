@@ -412,13 +412,13 @@ pub trait SeriesTrait:
     /// fn example() -> PolarsResult<()> {
     ///     let s = Series::new("series", &[1, 2, 3]);
     ///
-    ///     let shifted = s.shift(1)?;
+    ///     let shifted = s.shift(1);
     ///     assert_eq!(Vec::from(shifted.i32()?), &[None, Some(1), Some(2)]);
     ///
-    ///     let shifted = s.shift(-1)?;
+    ///     let shifted = s.shift(-1);
     ///     assert_eq!(Vec::from(shifted.i32()?), &[Some(2), Some(3), None]);
     ///
-    ///     let shifted = s.shift(2)?;
+    ///     let shifted = s.shift(2);
     ///     assert_eq!(Vec::from(shifted.i32()?), &[None, None, Some(1)]);
     ///
     ///     Ok(())
