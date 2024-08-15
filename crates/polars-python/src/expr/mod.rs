@@ -1,15 +1,26 @@
+#[cfg(feature = "pymethods")]
 mod array;
+#[cfg(feature = "pymethods")]
 mod binary;
+#[cfg(feature = "pymethods")]
 mod categorical;
+#[cfg(feature = "pymethods")]
 mod datetime;
+#[cfg(feature = "pymethods")]
 mod general;
+#[cfg(feature = "pymethods")]
 mod list;
-#[cfg(feature = "meta")]
+#[cfg(all(feature = "meta", feature = "pymethods"))]
 mod meta;
+#[cfg(feature = "pymethods")]
 mod name;
+#[cfg(feature = "pymethods")]
 mod rolling;
+#[cfg(feature = "pymethods")]
 mod serde;
+#[cfg(feature = "pymethods")]
 mod string;
+#[cfg(feature = "pymethods")]
 mod r#struct;
 
 use std::mem::ManuallyDrop;

@@ -227,10 +227,14 @@ optimizations = [
 ]
 
 polars_cloud = ["polars/polars_cloud"]
+
 # also includes simd
 nightly = ["polars/nightly"]
 
+pymethods = []
+
 all = [
+  "pymethods",
   "optimizations",
   "io",
   "operations",
