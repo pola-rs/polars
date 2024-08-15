@@ -109,4 +109,4 @@ all = [
   "polars-python/all",
 ]
 
-default = ["all", "polars-python/default"]
+default = ["all", "nightly"]
