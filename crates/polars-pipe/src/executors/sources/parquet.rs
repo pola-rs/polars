@@ -48,7 +48,6 @@ pub struct ParquetSource {
     run_async: bool,
     prefetch_size: usize,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
-    concurrency_semaphore: tokio::sync::Semaphore,
 }
 
 impl ParquetSource {
@@ -187,7 +186,6 @@ impl ParquetSource {
     #[cfg(feature = "async")]
     async fn init_reader_async(&self, index: usize) -> PolarsResult<BatchedParquetReader> {
         use std::sync::atomic::Ordering;
-        let _permit = self.concurrency_semaphore.try_acquire().unwrap();
 
         let metadata = self.metadata.clone();
         let predicate = self.predicate.clone();
@@ -267,16 +265,6 @@ impl ParquetSource {
         }
         let run_async = paths.first().map(is_cloud_url).unwrap_or(false) || config::force_async();
 
-        let concurrency_semaphore = {
-            let n = if file_options.slice.is_some() {
-                1
-            } else {
-                tokio::sync::Semaphore::MAX_PERMITS
-            };
-
-            tokio::sync::Semaphore::new(n)
-        };
-
         let mut source = ParquetSource {
             batched_readers: VecDeque::new(),
             n_threads,
@@ -294,7 +282,6 @@ impl ParquetSource {
             run_async,
             prefetch_size,
             predicate,
-            concurrency_semaphore,
         };
         // Already start downloading when we deal with cloud urls.
         if run_async {
