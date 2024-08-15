@@ -43,6 +43,18 @@ pub trait Itertools: Iterator {
     {
         enumerate_idx::EnumerateIdx::new(self)
     }
+
+    fn all_equal(mut self) -> bool
+    where
+        Self: Sized,
+        Self::Item: PartialEq,
+    {
+        match self.next() {
+            None => true,
+            Some(a) => self.all(|x| a == x),
+        }
+    }
+
 }
 
 impl<T: Iterator + ?Sized> Itertools for T {}
