@@ -101,7 +101,7 @@ def test_unpivot_empty_18170() -> None:
 
 
 def test_unpivot_categorical() -> None:
-    def test_op():
+    def test_op() -> None:
         result = pl.DataFrame(
             {
                 "X": pl.Series(["a", "b"], dtype=pl.Categorical),
