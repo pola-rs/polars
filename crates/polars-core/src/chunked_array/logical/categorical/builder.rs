@@ -1,7 +1,7 @@
 use arrow::array::*;
 use arrow::legacy::trusted_len::TrustedLenPush;
 use hashbrown::hash_map::Entry;
-use polars_utils::iter::EnumerateIdxTrait;
+use polars_utils::itertools::Itertools;
 
 use crate::hashing::_HASHMAP_INIT_SIZE;
 use crate::prelude::*;

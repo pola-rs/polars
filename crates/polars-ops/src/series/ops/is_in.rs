@@ -5,7 +5,7 @@ use polars_core::prelude::*;
 use polars_core::utils::{try_get_supertype, CustomIterTools};
 use polars_core::with_match_physical_numeric_polars_type;
 #[cfg(feature = "dtype-categorical")]
-use polars_utils::iter::EnumerateIdxTrait;
+use polars_utils::itertools::Itertools;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 
 fn is_in_helper_ca<'a, T>(
