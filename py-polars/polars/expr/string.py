@@ -2596,9 +2596,7 @@ class ExprStringNameSpace:
             list_as_series=True,
         )
         replace_with = parse_into_expression(
-            replace_with,
-            str_as_lit=True,
-            list_as_series=True,
+            replace_with, str_as_lit=True, list_as_series=True
         )
         return wrap_expr(
             self._pyexpr.str_replace_many(
@@ -2632,7 +2630,6 @@ class ExprStringNameSpace:
         -----
         This method supports matching on string literals only, and does not support
         regular expression matching.
-
 
         Examples
         --------
