@@ -98,3 +98,19 @@ def test_unpivot_empty_18170() -> None:
     assert pl.DataFrame().unpivot().schema == pl.Schema(
         {"variable": pl.String(), "value": pl.Null()}
     )
+
+
+def test_unpivot_categorical() -> None:
+    def test_op():
+        result = pl.DataFrame(
+            {
+                "X": pl.Series(["a", "b"], dtype=pl.Categorical),
+                "Y": pl.Series(["c", "d"], dtype=pl.Categorical),
+            }
+        ).unpivot(on=["X", "Y"])
+        assert(all(result["value"] == pl.Series(["a", "b", "c", "d"])))
+
+    with pl.StringCache():
+        test_op()
+
+    test_op()

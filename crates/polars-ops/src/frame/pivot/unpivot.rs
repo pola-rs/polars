@@ -150,26 +150,42 @@ pub trait UnpivotDF: IntoDf {
         ids.as_single_chunk_par();
         drop(ids_);
 
-        let mut values = Vec::with_capacity(on.len());
         let columns = self_.get_columns();
 
-        for value_column_name in &on {
-            variable_col.extend_constant(len, Some(value_column_name.as_str()));
-            // ensure we go via the schema so we are O(1)
-            // self.column() is linear
-            // together with this loop that would make it O^2 over `on`
-            let (pos, _name, _dtype) = schema.try_get_full(value_column_name)?;
-            let col = &columns[pos];
-            let value_col = col.cast(&st).map_err(
-                |_| polars_err!(InvalidOperation: "'unpivot' not supported for dtype: {}", col.dtype()),
-            )?;
-            values.extend_from_slice(value_col.chunks())
-        }
-        let values_arr = concatenate_owned_unchecked(&values)?;
-        // SAFETY:
-        // The give dtype is correct
-        let values =
-            unsafe { Series::from_chunks_and_dtype_unchecked(value_name, vec![values_arr], &st) };
+        let values = if matches!(st, DataType::Categorical(_, _)) {
+            let mut values = Series::new_empty(value_name, &st);
+            for value_column_name in &on {
+                variable_col.extend_constant(len, Some(value_column_name.as_str()));
+                // ensure we go via the schema so we are O(1)
+                // self.column() is linear
+                // together with this loop that would make it O^2 over `on`
+                let (pos, _name, _dtype) = schema.try_get_full(value_column_name)?;
+                let col = &columns[pos];
+                let value_col = col.cast(&st).map_err(
+                    |_| polars_err!(InvalidOperation: "'unpivot' not supported for dtype: {}", col.dtype()),
+                )?;
+                values.append(&value_col)?;
+            }
+            values
+        } else {
+            let mut values = Vec::with_capacity(on.len());
+            for value_column_name in &on {
+                variable_col.extend_constant(len, Some(value_column_name.as_str()));
+                // ensure we go via the schema so we are O(1)
+                // self.column() is linear
+                // together with this loop that would make it O^2 over `on`
+                let (pos, _name, _dtype) = schema.try_get_full(value_column_name)?;
+                let col = &columns[pos];
+                let value_col = col.cast(&st).map_err(
+                    |_| polars_err!(InvalidOperation: "'unpivot' not supported for dtype: {}", col.dtype()),
+                )?;
+                values.extend_from_slice(value_col.chunks())
+            }
+            let values_arr = concatenate_owned_unchecked(&values)?;
+            // SAFETY:
+            // The give dtype is correct
+            unsafe { Series::from_chunks_and_dtype_unchecked(value_name, vec![values_arr], &st) }
+        };
 
         let variable_col = variable_col.as_box();
         // SAFETY:
