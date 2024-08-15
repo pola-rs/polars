@@ -271,7 +271,7 @@ impl ParquetSource {
             let n = if file_options.slice.is_some() {
                 1
             } else {
-                usize::MAX
+                tokio::sync::Semaphore::MAX_PERMITS
             };
 
             tokio::sync::Semaphore::new(n)
