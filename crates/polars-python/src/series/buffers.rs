@@ -18,9 +18,15 @@ use polars::export::arrow::bitmap::Bitmap;
 use polars::export::arrow::buffer::Buffer;
 use polars::export::arrow::offset::OffsetsBuffer;
 use polars::export::arrow::types::NativeType;
+use polars::prelude::*;
+use polars_core::{with_match_physical_numeric_polars_type, with_match_physical_numeric_type};
 use pyo3::exceptions::PyTypeError;
+use pyo3::prelude::*;
 
-use super::*;
+use super::{PySeries, ToSeries};
+use crate::conversion::Wrap;
+use crate::error::PyPolarsErr;
+use crate::raise_err;
 
 struct BufferInfo {
     pointer: usize,

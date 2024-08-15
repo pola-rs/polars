@@ -9,7 +9,7 @@ use polars_core::utils::arrow::types::NativeType;
 use pyo3::prelude::*;
 use pyo3::types::{PyNone, PyTuple};
 
-use crate::series::PySeries;
+use super::PySeries;
 
 /// Create an empty numpy array arrows 64 byte alignment
 ///

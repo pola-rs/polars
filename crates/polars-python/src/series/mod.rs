@@ -10,23 +10,8 @@ mod import;
 mod numpy_ufunc;
 mod scatter;
 
-use std::io::Cursor;
-
-use polars_core::chunked_array::cast::CastOptions;
-use polars_core::series::IsSorted;
-use polars_core::utils::flatten::flatten_series;
-use polars_core::{with_match_physical_numeric_polars_type, with_match_physical_numeric_type};
-use pyo3::exceptions::{PyIndexError, PyRuntimeError, PyValueError};
-use pyo3::prelude::*;
-use pyo3::types::PyBytes;
-use pyo3::Python;
-
-use crate::dataframe::PyDataFrame;
-use crate::error::PyPolarsErr;
-use crate::map::series::{call_lambda_and_extract, ApplyLambda};
-use crate::prelude::*;
-use crate::py_modules::POLARS;
-use crate::raise_err;
+use polars::prelude::Series;
+use pyo3::pyclass;
 
 #[pyclass]
 #[repr(transparent)]

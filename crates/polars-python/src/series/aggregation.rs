@@ -1,9 +1,10 @@
+use polars::prelude::*;
 use pyo3::prelude::*;
 use DataType::*;
 
+use super::PySeries;
+use crate::conversion::Wrap;
 use crate::error::PyPolarsErr;
-use crate::prelude::*;
-use crate::PySeries;
 
 #[pymethods]
 impl PySeries {

@@ -1,9 +1,19 @@
+use std::io::Cursor;
+
+use polars_core::chunked_array::cast::CastOptions;
+use polars_core::series::IsSorted;
+use polars_core::utils::flatten::flatten_series;
+use pyo3::exceptions::{PyIndexError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
+use pyo3::types::PyBytes;
 use pyo3::Python;
 
-use super::{PySeries, *};
+use super::PySeries;
+use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
+use crate::map::series::{call_lambda_and_extract, ApplyLambda};
 use crate::prelude::*;
+use crate::py_modules::POLARS;
 use crate::{apply_method_all_arrow_series2, raise_err};
 
 #[pymethods]

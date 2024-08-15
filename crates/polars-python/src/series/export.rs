@@ -2,9 +2,10 @@ use polars_core::prelude::*;
 use pyo3::prelude::*;
 use pyo3::types::{PyCapsule, PyList};
 
+use super::PySeries;
+use crate::interop;
 use crate::interop::arrow::to_py::series_to_stream;
 use crate::prelude::*;
-use crate::{interop, PySeries};
 
 #[pymethods]
 impl PySeries {
