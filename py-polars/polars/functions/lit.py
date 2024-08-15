@@ -111,7 +111,7 @@ def lit(
 
     elif isinstance(value, timedelta):
         expr = wrap_expr(plr.lit(value, allow_object=False))
-        if dtype == Duration and (tu := getattr(dtype, "time_unit", None)) is not None:
+        if dtype is not None and (tu := getattr(dtype, "time_unit", None)) is not None:
             expr = expr.cast(Duration(tu))
         return expr
 
