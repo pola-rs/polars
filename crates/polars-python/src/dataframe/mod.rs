@@ -5,7 +5,7 @@ mod io;
 mod serde;
 
 use polars::prelude::DataFrame;
-use pyo3::prelude::*;
+use pyo3::pyclass;
 
 #[pyclass]
 #[repr(transparent)]

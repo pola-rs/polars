@@ -7,8 +7,8 @@ use polars_plan::prelude::{
 use pyo3::exceptions::{PyNotImplementedError, PyValueError};
 use pyo3::prelude::*;
 
-use super::super::visit::PyExprIR;
 use super::expr_nodes::PyGroupbyOptions;
+use crate::lazyframe::visit::PyExprIR;
 use crate::PyDataFrame;
 
 #[pyclass]
