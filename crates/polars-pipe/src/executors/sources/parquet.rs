@@ -1,8 +1,10 @@
 use std::collections::VecDeque;
 use std::ops::Range;
 use std::path::PathBuf;
+use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 
+use futures::{StreamExt, TryStreamExt};
 use polars_core::config::{self, get_file_prefetch_size};
 use polars_core::error::*;
 use polars_core::prelude::Series;
@@ -32,7 +34,7 @@ pub struct ParquetSource {
     batched_readers: VecDeque<BatchedParquetReader>,
     n_threads: usize,
     processed_paths: usize,
-    processed_rows: usize,
+    processed_rows: AtomicUsize,
     iter: Range<usize>,
     paths: Arc<Vec<PathBuf>>,
     options: ParquetOptions,
@@ -46,6 +48,7 @@ pub struct ParquetSource {
     run_async: bool,
     prefetch_size: usize,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
+    concurrency_semaphore: tokio::sync::Semaphore,
 }
 
 impl ParquetSource {
@@ -110,11 +113,13 @@ impl ParquetSource {
     }
 
     fn init_reader_sync(&mut self) -> PolarsResult<()> {
+        use std::sync::atomic::Ordering;
+
         let Some(index) = self.iter.next() else {
             return Ok(());
         };
         if let Some(slice) = self.file_options.slice {
-            if self.processed_rows >= slice.0 as usize + slice.1 {
+            if self.processed_rows.load(Ordering::Relaxed) >= slice.0 as usize + slice.1 {
                 return Ok(());
             }
         }
@@ -147,20 +152,22 @@ impl ParquetSource {
                 );
 
             let n_rows_this_file = reader.num_rows().unwrap();
+            let current_row_offset = self
+                .processed_rows
+                .fetch_add(n_rows_this_file, Ordering::Relaxed);
 
             let slice = file_options.slice.map(|slice| {
                 assert!(slice.0 >= 0);
                 let slice_start = slice.0 as usize;
                 let slice_end = slice_start + slice.1;
                 split_slice_at_file(
-                    &mut self.processed_rows.clone(),
+                    &mut current_row_offset.clone(),
                     n_rows_this_file,
                     slice_start,
                     slice_end,
                 )
             });
 
-            self.processed_rows += n_rows_this_file;
             reader = reader.with_slice(slice);
             reader.batched(chunk_size)?
         };
@@ -174,42 +181,65 @@ impl ParquetSource {
         Ok(())
     }
 
+    /// This function must NOT be run concurrently if there is a slice (or any operation that
+    /// requires `self.processed_rows` to be incremented in the correct order), as it does not
+    /// coordinate to increment the row offset in a properly ordered manner.
     #[cfg(feature = "async")]
     async fn init_reader_async(&self, index: usize) -> PolarsResult<BatchedParquetReader> {
+        use std::sync::atomic::Ordering;
+        let _permit = self.concurrency_semaphore.try_acquire().unwrap();
+
         let metadata = self.metadata.clone();
         let predicate = self.predicate.clone();
         let cloud_options = self.cloud_options.clone();
         let (path, options, file_options, projection, chunk_size, hive_partitions) =
             self.prepare_init_reader(index)?;
 
-        assert_eq!(file_options.slice, None);
-
         let batched_reader = {
             let uri = path.to_string_lossy();
-            ParquetAsyncReader::from_uri(&uri, cloud_options.as_ref(), metadata)
-                .await?
-                .with_row_index(file_options.row_index)
-                .with_projection(projection)
-                .check_schema(
-                    self.file_info
-                        .reader_schema
-                        .as_ref()
-                        .unwrap()
-                        .as_ref()
-                        .unwrap_left(),
+
+            let mut async_reader =
+                ParquetAsyncReader::from_uri(&uri, cloud_options.as_ref(), metadata)
+                    .await?
+                    .with_row_index(file_options.row_index)
+                    .with_projection(projection)
+                    .check_schema(
+                        self.file_info
+                            .reader_schema
+                            .as_ref()
+                            .unwrap()
+                            .as_ref()
+                            .unwrap_left(),
+                    )
+                    .await?
+                    .with_predicate(predicate.clone())
+                    .use_statistics(options.use_statistics)
+                    .with_hive_partition_columns(hive_partitions)
+                    .with_include_file_path(
+                        self.file_options
+                            .include_file_paths
+                            .as_ref()
+                            .map(|x| (x.clone(), Arc::from(path.to_str().unwrap()))),
+                    );
+
+            let n_rows_this_file = async_reader.num_rows().await?;
+            let current_row_offset = self
+                .processed_rows
+                .fetch_add(n_rows_this_file, Ordering::Relaxed);
+
+            let slice = file_options.slice.map(|slice| {
+                assert!(slice.0 >= 0);
+                let slice_start = slice.0 as usize;
+                let slice_end = slice_start + slice.1;
+                split_slice_at_file(
+                    &mut current_row_offset.clone(),
+                    n_rows_this_file,
+                    slice_start,
+                    slice_end,
                 )
-                .await?
-                .with_predicate(predicate.clone())
-                .use_statistics(options.use_statistics)
-                .with_hive_partition_columns(hive_partitions)
-                .with_include_file_path(
-                    self.file_options
-                        .include_file_paths
-                        .as_ref()
-                        .map(|x| (x.clone(), Arc::from(path.to_str().unwrap()))),
-                )
-                .batched(chunk_size)
-                .await?
+            });
+
+            async_reader.with_slice(slice).batched(chunk_size).await?
         };
         Ok(batched_reader)
     }
@@ -237,11 +267,21 @@ impl ParquetSource {
         }
         let run_async = paths.first().map(is_cloud_url).unwrap_or(false) || config::force_async();
 
+        let concurrency_semaphore = {
+            let n = if file_options.slice.is_some() {
+                1
+            } else {
+                usize::MAX
+            };
+
+            tokio::sync::Semaphore::new(n)
+        };
+
         let mut source = ParquetSource {
             batched_readers: VecDeque::new(),
             n_threads,
             processed_paths: 0,
-            processed_rows: 0,
+            processed_rows: AtomicUsize::new(0),
             options,
             file_options,
             iter,
@@ -254,6 +294,7 @@ impl ParquetSource {
             run_async,
             prefetch_size,
             predicate,
+            concurrency_semaphore,
         };
         // Already start downloading when we deal with cloud urls.
         if run_async {
@@ -269,29 +310,36 @@ impl ParquetSource {
         //
         // It is important we do this for a reasonable batch size, that's why we start this when we
         // have just 2 readers left.
-        if self.file_options.slice.is_none()
-            && self.run_async
-            && (self.batched_readers.len() <= 2 || self.batched_readers.is_empty())
-        {
+        if self.run_async {
             #[cfg(not(feature = "async"))]
             panic!("activate 'async' feature");
 
             #[cfg(feature = "async")]
             {
-                let range = 0..self.prefetch_size - self.batched_readers.len();
-                let range = range
-                    .zip(&mut self.iter)
-                    .map(|(_, index)| index)
-                    .collect::<Vec<_>>();
-                let init_iter = range.into_iter().map(|index| self.init_reader_async(index));
+                if self.batched_readers.len() <= 2 || self.batched_readers.is_empty() {
+                    let range = 0..self.prefetch_size - self.batched_readers.len();
+                    let range = range
+                        .zip(&mut self.iter)
+                        .map(|(_, index)| index)
+                        .collect::<Vec<_>>();
+                    let init_iter = range.into_iter().map(|index| self.init_reader_async(index));
 
-                let batched_readers =
-                    polars_io::pl_async::get_runtime().block_on_potential_spawn(async {
-                        futures::future::try_join_all(init_iter).await
-                    })?;
+                    let batched_readers = if self.file_options.slice.is_some() {
+                        polars_io::pl_async::get_runtime().block_on_potential_spawn(async {
+                            futures::stream::iter(init_iter)
+                                .then(|x| x)
+                                .try_collect()
+                                .await
+                        })?
+                    } else {
+                        polars_io::pl_async::get_runtime().block_on_potential_spawn(async {
+                            futures::future::try_join_all(init_iter).await
+                        })?
+                    };
 
-                for r in batched_readers {
-                    self.finish_init_reader(r)?;
+                    for r in batched_readers {
+                        self.finish_init_reader(r)?;
+                    }
                 }
             }
         } else {
