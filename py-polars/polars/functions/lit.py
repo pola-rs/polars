@@ -7,8 +7,6 @@ from typing import TYPE_CHECKING, Any
 
 import polars._reexport as pl
 from polars._utils.convert import (
-    date_to_int,
-    datetime_to_int,
     time_to_int,
     timedelta_to_int,
 )
@@ -79,8 +77,7 @@ def lit(
 
     if isinstance(value, datetime):
         if dtype == Date:
-            dt_int = date_to_int(value.date())
-            return lit(dt_int).cast(Date)
+            return wrap_expr(plr.lit(value.date(), allow_object=False))
 
         # parse time unit
         if dtype is not None and (tu := getattr(dtype, "time_unit", "us")) is not None:
@@ -109,8 +106,7 @@ def lit(
                 raise TypeError(msg)
 
         dt_utc = value.replace(tzinfo=timezone.utc)
-        dt_int = datetime_to_int(dt_utc, time_unit)
-        expr = lit(dt_int).cast(Datetime(time_unit))
+        expr = wrap_expr(plr.lit(dt_utc, allow_object=False)).cast(Datetime(time_unit))
         if tz is not None:
             expr = expr.dt.replace_time_zone(
                 tz, ambiguous="earliest" if value.fold == 0 else "latest"
@@ -134,14 +130,14 @@ def lit(
         if dtype == Datetime:
             time_unit = getattr(dtype, "time_unit", "us") or "us"
             dt_utc = datetime(value.year, value.month, value.day)
-            dt_int = datetime_to_int(dt_utc, time_unit)
-            expr = lit(dt_int).cast(Datetime(time_unit))
+            expr = wrap_expr(plr.lit(dt_utc, allow_object=False)).cast(
+                Datetime(time_unit)
+            )
             if (time_zone := getattr(dtype, "time_zone", None)) is not None:
                 expr = expr.dt.replace_time_zone(str(time_zone))
             return expr
         else:
-            date_int = date_to_int(value)
-            return lit(date_int).cast(Date)
+            return wrap_expr(plr.lit(value, allow_object=False))
 
     elif isinstance(value, pl.Series):
         value = value._s
