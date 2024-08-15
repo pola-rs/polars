@@ -144,7 +144,7 @@ where
         self.length = self
             .length
             .checked_add(other.length)
-            .ok_or(polars_err!(ComputeError: LENGTH_LIMIT_MSG))?;
+            .ok_or_else(|| polars_err!(ComputeError: LENGTH_LIMIT_MSG))?;
         self.null_count += other.null_count;
         new_chunks(&mut self.chunks, &other.chunks, len);
         Ok(())
@@ -161,7 +161,7 @@ impl ListChunked {
         self.length = self
             .length
             .checked_add(other.length)
-            .ok_or(polars_err!(ComputeError: LENGTH_LIMIT_MSG))?;
+            .ok_or_else(|| polars_err!(ComputeError: LENGTH_LIMIT_MSG))?;
         self.null_count += other.null_count;
         new_chunks(&mut self.chunks, &other.chunks, len);
         self.set_sorted_flag(IsSorted::Not);
@@ -184,7 +184,7 @@ impl ArrayChunked {
         self.length = self
             .length
             .checked_add(other.length)
-            .ok_or(polars_err!(ComputeError: LENGTH_LIMIT_MSG))?;
+            .ok_or_else(|| polars_err!(ComputeError: LENGTH_LIMIT_MSG))?;
         self.null_count += other.null_count;
 
         new_chunks(&mut self.chunks, &other.chunks, len);
@@ -205,7 +205,7 @@ impl StructChunked {
         self.length = self
             .length
             .checked_add(other.length)
-            .ok_or(polars_err!(ComputeError: LENGTH_LIMIT_MSG))?;
+            .ok_or_else(|| polars_err!(ComputeError: LENGTH_LIMIT_MSG))?;
         self.null_count += other.null_count;
 
         new_chunks(&mut self.chunks, &other.chunks, len);
@@ -222,7 +222,7 @@ impl<T: PolarsObject> ObjectChunked<T> {
         self.length = self
             .length
             .checked_add(other.length)
-            .ok_or(polars_err!(ComputeError: LENGTH_LIMIT_MSG))?;
+            .ok_or_else(|| polars_err!(ComputeError: LENGTH_LIMIT_MSG))?;
         self.null_count += other.null_count;
         self.set_sorted_flag(IsSorted::Not);
         new_chunks(&mut self.chunks, &other.chunks, len);
