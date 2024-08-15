@@ -107,6 +107,11 @@ where
     }
 
     fn slice(&self, offset: i64, length: usize) -> Series {
+
+        for i in self.0.into_no_null_iter() {
+            // Use pointer arithmetic to get the address of the ith element
+            eprintln!("Location of k before {:p}", i);
+        }
         ObjectChunked::slice(&self.0, offset, length).into_series()
     }
 
