@@ -251,7 +251,7 @@ def test_write_delta_overwrite_schema_deprecated(
 ) -> None:
     df = df.select(pl.col(pl.Int64))
     with pytest.deprecated_call():
-        df.write_delta(tmp_path, overwrite_schema=True)
+        df.write_delta(tmp_path, mode="overwrite", overwrite_schema=True)
     result = pl.read_delta(str(tmp_path))
     assert_frame_equal(df, result)
 
