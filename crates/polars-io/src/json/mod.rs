@@ -12,7 +12,7 @@
 //!
 //! let basic_json = r#"{"a":1, "b":2.0, "c":false, "d":"4"}
 //! {"a":-10, "b":-3.5, "c":true, "d":"4"}
-//! {"a":2, "b":0.6, "c":false, "d":"text"}
+//! {"a":2, 
 //! {"a":1, "b":2.0, "c":false, "d":"4"}
 //! {"a":7, "b":-3.5, "c":true, "d":"4"}
 //! {"a":1, "b":0.6, "c":false, "d":"text"}
@@ -221,6 +221,15 @@ where
     schema_overwrite: Option<&'a Schema>,
     json_format: JsonFormat,
 }
+fn remove_bom(bytes: Vec<u8>) -> Vec<u8> {
+    if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {  // UTF-8 BOM
+        bytes[3..].to_vec()
+    } else if bytes.starts_with(&[0xFE, 0xFF]) || bytes.starts_with(&[0xFF, 0xFE]) {  // UTF-16 BOM
+        bytes[2..].to_vec()
+    } else {
+        bytes
+    }
+}
 
 impl<'a, R> SerReader<R> for JsonReader<'a, R>
 where
@@ -256,7 +265,8 @@ where
         let out = match self.json_format {
             JsonFormat::Json => {
                 polars_ensure!(!self.ignore_errors, InvalidOperation: "'ignore_errors' only supported in ndjson");
-                let mut bytes = rb.deref().to_vec();
+                let mut bytes: Vec<u8> = rb.deref().to_vec();
+                bytes = remove_bom(bytes);
                 let json_value =
                     simd_json::to_borrowed_value(&mut bytes).map_err(to_compute_err)?;
 
