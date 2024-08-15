@@ -253,5 +253,61 @@ def test_from_dict_cast_logical_type(dtype: pl.DataType, data: Any) -> None:
         ],
         schema=schema,
     )
-
     assert_frame_equal(df_from_dicts, df)
+
+
+def test_from_dict_indexed() -> None:
+    data = {
+        "a": {"x": [1, 8], "y": [2.5, 5.0]},
+        "b": {"w": [0, 0], "y": [2, 3], "z": [8, 7]},
+        "c": None,
+    }
+    expected_data = {
+        "index": ["a", "a", "b", "b", "c"],
+        "x": [1, 8, None, None, None],
+        "y": [2.5, 5.0, 2.0, 3.0, None],
+        "w": [None, None, 0, 0, None],
+        "z": [None, None, 8, 7, None],
+    }
+    expected_frame = pl.DataFrame(expected_data)
+
+    res = pl.from_dict(data, indexed=True)
+    assert_frame_equal(expected_frame, res)
+
+    res = pl.from_dict(data=data, indexed="key")
+    assert_frame_equal(expected_frame.rename({"index": "key"}), res)
+
+
+def test_from_dicts_indexed() -> None:
+    df = pl.DataFrame(
+        {
+            "idx": ["a", "a", "b", "b", "c"],
+            "x": [1, 8, None, None, None],
+            "y": [2.5, 5.0, 2.0, 3.0, None],
+            "w": [None, None, 0, 0, None],
+            "z": [None, None, 8, 7, None],
+        }
+    )
+
+    # export records...
+    indexed_records = df.rows_by_key("idx", named=True)
+    assert indexed_records == {
+        "a": [
+            {"x": 1, "y": 2.5, "w": None, "z": None},
+            {"x": 8, "y": 5.0, "w": None, "z": None},
+        ],
+        "b": [
+            {"x": None, "y": 2.0, "w": 0, "z": 8},
+            {"x": None, "y": 3.0, "w": 0, "z": 7},
+        ],
+        "c": [
+            {"x": None, "y": None, "w": None, "z": None},
+        ],
+    }
+
+    # ...and read them back
+    res = pl.from_dicts(indexed_records, indexed=True)
+    assert_frame_equal(res, df.rename({"idx": "index"}))
+
+    res = pl.from_dicts(data=indexed_records, indexed="key")
+    assert_frame_equal(res.rename({"key": "idx"}), df)
