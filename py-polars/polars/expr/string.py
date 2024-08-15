@@ -2473,10 +2473,9 @@ class ExprStringNameSpace:
             `replace_many(pl.Series(mapping.keys()), pl.Series(mapping.values()))`.
         replace_with
             Strings to replace where a pattern was a match.
-            Accepts expression input. Sequences are parsed as Series. Non-expression
-            inputs are parsed as literals. Length must match the length of `patterns` or
-            have length 1. This can be broadcasted, so it supports many:one and
-            many:many.
+            Accepts expression input. Non-expression inputs are parsed as literals.
+            Length must match the length of `patterns` or have length 1. This can be
+            broadcasted, so it supports many:one and many:many.
         ascii_case_insensitive
             Enable ASCII-aware case-insensitive matching.
             When this option is enabled, searching will be performed without respect
@@ -2581,19 +2580,23 @@ class ExprStringNameSpace:
         │ Can you feel the love tonight                      ┆ Can me feel the love tonight                      │
         └────────────────────────────────────────────────────┴───────────────────────────────────────────────────┘
         """  # noqa: W505
-        if replace_with is no_default and isinstance(patterns, Mapping):
+        if replace_with is no_default:
+            if not isinstance(patterns, Mapping):
+                msg = "`replace_with` is required if `patterns` is not a Mapping type"
+                raise ValueError(msg)
             # Early return in case of an empty mapping.
             if not patterns:
                 return wrap_expr(self._pyexpr)
             replace_with = pl.Series(patterns.values())
             patterns = pl.Series(patterns.keys())
+
         patterns = parse_into_expression(
             patterns,  # type: ignore[arg-type]
             str_as_lit=False,
             list_as_series=True,
         )
         replace_with = parse_into_expression(
-            replace_with,  # type: ignore[arg-type]
+            replace_with,
             str_as_lit=True,
             list_as_series=True,
         )

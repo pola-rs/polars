@@ -1118,6 +1118,12 @@ def test_replace_many_invalid_inputs() -> None:
     with pytest.raises(SchemaError):
         df.select(pl.col("text").str.replace_many([1], [2]))
 
+    with pytest.raises(SchemaError):
+        df.select(pl.col("text").str.replace_many(["me"], None))
+
+    with pytest.raises(ValueError):
+        df.select(pl.col("text").str.replace_many(["me"]))
+
     with pytest.raises(
         InvalidOperationError,
         match="expected the same amount of patterns as replacement strings",
@@ -1128,6 +1134,12 @@ def test_replace_many_invalid_inputs() -> None:
 
     with pytest.raises(ColumnNotFoundError, match="me"):
         s.str.replace_many("me", "you")  # type: ignore[arg-type]
+
+    with pytest.raises(SchemaError):
+        df.select(pl.col("text").str.replace_many(["me"], None))
+
+    with pytest.raises(ValueError):
+        df.select(pl.col("text").str.replace_many(["me"]))
 
     with pytest.raises(
         InvalidOperationError,
