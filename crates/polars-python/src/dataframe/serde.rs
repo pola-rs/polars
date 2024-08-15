@@ -1,6 +1,7 @@
 use std::io::{BufReader, BufWriter, Cursor};
 use std::ops::Deref;
 
+use polars::prelude::*;
 use polars_io::mmap::ReaderBytes;
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
@@ -9,7 +10,6 @@ use super::PyDataFrame;
 use crate::error::PyPolarsErr;
 use crate::exceptions::ComputeError;
 use crate::file::{get_file_like, get_mmap_bytes_reader};
-use crate::prelude::*;
 
 #[pymethods]
 impl PyDataFrame {

@@ -1,11 +1,13 @@
 use polars::export::arrow::record_batch::RecordBatch;
+use polars::prelude::*;
 use polars_core::export::arrow::datatypes::IntegerType;
 use polars_core::utils::arrow::compute::cast::CastOptionsImpl;
 use pyo3::prelude::*;
 use pyo3::types::{PyCapsule, PyList, PyTuple};
 
-use super::*;
+use super::PyDataFrame;
 use crate::conversion::{ObjectValue, Wrap};
+use crate::error::PyPolarsErr;
 use crate::interop;
 use crate::interop::arrow::to_py::dataframe_to_stream;
 use crate::prelude::PyCompatLevel;

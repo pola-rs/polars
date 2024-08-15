@@ -4,11 +4,8 @@ mod general;
 mod io;
 mod serde;
 
-use polars::prelude::*;
+use polars::prelude::DataFrame;
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
-
-use crate::error::PyPolarsErr;
 
 #[pyclass]
 #[repr(transparent)]

@@ -11,8 +11,9 @@ use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::types::PyList;
 
-use super::*;
+use super::PyDataFrame;
 use crate::conversion::Wrap;
+use crate::error::PyPolarsErr;
 use crate::map::dataframe::{
     apply_lambda_unknown, apply_lambda_with_bool_out_type, apply_lambda_with_primitive_out_type,
     apply_lambda_with_string_out_type,
