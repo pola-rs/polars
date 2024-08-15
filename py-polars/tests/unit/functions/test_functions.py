@@ -212,6 +212,24 @@ def test_null_handling_correlation() -> None:
     )
 
 
+def test_min_periods_handling_correlation() -> None:
+    df = pl.DataFrame({"a": [1, None, 3, None, 4], "b": [1, 2, 3, 10, 4]})
+
+    out = df.select(
+        pl.corr("a", "b", min_periods=3).alias("pearson"),
+        pl.corr("a", "b", method="spearman", min_periods=3).alias("spearman"),
+    )
+    assert out["pearson"][0] == pytest.approx(1.0)
+    assert out["spearman"][0] == pytest.approx(1.0)
+
+    out1 = df.select(
+        pl.corr("a", "b", min_periods=4).alias("pearson"),
+        pl.corr("a", "b", method="spearman", min_periods=4).alias("spearman"),
+    )
+    assert not out1["pearson"][0]
+    assert not out1["spearman"][0]
+
+
 def test_align_frames() -> None:
     import numpy as np
     import pandas as pd

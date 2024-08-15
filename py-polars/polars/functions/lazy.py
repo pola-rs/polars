@@ -784,6 +784,7 @@ def corr(
     method: CorrelationMethod = "pearson",
     ddof: int = 1,
     propagate_nans: bool = False,
+    min_periods: int = 1,
 ) -> Expr:
     """
     Compute the Pearson's or Spearman rank correlation correlation between two columns.
@@ -804,6 +805,9 @@ def corr(
         If `True` any `NaN` encountered will lead to `NaN` in the output.
         Defaults to `False` where `NaN` are regarded as larger than any finite number
         and thus lead to the highest rank.
+    min_periods
+        Minimum number of overlapping observations required
+        to have a valid result.
 
     Examples
     --------
@@ -849,15 +853,17 @@ def corr(
     b = parse_into_expression(b)
 
     if method == "pearson":
-        return wrap_expr(plr.pearson_corr(a, b, ddof))
+        return wrap_expr(plr.pearson_corr(a, b, ddof, min_periods))
     elif method == "spearman":
-        return wrap_expr(plr.spearman_rank_corr(a, b, ddof, propagate_nans))
+        return wrap_expr(
+            plr.spearman_rank_corr(a, b, ddof, propagate_nans, min_periods)
+        )
     else:
         msg = f"method must be one of {{'pearson', 'spearman'}}, got {method!r}"
         raise ValueError(msg)
 
 
-def cov(a: IntoExpr, b: IntoExpr, ddof: int = 1) -> Expr:
+def cov(a: IntoExpr, b: IntoExpr, ddof: int = 1, min_periods: int = 1) -> Expr:
     """
     Compute the covariance between two columns/ expressions.
 
@@ -871,6 +877,9 @@ def cov(a: IntoExpr, b: IntoExpr, ddof: int = 1) -> Expr:
         "Delta Degrees of Freedom": the divisor used in the calculation is N - ddof,
         where N represents the number of elements.
         By default ddof is 1.
+    min_periods
+        Minimum number of overlapping observations required
+        to have a valid result.
 
     Examples
     --------
@@ -893,7 +902,7 @@ def cov(a: IntoExpr, b: IntoExpr, ddof: int = 1) -> Expr:
     """
     a = parse_into_expression(a)
     b = parse_into_expression(b)
-    return wrap_expr(plr.cov(a, b, ddof))
+    return wrap_expr(plr.cov(a, b, ddof, min_periods))
 
 
 def map_batches(
