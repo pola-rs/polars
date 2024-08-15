@@ -5,31 +5,6 @@ import sys
 from polars._utils.polars_version import get_polars_version
 from polars.meta.index_type import get_index_type
 
-# See the list of dependencies in pyproject.toml.
-_OPT_DEPS = [
-    "adbc_driver_manager",
-    "cloudpickle",
-    "connectorx",
-    "deltalake",
-    "fastexcel",
-    "fsspec",
-    "gevent",
-    "great_tables",
-    "hvplot",
-    "matplotlib",
-    "nest_asyncio",
-    "numpy",
-    "openpyxl",
-    "pandas",
-    "pyarrow",
-    "pydantic",
-    "pyiceberg",
-    "sqlalchemy",
-    "torch",
-    "xlsx2csv",
-    "xlsxwriter",
-]
-
 
 def show_versions() -> None:
     """
@@ -69,8 +44,9 @@ def show_versions() -> None:
     # module) as a micro-optimization for polars' initial import
     import platform
 
+    deps = _get_dependency_list()
     core_properties = ("Polars", "Index type", "Platform", "Python")
-    keylen = max(len(x) for x in [*core_properties, *_OPT_DEPS]) + 1
+    keylen = max(len(x) for x in [*core_properties, *deps]) + 1
 
     print("--------Version info---------")
     print(f"{'Polars:':{keylen}s} {get_polars_version()}")
@@ -79,9 +55,36 @@ def show_versions() -> None:
     print(f"{'Python:':{keylen}s} {sys.version}")
 
     print("\n----Optional dependencies----")
-    for name in _OPT_DEPS:
+    for name in deps:
         print(f"{name:{keylen}s} ", end="", flush=True)
         print(_get_dependency_version(name))
+
+
+# See the list of dependencies in pyproject.toml.
+def _get_dependency_list() -> str:
+    return [
+        "adbc_driver_manager",
+        "cloudpickle",
+        "connectorx",
+        "deltalake",
+        "fastexcel",
+        "fsspec",
+        "gevent",
+        "great_tables",
+        "hvplot",
+        "matplotlib",
+        "nest_asyncio",
+        "numpy",
+        "openpyxl",
+        "pandas",
+        "pyarrow",
+        "pydantic",
+        "pyiceberg",
+        "sqlalchemy",
+        "torch",
+        "xlsx2csv",
+        "xlsxwriter",
+    ]
 
 
 def _get_dependency_version(dep_name: str) -> str:
