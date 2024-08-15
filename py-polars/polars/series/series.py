@@ -1021,6 +1021,7 @@ class Series:
         else:
             other = maybe_cast(other, self.dtype)
             f = get_ffi_func(op_ffi, self.dtype, self._s)
+            print(f)
         if f is None:
             msg = (
                 f"cannot do arithmetic with Series of dtype: {self.dtype!r} and argument"
