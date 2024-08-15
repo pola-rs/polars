@@ -8,7 +8,7 @@ name = "polars"
 crate-type = ["cdylib"]
 
 [dependencies]
-polars-python = { workspace = true, default-features = true }
+polars-python = { workspace = true }
 pyo3 = { workspace = true, features = ["abi3-py38", "chrono", "extension-module", "multiple-pymethods"] }
 
 [build-dependencies]
@@ -25,6 +25,7 @@ jemallocator = { version = "0.5", features = ["disable_initial_exec_tls", "backg
 jemallocator = { version = "0.5", features = ["disable_initial_exec_tls"] }
 
 [features]
+# Features used in this crate
 build_info = ["dep:built"]
 ffi_plugin = ["polars-python/ffi_plugin"]
 csv = ["polars-python/csv"]
@@ -35,6 +36,63 @@ sql = ["polars-python/sql"]
 trigonometry = ["polars-python/trigonometry"]
 parquet = ["polars-python/parquet"]
 ipc = ["polars-python/ipc"]
+
+# Features passed through to the polars-python crate
+avro = ["polars-python/avro"]
+ipc_streaming = ["polars-python/ipc_streaming"]
+is_in = ["polars-python/is_in"]
+json = ["polars-python/json"]
+sign = ["polars-python/sign"]
+asof_join = ["polars-python/asof_join"]
+cross_join = ["polars-python/cross_join"]
+pct_change = ["polars-python/pct_change"]
+repeat_by = ["polars-python/repeat_by"]
+# also includes simd
+nightly = ["polars-python/nightly"]
+streaming = ["polars-python/streaming"]
+meta = ["polars-python/meta"]
+search_sorted = ["polars-python/search_sorted"]
+decompress = ["polars-python/decompress"]
+regex = ["polars-python/regex"]
+extract_jsonpath = ["polars-python/extract_jsonpath"]
+pivot = ["polars-python/pivot"]
+top_k = ["polars-python/top_k"]
+propagate_nans = ["polars-python/propagate_nans"]
+performant = ["polars-python/performant"]
+timezones = ["polars-python/timezones"]
+cse = ["polars-python/cse"]
+merge_sorted = ["polars-python/merge_sorted"]
+list_gather = ["polars-python/list_gather"]
+list_count = ["polars-python/list_count"]
+array_count = ["polars-python/array_count"]
+binary_encoding = ["polars-python/binary_encoding"]
+list_sets = ["polars-python/list_sets"]
+list_any_all = ["polars-python/list_any_all"]
+array_any_all = ["polars-python/array_any_all"]
+list_drop_nulls = ["polars-python/list_drop_nulls"]
+list_sample = ["polars-python/list_sample"]
+cutqcut = ["polars-python/cutqcut"]
+rle = ["polars-python/rle"]
+extract_groups = ["polars-python/extract_groups"]
+cloud = ["polars-python/cloud"]
+peaks = ["polars-python/peaks"]
+hist = ["polars-python/hist"]
+find_many = ["polars-python/find_many"]
+new_streaming = ["polars-python/new_streaming"]
+
+dtype-i8 = ["polars-python/dtype-i8"]
+dtype-i16 = ["polars-python/dtype-i16"]
+dtype-u8 = ["polars-python/dtype-u8"]
+dtype-u16 = ["polars-python/dtype-u16"]
+dtype-array = ["polars-python/dtype-array"]
+
+dtypes = ["polars-python/dtypes"]
+
+operations = ["polars-python/operations"]
+
+io = ["polars-python/io"]
+
+optimizations = ["polars-python/optimizations"]
 
 all = [
   "build_info",
@@ -47,13 +105,7 @@ all = [
   "trigonometry",
   "parquet",
   "ipc",
+  "polars-python/all",
 ]
 
-# we cannot conditionally activate simd
-# https://github.com/rust-lang/cargo/issues/1197
-# so we have an indirection and compile
-# with --no-default-features --features=all for targets without simd
-default = [
-  "all",
-  #   "nightly",
-]
+default = ["all", "polars-python/default"]
