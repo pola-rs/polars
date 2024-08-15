@@ -1427,3 +1427,42 @@ def test_literal_from_datetime(
 
     assert out.schema == OrderedDict({"literal": dtype})
     assert out.item() == value
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        time(0),
+        time(hour=1),
+        time(hour=16, minute=43, microsecond=500),
+        time(hour=23, minute=59, second=59, microsecond=999999),
+    ],
+)
+def test_literal_from_time(value: time) -> None:
+    out = pl.select(pl.lit(value))
+    assert out.schema == OrderedDict({"literal": pl.Time})
+    assert out.item() == value
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        None,
+        pl.Duration("ms"),
+        pl.Duration("us"),
+        pl.Duration("ns"),
+    ],
+)
+@pytest.mark.parametrize(
+    "value",
+    [
+        timedelta(0),
+        timedelta(hours=1),
+        timedelta(days=-99999),
+        timedelta(days=99999),
+    ],
+)
+def test_literal_from_timedelta(value: time, dtype: pl.Duration | None) -> None:
+    out = pl.select(pl.lit(value, dtype=dtype))
+    assert out.schema == OrderedDict({"literal": dtype or pl.Duration("us")})
+    assert out.item() == value
