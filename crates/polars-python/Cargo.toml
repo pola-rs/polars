@@ -109,7 +109,7 @@ features = [
 ]
 
 [build-dependencies]
-built = { version = "0.7", features = ["chrono", "git2", "cargo-lock"], optional = true }
+version_check = { workspace = true }
 
 [target.'cfg(all(any(not(target_family = "unix"), allocator = "mimalloc"), not(allocator = "default")))'.dependencies]
 mimalloc = { version = "0.1", default-features = false }
@@ -149,7 +149,6 @@ pivot = ["polars/pivot"]
 top_k = ["polars/top_k"]
 propagate_nans = ["polars/propagate_nans"]
 sql = ["polars/sql"]
-build_info = ["dep:built"]
 performant = ["polars/performant"]
 timezones = ["polars/timezones"]
 cse = ["polars/cse"]
@@ -248,7 +247,6 @@ all = [
   "meta",
   "decompress",
   "regex",
-  "build_info",
   "sql",
   "binary_encoding",
   "ffi_plugin",
