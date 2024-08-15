@@ -108,7 +108,7 @@ def test_unpivot_categorical() -> None:
                 "Y": pl.Series(["c", "d"], dtype=pl.Categorical),
             }
         ).unpivot(on=["X", "Y"])
-        assert(all(result["value"] == pl.Series(["a", "b", "c", "d"])))
+        assert all(result["value"] == pl.Series(["a", "b", "c", "d"]))
 
     with pl.StringCache():
         test_op()
