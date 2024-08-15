@@ -109,14 +109,14 @@ def lit(
             )
         return expr
 
-    elif isinstance(value, time):
-        return wrap_expr(plr.lit(value, allow_object=False))
-
     elif isinstance(value, timedelta):
         expr = wrap_expr(plr.lit(value, allow_object=False))
-        if dtype == Duration and (tu := getattr(dtype, "time_unit", None)) is not None:  # type: ignore[union-attr]
+        if dtype == Duration and (tu := getattr(dtype, "time_unit", None)) is not None:
             expr = expr.cast(Duration(tu))
         return expr
+
+    elif isinstance(value, time):
+        return wrap_expr(plr.lit(value, allow_object=False))
 
     elif isinstance(value, date):
         if dtype == Datetime:
