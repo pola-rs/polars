@@ -1,5 +1,7 @@
 mod exitable;
+#[cfg(feature = "pymethods")]
 mod general;
+#[cfg(feature = "pymethods")]
 mod serde;
 pub mod visit;
 pub mod visitor;
