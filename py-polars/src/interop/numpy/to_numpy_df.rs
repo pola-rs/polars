@@ -249,7 +249,7 @@ fn df_columns_to_numpy(
     writable: bool,
 ) -> PyResult<PyObject> {
     let np_arrays = df.iter().map(|s| {
-        let mut arr = series_to_numpy(py, s, writable, true).unwrap();
+        let mut arr = series_to_numpy(py, s, writable, true, false).unwrap();
 
         // Convert multidimensional arrays to 1D object arrays.
         let shape: Vec<usize> = arr
