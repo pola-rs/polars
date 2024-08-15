@@ -1,7 +1,12 @@
+#[cfg(feature = "pymethods")]
 mod construction;
+#[cfg(feature = "pymethods")]
 mod export;
+#[cfg(feature = "pymethods")]
 mod general;
+#[cfg(feature = "pymethods")]
 mod io;
+#[cfg(feature = "pymethods")]
 mod serde;
 
 use polars::prelude::DataFrame;
