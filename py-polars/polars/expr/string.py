@@ -2419,7 +2419,6 @@ class ExprStringNameSpace:
         This method supports matching on string literals only, and does not support
         regular expression matching.
 
-
         Examples
         --------
         >>> _ = pl.Config.set_fmt_str_lengths(100)
