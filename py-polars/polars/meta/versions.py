@@ -61,7 +61,7 @@ def show_versions() -> None:
 
 
 # See the list of dependencies in pyproject.toml.
-def _get_dependency_list() -> str:
+def _get_dependency_list() -> list[str]:
     return [
         "adbc_driver_manager",
         "cloudpickle",
