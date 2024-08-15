@@ -2491,6 +2491,7 @@ class ExprStringNameSpace:
         `replace_with` parameters.
 
         >>> _ = pl.Config.set_fmt_str_lengths(100)
+        >>> _ = pl.Config.set_tbl_width_chars(110)
         >>> df = pl.DataFrame(
         ...     {
         ...         "lyrics": [
@@ -2555,6 +2556,7 @@ class ExprStringNameSpace:
         sugar.
 
         >>> _ = pl.Config.set_fmt_str_lengths(100)
+        >>> _ = pl.Config.set_tbl_width_chars(110)
         >>> df = pl.DataFrame(
         ...     {
         ...         "lyrics": [
