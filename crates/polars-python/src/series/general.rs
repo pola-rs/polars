@@ -810,6 +810,7 @@ impl_get!(get_duration, duration, i64);
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::series::ToSeries;
 
     #[test]
     fn transmute_to_series() {
