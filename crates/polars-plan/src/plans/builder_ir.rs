@@ -297,6 +297,7 @@ impl<'a> IRBuilder<'a> {
         self.add_alp(lp)
     }
 
+    #[cfg(feature = "pivot")]
     pub fn unpivot(self, args: Arc<UnpivotArgsIR>) -> Self {
         let lp = IR::MapFunction {
             input: self.root,

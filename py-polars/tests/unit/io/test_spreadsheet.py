@@ -644,20 +644,22 @@ def test_excel_round_trip(write_params: dict[str, Any]) -> None:
 
     engine: ExcelSpreadsheetEngine
     for engine in ("calamine", "xlsx2csv"):
-        read_options = (
-            {}
+        read_options, has_header = (
+            ({}, True)
             if write_params.get("include_header", True)
             else (
-                {"has_header": False, "new_columns": ["dtm", "str", "val"]}
+                {"new_columns": ["dtm", "str", "val"]}
                 if engine == "xlsx2csv"
-                else {"header_row": None, "column_names": ["dtm", "str", "val"]}
+                else {"column_names": ["dtm", "str", "val"]},
+                False,
             )
         )
+
         fmt_strptime = "%Y-%m-%d"
         if write_params.get("dtype_formats", {}).get(pl.Date) == "dd-mm-yyyy":
             fmt_strptime = "%d-%m-%Y"
 
-        # write to an xlsx with polars, using various parameters...
+        # write to xlsx using various parameters...
         xls = BytesIO()
         _wb = df.write_excel(workbook=xls, worksheet="data", **write_params)
 
@@ -667,6 +669,7 @@ def test_excel_round_trip(write_params: dict[str, Any]) -> None:
             sheet_name="data",
             engine=engine,
             read_options=read_options,
+            has_header=has_header,
         )[:3].select(df.columns[:3])
 
         if engine == "xlsx2csv":
@@ -725,6 +728,19 @@ def test_excel_write_compound_types(engine: ExcelSpreadsheetEngine) -> None:
         ("[3, 4]", "{'y': 'b', 'z': 8}"),
         ("[5, 6]", "{'y': 'c', 'z': 7}"),
     ]
+
+
+@pytest.mark.parametrize("engine", ["xlsx2csv", "openpyxl", "calamine"])
+def test_excel_read_no_headers(engine: ExcelSpreadsheetEngine) -> None:
+    df = pl.DataFrame(
+        {"colx": [1, 2, 3], "coly": ["aaa", "bbb", "ccc"], "colz": [0.5, 0.0, -1.0]}
+    )
+    xls = BytesIO()
+    df.write_excel(xls, worksheet="data", include_header=False)
+
+    xldf = pl.read_excel(xls, engine=engine, has_header=False)
+    expected = xldf.rename({"column_1": "colx", "column_2": "coly", "column_3": "colz"})
+    assert_frame_equal(df, expected)
 
 
 @pytest.mark.parametrize("engine", ["xlsx2csv", "openpyxl", "calamine"])

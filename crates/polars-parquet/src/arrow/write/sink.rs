@@ -1,13 +1,13 @@
 use std::pin::Pin;
 use std::task::Poll;
 
-use ahash::AHashMap;
 use arrow::array::Array;
 use arrow::datatypes::ArrowSchema;
 use arrow::record_batch::RecordBatchT;
 use futures::future::BoxFuture;
 use futures::{AsyncWrite, AsyncWriteExt, FutureExt, Sink, TryFutureExt};
 use polars_error::{polars_bail, to_compute_err, PolarsError, PolarsResult};
+use polars_utils::aliases::PlHashMap;
 
 use super::file::add_arrow_schema;
 use super::{Encoding, SchemaDescriptor, WriteOptions};
@@ -26,7 +26,7 @@ pub struct FileSink<'a, W: AsyncWrite + Send + Unpin> {
     schema: ArrowSchema,
     parquet_schema: SchemaDescriptor,
     /// Key-value metadata that will be written to the file on close.
-    pub metadata: AHashMap<String, Option<String>>,
+    pub metadata: PlHashMap<String, Option<String>>,
 }
 
 impl<'a, W> FileSink<'a, W>
@@ -69,7 +69,7 @@ where
             schema,
             encodings,
             parquet_schema,
-            metadata: AHashMap::default(),
+            metadata: PlHashMap::default(),
         })
     }
 

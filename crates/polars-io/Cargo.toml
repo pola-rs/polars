@@ -40,7 +40,7 @@ regex = { workspace = true }
 reqwest = { workspace = true, optional = true }
 ryu = { workspace = true, optional = true }
 serde = { workspace = true, features = ["rc"], optional = true }
-serde_json = { version = "1", default-features = false, features = ["alloc", "raw_value", "std"], optional = true }
+serde_json = { version = "1", default-features = false, features = ["alloc"], optional = true }
 simd-json = { workspace = true, optional = true }
 simdutf8 = { workspace = true, optional = true }
 smartstring = { workspace = true }
@@ -63,7 +63,6 @@ json = [
   "polars-json",
   "simd-json",
   "atoi_simd",
-  "serde_json",
   "dtype-struct",
   "csv",
 ]

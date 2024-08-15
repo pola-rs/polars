@@ -3,7 +3,7 @@
 use std::borrow::Cow;
 use std::{mem, ops};
 
-use ahash::AHashSet;
+use polars_utils::itertools::Itertools;
 use rayon::prelude::*;
 
 #[cfg(feature = "algorithm_group_by")]
@@ -575,6 +575,11 @@ impl DataFrame {
         &mut self.columns
     }
 
+    /// Take ownership of the underlying columns vec.
+    pub fn take_columns(self) -> Vec<Series> {
+        self.columns
+    }
+
     /// Iterator over the columns as [`Series`].
     ///
     /// # Example
@@ -632,8 +637,8 @@ impl DataFrame {
             ShapeMismatch: "{} column names provided for a DataFrame of width {}",
             names.len(), self.width()
         );
-        let unique_names: AHashSet<&str, ahash::RandomState> =
-            AHashSet::from_iter(names.iter().map(|name| name.as_ref()));
+        let unique_names: PlHashSet<&str> =
+            PlHashSet::from_iter(names.iter().map(|name| name.as_ref()));
         polars_ensure!(
             unique_names.len() == self.width(),
             Duplicate: "duplicate column names found"
@@ -926,8 +931,13 @@ impl DataFrame {
         Ok(self)
     }
 
-    /// Does not check if schema is correct
-    pub(crate) fn vstack_mut_unchecked(&mut self, other: &DataFrame) {
+    /// Concatenate a [`DataFrame`] to this [`DataFrame`]
+    ///
+    /// If many `vstack` operations are done, it is recommended to call [`DataFrame::align_chunks`].
+    ///
+    /// # Panics
+    /// Panics if the schema's don't match.
+    pub fn vstack_mut_unchecked(&mut self, other: &DataFrame) {
         self.columns
             .iter_mut()
             .zip(other.columns.iter())
@@ -1698,12 +1708,13 @@ impl DataFrame {
         self.select_mut(column)
             .ok_or_else(|| polars_err!(col_not_found = column))
             .map(|s| s.rename(name))?;
-        let unique_names: AHashSet<&str, ahash::RandomState> =
-            AHashSet::from_iter(self.columns.iter().map(|s| s.name()));
+        let unique_names: PlHashSet<&str> =
+            PlHashSet::from_iter(self.columns.iter().map(|s| s.name()));
         polars_ensure!(
             unique_names.len() == self.width(),
             Duplicate: "duplicate column names found"
         );
+        drop(unique_names);
         Ok(self)
     }
 
@@ -2391,7 +2402,6 @@ impl DataFrame {
     #[must_use]
     pub fn shift(&self, periods: i64) -> Self {
         let col = self._apply_columns_par(&|s| s.shift(periods));
-
         unsafe { DataFrame::new_no_checks(col) }
     }
 
@@ -2808,7 +2818,7 @@ impl DataFrame {
     #[cfg(feature = "row_hash")]
     pub fn hash_rows(
         &mut self,
-        hasher_builder: Option<ahash::RandomState>,
+        hasher_builder: Option<PlRandomState>,
     ) -> PolarsResult<UInt64Chunked> {
         let dfs = split_df(self, POOL.current_num_threads(), false);
         let (cas, _) = _df_rows_to_hashes_threaded_vertical(&dfs, hasher_builder)?;
@@ -2816,7 +2826,7 @@ impl DataFrame {
         let mut iter = cas.into_iter();
         let mut acc_ca = iter.next().unwrap();
         for ca in iter {
-            acc_ca.append(&ca);
+            acc_ca.append(&ca)?;
         }
         Ok(acc_ca.rechunk())
     }

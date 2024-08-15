@@ -43,8 +43,22 @@ from_iterator!(f32, Float32Type);
 from_iterator!(f64, Float64Type);
 from_iterator!(bool, BooleanType);
 
+impl<'a> FromIterator<Option<&'a str>> for Series {
+    fn from_iter<I: IntoIterator<Item = Option<&'a str>>>(iter: I) -> Self {
+        let ca: StringChunked = iter.into_iter().collect();
+        ca.into_series()
+    }
+}
+
 impl<'a> FromIterator<&'a str> for Series {
     fn from_iter<I: IntoIterator<Item = &'a str>>(iter: I) -> Self {
+        let ca: StringChunked = iter.into_iter().collect();
+        ca.into_series()
+    }
+}
+
+impl FromIterator<Option<String>> for Series {
+    fn from_iter<T: IntoIterator<Item = Option<String>>>(iter: T) -> Self {
         let ca: StringChunked = iter.into_iter().collect();
         ca.into_series()
     }
@@ -192,5 +206,21 @@ mod test {
             .unwrap()
             .into_iter()
             .map(|opt_v| opt_v.map(|v| v * 2));
+    }
+
+    #[test]
+    fn test_iter_str() {
+        let data = [Some("John"), Some("Doe"), None];
+        let a: Series = data.into_iter().collect();
+        let b = Series::new("", data);
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn test_iter_string() {
+        let data = [Some("John".to_string()), Some("Doe".to_string()), None];
+        let a: Series = data.clone().into_iter().collect();
+        let b = Series::new("", data);
+        assert_eq!(a, b);
     }
 }

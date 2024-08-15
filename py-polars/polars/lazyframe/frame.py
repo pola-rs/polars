@@ -2841,7 +2841,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Return lazy representation, i.e. itself.
 
         Useful for writing code that expects either a :class:`DataFrame` or
-        :class:`LazyFrame`.
+        :class:`LazyFrame`. On LazyFrame this is a no-op, and returns the same object.
 
         Returns
         -------

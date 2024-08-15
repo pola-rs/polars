@@ -4,13 +4,11 @@ use arrow::array::Array;
 use arrow::datatypes::Field;
 use arrow::record_batch::RecordBatchT;
 use polars_error::PolarsResult;
+use polars_parquet::arrow::read::{column_iter_to_arrays, Filter};
+use polars_parquet::parquet::metadata::ColumnChunkMetaData;
+use polars_parquet::parquet::read::{get_field_columns, BasicDecompressor, PageReader};
+use polars_parquet::read::RowGroupMetaData;
 use polars_utils::mmap::MemReader;
-
-use super::{ArrayIter, RowGroupMetaData};
-use crate::arrow::read::column_iter_to_arrays;
-use crate::arrow::read::deserialize::Filter;
-use crate::parquet::metadata::ColumnChunkMetaData;
-use crate::parquet::read::{BasicDecompressor, PageReader};
 
 /// An [`Iterator`] of [`RecordBatchT`] that (dynamically) adapts a vector of iterators of [`Array`] into
 /// an iterator of [`RecordBatchT`].
@@ -23,7 +21,7 @@ use crate::parquet::read::{BasicDecompressor, PageReader};
 pub struct RowGroupDeserializer {
     num_rows: usize,
     remaining_rows: usize,
-    column_chunks: Vec<ArrayIter<'static>>,
+    column_chunks: Vec<Box<dyn Array>>,
 }
 
 impl RowGroupDeserializer {
@@ -32,11 +30,7 @@ impl RowGroupDeserializer {
     /// # Panic
     /// This function panics iff any of the `column_chunks`
     /// do not return an array with an equal length.
-    pub fn new(
-        column_chunks: Vec<ArrayIter<'static>>,
-        num_rows: usize,
-        limit: Option<usize>,
-    ) -> Self {
+    pub fn new(column_chunks: Vec<Box<dyn Array>>, num_rows: usize, limit: Option<usize>) -> Self {
         Self {
             num_rows,
             remaining_rows: limit.unwrap_or(usize::MAX).min(num_rows),
@@ -57,12 +51,7 @@ impl Iterator for RowGroupDeserializer {
         if self.remaining_rows == 0 {
             return None;
         }
-        let chunk = self
-            .column_chunks
-            .iter_mut()
-            .map(|iter| iter.next().unwrap())
-            .collect::<PolarsResult<Vec<_>>>()
-            .and_then(RecordBatchT::try_new);
+        let chunk = RecordBatchT::try_new(std::mem::take(&mut self.column_chunks));
         self.remaining_rows = self.remaining_rows.saturating_sub(
             chunk
                 .as_ref()
@@ -74,33 +63,6 @@ impl Iterator for RowGroupDeserializer {
     }
 }
 
-/// Returns all [`ColumnChunkMetaData`] associated to `field_name`.
-/// For non-nested parquet types, this returns a single column
-pub fn get_field_columns<'a>(
-    columns: &'a [ColumnChunkMetaData],
-    field_name: &str,
-) -> Vec<&'a ColumnChunkMetaData> {
-    columns
-        .iter()
-        .filter(|x| x.descriptor().path_in_schema[0] == field_name)
-        .collect()
-}
-
-/// Returns all [`ColumnChunkMetaData`] associated to `field_name`.
-/// For non-nested parquet types, this returns a single column
-pub fn get_field_pages<'a, T>(
-    columns: &'a [ColumnChunkMetaData],
-    items: &'a [T],
-    field_name: &str,
-) -> Vec<&'a T> {
-    columns
-        .iter()
-        .zip(items)
-        .filter(|(metadata, _)| metadata.descriptor().path_in_schema[0] == field_name)
-        .map(|(_, item)| item)
-        .collect()
-}
-
 /// Reads all columns that are part of the parquet field `field_name`
 /// # Implementation
 /// This operation is IO-bounded `O(C)` where C is the number of columns associated to
@@ -108,10 +70,9 @@ pub fn get_field_pages<'a, T>(
 pub fn read_columns<'a, R: Read + Seek>(
     reader: &mut R,
     columns: &'a [ColumnChunkMetaData],
-    field_name: &str,
+    field_name: &'a str,
 ) -> PolarsResult<Vec<(&'a ColumnChunkMetaData, Vec<u8>)>> {
     get_field_columns(columns, field_name)
-        .into_iter()
         .map(|meta| _read_single_column(reader, meta))
         .collect()
 }
@@ -134,11 +95,11 @@ where
 
 /// Converts a vector of columns associated with the parquet field whose name is [`Field`]
 /// to an iterator of [`Array`], [`ArrayIter`] of chunk size `chunk_size`.
-pub fn to_deserializer<'a>(
+pub fn to_deserializer(
     columns: Vec<(&ColumnChunkMetaData, Vec<u8>)>,
     field: Field,
     filter: Option<Filter>,
-) -> PolarsResult<ArrayIter<'a>> {
+) -> PolarsResult<Box<dyn Array>> {
     let (columns, types): (Vec<_>, Vec<_>) = columns
         .into_iter()
         .map(|(column_meta, chunk)| {
@@ -169,12 +130,12 @@ pub fn to_deserializer<'a>(
 /// This operation is single-threaded. For readers with stronger invariants
 /// (e.g. implement [`Clone`]) you can use [`read_columns`] to read multiple columns at once
 /// and convert them to [`ArrayIter`] via [`to_deserializer`].
-pub fn read_columns_many<'a, R: Read + Seek>(
+pub fn read_columns_many<R: Read + Seek>(
     reader: &mut R,
     row_group: &RowGroupMetaData,
     fields: Vec<Field>,
     filter: Option<Filter>,
-) -> PolarsResult<Vec<ArrayIter<'a>>> {
+) -> PolarsResult<Vec<Box<dyn Array>>> {
     // reads all the necessary columns for all fields from the row group
     // This operation is IO-bounded `O(C)` where C is the number of columns in the row group
     let field_columns = fields
@@ -184,7 +145,7 @@ pub fn read_columns_many<'a, R: Read + Seek>(
 
     field_columns
         .into_iter()
-        .zip(fields)
-        .map(|(columns, field)| to_deserializer(columns, field, filter.clone()))
+        .zip(fields.clone())
+        .map(|(columns, field)| to_deserializer(columns.clone(), field, filter.clone()))
         .collect()
 }

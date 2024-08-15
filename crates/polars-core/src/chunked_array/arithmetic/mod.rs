@@ -164,7 +164,7 @@ pub(crate) mod test {
         let mut a1 = Int32Chunked::new("a", &[1, 2, 3]);
         let a2 = Int32Chunked::new("a", &[4, 5, 6]);
         let a3 = Int32Chunked::new("a", &[1, 2, 3, 4, 5, 6]);
-        a1.append(&a2);
+        a1.append(&a2).unwrap();
         (a1, a3)
     }
 

@@ -10,8 +10,8 @@ use super::*;
 
 pub(crate) fn create_hash_and_keys_threaded_vectorized<I, T>(
     iters: Vec<I>,
-    build_hasher: Option<RandomState>,
-) -> (Vec<Vec<(u64, T)>>, RandomState)
+    build_hasher: Option<PlRandomState>,
+) -> (Vec<Vec<(u64, T)>>, PlRandomState)
 where
     I: IntoIterator<Item = T> + Send,
     I::IntoIter: TrustedLen,

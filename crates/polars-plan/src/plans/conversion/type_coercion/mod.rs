@@ -2,12 +2,13 @@ mod binary;
 
 use std::borrow::Cow;
 
-use arrow::legacy::utils::CustomIterTools;
+use arrow::temporal_conversions::{time_unit_multiple, SECONDS_IN_DAY};
 use binary::process_binary;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::utils::{get_supertype, get_supertype_with_options, materialize_dyn_int};
 use polars_utils::idx_vec::UnitVec;
+use polars_utils::itertools::Itertools;
 use polars_utils::{format_list, unitvec};
 
 use super::*;
@@ -509,6 +510,13 @@ fn inline_or_prune_cast(
             LiteralValue::StrCat(s) => {
                 let av = AnyValue::String(s).strict_cast(dtype);
                 return Ok(av.map(|av| AExpr::Literal(av.try_into().unwrap())));
+            },
+            // We generate casted literal datetimes, so ensure we cast upon conversion
+            // to create simpler expr trees.
+            #[cfg(feature = "temporal")]
+            LiteralValue::DateTime(ts, tu, None) if dtype.is_date() => {
+                let from_size = time_unit_multiple(tu.to_arrow()) * SECONDS_IN_DAY;
+                LiteralValue::Date((*ts / from_size) as i32)
             },
             lv @ (LiteralValue::Int(_) | LiteralValue::Float(_)) => {
                 let av = lv.to_any_value().ok_or_else(|| polars_err!(InvalidOperation: "literal value: {:?} too large for Polars", lv))?;

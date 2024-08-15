@@ -8,7 +8,7 @@ pub mod string_cache;
 use bitflags::bitflags;
 pub use builder::*;
 pub use merge::*;
-use polars_utils::iter::EnumerateIdxTrait;
+use polars_utils::itertools::Itertools;
 use polars_utils::sync::SyncPtr;
 pub use revmap::*;
 
