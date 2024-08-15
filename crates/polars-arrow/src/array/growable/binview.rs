@@ -12,7 +12,6 @@ use crate::bitmap::{Bitmap, MutableBitmap};
 use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
 
-
 /// Concrete [`Growable`] for the [`BinaryArray`].
 pub struct GrowableBinaryViewArray<'a, T: ViewType + ?Sized> {
     arrays: Vec<&'a BinaryViewArrayGeneric<T>>,

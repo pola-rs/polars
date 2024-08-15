@@ -3,8 +3,8 @@
 use std::borrow::Cow;
 use std::{mem, ops};
 
-use rayon::prelude::*;
 use polars_utils::itertools::Itertools;
+use rayon::prelude::*;
 
 #[cfg(feature = "algorithm_group_by")]
 use crate::chunked_array::ops::unique::is_unique_helper;

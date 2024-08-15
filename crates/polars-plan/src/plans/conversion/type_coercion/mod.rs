@@ -8,8 +8,8 @@ use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::utils::{get_supertype, get_supertype_with_options, materialize_dyn_int};
 use polars_utils::idx_vec::UnitVec;
-use polars_utils::{format_list, unitvec};
 use polars_utils::itertools::Itertools;
+use polars_utils::{format_list, unitvec};
 
 use super::*;
 

@@ -54,7 +54,6 @@ pub trait Itertools: Iterator {
             Some(a) => self.all(|x| a == x),
         }
     }
-
 }
 
 impl<T: Iterator + ?Sized> Itertools for T {}
