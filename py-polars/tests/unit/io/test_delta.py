@@ -174,7 +174,7 @@ def test_write_delta(df: pl.DataFrame, tmp_path: Path) -> None:
 
     # Case: Error if table exists
     with pytest.raises(DeltaError, match="A table already exists"):
-        v1.write_delta(tmp_path)
+        v0.write_delta(tmp_path)
 
     # Case: Overwrite with new version (version 1)
     v1.write_delta(
