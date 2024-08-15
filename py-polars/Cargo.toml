@@ -10,6 +10,7 @@ crate-type = ["cdylib"]
 [dependencies]
 polars-python = { workspace = true }
 pyo3 = { workspace = true, features = ["abi3-py38", "chrono", "extension-module", "multiple-pymethods"] }
+libc = { workspace = true }
 
 [build-dependencies]
 built = { version = "0.7", features = ["chrono", "git2", "cargo-lock"], optional = true }

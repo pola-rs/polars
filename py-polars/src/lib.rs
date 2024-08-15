@@ -9,7 +9,11 @@ mod build {
     include!(concat!(env!("OUT_DIR"), "/built.rs"));
 }
 
-use polars_python::allocator::create_allocator_capsule;
+mod allocator;
+#[cfg(debug_assertions)]
+mod memory;
+
+use allocator::create_allocator_capsule;
 #[cfg(feature = "csv")]
 use polars_python::batched_csv::PyBatchedCsv;
 #[cfg(feature = "polars_cloud")]

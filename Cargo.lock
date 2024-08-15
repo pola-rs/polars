@@ -3345,9 +3345,7 @@ dependencies = [
  "ciborium",
  "either",
  "itoa",
- "jemallocator",
  "libc",
- "mimalloc",
  "ndarray",
  "num-traits",
  "numpy",
@@ -3550,6 +3548,7 @@ version = "1.5.0"
 dependencies = [
  "built",
  "jemallocator",
+ "libc",
  "mimalloc",
  "polars-python",
  "pyo3",

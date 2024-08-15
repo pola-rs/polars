@@ -55,6 +55,7 @@ hex = "0.4.3"
 indexmap = { version = "2", features = ["std"] }
 itoa = "1.0.6"
 itoap = { version = "1", features = ["simd"] }
+libc = "0.2"
 memchr = "2.6"
 memmap = { package = "memmap2", version = "0.7" }
 multiversion = "0.7"

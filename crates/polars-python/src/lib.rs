@@ -4,7 +4,6 @@
 #![allow(clippy::too_many_arguments)] // Python functions can have many arguments due to default arguments
 #![allow(clippy::disallowed_types)]
 
-pub mod allocator;
 #[cfg(feature = "csv")]
 pub mod batched_csv;
 #[cfg(feature = "polars_cloud")]
@@ -22,8 +21,7 @@ pub mod interop;
 pub mod lazyframe;
 pub mod lazygroupby;
 pub mod map;
-#[cfg(debug_assertions)]
-pub mod memory;
+
 #[cfg(feature = "object")]
 pub mod object;
 #[cfg(feature = "object")]
