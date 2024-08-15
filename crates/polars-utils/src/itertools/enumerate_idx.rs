@@ -1,6 +1,4 @@
-use num_traits::{FromPrimitive, One};
-
-use crate::IdxSize;
+use num_traits::{FromPrimitive, One, Zero};
 
 /// An iterator that yields the current count and the element during iteration.
 ///
@@ -14,6 +12,15 @@ use crate::IdxSize;
 pub struct EnumerateIdx<I, IdxType> {
     iter: I,
     count: IdxType,
+}
+
+impl<I, IdxType: Zero> EnumerateIdx<I, IdxType> {
+    pub fn new(iter: I) -> Self {
+        Self {
+            iter,
+            count: IdxType::zero(),
+        }
+    }
 }
 
 impl<I, IdxType> Iterator for EnumerateIdx<I, IdxType>
@@ -92,27 +99,3 @@ where
         self.iter.len()
     }
 }
-
-pub trait EnumerateIdxTrait: Iterator {
-    fn enumerate_idx(self) -> EnumerateIdx<Self, IdxSize>
-    where
-        Self: Sized,
-    {
-        EnumerateIdx {
-            iter: self,
-            count: 0,
-        }
-    }
-
-    fn enumerate_u32(self) -> EnumerateIdx<Self, u32>
-    where
-        Self: Sized,
-    {
-        EnumerateIdx {
-            iter: self,
-            count: 0,
-        }
-    }
-}
-
-impl<T: ?Sized> EnumerateIdxTrait for T where T: Iterator {}
