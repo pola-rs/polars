@@ -15,7 +15,7 @@ mod r#struct;
 use std::mem::ManuallyDrop;
 
 use polars::lazy::dsl::Expr;
-use pyo3::prelude::*;
+use pyo3::pyclass;
 
 #[pyclass]
 #[repr(transparent)]
