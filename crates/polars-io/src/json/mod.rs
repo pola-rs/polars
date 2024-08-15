@@ -222,9 +222,11 @@ where
     json_format: JsonFormat,
 }
 fn remove_bom(bytes: Vec<u8>) -> Vec<u8> {
-    if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {  // UTF-8 BOM
+    if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
+        // UTF-8 BOM
         bytes[3..].to_vec()
-    } else if bytes.starts_with(&[0xFE, 0xFF]) || bytes.starts_with(&[0xFF, 0xFE]) {  // UTF-16 BOM
+    } else if bytes.starts_with(&[0xFE, 0xFF]) || bytes.starts_with(&[0xFF, 0xFE]) {
+        // UTF-16 BOM
         bytes[2..].to_vec()
     } else {
         bytes
