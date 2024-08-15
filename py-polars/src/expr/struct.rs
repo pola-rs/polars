@@ -23,8 +23,12 @@ impl PyExpr {
     }
 
     #[cfg(feature = "json")]
-    fn struct_json_encode(&self) -> Self {
-        self.inner.clone().struct_().json_encode().into()
+    fn struct_json_encode(&self, ignore_nulls: bool) -> Self {
+        self.inner
+            .clone()
+            .struct_()
+            .json_encode(ignore_nulls)
+            .into()
     }
 
     fn struct_with_fields(&self, fields: Vec<PyExpr>) -> PyResult<Self> {

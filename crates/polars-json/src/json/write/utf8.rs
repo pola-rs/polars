@@ -141,9 +141,9 @@ where
     writer.write_all(s)
 }
 
-pub fn serialize_to_utf8(array: &dyn Array) -> Utf8ViewArray {
+pub fn serialize_to_utf8(array: &dyn Array, ignore_nulls: bool) -> Utf8ViewArray {
     let mut values = MutableBinaryViewArray::with_capacity(array.len());
-    let mut serializer = new_serializer(array, 0, usize::MAX);
+    let mut serializer = new_serializer(array, ignore_nulls, 0, usize::MAX);
 
     while let Some(v) = serializer.next() {
         unsafe { values.push_value(std::str::from_utf8_unchecked(v)) }
