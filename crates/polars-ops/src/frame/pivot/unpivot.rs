@@ -187,8 +187,10 @@ pub trait UnpivotDF: IntoDf {
                 let values_arr = concatenate_owned_unchecked(&values)?;
                 // SAFETY:
                 // The give dtype is correct
-                unsafe { Series::from_chunks_and_dtype_unchecked(value_name, vec![values_arr], &st) }
-            }
+                unsafe {
+                    Series::from_chunks_and_dtype_unchecked(value_name, vec![values_arr], &st)
+                }
+            },
         };
 
         let variable_col = variable_col.as_box();
