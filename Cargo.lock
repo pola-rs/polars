@@ -3336,6 +3336,40 @@ dependencies = [
 ]
 
 [[package]]
+name = "polars-python"
+version = "0.42.0"
+dependencies = [
+ "ahash",
+ "arboard",
+ "bytemuck",
+ "ciborium",
+ "either",
+ "itoa",
+ "libc",
+ "ndarray",
+ "num-traits",
+ "numpy",
+ "once_cell",
+ "polars",
+ "polars-core",
+ "polars-error",
+ "polars-io",
+ "polars-lazy",
+ "polars-ops",
+ "polars-parquet",
+ "polars-plan",
+ "polars-stream",
+ "polars-time",
+ "polars-utils",
+ "pyo3",
+ "recursive",
+ "serde_json",
+ "smartstring",
+ "thiserror",
+ "version_check",
+]
+
+[[package]]
 name = "polars-row"
 version = "0.42.0"
 dependencies = [
@@ -3512,36 +3546,12 @@ dependencies = [
 name = "py-polars"
 version = "1.5.0"
 dependencies = [
- "ahash",
- "arboard",
  "built",
- "bytemuck",
- "ciborium",
- "either",
- "itoa",
  "jemallocator",
  "libc",
  "mimalloc",
- "ndarray",
- "num-traits",
- "numpy",
- "once_cell",
- "polars",
- "polars-core",
- "polars-error",
- "polars-io",
- "polars-lazy",
- "polars-ops",
- "polars-parquet",
- "polars-plan",
- "polars-stream",
- "polars-time",
- "polars-utils",
+ "polars-python",
  "pyo3",
- "recursive",
- "serde_json",
- "smartstring",
- "thiserror",
 ]
 
 [[package]]

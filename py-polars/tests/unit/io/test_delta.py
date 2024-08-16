@@ -8,7 +8,7 @@ import pyarrow as pa
 import pyarrow.fs
 import pytest
 from deltalake import DeltaTable
-from deltalake.exceptions import TableNotFoundError
+from deltalake.exceptions import DeltaError, TableNotFoundError
 from deltalake.table import TableMerger
 
 import polars as pl
@@ -173,8 +173,8 @@ def test_write_delta(df: pl.DataFrame, tmp_path: Path) -> None:
     v0.write_delta(tmp_path)
 
     # Case: Error if table exists
-    with pytest.raises(ValueError):
-        v1.write_delta(tmp_path)
+    with pytest.raises(DeltaError, match="A table already exists"):
+        v0.write_delta(tmp_path)
 
     # Case: Overwrite with new version (version 1)
     v1.write_delta(
@@ -251,7 +251,7 @@ def test_write_delta_overwrite_schema_deprecated(
 ) -> None:
     df = df.select(pl.col(pl.Int64))
     with pytest.deprecated_call():
-        df.write_delta(tmp_path, overwrite_schema=True)
+        df.write_delta(tmp_path, mode="overwrite", overwrite_schema=True)
     result = pl.read_delta(str(tmp_path))
     assert_frame_equal(df, result)
 
