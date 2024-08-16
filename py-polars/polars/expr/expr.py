@@ -4745,7 +4745,7 @@ class Expr:
         """
         Flatten a list or string column.
 
-        Alias for :func:`polars.expr.list.ExprListNameSpace.explode`.
+        Alias for :func:`Expr.list.explode`.
 
         Examples
         --------
