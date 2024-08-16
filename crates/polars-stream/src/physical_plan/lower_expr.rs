@@ -1,4 +1,5 @@
 use std::borrow::Borrow;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use polars_core::prelude::PlHashMap;
 use polars_error::PolarsResult;
@@ -11,6 +12,12 @@ use slotmap::SlotMap;
 use super::{PhysNode, PhysNodeKey};
 
 type IRNodeKey = Node;
+
+fn unique_column_name() -> String {
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let idx = COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("_POLARS_STREAM_TMP_{idx}")
+}
 
 #[recursive::recursive]
 fn is_streamable_rec(
@@ -206,11 +213,22 @@ fn lower_exprs_rec(
     exprs: &[ExprIR],
     ctx: &mut LowerExprContext,
 ) -> PolarsResult<(PhysNodeKey, Vec<ExprIR>)> {
-    if exprs.iter().all(|e| is_input_independent(e.node(), ctx)) {
-        return Ok((input, exprs.to_vec()));
+    let streamable_subset: Vec<_> = exprs.iter().cloned().filter(|e| is_input_independent(e.node(), ctx)).collect();
+    if streamable_subset.len() == exprs.len() {
+        return Ok((input, streamable_subset));
     }
     
-    let streamable_subset: Vec<_> = exprs.iter().filter(|e| is_input_independent(e.node(), ctx)).collect();
+    
+    
+            // let selectors = expr.clone();
+            // let output_schema = schema.clone();
+            // let input = lower_ir(*input, ir_arena, expr_arena, phys_sm)?;
+            // Ok(phys_sm.insert(PhysNode::Select {
+            //     input,
+            //     selectors,
+            //     output_schema,
+            //     extend_original: false,
+            // }))
     
     todo!()
 }
