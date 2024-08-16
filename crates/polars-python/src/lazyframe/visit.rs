@@ -12,7 +12,7 @@ use crate::raise_err;
 
 #[derive(Clone)]
 #[pyclass]
-pub(crate) struct PyExprIR {
+pub struct PyExprIR {
     #[pyo3(get)]
     node: usize,
     #[pyo3(get)]

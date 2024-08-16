@@ -1,12 +1,7 @@
-mod exitable;
-mod visit;
-pub(crate) mod visitor;
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
-mod serde;
 
-pub use exitable::PyInProcessQuery;
 use polars::io::{HiveOptions, RowIndex};
 use polars::time::*;
 use polars_core::prelude::*;
@@ -16,27 +11,14 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::types::{PyDict, PyList};
-pub(crate) use visit::PyExprIR;
 
+use super::PyLazyFrame;
 use crate::error::PyPolarsErr;
 use crate::expr::ToExprs;
 use crate::interop::arrow::to_rust::pyarrow_schema_to_rust;
 use crate::lazyframe::visit::NodeTraverser;
 use crate::prelude::*;
 use crate::{PyDataFrame, PyExpr, PyLazyGroupBy};
-
-#[pyclass]
-#[repr(transparent)]
-#[derive(Clone)]
-pub struct PyLazyFrame {
-    pub ldf: LazyFrame,
-}
-
-impl From<LazyFrame> for PyLazyFrame {
-    fn from(ldf: LazyFrame) -> Self {
-        PyLazyFrame { ldf }
-    }
-}
 
 #[pymethods]
 #[allow(clippy::should_implement_trait)]

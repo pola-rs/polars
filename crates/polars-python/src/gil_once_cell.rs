@@ -14,6 +14,7 @@ unsafe impl<T: Send> Send for GILOnceCell<T> {}
 
 impl<T> GILOnceCell<T> {
     /// Create a `GILOnceCell` which does not yet contain a value.
+    #[allow(clippy::new_without_default)]
     pub const fn new() -> Self {
         Self(UnsafeCell::new(None))
     }
