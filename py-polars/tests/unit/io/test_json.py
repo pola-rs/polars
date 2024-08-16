@@ -392,3 +392,25 @@ def test_json_bom() -> None:
         ]
     )
     assert_frame_equal(df, expected)
+
+
+def test_ndjson_bom() -> None:
+    data = BytesIO(
+        b"\n".join(
+            [
+                b'\xef\xbb\xbf{"name": "John",    "age": 30,    "city": "New York"}',
+                b'{"name": "Fred",    "age": 31,    "city": "Antwerp"}',
+            ]
+        )
+    )
+
+    df = pl.read_ndjson(data)
+
+    expected = pl.DataFrame(
+        [
+            pl.Series("name", ["John", "Fred"]),
+            pl.Series("age", [30, 31], pl.Int64),
+            pl.Series("city", ["New York", "Antwerp"]),
+        ]
+    )
+    assert_frame_equal(df, expected)

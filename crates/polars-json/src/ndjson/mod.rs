@@ -4,5 +4,5 @@ use polars_error::*;
 pub mod deserialize;
 mod file;
 pub mod write;
-
+pub mod remove_bom;
 pub use file::{infer_iter, iter_unique_dtypes};

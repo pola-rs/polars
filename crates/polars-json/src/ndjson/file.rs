@@ -8,6 +8,9 @@ use polars_error::*;
 use polars_utils::aliases::{PlIndexSet, PlRandomState};
 use simd_json::BorrowedValue;
 
+use crate::ndjson::remove_bom::remove_bom;
+
+
 /// Reads up to a number of lines from `reader` into `rows` bounded by `limit`.
 fn read_rows<R: BufRead>(reader: &mut R, rows: &mut [String], limit: usize) -> PolarsResult<usize> {
     if limit == 0 {
@@ -88,8 +91,10 @@ impl<R: BufRead> FallibleStreamingIterator for FileReader<R> {
 
 fn parse_value<'a>(scratch: &'a mut Vec<u8>, val: &[u8]) -> PolarsResult<BorrowedValue<'a>> {
     scratch.clear();
-    scratch.extend_from_slice(val);
+    let bytes = remove_bom(val);
+    scratch.extend_from_slice(bytes);
     // 0 because it is row by row
+
     simd_json::to_borrowed_value(scratch)
         .map_err(|e| PolarsError::ComputeError(format!("{e}").into()))
 }
