@@ -8,8 +8,9 @@ use num_traits::pow::Pow;
 use polars_core::prelude::*;
 use polars_core::utils::accumulate_dataframes_vertical;
 use polars_core::POOL;
-use rayon::prelude::*;
 use polars_json::ndjson::remove_bom::remove_bom;
+use rayon::prelude::*;
+
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 use crate::ndjson::buffer::*;
 use crate::predicates::PhysicalIoExpr;
