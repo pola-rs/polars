@@ -94,4 +94,9 @@ pub enum PhysNode {
         /// which case they are broadcast.
         null_extend: bool,
     },
+
+    #[allow(unused)]
+    Multiplexer {
+        input: PhysNodeKey,
+    },
 }

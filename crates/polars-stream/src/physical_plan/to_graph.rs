@@ -257,6 +257,12 @@ fn to_graph_rec<'a>(
                 input_keys,
             )
         },
+
+        Multiplexer { input } => {
+            let input_key = to_graph_rec(*input, ctx)?;
+            ctx.graph
+                .add_node(nodes::multiplexer::MultiplexerNode::new(), [input_key])
+        },
     };
 
     ctx.phys_to_graph.insert(phys_node_key, graph_key);
