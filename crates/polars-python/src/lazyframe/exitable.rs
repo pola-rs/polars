@@ -1,4 +1,9 @@
-use super::*;
+use polars::prelude::*;
+use pyo3::prelude::*;
+
+use super::PyLazyFrame;
+use crate::error::PyPolarsErr;
+use crate::PyDataFrame;
 
 #[pymethods]
 impl PyLazyFrame {

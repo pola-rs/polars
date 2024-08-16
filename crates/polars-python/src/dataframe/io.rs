@@ -1,19 +1,22 @@
 use std::io::BufWriter;
 use std::num::NonZeroUsize;
+use std::sync::Arc;
 
 #[cfg(feature = "avro")]
 use polars::io::avro::AvroCompression;
 use polars::io::mmap::ensure_not_mapped;
 use polars::io::RowIndex;
+use polars::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_parquet::arrow::write::StatisticsOptions;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 
-use super::*;
+use super::PyDataFrame;
 #[cfg(feature = "parquet")]
 use crate::conversion::parse_parquet_compression;
 use crate::conversion::Wrap;
+use crate::error::PyPolarsErr;
 use crate::file::{
     get_either_file, get_file_like, get_mmap_bytes_reader, get_mmap_bytes_reader_and_path,
     read_if_bytesio, EitherRustPythonFile,

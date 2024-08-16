@@ -1,8 +1,8 @@
+use polars::prelude::*;
 use pyo3::prelude::*;
 
+use super::PySeries;
 use crate::error::PyPolarsErr;
-use crate::prelude::*;
-use crate::PySeries;
 
 #[pymethods]
 impl PySeries {

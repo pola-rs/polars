@@ -65,3 +65,8 @@ pub fn register_plugin_function(
     }
     .into())
 }
+
+#[pyfunction]
+pub fn __register_startup_deps() {
+    crate::on_startup::register_startup_deps()
+}

@@ -2,8 +2,8 @@ use polars::export::arrow::array::Array;
 use polars::prelude::*;
 use pyo3::prelude::*;
 
+use super::PySeries;
 use crate::error::PyPolarsErr;
-use crate::PySeries;
 
 #[pymethods]
 impl PySeries {

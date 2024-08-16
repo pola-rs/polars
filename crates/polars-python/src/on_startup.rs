@@ -65,8 +65,7 @@ fn warning_function(msg: &str, warning: PolarsWarning) {
     });
 }
 
-#[pyfunction]
-pub fn __register_startup_deps() {
+pub fn register_startup_deps() {
     set_polars_allow_extension(true);
     if !registry::is_object_builder_registered() {
         // Stack frames can get really large in debug mode.

@@ -1,7 +1,10 @@
 use polars::export::arrow;
+use polars::prelude::*;
 use pyo3::ffi::Py_uintptr_t;
+use pyo3::prelude::*;
 
-use super::*;
+use super::PySeries;
+use crate::error::PyPolarsErr;
 
 // Import arrow data directly without requiring pyarrow (used in pyo3-polars)
 #[pymethods]

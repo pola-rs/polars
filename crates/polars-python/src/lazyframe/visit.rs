@@ -1,14 +1,17 @@
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
+use polars::prelude::PolarsError;
 use polars_plan::plans::{to_aexpr, Context, IR};
 use polars_plan::prelude::expr_ir::ExprIR;
 use polars_plan::prelude::{AExpr, PythonOptions, PythonScanSource};
 use polars_utils::arena::{Arena, Node};
 use pyo3::prelude::*;
-use visitor::{expr_nodes, nodes};
+use pyo3::types::PyList;
 
-use super::*;
-use crate::raise_err;
+use super::visitor::{expr_nodes, nodes};
+use super::PyLazyFrame;
+use crate::error::PyPolarsErr;
+use crate::{raise_err, PyExpr, Wrap};
 
 #[derive(Clone)]
 #[pyclass]

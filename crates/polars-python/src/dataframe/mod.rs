@@ -1,14 +1,16 @@
+#[cfg(feature = "pymethods")]
 mod construction;
+#[cfg(feature = "pymethods")]
 mod export;
+#[cfg(feature = "pymethods")]
 mod general;
+#[cfg(feature = "pymethods")]
 mod io;
+#[cfg(feature = "pymethods")]
 mod serde;
 
-use polars::prelude::*;
-use pyo3::prelude::*;
-use pyo3::types::PyDict;
-
-use crate::error::PyPolarsErr;
+use polars::prelude::DataFrame;
+use pyo3::pyclass;
 
 #[pyclass]
 #[repr(transparent)]

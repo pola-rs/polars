@@ -1,17 +1,14 @@
 mod exitable;
+#[cfg(feature = "pymethods")]
 mod general;
+#[cfg(feature = "pymethods")]
 mod serde;
 pub mod visit;
 pub mod visitor;
 
 pub use exitable::PyInProcessQuery;
-use polars_core::prelude::*;
-use pyo3::prelude::*;
-use pyo3::types::PyList;
-
-use crate::error::PyPolarsErr;
-use crate::prelude::*;
-use crate::{PyDataFrame, PyExpr};
+use polars::prelude::LazyFrame;
+use pyo3::pyclass;
 
 #[pyclass]
 #[repr(transparent)]

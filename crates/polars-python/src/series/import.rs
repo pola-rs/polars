@@ -4,11 +4,12 @@ use polars::export::arrow::ffi;
 use polars::export::arrow::ffi::{
     ArrowArray, ArrowArrayStream, ArrowArrayStreamReader, ArrowSchema,
 };
+use polars::prelude::*;
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyCapsule, PyTuple, PyType};
 
-use super::*;
+use super::PySeries;
 
 /// Validate PyCapsule has provided name
 fn validate_pycapsule_name(capsule: &Bound<PyCapsule>, expected_name: &str) -> PyResult<()> {

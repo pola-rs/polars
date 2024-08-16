@@ -15,6 +15,7 @@ pub mod error;
 pub mod exceptions;
 pub mod expr;
 pub mod file;
+#[cfg(feature = "pymethods")]
 pub mod functions;
 pub mod gil_once_cell;
 pub mod interop;
