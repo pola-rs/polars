@@ -7003,17 +7003,17 @@ class DataFrame:
 
         Return a DataFrame with a single column by mapping each row to a scalar:
 
-        >>> df.map_rows(lambda t: (t[0] * 2 + t[1]))  # doctest: +SKIP
+        >>> df.map_rows(lambda t: (t[0] * 2 + t[1]))
         shape: (3, 1)
-        ┌───────┐
-        │ apply │
-        │ ---   │
-        │ i64   │
-        ╞═══════╡
-        │ 1     │
-        │ 9     │
-        │ 14    │
-        └───────┘
+        ┌─────┐
+        │ map │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 1   │
+        │ 9   │
+        │ 14  │
+        └─────┘
 
         In this case it is better to use the following native expression:
 
