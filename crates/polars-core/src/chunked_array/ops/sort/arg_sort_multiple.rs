@@ -1,7 +1,7 @@
 use arrow::compute::utils::combine_validities_and_many;
 use compare_inner::NullOrderCmp;
 use polars_row::{convert_columns, EncodingField, RowsEncoded};
-use polars_utils::iter::EnumerateIdxTrait;
+use polars_utils::itertools::Itertools;
 
 use super::*;
 use crate::utils::_split_offsets;

@@ -3,6 +3,7 @@
 use std::borrow::Cow;
 use std::{mem, ops};
 
+use polars_utils::itertools::Itertools;
 use rayon::prelude::*;
 
 #[cfg(feature = "algorithm_group_by")]

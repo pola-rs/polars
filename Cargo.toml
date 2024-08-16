@@ -55,6 +55,7 @@ hex = "0.4.3"
 indexmap = { version = "2", features = ["std"] }
 itoa = "1.0.6"
 itoap = { version = "1", features = ["simd"] }
+libc = "0.2"
 memchr = "2.6"
 memmap = { package = "memmap2", version = "0.7" }
 multiversion = "0.7"
@@ -109,6 +110,7 @@ polars-ops = { version = "0.42.0", path = "crates/polars-ops", default-features 
 polars-parquet = { version = "0.42.0", path = "crates/polars-parquet", default-features = false }
 polars-pipe = { version = "0.42.0", path = "crates/polars-pipe", default-features = false }
 polars-plan = { version = "0.42.0", path = "crates/polars-plan", default-features = false }
+polars-python = { version = "0.42.0", path = "crates/polars-python", default-features = false }
 polars-row = { version = "0.42.0", path = "crates/polars-row", default-features = false }
 polars-sql = { version = "0.42.0", path = "crates/polars-sql", default-features = false }
 polars-stream = { version = "0.42.0", path = "crates/polars-stream", default-features = false }

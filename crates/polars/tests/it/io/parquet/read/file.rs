@@ -52,11 +52,6 @@ impl<R: Read + Seek> FileReader<R> {
         }
         Ok(result)
     }
-
-    /// Returns the [`ArrowSchema`] associated to this file.
-    pub fn schema(&self) -> &ArrowSchema {
-        &self.row_groups.schema
-    }
 }
 
 impl<R: Read + Seek> Iterator for FileReader<R> {
