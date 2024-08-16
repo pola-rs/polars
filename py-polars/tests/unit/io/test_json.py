@@ -375,3 +375,42 @@ def test_json_normalize() -> None:
         "fitness.height": [130, 130, 130],
         "fitness.weight": [60, 60, 60],
     }
+
+
+def test_json_bom() -> None:
+    data = BytesIO(
+        b'\xef\xbb\xbf{\n    "name": "John",\n    "age": 30,\n    "city": "New York"\n}'
+    )
+
+    df = pl.read_json(data)
+
+    expected = pl.DataFrame(
+        [
+            pl.Series("name", ["John"]),
+            pl.Series("age", [30], pl.Int64),
+            pl.Series("city", ["New York"]),
+        ]
+    )
+    assert_frame_equal(df, expected)
+
+
+def test_ndjson_bom() -> None:
+    data = BytesIO(
+        b"\n".join(
+            [
+                b'\xef\xbb\xbf{"name": "John",    "age": 30,    "city": "New York"}',
+                b'{"name": "Fred",    "age": 31,    "city": "Antwerp"}',
+            ]
+        )
+    )
+
+    df = pl.read_ndjson(data)
+
+    expected = pl.DataFrame(
+        [
+            pl.Series("name", ["John", "Fred"]),
+            pl.Series("age", [30, 31], pl.Int64),
+            pl.Series("city", ["New York", "Antwerp"]),
+        ]
+    )
+    assert_frame_equal(df, expected)
