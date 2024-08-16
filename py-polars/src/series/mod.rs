@@ -386,7 +386,7 @@ impl PySeries {
             if let Some(output_type) = output_type {
                 return Ok(Series::full_null(series.name(), series.len(), &output_type.0).into());
             }
-            let msg = "The output type of the 'apply' function cannot be determined.\n\
+            let msg = "The output type of the 'map_elements' function cannot be determined.\n\
             The function was never called because 'skip_nulls=True' and all values are null.\n\
             Consider setting 'skip_nulls=False' or setting the 'return_dtype'.";
             raise_err!(msg, ComputeError)
