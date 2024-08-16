@@ -10,7 +10,6 @@ use simd_json::BorrowedValue;
 
 use crate::ndjson::remove_bom::remove_bom;
 
-
 /// Reads up to a number of lines from `reader` into `rows` bounded by `limit`.
 fn read_rows<R: BufRead>(reader: &mut R, rows: &mut [String], limit: usize) -> PolarsResult<usize> {
     if limit == 0 {
