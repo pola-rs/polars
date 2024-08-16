@@ -72,7 +72,6 @@ use arrow::legacy::conversion::chunk_to_struct;
 use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
 use polars_json::json::write::FallibleStreamingIterator;
-use polars_json::ndjson::remove_bom::remove_bom;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use simd_json::BorrowedValue;
@@ -222,18 +221,18 @@ where
     schema_overwrite: Option<&'a Schema>,
     json_format: JsonFormat,
 }
-// fn remove_bom(bytes: Vec<u8>) -> Vec<u8> {
-//     if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
-//         // UTF-8 BOM
-//         bytes[3..].to_vec()
-//     } else if bytes.starts_with(&[0xFE, 0xFF]) || bytes.starts_with(&[0xFF, 0xFE]) {
-//         // UTF-16 BOM
-//         bytes[2..].to_vec()
-//     } else {
-//         bytes
-//     }
-// }
 
+pub fn remove_bom(bytes: &[u8]) -> &[u8] {
+    if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
+        // UTF-8 BOM
+        &bytes[3..]
+    } else if bytes.starts_with(&[0xFE, 0xFF]) || bytes.starts_with(&[0xFF, 0xFE]) {
+        // UTF-16 BOM
+        &bytes[2..]
+    } else {
+        bytes
+    }
+}
 impl<'a, R> SerReader<R> for JsonReader<'a, R>
 where
     R: MmapBytesReader,
@@ -263,14 +262,13 @@ where
     /// incompatible types in the input. In the event that a column contains mixed dtypes, is it unspecified whether an
     /// error is returned or whether elements of incompatible dtypes are replaced with `null`.
     fn finish(mut self) -> PolarsResult<DataFrame> {
-        let rb: ReaderBytes = (&mut self.reader).into();
-
+        let pre_rb: ReaderBytes = (&mut self.reader).into();
+        let bytes = remove_bom(pre_rb.deref());
+        let rb = ReaderBytes::Borrowed(bytes);
         let out = match self.json_format {
             JsonFormat::Json => {
                 polars_ensure!(!self.ignore_errors, InvalidOperation: "'ignore_errors' only supported in ndjson");
-                let mut bytes = remove_bom(rb.deref()).to_vec();
-                // let mut bytes: Vec<u8> = rb.deref().to_vec();
-                // bytes = remove_bom(bytes);
+                let mut bytes = rb.deref().to_vec();
                 let json_value =
                     simd_json::to_borrowed_value(&mut bytes).map_err(to_compute_err)?;
 

@@ -8,7 +8,6 @@ use num_traits::pow::Pow;
 use polars_core::prelude::*;
 use polars_core::utils::accumulate_dataframes_vertical;
 use polars_core::POOL;
-use polars_json::ndjson::remove_bom::remove_bom;
 use rayon::prelude::*;
 
 use crate::mmap::{MmapBytesReader, ReaderBytes};
@@ -16,6 +15,7 @@ use crate::ndjson::buffer::*;
 use crate::predicates::PhysicalIoExpr;
 use crate::prelude::*;
 use crate::RowIndex;
+
 const NEWLINE: u8 = b'\n';
 const CLOSING_BRACKET: u8 = b'}';
 
@@ -347,7 +347,6 @@ impl<'a> CoreJsonReader<'a> {
         let n_threads = self.n_threads.unwrap_or_else(|| POOL.current_num_threads());
 
         let reader_bytes = self.reader_bytes.take().unwrap();
-
         let mut df = self.parse_json(n_threads, &reader_bytes)?;
 
         // if multi-threaded the n_rows was probabilistically determined.
@@ -368,7 +367,7 @@ fn parse_impl(
     scratch: &mut Scratch,
 ) -> PolarsResult<usize> {
     scratch.json.clear();
-    scratch.json.extend_from_slice(remove_bom(bytes));
+    scratch.json.extend_from_slice(bytes);
     let n = scratch.json.len();
     let value = simd_json::to_borrowed_value_with_buffers(&mut scratch.json, &mut scratch.buffers)
         .map_err(|e| polars_err!(ComputeError: "error parsing line: {}", e))?;
