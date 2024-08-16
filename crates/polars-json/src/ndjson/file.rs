@@ -88,7 +88,6 @@ impl<R: BufRead> FallibleStreamingIterator for FileReader<R> {
 
 fn parse_value<'a>(scratch: &'a mut Vec<u8>, val: &[u8]) -> PolarsResult<BorrowedValue<'a>> {
     scratch.clear();
-    // let bytes = remove_bom(val);
     scratch.extend_from_slice(val);
     // 0 because it is row by row
 

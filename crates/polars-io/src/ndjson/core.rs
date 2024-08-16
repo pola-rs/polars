@@ -15,7 +15,6 @@ use crate::ndjson::buffer::*;
 use crate::predicates::PhysicalIoExpr;
 use crate::prelude::*;
 use crate::RowIndex;
-
 const NEWLINE: u8 = b'\n';
 const CLOSING_BRACKET: u8 = b'}';
 
@@ -347,6 +346,7 @@ impl<'a> CoreJsonReader<'a> {
         let n_threads = self.n_threads.unwrap_or_else(|| POOL.current_num_threads());
 
         let reader_bytes = self.reader_bytes.take().unwrap();
+
         let mut df = self.parse_json(n_threads, &reader_bytes)?;
 
         // if multi-threaded the n_rows was probabilistically determined.
