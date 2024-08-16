@@ -23,8 +23,6 @@ use polars_python::expr::PyExpr;
 use polars_python::functions::PyStringCacheHolder;
 use polars_python::lazyframe::{PyInProcessQuery, PyLazyFrame};
 use polars_python::lazygroupby::PyLazyGroupBy;
-#[cfg(feature = "object")]
-use polars_python::on_startup;
 use polars_python::series::PySeries;
 #[cfg(feature = "sql")]
 use polars_python::sql::PySQLContext;
@@ -276,7 +274,7 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(functions::dtype_str_repr))
         .unwrap();
     #[cfg(feature = "object")]
-    m.add_wrapped(wrap_pyfunction!(on_startup::__register_startup_deps))
+    m.add_wrapped(wrap_pyfunction!(functions::__register_startup_deps))
         .unwrap();
 
     // Functions - random
