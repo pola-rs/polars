@@ -4885,7 +4885,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"foo": [1, 2, 3, 4, 5, 6, 7]})
-        >>> df.head(3)
+        >>> df.select(pl.col("foo").head(3))
         shape: (3, 1)
         ┌─────┐
         │ foo │
@@ -4911,7 +4911,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"foo": [1, 2, 3, 4, 5, 6, 7]})
-        >>> df.tail(3)
+        >>> df.select(pl.col("foo").tail(3))
         shape: (3, 1)
         ┌─────┐
         │ foo │
@@ -4942,7 +4942,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"foo": [1, 2, 3, 4, 5, 6, 7]})
-        >>> df.limit(3)
+        >>> df.select(pl.col("foo").limit(3))
         shape: (3, 1)
         ┌─────┐
         │ foo │
