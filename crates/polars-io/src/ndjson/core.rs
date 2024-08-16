@@ -9,7 +9,7 @@ use polars_core::prelude::*;
 use polars_core::utils::accumulate_dataframes_vertical;
 use polars_core::POOL;
 use rayon::prelude::*;
-
+use polars_json::ndjson::remove_bom::remove_bom;
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 use crate::ndjson::buffer::*;
 use crate::predicates::PhysicalIoExpr;
@@ -367,7 +367,7 @@ fn parse_impl(
     scratch: &mut Scratch,
 ) -> PolarsResult<usize> {
     scratch.json.clear();
-    scratch.json.extend_from_slice(bytes);
+    scratch.json.extend_from_slice(remove_bom(bytes));
     let n = scratch.json.len();
     let value = simd_json::to_borrowed_value_with_buffers(&mut scratch.json, &mut scratch.buffers)
         .map_err(|e| polars_err!(ComputeError: "error parsing line: {}", e))?;
