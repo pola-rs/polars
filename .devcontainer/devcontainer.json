@@ -17,6 +17,7 @@
         ],
         "ruff.importStrategy": "fromEnvironment",
         "editor.formatOnSave": true,
+        "editor.trimAutoWhitespace": true,
         "mypy-type-checker.cwd": "${workspaceFolder}/py-polars",
         "mypy-type-checker.importStrategy": "fromEnvironment",
         "[python]": {
@@ -29,14 +30,13 @@
         "[dockerfile]": {
           "editor.defaultFormatter": "ms-azuretools.vscode-docker"
         },
+        "prettier.enable": true,
         "[json]": {
           "editor.quickSuggestions": {
             "strings": true
           },
-          "editor.suggest.insertMode": "replace",
-          "editor.defaultFormatter": "vscode.json-language-features",
-          "files.trimFinalNewlines": false,
-          "files.insertFinalNewline": true
+          "editor.formatOnSave": true,
+          "editor.defaultFormatter": "esbenp.prettier-vscode"
         }
       },
       "extensions": [
@@ -49,10 +49,11 @@
         "ms-vscode.makefile-tools",
         "vscode.json-language-features",
         "vadimcn.vscode-lldb",
-        "fill-labs.dependi"
+        "fill-labs.dependi",
+        "esbenp.prettier-vscode"
       ]
     }
   },
-  "forwardPorts": [ ],
+  "forwardPorts": [],
   "remoteUser": "root"
 }
