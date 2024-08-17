@@ -39,7 +39,6 @@
       },
       "extensions": [
         "rust-lang.rust-analyzer",
-        "serayuzgur.crates",
         "ms-python.python",
         "ms-python.vscode-pylance",
         "ms-python.mypy-type-checker",
@@ -47,7 +46,8 @@
         "charliermarsh.ruff",
         "ms-vscode.makefile-tools",
         "vscode.json-language-features",
-        "vadimcn.vscode-lldb"
+        "vadimcn.vscode-lldb",
+        "fill-labs.dependi"
       ]
     }
   },

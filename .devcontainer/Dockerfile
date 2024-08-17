@@ -3,7 +3,7 @@ FROM python:3.12-slim
 
 # Install necessary packages
 RUN apt-get update && \
-    apt-get install -y curl build-essential libffi-dev pkg-config zlib1g-dev cmake make git && \
+    apt-get install -y curl build-essential libffi-dev pkg-config zlib1g-dev cmake make git libssl-dev && \
     rm -rf /var/lib/apt/lists/*
 
 # Install Rust using rustup with stable toolchain
