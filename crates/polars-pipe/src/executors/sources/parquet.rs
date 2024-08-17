@@ -21,7 +21,7 @@ use polars_io::SerReader;
 use polars_plan::plans::FileInfo;
 use polars_plan::prelude::hive::HivePartitions;
 use polars_plan::prelude::FileScanOptions;
-use polars_utils::iter::EnumerateIdxTrait;
+use polars_utils::itertools::Itertools;
 use polars_utils::IdxSize;
 
 use crate::executors::sources::get_source_index;

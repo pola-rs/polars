@@ -2494,7 +2494,7 @@ class Expr:
         )
 
     def gather(
-        self, indices: int | Sequence[int] | Expr | Series | np.ndarray[Any, Any]
+        self, indices: int | Sequence[int] | IntoExpr | Series | np.ndarray[Any, Any]
     ) -> Expr:
         """
         Take values by index.
@@ -2541,8 +2541,10 @@ class Expr:
         │ two   ┆ [4, 99]   │
         └───────┴───────────┘
         """
-        if isinstance(indices, Sequence) or (
-            _check_for_numpy(indices) and isinstance(indices, np.ndarray)
+        if (
+            isinstance(indices, Sequence)
+            and not isinstance(indices, str)
+            or (_check_for_numpy(indices) and isinstance(indices, np.ndarray))
         ):
             indices_lit = F.lit(pl.Series("", indices, dtype=Int64))._pyexpr
         else:

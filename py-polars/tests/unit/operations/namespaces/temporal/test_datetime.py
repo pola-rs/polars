@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import OrderedDict
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING
 
@@ -15,7 +16,7 @@ from polars.testing.parametric import series
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
 
-    from polars._typing import TemporalLiteral, TimeUnit
+    from polars._typing import PolarsDataType, TemporalLiteral, TimeUnit
 else:
     from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
@@ -1350,3 +1351,79 @@ def test_dt_mean_deprecated() -> None:
     with pytest.deprecated_call():
         result = s.dt.mean()
     assert result == s.mean()
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.Date,
+        pl.Datetime("ms"),
+        pl.Datetime("ms", "EST"),
+        pl.Datetime("us"),
+        pl.Datetime("us", "EST"),
+        pl.Datetime("ns"),
+        pl.Datetime("ns", "EST"),
+    ],
+)
+@pytest.mark.parametrize(
+    "value",
+    [
+        date(1677, 9, 22),
+        date(1970, 1, 1),
+        date(2024, 2, 29),
+        date(2262, 4, 11),
+    ],
+)
+def test_literal_from_date(
+    value: date,
+    dtype: PolarsDataType,
+) -> None:
+    out = pl.select(pl.lit(value, dtype=dtype))
+    assert out.schema == OrderedDict({"literal": dtype})
+    if dtype == pl.Datetime:
+        tz = ZoneInfo(dtype.time_zone) if dtype.time_zone is not None else None  # type: ignore[union-attr]
+        value = datetime(value.year, value.month, value.day, tzinfo=tz)
+    assert out.item() == value
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.Date,
+        pl.Datetime("ms"),
+        pl.Datetime("ms", "EST"),
+        pl.Datetime("us"),
+        pl.Datetime("us", "EST"),
+        pl.Datetime("ns"),
+        pl.Datetime("ns", "EST"),
+    ],
+)
+@pytest.mark.parametrize(
+    "value",
+    [
+        datetime(1677, 9, 22),
+        datetime(1677, 9, 22, tzinfo=ZoneInfo("EST")),
+        datetime(1970, 1, 1),
+        datetime(1970, 1, 1, tzinfo=ZoneInfo("EST")),
+        datetime(2024, 2, 29),
+        datetime(2024, 2, 29, tzinfo=ZoneInfo("EST")),
+        datetime(2262, 4, 11),
+        datetime(2262, 4, 11, tzinfo=ZoneInfo("EST")),
+    ],
+)
+def test_literal_from_datetime(
+    value: datetime,
+    dtype: pl.Date | pl.Datetime,
+) -> None:
+    out = pl.select(pl.lit(value, dtype=dtype))
+    if dtype == pl.Date:
+        value = value.date()  # type: ignore[assignment]
+    elif dtype.time_zone is None and value.tzinfo is not None:  # type: ignore[union-attr]
+        # update the dtype with the supplied time zone in the value
+        dtype = pl.Datetime(dtype.time_unit, str(value.tzinfo))  # type: ignore[union-attr]
+    elif dtype.time_zone is not None and value.tzinfo is None:  # type: ignore[union-attr]
+        # cast from dt without tz to dtype with tz
+        value = value.replace(tzinfo=ZoneInfo(dtype.time_zone))  # type: ignore[union-attr]
+
+    assert out.schema == OrderedDict({"literal": dtype})
+    assert out.item() == value

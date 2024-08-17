@@ -686,7 +686,7 @@ def test_read_database_exceptions(
     ],
 )
 def test_read_database_cx_credentials(uri: str) -> None:
-    if sys.version_info > (3, 11):
+    if sys.version_info > (3, 9, 4):
         # slightly different error on more recent Python versions
         with pytest.raises(RuntimeError, match=r"Source.*not supported"):
             pl.read_database_uri("SELECT * FROM data", uri=uri, engine="connectorx")
