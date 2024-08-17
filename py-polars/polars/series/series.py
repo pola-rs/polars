@@ -1,4 +1,5 @@
 from __future__ import annotations
+from polars.series.plotting import Plot
 
 import contextlib
 import math
@@ -86,11 +87,13 @@ from polars.datatypes import (
 )
 from polars.datatypes._utils import dtype_to_init_repr
 from polars.dependencies import (
+    _ALTAIR_AVAILABLE,
     _PYARROW_AVAILABLE,
     _check_for_numpy,
     _check_for_pandas,
     _check_for_pyarrow,
     import_optional,
+    altair,
 )
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
@@ -7353,6 +7356,51 @@ class Series:
     def struct(self) -> StructNameSpace:
         """Create an object namespace of all struct related methods."""
         return StructNameSpace(self)
+
+    @property
+    @unstable()
+    def plot(self) -> Plot:
+        """
+        Create a plot namespace.
+
+        .. warning::
+            This functionality is currently considered **unstable**. It may be
+            changed at any point without it being considered a breaking change.
+
+        .. versionchanged:: 1.6.0
+            In prior versions of Polars, HvPlot was the plotting backend. If you would
+            like to restore the previous plotting functionality, all you need to do
+            add `import hvplot.polars` at the top of your script and replace
+            `df.plot` with `df.hvplot`.
+
+        Polars does not implement plotting logic itself, but instead defers to
+        Altair:
+
+        - `s.plot.hist(*args, **kwargs)`
+          is shorthand for
+          `alt.Chart(s.to_frame()).mark_bar().encode(x=s.name, y='count()', *args, **kwargs).interactive()`
+        - `s.plot.kde(*args, **kwargs)`
+          is shorthand for
+          `alt.Chart(s.to_frame()).transform_density(s.name, as_=[s.name, 'density']).mark_area().encode(x=s.name, y='density', *args, **kwargs).interactive()`
+        
+        For anything else, please call `s.to_frame()` and then use one of the
+        methods in :meth:`DataFrame.plot`.
+
+        Examples
+        --------
+        Histogram:
+
+        >>> s = pl.Series([1, 1, 2, 3])
+        >>> s.plot.hist()  # doctest: +SKIP
+
+        KDE plot:
+
+        >>> s.plot.kde()  # doctest: +SKIP
+        """
+        if not _ALTAIR_AVAILABLE or parse_version(altair.__version__) < (5, 4, 0):
+            msg = "altair>=5.4.0 is required for `.plot`"
+            raise ModuleUpgradeRequiredError(msg)
+        return Plot(self)
 
 
 def _resolve_temporal_dtype(

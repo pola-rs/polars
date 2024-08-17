@@ -652,11 +652,6 @@ class DataFrame:
         ...     }
         ... )
         >>> df.plot.line(x="date", y="price", color="stock")  # doctest: +SKIP
-
-        Histogram:
-
-        >>> df = pl.DataFrame({"rating": [1, 3, 3, 3, 2, 3, 3, 2, 1, 4]})
-        >>> df.plot.bar(x="rating", y="count()")  # doctest: +SKIP
         """
         if not _ALTAIR_AVAILABLE or parse_version(altair.__version__) < (5, 4, 0):
             msg = "altair>=5.4.0 is required for `.plot`"

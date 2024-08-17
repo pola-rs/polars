@@ -247,7 +247,7 @@ class Plot:
     def __getattr__(
         self, attr: str, *args: EncodeKwds, **kwargs: EncodeKwds
     ) -> Callable[..., alt.Chart]:
-        method = self.chart.getattr(f"mark_{attr}", None)
+        method = self.chart.__getattr__(f"mark_{attr}", None)
         if method is None:
             msg = "Altair has no method 'mark_{attr}'"
             raise AttributeError(msg)
