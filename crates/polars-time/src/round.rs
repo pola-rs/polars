@@ -36,8 +36,7 @@ impl PolarsRound for DatetimeChunked {
                     };
                     return Ok(self
                         .apply_values(|t| {
-                            // Round half-way values away from zero
-                            let half_away = t.signum() * every / 2;
+                            let half_away = every / 2;
                             t + half_away - (t + half_away) % every
                         })
                         .into_datetime(self.time_unit(), time_zone.clone()));
