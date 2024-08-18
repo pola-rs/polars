@@ -251,6 +251,9 @@ class Plot:
             .interactive()
         )
 
+    # Alias to `point` because of how common it is.
+    scatter = point
+
     def __getattr__(self, attr: str) -> Callable[..., alt.Chart]:
         method = getattr(self.chart, f"mark_{attr}", None)
         if method is None:

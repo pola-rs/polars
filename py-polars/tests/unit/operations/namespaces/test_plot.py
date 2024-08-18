@@ -23,6 +23,7 @@ def test_series_plot() -> None:
     s.plot.hist().to_json()
     s.plot.line().to_json()
     s.plot.point().to_json()
+    s.plot.scatter().to_json()
 
 
 def test_empty_dataframe() -> None:
