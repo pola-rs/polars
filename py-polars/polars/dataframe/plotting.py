@@ -35,7 +35,7 @@ if TYPE_CHECKING:
     ]
 
 
-class Plot:
+class DataFramePlot:
     """DataFrame.plot namespace."""
 
     chart: alt.Chart
@@ -86,15 +86,16 @@ class Plot:
 
         Examples
         --------
-        >>> from datetime import date
         >>> df = pl.DataFrame(
         ...     {
-        ...         "date": [date(2020, 1, 2), date(2020, 1, 3), date(2020, 1, 4)] * 2,
-        ...         "price": [1, 4, 6, 1, 5, 2],
-        ...         "stock": ["a", "a", "a", "b", "b", "b"],
+        ...         "day": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] * 2,
+        ...         "group": ["a"] * 7 + ["b"] * 7,
+        ...         "value": [1, 3, 2, 4, 5, 6, 1, 1, 3, 2, 4, 5, 1, 2],
         ...     }
         ... )
-        >>> df.plot.bar(x="price", y="count()")  # doctest: +SKIP
+        >>> df.plot.bar(
+        ...     x="day", y="value", color="day", column="group"
+        ... )  # doctest: +SKIP
         """
         encodings: Encodings = {}
         if x is not None:
@@ -105,9 +106,7 @@ class Plot:
             encodings["color"] = color
         if tooltip is not None:
             encodings["tooltip"] = tooltip
-        return (
-            self.chart.mark_bar().encode(**{**encodings, **kwargs}).interactive()  # type: ignore[arg-type]
-        )
+        return self.chart.mark_bar().encode(**encodings, **kwargs).interactive()
 
     def line(
         self,
@@ -173,11 +172,7 @@ class Plot:
             encodings["order"] = order
         if tooltip is not None:
             encodings["tooltip"] = tooltip
-        return (
-            self.chart.mark_line()
-            .encode(**{**encodings, **kwargs})  # type: ignore[arg-type]
-            .interactive()
-        )
+        return self.chart.mark_line().encode(**encodings, **kwargs).interactive()
 
     def point(
         self,

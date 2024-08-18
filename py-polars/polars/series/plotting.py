@@ -36,7 +36,7 @@ if TYPE_CHECKING:
     ]
 
 
-class Plot:
+class SeriesPlot:
     """Series.plot namespace."""
 
     _accessor = "plot"

@@ -104,7 +104,7 @@ from polars.series.binary import BinaryNameSpace
 from polars.series.categorical import CatNameSpace
 from polars.series.datetime import DateTimeNameSpace
 from polars.series.list import ListNameSpace
-from polars.series.plotting import Plot
+from polars.series.plotting import SeriesPlot
 from polars.series.string import StringNameSpace
 from polars.series.struct import StructNameSpace
 from polars.series.utils import expr_dispatch, get_ffi_func
@@ -7359,7 +7359,7 @@ class Series:
 
     @property
     @unstable()
-    def plot(self) -> Plot:
+    def plot(self) -> SeriesPlot:
         """
         Create a plot namespace.
 
@@ -7404,7 +7404,7 @@ class Series:
         if not _ALTAIR_AVAILABLE or parse_version(altair.__version__) < (5, 4, 0):
             msg = "altair>=5.4.0 is required for `.plot`"
             raise ModuleUpgradeRequiredError(msg)
-        return Plot(self)
+        return SeriesPlot(self)
 
 
 def _resolve_temporal_dtype(

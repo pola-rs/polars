@@ -66,7 +66,7 @@ from polars._utils.various import (
 from polars._utils.wrap import wrap_expr, wrap_ldf, wrap_s
 from polars.dataframe._html import NotebookFormatter
 from polars.dataframe.group_by import DynamicGroupBy, GroupBy, RollingGroupBy
-from polars.dataframe.plotting import Plot
+from polars.dataframe.plotting import DataFramePlot
 from polars.datatypes import (
     N_INFER_DEFAULT,
     Boolean,
@@ -603,7 +603,7 @@ class DataFrame:
 
     @property
     @unstable()
-    def plot(self) -> Plot:
+    def plot(self) -> DataFramePlot:
         """
         Create a plot namespace.
 
@@ -675,7 +675,7 @@ class DataFrame:
         if not _ALTAIR_AVAILABLE or parse_version(altair.__version__) < (5, 4, 0):
             msg = "altair>=5.4.0 is required for `.plot`"
             raise ModuleUpgradeRequiredError(msg)
-        return Plot(self)
+        return DataFramePlot(self)
 
     @property
     @unstable()
