@@ -57,9 +57,11 @@ class Plot:
         """
         Draw bar plot.
 
-        Polars does not implement plotting logic itself but instead defers to Altair.
-        `df.plot.bar(*args, **kwargs)` is shorthand for
-        `alt.Chart(df).mark_bar().encode(*args, **kwargs).interactive()`,
+        Polars does not implement plotting logic itself but instead defers to
+        `Altair <https://altair-viz.github.io/>`_.
+
+        `df.plot.bar(**kwargs)` is shorthand for
+        `alt.Chart(df).mark_bar().encode(**kwargs).interactive()`,
         as is intended for convenience - for full customisatibility, use a plotting
         library directly.
 
@@ -79,8 +81,8 @@ class Plot:
             Column to color bars by.
         tooltip
             Columns to show values of when hovering over bars with pointer.
-        *args, **kwargs
-            Additional arguments and keyword arguments passed to Altair.
+        **kwargs
+            Additional keyword arguments passed to Altair.
 
         Examples
         --------
@@ -120,9 +122,10 @@ class Plot:
         """
         Draw line plot.
 
-        Polars does not implement plotting logic itself but instead defers to Altair.
-        `df.plot.line(*args, **kwargs)` is shorthand for
-        `alt.Chart(df).mark_line().encode(*args, **kwargs).interactive()`,
+        Polars does not implement plotting logic itself but instead defers to
+        `Altair <https://altair-viz.github.io/>`_.
+
+        `alt.Chart(df).mark_line().encode(**kwargs).interactive()`,
         as is intended for convenience - for full customisatibility, use a plotting
         library directly.
 
@@ -144,8 +147,8 @@ class Plot:
             Column to use for order of data points in lines.
         tooltip
             Columns to show values of when hovering over lines with pointer.
-        *args, **kwargs
-            Additional arguments and keyword arguments passed to Altair.
+        **kwargs
+            Additional keyword arguments passed to Altair.
 
         Examples
         --------
@@ -183,15 +186,16 @@ class Plot:
         color: ChannelColor | None = None,
         size: ChannelSize | None = None,
         tooltip: ChannelTooltip | None = None,
-        *args: Any,
         **kwargs: Any,
     ) -> alt.Chart:
         """
         Draw scatter plot.
 
-        Polars does not implement plotting logic itself but instead defers to Altair.
-        `df.plot.point(*args, **kwargs)` is shorthand for
-        `alt.Chart(df).mark_point().encode(*args, **kwargs).interactive()`,
+        Polars does not implement plotting logic itself but instead defers to
+        `Altair <https://altair-viz.github.io/>`_.
+
+        `df.plot.point(**kwargs)` is shorthand for
+        `alt.Chart(df).mark_point().encode(**kwargs).interactive()`,
         as is intended for convenience - for full customisatibility, use a plotting
         library directly.
 
@@ -213,8 +217,8 @@ class Plot:
             Column which determines points' sizes.
         tooltip
             Columns to show values of when hovering over points with pointer.
-        *args, **kwargs
-            Additional arguments and keyword arguments passed to Altair.
+        **kwargs
+            Additional keyword arguments passed to Altair.
 
         Examples
         --------
@@ -240,15 +244,16 @@ class Plot:
             encodings["tooltip"] = tooltip
         return (
             self.chart.mark_point()
-            .encode(*args, **{**encodings, **kwargs})
+            .encode(
+                **encodings,  # type: ignore[arg-type]
+                **kwargs,
+            )
             .interactive()
         )
 
-    def __getattr__(
-        self, attr: str, *args: EncodeKwds, **kwargs: EncodeKwds
-    ) -> Callable[..., alt.Chart]:
-        method = self.chart.__getattr__(f"mark_{attr}", None)
+    def __getattr__(self, attr: str) -> Callable[..., alt.Chart]:
+        method = getattr(self.chart, f"mark_{attr}", None)
         if method is None:
             msg = "Altair has no method 'mark_{attr}'"
             raise AttributeError(msg)
-        return method().encode(*args, **kwargs).interactive()
+        return lambda **kwargs: method().encode(**kwargs).interactive()

@@ -618,15 +618,20 @@ class DataFrame:
             `df.plot` with `df.hvplot`.
 
         Polars does not implement plotting logic itself, but instead defers to
-        Altair:
+        `Altair <https://altair-viz.github.io/>`_:
 
-        - `df.plot.line(*args, **kwargs)`
+        - `df.plot.line(**kwargs)`
           is shorthand for
-          `alt.Chart(df).mark_line().encode(*args, **kwargs).interactive()`
-        - `df.plot.point(*args, **kwargs)`
+          `alt.Chart(df).mark_line().encode(**kwargs).interactive()`
+        - `df.plot.point(**kwargs)`
           is shorthand for
-          `alt.Chart(df).mark_point().encode(*args, **kwargs).interactive()`
-        - ... (likewise, for any other attribute, e.g. `df.plot.bar`)
+          `alt.Chart(df).mark_point().encode(**kwargs).interactive()`
+        - `df.plot.bar(**kwargs)`
+          is shorthand for
+          `alt.Chart(df).mark_bar().encode(**kwargs).interactive()`
+        - for any other attribute `attr`, `df.plot.attr(**kwargs)`
+          is shorthand for
+          `alt.Chart(df).mark_attr().encode(**kwargs).interactive()`
 
         Examples
         --------
@@ -652,6 +657,19 @@ class DataFrame:
         ...     }
         ... )
         >>> df.plot.line(x="date", y="price", color="stock")  # doctest: +SKIP
+
+        Bar plot:
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "day": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] * 2,
+        ...         "group": ["a"] * 7 + ["b"] * 7,
+        ...         "value": [1, 3, 2, 4, 5, 6, 1, 1, 3, 2, 4, 5, 1, 2],
+        ...     }
+        ... )
+        >>> df.plot.bar(
+        ...     x="day", y="value", color="day", column="group"
+        ... )  # doctest: +SKIP
         """
         if not _ALTAIR_AVAILABLE or parse_version(altair.__version__) < (5, 4, 0):
             msg = "altair>=5.4.0 is required for `.plot`"

@@ -1,5 +1,4 @@
 from __future__ import annotations
-from polars.series.plotting import Plot
 
 import contextlib
 import math
@@ -92,8 +91,8 @@ from polars.dependencies import (
     _check_for_numpy,
     _check_for_pandas,
     _check_for_pyarrow,
-    import_optional,
     altair,
+    import_optional,
 )
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
@@ -105,6 +104,7 @@ from polars.series.binary import BinaryNameSpace
 from polars.series.categorical import CatNameSpace
 from polars.series.datetime import DateTimeNameSpace
 from polars.series.list import ListNameSpace
+from polars.series.plotting import Plot
 from polars.series.string import StringNameSpace
 from polars.series.struct import StructNameSpace
 from polars.series.utils import expr_dispatch, get_ffi_func
@@ -7376,27 +7376,31 @@ class Series:
         Polars does not implement plotting logic itself, but instead defers to
         Altair:
 
-        - `s.plot.hist(*args, **kwargs)`
+        - `s.plot.hist(**kwargs)`
           is shorthand for
-          `alt.Chart(s.to_frame()).mark_bar().encode(x=s.name, y='count()', *args, **kwargs).interactive()`
-        - `s.plot.kde(*args, **kwargs)`
+          `alt.Chart(s.to_frame()).mark_bar().encode(x=alt.X(f'{s.name}:Q', bin=True), y='count()', **kwargs).interactive()`
+        - `s.plot.kde(**kwargs)`
           is shorthand for
-          `alt.Chart(s.to_frame()).transform_density(s.name, as_=[s.name, 'density']).mark_area().encode(x=s.name, y='density', *args, **kwargs).interactive()`
-        
-        For anything else, please call `s.to_frame()` and then use one of the
-        methods in :meth:`DataFrame.plot`.
+          `alt.Chart(s.to_frame()).transform_density(s.name, as_=[s.name, 'density']).mark_area().encode(x=s.name, y='density:Q', **kwargs).interactive()`
+        - for any other attribute `attr`, `s.plot.attr(**kwargs)`
+          is shorthand for
+          `alt.Chart(s.to_frame().with_row_index()).mark_attr().encode(x=s.name, y='index', **kwargs).interactive()`
 
         Examples
         --------
         Histogram:
 
-        >>> s = pl.Series([1, 1, 2, 3])
+        >>> s = pl.Series([1, 4, 4, 6, 2, 4, 3, 5, 5, 7, 1])
         >>> s.plot.hist()  # doctest: +SKIP
 
         KDE plot:
 
         >>> s.plot.kde()  # doctest: +SKIP
-        """
+
+        Line plot:
+
+        >>> s.plot.line()  # doctest: +SKIP
+        """  # noqa: W505
         if not _ALTAIR_AVAILABLE or parse_version(altair.__version__) < (5, 4, 0):
             msg = "altair>=5.4.0 is required for `.plot`"
             raise ModuleUpgradeRequiredError(msg)

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Dict, Union
+from typing import TYPE_CHECKING, Callable, Dict, Union
+
+from polars.dependencies import altair as alt
 
 if TYPE_CHECKING:
     import sys
 
-    import altair as alt
     from altair.typing import (
         ChannelColor,
         ChannelOrder,
@@ -16,7 +17,6 @@ if TYPE_CHECKING:
         EncodeKwds,
     )
 
-
     if sys.version_info >= (3, 10):
         from typing import TypeAlias
     else:
@@ -25,6 +25,8 @@ if TYPE_CHECKING:
         from typing import Unpack
     else:
         from typing_extensions import Unpack
+
+    from polars import Series
 
     Encodings: TypeAlias = Dict[
         str,
@@ -35,31 +37,30 @@ if TYPE_CHECKING:
 
 
 class Plot:
-    """DataFrame.plot namespace."""
+    """Series.plot namespace."""
+
+    _accessor = "plot"
 
     chart: alt.Chart
 
     def __init__(self, s: Series) -> None:
-        import altair as alt
+        name = s.name or "value"
+        self._df = s.to_frame(name)
+        self._series_name = name
 
-        self.chart = alt.Chart(s.to_frame())
-        self._series_name = s.name
-
-    def bar(
+    def hist(
         self,
-        x: ChannelX | None = None,
-        y: ChannelY | None = None,
-        color: ChannelColor | None = None,
-        tooltip: ChannelTooltip | None = None,
         /,
         **kwargs: Unpack[EncodeKwds],
     ) -> alt.Chart:
         """
-        Draw bar plot.
+        Draw histogram.
 
-        Polars does not implement plotting logic itself but instead defers to Altair.
-        `df.plot.bar(*args, **kwargs)` is shorthand for
-        `alt.Chart(df).mark_bar().encode(*args, **kwargs).interactive()`,
+        Polars does not implement plotting logic itself but instead defers to
+        `Altair <https://altair-viz.github.io/>`_.
+
+        `s.plot.hist(**kwargs)` is shorthand for
+        `alt.Chart(s.to_frame()).mark_bar().encode(x=alt.X(f'{s.name}:Q', bin=True), y='count()', **kwargs).interactive()`,
         as is intended for convenience - for full customisatibility, use a plotting
         library directly.
 
@@ -71,40 +72,22 @@ class Plot:
 
         Parameters
         ----------
-        x
-            Column with x-coordinates of bars.
-        y
-            Column with y-coordinates of bars.
-        color
-            Column to color bars by.
-        tooltip
-            Columns to show values of when hovering over bars with pointer.
-        *args, **kwargs
+        **kwargs
             Additional arguments and keyword arguments passed to Altair.
 
         Examples
         --------
-        >>> from datetime import date
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "date": [date(2020, 1, 2), date(2020, 1, 3), date(2020, 1, 4)] * 2,
-        ...         "price": [1, 4, 6, 1, 5, 2],
-        ...         "stock": ["a", "a", "a", "b", "b", "b"],
-        ...     }
-        ... )
-        >>> df.plot.bar(x="price", y="count()")  # doctest: +SKIP
-        """
-        encodings: Encodings = {}
-        if x is not None:
-            encodings["x"] = x
-        if y is not None:
-            encodings["y"] = y
-        if color is not None:
-            encodings["color"] = color
-        if tooltip is not None:
-            encodings["tooltip"] = tooltip
+        >>> s = pl.Series("price", [1, 3, 3, 3, 5, 2, 6, 5, 5, 5, 7])
+        >>> s.plot.hist()  # doctest: +SKIP
+        """  # noqa: W505
+        if self._series_name == "count()":
+            msg = "Cannot use `plot.hist` when Series name is `'count()'`"
+            raise ValueError(msg)
         return (
-            self.chart.mark_bar().encode(**{**encodings, **kwargs}).interactive()  # type: ignore[arg-type]
+            alt.Chart(self._df)
+            .mark_bar()
+            .encode(x=alt.X(f"{self._series_name}:Q", bin=True), y="count()", **kwargs)  # type: ignore[misc]
+            .interactive()
         )
 
     def kde(
@@ -113,11 +96,13 @@ class Plot:
         **kwargs: Unpack[EncodeKwds],
     ) -> alt.Chart:
         """
-        Draw line plot.
+        Draw kernel dentity estimate plot.
 
-        Polars does not implement plotting logic itself but instead defers to Altair.
-        `df.plot.line(*args, **kwargs)` is shorthand for
-        `alt.Chart(df).mark_line().encode(*args, **kwargs).interactive()`,
+        Polars does not implement plotting logic itself but instead defers to
+        `Altair <https://altair-viz.github.io/>`_.
+
+        `s.plot.kde(**kwargs)` is shorthand for
+        `alt.Chart(s.to_frame()).transform_density(s.name, as_=[s.name, 'density']).mark_area().encode(x=s.name, y='density:Q', **kwargs).interactive()`,
         as is intended for convenience - for full customisatibility, use a plotting
         library directly.
 
@@ -144,96 +129,32 @@ class Plot:
 
         Examples
         --------
-        >>> from datetime import date
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "date": [date(2020, 1, 2), date(2020, 1, 3), date(2020, 1, 4)] * 2,
-        ...         "price": [1, 4, 6, 1, 5, 2],
-        ...         "stock": ["a", "a", "a", "b", "b", "b"],
-        ...     }
-        ... )
-        >>> df.plot.line(x="date", y="price", color="stock")  # doctest: +SKIP
-        """
+        >>> s = pl.Series("price", [1, 3, 3, 3, 5, 2, 6, 5, 5, 5, 7])
+        >>> s.plot.kde()  # doctest: +SKIP
+        """  # noqa: W505
+        if self._series_name == "density":
+            msg = "Cannot use `plot.kde` when Series name is `'density'`"
+            raise ValueError(msg)
         return (
-            self.chart.transform_density(self._series_name, as_=[f'{self._series_name}', 'density']).mark_area()
-            .encode(x=f'{self._series_name}', y='density:Q', **kwargs)  # type: ignore[arg-type]
-            .interactive()
-        )
-        alt.Chart(df).transform_density('price', as_=['price', 'density']).mark_area().encode(x='price', y='density:Q')
-
-    def point(
-        self,
-        x: ChannelX | None = None,
-        y: ChannelY | None = None,
-        color: ChannelColor | None = None,
-        size: ChannelSize | None = None,
-        tooltip: ChannelTooltip | None = None,
-        *args: Any,
-        **kwargs: Any,
-    ) -> alt.Chart:
-        """
-        Draw scatter plot.
-
-        Polars does not implement plotting logic itself but instead defers to Altair.
-        `df.plot.point(*args, **kwargs)` is shorthand for
-        `alt.Chart(df).mark_point().encode(*args, **kwargs).interactive()`,
-        as is intended for convenience - for full customisatibility, use a plotting
-        library directly.
-
-        .. versionchanged:: 1.6.0
-            In prior versions of Polars, HvPlot was the plotting backend. If you would
-            like to restore the previous plotting functionality, all you need to do
-            add `import hvplot.polars` at the top of your script and replace
-            `df.plot` with `df.hvplot`.
-
-        Parameters
-        ----------
-        x
-            Column with x-coordinates of points.
-        y
-            Column with y-coordinates of points.
-        color
-            Column to color points by.
-        size
-            Column which determines points' sizes.
-        tooltip
-            Columns to show values of when hovering over points with pointer.
-        *args, **kwargs
-            Additional arguments and keyword arguments passed to Altair.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "length": [1, 4, 6],
-        ...         "width": [4, 5, 6],
-        ...         "species": ["setosa", "setosa", "versicolor"],
-        ...     }
-        ... )
-        >>> df.plot.point(x="length", y="width", color="species")  # doctest: +SKIP
-        """
-        encodings: Encodings = {}
-        if x is not None:
-            encodings["x"] = x
-        if y is not None:
-            encodings["y"] = y
-        if color is not None:
-            encodings["color"] = color
-        if size is not None:
-            encodings["size"] = size
-        if tooltip is not None:
-            encodings["tooltip"] = tooltip
-        return (
-            self.chart.mark_point()
-            .encode(*args, **{**encodings, **kwargs})
+            alt.Chart(self._df)
+            .transform_density(self._series_name, as_=[self._series_name, "density"])
+            .mark_area()
+            .encode(x=self._series_name, y="density:Q", **kwargs)  # type: ignore[misc]
             .interactive()
         )
 
-    # def __getattr__(
-    #     self, attr: str, *args: EncodeKwds, **kwargs: EncodeKwds
-    # ) -> Callable[..., alt.Chart]:
-    #     method = self.chart.__getattr__(f"mark_{attr}", None)
-    #     if method is None:
-    #         msg = "Altair has no method 'mark_{attr}'"
-    #         raise AttributeError(msg)
-    #     return method().encode(*args, **kwargs).interactive()
+    def __getattr__(self, attr: str) -> Callable[..., alt.Chart]:
+        if "index" in self._df.columns:
+            msg = "Cannot call `plot.{attr}` when Series name is 'index'"
+            raise ValueError(msg)
+        method = getattr(
+            alt.Chart(self._df.with_row_index("index")), f"mark_{attr}", None
+        )
+        if method is None:
+            msg = "Altair has no method 'mark_{attr}'"
+            raise AttributeError(msg)
+        return (
+            lambda **kwargs: method()
+            .encode(x="index", y=self._series_name, **kwargs)
+            .interactive()
+        )
