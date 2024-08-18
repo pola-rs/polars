@@ -187,15 +187,14 @@ impl ParquetExec {
                 readers_and_metadata
                     .into_par_iter()
                     .zip(row_statistics.into_par_iter())
-                    .enumerate()
                     .map(
-                        |(i, ((reader, _, predicate, projection), (cumulative_read, slice)))| {
+                        |((reader, _, predicate, projection), (cumulative_read, slice))| {
                             let row_index = base_row_index.as_ref().map(|rc| RowIndex {
                                 name: rc.name.clone(),
                                 offset: rc.offset + cumulative_read as IdxSize,
                             });
 
-                            let mut df = reader
+                            let df = reader
                                 .with_slice(Some(slice))
                                 .with_row_index(row_index)
                                 .with_predicate(predicate.clone())
@@ -209,20 +208,6 @@ impl ParquetExec {
                                         .as_ref(),
                                 )?
                                 .finish()?;
-
-                            if let Some(col) = &self.file_options.include_file_paths {
-                                let path = paths[i].to_str().unwrap();
-                                unsafe {
-                                    df.with_column_unchecked(
-                                        StringChunked::full(
-                                            col,
-                                            path,
-                                            std::cmp::max(df.height(), slice.1),
-                                        )
-                                        .into_series(),
-                                    )
-                                };
-                            }
 
                             Ok(df)
                         },

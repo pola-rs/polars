@@ -1171,8 +1171,15 @@ impl DataFrame {
     /// # Safety
     /// The caller must ensure `column.len() == self.height()` .
     pub unsafe fn with_column_unchecked(&mut self, column: Series) -> &mut Self {
-        self.get_columns_mut().push(column);
-        self
+        #[cfg(debug_assertions)]
+        {
+            return self.with_column(column).unwrap();
+        }
+        #[cfg(not(debug_assertions))]
+        {
+            self.get_columns_mut().push(column);
+            self
+        }
     }
 
     fn add_column_by_schema(&mut self, s: Series, schema: &Schema) -> PolarsResult<()> {
