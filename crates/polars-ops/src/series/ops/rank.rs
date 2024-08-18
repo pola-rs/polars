@@ -65,6 +65,11 @@ unsafe fn rank_impl<F: FnMut(&mut [IdxSize])>(idxs: &IdxCa, neq: &BooleanArray, 
 fn rank(s: &Series, method: RankMethod, descending: bool, seed: Option<u64>) -> Series {
     let len = s.len();
     let null_count = s.null_count();
+
+    if null_count == len {
+        return Series::full_null(s.name(), s.len(), s.dtype());
+    }
+
     match len {
         1 => {
             return match method {
