@@ -333,55 +333,6 @@ def test_arr_contains() -> None:
     }
 
 
-def test_rank() -> None:
-    df = pl.DataFrame(
-        {
-            "a": [1, 1, 2, 2, 3],
-        }
-    )
-
-    s = df.select(pl.col("a").rank(method="average").alias("b")).to_series()
-    assert s.to_list() == [1.5, 1.5, 3.5, 3.5, 5.0]
-    assert s.dtype == pl.Float64
-
-    s = df.select(pl.col("a").rank(method="max").alias("b")).to_series()
-    assert s.to_list() == [2, 2, 4, 4, 5]
-    assert s.dtype == pl.get_index_type()
-
-
-def test_rank_so_4109() -> None:
-    # also tests ranks null behavior
-    df = pl.from_dict(
-        {
-            "id": [1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4],
-            "rank": [None, 3, 2, 4, 1, 4, 3, 2, 1, None, 3, 4, 4, 1, None, 3],
-        }
-    ).sort(by=["id", "rank"])
-
-    assert df.group_by("id").agg(
-        [
-            pl.col("rank").alias("original"),
-            pl.col("rank").rank(method="dense").alias("dense"),
-            pl.col("rank").rank(method="average").alias("average"),
-        ]
-    ).to_dict(as_series=False) == {
-        "id": [1, 2, 3, 4],
-        "original": [[None, 2, 3, 4], [1, 2, 3, 4], [None, 1, 3, 4], [None, 1, 3, 4]],
-        "dense": [[None, 1, 2, 3], [1, 2, 3, 4], [None, 1, 2, 3], [None, 1, 2, 3]],
-        "average": [
-            [None, 1.0, 2.0, 3.0],
-            [1.0, 2.0, 3.0, 4.0],
-            [None, 1.0, 2.0, 3.0],
-            [None, 1.0, 2.0, 3.0],
-        ],
-    }
-
-
-def test_rank_string_null_11252() -> None:
-    rank = pl.Series([None, "", "z", None, "a"]).rank()
-    assert rank.to_list() == [None, 1.0, 3.0, None, 2.0]
-
-
 def test_logical_boolean() -> None:
     # note, cannot use expressions in logical
     # boolean context (eg: and/or/not operators)

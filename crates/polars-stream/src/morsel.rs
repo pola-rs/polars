@@ -67,7 +67,7 @@ impl SourceToken {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Morsel {
     /// The data contained in this morsel.
     df: DataFrame,
@@ -151,5 +151,9 @@ impl Morsel {
 
     pub fn source_token(&self) -> &SourceToken {
         &self.source_token
+    }
+
+    pub fn replace_source_token(&mut self, new_token: SourceToken) -> SourceToken {
+        core::mem::replace(&mut self.source_token, new_token)
     }
 }

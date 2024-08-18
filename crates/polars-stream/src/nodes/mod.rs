@@ -3,6 +3,7 @@ pub mod in_memory_map;
 pub mod in_memory_sink;
 pub mod in_memory_source;
 pub mod map;
+pub mod multiplexer;
 pub mod ordered_union;
 pub mod reduce;
 pub mod select;
