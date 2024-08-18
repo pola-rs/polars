@@ -66,8 +66,6 @@ class _LazyModule(ModuleType):
 
     def _import(self) -> ModuleType:
         # import the referenced module, replacing the proxy in this module's globals
-        if self._module_name == "pandas":
-            breakpoint()
         module = import_module(self.__name__)
         self._globals[self._module_name] = module
         self.__dict__.update(module.__dict__)
