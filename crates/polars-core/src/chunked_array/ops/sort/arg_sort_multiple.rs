@@ -100,7 +100,8 @@ pub fn _get_rows_encoded_compat_array(by: &Series) -> PolarsResult<ArrayRef> {
                 ca.physical().chunks[0].clone()
             }
         },
-        _ => by.to_arrow(0, CompatLevel::newest()),
+        // Take physical
+        _ => by.chunks()[0].clone(),
     };
     Ok(out)
 }
