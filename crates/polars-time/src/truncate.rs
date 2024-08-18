@@ -12,6 +12,7 @@ pub trait PolarsTruncate {
         Self: Sized;
 }
 
+#[inline(always)]
 pub(crate) fn fast_truncate(t: i64, every: i64) -> i64 {
     let remainder = t % every;
     t - (remainder + every * (remainder < 0) as i64)

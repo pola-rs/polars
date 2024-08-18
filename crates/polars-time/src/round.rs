@@ -7,6 +7,7 @@ use polars_utils::cache::FastFixedCache;
 use crate::prelude::*;
 use crate::truncate::fast_truncate;
 
+#[inline(always)]
 fn fast_round(t: i64, every: i64) -> i64 {
     fast_truncate(t + every / 2, every)
 }
