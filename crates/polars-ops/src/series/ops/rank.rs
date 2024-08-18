@@ -67,7 +67,11 @@ fn rank(s: &Series, method: RankMethod, descending: bool, seed: Option<u64>) -> 
     let null_count = s.null_count();
 
     if null_count == len {
-        return Series::full_null(s.name(), s.len(), s.dtype());
+        let dt = match method {
+            Average => DataType::Float64,
+            _ => IDX_DTYPE,
+        };
+        return Series::full_null(s.name(), s.len(), &dt);
     }
 
     match len {
