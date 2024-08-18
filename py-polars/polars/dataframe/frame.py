@@ -625,8 +625,8 @@ class DataFrame:
           `alt.Chart(df).mark_line().encode(**kwargs).interactive()`
         - `df.plot.point(**kwargs)`
           is shorthand for
-          `alt.Chart(df).mark_point().encode(**kwargs).interactive()` (and `plot.scatter` is
-          provided as an alias)
+          `alt.Chart(df).mark_point().encode(**kwargs).interactive()` (and
+          `plot.scatter` is provided as an alias)
         - `df.plot.bar(**kwargs)`
           is shorthand for
           `alt.Chart(df).mark_bar().encode(**kwargs).interactive()`
