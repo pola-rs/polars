@@ -384,3 +384,4 @@ def test_empty_json() -> None:
 
     df = pl.read_json(b'{"j":{}}')
     assert df.dtypes == [pl.Struct([])]
+    assert df.shape == (0, 1)
