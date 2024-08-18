@@ -375,3 +375,9 @@ def test_json_normalize() -> None:
         "fitness.height": [130, 130, 130],
         "fitness.weight": [60, 60, 60],
     }
+
+
+def test_empty_json() -> None:
+    df = pl.read_json(io.StringIO("{}"))
+    assert df.shape == (0, 0)
+    assert isinstance(df, pl.DataFrame)
