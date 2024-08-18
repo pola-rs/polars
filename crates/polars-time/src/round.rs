@@ -5,6 +5,11 @@ use polars_core::prelude::*;
 use polars_utils::cache::FastFixedCache;
 
 use crate::prelude::*;
+use crate::truncate::fast_truncate;
+
+fn fast_round(t: i64, every: i64) -> i64 {
+    fast_truncate(t + every / 2, every)
+}
 
 pub trait PolarsRound {
     fn round(&self, every: &StringChunked, tz: Option<&Tz>) -> PolarsResult<Self>
@@ -35,10 +40,7 @@ impl PolarsRound for DatetimeChunked {
                         TimeUnit::Nanoseconds => every_parsed.duration_ns(),
                     };
                     return Ok(self
-                        .apply_values(|t| {
-                            let half_away = every / 2;
-                            t + half_away - (t + half_away) % every
-                        })
+                        .apply_values(|t| fast_round(t, every))
                         .into_datetime(self.time_unit(), time_zone.clone()));
                 } else {
                     let w = Window::new(every_parsed, every_parsed, offset);
