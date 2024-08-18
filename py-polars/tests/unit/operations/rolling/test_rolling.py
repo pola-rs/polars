@@ -589,6 +589,36 @@ def test_rolling_cov_corr() -> None:
     assert res["corr"][:2] == [None] * 2
 
 
+def test_rolling_cov_corr_nulls() -> None:
+    df1 = pl.DataFrame(
+        {"a": [1.06, 1.07, 0.93, 0.78, 0.85], "lag_a": [1.0, 1.06, 1.07, 0.93, 0.78]}
+    )
+    df2 = pl.DataFrame(
+        {
+            "a": [1.0, 1.06, 1.07, 0.93, 0.78, 0.85],
+            "lag_a": [None, 1.0, 1.06, 1.07, 0.93, 0.78],
+        }
+    )
+
+    val_1 = df1.select(
+        pl.rolling_corr("a", "lag_a", window_size=10, min_periods=5, ddof=1).tail(1)
+    ).item()
+    val_2 = df2.select(
+        pl.rolling_corr("a", "lag_a", window_size=10, min_periods=5, ddof=1).tail(1)
+    ).item()
+
+    assert val_1 == val_2
+
+    val_1 = df1.select(
+        pl.rolling_cov("a", "lag_a", window_size=10, min_periods=5, ddof=1).tail(1)
+    ).item()
+    val_2 = df2.select(
+        pl.rolling_cov("a", "lag_a", window_size=10, min_periods=5, ddof=1).tail(1)
+    ).item()
+
+    assert val_1 == val_2
+
+
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
 def test_rolling_empty_window_9406(time_unit: TimeUnit) -> None:
     datecol = pl.Series(
