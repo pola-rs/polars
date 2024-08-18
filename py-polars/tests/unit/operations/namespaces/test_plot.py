@@ -12,6 +12,7 @@ def test_dataframe_plot() -> None:
     )
     df.plot.line(x="length", y="width", color="species").to_json()
     df.plot.point(x="length", y="width", size="species").to_json()
+    df.plot.scatter(x="length", y="width", size="species").to_json()
     df.plot.bar(x="length", y="width", color="species").to_json()
     df.plot.area(x="length", y="width", color="species").to_json()
 
@@ -23,7 +24,6 @@ def test_series_plot() -> None:
     s.plot.hist().to_json()
     s.plot.line().to_json()
     s.plot.point().to_json()
-    s.plot.scatter().to_json()
 
 
 def test_empty_dataframe() -> None:
