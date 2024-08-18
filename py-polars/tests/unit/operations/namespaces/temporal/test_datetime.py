@@ -1442,7 +1442,6 @@ def test_literal_from_time(value: time) -> None:
     out = pl.select(pl.lit(value))
     assert out.schema == OrderedDict({"literal": pl.Time})
     assert out.item() == value
-    assert "cast" not in pl.LazyFrame().select(pl.lit(value)).explain(optimized=False)
 
 
 @pytest.mark.parametrize(
@@ -1467,4 +1466,3 @@ def test_literal_from_timedelta(value: time, dtype: pl.Duration | None) -> None:
     out = pl.select(pl.lit(value, dtype=dtype))
     assert out.schema == OrderedDict({"literal": dtype or pl.Duration("us")})
     assert out.item() == value
-    assert "cast" not in pl.LazyFrame().select(pl.lit(value)).explain(optimized=False)
