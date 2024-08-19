@@ -67,10 +67,11 @@ pub(crate) mod infer;
 use std::io::Write;
 use std::num::NonZeroUsize;
 use std::ops::Deref;
-use polars_error::{polars_bail, PolarsResult};
+
 use arrow::legacy::conversion::chunk_to_struct;
 use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
+use polars_error::{polars_bail, PolarsResult};
 use polars_json::json::write::FallibleStreamingIterator;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
