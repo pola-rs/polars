@@ -3010,7 +3010,7 @@ class Series:
                 1
                 3
         ]
-        >>> s.filter(pl.element() < 2)
+        >>> s.filter(pl.element() != 2)
         shape: (2,)
         Series: 'a' [i64]
         [
