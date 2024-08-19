@@ -151,7 +151,7 @@ impl ExprIR {
         self.output_name = OutputName::Alias(name)
     }
 
-    pub(crate) fn output_name_inner(&self) -> &OutputName {
+    pub fn output_name_inner(&self) -> &OutputName {
         &self.output_name
     }
 
