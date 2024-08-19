@@ -7370,7 +7370,7 @@ class Series:
         .. versionchanged:: 1.6.0
             In prior versions of Polars, HvPlot was the plotting backend. If you would
             like to restore the previous plotting functionality, all you need to do
-            add `import hvplot.polars` at the top of your script and replace
+            is add `import hvplot.polars` at the top of your script and replace
             `df.plot` with `df.hvplot`.
 
         Polars does not implement plotting logic itself, but instead defers to
@@ -7384,7 +7384,7 @@ class Series:
           `alt.Chart(s.to_frame()).transform_density(s.name, as_=[s.name, 'density']).mark_area().encode(x=s.name, y='density:Q', **kwargs).interactive()`
         - for any other attribute `attr`, `s.plot.attr(**kwargs)`
           is shorthand for
-          `alt.Chart(s.to_frame().with_row_index()).mark_attr().encode(x=s.name, y='index', **kwargs).interactive()`
+          `alt.Chart(s.to_frame().with_row_index()).mark_attr().encode(x='index', y=s.name, **kwargs).interactive()`
 
         Examples
         --------

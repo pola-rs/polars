@@ -1,26 +1,14 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable, Dict, Union
+from typing import TYPE_CHECKING, Callable
 
 from polars.dependencies import altair as alt
 
 if TYPE_CHECKING:
     import sys
 
-    from altair.typing import (
-        ChannelColor,
-        ChannelOrder,
-        ChannelSize,
-        ChannelTooltip,
-        ChannelX,
-        ChannelY,
-        EncodeKwds,
-    )
+    from altair.typing import EncodeKwds
 
-    if sys.version_info >= (3, 10):
-        from typing import TypeAlias
-    else:
-        from typing_extensions import TypeAlias
     if sys.version_info >= (3, 11):
         from typing import Unpack
     else:
@@ -28,20 +16,11 @@ if TYPE_CHECKING:
 
     from polars import Series
 
-    Encodings: TypeAlias = Dict[
-        str,
-        Union[
-            ChannelX, ChannelY, ChannelColor, ChannelOrder, ChannelSize, ChannelTooltip
-        ],
-    ]
-
 
 class SeriesPlot:
     """Series.plot namespace."""
 
     _accessor = "plot"
-
-    chart: alt.Chart
 
     def __init__(self, s: Series) -> None:
         name = s.name or "value"
@@ -67,7 +46,7 @@ class SeriesPlot:
         .. versionchanged:: 1.6.0
             In prior versions of Polars, HvPlot was the plotting backend. If you would
             like to restore the previous plotting functionality, all you need to do
-            add `import hvplot.polars` at the top of your script and replace
+            is add `import hvplot.polars` at the top of your script and replace
             `df.plot` with `df.hvplot`.
 
         Parameters
@@ -109,7 +88,7 @@ class SeriesPlot:
         .. versionchanged:: 1.6.0
             In prior versions of Polars, HvPlot was the plotting backend. If you would
             like to restore the previous plotting functionality, all you need to do
-            add `import hvplot.polars` at the top of your script and replace
+            is add `import hvplot.polars` at the top of your script and replace
             `df.plot` with `df.hvplot`.
 
         Parameters
@@ -152,7 +131,7 @@ class SeriesPlot:
         .. versionchanged:: 1.6.0
             In prior versions of Polars, HvPlot was the plotting backend. If you would
             like to restore the previous plotting functionality, all you need to do
-            add `import hvplot.polars` at the top of your script and replace
+            is add `import hvplot.polars` at the top of your script and replace
             `df.plot` with `df.hvplot`.
 
         Parameters

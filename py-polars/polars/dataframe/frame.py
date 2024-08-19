@@ -614,7 +614,7 @@ class DataFrame:
         .. versionchanged:: 1.6.0
             In prior versions of Polars, HvPlot was the plotting backend. If you would
             like to restore the previous plotting functionality, all you need to do
-            add `import hvplot.polars` at the top of your script and replace
+            is add `import hvplot.polars` at the top of your script and replace
             `df.plot` with `df.hvplot`.
 
         Polars does not implement plotting logic itself, but instead defers to

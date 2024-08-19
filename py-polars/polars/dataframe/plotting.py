@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable, Dict, Union
+from typing import TYPE_CHECKING, Callable, Dict, Union
 
 if TYPE_CHECKING:
     import sys
@@ -38,12 +38,10 @@ if TYPE_CHECKING:
 class DataFramePlot:
     """DataFrame.plot namespace."""
 
-    chart: alt.Chart
-
     def __init__(self, df: DataFrame) -> None:
         import altair as alt
 
-        self.chart = alt.Chart(df)
+        self._chart = alt.Chart(df)
 
     def bar(
         self,
@@ -68,7 +66,7 @@ class DataFramePlot:
         .. versionchanged:: 1.6.0
             In prior versions of Polars, HvPlot was the plotting backend. If you would
             like to restore the previous plotting functionality, all you need to do
-            add `import hvplot.polars` at the top of your script and replace
+            is add `import hvplot.polars` at the top of your script and replace
             `df.plot` with `df.hvplot`.
 
         Parameters
@@ -106,7 +104,7 @@ class DataFramePlot:
             encodings["color"] = color
         if tooltip is not None:
             encodings["tooltip"] = tooltip
-        return self.chart.mark_bar().encode(**encodings, **kwargs).interactive()
+        return self._chart.mark_bar().encode(**encodings, **kwargs).interactive()
 
     def line(
         self,
@@ -131,7 +129,7 @@ class DataFramePlot:
         .. versionchanged:: 1.6.0
             In prior versions of Polars, HvPlot was the plotting backend. If you would
             like to restore the previous plotting functionality, all you need to do
-            add `import hvplot.polars` at the top of your script and replace
+            is add `import hvplot.polars` at the top of your script and replace
             `df.plot` with `df.hvplot`.
 
         Parameters
@@ -172,7 +170,7 @@ class DataFramePlot:
             encodings["order"] = order
         if tooltip is not None:
             encodings["tooltip"] = tooltip
-        return self.chart.mark_line().encode(**encodings, **kwargs).interactive()
+        return self._chart.mark_line().encode(**encodings, **kwargs).interactive()
 
     def point(
         self,
@@ -181,7 +179,8 @@ class DataFramePlot:
         color: ChannelColor | None = None,
         size: ChannelSize | None = None,
         tooltip: ChannelTooltip | None = None,
-        **kwargs: Any,
+        /,
+        **kwargs: Unpack[EncodeKwds],
     ) -> alt.Chart:
         """
         Draw scatter plot.
@@ -197,7 +196,7 @@ class DataFramePlot:
         .. versionchanged:: 1.6.0
             In prior versions of Polars, HvPlot was the plotting backend. If you would
             like to restore the previous plotting functionality, all you need to do
-            add `import hvplot.polars` at the top of your script and replace
+            is add `import hvplot.polars` at the top of your script and replace
             `df.plot` with `df.hvplot`.
 
         Parameters
@@ -238,9 +237,9 @@ class DataFramePlot:
         if tooltip is not None:
             encodings["tooltip"] = tooltip
         return (
-            self.chart.mark_point()
+            self._chart.mark_point()
             .encode(
-                **encodings,  # type: ignore[arg-type]
+                **encodings,
                 **kwargs,
             )
             .interactive()
@@ -250,7 +249,7 @@ class DataFramePlot:
     scatter = point
 
     def __getattr__(self, attr: str) -> Callable[..., alt.Chart]:
-        method = getattr(self.chart, f"mark_{attr}", None)
+        method = getattr(self._chart, f"mark_{attr}", None)
         if method is None:
             msg = "Altair has no method 'mark_{attr}'"
             raise AttributeError(msg)
