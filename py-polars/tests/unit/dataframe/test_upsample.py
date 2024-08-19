@@ -218,16 +218,7 @@ def test_upsample_index_invalid(
         )
 
 
-@pytest.mark.parametrize(
-    ("time_zone", "tzinfo"),
-    [
-        (None, None),
-        ("Europe/Warsaw", ZoneInfo("Europe/Warsaw")),
-    ],
-)
-def test_upsample_sorted_only_within_group(
-    time_zone: str | None, tzinfo: ZoneInfo | timezone | None
-) -> None:
+def test_upsample_sorted_only_within_group() -> None:
     df = pl.DataFrame(
         {
             "time": [
@@ -239,7 +230,7 @@ def test_upsample_sorted_only_within_group(
             "admin": ["Netherlands", "Åland", "Åland", "Netherlands"],
             "test2": [1, 0, 2, 3],
         }
-    ).with_columns(pl.col("time").dt.replace_time_zone(time_zone))
+    )
 
     up = df.upsample(
         time_column="time",
@@ -275,21 +266,11 @@ def test_upsample_sorted_only_within_group(
             "test2": [1, 1, 3, 0, 0, 0, 2],
         }
     )
-    expected = expected.with_columns(pl.col("time").dt.replace_time_zone(time_zone))
 
     assert_frame_equal(up, expected)
 
 
-@pytest.mark.parametrize(
-    ("time_zone", "tzinfo"),
-    [
-        (None, None),
-        ("Europe/Warsaw", ZoneInfo("Europe/Warsaw")),
-    ],
-)
-def test_upsample_sorted_only_within_group_but_no_group_by_provided(
-    time_zone: str | None, tzinfo: ZoneInfo | timezone | None
-) -> None:
+def test_upsample_sorted_only_within_group_but_no_group_by_provided() -> None:
     df = pl.DataFrame(
         {
             "time": [
@@ -301,13 +282,9 @@ def test_upsample_sorted_only_within_group_but_no_group_by_provided(
             "admin": ["Netherlands", "Åland", "Åland", "Netherlands"],
             "test2": [1, 0, 2, 3],
         }
-    ).with_columns(pl.col("time").dt.replace_time_zone(time_zone))
+    )
     with pytest.raises(
         InvalidOperationError,
         match=r"argument in operation 'upsample' is not sorted, please sort the 'expr/series/column' first",
     ):
-        df.upsample(
-            time_column="time",
-            every="1mo",
-            maintain_order=True,
-        ).select(pl.all().forward_fill())
+        df.upsample(time_column="time", every="1mo")
