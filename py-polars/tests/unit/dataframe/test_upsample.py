@@ -216,3 +216,98 @@ def test_upsample_index_invalid(
             every="1h",
             maintain_order=maintain_order,
         )
+
+
+@pytest.mark.parametrize(
+    ("time_zone", "tzinfo"),
+    [
+        (None, None),
+        ("Europe/Warsaw", ZoneInfo("Europe/Warsaw")),
+    ],
+)
+def test_upsample_sorted_only_within_group(
+    time_zone: str | None, tzinfo: ZoneInfo | timezone | None
+) -> None:
+    df = pl.DataFrame(
+        {
+            "time": [
+                datetime(2021, 4, 1),
+                datetime(2021, 2, 1),
+                datetime(2021, 5, 1),
+                datetime(2021, 6, 1),
+            ],
+            "admin": ["Netherlands", "Åland", "Åland", "Netherlands"],
+            "test2": [1, 0, 2, 3],
+        }
+    ).with_columns(pl.col("time").dt.replace_time_zone(time_zone))
+
+    up = df.upsample(
+        time_column="time",
+        every="1mo",
+        group_by="admin",
+        maintain_order=True,
+    ).select(pl.all().forward_fill())
+
+    # this print will panic if timezones feature is not activated
+    # don't remove
+    print(up)
+
+    expected = pl.DataFrame(
+        {
+            "time": [
+                datetime(2021, 4, 1, 0, 0),
+                datetime(2021, 5, 1, 0, 0),
+                datetime(2021, 6, 1, 0, 0),
+                datetime(2021, 2, 1, 0, 0),
+                datetime(2021, 3, 1, 0, 0),
+                datetime(2021, 4, 1, 0, 0),
+                datetime(2021, 5, 1, 0, 0),
+            ],
+            "admin": [
+                "Netherlands",
+                "Netherlands",
+                "Netherlands",
+                "Åland",
+                "Åland",
+                "Åland",
+                "Åland",
+            ],
+            "test2": [1, 1, 3, 0, 0, 0, 2],
+        }
+    )
+    expected = expected.with_columns(pl.col("time").dt.replace_time_zone(time_zone))
+
+    assert_frame_equal(up, expected)
+
+
+@pytest.mark.parametrize(
+    ("time_zone", "tzinfo"),
+    [
+        (None, None),
+        ("Europe/Warsaw", ZoneInfo("Europe/Warsaw")),
+    ],
+)
+def test_upsample_sorted_only_within_group_but_no_group_by_provided(
+    time_zone: str | None, tzinfo: ZoneInfo | timezone | None
+) -> None:
+    df = pl.DataFrame(
+        {
+            "time": [
+                datetime(2021, 4, 1),
+                datetime(2021, 2, 1),
+                datetime(2021, 5, 1),
+                datetime(2021, 6, 1),
+            ],
+            "admin": ["Netherlands", "Åland", "Åland", "Netherlands"],
+            "test2": [1, 0, 2, 3],
+        }
+    ).with_columns(pl.col("time").dt.replace_time_zone(time_zone))
+    with pytest.raises(
+        InvalidOperationError,
+        match=r"argument in operation 'upsample' is not sorted, please sort the 'expr/series/column' first",
+    ):
+        df.upsample(
+            time_column="time",
+            every="1mo",
+            maintain_order=True,
+        ).select(pl.all().forward_fill())
