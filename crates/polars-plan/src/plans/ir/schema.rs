@@ -151,7 +151,9 @@ impl IR {
             | Join { schema, .. }
             | HStack { schema, .. }
             | ExtContext { schema, .. }
-            | SimpleProjection { columns: schema, .. } => schema.clone(),
+            | SimpleProjection {
+                columns: schema, ..
+            } => schema.clone(),
             MapFunction { input, function } => {
                 let input_schema = IR::schema_with_cache(*input, arena, cache);
                 function.schema(&input_schema).unwrap().into_owned()

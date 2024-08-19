@@ -14,7 +14,7 @@ use polars_utils::itertools::Itertools;
 use recursive::recursive;
 use slotmap::{SecondaryMap, SlotMap};
 
-use super::{PhysNode, PhysNodeKind, PhysNodeKey};
+use super::{PhysNode, PhysNodeKey, PhysNodeKind};
 use crate::expression::StreamExpr;
 use crate::graph::{Graph, GraphNodeKey};
 use crate::nodes;
@@ -130,10 +130,7 @@ fn to_graph_rec<'a>(
                 [input_key],
             )
         },
-        Reduce {
-            input,
-            exprs,
-        } => {
+        Reduce { input, exprs } => {
             let input_key = to_graph_rec(*input, ctx)?;
             let input_schema = &ctx.phys_sm[*input].output_schema;
 
@@ -142,8 +139,7 @@ fn to_graph_rec<'a>(
 
             for e in exprs {
                 let (red, input_node) =
-                    into_reduction(e.node(), ctx.expr_arena, input_schema)?
-                        .expect("invariant");
+                    into_reduction(e.node(), ctx.expr_arena, input_schema)?.expect("invariant");
                 reductions.push(red);
 
                 let input_phys =
@@ -157,17 +153,11 @@ fn to_graph_rec<'a>(
                 [input_key],
             )
         },
-        SimpleProjection {
-            input,
-            columns,
-        } => {
+        SimpleProjection { input, columns } => {
             let input_schema = ctx.phys_sm[*input].output_schema.clone();
             let input_key = to_graph_rec(*input, ctx)?;
             ctx.graph.add_node(
-                nodes::simple_projection::SimpleProjectionNode::new(
-                    columns.clone(),
-                    input_schema,
-                ),
+                nodes::simple_projection::SimpleProjectionNode::new(columns.clone(), input_schema),
                 [input_key],
             )
         },
@@ -181,10 +171,7 @@ fn to_graph_rec<'a>(
             )
         },
 
-        InMemoryMap {
-            input,
-            map,
-        } => {
+        InMemoryMap { input, map } => {
             let input_schema = ctx.phys_sm[*input].output_schema.clone();
             let input_key = to_graph_rec(*input, ctx)?;
             ctx.graph.add_node(
@@ -248,7 +235,10 @@ fn to_graph_rec<'a>(
             inputs,
             null_extend,
         } => {
-            let input_schemas = inputs.iter().map(|i| ctx.phys_sm[*i].output_schema.clone()).collect_vec();
+            let input_schemas = inputs
+                .iter()
+                .map(|i| ctx.phys_sm[*i].output_schema.clone())
+                .collect_vec();
             let input_keys = inputs
                 .iter()
                 .map(|i| to_graph_rec(*i, ctx))

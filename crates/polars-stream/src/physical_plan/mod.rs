@@ -29,7 +29,10 @@ pub struct PhysNode {
 
 impl PhysNode {
     pub fn new(output_schema: Arc<Schema>, kind: PhysNodeKind) -> Self {
-        Self { output_schema, kind }
+        Self {
+            output_schema,
+            kind,
+        }
     }
 }
 
