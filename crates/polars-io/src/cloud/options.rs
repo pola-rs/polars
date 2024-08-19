@@ -297,8 +297,6 @@ impl CloudOptions {
             )],
         );
 
-        dbg!(&builder);
-
         if builder
             .get_config_value(&AmazonS3ConfigKey::DefaultRegion)
             .is_none()
