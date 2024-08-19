@@ -6628,6 +6628,45 @@ class DataFrame:
         │ 2019-01-01 ┆ 83.12      ┆ 4696 │
         └────────────┴────────────┴──────┘
 
+        If we use `coalesce=True`,
+        - The missing key values on second table are first filled based on `strategy`.
+        - Then, the joined with the first dataframe.
+        In this example, since date `2016-03-01` is missing in the first table,
+        it is filled with `2016-01-01` from the second table.
+        And since the strategy is `backward`, it is filled with `4164`.
+
+        >>> population.join_asof(gdp, on="date", strategy="backward", coalesce=True)
+        shape: (3, 3)
+        ┌────────────┬────────────┬──────┐
+        │ date       ┆ population ┆ gdp  │
+        │ ---        ┆ ---        ┆ ---  │
+        │ date       ┆ f64        ┆ i64  │
+        ╞════════════╪════════════╪══════╡
+        │ 2016-03-01 ┆ 82.19      ┆ 4164 │
+        │ 2018-08-01 ┆ 82.66      ┆ 4566 │
+        │ 2019-01-01 ┆ 83.12      ┆ 4696 │
+        └────────────┴────────────┴──────┘
+
+        But if we use `coalesce=False`,
+        - the missing key values on the second table are not filled.
+        - But the tables joined by retaining the both key columns.
+        In this example, the `date` columns are joined based on `strategy`;
+        and both the `date` columns are retained in the result.
+        Note how the `date` column in the second table is used to join with
+        the `date` column in the first table based on the `strategy` as shown below:
+
+        >>> population.join_asof(gdp, on="date", strategy="backward", coalesce=False)
+        shape: (3, 4)
+        ┌────────────┬────────────┬────────────┬──────┐
+        │ date       ┆ population ┆ date_right ┆ gdp  │
+        │ ---        ┆ ---        ┆ ---        ┆ ---  │
+        │ date       ┆ f64        ┆ date       ┆ i64  │
+        ╞════════════╪════════════╪════════════╪══════╡
+        │ 2016-03-01 ┆ 82.19      ┆ 2016-01-01 ┆ 4164 │
+        │ 2018-08-01 ┆ 82.66      ┆ 2018-01-01 ┆ 4566 │
+        │ 2019-01-01 ┆ 83.12      ┆ 2019-01-01 ┆ 4696 │
+        └────────────┴────────────┴────────────┴──────┘
+
         Note how:
 
         - date `2016-03-01` from `population` is matched with `2016-01-01` from `gdp`;
@@ -6708,7 +6747,6 @@ class DataFrame:
         │ Netherlands ┆ 2018-08-01 ┆ 17.32      ┆ 910  │
         │ Netherlands ┆ 2019-01-01 ┆ 17.4       ┆ 910  │
         └─────────────┴────────────┴────────────┴──────┘
-
         """
         if not isinstance(other, DataFrame):
             msg = f"expected `other` join table to be a DataFrame, got {type(other).__name__!r}"
