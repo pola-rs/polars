@@ -277,7 +277,7 @@ impl CloudOptions {
             &mut builder,
             &[(
                 Path::new("~/.aws/config"),
-                &[("region = (.*)\n", AmazonS3ConfigKey::Region)],
+                &[("region\\s*=\\s*(.*)\n", AmazonS3ConfigKey::Region)],
             )],
         );
         read_config(
@@ -285,14 +285,19 @@ impl CloudOptions {
             &[(
                 Path::new("~/.aws/credentials"),
                 &[
-                    ("aws_access_key_id = (.*)\n", AmazonS3ConfigKey::AccessKeyId),
                     (
-                        "aws_secret_access_key = (.*)\n",
+                        "aws_access_key_id\\s*=\\s*(.*)\n",
+                        AmazonS3ConfigKey::AccessKeyId,
+                    ),
+                    (
+                        "aws_secret_access_key\\s*=\\s*(.*)\n",
                         AmazonS3ConfigKey::SecretAccessKey,
                     ),
                 ],
             )],
         );
+
+        dbg!(&builder);
 
         if builder
             .get_config_value(&AmazonS3ConfigKey::DefaultRegion)
