@@ -2986,7 +2986,7 @@ class Series:
         return self
 
     def filter(
-        self, predicate: Series | list[bool] | IntoExpr
+        self, predicate: Series | list[bool] | Expr
     ) -> Self:
         """
         Filter elements by a boolean mask.
