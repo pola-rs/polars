@@ -495,7 +495,7 @@ fn test_with_column_prune() -> PolarsResult<()> {
         matches!(lp, SimpleProjection { .. } | DataFrameScan { .. })
     }));
     assert_eq!(
-        q.schema().unwrap().as_ref(),
+        q.collect_schema().unwrap().as_ref(),
         &Schema::from_iter([Field::new("c1", DataType::Int32)])
     );
     Ok(())
