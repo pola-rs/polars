@@ -121,9 +121,6 @@ fn upsample_impl(
     stable: bool,
 ) -> PolarsResult<DataFrame> {
     let s = source.column(index_column)?;
-    if by.is_empty() {
-        s.ensure_sorted_arg("upsample")?;
-    }
     let time_type = s.dtype();
     if matches!(time_type, DataType::Date) {
         let mut df = source.clone();
@@ -176,7 +173,6 @@ fn upsample_impl(
         // don't parallelize this, this may SO on large data.
         gb?.apply(|df| {
             let index_column = df.column(index_column)?;
-            index_column.ensure_sorted_arg("upsample")?;
             upsample_single_impl(&df, index_column, every)
         })
     }
@@ -187,6 +183,7 @@ fn upsample_single_impl(
     index_column: &Series,
     every: Duration,
 ) -> PolarsResult<DataFrame> {
+    index_column.ensure_sorted_arg("upsample")?;
     let index_col_name = index_column.name();
 
     use DataType::*;
