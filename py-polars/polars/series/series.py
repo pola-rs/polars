@@ -2985,9 +2985,7 @@ class Series:
                 raise
         return self
 
-    def filter(
-        self, predicate: Series | list[bool] | Expr
-    ) -> Self:
+    def filter(self, predicate: Series | list[bool] | Expr) -> Series:
         """
         Filter elements by a boolean mask.
 
@@ -3021,12 +3019,7 @@ class Series:
         ]
         """
         if isinstance(predicate, pl.Expr):
-            return (
-                self.to_frame("")
-                .filter(predicate)
-                .to_series()
-                .rename(self.name)
-            )
+            return self.to_frame("").filter(predicate).to_series().rename(self.name)
         elif isinstance(predicate, list):
             predicate = Series("", predicate)
         return self._from_pyseries(self._s.filter(predicate._s))
