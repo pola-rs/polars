@@ -257,15 +257,20 @@ class ExprBinaryNameSpace:
         r"""
         Get the size of binary values in the given unit.
 
+        Parameters
+        ----------
+        unit : {'b', 'kb', 'mb', 'gb', 'tb'}
+            Scale the returned size to the given unit.
+
         Returns
         -------
         Expr
-            Expression of data type :class:`UInt32`.
+            Expression of data type :class:`UInt32` or `Float64`.
 
         Examples
         --------
         >>> from os import urandom
-        >>> df = pl.DataFrame({"data": [urandom(n) for n in (512, 256, 2560, 1024)]})
+        >>> df = pl.DataFrame({"data": [urandom(n) for n in (512, 256, 1024)]})
         >>> df.with_columns(  # doctest: +IGNORE_RESULT
         ...     n_bytes=pl.col("data").bin.size(),
         ...     n_kilobytes=pl.col("data").bin.size("kb"),
@@ -278,7 +283,6 @@ class ExprBinaryNameSpace:
         ╞═════════════════════════════════╪═════════╪═════════════╡
         │ b"y?~B\x83\xf4V\x07\xd3\xfb\xb… ┆ 512     ┆ 0.5         │
         │ b"\xee$4@f\xc14\x07\x8e\x88\x1… ┆ 256     ┆ 0.25        │
-        │ b"~\x17\x9c\xb1\xf4\xdb?\xe9\x… ┆ 2560    ┆ 2.5         │
         │ b"\x80\xbd\xb9nEq;2\x99$\xf9\x… ┆ 1024    ┆ 1.0         │
         └─────────────────────────────────┴─────────┴─────────────┘
         """
