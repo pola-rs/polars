@@ -239,10 +239,6 @@ def test_upsample_sorted_only_within_group() -> None:
         maintain_order=True,
     ).select(pl.all().forward_fill())
 
-    # this print will panic if timezones feature is not activated
-    # don't remove
-    print(up)
-
     expected = pl.DataFrame(
         {
             "time": [
