@@ -65,3 +65,9 @@ def test_schema_in_map_elements_returns_scalar() -> None:
 
     assert (q.collect_schema()) == schema
     assert q.collect().schema == schema
+
+
+def test_ir_cache_unique_18198() -> None:
+    lf = pl.LazyFrame({"a": [1]})
+    lf.collect_schema()
+    assert pl.concat([lf, lf]).collect().to_dict(as_series=False) == {"a": [1, 1]}
