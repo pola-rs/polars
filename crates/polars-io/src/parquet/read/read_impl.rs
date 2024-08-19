@@ -1022,7 +1022,7 @@ impl BatchedParquetReader {
 
                 // Re-use the same ChunkedArray
                 if ca.len() < max_len {
-                    *ca = ca.new_from_index(max_len, 0);
+                    *ca = ca.new_from_index(0, max_len);
                 }
 
                 for df in &mut dfs {

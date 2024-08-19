@@ -12,6 +12,12 @@ pub trait PolarsTruncate {
         Self: Sized;
 }
 
+#[inline(always)]
+pub(crate) fn fast_truncate(t: i64, every: i64) -> i64 {
+    let remainder = t % every;
+    t - (remainder + every * (remainder < 0) as i64)
+}
+
 impl PolarsTruncate for DatetimeChunked {
     fn truncate(&self, tz: Option<&Tz>, every: &StringChunked) -> PolarsResult<Self> {
         let time_zone = self.time_zone();
@@ -35,10 +41,7 @@ impl PolarsTruncate for DatetimeChunked {
                         TimeUnit::Nanoseconds => every_parsed.duration_ns(),
                     };
                     return Ok(self
-                        .apply_values(|t| {
-                            let remainder = t % every;
-                            t - (remainder + every * (remainder < 0) as i64)
-                        })
+                        .apply_values(|t| fast_truncate(t, every))
                         .into_datetime(self.time_unit(), time_zone.clone()));
                 } else {
                     let w = Window::new(every_parsed, every_parsed, offset);

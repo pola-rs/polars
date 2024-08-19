@@ -376,7 +376,7 @@ class StringNameSpace:
         self, pattern: str | Expr, *, literal: bool = False, strict: bool = True
     ) -> Series:
         """
-        Check if strings in Series contain a substring that matches a regex.
+        Check if the string contains a substring that matches a pattern.
 
         Parameters
         ----------
@@ -480,7 +480,7 @@ class StringNameSpace:
 
         See Also
         --------
-        contains : Check if string contains a substring that matches a regex.
+        contains : Check if the string contains a substring that matches a pattern.
 
         Examples
         --------
@@ -535,7 +535,7 @@ class StringNameSpace:
 
         See Also
         --------
-        contains : Check if string contains a substring that matches a regex.
+        contains : Check if the string contains a substring that matches a pattern.
         starts_with : Check if string values start with a substring.
 
         Examples
@@ -562,7 +562,7 @@ class StringNameSpace:
 
         See Also
         --------
-        contains : Check if string contains a substring that matches a regex.
+        contains : Check if the string contains a substring that matches a pattern.
         ends_with : Check if string values end with a substring.
 
         Examples

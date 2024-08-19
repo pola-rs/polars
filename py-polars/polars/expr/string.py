@@ -923,7 +923,7 @@ class ExprStringNameSpace:
         self, pattern: str | Expr, *, literal: bool = False, strict: bool = True
     ) -> Expr:
         """
-        Check if string contains a substring that matches a pattern.
+        Check if the string contains a substring that matches a pattern.
 
         Parameters
         ----------
@@ -1034,7 +1034,7 @@ class ExprStringNameSpace:
 
         See Also
         --------
-        contains : Check if string contains a substring that matches a regex.
+        contains : Check if the string contains a substring that matches a pattern.
 
         Examples
         --------
@@ -1093,7 +1093,7 @@ class ExprStringNameSpace:
 
         See Also
         --------
-        contains : Check if string contains a substring that matches a regex.
+        contains : Check if the string contains a substring that matches a pattern.
         starts_with : Check if string values start with a substring.
 
         Examples
@@ -1156,7 +1156,7 @@ class ExprStringNameSpace:
 
         See Also
         --------
-        contains : Check if string contains a substring that matches a regex.
+        contains : Check if the string contains a substring that matches a pattern.
         ends_with : Check if string values end with a substring.
 
         Examples

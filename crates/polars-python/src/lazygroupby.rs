@@ -43,7 +43,7 @@ impl PyLazyGroupBy {
         let schema = match schema {
             Some(schema) => Arc::new(schema.0),
             None => LazyFrame::from(lgb.logical_plan.clone())
-                .schema()
+                .collect_schema()
                 .map_err(PyPolarsErr::from)?,
         };
 

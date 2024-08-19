@@ -2404,7 +2404,7 @@ class Series:
             If None given, we determine the boundaries based on the data.
         bin_count
             If no bins provided, this will be used to determine
-            the distance of the bins
+            the distance of the bins.
         include_breakpoint
             Include a column that indicates the upper breakpoint.
         include_category
@@ -2418,18 +2418,17 @@ class Series:
         --------
         >>> a = pl.Series("a", [1, 3, 8, 8, 2, 1, 3])
         >>> a.hist(bin_count=4)
-        shape: (5, 3)
-        ┌────────────┬─────────────┬───────┐
-        │ breakpoint ┆ category    ┆ count │
-        │ ---        ┆ ---         ┆ ---   │
-        │ f64        ┆ cat         ┆ u32   │
-        ╞════════════╪═════════════╪═══════╡
-        │ 0.0        ┆ (-inf, 0.0] ┆ 0     │
-        │ 2.25       ┆ (0.0, 2.25] ┆ 3     │
-        │ 4.5        ┆ (2.25, 4.5] ┆ 2     │
-        │ 6.75       ┆ (4.5, 6.75] ┆ 0     │
-        │ inf        ┆ (6.75, inf] ┆ 2     │
-        └────────────┴─────────────┴───────┘
+        shape: (4, 3)
+        ┌────────────┬───────────────┬───────┐
+        │ breakpoint ┆ category      ┆ count │
+        │ ---        ┆ ---           ┆ ---   │
+        │ f64        ┆ cat           ┆ u32   │
+        ╞════════════╪═══════════════╪═══════╡
+        │ 2.75       ┆ (0.993, 2.75] ┆ 3     │
+        │ 4.5        ┆ (2.75, 4.5]   ┆ 2     │
+        │ 6.25       ┆ (4.5, 6.25]   ┆ 0     │
+        │ 8.0        ┆ (6.25, 8.0]   ┆ 2     │
+        └────────────┴───────────────┴───────┘
         """
         out = (
             self.to_frame()
