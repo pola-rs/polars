@@ -284,10 +284,12 @@ class ExprDateTimeNameSpace:
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
 
-        Each date/datetime in the first half of the interval
-        is mapped to the start of its bucket.
-        Each date/datetime in the second half of the interval
-        is mapped to the end of its bucket.
+        - Each date/datetime in the first half of the interval
+          is mapped to the start of its bucket.
+        - Each date/datetime in the second half of the interval
+          is mapped to the end of its bucket.
+        - Half-way points are mapped to the start of their bucket.
+
         Ambiguous results are localised using the DST offset of the original timestamp -
         for example, rounding `'2022-11-06 01:20:00 CST'` by `'1h'` results in
         `'2022-11-06 01:00:00 CST'`, whereas rounding `'2022-11-06 01:20:00 CDT'` by
