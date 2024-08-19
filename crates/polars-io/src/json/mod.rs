@@ -67,7 +67,7 @@ pub(crate) mod infer;
 use std::io::Write;
 use std::num::NonZeroUsize;
 use std::ops::Deref;
-
+use polars_error::{polars_bail, PolarsResult};
 use arrow::legacy::conversion::chunk_to_struct;
 use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
@@ -222,15 +222,15 @@ where
     json_format: JsonFormat,
 }
 
-pub fn remove_bom(bytes: &[u8]) -> &[u8] {
+pub fn remove_bom(bytes: &[u8]) -> PolarsResult<&[u8]> {
     if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
         // UTF-8 BOM
-        &bytes[3..]
+        Ok(&bytes[3..])
     } else if bytes.starts_with(&[0xFE, 0xFF]) || bytes.starts_with(&[0xFF, 0xFE]) {
         // UTF-16 BOM
-        polars_err!(ComputeError: "utf-16 not supported")
+        polars_bail!(ComputeError: "utf-16 not supported")
     } else {
-        bytes
+        Ok(bytes)
     }
 }
 impl<'a, R> SerReader<R> for JsonReader<'a, R>
@@ -263,7 +263,7 @@ where
     /// error is returned or whether elements of incompatible dtypes are replaced with `null`.
     fn finish(mut self) -> PolarsResult<DataFrame> {
         let pre_rb: ReaderBytes = (&mut self.reader).into();
-        let bytes = remove_bom(pre_rb.deref());
+        let bytes = remove_bom(pre_rb.deref())?;
         let rb = ReaderBytes::Borrowed(bytes);
         let out = match self.json_format {
             JsonFormat::Json => {
