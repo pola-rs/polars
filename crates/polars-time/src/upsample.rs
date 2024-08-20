@@ -121,7 +121,6 @@ fn upsample_impl(
     stable: bool,
 ) -> PolarsResult<DataFrame> {
     let s = source.column(index_column)?;
-    s.ensure_sorted_arg("upsample")?;
     let time_type = s.dtype();
     if matches!(time_type, DataType::Date) {
         let mut df = source.clone();
@@ -184,6 +183,7 @@ fn upsample_single_impl(
     index_column: &Series,
     every: Duration,
 ) -> PolarsResult<DataFrame> {
+    index_column.ensure_sorted_arg("upsample")?;
     let index_col_name = index_column.name();
 
     use DataType::*;
