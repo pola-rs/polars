@@ -21,22 +21,24 @@ pub(crate) fn collect_statistics(
     md: &RowGroupMetaData,
     schema: &ArrowSchema,
 ) -> PolarsResult<Option<BatchStats>> {
-    let mut stats = vec![];
+    let stats = schema
+        .fields
+        .iter()
+        .map(|field| {
+            let st = deserialize(field, md)?;
+            Ok(ColumnStats::from_arrow_stats(st, field))
+        })
+        .collect::<PolarsResult<Vec<_>>>()?;
 
-    for field in schema.fields.iter() {
-        let st = deserialize(field, md)?;
-        stats.push(ColumnStats::from_arrow_stats(st, field));
+    if stats.is_empty() {
+        return Ok(None);
     }
 
-    Ok(if stats.is_empty() {
-        None
-    } else {
-        Some(BatchStats::new(
-            Arc::new(schema.into()),
-            stats,
-            Some(md.num_rows()),
-        ))
-    })
+    Ok(Some(BatchStats::new(
+        Arc::new(schema.into()),
+        stats,
+        Some(md.num_rows()),
+    )))
 }
 
 pub(super) fn read_this_row_group(
