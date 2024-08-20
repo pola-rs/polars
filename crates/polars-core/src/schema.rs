@@ -4,6 +4,7 @@ use std::hash::{Hash, Hasher};
 use arrow::datatypes::ArrowSchemaRef;
 use indexmap::map::MutableKeys;
 use indexmap::IndexMap;
+use polars_utils::itertools::Itertools;
 use polars_utils::aliases::PlRandomState;
 #[cfg(feature = "serde-lazy")]
 use serde::{Deserialize, Serialize};
@@ -425,6 +426,21 @@ impl Schema {
             *dt = st
         }
         Ok(changed)
+    }
+    
+    /// Generates another schema with just the specified columns selected from this one.
+    pub fn select<I>(&self, columns: I) -> PolarsResult<Self>
+    where
+        I: IntoIterator,
+        I::Item: AsRef<str>
+    {
+        Ok(Self {
+            inner: columns.into_iter().map(|c| {
+                let name = c.as_ref();
+                let dtype = self.inner.get(name).ok_or_else(|| polars_err!(col_not_found = name))?;
+                PolarsResult::Ok((SmartString::from(name), dtype.clone()))
+            }).try_collect()?
+        })
     }
 }
 

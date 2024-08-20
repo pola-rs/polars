@@ -27,7 +27,7 @@ pub enum OutputName {
 }
 
 impl OutputName {
-    fn unwrap(&self) -> &ColumnName {
+    pub fn unwrap(&self) -> &ColumnName {
         match self {
             OutputName::Alias(name) => name,
             OutputName::ColumnLhs(name) => name,
