@@ -70,8 +70,8 @@ where
         return Ok(());
     }
 
-    // Too small to be worth spawning a hashmap for, this is at most 6 comparisons.
     if items.len() <= 4 {
+        // Too small to be worth spawning a hashmap for, this is at most 6 comparisons.
         for i in 0..items.len() - 1 {
             let name = get_name(&items[i]);
             for other in items.iter().skip(i + 1) {
@@ -80,16 +80,15 @@ where
                 }
             }
         }
-    }
-
-    let mut names = PlHashSet::with_capacity(items.len());
-    for item in items {
-        let name = get_name(item);
-        if !names.insert(name) {
-            polars_bail!(duplicate = name);
+    } else {
+        let mut names = PlHashSet::with_capacity(items.len());
+        for item in items {
+            let name = get_name(item);
+            if !names.insert(name) {
+                polars_bail!(duplicate = name);
+            }
         }
     }
-
     Ok(())
 }
 
