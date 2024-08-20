@@ -9213,6 +9213,9 @@ class Expr:
         """
         Shuffle the contents of this expression.
 
+        Note this is shuffled independently of any other column or Expression. If you
+        want each row to stay the same use df.sample(shuffle=True)
+
         Parameters
         ----------
         seed

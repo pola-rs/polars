@@ -10,10 +10,11 @@ use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, ArenaExprIter, Context, IR};
 use polars_plan::prelude::FunctionFlags;
 use polars_utils::arena::{Arena, Node};
+use polars_utils::itertools::Itertools;
 use recursive::recursive;
 use slotmap::{SecondaryMap, SlotMap};
 
-use super::{PhysNode, PhysNodeKey};
+use super::{PhysNode, PhysNodeKey, PhysNodeKind};
 use crate::expression::StreamExpr;
 use crate::graph::{Graph, GraphNodeKey};
 use crate::nodes;
@@ -81,8 +82,9 @@ fn to_graph_rec<'a>(
         return Ok(*graph_key);
     }
 
-    use PhysNode::*;
-    let graph_key = match &ctx.phys_sm[phys_node_key] {
+    use PhysNodeKind::*;
+    let node = &ctx.phys_sm[phys_node_key];
+    let graph_key = match &node.kind {
         InMemorySource { df } => ctx.graph.add_node(
             nodes::in_memory_source::InMemorySourceNode::new(df.clone()),
             [],
@@ -112,7 +114,6 @@ fn to_graph_rec<'a>(
         Select {
             selectors,
             input,
-            output_schema,
             extend_original,
         } => {
             let phys_selectors = selectors
@@ -123,27 +124,22 @@ fn to_graph_rec<'a>(
             ctx.graph.add_node(
                 nodes::select::SelectNode::new(
                     phys_selectors,
-                    output_schema.clone(),
+                    node.output_schema.clone(),
                     *extend_original,
                 ),
                 [input_key],
             )
         },
-        Reduce {
-            input,
-            exprs,
-            input_schema,
-            output_schema,
-        } => {
+        Reduce { input, exprs } => {
             let input_key = to_graph_rec(*input, ctx)?;
+            let input_schema = &ctx.phys_sm[*input].output_schema;
 
             let mut reductions = Vec::with_capacity(exprs.len());
             let mut inputs = Vec::with_capacity(reductions.len());
 
             for e in exprs {
                 let (red, input_node) =
-                    into_reduction(e.node(), ctx.expr_arena, input_schema.as_ref())?
-                        .expect("invariant");
+                    into_reduction(e.node(), ctx.expr_arena, input_schema)?.expect("invariant");
                 reductions.push(red);
 
                 let input_phys =
@@ -153,41 +149,33 @@ fn to_graph_rec<'a>(
             }
 
             ctx.graph.add_node(
-                nodes::reduce::ReduceNode::new(inputs, reductions, output_schema.clone()),
+                nodes::reduce::ReduceNode::new(inputs, reductions, node.output_schema.clone()),
                 [input_key],
             )
         },
-        SimpleProjection {
-            input,
-            columns,
-            input_schema,
-        } => {
+        SimpleProjection { input, columns } => {
+            let input_schema = ctx.phys_sm[*input].output_schema.clone();
             let input_key = to_graph_rec(*input, ctx)?;
             ctx.graph.add_node(
-                nodes::simple_projection::SimpleProjectionNode::new(
-                    columns.clone(),
-                    input_schema.clone(),
-                ),
+                nodes::simple_projection::SimpleProjectionNode::new(columns.clone(), input_schema),
                 [input_key],
             )
         },
 
-        InMemorySink { input, schema } => {
+        InMemorySink { input } => {
+            let input_schema = ctx.phys_sm[*input].output_schema.clone();
             let input_key = to_graph_rec(*input, ctx)?;
             ctx.graph.add_node(
-                nodes::in_memory_sink::InMemorySinkNode::new(schema.clone()),
+                nodes::in_memory_sink::InMemorySinkNode::new(input_schema),
                 [input_key],
             )
         },
 
-        InMemoryMap {
-            input,
-            input_schema,
-            map,
-        } => {
+        InMemoryMap { input, map } => {
+            let input_schema = ctx.phys_sm[*input].output_schema.clone();
             let input_key = to_graph_rec(*input, ctx)?;
             ctx.graph.add_node(
-                nodes::in_memory_map::InMemoryMapNode::new(input_schema.clone(), map.clone()),
+                nodes::in_memory_map::InMemoryMapNode::new(input_schema, map.clone()),
                 [input_key],
             )
         },
@@ -200,11 +188,11 @@ fn to_graph_rec<'a>(
 
         Sort {
             input,
-            input_schema,
             by_column,
             slice,
             sort_options,
         } => {
+            let input_schema = ctx.phys_sm[*input].output_schema.clone();
             let lmdf = Arc::new(LateMaterializedDataFrame::default());
             let mut lp_arena = Arena::default();
             let df_node = lp_arena.add(lmdf.clone().as_ir_node(input_schema.clone()));
@@ -223,7 +211,7 @@ fn to_graph_rec<'a>(
             let input_key = to_graph_rec(*input, ctx)?;
             ctx.graph.add_node(
                 nodes::in_memory_map::InMemoryMapNode::new(
-                    input_schema.clone(),
+                    input_schema,
                     Arc::new(move |df| {
                         lmdf.set_materialized_dataframe(df);
                         let mut state = ExecutionState::new();
@@ -245,15 +233,18 @@ fn to_graph_rec<'a>(
 
         Zip {
             inputs,
-            input_schemas,
             null_extend,
         } => {
+            let input_schemas = inputs
+                .iter()
+                .map(|i| ctx.phys_sm[*i].output_schema.clone())
+                .collect_vec();
             let input_keys = inputs
                 .iter()
                 .map(|i| to_graph_rec(*i, ctx))
-                .collect::<Result<Vec<_>, _>>()?;
+                .try_collect_vec()?;
             ctx.graph.add_node(
-                nodes::zip::ZipNode::new(*null_extend, input_schemas.clone()),
+                nodes::zip::ZipNode::new(*null_extend, input_schemas),
                 input_keys,
             )
         },

@@ -82,8 +82,31 @@ impl PolarsObjectStore {
 
     /// Fetch the metadata of the parquet file, do not memoize it.
     pub async fn head(&self, path: &Path) -> PolarsResult<ObjectMeta> {
-        with_concurrency_budget(1, || self.0.head(path))
-            .await
-            .map_err(to_compute_err)
+        with_concurrency_budget(1, || async {
+            let head_result = self.0.head(path).await;
+
+            if head_result.is_err() {
+                // Pre-signed URLs forbid the HEAD method, but we can still retrieve the header
+                // information with a range 0-0 request.
+                let get_range_0_0_result = self
+                    .0
+                    .get_opts(
+                        path,
+                        object_store::GetOptions {
+                            range: Some((0..1).into()),
+                            ..Default::default()
+                        },
+                    )
+                    .await;
+
+                if let Ok(v) = get_range_0_0_result {
+                    return Ok(v.meta);
+                }
+            }
+
+            head_result
+        })
+        .await
+        .map_err(to_compute_err)
     }
 }
