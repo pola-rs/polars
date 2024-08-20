@@ -254,6 +254,13 @@ fn gather_miniblock<G: DeltaGatherer>(
 ) -> ParquetResult<()> {
     let bitwidth = bitwidth as usize;
 
+    if bitwidth == 0 {
+        let v = last_value.wrapping_add(min_delta);
+        gatherer.gather_constant(target, v, min_delta, values_per_miniblock)?;
+        *last_value = last_value.wrapping_add(min_delta * values_per_miniblock as i64);
+        return Ok(());
+    }
+
     debug_assert!(bitwidth <= 64);
     debug_assert_eq!((bitwidth * values_per_miniblock).div_ceil(8), values.len());
 
