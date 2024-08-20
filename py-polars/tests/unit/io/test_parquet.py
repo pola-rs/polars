@@ -3,7 +3,7 @@ from __future__ import annotations
 import io
 from datetime import datetime, time, timezone
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any, Literal, cast, Tuple
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import fsspec
 import numpy as np
@@ -1544,7 +1544,7 @@ def test_predicate_filtering(
     tmp_path: Path,
     df: pl.DataFrame,
     first_op: str,
-    second_op: None | Tuple[str, str],
+    second_op: None | tuple[str, str],
     l1: int,
     l2: int,
     r1: int,
