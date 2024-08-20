@@ -40,6 +40,7 @@ def test_lf_serde_roundtrip_binary(lf: pl.LazyFrame) -> None:
         ],
     )
 )
+@pytest.mark.filterwarnings("ignore")
 def test_lf_serde_roundtrip_json(lf: pl.LazyFrame) -> None:
     serialized = lf.serialize(format="json")
     result = pl.LazyFrame.deserialize(io.StringIO(serialized), format="json")
