@@ -18,8 +18,14 @@ pub fn run_query(
     expr_arena: &Arena<AExpr>,
 ) -> PolarsResult<DataFrame> {
     let mut phys_sm = SlotMap::with_capacity_and_key(ir_arena.len());
-
-    let root = crate::physical_plan::lower_ir(node, &mut ir_arena, expr_arena, &mut phys_sm)?;
+    let mut schema_cache = PlHashMap::with_capacity(ir_arena.len());
+    let root = crate::physical_plan::lower_ir(
+        node,
+        &mut ir_arena,
+        expr_arena,
+        &mut phys_sm,
+        &mut schema_cache,
+    )?;
     let (mut graph, phys_to_graph) =
         crate::physical_plan::physical_plan_to_graph(&phys_sm, expr_arena)?;
     let mut results = crate::execute::execute_graph(&mut graph)?;

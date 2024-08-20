@@ -22,7 +22,22 @@ slotmap::new_key_type! {
 /// A physical plan is created when the `IR` is translated to a directed
 /// acyclic graph of operations that can run on the streaming engine.
 #[derive(Clone, Debug)]
-pub enum PhysNode {
+pub struct PhysNode {
+    output_schema: Arc<Schema>,
+    kind: PhysNodeKind,
+}
+
+impl PhysNode {
+    pub fn new(output_schema: Arc<Schema>, kind: PhysNodeKind) -> Self {
+        Self {
+            output_schema,
+            kind,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum PhysNodeKind {
     InMemorySource {
         df: Arc<DataFrame>,
     },
@@ -31,14 +46,11 @@ pub enum PhysNode {
         input: PhysNodeKey,
         selectors: Vec<ExprIR>,
         extend_original: bool,
-        output_schema: Arc<Schema>,
     },
 
     Reduce {
         input: PhysNodeKey,
         exprs: Vec<ExprIR>,
-        input_schema: Arc<Schema>,
-        output_schema: Arc<Schema>,
     },
 
     StreamingSlice {
@@ -54,18 +66,15 @@ pub enum PhysNode {
 
     SimpleProjection {
         input: PhysNodeKey,
-        input_schema: Arc<Schema>,
         columns: Vec<String>,
     },
 
     InMemorySink {
         input: PhysNodeKey,
-        schema: Arc<Schema>,
     },
 
     InMemoryMap {
         input: PhysNodeKey,
-        input_schema: Arc<Schema>,
         map: Arc<dyn DataFrameUdf>,
     },
 
@@ -76,7 +85,6 @@ pub enum PhysNode {
 
     Sort {
         input: PhysNodeKey,
-        input_schema: Arc<Schema>, // TODO: remove when not using fallback impl.
         by_column: Vec<ExprIR>,
         slice: Option<(i64, usize)>,
         sort_options: SortMultipleOptions,
@@ -88,7 +96,6 @@ pub enum PhysNode {
 
     Zip {
         inputs: Vec<PhysNodeKey>,
-        input_schemas: Vec<Arc<Schema>>,
         /// If true shorter inputs are extended with nulls to the longest input,
         /// if false all inputs must be the same length, or have length 1 in
         /// which case they are broadcast.
