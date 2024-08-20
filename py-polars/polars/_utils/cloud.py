@@ -13,7 +13,6 @@ if TYPE_CHECKING:
 
 def prepare_cloud_plan(
     lf: LazyFrame,
-    uri: Path | str,
     **optimizations: bool,
 ) -> bytes:
     """
@@ -23,9 +22,6 @@ def prepare_cloud_plan(
     ----------
     lf
         The LazyFrame to prepare.
-    uri
-        Path to which the file should be written.
-        Must be a URI to an accessible object store location.
     **optimizations
         Optimizations to enable or disable in the query optimizer, e.g.
         `projection_pushdown=False`.
@@ -41,6 +37,5 @@ def prepare_cloud_plan(
     ComputeError
         If the given LazyFrame cannot be serialized.
     """
-    uri = normalize_filepath(uri)
     pylf = lf._set_sink_optimizations(**optimizations)
-    return plr.prepare_cloud_plan(pylf, uri)
+    return plr.prepare_cloud_plan(pylf)
