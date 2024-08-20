@@ -74,8 +74,8 @@ where
     if items.len() <= 4 {
         for i in 0..items.len() - 1 {
             let name = get_name(&items[i]);
-            for j in i + 1..items.len() {
-                if name == get_name(&items[j]) {
+            for other in items.iter().skip(i + 1) {
+                if name == get_name(other) {
                     polars_bail!(duplicate = name);
                 }
             }
