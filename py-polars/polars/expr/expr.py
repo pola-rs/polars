@@ -681,9 +681,9 @@ class Expr:
 
         See Also
         --------
-        map
-        prefix
-        suffix
+        name.map
+        name.prefix
+        name.suffix
 
         Examples
         --------
