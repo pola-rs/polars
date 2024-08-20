@@ -3,11 +3,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import polars.polars as plr
-from polars._utils.various import normalize_filepath
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from polars import LazyFrame
 
 
