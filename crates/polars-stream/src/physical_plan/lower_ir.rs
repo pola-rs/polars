@@ -62,13 +62,10 @@ pub fn lower_ir(
 
         // TODO: split reductions and streamable selections. E.g. sum(a) + sum(b) should be split
         // into Select(a + b) -> Reduce(sum(a), sum(b)).
-        IR::Select {
-            input,
-            expr,
-            ..
-        } if expr
-            .iter()
-            .all(|e| can_convert_into_reduction(e.node(), expr_arena)) =>
+        IR::Select { input, expr, .. }
+            if expr
+                .iter()
+                .all(|e| can_convert_into_reduction(e.node(), expr_arena)) =>
         {
             let exprs = expr.clone();
             let phys_input = lower_ir(*input, ir_arena, expr_arena, phys_sm, schema_cache)?;

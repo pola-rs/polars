@@ -6,8 +6,8 @@ use polars_core::schema::Schema;
 use polars_plan::plans::{AExpr, DataFrameUdf};
 use polars_plan::prelude::expr_ir::ExprIR;
 
-mod lower_ir;
 mod lower_expr;
+mod lower_ir;
 mod to_graph;
 
 pub use lower_ir::lower_ir;
