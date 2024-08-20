@@ -86,7 +86,7 @@ impl PolarsObjectStore {
             let head_result = self.0.head(path).await;
 
             if head_result.is_err() {
-                // Pre-signed URLs forbid the HEAD method, but we can still retreive the header
+                // Pre-signed URLs forbid the HEAD method, but we can still retrieve the header
                 // information with a range 0-0 request.
                 let get_range_0_0_result = self
                     .0
