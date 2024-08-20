@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import warnings
 from datetime import date, datetime, time, timedelta
 from functools import lru_cache, partial, reduce
 from io import BytesIO, StringIO
@@ -41,6 +42,7 @@ from polars._utils.various import (
     _in_notebook,
     _is_generator,
     extend_bool,
+    find_stacklevel,
     is_bool_sequence,
     is_sequence,
     issue_warning,
@@ -680,7 +682,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             The format in which to serialize. Options:
 
             - `"binary"`: Serialize to binary format (bytes). This is the default.
-            - `"json"`: Serialize to JSON format (string).
+            - `"json"`: Serialize to JSON format (string) (deprecated).
 
         See Also
         --------
@@ -716,6 +718,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if format == "binary":
             serializer = self._ldf.serialize_binary
         elif format == "json":
+            msg = "'json' serialization format of LazyFrame is deprecated"
+            warnings.warn(
+                msg,
+                stacklevel=find_stacklevel(),
+            )
             serializer = self._ldf.serialize_json
         else:
             msg = f"`format` must be one of {{'binary', 'json'}}, got {format!r}"
