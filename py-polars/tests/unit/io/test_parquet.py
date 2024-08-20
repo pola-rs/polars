@@ -3,7 +3,7 @@ from __future__ import annotations
 import io
 from datetime import datetime, time, timezone
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Literal, cast, Tuple
 
 import fsspec
 import numpy as np
@@ -1510,3 +1510,64 @@ def test_delta_strings_encoding_roundtrip(
 
     f.seek(0)
     assert_frame_equal(pl.read_parquet(f), df)
+
+
+EQUALITY_OPERATORS = ["__eq__", "__lt__", "__le__", "__gt__", "__ge__"]
+BOOLEAN_OPERATORS = ["__or__", "__and__"]
+
+
+@given(
+    df=dataframes(
+        min_size=0, max_size=100, min_cols=2, max_cols=5, allowed_dtypes=[pl.Int32]
+    ),
+    first_op=st.sampled_from(EQUALITY_OPERATORS),
+    second_op=st.sampled_from(
+        [None]
+        + [
+            (booljoin, eq)
+            for booljoin in BOOLEAN_OPERATORS
+            for eq in EQUALITY_OPERATORS
+        ]
+    ),
+    l1=st.integers(min_value=0, max_value=1000),
+    l2=st.integers(min_value=0, max_value=1000),
+    r1=st.integers(min_value=0, max_value=1000),
+    r2=st.integers(min_value=0, max_value=1000),
+)
+@pytest.mark.parametrize("parallel_st", ["auto", "prefiltered"])
+@settings(
+    deadline=None,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
+@pytest.mark.write_disk()
+def test_predicate_filtering(
+    tmp_path: Path,
+    df: pl.DataFrame,
+    first_op: str,
+    second_op: None | Tuple[str, str],
+    l1: int,
+    l2: int,
+    r1: int,
+    r2: int,
+    parallel_st: Literal["auto", "prefiltered"],
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    f = tmp_path / "test.parquet"
+
+    df.write_parquet(f, row_group_size=5)
+
+    cols = df.columns
+
+    l1s = cols[l1 % len(cols)]
+    l2s = cols[l2 % len(cols)]
+    expr = (getattr(pl.col(l1s), first_op))(pl.col(l2s))
+
+    if second_op is not None:
+        r1s = cols[r1 % len(cols)]
+        r2s = cols[r2 % len(cols)]
+        expr = getattr(expr, second_op[0])(
+            (getattr(pl.col(r1s), second_op[1]))(pl.col(r2s))
+        )
+
+    result = pl.scan_parquet(f, parallel=parallel_st).filter(expr).collect()
+    assert_frame_equal(result, df.filter(expr))
