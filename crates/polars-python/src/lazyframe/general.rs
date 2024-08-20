@@ -890,12 +890,12 @@ impl PyLazyFrame {
         strategy: Wrap<AsofStrategy>,
         tolerance: Option<Wrap<AnyValue<'_>>>,
         tolerance_str: Option<String>,
-        coalesce: Option<bool>,
+        coalesce: bool,
     ) -> PyResult<Self> {
-        let coalesce = match coalesce {
-            None => JoinCoalesce::JoinSpecific,
-            Some(true) => JoinCoalesce::CoalesceColumns,
-            Some(false) => JoinCoalesce::KeepColumns,
+        let coalesce = if coalesce {
+            JoinCoalesce::CoalesceColumns
+        } else {
+            JoinCoalesce::KeepColumns
         };
         let ldf = self.ldf.clone();
         let other = other.ldf;
