@@ -1,15 +1,14 @@
-use std::borrow::Borrow;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{InitHashMaps, PlHashMap};
+use polars_core::prelude::{Field, InitHashMaps, PlHashMap};
 use polars_core::schema::Schema;
 use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
 use polars_expr::{create_physical_expr, ExpressionConversionState};
 use polars_expr::planner::get_expr_depth_limit;
-use polars_plan::plans::expr_ir::ExprIR;
+use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::{AExpr, LiteralValue, IR};
 use polars_plan::prelude::*;
 use polars_utils::arena::{Arena, Node};
@@ -27,7 +26,7 @@ fn unique_column_name() -> String {
 }
 
 #[recursive::recursive]
-fn is_streamable_rec(
+fn is_elementwise_rec(
     expr_key: IRNodeKey,
     arena: &Arena<AExpr>,
     cache: &mut PlHashMap<IRNodeKey, bool>,
@@ -38,20 +37,20 @@ fn is_streamable_rec(
 
     let ret = match arena.get(expr_key) {
         AExpr::Explode(_) => false,
-        AExpr::Alias(inner, _) => is_streamable_rec(*inner, arena, cache),
+        AExpr::Alias(inner, _) => is_elementwise_rec(*inner, arena, cache),
         AExpr::Column(_) => true,
         AExpr::Literal(lit) => !matches!(lit, LiteralValue::Series(_) | LiteralValue::Range { .. }),
         AExpr::BinaryExpr { left, op: _, right } => {
-            is_streamable_rec(*left, arena, cache) && is_streamable_rec(*right, arena, cache)
+            is_elementwise_rec(*left, arena, cache) && is_elementwise_rec(*right, arena, cache)
         },
         AExpr::Cast {
             expr,
             data_type: _,
             options: _,
-        } => is_streamable_rec(*expr, arena, cache),
+        } => is_elementwise_rec(*expr, arena, cache),
         AExpr::Sort { .. } | AExpr::SortBy { .. } | AExpr::Gather { .. } => false,
         AExpr::Filter { input, by } => {
-            is_streamable_rec(*input, arena, cache) && is_streamable_rec(*by, arena, cache)
+            is_elementwise_rec(*input, arena, cache) && is_elementwise_rec(*by, arena, cache)
         },
         AExpr::Agg(_) => false,
         AExpr::Ternary {
@@ -59,9 +58,9 @@ fn is_streamable_rec(
             truthy,
             falsy,
         } => {
-            is_streamable_rec(*predicate, arena, cache)
-                && is_streamable_rec(*truthy, arena, cache)
-                && is_streamable_rec(*falsy, arena, cache)
+            is_elementwise_rec(*predicate, arena, cache)
+                && is_elementwise_rec(*truthy, arena, cache)
+                && is_elementwise_rec(*falsy, arena, cache)
         },
         AExpr::AnonymousFunction {
             input: _,
@@ -83,8 +82,8 @@ fn is_streamable_rec(
     ret
 }
 
-fn is_streamable(expr_key: IRNodeKey, ctx: &mut LowerExprContext) -> bool {
-    is_streamable_rec(expr_key, &ctx.expr_arena, &mut ctx.is_streamable_cache)
+fn is_elementwise(expr_key: IRNodeKey, ctx: &mut LowerExprContext) -> bool {
+    is_elementwise_rec(expr_key, &ctx.expr_arena, &mut ctx.is_elementwise_cache)
 }
 
 #[recursive::recursive]
@@ -213,48 +212,51 @@ fn is_aggregation(expr_key: IRNodeKey, ctx: &mut LowerExprContext) -> bool {
     }
 }
 
+/// Generates a new expression for the output column of an arbitrary expression.
+fn expr_for_output_column(
+    expr: &ExprIR,
+    ctx: &mut LowerExprContext
+) -> ExprIR {
+    if matches!(ctx.expr_arena.get(expr.node()), AExpr::Column(_)) {
+        return expr.clone();
+    }
+
+    let col_name = expr.output_name_inner().clone();
+    ExprIR::new(ctx.expr_arena.add(AExpr::Column(col_name.unwrap().clone())), col_name)
+}
+
 fn build_input_independent_node_with_ctx(
     exprs: &[ExprIR],
     ctx: &mut LowerExprContext,
 ) -> PolarsResult<PhysNodeKey> {
-    let input_schema = Schema::new();
-    let output_schema = Schema::from_iter(exprs.iter().map(|expr| {
-        ctx.expr_arena.get(expr.node()).to_field(&input_schema, Context::Default, &ctx.expr_arena).unwrap()
-    }));
     let expr_depth_limit = get_expr_depth_limit()?;
     let mut state = ExpressionConversionState::new(false, expr_depth_limit);
-    let phys_exprs = exprs.iter().map(|expr| {
-        create_physical_expr(
+    let empty = DataFrame::empty();
+    let execution_state = ExecutionState::new();
+    let columns = exprs.iter().map(|expr| {
+        let phys_expr = create_physical_expr(
             expr,
             Context::Default,
             ctx.expr_arena,
             None,
             &mut state,
-        )
+        )?;
+        
+        phys_expr.evaluate(&empty, &execution_state)
     }).try_collect_vec()?;
     
-    let empty = DataFrame::new();
-    let execution_state = ExecutionState::new();
-    DataFrame::new()._add_columns(phys_exprs.into_iter().map(|expr| {
-        expr.evaluate(&empty, &execution_state)
-    }));
-    
-    // let columns = 
-    
-    todo!()
+    let df = Arc::new(DataFrame::new_with_broadcast(columns)?);
+    Ok(ctx.phys_sm.insert(PhysNode::new(Arc::new(df.schema()), PhysNodeKind::InMemorySource { df })))
 }
 
 struct LowerExprContext<'a> {
     ir_arena: &'a mut Arena<IR>,
     expr_arena: &'a mut Arena<AExpr>,
     phys_sm: &'a mut SlotMap<PhysNodeKey, PhysNode>,
-    is_streamable_cache: PlHashMap<Node, bool>,
+    is_elementwise_cache: PlHashMap<Node, bool>,
     is_input_independent_cache: PlHashMap<Node, bool>,
 }
 
-/// Lowers an input node plus a set of expressions on that input node to an
-/// equivalent (input node, set of expressions) pair, ensuring that the new set
-/// of expressions can run on the streaming engine.
 #[recursive::recursive]
 fn lower_exprs_with_ctx(
     input: PhysNodeKey,
@@ -262,40 +264,64 @@ fn lower_exprs_with_ctx(
     ctx: &mut LowerExprContext,
 ) -> PolarsResult<(PhysNodeKey, Vec<ExprIR>)> {
     if exprs.iter().all(|e| is_input_independent(e.node(), ctx)) {
-        // Run expression on empty dataframe and insert InMemorySourceNode.
-        // Probably want some sort of efficient path for Series literals.
-        return todo!();
+        let node = build_input_independent_node_with_ctx(exprs, ctx)?;
+        let exprs = exprs.iter().map(|e| expr_for_output_column(e, ctx)).collect();
+        return Ok((node, exprs));
     }
 
-    // let streamable_subset = exprs.iter().filter(|e| is_streamable(e.node(), ctx)).cloned().collect_vec();
-    // let agg_subset = exprs.iter().filter(|e| is_aggregation(e.node(), ctx)).collect_vec();
-    // let rest = exprs.iter().filter(|e| !is_streamable(e.node(), ctx) && !is_aggregation(e.node(), ctx)).collect_vec();
-
-    // if agg_subset.len() == 0 && rest.len() == 0 {
-    //     return Ok((input, streamable_subset));
-    // }
-
-    let mut streamable_subset = Vec::new();
+    // Elementwise expressions that can directly be applied to the original input.
+    let mut elementwise_subset = Vec::new();
+    
+    // Aggregation expressions that can directly be applied to the original input.
     let mut agg_subset = Vec::new();
-    let mut transformed = Vec::new();
+
+    // Fallback expressions that can directly be applied to the original input.
     // let mut fallback_subset = Vec::new();
 
+    // Expressions that create DataFrames from thin air.
+    let mut input_independent = Vec::new();
+
+    // New nodes containing transformed data columns used for executing
+    // transformed expressions.
+    let mut transformed = Vec::new();
+
     for expr in exprs {
-        if is_streamable(expr.node(), ctx) {
-            streamable_subset.push(expr.clone());
+        if is_elementwise(expr.node(), ctx) {
+            elementwise_subset.push(expr.clone());
+            continue;
         }
 
         match ctx.expr_arena.get(expr.node()) {
-            AExpr::Explode(_) => todo!(),
-            AExpr::Alias(_, _) => todo!(),
-            AExpr::Column(_) => todo!(),
-            AExpr::Literal(_) => todo!(),
-            AExpr::BinaryExpr { left, op, right } => todo!(),
+            AExpr::Explode(_) => {
+                // While explode is streamable, it is not elementwise, so we
+                // have to transform it to a select node.
+                let output_schema = schema_for_select(input, &[expr.clone()], ctx)?;
+                let node_kind = PhysNodeKind::Select { input, selectors: vec![expr.clone()], extend_original: false };
+                let node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, node_kind));
+                transformed.push(node_key);
+            }
+            AExpr::Alias(_, _) => unreachable!(),
+            AExpr::Column(_) => unreachable!("column should always be streamable"),
+            AExpr::Literal(_) => input_independent.push(expr.clone()),
+            AExpr::BinaryExpr { left, op, right } => {
+                // One or both of left and right is not streaming, give them
+                // temporary names, recurse to make a streaming input from them.
+                let left_new_name = unique_column_name();
+                let right_new_name = unique_column_name();
+                let left_expr = ExprIR::new(left.clone(), OutputName::Alias(left_new_name.into()));
+                let right_expr = ExprIR::new(right.clone(), OutputName::Alias(right_new_name.into()));
+                let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &[left_expr, right_expr], ctx)?;
+                todo!()
+                
+            },
             AExpr::Cast {
                 expr,
                 data_type,
                 options,
-            } => todo!(),
+            } => {
+                todo!()
+                
+            },
             AExpr::Sort {
                 expr: inner,
                 options,
@@ -304,14 +330,11 @@ fn lower_exprs_with_ctx(
 
                 // As we'll refer to the column twice, ensure the inner expr is
                 // available as a column by selecting first.
-                let col_name = expr.output_name_inner().clone();
-                let inner_expr_ir = ExprIR::new(*inner, col_name.clone());
+                let inner_expr_ir = ExprIR::new(*inner, expr.output_name_inner().clone());
                 let select_node = build_select_node_with_ctx(input, &[inner_expr_ir], ctx)?;
-                let col_expr = ExprIR::new(ctx.expr_arena.add(AExpr::Column(col_name.unwrap().clone())), col_name);
-
                 let kind = PhysNodeKind::Sort {
                     input: select_node,
-                    by_column: vec![col_expr],
+                    by_column: vec![expr_for_output_column(expr, ctx)],
                     slice: None,
                     sort_options,
                 };
@@ -326,7 +349,22 @@ fn lower_exprs_with_ctx(
                 sort_options,
             } => todo!(),
             AExpr::Filter { input, by } => todo!(),
-            AExpr::Agg(agg) => agg_subset.push(agg.clone()),
+            AExpr::Agg(agg) => match agg {
+                IRAggExpr::Min { .. } => agg_subset.push(expr.clone()),
+                IRAggExpr::Max { .. } => agg_subset.push(expr.clone()),
+                IRAggExpr::Median(_) => todo!(),
+                IRAggExpr::NUnique(_) => todo!(),
+                IRAggExpr::First(_) => todo!(),
+                IRAggExpr::Last(_) => todo!(),
+                IRAggExpr::Mean(_) => agg_subset.push(expr.clone()),
+                IRAggExpr::Implode(_) => todo!(),
+                IRAggExpr::Quantile {.. } => todo!(),
+                IRAggExpr::Sum(_) => agg_subset.push(expr.clone()),
+                IRAggExpr::Count(_, _) => todo!(),
+                IRAggExpr::Std(_, _) => todo!(),
+                IRAggExpr::Var(_, _) => todo!(),
+                IRAggExpr::AggGroups(_) => todo!(),
+            },
             AExpr::Ternary {
                 predicate,
                 truthy,
@@ -393,15 +431,30 @@ fn lower_exprs_with_ctx(
     todo!()
 }
 
+/// Computes the schema that selecting the given expressions on the input node
+/// would result in.
+fn schema_for_select(
+    input: PhysNodeKey,
+    exprs: &[ExprIR],
+    ctx: &mut LowerExprContext,
+) -> PolarsResult<Arc<Schema>> {
+    let input_schema = &ctx.phys_sm[input].output_schema;
+    let output_schema: Schema = exprs.iter().map(|e| {
+        let name = e.output_name();
+        let dtype = ctx.expr_arena.get(e.node()).to_dtype(input_schema, Context::Default, &ctx.expr_arena)?;
+        PolarsResult::Ok(Field::new(name, dtype))
+    }).try_collect()?;
+    Ok(Arc::new(output_schema))
+}
+    
+
 fn build_select_node_with_ctx(
     input: PhysNodeKey,
     exprs: &[ExprIR],
     ctx: &mut LowerExprContext,
 ) -> PolarsResult<PhysNodeKey> {
     if exprs.iter().all(|e| is_input_independent(e.node(), ctx)) {
-        // Run expression on empty dataframe and insert InMemorySourceNode.
-        // Probably want some sort of efficient path for Series literals.
-        return todo!();
+        return build_input_independent_node_with_ctx(exprs, ctx);
     }
 
     // Are we only selecting simple columns?
@@ -426,11 +479,15 @@ fn build_select_node_with_ctx(
     }
     
     let (transformed_input, transformed_exprs) = lower_exprs_with_ctx(input, exprs, ctx)?;
-
-    todo!()
+    let output_schema = schema_for_select(transformed_input, &transformed_exprs, ctx)?;
+    let node_kind = PhysNodeKind::Select { input: transformed_input, selectors: transformed_exprs, extend_original: false };
+    Ok(ctx.phys_sm.insert(PhysNode::new(output_schema, node_kind)))
 }
 
 
+/// Lowers an input node plus a set of expressions on that input node to an
+/// equivalent (input node, set of expressions) pair, ensuring that the new set
+/// of expressions can run on the streaming engine.
 pub fn lower_exprs(
     input: PhysNodeKey,
     exprs: &[ExprIR],
@@ -442,7 +499,7 @@ pub fn lower_exprs(
         ir_arena,
         expr_arena,
         phys_sm,
-        is_streamable_cache: PlHashMap::new(),
+        is_elementwise_cache: PlHashMap::new(),
         is_input_independent_cache: PlHashMap::new(),
     };
     lower_exprs_with_ctx(input, exprs, &mut ctx)
@@ -460,7 +517,7 @@ pub fn build_select_node(
         ir_arena,
         expr_arena,
         phys_sm,
-        is_streamable_cache: PlHashMap::new(),
+        is_elementwise_cache: PlHashMap::new(),
         is_input_independent_cache: PlHashMap::new(),
     };
     build_select_node_with_ctx(input, exprs, &mut ctx)
