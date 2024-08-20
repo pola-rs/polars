@@ -7088,16 +7088,43 @@ class DataFrame:
     def ie_join(
         self,
         other: DataFrame,
-        col1: str,
-        op1: str,
-        other_col1: str,
-        col2: str,
-        op2: str,
-        other_col2: str,
+        *,
+        on: Sequence[Expr],
+        suffix: str = "_right",
     ) -> DataFrame:
-        """Join matching using two inequality comparisons."""
-        return self._from_pydf(
-            self._df.ie_join(other._df, col1, op1, other_col1, col2, op2, other_col2)
+        """
+        Perform a join using inequality operations.
+
+        Parameters
+        ----------
+        other
+            DataFrame to join with.
+        on
+            Inequality expressions to join with,
+            for example [pl.col("a") < pl.col("b"), pl.col("c") > pl.col("d")]
+        suffix
+            Suffix to append to columns with a duplicate name.
+
+        Returns
+        -------
+        DataFrame
+
+        See Also
+        --------
+        join_asof
+        """
+        if not isinstance(other, DataFrame):
+            msg = f"expected `other` join table to be a DataFrame, got {type(other).__name__!r}"
+            raise TypeError(msg)
+
+        return (
+            self.lazy()
+            .ie_join(
+                other.lazy(),
+                on=on,
+                suffix=suffix,
+            )
+            .collect(_eager=True)
         )
 
     def map_rows(

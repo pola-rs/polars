@@ -622,21 +622,4 @@ impl PyDataFrame {
         let cap = md_cols.capacity();
         (ptr as usize, len, cap)
     }
-
-    pub fn ie_join(
-        &self,
-        other: &PyDataFrame,
-        col1: &str,
-        op1: &str,
-        other_col1: &str,
-        col2: &str,
-        op2: &str,
-        other_col2: &str,
-    ) -> PyResult<Self> {
-        let df = self
-            .df
-            .ie_join(&other.df, col1, op1, other_col1, col2, op2, other_col2)
-            .map_err(PyPolarsErr::from)?;
-        Ok(df.into())
-    }
 }

@@ -969,6 +969,23 @@ impl PyLazyFrame {
             .into())
     }
 
+    fn ie_join(&self, other: Self, on: Vec<PyExpr>, suffix: String) -> PyResult<Self> {
+        let ldf = self.ldf.clone();
+        let other = other.ldf;
+        Ok(ldf
+            .join_builder()
+            .with(other)
+            .how(JoinType::IEJoin(IEJoinOptions {
+                on: on
+                    .into_iter()
+                    .map(|pyexpr| to_join_inequality(&pyexpr.inner))
+                    .collect::<PyResult<Vec<_>>>()?,
+            }))
+            .suffix(suffix)
+            .finish()
+            .into())
+    }
+
     fn with_columns(&mut self, exprs: Vec<PyExpr>) -> Self {
         let ldf = self.ldf.clone();
         ldf.with_columns(exprs.to_exprs()).into()
@@ -1203,5 +1220,50 @@ impl PyLazyFrame {
             .merge_sorted(other.ldf, key)
             .map_err(PyPolarsErr::from)?;
         Ok(out.into())
+    }
+}
+
+fn to_join_inequality(expr: &Expr) -> PyResult<JoinInequality> {
+    // TODO: Handle when the order of the expression operands doesn't match lhs, rhs?
+    fn to_inequality_operator(op: &Operator) -> PyResult<InequalityOperator> {
+        match op {
+            Operator::Lt => Ok(InequalityOperator::Lt),
+            Operator::LtEq => Ok(InequalityOperator::LtEq),
+            Operator::Gt => Ok(InequalityOperator::Gt),
+            Operator::GtEq => Ok(InequalityOperator::GtEq),
+            _ => Err(PyValueError::new_err(
+                "expected an inequality operator in join inequality",
+            )),
+        }
+    }
+
+    match expr {
+        Expr::BinaryExpr { left, op, right } => {
+            let operator = to_inequality_operator(op)?;
+            let left_column = match &**left {
+                Expr::Column(col) => SmartString::from(&**col),
+                _ => {
+                    return Err(PyValueError::new_err(
+                        "expected a column name for the left operand",
+                    ));
+                },
+            };
+            let right_column = match &**right {
+                Expr::Column(col) => SmartString::from(&**col),
+                _ => {
+                    return Err(PyValueError::new_err(
+                        "expected a column name for the right operand",
+                    ));
+                },
+            };
+            Ok(JoinInequality {
+                left_column,
+                operator,
+                right_column,
+            })
+        },
+        _ => Err(PyValueError::new_err(
+            "expected a binary expression for a join inequality",
+        )),
     }
 }

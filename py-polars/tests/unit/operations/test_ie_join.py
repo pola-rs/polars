@@ -23,7 +23,9 @@ def test_self_join() -> None:
         }
     )
 
-    actual = west.ie_join(west, "time", ">", "time", "cost", "<", "cost")
+    actual = west.ie_join(
+        west, on=[pl.col("time") > pl.col("time"), pl.col("cost") < pl.col("cost")]
+    )
 
     expected = pl.DataFrame(
         {
@@ -58,7 +60,9 @@ def test_basic_ie_join() -> None:
         }
     )
 
-    actual = east.ie_join(west, "dur", "<", "time", "rev", ">", "cost")
+    actual = east.ie_join(
+        west, on=[pl.col("dur") < pl.col("time"), pl.col("rev") > pl.col("cost")]
+    )
 
     expected = pl.DataFrame(
         {
@@ -75,7 +79,7 @@ def test_basic_ie_join() -> None:
     assert_frame_equal(actual, expected, check_row_order=False, check_exact=True)
 
 
-def _filter_expression(col1: str, op: str, col2: str) -> pl.Expr:
+def _inequality_expression(col1: str, op: str, col2: str) -> pl.Expr:
     if op == "<":
         return pl.col(col1) < pl.col(col2)
     elif op == "<=":
@@ -177,11 +181,12 @@ def west_df(
     op2=operators(),
 )
 def test_ie_join(east: pl.DataFrame, west: pl.DataFrame, op1: str, op2: str) -> None:
-    actual = east.ie_join(west, "dur", op1, "time", "rev", op2, "cost")
+    expr0 = _inequality_expression("dur", op1, "time")
+    expr1 = _inequality_expression("rev", op2, "cost")
 
-    expected = east.join(west, how="cross").filter(
-        _filter_expression("dur", op1, "time") & _filter_expression("rev", op2, "cost")
-    )
+    actual = east.ie_join(west, on=[expr0, expr1])
+
+    expected = east.join(west, how="cross").filter(expr0 & expr1)
     assert_frame_equal(actual, expected, check_row_order=False, check_exact=True)
 
 
@@ -194,11 +199,12 @@ def test_ie_join(east: pl.DataFrame, west: pl.DataFrame, op1: str, op2: str) -> 
 def test_ie_join_with_nulls(
     east: pl.DataFrame, west: pl.DataFrame, op1: str, op2: str
 ) -> None:
-    actual = east.ie_join(west, "dur", op1, "time", "rev", op2, "cost")
+    expr0 = _inequality_expression("dur", op1, "time")
+    expr1 = _inequality_expression("rev", op2, "cost")
 
-    expected = east.join(west, how="cross").filter(
-        _filter_expression("dur", op1, "time") & _filter_expression("rev", op2, "cost")
-    )
+    actual = east.ie_join(west, on=[expr0, expr1])
+
+    expected = east.join(west, how="cross").filter(expr0 & expr1)
     assert_frame_equal(actual, expected, check_row_order=False, check_exact=True)
 
 
@@ -211,9 +217,10 @@ def test_ie_join_with_nulls(
 def test_ie_join_with_floats(
     east: pl.DataFrame, west: pl.DataFrame, op1: str, op2: str
 ) -> None:
-    actual = east.ie_join(west, "dur", op1, "time", "rev", op2, "cost")
+    expr0 = _inequality_expression("dur", op1, "time")
+    expr1 = _inequality_expression("rev", op2, "cost")
 
-    expected = east.join(west, how="cross").filter(
-        _filter_expression("dur", op1, "time") & _filter_expression("rev", op2, "cost")
-    )
+    actual = east.ie_join(west, on=[expr0, expr1])
+
+    expected = east.join(west, how="cross").filter(expr0 & expr1)
     assert_frame_equal(actual, expected, check_row_order=False, check_exact=True)

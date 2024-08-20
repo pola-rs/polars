@@ -4341,6 +4341,54 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             )
         )
 
+    def ie_join(
+        self,
+        other: LazyFrame,
+        *,
+        on: Sequence[Expr],
+        suffix: str = "_right",
+    ) -> LazyFrame:
+        """
+        Perform a join using inequality operations.
+
+        Parameters
+        ----------
+        other
+            LazyFrame to join with.
+        on
+            Inequality expressions to join with,
+            for example [pl.col("a") < pl.col("b"), pl.col("c") > pl.col("d")]
+        suffix
+            Suffix to append to columns with a duplicate name.
+
+        Returns
+        -------
+        LazyFrame
+
+        See Also
+        --------
+        join_asof
+        """
+        if not isinstance(other, LazyFrame):
+            msg = f"expected `other` join table to be a LazyFrame, not a {type(other).__name__!r}"
+            raise TypeError(msg)
+
+        if on is None:
+            msg = "you must pass the expressions to join on as an argument"
+            raise ValueError(msg)
+
+        if not all(isinstance(expr, pl.Expr) for expr in on):
+            msg = "Join expressions must all be an Expr instance"
+            raise ValueError(msg)
+
+        return self._from_pyldf(
+            self._ldf.ie_join(
+                other._ldf,
+                [expr._pyexpr for expr in on],
+                suffix,
+            )
+        )
+
     def join(
         self,
         other: LazyFrame,

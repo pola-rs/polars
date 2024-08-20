@@ -7,6 +7,7 @@ mod cross_join;
 mod dispatch_left_right;
 mod general;
 mod hash_join;
+mod iejoin;
 #[cfg(feature = "merge_sorted")]
 mod merge_sorted;
 
@@ -28,6 +29,7 @@ use general::create_chunked_index_mapping;
 pub use general::{_coalesce_full_join, _finish_join, _join_suffix_name};
 pub use hash_join::*;
 use hashbrown::hash_map::{Entry, RawEntryMut};
+pub use iejoin::{IEJoinOptions, InequalityOperator, JoinInequality};
 #[cfg(feature = "merge_sorted")]
 pub use merge_sorted::_merge_sorted_dfs;
 use polars_core::hashing::_HASHMAP_INIT_SIZE;
@@ -111,6 +113,13 @@ pub trait DataFrameJoinOps: IntoDf {
         #[cfg(feature = "cross_join")]
         if let JoinType::Cross = args.how {
             return left_df.cross_join(other, args.suffix.clone(), args.slice);
+        }
+
+        if let JoinType::IEJoin(options) = args.how {
+            if args.slice.is_some() {
+                return Err(polars_err!(ComputeError: "IEJoin with slice not implemented"));
+            }
+            return iejoin::join_dataframes(left_df, other, &options, args.suffix.as_deref());
         }
 
         // Clear literals if a frame is empty. Otherwise we could get an oob
@@ -269,6 +278,9 @@ pub trait DataFrameJoinOps: IntoDf {
                         panic!("expected by arguments on both sides")
                     },
                 },
+                JoinType::IEJoin(_) => {
+                    unreachable!()
+                },
                 JoinType::Cross => {
                     unreachable!()
                 },
@@ -293,6 +305,9 @@ pub trait DataFrameJoinOps: IntoDf {
             JoinType::AsOf(_) => polars_bail!(
                 ComputeError: "asof join not supported for join on multiple keys"
             ),
+            JoinType::IEJoin(_) => {
+                unreachable!()
+            },
             JoinType::Cross => {
                 unreachable!()
             },
