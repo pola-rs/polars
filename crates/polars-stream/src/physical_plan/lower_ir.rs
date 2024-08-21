@@ -19,7 +19,7 @@ fn is_streamable(node: Node, arena: &Arena<AExpr>) -> bool {
 pub fn lower_ir(
     node: Node,
     ir_arena: &mut Arena<IR>,
-    expr_arena: &Arena<AExpr>,
+    expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
     schema_cache: &mut PlHashMap<Node, Arc<Schema>>,
 ) -> PolarsResult<PhysNodeKey> {
@@ -34,18 +34,24 @@ pub fn lower_ir(
             }
         },
 
-        // TODO: split partially streamable selections to avoid fallback as much as possible.
-        IR::Select { input, expr, .. }
-            if expr.iter().all(|e| is_streamable(e.node(), expr_arena)) =>
-        {
+        IR::Select { input, expr, .. } => {
             let selectors = expr.clone();
             let phys_input = lower_ir(*input, ir_arena, expr_arena, phys_sm, schema_cache)?;
-            PhysNodeKind::Select {
-                input: phys_input,
-                selectors,
-                extend_original: false,
-            }
+            return super::lower_expr::build_select_node(phys_input, &selectors, ir_arena, expr_arena, phys_sm);
         },
+
+        // TODO: split partially streamable selections to avoid fallback as much as possible.
+        // IR::Select { input, expr, .. }
+        //     if expr.iter().all(|e| is_streamable(e.node(), expr_arena)) =>
+        // {
+        //     let selectors = expr.clone();
+        //     let phys_input = lower_ir(*input, ir_arena, expr_arena, phys_sm, schema_cache)?;
+        //     PhysNodeKind::Select {
+        //         input: phys_input,
+        //         selectors,
+        //         extend_original: false,
+        //     }
+        // },
 
         // TODO: split partially streamable selections to avoid fallback as much as possible.
         IR::HStack { input, exprs, .. }
@@ -62,18 +68,18 @@ pub fn lower_ir(
 
         // TODO: split reductions and streamable selections. E.g. sum(a) + sum(b) should be split
         // into Select(a + b) -> Reduce(sum(a), sum(b)).
-        IR::Select { input, expr, .. }
-            if expr
-                .iter()
-                .all(|e| can_convert_into_reduction(e.node(), expr_arena)) =>
-        {
-            let exprs = expr.clone();
-            let phys_input = lower_ir(*input, ir_arena, expr_arena, phys_sm, schema_cache)?;
-            PhysNodeKind::Reduce {
-                input: phys_input,
-                exprs,
-            }
-        },
+        // IR::Select { input, expr, .. }
+        //     if expr
+        //         .iter()
+        //         .all(|e| can_convert_into_reduction(e.node(), expr_arena)) =>
+        // {
+        //     let exprs = expr.clone();
+        //     let phys_input = lower_ir(*input, ir_arena, expr_arena, phys_sm, schema_cache)?;
+        //     PhysNodeKind::Reduce {
+        //         input: phys_input,
+        //         exprs,
+        //     }
+        // },
 
         IR::Slice { input, offset, len } => {
             if *offset >= 0 {

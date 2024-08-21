@@ -705,7 +705,7 @@ impl LazyFrame {
                 return polars_stream::run_query(
                     stream_lp_top,
                     alp_plan.lp_arena,
-                    &alp_plan.expr_arena,
+                    &mut alp_plan.expr_arena,
                 );
             }
 
@@ -718,7 +718,7 @@ impl LazyFrame {
                     polars_stream::run_query(
                         stream_lp_top,
                         alp_plan.lp_arena.clone(),
-                        &alp_plan.expr_arena,
+                        &mut alp_plan.expr_arena,
                     )
                 };
                 match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
