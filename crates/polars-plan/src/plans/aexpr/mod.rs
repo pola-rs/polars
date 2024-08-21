@@ -11,6 +11,8 @@ use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::utils::{get_time_units, try_get_supertype};
 use polars_utils::arena::{Arena, Node};
+#[cfg(feature = "ir_serde")]
+use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 pub use utils::*;
 
@@ -19,6 +21,7 @@ use crate::plans::Context;
 use crate::prelude::*;
 
 #[derive(Clone, Debug, IntoStaticStr)]
+#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 pub enum IRAggExpr {
     Min {
         input: Node,
@@ -125,6 +128,7 @@ impl From<IRAggExpr> for GroupByMethod {
 
 /// IR expression node that is allocated in an [`Arena`][polars_utils::arena::Arena].
 #[derive(Clone, Debug, Default)]
+#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 pub enum AExpr {
     Explode(Node),
     Alias(Node, ColumnName),
@@ -164,6 +168,7 @@ pub enum AExpr {
         truthy: Node,
         falsy: Node,
     },
+    #[cfg_attr(feature = "ir_serde", serde(skip))]
     AnonymousFunction {
         input: Vec<ExprIR>,
         function: SpecialEq<Arc<dyn SeriesUdf>>,

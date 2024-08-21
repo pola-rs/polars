@@ -85,6 +85,7 @@ pub struct DistinctOptionsDSL {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 pub struct DistinctOptionsIR {
     /// Subset of columns that will be taken into account.
     pub subset: Option<Arc<[ColumnName]>>,

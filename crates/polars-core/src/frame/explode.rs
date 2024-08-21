@@ -1,5 +1,6 @@
 use arrow::offset::OffsetsBuffer;
 use rayon::prelude::*;
+use serde::{Deserialize, Serialize};
 use smartstring::alias::String as SmartString;
 
 use crate::chunked_array::ops::explode::offsets_to_indexes;
@@ -18,6 +19,7 @@ fn get_exploded(series: &Series) -> PolarsResult<(Series, OffsetsBuffer<i64>)> {
 
 /// Arguments for `[DataFrame::unpivot]` function
 #[derive(Clone, Default, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct UnpivotArgsIR {
     pub on: Vec<SmartString>,
     pub index: Vec<SmartString>,

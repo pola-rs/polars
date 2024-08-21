@@ -228,6 +228,7 @@ zip_with = ["polars-core/zip_with"]
 
 bigidx = ["polars-core/bigidx", "polars-lazy?/bigidx", "polars-ops/big_idx"]
 polars_cloud = ["polars-lazy?/polars_cloud"]
+ir_serde = ["polars-plan/ir_serde"]
 
 test = [
   "lazy",

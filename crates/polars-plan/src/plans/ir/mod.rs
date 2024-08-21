@@ -14,6 +14,8 @@ use hive::HivePartitions;
 use polars_core::prelude::*;
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::unitvec;
+#[cfg(feature = "ir_serde")]
+use serde::{Deserialize, Serialize};
 
 use crate::prelude::*;
 
@@ -33,6 +35,7 @@ pub struct IRPlanRef<'a> {
 /// [`IR`] is a representation of [`DslPlan`] with [`Node`]s which are allocated in an [`Arena`]
 /// In this IR the logical plan has access to the full dataset.
 #[derive(Clone, Debug, Default)]
+#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 pub enum IR {
     #[cfg(feature = "python")]
     PythonScan {
@@ -105,6 +108,7 @@ pub enum IR {
         keys: Vec<ExprIR>,
         aggs: Vec<ExprIR>,
         schema: SchemaRef,
+        #[cfg_attr(feature = "ir_serde", serde(skip))]
         apply: Option<Arc<dyn DataFrameUdf>>,
         maintain_order: bool,
         options: Arc<GroupbyOptions>,

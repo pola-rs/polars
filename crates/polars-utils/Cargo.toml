@@ -21,6 +21,7 @@ num-traits = { workspace = true }
 once_cell = { workspace = true }
 raw-cpuid = { workspace = true }
 rayon = { workspace = true }
+serde = { workspace = true, optional = true }
 smartstring = { workspace = true }
 stacker = { workspace = true }
 sysinfo = { version = "0.31", default-features = false, features = ["system"], optional = true }
@@ -35,3 +36,4 @@ version_check = { workspace = true }
 mmap = ["memmap"]
 bigidx = []
 nightly = []
+ir_serde = ["serde"]

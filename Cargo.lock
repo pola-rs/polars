@@ -3458,6 +3458,7 @@ dependencies = [
  "rand",
  "raw-cpuid",
  "rayon",
+ "serde",
  "smartstring",
  "stacker",
  "sysinfo",
