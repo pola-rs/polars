@@ -213,7 +213,7 @@ impl Clone for DslPlan {
 
 impl Default for DslPlan {
     fn default() -> Self {
-        let df = DataFrame::new::<Series>(vec![]).unwrap();
+        let df = DataFrame::empty();
         let schema = df.schema();
         DslPlan::DataFrameScan {
             df: Arc::new(df),
