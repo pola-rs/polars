@@ -269,11 +269,19 @@ impl DataFrame {
         Ok(DataFrame { columns })
     }
 
-    // Converts a sequence of columns into a DataFrame, broadcasting length-1
-    // columns to match the other columns.
-    pub fn new_with_broadcast(mut columns: Vec<Series>) -> PolarsResult<Self> {
+    /// Converts a sequence of columns into a DataFrame, broadcasting length-1
+    /// columns to match the other columns.
+    pub fn new_with_broadcast(columns: Vec<Series>) -> PolarsResult<Self> {
         ensure_names_unique(&columns, |s| s.name())?;
+        unsafe { Self::new_with_broadcast_no_checks(columns) }
+    }
 
+    /// Converts a sequence of columns into a DataFrame, broadcasting length-1
+    /// columns to match the other columns.
+    ///  
+    /// # Safety
+    /// Does not check that the column names are unique (which they must be).
+    pub unsafe fn new_with_broadcast_no_checks(mut columns: Vec<Series>) -> PolarsResult<Self> {
         // The length of the longest non-unit length column determines the
         // broadcast length. If all columns are unit-length the broadcast length
         // is one.
