@@ -10,14 +10,14 @@ pub(crate) fn lin_natural_sum(start: i64, delta: i64, len: usize) -> i64 {
     debug_assert!(len < i64::MAX as usize);
 
     let base = start * len as i64;
-    let sum = (len == 0).then_some(0).unwrap_or({
+    let sum = if len == 0 {
+        0
+    } else {
         let is_odd = len & 1;
         // SUM_i=0^n f * i = f * (n(n+1)/2)
         let sum = (len >> (is_odd ^ 1)) * (len.wrapping_sub(1) >> is_odd);
-        let sum = delta * sum as i64;
-
-        sum
-    });
+        delta * sum as i64
+    };
 
     base + sum
 }
