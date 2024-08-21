@@ -12,7 +12,7 @@ mod to_graph;
 pub use lower_ir::lower_ir;
 use polars_utils::arena::Arena;
 use polars_utils::itertools::Itertools;
-use slotmap::{Key, SlotMap};
+use slotmap::{Key, SecondaryMap, SlotMap};
 pub use to_graph::physical_plan_to_graph;
 
 slotmap::new_key_type! {
@@ -130,8 +130,14 @@ fn visualize_plan_rec(
     node_key: PhysNodeKey,
     phys_sm: &SlotMap<PhysNodeKey, PhysNode>,
     expr_arena: &Arena<AExpr>,
+    visited: &mut SecondaryMap<PhysNodeKey, ()>,
     out: &mut Vec<String>,
 ) {
+    if visited.contains_key(node_key) {
+        return;
+    }
+    visited.insert(node_key, ());
+
     use std::slice::from_ref;
     let (label, inputs) = match &phys_sm[node_key].kind {
         PhysNodeKind::InMemorySource { df } => (
@@ -211,7 +217,7 @@ fn visualize_plan_rec(
         label
     ));
     for input in inputs {
-        visualize_plan_rec(*input, phys_sm, expr_arena, out);
+        visualize_plan_rec(*input, phys_sm, expr_arena, visited, out);
         out.push(format!(
             "{} -> {};",
             input.data().as_ffi(),
@@ -225,9 +231,10 @@ pub fn visualize_plan(
     phys_sm: &SlotMap<PhysNodeKey, PhysNode>,
     expr_arena: &Arena<AExpr>,
 ) -> String {
+    let mut visited: SecondaryMap<PhysNodeKey, ()> = SecondaryMap::new();
     let mut out = Vec::with_capacity(phys_sm.len() + 2);
     out.push("digraph polars {\nrankdir=\"BT\"".to_string());
-    visualize_plan_rec(root, phys_sm, expr_arena, &mut out);
+    visualize_plan_rec(root, phys_sm, expr_arena, &mut visited, &mut out);
     out.push("}".to_string());
     out.join("\n")
 }
