@@ -184,6 +184,7 @@ offset_by = ["polars-time/offset_by"]
 
 bigidx = ["polars-core/bigidx"]
 polars_cloud = ["serde", "ciborium"]
+ir_serde = ["serde", "polars-utils/ir_serde"]
 
 panic_on_schema = []
 

@@ -1,5 +1,8 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 
+#[cfg(feature = "ir_serde")]
+use serde::{Deserialize, Serialize};
+
 use crate::error::*;
 use crate::slice::GetSaferUnchecked;
 
@@ -21,6 +24,7 @@ fn index_of<T>(slice: &[T], item: &T) -> Option<usize> {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
 #[repr(transparent)]
+#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 pub struct Node(pub usize);
 
 impl Default for Node {
@@ -32,6 +36,7 @@ impl Default for Node {
 static ARENA_VERSION: AtomicU32 = AtomicU32::new(0);
 
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 pub struct Arena<T> {
     version: u32,
     items: Vec<T>,

@@ -26,11 +26,13 @@ use crate::dsl::python_udf::PythonFunction;
 use crate::plans::functions::merge_sorted::merge_sorted;
 use crate::prelude::*;
 
+#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 #[derive(Clone, IntoStaticStr)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 pub enum FunctionIR {
     #[cfg(feature = "python")]
     OpaquePython(OpaquePythonUdf),
+    #[cfg_attr(feature = "ir_serde", serde(skip))]
     Opaque {
         function: Arc<dyn DataFrameUdf>,
         schema: Option<Arc<dyn UdfSchema>>,
@@ -40,7 +42,7 @@ pub enum FunctionIR {
         projection_pd: bool,
         streamable: bool,
         // used for formatting
-        fmt_str: &'static str,
+        fmt_str: String,
     },
     FastCount {
         paths: Arc<Vec<PathBuf>>,
@@ -48,6 +50,7 @@ pub enum FunctionIR {
         alias: Option<Arc<str>>,
     },
     /// Streaming engine pipeline
+    #[cfg_attr(feature = "ir_serde", serde(skip))]
     Pipeline {
         function: Arc<Mutex<dyn DataFrameUdfMut>>,
         schema: SchemaRef,
@@ -71,20 +74,24 @@ pub enum FunctionIR {
         new: Arc<[SmartString]>,
         // A column name gets swapped with an existing column
         swapping: bool,
+        #[cfg_attr(feature = "ir_serde", serde(skip))]
         schema: CachedSchema,
     },
     Explode {
         columns: Arc<[ColumnName]>,
+        #[cfg_attr(feature = "ir_serde", serde(skip))]
         schema: CachedSchema,
     },
     #[cfg(feature = "pivot")]
     Unpivot {
         args: Arc<UnpivotArgsIR>,
+        #[cfg_attr(feature = "ir_serde", serde(skip))]
         schema: CachedSchema,
     },
     RowIndex {
         name: Arc<str>,
         // Might be cached.
+        #[cfg_attr(feature = "ir_serde", serde(skip))]
         schema: CachedSchema,
         offset: Option<IdxSize>,
     },
