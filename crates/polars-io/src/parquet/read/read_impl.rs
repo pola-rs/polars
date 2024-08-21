@@ -315,9 +315,7 @@ fn rg_to_dfs_prefiltered(
                 if let Some(rc) = &row_index {
                     df.with_row_index_mut(&rc.name, Some(rg.row_offset + rc.offset));
                 }
-                // We don't want to parallelize here since we are already parallelizing over the
-                // row groups here.
-                df = df._filter_seq(mask)?;
+                df = df.filter(mask)?;
 
                 let mut bitmap = MutableBitmap::with_capacity(mask.len());
 
