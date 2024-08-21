@@ -5,10 +5,7 @@ use polars_core::series::amortized_iter::AmortSeries;
 use super::*;
 
 impl<'a> AggregationContext<'a> {
-    /// # Safety
-    /// The lifetime of [AmortSeries] is bound to the iterator. Keeping it alive
-    /// longer than the iterator is UB.
-    pub(super) unsafe fn iter_groups(
+    pub(super) fn iter_groups(
         &mut self,
         keep_names: bool,
     ) -> Box<dyn Iterator<Item = Option<AmortSeries>> + '_> {

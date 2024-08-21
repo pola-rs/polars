@@ -253,21 +253,19 @@ impl GatherExpr {
             ac.series().name(),
         )?;
 
-        unsafe {
-            let iter = ac.iter_groups(false).zip(idx.iter_groups(false));
-            for (s, idx) in iter {
-                match (s, idx) {
-                    (Some(s), Some(idx)) => {
-                        let idx = convert_to_unsigned_index(idx.as_ref(), s.as_ref().len())?;
-                        let out = s.as_ref().take(&idx)?;
-                        builder.append_series(&out)?;
-                    },
-                    _ => builder.append_null(),
-                };
-            }
-            let out = builder.finish().into_series();
-            ac.with_agg_state(AggState::AggregatedList(out));
+        let iter = ac.iter_groups(false).zip(idx.iter_groups(false));
+        for (s, idx) in iter {
+            match (s, idx) {
+                (Some(s), Some(idx)) => {
+                    let idx = convert_to_unsigned_index(idx.as_ref(), s.as_ref().len())?;
+                    let out = s.as_ref().take(&idx)?;
+                    builder.append_series(&out)?;
+                },
+                _ => builder.append_null(),
+            };
         }
+        let out = builder.finish().into_series();
+        ac.with_agg_state(AggState::AggregatedList(out));
         Ok(ac)
     }
 }
