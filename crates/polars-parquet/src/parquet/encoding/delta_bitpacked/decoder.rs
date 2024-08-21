@@ -28,6 +28,7 @@
 //! Note that all these additions need to be wrapping.
 
 use super::super::{bitpacked, uleb128, zigzag_leb128};
+use super::lin_natural_sum;
 use crate::parquet::encoding::bitpacked::{Unpackable, Unpacked};
 use crate::parquet::error::{ParquetError, ParquetResult};
 
@@ -166,17 +167,11 @@ impl DeltaGatherer for SumGatherer {
         delta: i64,
         num_repeats: usize,
     ) -> ParquetResult<()> {
-        if v < 0 || (delta < 0 && num_repeats as i64 * delta + v < 0) {
+        if v < 0 || (delta < 0 && num_repeats > 0 && (num_repeats - 1) as i64 * delta + v < 0) {
             return Err(ParquetError::oos("Invalid delta encoding length"));
         }
 
-        let base = v * num_repeats as i64;
-        let is_even = num_repeats & 1;
-        // SUM_i=0^n f * i = f * (n(n+1)/2)
-        let increment = (num_repeats >> is_even) * ((num_repeats + 1) >> (is_even ^ 1));
-        let increment = delta * increment as i64;
-
-        *target += (base + increment) as usize;
+        *target += lin_natural_sum(v, delta, num_repeats) as usize;
 
         Ok(())
     }

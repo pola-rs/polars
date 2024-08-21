@@ -643,11 +643,16 @@ impl MutableBinaryViewArray<[u8]> {
             // implementation.
             if min_length == max_length {
                 let length = min_length;
-                View::extend_with_inlinable_strided(
-                    &mut self.views,
-                    &buffer[..length * num_items],
-                    length as u8,
-                );
+                if length == 0 {
+                    self.views
+                        .resize(self.views.len() + num_items, View::new_inline(&[]));
+                } else {
+                    View::extend_with_inlinable_strided(
+                        &mut self.views,
+                        &buffer[..length * num_items],
+                        length as u8,
+                    );
+                }
             } else {
                 self.views.extend(lengths_iterator.map(|length| {
                     // SAFETY: We asserted before that the sum of all lengths is smaller or equal

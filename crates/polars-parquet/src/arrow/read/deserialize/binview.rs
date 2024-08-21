@@ -10,7 +10,7 @@ use arrow::datatypes::{ArrowDataType, PhysicalType};
 
 use super::binary::decoders::*;
 use super::utils::{freeze_validity, BatchableCollector};
-use crate::parquet::encoding::delta_bitpacked::DeltaGatherer;
+use crate::parquet::encoding::delta_bitpacked::{lin_natural_sum, DeltaGatherer};
 use crate::parquet::encoding::hybrid_rle::{self, DictionaryTranslator};
 use crate::parquet::encoding::{delta_byte_array, delta_length_byte_array};
 use crate::parquet::error::{ParquetError, ParquetResult};
@@ -168,7 +168,7 @@ pub(crate) struct DeltaBytesCollector<'a, 'b> {
 pub(crate) struct StatGatherer {
     min: usize,
     max: usize,
-    flat_length: usize,
+    sum: usize,
 }
 
 impl Default for StatGatherer {
@@ -176,7 +176,7 @@ impl Default for StatGatherer {
         Self {
             min: usize::MAX,
             max: usize::MIN,
-            flat_length: 0,
+            sum: 0,
         }
     }
 }
@@ -207,7 +207,7 @@ impl DeltaGatherer for StatGatherer {
 
         self.min = self.min.min(v);
         self.max = self.max.max(v);
-        self.flat_length += v;
+        self.sum += v;
 
         target.push(v as u32);
 
@@ -226,7 +226,7 @@ impl DeltaGatherer for StatGatherer {
 
             self.min = self.min.min(v);
             self.max = self.max.max(v);
-            self.flat_length += v;
+            self.sum += v;
 
             v as u32
         }));
@@ -252,8 +252,8 @@ impl DeltaGatherer for StatGatherer {
         delta: i64,
         num_repeats: usize,
     ) -> ParquetResult<()> {
-        if v < 0 || (delta < 0 && num_repeats as i64 * delta + v < 0) {
-            return Err(ParquetError::oos("Invalid delta encoding length"));
+        if v < 0 || (delta < 0 && num_repeats > 0 && (num_repeats - 1) as i64 * delta + v < 0) {
+            return Err(ParquetError::oos("DELTA_LENGTH_BYTE_ARRAY length < 0"));
         }
 
         if v > i64::from(u32::MAX) || v + ((num_repeats - 1) as i64) * delta > i64::from(u32::MAX) {
@@ -264,12 +264,6 @@ impl DeltaGatherer for StatGatherer {
 
         target.extend((0..num_repeats).map(|i| (v + (i as i64) * delta) as u32));
 
-        let base = v * num_repeats as i64;
-        let is_even = num_repeats & 1;
-        // SUM_i=0^n f * i = f * (n(n+1)/2)
-        let increment = (num_repeats >> is_even) * ((num_repeats + 1) >> (is_even ^ 1));
-        let increment = delta * increment as i64;
-
         let vstart = v;
         let vend = v + (num_repeats - 1) as i64 * delta;
 
@@ -279,10 +273,21 @@ impl DeltaGatherer for StatGatherer {
             (vstart, vend)
         };
 
+        let sum = lin_natural_sum(v, delta, num_repeats) as usize;
+
+        #[cfg(debug_assertions)]
+        {
+            assert_eq!(
+                (0..num_repeats)
+                    .map(|i| (v + (i as i64) * delta) as usize)
+                    .sum::<usize>(),
+                sum
+            );
+        }
+
         self.min = self.min.min(min as usize);
         self.max = self.max.max(max as usize);
-
-        self.flat_length += (base + increment) as usize;
+        self.sum += sum;
 
         Ok(())
     }
@@ -325,11 +330,11 @@ impl<'a, 'b> DeltaCollector<'a, 'b> {
                     self.pushed_lengths.iter().map(|&v| v as usize),
                     self.gatherer.min,
                     self.gatherer.max,
-                    self.gatherer.flat_length,
+                    self.gatherer.sum,
                 )
             };
 
-            self.decoder.offset += self.gatherer.flat_length;
+            self.decoder.offset += self.gatherer.sum;
             self.pushed_lengths.clear();
             *self.gatherer = StatGatherer::default();
         }
