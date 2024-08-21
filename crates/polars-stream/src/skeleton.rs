@@ -26,6 +26,10 @@ pub fn run_query(
         &mut phys_sm,
         &mut schema_cache,
     )?;
+    if let Ok(visual_path) = std::env::var("POLARS_VISUALIZE_PHYSICAL_PLAN") {
+        let visualization = crate::physical_plan::visualize_plan(root, &phys_sm, expr_arena);
+        std::fs::write(visual_path, visualization).unwrap();
+    }
     let (mut graph, phys_to_graph) =
         crate::physical_plan::physical_plan_to_graph(&phys_sm, expr_arena)?;
     let mut results = crate::execute::execute_graph(&mut graph)?;
