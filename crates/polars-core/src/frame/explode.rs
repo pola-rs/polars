@@ -1,5 +1,6 @@
 use arrow::offset::OffsetsBuffer;
 use rayon::prelude::*;
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use smartstring::alias::String as SmartString;
 
