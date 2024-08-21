@@ -1,6 +1,6 @@
 #[cfg(feature = "ipc")]
 use arrow::io::ipc::read::get_row_count as count_rows_ipc_sync;
-#[cfg(feature = "parquet")]
+#[cfg(any(feature = "parquet", feature = "json"))]
 use polars_io::cloud::CloudOptions;
 #[cfg(feature = "csv")]
 use polars_io::csv::read::count_rows as count_rows_csv;
@@ -10,8 +10,10 @@ use polars_io::parquet::read::ParquetAsyncReader;
 use polars_io::parquet::read::ParquetReader;
 #[cfg(all(feature = "parquet", feature = "async"))]
 use polars_io::pl_async::{get_runtime, with_concurrency_budget};
-#[cfg(any(feature = "parquet", feature = "ipc"))]
-use polars_io::{path_utils::is_cloud_url, SerReader};
+#[cfg(any(feature = "parquet", feature = "ipc", feature = "json"))]
+use polars_io::is_cloud_url;
+#[cfg(feature = "json")]
+use polars_io::SerReader;
 
 use super::*;
 

@@ -15,6 +15,7 @@ use crate::ndjson::buffer::*;
 use crate::predicates::PhysicalIoExpr;
 use crate::prelude::*;
 use crate::RowIndex;
+use crate::SerReader;
 const NEWLINE: u8 = b'\n';
 const CLOSING_BRACKET: u8 = b'}';
 
