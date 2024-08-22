@@ -1232,7 +1232,31 @@ class Series:
     def __getitem__(
         self, key: SingleIndexSelector | MultiIndexSelector
     ) -> Any | Series:
-        """Get part of the Series as a new Series or scalar."""
+        """
+        Get part of the Series as a new Series or scalar.
+
+        Parameters
+        ----------
+        key
+            Row(s) to select.
+
+        Returns
+        -------
+        Series or scalar, depending on `key`.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 4, 2])
+        >>> s[0]
+        1
+        >>> s[0:2]
+        shape: (2,)
+        Series: 'a' [i64]
+        [
+            1
+            4
+        ]
+        """
         return get_series_item_by_key(self, key)
 
     def __setitem__(
