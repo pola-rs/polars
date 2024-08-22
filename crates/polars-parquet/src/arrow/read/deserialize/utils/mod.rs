@@ -185,14 +185,15 @@ pub trait BatchableCollector<I, T> {
     fn reserve(target: &mut T, n: usize);
     fn push_n(&mut self, target: &mut T, n: usize) -> ParquetResult<()>;
     fn push_n_nulls(&mut self, target: &mut T, n: usize) -> ParquetResult<()>;
+    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()>;
 }
 
 /// This batches sequential collect operations to try and prevent unnecessary buffering and
 /// `Iterator::next` polling.
 #[must_use]
 pub struct BatchedCollector<'a, I, T, C: BatchableCollector<I, T>> {
-    num_waiting_valids: usize,
-    num_waiting_invalids: usize,
+    pub(crate) num_waiting_valids: usize,
+    pub(crate) num_waiting_invalids: usize,
 
     target: &'a mut T,
     collector: C,
@@ -241,6 +242,21 @@ impl<'a, I, T, C: BatchableCollector<I, T>> BatchedCollector<'a, I, T, C> {
     #[inline]
     pub fn push_n_invalids(&mut self, n: usize) {
         self.num_waiting_invalids += n;
+    }
+
+    #[inline]
+    pub fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
+        self.collector
+            .push_n(self.target, self.num_waiting_valids)?;
+        self.collector
+            .push_n_nulls(self.target, self.num_waiting_invalids)?;
+
+        self.num_waiting_valids = 0;
+        self.num_waiting_invalids = 0;
+        
+        self.collector.skip_in_place(n)?;
+
+        Ok(())
     }
 
     #[inline]
@@ -403,6 +419,11 @@ where
         target.resize(target.len() + n, O::default());
         Ok(())
     }
+
+    #[inline]
+    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
+        self.decoder.skip_in_place(n)
+    }
 }
 
 pub struct GatheredHybridRle<'a, 'b, 'c, O, G>
@@ -453,6 +474,11 @@ where
             .gather_repeated(target, self.null_value.clone(), n)?;
         Ok(())
     }
+
+    #[inline]
+    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
+        self.decoder.skip_in_place(n)
+    }
 }
 
 impl<'a, 'b, 'c, O, Out, G> BatchableCollector<u8, Binary<O>>
@@ -479,6 +505,11 @@ where
         self.gatherer
             .gather_repeated(target, self.null_value.clone(), n)?;
         Ok(())
+    }
+
+    #[inline]
+    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
+        self.decoder.skip_in_place(n)
     }
 }
 
@@ -513,6 +544,11 @@ where
         target.extend_null(n);
         Ok(())
     }
+
+    #[inline]
+    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
+        self.decoder.skip_in_place(n)
+    }
 }
 
 impl<T, P: Pushable<T>, I: Iterator<Item = T>> BatchableCollector<T, P> for I {
@@ -530,6 +566,14 @@ impl<T, P: Pushable<T>, I: Iterator<Item = T>> BatchableCollector<T, P> for I {
     #[inline]
     fn push_n_nulls(&mut self, target: &mut P, n: usize) -> ParquetResult<()> {
         target.extend_null_constant(n);
+        Ok(())
+    }
+
+    #[inline]
+    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
+        if n > 0 {
+            _ = self.nth(n - 1);
+        }
         Ok(())
     }
 }

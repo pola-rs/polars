@@ -1571,3 +1571,31 @@ def test_predicate_filtering(
 
     result = pl.scan_parquet(f, parallel=parallel_st).filter(expr).collect()
     assert_frame_equal(result, df.filter(expr))
+
+
+@given(
+    df=dataframes(
+        min_size=1, max_size=5, min_cols=1, max_cols=1,
+        excluded_dtypes=[pl.Decimal, pl.Categorical, pl.Enum],
+    ),
+    offset=st.integers(0, 100),
+    length=st.integers(0, 100),
+)
+@settings(
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
+@pytest.mark.write_disk()
+def test_slice_roundtrip(df: pl.DataFrame, offset: int, length: int, tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    f = tmp_path / "test.parquet"
+
+    offset %= (df.height + 1)
+    length %= (df.height - offset + 1)
+
+    print(df)
+    print(f"slice({offset}, {length})")
+
+    df.write_parquet(f)
+
+    scanned = pl.scan_parquet(f).slice(offset, length).collect()
+    assert_frame_equal(scanned, df.slice(offset, length))

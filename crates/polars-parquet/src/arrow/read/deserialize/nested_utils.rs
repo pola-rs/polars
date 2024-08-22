@@ -204,6 +204,10 @@ impl<'a, 'b, 'c, D: utils::NestedDecoder> BatchableCollector<(), D::DecodedState
         self.decoder.push_n_nulls(self.state, target, n);
         Ok(())
     }
+
+    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
+        self.state.skip_in_place(n)
+    }
 }
 
 /// The initial info of nested data types.
@@ -288,60 +292,24 @@ impl NestedState {
 
         (def_levels, rep_levels)
     }
-
-    /// Return a Look-Up Table that maps the definition levels to the number of leaf values they
-    /// are associated with.
-    fn def_lvl_to_num_values(&self, def_levels: &[u16]) -> Vec<usize> {
-        let depth = self.nested.len();
-        let highest_def_lvl = *def_levels.last().unwrap() as usize;
-
-        let mut def_lvl_to_num_values = vec![0; highest_def_lvl + 1];
-
-        let mut num_values = 1;
-        let mut idx = highest_def_lvl;
-
-        // The leaf is always associated with 1 element.
-        def_lvl_to_num_values[idx] = 1;
-
-        for i in (0..depth).rev() {
-            let nest = &self.nested[i];
-
-            if nest.is_repeated() {
-                idx -= 1;
-                def_lvl_to_num_values[idx as usize] = num_values;
-            }
-
-            if nest.is_nullable() {
-                idx -= 1;
-                num_values *= self.nested[i].invalid_num_values();
-                def_lvl_to_num_values[idx as usize] = num_values;
-            }
-
-            if num_values == 0 {
-                break;
-            }
-        }
-
-        def_lvl_to_num_values
-    }
 }
 
 /// Calculate the number of leaf values that are covered by the first `limit` definition level
 /// values.
 fn limit_to_num_values(
     def_iter: &HybridRleDecoder<'_>,
-    def_lvl_to_num_values: &[usize],
+    def_levels: &[u16],
     limit: usize,
 ) -> ParquetResult<usize> {
-    struct NumValuesGatherer<'a> {
-        def_lvl_to_num_values: &'a [usize],
+    struct NumValuesGatherer {
+        leaf_def_level: u16,
     }
     struct NumValuesState {
         num_values: usize,
         length: usize,
     }
 
-    impl<'a> HybridRleGatherer<u32> for NumValuesGatherer<'a> {
+    impl HybridRleGatherer<u32> for NumValuesGatherer {
         type Target = NumValuesState;
 
         fn target_reserve(&self, _target: &mut Self::Target, _n: usize) {}
@@ -355,7 +323,7 @@ fn limit_to_num_values(
         }
 
         fn gather_one(&self, target: &mut Self::Target, value: u32) -> ParquetResult<()> {
-            target.num_values += self.def_lvl_to_num_values[value as usize];
+            target.num_values += usize::from(value == self.leaf_def_level as u32);
             target.length += 1;
             Ok(())
         }
@@ -366,7 +334,7 @@ fn limit_to_num_values(
             value: u32,
             n: usize,
         ) -> ParquetResult<()> {
-            target.num_values += n * self.def_lvl_to_num_values[value as usize];
+            target.num_values += n * usize::from(value == self.leaf_def_level as u32);
             target.length += n;
             Ok(())
         }
@@ -380,7 +348,7 @@ fn limit_to_num_values(
         &mut state,
         limit,
         &NumValuesGatherer {
-            def_lvl_to_num_values,
+            leaf_def_level: *def_levels.last().unwrap(),
         },
     )?;
 
@@ -484,7 +452,6 @@ fn extend_offsets2<'a, D: utils::NestedDecoder>(
 
     def_levels: &[u16],
     rep_levels: &[u16],
-    def_lvl_to_num_values: &[usize],
 ) -> PolarsResult<()> {
     debug_assert_eq!(def_iter.len(), rep_iter.len());
 
@@ -515,11 +482,8 @@ fn extend_offsets2<'a, D: utils::NestedDecoder>(
                 let start_cell = idx_to_limit(&rep_iter, start)?;
 
                 let num_skipped_values =
-                    limit_to_num_values(&def_iter, def_lvl_to_num_values, start_cell)?;
-                batched_collector
-                    .collector()
-                    .state
-                    .skip_in_place(num_skipped_values)?;
+                    limit_to_num_values(&def_iter, def_levels, start_cell)?;
+                batched_collector.skip_in_place(num_skipped_values)?;
 
                 rep_iter.skip_in_place(start_cell)?;
                 def_iter.skip_in_place(start_cell)?;
@@ -542,11 +506,8 @@ fn extend_offsets2<'a, D: utils::NestedDecoder>(
             // @NOTE: This is kind of unused
             let last_skip = def_iter.len();
             let num_skipped_values =
-                limit_to_num_values(&def_iter, def_lvl_to_num_values, last_skip)?;
-            batched_collector
-                .collector()
-                .state
-                .skip_in_place(num_skipped_values)?;
+                limit_to_num_values(&def_iter, def_levels, last_skip)?;
+            batched_collector.skip_in_place(num_skipped_values)?;
             rep_iter.skip_in_place(last_skip)?;
             def_iter.skip_in_place(last_skip)?;
 
@@ -558,12 +519,8 @@ fn extend_offsets2<'a, D: utils::NestedDecoder>(
                 let num_zeros = iter.take_leading_zeros();
                 if num_zeros > 0 {
                     let offset = idx_to_limit(&rep_iter, num_zeros)?;
-                    let num_skipped_values =
-                        limit_to_num_values(&def_iter, def_lvl_to_num_values, offset)?;
-                    batched_collector
-                        .collector()
-                        .state
-                        .skip_in_place(num_skipped_values)?;
+                    let num_skipped_values = limit_to_num_values(&def_iter, def_levels, offset)?;
+                    batched_collector.skip_in_place(num_skipped_values)?;
                     rep_iter.skip_in_place(offset)?;
                     def_iter.skip_in_place(offset)?;
                 }
@@ -726,9 +683,7 @@ fn extend_offsets_limited<'a, D: utils::NestedDecoder>(
                         }
                     }
 
-                    for _ in 0..num_elements {
-                        batched_collector.push_invalid();
-                    }
+                    batched_collector.push_n_invalids(num_elements);
 
                     break;
                 }
@@ -809,7 +764,6 @@ impl<D: utils::NestedDecoder> PageNestedDecoder<D> {
 
         // Amortize the allocations.
         let (def_levels, rep_levels) = nested_state.levels();
-        let def_lvl_to_num_values = nested_state.def_lvl_to_num_values(&def_levels);
 
         match filter {
             None => {
@@ -840,7 +794,6 @@ impl<D: utils::NestedDecoder> PageNestedDecoder<D> {
                         None,
                         &def_levels,
                         &rep_levels,
-                        &def_lvl_to_num_values,
                     )?;
 
                     batched_collector.finalize()?;
@@ -895,7 +848,6 @@ impl<D: utils::NestedDecoder> PageNestedDecoder<D> {
                         state_filter,
                         &def_levels,
                         &rep_levels,
-                        &def_lvl_to_num_values,
                     )?;
 
                     batched_collector.finalize()?;

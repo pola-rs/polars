@@ -84,7 +84,7 @@ where
         }
 
         match self {
-            Self::Plain(v) => _ = v.nth(n - 1),
+            Self::Plain(v) => v.skip_in_place(n),
             Self::Dictionary(v) => v.values.skip_in_place(n)?,
             Self::ByteStreamSplit(v) => _ = v.iter_converted(|_| ()).nth(n - 1),
             Self::DeltaBinaryPacked(v) => v.skip_in_place(n)?,

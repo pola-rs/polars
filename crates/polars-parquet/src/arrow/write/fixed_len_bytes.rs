@@ -3,16 +3,16 @@ use arrow::types::i256;
 use polars_error::PolarsResult;
 
 use super::binary::ord_binary;
-use super::{utils, StatisticsOptions, WriteOptions};
+use super::{utils, EncodeNullability, StatisticsOptions, WriteOptions};
 use crate::arrow::read::schema::is_nullable;
 use crate::parquet::encoding::Encoding;
 use crate::parquet::page::DataPage;
 use crate::parquet::schema::types::PrimitiveType;
 use crate::parquet::statistics::FixedLenStatistics;
 
-pub(crate) fn encode_plain(array: &FixedSizeBinaryArray, is_optional: bool, buffer: &mut Vec<u8>) {
+pub(crate) fn encode_plain(array: &FixedSizeBinaryArray, options: EncodeNullability, buffer: &mut Vec<u8>) {
     // append the non-null values
-    if is_optional {
+    if options.is_optional() && array.validity().is_some() {
         array.iter().for_each(|x| {
             if let Some(x) = x {
                 buffer.extend_from_slice(x);
@@ -30,6 +30,8 @@ pub fn array_to_page(
     statistics: Option<FixedLenStatistics>,
 ) -> PolarsResult<DataPage> {
     let is_optional = is_nullable(&type_.field_info);
+    let encode_options = EncodeNullability::new(is_optional);
+
     let validity = array.validity();
 
     let mut buffer = vec![];
@@ -43,7 +45,7 @@ pub fn array_to_page(
 
     let definition_levels_byte_length = buffer.len();
 
-    encode_plain(array, is_optional, &mut buffer);
+    encode_plain(array, encode_options, &mut buffer);
 
     utils::build_plain_page(
         buffer,

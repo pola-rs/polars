@@ -165,6 +165,10 @@ impl<'a, 'b> BatchableCollector<u32, MutableBitmap> for BitmapCollector<'a, 'b> 
         target.extend_constant(n, false);
         Ok(())
     }
+
+    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
+        self.0.skip_in_place(n)
+    }
 }
 
 impl ExactSize for (MutableBitmap, MutableBitmap) {

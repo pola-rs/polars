@@ -109,4 +109,8 @@ where
         target.resize(target.len() + n, T::default());
         Ok(())
     }
+
+    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
+        self.decoder.skip_in_place(n)
+    }
 }

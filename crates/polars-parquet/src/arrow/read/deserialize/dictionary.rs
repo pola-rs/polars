@@ -191,6 +191,10 @@ impl<'a, 'b, K: DictionaryKey> BatchableCollector<(), Vec<K>> for DictArrayColle
         target.resize(target.len() + n, K::default());
         Ok(())
     }
+
+    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
+        self.values.skip_in_place(n)
+    }
 }
 
 impl<K: DictionaryKey> Translator<K> for DictArrayTranslator {
