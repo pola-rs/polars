@@ -601,21 +601,16 @@ fn extend_offsets_limited<'a, D: utils::NestedDecoder>(
                             }
                         }
 
-                        if embed_depth == max_depth - 1 {
-                            for _ in 0..num_elements {
-                                batched_collector.push_invalid();
-                            }
-
-                            break;
-                        }
-
                         let embed_num_values = embed_nest.invalid_num_values();
+                        num_elements *= embed_num_values;
 
                         if embed_num_values == 0 {
                             break;
                         }
+                    }
 
-                        num_elements *= embed_num_values;
+                    for _ in 0..num_elements {
+                        batched_collector.push_invalid();
                     }
 
                     break;
