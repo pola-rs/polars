@@ -77,5 +77,13 @@ class Schema(BaseSchema):
         return len(self)
 
     def to_python(self) -> dict[str, type]:
-        """Return Schema as a dictionary of column names and their Python types."""
+        """
+        Return Schema as a dictionary of column names and their Python types.
+
+        Examples
+        --------
+        >>> s = pl.Schema({"x": pl.Int8(), "y": pl.String(), "z": pl.Duration("ms")})
+        >>> s.to_python()
+        {'x': <class 'int'>, 'y':  <class 'str'>, 'z': <class 'datetime.timedelta'>}
+        """
         return {name: tp.to_python() for name, tp in self.items()}

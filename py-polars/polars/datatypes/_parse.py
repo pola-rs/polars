@@ -175,5 +175,7 @@ def _parse_union_type_into_dtype(input: Any) -> PolarsDataType:
 
 def _raise_on_invalid_dtype(input: Any) -> NoReturn:
     """Raise an informative error if the input could not be parsed."""
-    msg = f"cannot parse input of type {type(input).__name__!r} into Polars data type: {input!r}"
+    input_type = input if type(input) is type else f"of type {type(input).__name__!r}"
+    input_detail = "" if type(input) is type else f" (given: {input!r})"
+    msg = f"cannot parse input {input_type} into Polars data type{input_detail}"
     raise TypeError(msg) from None
