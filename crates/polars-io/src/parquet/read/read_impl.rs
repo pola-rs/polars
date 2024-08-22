@@ -252,13 +252,15 @@ fn rg_to_dfs_prefiltered(
         })
         .collect::<PolarsResult<Vec<_>>>()?;
 
-    let num_live_columns = live_variables.len();
-    let num_dead_columns = projection.len() - num_live_columns;
-
+    // Deduplicate the live variables
     let live_variables = live_variables
         .iter()
         .map(Deref::deref)
         .collect::<PlHashSet<_>>();
+
+    // Get the number of live columns
+    let num_live_columns = live_variables.len();
+    let num_dead_columns = projection.len() - num_live_columns;
 
     // We create two look-up tables that map indexes offsets into the live- and dead-set onto
     // column indexes of the schema.
@@ -271,7 +273,8 @@ fn rg_to_dfs_prefiltered(
             dead_idx_to_col_idx.push(i);
         }
     }
-    debug_assert_eq!(live_variables.len(), num_live_columns);
+
+    debug_assert_eq!(live_idx_to_col_idx.len(), num_live_columns);
     debug_assert_eq!(dead_idx_to_col_idx.len(), num_dead_columns);
 
     POOL.install(|| {
@@ -316,8 +319,12 @@ fn rg_to_dfs_prefiltered(
 
                 let mut bitmap = MutableBitmap::with_capacity(mask.len());
 
+                // We need to account for the validity of the items
                 for chunk in mask.downcast_iter() {
-                    bitmap.extend_from_bitmap(chunk.values());
+                    match chunk.validity() {
+                        None => bitmap.extend_from_bitmap(chunk.values()),
+                        Some(validity) => bitmap.extend_from_bitmap(&(validity & chunk.values())),
+                    }
                 }
 
                 let bitmap = bitmap.freeze();
@@ -339,6 +346,11 @@ fn rg_to_dfs_prefiltered(
             *previous_row_count = previous_row_count
                 .checked_add(height)
                 .ok_or(ROW_COUNT_OVERFLOW_ERR)?;
+        }
+
+        // We don't need to do any further work if there are no dead columns
+        if num_dead_columns == 0 {
+            return Ok(dfs.into_iter().map(|(_, df)| df).collect());
         }
 
         // @TODO: Incorporate this if we how we can properly use it. The problem here is that
