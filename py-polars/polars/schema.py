@@ -64,6 +64,9 @@ class Schema(BaseSchema):
         )
         super().__init__({name: parse_into_dtype(tp) for name, tp in input})  # type: ignore[misc]
 
+    def __setitem__(self, name: str, dtype: DataType | PythonDataType) -> None:
+        super().__setitem__(name, parse_into_dtype(dtype))  # type: ignore[assignment]
+
     def names(self) -> list[str]:
         """Get the column names of the schema."""
         return list(self.keys())

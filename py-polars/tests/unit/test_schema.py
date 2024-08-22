@@ -1,4 +1,5 @@
 import pickle
+from datetime import datetime
 
 import polars as pl
 
@@ -15,18 +16,21 @@ def test_schema() -> None:
 
 def test_schema_parse_nonpolars_dtypes() -> None:
     cardinal_directions = pl.Enum(["north", "south", "east", "west"])
+
     s = pl.Schema({"foo": pl.List, "bar": int, "baz": cardinal_directions})  # type: ignore[arg-type]
+    s["ham"] = datetime
 
     assert s["foo"] == pl.List
     assert s["bar"] == pl.Int64
     assert s["baz"] == cardinal_directions
+    assert s["ham"] == pl.Datetime("us")
 
-    assert s.len() == 3
-    assert s.names() == ["foo", "bar", "baz"]
-    assert s.dtypes() == [pl.List, pl.Int64, cardinal_directions]
+    assert s.len() == 4
+    assert s.names() == ["foo", "bar", "baz", "ham"]
+    assert s.dtypes() == [pl.List, pl.Int64, cardinal_directions, pl.Datetime("us")]
 
-    assert list(s.to_python().values()) == [list, int, str]
-    assert [tp.to_python() for tp in s.dtypes()] == [list, int, str]
+    assert list(s.to_python().values()) == [list, int, str, datetime]
+    assert [tp.to_python() for tp in s.dtypes()] == [list, int, str, datetime]
 
 
 def test_schema_equality() -> None:
