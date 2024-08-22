@@ -83,6 +83,14 @@ class DataTypeClass(type):
     def is_nested(cls) -> bool:  # noqa: D102
         ...
 
+    @classmethod
+    def from_python(cls, py_type: PythonDataType) -> PolarsDataType:  # noqa: D102
+        ...
+
+    @classmethod
+    def to_python(self) -> PythonDataType:  # noqa: D102
+        ...
+
 
 class DataType(metaclass=DataTypeClass):
     """Base class for all Polars data types."""
@@ -179,6 +187,20 @@ class DataType(metaclass=DataTypeClass):
     def is_nested(cls) -> bool:
         """Check whether the data type is a nested type."""
         return issubclass(cls, NestedType)
+
+    @classmethod
+    def from_python(cls, py_type: PythonDataType) -> PolarsDataType:
+        """Return the Polars data type that corresponds to a given Python type."""
+        from polars.datatypes._parse import parse_into_dtype
+
+        return parse_into_dtype(py_type)
+
+    @classinstmethod  # type: ignore[arg-type]
+    def to_python(self) -> PythonDataType:
+        """Return the Python type that corresponds to this Polars data type."""
+        from polars.datatypes import dtype_to_py_type
+
+        return dtype_to_py_type(self)
 
 
 class NumericType(DataType):
