@@ -19,7 +19,6 @@ Computation
     Series.cos
     Series.cosh
     Series.cot
-    Series.count
     Series.cum_count
     Series.cum_max
     Series.cum_min
