@@ -848,6 +848,16 @@ where
 pub(crate) fn align_chunks_binary_owned_series(left: Series, right: Series) -> (Series, Series) {
     match (left.chunks().len(), right.chunks().len()) {
         (1, 1) => (left, right),
+        // All chunks are equal length
+        (a, b)
+            if a == b
+                && left
+                    .chunk_lengths()
+                    .zip(right.chunk_lengths())
+                    .all(|(l, r)| l == r) =>
+        {
+            (left, right)
+        },
         (_, 1) => (left.rechunk(), right),
         (1, _) => (left, right.rechunk()),
         (_, _) => (left.rechunk(), right.rechunk()),
@@ -864,6 +874,16 @@ where
 {
     match (left.chunks.len(), right.chunks.len()) {
         (1, 1) => (left, right),
+        // All chunks are equal length
+        (a, b)
+            if a == b
+                && left
+                    .chunk_lengths()
+                    .zip(right.chunk_lengths())
+                    .all(|(l, r)| l == r) =>
+        {
+            (left, right)
+        },
         (_, 1) => (left.rechunk(), right),
         (1, _) => (left, right.rechunk()),
         (_, _) => (left.rechunk(), right.rechunk()),
