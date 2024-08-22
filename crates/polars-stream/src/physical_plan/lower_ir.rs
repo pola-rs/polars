@@ -102,20 +102,27 @@ pub fn lower_ir(
             let predicate = predicate.clone();
             let phys_input = lower_ir(*input, ir_arena, expr_arena, phys_sm, schema_cache)?;
             let (trans_input, trans_predicate) = super::lower_expr::lower_exprs(
-                phys_input, &[predicate], ir_arena, expr_arena, phys_sm,
+                phys_input,
+                &[predicate],
+                ir_arena,
+                expr_arena,
+                phys_sm,
             )?;
 
             let filter = PhysNodeKind::Filter {
                 input: trans_input,
                 predicate: trans_predicate.into_iter().next().unwrap(),
             };
-            
+
             // Drop the computed predicate column if necessary.
             if trans_input == phys_input {
                 filter
             } else {
                 let filter_schema = phys_sm[trans_input].output_schema.clone();
-                let columns = output_schema.iter_names().map(|name| name.to_string()).collect_vec();
+                let columns = output_schema
+                    .iter_names()
+                    .map(|name| name.to_string())
+                    .collect_vec();
                 PhysNodeKind::SimpleProjection {
                     input: phys_sm.insert(PhysNode::new(filter_schema, filter)),
                     columns,

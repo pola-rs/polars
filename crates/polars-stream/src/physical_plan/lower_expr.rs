@@ -325,9 +325,7 @@ fn build_fallback_node_with_ctx(
     let input_schema = &ctx.phys_sm[input].output_schema;
     let select_names: PlHashSet<_> = exprs
         .iter()
-        .flat_map(|expr| {
-            polars_plan::utils::aexpr_to_leaf_names_iter(expr.node(), ctx.expr_arena)
-        })
+        .flat_map(|expr| polars_plan::utils::aexpr_to_leaf_names_iter(expr.node(), ctx.expr_arena))
         .collect();
     let input_node = if input_schema
         .iter_names()
@@ -350,17 +348,30 @@ fn build_fallback_node_with_ctx(
     let output_schema = schema_for_select(input_node, &exprs, ctx)?;
     let expr_depth_limit = get_expr_depth_limit()?;
     let mut conv_state = ExpressionConversionState::new(false, expr_depth_limit);
-    let phys_exprs = exprs.into_iter().map(|expr| {
-        create_physical_expr(&expr, Context::Default, ctx.expr_arena, None, &mut conv_state)
-    }).try_collect_vec()?;
+    let phys_exprs = exprs
+        .into_iter()
+        .map(|expr| {
+            create_physical_expr(
+                &expr,
+                Context::Default,
+                ctx.expr_arena,
+                None,
+                &mut conv_state,
+            )
+        })
+        .try_collect_vec()?;
     let map = move |df| {
         let exec_state = ExecutionState::new();
-        let columns = phys_exprs.iter().map(|phys_expr| {
-            phys_expr.evaluate(&df, &exec_state)
-        }).try_collect()?;
+        let columns = phys_exprs
+            .iter()
+            .map(|phys_expr| phys_expr.evaluate(&df, &exec_state))
+            .try_collect()?;
         DataFrame::new_with_broadcast(columns)
     };
-    let kind = PhysNodeKind::InMemoryMap { input: input_node, map: Arc::new(map) };
+    let kind = PhysNodeKind::InMemoryMap {
+        input: input_node,
+        map: Arc::new(map),
+    };
     Ok(ctx.phys_sm.insert(PhysNode::new(output_schema, kind)))
 }
 
