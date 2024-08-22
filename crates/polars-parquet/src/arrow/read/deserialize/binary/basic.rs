@@ -210,7 +210,7 @@ impl<'a, O: Offset> StateTranslation<'a, BinaryDecoder<O>> for BinaryStateTransl
                 page.dict,
                 additional,
             )?,
-            T::Delta(ref mut page) => {
+            T::DeltaLengthByteArray(ref mut page, ref mut _lengths) => {
                 let (values, validity) = decoded;
 
                 let mut collector = DeltaCollector {

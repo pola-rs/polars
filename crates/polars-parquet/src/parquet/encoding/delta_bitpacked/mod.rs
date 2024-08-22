@@ -5,10 +5,38 @@ mod fuzz;
 pub(crate) use decoder::{Decoder, DeltaGatherer, SumGatherer};
 pub(crate) use encoder::encode;
 
+/// The sum of `start, start + delta, start + 2 * delta, ... len times`.
+pub(crate) fn lin_natural_sum(start: i64, delta: i64, len: usize) -> i64 {
+    debug_assert!(len < i64::MAX as usize);
+
+    let base = start * len as i64;
+    let sum = if len == 0 {
+        0
+    } else {
+        let is_odd = len & 1;
+        // SUM_i=0^n f * i = f * (n(n+1)/2)
+        let sum = (len >> (is_odd ^ 1)) * (len.wrapping_sub(1) >> is_odd);
+        delta * sum as i64
+    };
+
+    base + sum
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::parquet::error::{ParquetError, ParquetResult};
+
+    #[test]
+    fn linear_natural_sum() {
+        assert_eq!(lin_natural_sum(0, 0, 0), 0);
+        assert_eq!(lin_natural_sum(10, 4, 0), 0);
+        assert_eq!(lin_natural_sum(0, 1, 1), 0);
+        assert_eq!(lin_natural_sum(0, 1, 3), 3);
+        assert_eq!(lin_natural_sum(0, 1, 4), 6);
+        assert_eq!(lin_natural_sum(0, 2, 3), 6);
+        assert_eq!(lin_natural_sum(2, 2, 3), 12);
+    }
 
     #[test]
     fn basic() -> Result<(), ParquetError> {
