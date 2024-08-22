@@ -9,7 +9,7 @@ use polars_expr::planner::get_expr_depth_limit;
 use polars_expr::state::ExecutionState;
 use polars_expr::{create_physical_expr, ExpressionConversionState};
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
-use polars_plan::plans::{AExpr, LiteralValue, IR};
+use polars_plan::plans::{AExpr, LiteralValue};
 use polars_plan::prelude::*;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
@@ -26,7 +26,6 @@ fn unique_column_name() -> ColumnName {
 }
 
 struct LowerExprContext<'a> {
-    ir_arena: &'a mut Arena<IR>,
     expr_arena: &'a mut Arena<AExpr>,
     phys_sm: &'a mut SlotMap<PhysNodeKey, PhysNode>,
     is_elementwise_cache: PlHashMap<Node, bool>,
@@ -89,7 +88,7 @@ fn is_elementwise_rec(
 }
 
 fn is_elementwise(expr_key: IRNodeKey, ctx: &mut LowerExprContext) -> bool {
-    is_elementwise_rec(expr_key, &ctx.expr_arena, &mut ctx.is_elementwise_cache)
+    is_elementwise_rec(expr_key, ctx.expr_arena, &mut ctx.is_elementwise_cache)
 }
 
 #[recursive::recursive]
@@ -206,34 +205,9 @@ fn is_input_independent_rec(
 fn is_input_independent(expr_key: IRNodeKey, ctx: &mut LowerExprContext) -> bool {
     is_input_independent_rec(
         expr_key,
-        &ctx.expr_arena,
+        ctx.expr_arena,
         &mut ctx.is_input_independent_cache,
     )
-}
-
-fn is_aggregation(expr_key: IRNodeKey, ctx: &mut LowerExprContext) -> bool {
-    match ctx.expr_arena.get(expr_key) {
-        AExpr::Agg(_) => true,
-        _ => false,
-    }
-}
-
-/// Generates a new expression for the output column of an arbitrary expression.
-fn expr_for_output_column(expr: &ExprIR, ctx: &mut LowerExprContext) -> ExprIR {
-    if matches!(ctx.expr_arena.get(expr.node()), AExpr::Column(_)) {
-        return expr.clone();
-    }
-
-    let col_name = expr.output_name_inner().clone();
-    ExprIR::new(
-        ctx.expr_arena.add(AExpr::Column(col_name.unwrap().clone())),
-        col_name,
-    )
-}
-
-/// Generates a new ExprIR from the given AExpr with the given output name.
-fn add_expr(expr: AExpr, alias: ColumnName, ctx: &mut LowerExprContext) -> ExprIR {
-    ExprIR::new(ctx.expr_arena.add(expr), OutputName::Alias(alias))
 }
 
 fn build_input_independent_node_with_ctx(
@@ -288,22 +262,22 @@ fn simplify_input_nodes(
     let mut combined_exprs = vec![];
     input_nodes = input_nodes
         .into_iter()
-        .filter_map(|input_node| {
+        .filter(|input_node| {
             if let PhysNodeKind::Reduce {
                 input: inner,
                 exprs,
-            } = &ctx.phys_sm[input_node].kind
+            } = &ctx.phys_sm[*input_node].kind
             {
                 if *inner == orig_input {
                     combined_exprs.extend(exprs.iter().cloned());
-                    ctx.phys_sm.remove(input_node);
-                    return None;
+                    ctx.phys_sm.remove(*input_node);
+                    return false;
                 }
             }
-            Some(input_node)
+            true
         })
         .collect();
-    if combined_exprs.len() > 0 {
+    if !combined_exprs.is_empty() {
         let output_schema = schema_for_select(orig_input, &combined_exprs, ctx)?;
         let kind = PhysNodeKind::Reduce {
             input: orig_input,
@@ -345,14 +319,14 @@ fn build_fallback_node_with_ctx(
         input
     };
 
-    let output_schema = schema_for_select(input_node, &exprs, ctx)?;
+    let output_schema = schema_for_select(input_node, exprs, ctx)?;
     let expr_depth_limit = get_expr_depth_limit()?;
     let mut conv_state = ExpressionConversionState::new(false, expr_depth_limit);
     let phys_exprs = exprs
-        .into_iter()
+        .iter()
         .map(|expr| {
             create_physical_expr(
-                &expr,
+                expr,
                 Context::Default,
                 ctx.expr_arena,
                 None,
@@ -688,7 +662,7 @@ fn schema_for_select(
             let dtype = ctx.expr_arena.get(e.node()).to_dtype(
                 input_schema,
                 Context::Default,
-                &ctx.expr_arena,
+                ctx.expr_arena,
             )?;
             PolarsResult::Ok(Field::new(name, dtype))
         })
@@ -752,12 +726,10 @@ fn build_select_node_with_ctx(
 pub fn lower_exprs(
     input: PhysNodeKey,
     exprs: &[ExprIR],
-    ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
 ) -> PolarsResult<(PhysNodeKey, Vec<ExprIR>)> {
     let mut ctx = LowerExprContext {
-        ir_arena,
         expr_arena,
         phys_sm,
         is_elementwise_cache: PlHashMap::new(),
@@ -778,12 +750,10 @@ pub fn lower_exprs(
 pub fn build_select_node(
     input: PhysNodeKey,
     exprs: &[ExprIR],
-    ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
 ) -> PolarsResult<PhysNodeKey> {
     let mut ctx = LowerExprContext {
-        ir_arena,
         expr_arena,
         phys_sm,
         is_elementwise_cache: PlHashMap::new(),

@@ -40,7 +40,7 @@ pub fn lower_ir(
             let selectors = expr.clone();
             let phys_input = lower_ir(*input, ir_arena, expr_arena, phys_sm, schema_cache)?;
             return super::lower_expr::build_select_node(
-                phys_input, &selectors, ir_arena, expr_arena, phys_sm,
+                phys_input, &selectors, expr_arena, phys_sm,
             );
         },
 
@@ -79,7 +79,7 @@ pub fn lower_ir(
             }
             let selectors = selectors.into_values().collect_vec();
             return super::lower_expr::build_select_node(
-                phys_input, &selectors, ir_arena, expr_arena, phys_sm,
+                phys_input, &selectors, expr_arena, phys_sm,
             );
         },
 
@@ -101,13 +101,8 @@ pub fn lower_ir(
         IR::Filter { input, predicate } => {
             let predicate = predicate.clone();
             let phys_input = lower_ir(*input, ir_arena, expr_arena, phys_sm, schema_cache)?;
-            let (trans_input, trans_predicate) = super::lower_expr::lower_exprs(
-                phys_input,
-                &[predicate],
-                ir_arena,
-                expr_arena,
-                phys_sm,
-            )?;
+            let (trans_input, trans_predicate) =
+                super::lower_expr::lower_exprs(phys_input, &[predicate], expr_arena, phys_sm)?;
 
             let filter = PhysNodeKind::Filter {
                 input: trans_input,
