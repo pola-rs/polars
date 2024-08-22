@@ -440,6 +440,57 @@ impl OptimizationRule for SimplifyExprRule {
         let expr = expr_arena.get(expr_node).clone();
 
         let out = match &expr {
+            // is_null().sum() -> null_count()
+            // is_not_null().sum() -> len() - null_count()
+            AExpr::Agg(IRAggExpr::Sum(input)) => {
+                let input_expr = expr_arena.get(*input);
+                match input_expr {
+                    AExpr::Function {
+                        input,
+                        function: FunctionExpr::Boolean(BooleanFunction::IsNull),
+                        options: _,
+                    } => {
+                        Some(
+                            AExpr::Function {
+                                input: input.clone(),
+                                function: FunctionExpr::NullCount,
+                                options: FunctionOptions{
+                                    collect_groups: ApplyOptions::GroupWise,
+                                    fmt_str: "",
+                                    cast_to_supertypes: None,
+                                    check_lengths: UnsafeBool::default(),
+                                    flags: FunctionFlags::ALLOW_GROUP_AWARE | FunctionFlags::RETURNS_SCALAR
+
+                                }
+                            }
+                        )
+                    },
+                    AExpr::Function {
+                        input,
+                        function: FunctionExpr::Boolean(BooleanFunction::IsNotNull),
+                        options: _,
+                    } => {
+                        let inner_minus_exp = AExpr::BinaryExpr {
+                                op: Operator::Minus,
+                                right: expr_arena.add(AExpr::Function {
+                                    input: input.clone(),
+                                    function: FunctionExpr::NullCount,
+                                    options: FunctionOptions{
+                                        collect_groups: ApplyOptions::GroupWise,
+                                        fmt_str: "",
+                                        cast_to_supertypes: None,
+                                        check_lengths: UnsafeBool::default(),
+                                        flags: FunctionFlags::ALLOW_GROUP_AWARE | FunctionFlags::RETURNS_SCALAR
+                                    }
+                                }),
+                                left: expr_arena.add(AExpr::Len)
+                            };
+                        let inner_minus_node = expr_arena.add(inner_minus_exp);
+                        Some(AExpr::Alias(inner_minus_node, ColumnName::from("literal")))
+                    },
+                    _ => None
+                }
+            },
             // lit(left) + lit(right) => lit(left + right)
             // and null propagation
             AExpr::BinaryExpr { left, op, right } => {

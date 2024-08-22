@@ -102,9 +102,6 @@ pub(super) fn optimize_functions(
                 _ => None
             }
         },
-        // is_null().sum() -> null_count()
-        // is_not_null().sum() -> len() - null_count()
-        
         // sort().reverse() -> sort(reverse)
         // sort_by().reverse() -> sort_by(reverse)
         FunctionExpr::Reverse => {
