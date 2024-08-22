@@ -79,11 +79,15 @@ pub fn rolling_corr(x: Expr, y: Expr, options: RollingCovOptions) -> Expr {
         ..Default::default()
     };
 
+    let non_null_mask = when(x.clone().is_not_null().and(y.clone().is_not_null()))
+        .then(lit(1.0))
+        .otherwise(lit(Null {}));
+
     let mean_x_y = (x.clone() * y.clone()).rolling_mean(rolling_options.clone());
-    let mean_x = x.clone().rolling_mean(rolling_options.clone());
-    let mean_y = y.clone().rolling_mean(rolling_options.clone());
-    let var_x = x.clone().rolling_var(rolling_options.clone());
-    let var_y = y.clone().rolling_var(rolling_options);
+    let mean_x = (x.clone() * non_null_mask.clone()).rolling_mean(rolling_options.clone());
+    let mean_y = (y.clone() * non_null_mask.clone()).rolling_mean(rolling_options.clone());
+    let var_x = (x.clone() * non_null_mask.clone()).rolling_var(rolling_options.clone());
+    let var_y = (y.clone() * non_null_mask.clone()).rolling_var(rolling_options);
 
     let rolling_options_count = RollingOptionsFixedWindow {
         window_size: options.window_size as usize,
@@ -110,9 +114,13 @@ pub fn rolling_cov(x: Expr, y: Expr, options: RollingCovOptions) -> Expr {
         ..Default::default()
     };
 
+    let non_null_mask = when(x.clone().is_not_null().and(y.clone().is_not_null()))
+        .then(lit(1.0))
+        .otherwise(lit(Null {}));
+
     let mean_x_y = (x.clone() * y.clone()).rolling_mean(rolling_options.clone());
-    let mean_x = x.clone().rolling_mean(rolling_options.clone());
-    let mean_y = y.clone().rolling_mean(rolling_options);
+    let mean_x = (x.clone() * non_null_mask.clone()).rolling_mean(rolling_options.clone());
+    let mean_y = (y.clone() * non_null_mask.clone()).rolling_mean(rolling_options);
     let rolling_options_count = RollingOptionsFixedWindow {
         window_size: options.window_size as usize,
         min_periods: 0,
