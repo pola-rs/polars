@@ -146,3 +146,9 @@ def test_sample_16232() -> None:
     assert df.select(pl.col("b").list.sample(n=pl.col("a"), seed=0)).to_dict(
         as_series=False
     ) == {"b": [[], [], [1]]}
+
+
+def test_random_field_expansion_18234() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 3]})
+    df = df.select(pl.struct(pl.all()).shuffle().struct.field("*"))
+    assert_series_equal(df["a"], df["b"], check_names=False)
