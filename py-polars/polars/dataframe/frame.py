@@ -1194,7 +1194,130 @@ class DataFrame:
             | tuple[MultiIndexSelector, MultiColSelector]
         ),
     ) -> DataFrame | Series | Any:
-        """Get part of the DataFrame as a new DataFrame, Series, or scalar."""
+        """
+        Get part of the DataFrame as a new DataFrame, Series, or scalar.
+
+        Parameters
+        ----------
+        key
+            Rows / columns to select. This is easiest to explain via example. Suppose
+            we have a DataFrame with columns `'a'`, `'d'`, `'c'`, `'d'`. Here is what
+            various types of `key` would do:
+
+            - `df[0, 'a']` extracts the first element of column `'a'` and returns a
+              scalar.
+            - `df[0]` extracts the first row and returns a Dataframe.
+            - `df['a']` extracts column `'a'` and returns a Series.
+            - `df[0:2]` extracts the first two rows and returns a Dataframe.
+            - `df[0:2, 'a']` extracts the first two rows from column `'a'` and returns
+              a Series.
+            - `df[0:2, 0]` extracts the first two rows from the first column and returns
+              a Series.
+            - `df[[0, 1], [0, 1, 2]]` extracts the first two rows and the first three
+              columns and returns a Dataframe.
+            - `df[0: 2, ['a', 'c']]` extracts the first two rows from columns `'a'` and
+              `'c'` and returns a Dataframe.
+            - `df[:, 0: 2]` extracts all rows from the first two columns and returns a
+              Dataframe.
+            - `df[:, 'a': 'c']` extracts all rows and all columns positioned between
+              `'a'` and `'c'` *inclusive* and returns a Dataframe. In our example,
+              that would extract columns `'a'`, `'d'`, and `'c'`.
+
+        Returns
+        -------
+        DataFrame, Series, or scalar, depending on `key`.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"a": [1, 2, 3], "d": [4, 5, 6], "c": [1, 3, 2], "b": [7, 8, 9]}
+        ... )
+        >>> df[0]
+        shape: (1, 4)
+        ┌─────┬─────┬─────┬─────┐
+        │ a   ┆ d   ┆ c   ┆ b   │
+        │ --- ┆ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╪═════╡
+        │ 1   ┆ 4   ┆ 1   ┆ 7   │
+        └─────┴─────┴─────┴─────┘
+        >>> df[0, "a"]
+        1
+        >>> df["a"]
+        shape: (3,)
+        Series: 'a' [i64]
+        [
+            1
+            2
+            3
+        ]
+        >>> df[0:2]
+        shape: (2, 4)
+        ┌─────┬─────┬─────┬─────┐
+        │ a   ┆ d   ┆ c   ┆ b   │
+        │ --- ┆ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╪═════╡
+        │ 1   ┆ 4   ┆ 1   ┆ 7   │
+        │ 2   ┆ 5   ┆ 3   ┆ 8   │
+        └─────┴─────┴─────┴─────┘
+        >>> df[0:2, "a"]
+        shape: (2,)
+        Series: 'a' [i64]
+        [
+            1
+            2
+        ]
+        >>> df[0:2, 0]
+        shape: (2,)
+        Series: 'a' [i64]
+        [
+            1
+            2
+        ]
+        >>> df[[0, 1], [0, 1, 2]]
+        shape: (2, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ d   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ 4   ┆ 1   │
+        │ 2   ┆ 5   ┆ 3   │
+        └─────┴─────┴─────┘
+        >>> df[0:2, ["a", "c"]]
+        shape: (2, 2)
+        ┌─────┬─────┐
+        │ a   ┆ c   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 1   │
+        │ 2   ┆ 3   │
+        └─────┴─────┘
+        >>> df[:, 0:2]
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ a   ┆ d   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 4   │
+        │ 2   ┆ 5   │
+        │ 3   ┆ 6   │
+        └─────┴─────┘
+        >>> df[:, "a":"c"]
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ d   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ 4   ┆ 1   │
+        │ 2   ┆ 5   ┆ 3   │
+        │ 3   ┆ 6   ┆ 2   │
+        └─────┴─────┴─────┘
+        """
         return get_df_item_by_key(self, key)
 
     def __setitem__(
