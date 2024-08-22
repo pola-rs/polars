@@ -1361,6 +1361,7 @@ def test_filter() -> None:
 
     assert_series_equal(s.filter(mask), pl.Series("a", [1, 3]))
     assert_series_equal(s.filter([True, False, True]), pl.Series("a", [1, 3]))
+    assert_series_equal(s.filter(pl.element() != 2), pl.Series("a", [1, 3]))
 
 
 def test_gather_every() -> None:
