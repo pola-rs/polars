@@ -8,7 +8,8 @@ pub(super) fn optimize_functions(
 ) -> PolarsResult<Option<AExpr>> {
     let out = match function {
         // is_null().any() -> null_count() > 0
-        FunctionExpr::Boolean(BooleanFunction::Any {ignore_nulls:false}) => {
+        // is_not_null().any() ->  null_count() < len()
+        FunctionExpr::Boolean(BooleanFunction::Any {ignore_nulls:_}) => {
             let input_node = expr_arena.get(input[0].node());
             match input_node {
                 AExpr::Function {
@@ -26,14 +27,6 @@ pub(super) fn optimize_functions(
                         right: expr_arena.add(AExpr::Literal(LiteralValue::UInt8(0)))
                     }
                 ),
-                _ => None
-            }
-        },
-        // is_null().all() -> null_count() == len()
-        // is_not_null().all() -> null_count() == 0
-        FunctionExpr::Boolean(BooleanFunction::All {ignore_nulls: false}) => {
-            let input_node = expr_arena.get(input[0].node());
-            match input_node {
                 AExpr::Function {
                     input,
                     function: FunctionExpr::Boolean(BooleanFunction::IsNotNull),
@@ -45,13 +38,73 @@ pub(super) fn optimize_functions(
                             function: FunctionExpr::NullCount,
                             options: *options
                         }),
-                        op: Operator::Eq,
-                        right: expr_arena.add(AExpr::Literal(LiteralValue::UInt8(0)))
+                        op: Operator::Lt,
+                        right: expr_arena.add(AExpr::Len)
                     }
                 ),
                 _ => None
             }
         },
+        // is_null().all() -> null_count() == len()
+        // is_not_null().all() -> null_count() == 0
+        FunctionExpr::Boolean(BooleanFunction::All {ignore_nulls: _}) => {
+            let input_node = expr_arena.get(input[0].node());
+            match input_node {
+                AExpr::Function {
+                    input,
+                    function: FunctionExpr::Boolean(BooleanFunction::IsNull),
+                    options: _,
+                } => {
+                    let null_count_options = FunctionOptions{
+                        collect_groups: ApplyOptions::GroupWise,
+                        fmt_str: "",
+                        cast_to_supertypes: None,
+                        check_lengths: UnsafeBool::default(),
+                        flags: FunctionFlags::ALLOW_GROUP_AWARE | FunctionFlags::RETURNS_SCALAR
+
+                    };
+                    Some(
+                        AExpr::BinaryExpr {
+                            left: expr_arena.add(AExpr::Function {
+                                input: input.clone(),
+                                function: FunctionExpr::NullCount,
+                                options: null_count_options
+                            }),
+                            op: Operator::Eq,
+                            right: expr_arena.add(AExpr::Len)
+                        }
+                    )
+                },
+                AExpr::Function {
+                    input,
+                    function: FunctionExpr::Boolean(BooleanFunction::IsNotNull),
+                    options: _,
+                } => {
+                        let null_count_options = FunctionOptions{
+                            collect_groups: ApplyOptions::GroupWise,
+                            fmt_str: "",
+                            cast_to_supertypes: None,
+                            check_lengths: UnsafeBool::default(),
+                            flags: FunctionFlags::ALLOW_GROUP_AWARE | FunctionFlags::RETURNS_SCALAR
+
+                        };
+                        Some(
+                        AExpr::BinaryExpr {
+                            left: expr_arena.add(AExpr::Function {
+                                input: input.clone(),
+                                function: FunctionExpr::NullCount,
+                                options: null_count_options
+                            }),
+                            op: Operator::Eq,
+                            right: expr_arena.add(AExpr::Literal(LiteralValue::UInt8(0)))
+                        })
+                },
+                _ => None
+            }
+        },
+        // is_null().sum() -> null_count()
+        // is_not_null().sum() -> len() - null_count()
+        
         // sort().reverse() -> sort(reverse)
         // sort_by().reverse() -> sort_by(reverse)
         FunctionExpr::Reverse => {
