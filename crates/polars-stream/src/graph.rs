@@ -85,11 +85,17 @@ impl Graph {
 
             // Compute the new state of this node given its environment.
             if verbose {
-                eprintln!("updating {}, before: {recv_state:?} {send_state:?}", node.compute.name());
+                eprintln!(
+                    "updating {}, before: {recv_state:?} {send_state:?}",
+                    node.compute.name()
+                );
             }
             node.compute.update_state(&mut recv_state, &mut send_state);
             if verbose {
-                eprintln!("updating {}, after: {recv_state:?} {send_state:?}", node.compute.name());
+                eprintln!(
+                    "updating {}, after: {recv_state:?} {send_state:?}",
+                    node.compute.name()
+                );
             }
 
             // Propagate information.
