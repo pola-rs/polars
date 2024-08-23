@@ -1366,6 +1366,13 @@ def test_filter() -> None:
 def test_filter_element() -> None:
     s = pl.Series("a", [1, 2, 3])
     assert_series_equal(s.filter(pl.element() < 3), pl.Series("a", [1, 2]))
+    assert_series_equal(s.filter(pl.element() != 2), pl.Series("a", [1, 3]))
+
+    s = pl.Series("a", [None, None, None], dtype=pl.UInt8)
+    assert_series_equal(
+        s.filter(pl.element().is_not_null()),
+        pl.Series("a", [], dtype=pl.UInt8),
+    )
 
 
 def test_gather_every() -> None:

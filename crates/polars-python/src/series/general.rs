@@ -3,7 +3,7 @@ use std::io::Cursor;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::series::IsSorted;
 use polars_core::utils::flatten::flatten_series;
-use pyo3::exceptions::{PyIndexError, PyRuntimeError, PyValueError};
+use pyo3::exceptions::{PyIndexError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 use pyo3::Python;
@@ -235,16 +235,6 @@ impl PySeries {
             Err(PyValueError::new_err("index is out of bounds"))
         } else {
             Ok(self.series.new_from_index(index, length).into())
-        }
-    }
-
-    fn filter(&self, filter: &PySeries) -> PyResult<Self> {
-        let filter_series = &filter.series;
-        if let Ok(ca) = filter_series.bool() {
-            let series = self.series.filter(ca).map_err(PyPolarsErr::from)?;
-            Ok(PySeries { series })
-        } else {
-            Err(PyRuntimeError::new_err("Expected a boolean mask"))
         }
     }
 

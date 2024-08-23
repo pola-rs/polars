@@ -3018,11 +3018,7 @@ class Series:
                 3
         ]
         """
-        if isinstance(predicate, pl.Expr):
-            return self.to_frame("").filter(predicate).to_series().rename(self.name)
-        elif isinstance(predicate, list):
-            predicate = Series("", predicate)
-        return self._from_pyseries(self._s.filter(predicate._s))
+        return self.to_frame("").filter(predicate).to_series().rename(self.name)
 
     def head(self, n: int = 10) -> Series:
         """
