@@ -719,7 +719,7 @@ impl LazyFrame {
                 let f = || {
                     polars_stream::run_query(
                         stream_lp_top,
-                        alp_plan.lp_arena.clone(),
+                        alp_plan.lp_arena,
                         &mut alp_plan.expr_arena,
                     )
                 };
