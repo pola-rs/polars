@@ -1,5 +1,4 @@
 mod binary;
-mod indexes;
 mod primitive;
 mod sidecar;
 

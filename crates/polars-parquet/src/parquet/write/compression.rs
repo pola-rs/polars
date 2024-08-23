@@ -16,9 +16,10 @@ fn compress_data(
         mut buffer,
         header,
         descriptor,
-        selected_rows,
+        num_rows,
     } = page;
     let uncompressed_page_size = buffer.len();
+    let num_rows = num_rows.expect("We should have num_rows when we are writing");
     if compression != CompressionOptions::Uncompressed {
         match &header {
             DataPageHeader::V1(_) => {
@@ -40,13 +41,13 @@ fn compress_data(
         std::mem::swap(buffer.to_mut(), &mut compressed_buffer);
     }
 
-    Ok(CompressedDataPage::new_read(
+    Ok(CompressedDataPage::new(
         header,
         CowBuffer::Owned(compressed_buffer),
         compression.into(),
         uncompressed_page_size,
         descriptor,
-        selected_rows,
+        num_rows,
     ))
 }
 

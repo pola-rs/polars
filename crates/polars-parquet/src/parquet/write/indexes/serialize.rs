@@ -62,11 +62,7 @@ pub fn serialize_offset_index(pages: &[PageWriteSpec]) -> ParquetResult<OffsetIn
                 compressed_page_size: spec.bytes_written.try_into()?,
                 first_row_index,
             };
-            let num_rows = spec.num_rows.ok_or_else(|| {
-                ParquetError::oos(
-                    "options were set to write statistics but some data pages miss number of rows",
-                )
-            })?;
+            let num_rows = spec.num_rows;
             first_row_index += num_rows as i64;
             Ok(location)
         })

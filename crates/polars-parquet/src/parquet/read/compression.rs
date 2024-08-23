@@ -105,7 +105,6 @@ fn create_page(compressed_page: CompressedPage, buffer: Vec<u8>) -> Page {
             page.header,
             CowBuffer::Owned(buffer),
             page.descriptor,
-            page.selected_rows,
         )),
         CompressedPage::Dict(page) => Page::Dict(DictPage {
             buffer: CowBuffer::Owned(buffer),
