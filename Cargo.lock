@@ -3128,6 +3128,7 @@ dependencies = [
  "fs4",
  "futures",
  "glob",
+ "hashbrown",
  "home",
  "itoa",
  "memchr",
