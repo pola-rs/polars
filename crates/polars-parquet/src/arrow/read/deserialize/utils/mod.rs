@@ -253,7 +253,7 @@ impl<'a, I, T, C: BatchableCollector<I, T>> BatchedCollector<'a, I, T, C> {
 
         self.num_waiting_valids = 0;
         self.num_waiting_invalids = 0;
-        
+
         self.collector.skip_in_place(n)?;
 
         Ok(())

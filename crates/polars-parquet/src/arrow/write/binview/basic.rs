@@ -10,7 +10,11 @@ use crate::write::binary::encode_non_null_values;
 use crate::write::utils::invalid_encoding;
 use crate::write::{utils, EncodeNullability, Encoding, Page, StatisticsOptions, WriteOptions};
 
-pub(crate) fn encode_plain(array: &BinaryViewArray, options: EncodeNullability, buffer: &mut Vec<u8>) {
+pub(crate) fn encode_plain(
+    array: &BinaryViewArray,
+    options: EncodeNullability,
+    buffer: &mut Vec<u8>,
+) {
     if options.is_optional() && array.validity().is_some() {
         let capacity = array.total_bytes_len()
             + (array.len() - array.null_count()) * std::mem::size_of::<u32>();
@@ -33,7 +37,11 @@ pub(crate) fn encode_plain(array: &BinaryViewArray, options: EncodeNullability, 
     }
 }
 
-pub(crate) fn encode_delta(array: &BinaryViewArray, options: EncodeNullability, buffer: &mut Vec<u8>) {
+pub(crate) fn encode_delta(
+    array: &BinaryViewArray,
+    options: EncodeNullability,
+    buffer: &mut Vec<u8>,
+) {
     if options.is_optional() && array.validity().is_some() {
         let lengths = utils::ExactSizedIter::new(
             array.non_null_views_iter().map(|v| v.length as i64),

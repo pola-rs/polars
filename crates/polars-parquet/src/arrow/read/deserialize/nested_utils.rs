@@ -481,8 +481,7 @@ fn extend_offsets2<'a, D: utils::NestedDecoder>(
             if start > 0 {
                 let start_cell = idx_to_limit(&rep_iter, start)?;
 
-                let num_skipped_values =
-                    limit_to_num_values(&def_iter, def_levels, start_cell)?;
+                let num_skipped_values = limit_to_num_values(&def_iter, def_levels, start_cell)?;
                 batched_collector.skip_in_place(num_skipped_values)?;
 
                 rep_iter.skip_in_place(start_cell)?;
@@ -505,8 +504,7 @@ fn extend_offsets2<'a, D: utils::NestedDecoder>(
 
             // @NOTE: This is kind of unused
             let last_skip = def_iter.len();
-            let num_skipped_values =
-                limit_to_num_values(&def_iter, def_levels, last_skip)?;
+            let num_skipped_values = limit_to_num_values(&def_iter, def_levels, last_skip)?;
             batched_collector.skip_in_place(num_skipped_values)?;
             rep_iter.skip_in_place(last_skip)?;
             def_iter.skip_in_place(last_skip)?;

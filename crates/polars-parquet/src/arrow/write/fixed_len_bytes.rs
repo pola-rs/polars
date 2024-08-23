@@ -10,7 +10,11 @@ use crate::parquet::page::DataPage;
 use crate::parquet::schema::types::PrimitiveType;
 use crate::parquet::statistics::FixedLenStatistics;
 
-pub(crate) fn encode_plain(array: &FixedSizeBinaryArray, options: EncodeNullability, buffer: &mut Vec<u8>) {
+pub(crate) fn encode_plain(
+    array: &FixedSizeBinaryArray,
+    options: EncodeNullability,
+    buffer: &mut Vec<u8>,
+) {
     // append the non-null values
     if options.is_optional() && array.validity().is_some() {
         array.iter().for_each(|x| {
