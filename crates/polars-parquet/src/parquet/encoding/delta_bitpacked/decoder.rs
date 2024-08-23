@@ -28,6 +28,7 @@
 //! Note that all these additions need to be wrapping.
 
 use super::super::{bitpacked, uleb128, zigzag_leb128};
+use super::lin_natural_sum;
 use crate::parquet::encoding::bitpacked::{Unpackable, Unpacked};
 use crate::parquet::error::{ParquetError, ParquetResult};
 
@@ -166,16 +167,11 @@ impl DeltaGatherer for SumGatherer {
         delta: i64,
         num_repeats: usize,
     ) -> ParquetResult<()> {
-        if v < 0 || (delta < 0 && num_repeats as i64 * delta + v < 0) {
+        if v < 0 || (delta < 0 && num_repeats > 0 && (num_repeats - 1) as i64 * delta + v < 0) {
             return Err(ParquetError::oos("Invalid delta encoding length"));
         }
 
-        let base = v * num_repeats as i64;
-        let is_even = num_repeats & 1;
-        // SUM_i=0^n f * i = f * (n(n+1)/2)
-        let increment = (num_repeats >> is_even) * ((num_repeats + 1) >> (is_even ^ 1));
-
-        *target += base as usize + increment;
+        *target += lin_natural_sum(v, delta, num_repeats) as usize;
 
         Ok(())
     }
@@ -254,6 +250,13 @@ fn gather_miniblock<G: DeltaGatherer>(
 ) -> ParquetResult<()> {
     let bitwidth = bitwidth as usize;
 
+    if bitwidth == 0 {
+        let v = last_value.wrapping_add(min_delta);
+        gatherer.gather_constant(target, v, min_delta, values_per_miniblock)?;
+        *last_value = last_value.wrapping_add(min_delta * values_per_miniblock as i64);
+        return Ok(());
+    }
+
     debug_assert!(bitwidth <= 64);
     debug_assert_eq!((bitwidth * values_per_miniblock).div_ceil(8), values.len());
 
@@ -286,18 +289,14 @@ fn gather_block<'a, G: DeltaGatherer>(
     let bitwidths;
     (bitwidths, values) = values
         .split_at_checked(num_miniblocks)
-        .ok_or(ParquetError::oos(
-            "Not enough bitwidths available in delta encoding",
-        ))?;
+        .ok_or_else(|| ParquetError::oos("Not enough bitwidths available in delta encoding"))?;
 
     gatherer.target_reserve(target, num_miniblocks * values_per_miniblock);
     for &bitwidth in bitwidths {
         let miniblock;
         (miniblock, values) = values
             .split_at_checked((bitwidth as usize * values_per_miniblock).div_ceil(8))
-            .ok_or(ParquetError::oos(
-                "Not enough bytes for miniblock in delta encoding",
-            ))?;
+            .ok_or_else(|| ParquetError::oos("Not enough bytes for miniblock in delta encoding"))?;
         gather_miniblock(
             target,
             min_delta,
@@ -372,9 +371,9 @@ impl<'a> Decoder<'a> {
                 // <min delta> <list of bitwidths of miniblocks> <miniblocks>
 
                 let (_, consumed) = zigzag_leb128::decode(rem);
-                rem = rem.get(consumed..).ok_or(ParquetError::oos(
-                    "No min-delta value in delta encoding miniblock",
-                ))?;
+                rem = rem.get(consumed..).ok_or_else(|| {
+                    ParquetError::oos("No min-delta value in delta encoding miniblock")
+                })?;
 
                 if rem.len() < num_miniblocks_per_block {
                     return Err(ParquetError::oos(
@@ -401,9 +400,11 @@ impl<'a> Decoder<'a> {
 
                 rem = rem
                     .get(num_miniblocks_per_block + num_bitpacking_bytes..)
-                    .ok_or(ParquetError::oos(
-                        "Not enough bytes for all bitpacked values in delta encoding",
-                    ))?;
+                    .ok_or_else(|| {
+                        ParquetError::oos(
+                            "Not enough bytes for all bitpacked values in delta encoding",
+                        )
+                    })?;
 
                 num_values_left = num_values_left.saturating_sub(values_per_block);
             }

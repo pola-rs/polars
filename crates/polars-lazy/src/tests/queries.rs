@@ -1440,7 +1440,7 @@ fn test_when_then_schema() -> PolarsResult<()> {
         .select([when(col("A").gt(lit(1)))
             .then(Null {}.lit())
             .otherwise(col("A"))])
-        .schema();
+        .collect_schema();
     assert_ne!(schema?.get_at_index(0).unwrap().1, &DataType::Null);
 
     Ok(())

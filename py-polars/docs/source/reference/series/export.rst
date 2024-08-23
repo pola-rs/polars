@@ -8,6 +8,7 @@ Export Series data to other formats:
 .. autosummary::
    :toctree: api/
 
+   Series.__array__
    Series.__arrow_c_stream__
    Series.to_arrow
    Series.to_frame

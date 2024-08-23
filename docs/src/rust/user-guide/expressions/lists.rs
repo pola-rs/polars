@@ -141,7 +141,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ListPrimitiveChunkedBuilder::new("Array_2", 8, 8, DataType::Int32);
     col2.append_slice(&[1, 7, 3]);
     col2.append_slice(&[8, 1, 0]);
-    let array_df = DataFrame::new([col1.finish(), col2.finish()].into())?;
+    let array_df = DataFrame::new(vec![
+        col1.finish().into_series(),
+        col2.finish().into_series(),
+    ])?;
 
     println!("{}", &array_df);
     // --8<-- [end:array_df]

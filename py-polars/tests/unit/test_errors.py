@@ -484,7 +484,7 @@ def test_skip_nulls_err() -> None:
 
     with pytest.raises(
         ComputeError,
-        match=r"The output type of the 'apply' function cannot be determined",
+        match=r"The output type of the 'map_elements' function cannot be determined",
     ):
         df.with_columns(pl.col("foo").map_elements(lambda x: x, skip_nulls=True))
 

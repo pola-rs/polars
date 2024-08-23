@@ -59,20 +59,7 @@ impl ComputeNode for SelectNode {
                         out._add_columns(selected, &slf.schema)?;
                         out
                     } else {
-                        // Broadcast scalars.
-                        let max_non_unit_length = selected
-                            .iter()
-                            .map(|s| s.len())
-                            .filter(|l| *l != 1)
-                            .max()
-                            .unwrap_or(1);
-                        for s in &mut selected {
-                            if s.len() != max_non_unit_length {
-                                assert!(s.len() == 1, "got series of incompatible lengths");
-                                *s = s.new_from_index(0, max_non_unit_length);
-                            }
-                        }
-                        unsafe { DataFrame::new_no_checks(selected) }
+                        DataFrame::new_with_broadcast(selected)?
                     };
 
                     let mut morsel = Morsel::new(ret, seq, source_token);

@@ -794,8 +794,11 @@ pub fn to_alp_impl(
             IR::Sink { input, payload }
         },
         DslPlan::IR { node, dsl, version } => {
-            return if let (true, Some(node)) = (version == lp_arena.version(), node) {
-                Ok(node)
+            return if node.is_some()
+                && version == lp_arena.version()
+                && convert.used_arenas.insert(version)
+            {
+                Ok(node.unwrap())
             } else {
                 to_alp_impl(owned(dsl), expr_arena, lp_arena, convert)
             }

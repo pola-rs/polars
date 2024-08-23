@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import warnings
 from datetime import date, datetime, time, timedelta
 from functools import lru_cache, partial, reduce
 from io import BytesIO, StringIO
@@ -41,6 +42,7 @@ from polars._utils.various import (
     _in_notebook,
     _is_generator,
     extend_bool,
+    find_stacklevel,
     is_bool_sequence,
     is_sequence,
     issue_warning,
@@ -680,7 +682,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             The format in which to serialize. Options:
 
             - `"binary"`: Serialize to binary format (bytes). This is the default.
-            - `"json"`: Serialize to JSON format (string).
+            - `"json"`: Serialize to JSON format (string) (deprecated).
 
         See Also
         --------
@@ -716,6 +718,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if format == "binary":
             serializer = self._ldf.serialize_binary
         elif format == "json":
+            msg = "'json' serialization format of LazyFrame is deprecated"
+            warnings.warn(
+                msg,
+                stacklevel=find_stacklevel(),
+            )
             serializer = self._ldf.serialize_json
         else:
             msg = f"`format` must be one of {{'binary', 'json'}}, got {format!r}"
@@ -3993,7 +4000,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         tolerance: str | int | float | timedelta | None = None,
         allow_parallel: bool = True,
         force_parallel: bool = False,
-        coalesce: bool | None = None,
+        coalesce: bool = True,
     ) -> LazyFrame:
         """
         Perform an asof join.
@@ -4071,53 +4078,214 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Force the physical plan to evaluate the computation of both DataFrames up to
             the join in parallel.
         coalesce
-            Coalescing behavior (merging of join columns).
+            Coalescing behavior (merging of `on` / `left_on` / `right_on` columns):
 
-            - None: -> join specific.
             - True: -> Always coalesce join columns.
             - False: -> Never coalesce join columns.
 
             Note that joining on any other expressions than `col`
             will turn off coalescing.
 
-
         Examples
         --------
-        >>> from datetime import datetime
+        >>> from datetime import date
         >>> gdp = pl.LazyFrame(
         ...     {
-        ...         "date": [
-        ...             datetime(2016, 1, 1),
-        ...             datetime(2017, 1, 1),
-        ...             datetime(2018, 1, 1),
-        ...             datetime(2019, 1, 1),
-        ...         ],  # note record date: Jan 1st (sorted!)
-        ...         "gdp": [4164, 4411, 4566, 4696],
+        ...         "date": pl.date_range(
+        ...             date(2016, 1, 1),
+        ...             date(2020, 1, 1),
+        ...             "1y",
+        ...             eager=True,
+        ...         ),
+        ...         "gdp": [4164, 4411, 4566, 4696, 4827],
         ...     }
-        ... ).set_sorted("date")
+        ... )
+        >>> gdp.collect()
+        shape: (5, 2)
+        ┌────────────┬──────┐
+        │ date       ┆ gdp  │
+        │ ---        ┆ ---  │
+        │ date       ┆ i64  │
+        ╞════════════╪══════╡
+        │ 2016-01-01 ┆ 4164 │
+        │ 2017-01-01 ┆ 4411 │
+        │ 2018-01-01 ┆ 4566 │
+        │ 2019-01-01 ┆ 4696 │
+        │ 2020-01-01 ┆ 4827 │
+        └────────────┴──────┘
+
         >>> population = pl.LazyFrame(
         ...     {
-        ...         "date": [
-        ...             datetime(2016, 5, 12),
-        ...             datetime(2017, 5, 12),
-        ...             datetime(2018, 5, 12),
-        ...             datetime(2019, 5, 12),
-        ...         ],  # note record date: May 12th (sorted!)
-        ...         "population": [82.19, 82.66, 83.12, 83.52],
+        ...         "date": [date(2016, 3, 1), date(2018, 8, 1), date(2019, 1, 1)],
+        ...         "population": [82.19, 82.66, 83.12],
         ...     }
-        ... ).set_sorted("date")
+        ... ).sort("date")
+        >>> population.collect()
+        shape: (3, 2)
+        ┌────────────┬────────────┐
+        │ date       ┆ population │
+        │ ---        ┆ ---        │
+        │ date       ┆ f64        │
+        ╞════════════╪════════════╡
+        │ 2016-03-01 ┆ 82.19      │
+        │ 2018-08-01 ┆ 82.66      │
+        │ 2019-01-01 ┆ 83.12      │
+        └────────────┴────────────┘
+
+        Note how the dates don't quite match. If we join them using `join_asof` and
+        `strategy='backward'`, then each date from `population` which doesn't have an
+        exact match is matched with the closest earlier date from `gdp`:
+
         >>> population.join_asof(gdp, on="date", strategy="backward").collect()
-        shape: (4, 3)
-        ┌─────────────────────┬────────────┬──────┐
-        │ date                ┆ population ┆ gdp  │
-        │ ---                 ┆ ---        ┆ ---  │
-        │ datetime[μs]        ┆ f64        ┆ i64  │
-        ╞═════════════════════╪════════════╪══════╡
-        │ 2016-05-12 00:00:00 ┆ 82.19      ┆ 4164 │
-        │ 2017-05-12 00:00:00 ┆ 82.66      ┆ 4411 │
-        │ 2018-05-12 00:00:00 ┆ 83.12      ┆ 4566 │
-        │ 2019-05-12 00:00:00 ┆ 83.52      ┆ 4696 │
-        └─────────────────────┴────────────┴──────┘
+        shape: (3, 3)
+        ┌────────────┬────────────┬──────┐
+        │ date       ┆ population ┆ gdp  │
+        │ ---        ┆ ---        ┆ ---  │
+        │ date       ┆ f64        ┆ i64  │
+        ╞════════════╪════════════╪══════╡
+        │ 2016-03-01 ┆ 82.19      ┆ 4164 │
+        │ 2018-08-01 ┆ 82.66      ┆ 4566 │
+        │ 2019-01-01 ┆ 83.12      ┆ 4696 │
+        └────────────┴────────────┴──────┘
+
+        Note how:
+
+        - date `2016-03-01` from `population` is matched with `2016-01-01` from `gdp`;
+        - date `2018-08-01` from `population` is matched with `2018-01-01` from `gdp`.
+
+        You can verify this by passing `coalesce=False`:
+
+        >>> population.join_asof(
+        ...     gdp, on="date", strategy="backward", coalesce=False
+        ... ).collect()
+        shape: (3, 4)
+        ┌────────────┬────────────┬────────────┬──────┐
+        │ date       ┆ population ┆ date_right ┆ gdp  │
+        │ ---        ┆ ---        ┆ ---        ┆ ---  │
+        │ date       ┆ f64        ┆ date       ┆ i64  │
+        ╞════════════╪════════════╪════════════╪══════╡
+        │ 2016-03-01 ┆ 82.19      ┆ 2016-01-01 ┆ 4164 │
+        │ 2018-08-01 ┆ 82.66      ┆ 2018-01-01 ┆ 4566 │
+        │ 2019-01-01 ┆ 83.12      ┆ 2019-01-01 ┆ 4696 │
+        └────────────┴────────────┴────────────┴──────┘
+
+        If we instead use `strategy='forward'`, then each date from `population` which
+        doesn't have an exact match is matched with the closest later date from `gdp`:
+
+        >>> population.join_asof(gdp, on="date", strategy="forward").collect()
+        shape: (3, 3)
+        ┌────────────┬────────────┬──────┐
+        │ date       ┆ population ┆ gdp  │
+        │ ---        ┆ ---        ┆ ---  │
+        │ date       ┆ f64        ┆ i64  │
+        ╞════════════╪════════════╪══════╡
+        │ 2016-03-01 ┆ 82.19      ┆ 4411 │
+        │ 2018-08-01 ┆ 82.66      ┆ 4696 │
+        │ 2019-01-01 ┆ 83.12      ┆ 4696 │
+        └────────────┴────────────┴──────┘
+
+        Note how:
+
+        - date `2016-03-01` from `population` is matched with `2017-01-01` from `gdp`;
+        - date `2018-08-01` from `population` is matched with `2019-01-01` from `gdp`.
+
+        Finally, `strategy='nearest'` gives us a mix of the two results above, as each
+        date from `population` which doesn't have an exact match is matched with the
+        closest date from `gdp`, regardless of whether it's earlier or later:
+
+        >>> population.join_asof(gdp, on="date", strategy="nearest").collect()
+        shape: (3, 3)
+        ┌────────────┬────────────┬──────┐
+        │ date       ┆ population ┆ gdp  │
+        │ ---        ┆ ---        ┆ ---  │
+        │ date       ┆ f64        ┆ i64  │
+        ╞════════════╪════════════╪══════╡
+        │ 2016-03-01 ┆ 82.19      ┆ 4164 │
+        │ 2018-08-01 ┆ 82.66      ┆ 4696 │
+        │ 2019-01-01 ┆ 83.12      ┆ 4696 │
+        └────────────┴────────────┴──────┘
+
+        Note how:
+
+        - date `2016-03-01` from `population` is matched with `2016-01-01` from `gdp`;
+        - date `2018-08-01` from `population` is matched with `2019-01-01` from `gdp`.
+
+        They `by` argument allows joining on another column first, before the asof join.
+        In this example we join by `country` first, then asof join by date, as above.
+
+        >>> gdp_dates = pl.date_range(  # fmt: skip
+        ...     date(2016, 1, 1), date(2020, 1, 1), "1y", eager=True
+        ... )
+        >>> gdp2 = pl.LazyFrame(
+        ...     {
+        ...         "country": ["Germany"] * 5 + ["Netherlands"] * 5,
+        ...         "date": pl.concat([gdp_dates, gdp_dates]),
+        ...         "gdp": [4164, 4411, 4566, 4696, 4827, 784, 833, 914, 910, 909],
+        ...     }
+        ... ).sort("country", "date")
+        >>>
+        >>> gdp2.collect()
+        shape: (10, 3)
+        ┌─────────────┬────────────┬──────┐
+        │ country     ┆ date       ┆ gdp  │
+        │ ---         ┆ ---        ┆ ---  │
+        │ str         ┆ date       ┆ i64  │
+        ╞═════════════╪════════════╪══════╡
+        │ Germany     ┆ 2016-01-01 ┆ 4164 │
+        │ Germany     ┆ 2017-01-01 ┆ 4411 │
+        │ Germany     ┆ 2018-01-01 ┆ 4566 │
+        │ Germany     ┆ 2019-01-01 ┆ 4696 │
+        │ Germany     ┆ 2020-01-01 ┆ 4827 │
+        │ Netherlands ┆ 2016-01-01 ┆ 784  │
+        │ Netherlands ┆ 2017-01-01 ┆ 833  │
+        │ Netherlands ┆ 2018-01-01 ┆ 914  │
+        │ Netherlands ┆ 2019-01-01 ┆ 910  │
+        │ Netherlands ┆ 2020-01-01 ┆ 909  │
+        └─────────────┴────────────┴──────┘
+        >>> pop2 = pl.LazyFrame(
+        ...     {
+        ...         "country": ["Germany"] * 3 + ["Netherlands"] * 3,
+        ...         "date": [
+        ...             date(2016, 3, 1),
+        ...             date(2018, 8, 1),
+        ...             date(2019, 1, 1),
+        ...             date(2016, 3, 1),
+        ...             date(2018, 8, 1),
+        ...             date(2019, 1, 1),
+        ...         ],
+        ...         "population": [82.19, 82.66, 83.12, 17.11, 17.32, 17.40],
+        ...     }
+        ... ).sort("country", "date")
+        >>>
+        >>> pop2.collect()
+        shape: (6, 3)
+        ┌─────────────┬────────────┬────────────┐
+        │ country     ┆ date       ┆ population │
+        │ ---         ┆ ---        ┆ ---        │
+        │ str         ┆ date       ┆ f64        │
+        ╞═════════════╪════════════╪════════════╡
+        │ Germany     ┆ 2016-03-01 ┆ 82.19      │
+        │ Germany     ┆ 2018-08-01 ┆ 82.66      │
+        │ Germany     ┆ 2019-01-01 ┆ 83.12      │
+        │ Netherlands ┆ 2016-03-01 ┆ 17.11      │
+        │ Netherlands ┆ 2018-08-01 ┆ 17.32      │
+        │ Netherlands ┆ 2019-01-01 ┆ 17.4       │
+        └─────────────┴────────────┴────────────┘
+        >>> pop2.join_asof(gdp2, by="country", on="date", strategy="nearest").collect()
+        shape: (6, 4)
+        ┌─────────────┬────────────┬────────────┬──────┐
+        │ country     ┆ date       ┆ population ┆ gdp  │
+        │ ---         ┆ ---        ┆ ---        ┆ ---  │
+        │ str         ┆ date       ┆ f64        ┆ i64  │
+        ╞═════════════╪════════════╪════════════╪══════╡
+        │ Germany     ┆ 2016-03-01 ┆ 82.19      ┆ 4164 │
+        │ Germany     ┆ 2018-08-01 ┆ 82.66      ┆ 4696 │
+        │ Germany     ┆ 2019-01-01 ┆ 83.12      ┆ 4696 │
+        │ Netherlands ┆ 2016-03-01 ┆ 17.11      ┆ 784  │
+        │ Netherlands ┆ 2018-08-01 ┆ 17.32      ┆ 910  │
+        │ Netherlands ┆ 2019-01-01 ┆ 17.4       ┆ 910  │
+        └─────────────┴────────────┴────────────┴──────┘
+
         """
         if not isinstance(other, LazyFrame):
             msg = f"expected `other` join table to be a LazyFrame, not a {type(other).__name__!r}"

@@ -90,6 +90,7 @@ fn parse_value<'a>(scratch: &'a mut Vec<u8>, val: &[u8]) -> PolarsResult<Borrowe
     scratch.clear();
     scratch.extend_from_slice(val);
     // 0 because it is row by row
+
     simd_json::to_borrowed_value(scratch)
         .map_err(|e| PolarsError::ComputeError(format!("{e}").into()))
 }

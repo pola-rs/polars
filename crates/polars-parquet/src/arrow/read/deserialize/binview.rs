@@ -10,7 +10,7 @@ use arrow::datatypes::{ArrowDataType, PhysicalType};
 
 use super::binary::decoders::*;
 use super::utils::{freeze_validity, BatchableCollector};
-use crate::parquet::encoding::delta_bitpacked::DeltaGatherer;
+use crate::parquet::encoding::delta_bitpacked::{lin_natural_sum, DeltaGatherer};
 use crate::parquet::encoding::hybrid_rle::{self, DictionaryTranslator};
 use crate::parquet::encoding::{delta_byte_array, delta_length_byte_array};
 use crate::parquet::error::{ParquetError, ParquetResult};
@@ -85,23 +85,27 @@ impl<'a> StateTranslation<'a, BinViewDecoder> for BinaryStateTranslation<'a> {
                 // Already done in decode_plain_encoded
                 validate_utf8 = false;
             },
-            Self::Delta(ref mut page_values) => {
+            Self::DeltaLengthByteArray(ref mut page_values, ref mut lengths) => {
                 let (values, validity) = decoded;
 
                 let mut collector = DeltaCollector {
+                    gatherer: &mut StatGatherer::default(),
+                    pushed_lengths: lengths,
                     decoder: page_values,
                 };
 
                 match page_validity {
-                    None => collector.push_n(values, additional)?,
+                    None => (&mut collector).push_n(values, additional)?,
                     Some(page_validity) => extend_from_decoder(
                         validity,
                         page_validity,
                         Some(additional),
                         values,
-                        collector,
+                        &mut collector,
                     )?,
                 }
+
+                collector.flush(values);
             },
             Self::DeltaBytes(ref mut page_values) => {
                 let (values, validity) = decoded;
@@ -147,6 +151,12 @@ impl utils::ExactSize for DecodedStateTuple {
 }
 
 pub(crate) struct DeltaCollector<'a, 'b> {
+    // We gatherer the decoded lengths into `pushed_lengths`. Then, we `flush` those to the
+    // `BinView` This allows us to group many memcopies into one and take better potential fast
+    // paths for inlineable views and such.
+    pub(crate) gatherer: &'b mut StatGatherer,
+    pub(crate) pushed_lengths: &'b mut Vec<u32>,
+
     pub(crate) decoder: &'b mut delta_length_byte_array::Decoder<'a>,
 }
 
@@ -154,44 +164,148 @@ pub(crate) struct DeltaBytesCollector<'a, 'b> {
     pub(crate) decoder: &'b mut delta_byte_array::Decoder<'a>,
 }
 
-pub(crate) struct ViewGatherer<'a, 'b> {
-    values: &'a [u8],
-    offset: &'b mut usize,
+/// A [`DeltaGatherer`] that gathers the minimum, maximum and summation of the values as `usize`s.
+pub(crate) struct StatGatherer {
+    min: usize,
+    max: usize,
+    sum: usize,
 }
 
-impl<'a, 'b> DeltaGatherer for ViewGatherer<'a, 'b> {
-    type Target = MutableBinaryViewArray<[u8]>;
+impl Default for StatGatherer {
+    fn default() -> Self {
+        Self {
+            min: usize::MAX,
+            max: usize::MIN,
+            sum: 0,
+        }
+    }
+}
+
+impl DeltaGatherer for StatGatherer {
+    type Target = Vec<u32>;
 
     fn target_len(&self, target: &Self::Target) -> usize {
         target.len()
     }
 
     fn target_reserve(&self, target: &mut Self::Target, n: usize) {
-        target.views_mut().reserve(n)
+        target.reserve(n);
     }
 
     fn gather_one(&mut self, target: &mut Self::Target, v: i64) -> ParquetResult<()> {
+        if v < 0 {
+            return Err(ParquetError::oos("DELTA_LENGTH_BYTE_ARRAY length < 0"));
+        }
+
+        if v > i64::from(u32::MAX) {
+            return Err(ParquetError::not_supported(
+                "DELTA_LENGTH_BYTE_ARRAY length > u32::MAX",
+            ));
+        }
+
         let v = v as usize;
-        let s = &self.values[*self.offset..*self.offset + v];
-        *self.offset += v;
-        target.push(Some(s));
+
+        self.min = self.min.min(v);
+        self.max = self.max.max(v);
+        self.sum += v;
+
+        target.push(v as u32);
+
+        Ok(())
+    }
+
+    fn gather_slice(&mut self, target: &mut Self::Target, slice: &[i64]) -> ParquetResult<()> {
+        let mut is_invalid = false;
+        let mut is_too_large = false;
+
+        target.extend(slice.iter().map(|&v| {
+            is_invalid |= v < 0;
+            is_too_large |= v > i64::from(u32::MAX);
+
+            let v = v as usize;
+
+            self.min = self.min.min(v);
+            self.max = self.max.max(v);
+            self.sum += v;
+
+            v as u32
+        }));
+
+        if is_invalid {
+            target.truncate(target.len() - slice.len());
+            return Err(ParquetError::oos("DELTA_LENGTH_BYTE_ARRAY length < 0"));
+        }
+
+        if is_too_large {
+            return Err(ParquetError::not_supported(
+                "DELTA_LENGTH_BYTE_ARRAY length > u32::MAX",
+            ));
+        }
+
+        Ok(())
+    }
+
+    fn gather_constant(
+        &mut self,
+        target: &mut Self::Target,
+        v: i64,
+        delta: i64,
+        num_repeats: usize,
+    ) -> ParquetResult<()> {
+        if v < 0 || (delta < 0 && num_repeats > 0 && (num_repeats - 1) as i64 * delta + v < 0) {
+            return Err(ParquetError::oos("DELTA_LENGTH_BYTE_ARRAY length < 0"));
+        }
+
+        if v > i64::from(u32::MAX) || v + ((num_repeats - 1) as i64) * delta > i64::from(u32::MAX) {
+            return Err(ParquetError::not_supported(
+                "DELTA_LENGTH_BYTE_ARRAY length > u32::MAX",
+            ));
+        }
+
+        target.extend((0..num_repeats).map(|i| (v + (i as i64) * delta) as u32));
+
+        let vstart = v;
+        let vend = v + (num_repeats - 1) as i64 * delta;
+
+        let (min, max) = if delta < 0 {
+            (vend, vstart)
+        } else {
+            (vstart, vend)
+        };
+
+        let sum = lin_natural_sum(v, delta, num_repeats) as usize;
+
+        #[cfg(debug_assertions)]
+        {
+            assert_eq!(
+                (0..num_repeats)
+                    .map(|i| (v + (i as i64) * delta) as usize)
+                    .sum::<usize>(),
+                sum
+            );
+        }
+
+        self.min = self.min.min(min as usize);
+        self.max = self.max.max(max as usize);
+        self.sum += sum;
+
         Ok(())
     }
 }
 
-impl<'a, 'b> BatchableCollector<(), MutableBinaryViewArray<[u8]>> for DeltaCollector<'a, 'b> {
+impl<'a, 'b> BatchableCollector<(), MutableBinaryViewArray<[u8]>> for &mut DeltaCollector<'a, 'b> {
     fn reserve(target: &mut MutableBinaryViewArray<[u8]>, n: usize) {
         target.views_mut().reserve(n);
     }
 
-    fn push_n(&mut self, target: &mut MutableBinaryViewArray<[u8]>, n: usize) -> ParquetResult<()> {
-        let mut gatherer = ViewGatherer {
-            values: self.decoder.values,
-            offset: &mut self.decoder.offset,
-        };
+    fn push_n(
+        &mut self,
+        _target: &mut MutableBinaryViewArray<[u8]>,
+        n: usize,
+    ) -> ParquetResult<()> {
         self.decoder
             .lengths
-            .gather_n_into(target, n, &mut gatherer)?;
+            .gather_n_into(self.pushed_lengths, n, self.gatherer)?;
 
         Ok(())
     }
@@ -201,8 +315,29 @@ impl<'a, 'b> BatchableCollector<(), MutableBinaryViewArray<[u8]>> for DeltaColle
         target: &mut MutableBinaryViewArray<[u8]>,
         n: usize,
     ) -> ParquetResult<()> {
+        self.flush(target);
         target.extend_constant(n, <Option<&[u8]>>::None);
         Ok(())
+    }
+}
+
+impl<'a, 'b> DeltaCollector<'a, 'b> {
+    pub fn flush(&mut self, target: &mut MutableBinaryViewArray<[u8]>) {
+        if !self.pushed_lengths.is_empty() {
+            unsafe {
+                target.extend_from_lengths_with_stats(
+                    &self.decoder.values[self.decoder.offset..],
+                    self.pushed_lengths.iter().map(|&v| v as usize),
+                    self.gatherer.min,
+                    self.gatherer.max,
+                    self.gatherer.sum,
+                )
+            };
+
+            self.decoder.offset += self.gatherer.sum;
+            self.pushed_lengths.clear();
+            *self.gatherer = StatGatherer::default();
+        }
     }
 }
 

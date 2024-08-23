@@ -1232,7 +1232,31 @@ class Series:
     def __getitem__(
         self, key: SingleIndexSelector | MultiIndexSelector
     ) -> Any | Series:
-        """Get part of the Series as a new Series or scalar."""
+        """
+        Get part of the Series as a new Series or scalar.
+
+        Parameters
+        ----------
+        key
+            Row(s) to select.
+
+        Returns
+        -------
+        Series or scalar, depending on `key`.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 4, 2])
+        >>> s[0]
+        1
+        >>> s[0:2]
+        shape: (2,)
+        Series: 'a' [i64]
+        [
+            1
+            4
+        ]
+        """
         return get_series_item_by_key(self, key)
 
     def __setitem__(
@@ -2404,7 +2428,7 @@ class Series:
             If None given, we determine the boundaries based on the data.
         bin_count
             If no bins provided, this will be used to determine
-            the distance of the bins
+            the distance of the bins.
         include_breakpoint
             Include a column that indicates the upper breakpoint.
         include_category
@@ -2418,18 +2442,17 @@ class Series:
         --------
         >>> a = pl.Series("a", [1, 3, 8, 8, 2, 1, 3])
         >>> a.hist(bin_count=4)
-        shape: (5, 3)
-        ┌────────────┬─────────────┬───────┐
-        │ breakpoint ┆ category    ┆ count │
-        │ ---        ┆ ---         ┆ ---   │
-        │ f64        ┆ cat         ┆ u32   │
-        ╞════════════╪═════════════╪═══════╡
-        │ 0.0        ┆ (-inf, 0.0] ┆ 0     │
-        │ 2.25       ┆ (0.0, 2.25] ┆ 3     │
-        │ 4.5        ┆ (2.25, 4.5] ┆ 2     │
-        │ 6.75       ┆ (4.5, 6.75] ┆ 0     │
-        │ inf        ┆ (6.75, inf] ┆ 2     │
-        └────────────┴─────────────┴───────┘
+        shape: (4, 3)
+        ┌────────────┬───────────────┬───────┐
+        │ breakpoint ┆ category      ┆ count │
+        │ ---        ┆ ---           ┆ ---   │
+        │ f64        ┆ cat           ┆ u32   │
+        ╞════════════╪═══════════════╪═══════╡
+        │ 2.75       ┆ (0.993, 2.75] ┆ 3     │
+        │ 4.5        ┆ (2.75, 4.5]   ┆ 2     │
+        │ 6.25       ┆ (4.5, 6.25]   ┆ 0     │
+        │ 8.0        ┆ (6.25, 8.0]   ┆ 2     │
+        └────────────┴───────────────┴───────┘
         """
         out = (
             self.to_frame()

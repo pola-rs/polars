@@ -382,7 +382,7 @@ impl SQLContext {
         let lf_schema = self.get_frame_schema(&mut lf)?;
         let lf_cols: Vec<_> = lf_schema.iter_names().map(|nm| col(nm)).collect();
         let joined_tbl = match quantifier {
-            SetQuantifier::ByName | SetQuantifier::AllByName => join.on(lf_cols).finish(),
+            SetQuantifier::ByName => join.on(lf_cols).finish(),
             SetQuantifier::Distinct | SetQuantifier::None => {
                 let rf_schema = self.get_frame_schema(&mut rf)?;
                 let rf_cols: Vec<_> = rf_schema.iter_names().map(|nm| col(nm)).collect();

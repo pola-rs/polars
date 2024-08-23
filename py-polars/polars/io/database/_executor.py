@@ -384,7 +384,7 @@ class ConnectionExecutor:
                     return conn.engine.raw_connection().cursor()
                 elif conn.engine.driver == "duckdb_engine":
                     self.driver_name = "duckdb"
-                    return conn.engine.raw_connection().driver_connection.c
+                    return conn.engine.raw_connection().driver_connection
                 elif self._is_alchemy_engine(conn):
                     # note: if we create it, we can close it
                     self.can_close_cursor = True

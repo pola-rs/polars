@@ -502,7 +502,7 @@ fn infer_file_schema_inner(
 
 pub(super) fn check_decimal_comma(decimal_comma: bool, separator: u8) -> PolarsResult<()> {
     if decimal_comma {
-        polars_ensure!(b',' != separator, InvalidOperation: "'decimal_comma' argument cannot be combined with ',' quote char")
+        polars_ensure!(b',' != separator, InvalidOperation: "'decimal_comma' argument cannot be combined with ',' separator")
     }
     Ok(())
 }
