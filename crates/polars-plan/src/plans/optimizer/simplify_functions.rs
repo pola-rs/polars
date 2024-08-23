@@ -61,7 +61,6 @@ pub(super) fn optimize_functions(
                         cast_to_supertypes: None,
                         check_lengths: UnsafeBool::default(),
                         flags: FunctionFlags::ALLOW_GROUP_AWARE | FunctionFlags::RETURNS_SCALAR
-
                     };
                     Some(
                         AExpr::BinaryExpr {
@@ -86,7 +85,6 @@ pub(super) fn optimize_functions(
                             cast_to_supertypes: None,
                             check_lengths: UnsafeBool::default(),
                             flags: FunctionFlags::ALLOW_GROUP_AWARE | FunctionFlags::RETURNS_SCALAR
-
                         };
                         Some(
                         AExpr::BinaryExpr {
