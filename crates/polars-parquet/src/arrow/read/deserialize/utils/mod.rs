@@ -653,20 +653,21 @@ impl<D: Decoder> PageDecoder<D> {
 
         while num_rows_remaining > 0 {
             let Some(page) = self.iter.next() else {
-                return self.decoder.finalize(self.data_type, self.dict, target);
+                break;
             };
             let page = page?;
 
-            let mut state = State::new(&self.decoder, &page, self.dict.as_ref())?;
-            let state_len = state.len();
-
             let state_filter;
-            (state_filter, filter) = Filter::opt_split_at(&filter, state_len);
+            (state_filter, filter) = Filter::opt_split_at(&filter, page.num_values());
 
             // Skip the whole page if we don't need any rows from it
             if state_filter.as_ref().is_some_and(|f| f.num_rows() == 0) {
                 continue;
             }
+
+            let page = page.decompress(&mut self.iter)?;
+
+            let mut state = State::new(&self.decoder, &page, self.dict.as_ref())?;
 
             let start_length = target.len();
             state.extend_from_state(&mut self.decoder, &mut target, state_filter)?;

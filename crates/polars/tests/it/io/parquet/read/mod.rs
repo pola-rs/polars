@@ -159,6 +159,7 @@ where
             .map(|dict| dictionary::deserialize(&dict, column.physical_type()))
             .transpose()?;
         while let Some(page) = iterator.next().transpose()? {
+            let page = page.decompress(&mut iterator)?;
             if !has_filled {
                 struct_::extend_validity(&mut validity, &page)?;
             }
