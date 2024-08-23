@@ -201,13 +201,7 @@ pub fn optimize(
     // This one should run (nearly) last as this modifies the projections
     #[cfg(feature = "cse")]
     if comm_subexpr_elim && !members.has_ext_context {
-        let mut optimizer = CommonSubExprOptimizer::new();
-        let alp_node = IRNode::new(lp_top);
-
-        lp_top = try_with_ir_arena(lp_arena, expr_arena, |arena| {
-            let rewritten = alp_node.rewrite(&mut optimizer, arena)?;
-            Ok(rewritten.node())
-        })?;
+        lp_top = apply_comm_subexpr_elim(lp_top, lp_arena, expr_arena)?;
     }
 
     // During debug we check if the optimizations have not modified the final schema.
@@ -225,4 +219,19 @@ pub fn optimize(
     };
 
     Ok(lp_top)
+}
+
+#[cfg(feature = "cse")]
+pub fn apply_comm_subexpr_elim(
+    lp_top: Node,
+    lp_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+) -> PolarsResult<Node> {
+    let mut optimizer = CommonSubExprOptimizer::new();
+    let alp_node = IRNode::new(lp_top);
+
+    try_with_ir_arena(lp_arena, expr_arena, |arena| {
+        let rewritten = alp_node.rewrite(&mut optimizer, arena)?;
+        Ok(rewritten.node())
+    })
 }

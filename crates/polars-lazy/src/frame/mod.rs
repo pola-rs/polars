@@ -691,10 +691,24 @@ impl LazyFrame {
     ///       .collect()
     /// }
     /// ```
-    pub fn collect(self) -> PolarsResult<DataFrame> {
+    #[allow(unused_mut)]
+    pub fn collect(mut self) -> PolarsResult<DataFrame> {
         #[cfg(feature = "new_streaming")]
         {
             let force_new_streaming = self.opt_state.contains(OptState::NEW_STREAMING);
+            let auto_new_streaming = std::env::var("POLARS_AUTO_NEW_STREAMING")
+                .as_deref()
+                .unwrap_or("")
+                == "1";
+
+            // Turn off CSE if we go into new streaming engine.
+            #[cfg(feature = "cse")]
+            let cse = self.opt_state.contains(OptState::COMM_SUBEXPR_ELIM);
+            #[cfg(feature = "cse")]
+            if auto_new_streaming || force_new_streaming {
+                self.opt_state.remove(OptState::COMM_SUBEXPR_ELIM);
+            }
+
             let mut alp_plan = self.to_alp_optimized()?;
             let stream_lp_top = alp_plan.lp_arena.add(IR::Sink {
                 input: alp_plan.lp_top,
@@ -709,11 +723,7 @@ impl LazyFrame {
                 );
             }
 
-            if std::env::var("POLARS_AUTO_NEW_STREAMING")
-                .as_deref()
-                .unwrap_or("")
-                == "1"
-            {
+            if auto_new_streaming {
                 let f = || {
                     polars_stream::run_query(
                         stream_lp_top,
@@ -734,6 +744,15 @@ impl LazyFrame {
                         }
                     },
                 }
+            }
+            #[cfg(feature = "cse")]
+            // We fallback to default engine. Apply CSE.
+            if auto_new_streaming && cse {
+                alp_plan.lp_top = apply_comm_subexpr_elim(
+                    alp_plan.lp_top,
+                    &mut alp_plan.lp_arena,
+                    &mut alp_plan.expr_arena,
+                )?;
             }
 
             let mut physical_plan = create_physical_plan(
