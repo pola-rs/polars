@@ -3,7 +3,9 @@ use parquet_format_safe::DataPageHeaderV2;
 use super::PageReader;
 use crate::parquet::compression::{self, Compression};
 use crate::parquet::error::{ParquetError, ParquetResult};
-use crate::parquet::page::{CompressedPage, DataPage, DataPageHeader, DictPage, Page};
+use crate::parquet::page::{
+    CompressedDataPage, CompressedPage, DataPage, DataPageHeader, DictPage, Page,
+};
 use crate::parquet::CowBuffer;
 
 fn decompress_v1(
@@ -205,8 +207,27 @@ impl BasicDecompressor {
     }
 }
 
+pub struct DataPageItem {
+    page: CompressedDataPage,
+}
+
+impl DataPageItem {
+    pub fn num_values(&self) -> usize {
+        self.page.num_values()
+    }
+
+    pub fn decompress(self, decompressor: &mut BasicDecompressor) -> ParquetResult<DataPage> {
+        let p = decompress(CompressedPage::Data(self.page), &mut decompressor.buffer)?;
+        let Page::Data(p) = p else {
+            panic!("Decompressing a data page should result in a data page");
+        };
+
+        Ok(p)
+    }
+}
+
 impl Iterator for BasicDecompressor {
-    type Item = ParquetResult<DataPage>;
+    type Item = ParquetResult<DataPageItem>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let page = match self.reader.next() {
@@ -215,15 +236,13 @@ impl Iterator for BasicDecompressor {
             Some(Ok(p)) => p,
         };
 
-        Some(decompress(page, &mut self.buffer).and_then(|p| {
-            let Page::Data(p) = p else {
-                return Err(ParquetError::oos(
-                    "Found dictionary page beyond the first page of a column chunk",
-                ));
-            };
+        let CompressedPage::Data(page) = page else {
+            return Some(Err(ParquetError::oos(
+                "Found dictionary page beyond the first page of a column chunk",
+            )));
+        };
 
-            Ok(p)
-        }))
+        Some(Ok(DataPageItem { page }))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {

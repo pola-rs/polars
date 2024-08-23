@@ -136,18 +136,20 @@ pub fn iter_to_arrays(
         };
         let page = page?;
 
-        let rows = page.num_values();
-        let page_filter;
-        (page_filter, filter) = Filter::opt_split_at(&filter, rows);
+        let state_filter;
+        (state_filter, filter) = Filter::opt_split_at(&filter, page.num_values());
 
-        let num_rows = match page_filter {
-            None => rows,
+        // Skip the whole page if we don't need any rows from it
+        if state_filter.as_ref().is_some_and(|f| f.num_rows() == 0) {
+            continue;
+        }
+
+        let num_rows = match state_filter {
+            None => page.num_values(),
             Some(filter) => filter.num_rows(),
         };
 
         len = (len + num_rows).min(num_rows);
-
-        iter.reuse_page_buffer(page);
     }
 
     Ok(Box::new(NullArray::new(data_type, len)))

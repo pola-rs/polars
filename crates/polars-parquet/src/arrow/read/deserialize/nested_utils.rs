@@ -705,6 +705,7 @@ impl<D: utils::NestedDecoder> PageNestedDecoder<D> {
                         break;
                     };
                     let page = page?;
+                    let page = page.decompress(&mut self.iter)?;
 
                     let mut state =
                         utils::State::new_nested(&self.decoder, &page, self.dict.as_ref())?;
@@ -743,9 +744,11 @@ impl<D: utils::NestedDecoder> PageNestedDecoder<D> {
                         break;
                     };
                     let page = page?;
+                    // We cannot lazily decompress because we don't have the number of leaf values
+                    // at this point. This is encoded within the `definition level` values. *sign*.
+                    // In general, lazy decompression is quite difficult with nested values.
+                    let page = page.decompress(&mut self.iter)?;
 
-                    let mut state =
-                        utils::State::new_nested(&self.decoder, &page, self.dict.as_ref())?;
                     let (def_iter, rep_iter) = level_iters(&page)?;
 
                     let mut count = ZeroCount::default();
@@ -761,6 +764,9 @@ impl<D: utils::NestedDecoder> PageNestedDecoder<D> {
                     } else {
                         None
                     };
+
+                    let mut state =
+                        utils::State::new_nested(&self.decoder, &page, self.dict.as_ref())?;
 
                     let start_length = nested_state.len();
 
