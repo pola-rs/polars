@@ -267,7 +267,7 @@ def read_csv(
             "quote_char", quote_char, replace_map=replace_chars_map
         )
     else:
-        quote_char = cast(str | None, quote_char)
+        quote_char = cast(Optional[str], quote_char)
     projection, columns = parse_columns_arg(columns)
     storage_options = storage_options or {}
 
@@ -474,7 +474,7 @@ def read_csv(
             has_header=has_header,
             separator=separator,
             comment_prefix=comment_prefix,
-            quote_char=cast(Optional[str], quote_char),
+            quote_char=quote_char,
             skip_rows=skip_rows,
             schema_overrides=schema_overrides,  # type: ignore[arg-type]
             schema=schema,
@@ -519,7 +519,7 @@ def read_csv(
                 columns=columns if columns else projection,
                 separator=separator,
                 comment_prefix=comment_prefix,
-                quote_char=cast(Optional[str], quote_char),
+                quote_char=quote_char,
                 skip_rows=skip_rows,
                 schema_overrides=schema_overrides,
                 schema=schema,
