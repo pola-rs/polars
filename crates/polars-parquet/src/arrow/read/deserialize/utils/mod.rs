@@ -112,6 +112,11 @@ impl<'a, D: Decoder> State<'a, D> {
         match filter {
             None => {
                 let num_rows = self.len();
+
+                if num_rows == 0 {
+                    return Ok(());
+                }
+
                 self.translation.extend_from_state(
                     decoder,
                     decoded,
@@ -126,12 +131,16 @@ impl<'a, D: Decoder> State<'a, D> {
 
                     self.skip_in_place(start)?;
                     debug_assert!(end - start <= self.len());
-                    self.translation.extend_from_state(
-                        decoder,
-                        decoded,
-                        &mut self.page_validity,
-                        end - start,
-                    )?;
+
+                    if end - start > 0 {
+                        self.translation.extend_from_state(
+                            decoder,
+                            decoded,
+                            &mut self.page_validity,
+                            end - start,
+                        )?;
+                    }
+
                     Ok(())
                 },
                 Filter::Mask(bitmap) => {
@@ -142,12 +151,15 @@ impl<'a, D: Decoder> State<'a, D> {
                         let prev_state_len = self.len();
 
                         let num_ones = iter.take_leading_ones();
-                        self.translation.extend_from_state(
-                            decoder,
-                            decoded,
-                            &mut self.page_validity,
-                            num_ones,
-                        )?;
+
+                        if num_ones > 0 {
+                            self.translation.extend_from_state(
+                                decoder,
+                                decoded,
+                                &mut self.page_validity,
+                                num_ones,
+                            )?;
+                        }
 
                         if iter.num_remaining() == 0 || self.len() == 0 {
                             break;
@@ -246,13 +258,16 @@ impl<'a, I, T, C: BatchableCollector<I, T>> BatchedCollector<'a, I, T, C> {
 
     #[inline]
     pub fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
-        self.collector
-            .push_n(self.target, self.num_waiting_valids)?;
-        self.collector
-            .push_n_nulls(self.target, self.num_waiting_invalids)?;
-
-        self.num_waiting_valids = 0;
-        self.num_waiting_invalids = 0;
+        if self.num_waiting_valids > 0 {
+            self.collector
+                .push_n(self.target, self.num_waiting_valids)?;
+            self.num_waiting_valids = 0;
+        }
+        if self.num_waiting_invalids > 0 {
+            self.collector
+                .push_n_nulls(self.target, self.num_waiting_invalids)?;
+            self.num_waiting_invalids = 0;
+        }
 
         self.collector.skip_in_place(n)?;
 
