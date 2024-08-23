@@ -642,7 +642,7 @@ pub fn to_alp_impl(
                 } => {
                     let columns = expand_selectors(columns, &input_schema, &[])?;
                     validate_columns_in_input(&columns, &input_schema, "explode")?;
-                    polars_ensure!(!(columns.is_empty() && !allow_empty), InvalidOperation: "no columns provided in explode");
+                    polars_ensure!(!columns.is_empty() || allow_empty, InvalidOperation: "no columns provided in explode");
                     if columns.is_empty() {
                         return Ok(input);
                     }
