@@ -266,8 +266,8 @@ fn rg_to_dfs_prefiltered(
     // column indexes of the schema.
     let mut live_idx_to_col_idx = Vec::with_capacity(num_live_columns);
     let mut dead_idx_to_col_idx = Vec::with_capacity(num_dead_columns);
-    for (i, col) in file_metadata.schema().columns().iter().enumerate() {
-        if live_variables.contains(col.path_in_schema[0].deref()) {
+    for (i, field) in schema.fields.iter().enumerate() {
+        if live_variables.contains(&field.name[..]) {
             live_idx_to_col_idx.push(i);
         } else {
             dead_idx_to_col_idx.push(i);
@@ -406,22 +406,10 @@ fn rg_to_dfs_prefiltered(
             })
             .collect::<PolarsResult<Vec<_>>>()?;
 
-        let mut rearranged_schema: Schema = Schema::new();
-        if let Some(rc) = &row_index {
-            rearranged_schema.insert_at_index(
-                0,
-                SmartString::from(rc.name.deref()),
-                IdxType::get_dtype(),
-            )?;
-        }
-        for i in live_idx_to_col_idx.iter().copied() {
-            rearranged_schema.insert_at_index(
-                rearranged_schema.len(),
-                schema.fields[i].name.clone().into(),
-                schema.fields[i].data_type().into(),
-            )?;
-        }
-        rearranged_schema.merge(Schema::from(schema.as_ref()));
+        let Some(df) = dfs.first().map(|(_, df)| df) else {
+            return Ok(Vec::new());
+        };
+        let rearranged_schema = df.schema();
 
         rg_columns
             .par_chunks_exact_mut(num_dead_columns)
@@ -520,7 +508,7 @@ fn rg_to_dfs_optionally_par_over_columns(
         materialize_hive_partitions(&mut df, schema.as_ref(), hive_partition_columns, rg_slice.1);
         apply_predicate(&mut df, predicate, true)?;
 
-        *previous_row_count = previous_row_count.checked_add(current_row_count).ok_or(
+        *previous_row_count = previous_row_count.checked_add(current_row_count).ok_or_else(||
             polars_err!(
                 ComputeError: "Parquet file produces more than pow(2, 32) rows; \
                 consider compiling with polars-bigidx feature (polars-u64-idx package on python), \

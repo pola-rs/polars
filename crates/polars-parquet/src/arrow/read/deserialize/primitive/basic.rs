@@ -147,6 +147,11 @@ where
         target.resize(target.len() + n, T::default());
         Ok(())
     }
+
+    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
+        self.chunks.skip_in_place(n);
+        Ok(())
+    }
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -206,7 +211,7 @@ where
         }
 
         match self {
-            Self::Plain(t) => _ = t.nth(n - 1),
+            Self::Plain(t) => t.skip_in_place(n),
             Self::Dictionary(t) => t.values.skip_in_place(n)?,
             Self::ByteStreamSplit(t) => _ = t.iter_converted(|_| ()).nth(n - 1),
         }

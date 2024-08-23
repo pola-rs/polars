@@ -319,6 +319,10 @@ impl<'a, 'b> BatchableCollector<(), MutableBinaryViewArray<[u8]>> for &mut Delta
         target.extend_constant(n, <Option<&[u8]>>::None);
         Ok(())
     }
+
+    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
+        self.decoder.skip_in_place(n)
+    }
 }
 
 impl<'a, 'b> DeltaCollector<'a, 'b> {
@@ -425,6 +429,10 @@ impl<'a, 'b> BatchableCollector<(), MutableBinaryViewArray<[u8]>> for DeltaBytes
     ) -> ParquetResult<()> {
         target.extend_constant(n, <Option<&[u8]>>::None);
         Ok(())
+    }
+
+    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
+        self.decoder.skip_in_place(n)
     }
 }
 

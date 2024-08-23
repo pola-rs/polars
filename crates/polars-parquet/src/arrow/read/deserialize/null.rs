@@ -12,6 +12,7 @@ use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{DataPage, DictPage};
 
 pub(crate) struct NullDecoder;
+#[derive(Debug)]
 pub(crate) struct NullArrayLength {
     length: usize,
 }

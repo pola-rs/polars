@@ -144,6 +144,10 @@ impl<'a, 'b, O: Offset> BatchableCollector<(), Binary<O>> for DeltaCollector<'a,
         target.extend_constant(n);
         Ok(())
     }
+
+    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
+        self.decoder.skip_in_place(n)
+    }
 }
 
 impl<'a, 'b, O: Offset> BatchableCollector<(), Binary<O>> for DeltaBytesCollector<'a, 'b, O> {
@@ -158,6 +162,10 @@ impl<'a, 'b, O: Offset> BatchableCollector<(), Binary<O>> for DeltaBytesCollecto
     fn push_n_nulls(&mut self, target: &mut Binary<O>, n: usize) -> ParquetResult<()> {
         target.extend_constant(n);
         Ok(())
+    }
+
+    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
+        self.decoder.skip_in_place(n)
     }
 }
 
