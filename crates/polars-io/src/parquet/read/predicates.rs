@@ -41,7 +41,7 @@ pub(crate) fn collect_statistics(
     )))
 }
 
-pub(super) fn read_this_row_group(
+pub fn read_this_row_group(
     predicate: Option<&dyn PhysicalIoExpr>,
     md: &RowGroupMetaData,
     schema: &ArrowSchemaRef,

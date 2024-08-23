@@ -92,7 +92,7 @@ pub fn count_rows(paths: &Arc<Vec<PathBuf>>, scan_type: &FileScan) -> PolarsResu
 #[cfg(feature = "parquet")]
 pub(super) fn count_rows_parquet(
     paths: &Arc<Vec<PathBuf>>,
-    cloud_options: Option<&CloudOptions>,
+    #[allow(unused)] cloud_options: Option<&CloudOptions>,
 ) -> PolarsResult<usize> {
     if paths.is_empty() {
         return Ok(0);

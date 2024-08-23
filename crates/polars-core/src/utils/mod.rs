@@ -1181,6 +1181,22 @@ pub fn coalesce_nulls_series(a: &Series, b: &Series) -> (Series, Series) {
     }
 }
 
+pub fn operation_exceeded_idxsize_msg(operation: &str) -> String {
+    if core::mem::size_of::<IdxSize>() == core::mem::size_of::<u32>() {
+        format!(
+            "{} exceeded the maximum supported limit of {} rows. Consider installing 'polars-u64-idx'.",
+            operation,
+            IdxSize::MAX,
+        )
+    } else {
+        format!(
+            "{} exceeded the maximum supported limit of {} rows.",
+            operation,
+            IdxSize::MAX,
+        )
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;

@@ -239,6 +239,31 @@ pub fn lower_ir(
             }
         },
 
+        v @ IR::Scan { .. } => {
+            let IR::Scan {
+                paths,
+                file_info,
+                hive_parts,
+                output_schema,
+                scan_type,
+                predicate,
+                file_options,
+            } = v.clone()
+            else {
+                unreachable!();
+            };
+
+            PhysNodeKind::FileScan {
+                paths,
+                file_info,
+                hive_parts,
+                output_schema,
+                scan_type,
+                predicate,
+                file_options,
+            }
+        },
+
         _ => todo!(),
     };
 
