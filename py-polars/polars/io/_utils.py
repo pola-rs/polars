@@ -3,9 +3,9 @@ from __future__ import annotations
 import glob
 import re
 from contextlib import contextmanager
-from io import BytesIO, StringIO
+from io import BufferedReader, BytesIO, StringIO
 from pathlib import Path
-from typing import IO, Any, ContextManager, Iterator, Sequence, overload
+from typing import IO, Any, ContextManager, Iterator, Sequence, cast, overload
 
 from polars._utils.various import is_int_sequence, is_str_sequence, normalize_filepath
 from polars.dependencies import _FSSPEC_AVAILABLE, fsspec
@@ -70,6 +70,12 @@ def parse_row_index_args(
         return (row_index_name, row_index_offset)
 
 
+def _replace(file: str, replace_chars_map: list):
+    for old, new in replace_chars_map:
+        file = file.replace(old, new)
+    return file
+
+
 @overload
 def prepare_file_arg(
     file: str | Path | list[str] | IO[bytes] | bytes,
@@ -78,6 +84,7 @@ def prepare_file_arg(
     use_pyarrow: bool = ...,
     raise_if_empty: bool = ...,
     storage_options: dict[str, Any] | None = ...,
+    replace_chars_map: list | None = None,
 ) -> ContextManager[str | BytesIO]: ...
 
 
@@ -89,6 +96,7 @@ def prepare_file_arg(
     use_pyarrow: bool = ...,
     raise_if_empty: bool = ...,
     storage_options: dict[str, Any] | None = ...,
+    replace_chars_map: list | None = None,
 ) -> ContextManager[str | BytesIO]: ...
 
 
@@ -100,6 +108,7 @@ def prepare_file_arg(
     use_pyarrow: bool = ...,
     raise_if_empty: bool = ...,
     storage_options: dict[str, Any] | None = ...,
+    replace_chars_map: list | None = None,
 ) -> ContextManager[str | list[str] | BytesIO | list[BytesIO]]: ...
 
 
@@ -110,6 +119,7 @@ def prepare_file_arg(
     use_pyarrow: bool = False,
     raise_if_empty: bool = True,
     storage_options: dict[str, Any] | None = None,
+    replace_chars_map: list | None = None,
 ) -> ContextManager[str | list[str] | BytesIO | list[BytesIO]]:
     """
     Prepare file argument.
@@ -132,6 +142,8 @@ def prepare_file_arg(
     If encoding is not `utf8` or `utf8-lossy`, decoding is handled by
     fsspec too.
     """
+    if replace_chars_map is None:
+        replace_chars_map = []
     storage_options = storage_options.copy() if storage_options else {}
     if storage_options and not _FSSPEC_AVAILABLE:
         msg = "`fsspec` is required for `storage_options` argument"
@@ -155,24 +167,28 @@ def prepare_file_arg(
     check_not_dir = not use_pyarrow
 
     if isinstance(file, bytes):
-        if not has_utf8_utf8_lossy_encoding:
-            file = file.decode(encoding_str).encode("utf8")
+        if not has_utf8_utf8_lossy_encoding or len(replace_chars_map) > 0:
+            file = _replace(file.decode(encoding_str), replace_chars_map).encode("utf8")
         return _check_empty(
             BytesIO(file), context="bytes", raise_if_empty=raise_if_empty
         )
 
     if isinstance(file, StringIO):
         return _check_empty(
-            BytesIO(file.read().encode("utf8")),
+            BytesIO(_replace(file.read(), replace_chars_map).encode("utf8")),
             context="StringIO",
             read_position=file.tell(),
             raise_if_empty=raise_if_empty,
         )
 
     if isinstance(file, BytesIO):
-        if not has_utf8_utf8_lossy_encoding:
+        if not has_utf8_utf8_lossy_encoding or len(replace_chars_map) > 0:
             return _check_empty(
-                BytesIO(file.read().decode(encoding_str).encode("utf8")),
+                BytesIO(
+                    _replace(
+                        file.read().decode(encoding_str), replace_chars_map
+                    ).encode("utf8")
+                ),
                 context="BytesIO",
                 read_position=file.tell(),
                 raise_if_empty=raise_if_empty,
@@ -187,9 +203,13 @@ def prepare_file_arg(
         )
 
     if isinstance(file, Path):
-        if not has_utf8_utf8_lossy_encoding:
+        if not has_utf8_utf8_lossy_encoding or len(replace_chars_map) > 0:
             return _check_empty(
-                BytesIO(file.read_bytes().decode(encoding_str).encode("utf8")),
+                BytesIO(
+                    _replace(
+                        file.read_bytes().decode(encoding_str), replace_chars_map
+                    ).encode("utf8")
+                ),
                 context=f"Path ({file!r})",
                 raise_if_empty=raise_if_empty,
             )
@@ -200,26 +220,41 @@ def prepare_file_arg(
         # as fsspec needs requests to be installed
         # to read from http
         if looks_like_url(file):
-            return process_file_url(file, encoding_str)
+            return process_file_url(file, encoding_str, replace_chars_map)
         if _FSSPEC_AVAILABLE:
             from fsspec.utils import infer_storage_options
 
             # check if it is a local file
             if infer_storage_options(file)["protocol"] == "file":
                 # (lossy) utf8
-                if has_utf8_utf8_lossy_encoding:
+                if has_utf8_utf8_lossy_encoding and len(replace_chars_map) == 0:
                     return managed_file(
                         normalize_filepath(file, check_not_directory=check_not_dir)
                     )
                 # decode first
                 with Path(file).open(encoding=encoding_str) as f:
                     return _check_empty(
-                        BytesIO(f.read().encode("utf8")),
+                        BytesIO(_replace(f.read(), replace_chars_map).encode("utf8")),
                         context=f"{file!r}",
                         raise_if_empty=raise_if_empty,
                     )
+
             storage_options["encoding"] = encoding
-            return fsspec.open(file, **storage_options)
+            if len(replace_chars_map) == 0:
+                return fsspec.open(file, **storage_options)
+            else:
+                with fsspec.open(file, **storage_options) as f:
+                    f = cast(BufferedReader, f)
+                    encoding = encoding or "utf8"
+                    return _check_empty(
+                        BytesIO(
+                            _replace(
+                                f.read().decode(encoding), replace_chars_map
+                            ).encode("utf8")
+                        ),
+                        context=f"{file!r}",
+                        raise_if_empty=raise_if_empty,
+                    )
 
     if isinstance(file, list) and bool(file) and all(isinstance(f, str) for f in file):
         if _FSSPEC_AVAILABLE:
@@ -238,10 +273,10 @@ def prepare_file_arg(
 
     if isinstance(file, str):
         file = normalize_filepath(file, check_not_directory=check_not_dir)
-        if not has_utf8_utf8_lossy_encoding:
+        if not has_utf8_utf8_lossy_encoding or len(replace_chars_map) > 0:
             with Path(file).open(encoding=encoding_str) as f:
                 return _check_empty(
-                    BytesIO(f.read().encode("utf8")),
+                    BytesIO(_replace(f.read(), replace_chars_map).encode("utf8")),
                     context=f"{file!r}",
                     raise_if_empty=raise_if_empty,
                 )
@@ -267,14 +302,25 @@ def looks_like_url(path: str) -> bool:
     return re.match("^(ht|f)tps?://", path, re.IGNORECASE) is not None
 
 
-def process_file_url(path: str, encoding: str | None = None) -> BytesIO:
+def process_file_url(
+    path: str, encoding: str | None = None, replace_chars_map: list | None = None
+) -> BytesIO:
+    if replace_chars_map is None:
+        replace_chars_map = []
     from urllib.request import urlopen
 
     with urlopen(path) as f:
-        if not encoding or encoding in {"utf8", "utf8-lossy"}:
+        if (
+            not encoding
+            or encoding in {"utf8", "utf8-lossy"}
+            and len(replace_chars_map) == 0
+        ):
             return BytesIO(f.read())
         else:
-            return BytesIO(f.read().decode(encoding).encode("utf8"))
+            encoding = encoding = "utf8"
+            return BytesIO(
+                _replace(f.read().decode(encoding), replace_chars_map).encode("utf8")
+            )
 
 
 def is_glob_pattern(file: str) -> bool:

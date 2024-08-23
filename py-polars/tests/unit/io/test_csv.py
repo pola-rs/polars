@@ -2280,3 +2280,11 @@ def test_read_csv_cast_unparsable_later(
     f = io.BytesIO()
     df.write_csv(f)
     assert df.equals(pl.read_csv(f, schema={"x": dtype}))
+
+
+def test_latin1_csv_separator(io_files_path: Path) -> None:
+    df = pl.read_csv(
+        io_files_path / "foods1_latin1.csv", separator="§", encoding="latin-1"
+    )
+    df2 = pl.read_csv(io_files_path / "foods1.csv")
+    assert_frame_equal(df, df2)

@@ -22,7 +22,11 @@ from polars.io._utils import (
     parse_row_index_args,
     prepare_file_arg,
 )
-from polars.io.csv._utils import _check_arg_is_1byte, _update_columns
+from polars.io.csv._utils import (
+    _check_arg_is_1byte,
+    _check_fix_1byte_arg,
+    _update_columns,
+)
 from polars.io.csv.batched_reader import BatchedCsvReader
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -42,9 +46,9 @@ def read_csv(
     has_header: bool = True,
     columns: Sequence[int] | Sequence[str] | None = None,
     new_columns: Sequence[str] | None = None,
-    separator: str = ",",
+    separator: str | tuple = ",",
     comment_prefix: str | None = None,
-    quote_char: str | None = '"',
+    quote_char: str | tuple = '"',
     skip_rows: int = 0,
     schema: SchemaDict | None = None,
     schema_overrides: (
@@ -68,7 +72,7 @@ def read_csv(
     row_index_name: str | None = None,
     row_index_offset: int = 0,
     sample_size: int = 1024,
-    eol_char: str = "\n",
+    eol_char: str | tuple = "\n",
     raise_if_empty: bool = True,
     truncate_ragged_lines: bool = False,
     decimal_comma: bool = False,
@@ -245,10 +249,15 @@ def read_csv(
     │ 3   ┆ Charlie ┆ 2002-03-08 │
     └─────┴─────────┴────────────┘
     """
-    _check_arg_is_1byte("separator", separator, can_be_empty=False)
-    _check_arg_is_1byte("quote_char", quote_char, can_be_empty=True)
-    _check_arg_is_1byte("eol_char", eol_char, can_be_empty=False)
-
+    encoding_supported_in_lazy = encoding in {"utf8", "utf8-lossy"}
+    replace_chars_map = []
+    separator = _check_fix_1byte_arg(
+        "separator", separator, replace_map=replace_chars_map
+    )
+    eol_char = _check_fix_1byte_arg("eol_char", eol_char, replace_map=replace_chars_map)
+    quote_char = _check_fix_1byte_arg(
+        "quote_char", quote_char, replace_map=replace_chars_map
+    )
     projection, columns = parse_columns_arg(columns)
     storage_options = storage_options or {}
 
@@ -289,25 +298,26 @@ def read_csv(
             use_pyarrow=True,
             raise_if_empty=raise_if_empty,
             storage_options=storage_options,
+            replace_chars_map=replace_chars_map,
         ) as data:
             import pyarrow as pa
-            import pyarrow.csv
+            import pyarrow.csv as pa_csv
 
             try:
-                tbl = pa.csv.read_csv(
+                tbl = pa_csv.read_csv(
                     data,
-                    pa.csv.ReadOptions(
+                    pa_csv.ReadOptions(
                         skip_rows=skip_rows,
                         skip_rows_after_names=skip_rows_after_header,
                         autogenerate_column_names=not has_header,
                         encoding=encoding,
                     ),
-                    pa.csv.ParseOptions(
+                    pa_csv.ParseOptions(
                         delimiter=separator,
-                        quote_char=quote_char if quote_char else False,
-                        double_quote=quote_char is not None and quote_char == '"',
+                        quote_char=quote_char[1] if quote_char else False,
+                        double_quote=quote_char[1] is not None and quote_char == '"',
                     ),
-                    pa.csv.ConvertOptions(
+                    pa_csv.ConvertOptions(
                         column_types=None,
                         include_columns=include_columns,
                         include_missing_columns=ignore_errors,
@@ -423,7 +433,6 @@ def read_csv(
 
     # TODO: scan_csv doesn't support a "dtype slice" (i.e. list[DataType])
     schema_overrides_is_list = isinstance(schema_overrides, Sequence)
-    encoding_supported_in_lazy = encoding in {"utf8", "utf8-lossy"}
 
     if (
         # Check that it is not a BytesIO object
@@ -492,6 +501,7 @@ def read_csv(
             use_pyarrow=False,
             raise_if_empty=raise_if_empty,
             storage_options=storage_options,
+            replace_chars_map=replace_chars_map,
         ) as data:
             df = _read_csv_impl(
                 data,
@@ -1221,12 +1231,13 @@ def scan_csv(
             schema_overrides = dict(zip(new_columns, schema_overrides))
 
         # wrap new column names as a callable
-        def with_column_names(cols: list[str]) -> list[str]:
+        def with_column_names_default(cols: list[str]) -> list[str]:
             if len(cols) > len(new_columns):
                 return new_columns + cols[len(new_columns) :]  # type: ignore[operator]
             else:
                 return new_columns  # type: ignore[return-value]
 
+        with_column_names = with_column_names_default
     _check_arg_is_1byte("separator", separator, can_be_empty=False)
     _check_arg_is_1byte("quote_char", quote_char, can_be_empty=True)
 
