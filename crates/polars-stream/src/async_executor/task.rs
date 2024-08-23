@@ -278,6 +278,10 @@ impl<M> Runnable<M> {
 
 pub struct JoinHandle<T>(Option<Arc<dyn Joinable<T>>>);
 pub struct CancelHandle(Weak<dyn Cancellable>);
+pub struct AbortOnDropHandle<T> {
+    join_handle: JoinHandle<T>,
+    cancel_handle: CancelHandle,
+}
 
 impl<T> JoinHandle<T> {
     pub fn cancel_handle(&self) -> CancelHandle {
@@ -305,10 +309,34 @@ impl<T> Future for JoinHandle<T> {
 }
 
 impl CancelHandle {
-    pub fn cancel(self) {
+    pub fn cancel(&self) {
         if let Some(t) = self.0.upgrade() {
             t.cancel();
         }
+    }
+}
+
+impl<T> AbortOnDropHandle<T> {
+    pub fn new(join_handle: JoinHandle<T>) -> Self {
+        let cancel_handle = join_handle.cancel_handle();
+        Self {
+            join_handle,
+            cancel_handle,
+        }
+    }
+}
+
+impl<T> Future for AbortOnDropHandle<T> {
+    type Output = T;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        Pin::new(&mut self.join_handle).poll(cx)
+    }
+}
+
+impl<T> Drop for AbortOnDropHandle<T> {
+    fn drop(&mut self) {
+        self.cancel_handle.cancel();
     }
 }
 

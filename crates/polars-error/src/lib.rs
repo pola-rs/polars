@@ -204,7 +204,7 @@ impl PolarsError {
         }
     }
 
-    fn wrap_msg<F: FnOnce(&str) -> String>(&self, func: F) -> Self {
+    pub fn wrap_msg<F: FnOnce(&str) -> String>(&self, func: F) -> Self {
         use PolarsError::*;
         match self {
             ColumnNotFound(msg) => ColumnNotFound(func(msg).into()),

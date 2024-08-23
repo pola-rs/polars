@@ -93,19 +93,7 @@ mod private {
         /// Attempt to prefetch the memory belonging to to this [`MemSlice`]
         #[inline]
         pub fn prefetch(&self) {
-            if self.len() == 0 {
-                return;
-            }
-
-            // @TODO: We can play a bit more with this prefetching. Maybe introduce a maximum number of
-            // prefetches as to not overwhelm the processor. The linear prefetcher should pick it up
-            // at a certain point.
-
-            const PAGE_SIZE: usize = 4096;
-            for i in 0..self.len() / PAGE_SIZE {
-                unsafe { prefetch_l2(self[i * PAGE_SIZE..].as_ptr()) };
-            }
-            unsafe { prefetch_l2(self[self.len() - 1..].as_ptr()) }
+            prefetch_l2(self.as_ref());
         }
 
         /// # Panics

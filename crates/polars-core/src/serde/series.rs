@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::fmt::Formatter;
 
 use serde::de::{Error as DeError, MapAccess, Visitor};
+#[cfg(feature = "object")]
 use serde::ser::Error as SerError;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 

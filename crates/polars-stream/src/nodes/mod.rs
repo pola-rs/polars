@@ -5,6 +5,7 @@ pub mod in_memory_source;
 pub mod map;
 pub mod multiplexer;
 pub mod ordered_union;
+pub mod parquet_source;
 pub mod reduce;
 pub mod select;
 pub mod simple_projection;
