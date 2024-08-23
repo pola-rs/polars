@@ -2283,8 +2283,9 @@ def test_read_csv_cast_unparsable_later(
 
 
 def test_latin1_csv_separator(io_files_path: Path) -> None:
-    df = pl.read_csv(
-        io_files_path / "foods1_latin1.csv", separator="§", encoding="latin-1"
-    )
+    with NamedTemporaryFile() as tmp, (io_files_path / "foods1.csv").open("r") as s:
+        tmp.write(s.read().replace(",", "§").encode("latin-1"))
+        tmp.seek(0)
+        df = pl.read_csv(tmp.name, separator="§", encoding="latin-1")
     df2 = pl.read_csv(io_files_path / "foods1.csv")
     assert_frame_equal(df, df2)

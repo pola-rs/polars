@@ -4,7 +4,7 @@ import contextlib
 import os
 from io import BytesIO, StringIO
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, Any, Callable, Mapping, Sequence
+from typing import IO, TYPE_CHECKING, Any, Callable, Mapping, Sequence, cast
 
 import polars._reexport as pl
 import polars.functions as F
@@ -48,7 +48,7 @@ def read_csv(
     new_columns: Sequence[str] | None = None,
     separator: str | tuple = ",",
     comment_prefix: str | None = None,
-    quote_char: str | tuple = '"',
+    quote_char: str | tuple | None = '"',
     skip_rows: int = 0,
     schema: SchemaDict | None = None,
     schema_overrides: (
@@ -224,6 +224,13 @@ def read_csv(
     will be stored continuously in memory. Set `rechunk=False` if you are benchmarking
     the csv-reader. A `rechunk` is an expensive operation.
 
+    If the CSV file is not UTF-8 and the separator, eol_char, or quote_char are not
+    valid one byte UTF-8 characters then this will attempt to replace that character
+    with \x1f, \x1d, and/or \x1e by default. If those characters are problematic
+    then a two-item tuple can be entered for one or all of those arguments
+    where the first item in the tuple is the actual string character in the file and the
+    second item it a valid one byte UTF-8 character to use in its place.
+
     Examples
     --------
     >>> pl.read_csv("data.csv", separator="|")  # doctest: +SKIP
@@ -255,9 +262,12 @@ def read_csv(
         "separator", separator, replace_map=replace_chars_map
     )
     eol_char = _check_fix_1byte_arg("eol_char", eol_char, replace_map=replace_chars_map)
-    quote_char = _check_fix_1byte_arg(
-        "quote_char", quote_char, replace_map=replace_chars_map
-    )
+    if quote_char is not None and quote_char != "":
+        quote_char = _check_fix_1byte_arg(
+            "quote_char", quote_char, replace_map=replace_chars_map
+        )
+    else:
+        quote_char = cast(str | None, quote_char)
     projection, columns = parse_columns_arg(columns)
     storage_options = storage_options or {}
 
@@ -314,8 +324,8 @@ def read_csv(
                     ),
                     pa_csv.ParseOptions(
                         delimiter=separator,
-                        quote_char=quote_char[1] if quote_char else False,
-                        double_quote=quote_char[1] is not None and quote_char == '"',
+                        quote_char=quote_char if quote_char else False,
+                        double_quote=quote_char is not None and quote_char == '"',
                     ),
                     pa_csv.ConvertOptions(
                         column_types=None,

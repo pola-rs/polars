@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING, Literal, Sequence, cast
 from warnings import warn
 
 from polars._utils.various import find_stacklevel
-from polars.exceptions import InvalidOperationError
 
 if TYPE_CHECKING:
     from polars import DataFrame
@@ -29,13 +28,13 @@ def _check_arg_is_1byte(
                     f'{arg_name}="{arg}" should be a single byte character or empty,'
                     f" but is {arg_byte_length} bytes long"
                 )
-                raise InvalidOperationError(msg)
+                raise ValueError(msg)
         elif arg_byte_length != 1:
             msg = (
                 f'{arg_name}="{arg}" should be a single byte character, but is'
                 f" {arg_byte_length} bytes long"
             )
-            raise InvalidOperationError(msg)
+            raise ValueError(msg)
     elif hasattr(arg, "decode"):
         msg = f'{arg_name}="{arg}" should be a str not a {type(arg)}. To silence this warning please use a str'
         warn(
@@ -60,7 +59,7 @@ def _check_fix_1byte_arg(
         user_supplied_tuple = True
         if len(arg) != 2:
             msg = f"If {arg_name} is a tuple, it must be 2 elements"
-            raise InvalidOperationError(msg)
+            raise ValueError(msg)
         arg_search, arg_replace = arg
     elif hasattr(arg, "decode"):
         return _check_fix_1byte_arg(
@@ -72,14 +71,14 @@ def _check_fix_1byte_arg(
     arg_byte_length = len(arg_replace.encode("utf-8"))
     if arg_byte_length == 0:
         msg = f"{arg_name} can't be empty"
-        raise InvalidOperationError(msg)
+        raise ValueError(msg)
 
     if user_supplied_tuple and arg_byte_length > 1:
         msg = (
             f"When supplying a tuple for {arg_name} the second element must be single byte character, but is"
             f"{arg_byte_length} bytes long"
         )
-        raise InvalidOperationError(msg)
+        raise ValueError(msg)
     elif arg_byte_length > 1:
         if arg_name == "separator":
             arg_replace = "\x1f"
@@ -89,7 +88,7 @@ def _check_fix_1byte_arg(
             arg_replace = "\x1e"
         else:
             msg = 'arg_name must be one of "separator","quote_char","eol_char"'
-            raise InvalidOperationError
+            raise ValueError
     if arg_search != arg_replace:
         replace_map.append((arg_search, arg_replace))
     return arg_replace
