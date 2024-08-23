@@ -16,6 +16,7 @@
 
 #[cfg(feature = "cloud")]
 mod async_impl;
+mod metadata;
 mod mmap;
 mod options;
 mod predicates;

@@ -20,7 +20,6 @@ bytemuck = { workspace = true }
 ethnum = { workspace = true }
 fallible-streaming-iterator = { workspace = true, optional = true }
 futures = { workspace = true, optional = true }
-hashbrown = { workspace = true }
 num-traits = { workspace = true }
 polars-compute = { workspace = true }
 polars-error = { workspace = true }

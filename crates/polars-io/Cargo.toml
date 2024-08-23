@@ -28,6 +28,7 @@ fast-float = { workspace = true, optional = true }
 flate2 = { workspace = true, optional = true }
 futures = { workspace = true, optional = true }
 glob = { version = "0.3" }
+hashbrown = { workspace = true }
 itoa = { workspace = true, optional = true }
 memchr = { workspace = true }
 memmap = { workspace = true }

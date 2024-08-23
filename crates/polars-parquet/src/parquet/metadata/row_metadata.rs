@@ -1,10 +1,4 @@
-use std::sync::{Arc, RwLock};
-
-use hashbrown::hash_map::RawEntryMut;
 use parquet_format_safe::RowGroup;
-use polars_utils::aliases::{InitHashMaps, PlHashMap, PlHashSet};
-use polars_utils::idx_vec::UnitVec;
-use polars_utils::unitvec;
 #[cfg(feature = "serde_types")]
 use serde::{Deserialize, Serialize};
 
@@ -13,8 +7,6 @@ use super::schema_descriptor::SchemaDescriptor;
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::write::ColumnOffsetsMetadata;
 
-pub type PartitionedFields = PlHashMap<String, UnitVec<usize>>;
-
 /// Metadata for a row group.
 #[derive(Debug, Clone, Default)]
 #[cfg_attr(feature = "serde_types", derive(Deserialize, Serialize))]
@@ -22,8 +14,6 @@ pub struct RowGroupMetaData {
     columns: Vec<ColumnChunkMetaData>,
     num_rows: usize,
     total_byte_size: usize,
-    #[cfg_attr(feature = "serde_types", serde(skip))]
-    partitioned_fields: Arc<RwLock<PartitionedFields>>,
 }
 
 impl RowGroupMetaData {
@@ -37,44 +27,7 @@ impl RowGroupMetaData {
             columns,
             num_rows,
             total_byte_size,
-            partitioned_fields: Default::default(),
         }
-    }
-
-    pub fn set_partition_fields(&self, field_names: Option<&PlHashSet<&str>>) {
-        let mut out = PlHashMap::new();
-        for (i, x) in self.columns.iter().enumerate() {
-            let name = &x.descriptor().path_in_schema[0];
-            if field_names
-                .map(|field_names| field_names.contains(name.as_str()))
-                .unwrap_or(true)
-            {
-                let entry = out.raw_entry_mut().from_key(name.as_str());
-
-                match entry {
-                    RawEntryMut::Vacant(slot) => {
-                        slot.insert(name.to_string(), unitvec![i]);
-                    },
-                    RawEntryMut::Occupied(mut slot) => {
-                        slot.get_mut().push(i);
-                    },
-                };
-            }
-        }
-        let mut lock = self.partitioned_fields.write().unwrap();
-        *lock = out;
-    }
-
-    pub fn get_partition_fields(&self, name: &str) -> UnitVec<&ColumnChunkMetaData> {
-        let pf = self.partitioned_fields.read().unwrap();
-        debug_assert!(!pf.is_empty(), "fields should be partitioned first");
-        pf.get(name)
-            .map(|idx| {
-                idx.iter()
-                    .map(|i| &self.columns[*i])
-                    .collect::<UnitVec<_>>()
-            })
-            .unwrap_or_default()
     }
 
     /// Returns slice of column chunk metadata.
@@ -123,7 +76,6 @@ impl RowGroupMetaData {
             columns,
             num_rows,
             total_byte_size,
-            partitioned_fields: Default::default(),
         })
     }
 
