@@ -7125,6 +7125,58 @@ class DataFrame:
             .collect(_eager=True)
         )
 
+    def join_between(
+        self,
+        other: DataFrame,
+        *,
+        left_on: str | Expr,
+        right_on_lower: str | Expr,
+        right_on_upper: str | Expr,
+        exclusive_lower: bool = False,
+        exclusive_upper: bool = True,
+        suffix: str = "_right",
+    ) -> DataFrame:
+        """
+        Join by matching values from this table with an interval in another table.
+
+        A row from this table may be included in zero or multiple rows in the result,
+        and the relative order of rows may differ between the input and output tables.
+
+        Parameters
+        ----------
+        other
+            DataFrame to join with.
+        left_on
+            Join column of the left table.
+        right_on_lower
+            Lower bound of the interval in the other table
+        right_on_upper
+            Upper bound of the interval in the other table
+        exclusive_lower
+            Whether the lower bound of the interval is an exclusive bound
+        exclusive_upper
+            Whether the upper bound of the interval is an exclusive bound
+        suffix
+            Suffix to append to columns with a duplicate name.
+        """
+        if not isinstance(other, DataFrame):
+            msg = f"expected `other` join table to be a DataFrame, got {type(other).__name__!r}"
+            raise TypeError(msg)
+
+        return (
+            self.lazy()
+            .join_between(
+                other.lazy(),
+                left_on=left_on,
+                right_on_lower=right_on_lower,
+                right_on_upper=right_on_upper,
+                exclusive_lower=exclusive_lower,
+                exclusive_upper=exclusive_upper,
+                suffix=suffix,
+            )
+            .collect(_eager=True)
+        )
+
     def map_rows(
         self,
         function: Callable[[tuple[Any, ...]], Any],

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 import hypothesis.strategies as st
@@ -162,6 +163,52 @@ def test_ie_join_with_expressions() -> None:
             "time": [140],
             "cost": [22],
             "cores_right": [2],
+        }
+    )
+    assert_frame_equal(actual, expected, check_row_order=False, check_exact=True)
+
+
+def test_join_between() -> None:
+    left = pl.DataFrame(
+        {
+            "id": [0, 1, 2, 3, 4, 5],
+            "time": [
+                datetime(2024, 8, 26, 15, 34, 30),
+                datetime(2024, 8, 26, 15, 35, 30),
+                datetime(2024, 8, 26, 15, 36, 30),
+                datetime(2024, 8, 26, 15, 37, 30),
+                datetime(2024, 8, 26, 15, 38, 0),
+                datetime(2024, 8, 26, 15, 39, 0),
+            ],
+        }
+    )
+    right = pl.DataFrame(
+        {
+            "id": [0, 1, 2],
+            "start_time": [
+                datetime(2024, 8, 26, 15, 34, 0),
+                datetime(2024, 8, 26, 15, 35, 0),
+                datetime(2024, 8, 26, 15, 38, 0),
+            ],
+            "end_time": [
+                datetime(2024, 8, 26, 15, 36, 0),
+                datetime(2024, 8, 26, 15, 37, 0),
+                datetime(2024, 8, 26, 15, 39, 0),
+            ],
+        }
+    )
+
+    actual = left.join_between(
+        right,
+        left_on="time",
+        right_on_lower="start_time",
+        right_on_upper="end_time",
+    ).select("id", "id_right")
+
+    expected = pl.DataFrame(
+        {
+            "id": [0, 1, 1, 2, 4],
+            "id_right": [0, 0, 1, 1, 2],
         }
     )
     assert_frame_equal(actual, expected, check_row_order=False, check_exact=True)

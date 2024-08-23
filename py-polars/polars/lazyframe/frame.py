@@ -4607,6 +4607,63 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             )
         )
 
+    def join_between(
+        self,
+        other: LazyFrame,
+        *,
+        left_on: str | Expr,
+        right_on_lower: str | Expr,
+        right_on_upper: str | Expr,
+        exclusive_lower: bool = False,
+        exclusive_upper: bool = True,
+        suffix: str = "_right",
+    ) -> LazyFrame:
+        """
+        Join by matching values from this table with an interval in another table.
+
+        A row from this table may be included in zero or multiple rows in the result,
+        and the relative order of rows may differ between the input and output tables.
+
+        Parameters
+        ----------
+        other
+            LazyFrame to join with.
+        left_on
+            Join column of the left table.
+        right_on_lower
+            Lower bound of the interval in the other table
+        right_on_upper
+            Upper bound of the interval in the other table
+        exclusive_lower
+            Whether the lower bound of the interval is an exclusive bound
+        exclusive_upper
+            Whether the upper bound of the interval is an exclusive bound
+        suffix
+            Suffix to append to columns with a duplicate name.
+        """
+        if not isinstance(other, LazyFrame):
+            msg = f"expected `other` join table to be a LazyFrame, not a {type(other).__name__!r}"
+            raise TypeError(msg)
+
+        left_on = wrap_expr(parse_into_expression(left_on))
+        right_on_lower = wrap_expr(parse_into_expression(right_on_lower))
+        right_on_upper = wrap_expr(parse_into_expression(right_on_upper))
+
+        lower_expr = (
+            left_on > right_on_lower if exclusive_lower else left_on >= right_on_lower
+        )
+        upper_expr = (
+            left_on < right_on_upper if exclusive_upper else left_on <= right_on_upper
+        )
+
+        return self._from_pyldf(
+            self._ldf.inequality_join(
+                other._ldf,
+                [lower_expr._pyexpr, upper_expr._pyexpr],
+                suffix,
+            )
+        )
+
     def with_columns(
         self,
         *exprs: IntoExpr | Iterable[IntoExpr],
