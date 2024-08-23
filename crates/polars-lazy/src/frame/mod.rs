@@ -1513,13 +1513,25 @@ impl LazyFrame {
 
     /// Apply explode operation. [See eager explode](polars_core::frame::DataFrame::explode).
     pub fn explode<E: AsRef<[IE]>, IE: Into<Selector> + Clone>(self, columns: E) -> LazyFrame {
+        self.explode_impl(columns, false)
+    }
+
+    /// Apply explode operation. [See eager explode](polars_core::frame::DataFrame::explode).
+    fn explode_impl<E: AsRef<[IE]>, IE: Into<Selector> + Clone>(
+        self,
+        columns: E,
+        allow_empty: bool,
+    ) -> LazyFrame {
         let columns = columns
             .as_ref()
             .iter()
             .map(|e| e.clone().into())
             .collect::<Vec<_>>();
         let opt_state = self.get_opt_state();
-        let lp = self.get_plan_builder().explode(columns).build();
+        let lp = self
+            .get_plan_builder()
+            .explode(columns, allow_empty)
+            .build();
         Self::from_logical_plan(lp, opt_state)
     }
 
@@ -1877,7 +1889,7 @@ impl LazyGroupBy {
             .collect::<Vec<_>>();
 
         self.agg([col("*").exclude(&keys).head(n)])
-            .explode([col("*").exclude(&keys)])
+            .explode_impl([col("*").exclude(&keys)], true)
     }
 
     /// Return last n rows of each group
@@ -1889,7 +1901,7 @@ impl LazyGroupBy {
             .collect::<Vec<_>>();
 
         self.agg([col("*").exclude(&keys).tail(n)])
-            .explode([col("*").exclude(&keys)])
+            .explode_impl([col("*").exclude(&keys)], true)
     }
 
     /// Apply a function over the groups as a new DataFrame.
