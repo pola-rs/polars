@@ -69,8 +69,9 @@ fn column_idx_to_series(
     {
         assert_dtypes(field.data_type())
     }
+    let parts = md.get_partition_fields(&field.name);
 
-    let columns = mmap_columns(store, md.columns(), &field.name);
+    let columns = mmap_columns(store, parts.as_slice());
     let stats = columns
         .iter()
         .map(|(col_md, _)| col_md.statistics().transpose())
@@ -203,6 +204,24 @@ fn rg_to_dfs(
     }
 }
 
+/// Collect a HashSet of the projected columns.
+///  Returns `None` if all columns are projected.
+fn projected_columns_set<'a>(
+    schema: &'a ArrowSchema,
+    projection: &[usize],
+) -> Option<PlHashSet<&'a str>> {
+    if projection.len() == schema.len() {
+        None
+    } else {
+        Some(
+            projection
+                .iter()
+                .map(|i| schema.fields[*i].name.as_str())
+                .collect::<PlHashSet<_>>(),
+        )
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn rg_to_dfs_prefiltered(
     store: &mmap::ColumnStore,
@@ -278,6 +297,18 @@ fn rg_to_dfs_prefiltered(
     debug_assert_eq!(dead_idx_to_col_idx.len(), num_dead_columns);
 
     POOL.install(|| {
+        // Set partitioned fields to prevent quadratic behavior.
+        // Ensure all row groups are partitioned.
+        {
+            let projected_columns = projected_columns_set(schema, projection);
+            (row_group_start..row_group_end)
+                .into_par_iter()
+                .for_each(|rg_idx| {
+                    file_metadata.row_groups[rg_idx]
+                        .set_partition_fields(projected_columns.as_ref());
+                });
+        }
+
         // Collect the data for the live columns
         let mut live_columns = (0..row_groups.len() * num_live_columns)
             .into_par_iter()
@@ -470,6 +501,9 @@ fn rg_to_dfs_optionally_par_over_columns(
             assert!(std::env::var("POLARS_PANIC_IF_PARQUET_PARSED").is_err())
         }
 
+        // Set partitioned fields to prevent quadratic behavior.
+        let projected_columns = projected_columns_set(schema, projection);
+        md.set_partition_fields(projected_columns.as_ref());
         let columns = if let ParallelStrategy::Columns = parallel {
             POOL.install(|| {
                 projection
@@ -566,6 +600,15 @@ fn rg_to_dfs_par_over_rg(
     }
 
     let dfs = POOL.install(|| {
+        // Set partitioned fields to prevent quadratic behavior.
+        // Ensure all row groups are partitioned.
+        {
+            let projected_columns = projected_columns_set(schema, projection);
+            row_groups.par_iter().for_each(|(_, rg, _, _)| {
+                rg.set_partition_fields(projected_columns.as_ref());
+            });
+        }
+
         row_groups
             .into_par_iter()
             .map(|(rg_idx, md, slice, row_count_start)| {

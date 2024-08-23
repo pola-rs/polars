@@ -6,8 +6,7 @@ use bytes::Bytes;
 use polars_core::datatypes::PlHashMap;
 use polars_error::PolarsResult;
 use polars_parquet::read::{
-    column_iter_to_arrays, get_field_columns, BasicDecompressor, ColumnChunkMetaData, Filter,
-    PageReader,
+    column_iter_to_arrays, BasicDecompressor, ColumnChunkMetaData, Filter, PageReader,
 };
 use polars_utils::mmap::{MemReader, MemSlice};
 
@@ -32,11 +31,10 @@ pub enum ColumnStore {
 /// For cloud files the relevant memory regions should have been prefetched.
 pub(super) fn mmap_columns<'a>(
     store: &'a ColumnStore,
-    columns: &'a [ColumnChunkMetaData],
-    field_name: &str,
+    field_columns: &'a [&ColumnChunkMetaData],
 ) -> Vec<(&'a ColumnChunkMetaData, MemSlice)> {
-    get_field_columns(columns, field_name)
-        .into_iter()
+    field_columns
+        .iter()
         .map(|meta| _mmap_single_column(store, meta))
         .collect()
 }

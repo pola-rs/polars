@@ -183,4 +183,4 @@ where
 
 #[cfg(feature = "async")]
 #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
-pub use stream::{read_column_async, read_columns_async};
+pub use stream::read_column_async;
