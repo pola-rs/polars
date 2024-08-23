@@ -3,9 +3,9 @@ from __future__ import annotations
 import glob
 import re
 from contextlib import contextmanager
-from io import BufferedReader, BytesIO, StringIO
+from io import BytesIO, StringIO
 from pathlib import Path
-from typing import IO, Any, ContextManager, Iterator, Sequence, cast, overload
+from typing import IO, Any, ContextManager, Iterator, Sequence, overload
 
 from polars._utils.various import is_int_sequence, is_str_sequence, normalize_filepath
 from polars.dependencies import _FSSPEC_AVAILABLE, fsspec
@@ -70,7 +70,7 @@ def parse_row_index_args(
         return (row_index_name, row_index_offset)
 
 
-def _replace(file: str, replace_chars_map: list):
+def _replace(file: str, replace_chars_map: list[tuple[str, str]]) -> str:
     for old, new in replace_chars_map:
         file = file.replace(old, new)
     return file
@@ -84,7 +84,7 @@ def prepare_file_arg(
     use_pyarrow: bool = ...,
     raise_if_empty: bool = ...,
     storage_options: dict[str, Any] | None = ...,
-    replace_chars_map: list | None = None,
+    replace_chars_map: list[tuple[str, str]] | None = None,
 ) -> ContextManager[str | BytesIO]: ...
 
 
@@ -96,7 +96,7 @@ def prepare_file_arg(
     use_pyarrow: bool = ...,
     raise_if_empty: bool = ...,
     storage_options: dict[str, Any] | None = ...,
-    replace_chars_map: list | None = None,
+    replace_chars_map: list[tuple[str, str]] | None = None,
 ) -> ContextManager[str | BytesIO]: ...
 
 
@@ -108,7 +108,7 @@ def prepare_file_arg(
     use_pyarrow: bool = ...,
     raise_if_empty: bool = ...,
     storage_options: dict[str, Any] | None = ...,
-    replace_chars_map: list | None = None,
+    replace_chars_map: list[tuple[str, str]] | None = None,
 ) -> ContextManager[str | list[str] | BytesIO | list[BytesIO]]: ...
 
 
@@ -119,7 +119,7 @@ def prepare_file_arg(
     use_pyarrow: bool = False,
     raise_if_empty: bool = True,
     storage_options: dict[str, Any] | None = None,
-    replace_chars_map: list | None = None,
+    replace_chars_map: list[tuple[str, str]] | None = None,
 ) -> ContextManager[str | list[str] | BytesIO | list[BytesIO]]:
     """
     Prepare file argument.
@@ -243,14 +243,14 @@ def prepare_file_arg(
             if len(replace_chars_map) == 0:
                 return fsspec.open(file, **storage_options)
             else:
-                with fsspec.open(file, **storage_options) as f:
-                    f = cast(BufferedReader, f)
+                with fsspec.open(file, **storage_options, mode="rb") as f:
+                    fread: bytes = f.read()  # type: ignore[assignment]
                     encoding = encoding or "utf8"
                     return _check_empty(
                         BytesIO(
-                            _replace(
-                                f.read().decode(encoding), replace_chars_map
-                            ).encode("utf8")
+                            _replace(fread.decode(encoding), replace_chars_map).encode(
+                                "utf8"
+                            )
                         ),
                         context=f"{file!r}",
                         raise_if_empty=raise_if_empty,
@@ -303,7 +303,9 @@ def looks_like_url(path: str) -> bool:
 
 
 def process_file_url(
-    path: str, encoding: str | None = None, replace_chars_map: list | None = None
+    path: str,
+    encoding: str | None = None,
+    replace_chars_map: list[tuple[str, str]] | None = None,
 ) -> BytesIO:
     if replace_chars_map is None:
         replace_chars_map = []

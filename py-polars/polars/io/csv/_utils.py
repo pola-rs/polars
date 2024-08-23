@@ -13,7 +13,7 @@ Arguments = Literal["separator", "quote_char", "eol_char"]
 class Hasdecode:
     """Dummy class for typing."""
 
-    def decode(self, encoding) -> str:
+    def decode(self, encoding: str) -> str:
         return ""
 
 
@@ -50,7 +50,10 @@ def _check_arg_is_1byte(
 
 
 def _check_fix_1byte_arg(
-    arg_name: Arguments, arg: str | tuple, *, replace_map: list
+    arg_name: Arguments,
+    arg: str | tuple[str, str],
+    *,
+    replace_map: list[tuple[str, str]],
 ) -> str:
     user_supplied_tuple = False
     if arg is None:

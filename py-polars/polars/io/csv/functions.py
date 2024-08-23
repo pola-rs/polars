@@ -46,9 +46,9 @@ def read_csv(
     has_header: bool = True,
     columns: Sequence[int] | Sequence[str] | None = None,
     new_columns: Sequence[str] | None = None,
-    separator: str | tuple = ",",
+    separator: str | tuple[str, str] = ",",
     comment_prefix: str | None = None,
-    quote_char: str | tuple | None = '"',
+    quote_char: str | tuple[str, str] | None = '"',
     skip_rows: int = 0,
     schema: SchemaDict | None = None,
     schema_overrides: (
@@ -72,7 +72,7 @@ def read_csv(
     row_index_name: str | None = None,
     row_index_offset: int = 0,
     sample_size: int = 1024,
-    eol_char: str | tuple = "\n",
+    eol_char: str | tuple[str, str] = "\n",
     raise_if_empty: bool = True,
     truncate_ragged_lines: bool = False,
     decimal_comma: bool = False,
@@ -257,7 +257,7 @@ def read_csv(
     └─────┴─────────┴────────────┘
     """
     encoding_supported_in_lazy = encoding in {"utf8", "utf8-lossy"}
-    replace_chars_map = []
+    replace_chars_map: list[tuple[str, str]] = []
     separator = _check_fix_1byte_arg(
         "separator", separator, replace_map=replace_chars_map
     )
