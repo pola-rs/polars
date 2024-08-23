@@ -7,7 +7,6 @@ use arrow::array::{
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::datatypes::ArrowDataType;
 use arrow::pushable::Pushable;
-use arrow::types::Offset;
 
 use self::filter::Filter;
 use super::binary::utils::Binary;
@@ -494,27 +493,25 @@ where
     }
 }
 
-impl<'a, 'b, 'c, O, Out, G> BatchableCollector<u8, Binary<O>>
-    for GatheredHybridRle<'a, 'b, 'c, Out, G>
+impl<'a, 'b, 'c, Out, G> BatchableCollector<u8, Binary> for GatheredHybridRle<'a, 'b, 'c, Out, G>
 where
-    O: Offset,
     Out: Clone,
-    G: HybridRleGatherer<Out, Target = Binary<O>>,
+    G: HybridRleGatherer<Out, Target = Binary>,
 {
     #[inline]
-    fn reserve(target: &mut Binary<O>, n: usize) {
+    fn reserve(target: &mut Binary, n: usize) {
         target.offsets.reserve(n);
         target.values.reserve(n);
     }
 
     #[inline]
-    fn push_n(&mut self, target: &mut Binary<O>, n: usize) -> ParquetResult<()> {
+    fn push_n(&mut self, target: &mut Binary, n: usize) -> ParquetResult<()> {
         self.decoder.gather_n_into(target, n, self.gatherer)?;
         Ok(())
     }
 
     #[inline]
-    fn push_n_nulls(&mut self, target: &mut Binary<O>, n: usize) -> ParquetResult<()> {
+    fn push_n_nulls(&mut self, target: &mut Binary, n: usize) -> ParquetResult<()> {
         self.gatherer
             .gather_repeated(target, self.null_value.clone(), n)?;
         Ok(())

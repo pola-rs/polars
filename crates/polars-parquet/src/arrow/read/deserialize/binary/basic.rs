@@ -6,7 +6,6 @@ use arrow::array::specification::try_check_utf8;
 use arrow::array::{Array, BinaryArray, DictionaryArray, DictionaryKey, PrimitiveArray, Utf8Array};
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::{ArrowDataType, PhysicalType};
-use arrow::offset::Offset;
 
 use super::super::utils;
 use super::super::utils::extend_from_decoder;
@@ -23,24 +22,22 @@ use crate::read::deserialize::utils::{
 };
 use crate::read::PrimitiveLogicalType;
 
-impl<O: Offset> utils::ExactSize for (Binary<O>, MutableBitmap) {
+impl utils::ExactSize for (Binary, MutableBitmap) {
     fn len(&self) -> usize {
         self.0.len()
     }
 }
 
-pub(crate) struct DeltaCollector<'a, 'b, O: Offset> {
+pub(crate) struct DeltaCollector<'a, 'b> {
     pub(crate) decoder: &'b mut delta_length_byte_array::Decoder<'a>,
-    pub(crate) _pd: std::marker::PhantomData<O>,
 }
 
-pub(crate) struct DeltaBytesCollector<'a, 'b, O: Offset> {
+pub(crate) struct DeltaBytesCollector<'a, 'b> {
     pub(crate) decoder: &'b mut delta_byte_array::Decoder<'a>,
-    pub(crate) _pd: std::marker::PhantomData<O>,
 }
 
-impl<'a, 'b, O: Offset> DeltaBytesCollector<'a, 'b, O> {
-    pub fn gather_n_into(&mut self, target: &mut Binary<O>, n: usize) -> ParquetResult<()> {
+impl<'a, 'b> DeltaBytesCollector<'a, 'b> {
+    pub fn gather_n_into(&mut self, target: &mut Binary, n: usize) -> ParquetResult<()> {
         struct MaybeUninitCollector(usize);
 
         impl DeltaGatherer for MaybeUninitCollector {
@@ -119,18 +116,18 @@ impl<'a, 'b, O: Offset> DeltaBytesCollector<'a, 'b, O> {
     }
 }
 
-impl<'a, 'b, O: Offset> BatchableCollector<(), Binary<O>> for DeltaCollector<'a, 'b, O> {
-    fn reserve(target: &mut Binary<O>, n: usize) {
+impl<'a, 'b> BatchableCollector<(), Binary> for DeltaCollector<'a, 'b> {
+    fn reserve(target: &mut Binary, n: usize) {
         target.offsets.reserve(n);
     }
 
-    fn push_n(&mut self, target: &mut Binary<O>, n: usize) -> ParquetResult<()> {
-        let start = target.offsets.last().to_usize();
+    fn push_n(&mut self, target: &mut Binary, n: usize) -> ParquetResult<()> {
+        let start = *target.offsets.last() as usize;
         let mut gatherer = OffsetGatherer::default();
         self.decoder
             .lengths
             .gather_n_into(&mut target.offsets, n, &mut gatherer)?;
-        let end = target.offsets.last().to_usize();
+        let end = *target.offsets.last() as usize;
 
         target.values.extend_from_slice(
             &self.decoder.values[self.decoder.offset..self.decoder.offset + end - start],
@@ -140,7 +137,7 @@ impl<'a, 'b, O: Offset> BatchableCollector<(), Binary<O>> for DeltaCollector<'a,
         Ok(())
     }
 
-    fn push_n_nulls(&mut self, target: &mut Binary<O>, n: usize) -> ParquetResult<()> {
+    fn push_n_nulls(&mut self, target: &mut Binary, n: usize) -> ParquetResult<()> {
         target.extend_constant(n);
         Ok(())
     }
@@ -150,16 +147,16 @@ impl<'a, 'b, O: Offset> BatchableCollector<(), Binary<O>> for DeltaCollector<'a,
     }
 }
 
-impl<'a, 'b, O: Offset> BatchableCollector<(), Binary<O>> for DeltaBytesCollector<'a, 'b, O> {
-    fn reserve(target: &mut Binary<O>, n: usize) {
+impl<'a, 'b> BatchableCollector<(), Binary> for DeltaBytesCollector<'a, 'b> {
+    fn reserve(target: &mut Binary, n: usize) {
         target.offsets.reserve(n);
     }
 
-    fn push_n(&mut self, target: &mut Binary<O>, n: usize) -> ParquetResult<()> {
+    fn push_n(&mut self, target: &mut Binary, n: usize) -> ParquetResult<()> {
         self.gather_n_into(target, n)
     }
 
-    fn push_n_nulls(&mut self, target: &mut Binary<O>, n: usize) -> ParquetResult<()> {
+    fn push_n_nulls(&mut self, target: &mut Binary, n: usize) -> ParquetResult<()> {
         target.extend_constant(n);
         Ok(())
     }
@@ -169,13 +166,13 @@ impl<'a, 'b, O: Offset> BatchableCollector<(), Binary<O>> for DeltaBytesCollecto
     }
 }
 
-impl<'a, O: Offset> StateTranslation<'a, BinaryDecoder<O>> for BinaryStateTranslation<'a> {
+impl<'a> StateTranslation<'a, BinaryDecoder> for BinaryStateTranslation<'a> {
     type PlainDecoder = BinaryIter<'a>;
 
     fn new(
-        decoder: &BinaryDecoder<O>,
+        decoder: &BinaryDecoder,
         page: &'a DataPage,
-        dict: Option<&'a <BinaryDecoder<O> as utils::Decoder>::Dict>,
+        dict: Option<&'a <BinaryDecoder as utils::Decoder>::Dict>,
         page_validity: Option<&utils::PageValidity<'a>>,
     ) -> ParquetResult<Self> {
         let is_string = matches!(
@@ -196,8 +193,8 @@ impl<'a, O: Offset> StateTranslation<'a, BinaryDecoder<O>> for BinaryStateTransl
 
     fn extend_from_state(
         &mut self,
-        decoder: &mut BinaryDecoder<O>,
-        decoded: &mut <BinaryDecoder<O> as utils::Decoder>::DecodedState,
+        decoder: &mut BinaryDecoder,
+        decoded: &mut <BinaryDecoder as utils::Decoder>::DecodedState,
         page_validity: &mut Option<utils::PageValidity<'a>>,
         additional: usize,
     ) -> ParquetResult<()> {
@@ -221,10 +218,7 @@ impl<'a, O: Offset> StateTranslation<'a, BinaryDecoder<O>> for BinaryStateTransl
             T::DeltaLengthByteArray(ref mut page, ref mut _lengths) => {
                 let (values, validity) = decoded;
 
-                let mut collector = DeltaCollector {
-                    decoder: page,
-                    _pd: std::marker::PhantomData,
-                };
+                let mut collector = DeltaCollector { decoder: page };
 
                 match page_validity {
                     None => collector.push_n(values, additional)?,
@@ -240,7 +234,6 @@ impl<'a, O: Offset> StateTranslation<'a, BinaryDecoder<O>> for BinaryStateTransl
             T::DeltaBytes(ref mut page_values) => {
                 let mut collector = DeltaBytesCollector {
                     decoder: page_values,
-                    _pd: std::marker::PhantomData,
                 };
 
                 let (values, validity) = decoded;
@@ -271,8 +264,7 @@ impl<'a, O: Offset> StateTranslation<'a, BinaryDecoder<O>> for BinaryStateTransl
 }
 
 #[derive(Debug, Default)]
-pub(crate) struct BinaryDecoder<O: Offset> {
-    phantom_o: std::marker::PhantomData<O>,
+pub(crate) struct BinaryDecoder {
     check_utf8: AtomicBool,
 }
 
@@ -282,15 +274,15 @@ impl utils::ExactSize for BinaryDict {
     }
 }
 
-impl<O: Offset> utils::Decoder for BinaryDecoder<O> {
+impl utils::Decoder for BinaryDecoder {
     type Translation<'a> = BinaryStateTranslation<'a>;
     type Dict = BinaryDict;
-    type DecodedState = (Binary<O>, MutableBitmap);
+    type DecodedState = (Binary, MutableBitmap);
     type Output = Box<dyn Array>;
 
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState {
         (
-            Binary::<O>::with_capacity(capacity),
+            Binary::with_capacity(capacity),
             MutableBitmap::with_capacity(capacity),
         )
     }
@@ -336,13 +328,12 @@ impl<O: Offset> utils::Decoder for BinaryDecoder<O> {
         dict: &Self::Dict,
         limit: usize,
     ) -> ParquetResult<()> {
-        struct BinaryGatherer<'a, O> {
+        struct BinaryGatherer<'a> {
             dict: &'a BinaryDict,
-            _pd: std::marker::PhantomData<O>,
         }
 
-        impl<'a, O: Offset> HybridRleGatherer<&'a [u8]> for BinaryGatherer<'a, O> {
-            type Target = Binary<O>;
+        impl<'a> HybridRleGatherer<&'a [u8]> for BinaryGatherer<'a> {
+            type Target = Binary;
 
             fn target_reserve(&self, target: &mut Self::Target, n: usize) {
                 // @NOTE: This is an estimation for the reservation. It will probably not be
@@ -383,10 +374,7 @@ impl<O: Offset> utils::Decoder for BinaryDecoder<O> {
             }
         }
 
-        let gatherer = BinaryGatherer {
-            dict,
-            _pd: std::marker::PhantomData,
-        };
+        let gatherer = BinaryGatherer { dict };
 
         match page_validity {
             None => {
@@ -412,7 +400,7 @@ impl<O: Offset> utils::Decoder for BinaryDecoder<O> {
     }
 }
 
-impl<O: Offset> utils::DictDecodable for BinaryDecoder<O> {
+impl utils::DictDecodable for BinaryDecoder {
     fn finalize_dict_array<K: DictionaryKey>(
         &self,
         data_type: ArrowDataType,
@@ -440,7 +428,7 @@ impl<O: Offset> utils::DictDecodable for BinaryDecoder<O> {
     }
 }
 
-impl<O: Offset> utils::NestedDecoder for BinaryDecoder<O> {
+impl utils::NestedDecoder for BinaryDecoder {
     fn validity_extend(
         _: &mut utils::State<'_, Self>,
         (_, validity): &mut Self::DecodedState,

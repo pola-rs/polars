@@ -126,13 +126,45 @@ fn is_primitive(data_type: &ArrowDataType) -> bool {
     )
 }
 
+fn make_field_large(field: &mut Field) {
+    let dt = std::mem::take(&mut field.data_type);
+    field.data_type = make_datetype_large(dt);
+}
+
+fn make_datetype_large(mut datatype: ArrowDataType) -> ArrowDataType {
+    use ArrowDataType as D;
+    match datatype {
+        D::Binary => datatype = D::LargeBinary,
+        D::Utf8 => datatype = D::LargeUtf8,
+        D::List(ref mut f)
+        | D::FixedSizeList(ref mut f, _)
+        | D::LargeList(ref mut f)
+        | D::Map(ref mut f, _) => make_field_large(f),
+        D::Struct(ref mut fs) => {
+            for f in fs {
+                make_field_large(f);
+            }
+        },
+        D::Union(_, _, _) => todo!(),
+        D::Dictionary(_, ref mut boxed_dt, _) | D::Extension(_, ref mut boxed_dt, _) => {
+            let dt = std::mem::take(boxed_dt.as_mut());
+            *boxed_dt.as_mut() = make_datetype_large(dt);
+        },
+        _ => {},
+    }
+
+    datatype
+}
+
 fn columns_to_iter_recursive(
     mut columns: Vec<BasicDecompressor>,
     mut types: Vec<&PrimitiveType>,
-    field: Field,
+    mut field: Field,
     init: Vec<InitNested>,
     filter: Option<Filter>,
 ) -> PolarsResult<(NestedState, Box<dyn Array>)> {
+    make_field_large(&mut field);
+
     if init.is_empty() && is_primitive(&field.data_type) {
         let array = page_iter_to_array(
             columns.pop().unwrap(),

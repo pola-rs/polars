@@ -1,14 +1,14 @@
-use arrow::offset::{Offset, Offsets};
+use arrow::offset::Offsets;
 use arrow::pushable::Pushable;
 
 /// [`Pushable`] for variable length binary data.
 #[derive(Debug, Default)]
-pub struct Binary<O: Offset> {
-    pub offsets: Offsets<O>,
+pub struct Binary {
+    pub offsets: Offsets<i64>,
     pub values: Vec<u8>,
 }
 
-impl<O: Offset> Binary<O> {
+impl Binary {
     #[inline]
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
@@ -42,11 +42,11 @@ impl<O: Offset> Binary<O> {
     }
 }
 
-impl<'a, O: Offset> Pushable<&'a [u8]> for Binary<O> {
+impl<'a> Pushable<&'a [u8]> for Binary {
     type Freeze = ();
     #[inline]
     fn reserve(&mut self, additional: usize) {
-        let avg_len = self.values.len() / std::cmp::max(self.offsets.last().to_usize(), 1);
+        let avg_len = self.values.len() / std::cmp::max(*self.offsets.last() as usize, 1);
         self.values.reserve(additional * avg_len);
         self.offsets.reserve(additional);
     }
