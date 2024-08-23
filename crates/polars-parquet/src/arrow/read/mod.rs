@@ -2,7 +2,6 @@
 #![allow(clippy::type_complexity)]
 
 mod deserialize;
-pub mod indexes;
 pub mod schema;
 pub mod statistics;
 
@@ -28,8 +27,7 @@ pub use crate::parquet::{
     metadata::{ColumnChunkMetaData, ColumnDescriptor, RowGroupMetaData},
     page::{CompressedDataPage, DataPageHeader, Page},
     read::{
-        decompress, get_column_iterator, read_columns_indexes as _read_columns_indexes,
-        read_metadata as _read_metadata, read_pages_locations, BasicDecompressor,
+        decompress, get_column_iterator, read_metadata as _read_metadata, BasicDecompressor,
         MutStreamingIterator, PageReader, ReadColumnIterator, State,
     },
     schema::types::{

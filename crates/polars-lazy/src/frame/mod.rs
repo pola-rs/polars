@@ -582,10 +582,19 @@ impl LazyFrame {
         #[allow(unused_mut)]
         let mut opt_state = self.opt_state;
         let streaming = self.opt_state.contains(OptState::STREAMING);
+        let new_streaming = self.opt_state.contains(OptState::NEW_STREAMING);
         #[cfg(feature = "cse")]
-        if streaming && self.opt_state.contains(OptState::COMM_SUBPLAN_ELIM) {
+        if streaming && !new_streaming {
             opt_state &= !OptState::COMM_SUBPLAN_ELIM;
         }
+
+        // The new streaming engine can't deal with the way the common
+        // subexpression elimination adds length-incorrect with_columns.
+        #[cfg(feature = "cse")]
+        if new_streaming {
+            opt_state &= !OptState::COMM_SUBEXPR_ELIM;
+        }
+
         let lp_top = optimize(
             self.logical_plan,
             opt_state,
@@ -694,31 +703,24 @@ impl LazyFrame {
     pub fn collect(self) -> PolarsResult<DataFrame> {
         #[cfg(feature = "new_streaming")]
         {
-            let force_new_streaming = self.opt_state.contains(OptState::NEW_STREAMING);
-            let mut alp_plan = self.to_alp_optimized()?;
-            let stream_lp_top = alp_plan.lp_arena.add(IR::Sink {
-                input: alp_plan.lp_top,
-                payload: SinkType::Memory,
-            });
-
-            if force_new_streaming {
-                return polars_stream::run_query(
-                    stream_lp_top,
-                    alp_plan.lp_arena,
-                    &alp_plan.expr_arena,
-                );
-            }
-
-            if std::env::var("POLARS_AUTO_NEW_STREAMING")
-                .as_deref()
-                .unwrap_or("")
-                == "1"
+            if !self.opt_state.contains(OptState::NEW_STREAMING)
+                && std::env::var("POLARS_AUTO_NEW_STREAMING").as_deref() == Ok("1")
             {
+                // Try to run using the new streaming engine, falling back
+                // if it fails in a todo!() error.
+                let mut new_stream_lazy = self.clone();
+                new_stream_lazy.opt_state |= OptState::NEW_STREAMING;
+                let mut alp_plan = new_stream_lazy.to_alp_optimized()?;
+                let stream_lp_top = alp_plan.lp_arena.add(IR::Sink {
+                    input: alp_plan.lp_top,
+                    payload: SinkType::Memory,
+                });
+
                 let f = || {
                     polars_stream::run_query(
                         stream_lp_top,
-                        alp_plan.lp_arena.clone(),
-                        &alp_plan.expr_arena,
+                        alp_plan.lp_arena,
+                        &mut alp_plan.expr_arena,
                     )
                 };
                 match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
@@ -736,6 +738,7 @@ impl LazyFrame {
                 }
             }
 
+            let mut alp_plan = self.to_alp_optimized()?;
             let mut physical_plan = create_physical_plan(
                 alp_plan.lp_top,
                 &mut alp_plan.lp_arena,
@@ -1513,13 +1516,25 @@ impl LazyFrame {
 
     /// Apply explode operation. [See eager explode](polars_core::frame::DataFrame::explode).
     pub fn explode<E: AsRef<[IE]>, IE: Into<Selector> + Clone>(self, columns: E) -> LazyFrame {
+        self.explode_impl(columns, false)
+    }
+
+    /// Apply explode operation. [See eager explode](polars_core::frame::DataFrame::explode).
+    fn explode_impl<E: AsRef<[IE]>, IE: Into<Selector> + Clone>(
+        self,
+        columns: E,
+        allow_empty: bool,
+    ) -> LazyFrame {
         let columns = columns
             .as_ref()
             .iter()
             .map(|e| e.clone().into())
             .collect::<Vec<_>>();
         let opt_state = self.get_opt_state();
-        let lp = self.get_plan_builder().explode(columns).build();
+        let lp = self
+            .get_plan_builder()
+            .explode(columns, allow_empty)
+            .build();
         Self::from_logical_plan(lp, opt_state)
     }
 
@@ -1877,7 +1892,7 @@ impl LazyGroupBy {
             .collect::<Vec<_>>();
 
         self.agg([col("*").exclude(&keys).head(n)])
-            .explode([col("*").exclude(&keys)])
+            .explode_impl([col("*").exclude(&keys)], true)
     }
 
     /// Return last n rows of each group
@@ -1889,7 +1904,7 @@ impl LazyGroupBy {
             .collect::<Vec<_>>();
 
         self.agg([col("*").exclude(&keys).tail(n)])
-            .explode([col("*").exclude(&keys)])
+            .explode_impl([col("*").exclude(&keys)], true)
     }
 
     /// Apply a function over the groups as a new DataFrame.

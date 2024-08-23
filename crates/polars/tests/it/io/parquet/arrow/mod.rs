@@ -38,16 +38,6 @@ pub fn read_column<R: Read + Seek>(mut reader: R, column: &str) -> PolarsResult<
 
     let row_group = &metadata.row_groups[0];
 
-    // verify that we can read indexes
-    if p_read::indexes::has_indexes(row_group) {
-        let _indexes = p_read::indexes::read_filtered_pages(
-            &mut reader,
-            row_group,
-            &schema.fields,
-            |_, _| vec![],
-        )?;
-    }
-
     let schema = schema.filter(|_, f| f.name == column);
 
     let field = &schema.fields[0];

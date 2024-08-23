@@ -1,15 +1,19 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
 use polars_core::prelude::SortMultipleOptions;
-use polars_core::schema::Schema;
-use polars_plan::plans::{AExpr, DataFrameUdf};
+use polars_core::schema::{Schema, SchemaRef};
+use polars_plan::plans::hive::HivePartitions;
+use polars_plan::plans::{AExpr, DataFrameUdf, FileInfo, FileScan};
 use polars_plan::prelude::expr_ir::ExprIR;
 
+mod lower_expr;
 mod lower_ir;
 mod to_graph;
 
 pub use lower_ir::lower_ir;
+use polars_plan::prelude::FileScanOptions;
 use polars_utils::arena::Arena;
 use polars_utils::itertools::Itertools;
 use slotmap::{Key, SecondaryMap, SlotMap};
@@ -108,6 +112,16 @@ pub enum PhysNodeKind {
     #[allow(unused)]
     Multiplexer {
         input: PhysNodeKey,
+    },
+
+    FileScan {
+        paths: Arc<Vec<PathBuf>>,
+        file_info: FileInfo,
+        hive_parts: Option<Arc<Vec<HivePartitions>>>,
+        predicate: Option<ExprIR>,
+        output_schema: Option<SchemaRef>,
+        scan_type: FileScan,
+        file_options: FileScanOptions,
     },
 }
 
@@ -209,6 +223,24 @@ fn visualize_plan_rec(
             (label.to_string(), inputs.as_slice())
         },
         PhysNodeKind::Multiplexer { input } => ("multiplexer".to_string(), from_ref(input)),
+        #[allow(unused)]
+        PhysNodeKind::FileScan {
+            paths,
+            file_info,
+            hive_parts,
+            output_schema,
+            scan_type,
+            predicate,
+            file_options,
+        } => {
+            // TODO: Improve formatting
+            let label = match scan_type {
+                FileScan::Parquet { .. } => "parquet-source",
+                _ => todo!(),
+            };
+
+            (label.to_string(), &[][..])
+        },
     };
 
     out.push(format!(

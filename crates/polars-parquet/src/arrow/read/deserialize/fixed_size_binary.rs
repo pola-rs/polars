@@ -16,6 +16,7 @@ pub(crate) enum StateTranslation<'a> {
     Dictionary(hybrid_rle::HybridRleDecoder<'a>, &'a Vec<u8>),
 }
 
+#[derive(Debug)]
 pub struct FixedSizeBinary {
     pub values: Vec<u8>,
     pub size: usize,
@@ -162,6 +163,12 @@ impl Decoder for BinaryDecoder {
 
             fn push_n_nulls(&mut self, target: &mut Vec<u8>, n: usize) -> ParquetResult<()> {
                 target.resize(target.len() + n * self.size, 0);
+                Ok(())
+            }
+
+            fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
+                let n = usize::min(n, self.slice.len() / self.size);
+                *self.slice = &self.slice[n * self.size..];
                 Ok(())
             }
         }

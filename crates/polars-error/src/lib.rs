@@ -6,10 +6,26 @@ use std::collections::TryReserveError;
 use std::error::Error;
 use std::fmt::{self, Display, Formatter, Write};
 use std::ops::Deref;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use std::{env, io};
 
 pub use warning::*;
+
+enum ErrorStrategy {
+    Panic,
+    WithBacktrace,
+    Normal,
+}
+
+static ERROR_STRATEGY: LazyLock<ErrorStrategy> = LazyLock::new(|| {
+    if env::var("POLARS_PANIC_ON_ERR").as_deref() == Ok("1") {
+        ErrorStrategy::Panic
+    } else if env::var("POLARS_BACKTRACE_IN_ERR").as_deref() == Ok("1") {
+        ErrorStrategy::WithBacktrace
+    } else {
+        ErrorStrategy::Normal
+    }
+});
 
 #[derive(Debug)]
 pub struct ErrString(Cow<'static, str>);
@@ -25,10 +41,14 @@ where
     T: Into<Cow<'static, str>>,
 {
     fn from(msg: T) -> Self {
-        if env::var("POLARS_PANIC_ON_ERR").as_deref().unwrap_or("") == "1" {
-            panic!("{}", msg.into())
-        } else {
-            ErrString(msg.into())
+        match &*ERROR_STRATEGY {
+            ErrorStrategy::Panic => panic!("{}", msg.into()),
+            ErrorStrategy::WithBacktrace => ErrString(Cow::Owned(format!(
+                "{}\n\nRust backtrace:\n{}",
+                msg.into(),
+                std::backtrace::Backtrace::force_capture()
+            ))),
+            ErrorStrategy::Normal => ErrString(msg.into()),
         }
     }
 }
@@ -184,7 +204,7 @@ impl PolarsError {
         }
     }
 
-    fn wrap_msg<F: FnOnce(&str) -> String>(&self, func: F) -> Self {
+    pub fn wrap_msg<F: FnOnce(&str) -> String>(&self, func: F) -> Self {
         use PolarsError::*;
         match self {
             ColumnNotFound(msg) => ColumnNotFound(func(msg).into()),

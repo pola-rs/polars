@@ -66,8 +66,18 @@ impl ComputeNode for MultiplexerNode {
         let all_blocked = send.iter().all(|p| *p == PortState::Blocked);
 
         // Pass along the input state to the output.
-        for s in send {
-            *s = recv[0];
+        for (i, s) in send.iter_mut().enumerate() {
+            let buffer_empty = match &self.buffers[i] {
+                BufferedStream::Open(v) => v.is_empty(),
+                BufferedStream::Closed => true,
+            };
+            *s = if buffer_empty && recv[0] == PortState::Done {
+                PortState::Done
+            } else if !buffer_empty || recv[0] == PortState::Ready {
+                PortState::Ready
+            } else {
+                PortState::Blocked
+            };
         }
 
         // We say we are ready to receive unless all outputs are blocked.

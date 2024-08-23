@@ -205,10 +205,11 @@ fn run_subgraph(
             for input in &node.inputs {
                 let sender = graph.pipes[*input].sender;
                 if let Some(count) = num_send_ports_not_yet_ready.get_mut(sender) {
-                    assert!(*count > 0);
-                    *count -= 1;
-                    if *count == 0 {
-                        ready.push(sender);
+                    if *count > 0 {
+                        *count -= 1;
+                        if *count == 0 {
+                            ready.push(sender);
+                        }
                     }
                 }
             }

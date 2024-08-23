@@ -97,16 +97,14 @@ def parse_py_type_into_dtype(input: PythonDataType | type[object]) -> PolarsData
     # this is required as pass through. Don't remove
     elif input == Unknown:
         return Unknown
-
     elif hasattr(input, "__origin__") and hasattr(input, "__args__"):
         return _parse_generic_into_dtype(input)
-
     else:
         _raise_on_invalid_dtype(input)
 
 
 def _parse_generic_into_dtype(input: Any) -> PolarsDataType:
-    """Parse a generic type into a Polars data type."""
+    """Parse a generic type (from typing annotation) into a Polars data type."""
     base_type = input.__origin__
     if base_type not in (tuple, list):
         _raise_on_invalid_dtype(input)
@@ -124,19 +122,19 @@ def _parse_generic_into_dtype(input: Any) -> PolarsDataType:
 
 
 PY_TYPE_STR_TO_DTYPE: SchemaDict = {
-    "int": Int64(),
-    "float": Float64(),
+    "Decimal": Decimal,
+    "NoneType": Null(),
     "bool": Boolean(),
-    "str": String(),
     "bytes": Binary(),
     "date": Date(),
-    "time": Time(),
     "datetime": Datetime("us"),
-    "object": Object(),
-    "NoneType": Null(),
-    "timedelta": Duration,
-    "Decimal": Decimal,
+    "float": Float64(),
+    "int": Int64(),
     "list": List,
+    "object": Object(),
+    "str": String(),
+    "time": Time(),
+    "timedelta": Duration,
     "tuple": List,
 }
 
@@ -177,5 +175,7 @@ def _parse_union_type_into_dtype(input: Any) -> PolarsDataType:
 
 def _raise_on_invalid_dtype(input: Any) -> NoReturn:
     """Raise an informative error if the input could not be parsed."""
-    msg = f"cannot parse input of type {type(input).__name__!r} into Polars data type: {input!r}"
+    input_type = input if type(input) is type else f"of type {type(input).__name__!r}"
+    input_detail = "" if type(input) is type else f" (given: {input!r})"
+    msg = f"cannot parse input {input_type} into Polars data type{input_detail}"
     raise TypeError(msg) from None

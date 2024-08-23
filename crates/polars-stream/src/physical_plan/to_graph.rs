@@ -6,6 +6,7 @@ use polars_expr::planner::{create_physical_expr, get_expr_depth_limit, Expressio
 use polars_expr::reduce::into_reduction;
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
+use polars_plan::global::_set_n_rows_for_scan;
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, ArenaExprIter, Context, IR};
 use polars_plan::prelude::FunctionFlags;
@@ -253,6 +254,65 @@ fn to_graph_rec<'a>(
             let input_key = to_graph_rec(*input, ctx)?;
             ctx.graph
                 .add_node(nodes::multiplexer::MultiplexerNode::new(), [input_key])
+        },
+
+        v @ FileScan { .. } => {
+            let FileScan {
+                paths,
+                file_info,
+                hive_parts,
+                output_schema,
+                scan_type,
+                predicate,
+                mut file_options,
+            } = v.clone()
+            else {
+                unreachable!()
+            };
+
+            file_options.slice = if let Some((offset, len)) = file_options.slice {
+                Some((offset, _set_n_rows_for_scan(Some(len)).unwrap()))
+            } else {
+                _set_n_rows_for_scan(None).map(|x| (0, x))
+            };
+
+            let predicate = predicate
+                .map(|pred| {
+                    create_physical_expr(
+                        &pred,
+                        Context::Default,
+                        ctx.expr_arena,
+                        output_schema.as_ref(),
+                        &mut ctx.expr_conversion_state,
+                    )
+                })
+                .map_or(Ok(None), |v| v.map(Some))?;
+
+            {
+                use polars_plan::prelude::FileScan;
+
+                match scan_type {
+                    FileScan::Parquet {
+                        options,
+                        cloud_options,
+                        metadata: _,
+                    } => ctx.graph.add_node(
+                        {
+                            nodes::parquet_source::ParquetSourceNode::new(
+                                paths,
+                                file_info,
+                                hive_parts,
+                                predicate,
+                                options,
+                                cloud_options,
+                                file_options,
+                            )
+                        },
+                        [],
+                    ),
+                    _ => todo!(),
+                }
+            }
         },
     };
 
