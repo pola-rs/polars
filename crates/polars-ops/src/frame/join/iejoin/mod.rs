@@ -49,6 +49,7 @@ pub fn join_dataframes(
     right: &DataFrame,
     options: &IEJoinOptions,
     suffix: Option<&str>,
+    slice: Option<(i64, usize)>,
 ) -> PolarsResult<DataFrame> {
     if options.on.len() != 2 {
         return Err(
@@ -108,8 +109,14 @@ pub fn join_dataframes(
     // denoting which entries have been visited while traversing L2.
     let mut bit_array = FilteredBitArray::from_len_zeroed(l1_order.len());
 
-    let mut left_row_ids = PrimitiveChunkedBuilder::<IdxType>::new("left_indices", 0);
-    let mut right_row_ids = PrimitiveChunkedBuilder::<IdxType>::new("right_indices", 0);
+    let mut left_row_ids_builder = PrimitiveChunkedBuilder::<IdxType>::new("left_indices", 0);
+    let mut right_row_ids_builder = PrimitiveChunkedBuilder::<IdxType>::new("right_indices", 0);
+
+    let slice_end = match slice {
+        Some((offset, len)) if offset >= 0 => Some(offset.saturating_add_unsigned(len as u64)),
+        _ => None,
+    };
+    let mut match_count = 0;
 
     if is_strict(op2) {
         // For strict inequalities, we rely on using a stable sort of l2 so that
@@ -118,13 +125,17 @@ pub fn join_dataframes(
         // sort of l1 to be stable, so that the left hand side entries come before the right
         // hand side entries (as we mark visited entries from the right hand side).
         for p in l2_order.into_no_null_iter() {
-            l1_array.process_entry(
+            match_count += l1_array.process_entry(
                 p as usize,
                 &mut bit_array,
                 op1,
-                &mut left_row_ids,
-                &mut right_row_ids,
+                &mut left_row_ids_builder,
+                &mut right_row_ids_builder,
             );
+
+            if slice_end.is_some_and(|end| match_count >= end) {
+                break;
+            }
         }
     } else {
         let l2_array = with_match_physical_numeric_polars_type!(y.dtype(), |$T| {
@@ -141,23 +152,37 @@ pub fn join_dataframes(
             if l2_array[i].run_end {
                 for l2_item in l2_array.iter().take(i + 1).skip(run_start) {
                     let p = l2_item.l1_index;
-                    l1_array.process_lhs_entry(
+                    match_count += l1_array.process_lhs_entry(
                         p as usize,
                         &bit_array,
                         op1,
-                        &mut left_row_ids,
-                        &mut right_row_ids,
+                        &mut left_row_ids_builder,
+                        &mut right_row_ids_builder,
                     );
                 }
+
                 run_start = i + 1;
+
+                if slice_end.is_some_and(|end| match_count >= end) {
+                    break;
+                }
             }
         }
     }
 
-    let left_rows = left.take(&left_row_ids.finish())?;
-    let right_rows = right.take(&right_row_ids.finish())?;
+    let left_rows = left_row_ids_builder.finish();
+    let right_rows = right_row_ids_builder.finish();
 
-    _finish_join(left_rows, right_rows, suffix)
+    debug_assert_eq!(left_rows.len(), right_rows.len());
+    let (left_rows, right_rows) = match slice {
+        None => (left_rows, right_rows),
+        Some((offset, len)) => (left_rows.slice(offset, len), right_rows.slice(offset, len)),
+    };
+
+    let join_left = left.take(&left_rows)?;
+    let join_right = right.take(&right_rows)?;
+
+    _finish_join(join_left, join_right, suffix)
 }
 
 /// Item in L1 array used in the IEJoin algorithm
@@ -186,7 +211,7 @@ trait L1Array {
         op1: InequalityOperator,
         left_row_ids: &mut PrimitiveChunkedBuilder<IdxType>,
         right_row_ids: &mut PrimitiveChunkedBuilder<IdxType>,
-    );
+    ) -> i64;
 
     fn process_lhs_entry(
         &self,
@@ -195,7 +220,7 @@ trait L1Array {
         op1: InequalityOperator,
         left_row_ids: &mut PrimitiveChunkedBuilder<IdxType>,
         right_row_ids: &mut PrimitiveChunkedBuilder<IdxType>,
-    );
+    ) -> i64;
 
     fn mark_visited(&self, index: usize, bit_array: &mut FilteredBitArray);
 }
@@ -274,7 +299,8 @@ where
         op1: InequalityOperator,
         left_row_ids: &mut PrimitiveChunkedBuilder<IdxType>,
         right_row_ids: &mut PrimitiveChunkedBuilder<IdxType>,
-    ) {
+    ) -> i64 {
+        let mut match_count = 0;
         let row_index = self[l1_index].row_index;
         let from_lhs = row_index > 0;
         if from_lhs {
@@ -289,10 +315,12 @@ where
                 debug_assert!(right_row_index < 0);
                 left_row_ids.append_value((row_index - 1) as IdxSize);
                 right_row_ids.append_value((-right_row_index) as IdxSize - 1);
+                match_count += 1;
             });
         } else {
             bit_array.set_bit(l1_index);
         }
+        match_count
     }
 
     fn process_lhs_entry(
@@ -302,7 +330,8 @@ where
         op1: InequalityOperator,
         left_row_ids: &mut PrimitiveChunkedBuilder<IdxType>,
         right_row_ids: &mut PrimitiveChunkedBuilder<IdxType>,
-    ) {
+    ) -> i64 {
+        let mut match_count = 0;
         let row_index = self[l1_index].row_index;
         let from_lhs = row_index > 0;
         if from_lhs {
@@ -312,8 +341,10 @@ where
                 debug_assert!(right_row_index < 0);
                 left_row_ids.append_value((row_index - 1) as IdxSize);
                 right_row_ids.append_value((-right_row_index) as IdxSize - 1);
+                match_count += 1;
             });
         }
+        match_count
     }
 
     fn mark_visited(&self, index: usize, bit_array: &mut FilteredBitArray) {

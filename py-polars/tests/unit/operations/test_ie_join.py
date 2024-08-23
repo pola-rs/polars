@@ -79,6 +79,53 @@ def test_basic_ie_join() -> None:
     assert_frame_equal(actual, expected, check_row_order=False, check_exact=True)
 
 
+@given(
+    offset=st.integers(-6, 5),
+    length=st.integers(0, 6),
+)
+def test_ie_join_with_slice(offset: int, length: int) -> None:
+    east = pl.DataFrame(
+        {
+            "id": [100, 101, 102],
+            "dur": [120, 140, 160],
+            "rev": [12, 14, 16],
+            "cores": [2, 8, 4],
+        }
+    ).lazy()
+    west = pl.DataFrame(
+        {
+            "t_id": [404, 498, 676, 742],
+            "time": [90, 130, 150, 170],
+            "cost": [9, 13, 15, 16],
+            "cores": [4, 2, 1, 4],
+        }
+    ).lazy()
+
+    actual = (
+        east.ie_join(
+            west, on=[pl.col("dur") < pl.col("time"), pl.col("rev") < pl.col("cost")]
+        )
+        .slice(offset, length)
+        .collect()
+    )
+
+    expected_full = pl.DataFrame(
+        {
+            "id": [101, 101, 100, 100, 100],
+            "dur": [140, 140, 120, 120, 120],
+            "rev": [14, 14, 12, 12, 12],
+            "cores": [8, 8, 2, 2, 2],
+            "t_id": [676, 742, 498, 676, 742],
+            "time": [150, 170, 130, 150, 170],
+            "cost": [15, 16, 13, 15, 16],
+            "cores_right": [1, 4, 2, 1, 4],
+        }
+    )
+    expected = expected_full.slice(offset, length)
+
+    assert_frame_equal(actual, expected)
+
+
 def _inequality_expression(col1: str, op: str, col2: str) -> pl.Expr:
     if op == "<":
         return pl.col(col1) < pl.col(col2)

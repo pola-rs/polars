@@ -116,10 +116,13 @@ pub trait DataFrameJoinOps: IntoDf {
         }
 
         if let JoinType::IEJoin(options) = args.how {
-            if args.slice.is_some() {
-                return Err(polars_err!(ComputeError: "IEJoin with slice not implemented"));
-            }
-            return iejoin::join_dataframes(left_df, other, &options, args.suffix.as_deref());
+            return iejoin::join_dataframes(
+                left_df,
+                other,
+                &options,
+                args.suffix.as_deref(),
+                args.slice,
+            );
         }
 
         // Clear literals if a frame is empty. Otherwise we could get an oob
