@@ -92,7 +92,7 @@ pub fn build_plain_page(
             max_def_level: 0,
             max_rep_level: 0,
         },
-        Some(num_rows),
+        num_rows,
     ))
 }
 

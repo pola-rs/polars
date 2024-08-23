@@ -100,7 +100,6 @@ fn _get_page_stream<R: AsyncRead + Unpin + Send>(
                 MemSlice::from_vec(std::mem::take(&mut scratch)),
                 compression,
                 &descriptor,
-                None,
             )?;
         }
     }

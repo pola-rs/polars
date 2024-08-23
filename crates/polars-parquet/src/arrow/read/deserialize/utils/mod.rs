@@ -171,11 +171,9 @@ impl<'a, D: Decoder> State<'a, D> {
 
 pub fn not_implemented(page: &DataPage) -> ParquetError {
     let is_optional = page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
-    let is_filtered = page.selected_rows().is_some();
     let required = if is_optional { "optional" } else { "required" };
-    let is_filtered = if is_filtered { ", index-filtered" } else { "" };
     ParquetError::not_supported(format!(
-        "Decoding {:?} \"{:?}\"-encoded {required}{is_filtered} parquet pages not yet supported",
+        "Decoding {:?} \"{:?}\"-encoded {required} parquet pages not yet supported",
         page.descriptor.primitive_type.physical_type,
         page.encoding(),
     ))

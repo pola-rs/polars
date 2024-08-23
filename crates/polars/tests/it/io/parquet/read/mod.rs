@@ -6,7 +6,6 @@ mod boolean;
 mod dictionary;
 pub(crate) mod file;
 mod fixed_binary;
-mod indexes;
 mod primitive;
 mod primitive_nested;
 pub(crate) mod row_group;
