@@ -61,7 +61,7 @@ fn assert_dtypes(data_type: &ArrowDataType) {
 
 fn column_idx_to_series(
     column_i: usize,
-    // The metadata beloning to this column
+    // The metadata belonging to this column
     field_md: &[&ColumnChunkMetaData],
     filter: Option<Filter>,
     file_schema: &ArrowSchema,
@@ -304,10 +304,10 @@ fn rg_to_dfs_prefiltered(
         let part_md = {
             let projected_columns = projected_columns_set(schema, projection);
 
-            (row_group_start..row_group_end)
-                .into_par_iter()
-                .map(|rg_idx| {
-                    let md = &file_metadata.row_groups[rg_idx];
+            row_groups
+                .par_iter()
+                .map(|rg_info| {
+                    let md = &file_metadata.row_groups[rg_info.index as usize];
                     let mut part_md = ColumnToColumnChunkMD::new(md);
                     part_md.set_partitions(projected_columns.as_ref());
                     part_md

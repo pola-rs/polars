@@ -1,4 +1,3 @@
-use std::io::{Read, Seek};
 use std::vec::IntoIter;
 
 use super::{get_field_columns, get_page_iterator, MemReader, PageReader};
@@ -6,10 +5,6 @@ use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::metadata::{ColumnChunkMetaData, RowGroupMetaData};
 use crate::parquet::page::CompressedPage;
 use crate::parquet::schema::types::ParquetType;
-
-#[cfg(feature = "async")]
-#[cfg_attr(docsrs, doc(cfg(feature = "async")))]
-mod stream;
 
 /// Returns a [`ColumnIterator`] of column chunks corresponding to `field`.
 ///
@@ -149,38 +144,3 @@ impl MutStreamingIterator for ReadColumnIterator {
         self.current.as_mut()
     }
 }
-
-/// Reads all columns that are part of the parquet field `field_name`
-/// # Implementation
-/// This operation is IO-bounded `O(C)` where C is the number of columns associated to
-/// the field (one for non-nested types)
-/// It reads the columns sequentially. Use [`read_column`] to fork this operation to multiple
-/// readers.
-pub fn read_columns<'a, R: Read + Seek>(
-    reader: &mut R,
-    columns: &'a [ColumnChunkMetaData],
-    field_name: &'a str,
-) -> Result<Vec<(&'a ColumnChunkMetaData, Vec<u8>)>, ParquetError> {
-    get_field_columns(columns, field_name)
-        .map(|column| read_column(reader, column).map(|c| (column, c)))
-        .collect()
-}
-
-/// Reads a column chunk into memory
-/// This operation is IO-bounded and allocates the column's `compressed_size`.
-pub fn read_column<R>(reader: &mut R, column: &ColumnChunkMetaData) -> Result<Vec<u8>, ParquetError>
-where
-    R: Read + Seek,
-{
-    let (start, length) = column.byte_range();
-    reader.seek(std::io::SeekFrom::Start(start))?;
-
-    let mut chunk = vec![];
-    chunk.try_reserve(length as usize)?;
-    reader.by_ref().take(length).read_to_end(&mut chunk)?;
-    Ok(chunk)
-}
-
-#[cfg(feature = "async")]
-#[cfg_attr(docsrs, doc(cfg(feature = "async")))]
-pub use stream::read_column_async;
