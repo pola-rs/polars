@@ -4,7 +4,7 @@ import contextlib
 import os
 from io import BytesIO, StringIO
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, Any, Callable, Mapping, Sequence, cast
+from typing import IO, TYPE_CHECKING, Any, Callable, Mapping, Optional, Sequence, cast
 
 import polars._reexport as pl
 import polars.functions as F
@@ -474,7 +474,7 @@ def read_csv(
             has_header=has_header,
             separator=separator,
             comment_prefix=comment_prefix,
-            quote_char=quote_char,
+            quote_char=cast(Optional[str], quote_char),
             skip_rows=skip_rows,
             schema_overrides=schema_overrides,  # type: ignore[arg-type]
             schema=schema,
@@ -519,7 +519,7 @@ def read_csv(
                 columns=columns if columns else projection,
                 separator=separator,
                 comment_prefix=comment_prefix,
-                quote_char=quote_char,
+                quote_char=cast(Optional[str], quote_char),
                 skip_rows=skip_rows,
                 schema_overrides=schema_overrides,
                 schema=schema,
