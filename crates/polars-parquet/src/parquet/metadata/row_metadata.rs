@@ -67,7 +67,7 @@ impl RowGroupMetaData {
 
     pub fn get_partition_fields(&self, name: &str) -> UnitVec<&ColumnChunkMetaData> {
         let pf = self.partitioned_fields.read().unwrap();
-        debug_assert!(!pf.is_empty(), "fields should be parititioned first");
+        debug_assert!(!pf.is_empty(), "fields should be partitioned first");
         pf.get(name)
             .map(|idx| {
                 idx.iter()
