@@ -69,6 +69,8 @@ impl Graph {
         let mut scheduled_for_update: SecondaryMap<GraphNodeKey, ()> =
             self.nodes.keys().map(|k| (k, ())).collect();
 
+        let verbose = std::env::var("POLARS_VERBOSE_STATE_UPDATE").as_deref() == Ok("1");
+
         let mut recv_state = Vec::new();
         let mut send_state = Vec::new();
         while let Some(node_key) = to_update.pop() {
@@ -82,15 +84,24 @@ impl Graph {
             send_state.extend(node.outputs.iter().map(|o| self.pipes[*o].recv_state));
 
             // Compute the new state of this node given its environment.
-            // eprintln!("updating {}, before: {recv_state:?} {send_state:?}", node.compute.name());
+            if verbose {
+                eprintln!(
+                    "updating {}, before: {recv_state:?} {send_state:?}",
+                    node.compute.name()
+                );
+            }
             node.compute.update_state(&mut recv_state, &mut send_state);
-            // eprintln!("updating {}, after: {recv_state:?} {send_state:?}", node.compute.name());
+            if verbose {
+                eprintln!(
+                    "updating {}, after: {recv_state:?} {send_state:?}",
+                    node.compute.name()
+                );
+            }
 
             // Propagate information.
             for (input, state) in node.inputs.iter().zip(recv_state.iter()) {
                 let pipe = &mut self.pipes[*input];
                 if pipe.recv_state != *state {
-                    // eprintln!("transitioning input pipe from {:?} to {state:?}", pipe.recv_state);
                     assert!(pipe.recv_state != PortState::Done, "implementation error: state transition from Done to Blocked/Ready attempted");
                     pipe.recv_state = *state;
                     if scheduled_for_update.insert(pipe.sender, ()).is_none() {
@@ -102,7 +113,6 @@ impl Graph {
             for (output, state) in node.outputs.iter().zip(send_state.iter()) {
                 let pipe = &mut self.pipes[*output];
                 if pipe.send_state != *state {
-                    // eprintln!("transitioning output pipe from {:?} to {state:?}", pipe.send_state);
                     assert!(pipe.send_state != PortState::Done, "implementation error: state transition from Done to Blocked/Ready attempted");
                     pipe.send_state = *state;
                     if scheduled_for_update.insert(pipe.receiver, ()).is_none() {

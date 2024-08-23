@@ -15,7 +15,7 @@ fn is_streamable(node: Node, arena: &Arena<AExpr>) -> bool {
 pub fn run_query(
     node: Node,
     mut ir_arena: Arena<IR>,
-    expr_arena: &Arena<AExpr>,
+    expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<DataFrame> {
     let mut phys_sm = SlotMap::with_capacity_and_key(ir_arena.len());
     let mut schema_cache = PlHashMap::with_capacity(ir_arena.len());

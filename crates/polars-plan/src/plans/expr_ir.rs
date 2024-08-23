@@ -27,7 +27,7 @@ pub enum OutputName {
 }
 
 impl OutputName {
-    fn unwrap(&self) -> &ColumnName {
+    pub fn unwrap(&self) -> &ColumnName {
         match self {
             OutputName::Alias(name) => name,
             OutputName::ColumnLhs(name) => name,
@@ -151,7 +151,7 @@ impl ExprIR {
         self.output_name = OutputName::Alias(name)
     }
 
-    pub(crate) fn output_name_inner(&self) -> &OutputName {
+    pub fn output_name_inner(&self) -> &OutputName {
         &self.output_name
     }
 
