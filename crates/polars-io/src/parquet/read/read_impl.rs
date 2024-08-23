@@ -301,6 +301,8 @@ fn rg_to_dfs_prefiltered(
     POOL.install(|| {
         // Set partitioned fields to prevent quadratic behavior.
         // Ensure all row groups are partitioned.
+
+        // Hashset, because row-groups will be modified in place later, so we cannot trust the indexes.
         let part_md = {
             let projected_columns = projected_columns_set(schema, projection);
 
@@ -310,9 +312,9 @@ fn rg_to_dfs_prefiltered(
                     let md = &file_metadata.row_groups[rg_info.index as usize];
                     let mut part_md = ColumnToColumnChunkMD::new(md);
                     part_md.set_partitions(projected_columns.as_ref());
-                    part_md
+                    (rg_info.index, part_md)
                 })
-                .collect::<Vec<_>>()
+                .collect::<PlHashMap<_, _>>()
         };
 
         // Collect the data for the live columns
@@ -322,8 +324,10 @@ fn rg_to_dfs_prefiltered(
                 let col_idx = live_idx_to_col_idx[i % num_live_columns];
 
                 let name = &schema.fields[col_idx].name;
-                let md = part_md[i / num_live_columns].get_partitions(name);
-                column_idx_to_series(col_idx, md.as_slice(), None, schema, store)
+                let rg_idx = row_groups[i / num_live_columns].index;
+                let field_md = part_md.get(&rg_idx).unwrap().get_partitions(name);
+
+                column_idx_to_series(col_idx, field_md.as_slice(), None, schema, store)
             })
             .collect::<PolarsResult<Vec<_>>>()?;
 
@@ -428,8 +432,17 @@ fn rg_to_dfs_prefiltered(
             .map(|i| {
                 let col_idx = dead_idx_to_col_idx[i % num_dead_columns];
                 let name = &schema.fields[col_idx].name;
-                let field_md = part_md[i / num_dead_columns].get_partitions(name);
+
                 let (mask, _) = &dfs[i / num_dead_columns];
+
+                let rg_idx = row_groups[i / num_dead_columns].index;
+
+                #[cfg(debug_assertions)]
+                {
+                    let md = &file_metadata.row_groups[rg_idx as usize];
+                    debug_assert_eq!(md.num_rows(), mask.len());
+                }
+                let field_md = part_md.get(&rg_idx).unwrap().get_partitions(name);
 
                 column_idx_to_series(
                     col_idx,

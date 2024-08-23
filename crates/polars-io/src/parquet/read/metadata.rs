@@ -6,7 +6,7 @@ use polars_utils::unitvec;
 
 pub(super) struct ColumnToColumnChunkMD<'a> {
     partitions: PlHashMap<String, UnitVec<usize>>,
-    metadata: &'a RowGroupMetaData,
+    pub metadata: &'a RowGroupMetaData,
 }
 
 impl<'a> ColumnToColumnChunkMD<'a> {
