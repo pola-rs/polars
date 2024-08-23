@@ -428,7 +428,7 @@ fn rg_to_dfs_prefiltered(
             .map(|i| {
                 let col_idx = dead_idx_to_col_idx[i % num_dead_columns];
                 let name = &schema.fields[col_idx].name;
-                let field_md = part_md[i / num_live_columns].get_partitions(name);
+                let field_md = part_md[i / num_dead_columns].get_partitions(name);
                 let (mask, _) = &dfs[i / num_dead_columns];
 
                 column_idx_to_series(
