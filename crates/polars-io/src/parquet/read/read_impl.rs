@@ -324,7 +324,7 @@ fn rg_to_dfs_prefiltered(
 
                 let name = &schema.fields[col_idx].name;
                 let rg_idx = row_groups[i / num_live_columns].index;
-                let field_md = part_mds[rg_idx as usize].get_partitions(name);
+                let field_md = part_mds[rg_idx as usize].get_partitions(name).unwrap();
 
                 column_idx_to_series(col_idx, field_md.as_slice(), None, schema, store)
             })
@@ -441,7 +441,7 @@ fn rg_to_dfs_prefiltered(
                     let md = &file_metadata.row_groups[rg_idx as usize];
                     debug_assert_eq!(md.num_rows(), mask.len());
                 }
-                let field_md = part_mds[rg_idx as usize].get_partitions(name);
+                let field_md = part_mds[rg_idx as usize].get_partitions(name).unwrap();
 
                 column_idx_to_series(
                     col_idx,
@@ -527,7 +527,7 @@ fn rg_to_dfs_optionally_par_over_columns(
                     .par_iter()
                     .map(|column_i| {
                         let name = &schema.fields[*column_i].name;
-                        let part = part_md.get_partitions(name);
+                        let part = part_md.get_partitions(name).unwrap();
 
                         column_idx_to_series(
                             *column_i,
@@ -544,7 +544,7 @@ fn rg_to_dfs_optionally_par_over_columns(
                 .iter()
                 .map(|column_i| {
                     let name = &schema.fields[*column_i].name;
-                    let part = part_md.get_partitions(name);
+                    let part = part_md.get_partitions(name).unwrap();
 
                     column_idx_to_series(
                         *column_i,
@@ -658,7 +658,7 @@ fn rg_to_dfs_par_over_rg(
                     .iter()
                     .map(|column_i| {
                         let name = &schema.fields[*column_i].name;
-                        let field_md = part_md.get_partitions(name);
+                        let field_md = part_md.get_partitions(name).unwrap();
 
                         column_idx_to_series(
                             *column_i,

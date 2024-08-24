@@ -20,12 +20,16 @@ pub(crate) fn collect_statistics(
     part_md: &PartitionedColumnChunkMD,
     schema: &ArrowSchema,
 ) -> PolarsResult<Option<BatchStats>> {
+    // TODO! fix this performance. This is a full sequential scan.
     let stats = schema
         .fields
         .iter()
-        .map(|field| {
-            let st = deserialize(field, &part_md.get_partitions(&field.name))?;
-            Ok(ColumnStats::from_arrow_stats(st, field))
+        .map(|field| match part_md.get_partitions(&field.name) {
+            Some(md) => {
+                let st = deserialize(field, &md)?;
+                Ok(ColumnStats::from_arrow_stats(st, field))
+            },
+            None => Ok(ColumnStats::new(field.into(), None, None, None)),
         })
         .collect::<PolarsResult<Vec<_>>>()?;
 
