@@ -27,6 +27,7 @@ use polars_parquet::read::RowGroupMetaData;
 use polars_plan::plans::hive::HivePartitions;
 use polars_plan::plans::FileInfo;
 use polars_plan::prelude::FileScanOptions;
+use polars_utils::aliases::PlHashSet;
 use polars_utils::mmap::MemSlice;
 use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::IdxSize;
@@ -1050,6 +1051,28 @@ struct RowGroupDataFetcher {
     current_shared_file_state: Arc<tokio::sync::OnceCell<SharedFileState>>,
 }
 
+fn read_this_row_group(
+    rg_md: &RowGroupMetaData,
+    predicate: Option<&dyn PhysicalIoExpr>,
+    reader_schema: &ArrowSchema,
+) -> PolarsResult<bool> {
+    let Some(pred) = predicate else {
+        return Ok(true);
+    };
+    use polars_io::prelude::_internal::*;
+    // TODO!
+    // Optimize this. Now we partition the predicate columns twice. (later on reading as well)
+    // I think we must add metadata context where we can cache and amortize the partitioning.
+    let mut part_md = PartitionedColumnChunkMD::new(rg_md);
+    let live = pred.live_variables();
+    part_md.set_partitions(
+        live.as_ref()
+            .map(|vars| vars.iter().map(|s| s.as_ref()).collect::<PlHashSet<_>>())
+            .as_ref(),
+    );
+    read_this_row_group(Some(pred), &part_md, reader_schema)
+}
+
 impl RowGroupDataFetcher {
     fn into_stream(self) -> RowGroupDataStream {
         RowGroupDataStream::new(self)
@@ -1089,10 +1112,10 @@ impl RowGroupDataFetcher {
                 self.current_row_group_idx += 1;
 
                 if self.use_statistics
-                    && !match polars_io::prelude::_internal::read_this_row_group(
-                        self.predicate.as_deref(),
+                    && !match read_this_row_group(
                         &row_group_metadata,
-                        &self.reader_schema,
+                        self.predicate.as_deref(),
+                        self.reader_schema.as_ref(),
                     ) {
                         Ok(v) => v,
                         Err(e) => return Some(Err(e)),

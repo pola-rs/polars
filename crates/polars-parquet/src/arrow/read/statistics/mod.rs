@@ -8,12 +8,12 @@ use arrow::with_match_primitive_type_full;
 use ethnum::I256;
 use polars_error::{polars_bail, PolarsResult};
 
-use crate::parquet::metadata::RowGroupMetaData;
 use crate::parquet::schema::types::{
     PhysicalType as ParquetPhysicalType, PrimitiveType as ParquetPrimitiveType,
 };
 use crate::parquet::statistics::{PrimitiveStatistics, Statistics as ParquetStatistics};
 use crate::parquet::types::int96_to_i64_ns;
+use crate::read::ColumnChunkMetaData;
 
 mod binary;
 mod binview;
@@ -28,7 +28,6 @@ mod struct_;
 mod utf8;
 
 use self::list::DynMutableListArray;
-use super::get_field_columns;
 
 /// Arrow-deserialized parquet Statistics of a file
 #[derive(Debug, PartialEq)]
@@ -543,12 +542,11 @@ fn push(
 ///
 /// # Errors
 /// This function errors if the deserialization of the statistics fails (e.g. invalid utf8)
-pub fn deserialize(field: &Field, row_group: &RowGroupMetaData) -> PolarsResult<Statistics> {
+pub fn deserialize(field: &Field, field_md: &[&ColumnChunkMetaData]) -> PolarsResult<Statistics> {
     let mut statistics = MutableStatistics::try_new(field)?;
 
-    let columns = get_field_columns(row_group.columns(), field.name.as_ref());
-    let mut stats = columns
-        .into_iter()
+    let mut stats = field_md
+        .iter()
         .map(|column| {
             Ok((
                 column.statistics().transpose()?,

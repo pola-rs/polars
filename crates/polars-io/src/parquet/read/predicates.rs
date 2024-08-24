@@ -1,8 +1,7 @@
-use arrow::datatypes::ArrowSchemaRef;
 use polars_core::prelude::*;
 use polars_parquet::read::statistics::{deserialize, Statistics};
-use polars_parquet::read::RowGroupMetaData;
 
+use crate::parquet::read::metadata::PartitionedColumnChunkMD;
 use crate::predicates::{BatchStats, ColumnStats, PhysicalIoExpr};
 
 impl ColumnStats {
@@ -16,17 +15,21 @@ impl ColumnStats {
     }
 }
 
-/// Collect the statistics in a column chunk.
+/// Collect the statistics in a row-group
 pub(crate) fn collect_statistics(
-    md: &RowGroupMetaData,
+    part_md: &PartitionedColumnChunkMD,
     schema: &ArrowSchema,
 ) -> PolarsResult<Option<BatchStats>> {
+    // TODO! fix this performance. This is a full sequential scan.
     let stats = schema
         .fields
         .iter()
-        .map(|field| {
-            let st = deserialize(field, md)?;
-            Ok(ColumnStats::from_arrow_stats(st, field))
+        .map(|field| match part_md.get_partitions(&field.name) {
+            Some(md) => {
+                let st = deserialize(field, &md)?;
+                Ok(ColumnStats::from_arrow_stats(st, field))
+            },
+            None => Ok(ColumnStats::new(field.into(), None, None, None)),
         })
         .collect::<PolarsResult<Vec<_>>>()?;
 
@@ -37,18 +40,18 @@ pub(crate) fn collect_statistics(
     Ok(Some(BatchStats::new(
         Arc::new(schema.into()),
         stats,
-        Some(md.num_rows()),
+        Some(part_md.num_rows()),
     )))
 }
 
 pub fn read_this_row_group(
     predicate: Option<&dyn PhysicalIoExpr>,
-    md: &RowGroupMetaData,
-    schema: &ArrowSchemaRef,
+    part_md: &PartitionedColumnChunkMD,
+    schema: &ArrowSchema,
 ) -> PolarsResult<bool> {
     if let Some(pred) = predicate {
         if let Some(pred) = pred.as_stats_evaluator() {
-            if let Some(stats) = collect_statistics(md, schema)? {
+            if let Some(stats) = collect_statistics(part_md, schema)? {
                 let should_read = pred.should_read(&stats);
                 // a parquet file may not have statistics of all columns
                 if matches!(should_read, Ok(false)) {
