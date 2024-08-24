@@ -26,7 +26,7 @@ use super::{mmap, ParallelStrategy};
 use crate::hive::materialize_hive_partitions;
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 use crate::parquet::metadata::FileMetaDataRef;
-use crate::parquet::read::metadata::ColumnToColumnChunkMD;
+use crate::parquet::read::metadata::PartitionedColumnChunkMD;
 use crate::parquet::read::ROW_COUNT_OVERFLOW_ERR;
 use crate::predicates::{apply_predicate, PhysicalIoExpr};
 use crate::utils::get_reader_bytes;
@@ -248,9 +248,24 @@ fn rg_to_dfs_prefiltered(
         polars_bail!(ComputeError: "Parquet file contains too many row groups (> {})", u32::MAX);
     }
 
+    let projected_columns = projected_columns_set(schema, projection);
+
+    let part_mds = POOL.install(|| {
+        file_metadata
+            .row_groups
+            .par_iter()
+            .map(|rg| {
+                let mut part_md = PartitionedColumnChunkMD::new(rg);
+                part_md.set_partitions(projected_columns.as_ref());
+                part_md
+            })
+            .collect::<Vec<_>>()
+    });
+
     let mut row_offset = *previous_row_count;
     let mut row_groups: Vec<RowGroupInfo> = (row_group_start..row_group_end)
         .filter_map(|index| {
+            let part_md = &part_mds[index];
             let md = &file_metadata.row_groups[index];
 
             let current_offset = row_offset;
@@ -258,8 +273,7 @@ fn rg_to_dfs_prefiltered(
             row_offset += current_row_count;
 
             if use_statistics {
-                match read_this_row_group(Some(predicate), &file_metadata.row_groups[index], schema)
-                {
+                match read_this_row_group(Some(predicate), part_md, schema) {
                     Ok(false) => return None,
                     Ok(true) => {},
                     Err(e) => return Some(Err(e)),
@@ -302,21 +316,6 @@ fn rg_to_dfs_prefiltered(
         // Set partitioned fields to prevent quadratic behavior.
         // Ensure all row groups are partitioned.
 
-        // Hashset, because row-groups will be modified in place later, so we cannot trust the indexes.
-        let part_md = {
-            let projected_columns = projected_columns_set(schema, projection);
-
-            row_groups
-                .par_iter()
-                .map(|rg_info| {
-                    let md = &file_metadata.row_groups[rg_info.index as usize];
-                    let mut part_md = ColumnToColumnChunkMD::new(md);
-                    part_md.set_partitions(projected_columns.as_ref());
-                    (rg_info.index, part_md)
-                })
-                .collect::<PlHashMap<_, _>>()
-        };
-
         // Collect the data for the live columns
         let mut live_columns = (0..row_groups.len() * num_live_columns)
             .into_par_iter()
@@ -325,7 +324,7 @@ fn rg_to_dfs_prefiltered(
 
                 let name = &schema.fields[col_idx].name;
                 let rg_idx = row_groups[i / num_live_columns].index;
-                let field_md = part_md.get(&rg_idx).unwrap().get_partitions(name);
+                let field_md = part_mds[rg_idx as usize].get_partitions(name);
 
                 column_idx_to_series(col_idx, field_md.as_slice(), None, schema, store)
             })
@@ -442,7 +441,7 @@ fn rg_to_dfs_prefiltered(
                     let md = &file_metadata.row_groups[rg_idx as usize];
                     debug_assert_eq!(md.num_rows(), mask.len());
                 }
-                let field_md = part_md.get(&rg_idx).unwrap().get_partitions(name);
+                let field_md = part_mds[rg_idx as usize].get_partitions(name);
 
                 column_idx_to_series(
                     col_idx,
@@ -502,13 +501,17 @@ fn rg_to_dfs_optionally_par_over_columns(
 
     for rg_idx in row_group_start..row_group_end {
         let md = &file_metadata.row_groups[rg_idx];
+
+        // Set partitioned fields to prevent quadratic behavior.
+        let projected_columns = projected_columns_set(schema, projection);
+        let mut part_md = PartitionedColumnChunkMD::new(md);
+        part_md.set_partitions(projected_columns.as_ref());
+
         let rg_slice =
             split_slice_at_file(&mut n_rows_processed, md.num_rows(), slice.0, slice_end);
         let current_row_count = md.num_rows() as IdxSize;
 
-        if use_statistics
-            && !read_this_row_group(predicate, &file_metadata.row_groups[rg_idx], schema)?
-        {
+        if use_statistics && !read_this_row_group(predicate, &part_md, schema)? {
             *previous_row_count += rg_slice.1 as IdxSize;
             continue;
         }
@@ -517,11 +520,6 @@ fn rg_to_dfs_optionally_par_over_columns(
         {
             assert!(std::env::var("POLARS_PANIC_IF_PARQUET_PARSED").is_err())
         }
-
-        // Set partitioned fields to prevent quadratic behavior.
-        let projected_columns = projected_columns_set(schema, projection);
-        let mut part_md = ColumnToColumnChunkMD::new(md);
-        part_md.set_partitions(projected_columns.as_ref());
 
         let columns = if let ParallelStrategy::Columns = parallel {
             POOL.install(|| {
@@ -627,12 +625,12 @@ fn rg_to_dfs_par_over_rg(
     let dfs = POOL.install(|| {
         // Set partitioned fields to prevent quadratic behavior.
         // Ensure all row groups are partitioned.
-        let part_md = {
+        let part_mds = {
             let projected_columns = projected_columns_set(schema, projection);
             row_groups
                 .par_iter()
                 .map(|(_, rg, _, _)| {
-                    let mut ccmd = ColumnToColumnChunkMD::new(rg);
+                    let mut ccmd = PartitionedColumnChunkMD::new(rg);
                     ccmd.set_partitions(projected_columns.as_ref());
                     ccmd
                 })
@@ -642,14 +640,11 @@ fn rg_to_dfs_par_over_rg(
         row_groups
             .into_par_iter()
             .enumerate()
-            .map(|(iter_idx, (rg_idx, _md, slice, row_count_start))| {
+            .map(|(iter_idx, (_rg_idx, _md, slice, row_count_start))| {
+                let part_md = &part_mds[iter_idx];
+
                 if slice.1 == 0
-                    || use_statistics
-                        && !read_this_row_group(
-                            predicate,
-                            &file_metadata.row_groups[rg_idx],
-                            schema,
-                        )?
+                    || use_statistics && !read_this_row_group(predicate, part_md, schema)?
                 {
                     return Ok(None);
                 }
@@ -663,7 +658,7 @@ fn rg_to_dfs_par_over_rg(
                     .iter()
                     .map(|column_i| {
                         let name = &schema.fields[*column_i].name;
-                        let field_md = part_md[iter_idx].get_partitions(name);
+                        let field_md = part_md.get_partitions(name);
 
                         column_idx_to_series(
                             *column_i,

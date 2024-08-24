@@ -40,18 +40,6 @@ pub use crate::parquet::{
 
 /// Returns all [`ColumnChunkMetaData`] associated to `field_name`.
 /// For non-nested parquet types, this returns a single column
-pub fn get_field_columns<'a>(
-    columns: &'a [ColumnChunkMetaData],
-    field_name: &str,
-) -> Vec<&'a ColumnChunkMetaData> {
-    columns
-        .iter()
-        .filter(|x| x.descriptor().path_in_schema[0] == field_name)
-        .collect()
-}
-
-/// Returns all [`ColumnChunkMetaData`] associated to `field_name`.
-/// For non-nested parquet types, this returns a single column
 pub fn get_field_pages<'a, T>(
     columns: &'a [ColumnChunkMetaData],
     items: &'a [T],

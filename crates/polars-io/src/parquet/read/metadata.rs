@@ -4,20 +4,26 @@ use polars_utils::aliases::{PlHashMap, PlHashSet};
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::unitvec;
 
-pub(super) struct ColumnToColumnChunkMD<'a> {
+/// This is a utility struct that Partitions the `ColumnChunkMetaData` by `field.name == descriptor.path_in_schema[0]`
+/// This is required to fix quadratic behavior in wide parquet files. See #18319.
+pub struct PartitionedColumnChunkMD<'a> {
     partitions: PlHashMap<String, UnitVec<usize>>,
-    pub metadata: &'a RowGroupMetaData,
+    metadata: &'a RowGroupMetaData,
 }
 
-impl<'a> ColumnToColumnChunkMD<'a> {
-    pub(super) fn new(metadata: &'a RowGroupMetaData) -> Self {
+impl<'a> PartitionedColumnChunkMD<'a> {
+    pub fn new(metadata: &'a RowGroupMetaData) -> Self {
         Self {
             partitions: Default::default(),
             metadata,
         }
     }
 
-    pub(super) fn set_partitions(&mut self, field_names: Option<&PlHashSet<&str>>) {
+    pub(super) fn num_rows(&self) -> usize {
+        self.metadata.num_rows()
+    }
+
+    pub fn set_partitions(&mut self, field_names: Option<&PlHashSet<&str>>) {
         for (i, ccmd) in self.metadata.columns().iter().enumerate() {
             let name = &ccmd.descriptor().path_in_schema[0];
             if field_names
@@ -38,7 +44,7 @@ impl<'a> ColumnToColumnChunkMD<'a> {
         }
     }
 
-    pub(super) fn get_partitions(&self, name: &str) -> UnitVec<&ColumnChunkMetaData> {
+    pub fn get_partitions(&self, name: &str) -> UnitVec<&ColumnChunkMetaData> {
         debug_assert!(
             !self.partitions.is_empty(),
             "fields should be partitioned first"
