@@ -703,11 +703,10 @@ impl LazyFrame {
     pub fn collect(self) -> PolarsResult<DataFrame> {
         #[cfg(feature = "new_streaming")]
         {
-            if !self.opt_state.contains(OptState::NEW_STREAMING)
-                && std::env::var("POLARS_AUTO_NEW_STREAMING").as_deref() == Ok("1")
-            {
+            let auto_new_streaming = std::env::var("POLARS_AUTO_NEW_STREAMING").as_deref() == Ok("1");
+            if self.opt_state.contains(OptState::NEW_STREAMING) || auto_new_streaming {
                 // Try to run using the new streaming engine, falling back
-                // if it fails in a todo!() error.
+                // if it fails in a todo!() error if auto_new_streaming is set.
                 let mut new_stream_lazy = self.clone();
                 new_stream_lazy.opt_state |= OptState::NEW_STREAMING;
                 let mut alp_plan = new_stream_lazy.to_alp_optimized()?;
@@ -726,12 +725,13 @@ impl LazyFrame {
                 match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
                     Ok(r) => return r,
                     Err(e) => {
-                        // Fallback to normal engine if error is due to not being implemented,
-                        // otherwise propagate error.
-                        if e.downcast_ref::<&str>() != Some(&"not yet implemented") {
+                        // Fallback to normal engine if error is due to not being implemented
+                        // and auto_new_streaming is set, otherwise propagate error.
+                        if auto_new_streaming && e.downcast_ref::<&str>() == Some(&"not yet implemented") {
                             if polars_core::config::verbose() {
                                 eprintln!("caught unimplemented error in new streaming engine, falling back to normal engine");
                             }
+                        } else {
                             std::panic::resume_unwind(e);
                         }
                     },
