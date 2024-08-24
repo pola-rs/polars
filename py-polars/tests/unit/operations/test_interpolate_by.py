@@ -242,10 +242,10 @@ def test_interpolate_vs_numpy(
     if not extrapolate_flat:
         # If we aren't extrapolating, we need to nan out the values
         # before and after the min and max
-        first_non_null = dataframe["value"].is_not_null().arg_max()
-        last_non_null = (
-            len(dataframe) - dataframe["value"][::-1].is_not_null().arg_max()
-        )  # type: ignore[operator]
+        first_non_null = dataframe["value"].is_not_null().arg_max() or 0
+        last_non_null = len(dataframe) - (
+            dataframe["value"][::-1].is_not_null().arg_max() or 0
+        )
         interp[:first_non_null] = float("nan")
         interp[last_non_null:] = float("nan")
 
