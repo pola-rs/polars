@@ -54,6 +54,7 @@ struct GraphConversionContext<'a> {
 }
 
 pub fn physical_plan_to_graph(
+    root: PhysNodeKey,
     phys_sm: &SlotMap<PhysNodeKey, PhysNode>,
     expr_arena: &Arena<AExpr>,
 ) -> PolarsResult<(Graph, SecondaryMap<PhysNodeKey, GraphNodeKey>)> {
@@ -66,9 +67,7 @@ pub fn physical_plan_to_graph(
         expr_conversion_state: ExpressionConversionState::new(false, expr_depth_limit),
     };
 
-    for key in phys_sm.keys() {
-        to_graph_rec(key, &mut ctx)?;
-    }
+    to_graph_rec(root, &mut ctx)?;
 
     Ok((ctx.graph, ctx.phys_to_graph))
 }
