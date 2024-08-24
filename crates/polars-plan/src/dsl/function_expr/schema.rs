@@ -181,7 +181,9 @@ impl FunctionExpr {
                 InterpolationMethod::Nearest => mapper.with_same_dtype(),
             },
             #[cfg(feature = "interpolate_by")]
-            InterpolateBy => mapper.map_numeric_to_float_dtype(),
+            InterpolateBy {
+                extrapolate_flat: _,
+            } => mapper.map_numeric_to_float_dtype(),
             ShrinkType => {
                 // we return the smallest type this can return
                 // this might not be correct once the actual data

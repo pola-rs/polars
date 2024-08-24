@@ -84,7 +84,7 @@ fn interpolate_impl_by_sorted<T, F, I>(
     chunked_arr: &ChunkedArray<T>,
     by: &ChunkedArray<F>,
     interpolation_branch: I,
-    extrapolate_flat: bool
+    extrapolate_flat: bool,
 ) -> PolarsResult<ChunkedArray<T>>
 where
     T: PolarsNumericType,
@@ -115,11 +115,9 @@ where
     for _ in 0..first {
         if extrapolate_flat {
             out.push(lowest_value)
-        }
-        else {
+        } else {
             out.push(Zero::zero());
         }
-        
     }
 
     // The next element of `iter` is definitely `Some(idx, Some(v))`, because we skipped the first
@@ -152,18 +150,17 @@ where
         let mut validity = MutableBitmap::with_capacity(chunked_arr.len());
         validity.extend_constant(chunked_arr.len(), true);
 
-        // If we're not extrapolating, set the null mask for the area before 
+        // If we're not extrapolating, set the null mask for the area before
         if !extrapolate_flat {
             for i in 0..first {
                 unsafe { validity.set_unchecked(i, false) };
             }
         }
-        
+
         for i in last..chunked_arr.len() {
             if extrapolate_flat {
                 out.push(highest_value);
-            }
-            else {
+            } else {
                 unsafe { validity.set_unchecked(i, false) }
                 out.push(Zero::zero());
             }
@@ -185,7 +182,7 @@ fn interpolate_impl_by<T, F, I>(
     ca: &ChunkedArray<T>,
     by: &ChunkedArray<F>,
     interpolation_branch: I,
-    extrapolate_flat: bool
+    extrapolate_flat: bool,
 ) -> PolarsResult<ChunkedArray<T>>
 where
     T: PolarsNumericType,
@@ -267,11 +264,9 @@ where
                 let out_idx = sorting_indices.get_unchecked(i);
                 if extrapolate_flat {
                     *out.get_unchecked_mut(*out_idx as usize) = lowest_value;
-                }
-                else{
+                } else {
                     validity.set_unchecked(*out_idx as usize, false);
                 }
-                
             }
         }
 
@@ -280,8 +275,7 @@ where
                 let out_idx = sorting_indices.get_unchecked(i);
                 if extrapolate_flat {
                     *out.get_unchecked_mut(*out_idx as usize) = highest_value;
-                }
-                else {
+                } else {
                     validity.set_unchecked(*out_idx as usize, false);
                 }
             }
@@ -298,15 +292,19 @@ where
     }
 }
 
-pub fn interpolate_by(s: &Series, by: &Series, by_is_sorted: bool, extrapolate_flat: bool) -> PolarsResult<Series> {
-    
+pub fn interpolate_by(
+    s: &Series,
+    by: &Series,
+    by_is_sorted: bool,
+    extrapolate_flat: bool,
+) -> PolarsResult<Series> {
     polars_ensure!(s.len() == by.len(), InvalidOperation: "`by` column must be the same length as Series ({}), got {}", s.len(), by.len());
 
     fn func<T, F>(
         ca: &ChunkedArray<T>,
         by: &ChunkedArray<F>,
         is_sorted: bool,
-        extrapolate_flat: bool
+        extrapolate_flat: bool,
     ) -> PolarsResult<Series>
     where
         T: PolarsNumericType,
@@ -314,63 +312,120 @@ pub fn interpolate_by(s: &Series, by: &Series, by_is_sorted: bool, extrapolate_f
         ChunkedArray<T>: IntoSeries,
     {
         if is_sorted {
-            interpolate_impl_by_sorted(ca, by, |y_start, y_end, x, out| unsafe {
-                signed_interp_by_sorted(y_start, y_end, x, out)
-            }, extrapolate_flat)
+            interpolate_impl_by_sorted(
+                ca,
+                by,
+                |y_start, y_end, x, out| unsafe { signed_interp_by_sorted(y_start, y_end, x, out) },
+                extrapolate_flat,
+            )
             .map(|x| x.into_series())
         } else {
-            interpolate_impl_by(ca, by, |y_start, y_end, x, out, sorting_indices| unsafe {
-                signed_interp_by(y_start, y_end, x, out, sorting_indices)
-            }, extrapolate_flat)
+            interpolate_impl_by(
+                ca,
+                by,
+                |y_start, y_end, x, out, sorting_indices| unsafe {
+                    signed_interp_by(y_start, y_end, x, out, sorting_indices)
+                },
+                extrapolate_flat,
+            )
             .map(|x| x.into_series())
         }
     }
 
     match (s.dtype(), by.dtype()) {
-        (DataType::Float64, DataType::Float64) => {
-            func(s.f64().unwrap(), by.f64().unwrap(), by_is_sorted, extrapolate_flat)
-        },
-        (DataType::Float64, DataType::Float32) => {
-            func(s.f64().unwrap(), by.f32().unwrap(), by_is_sorted, extrapolate_flat)
-        },
-        (DataType::Float32, DataType::Float64) => {
-            func(s.f32().unwrap(), by.f64().unwrap(), by_is_sorted, extrapolate_flat)
-        },
-        (DataType::Float32, DataType::Float32) => {
-            func(s.f32().unwrap(), by.f32().unwrap(), by_is_sorted, extrapolate_flat)
-        },
-        (DataType::Float64, DataType::Int64) => {
-            func(s.f64().unwrap(), by.i64().unwrap(), by_is_sorted, extrapolate_flat)
-        },
-        (DataType::Float64, DataType::Int32) => {
-            func(s.f64().unwrap(), by.i32().unwrap(), by_is_sorted, extrapolate_flat)
-        },
-        (DataType::Float64, DataType::UInt64) => {
-            func(s.f64().unwrap(), by.u64().unwrap(), by_is_sorted, extrapolate_flat)
-        },
-        (DataType::Float64, DataType::UInt32) => {
-            func(s.f64().unwrap(), by.u32().unwrap(), by_is_sorted, extrapolate_flat)
-        },
-        (DataType::Float32, DataType::Int64) => {
-            func(s.f32().unwrap(), by.i64().unwrap(), by_is_sorted, extrapolate_flat)
-        },
-        (DataType::Float32, DataType::Int32) => {
-            func(s.f32().unwrap(), by.i32().unwrap(), by_is_sorted, extrapolate_flat)
-        },
-        (DataType::Float32, DataType::UInt64) => {
-            func(s.f32().unwrap(), by.u64().unwrap(), by_is_sorted, extrapolate_flat)
-        },
-        (DataType::Float32, DataType::UInt32) => {
-            func(s.f32().unwrap(), by.u32().unwrap(), by_is_sorted, extrapolate_flat)
-        },
+        (DataType::Float64, DataType::Float64) => func(
+            s.f64().unwrap(),
+            by.f64().unwrap(),
+            by_is_sorted,
+            extrapolate_flat,
+        ),
+        (DataType::Float64, DataType::Float32) => func(
+            s.f64().unwrap(),
+            by.f32().unwrap(),
+            by_is_sorted,
+            extrapolate_flat,
+        ),
+        (DataType::Float32, DataType::Float64) => func(
+            s.f32().unwrap(),
+            by.f64().unwrap(),
+            by_is_sorted,
+            extrapolate_flat,
+        ),
+        (DataType::Float32, DataType::Float32) => func(
+            s.f32().unwrap(),
+            by.f32().unwrap(),
+            by_is_sorted,
+            extrapolate_flat,
+        ),
+        (DataType::Float64, DataType::Int64) => func(
+            s.f64().unwrap(),
+            by.i64().unwrap(),
+            by_is_sorted,
+            extrapolate_flat,
+        ),
+        (DataType::Float64, DataType::Int32) => func(
+            s.f64().unwrap(),
+            by.i32().unwrap(),
+            by_is_sorted,
+            extrapolate_flat,
+        ),
+        (DataType::Float64, DataType::UInt64) => func(
+            s.f64().unwrap(),
+            by.u64().unwrap(),
+            by_is_sorted,
+            extrapolate_flat,
+        ),
+        (DataType::Float64, DataType::UInt32) => func(
+            s.f64().unwrap(),
+            by.u32().unwrap(),
+            by_is_sorted,
+            extrapolate_flat,
+        ),
+        (DataType::Float32, DataType::Int64) => func(
+            s.f32().unwrap(),
+            by.i64().unwrap(),
+            by_is_sorted,
+            extrapolate_flat,
+        ),
+        (DataType::Float32, DataType::Int32) => func(
+            s.f32().unwrap(),
+            by.i32().unwrap(),
+            by_is_sorted,
+            extrapolate_flat,
+        ),
+        (DataType::Float32, DataType::UInt64) => func(
+            s.f32().unwrap(),
+            by.u64().unwrap(),
+            by_is_sorted,
+            extrapolate_flat,
+        ),
+        (DataType::Float32, DataType::UInt32) => func(
+            s.f32().unwrap(),
+            by.u32().unwrap(),
+            by_is_sorted,
+            extrapolate_flat,
+        ),
         #[cfg(feature = "dtype-date")]
-        (_, DataType::Date) => interpolate_by(s, &by.cast(&DataType::Int32).unwrap(), by_is_sorted, extrapolate_flat),
+        (_, DataType::Date) => interpolate_by(
+            s,
+            &by.cast(&DataType::Int32).unwrap(),
+            by_is_sorted,
+            extrapolate_flat,
+        ),
         #[cfg(feature = "dtype-datetime")]
-        (_, DataType::Datetime(_, _)) => {
-            interpolate_by(s, &by.cast(&DataType::Int64).unwrap(), by_is_sorted, extrapolate_flat)
-        },
+        (_, DataType::Datetime(_, _)) => interpolate_by(
+            s,
+            &by.cast(&DataType::Int64).unwrap(),
+            by_is_sorted,
+            extrapolate_flat,
+        ),
         (DataType::UInt64 | DataType::UInt32 | DataType::Int64 | DataType::Int32, _) => {
-            interpolate_by(&s.cast(&DataType::Float64).unwrap(), by, by_is_sorted, extrapolate_flat)
+            interpolate_by(
+                &s.cast(&DataType::Float64).unwrap(),
+                by,
+                by_is_sorted,
+                extrapolate_flat,
+            )
         },
         _ => {
             polars_bail!(InvalidOperation: "expected series to be Float64, Float32, \

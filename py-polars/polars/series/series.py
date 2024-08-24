@@ -6159,7 +6159,7 @@ class Series:
         ]
         """
 
-    def interpolate_by(self, by: IntoExpr) -> Series:
+    def interpolate_by(self, by: IntoExpr, *, extrapolate_flat: bool = False) -> Series:
         """
         Fill null values using interpolation based on another column.
 
@@ -6167,6 +6167,9 @@ class Series:
         ----------
         by
             Column to interpolate values based on.
+        extrapolate_flat
+            If True, extrapolate the highest and lowest values of the expression in
+            the regions below and above the highest/lowest by values
 
         Examples
         --------
