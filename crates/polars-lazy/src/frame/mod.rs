@@ -703,7 +703,8 @@ impl LazyFrame {
     pub fn collect(self) -> PolarsResult<DataFrame> {
         #[cfg(feature = "new_streaming")]
         {
-            let auto_new_streaming = std::env::var("POLARS_AUTO_NEW_STREAMING").as_deref() == Ok("1");
+            let auto_new_streaming =
+                std::env::var("POLARS_AUTO_NEW_STREAMING").as_deref() == Ok("1");
             if self.opt_state.contains(OptState::NEW_STREAMING) || auto_new_streaming {
                 // Try to run using the new streaming engine, falling back
                 // if it fails in a todo!() error if auto_new_streaming is set.
@@ -727,7 +728,9 @@ impl LazyFrame {
                     Err(e) => {
                         // Fallback to normal engine if error is due to not being implemented
                         // and auto_new_streaming is set, otherwise propagate error.
-                        if auto_new_streaming && e.downcast_ref::<&str>() == Some(&"not yet implemented") {
+                        if auto_new_streaming
+                            && e.downcast_ref::<&str>() == Some(&"not yet implemented")
+                        {
                             if polars_core::config::verbose() {
                                 eprintln!("caught unimplemented error in new streaming engine, falling back to normal engine");
                             }
