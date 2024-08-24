@@ -174,8 +174,14 @@ def test_interpolate_by_trailing_nulls(dataset: str) -> None:
     assert_frame_equal(result, expected)
 
 
-@given(data=st.data(), x_dtype=st.sampled_from([pl.Date, pl.Float64]), extrapolate_flat=st.sampled_from([True, False]))
-def test_interpolate_vs_numpy(data: st.DataObject, x_dtype: pl.DataType, extrapolate_flat: bool) -> None:
+@given(
+    data=st.data(),
+    x_dtype=st.sampled_from([pl.Date, pl.Float64]),
+    extrapolate_flat=st.sampled_from([False, True]),
+)
+def test_interpolate_vs_numpy(
+    data: st.DataObject, x_dtype: pl.DataType, extrapolate_flat: bool
+) -> None:
     if x_dtype == pl.Float64:
         by_strategy = st.floats(
             min_value=-1e150,
@@ -221,7 +227,9 @@ def test_interpolate_vs_numpy(data: st.DataObject, x_dtype: pl.DataType, extrapo
 
     dataframe = dataframe.sort("ts")
 
-    result = dataframe.select(pl.col("value").interpolate_by("ts", extrapolate_flat=extrapolate_flat))["value"]
+    result = dataframe.select(
+        pl.col("value").interpolate_by("ts", extrapolate_flat=extrapolate_flat)
+    )["value"]
 
     mask = dataframe["value"].is_not_null()
 
@@ -230,11 +238,14 @@ def test_interpolate_vs_numpy(data: st.DataObject, x_dtype: pl.DataType, extrapo
     xp = dataframe["ts"].filter(mask).to_numpy().astype(np_dtype)
     yp = dataframe["value"].filter(mask).to_numpy().astype("float64")
     interp = np.interp(x, xp, yp)
-    
+
     if not extrapolate_flat:
-        # If we aren't extrapolating, we need to nan out the values before and after the min and max
+        # If we aren't extrapolating, we need to nan out the values
+        # before and after the min and max
         first_non_null = dataframe["value"].is_not_null().arg_max()
-        last_non_null = len(dataframe) - dataframe["value"][::-1].is_not_null().arg_max()  # type: ignore[operator]
+        last_non_null = (
+            len(dataframe) - dataframe["value"][::-1].is_not_null().arg_max()
+        )  # type: ignore[operator]
         interp[:first_non_null] = float("nan")
         interp[last_non_null:] = float("nan")
 
@@ -245,7 +256,9 @@ def test_interpolate_vs_numpy(data: st.DataObject, x_dtype: pl.DataType, extrapo
     assert_series_equal(result, expected)
     result_from_unsorted = (
         dataframe.sort("ts", descending=True)
-        .with_columns(pl.col("value").interpolate_by("ts"))
+        .with_columns(
+            pl.col("value").interpolate_by("ts", extrapolate_flat=extrapolate_flat)
+        )
         .sort("ts")["value"]
     )
     assert_series_equal(result_from_unsorted, expected)

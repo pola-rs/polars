@@ -1301,9 +1301,7 @@ impl Expr {
     /// Fill null values using interpolation.
     pub fn interpolate_by(self, by: Expr, extrapolate_flat: bool) -> Expr {
         self.apply_many_private(
-            FunctionExpr::InterpolateBy {
-                extrapolate_flat: extrapolate_flat,
-            },
+            FunctionExpr::InterpolateBy { extrapolate_flat },
             &[by],
             false,
             false,
