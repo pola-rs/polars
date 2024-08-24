@@ -1052,3 +1052,22 @@ class ListNameSpace:
             [5, 7, 8]
         ]
         """  # noqa: W505
+
+    def json_encode(self) -> Series:
+        """
+        Convert this list Series into a string Series with json values.
+
+        Examples
+        --------
+        >>> a = pl.Series([[1, 2, 3], [], [None, 3], [5, 6, 7]])
+        >>> a.list.json_encode(b)
+        shape: (4,)
+        Series: '' [String]
+        [
+            "[1, 2, 3]"
+            "[]"
+            "[null, 3]"
+            "[5, 6, 7]"
+        ]
+        """
+

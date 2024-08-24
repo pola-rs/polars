@@ -1358,3 +1358,39 @@ class ExprListNameSpace:
         """  # noqa: W505.
         other = parse_into_expression(other, str_as_lit=False)
         return wrap_expr(self._pyexpr.list_set_operation(other, "symmetric_difference"))
+
+    def json_encode(self) -> Expr:
+        r"""
+        Convert this list to a string column with json values.
+
+        Examples
+        --------
+        >>> pl.DataFrame(
+        ...     {"a": [[1, 2], [45], [9, 1, 3], None]}
+        ... ).with_columns(pl.col("a").list.json_encode().alias("encoded"))
+        shape: (4, 2)
+        ┌───────────┬───────────┐
+        │ a         ┆ encoded   │
+        │ ---       ┆ ---       │
+        │ list[i64] ┆ str       │
+        ╞═══════════╪═══════════╡
+        │ [1, 2]    ┆ [1, 2]    │
+        │ [45]      ┆ [45]      │
+        │ [9, 1, 3] ┆ [9, 1, 3] │
+        │ null      ┆ null      │
+        └───────────┴───────────┘
+
+        >>> pl.DataFrame(
+        ...     {"a": [["\\", "\\foo"], ["\a\"'", "{\" bar}"]]}
+        ... ).with_columns(pl.col("a").list.json_encode().alias("encoded"))
+        shape: (2, 2)
+        ┌────────────────────┬───────────────────────────┐
+        │ a                  ┆ encoded                   │
+        │ ---                ┆ ---                       │
+        │ list[str]          ┆ str                       │
+        ╞════════════════════╪═══════════════════════════╡
+        │ ["\", "\foo"]      ┆ ['\', '\bar']             │
+        │ [""'", "{" bar}"] ┆ ["\u0007\"'", "{\" bar}"] │
+        └────────────────────┴───────────────────────────┘
+        """
+        return wrap_expr(self._pyexpr.list_json_encode())
