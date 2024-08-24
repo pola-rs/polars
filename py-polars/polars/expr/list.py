@@ -1365,9 +1365,9 @@ class ExprListNameSpace:
 
         Examples
         --------
-        >>> pl.DataFrame(
-        ...     {"a": [[1, 2], [45], [9, 1, 3], None]}
-        ... ).with_columns(pl.col("a").list.json_encode().alias("encoded"))
+        >>> pl.DataFrame({"a": [[1, 2], [45], [9, 1, 3], None]}).with_columns(
+        ...     pl.col("a").list.json_encode().alias("encoded")
+        ... )
         shape: (4, 2)
         ┌───────────┬───────────┐
         │ a         ┆ encoded   │
@@ -1380,9 +1380,9 @@ class ExprListNameSpace:
         │ null      ┆ null      │
         └───────────┴───────────┘
 
-        >>> pl.DataFrame(
-        ...     {"a": [["\\", "\\foo"], ["\a\"'", "{\" bar}"]]}
-        ... ).with_columns(pl.col("a").list.json_encode().alias("encoded"))
+        >>> pl.DataFrame({"a": [["\\", "\\foo"], ["\a\"'", '{" bar}']]}).with_columns(
+        ...     pl.col("a").list.json_encode().alias("encoded")
+        ... )
         shape: (2, 2)
         ┌────────────────────┬───────────────────────────┐
         │ a                  ┆ encoded                   │

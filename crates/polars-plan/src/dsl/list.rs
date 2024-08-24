@@ -412,5 +412,4 @@ impl ListNameSpace {
         self.0
             .map_private(FunctionExpr::ListExpr(ListFunction::JsonEncode))
     }
-
 }

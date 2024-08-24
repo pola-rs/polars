@@ -654,7 +654,6 @@ pub(super) fn n_unique(s: &Series) -> PolarsResult<Series> {
 pub(super) fn to_json(s: &Series) -> PolarsResult<Series> {
     let ca = s.list()?;
 
-
     let dtype = ca.dtype().to_arrow(CompatLevel::newest());
 
     let iter = ca.chunks().iter().map(|arr| {
