@@ -232,6 +232,29 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         )
     }
 
+    /// Apply a function over the views. This can be used to update views in operations like slicing.
+    ///
+    /// # Safety
+    /// Update the views. All invariants of the views apply.
+    pub unsafe fn apply_views<F: FnMut(View, &T) -> View>(&self, mut update_view: F) -> Self {
+        let arr = self.clone();
+        let (views, buffers, validity, total_bytes_len, total_buffer_len) = arr.into_inner();
+
+        let mut views = views.make_mut();
+        for v in views.iter_mut() {
+            let str_slice = T::from_bytes_unchecked(v.get_slice_unchecked(&buffers));
+            *v = update_view(*v, str_slice);
+        }
+        Self::new_unchecked(
+            self.data_type.clone(),
+            views.into(),
+            buffers,
+            validity,
+            total_bytes_len,
+            total_buffer_len,
+        )
+    }
+
     pub fn try_new(
         data_type: ArrowDataType,
         views: Buffer<View>,
@@ -384,7 +407,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         let buffers = self.buffers.as_ref();
 
         for view in self.views.as_ref() {
-            unsafe { mutable.push_view_copied_unchecked(*view, buffers) }
+            unsafe { mutable.push_view_unchecked(*view, buffers) }
         }
         mutable.freeze().with_validity(self.validity)
     }
@@ -540,6 +563,13 @@ impl<T: ViewType + ?Sized> Array for BinaryViewArrayGeneric<T> {
     }
 
     fn with_validity(&self, validity: Option<Bitmap>) -> Box<dyn Array> {
+        debug_assert!(
+            validity.as_ref().map_or(true, |v| v.len() == self.len()),
+            "{} != {}",
+            validity.as_ref().unwrap().len(),
+            self.len()
+        );
+
         let mut new = self.clone();
         new.validity = validity;
         Box::new(new)

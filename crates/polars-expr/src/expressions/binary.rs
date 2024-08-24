@@ -151,15 +151,13 @@ impl BinaryExpr {
         mut ac_r: AggregationContext<'a>,
     ) -> PolarsResult<AggregationContext<'a>> {
         let name = ac_l.series().name().to_string();
-        // SAFETY: unstable series never lives longer than the iterator.
-        let ca = unsafe {
-            ac_l.iter_groups(false)
-                .zip(ac_r.iter_groups(false))
-                .map(|(l, r)| Some(apply_operator(l?.as_ref(), r?.as_ref(), self.op)))
-                .map(|opt_res| opt_res.transpose())
-                .collect::<PolarsResult<ListChunked>>()?
-                .with_name(&name)
-        };
+        let ca = ac_l
+            .iter_groups(false)
+            .zip(ac_r.iter_groups(false))
+            .map(|(l, r)| Some(apply_operator(l?.as_ref(), r?.as_ref(), self.op)))
+            .map(|opt_res| opt_res.transpose())
+            .collect::<PolarsResult<ListChunked>>()?
+            .with_name(&name);
 
         ac_l.with_update_groups(UpdateGroups::WithSeriesLen);
         ac_l.with_agg_state(AggState::AggregatedList(ca.into_series()));
@@ -435,10 +433,10 @@ mod stats {
                 // Default: read the file
                 _ => Ok(true),
             };
-            out.inspect(|read| {
-                if state.verbose() && *read {
+            out.inspect(|&read| {
+                if state.verbose() && read {
                     eprintln!("parquet file must be read, statistics not sufficient for predicate.")
-                } else if state.verbose() && !*read {
+                } else if state.verbose() && !read {
                     eprintln!("parquet file can be skipped, the statistics were sufficient to apply the predicate.")
                 }
             })

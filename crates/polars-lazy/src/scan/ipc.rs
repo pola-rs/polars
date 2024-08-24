@@ -37,14 +37,14 @@ impl Default for ScanArgsIpc {
 #[derive(Clone)]
 struct LazyIpcReader {
     args: ScanArgsIpc,
-    paths: Arc<[PathBuf]>,
+    paths: Arc<Vec<PathBuf>>,
 }
 
 impl LazyIpcReader {
     fn new(args: ScanArgsIpc) -> Self {
         Self {
             args,
-            paths: Arc::new([]),
+            paths: Arc::new(vec![]),
         }
     }
 }
@@ -84,7 +84,7 @@ impl LazyFileListReader for LazyIpcReader {
         &self.paths
     }
 
-    fn with_paths(mut self, paths: Arc<[PathBuf]>) -> Self {
+    fn with_paths(mut self, paths: Arc<Vec<PathBuf>>) -> Self {
         self.paths = paths;
         self
     }
@@ -126,11 +126,11 @@ impl LazyFrame {
     /// Create a LazyFrame directly from a ipc scan.
     pub fn scan_ipc(path: impl AsRef<Path>, args: ScanArgsIpc) -> PolarsResult<Self> {
         LazyIpcReader::new(args)
-            .with_paths(Arc::new([path.as_ref().to_path_buf()]))
+            .with_paths(Arc::new(vec![path.as_ref().to_path_buf()]))
             .finish()
     }
 
-    pub fn scan_ipc_files(paths: Arc<[PathBuf]>, args: ScanArgsIpc) -> PolarsResult<Self> {
+    pub fn scan_ipc_files(paths: Arc<Vec<PathBuf>>, args: ScanArgsIpc) -> PolarsResult<Self> {
         LazyIpcReader::new(args).with_paths(paths).finish()
     }
 }

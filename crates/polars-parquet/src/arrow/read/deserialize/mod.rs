@@ -18,7 +18,9 @@ use arrow::offset::Offsets;
 use polars_utils::mmap::MemReader;
 use simple::page_iter_to_array;
 
-pub use self::nested_utils::{init_nested, InitNested, NestedArrayIter, NestedState};
+pub use self::nested_utils::{init_nested, InitNested, NestedState};
+pub use self::utils::filter::Filter;
+use self::utils::freeze_validity;
 use super::*;
 use crate::parquet::read::get_page_iterator as _get_page_iterator;
 use crate::parquet::schema::types::PrimitiveType;
@@ -27,14 +29,12 @@ use crate::parquet::schema::types::PrimitiveType;
 pub fn get_page_iterator(
     column_metadata: &ColumnChunkMetaData,
     reader: MemReader,
-    pages_filter: Option<PageFilter>,
     buffer: Vec<u8>,
     max_header_size: usize,
 ) -> PolarsResult<PageReader> {
     Ok(_get_page_iterator(
         column_metadata,
         reader,
-        pages_filter,
         buffer,
         max_header_size,
     )?)
@@ -47,6 +47,7 @@ pub fn create_list(
     values: Box<dyn Array>,
 ) -> Box<dyn Array> {
     let (mut offsets, validity) = nested.pop().unwrap();
+    let validity = validity.and_then(freeze_validity);
     match data_type.to_logical_type() {
         ArrowDataType::List(_) => {
             offsets.push(values.len() as i64);
@@ -61,7 +62,7 @@ pub fn create_list(
                 data_type,
                 offsets.into(),
                 values,
-                validity.and_then(|x| x.into()),
+                validity,
             ))
         },
         ArrowDataType::LargeList(_) => {
@@ -71,14 +72,12 @@ pub fn create_list(
                 data_type,
                 offsets.try_into().expect("List too large"),
                 values,
-                validity.and_then(|x| x.into()),
+                validity,
             ))
         },
-        ArrowDataType::FixedSizeList(_, _) => Box::new(FixedSizeListArray::new(
-            data_type,
-            values,
-            validity.and_then(|x| x.into()),
-        )),
+        ArrowDataType::FixedSizeList(_, _) => {
+            Box::new(FixedSizeListArray::new(data_type, values, validity))
+        },
         _ => unreachable!(),
     }
 }
@@ -103,7 +102,7 @@ pub fn create_map(
                 data_type,
                 offsets.into(),
                 values,
-                validity.and_then(|x| x.into()),
+                validity.and_then(freeze_validity),
             ))
         },
         _ => unreachable!(),
@@ -127,28 +126,25 @@ fn is_primitive(data_type: &ArrowDataType) -> bool {
     )
 }
 
-fn columns_to_iter_recursive<'a, I>(
-    mut columns: Vec<BasicDecompressor<I>>,
+fn columns_to_iter_recursive(
+    mut columns: Vec<BasicDecompressor>,
     mut types: Vec<&PrimitiveType>,
     field: Field,
     init: Vec<InitNested>,
-    num_rows: usize,
-) -> PolarsResult<(NestedState, Box<dyn Array>)>
-where
-    I: 'a + CompressedPagesIter,
-{
+    filter: Option<Filter>,
+) -> PolarsResult<(NestedState, Box<dyn Array>)> {
     if init.is_empty() && is_primitive(&field.data_type) {
         let array = page_iter_to_array(
             columns.pop().unwrap(),
             types.pop().unwrap(),
             field.data_type,
-            num_rows,
+            filter,
         )?;
 
         return Ok((NestedState::default(), array));
     }
 
-    nested::columns_to_iter_recursive(columns, types, field, init, num_rows)
+    nested::columns_to_iter_recursive(columns, types, field, init, filter)
 }
 
 /// Returns the number of (parquet) columns that a [`ArrowDataType`] contains.
@@ -194,16 +190,12 @@ pub fn n_columns(data_type: &ArrowDataType) -> usize {
 /// For nested types, `columns` must be composed by all parquet columns with associated types `types`.
 ///
 /// The arrays are guaranteed to be at most of size `chunk_size` and data type `field.data_type`.
-pub fn column_iter_to_arrays<'a, I>(
-    columns: Vec<BasicDecompressor<I>>,
+pub fn column_iter_to_arrays(
+    columns: Vec<BasicDecompressor>,
     types: Vec<&PrimitiveType>,
     field: Field,
-    num_rows: usize,
-) -> PolarsResult<ArrayIter<'a>>
-where
-    I: 'a + CompressedPagesIter,
-{
-    let (_, array) = columns_to_iter_recursive(columns, types, field, vec![], num_rows)?;
-
-    Ok(Box::new(std::iter::once(Ok(array))))
+    filter: Option<Filter>,
+) -> PolarsResult<Box<dyn Array>> {
+    let (_, array) = columns_to_iter_recursive(columns, types, field, vec![], filter)?;
+    Ok(array)
 }

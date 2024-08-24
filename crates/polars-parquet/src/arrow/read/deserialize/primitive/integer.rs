@@ -1,24 +1,22 @@
-use arrow::array::{Array, DictionaryArray, DictionaryKey, MutablePrimitiveArray, PrimitiveArray};
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::array::{DictionaryArray, DictionaryKey, PrimitiveArray};
+use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
-use num_traits::AsPrimitive;
-use polars_error::PolarsResult;
 
 use super::super::utils;
 use super::basic::{
     AsDecoderFunction, ClosureDecoderFunction, DecoderFunction, IntoDecoderFunction,
     PlainDecoderFnCollector, PrimitiveDecoder, UnitDecoderFunction, ValuesDictionary,
 };
+use super::{DeltaCollector, DeltaTranslator};
 use crate::parquet::encoding::hybrid_rle::{self, DictionaryTranslator};
 use crate::parquet::encoding::{byte_stream_split, delta_bitpacked, Encoding};
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
 use crate::parquet::types::{decode, NativeType as ParquetNativeType};
 use crate::read::deserialize::utils::array_chunks::ArrayChunks;
-use crate::read::deserialize::utils::filter::Filter;
 use crate::read::deserialize::utils::{
-    BatchableCollector, Decoder, PageValidity, TranslatedHybridRle,
+    freeze_validity, BatchableCollector, Decoder, PageValidity, TranslatedHybridRle,
 };
 
 #[allow(clippy::large_enum_variant)]
@@ -44,8 +42,7 @@ where
         page: &'a DataPage,
         dict: Option<&'a <IntDecoder<P, T, D> as utils::Decoder>::Dict>,
         _page_validity: Option<&PageValidity<'a>>,
-        _filter: Option<&Filter<'a>>,
-    ) -> PolarsResult<Self> {
+    ) -> ParquetResult<Self> {
         match (page.encoding(), dict) {
             (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict)) => {
                 Ok(Self::Dictionary(ValuesDictionary::try_new(page, dict)?))
@@ -64,9 +61,9 @@ where
             },
             (Encoding::DeltaBinaryPacked, _) => {
                 let values = split_buffer(page)?.values;
-                Ok(Self::DeltaBinaryPacked(delta_bitpacked::Decoder::try_new(
-                    values,
-                )?))
+                Ok(Self::DeltaBinaryPacked(
+                    delta_bitpacked::Decoder::try_new(values)?.0,
+                ))
             },
             _ => Err(utils::not_implemented(page)),
         }
@@ -77,7 +74,7 @@ where
             Self::Plain(v) => v.len(),
             Self::Dictionary(v) => v.len(),
             Self::ByteStreamSplit(v) => v.len(),
-            Self::DeltaBinaryPacked(v) => v.size_hint().0,
+            Self::DeltaBinaryPacked(v) => v.len(),
         }
     }
 
@@ -87,10 +84,10 @@ where
         }
 
         match self {
-            Self::Plain(v) => _ = v.nth(n - 1),
+            Self::Plain(v) => v.skip_in_place(n),
             Self::Dictionary(v) => v.values.skip_in_place(n)?,
             Self::ByteStreamSplit(v) => _ = v.iter_converted(|_| ()).nth(n - 1),
-            Self::DeltaBinaryPacked(v) => _ = v.nth(n - 1),
+            Self::DeltaBinaryPacked(v) => v.skip_in_place(n)?,
         }
 
         Ok(())
@@ -143,23 +140,22 @@ where
             Self::DeltaBinaryPacked(page_values) => {
                 let (values, validity) = decoded;
 
+                let mut gatherer = DeltaTranslator {
+                    dfn: decoder.0.decoder,
+                    _pd: std::marker::PhantomData,
+                };
+
                 match page_validity {
-                    None => {
-                        values.extend(
-                            page_values
-                                .by_ref()
-                                .map(|x| decoder.0.decoder.decode(x.unwrap().as_()))
-                                .take(additional),
-                        );
-                    },
+                    None => page_values.gather_n_into(values, additional, &mut gatherer)?,
                     Some(page_validity) => utils::extend_from_decoder(
                         validity,
                         page_validity,
                         Some(additional),
                         values,
-                        &mut page_values
-                            .by_ref()
-                            .map(|x| decoder.0.decoder.decode(x.unwrap().as_())),
+                        DeltaCollector {
+                            decoder: page_values,
+                            gatherer,
+                        },
                     )?,
                 }
             },
@@ -248,6 +244,7 @@ where
     type Translation<'a> = StateTranslation<'a, P, T>;
     type Dict = Vec<T>;
     type DecodedState = (Vec<T>, MutableBitmap);
+    type Output = PrimitiveArray<T>;
 
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState {
         self.0.with_capacity(capacity)
@@ -326,36 +323,35 @@ where
     fn finalize(
         &self,
         data_type: ArrowDataType,
+        _dict: Option<Self::Dict>,
         (values, validity): Self::DecodedState,
-    ) -> ParquetResult<Box<dyn Array>> {
-        let validity = if validity.is_empty() {
-            None
-        } else {
-            Some(validity)
-        };
-
-        Ok(Box::new(
-            MutablePrimitiveArray::try_new(data_type, values, validity)
-                .unwrap()
-                .freeze(),
-        ))
+    ) -> ParquetResult<Self::Output> {
+        let validity = freeze_validity(validity);
+        Ok(PrimitiveArray::try_new(data_type, values.into(), validity).unwrap())
     }
+}
 
+impl<P, T, D> utils::DictDecodable for IntDecoder<P, T, D>
+where
+    T: NativeType,
+    P: ParquetNativeType,
+    i64: num_traits::AsPrimitive<P>,
+    D: DecoderFunction<P, T>,
+{
     fn finalize_dict_array<K: DictionaryKey>(
         &self,
         data_type: ArrowDataType,
         dict: Self::Dict,
-        (values, validity): (Vec<K>, Option<Bitmap>),
+        keys: PrimitiveArray<K>,
     ) -> ParquetResult<DictionaryArray<K>> {
         let value_type = match &data_type {
             ArrowDataType::Dictionary(_, value, _) => value.as_ref().clone(),
             _ => T::PRIMITIVE.into(),
         };
 
-        let array = PrimitiveArray::<K>::new(K::PRIMITIVE.into(), values.into(), validity);
         let dict = Box::new(PrimitiveArray::new(value_type, dict.into(), None));
 
-        Ok(DictionaryArray::try_new(data_type, array, dict).unwrap())
+        Ok(DictionaryArray::try_new(data_type, keys, dict).unwrap())
     }
 }
 

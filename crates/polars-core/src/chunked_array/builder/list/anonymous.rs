@@ -63,12 +63,6 @@ impl<'a> AnonymousListBuilder<'a> {
             // Empty arrays tend to be null type and thus differ
             // if we would push it the concat would fail.
             DataType::Null if s.is_empty() => self.append_empty(),
-            #[cfg(feature = "dtype-struct")]
-            DataType::Struct(_) => {
-                let arr = &**s.array_ref(0);
-                self.builder.push(arr);
-                return Ok(());
-            },
             dt => self.inner_dtype.update(dt)?,
         }
         self.builder.push_multiple(s.chunks());
@@ -127,17 +121,9 @@ impl ListBuilderTrait for AnonymousOwnedListBuilder {
             self.append_empty();
         } else {
             unsafe {
-                match s.dtype() {
-                    #[cfg(feature = "dtype-struct")]
-                    DataType::Struct(_) => {
-                        self.builder.push(&*(&**s.array_ref(0) as *const dyn Array));
-                    },
-                    dt => {
-                        self.inner_dtype.update(dt)?;
-                        self.builder
-                            .push_multiple(&*(s.chunks().as_ref() as *const [ArrayRef]));
-                    },
-                }
+                self.inner_dtype.update(s.dtype())?;
+                self.builder
+                    .push_multiple(&*(s.chunks().as_ref() as *const [ArrayRef]));
             }
             // This make sure that the underlying ArrayRef's are not dropped.
             self.owned.push(s.clone());

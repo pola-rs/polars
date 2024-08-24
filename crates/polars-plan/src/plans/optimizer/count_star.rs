@@ -31,7 +31,7 @@ impl OptimizationRule for CountStar {
 
                 let alp = IR::MapFunction {
                     input: placeholder_node,
-                    function: FunctionNode::Count {
+                    function: FunctionIR::FastCount {
                         paths: count_star_expr.paths,
                         scan_type: count_star_expr.scan_type,
                         alias: count_star_expr.alias,
@@ -49,7 +49,7 @@ struct CountStarExpr {
     // Top node of the projection to replace
     node: Node,
     // Paths to the input files
-    paths: Arc<[PathBuf]>,
+    paths: Arc<Vec<PathBuf>>,
     // File Type
     scan_type: FileScan,
     // Column Alias

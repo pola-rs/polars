@@ -5,7 +5,7 @@ use arrow::datatypes::ArrowDataType;
 use fallible_streaming_iterator::FallibleStreamingIterator;
 use indexmap::IndexSet;
 use polars_error::*;
-use polars_utils::aliases::PlIndexSet;
+use polars_utils::aliases::{PlIndexSet, PlRandomState};
 use simd_json::BorrowedValue;
 
 /// Reads up to a number of lines from `reader` into `rows` bounded by `limit`.
@@ -90,6 +90,7 @@ fn parse_value<'a>(scratch: &'a mut Vec<u8>, val: &[u8]) -> PolarsResult<Borrowe
     scratch.clear();
     scratch.extend_from_slice(val);
     // 0 because it is row by row
+
     simd_json::to_borrowed_value(scratch)
         .map_err(|e| PolarsError::ComputeError(format!("{e}").into()))
 }
@@ -129,7 +130,7 @@ pub fn iter_unique_dtypes<R: std::io::BufRead>(
 /// # Implementation
 /// This implementation infers each row by going through the entire iterator.
 pub fn infer_iter<A: AsRef<str>>(rows: impl Iterator<Item = A>) -> PolarsResult<ArrowDataType> {
-    let mut data_types = IndexSet::<_, ahash::RandomState>::default();
+    let mut data_types = IndexSet::<_, PlRandomState>::default();
 
     let mut buf = vec![];
     for row in rows {

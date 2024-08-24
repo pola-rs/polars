@@ -744,6 +744,7 @@ where
     for df in iter {
         acc_df.vstack_mut(&df)?;
     }
+
     Ok(acc_df)
 }
 
@@ -847,6 +848,16 @@ where
 pub(crate) fn align_chunks_binary_owned_series(left: Series, right: Series) -> (Series, Series) {
     match (left.chunks().len(), right.chunks().len()) {
         (1, 1) => (left, right),
+        // All chunks are equal length
+        (a, b)
+            if a == b
+                && left
+                    .chunk_lengths()
+                    .zip(right.chunk_lengths())
+                    .all(|(l, r)| l == r) =>
+        {
+            (left, right)
+        },
         (_, 1) => (left.rechunk(), right),
         (1, _) => (left, right.rechunk()),
         (_, _) => (left.rechunk(), right.rechunk()),
@@ -863,6 +874,16 @@ where
 {
     match (left.chunks.len(), right.chunks.len()) {
         (1, 1) => (left, right),
+        // All chunks are equal length
+        (a, b)
+            if a == b
+                && left
+                    .chunk_lengths()
+                    .zip(right.chunk_lengths())
+                    .all(|(l, r)| l == r) =>
+        {
+            (left, right)
+        },
         (_, 1) => (left.rechunk(), right),
         (1, _) => (left, right.rechunk()),
         (_, _) => (left.rechunk(), right.rechunk()),
@@ -1160,6 +1181,22 @@ pub fn coalesce_nulls_series(a: &Series, b: &Series) -> (Series, Series) {
     }
 }
 
+pub fn operation_exceeded_idxsize_msg(operation: &str) -> String {
+    if core::mem::size_of::<IdxSize>() == core::mem::size_of::<u32>() {
+        format!(
+            "{} exceeded the maximum supported limit of {} rows. Consider installing 'polars-u64-idx'.",
+            operation,
+            IdxSize::MAX,
+        )
+    } else {
+        format!(
+            "{} exceeded the maximum supported limit of {} rows.",
+            operation,
+            IdxSize::MAX,
+        )
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -1175,12 +1212,12 @@ mod test {
     }
 
     #[test]
-    fn test_align_chunks() {
+    fn test_align_chunks() -> PolarsResult<()> {
         let a = Int32Chunked::new("", &[1, 2, 3, 4]);
         let mut b = Int32Chunked::new("", &[1]);
         let b2 = Int32Chunked::new("", &[2, 3, 4]);
 
-        b.append(&b2);
+        b.append(&b2)?;
         let (a, b) = align_chunks_binary(&a, &b);
         assert_eq!(
             a.chunk_lengths().collect::<Vec<_>>(),
@@ -1190,13 +1227,15 @@ mod test {
         let a = Int32Chunked::new("", &[1, 2, 3, 4]);
         let mut b = Int32Chunked::new("", &[1]);
         let b1 = b.clone();
-        b.append(&b1);
-        b.append(&b1);
-        b.append(&b1);
+        b.append(&b1)?;
+        b.append(&b1)?;
+        b.append(&b1)?;
         let (a, b) = align_chunks_binary(&a, &b);
         assert_eq!(
             a.chunk_lengths().collect::<Vec<_>>(),
             b.chunk_lengths().collect::<Vec<_>>()
         );
+
+        Ok(())
     }
 }

@@ -46,10 +46,11 @@ fn test_lazy_alias() {
 }
 
 #[test]
+#[cfg(feature = "pivot")]
 fn test_lazy_unpivot() {
     let df = get_df();
 
-    let args = UnpivotArgs {
+    let args = UnpivotArgsDSL {
         on: vec!["sepal_length".into(), "sepal_width".into()],
         index: vec!["petal_width".into(), "petal_length".into()],
         ..Default::default()
@@ -1439,7 +1440,7 @@ fn test_when_then_schema() -> PolarsResult<()> {
         .select([when(col("A").gt(lit(1)))
             .then(Null {}.lit())
             .otherwise(col("A"))])
-        .schema();
+        .collect_schema();
     assert_ne!(schema?.get_at_index(0).unwrap().1, &DataType::Null);
 
     Ok(())

@@ -241,8 +241,8 @@ def test_ternary_none_struct() -> None:
     ).to_dict(as_series=False) == {
         "groups": [1, 2, 3, 4],
         "out": [
-            {"sum": None, "count": None},
-            {"sum": None, "count": None},
+            None,
+            None,
             {"sum": 1, "count": 1},
             {"sum": 2, "count": 1},
         ],

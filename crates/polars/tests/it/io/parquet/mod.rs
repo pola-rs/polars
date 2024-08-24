@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 mod arrow;
-mod read;
+pub(crate) mod read;
 mod roundtrip;
 mod write;
 

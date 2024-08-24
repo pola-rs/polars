@@ -70,6 +70,7 @@ PythonDataType: TypeAlias = Union[
     Type[List[Any]],
     Type[Tuple[Any, ...]],
     Type[bytes],
+    Type[object],
     Type["Decimal"],
     Type[None],
 ]
@@ -113,7 +114,9 @@ JoinValidation: TypeAlias = Literal["m:m", "m:1", "1:m", "1:1"]
 Label: TypeAlias = Literal["left", "right", "datapoint"]
 NonExistent: TypeAlias = Literal["raise", "null"]
 NullBehavior: TypeAlias = Literal["ignore", "drop"]
-ParallelStrategy: TypeAlias = Literal["auto", "columns", "row_groups", "none"]
+ParallelStrategy: TypeAlias = Literal[
+    "auto", "columns", "row_groups", "prefiltered", "none"
+]
 ParquetCompression: TypeAlias = Literal[
     "lz4", "uncompressed", "snappy", "gzip", "lzo", "brotli", "zstd"
 ]

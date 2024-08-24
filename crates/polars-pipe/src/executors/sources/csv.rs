@@ -6,7 +6,7 @@ use polars_io::csv::read::{BatchedCsvReader, CsvReadOptions, CsvReader};
 use polars_io::path_utils::is_cloud_url;
 use polars_plan::global::_set_n_rows_for_scan;
 use polars_plan::prelude::FileScanOptions;
-use polars_utils::iter::EnumerateIdxTrait;
+use polars_utils::itertools::Itertools;
 
 use super::*;
 use crate::pipeline::determine_chunk_size;
@@ -20,7 +20,7 @@ pub(crate) struct CsvSource {
     batched_reader: Option<BatchedCsvReader<'static>>,
     reader: Option<CsvReader<File>>,
     n_threads: usize,
-    paths: Arc<[PathBuf]>,
+    paths: Arc<Vec<PathBuf>>,
     options: Option<CsvReadOptions>,
     file_options: FileScanOptions,
     verbose: bool,
@@ -38,8 +38,13 @@ impl CsvSource {
     fn init_next_reader(&mut self) -> PolarsResult<()> {
         let file_options = self.file_options.clone();
 
+        let n_rows = file_options.slice.map(|x| {
+            assert_eq!(x.0, 0);
+            x.1
+        });
+
         if self.current_path_idx == self.paths.len()
-            || (file_options.n_rows.is_some() && file_options.n_rows.unwrap() <= self.n_rows_read)
+            || (n_rows.is_some() && n_rows.unwrap() <= self.n_rows_read)
         {
             return Ok(());
         }
@@ -72,7 +77,11 @@ impl CsvSource {
         };
         let n_rows = _set_n_rows_for_scan(
             file_options
-                .n_rows
+                .slice
+                .map(|x| {
+                    assert_eq!(x.0, 0);
+                    x.1
+                })
                 .map(|n| n.saturating_sub(self.n_rows_read)),
         );
         let row_index = file_options.row_index.map(|mut ri| {
@@ -130,7 +139,7 @@ impl CsvSource {
     }
 
     pub(crate) fn new(
-        paths: Arc<[PathBuf]>,
+        paths: Arc<Vec<PathBuf>>,
         schema: SchemaRef,
         options: CsvReadOptions,
         file_options: FileScanOptions,
@@ -202,7 +211,7 @@ impl Source for CsvSource {
 
             if let Some(ca) = &mut self.include_file_path {
                 if ca.len() < max_height {
-                    *ca = ca.new_from_index(max_height, 0);
+                    *ca = ca.new_from_index(0, max_height);
                 };
 
                 for data_chunk in &mut out {

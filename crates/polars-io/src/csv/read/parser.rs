@@ -13,7 +13,7 @@ use super::options::{CommentPrefix, NullValuesCompiled};
 use super::splitfields::SplitFields;
 use super::utils::get_file_chunks;
 use crate::path_utils::is_cloud_url;
-use crate::utils::get_reader_bytes;
+use crate::utils::maybe_decompress_bytes;
 
 /// Read the number of rows without parsing columns
 /// useful for count(*) queries
@@ -25,7 +25,7 @@ pub fn count_rows(
     eol_char: u8,
     has_header: bool,
 ) -> PolarsResult<usize> {
-    let mut reader = if is_cloud_url(path) || config::force_async() {
+    let file = if is_cloud_url(path) || config::force_async() {
         #[cfg(feature = "cloud")]
         {
             crate::file_cache::FILE_CACHE
@@ -41,13 +41,25 @@ pub fn count_rows(
     } else {
         polars_utils::open_file(path)?
     };
-    let reader_bytes = get_reader_bytes(&mut reader)?;
+
+    let mmap = unsafe { memmap::Mmap::map(&file).unwrap() };
+    let owned = &mut vec![];
+    let mut reader_bytes = maybe_decompress_bytes(mmap.as_ref(), owned)?;
+
+    for _ in 0..reader_bytes.len() {
+        if reader_bytes[0] != eol_char {
+            break;
+        }
+
+        reader_bytes = &reader_bytes[1..];
+    }
+
     const MIN_ROWS_PER_THREAD: usize = 1024;
     let max_threads = POOL.current_num_threads();
 
     // Determine if parallelism is beneficial and how many threads
     let n_threads = get_line_stats(
-        &reader_bytes,
+        reader_bytes,
         MIN_ROWS_PER_THREAD,
         eol_char,
         None,
@@ -61,7 +73,7 @@ pub fn count_rows(
     .unwrap_or(1);
 
     let file_chunks: Vec<(usize, usize)> = get_file_chunks(
-        &reader_bytes,
+        reader_bytes,
         n_threads,
         None,
         separator,
@@ -247,12 +259,6 @@ where
 #[inline]
 pub(super) fn skip_whitespace(input: &[u8]) -> &[u8] {
     skip_condition(input, is_whitespace)
-}
-
-#[inline]
-/// Can be used to skip whitespace, but exclude the separator
-pub(super) fn skip_whitespace_exclude(input: &[u8], exclude: u8) -> &[u8] {
-    skip_condition(input, |b| b != exclude && (is_whitespace(b)))
 }
 
 #[inline]

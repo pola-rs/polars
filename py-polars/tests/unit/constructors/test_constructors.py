@@ -216,10 +216,10 @@ def test_init_structured_objects() -> None:
     columns = ["timestamp", "ticker", "price", "size"]
 
     for TradeClass in (TradeDC, TradeNT, TradePD):
-        trades = [TradeClass(**dict(zip(columns, values))) for values in raw_data]
+        trades = [TradeClass(**dict(zip(columns, values))) for values in raw_data]  # type: ignore[arg-type]
 
         for DF in (pl.DataFrame, pl.from_records):
-            df = DF(data=trades)  # type: ignore[operator]
+            df = DF(data=trades)
             assert df.schema == {
                 "timestamp": pl.Datetime("us"),
                 "ticker": pl.String,
@@ -229,7 +229,7 @@ def test_init_structured_objects() -> None:
             assert df.rows() == raw_data
 
             # partial dtypes override
-            df = DF(  # type: ignore[operator]
+            df = DF(
                 data=trades,
                 schema_overrides={"timestamp": pl.Datetime("ms"), "size": pl.Int32},
             )
@@ -1041,13 +1041,13 @@ def test_init_records_schema_order() -> None:
             shuffle(data)
             shuffle(cols)
 
-            df = constructor(data, schema=cols)  # type: ignore[operator]
+            df = constructor(data, schema=cols)
             for col in df.columns:
                 assert all(value in (None, lookup[col]) for value in df[col].to_list())
 
         # have schema override inferred types, omit some columns, add a new one
         schema = {"a": pl.Int8, "c": pl.Int16, "e": pl.Int32}
-        df = constructor(data, schema=schema)  # type: ignore[operator]
+        df = constructor(data, schema=schema)
 
         assert df.schema == schema
         for col in df.columns:

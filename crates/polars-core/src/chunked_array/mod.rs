@@ -75,8 +75,8 @@ pub type ChunkLenIter<'a> = std::iter::Map<std::slice::Iter<'a, ArrayRef>, fn(&A
 ///
 /// ```rust
 /// # use polars_core::prelude::*;
-/// fn apply_cosine_and_cast(ca: &Float32Chunked) -> Float64Chunked {
-///     ca.apply_values_generic(|v| v.cos() as f64)
+/// fn apply_cosine_and_cast(ca: &Float32Chunked) -> Float32Chunked {
+///     ca.apply_values(|v| v.cos())
 /// }
 /// ```
 ///
@@ -1053,7 +1053,7 @@ pub(crate) mod test {
     fn slice() {
         let mut first = UInt32Chunked::new("first", &[0, 1, 2]);
         let second = UInt32Chunked::new("second", &[3, 4, 5]);
-        first.append(&second);
+        first.append(&second).unwrap();
         assert_slice_equal(&first.slice(0, 3), &[0, 1, 2]);
         assert_slice_equal(&first.slice(0, 4), &[0, 1, 2, 3]);
         assert_slice_equal(&first.slice(1, 4), &[1, 2, 3, 4]);

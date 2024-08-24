@@ -508,7 +508,7 @@ def test_list_slice_5866() -> None:
 
 def test_list_gather() -> None:
     s = pl.Series("a", [[1, 2, 3], [4, 5], [6, 7, 8]])
-    # mypy: we make it work, but idomatic is `arr.get`.
+    # mypy: we make it work, but idiomatic is `arr.get`.
     assert s.list.gather(0).to_list() == [[1], [4], [6]]  # type: ignore[arg-type]
     assert s.list.gather([0, 1]).to_list() == [[1, 2], [4, 5], [6, 7]]
 

@@ -2,7 +2,7 @@ use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::legacy::kernels::set::set_at_nulls;
 use bytemuck::Zeroable;
 use num_traits::{Bounded, NumCast, One, Zero};
-use polars_utils::iter::EnumerateIdxTrait;
+use polars_utils::itertools::Itertools;
 
 use crate::prelude::*;
 

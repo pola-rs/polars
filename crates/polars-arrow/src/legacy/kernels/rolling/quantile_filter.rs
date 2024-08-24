@@ -6,7 +6,6 @@ use std::ops::{Add, Div, Mul, Sub};
 
 use num_traits::NumCast;
 use polars_utils::index::{Bounded, Indexable, NullCount};
-use polars_utils::iter::IntoIteratorCopied;
 use polars_utils::nulls::IsNull;
 use polars_utils::slice::{GetSaferUnchecked, SliceAble};
 use polars_utils::sort::arg_sort_ascending;
@@ -86,11 +85,7 @@ where
 
 impl<'a, A> Block<'a, A>
 where
-    A: Indexable
-        + Bounded
-        + NullCount
-        + IntoIteratorCopied<OwnedItem = <A as Indexable>::Item>
-        + Clone,
+    A: Indexable + Bounded + NullCount + Clone,
     <A as Indexable>::Item: TotalOrd + Copy + IsNull + Debug + 'a,
 {
     fn new(
@@ -101,11 +96,7 @@ where
     ) -> Self {
         debug_assert!(!alpha.is_empty());
         let k = alpha.len();
-        let pi = arg_sort_ascending(
-            <A as IntoIteratorCopied>::into_iter(alpha.clone()),
-            scratch,
-            alpha.len(),
-        );
+        let pi = arg_sort_ascending((0..alpha.len()).map(|i| alpha.get(i)), scratch, alpha.len());
 
         let nulls_in_window = alpha.null_count();
         let m_index = k / 2;
@@ -384,11 +375,7 @@ trait LenGet {
 
 impl<'a, A> LenGet for &mut Block<'a, A>
 where
-    A: Indexable
-        + Bounded
-        + NullCount
-        + IntoIteratorCopied<OwnedItem = <A as Indexable>::Item>
-        + Clone,
+    A: Indexable + Bounded + NullCount + Clone,
     <A as Indexable>::Item: Copy + TotalOrd + Debug + 'a,
 {
     type Item = <A as Indexable>::Item;
@@ -418,11 +405,7 @@ where
 
 impl<'a, A> BlockUnion<'a, A>
 where
-    A: Indexable
-        + Bounded
-        + NullCount
-        + IntoIteratorCopied<OwnedItem = <A as Indexable>::Item>
-        + Clone,
+    A: Indexable + Bounded + NullCount + Clone,
     <A as Indexable>::Item: TotalOrd + Copy + Debug,
 {
     fn new(block_left: &'a mut Block<'a, A>, block_right: &'a mut Block<'a, A>) -> Self {
@@ -462,11 +445,7 @@ where
 
 impl<'a, A> LenGet for BlockUnion<'a, A>
 where
-    A: Indexable
-        + Bounded
-        + NullCount
-        + IntoIteratorCopied<OwnedItem = <A as Indexable>::Item>
-        + Clone,
+    A: Indexable + Bounded + NullCount + Clone,
     <A as Indexable>::Item: TotalOrd + Copy + Debug,
 {
     type Item = <A as Indexable>::Item;
@@ -679,12 +658,7 @@ pub(super) fn rolling_quantile<A, Out: Pushable<<A as Indexable>::Item>>(
     quantile: f64,
 ) -> Out
 where
-    A: Indexable
-        + SliceAble
-        + Bounded
-        + NullCount
-        + IntoIteratorCopied<OwnedItem = <A as Indexable>::Item>
-        + Clone,
+    A: Indexable + SliceAble + Bounded + NullCount + Clone,
     <A as Indexable>::Item: Default + TotalOrd + Copy + FinishLinear + Debug,
 {
     let mut scratch_left = vec![];

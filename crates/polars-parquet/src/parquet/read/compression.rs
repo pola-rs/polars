@@ -1,9 +1,12 @@
 use parquet_format_safe::DataPageHeaderV2;
 
+use super::PageReader;
 use crate::parquet::compression::{self, Compression};
 use crate::parquet::error::{ParquetError, ParquetResult};
-use crate::parquet::page::{CompressedPage, DataPage, DataPageHeader, DictPage, Page};
-use crate::parquet::{CowBuffer, FallibleStreamingIterator};
+use crate::parquet::page::{
+    CompressedDataPage, CompressedPage, DataPage, DataPageHeader, DictPage, Page,
+};
+use crate::parquet::CowBuffer;
 
 fn decompress_v1(
     compressed: &[u8],
@@ -102,7 +105,6 @@ fn create_page(compressed_page: CompressedPage, buffer: Vec<u8>) -> Page {
             page.header,
             CowBuffer::Owned(buffer),
             page.descriptor,
-            page.selected_rows,
         )),
         CompressedPage::Dict(page) => Page::Dict(DictPage {
             buffer: CowBuffer::Owned(buffer),
@@ -150,60 +152,99 @@ impl streaming_decompression::Decompressed for Page {
 /// This decompressor uses an internal [`Vec<u8>`] to perform decompressions which
 /// is reused across pages, so that a single allocation is required.
 /// If the pages are not compressed, the internal buffer is not used.
-pub struct BasicDecompressor<I: Iterator<Item = ParquetResult<CompressedPage>>> {
-    iter: _Decompressor<I>,
-    peeked: Option<Page>,
+pub struct BasicDecompressor {
+    reader: PageReader,
+    buffer: Vec<u8>,
 }
 
-impl<I> BasicDecompressor<I>
-where
-    I: Iterator<Item = ParquetResult<CompressedPage>>,
-{
-    /// Returns a new [`BasicDecompressor`].
-    pub fn new(iter: I, buffer: Vec<u8>) -> Self {
-        Self {
-            iter: _Decompressor::new(iter, buffer, decompress),
-            peeked: None,
-        }
+impl BasicDecompressor {
+    /// Create a new [`BasicDecompressor`]
+    pub fn new(reader: PageReader, buffer: Vec<u8>) -> Self {
+        Self { reader, buffer }
+    }
+
+    /// The total number of values is given from the `ColumnChunk` metadata.
+    ///
+    /// - Nested column: equal to the number of non-null values at the lowest nesting level.
+    /// - Unnested column: equal to the number of non-null rows.
+    pub fn total_num_values(&self) -> usize {
+        self.reader.total_num_values()
     }
 
     /// Returns its internal buffer, consuming itself.
     pub fn into_inner(self) -> Vec<u8> {
-        self.iter.into_inner()
+        self.buffer
     }
 
     pub fn read_dict_page(&mut self) -> ParquetResult<Option<DictPage>> {
-        match self.iter.next()? {
-            Some(Page::Data(page)) => {
-                self.peeked = Some(Page::Data(page.clone()));
-                Ok(None)
-            },
-            Some(Page::Dict(page)) => Ok(Some(page.clone())),
+        match self.reader.read_dict()? {
             None => Ok(None),
+            Some(p) => {
+                let num_values = p.num_values;
+                let page =
+                    decompress(CompressedPage::Dict(p), &mut Vec::with_capacity(num_values))?;
+
+                match page {
+                    Page::Dict(d) => Ok(Some(d)),
+                    Page::Data(_) => unreachable!(),
+                }
+            },
         }
+    }
+
+    pub fn reuse_page_buffer(&mut self, page: DataPage) {
+        let buffer = match page.buffer {
+            CowBuffer::Borrowed(_) => return,
+            CowBuffer::Owned(vec) => vec,
+        };
+
+        if self.buffer.capacity() > buffer.capacity() {
+            return;
+        };
+
+        self.buffer = buffer;
     }
 }
 
-impl<I> FallibleStreamingIterator for BasicDecompressor<I>
-where
-    I: Iterator<Item = ParquetResult<CompressedPage>>,
-{
-    type Item = Page;
-    type Error = ParquetError;
+pub struct DataPageItem {
+    page: CompressedDataPage,
+}
 
-    fn advance(&mut self) -> ParquetResult<()> {
-        if self.peeked.take().is_some() {
-            return Ok(());
-        }
-
-        self.iter.advance()
+impl DataPageItem {
+    pub fn num_values(&self) -> usize {
+        self.page.num_values()
     }
 
-    fn get(&self) -> Option<&Self::Item> {
-        if let Some(peeked) = self.peeked.as_ref() {
-            return Some(peeked);
-        }
+    pub fn decompress(self, decompressor: &mut BasicDecompressor) -> ParquetResult<DataPage> {
+        let p = decompress(CompressedPage::Data(self.page), &mut decompressor.buffer)?;
+        let Page::Data(p) = p else {
+            panic!("Decompressing a data page should result in a data page");
+        };
 
-        self.iter.get()
+        Ok(p)
+    }
+}
+
+impl Iterator for BasicDecompressor {
+    type Item = ParquetResult<DataPageItem>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let page = match self.reader.next() {
+            None => return None,
+            Some(Err(e)) => return Some(Err(e)),
+            Some(Ok(p)) => p,
+        };
+
+        let CompressedPage::Data(page) = page else {
+            return Some(Err(ParquetError::oos(
+                "Found dictionary page beyond the first page of a column chunk",
+            )));
+        };
+
+        Some(Ok(DataPageItem { page }))
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.reader.size_hint()
     }
 }

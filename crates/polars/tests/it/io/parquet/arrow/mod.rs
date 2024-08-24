@@ -1,5 +1,4 @@
 mod read;
-mod read_indexes;
 mod write;
 
 use std::io::{Cursor, Read, Seek};
@@ -16,7 +15,7 @@ use polars_parquet::read as p_read;
 use polars_parquet::read::statistics::*;
 use polars_parquet::write::*;
 
-type ArrayStats = (Box<dyn Array>, Statistics);
+use super::read::file::FileReader;
 
 fn new_struct(
     arrays: Vec<Box<dyn Array>>,
@@ -31,33 +30,17 @@ fn new_struct(
     StructArray::new(ArrowDataType::Struct(fields), arrays, validity)
 }
 
-pub fn read_column<R: Read + Seek>(mut reader: R, column: &str) -> PolarsResult<ArrayStats> {
+pub fn read_column<R: Read + Seek>(mut reader: R, column: &str) -> PolarsResult<Box<dyn Array>> {
     let metadata = p_read::read_metadata(&mut reader)?;
     let schema = p_read::infer_schema(&metadata)?;
 
-    let row_group = &metadata.row_groups[0];
-
-    // verify that we can read indexes
-    if p_read::indexes::has_indexes(row_group) {
-        let _indexes = p_read::indexes::read_filtered_pages(
-            &mut reader,
-            row_group,
-            &schema.fields,
-            |_, _| vec![],
-        )?;
-    }
-
     let schema = schema.filter(|_, f| f.name == column);
 
-    let field = &schema.fields[0];
-
-    let statistics = deserialize(field, row_group)?;
-
-    let mut reader = p_read::FileReader::new(reader, metadata.row_groups, schema, None, None);
+    let mut reader = FileReader::new(reader, metadata.row_groups, schema, None);
 
     let array = reader.next().unwrap()?.into_arrays().pop().unwrap();
 
-    Ok((array, statistics))
+    Ok(array)
 }
 
 pub fn pyarrow_nested_edge(column: &str) -> Box<dyn Array> {
@@ -1299,16 +1282,11 @@ fn integration_read(data: &[u8], limit: Option<usize>) -> PolarsResult<Integrati
     let metadata = p_read::read_metadata(&mut reader)?;
     let schema = p_read::infer_schema(&metadata)?;
 
-    for (field, row_group) in schema.fields.iter().zip(metadata.row_groups.iter()) {
-        let mut _statistics = deserialize(field, row_group)?;
-    }
-
-    let reader = p_read::FileReader::new(
+    let reader = FileReader::new(
         Cursor::new(data),
         metadata.row_groups,
         schema.clone(),
         limit,
-        None,
     );
 
     let batches = reader.collect::<PolarsResult<Vec<_>>>()?;
@@ -1646,7 +1624,7 @@ fn filter_chunk() -> PolarsResult<()> {
         .map(|(_, row_group)| row_group)
         .collect();
 
-    let reader = p_read::FileReader::new(reader, row_groups, schema, None, None);
+    let reader = FileReader::new(reader, row_groups, schema, None);
 
     let new_chunks = reader.collect::<PolarsResult<Vec<_>>>()?;
 

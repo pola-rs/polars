@@ -13,6 +13,7 @@ use polars_io::path_utils::{expand_paths_hive, expanded_from_single_directory};
 
 use super::stack_opt::ConversionOptimizer;
 use super::*;
+use crate::plans::conversion::expr_expansion::expand_selectors;
 
 fn expand_expressions(
     input: Node,
@@ -22,7 +23,7 @@ fn expand_expressions(
 ) -> PolarsResult<Vec<ExprIR>> {
     let schema = lp_arena.get(input).schema(lp_arena);
     let exprs = rewrite_projections(exprs, &schema, &[])?;
-    Ok(to_expr_irs(exprs, expr_arena))
+    to_expr_irs(exprs, expr_arena)
 }
 
 fn empty_df() -> IR {
@@ -253,16 +254,15 @@ pub fn to_alp_impl(
                 file_info: resolved_file_info,
                 hive_parts,
                 output_schema: None,
-                predicate: predicate.map(|expr| to_expr_ir(expr, expr_arena)),
+                predicate: predicate
+                    .map(|expr| to_expr_ir(expr, expr_arena))
+                    .transpose()?,
                 scan_type,
                 file_options,
             }
         },
         #[cfg(feature = "python")]
-        DslPlan::PythonScan { options } => IR::PythonScan {
-            options,
-            predicate: None,
-        },
+        DslPlan::PythonScan { options } => IR::PythonScan { options },
         DslPlan::Union { inputs, args } => {
             let mut inputs = inputs
                 .into_iter()
@@ -271,7 +271,7 @@ pub fn to_alp_impl(
                 .map_err(|e| e.context(failed_input!(vertical concat)))?;
 
             if args.diagonal {
-                inputs = convert_utils::convert_diagonal_concat(inputs, lp_arena, expr_arena);
+                inputs = convert_utils::convert_diagonal_concat(inputs, lp_arena, expr_arena)?;
             }
 
             if args.to_supertypes {
@@ -302,7 +302,7 @@ pub fn to_alp_impl(
             let predicate = expand_filter(predicate, input, lp_arena)
                 .map_err(|e| e.context(failed_here!(filter)))?;
 
-            let predicate_ae = to_expr_ir(predicate.clone(), expr_arena);
+            let predicate_ae = to_expr_ir(predicate.clone(), expr_arena)?;
 
             return if is_streamable(predicate_ae.node(), expr_arena, Context::Default) {
                 // Split expression that are ANDed into multiple Filter nodes as the optimizer can then
@@ -329,7 +329,7 @@ pub fn to_alp_impl(
                 }
 
                 for predicate in predicates {
-                    let predicate = to_expr_ir(predicate, expr_arena);
+                    let predicate = to_expr_ir(predicate, expr_arena)?;
                     convert.push_scratch(predicate.node(), expr_arena);
                     let lp = IR::Filter { input, predicate };
                     input = run_conversion(lp, lp_arena, expr_arena, convert, "filter")?;
@@ -358,7 +358,9 @@ pub fn to_alp_impl(
             df,
             schema,
             output_schema,
-            filter: selection.map(|expr| to_expr_ir(expr, expr_arena)),
+            filter: selection
+                .map(|expr| to_expr_ir(expr, expr_arena))
+                .transpose()?,
         },
         DslPlan::Select {
             expr,
@@ -376,7 +378,7 @@ pub fn to_alp_impl(
             }
 
             let schema = Arc::new(schema);
-            let eirs = to_expr_irs(exprs, expr_arena);
+            let eirs = to_expr_irs(exprs, expr_arena)?;
             convert.fill_scratch(&eirs, expr_arena);
 
             let lp = IR::Select {
@@ -392,14 +394,58 @@ pub fn to_alp_impl(
             input,
             by_column,
             slice,
-            sort_options,
+            mut sort_options,
         } => {
+            // note: if given an Expr::Columns, count the individual cols
+            let n_by_exprs = if by_column.len() == 1 {
+                match &by_column[0] {
+                    Expr::Columns(cols) => cols.len(),
+                    _ => 1,
+                }
+            } else {
+                by_column.len()
+            };
+            let n_desc = sort_options.descending.len();
+            polars_ensure!(
+                n_desc == n_by_exprs || n_desc == 1,
+                ComputeError: "the length of `descending` ({}) does not match the length of `by` ({})", n_desc, by_column.len()
+            );
+            let n_nulls_last = sort_options.nulls_last.len();
+            polars_ensure!(
+                n_nulls_last == n_by_exprs || n_nulls_last == 1,
+                ComputeError: "the length of `nulls_last` ({}) does not match the length of `by` ({})", n_nulls_last, by_column.len()
+            );
+
             let input = to_alp_impl(owned(input), expr_arena, lp_arena, convert)
                 .map_err(|e| e.context(failed_input!(sort)))?;
-            let by_column = expand_expressions(input, by_column, lp_arena, expr_arena)
-                .map_err(|e| e.context(failed_here!(sort)))?;
 
-            convert.fill_scratch(&by_column, expr_arena);
+            let mut expanded_cols = Vec::new();
+            let mut nulls_last = Vec::new();
+            let mut descending = Vec::new();
+
+            // note: nulls_last/descending need to be matched to expanded multi-output expressions.
+            // when one of nulls_last/descending has not been updated from the default (single
+            // value true/false), 'cycle' ensures that "by_column" iter is not truncated.
+            for (c, (&n, &d)) in by_column.into_iter().zip(
+                sort_options
+                    .nulls_last
+                    .iter()
+                    .cycle()
+                    .zip(sort_options.descending.iter().cycle()),
+            ) {
+                let exprs = expand_expressions(input, vec![c], lp_arena, expr_arena)
+                    .map_err(|e| e.context(failed_here!(sort)))?;
+
+                nulls_last.extend(std::iter::repeat(n).take(exprs.len()));
+                descending.extend(std::iter::repeat(d).take(exprs.len()));
+                expanded_cols.extend(exprs);
+            }
+            sort_options.nulls_last = nulls_last;
+            sort_options.descending = descending;
+
+            convert.fill_scratch(&expanded_cols, expr_arena);
+            let by_column = expanded_cols;
+
             let lp = IR::Sort {
                 input,
                 by_column,
@@ -482,7 +528,7 @@ pub fn to_alp_impl(
                 if turn_off_coalesce {
                     let options = Arc::make_mut(&mut options);
                     if matches!(options.args.coalesce, JoinCoalesce::CoalesceColumns) {
-                        polars_warn!("Coalescing join requested but not all join keys are column references, turning off key coalescing");
+                        polars_warn!("coalescing join requested but not all join keys are column references, turning off key coalescing");
                     }
                     options.args.coalesce = JoinCoalesce::KeepColumns;
                 }
@@ -512,8 +558,8 @@ pub fn to_alp_impl(
                 det_join_schema(&schema_left, &schema_right, &left_on, &right_on, &options)
                     .map_err(|e| e.context(failed_here!(join schema resolving)))?;
 
-            let left_on = to_expr_irs_ignore_alias(left_on, expr_arena);
-            let right_on = to_expr_irs_ignore_alias(right_on, expr_arena);
+            let left_on = to_expr_irs_ignore_alias(left_on, expr_arena)?;
+            let right_on = to_expr_irs_ignore_alias(right_on, expr_arena)?;
             let mut joined_on = PlHashSet::new();
             for (l, r) in left_on.iter().zip(right_on.iter()) {
                 polars_ensure!(
@@ -568,6 +614,19 @@ pub fn to_alp_impl(
         DslPlan::Distinct { input, options } => {
             let input = to_alp_impl(owned(input), expr_arena, lp_arena, convert)
                 .map_err(|e| e.context(failed_input!(unique)))?;
+            let input_schema = lp_arena.get(input).schema(lp_arena);
+
+            let subset = options
+                .subset
+                .map(|s| expand_selectors(s, input_schema.as_ref(), &[]))
+                .transpose()?;
+            let options = DistinctOptionsIR {
+                subset,
+                maintain_order: options.maintain_order,
+                keep_strategy: options.keep_strategy,
+                slice: None,
+            };
+
             IR::Distinct { input, options }
         },
         DslPlan::MapFunction { input, function } => {
@@ -577,6 +636,23 @@ pub fn to_alp_impl(
             let input_schema = lp_arena.get(input).schema(lp_arena);
 
             match function {
+                DslFunction::Explode {
+                    columns,
+                    allow_empty,
+                } => {
+                    let columns = expand_selectors(columns, &input_schema, &[])?;
+                    validate_columns_in_input(&columns, &input_schema, "explode")?;
+                    polars_ensure!(!columns.is_empty() || allow_empty, InvalidOperation: "no columns provided in explode");
+                    if columns.is_empty() {
+                        return Ok(input);
+                    }
+                    let function = FunctionIR::Explode {
+                        columns,
+                        schema: Default::default(),
+                    };
+                    let ir = IR::MapFunction { input, function };
+                    return Ok(lp_arena.add(ir));
+                },
                 DslFunction::FillNan(fill_value) => {
                     let exprs = input_schema
                         .iter()
@@ -605,9 +681,15 @@ pub fn to_alp_impl(
                     return run_conversion(lp, lp_arena, expr_arena, convert, "fill_nan");
                 },
                 DslFunction::Drop(DropFunction { to_drop, strict }) => {
+                    let to_drop = expand_selectors(to_drop, &input_schema, &[])?;
+                    let to_drop = to_drop.iter().map(|s| s.as_ref()).collect::<PlHashSet<_>>();
+
                     if strict {
                         for col_name in to_drop.iter() {
-                            polars_ensure!(input_schema.contains(col_name), ColumnNotFound: "{col_name}");
+                            polars_ensure!(
+                                input_schema.contains(col_name),
+                                col_not_found = col_name
+                            );
                         }
                     }
 
@@ -677,7 +759,7 @@ pub fn to_alp_impl(
                         &input_schema,
                         Context::Default,
                     )?);
-                    let eirs = to_expr_irs(exprs, expr_arena);
+                    let eirs = to_expr_irs(exprs, expr_arena)?;
 
                     convert.fill_scratch(&eirs, expr_arena);
 
@@ -693,7 +775,7 @@ pub fn to_alp_impl(
                     return run_conversion(lp, lp_arena, expr_arena, convert, "stats");
                 },
                 _ => {
-                    let function = function.into_function_node(&input_schema)?;
+                    let function = function.into_function_ir(&input_schema)?;
                     IR::MapFunction { input, function }
                 },
             }
@@ -729,8 +811,11 @@ pub fn to_alp_impl(
             IR::Sink { input, payload }
         },
         DslPlan::IR { node, dsl, version } => {
-            return if let (true, Some(node)) = (version == lp_arena.version(), node) {
-                Ok(node)
+            return if node.is_some()
+                && version == lp_arena.version()
+                && convert.used_arenas.insert(version)
+            {
+                Ok(node.unwrap())
             } else {
                 to_alp_impl(owned(dsl), expr_arena, lp_arena, convert)
             }
@@ -742,10 +827,10 @@ pub fn to_alp_impl(
 /// Expand scan paths if they were not already expanded.
 #[allow(unused_variables)]
 fn expand_scan_paths(
-    paths: Arc<Mutex<(Arc<[PathBuf]>, bool)>>,
+    paths: Arc<Mutex<(Arc<Vec<PathBuf>>, bool)>>,
     scan_type: &mut FileScan,
     file_options: &mut FileScanOptions,
-) -> PolarsResult<Arc<[PathBuf]>> {
+) -> PolarsResult<Arc<Vec<PathBuf>>> {
     #[allow(unused_mut)]
     let mut lock = paths.lock().unwrap();
 
@@ -790,7 +875,7 @@ fn expand_scan_paths_with_hive_update(
     paths: &[PathBuf],
     file_options: &mut FileScanOptions,
     cloud_options: &Option<CloudOptions>,
-) -> PolarsResult<Arc<[PathBuf]>> {
+) -> PolarsResult<Arc<Vec<PathBuf>>> {
     let hive_enabled = file_options.hive_options.enabled;
     let (expanded_paths, hive_start_idx) = expand_paths_hive(
         paths,
@@ -893,7 +978,7 @@ fn resolve_with_columns(
         arena.clear();
     }
 
-    let eirs = to_expr_irs(exprs, expr_arena);
+    let eirs = to_expr_irs(exprs, expr_arena)?;
     Ok((eirs, Arc::new(new_schema)))
 }
 
@@ -955,8 +1040,8 @@ fn resolve_group_by(
             polars_ensure!(names.insert(name.clone()), duplicate = name)
         }
     }
-    let aggs = to_expr_irs(aggs, expr_arena);
-    let keys = keys.convert(|e| to_expr_ir(e.clone(), expr_arena));
+    let aggs = to_expr_irs(aggs, expr_arena)?;
+    let keys = to_expr_irs(keys, expr_arena)?;
 
     Ok((keys, aggs, Arc::new(schema)))
 }

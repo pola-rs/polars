@@ -15,7 +15,7 @@ use parking_lot::Mutex;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 use slotmap::SlotMap;
-pub use task::JoinHandle;
+pub use task::{AbortOnDropHandle, JoinHandle};
 use task::{CancelHandle, Runnable};
 
 static NUM_EXECUTOR_THREADS: AtomicUsize = AtomicUsize::new(0);
@@ -42,18 +42,23 @@ pub enum TaskPriority {
 }
 
 /// Metadata associated with a task to help schedule it and clean it up.
-struct TaskMetadata {
-    priority: TaskPriority,
-    freshly_spawned: AtomicBool,
-
+struct ScopedTaskMetadata {
     task_key: TaskKey,
     completed_tasks: Weak<Mutex<Vec<TaskKey>>>,
 }
 
+struct TaskMetadata {
+    priority: TaskPriority,
+    freshly_spawned: AtomicBool,
+    scoped: Option<ScopedTaskMetadata>,
+}
+
 impl Drop for TaskMetadata {
     fn drop(&mut self) {
-        if let Some(completed_tasks) = self.completed_tasks.upgrade() {
-            completed_tasks.lock().push(self.task_key);
+        if let Some(scoped) = &self.scoped {
+            if let Some(completed_tasks) = scoped.completed_tasks.upgrade() {
+                completed_tasks.lock().push(scoped.task_key);
+            }
         }
     }
 }
@@ -296,10 +301,12 @@ impl<'scope, 'env> TaskScope<'scope, 'env> {
                     fut,
                     on_wake,
                     TaskMetadata {
-                        task_key,
                         priority,
                         freshly_spawned: AtomicBool::new(true),
-                        completed_tasks: Arc::downgrade(&self.completed_tasks),
+                        scoped: Some(ScopedTaskMetadata {
+                            task_key,
+                            completed_tasks: Arc::downgrade(&self.completed_tasks),
+                        }),
                     },
                 )
             };
@@ -336,6 +343,25 @@ where
         Err(e) => std::panic::resume_unwind(e),
         Ok(result) => result,
     }
+}
+
+pub fn spawn<F: Future + Send + 'static>(priority: TaskPriority, fut: F) -> JoinHandle<F::Output>
+where
+    <F as Future>::Output: Send + 'static,
+{
+    let executor = Executor::global();
+    let on_wake = move |task| executor.schedule_task(task);
+    let (runnable, join_handle) = task::spawn(
+        fut,
+        on_wake,
+        TaskMetadata {
+            priority,
+            freshly_spawned: AtomicBool::new(true),
+            scoped: None,
+        },
+    );
+    runnable.schedule();
+    join_handle
 }
 
 fn random_permutation<R: Rng>(len: u32, rng: &mut R) -> impl Iterator<Item = u32> {

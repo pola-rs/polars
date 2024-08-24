@@ -9,6 +9,7 @@ use arrow::compute::utils::combine_validities_and;
 use num_traits::{Num, NumCast, ToPrimitive};
 pub use numeric::ArithmeticChunked;
 
+use crate::prelude::arity::unary_elementwise_values;
 use crate::prelude::*;
 
 #[inline]
@@ -135,7 +136,7 @@ impl Add for &BooleanChunked {
         if rhs.len() == 1 {
             let rhs = rhs.get(0);
             return match rhs {
-                Some(rhs) => self.apply_values_generic(|v| v as IdxSize + rhs as IdxSize),
+                Some(rhs) => unary_elementwise_values(self, |v| v as IdxSize + rhs as IdxSize),
                 None => IdxCa::full_null(self.name(), self.len()),
             };
         }
@@ -163,7 +164,7 @@ pub(crate) mod test {
         let mut a1 = Int32Chunked::new("a", &[1, 2, 3]);
         let a2 = Int32Chunked::new("a", &[4, 5, 6]);
         let a3 = Int32Chunked::new("a", &[1, 2, 3, 4, 5, 6]);
-        a1.append(&a2);
+        a1.append(&a2).unwrap();
         (a1, a3)
     }
 

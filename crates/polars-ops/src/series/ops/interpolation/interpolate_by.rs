@@ -375,7 +375,7 @@ pub fn interpolate_by(s: &Series, by: &Series, by_is_sorted: bool, extrapolate_f
         _ => {
             polars_bail!(InvalidOperation: "expected series to be Float64, Float32, \
                 Int64, Int32, UInt64, UInt32, and `by` to be Date, Datetime, Int64, Int32, \
-                UInt64, or UInt32")
+                UInt64, UInt32, Float32 or Float64")
         },
     }
 }

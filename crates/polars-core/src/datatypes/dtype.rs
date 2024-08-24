@@ -156,7 +156,7 @@ impl DataType {
         match tz.as_deref() {
             Some("") => None,
             #[cfg(feature = "timezones")]
-            Some("+00:00") | Some("00:00") => Some("UTC"),
+            Some("+00:00") | Some("00:00") | Some("utc") => Some("UTC"),
             _ => tz.as_deref(),
         }
         .map(|s| s.to_string())
@@ -336,6 +336,10 @@ impl DataType {
 
     pub fn is_binary(&self) -> bool {
         matches!(self, DataType::Binary)
+    }
+
+    pub fn is_date(&self) -> bool {
+        matches!(self, DataType::Date)
     }
 
     pub fn is_object(&self) -> bool {

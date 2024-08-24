@@ -40,6 +40,7 @@ rayon = { workspace = true }
 recursive = { workspace = true }
 regex = { workspace = true, optional = true }
 serde = { workspace = true, features = ["rc"], optional = true }
+serde_json = { workspace = true, optional = true }
 smartstring = { workspace = true }
 strum_macros = { workspace = true }
 
@@ -66,6 +67,7 @@ ipc = ["polars-io/ipc"]
 json = ["polars-io/json", "polars-json"]
 csv = ["polars-io/csv"]
 temporal = [
+  "chrono",
   "polars-core/temporal",
   "polars-core/dtype-date",
   "polars-core/dtype-datetime",
@@ -84,7 +86,7 @@ dtype-i16 = ["polars-core/dtype-i16"]
 dtype-decimal = ["polars-core/dtype-decimal"]
 dtype-date = ["polars-time/dtype-date", "temporal"]
 dtype-datetime = ["polars-time/dtype-datetime", "temporal"]
-dtype-duration = ["polars-core/dtype-duration", "polars-time/dtype-duration", "temporal"]
+dtype-duration = ["polars-core/dtype-duration", "polars-time/dtype-duration", "temporal", "polars-ops/dtype-duration"]
 dtype-time = ["polars-time/dtype-time", "temporal"]
 dtype-array = ["polars-core/dtype-array", "polars-ops/dtype-array"]
 dtype-categorical = ["polars-core/dtype-categorical"]
@@ -182,6 +184,7 @@ offset_by = ["polars-time/offset_by"]
 
 bigidx = ["polars-core/bigidx"]
 polars_cloud = ["serde", "ciborium"]
+ir_serde = ["serde", "polars-utils/ir_serde"]
 
 panic_on_schema = []
 

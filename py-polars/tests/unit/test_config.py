@@ -688,6 +688,24 @@ def test_config_load_save(tmp_path: Path) -> None:
         assert isinstance(repr(pl.DataFrame({"xyz": [0]})), str)
 
 
+def test_config_load_save_context() -> None:
+    # store the default configuration state
+    default_state = pl.Config.save()
+
+    # establish some non-default settings
+    pl.Config.set_tbl_formatting("ASCII_MARKDOWN")
+    pl.Config.set_verbose(True)
+
+    # load the default config, validate load & context manager behaviour
+    with pl.Config.load(default_state):
+        assert os.environ.get("POLARS_FMT_TABLE_FORMATTING") is None
+        assert os.environ.get("POLARS_VERBOSE") is None
+
+    # ensure earlier state was restored
+    assert os.environ["POLARS_FMT_TABLE_FORMATTING"] == "ASCII_MARKDOWN"
+    assert os.environ["POLARS_VERBOSE"]
+
+
 def test_config_scope() -> None:
     pl.Config.set_verbose(False)
     pl.Config.set_tbl_cols(8)

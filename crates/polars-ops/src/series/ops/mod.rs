@@ -136,6 +136,11 @@ pub use to_dummies::*;
 pub use unique::*;
 pub use various::*;
 mod not;
+
+#[cfg(feature = "dtype-duration")]
+pub(crate) mod duration;
+#[cfg(feature = "dtype-duration")]
+pub use duration::*;
 pub use not::*;
 
 pub trait SeriesSealed {

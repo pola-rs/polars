@@ -1,9 +1,10 @@
-use ahash::RandomState;
+pub type PlRandomState = ahash::RandomState;
+pub type PlRandomStateQuality = ahash::RandomState;
 
-pub type PlHashMap<K, V> = hashbrown::HashMap<K, V, RandomState>;
-pub type PlHashSet<V> = hashbrown::HashSet<V, RandomState>;
-pub type PlIndexMap<K, V> = indexmap::IndexMap<K, V, RandomState>;
-pub type PlIndexSet<K> = indexmap::IndexSet<K, RandomState>;
+pub type PlHashMap<K, V> = hashbrown::HashMap<K, V, PlRandomState>;
+pub type PlHashSet<V> = hashbrown::HashSet<V, PlRandomState>;
+pub type PlIndexMap<K, V> = indexmap::IndexMap<K, V, PlRandomState>;
+pub type PlIndexSet<K> = indexmap::IndexSet<K, PlRandomState>;
 
 pub trait InitHashMaps {
     type HashMap;

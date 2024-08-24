@@ -200,7 +200,7 @@ impl<'a> IRBuilder<'a> {
     pub(crate) fn explode(self, columns: Arc<[Arc<str>]>) -> Self {
         let lp = IR::MapFunction {
             input: self.root,
-            function: FunctionNode::Explode {
+            function: FunctionIR::Explode {
                 columns,
                 schema: Default::default(),
             },
@@ -297,10 +297,11 @@ impl<'a> IRBuilder<'a> {
         self.add_alp(lp)
     }
 
-    pub fn unpivot(self, args: Arc<UnpivotArgs>) -> Self {
+    #[cfg(feature = "pivot")]
+    pub fn unpivot(self, args: Arc<UnpivotArgsIR>) -> Self {
         let lp = IR::MapFunction {
             input: self.root,
-            function: FunctionNode::Unpivot {
+            function: FunctionIR::Unpivot {
                 args,
                 schema: Default::default(),
             },
@@ -311,7 +312,7 @@ impl<'a> IRBuilder<'a> {
     pub fn row_index(self, name: Arc<str>, offset: Option<IdxSize>) -> Self {
         let lp = IR::MapFunction {
             input: self.root,
-            function: FunctionNode::RowIndex {
+            function: FunctionIR::RowIndex {
                 name,
                 offset,
                 schema: Default::default(),

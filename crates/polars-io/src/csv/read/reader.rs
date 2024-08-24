@@ -114,11 +114,7 @@ impl CsvReadOptions {
 }
 
 impl<R: MmapBytesReader> CsvReader<R> {
-    fn core_reader(
-        &mut self,
-        schema: Option<SchemaRef>,
-        to_cast: Vec<Field>,
-    ) -> PolarsResult<CoreReader> {
+    fn core_reader(&mut self) -> PolarsResult<CoreReader> {
         let reader_bytes = get_reader_bytes(&mut self.reader)?;
 
         let parse_options = self.options.get_parse_options();
@@ -136,7 +132,7 @@ impl<R: MmapBytesReader> CsvReader<R> {
             self.options.columns.clone(),
             parse_options.encoding,
             self.options.n_threads,
-            schema,
+            self.options.schema_overwrite.clone(),
             self.options.dtype_overwrite.clone(),
             self.options.sample_size,
             self.options.chunk_size,
@@ -147,7 +143,7 @@ impl<R: MmapBytesReader> CsvReader<R> {
             parse_options.null_values.clone(),
             parse_options.missing_is_null,
             self.predicate.clone(),
-            to_cast,
+            self.options.fields_to_cast.clone(),
             self.options.skip_rows_after_header,
             self.options.row_index.clone(),
             parse_options.try_parse_dates,
@@ -161,70 +157,62 @@ impl<R: MmapBytesReader> CsvReader<R> {
     // * Move this step outside of the reader so that we don't do it multiple times
     //   when we read a file list.
     // * See if we can avoid constructing a filtered schema.
-    fn prepare_schema_overwrite(
-        &self,
-        overwriting_schema: &Schema,
-    ) -> PolarsResult<(Schema, Vec<Field>, bool)> {
+    fn prepare_schema(&mut self) -> PolarsResult<bool> {
         // This branch we check if there are dtypes we cannot parse.
         // We only support a few dtypes in the parser and later cast to the required dtype
-        let mut to_cast = Vec::with_capacity(overwriting_schema.len());
-
         let mut _has_categorical = false;
-        let mut _err: Option<PolarsError> = None;
 
-        #[allow(unused_mut)]
-        let schema = overwriting_schema
-            .iter_fields()
-            .filter_map(|mut fld| {
-                use DataType::*;
-                match fld.data_type() {
-                    Time => {
-                        to_cast.push(fld);
-                        // let inference decide the column type
-                        None
-                    },
-                    #[cfg(feature = "dtype-categorical")]
-                    Categorical(_, _) => {
-                        _has_categorical = true;
-                        Some(fld)
-                    },
-                    #[cfg(feature = "dtype-decimal")]
-                    Decimal(precision, scale) => match (precision, scale) {
-                        (_, Some(_)) => {
-                            to_cast.push(fld.clone());
+        let mut process_schema = |schema: &Schema| {
+            schema
+                .iter_fields()
+                .map(|mut fld| {
+                    use DataType::*;
+
+                    match fld.data_type() {
+                        Time => {
+                            self.options.fields_to_cast.push(fld.clone());
                             fld.coerce(String);
-                            Some(fld)
+                            Ok(fld)
                         },
-                        _ => {
-                            _err = Some(PolarsError::ComputeError(
+                        #[cfg(feature = "dtype-categorical")]
+                        Categorical(_, _) => {
+                            _has_categorical = true;
+                            Ok(fld)
+                        },
+                        #[cfg(feature = "dtype-decimal")]
+                        Decimal(precision, scale) => match (precision, scale) {
+                            (_, Some(_)) => {
+                                self.options.fields_to_cast.push(fld.clone());
+                                fld.coerce(String);
+                                Ok(fld)
+                            },
+                            _ => Err(PolarsError::ComputeError(
                                 "'scale' must be set when reading csv column as Decimal".into(),
-                            ));
-                            None
+                            )),
                         },
-                    },
-                    _ => Some(fld),
-                }
-            })
-            .collect::<Schema>();
+                        _ => Ok(fld),
+                    }
+                })
+                .collect::<PolarsResult<Schema>>()
+        };
 
-        if let Some(err) = _err {
-            Err(err)
-        } else {
-            Ok((schema, to_cast, _has_categorical))
+        if let Some(schema) = self.options.schema.as_ref() {
+            self.options.schema = Some(Arc::new(process_schema(schema)?));
+        } else if let Some(schema) = self.options.schema_overwrite.as_ref() {
+            self.options.schema_overwrite = Some(Arc::new(process_schema(schema)?));
         }
+
+        Ok(_has_categorical)
     }
 
     pub fn batched_borrowed(&mut self) -> PolarsResult<BatchedCsvReader> {
-        if let Some(schema) = self.options.schema_overwrite.as_deref() {
-            let (schema, to_cast, has_cat) = self.prepare_schema_overwrite(schema)?;
-            let schema = Arc::new(schema);
+        let has_cat = match self.options.schema_overwrite.as_deref() {
+            Some(_) => self.prepare_schema()?,
+            None => false,
+        };
 
-            let csv_reader = self.core_reader(Some(schema), to_cast)?;
-            csv_reader.batched(has_cat)
-        } else {
-            let csv_reader = self.core_reader(self.options.schema.clone(), vec![])?;
-            csv_reader.batched(false)
-        }
+        let csv_reader = self.core_reader()?;
+        csv_reader.batched(has_cat)
     }
 }
 
@@ -281,39 +269,17 @@ where
         let schema_overwrite = self.options.schema_overwrite.clone();
         let low_memory = self.options.low_memory;
 
+        let _has_cat = self.prepare_schema()?;
+
         #[cfg(feature = "dtype-categorical")]
-        let mut _cat_lock = None;
-
-        let mut df = if let Some(schema) = schema_overwrite.as_deref() {
-            let (schema, to_cast, _has_cat) = self.prepare_schema_overwrite(schema)?;
-
-            #[cfg(feature = "dtype-categorical")]
-            if _has_cat {
-                _cat_lock = Some(polars_core::StringCacheHolder::hold())
-            }
-
-            let mut csv_reader = self.core_reader(Some(Arc::new(schema)), to_cast)?;
-            csv_reader.as_df()?
+        let mut _cat_lock = if _has_cat {
+            Some(polars_core::StringCacheHolder::hold())
         } else {
-            #[cfg(feature = "dtype-categorical")]
-            {
-                let has_cat = self
-                    .options
-                    .schema
-                    .clone()
-                    .map(|schema| {
-                        schema
-                            .iter_dtypes()
-                            .any(|dtype| matches!(dtype, DataType::Categorical(_, _)))
-                    })
-                    .unwrap_or(false);
-                if has_cat {
-                    _cat_lock = Some(polars_core::StringCacheHolder::hold())
-                }
-            }
-            let mut csv_reader = self.core_reader(self.options.schema.clone(), vec![])?;
-            csv_reader.as_df()?
+            None
         };
+
+        let mut csv_reader = self.core_reader()?;
+        let mut df = csv_reader.as_df()?;
 
         // Important that this rechunk is never done in parallel.
         // As that leads to great memory overhead.

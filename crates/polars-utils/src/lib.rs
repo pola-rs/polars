@@ -34,7 +34,7 @@ pub use functions::*;
 pub mod aliases;
 pub mod fixedringbuffer;
 pub mod fmt;
-pub mod iter;
+pub mod itertools;
 pub mod macros;
 pub mod vec;
 #[cfg(target_family = "wasm")]

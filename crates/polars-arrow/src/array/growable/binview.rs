@@ -1,6 +1,9 @@
 use std::ops::Deref;
 use std::sync::Arc;
 
+use polars_utils::aliases::{InitHashMaps, PlHashSet};
+use polars_utils::itertools::Itertools;
+
 use super::Growable;
 use crate::array::binview::{BinaryViewArrayGeneric, ViewType};
 use crate::array::growable::utils::{extend_validity, extend_validity_copies, prepare_validity};
@@ -8,7 +11,6 @@ use crate::array::{Array, MutableBinaryViewArray, View};
 use crate::bitmap::{Bitmap, MutableBitmap};
 use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
-use crate::legacy::utils::CustomIterTools;
 
 /// Concrete [`Growable`] for the [`BinaryArray`].
 pub struct GrowableBinaryViewArray<'a, T: ViewType + ?Sized> {
@@ -18,6 +20,7 @@ pub struct GrowableBinaryViewArray<'a, T: ViewType + ?Sized> {
     inner: MutableBinaryViewArray<T>,
     same_buffers: Option<&'a Arc<[Buffer<u8>]>>,
     total_same_buffers_len: usize, // Only valid if same_buffers is Some.
+    has_duplicate_buffers: bool,
 }
 
 impl<'a, T: ViewType + ?Sized> GrowableBinaryViewArray<'a, T> {
@@ -51,6 +54,14 @@ impl<'a, T: ViewType + ?Sized> GrowableBinaryViewArray<'a, T> {
             .then(|| arrays[0].total_buffer_len())
             .unwrap_or_default();
 
+        let mut duplicates = PlHashSet::new();
+        let mut has_duplicate_buffers = false;
+        for arr in arrays.iter() {
+            if !duplicates.insert(arr.data_buffers().as_ptr()) {
+                has_duplicate_buffers = true;
+                break;
+            }
+        }
         Self {
             arrays,
             data_type,
@@ -58,6 +69,7 @@ impl<'a, T: ViewType + ?Sized> GrowableBinaryViewArray<'a, T> {
             inner: MutableBinaryViewArray::<T>::with_capacity(capacity),
             same_buffers,
             total_same_buffers_len,
+            has_duplicate_buffers,
         }
     }
 
@@ -97,9 +109,12 @@ impl<'a, T: ViewType + ?Sized> Growable<'a> for GrowableBinaryViewArray<'a, T> {
                 .views
                 .extend(views_iter.inspect(|v| total_len += v.length as usize));
             self.inner.total_bytes_len += total_len;
+        } else if self.has_duplicate_buffers {
+            self.inner
+                .extend_non_null_views_unchecked_dedupe(views_iter, local_buffers.deref());
         } else {
             self.inner
-                .extend_non_null_views_trusted_len_unchecked(views_iter, local_buffers.deref());
+                .extend_non_null_views_unchecked(views_iter, local_buffers.deref());
         }
     }
 

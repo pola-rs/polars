@@ -1,5 +1,5 @@
-use arrow::array::{Array, DictionaryArray, DictionaryKey, MutablePrimitiveArray, PrimitiveArray};
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::array::{DictionaryArray, DictionaryKey, PrimitiveArray};
+use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
 use polars_error::PolarsResult;
@@ -11,9 +11,8 @@ use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
 use crate::parquet::types::{decode, NativeType as ParquetNativeType};
 use crate::read::deserialize::utils::array_chunks::ArrayChunks;
-use crate::read::deserialize::utils::filter::Filter;
 use crate::read::deserialize::utils::{
-    BatchableCollector, Decoder, PageValidity, TranslatedHybridRle,
+    freeze_validity, BatchableCollector, Decoder, PageValidity, TranslatedHybridRle,
 };
 
 #[derive(Debug)]
@@ -148,6 +147,11 @@ where
         target.resize(target.len() + n, T::default());
         Ok(())
     }
+
+    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
+        self.chunks.skip_in_place(n);
+        Ok(())
+    }
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -172,8 +176,7 @@ where
         page: &'a DataPage,
         dict: Option<&'a <PrimitiveDecoder<P, T, D> as utils::Decoder>::Dict>,
         _page_validity: Option<&PageValidity<'a>>,
-        _filter: Option<&Filter<'a>>,
-    ) -> PolarsResult<Self> {
+    ) -> ParquetResult<Self> {
         match (page.encoding(), dict) {
             (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict)) => {
                 Ok(Self::Dictionary(ValuesDictionary::try_new(page, dict)?))
@@ -208,7 +211,7 @@ where
         }
 
         match self {
-            Self::Plain(t) => _ = t.nth(n - 1),
+            Self::Plain(t) => t.skip_in_place(n),
             Self::Dictionary(t) => t.values.skip_in_place(n)?,
             Self::ByteStreamSplit(t) => _ = t.iter_converted(|_| ()).nth(n - 1),
         }
@@ -347,6 +350,7 @@ where
     type Translation<'a> = StateTranslation<'a, P, T>;
     type Dict = Vec<T>;
     type DecodedState = (Vec<T>, MutableBitmap);
+    type Output = PrimitiveArray<T>;
 
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState {
         (
@@ -428,36 +432,34 @@ where
     fn finalize(
         &self,
         data_type: ArrowDataType,
+        _dict: Option<Self::Dict>,
         (values, validity): Self::DecodedState,
-    ) -> ParquetResult<Box<dyn Array>> {
-        let validity = if validity.is_empty() {
-            None
-        } else {
-            Some(validity)
-        };
-
-        Ok(Box::new(
-            MutablePrimitiveArray::try_new(data_type, values, validity)
-                .unwrap()
-                .freeze(),
-        ))
+    ) -> ParquetResult<Self::Output> {
+        let validity = freeze_validity(validity);
+        Ok(PrimitiveArray::try_new(data_type, values.into(), validity).unwrap())
     }
+}
 
+impl<P, T, D> utils::DictDecodable for PrimitiveDecoder<P, T, D>
+where
+    T: NativeType,
+    P: ParquetNativeType,
+    D: DecoderFunction<P, T>,
+{
     fn finalize_dict_array<K: DictionaryKey>(
         &self,
         data_type: ArrowDataType,
         dict: Self::Dict,
-        (values, validity): (Vec<K>, Option<Bitmap>),
+        keys: PrimitiveArray<K>,
     ) -> ParquetResult<DictionaryArray<K>> {
         let value_type = match &data_type {
             ArrowDataType::Dictionary(_, value, _) => value.as_ref().clone(),
             _ => T::PRIMITIVE.into(),
         };
 
-        let array = PrimitiveArray::<K>::new(K::PRIMITIVE.into(), values.into(), validity);
         let dict = Box::new(PrimitiveArray::new(value_type, dict.into(), None));
 
-        Ok(DictionaryArray::try_new(data_type, array, dict).unwrap())
+        Ok(DictionaryArray::try_new(data_type, keys, dict).unwrap())
     }
 }
 

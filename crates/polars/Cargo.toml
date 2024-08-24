@@ -190,7 +190,7 @@ moment = ["polars-ops/moment", "polars-lazy?/moment"]
 partition_by = ["polars-core/partition_by"]
 pct_change = ["polars-ops/pct_change", "polars-lazy?/pct_change"]
 peaks = ["polars-lazy/peaks"]
-pivot = ["polars-lazy?/pivot"]
+pivot = ["polars-lazy?/pivot", "polars-ops/pivot", "dtype-struct", "rows"]
 product = ["polars-core/product"]
 propagate_nans = ["polars-lazy?/propagate_nans"]
 range = ["polars-lazy?/range"]
@@ -228,6 +228,7 @@ zip_with = ["polars-core/zip_with"]
 
 bigidx = ["polars-core/bigidx", "polars-lazy?/bigidx", "polars-ops/big_idx"]
 polars_cloud = ["polars-lazy?/polars_cloud"]
+ir_serde = ["polars-plan/ir_serde"]
 
 test = [
   "lazy",

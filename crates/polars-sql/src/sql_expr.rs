@@ -907,9 +907,10 @@ impl SQLExprVisitor<'_> {
     ///
     /// See [SQLValue] and [LiteralValue] for more details
     fn visit_literal(&self, value: &SQLValue) -> PolarsResult<Expr> {
+        // note: double-quoted strings will be parsed as identifiers, not literals
         Ok(match value {
             SQLValue::Boolean(b) => lit(*b),
-            SQLValue::DoubleQuotedString(s) => lit(s.clone()),
+            SQLValue::DollarQuotedString(s) => lit(s.value.clone()),
             #[cfg(feature = "binary_encoding")]
             SQLValue::HexStringLiteral(x) => {
                 if x.len() % 2 != 0 {
@@ -929,12 +930,14 @@ impl SQLExprVisitor<'_> {
             },
             SQLValue::SingleQuotedByteStringLiteral(b) => {
                 // note: for PostgreSQL this represents a BIT string literal (eg: b'10101') not a BYTE string
-                // literal (see https://www.postgresql.org/docs/current/datatype-bit.html), but sqlparser
+                // literal (see https://www.postgresql.org/docs/current/datatype-bit.html), but sqlparser-rs
                 // patterned the token name after BigQuery (where b'str' really IS a byte string)
                 bitstring_to_bytes_literal(b)?
             },
             SQLValue::SingleQuotedString(s) => lit(s.clone()),
-            other => polars_bail!(SQLInterface: "value {:?} is not supported", other),
+            other => {
+                polars_bail!(SQLInterface: "value {:?} is not a supported literal type", other)
+            },
         })
     }
 
@@ -946,6 +949,14 @@ impl SQLExprVisitor<'_> {
     ) -> PolarsResult<AnyValue> {
         Ok(match value {
             SQLValue::Boolean(b) => AnyValue::Boolean(*b),
+            SQLValue::DollarQuotedString(s) => AnyValue::StringOwned(s.clone().value.into()),
+            #[cfg(feature = "binary_encoding")]
+            SQLValue::HexStringLiteral(x) => {
+                if x.len() % 2 != 0 {
+                    polars_bail!(SQLSyntax: "hex string literal must have an even number of digits; found '{}'", x)
+                };
+                AnyValue::BinaryOwned(hex::decode(x.clone()).unwrap())
+            },
             SQLValue::Null => AnyValue::Null,
             SQLValue::Number(s, _) => {
                 let negate = match op {
@@ -968,13 +979,6 @@ impl SQLExprVisitor<'_> {
                 }
                 .map_err(|_| polars_err!(SQLInterface: "cannot parse literal: {:?}", s))?
             },
-            #[cfg(feature = "binary_encoding")]
-            SQLValue::HexStringLiteral(x) => {
-                if x.len() % 2 != 0 {
-                    polars_bail!(SQLSyntax: "hex string literal must have an even number of digits; found '{}'", x)
-                };
-                AnyValue::BinaryOwned(hex::decode(x.clone()).unwrap())
-            },
             SQLValue::SingleQuotedByteStringLiteral(b) => {
                 // note: for PostgreSQL this represents a BIT literal (eg: b'10101') not BYTE
                 let bytes_literal = bitstring_to_bytes_literal(b)?;
@@ -985,9 +989,7 @@ impl SQLExprVisitor<'_> {
                     },
                 }
             },
-            SQLValue::SingleQuotedString(s) | SQLValue::DoubleQuotedString(s) => {
-                AnyValue::StringOwned(s.into())
-            },
+            SQLValue::SingleQuotedString(s) => AnyValue::StringOwned(s.into()),
             other => polars_bail!(SQLInterface: "value {:?} is not currently supported", other),
         })
     }

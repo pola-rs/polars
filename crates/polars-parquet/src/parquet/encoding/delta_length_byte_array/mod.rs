@@ -1,8 +1,8 @@
 mod decoder;
 mod encoder;
 
-pub use decoder::Decoder;
-pub use encoder::encode;
+pub(crate) use decoder::Decoder;
+pub(crate) use encoder::encode;
 
 #[cfg(test)]
 mod tests {
@@ -19,9 +19,18 @@ mod tests {
         let mut iter = Decoder::try_new(&buffer)?;
 
         let result = iter.by_ref().collect::<Result<Vec<_>, _>>()?;
-        assert_eq!(result, vec![2, 3, 1, 2, 1]);
+        assert_eq!(
+            result,
+            vec![
+                b"aa".as_ref(),
+                b"bbb".as_ref(),
+                b"a".as_ref(),
+                b"aa".as_ref(),
+                b"b".as_ref()
+            ]
+        );
 
-        let result = iter.values();
+        let result = iter.values;
         assert_eq!(result, b"aabbbaaab".as_ref());
         Ok(())
     }
@@ -32,8 +41,11 @@ mod tests {
         for i in 0..136 {
             data.push(format!("a{}", i))
         }
-        let expected_values = data.join("");
-        let expected_lengths = data.iter().map(|x| x.len() as i32).collect::<Vec<_>>();
+
+        let expected = data
+            .iter()
+            .map(|v| v.as_bytes().to_vec())
+            .collect::<Vec<_>>();
 
         let mut buffer = vec![];
         encode(data.into_iter(), &mut buffer);
@@ -41,10 +53,8 @@ mod tests {
         let mut iter = Decoder::try_new(&buffer)?;
 
         let result = iter.by_ref().collect::<Result<Vec<_>, _>>()?;
-        assert_eq!(result, expected_lengths);
+        assert_eq!(result, expected);
 
-        let result = iter.into_values();
-        assert_eq!(result, expected_values.as_bytes());
         Ok(())
     }
 }

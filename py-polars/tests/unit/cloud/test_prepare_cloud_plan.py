@@ -9,7 +9,6 @@ from polars._utils.cloud import prepare_cloud_plan
 from polars.exceptions import InvalidOperationError
 
 CLOUD_SOURCE = "s3://my-nonexistent-bucket/dataset"
-CLOUD_SINK = "s3://my-nonexistent-bucket/result"
 
 
 @pytest.mark.parametrize(
@@ -22,37 +21,20 @@ CLOUD_SINK = "s3://my-nonexistent-bucket/result"
     ],
 )
 def test_prepare_cloud_plan(lf: pl.LazyFrame) -> None:
-    result = prepare_cloud_plan(lf, CLOUD_SINK)
+    result = prepare_cloud_plan(lf)
     assert isinstance(result, bytes)
 
     deserialized = pl.LazyFrame.deserialize(BytesIO(result))
     assert isinstance(deserialized, pl.LazyFrame)
 
 
-def test_prepare_cloud_plan_sink_added() -> None:
-    lf = pl.LazyFrame({"a": [1, 2], "b": [3, 4]})
-
-    result = prepare_cloud_plan(lf, CLOUD_SINK)
-
-    deserialized = pl.LazyFrame.deserialize(BytesIO(result))
-    assert "SINK (cloud)" in deserialized.explain()
-
-
-def test_prepare_cloud_plan_invalid_sink_uri() -> None:
-    lf = pl.LazyFrame({"a": [1, 2], "b": [3, 4]})
-    local_path = "~/local/result.parquet"
-
-    with pytest.raises(InvalidOperationError, match="non-cloud paths not supported"):
-        prepare_cloud_plan(lf, local_path)
-
-
 def test_prepare_cloud_plan_optimization_toggle() -> None:
     lf = pl.LazyFrame({"a": [1, 2], "b": [3, 4]})
 
     with pytest.raises(TypeError, match="unexpected keyword argument"):
-        prepare_cloud_plan(lf, CLOUD_SINK, nonexistent_optimization=False)
+        prepare_cloud_plan(lf, nonexistent_optimization=False)
 
-    result = prepare_cloud_plan(lf, CLOUD_SINK, projection_pushdown=False)
+    result = prepare_cloud_plan(lf, projection_pushdown=False)
     assert isinstance(result, bytes)
 
     # TODO: How to check that this optimization was toggled correctly?
@@ -92,7 +74,7 @@ def test_prepare_cloud_plan_fail_on_udf(lf: pl.LazyFrame) -> None:
         InvalidOperationError,
         match="logical plan ineligible for execution on Polars Cloud",
     ):
-        prepare_cloud_plan(lf, CLOUD_SINK)
+        prepare_cloud_plan(lf)
 
 
 @pytest.mark.parametrize(
@@ -109,7 +91,7 @@ def test_prepare_cloud_plan_fail_on_local_data_source(lf: pl.LazyFrame) -> None:
         InvalidOperationError,
         match="logical plan ineligible for execution on Polars Cloud",
     ):
-        prepare_cloud_plan(lf, CLOUD_SINK)
+        prepare_cloud_plan(lf)
 
 
 @pytest.mark.write_disk()
@@ -124,4 +106,4 @@ def test_prepare_cloud_plan_fail_on_python_scan(tmp_path: Path) -> None:
         InvalidOperationError,
         match="logical plan ineligible for execution on Polars Cloud",
     ):
-        prepare_cloud_plan(lf, CLOUD_SINK)
+        prepare_cloud_plan(lf)

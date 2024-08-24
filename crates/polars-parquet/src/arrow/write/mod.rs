@@ -71,6 +71,13 @@ impl Default for StatisticsOptions {
     }
 }
 
+/// Options to encode an array
+#[derive(Clone, Copy)]
+pub enum EncodeNullability {
+    Required,
+    Optional,
+}
+
 /// Currently supported options to write to parquet
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WriteOptions {
@@ -128,6 +135,20 @@ impl StatisticsOptions {
 impl WriteOptions {
     pub fn has_statistics(&self) -> bool {
         !self.statistics.is_empty()
+    }
+}
+
+impl EncodeNullability {
+    const fn new(is_optional: bool) -> Self {
+        if is_optional {
+            Self::Optional
+        } else {
+            Self::Required
+        }
+    }
+
+    fn is_optional(self) -> bool {
+        matches!(self, Self::Optional)
     }
 }
 
@@ -361,9 +382,12 @@ pub fn array_to_page_simple(
     let data_type = array.data_type();
 
     match data_type.to_logical_type() {
-        ArrowDataType::Boolean => {
-            boolean::array_to_page(array.as_any().downcast_ref().unwrap(), options, type_)
-        },
+        ArrowDataType::Boolean => boolean::array_to_page(
+            array.as_any().downcast_ref().unwrap(),
+            options,
+            type_,
+            encoding,
+        ),
         // casts below MUST match the casts done at the metadata (field -> parquet type).
         ArrowDataType::UInt8 => {
             return primitive::array_to_page_integer::<u8, i32>(

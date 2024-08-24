@@ -1,4 +1,3 @@
-#![feature(vec_into_raw_parts)]
 #![allow(clippy::nonstandard_macro_braces)] // Needed because clippy does not understand proc macro of PyO3
 #![allow(clippy::transmute_undefined_repr)]
 #![allow(non_local_definitions)]
@@ -11,55 +10,29 @@ mod build {
 }
 
 mod allocator;
-#[cfg(feature = "csv")]
-mod batched_csv;
-#[cfg(feature = "polars_cloud")]
-mod cloud;
-mod conversion;
-mod dataframe;
-mod datatypes;
-mod error;
-mod exceptions;
-mod expr;
-mod file;
-mod functions;
-mod gil_once_cell;
-mod interop;
-mod lazyframe;
-mod lazygroupby;
-mod map;
 #[cfg(debug_assertions)]
 mod memory;
-#[cfg(feature = "object")]
-mod object;
-#[cfg(feature = "object")]
-mod on_startup;
-mod prelude;
-mod py_modules;
-mod series;
-#[cfg(feature = "sql")]
-mod sql;
-mod utils;
 
+use allocator::create_allocator_capsule;
+#[cfg(feature = "csv")]
+use polars_python::batched_csv::PyBatchedCsv;
+#[cfg(feature = "polars_cloud")]
+use polars_python::cloud;
+use polars_python::dataframe::PyDataFrame;
+use polars_python::expr::PyExpr;
+use polars_python::functions::PyStringCacheHolder;
+use polars_python::lazyframe::{PyInProcessQuery, PyLazyFrame};
+use polars_python::lazygroupby::PyLazyGroupBy;
+use polars_python::series::PySeries;
+#[cfg(feature = "sql")]
+use polars_python::sql::PySQLContext;
+use polars_python::{exceptions, functions};
 use pyo3::prelude::*;
 use pyo3::{wrap_pyfunction, wrap_pymodule};
 
-use crate::allocator::create_allocator_capsule;
-#[cfg(feature = "csv")]
-use crate::batched_csv::PyBatchedCsv;
-use crate::conversion::Wrap;
-use crate::dataframe::PyDataFrame;
-use crate::expr::PyExpr;
-use crate::functions::PyStringCacheHolder;
-use crate::lazyframe::{PyInProcessQuery, PyLazyFrame};
-use crate::lazygroupby::PyLazyGroupBy;
-use crate::series::PySeries;
-#[cfg(feature = "sql")]
-use crate::sql::PySQLContext;
-
 #[pymodule]
 fn _ir_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
-    use crate::lazyframe::visitor::nodes::*;
+    use polars_python::lazyframe::visitor::nodes::*;
     m.add_class::<PythonScan>().unwrap();
     m.add_class::<Slice>().unwrap();
     m.add_class::<Filter>().unwrap();
@@ -84,8 +57,8 @@ fn _ir_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
 
 #[pymodule]
 fn _expr_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
-    use crate::lazyframe::visitor::expr_nodes::*;
-    use crate::lazyframe::PyExprIR;
+    use polars_python::lazyframe::visit::PyExprIR;
+    use polars_python::lazyframe::visitor::expr_nodes::*;
     // Expressions
     m.add_class::<PyExprIR>().unwrap();
     m.add_class::<Alias>().unwrap();
@@ -134,6 +107,7 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_wrapped(wrap_pymodule!(_ir_nodes))?;
     // Expr objects
     m.add_wrapped(wrap_pymodule!(_expr_nodes))?;
+
     // Functions - eager
     m.add_wrapped(wrap_pyfunction!(functions::concat_df))
         .unwrap();
@@ -300,7 +274,7 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(functions::dtype_str_repr))
         .unwrap();
     #[cfg(feature = "object")]
-    m.add_wrapped(wrap_pyfunction!(on_startup::__register_startup_deps))
+    m.add_wrapped(wrap_pyfunction!(functions::__register_startup_deps))
         .unwrap();
 
     // Functions - random

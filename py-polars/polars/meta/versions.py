@@ -44,9 +44,9 @@ def show_versions() -> None:
     # module) as a micro-optimization for polars' initial import
     import platform
 
-    deps = _get_dependency_info()
+    deps = _get_dependency_list()
     core_properties = ("Polars", "Index type", "Platform", "Python")
-    keylen = max(len(x) for x in [*core_properties, *deps.keys()]) + 1
+    keylen = max(len(x) for x in [*core_properties, *deps]) + 1
 
     print("--------Version info---------")
     print(f"{'Polars:':{keylen}s} {get_polars_version()}")
@@ -55,13 +55,14 @@ def show_versions() -> None:
     print(f"{'Python:':{keylen}s} {sys.version}")
 
     print("\n----Optional dependencies----")
-    for name, v in deps.items():
-        print(f"{name:{keylen}s} {v}")
+    for name in deps:
+        print(f"{name:{keylen}s} ", end="", flush=True)
+        print(_get_dependency_version(name))
 
 
-def _get_dependency_info() -> dict[str, str]:
-    # see the list of dependencies in pyproject.toml
-    opt_deps = [
+# See the list of dependencies in pyproject.toml.
+def _get_dependency_list() -> list[str]:
+    return [
         "adbc_driver_manager",
         "cloudpickle",
         "connectorx",
@@ -84,11 +85,10 @@ def _get_dependency_info() -> dict[str, str]:
         "xlsx2csv",
         "xlsxwriter",
     ]
-    return {f"{name}:": _get_dependency_version(name) for name in opt_deps}
 
 
 def _get_dependency_version(dep_name: str) -> str:
-    # note: we import 'importlib' here as a significiant optimisation for initial import
+    # note: we import 'importlib' here as a significant optimisation for initial import
     import importlib
     import importlib.metadata
 

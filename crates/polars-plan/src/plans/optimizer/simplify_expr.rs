@@ -631,7 +631,7 @@ fn test_expr_to_aexp() {
 
     let expr = Expr::Literal(LiteralValue::Int8(0));
     let mut arena = Arena::new();
-    let aexpr = to_aexpr(expr, &mut arena);
+    let aexpr = to_aexpr(expr, &mut arena).unwrap();
     assert_eq!(aexpr, Node(0));
     assert!(matches!(
         arena.get(aexpr),

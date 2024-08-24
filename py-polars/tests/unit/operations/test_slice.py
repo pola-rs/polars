@@ -243,3 +243,33 @@ def test_double_sort_slice_pushdown_15779() -> None:
     assert (
         pl.LazyFrame({"foo": [1, 2]}).sort("foo").head(0).sort("foo").collect()
     ).shape == (0, 1)
+
+
+def test_slice_pushdown_simple_projection_18288() -> None:
+    lf = pl.DataFrame({"col": ["0", "notanumber"]}).lazy()
+    lf = lf.with_columns([pl.col("col").cast(pl.Int64)])
+    lf = lf.with_columns([pl.col("col"), pl.lit(None)])
+    assert lf.head(1).collect().to_dict(as_series=False) == {
+        "col": [0],
+        "literal": [None],
+    }
+
+
+def test_group_by_slice_all_keys() -> None:
+    df = pl.DataFrame(
+        {
+            "a": ["Tom", "Nick", "Marry", "Krish", "Jack", None],
+            "b": [
+                "2020-01-01",
+                "2020-01-02",
+                "2020-01-03",
+                "2020-01-04",
+                "2020-01-05",
+                None,
+            ],
+            "c": [5, 6, 6, 7, 8, 5],
+        }
+    )
+
+    gb = df.group_by(["a", "b", "c"], maintain_order=True)
+    assert_frame_equal(gb.tail(1), gb.head(1))

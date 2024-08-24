@@ -46,7 +46,7 @@ impl MorselSeq {
 /// A token indicating which source this morsel originated from, and a way to
 /// pass information/signals to it. Currently it's only used to request a source
 /// to stop with passing new morsels this execution phase.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SourceToken {
     stop: Arc<AtomicBool>,
 }
@@ -67,6 +67,7 @@ impl SourceToken {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Morsel {
     /// The data contained in this morsel.
     df: DataFrame,
@@ -150,5 +151,9 @@ impl Morsel {
 
     pub fn source_token(&self) -> &SourceToken {
         &self.source_token
+    }
+
+    pub fn replace_source_token(&mut self, new_token: SourceToken) -> SourceToken {
+        core::mem::replace(&mut self.source_token, new_token)
     }
 }

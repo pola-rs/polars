@@ -1,8 +1,8 @@
 use std::io::Read;
 
-use ahash::AHashMap;
 use arrow_format::ipc::planus::ReadAsRoot;
 use polars_error::{polars_bail, polars_err, PolarsError, PolarsResult};
+use polars_utils::aliases::PlHashMap;
 
 use super::super::CONTINUATION_MARKER;
 use super::common::*;
@@ -93,7 +93,7 @@ fn read_next<R: Read>(
     dictionaries: &mut Dictionaries,
     message_buffer: &mut Vec<u8>,
     data_buffer: &mut Vec<u8>,
-    projection: &Option<(Vec<usize>, AHashMap<usize, usize>, ArrowSchema)>,
+    projection: &Option<(Vec<usize>, PlHashMap<usize, usize>, ArrowSchema)>,
     scratch: &mut Vec<u8>,
 ) -> PolarsResult<Option<StreamState>> {
     // determine metadata length
@@ -238,7 +238,7 @@ pub struct StreamReader<R: Read> {
     finished: bool,
     data_buffer: Vec<u8>,
     message_buffer: Vec<u8>,
-    projection: Option<(Vec<usize>, AHashMap<usize, usize>, ArrowSchema)>,
+    projection: Option<(Vec<usize>, PlHashMap<usize, usize>, ArrowSchema)>,
     scratch: Vec<u8>,
 }
 

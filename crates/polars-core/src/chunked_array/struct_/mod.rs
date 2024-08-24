@@ -5,9 +5,9 @@ use std::fmt::Write;
 use arrow::array::StructArray;
 use arrow::bitmap::Bitmap;
 use arrow::compute::utils::combine_validities_and;
-use arrow::legacy::utils::CustomIterTools;
 use polars_error::{polars_ensure, PolarsResult};
 use polars_utils::aliases::PlHashMap;
+use polars_utils::itertools::Itertools;
 
 use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::ChunkedArray;

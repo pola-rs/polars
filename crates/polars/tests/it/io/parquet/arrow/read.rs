@@ -3,9 +3,12 @@ use std::path::PathBuf;
 use polars_parquet::arrow::read::*;
 
 use super::*;
+use crate::io::parquet::read::file::FileReader;
 #[cfg(feature = "parquet")]
 #[test]
 fn all_types() -> PolarsResult<()> {
+    use crate::io::parquet::read::file::FileReader;
+
     let dir = env!("CARGO_MANIFEST_DIR");
     let path = PathBuf::from(dir).join("../../docs/data/alltypes_plain.parquet");
 
@@ -13,7 +16,7 @@ fn all_types() -> PolarsResult<()> {
 
     let metadata = read_metadata(&mut reader)?;
     let schema = infer_schema(&metadata)?;
-    let reader = FileReader::new(reader, metadata.row_groups, schema, None, None);
+    let reader = FileReader::new(reader, metadata.row_groups, schema, None);
 
     let batches = reader.collect::<PolarsResult<Vec<_>>>()?;
     assert_eq!(batches.len(), 1);
@@ -49,6 +52,8 @@ fn all_types() -> PolarsResult<()> {
 #[test]
 fn all_types_chunked() -> PolarsResult<()> {
     // this has one batch with 8 elements
+
+    use crate::io::parquet::read::file::FileReader;
     let dir = env!("CARGO_MANIFEST_DIR");
     let path = PathBuf::from(dir).join("../../docs/data/alltypes_plain.parquet");
     let mut reader = std::fs::File::open(path)?;
@@ -56,7 +61,7 @@ fn all_types_chunked() -> PolarsResult<()> {
     let metadata = read_metadata(&mut reader)?;
     let schema = infer_schema(&metadata)?;
     // chunk it in 5 (so, (5,3))
-    let reader = FileReader::new(reader, metadata.row_groups, schema, None, None);
+    let reader = FileReader::new(reader, metadata.row_groups, schema, None);
 
     let batches = reader.collect::<PolarsResult<Vec<_>>>()?;
     assert_eq!(batches.len(), 1);
@@ -128,7 +133,7 @@ fn read_int96_timestamps() -> PolarsResult<()> {
             )],
             metadata: BTreeMap::new(),
         };
-        let reader = FileReader::new(reader, metadata.row_groups, schema, None, None);
+        let reader = FileReader::new(reader, metadata.row_groups, schema, None);
         reader.collect::<PolarsResult<Vec<_>>>()
     };
 

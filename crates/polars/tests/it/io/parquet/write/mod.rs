@@ -1,5 +1,4 @@
 mod binary;
-mod indexes;
 mod primitive;
 mod sidecar;
 
@@ -16,8 +15,6 @@ use polars_parquet::parquet::metadata::{Descriptor, SchemaDescriptor};
 use polars_parquet::parquet::page::Page;
 use polars_parquet::parquet::schema::types::{ParquetType, PhysicalType};
 use polars_parquet::parquet::statistics::Statistics;
-#[cfg(feature = "async")]
-use polars_parquet::parquet::write::FileStreamer;
 use polars_parquet::parquet::write::{
     Compressor, DynIter, DynStreamingIterator, FileWriter, Version, WriteOptions,
 };
@@ -47,17 +44,6 @@ pub fn array_to_page(
 fn read_column<R: Read + Seek>(reader: &mut R) -> ParquetResult<(Array, Option<Statistics>)> {
     let memreader = MemReader::from_reader(reader)?;
     let (a, statistics) = super::read::read_column(memreader, 0, "col")?;
-    Ok((a, statistics))
-}
-
-#[cfg(feature = "async")]
-#[allow(dead_code)]
-async fn read_column_async<
-    R: futures::AsyncRead + futures::AsyncSeek + Send + std::marker::Unpin,
->(
-    reader: &mut R,
-) -> ParquetResult<(Array, Option<Statistics>)> {
-    let (a, statistics) = super::read::read_column_async(reader, 0, "col").await?;
     Ok((a, statistics))
 }
 
@@ -231,60 +217,6 @@ fn basic() -> ParquetResult<()> {
         expected
     );
 
-    Ok(())
-}
-
-#[cfg(feature = "async")]
-#[allow(dead_code)]
-async fn test_column_async(column: &str, compression: CompressionOptions) -> ParquetResult<()> {
-    let array = alltypes_plain(column);
-
-    let options = WriteOptions {
-        write_statistics: true,
-        version: Version::V1,
-    };
-
-    // prepare schema
-    let type_ = match array {
-        Array::Int32(_) => PhysicalType::Int32,
-        Array::Int64(_) => PhysicalType::Int64,
-        Array::Int96(_) => PhysicalType::Int96,
-        Array::Float(_) => PhysicalType::Float,
-        Array::Double(_) => PhysicalType::Double,
-        Array::Binary(_) => PhysicalType::ByteArray,
-        _ => todo!(),
-    };
-
-    let schema = SchemaDescriptor::new(
-        "schema".to_string(),
-        vec![ParquetType::from_physical("col".to_string(), type_)],
-    );
-
-    let a = schema.columns();
-
-    let pages = DynStreamingIterator::new(Compressor::new_from_vec(
-        DynIter::new(std::iter::once(array_to_page(
-            &array,
-            &options,
-            &a[0].descriptor,
-        ))),
-        compression,
-        vec![],
-    ));
-    let columns = std::iter::once(Ok(pages));
-
-    let writer = futures::io::Cursor::new(vec![]);
-    let mut writer = FileStreamer::new(writer, schema, options, None);
-
-    writer.write(DynIter::new(columns)).await?;
-    writer.end(None).await?;
-
-    let data = writer.into_inner().into_inner();
-
-    let (result, statistics) = read_column_async(&mut futures::io::Cursor::new(data)).await?;
-    assert_eq!(array, result);
-    let stats = alltypes_statistics(column);
-    assert_eq!(statistics.as_ref(), Some(stats).as_ref());
     Ok(())
 }
 

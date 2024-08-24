@@ -376,7 +376,7 @@ class StringNameSpace:
         self, pattern: str | Expr, *, literal: bool = False, strict: bool = True
     ) -> Series:
         """
-        Check if strings in Series contain a substring that matches a regex.
+        Check if the string contains a substring that matches a pattern.
 
         Parameters
         ----------
@@ -480,11 +480,11 @@ class StringNameSpace:
 
         See Also
         --------
-        contains : Check if string contains a substring that matches a regex.
+        contains : Check if the string contains a substring that matches a pattern.
 
         Examples
         --------
-        >>> s = pl.Series("txt", ["Crab", "Lobster", None, "Crustaceon"])
+        >>> s = pl.Series("txt", ["Crab", "Lobster", None, "Crustacean"])
 
         Find the index of the first substring matching a regex pattern:
 
@@ -535,7 +535,7 @@ class StringNameSpace:
 
         See Also
         --------
-        contains : Check if string contains a substring that matches a regex.
+        contains : Check if the string contains a substring that matches a pattern.
         starts_with : Check if string values start with a substring.
 
         Examples
@@ -562,7 +562,7 @@ class StringNameSpace:
 
         See Also
         --------
-        contains : Check if string contains a substring that matches a regex.
+        contains : Check if the string contains a substring that matches a pattern.
         ends_with : Check if string values end with a substring.
 
         Examples
@@ -1481,7 +1481,7 @@ class StringNameSpace:
 
     def to_lowercase(self) -> Series:
         """
-        Modify the strings to their lowercase equivalent.
+        Modify strings to their lowercase equivalent.
 
         Examples
         --------
@@ -1497,7 +1497,7 @@ class StringNameSpace:
 
     def to_uppercase(self) -> Series:
         """
-        Modify the strings to their uppercase equivalent.
+        Modify strings to their uppercase equivalent.
 
         Examples
         --------
@@ -1513,17 +1513,31 @@ class StringNameSpace:
 
     def to_titlecase(self) -> Series:
         """
-        Modify the strings to their titlecase equivalent.
+        Modify strings to their titlecase equivalent.
+
+        Notes
+        -----
+        This is a form of case transform where the first letter of each word is
+        capitalized, with the rest of the word in lowercase. Non-alphanumeric
+        characters define the word boundaries.
 
         Examples
         --------
-        >>> s = pl.Series("sing", ["welcome to my world", "THERE'S NO TURNING BACK"])
+        >>> s = pl.Series(
+        ...     "quotes",
+        ...     [
+        ...         "'e.t. phone home'",
+        ...         "you talkin' to me?",
+        ...         "to infinity,and BEYOND!",
+        ...     ],
+        ... )
         >>> s.str.to_titlecase()
-        shape: (2,)
-        Series: 'sing' [str]
+        shape: (3,)
+        Series: 'quotes' [str]
         [
-            "Welcome To My World"
-            "There's No Turning Back"
+            "'E.T. Phone Home'"
+            "You Talkin' To Me?"
+            "To Infinity,And Beyond!"
         ]
         """
 
@@ -1813,7 +1827,7 @@ class StringNameSpace:
         patterns
             String patterns to search.
         ascii_case_insensitive
-            Enable ASCII-aware case insensitive matching.
+            Enable ASCII-aware case-insensitive matching.
             When this option is enabled, searching will be performed without respect
             to case for ASCII letters (a-z and A-Z) only.
 
@@ -1854,9 +1868,9 @@ class StringNameSpace:
             String patterns to search and replace.
         replace_with
             Strings to replace where a pattern was a match.
-            This can be broadcasted. So it supports many:one and many:many.
+            This can be broadcast, so it supports many:one and many:many.
         ascii_case_insensitive
-            Enable ASCII-aware case insensitive matching.
+            Enable ASCII-aware case-insensitive matching.
             When this option is enabled, searching will be performed without respect
             to case for ASCII letters (a-z and A-Z) only.
 
@@ -1897,7 +1911,7 @@ class StringNameSpace:
         patterns
             String patterns to search.
         ascii_case_insensitive
-            Enable ASCII-aware case insensitive matching.
+            Enable ASCII-aware case-insensitive matching.
             When this option is enabled, searching will be performed without respect
             to case for ASCII letters (a-z and A-Z) only.
         overlapping

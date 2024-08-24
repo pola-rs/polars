@@ -461,7 +461,7 @@ pub trait ChunkFilter<T: PolarsDataType> {
 /// Create a new ChunkedArray filled with values at that index.
 pub trait ChunkExpandAtIndex<T: PolarsDataType> {
     /// Create a new ChunkedArray filled with values at that index.
-    fn new_from_index(&self, length: usize, index: usize) -> ChunkedArray<T>;
+    fn new_from_index(&self, index: usize, length: usize) -> ChunkedArray<T>;
 }
 
 macro_rules! impl_chunk_expand {
@@ -536,7 +536,7 @@ impl ChunkExpandAtIndex<ListType> for ListChunked {
 
 #[cfg(feature = "dtype-struct")]
 impl ChunkExpandAtIndex<StructType> for StructChunked {
-    fn new_from_index(&self, length: usize, index: usize) -> ChunkedArray<StructType> {
+    fn new_from_index(&self, index: usize, length: usize) -> ChunkedArray<StructType> {
         let (chunk_idx, idx) = self.index_to_chunked_index(index);
         let chunk = self.downcast_chunks().get(chunk_idx).unwrap();
         let chunk = if chunk.is_null(idx) {

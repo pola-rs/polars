@@ -7,7 +7,6 @@ use arrow::legacy::is_valid::IsValid;
 use arrow::legacy::kernels::sort_partition::partition_to_groups_amortized;
 use hashbrown::hash_map::RawEntryMut;
 use num_traits::NumCast;
-use polars_core::export::ahash::RandomState;
 use polars_core::frame::row::AnyValueBuffer;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
@@ -62,7 +61,7 @@ pub struct PrimitiveGroupbySink<K: PolarsNumericType> {
     key: Arc<dyn PhysicalPipedExpr>,
     // the columns that will be aggregated
     aggregation_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
-    hb: RandomState,
+    hb: PlRandomState,
     // Initializing Aggregation functions. If we aggregate by 2 columns
     // this vec will have two functions. We will use these functions
     // to populate the buffer where the hashmap points to
@@ -116,7 +115,7 @@ where
         io_thread: Option<Arc<Mutex<Option<IOThread>>>>,
         ooc: bool,
     ) -> Self {
-        let hb = RandomState::default();
+        let hb = PlRandomState::default();
         let partitions = _set_partition_size();
 
         let pre_agg = load_vec(partitions, || PlIdHashMap::with_capacity(HASHMAP_INIT_SIZE));

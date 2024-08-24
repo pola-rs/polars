@@ -110,7 +110,7 @@ impl ArrayNameSpace {
             FunctionExpr::ArrayExpr(ArrayFunction::Get(null_on_oob)),
             &[index],
             false,
-            false,
+            None,
         )
     }
 
@@ -122,7 +122,7 @@ impl ArrayNameSpace {
             FunctionExpr::ArrayExpr(ArrayFunction::Join(ignore_nulls)),
             &[separator],
             false,
-            false,
+            None,
         )
     }
 
@@ -135,7 +135,7 @@ impl ArrayNameSpace {
             FunctionExpr::ArrayExpr(ArrayFunction::Contains),
             &[other],
             false,
-            false,
+            None,
         )
     }
 
@@ -149,7 +149,7 @@ impl ArrayNameSpace {
                 FunctionExpr::ArrayExpr(ArrayFunction::CountMatches),
                 &[other],
                 false,
-                false,
+                None,
             )
             .with_function_options(|mut options| {
                 options.flags |= FunctionFlags::INPUT_WILDCARD_EXPANSION;
@@ -189,7 +189,7 @@ impl ArrayNameSpace {
             FunctionExpr::ArrayExpr(ArrayFunction::Shift),
             &[n],
             false,
-            false,
+            None,
         )
     }
 }

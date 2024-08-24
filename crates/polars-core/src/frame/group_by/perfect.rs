@@ -21,9 +21,10 @@ where
     pub fn group_tuples_perfect(
         &self,
         max: usize,
-        multithreaded: bool,
+        mut multithreaded: bool,
         group_capacity: usize,
     ) -> GroupsProxy {
+        multithreaded &= POOL.current_num_threads() > 1;
         let len = if self.null_count() > 0 {
             // we add one to store the null sentinel group
             max + 2

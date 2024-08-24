@@ -1,7 +1,7 @@
 use arrow::compute::utils::combine_validities_and_many;
 use compare_inner::NullOrderCmp;
 use polars_row::{convert_columns, EncodingField, RowsEncoded};
-use polars_utils::iter::EnumerateIdxTrait;
+use polars_utils::itertools::Itertools;
 
 use super::*;
 use crate::utils::_split_offsets;
@@ -9,15 +9,16 @@ use crate::utils::_split_offsets;
 pub(crate) fn args_validate<T: PolarsDataType>(
     ca: &ChunkedArray<T>,
     other: &[Series],
-    descending: &[bool],
+    param_value: &[bool],
+    param_name: &str,
 ) -> PolarsResult<()> {
     for s in other {
         assert_eq!(ca.len(), s.len());
     }
-    polars_ensure!(other.len() == (descending.len() - 1),
+    polars_ensure!(other.len() == (param_value.len() - 1),
         ComputeError:
-        "the amount of ordering booleans: {} does not match the number of series: {}",
-        descending.len(), other.len() + 1,
+        "the length of `{}` ({}) does not match the number of series ({})",
+        param_name, param_value.len(), other.len() + 1,
     );
     Ok(())
 }
@@ -99,7 +100,8 @@ pub fn _get_rows_encoded_compat_array(by: &Series) -> PolarsResult<ArrayRef> {
                 ca.physical().chunks[0].clone()
             }
         },
-        _ => by.to_arrow(0, CompatLevel::newest()),
+        // Take physical
+        _ => by.chunks()[0].clone(),
     };
     Ok(out)
 }

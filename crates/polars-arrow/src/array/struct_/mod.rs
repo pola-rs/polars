@@ -53,7 +53,13 @@ impl StructArray {
     ) -> PolarsResult<Self> {
         let fields = Self::try_get_fields(&data_type)?;
         if fields.is_empty() {
-            polars_bail!(ComputeError: "a StructArray must contain at least one field")
+            assert!(values.is_empty(), "invalid struct");
+            assert_eq!(validity.map(|v| v.len()).unwrap_or(0), 0, "invalid struct");
+            return Ok(Self {
+                data_type,
+                values,
+                validity: None,
+            });
         }
         if fields.len() != values.len() {
             polars_bail!(ComputeError:"a StructArray must have a number of fields in its DataType equal to the number of child values")
@@ -220,7 +226,7 @@ impl StructArray {
 impl StructArray {
     #[inline]
     fn len(&self) -> usize {
-        self.values[0].len()
+        self.values.first().map(|arr| arr.len()).unwrap_or(0)
     }
 
     /// The optional validity.

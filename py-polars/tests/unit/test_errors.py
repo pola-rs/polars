@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import io
-from datetime import date, datetime, time
+from datetime import date, datetime, time, tzinfo
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
@@ -326,9 +326,15 @@ def test_datetime_time_add_err() -> None:
 def test_invalid_dtype() -> None:
     with pytest.raises(
         TypeError,
-        match="cannot parse input of type 'str' into Polars data type: 'mayonnaise'",
+        match=r"cannot parse input of type 'str' into Polars data type \(given: 'mayonnaise'\)",
     ):
         pl.Series([1, 2], dtype="mayonnaise")  # type: ignore[arg-type]
+
+    with pytest.raises(
+        TypeError,
+        match="cannot parse input <class 'datetime.tzinfo'> into Polars data type",
+    ):
+        pl.Series([None], dtype=tzinfo)  # type: ignore[arg-type]
 
 
 def test_arr_eval_named_cols() -> None:
@@ -484,7 +490,7 @@ def test_skip_nulls_err() -> None:
 
     with pytest.raises(
         ComputeError,
-        match=r"The output type of the 'apply' function cannot be determined",
+        match=r"The output type of the 'map_elements' function cannot be determined",
     ):
         df.with_columns(pl.col("foo").map_elements(lambda x: x, skip_nulls=True))
 
@@ -587,7 +593,7 @@ def test_invalid_is_in_dtypes(
     if expected is None:
         with pytest.raises(
             InvalidOperationError,
-            match="`is_in` cannot check for .*? values in .*? data",
+            match="'is_in' cannot check for .*? values in .*? data",
         ):
             df.select(pl.col(colname).is_in(values))
     else:
@@ -650,7 +656,7 @@ def test_invalid_product_type() -> None:
 
 def test_fill_null_invalid_supertype() -> None:
     df = pl.DataFrame({"date": [date(2022, 1, 1), None]})
-    with pytest.raises(InvalidOperationError, match="could not determine supertype of"):
+    with pytest.raises(InvalidOperationError, match="got invalid or ambiguous"):
         df.select(pl.col("date").fill_null(1.0))
 
 

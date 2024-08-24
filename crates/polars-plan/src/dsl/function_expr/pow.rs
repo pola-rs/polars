@@ -2,6 +2,7 @@ use arrow::legacy::kernels::pow::pow as pow_kernel;
 use num::pow::Pow;
 use polars_core::export::num;
 use polars_core::export::num::{Float, ToPrimitive};
+use polars_core::prelude::arity::unary_elementwise_values;
 use polars_core::with_match_physical_integer_type;
 
 use super::*;
@@ -41,9 +42,7 @@ where
             .ok_or_else(|| polars_err!(ComputeError: "base is null"))?;
 
         Ok(Some(
-            exponent
-                .apply_values_generic(|exp| Pow::pow(base, exp))
-                .into_series(),
+            unary_elementwise_values(exponent, |exp| Pow::pow(base, exp)).into_series(),
         ))
     } else {
         Ok(Some(
