@@ -406,4 +406,11 @@ impl ListNameSpace {
         let other = other.into();
         self.set_operation(other, SetOperation::SymmetricDifference)
     }
+
+    #[cfg(feature = "json")]
+    pub fn json_encode(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::ListExpr(ListFunction::JsonEncode))
+    }
+
 }
