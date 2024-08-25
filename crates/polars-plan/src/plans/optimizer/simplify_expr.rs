@@ -450,6 +450,8 @@ impl OptimizationRule for SimplifyExprRule {
                         function: FunctionExpr::DropNulls,
                         options: _,
                     } => {
+                        let expr_ir = ExprIR::from_node(expr_node, expr_arena);
+                        let expr_output_name = expr_ir.output_name();
                         let inner_minus_exp = AExpr::BinaryExpr {
                             op: Operator::Minus,
                             right: expr_arena.add(AExpr::Function {
@@ -466,7 +468,7 @@ impl OptimizationRule for SimplifyExprRule {
                             left: expr_arena.add(AExpr::Len)
                         };
                         let inner_minus_node = expr_arena.add(inner_minus_exp);
-                        Some(AExpr::Alias(inner_minus_node, ColumnName::from("literal")))
+                        Some(AExpr::Alias(inner_minus_node, ColumnName::from(expr_output_name)))
                     }
                     _ => None
                 }
@@ -500,6 +502,8 @@ impl OptimizationRule for SimplifyExprRule {
                         function: FunctionExpr::Boolean(BooleanFunction::IsNotNull),
                         options: _,
                     } => {
+                        let expr_ir = ExprIR::from_node(expr_node, expr_arena);
+                        let expr_output_name = expr_ir.output_name();
                         let inner_minus_exp = AExpr::BinaryExpr {
                                 op: Operator::Minus,
                                 right: expr_arena.add(AExpr::Function {
@@ -516,7 +520,7 @@ impl OptimizationRule for SimplifyExprRule {
                                 left: expr_arena.add(AExpr::Len)
                             };
                         let inner_minus_node = expr_arena.add(inner_minus_exp);
-                        Some(AExpr::Alias(inner_minus_node, ColumnName::from("literal")))
+                        Some(AExpr::Alias(inner_minus_node, ColumnName::from(expr_output_name)))
                     },
                     _ => None
                 }

@@ -15,13 +15,19 @@ pub(super) fn optimize_functions(
                 AExpr::Function {
                     input,
                     function: FunctionExpr::Boolean(BooleanFunction::IsNull),
-                    options,
+                    options: _,
                 } => Some(
                     AExpr::BinaryExpr {
                         left: expr_arena.add(AExpr::Function {
                             input: input.clone(),
                             function: FunctionExpr::NullCount,
-                            options: *options
+                            options: FunctionOptions{
+                                collect_groups: ApplyOptions::GroupWise,
+                                fmt_str: "",
+                                cast_to_supertypes: None,
+                                check_lengths: UnsafeBool::default(),
+                                flags: FunctionFlags::ALLOW_GROUP_AWARE | FunctionFlags::RETURNS_SCALAR
+                            }
                         }),
                         op: Operator::Gt,
                         right: expr_arena.add(AExpr::Literal(LiteralValue::UInt8(0)))
@@ -30,13 +36,19 @@ pub(super) fn optimize_functions(
                 AExpr::Function {
                     input,
                     function: FunctionExpr::Boolean(BooleanFunction::IsNotNull),
-                    options,
+                    options: _,
                 } => Some(
                     AExpr::BinaryExpr {
                         left: expr_arena.add(AExpr::Function {
                             input: input.clone(),
                             function: FunctionExpr::NullCount,
-                            options: *options
+                            options: FunctionOptions{
+                                collect_groups: ApplyOptions::GroupWise,
+                                fmt_str: "",
+                                cast_to_supertypes: None,
+                                check_lengths: UnsafeBool::default(),
+                                flags: FunctionFlags::ALLOW_GROUP_AWARE | FunctionFlags::RETURNS_SCALAR
+                            }
                         }),
                         op: Operator::Lt,
                         right: expr_arena.add(AExpr::Len)
