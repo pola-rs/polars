@@ -63,15 +63,15 @@ macro_rules! make_null_count_expr {
         AExpr::Function {
             input: $input.clone(),
             function: FunctionExpr::NullCount,
-            options: FunctionOptions{
+            options: FunctionOptions {
                 collect_groups: ApplyOptions::GroupWise,
                 fmt_str: "",
                 cast_to_supertypes: None,
                 check_lengths: UnsafeBool::default(),
-                flags: FunctionFlags::ALLOW_GROUP_AWARE | FunctionFlags::RETURNS_SCALAR
-            }
+                flags: FunctionFlags::ALLOW_GROUP_AWARE | FunctionFlags::RETURNS_SCALAR,
+            },
         }
-    }}
+    }};
 }
 pub(crate) use make_null_count_expr;
 

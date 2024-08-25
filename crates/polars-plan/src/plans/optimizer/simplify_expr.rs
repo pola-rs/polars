@@ -455,12 +455,15 @@ impl OptimizationRule for SimplifyExprRule {
                         let inner_minus_exp = AExpr::BinaryExpr {
                             op: Operator::Minus,
                             right: expr_arena.add(make_null_count_expr!(input)),
-                            left: expr_arena.add(AExpr::Len)
+                            left: expr_arena.add(AExpr::Len),
                         };
                         let inner_minus_node = expr_arena.add(inner_minus_exp);
-                        Some(AExpr::Alias(inner_minus_node, ColumnName::from(expr_output_name)))
-                    }
-                    _ => None
+                        Some(AExpr::Alias(
+                            inner_minus_node,
+                            ColumnName::from(expr_output_name),
+                        ))
+                    },
+                    _ => None,
                 }
             },
             // is_null().sum() -> null_count()
@@ -472,8 +475,7 @@ impl OptimizationRule for SimplifyExprRule {
                         input,
                         function: FunctionExpr::Boolean(BooleanFunction::IsNull),
                         options: _,
-                    } => Some(make_null_count_expr!(input))
-                    ,
+                    } => Some(make_null_count_expr!(input)),
                     AExpr::Function {
                         input,
                         function: FunctionExpr::Boolean(BooleanFunction::IsNotNull),
@@ -482,14 +484,17 @@ impl OptimizationRule for SimplifyExprRule {
                         let expr_ir = ExprIR::from_node(expr_node, expr_arena);
                         let expr_output_name = expr_ir.output_name();
                         let inner_minus_exp = AExpr::BinaryExpr {
-                                op: Operator::Minus,
-                                right: expr_arena.add(make_null_count_expr!(input)),
-                                left: expr_arena.add(AExpr::Len)
-                            };
+                            op: Operator::Minus,
+                            right: expr_arena.add(make_null_count_expr!(input)),
+                            left: expr_arena.add(AExpr::Len),
+                        };
                         let inner_minus_node = expr_arena.add(inner_minus_exp);
-                        Some(AExpr::Alias(inner_minus_node, ColumnName::from(expr_output_name)))
+                        Some(AExpr::Alias(
+                            inner_minus_node,
+                            ColumnName::from(expr_output_name),
+                        ))
                     },
-                    _ => None
+                    _ => None,
                 }
             },
             // lit(left) + lit(right) => lit(left + right)

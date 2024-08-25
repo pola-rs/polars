@@ -9,65 +9,54 @@ pub(super) fn optimize_functions(
     let out = match function {
         // is_null().any() -> null_count() > 0
         // is_not_null().any() ->  null_count() < len()
-        FunctionExpr::Boolean(BooleanFunction::Any {ignore_nulls:_}) => {
+        FunctionExpr::Boolean(BooleanFunction::Any { ignore_nulls: _ }) => {
             let input_node = expr_arena.get(input[0].node());
             match input_node {
                 AExpr::Function {
                     input,
                     function: FunctionExpr::Boolean(BooleanFunction::IsNull),
                     options: _,
-                } => Some(
-                    AExpr::BinaryExpr {
-                        left: expr_arena.add(make_null_count_expr!(input)),
-                        op: Operator::Gt,
-                        right: expr_arena.add(AExpr::Literal(LiteralValue::UInt8(0)))
-                    }
-                ),
+                } => Some(AExpr::BinaryExpr {
+                    left: expr_arena.add(make_null_count_expr!(input)),
+                    op: Operator::Gt,
+                    right: expr_arena.add(AExpr::Literal(LiteralValue::UInt8(0))),
+                }),
                 AExpr::Function {
                     input,
                     function: FunctionExpr::Boolean(BooleanFunction::IsNotNull),
                     options: _,
-                } => Some(
-                    AExpr::BinaryExpr {
-                        left: expr_arena.add(make_null_count_expr!(input)),
-                        op: Operator::Lt,
-                        right: expr_arena.add(AExpr::Len)
-                    }
-                ),
-                _ => None
+                } => Some(AExpr::BinaryExpr {
+                    left: expr_arena.add(make_null_count_expr!(input)),
+                    op: Operator::Lt,
+                    right: expr_arena.add(AExpr::Len),
+                }),
+                _ => None,
             }
         },
         // is_null().all() -> null_count() == len()
         // is_not_null().all() -> null_count() == 0
-        FunctionExpr::Boolean(BooleanFunction::All {ignore_nulls: _}) => {
+        FunctionExpr::Boolean(BooleanFunction::All { ignore_nulls: _ }) => {
             let input_node = expr_arena.get(input[0].node());
             match input_node {
                 AExpr::Function {
                     input,
                     function: FunctionExpr::Boolean(BooleanFunction::IsNull),
                     options: _,
-                } => {
-                    Some(
-                        AExpr::BinaryExpr {
-                            left: expr_arena.add(make_null_count_expr!(input)),
-                            op: Operator::Eq,
-                            right: expr_arena.add(AExpr::Len)
-                        }
-                    )
-                },
+                } => Some(AExpr::BinaryExpr {
+                    left: expr_arena.add(make_null_count_expr!(input)),
+                    op: Operator::Eq,
+                    right: expr_arena.add(AExpr::Len),
+                }),
                 AExpr::Function {
                     input,
                     function: FunctionExpr::Boolean(BooleanFunction::IsNotNull),
                     options: _,
-                } => {
-                        Some(
-                        AExpr::BinaryExpr {
-                            left: expr_arena.add(make_null_count_expr!(input)),
-                            op: Operator::Eq,
-                            right: expr_arena.add(AExpr::Literal(LiteralValue::UInt8(0)))
-                        })
-                },
-                _ => None
+                } => Some(AExpr::BinaryExpr {
+                    left: expr_arena.add(make_null_count_expr!(input)),
+                    op: Operator::Eq,
+                    right: expr_arena.add(AExpr::Literal(LiteralValue::UInt8(0))),
+                }),
+                _ => None,
             }
         },
         // sort().reverse() -> sort(reverse)
