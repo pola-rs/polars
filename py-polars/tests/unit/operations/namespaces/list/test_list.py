@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from datetime import date, datetime
 
 import numpy as np
@@ -917,3 +918,64 @@ def test_list_eval_type_cast_11188() -> None:
     assert df.select(
         pl.col("a").list.eval(pl.element().cast(pl.String)).alias("a_str")
     ).schema == {"a_str": pl.List(pl.String)}
+
+
+def test_list_json_encode() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [[1, None, 3], [4, 5, 6], None],
+            "b": [
+                [
+                    {
+                        "foo": 1,
+                    },
+                    {"foo": 2},
+                    {
+                        "foo": 3,
+                    },
+                ],
+                [
+                    {
+                        "foo": 3,
+                    },
+                    {"foo": 4},
+                    {
+                        "foo": 5,
+                    },
+                ],
+                [
+                    {
+                        "foo": 6,
+                    },
+                    {"foo": 7},
+                    {
+                        "foo": 8,
+                    },
+                ],
+            ],
+            "c": [[True, False, True], [False, True, False], [True, True, False]],
+            "d": [[1.6, 2.7, 3.8], [math.inf, -math.inf, 6.1], [7.2, 8.3, math.nan]],
+        }
+    )
+    df = df.with_columns(
+        pl.col("a").list.json_encode(),
+        pl.col("b").list.json_encode(),
+        pl.col("c").list.json_encode(),
+        pl.col("d").list.json_encode(),
+    )
+    assert df.schema == {
+        "a": pl.String,
+        "b": pl.String,
+        "c": pl.String,
+        "d": pl.String,
+    }
+    assert df.to_dict(as_series=False) == {
+        "a": ["[1,null,3]", "[4,5,6]", "null"],
+        "b": [
+            """[{"foo":1},{"foo":2},{"foo":3}]""",
+            """[{"foo":3},{"foo":4},{"foo":5}]""",
+            """[{"foo":6},{"foo":7},{"foo":8}]""",
+        ],
+        "c": ["[true,false,true]", "[false,true,false]", "[true,true,false]"],
+        "d": ["[1.6,2.7,3.8]", "[null,null,6.1]", "[7.2,8.3,null]"],
+    }
