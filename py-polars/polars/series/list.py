@@ -1060,7 +1060,7 @@ class ListNameSpace:
         Examples
         --------
         >>> a = pl.Series([[1, 2, 3], [], [None, 3], [5, 6, 7]])
-        >>> a.list.json_encode(b)
+        >>> a.list.json_encode()
         shape: (4,)
         Series: '' [String]
         [
