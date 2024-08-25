@@ -454,17 +454,7 @@ impl OptimizationRule for SimplifyExprRule {
                         let expr_output_name = expr_ir.output_name();
                         let inner_minus_exp = AExpr::BinaryExpr {
                             op: Operator::Minus,
-                            right: expr_arena.add(AExpr::Function {
-                                input: input.clone(),
-                                function: FunctionExpr::NullCount,
-                                options: FunctionOptions{
-                                    collect_groups: ApplyOptions::GroupWise,
-                                    fmt_str: "",
-                                    cast_to_supertypes: None,
-                                    check_lengths: UnsafeBool::default(),
-                                    flags: FunctionFlags::ALLOW_GROUP_AWARE | FunctionFlags::RETURNS_SCALAR
-                                }
-                            }),
+                            right: expr_arena.add(make_null_count_expr!(input)),
                             left: expr_arena.add(AExpr::Len)
                         };
                         let inner_minus_node = expr_arena.add(inner_minus_exp);
@@ -482,21 +472,8 @@ impl OptimizationRule for SimplifyExprRule {
                         input,
                         function: FunctionExpr::Boolean(BooleanFunction::IsNull),
                         options: _,
-                    } => {
-                        Some(
-                            AExpr::Function {
-                                input: input.clone(),
-                                function: FunctionExpr::NullCount,
-                                options: FunctionOptions{
-                                    collect_groups: ApplyOptions::GroupWise,
-                                    fmt_str: "",
-                                    cast_to_supertypes: None,
-                                    check_lengths: UnsafeBool::default(),
-                                    flags: FunctionFlags::ALLOW_GROUP_AWARE | FunctionFlags::RETURNS_SCALAR
-                                }
-                            }
-                        )
-                    },
+                    } => Some(make_null_count_expr!(input))
+                    ,
                     AExpr::Function {
                         input,
                         function: FunctionExpr::Boolean(BooleanFunction::IsNotNull),
@@ -506,17 +483,7 @@ impl OptimizationRule for SimplifyExprRule {
                         let expr_output_name = expr_ir.output_name();
                         let inner_minus_exp = AExpr::BinaryExpr {
                                 op: Operator::Minus,
-                                right: expr_arena.add(AExpr::Function {
-                                    input: input.clone(),
-                                    function: FunctionExpr::NullCount,
-                                    options: FunctionOptions{
-                                        collect_groups: ApplyOptions::GroupWise,
-                                        fmt_str: "",
-                                        cast_to_supertypes: None,
-                                        check_lengths: UnsafeBool::default(),
-                                        flags: FunctionFlags::ALLOW_GROUP_AWARE | FunctionFlags::RETURNS_SCALAR
-                                    }
-                                }),
+                                right: expr_arena.add(make_null_count_expr!(input)),
                                 left: expr_arena.add(AExpr::Len)
                             };
                         let inner_minus_node = expr_arena.add(inner_minus_exp);

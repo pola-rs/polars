@@ -18,17 +18,7 @@ pub(super) fn optimize_functions(
                     options: _,
                 } => Some(
                     AExpr::BinaryExpr {
-                        left: expr_arena.add(AExpr::Function {
-                            input: input.clone(),
-                            function: FunctionExpr::NullCount,
-                            options: FunctionOptions{
-                                collect_groups: ApplyOptions::GroupWise,
-                                fmt_str: "",
-                                cast_to_supertypes: None,
-                                check_lengths: UnsafeBool::default(),
-                                flags: FunctionFlags::ALLOW_GROUP_AWARE | FunctionFlags::RETURNS_SCALAR
-                            }
-                        }),
+                        left: expr_arena.add(make_null_count_expr!(input)),
                         op: Operator::Gt,
                         right: expr_arena.add(AExpr::Literal(LiteralValue::UInt8(0)))
                     }
@@ -39,17 +29,7 @@ pub(super) fn optimize_functions(
                     options: _,
                 } => Some(
                     AExpr::BinaryExpr {
-                        left: expr_arena.add(AExpr::Function {
-                            input: input.clone(),
-                            function: FunctionExpr::NullCount,
-                            options: FunctionOptions{
-                                collect_groups: ApplyOptions::GroupWise,
-                                fmt_str: "",
-                                cast_to_supertypes: None,
-                                check_lengths: UnsafeBool::default(),
-                                flags: FunctionFlags::ALLOW_GROUP_AWARE | FunctionFlags::RETURNS_SCALAR
-                            }
-                        }),
+                        left: expr_arena.add(make_null_count_expr!(input)),
                         op: Operator::Lt,
                         right: expr_arena.add(AExpr::Len)
                     }
@@ -67,20 +47,9 @@ pub(super) fn optimize_functions(
                     function: FunctionExpr::Boolean(BooleanFunction::IsNull),
                     options: _,
                 } => {
-                    let null_count_options = FunctionOptions{
-                        collect_groups: ApplyOptions::GroupWise,
-                        fmt_str: "",
-                        cast_to_supertypes: None,
-                        check_lengths: UnsafeBool::default(),
-                        flags: FunctionFlags::ALLOW_GROUP_AWARE | FunctionFlags::RETURNS_SCALAR
-                    };
                     Some(
                         AExpr::BinaryExpr {
-                            left: expr_arena.add(AExpr::Function {
-                                input: input.clone(),
-                                function: FunctionExpr::NullCount,
-                                options: null_count_options
-                            }),
+                            left: expr_arena.add(make_null_count_expr!(input)),
                             op: Operator::Eq,
                             right: expr_arena.add(AExpr::Len)
                         }
@@ -91,20 +60,9 @@ pub(super) fn optimize_functions(
                     function: FunctionExpr::Boolean(BooleanFunction::IsNotNull),
                     options: _,
                 } => {
-                        let null_count_options = FunctionOptions{
-                            collect_groups: ApplyOptions::GroupWise,
-                            fmt_str: "",
-                            cast_to_supertypes: None,
-                            check_lengths: UnsafeBool::default(),
-                            flags: FunctionFlags::ALLOW_GROUP_AWARE | FunctionFlags::RETURNS_SCALAR
-                        };
                         Some(
                         AExpr::BinaryExpr {
-                            left: expr_arena.add(AExpr::Function {
-                                input: input.clone(),
-                                function: FunctionExpr::NullCount,
-                                options: null_count_options
-                            }),
+                            left: expr_arena.add(make_null_count_expr!(input)),
                             op: Operator::Eq,
                             right: expr_arena.add(AExpr::Literal(LiteralValue::UInt8(0)))
                         })

@@ -57,6 +57,24 @@ pub(crate) fn init_hashmap<K, V>(max_len: Option<usize>) -> PlHashMap<K, V> {
     PlHashMap::with_capacity(std::cmp::min(max_len.unwrap_or(HASHMAP_SIZE), HASHMAP_SIZE))
 }
 
+// common macros for optimizer
+macro_rules! make_null_count_expr {
+    ($input:ident) => {{
+        AExpr::Function {
+            input: $input.clone(),
+            function: FunctionExpr::NullCount,
+            options: FunctionOptions{
+                collect_groups: ApplyOptions::GroupWise,
+                fmt_str: "",
+                cast_to_supertypes: None,
+                check_lengths: UnsafeBool::default(),
+                flags: FunctionFlags::ALLOW_GROUP_AWARE | FunctionFlags::RETURNS_SCALAR
+            }
+        }
+    }}
+}
+pub(crate) use make_null_count_expr;
+
 pub fn optimize(
     logical_plan: DslPlan,
     opt_state: OptState,
