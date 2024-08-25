@@ -1062,11 +1062,11 @@ class ListNameSpace:
         >>> a = pl.Series([[1, 2, 3], [], [None, 3], [5, 6, 7]])
         >>> a.list.json_encode()
         shape: (4,)
-        Series: '' [String]
+        Series: '' [str]
         [
-            "[1, 2, 3]"
+            "[1,2,3]"
             "[]"
-            "[null, 3]"
-            "[5, 6, 7]"
+            "[null,3]"
+            "[5,6,7]"
         ]
         """
