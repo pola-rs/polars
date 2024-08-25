@@ -126,6 +126,47 @@ def test_ie_join_with_slice(offset: int, length: int) -> None:
     assert_frame_equal(actual, expected)
 
 
+def test_ie_join_with_expressions() -> None:
+    east = pl.DataFrame(
+        {
+            "id": [100, 101, 102],
+            "dur": [70, 50, 45],
+            "rev": [12, 12, 5],
+            "cores": [2, 8, 4],
+        }
+    )
+    west = pl.DataFrame(
+        {
+            "t_id": [404, 498, 676, 742],
+            "time": [100, 140, 80, 90],
+            "cost": [12, 22, 20, 10],
+            "cores": [4, 2, 1, 4],
+        }
+    )
+
+    actual = east.ie_join(
+        west,
+        on=[
+            (pl.col("dur") * 2) < pl.col("time"),
+            pl.col("rev") > (pl.col("cost").cast(pl.Int32) // 2).cast(pl.Int64),
+        ],
+    )
+
+    expected = pl.DataFrame(
+        {
+            "id": [101],
+            "dur": [50],
+            "rev": [12],
+            "cores": [8],
+            "t_id": [498],
+            "time": [140],
+            "cost": [22],
+            "cores_right": [2],
+        }
+    )
+    assert_frame_equal(actual, expected, check_row_order=False, check_exact=True)
+
+
 def _inequality_expression(col1: str, op: str, col2: str) -> pl.Expr:
     if op == "<":
         return pl.col(col1) < pl.col(col2)

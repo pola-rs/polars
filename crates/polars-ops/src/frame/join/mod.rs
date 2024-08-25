@@ -29,7 +29,7 @@ use general::create_chunked_index_mapping;
 pub use general::{_coalesce_full_join, _finish_join, _join_suffix_name};
 pub use hash_join::*;
 use hashbrown::hash_map::{Entry, RawEntryMut};
-pub use iejoin::{IEJoinOptions, InequalityOperator, JoinInequality};
+pub use iejoin::{IEJoinOptions, InequalityOperator};
 #[cfg(feature = "merge_sorted")]
 pub use merge_sorted::_merge_sorted_dfs;
 use polars_core::hashing::_HASHMAP_INIT_SIZE;
@@ -119,6 +119,8 @@ pub trait DataFrameJoinOps: IntoDf {
             return iejoin::join_dataframes(
                 left_df,
                 other,
+                selected_left,
+                selected_right,
                 &options,
                 args.suffix.as_deref(),
                 args.slice,

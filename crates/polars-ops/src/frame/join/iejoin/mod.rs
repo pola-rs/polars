@@ -15,29 +15,22 @@ use polars_utils::IdxSize;
 use serde::{Deserialize, Serialize};
 
 use crate::frame::_finish_join;
-use crate::frame::join::hash_join::SmartString;
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum InequalityOperator {
+    #[default]
     Lt,
     LtEq,
     Gt,
     GtEq,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct JoinInequality {
-    pub left_column: SmartString,
-    pub operator: InequalityOperator,
-    pub right_column: SmartString,
-}
-
 #[derive(Clone, Debug, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct IEJoinOptions {
-    pub on: Vec<JoinInequality>,
+    pub operator1: InequalityOperator,
+    pub operator2: InequalityOperator,
 }
 
 /// Inequality join. Matches rows from this DataFrame with rows from another DataFrame
@@ -47,28 +40,31 @@ pub struct IEJoinOptions {
 pub fn join_dataframes(
     left: &DataFrame,
     right: &DataFrame,
+    selected_left: Vec<Series>,
+    selected_right: Vec<Series>,
     options: &IEJoinOptions,
     suffix: Option<&str>,
     slice: Option<(i64, usize)>,
 ) -> PolarsResult<DataFrame> {
-    if options.on.len() != 2 {
+    if selected_left.len() != 2 {
         return Err(
-            polars_err!(ComputeError: "IEJoin requires exactly two inequality expressions"),
+            polars_err!(ComputeError: "IEJoin requires exactly two expressions from the left DataFrame"),
         );
     };
-    let left_col1 = options.on[0].left_column.as_ref();
-    let op1 = options.on[0].operator;
-    let right_col1 = options.on[0].right_column.as_ref();
+    if selected_right.len() != 2 {
+        return Err(
+            polars_err!(ComputeError: "IEJoin requires exactly two expressions from the right DataFrame"),
+        );
+    };
 
-    let left_col2 = options.on[1].left_column.as_ref();
-    let op2 = options.on[1].operator;
-    let right_col2 = options.on[1].right_column.as_ref();
+    let op1 = options.operator1;
+    let op2 = options.operator2;
 
-    let mut x = left.column(left_col1)?.to_physical_repr().into_owned();
-    x.extend(&right.column(right_col1)?.to_physical_repr())?;
+    let mut x = selected_left[0].to_physical_repr().into_owned();
+    x.extend(&selected_right[0].to_physical_repr())?;
 
-    let mut y = left.column(left_col2)?.to_physical_repr().into_owned();
-    y.extend(&right.column(right_col2)?.to_physical_repr())?;
+    let mut y = selected_left[1].to_physical_repr().into_owned();
+    y.extend(&selected_right[1].to_physical_repr())?;
 
     // Determine the sort order based on the comparison operators used.
     // We want to sort L1 so that "x[i] op1 x[j]" is true for j > i,
