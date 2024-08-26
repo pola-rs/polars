@@ -270,7 +270,7 @@ fn visualize_plan_rec(
             }
 
             if let Some((offset, len)) = file_options.slice {
-                write!(f, "\nslice: {:?}", (offset, len)).unwrap();
+                write!(f, "\nslice: offset: {}, len: {}", offset, len).unwrap();
             }
 
             if let Some(predicate) = predicate.as_ref() {
