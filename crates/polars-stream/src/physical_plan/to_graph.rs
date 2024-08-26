@@ -308,7 +308,7 @@ fn to_graph_rec<'a>(
                                     file_options,
                                 ),
                                 [],
-                            );
+                            )
                         } else {
                             todo!()
                         }
