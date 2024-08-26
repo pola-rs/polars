@@ -2583,8 +2583,8 @@ class ExprStringNameSpace:
         """  # noqa: W505
         if replace_with is no_default:
             if not isinstance(patterns, Mapping):
-                msg = "`replace_with` is required if `patterns` is not a Mapping type"
-                raise ValueError(msg)
+                msg = "`replace_with` argument is required if `patterns` argument is not a Mapping type"
+                raise TypeError(msg)
             # Early return in case of an empty mapping.
             if not patterns:
                 return wrap_expr(self._pyexpr)

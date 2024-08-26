@@ -1121,7 +1121,7 @@ def test_replace_many_invalid_inputs() -> None:
     with pytest.raises(SchemaError):
         df.select(pl.col("text").str.replace_many(["me"], None))
 
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         df.select(pl.col("text").str.replace_many(["me"]))
 
     with pytest.raises(
@@ -1138,7 +1138,7 @@ def test_replace_many_invalid_inputs() -> None:
     with pytest.raises(SchemaError):
         df.select(pl.col("text").str.replace_many(["me"], None))
 
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         df.select(pl.col("text").str.replace_many(["me"]))
 
     with pytest.raises(
