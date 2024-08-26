@@ -690,3 +690,12 @@ def test_bool_numeric_supertype(dtype: PolarsDataType) -> None:
     df = pl.DataFrame({"v": [1, 2, 3, 4, 5, 6]})
     result = df.select((pl.col("v") < 3).sum().cast(dtype) / pl.len())
     assert result.item() - 0.3333333 <= 0.00001
+
+
+def test_ddMonYYY_string_date() -> None:
+    df = pl.DataFrame({"x1": ["01Jan2021"]}).with_columns(
+        **{"x1-date": pl.col("x1").cast(pl.Date)}
+    )
+    expected = pl.DataFrame({"x1-date": [date(2021, 1, 1)]})
+    out = df.select(pl.col("x1-date"))
+    assert_frame_equal(expected, out)
