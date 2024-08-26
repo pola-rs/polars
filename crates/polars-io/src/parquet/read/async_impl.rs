@@ -18,6 +18,7 @@ use crate::cloud::{
     build_object_store, object_path_from_str, CloudLocation, CloudOptions, PolarsObjectStore,
 };
 use crate::parquet::metadata::FileMetaDataRef;
+use crate::parquet::read::metadata::PartitionedColumnChunkMD;
 use crate::pl_async::get_runtime;
 use crate::predicates::PhysicalIoExpr;
 
@@ -277,8 +278,19 @@ impl FetchRowGroupsFromObjectStore {
             row_group_range
                 .filter_map(|i| {
                     let rg = &row_groups[i];
+
+                    // TODO!
+                    // Optimize this. Now we partition the predicate columns twice. (later on reading as well)
+                    // I think we must add metadata context where we can cache and amortize the partitioning.
+                    let mut part_md = PartitionedColumnChunkMD::new(rg);
+                    let live = pred.live_variables();
+                    part_md.set_partitions(
+                        live.as_ref()
+                            .map(|vars| vars.iter().map(|s| s.as_ref()).collect::<PlHashSet<_>>())
+                            .as_ref(),
+                    );
                     let should_be_read =
-                        matches!(read_this_row_group(Some(pred), rg, &schema), Ok(true));
+                        matches!(read_this_row_group(Some(pred), &part_md, &schema), Ok(true));
 
                     // Already add the row groups that will be skipped to the prefetched data.
                     if !should_be_read {

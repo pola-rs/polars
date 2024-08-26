@@ -104,7 +104,7 @@ pub trait UnpivotDF: IntoDf {
             // return empty frame if there are no columns available to use as value vars
             if index.len() == self_.width() {
                 let variable_col = Series::new_empty(variable_name, &DataType::String);
-                let value_col = Series::new_empty(variable_name, &DataType::Null);
+                let value_col = Series::new_empty(value_name, &DataType::Null);
 
                 let mut out = self_.select(index).unwrap().clear().take_columns();
                 out.push(variable_col);
@@ -193,6 +193,7 @@ impl UnpivotDF for DataFrame {}
 #[cfg(test)]
 mod test {
     use polars_core::df;
+    use polars_core::utils::Container;
 
     use super::*;
 
@@ -205,12 +206,31 @@ mod test {
         )
         .unwrap();
 
+        // Specify on and index
         let unpivoted = df.unpivot(["C", "D"], ["A", "B"])?;
+        assert_eq!(
+            unpivoted.get_column_names(),
+            &["A", "B", "variable", "value"]
+        );
         assert_eq!(
             Vec::from(unpivoted.column("value")?.i32()?),
             &[Some(10), Some(11), Some(12), Some(2), Some(4), Some(6)]
         );
 
+        // Specify custom column names
+        let args = UnpivotArgsIR {
+            on: vec!["C".into(), "D".into()],
+            index: vec!["A".into(), "B".into()],
+            variable_name: Some("custom_variable".into()),
+            value_name: Some("custom_value".into()),
+        };
+        let unpivoted = df.unpivot2(args).unwrap();
+        assert_eq!(
+            unpivoted.get_column_names(),
+            &["A", "B", "custom_variable", "custom_value"]
+        );
+
+        // Specify neither on nor index
         let args = UnpivotArgsIR {
             on: vec![],
             index: vec![],
@@ -218,6 +238,7 @@ mod test {
         };
 
         let unpivoted = df.unpivot2(args).unwrap();
+        assert_eq!(unpivoted.get_column_names(), &["variable", "value"]);
         let value = unpivoted.column("value")?;
         // String because of supertype
         let value = value.str()?;
@@ -227,6 +248,7 @@ mod test {
             &["a", "b", "a", "1", "3", "5", "10", "11", "12", "2", "4", "6"]
         );
 
+        // Specify index but not on
         let args = UnpivotArgsIR {
             on: vec![],
             index: vec!["A".into()],
@@ -234,6 +256,7 @@ mod test {
         };
 
         let unpivoted = df.unpivot2(args).unwrap();
+        assert_eq!(unpivoted.get_column_names(), &["A", "variable", "value"]);
         let value = unpivoted.column("value")?;
         let value = value.i32()?;
         let value = value.into_no_null_iter().collect::<Vec<_>>();
@@ -243,6 +266,20 @@ mod test {
         let variable = variable.into_no_null_iter().collect::<Vec<_>>();
         assert_eq!(variable, &["B", "B", "B", "C", "C", "C", "D", "D", "D"]);
         assert!(unpivoted.column("A").is_ok());
+
+        // Specify all columns in index
+        let args = UnpivotArgsIR {
+            on: vec![],
+            index: vec!["A".into(), "B".into(), "C".into(), "D".into()],
+            ..Default::default()
+        };
+        let unpivoted = df.unpivot2(args).unwrap();
+        assert_eq!(
+            unpivoted.get_column_names(),
+            &["A", "B", "C", "D", "variable", "value"]
+        );
+        assert_eq!(unpivoted.len(), 0);
+
         Ok(())
     }
 }

@@ -31,7 +31,7 @@ pub fn run_query(
         std::fs::write(visual_path, visualization).unwrap();
     }
     let (mut graph, phys_to_graph) =
-        crate::physical_plan::physical_plan_to_graph(&phys_sm, expr_arena)?;
+        crate::physical_plan::physical_plan_to_graph(root, &phys_sm, expr_arena)?;
     let mut results = crate::execute::execute_graph(&mut graph)?;
     Ok(results.remove(phys_to_graph[root]).unwrap())
 }
