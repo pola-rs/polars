@@ -82,3 +82,25 @@ def test_count_ndjson(io_files_path: Path, path: str, n_rows: int) -> None:
     # Check if we are using our fast count star
     assert "FAST_COUNT" in lf.explain()
     assert_frame_equal(lf.collect(), expected)
+
+
+def test_count_compressed_csv_18057(io_files_path: Path) -> None:
+    csv_file = io_files_path / "gzipped.csv.gz"
+
+    expected = pl.DataFrame(
+        {"a": [1, 2, 3], "b": ["a", "b", "c"], "c": [1.0, 2.0, 3.0]}
+    )
+    lf = pl.scan_csv(csv_file, truncate_ragged_lines=True)
+    out = lf.collect()
+    assert_frame_equal(out, expected)
+    # This also tests:
+    # #18070 "CSV count_rows does not skip empty lines at file start"
+    # as the file has an empty line at the beginning.
+    assert lf.select(pl.len()).collect().item() == 3
+
+
+def test_count_compressed_ndjson(io_files_path: Path) -> None:
+    path = io_files_path / "iris.jsonl.gz"
+
+    lf = pl.scan_ndjson(path)
+    assert lf.select(pl.len()).collect().item() == 150
