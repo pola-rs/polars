@@ -123,6 +123,13 @@ impl DataPageHeader {
             DataPageHeader::V2(d) => d.num_values as usize,
         }
     }
+
+    pub fn encoding(&self) -> Encoding {
+        match self {
+            Self::V1(d) => d.encoding(),
+            Self::V2(d) => d.encoding(),
+        }
+    }
 }
 
 /// A [`DataPage`] is an uncompressed, encoded representation of a Parquet data page. It holds actual data

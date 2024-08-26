@@ -4,6 +4,7 @@ use crate::parquet::page::{
     CompressedDataPage, CompressedDictPage, CompressedPage, DataPage, DataPageHeader, DictPage,
     Page,
 };
+use crate::parquet::parquet_bridge::Encoding;
 use crate::parquet::{compression, CowBuffer, FallibleStreamingIterator};
 
 /// Compresses a [`DataPage`] into a [`CompressedDataPage`].
@@ -20,6 +21,16 @@ fn compress_data(
     } = page;
     let uncompressed_page_size = buffer.len();
     let num_rows = num_rows.expect("We should have num_rows when we are writing");
+
+    let mut compression = compression;
+
+    // Hybrid RLE-Bitpacked is everything you should want from your compression. This encoding gets
+    // used for dictionary-encoded pages and boolean. If you have that encoding, do not compress
+    // page.
+    if matches!(header.encoding(), Encoding::RleDictionary | Encoding::Rle) {
+        compression = CompressionOptions::Uncompressed;
+    }
+
     if compression != CompressionOptions::Uncompressed {
         match &header {
             DataPageHeader::V1(_) => {
@@ -37,7 +48,15 @@ fn compress_data(
                 )?;
             },
         };
-    } else {
+
+        // Revert to uncompressed if our compression resulted in a worse result
+        if compressed_buffer.len() >= buffer.len() {
+            compressed_buffer.clear();
+            compression = CompressionOptions::Uncompressed;
+        }
+    }
+
+    if compression == CompressionOptions::Uncompressed {
         std::mem::swap(buffer.to_mut(), &mut compressed_buffer);
     }
 
