@@ -4,7 +4,7 @@ use polars_core::prelude::{InitHashMaps, PlHashMap, PlIndexMap};
 use polars_core::schema::Schema;
 use polars_error::PolarsResult;
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
-use polars_plan::plans::{AExpr, Context, IR};
+use polars_plan::plans::{AExpr, ColumnName, Context, IR};
 use polars_plan::prelude::SinkType;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
@@ -101,28 +101,28 @@ pub fn lower_ir(
         IR::Filter { input, predicate } => {
             let predicate = predicate.clone();
             let phys_input = lower_ir(*input, ir_arena, expr_arena, phys_sm, schema_cache)?;
-            let (trans_input, trans_predicate) =
-                super::lower_expr::lower_exprs(phys_input, &[predicate], expr_arena, phys_sm)?;
+            let cols_and_predicate = output_schema
+                .iter_names()
+                .map(|name| {
+                    let name: ColumnName = name.as_str().into();
+                    ExprIR::new(expr_arena.add(AExpr::Column(name.clone())), OutputName::ColumnLhs(name))
+                })
+                .chain([predicate])
+                .collect_vec();
+            let (trans_input, mut trans_cols_and_predicate) =
+                super::lower_expr::lower_exprs(phys_input, &cols_and_predicate, expr_arena, phys_sm)?;
 
+            let filter_schema = phys_sm[trans_input].output_schema.clone();
             let filter = PhysNodeKind::Filter {
                 input: trans_input,
-                predicate: trans_predicate.into_iter().next().unwrap(),
+                predicate: trans_cols_and_predicate.last().unwrap().clone(),
             };
 
-            // Drop the computed predicate column if necessary.
-            if trans_input == phys_input {
-                filter
-            } else {
-                let filter_schema = phys_sm[trans_input].output_schema.clone();
-                let columns = output_schema
-                    .iter_names()
-                    .map(|name| name.to_string())
-                    .collect_vec();
-                PhysNodeKind::SimpleProjection {
-                    input: phys_sm.insert(PhysNode::new(filter_schema, filter)),
-                    columns,
-                }
-            }
+            let post_filter = phys_sm.insert(PhysNode::new(filter_schema, filter));
+            trans_cols_and_predicate.pop(); // Remove predicate.
+            return super::lower_expr::build_select_node(
+                post_filter, &trans_cols_and_predicate, expr_arena, phys_sm,
+            );
         },
 
         IR::DataFrameScan {
