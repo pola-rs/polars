@@ -11,7 +11,7 @@ from hypothesis import given
 import polars as pl
 from polars.dependencies import _ZONEINFO_AVAILABLE
 from polars.exceptions import ComputeError, InvalidOperationError
-from polars.testing import assert_series_equal, assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if sys.version_info >= (3, 9):
     from zoneinfo import ZoneInfo
