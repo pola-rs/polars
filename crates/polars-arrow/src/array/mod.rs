@@ -195,6 +195,7 @@ pub trait Array: Send + Sync + dyn_clone::DynClone + 'static {
 dyn_clone::clone_trait_object!(Array);
 
 /// A trait describing a mutable array; i.e. an array whose values can be changed.
+///
 /// Mutable arrays cannot be cloned but can be mutated in place,
 /// thereby making them useful to perform numeric operations without allocations.
 /// As in [`Array`], concrete arrays (such as [`MutablePrimitiveArray`]) implement how they are mutated.
@@ -370,6 +371,7 @@ pub fn new_empty_array(data_type: ArrowDataType) -> Box<dyn Array> {
 }
 
 /// Creates a new [`Array`] of [`ArrowDataType`] `data_type` and `length`.
+///
 /// The array is guaranteed to have [`Array::null_count`] equal to [`Array::len`]
 /// for all types except Union, which does not have a validity.
 pub fn new_null_array(data_type: ArrowDataType, length: usize) -> Box<dyn Array> {

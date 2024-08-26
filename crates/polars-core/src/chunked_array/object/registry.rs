@@ -1,4 +1,5 @@
 //! This is a heap allocated utility that can be used to register an object type.
+//!
 //! That object type will know its own generic type parameter `T` and callers can simply
 //! send `&Any` values and don't have to know the generic type themselves.
 use std::any::Any;

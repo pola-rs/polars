@@ -1,3 +1,5 @@
+//! Module containing implementation of the pivot operation.
+//!
 //! Polars lazy does not implement a pivot because it is impossible to know the schema without
 //! materializing the whole dataset. This makes a pivot quite a terrible operation for performant
 //! workflows. An optimization can never be pushed down passed a pivot.
