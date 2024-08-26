@@ -169,7 +169,11 @@ mod compute_node_impl {
             self.row_group_decoder = Some(Arc::new(row_group_decoder));
         }
 
-        fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {
+        fn update_state(
+            &mut self,
+            recv: &mut [PortState],
+            send: &mut [PortState],
+        ) -> PolarsResult<()> {
             use std::sync::atomic::Ordering;
 
             assert!(recv.is_empty());
@@ -190,7 +194,7 @@ mod compute_node_impl {
             } else {
                 send[0] = PortState::Ready
             }
-            
+
             Ok(())
         }
 

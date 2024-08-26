@@ -91,7 +91,8 @@ impl Graph {
                     node.compute.name()
                 );
             }
-            node.compute.update_state(&mut recv_state, &mut send_state)?;
+            node.compute
+                .update_state(&mut recv_state, &mut send_state)?;
             if verbose {
                 eprintln!(
                     "updating {}, after: {recv_state:?} {send_state:?}",
