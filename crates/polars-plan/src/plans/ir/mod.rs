@@ -9,7 +9,7 @@ use std::fmt;
 use std::path::PathBuf;
 
 pub use dot::IRDotDisplay;
-pub use format::{ExprIRDisplay, IRDisplay};
+pub use format::{write_scan, ExprIRDisplay, IRDisplay};
 use hive::HivePartitions;
 use polars_core::prelude::*;
 use polars_utils::idx_vec::UnitVec;

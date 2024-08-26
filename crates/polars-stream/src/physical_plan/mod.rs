@@ -5,7 +5,7 @@ use polars_core::frame::DataFrame;
 use polars_core::prelude::SortMultipleOptions;
 use polars_core::schema::{Schema, SchemaRef};
 use polars_plan::plans::hive::HivePartitions;
-use polars_plan::plans::{AExpr, DataFrameUdf, FileInfo, FileScan};
+use polars_plan::plans::{write_scan, AExpr, DataFrameUdf, FileInfo, FileScan};
 use polars_plan::prelude::expr_ir::ExprIR;
 
 mod lower_expr;
@@ -223,23 +223,46 @@ fn visualize_plan_rec(
             (label.to_string(), inputs.as_slice())
         },
         PhysNodeKind::Multiplexer { input } => ("multiplexer".to_string(), from_ref(input)),
-        #[allow(unused)]
         PhysNodeKind::FileScan {
             paths,
             file_info,
-            hive_parts,
-            output_schema,
+            hive_parts: _,
+            output_schema: _,
             scan_type,
             predicate,
             file_options,
         } => {
-            // TODO: Improve formatting
-            let label = match scan_type {
+            let n_columns = file_options
+                .with_columns
+                .as_ref()
+                .map(|columns| columns.len() as i64)
+                .unwrap_or(-1);
+            let indent = 0;
+
+            let name = match scan_type {
                 FileScan::Parquet { .. } => "parquet-source",
-                _ => todo!(),
+                FileScan::Csv { .. } => "csv-source",
+                FileScan::Ipc { .. } => "ipc-source",
+                FileScan::NDJson { .. } => "ndjson-source",
+                FileScan::Anonymous { .. } => "anonymous-source",
             };
 
-            (label.to_string(), &[][..])
+            let mut out = String::new();
+
+            write_scan(
+                &mut out,
+                name,
+                paths,
+                indent,
+                n_columns,
+                file_info.schema.len(),
+                &predicate.as_ref().map(|x| x.display(expr_arena)),
+                file_options.slice,
+                file_options.row_index.as_ref(),
+            )
+            .unwrap();
+
+            (out, &[][..])
         },
     };
 
