@@ -72,12 +72,18 @@ fn is_elementwise_rec(
             function: _,
             output_type: _,
             options,
-        }
-        | AExpr::Function {
-            input: _,
-            function: _,
+        } => {
+            options.is_elementwise()
+        },
+        AExpr::Function {
+            input,
+            function,
             options,
-        } => options.is_elementwise(),
+        } => match function {
+            FunctionExpr::AsStruct => input.iter().all(|expr| is_elementwise_rec(expr.node(), arena, cache)),
+            _ => options.is_elementwise(),
+        }
+
         AExpr::Window { .. } => false,
         AExpr::Slice { .. } => false,
         AExpr::Len => false,
