@@ -119,7 +119,7 @@ impl ComputeNode for ReduceNode {
                     })
                     .collect::<PolarsResult<Vec<_>>>()
                     .unwrap();
-                let out = unsafe { DataFrame::new_no_checks(columns) };
+                let out = DataFrame::new(columns).unwrap();
 
                 self.state = ReduceState::Source(Some(out));
             },
