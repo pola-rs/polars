@@ -19,7 +19,7 @@ pub fn run_query(
 ) -> PolarsResult<DataFrame> {
     let mut phys_sm = SlotMap::with_capacity_and_key(ir_arena.len());
     let mut schema_cache = PlHashMap::with_capacity(ir_arena.len());
-    let root = crate::physical_plan::lower_ir(
+    let root = crate::physical_plan::build_physical_plan(
         node,
         &mut ir_arena,
         expr_arena,

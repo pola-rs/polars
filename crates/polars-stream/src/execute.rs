@@ -248,7 +248,7 @@ pub fn execute_graph(
         if polars_core::config::verbose() {
             eprintln!("polars-stream: updating graph state");
         }
-        graph.update_all_states();
+        graph.update_all_states()?;
         let (nodes, pipes) = find_runnable_subgraph(graph);
         if polars_core::config::verbose() {
             for node in &nodes {

@@ -1,3 +1,4 @@
+use polars_error::PolarsResult;
 use slotmap::{SecondaryMap, SlotMap};
 
 use crate::nodes::ComputeNode;
@@ -64,7 +65,7 @@ impl Graph {
     }
 
     /// Updates all the nodes' states until a fixed point is reached.
-    pub fn update_all_states(&mut self) {
+    pub fn update_all_states(&mut self) -> PolarsResult<()> {
         let mut to_update: Vec<_> = self.nodes.keys().collect();
         let mut scheduled_for_update: SecondaryMap<GraphNodeKey, ()> =
             self.nodes.keys().map(|k| (k, ())).collect();
@@ -90,7 +91,8 @@ impl Graph {
                     node.compute.name()
                 );
             }
-            node.compute.update_state(&mut recv_state, &mut send_state);
+            node.compute
+                .update_state(&mut recv_state, &mut send_state)?;
             if verbose {
                 eprintln!(
                     "updating {}, after: {recv_state:?} {send_state:?}",
@@ -121,6 +123,7 @@ impl Graph {
                 }
             }
         }
+        Ok(())
     }
 }
 

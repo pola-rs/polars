@@ -18,9 +18,10 @@ impl ComputeNode for FilterNode {
         "filter"
     }
 
-    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) {
+    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {
         assert!(recv.len() == 1 && send.len() == 1);
         recv.swap_with_slice(send);
+        Ok(())
     }
 
     fn spawn<'env, 's>(
