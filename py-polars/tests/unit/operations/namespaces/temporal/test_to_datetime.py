@@ -203,3 +203,12 @@ def test_to_datetime_two_digit_year_17213(
 ) -> None:
     result = pl.Series([inputs]).str.to_date(format=format).item()
     assert result == expected
+
+
+def test_ddMonYYY_string_date() -> None:
+    df = pl.DataFrame({"x1": ["01Jan2021"]}).with_columns(
+        **{"x1-date": pl.col("x1").str.to_date()}
+    )
+    expected = pl.DataFrame({"x1-date": [date(2021, 1, 1)]})
+    out = df.select(pl.col("x1-date"))
+    assert_frame_equal(expected, out)
