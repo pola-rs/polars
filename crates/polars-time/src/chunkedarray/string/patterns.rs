@@ -5,6 +5,7 @@ pub(super) static DATE_D_M_Y: &[&str] = &[
     "%d-%m-%Y", // 31-12-2021
     "%d/%m/%Y", // 31/12/2021
     "%d.%m.%Y", // 31.12.2021
+    "%d%b%Y",   // 31Dec2021
 ];
 
 pub(super) static DATE_Y_M_D: &[&str] = &[
