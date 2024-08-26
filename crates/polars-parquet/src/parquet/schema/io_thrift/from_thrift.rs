@@ -51,6 +51,12 @@ fn from_thrift_helper(
         // Sometimes parquet-cpp sets num_children field to 0 for primitive types, so we
         // have to handle this case too.
         None | Some(0) => {
+            // empty root
+            if is_root_node {
+                let fields = vec![];
+                let tp = ParquetType::new_root(name, fields);
+                return Ok((index + 1, tp));
+            }
             // primitive type
             let repetition = element
                 .repetition_type
