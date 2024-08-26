@@ -1,3 +1,4 @@
+use std::fmt::Write;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -5,7 +6,7 @@ use polars_core::frame::DataFrame;
 use polars_core::prelude::SortMultipleOptions;
 use polars_core::schema::{Schema, SchemaRef};
 use polars_plan::plans::hive::HivePartitions;
-use polars_plan::plans::{AExpr, DataFrameUdf, FileInfo, FileScan};
+use polars_plan::plans::{AExpr, DataFrameUdf, EscapeLabel, FileInfo, FileScan, PathsDisplay};
 use polars_plan::prelude::expr_ir::ExprIR;
 
 mod lower_expr;
@@ -223,23 +224,67 @@ fn visualize_plan_rec(
             (label.to_string(), inputs.as_slice())
         },
         PhysNodeKind::Multiplexer { input } => ("multiplexer".to_string(), from_ref(input)),
-        #[allow(unused)]
         PhysNodeKind::FileScan {
             paths,
             file_info,
             hive_parts,
-            output_schema,
+            output_schema: _,
             scan_type,
             predicate,
             file_options,
         } => {
-            // TODO: Improve formatting
-            let label = match scan_type {
+            let name = match scan_type {
                 FileScan::Parquet { .. } => "parquet-source",
-                _ => todo!(),
+                FileScan::Csv { .. } => "csv-source",
+                FileScan::Ipc { .. } => "ipc-source",
+                FileScan::NDJson { .. } => "ndjson-source",
+                FileScan::Anonymous { .. } => "anonymous-source",
             };
 
-            (label.to_string(), &[][..])
+            let mut out = name.to_string();
+            let mut f = EscapeLabel(&mut out);
+
+            {
+                let paths_display = PathsDisplay(paths.as_ref());
+
+                write!(f, "\npaths: {}", paths_display).unwrap();
+            }
+
+            {
+                let total_columns =
+                    file_info.schema.len() - usize::from(file_options.row_index.is_some());
+                let n_columns = file_options
+                    .with_columns
+                    .as_ref()
+                    .map(|columns| columns.len());
+
+                if let Some(n) = n_columns {
+                    write!(f, "\nprojection: {}/{total_columns}", n).unwrap();
+                } else {
+                    write!(f, "\nprojection: */{total_columns}").unwrap();
+                }
+            }
+
+            if let Some(polars_io::RowIndex { name, offset }) = &file_options.row_index {
+                write!(f, r#"\nrow index: name: "{}", offset: {}"#, name, offset).unwrap();
+            }
+
+            if let Some((offset, len)) = file_options.slice {
+                write!(f, "\nslice: offset: {}, len: {}", offset, len).unwrap();
+            }
+
+            if let Some(predicate) = predicate.as_ref() {
+                write!(f, "\nfilter: {}", predicate.display(expr_arena)).unwrap();
+            }
+
+            if let Some(v) = hive_parts
+                .as_deref()
+                .map(|x| x[0].get_statistics().column_stats().len())
+            {
+                write!(f, "\nhive: {} columns", v).unwrap();
+            }
+
+            (out, &[][..])
         },
     };
 
