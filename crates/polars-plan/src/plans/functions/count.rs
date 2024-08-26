@@ -12,7 +12,7 @@ use polars_io::parquet::read::ParquetAsyncReader;
 use polars_io::parquet::read::ParquetReader;
 #[cfg(all(feature = "parquet", feature = "async"))]
 use polars_io::pl_async::{get_runtime, with_concurrency_budget};
-#[cfg(feature = "json")]
+#[cfg(any(feature = "json", feature = "parquet"))]
 use polars_io::SerReader;
 
 use super::*;
