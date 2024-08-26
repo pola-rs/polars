@@ -53,8 +53,8 @@ impl AsExpr for ExprIR {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn write_scan(
-    f: &mut dyn std::fmt::Write,
+fn write_scan(
+    f: &mut Formatter,
     name: &str,
     path: &[PathBuf],
     indent: usize,
