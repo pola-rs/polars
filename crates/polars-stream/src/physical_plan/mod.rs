@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{PlHashMap, SortMultipleOptions};
+use polars_core::prelude::{InitHashMaps, PlHashMap, SortMultipleOptions};
 use polars_core::schema::{Schema, SchemaRef};
 use polars_error::PolarsResult;
 use polars_plan::plans::hive::HivePartitions;
@@ -19,6 +19,8 @@ use polars_plan::prelude::FileScanOptions;
 use polars_utils::arena::{Arena, Node};
 use slotmap::{Key, SecondaryMap, SlotMap};
 pub use to_graph::physical_plan_to_graph;
+
+use crate::physical_plan::lower_expr::ExprCache;
 
 slotmap::new_key_type! {
     /// Key used for PNodes.
@@ -182,9 +184,17 @@ pub fn build_physical_plan(
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
-    schema_cache: &mut PlHashMap<Node, Arc<Schema>>,
 ) -> PolarsResult<PhysNodeKey> {
-    let phys_root = lower_ir::lower_ir(root, ir_arena, expr_arena, phys_sm, schema_cache)?;
+    let mut schema_cache = PlHashMap::with_capacity(ir_arena.len());
+    let mut expr_cache = ExprCache::with_capacity(expr_arena.len());
+    let phys_root = lower_ir::lower_ir(
+        root,
+        ir_arena,
+        expr_arena,
+        phys_sm,
+        &mut schema_cache,
+        &mut expr_cache,
+    )?;
     let mut referenced = SecondaryMap::with_capacity(phys_sm.capacity());
     insert_multiplexers(phys_root, phys_sm, &mut referenced);
     Ok(phys_root)

@@ -18,14 +18,8 @@ pub fn run_query(
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<DataFrame> {
     let mut phys_sm = SlotMap::with_capacity_and_key(ir_arena.len());
-    let mut schema_cache = PlHashMap::with_capacity(ir_arena.len());
-    let root = crate::physical_plan::build_physical_plan(
-        node,
-        &mut ir_arena,
-        expr_arena,
-        &mut phys_sm,
-        &mut schema_cache,
-    )?;
+    let root =
+        crate::physical_plan::build_physical_plan(node, &mut ir_arena, expr_arena, &mut phys_sm)?;
     if let Ok(visual_path) = std::env::var("POLARS_VISUALIZE_PHYSICAL_PLAN") {
         let visualization = crate::physical_plan::visualize_plan(root, &phys_sm, expr_arena);
         std::fs::write(visual_path, visualization).unwrap();
