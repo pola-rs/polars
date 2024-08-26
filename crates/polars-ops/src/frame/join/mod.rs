@@ -115,18 +115,6 @@ pub trait DataFrameJoinOps: IntoDf {
             return left_df.cross_join(other, args.suffix.clone(), args.slice);
         }
 
-        if let JoinType::IEJoin(options) = args.how {
-            return iejoin::join_dataframes(
-                left_df,
-                other,
-                selected_left,
-                selected_right,
-                &options,
-                args.suffix.as_deref(),
-                args.slice,
-            );
-        }
-
         // Clear literals if a frame is empty. Otherwise we could get an oob
         fn clear(s: &mut [Series]) {
             for s in s.iter_mut() {
@@ -209,6 +197,18 @@ pub trait DataFrameJoinOps: IntoDf {
                     *r = ca_right.into_series().with_name(r.name().clone());
                 },
             }
+        }
+
+        if let JoinType::IEJoin(options) = args.how {
+            return iejoin::join_dataframes(
+                left_df,
+                other,
+                selected_left,
+                selected_right,
+                &options,
+                args.suffix.as_deref(),
+                args.slice,
+            );
         }
 
         // Single keys.
