@@ -13,7 +13,7 @@ use polars_plan::plans::{AExpr, LiteralValue};
 use polars_plan::prelude::*;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
-use slotmap::{Key, SlotMap};
+use slotmap::SlotMap;
 
 use super::{PhysNode, PhysNodeKey, PhysNodeKind};
 
@@ -631,24 +631,6 @@ fn lower_exprs_with_ctx(
     let zip_node = ctx
         .phys_sm
         .insert(PhysNode::new(Arc::new(output_schema), zip_kind));
-
-    // Replace original input node with a multiplexer, if it wasn't already one.
-    if !matches!(ctx.phys_sm[input].kind, PhysNodeKind::Multiplexer { .. }) {
-        let input_schema = ctx.phys_sm[input].output_schema.clone();
-        let orig_input_node = core::mem::replace(
-            &mut ctx.phys_sm[input],
-            PhysNode::new(
-                input_schema,
-                PhysNodeKind::Multiplexer {
-                    input: PhysNodeKey::null(),
-                },
-            ),
-        );
-        let orig_input_key = ctx.phys_sm.insert(orig_input_node);
-        ctx.phys_sm[input].kind = PhysNodeKind::Multiplexer {
-            input: orig_input_key,
-        };
-    }
 
     Ok((zip_node, transformed_exprs))
 }
