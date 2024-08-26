@@ -76,17 +76,17 @@ fn write_scan(
     } else {
         write!(f, "\n{:indent$}PROJECT */{total_columns} COLUMNS", "")?;
     }
-    if let Some(predicate) = predicate {
-        write!(f, "\n{:indent$}SELECTION: {predicate}", "")?;
-    }
-    if let Some(slice) = slice {
-        write!(f, "\n{:indent$}SLICE: {slice:?}", "")?;
-    }
     if let Some(row_index) = row_index {
         write!(f, "\n{:indent$}ROW_INDEX: {}", "", row_index.name)?;
         if row_index.offset != 0 {
             write!(f, " (offset: {})", row_index.offset)?;
         }
+    }
+    if let Some(slice) = slice {
+        write!(f, "\n{:indent$}SLICE: {slice:?}", "")?;
+    }
+    if let Some(predicate) = predicate {
+        write!(f, "\n{:indent$}SELECTION: {predicate}", "")?;
     }
     Ok(())
 }
