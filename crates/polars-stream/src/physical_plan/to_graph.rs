@@ -295,20 +295,24 @@ fn to_graph_rec<'a>(
                         options,
                         cloud_options,
                         metadata: _,
-                    } => ctx.graph.add_node(
-                        {
-                            nodes::parquet_source::ParquetSourceNode::new(
-                                paths,
-                                file_info,
-                                hive_parts,
-                                predicate,
-                                options,
-                                cloud_options,
-                                file_options,
-                            )
-                        },
-                        [],
-                    ),
+                    } => {
+                        if std::env::var("POLARS_DISABLE_PARQUET_SOURCE").as_deref() != Ok("1") {
+                            ctx.graph.add_node(
+                                nodes::parquet_source::ParquetSourceNode::new(
+                                    paths,
+                                    file_info,
+                                    hive_parts,
+                                    predicate,
+                                    options,
+                                    cloud_options,
+                                    file_options,
+                                ),
+                                [],
+                            );
+                        } else {
+                            todo!()
+                        }
+                    },
                     _ => todo!(),
                 }
             }
