@@ -151,6 +151,17 @@ pub fn optimize(
         }
     }
 
+    if slice_pushdown {
+        let slice_pushdown_opt = SlicePushDown::new(streaming);
+        let alp = lp_arena.take(lp_top);
+        let alp = slice_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
+
+        lp_arena.replace(lp_top, alp);
+
+        // Expressions use the stack optimizer.
+        rules.push(Box::new(slice_pushdown_opt));
+    }
+
     if predicate_pushdown {
         let predicate_pushdown_opt = PredicatePushDown::new(expr_eval);
         let alp = lp_arena.take(lp_top);
@@ -171,16 +182,6 @@ pub fn optimize(
         rules.push(Box::new(DelayRechunk::new()));
     }
 
-    if slice_pushdown {
-        let slice_pushdown_opt = SlicePushDown::new(streaming);
-        let alp = lp_arena.take(lp_top);
-        let alp = slice_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
-
-        lp_arena.replace(lp_top, alp);
-
-        // Expressions use the stack optimizer.
-        rules.push(Box::new(slice_pushdown_opt));
-    }
     // This optimization removes branches, so we must do it when type coercion
     // is completed.
     if simplify_expr {
