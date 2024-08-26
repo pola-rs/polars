@@ -6,7 +6,7 @@ import pytest
 
 import polars as pl
 from polars._utils.cloud import prepare_cloud_plan
-from polars.exceptions import InvalidOperationError
+from polars.exceptions import ComputeError, InvalidOperationError
 
 CLOUD_SOURCE = "s3://my-nonexistent-bucket/dataset"
 
@@ -36,12 +36,6 @@ def test_prepare_cloud_plan(lf: pl.LazyFrame) -> None:
         ),
         pl.LazyFrame({"a": [1, 2], "b": [3, 4]}).select(
             pl.col("b").map_batches(lambda x: sum(x))
-        ),
-        pl.LazyFrame({"a": [{"x": 1, "y": 2}]}).select(
-            pl.col("a").name.map(lambda x: x.upper())
-        ),
-        pl.LazyFrame({"a": [{"x": 1, "y": 2}]}).select(
-            pl.col("a").name.map_fields(lambda x: x.upper())
         ),
         pl.LazyFrame({"a": [1, 2], "b": [3, 4]}).map_batches(lambda x: x),
         pl.LazyFrame({"a": [1, 2], "b": [3, 4]})
@@ -106,4 +100,23 @@ def test_prepare_cloud_plan_fail_on_python_scan(tmp_path: Path) -> None:
         InvalidOperationError,
         match="logical plan ineligible for execution on Polars Cloud",
     ):
+        prepare_cloud_plan(lf)
+
+
+@pytest.mark.parametrize(
+    "lf",
+    [
+        pl.LazyFrame({"a": [{"x": 1, "y": 2}]}).select(
+            pl.col("a").name.map(lambda x: x.upper())
+        ),
+        pl.LazyFrame({"a": [{"x": 1, "y": 2}]}).select(
+            pl.col("a").name.map_fields(lambda x: x.upper())
+        ),
+        pl.LazyFrame({"a": [1, 2], "b": [3, 4]}).select(
+            pl.col("a").map_elements(lambda x: sum(x), return_dtype=pl.Int64)
+        ),
+    ],
+)
+def test_prepare_cloud_plan_fail_on_serialization(lf: pl.LazyFrame) -> None:
+    with pytest.raises(ComputeError, match="serialize"):
         prepare_cloud_plan(lf)
