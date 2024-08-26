@@ -1707,12 +1707,20 @@ impl Expr {
 
     /// Get maximal value that could be hold by this dtype.
     pub fn upper_bound(self) -> Expr {
-        self.map_private(FunctionExpr::UpperBound)
+        self.apply_private(FunctionExpr::UpperBound)
+            .with_function_options(|mut options| {
+                options.flags |= FunctionFlags::RETURNS_SCALAR;
+                options
+            })
     }
 
     /// Get minimal value that could be hold by this dtype.
     pub fn lower_bound(self) -> Expr {
-        self.map_private(FunctionExpr::LowerBound)
+        self.apply_private(FunctionExpr::LowerBound)
+            .with_function_options(|mut options| {
+                options.flags |= FunctionFlags::RETURNS_SCALAR;
+                options
+            })
     }
 
     pub fn reshape(self, dimensions: &[i64], nested_type: NestedType) -> Self {
