@@ -33,11 +33,11 @@ pub struct IEJoinOptions {
     pub operator2: InequalityOperator,
 }
 
-/// Inequality join. Matches rows from this DataFrame with rows from another DataFrame
-/// using two inequality operators (one of [<, <=, >, >=]).
+/// Inequality join. Matches rows between two DataFrames using two inequality operators
+/// (one of [<, <=, >, >=]).
 /// Based on Khayyat et al. 2015, "Lightning Fast and Space Efficient Inequality Joins"
 /// and extended to work with duplicate values.
-pub fn join_dataframes(
+pub fn iejoin(
     left: &DataFrame,
     right: &DataFrame,
     selected_left: Vec<Series>,
@@ -221,6 +221,8 @@ trait L1Array {
     fn mark_visited(&self, index: usize, bit_array: &mut FilteredBitArray);
 }
 
+/// Find the position in the L1 array where we should begin checking for matches,
+/// given the index in L1 corresponding to the current position in L2.
 fn find_search_start_index<T>(
     l1_array: &[L1Item<T>],
     index: usize,
@@ -284,6 +286,39 @@ where
     }
 }
 
+fn find_matches_in_l1<T>(
+    l1_array: &[L1Item<T>],
+    l1_index: usize,
+    row_index: i64,
+    bit_array: &FilteredBitArray,
+    op1: InequalityOperator,
+    left_row_ids: &mut PrimitiveChunkedBuilder<IdxType>,
+    right_row_ids: &mut PrimitiveChunkedBuilder<IdxType>,
+) -> i64
+where
+    T: NumericNative,
+    T: TotalOrd,
+{
+    debug_assert!(row_index > 0);
+    let mut match_count = 0;
+
+    // This entry comes from the left hand side DataFrame.
+    // Find all following entries in L1 (meaning they satisfy the first operator)
+    // that have already been visited (so satisfy the second operator).
+    // Because we use a stable sort for l2, we know that we won't find any
+    // matches for duplicate y values when traversing forwards in l1.
+    let start_index = find_search_start_index(l1_array, l1_index, op1);
+    bit_array.on_set_bits_from(start_index, |set_bit: usize| {
+        let right_row_index = l1_array[set_bit].row_index;
+        debug_assert!(right_row_index < 0);
+        left_row_ids.append_value((row_index - 1) as IdxSize);
+        right_row_ids.append_value((-right_row_index) as IdxSize - 1);
+        match_count += 1;
+    });
+
+    match_count
+}
+
 impl<T> L1Array for Vec<L1Item<T>>
 where
     T: NumericNative,
@@ -296,27 +331,22 @@ where
         left_row_ids: &mut PrimitiveChunkedBuilder<IdxType>,
         right_row_ids: &mut PrimitiveChunkedBuilder<IdxType>,
     ) -> i64 {
-        let mut match_count = 0;
         let row_index = self[l1_index].row_index;
         let from_lhs = row_index > 0;
         if from_lhs {
-            // This entry comes from the left hand side DataFrame.
-            // Find all following entries in L1 (meaning they satisfy the first operator)
-            // that have already been visited (so satisfy the second operator).
-            // Because we use a stable sort for l2, we know that we won't find any
-            // matches for duplicate y values when traversing forwards in l1.
-            let start_index = find_search_start_index(self, l1_index, op1);
-            bit_array.on_set_bits_from(start_index, |set_bit: usize| {
-                let right_row_index = self[set_bit].row_index;
-                debug_assert!(right_row_index < 0);
-                left_row_ids.append_value((row_index - 1) as IdxSize);
-                right_row_ids.append_value((-right_row_index) as IdxSize - 1);
-                match_count += 1;
-            });
+            find_matches_in_l1(
+                self,
+                l1_index,
+                row_index,
+                bit_array,
+                op1,
+                left_row_ids,
+                right_row_ids,
+            )
         } else {
             bit_array.set_bit(l1_index);
+            0
         }
-        match_count
     }
 
     fn process_lhs_entry(
@@ -327,30 +357,35 @@ where
         left_row_ids: &mut PrimitiveChunkedBuilder<IdxType>,
         right_row_ids: &mut PrimitiveChunkedBuilder<IdxType>,
     ) -> i64 {
-        let mut match_count = 0;
         let row_index = self[l1_index].row_index;
         let from_lhs = row_index > 0;
         if from_lhs {
-            let start_index = find_search_start_index(self, l1_index, op1);
-            bit_array.on_set_bits_from(start_index, |set_bit: usize| {
-                let right_row_index = self[set_bit].row_index;
-                debug_assert!(right_row_index < 0);
-                left_row_ids.append_value((row_index - 1) as IdxSize);
-                right_row_ids.append_value((-right_row_index) as IdxSize - 1);
-                match_count += 1;
-            });
+            find_matches_in_l1(
+                self,
+                l1_index,
+                row_index,
+                bit_array,
+                op1,
+                left_row_ids,
+                right_row_ids,
+            )
+        } else {
+            0
         }
-        match_count
     }
 
     fn mark_visited(&self, index: usize, bit_array: &mut FilteredBitArray) {
         let from_lhs = self[index].row_index > 0;
+        // We only mark RHS entries as visited,
+        // so that we don't try to match LHS entries with other LHS entries.
         if !from_lhs {
             bit_array.set_bit(index);
         }
     }
 }
 
+/// Create a vector of L1 items from the array of LHS x values concatenated with RHS x values
+/// and their ordering.
 fn build_l1_array<T>(
     ca: &ChunkedArray<T>,
     order: &IdxCa,
@@ -366,8 +401,10 @@ where
             // Nulls should have been skipped over
             .ok_or_else(|| polars_err!(ComputeError: "Unexpected null value in IEJoin data"))?;
         let row_index = if index < right_df_offset {
+            // Row from LHS
             index as i64 + 1
         } else {
+            // Row from RHS
             -((index - right_df_offset) as i64) - 1
         };
         array.push(L1Item { row_index, value });
@@ -375,6 +412,9 @@ where
     Ok(Box::new(array))
 }
 
+/// Create a vector of L2 items from the array of y values ordered according to the L1 order,
+/// and their ordering. We don't need to store actual y values but only track whether we're at
+/// the end of a run of equal values.
 fn build_l2_array<T>(ca: &ChunkedArray<T>, order: &IdxCa) -> PolarsResult<Vec<L2Item>>
 where
     T: PolarsNumericType,

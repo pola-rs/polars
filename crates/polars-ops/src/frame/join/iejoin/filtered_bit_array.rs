@@ -2,8 +2,9 @@ use std::cmp::min;
 
 use arrow::bitmap::MutableBitmap;
 
-/// Bit array with a filter to speed up searching for set bits,
-/// based on section 4.1 in Khayyat et al.
+/// Bit array with a filter to speed up searching for set bits when sparse,
+/// based on section 4.1 from Khayyat et al. 2015,
+/// "Lightning Fast and Space Efficient Inequality Joins"
 pub struct FilteredBitArray {
     bit_array: MutableBitmap,
     filter: MutableBitmap,

@@ -969,7 +969,7 @@ impl PyLazyFrame {
             .into())
     }
 
-    fn ie_join(&self, other: Self, on: Vec<PyExpr>, suffix: String) -> PyResult<Self> {
+    fn inequality_join(&self, other: Self, on: Vec<PyExpr>, suffix: String) -> PyResult<Self> {
         let ldf = self.ldf.clone();
         let other = other.ldf;
         let (left_on, operators, right_on) = parse_ie_join_expressions(on)?;

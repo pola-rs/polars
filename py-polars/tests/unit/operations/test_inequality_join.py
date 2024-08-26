@@ -23,7 +23,7 @@ def test_self_join() -> None:
         }
     )
 
-    actual = west.ie_join(
+    actual = west.inequality_join(
         west, on=[pl.col("time") > pl.col("time"), pl.col("cost") < pl.col("cost")]
     )
 
@@ -60,7 +60,7 @@ def test_basic_ie_join() -> None:
         }
     )
 
-    actual = east.ie_join(
+    actual = east.inequality_join(
         west, on=[pl.col("dur") < pl.col("time"), pl.col("rev") > pl.col("cost")]
     )
 
@@ -102,7 +102,7 @@ def test_ie_join_with_slice(offset: int, length: int) -> None:
     ).lazy()
 
     actual = (
-        east.ie_join(
+        east.inequality_join(
             west, on=[pl.col("dur") < pl.col("time"), pl.col("rev") < pl.col("cost")]
         )
         .slice(offset, length)
@@ -144,7 +144,7 @@ def test_ie_join_with_expressions() -> None:
         }
     )
 
-    actual = east.ie_join(
+    actual = east.inequality_join(
         west,
         on=[
             (pl.col("dur") * 2) < pl.col("time"),
@@ -272,7 +272,7 @@ def test_ie_join(east: pl.DataFrame, west: pl.DataFrame, op1: str, op2: str) -> 
     expr0 = _inequality_expression("dur", op1, "time")
     expr1 = _inequality_expression("rev", op2, "cost")
 
-    actual = east.ie_join(west, on=[expr0, expr1])
+    actual = east.inequality_join(west, on=[expr0, expr1])
 
     expected = east.join(west, how="cross").filter(expr0 & expr1)
     assert_frame_equal(actual, expected, check_row_order=False, check_exact=True)
@@ -290,7 +290,7 @@ def test_ie_join_with_nulls(
     expr0 = _inequality_expression("dur", op1, "time")
     expr1 = _inequality_expression("rev", op2, "cost")
 
-    actual = east.ie_join(west, on=[expr0, expr1])
+    actual = east.inequality_join(west, on=[expr0, expr1])
 
     expected = east.join(west, how="cross").filter(expr0 & expr1)
     assert_frame_equal(actual, expected, check_row_order=False, check_exact=True)
@@ -308,7 +308,7 @@ def test_ie_join_with_floats(
     expr0 = _inequality_expression("dur", op1, "time")
     expr1 = _inequality_expression("rev", op2, "cost")
 
-    actual = east.ie_join(west, on=[expr0, expr1])
+    actual = east.inequality_join(west, on=[expr0, expr1])
 
     expected = east.join(west, how="cross").filter(expr0 & expr1)
     assert_frame_equal(actual, expected, check_row_order=False, check_exact=True)

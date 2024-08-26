@@ -4341,7 +4341,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             )
         )
 
-    def ie_join(
+    def inequality_join(
         self,
         other: LazyFrame,
         *,
@@ -4349,14 +4349,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         suffix: str = "_right",
     ) -> LazyFrame:
         """
-        Perform a join using inequality operations.
+        Perform a join using two inequality expressions.
 
         Parameters
         ----------
         other
             LazyFrame to join with.
         on
-            Inequality expressions to join with,
+            A sequence of two inequality expressions to join on, where each expression
+            is in the form `left_hand_side_expr op right_hand_side_expr` and op
+            is one of <, <=, >, >=.
             for example [pl.col("a") < pl.col("b"), pl.col("c") > pl.col("d")]
         suffix
             Suffix to append to columns with a duplicate name.
@@ -4364,10 +4366,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Returns
         -------
         LazyFrame
-
-        See Also
-        --------
-        join_asof
         """
         if not isinstance(other, LazyFrame):
             msg = f"expected `other` join table to be a LazyFrame, not a {type(other).__name__!r}"
@@ -4382,7 +4380,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             raise ValueError(msg)
 
         return self._from_pyldf(
-            self._ldf.ie_join(
+            self._ldf.inequality_join(
                 other._ldf,
                 [expr._pyexpr for expr in on],
                 suffix,
