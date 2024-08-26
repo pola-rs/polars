@@ -40,7 +40,8 @@ pub fn _set_partition_size() -> usize {
     POOL.current_num_threads()
 }
 
-/// Just a wrapper structure. Useful for certain impl specializations
+/// Just a wrapper structure which is useful for certain impl specializations.
+///
 /// This is for instance use to implement
 /// `impl<T> FromIterator<T::Native> for NoNull<ChunkedArray<T>>`
 /// as `Option<T::Native>` was already implemented:
@@ -848,6 +849,16 @@ where
 pub(crate) fn align_chunks_binary_owned_series(left: Series, right: Series) -> (Series, Series) {
     match (left.chunks().len(), right.chunks().len()) {
         (1, 1) => (left, right),
+        // All chunks are equal length
+        (a, b)
+            if a == b
+                && left
+                    .chunk_lengths()
+                    .zip(right.chunk_lengths())
+                    .all(|(l, r)| l == r) =>
+        {
+            (left, right)
+        },
         (_, 1) => (left.rechunk(), right),
         (1, _) => (left, right.rechunk()),
         (_, _) => (left.rechunk(), right.rechunk()),
@@ -864,6 +875,16 @@ where
 {
     match (left.chunks.len(), right.chunks.len()) {
         (1, 1) => (left, right),
+        // All chunks are equal length
+        (a, b)
+            if a == b
+                && left
+                    .chunk_lengths()
+                    .zip(right.chunk_lengths())
+                    .all(|(l, r)| l == r) =>
+        {
+            (left, right)
+        },
         (_, 1) => (left.rechunk(), right),
         (1, _) => (left, right.rechunk()),
         (_, _) => (left.rechunk(), right.rechunk()),
@@ -1158,6 +1179,22 @@ pub fn coalesce_nulls_series(a: &Series, b: &Series) -> (Series, Series) {
         (a, b)
     } else {
         (a.clone(), b.clone())
+    }
+}
+
+pub fn operation_exceeded_idxsize_msg(operation: &str) -> String {
+    if core::mem::size_of::<IdxSize>() == core::mem::size_of::<u32>() {
+        format!(
+            "{} exceeded the maximum supported limit of {} rows. Consider installing 'polars-u64-idx'.",
+            operation,
+            IdxSize::MAX,
+        )
+    } else {
+        format!(
+            "{} exceeded the maximum supported limit of {} rows.",
+            operation,
+            IdxSize::MAX,
+        )
     }
 }
 

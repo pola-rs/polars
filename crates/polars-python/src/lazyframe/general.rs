@@ -890,12 +890,12 @@ impl PyLazyFrame {
         strategy: Wrap<AsofStrategy>,
         tolerance: Option<Wrap<AnyValue<'_>>>,
         tolerance_str: Option<String>,
-        coalesce: Option<bool>,
+        coalesce: bool,
     ) -> PyResult<Self> {
-        let coalesce = match coalesce {
-            None => JoinCoalesce::JoinSpecific,
-            Some(true) => JoinCoalesce::CoalesceColumns,
-            Some(false) => JoinCoalesce::KeepColumns,
+        let coalesce = if coalesce {
+            JoinCoalesce::CoalesceColumns
+        } else {
+            JoinCoalesce::KeepColumns
         };
         let ldf = self.ldf.clone();
         let other = other.ldf;
@@ -1170,7 +1170,7 @@ impl PyLazyFrame {
 
     fn collect_schema(&mut self, py: Python) -> PyResult<PyObject> {
         let schema = py
-            .allow_threads(|| self.ldf.schema())
+            .allow_threads(|| self.ldf.collect_schema())
             .map_err(PyPolarsErr::from)?;
 
         let schema_dict = PyDict::new_bound(py);

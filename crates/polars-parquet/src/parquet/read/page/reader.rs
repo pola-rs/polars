@@ -7,7 +7,6 @@ use polars_utils::mmap::{MemReader, MemSlice};
 use super::PageIterator;
 use crate::parquet::compression::Compression;
 use crate::parquet::error::{ParquetError, ParquetResult};
-use crate::parquet::indexes::Interval;
 use crate::parquet::metadata::{ColumnChunkMetaData, Descriptor};
 use crate::parquet::page::{
     CompressedDataPage, CompressedDictPage, CompressedPage, DataPageHeader, PageType,
@@ -58,6 +57,7 @@ impl From<&ColumnChunkMetaData> for PageMetaData {
 
 /// A fallible [`Iterator`] of [`CompressedDataPage`]. This iterator reads pages back
 /// to back until all pages have been consumed.
+///
 /// The pages from this iterator always have [`None`] [`crate::parquet::page::CompressedDataPage::selected_rows()`] since
 /// filter pushdown is not supported without a
 /// pre-computed [page index](https://github.com/apache/parquet-format/blob/master/PageIndex.md).
@@ -159,14 +159,7 @@ impl PageReader {
             ));
         }
 
-        finish_page(
-            page_header,
-            buffer,
-            self.compression,
-            &self.descriptor,
-            None,
-        )
-        .map(|p| {
+        finish_page(page_header, buffer, self.compression, &self.descriptor).map(|p| {
             if let CompressedPage::Dict(d) = p {
                 Some(d)
             } else {
@@ -234,14 +227,7 @@ pub(super) fn build_page(reader: &mut PageReader) -> ParquetResult<Option<Compre
         ));
     }
 
-    finish_page(
-        page_header,
-        buffer,
-        reader.compression,
-        &reader.descriptor,
-        None,
-    )
-    .map(Some)
+    finish_page(page_header, buffer, reader.compression, &reader.descriptor).map(Some)
 }
 
 pub(super) fn finish_page(
@@ -249,7 +235,6 @@ pub(super) fn finish_page(
     data: MemSlice,
     compression: Compression,
     descriptor: &Descriptor,
-    selected_rows: Option<Vec<Interval>>,
 ) -> ParquetResult<CompressedPage> {
     let type_ = page_header.type_.try_into()?;
     let uncompressed_page_size = page_header.uncompressed_page_size.try_into()?;
@@ -302,7 +287,6 @@ pub(super) fn finish_page(
                 compression,
                 uncompressed_page_size,
                 descriptor.clone(),
-                selected_rows,
             )))
         },
         PageType::DataPageV2 => {
@@ -325,7 +309,6 @@ pub(super) fn finish_page(
                 compression,
                 uncompressed_page_size,
                 descriptor.clone(),
-                selected_rows,
             )))
         },
     }

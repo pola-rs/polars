@@ -216,3 +216,71 @@ def test_upsample_index_invalid(
             every="1h",
             maintain_order=maintain_order,
         )
+
+
+def test_upsample_sorted_only_within_group() -> None:
+    df = pl.DataFrame(
+        {
+            "time": [
+                datetime(2021, 4, 1),
+                datetime(2021, 2, 1),
+                datetime(2021, 5, 1),
+                datetime(2021, 6, 1),
+            ],
+            "admin": ["Netherlands", "Åland", "Åland", "Netherlands"],
+            "test2": [1, 0, 2, 3],
+        }
+    )
+
+    up = df.upsample(
+        time_column="time",
+        every="1mo",
+        group_by="admin",
+        maintain_order=True,
+    ).select(pl.all().forward_fill())
+
+    expected = pl.DataFrame(
+        {
+            "time": [
+                datetime(2021, 4, 1, 0, 0),
+                datetime(2021, 5, 1, 0, 0),
+                datetime(2021, 6, 1, 0, 0),
+                datetime(2021, 2, 1, 0, 0),
+                datetime(2021, 3, 1, 0, 0),
+                datetime(2021, 4, 1, 0, 0),
+                datetime(2021, 5, 1, 0, 0),
+            ],
+            "admin": [
+                "Netherlands",
+                "Netherlands",
+                "Netherlands",
+                "Åland",
+                "Åland",
+                "Åland",
+                "Åland",
+            ],
+            "test2": [1, 1, 3, 0, 0, 0, 2],
+        }
+    )
+
+    assert_frame_equal(up, expected)
+
+
+def test_upsample_sorted_only_within_group_but_no_group_by_provided() -> None:
+    df = pl.DataFrame(
+        {
+            "time": [
+                datetime(2021, 4, 1),
+                datetime(2021, 2, 1),
+                datetime(2021, 5, 1),
+                datetime(2021, 6, 1),
+            ],
+            "admin": ["Netherlands", "Åland", "Åland", "Netherlands"],
+            "test2": [1, 0, 2, 3],
+        }
+    )
+    with pytest.raises(
+        InvalidOperationError,
+        match=r"argument in operation 'upsample' is not sorted, please sort the 'expr/series/column' first",
+    ):
+        df.upsample(time_column="time", every="1mo")

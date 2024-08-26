@@ -285,3 +285,16 @@ def test_filter_group_aware_17030() -> None:
         (group_count > 2) & (group_cum_count > 1) & (group_cum_count < group_count)
     )
     assert df.filter(filter_expr)["foo"].to_list() == ["1", "2"]
+
+
+def test_invalid_filter_18295() -> None:
+    codes = ["a"] * 5 + ["b"] * 5
+    values = list(range(-2, 3)) + list(range(2, -3, -1))
+    df = pl.DataFrame({"code": codes, "value": values})
+    with pytest.raises(pl.exceptions.ShapeError):
+        df.group_by("code").agg(
+            pl.col("value")
+            .ewm_mean(span=2, ignore_nulls=True)
+            .tail(3)
+            .filter(pl.col("value") > 0),
+        ).sort("code")

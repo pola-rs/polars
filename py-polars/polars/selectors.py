@@ -2494,7 +2494,7 @@ def starts_with(*prefix: str) -> SelectorType:
 
 def string(*, include_categorical: bool = False) -> SelectorType:
     """
-    Select all String (and, optionally, Categorical) string columns .
+    Select all String (and, optionally, Categorical) string columns.
 
     See Also
     --------

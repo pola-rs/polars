@@ -85,6 +85,7 @@ pub struct DistinctOptionsDSL {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 pub struct DistinctOptionsIR {
     /// Subset of columns that will be taken into account.
     pub subset: Option<Arc<[ColumnName]>>,
@@ -212,6 +213,13 @@ impl FunctionOptions {
     }
     pub fn check_lengths(&self) -> bool {
         self.check_lengths.0
+    }
+
+    pub fn is_elementwise(&self) -> bool {
+        self.collect_groups == ApplyOptions::ElementWise
+            && !self
+                .flags
+                .contains(FunctionFlags::CHANGES_LENGTH | FunctionFlags::RETURNS_SCALAR)
     }
 }
 

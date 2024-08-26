@@ -71,6 +71,13 @@ impl Default for StatisticsOptions {
     }
 }
 
+/// Options to encode an array
+#[derive(Clone, Copy)]
+pub enum EncodeNullability {
+    Required,
+    Optional,
+}
+
 /// Currently supported options to write to parquet
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WriteOptions {
@@ -128,6 +135,20 @@ impl StatisticsOptions {
 impl WriteOptions {
     pub fn has_statistics(&self) -> bool {
         !self.statistics.is_empty()
+    }
+}
+
+impl EncodeNullability {
+    const fn new(is_optional: bool) -> Self {
+        if is_optional {
+            Self::Optional
+        } else {
+            Self::Required
+        }
+    }
+
+    fn is_optional(self) -> bool {
+        matches!(self, Self::Optional)
     }
 }
 
@@ -1003,6 +1024,7 @@ fn transverse_recursive<T, F: Fn(&ArrowDataType) -> T + Clone>(
 
 /// Transverses the `data_type` up to its (parquet) columns and returns a vector of
 /// items based on `map`.
+///
 /// This is used to assign an [`Encoding`] to every parquet column based on the columns' type (see example)
 pub fn transverse<T, F: Fn(&ArrowDataType) -> T + Clone>(
     data_type: &ArrowDataType,

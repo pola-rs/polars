@@ -157,12 +157,12 @@ impl View {
     /// Extend a `Vec<View>` with inline views slices of `src` with `width`.
     ///
     /// This tries to use SIMD to optimize the copying and can be massively faster than doing a
-    /// `views.extend(src.chunks_exact(stride).map(View::new_inline))`.
+    /// `views.extend(src.chunks_exact(width).map(View::new_inline))`.
     ///
     /// # Panics
     ///
-    /// This function panics if `src.len()` is not divisible by `width` or if `width >
-    /// View::MAX_INLINE_SIZE`.
+    /// This function panics if `src.len()` is not divisible by `width`, `width >
+    /// View::MAX_INLINE_SIZE` or `width == 0`.
     pub fn extend_with_inlinable_strided(views: &mut Vec<Self>, src: &[u8], width: u8) {
         macro_rules! dispatch {
             ($n:ident = $match:ident in [$($v:literal),+ $(,)?] => $block:block, otherwise = $otherwise:expr) => {
@@ -180,16 +180,15 @@ impl View {
         }
 
         let width = width as usize;
-        assert_eq!(src.len() % width, 0);
+
+        assert!(width > 0);
         assert!(width <= View::MAX_INLINE_SIZE as usize);
+
+        assert_eq!(src.len() % width, 0);
+
         let num_values = src.len() / width;
 
         views.reserve(num_values);
-
-        if width == 0 {
-            views.resize(views.len() + num_values, View::new_inline(&[]));
-            return;
-        }
 
         #[allow(unused_mut)]
         let mut src = src;

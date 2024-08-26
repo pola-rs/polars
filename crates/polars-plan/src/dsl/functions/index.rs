@@ -1,6 +1,7 @@
 use super::*;
 
 /// Find the indexes that would sort these series in order of appearance.
+///
 /// That means that the first `Series` will be used to determine the ordering
 /// until duplicates are found. Once duplicates are found, the next `Series` will
 /// be used and so on.

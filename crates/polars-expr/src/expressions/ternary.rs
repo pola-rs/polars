@@ -37,26 +37,23 @@ fn finish_as_iters<'a>(
     mut ac_falsy: AggregationContext<'a>,
     mut ac_mask: AggregationContext<'a>,
 ) -> PolarsResult<AggregationContext<'a>> {
-    // SAFETY: unstable series never lives longer than the iterator.
-    let ca = unsafe {
-        ac_truthy
-            .iter_groups(false)
-            .zip(ac_falsy.iter_groups(false))
-            .zip(ac_mask.iter_groups(false))
-            .map(|((truthy, falsy), mask)| {
-                match (truthy, falsy, mask) {
-                    (Some(truthy), Some(falsy), Some(mask)) => Some(
-                        truthy
-                            .as_ref()
-                            .zip_with(mask.as_ref().bool()?, falsy.as_ref()),
-                    ),
-                    _ => None,
-                }
-                .transpose()
-            })
-            .collect::<PolarsResult<ListChunked>>()?
-            .with_name(ac_truthy.series().name())
-    };
+    let ca = ac_truthy
+        .iter_groups(false)
+        .zip(ac_falsy.iter_groups(false))
+        .zip(ac_mask.iter_groups(false))
+        .map(|((truthy, falsy), mask)| {
+            match (truthy, falsy, mask) {
+                (Some(truthy), Some(falsy), Some(mask)) => Some(
+                    truthy
+                        .as_ref()
+                        .zip_with(mask.as_ref().bool()?, falsy.as_ref()),
+                ),
+                _ => None,
+            }
+            .transpose()
+        })
+        .collect::<PolarsResult<ListChunked>>()?
+        .with_name(ac_truthy.series().name());
 
     // Aggregation leaves only a single chunk.
     let arr = ca.downcast_iter().next().unwrap();

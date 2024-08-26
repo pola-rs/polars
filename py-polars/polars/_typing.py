@@ -70,6 +70,7 @@ PythonDataType: TypeAlias = Union[
     Type[List[Any]],
     Type[Tuple[Any, ...]],
     Type[bytes],
+    Type[object],
     Type["Decimal"],
     Type[None],
 ]

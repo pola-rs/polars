@@ -4,6 +4,7 @@
 //! We could use [serde_1712](https://github.com/serde-rs/serde/issues/1712), but that gave problems caused by
 //! [rust_96956](https://github.com/rust-lang/rust/issues/96956), so we make a dummy type without static
 
+#[cfg(feature = "dtype-categorical")]
 use serde::de::SeqAccess;
 use serde::{Deserialize, Serialize};
 

@@ -640,18 +640,14 @@ def test_scan_include_file_name(
     streaming: bool,
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
-    paths: list[Path] = []
     dfs: list[pl.DataFrame] = []
 
     for x in ["1", "2"]:
-        paths.append(Path(f"{tmp_path}/{x}.bin").absolute())
-        dfs.append(pl.DataFrame({"x": x}))
-        write_func(dfs[-1], paths[-1])
+        path = Path(f"{tmp_path}/{x}.bin").absolute()
+        dfs.append(pl.DataFrame({"x": 10 * [x]}).with_columns(path=pl.lit(str(path))))
+        write_func(dfs[-1].drop("path"), path)
 
-    df = pl.concat(dfs).with_columns(
-        pl.Series("path", map(str, paths), dtype=pl.String)
-    )
-
+    df = pl.concat(dfs)
     assert df.columns == ["x", "path"]
 
     with pytest.raises(

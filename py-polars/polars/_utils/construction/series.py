@@ -179,7 +179,7 @@ def sequence_to_pyseries(
         python_dtype = type(value)
 
     # temporal branch
-    if python_dtype in py_temporal_types:
+    if issubclass(python_dtype, tuple(py_temporal_types)):
         if dtype is None:
             dtype = parse_into_dtype(python_dtype)  # construct from integer
         elif dtype in py_temporal_types:

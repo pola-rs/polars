@@ -97,7 +97,6 @@ These functions are available from the Polars module root and can be used as exp
    Expr.any
    Expr.approx_n_unique
    Expr.count
-   Expr.exclude
    Expr.first
    Expr.head
    Expr.implode

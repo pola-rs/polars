@@ -6,12 +6,8 @@ from datetime import date, datetime, time, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
 import polars._reexport as pl
-from polars._utils.convert import (
-    time_to_int,
-    timedelta_to_int,
-)
 from polars._utils.wrap import wrap_expr
-from polars.datatypes import Date, Datetime, Duration, Enum, Time
+from polars.datatypes import Date, Datetime, Duration, Enum
 from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
 
@@ -114,17 +110,13 @@ def lit(
         return expr
 
     elif isinstance(value, timedelta):
-        if dtype is not None and (tu := getattr(dtype, "time_unit", "us")) is not None:
-            time_unit = tu  # type: ignore[assignment]
-        else:
-            time_unit = "us"
-
-        td_int = timedelta_to_int(value, time_unit)
-        return lit(td_int).cast(Duration(time_unit))
+        expr = wrap_expr(plr.lit(value, allow_object=False))
+        if dtype is not None and (tu := getattr(dtype, "time_unit", None)) is not None:
+            expr = expr.cast(Duration(tu))
+        return expr
 
     elif isinstance(value, time):
-        time_int = time_to_int(value)
-        return lit(time_int).cast(Time)
+        return wrap_expr(plr.lit(value, allow_object=False))
 
     elif isinstance(value, date):
         if dtype == Datetime:

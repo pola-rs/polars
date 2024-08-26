@@ -211,7 +211,7 @@ impl Source for CsvSource {
 
             if let Some(ca) = &mut self.include_file_path {
                 if ca.len() < max_height {
-                    *ca = ca.new_from_index(max_height, 0);
+                    *ca = ca.new_from_index(0, max_height);
                 };
 
                 for data_chunk in &mut out {

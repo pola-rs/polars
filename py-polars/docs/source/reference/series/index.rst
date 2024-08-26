@@ -19,6 +19,7 @@ This page gives an overview of all public Series methods.
    export
    list
    modify_select
+   operators
    miscellaneous
    plot
    string

@@ -83,6 +83,14 @@ class DataTypeClass(type):
     def is_nested(cls) -> bool:  # noqa: D102
         ...
 
+    @classmethod
+    def from_python(cls, py_type: PythonDataType) -> PolarsDataType:  # noqa: D102
+        ...
+
+    @classmethod
+    def to_python(self) -> PythonDataType:  # noqa: D102
+        ...
+
 
 class DataType(metaclass=DataTypeClass):
     """Base class for all Polars data types."""
@@ -179,6 +187,49 @@ class DataType(metaclass=DataTypeClass):
     def is_nested(cls) -> bool:
         """Check whether the data type is a nested type."""
         return issubclass(cls, NestedType)
+
+    @classmethod
+    def from_python(cls, py_type: PythonDataType) -> PolarsDataType:
+        """
+        Return the Polars data type corresponding to a given Python type.
+
+        Notes
+        -----
+        Not every Python type has a corresponding Polars data type; in general
+        you should declare Polars data types explicitly to exactly specify
+        the desired type and its properties (such as scale/unit).
+
+        Examples
+        --------
+        >>> pl.DataType.from_python(int)
+        Int64
+        >>> pl.DataType.from_python(float)
+        Float64
+        >>> from datetime import tzinfo
+        >>> pl.DataType.from_python(tzinfo)  # doctest: +SKIP
+        TypeError: cannot parse input <class 'datetime.tzinfo'> into Polars data type
+        """
+        from polars.datatypes._parse import parse_into_dtype
+
+        return parse_into_dtype(py_type)
+
+    @classinstmethod  # type: ignore[arg-type]
+    def to_python(self) -> PythonDataType:
+        """
+        Return the Python type corresponding to this Polars data type.
+
+        Examples
+        --------
+        >>> pl.Int16().to_python()
+        <class 'int'>
+        >>> pl.Float32().to_python()
+        <class 'float'>
+        >>> pl.Array(pl.Date(), 10).to_python()
+        <class 'list'>
+        """
+        from polars.datatypes import dtype_to_py_type
+
+        return dtype_to_py_type(self)
 
 
 class NumericType(DataType):

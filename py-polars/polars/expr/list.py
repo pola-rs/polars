@@ -1005,7 +1005,7 @@ class ExprListNameSpace:
 
         See Also
         --------
-        ExprNameSpace.reshape: Reshape this Expr to a flat Series or a Series of Lists.
+        Expr.reshape: Reshape this Expr to a flat Series or a Series of Lists.
 
         Examples
         --------

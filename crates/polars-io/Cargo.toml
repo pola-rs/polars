@@ -28,6 +28,7 @@ fast-float = { workspace = true, optional = true }
 flate2 = { workspace = true, optional = true }
 futures = { workspace = true, optional = true }
 glob = { version = "0.3" }
+hashbrown = { workspace = true }
 itoa = { workspace = true, optional = true }
 memchr = { workspace = true }
 memmap = { workspace = true }
@@ -40,7 +41,7 @@ regex = { workspace = true }
 reqwest = { workspace = true, optional = true }
 ryu = { workspace = true, optional = true }
 serde = { workspace = true, features = ["rc"], optional = true }
-serde_json = { version = "1", default-features = false, features = ["alloc"], optional = true }
+serde_json = { version = "1", optional = true }
 simd-json = { workspace = true, optional = true }
 simdutf8 = { workspace = true, optional = true }
 smartstring = { workspace = true }
@@ -100,7 +101,7 @@ dtype-struct = ["polars-core/dtype-struct"]
 dtype-decimal = ["polars-core/dtype-decimal", "polars-json?/dtype-decimal"]
 fmt = ["polars-core/fmt"]
 lazy = []
-parquet = ["polars-parquet", "polars-parquet/compression"]
+parquet = ["polars-parquet", "polars-parquet/compression", "polars-core/partition_by"]
 async = [
   "async-trait",
   "futures",
@@ -121,12 +122,11 @@ cloud = [
   "reqwest",
   "http",
 ]
-file_cache = ["async", "dep:blake3", "dep:fs4"]
+file_cache = ["async", "dep:blake3", "dep:fs4", "serde_json", "cloud"]
 aws = ["object_store/aws", "cloud", "reqwest"]
 azure = ["object_store/azure", "cloud"]
 gcp = ["object_store/gcp", "cloud"]
 http = ["object_store/http", "cloud"]
-partition = ["polars-core/partition_by"]
 temporal = ["dtype-datetime", "dtype-date", "dtype-time"]
 simd = []
 python = ["polars-error/python"]

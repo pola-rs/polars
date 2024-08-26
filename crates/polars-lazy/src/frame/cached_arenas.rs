@@ -36,7 +36,7 @@ impl LazyFrame {
     ///
     /// Returns an `Err` if the logical plan has already encountered an error (i.e., if
     /// `self.collect()` would fail), `Ok` otherwise.
-    pub fn schema(&mut self) -> PolarsResult<SchemaRef> {
+    pub fn collect_schema(&mut self) -> PolarsResult<SchemaRef> {
         let mut cached_arenas = self.cached_arena.lock().unwrap();
 
         match &mut *cached_arenas {

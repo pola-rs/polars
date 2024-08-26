@@ -636,6 +636,23 @@ pub fn to_alp_impl(
             let input_schema = lp_arena.get(input).schema(lp_arena);
 
             match function {
+                DslFunction::Explode {
+                    columns,
+                    allow_empty,
+                } => {
+                    let columns = expand_selectors(columns, &input_schema, &[])?;
+                    validate_columns_in_input(&columns, &input_schema, "explode")?;
+                    polars_ensure!(!columns.is_empty() || allow_empty, InvalidOperation: "no columns provided in explode");
+                    if columns.is_empty() {
+                        return Ok(input);
+                    }
+                    let function = FunctionIR::Explode {
+                        columns,
+                        schema: Default::default(),
+                    };
+                    let ir = IR::MapFunction { input, function };
+                    return Ok(lp_arena.add(ir));
+                },
                 DslFunction::FillNan(fill_value) => {
                     let exprs = input_schema
                         .iter()
@@ -794,8 +811,11 @@ pub fn to_alp_impl(
             IR::Sink { input, payload }
         },
         DslPlan::IR { node, dsl, version } => {
-            return if let (true, Some(node)) = (version == lp_arena.version(), node) {
-                Ok(node)
+            return if node.is_some()
+                && version == lp_arena.version()
+                && convert.used_arenas.insert(version)
+            {
+                Ok(node.unwrap())
             } else {
                 to_alp_impl(owned(dsl), expr_arena, lp_arena, convert)
             }

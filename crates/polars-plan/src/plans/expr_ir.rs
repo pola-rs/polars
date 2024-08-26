@@ -3,10 +3,14 @@ use std::hash::Hash;
 #[cfg(feature = "cse")]
 use std::hash::Hasher;
 
+#[cfg(feature = "ir_serde")]
+use serde::{Deserialize, Serialize};
+
 use super::*;
 use crate::constants::{get_len_name, LITERAL_NAME};
 
 #[derive(Default, Debug, Clone, Hash, PartialEq, Eq)]
+#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 pub enum OutputName {
     /// No not yet set.
     #[default]
@@ -23,7 +27,7 @@ pub enum OutputName {
 }
 
 impl OutputName {
-    fn unwrap(&self) -> &ColumnName {
+    pub fn unwrap(&self) -> &ColumnName {
         match self {
             OutputName::Alias(name) => name,
             OutputName::ColumnLhs(name) => name,
@@ -40,6 +44,7 @@ impl OutputName {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 pub struct ExprIR {
     /// Output name of this expression.
     output_name: OutputName,
@@ -146,7 +151,7 @@ impl ExprIR {
         self.output_name = OutputName::Alias(name)
     }
 
-    pub(crate) fn output_name_inner(&self) -> &OutputName {
+    pub fn output_name_inner(&self) -> &OutputName {
         &self.output_name
     }
 

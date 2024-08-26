@@ -9,7 +9,9 @@ use polars_core::utils::{accumulate_dataframes_vertical, split_df};
 use polars_core::POOL;
 use polars_parquet::parquet::error::ParquetResult;
 use polars_parquet::parquet::statistics::Statistics;
-use polars_parquet::read::{self, FileMetaData, Filter, PhysicalType, RowGroupMetaData};
+use polars_parquet::read::{
+    self, ColumnChunkMetaData, FileMetaData, Filter, PhysicalType, RowGroupMetaData,
+};
 use polars_utils::mmap::MemSlice;
 use polars_utils::vec::inplace_zip_filtermap;
 use rayon::prelude::*;
@@ -24,6 +26,7 @@ use super::{mmap, ParallelStrategy};
 use crate::hive::materialize_hive_partitions;
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 use crate::parquet::metadata::FileMetaDataRef;
+use crate::parquet::read::metadata::PartitionedColumnChunkMD;
 use crate::parquet::read::ROW_COUNT_OVERFLOW_ERR;
 use crate::predicates::{apply_predicate, PhysicalIoExpr};
 use crate::utils::get_reader_bytes;
@@ -58,7 +61,8 @@ fn assert_dtypes(data_type: &ArrowDataType) {
 
 fn column_idx_to_series(
     column_i: usize,
-    md: &RowGroupMetaData,
+    // The metadata belonging to this column
+    field_md: &[&ColumnChunkMetaData],
     filter: Option<Filter>,
     file_schema: &ArrowSchema,
     store: &mmap::ColumnStore,
@@ -69,8 +73,7 @@ fn column_idx_to_series(
     {
         assert_dtypes(field.data_type())
     }
-
-    let columns = mmap_columns(store, md.columns(), &field.name);
+    let columns = mmap_columns(store, field_md);
     let stats = columns
         .iter()
         .map(|(col_md, _)| col_md.statistics().transpose())
@@ -203,6 +206,24 @@ fn rg_to_dfs(
     }
 }
 
+/// Collect a HashSet of the projected columns.
+///  Returns `None` if all columns are projected.
+fn projected_columns_set<'a>(
+    schema: &'a ArrowSchema,
+    projection: &[usize],
+) -> Option<PlHashSet<&'a str>> {
+    if projection.len() == schema.len() {
+        None
+    } else {
+        Some(
+            projection
+                .iter()
+                .map(|i| schema.fields[*i].name.as_str())
+                .collect::<PlHashSet<_>>(),
+        )
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn rg_to_dfs_prefiltered(
     store: &mmap::ColumnStore,
@@ -227,9 +248,24 @@ fn rg_to_dfs_prefiltered(
         polars_bail!(ComputeError: "Parquet file contains too many row groups (> {})", u32::MAX);
     }
 
+    let projected_columns = projected_columns_set(schema, projection);
+
+    let part_mds = POOL.install(|| {
+        file_metadata
+            .row_groups
+            .par_iter()
+            .map(|rg| {
+                let mut part_md = PartitionedColumnChunkMD::new(rg);
+                part_md.set_partitions(projected_columns.as_ref());
+                part_md
+            })
+            .collect::<Vec<_>>()
+    });
+
     let mut row_offset = *previous_row_count;
     let mut row_groups: Vec<RowGroupInfo> = (row_group_start..row_group_end)
         .filter_map(|index| {
+            let part_md = &part_mds[index];
             let md = &file_metadata.row_groups[index];
 
             let current_offset = row_offset;
@@ -237,8 +273,7 @@ fn rg_to_dfs_prefiltered(
             row_offset += current_row_count;
 
             if use_statistics {
-                match read_this_row_group(Some(predicate), &file_metadata.row_groups[index], schema)
-                {
+                match read_this_row_group(Some(predicate), part_md, schema) {
                     Ok(false) => return None,
                     Ok(true) => {},
                     Err(e) => return Some(Err(e)),
@@ -252,38 +287,46 @@ fn rg_to_dfs_prefiltered(
         })
         .collect::<PolarsResult<Vec<_>>>()?;
 
-    let num_live_columns = live_variables.len();
-    let num_dead_columns = projection.len() - num_live_columns;
-
+    // Deduplicate the live variables
     let live_variables = live_variables
         .iter()
         .map(Deref::deref)
         .collect::<PlHashSet<_>>();
 
+    // Get the number of live columns
+    let num_live_columns = live_variables.len();
+    let num_dead_columns = projection.len() - num_live_columns;
+
     // We create two look-up tables that map indexes offsets into the live- and dead-set onto
     // column indexes of the schema.
     let mut live_idx_to_col_idx = Vec::with_capacity(num_live_columns);
     let mut dead_idx_to_col_idx = Vec::with_capacity(num_dead_columns);
-    for (i, col) in file_metadata.schema().columns().iter().enumerate() {
-        if live_variables.contains(col.path_in_schema[0].deref()) {
+    for (i, field) in schema.fields.iter().enumerate() {
+        if live_variables.contains(&field.name[..]) {
             live_idx_to_col_idx.push(i);
         } else {
             dead_idx_to_col_idx.push(i);
         }
     }
-    debug_assert_eq!(live_variables.len(), num_live_columns);
+
+    debug_assert_eq!(live_idx_to_col_idx.len(), num_live_columns);
     debug_assert_eq!(dead_idx_to_col_idx.len(), num_dead_columns);
 
     POOL.install(|| {
+        // Set partitioned fields to prevent quadratic behavior.
+        // Ensure all row groups are partitioned.
+
         // Collect the data for the live columns
         let mut live_columns = (0..row_groups.len() * num_live_columns)
             .into_par_iter()
             .map(|i| {
                 let col_idx = live_idx_to_col_idx[i % num_live_columns];
-                let rg_idx = row_groups[i / num_live_columns].index as usize;
 
-                let md = &file_metadata.row_groups[rg_idx];
-                column_idx_to_series(col_idx, md, None, schema, store)
+                let name = &schema.fields[col_idx].name;
+                let rg_idx = row_groups[i / num_live_columns].index;
+                let field_md = part_mds[rg_idx as usize].get_partitions(name).unwrap();
+
+                column_idx_to_series(col_idx, field_md.as_slice(), None, schema, store)
             })
             .collect::<PolarsResult<Vec<_>>>()?;
 
@@ -316,8 +359,12 @@ fn rg_to_dfs_prefiltered(
 
                 let mut bitmap = MutableBitmap::with_capacity(mask.len());
 
+                // We need to account for the validity of the items
                 for chunk in mask.downcast_iter() {
-                    bitmap.extend_from_bitmap(chunk.values());
+                    match chunk.validity() {
+                        None => bitmap.extend_from_bitmap(chunk.values()),
+                        Some(validity) => bitmap.extend_from_bitmap(&(validity & chunk.values())),
+                    }
                 }
 
                 let bitmap = bitmap.freeze();
@@ -339,6 +386,11 @@ fn rg_to_dfs_prefiltered(
             *previous_row_count = previous_row_count
                 .checked_add(height)
                 .ok_or(ROW_COUNT_OVERFLOW_ERR)?;
+        }
+
+        // We don't need to do any further work if there are no dead columns
+        if num_dead_columns == 0 {
+            return Ok(dfs.into_iter().map(|(_, df)| df).collect());
         }
 
         // @TODO: Incorporate this if we how we can properly use it. The problem here is that
@@ -378,15 +430,22 @@ fn rg_to_dfs_prefiltered(
             .into_par_iter()
             .map(|i| {
                 let col_idx = dead_idx_to_col_idx[i % num_dead_columns];
-                let rg_idx = row_groups[i / num_dead_columns].index as usize;
+                let name = &schema.fields[col_idx].name;
 
                 let (mask, _) = &dfs[i / num_dead_columns];
 
-                let md = &file_metadata.row_groups[rg_idx];
-                debug_assert_eq!(md.num_rows(), mask.len());
+                let rg_idx = row_groups[i / num_dead_columns].index;
+
+                #[cfg(debug_assertions)]
+                {
+                    let md = &file_metadata.row_groups[rg_idx as usize];
+                    debug_assert_eq!(md.num_rows(), mask.len());
+                }
+                let field_md = part_mds[rg_idx as usize].get_partitions(name).unwrap();
+
                 column_idx_to_series(
                     col_idx,
-                    md,
+                    field_md.as_slice(),
                     Some(Filter::new_masked(mask.clone())),
                     schema,
                     store,
@@ -394,22 +453,10 @@ fn rg_to_dfs_prefiltered(
             })
             .collect::<PolarsResult<Vec<_>>>()?;
 
-        let mut rearranged_schema: Schema = Schema::new();
-        if let Some(rc) = &row_index {
-            rearranged_schema.insert_at_index(
-                0,
-                SmartString::from(rc.name.deref()),
-                IdxType::get_dtype(),
-            )?;
-        }
-        for i in live_idx_to_col_idx.iter().copied() {
-            rearranged_schema.insert_at_index(
-                rearranged_schema.len(),
-                schema.fields[i].name.clone().into(),
-                schema.fields[i].data_type().into(),
-            )?;
-        }
-        rearranged_schema.merge(Schema::from(schema.as_ref()));
+        let Some(df) = dfs.first().map(|(_, df)| df) else {
+            return Ok(Vec::new());
+        };
+        let rearranged_schema = df.schema();
 
         rg_columns
             .par_chunks_exact_mut(num_dead_columns)
@@ -454,13 +501,17 @@ fn rg_to_dfs_optionally_par_over_columns(
 
     for rg_idx in row_group_start..row_group_end {
         let md = &file_metadata.row_groups[rg_idx];
+
+        // Set partitioned fields to prevent quadratic behavior.
+        let projected_columns = projected_columns_set(schema, projection);
+        let mut part_md = PartitionedColumnChunkMD::new(md);
+        part_md.set_partitions(projected_columns.as_ref());
+
         let rg_slice =
             split_slice_at_file(&mut n_rows_processed, md.num_rows(), slice.0, slice_end);
         let current_row_count = md.num_rows() as IdxSize;
 
-        if use_statistics
-            && !read_this_row_group(predicate, &file_metadata.row_groups[rg_idx], schema)?
-        {
+        if use_statistics && !read_this_row_group(predicate, &part_md, schema)? {
             *previous_row_count += rg_slice.1 as IdxSize;
             continue;
         }
@@ -475,9 +526,12 @@ fn rg_to_dfs_optionally_par_over_columns(
                 projection
                     .par_iter()
                     .map(|column_i| {
+                        let name = &schema.fields[*column_i].name;
+                        let part = part_md.get_partitions(name).unwrap();
+
                         column_idx_to_series(
                             *column_i,
-                            md,
+                            part.as_slice(),
                             Some(Filter::new_ranged(rg_slice.0, rg_slice.0 + rg_slice.1)),
                             schema,
                             store,
@@ -489,9 +543,12 @@ fn rg_to_dfs_optionally_par_over_columns(
             projection
                 .iter()
                 .map(|column_i| {
+                    let name = &schema.fields[*column_i].name;
+                    let part = part_md.get_partitions(name).unwrap();
+
                     column_idx_to_series(
                         *column_i,
-                        md,
+                        part.as_slice(),
                         Some(Filter::new_ranged(rg_slice.0, rg_slice.0 + rg_slice.1)),
                         schema,
                         store,
@@ -508,7 +565,7 @@ fn rg_to_dfs_optionally_par_over_columns(
         materialize_hive_partitions(&mut df, schema.as_ref(), hive_partition_columns, rg_slice.1);
         apply_predicate(&mut df, predicate, true)?;
 
-        *previous_row_count = previous_row_count.checked_add(current_row_count).ok_or(
+        *previous_row_count = previous_row_count.checked_add(current_row_count).ok_or_else(||
             polars_err!(
                 ComputeError: "Parquet file produces more than pow(2, 32) rows; \
                 consider compiling with polars-bigidx feature (polars-u64-idx package on python), \
@@ -566,16 +623,28 @@ fn rg_to_dfs_par_over_rg(
     }
 
     let dfs = POOL.install(|| {
+        // Set partitioned fields to prevent quadratic behavior.
+        // Ensure all row groups are partitioned.
+        let part_mds = {
+            let projected_columns = projected_columns_set(schema, projection);
+            row_groups
+                .par_iter()
+                .map(|(_, rg, _, _)| {
+                    let mut ccmd = PartitionedColumnChunkMD::new(rg);
+                    ccmd.set_partitions(projected_columns.as_ref());
+                    ccmd
+                })
+                .collect::<Vec<_>>()
+        };
+
         row_groups
             .into_par_iter()
-            .map(|(rg_idx, md, slice, row_count_start)| {
+            .enumerate()
+            .map(|(iter_idx, (_rg_idx, _md, slice, row_count_start))| {
+                let part_md = &part_mds[iter_idx];
+
                 if slice.1 == 0
-                    || use_statistics
-                        && !read_this_row_group(
-                            predicate,
-                            &file_metadata.row_groups[rg_idx],
-                            schema,
-                        )?
+                    || use_statistics && !read_this_row_group(predicate, part_md, schema)?
                 {
                     return Ok(None);
                 }
@@ -588,9 +657,12 @@ fn rg_to_dfs_par_over_rg(
                 let columns = projection
                     .iter()
                     .map(|column_i| {
+                        let name = &schema.fields[*column_i].name;
+                        let field_md = part_md.get_partitions(name).unwrap();
+
                         column_idx_to_series(
                             *column_i,
-                            md,
+                            field_md.as_slice(),
                             Some(Filter::new_ranged(slice.0, slice.0 + slice.1)),
                             schema,
                             store,
@@ -1022,7 +1094,7 @@ impl BatchedParquetReader {
 
                 // Re-use the same ChunkedArray
                 if ca.len() < max_len {
-                    *ca = ca.new_from_index(max_len, 0);
+                    *ca = ca.new_from_index(0, max_len);
                 }
 
                 for df in &mut dfs {

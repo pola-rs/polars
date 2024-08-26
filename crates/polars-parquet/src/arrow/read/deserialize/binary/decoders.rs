@@ -39,7 +39,7 @@ impl<'a> ValuesDictionary<'a> {
 pub(crate) enum BinaryStateTranslation<'a> {
     Plain(BinaryIter<'a>),
     Dictionary(ValuesDictionary<'a>),
-    Delta(delta_length_byte_array::Decoder<'a>),
+    DeltaLengthByteArray(delta_length_byte_array::Decoder<'a>, Vec<u32>),
     DeltaBytes(delta_byte_array::Decoder<'a>),
 }
 
@@ -67,8 +67,9 @@ impl<'a> BinaryStateTranslation<'a> {
             },
             (Encoding::DeltaLengthByteArray, _) => {
                 let values = split_buffer(page)?.values;
-                Ok(BinaryStateTranslation::Delta(
+                Ok(BinaryStateTranslation::DeltaLengthByteArray(
                     delta_length_byte_array::Decoder::try_new(values)?,
+                    Vec::new(),
                 ))
             },
             (Encoding::DeltaByteArray, _) => {
@@ -84,7 +85,7 @@ impl<'a> BinaryStateTranslation<'a> {
         match self {
             Self::Plain(v) => v.len_when_not_nullable(),
             Self::Dictionary(v) => v.len(),
-            Self::Delta(v) => v.len(),
+            Self::DeltaLengthByteArray(v, _) => v.len(),
             Self::DeltaBytes(v) => v.len(),
         }
     }
@@ -97,7 +98,7 @@ impl<'a> BinaryStateTranslation<'a> {
         match self {
             Self::Plain(t) => _ = t.by_ref().nth(n - 1),
             Self::Dictionary(t) => t.values.skip_in_place(n)?,
-            Self::Delta(t) => t.skip_in_place(n)?,
+            Self::DeltaLengthByteArray(t, _) => t.skip_in_place(n)?,
             Self::DeltaBytes(t) => t.skip_in_place(n)?,
         }
 

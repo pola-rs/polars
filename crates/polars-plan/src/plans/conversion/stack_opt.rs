@@ -7,6 +7,12 @@ pub(super) struct ConversionOptimizer {
     scratch: Vec<Node>,
     simplify: Option<SimplifyExprRule>,
     coerce: Option<TypeCoercionRule>,
+    // IR's can be cached in the DSL.
+    // But if they are used multiple times in DSL (e.g. concat/join)
+    // then it can occur that we take a slot multiple times.
+    // So we keep track of the arena versions used and allow only
+    // one unique IR cache to be reused.
+    pub(super) used_arenas: PlHashSet<u32>,
 }
 
 impl ConversionOptimizer {
@@ -27,6 +33,7 @@ impl ConversionOptimizer {
             scratch: Vec::with_capacity(8),
             simplify,
             coerce,
+            used_arenas: Default::default(),
         }
     }
 

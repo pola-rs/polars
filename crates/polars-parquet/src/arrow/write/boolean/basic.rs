@@ -8,7 +8,7 @@ use crate::parquet::encoding::Encoding;
 use crate::parquet::page::DataPage;
 use crate::parquet::schema::types::PrimitiveType;
 use crate::parquet::statistics::{BooleanStatistics, ParquetStatistics};
-use crate::write::StatisticsOptions;
+use crate::write::{EncodeNullability, StatisticsOptions};
 
 fn encode(iterator: impl Iterator<Item = bool>, buffer: &mut Vec<u8>) -> PolarsResult<()> {
     // encode values using bitpacking
@@ -20,10 +20,10 @@ fn encode(iterator: impl Iterator<Item = bool>, buffer: &mut Vec<u8>) -> PolarsR
 
 pub(super) fn encode_plain(
     array: &BooleanArray,
-    is_optional: bool,
+    encode_options: EncodeNullability,
     buffer: &mut Vec<u8>,
 ) -> PolarsResult<()> {
-    if is_optional && array.validity().is_some() {
+    if encode_options.is_optional() && array.validity().is_some() {
         encode(array.non_null_values_iter(), buffer)
     } else {
         encode(array.values().iter(), buffer)
@@ -32,13 +32,13 @@ pub(super) fn encode_plain(
 
 pub(super) fn encode_hybrid_rle(
     array: &BooleanArray,
-    is_optional: bool,
+    encode_options: EncodeNullability,
     buffer: &mut Vec<u8>,
 ) -> PolarsResult<()> {
     buffer.extend_from_slice(&[0; 4]);
     let start = buffer.len();
 
-    if is_optional && array.validity().is_some() {
+    if encode_options.is_optional() && array.validity().is_some() {
         hybrid_rle::encode(buffer, array.non_null_values_iter(), 1)?;
     } else {
         hybrid_rle::encode(buffer, array.values().iter(), 1)?;
@@ -60,6 +60,7 @@ pub fn array_to_page(
     encoding: Encoding,
 ) -> PolarsResult<DataPage> {
     let is_optional = is_nullable(&type_.field_info);
+    let encode_nullability = EncodeNullability::new(is_optional);
 
     let validity = array.validity();
 
@@ -75,8 +76,8 @@ pub fn array_to_page(
     let definition_levels_byte_length = buffer.len();
 
     match encoding {
-        Encoding::Plain => encode_plain(array, is_optional, &mut buffer)?,
-        Encoding::Rle => encode_hybrid_rle(array, is_optional, &mut buffer)?,
+        Encoding::Plain => encode_plain(array, encode_nullability, &mut buffer)?,
+        Encoding::Rle => encode_hybrid_rle(array, encode_nullability, &mut buffer)?,
         other => polars_bail!(nyi = "Encoding boolean as {other:?}"),
     }
 

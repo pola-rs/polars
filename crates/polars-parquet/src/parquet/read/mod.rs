@@ -1,6 +1,5 @@
 mod column;
 mod compression;
-mod indexes;
 pub mod levels;
 mod metadata;
 mod page;
@@ -11,7 +10,6 @@ use std::io::{Seek, SeekFrom};
 
 pub use column::*;
 pub use compression::{decompress, BasicDecompressor};
-pub use indexes::{read_columns_indexes, read_pages_locations};
 pub use metadata::{deserialize_metadata, read_metadata, read_metadata_with_size};
 #[cfg(feature = "async")]
 pub use page::{get_page_stream, get_page_stream_from_column_start};

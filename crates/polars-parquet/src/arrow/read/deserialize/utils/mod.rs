@@ -112,6 +112,11 @@ impl<'a, D: Decoder> State<'a, D> {
         match filter {
             None => {
                 let num_rows = self.len();
+
+                if num_rows == 0 {
+                    return Ok(());
+                }
+
                 self.translation.extend_from_state(
                     decoder,
                     decoded,
@@ -126,12 +131,16 @@ impl<'a, D: Decoder> State<'a, D> {
 
                     self.skip_in_place(start)?;
                     debug_assert!(end - start <= self.len());
-                    self.translation.extend_from_state(
-                        decoder,
-                        decoded,
-                        &mut self.page_validity,
-                        end - start,
-                    )?;
+
+                    if end - start > 0 {
+                        self.translation.extend_from_state(
+                            decoder,
+                            decoded,
+                            &mut self.page_validity,
+                            end - start,
+                        )?;
+                    }
+
                     Ok(())
                 },
                 Filter::Mask(bitmap) => {
@@ -142,12 +151,15 @@ impl<'a, D: Decoder> State<'a, D> {
                         let prev_state_len = self.len();
 
                         let num_ones = iter.take_leading_ones();
-                        self.translation.extend_from_state(
-                            decoder,
-                            decoded,
-                            &mut self.page_validity,
-                            num_ones,
-                        )?;
+
+                        if num_ones > 0 {
+                            self.translation.extend_from_state(
+                                decoder,
+                                decoded,
+                                &mut self.page_validity,
+                                num_ones,
+                            )?;
+                        }
 
                         if iter.num_remaining() == 0 || self.len() == 0 {
                             break;
@@ -171,11 +183,9 @@ impl<'a, D: Decoder> State<'a, D> {
 
 pub fn not_implemented(page: &DataPage) -> ParquetError {
     let is_optional = page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
-    let is_filtered = page.selected_rows().is_some();
     let required = if is_optional { "optional" } else { "required" };
-    let is_filtered = if is_filtered { ", index-filtered" } else { "" };
     ParquetError::not_supported(format!(
-        "Decoding {:?} \"{:?}\"-encoded {required}{is_filtered} parquet pages not yet supported",
+        "Decoding {:?} \"{:?}\"-encoded {required} parquet pages not yet supported",
         page.descriptor.primitive_type.physical_type,
         page.encoding(),
     ))
@@ -185,14 +195,15 @@ pub trait BatchableCollector<I, T> {
     fn reserve(target: &mut T, n: usize);
     fn push_n(&mut self, target: &mut T, n: usize) -> ParquetResult<()>;
     fn push_n_nulls(&mut self, target: &mut T, n: usize) -> ParquetResult<()>;
+    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()>;
 }
 
 /// This batches sequential collect operations to try and prevent unnecessary buffering and
 /// `Iterator::next` polling.
 #[must_use]
 pub struct BatchedCollector<'a, I, T, C: BatchableCollector<I, T>> {
-    num_waiting_valids: usize,
-    num_waiting_invalids: usize,
+    pub(crate) num_waiting_valids: usize,
+    pub(crate) num_waiting_invalids: usize,
 
     target: &'a mut T,
     collector: C,
@@ -241,6 +252,24 @@ impl<'a, I, T, C: BatchableCollector<I, T>> BatchedCollector<'a, I, T, C> {
     #[inline]
     pub fn push_n_invalids(&mut self, n: usize) {
         self.num_waiting_invalids += n;
+    }
+
+    #[inline]
+    pub fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
+        if self.num_waiting_valids > 0 {
+            self.collector
+                .push_n(self.target, self.num_waiting_valids)?;
+            self.num_waiting_valids = 0;
+        }
+        if self.num_waiting_invalids > 0 {
+            self.collector
+                .push_n_nulls(self.target, self.num_waiting_invalids)?;
+            self.num_waiting_invalids = 0;
+        }
+
+        self.collector.skip_in_place(n)?;
+
+        Ok(())
     }
 
     #[inline]
@@ -403,6 +432,11 @@ where
         target.resize(target.len() + n, O::default());
         Ok(())
     }
+
+    #[inline]
+    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
+        self.decoder.skip_in_place(n)
+    }
 }
 
 pub struct GatheredHybridRle<'a, 'b, 'c, O, G>
@@ -453,6 +487,11 @@ where
             .gather_repeated(target, self.null_value.clone(), n)?;
         Ok(())
     }
+
+    #[inline]
+    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
+        self.decoder.skip_in_place(n)
+    }
 }
 
 impl<'a, 'b, 'c, O, Out, G> BatchableCollector<u8, Binary<O>>
@@ -479,6 +518,11 @@ where
         self.gatherer
             .gather_repeated(target, self.null_value.clone(), n)?;
         Ok(())
+    }
+
+    #[inline]
+    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
+        self.decoder.skip_in_place(n)
     }
 }
 
@@ -513,6 +557,11 @@ where
         target.extend_null(n);
         Ok(())
     }
+
+    #[inline]
+    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
+        self.decoder.skip_in_place(n)
+    }
 }
 
 impl<T, P: Pushable<T>, I: Iterator<Item = T>> BatchableCollector<T, P> for I {
@@ -530,6 +579,14 @@ impl<T, P: Pushable<T>, I: Iterator<Item = T>> BatchableCollector<T, P> for I {
     #[inline]
     fn push_n_nulls(&mut self, target: &mut P, n: usize) -> ParquetResult<()> {
         target.extend_null_constant(n);
+        Ok(())
+    }
+
+    #[inline]
+    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
+        if n > 0 {
+            _ = self.nth(n - 1);
+        }
         Ok(())
     }
 }
@@ -653,20 +710,21 @@ impl<D: Decoder> PageDecoder<D> {
 
         while num_rows_remaining > 0 {
             let Some(page) = self.iter.next() else {
-                return self.decoder.finalize(self.data_type, self.dict, target);
+                break;
             };
             let page = page?;
 
-            let mut state = State::new(&self.decoder, &page, self.dict.as_ref())?;
-            let state_len = state.len();
-
             let state_filter;
-            (state_filter, filter) = Filter::opt_split_at(&filter, state_len);
+            (state_filter, filter) = Filter::opt_split_at(&filter, page.num_values());
 
             // Skip the whole page if we don't need any rows from it
             if state_filter.as_ref().is_some_and(|f| f.num_rows() == 0) {
                 continue;
             }
+
+            let page = page.decompress(&mut self.iter)?;
+
+            let mut state = State::new(&self.decoder, &page, self.dict.as_ref())?;
 
             let start_length = target.len();
             state.extend_from_state(&mut self.decoder, &mut target, state_filter)?;

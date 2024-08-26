@@ -71,6 +71,7 @@ use std::ops::Deref;
 use arrow::legacy::conversion::chunk_to_struct;
 use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
+use polars_error::{polars_bail, PolarsResult};
 use polars_json::json::write::FallibleStreamingIterator;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -86,9 +87,11 @@ pub struct JsonWriterOptions {
     pub maintain_order: bool,
 }
 
-/// The format to use to write the DataFrame to JSON: `Json` (a JSON array) or `JsonLines` (each row output on a
-/// separate line). In either case, each row is serialized as a JSON object whose keys are the column names and whose
-/// values are the row's corresponding values.
+/// The format to use to write the DataFrame to JSON: `Json` (a JSON array)
+/// or `JsonLines` (each row output on a separate line).
+///
+/// In either case, each row is serialized as a JSON object whose keys are the column names and
+/// whose values are the row's corresponding values.
 pub enum JsonFormat {
     /// A single JSON array containing each DataFrame row as an object. The length of the array is the number of rows in
     /// the DataFrame.
@@ -222,6 +225,17 @@ where
     json_format: JsonFormat,
 }
 
+pub fn remove_bom(bytes: &[u8]) -> PolarsResult<&[u8]> {
+    if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
+        // UTF-8 BOM
+        Ok(&bytes[3..])
+    } else if bytes.starts_with(&[0xFE, 0xFF]) || bytes.starts_with(&[0xFF, 0xFE]) {
+        // UTF-16 BOM
+        polars_bail!(ComputeError: "utf-16 not supported")
+    } else {
+        Ok(bytes)
+    }
+}
 impl<'a, R> SerReader<R> for JsonReader<'a, R>
 where
     R: MmapBytesReader,
@@ -251,8 +265,9 @@ where
     /// incompatible types in the input. In the event that a column contains mixed dtypes, is it unspecified whether an
     /// error is returned or whether elements of incompatible dtypes are replaced with `null`.
     fn finish(mut self) -> PolarsResult<DataFrame> {
-        let rb: ReaderBytes = (&mut self.reader).into();
-
+        let pre_rb: ReaderBytes = (&mut self.reader).into();
+        let bytes = remove_bom(pre_rb.deref())?;
+        let rb = ReaderBytes::Borrowed(bytes);
         let out = match self.json_format {
             JsonFormat::Json => {
                 polars_ensure!(!self.ignore_errors, InvalidOperation: "'ignore_errors' only supported in ndjson");

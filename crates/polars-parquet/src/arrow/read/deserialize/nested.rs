@@ -202,6 +202,17 @@ pub fn columns_to_iter_recursive(
             )?
             .collect_n(filter)?
         },
+        Binary | Utf8 => {
+            init.push(InitNested::Primitive(field.is_nullable));
+            types.pop();
+            PageNestedDecoder::new(
+                columns.pop().unwrap(),
+                field.data_type().clone(),
+                binary::BinaryDecoder::<i32>::default(),
+                init,
+            )?
+            .collect_n(filter)?
+        },
         _ => match field.data_type().to_logical_type() {
             ArrowDataType::Dictionary(key_type, _, _) => {
                 init.push(InitNested::Primitive(field.is_nullable));

@@ -75,12 +75,14 @@ macro_rules! date_like {
 }
 
 /// Extracts the years of a temporal array as [`PrimitiveArray<i32>`].
+///
 /// Use [`can_year`] to check if this operation is supported for the target [`ArrowDataType`].
 pub fn year(array: &dyn Array) -> PolarsResult<PrimitiveArray<i32>> {
     date_like!(year, array, ArrowDataType::Int32)
 }
 
 /// Extracts the months of a temporal array as [`PrimitiveArray<i8>`].
+///
 /// Value ranges from 1 to 12.
 /// Use [`can_month`] to check if this operation is supported for the target [`ArrowDataType`].
 pub fn month(array: &dyn Array) -> PolarsResult<PrimitiveArray<i8>> {
@@ -88,6 +90,7 @@ pub fn month(array: &dyn Array) -> PolarsResult<PrimitiveArray<i8>> {
 }
 
 /// Extracts the days of a temporal array as [`PrimitiveArray<i8>`].
+///
 /// Value ranges from 1 to 32 (Last day depends on month).
 /// Use [`can_day`] to check if this operation is supported for the target [`ArrowDataType`].
 pub fn day(array: &dyn Array) -> PolarsResult<PrimitiveArray<i8>> {
@@ -95,13 +98,15 @@ pub fn day(array: &dyn Array) -> PolarsResult<PrimitiveArray<i8>> {
 }
 
 /// Extracts weekday of a temporal array as [`PrimitiveArray<i8>`].
+///
 /// Monday is 1, Tuesday is 2, ..., Sunday is 7.
 /// Use [`can_weekday`] to check if this operation is supported for the target [`ArrowDataType`]
 pub fn weekday(array: &dyn Array) -> PolarsResult<PrimitiveArray<i8>> {
     date_like!(i8_weekday, array, ArrowDataType::Int8)
 }
 
-/// Extracts ISO week of a temporal array as [`PrimitiveArray<i8>`]
+/// Extracts ISO week of a temporal array as [`PrimitiveArray<i8>`].
+///
 /// Value ranges from 1 to 53 (Last week depends on the year).
 /// Use [`can_iso_week`] to check if this operation is supported for the target [`ArrowDataType`]
 pub fn iso_week(array: &dyn Array) -> PolarsResult<PrimitiveArray<i8>> {
@@ -161,6 +166,7 @@ pub fn second(array: &dyn Array) -> PolarsResult<PrimitiveArray<i8>> {
 }
 
 /// Extracts the nanoseconds of a temporal array as [`PrimitiveArray<i32>`].
+///
 /// Value ranges from 0 to 1_999_999_999.
 /// The range from 1_000_000_000 to 1_999_999_999 represents the leap second.
 /// Use [`can_nanosecond`] to check if this operation is supported for the target [`ArrowDataType`].

@@ -107,4 +107,60 @@ impl IR {
         };
         Cow::Borrowed(schema)
     }
+
+    /// Get the schema of the logical plan node, using caching.
+    #[recursive]
+    pub fn schema_with_cache<'a>(
+        node: Node,
+        arena: &'a Arena<IR>,
+        cache: &mut PlHashMap<Node, Arc<Schema>>,
+    ) -> Arc<Schema> {
+        use IR::*;
+        if let Some(schema) = cache.get(&node) {
+            return schema.clone();
+        }
+
+        let schema = match arena.get(node) {
+            #[cfg(feature = "python")]
+            PythonScan { options } => options
+                .output_schema
+                .as_ref()
+                .unwrap_or(&options.schema)
+                .clone(),
+            Union { inputs, .. } => IR::schema_with_cache(inputs[0], arena, cache),
+            HConcat { schema, .. } => schema.clone(),
+            Cache { input, .. }
+            | Sort { input, .. }
+            | Filter { input, .. }
+            | Distinct { input, .. }
+            | Sink { input, .. }
+            | Slice { input, .. } => IR::schema_with_cache(*input, arena, cache),
+            Scan {
+                output_schema,
+                file_info,
+                ..
+            } => output_schema.as_ref().unwrap_or(&file_info.schema).clone(),
+            DataFrameScan {
+                schema,
+                output_schema,
+                ..
+            } => output_schema.as_ref().unwrap_or(schema).clone(),
+            Select { schema, .. }
+            | Reduce { schema, .. }
+            | GroupBy { schema, .. }
+            | Join { schema, .. }
+            | HStack { schema, .. }
+            | ExtContext { schema, .. }
+            | SimpleProjection {
+                columns: schema, ..
+            } => schema.clone(),
+            MapFunction { input, function } => {
+                let input_schema = IR::schema_with_cache(*input, arena, cache);
+                function.schema(&input_schema).unwrap().into_owned()
+            },
+            Invalid => unreachable!(),
+        };
+        cache.insert(node, schema.clone());
+        schema
+    }
 }

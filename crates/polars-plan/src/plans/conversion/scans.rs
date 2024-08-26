@@ -40,7 +40,7 @@ fn prepare_schemas(mut schema: Schema, row_index: Option<&RowIndex>) -> (SchemaR
 pub(super) fn parquet_file_info(
     paths: &[PathBuf],
     file_options: &FileScanOptions,
-    cloud_options: Option<&polars_io::cloud::CloudOptions>,
+    #[allow(unused)] cloud_options: Option<&polars_io::cloud::CloudOptions>,
 ) -> PolarsResult<(FileInfo, Option<FileMetaDataRef>)> {
     let path = get_first_path(paths)?;
 

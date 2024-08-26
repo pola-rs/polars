@@ -140,7 +140,7 @@ impl Nested {
 
     fn invalid_num_values(&self) -> usize {
         match &self.content {
-            NestedContent::Primitive => 0,
+            NestedContent::Primitive => 1,
             NestedContent::List { .. } => 0,
             NestedContent::FixedSizeList { width } => *width,
             NestedContent::Struct => 1,
@@ -203,6 +203,10 @@ impl<'a, 'b, 'c, D: utils::NestedDecoder> BatchableCollector<(), D::DecodedState
     fn push_n_nulls(&mut self, target: &mut D::DecodedState, n: usize) -> ParquetResult<()> {
         self.decoder.push_n_nulls(self.state, target, n);
         Ok(())
+    }
+
+    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
+        self.state.skip_in_place(n)
     }
 }
 
@@ -288,6 +292,67 @@ impl NestedState {
 
         (def_levels, rep_levels)
     }
+}
+
+/// Calculate the number of leaf values that are covered by the first `limit` definition level
+/// values.
+fn limit_to_num_values(
+    def_iter: &HybridRleDecoder<'_>,
+    def_levels: &[u16],
+    limit: usize,
+) -> ParquetResult<usize> {
+    struct NumValuesGatherer {
+        leaf_def_level: u16,
+    }
+    struct NumValuesState {
+        num_values: usize,
+        length: usize,
+    }
+
+    impl HybridRleGatherer<u32> for NumValuesGatherer {
+        type Target = NumValuesState;
+
+        fn target_reserve(&self, _target: &mut Self::Target, _n: usize) {}
+
+        fn target_num_elements(&self, target: &Self::Target) -> usize {
+            target.length
+        }
+
+        fn hybridrle_to_target(&self, value: u32) -> ParquetResult<u32> {
+            Ok(value)
+        }
+
+        fn gather_one(&self, target: &mut Self::Target, value: u32) -> ParquetResult<()> {
+            target.num_values += usize::from(value == self.leaf_def_level as u32);
+            target.length += 1;
+            Ok(())
+        }
+
+        fn gather_repeated(
+            &self,
+            target: &mut Self::Target,
+            value: u32,
+            n: usize,
+        ) -> ParquetResult<()> {
+            target.num_values += n * usize::from(value == self.leaf_def_level as u32);
+            target.length += n;
+            Ok(())
+        }
+    }
+
+    let mut state = NumValuesState {
+        num_values: 0,
+        length: 0,
+    };
+    def_iter.clone().gather_n_into(
+        &mut state,
+        limit,
+        &NumValuesGatherer {
+            leaf_def_level: *def_levels.last().unwrap(),
+        },
+    )?;
+
+    Ok(state.num_values)
 }
 
 fn idx_to_limit(rep_iter: &HybridRleDecoder<'_>, idx: usize) -> ParquetResult<usize> {
@@ -384,7 +449,7 @@ fn extend_offsets2<'a, D: utils::NestedDecoder>(
     >,
     nested: &mut [Nested],
     filter: Option<Filter>,
-    // Amortized allocations
+
     def_levels: &[u16],
     rep_levels: &[u16],
 ) -> PolarsResult<()> {
@@ -416,6 +481,9 @@ fn extend_offsets2<'a, D: utils::NestedDecoder>(
             if start > 0 {
                 let start_cell = idx_to_limit(&rep_iter, start)?;
 
+                let num_skipped_values = limit_to_num_values(&def_iter, def_levels, start_cell)?;
+                batched_collector.skip_in_place(num_skipped_values)?;
+
                 rep_iter.skip_in_place(start_cell)?;
                 def_iter.skip_in_place(start_cell)?;
             }
@@ -436,6 +504,8 @@ fn extend_offsets2<'a, D: utils::NestedDecoder>(
 
             // @NOTE: This is kind of unused
             let last_skip = def_iter.len();
+            let num_skipped_values = limit_to_num_values(&def_iter, def_levels, last_skip)?;
+            batched_collector.skip_in_place(num_skipped_values)?;
             rep_iter.skip_in_place(last_skip)?;
             def_iter.skip_in_place(last_skip)?;
 
@@ -447,6 +517,8 @@ fn extend_offsets2<'a, D: utils::NestedDecoder>(
                 let num_zeros = iter.take_leading_zeros();
                 if num_zeros > 0 {
                     let offset = idx_to_limit(&rep_iter, num_zeros)?;
+                    let num_skipped_values = limit_to_num_values(&def_iter, def_levels, offset)?;
+                    batched_collector.skip_in_place(num_skipped_values)?;
                     rep_iter.skip_in_place(offset)?;
                     def_iter.skip_in_place(offset)?;
                 }
@@ -601,22 +673,15 @@ fn extend_offsets_limited<'a, D: utils::NestedDecoder>(
                             }
                         }
 
-                        if embed_depth == max_depth - 1 {
-                            for _ in 0..num_elements {
-                                batched_collector.push_invalid();
-                            }
-
-                            break;
-                        }
-
                         let embed_num_values = embed_nest.invalid_num_values();
+                        num_elements *= embed_num_values;
 
                         if embed_num_values == 0 {
                             break;
                         }
-
-                        num_elements *= embed_num_values;
                     }
+
+                    batched_collector.push_n_invalids(num_elements);
 
                     break;
                 }
@@ -705,6 +770,7 @@ impl<D: utils::NestedDecoder> PageNestedDecoder<D> {
                         break;
                     };
                     let page = page?;
+                    let page = page.decompress(&mut self.iter)?;
 
                     let mut state =
                         utils::State::new_nested(&self.decoder, &page, self.dict.as_ref())?;
@@ -743,9 +809,11 @@ impl<D: utils::NestedDecoder> PageNestedDecoder<D> {
                         break;
                     };
                     let page = page?;
+                    // We cannot lazily decompress because we don't have the number of leaf values
+                    // at this point. This is encoded within the `definition level` values. *sign*.
+                    // In general, lazy decompression is quite difficult with nested values.
+                    let page = page.decompress(&mut self.iter)?;
 
-                    let mut state =
-                        utils::State::new_nested(&self.decoder, &page, self.dict.as_ref())?;
                     let (def_iter, rep_iter) = level_iters(&page)?;
 
                     let mut count = ZeroCount::default();
@@ -761,6 +829,9 @@ impl<D: utils::NestedDecoder> PageNestedDecoder<D> {
                     } else {
                         None
                     };
+
+                    let mut state =
+                        utils::State::new_nested(&self.decoder, &page, self.dict.as_ref())?;
 
                     let start_length = nested_state.len();
 

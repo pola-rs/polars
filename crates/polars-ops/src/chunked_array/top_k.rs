@@ -204,6 +204,7 @@ pub fn top_k(s: &[Series], descending: bool) -> PolarsResult<Series> {
             Ok(ca.into_series())
         },
         DataType::Binary => Ok(top_k_binary_impl(s.binary().unwrap(), k, descending).into_series()),
+        #[cfg(feature = "dtype-decimal")]
         DataType::Decimal(_, _) => {
             let src = src.decimal().unwrap();
             let ca = top_k_num_impl(src, k, descending);
@@ -212,6 +213,7 @@ pub fn top_k(s: &[Series], descending: bool) -> PolarsResult<Series> {
             Ok(lca.into_series())
         },
         DataType::Null => Ok(src.slice(0, k)),
+        #[cfg(feature = "dtype-struct")]
         DataType::Struct(_) => {
             // Fallback to more generic impl.
             top_k_by_impl(k, src, &[src.clone()], vec![descending])

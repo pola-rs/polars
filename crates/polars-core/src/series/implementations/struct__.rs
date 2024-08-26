@@ -149,7 +149,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
     }
 
     fn new_from_index(&self, _index: usize, _length: usize) -> Series {
-        self.0.new_from_index(_length, _index).into_series()
+        self.0.new_from_index(_index, _length).into_series()
     }
 
     fn cast(&self, dtype: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {

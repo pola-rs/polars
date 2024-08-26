@@ -26,9 +26,10 @@ impl ComputeNode for SelectNode {
         "select"
     }
 
-    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) {
+    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {
         assert!(recv.len() == 1 && send.len() == 1);
         recv.swap_with_slice(send);
+        Ok(())
     }
 
     fn spawn<'env, 's>(
@@ -59,20 +60,7 @@ impl ComputeNode for SelectNode {
                         out._add_columns(selected, &slf.schema)?;
                         out
                     } else {
-                        // Broadcast scalars.
-                        let max_non_unit_length = selected
-                            .iter()
-                            .map(|s| s.len())
-                            .filter(|l| *l != 1)
-                            .max()
-                            .unwrap_or(1);
-                        for s in &mut selected {
-                            if s.len() != max_non_unit_length {
-                                assert!(s.len() == 1, "got series of incompatible lengths");
-                                *s = s.new_from_index(0, max_non_unit_length);
-                            }
-                        }
-                        unsafe { DataFrame::new_no_checks(selected) }
+                        DataFrame::new_with_broadcast(selected)?
                     };
 
                     let mut morsel = Morsel::new(ret, seq, source_token);

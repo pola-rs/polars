@@ -346,10 +346,13 @@ impl DslBuilder {
         .into()
     }
 
-    pub fn explode(self, columns: Vec<Selector>) -> Self {
+    pub fn explode(self, columns: Vec<Selector>, allow_empty: bool) -> Self {
         DslPlan::MapFunction {
             input: Arc::new(self.0),
-            function: DslFunction::Explode { columns },
+            function: DslFunction::Explode {
+                columns,
+                allow_empty,
+            },
         }
         .into()
     }
@@ -442,7 +445,7 @@ impl DslBuilder {
         function: F,
         optimizations: AllowedOptimizations,
         schema: Option<Arc<dyn UdfSchema>>,
-        name: &'static str,
+        name: &str,
     ) -> Self
     where
         F: DataFrameUdf + 'static,
@@ -457,7 +460,7 @@ impl DslBuilder {
                 predicate_pd: optimizations.contains(OptState::PREDICATE_PUSHDOWN),
                 projection_pd: optimizations.contains(OptState::PROJECTION_PUSHDOWN),
                 streamable: optimizations.contains(OptState::STREAMING),
-                fmt_str: name,
+                fmt_str: name.into(),
             }),
         }
         .into()
