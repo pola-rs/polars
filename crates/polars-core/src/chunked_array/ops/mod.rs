@@ -121,6 +121,7 @@ pub trait ChunkTakeUnchecked<Idx: ?Sized> {
 }
 
 /// Create a `ChunkedArray` with new values by index or by boolean mask.
+///
 /// Note that these operations clone data. This is however the only way we can modify at mask or
 /// index level as the underlying Arrow arrays are immutable.
 pub trait ChunkSet<'a, A, B> {

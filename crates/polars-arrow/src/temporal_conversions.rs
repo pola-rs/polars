@@ -267,6 +267,7 @@ pub fn parse_offset(offset: &str) -> PolarsResult<FixedOffset> {
 }
 
 /// Parses `value` to `Option<i64>` consistent with the Arrow's definition of timestamp with timezone.
+///
 /// `tz` must be built from `timezone` (either via [`parse_offset`] or `chrono-tz`).
 /// Returns in scale `tz` of `TimeUnit`.
 #[inline]

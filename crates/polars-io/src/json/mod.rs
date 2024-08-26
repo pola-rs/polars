@@ -87,9 +87,11 @@ pub struct JsonWriterOptions {
     pub maintain_order: bool,
 }
 
-/// The format to use to write the DataFrame to JSON: `Json` (a JSON array) or `JsonLines` (each row output on a
-/// separate line). In either case, each row is serialized as a JSON object whose keys are the column names and whose
-/// values are the row's corresponding values.
+/// The format to use to write the DataFrame to JSON: `Json` (a JSON array)
+/// or `JsonLines` (each row output on a separate line).
+///
+/// In either case, each row is serialized as a JSON object whose keys are the column names and
+/// whose values are the row's corresponding values.
 pub enum JsonFormat {
     /// A single JSON array containing each DataFrame row as an object. The length of the array is the number of rows in
     /// the DataFrame.

@@ -40,7 +40,8 @@ pub fn _set_partition_size() -> usize {
     POOL.current_num_threads()
 }
 
-/// Just a wrapper structure. Useful for certain impl specializations
+/// Just a wrapper structure which is useful for certain impl specializations.
+///
 /// This is for instance use to implement
 /// `impl<T> FromIterator<T::Native> for NoNull<ChunkedArray<T>>`
 /// as `Option<T::Native>` was already implemented:

@@ -67,6 +67,7 @@ impl IntoLazy for LazyFrame {
 }
 
 /// Lazy abstraction over an eager `DataFrame`.
+///
 /// It really is an abstraction over a logical plan. The methods of this struct will incrementally
 /// modify a logical plan until output is requested (via [`collect`](crate::frame::LazyFrame::collect)).
 #[derive(Clone, Default)]
