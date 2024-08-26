@@ -525,3 +525,17 @@ def test_parquet_slice_pushdown_non_zero_offset(
         assert_frame_equal(
             pl.scan_parquet(path).slice(-1, (1 << 32) - 1).collect(), df.tail(1)
         )
+
+
+def test_predicate_slice_pushdown(tmp_path: Path) -> None:
+    path = tmp_path / "data.parquet"
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+    df.write_parquet(path)
+
+    expect = df.slice(1, 1)
+    lf = pl.scan_parquet(path).slice(1).filter(pl.col("a") < 3)
+
+    assert lf.explain().startswith("Parquet SCAN")
+
+    assert_frame_equal(lf.collect(no_optimization=True), expect)
+    assert_frame_equal(lf.collect(), expect)
