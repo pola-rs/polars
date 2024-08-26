@@ -764,8 +764,8 @@ mod values;
 
 pub use binary::{BinaryArray, BinaryValueIter, MutableBinaryArray, MutableBinaryValuesArray};
 pub use binview::{
-    BinaryViewArray, BinaryViewArrayGeneric, MutableBinaryViewArray, MutablePlBinary,
-    MutablePlString, Utf8ViewArray, View, ViewType,
+    validate_utf8_view, BinaryViewArray, BinaryViewArrayGeneric, MutableBinaryViewArray,
+    MutablePlBinary, MutablePlString, Utf8ViewArray, View, ViewType,
 };
 pub use boolean::{BooleanArray, MutableBooleanArray};
 pub use dictionary::{DictionaryArray, DictionaryKey, MutableDictionaryArray};

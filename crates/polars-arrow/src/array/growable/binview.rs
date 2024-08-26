@@ -103,6 +103,7 @@ impl<'a, T: ViewType + ?Sized> Growable<'a> for GrowableBinaryViewArray<'a, T> {
         let range = start..start + len;
 
         let views_iter = array.views().get_unchecked(range).iter().cloned();
+
         if self.same_buffers.is_some() {
             let mut total_len = 0;
             self.inner

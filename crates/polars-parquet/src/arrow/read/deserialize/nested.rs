@@ -191,18 +191,8 @@ pub fn columns_to_iter_recursive(
             )?
             .collect_n(filter)?
         },
-        LargeBinary | LargeUtf8 => {
-            init.push(InitNested::Primitive(field.is_nullable));
-            types.pop();
-            PageNestedDecoder::new(
-                columns.pop().unwrap(),
-                field.data_type().clone(),
-                binary::BinaryDecoder::default(),
-                init,
-            )?
-            .collect_n(filter)?
-        },
-        Binary | Utf8 => unreachable!(),
+        // These are all converted to View variants before.
+        LargeBinary | LargeUtf8 | Binary | Utf8 => unreachable!(),
         _ => match field.data_type().to_logical_type() {
             ArrowDataType::Dictionary(key_type, _, _) => {
                 init.push(InitNested::Primitive(field.is_nullable));
@@ -545,14 +535,8 @@ fn dict_read<K: DictionaryKey>(
             init,
         )?
         .collect_n(filter)?,
-        LargeUtf8 | LargeBinary => PageNestedDecoder::new(
-            iter,
-            data_type,
-            dictionary::DictionaryDecoder::new(binary::BinaryDecoder::default()),
-            init,
-        )?
-        .collect_n(filter)?,
-        Utf8 | Binary => unreachable!(),
+        // These are all converted to View variants before.
+        LargeUtf8 | LargeBinary | Utf8 | Binary => unreachable!(),
         Utf8View | BinaryView => PageNestedDecoder::new(
             iter,
             data_type,

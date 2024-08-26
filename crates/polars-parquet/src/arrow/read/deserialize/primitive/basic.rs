@@ -2,7 +2,6 @@ use arrow::array::{DictionaryArray, DictionaryKey, PrimitiveArray};
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
-use polars_error::PolarsResult;
 
 use super::super::utils;
 use crate::parquet::encoding::hybrid_rle::DictionaryTranslator;
@@ -12,27 +11,9 @@ use crate::parquet::page::{split_buffer, DataPage, DictPage};
 use crate::parquet::types::{decode, NativeType as ParquetNativeType};
 use crate::read::deserialize::utils::array_chunks::ArrayChunks;
 use crate::read::deserialize::utils::{
-    freeze_validity, BatchableCollector, Decoder, PageValidity, TranslatedHybridRle,
+    dict_indices_decoder, freeze_validity, BatchableCollector, Decoder, PageValidity,
+    TranslatedHybridRle,
 };
-
-#[derive(Debug)]
-pub(crate) struct ValuesDictionary<'a, T: NativeType> {
-    pub values: hybrid_rle::HybridRleDecoder<'a>,
-    pub dict: &'a Vec<T>,
-}
-
-impl<'a, T: NativeType> ValuesDictionary<'a, T> {
-    pub fn try_new(page: &'a DataPage, dict: &'a Vec<T>) -> PolarsResult<Self> {
-        let values = utils::dict_indices_decoder(page)?;
-
-        Ok(Self { dict, values })
-    }
-
-    #[inline]
-    pub fn len(&self) -> usize {
-        self.values.len()
-    }
-}
 
 /// A function that defines how to decode from the
 /// [`parquet::types::NativeType`][ParquetNativeType] to the [`arrow::types::NativeType`].
@@ -156,14 +137,13 @@ where
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
-pub(crate) enum StateTranslation<'a, P: ParquetNativeType, T: NativeType> {
+pub(crate) enum StateTranslation<'a, P: ParquetNativeType> {
     Plain(ArrayChunks<'a, P>),
-    Dictionary(ValuesDictionary<'a, T>),
+    Dictionary(hybrid_rle::HybridRleDecoder<'a>),
     ByteStreamSplit(byte_stream_split::Decoder<'a>),
 }
 
-impl<'a, P, T, D> utils::StateTranslation<'a, PrimitiveDecoder<P, T, D>>
-    for StateTranslation<'a, P, T>
+impl<'a, P, T, D> utils::StateTranslation<'a, PrimitiveDecoder<P, T, D>> for StateTranslation<'a, P>
 where
     T: NativeType,
     P: ParquetNativeType,
@@ -178,8 +158,9 @@ where
         _page_validity: Option<&PageValidity<'a>>,
     ) -> ParquetResult<Self> {
         match (page.encoding(), dict) {
-            (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict)) => {
-                Ok(Self::Dictionary(ValuesDictionary::try_new(page, dict)?))
+            (Encoding::PlainDictionary | Encoding::RleDictionary, Some(_)) => {
+                let values = dict_indices_decoder(page)?;
+                Ok(Self::Dictionary(values))
             },
             (Encoding::Plain, _) => {
                 let values = split_buffer(page)?.values;
@@ -212,7 +193,7 @@ where
 
         match self {
             Self::Plain(t) => t.skip_in_place(n),
-            Self::Dictionary(t) => t.values.skip_in_place(n)?,
+            Self::Dictionary(t) => t.skip_in_place(n)?,
             Self::ByteStreamSplit(t) => _ = t.iter_converted(|_| ()).nth(n - 1),
         }
 
@@ -224,6 +205,7 @@ where
         decoder: &mut PrimitiveDecoder<P, T, D>,
         decoded: &mut <PrimitiveDecoder<P, T, D> as utils::Decoder>::DecodedState,
         page_validity: &mut Option<PageValidity<'a>>,
+        dict: Option<&'a <PrimitiveDecoder<P, T, D> as utils::Decoder>::Dict>,
         additional: usize,
     ) -> ParquetResult<()> {
         match self {
@@ -233,11 +215,11 @@ where
                 page_validity.as_mut(),
                 additional,
             )?,
-            Self::Dictionary(page) => decoder.decode_dictionary_encoded(
+            Self::Dictionary(ref mut page) => decoder.decode_dictionary_encoded(
                 decoded,
-                &mut page.values,
+                page,
                 page_validity.as_mut(),
-                page.dict,
+                dict.unwrap(),
                 additional,
             )?,
             Self::ByteStreamSplit(page_values) => {
@@ -347,7 +329,7 @@ where
     P: ParquetNativeType,
     D: DecoderFunction<P, T>,
 {
-    type Translation<'a> = StateTranslation<'a, P, T>;
+    type Translation<'a> = StateTranslation<'a, P>;
     type Dict = Vec<T>;
     type DecodedState = (Vec<T>, MutableBitmap);
     type Output = PrimitiveArray<T>;
