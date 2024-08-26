@@ -105,12 +105,19 @@ pub fn lower_ir(
                 .iter_names()
                 .map(|name| {
                     let name: ColumnName = name.as_str().into();
-                    ExprIR::new(expr_arena.add(AExpr::Column(name.clone())), OutputName::ColumnLhs(name))
+                    ExprIR::new(
+                        expr_arena.add(AExpr::Column(name.clone())),
+                        OutputName::ColumnLhs(name),
+                    )
                 })
                 .chain([predicate])
                 .collect_vec();
-            let (trans_input, mut trans_cols_and_predicate) =
-                super::lower_expr::lower_exprs(phys_input, &cols_and_predicate, expr_arena, phys_sm)?;
+            let (trans_input, mut trans_cols_and_predicate) = super::lower_expr::lower_exprs(
+                phys_input,
+                &cols_and_predicate,
+                expr_arena,
+                phys_sm,
+            )?;
 
             let filter_schema = phys_sm[trans_input].output_schema.clone();
             let filter = PhysNodeKind::Filter {
@@ -121,7 +128,10 @@ pub fn lower_ir(
             let post_filter = phys_sm.insert(PhysNode::new(filter_schema, filter));
             trans_cols_and_predicate.pop(); // Remove predicate.
             return super::lower_expr::build_select_node(
-                post_filter, &trans_cols_and_predicate, expr_arena, phys_sm,
+                post_filter,
+                &trans_cols_and_predicate,
+                expr_arena,
+                phys_sm,
             );
         },
 

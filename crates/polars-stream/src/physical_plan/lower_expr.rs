@@ -72,17 +72,17 @@ fn is_elementwise_rec(
             function: _,
             output_type: _,
             options,
-        } => {
-            options.is_elementwise()
-        },
+        } => options.is_elementwise(),
         AExpr::Function {
             input,
             function,
             options,
         } => match function {
-            FunctionExpr::AsStruct => input.iter().all(|expr| is_elementwise_rec(expr.node(), arena, cache)),
+            FunctionExpr::AsStruct => input
+                .iter()
+                .all(|expr| is_elementwise_rec(expr.node(), arena, cache)),
             _ => options.is_elementwise(),
-        }
+        },
 
         AExpr::Window { .. } => false,
         AExpr::Slice { .. } => false,

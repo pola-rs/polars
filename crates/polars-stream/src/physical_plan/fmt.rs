@@ -1,12 +1,12 @@
-use polars_plan::plans::{AExpr, EscapeLabel, FileScan, PathsDisplay};
+use std::fmt::Write;
+
 use polars_plan::plans::expr_ir::ExprIR;
+use polars_plan::plans::{AExpr, EscapeLabel, FileScan, PathsDisplay};
 use polars_utils::arena::Arena;
 use polars_utils::itertools::Itertools;
 use slotmap::{Key, SecondaryMap, SlotMap};
-use std::fmt::Write;
 
-use super::{PhysNodeKey, PhysNodeKind, PhysNode};
-
+use super::{PhysNode, PhysNodeKey, PhysNodeKind};
 
 fn escape_graphviz(s: &str) -> String {
     s.replace('\\', "\\\\")

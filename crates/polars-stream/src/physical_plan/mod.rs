@@ -9,17 +9,16 @@ use polars_plan::plans::hive::HivePartitions;
 use polars_plan::plans::{AExpr, DataFrameUdf, FileInfo, FileScan, IR};
 use polars_plan::prelude::expr_ir::ExprIR;
 
+mod fmt;
 mod lower_expr;
 mod lower_ir;
 mod to_graph;
-mod fmt;
 
+pub use fmt::visualize_plan;
 use polars_plan::prelude::FileScanOptions;
 use polars_utils::arena::{Arena, Node};
 use slotmap::{Key, SecondaryMap, SlotMap};
-
 pub use to_graph::physical_plan_to_graph;
-pub use fmt::visualize_plan;
 
 slotmap::new_key_type! {
     /// Key used for PNodes.
@@ -131,7 +130,7 @@ pub enum PhysNodeKind {
 fn insert_multiplexers(
     node: PhysNodeKey,
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
-    referenced: &mut SecondaryMap<PhysNodeKey, ()>
+    referenced: &mut SecondaryMap<PhysNodeKey, ()>,
 ) {
     let seen_before = referenced.insert(node, ()).is_some();
     if seen_before && !matches!(phys_sm[node].kind, PhysNodeKind::Multiplexer { .. }) {
@@ -155,30 +154,28 @@ fn insert_multiplexers(
 
     if !seen_before {
         match &phys_sm[node].kind {
-            PhysNodeKind::InMemorySource { .. } | PhysNodeKind::FileScan { .. } => {}
-            PhysNodeKind::Select { input, .. } |
-            PhysNodeKind::Reduce { input, .. } |
-            PhysNodeKind::StreamingSlice { input, .. } |
-            PhysNodeKind::Filter { input, .. } |
-            PhysNodeKind::SimpleProjection { input, .. } |
-            PhysNodeKind::InMemorySink { input } |
-            PhysNodeKind::InMemoryMap { input, .. } |
-            PhysNodeKind::Map { input, .. } |
-            PhysNodeKind::Sort { input, .. } |
-            PhysNodeKind::Multiplexer { input } => {
+            PhysNodeKind::InMemorySource { .. } | PhysNodeKind::FileScan { .. } => {},
+            PhysNodeKind::Select { input, .. }
+            | PhysNodeKind::Reduce { input, .. }
+            | PhysNodeKind::StreamingSlice { input, .. }
+            | PhysNodeKind::Filter { input, .. }
+            | PhysNodeKind::SimpleProjection { input, .. }
+            | PhysNodeKind::InMemorySink { input }
+            | PhysNodeKind::InMemoryMap { input, .. }
+            | PhysNodeKind::Map { input, .. }
+            | PhysNodeKind::Sort { input, .. }
+            | PhysNodeKind::Multiplexer { input } => {
                 insert_multiplexers(*input, phys_sm, referenced);
-            }
+            },
 
-            PhysNodeKind::OrderedUnion { inputs } |
-            PhysNodeKind::Zip { inputs, .. } => {
+            PhysNodeKind::OrderedUnion { inputs } | PhysNodeKind::Zip { inputs, .. } => {
                 for input in inputs.clone() {
                     insert_multiplexers(input, phys_sm, referenced);
                 }
-            }
+            },
         }
     }
 }
-
 
 pub fn build_physical_plan(
     root: Node,
