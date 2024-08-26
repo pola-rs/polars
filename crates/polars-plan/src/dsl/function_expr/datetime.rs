@@ -311,24 +311,31 @@ pub(super) fn microsecond(s: &Series) -> PolarsResult<Series> {
 pub(super) fn nanosecond(s: &Series) -> PolarsResult<Series> {
     s.nanosecond().map(|ca| ca.into_series())
 }
+#[cfg(feature = "dtype-duration")]
 pub(super) fn total_days(s: &Series) -> PolarsResult<Series> {
     s.duration().map(|ca| ca.days().into_series())
 }
+#[cfg(feature = "dtype-duration")]
 pub(super) fn total_hours(s: &Series) -> PolarsResult<Series> {
     s.duration().map(|ca| ca.hours().into_series())
 }
+#[cfg(feature = "dtype-duration")]
 pub(super) fn total_minutes(s: &Series) -> PolarsResult<Series> {
     s.duration().map(|ca| ca.minutes().into_series())
 }
+#[cfg(feature = "dtype-duration")]
 pub(super) fn total_seconds(s: &Series) -> PolarsResult<Series> {
     s.duration().map(|ca| ca.seconds().into_series())
 }
+#[cfg(feature = "dtype-duration")]
 pub(super) fn total_milliseconds(s: &Series) -> PolarsResult<Series> {
     s.duration().map(|ca| ca.milliseconds().into_series())
 }
+#[cfg(feature = "dtype-duration")]
 pub(super) fn total_microseconds(s: &Series) -> PolarsResult<Series> {
     s.duration().map(|ca| ca.microseconds().into_series())
 }
+#[cfg(feature = "dtype-duration")]
 pub(super) fn total_nanoseconds(s: &Series) -> PolarsResult<Series> {
     s.duration().map(|ca| ca.nanoseconds().into_series())
 }

@@ -3,7 +3,12 @@ mod dsl_to_ir;
 mod expr_expansion;
 mod expr_to_ir;
 mod ir_to_dsl;
-#[cfg(any(feature = "ipc", feature = "parquet", feature = "csv"))]
+#[cfg(any(
+    feature = "ipc",
+    feature = "parquet",
+    feature = "csv",
+    feature = "json"
+))]
 mod scans;
 mod stack_opt;
 

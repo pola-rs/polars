@@ -513,7 +513,7 @@ fn inline_or_prune_cast(
             },
             // We generate casted literal datetimes, so ensure we cast upon conversion
             // to create simpler expr trees.
-            #[cfg(feature = "temporal")]
+            #[cfg(feature = "dtype-datetime")]
             LiteralValue::DateTime(ts, tu, None) if dtype.is_date() => {
                 let from_size = time_unit_multiple(tu.to_arrow()) * SECONDS_IN_DAY;
                 LiteralValue::Date((*ts / from_size) as i32)
