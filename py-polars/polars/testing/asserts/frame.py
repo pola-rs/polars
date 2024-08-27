@@ -249,7 +249,7 @@ def assert_frame_not_equal(
     ...     assert_frame_not_equal(df1, df2)
     ... except AssertionError as e:
     ...     print(e)
-    DataFrames are equal
+    frames are equal
     """
     __tracebackhide__ = True
 
