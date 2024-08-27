@@ -66,9 +66,14 @@ pub fn into_reduction(
             _ => unreachable!(),
         },
         AExpr::Len => {
-            let first_column = schema.iter_names().next().unwrap();
+            // Compute length on the first column, or if none exist we'll never
+            // be called and correctly return 0 as length anyway.
             let out: Box<dyn Reduction> = Box::new(LenReduce::new());
-            let expr = expr_arena.add(AExpr::Column(first_column.as_str().into()));
+            let expr = if let Some(first_column) = schema.iter_names().next() {
+                expr_arena.add(AExpr::Column(first_column.as_str().into()))
+            } else {
+                expr_arena.add(AExpr::Literal(LiteralValue::Null))
+            };
             (out, expr)
         }
         _ => unreachable!()
