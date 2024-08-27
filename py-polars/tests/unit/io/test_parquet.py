@@ -1690,7 +1690,7 @@ def test_nested_span_multiple_pages_18400() -> None:
 @given(
     df=dataframes(
         min_size=0,
-        max_size=10,
+        max_size=1000,
         min_cols=2,
         max_cols=5,
         excluded_dtypes=[pl.Decimal, pl.Categorical, pl.Enum, pl.Array],
