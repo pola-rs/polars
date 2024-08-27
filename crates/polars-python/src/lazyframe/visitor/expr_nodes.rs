@@ -1304,6 +1304,10 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 FunctionExpr::EwmMeanBy { half_life: _ } => {
                     return Err(PyNotImplementedError::new_err("ewm_mean_by"))
                 },
+                #[cfg(feature = "json")]
+                FunctionExpr::JsonEncode(_) => {
+                    return Err(PyNotImplementedError::new_err("json_encode"))
+                },
             },
             options: py.None(),
         }

@@ -136,14 +136,4 @@ class StructNameSpace:
         .. deprecated:: x.y.z
             This method has been renamed to :meth:`Series.json_encode`.
 
-        Examples
-        --------
-        >>> s = pl.Series("a", [{"a": [1, 2], "b": [45]}, {"a": [9, 1, 3], "b": None}])
-        >>> s.struct.json_encode()
-        shape: (2,)
-        Series: 'a' [str]
-        [
-            "{"a":[1,2],"b":[45]}"
-            "{"a":[9,1,3],"b":null}"
-        ]
         """

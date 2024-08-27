@@ -7366,10 +7366,19 @@ class Series:
 
         Examples
         --------
-        >>> a = pl.Series([[1, 2, 3], [], [None, 3], [5, 6, 7]])
-        >>> a.json_encode()
+        >>> s = pl.Series("a", [{"a": [1, 2], "b": [45]}, {"a": [9, 1, 3], "b": None}])
+        >>> s.json_encode()
+        shape: (2,)
+        Series: 'a' [str]
+        [
+            "{"a":[1,2],"b":[45]}"
+            "{"a":[9,1,3],"b":null}"
+        ]
+
+        >>> s = pl.Series("b", [[1, 2, 3], [], [None, 3], [5, 6, 7]])
+        >>> s.json_encode()
         shape: (4,)
-        Series: '' [str]
+        Series: 'b' [str]
         [
             "[1,2,3]"
             "[]"

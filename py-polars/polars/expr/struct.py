@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING, Iterable, Sequence
 
+from polars._utils.deprecation import deprecate_renamed_function
 from polars._utils.parse import parse_into_list_of_expressions
 from polars._utils.wrap import wrap_expr
 
@@ -222,20 +223,6 @@ class ExprStructNameSpace:
         .. deprecated:: x.y.z
             This method has been renamed to :meth:`Expr.json_encode`.
 
-        Examples
-        --------
-        >>> pl.DataFrame(
-        ...     {"a": [{"a": [1, 2], "b": [45]}, {"a": [9, 1, 3], "b": None}]}
-        ... ).with_columns(pl.col("a").struct.json_encode().alias("encoded"))
-        shape: (2, 2)
-        ┌──────────────────┬────────────────────────┐
-        │ a                ┆ encoded                │
-        │ ---              ┆ ---                    │
-        │ struct[2]        ┆ str                    │
-        ╞══════════════════╪════════════════════════╡
-        │ {[1, 2],[45]}    ┆ {"a":[1,2],"b":[45]}   │
-        │ {[9, 1, 3],null} ┆ {"a":[9,1,3],"b":null} │
-        └──────────────────┴────────────────────────┘
         """
         return wrap_expr(self._pyexpr.json_encode())
 

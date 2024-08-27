@@ -10719,8 +10719,21 @@ class Expr:
 
         Examples
         --------
+        >>> pl.DataFrame(
+        ...     {"a": [{"a": [1, 2], "b": [45]}, {"a": [9, 1, 3], "b": None}]}
+        ... ).with_columns(pl.col("a").json_encode().alias("encoded"))
+        shape: (2, 2)
+        ┌──────────────────┬────────────────────────┐
+        │ a                ┆ encoded                │
+        │ ---              ┆ ---                    │
+        │ struct[2]        ┆ str                    │
+        ╞══════════════════╪════════════════════════╡
+        │ {[1, 2],[45]}    ┆ {"a":[1,2],"b":[45]}   │
+        │ {[9, 1, 3],null} ┆ {"a":[9,1,3],"b":null} │
+        └──────────────────┴────────────────────────┘
+
         >>> pl.DataFrame({"a": [[1, 2], [45], [9, 1, 3], None]}).with_columns(
-        ...     pl.col("a").list.json_encode().alias("encoded")
+        ...     pl.col("a").json_encode().alias("encoded")
         ... )
         shape: (4, 2)
         ┌───────────┬─────────┐
@@ -10735,7 +10748,7 @@ class Expr:
         └───────────┴─────────┘
 
         >>> pl.DataFrame({"a": [["\\", '"foo"'], [None, ""]]}).with_columns(
-        ...     pl.col("a").list.json_encode().alias("encoded")
+        ...     pl.col("a").json_encode().alias("encoded")
         ... )
         shape: (2, 2)
         ┌────────────────┬──────────────────┐

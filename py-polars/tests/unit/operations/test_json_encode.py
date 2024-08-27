@@ -107,7 +107,7 @@ def test_json_encode_in_struct_name_space() -> None:
                 },
             ]
         }
-    ).with_columns(pl.col("a").json_encode().alias("encoded"))
+    ).select(pl.col("a").json_encode().alias("encoded"))
     assert df.to_dict(as_series=False) == {
         "encoded": ['{"a":1,"b":2}', '{"a":3,"b":4}'],
     }

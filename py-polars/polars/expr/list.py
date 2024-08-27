@@ -1358,4 +1358,3 @@ class ExprListNameSpace:
         """  # noqa: W505.
         other = parse_into_expression(other, str_as_lit=False)
         return wrap_expr(self._pyexpr.list_set_operation(other, "symmetric_difference"))
-

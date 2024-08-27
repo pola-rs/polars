@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import datetime
 from collections import OrderedDict
 
 import polars as pl
