@@ -45,6 +45,13 @@ fn from_thrift_helper(
 
     let id = element.field_id;
     match element.num_children {
+        // empty root
+        None | Some(0) if is_root_node => {
+            let fields = vec![];
+            let tp = ParquetType::new_root(name, fields);
+            Ok((index + 1, tp))
+        },
+
         // From parquet-format:
         //   The children count is used to construct the nested relationship.
         //   This field is not set when the element is a primitive type

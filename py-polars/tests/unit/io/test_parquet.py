@@ -1730,3 +1730,20 @@ def test_general_prefiltering(
 
     result = pl.scan_parquet(f, parallel="prefiltered").filter(expr).collect()
     assert_frame_equal(result, df.filter(expr))
+
+
+def test_empty_parquet() -> None:
+    f_pd = io.BytesIO()
+    f_pl = io.BytesIO()
+
+    pd.DataFrame().to_parquet(f_pd)
+    pl.DataFrame().write_parquet(f_pl)
+
+    f_pd.seek(0)
+    f_pl.seek(0)
+
+    empty_from_pd = pl.read_parquet(f_pd)
+    assert empty_from_pd.shape == (0, 0)
+
+    empty_from_pl = pl.read_parquet(f_pl)
+    assert empty_from_pl.shape == (0, 0)

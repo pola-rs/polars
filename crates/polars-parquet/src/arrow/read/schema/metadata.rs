@@ -17,44 +17,40 @@ pub fn read_schema_from_metadata(metadata: &mut Metadata) -> PolarsResult<Option
         .transpose()
 }
 
-fn convert_field(field: Field) -> Field {
-    Field {
-        name: field.name,
-        data_type: convert_data_type(field.data_type),
-        is_nullable: field.is_nullable,
-        metadata: field.metadata,
-    }
+fn convert_field(field: &mut Field) {
+    field.data_type = convert_data_type(std::mem::take(&mut field.data_type));
 }
 
-fn convert_data_type(data_type: ArrowDataType) -> ArrowDataType {
+fn convert_data_type(mut data_type: ArrowDataType) -> ArrowDataType {
     use ArrowDataType::*;
     match data_type {
-        List(field) => LargeList(Box::new(convert_field(*field))),
-        LargeList(field) => LargeList(Box::new(convert_field(*field))),
-        Struct(mut fields) => {
-            for field in &mut fields {
-                *field = convert_field(std::mem::take(field))
+        List(mut field) => {
+            convert_field(field.as_mut());
+            data_type = LargeList(field);
+        },
+        LargeList(ref mut field) | FixedSizeList(ref mut field, _) => convert_field(field.as_mut()),
+        Struct(ref mut fields) => {
+            for field in fields {
+                convert_field(field);
             }
-            Struct(fields)
         },
-        Binary | LargeBinary => BinaryView,
-        Utf8 | LargeUtf8 => Utf8View,
-        Dictionary(it, data_type, sorted) => {
-            let dtype = convert_data_type(*data_type);
-            Dictionary(it, Box::new(dtype), sorted)
+        Binary | LargeBinary => data_type = BinaryView,
+        Utf8 | LargeUtf8 => data_type = Utf8View,
+        Dictionary(_, ref mut data_type, _) | Extension(_, ref mut data_type, _) => {
+            let data_type = data_type.as_mut();
+            *data_type = convert_data_type(std::mem::take(data_type));
         },
-        Extension(name, data_type, metadata) => {
-            let data_type = convert_data_type(*data_type);
-            Extension(name, Box::new(data_type), metadata)
-        },
-        Map(field, _ordered) => {
+        Map(mut field, _ordered) => {
             // Polars doesn't support Map.
             // A map is physically a `List<Struct<K, V>>`
             // So we read as list.
-            LargeList(Box::new(convert_field(*field)))
+            convert_field(field.as_mut());
+            data_type = LargeList(field);
         },
-        dt => dt,
+        _ => {},
     }
+
+    data_type
 }
 
 /// Try to convert Arrow schema metadata into a schema

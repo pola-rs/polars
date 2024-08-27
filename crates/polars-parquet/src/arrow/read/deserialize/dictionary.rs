@@ -48,6 +48,7 @@ impl<'a, K: DictionaryKey, D: utils::DictDecodable> StateTranslation<'a, Diction
         decoder: &mut DictionaryDecoder<K, D>,
         decoded: &mut <DictionaryDecoder<K, D> as Decoder>::DecodedState,
         page_validity: &mut Option<PageValidity<'a>>,
+        _: Option<&'a <DictionaryDecoder<K, D> as Decoder>::Dict>,
         additional: usize,
     ) -> ParquetResult<()> {
         let (values, validity) = decoded;
