@@ -70,18 +70,13 @@ def assert_frame_equal(
     >>> from polars.testing import assert_frame_equal
     >>> df1 = pl.DataFrame({"a": [1, 2, 3]})
     >>> df2 = pl.DataFrame({"a": [1, 5, 3]})
-    >>> assert_frame_equal(df1, df2)  # doctest: +SKIP
-    Traceback (most recent call last):
-    ...
-    AssertionError: Series are different (value mismatch)
+    >>> try:
+    ...     assert_frame_equal(df1, df2)
+    ... except AssertionError as e:
+    ...     print(e)
+    DataFrames are different (value mismatch for column 'a')
     [left]:  [1, 2, 3]
     [right]: [1, 5, 3]
-
-    The above exception was the direct cause of the following exception:
-
-    Traceback (most recent call last):
-    ...
-    AssertionError: values for column 'a' are different
     """
     __tracebackhide__ = True
 
@@ -250,10 +245,11 @@ def assert_frame_not_equal(
     >>> from polars.testing import assert_frame_not_equal
     >>> df1 = pl.DataFrame({"a": [1, 2, 3]})
     >>> df2 = pl.DataFrame({"a": [1, 2, 3]})
-    >>> assert_frame_not_equal(df1, df2)  # doctest: +SKIP
-    Traceback (most recent call last):
-    ...
-    AssertionError: frames are equal
+    >>> try:
+    ...     assert_frame_not_equal(df1, df2)
+    ... except AssertionError as e:
+    ...     print(e)
+    DataFrames are equal
     """
     __tracebackhide__ = True
 

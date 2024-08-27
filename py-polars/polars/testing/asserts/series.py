@@ -81,10 +81,11 @@ def assert_series_equal(
     >>> from polars.testing import assert_series_equal
     >>> s1 = pl.Series([1, 2, 3])
     >>> s2 = pl.Series([1, 5, 3])
-    >>> assert_series_equal(s1, s2)  # doctest: +SKIP
-    Traceback (most recent call last):
-    ...
-    AssertionError: Series are different (value mismatch)
+    >>> try:
+    ...     assert_series_equal(s1, s2)
+    ... except AssertionError as e:
+    ...     print(e)
+    Series are different (exact value mismatch)
     [left]:  [1, 2, 3]
     [right]: [1, 5, 3]
     """
@@ -397,10 +398,11 @@ def assert_series_not_equal(
     >>> from polars.testing import assert_series_not_equal
     >>> s1 = pl.Series([1, 2, 3])
     >>> s2 = pl.Series([1, 2, 3])
-    >>> assert_series_not_equal(s1, s2)  # doctest: +SKIP
-    Traceback (most recent call last):
-    ...
-    AssertionError: Series are equal
+    >>> try:
+    ...     assert_series_not_equal(s1, s2)
+    ... except AssertionError as e:
+    ...     print(e)
+    Series are equal
     """
     __tracebackhide__ = True
 
