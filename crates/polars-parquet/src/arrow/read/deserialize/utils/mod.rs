@@ -283,10 +283,6 @@ impl<'a, I, T, C: BatchableCollector<I, T>> BatchedCollector<'a, I, T, C> {
             .push_n_nulls(self.target, self.num_waiting_invalids)?;
         Ok(())
     }
-
-    pub fn collector(&mut self) -> &mut C {
-        &mut self.collector
-    }
 }
 
 pub(crate) type PageValidity<'a> = HybridRleDecoder<'a>;
