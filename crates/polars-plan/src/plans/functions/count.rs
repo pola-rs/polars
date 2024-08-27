@@ -12,7 +12,7 @@ use polars_io::parquet::read::ParquetAsyncReader;
 use polars_io::parquet::read::ParquetReader;
 #[cfg(all(feature = "parquet", feature = "async"))]
 use polars_io::pl_async::{get_runtime, with_concurrency_budget};
-#[cfg(feature = "json")]
+#[cfg(any(feature = "json", feature = "parquet"))]
 use polars_io::SerReader;
 
 use super::*;
@@ -191,6 +191,7 @@ pub(super) fn count_rows_ndjson(
     cloud_options: Option<&CloudOptions>,
 ) -> PolarsResult<usize> {
     use polars_core::config;
+    use polars_io::utils::maybe_decompress_bytes;
 
     let run_async = !paths.is_empty() && is_cloud_url(&paths[0]) || config::force_async();
 
@@ -235,7 +236,12 @@ pub(super) fn count_rows_ndjson(
                 polars_utils::open_file(&paths[i])?
             };
 
-            let reader = polars_io::ndjson::core::JsonLineReader::new(f);
+            let mmap = unsafe { memmap::Mmap::map(&f).unwrap() };
+            let owned = &mut vec![];
+
+            let reader = polars_io::ndjson::core::JsonLineReader::new(std::io::Cursor::new(
+                maybe_decompress_bytes(mmap.as_ref(), owned)?,
+            ));
             reader.count()
         })
         .sum()

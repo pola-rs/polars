@@ -6,7 +6,7 @@ use arrow::types::NativeType;
 use super::super::utils;
 use super::basic::{
     AsDecoderFunction, ClosureDecoderFunction, DecoderFunction, IntoDecoderFunction,
-    PlainDecoderFnCollector, PrimitiveDecoder, UnitDecoderFunction, ValuesDictionary,
+    PlainDecoderFnCollector, PrimitiveDecoder, UnitDecoderFunction,
 };
 use super::{DeltaCollector, DeltaTranslator};
 use crate::parquet::encoding::hybrid_rle::{self, DictionaryTranslator};
@@ -16,19 +16,20 @@ use crate::parquet::page::{split_buffer, DataPage, DictPage};
 use crate::parquet::types::{decode, NativeType as ParquetNativeType};
 use crate::read::deserialize::utils::array_chunks::ArrayChunks;
 use crate::read::deserialize::utils::{
-    freeze_validity, BatchableCollector, Decoder, PageValidity, TranslatedHybridRle,
+    dict_indices_decoder, freeze_validity, BatchableCollector, Decoder, PageValidity,
+    TranslatedHybridRle,
 };
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
-pub(crate) enum StateTranslation<'a, P: ParquetNativeType, T: NativeType> {
+pub(crate) enum StateTranslation<'a, P: ParquetNativeType> {
     Plain(ArrayChunks<'a, P>),
-    Dictionary(ValuesDictionary<'a, T>),
+    Dictionary(hybrid_rle::HybridRleDecoder<'a>),
     ByteStreamSplit(byte_stream_split::Decoder<'a>),
     DeltaBinaryPacked(delta_bitpacked::Decoder<'a>),
 }
 
-impl<'a, P, T, D> utils::StateTranslation<'a, IntDecoder<P, T, D>> for StateTranslation<'a, P, T>
+impl<'a, P, T, D> utils::StateTranslation<'a, IntDecoder<P, T, D>> for StateTranslation<'a, P>
 where
     T: NativeType,
     P: ParquetNativeType,
@@ -44,8 +45,9 @@ where
         _page_validity: Option<&PageValidity<'a>>,
     ) -> ParquetResult<Self> {
         match (page.encoding(), dict) {
-            (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict)) => {
-                Ok(Self::Dictionary(ValuesDictionary::try_new(page, dict)?))
+            (Encoding::PlainDictionary | Encoding::RleDictionary, Some(_)) => {
+                let values = dict_indices_decoder(page)?;
+                Ok(Self::Dictionary(values))
             },
             (Encoding::Plain, _) => {
                 let values = split_buffer(page)?.values;
@@ -85,7 +87,7 @@ where
 
         match self {
             Self::Plain(v) => v.skip_in_place(n),
-            Self::Dictionary(v) => v.values.skip_in_place(n)?,
+            Self::Dictionary(v) => v.skip_in_place(n)?,
             Self::ByteStreamSplit(v) => _ = v.iter_converted(|_| ()).nth(n - 1),
             Self::DeltaBinaryPacked(v) => v.skip_in_place(n)?,
         }
@@ -98,6 +100,7 @@ where
         decoder: &mut IntDecoder<P, T, D>,
         decoded: &mut <IntDecoder<P, T, D> as utils::Decoder>::DecodedState,
         page_validity: &mut Option<PageValidity<'a>>,
+        dict: Option<&'a <IntDecoder<P, T, D> as utils::Decoder>::Dict>,
         additional: usize,
     ) -> ParquetResult<()> {
         match self {
@@ -107,11 +110,11 @@ where
                 page_validity.as_mut(),
                 additional,
             )?,
-            Self::Dictionary(page) => decoder.decode_dictionary_encoded(
+            Self::Dictionary(ref mut page) => decoder.decode_dictionary_encoded(
                 decoded,
-                &mut page.values,
+                page,
                 page_validity.as_mut(),
-                page.dict,
+                dict.unwrap(),
                 additional,
             )?,
             Self::ByteStreamSplit(page_values) => {
@@ -241,7 +244,7 @@ where
     i64: num_traits::AsPrimitive<P>,
     D: DecoderFunction<P, T>,
 {
-    type Translation<'a> = StateTranslation<'a, P, T>;
+    type Translation<'a> = StateTranslation<'a, P>;
     type Dict = Vec<T>;
     type DecodedState = (Vec<T>, MutableBitmap);
     type Output = PrimitiveArray<T>;

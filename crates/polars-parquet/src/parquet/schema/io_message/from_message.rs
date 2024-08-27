@@ -158,9 +158,11 @@ fn type_from_str(s: &str) -> ParquetResult<Type> {
     }
 }
 
-/// Parses message type as string into a Parquet [`ParquetType`](crate::parquet::schema::types::ParquetType)
-/// which, for example, could be used to extract individual columns. Returns Parquet
-/// general error when parsing or validation fails.
+/// Parses message type as string into a Parquet [`ParquetType`](crate::parquet::schema::types::ParquetType).
+///
+/// This could, for example, be used to extract individual columns.
+///
+/// Returns Parquet general error when parsing or validation fails.
 pub fn from_message(message_type: &str) -> ParquetResult<ParquetType> {
     let mut parser = Parser {
         tokenizer: &mut Tokenizer::from_str(message_type),

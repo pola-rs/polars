@@ -760,6 +760,10 @@ impl<D: utils::NestedDecoder> PageNestedDecoder<D> {
         // @TODO: Self capacity
         let mut nested_state = init_nested(&self.init, 0);
 
+        if let Some(dict) = self.dict.as_ref() {
+            self.decoder.apply_dictionary(&mut target, dict)?;
+        }
+
         // Amortize the allocations.
         let (def_levels, rep_levels) = nested_state.levels();
 

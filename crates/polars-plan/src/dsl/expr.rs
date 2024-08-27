@@ -61,9 +61,11 @@ impl AsRef<Expr> for AggExpr {
     }
 }
 
-/// Expressions that can be used in various contexts. Queries consist of multiple expressions. When using the polars
-/// lazy API, don't construct an `Expr` directly; instead, create one using the functions in the `polars_lazy::dsl`
-/// module. See that module's docs for more info.
+/// Expressions that can be used in various contexts.
+///
+/// Queries consist of multiple expressions.
+/// When using the polars lazy API, don't construct an `Expr` directly; instead, create one using
+/// the functions in the `polars_lazy::dsl` module. See that module's docs for more info.
 #[derive(Clone, PartialEq)]
 #[must_use]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]

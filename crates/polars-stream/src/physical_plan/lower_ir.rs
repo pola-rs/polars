@@ -4,17 +4,14 @@ use polars_core::prelude::{InitHashMaps, PlHashMap, PlIndexMap};
 use polars_core::schema::Schema;
 use polars_error::PolarsResult;
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
-use polars_plan::plans::{AExpr, Context, IR};
+use polars_plan::plans::{AExpr, ColumnName, IR};
 use polars_plan::prelude::SinkType;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
 use slotmap::SlotMap;
 
 use super::{PhysNode, PhysNodeKey, PhysNodeKind};
-
-fn is_streamable(node: Node, arena: &Arena<AExpr>) -> bool {
-    polars_plan::plans::is_streamable(node, arena, Context::Default)
-}
+use crate::physical_plan::lower_expr::{is_elementwise, ExprCache};
 
 #[recursive::recursive]
 pub fn lower_ir(
@@ -23,13 +20,21 @@ pub fn lower_ir(
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
     schema_cache: &mut PlHashMap<Node, Arc<Schema>>,
+    expr_cache: &mut ExprCache,
 ) -> PolarsResult<PhysNodeKey> {
     let ir_node = ir_arena.get(node);
     let output_schema = IR::schema_with_cache(node, ir_arena, schema_cache);
     let node_kind = match ir_node {
         IR::SimpleProjection { input, columns } => {
             let columns = columns.iter_names().map(|s| s.to_string()).collect();
-            let phys_input = lower_ir(*input, ir_arena, expr_arena, phys_sm, schema_cache)?;
+            let phys_input = lower_ir(
+                *input,
+                ir_arena,
+                expr_arena,
+                phys_sm,
+                schema_cache,
+                expr_cache,
+            )?;
             PhysNodeKind::SimpleProjection {
                 input: phys_input,
                 columns,
@@ -38,18 +43,34 @@ pub fn lower_ir(
 
         IR::Select { input, expr, .. } => {
             let selectors = expr.clone();
-            let phys_input = lower_ir(*input, ir_arena, expr_arena, phys_sm, schema_cache)?;
+            let phys_input = lower_ir(
+                *input,
+                ir_arena,
+                expr_arena,
+                phys_sm,
+                schema_cache,
+                expr_cache,
+            )?;
             return super::lower_expr::build_select_node(
-                phys_input, &selectors, expr_arena, phys_sm,
+                phys_input, &selectors, expr_arena, phys_sm, expr_cache,
             );
         },
 
         IR::HStack { input, exprs, .. }
-            if exprs.iter().all(|e| is_streamable(e.node(), expr_arena)) =>
+            if exprs
+                .iter()
+                .all(|e| is_elementwise(e.node(), expr_arena, expr_cache)) =>
         {
             // FIXME: constant literal columns should be broadcasted with hstack.
             let selectors = exprs.clone();
-            let phys_input = lower_ir(*input, ir_arena, expr_arena, phys_sm, schema_cache)?;
+            let phys_input = lower_ir(
+                *input,
+                ir_arena,
+                expr_arena,
+                phys_sm,
+                schema_cache,
+                expr_cache,
+            )?;
             PhysNodeKind::Select {
                 input: phys_input,
                 selectors,
@@ -63,7 +84,14 @@ pub fn lower_ir(
             //
             // FIXME: constant literal columns should be broadcasted with hstack.
             let exprs = exprs.clone();
-            let phys_input = lower_ir(*input, ir_arena, expr_arena, phys_sm, schema_cache)?;
+            let phys_input = lower_ir(
+                *input,
+                ir_arena,
+                expr_arena,
+                phys_sm,
+                schema_cache,
+                expr_cache,
+            )?;
             let input_schema = &phys_sm[phys_input].output_schema;
             let mut selectors = PlIndexMap::with_capacity(input_schema.len() + exprs.len());
             for name in input_schema.iter_names() {
@@ -79,7 +107,7 @@ pub fn lower_ir(
             }
             let selectors = selectors.into_values().collect_vec();
             return super::lower_expr::build_select_node(
-                phys_input, &selectors, expr_arena, phys_sm,
+                phys_input, &selectors, expr_arena, phys_sm, expr_cache,
             );
         },
 
@@ -87,7 +115,14 @@ pub fn lower_ir(
             if *offset >= 0 {
                 let offset = *offset as usize;
                 let length = *len as usize;
-                let phys_input = lower_ir(*input, ir_arena, expr_arena, phys_sm, schema_cache)?;
+                let phys_input = lower_ir(
+                    *input,
+                    ir_arena,
+                    expr_arena,
+                    phys_sm,
+                    schema_cache,
+                    expr_cache,
+                )?;
                 PhysNodeKind::StreamingSlice {
                     input: phys_input,
                     offset,
@@ -100,29 +135,48 @@ pub fn lower_ir(
 
         IR::Filter { input, predicate } => {
             let predicate = predicate.clone();
-            let phys_input = lower_ir(*input, ir_arena, expr_arena, phys_sm, schema_cache)?;
-            let (trans_input, trans_predicate) =
-                super::lower_expr::lower_exprs(phys_input, &[predicate], expr_arena, phys_sm)?;
+            let phys_input = lower_ir(
+                *input,
+                ir_arena,
+                expr_arena,
+                phys_sm,
+                schema_cache,
+                expr_cache,
+            )?;
+            let cols_and_predicate = output_schema
+                .iter_names()
+                .map(|name| {
+                    let name: ColumnName = name.as_str().into();
+                    ExprIR::new(
+                        expr_arena.add(AExpr::Column(name.clone())),
+                        OutputName::ColumnLhs(name),
+                    )
+                })
+                .chain([predicate])
+                .collect_vec();
+            let (trans_input, mut trans_cols_and_predicate) = super::lower_expr::lower_exprs(
+                phys_input,
+                &cols_and_predicate,
+                expr_arena,
+                phys_sm,
+                expr_cache,
+            )?;
 
+            let filter_schema = phys_sm[trans_input].output_schema.clone();
             let filter = PhysNodeKind::Filter {
                 input: trans_input,
-                predicate: trans_predicate.into_iter().next().unwrap(),
+                predicate: trans_cols_and_predicate.last().unwrap().clone(),
             };
 
-            // Drop the computed predicate column if necessary.
-            if trans_input == phys_input {
-                filter
-            } else {
-                let filter_schema = phys_sm[trans_input].output_schema.clone();
-                let columns = output_schema
-                    .iter_names()
-                    .map(|name| name.to_string())
-                    .collect_vec();
-                PhysNodeKind::SimpleProjection {
-                    input: phys_sm.insert(PhysNode::new(filter_schema, filter)),
-                    columns,
-                }
-            }
+            let post_filter = phys_sm.insert(PhysNode::new(filter_schema, filter));
+            trans_cols_and_predicate.pop(); // Remove predicate.
+            return super::lower_expr::build_select_node(
+                post_filter,
+                &trans_cols_and_predicate,
+                expr_arena,
+                phys_sm,
+                expr_cache,
+            );
         },
 
         IR::DataFrameScan {
@@ -156,7 +210,7 @@ pub fn lower_ir(
             }
 
             if let Some(predicate) = filter.clone() {
-                if !is_streamable(predicate.node(), expr_arena) {
+                if !is_elementwise(predicate.node(), expr_arena, expr_cache) {
                     todo!()
                 }
 
@@ -172,7 +226,14 @@ pub fn lower_ir(
 
         IR::Sink { input, payload } => {
             if *payload == SinkType::Memory {
-                let phys_input = lower_ir(*input, ir_arena, expr_arena, phys_sm, schema_cache)?;
+                let phys_input = lower_ir(
+                    *input,
+                    ir_arena,
+                    expr_arena,
+                    phys_sm,
+                    schema_cache,
+                    expr_cache,
+                )?;
                 PhysNodeKind::InMemorySink { input: phys_input }
             } else {
                 todo!()
@@ -181,7 +242,14 @@ pub fn lower_ir(
 
         IR::MapFunction { input, function } => {
             let function = function.clone();
-            let phys_input = lower_ir(*input, ir_arena, expr_arena, phys_sm, schema_cache)?;
+            let phys_input = lower_ir(
+                *input,
+                ir_arena,
+                expr_arena,
+                phys_sm,
+                schema_cache,
+                expr_cache,
+            )?;
 
             if function.is_streamable() {
                 let map = Arc::new(move |df| function.evaluate(df));
@@ -207,7 +275,14 @@ pub fn lower_ir(
             by_column: by_column.clone(),
             slice: *slice,
             sort_options: sort_options.clone(),
-            input: lower_ir(*input, ir_arena, expr_arena, phys_sm, schema_cache)?,
+            input: lower_ir(
+                *input,
+                ir_arena,
+                expr_arena,
+                phys_sm,
+                schema_cache,
+                expr_cache,
+            )?,
         },
 
         IR::Union { inputs, options } => {
@@ -218,7 +293,16 @@ pub fn lower_ir(
             let inputs = inputs
                 .clone() // Needed to borrow ir_arena mutably.
                 .into_iter()
-                .map(|input| lower_ir(input, ir_arena, expr_arena, phys_sm, schema_cache))
+                .map(|input| {
+                    lower_ir(
+                        input,
+                        ir_arena,
+                        expr_arena,
+                        phys_sm,
+                        schema_cache,
+                        expr_cache,
+                    )
+                })
                 .collect::<Result<_, _>>()?;
             PhysNodeKind::OrderedUnion { inputs }
         },
@@ -231,7 +315,16 @@ pub fn lower_ir(
             let inputs = inputs
                 .clone() // Needed to borrow ir_arena mutably.
                 .into_iter()
-                .map(|input| lower_ir(input, ir_arena, expr_arena, phys_sm, schema_cache))
+                .map(|input| {
+                    lower_ir(
+                        input,
+                        ir_arena,
+                        expr_arena,
+                        phys_sm,
+                        schema_cache,
+                        expr_cache,
+                    )
+                })
                 .collect::<Result<_, _>>()?;
             PhysNodeKind::Zip {
                 inputs,

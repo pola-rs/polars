@@ -86,12 +86,12 @@ from polars.datatypes import (
 )
 from polars.datatypes._utils import dtype_to_init_repr
 from polars.dependencies import (
-    _HVPLOT_AVAILABLE,
+    _ALTAIR_AVAILABLE,
     _PYARROW_AVAILABLE,
     _check_for_numpy,
     _check_for_pandas,
     _check_for_pyarrow,
-    hvplot,
+    altair,
     import_optional,
 )
 from polars.dependencies import numpy as np
@@ -104,6 +104,7 @@ from polars.series.binary import BinaryNameSpace
 from polars.series.categorical import CatNameSpace
 from polars.series.datetime import DateTimeNameSpace
 from polars.series.list import ListNameSpace
+from polars.series.plotting import SeriesPlot
 from polars.series.string import StringNameSpace
 from polars.series.struct import StructNameSpace
 from polars.series.utils import expr_dispatch, get_ffi_func
@@ -117,7 +118,6 @@ if TYPE_CHECKING:
     import jax
     import numpy.typing as npt
     import torch
-    from hvplot.plotting.core import hvPlotTabularPolars
 
     from polars import DataFrame, DataType, Expr
     from polars._typing import (
@@ -7382,7 +7382,7 @@ class Series:
 
     @property
     @unstable()
-    def plot(self) -> hvPlotTabularPolars:
+    def plot(self) -> SeriesPlot:
         """
         Create a plot namespace.
 
@@ -7390,33 +7390,44 @@ class Series:
             This functionality is currently considered **unstable**. It may be
             changed at any point without it being considered a breaking change.
 
+        .. versionchanged:: 1.6.0
+            In prior versions of Polars, HvPlot was the plotting backend. If you would
+            like to restore the previous plotting functionality, all you need to do
+            is add `import hvplot.polars` at the top of your script and replace
+            `df.plot` with `df.hvplot`.
+
         Polars does not implement plotting logic itself, but instead defers to
-        hvplot. Please see the `hvplot reference gallery <https://hvplot.holoviz.org/reference/index.html>`_
-        for more information and documentation.
+        Altair:
+
+        - `s.plot.hist(**kwargs)`
+          is shorthand for
+          `alt.Chart(s.to_frame()).mark_bar().encode(x=alt.X(f'{s.name}:Q', bin=True), y='count()', **kwargs).interactive()`
+        - `s.plot.kde(**kwargs)`
+          is shorthand for
+          `alt.Chart(s.to_frame()).transform_density(s.name, as_=[s.name, 'density']).mark_area().encode(x=s.name, y='density:Q', **kwargs).interactive()`
+        - for any other attribute `attr`, `s.plot.attr(**kwargs)`
+          is shorthand for
+          `alt.Chart(s.to_frame().with_row_index()).mark_attr().encode(x='index', y=s.name, **kwargs).interactive()`
 
         Examples
         --------
         Histogram:
 
-        >>> s = pl.Series("values", [1, 4, 2])
+        >>> s = pl.Series([1, 4, 4, 6, 2, 4, 3, 5, 5, 7, 1])
         >>> s.plot.hist()  # doctest: +SKIP
 
-        KDE plot (note: in addition to ``hvplot``, this one also requires ``scipy``):
+        KDE plot:
 
         >>> s.plot.kde()  # doctest: +SKIP
 
-        For more info on what you can pass, you can use ``hvplot.help``:
+        Line plot:
 
-        >>> import hvplot  # doctest: +SKIP
-        >>> hvplot.help("hist")  # doctest: +SKIP
-        """
-        if not _HVPLOT_AVAILABLE or parse_version(hvplot.__version__) < parse_version(
-            "0.9.1"
-        ):
-            msg = "hvplot>=0.9.1 is required for `.plot`"
+        >>> s.plot.line()  # doctest: +SKIP
+        """  # noqa: W505
+        if not _ALTAIR_AVAILABLE or parse_version(altair.__version__) < (5, 4, 0):
+            msg = "altair>=5.4.0 is required for `.plot`"
             raise ModuleUpgradeRequiredError(msg)
-        hvplot.post_patch()
-        return hvplot.plotting.core.hvPlotTabularPolars(self)
+        return SeriesPlot(self)
 
 
 def _resolve_temporal_dtype(

@@ -209,22 +209,7 @@ where
     }
 
     fn extend_constant(&mut self, additional: usize, value: T) {
-        let value = value.as_ref();
-        // First push a value to get the View
-        MutableBinaryViewArray::push_value(self, value);
-
-        // And then use that new view to extend
-        let views = self.views_mut();
-        let view = *views.last().unwrap();
-
-        let remaining = additional - 1;
-        for _ in 0..remaining {
-            views.push(view);
-        }
-
-        if let Some(bitmap) = self.validity() {
-            bitmap.extend_constant(remaining, true)
-        }
+        MutableBinaryViewArray::extend_constant(self, additional, Some(value));
     }
 
     #[inline]
@@ -262,22 +247,7 @@ where
     }
 
     fn extend_constant(&mut self, additional: usize, value: Option<T>) {
-        let value = value.as_ref();
-        // First push a value to get the View
-        MutableBinaryViewArray::push(self, value);
-
-        // And then use that new view to extend
-        let views = self.views_mut();
-        let view = *views.last().unwrap();
-
-        let remaining = additional - 1;
-        for _ in 0..remaining {
-            views.push(view);
-        }
-
-        if let Some(bitmap) = self.validity() {
-            bitmap.extend_constant(remaining, true)
-        }
+        MutableBinaryViewArray::extend_constant(self, additional, value);
     }
 
     #[inline]

@@ -11,11 +11,13 @@ use tokio::io::AsyncWriteExt;
 use super::CloudOptions;
 use crate::pl_async::get_runtime;
 
-/// Adaptor which wraps the interface of [ObjectStore::BufWriter](https://docs.rs/object_store/latest/object_store/buffered/struct.BufWriter.html)
-/// exposing a synchronous interface which implements `std::io::Write`.
+/// Adaptor which wraps the interface of [ObjectStore::BufWriter] exposing a synchronous interface
+/// which implements `std::io::Write`.
 ///
 /// This allows it to be used in sync code which would otherwise write to a simple File or byte stream,
 /// such as with `polars::prelude::CsvWriter`.
+///
+/// [ObjectStore::BufWriter]: https://docs.rs/object_store/latest/object_store/buffered/struct.BufWriter.html
 pub struct CloudWriter {
     // Internal writer, constructed at creation
     writer: BufWriter,

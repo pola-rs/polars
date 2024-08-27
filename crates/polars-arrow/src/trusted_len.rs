@@ -3,6 +3,7 @@ use std::iter::Scan;
 use std::slice::Iter;
 
 /// An iterator of known, fixed size.
+///
 /// A trait denoting Rusts' unstable [TrustedLen](https://doc.rust-lang.org/std/iter/trait.TrustedLen.html).
 /// This is re-defined here and implemented for some iterators until `std::iter::TrustedLen`
 /// is stabilized.

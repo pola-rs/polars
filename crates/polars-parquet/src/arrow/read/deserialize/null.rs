@@ -48,6 +48,7 @@ impl<'a> utils::StateTranslation<'a, NullDecoder> for () {
         _decoder: &mut NullDecoder,
         decoded: &mut <NullDecoder as utils::Decoder>::DecodedState,
         _page_validity: &mut Option<utils::PageValidity<'a>>,
+        _: Option<&'a <NullDecoder as utils::Decoder>::Dict>,
         additional: usize,
     ) -> ParquetResult<()> {
         decoded.length += additional;

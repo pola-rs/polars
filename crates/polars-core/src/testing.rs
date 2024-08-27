@@ -162,7 +162,9 @@ impl PartialEq for DataFrame {
 }
 
 /// Asserts that two expressions of type [`DataFrame`] are equal according to [`DataFrame::equals`]
-/// at runtime. If the expression are not equal, the program will panic with a message that displays
+/// at runtime.
+///
+/// If the expression are not equal, the program will panic with a message that displays
 /// both dataframes.
 #[macro_export]
 macro_rules! assert_df_eq {

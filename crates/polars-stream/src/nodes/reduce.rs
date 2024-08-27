@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use polars_core::schema::Schema;
 use polars_expr::reduce::Reduction;
+use polars_utils::itertools::Itertools;
 
 use super::compute_node_prelude::*;
 use crate::expression::StreamExpr;
@@ -97,7 +98,7 @@ impl ComputeNode for ReduceNode {
         "reduce"
     }
 
-    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) {
+    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {
         assert!(recv.len() == 1 && send.len() == 1);
 
         // State transitions.
@@ -108,7 +109,6 @@ impl ComputeNode for ReduceNode {
             },
             // Input is done, transition to being a source.
             ReduceState::Sink { reductions, .. } if matches!(recv[0], PortState::Done) => {
-                // TODO! make `update_state` fallible.
                 let columns = reductions
                     .iter_mut()
                     .zip(self.output_schema.iter_fields())
@@ -117,9 +117,8 @@ impl ComputeNode for ReduceNode {
                             scalar.into_series(&field.name).cast(&field.dtype).unwrap()
                         })
                     })
-                    .collect::<PolarsResult<Vec<_>>>()
-                    .unwrap();
-                let out = unsafe { DataFrame::new_no_checks(columns) };
+                    .try_collect_vec()?;
+                let out = DataFrame::new(columns).unwrap();
 
                 self.state = ReduceState::Source(Some(out));
             },
@@ -146,6 +145,7 @@ impl ComputeNode for ReduceNode {
                 send[0] = PortState::Done;
             },
         }
+        Ok(())
     }
 
     fn spawn<'env, 's>(

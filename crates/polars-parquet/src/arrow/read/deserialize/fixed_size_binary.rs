@@ -13,7 +13,7 @@ use crate::read::deserialize::utils::{self, BatchableCollector, GatheredHybridRl
 #[derive(Debug)]
 pub(crate) enum StateTranslation<'a> {
     Plain(&'a [u8], usize),
-    Dictionary(hybrid_rle::HybridRleDecoder<'a>, &'a Vec<u8>),
+    Dictionary(hybrid_rle::HybridRleDecoder<'a>),
 }
 
 #[derive(Debug)]
@@ -43,9 +43,9 @@ impl<'a> utils::StateTranslation<'a, BinaryDecoder> for StateTranslation<'a> {
                 }
                 Ok(Self::Plain(values, decoder.size))
             },
-            (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict)) => {
+            (Encoding::PlainDictionary | Encoding::RleDictionary, Some(_)) => {
                 let values = dict_indices_decoder(page)?;
-                Ok(Self::Dictionary(values, dict))
+                Ok(Self::Dictionary(values))
             },
             _ => Err(utils::not_implemented(page)),
         }
@@ -54,7 +54,7 @@ impl<'a> utils::StateTranslation<'a, BinaryDecoder> for StateTranslation<'a> {
     fn len_when_not_nullable(&self) -> usize {
         match self {
             Self::Plain(v, size) => v.len() / size,
-            Self::Dictionary(v, _) => v.len(),
+            Self::Dictionary(v) => v.len(),
         }
     }
 
@@ -65,7 +65,7 @@ impl<'a> utils::StateTranslation<'a, BinaryDecoder> for StateTranslation<'a> {
 
         match self {
             Self::Plain(v, size) => *v = &v[usize::min(v.len(), n * *size)..],
-            Self::Dictionary(v, _) => v.skip_in_place(n)?,
+            Self::Dictionary(v) => v.skip_in_place(n)?,
         }
 
         Ok(())
@@ -76,6 +76,7 @@ impl<'a> utils::StateTranslation<'a, BinaryDecoder> for StateTranslation<'a> {
         decoder: &mut BinaryDecoder,
         decoded: &mut <BinaryDecoder as Decoder>::DecodedState,
         page_validity: &mut Option<PageValidity<'a>>,
+        dict: Option<&'a <BinaryDecoder as Decoder>::Dict>,
         additional: usize,
     ) -> ParquetResult<()> {
         use StateTranslation as T;
@@ -86,11 +87,11 @@ impl<'a> utils::StateTranslation<'a, BinaryDecoder> for StateTranslation<'a> {
                 page_validity.as_mut(),
                 additional,
             )?,
-            T::Dictionary(page_values, dict) => decoder.decode_dictionary_encoded(
+            T::Dictionary(page_values) => decoder.decode_dictionary_encoded(
                 decoded,
                 page_values,
                 page_validity.as_mut(),
-                dict,
+                dict.unwrap(),
                 additional,
             )?,
         }

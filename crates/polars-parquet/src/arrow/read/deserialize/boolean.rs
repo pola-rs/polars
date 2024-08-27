@@ -90,6 +90,7 @@ impl<'a> utils::StateTranslation<'a, BooleanDecoder> for StateTranslation<'a> {
         decoder: &mut BooleanDecoder,
         decoded: &mut <BooleanDecoder as Decoder>::DecodedState,
         page_validity: &mut Option<PageValidity<'a>>,
+        _: Option<&'a <BooleanDecoder as Decoder>::Dict>,
         additional: usize,
     ) -> ParquetResult<()> {
         match self {

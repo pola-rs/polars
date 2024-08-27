@@ -13,7 +13,7 @@ use polars_plan::plans::{AExpr, LiteralValue};
 use polars_plan::prelude::*;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
-use slotmap::{Key, SlotMap};
+use slotmap::SlotMap;
 
 use super::{PhysNode, PhysNodeKey, PhysNodeKind};
 
@@ -25,36 +25,49 @@ fn unique_column_name() -> ColumnName {
     format!("__POLARS_STMP_{idx}").into()
 }
 
+pub(crate) struct ExprCache {
+    is_elementwise: PlHashMap<Node, bool>,
+    is_input_independent: PlHashMap<Node, bool>,
+}
+
+impl ExprCache {
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            is_elementwise: PlHashMap::with_capacity(capacity),
+            is_input_independent: PlHashMap::with_capacity(capacity),
+        }
+    }
+}
+
 struct LowerExprContext<'a> {
     expr_arena: &'a mut Arena<AExpr>,
     phys_sm: &'a mut SlotMap<PhysNodeKey, PhysNode>,
-    is_elementwise_cache: PlHashMap<Node, bool>,
-    is_input_independent_cache: PlHashMap<Node, bool>,
+    cache: &'a mut ExprCache,
 }
 
 #[recursive::recursive]
-fn is_elementwise_rec(
+pub(crate) fn is_elementwise(
     expr_key: IRNodeKey,
     arena: &Arena<AExpr>,
-    cache: &mut PlHashMap<IRNodeKey, bool>,
+    cache: &mut ExprCache,
 ) -> bool {
-    if let Some(ret) = cache.get(&expr_key) {
+    if let Some(ret) = cache.is_elementwise.get(&expr_key) {
         return *ret;
     }
 
     let ret = match arena.get(expr_key) {
         AExpr::Explode(_) => false,
-        AExpr::Alias(inner, _) => is_elementwise_rec(*inner, arena, cache),
+        AExpr::Alias(inner, _) => is_elementwise(*inner, arena, cache),
         AExpr::Column(_) => true,
         AExpr::Literal(lit) => !matches!(lit, LiteralValue::Series(_) | LiteralValue::Range { .. }),
         AExpr::BinaryExpr { left, op: _, right } => {
-            is_elementwise_rec(*left, arena, cache) && is_elementwise_rec(*right, arena, cache)
+            is_elementwise(*left, arena, cache) && is_elementwise(*right, arena, cache)
         },
         AExpr::Cast {
             expr,
             data_type: _,
             options: _,
-        } => is_elementwise_rec(*expr, arena, cache),
+        } => is_elementwise(*expr, arena, cache),
         AExpr::Sort { .. } | AExpr::SortBy { .. } | AExpr::Gather { .. } => false,
         AExpr::Filter { .. } => false,
         AExpr::Agg(_) => false,
@@ -63,32 +76,31 @@ fn is_elementwise_rec(
             truthy,
             falsy,
         } => {
-            is_elementwise_rec(*predicate, arena, cache)
-                && is_elementwise_rec(*truthy, arena, cache)
-                && is_elementwise_rec(*falsy, arena, cache)
+            is_elementwise(*predicate, arena, cache)
+                && is_elementwise(*truthy, arena, cache)
+                && is_elementwise(*falsy, arena, cache)
         },
         AExpr::AnonymousFunction {
-            input: _,
+            input,
             function: _,
             output_type: _,
             options,
         }
         | AExpr::Function {
-            input: _,
+            input,
             function: _,
             options,
-        } => options.is_elementwise(),
+        } => {
+            options.is_elementwise() && input.iter().all(|e| is_elementwise(e.node(), arena, cache))
+        },
+
         AExpr::Window { .. } => false,
         AExpr::Slice { .. } => false,
         AExpr::Len => false,
     };
 
-    cache.insert(expr_key, ret);
+    cache.is_elementwise.insert(expr_key, ret);
     ret
-}
-
-fn is_elementwise(expr_key: IRNodeKey, ctx: &mut LowerExprContext) -> bool {
-    is_elementwise_rec(expr_key, ctx.expr_arena, &mut ctx.is_elementwise_cache)
 }
 
 #[recursive::recursive]
@@ -206,7 +218,7 @@ fn is_input_independent(expr_key: IRNodeKey, ctx: &mut LowerExprContext) -> bool
     is_input_independent_rec(
         expr_key,
         ctx.expr_arena,
-        &mut ctx.is_input_independent_cache,
+        &mut ctx.cache.is_input_independent,
     )
 }
 
@@ -383,7 +395,7 @@ fn lower_exprs_with_ctx(
     let mut transformed_exprs = Vec::with_capacity(exprs.len());
 
     for expr in exprs.iter().copied() {
-        if is_elementwise(expr, ctx) {
+        if is_elementwise(expr, ctx.expr_arena, ctx.cache) {
             if !is_input_independent(expr, ctx) {
                 input_nodes.insert(input);
             }
@@ -626,24 +638,6 @@ fn lower_exprs_with_ctx(
         .phys_sm
         .insert(PhysNode::new(Arc::new(output_schema), zip_kind));
 
-    // Replace original input node with a multiplexer, if it wasn't already one.
-    if !matches!(ctx.phys_sm[input].kind, PhysNodeKind::Multiplexer { .. }) {
-        let input_schema = ctx.phys_sm[input].output_schema.clone();
-        let orig_input_node = core::mem::replace(
-            &mut ctx.phys_sm[input],
-            PhysNode::new(
-                input_schema,
-                PhysNodeKind::Multiplexer {
-                    input: PhysNodeKey::null(),
-                },
-            ),
-        );
-        let orig_input_key = ctx.phys_sm.insert(orig_input_node);
-        ctx.phys_sm[input].kind = PhysNodeKind::Multiplexer {
-            input: orig_input_key,
-        };
-    }
-
     Ok((zip_node, transformed_exprs))
 }
 
@@ -728,12 +722,12 @@ pub fn lower_exprs(
     exprs: &[ExprIR],
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    expr_cache: &mut ExprCache,
 ) -> PolarsResult<(PhysNodeKey, Vec<ExprIR>)> {
     let mut ctx = LowerExprContext {
         expr_arena,
         phys_sm,
-        is_elementwise_cache: PlHashMap::new(),
-        is_input_independent_cache: PlHashMap::new(),
+        cache: expr_cache,
     };
     let node_exprs = exprs.iter().map(|e| e.node()).collect_vec();
     let (transformed_input, transformed_exprs) =
@@ -752,12 +746,12 @@ pub fn build_select_node(
     exprs: &[ExprIR],
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    expr_cache: &mut ExprCache,
 ) -> PolarsResult<PhysNodeKey> {
     let mut ctx = LowerExprContext {
         expr_arena,
         phys_sm,
-        is_elementwise_cache: PlHashMap::new(),
-        is_input_independent_cache: PlHashMap::new(),
+        cache: expr_cache,
     };
     build_select_node_with_ctx(input, exprs, &mut ctx)
 }
