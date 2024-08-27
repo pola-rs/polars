@@ -329,6 +329,7 @@ impl FunctionExpr {
                 mapper.with_dtype(dt)
             },
             ExtendConstant => mapper.with_same_dtype(),
+            #[cfg(feature = "json")]
             JsonEncode(_) => mapper.with_dtype(DataType::String),
         }
     }
