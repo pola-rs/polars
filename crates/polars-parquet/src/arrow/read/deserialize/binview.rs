@@ -582,7 +582,10 @@ impl utils::Decoder for BinViewDecoder {
         let views_offset = values.views().len();
         let buffer_offset = values.completed_buffers().len();
 
-        struct Collector<'a, 'b>(&'b mut BinaryIter<'a>);
+        struct Collector<'a, 'b> {
+            iter: &'b mut BinaryIter<'a>,
+            max_length: &'b mut usize,
+        }
 
         impl<'a, 'b> BatchableCollector<(), MutableBinaryViewArray<[u8]>> for Collector<'a, 'b> {
             fn reserve(target: &mut MutableBinaryViewArray<[u8]>, n: usize) {
@@ -594,7 +597,8 @@ impl utils::Decoder for BinViewDecoder {
                 target: &mut MutableBinaryViewArray<[u8]>,
                 n: usize,
             ) -> ParquetResult<()> {
-                for x in self.0.take(n) {
+                for x in self.iter.take(n) {
+                    *self.max_length = usize::max(*self.max_length, x.len());
                     target.push_value(x);
                 }
                 Ok(())
@@ -611,13 +615,18 @@ impl utils::Decoder for BinViewDecoder {
 
             fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
                 if n > 0 {
-                    _ = self.0.nth(n - 1);
+                    _ = self.iter.nth(n - 1);
                 }
                 Ok(())
             }
         }
 
-        let mut collector = Collector(page_values);
+        let mut max_length = 0;
+        let buffer = page_values.values;
+        let mut collector = Collector {
+            iter: page_values,
+            max_length: &mut max_length,
+        };
 
         match page_validity {
             None => collector.push_n(values, limit)?,
@@ -626,11 +635,20 @@ impl utils::Decoder for BinViewDecoder {
             },
         }
 
+        let buffer = &buffer[..buffer.len() - page_values.values.len()];
+
         if self.check_utf8.load(Ordering::Relaxed) {
-            // @TODO: Better error message
-            values
-                .validate_utf8(buffer_offset, views_offset)
-                .map_err(|_| ParquetError::oos("Binary view contained invalid UTF-8"))?
+            // This is a small trick that allows us to check the Parquet buffer instead of the view
+            // buffer. Batching the UTF-8 verification is more performant. For this to be allowed,
+            // all the interleaved lengths need to be valid UTF-8.
+            if max_length < 128 {
+                simdutf8::basic::from_utf8(buffer)
+                    .map_err(|_| ParquetError::oos("String data contained invalid UTF-8"))?;
+            } else {
+                values
+                    .validate_utf8(buffer_offset, views_offset)
+                    .map_err(|_| ParquetError::oos("String data contained invalid UTF-8"))?
+            }
         }
 
         Ok(())
