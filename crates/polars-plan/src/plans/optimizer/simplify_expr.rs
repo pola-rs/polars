@@ -440,8 +440,8 @@ impl OptimizationRule for SimplifyExprRule {
         let expr = expr_arena.get(expr_node).clone();
 
         let out = match &expr {
-            // drop_nulls().len() -> null_count()
-            // drop_nulls().count() -> null_count()
+            // drop_nulls().len() -> len() - null_count()
+            // drop_nulls().count() -> len() - null_count()
             AExpr::Agg(IRAggExpr::Count(input, _)) => {
                 let input_expr = expr_arena.get(*input);
                 match input_expr {
@@ -450,18 +450,24 @@ impl OptimizationRule for SimplifyExprRule {
                         function: FunctionExpr::DropNulls,
                         options: _,
                     } => {
-                        let expr_ir = ExprIR::from_node(expr_node, expr_arena);
-                        let expr_output_name = expr_ir.output_name();
-                        let inner_minus_exp = AExpr::BinaryExpr {
-                            op: Operator::Minus,
-                            right: expr_arena.add(make_null_count_expr!(input)),
-                            left: expr_arena.add(AExpr::Len),
-                        };
-                        let inner_minus_node = expr_arena.add(inner_minus_exp);
-                        Some(AExpr::Alias(
-                            inner_minus_node,
-                            ColumnName::from(expr_output_name),
-                        ))
+                        // we should perform optimization only if the original expression is a column
+                        // so in case of disabled CSE, we will not suffer from performance regression
+                        if input.len() == 1 {
+                            let drop_nulls_input_node = input[0].node();
+                            match expr_arena.get(drop_nulls_input_node) {
+                                AExpr::Column(_) => Some(AExpr::BinaryExpr {
+                                    op: Operator::Minus,
+                                    right: expr_arena.add(make_null_count_expr!(input)),
+                                    left: expr_arena.add(AExpr::Agg(IRAggExpr::Count(
+                                        drop_nulls_input_node,
+                                        true,
+                                    ))),
+                                }),
+                                _ => None,
+                            }
+                        } else {
+                            None
+                        }
                     },
                     _ => None,
                 }
@@ -481,18 +487,24 @@ impl OptimizationRule for SimplifyExprRule {
                         function: FunctionExpr::Boolean(BooleanFunction::IsNotNull),
                         options: _,
                     } => {
-                        let expr_ir = ExprIR::from_node(expr_node, expr_arena);
-                        let expr_output_name = expr_ir.output_name();
-                        let inner_minus_exp = AExpr::BinaryExpr {
-                            op: Operator::Minus,
-                            right: expr_arena.add(make_null_count_expr!(input)),
-                            left: expr_arena.add(AExpr::Len),
-                        };
-                        let inner_minus_node = expr_arena.add(inner_minus_exp);
-                        Some(AExpr::Alias(
-                            inner_minus_node,
-                            ColumnName::from(expr_output_name),
-                        ))
+                        // we should perform optimization only if the original expression is a column
+                        // so in case of disabled CSE, we will not suffer from performance regression
+                        if input.len() == 1 {
+                            let is_not_null_input_node = input[0].node();
+                            match expr_arena.get(is_not_null_input_node) {
+                                AExpr::Column(_) => Some(AExpr::BinaryExpr {
+                                    op: Operator::Minus,
+                                    right: expr_arena.add(make_null_count_expr!(input)),
+                                    left: expr_arena.add(AExpr::Agg(IRAggExpr::Count(
+                                        is_not_null_input_node,
+                                        true,
+                                    ))),
+                                }),
+                                _ => None,
+                            }
+                        } else {
+                            None
+                        }
                     },
                     _ => None,
                 }

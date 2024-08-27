@@ -9,6 +9,7 @@ pub(super) fn optimize_functions(
     let out = match function {
         // is_null().any() -> null_count() > 0
         // is_not_null().any() ->  null_count() < len()
+        // CORRECTNESS: we can ignore 'ignore_nulls' since is_null/is_not_null never produces NULLS
         FunctionExpr::Boolean(BooleanFunction::Any { ignore_nulls: _ }) => {
             let input_node = expr_arena.get(input[0].node());
             match input_node {
@@ -19,17 +20,32 @@ pub(super) fn optimize_functions(
                 } => Some(AExpr::BinaryExpr {
                     left: expr_arena.add(make_null_count_expr!(input)),
                     op: Operator::Gt,
-                    right: expr_arena.add(AExpr::Literal(LiteralValue::Int8(0))),
+                    right: expr_arena.add((0 as IdxSize).lit_aexpr()),
                 }),
                 AExpr::Function {
                     input,
                     function: FunctionExpr::Boolean(BooleanFunction::IsNotNull),
                     options: _,
-                } => Some(AExpr::BinaryExpr {
-                    left: expr_arena.add(make_null_count_expr!(input)),
-                    op: Operator::Lt,
-                    right: expr_arena.add(AExpr::Len),
-                }),
+                } => {
+                    // we should perform optimization only if the original expression is a column
+                    // so in case of disabled CSE, we will not suffer from performance regression
+                    if input.len() == 1 {
+                        let is_not_null_input_node = input[0].node();
+                        match expr_arena.get(is_not_null_input_node) {
+                            AExpr::Column(_) => Some(AExpr::BinaryExpr {
+                                op: Operator::Lt,
+                                left: expr_arena.add(make_null_count_expr!(input)),
+                                right: expr_arena.add(AExpr::Agg(IRAggExpr::Count(
+                                    is_not_null_input_node,
+                                    true,
+                                ))),
+                            }),
+                            _ => None,
+                        }
+                    } else {
+                        None
+                    }
+                },
                 _ => None,
             }
         },
@@ -42,11 +58,24 @@ pub(super) fn optimize_functions(
                     input,
                     function: FunctionExpr::Boolean(BooleanFunction::IsNull),
                     options: _,
-                } => Some(AExpr::BinaryExpr {
-                    left: expr_arena.add(make_null_count_expr!(input)),
-                    op: Operator::Eq,
-                    right: expr_arena.add(AExpr::Len),
-                }),
+                } => {
+                    // we should perform optimization only if the original expression is a column
+                    // so in case of disabled CSE, we will not suffer from performance regression
+                    if input.len() == 1 {
+                        let is_null_input_node = input[0].node();
+                        match expr_arena.get(is_null_input_node) {
+                            AExpr::Column(_) => Some(AExpr::BinaryExpr {
+                                op: Operator::Eq,
+                                right: expr_arena.add(make_null_count_expr!(input)),
+                                left: expr_arena
+                                    .add(AExpr::Agg(IRAggExpr::Count(is_null_input_node, true))),
+                            }),
+                            _ => None,
+                        }
+                    } else {
+                        None
+                    }
+                },
                 AExpr::Function {
                     input,
                     function: FunctionExpr::Boolean(BooleanFunction::IsNotNull),
@@ -54,7 +83,7 @@ pub(super) fn optimize_functions(
                 } => Some(AExpr::BinaryExpr {
                     left: expr_arena.add(make_null_count_expr!(input)),
                     op: Operator::Eq,
-                    right: expr_arena.add(AExpr::Literal(LiteralValue::Int8(0))),
+                    right: expr_arena.add((0 as IdxSize).lit_aexpr()),
                 }),
                 _ => None,
             }
