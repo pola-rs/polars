@@ -26,6 +26,22 @@ def foods_parquet_path(io_files_path: Path) -> Path:
     return io_files_path / "foods1.parquet"
 
 
+@pytest.mark.write_disk()
+def test_empty_parquet(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    file_path_pd = tmp_path / "empty_pd.parquet"
+    file_path_pl = tmp_path / "empty_pl.parquet"
+
+    pd.DataFrame().to_parquet(file_path_pd)
+    pl.DataFrame().write_parquet(file_path_pl)
+
+    empty_from_pd = pl.read_parquet(file_path_pd)
+    assert empty_from_pd.shape == (0, 0)
+
+    empty_from_pl = pl.read_parquet(file_path_pl)
+    assert empty_from_pl.shape == (0, 0)
+
+
 def test_scan_parquet(parquet_file_path: Path) -> None:
     df = pl.scan_parquet(parquet_file_path)
     assert df.collect().shape == (4, 3)
