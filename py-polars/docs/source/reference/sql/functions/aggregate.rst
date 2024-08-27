@@ -202,7 +202,7 @@ Returns the smallest (minimum) of all the elements in the grouping.
 
 STDDEV
 ------
-Returns the standard deviation of all the elements in the grouping.
+Returns the sample standard deviation of all the elements in the grouping.
 
 .. admonition:: Aliases
 
