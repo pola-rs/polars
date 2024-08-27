@@ -47,7 +47,7 @@ fn create_stream_expr(
 
 struct GraphConversionContext<'a> {
     phys_sm: &'a SlotMap<PhysNodeKey, PhysNode>,
-    expr_arena: &'a Arena<AExpr>,
+    expr_arena: &'a mut Arena<AExpr>,
     graph: Graph,
     phys_to_graph: SecondaryMap<PhysNodeKey, GraphNodeKey>,
     expr_conversion_state: ExpressionConversionState,
@@ -56,7 +56,7 @@ struct GraphConversionContext<'a> {
 pub fn physical_plan_to_graph(
     root: PhysNodeKey,
     phys_sm: &SlotMap<PhysNodeKey, PhysNode>,
-    expr_arena: &Arena<AExpr>,
+    expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<(Graph, SecondaryMap<PhysNodeKey, GraphNodeKey>)> {
     let expr_depth_limit = get_expr_depth_limit()?;
     let mut ctx = GraphConversionContext {
@@ -139,7 +139,7 @@ fn to_graph_rec<'a>(
 
             for e in exprs {
                 let (red, input_node) =
-                    into_reduction(e.node(), ctx.expr_arena, input_schema)?.expect("invariant");
+                    into_reduction(e.node(), ctx.expr_arena, input_schema)?;
                 reductions.push(red);
 
                 let input_phys =

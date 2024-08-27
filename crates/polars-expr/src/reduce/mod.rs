@@ -2,10 +2,11 @@ mod convert;
 mod extrema;
 mod mean;
 mod sum;
+mod len;
 
 use std::any::Any;
 
-pub use convert::{can_convert_into_reduction, into_reduction};
+pub use convert::into_reduction;
 use polars_core::prelude::*;
 
 #[allow(dead_code)]

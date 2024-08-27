@@ -596,13 +596,24 @@ fn lower_exprs_with_ctx(
                     transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
                 },
             },
+            AExpr::Len => {
+                let out_name = unique_column_name();
+                let expr_ir = ExprIR::new(expr, OutputName::Alias(out_name.clone()));
+                let output_schema = schema_for_select(input, &[expr_ir.clone()], ctx)?;
+                let kind = PhysNodeKind::Reduce {
+                    input: input,
+                    exprs: vec![expr_ir],
+                };
+                let reduce_node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, kind));
+                input_nodes.insert(reduce_node_key);
+                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
+            },
             AExpr::AnonymousFunction {
                 ..
             }
             | AExpr::Function {
                 ..
             }
-            | AExpr::Len // TODO: this one makes me really sad, make this streaming ASAP.
             | AExpr::Slice { .. }
             | AExpr::Window { .. } => {
                 let out_name = unique_column_name();
