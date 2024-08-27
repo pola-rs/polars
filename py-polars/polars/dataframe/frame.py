@@ -6959,10 +6959,6 @@ class DataFrame:
             Note that joining on any other expressions than `col`
             will turn off coalescing.
 
-        Returns
-        -------
-        DataFrame
-
         See Also
         --------
         join_asof
