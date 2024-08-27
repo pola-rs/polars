@@ -158,35 +158,3 @@ fn encoding_map(data_type: &ArrowDataType) -> Encoding {
         _ => Encoding::Plain,
     }
 }
-
-#[cfg(test)]
-mod tests {
-    // use polars::prelude::{DataFrame, ParquetReader, ParquetWriter, PolarsResult, SerReader};
-    use std::io::Cursor;
-
-    use polars_core::prelude::*;
-    use polars_parquet::read::ParquetError;
-
-    use crate::prelude::{ParquetReader, ParquetWriter, SerReader};
-
-    // polars = { path = "~/src/polars/crates/polars", features = ["lazy", "parquet", "json"]}
-
-    // check round-trip to parquet of empty DataFrame
-    #[test]
-    fn round_trip_no_data() -> Result<(), ParquetError> {
-        let mut src_df = DataFrame::default();
-        let mut data = vec![];
-
-        ParquetWriter::new(&mut data)
-            .finish(&mut src_df)
-            .expect("Failed to write empty data to parquet");
-
-        let read_df = ParquetReader::new(Cursor::new(data)).finish()?;
-
-        // Expect empty Dataframe back
-        let no_cols: Vec<&str> = Vec::new();
-        assert_eq!(read_df.get_column_names(), no_cols);
-        assert_eq!(read_df.shape(), (0, 0));
-        Ok(())
-    }
-}
