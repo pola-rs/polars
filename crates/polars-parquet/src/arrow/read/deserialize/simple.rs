@@ -7,8 +7,7 @@ use polars_error::{polars_bail, PolarsResult};
 
 use super::utils::filter::Filter;
 use super::{
-    binary, boolean, dictionary, fixed_size_binary, null, primitive, BasicDecompressor,
-    ParquetResult,
+    boolean, dictionary, fixed_size_binary, null, primitive, BasicDecompressor, ParquetResult,
 };
 use crate::parquet::error::ParquetError;
 use crate::parquet::schema::types::{
@@ -290,9 +289,10 @@ pub fn page_iter_to_array(
         .collect_n(filter)?),
         // Don't compile this code with `i32` as we don't use this in polars
         (PhysicalType::ByteArray, LargeBinary | LargeUtf8) => {
-            PageDecoder::new(pages, data_type, binary::BinaryDecoder::<i64>::default())?
+            PageDecoder::new(pages, data_type, binview::BinViewDecoder::default())?
                 .collect_n(filter)?
         },
+        (_, Binary | Utf8) => unreachable!(),
         (PhysicalType::ByteArray, BinaryView | Utf8View) => {
             PageDecoder::new(pages, data_type, binview::BinViewDecoder::default())?
                 .collect_n(filter)?
@@ -630,12 +630,7 @@ fn dict_read<K: DictionaryKey>(
                 )?
                 .collect_n(filter)?
             },
-            (PhysicalType::ByteArray, LargeUtf8 | LargeBinary) => PageDecoder::new(
-                iter,
-                data_type,
-                dictionary::DictionaryDecoder::new(binary::BinaryDecoder::<i64>::default()),
-            )?
-            .collect_n(filter)?,
+            (_, LargeUtf8 | LargeBinary | Utf8 | Binary) => unreachable!(),
             (PhysicalType::ByteArray, Utf8View | BinaryView) => PageDecoder::new(
                 iter,
                 data_type,
