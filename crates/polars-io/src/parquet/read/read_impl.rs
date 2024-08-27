@@ -37,24 +37,25 @@ use crate::RowIndex;
 // Ensure we get the proper polars types from schema inference
 // This saves unneeded casts.
 fn assert_dtypes(data_type: &ArrowDataType) {
+    use ArrowDataType as D;
+
     match data_type {
-        ArrowDataType::Utf8 => {
-            unreachable!()
-        },
-        ArrowDataType::Binary => {
-            unreachable!()
-        },
-        ArrowDataType::List(_) => {
-            unreachable!()
-        },
-        ArrowDataType::LargeList(inner) => {
-            assert_dtypes(&inner.data_type);
-        },
-        ArrowDataType::Struct(fields) => {
-            for fld in fields {
-                assert_dtypes(fld.data_type())
-            }
-        },
+        // These should all be casted to the BinaryView / Utf8View variants
+        D::Utf8 | D::Binary | D::LargeUtf8 | D::LargeBinary => unreachable!(),
+
+        // This should have been converted to a LargeList
+        D::List(_) => unreachable!(),
+
+        // This should have been converted to a LargeList(Struct(_))
+        D::Map(_, _) => unreachable!(),
+
+        // Recursive checks
+        D::Dictionary(_, data_type, _) => assert_dtypes(data_type),
+        D::Extension(_, data_type, _) => assert_dtypes(data_type),
+        D::LargeList(inner) => assert_dtypes(&inner.data_type),
+        D::FixedSizeList(inner, _) => assert_dtypes(&inner.data_type),
+        D::Struct(fields) => fields.iter().for_each(|f| assert_dtypes(f.data_type())),
+
         _ => {},
     }
 }

@@ -125,45 +125,13 @@ fn is_primitive(data_type: &ArrowDataType) -> bool {
     )
 }
 
-fn make_field_view(field: &mut Field) {
-    let dt = std::mem::take(&mut field.data_type);
-    field.data_type = make_datatype_view(dt);
-}
-
-fn make_datatype_view(mut datatype: ArrowDataType) -> ArrowDataType {
-    use ArrowDataType as D;
-    match datatype {
-        D::Binary | D::LargeBinary => datatype = D::BinaryView,
-        D::Utf8 | D::LargeUtf8 => datatype = D::Utf8View,
-        D::List(ref mut f)
-        | D::FixedSizeList(ref mut f, _)
-        | D::LargeList(ref mut f)
-        | D::Map(ref mut f, _) => make_field_view(f),
-        D::Struct(ref mut fs) => {
-            for f in fs {
-                make_field_view(f);
-            }
-        },
-        D::Union(_, _, _) => todo!(),
-        D::Dictionary(_, ref mut boxed_dt, _) | D::Extension(_, ref mut boxed_dt, _) => {
-            let dt = std::mem::take(boxed_dt.as_mut());
-            *boxed_dt.as_mut() = make_datatype_view(dt);
-        },
-        _ => {},
-    }
-
-    datatype
-}
-
 fn columns_to_iter_recursive(
     mut columns: Vec<BasicDecompressor>,
     mut types: Vec<&PrimitiveType>,
-    mut field: Field,
+    field: Field,
     init: Vec<InitNested>,
     filter: Option<Filter>,
 ) -> PolarsResult<(NestedState, Box<dyn Array>)> {
-    make_field_view(&mut field);
-
     if init.is_empty() && is_primitive(&field.data_type) {
         let array = page_iter_to_array(
             columns.pop().unwrap(),
