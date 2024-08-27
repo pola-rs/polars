@@ -352,6 +352,8 @@ pub enum FunctionExpr {
     #[cfg(feature = "reinterpret")]
     Reinterpret(bool),
     ExtendConstant,
+    #[cfg(feature = "json")]
+    JsonEncode(bool),
 }
 
 impl Hash for FunctionExpr {
@@ -579,6 +581,7 @@ impl Hash for FunctionExpr {
             ExtendConstant => {},
             #[cfg(feature = "top_k")]
             TopKBy { descending } => descending.hash(state),
+            JsonEncode(a) => a.hash(state),
         }
     }
 }
@@ -764,6 +767,7 @@ impl Display for FunctionExpr {
             #[cfg(feature = "reinterpret")]
             Reinterpret(_) => "reinterpret",
             ExtendConstant => "extend_constant",
+            JsonEncode(_) => "json_encode",
         };
         write!(f, "{s}")
     }
@@ -1157,6 +1161,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "reinterpret")]
             Reinterpret(signed) => map!(dispatch::reinterpret, signed),
             ExtendConstant => map_as_slice!(dispatch::extend_constant),
+            JsonEncode(ignore_nulls) => map!(dispatch::json_encode, ignore_nulls),
         }
     }
 }

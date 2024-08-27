@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Sequence
 
+from polars._utils.deprecation import deprecate_renamed_function
 from polars._utils.various import BUILDING_SPHINX_DOCS, sphinx_accessor
 from polars._utils.wrap import wrap_df
 from polars.schema import Schema
@@ -127,9 +128,13 @@ class StructNameSpace:
         """
         return wrap_df(self._s.struct_unnest())
 
+    @deprecate_renamed_function("Series.json_encode", version="x.y.z")
     def json_encode(self) -> Series:
         """
         Convert this struct to a string column with json values.
+
+        .. deprecated:: x.y.z
+            This method has been renamed to :meth:`Series.json_encode`.
 
         Examples
         --------

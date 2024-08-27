@@ -214,9 +214,13 @@ class ExprStructNameSpace:
         """
         return wrap_expr(self._pyexpr.struct_rename_fields(names))
 
+    @deprecate_renamed_function("Expr.json_encode", version="x.y.z")
     def json_encode(self) -> Expr:
         """
         Convert this struct to a string column with json values.
+
+        .. deprecated:: x.y.z
+            This method has been renamed to :meth:`Expr.json_encode`.
 
         Examples
         --------
@@ -233,7 +237,7 @@ class ExprStructNameSpace:
         │ {[9, 1, 3],null} ┆ {"a":[9,1,3],"b":null} │
         └──────────────────┴────────────────────────┘
         """
-        return wrap_expr(self._pyexpr.struct_json_encode())
+        return wrap_expr(self._pyexpr.json_encode())
 
     def with_fields(
         self,

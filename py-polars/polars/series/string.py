@@ -659,6 +659,7 @@ class StringNameSpace:
         --------
         json_path_match : Extract the first match of json string with provided JSONPath
             expression.
+        Series.json_encode: Encode a Series' values as JSON.
 
         Examples
         --------

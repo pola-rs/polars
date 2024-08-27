@@ -205,3 +205,19 @@ pub(super) fn extend_constant(s: &[Series]) -> PolarsResult<Series> {
         },
     }
 }
+
+#[cfg(feature = "json")]
+pub(super) fn json_encode(s: &Series, ignore_nulls: bool) -> PolarsResult<Series> {
+        if ignore_nulls {
+            panic!("ignore_nulls not implemented")
+        }
+        let dtype = s.dtype().to_arrow(CompatLevel::newest());
+        let ca = s.as_ref();
+        let iter = ca.chunks().iter().map(|arr| {
+            let arr = arrow::compute::cast::cast_unchecked(arr.as_ref(), &dtype).unwrap();
+            polars_json::json::write::serialize_to_utf8(arr.as_ref())
+        });
+
+        Ok(StringChunked::from_chunk_iter(ca.name(), iter).into_series())
+
+}

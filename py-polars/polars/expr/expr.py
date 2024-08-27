@@ -10695,6 +10695,60 @@ class Expr:
         """
         return ExprStructNameSpace(self)
 
+    def json_encode(self, *, ignore_nulls: bool = False) -> Expr:
+        r"""
+        Convert individual values into their JSON string representation.
+
+        Parameters
+        ----------
+        ignore_nulls
+            Ignore missing values in the struct when serializing.
+                - When `ignore_nulls=False`, the values in the struct are included even
+                  if they are null (they serialize into "null")
+                - When `ignore_nulls=True`, the values in the struct are skipped if they
+                  are null
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`String`.
+
+        See Also
+        --------
+        Expr.str.json_decode
+
+        Examples
+        --------
+        >>> pl.DataFrame({"a": [[1, 2], [45], [9, 1, 3], None]}).with_columns(
+        ...     pl.col("a").list.json_encode().alias("encoded")
+        ... )
+        shape: (4, 2)
+        ┌───────────┬─────────┐
+        │ a         ┆ encoded │
+        │ ---       ┆ ---     │
+        │ list[i64] ┆ str     │
+        ╞═══════════╪═════════╡
+        │ [1, 2]    ┆ [1,2]   │
+        │ [45]      ┆ [45]    │
+        │ [9, 1, 3] ┆ [9,1,3] │
+        │ null      ┆ null    │
+        └───────────┴─────────┘
+
+        >>> pl.DataFrame({"a": [["\\", '"foo"'], [None, ""]]}).with_columns(
+        ...     pl.col("a").list.json_encode().alias("encoded")
+        ... )
+        shape: (2, 2)
+        ┌────────────────┬──────────────────┐
+        │ a              ┆ encoded          │
+        │ ---            ┆ ---              │
+        │ list[str]      ┆ str              │
+        ╞════════════════╪══════════════════╡
+        │ ["\", ""foo""] ┆ ["\\","\"foo\""] │
+        │ [null, ""]     ┆ [null,""]        │
+        └────────────────┴──────────────────┘
+        """
+        return self._from_pyexpr(self._pyexpr.json_encode(ignore_nulls))
+
 
 def _prepare_alpha(
     com: float | int | None = None,

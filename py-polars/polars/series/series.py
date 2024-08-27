@@ -7342,6 +7342,42 @@ class Series:
         ]
         """
 
+    def json_encode(self, *, ignore_nulls: bool = False) -> Self:
+        """
+        Convert this Series into a string Series with json values.
+
+        Parameters
+        ----------
+        ignore_nulls
+            Ignore missing values in the struct when serializing.
+                - When `ignore_nulls=False`, the values in the struct are included even
+                  if they are null (they serialize into "null")
+                - When `ignore_nulls=True`, the values in the struct are skipped if they
+                  are null
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`String`.
+
+        See Also
+        --------
+        Series.str.json_decode : Deserialize a string Series with json values.
+
+        Examples
+        --------
+        >>> a = pl.Series([[1, 2, 3], [], [None, 3], [5, 6, 7]])
+        >>> a.json_encode()
+        shape: (4,)
+        Series: '' [str]
+        [
+            "[1,2,3]"
+            "[]"
+            "[null,3]"
+            "[5,6,7]"
+        ]
+        """
+
     # Keep the `list` and `str` properties below at the end of the definition of Series,
     # as to not confuse mypy with the type annotation `str` and `list`
 

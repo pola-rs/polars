@@ -935,4 +935,9 @@ impl PyExpr {
             .hist(bins, bin_count, include_category, include_breakpoint)
             .into()
     }
+
+    #[cfg(feature = "json")]
+    fn json_encode(&self, ignore_nulls: bool) -> Self {
+        self.inner.clone().json_encode(ignore_nulls).into()
+    }
 }

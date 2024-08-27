@@ -1880,6 +1880,11 @@ impl Expr {
         self.apply_many_private(FunctionExpr::ExtendConstant, &[value, n], false, false)
     }
 
+    #[cfg(feature = "json")]
+    pub fn json_encode(self, ignore_nulls: bool) -> Expr {
+        self.map_private(FunctionExpr::JsonEncode(ignore_nulls))
+    }
+
     #[cfg(feature = "strings")]
     /// Get the [`string::StringNameSpace`]
     pub fn str(self) -> string::StringNameSpace {
