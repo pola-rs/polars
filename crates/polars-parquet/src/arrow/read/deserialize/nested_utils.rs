@@ -4,14 +4,12 @@ use polars_error::PolarsResult;
 
 use super::utils::{self, BatchableCollector};
 use super::{BasicDecompressor, Filter};
-use crate::parquet::encoding::hybrid_rle::gatherer::{
-    HybridRleGatherer, ZeroCount, ZeroCountGatherer,
-};
+use crate::parquet::encoding::hybrid_rle::gatherer::HybridRleGatherer;
 use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{split_buffer, DataPage};
 use crate::parquet::read::levels::get_bit_width;
-use crate::read::deserialize::utils::BatchedCollector;
+use crate::read::deserialize::utils::{hybrid_rle_count_zeros, BatchedCollector};
 
 #[derive(Debug)]
 pub struct Nested {
@@ -537,6 +535,7 @@ fn extend_offsets2<'a, D: utils::NestedDecoder>(
                     )?;
                 }
             }
+
             Ok(())
         },
     }
@@ -806,54 +805,147 @@ impl<D: utils::NestedDecoder> PageNestedDecoder<D> {
                 }
             },
             Some(mut filter) => {
+                enum PageStartAction {
+                    Skip,
+                    Collect,
+                }
+
+                // We may have an action (skip / collect) for one row value left over from the
+                // previous page. Every page may state what the next page needs to do until the
+                // first of its own row values (rep_lvl = 0).
+                let mut last_row_value_action = PageStartAction::Skip;
                 let mut num_rows_remaining = filter.num_rows();
 
-                loop {
+                while num_rows_remaining > 0
+                    || matches!(last_row_value_action, PageStartAction::Collect)
+                {
                     let Some(page) = self.iter.next() else {
                         break;
                     };
                     let page = page?;
-                    // We cannot lazily decompress because we don't have the number of leaf values
-                    // at this point. This is encoded within the `definition level` values. *sign*.
-                    // In general, lazy decompression is quite difficult with nested values.
+                    // We cannot lazily decompress because we don't have the number of row values
+                    // at this point. We need repetition levels for that. *sign*. In general, lazy
+                    // decompression is quite difficult with nested values.
+                    //
+                    // @TODO
+                    // Lazy decompression is quite doable in the V2 specification since that does
+                    // not compress the repetition and definition levels. However, not a lot of
+                    // people use the V2 specification. So let us ignore that for now.
                     let page = page.decompress(&mut self.iter)?;
 
-                    let (def_iter, rep_iter) = level_iters(&page)?;
+                    let (mut def_iter, mut rep_iter) = level_iters(&page)?;
 
-                    let mut count = ZeroCount::default();
-                    rep_iter
-                        .clone()
-                        .gather_into(&mut count, &ZeroCountGatherer)?;
-
-                    let is_fully_read = count.num_zero > num_rows_remaining;
-                    let state_filter;
-                    (state_filter, filter) = Filter::split_at(&filter, count.num_zero);
-                    let state_filter = if count.num_zero > 0 {
-                        Some(state_filter)
-                    } else {
-                        None
-                    };
-
-                    let mut state =
-                        utils::State::new_nested(&self.decoder, &page, self.dict.as_ref())?;
+                    let mut state;
+                    let mut batched_collector;
 
                     let start_length = nested_state.len();
 
-                    // @TODO: move this to outside the loop.
-                    let mut batched_collector = BatchedCollector::new(
-                        BatchedNestedDecoder {
-                            state: &mut state,
-                            decoder: &mut self.decoder,
+                    // rep lvl == 0 ==> row value
+                    let num_row_values = hybrid_rle_count_zeros(&rep_iter)?;
+
+                    let state_filter;
+                    (state_filter, filter) = Filter::split_at(&filter, num_row_values);
+
+                    match last_row_value_action {
+                        PageStartAction::Skip => {
+                            // Fast path: skip the whole page.
+                            // No new row values or we don't care about any of the row values.
+                            if num_row_values == 0 && state_filter.num_rows() == 0 {
+                                self.iter.reuse_page_buffer(page);
+                                continue;
+                            }
+
+                            let limit = idx_to_limit(&rep_iter, 0)?;
+
+                            // We just saw that we had at least one row value.
+                            debug_assert!(limit < rep_iter.len());
+
+                            state =
+                                utils::State::new_nested(&self.decoder, &page, self.dict.as_ref())?;
+                            batched_collector = BatchedCollector::new(
+                                BatchedNestedDecoder {
+                                    state: &mut state,
+                                    decoder: &mut self.decoder,
+                                },
+                                &mut target,
+                            );
+
+                            let num_leaf_values =
+                                limit_to_num_values(&def_iter, &def_levels, limit)?;
+                            batched_collector.skip_in_place(num_leaf_values)?;
+                            rep_iter.skip_in_place(limit)?;
+                            def_iter.skip_in_place(limit)?;
                         },
-                        &mut target,
-                    );
+                        PageStartAction::Collect => {
+                            let limit = if num_row_values == 0 {
+                                rep_iter.len()
+                            } else {
+                                idx_to_limit(&rep_iter, 0)?
+                            };
+
+                            // Fast path: we are not interested in any of the row values in this
+                            // page.
+                            if limit == 0 && state_filter.num_rows() == 0 {
+                                self.iter.reuse_page_buffer(page);
+                                last_row_value_action = PageStartAction::Skip;
+                                continue;
+                            }
+
+                            state =
+                                utils::State::new_nested(&self.decoder, &page, self.dict.as_ref())?;
+                            batched_collector = BatchedCollector::new(
+                                BatchedNestedDecoder {
+                                    state: &mut state,
+                                    decoder: &mut self.decoder,
+                                },
+                                &mut target,
+                            );
+
+                            extend_offsets_limited(
+                                &mut def_iter,
+                                &mut rep_iter,
+                                &mut batched_collector,
+                                &mut nested_state.nested,
+                                limit,
+                                &def_levels,
+                                &rep_levels,
+                            )?;
+
+                            // No new row values. Keep collecting.
+                            if rep_iter.len() == 0 {
+                                batched_collector.finalize()?;
+
+                                let num_done = nested_state.len() - start_length;
+                                debug_assert!(num_done <= num_rows_remaining);
+                                debug_assert!(num_done <= num_row_values);
+                                num_rows_remaining -= num_done;
+
+                                drop(state);
+                                self.iter.reuse_page_buffer(page);
+
+                                continue;
+                            }
+                        },
+                    }
+
+                    // Two cases:
+                    // 1. First page: Must always start with a row value.
+                    // 2. Other pages: If they did not have a row value, they would have been
+                    //    handled by the last_row_value_action.
+                    debug_assert!(num_row_values > 0);
+
+                    last_row_value_action = if state_filter.do_include_at(num_row_values - 1) {
+                        PageStartAction::Collect
+                    } else {
+                        PageStartAction::Skip
+                    };
 
                     extend_offsets2(
                         def_iter,
                         rep_iter,
                         &mut batched_collector,
                         &mut nested_state.nested,
-                        state_filter,
+                        Some(state_filter),
                         &def_levels,
                         &rep_levels,
                     )?;
@@ -862,15 +954,11 @@ impl<D: utils::NestedDecoder> PageNestedDecoder<D> {
 
                     let num_done = nested_state.len() - start_length;
                     debug_assert!(num_done <= num_rows_remaining);
-                    debug_assert!(num_done <= count.num_zero);
+                    debug_assert!(num_done <= num_row_values);
                     num_rows_remaining -= num_done;
 
                     drop(state);
                     self.iter.reuse_page_buffer(page);
-
-                    if is_fully_read {
-                        break;
-                    }
                 }
             },
         }
