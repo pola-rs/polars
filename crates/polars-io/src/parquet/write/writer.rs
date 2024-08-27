@@ -165,8 +165,8 @@ mod tests {
     use std::io::Cursor;
 
     use polars_core::prelude::*;
+    use polars_parquet::read::ParquetError;
 
-    use super::*;
     use crate::prelude::{ParquetReader, ParquetWriter, SerReader};
 
     // polars = { path = "~/src/polars/crates/polars", features = ["lazy", "parquet", "json"]}
