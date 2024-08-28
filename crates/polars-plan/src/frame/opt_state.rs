@@ -18,11 +18,9 @@ bitflags! {
         const FILE_CACHING = 1 << 6;
         /// Pushdown slices/limits.
         const SLICE_PUSHDOWN = 1 << 7;
-        #[cfg(feature = "cse")]
         /// Run common-subplan-elimination. This elides duplicate plans and caches their
         /// outputs.
         const COMM_SUBPLAN_ELIM = 1 << 8;
-        #[cfg(feature = "cse")]
         /// Run common-subexpression-elimination. This elides duplicate expressions and caches their
         /// outputs.
         const COMM_SUBEXPR_ELIM = 1 << 9;
