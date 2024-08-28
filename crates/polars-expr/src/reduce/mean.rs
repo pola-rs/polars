@@ -1,5 +1,3 @@
-use polars_core::utils::Container;
-
 use super::*;
 
 #[derive(Clone)]
