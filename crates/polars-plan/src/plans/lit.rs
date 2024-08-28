@@ -217,24 +217,19 @@ impl LiteralValue {
             LiteralValue::StrCat(_) => DataType::Unknown(UnknownKind::Str),
         }
     }
-}
 
-pub trait LiteralAExpr {
-    /// [LiteralAExpr](AExpr::Literal) expression.
-    fn lit_aexpr(self) -> AExpr;
-}
-
-macro_rules! make_literal_aexpr {
-    ($TYPE:ty, $SCALAR:ident) => {
-        impl LiteralAExpr for $TYPE {
-            fn lit_aexpr(self) -> AExpr {
-                AExpr::Literal(LiteralValue::$SCALAR(self))
-            }
+    pub(crate) fn new_idxsize(value: IdxSize) -> Self {
+        #[cfg(feature = "bigidx")]
+        {
+            LiteralValue::UInt64(value)
         }
-    };
+        #[cfg(not(feature = "bigidx"))]
+        {
+            LiteralValue::UInt32(value)
+        }
+    }
 }
-make_literal_aexpr!(u32, UInt32);
-make_literal_aexpr!(u64, UInt64);
+
 pub trait Literal {
     /// [Literal](Expr::Literal) expression.
     fn lit(self) -> Expr;

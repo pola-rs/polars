@@ -20,7 +20,7 @@ pub(super) fn optimize_functions(
                 } => Some(AExpr::BinaryExpr {
                     left: expr_arena.add(make_null_count_expr!(input)),
                     op: Operator::Gt,
-                    right: expr_arena.add((0 as IdxSize).lit_aexpr()),
+                    right: expr_arena.add(AExpr::Literal(LiteralValue::new_idxsize(0))),
                 }),
                 AExpr::Function {
                     input,
@@ -83,7 +83,7 @@ pub(super) fn optimize_functions(
                 } => Some(AExpr::BinaryExpr {
                     left: expr_arena.add(make_null_count_expr!(input)),
                     op: Operator::Eq,
-                    right: expr_arena.add((0 as IdxSize).lit_aexpr()),
+                    right: expr_arena.add(AExpr::Literal(LiteralValue::new_idxsize(0))),
                 }),
                 _ => None,
             }
