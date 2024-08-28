@@ -742,7 +742,7 @@ impl<D: utils::NestedDecoder> PageNestedDecoder<D> {
         init: Vec<InitNested>,
     ) -> ParquetResult<Self> {
         let dict_page = iter.read_dict_page()?;
-        let dict = dict_page.map(|d| decoder.deserialize_dict(d));
+        let dict = dict_page.map(|d| decoder.deserialize_dict(d)).transpose()?;
 
         Ok(Self {
             iter,

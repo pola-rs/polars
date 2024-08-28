@@ -545,6 +545,22 @@ impl ArrowDataType {
         }
     }
 
+    pub fn is_nested(&self) -> bool {
+        use ArrowDataType as D;
+
+        matches!(
+            self,
+            D::List(_)
+                | D::LargeList(_)
+                | D::FixedSizeList(_, _)
+                | D::Struct(_)
+                | D::Union(_, _, _)
+                | D::Map(_, _)
+                | D::Dictionary(_, _, _)
+                | D::Extension(_, _, _)
+        )
+    }
+
     pub fn is_view(&self) -> bool {
         matches!(self, ArrowDataType::Utf8View | ArrowDataType::BinaryView)
     }

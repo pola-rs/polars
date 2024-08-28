@@ -41,11 +41,8 @@ impl<'a> utils::StateTranslation<'a, BinViewDecoder> for StateTranslation<'a> {
 
                 Ok(Self::Plain(values))
             },
-            (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict)) => {
+            (Encoding::PlainDictionary | Encoding::RleDictionary, Some(_)) => {
                 let values = dict_indices_decoder(page)?;
-                if is_string {
-                    arrow::array::validate_utf8_view(dict.0.as_ref(), dict.1.as_ref())?;
-                }
                 Ok(Self::Dictionary(values))
             },
             (Encoding::DeltaLengthByteArray, _) => {
@@ -93,6 +90,7 @@ impl<'a> utils::StateTranslation<'a, BinViewDecoder> for StateTranslation<'a> {
         &mut self,
         decoder: &mut BinViewDecoder,
         decoded: &mut <BinViewDecoder as utils::Decoder>::DecodedState,
+        is_optional: bool,
         page_validity: &mut Option<utils::PageValidity<'a>>,
         dict: Option<&'a <BinViewDecoder as utils::Decoder>::Dict>,
         additional: usize,
@@ -107,6 +105,7 @@ impl<'a> utils::StateTranslation<'a, BinViewDecoder> for StateTranslation<'a> {
                 decoder.decode_plain_encoded(
                     decoded,
                     page_values,
+                    is_optional,
                     page_validity.as_mut(),
                     additional,
                 )?;
@@ -120,6 +119,7 @@ impl<'a> utils::StateTranslation<'a, BinViewDecoder> for StateTranslation<'a> {
                 decoder.decode_dictionary_encoded(
                     decoded,
                     page,
+                    is_optional,
                     page_validity.as_mut(),
                     dict,
                     additional,
@@ -138,7 +138,13 @@ impl<'a> utils::StateTranslation<'a, BinViewDecoder> for StateTranslation<'a> {
                 };
 
                 match page_validity {
-                    None => (&mut collector).push_n(values, additional)?,
+                    None => {
+                        (&mut collector).push_n(values, additional)?;
+
+                        if is_optional {
+                            validity.extend_constant(additional, true);
+                        }
+                    },
                     Some(page_validity) => extend_from_decoder(
                         validity,
                         page_validity,
@@ -158,7 +164,13 @@ impl<'a> utils::StateTranslation<'a, BinViewDecoder> for StateTranslation<'a> {
                 };
 
                 match page_validity {
-                    None => collector.push_n(values, additional)?,
+                    None => {
+                        collector.push_n(values, additional)?;
+
+                        if is_optional {
+                            validity.extend_constant(additional, true);
+                        }
+                    },
                     Some(page_validity) => extend_from_decoder(
                         validity,
                         page_validity,
@@ -536,7 +548,7 @@ impl utils::Decoder for BinViewDecoder {
         Ok(())
     }
 
-    fn deserialize_dict(&self, page: DictPage) -> Self::Dict {
+    fn deserialize_dict(&self, page: DictPage) -> ParquetResult<Self::Dict> {
         let values = &page.buffer;
         let num_values = page.num_values;
 
@@ -549,9 +561,12 @@ impl utils::Decoder for BinViewDecoder {
         let mut buffers = Vec::with_capacity(1);
 
         let mut offset = 0;
-        for v in BinaryIter::new(values, num_values) {
-            if v.len() <= View::MAX_INLINE_SIZE as usize {
-                views.push(View::new_inline(v));
+        let mut max_length = 0;
+        views.extend(BinaryIter::new(values, num_values).map(|v| {
+            let length = v.len();
+            max_length = usize::max(length, max_length);
+            if length <= View::MAX_INLINE_SIZE as usize {
+                View::new_inline(v)
             } else {
                 if offset >= u32::MAX as usize {
                     let full_buffer = std::mem::take(&mut buffer);
@@ -562,20 +577,39 @@ impl utils::Decoder for BinViewDecoder {
                 }
 
                 buffer.extend_from_slice(v);
-                views.push(View::new_from_bytes(v, buffers.len() as u32, offset as u32));
+                let view = View::new_from_bytes(v, buffers.len() as u32, offset as u32);
                 offset += v.len();
+                view
             }
-        }
+        }));
 
         buffers.push(Buffer::from(buffer));
 
-        (views, buffers)
+        if self.check_utf8.load(Ordering::Relaxed) {
+            // This is a small trick that allows us to check the Parquet buffer instead of the view
+            // buffer. Batching the UTF-8 verification is more performant. For this to be allowed,
+            // all the interleaved lengths need to be valid UTF-8.
+            //
+            // Every strings prepended by 4 bytes (L, 0, 0, 0), since we check here L < 128. L is
+            // only a valid first byte of a UTF-8 code-point and (L, 0, 0, 0) is valid UTF-8.
+            // Consequently, it is valid to just check the whole buffer.
+            if max_length < 128 {
+                simdutf8::basic::from_utf8(values)
+                    .map_err(|_| ParquetError::oos("String data contained invalid UTF-8"))?;
+            } else {
+                arrow::array::validate_utf8_view(&views, &buffers)
+                    .map_err(|_| ParquetError::oos("String data contained invalid UTF-8"))?;
+            }
+        }
+
+        Ok((views, buffers))
     }
 
     fn decode_plain_encoded<'a>(
         &mut self,
         (values, validity): &mut Self::DecodedState,
         page_values: &mut <Self::Translation<'a> as utils::StateTranslation<'a, Self>>::PlainDecoder,
+        is_optional: bool,
         page_validity: Option<&mut PageValidity<'a>>,
         limit: usize,
     ) -> ParquetResult<()> {
@@ -629,7 +663,13 @@ impl utils::Decoder for BinViewDecoder {
         };
 
         match page_validity {
-            None => collector.push_n(values, limit)?,
+            None => {
+                collector.push_n(values, limit)?;
+
+                if is_optional {
+                    validity.extend_constant(limit, true);
+                }
+            },
             Some(page_validity) => {
                 extend_from_decoder(validity, page_validity, Some(limit), values, collector)?
             },
@@ -641,6 +681,10 @@ impl utils::Decoder for BinViewDecoder {
             // This is a small trick that allows us to check the Parquet buffer instead of the view
             // buffer. Batching the UTF-8 verification is more performant. For this to be allowed,
             // all the interleaved lengths need to be valid UTF-8.
+            //
+            // Every strings prepended by 4 bytes (L, 0, 0, 0), since we check here L < 128. L is
+            // only a valid first byte of a UTF-8 code-point and (L, 0, 0, 0) is valid UTF-8.
+            // Consequently, it is valid to just check the whole buffer.
             if max_length < 128 {
                 simdutf8::basic::from_utf8(buffer)
                     .map_err(|_| ParquetError::oos("String data contained invalid UTF-8"))?;
@@ -658,6 +702,7 @@ impl utils::Decoder for BinViewDecoder {
         &mut self,
         (values, validity): &mut Self::DecodedState,
         page_values: &mut hybrid_rle::HybridRleDecoder<'a>,
+        is_optional: bool,
         page_validity: Option<&mut PageValidity<'a>>,
         dict: &Self::Dict,
         limit: usize,
@@ -747,6 +792,10 @@ impl utils::Decoder for BinViewDecoder {
         match page_validity {
             None => {
                 page_values.gather_n_into(values, limit, &translator)?;
+
+                if is_optional {
+                    validity.extend_constant(limit, true);
+                }
             },
             Some(page_validity) => {
                 struct Collector<'a, 'b> {
