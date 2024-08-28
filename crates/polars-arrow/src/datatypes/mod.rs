@@ -550,16 +550,15 @@ impl ArrowDataType {
 
         matches!(
             self,
-            D::List(_) |
-            D::LargeList(_) |
-            D::FixedSizeList(_, _) |
-            D::Struct(_) |
-            D::Union(_, _, _) |
-            D::Map(_, _) |
-            D::Dictionary(_, _, _) |
-            D::Extension(_, _, _)
+            D::List(_)
+                | D::LargeList(_)
+                | D::FixedSizeList(_, _)
+                | D::Struct(_)
+                | D::Union(_, _, _)
+                | D::Map(_, _)
+                | D::Dictionary(_, _, _)
+                | D::Extension(_, _, _)
         )
-
     }
 
     pub fn is_view(&self) -> bool {

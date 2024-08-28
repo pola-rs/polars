@@ -481,7 +481,7 @@ fn rg_to_dfs_prefiltered(
                         // higher.
                         let is_nested = schema.fields[col_idx].data_type.is_nested();
                         let prefilter_cost = rg_prefilter_costs[i / num_dead_columns];
-                        
+
                         // We empirically selected these numbers.
                         let do_prefilter = (is_nested && prefilter_cost <= 0.01)
                             || (!is_nested && prefilter_cost <= 0.02);

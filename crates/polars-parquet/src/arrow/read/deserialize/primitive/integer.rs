@@ -5,7 +5,9 @@ use arrow::types::NativeType;
 
 use super::super::utils;
 use super::{
-    deserialize_plain, AsDecoderFunction, ClosureDecoderFunction, DecoderFunction, DeltaCollector, DeltaTranslator, IntoDecoderFunction, PlainDecoderFnCollector, PrimitiveDecoder, UnitDecoderFunction
+    deserialize_plain, AsDecoderFunction, ClosureDecoderFunction, DecoderFunction, DeltaCollector,
+    DeltaTranslator, IntoDecoderFunction, PlainDecoderFnCollector, PrimitiveDecoder,
+    UnitDecoderFunction,
 };
 use crate::parquet::encoding::hybrid_rle::{self, DictionaryTranslator};
 use crate::parquet::encoding::{byte_stream_split, delta_bitpacked, Encoding};
