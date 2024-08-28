@@ -23,7 +23,7 @@ impl LazyFrame {
             self.logical_plan.clone(),
             expr_arena,
             lp_arena,
-            &mut OptState::schema_only(),
+            &mut OptFlags::schema_only(),
         )?;
 
         let schema = lp_arena.get(node).schema(lp_arena).into_owned();
@@ -53,7 +53,7 @@ impl LazyFrame {
                     self.logical_plan.clone(),
                     &mut expr_arena,
                     &mut lp_arena,
-                    &mut OptState::schema_only(),
+                    &mut OptFlags::schema_only(),
                 )?;
 
                 let schema = lp_arena.get(node).schema(&lp_arena).into_owned();
@@ -87,7 +87,7 @@ impl LazyFrame {
                             self.logical_plan.clone(),
                             &mut arenas.expr_arena,
                             &mut arenas.lp_arena,
-                            &mut OptState::schema_only(),
+                            &mut OptFlags::schema_only(),
                         )?;
 
                         let schema = arenas

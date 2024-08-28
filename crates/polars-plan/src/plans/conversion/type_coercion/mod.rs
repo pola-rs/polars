@@ -633,7 +633,7 @@ mod test {
             .build();
 
         let mut lp_top =
-            to_alp(lp, &mut expr_arena, &mut lp_arena, &mut OptState::default()).unwrap();
+            to_alp(lp, &mut expr_arena, &mut lp_arena, &mut OptFlags::default()).unwrap();
         lp_top = optimizer
             .optimize_loop(rules, &mut expr_arena, &mut lp_arena, lp_top)
             .unwrap();
@@ -649,7 +649,7 @@ mod test {
             .project(expr_in, Default::default())
             .build();
         let mut lp_top =
-            to_alp(lp, &mut expr_arena, &mut lp_arena, &mut OptState::default()).unwrap();
+            to_alp(lp, &mut expr_arena, &mut lp_arena, &mut OptFlags::default()).unwrap();
         lp_top = optimizer
             .optimize_loop(rules, &mut expr_arena, &mut lp_arena, lp_top)
             .unwrap();

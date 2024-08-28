@@ -22,7 +22,7 @@ impl DslPlan {
             self.clone(),
             &mut expr_arena,
             &mut lp_arena,
-            &mut OptState::schema_only(),
+            &mut OptFlags::schema_only(),
         )?;
 
         Ok(lp_arena.get(node).schema(&lp_arena).into_owned())

@@ -35,7 +35,7 @@ use polars_expr::{create_physical_expr, ExpressionConversionState};
 use polars_io::RowIndex;
 use polars_mem_engine::{create_physical_plan, Executor};
 use polars_ops::frame::JoinCoalesce;
-pub use polars_plan::frame::{AllowedOptimizations, OptState};
+pub use polars_plan::frame::{AllowedOptimizations, OptFlags};
 use polars_plan::global::FETCH_ROWS;
 use smartstring::alias::String as SmartString;
 
@@ -74,7 +74,7 @@ impl IntoLazy for LazyFrame {
 #[must_use]
 pub struct LazyFrame {
     pub logical_plan: DslPlan,
-    pub(crate) opt_state: OptState,
+    pub(crate) opt_state: OptFlags,
     pub(crate) cached_arena: Arc<Mutex<Option<CachedArena>>>,
 }
 
@@ -82,7 +82,7 @@ impl From<DslPlan> for LazyFrame {
     fn from(plan: DslPlan) -> Self {
         Self {
             logical_plan: plan,
-            opt_state: OptState::default() | OptState::FILE_CACHING,
+            opt_state: OptFlags::default() | OptFlags::FILE_CACHING,
             cached_arena: Default::default(),
         }
     }
@@ -91,7 +91,7 @@ impl From<DslPlan> for LazyFrame {
 impl LazyFrame {
     pub(crate) fn from_inner(
         logical_plan: DslPlan,
-        opt_state: OptState,
+        opt_state: OptFlags,
         cached_arena: Arc<Mutex<Option<CachedArena>>>,
     ) -> Self {
         Self {
@@ -105,11 +105,11 @@ impl LazyFrame {
         DslBuilder::from(self.logical_plan)
     }
 
-    fn get_opt_state(&self) -> OptState {
+    fn get_opt_state(&self) -> OptFlags {
         self.opt_state
     }
 
-    fn from_logical_plan(logical_plan: DslPlan, opt_state: OptState) -> Self {
+    fn from_logical_plan(logical_plan: DslPlan, opt_state: OptFlags) -> Self {
         LazyFrame {
             logical_plan,
             opt_state,
@@ -118,91 +118,91 @@ impl LazyFrame {
     }
 
     /// Get current optimizations.
-    pub fn get_current_optimizations(&self) -> OptState {
+    pub fn get_current_optimizations(&self) -> OptFlags {
         self.opt_state
     }
 
     /// Set allowed optimizations.
-    pub fn with_optimizations(mut self, opt_state: OptState) -> Self {
+    pub fn with_optimizations(mut self, opt_state: OptFlags) -> Self {
         self.opt_state = opt_state;
         self
     }
 
     /// Turn off all optimizations.
     pub fn without_optimizations(self) -> Self {
-        self.with_optimizations(OptState::from_bits_truncate(0) | OptState::TYPE_COERCION)
+        self.with_optimizations(OptFlags::from_bits_truncate(0) | OptFlags::TYPE_COERCION)
     }
 
     /// Toggle projection pushdown optimization.
     pub fn with_projection_pushdown(mut self, toggle: bool) -> Self {
-        self.opt_state.set(OptState::PROJECTION_PUSHDOWN, toggle);
+        self.opt_state.set(OptFlags::PROJECTION_PUSHDOWN, toggle);
         self
     }
 
     /// Toggle cluster with columns optimization.
     pub fn with_cluster_with_columns(mut self, toggle: bool) -> Self {
-        self.opt_state.set(OptState::CLUSTER_WITH_COLUMNS, toggle);
+        self.opt_state.set(OptFlags::CLUSTER_WITH_COLUMNS, toggle);
         self
     }
 
     /// Toggle predicate pushdown optimization.
     pub fn with_predicate_pushdown(mut self, toggle: bool) -> Self {
-        self.opt_state.set(OptState::PREDICATE_PUSHDOWN, toggle);
+        self.opt_state.set(OptFlags::PREDICATE_PUSHDOWN, toggle);
         self
     }
 
     /// Toggle type coercion optimization.
     pub fn with_type_coercion(mut self, toggle: bool) -> Self {
-        self.opt_state.set(OptState::TYPE_COERCION, toggle);
+        self.opt_state.set(OptFlags::TYPE_COERCION, toggle);
         self
     }
 
     /// Toggle expression simplification optimization on or off.
     pub fn with_simplify_expr(mut self, toggle: bool) -> Self {
-        self.opt_state.set(OptState::SIMPLIFY_EXPR, toggle);
+        self.opt_state.set(OptFlags::SIMPLIFY_EXPR, toggle);
         self
     }
 
     /// Toggle common subplan elimination optimization on or off
     #[cfg(feature = "cse")]
     pub fn with_comm_subplan_elim(mut self, toggle: bool) -> Self {
-        self.opt_state.set(OptState::COMM_SUBPLAN_ELIM, toggle);
+        self.opt_state.set(OptFlags::COMM_SUBPLAN_ELIM, toggle);
         self
     }
 
     /// Toggle common subexpression elimination optimization on or off
     #[cfg(feature = "cse")]
     pub fn with_comm_subexpr_elim(mut self, toggle: bool) -> Self {
-        self.opt_state.set(OptState::COMM_SUBEXPR_ELIM, toggle);
+        self.opt_state.set(OptFlags::COMM_SUBEXPR_ELIM, toggle);
         self
     }
 
     /// Toggle slice pushdown optimization.
     pub fn with_slice_pushdown(mut self, toggle: bool) -> Self {
-        self.opt_state.set(OptState::SLICE_PUSHDOWN, toggle);
+        self.opt_state.set(OptFlags::SLICE_PUSHDOWN, toggle);
         self
     }
 
     /// Run nodes that are capably of doing so on the streaming engine.
     pub fn with_streaming(mut self, toggle: bool) -> Self {
-        self.opt_state.set(OptState::STREAMING, toggle);
+        self.opt_state.set(OptFlags::STREAMING, toggle);
         self
     }
 
     pub fn with_new_streaming(mut self, toggle: bool) -> Self {
-        self.opt_state.set(OptState::NEW_STREAMING, toggle);
+        self.opt_state.set(OptFlags::NEW_STREAMING, toggle);
         self
     }
 
     /// Try to estimate the number of rows so that joins can determine which side to keep in memory.
     pub fn with_row_estimate(mut self, toggle: bool) -> Self {
-        self.opt_state.set(OptState::ROW_ESTIMATE, toggle);
+        self.opt_state.set(OptFlags::ROW_ESTIMATE, toggle);
         self
     }
 
     /// Run every node eagerly. This turns off multi-node optimizations.
     pub fn _with_eager(mut self, toggle: bool) -> Self {
-        self.opt_state.set(OptState::EAGER, toggle);
+        self.opt_state.set(OptFlags::EAGER, toggle);
         self
     }
 
@@ -581,18 +581,18 @@ impl LazyFrame {
     ) -> PolarsResult<Node> {
         #[allow(unused_mut)]
         let mut opt_state = self.opt_state;
-        let streaming = self.opt_state.contains(OptState::STREAMING);
-        let new_streaming = self.opt_state.contains(OptState::NEW_STREAMING);
+        let streaming = self.opt_state.contains(OptFlags::STREAMING);
+        let new_streaming = self.opt_state.contains(OptFlags::NEW_STREAMING);
         #[cfg(feature = "cse")]
         if streaming && !new_streaming {
-            opt_state &= !OptState::COMM_SUBPLAN_ELIM;
+            opt_state &= !OptFlags::COMM_SUBPLAN_ELIM;
         }
 
         // The new streaming engine can't deal with the way the common
         // subexpression elimination adds length-incorrect with_columns.
         #[cfg(feature = "cse")]
         if new_streaming {
-            opt_state &= !OptState::COMM_SUBEXPR_ELIM;
+            opt_state &= !OptFlags::COMM_SUBEXPR_ELIM;
         }
 
         let lp_top = optimize(
@@ -625,7 +625,7 @@ impl LazyFrame {
                     scratch,
                     enable_fmt,
                     true,
-                    opt_state.contains(OptState::ROW_ESTIMATE),
+                    opt_state.contains(OptFlags::ROW_ESTIMATE),
                 )?;
             }
             #[cfg(not(feature = "streaming"))]
@@ -705,11 +705,11 @@ impl LazyFrame {
         {
             let auto_new_streaming =
                 std::env::var("POLARS_AUTO_NEW_STREAMING").as_deref() == Ok("1");
-            if self.opt_state.contains(OptState::NEW_STREAMING) || auto_new_streaming {
+            if self.opt_state.contains(OptFlags::NEW_STREAMING) || auto_new_streaming {
                 // Try to run using the new streaming engine, falling back
                 // if it fails in a todo!() error if auto_new_streaming is set.
                 let mut new_stream_lazy = self.clone();
-                new_stream_lazy.opt_state |= OptState::NEW_STREAMING;
+                new_stream_lazy.opt_state |= OptFlags::NEW_STREAMING;
                 let mut alp_plan = new_stream_lazy.to_alp_optimized()?;
                 let stream_lp_top = alp_plan.lp_arena.add(IR::Sink {
                     input: alp_plan.lp_top,
@@ -834,7 +834,7 @@ impl LazyFrame {
         cloud_options: Option<polars_io::cloud::CloudOptions>,
         ipc_options: IpcWriterOptions,
     ) -> PolarsResult<()> {
-        self.opt_state |= OptState::STREAMING;
+        self.opt_state |= OptFlags::STREAMING;
         self.logical_plan = DslPlan::Sink {
             input: Arc::new(self.logical_plan),
             payload: SinkType::Cloud {
@@ -889,7 +889,7 @@ impl LazyFrame {
         feature = "json",
     ))]
     fn sink(mut self, payload: SinkType, msg_alternative: &str) -> Result<(), PolarsError> {
-        self.opt_state |= OptState::STREAMING;
+        self.opt_state |= OptFlags::STREAMING;
         self.logical_plan = DslPlan::Sink {
             input: Arc::new(self.logical_plan),
             payload,
@@ -1314,8 +1314,8 @@ impl LazyFrame {
         args: JoinArgs,
     ) -> LazyFrame {
         // if any of the nodes reads from files we must activate this this plan as well.
-        if other.opt_state.contains(OptState::FILE_CACHING) {
-            self.opt_state |= OptState::FILE_CACHING;
+        if other.opt_state.contains(OptFlags::FILE_CACHING) {
+            self.opt_state |= OptFlags::FILE_CACHING;
         }
 
         let left_on = left_on.as_ref().to_vec();
@@ -1824,7 +1824,7 @@ impl LazyFrame {
 #[derive(Clone)]
 pub struct LazyGroupBy {
     pub logical_plan: DslPlan,
-    opt_state: OptState,
+    opt_state: OptFlags,
     keys: Vec<Expr>,
     maintain_order: bool,
     #[cfg(feature = "dynamic_group_by")]
@@ -2052,8 +2052,8 @@ impl JoinBuilder {
         let other = self.other.expect("with not set");
 
         // If any of the nodes reads from files we must activate this this plan as well.
-        if other.opt_state.contains(OptState::FILE_CACHING) {
-            opt_state |= OptState::FILE_CACHING;
+        if other.opt_state.contains(OptFlags::FILE_CACHING) {
+            opt_state |= OptFlags::FILE_CACHING;
         }
 
         let args = JoinArgs {
