@@ -300,6 +300,22 @@ pub fn intersects_with_mut(lhs: &MutableBitmap, rhs: &MutableBitmap) -> bool {
     )
 }
 
+pub fn num_edges(lhs: &Bitmap) -> usize {
+    if lhs.len() == 0 {
+        return 0;
+    }
+
+    // @TODO: If is probably quite inefficient to do it like this because now either one is not
+    // aligned. Maybe, we can implement a smarter way to do this.
+    binary_fold(
+        &unsafe { lhs.clone().sliced_unchecked(0, lhs.len() - 1) },
+        &unsafe { lhs.clone().sliced_unchecked(1, lhs.len() - 1) },
+        |l, r| (l ^ r).count_ones() as usize,
+        0,
+        |acc, v| acc + v,
+    )
+}
+
 /// Compute `out[i] = if selector[i] { truthy[i] } else { falsy }`.
 pub fn select_constant(selector: &Bitmap, truthy: &Bitmap, falsy: bool) -> Bitmap {
     let falsy_mask: u64 = if falsy {
