@@ -302,7 +302,7 @@ mod inner {
             };
 
             unsafe {
-                debug_assert!(pos <= self.v.len());
+                debug_assert!(pos < self.v.len());
                 // SAFETY:
                 // we are in bounds
                 let ret = Some((self.v.get_unchecked(..pos), needs_escaping));
