@@ -269,13 +269,6 @@ pub enum CompressedPage {
 }
 
 impl CompressedPage {
-    pub(crate) fn buffer(&self) -> &[u8] {
-        match self {
-            CompressedPage::Data(page) => &page.buffer,
-            CompressedPage::Dict(page) => &page.buffer,
-        }
-    }
-
     pub(crate) fn buffer_mut(&mut self) -> &mut Vec<u8> {
         match self {
             CompressedPage::Data(page) => page.buffer.to_mut(),
@@ -301,13 +294,6 @@ impl CompressedPage {
         match self {
             CompressedPage::Data(page) => page.num_rows(),
             CompressedPage::Dict(_) => Some(0),
-        }
-    }
-
-    pub(crate) fn uncompressed_size(&self) -> usize {
-        match self {
-            CompressedPage::Data(page) => page.uncompressed_page_size,
-            CompressedPage::Dict(page) => page.uncompressed_page_size,
         }
     }
 }
