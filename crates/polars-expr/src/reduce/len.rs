@@ -34,6 +34,7 @@ impl Reduction for LenReduce {
     }
 
     fn finalize(&mut self) -> PolarsResult<Scalar> {
+        #[allow(clippy::useless_conversion)]
         let as_idx: IdxSize = self.len.try_into().expect(LENGTH_LIMIT_MSG);
         Ok(Scalar::new(IDX_DTYPE, as_idx.into()))
     }
