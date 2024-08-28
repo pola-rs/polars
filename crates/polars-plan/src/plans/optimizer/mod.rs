@@ -75,6 +75,7 @@ pub fn optimize(
     // Unset CSE
     // This can be turned on again during ir-conversion.
     #[allow(clippy::eq_op)]
+    #[cfg(feature = "cse")]
     if opt_state.contains(OptFlags::EAGER) {
         opt_state &= !(OptFlags::COMM_SUBEXPR_ELIM | OptFlags::COMM_SUBEXPR_ELIM);
     }
