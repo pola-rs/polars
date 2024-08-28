@@ -3578,6 +3578,7 @@ dependencies = [
  "jemallocator",
  "libc",
  "mimalloc",
+ "polars",
  "polars-python",
  "pyo3",
 ]
