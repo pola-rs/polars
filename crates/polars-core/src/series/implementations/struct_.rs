@@ -32,12 +32,6 @@ impl PrivateSeries for SeriesWrap<StructChunked> {
 
     fn _set_flags(&mut self, _flags: MetadataFlags) {}
 
-    fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
-        self._apply_fields(|s| s.explode_by_offsets(offsets))
-            .unwrap()
-            .into_series()
-    }
-
     // TODO! remove this. Very slow. Asof join should use row-encoding.
     unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
         let other = other.struct_().unwrap();

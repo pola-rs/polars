@@ -3,7 +3,6 @@ use std::any::Any;
 use polars_error::constants::LENGTH_LIMIT_MSG;
 
 use crate::prelude::compare_inner::{IntoTotalEqInner, TotalEqInner};
-use crate::prelude::explode::ExplodeByOffsets;
 use crate::prelude::*;
 use crate::series::private::{PrivateSeries, PrivateSeriesNumeric};
 use crate::series::*;
@@ -80,10 +79,6 @@ impl PrivateSeries for NullChunked {
 
         Ok(Self::new(self.name().into(), len).into_series())
     }
-    fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
-        ExplodeByOffsets::explode_by_offsets(self, offsets)
-    }
-
     fn subtract(&self, _rhs: &Series) -> PolarsResult<Series> {
         null_arithmetic(self, _rhs, "subtract")
     }

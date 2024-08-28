@@ -79,10 +79,6 @@ pub(crate) mod private {
 
         fn _set_flags(&mut self, flags: MetadataFlags);
 
-        fn explode_by_offsets(&self, _offsets: &[i64]) -> Series {
-            invalid_operation_panic!(explode_by_offsets, self)
-        }
-
         unsafe fn equal_element(
             &self,
             _idx_self: usize,
