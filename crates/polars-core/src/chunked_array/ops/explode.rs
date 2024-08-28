@@ -294,32 +294,6 @@ mod test {
     }
 
     #[test]
-    fn test_explode_list_nulls() -> PolarsResult<()> {
-        let ca = Int32Chunked::from_slice_options("", &[None, Some(1), Some(2)]);
-        let offsets = &[0, 3, 3];
-        let out = ca.explode_by_offsets(offsets);
-        assert_eq!(
-            Vec::from(out.i32().unwrap()),
-            &[None, Some(1), Some(2), None]
-        );
-
-        let ca = BooleanChunked::from_slice_options("", &[None, Some(true), Some(false)]);
-        let out = ca.explode_by_offsets(offsets);
-        assert_eq!(
-            Vec::from(out.bool().unwrap()),
-            &[None, Some(true), Some(false), None]
-        );
-
-        let ca = StringChunked::from_slice_options("", &[None, Some("b"), Some("c")]);
-        let out = ca.explode_by_offsets(offsets);
-        assert_eq!(
-            Vec::from(out.str().unwrap()),
-            &[None, Some("b"), Some("c"), None]
-        );
-        Ok(())
-    }
-
-    #[test]
     fn test_explode_empty_list_slot() -> PolarsResult<()> {
         // primitive
         let mut builder = get_list_builder(&DataType::Int32, 5, 5, "a")?;

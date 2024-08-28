@@ -447,3 +447,8 @@ def test_explode_17648() -> None:
         .with_columns(pl.int_ranges(pl.col("a").list.len()).alias("count"))
         .explode("a", "count")
     ).to_dict(as_series=False) == {"a": [2, 6, 7, 3, 9, 2], "count": [0, 1, 2, 0, 1, 2]}
+
+
+def test_explode_struct_nulls() -> None:
+    df = pl.DataFrame({"A": [[{"B": 1}], [None], []]})
+    assert df.explode("A").to_dict(as_series=False) == {"A": [{"B": 1}, None, None]}
