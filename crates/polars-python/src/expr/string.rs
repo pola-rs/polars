@@ -7,11 +7,11 @@ use crate::PyExpr;
 
 #[pymethods]
 impl PyExpr {
-    fn str_join(&self, delimiter: &str, ignore_nulls: bool) -> Self {
+    fn str_join(&self, separator: &str, ignore_nulls: bool) -> Self {
         self.inner
             .clone()
             .str()
-            .join(delimiter, ignore_nulls)
+            .join(separator, ignore_nulls)
             .into()
     }
 

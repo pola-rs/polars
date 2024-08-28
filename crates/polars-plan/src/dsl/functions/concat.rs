@@ -9,7 +9,7 @@ pub fn concat_str<E: AsRef<[Expr]>>(s: E, separator: &str, ignore_nulls: bool) -
     Expr::Function {
         input,
         function: StringFunction::ConcatHorizontal {
-            delimiter: separator,
+            separator,
             ignore_nulls,
         }
         .into(),

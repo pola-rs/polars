@@ -775,7 +775,7 @@ def test_str_join_returns_scalar() -> None:
     )
     grouped = (
         df.group_by("id")
-        .agg(pl.col("val").str.join(delimiter=",").alias("grouped"))
+        .agg(pl.col("val").str.join(separator=",").alias("grouped"))
         .get_column("grouped")
     )
     assert grouped.dtype == pl.String

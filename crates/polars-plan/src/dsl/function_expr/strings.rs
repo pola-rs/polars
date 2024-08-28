@@ -25,12 +25,12 @@ static TZ_AWARE_RE: Lazy<Regex> =
 pub enum StringFunction {
     #[cfg(feature = "concat_str")]
     ConcatHorizontal {
-        delimiter: String,
+        separator: String,
         ignore_nulls: bool,
     },
     #[cfg(feature = "concat_str")]
     ConcatVertical {
-        delimiter: String,
+        separator: String,
         ignore_nulls: bool,
     },
     #[cfg(feature = "regex")]
@@ -338,14 +338,14 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             SplitN(n) => map_as_slice!(strings::splitn, n),
             #[cfg(feature = "concat_str")]
             ConcatVertical {
-                delimiter,
+                separator,
                 ignore_nulls,
-            } => map!(strings::join, &delimiter, ignore_nulls),
+            } => map!(strings::join, &separator, ignore_nulls),
             #[cfg(feature = "concat_str")]
             ConcatHorizontal {
-                delimiter,
+                separator,
                 ignore_nulls,
-            } => map_as_slice!(strings::concat_hor, &delimiter, ignore_nulls),
+            } => map_as_slice!(strings::concat_hor, &separator, ignore_nulls),
             #[cfg(feature = "regex")]
             Replace { n, literal } => map_as_slice!(strings::replace, literal, n),
             #[cfg(feature = "string_reverse")]
@@ -738,16 +738,16 @@ fn to_time(s: &Series, options: &StrptimeOptions) -> PolarsResult<Series> {
 }
 
 #[cfg(feature = "concat_str")]
-pub(super) fn join(s: &Series, delimiter: &str, ignore_nulls: bool) -> PolarsResult<Series> {
+pub(super) fn join(s: &Series, separator: &str, ignore_nulls: bool) -> PolarsResult<Series> {
     let str_s = s.cast(&DataType::String)?;
-    let joined = polars_ops::chunked_array::str_join(str_s.str()?, delimiter, ignore_nulls);
+    let joined = polars_ops::chunked_array::str_join(str_s.str()?, separator, ignore_nulls);
     Ok(joined.into_series())
 }
 
 #[cfg(feature = "concat_str")]
 pub(super) fn concat_hor(
     series: &[Series],
-    delimiter: &str,
+    separator: &str,
     ignore_nulls: bool,
 ) -> PolarsResult<Series> {
     let str_series: Vec<_> = series
@@ -755,7 +755,7 @@ pub(super) fn concat_hor(
         .map(|s| s.cast(&DataType::String))
         .collect::<PolarsResult<_>>()?;
     let cas: Vec<_> = str_series.iter().map(|s| s.str().unwrap()).collect();
-    Ok(polars_ops::chunked_array::hor_str_concat(&cas, delimiter, ignore_nulls)?.into_series())
+    Ok(polars_ops::chunked_array::hor_str_concat(&cas, separator, ignore_nulls)?.into_series())
 }
 
 impl From<StringFunction> for FunctionExpr {
