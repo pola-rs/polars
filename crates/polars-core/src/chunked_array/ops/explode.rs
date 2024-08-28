@@ -1,16 +1,9 @@
 use arrow::array::*;
 use arrow::bitmap::utils::set_bit_unchecked;
 use arrow::bitmap::{Bitmap, MutableBitmap};
-use arrow::legacy::array::list::AnonymousBuilder;
-#[cfg(feature = "dtype-array")]
-use arrow::legacy::is_valid::IsValid;
 use arrow::legacy::prelude::*;
-use arrow::legacy::trusted_len::TrustedLenPush;
 use polars_utils::slice::GetSaferUnchecked;
 
-#[cfg(feature = "dtype-array")]
-use crate::chunked_array::builder::get_fixed_size_list_builder;
-use crate::chunked_array::metadata::MetadataProperties;
 use crate::prelude::*;
 use crate::series::implementations::null::NullChunked;
 
@@ -160,12 +153,18 @@ where
 
 impl ExplodeByOffsets for Float32Chunked {
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
-        self.apply_as_ints(|s| s.explode_by_offsets(offsets))
+        self.apply_as_ints(|s| {
+            let ca = s.u32().unwrap();
+            ca.explode_by_offsets(offsets)
+        })
     }
 }
 impl ExplodeByOffsets for Float64Chunked {
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
-        self.apply_as_ints(|s| s.explode_by_offsets(offsets))
+        self.apply_as_ints(|s| {
+            let ca = s.u64().unwrap();
+            ca.explode_by_offsets(offsets)
+        })
     }
 }
 
@@ -220,166 +219,6 @@ impl ExplodeByOffsets for BooleanChunked {
                 .extend_trusted_len_values(vals.values_iter())
         } else {
             builder.array_builder.extend_trusted_len(vals.into_iter());
-        }
-        builder.finish().into()
-    }
-}
-
-impl ExplodeByOffsets for ListChunked {
-    fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
-        debug_assert_eq!(self.chunks.len(), 1);
-        let arr = self.downcast_iter().next().unwrap();
-
-        let cap = get_capacity(offsets);
-        let inner_type = self.inner_dtype();
-
-        let mut builder = arrow::legacy::array::list::AnonymousBuilder::new(cap);
-        let mut owned = Vec::with_capacity(cap);
-        let mut start = offsets[0] as usize;
-        let mut last = start;
-
-        let mut process_range = |start: usize, last: usize, builder: &mut AnonymousBuilder<'_>| {
-            let vals = arr.slice_typed(start, last - start);
-            for opt_arr in vals.into_iter() {
-                match opt_arr {
-                    None => builder.push_null(),
-                    Some(arr) => {
-                        unsafe {
-                            // we create a pointer to evade the bck
-                            let ptr = arr.as_ref() as *const dyn Array;
-                            // SAFETY: we preallocated
-                            owned.push_unchecked(arr);
-                            // SAFETY: the pointer is still valid as `owned` will not reallocate
-                            builder.push(&*ptr as &dyn Array);
-                        }
-                    },
-                }
-            }
-        };
-
-        for &o in &offsets[1..] {
-            let o = o as usize;
-            if o == last {
-                if start != last {
-                    process_range(start, last, &mut builder);
-                }
-                builder.push_null();
-                start = o;
-            }
-            last = o;
-        }
-        process_range(start, last, &mut builder);
-        let arr = builder
-            .finish(Some(&inner_type.to_arrow(CompatLevel::newest())))
-            .unwrap();
-        let mut ca = unsafe { self.copy_with_chunks(vec![Box::new(arr)]) };
-
-        use MetadataProperties as P;
-        ca.copy_metadata(self, P::SORTED | P::FAST_EXPLODE_LIST);
-
-        ca.into_series()
-    }
-}
-
-#[cfg(feature = "dtype-array")]
-impl ExplodeByOffsets for ArrayChunked {
-    fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
-        debug_assert_eq!(self.chunks.len(), 1);
-        let arr = self.downcast_iter().next().unwrap();
-
-        let cap = get_capacity(offsets);
-        let inner_type = self.inner_dtype();
-        let mut builder =
-            get_fixed_size_list_builder(inner_type, cap, self.width(), self.name()).unwrap();
-
-        let mut start = offsets[0] as usize;
-        let mut last = start;
-        for &o in &offsets[1..] {
-            let o = o as usize;
-            if o == last {
-                if start != last {
-                    let array = arr.slice_typed(start, last - start);
-                    let values = array.values().as_ref();
-
-                    for i in 0..array.len() {
-                        unsafe {
-                            if array.is_valid_unchecked(i) {
-                                builder.push_unchecked(values, i)
-                            } else {
-                                builder.push_null()
-                            }
-                        }
-                    }
-                }
-                unsafe {
-                    builder.push_null();
-                }
-                start = o;
-            }
-            last = o;
-        }
-        let array = arr.slice_typed(start, last - start);
-        let values = array.values().as_ref();
-        for i in 0..array.len() {
-            unsafe {
-                if array.is_valid_unchecked(i) {
-                    builder.push_unchecked(values, i)
-                } else {
-                    builder.push_null()
-                }
-            }
-        }
-
-        builder.finish().into()
-    }
-}
-
-impl ExplodeByOffsets for StringChunked {
-    fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
-        unsafe {
-            self.as_binary()
-                .explode_by_offsets(offsets)
-                .cast_unchecked(&DataType::String)
-                .unwrap()
-        }
-    }
-}
-
-impl ExplodeByOffsets for BinaryChunked {
-    fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
-        debug_assert_eq!(self.chunks.len(), 1);
-        let arr = self.downcast_iter().next().unwrap();
-
-        let cap = get_capacity(offsets);
-        let mut builder = BinaryChunkedBuilder::new(self.name(), cap);
-
-        let mut start = offsets[0] as usize;
-        let mut last = start;
-        for &o in &offsets[1..] {
-            let o = o as usize;
-            if o == last {
-                if start != last {
-                    let vals = arr.slice_typed(start, last - start);
-                    if vals.null_count() == 0 {
-                        builder
-                            .chunk_builder
-                            .extend_trusted_len_values(vals.values_iter())
-                    } else {
-                        builder.chunk_builder.extend_trusted_len(vals.into_iter());
-                    }
-                }
-                builder.append_null();
-                start = o;
-            }
-            last = o;
-        }
-        let vals = arr.slice_typed(start, last - start);
-        if vals.null_count() == 0 {
-            builder
-                .chunk_builder
-                .extend_trusted_len_values(vals.values_iter())
-        } else {
-            builder.chunk_builder.extend_trusted_len(vals.into_iter());
         }
         builder.finish().into()
     }

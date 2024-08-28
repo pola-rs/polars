@@ -35,7 +35,6 @@ use crate::chunked_array::metadata::MetadataTrait;
 use crate::chunked_array::ops::compare_inner::{
     IntoTotalEqInner, IntoTotalOrdInner, TotalEqInner, TotalOrdInner,
 };
-use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::AsSinglePtr;
 
 // Utility wrapper struct
@@ -88,10 +87,6 @@ macro_rules! impl_dyn_series {
 
             fn _set_flags(&mut self, flags: MetadataFlags) {
                 self.0.set_flags(flags)
-            }
-
-            fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
-                self.0.explode_by_offsets(offsets)
             }
 
             unsafe fn equal_element(

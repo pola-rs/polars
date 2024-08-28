@@ -29,13 +29,6 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
         self.0.dtype()
     }
 
-    fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
-        self.0
-            .explode_by_offsets(offsets)
-            .into_duration(self.0.time_unit())
-            .into_series()
-    }
-
     fn _set_flags(&mut self, flags: MetadataFlags) {
         self.0.deref_mut().set_flags(flags)
     }

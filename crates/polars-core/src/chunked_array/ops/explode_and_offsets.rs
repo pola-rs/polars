@@ -3,10 +3,13 @@ use arrow::offset::OffsetsBuffer;
 
 use super::*;
 
-
 impl ListChunked {
-    fn specialized(&self, values: ArrayRef, offsets: &[i64], offsets_buf: OffsetsBuffer<i64>) -> (Series, OffsetsBuffer<i64>) {
-
+    fn specialized(
+        &self,
+        values: ArrayRef,
+        offsets: &[i64],
+        offsets_buf: OffsetsBuffer<i64>,
+    ) -> (Series, OffsetsBuffer<i64>) {
         // SAFETY: inner_dtype should be correct
         let values = unsafe {
             Series::from_chunks_and_dtype_unchecked(
@@ -17,10 +20,23 @@ impl ListChunked {
         };
 
         use crate::chunked_array::ops::explode::ExplodeByOffsets;
-        let mut values = with_match_physical_numeric_polars_type!(values.dtype(), |$T| {
+
+        let mut values = match values.dtype() {
+            DataType::Boolean => {
+                let t = values.bool().unwrap();
+                ExplodeByOffsets::explode_by_offsets(t, offsets).into_series()
+            },
+            DataType::Null => {
+                let t = values.null().unwrap();
+                ExplodeByOffsets::explode_by_offsets(t, offsets).into_series()
+            },
+            dtype => {
+                with_match_physical_numeric_polars_type!(dtype, |$T| {
                     let t: &ChunkedArray<$T> = values.as_ref().as_ref();
                     ExplodeByOffsets::explode_by_offsets(t, offsets).into_series()
-                });
+                })
+            },
+        };
 
         // let mut values = values.explode_by_offsets(offsets);
         // restore logical type
@@ -40,7 +56,6 @@ impl ChunkExplode for ListChunked {
 
         Ok(offsets)
     }
-
 
     fn explode_and_offsets(&self) -> PolarsResult<(Series, OffsetsBuffer<i64>)> {
         // A list array's memory layout is actually already 'exploded', so we can just take the
@@ -97,10 +112,10 @@ impl ChunkExplode for ListChunked {
             let (indices, new_offsets) = if listarr.null_count() == 0 {
                 // SPECIALIZED path.
                 let inner_phys = self.inner_dtype().to_physical();
-                if inner_phys.is_numeric() || inner_phys.is_null() {
-                    return Ok(self.specialized(values, offsets, offsets_buf))
+                if inner_phys.is_numeric() || inner_phys.is_null() || inner_phys.is_bool() {
+                    return Ok(self.specialized(values, offsets, offsets_buf));
                 }
-
+                // Use gather
                 let mut indices =
                     MutablePrimitiveArray::<IdxSize>::with_capacity(*offsets_buf.last() as usize);
                 let mut new_offsets = Vec::with_capacity(listarr.len() + 1);

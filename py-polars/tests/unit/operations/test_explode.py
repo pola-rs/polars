@@ -167,7 +167,7 @@ def test_list_struct_explode_6905() -> None:
         },
         schema={"group": pl.List(pl.Struct([pl.Field("params", pl.List(pl.Int32))]))},
     )["group"].list.explode().to_list() == [
-        {"params": None},
+        None,
         {"params": [1]},
         {"params": []},
     ]

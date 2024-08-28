@@ -23,10 +23,6 @@ macro_rules! impl_dyn_series {
             fn _get_flags(&self) -> MetadataFlags {
                 self.0.get_flags()
             }
-            fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
-                self.0.explode_by_offsets(offsets)
-            }
-
             unsafe fn equal_element(
                 &self,
                 idx_self: usize,

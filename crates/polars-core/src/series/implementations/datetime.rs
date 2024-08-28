@@ -32,13 +32,6 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
         self.0.set_flags(flags)
     }
 
-    fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
-        self.0
-            .explode_by_offsets(offsets)
-            .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
-            .into_series()
-    }
-
     #[cfg(feature = "zip_with")]
     fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> PolarsResult<Series> {
         let other = other.to_physical_repr().into_owned();
