@@ -1,6 +1,6 @@
+use num::{One, Zero};
 use polars_core::export::num;
 use polars_core::with_match_physical_numeric_polars_type;
-use num::{Zero, One};
 
 use super::*;
 
@@ -16,7 +16,7 @@ pub(super) fn sign(s: &Series) -> PolarsResult<Series> {
 fn sign_impl<T>(ca: &ChunkedArray<T>) -> Series
 where
     T: PolarsNumericType,
-    ChunkedArray<T>: IntoSeries
+    ChunkedArray<T>: IntoSeries,
 {
     ca.apply_values(|x| {
         if x < T::Native::zero() {
@@ -29,5 +29,6 @@ where
             // care about the latter).
             x
         }
-    }).into_series()
+    })
+    .into_series()
 }
