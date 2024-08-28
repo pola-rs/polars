@@ -760,3 +760,13 @@ pub fn freeze_validity(validity: MutableBitmap) -> Option<Bitmap> {
 
     Some(validity)
 }
+
+pub(crate) fn hybrid_rle_count_zeros(
+    decoder: &hybrid_rle::HybridRleDecoder<'_>,
+) -> ParquetResult<usize> {
+    let mut count = ZeroCount::default();
+    decoder
+        .clone()
+        .gather_into(&mut count, &ZeroCountGatherer)?;
+    Ok(count.num_zero)
+}
