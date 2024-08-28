@@ -562,7 +562,7 @@ fn test_simplify_expr() {
         plan,
         &mut expr_arena,
         &mut lp_arena,
-        &mut OptFlags::schema_only(),
+        &mut OptFlags::default(),
     )
     .unwrap();
     let plan = node_to_lp(lp_top, &expr_arena, &mut lp_arena);
