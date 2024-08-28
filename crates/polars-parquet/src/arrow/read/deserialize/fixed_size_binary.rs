@@ -134,8 +134,8 @@ impl Decoder for BinaryDecoder {
         )
     }
 
-    fn deserialize_dict(&self, page: DictPage) -> Self::Dict {
-        page.buffer.into_vec()
+    fn deserialize_dict(&self, page: DictPage) -> ParquetResult<Self::Dict> {
+        Ok(page.buffer.into_vec())
     }
 
     fn decode_plain_encoded<'a>(

@@ -41,11 +41,8 @@ impl<'a> utils::StateTranslation<'a, BinViewDecoder> for StateTranslation<'a> {
 
                 Ok(Self::Plain(values))
             },
-            (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict)) => {
+            (Encoding::PlainDictionary | Encoding::RleDictionary, Some(_)) => {
                 let values = dict_indices_decoder(page)?;
-                if is_string {
-                    arrow::array::validate_utf8_view(dict.0.as_ref(), dict.1.as_ref())?;
-                }
                 Ok(Self::Dictionary(values))
             },
             (Encoding::DeltaLengthByteArray, _) => {
@@ -536,7 +533,7 @@ impl utils::Decoder for BinViewDecoder {
         Ok(())
     }
 
-    fn deserialize_dict(&self, page: DictPage) -> Self::Dict {
+    fn deserialize_dict(&self, page: DictPage) -> ParquetResult<Self::Dict> {
         let values = &page.buffer;
         let num_values = page.num_values;
 
@@ -549,9 +546,12 @@ impl utils::Decoder for BinViewDecoder {
         let mut buffers = Vec::with_capacity(1);
 
         let mut offset = 0;
-        for v in BinaryIter::new(values, num_values) {
-            if v.len() <= View::MAX_INLINE_SIZE as usize {
-                views.push(View::new_inline(v));
+        let mut max_length = 0;
+        views.extend(BinaryIter::new(values, num_values).map(|v| {
+            let length = v.len();
+            max_length = usize::max(length, max_length);
+            if length <= View::MAX_INLINE_SIZE as usize {
+                View::new_inline(v)
             } else {
                 if offset >= u32::MAX as usize {
                     let full_buffer = std::mem::take(&mut buffer);
@@ -562,14 +562,32 @@ impl utils::Decoder for BinViewDecoder {
                 }
 
                 buffer.extend_from_slice(v);
-                views.push(View::new_from_bytes(v, buffers.len() as u32, offset as u32));
+                let view = View::new_from_bytes(v, buffers.len() as u32, offset as u32);
                 offset += v.len();
+                view
             }
-        }
+        }));
 
         buffers.push(Buffer::from(buffer));
 
-        (views, buffers)
+        if self.check_utf8.load(Ordering::Relaxed) {
+            // This is a small trick that allows us to check the Parquet buffer instead of the view
+            // buffer. Batching the UTF-8 verification is more performant. For this to be allowed,
+            // all the interleaved lengths need to be valid UTF-8.
+            //
+            // Every strings prepended by 4 bytes (L, 0, 0, 0), since we check here L < 128. L is
+            // only a valid first byte of a UTF-8 code-point and (L, 0, 0, 0) is valid UTF-8.
+            // Consequently, it is valid to just check the whole buffer.
+            if max_length < 128 {
+                simdutf8::basic::from_utf8(values)
+                    .map_err(|_| ParquetError::oos("String data contained invalid UTF-8"))?;
+            } else {
+                arrow::array::validate_utf8_view(&views, &buffers)
+                    .map_err(|_| ParquetError::oos("String data contained invalid UTF-8"))?;
+            }
+        }
+
+        Ok((views, buffers))
     }
 
     fn decode_plain_encoded<'a>(
@@ -641,6 +659,10 @@ impl utils::Decoder for BinViewDecoder {
             // This is a small trick that allows us to check the Parquet buffer instead of the view
             // buffer. Batching the UTF-8 verification is more performant. For this to be allowed,
             // all the interleaved lengths need to be valid UTF-8.
+            //
+            // Every strings prepended by 4 bytes (L, 0, 0, 0), since we check here L < 128. L is
+            // only a valid first byte of a UTF-8 code-point and (L, 0, 0, 0) is valid UTF-8.
+            // Consequently, it is valid to just check the whole buffer.
             if max_length < 128 {
                 simdutf8::basic::from_utf8(buffer)
                     .map_err(|_| ParquetError::oos("String data contained invalid UTF-8"))?;

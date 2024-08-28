@@ -341,8 +341,8 @@ where
         )
     }
 
-    fn deserialize_dict(&self, page: DictPage) -> Self::Dict {
-        deserialize_plain::<P, T, D>(&page.buffer, self.decoder)
+    fn deserialize_dict(&self, page: DictPage) -> ParquetResult<Self::Dict> {
+        Ok(deserialize_plain::<P, T, D>(&page.buffer, self.decoder))
     }
 
     fn decode_plain_encoded<'a>(

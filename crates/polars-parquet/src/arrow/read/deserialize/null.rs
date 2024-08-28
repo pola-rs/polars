@@ -67,7 +67,9 @@ impl utils::Decoder for NullDecoder {
         NullArrayLength { length: 0 }
     }
 
-    fn deserialize_dict(&self, _: DictPage) -> Self::Dict {}
+    fn deserialize_dict(&self, _: DictPage) -> ParquetResult<Self::Dict> {
+        Ok(())
+    }
 
     fn decode_plain_encoded<'a>(
         &mut self,

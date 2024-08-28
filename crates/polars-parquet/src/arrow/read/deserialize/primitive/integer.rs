@@ -253,7 +253,7 @@ where
         self.0.with_capacity(capacity)
     }
 
-    fn deserialize_dict(&self, page: DictPage) -> Self::Dict {
+    fn deserialize_dict(&self, page: DictPage) -> ParquetResult<Self::Dict> {
         self.0.deserialize_dict(page)
     }
 

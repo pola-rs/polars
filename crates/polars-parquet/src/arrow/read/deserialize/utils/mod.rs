@@ -586,7 +586,7 @@ pub(super) trait Decoder: Sized {
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState;
 
     /// Deserializes a [`DictPage`] into [`Self::Dict`].
-    fn deserialize_dict(&self, page: DictPage) -> Self::Dict;
+    fn deserialize_dict(&self, page: DictPage) -> ParquetResult<Self::Dict>;
 
     fn apply_dictionary(
         &mut self,
@@ -675,7 +675,7 @@ impl<D: Decoder> PageDecoder<D> {
         decoder: D,
     ) -> ParquetResult<Self> {
         let dict_page = iter.read_dict_page()?;
-        let dict = dict_page.map(|d| decoder.deserialize_dict(d));
+        let dict = dict_page.map(|d| decoder.deserialize_dict(d)).transpose()?;
 
         Ok(Self {
             iter,
