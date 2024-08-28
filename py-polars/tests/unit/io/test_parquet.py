@@ -1659,6 +1659,62 @@ def test_nested_skip_18303(
     assert_frame_equal(scanned, pl.DataFrame(tb).slice(1, 1))
 
 
+def test_nested_span_multiple_pages_18400() -> None:
+    width = 4100
+    df = pl.DataFrame(
+        [
+            pl.Series(
+                "a",
+                [
+                    list(range(width)),
+                    list(range(width)),
+                ],
+                pl.Array(pl.Int64, width),
+            ),
+        ]
+    )
+
+    f = io.BytesIO()
+    pq.write_table(
+        df.to_arrow(),
+        f,
+        use_dictionary=False,
+        data_page_size=1024,
+        column_encoding={"a": "PLAIN"},
+    )
+
+    f.seek(0)
+    assert_frame_equal(df.head(1), pl.read_parquet(f, n_rows=1))
+
+
+@given(
+    df=dataframes(
+        min_size=0,
+        max_size=1000,
+        min_cols=2,
+        max_cols=5,
+        excluded_dtypes=[pl.Decimal, pl.Categorical, pl.Enum, pl.Array],
+        include_cols=[column("filter_col", pl.Boolean, allow_null=False)],
+    ),
+)
+@pytest.mark.write_disk()
+@settings(
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
+def test_parametric_small_page_mask_filtering(
+    tmp_path: Path,
+    df: pl.DataFrame,
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    f = tmp_path / "test.parquet"
+
+    df.write_parquet(f, data_page_size=1024)
+
+    expr = pl.col("filter_col")
+    result = pl.scan_parquet(f, parallel="prefiltered").filter(expr).collect()
+    assert_frame_equal(result, df.filter(expr))
+
+
 @given(
     df=dataframes(
         min_size=0,
