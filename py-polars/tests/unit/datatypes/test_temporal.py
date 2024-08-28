@@ -2294,7 +2294,7 @@ def test_weekday_vs_stdlib_datetime(
 ) -> None:
     result = (
         pl.Series([value], dtype=pl.Datetime(time_unit))
-        .dt.replace_time_zone(time_zone, non_existent="null")
+        .dt.replace_time_zone(time_zone, non_existent="null", ambiguous="null")
         .dt.weekday()
         .item()
     )
