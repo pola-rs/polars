@@ -431,9 +431,9 @@ impl DslBuilder {
             function: DslFunction::OpaquePython(OpaquePythonUdf {
                 function,
                 schema,
-                predicate_pd: optimizations.contains(OptState::PREDICATE_PUSHDOWN),
-                projection_pd: optimizations.contains(OptState::PROJECTION_PUSHDOWN),
-                streamable: optimizations.contains(OptState::STREAMING),
+                predicate_pd: optimizations.contains(OptFlags::PREDICATE_PUSHDOWN),
+                projection_pd: optimizations.contains(OptFlags::PROJECTION_PUSHDOWN),
+                streamable: optimizations.contains(OptFlags::STREAMING),
                 validate_output,
             }),
         }
@@ -457,9 +457,9 @@ impl DslBuilder {
             function: DslFunction::FunctionIR(FunctionIR::Opaque {
                 function,
                 schema,
-                predicate_pd: optimizations.contains(OptState::PREDICATE_PUSHDOWN),
-                projection_pd: optimizations.contains(OptState::PROJECTION_PUSHDOWN),
-                streamable: optimizations.contains(OptState::STREAMING),
+                predicate_pd: optimizations.contains(OptFlags::PREDICATE_PUSHDOWN),
+                projection_pd: optimizations.contains(OptFlags::PROJECTION_PUSHDOWN),
+                streamable: optimizations.contains(OptFlags::STREAMING),
                 fmt_str: name.into(),
             }),
         }

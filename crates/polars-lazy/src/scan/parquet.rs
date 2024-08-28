@@ -83,7 +83,7 @@ impl LazyFileListReader for LazyParquetReader {
             lf = lf.with_row_index(&row_index.name, Some(row_index.offset))
         }
 
-        lf.opt_state |= OptState::FILE_CACHING;
+        lf.opt_state |= OptFlags::FILE_CACHING;
         Ok(lf)
     }
 
