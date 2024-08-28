@@ -4,7 +4,7 @@ use polars_core::prelude::arity::unary_elementwise;
 use polars_core::prelude::*;
 
 // Vertically concatenate all strings in a StringChunked.
-pub fn str_join(ca: &StringChunked, delimiter: &str, ignore_nulls: bool) -> StringChunked {
+pub fn str_join(ca: &StringChunked, separator: &str, ignore_nulls: bool) -> StringChunked {
     if ca.is_empty() {
         return StringChunked::new(ca.name(), &[""]);
     }
@@ -24,14 +24,14 @@ pub fn str_join(ca: &StringChunked, delimiter: &str, ignore_nulls: bool) -> Stri
     }
 
     // Calculate capacity.
-    let capacity = ca.get_values_size() + delimiter.len() * (ca.len() - 1);
+    let capacity = ca.get_values_size() + separator.len() * (ca.len() - 1);
 
     let mut buf = String::with_capacity(capacity);
     let mut first = true;
     ca.for_each(|val| {
         if let Some(val) = val {
             if !first {
-                buf.push_str(delimiter);
+                buf.push_str(separator);
             }
             buf.push_str(val);
             first = false;
@@ -57,7 +57,7 @@ enum ColumnIter<I, T> {
 /// Each array should have length 1 or a length equal to the maximum length.
 pub fn hor_str_concat(
     cas: &[&StringChunked],
-    delimiter: &str,
+    separator: &str,
     ignore_nulls: bool,
 ) -> PolarsResult<StringChunked> {
     if cas.is_empty() {
@@ -115,7 +115,7 @@ pub fn hor_str_concat(
 
             if let Some(s) = val {
                 if found_not_null_value {
-                    buf.push_str(delimiter);
+                    buf.push_str(separator);
                 }
                 buf.push_str(s);
                 found_not_null_value = true;

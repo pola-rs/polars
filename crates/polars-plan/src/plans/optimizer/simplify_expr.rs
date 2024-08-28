@@ -325,7 +325,7 @@ fn string_addition_to_linear_concat(
                         input: input_left,
                         function:
                             ref fun_l @ FunctionExpr::StringExpr(StringFunction::ConcatHorizontal {
-                                delimiter: sep_l,
+                                separator: sep_l,
                                 ignore_nulls: ignore_nulls_l,
                             }),
                         options,
@@ -334,7 +334,7 @@ fn string_addition_to_linear_concat(
                         input: input_right,
                         function:
                             FunctionExpr::StringExpr(StringFunction::ConcatHorizontal {
-                                delimiter: sep_r,
+                                separator: sep_r,
                                 ignore_nulls: ignore_nulls_r,
                             }),
                         ..
@@ -359,7 +359,7 @@ fn string_addition_to_linear_concat(
                         input,
                         function:
                             ref fun @ FunctionExpr::StringExpr(StringFunction::ConcatHorizontal {
-                                delimiter: sep,
+                                separator: sep,
                                 ignore_nulls,
                             }),
                         options,
@@ -385,7 +385,7 @@ fn string_addition_to_linear_concat(
                         input: input_right,
                         function:
                             ref fun @ FunctionExpr::StringExpr(StringFunction::ConcatHorizontal {
-                                delimiter: sep,
+                                separator: sep,
                                 ignore_nulls,
                             }),
                         options,
@@ -407,7 +407,7 @@ fn string_addition_to_linear_concat(
                 _ => Some(AExpr::Function {
                     input: vec![left_e, right_e],
                     function: StringFunction::ConcatHorizontal {
-                        delimiter: "".to_string(),
+                        separator: "".to_string(),
                         ignore_nulls: false,
                     }
                     .into(),

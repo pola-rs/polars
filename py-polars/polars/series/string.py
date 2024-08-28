@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Mapping
 
-from polars._utils.deprecation import deprecate_function
+from polars._utils.deprecation import deprecate_function, deprecate_renamed_parameter
 from polars._utils.unstable import unstable
 from polars._utils.various import no_default
 from polars.datatypes.constants import N_INFER_DEFAULT
@@ -1996,14 +1996,17 @@ class StringNameSpace:
 
         """
 
-    def join(self, delimiter: str = "", *, ignore_nulls: bool = True) -> Series:
+    @deprecate_renamed_parameter(
+        old_name="delimiter", new_name="separator", version="1.6.0"
+    )
+    def join(self, separator: str = "", *, ignore_nulls: bool = True) -> Series:
         """
         Vertically concatenate the string values in the column to a single string value.
 
         Parameters
         ----------
-        delimiter
-            The delimiter to insert between consecutive string values.
+        separator
+            The separator to insert between consecutive string values.
         ignore_nulls
             Ignore null values (default).
             If set to `False`, null values will be propagated. This means that
@@ -2036,8 +2039,11 @@ class StringNameSpace:
         " is an empty string instead of a hyphen.",
         version="1.0.0",
     )
+    @deprecate_renamed_parameter(
+        old_name="delimiter", new_name="separator", version="1.6.0"
+    )
     def concat(
-        self, delimiter: str | None = None, *, ignore_nulls: bool = True
+        self, separator: str | None = None, *, ignore_nulls: bool = True
     ) -> Series:
         """
         Vertically concatenate the string values in the column to a single string value.
@@ -2048,8 +2054,8 @@ class StringNameSpace:
 
         Parameters
         ----------
-        delimiter
-            The delimiter to insert between consecutive string values.
+        separator
+            The separator to insert between consecutive string values.
         ignore_nulls
             Ignore null values (default).
             If set to `False`, null values will be propagated. This means that

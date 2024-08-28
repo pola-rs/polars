@@ -759,20 +759,20 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 },
                 FunctionExpr::StringExpr(strfun) => match strfun {
                     StringFunction::ConcatHorizontal {
-                        delimiter,
+                        separator,
                         ignore_nulls,
                     } => (
                         PyStringFunction::ConcatHorizontal.into_py(py),
-                        delimiter,
+                        separator,
                         ignore_nulls,
                     )
                         .to_object(py),
                     StringFunction::ConcatVertical {
-                        delimiter,
+                        separator,
                         ignore_nulls,
                     } => (
                         PyStringFunction::ConcatVertical.into_py(py),
-                        delimiter,
+                        separator,
                         ignore_nulls,
                     )
                         .to_object(py),

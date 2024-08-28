@@ -41,7 +41,7 @@ pub(super) fn optimize_functions(
         // flatten nested concat_str calls
         #[cfg(all(feature = "strings", feature = "concat_str"))]
         function @ FunctionExpr::StringExpr(StringFunction::ConcatHorizontal {
-            delimiter: sep,
+            separator: sep,
             ignore_nulls,
         }) if sep.is_empty() => {
             if input
@@ -258,7 +258,7 @@ pub(super) fn optimize_functions(
 fn is_string_concat(ae: &AExpr, ignore_nulls: bool) -> bool {
     matches!(ae, AExpr::Function {
                 function:FunctionExpr::StringExpr(
-                    StringFunction::ConcatHorizontal{delimiter: sep, ignore_nulls: func_inore_nulls},
+                    StringFunction::ConcatHorizontal{separator: sep, ignore_nulls: func_inore_nulls},
                 ),
                 ..
             } if sep.is_empty() && *func_inore_nulls == ignore_nulls)
@@ -275,7 +275,7 @@ fn get_string_concat_input(
             input,
             function:
                 FunctionExpr::StringExpr(StringFunction::ConcatHorizontal {
-                    delimiter: sep,
+                    separator: sep,
                     ignore_nulls: func_ignore_nulls,
                 }),
             ..

@@ -7,6 +7,7 @@ import polars._reexport as pl
 from polars import functions as F
 from polars._utils.deprecation import (
     deprecate_function,
+    deprecate_renamed_parameter,
     issue_deprecation_warning,
 )
 from polars._utils.parse import parse_into_expression
@@ -2681,14 +2682,17 @@ class ExprStringNameSpace:
             self._pyexpr.str_extract_many(patterns, ascii_case_insensitive, overlapping)
         )
 
-    def join(self, delimiter: str = "", *, ignore_nulls: bool = True) -> Expr:
+    @deprecate_renamed_parameter(
+        old_name="delimiter", new_name="separator", version="1.6.0"
+    )
+    def join(self, separator: str = "", *, ignore_nulls: bool = True) -> Expr:
         """
         Vertically concatenate the string values in the column to a single string value.
 
         Parameters
         ----------
-        delimiter
-            The delimiter to insert between consecutive string values.
+        separator
+            The separator to insert between consecutive string values.
         ignore_nulls
             Ignore null values (default).
             If set to `False`, null values will be propagated. This means that
@@ -2721,22 +2725,25 @@ class ExprStringNameSpace:
         │ null │
         └──────┘
         """
-        return wrap_expr(self._pyexpr.str_join(delimiter, ignore_nulls=ignore_nulls))
+        return wrap_expr(self._pyexpr.str_join(separator, ignore_nulls=ignore_nulls))
 
+    @deprecate_renamed_parameter(
+        old_name="delimiter", new_name="separator", version="1.6.0"
+    )
     def concat(
-        self, delimiter: str | None = None, *, ignore_nulls: bool = True
+        self, separator: str | None = None, *, ignore_nulls: bool = True
     ) -> Expr:
         """
         Vertically concatenate the string values in the column to a single string value.
 
         .. deprecated:: 1.0.0
-            Use :meth:`join` instead. Note that the default `delimiter` for :meth:`join`
+            Use :meth:`join` instead. Note that the default `separator` for :meth:`join`
             is an empty string instead of a hyphen.
 
         Parameters
         ----------
-        delimiter
-            The delimiter to insert between consecutive string values.
+        separator
+            The separator to insert between consecutive string values.
         ignore_nulls
             Ignore null values (default).
             If set to `False`, null values will be propagated. This means that
@@ -2771,14 +2778,14 @@ class ExprStringNameSpace:
         │ null │
         └──────┘
         """
-        if delimiter is None:
+        if separator is None:
             issue_deprecation_warning(
-                "The default `delimiter` for `str.concat` will change from '-' to an empty string."
-                " Pass a delimiter to silence this warning.",
+                "The default `separator` for `str.concat` will change from '-' to an empty string."
+                " Pass a separator to silence this warning.",
                 version="0.20.5",
             )
-            delimiter = "-"
-        return self.join(delimiter, ignore_nulls=ignore_nulls)
+            separator = "-"
+        return self.join(separator, ignore_nulls=ignore_nulls)
 
 
 def _validate_format_argument(format: str | None) -> None:

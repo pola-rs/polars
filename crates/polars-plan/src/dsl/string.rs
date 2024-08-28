@@ -327,13 +327,13 @@ impl StringNameSpace {
     /// Concat the values into a string array.
     /// # Arguments
     ///
-    /// * `delimiter` - A string that will act as delimiter between values.
+    /// * `separator` - A string that will act as separator between values.
     #[cfg(feature = "concat_str")]
-    pub fn join(self, delimiter: &str, ignore_nulls: bool) -> Expr {
+    pub fn join(self, separator: &str, ignore_nulls: bool) -> Expr {
         self.0
             .apply_private(
                 StringFunction::ConcatVertical {
-                    delimiter: delimiter.to_owned(),
+                    separator: separator.to_owned(),
                     ignore_nulls,
                 }
                 .into(),
