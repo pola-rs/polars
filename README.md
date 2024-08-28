@@ -106,11 +106,11 @@ shape: (5, 8)
 >>> ## OPTION 1
 >>> # run SQL queries on frame-level
 >>> df.sql("""
-...	SELECT species,
-...	  AVG(sepal_length) AS avg_sepal_length
-...	FROM self
-...	GROUP BY species
-...	""").collect()
+... SELECT species,
+...   AVG(sepal_length) AS avg_sepal_length
+... FROM self
+... GROUP BY species
+... """).collect()
 shape: (3, 2)
 ┌────────────┬──────────────────┐
 │ species    ┆ avg_sepal_length │
@@ -157,7 +157,7 @@ Refer to the [Polars CLI repository](https://github.com/pola-rs/polars-cli) for 
 
 ### Blazingly fast
 
-Polars is very fast. In fact, it is one of the best performing solutions available. See the [TPC-H benchmarks](https://www.pola.rs/benchmarks.html) results.
+Polars is very fast. In fact, it is one of the best performing solutions available. See the [PDS-H benchmarks](https://www.pola.rs/benchmarks.html) results.
 
 ### Lightweight
 
@@ -247,9 +247,9 @@ can `pip install polars` and `import polars`.
 ## Using custom Rust functions in Python
 
 Extending Polars with UDFs compiled in Rust is easy. We expose PyO3 extensions for `DataFrame` and `Series`
-data structures. See more in https://github.com/pola-rs/pyo3-polars.
+data structures. See more in <https://github.com/pola-rs/pyo3-polars>.
 
-## Going big...
+## Going big
 
 Do you expect more than 2^32 (~4.2 billion) rows? Compile Polars with the `bigidx` feature
 flag or, for Python users, install `pip install polars-u64-idx`.
