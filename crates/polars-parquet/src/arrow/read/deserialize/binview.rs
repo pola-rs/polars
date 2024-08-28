@@ -90,6 +90,7 @@ impl<'a> utils::StateTranslation<'a, BinViewDecoder> for StateTranslation<'a> {
         &mut self,
         decoder: &mut BinViewDecoder,
         decoded: &mut <BinViewDecoder as utils::Decoder>::DecodedState,
+        is_optional: bool,
         page_validity: &mut Option<utils::PageValidity<'a>>,
         dict: Option<&'a <BinViewDecoder as utils::Decoder>::Dict>,
         additional: usize,
@@ -104,6 +105,7 @@ impl<'a> utils::StateTranslation<'a, BinViewDecoder> for StateTranslation<'a> {
                 decoder.decode_plain_encoded(
                     decoded,
                     page_values,
+                    is_optional,
                     page_validity.as_mut(),
                     additional,
                 )?;
@@ -117,6 +119,7 @@ impl<'a> utils::StateTranslation<'a, BinViewDecoder> for StateTranslation<'a> {
                 decoder.decode_dictionary_encoded(
                     decoded,
                     page,
+                    is_optional,
                     page_validity.as_mut(),
                     dict,
                     additional,
@@ -135,7 +138,13 @@ impl<'a> utils::StateTranslation<'a, BinViewDecoder> for StateTranslation<'a> {
                 };
 
                 match page_validity {
-                    None => (&mut collector).push_n(values, additional)?,
+                    None => {
+                        (&mut collector).push_n(values, additional)?;
+
+                        if is_optional {
+                            validity.extend_constant(additional, true);
+                        }
+                    },
                     Some(page_validity) => extend_from_decoder(
                         validity,
                         page_validity,
@@ -155,7 +164,13 @@ impl<'a> utils::StateTranslation<'a, BinViewDecoder> for StateTranslation<'a> {
                 };
 
                 match page_validity {
-                    None => collector.push_n(values, additional)?,
+                    None => {
+                        collector.push_n(values, additional)?;
+
+                        if is_optional {
+                            validity.extend_constant(additional, true);
+                        }
+                    },
                     Some(page_validity) => extend_from_decoder(
                         validity,
                         page_validity,
@@ -594,6 +609,7 @@ impl utils::Decoder for BinViewDecoder {
         &mut self,
         (values, validity): &mut Self::DecodedState,
         page_values: &mut <Self::Translation<'a> as utils::StateTranslation<'a, Self>>::PlainDecoder,
+        is_optional: bool,
         page_validity: Option<&mut PageValidity<'a>>,
         limit: usize,
     ) -> ParquetResult<()> {
@@ -647,7 +663,13 @@ impl utils::Decoder for BinViewDecoder {
         };
 
         match page_validity {
-            None => collector.push_n(values, limit)?,
+            None => {
+                collector.push_n(values, limit)?;
+
+                if is_optional {
+                    validity.extend_constant(limit, true);
+                }
+            },
             Some(page_validity) => {
                 extend_from_decoder(validity, page_validity, Some(limit), values, collector)?
             },
@@ -680,6 +702,7 @@ impl utils::Decoder for BinViewDecoder {
         &mut self,
         (values, validity): &mut Self::DecodedState,
         page_values: &mut hybrid_rle::HybridRleDecoder<'a>,
+        is_optional: bool,
         page_validity: Option<&mut PageValidity<'a>>,
         dict: &Self::Dict,
         limit: usize,
@@ -769,6 +792,10 @@ impl utils::Decoder for BinViewDecoder {
         match page_validity {
             None => {
                 page_values.gather_n_into(values, limit, &translator)?;
+
+                if is_optional {
+                    validity.extend_constant(limit, true);
+                }
             },
             Some(page_validity) => {
                 struct Collector<'a, 'b> {

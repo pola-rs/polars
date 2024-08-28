@@ -1715,6 +1715,35 @@ def test_parametric_small_page_mask_filtering(
     assert_frame_equal(result, df.filter(expr))
 
 
+@pytest.mark.parametrize(
+    "value",
+    [
+        "abcd",
+        0,
+        0.0,
+        False,
+    ],
+)
+def test_different_page_validity_across_pages(value: str | int | float | bool) -> None:
+    df = pl.DataFrame(
+        {
+            "a": [None] + [value] * 4000,
+        }
+    )
+
+    f = io.BytesIO()
+    pq.write_table(
+        df.to_arrow(),
+        f,
+        use_dictionary=False,
+        data_page_size=1024,
+        column_encoding={"a": "PLAIN"},
+    )
+
+    f.seek(0)
+    assert_frame_equal(df, pl.read_parquet(f))
+
+
 @given(
     df=dataframes(
         min_size=0,

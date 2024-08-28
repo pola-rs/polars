@@ -47,6 +47,7 @@ impl<'a, K: DictionaryKey, D: utils::DictDecodable> StateTranslation<'a, Diction
         &mut self,
         decoder: &mut DictionaryDecoder<K, D>,
         decoded: &mut <DictionaryDecoder<K, D> as Decoder>::DecodedState,
+        is_optional: bool,
         page_validity: &mut Option<PageValidity<'a>>,
         _: Option<&'a <DictionaryDecoder<K, D> as Decoder>::Dict>,
         additional: usize,
@@ -65,7 +66,13 @@ impl<'a, K: DictionaryKey, D: utils::DictDecodable> StateTranslation<'a, Diction
         };
 
         match page_validity {
-            None => collector.push_n(&mut decoded.0, additional)?,
+            None => {
+                collector.push_n(&mut decoded.0, additional)?;
+
+                if is_optional {
+                    validity.extend_constant(additional, true);
+                }
+            },
             Some(page_validity) => {
                 extend_from_decoder(validity, page_validity, Some(additional), values, collector)?
             },
@@ -129,6 +136,7 @@ impl<K: DictionaryKey, D: utils::DictDecodable> utils::Decoder for DictionaryDec
         &mut self,
         _decoded: &mut Self::DecodedState,
         _page_values: &mut <Self::Translation<'a> as StateTranslation<'a, Self>>::PlainDecoder,
+        _is_optional: bool,
         _page_validity: Option<&mut PageValidity<'a>>,
         _limit: usize,
     ) -> ParquetResult<()> {
@@ -139,6 +147,7 @@ impl<K: DictionaryKey, D: utils::DictDecodable> utils::Decoder for DictionaryDec
         &mut self,
         _decoded: &mut Self::DecodedState,
         _page_values: &mut HybridRleDecoder<'a>,
+        _is_optional: bool,
         _page_validity: Option<&mut PageValidity<'a>>,
         _dict: &Self::Dict,
         _limit: usize,

@@ -204,6 +204,7 @@ where
         &mut self,
         decoder: &mut PrimitiveDecoder<P, T, D>,
         decoded: &mut <PrimitiveDecoder<P, T, D> as utils::Decoder>::DecodedState,
+        is_optional: bool,
         page_validity: &mut Option<PageValidity<'a>>,
         dict: Option<&'a <PrimitiveDecoder<P, T, D> as utils::Decoder>::Dict>,
         additional: usize,
@@ -212,12 +213,14 @@ where
             Self::Plain(page_values) => decoder.decode_plain_encoded(
                 decoded,
                 page_values,
+                is_optional,
                 page_validity.as_mut(),
                 additional,
             )?,
             Self::Dictionary(ref mut page) => decoder.decode_dictionary_encoded(
                 decoded,
                 page,
+                is_optional,
                 page_validity.as_mut(),
                 dict.unwrap(),
                 additional,
@@ -232,6 +235,10 @@ where
                                 .iter_converted(|v| decoder.decoder.decode(decode(v)))
                                 .take(additional),
                         );
+
+                        if is_optional {
+                            validity.extend_constant(additional, true);
+                        }
                     },
                     Some(page_validity) => utils::extend_from_decoder(
                         validity,
@@ -349,6 +356,7 @@ where
         &mut self,
         (values, validity): &mut Self::DecodedState,
         page_values: &mut <Self::Translation<'a> as utils::StateTranslation<'a, Self>>::PlainDecoder,
+        is_optional: bool,
         page_validity: Option<&mut PageValidity<'a>>,
         limit: usize,
     ) -> ParquetResult<()> {
@@ -360,6 +368,10 @@ where
                     _pd: std::marker::PhantomData,
                 }
                 .push_n(values, limit)?;
+
+                if is_optional {
+                    validity.extend_constant(limit, true);
+                }
             },
             Some(page_validity) => {
                 let collector = PlainDecoderFnCollector {
@@ -385,6 +397,7 @@ where
         &mut self,
         (values, validity): &mut Self::DecodedState,
         page_values: &mut hybrid_rle::HybridRleDecoder<'a>,
+        is_optional: bool,
         page_validity: Option<&mut PageValidity<'a>>,
         dict: &Self::Dict,
         limit: usize,
@@ -394,6 +407,10 @@ where
         match page_validity {
             None => {
                 page_values.translate_and_collect_n_into(values, limit, &translator)?;
+
+                if is_optional {
+                    validity.extend_constant(limit, true);
+                }
             },
             Some(page_validity) => {
                 let translated_hybridrle = TranslatedHybridRle::new(page_values, &translator);
