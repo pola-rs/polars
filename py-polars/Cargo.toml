@@ -9,6 +9,8 @@ crate-type = ["cdylib"]
 
 [dependencies]
 libc = { workspace = true }
+# Explicit dependency is needed to add bigidx in CI during release
+polars = { workspace = true }
 polars-python = { workspace = true, features = ["pymethods"] }
 pyo3 = { workspace = true, features = ["abi3-py38", "chrono", "extension-module", "multiple-pymethods"] }
 
