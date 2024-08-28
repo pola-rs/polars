@@ -710,6 +710,7 @@ impl LazyFrame {
                 // if it fails in a todo!() error if auto_new_streaming is set.
                 let mut new_stream_lazy = self.clone();
                 new_stream_lazy.opt_state |= OptFlags::NEW_STREAMING;
+                new_stream_lazy.opt_state &= !OptFlags::STREAMING;
                 let mut alp_plan = new_stream_lazy.to_alp_optimized()?;
                 let stream_lp_top = alp_plan.lp_arena.add(IR::Sink {
                     input: alp_plan.lp_top,
