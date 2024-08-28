@@ -457,7 +457,7 @@ impl OptimizationRule for SimplifyExprRule {
                             match expr_arena.get(drop_nulls_input_node) {
                                 AExpr::Column(_) => Some(AExpr::BinaryExpr {
                                     op: Operator::Minus,
-                                    right: expr_arena.add(make_null_count_expr!(input)),
+                                    right: expr_arena.add(AExpr::new_null_count(input)),
                                     left: expr_arena.add(AExpr::Agg(IRAggExpr::Count(
                                         drop_nulls_input_node,
                                         true,
@@ -481,7 +481,7 @@ impl OptimizationRule for SimplifyExprRule {
                         input,
                         function: FunctionExpr::Boolean(BooleanFunction::IsNull),
                         options: _,
-                    } => Some(make_null_count_expr!(input)),
+                    } => Some(AExpr::new_null_count(input)),
                     AExpr::Function {
                         input,
                         function: FunctionExpr::Boolean(BooleanFunction::IsNotNull),
@@ -494,7 +494,7 @@ impl OptimizationRule for SimplifyExprRule {
                             match expr_arena.get(is_not_null_input_node) {
                                 AExpr::Column(_) => Some(AExpr::BinaryExpr {
                                     op: Operator::Minus,
-                                    right: expr_arena.add(make_null_count_expr!(input)),
+                                    right: expr_arena.add(AExpr::new_null_count(input)),
                                     left: expr_arena.add(AExpr::Agg(IRAggExpr::Count(
                                         is_not_null_input_node,
                                         true,

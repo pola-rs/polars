@@ -427,6 +427,19 @@ impl AExpr {
     pub(crate) fn is_leaf(&self) -> bool {
         matches!(self, AExpr::Column(_) | AExpr::Literal(_) | AExpr::Len)
     }
+    pub(crate) fn new_null_count(input: &[ExprIR]) -> Self {
+        AExpr::Function {
+            input: input.to_vec(),
+            function: FunctionExpr::NullCount,
+            options: FunctionOptions {
+                collect_groups: ApplyOptions::GroupWise,
+                fmt_str: "",
+                cast_to_supertypes: None,
+                check_lengths: UnsafeBool::default(),
+                flags: FunctionFlags::ALLOW_GROUP_AWARE | FunctionFlags::RETURNS_SCALAR,
+            },
+        }
+    }
 }
 
 impl IRAggExpr {
