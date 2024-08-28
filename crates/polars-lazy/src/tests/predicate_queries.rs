@@ -102,7 +102,7 @@ fn filter_added_column_issue_2470() -> PolarsResult<()> {
 fn filter_blocked_by_map() -> PolarsResult<()> {
     let df = fruits_cars();
 
-    let allowed = OptState::default() & !OptState::PREDICATE_PUSHDOWN;
+    let allowed = OptFlags::default() & !OptFlags::PREDICATE_PUSHDOWN;
     let q = df
         .lazy()
         .map(Ok, allowed, None, None)

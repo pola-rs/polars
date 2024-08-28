@@ -18,7 +18,12 @@ impl DslPlan {
     pub fn compute_schema(&self) -> PolarsResult<SchemaRef> {
         let mut lp_arena = Default::default();
         let mut expr_arena = Default::default();
-        let node = to_alp(self.clone(), &mut expr_arena, &mut lp_arena, false, true)?;
+        let node = to_alp(
+            self.clone(),
+            &mut expr_arena,
+            &mut lp_arena,
+            &mut OptFlags::schema_only(),
+        )?;
 
         Ok(lp_arena.get(node).schema(&lp_arena).into_owned())
     }
