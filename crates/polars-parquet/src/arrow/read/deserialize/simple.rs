@@ -278,13 +278,13 @@ pub fn page_iter_to_array(
         (PhysicalType::Float, Float32) => Box::new(PageDecoder::new(
             pages,
             data_type,
-            primitive::PrimitiveDecoder::<f32, _, _>::unit(),
+            primitive::FloatDecoder::<f32, _, _>::unit(),
         )?
         .collect_n(filter)?),
         (PhysicalType::Double, Float64) => Box::new(PageDecoder::new(
             pages,
             data_type,
-            primitive::PrimitiveDecoder::<f64, _, _>::unit(),
+            primitive::FloatDecoder::<f64, _, _>::unit(),
         )?
         .collect_n(filter)?),
         // Don't compile this code with `i32` as we don't use this in polars
@@ -393,7 +393,7 @@ fn timestamp(
                 PageDecoder::new(
                     pages,
                     data_type,
-                    primitive::PrimitiveDecoder::closure(|x: [u32; 3]| int96_to_i64_ns(x)),
+                    primitive::FloatDecoder::closure(|x: [u32; 3]| int96_to_i64_ns(x)),
                 )?
                 .collect_n(filter)?,
             )),
@@ -401,7 +401,7 @@ fn timestamp(
                 PageDecoder::new(
                     pages,
                     data_type,
-                    primitive::PrimitiveDecoder::closure(|x: [u32; 3]| int96_to_i64_us(x)),
+                    primitive::FloatDecoder::closure(|x: [u32; 3]| int96_to_i64_us(x)),
                 )?
                 .collect_n(filter)?,
             )),
@@ -409,7 +409,7 @@ fn timestamp(
                 PageDecoder::new(
                     pages,
                     data_type,
-                    primitive::PrimitiveDecoder::closure(|x: [u32; 3]| int96_to_i64_ms(x)),
+                    primitive::FloatDecoder::closure(|x: [u32; 3]| int96_to_i64_ms(x)),
                 )?
                 .collect_n(filter)?,
             )),
@@ -417,7 +417,7 @@ fn timestamp(
                 PageDecoder::new(
                     pages,
                     data_type,
-                    primitive::PrimitiveDecoder::closure(|x: [u32; 3]| int96_to_i64_s(x)),
+                    primitive::FloatDecoder::closure(|x: [u32; 3]| int96_to_i64_s(x)),
                 )?
                 .collect_n(filter)?,
             )),
@@ -473,7 +473,7 @@ fn timestamp_dict<K: DictionaryKey>(
             (a, true) => PageDecoder::new(
                 pages,
                 ArrowDataType::Timestamp(TimeUnit::Nanosecond, None),
-                dictionary::DictionaryDecoder::<K, _>::new(primitive::PrimitiveDecoder::closure(
+                dictionary::DictionaryDecoder::<K, _>::new(primitive::FloatDecoder::closure(
                     |x: [u32; 3]| int96_to_i64_ns(x) * a,
                 )),
             )?
@@ -481,7 +481,7 @@ fn timestamp_dict<K: DictionaryKey>(
             (a, false) => PageDecoder::new(
                 pages,
                 ArrowDataType::Timestamp(TimeUnit::Nanosecond, None),
-                dictionary::DictionaryDecoder::<K, _>::new(primitive::PrimitiveDecoder::closure(
+                dictionary::DictionaryDecoder::<K, _>::new(primitive::FloatDecoder::closure(
                     |x: [u32; 3]| int96_to_i64_ns(x) / a,
                 )),
             )?
@@ -494,7 +494,7 @@ fn timestamp_dict<K: DictionaryKey>(
         (a, true) => PageDecoder::new(
             pages,
             data_type,
-            dictionary::DictionaryDecoder::new(primitive::PrimitiveDecoder::closure(|x: i64| {
+            dictionary::DictionaryDecoder::new(primitive::FloatDecoder::closure(|x: i64| {
                 x * a
             })),
         )?
@@ -502,7 +502,7 @@ fn timestamp_dict<K: DictionaryKey>(
         (a, false) => PageDecoder::new(
             pages,
             data_type,
-            dictionary::DictionaryDecoder::new(primitive::PrimitiveDecoder::closure(|x: i64| {
+            dictionary::DictionaryDecoder::new(primitive::FloatDecoder::closure(|x: i64| {
                 x / a
             })),
         )?
@@ -530,7 +530,7 @@ fn dict_read<K: DictionaryKey>(
                 iter,
                 data_type,
                 dictionary::DictionaryDecoder::new(
-                    primitive::PrimitiveDecoder::<i32, u8, _>::cast_as(),
+                    primitive::FloatDecoder::<i32, u8, _>::cast_as(),
                 ),
             )?
             .collect_n(filter)?,
@@ -538,7 +538,7 @@ fn dict_read<K: DictionaryKey>(
                 iter,
                 data_type,
                 dictionary::DictionaryDecoder::new(
-                    primitive::PrimitiveDecoder::<i32, u16, _>::cast_as(),
+                    primitive::FloatDecoder::<i32, u16, _>::cast_as(),
                 ),
             )?
             .collect_n(filter)?,
@@ -546,7 +546,7 @@ fn dict_read<K: DictionaryKey>(
                 iter,
                 data_type,
                 dictionary::DictionaryDecoder::new(
-                    primitive::PrimitiveDecoder::<i32, u32, _>::cast_as(),
+                    primitive::FloatDecoder::<i32, u32, _>::cast_as(),
                 ),
             )?
             .collect_n(filter)?,
@@ -554,7 +554,7 @@ fn dict_read<K: DictionaryKey>(
                 iter,
                 data_type,
                 dictionary::DictionaryDecoder::new(
-                    primitive::PrimitiveDecoder::<i64, u64, _>::cast_as(),
+                    primitive::FloatDecoder::<i64, u64, _>::cast_as(),
                 ),
             )?
             .collect_n(filter)?,
@@ -562,7 +562,7 @@ fn dict_read<K: DictionaryKey>(
                 iter,
                 data_type,
                 dictionary::DictionaryDecoder::new(
-                    primitive::PrimitiveDecoder::<i32, i8, _>::cast_as(),
+                    primitive::FloatDecoder::<i32, i8, _>::cast_as(),
                 ),
             )?
             .collect_n(filter)?,
@@ -570,7 +570,7 @@ fn dict_read<K: DictionaryKey>(
                 iter,
                 data_type,
                 dictionary::DictionaryDecoder::new(
-                    primitive::PrimitiveDecoder::<i32, i16, _>::cast_as(),
+                    primitive::FloatDecoder::<i32, i16, _>::cast_as(),
                 ),
             )?
             .collect_n(filter)?,
@@ -582,7 +582,7 @@ fn dict_read<K: DictionaryKey>(
                     iter,
                     data_type,
                     dictionary::DictionaryDecoder::new(
-                        primitive::PrimitiveDecoder::<i32, _, _>::unit(),
+                        primitive::FloatDecoder::<i32, _, _>::unit(),
                     ),
                 )?
                 .collect_n(filter)?
@@ -605,7 +605,7 @@ fn dict_read<K: DictionaryKey>(
                     iter,
                     data_type,
                     dictionary::DictionaryDecoder::new(
-                        primitive::PrimitiveDecoder::<i64, _, _>::unit(),
+                        primitive::FloatDecoder::<i64, _, _>::unit(),
                     ),
                 )?
                 .collect_n(filter)?
@@ -615,7 +615,7 @@ fn dict_read<K: DictionaryKey>(
                     iter,
                     data_type,
                     dictionary::DictionaryDecoder::new(
-                        primitive::PrimitiveDecoder::<f32, _, _>::unit(),
+                        primitive::FloatDecoder::<f32, _, _>::unit(),
                     ),
                 )?
                 .collect_n(filter)?
@@ -625,7 +625,7 @@ fn dict_read<K: DictionaryKey>(
                     iter,
                     data_type,
                     dictionary::DictionaryDecoder::new(
-                        primitive::PrimitiveDecoder::<f64, _, _>::unit(),
+                        primitive::FloatDecoder::<f64, _, _>::unit(),
                     ),
                 )?
                 .collect_n(filter)?

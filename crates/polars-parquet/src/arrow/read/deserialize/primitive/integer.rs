@@ -4,11 +4,9 @@ use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
 
 use super::super::utils;
-use super::basic::{
-    AsDecoderFunction, ClosureDecoderFunction, DecoderFunction, IntoDecoderFunction,
-    PlainDecoderFnCollector, PrimitiveDecoder, UnitDecoderFunction,
+use super::{
+    deserialize_plain, AsDecoderFunction, ClosureDecoderFunction, DecoderFunction, DeltaCollector, DeltaTranslator, IntoDecoderFunction, PlainDecoderFnCollector, PrimitiveDecoder, UnitDecoderFunction
 };
-use super::{DeltaCollector, DeltaTranslator};
 use crate::parquet::encoding::hybrid_rle::{self, DictionaryTranslator};
 use crate::parquet::encoding::{byte_stream_split, delta_bitpacked, Encoding};
 use crate::parquet::error::ParquetResult;
@@ -198,8 +196,8 @@ where
     D: DecoderFunction<P, T>,
 {
     #[inline]
-    fn new(decoder: PrimitiveDecoder<P, T, D>) -> Self {
-        Self(decoder)
+    fn new(decoder: D) -> Self {
+        Self(PrimitiveDecoder::new(decoder))
     }
 }
 
@@ -210,7 +208,7 @@ where
     UnitDecoderFunction<T>: Default + DecoderFunction<T, T>,
 {
     pub(crate) fn unit() -> Self {
-        Self::new(PrimitiveDecoder::unit())
+        Self::new(UnitDecoderFunction::<T>::default())
     }
 }
 
@@ -222,7 +220,7 @@ where
     AsDecoderFunction<P, T>: Default + DecoderFunction<P, T>,
 {
     pub(crate) fn cast_as() -> Self {
-        Self::new(PrimitiveDecoder::cast_as())
+        Self::new(AsDecoderFunction::<P, T>::default())
     }
 }
 
@@ -234,7 +232,7 @@ where
     IntoDecoderFunction<P, T>: Default + DecoderFunction<P, T>,
 {
     pub(crate) fn cast_into() -> Self {
-        Self::new(PrimitiveDecoder::cast_into())
+        Self::new(IntoDecoderFunction::<P, T>::default())
     }
 }
 
@@ -246,7 +244,7 @@ where
     F: Copy + Fn(P) -> T,
 {
     pub(crate) fn closure(f: F) -> Self {
-        Self::new(PrimitiveDecoder::closure(f))
+        Self::new(ClosureDecoderFunction(f, std::marker::PhantomData))
     }
 }
 
@@ -263,11 +261,14 @@ where
     type Output = PrimitiveArray<T>;
 
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState {
-        self.0.with_capacity(capacity)
+        (
+            Vec::<T>::with_capacity(capacity),
+            MutableBitmap::with_capacity(capacity),
+        )
     }
 
     fn deserialize_dict(&self, page: DictPage) -> ParquetResult<Self::Dict> {
-        self.0.deserialize_dict(page)
+        Ok(deserialize_plain::<P, T, D>(&page.buffer, self.0.decoder))
     }
 
     fn decode_plain_encoded<'a>(
