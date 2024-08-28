@@ -1,8 +1,6 @@
 //! this contains code used for rewriting projections, expanding wildcards, regex selection etc.
 use std::ops::BitXor;
 
-use polars_core::config::verbose;
-
 use super::*;
 
 pub(crate) fn prepare_projection(
@@ -651,6 +649,7 @@ fn toggle_cse(opt_flags: &mut OptFlags) {
     if opt_flags.contains(OptFlags::EAGER) {
         #[cfg(debug_assertions)]
         {
+            use polars_core::config::verbose;
             if verbose() {
                 eprintln!("CSE turned on because of struct expansion")
             }
