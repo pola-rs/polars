@@ -558,11 +558,13 @@ fn test_simplify_expr() {
 
     let mut expr_arena = Arena::new();
     let mut lp_arena = Arena::new();
+
+    #[allow(const_item_mutation)]
     let lp_top = to_alp(
         plan,
         &mut expr_arena,
         &mut lp_arena,
-        &mut OptFlags::default(),
+        &mut OptFlags::SIMPLIFY_EXPR,
     )
     .unwrap();
     let plan = node_to_lp(lp_top, &expr_arena, &mut lp_arena);

@@ -56,6 +56,7 @@ pub fn to_alp(
     lp: DslPlan,
     expr_arena: &mut Arena<AExpr>,
     lp_arena: &mut Arena<IR>,
+    // Only `SIMPLIFY_EXPR` and `TYPE_COERCION` are respected.
     opt_state: &mut OptFlags,
 ) -> PolarsResult<Node> {
     let conversion_optimizer = ConversionOptimizer::new(
