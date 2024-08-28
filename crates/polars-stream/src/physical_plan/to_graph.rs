@@ -138,8 +138,7 @@ fn to_graph_rec<'a>(
             let mut inputs = Vec::with_capacity(reductions.len());
 
             for e in exprs {
-                let (red, input_node) =
-                    into_reduction(e.node(), ctx.expr_arena, input_schema)?;
+                let (red, input_node) = into_reduction(e.node(), ctx.expr_arena, input_schema)?;
                 reductions.push(red);
 
                 let input_phys =

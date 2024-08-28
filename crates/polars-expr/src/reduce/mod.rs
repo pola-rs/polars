@@ -1,8 +1,8 @@
 mod convert;
 mod extrema;
+mod len;
 mod mean;
 mod sum;
-mod len;
 
 use std::any::Any;
 

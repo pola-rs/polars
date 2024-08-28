@@ -75,8 +75,8 @@ pub fn into_reduction(
                 expr_arena.add(AExpr::Literal(LiteralValue::Null))
             };
             (out, expr)
-        }
-        _ => unreachable!()
+        },
+        _ => unreachable!(),
     };
     Ok(out)
 }

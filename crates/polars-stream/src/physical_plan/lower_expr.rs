@@ -410,7 +410,8 @@ fn lower_exprs_with_ctx(
                 let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &[inner], ctx)?;
                 let exploded_name = unique_column_name();
                 let trans_inner = ctx.expr_arena.add(AExpr::Explode(trans_exprs[0]));
-                let explode_expr = ExprIR::new(trans_inner, OutputName::Alias(exploded_name.clone()));
+                let explode_expr =
+                    ExprIR::new(trans_inner, OutputName::Alias(exploded_name.clone()));
                 let output_schema = schema_for_select(trans_input, &[explode_expr.clone()], ctx)?;
                 let node_kind = PhysNodeKind::Select {
                     input: trans_input,
@@ -601,25 +602,21 @@ fn lower_exprs_with_ctx(
                 let expr_ir = ExprIR::new(expr, OutputName::Alias(out_name.clone()));
                 let output_schema = schema_for_select(input, &[expr_ir.clone()], ctx)?;
                 let kind = PhysNodeKind::Reduce {
-                    input: input,
+                    input,
                     exprs: vec![expr_ir],
                 };
                 let reduce_node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, kind));
                 input_nodes.insert(reduce_node_key);
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
             },
-            AExpr::AnonymousFunction {
-                ..
-            }
-            | AExpr::Function {
-                ..
-            }
+            AExpr::AnonymousFunction { .. }
+            | AExpr::Function { .. }
             | AExpr::Slice { .. }
             | AExpr::Window { .. } => {
                 let out_name = unique_column_name();
                 fallback_subset.push(ExprIR::new(expr, OutputName::Alias(out_name.clone())));
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
-            }
+            },
         }
     }
 
