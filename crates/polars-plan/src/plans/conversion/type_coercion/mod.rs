@@ -632,7 +632,8 @@ mod test {
             .project(expr_in.clone(), Default::default())
             .build();
 
-        let mut lp_top = to_alp(lp, &mut expr_arena, &mut lp_arena, true, true).unwrap();
+        let mut lp_top =
+            to_alp(lp, &mut expr_arena, &mut lp_arena, &mut OptState::default()).unwrap();
         lp_top = optimizer
             .optimize_loop(rules, &mut expr_arena, &mut lp_arena, lp_top)
             .unwrap();
@@ -647,7 +648,8 @@ mod test {
         let lp = DslBuilder::from_existing_df(df)
             .project(expr_in, Default::default())
             .build();
-        let mut lp_top = to_alp(lp, &mut expr_arena, &mut lp_arena, true, true).unwrap();
+        let mut lp_top =
+            to_alp(lp, &mut expr_arena, &mut lp_arena, &mut OptState::default()).unwrap();
         lp_top = optimizer
             .optimize_loop(rules, &mut expr_arena, &mut lp_arena, lp_top)
             .unwrap();

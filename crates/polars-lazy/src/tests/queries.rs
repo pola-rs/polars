@@ -558,7 +558,13 @@ fn test_simplify_expr() {
 
     let mut expr_arena = Arena::new();
     let mut lp_arena = Arena::new();
-    let lp_top = to_alp(plan, &mut expr_arena, &mut lp_arena, true, false).unwrap();
+    let lp_top = to_alp(
+        plan,
+        &mut expr_arena,
+        &mut lp_arena,
+        &mut OptState::schema_only(),
+    )
+    .unwrap();
     let plan = node_to_lp(lp_top, &expr_arena, &mut lp_arena);
     assert!(
         matches!(plan, DslPlan::Select{ expr, ..} if matches!(&expr[0], Expr::BinaryExpr{left, ..} if **left == Expr::Literal(LiteralValue::Float(2.0))))
@@ -637,7 +643,7 @@ fn test_type_coercion() {
 
     let mut expr_arena = Arena::new();
     let mut lp_arena = Arena::new();
-    let lp_top = to_alp(lp, &mut expr_arena, &mut lp_arena, true, true).unwrap();
+    let lp_top = to_alp(lp, &mut expr_arena, &mut lp_arena, &mut OptState::default()).unwrap();
     let lp = node_to_lp(lp_top, &expr_arena, &mut lp_arena);
 
     if let DslPlan::Select { expr, .. } = lp {

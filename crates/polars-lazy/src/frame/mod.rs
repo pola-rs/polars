@@ -566,8 +566,7 @@ impl LazyFrame {
             self.logical_plan,
             &mut expr_arena,
             &mut lp_arena,
-            true,
-            true,
+            &mut self.opt_state,
         )?;
         let plan = IRPlan::new(node, lp_arena, expr_arena);
         Ok(plan)

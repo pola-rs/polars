@@ -38,6 +38,12 @@ bitflags! {
     }
 }
 
+impl OptState {
+    pub fn schema_only() -> Self {
+        Self::TYPE_COERCION
+    }
+}
+
 impl Default for OptState {
     fn default() -> Self {
         Self::from_bits_truncate(u32::MAX) & !Self::NEW_STREAMING & !Self::STREAMING & !Self::EAGER

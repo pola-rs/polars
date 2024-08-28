@@ -59,7 +59,7 @@ pub(crate) fn init_hashmap<K, V>(max_len: Option<usize>) -> PlHashMap<K, V> {
 
 pub fn optimize(
     logical_plan: DslPlan,
-    opt_state: OptState,
+    mut opt_state: OptState,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     scratch: &mut Vec<Node>,
@@ -67,15 +67,22 @@ pub fn optimize(
 ) -> PolarsResult<Node> {
     #[allow(dead_code)]
     let verbose = verbose();
+
+    // Gradually fill the rules passed to the optimizer
+    let opt = StackOptimizer {};
+    let mut rules: Vec<Box<dyn OptimizationRule>> = Vec::with_capacity(8);
+
+    let mut lp_top = to_alp(logical_plan, expr_arena, lp_arena, &mut opt_state)?;
+
     // get toggle values
     let cluster_with_columns = opt_state.contains(OptState::CLUSTER_WITH_COLUMNS);
     let predicate_pushdown = opt_state.contains(OptState::PREDICATE_PUSHDOWN);
     let projection_pushdown = opt_state.contains(OptState::PROJECTION_PUSHDOWN);
-    let type_coercion = opt_state.contains(OptState::TYPE_COERCION);
     let simplify_expr = opt_state.contains(OptState::SIMPLIFY_EXPR);
     let slice_pushdown = opt_state.contains(OptState::SLICE_PUSHDOWN);
     let streaming = opt_state.contains(OptState::STREAMING);
     let fast_projection = opt_state.contains(OptState::FAST_PROJECTION);
+
     // Don't run optimizations that don't make sense on a single node.
     // This keeps eager execution more snappy.
     let eager = opt_state.contains(OptState::EAGER);
@@ -90,17 +97,6 @@ pub fn optimize(
     #[allow(unused_variables)]
     let agg_scan_projection = opt_state.contains(OptState::FILE_CACHING) && !streaming && !eager;
 
-    // Gradually fill the rules passed to the optimizer
-    let opt = StackOptimizer {};
-    let mut rules: Vec<Box<dyn OptimizationRule>> = Vec::with_capacity(8);
-
-    let mut lp_top = to_alp(
-        logical_plan,
-        expr_arena,
-        lp_arena,
-        simplify_expr,
-        type_coercion,
-    )?;
     // During debug we check if the optimizations have not modified the final schema.
     #[cfg(debug_assertions)]
     let prev_schema = lp_arena.get(lp_top).schema(lp_arena).into_owned();
