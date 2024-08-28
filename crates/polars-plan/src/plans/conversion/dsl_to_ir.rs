@@ -20,9 +20,10 @@ fn expand_expressions(
     exprs: Vec<Expr>,
     lp_arena: &Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
+    opt_flags: &mut OptFlags,
 ) -> PolarsResult<Vec<ExprIR>> {
     let schema = lp_arena.get(input).schema(lp_arena);
-    let exprs = rewrite_projections(exprs, &schema, &[])?;
+    let exprs = rewrite_projections(exprs, &schema, &[], opt_flags)?;
     to_expr_irs(exprs, expr_arena)
 }
 
@@ -57,17 +58,18 @@ pub fn to_alp(
     expr_arena: &mut Arena<AExpr>,
     lp_arena: &mut Arena<IR>,
     // Only `SIMPLIFY_EXPR` and `TYPE_COERCION` are respected.
-    opt_state: &mut OptFlags,
+    opt_flags: &mut OptFlags,
 ) -> PolarsResult<Node> {
     let conversion_optimizer = ConversionOptimizer::new(
-        opt_state.contains(OptFlags::SIMPLIFY_EXPR),
-        opt_state.contains(OptFlags::TYPE_COERCION),
+        opt_flags.contains(OptFlags::SIMPLIFY_EXPR),
+        opt_flags.contains(OptFlags::TYPE_COERCION),
     );
 
     let mut ctxt = ConversionContext {
         expr_arena,
         lp_arena,
         conversion_optimizer,
+        opt_flags,
     };
 
     to_alp_impl(lp, &mut ctxt)
@@ -77,6 +79,7 @@ struct ConversionContext<'a> {
     expr_arena: &'a mut Arena<AExpr>,
     lp_arena: &'a mut Arena<IR>,
     conversion_optimizer: ConversionOptimizer,
+    opt_flags: &'a mut OptFlags,
 }
 
 /// converts LogicalPlan to IR
@@ -305,7 +308,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut ConversionContext) -> PolarsResult<No
         DslPlan::Filter { input, predicate } => {
             let mut input =
                 to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_input!(filter)))?;
-            let predicate = expand_filter(predicate, input, ctxt.lp_arena)
+            let predicate = expand_filter(predicate, input, ctxt.lp_arena, ctxt.opt_flags)
                 .map_err(|e| e.context(failed_here!(filter)))?;
 
             let predicate_ae = to_expr_ir(predicate.clone(), ctxt.expr_arena)?;
@@ -378,8 +381,8 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut ConversionContext) -> PolarsResult<No
             let input =
                 to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_input!(select)))?;
             let schema = ctxt.lp_arena.get(input).schema(ctxt.lp_arena);
-            let (exprs, schema) =
-                prepare_projection(expr, &schema).map_err(|e| e.context(failed_here!(select)))?;
+            let (exprs, schema) = prepare_projection(expr, &schema, ctxt.opt_flags)
+                .map_err(|e| e.context(failed_here!(select)))?;
 
             if exprs.is_empty() {
                 ctxt.lp_arena.replace(input, empty_df());
@@ -442,8 +445,14 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut ConversionContext) -> PolarsResult<No
                     .cycle()
                     .zip(sort_options.descending.iter().cycle()),
             ) {
-                let exprs = expand_expressions(input, vec![c], ctxt.lp_arena, ctxt.expr_arena)
-                    .map_err(|e| e.context(failed_here!(sort)))?;
+                let exprs = expand_expressions(
+                    input,
+                    vec![c],
+                    ctxt.lp_arena,
+                    ctxt.expr_arena,
+                    ctxt.opt_flags,
+                )
+                .map_err(|e| e.context(failed_here!(sort)))?;
 
                 nulls_last.extend(std::iter::repeat(n).take(exprs.len()));
                 descending.extend(std::iter::repeat(d).take(exprs.len()));
@@ -489,9 +498,16 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut ConversionContext) -> PolarsResult<No
             let input =
                 to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_input!(group_by)))?;
 
-            let (keys, aggs, schema) =
-                resolve_group_by(input, keys, aggs, &options, ctxt.lp_arena, ctxt.expr_arena)
-                    .map_err(|e| e.context(failed_here!(group_by)))?;
+            let (keys, aggs, schema) = resolve_group_by(
+                input,
+                keys,
+                aggs,
+                &options,
+                ctxt.lp_arena,
+                ctxt.expr_arena,
+                ctxt.opt_flags,
+            )
+            .map_err(|e| e.context(failed_here!(group_by)))?;
 
             let (apply, schema) = if let Some((apply, schema)) = apply {
                 (Some(apply), schema)
@@ -614,7 +630,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut ConversionContext) -> PolarsResult<No
             let input = to_alp_impl(owned(input), ctxt)
                 .map_err(|e| e.context(failed_input!(with_columns)))?;
             let (exprs, schema) =
-                resolve_with_columns(exprs, input, ctxt.lp_arena, ctxt.expr_arena)
+                resolve_with_columns(exprs, input, ctxt.lp_arena, ctxt.expr_arena, ctxt.opt_flags)
                     .map_err(|e| e.context(failed_here!(with_columns)))?;
 
             ctxt.conversion_optimizer
@@ -680,9 +696,14 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut ConversionContext) -> PolarsResult<No
                         })
                         .collect::<Vec<_>>();
 
-                    let (exprs, schema) =
-                        resolve_with_columns(exprs, input, ctxt.lp_arena, ctxt.expr_arena)
-                            .map_err(|e| e.context(failed_here!(fill_nan)))?;
+                    let (exprs, schema) = resolve_with_columns(
+                        exprs,
+                        input,
+                        ctxt.lp_arena,
+                        ctxt.expr_arena,
+                        ctxt.opt_flags,
+                    )
+                    .map_err(|e| e.context(failed_here!(fill_nan)))?;
 
                     ctxt.conversion_optimizer
                         .fill_scratch(&exprs, ctxt.expr_arena);
@@ -911,7 +932,12 @@ fn expand_scan_paths_with_hive_update(
     Ok(expanded_paths)
 }
 
-fn expand_filter(predicate: Expr, input: Node, lp_arena: &Arena<IR>) -> PolarsResult<Expr> {
+fn expand_filter(
+    predicate: Expr,
+    input: Node,
+    lp_arena: &Arena<IR>,
+    opt_flags: &mut OptFlags,
+) -> PolarsResult<Expr> {
     let schema = lp_arena.get(input).schema(lp_arena);
     let predicate = if has_expr(&predicate, |e| match e {
         Expr::Column(name) => is_regex_projection(name),
@@ -924,7 +950,7 @@ fn expand_filter(predicate: Expr, input: Node, lp_arena: &Arena<IR>) -> PolarsRe
         | Expr::Nth(_) => true,
         _ => false,
     }) {
-        let mut rewritten = rewrite_projections(vec![predicate], &schema, &[])?;
+        let mut rewritten = rewrite_projections(vec![predicate], &schema, &[], opt_flags)?;
         match rewritten.len() {
             1 => {
                 // all good
@@ -971,10 +997,11 @@ fn resolve_with_columns(
     input: Node,
     lp_arena: &Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
+    opt_flags: &mut OptFlags,
 ) -> PolarsResult<(Vec<ExprIR>, SchemaRef)> {
     let schema = lp_arena.get(input).schema(lp_arena);
     let mut new_schema = (**schema).clone();
-    let (exprs, _) = prepare_projection(exprs, &schema)?;
+    let (exprs, _) = prepare_projection(exprs, &schema, opt_flags)?;
     let mut output_names = PlHashSet::with_capacity(exprs.len());
 
     let mut arena = Arena::with_capacity(8);
@@ -1008,10 +1035,11 @@ fn resolve_group_by(
     _options: &GroupbyOptions,
     lp_arena: &Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
+    opt_flags: &mut OptFlags,
 ) -> PolarsResult<(Vec<ExprIR>, Vec<ExprIR>, SchemaRef)> {
     let current_schema = lp_arena.get(input).schema(lp_arena);
     let current_schema = current_schema.as_ref();
-    let mut keys = rewrite_projections(keys, current_schema, &[])?;
+    let mut keys = rewrite_projections(keys, current_schema, &[], opt_flags)?;
 
     // Initialize schema from keys
     let mut schema = expressions_to_schema(&keys, current_schema, Context::Default)?;
@@ -1042,7 +1070,7 @@ fn resolve_group_by(
     }
     let keys_index_len = schema.len();
 
-    let aggs = rewrite_projections(aggs, current_schema, &keys)?;
+    let aggs = rewrite_projections(aggs, current_schema, &keys, opt_flags)?;
     if pop_keys {
         let _ = keys.pop();
     }

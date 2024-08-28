@@ -783,3 +783,15 @@ def test_cse_chunks_18124() -> None:
         )
         .filter(pl.col("ts_diff") > 1)
     ).collect().shape == (4, 4)
+
+
+def test_eager_cse_during_struct_expansion_18411() -> None:
+    df = pl.DataFrame({"foo": [0, 0, 0, 1, 1]})
+    vc = pl.col("foo").value_counts()
+    classes = vc.struct[0]
+    counts = vc.struct[1]
+    # Check if output is stable
+    assert (
+        df.select(pl.col("foo").replace(classes, counts))
+        == df.select(pl.col("foo").replace(classes, counts))
+    )["foo"].all()

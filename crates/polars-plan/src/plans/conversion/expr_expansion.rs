@@ -6,8 +6,9 @@ use super::*;
 pub(crate) fn prepare_projection(
     exprs: Vec<Expr>,
     schema: &Schema,
+    opt_flags: &mut OptFlags,
 ) -> PolarsResult<(Vec<Expr>, Schema)> {
-    let exprs = rewrite_projections(exprs, schema, &[])?;
+    let exprs = rewrite_projections(exprs, schema, &[], opt_flags)?;
     let schema = expressions_to_schema(&exprs, schema, Context::Default)?;
     Ok((exprs, schema))
 }
@@ -541,14 +542,18 @@ fn prepare_excluded(
 }
 
 // functions can have col(["a", "b"]) or col(String) as inputs
-fn expand_function_inputs(expr: Expr, schema: &Schema) -> PolarsResult<Expr> {
+fn expand_function_inputs(
+    expr: Expr,
+    schema: &Schema,
+    opt_flags: &mut OptFlags,
+) -> PolarsResult<Expr> {
     expr.try_map_expr(|mut e| match &mut e {
         Expr::AnonymousFunction { input, options, .. } | Expr::Function { input, options, .. }
             if options
                 .flags
                 .contains(FunctionFlags::INPUT_WILDCARD_EXPANSION) =>
         {
-            *input = rewrite_projections(core::mem::take(input), schema, &[]).unwrap();
+            *input = rewrite_projections(core::mem::take(input), schema, &[], opt_flags).unwrap();
             if input.is_empty() && !options.flags.contains(FunctionFlags::ALLOW_EMPTY_INPUTS) {
                 // Needed to visualize the error
                 *input = vec![Expr::Literal(LiteralValue::Null)];
@@ -639,12 +644,27 @@ fn find_flags(expr: &Expr) -> PolarsResult<ExpansionFlags> {
     })
 }
 
+#[cfg(feature = "dtype-struct")]
+fn toggle_cse(opt_flags: &mut OptFlags) {
+    if opt_flags.contains(OptFlags::EAGER) {
+        #[cfg(debug_assertions)]
+        {
+            use polars_core::config::verbose;
+            if verbose() {
+                eprintln!("CSE turned on because of struct expansion")
+            }
+        }
+        *opt_flags |= OptFlags::COMM_SUBEXPR_ELIM;
+    }
+}
+
 /// In case of single col(*) -> do nothing, no selection is the same as select all
 /// In other cases replace the wildcard with an expression with all columns
 pub(crate) fn rewrite_projections(
     exprs: Vec<Expr>,
     schema: &Schema,
     keys: &[Expr],
+    opt_flags: &mut OptFlags,
 ) -> PolarsResult<Vec<Expr>> {
     let mut result = Vec::with_capacity(exprs.len() + schema.len());
 
@@ -653,7 +673,7 @@ pub(crate) fn rewrite_projections(
         let result_offset = result.len();
 
         // Functions can have col(["a", "b"]) or col(String) as inputs.
-        expr = expand_function_inputs(expr, schema)?;
+        expr = expand_function_inputs(expr, schema, opt_flags)?;
 
         let mut flags = find_flags(&expr)?;
         if flags.has_selector {
@@ -662,10 +682,11 @@ pub(crate) fn rewrite_projections(
             flags.multiple_columns = true;
         }
 
-        replace_and_add_to_results(expr, flags, &mut result, schema, keys)?;
+        replace_and_add_to_results(expr, flags, &mut result, schema, keys, opt_flags)?;
 
         #[cfg(feature = "dtype-struct")]
         if flags.has_struct_field_by_index {
+            toggle_cse(opt_flags);
             for e in &mut result[result_offset..] {
                 *e = struct_index_to_field(std::mem::take(e), schema)?;
             }
@@ -680,6 +701,7 @@ fn replace_and_add_to_results(
     result: &mut Vec<Expr>,
     schema: &Schema,
     keys: &[Expr],
+    opt_flags: &mut OptFlags,
 ) -> PolarsResult<()> {
     if flags.has_nth {
         expr = replace_nth(expr, schema);
@@ -732,6 +754,7 @@ fn replace_and_add_to_results(
                             &mut intermediate,
                             schema,
                             keys,
+                            opt_flags,
                         )?;
 
                         // Then expand the fields and add to the final result vec.
@@ -739,12 +762,13 @@ fn replace_and_add_to_results(
                         flags.multiple_columns = false;
                         flags.has_wildcard = false;
                         for e in intermediate {
-                            replace_and_add_to_results(e, flags, result, schema, keys)?;
+                            replace_and_add_to_results(e, flags, result, schema, keys, opt_flags)?;
                         }
                     }
                     // has only field expansion
                     // col('a').struct.field('*')
                     else {
+                        toggle_cse(opt_flags);
                         expand_struct_fields(e, &expr, result, schema, names, &exclude)?
                     }
                 },
@@ -787,7 +811,14 @@ fn replace_selector_inner(
     match s {
         Selector::Root(expr) => {
             let local_flags = find_flags(&expr)?;
-            replace_and_add_to_results(*expr, local_flags, scratch, schema, keys)?;
+            replace_and_add_to_results(
+                *expr,
+                local_flags,
+                scratch,
+                schema,
+                keys,
+                &mut Default::default(),
+            )?;
             members.extend(scratch.drain(..))
         },
         Selector::Add(lhs, rhs) => {

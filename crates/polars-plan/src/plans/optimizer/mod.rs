@@ -72,6 +72,13 @@ pub fn optimize(
     let opt = StackOptimizer {};
     let mut rules: Vec<Box<dyn OptimizationRule>> = Vec::with_capacity(8);
 
+    // Unset CSE
+    // This can be turned on again during ir-conversion.
+    #[allow(clippy::eq_op)]
+    #[cfg(feature = "cse")]
+    if opt_state.contains(OptFlags::EAGER) {
+        opt_state &= !(OptFlags::COMM_SUBEXPR_ELIM | OptFlags::COMM_SUBEXPR_ELIM);
+    }
     let mut lp_top = to_alp(logical_plan, expr_arena, lp_arena, &mut opt_state)?;
 
     // get toggle values
@@ -87,10 +94,10 @@ pub fn optimize(
     // This keeps eager execution more snappy.
     let eager = opt_state.contains(OptFlags::EAGER);
     #[cfg(feature = "cse")]
-    let comm_subplan_elim = opt_state.contains(OptFlags::COMM_SUBPLAN_ELIM) && !eager;
+    let comm_subplan_elim = opt_state.contains(OptFlags::COMM_SUBPLAN_ELIM);
 
     #[cfg(feature = "cse")]
-    let comm_subexpr_elim = opt_state.contains(OptFlags::COMM_SUBEXPR_ELIM) && !eager;
+    let comm_subexpr_elim = opt_state.contains(OptFlags::COMM_SUBEXPR_ELIM);
     #[cfg(not(feature = "cse"))]
     let comm_subexpr_elim = false;
 
