@@ -301,7 +301,7 @@ pub fn intersects_with_mut(lhs: &MutableBitmap, rhs: &MutableBitmap) -> bool {
 }
 
 pub fn num_edges(lhs: &Bitmap) -> usize {
-    if lhs.len() == 0 {
+    if lhs.is_empty() {
         return 0;
     }
 
