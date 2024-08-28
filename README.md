@@ -106,10 +106,10 @@ shape: (5, 8)
 >>> ## OPTION 1
 >>> # run SQL queries on frame-level
 >>> df.sql("""
-...   SELECT species,
-...     AVG(sepal_length) AS avg_sepal_length
-...   FROM self
-...   GROUP BY species
+... SELECT species,
+...   AVG(sepal_length) AS avg_sepal_length
+... FROM self
+... GROUP BY species
 ... """).collect()
 shape: (3, 2)
 ┌────────────┬──────────────────┐
