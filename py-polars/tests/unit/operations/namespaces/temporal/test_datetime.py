@@ -1432,7 +1432,7 @@ def test_literal_from_datetime(
         if getattr(value, "tzinfo", None) is not None:
             value = value.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
     else:
-        input_value = value   # type: ignore[assignment]
+        input_value = value  # type: ignore[assignment]
     out = pl.select(pl.lit(input_value, dtype=dtype))
     if dtype == pl.Date:
         value = value.date()  # type: ignore[assignment]
