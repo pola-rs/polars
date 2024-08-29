@@ -343,10 +343,6 @@ def test_parse_apply_raw_functions() -> None:
         ):
             df1 = lf.select(pl.col("a").map_elements(func)).collect()
             df2 = lf.select(getattr(pl.col("a"), func_name)()).collect()
-            if func_name == "sign":
-                # note: Polars' 'sign' function returns an Int64, while numpy's
-                # 'sign' function returns a Float64
-                df1 = df1.with_columns(pl.col("a").cast(pl.Int64))
             assert_frame_equal(df1, df2)
 
     # test bare 'json.loads'
