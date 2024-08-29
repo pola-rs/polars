@@ -74,7 +74,7 @@ impl PrivateSeries for SeriesWrap<StructChunked> {
 }
 
 impl SeriesTrait for SeriesWrap<StructChunked> {
-    fn rename(&mut self, name: &str) {
+    fn rename(&mut self, name: PlSmallStr) {
         self.0.rename(name)
     }
 
@@ -82,7 +82,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         self.0.chunk_lengths()
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &PlSmallStr {
         self.0.name()
     }
 
@@ -197,12 +197,12 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
         // this can called in aggregation, so this fast path can be worth a lot
         if self.len() == 1 {
-            return Ok(IdxCa::new_vec(self.name(), vec![0 as IdxSize]));
+            return Ok(IdxCa::new_vec(self.name().clone(), vec![0 as IdxSize]));
         }
         let main_thread = POOL.current_thread_index().is_none();
         let groups = self.group_tuples(main_thread, true)?;
         let first = groups.take_group_firsts();
-        Ok(IdxCa::from_vec(self.name(), first))
+        Ok(IdxCa::from_vec(self.name().clone(), first))
     }
 
     fn has_nulls(&self) -> bool {
@@ -217,7 +217,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
             };
             BooleanArray::from_data_default(bitmap, None)
         });
-        BooleanChunked::from_chunk_iter(self.name(), iter)
+        BooleanChunked::from_chunk_iter(self.name().clone(), iter)
     }
 
     fn is_not_null(&self) -> BooleanChunked {
@@ -228,7 +228,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
             };
             BooleanArray::from_data_default(bitmap, None)
         });
-        BooleanChunked::from_chunk_iter(self.name(), iter)
+        BooleanChunked::from_chunk_iter(self.name().clone(), iter)
     }
 
     fn reverse(&self) -> Series {

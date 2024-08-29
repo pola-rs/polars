@@ -95,7 +95,7 @@ impl FunctionExpr {
             }),
             #[cfg(feature = "dtype-struct")]
             AsStruct => Ok(Field::new(
-                fields[0].name(),
+                fields[0].name().clone(),
                 DataType::Struct(fields.to_vec()),
             )),
             #[cfg(feature = "top_k")]
@@ -115,8 +115,8 @@ impl FunctionExpr {
                     IDX_DTYPE
                 };
                 DataType::Struct(vec![
-                    Field::new(fields[0].name().as_str(), dt.clone()),
-                    Field::new(name, count_dt),
+                    Field::new(fields[0].name().clone(), dt.clone()),
+                    Field::new(name.clone(), count_dt),
                 ])
             }),
             #[cfg(feature = "unique_counts")]
@@ -143,15 +143,18 @@ impl FunctionExpr {
                 if *include_breakpoint || *include_category {
                     let mut fields = Vec::with_capacity(3);
                     if *include_breakpoint {
-                        fields.push(Field::new("breakpoint", DataType::Float64));
+                        fields.push(Field::new(
+                            PlSmallStr::from_static("breakpoint"),
+                            DataType::Float64,
+                        ));
                     }
                     if *include_category {
                         fields.push(Field::new(
-                            "category",
+                            PlSmallStr::from_static("category"),
                             DataType::Categorical(None, Default::default()),
                         ));
                     }
-                    fields.push(Field::new("count", IDX_DTYPE));
+                    fields.push(Field::new(PlSmallStr::from_static("count"), IDX_DTYPE));
                     mapper.with_dtype(DataType::Struct(fields))
                 } else {
                     mapper.with_dtype(IDX_DTYPE)
@@ -231,8 +234,11 @@ impl FunctionExpr {
                 ..
             } => {
                 let struct_dt = DataType::Struct(vec![
-                    Field::new("breakpoint", DataType::Float64),
-                    Field::new("category", DataType::Categorical(None, Default::default())),
+                    Field::new(PlSmallStr::from_static("breakpoint"), DataType::Float64),
+                    Field::new(
+                        PlSmallStr::from_static("category"),
+                        DataType::Categorical(None, Default::default()),
+                    ),
                 ]);
                 mapper.with_dtype(struct_dt)
             },
@@ -269,16 +275,19 @@ impl FunctionExpr {
                 ..
             } => {
                 let struct_dt = DataType::Struct(vec![
-                    Field::new("breakpoint", DataType::Float64),
-                    Field::new("category", DataType::Categorical(None, Default::default())),
+                    Field::new(PlSmallStr::from_static("breakpoint"), DataType::Float64),
+                    Field::new(
+                        PlSmallStr::from_static("category"),
+                        DataType::Categorical(None, Default::default()),
+                    ),
                 ]);
                 mapper.with_dtype(struct_dt)
             },
             #[cfg(feature = "rle")]
             RLE => mapper.map_dtype(|dt| {
                 DataType::Struct(vec![
-                    Field::new("len", IDX_DTYPE),
-                    Field::new("value", dt.clone()),
+                    Field::new(PlSmallStr::from_static("len"), IDX_DTYPE),
+                    Field::new(PlSmallStr::from_static("value"), dt.clone()),
                 ])
             }),
             #[cfg(feature = "rle")]
@@ -363,13 +372,13 @@ impl<'a> FieldsMapper<'a> {
 
     /// Set a dtype.
     pub fn with_dtype(&self, dtype: DataType) -> PolarsResult<Field> {
-        Ok(Field::new(self.fields[0].name(), dtype))
+        Ok(Field::new(self.fields[0].name().clone(), dtype))
     }
 
     /// Map a single dtype.
     pub fn map_dtype(&self, func: impl FnOnce(&DataType) -> DataType) -> PolarsResult<Field> {
         let dtype = func(self.fields[0].data_type());
-        Ok(Field::new(self.fields[0].name(), dtype))
+        Ok(Field::new(self.fields[0].name().clone(), dtype))
     }
 
     pub fn get_fields_lens(&self) -> usize {
@@ -417,7 +426,7 @@ impl<'a> FieldsMapper<'a> {
         func: impl FnOnce(&DataType) -> PolarsResult<DataType>,
     ) -> PolarsResult<Field> {
         let dtype = func(self.fields[0].data_type())?;
-        Ok(Field::new(self.fields[0].name(), dtype))
+        Ok(Field::new(self.fields[0].name().clone(), dtype))
     }
 
     /// Map all dtypes with a potentially failing mapper function.
@@ -515,12 +524,21 @@ impl<'a> FieldsMapper<'a> {
         let exponent_dtype = self.fields[1].data_type();
         if base_dtype.is_integer() {
             if exponent_dtype.is_float() {
-                Ok(Field::new(self.fields[0].name(), exponent_dtype.clone()))
+                Ok(Field::new(
+                    self.fields[0].name().clone(),
+                    exponent_dtype.clone(),
+                ))
             } else {
-                Ok(Field::new(self.fields[0].name(), base_dtype.clone()))
+                Ok(Field::new(
+                    self.fields[0].name().clone(),
+                    base_dtype.clone(),
+                ))
             }
         } else {
-            Ok(Field::new(self.fields[0].name(), base_dtype.clone()))
+            Ok(Field::new(
+                self.fields[0].name().clone(),
+                base_dtype.clone(),
+            ))
         }
     }
 

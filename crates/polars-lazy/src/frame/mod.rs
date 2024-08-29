@@ -37,7 +37,7 @@ use polars_mem_engine::{create_physical_plan, Executor};
 use polars_ops::frame::JoinCoalesce;
 pub use polars_plan::frame::{AllowedOptimizations, OptFlags};
 use polars_plan::global::FETCH_ROWS;
-use smartstring::alias::String as SmartString;
+use polars_utils::pl_str::PlSmallStr;
 
 use crate::frame::cached_arenas::CachedArena;
 #[cfg(feature = "streaming")]
@@ -293,14 +293,11 @@ impl LazyFrame {
     /// }
     /// ```
     /// See [`SortMultipleOptions`] for more options.
-    pub fn sort(self, by: impl IntoVec<SmartString>, sort_options: SortMultipleOptions) -> Self {
+    pub fn sort(self, by: impl IntoVec<PlSmallStr>, sort_options: SortMultipleOptions) -> Self {
         let opt_state = self.get_opt_state();
         let lp = self
             .get_plan_builder()
-            .sort(
-                by.into_vec().into_iter().map(|x| col(&x)).collect(),
-                sort_options,
-            )
+            .sort(by.into_vec().into_iter().map(col).collect(), sort_options)
             .build();
         Self::from_logical_plan(lp, opt_state)
     }
@@ -380,7 +377,7 @@ impl LazyFrame {
     /// }
     /// ```
     pub fn reverse(self) -> Self {
-        self.select(vec![col("*").reverse()])
+        self.select(vec![col(PlSmallStr::from_static("*")).reverse()])
     }
 
     /// Rename columns in the DataFrame.
@@ -398,8 +395,8 @@ impl LazyFrame {
     {
         let iter = existing.into_iter();
         let cap = iter.size_hint().0;
-        let mut existing_vec: Vec<SmartString> = Vec::with_capacity(cap);
-        let mut new_vec: Vec<SmartString> = Vec::with_capacity(cap);
+        let mut existing_vec: Vec<PlSmallStr> = Vec::with_capacity(cap);
+        let mut new_vec: Vec<PlSmallStr> = Vec::with_capacity(cap);
 
         // TODO! should this error if `existing` and `new` have different lengths?
         // Currently, the longer of the two is truncated.
@@ -468,7 +465,7 @@ impl LazyFrame {
     ///
     /// See the method on [Series](polars_core::series::SeriesTrait::shift) for more info on the `shift` operation.
     pub fn shift<E: Into<Expr>>(self, n: E) -> Self {
-        self.select(vec![col("*").shift(n.into())])
+        self.select(vec![col(PlSmallStr::from_static("*")).shift(n.into())])
     }
 
     /// Shift the values by a given period and fill the parts that will be empty due to this operation
@@ -476,7 +473,9 @@ impl LazyFrame {
     ///
     /// See the method on [Series](polars_core::series::SeriesTrait::shift) for more info on the `shift` operation.
     pub fn shift_and_fill<E: Into<Expr>, IE: Into<Expr>>(self, n: E, fill_value: IE) -> Self {
-        self.select(vec![col("*").shift_and_fill(n.into(), fill_value.into())])
+        self.select(vec![
+            col(PlSmallStr::from_static("*")).shift_and_fill(n.into(), fill_value.into())
+        ])
     }
 
     /// Fill None values in the DataFrame with an expression.
@@ -507,6 +506,8 @@ impl LazyFrame {
         let cast_cols: Vec<Expr> = dtypes
             .into_iter()
             .map(|(name, dt)| {
+                let name = PlSmallStr::from_str(name);
+
                 if strict {
                     col(name).strict_cast(dt)
                 } else {
@@ -525,9 +526,9 @@ impl LazyFrame {
     /// Cast all frame columns to the given dtype, resulting in a new LazyFrame
     pub fn cast_all(self, dtype: DataType, strict: bool) -> Self {
         self.with_columns(vec![if strict {
-            col("*").strict_cast(dtype)
+            col(PlSmallStr::from_static("*")).strict_cast(dtype)
         } else {
-            col("*").cast(dtype)
+            col(PlSmallStr::from_static("*")).cast(dtype)
         }])
     }
 
@@ -930,7 +931,7 @@ impl LazyFrame {
     /// Select (and optionally rename, with [`alias`](crate::dsl::Expr::alias)) columns from the query.
     ///
     /// Columns can be selected with [`col`];
-    /// If you want to select all columns use `col("*")`.
+    /// If you want to select all columns use `col(PlSmallStr::from_static("*"))`.
     ///
     /// # Example
     ///
@@ -949,7 +950,7 @@ impl LazyFrame {
     /// /// This function selects all columns except "foo"
     /// fn exclude_a_column(df: DataFrame) -> LazyFrame {
     ///       df.lazy()
-    ///         .select(&[col("*").exclude(["foo"])])
+    ///         .select(&[col(PlSmallStr::from_static("*")).exclude(["foo"])])
     /// }
     /// ```
     pub fn select<E: AsRef<[Expr]>>(self, exprs: E) -> Self {
@@ -1055,7 +1056,7 @@ impl LazyFrame {
                 .to_field(&self.collect_schema().unwrap(), Context::Default)
                 .unwrap();
             return self.with_column(index_column).rolling(
-                Expr::Column(Arc::from(output_field.name().as_str())),
+                Expr::Column(output_field.name().clone()),
                 group_by,
                 options,
             );
@@ -1100,7 +1101,7 @@ impl LazyFrame {
                 .to_field(&self.collect_schema().unwrap(), Context::Default)
                 .unwrap();
             return self.with_column(index_column).group_by_dynamic(
-                Expr::Column(Arc::from(output_field.name().as_str())),
+                Expr::Column(output_field.name().clone()),
                 group_by,
                 options,
             );
@@ -1176,7 +1177,7 @@ impl LazyFrame {
 
     /// Creates the Cartesian product from both frames, preserving the order of the left keys.
     #[cfg(feature = "cross_join")]
-    pub fn cross_join(self, other: LazyFrame, suffix: Option<String>) -> LazyFrame {
+    pub fn cross_join(self, other: LazyFrame, suffix: Option<PlSmallStr>) -> LazyFrame {
         self.join(
             other,
             vec![],
@@ -1544,7 +1545,7 @@ impl LazyFrame {
 
     /// Aggregate all the columns as the sum of their null value count.
     pub fn null_count(self) -> LazyFrame {
-        self.select(vec![col("*").null_count()])
+        self.select(vec![col(PlSmallStr::from_static("*")).null_count()])
     }
 
     /// Drop non-unique rows and maintain the order of kept rows.
@@ -1553,7 +1554,7 @@ impl LazyFrame {
     /// `None`, all columns are considered.
     pub fn unique_stable(
         self,
-        subset: Option<Vec<String>>,
+        subset: Option<Vec<PlSmallStr>>,
         keep_strategy: UniqueKeepStrategy,
     ) -> LazyFrame {
         self.unique_stable_generic(subset, keep_strategy)
@@ -1715,7 +1716,7 @@ impl LazyFrame {
                 function,
                 optimizations,
                 schema,
-                name.unwrap_or("ANONYMOUS UDF"),
+                PlSmallStr::from_static(name.unwrap_or("ANONYMOUS UDF")),
             )
             .build();
         Self::from_logical_plan(lp, opt_state)
@@ -1751,15 +1752,20 @@ impl LazyFrame {
     /// # Warning
     /// This can have a negative effect on query performance. This may for instance block
     /// predicate pushdown optimization.
-    pub fn with_row_index(mut self, name: &str, offset: Option<IdxSize>) -> LazyFrame {
+    pub fn with_row_index<S>(mut self, name: S, offset: Option<IdxSize>) -> LazyFrame
+    where
+        S: Into<PlSmallStr>,
+    {
+        let name = name.into();
         let add_row_index_in_map = match &mut self.logical_plan {
             DslPlan::Scan {
                 file_options: options,
                 scan_type,
                 ..
             } if !matches!(scan_type, FileScan::Anonymous { .. }) => {
+                let name = name.clone();
                 options.row_index = Some(RowIndex {
-                    name: Arc::from(name),
+                    name,
                     offset: offset.unwrap_or(0),
                 });
                 false
@@ -1768,10 +1774,7 @@ impl LazyFrame {
         };
 
         if add_row_index_in_map {
-            self.map_private(DslFunction::RowIndex {
-                name: Arc::from(name),
-                offset,
-            })
+            self.map_private(DslFunction::RowIndex { name, offset })
         } else {
             self
         }
@@ -1779,7 +1782,7 @@ impl LazyFrame {
 
     /// Return the number of non-null elements for each column.
     pub fn count(self) -> LazyFrame {
-        self.select(vec![col("*").count()])
+        self.select(vec![col(PlSmallStr::from_static("*")).count()])
     }
 
     /// Unnest the given `Struct` columns: the fields of the `Struct` type will be
@@ -1799,11 +1802,15 @@ impl LazyFrame {
     }
 
     #[cfg(feature = "merge_sorted")]
-    pub fn merge_sorted(self, other: LazyFrame, key: &str) -> PolarsResult<LazyFrame> {
+    pub fn merge_sorted<S>(self, other: LazyFrame, key: S) -> PolarsResult<LazyFrame>
+    where
+        S: Into<PlSmallStr>,
+    {
         // The two DataFrames are temporary concatenated
         // this indicates until which chunk the data is from the left df
         // this trick allows us to reuse the `Union` architecture to get map over
         // two DataFrames
+        let key = key.into();
         let left = self.map_private(DslFunction::FunctionIR(FunctionIR::Rechunk));
         let q = concat(
             &[left, other],
@@ -1815,7 +1822,7 @@ impl LazyFrame {
         )?;
         Ok(
             q.map_private(DslFunction::FunctionIR(FunctionIR::MergeSorted {
-                column: Arc::from(key),
+                column: key,
             })),
         )
     }
@@ -1848,7 +1855,7 @@ impl LazyGroupBy {
     /// Group by and aggregate.
     ///
     /// Select a column with [col] and choose an aggregation.
-    /// If you want to aggregate all columns use `col("*")`.
+    /// If you want to aggregate all columns use `col(PlSmallStr::from_static("*"))`.
     ///
     /// # Example
     ///
@@ -1895,8 +1902,13 @@ impl LazyGroupBy {
             .filter_map(|expr| expr_output_name(expr).ok())
             .collect::<Vec<_>>();
 
-        self.agg([col("*").exclude(&keys).head(n)])
-            .explode_impl([col("*").exclude(&keys)], true)
+        self.agg([col(PlSmallStr::from_static("*"))
+            .exclude(keys.iter().cloned())
+            .head(n)])
+            .explode_impl(
+                [col(PlSmallStr::from_static("*")).exclude(keys.iter().cloned())],
+                true,
+            )
     }
 
     /// Return last n rows of each group
@@ -1907,8 +1919,13 @@ impl LazyGroupBy {
             .filter_map(|expr| expr_output_name(expr).ok())
             .collect::<Vec<_>>();
 
-        self.agg([col("*").exclude(&keys).tail(n)])
-            .explode_impl([col("*").exclude(&keys)], true)
+        self.agg([col(PlSmallStr::from_static("*"))
+            .exclude(keys.iter().cloned())
+            .tail(n)])
+            .explode_impl(
+                [col(PlSmallStr::from_static("*")).exclude(keys.iter().cloned())],
+                true,
+            )
     }
 
     /// Apply a function over the groups as a new DataFrame.
@@ -1950,7 +1967,7 @@ pub struct JoinBuilder {
     right_on: Vec<Expr>,
     allow_parallel: bool,
     force_parallel: bool,
-    suffix: Option<String>,
+    suffix: Option<PlSmallStr>,
     validation: JoinValidation,
     coalesce: JoinCoalesce,
     join_nulls: bool,
@@ -2036,8 +2053,11 @@ impl JoinBuilder {
 
     /// Suffix to add duplicate column names in join.
     /// Defaults to `"_right"` if this method is never called.
-    pub fn suffix<S: AsRef<str>>(mut self, suffix: S) -> Self {
-        self.suffix = Some(suffix.as_ref().to_string());
+    pub fn suffix<S>(mut self, suffix: S) -> Self
+    where
+        S: Into<PlSmallStr>,
+    {
+        self.suffix = Some(suffix.into());
         self
     }
 

@@ -7,6 +7,7 @@ mod array;
 use arrow_format::ipc::planus::ReadAsRoot;
 use arrow_format::ipc::{Block, MessageRef, RecordBatchRef};
 use polars_error::{polars_bail, polars_err, to_compute_err, PolarsResult};
+use polars_utils::pl_str::PlSmallStr;
 
 use crate::array::Array;
 use crate::datatypes::{ArrowDataType, Field};
@@ -185,7 +186,7 @@ unsafe fn mmap_dictionary<T: AsRef<[u8]>>(
     };
 
     // Make a fake schema for the dictionary batch.
-    let field = Field::new("", value_type.clone(), false);
+    let field = Field::new(PlSmallStr::const_default(), value_type.clone(), false);
 
     let chunk = _mmap_record(
         &[field],

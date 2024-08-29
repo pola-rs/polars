@@ -234,7 +234,7 @@ fn rg_to_dfs_prefiltered(
     row_group_end: usize,
     file_metadata: &FileMetaData,
     schema: &ArrowSchemaRef,
-    live_variables: Vec<Arc<str>>,
+    live_variables: Vec<PlSmallStr>,
     predicate: &dyn PhysicalIoExpr,
     row_index: Option<RowIndex>,
     projection: &[usize],
@@ -369,7 +369,7 @@ fn rg_to_dfs_prefiltered(
                 let mask = s.bool().expect("filter predicates was not of type boolean");
 
                 if let Some(rc) = &row_index {
-                    df.with_row_index_mut(&rc.name, Some(rg.row_offset + rc.offset));
+                    df.with_row_index_mut(rc.name.clone(), Some(rg.row_offset + rc.offset));
                 }
                 df = df.filter(mask)?;
 
@@ -519,7 +519,7 @@ fn rg_to_dfs_prefiltered(
                 // We first add the columns with the live columns at the start. Then, we do a
                 // projections that puts the columns at the right spot.
                 df._add_columns(rg_cols, &rearranged_schema)?;
-                let df = df.select(schema.get_names())?;
+                let df = df.select(schema.get_names_owned())?;
 
                 PolarsResult::Ok(df)
             })
@@ -611,7 +611,7 @@ fn rg_to_dfs_optionally_par_over_columns(
 
         let mut df = unsafe { DataFrame::new_no_checks(columns) };
         if let Some(rc) = &row_index {
-            df.with_row_index_mut(&rc.name, Some(*previous_row_count + rc.offset));
+            df.with_row_index_mut(rc.name.clone(), Some(*previous_row_count + rc.offset));
         }
 
         materialize_hive_partitions(&mut df, schema.as_ref(), hive_partition_columns, rg_slice.1);
@@ -725,7 +725,10 @@ fn rg_to_dfs_par_over_rg(
                 let mut df = unsafe { DataFrame::new_no_checks(columns) };
 
                 if let Some(rc) = &row_index {
-                    df.with_row_index_mut(&rc.name, Some(row_count_start as IdxSize + rc.offset));
+                    df.with_row_index_mut(
+                        rc.name.clone(),
+                        Some(row_count_start as IdxSize + rc.offset),
+                    );
                 }
 
                 materialize_hive_partitions(
@@ -972,7 +975,7 @@ impl BatchedParquetReader {
         chunk_size: usize,
         use_statistics: bool,
         hive_partition_columns: Option<Vec<Series>>,
-        include_file_path: Option<(Arc<str>, Arc<str>)>,
+        include_file_path: Option<(PlSmallStr, Arc<str>)>,
         mut parallel: ParallelStrategy,
     ) -> PolarsResult<Self> {
         let n_row_groups = metadata.row_groups.len();
@@ -1012,7 +1015,7 @@ impl BatchedParquetReader {
             use_statistics,
             hive_partition_columns: hive_partition_columns.map(Arc::from),
             include_file_path: include_file_path
-                .map(|(col, path)| StringChunked::full(&col, &path, 1)),
+                .map(|(col, path)| StringChunked::full(col, &path, 1)),
             has_returned: false,
         })
     }

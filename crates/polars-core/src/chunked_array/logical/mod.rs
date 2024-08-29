@@ -97,6 +97,6 @@ where
     }
     pub fn field(&self) -> Field {
         let name = self.0.ref_field().name();
-        Field::new(name, LogicalType::dtype(self).clone())
+        Field::new(name.clone(), LogicalType::dtype(self).clone())
     }
 }

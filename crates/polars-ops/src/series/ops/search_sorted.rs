@@ -19,7 +19,7 @@ pub fn search_sorted(
             let search_values = search_values.str()?;
             let search_values = search_values.as_binary();
             let idx = binary_search_ca(&ca, search_values.iter(), side, descending);
-            Ok(IdxCa::new_vec(s.name(), idx))
+            Ok(IdxCa::new_vec(s.name().clone(), idx))
         },
         DataType::Boolean => {
             let ca = s.bool().unwrap();
@@ -41,7 +41,7 @@ pub fn search_sorted(
                     })
                 })
                 .collect();
-            Ok(IdxCa::new_vec(s.name(), idxs))
+            Ok(IdxCa::new_vec(s.name().clone(), idxs))
         },
         DataType::Binary => {
             let ca = s.binary().unwrap();
@@ -58,7 +58,7 @@ pub fn search_sorted(
                 _ => unreachable!(),
             };
 
-            Ok(IdxCa::new_vec(s.name(), idx))
+            Ok(IdxCa::new_vec(s.name().clone(), idx))
         },
         dt if dt.is_numeric() => {
             let search_values = search_values.to_physical_repr();
@@ -68,7 +68,7 @@ pub fn search_sorted(
                 let search_values: &ChunkedArray<$T> = search_values.as_ref().as_ref().as_ref();
                 binary_search_ca(ca, search_values.iter(), side, descending)
             });
-            Ok(IdxCa::new_vec(s.name(), idx))
+            Ok(IdxCa::new_vec(s.name().clone(), idx))
         },
         _ => polars_bail!(opq = search_sorted, original_dtype),
     }

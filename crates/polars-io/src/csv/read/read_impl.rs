@@ -74,7 +74,7 @@ pub(crate) fn cast_columns(
             df.get_columns()
                 .into_par_iter()
                 .map(|s| {
-                    if let Some(fld) = to_cast.iter().find(|fld| fld.name().as_str() == s.name()) {
+                    if let Some(fld) = to_cast.iter().find(|fld| fld.name() == s.name()) {
                         cast_fn(s, fld)
                     } else {
                         Ok(s.clone())
@@ -150,7 +150,7 @@ impl<'a> CoreReader<'a> {
         has_header: bool,
         ignore_errors: bool,
         schema: Option<SchemaRef>,
-        columns: Option<Arc<[String]>>,
+        columns: Option<Arc<[PlSmallStr]>>,
         encoding: CsvEncoding,
         mut n_threads: Option<usize>,
         schema_overwrite: Option<SchemaRef>,
@@ -496,7 +496,7 @@ impl<'a> CoreReader<'a> {
                 )
             };
             if let Some(ref row_index) = self.row_index {
-                df.insert_column(0, Series::new_empty(&row_index.name, &IDX_DTYPE))?;
+                df.insert_column(0, Series::new_empty(row_index.name.clone(), &IDX_DTYPE))?;
             }
             return Ok(df);
         }
@@ -559,7 +559,7 @@ impl<'a> CoreReader<'a> {
                             let mut local_df = unsafe { DataFrame::new_no_checks(columns) };
                             let current_row_count = local_df.height() as IdxSize;
                             if let Some(rc) = &self.row_index {
-                                local_df.with_row_index_mut(&rc.name, Some(rc.offset));
+                                local_df.with_row_index_mut(rc.name.clone(), Some(rc.offset));
                             };
 
                             cast_columns(&mut local_df, &self.to_cast, false, self.ignore_errors)?;
@@ -617,7 +617,7 @@ impl<'a> CoreReader<'a> {
 
                         cast_columns(&mut df, &self.to_cast, false, self.ignore_errors)?;
                         if let Some(rc) = &self.row_index {
-                            df.with_row_index_mut(&rc.name, Some(rc.offset));
+                            df.with_row_index_mut(rc.name.clone(), Some(rc.offset));
                         }
                         let n_read = df.height() as IdxSize;
                         Ok((df, n_read))
@@ -666,7 +666,7 @@ impl<'a> CoreReader<'a> {
 
                         cast_columns(&mut df, &self.to_cast, false, self.ignore_errors)?;
                         if let Some(rc) = &self.row_index {
-                            df.with_row_index_mut(&rc.name, Some(rc.offset));
+                            df.with_row_index_mut(rc.name.clone(), Some(rc.offset));
                         }
                         let n_read = df.height() as IdxSize;
                         (df, n_read)

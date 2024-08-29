@@ -219,7 +219,7 @@ where
     ignore_errors: bool,
     infer_schema_len: Option<NonZeroUsize>,
     batch_size: NonZeroUsize,
-    projection: Option<Vec<String>>,
+    projection: Option<Vec<PlSmallStr>>,
     schema: Option<SchemaRef>,
     schema_overwrite: Option<&'a Schema>,
     json_format: JsonFormat,
@@ -307,7 +307,7 @@ where
                         DataType::Struct(
                             schema
                                 .into_iter()
-                                .map(|(name, dt)| Field::new(&name, dt))
+                                .map(|(name, dt)| Field::new(name, dt))
                                 .collect(),
                         )
                         .to_arrow(CompatLevel::newest())
@@ -318,7 +318,9 @@ where
 
                 let dtype = if let BorrowedValue::Array(_) = &json_value {
                     ArrowDataType::LargeList(Box::new(arrow::datatypes::Field::new(
-                        "item", dtype, true,
+                        PlSmallStr::from_static("item"),
+                        dtype,
+                        true,
                     )))
                 } else {
                     dtype
@@ -355,8 +357,8 @@ where
         }?;
 
         // TODO! Ensure we don't materialize the columns we don't need
-        if let Some(proj) = &self.projection {
-            out.select(proj)
+        if let Some(proj) = self.projection.as_deref() {
+            out.select(proj.iter().cloned())
         } else {
             Ok(out)
         }
@@ -405,7 +407,7 @@ where
     ///
     /// Setting `projection` to the columns you want to keep is more efficient than deserializing all of the columns and
     /// then dropping the ones you don't want.
-    pub fn with_projection(mut self, projection: Option<Vec<String>>) -> Self {
+    pub fn with_projection(mut self, projection: Option<Vec<PlSmallStr>>) -> Self {
         self.projection = projection;
         self
     }

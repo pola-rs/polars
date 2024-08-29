@@ -59,12 +59,12 @@ macro_rules! date_like {
             ArrowDataType::Timestamp(time_unit, Some(timezone_str)) => {
                 let array = $array.as_any().downcast_ref().unwrap();
 
-                if let Ok(timezone) = parse_offset(timezone_str) {
+                if let Ok(timezone) = parse_offset(timezone_str.as_str()) {
                     Ok(extract_impl(array, *time_unit, timezone, |x| {
                         x.$extract().try_into().unwrap()
                     }))
                 } else {
-                    chrono_tz(array, *time_unit, timezone_str, |x| {
+                    chrono_tz(array, *time_unit, timezone_str.as_str(), |x| {
                         x.$extract().try_into().unwrap()
                     })
                 }
@@ -129,12 +129,12 @@ macro_rules! time_like {
             ArrowDataType::Timestamp(time_unit, Some(timezone_str)) => {
                 let array = $array.as_any().downcast_ref().unwrap();
 
-                if let Ok(timezone) = parse_offset(timezone_str) {
+                if let Ok(timezone) = parse_offset(timezone_str.as_str()) {
                     Ok(extract_impl(array, *time_unit, timezone, |x| {
                         x.$extract().try_into().unwrap()
                     }))
                 } else {
-                    chrono_tz(array, *time_unit, timezone_str, |x| {
+                    chrono_tz(array, *time_unit, timezone_str.as_str(), |x| {
                         x.$extract().try_into().unwrap()
                     })
                 }

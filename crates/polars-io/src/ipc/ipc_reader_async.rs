@@ -7,6 +7,7 @@ use polars_core::datatypes::IDX_DTYPE;
 use polars_core::frame::DataFrame;
 use polars_core::schema::Schema;
 use polars_error::{polars_bail, polars_err, to_compute_err, PolarsResult};
+use polars_utils::pl_str::PlSmallStr;
 
 use crate::cloud::{
     build_object_store, object_path_from_str, CloudLocation, CloudOptions, PolarsObjectStore,
@@ -27,7 +28,7 @@ pub struct IpcReaderAsync {
 #[derive(Default, Clone)]
 pub struct IpcReadOptions {
     // Names of the columns to include in the output.
-    projection: Option<Arc<[String]>>,
+    projection: Option<Arc<[PlSmallStr]>>,
 
     // The maximum number of rows to include in the output.
     row_limit: Option<usize>,
@@ -40,7 +41,7 @@ pub struct IpcReadOptions {
 }
 
 impl IpcReadOptions {
-    pub fn with_projection(mut self, projection: Option<Arc<[String]>>) -> Self {
+    pub fn with_projection(mut self, projection: Option<Arc<[PlSmallStr]>>) -> Self {
         self.projection = projection;
         self
     }

@@ -74,7 +74,7 @@ where
         false => ca.iter().scan(init, det_max).collect_trusted(),
         true => ca.iter().rev().scan(init, det_max).collect_reversed(),
     };
-    out.with_name(ca.name())
+    out.with_name(ca.name().clone())
 }
 
 fn cum_min_numeric<T>(ca: &ChunkedArray<T>, reverse: bool) -> ChunkedArray<T>
@@ -87,7 +87,7 @@ where
         false => ca.iter().scan(init, det_min).collect_trusted(),
         true => ca.iter().rev().scan(init, det_min).collect_reversed(),
     };
-    out.with_name(ca.name())
+    out.with_name(ca.name().clone())
 }
 
 fn cum_sum_numeric<T>(ca: &ChunkedArray<T>, reverse: bool) -> ChunkedArray<T>
@@ -100,7 +100,7 @@ where
         false => ca.iter().scan(init, det_sum).collect_trusted(),
         true => ca.iter().rev().scan(init, det_sum).collect_reversed(),
     };
-    out.with_name(ca.name())
+    out.with_name(ca.name().clone())
 }
 
 fn cum_prod_numeric<T>(ca: &ChunkedArray<T>, reverse: bool) -> ChunkedArray<T>
@@ -113,7 +113,7 @@ where
         false => ca.iter().scan(init, det_prod).collect_trusted(),
         true => ca.iter().rev().scan(init, det_prod).collect_reversed(),
     };
-    out.with_name(ca.name())
+    out.with_name(ca.name().clone())
 }
 
 /// Get an array with the cumulative product computed at every element.
@@ -211,7 +211,7 @@ pub fn cum_max(s: &Series, reverse: bool) -> PolarsResult<Series> {
 pub fn cum_count(s: &Series, reverse: bool) -> PolarsResult<Series> {
     let mut out = if s.null_count() == 0 {
         // Fast paths for no nulls
-        cum_count_no_nulls(s.name(), s.len(), reverse)
+        cum_count_no_nulls(s.name().clone(), s.len(), reverse)
     } else {
         let ca = s.is_not_null();
         let out: IdxCa = if reverse {
@@ -242,7 +242,7 @@ pub fn cum_count(s: &Series, reverse: bool) -> PolarsResult<Series> {
     Ok(out)
 }
 
-fn cum_count_no_nulls(name: &str, len: usize, reverse: bool) -> Series {
+fn cum_count_no_nulls(name: PlSmallStr, len: usize, reverse: bool) -> Series {
     let start = 1 as IdxSize;
     let end = len as IdxSize + 1;
     let ca: NoNull<IdxCa> = if reverse {

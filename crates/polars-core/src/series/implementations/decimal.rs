@@ -54,7 +54,11 @@ impl SeriesWrap<DecimalChunked> {
                 let arr = ca.downcast_iter().next().unwrap();
                 // SAFETY: dtype is passed correctly
                 let s = unsafe {
-                    Series::from_chunks_and_dtype_unchecked("", vec![arr.values().clone()], dtype)
+                    Series::from_chunks_and_dtype_unchecked(
+                        PlSmallStr::const_default(),
+                        vec![arr.values().clone()],
+                        dtype,
+                    )
                 };
                 let new_values = s.array_ref(0).clone();
                 let data_type =
@@ -67,7 +71,7 @@ impl SeriesWrap<DecimalChunked> {
                 );
                 unsafe {
                     ListChunked::from_chunks_and_dtype_unchecked(
-                        agg_s.name(),
+                        agg_s.name().clone(),
                         vec![Box::new(new_arr)],
                         DataType::List(Box::new(self.dtype().clone())),
                     )
@@ -183,7 +187,7 @@ impl private::PrivateSeries for SeriesWrap<DecimalChunked> {
 }
 
 impl SeriesTrait for SeriesWrap<DecimalChunked> {
-    fn rename(&mut self, name: &str) {
+    fn rename(&mut self, name: PlSmallStr) {
         self.0.rename(name)
     }
 
@@ -191,7 +195,7 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
         self.0.chunk_lengths()
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &PlSmallStr {
         self.0.name()
     }
 

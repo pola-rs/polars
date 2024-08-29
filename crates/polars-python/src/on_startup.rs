@@ -76,7 +76,7 @@ pub fn register_startup_deps() {
         }
 
         // register object type builder
-        let object_builder = Box::new(|name: &str, capacity: usize| {
+        let object_builder = Box::new(|name: PlSmallStr, capacity: usize| {
             Box::new(ObjectChunkedBuilder::<ObjectValue>::new(name, capacity))
                 as Box<dyn AnonymousObjectBuilder>
         });

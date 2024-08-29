@@ -11,9 +11,9 @@ use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 pub fn is_last_distinct(s: &Series) -> PolarsResult<BooleanChunked> {
     // fast path.
     if s.len() == 0 {
-        return Ok(BooleanChunked::full_null(s.name(), 0));
+        return Ok(BooleanChunked::full_null(s.name().clone(), 0));
     } else if s.len() == 1 {
-        return Ok(BooleanChunked::new(s.name(), &[true]));
+        return Ok(BooleanChunked::new(s.name().clone(), &[true]));
     }
 
     let s = s.to_physical_repr();
@@ -107,7 +107,7 @@ fn is_last_distinct_boolean(ca: &BooleanChunked) -> BooleanChunked {
     }
 
     let arr = BooleanArray::new(ArrowDataType::Boolean, out.into(), None);
-    BooleanChunked::with_chunk(ca.name(), arr)
+    BooleanChunked::with_chunk(ca.name().clone(), arr)
 }
 
 fn is_last_distinct_bin(ca: &BinaryChunked) -> BooleanChunked {
@@ -120,7 +120,7 @@ fn is_last_distinct_bin(ca: &BinaryChunked) -> BooleanChunked {
         .map(|opt_v| unique.insert(opt_v))
         .collect_reversed::<NoNull<BooleanChunked>>()
         .into_inner();
-    new_ca.rename(ca.name());
+    new_ca.rename(ca.name().clone());
     new_ca
 }
 
@@ -139,7 +139,7 @@ where
         .map(|opt_v| unique.insert(opt_v.to_total_ord()))
         .collect_reversed::<NoNull<BooleanChunked>>()
         .into_inner();
-    new_ca.rename(ca.name());
+    new_ca.rename(ca.name().clone());
     new_ca
 }
 
@@ -157,7 +157,7 @@ fn is_last_distinct_struct(s: &Series) -> PolarsResult<BooleanChunked> {
     }
 
     let arr = BooleanArray::new(ArrowDataType::Boolean, out.into(), None);
-    Ok(BooleanChunked::with_chunk(s.name(), arr))
+    Ok(BooleanChunked::with_chunk(s.name().clone(), arr))
 }
 
 fn is_last_distinct_list(ca: &ListChunked) -> PolarsResult<BooleanChunked> {
@@ -173,5 +173,5 @@ fn is_last_distinct_list(ca: &ListChunked) -> PolarsResult<BooleanChunked> {
     }
 
     let arr = BooleanArray::new(ArrowDataType::Boolean, out.into(), None);
-    Ok(BooleanChunked::with_chunk(ca.name(), arr))
+    Ok(BooleanChunked::with_chunk(ca.name().clone(), arr))
 }

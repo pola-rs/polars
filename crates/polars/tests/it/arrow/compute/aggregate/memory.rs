@@ -23,7 +23,7 @@ fn utf8() {
 #[test]
 fn fixed_size_list() {
     let data_type = ArrowDataType::FixedSizeList(
-        Box::new(Field::new("elem", ArrowDataType::Float32, false)),
+        Box::new(Field::new("elem".into(), ArrowDataType::Float32, false)),
         3,
     );
     let values = Box::new(Float32Array::from_slice([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]));

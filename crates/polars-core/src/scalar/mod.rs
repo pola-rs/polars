@@ -1,5 +1,7 @@
 pub mod reduce;
 
+use polars_utils::pl_str::PlSmallStr;
+
 use crate::datatypes::{AnyValue, DataType};
 use crate::prelude::Series;
 
@@ -24,7 +26,7 @@ impl Scalar {
             .unwrap_or_else(|| self.value.clone())
     }
 
-    pub fn into_series(self, name: &str) -> Series {
+    pub fn into_series(self, name: PlSmallStr) -> Series {
         Series::from_any_values_and_dtype(name, &[self.as_any_value()], &self.dtype, true).unwrap()
     }
 

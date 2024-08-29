@@ -56,7 +56,7 @@ pub fn get_write_value<'a, T: NativeType, F: Write>(
         Time64(_) => unreachable!(), // remaining are not valid
         Timestamp(time_unit, tz) => {
             if let Some(tz) = tz {
-                let timezone = temporal_conversions::parse_offset(tz);
+                let timezone = temporal_conversions::parse_offset(tz.as_str());
                 match timezone {
                     Ok(timezone) => {
                         dyn_primitive!(array, i64, |time| {
@@ -65,7 +65,7 @@ pub fn get_write_value<'a, T: NativeType, F: Write>(
                     },
                     #[cfg(feature = "chrono-tz")]
                     Err(_) => {
-                        let timezone = temporal_conversions::parse_offset_tz(tz);
+                        let timezone = temporal_conversions::parse_offset_tz(tz.as_str());
                         match timezone {
                             Ok(timezone) => dyn_primitive!(array, i64, |time| {
                                 temporal_conversions::timestamp_to_datetime(

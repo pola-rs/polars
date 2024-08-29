@@ -9,6 +9,7 @@ use arrow::array::FixedSizeBinaryArray;
 use arrow::bitmap::MutableBitmap;
 use arrow::buffer::Buffer;
 use polars_extension::PolarsExtension;
+use polars_utils::format_pl_smallstr;
 
 use crate::prelude::*;
 use crate::PROCESS_ID;
@@ -39,9 +40,9 @@ unsafe fn create_drop<T: Sized>(mut ptr: *const u8, n_t_vals: usize) -> Box<dyn 
 #[allow(clippy::type_complexity)]
 struct ExtensionSentinel {
     drop_fn: Option<Box<dyn FnMut()>>,
-    // A function on the heap that take a `array: FixedSizeBinary` and a `name: &str`
+    // A function on the heap that take a `array: FixedSizeBinary` and a `name: PlSmallStr`
     // and returns a `Series` of `ObjectChunked<T>`
-    pub(crate) to_series_fn: Option<Box<dyn Fn(&FixedSizeBinaryArray, &str) -> Series>>,
+    pub(crate) to_series_fn: Option<Box<dyn Fn(&FixedSizeBinaryArray, &PlSmallStr) -> Series>>,
 }
 
 impl Drop for ExtensionSentinel {
@@ -120,11 +121,14 @@ pub(crate) fn create_extension<I: Iterator<Item = Option<T>> + TrustedLen, T: Si
     let et_ptr = &*et as *const ExtensionSentinel;
     std::mem::forget(et);
 
-    let metadata = format!("{};{}", *PROCESS_ID, et_ptr as usize);
+    let metadata = format_pl_smallstr!("{};{}", *PROCESS_ID, et_ptr as usize);
 
     let physical_type = ArrowDataType::FixedSizeBinary(t_size);
-    let extension_type =
-        ArrowDataType::Extension(EXTENSION_NAME.into(), physical_type.into(), Some(metadata));
+    let extension_type = ArrowDataType::Extension(
+        PlSmallStr::from_static(EXTENSION_NAME),
+        physical_type.into(),
+        Some(metadata),
+    );
     // first freeze, otherwise we compute null
     let validity = if null_count > 0 {
         Some(validity.into())
@@ -217,7 +221,7 @@ mod test {
         };
 
         let values = &[Some(foo1), None, Some(foo2), None];
-        let ca = ObjectChunked::new("", values);
+        let ca = ObjectChunked::new(PlSmallStr::const_default(), values);
 
         let groups =
             GroupsProxy::Idx(vec![(0, unitvec![0, 1]), (2, unitvec![2]), (3, unitvec![3])].into());
@@ -241,7 +245,7 @@ mod test {
         };
 
         let values = &[Some(foo1.clone()), None, Some(foo2.clone()), None];
-        let ca = ObjectChunked::new("", values);
+        let ca = ObjectChunked::new(PlSmallStr::const_default(), values);
 
         let groups = vec![(0, unitvec![0, 1]), (2, unitvec![2]), (3, unitvec![3])].into();
         let out = unsafe { ca.agg_list(&GroupsProxy::Idx(groups)) };

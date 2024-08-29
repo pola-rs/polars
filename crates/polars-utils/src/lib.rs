@@ -20,6 +20,7 @@ pub mod hashing;
 pub mod idx_vec;
 pub mod mem;
 pub mod min_max;
+pub mod pl_str;
 pub mod priority;
 pub mod slice;
 pub mod sort;

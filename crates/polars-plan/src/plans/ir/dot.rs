@@ -2,6 +2,7 @@ use std::fmt;
 use std::path::PathBuf;
 
 use polars_core::schema::Schema;
+use polars_utils::pl_str::PlSmallStr;
 
 use super::format::ExprIRSliceDisplay;
 use crate::constants::UNLIMITED_CACHE;
@@ -342,7 +343,7 @@ impl<'a> IRDotDisplay<'a> {
 
 // A few utility structures for formatting
 pub struct PathsDisplay<'a>(pub &'a [PathBuf]);
-struct NumColumns<'a>(Option<&'a [String]>);
+struct NumColumns<'a>(Option<&'a [PlSmallStr]>);
 struct NumColumnsSchema<'a>(Option<&'a Schema>);
 struct OptionExprIRDisplay<'a>(Option<ExprIRDisplay<'a>>);
 

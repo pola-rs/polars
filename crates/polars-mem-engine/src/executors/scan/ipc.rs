@@ -185,7 +185,9 @@ impl IpcExec {
 impl Executor for IpcExec {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         let profile_name = if state.has_node_timer() {
-            let mut ids = vec![self.paths[0].to_string_lossy().into()];
+            let mut ids = vec![PlSmallStr::from_str(
+                self.paths[0].to_string_lossy().as_ref(),
+            )];
             if self.predicate.is_some() {
                 ids.push("predicate".into())
             }

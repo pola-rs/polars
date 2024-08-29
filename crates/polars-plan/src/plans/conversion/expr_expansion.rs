@@ -15,7 +15,7 @@ pub(crate) fn prepare_projection(
 
 /// This replaces the wildcard Expr with a Column Expr. It also removes the Exclude Expr from the
 /// expression chain.
-pub(super) fn replace_wildcard_with_column(expr: Expr, column_name: Arc<str>) -> Expr {
+pub(super) fn replace_wildcard_with_column(expr: Expr, column_name: &PlSmallStr) -> Expr {
     expr.map_expr(|e| match e {
         Expr::Wildcard => Expr::Column(column_name.clone()),
         Expr::Exclude(input, _) => Arc::unwrap_or_clone(input),
@@ -47,7 +47,7 @@ fn rewrite_special_aliases(expr: Expr) -> PolarsResult<Expr> {
             Expr::RenameAlias { expr, function } => {
                 let name = get_single_leaf(&expr).unwrap();
                 let name = function.call(&name)?;
-                Ok(Expr::Alias(expr, ColumnName::from(name)))
+                Ok(Expr::Alias(expr, name))
             },
             _ => {
                 polars_bail!(InvalidOperation: "`keep`, `suffix`, `prefix` should be last expression")
@@ -64,13 +64,12 @@ fn rewrite_special_aliases(expr: Expr) -> PolarsResult<Expr> {
 fn replace_wildcard(
     expr: &Expr,
     result: &mut Vec<Expr>,
-    exclude: &PlHashSet<Arc<str>>,
+    exclude: &PlHashSet<PlSmallStr>,
     schema: &Schema,
 ) -> PolarsResult<()> {
     for name in schema.iter_names() {
         if !exclude.contains(name.as_str()) {
-            let new_expr =
-                replace_wildcard_with_column(expr.clone(), ColumnName::from(name.as_str()));
+            let new_expr = replace_wildcard_with_column(expr.clone(), name);
             let new_expr = rewrite_special_aliases(new_expr)?;
             result.push(new_expr)
         }
@@ -88,11 +87,11 @@ fn replace_nth(expr: Expr, schema: &Schema) -> Expr {
                         -1 => "last",
                         _ => "nth",
                     };
-                    Expr::Column(ColumnName::from(name))
+                    Expr::Column(PlSmallStr::from_static(name))
                 },
                 Some(idx) => {
                     let (name, _dtype) = schema.get_at_index(idx).unwrap();
-                    Expr::Column(ColumnName::from(&**name))
+                    Expr::Column(name.clone())
                 },
             }
         } else {
@@ -109,7 +108,7 @@ fn expand_regex(
     result: &mut Vec<Expr>,
     schema: &Schema,
     pattern: &str,
-    exclude: &PlHashSet<Arc<str>>,
+    exclude: &PlHashSet<PlSmallStr>,
 ) -> PolarsResult<()> {
     let re =
         regex::Regex::new(pattern).map_err(|e| polars_err!(ComputeError: "invalid regex {}", e))?;
@@ -118,9 +117,7 @@ fn expand_regex(
             let mut new_expr = remove_exclude(expr.clone());
 
             new_expr = new_expr.map_expr(|e| match e {
-                Expr::Column(pat) if pat.as_ref() == pattern => {
-                    Expr::Column(ColumnName::from(name.as_str()))
-                },
+                Expr::Column(pat) if pat.as_ref() == pattern => Expr::Column(name.clone()),
                 e => e,
             });
 
@@ -142,7 +139,7 @@ fn replace_regex(
     expr: &Expr,
     result: &mut Vec<Expr>,
     schema: &Schema,
-    exclude: &PlHashSet<Arc<str>>,
+    exclude: &PlHashSet<PlSmallStr>,
 ) -> PolarsResult<()> {
     let roots = expr_to_leaf_column_names(expr);
     let mut regex = None;
@@ -175,9 +172,9 @@ fn replace_regex(
 fn expand_columns(
     expr: &Expr,
     result: &mut Vec<Expr>,
-    names: &[ColumnName],
+    names: &[PlSmallStr],
     schema: &Schema,
-    exclude: &PlHashSet<ColumnName>,
+    exclude: &PlHashSet<PlSmallStr>,
 ) -> PolarsResult<()> {
     let mut is_valid = true;
     for name in names {
@@ -216,12 +213,10 @@ fn struct_index_to_field(expr: Expr, schema: &Schema) -> PolarsResult<Expr> {
                     polars_bail!(InvalidOperation: "expected 'struct' dtype, got {:?}", dtype)
                 };
                 let index = index.try_negative_to_usize(fields.len())?;
-                let name = fields[index].name.as_str();
+                let name = fields[index].name.clone();
                 Ok(Expr::Function {
                     input,
-                    function: FunctionExpr::StructExpr(StructFunction::FieldByName(
-                        ColumnName::from(name),
-                    )),
+                    function: FunctionExpr::StructExpr(StructFunction::FieldByName(name)),
                     options,
                 })
             } else {
@@ -240,7 +235,7 @@ fn struct_index_to_field(expr: Expr, schema: &Schema) -> PolarsResult<Expr> {
 /// ()It also removes the Exclude Expr from the expression chain).
 fn replace_dtype_or_index_with_column(
     expr: Expr,
-    column_name: &ColumnName,
+    column_name: &PlSmallStr,
     replace_dtype: bool,
 ) -> Expr {
     expr.map_expr(|e| match e {
@@ -255,8 +250,8 @@ fn replace_dtype_or_index_with_column(
 /// expression chain.
 pub(super) fn replace_columns_with_column(
     mut expr: Expr,
-    names: &[ColumnName],
-    column_name: &ColumnName,
+    names: &[PlSmallStr],
+    column_name: &PlSmallStr,
 ) -> (Expr, bool) {
     let mut is_valid = true;
     expr = expr.map_expr(|e| match e {
@@ -295,7 +290,7 @@ fn expand_dtypes(
     result: &mut Vec<Expr>,
     schema: &Schema,
     dtypes: &[DataType],
-    exclude: &PlHashSet<Arc<str>>,
+    exclude: &PlHashSet<PlSmallStr>,
 ) -> PolarsResult<()> {
     // note: we loop over the schema to guarantee that we return a stable
     // field-order, irrespective of which dtypes are filtered against
@@ -305,8 +300,7 @@ fn expand_dtypes(
     }) {
         let name = field.name();
         let new_expr = expr.clone();
-        let new_expr =
-            replace_dtype_or_index_with_column(new_expr, &ColumnName::from(name.as_str()), true);
+        let new_expr = replace_dtype_or_index_with_column(new_expr, name, true);
         let new_expr = rewrite_special_aliases(new_expr)?;
         result.push(new_expr)
     }
@@ -316,7 +310,7 @@ fn expand_dtypes(
 #[cfg(feature = "dtype-struct")]
 fn replace_struct_multiple_fields_with_field(
     expr: Expr,
-    column_name: &ColumnName,
+    column_name: &PlSmallStr,
 ) -> PolarsResult<Expr> {
     let mut count = 0;
     let out = expr.map_expr(|e| match e {
@@ -357,8 +351,8 @@ fn expand_struct_fields(
     full_expr: &Expr,
     result: &mut Vec<Expr>,
     schema: &Schema,
-    names: &[ColumnName],
-    exclude: &PlHashSet<Arc<str>>,
+    names: &[PlSmallStr],
+    exclude: &PlHashSet<PlSmallStr>,
 ) -> PolarsResult<()> {
     let first_name = names[0].as_ref();
     if names.len() == 1 && first_name == "*" || is_regex_projection(first_name) {
@@ -375,12 +369,12 @@ fn expand_struct_fields(
             fields
                 .iter()
                 .flat_map(|field| {
-                    let name = field.name().as_str();
+                    let name = field.name();
 
-                    if exclude.contains(name) {
+                    if exclude.contains(name.as_str()) {
                         None
                     } else {
-                        Some(Arc::from(field.name().as_str()))
+                        Some(name.clone())
                     }
                 })
                 .collect::<Vec<_>>()
@@ -395,11 +389,11 @@ fn expand_struct_fields(
                 fields
                     .iter()
                     .flat_map(|field| {
-                        let name = field.name().as_str();
-                        if exclude.contains(name) || !re.is_match(name) {
+                        let name = field.name();
+                        if exclude.contains(name.as_str()) || !re.is_match(name.as_str()) {
                             None
                         } else {
-                            Some(Arc::from(field.name().as_str()))
+                            Some(name.clone())
                         }
                     })
                     .collect::<Vec<_>>()
@@ -410,7 +404,14 @@ fn expand_struct_fields(
             }
         };
 
-        return expand_struct_fields(struct_expr, full_expr, result, schema, &names, exclude);
+        return expand_struct_fields(
+            struct_expr,
+            full_expr,
+            result,
+            schema,
+            names.as_slice(),
+            exclude,
+        );
     }
 
     for name in names {
@@ -424,7 +425,7 @@ fn expand_struct_fields(
                 },
                 Expr::RenameAlias { expr, function } => {
                     let name = function.call(name)?;
-                    new_expr = Expr::Alias(expr, ColumnName::from(name));
+                    new_expr = Expr::Alias(expr, name);
                 },
                 _ => {},
             }
@@ -441,7 +442,7 @@ fn expand_indices(
     result: &mut Vec<Expr>,
     schema: &Schema,
     indices: &[i64],
-    exclude: &PlHashSet<Arc<str>>,
+    exclude: &PlHashSet<PlSmallStr>,
 ) -> PolarsResult<()> {
     let n_fields = schema.len() as i64;
     for idx in indices {
@@ -455,11 +456,7 @@ fn expand_indices(
         if let Some((name, _)) = schema.get_at_index(idx as usize) {
             if !exclude.contains(name.as_str()) {
                 let new_expr = expr.clone();
-                let new_expr = replace_dtype_or_index_with_column(
-                    new_expr,
-                    &ColumnName::from(name.as_str()),
-                    false,
-                );
+                let new_expr = replace_dtype_or_index_with_column(new_expr, name, false);
                 let new_expr = rewrite_special_aliases(new_expr)?;
                 result.push(new_expr);
             }
@@ -475,7 +472,7 @@ fn prepare_excluded(
     schema: &Schema,
     keys: &[Expr],
     has_exclude: bool,
-) -> PolarsResult<PlHashSet<Arc<str>>> {
+) -> PolarsResult<PlHashSet<PlSmallStr>> {
     let mut exclude = PlHashSet::new();
 
     // explicit exclude branch
@@ -503,7 +500,7 @@ fn prepare_excluded(
                             Excluded::Dtype(dt) => {
                                 for fld in schema.iter_fields() {
                                     if dtypes_match(fld.data_type(), dt) {
-                                        exclude.insert(ColumnName::from(fld.name().as_ref()));
+                                        exclude.insert(fld.name.clone());
                                     }
                                 }
                             },
@@ -521,7 +518,7 @@ fn prepare_excluded(
                             Excluded::Dtype(dt) => {
                                 for (name, dtype) in schema.iter() {
                                     if matches!(dtype, dt) {
-                                        exclude.insert(ColumnName::from(name.as_str()));
+                                        exclude.insert(name.clone());
                                     }
                                 }
                             },
@@ -882,7 +879,7 @@ pub(crate) fn expand_selectors(
     s: Vec<Selector>,
     schema: &Schema,
     keys: &[Expr],
-) -> PolarsResult<Arc<[ColumnName]>> {
+) -> PolarsResult<Arc<[PlSmallStr]>> {
     let mut columns = vec![];
 
     // Skip the column fast paths.
@@ -920,7 +917,7 @@ pub(super) fn expand_selector(
     s: Selector,
     schema: &Schema,
     keys: &[Expr],
-) -> PolarsResult<Arc<[ColumnName]>> {
+) -> PolarsResult<Arc<[PlSmallStr]>> {
     let mut members = PlIndexSet::new();
     replace_selector_inner(s, &mut members, &mut vec![], schema, keys)?;
 
@@ -938,7 +935,7 @@ pub(super) fn expand_selector(
         // Ensure that multiple columns returned from combined/nested selectors remain in schema order
         let selected = schema
             .iter_fields()
-            .map(|field| ColumnName::from(field.name().as_ref()))
+            .map(|field| field.name().clone())
             .filter(|field_name| members.contains(&Expr::Column(field_name.clone())))
             .collect();
 

@@ -15,6 +15,7 @@ pub type ChunkJoinOptIds = Vec<NullableIdxSize>;
 #[cfg(not(feature = "chunked_ids"))]
 pub type ChunkJoinIds = Vec<IdxSize>;
 
+use polars_core::export::once_cell::sync::Lazy;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -23,7 +24,7 @@ use serde::{Deserialize, Serialize};
 pub struct JoinArgs {
     pub how: JoinType,
     pub validation: JoinValidation,
-    pub suffix: Option<String>,
+    pub suffix: Option<PlSmallStr>,
     pub slice: Option<(i64, usize)>,
     pub join_nulls: bool,
     pub coalesce: JoinCoalesce,
@@ -94,13 +95,14 @@ impl JoinArgs {
         self
     }
 
-    pub fn with_suffix(mut self, suffix: Option<String>) -> Self {
+    pub fn with_suffix(mut self, suffix: Option<PlSmallStr>) -> Self {
         self.suffix = suffix;
         self
     }
 
-    pub fn suffix(&self) -> &str {
-        self.suffix.as_deref().unwrap_or("_right")
+    pub fn suffix(&self) -> &PlSmallStr {
+        static DEFAULT: Lazy<PlSmallStr> = Lazy::new(|| PlSmallStr::from_static("_right"));
+        self.suffix.as_ref().unwrap_or(&*DEFAULT)
     }
 }
 

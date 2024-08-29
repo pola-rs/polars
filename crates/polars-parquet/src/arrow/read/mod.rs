@@ -48,7 +48,7 @@ pub fn get_field_pages<'a, T>(
     columns
         .iter()
         .zip(items)
-        .filter(|(metadata, _)| metadata.descriptor().path_in_schema[0] == field_name)
+        .filter(|(metadata, _)| metadata.descriptor().path_in_schema[0].as_str() == field_name)
         .map(|(_, item)| item)
         .collect()
 }

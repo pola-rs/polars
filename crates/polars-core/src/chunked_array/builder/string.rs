@@ -23,7 +23,7 @@ impl<T: ViewType + ?Sized> BinViewChunkedBuilder<T> {
     /// # Arguments
     ///
     /// * `capacity` - Number of string elements in the final array.
-    pub fn new(name: &str, capacity: usize) -> Self {
+    pub fn new(name: PlSmallStr, capacity: usize) -> Self {
         Self {
             chunk_builder: MutableBinaryViewArray::with_capacity(capacity),
             field: Arc::new(Field::new(name, DataType::from(&T::DATA_TYPE))),

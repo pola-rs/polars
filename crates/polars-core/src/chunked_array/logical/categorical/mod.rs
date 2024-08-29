@@ -37,7 +37,7 @@ pub struct CategoricalChunked {
 impl CategoricalChunked {
     pub(crate) fn field(&self) -> Field {
         let name = self.physical().name();
-        Field::new(name, self.dtype().clone())
+        Field::new(name.clone(), self.dtype().clone())
     }
 
     pub fn is_empty(&self) -> bool {
@@ -54,7 +54,7 @@ impl CategoricalChunked {
         self.physical.null_count()
     }
 
-    pub fn name(&self) -> &str {
+    pub fn name(&self) -> &PlSmallStr {
         self.physical.name()
     }
 
@@ -122,7 +122,7 @@ impl CategoricalChunked {
         // SAFETY: keys and values are in bounds
         unsafe {
             Ok(CategoricalChunked::from_keys_and_values_global(
-                self.name(),
+                self.name().clone(),
                 self.physical(),
                 self.len(),
                 categories,
@@ -337,7 +337,8 @@ impl LogicalType for CategoricalChunked {
             DataType::String => {
                 let mapping = &**self.get_rev_map();
 
-                let mut builder = StringChunkedBuilder::new(self.physical.name(), self.len());
+                let mut builder =
+                    StringChunkedBuilder::new(self.physical.name().clone(), self.len());
 
                 let f = |idx: u32| mapping.get(idx);
 
@@ -356,7 +357,10 @@ impl LogicalType for CategoricalChunked {
             },
             DataType::UInt32 => {
                 let ca = unsafe {
-                    UInt32Chunked::from_chunks(self.physical.name(), self.physical.chunks.clone())
+                    UInt32Chunked::from_chunks(
+                        self.physical.name().clone(),
+                        self.physical.chunks.clone(),
+                    )
                 };
                 Ok(ca.into_series())
             },
@@ -369,7 +373,7 @@ impl LogicalType for CategoricalChunked {
                     .to_enum(categories, *hash)
                     .set_ordering(*ordering, true)
                     .into_series()
-                    .with_name(self.name()))
+                    .with_name(self.name().clone()))
             },
             DataType::Enum(None, _) => {
                 polars_bail!(ComputeError: "can not cast to enum without categories present")
@@ -393,7 +397,7 @@ impl LogicalType for CategoricalChunked {
             dt if dt.is_numeric() => {
                 // Apply the cast to the categories and then index into the casted series
                 let categories = StringChunked::with_chunk(
-                    self.physical.name(),
+                    self.physical.name().clone(),
                     self.get_rev_map().get_categories().clone(),
                 );
                 let casted_series = categories.cast_with_options(dtype, options)?;
@@ -460,12 +464,12 @@ mod test {
             Some("foo"),
             Some("bar"),
         ];
-        let ca = StringChunked::new("a", slice);
+        let ca = StringChunked::new(PlSmallStr::from_static("a"), slice);
         let ca = ca.cast(&DataType::Categorical(None, Default::default()))?;
         let ca = ca.categorical().unwrap();
 
         let arr = ca.to_arrow(CompatLevel::newest(), false);
-        let s = Series::try_from(("foo", arr))?;
+        let s = Series::try_from((PlSmallStr::from_static("foo"), arr))?;
         assert!(matches!(s.dtype(), &DataType::Categorical(_, _)));
         assert_eq!(s.null_count(), 1);
         assert_eq!(s.len(), 6);
@@ -479,10 +483,10 @@ mod test {
         disable_string_cache();
         enable_string_cache();
 
-        let mut s1 = Series::new("1", vec!["a", "b", "c"])
+        let mut s1 = Series::new(PlSmallStr::from_static("1"), vec!["a", "b", "c"])
             .cast(&DataType::Categorical(None, Default::default()))
             .unwrap();
-        let s2 = Series::new("2", vec!["a", "x", "y"])
+        let s2 = Series::new(PlSmallStr::from_static("2"), vec!["a", "x", "y"])
             .cast(&DataType::Categorical(None, Default::default()))
             .unwrap();
         let appended = s1.append(&s2).unwrap();
@@ -495,13 +499,15 @@ mod test {
     #[test]
     fn test_fast_unique() {
         let _lock = SINGLE_LOCK.lock();
-        let s = Series::new("1", vec!["a", "b", "c"])
+        let s = Series::new(PlSmallStr::from_static("1"), vec!["a", "b", "c"])
             .cast(&DataType::Categorical(None, Default::default()))
             .unwrap();
 
         assert_eq!(s.n_unique().unwrap(), 3);
         // Make sure that it does not take the fast path after take/slice.
-        let out = s.take(&IdxCa::new("", [1, 2])).unwrap();
+        let out = s
+            .take(&IdxCa::new(PlSmallStr::const_default(), [1, 2]))
+            .unwrap();
         assert_eq!(out.n_unique().unwrap(), 2);
         let out = s.slice(1, 2);
         assert_eq!(out.n_unique().unwrap(), 2);
@@ -513,12 +519,15 @@ mod test {
         disable_string_cache();
 
         // tests several things that may lose the dtype information
-        let s = Series::new("a", vec!["a", "b", "c"])
+        let s = Series::new(PlSmallStr::from_static("a"), vec!["a", "b", "c"])
             .cast(&DataType::Categorical(None, Default::default()))?;
 
         assert_eq!(
             s.field().into_owned(),
-            Field::new("a", DataType::Categorical(None, Default::default()))
+            Field::new(
+                PlSmallStr::from_static("a"),
+                DataType::Categorical(None, Default::default())
+            )
         );
         assert!(matches!(
             s.get(0)?,

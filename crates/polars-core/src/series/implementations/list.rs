@@ -46,14 +46,14 @@ impl private::PrivateSeries for SeriesWrap<ListChunked> {
 }
 
 impl SeriesTrait for SeriesWrap<ListChunked> {
-    fn rename(&mut self, name: &str) {
+    fn rename(&mut self, name: PlSmallStr) {
         self.0.rename(name);
     }
 
     fn chunk_lengths(&self) -> ChunkLenIter {
         self.0.chunk_lengths()
     }
-    fn name(&self) -> &str {
+    fn name(&self) -> &PlSmallStr {
         self.0.name()
     }
 
@@ -187,13 +187,13 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
         }
         // this can be called in aggregation, so this fast path can be worth a lot
         if self.len() == 1 {
-            return Ok(IdxCa::new_vec(self.name(), vec![0 as IdxSize]));
+            return Ok(IdxCa::new_vec(self.name().clone(), vec![0 as IdxSize]));
         }
         let main_thread = POOL.current_thread_index().is_none();
         // arg_unique requires a stable order
         let groups = self.group_tuples(main_thread, true)?;
         let first = groups.take_group_firsts();
-        Ok(IdxCa::from_vec(self.name(), first))
+        Ok(IdxCa::from_vec(self.name().clone(), first))
     }
 
     fn is_null(&self) -> BooleanChunked {

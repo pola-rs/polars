@@ -12,17 +12,19 @@ use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::{AExpr, LiteralValue};
 use polars_plan::prelude::*;
 use polars_utils::arena::{Arena, Node};
+use polars_utils::format_pl_smallstr;
 use polars_utils::itertools::Itertools;
+use polars_utils::pl_str::PlSmallStr;
 use slotmap::SlotMap;
 
 use super::{PhysNode, PhysNodeKey, PhysNodeKind};
 
 type IRNodeKey = Node;
 
-fn unique_column_name() -> ColumnName {
+fn unique_column_name() -> PlSmallStr {
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let idx = COUNTER.fetch_add(1, Ordering::Relaxed);
-    format!("__POLARS_STMP_{idx}").into()
+    format_pl_smallstr!("__POLARS_STMP_{idx}")
 }
 
 pub(crate) struct ExprCache {
@@ -379,7 +381,7 @@ fn lower_exprs_with_ctx(
         let node = build_input_independent_node_with_ctx(&expr_irs, ctx)?;
         let out_exprs = expr_irs
             .iter()
-            .map(|e| ctx.expr_arena.add(AExpr::Column(e.output_name().into())))
+            .map(|e| ctx.expr_arena.add(AExpr::Column(e.output_name().clone())))
             .collect();
         return Ok((node, out_exprs));
     }
@@ -660,7 +662,7 @@ fn schema_for_select(
     let output_schema: Schema = exprs
         .iter()
         .map(|e| {
-            let name = e.output_name();
+            let name = e.output_name().clone();
             let dtype = ctx.expr_arena.get(e.node()).to_dtype(
                 input_schema,
                 Context::Default,
@@ -682,10 +684,10 @@ fn build_select_node_with_ctx(
     }
 
     // Are we only selecting simple columns, with the same name?
-    let all_simple_columns: Option<Vec<String>> = exprs
+    let all_simple_columns: Option<Vec<PlSmallStr>> = exprs
         .iter()
         .map(|e| match ctx.expr_arena.get(e.node()) {
-            AExpr::Column(name) if name.as_ref() == e.output_name() => Some(name.to_string()),
+            AExpr::Column(name) if name == e.output_name() => Some(name.clone()),
             _ => None,
         })
         .collect();
@@ -709,7 +711,7 @@ fn build_select_node_with_ctx(
     let trans_expr_irs = exprs
         .iter()
         .zip(transformed_exprs)
-        .map(|(e, te)| ExprIR::new(te, OutputName::Alias(e.output_name().into())))
+        .map(|(e, te)| ExprIR::new(te, OutputName::Alias(e.output_name().clone())))
         .collect_vec();
     let output_schema = schema_for_select(transformed_input, &trans_expr_irs, ctx)?;
     let node_kind = PhysNodeKind::Select {
@@ -743,7 +745,7 @@ pub fn lower_exprs(
     let trans_expr_irs = exprs
         .iter()
         .zip(transformed_exprs)
-        .map(|(e, te)| ExprIR::new(te, OutputName::Alias(e.output_name().into())))
+        .map(|(e, te)| ExprIR::new(te, OutputName::Alias(e.output_name().clone())))
         .collect_vec();
     Ok((transformed_input, trans_expr_irs))
 }

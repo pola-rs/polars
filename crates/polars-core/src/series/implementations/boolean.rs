@@ -121,14 +121,14 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
         Ok((&self.0).bitor(other).into_series())
     }
 
-    fn rename(&mut self, name: &str) {
+    fn rename(&mut self, name: PlSmallStr) {
         self.0.rename(name);
     }
 
     fn chunk_lengths(&self) -> ChunkLenIter {
         self.0.chunk_lengths()
     }
-    fn name(&self) -> &str {
+    fn name(&self) -> &PlSmallStr {
         self.0.name()
     }
 

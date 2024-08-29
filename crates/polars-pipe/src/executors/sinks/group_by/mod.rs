@@ -16,7 +16,7 @@ pub(crate) use string::*;
 pub(super) fn physical_agg_to_logical(cols: &mut [Series], output_schema: &Schema) {
     for (s, (name, dtype)) in cols.iter_mut().zip(output_schema.iter()) {
         if s.name() != name {
-            s.rename(name);
+            s.rename(name.clone());
         }
         match dtype {
             #[cfg(feature = "dtype-categorical")]

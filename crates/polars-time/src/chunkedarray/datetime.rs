@@ -25,7 +25,7 @@ fn cast_and_apply<
         .unwrap();
         func(&*arr).unwrap()
     });
-    ChunkedArray::from_chunk_iter(ca.name(), chunks)
+    ChunkedArray::from_chunk_iter(ca.name().clone(), chunks)
 }
 
 pub trait DatetimeMethods: AsDatetime {
@@ -130,7 +130,12 @@ pub trait DatetimeMethods: AsDatetime {
         ca.apply_kernel_cast::<Int16Type>(&f)
     }
 
-    fn parse_from_str_slice(name: &str, v: &[&str], fmt: &str, tu: TimeUnit) -> DatetimeChunked {
+    fn parse_from_str_slice(
+        name: PlSmallStr,
+        v: &[&str],
+        fmt: &str,
+        tu: TimeUnit,
+    ) -> DatetimeChunked {
         let func = match tu {
             TimeUnit::Nanoseconds => datetime_to_timestamp_ns,
             TimeUnit::Microseconds => datetime_to_timestamp_us,
@@ -175,7 +180,7 @@ mod test {
 
         // NOTE: the values are checked and correct.
         let dt = DatetimeChunked::from_naive_datetime(
-            "name",
+            "name".into(),
             datetimes.iter().copied(),
             TimeUnit::Nanoseconds,
         );

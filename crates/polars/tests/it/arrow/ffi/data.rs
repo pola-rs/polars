@@ -4,7 +4,7 @@ use arrow::ffi;
 use polars_error::PolarsResult;
 
 fn _test_round_trip(array: Box<dyn Array>, expected: Box<dyn Array>) -> PolarsResult<()> {
-    let field = Field::new("a", array.data_type().clone(), true);
+    let field = Field::new("a".into(), array.data_type().clone(), true);
 
     // export array and corresponding data_type
     let array_ffi = ffi::export_array_to_c(array);

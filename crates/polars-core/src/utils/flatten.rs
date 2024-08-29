@@ -12,7 +12,7 @@ pub fn flatten_df_iter(df: &DataFrame) -> impl Iterator<Item = DataFrame> + '_ {
                 // SAFETY:
                 // datatypes are correct
                 let mut out = unsafe {
-                    Series::from_chunks_and_dtype_unchecked(s.name(), vec![arr], s.dtype())
+                    Series::from_chunks_and_dtype_unchecked(s.name().clone(), vec![arr], s.dtype())
                 };
                 out.set_sorted_flag(s.is_sorted_flag());
                 out
@@ -33,7 +33,9 @@ pub fn flatten_series(s: &Series) -> Vec<Series> {
     unsafe {
         s.chunks()
             .iter()
-            .map(|arr| Series::from_chunks_and_dtype_unchecked(name, vec![arr.clone()], dtype))
+            .map(|arr| {
+                Series::from_chunks_and_dtype_unchecked(name.clone(), vec![arr.clone()], dtype)
+            })
             .collect()
     }
 }

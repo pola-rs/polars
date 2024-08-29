@@ -3,6 +3,7 @@ use std::sync::Arc;
 use arrow::legacy::error::{polars_bail, PolarsResult};
 use polars_core::prelude::Field;
 use polars_core::schema::Schema;
+use polars_utils::pl_str::PlSmallStr;
 
 use super::{Expr, GetOutput, SeriesUdf, SpecialEq};
 use crate::prelude::{Context, FunctionOptions};
@@ -11,7 +12,7 @@ use crate::prelude::{Context, FunctionOptions};
 #[derive(Clone)]
 pub struct UserDefinedFunction {
     /// name
-    pub name: String,
+    pub name: PlSmallStr,
     /// The function signature.
     pub input_fields: Vec<Field>,
     /// The function output type.
@@ -36,13 +37,13 @@ impl std::fmt::Debug for UserDefinedFunction {
 impl UserDefinedFunction {
     /// Create a new UserDefinedFunction
     pub fn new(
-        name: &str,
+        name: PlSmallStr,
         input_fields: Vec<Field>,
         return_type: GetOutput,
         fun: impl SeriesUdf + 'static,
     ) -> Self {
         Self {
-            name: name.to_owned(),
+            name,
             input_fields,
             return_type,
             fun: SpecialEq::new(Arc::new(fun)),

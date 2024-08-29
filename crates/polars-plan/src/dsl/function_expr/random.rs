@@ -46,7 +46,7 @@ pub(super) fn sample_frac(
 
     match frac.get(0) {
         Some(frac) => src.sample_frac(frac, with_replacement, shuffle, seed),
-        None => Ok(Series::new_empty(src.name(), src.dtype())),
+        None => Ok(Series::new_empty(src.name().clone(), src.dtype())),
     }
 }
 
@@ -69,6 +69,6 @@ pub(super) fn sample_n(
 
     match n.get(0) {
         Some(n) => src.sample_n(n as usize, with_replacement, shuffle, seed),
-        None => Ok(Series::new_empty(src.name(), src.dtype())),
+        None => Ok(Series::new_empty(src.name().clone(), src.dtype())),
     }
 }

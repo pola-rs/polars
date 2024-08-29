@@ -8,8 +8,8 @@ impl DataFrame {
     pub(crate) fn transpose_from_dtype(
         &self,
         dtype: &DataType,
-        keep_names_as: Option<&str>,
-        names_out: &[String],
+        keep_names_as: Option<PlSmallStr>,
+        names_out: &[PlSmallStr],
     ) -> PolarsResult<DataFrame> {
         let new_width = self.height();
         let new_height = self.width();
@@ -18,7 +18,13 @@ impl DataFrame {
             None => Vec::<Series>::with_capacity(new_width),
             Some(name) => {
                 let mut tmp = Vec::<Series>::with_capacity(new_width + 1);
-                tmp.push(StringChunked::new(name, self.get_column_names()).into());
+                tmp.push(
+                    StringChunked::from_iter_values(
+                        name,
+                        self.get_column_names_owned().into_iter(),
+                    )
+                    .into(),
+                );
                 tmp
             },
         };
@@ -74,7 +80,7 @@ impl DataFrame {
                 cols_t.extend(buffers.into_iter().zip(names_out).map(|(buf, name)| {
                     // SAFETY: we are casting back to the supertype
                     let mut s = unsafe { buf.into_series().cast_unchecked(dtype).unwrap() };
-                    s.rename(name);
+                    s.rename(name.clone());
                     s
                 }));
             },
@@ -82,26 +88,43 @@ impl DataFrame {
         Ok(unsafe { DataFrame::new_no_checks(cols_t) })
     }
 
-    /// Transpose a DataFrame. This is a very expensive operation.
     pub fn transpose(
         &mut self,
         keep_names_as: Option<&str>,
         new_col_names: Option<Either<String, Vec<String>>>,
+    ) -> PolarsResult<DataFrame> {
+        let new_col_names = match new_col_names {
+            None => None,
+            Some(Either::Left(v)) => Some(Either::Left(v.into())),
+            Some(Either::Right(v)) => Some(Either::Right(
+                v.into_iter().map(Into::into).collect::<Vec<_>>(),
+            )),
+        };
+
+        self.transpose_impl(keep_names_as, new_col_names)
+    }
+    /// Transpose a DataFrame. This is a very expensive operation.
+    pub fn transpose_impl(
+        &mut self,
+        keep_names_as: Option<&str>,
+        new_col_names: Option<Either<PlSmallStr, Vec<PlSmallStr>>>,
     ) -> PolarsResult<DataFrame> {
         // We must iterate columns as [`AnyValue`], so we must be contiguous.
         self.as_single_chunk_par();
 
         let mut df = Cow::Borrowed(self); // Can't use self because we might drop a name column
         let names_out = match new_col_names {
-            None => (0..self.height()).map(|i| format!("column_{i}")).collect(),
+            None => (0..self.height())
+                .map(|i| format_pl_smallstr!("column_{i}"))
+                .collect(),
             Some(cn) => match cn {
                 Either::Left(name) => {
-                    let new_names = self.column(&name).and_then(|x| x.str())?;
+                    let new_names = self.column(name.as_str()).and_then(|x| x.str())?;
                     polars_ensure!(new_names.null_count() == 0, ComputeError: "Column with new names can't have null values");
-                    df = Cow::Owned(self.drop(&name)?);
+                    df = Cow::Owned(self.drop(name.as_str())?);
                     new_names
                         .into_no_null_iter()
-                        .map(|s| s.to_owned())
+                        .map(PlSmallStr::from_str)
                         .collect()
                 },
                 Either::Right(names) => {
@@ -141,7 +164,7 @@ impl DataFrame {
             },
             _ => {},
         }
-        df.transpose_from_dtype(&dtype, keep_names_as, &names_out)
+        df.transpose_from_dtype(&dtype, keep_names_as.map(PlSmallStr::from_str), &names_out)
     }
 }
 
@@ -159,8 +182,11 @@ unsafe fn add_value<T: NumericNative>(
 
 // This just fills a pre-allocated mutable series vector, which may have a name column.
 // Nothing is returned and the actual DataFrame is constructed above.
-pub(super) fn numeric_transpose<T>(cols: &[Series], names_out: &[String], cols_t: &mut Vec<Series>)
-where
+pub(super) fn numeric_transpose<T>(
+    cols: &[Series],
+    names_out: &[PlSmallStr],
+    cols_t: &mut Vec<Series>,
+) where
     T: PolarsNumericType,
     //S: AsRef<str>,
     ChunkedArray<T>: IntoSeries,
@@ -251,7 +277,7 @@ where
                 values.into(),
                 validity,
             );
-            ChunkedArray::with_chunk(name.as_str(), arr).into_series()
+            ChunkedArray::with_chunk(name.clone(), arr).into_series()
         });
     POOL.install(|| cols_t.par_extend(par_iter));
 }

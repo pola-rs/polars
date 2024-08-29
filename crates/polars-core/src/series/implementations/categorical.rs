@@ -125,14 +125,14 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
 }
 
 impl SeriesTrait for SeriesWrap<CategoricalChunked> {
-    fn rename(&mut self, name: &str) {
+    fn rename(&mut self, name: PlSmallStr) {
         self.0.physical_mut().rename(name);
     }
 
     fn chunk_lengths(&self) -> ChunkLenIter {
         self.0.physical().chunk_lengths()
     }
-    fn name(&self) -> &str {
+    fn name(&self) -> &PlSmallStr {
         self.0.physical().name()
     }
 

@@ -217,7 +217,10 @@ fn test_lazy_ternary_and_predicates() {
 
     let new = ldf.collect().unwrap();
     let length = new.column("sepal_length").unwrap();
-    assert_eq!(length, &Series::new("sepal_length", &[5.1f64, 5.0, 5.4]));
+    assert_eq!(
+        length,
+        &Series::new("sepal_length".into(), &[5.1f64, 5.0, 5.4])
+    );
     assert_eq!(new.shape(), (3, 6));
 }
 
@@ -344,7 +347,7 @@ fn test_lazy_query_8() -> PolarsResult<()> {
 
     let mut selection = vec![];
 
-    for c in &["A", "B", "C", "D", "E"] {
+    for &c in &["A", "B", "C", "D", "E"] {
         let e = when(col(c).is_in(col("E")))
             .then(col("A"))
             .otherwise(Null {}.lit())
@@ -412,7 +415,7 @@ fn test_lazy_query_10() {
     use polars_core::export::chrono::Duration as ChronoDuration;
     let date = NaiveDate::from_ymd_opt(2021, 3, 5).unwrap();
     let x: Series = DatetimeChunked::from_naive_datetime(
-        "x",
+        "x".into(),
         [
             NaiveDateTime::new(date, NaiveTime::from_hms_opt(12, 0, 0).unwrap()),
             NaiveDateTime::new(date, NaiveTime::from_hms_opt(13, 0, 0).unwrap()),
@@ -422,7 +425,7 @@ fn test_lazy_query_10() {
     )
     .into();
     let y: Series = DatetimeChunked::from_naive_datetime(
-        "y",
+        "y".into(),
         [
             NaiveDateTime::new(date, NaiveTime::from_hms_opt(11, 0, 0).unwrap()),
             NaiveDateTime::new(date, NaiveTime::from_hms_opt(11, 0, 0).unwrap()),
@@ -438,7 +441,7 @@ fn test_lazy_query_10() {
         .collect()
         .unwrap();
     let z: Series = DurationChunked::from_duration(
-        "z",
+        "z".into(),
         [
             ChronoDuration::try_hours(1).unwrap(),
             ChronoDuration::try_hours(2).unwrap(),
@@ -449,7 +452,7 @@ fn test_lazy_query_10() {
     .into();
     assert!(out.column("z").unwrap().equals(&z));
     let x: Series = DatetimeChunked::from_naive_datetime(
-        "x",
+        "x".into(),
         [
             NaiveDateTime::new(date, NaiveTime::from_hms_opt(2, 0, 0).unwrap()),
             NaiveDateTime::new(date, NaiveTime::from_hms_opt(3, 0, 0).unwrap()),
@@ -459,7 +462,7 @@ fn test_lazy_query_10() {
     )
     .into();
     let y: Series = DatetimeChunked::from_naive_datetime(
-        "y",
+        "y".into(),
         [
             NaiveDateTime::new(date, NaiveTime::from_hms_opt(1, 0, 0).unwrap()),
             NaiveDateTime::new(date, NaiveTime::from_hms_opt(1, 0, 0).unwrap()),
@@ -498,8 +501,8 @@ fn test_lazy_query_7() {
     ];
     let data = vec![Some(1.), Some(2.), Some(3.), Some(4.), None, None];
     let df = DataFrame::new(vec![
-        DatetimeChunked::from_naive_datetime("date", dates, TimeUnit::Nanoseconds).into(),
-        Series::new("data", data),
+        DatetimeChunked::from_naive_datetime("date".into(), dates, TimeUnit::Nanoseconds).into(),
+        Series::new("data".into(), data),
     ])
     .unwrap();
     // this tests if predicate pushdown not interferes with the shift data.
@@ -520,7 +523,7 @@ fn test_lazy_query_7() {
 #[test]
 fn test_lazy_shift_and_fill_all() {
     let data = &[1, 2, 3];
-    let df = DataFrame::new(vec![Series::new("data", data)]).unwrap();
+    let df = DataFrame::new(vec![Series::new("data".into(), data)]).unwrap();
     let out = df
         .lazy()
         .with_column(col("data").shift(lit(1)).fill_null(lit(0)).alias("output"))
@@ -711,7 +714,7 @@ fn test_lazy_group_by_apply() {
     df.lazy()
         .group_by([col("fruits")])
         .agg([col("cars").apply(
-            |s: Series| Ok(Some(Series::new("", &[s.len() as u32]))),
+            |s: Series| Ok(Some(Series::new("".into(), &[s.len() as u32]))),
             GetOutput::from_type(DataType::UInt32),
         )])
         .collect()
@@ -1163,9 +1166,9 @@ fn test_fill_forward() -> PolarsResult<()> {
     let agg = out.column("b")?.list()?;
 
     let a: Series = agg.get_as_series(0).unwrap();
-    assert!(a.equals(&Series::new("b", &[1, 1])));
+    assert!(a.equals(&Series::new("b".into(), &[1, 1])));
     let a: Series = agg.get_as_series(2).unwrap();
-    assert!(a.equals(&Series::new("b", &[1, 1])));
+    assert!(a.equals(&Series::new("b".into(), &[1, 1])));
     let a: Series = agg.get_as_series(1).unwrap();
     assert_eq!(a.null_count(), 1);
     Ok(())
@@ -1468,8 +1471,8 @@ fn test_singleton_broadcast() -> PolarsResult<()> {
 
 #[test]
 fn test_list_in_select_context() -> PolarsResult<()> {
-    let s = Series::new("a", &[1, 2, 3]);
-    let mut builder = get_list_builder(s.dtype(), s.len(), 1, s.name()).unwrap();
+    let s = Series::new("a".into(), &[1, 2, 3]);
+    let mut builder = get_list_builder(s.dtype(), s.len(), 1, s.name().clone()).unwrap();
     builder.append_series(&s).unwrap();
     let expected = builder.finish().into_series();
 
@@ -1546,8 +1549,8 @@ fn test_round_after_agg() -> PolarsResult<()> {
 #[test]
 #[cfg(feature = "dtype-date")]
 fn test_fill_nan() -> PolarsResult<()> {
-    let s0 = Series::new("date", &[1, 2, 3]).cast(&DataType::Date)?;
-    let s1 = Series::new("float", &[Some(1.0), Some(f32::NAN), Some(3.0)]);
+    let s0 = Series::new("date".into(), &[1, 2, 3]).cast(&DataType::Date)?;
+    let s1 = Series::new("float".into(), &[Some(1.0), Some(f32::NAN), Some(3.0)]);
 
     let df = DataFrame::new(vec![s0, s1])?;
     let out = df.lazy().fill_nan(Null {}.lit()).collect()?;
@@ -1694,7 +1697,7 @@ fn test_single_ranked_group() -> PolarsResult<()> {
 #[cfg(feature = "diff")]
 fn empty_df() -> PolarsResult<()> {
     let df = fruits_cars();
-    let df = df.filter(&BooleanChunked::full("", false, df.height()))?;
+    let df = df.filter(&BooleanChunked::full("".into(), false, df.height()))?;
 
     df.lazy()
         .select([
@@ -1757,7 +1760,7 @@ fn test_is_in() -> PolarsResult<()> {
     let out = df
         .lazy()
         .group_by_stable([col("fruits")])
-        .agg([col("cars").is_in(lit(Series::new("a", ["beetle", "vw"])))])
+        .agg([col("cars").is_in(lit(Series::new("a".into(), ["beetle", "vw"])))])
         .collect()?;
 
     let out = out.column("cars").unwrap();

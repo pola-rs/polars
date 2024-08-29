@@ -86,7 +86,10 @@ impl From<BinaryFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
 pub(super) fn contains(s: &[Series]) -> PolarsResult<Series> {
     let ca = s[0].binary()?;
     let lit = s[1].binary()?;
-    Ok(ca.contains_chunked(lit).with_name(ca.name()).into_series())
+    Ok(ca
+        .contains_chunked(lit)
+        .with_name(ca.name().clone())
+        .into_series())
 }
 
 pub(super) fn ends_with(s: &[Series]) -> PolarsResult<Series> {
@@ -95,7 +98,7 @@ pub(super) fn ends_with(s: &[Series]) -> PolarsResult<Series> {
 
     Ok(ca
         .ends_with_chunked(suffix)
-        .with_name(ca.name())
+        .with_name(ca.name().clone())
         .into_series())
 }
 
@@ -105,7 +108,7 @@ pub(super) fn starts_with(s: &[Series]) -> PolarsResult<Series> {
 
     Ok(ca
         .starts_with_chunked(prefix)
-        .with_name(ca.name())
+        .with_name(ca.name().clone())
         .into_series())
 }
 

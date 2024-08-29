@@ -6,7 +6,11 @@ pub(super) fn arg_where(s: &mut [Series]) -> PolarsResult<Option<Series>> {
     let predicate = s[0].bool()?;
 
     if predicate.is_empty() {
-        Ok(Some(Series::full_null(predicate.name(), 0, &IDX_DTYPE)))
+        Ok(Some(Series::full_null(
+            predicate.name().clone(),
+            0,
+            &IDX_DTYPE,
+        )))
     } else {
         let capacity = predicate.sum().unwrap();
         let mut out = Vec::with_capacity(capacity as usize);
@@ -32,7 +36,7 @@ pub(super) fn arg_where(s: &mut [Series]) -> PolarsResult<Option<Series>> {
 
             total_offset += arr.len();
         });
-        let ca = IdxCa::with_chunk(predicate.name(), IdxArr::from_vec(out));
+        let ca = IdxCa::with_chunk(predicate.name().clone(), IdxArr::from_vec(out));
         Ok(Some(ca.into_series()))
     }
 }

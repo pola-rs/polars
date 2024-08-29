@@ -127,7 +127,7 @@ fn read_int96_timestamps() -> PolarsResult<()> {
         let metadata = read_metadata(&mut reader)?;
         let schema = arrow::datatypes::ArrowSchema {
             fields: vec![arrow::datatypes::Field::new(
-                "timestamps",
+                "timestamps".into(),
                 arrow::datatypes::ArrowDataType::Timestamp(time_unit, None),
                 false,
             )],

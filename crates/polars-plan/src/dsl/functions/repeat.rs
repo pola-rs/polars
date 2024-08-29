@@ -16,5 +16,6 @@ pub fn repeat<E: Into<Expr>>(value: E, n: Expr) -> Expr {
         )?;
         Ok(Some(s.new_from_index(0, n)))
     };
-    apply_binary(value.into(), n, function, GetOutput::same_type()).alias("repeat")
+    apply_binary(value.into(), n, function, GetOutput::same_type())
+        .alias(PlSmallStr::from_static("repeat"))
 }

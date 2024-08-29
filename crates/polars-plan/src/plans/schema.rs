@@ -4,7 +4,7 @@ use std::sync::Mutex;
 use arrow::datatypes::ArrowSchemaRef;
 use either::Either;
 use polars_core::prelude::*;
-use polars_utils::format_smartstring;
+use polars_utils::format_pl_smallstr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -286,7 +286,7 @@ pub(crate) fn det_join_schema(
                 {
                     let left_is_removed = join_on_left.contains(name.as_str()) && should_coalesce;
                     if schema_left.contains(name.as_str()) && !left_is_removed {
-                        let new_name = format_smartstring!("{}{}", name, options.args.suffix());
+                        let new_name = format_pl_smallstr!("{}{}", name, options.args.suffix());
                         new_schema.with_column(new_name, dtype.clone());
                     } else {
                         new_schema.with_column(name.clone(), dtype.clone());
@@ -319,7 +319,7 @@ pub(crate) fn det_join_schema(
                     if should_coalesce && field_left.name != field_right.name {
                         if schema_left.contains(&field_right.name) {
                             new_schema.with_column(
-                                _join_suffix_name(&field_right.name, options.args.suffix()).into(),
+                                _join_suffix_name(&field_right.name, options.args.suffix()),
                                 field_right.dtype,
                             );
                         } else {
@@ -351,7 +351,7 @@ pub(crate) fn det_join_schema(
 
                     // The names that are joined on are merged
                     if schema_left.contains(name.as_str()) {
-                        let new_name = format_smartstring!("{}{}", name, options.args.suffix());
+                        let new_name = format_pl_smallstr!("{}{}", name, options.args.suffix());
                         new_schema.with_column(new_name, dtype.clone());
                     } else {
                         new_schema.with_column(name.clone(), dtype.clone());

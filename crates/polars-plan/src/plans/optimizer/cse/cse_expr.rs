@@ -1,4 +1,5 @@
 use hashbrown::hash_map::RawEntryMut;
+use polars_utils::format_pl_smallstr;
 use polars_utils::vec::CapacityByFactor;
 
 use super::*;
@@ -74,8 +75,8 @@ impl Identifier {
         self.inner.is_some()
     }
 
-    fn materialize(&self) -> String {
-        format!("{}{:#x}", CSE_REPLACED, self.materialized_hash())
+    fn materialize(&self) -> PlSmallStr {
+        format_pl_smallstr!("{}{:#x}", CSE_REPLACED, self.materialized_hash())
     }
 
     fn materialized_hash(&self) -> u64 {
@@ -590,7 +591,7 @@ impl RewritingVisitor for CommonSubExprRewriter<'_> {
         );
 
         let name = id.materialize();
-        node.assign(AExpr::col(name.as_ref()), arena);
+        node.assign(AExpr::col(name), arena);
         self.rewritten = true;
 
         Ok(node)
@@ -723,7 +724,7 @@ impl CommonSubExprOptimizer {
                     // intermediate temporary names starting with the `CSE_REPLACED` constant.
                     if !e.has_alias() {
                         let name = ae_node.to_field(schema, expr_arena)?.name;
-                        out_e.set_alias(ColumnName::from(name.as_str()));
+                        out_e.set_alias(name.clone());
                     }
                     out_e
                 };
@@ -733,7 +734,7 @@ impl CommonSubExprOptimizer {
             for id in self.replaced_identifiers.inner.keys() {
                 let (node, _count) = self.se_count.get(id, expr_arena).unwrap();
                 let name = id.materialize();
-                let out_e = ExprIR::new(*node, OutputName::Alias(ColumnName::from(name)));
+                let out_e = ExprIR::new(*node, OutputName::Alias(name));
                 new_expr.push(out_e)
             }
             let expr =

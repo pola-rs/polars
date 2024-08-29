@@ -3,6 +3,7 @@ use arrow::io::ipc::read::deserialize_schema;
 use base64::engine::general_purpose;
 use base64::Engine as _;
 use polars_error::{polars_bail, PolarsResult};
+use polars_utils::pl_str::PlSmallStr;
 
 use super::super::super::ARROW_SCHEMA_META_KEY;
 pub use crate::parquet::metadata::KeyValue;
@@ -86,9 +87,12 @@ pub(super) fn parse_key_value_metadata(key_value_metadata: &Option<Vec<KeyValue>
             key_values
                 .iter()
                 .filter_map(|kv| {
-                    kv.value
-                        .as_ref()
-                        .map(|value| (kv.key.clone(), value.clone()))
+                    kv.value.as_ref().map(|value| {
+                        (
+                            PlSmallStr::from_str(kv.key.as_str()),
+                            PlSmallStr::from_str(value.as_str()),
+                        )
+                    })
                 })
                 .collect()
         })

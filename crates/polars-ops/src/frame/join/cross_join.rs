@@ -1,5 +1,5 @@
 use polars_core::utils::{concat_df_unchecked, CustomIterTools, NoNull};
-use smartstring::alias::String as SmartString;
+use polars_utils::pl_str::PlSmallStr;
 
 use super::*;
 
@@ -99,7 +99,7 @@ pub trait CrossJoin: IntoDf {
     fn _cross_join_with_names(
         &self,
         other: &DataFrame,
-        names: &[SmartString],
+        names: &[PlSmallStr],
     ) -> PolarsResult<DataFrame> {
         let (mut l_df, r_df) = self.cross_join_dfs(other, None, false)?;
 
@@ -111,7 +111,7 @@ pub trait CrossJoin: IntoDf {
                 .zip(names)
                 .for_each(|(s, name)| {
                     if s.name() != name {
-                        s.rename(name);
+                        s.rename(name.clone());
                     }
                 });
         }
@@ -122,7 +122,7 @@ pub trait CrossJoin: IntoDf {
     fn cross_join(
         &self,
         other: &DataFrame,
-        suffix: Option<&str>,
+        suffix: Option<PlSmallStr>,
         slice: Option<(i64, usize)>,
     ) -> PolarsResult<DataFrame> {
         let (l_df, r_df) = self.cross_join_dfs(other, slice, true)?;
