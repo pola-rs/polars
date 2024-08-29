@@ -3,37 +3,38 @@ use polars_core::error::constants::LENGTH_LIMIT_MSG;
 use super::*;
 
 #[derive(Clone)]
-pub struct LenReduce {
-    len: u64,
-}
+pub struct LenReduce {}
 
 impl LenReduce {
-    pub(crate) fn new() -> Self {
-        Self { len: 0 }
+    pub fn new() -> Self {
+        Self { }
     }
 }
 
 impl Reduction for LenReduce {
-    fn init_dyn(&self) -> Box<dyn Reduction> {
-        Box::new(Self::new())
+    fn new_reducer(&self) -> Box<dyn ReductionState> {
+        Box::new(LenReduceState { len: 0 })
     }
+}
+    
 
-    fn reset(&mut self) {
-        self.len = 0;
-    }
+pub struct LenReduceState {
+    len: u64,
+}
 
+impl ReductionState for LenReduceState {
     fn update(&mut self, batch: &Series) -> PolarsResult<()> {
         self.len += batch.len() as u64;
         Ok(())
     }
 
-    fn combine(&mut self, other: &dyn Reduction) -> PolarsResult<()> {
+    fn combine(&mut self, other: &dyn ReductionState) -> PolarsResult<()> {
         let other = other.as_any().downcast_ref::<Self>().unwrap();
         self.len += other.len;
         Ok(())
     }
 
-    fn finalize(&mut self) -> PolarsResult<Scalar> {
+    fn finalize(&self) -> PolarsResult<Scalar> {
         #[allow(clippy::useless_conversion)]
         let as_idx: IdxSize = self.len.try_into().expect(LENGTH_LIMIT_MSG);
         Ok(Scalar::new(IDX_DTYPE, as_idx.into()))
