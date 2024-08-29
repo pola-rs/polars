@@ -124,7 +124,8 @@ if TYPE_CHECKING:
     import numpy.typing as npt
     import torch
     from great_tables import GT
-    from xlsxwriter import Workbook, Worksheet
+    from xlsxwriter import Workbook
+    from xlsxwriter.worksheet import Worksheet
 
     from polars import DataType, Expr, LazyFrame, Series
     from polars._typing import (
