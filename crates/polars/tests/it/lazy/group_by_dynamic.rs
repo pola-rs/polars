@@ -22,7 +22,7 @@ fn test_group_by_dynamic_week_bounds() -> PolarsResult<()> {
         .and_hms_opt(0, 0, 0)
         .unwrap();
     let range = polars_time::date_range(
-        "dt",
+        "dt".into(),
         start,
         stop,
         Duration::parse("1d"),
@@ -32,7 +32,7 @@ fn test_group_by_dynamic_week_bounds() -> PolarsResult<()> {
     )?
     .into_series();
 
-    let a = Int32Chunked::full("a", 1, range.len());
+    let a = Int32Chunked::full("a".into(), 1, range.len());
     let df = df![
         "dt" => range,
         "a" => a

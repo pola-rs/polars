@@ -5,7 +5,7 @@ use polars::chunked_array::object::PolarsObjectSafe;
 #[cfg(feature = "object")]
 use polars::datatypes::OwnedObject;
 use polars::datatypes::{DataType, Field, PlHashMap, TimeUnit};
-use polars::prelude::{AnyValue, Series};
+use polars::prelude::{AnyValue, PlSmallStr, Series};
 use polars_core::export::chrono::{NaiveDate, NaiveDateTime, NaiveTime, TimeDelta, Timelike};
 use polars_core::utils::any_values_to_supertype_and_n_dtypes;
 use polars_core::utils::arrow::temporal_conversions::date32_to_date;
@@ -289,7 +289,10 @@ pub(crate) fn py_object_to_any_value<'py>(
         }
 
         if ob.is_empty()? {
-            Ok(AnyValue::List(Series::new_empty("", &DataType::Null)))
+            Ok(AnyValue::List(Series::new_empty(
+                PlSmallStr::const_default(),
+                &DataType::Null,
+            )))
         } else if ob.is_instance_of::<PyList>() | ob.is_instance_of::<PyTuple>() {
             const INFER_SCHEMA_LENGTH: usize = 25;
 
@@ -320,7 +323,7 @@ pub(crate) fn py_object_to_any_value<'py>(
                     avs.push(av)
                 }
 
-                let s = Series::from_any_values_and_dtype("", &avs, &dtype, strict)
+                let s = Series::from_any_values_and_dtype(PlSmallStr::const_default(), &avs, &dtype, strict)
                     .map_err(|e| {
                         PyTypeError::new_err(format!(
                             "{e}\n\nHint: Try setting `strict=False` to allow passing data with mixed types."
@@ -348,7 +351,7 @@ pub(crate) fn py_object_to_any_value<'py>(
             let key = k.extract::<Cow<str>>()?;
             let val = py_object_to_any_value(&v, strict)?;
             let dtype = val.dtype();
-            keys.push(Field::new(&key, dtype));
+            keys.push(Field::new(key.as_ref().into(), dtype));
             vals.push(val)
         }
         Ok(AnyValue::StructOwned(Box::new((vals, keys))))

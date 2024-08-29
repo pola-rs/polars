@@ -25,7 +25,7 @@ pub fn to_record(schema: &ArrowSchema, name: String) -> PolarsResult<Record> {
 
 fn field_to_field(field: &Field, name_counter: &mut i32) -> PolarsResult<AvroField> {
     let schema = type_to_schema(field.data_type(), field.is_nullable, name_counter)?;
-    Ok(AvroField::new(&field.name, schema))
+    Ok(AvroField::new(field.name.to_string(), schema))
 }
 
 fn type_to_schema(

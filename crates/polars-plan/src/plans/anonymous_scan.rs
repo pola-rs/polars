@@ -8,7 +8,7 @@ use crate::dsl::Expr;
 
 pub struct AnonymousScanArgs {
     pub n_rows: Option<usize>,
-    pub with_columns: Option<Arc<[String]>>,
+    pub with_columns: Option<Arc<[PlSmallStr]>>,
     pub schema: SchemaRef,
     pub output_schema: Option<SchemaRef>,
     pub predicate: Option<Expr>,

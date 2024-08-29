@@ -65,7 +65,7 @@ impl SpillPayload {
         schema.with_column(INDEX_COL.into(), IDX_DTYPE);
         schema.with_column(KEYS_COL.into(), DataType::BinaryOffset);
         for s in &self.aggs {
-            schema.with_column(s.name().into(), s.dtype().clone());
+            schema.with_column(s.name().clone(), s.dtype().clone());
         }
         schema
     }
@@ -74,9 +74,12 @@ impl SpillPayload {
         debug_assert_eq!(self.hashes.len(), self.chunk_idx.len());
         debug_assert_eq!(self.hashes.len(), self.keys.len());
 
-        let hashes = UInt64Chunked::from_vec(HASH_COL, self.hashes).into_series();
-        let chunk_idx = IdxCa::from_vec(INDEX_COL, self.chunk_idx).into_series();
-        let keys = BinaryOffsetChunked::with_chunk(KEYS_COL, self.keys).into_series();
+        let hashes =
+            UInt64Chunked::from_vec(PlSmallStr::from_static(HASH_COL), self.hashes).into_series();
+        let chunk_idx =
+            IdxCa::from_vec(PlSmallStr::from_static(INDEX_COL), self.chunk_idx).into_series();
+        let keys = BinaryOffsetChunked::with_chunk(PlSmallStr::from_static(KEYS_COL), self.keys)
+            .into_series();
 
         let mut cols = Vec::with_capacity(self.aggs.len() + 3);
         cols.push(hashes);

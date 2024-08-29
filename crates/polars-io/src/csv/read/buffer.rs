@@ -147,7 +147,7 @@ where
 }
 
 pub struct Utf8Field {
-    name: String,
+    name: PlSmallStr,
     mutable: MutableBinaryViewArray<str>,
     scratch: Vec<u8>,
     quote_char: u8,
@@ -155,9 +155,14 @@ pub struct Utf8Field {
 }
 
 impl Utf8Field {
-    fn new(name: &str, capacity: usize, quote_char: Option<u8>, encoding: CsvEncoding) -> Self {
+    fn new(
+        name: PlSmallStr,
+        capacity: usize,
+        quote_char: Option<u8>,
+        encoding: CsvEncoding,
+    ) -> Self {
         Self {
-            name: name.to_string(),
+            name,
             mutable: MutableBinaryViewArray::with_capacity(capacity),
             scratch: vec![],
             quote_char: quote_char.unwrap_or(b'"'),
@@ -254,7 +259,7 @@ pub struct CategoricalField {
 #[cfg(feature = "dtype-categorical")]
 impl CategoricalField {
     fn new(
-        name: &str,
+        name: PlSmallStr,
         capacity: usize,
         quote_char: Option<u8>,
         ordering: CategoricalOrdering,
@@ -358,7 +363,7 @@ pub struct DatetimeField<T: PolarsNumericType> {
 
 #[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
 impl<T: PolarsNumericType> DatetimeField<T> {
-    fn new(name: &str, capacity: usize) -> Self {
+    fn new(name: PlSmallStr, capacity: usize) -> Self {
         let builder = PrimitiveChunkedBuilder::<T>::new(name, capacity);
         Self {
             compiled: None,
@@ -492,6 +497,7 @@ pub fn init_buffers(
         .iter()
         .map(|&i| {
             let (name, dtype) = schema.get_at_index(i).unwrap();
+            let name = name.clone();
             let builder = match dtype {
                 &DataType::Boolean => Buffer::Boolean(BooleanChunkedBuilder::new(name, capacity)),
                 #[cfg(feature = "dtype-i8")]
@@ -625,7 +631,7 @@ impl Buffer {
 
             Buffer::Utf8(v) => {
                 let arr = v.mutable.freeze();
-                StringChunked::with_chunk(v.name.as_str(), arr).into_series()
+                StringChunked::with_chunk(v.name.clone(), arr).into_series()
             },
             #[allow(unused_variables)]
             Buffer::Categorical(buf) => {

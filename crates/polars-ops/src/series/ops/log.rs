@@ -92,7 +92,10 @@ pub trait LogSeries: SeriesSealed {
                 let pk = s.as_ref();
 
                 let pk = if normalize {
-                    let sum = pk.sum_reduce().unwrap().into_series("");
+                    let sum = pk
+                        .sum_reduce()
+                        .unwrap()
+                        .into_series(PlSmallStr::const_default());
 
                     if sum.get(0).unwrap().extract::<f64>().unwrap() != 1.0 {
                         (pk / &sum)?

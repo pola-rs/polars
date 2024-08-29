@@ -8,7 +8,7 @@ struct LeftRight<T>(T, T);
 fn should_block_join_specific(
     ae: &AExpr,
     how: &JoinType,
-    on_names: &PlHashSet<Arc<str>>,
+    on_names: &PlHashSet<PlSmallStr>,
     expr_arena: &Arena<AExpr>,
     schema_left: &Schema,
     schema_right: &Schema,
@@ -130,7 +130,7 @@ pub(super) fn process_join(
     right_on: Vec<ExprIR>,
     schema: SchemaRef,
     options: Arc<JoinOptions>,
-    acc_predicates: PlHashMap<Arc<str>, ExprIR>,
+    acc_predicates: PlHashMap<PlSmallStr, ExprIR>,
 ) -> PolarsResult<IR> {
     use IR::*;
     let schema_left = lp_arena.get(input_left).schema(lp_arena);

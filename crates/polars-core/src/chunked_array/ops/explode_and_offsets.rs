@@ -13,7 +13,7 @@ impl ListChunked {
         // SAFETY: inner_dtype should be correct
         let values = unsafe {
             Series::from_chunks_and_dtype_unchecked(
-                self.name(),
+                self.name().clone(),
                 vec![values],
                 &self.inner_dtype().to_physical(),
             )
@@ -85,7 +85,7 @@ impl ChunkExplode for ListChunked {
             (
                 unsafe {
                     Series::from_chunks_and_dtype_unchecked(
-                        self.name(),
+                        self.name().clone(),
                         vec![values],
                         &self.inner_dtype().to_physical(),
                     )
@@ -178,7 +178,7 @@ impl ChunkExplode for ListChunked {
             // SAFETY: inner_dtype should be correct
             let s = unsafe {
                 Series::from_chunks_and_dtype_unchecked(
-                    self.name(),
+                    self.name().clone(),
                     vec![chunk],
                     &self.inner_dtype().to_physical(),
                 )
@@ -244,7 +244,7 @@ impl ChunkExplode for ArrayChunked {
         let arr = ca.downcast_iter().next().unwrap();
         // fast-path for non-null array.
         if arr.null_count() == 0 {
-            let s = Series::try_from((self.name(), arr.values().clone()))
+            let s = Series::try_from((self.name().clone(), arr.values().clone()))
                 .unwrap()
                 .cast(ca.inner_dtype())?;
             let width = self.width() as i64;
@@ -291,7 +291,11 @@ impl ChunkExplode for ArrayChunked {
         Ok((
             // SAFETY: inner_dtype should be correct
             unsafe {
-                Series::from_chunks_and_dtype_unchecked(ca.name(), vec![chunk], ca.inner_dtype())
+                Series::from_chunks_and_dtype_unchecked(
+                    ca.name().clone(),
+                    vec![chunk],
+                    ca.inner_dtype(),
+                )
             },
             offsets,
         ))

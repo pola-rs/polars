@@ -56,10 +56,12 @@ impl JsonExec {
         if n_rows == Some(0) {
             let mut df = DataFrame::empty_with_schema(schema);
             if let Some(col) = &self.file_scan_options.include_file_paths {
-                unsafe { df.with_column_unchecked(StringChunked::full_null(col, 0).into_series()) };
+                unsafe {
+                    df.with_column_unchecked(StringChunked::full_null(col.clone(), 0).into_series())
+                };
             }
             if let Some(row_index) = &self.file_scan_options.row_index {
-                df.with_row_index_mut(row_index.name.as_ref(), Some(row_index.offset));
+                df.with_row_index_mut(row_index.name.clone(), Some(row_index.offset));
             }
             return Ok(df);
         }
@@ -132,7 +134,7 @@ impl JsonExec {
                     let path = p.to_str().unwrap();
                     unsafe {
                         df.with_column_unchecked(
-                            StringChunked::full(col, path, df.height()).into_series(),
+                            StringChunked::full(col.clone(), path, df.height()).into_series(),
                         )
                     };
                 }
@@ -148,7 +150,7 @@ impl JsonExec {
 impl Executor for JsonExec {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         let profile_name = if state.has_node_timer() {
-            let ids = vec![self.paths[0].to_string_lossy().into()];
+            let ids = vec![self.paths[0].to_string_lossy().clone()];
             let name = comma_delimited("ndjson".to_string(), &ids);
             Cow::Owned(name)
         } else {

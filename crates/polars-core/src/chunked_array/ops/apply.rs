@@ -37,7 +37,7 @@ where
             }
         });
 
-        ChunkedArray::from_chunk_iter(self.name(), iter)
+        ChunkedArray::from_chunk_iter(self.name().clone(), iter)
     }
 
     /// Applies a function only to the non-null elements, propagating nulls.
@@ -64,7 +64,7 @@ where
             Ok(arr)
         });
 
-        ChunkedArray::try_from_chunk_iter(self.name(), iter)
+        ChunkedArray::try_from_chunk_iter(self.name().clone(), iter)
     }
 
     pub fn apply_into_string_amortized<'a, F>(&'a self, mut f: F) -> StringChunked
@@ -87,7 +87,7 @@ where
                 mutarr.freeze()
             })
             .collect::<Vec<_>>();
-        ChunkedArray::from_chunk_iter(self.name(), chunks)
+        ChunkedArray::from_chunk_iter(self.name().clone(), chunks)
     }
 
     pub fn try_apply_into_string_amortized<'a, F, E>(&'a self, mut f: F) -> Result<StringChunked, E>
@@ -112,11 +112,11 @@ where
                 Ok(mutarr.freeze())
             })
             .collect::<Vec<_>>();
-        ChunkedArray::try_from_chunk_iter(self.name(), chunks)
+        ChunkedArray::try_from_chunk_iter(self.name().clone(), chunks)
     }
 }
 
-fn apply_in_place_impl<S, F>(name: &str, chunks: Vec<ArrayRef>, f: F) -> ChunkedArray<S>
+fn apply_in_place_impl<S, F>(name: PlSmallStr, chunks: Vec<ArrayRef>, f: F) -> ChunkedArray<S>
 where
     F: Fn(S::Native) -> S::Native + Copy,
     S: PolarsNumericType,
@@ -170,7 +170,7 @@ impl<T: PolarsNumericType> ChunkedArray<T> {
                 .unwrap();
             s.chunks().clone()
         };
-        apply_in_place_impl(self.name(), chunks, f)
+        apply_in_place_impl(self.name().clone(), chunks, f)
     }
 
     /// Cast a numeric array to another numeric data type and apply a function in place.
@@ -180,7 +180,7 @@ impl<T: PolarsNumericType> ChunkedArray<T> {
         F: Fn(T::Native) -> T::Native + Copy,
     {
         let chunks = std::mem::take(&mut self.chunks);
-        apply_in_place_impl(self.name(), chunks, f)
+        apply_in_place_impl(self.name().clone(), chunks, f)
     }
 }
 
@@ -217,7 +217,7 @@ where
                 let arr: T::Array = slice.iter().copied().map(f).collect_arr();
                 arr.with_validity(validity.cloned())
             });
-        ChunkedArray::from_chunk_iter(self.name(), chunks)
+        ChunkedArray::from_chunk_iter(self.name().clone(), chunks)
     }
 
     fn apply<F>(&'a self, f: F) -> Self
@@ -228,7 +228,7 @@ where
             let iter = arr.into_iter().map(|opt_v| f(opt_v.copied()));
             PrimitiveArray::<T::Native>::from_trusted_len_iter(iter)
         });
-        Self::from_chunk_iter(self.name(), chunks)
+        Self::from_chunk_iter(self.name().clone(), chunks)
     }
 
     fn apply_to_slice<F, V>(&'a self, f: F, slice: &mut [V])
@@ -312,7 +312,7 @@ impl StringChunked {
             let new = Utf8ViewArray::arr_from_iter(iter);
             new.with_validity(arr.validity().cloned())
         });
-        StringChunked::from_chunk_iter(self.name(), chunks)
+        StringChunked::from_chunk_iter(self.name().clone(), chunks)
     }
 }
 
@@ -326,7 +326,7 @@ impl BinaryChunked {
             let new = BinaryViewArray::arr_from_iter(iter);
             new.with_validity(arr.validity().cloned())
         });
-        BinaryChunked::from_chunk_iter(self.name(), chunks)
+        BinaryChunked::from_chunk_iter(self.name().clone(), chunks)
     }
 }
 
@@ -405,7 +405,7 @@ impl<'a> ChunkApply<'a, &'a [u8]> for BinaryChunked {
 impl ChunkApplyKernel<BooleanArray> for BooleanChunked {
     fn apply_kernel(&self, f: &dyn Fn(&BooleanArray) -> ArrayRef) -> Self {
         let chunks = self.downcast_iter().map(f).collect();
-        unsafe { Self::from_chunks(self.name(), chunks) }
+        unsafe { Self::from_chunks(self.name().clone(), chunks) }
     }
 
     fn apply_kernel_cast<S>(&self, f: &dyn Fn(&BooleanArray) -> ArrayRef) -> ChunkedArray<S>
@@ -413,7 +413,7 @@ impl ChunkApplyKernel<BooleanArray> for BooleanChunked {
         S: PolarsDataType,
     {
         let chunks = self.downcast_iter().map(f).collect();
-        unsafe { ChunkedArray::<S>::from_chunks(self.name(), chunks) }
+        unsafe { ChunkedArray::<S>::from_chunks(self.name().clone(), chunks) }
     }
 }
 
@@ -432,7 +432,7 @@ where
         S: PolarsDataType,
     {
         let chunks = self.downcast_iter().map(f).collect();
-        unsafe { ChunkedArray::from_chunks(self.name(), chunks) }
+        unsafe { ChunkedArray::from_chunks(self.name().clone(), chunks) }
     }
 }
 
@@ -446,7 +446,7 @@ impl ChunkApplyKernel<Utf8ViewArray> for StringChunked {
         S: PolarsDataType,
     {
         let chunks = self.downcast_iter().map(f).collect();
-        unsafe { ChunkedArray::from_chunks(self.name(), chunks) }
+        unsafe { ChunkedArray::from_chunks(self.name().clone(), chunks) }
     }
 }
 
@@ -460,7 +460,7 @@ impl ChunkApplyKernel<BinaryViewArray> for BinaryChunked {
         S: PolarsDataType,
     {
         let chunks = self.downcast_iter().map(f).collect();
-        unsafe { ChunkedArray::from_chunks(self.name(), chunks) }
+        unsafe { ChunkedArray::from_chunks(self.name().clone(), chunks) }
     }
 }
 
@@ -519,7 +519,9 @@ impl<'a> ChunkApply<'a, Series> for ListChunked {
         let mut idx = 0;
         self.downcast_iter().for_each(|arr| {
             arr.iter().for_each(|opt_val| {
-                let opt_val = opt_val.map(|arrayref| Series::try_from(("", arrayref)).unwrap());
+                let opt_val = opt_val.map(|arrayref| {
+                    Series::try_from((PlSmallStr::const_default(), arrayref)).unwrap()
+                });
 
                 // SAFETY:
                 // length asserted above
@@ -543,7 +545,7 @@ where
         F: Fn(&'a T) -> T + Copy,
     {
         let mut ca: ObjectChunked<T> = self.into_iter().map(|opt_v| opt_v.map(f)).collect();
-        ca.rename(self.name());
+        ca.rename(self.name().clone());
         ca
     }
 
@@ -552,7 +554,7 @@ where
         F: Fn(Option<&'a T>) -> Option<T> + Copy,
     {
         let mut ca: ObjectChunked<T> = self.into_iter().map(f).collect();
-        ca.rename(self.name());
+        ca.rename(self.name().clone());
         ca
     }
 

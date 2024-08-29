@@ -11,6 +11,7 @@ mod iterator;
 mod mutable;
 pub use mutable::*;
 use polars_error::{polars_bail, PolarsResult};
+use polars_utils::pl_str::PlSmallStr;
 
 /// The Arrow's equivalent to an immutable `Vec<Option<[T; size]>>` where `T` is an Arrow type.
 /// Cloning and slicing this struct is `O(1)`.
@@ -199,7 +200,7 @@ impl FixedSizeListArray {
 
     /// Returns a [`ArrowDataType`] consistent with [`FixedSizeListArray`].
     pub fn default_datatype(data_type: ArrowDataType, size: usize) -> ArrowDataType {
-        let field = Box::new(Field::new("item", data_type, true));
+        let field = Box::new(Field::new(PlSmallStr::from_static("item"), data_type, true));
         ArrowDataType::FixedSizeList(field, size)
     }
 }

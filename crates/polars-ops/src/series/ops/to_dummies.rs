@@ -1,3 +1,5 @@
+use polars_utils::format_pl_smallstr;
+
 use super::*;
 
 #[cfg(feature = "dtype-u8")]
@@ -28,18 +30,16 @@ impl ToDummies for Series {
                 // strings are formatted with extra \" \" in polars, so we
                 // extract the string
                 let name = if let Some(s) = av.get_str() {
-                    format!("{col_name}{sep}{s}")
+                    format_pl_smallstr!("{col_name}{sep}{s}")
                 } else {
                     // other types don't have this formatting issue
-                    format!("{col_name}{sep}{av}")
+                    format_pl_smallstr!("{col_name}{sep}{av}")
                 };
 
                 let ca = match group {
-                    GroupsIndicator::Idx((_, group)) => {
-                        dummies_helper_idx(group, self.len(), &name)
-                    },
+                    GroupsIndicator::Idx((_, group)) => dummies_helper_idx(group, self.len(), name),
                     GroupsIndicator::Slice([offset, len]) => {
-                        dummies_helper_slice(offset, len, self.len(), &name)
+                        dummies_helper_slice(offset, len, self.len(), name)
                     },
                 };
                 ca.into_series()
@@ -50,7 +50,7 @@ impl ToDummies for Series {
     }
 }
 
-fn dummies_helper_idx(groups: &[IdxSize], len: usize, name: &str) -> DummyCa {
+fn dummies_helper_idx(groups: &[IdxSize], len: usize, name: PlSmallStr) -> DummyCa {
     let mut av = vec![0 as DummyType; len];
 
     for &idx in groups {
@@ -65,7 +65,7 @@ fn dummies_helper_slice(
     group_offset: IdxSize,
     group_len: IdxSize,
     len: usize,
-    name: &str,
+    name: PlSmallStr,
 ) -> DummyCa {
     let mut av = vec![0 as DummyType; len];
 

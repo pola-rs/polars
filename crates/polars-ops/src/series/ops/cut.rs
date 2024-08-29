@@ -1,16 +1,17 @@
 use polars_core::prelude::*;
+use polars_utils::format_pl_smallstr;
 
 fn map_cats(
     s: &Series,
-    labels: &[String],
+    labels: &[PlSmallStr],
     sorted_breaks: &[f64],
     left_closed: bool,
     include_breaks: bool,
 ) -> PolarsResult<Series> {
-    let out_name = "category";
+    let out_name = PlSmallStr::from_static("category");
 
     // Create new categorical and pre-register labels for consistent categorical indexes.
-    let mut bld = CategoricalChunkedBuilder::new(out_name, s.len(), Default::default());
+    let mut bld = CategoricalChunkedBuilder::new(out_name.clone(), s.len(), Default::default());
     for label in labels {
         bld.register_value(label);
     }
@@ -33,7 +34,10 @@ fn map_cats(
         // returned a dataframe. That included a column of the right endpoint of the interval. So we
         // return a struct series instead which can be turned into a dataframe later.
         let right_ends = [sorted_breaks, &[f64::INFINITY]].concat();
-        let mut brk_vals = PrimitiveChunkedBuilder::<Float64Type>::new("breakpoint", s.len());
+        let mut brk_vals = PrimitiveChunkedBuilder::<Float64Type>::new(
+            PlSmallStr::from_static("breakpoint"),
+            s.len(),
+        );
         s_iter
             .map(|opt| {
                 opt.filter(|x| !x.is_nan()).map(|x| {
@@ -74,7 +78,7 @@ fn map_cats(
     }
 }
 
-pub fn compute_labels(breaks: &[f64], left_closed: bool) -> PolarsResult<Vec<String>> {
+pub fn compute_labels(breaks: &[f64], left_closed: bool) -> PolarsResult<Vec<PlSmallStr>> {
     let lo = std::iter::once(&f64::NEG_INFINITY).chain(breaks.iter());
     let hi = breaks.iter().chain(std::iter::once(&f64::INFINITY));
 
@@ -82,9 +86,9 @@ pub fn compute_labels(breaks: &[f64], left_closed: bool) -> PolarsResult<Vec<Str
         .zip(hi)
         .map(|(l, h)| {
             if left_closed {
-                format!("[{}, {})", l, h)
+                format_pl_smallstr!("[{}, {})", l, h)
             } else {
-                format!("({}, {}]", l, h)
+                format_pl_smallstr!("({}, {}]", l, h)
             }
         })
         .collect();
@@ -94,7 +98,7 @@ pub fn compute_labels(breaks: &[f64], left_closed: bool) -> PolarsResult<Vec<Str
 pub fn cut(
     s: &Series,
     mut breaks: Vec<f64>,
-    labels: Option<Vec<String>>,
+    labels: Option<Vec<PlSmallStr>>,
     left_closed: bool,
     include_breaks: bool,
 ) -> PolarsResult<Series> {
@@ -120,7 +124,7 @@ pub fn cut(
 pub fn qcut(
     s: &Series,
     probs: Vec<f64>,
-    labels: Option<Vec<String>>,
+    labels: Option<Vec<PlSmallStr>>,
     left_closed: bool,
     allow_duplicates: bool,
     include_breaks: bool,
@@ -169,9 +173,9 @@ mod test {
 
         use super::map_cats;
 
-        let s = Series::new("x", &[1, 2, 3, 4, 5]);
+        let s = Series::new("x".into(), &[1, 2, 3, 4, 5]);
 
-        let labels = &["a", "b", "c"].map(str::to_owned);
+        let labels = &["a", "b", "c"].map(PlSmallStr::from_static);
         let breaks = &[2.0, 4.0];
         let left_closed = false;
 

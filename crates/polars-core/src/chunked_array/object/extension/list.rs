@@ -6,7 +6,7 @@ use crate::prelude::*;
 
 impl<T: PolarsObject> ObjectChunked<T> {
     pub(crate) fn get_list_builder(
-        name: &str,
+        name: PlSmallStr,
         values_capacity: usize,
         list_capacity: usize,
     ) -> Box<dyn ListBuilderTrait> {
@@ -25,7 +25,7 @@ struct ExtensionListBuilder<T: PolarsObject> {
 }
 
 impl<T: PolarsObject> ExtensionListBuilder<T> {
-    pub(crate) fn new(name: &str, values_capacity: usize, list_capacity: usize) -> Self {
+    pub(crate) fn new(name: PlSmallStr, values_capacity: usize, list_capacity: usize) -> Self {
         let mut offsets = Vec::with_capacity(list_capacity + 1);
         offsets.push(0);
         Self {
@@ -80,7 +80,7 @@ impl<T: PolarsObject> ListBuilderTrait for ExtensionListBuilder<T> {
             None,
         );
 
-        let mut listarr = ListChunked::with_chunk(ca.name(), arr);
+        let mut listarr = ListChunked::with_chunk(ca.name().clone(), arr);
         if self.fast_explode {
             listarr.set_fast_explode()
         }

@@ -20,7 +20,7 @@ pub struct ScanArgsParquet {
     pub cache: bool,
     /// Expand path given via globbing rules.
     pub glob: bool,
-    pub include_file_paths: Option<Arc<str>>,
+    pub include_file_paths: Option<PlSmallStr>,
 }
 
 impl Default for ScanArgsParquet {
@@ -80,7 +80,7 @@ impl LazyFileListReader for LazyParquetReader {
 
         // It's a bit hacky, but this row_index function updates the schema.
         if let Some(row_index) = row_index {
-            lf = lf.with_row_index(&row_index.name, Some(row_index.offset))
+            lf = lf.with_row_index(row_index.name.clone(), Some(row_index.offset))
         }
 
         lf.opt_state |= OptFlags::FILE_CACHING;

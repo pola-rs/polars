@@ -252,14 +252,14 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
 }
 
 impl SeriesTrait for SeriesWrap<DurationChunked> {
-    fn rename(&mut self, name: &str) {
+    fn rename(&mut self, name: PlSmallStr) {
         self.0.rename(name);
     }
 
     fn chunk_lengths(&self) -> ChunkLenIter {
         self.0.chunk_lengths()
     }
-    fn name(&self) -> &str {
+    fn name(&self) -> &PlSmallStr {
         self.0.name()
     }
 

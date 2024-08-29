@@ -138,7 +138,7 @@ mod test {
             .iter()
             .enumerate()
             .map(|(i, length)| {
-                let series = Series::new("val", vec![i as u64; *length]);
+                let series = Series::new("val".into(), vec![i as u64; *length]);
                 DataFrame::new(vec![series]).unwrap()
             })
             .collect();

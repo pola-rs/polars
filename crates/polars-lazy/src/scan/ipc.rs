@@ -16,7 +16,7 @@ pub struct ScanArgsIpc {
     pub memory_map: bool,
     pub cloud_options: Option<CloudOptions>,
     pub hive_options: HiveOptions,
-    pub include_file_paths: Option<Arc<str>>,
+    pub include_file_paths: Option<PlSmallStr>,
 }
 
 impl Default for ScanArgsIpc {

@@ -41,9 +41,9 @@ pub fn unique_counts(s: &Series) -> PolarsResult<Series> {
             },
             DataType::Null => {
                 let ca = if s.is_empty() {
-                    IdxCa::new(s.name(), [] as [IdxSize; 0])
+                    IdxCa::new(s.name().clone(), [] as [IdxSize; 0])
                 } else {
-                    IdxCa::new(s.name(), [s.len() as IdxSize])
+                    IdxCa::new(s.name().clone(), [s.len() as IdxSize])
                 };
                 Ok(ca.into_series())
             },

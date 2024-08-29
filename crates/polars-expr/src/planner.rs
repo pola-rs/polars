@@ -251,9 +251,9 @@ fn create_physical_expr_inner(
 
                     if apply_columns.is_empty() {
                         if has_aexpr(function, expr_arena, |e| matches!(e, AExpr::Literal(_))) {
-                            apply_columns.push(Arc::from("literal"))
+                            apply_columns.push(PlSmallStr::from_static("literal"))
                         } else if has_aexpr(function, expr_arena, |e| matches!(e, AExpr::Len)) {
-                            apply_columns.push(Arc::from("len"))
+                            apply_columns.push(PlSmallStr::from_static("len"))
                         } else {
                             let e = node_to_expr(function, expr_arena);
                             polars_bail!(

@@ -689,9 +689,11 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut ConversionContext) -> PolarsResult<No
                     let exprs = input_schema
                         .iter()
                         .filter_map(|(name, dtype)| match dtype {
-                            DataType::Float32 | DataType::Float64 => {
-                                Some(col(name).fill_nan(fill_value.clone()).alias(name))
-                            },
+                            DataType::Float32 | DataType::Float64 => Some(
+                                col(name.clone())
+                                    .fill_nan(fill_value.clone())
+                                    .alias(name.clone()),
+                            ),
                             _ => None,
                         })
                         .collect::<Vec<_>>();
@@ -754,22 +756,22 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut ConversionContext) -> PolarsResult<No
                     let exprs = match sf {
                         StatsFunction::Var { ddof } => stats_helper(
                             |dt| dt.is_numeric() || dt.is_bool(),
-                            |name| col(name).var(ddof),
+                            |name| col(name.clone()).var(ddof),
                             &input_schema,
                         ),
                         StatsFunction::Std { ddof } => stats_helper(
                             |dt| dt.is_numeric() || dt.is_bool(),
-                            |name| col(name).std(ddof),
+                            |name| col(name.clone()).std(ddof),
                             &input_schema,
                         ),
                         StatsFunction::Quantile { quantile, interpol } => stats_helper(
                             |dt| dt.is_numeric(),
-                            |name| col(name).quantile(quantile.clone(), interpol),
+                            |name| col(name.clone()).quantile(quantile.clone(), interpol),
                             &input_schema,
                         ),
                         StatsFunction::Mean => stats_helper(
                             |dt| dt.is_numeric() || dt.is_temporal() || dt == &DataType::Boolean,
-                            |name| col(name).mean(),
+                            |name| col(name.clone()).mean(),
                             &input_schema,
                         ),
                         StatsFunction::Sum => stats_helper(
@@ -778,18 +780,22 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut ConversionContext) -> PolarsResult<No
                                     || dt.is_decimal()
                                     || matches!(dt, DataType::Boolean | DataType::Duration(_))
                             },
-                            |name| col(name).sum(),
+                            |name| col(name.clone()).sum(),
                             &input_schema,
                         ),
-                        StatsFunction::Min => {
-                            stats_helper(|dt| dt.is_ord(), |name| col(name).min(), &input_schema)
-                        },
-                        StatsFunction::Max => {
-                            stats_helper(|dt| dt.is_ord(), |name| col(name).max(), &input_schema)
-                        },
+                        StatsFunction::Min => stats_helper(
+                            |dt| dt.is_ord(),
+                            |name| col(name.clone()).min(),
+                            &input_schema,
+                        ),
+                        StatsFunction::Max => stats_helper(
+                            |dt| dt.is_ord(),
+                            |name| col(name.clone()).max(),
+                            &input_schema,
+                        ),
                         StatsFunction::Median => stats_helper(
                             |dt| dt.is_numeric() || dt.is_temporal() || dt == &DataType::Boolean,
-                            |name| col(name).median(),
+                            |name| col(name.clone()).median(),
                             &input_schema,
                         ),
                     };
@@ -1051,16 +1057,16 @@ fn resolve_group_by(
     #[cfg(feature = "dynamic_group_by")]
     {
         if let Some(options) = _options.rolling.as_ref() {
-            let name = &options.index_column;
-            let dtype = current_schema.try_get(name)?;
-            keys.push(col(name));
+            let name = options.index_column.clone();
+            let dtype = current_schema.try_get(name.as_str())?;
+            keys.push(col(name.clone()));
             pop_keys = true;
             schema.with_column(name.clone(), dtype.clone());
         } else if let Some(options) = _options.dynamic.as_ref() {
-            let name = &options.index_column;
-            keys.push(col(name));
+            let name = options.index_column.clone();
+            keys.push(col(name.clone()));
             pop_keys = true;
-            let dtype = current_schema.try_get(name)?;
+            let dtype = current_schema.try_get(name.as_str())?;
             if options.include_boundaries {
                 schema.with_column("_lower_boundary".into(), dtype.clone());
                 schema.with_column("_upper_boundary".into(), dtype.clone());
@@ -1095,7 +1101,7 @@ fn resolve_group_by(
 fn stats_helper<F, E>(condition: F, expr: E, schema: &Schema) -> Vec<Expr>
 where
     F: Fn(&DataType) -> bool,
-    E: Fn(&str) -> Expr,
+    E: Fn(&PlSmallStr) -> Expr,
 {
     schema
         .iter()
@@ -1103,7 +1109,7 @@ where
             if condition(dt) {
                 expr(name)
             } else {
-                lit(NULL).cast(dt.clone()).alias(name)
+                lit(NULL).cast(dt.clone()).alias(name.clone())
             }
         })
         .collect()
@@ -1112,7 +1118,7 @@ where
 pub(crate) fn maybe_init_projection_excluding_hive(
     reader_schema: &Either<ArrowSchemaRef, SchemaRef>,
     hive_parts: Option<&HivePartitions>,
-) -> Option<Arc<[String]>> {
+) -> Option<Arc<[PlSmallStr]>> {
     // Update `with_columns` with a projection so that hive columns aren't loaded from the
     // file
     let hive_parts = hive_parts?;
@@ -1123,19 +1129,20 @@ pub(crate) fn maybe_init_projection_excluding_hive(
 
     let names = match reader_schema {
         Either::Left(ref v) => {
-            let names = v.get_names();
-            names.contains(&first_hive_name.as_str()).then_some(names)
+            let names = v.get_names_owned();
+            names.contains(first_hive_name).then_some(names)
         },
-        Either::Right(ref v) => v.contains(first_hive_name.as_str()).then(|| v.get_names()),
+        Either::Right(ref v) => v
+            .contains(first_hive_name.as_str())
+            .then(|| v.get_names_owned()),
     };
 
     let names = names?;
 
     Some(
         names
-            .iter()
+            .into_iter()
             .filter(|x| !hive_schema.contains(x))
-            .map(ToString::to_string)
             .collect::<Arc<[_]>>(),
     )
 }

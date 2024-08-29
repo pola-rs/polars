@@ -51,8 +51,8 @@ impl AmortSeries {
             let s = &(*self.container);
             debug_assert_eq!(s.chunks().len(), 1);
             let array_ref = s.chunks().get_unchecked(0).clone();
-            let name = s.name();
-            Series::from_chunks_and_dtype_unchecked(name, vec![array_ref], s.dtype())
+            let name = s.name().clone();
+            Series::from_chunks_and_dtype_unchecked(name.clone(), vec![array_ref], s.dtype())
         }
     }
 
@@ -93,7 +93,7 @@ impl AmortSeries {
 // SAFETY:
 // type must be matching
 pub(crate) unsafe fn unstable_series_container_and_ptr(
-    name: &str,
+    name: PlSmallStr,
     inner_values: ArrayRef,
     iter_dtype: &DataType,
 ) -> (Series, *mut ArrayRef) {

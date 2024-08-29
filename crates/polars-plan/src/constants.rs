@@ -1,22 +1,22 @@
-use std::sync::{Arc, OnceLock};
+use std::sync::OnceLock;
 
-use crate::prelude::ColumnName;
+use polars_utils::pl_str::PlSmallStr;
 
 pub static MAP_LIST_NAME: &str = "map_list";
 pub static CSE_REPLACED: &str = "__POLARS_CSER_";
 pub const LEN: &str = "len";
-pub const LITERAL_NAME: &str = "literal";
+const LITERAL_NAME: &str = "literal";
 pub const UNLIMITED_CACHE: u32 = u32::MAX;
 
 // Cache the often used LITERAL and LEN constants
-static LITERAL_NAME_INIT: OnceLock<Arc<str>> = OnceLock::new();
-static LEN_INIT: OnceLock<Arc<str>> = OnceLock::new();
+static LITERAL_NAME_INIT: OnceLock<PlSmallStr> = OnceLock::new();
+static LEN_INIT: OnceLock<PlSmallStr> = OnceLock::new();
 
-pub(crate) fn get_literal_name() -> Arc<str> {
-    LITERAL_NAME_INIT
-        .get_or_init(|| ColumnName::from(LITERAL_NAME))
-        .clone()
+pub fn get_literal_name() -> &'static PlSmallStr {
+    LITERAL_NAME_INIT.get_or_init(|| PlSmallStr::from_static(LITERAL_NAME))
 }
-pub(crate) fn get_len_name() -> Arc<str> {
-    LEN_INIT.get_or_init(|| ColumnName::from(LEN)).clone()
+pub(crate) fn get_len_name() -> PlSmallStr {
+    LEN_INIT
+        .get_or_init(|| PlSmallStr::from_static(LEN))
+        .clone()
 }

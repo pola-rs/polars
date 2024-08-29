@@ -104,7 +104,7 @@ impl LogicalType for DecimalChunked {
         let chunks = cast_chunks(&self.chunks, dtype, cast_options)?;
         unsafe {
             Ok(Series::from_chunks_and_dtype_unchecked(
-                self.name(),
+                self.name().clone(),
                 chunks,
                 dtype,
             ))
@@ -134,7 +134,8 @@ impl DecimalChunked {
 
         let dtype = DataType::Decimal(None, Some(scale));
         let chunks = cast_chunks(&self.chunks, &dtype, CastOptions::NonStrict)?;
-        let mut dt = Self::new_logical(unsafe { Int128Chunked::from_chunks(self.name(), chunks) });
+        let mut dt =
+            Self::new_logical(unsafe { Int128Chunked::from_chunks(self.name().clone(), chunks) });
         dt.2 = Some(dtype);
         Ok(Cow::Owned(dt))
     }

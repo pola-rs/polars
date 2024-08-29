@@ -161,6 +161,8 @@ impl StringNameSpace {
     pub fn extract_groups(self, pat: &str) -> PolarsResult<Expr> {
         // regex will be compiled twice, because it doesn't support serde
         // and we need to compile it here to determine the output datatype
+
+        use polars_utils::format_pl_smallstr;
         let reg = regex::Regex::new(pat)?;
         let names = reg
             .capture_names()
@@ -168,22 +170,22 @@ impl StringNameSpace {
             .skip(1)
             .map(|(idx, opt_name)| {
                 opt_name
-                    .map(|name| name.to_string())
-                    .unwrap_or_else(|| format!("{idx}"))
+                    .map(PlSmallStr::from_str)
+                    .unwrap_or_else(|| format_pl_smallstr!("{idx}"))
             })
             .collect::<Vec<_>>();
 
         let dtype = DataType::Struct(
             names
                 .iter()
-                .map(|name| Field::new(name.as_str(), DataType::String))
+                .map(|name| Field::new(name.clone(), DataType::String))
                 .collect(),
         );
 
         Ok(self.0.map_private(
             StringFunction::ExtractGroups {
                 dtype,
-                pat: pat.to_string(),
+                pat: pat.into(),
             }
             .into(),
         ))
@@ -333,7 +335,7 @@ impl StringNameSpace {
         self.0
             .apply_private(
                 StringFunction::ConcatVertical {
-                    delimiter: delimiter.to_owned(),
+                    delimiter: delimiter.into(),
                     ignore_nulls,
                 }
                 .into(),

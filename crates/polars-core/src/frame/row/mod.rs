@@ -10,6 +10,7 @@ use std::hint::unreachable_unchecked;
 
 use arrow::bitmap::Bitmap;
 pub use av_buffer::*;
+use polars_utils::format_pl_smallstr;
 #[cfg(feature = "object")]
 use polars_utils::total_ord::TotalHash;
 use rayon::prelude::*;
@@ -96,10 +97,10 @@ impl<'a> Row<'a> {
     }
 }
 
-type Tracker = PlIndexMap<String, PlHashSet<DataType>>;
+type Tracker = PlIndexMap<PlSmallStr, PlHashSet<DataType>>;
 
 pub fn infer_schema(
-    iter: impl Iterator<Item = Vec<(String, impl Into<DataType>)>>,
+    iter: impl Iterator<Item = Vec<(impl Into<PlSmallStr>, impl Into<DataType>)>>,
     infer_schema_length: usize,
 ) -> Schema {
     let mut values: Tracker = Tracker::default();
@@ -108,25 +109,25 @@ pub fn infer_schema(
     let max_infer = std::cmp::min(len, infer_schema_length);
     for inner in iter.take(max_infer) {
         for (key, value) in inner {
-            add_or_insert(&mut values, &key, value.into());
+            add_or_insert(&mut values, key.into(), value.into());
         }
     }
     Schema::from_iter(resolve_fields(values))
 }
 
-fn add_or_insert(values: &mut Tracker, key: &str, data_type: DataType) {
+fn add_or_insert(values: &mut Tracker, key: PlSmallStr, data_type: DataType) {
     if data_type == DataType::Null {
         return;
     }
 
-    if values.contains_key(key) {
-        let x = values.get_mut(key).unwrap();
+    if values.contains_key(&key) {
+        let x = values.get_mut(&key).unwrap();
         x.insert(data_type);
     } else {
         // create hashset and add value type
         let mut hs = PlHashSet::new();
         hs.insert(data_type);
-        values.insert(key.to_string(), hs);
+        values.insert(key, hs);
     }
 }
 
@@ -134,7 +135,7 @@ fn resolve_fields(spec: Tracker) -> Vec<Field> {
     spec.iter()
         .map(|(k, hs)| {
             let v: Vec<&DataType> = hs.iter().collect();
-            Field::new(k, coerce_data_type(&v))
+            Field::new(k.clone(), coerce_data_type(&v))
         })
         .collect()
 }
@@ -237,7 +238,7 @@ pub fn rows_to_schema_first_non_null(
 
 impl<'a> From<&AnyValue<'a>> for Field {
     fn from(val: &AnyValue<'a>) -> Self {
-        Field::new("", val.into())
+        Field::new(PlSmallStr::const_default(), val.into())
     }
 }
 
@@ -248,7 +249,7 @@ impl From<&Row<'_>> for Schema {
             .enumerate()
             .map(|(i, av)| {
                 let dtype = av.into();
-                Field::new(format!("column_{i}").as_ref(), dtype)
+                Field::new(format_pl_smallstr!("column_{i}"), dtype)
             })
             .collect()
     }

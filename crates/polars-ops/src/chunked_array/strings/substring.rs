@@ -163,14 +163,14 @@ pub(super) fn substring(
             let str_val = ca.get(0);
             let offset = offset.get(0);
             unary_elementwise(length, |length| substring_ternary(str_val, offset, length))
-                .with_name(ca.name())
+                .with_name(ca.name().clone())
         },
         (_, 1, 1) => {
             let offset = offset.get(0);
             let length = length.get(0).unwrap_or(u64::MAX);
 
             let Some(offset) = offset else {
-                return StringChunked::full_null(ca.name(), ca.len());
+                return StringChunked::full_null(ca.name().clone(), ca.len());
             };
 
             unsafe {
@@ -184,7 +184,7 @@ pub(super) fn substring(
             let str_val = ca.get(0);
             let length = length.get(0);
             unary_elementwise(offset, |offset| substring_ternary(str_val, offset, length))
-                .with_name(ca.name())
+                .with_name(ca.name().clone())
         },
         (1, len_b, len_c) if len_b == len_c => {
             let str_val = ca.get(0);
@@ -225,7 +225,7 @@ pub(super) fn head(ca: &StringChunked, n: &Int64Chunked) -> PolarsResult<StringC
         (len, 1) => {
             let n = n.get(0);
             let Some(n) = n else {
-                return Ok(StringChunked::full_null(ca.name(), len));
+                return Ok(StringChunked::full_null(ca.name().clone(), len));
             };
 
             Ok(unsafe {
@@ -238,7 +238,7 @@ pub(super) fn head(ca: &StringChunked, n: &Int64Chunked) -> PolarsResult<StringC
         // TODO! below should also work on only views
         (1, _) => {
             let str_val = ca.get(0);
-            Ok(unary_elementwise(n, |n| head_binary(str_val, n)).with_name(ca.name()))
+            Ok(unary_elementwise(n, |n| head_binary(str_val, n)).with_name(ca.name().clone()))
         },
         (a, b) => {
             polars_ensure!(a == b, ShapeMismatch: "lengths of arguments do not align in 'str.head' got length: {} for column: {}, got length: {} for argument 'n'", a, ca.name(), b);
@@ -252,7 +252,7 @@ pub(super) fn tail(ca: &StringChunked, n: &Int64Chunked) -> PolarsResult<StringC
         (len, 1) => {
             let n = n.get(0);
             let Some(n) = n else {
-                return Ok(StringChunked::full_null(ca.name(), len));
+                return Ok(StringChunked::full_null(ca.name().clone(), len));
             };
             unsafe {
                 ca.apply_views(|view, val| {
@@ -264,7 +264,7 @@ pub(super) fn tail(ca: &StringChunked, n: &Int64Chunked) -> PolarsResult<StringC
         // TODO! below should also work on only views
         (1, _) => {
             let str_val = ca.get(0);
-            unary_elementwise(n, |n| tail_binary(str_val, n)).with_name(ca.name())
+            unary_elementwise(n, |n| tail_binary(str_val, n)).with_name(ca.name().clone())
         },
         (a, b) => {
             polars_ensure!(a == b, ShapeMismatch: "lengths of arguments do not align in 'str.tail' got length: {} for column: {}, got length: {} for argument 'n'", a, ca.name(), b);

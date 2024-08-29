@@ -18,7 +18,7 @@ use crate::utils::Container;
 
 pub type StructChunked = ChunkedArray<StructType>;
 
-fn constructor(name: &str, fields: &[Series]) -> PolarsResult<StructChunked> {
+fn constructor(name: PlSmallStr, fields: &[Series]) -> PolarsResult<StructChunked> {
     // Different chunk lengths: rechunk and recurse.
     if !fields.iter().map(|s| s.n_chunks()).all_equal() {
         let fields = fields.iter().map(|s| s.rechunk()).collect::<Vec<_>>();
@@ -62,7 +62,7 @@ fn constructor(name: &str, fields: &[Series]) -> PolarsResult<StructChunked> {
 }
 
 impl StructChunked {
-    pub fn from_series(name: &str, fields: &[Series]) -> PolarsResult<Self> {
+    pub fn from_series(name: PlSmallStr, fields: &[Series]) -> PolarsResult<Self> {
         let mut names = PlHashSet::with_capacity(fields.len());
         let first_len = fields.first().map(|s| s.len()).unwrap_or(0);
         let mut max_len = first_len;
@@ -110,7 +110,7 @@ impl StructChunked {
             }
             constructor(name, &new_fields)
         } else if fields.is_empty() {
-            let fields = &[Series::new_null("", 0)];
+            let fields = &[Series::new_null(PlSmallStr::const_default(), 0)];
             constructor(name, fields)
         } else {
             constructor(name, fields)
@@ -136,7 +136,11 @@ impl StructChunked {
 
                 // SAFETY: correct type.
                 unsafe {
-                    Series::from_chunks_and_dtype_unchecked(&field.name, field_chunks, &field.dtype)
+                    Series::from_chunks_and_dtype_unchecked(
+                        field.name.clone(),
+                        field_chunks,
+                        &field.dtype,
+                    )
                 }
             })
             .collect()
@@ -155,7 +159,7 @@ impl StructChunked {
                 let struct_len = self.len();
                 let new_fields = dtype_fields
                     .iter()
-                    .map(|new_field| match map.get(new_field.name().as_str()) {
+                    .map(|new_field| match map.get(new_field.name()) {
                         Some(s) => {
                             if unchecked {
                                 s.cast_unchecked(&new_field.dtype)
@@ -164,14 +168,14 @@ impl StructChunked {
                             }
                         },
                         None => Ok(Series::full_null(
-                            new_field.name(),
+                            new_field.name().clone(),
                             struct_len,
                             &new_field.dtype,
                         )),
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
 
-                let mut out = Self::from_series(self.name(), &new_fields)?;
+                let mut out = Self::from_series(self.name().clone(), &new_fields)?;
                 if self.null_count > 0 {
                     out.zip_outer_validity(self);
                 }
@@ -213,7 +217,7 @@ impl StructChunked {
                     scratch.clear();
                 }
                 let array = builder.freeze().boxed();
-                Series::try_from((ca.name(), array))
+                Series::try_from((ca.name().clone(), array))
             },
             _ => {
                 let fields = self
@@ -227,7 +231,7 @@ impl StructChunked {
                         }
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
-                let mut out = Self::from_series(self.name(), &fields)?;
+                let mut out = Self::from_series(self.name().clone(), &fields)?;
                 if self.null_count > 0 {
                     out.zip_outer_validity(self);
                 }
@@ -272,7 +276,7 @@ impl StructChunked {
             .iter()
             .map(func)
             .collect::<PolarsResult<Vec<_>>>()?;
-        Self::from_series(self.name(), &fields).map(|mut ca| {
+        Self::from_series(self.name().clone(), &fields).map(|mut ca| {
             if self.null_count > 0 {
                 // SAFETY: we don't change types/ lengths.
                 unsafe {
@@ -293,7 +297,7 @@ impl StructChunked {
     pub fn get_row_encoded(&self, options: SortOptions) -> PolarsResult<BinaryOffsetChunked> {
         let s = self.clone().into_series();
         _get_rows_encoded_ca(
-            self.name(),
+            self.name().clone(),
             &[s],
             &[options.descending],
             &[options.nulls_last],
@@ -350,7 +354,7 @@ impl StructChunked {
     pub fn field_by_name(&self, name: &str) -> PolarsResult<Series> {
         self.fields_as_series()
             .into_iter()
-            .find(|s| s.name() == name)
+            .find(|s| s.name().as_str() == name)
             .ok_or_else(|| polars_err!(StructFieldNotFound: "{}", name))
     }
     pub(crate) fn set_outer_validity(&mut self, validity: Option<Bitmap>) {

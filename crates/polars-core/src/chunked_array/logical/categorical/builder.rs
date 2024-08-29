@@ -13,7 +13,7 @@ struct KeyWrapper(u32);
 
 pub struct CategoricalChunkedBuilder {
     cat_builder: UInt32Vec,
-    name: String,
+    name: PlSmallStr,
     ordering: CategoricalOrdering,
     categories: MutablePlString,
     // hashmap utilized by the local builder
@@ -21,10 +21,10 @@ pub struct CategoricalChunkedBuilder {
 }
 
 impl CategoricalChunkedBuilder {
-    pub fn new(name: &str, capacity: usize, ordering: CategoricalOrdering) -> Self {
+    pub fn new(name: PlSmallStr, capacity: usize, ordering: CategoricalOrdering) -> Self {
         Self {
             cat_builder: UInt32Vec::with_capacity(capacity),
-            name: name.to_string(),
+            name,
             ordering,
             categories: MutablePlString::with_capacity(_HASHMAP_INIT_SIZE),
             local_mapping: PlHashMap::with_capacity_and_hasher(
@@ -166,7 +166,7 @@ impl CategoricalChunkedBuilder {
         );
 
         let indices = std::mem::take(&mut self.cat_builder).into();
-        let indices = UInt32Chunked::with_chunk(&self.name, indices);
+        let indices = UInt32Chunked::with_chunk(self.name.clone(), indices);
 
         // SAFETY: indices are in bounds of new rev_map
         unsafe {
@@ -196,7 +196,7 @@ impl CategoricalChunkedBuilder {
         // SAFETY: keys and values are in bounds
         unsafe {
             CategoricalChunked::from_keys_and_values(
-                &self.name,
+                self.name.clone(),
                 &self.cat_builder.into(),
                 &self.categories.into(),
                 self.ordering,
@@ -271,7 +271,7 @@ impl CategoricalChunked {
     }
 
     pub(crate) unsafe fn from_keys_and_values_global(
-        name: &str,
+        name: PlSmallStr,
         keys: impl IntoIterator<Item = Option<u32>> + Send,
         capacity: usize,
         values: &Utf8ViewArray,
@@ -317,7 +317,7 @@ impl CategoricalChunked {
     }
 
     pub(crate) unsafe fn from_keys_and_values_local(
-        name: &str,
+        name: PlSmallStr,
         keys: &PrimitiveArray<u32>,
         values: &Utf8ViewArray,
         ordering: CategoricalOrdering,
@@ -333,7 +333,7 @@ impl CategoricalChunked {
     /// # Safety
     /// The caller must ensure that index values in the `keys` are in within bounds of the `values` length.
     pub(crate) unsafe fn from_keys_and_values(
-        name: &str,
+        name: PlSmallStr,
         keys: &PrimitiveArray<u32>,
         values: &Utf8ViewArray,
         ordering: CategoricalOrdering,
@@ -372,8 +372,8 @@ impl CategoricalChunked {
                 .map(|opt_s: Option<&str>| opt_s.and_then(|s| map.get(s).copied()))
                 .collect_arr()
         });
-        let mut keys: UInt32Chunked = ChunkedArray::from_chunk_iter(values.name(), iter);
-        keys.rename(values.name());
+        let mut keys: UInt32Chunked = ChunkedArray::from_chunk_iter(values.name().clone(), iter);
+        keys.rename(values.name().clone());
         let rev_map = RevMapping::build_local(categories.clone());
         unsafe {
             Ok(CategoricalChunked::from_cats_and_rev_map_unchecked(
@@ -403,7 +403,7 @@ mod test {
             Some("foo"),
             Some("bar"),
         ];
-        let ca = StringChunked::new("a", slice);
+        let ca = StringChunked::new(PlSmallStr::from_static("a"), slice);
         let out = ca.cast(&DataType::Categorical(None, Default::default()))?;
         let out = out.categorical().unwrap().clone();
         assert_eq!(out.get_rev_map().len(), 2);
@@ -422,10 +422,10 @@ mod test {
         // Check that we don't panic if we append two categorical arrays
         // build under the same string cache
         // https://github.com/pola-rs/polars/issues/1115
-        let ca1 = StringChunked::new("a", slice)
+        let ca1 = StringChunked::new(PlSmallStr::from_static("a"), slice)
             .cast(&DataType::Categorical(None, Default::default()))?;
         let mut ca1 = ca1.categorical().unwrap().clone();
-        let ca2 = StringChunked::new("a", slice)
+        let ca2 = StringChunked::new(PlSmallStr::from_static("a"), slice)
             .cast(&DataType::Categorical(None, Default::default()))?;
         let ca2 = ca2.categorical().unwrap();
         ca1.append(ca2).unwrap();
@@ -445,8 +445,16 @@ mod test {
 
             // Use 2 builders to check if the global string cache
             // does not interfere with the index mapping
-            let builder1 = CategoricalChunkedBuilder::new("foo", 10, Default::default());
-            let builder2 = CategoricalChunkedBuilder::new("foo", 10, Default::default());
+            let builder1 = CategoricalChunkedBuilder::new(
+                PlSmallStr::from_static("foo"),
+                10,
+                Default::default(),
+            );
+            let builder2 = CategoricalChunkedBuilder::new(
+                PlSmallStr::from_static("foo"),
+                10,
+                Default::default(),
+            );
             let s = builder1
                 .drain_iter_and_finish(vec![None, Some("hello"), Some("vietnam")])
                 .into_series();

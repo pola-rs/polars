@@ -139,7 +139,7 @@ impl SpillPartitions {
                             .zip(self.output_schema.iter_names())
                             .map(|(b, name)| {
                                 let mut s = b.reset(OB_SIZE);
-                                s.rename(name);
+                                s.rename(name.clone());
                                 s
                             })
                             .collect(),

@@ -622,7 +622,7 @@ mod test {
         let rules: &mut [Box<dyn OptimizationRule>] = &mut [Box::new(TypeCoercionRule {})];
 
         let df = DataFrame::new(Vec::from([Series::new_empty(
-            "fruits",
+            PlSmallStr::from_static("fruits"),
             &DataType::Categorical(None, Default::default()),
         )]))
         .unwrap();

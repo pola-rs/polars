@@ -29,7 +29,7 @@ pub(crate) struct Buffer<'a> {
 impl Buffer<'_> {
     pub fn into_series(self) -> Series {
         let mut s = self.buf.into_series();
-        s.rename(self.name);
+        s.rename(PlSmallStr::from_str(self.name));
         s
     }
 
@@ -201,7 +201,12 @@ fn deserialize_all<'a>(
                 .iter()
                 .map(|val| deserialize_all(val, inner_dtype, ignore_errors))
                 .collect::<PolarsResult<_>>()?;
-            let s = Series::from_any_values_and_dtype("", &vals, inner_dtype, false)?;
+            let s = Series::from_any_values_and_dtype(
+                PlSmallStr::const_default(),
+                &vals,
+                inner_dtype,
+                false,
+            )?;
             AnyValue::List(s)
         },
         #[cfg(feature = "dtype-struct")]

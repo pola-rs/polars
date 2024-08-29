@@ -48,7 +48,7 @@ impl PyLazyFrame {
         file_cache_ttl: Option<u64>,
     ) -> PyResult<Self> {
         let row_index = row_index.map(|(name, offset)| RowIndex {
-            name: Arc::from(name.as_str()),
+            name: name.into(),
             offset,
         });
 
@@ -95,7 +95,7 @@ impl PyLazyFrame {
             .with_schema_overwrite(schema_overrides.map(|x| Arc::new(x.0)))
             .with_row_index(row_index)
             .with_ignore_errors(ignore_errors)
-            .with_include_file_paths(include_file_paths.map(Arc::from))
+            .with_include_file_paths(include_file_paths.map(|x| x.into()))
             .with_cloud_options(cloud_options)
             .finish()
             .map_err(PyPolarsErr::from)?;
@@ -150,14 +150,14 @@ impl PyLazyFrame {
         let separator = separator.as_bytes()[0];
         let eol_char = eol_char.as_bytes()[0];
         let row_index = row_index.map(|(name, offset)| RowIndex {
-            name: Arc::from(name.as_str()),
+            name: name.into(),
             offset,
         });
 
         let overwrite_dtype = overwrite_dtype.map(|overwrite_dtype| {
             overwrite_dtype
                 .into_iter()
-                .map(|(name, dtype)| Field::new(&name, dtype.0))
+                .map(|(name, dtype)| Field::new((&*name).into(), dtype.0))
                 .collect::<Schema>()
         });
 
@@ -205,7 +205,7 @@ impl PyLazyFrame {
             .with_dtype_overwrite(overwrite_dtype.map(Arc::new))
             .with_schema(schema.map(|schema| Arc::new(schema.0)))
             .with_low_memory(low_memory)
-            .with_comment_prefix(comment_prefix)
+            .with_comment_prefix(comment_prefix.map(|x| x.into()))
             .with_quote_char(quote_char)
             .with_eol_char(eol_char)
             .with_rechunk(rechunk)
@@ -220,7 +220,7 @@ impl PyLazyFrame {
             .with_glob(glob)
             .with_raise_if_empty(raise_if_empty)
             .with_cloud_options(cloud_options)
-            .with_include_file_paths(include_file_paths.map(Arc::from));
+            .with_include_file_paths(include_file_paths.map(|x| x.into()));
 
         if let Some(lambda) = with_schema_modify {
             let f = |schema: Schema| {
@@ -238,7 +238,7 @@ impl PyLazyFrame {
                     Ok(schema
                         .iter_dtypes()
                         .zip(new_names)
-                        .map(|(dtype, name)| Field::from_owned(name.into(), dtype.clone()))
+                        .map(|(dtype, name)| Field::new(name.into(), dtype.clone()))
                         .collect())
                 })
             };
@@ -298,7 +298,7 @@ impl PyLazyFrame {
         };
 
         let row_index = row_index.map(|(name, offset)| RowIndex {
-            name: Arc::from(name.as_str()),
+            name: name.into(),
             offset,
         });
         let hive_options = HiveOptions {
@@ -319,7 +319,7 @@ impl PyLazyFrame {
             use_statistics,
             hive_options,
             glob,
-            include_file_paths: include_file_paths.map(Arc::from),
+            include_file_paths: include_file_paths.map(|x| x.into()),
         };
 
         let lf = if path.is_some() {
@@ -351,7 +351,7 @@ impl PyLazyFrame {
         include_file_paths: Option<String>,
     ) -> PyResult<Self> {
         let row_index = row_index.map(|(name, offset)| RowIndex {
-            name: Arc::from(name.as_str()),
+            name: name.into(),
             offset,
         });
 
@@ -398,7 +398,7 @@ impl PyLazyFrame {
             #[cfg(feature = "cloud")]
             cloud_options,
             hive_options,
-            include_file_paths: include_file_paths.map(Arc::from),
+            include_file_paths: include_file_paths.map(|x| x.into()),
         };
 
         let lf = if let Some(path) = &path {
@@ -426,8 +426,11 @@ impl PyLazyFrame {
         scan_fn: PyObject,
         pyarrow: bool,
     ) -> PyResult<Self> {
-        let schema =
-            Schema::from_iter(schema.into_iter().map(|(name, dt)| Field::new(&name, dt.0)));
+        let schema = Schema::from_iter(
+            schema
+                .into_iter()
+                .map(|(name, dt)| Field::new((&*name).into(), dt.0)),
+        );
         Ok(LazyFrame::scan_from_python_function(schema, scan_fn, pyarrow).into())
     }
 
@@ -911,8 +914,8 @@ impl PyLazyFrame {
             .coalesce(coalesce)
             .how(JoinType::AsOf(AsOfOptions {
                 strategy: strategy.0,
-                left_by: left_by.map(strings_to_smartstrings),
-                right_by: right_by.map(strings_to_smartstrings),
+                left_by: left_by.map(strings_to_pl_smallstr),
+                right_by: right_by.map(strings_to_pl_smallstr),
                 tolerance: tolerance.map(|t| t.0.into_static().unwrap()),
                 tolerance_str: tolerance_str.map(|s| s.into()),
             }))

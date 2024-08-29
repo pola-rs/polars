@@ -17,7 +17,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out = ratings
         .clone()
         .lazy()
-        .select([col("Theatre").value_counts(true, true, "count".to_string(), false)])
+        .select([col("Theatre").value_counts(true, true, "count", false)])
         .collect()?;
     println!("{}", &out);
     // --8<-- [end:state_value_counts]
@@ -26,7 +26,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out = ratings
         .clone()
         .lazy()
-        .select([col("Theatre").value_counts(true, true, "count".to_string(), false)])
+        .select([col("Theatre").value_counts(true, true, "count", false)])
         .unnest(["Theatre"])
         .collect()?;
     println!("{}", &out);
@@ -39,7 +39,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "Theatre" => &["NE", "ME"],
         "Avg_Rating" => &[4.5, 4.9],
     )?
-    .into_struct("ratings")
+    .into_struct("ratings".into())
     .into_series();
     println!("{}", &rating_series);
     // // --8<-- [end:series_struct]
@@ -54,7 +54,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .lazy()
         .select([col("ratings")
             .struct_()
-            .rename_fields(["Film".into(), "State".into(), "Value".into()].to_vec())])
+            .rename_fields(["Film", "State", "Value"].to_vec())])
         .unnest(["ratings"])
         .collect()?;
 

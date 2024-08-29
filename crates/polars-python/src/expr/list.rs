@@ -2,8 +2,8 @@ use std::borrow::Cow;
 
 use polars::prelude::*;
 use polars::series::ops::NullBehavior;
+use polars_utils::pl_str::PlSmallStr;
 use pyo3::prelude::*;
-use smartstring::alias::String as SmartString;
 
 use crate::conversion::Wrap;
 use crate::PyExpr;
@@ -214,7 +214,7 @@ impl PyExpr {
             Arc::new(move |idx: usize| {
                 Python::with_gil(|py| {
                     let out = lambda.call1(py, (idx,)).unwrap();
-                    let out: SmartString = out.extract::<Cow<str>>(py).unwrap().into();
+                    let out: PlSmallStr = out.extract::<Cow<str>>(py).unwrap().as_ref().into();
                     out
                 })
             }) as NameGenerator

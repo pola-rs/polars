@@ -73,7 +73,9 @@ pub(super) fn position_aggregates(
             .map(|(i, opt_name)| {
                 let offset = i * n_rows;
                 let avs = &buf[offset..offset + n_rows];
-                let name = opt_name.unwrap_or("null");
+                let name = opt_name
+                    .map(PlSmallStr::from_str)
+                    .unwrap_or_else(|| PlSmallStr::from_static("null"));
                 let out = match &phys_type {
                     #[cfg(feature = "dtype-struct")]
                     DataType::Struct(_) => {
@@ -166,7 +168,9 @@ where
             .map(|(i, opt_name)| {
                 let offset = i * n_rows;
                 let opt_values = &buf[offset..offset + n_rows];
-                let name = opt_name.unwrap_or("null");
+                let name = opt_name
+                    .map(PlSmallStr::from_str)
+                    .unwrap_or_else(|| PlSmallStr::from_static("null"));
                 let out = ChunkedArray::<T>::from_slice_options(name, opt_values).into_series();
                 unsafe { out.cast_unchecked(logical_type).unwrap() }
             })
@@ -293,7 +297,7 @@ pub(super) fn compute_col_idx(
 }
 
 fn compute_row_index<'a, T>(
-    index: &[String],
+    index: &[PlSmallStr],
     index_agg_physical: &'a ChunkedArray<T>,
     count: usize,
     logical_type: &DataType,
@@ -331,7 +335,7 @@ where
                 .map(|(k, _)| Option::<T::Physical<'a>>::peel_total_ord(k))
                 .collect::<ChunkedArray<T>>()
                 .into_series();
-            s.rename(&index[0]);
+            s.rename(index[0].clone());
             let s = restore_logical_type(&s, logical_type);
             Some(vec![s])
         },
@@ -342,7 +346,7 @@ where
 }
 
 fn compute_row_index_struct(
-    index: &[String],
+    index: &[PlSmallStr],
     index_agg: &Series,
     index_agg_physical: &BinaryOffsetChunked,
     count: usize,
@@ -377,7 +381,7 @@ fn compute_row_index_struct(
             // SAFETY: `unique_indices` is filled with elements between
             // 0 and `index_agg.len() - 1`.
             let mut s = unsafe { index_agg.take_slice_unchecked(&unique_indices) };
-            s.rename(&index[0]);
+            s.rename(index[0].clone());
             Some(vec![s])
         },
         _ => None,
@@ -389,7 +393,7 @@ fn compute_row_index_struct(
 // TODO! Also create a specialized version for numerics.
 pub(super) fn compute_row_idx(
     pivot_df: &DataFrame,
-    index: &[String],
+    index: &[PlSmallStr],
     groups: &GroupsProxy,
     count: usize,
 ) -> PolarsResult<(Vec<IdxSize>, usize, Option<Vec<Series>>)> {
@@ -452,7 +456,7 @@ pub(super) fn compute_row_idx(
                 let row_index = match count {
                     0 => {
                         let s = Series::new(
-                            &index[0],
+                            index[0].clone(),
                             row_to_idx.into_iter().map(|(k, _)| k).collect::<Vec<_>>(),
                         );
                         let s = restore_logical_type(&s, index_s.dtype());
@@ -465,9 +469,11 @@ pub(super) fn compute_row_idx(
             },
         }
     } else {
-        let binding = pivot_df.select(index)?;
+        let binding = pivot_df.select(index.iter().cloned())?;
         let fields = binding.get_columns();
-        let index_struct_series = StructChunked::from_series("placeholder", fields)?.into_series();
+        let index_struct_series =
+            StructChunked::from_series(PlSmallStr::from_static("placeholder"), fields)?
+                .into_series();
         let index_agg = unsafe { index_struct_series.agg_first(groups) };
         let index_agg_physical = index_agg.to_physical_repr();
         let ca = index_agg_physical.struct_()?;

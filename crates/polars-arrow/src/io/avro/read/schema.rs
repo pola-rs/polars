@@ -1,18 +1,22 @@
 use avro_schema::schema::{Enum, Fixed, Record, Schema as AvroSchema};
 use polars_error::{polars_bail, PolarsResult};
+use polars_utils::pl_str::PlSmallStr;
 
 use crate::datatypes::*;
 
 fn external_props(schema: &AvroSchema) -> Metadata {
     let mut props = Metadata::new();
-    match &schema {
+    match schema {
         AvroSchema::Record(Record {
             doc: Some(ref doc), ..
         })
         | AvroSchema::Enum(Enum {
             doc: Some(ref doc), ..
         }) => {
-            props.insert("avro::doc".to_string(), doc.clone());
+            props.insert(
+                PlSmallStr::from_static("avro::doc"),
+                PlSmallStr::from_str(doc.as_str()),
+            );
         },
         _ => {},
     }
@@ -59,12 +63,14 @@ fn schema_to_field(
                 avro_schema::schema::LongLogical::Time => {
                     ArrowDataType::Time64(TimeUnit::Microsecond)
                 },
-                avro_schema::schema::LongLogical::TimestampMillis => {
-                    ArrowDataType::Timestamp(TimeUnit::Millisecond, Some("00:00".to_string()))
-                },
-                avro_schema::schema::LongLogical::TimestampMicros => {
-                    ArrowDataType::Timestamp(TimeUnit::Microsecond, Some("00:00".to_string()))
-                },
+                avro_schema::schema::LongLogical::TimestampMillis => ArrowDataType::Timestamp(
+                    TimeUnit::Millisecond,
+                    Some(PlSmallStr::from_static("00:00")),
+                ),
+                avro_schema::schema::LongLogical::TimestampMicros => ArrowDataType::Timestamp(
+                    TimeUnit::Microsecond,
+                    Some(PlSmallStr::from_static("00:00")),
+                ),
                 avro_schema::schema::LongLogical::LocalTimestampMillis => {
                     ArrowDataType::Timestamp(TimeUnit::Millisecond, None)
                 },
@@ -118,7 +124,10 @@ fn schema_to_field(
                 .map(|field| {
                     let mut props = Metadata::new();
                     if let Some(doc) = &field.doc {
-                        props.insert("avro::doc".to_string(), doc.clone());
+                        props.insert(
+                            PlSmallStr::from_static("avro::doc"),
+                            PlSmallStr::from_str(doc),
+                        );
                     }
                     schema_to_field(&field.schema, Some(&field.name), props)
                 })
@@ -127,7 +136,7 @@ fn schema_to_field(
         },
         AvroSchema::Enum { .. } => {
             return Ok(Field::new(
-                name.unwrap_or_default(),
+                PlSmallStr::from_str(name.unwrap_or_default()),
                 ArrowDataType::Dictionary(IntegerType::Int32, Box::new(ArrowDataType::Utf8), false),
                 false,
             ))
@@ -147,5 +156,5 @@ fn schema_to_field(
 
     let name = name.unwrap_or_default();
 
-    Ok(Field::new(name, data_type, nullable).with_metadata(props))
+    Ok(Field::new(PlSmallStr::from_str(name), data_type, nullable).with_metadata(props))
 }

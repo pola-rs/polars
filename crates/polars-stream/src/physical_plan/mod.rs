@@ -17,6 +17,7 @@ mod to_graph;
 pub use fmt::visualize_plan;
 use polars_plan::prelude::FileScanOptions;
 use polars_utils::arena::{Arena, Node};
+use polars_utils::pl_str::PlSmallStr;
 use slotmap::{Key, SecondaryMap, SlotMap};
 pub use to_graph::physical_plan_to_graph;
 
@@ -76,7 +77,7 @@ pub enum PhysNodeKind {
 
     SimpleProjection {
         input: PhysNodeKey,
-        columns: Vec<String>,
+        columns: Vec<PlSmallStr>,
     },
 
     InMemorySink {

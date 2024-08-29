@@ -105,7 +105,7 @@ impl CsvExec {
                     let path = path.to_str().unwrap();
                     unsafe {
                         df.with_column_unchecked(
-                            StringChunked::full(col, path, df.height()).into_series(),
+                            StringChunked::full(col.clone(), path, df.height()).into_series(),
                         )
                     };
                 }
@@ -218,7 +218,7 @@ impl CsvExec {
                 accumulate_dataframes_vertical(dfs.into_iter().flat_map(|dfs| dfs.into_iter()))?;
 
             if let Some(row_index) = self.file_options.row_index.clone() {
-                df.with_row_index_mut(row_index.name.as_ref(), Some(row_index.offset));
+                df.with_row_index_mut(row_index.name.clone(), Some(row_index.offset));
             }
 
             df
@@ -235,7 +235,9 @@ impl CsvExec {
 impl Executor for CsvExec {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         let profile_name = if state.has_node_timer() {
-            let mut ids = vec![self.paths[0].to_string_lossy().into()];
+            let mut ids = vec![PlSmallStr::from_str(
+                self.paths[0].to_string_lossy().as_ref(),
+            )];
             if self.predicate.is_some() {
                 ids.push("predicate".into())
             }
