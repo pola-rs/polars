@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import enum
+import re
 from datetime import date, datetime, time, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
@@ -18,6 +19,8 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 if TYPE_CHECKING:
     from polars import Expr
     from polars._typing import PolarsDataType, TimeUnit
+
+pd_match = re.compile(r"^<class 'pandas\..*Time(delta|stamp)'>$")
 
 
 def lit(
@@ -71,7 +74,17 @@ def lit(
     """
     time_unit: TimeUnit
 
+    # Convert np.datetime64 and timedelta64. Use str(type) to avoid unnecessary import
+    # of numpy.
+    type_str = str(type(value))
+    if type_str in ("<class 'numpy.datetime64'>", "<class 'numpy.timedelta64'>"):
+        value = value.item()
+
     if isinstance(value, datetime):
+        # Check for pandas. Again, we avoid unnecessary import.
+        if pd_match.match(type_str):
+            value = value.to_pydatetime()
+
         if dtype == Date:
             return wrap_expr(plr.lit(value.date(), allow_object=False))
 
@@ -110,6 +123,9 @@ def lit(
         return expr
 
     elif isinstance(value, timedelta):
+        # Check for pandas. Again, we avoid unnecessary import.
+        if pd_match.match(type_str):
+            value = value.to_pytimedelta()
         expr = wrap_expr(plr.lit(value, allow_object=False))
         if dtype is not None and (tu := getattr(dtype, "time_unit", None)) is not None:
             expr = expr.cast(Duration(tu))

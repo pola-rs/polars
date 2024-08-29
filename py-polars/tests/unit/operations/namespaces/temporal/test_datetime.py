@@ -4,6 +4,8 @@ from collections import OrderedDict
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING
 
+import numpy as np
+import pandas as pd
 import pytest
 from hypothesis import given
 
@@ -1411,11 +1413,27 @@ def test_literal_from_date(
         datetime(2262, 4, 11, tzinfo=ZoneInfo("EST")),
     ],
 )
+@pytest.mark.parametrize("input_type", ["datetime", "pandas", "numpy"])
+@pytest.mark.filterwarnings(
+    # disable numpy time-zone warning
+    "ignore:no explicit representation of timezones available for np.datetime64"
+)
 def test_literal_from_datetime(
     value: datetime,
     dtype: pl.Date | pl.Datetime,
+    input_type: str,
 ) -> None:
-    out = pl.select(pl.lit(value, dtype=dtype))
+    if input_type == "pandas":
+        input_value = pd.Timestamp(value)
+    elif input_type == "numpy":
+        input_value = np.datetime64(value)  # type: ignore[assignment]
+        # numpy datetime64 values do not carry time zone information, but they do
+        # convert to UTC
+        if getattr(value, "tzinfo", None) is not None:
+            value = value.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
+    else:
+        input_value = value   # type: ignore[assignment]
+    out = pl.select(pl.lit(input_value, dtype=dtype))
     if dtype == pl.Date:
         value = value.date()  # type: ignore[assignment]
     elif dtype.time_zone is None and value.tzinfo is not None:  # type: ignore[union-attr]
@@ -1462,7 +1480,18 @@ def test_literal_from_time(value: time) -> None:
         timedelta(days=99999),
     ],
 )
-def test_literal_from_timedelta(value: time, dtype: pl.Duration | None) -> None:
-    out = pl.select(pl.lit(value, dtype=dtype))
+@pytest.mark.parametrize("input_type", ["timedelta", "pandas", "numpy"])
+def test_literal_from_timedelta(
+    value: time,
+    dtype: pl.Duration | None,
+    input_type: str,
+) -> None:
+    if input_type == "pandas":
+        input_value = pd.Timedelta(value)  # type: ignore[arg-type]
+    elif input_type == "numpy":
+        input_value = np.timedelta64(value)  # type: ignore[assignment, arg-type]
+    else:
+        input_value = value  # type: ignore[assignment]
+    out = pl.select(pl.lit(input_value, dtype=dtype))
     assert out.schema == OrderedDict({"literal": dtype or pl.Duration("us")})
     assert out.item() == value
