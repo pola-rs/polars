@@ -13,7 +13,9 @@ impl MinReduce {
 
 impl Reduction for MinReduce {
     fn new_reducer(&self) -> Box<dyn ReductionState> {
-        Box::new(MinReduceState { value: Scalar::new(self.dtype.clone(), AnyValue::Null) })
+        Box::new(MinReduceState {
+            value: Scalar::new(self.dtype.clone(), AnyValue::Null),
+        })
     }
 }
 
@@ -51,7 +53,6 @@ impl ReductionState for MinReduceState {
     }
 }
 
-
 #[derive(Clone)]
 pub struct MaxReduce {
     dtype: DataType,
@@ -65,7 +66,9 @@ impl MaxReduce {
 
 impl Reduction for MaxReduce {
     fn new_reducer(&self) -> Box<dyn ReductionState> {
-        Box::new(MaxReduceState { value: Scalar::new(self.dtype.clone(), AnyValue::Null) })
+        Box::new(MaxReduceState {
+            value: Scalar::new(self.dtype.clone(), AnyValue::Null),
+        })
     }
 }
 

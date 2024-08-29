@@ -2,12 +2,12 @@ use polars_core::error::feature_gated;
 use polars_plan::prelude::*;
 use polars_utils::arena::{Arena, Node};
 
-use super::*;
-use super::min_max::{MinReduce, MaxReduce};
-use super::nan_min_max::{NanMinReduce, NanMaxReduce};
-use super::sum::SumReduce;
 use super::len::LenReduce;
 use super::mean::MeanReduce;
+use super::min_max::{MaxReduce, MinReduce};
+use super::nan_min_max::{NanMaxReduce, NanMinReduce};
+use super::sum::SumReduce;
+use super::*;
 
 /// Converts a node into a reduction + its associated selector expression.
 pub fn into_reduction(

@@ -112,7 +112,9 @@ impl ComputeNode for ReduceNode {
                 self.state = ReduceState::Done;
             },
             // Input is done, transition to being a source.
-            ReduceState::Sink { reduction_states, .. } if matches!(recv[0], PortState::Done) => {
+            ReduceState::Sink {
+                reduction_states, ..
+            } if matches!(recv[0], PortState::Done) => {
                 let columns = reduction_states
                     .iter_mut()
                     .zip(self.output_schema.iter_fields())
@@ -168,11 +170,19 @@ impl ComputeNode for ReduceNode {
             ReduceState::Sink {
                 selectors,
                 reductions,
-                reduction_states
+                reduction_states,
             } => {
                 assert!(send[0].is_none());
                 let recv_port = recv[0].take().unwrap();
-                Self::spawn_sink(selectors, reductions, reduction_states, scope, recv_port, state, join_handles)
+                Self::spawn_sink(
+                    selectors,
+                    reductions,
+                    reduction_states,
+                    scope,
+                    recv_port,
+                    state,
+                    join_handles,
+                )
             },
             ReduceState::Source(df) => {
                 assert!(recv[0].is_none());

@@ -16,7 +16,7 @@ impl Scalar {
     pub fn new(dtype: DataType, value: AnyValue<'static>) -> Self {
         Self { dtype, value }
     }
-    
+
     #[inline(always)]
     pub fn is_null(&self) -> bool {
         self.value.is_null()

@@ -13,7 +13,11 @@ impl MeanReduce {
 
 impl Reduction for MeanReduce {
     fn new_reducer(&self) -> Box<dyn ReductionState> {
-        Box::new(MeanReduceState { dtype: self.dtype.clone(), sum: 0.0, count: 0 })
+        Box::new(MeanReduceState {
+            dtype: self.dtype.clone(),
+            sum: 0.0,
+            count: 0,
+        })
     }
 }
 

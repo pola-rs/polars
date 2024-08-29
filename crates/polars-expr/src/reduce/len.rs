@@ -7,7 +7,7 @@ pub struct LenReduce {}
 
 impl LenReduce {
     pub fn new() -> Self {
-        Self { }
+        Self {}
     }
 }
 
@@ -16,7 +16,6 @@ impl Reduction for LenReduce {
         Box::new(LenReduceState { len: 0 })
     }
 }
-    
 
 pub struct LenReduceState {
     len: u64,

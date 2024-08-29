@@ -73,7 +73,6 @@ where
     }
 }
 
-
 #[derive(Clone)]
 pub struct NanMaxReduce<F> {
     _phantom: PhantomData<F>,

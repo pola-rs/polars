@@ -1,9 +1,9 @@
 mod convert;
+mod len;
+mod mean;
 mod min_max;
 #[cfg(feature = "propagate_nans")]
 mod nan_min_max;
-mod len;
-mod mean;
 mod sum;
 
 use std::any::Any;
@@ -11,13 +11,12 @@ use std::any::Any;
 pub use convert::into_reduction;
 use polars_core::prelude::*;
 
-
-pub trait Reduction : Send {
+pub trait Reduction: Send {
     /// Create a new reducer for this Reduction.
     fn new_reducer(&self) -> Box<dyn ReductionState>;
 }
 
-pub trait ReductionState : Any + Send {
+pub trait ReductionState: Any + Send {
     /// Adds the given series into the reduction.
     fn update(&mut self, batch: &Series) -> PolarsResult<()>;
 
