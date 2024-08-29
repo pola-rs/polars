@@ -1747,8 +1747,8 @@ def test_sign() -> None:
     assert_series_equal(a.sign(), expected)
 
     # Floats
-    a = pl.Series("a", [-9.0, -0.0, 0.0, 4.0, None])
-    expected = pl.Series("a", [-1.0, 0.0, 0.0, 1.0, None])
+    a = pl.Series("a", [-9.0, -0.0, 0.0, 4.0, float("nan"), None])
+    expected = pl.Series("a", [-1.0, 0.0, 0.0, 1.0, float("nan"), None])
     assert_series_equal(a.sign(), expected)
 
     # Invalid input
