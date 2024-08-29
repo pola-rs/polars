@@ -5,6 +5,7 @@ use polars_utils::arena::{Arena, Node};
 use super::len::LenReduce;
 use super::mean::MeanReduce;
 use super::min_max::{MaxReduce, MinReduce};
+#[cfg(feature = "propagate_nans")]
 use super::nan_min_max::{NanMaxReduce, NanMinReduce};
 use super::sum::SumReduce;
 use super::*;
