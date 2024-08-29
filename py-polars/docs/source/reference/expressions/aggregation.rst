@@ -24,6 +24,7 @@ Aggregation
     Expr.n_unique
     Expr.nan_max
     Expr.nan_min
+    Expr.null_count
     Expr.product
     Expr.quantile
     Expr.std
