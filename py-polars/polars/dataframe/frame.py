@@ -3967,6 +3967,7 @@ class DataFrame:
                         mode=mode,
                         catalog_name=catalog,
                         db_schema_name=db_schema,
+                        **(engine_options or {}),
                     )
                 elif db_schema is not None:
                     adbc_str_version = ".".join(str(v) for v in adbc_version)
