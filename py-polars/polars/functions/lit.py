@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import contextlib
 import enum
-import re
 from datetime import date, datetime, time, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
@@ -20,7 +19,70 @@ if TYPE_CHECKING:
     from polars import Expr
     from polars._typing import PolarsDataType, TimeUnit
 
-pd_match = re.compile(r"^<class 'pandas\..*Time(delta|stamp)'>$")
+
+def _np_int_and_dtype_datetime(
+    value: np.datetime64, dtype: PolarsDataType | None
+) -> tuple[int, PolarsDataType]:
+    """Determine numpy scalar conversion from datetime64."""
+    if dtype == Date:
+        np_unit = "D"
+        int_type = np.int32
+    elif dtype == Datetime:
+        np_unit = dtype.time_unit or "us"  # type: ignore[union-attr]
+        int_type = np.int64  # type: ignore[assignment]
+    else:
+        # output dtype not provided; infer from numpy dtype and cast value to proper int
+        unit, _ = np.datetime_data(value)
+        if unit in ("Y", "M", "W", "D"):
+            np_unit = "D"
+            dtype = Date
+            int_type = np.int32
+        elif unit in ("h", "m", "s", "ms"):
+            np_unit = "ms"
+            int_type = np.int64  # type: ignore[assignment]
+            dtype = Datetime("ms")
+        elif unit in ("ns", "ps", "fs", "as"):
+            np_unit = "ns"
+            int_type = np.int64  # type: ignore[assignment]
+            dtype = Datetime("ns")
+        else:
+            np_unit = "us"
+            int_type = np.int64  # type: ignore[assignment]
+            dtype = Datetime("us")
+    return (
+        # cast to np time unit, then to np.int, then to int
+        int(value.astype(f"datetime64[{np_unit}]").astype(int_type)),
+        dtype,
+    )
+
+
+def _np_int_and_dtype_timedelta(
+    value: np.timedelta64, dtype: PolarsDataType | None
+) -> tuple[int, PolarsDataType]:
+    """Determine numpy scalar conversion from timedelta64."""
+    if dtype is None:
+        # output dtype not provided; infer from numpy dtype and cast value to proper int
+        unit, _ = np.datetime_data(value)
+        if unit in ("Y", "M", "W", "D", "h", "m", "s", "ms"):
+            np_unit = "ms"
+            int_type = np.int64
+            dtype = Duration("ms")
+        elif unit in ("ns", "ps", "fs", "as"):
+            np_unit = "ns"
+            int_type = np.int64
+            dtype = Duration("ns")
+        else:
+            np_unit = "us"
+            int_type = np.int64
+            dtype = Duration("us")
+    else:
+        np_unit = dtype.time_unit or "us"  # type: ignore[union-attr]
+        int_type = np.int64
+    return (
+        # cast to np time unit, then to np.int, then to int
+        int(value.astype(f"timedelta64[{np_unit}]").astype(int_type)),
+        dtype,
+    )
 
 
 def lit(
@@ -74,17 +136,18 @@ def lit(
     """
     time_unit: TimeUnit
 
-    # Convert np.datetime64 and timedelta64. Use str(type) to avoid unnecessary import
-    # of numpy.
-    type_str = str(type(value))
-    if type_str in ("<class 'numpy.datetime64'>", "<class 'numpy.timedelta64'>"):
-        value = value.item()
+    if _check_for_numpy(value):
+        if isinstance(value, np.datetime64):
+            # Units < ns must be converted to ns. Units > ms are converted to ms.
+            value, dtype = _np_int_and_dtype_datetime(value, dtype)
+            return wrap_expr(plr.lit(value, allow_object=False)).cast(dtype)
+        elif isinstance(value, np.timedelta64):
+            value, dtype = _np_int_and_dtype_timedelta(value, dtype)
+            return wrap_expr(plr.lit(value, allow_object=False)).cast(dtype)
+        elif isinstance(value, np.ndarray):
+            return lit(pl.Series("literal", value, dtype=dtype))
 
     if isinstance(value, datetime):
-        # Check for pandas. Again, we avoid unnecessary import.
-        if pd_match.match(type_str):
-            value = value.to_pydatetime()
-
         if dtype == Date:
             return wrap_expr(plr.lit(value.date(), allow_object=False))
 
@@ -123,9 +186,6 @@ def lit(
         return expr
 
     elif isinstance(value, timedelta):
-        # Check for pandas. Again, we avoid unnecessary import.
-        if pd_match.match(type_str):
-            value = value.to_pytimedelta()
         expr = wrap_expr(plr.lit(value, allow_object=False))
         if dtype is not None and (tu := getattr(dtype, "time_unit", None)) is not None:
             expr = expr.cast(Duration(tu))
@@ -150,9 +210,6 @@ def lit(
     elif isinstance(value, pl.Series):
         value = value._s
         return wrap_expr(plr.lit(value, allow_object))
-
-    elif _check_for_numpy(value) and isinstance(value, np.ndarray):
-        return lit(pl.Series("literal", value, dtype=dtype))
 
     elif isinstance(value, (list, tuple)):
         return lit(pl.Series("literal", [value], dtype=dtype))

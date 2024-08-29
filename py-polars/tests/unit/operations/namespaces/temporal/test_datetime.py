@@ -5,7 +5,6 @@ from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING
 
 import numpy as np
-import pandas as pd
 import pytest
 from hypothesis import given
 
@@ -1413,28 +1412,11 @@ def test_literal_from_date(
         datetime(2262, 4, 11, tzinfo=ZoneInfo("EST")),
     ],
 )
-@pytest.mark.parametrize("input_type", ["datetime", "pandas", "numpy"])
-@pytest.mark.filterwarnings(
-    # disable numpy time-zone warning
-    "ignore:no explicit representation of timezones available for np.datetime64",
-    "ignore:parsing timezone aware datetimes is deprecated",
-)
 def test_literal_from_datetime(
     value: datetime,
     dtype: pl.Date | pl.Datetime,
-    input_type: str,
 ) -> None:
-    if input_type == "pandas":
-        input_value = pd.Timestamp(value)
-    elif input_type == "numpy":
-        input_value = np.datetime64(value)  # type: ignore[assignment]
-        # numpy datetime64 values do not carry time zone information, but they do
-        # convert to UTC
-        if getattr(value, "tzinfo", None) is not None:
-            value = value.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
-    else:
-        input_value = value  # type: ignore[assignment]
-    out = pl.select(pl.lit(input_value, dtype=dtype))
+    out = pl.select(pl.lit(value, dtype=dtype))
     if dtype == pl.Date:
         value = value.date()  # type: ignore[assignment]
     elif dtype.time_zone is None and value.tzinfo is not None:  # type: ignore[union-attr]
@@ -1446,6 +1428,74 @@ def test_literal_from_datetime(
 
     assert out.schema == OrderedDict({"literal": dtype})
     assert out.item() == value
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        None,
+        pl.Date,
+        pl.Datetime("ms"),
+        pl.Datetime("ms", "EST"),
+        pl.Datetime("us"),
+        pl.Datetime("us", "EST"),
+        pl.Datetime("ns"),
+        pl.Datetime("ns", "EST"),
+    ],
+)
+@pytest.mark.parametrize(
+    "value",
+    [
+        "-2000-05-31",
+        "1677-09-22 11:23:42.005",
+        "2024-02-29 16:53:59",
+        "2262-04-11",
+    ],
+)
+@pytest.mark.parametrize(
+    "np_unit", ["Y", "M", "D", "h", "m", "s", "ms", "us", "μs", "ns"]
+)
+@pytest.mark.parametrize("interval", [1, 5, 10])
+def test_literal_from_datetime64(
+    value: datetime,
+    dtype: pl.Date | pl.Datetime | None,
+    np_unit: str,
+    interval: int,
+) -> None:
+    input_value = np.datetime64(value, (np_unit, interval))
+    if dtype is None:
+        # Polars should infer dtype based on the time unit
+        if np_unit in ("Y", "M", "D"):
+            expected_value = input_value.astype("datetime64[D]").astype(np.int32)
+            expected_dtype = pl.Date
+        elif np_unit in ("h", "m", "s", "ms"):
+            expected_value = input_value.astype("datetime64[ms]").astype(np.int64)
+            expected_dtype = pl.Datetime("ms")  # type: ignore[assignment]
+        elif np_unit in ("us", "μs"):
+            expected_value = input_value.astype("datetime64[us]").astype(np.int64)
+            expected_dtype = pl.Datetime("us")  # type: ignore[assignment]
+        else:
+            expected_value = input_value.astype("datetime64[ns]").astype(np.int64)
+            expected_dtype = pl.Datetime("ns")  # type: ignore[assignment]
+    else:
+        expected_dtype = dtype  # type: ignore[assignment]
+        if dtype == pl.Date:
+            expected_value = input_value.astype("datetime64[D]").astype(np.int32)
+            expected_dtype = dtype  # type: ignore[assignment]
+        elif dtype == pl.Datetime:
+            if (tu := dtype.time_unit) is None:  # type: ignore[union-attr]
+                if np_unit in ("Y", "M", "D", "h", "m", "s", "m"):
+                    tu = "ms"
+                elif np_unit in ("us", "μs"):
+                    tu = "us"
+                else:
+                    tu = "ns"
+            expected_value = input_value.astype(f"datetime64[{tu}]").astype(np.int64)
+
+    out = pl.select(pl.lit(input_value, dtype=dtype))
+    assert out.schema == OrderedDict({"literal": expected_dtype})
+    # polars covers a larger range than date/datetime, so we test the underlying integer
+    assert out["literal"].cast(pl.Int64).item() == expected_value
 
 
 @pytest.mark.parametrize(
@@ -1481,18 +1531,59 @@ def test_literal_from_time(value: time) -> None:
         timedelta(days=99999),
     ],
 )
-@pytest.mark.parametrize("input_type", ["timedelta", "pandas", "numpy"])
 def test_literal_from_timedelta(
     value: time,
     dtype: pl.Duration | None,
-    input_type: str,
 ) -> None:
-    if input_type == "pandas":
-        input_value = pd.Timedelta(value)  # type: ignore[arg-type]
-    elif input_type == "numpy":
-        input_value = np.timedelta64(value)  # type: ignore[assignment, arg-type]
-    else:
-        input_value = value  # type: ignore[assignment]
-    out = pl.select(pl.lit(input_value, dtype=dtype))
+    out = pl.select(pl.lit(value, dtype=dtype))
     assert out.schema == OrderedDict({"literal": dtype or pl.Duration("us")})
     assert out.item() == value
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        None,
+        pl.Duration("ms"),
+        pl.Duration("us"),
+        pl.Duration("ns"),
+    ],
+)
+@pytest.mark.parametrize("value", [-100, 5000, 0, 6])
+@pytest.mark.parametrize(
+    "np_unit", ["Y", "M", "D", "h", "m", "s", "ms", "us", "μs", "ns"]
+)
+@pytest.mark.parametrize("interval", [1, 5, 10])
+def test_literal_from_timedelta64(
+    value: datetime,
+    dtype: pl.Date | pl.Datetime | None,
+    np_unit: str,
+    interval: int,
+) -> None:
+    input_value = np.timedelta64(value, (np_unit, interval))  # type: ignore[arg-type]
+    if dtype is None:
+        # Polars should infer dtype based on the time unit
+        if np_unit in ("Y", "M", "D", "h", "m", "s", "ms"):
+            expected_value = input_value.astype("timedelta64[ms]").astype(np.int64)
+            expected_dtype = pl.Duration("ms")
+        elif np_unit in ("us", "μs"):
+            expected_value = input_value.astype("timedelta64[us]").astype(np.int64)
+            expected_dtype = pl.Duration("us")
+        else:
+            expected_value = input_value.astype("timedelta64[ns]").astype(np.int64)
+            expected_dtype = pl.Duration("ns")
+    else:
+        expected_dtype = dtype  # type: ignore[assignment]
+        if (tu := dtype.time_unit) is None:  # type: ignore[union-attr]
+            if np_unit in ("Y", "M", "D", "h", "m", "s", "m"):
+                tu = "ms"
+            elif np_unit in ("us", "μs"):
+                tu = "us"
+            else:
+                tu = "ns"
+        expected_value = input_value.astype(f"timedelta64[{tu}]").astype(np.int64)
+
+    out = pl.select(pl.lit(input_value, dtype=dtype))
+    assert out.schema == OrderedDict({"literal": expected_dtype})
+    # polars covers a larger range than date/datetime, so we test the underlying integer
+    assert out["literal"].cast(pl.Int64).item() == expected_value
