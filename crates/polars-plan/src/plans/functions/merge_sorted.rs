@@ -10,7 +10,7 @@ pub(super) fn merge_sorted(df: &DataFrame, column: &str) -> PolarsResult<DataFra
                 .iter()
                 .map(|s| {
                     Series::from_chunks_and_dtype_unchecked(
-                        s.name(),
+                        s.name().clone(),
                         s.chunks()[..1].to_vec(),
                         s.dtype(),
                     )
@@ -20,7 +20,7 @@ pub(super) fn merge_sorted(df: &DataFrame, column: &str) -> PolarsResult<DataFra
                 .iter()
                 .map(|s| {
                     Series::from_chunks_and_dtype_unchecked(
-                        s.name(),
+                        s.name().clone(),
                         s.chunks()[1..].to_vec(),
                         s.dtype(),
                     )

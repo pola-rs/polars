@@ -141,7 +141,7 @@ impl IR {
                 let input = convert_to_lp(input, lp_arena);
                 let expr = columns
                     .iter_names()
-                    .map(|name| Expr::Column(ColumnName::from(name.as_str())))
+                    .map(|name| Expr::Column(name.clone()))
                     .collect::<Vec<_>>();
                 DslPlan::Select {
                     expr,

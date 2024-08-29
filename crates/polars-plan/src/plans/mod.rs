@@ -51,8 +51,6 @@ pub use schema::*;
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 
-pub type ColumnName = Arc<str>;
-
 #[derive(Clone, Copy, Debug)]
 pub enum Context {
     /// Any operation that is done on groups

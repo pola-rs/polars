@@ -240,7 +240,10 @@ impl IOThread {
     }
 
     pub(in crate::executors::sinks) fn dump_partition(&self, partition_no: IdxSize, df: DataFrame) {
-        let partition = Some(IdxCa::from_vec("", vec![partition_no]));
+        let partition = Some(IdxCa::from_vec(
+            PlSmallStr::const_default(),
+            vec![partition_no],
+        ));
         let iter = Box::new(std::iter::once(df));
         self.dump_iter(partition, iter)
     }

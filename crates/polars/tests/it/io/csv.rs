@@ -44,10 +44,16 @@ fn write_csv() {
 fn write_dates() {
     use polars_core::export::chrono;
 
-    let s0 = Series::new("date", [chrono::NaiveDate::from_yo_opt(2024, 33), None]);
-    let s1 = Series::new("time", [None, chrono::NaiveTime::from_hms_opt(19, 50, 0)]);
+    let s0 = Series::new(
+        "date".into(),
+        [chrono::NaiveDate::from_yo_opt(2024, 33), None],
+    );
+    let s1 = Series::new(
+        "time".into(),
+        [None, chrono::NaiveTime::from_hms_opt(19, 50, 0)],
+    );
     let s2 = Series::new(
-        "datetime",
+        "datetime".into(),
         [
             Some(chrono::NaiveDateTime::new(
                 chrono::NaiveDate::from_ymd_opt(2000, 12, 1).unwrap(),
@@ -112,7 +118,7 @@ fn write_dates() {
     let with_timezone = polars_ops::chunked_array::replace_time_zone(
         s2.slice(0, 1).datetime().unwrap(),
         Some("America/New_York"),
-        &StringChunked::new("", ["raise"]),
+        &StringChunked::new("".into(), ["raise"]),
         NonExistent::Raise,
     )
     .unwrap()
@@ -214,7 +220,7 @@ fn test_parser() -> PolarsResult<()> {
     assert_eq!(col.get(0)?, AnyValue::String("Setosa"));
     assert_eq!(col.get(2)?, AnyValue::String("Setosa"));
 
-    assert_eq!("sepal_length", df.get_columns()[0].name());
+    assert_eq!("sepal_length", df.get_columns()[0].name().as_str());
     assert_eq!(1, df.column("sepal_length").unwrap().chunks().len());
     assert_eq!(df.height(), 7);
 
@@ -229,7 +235,7 @@ fn test_parser() -> PolarsResult<()> {
         .finish()
         .unwrap();
 
-    assert_eq!("head_1", df.get_columns()[0].name());
+    assert_eq!("head_1", df.get_columns()[0].name().as_str());
     assert_eq!(df.shape(), (3, 2));
 
     // test windows line ending with 1 byte char column and no line endings for last line.
@@ -243,7 +249,7 @@ fn test_parser() -> PolarsResult<()> {
         .finish()
         .unwrap();
 
-    assert_eq!("head_1", df.get_columns()[0].name());
+    assert_eq!("head_1", df.get_columns()[0].name().as_str());
     assert_eq!(df.shape(), (3, 1));
     Ok(())
 }
@@ -303,15 +309,15 @@ fn test_missing_data() {
     assert!(df
         .column("column_1")
         .unwrap()
-        .equals(&Series::new("column_1", &[1_i64, 1])));
+        .equals(&Series::new("column_1".into(), &[1_i64, 1])));
     assert!(df
         .column("column_2")
         .unwrap()
-        .equals_missing(&Series::new("column_2", &[Some(2_i64), None])));
+        .equals_missing(&Series::new("column_2".into(), &[Some(2_i64), None])));
     assert!(df
         .column("column_3")
         .unwrap()
-        .equals(&Series::new("column_3", &[3_i64, 3])));
+        .equals(&Series::new("column_3".into(), &[3_i64, 3])));
 }
 
 #[test]
@@ -326,7 +332,7 @@ fn test_escape_comma() {
     assert!(df
         .column("column_3")
         .unwrap()
-        .equals(&Series::new("column_3", &[11_i64, 12])));
+        .equals(&Series::new("column_3".into(), &[11_i64, 12])));
 }
 
 #[test]
@@ -339,7 +345,7 @@ fn test_escape_double_quotes() {
     let df = CsvReader::new(file).finish().unwrap();
     assert_eq!(df.shape(), (2, 3));
     assert!(df.column("column_2").unwrap().equals(&Series::new(
-        "column_2",
+        "column_2".into(),
         &[
             r#"with "double quotes" US"#,
             r#"with "double quotes followed", by comma"#
@@ -397,7 +403,7 @@ hello,","," ",world,"!"
         assert!(df
             .column(col)
             .unwrap()
-            .equals(&Series::new(col, &[&**val; 4])));
+            .equals(&Series::new(col.into(), &[&**val; 4])));
     }
 }
 
@@ -420,7 +426,7 @@ versions of Lorem Ipsum.",11
         .unwrap();
 
     assert!(df.column("column_2").unwrap().equals(&Series::new(
-        "column_2",
+        "column_2".into(),
         &[
             r#"Lorem Ipsum is simply dummy text of the printing and typesetting
 industry. Lorem Ipsum has been the industry's standard dummy text ever since th
@@ -508,13 +514,13 @@ fn test_quoted_numeric() {
 
 #[test]
 fn test_empty_bytes_to_dataframe() {
-    let fields = vec![Field::new("test_field", DataType::String)];
+    let fields = vec![Field::new("test_field".into(), DataType::String)];
     let schema = Schema::from_iter(fields);
     let file = Cursor::new(vec![]);
 
     let result = CsvReadOptions::default()
         .with_has_header(false)
-        .with_columns(Some(schema.iter_names().map(|s| s.to_string()).collect()))
+        .with_columns(Some(schema.iter_names().cloned().collect()))
         .with_schema(Some(Arc::new(schema)))
         .into_reader_with_file_handle(file)
         .finish();
@@ -548,9 +554,9 @@ fn test_missing_value() {
     let df = CsvReadOptions::default()
         .with_has_header(true)
         .with_schema(Some(Arc::new(Schema::from_iter([
-            Field::new("foo", DataType::UInt32),
-            Field::new("bar", DataType::UInt32),
-            Field::new("ham", DataType::UInt32),
+            Field::new("foo".into(), DataType::UInt32),
+            Field::new("bar".into(), DataType::UInt32),
+            Field::new("ham".into(), DataType::UInt32),
         ]))))
         .into_reader_with_file_handle(file)
         .finish()
@@ -571,7 +577,7 @@ AUDCAD,1616455921,0.96212,0.95666,1
     let df = CsvReadOptions::default()
         .with_has_header(true)
         .with_schema_overwrite(Some(Arc::new(Schema::from_iter([Field::new(
-            "b",
+            "b".into(),
             DataType::Datetime(TimeUnit::Nanoseconds, None),
         )]))))
         .with_ignore_errors(true)
@@ -730,8 +736,7 @@ null-value,b,bar
     let file = Cursor::new(csv);
     let df = CsvReadOptions::default()
         .map_parse_options(|parse_options| {
-            parse_options
-                .with_null_values(Some(NullValues::AllColumnsSingle("null-value".to_string())))
+            parse_options.with_null_values(Some(NullValues::AllColumnsSingle("null-value".into())))
         })
         .into_reader_with_file_handle(file)
         .finish()?;

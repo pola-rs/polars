@@ -48,8 +48,11 @@ pub(super) fn extract_groups(
     let reg = Regex::new(pat)?;
     let n_fields = reg.captures_len();
     if n_fields == 1 {
-        return StructChunked::from_series(ca.name(), &[Series::new_null(ca.name(), ca.len())])
-            .map(|ca| ca.into_series());
+        return StructChunked::from_series(
+            ca.name().clone(),
+            &[Series::new_null(ca.name().clone(), ca.len())],
+        )
+        .map(|ca| ca.into_series());
     }
 
     let data_type = dtype.try_to_arrow(CompatLevel::newest())?;
@@ -66,7 +69,7 @@ pub(super) fn extract_groups(
         .map(|array| extract_groups_array(array, &reg, &names, data_type.clone()))
         .collect::<PolarsResult<Vec<_>>>()?;
 
-    Series::try_from((ca.name(), chunks))
+    Series::try_from((ca.name().clone(), chunks))
 }
 
 fn extract_group_reg_lit(
@@ -153,21 +156,21 @@ pub(super) fn extract_group(
                 let reg = Regex::new(pat)?;
                 try_unary_mut_with_options(ca, |arr| extract_group_reg_lit(arr, &reg, group_index))
             } else {
-                Ok(StringChunked::full_null(ca.name(), ca.len()))
+                Ok(StringChunked::full_null(ca.name().clone(), ca.len()))
             }
         },
         (1, _) => {
             if let Some(s) = ca.get(0) {
                 try_unary_mut_with_options(pat, |pat| extract_group_array_lit(s, pat, group_index))
             } else {
-                Ok(StringChunked::full_null(ca.name(), pat.len()))
+                Ok(StringChunked::full_null(ca.name().clone(), pat.len()))
             }
         },
         (len_ca, len_pat) if len_ca == len_pat => try_binary_mut_with_options(
             ca,
             pat,
             |ca, pat| extract_group_binary(ca, pat, group_index),
-            ca.name(),
+            ca.name().clone(),
         ),
         _ => {
             polars_bail!(ComputeError: "ca(len: {}) and pat(len: {}) should either broadcast or have the same length", ca.len(), pat.len())

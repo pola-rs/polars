@@ -8,6 +8,7 @@ use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{AnyValue, SchemaRef, Series, SortOptions};
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
+use polars_utils::pl_str::PlSmallStr;
 
 use crate::executors::sinks::io::{block_thread_until_io_thread_done, IOThread};
 use crate::executors::sinks::memory::MemTracker;
@@ -190,7 +191,9 @@ impl Sink for SortSink {
             let mut lock = self.io_thread.write().unwrap();
             let io_thread = lock.take().unwrap();
 
-            let dist = Series::from_any_values("", &self.dist_sample, true).unwrap();
+            let dist =
+                Series::from_any_values(PlSmallStr::const_default(), &self.dist_sample, true)
+                    .unwrap();
             let dist = dist.sort_with(SortOptions::from(&self.sort_options))?;
 
             let instant = self.ooc_start.unwrap();

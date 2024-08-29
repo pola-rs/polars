@@ -114,7 +114,10 @@ impl ComputeNode for ReduceNode {
                     .zip(self.output_schema.iter_fields())
                     .map(|(r, field)| {
                         r.finalize().map(|scalar| {
-                            scalar.into_series(&field.name).cast(&field.dtype).unwrap()
+                            scalar
+                                .into_series(field.name.clone())
+                                .cast(&field.dtype)
+                                .unwrap()
                         })
                     })
                     .try_collect_vec()?;

@@ -1,10 +1,9 @@
-use std::borrow::Cow;
-
 use polars::prelude::*;
 use polars_ops::prelude::array::ArrToStructNameGenerator;
+use polars_utils::pl_str::PlSmallStr;
 use pyo3::prelude::*;
+use pyo3::pybacked::PyBackedStr;
 use pyo3::pymethods;
-use smartstring::alias::String as SmartString;
 
 use crate::expr::PyExpr;
 
@@ -114,7 +113,7 @@ impl PyExpr {
             Arc::new(move |idx: usize| {
                 Python::with_gil(|py| {
                     let out = lambda.call1(py, (idx,)).unwrap();
-                    let out: SmartString = out.extract::<Cow<str>>(py).unwrap().into();
+                    let out: PlSmallStr = (&*out.extract::<PyBackedStr>(py).unwrap()).into();
                     out
                 })
             }) as ArrToStructNameGenerator

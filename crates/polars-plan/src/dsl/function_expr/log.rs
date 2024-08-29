@@ -4,9 +4,9 @@ pub(super) fn entropy(s: &Series, base: f64, normalize: bool) -> PolarsResult<Se
     let out = s.entropy(base, normalize)?;
     if matches!(s.dtype(), DataType::Float32) {
         let out = out as f32;
-        Ok(Series::new(s.name(), [out]))
+        Ok(Series::new(s.name().clone(), [out]))
     } else {
-        Ok(Series::new(s.name(), [out]))
+        Ok(Series::new(s.name().clone(), [out]))
     }
 }
 

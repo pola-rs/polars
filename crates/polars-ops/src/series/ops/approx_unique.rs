@@ -17,7 +17,7 @@ where
     ca.iter().for_each(|item| hllp.add(&item.to_total_ord()));
     let c = hllp.count() as IdxSize;
 
-    Ok(Series::new(ca.name(), &[c]))
+    Ok(Series::new(ca.name().clone(), &[c]))
 }
 
 fn dispatcher(s: &Series) -> PolarsResult<Series> {
@@ -59,7 +59,7 @@ fn dispatcher(s: &Series) -> PolarsResult<Series> {
 ///
 ///  use polars_core::prelude::*;
 ///
-///  let s = Series::new("s", [1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3]);
+///  let s = Series::new("s".into(), [1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3]);
 ///
 ///   let approx_count = approx_n_unique(&s).unwrap();
 ///   println!("{}", approx_count);

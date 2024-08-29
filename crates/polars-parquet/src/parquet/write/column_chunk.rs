@@ -179,7 +179,11 @@ fn build_column_chunk(
     let metadata = ColumnMetaData {
         type_,
         encodings,
-        path_in_schema: descriptor.path_in_schema.clone(),
+        path_in_schema: descriptor
+            .path_in_schema
+            .iter()
+            .map(|x| x.to_string())
+            .collect::<Vec<_>>(),
         codec: compression.into(),
         num_values,
         total_uncompressed_size,

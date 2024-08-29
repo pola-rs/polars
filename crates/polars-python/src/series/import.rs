@@ -114,7 +114,7 @@ pub(crate) fn import_stream_pycapsule(capsule: &Bound<PyCapsule>) -> PyResult<Py
     // Series::try_from fails for an empty vec of chunks
     let s = if produced_arrays.is_empty() {
         let polars_dt = DataType::from_arrow(stream.field().data_type(), false);
-        Series::new_empty(&stream.field().name, &polars_dt)
+        Series::new_empty(stream.field().name.clone(), &polars_dt)
     } else {
         Series::try_from((stream.field(), produced_arrays)).unwrap()
     };

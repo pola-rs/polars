@@ -36,12 +36,12 @@ pub enum DslFunction {
         args: UnpivotArgsDSL,
     },
     RowIndex {
-        name: Arc<str>,
+        name: PlSmallStr,
         offset: Option<IdxSize>,
     },
     Rename {
-        existing: Arc<[SmartString]>,
-        new: Arc<[SmartString]>,
+        existing: Arc<[PlSmallStr]>,
+        new: Arc<[PlSmallStr]>,
     },
     Unnest(Vec<Selector>),
     Stats(StatsFunction),

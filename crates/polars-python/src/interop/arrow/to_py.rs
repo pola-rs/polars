@@ -5,7 +5,7 @@ use arrow::ffi;
 use arrow::record_batch::RecordBatch;
 use polars::datatypes::CompatLevel;
 use polars::frame::DataFrame;
-use polars::prelude::{ArrayRef, ArrowField};
+use polars::prelude::{ArrayRef, ArrowField, PlSmallStr};
 use polars::series::Series;
 use polars_core::utils::arrow;
 use polars_error::PolarsResult;
@@ -20,7 +20,7 @@ pub(crate) fn to_py_array(
     pyarrow: &Bound<PyModule>,
 ) -> PyResult<PyObject> {
     let schema = Box::new(ffi::export_field_to_c(&ArrowField::new(
-        "",
+        PlSmallStr::const_default(),
         array.data_type().clone(),
         true,
     )));
@@ -103,7 +103,7 @@ impl DataFrameStreamIterator {
     }
 
     fn field(&self) -> ArrowField {
-        ArrowField::new("", self.data_type.clone(), false)
+        ArrowField::new(PlSmallStr::const_default(), self.data_type.clone(), false)
     }
 }
 

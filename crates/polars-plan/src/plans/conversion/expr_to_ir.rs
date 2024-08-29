@@ -74,7 +74,8 @@ where
 {
     if state.output_name.is_none() {
         if e.is_empty() {
-            state.output_name = OutputName::LiteralLhs(ColumnName::from(function_fmt().as_ref()));
+            let s = function_fmt();
+            state.output_name = OutputName::LiteralLhs(PlSmallStr::from_str(s.as_ref()));
         } else {
             state.output_name = e[0].output_name_inner().clone();
         }
@@ -137,7 +138,7 @@ fn to_aexpr_impl(
         },
         Expr::Literal(lv) => {
             if state.output_name.is_none() {
-                state.output_name = OutputName::LiteralLhs(lv.output_column_name());
+                state.output_name = OutputName::LiteralLhs(lv.output_column_name().clone());
             }
             AExpr::Literal(lv)
         },

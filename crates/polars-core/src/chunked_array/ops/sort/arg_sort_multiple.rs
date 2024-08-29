@@ -121,7 +121,10 @@ pub fn encode_rows_vertical_par_unordered(by: &[Series]) -> PolarsResult<BinaryO
     });
     let chunks = POOL.install(|| chunks.collect::<PolarsResult<Vec<_>>>());
 
-    Ok(BinaryOffsetChunked::from_chunk_iter("", chunks?))
+    Ok(BinaryOffsetChunked::from_chunk_iter(
+        PlSmallStr::const_default(),
+        chunks?,
+    ))
 }
 
 // Almost the same but broadcast nulls to the row-encoded array.
@@ -156,12 +159,18 @@ pub fn encode_rows_vertical_par_unordered_broadcast_nulls(
     });
     let chunks = POOL.install(|| chunks.collect::<PolarsResult<Vec<_>>>());
 
-    Ok(BinaryOffsetChunked::from_chunk_iter("", chunks?))
+    Ok(BinaryOffsetChunked::from_chunk_iter(
+        PlSmallStr::const_default(),
+        chunks?,
+    ))
 }
 
 pub(crate) fn encode_rows_unordered(by: &[Series]) -> PolarsResult<BinaryOffsetChunked> {
     let rows = _get_rows_encoded_unordered(by)?;
-    Ok(BinaryOffsetChunked::with_chunk("", rows.into_array()))
+    Ok(BinaryOffsetChunked::with_chunk(
+        PlSmallStr::const_default(),
+        rows.into_array(),
+    ))
 }
 
 pub fn _get_rows_encoded_unordered(by: &[Series]) -> PolarsResult<RowsEncoded> {
@@ -226,7 +235,7 @@ pub fn _get_rows_encoded(
 }
 
 pub fn _get_rows_encoded_ca(
-    name: &str,
+    name: PlSmallStr,
     by: &[Series],
     descending: &[bool],
     nulls_last: &[bool],
@@ -244,7 +253,7 @@ pub fn _get_rows_encoded_arr(
 }
 
 pub fn _get_rows_encoded_ca_unordered(
-    name: &str,
+    name: PlSmallStr,
     by: &[Series],
 ) -> PolarsResult<BinaryOffsetChunked> {
     _get_rows_encoded_unordered(by)

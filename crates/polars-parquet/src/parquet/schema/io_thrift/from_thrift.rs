@@ -1,4 +1,5 @@
 use parquet_format_safe::SchemaElement;
+use polars_utils::pl_str::PlSmallStr;
 
 use super::super::types::ParquetType;
 use crate::parquet::error::{ParquetError, ParquetResult};
@@ -40,7 +41,7 @@ fn from_thrift_helper(
     let element = elements.get(index).ok_or_else(|| {
         ParquetError::oos(format!("index {} on SchemaElement is not valid", index))
     })?;
-    let name = element.name.clone();
+    let name = PlSmallStr::from_str(element.name.as_str());
     let converted_type = element.converted_type;
 
     let id = element.field_id;

@@ -68,7 +68,7 @@ pub(crate) fn finish_reader<R: ArrowReader>(
         let mut df = DataFrame::try_from((batch, arrow_schema.fields.as_slice()))?;
 
         if let Some(rc) = &row_index {
-            df.with_row_index_mut(&rc.name, Some(current_num_rows + rc.offset));
+            df.with_row_index_mut(rc.name.clone(), Some(current_num_rows + rc.offset));
         }
 
         if let Some(predicate) = &predicate {
@@ -100,7 +100,7 @@ pub(crate) fn finish_reader<R: ArrowReader>(
                 .fields
                 .iter()
                 .map(|fld| {
-                    Series::try_from((fld.name.as_str(), new_empty_array(fld.data_type.clone())))
+                    Series::try_from((fld.name.clone(), new_empty_array(fld.data_type.clone())))
                 })
                 .collect::<PolarsResult<_>>()?;
             DataFrame::new(empty_cols)?
@@ -124,7 +124,7 @@ pub(crate) fn schema_to_arrow_checked(
     let fields = schema.iter_fields().map(|field| {
         #[cfg(feature = "object")]
         polars_ensure!(!matches!(field.data_type(), DataType::Object(_, _)), ComputeError: "cannot write 'Object' datatype to {}", _file_name);
-        Ok(field.data_type().to_arrow_field(field.name().as_str(), compat_level))
+        Ok(field.data_type().to_arrow_field(field.name().clone(), compat_level))
     }).collect::<PolarsResult<Vec<_>>>()?;
     Ok(ArrowSchema::from(fields))
 }

@@ -6,6 +6,7 @@ use polars_core::prelude::*;
 use polars_time::chunkedarray::string::infer as date_infer;
 #[cfg(feature = "polars-time")]
 use polars_time::prelude::string::Pattern;
+use polars_utils::format_pl_smallstr;
 use polars_utils::slice::GetSaferUnchecked;
 
 use super::options::{CommentPrefix, CsvEncoding, NullValues};
@@ -129,9 +130,10 @@ pub fn infer_field_schema(string: &str, try_parse_dates: bool, decimal_comma: bo
                             DataType::Datetime(TimeUnit::Microseconds, None)
                         },
                         Pattern::DateYMD | Pattern::DateDMY => DataType::Date,
-                        Pattern::DatetimeYMDZ => {
-                            DataType::Datetime(TimeUnit::Microseconds, Some("UTC".to_string()))
-                        },
+                        Pattern::DatetimeYMDZ => DataType::Datetime(
+                            TimeUnit::Microseconds,
+                            Some(PlSmallStr::from_static("UTC")),
+                        ),
                     },
                     None => DataType::String,
                 }
@@ -162,9 +164,10 @@ pub fn infer_field_schema(string: &str, try_parse_dates: bool, decimal_comma: bo
                         DataType::Datetime(TimeUnit::Microseconds, None)
                     },
                     Pattern::DateYMD | Pattern::DateDMY => DataType::Date,
-                    Pattern::DatetimeYMDZ => {
-                        DataType::Datetime(TimeUnit::Microseconds, Some("UTC".to_string()))
-                    },
+                    Pattern::DatetimeYMDZ => DataType::Datetime(
+                        TimeUnit::Microseconds,
+                        Some(PlSmallStr::from_static("UTC")),
+                    ),
                 },
                 None => DataType::String,
             }
@@ -241,7 +244,7 @@ fn infer_file_schema_inner(
     }
 
     // now that we've found the first non-comment line we parse the headers, or we create a header
-    let headers: Vec<String> = if let Some(mut header_line) = first_line {
+    let headers: Vec<PlSmallStr> = if let Some(mut header_line) = first_line {
         let len = header_line.len();
         if len > 1 {
             // remove carriage return
@@ -272,9 +275,9 @@ fn infer_file_schema_inner(
             for name in &headers {
                 let count = header_names.entry(name.as_ref()).or_insert(0usize);
                 if *count != 0 {
-                    final_headers.push(format!("{}_duplicated_{}", name, *count - 1))
+                    final_headers.push(format_pl_smallstr!("{}_duplicated_{}", name, *count - 1))
                 } else {
-                    final_headers.push(name.to_string())
+                    final_headers.push(PlSmallStr::from_str(name))
                 }
                 *count += 1;
             }
@@ -282,8 +285,8 @@ fn infer_file_schema_inner(
         } else {
             byterecord
                 .enumerate()
-                .map(|(i, _s)| format!("column_{}", i + 1))
-                .collect::<Vec<String>>()
+                .map(|(i, _s)| format_pl_smallstr!("column_{}", i + 1))
+                .collect::<Vec<PlSmallStr>>()
         }
     } else if has_header && !bytes.is_empty() && recursion_count == 0 {
         // there was no new line char. So we copy the whole buf and add one
@@ -395,7 +398,7 @@ fn infer_file_schema_inner(
                             }
                         },
                         Some(NullValues::AllColumnsSingle(name)) => {
-                            if s.as_ref() != name {
+                            if s.as_ref() != name.as_str() {
                                 Some(infer_field_schema(&s, try_parse_dates, decimal_comma))
                             } else {
                                 None
@@ -405,10 +408,10 @@ fn infer_file_schema_inner(
                             // SAFETY:
                             // we iterate over headers length.
                             let current_name = unsafe { headers.get_unchecked_release(i) };
-                            let null_name = &names.iter().find(|name| &name.0 == current_name);
+                            let null_name = &names.iter().find(|name| name.0 == current_name);
 
                             if let Some(null_name) = null_name {
-                                if null_name.1 != s.as_ref() {
+                                if null_name.1.as_str() != s.as_ref() {
                                     Some(infer_field_schema(&s, try_parse_dates, decimal_comma))
                                 } else {
                                     None
@@ -448,7 +451,7 @@ fn infer_file_schema_inner(
 
         if let Some(schema_overwrite) = schema_overwrite {
             if let Some((_, name, dtype)) = schema_overwrite.get_full(field_name) {
-                fields.push(Field::new(name, dtype.clone()));
+                fields.push(Field::new(name.clone(), dtype.clone()));
                 continue;
             }
 
@@ -456,7 +459,7 @@ fn infer_file_schema_inner(
             // execute only if schema is complete
             if schema_overwrite.len() == header_length {
                 if let Some((name, dtype)) = schema_overwrite.get_at_index(i) {
-                    fields.push(Field::new(name, dtype.clone()));
+                    fields.push(Field::new(name.clone(), dtype.clone()));
                     continue;
                 }
             }
@@ -464,7 +467,7 @@ fn infer_file_schema_inner(
 
         let possibilities = &column_types[i];
         let dtype = finish_infer_field_schema(possibilities);
-        fields.push(Field::new(field_name, dtype));
+        fields.push(Field::new(field_name.clone(), dtype));
     }
     // if there is a single line after the header without an eol
     // we copy the bytes add an eol and rerun this function

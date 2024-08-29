@@ -131,8 +131,8 @@ impl From<IRAggExpr> for GroupByMethod {
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 pub enum AExpr {
     Explode(Node),
-    Alias(Node, ColumnName),
-    Column(ColumnName),
+    Alias(Node, PlSmallStr),
+    Column(PlSmallStr),
     Literal(LiteralValue),
     BinaryExpr {
         left: Node,
@@ -202,8 +202,8 @@ pub enum AExpr {
 
 impl AExpr {
     #[cfg(feature = "cse")]
-    pub(crate) fn col(name: &str) -> Self {
-        AExpr::Column(ColumnName::from(name))
+    pub(crate) fn col(name: PlSmallStr) -> Self {
+        AExpr::Column(name)
     }
     /// Any expression that is sensitive to the number of elements in a group
     /// - Aggregations

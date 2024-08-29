@@ -5,7 +5,7 @@ use super::*;
 pub(super) fn profile_name(
     s: &dyn PhysicalExpr,
     input_schema: &Schema,
-) -> PolarsResult<SmartString> {
+) -> PolarsResult<PlSmallStr> {
     match s.to_field(input_schema) {
         Err(e) => Err(e),
         Ok(fld) => Ok(fld.name),

@@ -5,9 +5,9 @@ use std::borrow::Cow;
 use default::*;
 pub use groups::AsofJoinBy;
 use polars_core::prelude::*;
+use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-use smartstring::alias::String as SmartString;
 
 #[cfg(feature = "dtype-categorical")]
 use super::_check_categorical_src;
@@ -152,9 +152,9 @@ pub struct AsOfOptions {
     /// - "5m"
     /// - "2h15m"
     /// - "1d6h"
-    pub tolerance_str: Option<SmartString>,
-    pub left_by: Option<Vec<SmartString>>,
-    pub right_by: Option<Vec<SmartString>>,
+    pub tolerance_str: Option<PlSmallStr>,
+    pub left_by: Option<Vec<PlSmallStr>>,
+    pub right_by: Option<Vec<PlSmallStr>>,
 }
 
 fn check_asof_columns(
@@ -212,7 +212,7 @@ pub trait AsofJoin: IntoDf {
         right_key: &Series,
         strategy: AsofStrategy,
         tolerance: Option<AnyValue<'static>>,
-        suffix: Option<String>,
+        suffix: Option<PlSmallStr>,
         slice: Option<(i64, usize)>,
         coalesce: bool,
     ) -> PolarsResult<DataFrame> {
@@ -284,7 +284,7 @@ pub trait AsofJoin: IntoDf {
         // SAFETY: join tuples are in bounds.
         let right_df = unsafe { other.take_unchecked(&take_idx) };
 
-        _finish_join(left, right_df, suffix.as_deref())
+        _finish_join(left, right_df, suffix)
     }
 }
 

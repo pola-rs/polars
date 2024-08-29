@@ -44,16 +44,15 @@ fn test_make_growable_extension() {
     .unwrap();
     make_growable(&[&array], false, 2);
 
-    let data_type =
-        ArrowDataType::Extension("ext".to_owned(), Box::new(ArrowDataType::Int32), None);
+    let data_type = ArrowDataType::Extension("ext".into(), Box::new(ArrowDataType::Int32), None);
     let array = Int32Array::from_slice([1, 2]).to(data_type.clone());
     let array_grown = make_growable(&[&array], false, 2).as_box();
     assert_eq!(array_grown.data_type(), &data_type);
 
     let data_type = ArrowDataType::Extension(
-        "ext".to_owned(),
+        "ext".into(),
         Box::new(ArrowDataType::Struct(vec![Field::new(
-            "a",
+            "a".into(),
             ArrowDataType::Int32,
             false,
         )])),

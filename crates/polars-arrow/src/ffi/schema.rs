@@ -3,6 +3,7 @@ use std::ffi::{CStr, CString};
 use std::ptr;
 
 use polars_error::{polars_bail, polars_err, PolarsResult};
+use polars_utils::pl_str::PlSmallStr;
 
 use super::ArrowSchema;
 use crate::datatypes::{
@@ -74,7 +75,7 @@ impl ArrowSchema {
         {
             flags += *is_ordered as i64;
             // we do not store field info in the dict values, so can't recover it all :(
-            let field = Field::new("", values.as_ref().clone(), true);
+            let field = Field::new(PlSmallStr::const_default(), values.as_ref().clone(), true);
             Some(Box::new(ArrowSchema::new(&field)))
         } else {
             None
@@ -90,12 +91,15 @@ impl ArrowSchema {
                 // metadata
                 if let Some(extension_metadata) = extension_metadata {
                     metadata.insert(
-                        "ARROW:extension:metadata".to_string(),
+                        PlSmallStr::from_static("ARROW:extension:metadata"),
                         extension_metadata.clone(),
                     );
                 }
 
-                metadata.insert("ARROW:extension:name".to_string(), name.clone());
+                metadata.insert(
+                    PlSmallStr::from_static("ARROW:extension:name"),
+                    name.clone(),
+                );
 
                 Some(metadata_to_bytes(&metadata))
             } else if !metadata.is_empty() {
@@ -104,7 +108,7 @@ impl ArrowSchema {
                 None
             };
 
-        let name = CString::new(name).unwrap();
+        let name = CString::new(name.as_str()).unwrap();
         let format = CString::new(format).unwrap();
 
         let mut private = Box::new(SchemaPrivateData {
@@ -216,7 +220,12 @@ pub(crate) unsafe fn to_field(schema: &ArrowSchema) -> PolarsResult<Field> {
         data_type
     };
 
-    Ok(Field::new(schema.name(), data_type, schema.nullable()).with_metadata(metadata))
+    Ok(Field::new(
+        PlSmallStr::from_str(schema.name()),
+        data_type,
+        schema.nullable(),
+    )
+    .with_metadata(metadata))
 }
 
 fn to_integer_type(format: &str) -> PolarsResult<IntegerType> {
@@ -301,14 +310,18 @@ unsafe fn to_data_type(schema: &ArrowSchema) -> PolarsResult<ArrowDataType> {
                 ["tsn", ""] => ArrowDataType::Timestamp(TimeUnit::Nanosecond, None),
 
                 // Timestamps with timezone
-                ["tss", tz] => ArrowDataType::Timestamp(TimeUnit::Second, Some(tz.to_string())),
+                ["tss", tz] => {
+                    ArrowDataType::Timestamp(TimeUnit::Second, Some(PlSmallStr::from_str(tz)))
+                },
                 ["tsm", tz] => {
-                    ArrowDataType::Timestamp(TimeUnit::Millisecond, Some(tz.to_string()))
+                    ArrowDataType::Timestamp(TimeUnit::Millisecond, Some(PlSmallStr::from_str(tz)))
                 },
                 ["tsu", tz] => {
-                    ArrowDataType::Timestamp(TimeUnit::Microsecond, Some(tz.to_string()))
+                    ArrowDataType::Timestamp(TimeUnit::Microsecond, Some(PlSmallStr::from_str(tz)))
                 },
-                ["tsn", tz] => ArrowDataType::Timestamp(TimeUnit::Nanosecond, Some(tz.to_string())),
+                ["tsn", tz] => {
+                    ArrowDataType::Timestamp(TimeUnit::Nanosecond, Some(PlSmallStr::from_str(tz)))
+                },
 
                 ["w", size_raw] => {
                     // Example: "w:42" fixed-width binary [42 bytes]
@@ -451,7 +464,7 @@ fn to_format(data_type: &ArrowDataType) -> String {
             format!(
                 "ts{}:{}",
                 unit,
-                tz.as_ref().map(|x| x.as_ref()).unwrap_or("")
+                tz.as_ref().map(|x| x.as_str()).unwrap_or("")
             )
         },
         ArrowDataType::Utf8View => "vu".to_string(),
@@ -468,9 +481,9 @@ fn to_format(data_type: &ArrowDataType) -> String {
             let mut r = format!("+u{sparsness}:");
             let ids = if let Some(ids) = ids {
                 ids.iter()
-                    .fold(String::new(), |a, b| a + &b.to_string() + ",")
+                    .fold(String::new(), |a, b| a + b.to_string().as_str() + ",")
             } else {
-                (0..f.len()).fold(String::new(), |a, b| a + &b.to_string() + ",")
+                (0..f.len()).fold(String::new(), |a, b| a + b.to_string().as_str() + ",")
             };
             let ids = &ids[..ids.len() - 1]; // take away last ","
             r.push_str(ids);
@@ -498,7 +511,7 @@ pub(super) fn get_child(data_type: &ArrowDataType, index: usize) -> PolarsResult
     }
 }
 
-fn metadata_to_bytes(metadata: &BTreeMap<String, String>) -> Vec<u8> {
+fn metadata_to_bytes(metadata: &BTreeMap<PlSmallStr, PlSmallStr>) -> Vec<u8> {
     let a = (metadata.len() as i32).to_ne_bytes().to_vec();
     metadata.iter().fold(a, |mut acc, (key, value)| {
         acc.extend((key.len() as i32).to_ne_bytes());
@@ -541,13 +554,13 @@ unsafe fn metadata_from_bytes(data: *const ::std::os::raw::c_char) -> (Metadata,
         data = data.add(value_len);
         match key {
             "ARROW:extension:name" => {
-                extension_name = Some(value.to_string());
+                extension_name = Some(PlSmallStr::from_str(value));
             },
             "ARROW:extension:metadata" => {
-                extension_metadata = Some(value.to_string());
+                extension_metadata = Some(PlSmallStr::from_str(value));
             },
             _ => {
-                result.insert(key.to_string(), value.to_string());
+                result.insert(PlSmallStr::from_str(key), PlSmallStr::from_str(value));
             },
         };
     }
@@ -587,35 +600,50 @@ mod tests {
             ArrowDataType::LargeBinary,
             ArrowDataType::FixedSizeBinary(2),
             ArrowDataType::List(Box::new(Field::new(
-                "example",
+                PlSmallStr::from_static("example"),
                 ArrowDataType::Boolean,
                 false,
             ))),
             ArrowDataType::FixedSizeList(
-                Box::new(Field::new("example", ArrowDataType::Boolean, false)),
+                Box::new(Field::new(
+                    PlSmallStr::from_static("example"),
+                    ArrowDataType::Boolean,
+                    false,
+                )),
                 2,
             ),
             ArrowDataType::LargeList(Box::new(Field::new(
-                "example",
+                PlSmallStr::from_static("example"),
                 ArrowDataType::Boolean,
                 false,
             ))),
             ArrowDataType::Struct(vec![
-                Field::new("a", ArrowDataType::Int64, true),
+                Field::new(PlSmallStr::from_static("a"), ArrowDataType::Int64, true),
                 Field::new(
-                    "b",
-                    ArrowDataType::List(Box::new(Field::new("item", ArrowDataType::Int32, true))),
+                    PlSmallStr::from_static("b"),
+                    ArrowDataType::List(Box::new(Field::new(
+                        PlSmallStr::from_static("item"),
+                        ArrowDataType::Int32,
+                        true,
+                    ))),
                     true,
                 ),
             ]),
-            ArrowDataType::Map(Box::new(Field::new("a", ArrowDataType::Int64, true)), true),
+            ArrowDataType::Map(
+                Box::new(Field::new(
+                    PlSmallStr::from_static("a"),
+                    ArrowDataType::Int64,
+                    true,
+                )),
+                true,
+            ),
             ArrowDataType::Union(
                 vec![
-                    Field::new("a", ArrowDataType::Int64, true),
+                    Field::new(PlSmallStr::from_static("a"), ArrowDataType::Int64, true),
                     Field::new(
-                        "b",
+                        PlSmallStr::from_static("b"),
                         ArrowDataType::List(Box::new(Field::new(
-                            "item",
+                            PlSmallStr::from_static("item"),
                             ArrowDataType::Int32,
                             true,
                         ))),
@@ -627,11 +655,11 @@ mod tests {
             ),
             ArrowDataType::Union(
                 vec![
-                    Field::new("a", ArrowDataType::Int64, true),
+                    Field::new(PlSmallStr::from_static("a"), ArrowDataType::Int64, true),
                     Field::new(
-                        "b",
+                        PlSmallStr::from_static("b"),
                         ArrowDataType::List(Box::new(Field::new(
-                            "item",
+                            PlSmallStr::from_static("item"),
                             ArrowDataType::Int32,
                             true,
                         ))),
@@ -651,7 +679,7 @@ mod tests {
             dts.push(ArrowDataType::Timestamp(time_unit, None));
             dts.push(ArrowDataType::Timestamp(
                 time_unit,
-                Some("00:00".to_string()),
+                Some(PlSmallStr::from_static("00:00")),
             ));
             dts.push(ArrowDataType::Duration(time_unit));
         }
@@ -664,7 +692,7 @@ mod tests {
         }
 
         for expected in dts {
-            let field = Field::new("a", expected.clone(), true);
+            let field = Field::new(PlSmallStr::from_static("a"), expected.clone(), true);
             let schema = ArrowSchema::new(&field);
             let result = unsafe { super::to_data_type(&schema).unwrap() };
             assert_eq!(result, expected);

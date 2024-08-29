@@ -124,7 +124,7 @@ pub fn strip_prefix(ca: &StringChunked, prefix: &StringChunked) -> StringChunked
             Some(prefix) => unary_elementwise(ca, |opt_s| {
                 opt_s.map(|s| s.strip_prefix(prefix).unwrap_or(s))
             }),
-            _ => StringChunked::full_null(ca.name(), ca.len()),
+            _ => StringChunked::full_null(ca.name().clone(), ca.len()),
         },
         _ => broadcast_binary_elementwise(ca, prefix, strip_prefix_binary),
     }
@@ -136,7 +136,7 @@ pub fn strip_suffix(ca: &StringChunked, suffix: &StringChunked) -> StringChunked
             Some(suffix) => unary_elementwise(ca, |opt_s| {
                 opt_s.map(|s| s.strip_suffix(suffix).unwrap_or(s))
             }),
-            _ => StringChunked::full_null(ca.name(), ca.len()),
+            _ => StringChunked::full_null(ca.name().clone(), ca.len()),
         },
         _ => broadcast_binary_elementwise(ca, suffix, strip_suffix_binary),
     }

@@ -2,6 +2,7 @@
 use polars_core::utils::try_get_supertype;
 
 use super::*;
+use crate::constants::get_len_name;
 
 impl FunctionIR {
     pub(crate) fn clear_cached_schema(&self) {
@@ -43,12 +44,7 @@ impl FunctionIR {
             Pipeline { schema, .. } => Ok(Cow::Owned(schema.clone())),
             FastCount { alias, .. } => {
                 let mut schema: Schema = Schema::with_capacity(1);
-                let name = SmartString::from(
-                    alias
-                        .as_ref()
-                        .map(|alias| alias.as_ref())
-                        .unwrap_or(crate::constants::LEN),
-                );
+                let name = alias.clone().unwrap_or_else(get_len_name);
                 schema.insert_at_index(0, name, IDX_DTYPE)?;
                 Ok(Cow::Owned(Arc::new(schema)))
             },
@@ -97,9 +93,11 @@ impl FunctionIR {
                 schema,
                 ..
             } => rename_schema(input_schema, existing, new, schema),
-            RowIndex { schema, name, .. } => {
-                Ok(Cow::Owned(row_index_schema(schema, input_schema, name)))
-            },
+            RowIndex { schema, name, .. } => Ok(Cow::Owned(row_index_schema(
+                schema,
+                input_schema,
+                name.clone(),
+            ))),
             Explode { schema, columns } => explode_schema(schema, input_schema, columns),
             #[cfg(feature = "pivot")]
             Unpivot { schema, args } => unpivot_schema(args, schema, input_schema),
@@ -110,14 +108,14 @@ impl FunctionIR {
 fn row_index_schema(
     cached_schema: &CachedSchema,
     input_schema: &SchemaRef,
-    name: &str,
+    name: PlSmallStr,
 ) -> SchemaRef {
     let mut guard = cached_schema.lock().unwrap();
     if let Some(schema) = &*guard {
         return schema.clone();
     }
     let mut schema = (**input_schema).clone();
-    schema.insert_at_index(0, name.into(), IDX_DTYPE).unwrap();
+    schema.insert_at_index(0, name, IDX_DTYPE).unwrap();
     let schema_ref = Arc::new(schema);
     *guard = Some(schema_ref.clone());
     schema_ref
@@ -126,7 +124,7 @@ fn row_index_schema(
 fn explode_schema<'a>(
     cached_schema: &CachedSchema,
     schema: &'a Schema,
-    columns: &[Arc<str>],
+    columns: &[PlSmallStr],
 ) -> PolarsResult<Cow<'a, SchemaRef>> {
     let mut guard = cached_schema.lock().unwrap();
     if let Some(schema) = &*guard {
@@ -161,7 +159,7 @@ fn unpivot_schema<'a>(
     let mut new_schema = args
         .index
         .iter()
-        .map(|id| Ok(Field::new(id, input_schema.try_get(id)?.clone())))
+        .map(|id| Ok(Field::new(id.clone(), input_schema.try_get(id)?.clone())))
         .collect::<PolarsResult<Schema>>()?;
     let variable_name = args
         .variable_name
@@ -201,8 +199,8 @@ fn unpivot_schema<'a>(
 
 fn rename_schema<'a>(
     input_schema: &'a SchemaRef,
-    existing: &[SmartString],
-    new: &[SmartString],
+    existing: &[PlSmallStr],
+    new: &[PlSmallStr],
     cached_schema: &CachedSchema,
 ) -> PolarsResult<Cow<'a, SchemaRef>> {
     let mut guard = cached_schema.lock().unwrap();

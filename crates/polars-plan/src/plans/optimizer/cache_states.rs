@@ -6,7 +6,7 @@ fn get_upper_projections(
     parent: Node,
     lp_arena: &Arena<IR>,
     expr_arena: &Arena<AExpr>,
-    names_scratch: &mut Vec<ColumnName>,
+    names_scratch: &mut Vec<PlSmallStr>,
     found_required_columns: &mut bool,
 ) -> bool {
     let parent = lp_arena.get(parent);
@@ -15,7 +15,7 @@ fn get_upper_projections(
     // During projection pushdown all accumulated.
     match parent {
         SimpleProjection { columns, .. } => {
-            let iter = columns.iter_names().map(|s| ColumnName::from(s.as_str()));
+            let iter = columns.iter_names().cloned();
             names_scratch.extend(iter);
             *found_required_columns = true;
             false
@@ -138,7 +138,7 @@ pub(super) fn set_cache_states(
         parents: Vec<TwoParents>,
         cache_nodes: Vec<Node>,
         // Union over projected names.
-        names_union: PlHashSet<ColumnName>,
+        names_union: PlHashSet<PlSmallStr>,
         // Union over predicates.
         predicate_union: PlHashMap<Expr, u32>,
     }
@@ -264,11 +264,7 @@ pub(super) fn set_cache_states(
                     // all columns
                     if !found_required_columns {
                         let schema = lp.schema(lp_arena);
-                        v.names_union.extend(
-                            schema
-                                .iter_names()
-                                .map(|name| ColumnName::from(name.as_str())),
-                        );
+                        v.names_union.extend(schema.iter_names().cloned());
                     }
                 }
                 frame.cache_id = Some(*id);

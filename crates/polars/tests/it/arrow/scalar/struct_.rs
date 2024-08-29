@@ -4,7 +4,7 @@ use arrow::scalar::{BooleanScalar, Scalar, StructScalar};
 #[allow(clippy::eq_op)]
 #[test]
 fn equal() {
-    let dt = ArrowDataType::Struct(vec![Field::new("a", ArrowDataType::Boolean, true)]);
+    let dt = ArrowDataType::Struct(vec![Field::new("a".into(), ArrowDataType::Boolean, true)]);
     let a = StructScalar::new(
         dt.clone(),
         Some(vec![
@@ -27,7 +27,7 @@ fn equal() {
 
 #[test]
 fn basics() {
-    let dt = ArrowDataType::Struct(vec![Field::new("a", ArrowDataType::Boolean, true)]);
+    let dt = ArrowDataType::Struct(vec![Field::new("a".into(), ArrowDataType::Boolean, true)]);
 
     let values = vec![Box::new(BooleanScalar::from(Some(true))) as Box<dyn Scalar>];
 

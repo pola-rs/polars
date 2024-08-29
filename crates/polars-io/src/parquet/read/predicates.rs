@@ -8,9 +8,9 @@ impl ColumnStats {
     fn from_arrow_stats(stats: Statistics, field: &ArrowField) -> Self {
         Self::new(
             field.into(),
-            Some(Series::try_from(("", stats.null_count)).unwrap()),
-            Some(Series::try_from(("", stats.min_value)).unwrap()),
-            Some(Series::try_from(("", stats.max_value)).unwrap()),
+            Some(Series::try_from((PlSmallStr::const_default(), stats.null_count)).unwrap()),
+            Some(Series::try_from((PlSmallStr::const_default(), stats.min_value)).unwrap()),
+            Some(Series::try_from((PlSmallStr::const_default(), stats.max_value)).unwrap()),
         )
     }
 }

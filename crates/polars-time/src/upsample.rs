@@ -38,7 +38,7 @@ pub trait PolarsUpsample {
     /// day (which may not be 24 hours, depending on daylight savings).
     /// Similarly for "calendar week", "calendar month", "calendar quarter",
     /// and "calendar year".
-    fn upsample<I: IntoVec<String>>(
+    fn upsample<I: IntoVec<PlSmallStr>>(
         &self,
         by: I,
         time_column: &str,
@@ -79,7 +79,7 @@ pub trait PolarsUpsample {
     /// day (which may not be 24 hours, depending on daylight savings).
     /// Similarly for "calendar week", "calendar month", "calendar quarter",
     /// and "calendar year".
-    fn upsample_stable<I: IntoVec<String>>(
+    fn upsample_stable<I: IntoVec<PlSmallStr>>(
         &self,
         by: I,
         time_column: &str,
@@ -88,7 +88,7 @@ pub trait PolarsUpsample {
 }
 
 impl PolarsUpsample for DataFrame {
-    fn upsample<I: IntoVec<String>>(
+    fn upsample<I: IntoVec<PlSmallStr>>(
         &self,
         by: I,
         time_column: &str,
@@ -100,7 +100,7 @@ impl PolarsUpsample for DataFrame {
         upsample_impl(self, by, time_column, every, false)
     }
 
-    fn upsample_stable<I: IntoVec<String>>(
+    fn upsample_stable<I: IntoVec<PlSmallStr>>(
         &self,
         by: I,
         time_column: &str,
@@ -115,7 +115,7 @@ impl PolarsUpsample for DataFrame {
 
 fn upsample_impl(
     source: &DataFrame,
-    by: Vec<String>,
+    by: Vec<PlSmallStr>,
     index_column: &str,
     every: Duration,
     stable: bool,
@@ -201,7 +201,7 @@ fn upsample_single_impl(
                         _ => None,
                     };
                     let range = datetime_range_impl(
-                        index_col_name,
+                        index_col_name.clone(),
                         first,
                         last,
                         every,
@@ -213,8 +213,8 @@ fn upsample_single_impl(
                     .into_frame();
                     range.join(
                         source,
-                        &[index_col_name],
-                        &[index_col_name],
+                        [index_col_name],
+                        [index_col_name],
                         JoinArgs::new(JoinType::Left),
                     )
                 },

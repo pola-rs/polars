@@ -23,7 +23,7 @@ pub struct LazyJsonLineReader {
     pub(crate) infer_schema_length: Option<NonZeroUsize>,
     pub(crate) n_rows: Option<usize>,
     pub(crate) ignore_errors: bool,
-    pub(crate) include_file_paths: Option<Arc<str>>,
+    pub(crate) include_file_paths: Option<PlSmallStr>,
     pub(crate) cloud_options: Option<CloudOptions>,
 }
 
@@ -109,7 +109,7 @@ impl LazyJsonLineReader {
         self
     }
 
-    pub fn with_include_file_paths(mut self, include_file_paths: Option<Arc<str>>) -> Self {
+    pub fn with_include_file_paths(mut self, include_file_paths: Option<PlSmallStr>) -> Self {
         self.include_file_paths = include_file_paths;
         self
     }

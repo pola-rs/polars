@@ -50,7 +50,12 @@ fn run_per_sublist(
     parallel: bool,
     output_field: Field,
 ) -> PolarsResult<Option<Series>> {
-    let phys_expr = prepare_expression_for_context("", expr, lst.inner_dtype(), Context::Default)?;
+    let phys_expr = prepare_expression_for_context(
+        PlSmallStr::const_default(),
+        expr,
+        lst.inner_dtype(),
+        Context::Default,
+    )?;
 
     let state = ExecutionState::new();
 
@@ -72,7 +77,7 @@ fn run_per_sublist(
                     }
                 })
             })
-            .collect_ca_with_dtype("", output_field.dtype.clone());
+            .collect_ca_with_dtype(PlSmallStr::const_default(), output_field.dtype.clone());
         err = m_err.into_inner().unwrap();
         ca
     } else {
@@ -99,7 +104,7 @@ fn run_per_sublist(
         return Err(err);
     }
 
-    ca.rename(s.name());
+    ca.rename(s.name().clone());
 
     if ca.dtype() != output_field.data_type() {
         ca.cast(output_field.data_type()).map(Some)
@@ -109,7 +114,7 @@ fn run_per_sublist(
 }
 
 fn run_on_group_by_engine(
-    name: &str,
+    name: PlSmallStr,
     lst: &ListChunked,
     expr: &Expr,
 ) -> PolarsResult<Option<Series>> {
@@ -118,14 +123,19 @@ fn run_on_group_by_engine(
     let groups = offsets_to_groups(arr.offsets()).unwrap();
 
     // List elements in a series.
-    let values = Series::try_from(("", arr.values().clone())).unwrap();
+    let values = Series::try_from((PlSmallStr::const_default(), arr.values().clone())).unwrap();
     let inner_dtype = lst.inner_dtype();
     // SAFETY:
     // Invariant in List means values physicals can be cast to inner dtype
     let values = unsafe { values.cast_unchecked(inner_dtype).unwrap() };
 
     let df_context = values.into_frame();
-    let phys_expr = prepare_expression_for_context("", expr, inner_dtype, Context::Aggregation)?;
+    let phys_expr = prepare_expression_for_context(
+        PlSmallStr::const_default(),
+        expr,
+        inner_dtype,
+        Context::Aggregation,
+    )?;
 
     let state = ExecutionState::new();
     let mut ac = phys_expr.evaluate_on_groups(&df_context, &groups, &state)?;
@@ -173,7 +183,10 @@ pub trait ListNameSpaceExtension: IntoListNameSpace + Sized {
             // ensure we get the new schema
             let output_field = eval_field_to_dtype(lst.ref_field(), &expr, true);
             if lst.is_empty() {
-                return Ok(Some(Series::new_empty(s.name(), output_field.data_type())));
+                return Ok(Some(Series::new_empty(
+                    s.name().clone(),
+                    output_field.data_type(),
+                )));
             }
             if lst.null_count() == lst.len() {
                 return Ok(Some(s.cast(output_field.data_type())?));
@@ -187,7 +200,7 @@ pub trait ListNameSpaceExtension: IntoListNameSpace + Sized {
             };
 
             if fits_idx_size && s.null_count() == 0 && !is_user_apply() {
-                run_on_group_by_engine(s.name(), &lst, &expr)
+                run_on_group_by_engine(s.name().clone(), &lst, &expr)
             } else {
                 run_per_sublist(s, &lst, &expr, parallel, output_field)
             }

@@ -197,9 +197,9 @@ mod test {
 
         let mut values = Vec::with_capacity(32);
         values.extend_from_slice(&[1, 2, 3]);
-        let mut ca = Int32Chunked::from_vec("a", values);
+        let mut ca = Int32Chunked::from_vec(PlSmallStr::from_static("a"), values);
         let location = ca.cont_slice().unwrap().as_ptr() as usize;
-        let to_append = Int32Chunked::new("a", &[4, 5, 6]);
+        let to_append = Int32Chunked::new(PlSmallStr::from_static("a"), &[4, 5, 6]);
 
         ca.extend(&to_append)?;
         let location2 = ca.cont_slice().unwrap().as_ptr() as usize;
@@ -218,8 +218,8 @@ mod test {
 
     #[test]
     fn test_extend_string() -> PolarsResult<()> {
-        let mut ca = StringChunked::new("a", &["a", "b", "c"]);
-        let to_append = StringChunked::new("a", &["a", "b", "e"]);
+        let mut ca = StringChunked::new(PlSmallStr::from_static("a"), &["a", "b", "c"]);
+        let to_append = StringChunked::new(PlSmallStr::from_static("a"), &["a", "b", "e"]);
 
         ca.extend(&to_append)?;
         assert_eq!(ca.len(), 6);
@@ -231,8 +231,8 @@ mod test {
 
     #[test]
     fn test_extend_bool() -> PolarsResult<()> {
-        let mut ca = BooleanChunked::new("a", [true, false]);
-        let to_append = BooleanChunked::new("a", &[false, false]);
+        let mut ca = BooleanChunked::new(PlSmallStr::from_static("a"), [true, false]);
+        let to_append = BooleanChunked::new(PlSmallStr::from_static("a"), &[false, false]);
 
         ca.extend(&to_append)?;
         assert_eq!(ca.len(), 4);

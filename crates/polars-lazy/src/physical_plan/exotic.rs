@@ -6,14 +6,14 @@ use crate::prelude::*;
 #[cfg(feature = "pivot")]
 pub(crate) fn prepare_eval_expr(expr: Expr) -> Expr {
     expr.map_expr(|e| match e {
-        Expr::Column(_) => Expr::Column(Arc::from("")),
-        Expr::Nth(_) => Expr::Column(Arc::from("")),
+        Expr::Column(_) => Expr::Column(PlSmallStr::const_default()),
+        Expr::Nth(_) => Expr::Column(PlSmallStr::const_default()),
         e => e,
     })
 }
 
 pub(crate) fn prepare_expression_for_context(
-    name: &str,
+    name: PlSmallStr,
     expr: &Expr,
     dtype: &DataType,
     ctxt: Context,

@@ -1,5 +1,6 @@
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
+use polars_core::prelude::IndexOfSchema;
 use polars_core::schema::Schema;
 
 use crate::operators::DataChunk;
@@ -14,9 +15,12 @@ pub(crate) fn reproject_chunk(
         // the positions for subsequent calls
         let chunk_schema = chunk.data.schema();
 
-        let out = chunk
-            .data
-            .select_with_schema_unchecked(schema.iter_names(), &chunk_schema)?;
+        let check_duplicates = false;
+        let out = chunk.data._select_with_schema_impl(
+            schema.get_names_owned().as_slice(),
+            &chunk_schema,
+            check_duplicates,
+        )?;
 
         *positions = out
             .get_columns()

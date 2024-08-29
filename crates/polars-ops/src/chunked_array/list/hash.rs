@@ -80,6 +80,6 @@ pub(crate) fn hash(ca: &mut ListChunked, build_hasher: PlRandomState) -> UInt64C
     });
 
     let mut out = out.into_inner();
-    out.rename(ca.name());
+    out.rename(ca.name().clone());
     out
 }

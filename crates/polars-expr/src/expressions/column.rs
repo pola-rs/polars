@@ -7,13 +7,13 @@ use super::*;
 use crate::expressions::{AggregationContext, PartitionedAggregation, PhysicalExpr};
 
 pub struct ColumnExpr {
-    name: Arc<str>,
+    name: PlSmallStr,
     expr: Expr,
     schema: Option<SchemaRef>,
 }
 
 impl ColumnExpr {
-    pub fn new(name: Arc<str>, expr: Expr, schema: Option<SchemaRef>) -> Self {
+    pub fn new(name: PlSmallStr, expr: Expr, schema: Option<SchemaRef>) -> Self {
         Self { name, expr, schema }
     }
 }

@@ -19,7 +19,7 @@ impl Executor for UniqueExec {
             .options
             .subset
             .as_ref()
-            .map(|v| v.iter().map(|n| n.to_string()).collect::<Vec<_>>());
+            .map(|v| v.iter().cloned().collect::<Vec<_>>());
         let keep = self.options.keep_strategy;
 
         state.record(
@@ -28,10 +28,12 @@ impl Executor for UniqueExec {
                     return Ok(df);
                 }
 
-                match self.options.maintain_order {
-                    true => df.unique_stable(subset.as_deref(), keep, self.options.slice),
-                    false => df.unique(subset.as_deref(), keep, self.options.slice),
-                }
+                df.unique_impl(
+                    self.options.maintain_order,
+                    subset,
+                    keep,
+                    self.options.slice,
+                )
             },
             Cow::Borrowed("unique()"),
         )
