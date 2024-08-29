@@ -324,7 +324,9 @@ def test_write_database_adbc_temporary_table() -> None:
     """Confirm that execution_options are passed along to create temporary tables."""
     df = pl.DataFrame({"colx": [1, 2, 3]})
     temp_tbl_name = "should_be_temptable"
-    expected_temp_table_create_sql = """CREATE TABLE "should_be_temptable" ("colx" INTEGER)"""
+    expected_temp_table_create_sql = (
+        """CREATE TABLE "should_be_temptable" ("colx" INTEGER)"""
+    )
 
     # test with sqlite in memory
     conn = _open_adbc_connection("sqlite:///:memory:")
