@@ -1416,7 +1416,8 @@ def test_literal_from_date(
 @pytest.mark.parametrize("input_type", ["datetime", "pandas", "numpy"])
 @pytest.mark.filterwarnings(
     # disable numpy time-zone warning
-    "ignore:no explicit representation of timezones available for np.datetime64"
+    "ignore:no explicit representation of timezones available for np.datetime64",
+    "ignore:parsing timezone aware datetimes is deprecated",
 )
 def test_literal_from_datetime(
     value: datetime,
