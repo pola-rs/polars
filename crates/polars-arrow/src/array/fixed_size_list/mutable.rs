@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use polars_error::{polars_bail, PolarsResult};
+use polars_utils::pl_str::PlSmallStr;
 
 use super::FixedSizeListArray;
 use crate::array::physical_binary::extend_validity;
@@ -35,7 +36,7 @@ impl<M: MutableArray> MutableFixedSizeListArray<M> {
     }
 
     /// Creates a new [`MutableFixedSizeListArray`] from a [`MutableArray`] and size.
-    pub fn new_with_field(values: M, name: &str, nullable: bool, size: usize) -> Self {
+    pub fn new_with_field(values: M, name: PlSmallStr, nullable: bool, size: usize) -> Self {
         let data_type = ArrowDataType::FixedSizeList(
             Box::new(Field::new(name, values.data_type().clone(), nullable)),
             size,

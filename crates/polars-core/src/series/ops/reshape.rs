@@ -15,7 +15,7 @@ use crate::chunked_array::builder::get_list_builder;
 use crate::datatypes::{DataType, ListChunked};
 use crate::prelude::{IntoSeries, Series, *};
 
-fn reshape_fast_path(name: &str, s: &Series) -> Series {
+fn reshape_fast_path(name: PlSmallStr, s: &Series) -> Series {
     let mut ca = match s.dtype() {
         #[cfg(feature = "dtype-struct")]
         DataType::Struct(_) => {
@@ -44,7 +44,7 @@ impl Series {
                     .map(|arr| arr.values().clone())
                     .collect::<Vec<_>>();
                 // Safety: guarded by the type system
-                unsafe { Series::from_chunks_and_dtype_unchecked(s.name(), chunks, dtype) }
+                unsafe { Series::from_chunks_and_dtype_unchecked(s.name().clone(), chunks, dtype) }
                     .get_leaf_array()
             },
             DataType::List(dtype) => {
@@ -54,7 +54,7 @@ impl Series {
                     .map(|arr| arr.values().clone())
                     .collect::<Vec<_>>();
                 // Safety: guarded by the type system
-                unsafe { Series::from_chunks_and_dtype_unchecked(s.name(), chunks, dtype) }
+                unsafe { Series::from_chunks_and_dtype_unchecked(s.name().clone(), chunks, dtype) }
                     .get_leaf_array()
             },
             _ => s.clone(),
@@ -83,7 +83,7 @@ impl Series {
             )
         };
 
-        let mut ca = ListChunked::with_chunk(s.name(), arr);
+        let mut ca = ListChunked::with_chunk(s.name().clone(), arr);
         unsafe { ca.to_logical(inner_type.clone()) };
         ca.set_fast_explode();
         Ok(ca)
@@ -165,7 +165,7 @@ impl Series {
         }
         Ok(unsafe {
             Series::from_chunks_and_dtype_unchecked(
-                leaf_array.name(),
+                leaf_array.name().clone(),
                 vec![prev_array],
                 &prev_dtype,
             )
@@ -203,7 +203,7 @@ impl Series {
 
                 if s_ref.len() == 0_usize {
                     if (rows == -1 || rows == 0) && (cols == -1 || cols == 0 || cols == 1) {
-                        let s = reshape_fast_path(s.name(), s_ref);
+                        let s = reshape_fast_path(s.name().clone(), s_ref);
                         return Ok(s);
                     } else {
                         polars_bail!(InvalidOperation: "cannot reshape len 0 into shape {:?}", dimensions,)
@@ -222,7 +222,7 @@ impl Series {
 
                 // Fast path, we can create a unit list so we only allocate offsets.
                 if rows as usize == s_ref.len() && cols == 1 {
-                    let s = reshape_fast_path(s.name(), s_ref);
+                    let s = reshape_fast_path(s.name().clone(), s_ref);
                     return Ok(s);
                 }
 
@@ -232,7 +232,7 @@ impl Series {
                 );
 
                 let mut builder =
-                    get_list_builder(s_ref.dtype(), s_ref.len(), rows as usize, s.name())?;
+                    get_list_builder(s_ref.dtype(), s_ref.len(), rows as usize, s.name().clone())?;
 
                 let mut offset = 0i64;
                 for _ in 0..rows {
@@ -256,9 +256,9 @@ mod test {
 
     #[test]
     fn test_to_list() -> PolarsResult<()> {
-        let s = Series::new("a", &[1, 2, 3]);
+        let s = Series::new("a".into(), &[1, 2, 3]);
 
-        let mut builder = get_list_builder(s.dtype(), s.len(), 1, s.name())?;
+        let mut builder = get_list_builder(s.dtype(), s.len(), 1, s.name().clone())?;
         builder.append_series(&s).unwrap();
         let expected = builder.finish();
 
@@ -270,7 +270,7 @@ mod test {
 
     #[test]
     fn test_reshape() -> PolarsResult<()> {
-        let s = Series::new("a", &[1, 2, 3, 4]);
+        let s = Series::new("a".into(), &[1, 2, 3, 4]);
 
         for (dims, list_len) in [
             (&[-1, 1], 4),

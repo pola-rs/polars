@@ -40,7 +40,7 @@ impl TimeChunked {
             mutarr.freeze().boxed()
         });
 
-        ca.rename(self.name());
+        ca.rename(self.name().clone());
         ca
     }
 
@@ -65,7 +65,7 @@ impl TimeChunked {
     }
 
     /// Construct a new [`TimeChunked`] from an iterator over [`NaiveTime`].
-    pub fn from_naive_time<I: IntoIterator<Item = NaiveTime>>(name: &str, v: I) -> Self {
+    pub fn from_naive_time<I: IntoIterator<Item = NaiveTime>>(name: PlSmallStr, v: I) -> Self {
         let vals = v
             .into_iter()
             .map(|nt| time_to_time64ns(&nt))
@@ -75,7 +75,7 @@ impl TimeChunked {
 
     /// Construct a new [`TimeChunked`] from an iterator over optional [`NaiveTime`].
     pub fn from_naive_time_options<I: IntoIterator<Item = Option<NaiveTime>>>(
-        name: &str,
+        name: PlSmallStr,
         v: I,
     ) -> Self {
         let vals = v.into_iter().map(|opt| opt.map(|nt| time_to_time64ns(&nt)));

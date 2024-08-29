@@ -17,8 +17,6 @@ use polars_parquet::write::*;
 
 use super::read::file::FileReader;
 
-type ArrayStats = (Box<dyn Array>, Statistics);
-
 fn new_struct(
     arrays: Vec<Box<dyn Array>>,
     names: Vec<String>,
@@ -27,38 +25,22 @@ fn new_struct(
     let fields = names
         .into_iter()
         .zip(arrays.iter())
-        .map(|(n, a)| Field::new(n, a.data_type().clone(), true))
+        .map(|(n, a)| Field::new(n.into(), a.data_type().clone(), true))
         .collect();
     StructArray::new(ArrowDataType::Struct(fields), arrays, validity)
 }
 
-pub fn read_column<R: Read + Seek>(mut reader: R, column: &str) -> PolarsResult<ArrayStats> {
+pub fn read_column<R: Read + Seek>(mut reader: R, column: &str) -> PolarsResult<Box<dyn Array>> {
     let metadata = p_read::read_metadata(&mut reader)?;
     let schema = p_read::infer_schema(&metadata)?;
 
-    let row_group = &metadata.row_groups[0];
-
-    // verify that we can read indexes
-    if p_read::indexes::has_indexes(row_group) {
-        let _indexes = p_read::indexes::read_filtered_pages(
-            &mut reader,
-            row_group,
-            &schema.fields,
-            |_, _| vec![],
-        )?;
-    }
-
     let schema = schema.filter(|_, f| f.name == column);
-
-    let field = &schema.fields[0];
-
-    let statistics = deserialize(field, row_group)?;
 
     let mut reader = FileReader::new(reader, metadata.row_groups, schema, None);
 
     let array = reader.next().unwrap()?.into_arrays().pop().unwrap();
 
-    Ok((array, statistics))
+    Ok(array)
 }
 
 pub fn pyarrow_nested_edge(column: &str) -> Box<dyn Array> {
@@ -93,7 +75,7 @@ pub fn pyarrow_nested_edge(column: &str) -> Box<dyn Array> {
             // ]
             let a = ListArray::<i64>::new(
                 ArrowDataType::LargeList(Box::new(Field::new(
-                    "item",
+                    "item".into(),
                     ArrowDataType::Utf8View,
                     true,
                 ))),
@@ -102,7 +84,7 @@ pub fn pyarrow_nested_edge(column: &str) -> Box<dyn Array> {
                 None,
             );
             StructArray::new(
-                ArrowDataType::Struct(vec![Field::new("f1", a.data_type().clone(), true)]),
+                ArrowDataType::Struct(vec![Field::new("f1".into(), a.data_type().clone(), true)]),
                 vec![a.boxed()],
                 None,
             )
@@ -112,7 +94,7 @@ pub fn pyarrow_nested_edge(column: &str) -> Box<dyn Array> {
             let values = pyarrow_nested_edge("struct_list_nullable");
             ListArray::<i64>::new(
                 ArrowDataType::LargeList(Box::new(Field::new(
-                    "item",
+                    "item".into(),
                     values.data_type().clone(),
                     true,
                 ))),
@@ -323,7 +305,7 @@ pub fn pyarrow_nested_nullable(column: &str) -> Box<dyn Array> {
 
             let array = ListArray::<i64>::new(
                 ArrowDataType::LargeList(Box::new(Field::new(
-                    "item",
+                    "item".into(),
                     array.data_type().clone(),
                     true,
                 ))),
@@ -362,14 +344,20 @@ pub fn pyarrow_nested_nullable(column: &str) -> Box<dyn Array> {
     match column {
         "list_int64_required_required" => {
             // [[0, 1], [], [2, 0, 3], [4, 5, 6], [], [7, 8, 9], [], [10]]
-            let data_type =
-                ArrowDataType::LargeList(Box::new(Field::new("item", ArrowDataType::Int64, false)));
+            let data_type = ArrowDataType::LargeList(Box::new(Field::new(
+                "item".into(),
+                ArrowDataType::Int64,
+                false,
+            )));
             ListArray::<i64>::new(data_type, offsets, values, None).boxed()
         },
         "list_int64_optional_required" => {
             // [[0, 1], [], [2, 0, 3], [4, 5, 6], [], [7, 8, 9], [], [10]]
-            let data_type =
-                ArrowDataType::LargeList(Box::new(Field::new("item", ArrowDataType::Int64, true)));
+            let data_type = ArrowDataType::LargeList(Box::new(Field::new(
+                "item".into(),
+                ArrowDataType::Int64,
+                true,
+            )));
             ListArray::<i64>::new(data_type, offsets, values, None).boxed()
         },
         "list_nested_i64" => {
@@ -431,16 +419,22 @@ pub fn pyarrow_nested_nullable(column: &str) -> Box<dyn Array> {
         "struct_list_nullable" => new_struct(vec![values], vec!["a".to_string()], None).boxed(),
         _ => {
             let field = match column {
-                "list_int64" => Field::new("item", ArrowDataType::Int64, true),
-                "list_int64_required" => Field::new("item", ArrowDataType::Int64, false),
-                "list_int16" => Field::new("item", ArrowDataType::Int16, true),
-                "list_bool" => Field::new("item", ArrowDataType::Boolean, true),
-                "list_utf8" => Field::new("item", ArrowDataType::Utf8View, true),
-                "list_large_binary" => Field::new("item", ArrowDataType::LargeBinary, true),
-                "list_decimal" => Field::new("item", ArrowDataType::Decimal(9, 0), true),
-                "list_decimal256" => Field::new("item", ArrowDataType::Decimal256(9, 0), true),
-                "list_struct_nullable" => Field::new("item", values.data_type().clone(), true),
-                "list_struct_list_nullable" => Field::new("item", values.data_type().clone(), true),
+                "list_int64" => Field::new("item".into(), ArrowDataType::Int64, true),
+                "list_int64_required" => Field::new("item".into(), ArrowDataType::Int64, false),
+                "list_int16" => Field::new("item".into(), ArrowDataType::Int16, true),
+                "list_bool" => Field::new("item".into(), ArrowDataType::Boolean, true),
+                "list_utf8" => Field::new("item".into(), ArrowDataType::Utf8View, true),
+                "list_large_binary" => Field::new("item".into(), ArrowDataType::LargeBinary, true),
+                "list_decimal" => Field::new("item".into(), ArrowDataType::Decimal(9, 0), true),
+                "list_decimal256" => {
+                    Field::new("item".into(), ArrowDataType::Decimal256(9, 0), true)
+                },
+                "list_struct_nullable" => {
+                    Field::new("item".into(), values.data_type().clone(), true)
+                },
+                "list_struct_list_nullable" => {
+                    Field::new("item".into(), values.data_type().clone(), true)
+                },
                 other => unreachable!("{}", other),
             };
 
@@ -538,7 +532,7 @@ pub fn pyarrow_nullable(column: &str) -> Box<dyn Array> {
                 .to(ArrowDataType::Timestamp(TimeUnit::Second, None)),
         ),
         "timestamp_s_utc" => Box::new(PrimitiveArray::<i64>::from(i64_values).to(
-            ArrowDataType::Timestamp(TimeUnit::Second, Some("UTC".to_string())),
+            ArrowDataType::Timestamp(TimeUnit::Second, Some("UTC".into())),
         )),
         _ => unreachable!(),
     }
@@ -627,11 +621,11 @@ pub fn pyarrow_nullable_statistics(column: &str) -> Statistics {
             null_count: UInt64Array::from([Some(3)]).boxed(),
             min_value: Box::new(Int64Array::from_slice([-256]).to(ArrowDataType::Timestamp(
                 TimeUnit::Second,
-                Some("UTC".to_string()),
+                Some("UTC".into()),
             ))),
             max_value: Box::new(Int64Array::from_slice([9]).to(ArrowDataType::Timestamp(
                 TimeUnit::Second,
-                Some("UTC".to_string()),
+                Some("UTC".into()),
             ))),
         },
         _ => unreachable!(),
@@ -684,7 +678,7 @@ pub fn pyarrow_nested_nullable_statistics(column: &str) -> Statistics {
     let new_list = |array: Box<dyn Array>, nullable: bool| {
         ListArray::<i64>::new(
             ArrowDataType::LargeList(Box::new(Field::new(
-                "item",
+                "item".into(),
                 array.data_type().clone(),
                 nullable,
             ))),
@@ -931,7 +925,7 @@ pub fn pyarrow_nested_edge_statistics(column: &str) -> Statistics {
     let new_list = |array: Box<dyn Array>| {
         ListArray::<i64>::new(
             ArrowDataType::LargeList(Box::new(Field::new(
-                "item",
+                "item".into(),
                 array.data_type().clone(),
                 true,
             ))),
@@ -945,7 +939,7 @@ pub fn pyarrow_nested_edge_statistics(column: &str) -> Statistics {
         let fields = names
             .into_iter()
             .zip(arrays.iter())
-            .map(|(n, a)| Field::new(n, a.data_type().clone(), true))
+            .map(|(n, a)| Field::new(n.into(), a.data_type().clone(), true))
             .collect();
         StructArray::new(ArrowDataType::Struct(fields), arrays, None)
     };
@@ -1049,8 +1043,8 @@ pub fn pyarrow_struct(column: &str) -> Box<dyn Array> {
     let mask = [true, true, false, true, true, true, true, true, true, true];
 
     let fields = vec![
-        Field::new("f1", ArrowDataType::Utf8View, true),
-        Field::new("f2", ArrowDataType::Boolean, true),
+        Field::new("f1".into(), ArrowDataType::Utf8View, true),
+        Field::new("f2".into(), ArrowDataType::Boolean, true),
     ];
     match column {
         "struct" => {
@@ -1064,8 +1058,8 @@ pub fn pyarrow_struct(column: &str) -> Box<dyn Array> {
             let struct_ = pyarrow_struct("struct");
             Box::new(StructArray::new(
                 ArrowDataType::Struct(vec![
-                    Field::new("f1", ArrowDataType::Struct(fields), true),
-                    Field::new("f2", ArrowDataType::Boolean, true),
+                    Field::new("f1".into(), ArrowDataType::Struct(fields), true),
+                    Field::new("f2".into(), ArrowDataType::Boolean, true),
                 ]),
                 vec![struct_, boolean],
                 None,
@@ -1075,8 +1069,8 @@ pub fn pyarrow_struct(column: &str) -> Box<dyn Array> {
             let struct_ = pyarrow_struct("struct");
             Box::new(StructArray::new(
                 ArrowDataType::Struct(vec![
-                    Field::new("f1", ArrowDataType::Struct(fields), true),
-                    Field::new("f2", ArrowDataType::Boolean, true),
+                    Field::new("f1".into(), ArrowDataType::Struct(fields), true),
+                    Field::new("f2".into(), ArrowDataType::Boolean, true),
                 ]),
                 vec![struct_, boolean],
                 Some(mask.into()),
@@ -1300,10 +1294,6 @@ fn integration_read(data: &[u8], limit: Option<usize>) -> PolarsResult<Integrati
     let metadata = p_read::read_metadata(&mut reader)?;
     let schema = p_read::infer_schema(&metadata)?;
 
-    for (field, row_group) in schema.fields.iter().zip(metadata.row_groups.iter()) {
-        let mut _statistics = deserialize(field, row_group)?;
-    }
-
     let reader = FileReader::new(
         Cursor::new(data),
         metadata.row_groups,
@@ -1333,7 +1323,7 @@ fn generic_data() -> PolarsResult<(ArrowSchema, RecordBatchT<Box<dyn Array>>)> {
     let values = PrimitiveArray::from_slice([1i64, 3])
         .to(ArrowDataType::Timestamp(
             TimeUnit::Millisecond,
-            Some("UTC".to_string()),
+            Some("UTC".into()),
         ))
         .boxed();
     let array7 = DictionaryArray::try_from_keys(indices.clone(), values).unwrap();
@@ -1357,18 +1347,18 @@ fn generic_data() -> PolarsResult<(ArrowSchema, RecordBatchT<Box<dyn Array>>)> {
         .to(ArrowDataType::Interval(IntervalUnit::YearMonth));
 
     let schema = ArrowSchema::from(vec![
-        Field::new("a1", array1.data_type().clone(), true),
-        Field::new("a2", array2.data_type().clone(), true),
-        Field::new("a3", array3.data_type().clone(), true),
-        Field::new("a4", array4.data_type().clone(), true),
-        Field::new("a6", array6.data_type().clone(), true),
-        Field::new("a7", array7.data_type().clone(), true),
-        Field::new("a8", array8.data_type().clone(), true),
-        Field::new("a9", array9.data_type().clone(), true),
-        Field::new("a10", array10.data_type().clone(), true),
-        Field::new("a11", array11.data_type().clone(), true),
-        Field::new("a12", array12.data_type().clone(), true),
-        Field::new("a13", array13.data_type().clone(), true),
+        Field::new("a1".into(), array1.data_type().clone(), true),
+        Field::new("a2".into(), array2.data_type().clone(), true),
+        Field::new("a3".into(), array3.data_type().clone(), true),
+        Field::new("a4".into(), array4.data_type().clone(), true),
+        Field::new("a6".into(), array6.data_type().clone(), true),
+        Field::new("a7".into(), array7.data_type().clone(), true),
+        Field::new("a8".into(), array8.data_type().clone(), true),
+        Field::new("a9".into(), array9.data_type().clone(), true),
+        Field::new("a10".into(), array10.data_type().clone(), true),
+        Field::new("a11".into(), array11.data_type().clone(), true),
+        Field::new("a12".into(), array12.data_type().clone(), true),
+        Field::new("a13".into(), array13.data_type().clone(), true),
     ]);
     let chunk = RecordBatchT::try_new(vec![
         array1.boxed(),
@@ -1450,7 +1440,7 @@ fn data<T: NativeType, I: Iterator<Item = T>>(
     ];
     let mut array = MutableListArray::<i64, _>::new_with_field(
         MutablePrimitiveArray::<T>::new(),
-        "item",
+        "item".into(),
         inner_is_nullable,
     );
     array.try_extend(data).unwrap();
@@ -1463,7 +1453,7 @@ fn assert_array_roundtrip(
     limit: Option<usize>,
 ) -> PolarsResult<()> {
     let schema = ArrowSchema::from(vec![Field::new(
-        "a1",
+        "a1".into(),
         array.data_type().clone(),
         is_nullable,
     )]);
@@ -1518,7 +1508,7 @@ fn list_slice() -> PolarsResult<()> {
     ];
     let mut array = MutableListArray::<i64, _>::new_with_field(
         MutablePrimitiveArray::<i64>::new(),
-        "item",
+        "item".into(),
         true,
     );
     array.try_extend(data).unwrap();
@@ -1555,7 +1545,7 @@ fn list_int_nullable() -> PolarsResult<()> {
     ];
     let mut array = MutableListArray::<i64, _>::new_with_field(
         MutablePrimitiveArray::<i64>::new(),
-        "item",
+        "item".into(),
         true,
     );
     array.try_extend(data).unwrap();
@@ -1586,7 +1576,7 @@ fn nested_dict_data(
     let values = DictionaryArray::try_from_keys(indices, values).unwrap();
     let values = LargeListArray::try_new(
         ArrowDataType::LargeList(Box::new(Field::new(
-            "item",
+            "item".into(),
             values.data_type().clone(),
             false,
         ))),
@@ -1595,7 +1585,11 @@ fn nested_dict_data(
         Some([true, false, true, true].into()),
     )?;
 
-    let schema = ArrowSchema::from(vec![Field::new("c1", values.data_type().clone(), true)]);
+    let schema = ArrowSchema::from(vec![Field::new(
+        "c1".into(),
+        values.data_type().clone(),
+        true,
+    )]);
     let chunk = RecordBatchT::try_new(vec![values.boxed()])?;
 
     Ok((schema, chunk))
@@ -1626,7 +1620,7 @@ fn nested_dict_limit() -> PolarsResult<()> {
 fn filter_chunk() -> PolarsResult<()> {
     let chunk1 = RecordBatchT::new(vec![PrimitiveArray::from_slice([1i16, 3]).boxed()]);
     let chunk2 = RecordBatchT::new(vec![PrimitiveArray::from_slice([2i16, 4]).boxed()]);
-    let schema = ArrowSchema::from(vec![Field::new("c1", ArrowDataType::Int16, true)]);
+    let schema = ArrowSchema::from(vec![Field::new("c1".into(), ArrowDataType::Int16, true)]);
 
     let r = integration_write(&schema, &[chunk1.clone(), chunk2.clone()])?;
 

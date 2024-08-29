@@ -41,12 +41,12 @@ pub(super) fn list_all(ca: &ListChunked) -> PolarsResult<Series> {
     let chunks = ca
         .downcast_iter()
         .map(|arr| list_all_any(arr, arrow::compute::boolean::all, true));
-    Ok(BooleanChunked::try_from_chunk_iter(ca.name(), chunks)?.into_series())
+    Ok(BooleanChunked::try_from_chunk_iter(ca.name().clone(), chunks)?.into_series())
 }
 
 pub(super) fn list_any(ca: &ListChunked) -> PolarsResult<Series> {
     let chunks = ca
         .downcast_iter()
         .map(|arr| list_all_any(arr, arrow::compute::boolean::any, false));
-    Ok(BooleanChunked::try_from_chunk_iter(ca.name(), chunks)?.into_series())
+    Ok(BooleanChunked::try_from_chunk_iter(ca.name().clone(), chunks)?.into_series())
 }

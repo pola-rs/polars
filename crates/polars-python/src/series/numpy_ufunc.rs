@@ -109,8 +109,11 @@ macro_rules! impl_ufuncs {
                             assert!(get_refcnt(&out_array) <= 3);
 
                             let validity = self.series.chunks()[0].validity().cloned();
-                            let ca =
-                                ChunkedArray::<$type>::from_vec_validity(self.name(), av, validity);
+                            let ca = ChunkedArray::<$type>::from_vec_validity(
+                                self.series.name().clone(),
+                                av,
+                                validity,
+                            );
                             PySeries::new(ca.into_series())
                         },
                         Err(e) => {

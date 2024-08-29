@@ -155,7 +155,7 @@ where
 impl ListChunked {
     pub fn append(&mut self, other: &Self) -> PolarsResult<()> {
         let dtype = merge_dtypes(self.dtype(), other.dtype())?;
-        self.field = Arc::new(Field::new(self.name(), dtype));
+        self.field = Arc::new(Field::new(self.name().clone(), dtype));
 
         let len = self.len();
         self.length = self
@@ -177,7 +177,7 @@ impl ListChunked {
 impl ArrayChunked {
     pub fn append(&mut self, other: &Self) -> PolarsResult<()> {
         let dtype = merge_dtypes(self.dtype(), other.dtype())?;
-        self.field = Arc::new(Field::new(self.name(), dtype));
+        self.field = Arc::new(Field::new(self.name().clone(), dtype));
 
         let len = self.len();
 
@@ -198,7 +198,7 @@ impl ArrayChunked {
 impl StructChunked {
     pub fn append(&mut self, other: &Self) -> PolarsResult<()> {
         let dtype = merge_dtypes(self.dtype(), other.dtype())?;
-        self.field = Arc::new(Field::new(self.name(), dtype));
+        self.field = Arc::new(Field::new(self.name().clone(), dtype));
 
         let len = self.len();
 

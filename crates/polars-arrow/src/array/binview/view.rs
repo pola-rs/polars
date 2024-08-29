@@ -426,7 +426,7 @@ fn validate_utf8(b: &[u8]) -> PolarsResult<()> {
     }
 }
 
-pub(super) fn validate_utf8_view(views: &[View], buffers: &[Buffer<u8>]) -> PolarsResult<()> {
+pub fn validate_utf8_view(views: &[View], buffers: &[Buffer<u8>]) -> PolarsResult<()> {
     validate_view(views, buffers, validate_utf8)
 }
 

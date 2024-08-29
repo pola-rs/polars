@@ -22,6 +22,13 @@ impl Filter {
         Filter::Mask(mask)
     }
 
+    pub fn do_include_at(&self, at: usize) -> bool {
+        match self {
+            Filter::Range(range) => range.contains(&at),
+            Filter::Mask(bitmap) => bitmap.get_bit(at),
+        }
+    }
+
     pub(crate) fn num_rows(&self) -> usize {
         match self {
             Filter::Range(range) => range.len(),

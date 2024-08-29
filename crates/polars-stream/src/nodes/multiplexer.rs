@@ -34,7 +34,7 @@ impl ComputeNode for MultiplexerNode {
         "multiplexer"
     }
 
-    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) {
+    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {
         assert!(recv.len() == 1 && !send.is_empty());
 
         // Initialize buffered streams, and mark those for which the receiver
@@ -60,14 +60,24 @@ impl ComputeNode for MultiplexerNode {
             for s in send {
                 *s = PortState::Done;
             }
-            return;
+            return Ok(());
         }
 
         let all_blocked = send.iter().all(|p| *p == PortState::Blocked);
 
         // Pass along the input state to the output.
-        for s in send {
-            *s = recv[0];
+        for (i, s) in send.iter_mut().enumerate() {
+            let buffer_empty = match &self.buffers[i] {
+                BufferedStream::Open(v) => v.is_empty(),
+                BufferedStream::Closed => true,
+            };
+            *s = if buffer_empty && recv[0] == PortState::Done {
+                PortState::Done
+            } else if !buffer_empty || recv[0] == PortState::Ready {
+                PortState::Ready
+            } else {
+                PortState::Blocked
+            };
         }
 
         // We say we are ready to receive unless all outputs are blocked.
@@ -76,6 +86,7 @@ impl ComputeNode for MultiplexerNode {
         } else {
             PortState::Ready
         };
+        Ok(())
     }
 
     fn spawn<'env, 's>(

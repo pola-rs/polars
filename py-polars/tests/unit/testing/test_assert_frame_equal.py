@@ -278,13 +278,17 @@ def test_assert_frame_equal_pass() -> None:
     assert_frame_equal(df1, df2)
 
 
-def test_assert_frame_equal_types() -> None:
+@pytest.mark.parametrize(
+    "assert_function",
+    [assert_frame_equal, assert_frame_not_equal],
+)
+def test_assert_frame_equal_types(assert_function: Any) -> None:
     df1 = pl.DataFrame({"a": [1, 2]})
     srs1 = pl.Series(values=[1, 2], name="a")
     with pytest.raises(
         AssertionError, match=r"inputs are different \(unexpected input types\)"
     ):
-        assert_frame_equal(df1, srs1)  # type: ignore[arg-type]
+        assert_function(df1, srs1)
 
 
 def test_assert_frame_equal_length_mismatch() -> None:
@@ -295,6 +299,7 @@ def test_assert_frame_equal_length_mismatch() -> None:
         match=r"DataFrames are different \(number of rows does not match\)",
     ):
         assert_frame_equal(df1, df2)
+    assert_frame_not_equal(df1, df2)
 
 
 def test_assert_frame_equal_column_mismatch() -> None:
@@ -304,6 +309,7 @@ def test_assert_frame_equal_column_mismatch() -> None:
         AssertionError, match="columns \\['a'\\] in left DataFrame, but not in right"
     ):
         assert_frame_equal(df1, df2)
+    assert_frame_not_equal(df1, df2)
 
 
 def test_assert_frame_equal_column_mismatch2() -> None:
@@ -314,6 +320,7 @@ def test_assert_frame_equal_column_mismatch2() -> None:
         match="columns \\['b', 'c'\\] in right LazyFrame, but not in left",
     ):
         assert_frame_equal(df1, df2)
+    assert_frame_not_equal(df1, df2)
 
 
 def test_assert_frame_equal_column_mismatch_order() -> None:
@@ -323,6 +330,7 @@ def test_assert_frame_equal_column_mismatch_order() -> None:
         assert_frame_equal(df1, df2)
 
     assert_frame_equal(df1, df2, check_column_order=False)
+    assert_frame_not_equal(df1, df2)
 
 
 def test_assert_frame_equal_check_row_order() -> None:
@@ -331,25 +339,33 @@ def test_assert_frame_equal_check_row_order() -> None:
 
     with pytest.raises(AssertionError, match="value mismatch for column 'a'"):
         assert_frame_equal(df1, df2)
+
     assert_frame_equal(df1, df2, check_row_order=False)
+    assert_frame_not_equal(df1, df2)
 
 
 def test_assert_frame_equal_check_row_col_order() -> None:
     df1 = pl.DataFrame({"a": [1, 2], "b": [4, 3]})
-    df3 = pl.DataFrame({"b": [3, 4], "a": [2, 1]})
+    df2 = pl.DataFrame({"b": [3, 4], "a": [2, 1]})
 
     with pytest.raises(AssertionError, match="columns are not in the same order"):
-        assert_frame_equal(df1, df3, check_row_order=False)
-    assert_frame_equal(df1, df3, check_row_order=False, check_column_order=False)
+        assert_frame_equal(df1, df2, check_row_order=False)
+
+    assert_frame_equal(df1, df2, check_row_order=False, check_column_order=False)
+    assert_frame_not_equal(df1, df2)
 
 
-def test_assert_frame_equal_check_row_order_unsortable() -> None:
+@pytest.mark.parametrize(
+    "assert_function",
+    [assert_frame_equal, assert_frame_not_equal],
+)
+def test_assert_frame_equal_check_row_order_unsortable(assert_function: Any) -> None:
     df1 = pl.DataFrame({"a": [object(), object()], "b": [3, 4]})
     df2 = pl.DataFrame({"a": [object(), object()], "b": [4, 3]})
     with pytest.raises(
         TypeError, match="cannot set `check_row_order=False`.*unsortable columns"
     ):
-        assert_frame_equal(df1, df2, check_row_order=False)
+        assert_function(df1, df2, check_row_order=False)
 
 
 def test_assert_frame_equal_dtypes_mismatch() -> None:
@@ -359,6 +375,9 @@ def test_assert_frame_equal_dtypes_mismatch() -> None:
 
     with pytest.raises(AssertionError, match="dtypes do not match"):
         assert_frame_equal(df1, df2, check_column_order=False)
+
+    assert_frame_not_equal(df1, df2, check_column_order=False)
+    assert_frame_not_equal(df1, df2)
 
 
 def test_assert_frame_not_equal() -> None:

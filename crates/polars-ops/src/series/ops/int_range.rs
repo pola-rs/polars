@@ -5,7 +5,7 @@ pub fn new_int_range<T>(
     start: T::Native,
     end: T::Native,
     step: i64,
-    name: &str,
+    name: PlSmallStr,
 ) -> PolarsResult<Series>
 where
     T: PolarsIntegerType,

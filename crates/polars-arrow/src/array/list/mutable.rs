@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use polars_error::{polars_err, PolarsResult};
+use polars_utils::pl_str::PlSmallStr;
 
 use super::ListArray;
 use crate::array::physical_binary::extend_validity;
@@ -122,7 +123,7 @@ impl<O: Offset, M: MutableArray> MutableListArray<O, M> {
     }
 
     /// Creates a new [`MutableListArray`] from a [`MutableArray`].
-    pub fn new_with_field(values: M, name: &str, nullable: bool) -> Self {
+    pub fn new_with_field(values: M, name: PlSmallStr, nullable: bool) -> Self {
         let field = Box::new(Field::new(name, values.data_type().clone(), nullable));
         let data_type = if O::IS_LARGE {
             ArrowDataType::LargeList(field)

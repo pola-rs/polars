@@ -5,6 +5,7 @@ pub mod in_memory_source;
 pub mod map;
 pub mod multiplexer;
 pub mod ordered_union;
+pub mod parquet_source;
 pub mod reduce;
 pub mod select;
 pub mod simple_projection;
@@ -45,7 +46,7 @@ pub trait ComputeNode: Send {
     /// Similarly, for each output pipe `send` will contain the respective
     /// state of the input port that pipe is connected to when called, and you
     /// must update it to contain the desired state of your output port.
-    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]);
+    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()>;
 
     /// If this node (in its current state) is a pipeline blocker, and whether
     /// this is memory intensive or not.

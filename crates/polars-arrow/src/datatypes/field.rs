@@ -1,3 +1,4 @@
+use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -15,7 +16,7 @@ use super::{ArrowDataType, Metadata};
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Field {
     /// Its name
-    pub name: String,
+    pub name: PlSmallStr,
     /// Its logical [`ArrowDataType`]
     pub data_type: ArrowDataType,
     /// Its nullability
@@ -26,9 +27,9 @@ pub struct Field {
 
 impl Field {
     /// Creates a new [`Field`].
-    pub fn new<T: Into<String>>(name: T, data_type: ArrowDataType, is_nullable: bool) -> Self {
+    pub fn new(name: PlSmallStr, data_type: ArrowDataType, is_nullable: bool) -> Self {
         Field {
-            name: name.into(),
+            name,
             data_type,
             is_nullable,
             metadata: Default::default(),
@@ -56,8 +57,18 @@ impl Field {
 #[cfg(feature = "arrow_rs")]
 impl From<Field> for arrow_schema::Field {
     fn from(value: Field) -> Self {
-        Self::new(value.name, value.data_type.into(), value.is_nullable)
-            .with_metadata(value.metadata.into_iter().collect())
+        Self::new(
+            value.name.to_string(),
+            value.data_type.into(),
+            value.is_nullable,
+        )
+        .with_metadata(
+            value
+                .metadata
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+        )
     }
 }
 
@@ -75,9 +86,14 @@ impl From<&arrow_schema::Field> for Field {
         let metadata = value
             .metadata()
             .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
+            .map(|(k, v)| (PlSmallStr::from_str(k), PlSmallStr::from_str(v)))
             .collect();
-        Self::new(value.name(), data_type, value.is_nullable()).with_metadata(metadata)
+        Self::new(
+            PlSmallStr::from_str(value.name().as_str()),
+            data_type,
+            value.is_nullable(),
+        )
+        .with_metadata(metadata)
     }
 }
 

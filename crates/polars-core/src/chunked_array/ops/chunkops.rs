@@ -363,7 +363,7 @@ impl<T: PolarsObject> ObjectChunked<T> {
         if self.chunks.len() == 1 {
             self.clone()
         } else {
-            let mut builder = ObjectChunkedBuilder::new(self.name(), self.len());
+            let mut builder = ObjectChunkedBuilder::new(self.name().clone(), self.len());
             let chunks = self.downcast_iter();
 
             // todo! use iterators once implemented
@@ -398,7 +398,7 @@ mod test {
     #[test]
     #[cfg(feature = "dtype-categorical")]
     fn test_categorical_map_after_rechunk() {
-        let s = Series::new("", &["foo", "bar", "spam"]);
+        let s = Series::new(PlSmallStr::const_default(), &["foo", "bar", "spam"]);
         let mut a = s
             .cast(&DataType::Categorical(None, Default::default()))
             .unwrap();

@@ -26,7 +26,7 @@ impl From<ExprIR> for PyExprIR {
     fn from(value: ExprIR) -> Self {
         Self {
             node: value.node().0,
-            output_name: value.output_name().into(),
+            output_name: value.output_name().to_string(),
         }
     }
 }
@@ -35,7 +35,7 @@ impl From<&ExprIR> for PyExprIR {
     fn from(value: &ExprIR) -> Self {
         Self {
             node: value.node().0,
-            output_name: value.output_name().into(),
+            output_name: value.output_name().to_string(),
         }
     }
 }
@@ -57,7 +57,7 @@ impl NodeTraverser {
     // Increment major on breaking changes to the IR (e.g. renaming
     // fields, reordering tuples), minor on backwards compatible
     // changes (e.g. exposing a new expression node).
-    const VERSION: Version = (1, 0);
+    const VERSION: Version = (1, 1);
 
     pub(crate) fn new(root: Node, lp_arena: Arena<IR>, expr_arena: Arena<AExpr>) -> Self {
         Self {

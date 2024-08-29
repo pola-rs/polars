@@ -1,7 +1,7 @@
 use polars_core::export::rayon::prelude::*;
 use polars_core::POOL;
-use polars_utils::format_smartstring;
-use smartstring::alias::String as SmartString;
+use polars_utils::format_pl_smallstr;
+use polars_utils::pl_str::PlSmallStr;
 
 use super::*;
 
@@ -48,10 +48,10 @@ fn det_n_fields(ca: &ListChunked, n_fields: ListToStructWidthStrategy) -> usize 
     }
 }
 
-pub type NameGenerator = Arc<dyn Fn(usize) -> SmartString + Send + Sync>;
+pub type NameGenerator = Arc<dyn Fn(usize) -> PlSmallStr + Send + Sync>;
 
-pub fn _default_struct_name_gen(idx: usize) -> SmartString {
-    format_smartstring!("field_{idx}")
+pub fn _default_struct_name_gen(idx: usize) -> PlSmallStr {
+    format_pl_smallstr!("field_{idx}")
 }
 
 pub trait ToStruct: AsList {
@@ -73,14 +73,14 @@ pub trait ToStruct: AsList {
                 .into_par_iter()
                 .map(|i| {
                     ca.lst_get(i as i64, true).map(|mut s| {
-                        s.rename(&name_generator(i));
+                        s.rename(name_generator(i));
                         s
                     })
                 })
                 .collect::<PolarsResult<Vec<_>>>()
         })?;
 
-        StructChunked::from_series(ca.name(), &fields)
+        StructChunked::from_series(ca.name().clone(), &fields)
     }
 }
 

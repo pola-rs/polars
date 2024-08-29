@@ -3823,7 +3823,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 2021-12-16 03:00:00 ┆ 6   │
         └─────────────────────┴─────┘
 
-        Group by windows of 1 hour starting at 2021-12-16 00:00:00.
+        Group by windows of 1 hour.
 
         >>> lf.group_by_dynamic("time", every="1h", closed="right").agg(
         ...     pl.col("n")

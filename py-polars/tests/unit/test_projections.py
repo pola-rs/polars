@@ -78,11 +78,19 @@ def test_unnest_projection_pushdown() -> None:
         pl.col("field_2").cast(pl.Categorical).alias("col"),
         pl.col("value"),
     )
-    out = mlf.collect().to_dict(as_series=False)
+
+    out = (
+        mlf.sort(
+            [pl.col.row.cast(pl.String), pl.col.col.cast(pl.String)],
+            maintain_order=True,
+        )
+        .collect()
+        .to_dict(as_series=False)
+    )
     assert out == {
-        "row": ["y", "y", "b", "b"],
-        "col": ["z", "z", "c", "c"],
-        "value": [1, 2, 2, 3],
+        "row": ["b", "b", "y", "y"],
+        "col": ["c", "c", "z", "z"],
+        "value": [2, 3, 1, 2],
     }
 
 

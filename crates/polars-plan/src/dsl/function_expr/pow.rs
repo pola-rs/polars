@@ -65,7 +65,11 @@ where
 
     if exponent.len() == 1 {
         let Some(exponent_value) = exponent.get(0) else {
-            return Ok(Some(Series::full_null(base.name(), base.len(), &dtype)));
+            return Ok(Some(Series::full_null(
+                base.name().clone(),
+                base.len(),
+                &dtype,
+            )));
         };
         let s = match exponent_value.to_f64().unwrap() {
             a if a == 1.0 => base.clone().into_series(),
@@ -104,7 +108,11 @@ where
 
     if exponent.len() == 1 {
         let Some(exponent_value) = exponent.get(0) else {
-            return Ok(Some(Series::full_null(base.name(), base.len(), &dtype)));
+            return Ok(Some(Series::full_null(
+                base.name().clone(),
+                base.len(),
+                &dtype,
+            )));
         };
         let s = match exponent_value.to_u64().unwrap() {
             1 => base.clone().into_series(),

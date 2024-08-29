@@ -3,7 +3,12 @@ mod dsl_to_ir;
 mod expr_expansion;
 mod expr_to_ir;
 mod ir_to_dsl;
-#[cfg(any(feature = "ipc", feature = "parquet", feature = "csv"))]
+#[cfg(any(
+    feature = "ipc",
+    feature = "parquet",
+    feature = "csv",
+    feature = "json"
+))]
 mod scans;
 mod stack_opt;
 
@@ -136,7 +141,7 @@ impl IR {
                 let input = convert_to_lp(input, lp_arena);
                 let expr = columns
                     .iter_names()
-                    .map(|name| Expr::Column(ColumnName::from(name.as_str())))
+                    .map(|name| Expr::Column(name.clone()))
                     .collect::<Vec<_>>();
                 DslPlan::Select {
                     expr,

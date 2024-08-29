@@ -513,7 +513,7 @@ fn inline_or_prune_cast(
             },
             // We generate casted literal datetimes, so ensure we cast upon conversion
             // to create simpler expr trees.
-            #[cfg(feature = "temporal")]
+            #[cfg(feature = "dtype-datetime")]
             LiteralValue::DateTime(ts, tu, None) if dtype.is_date() => {
                 let from_size = time_unit_multiple(tu.to_arrow()) * SECONDS_IN_DAY;
                 LiteralValue::Date((*ts / from_size) as i32)
@@ -622,7 +622,7 @@ mod test {
         let rules: &mut [Box<dyn OptimizationRule>] = &mut [Box::new(TypeCoercionRule {})];
 
         let df = DataFrame::new(Vec::from([Series::new_empty(
-            "fruits",
+            PlSmallStr::from_static("fruits"),
             &DataType::Categorical(None, Default::default()),
         )]))
         .unwrap();
@@ -632,7 +632,8 @@ mod test {
             .project(expr_in.clone(), Default::default())
             .build();
 
-        let mut lp_top = to_alp(lp, &mut expr_arena, &mut lp_arena, true, true).unwrap();
+        let mut lp_top =
+            to_alp(lp, &mut expr_arena, &mut lp_arena, &mut OptFlags::default()).unwrap();
         lp_top = optimizer
             .optimize_loop(rules, &mut expr_arena, &mut lp_arena, lp_top)
             .unwrap();
@@ -647,7 +648,8 @@ mod test {
         let lp = DslBuilder::from_existing_df(df)
             .project(expr_in, Default::default())
             .build();
-        let mut lp_top = to_alp(lp, &mut expr_arena, &mut lp_arena, true, true).unwrap();
+        let mut lp_top =
+            to_alp(lp, &mut expr_arena, &mut lp_arena, &mut OptFlags::default()).unwrap();
         lp_top = optimizer
             .optimize_loop(rules, &mut expr_arena, &mut lp_arena, lp_top)
             .unwrap();

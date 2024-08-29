@@ -2,6 +2,7 @@ use std::hash::Hash;
 
 use num_traits::{AsPrimitive, Float, ToPrimitive};
 use polars_error::PolarsResult;
+use polars_utils::pl_str::PlSmallStr;
 
 use super::CastOptionsImpl;
 use crate::array::*;
@@ -434,7 +435,7 @@ pub fn timestamp_to_timestamp(
     from: &PrimitiveArray<i64>,
     from_unit: TimeUnit,
     to_unit: TimeUnit,
-    tz: &Option<String>,
+    tz: &Option<PlSmallStr>,
 ) -> PrimitiveArray<i64> {
     let from_size = time_unit_multiple(from_unit);
     let to_size = time_unit_multiple(to_unit);

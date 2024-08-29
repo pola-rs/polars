@@ -135,7 +135,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     use chrono::prelude::*;
 
     let date = polars::time::date_range(
-        "date",
+        "date".into(),
         NaiveDate::from_ymd_opt(2022, 1, 1)
             .unwrap()
             .and_hms_opt(0, 0, 0)
@@ -152,7 +152,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     .cast(&DataType::Date)?;
 
     let datetime = polars::time::date_range(
-        "datetime",
+        "datetime".into(),
         NaiveDate::from_ymd_opt(2022, 1, 1)
             .unwrap()
             .and_hms_opt(0, 0, 0)
@@ -185,7 +185,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --8<-- [start:dates2]
     let date = polars::time::date_range(
-        "date",
+        "date".into(),
         NaiveDate::from_ymd_opt(2022, 1, 1)
             .unwrap()
             .and_hms_opt(0, 0, 0)

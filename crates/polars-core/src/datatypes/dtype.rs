@@ -8,7 +8,7 @@ use super::*;
 use crate::chunked_array::object::registry::ObjectRegistry;
 use crate::utils::materialize_dyn_int;
 
-pub type TimeZone = String;
+pub type TimeZone = PlSmallStr;
 
 pub static DTYPE_ENUM_KEY: &str = "POLARS.CATEGORICAL_TYPE";
 pub static DTYPE_ENUM_VALUE: &str = "ENUM";
@@ -152,14 +152,13 @@ impl Eq for DataType {}
 
 impl DataType {
     /// Standardize timezones to consistent values.
-    pub(crate) fn canonical_timezone(tz: &Option<String>) -> Option<TimeZone> {
+    pub(crate) fn canonical_timezone(tz: &Option<PlSmallStr>) -> Option<TimeZone> {
         match tz.as_deref() {
-            Some("") => None,
+            Some("") | None => None,
             #[cfg(feature = "timezones")]
-            Some("+00:00") | Some("00:00") | Some("utc") => Some("UTC"),
-            _ => tz.as_deref(),
+            Some("+00:00") | Some("00:00") | Some("utc") => Some(PlSmallStr::from_static("UTC")),
+            Some(v) => Some(PlSmallStr::from_str(v)),
         }
-        .map(|s| s.to_string())
     }
 
     pub fn value_within_range(&self, other: AnyValue) -> bool {
@@ -262,7 +261,7 @@ impl DataType {
             Struct(fields) => {
                 let new_fields = fields
                     .iter()
-                    .map(|s| Field::new(s.name(), s.data_type().to_physical()))
+                    .map(|s| Field::new(s.name().clone(), s.data_type().to_physical()))
                     .collect();
                 Struct(new_fields)
             },
@@ -502,7 +501,7 @@ impl DataType {
     }
 
     /// Convert to an Arrow Field
-    pub fn to_arrow_field(&self, name: &str, compat_level: CompatLevel) -> ArrowField {
+    pub fn to_arrow_field(&self, name: PlSmallStr, compat_level: CompatLevel) -> ArrowField {
         let metadata = match self {
             #[cfg(feature = "dtype-categorical")]
             DataType::Enum(_, _) => Some(BTreeMap::from([(
@@ -510,8 +509,8 @@ impl DataType {
                 DTYPE_ENUM_VALUE.into(),
             )])),
             DataType::BinaryOffset => Some(BTreeMap::from([(
-                "pl".to_string(),
-                "maintain_type".to_string(),
+                PlSmallStr::from_static("pl"),
+                PlSmallStr::from_static("maintain_type"),
             )])),
             _ => None,
         };
@@ -578,11 +577,11 @@ impl DataType {
             Time => Ok(ArrowDataType::Time64(ArrowTimeUnit::Nanosecond)),
             #[cfg(feature = "dtype-array")]
             Array(dt, size) => Ok(ArrowDataType::FixedSizeList(
-                Box::new(dt.to_arrow_field("item", compat_level)),
+                Box::new(dt.to_arrow_field(PlSmallStr::from_static("item"), compat_level)),
                 *size,
             )),
             List(dt) => Ok(ArrowDataType::LargeList(Box::new(
-                dt.to_arrow_field("item", compat_level),
+                dt.to_arrow_field(PlSmallStr::from_static("item"), compat_level),
             ))),
             Null => Ok(ArrowDataType::Null),
             #[cfg(feature = "object")]

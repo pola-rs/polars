@@ -73,11 +73,11 @@ pub trait DateMethods: AsDate {
         ca.apply_kernel_cast::<Int16Type>(&date_to_ordinal)
     }
 
-    fn parse_from_str_slice(name: &str, v: &[&str], fmt: &str) -> DateChunked;
+    fn parse_from_str_slice(name: PlSmallStr, v: &[&str], fmt: &str) -> DateChunked;
 }
 
 impl DateMethods for DateChunked {
-    fn parse_from_str_slice(name: &str, v: &[&str], fmt: &str) -> DateChunked {
+    fn parse_from_str_slice(name: PlSmallStr, v: &[&str], fmt: &str) -> DateChunked {
         Int32Chunked::from_iter_options(
             name,
             v.iter().map(|s| {

@@ -1,7 +1,7 @@
 #[cfg(feature = "dtype-struct")]
 use arrow::legacy::trusted_len::TrustedLenPush;
 use arrow::types::PrimitiveType;
-use polars_utils::format_smartstring;
+use polars_utils::format_pl_smallstr;
 #[cfg(feature = "dtype-struct")]
 use polars_utils::slice::GetSaferUnchecked;
 #[cfg(feature = "dtype-categorical")]
@@ -91,7 +91,7 @@ pub enum AnyValue<'a> {
     #[cfg(feature = "dtype-struct")]
     StructOwned(Box<(Vec<AnyValue<'a>>, Vec<Field>)>),
     /// An UTF8 encoded string type.
-    StringOwned(smartstring::alias::String),
+    StringOwned(PlSmallStr),
     Binary(&'a [u8]),
     BinaryOwned(Vec<u8>),
     /// A 128-bit fixed point decimal number with a scale.
@@ -325,8 +325,8 @@ impl<'a> Deserialize<'a> for AnyValue<'static> {
                         AnyValue::List(value)
                     },
                     (AvField::StringOwned, variant) => {
-                        let value: String = variant.newtype_variant()?;
-                        AnyValue::StringOwned(value.into())
+                        let value: PlSmallStr = variant.newtype_variant()?;
+                        AnyValue::StringOwned(value)
                     },
                     (AvField::BinaryOwned, variant) => {
                         let value = variant.newtype_variant()?;
@@ -343,7 +343,7 @@ impl<'a> Deserialize<'a> for AnyValue<'static> {
 impl AnyValue<'static> {
     pub fn zero(dtype: &DataType) -> Self {
         match dtype {
-            DataType::String => AnyValue::StringOwned("".into()),
+            DataType::String => AnyValue::StringOwned(PlSmallStr::const_default()),
             DataType::Boolean => AnyValue::Boolean(false),
             // SAFETY:
             // Numeric values are static, inform the compiler of this.
@@ -448,7 +448,7 @@ impl<'a> AnyValue<'a> {
                     NumCast::from((*v).parse::<f64>().ok()?)
                 }
             },
-            StringOwned(v) => String(v).extract(),
+            StringOwned(v) => String(v.as_str()).extract(),
             _ => None,
         }
     }
@@ -538,11 +538,11 @@ impl<'a> AnyValue<'a> {
             // to string
             (av, DataType::String) => {
                 if av.is_unsigned_integer() {
-                    AnyValue::StringOwned(format_smartstring!("{}", av.extract::<u64>()?))
+                    AnyValue::StringOwned(format_pl_smallstr!("{}", av.extract::<u64>()?))
                 } else if av.is_float() {
-                    AnyValue::StringOwned(format_smartstring!("{}", av.extract::<f64>()?))
+                    AnyValue::StringOwned(format_pl_smallstr!("{}", av.extract::<f64>()?))
                 } else {
-                    AnyValue::StringOwned(format_smartstring!("{}", av.extract::<i64>()?))
+                    AnyValue::StringOwned(format_pl_smallstr!("{}", av.extract::<i64>()?))
                 }
             },
 
@@ -844,7 +844,7 @@ impl<'a> AnyValue<'a> {
     pub fn as_borrowed(&self) -> AnyValue<'_> {
         match self {
             AnyValue::BinaryOwned(data) => AnyValue::Binary(data),
-            AnyValue::StringOwned(data) => AnyValue::String(data),
+            AnyValue::StringOwned(data) => AnyValue::String(data.as_str()),
             av => av.clone(),
         }
     }
@@ -872,7 +872,7 @@ impl<'a> AnyValue<'a> {
             #[cfg(feature = "dtype-time")]
             Time(v) => Time(v),
             List(v) => List(v),
-            String(v) => StringOwned(v.into()),
+            String(v) => StringOwned(PlSmallStr::from_str(v)),
             StringOwned(v) => StringOwned(v),
             Binary(v) => BinaryOwned(v.to_vec()),
             BinaryOwned(v) => BinaryOwned(v),
@@ -907,7 +907,7 @@ impl<'a> AnyValue<'a> {
     pub fn get_str(&self) -> Option<&str> {
         match self {
             AnyValue::String(s) => Some(s),
-            AnyValue::StringOwned(s) => Some(s),
+            AnyValue::StringOwned(s) => Some(s.as_str()),
             #[cfg(feature = "dtype-categorical")]
             AnyValue::Categorical(idx, rev, arr) | AnyValue::Enum(idx, rev, arr) => {
                 let s = if arr.is_null() {
@@ -951,8 +951,8 @@ impl AnyValue<'_> {
             (Float32(l), Float32(r)) => l.to_total_ord() == r.to_total_ord(),
             (Float64(l), Float64(r)) => l.to_total_ord() == r.to_total_ord(),
             (String(l), String(r)) => l == r,
-            (String(l), StringOwned(r)) => l == r,
-            (StringOwned(l), String(r)) => l == r,
+            (String(l), StringOwned(r)) => *l == r.as_str(),
+            (StringOwned(l), String(r)) => l.as_str() == *r,
             (StringOwned(l), StringOwned(r)) => l == r,
             (Boolean(l), Boolean(r)) => *l == *r,
             (Binary(l), Binary(r)) => l == r,
@@ -1302,7 +1302,7 @@ mod test {
                 DataType::Datetime(TimeUnit::Milliseconds, None),
             ),
             (
-                ArrowDataType::Timestamp(ArrowTimeUnit::Second, Some("".to_string())),
+                ArrowDataType::Timestamp(ArrowTimeUnit::Second, Some(PlSmallStr::const_default())),
                 DataType::Datetime(TimeUnit::Milliseconds, None),
             ),
             (ArrowDataType::LargeUtf8, DataType::String),
@@ -1337,7 +1337,7 @@ mod test {
             (ArrowDataType::Time32(ArrowTimeUnit::Second), DataType::Time),
             (
                 ArrowDataType::List(Box::new(ArrowField::new(
-                    "item",
+                    PlSmallStr::from_static("item"),
                     ArrowDataType::Float64,
                     true,
                 ))),
@@ -1345,7 +1345,7 @@ mod test {
             ),
             (
                 ArrowDataType::LargeList(Box::new(ArrowField::new(
-                    "item",
+                    PlSmallStr::from_static("item"),
                     ArrowDataType::Float64,
                     true,
                 ))),

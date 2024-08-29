@@ -133,18 +133,18 @@ impl From<BooleanFunction> for FunctionExpr {
 fn any(s: &Series, ignore_nulls: bool) -> PolarsResult<Series> {
     let ca = s.bool()?;
     if ignore_nulls {
-        Ok(Series::new(s.name(), [ca.any()]))
+        Ok(Series::new(s.name().clone(), [ca.any()]))
     } else {
-        Ok(Series::new(s.name(), [ca.any_kleene()]))
+        Ok(Series::new(s.name().clone(), [ca.any_kleene()]))
     }
 }
 
 fn all(s: &Series, ignore_nulls: bool) -> PolarsResult<Series> {
     let ca = s.bool()?;
     if ignore_nulls {
-        Ok(Series::new(s.name(), [ca.all()]))
+        Ok(Series::new(s.name().clone(), [ca.all()]))
     } else {
-        Ok(Series::new(s.name(), [ca.all_kleene()]))
+        Ok(Series::new(s.name().clone(), [ca.all_kleene()]))
     }
 }
 
@@ -217,16 +217,19 @@ fn any_horizontal(s: &[Series]) -> PolarsResult<Series> {
         .install(|| {
             s.par_iter()
                 .try_fold(
-                    || BooleanChunked::new("", &[false]),
+                    || BooleanChunked::new(PlSmallStr::const_default(), &[false]),
                     |acc, b| {
                         let b = b.cast(&DataType::Boolean)?;
                         let b = b.bool()?;
                         PolarsResult::Ok((&acc).bitor(b))
                     },
                 )
-                .try_reduce(|| BooleanChunked::new("", [false]), |a, b| Ok(a.bitor(b)))
+                .try_reduce(
+                    || BooleanChunked::new(PlSmallStr::const_default(), [false]),
+                    |a, b| Ok(a.bitor(b)),
+                )
         })?
-        .with_name(s[0].name());
+        .with_name(s[0].name().clone());
     Ok(out.into_series())
 }
 
@@ -236,15 +239,18 @@ fn all_horizontal(s: &[Series]) -> PolarsResult<Series> {
         .install(|| {
             s.par_iter()
                 .try_fold(
-                    || BooleanChunked::new("", &[true]),
+                    || BooleanChunked::new(PlSmallStr::const_default(), &[true]),
                     |acc, b| {
                         let b = b.cast(&DataType::Boolean)?;
                         let b = b.bool()?;
                         PolarsResult::Ok((&acc).bitand(b))
                     },
                 )
-                .try_reduce(|| BooleanChunked::new("", [true]), |a, b| Ok(a.bitand(b)))
+                .try_reduce(
+                    || BooleanChunked::new(PlSmallStr::const_default(), [true]),
+                    |a, b| Ok(a.bitand(b)),
+                )
         })?
-        .with_name(s[0].name());
+        .with_name(s[0].name().clone());
     Ok(out.into_series())
 }

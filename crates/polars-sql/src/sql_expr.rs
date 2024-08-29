@@ -248,7 +248,7 @@ impl SQLExprVisitor<'_> {
             })
             .collect::<PolarsResult<Vec<_>>>()?;
 
-        Series::from_any_values("", &array_elements, true)
+        Series::from_any_values(PlSmallStr::const_default(), &array_elements, true)
     }
 
     fn visit_expr(&mut self, expr: &SQLExpr) -> PolarsResult<Expr> {
@@ -1369,15 +1369,15 @@ pub(crate) fn resolve_compound_identifier(
         if lf.is_some() && name == "*" {
             return Ok(schema
                 .iter_names()
-                .map(|name| col(name))
+                .map(|name| col(name.clone()))
                 .collect::<Vec<_>>());
         } else if let Some((_, name, dtype)) = schema.get_full(name) {
             let resolved = &ctx.resolve_name(&ident_root.value, name);
             Ok((
-                if name != resolved {
-                    col(resolved).alias(name)
+                if name != resolved.as_str() {
+                    col(resolved).alias(name.clone())
                 } else {
-                    col(name)
+                    col(name.clone())
                 },
                 Some(dtype),
             ))

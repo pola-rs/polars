@@ -8,7 +8,7 @@ use polars_utils::hashing::hash_to_partition;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-use crate::constants::{get_literal_name, LITERAL_NAME};
+use crate::constants::get_literal_name;
 use crate::prelude::*;
 
 #[derive(Clone, PartialEq)]
@@ -18,7 +18,7 @@ pub enum LiteralValue {
     /// A binary true or false.
     Boolean(bool),
     /// A UTF8 encoded string type.
-    String(String),
+    String(PlSmallStr),
     /// A raw binary array
     Binary(Vec<u8>),
     /// An unsigned 8-bit integer number.
@@ -67,22 +67,22 @@ pub enum LiteralValue {
     // Used for dynamic languages
     Int(i128),
     // Dynamic string, still needs to be made concrete.
-    StrCat(String),
+    StrCat(PlSmallStr),
 }
 
 impl LiteralValue {
     /// Get the output name as `&str`.
-    pub(crate) fn output_name(&self) -> &str {
+    pub(crate) fn output_name(&self) -> &PlSmallStr {
         match self {
             LiteralValue::Series(s) => s.name(),
-            _ => LITERAL_NAME,
+            _ => get_literal_name(),
         }
     }
 
-    /// Get the output name as [`ColumnName`].
-    pub(crate) fn output_column_name(&self) -> ColumnName {
+    /// Get the output name as [`PlSmallStr`].
+    pub(crate) fn output_column_name(&self) -> &PlSmallStr {
         match self {
-            LiteralValue::Series(s) => ColumnName::from(s.name()),
+            LiteralValue::Series(s) => s.name(),
             _ => get_literal_name(),
         }
     }
@@ -152,12 +152,14 @@ impl LiteralValue {
 
                         let low = *low as i32;
                         let high = *high as i32;
-                        new_int_range::<Int32Type>(low, high, 1, "range").ok()
+                        new_int_range::<Int32Type>(low, high, 1, PlSmallStr::from_static("range"))
+                            .ok()
                     },
                     DataType::Int64 => {
                         let low = *low;
                         let high = *high;
-                        new_int_range::<Int64Type>(low, high, 1, "range").ok()
+                        new_int_range::<Int64Type>(low, high, 1, PlSmallStr::from_static("range"))
+                            .ok()
                     },
                     DataType::UInt32 => {
                         if *low < 0 || *high > u32::MAX as i64 {
@@ -165,7 +167,8 @@ impl LiteralValue {
                         }
                         let low = *low as u32;
                         let high = *high as u32;
-                        new_int_range::<UInt32Type>(low, high, 1, "range").ok()
+                        new_int_range::<UInt32Type>(low, high, 1, PlSmallStr::from_static("range"))
+                            .ok()
                     },
                     _ => return None,
                 };
@@ -248,15 +251,21 @@ pub trait TypedLiteral: Literal {
 impl TypedLiteral for String {}
 impl TypedLiteral for &str {}
 
-impl Literal for String {
+impl Literal for PlSmallStr {
     fn lit(self) -> Expr {
         Expr::Literal(LiteralValue::String(self))
     }
 }
 
+impl Literal for String {
+    fn lit(self) -> Expr {
+        Expr::Literal(LiteralValue::String(PlSmallStr::from_string(self)))
+    }
+}
+
 impl<'a> Literal for &'a str {
     fn lit(self) -> Expr {
-        Expr::Literal(LiteralValue::String(self.to_string()))
+        Expr::Literal(LiteralValue::String(PlSmallStr::from_str(self)))
     }
 }
 
@@ -278,7 +287,7 @@ impl TryFrom<AnyValue<'_>> for LiteralValue {
         match value {
             AnyValue::Null => Ok(Self::Null),
             AnyValue::Boolean(b) => Ok(Self::Boolean(b)),
-            AnyValue::String(s) => Ok(Self::String(s.to_string())),
+            AnyValue::String(s) => Ok(Self::String(PlSmallStr::from_str(s))),
             AnyValue::Binary(b) => Ok(Self::Binary(b.to_vec())),
             #[cfg(feature = "dtype-u8")]
             AnyValue::UInt8(u) => Ok(Self::UInt8(u)),
@@ -305,16 +314,16 @@ impl TryFrom<AnyValue<'_>> for LiteralValue {
             #[cfg(feature = "dtype-time")]
             AnyValue::Time(v) => Ok(LiteralValue::Time(v)),
             AnyValue::List(l) => Ok(Self::Series(SpecialEq::new(l))),
-            AnyValue::StringOwned(o) => Ok(Self::String(o.into())),
+            AnyValue::StringOwned(o) => Ok(Self::String(o)),
             #[cfg(feature = "dtype-categorical")]
             AnyValue::Categorical(c, rev_mapping, arr) | AnyValue::Enum(c, rev_mapping, arr) => {
                 if arr.is_null() {
-                    Ok(Self::String(rev_mapping.get(c).to_string()))
+                    Ok(Self::String(PlSmallStr::from_str(rev_mapping.get(c))))
                 } else {
                     unsafe {
-                        Ok(Self::String(
-                            arr.deref_unchecked().value(c as usize).to_string(),
-                        ))
+                        Ok(Self::String(PlSmallStr::from_str(
+                            arr.deref_unchecked().value(c as usize),
+                        )))
                     }
                 }
             },

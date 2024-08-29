@@ -35,7 +35,6 @@ regex = { workspace = true, optional = true }
 # activate if you want serde support for Series and DataFrames
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
-smartstring = { workspace = true }
 thiserror = { workspace = true }
 xxhash-rust = { workspace = true }
 
@@ -64,7 +63,7 @@ performant = ["arrow/performant", "reinterpret"]
 # extra utilities for StringChunked
 strings = ["regex", "arrow/strings", "polars-error/regex"]
 # support for ObjectChunked<T> (downcastable Series of any type)
-object = ["serde_json"]
+object = ["serde_json", "algorithm_group_by"]
 
 fmt = ["comfy-table/tty"]
 fmt_no_tty = ["comfy-table"]
@@ -93,9 +92,9 @@ diagonal_concat = []
 dataframe_arithmetic = []
 product = []
 unique_counts = []
-partition_by = []
+partition_by = ["algorithm_group_by"]
 describe = []
-timezones = ["chrono-tz", "arrow/chrono-tz", "arrow/timezones"]
+timezones = ["temporal", "chrono", "chrono-tz", "arrow/chrono-tz", "arrow/timezones"]
 dynamic_group_by = ["dtype-datetime", "dtype-date"]
 arrow_rs = ["arrow-array", "arrow/arrow_rs"]
 
@@ -117,8 +116,8 @@ dtype-struct = []
 bigidx = ["arrow/bigidx", "polars-utils/bigidx"]
 python = []
 
-serde = ["dep:serde", "smartstring/serde", "bitflags/serde"]
-serde-lazy = ["serde", "arrow/serde", "indexmap/serde", "smartstring/serde", "chrono/serde"]
+serde = ["dep:serde", "bitflags/serde"]
+serde-lazy = ["serde", "arrow/serde", "indexmap/serde", "chrono/serde"]
 
 docs-selection = [
   "ndarray",

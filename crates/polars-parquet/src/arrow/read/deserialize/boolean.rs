@@ -89,20 +89,29 @@ impl<'a> utils::StateTranslation<'a, BooleanDecoder> for StateTranslation<'a> {
         &mut self,
         decoder: &mut BooleanDecoder,
         decoded: &mut <BooleanDecoder as Decoder>::DecodedState,
+        is_optional: bool,
         page_validity: &mut Option<PageValidity<'a>>,
+        _: Option<&'a <BooleanDecoder as Decoder>::Dict>,
         additional: usize,
     ) -> ParquetResult<()> {
         match self {
             Self::Plain(page_values) => decoder.decode_plain_encoded(
                 decoded,
                 page_values,
+                is_optional,
                 page_validity.as_mut(),
                 additional,
             )?,
             Self::Rle(page_values) => {
                 let (values, validity) = decoded;
                 match page_validity {
-                    None => page_values.gather_n_into(values, additional, &BitmapGatherer)?,
+                    None => {
+                        page_values.gather_n_into(values, additional, &BitmapGatherer)?;
+
+                        if is_optional {
+                            validity.extend_constant(additional, true);
+                        }
+                    },
                     Some(page_validity) => utils::extend_from_decoder(
                         validity,
                         page_validity,
@@ -165,6 +174,10 @@ impl<'a, 'b> BatchableCollector<u32, MutableBitmap> for BitmapCollector<'a, 'b> 
         target.extend_constant(n, false);
         Ok(())
     }
+
+    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
+        self.0.skip_in_place(n)
+    }
 }
 
 impl ExactSize for (MutableBitmap, MutableBitmap) {
@@ -194,17 +207,26 @@ impl Decoder for BooleanDecoder {
         )
     }
 
-    fn deserialize_dict(&self, _: DictPage) -> Self::Dict {}
+    fn deserialize_dict(&self, _: DictPage) -> ParquetResult<Self::Dict> {
+        Ok(())
+    }
 
     fn decode_plain_encoded<'a>(
         &mut self,
         (values, validity): &mut Self::DecodedState,
         page_values: &mut <Self::Translation<'a> as utils::StateTranslation<'a, Self>>::PlainDecoder,
+        is_optional: bool,
         page_validity: Option<&mut PageValidity<'a>>,
         limit: usize,
     ) -> ParquetResult<()> {
         match page_validity {
-            None => page_values.collect_n_into(values, limit),
+            None => {
+                page_values.collect_n_into(values, limit);
+
+                if is_optional {
+                    validity.extend_constant(limit, true);
+                }
+            },
             Some(page_validity) => {
                 extend_from_decoder(validity, page_validity, Some(limit), values, page_values)?
             },
@@ -217,6 +239,7 @@ impl Decoder for BooleanDecoder {
         &mut self,
         _decoded: &mut Self::DecodedState,
         _page_values: &mut HybridRleDecoder<'a>,
+        _is_optional: bool,
         _page_validity: Option<&mut PageValidity<'a>>,
         _dict: &Self::Dict,
         _limit: usize,

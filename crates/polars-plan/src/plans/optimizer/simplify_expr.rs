@@ -407,7 +407,7 @@ fn string_addition_to_linear_concat(
                 _ => Some(AExpr::Function {
                     input: vec![left_e, right_e],
                     function: StringFunction::ConcatHorizontal {
-                        delimiter: "".to_string(),
+                        delimiter: "".into(),
                         ignore_nulls: false,
                     }
                     .into(),

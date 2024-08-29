@@ -95,7 +95,7 @@ fn to() {
     let a = FixedSizeBinaryArray::new(ArrowDataType::FixedSizeBinary(2), values, None);
 
     let extension = ArrowDataType::Extension(
-        "a".to_string(),
+        "a".into(),
         Box::new(ArrowDataType::FixedSizeBinary(2)),
         None,
     );

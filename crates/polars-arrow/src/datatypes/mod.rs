@@ -9,14 +9,15 @@ use std::sync::Arc;
 
 pub use field::Field;
 pub use physical_type::*;
+use polars_utils::pl_str::PlSmallStr;
 pub use schema::{ArrowSchema, ArrowSchemaRef};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-/// typedef for [BTreeMap<String, String>] denoting [`Field`]'s and [`ArrowSchema`]'s metadata.
-pub type Metadata = BTreeMap<String, String>;
-/// typedef for [Option<(String, Option<String>)>] descr
-pub(crate) type Extension = Option<(String, Option<String>)>;
+/// typedef for [BTreeMap<PlSmallStr, PlSmallStr>] denoting [`Field`]'s and [`ArrowSchema`]'s metadata.
+pub type Metadata = BTreeMap<PlSmallStr, PlSmallStr>;
+/// typedef for [Option<(PlSmallStr, Option<PlSmallStr>)>] descr
+pub(crate) type Extension = Option<(PlSmallStr, Option<PlSmallStr>)>;
 
 /// The set of supported logical types in this crate.
 ///
@@ -70,7 +71,7 @@ pub enum ArrowDataType {
     ///
     /// When the timezone is not specified, the timestamp is considered to have no timezone
     /// and is represented _as is_
-    Timestamp(TimeUnit, Option<String>),
+    Timestamp(TimeUnit, Option<PlSmallStr>),
     /// An [`i32`] representing the elapsed time since UNIX epoch (1970-01-01)
     /// in days.
     Date32,
@@ -163,7 +164,7 @@ pub enum ArrowDataType {
     /// - name
     /// - physical type
     /// - metadata
-    Extension(String, Box<ArrowDataType>, Option<String>),
+    Extension(PlSmallStr, Box<ArrowDataType>, Option<PlSmallStr>),
     /// A binary type that inlines small values
     /// and can intern bytes.
     BinaryView,
@@ -193,7 +194,9 @@ impl From<ArrowDataType> for arrow_schema::DataType {
             ArrowDataType::Float16 => Self::Float16,
             ArrowDataType::Float32 => Self::Float32,
             ArrowDataType::Float64 => Self::Float64,
-            ArrowDataType::Timestamp(unit, tz) => Self::Timestamp(unit.into(), tz.map(Into::into)),
+            ArrowDataType::Timestamp(unit, tz) => {
+                Self::Timestamp(unit.into(), tz.map(|x| Arc::<str>::from(x.as_str())))
+            },
             ArrowDataType::Date32 => Self::Date32,
             ArrowDataType::Date64 => Self::Date64,
             ArrowDataType::Time32(unit) => Self::Time32(unit.into()),
@@ -260,7 +263,7 @@ impl From<arrow_schema::DataType> for ArrowDataType {
             DataType::Float32 => Self::Float32,
             DataType::Float64 => Self::Float64,
             DataType::Timestamp(unit, tz) => {
-                Self::Timestamp(unit.into(), tz.map(|x| x.to_string()))
+                Self::Timestamp(unit.into(), tz.map(|x| PlSmallStr::from_str(x.as_ref())))
             },
             DataType::Date32 => Self::Date32,
             DataType::Date64 => Self::Date64,
@@ -545,6 +548,22 @@ impl ArrowDataType {
         }
     }
 
+    pub fn is_nested(&self) -> bool {
+        use ArrowDataType as D;
+
+        matches!(
+            self,
+            D::List(_)
+                | D::LargeList(_)
+                | D::FixedSizeList(_, _)
+                | D::Struct(_)
+                | D::Union(_, _, _)
+                | D::Map(_, _)
+                | D::Dictionary(_, _, _)
+                | D::Extension(_, _, _)
+        )
+    }
+
     pub fn is_view(&self) -> bool {
         matches!(self, ArrowDataType::Utf8View | ArrowDataType::BinaryView)
     }
@@ -593,8 +612,10 @@ pub type SchemaRef = Arc<ArrowSchema>;
 
 /// support get extension for metadata
 pub fn get_extension(metadata: &Metadata) -> Extension {
-    if let Some(name) = metadata.get("ARROW:extension:name") {
-        let metadata = metadata.get("ARROW:extension:metadata").cloned();
+    if let Some(name) = metadata.get(&PlSmallStr::from_static("ARROW:extension:name")) {
+        let metadata = metadata
+            .get(&PlSmallStr::from_static("ARROW:extension:metadata"))
+            .cloned();
         Some((name.clone(), metadata))
     } else {
         None

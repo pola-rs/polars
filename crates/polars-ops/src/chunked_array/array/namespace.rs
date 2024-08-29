@@ -23,7 +23,7 @@ pub fn has_inner_nulls(ca: &ArrayChunked) -> bool {
 fn get_agg(ca: &ArrayChunked, agg_type: AggType) -> Series {
     let values = ca.get_inner();
     let width = ca.width();
-    min_max::array_dispatch(ca.name(), &values, width, agg_type)
+    min_max::array_dispatch(ca.name().clone(), &values, width, agg_type)
 }
 
 pub trait ArrayNameSpace: AsArray {
@@ -149,7 +149,7 @@ pub trait ArrayNameSpace: AsArray {
                     unsafe { ca.apply_amortized_same_type(|s| s.as_ref().shift(n)) }
                 } else {
                     ArrayChunked::full_null_with_dtype(
-                        ca.name(),
+                        ca.name().clone(),
                         ca.len(),
                         ca.inner_dtype(),
                         ca.width(),

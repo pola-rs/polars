@@ -124,11 +124,11 @@ impl Default for SpecialEq<Arc<dyn BinaryUdfOutputField>> {
 }
 
 pub trait RenameAliasFn: Send + Sync {
-    fn call(&self, name: &str) -> PolarsResult<String>;
+    fn call(&self, name: &PlSmallStr) -> PolarsResult<PlSmallStr>;
 }
 
-impl<F: Fn(&str) -> PolarsResult<String> + Send + Sync> RenameAliasFn for F {
-    fn call(&self, name: &str) -> PolarsResult<String> {
+impl<F: Fn(&PlSmallStr) -> PolarsResult<PlSmallStr> + Send + Sync> RenameAliasFn for F {
+    fn call(&self, name: &PlSmallStr) -> PolarsResult<PlSmallStr> {
         self(name)
     }
 }
@@ -269,7 +269,7 @@ impl GetOutput {
 
     pub fn from_type(dt: DataType) -> Self {
         SpecialEq::new(Arc::new(move |_: &Schema, _: Context, flds: &[Field]| {
-            Ok(Field::new(flds[0].name(), dt.clone()))
+            Ok(Field::new(flds[0].name().clone(), dt.clone()))
         }))
     }
 

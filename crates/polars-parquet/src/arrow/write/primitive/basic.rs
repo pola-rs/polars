@@ -13,11 +13,11 @@ use crate::parquet::schema::types::PrimitiveType;
 use crate::parquet::statistics::PrimitiveStatistics;
 use crate::parquet::types::NativeType as ParquetNativeType;
 use crate::read::Page;
-use crate::write::StatisticsOptions;
+use crate::write::{EncodeNullability, StatisticsOptions};
 
 pub(crate) fn encode_plain<T, P>(
     array: &PrimitiveArray<T>,
-    is_optional: bool,
+    options: EncodeNullability,
     mut buffer: Vec<u8>,
 ) -> Vec<u8>
 where
@@ -25,6 +25,8 @@ where
     P: ParquetNativeType,
     T: num_traits::AsPrimitive<P>,
 {
+    let is_optional = options.is_optional();
+
     if is_optional {
         // append the non-null values
         let validity = array.validity();
@@ -33,10 +35,10 @@ where
             let null_count = validity.unset_bits();
 
             if null_count > 0 {
-                let values = array.values().as_slice();
                 let mut iter = validity.iter();
+                let values = array.values().as_slice();
 
-                buffer.reserve(std::mem::size_of::<P>() * (array.len() - null_count));
+                buffer.reserve(std::mem::size_of::<P::Bytes>() * (array.len() - null_count));
 
                 let mut offset = 0;
                 let mut remaining_valid = array.len() - null_count;
@@ -72,7 +74,7 @@ where
 
 pub(crate) fn encode_delta<T, P>(
     array: &PrimitiveArray<T>,
-    is_optional: bool,
+    options: EncodeNullability,
     mut buffer: Vec<u8>,
 ) -> Vec<u8>
 where
@@ -81,6 +83,8 @@ where
     T: num_traits::AsPrimitive<P>,
     P: num_traits::AsPrimitive<i64>,
 {
+    let is_optional = options.is_optional();
+
     if is_optional {
         // append the non-null values
         let iterator = array.non_null_values_iter().map(|x| {
@@ -135,7 +139,7 @@ where
     .map(Page::Data)
 }
 
-pub fn array_to_page<T, P, F: Fn(&PrimitiveArray<T>, bool, Vec<u8>) -> Vec<u8>>(
+pub fn array_to_page<T, P, F: Fn(&PrimitiveArray<T>, EncodeNullability, Vec<u8>) -> Vec<u8>>(
     array: &PrimitiveArray<T>,
     options: WriteOptions,
     type_: PrimitiveType,
@@ -149,6 +153,7 @@ where
     T: num_traits::AsPrimitive<P>,
 {
     let is_optional = is_nullable(&type_.field_info);
+    let encode_options = EncodeNullability::new(is_optional);
 
     let validity = array.validity();
 
@@ -163,7 +168,7 @@ where
 
     let definition_levels_byte_length = buffer.len();
 
-    let buffer = encode(array, is_optional, buffer);
+    let buffer = encode(array, encode_options, buffer);
 
     let statistics = if options.has_statistics() {
         Some(build_statistics(array, type_.clone(), &options.statistics).serialize())

@@ -218,7 +218,7 @@ impl SeriesUdf for PythonUdfExpression {
         let output_type = self.output_type.clone();
         Some(GetOutput::map_field(move |fld| {
             Ok(match output_type {
-                Some(ref dt) => Field::new(fld.name(), dt.clone()),
+                Some(ref dt) => Field::new(fld.name().clone(), dt.clone()),
                 None => {
                     let mut fld = fld.clone();
                     fld.coerce(DataType::Unknown(Default::default()));
@@ -243,7 +243,7 @@ impl Expr {
         let return_dtype = func.output_type.clone();
         let output_type = GetOutput::map_field(move |fld| {
             Ok(match return_dtype {
-                Some(ref dt) => Field::new(fld.name(), dt.clone()),
+                Some(ref dt) => Field::new(fld.name().clone(), dt.clone()),
                 None => {
                     let mut fld = fld.clone();
                     fld.coerce(DataType::Unknown(Default::default()));

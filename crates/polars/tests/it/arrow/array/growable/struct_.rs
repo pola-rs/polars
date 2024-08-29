@@ -19,8 +19,8 @@ fn some_values() -> (ArrowDataType, Vec<Box<dyn Array>>) {
         Some(5),
     ]));
     let fields = vec![
-        Field::new("f1", ArrowDataType::Utf8View, true),
-        Field::new("f2", ArrowDataType::Int32, true),
+        Field::new("f1".into(), ArrowDataType::Utf8View, true),
+        Field::new("f2".into(), ArrowDataType::Int32, true),
     ];
     (ArrowDataType::Struct(fields), vec![strings, ints])
 }

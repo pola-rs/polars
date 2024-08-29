@@ -29,18 +29,19 @@ pub enum DslFunction {
     OpaquePython(OpaquePythonUdf),
     Explode {
         columns: Vec<Selector>,
+        allow_empty: bool,
     },
     #[cfg(feature = "pivot")]
     Unpivot {
         args: UnpivotArgsDSL,
     },
     RowIndex {
-        name: Arc<str>,
+        name: PlSmallStr,
         offset: Option<IdxSize>,
     },
     Rename {
-        existing: Arc<[SmartString]>,
-        new: Arc<[SmartString]>,
+        existing: Arc<[PlSmallStr]>,
+        new: Arc<[PlSmallStr]>,
     },
     Unnest(Vec<Selector>),
     Stats(StatsFunction),
@@ -79,7 +80,7 @@ pub enum StatsFunction {
     Max,
 }
 
-fn validate_columns<S: AsRef<str>>(
+pub(crate) fn validate_columns_in_input<S: AsRef<str>>(
     columns: &[S],
     input_schema: &Schema,
     operation_name: &str,
@@ -93,20 +94,12 @@ fn validate_columns<S: AsRef<str>>(
 impl DslFunction {
     pub(crate) fn into_function_ir(self, input_schema: &Schema) -> PolarsResult<FunctionIR> {
         let function = match self {
-            DslFunction::Explode { columns } => {
-                let columns = expand_selectors(columns, input_schema, &[])?;
-                validate_columns(columns.as_ref(), input_schema, "explode")?;
-                FunctionIR::Explode {
-                    columns,
-                    schema: Default::default(),
-                }
-            },
             #[cfg(feature = "pivot")]
             DslFunction::Unpivot { args } => {
                 let on = expand_selectors(args.on, input_schema, &[])?;
                 let index = expand_selectors(args.index, input_schema, &[])?;
-                validate_columns(on.as_ref(), input_schema, "unpivot")?;
-                validate_columns(index.as_ref(), input_schema, "unpivot")?;
+                validate_columns_in_input(on.as_ref(), input_schema, "unpivot")?;
+                validate_columns_in_input(index.as_ref(), input_schema, "unpivot")?;
 
                 let args = UnpivotArgsIR {
                     on: on.iter().map(|s| s.as_ref().into()).collect(),
@@ -128,7 +121,7 @@ impl DslFunction {
             },
             DslFunction::Rename { existing, new } => {
                 let swapping = new.iter().any(|name| input_schema.get(name).is_some());
-                validate_columns(existing.as_ref(), input_schema, "rename")?;
+                validate_columns_in_input(existing.as_ref(), input_schema, "rename")?;
 
                 FunctionIR::Rename {
                     existing,
@@ -139,12 +132,15 @@ impl DslFunction {
             },
             DslFunction::Unnest(selectors) => {
                 let columns = expand_selectors(selectors, input_schema, &[])?;
-                validate_columns(columns.as_ref(), input_schema, "explode")?;
+                validate_columns_in_input(columns.as_ref(), input_schema, "explode")?;
                 FunctionIR::Unnest { columns }
             },
             #[cfg(feature = "python")]
             DslFunction::OpaquePython(inner) => FunctionIR::OpaquePython(inner),
-            DslFunction::Stats(_) | DslFunction::FillNan(_) | DslFunction::Drop(_) => {
+            DslFunction::Stats(_)
+            | DslFunction::FillNan(_)
+            | DslFunction::Drop(_)
+            | DslFunction::Explode { .. } => {
                 // We should not reach this.
                 panic!("impl error")
             },

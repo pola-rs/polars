@@ -221,7 +221,9 @@ pub(super) fn contains(s: &[Series]) -> PolarsResult<Series> {
     polars_ensure!(matches!(array.dtype(), DataType::Array(_, _)),
         SchemaMismatch: "invalid series dtype: expected `Array`, got `{}`", array.dtype(),
     );
-    Ok(is_in(item, array)?.with_name(array.name()).into_series())
+    Ok(is_in(item, array)?
+        .with_name(array.name().clone())
+        .into_series())
 }
 
 #[cfg(feature = "array_count")]

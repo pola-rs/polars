@@ -5,7 +5,7 @@ use polars::prelude::*;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:example]
     let ts = ["2021-03-27 03:00", "2021-03-28 03:00"];
-    let tz_naive = Series::new("tz_naive", &ts);
+    let tz_naive = Series::new("tz_naive".into(), &ts);
     let time_zones_df = DataFrame::new(vec![tz_naive])?
         .lazy()
         .select([col("tz_naive").str().to_datetime(
@@ -16,7 +16,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )])
         .with_columns([col("tz_naive")
             .dt()
-            .replace_time_zone(Some("UTC".to_string()), lit("raise"), NonExistent::Raise)
+            .replace_time_zone(Some("UTC".into()), lit("raise"), NonExistent::Raise)
             .alias("tz_aware")])
         .collect()?;
 
@@ -30,14 +30,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             col("tz_aware")
                 .dt()
                 .replace_time_zone(
-                    Some("Europe/Brussels".to_string()),
+                    Some("Europe/Brussels".into()),
                     lit("raise"),
                     NonExistent::Raise,
                 )
                 .alias("replace time zone"),
             col("tz_aware")
                 .dt()
-                .convert_time_zone("Asia/Kathmandu".to_string())
+                .convert_time_zone("Asia/Kathmandu".into())
                 .alias("convert time zone"),
             col("tz_aware")
                 .dt()

@@ -106,7 +106,7 @@ pub(super) fn shift_and_fill(args: &[Series]) -> PolarsResult<Series> {
             dt => polars_bail!(opq = shift_and_fill, dt),
         }
     } else {
-        Ok(Series::full_null(s.name(), s.len(), s.dtype()))
+        Ok(Series::full_null(s.name().clone(), s.len(), s.dtype()))
     }
 }
 
@@ -123,6 +123,6 @@ pub fn shift(args: &[Series]) -> PolarsResult<Series> {
 
     match n.get(0) {
         Some(n) => Ok(s.shift(n)),
-        None => Ok(Series::full_null(s.name(), s.len(), s.dtype())),
+        None => Ok(Series::full_null(s.name().clone(), s.len(), s.dtype())),
     }
 }

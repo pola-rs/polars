@@ -13,7 +13,7 @@ pub(crate) fn eval_field_to_dtype(f: &Field, expr: &Expr, list: bool) -> Field {
         .cloned()
         .unwrap_or_else(|| f.data_type().clone());
 
-    let df = Series::new_empty("", &dtype).into_frame();
+    let df = Series::new_empty(PlSmallStr::const_default(), &dtype).into_frame();
 
     #[cfg(feature = "python")]
     let out = {
@@ -27,12 +27,12 @@ pub(crate) fn eval_field_to_dtype(f: &Field, expr: &Expr, list: bool) -> Field {
         Ok(out) => {
             let dtype = out.get_columns()[0].dtype();
             if list {
-                Field::new(f.name(), DataType::List(Box::new(dtype.clone())))
+                Field::new(f.name().clone(), DataType::List(Box::new(dtype.clone())))
             } else {
-                Field::new(f.name(), dtype.clone())
+                Field::new(f.name().clone(), dtype.clone())
             }
         },
-        Err(_) => Field::new(f.name(), DataType::Null),
+        Err(_) => Field::new(f.name().clone(), DataType::Null),
     }
 }
 
@@ -46,8 +46,8 @@ pub trait ExprEvalExtension: IntoExpr + Sized {
         let this = self.into_expr();
         let expr2 = expr.clone();
         let func = move |mut s: Series| {
-            let name = s.name().to_string();
-            s.rename("");
+            let name = s.name().clone();
+            s.rename(PlSmallStr::const_default());
 
             // Ensure we get the new schema.
             let output_field = eval_field_to_dtype(s.field().as_ref(), &expr, false);
@@ -107,7 +107,7 @@ pub trait ExprEvalExtension: IntoExpr + Sized {
                     })
                     .collect::<PolarsResult<Vec<_>>>()?
             };
-            let s = Series::new(&name, avs);
+            let s = Series::new(name, avs);
 
             if s.dtype() != output_field.data_type() {
                 s.cast(output_field.data_type()).map(Some)

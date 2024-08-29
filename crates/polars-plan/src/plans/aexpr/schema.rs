@@ -54,7 +54,7 @@ impl AExpr {
         match self {
             Len => {
                 *nested = 0;
-                Ok(Field::new(LEN, IDX_DTYPE))
+                Ok(Field::new(PlSmallStr::from_static(LEN), IDX_DTYPE))
             },
             Window { function, .. } => {
                 let e = arena.get(*function);
@@ -64,13 +64,13 @@ impl AExpr {
                 let field = arena.get(*expr).to_field_impl(schema, arena, nested)?;
 
                 if let List(inner) = field.data_type() {
-                    Ok(Field::new(field.name(), *inner.clone()))
+                    Ok(Field::new(field.name().clone(), *inner.clone()))
                 } else {
                     Ok(field)
                 }
             },
             Alias(expr, name) => Ok(Field::new(
-                name,
+                name.clone(),
                 arena.get(*expr).to_field_impl(schema, arena, nested)?.dtype,
             )),
             Column(name) => schema
@@ -80,7 +80,7 @@ impl AExpr {
                 *nested = 0;
                 Ok(match sv {
                     LiteralValue::Series(s) => s.field().into_owned(),
-                    _ => Field::new(sv.output_name(), sv.get_datatype()),
+                    _ => Field::new(sv.output_name().clone(), sv.get_datatype()),
                 })
             },
             BinaryExpr { left, right, op } => {
@@ -100,9 +100,9 @@ impl AExpr {
                         let out_field;
                         let out_name = {
                             out_field = arena.get(*left).to_field_impl(schema, arena, nested)?;
-                            out_field.name().as_str()
+                            out_field.name()
                         };
-                        Field::new(out_name, Boolean)
+                        Field::new(out_name.clone(), Boolean)
                     },
                     Operator::TrueDivide => {
                         return get_truediv_field(*left, *right, arena, schema, nested)
@@ -213,7 +213,7 @@ impl AExpr {
                 expr, data_type, ..
             } => {
                 let field = arena.get(*expr).to_field_impl(schema, arena, nested)?;
-                Ok(Field::new(field.name(), data_type.clone()))
+                Ok(Field::new(field.name().clone(), data_type.clone()))
             },
             Ternary { truthy, falsy, .. } => {
                 let mut nested_truthy = *nested;
@@ -287,7 +287,7 @@ fn func_args_to_fields(
                 .get(e.node())
                 .to_field_impl(schema, arena, nested)
                 .map(|mut field| {
-                    field.name = e.output_name().into();
+                    field.name = e.output_name().clone();
                     field
                 })
         })

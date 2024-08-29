@@ -177,6 +177,36 @@ def datetime_range(
         2022-02-01 00:00:00 EST
         2022-03-01 00:00:00 EST
     ]
+
+    Omit `eager=True` if you want to use `datetime_range` as an expression:
+
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "date": [
+    ...             date(2024, 1, 1),
+    ...             date(2024, 1, 2),
+    ...             date(2024, 1, 1),
+    ...             date(2024, 1, 3),
+    ...         ],
+    ...         "key": ["one", "one", "two", "two"],
+    ...     }
+    ... )
+    >>> result = (
+    ...     df.group_by("key")
+    ...     .agg(pl.datetime_range(pl.col("date").min(), pl.col("date").max()))
+    ...     .sort("key")
+    ... )
+    >>> with pl.Config(fmt_str_lengths=70):
+    ...     print(result)
+    shape: (2, 2)
+    ┌─────┬─────────────────────────────────────────────────────────────────┐
+    │ key ┆ date                                                            │
+    │ --- ┆ ---                                                             │
+    │ str ┆ list[datetime[μs]]                                              │
+    ╞═════╪═════════════════════════════════════════════════════════════════╡
+    │ one ┆ [2024-01-01 00:00:00, 2024-01-02 00:00:00]                      │
+    │ two ┆ [2024-01-01 00:00:00, 2024-01-02 00:00:00, 2024-01-03 00:00:00] │
+    └─────┴─────────────────────────────────────────────────────────────────┘
     """
     interval = parse_interval_argument(interval)
     if time_unit is None and "ns" in interval:

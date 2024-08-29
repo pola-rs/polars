@@ -58,9 +58,7 @@ fn compute_num_rows(columns: &[(ColumnChunk, Vec<PageWriteSpec>)]) -> ParquetRes
                 .iter()
                 .filter(|x| is_data_page(x))
                 .try_for_each(|spec| {
-                    num_rows += spec.num_rows.ok_or_else(|| {
-                        ParquetError::oos("All data pages must declare the number of rows on it")
-                    })? as i64;
+                    num_rows += spec.num_rows as i64;
                     ParquetResult::Ok(())
                 })?;
             ParquetResult::Ok(num_rows)

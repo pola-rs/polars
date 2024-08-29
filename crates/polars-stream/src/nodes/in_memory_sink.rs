@@ -26,7 +26,7 @@ impl ComputeNode for InMemorySinkNode {
         "in_memory_sink"
     }
 
-    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) {
+    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {
         assert!(send.is_empty());
         assert!(recv.len() == 1);
 
@@ -35,6 +35,7 @@ impl ComputeNode for InMemorySinkNode {
         if recv[0] != PortState::Done {
             recv[0] = PortState::Ready;
         }
+        Ok(())
     }
 
     fn is_memory_intensive_pipeline_blocker(&self) -> bool {

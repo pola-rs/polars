@@ -71,7 +71,7 @@ impl PyDataFrame {
         self.df.align_chunks();
         Python::with_gil(|py| {
             let pyarrow = py.import_bound("pyarrow")?;
-            let names = self.df.get_column_names();
+            let names = self.df.get_column_names_str();
 
             let rbs = self
                 .df
@@ -92,7 +92,7 @@ impl PyDataFrame {
         self.df.as_single_chunk_par();
         Python::with_gil(|py| {
             let pyarrow = py.import_bound("pyarrow")?;
-            let names = self.df.get_column_names();
+            let names = self.df.get_column_names_str();
             let cat_columns = self
                 .df
                 .get_columns()

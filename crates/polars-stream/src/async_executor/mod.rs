@@ -15,7 +15,7 @@ use parking_lot::Mutex;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 use slotmap::SlotMap;
-pub use task::JoinHandle;
+pub use task::{AbortOnDropHandle, JoinHandle};
 use task::{CancelHandle, Runnable};
 
 static NUM_EXECUTOR_THREADS: AtomicUsize = AtomicUsize::new(0);
@@ -345,7 +345,6 @@ where
     }
 }
 
-#[allow(unused)]
 pub fn spawn<F: Future + Send + 'static>(priority: TaskPriority, fut: F) -> JoinHandle<F::Output>
 where
     <F as Future>::Output: Send + 'static,

@@ -64,7 +64,7 @@ impl ToPyObject for Wrap<&DatetimeChunked> {
             let utils = UTILS.bind(py);
             let convert = utils.getattr(intern!(py, "to_py_datetime")).unwrap();
             let time_unit = self.0.time_unit().to_ascii();
-            let time_zone = time_zone.to_object(py);
+            let time_zone = time_zone.as_deref().to_object(py);
             let iter = self
                 .0
                 .iter()

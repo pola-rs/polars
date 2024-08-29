@@ -8,7 +8,7 @@ use std::borrow::Cow;
 use std::fmt;
 use std::path::PathBuf;
 
-pub use dot::IRDotDisplay;
+pub use dot::{EscapeLabel, IRDotDisplay, PathsDisplay};
 pub use format::{ExprIRDisplay, IRDisplay};
 use hive::HivePartitions;
 use polars_core::prelude::*;
@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::prelude::*;
 
+#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 pub struct IRPlan {
     pub lp_top: Node,
     pub lp_arena: Arena<IR>,

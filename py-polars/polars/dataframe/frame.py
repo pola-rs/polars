@@ -66,6 +66,7 @@ from polars._utils.various import (
 from polars._utils.wrap import wrap_expr, wrap_ldf, wrap_s
 from polars.dataframe._html import NotebookFormatter
 from polars.dataframe.group_by import DynamicGroupBy, GroupBy, RollingGroupBy
+from polars.dataframe.plotting import DataFramePlot
 from polars.datatypes import (
     N_INFER_DEFAULT,
     Boolean,
@@ -82,15 +83,15 @@ from polars.datatypes import (
 )
 from polars.datatypes.group import INTEGER_DTYPES
 from polars.dependencies import (
+    _ALTAIR_AVAILABLE,
     _GREAT_TABLES_AVAILABLE,
-    _HVPLOT_AVAILABLE,
     _PANDAS_AVAILABLE,
     _PYARROW_AVAILABLE,
     _check_for_numpy,
     _check_for_pandas,
     _check_for_pyarrow,
+    altair,
     great_tables,
-    hvplot,
     import_optional,
 )
 from polars.dependencies import numpy as np
@@ -123,8 +124,8 @@ if TYPE_CHECKING:
     import numpy.typing as npt
     import torch
     from great_tables import GT
-    from hvplot.plotting.core import hvPlotTabularPolars
-    from xlsxwriter import Workbook, Worksheet
+    from xlsxwriter import Workbook
+    from xlsxwriter.worksheet import Worksheet
 
     from polars import DataType, Expr, LazyFrame, Series
     from polars._typing import (
@@ -603,7 +604,7 @@ class DataFrame:
 
     @property
     @unstable()
-    def plot(self) -> hvPlotTabularPolars:
+    def plot(self) -> DataFramePlot:
         """
         Create a plot namespace.
 
@@ -611,9 +612,28 @@ class DataFrame:
             This functionality is currently considered **unstable**. It may be
             changed at any point without it being considered a breaking change.
 
+        .. versionchanged:: 1.6.0
+            In prior versions of Polars, HvPlot was the plotting backend. If you would
+            like to restore the previous plotting functionality, all you need to do
+            is add `import hvplot.polars` at the top of your script and replace
+            `df.plot` with `df.hvplot`.
+
         Polars does not implement plotting logic itself, but instead defers to
-        hvplot. Please see the `hvplot reference gallery <https://hvplot.holoviz.org/reference/index.html>`_
-        for more information and documentation.
+        `Altair <https://altair-viz.github.io/>`_:
+
+        - `df.plot.line(**kwargs)`
+          is shorthand for
+          `alt.Chart(df).mark_line().encode(**kwargs).interactive()`
+        - `df.plot.point(**kwargs)`
+          is shorthand for
+          `alt.Chart(df).mark_point().encode(**kwargs).interactive()` (and
+          `plot.scatter` is provided as an alias)
+        - `df.plot.bar(**kwargs)`
+          is shorthand for
+          `alt.Chart(df).mark_bar().encode(**kwargs).interactive()`
+        - for any other attribute `attr`, `df.plot.attr(**kwargs)`
+          is shorthand for
+          `alt.Chart(df).mark_attr().encode(**kwargs).interactive()`
 
         Examples
         --------
@@ -626,32 +646,37 @@ class DataFrame:
         ...         "species": ["setosa", "setosa", "versicolor"],
         ...     }
         ... )
-        >>> df.plot.scatter(x="length", y="width", by="species")  # doctest: +SKIP
+        >>> df.plot.point(x="length", y="width", color="species")  # doctest: +SKIP
 
         Line plot:
 
         >>> from datetime import date
         >>> df = pl.DataFrame(
         ...     {
-        ...         "date": [date(2020, 1, 2), date(2020, 1, 3), date(2020, 1, 4)],
-        ...         "stock_1": [1, 4, 6],
-        ...         "stock_2": [1, 5, 2],
+        ...         "date": [date(2020, 1, 2), date(2020, 1, 3), date(2020, 1, 4)] * 2,
+        ...         "price": [1, 4, 6, 1, 5, 2],
+        ...         "stock": ["a", "a", "a", "b", "b", "b"],
         ...     }
         ... )
-        >>> df.plot.line(x="date", y=["stock_1", "stock_2"])  # doctest: +SKIP
+        >>> df.plot.line(x="date", y="price", color="stock")  # doctest: +SKIP
 
-        For more info on what you can pass, you can use ``hvplot.help``:
+        Bar plot:
 
-        >>> import hvplot  # doctest: +SKIP
-        >>> hvplot.help("scatter")  # doctest: +SKIP
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "day": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] * 2,
+        ...         "group": ["a"] * 7 + ["b"] * 7,
+        ...         "value": [1, 3, 2, 4, 5, 6, 1, 1, 3, 2, 4, 5, 1, 2],
+        ...     }
+        ... )
+        >>> df.plot.bar(
+        ...     x="day", y="value", color="day", column="group"
+        ... )  # doctest: +SKIP
         """
-        if not _HVPLOT_AVAILABLE or parse_version(hvplot.__version__) < parse_version(
-            "0.9.1"
-        ):
-            msg = "hvplot>=0.9.1 is required for `.plot`"
+        if not _ALTAIR_AVAILABLE or parse_version(altair.__version__) < (5, 4, 0):
+            msg = "altair>=5.4.0 is required for `.plot`"
             raise ModuleUpgradeRequiredError(msg)
-        hvplot.post_patch()
-        return hvplot.plotting.core.hvPlotTabularPolars(self)
+        return DataFramePlot(self)
 
     @property
     @unstable()
@@ -6302,7 +6327,7 @@ class DataFrame:
         │ 2021-12-16 03:00:00 ┆ 6   │
         └─────────────────────┴─────┘
 
-        Group by windows of 1 hour starting at 2021-12-16 00:00:00.
+        Group by windows of 1 hour.
 
         >>> df.group_by_dynamic("time", every="1h", closed="right").agg(pl.col("n"))
         shape: (4, 2)
@@ -6958,10 +6983,6 @@ class DataFrame:
 
             Note that joining on any other expressions than `col`
             will turn off coalescing.
-
-        Returns
-        -------
-        DataFrame
 
         See Also
         --------

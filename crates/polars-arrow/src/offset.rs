@@ -518,6 +518,14 @@ impl<O: Offset> OffsetsBuffer<O> {
     pub fn into_inner(self) -> Buffer<O> {
         self.0
     }
+
+    /// Returns the offset difference between `start` and `end`.
+    #[inline]
+    pub fn delta(&self, start: usize, end: usize) -> usize {
+        assert!(start <= end);
+
+        (self.0[end + 1] - self.0[start]).to_usize()
+    }
 }
 
 impl From<&OffsetsBuffer<i32>> for OffsetsBuffer<i64> {

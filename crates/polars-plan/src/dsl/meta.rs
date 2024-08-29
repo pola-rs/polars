@@ -24,7 +24,7 @@ impl MetaNameSpace {
     }
 
     /// Get the root column names.
-    pub fn root_names(&self) -> Vec<Arc<str>> {
+    pub fn root_names(&self) -> Vec<PlSmallStr> {
         expr_to_leaf_column_names(&self.0)
     }
 
@@ -37,7 +37,7 @@ impl MetaNameSpace {
     }
 
     /// Get the output name of this expression.
-    pub fn output_name(&self) -> PolarsResult<Arc<str>> {
+    pub fn output_name(&self) -> PolarsResult<PlSmallStr> {
         expr_output_name(&self.0)
     }
 

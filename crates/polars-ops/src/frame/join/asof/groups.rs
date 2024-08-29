@@ -16,10 +16,10 @@ use polars_utils::aliases::PlRandomState;
 use polars_utils::hashing::{hash_to_partition, DirtyHash};
 use polars_utils::idx_vec::IdxVec;
 use polars_utils::nulls::IsNull;
+use polars_utils::pl_str::PlSmallStr;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 use polars_utils::unitvec;
 use rayon::prelude::*;
-use smartstring::alias::String as SmartString;
 
 use super::*;
 
@@ -600,11 +600,11 @@ pub trait AsofJoinBy: IntoDf {
         other: &DataFrame,
         left_on: &Series,
         right_on: &Series,
-        left_by: Vec<SmartString>,
-        right_by: Vec<SmartString>,
+        left_by: Vec<PlSmallStr>,
+        right_by: Vec<PlSmallStr>,
         strategy: AsofStrategy,
         tolerance: Option<AnyValue<'static>>,
-        suffix: Option<&str>,
+        suffix: Option<PlSmallStr>,
         slice: Option<(i64, usize)>,
         coalesce: bool,
     ) -> PolarsResult<DataFrame> {
@@ -678,8 +678,12 @@ pub trait AsofJoinBy: IntoDf {
         let left = self_df.clone();
 
         // SAFETY: join tuples are in bounds.
-        let right_df =
-            unsafe { proj_other_df.take_unchecked(&IdxCa::with_chunk("", right_join_tuples)) };
+        let right_df = unsafe {
+            proj_other_df.take_unchecked(&IdxCa::with_chunk(
+                PlSmallStr::const_default(),
+                right_join_tuples,
+            ))
+        };
 
         _finish_join(left, right_df, suffix)
     }

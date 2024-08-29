@@ -198,6 +198,8 @@ impl<T: Send> Sender<T> {
 }
 
 impl<T: Send> Receiver<T> {
+    /// Note: This intentionally takes `&mut` to ensure it is only accessed in a single-threaded
+    /// manner.
     pub async fn recv(&mut self) -> Result<T, ()> {
         loop {
             // Fast-path.

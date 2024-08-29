@@ -101,9 +101,8 @@ impl MutableBooleanArray {
     #[inline]
     pub fn push_value(&mut self, value: bool) {
         self.values.push(value);
-        match &mut self.validity {
-            Some(validity) => validity.push(true),
-            None => {},
+        if let Some(validity) = &mut self.validity {
+            validity.push(true)
         }
     }
 

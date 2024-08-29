@@ -6,7 +6,7 @@ fn test_is_in() -> PolarsResult<()> {
         "x" => [1, 2, 3],
         "y" => ["a", "b", "c"]
     ]?;
-    let s = Series::new("a", ["a", "b"]);
+    let s = Series::new("a".into(), ["a", "b"]);
 
     let out = df
         .lazy()
