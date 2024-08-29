@@ -722,7 +722,7 @@ impl PySeries {
     ) -> PyResult<PyDataFrame> {
         let out = self
             .series
-            .value_counts(sort, parallel, name.as_str(), normalize)
+            .value_counts(sort, parallel, name.into(), normalize)
             .map_err(PyPolarsErr::from)?;
         Ok(out.into())
     }
