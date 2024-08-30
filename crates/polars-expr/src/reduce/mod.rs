@@ -1,7 +1,9 @@
 mod convert;
-mod extrema;
 mod len;
 mod mean;
+mod min_max;
+#[cfg(feature = "propagate_nans")]
+mod nan_min_max;
 mod sum;
 
 use std::any::Any;
@@ -9,16 +11,17 @@ use std::any::Any;
 pub use convert::into_reduction;
 use polars_core::prelude::*;
 
-#[allow(dead_code)]
-pub trait Reduction: Any + Send {
-    // Creates a fresh reduction.
-    fn init_dyn(&self) -> Box<dyn Reduction>;
+pub trait Reduction: Send {
+    /// Create a new reducer for this Reduction.
+    fn new_reducer(&self) -> Box<dyn ReductionState>;
+}
 
-    // Resets this reduction to the fresh initial state.
-    fn reset(&mut self);
-
+pub trait ReductionState: Any + Send {
+    /// Adds the given series into the reduction.
     fn update(&mut self, batch: &Series) -> PolarsResult<()>;
 
+    /// Adds the elements of the given series at the given indices into the reduction.
+    ///
     /// # Safety
     /// Implementations may elide bound checks.
     unsafe fn update_gathered(&mut self, batch: &Series, idx: &[IdxSize]) -> PolarsResult<()> {
@@ -26,9 +29,12 @@ pub trait Reduction: Any + Send {
         self.update(&batch)
     }
 
-    fn combine(&mut self, other: &dyn Reduction) -> PolarsResult<()>;
+    /// Combines this reduction with another.
+    fn combine(&mut self, other: &dyn ReductionState) -> PolarsResult<()>;
 
-    fn finalize(&mut self) -> PolarsResult<Scalar>;
+    /// Returns a final result from the reduction.
+    fn finalize(&self) -> PolarsResult<Scalar>;
 
+    /// Returns this ReductionState as a dyn Any.
     fn as_any(&self) -> &dyn Any;
 }

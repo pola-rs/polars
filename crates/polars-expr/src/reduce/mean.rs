@@ -2,64 +2,51 @@ use super::*;
 
 #[derive(Clone)]
 pub struct MeanReduce {
-    value: Option<f64>,
-    len: u64,
     dtype: DataType,
 }
 
 impl MeanReduce {
-    pub(crate) fn new(dtype: DataType) -> Self {
-        let value = None;
-        Self {
-            value,
-            len: 0,
-            dtype,
-        }
-    }
-
-    fn update_impl(&mut self, value: &AnyValue<'static>, len: u64) {
-        let value = value.extract::<f64>().expect("phys numeric");
-        if let Some(acc) = &mut self.value {
-            *acc += value;
-            self.len += len;
-        } else {
-            self.value = Some(value);
-            self.len = len;
-        }
+    pub fn new(dtype: DataType) -> Self {
+        Self { dtype }
     }
 }
 
 impl Reduction for MeanReduce {
-    fn init_dyn(&self) -> Box<dyn Reduction> {
-        Box::new(Self::new(self.dtype.clone()))
+    fn new_reducer(&self) -> Box<dyn ReductionState> {
+        Box::new(MeanReduceState {
+            dtype: self.dtype.clone(),
+            sum: 0.0,
+            count: 0,
+        })
     }
-    fn reset(&mut self) {
-        self.value = None;
-        self.len = 0;
-    }
+}
 
+pub struct MeanReduceState {
+    dtype: DataType,
+    sum: f64,
+    count: u64,
+}
+
+impl ReductionState for MeanReduceState {
     fn update(&mut self, batch: &Series) -> PolarsResult<()> {
-        let sc = batch.sum_reduce()?;
-        self.update_impl(sc.value(), batch.len() as u64);
+        // TODO: don't go through mean but add sum_as_f64 to series trait.
+        let count = batch.len() as u64 - batch.null_count() as u64;
+        self.count += count;
+        self.sum += batch.mean().unwrap_or(0.0) * count as f64;
         Ok(())
     }
 
-    fn combine(&mut self, other: &dyn Reduction) -> PolarsResult<()> {
+    fn combine(&mut self, other: &dyn ReductionState) -> PolarsResult<()> {
         let other = other.as_any().downcast_ref::<Self>().unwrap();
-
-        match (self.value, other.value) {
-            (Some(l), Some(r)) => self.value = Some(l + r),
-            (None, Some(r)) => self.value = Some(r),
-            (Some(l), None) => self.value = Some(l),
-            (None, None) => self.value = None,
-        }
-        self.len += other.len;
+        self.sum += other.sum;
+        self.count += other.count;
         Ok(())
     }
 
-    fn finalize(&mut self) -> PolarsResult<Scalar> {
+    fn finalize(&self) -> PolarsResult<Scalar> {
+        let val = (self.count > 0).then(|| self.sum / self.count as f64);
         Ok(polars_core::scalar::reduce::mean_reduce(
-            self.value.map(|v| v / self.len as f64),
+            val,
             self.dtype.clone(),
         ))
     }

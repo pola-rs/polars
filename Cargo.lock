@@ -3092,6 +3092,7 @@ dependencies = [
  "bitflags",
  "once_cell",
  "polars-arrow",
+ "polars-compute",
  "polars-core",
  "polars-io",
  "polars-json",

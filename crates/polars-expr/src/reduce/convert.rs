@@ -2,11 +2,13 @@ use polars_core::error::feature_gated;
 use polars_plan::prelude::*;
 use polars_utils::arena::{Arena, Node};
 
-use super::extrema::*;
+use super::len::LenReduce;
+use super::mean::MeanReduce;
+use super::min_max::{MaxReduce, MinReduce};
+#[cfg(feature = "propagate_nans")]
+use super::nan_min_max::{NanMaxReduce, NanMinReduce};
 use super::sum::SumReduce;
 use super::*;
-use crate::reduce::len::LenReduce;
-use crate::reduce::mean::MeanReduce;
 
 /// Converts a node into a reduction + its associated selector expression.
 pub fn into_reduction(
@@ -29,8 +31,8 @@ pub fn into_reduction(
                 if *propagate_nans && field.dtype.is_float() {
                     feature_gated!("propagate_nans", {
                         let out: Box<dyn Reduction> = match field.dtype {
-                            DataType::Float32 => Box::new(MinNanReduce::<Float32Type>::new()),
-                            DataType::Float64 => Box::new(MinNanReduce::<Float64Type>::new()),
+                            DataType::Float32 => Box::new(NanMinReduce::<Float32Type>::new()),
+                            DataType::Float64 => Box::new(NanMinReduce::<Float64Type>::new()),
                             _ => unreachable!(),
                         };
                         (out, *input)
@@ -49,8 +51,8 @@ pub fn into_reduction(
                 if *propagate_nans && field.dtype.is_float() {
                     feature_gated!("propagate_nans", {
                         let out: Box<dyn Reduction> = match field.dtype {
-                            DataType::Float32 => Box::new(MaxNanReduce::<Float32Type>::new()),
-                            DataType::Float64 => Box::new(MaxNanReduce::<Float64Type>::new()),
+                            DataType::Float32 => Box::new(NanMaxReduce::<Float32Type>::new()),
+                            DataType::Float64 => Box::new(NanMaxReduce::<Float64Type>::new()),
                             _ => unreachable!(),
                         };
                         (out, *input)

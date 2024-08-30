@@ -4,42 +4,53 @@ use super::*;
 
 #[derive(Clone)]
 pub struct SumReduce {
-    value: Scalar,
+    dtype: DataType,
 }
 
 impl SumReduce {
-    pub(crate) fn new(dtype: DataType) -> Self {
-        let value = Scalar::new(dtype, AnyValue::Null);
-        Self { value }
-    }
-
-    fn update_impl(&mut self, value: &AnyValue<'static>) {
-        self.value.update(self.value.value().add(value))
+    pub fn new(dtype: DataType) -> Self {
+        // We cast small dtypes up in the sum, we must also do this when
+        // returning the empty sum to be consistent.
+        use DataType::*;
+        let dtype = match dtype {
+            Int8 | UInt8 | Int16 | UInt16 => Int64,
+            dt => dt,
+        };
+        Self { dtype }
     }
 }
 
 impl Reduction for SumReduce {
-    fn init_dyn(&self) -> Box<dyn Reduction> {
-        Box::new(Self::new(self.value.dtype().clone()))
+    fn new_reducer(&self) -> Box<dyn ReductionState> {
+        let value = Scalar::new(self.dtype.clone(), AnyValue::zero(&self.dtype));
+        Box::new(SumReduceState { value })
     }
-    fn reset(&mut self) {
-        let av = AnyValue::zero(self.value.dtype());
-        self.value.update(av);
-    }
+}
 
+struct SumReduceState {
+    value: Scalar,
+}
+
+impl SumReduceState {
+    fn add_value(&mut self, other: &AnyValue<'_>) {
+        self.value.update(self.value.value().add(other));
+    }
+}
+
+impl ReductionState for SumReduceState {
     fn update(&mut self, batch: &Series) -> PolarsResult<()> {
-        let sc = batch.sum_reduce()?;
-        self.update_impl(sc.value());
+        let reduced = batch.sum_reduce()?;
+        self.add_value(reduced.value());
         Ok(())
     }
 
-    fn combine(&mut self, other: &dyn Reduction) -> PolarsResult<()> {
+    fn combine(&mut self, other: &dyn ReductionState) -> PolarsResult<()> {
         let other = other.as_any().downcast_ref::<Self>().unwrap();
-        self.update_impl(other.value.value());
+        self.add_value(other.value.value());
         Ok(())
     }
 
-    fn finalize(&mut self) -> PolarsResult<Scalar> {
+    fn finalize(&self) -> PolarsResult<Scalar> {
         Ok(self.value.clone())
     }
 
