@@ -81,17 +81,13 @@ pub trait DataFrameJoinOps: IntoDf {
     /// | Pear   | 12                   | 115                 |
     /// +--------+----------------------+---------------------+
     /// ```
-    fn join<I, S>(
+    fn join(
         &self,
         other: &DataFrame,
-        left_on: I,
-        right_on: I,
+        left_on: impl IntoIterator<Item = impl Into<PlSmallStr>>,
+        right_on: impl IntoIterator<Item = impl Into<PlSmallStr>>,
         args: JoinArgs,
-    ) -> PolarsResult<DataFrame>
-    where
-        I: IntoIterator<Item = S>,
-        S: Into<PlSmallStr>,
-    {
+    ) -> PolarsResult<DataFrame> {
         let df_left = self.to_df();
         let selected_left = df_left.select_series(left_on)?;
         let selected_right = other.select_series(right_on)?;
@@ -370,16 +366,12 @@ pub trait DataFrameJoinOps: IntoDf {
     ///     left.inner_join(right, ["join_column_left"], ["join_column_right"])
     /// }
     /// ```
-    fn inner_join<I, S>(
+    fn inner_join(
         &self,
         other: &DataFrame,
-        left_on: I,
-        right_on: I,
-    ) -> PolarsResult<DataFrame>
-    where
-        I: IntoIterator<Item = S>,
-        S: Into<PlSmallStr>,
-    {
+        left_on: impl IntoIterator<Item = impl Into<PlSmallStr>>,
+        right_on: impl IntoIterator<Item = impl Into<PlSmallStr>>,
+    ) -> PolarsResult<DataFrame> {
         self.join(other, left_on, right_on, JoinArgs::new(JoinType::Inner))
     }
 
@@ -418,11 +410,12 @@ pub trait DataFrameJoinOps: IntoDf {
     /// | 100             | null   |
     /// +-----------------+--------+
     /// ```
-    fn left_join<I, S>(&self, other: &DataFrame, left_on: I, right_on: I) -> PolarsResult<DataFrame>
-    where
-        I: IntoIterator<Item = S>,
-        S: Into<PlSmallStr>,
-    {
+    fn left_join(
+        &self,
+        other: &DataFrame,
+        left_on: impl IntoIterator<Item = impl Into<PlSmallStr>>,
+        right_on: impl IntoIterator<Item = impl Into<PlSmallStr>>,
+    ) -> PolarsResult<DataFrame> {
         self.join(other, left_on, right_on, JoinArgs::new(JoinType::Left))
     }
 
@@ -436,11 +429,12 @@ pub trait DataFrameJoinOps: IntoDf {
     ///     left.full_join(right, ["join_column_left"], ["join_column_right"])
     /// }
     /// ```
-    fn full_join<I, S>(&self, other: &DataFrame, left_on: I, right_on: I) -> PolarsResult<DataFrame>
-    where
-        I: IntoIterator<Item = S>,
-        S: Into<PlSmallStr>,
-    {
+    fn full_join(
+        &self,
+        other: &DataFrame,
+        left_on: impl IntoIterator<Item = impl Into<PlSmallStr>>,
+        right_on: impl IntoIterator<Item = impl Into<PlSmallStr>>,
+    ) -> PolarsResult<DataFrame> {
         self.join(other, left_on, right_on, JoinArgs::new(JoinType::Full))
     }
 }

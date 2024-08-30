@@ -1170,7 +1170,7 @@ impl SQLContext {
                     e = (**expr).clone();
                 } else if let Expr::Alias(expr, name) = &e {
                     if let Expr::Agg(AggExpr::Implode(expr)) = expr.as_ref() {
-                        e = (**expr).clone().alias(name.as_ref());
+                        e = (**expr).clone().alias(name.clone());
                     }
                 }
                 aggregation_projection.push(e);
@@ -1386,8 +1386,8 @@ fn collect_compound_identifiers(
     right_name: &str,
 ) -> PolarsResult<(Vec<Expr>, Vec<Expr>)> {
     if left.len() == 2 && right.len() == 2 {
-        let (tbl_a, col_a) = (&left[0].value, &left[1].value);
-        let (tbl_b, col_b) = (&right[0].value, &right[1].value);
+        let (tbl_a, col_a) = (left[0].value.as_str(), left[1].value.as_str());
+        let (tbl_b, col_b) = (right[0].value.as_str(), right[1].value.as_str());
 
         // switch left/right operands if the caller has them in reverse
         if left_name == tbl_b || right_name == tbl_a {
@@ -1483,14 +1483,17 @@ fn process_join_constraint(
                 return collect_compound_identifiers(left, right, &tbl_left.name, &tbl_right.name);
             },
             (SQLExpr::Identifier(left), SQLExpr::Identifier(right)) => {
-                return Ok((vec![col(&left.value)], vec![col(&right.value)]))
+                return Ok((
+                    vec![col(left.value.as_str())],
+                    vec![col(right.value.as_str())],
+                ))
             },
             _ => {},
         }
     };
     if let JoinConstraint::Using(idents) = constraint {
         if !idents.is_empty() {
-            let using: Vec<Expr> = idents.iter().map(|id| col(&id.value)).collect();
+            let using: Vec<Expr> = idents.iter().map(|id| col(id.value.as_str())).collect();
             return Ok((using.clone(), using.clone()));
         }
     };

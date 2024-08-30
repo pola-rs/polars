@@ -117,7 +117,7 @@ fn expand_regex(
             let mut new_expr = remove_exclude(expr.clone());
 
             new_expr = new_expr.map_expr(|e| match e {
-                Expr::Column(pat) if pat.as_ref() == pattern => Expr::Column(name.clone()),
+                Expr::Column(pat) if pat.as_str() == pattern => Expr::Column(name.clone()),
                 e => e,
             });
 
@@ -415,7 +415,7 @@ fn expand_struct_fields(
     }
 
     for name in names {
-        polars_ensure!(name.as_ref() != "*", InvalidOperation: "cannot combine wildcards and column names");
+        polars_ensure!(name.as_str() != "*", InvalidOperation: "cannot combine wildcards and column names");
 
         if !exclude.contains(name) {
             let mut new_expr = replace_struct_multiple_fields_with_field(full_expr.clone(), name)?;

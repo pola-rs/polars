@@ -39,11 +39,11 @@ impl StructFunction {
                 if let DataType::Struct(ref fields) = field.dtype {
                     let fld = fields
                         .iter()
-                        .find(|fld| fld.name() == name.as_ref())
-                        .ok_or_else(|| polars_err!(StructFieldNotFound: "{}", name.as_ref()))?;
+                        .find(|fld| fld.name() == name)
+                        .ok_or_else(|| polars_err!(StructFieldNotFound: "{}", name))?;
                     Ok(fld.clone())
                 } else {
-                    polars_bail!(StructFieldNotFound: "{}", name.as_ref());
+                    polars_bail!(StructFieldNotFound: "{}", name);
                 }
             }),
             RenameFields(names) => mapper.map_dtype(|dt| match dt {

@@ -508,8 +508,8 @@ fn test_multi_joins_with_duplicates() -> PolarsResult<()> {
     let df_inner_join = df_left
         .join(
             &df_right,
-            &["col1", "join_col2"],
-            &["join_col1", "col2"],
+            ["col1", "join_col2"],
+            ["join_col1", "col2"],
             JoinType::Inner.into(),
         )
         .unwrap();
@@ -523,8 +523,8 @@ fn test_multi_joins_with_duplicates() -> PolarsResult<()> {
     let df_left_join = df_left
         .join(
             &df_right,
-            &["col1", "join_col2"],
-            &["join_col1", "col2"],
+            ["col1", "join_col2"],
+            ["join_col1", "col2"],
             JoinType::Left.into(),
         )
         .unwrap();
@@ -538,8 +538,8 @@ fn test_multi_joins_with_duplicates() -> PolarsResult<()> {
     let df_full_outer_join = df_left
         .join(
             &df_right,
-            &["col1", "join_col2"],
-            &["join_col1", "col2"],
+            ["col1", "join_col2"],
+            ["join_col1", "col2"],
             JoinArgs::new(JoinType::Full).with_coalesce(JoinCoalesce::CoalesceColumns),
         )
         .unwrap();

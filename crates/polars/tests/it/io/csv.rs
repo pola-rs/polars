@@ -393,7 +393,7 @@ hello,","," ",world,"!"
         .finish()
         .unwrap();
 
-    for (col, val) in &[
+    for (col, val) in [
         ("column_1", "hello"),
         ("column_2", ","),
         ("column_3", " "),
@@ -403,7 +403,7 @@ hello,","," ",world,"!"
         assert!(df
             .column(col)
             .unwrap()
-            .equals(&Series::new(col.into(), &[&**val; 4])));
+            .equals(&Series::new(col.into(), &[val; 4])));
     }
 }
 
