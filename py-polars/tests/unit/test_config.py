@@ -610,7 +610,7 @@ def test_numeric_right_alignment() -> None:
         )
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_config_load_save(tmp_path: Path) -> None:
     for file in (
         None,

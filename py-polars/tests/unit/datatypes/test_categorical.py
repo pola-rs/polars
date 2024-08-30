@@ -480,7 +480,7 @@ def test_cast_inner_categorical() -> None:
         )
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 def test_stringcache() -> None:
     N = 1_500
     with pl.StringCache():

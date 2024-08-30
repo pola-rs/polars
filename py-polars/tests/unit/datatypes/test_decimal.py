@@ -29,7 +29,7 @@ def permutations_int_dec_none() -> list[tuple[D | int | None, ...]]:
     )
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 def test_series_from_pydecimal_and_ints(
     permutations_int_dec_none: list[tuple[D | int | None, ...]],
 ) -> None:
@@ -45,7 +45,7 @@ def test_series_from_pydecimal_and_ints(
         assert s.to_list() == [D(x) if x is not None else None for x in data]
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 def test_frame_from_pydecimal_and_ints(
     permutations_int_dec_none: list[tuple[D | int | None, ...]], monkeypatch: Any
 ) -> None:

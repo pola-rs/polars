@@ -30,7 +30,7 @@ def assert_repr_equals(item: Any, expected: str) -> None:
     assert repr(item) == expected
 
 
-@pytest.fixture()
+@pytest.fixture
 def df() -> pl.DataFrame:
     # set up an empty dataframe with plenty of columns of various dtypes
     df = pl.DataFrame(

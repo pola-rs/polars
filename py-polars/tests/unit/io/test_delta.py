@@ -15,7 +15,7 @@ import polars as pl
 from polars.testing import assert_frame_equal, assert_frame_not_equal
 
 
-@pytest.fixture()
+@pytest.fixture
 def delta_table_path(io_files_path: Path) -> Path:
     return io_files_path / "delta-table"
 
@@ -34,7 +34,7 @@ def test_scan_delta_version(delta_table_path: Path) -> None:
     assert_frame_not_equal(df1, df2)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_scan_delta_timestamp_version(tmp_path: Path) -> None:
     df_sample = pl.DataFrame({"name": ["Joey"], "age": [14]})
     df_sample.write_delta(tmp_path, mode="append")
@@ -107,7 +107,7 @@ def test_read_delta_version(delta_table_path: Path) -> None:
     assert_frame_not_equal(df1, df2)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_read_delta_timestamp_version(tmp_path: Path) -> None:
     df_sample = pl.DataFrame({"name": ["Joey"], "age": [14]})
     df_sample.write_delta(tmp_path, mode="append")
@@ -163,7 +163,7 @@ def test_read_delta_relative(delta_table_path: Path) -> None:
     assert_frame_equal(expected, df, check_dtypes=False)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_write_delta(df: pl.DataFrame, tmp_path: Path) -> None:
     v0 = df.select(pl.col(pl.String))
     v1 = df.select(pl.col(pl.Int64))
@@ -245,7 +245,7 @@ def test_write_delta(df: pl.DataFrame, tmp_path: Path) -> None:
     df_supported.write_delta(partitioned_tbl_uri, mode="overwrite")
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_write_delta_overwrite_schema_deprecated(
     df: pl.DataFrame, tmp_path: Path
 ) -> None:
@@ -256,7 +256,7 @@ def test_write_delta_overwrite_schema_deprecated(
     assert_frame_equal(df, result)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 @pytest.mark.parametrize(
     "series",
     [
@@ -410,7 +410,7 @@ def test_write_delta_w_compatible_schema(series: pl.Series, tmp_path: Path) -> N
     assert tbl.version() == 1
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_write_delta_with_schema_10540(tmp_path: Path) -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
 
@@ -418,7 +418,7 @@ def test_write_delta_with_schema_10540(tmp_path: Path) -> None:
     df.write_delta(tmp_path, delta_write_options={"schema": pa_schema})
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 @pytest.mark.parametrize(
     "expr",
     [
@@ -455,7 +455,7 @@ def test_write_delta_with_merge_and_no_table(tmp_path: Path) -> None:
         )
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_write_delta_with_merge(tmp_path: Path) -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
 
@@ -484,7 +484,7 @@ def test_write_delta_with_merge(tmp_path: Path) -> None:
     assert_frame_equal(result, expected, check_row_order=False)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_unsupported_dtypes(tmp_path: Path) -> None:
     df = pl.DataFrame({"a": [None]}, schema={"a": pl.Null})
     with pytest.raises(TypeError, match="unsupported data type"):
@@ -495,7 +495,7 @@ def test_unsupported_dtypes(tmp_path: Path) -> None:
         df.write_delta(tmp_path / "time")
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_categorical_becomes_string(tmp_path: Path) -> None:
     df = pl.DataFrame({"a": ["A", "B", "A"]}, schema={"a": pl.Categorical})
     df.write_delta(tmp_path)
@@ -503,7 +503,7 @@ def test_categorical_becomes_string(tmp_path: Path) -> None:
     assert_frame_equal(df2, pl.DataFrame({"a": ["A", "B", "A"]}, schema={"a": pl.Utf8}))
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 @pytest.mark.parametrize("rechunk_and_expected_chunks", [(True, 1), (False, 3)])
 def test_read_parquet_respects_rechunk_16982(
     rechunk_and_expected_chunks: tuple[bool, int], tmp_path: Path

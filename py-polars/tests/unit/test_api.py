@@ -124,7 +124,7 @@ def test_custom_series_namespace() -> None:
     ]
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 @pytest.mark.parametrize("pcls", [pl.Expr, pl.DataFrame, pl.LazyFrame, pl.Series])
 def test_class_namespaces_are_registered(pcls: Any) -> None:
     # confirm that existing (and new) namespaces

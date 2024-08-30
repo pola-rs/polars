@@ -454,7 +454,7 @@ def test_window_agg_list_null_15437() -> None:
     assert_frame_equal(output, expected)
 
 
-@pytest.mark.release()
+@pytest.mark.release
 def test_windows_not_cached() -> None:
     ldf = (
         pl.DataFrame(

@@ -6,7 +6,7 @@ from polars import _cpu_check
 from polars._cpu_check import check_cpu_flags
 
 
-@pytest.fixture()
+@pytest.fixture
 def _feature_flags(monkeypatch: pytest.MonkeyPatch) -> None:
     """Use the default set of feature flags."""
     feature_flags = "+sse3,+ssse3"
