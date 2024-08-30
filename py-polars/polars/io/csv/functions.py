@@ -827,7 +827,7 @@ def read_csv_batched(
     Examples
     --------
     >>> reader = pl.read_csv_batched(
-    ...     "./tpch/tables_scale_100/lineitem.tbl",
+    ...     "./pdsh/tables_scale_100/lineitem.tbl",
     ...     separator="|",
     ...     try_parse_dates=True,
     ... )  # doctest: +SKIP
