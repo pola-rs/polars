@@ -440,6 +440,75 @@ impl OptimizationRule for SimplifyExprRule {
         let expr = expr_arena.get(expr_node).clone();
 
         let out = match &expr {
+            // drop_nulls().len() -> len() - null_count()
+            // drop_nulls().count() -> len() - null_count()
+            AExpr::Agg(IRAggExpr::Count(input, _)) => {
+                let input_expr = expr_arena.get(*input);
+                match input_expr {
+                    AExpr::Function {
+                        input,
+                        function: FunctionExpr::DropNulls,
+                        options: _,
+                    } => {
+                        // we should perform optimization only if the original expression is a column
+                        // so in case of disabled CSE, we will not suffer from performance regression
+                        if input.len() == 1 {
+                            let drop_nulls_input_node = input[0].node();
+                            match expr_arena.get(drop_nulls_input_node) {
+                                AExpr::Column(_) => Some(AExpr::BinaryExpr {
+                                    op: Operator::Minus,
+                                    right: expr_arena.add(AExpr::new_null_count(input)),
+                                    left: expr_arena.add(AExpr::Agg(IRAggExpr::Count(
+                                        drop_nulls_input_node,
+                                        true,
+                                    ))),
+                                }),
+                                _ => None,
+                            }
+                        } else {
+                            None
+                        }
+                    },
+                    _ => None,
+                }
+            },
+            // is_null().sum() -> null_count()
+            // is_not_null().sum() -> len() - null_count()
+            AExpr::Agg(IRAggExpr::Sum(input)) => {
+                let input_expr = expr_arena.get(*input);
+                match input_expr {
+                    AExpr::Function {
+                        input,
+                        function: FunctionExpr::Boolean(BooleanFunction::IsNull),
+                        options: _,
+                    } => Some(AExpr::new_null_count(input)),
+                    AExpr::Function {
+                        input,
+                        function: FunctionExpr::Boolean(BooleanFunction::IsNotNull),
+                        options: _,
+                    } => {
+                        // we should perform optimization only if the original expression is a column
+                        // so in case of disabled CSE, we will not suffer from performance regression
+                        if input.len() == 1 {
+                            let is_not_null_input_node = input[0].node();
+                            match expr_arena.get(is_not_null_input_node) {
+                                AExpr::Column(_) => Some(AExpr::BinaryExpr {
+                                    op: Operator::Minus,
+                                    right: expr_arena.add(AExpr::new_null_count(input)),
+                                    left: expr_arena.add(AExpr::Agg(IRAggExpr::Count(
+                                        is_not_null_input_node,
+                                        true,
+                                    ))),
+                                }),
+                                _ => None,
+                            }
+                        } else {
+                            None
+                        }
+                    },
+                    _ => None,
+                }
+            },
             // lit(left) + lit(right) => lit(left + right)
             // and null propagation
             AExpr::BinaryExpr { left, op, right } => {

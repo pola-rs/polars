@@ -220,6 +220,17 @@ impl LiteralValue {
             LiteralValue::StrCat(_) => DataType::Unknown(UnknownKind::Str),
         }
     }
+
+    pub(crate) fn new_idxsize(value: IdxSize) -> Self {
+        #[cfg(feature = "bigidx")]
+        {
+            LiteralValue::UInt64(value)
+        }
+        #[cfg(not(feature = "bigidx"))]
+        {
+            LiteralValue::UInt32(value)
+        }
+    }
 }
 
 pub trait Literal {
