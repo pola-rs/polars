@@ -78,6 +78,24 @@ impl AsRef<str> for PlSmallStr {
     }
 }
 
+impl core::ops::Deref for PlSmallStr {
+    type Target = str;
+
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        self.as_str()
+    }
+}
+
+impl core::borrow::Borrow<str> for PlSmallStr {
+    #[inline(always)]
+    fn borrow(&self) -> &str {
+        self.as_str()
+    }
+}
+
+/// AsRef impls for other types
+
 impl AsRef<std::path::Path> for PlSmallStr {
     fn as_ref(&self) -> &std::path::Path {
         self.as_str().as_ref()
@@ -95,24 +113,6 @@ impl AsRef<std::ffi::OsStr> for PlSmallStr {
         self.as_str().as_ref()
     }
 }
-
-impl core::ops::Deref for PlSmallStr {
-    type Target = str;
-
-    #[inline(always)]
-    fn deref(&self) -> &Self::Target {
-        self.as_str()
-    }
-}
-
-impl core::borrow::Borrow<str> for PlSmallStr {
-    #[inline(always)]
-    fn borrow(&self) -> &str {
-        self.as_str()
-    }
-}
-
-/// AsRef impls for other types (TODO)
 
 /// From impls
 
