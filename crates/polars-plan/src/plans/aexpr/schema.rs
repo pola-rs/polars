@@ -56,7 +56,12 @@ impl AExpr {
                 *nested = 0;
                 Ok(Field::new(PlSmallStr::from_static(LEN), IDX_DTYPE))
             },
-            Window { function, .. } => {
+            Window {
+                function, options, ..
+            } => {
+                if let WindowType::Over(mapping) = options {
+                    *nested += matches!(mapping, WindowMapping::Join) as u8;
+                }
                 let e = arena.get(*function);
                 e.to_field_impl(schema, arena, nested)
             },
