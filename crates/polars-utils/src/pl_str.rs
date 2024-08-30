@@ -78,11 +78,20 @@ impl AsRef<str> for PlSmallStr {
     }
 }
 
-impl<T> AsRef<T> for PlSmallStr
-where
-    str: AsRef<T>,
-{
-    fn as_ref(&self) -> &T {
+impl AsRef<std::path::Path> for PlSmallStr {
+    fn as_ref(&self) -> &std::path::Path {
+        self.as_str().as_ref()
+    }
+}
+
+impl AsRef<[u8]> for PlSmallStr {
+    fn as_ref(&self) -> &[u8] {
+        self.as_str().as_bytes()
+    }
+}
+
+impl AsRef<std::ffi::OsStr> for PlSmallStr {
+    fn as_ref(&self) -> &std::ffi::OsStr {
         self.as_str().as_ref()
     }
 }
