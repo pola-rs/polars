@@ -47,7 +47,7 @@ def test_prepare_cloud_plan(lf: pl.LazyFrame) -> None:
         pl.scan_parquet(CLOUD_SOURCE).filter(
             pl.col("a") < pl.lit(1).map_elements(lambda x: x + 1)
         ),
-        pl.LazyFrame({"a": [1, 2], "b": [3, 4]}).select(
+        pl.LazyFrame({"a": [[1, 2], [3, 4, 5]], "b": [3, 4]}).select(
             pl.col("a").map_elements(lambda x: sum(x), return_dtype=pl.Int64)
         ),
     ],
