@@ -1365,7 +1365,10 @@ class Series:
                 if isinstance(arg, (int, float, np.ndarray)):
                     args.append(arg)
                 elif isinstance(arg, Series):
-                    args.append(arg.to_physical()._s.to_numpy_view())
+                    phys_arg = arg.to_physical()
+                    if phys_arg._s.n_chunks() > 1:
+                        phys_arg._s.rechunk(in_place=True)
+                    args.append(phys_arg._s.to_numpy_view())
                 else:
                     msg = f"unsupported type {type(arg).__name__!r} for {arg!r}"
                     raise TypeError(msg)
@@ -1430,6 +1433,8 @@ class Series:
                     f"`apply_ufunc_{numpy_char_code_to_dtype(dtype_char)}`"
                 )
                 raise NotImplementedError(msg)
+            
+            print(args)
 
             series = f(
                 lambda out: ufunc(*args, out=out, dtype=dtype_char, **kwargs),
