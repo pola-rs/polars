@@ -1,10 +1,10 @@
-//! The tpch files only got ten rows, so after all the joins filters there is not data
+//! The PDSH files only got ten rows, so after all the joins filters there is not data
 //! Still we can use this to test the schema, operation correctness on empty data, and optimizations
 //! taken.
 use super::*;
 
 const fn base_path() -> &'static str {
-    "../../examples/datasets/tpc_heads"
+    "../../examples/datasets/pds_heads"
 }
 
 fn region() -> LazyFrame {
