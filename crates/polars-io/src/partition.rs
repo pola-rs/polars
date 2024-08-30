@@ -54,8 +54,8 @@ where
         let partition_by_col_idx = partition_by
             .iter()
             .map(|x| {
-                let Some(i) = schema.index_of(x.as_ref()) else {
-                    polars_bail!(col_not_found = x.as_ref())
+                let Some(i) = schema.index_of(x.as_str()) else {
+                    polars_bail!(col_not_found = x)
                 };
                 Ok(i)
             })

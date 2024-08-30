@@ -483,7 +483,7 @@ fn resolve_join_suffixes(
         .map(|proj| {
             let name = column_node_to_name(*proj, expr_arena).clone();
             if name.ends_with(suffix) && schema_after_join.get(&name).is_none() {
-                let downstream_name = &name.as_ref()[..name.len() - suffix.len()];
+                let downstream_name = &name.as_str()[..name.len() - suffix.len()];
                 let col = AExpr::Column(downstream_name.into());
                 let node = expr_arena.add(col);
                 all_columns = false;

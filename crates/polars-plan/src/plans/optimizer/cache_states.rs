@@ -339,15 +339,15 @@ pub(super) fn set_cache_states(
                     // order we discovered all values.
                     let child_schema = child_lp.schema(lp_arena);
                     let child_schema = child_schema.as_ref();
-                    let projection: Vec<_> = child_schema
+                    let projection = child_schema
                         .iter_names()
-                        .flat_map(|name| columns.get(name.as_str()).map(|name| name.as_ref()))
-                        .collect();
+                        .flat_map(|name| columns.get(name.as_str()).cloned())
+                        .collect::<Vec<_>>();
 
                     let new_child = lp_arena.add(child_lp);
 
                     let lp = IRBuilder::new(new_child, expr_arena, lp_arena)
-                        .project_simple(projection.iter().copied())
+                        .project_simple(projection)
                         .unwrap()
                         .build();
 

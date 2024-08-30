@@ -26,7 +26,7 @@ fn check_double_projection(
         name: &str,
         expr_arena: &Arena<AExpr>,
     ) {
-        acc_projections.retain(|node| column_node_to_name(*node, expr_arena).as_ref() != name);
+        acc_projections.retain(|node| column_node_to_name(*node, expr_arena) != name);
     }
     if let Some(name) = expr.get_non_projected_name() {
         if projected_names.remove(name) {

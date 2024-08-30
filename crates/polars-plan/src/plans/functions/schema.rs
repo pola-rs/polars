@@ -54,7 +54,7 @@ impl FunctionIR {
                 {
                     let mut new_schema = Schema::with_capacity(input_schema.len() * 2);
                     for (name, dtype) in input_schema.iter() {
-                        if _columns.iter().any(|item| item.as_ref() == name.as_str()) {
+                        if _columns.iter().any(|item| item == name) {
                             match dtype {
                                 DataType::Struct(flds) => {
                                     for fld in flds {
@@ -136,7 +136,7 @@ fn explode_schema<'a>(
     columns.iter().try_for_each(|name| {
         if let DataType::List(inner) = schema.try_get(name)? {
             let inner = *inner.clone();
-            schema.with_column(name.as_ref().into(), inner);
+            schema.with_column(name.clone(), inner);
         };
         PolarsResult::Ok(())
     })?;

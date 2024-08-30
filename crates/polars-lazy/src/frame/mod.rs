@@ -1050,7 +1050,7 @@ impl LazyFrame {
         mut options: RollingGroupOptions,
     ) -> LazyGroupBy {
         if let Expr::Column(name) = index_column {
-            options.index_column = name.as_ref().into();
+            options.index_column = name;
         } else {
             let output_field = index_column
                 .to_field(&self.collect_schema().unwrap(), Context::Default)
@@ -1095,7 +1095,7 @@ impl LazyFrame {
         mut options: DynamicGroupOptions,
     ) -> LazyGroupBy {
         if let Expr::Column(name) = index_column {
-            options.index_column = name.as_ref().into();
+            options.index_column = name;
         } else {
             let output_field = index_column
                 .to_field(&self.collect_schema().unwrap(), Context::Default)

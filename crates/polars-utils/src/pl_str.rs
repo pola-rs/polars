@@ -7,6 +7,7 @@ macro_rules! format_pl_smallstr {
     ($($arg:tt)*) => {{
         use std::fmt::Write;
 
+        // TODO: Optimize
         let mut string = String::new();
         write!(string, $($arg)*).unwrap();
         PlSmallStr::from_string(string)
@@ -68,49 +69,12 @@ impl Default for PlSmallStr {
     }
 }
 
+/// AsRef, Deref and Borrow impls to &str
+
 impl AsRef<str> for PlSmallStr {
     #[inline(always)]
     fn as_ref(&self) -> &str {
-        self.0.as_ref()
-    }
-}
-
-impl<T> PartialEq<T> for PlSmallStr
-where
-    T: AsRef<str> + ?Sized,
-{
-    fn eq(&self, other: &T) -> bool {
-        self.as_str() == other.as_ref()
-    }
-}
-
-impl PartialEq<PlSmallStr> for &str {
-    fn eq(&self, other: &PlSmallStr) -> bool {
-        *self == other.as_str()
-    }
-}
-
-impl PartialEq<PlSmallStr> for &&str {
-    fn eq(&self, other: &PlSmallStr) -> bool {
-        **self == other.as_str()
-    }
-}
-
-impl PartialEq<PlSmallStr> for String {
-    fn eq(&self, other: &PlSmallStr) -> bool {
-        self.as_str() == other.as_str()
-    }
-}
-
-impl PartialEq<PlSmallStr> for &String {
-    fn eq(&self, other: &PlSmallStr) -> bool {
-        self.as_str() == other.as_str()
-    }
-}
-
-impl core::fmt::Debug for PlSmallStr {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.as_str().fmt(f)
+        self.as_str()
     }
 }
 
@@ -119,32 +83,38 @@ impl core::ops::Deref for PlSmallStr {
 
     #[inline(always)]
     fn deref(&self) -> &Self::Target {
-        self.0.as_ref()
+        self.as_str()
     }
 }
 
 impl core::borrow::Borrow<str> for PlSmallStr {
     #[inline(always)]
     fn borrow(&self) -> &str {
-        self.0.as_ref()
+        self.as_str()
     }
 }
 
-/// We implement `From<&PlSmallStr>` to support `&[S] where S: Into<PlSmallStr>`,
-/// prefer calling `.clone()` for existing `PlSmallStr`s where possible.
-impl From<&PlSmallStr> for PlSmallStr {
-    #[inline(always)]
-    fn from(value: &PlSmallStr) -> Self {
-        value.clone()
+/// AsRef impls for other types
+
+impl AsRef<std::path::Path> for PlSmallStr {
+    fn as_ref(&self) -> &std::path::Path {
+        self.as_str().as_ref()
     }
 }
 
-impl From<&&PlSmallStr> for PlSmallStr {
-    #[inline(always)]
-    fn from(value: &&PlSmallStr) -> Self {
-        (*value).clone()
+impl AsRef<[u8]> for PlSmallStr {
+    fn as_ref(&self) -> &[u8] {
+        self.as_str().as_bytes()
     }
 }
+
+impl AsRef<std::ffi::OsStr> for PlSmallStr {
+    fn as_ref(&self) -> &std::ffi::OsStr {
+        self.as_str().as_ref()
+    }
+}
+
+/// From impls
 
 impl From<&str> for PlSmallStr {
     #[inline(always)]
@@ -153,6 +123,7 @@ impl From<&str> for PlSmallStr {
     }
 }
 
+/// TODO: remove
 impl From<&&str> for PlSmallStr {
     #[inline(always)]
     fn from(value: &&str) -> Self {
@@ -174,9 +145,46 @@ impl From<&String> for PlSmallStr {
     }
 }
 
+/// FromIterator impls (TODO)
+
+/// PartialEq impls
+
+impl<T> PartialEq<T> for PlSmallStr
+where
+    T: AsRef<str> + ?Sized,
+{
+    #[inline(always)]
+    fn eq(&self, other: &T) -> bool {
+        self.as_str() == other.as_ref()
+    }
+}
+
+impl PartialEq<PlSmallStr> for &str {
+    #[inline(always)]
+    fn eq(&self, other: &PlSmallStr) -> bool {
+        *self == other.as_str()
+    }
+}
+
+impl PartialEq<PlSmallStr> for String {
+    #[inline(always)]
+    fn eq(&self, other: &PlSmallStr) -> bool {
+        self.as_str() == other.as_str()
+    }
+}
+
+/// Debug, Display
+
+impl core::fmt::Debug for PlSmallStr {
+    #[inline(always)]
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.as_str().fmt(f)
+    }
+}
+
 impl core::fmt::Display for PlSmallStr {
     #[inline(always)]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
+        self.as_str().fmt(f)
     }
 }

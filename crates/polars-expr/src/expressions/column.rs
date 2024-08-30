@@ -123,7 +123,7 @@ impl ColumnExpr {
         // Linear search will be relatively cheap as we only search the CSE columns.
         Ok(columns
             .iter()
-            .find(|s| s.name() == self.name.as_ref())
+            .find(|s| s.name() == &self.name)
             .unwrap()
             .clone())
     }

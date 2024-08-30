@@ -26,8 +26,8 @@ impl fmt::Display for TreeFmtAExpr<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self.0 {
             AExpr::Explode(_) => "explode",
-            AExpr::Alias(_, name) => return write!(f, "alias({})", name.as_ref()),
-            AExpr::Column(name) => return write!(f, "col({})", name.as_ref()),
+            AExpr::Alias(_, name) => return write!(f, "alias({})", name),
+            AExpr::Column(name) => return write!(f, "col({})", name),
             AExpr::Literal(lv) => return write!(f, "lit({lv:?})"),
             AExpr::BinaryExpr { op, .. } => return write!(f, "binary: {}", op),
             AExpr::Cast {

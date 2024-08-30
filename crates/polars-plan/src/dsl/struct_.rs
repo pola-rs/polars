@@ -41,7 +41,7 @@ impl StructNameSpace {
     /// This expression also supports wildcard "*" and regex expansion.
     pub fn field_by_name(self, name: &str) -> Expr {
         if name == "*" || is_regex_projection(name) {
-            return self.field_by_names(&[name][..]);
+            return self.field_by_names([name]);
         }
         self.0
             .map_private(FunctionExpr::StructExpr(StructFunction::FieldByName(

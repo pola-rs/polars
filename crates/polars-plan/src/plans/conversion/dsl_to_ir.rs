@@ -233,7 +233,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut ConversionContext) -> PolarsResult<No
 
                     schema.insert_at_index(
                         schema.len(),
-                        file_path_col.as_ref().into(),
+                        file_path_col.clone(),
                         DataType::String,
                     )?;
                 }
@@ -253,7 +253,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut ConversionContext) -> PolarsResult<No
             if let Some(row_index) = &file_options.row_index {
                 let schema = Arc::make_mut(&mut resolved_file_info.schema);
                 *schema = schema
-                    .new_inserting_at_index(0, row_index.name.as_ref().into(), IDX_DTYPE)
+                    .new_inserting_at_index(0, row_index.name.clone(), IDX_DTYPE)
                     .unwrap();
             }
 

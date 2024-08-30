@@ -1303,7 +1303,7 @@ impl SQLFunctionVisitor<'_> {
                                 cols(col_names)
                             })
                         } else {
-                            Ok(col(&pat))
+                            Ok(col(pat.as_str()))
                         }
                     },
                     Expr::Wildcard => Ok(col("*")),

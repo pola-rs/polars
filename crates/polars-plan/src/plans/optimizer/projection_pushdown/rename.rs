@@ -15,7 +15,7 @@ fn iter_and_update_nodes(
         let node = column_node.0;
         if !processed.contains(&node.0) {
             // We walk the query backwards, so we rename new to existing
-            if column_node_to_name(*column_node, expr_arena).as_ref() == new {
+            if column_node_to_name(*column_node, expr_arena) == new {
                 let new_node = expr_arena.add(AExpr::Column(PlSmallStr::from_str(existing)));
                 *column_node = ColumnNode(new_node);
                 processed.insert(new_node.0);
@@ -41,7 +41,7 @@ pub(super) fn process_rename(
         for col in acc_projections {
             let name = column_node_to_name(*col, expr_arena);
 
-            if let Some(previous) = reverse_map.get(name.as_ref()) {
+            if let Some(previous) = reverse_map.get(name) {
                 let new = expr_arena.add(AExpr::Column(previous.clone()));
                 *col = ColumnNode(new);
                 let _ = new_projected_names.insert(previous.clone());

@@ -213,8 +213,8 @@ fn upsample_single_impl(
                     .into_frame();
                     range.join(
                         source,
-                        [index_col_name],
-                        [index_col_name],
+                        [index_col_name.clone()],
+                        [index_col_name.clone()],
                         JoinArgs::new(JoinType::Left),
                     )
                 },

@@ -90,11 +90,8 @@ fn all_pred_cols_in_left_on(
     expr_arena: &mut Arena<AExpr>,
     left_on: &[ExprIR],
 ) -> bool {
-    aexpr_to_leaf_names_iter(predicate.node(), expr_arena).all(|pred_column_name| {
-        left_on
-            .iter()
-            .any(|e| e.output_name() == pred_column_name.as_ref())
-    })
+    aexpr_to_leaf_names_iter(predicate.node(), expr_arena)
+        .all(|pred_column_name| left_on.iter().any(|e| e.output_name() == &pred_column_name))
 }
 
 // Checks if a predicate refers to columns in both tables
