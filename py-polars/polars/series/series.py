@@ -1433,8 +1433,6 @@ class Series:
                     f"`apply_ufunc_{numpy_char_code_to_dtype(dtype_char)}`"
                 )
                 raise NotImplementedError(msg)
-            
-            print(args)
 
             series = f(
                 lambda out: ufunc(*args, out=out, dtype=dtype_char, **kwargs),
