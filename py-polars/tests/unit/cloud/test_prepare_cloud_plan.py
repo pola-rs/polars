@@ -47,6 +47,9 @@ def test_prepare_cloud_plan(lf: pl.LazyFrame) -> None:
         pl.scan_parquet(CLOUD_SOURCE).filter(
             pl.col("a") < pl.lit(1).map_elements(lambda x: x + 1)
         ),
+        pl.LazyFrame({"a": [1, 2], "b": [3, 4]}).select(
+            pl.col("a").map_elements(lambda x: sum(x), return_dtype=pl.Int64)
+        ),
     ],
 )
 def test_prepare_cloud_plan_udf(lf: pl.LazyFrame) -> None:
@@ -112,11 +115,8 @@ def test_prepare_cloud_plan_fail_on_python_scan(tmp_path: Path) -> None:
         pl.LazyFrame({"a": [{"x": 1, "y": 2}]}).select(
             pl.col("a").name.map_fields(lambda x: x.upper())
         ),
-        pl.LazyFrame({"a": [1, 2], "b": [3, 4]}).select(
-            pl.col("a").map_elements(lambda x: sum(x), return_dtype=pl.Int64)
-        ),
     ],
 )
 def test_prepare_cloud_plan_fail_on_serialization(lf: pl.LazyFrame) -> None:
-    with pytest.raises(ComputeError, match="serialize"):
+    with pytest.raises(ComputeError, match="serialization not supported"):
         prepare_cloud_plan(lf)
