@@ -329,10 +329,14 @@ fn to_list(
     let item_type = match item {
         ParquetType::PrimitiveType(primitive) => Some(to_primitive_type_inner(primitive, options)),
         ParquetType::GroupType { fields, .. } => {
-            if fields.len() == 1
-                && item.name() != "array"
-                && item.name() != format!("{parent_name}_tuple")
-            {
+            if fields.len() == 1 && item.name() != "array" && {
+                // item.name() != format!("{parent_name}_tuple")
+                let cmp = [parent_name, "_tuple"];
+                let len_1 = parent_name.len();
+                let len = len_1 + "_tuple".len();
+
+                item.name().len() != len || [&item.name()[..len_1], &item.name()[len_1..]] != cmp
+            } {
                 // extract the repetition field
                 let nested_item = fields.first().unwrap();
                 to_data_type(nested_item, options)
