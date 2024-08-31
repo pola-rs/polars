@@ -2,8 +2,8 @@ use super::*;
 
 pub(super) fn rename_impl(
     mut df: DataFrame,
-    existing: &[SmartString],
-    new: &[SmartString],
+    existing: &[PlSmallStr],
+    new: &[PlSmallStr],
 ) -> PolarsResult<DataFrame> {
     let positions = existing
         .iter()
@@ -14,7 +14,7 @@ pub(super) fn rename_impl(
         // the column might be removed due to projection pushdown
         // so we only update if we can find it.
         if let Some(pos) = pos {
-            unsafe { df.get_columns_mut()[*pos].rename(name) };
+            unsafe { df.get_columns_mut()[*pos].rename(name.clone()) };
         }
     }
     // recreate dataframe so we check duplicates

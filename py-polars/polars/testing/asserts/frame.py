@@ -253,6 +253,7 @@ def assert_frame_not_equal(
     """
     __tracebackhide__ = True
 
+    _assert_correct_input_type(left, right)
     try:
         assert_frame_equal(
             left=left,
@@ -268,5 +269,5 @@ def assert_frame_not_equal(
     except AssertionError:
         return
     else:
-        msg = "frames are equal"
+        msg = "frames are equal (but are expected not to be)"
         raise AssertionError(msg)

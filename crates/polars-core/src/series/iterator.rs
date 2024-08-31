@@ -200,7 +200,7 @@ mod test {
 
     #[test]
     fn test_iter() {
-        let a = Series::new("age", [23, 71, 9].as_ref());
+        let a = Series::new("age".into(), [23, 71, 9].as_ref());
         let _b = a
             .i32()
             .unwrap()
@@ -212,7 +212,7 @@ mod test {
     fn test_iter_str() {
         let data = [Some("John"), Some("Doe"), None];
         let a: Series = data.into_iter().collect();
-        let b = Series::new("", data);
+        let b = Series::new("".into(), data);
         assert_eq!(a, b);
     }
 
@@ -220,7 +220,7 @@ mod test {
     fn test_iter_string() {
         let data = [Some("John".to_string()), Some("Doe".to_string()), None];
         let a: Series = data.clone().into_iter().collect();
-        let b = Series::new("", data);
+        let b = Series::new("".into(), data);
         assert_eq!(a, b);
     }
 }

@@ -20,6 +20,6 @@ pub fn pct_change(s: &Series, n: &Series) -> PolarsResult<Series> {
     if let Some(n) = n_s.i64()?.get(0) {
         diff(&fill_null_s, n, NullBehavior::Ignore)?.divide(&fill_null_s.shift(n))
     } else {
-        Ok(Series::full_null(s.name(), s.len(), s.dtype()))
+        Ok(Series::full_null(s.name().clone(), s.len(), s.dtype()))
     }
 }

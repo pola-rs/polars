@@ -20,7 +20,7 @@ pub(crate) mod null;
 mod object;
 mod string;
 #[cfg(feature = "dtype-struct")]
-mod struct__;
+mod struct_;
 #[cfg(feature = "dtype-time")]
 mod time;
 
@@ -35,7 +35,6 @@ use crate::chunked_array::metadata::MetadataTrait;
 use crate::chunked_array::ops::compare_inner::{
     IntoTotalEqInner, IntoTotalOrdInner, TotalEqInner, TotalOrdInner,
 };
-use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::AsSinglePtr;
 
 // Utility wrapper struct
@@ -88,10 +87,6 @@ macro_rules! impl_dyn_series {
 
             fn _set_flags(&mut self, flags: MetadataFlags) {
                 self.0.set_flags(flags)
-            }
-
-            fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
-                self.0.explode_by_offsets(offsets)
             }
 
             unsafe fn equal_element(
@@ -277,14 +272,14 @@ macro_rules! impl_dyn_series {
                 Ok(self.0.bitxor(&other).into_series())
             }
 
-            fn rename(&mut self, name: &str) {
+            fn rename(&mut self, name: PlSmallStr) {
                 self.0.rename(name);
             }
 
             fn chunk_lengths(&self) -> ChunkLenIter {
                 self.0.chunk_lengths()
             }
-            fn name(&self) -> &str {
+            fn name(&self) -> &PlSmallStr {
                 self.0.name()
             }
 

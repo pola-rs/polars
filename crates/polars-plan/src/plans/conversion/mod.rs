@@ -12,7 +12,6 @@ mod ir_to_dsl;
 mod scans;
 mod stack_opt;
 
-use std::borrow::Cow;
 use std::sync::{Arc, Mutex, RwLock};
 
 pub use dsl_to_ir::*;
@@ -21,6 +20,7 @@ pub use ir_to_dsl::*;
 use polars_core::prelude::*;
 use polars_utils::vec::ConvertVec;
 use recursive::recursive;
+mod functions;
 pub(crate) mod type_coercion;
 
 pub(crate) use expr_expansion::{expand_selectors, is_regex_projection, prepare_projection};
@@ -141,7 +141,7 @@ impl IR {
                 let input = convert_to_lp(input, lp_arena);
                 let expr = columns
                     .iter_names()
-                    .map(|name| Expr::Column(ColumnName::from(name.as_str())))
+                    .map(|name| Expr::Column(name.clone()))
                     .collect::<Vec<_>>();
                 DslPlan::Select {
                     expr,

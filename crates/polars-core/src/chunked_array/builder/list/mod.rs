@@ -84,7 +84,7 @@ pub fn get_list_builder(
     inner_type_logical: &DataType,
     value_capacity: usize,
     list_capacity: usize,
-    name: &str,
+    name: PlSmallStr,
 ) -> PolarsResult<Box<dyn ListBuilderTrait>> {
     match inner_type_logical {
         #[cfg(feature = "dtype-categorical")]
@@ -159,21 +159,21 @@ pub fn get_list_builder(
             macro_rules! get_bool_builder {
                 () => {{
                     let builder =
-                        ListBooleanChunkedBuilder::new(&name, list_capacity, value_capacity);
+                        ListBooleanChunkedBuilder::new(name, list_capacity, value_capacity);
                     Box::new(builder)
                 }};
             }
             macro_rules! get_string_builder {
                 () => {{
                     let builder =
-                        ListStringChunkedBuilder::new(&name, list_capacity, 5 * value_capacity);
+                        ListStringChunkedBuilder::new(name, list_capacity, 5 * value_capacity);
                     Box::new(builder)
                 }};
             }
             macro_rules! get_binary_builder {
                 () => {{
                     let builder =
-                        ListBinaryChunkedBuilder::new(&name, list_capacity, 5 * value_capacity);
+                        ListBinaryChunkedBuilder::new(name, list_capacity, 5 * value_capacity);
                     Box::new(builder)
                 }};
             }

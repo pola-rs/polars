@@ -555,6 +555,11 @@ impl Bitmap {
     pub fn select_constant(&self, truthy: &Self, falsy: bool) -> Self {
         super::bitmap_ops::select_constant(self, truthy, falsy)
     }
+
+    /// Calculates the number of edges from `0 -> 1` and `1 -> 0`.
+    pub fn num_edges(&self) -> usize {
+        super::bitmap_ops::num_edges(self)
+    }
 }
 
 impl<P: AsRef<[bool]>> From<P> for Bitmap {

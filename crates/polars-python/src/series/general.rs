@@ -191,11 +191,11 @@ impl PySeries {
     }
 
     pub fn name(&self) -> &str {
-        self.series.name()
+        self.series.name().as_str()
     }
 
     fn rename(&mut self, name: &str) {
-        self.series.rename(name);
+        self.series.rename(name.into());
     }
 
     fn dtype(&self, py: Python) -> PyObject {
@@ -333,7 +333,9 @@ impl PySeries {
 
         if skip_nulls && (series.null_count() == series.len()) {
             if let Some(output_type) = output_type {
-                return Ok(Series::full_null(series.name(), series.len(), &output_type.0).into());
+                return Ok(
+                    Series::full_null(series.name().clone(), series.len(), &output_type.0).into(),
+                );
             }
             let msg = "The output type of the 'map_elements' function cannot be determined.\n\
             The function was never called because 'skip_nulls=True' and all values are null.\n\
@@ -389,7 +391,7 @@ impl PySeries {
                     },
                 });
                 avs.extend(iter);
-                return Ok(Series::new(self.name(), &avs).into());
+                return Ok(Series::new(self.series.name().clone(), &avs).into());
             }
 
             let out = match output_type {
@@ -720,7 +722,7 @@ impl PySeries {
     ) -> PyResult<PyDataFrame> {
         let out = self
             .series
-            .value_counts(sort, parallel, name, normalize)
+            .value_counts(sort, parallel, name.into(), normalize)
             .map_err(PyPolarsErr::from)?;
         Ok(out.into())
     }

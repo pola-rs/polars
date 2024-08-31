@@ -6,18 +6,18 @@ use indexmap::map::MutableKeys;
 use indexmap::IndexMap;
 use polars_utils::aliases::PlRandomState;
 use polars_utils::itertools::Itertools;
+use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde-lazy")]
 use serde::{Deserialize, Serialize};
-use smartstring::alias::String as SmartString;
 
 use crate::prelude::*;
 use crate::utils::try_get_supertype;
 
-/// A map from field/column name ([`String`](smartstring::alias::String)) to the type of that field/column ([`DataType`])
+/// A map from field/column name to the type of that field/column ([`DataType`])
 #[derive(Eq, Clone, Default)]
 #[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
 pub struct Schema {
-    inner: PlIndexMap<SmartString, DataType>,
+    inner: PlIndexMap<PlSmallStr, DataType>,
 }
 
 impl Hash for Schema {
@@ -103,7 +103,7 @@ impl Schema {
     ///
     /// If `old` is not present in the schema, the schema is not modified and `None` is returned. Otherwise the schema
     /// is updated and `Some(old_name)` is returned.
-    pub fn rename(&mut self, old: &str, new: SmartString) -> Option<SmartString> {
+    pub fn rename(&mut self, old: &str, new: PlSmallStr) -> Option<PlSmallStr> {
         // Remove `old`, get the corresponding index and dtype, and move the last item in the map to that position
         let (old_index, old_name, dtype) = self.inner.swap_remove_full(old)?;
         // Insert the same dtype under the new name at the end of the map and store that index
@@ -130,7 +130,7 @@ impl Schema {
     pub fn new_inserting_at_index(
         &self,
         index: usize,
-        name: SmartString,
+        name: PlSmallStr,
         dtype: DataType,
     ) -> PolarsResult<Self> {
         polars_ensure!(
@@ -168,7 +168,7 @@ impl Schema {
     pub fn insert_at_index(
         &mut self,
         mut index: usize,
-        name: SmartString,
+        name: PlSmallStr,
         dtype: DataType,
     ) -> PolarsResult<Option<DataType>> {
         polars_ensure!(
@@ -211,14 +211,14 @@ impl Schema {
     /// Return all data about the field named `name`: its index in the schema, its name, and its dtype.
     ///
     /// Returns `Some((index, &name, &dtype))` if the field exists, `None` if it doesn't.
-    pub fn get_full(&self, name: &str) -> Option<(usize, &SmartString, &DataType)> {
+    pub fn get_full(&self, name: &str) -> Option<(usize, &PlSmallStr, &DataType)> {
         self.inner.get_full(name)
     }
 
     /// Return all data about the field named `name`: its index in the schema, its name, and its dtype.
     ///
     /// Returns `Ok((index, &name, &dtype))` if the field exists, `Err(PolarsErr)` if it doesn't.
-    pub fn try_get_full(&self, name: &str) -> PolarsResult<(usize, &SmartString, &DataType)> {
+    pub fn try_get_full(&self, name: &str) -> PolarsResult<(usize, &PlSmallStr, &DataType)> {
         self.inner
             .get_full(name)
             .ok_or_else(|| polars_err!(SchemaFieldNotFound: "{}", name))
@@ -232,8 +232,8 @@ impl Schema {
     /// [`get`][Self::get] or [`get_full`][Self::get_full].
     pub fn get_field(&self, name: &str) -> Option<Field> {
         self.inner
-            .get(name)
-            .map(|dtype| Field::new(name, dtype.clone()))
+            .get_full(name)
+            .map(|(_, name, dtype)| Field::new(name.clone(), dtype.clone()))
     }
 
     /// Look up the name in the schema and return an owned [`Field`] by cloning the data.
@@ -244,20 +244,20 @@ impl Schema {
     /// [`get`][Self::get] or [`get_full`][Self::get_full].
     pub fn try_get_field(&self, name: &str) -> PolarsResult<Field> {
         self.inner
-            .get(name)
+            .get_full(name)
             .ok_or_else(|| polars_err!(SchemaFieldNotFound: "{}", name))
-            .map(|dtype| Field::new(name, dtype.clone()))
+            .map(|(_, name, dtype)| Field::new(name.clone(), dtype.clone()))
     }
 
     /// Get references to the name and dtype of the field at `index`.
     ///
     /// If `index` is inbounds, returns `Some((&name, &dtype))`, else `None`. See
     /// [`get_at_index_mut`][Self::get_at_index_mut] for a mutable version.
-    pub fn get_at_index(&self, index: usize) -> Option<(&SmartString, &DataType)> {
+    pub fn get_at_index(&self, index: usize) -> Option<(&PlSmallStr, &DataType)> {
         self.inner.get_index(index)
     }
 
-    pub fn try_get_at_index(&self, index: usize) -> PolarsResult<(&SmartString, &DataType)> {
+    pub fn try_get_at_index(&self, index: usize) -> PolarsResult<(&PlSmallStr, &DataType)> {
         self.inner.get_index(index).ok_or_else(|| polars_err!(ComputeError: "index {index} out of bounds with 'schema' of len: {}", self.len()))
     }
 
@@ -265,7 +265,7 @@ impl Schema {
     ///
     /// If `index` is inbounds, returns `Some((&mut name, &mut dtype))`, else `None`. See
     /// [`get_at_index`][Self::get_at_index] for an immutable version.
-    pub fn get_at_index_mut(&mut self, index: usize) -> Option<(&mut SmartString, &mut DataType)> {
+    pub fn get_at_index_mut(&mut self, index: usize) -> Option<(&mut PlSmallStr, &mut DataType)> {
         self.inner.get_index_mut2(index)
     }
 
@@ -296,7 +296,7 @@ impl Schema {
     ///
     /// This method does a `shift_remove`, which preserves the order of the fields in the schema but **is O(n)**. For a
     /// faster, but not order-preserving, method, use [`remove`][Self::remove].
-    pub fn shift_remove_index(&mut self, index: usize) -> Option<(SmartString, DataType)> {
+    pub fn shift_remove_index(&mut self, index: usize) -> Option<(PlSmallStr, DataType)> {
         self.inner.shift_remove_index(index)
     }
 
@@ -341,7 +341,7 @@ impl Schema {
     /// To enforce the index of the resulting field, use [`insert_at_index`][Self::insert_at_index].
     ///
     /// Computes in **O(1)** time (amortized average).
-    pub fn with_column(&mut self, name: SmartString, dtype: DataType) -> Option<DataType> {
+    pub fn with_column(&mut self, name: PlSmallStr, dtype: DataType) -> Option<DataType> {
         self.inner.insert(name, dtype)
     }
 
@@ -376,7 +376,7 @@ impl Schema {
         let fields: Vec<_> = self
             .inner
             .iter()
-            .map(|(name, dtype)| dtype.to_arrow_field(name.as_str(), compat_level))
+            .map(|(name, dtype)| dtype.to_arrow_field(name.clone(), compat_level))
             .collect();
         ArrowSchema::from(fields)
     }
@@ -388,7 +388,7 @@ impl Schema {
     pub fn iter_fields(&self) -> impl ExactSizeIterator<Item = Field> + '_ {
         self.inner
             .iter()
-            .map(|(name, dtype)| Field::new(name, dtype.clone()))
+            .map(|(name, dtype)| Field::new(name.clone(), dtype.clone()))
     }
 
     /// Iterates over references to the dtypes in this schema.
@@ -402,14 +402,14 @@ impl Schema {
     }
 
     /// Iterates over references to the names in this schema.
-    pub fn iter_names(&self) -> impl '_ + ExactSizeIterator<Item = &SmartString> {
+    pub fn iter_names(&self) -> impl '_ + ExactSizeIterator<Item = &PlSmallStr> {
         self.inner.iter().map(|(name, _dtype)| name)
     }
 
     /// Iterates over the `(&name, &dtype)` pairs in this schema.
     ///
     /// For an owned version, use [`iter_fields`][Self::iter_fields], which clones the data to iterate owned `Field`s
-    pub fn iter(&self) -> impl Iterator<Item = (&SmartString, &DataType)> + '_ {
+    pub fn iter(&self) -> impl Iterator<Item = (&PlSmallStr, &DataType)> + '_ {
         self.inner.iter()
     }
 
@@ -439,11 +439,11 @@ impl Schema {
                 .into_iter()
                 .map(|c| {
                     let name = c.as_ref();
-                    let dtype = self
+                    let (_, name, dtype) = self
                         .inner
-                        .get(name)
+                        .get_full(name)
                         .ok_or_else(|| polars_err!(col_not_found = name))?;
-                    PolarsResult::Ok((SmartString::from(name), dtype.clone()))
+                    PolarsResult::Ok((name.clone(), dtype.clone()))
                 })
                 .try_collect()?,
         })
@@ -453,8 +453,8 @@ impl Schema {
 pub type SchemaRef = Arc<Schema>;
 
 impl IntoIterator for Schema {
-    type Item = (SmartString, DataType);
-    type IntoIter = <PlIndexMap<SmartString, DataType> as IntoIterator>::IntoIter;
+    type Item = (PlSmallStr, DataType);
+    type IntoIter = <PlIndexMap<PlSmallStr, DataType> as IntoIterator>::IntoIter;
 
     fn into_iter(self) -> Self::IntoIter {
         self.inner.into_iter()
@@ -467,7 +467,11 @@ pub trait IndexOfSchema: Debug {
     fn index_of(&self, name: &str) -> Option<usize>;
 
     /// Get a vector of all column names.
-    fn get_names(&self) -> Vec<&str>;
+    fn get_names(&self) -> Vec<&PlSmallStr>;
+
+    fn get_names_str(&self) -> Vec<&str>;
+
+    fn get_names_owned(&self) -> Vec<PlSmallStr>;
 
     fn try_index_of(&self, name: &str) -> PolarsResult<usize> {
         self.index_of(name).ok_or_else(|| {
@@ -484,17 +488,33 @@ impl IndexOfSchema for Schema {
         self.inner.get_index_of(name)
     }
 
-    fn get_names(&self) -> Vec<&str> {
-        self.iter_names().map(|name| name.as_str()).collect()
+    fn get_names(&self) -> Vec<&PlSmallStr> {
+        self.iter_names().collect()
+    }
+
+    fn get_names_owned(&self) -> Vec<PlSmallStr> {
+        self.iter_names().cloned().collect()
+    }
+
+    fn get_names_str(&self) -> Vec<&str> {
+        self.iter_names().map(|x| x.as_str()).collect()
     }
 }
 
 impl IndexOfSchema for ArrowSchema {
     fn index_of(&self, name: &str) -> Option<usize> {
-        self.fields.iter().position(|f| f.name == name)
+        self.fields.iter().position(|f| f.name.as_str() == name)
     }
 
-    fn get_names(&self) -> Vec<&str> {
+    fn get_names(&self) -> Vec<&PlSmallStr> {
+        self.fields.iter().map(|f| &f.name).collect()
+    }
+
+    fn get_names_owned(&self) -> Vec<PlSmallStr> {
+        self.fields.iter().map(|f| f.name.clone()).collect()
+    }
+
+    fn get_names_str(&self) -> Vec<&str> {
         self.fields.iter().map(|f| f.name.as_str()).collect()
     }
 }

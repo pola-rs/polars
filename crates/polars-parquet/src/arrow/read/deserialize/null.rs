@@ -47,7 +47,9 @@ impl<'a> utils::StateTranslation<'a, NullDecoder> for () {
         &mut self,
         _decoder: &mut NullDecoder,
         decoded: &mut <NullDecoder as utils::Decoder>::DecodedState,
+        _is_optional: bool,
         _page_validity: &mut Option<utils::PageValidity<'a>>,
+        _: Option<&'a <NullDecoder as utils::Decoder>::Dict>,
         additional: usize,
     ) -> ParquetResult<()> {
         decoded.length += additional;
@@ -66,12 +68,15 @@ impl utils::Decoder for NullDecoder {
         NullArrayLength { length: 0 }
     }
 
-    fn deserialize_dict(&self, _: DictPage) -> Self::Dict {}
+    fn deserialize_dict(&self, _: DictPage) -> ParquetResult<Self::Dict> {
+        Ok(())
+    }
 
     fn decode_plain_encoded<'a>(
         &mut self,
         _decoded: &mut Self::DecodedState,
         _page_values: &mut <Self::Translation<'a> as utils::StateTranslation<'a, Self>>::PlainDecoder,
+        _is_optional: bool,
         _page_validity: Option<&mut utils::PageValidity<'a>>,
         _limit: usize,
     ) -> ParquetResult<()> {
@@ -82,6 +87,7 @@ impl utils::Decoder for NullDecoder {
         &mut self,
         _decoded: &mut Self::DecodedState,
         _page_values: &mut hybrid_rle::HybridRleDecoder<'a>,
+        _is_optional: bool,
         _page_validity: Option<&mut utils::PageValidity<'a>>,
         _dict: &Self::Dict,
         _limit: usize,

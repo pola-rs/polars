@@ -113,7 +113,7 @@ clean:  ## Clean up caches and build artifacts
 	@rm -rf .mypy_cache/
 	@rm -rf .pytest_cache/
 	@$(VENV_BIN)/ruff clean
-	@rm -rf tests/data/tpch/sf*
+	@rm -rf tests/data/pdsh/sf*
 	@rm -f .coverage
 	@rm -f coverage.xml
 	@rm -f polars/polars.abi3.so

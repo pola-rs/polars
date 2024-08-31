@@ -123,6 +123,13 @@ impl DataPageHeader {
             DataPageHeader::V2(d) => d.num_values as usize,
         }
     }
+
+    pub fn null_count(&self) -> Option<usize> {
+        match &self {
+            DataPageHeader::V1(_) => None,
+            DataPageHeader::V2(d) => Some(d.num_nulls as usize),
+        }
+    }
 }
 
 /// A [`DataPage`] is an uncompressed, encoded representation of a Parquet data page. It holds actual data
@@ -179,6 +186,10 @@ impl DataPage {
 
     pub fn num_values(&self) -> usize {
         self.header.num_values()
+    }
+
+    pub fn null_count(&self) -> Option<usize> {
+        self.header.null_count()
     }
 
     pub fn num_rows(&self) -> Option<usize> {
@@ -258,13 +269,6 @@ pub enum CompressedPage {
 }
 
 impl CompressedPage {
-    pub(crate) fn buffer(&self) -> &[u8] {
-        match self {
-            CompressedPage::Data(page) => &page.buffer,
-            CompressedPage::Dict(page) => &page.buffer,
-        }
-    }
-
     pub(crate) fn buffer_mut(&mut self) -> &mut Vec<u8> {
         match self {
             CompressedPage::Data(page) => page.buffer.to_mut(),
@@ -290,13 +294,6 @@ impl CompressedPage {
         match self {
             CompressedPage::Data(page) => page.num_rows(),
             CompressedPage::Dict(_) => Some(0),
-        }
-    }
-
-    pub(crate) fn uncompressed_size(&self) -> usize {
-        match self {
-            CompressedPage::Data(page) => page.uncompressed_page_size,
-            CompressedPage::Dict(page) => page.uncompressed_page_size,
         }
     }
 }

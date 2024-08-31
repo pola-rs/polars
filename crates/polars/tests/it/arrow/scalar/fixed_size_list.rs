@@ -5,8 +5,10 @@ use arrow::scalar::{FixedSizeListScalar, Scalar};
 #[allow(clippy::eq_op)]
 #[test]
 fn equal() {
-    let dt =
-        ArrowDataType::FixedSizeList(Box::new(Field::new("a", ArrowDataType::Boolean, true)), 2);
+    let dt = ArrowDataType::FixedSizeList(
+        Box::new(Field::new("a".into(), ArrowDataType::Boolean, true)),
+        2,
+    );
     let a = FixedSizeListScalar::new(
         dt.clone(),
         Some(BooleanArray::from_slice([true, false]).boxed()),
@@ -25,8 +27,10 @@ fn equal() {
 
 #[test]
 fn basics() {
-    let dt =
-        ArrowDataType::FixedSizeList(Box::new(Field::new("a", ArrowDataType::Boolean, true)), 2);
+    let dt = ArrowDataType::FixedSizeList(
+        Box::new(Field::new("a".into(), ArrowDataType::Boolean, true)),
+        2,
+    );
     let a = FixedSizeListScalar::new(
         dt.clone(),
         Some(BooleanArray::from_slice([true, false]).boxed()),

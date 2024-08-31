@@ -219,7 +219,7 @@ pub enum FunctionExpr {
     ValueCounts {
         sort: bool,
         parallel: bool,
-        name: String,
+        name: PlSmallStr,
         normalize: bool,
     },
     #[cfg(feature = "unique_counts")]
@@ -279,14 +279,14 @@ pub enum FunctionExpr {
     #[cfg(feature = "cutqcut")]
     Cut {
         breaks: Vec<f64>,
-        labels: Option<Vec<String>>,
+        labels: Option<Vec<PlSmallStr>>,
         left_closed: bool,
         include_breaks: bool,
     },
     #[cfg(feature = "cutqcut")]
     QCut {
         probs: Vec<f64>,
-        labels: Option<Vec<String>>,
+        labels: Option<Vec<PlSmallStr>>,
         left_closed: bool,
         allow_duplicates: bool,
         include_breaks: bool,
@@ -307,9 +307,9 @@ pub enum FunctionExpr {
     /// This will lead to calls over FFI.
     FfiPlugin {
         /// Shared library.
-        lib: Arc<str>,
+        lib: PlSmallStr,
         /// Identifier in the shared lib.
-        symbol: Arc<str>,
+        symbol: PlSmallStr,
         /// Pickle serialized keyword arguments.
         kwargs: Arc<[u8]>,
     },
@@ -879,7 +879,10 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             NullCount => {
                 let f = |s: &mut [Series]| {
                     let s = &s[0];
-                    Ok(Some(Series::new(s.name(), [s.null_count() as IdxSize])))
+                    Ok(Some(Series::new(
+                        s.name().clone(),
+                        [s.null_count() as IdxSize],
+                    )))
                 };
                 wrap!(f)
             },

@@ -6,7 +6,7 @@ use polars::prelude::*;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:df]
     let time = polars::time::date_range(
-        "time",
+        "time".into(),
         NaiveDate::from_ymd_opt(2021, 12, 16)
             .unwrap()
             .and_hms_opt(0, 0, 0)

@@ -325,11 +325,11 @@ where
                 .map(|opt_val| opt_val.and_then(|val| self.parse(val)));
             PrimitiveArray::from_trusted_len_iter(iter)
         });
-        ChunkedArray::from_chunk_iter(ca.name(), chunks)
+        ChunkedArray::from_chunk_iter(ca.name().clone(), chunks)
             .into_series()
             .cast(&self.logical_type)
             .unwrap()
-            .with_name(ca.name())
+            .with_name(ca.name().clone())
     }
 }
 
@@ -444,7 +444,9 @@ pub(crate) fn to_datetime(
     _ambiguous: &StringChunked,
 ) -> PolarsResult<DatetimeChunked> {
     match ca.first_non_null() {
-        None => Ok(Int64Chunked::full_null(ca.name(), ca.len()).into_datetime(tu, tz.cloned())),
+        None => {
+            Ok(Int64Chunked::full_null(ca.name().clone(), ca.len()).into_datetime(tu, tz.cloned()))
+        },
         Some(idx) => {
             let subset = ca.slice(idx as i64, ca.len());
             let pattern = subset
@@ -459,7 +461,8 @@ pub(crate) fn to_datetime(
                     // `tz` has already been validated.
                     ca.set_time_unit_and_time_zone(
                         tu,
-                        tz.cloned().unwrap_or_else(|| "UTC".to_string()),
+                        tz.cloned()
+                            .unwrap_or_else(|| PlSmallStr::from_static("UTC")),
                     )?;
                     Ok(ca)
                 })?,
@@ -484,7 +487,7 @@ pub(crate) fn to_datetime(
 #[cfg(feature = "dtype-date")]
 pub(crate) fn to_date(ca: &StringChunked) -> PolarsResult<DateChunked> {
     match ca.first_non_null() {
-        None => Ok(Int32Chunked::full_null(ca.name(), ca.len()).into_date()),
+        None => Ok(Int32Chunked::full_null(ca.name().clone(), ca.len()).into_date()),
         Some(idx) => {
             let subset = ca.slice(idx as i64, ca.len());
             let pattern = subset

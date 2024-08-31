@@ -3,6 +3,7 @@ use arrow::io::ipc::write::{default_ipc_fields, schema_to_bytes};
 use base64::engine::general_purpose;
 use base64::Engine as _;
 use polars_error::{polars_bail, PolarsResult};
+use polars_utils::pl_str::PlSmallStr;
 
 use super::super::ARROW_SCHEMA_META_KEY;
 use crate::arrow::write::decimal_length_from_precision;
@@ -303,7 +304,7 @@ pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
             ))
         },
         ArrowDataType::Dictionary(_, value, _) => {
-            let dict_field = Field::new(name.as_str(), value.as_ref().clone(), field.is_nullable);
+            let dict_field = Field::new(name.clone(), value.as_ref().clone(), field.is_nullable);
             to_parquet_type(&dict_field)
         },
         ArrowDataType::FixedSizeBinary(size) => Ok(ParquetType::try_from_primitive(
@@ -392,7 +393,7 @@ pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
         | ArrowDataType::FixedSizeList(f, _)
         | ArrowDataType::LargeList(f) => {
             let mut f = f.clone();
-            f.name = "element".to_string();
+            f.name = PlSmallStr::from_static("element");
 
             Ok(ParquetType::from_group(
                 name,
@@ -400,7 +401,7 @@ pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
                 Some(GroupConvertedType::List),
                 Some(GroupLogicalType::List),
                 vec![ParquetType::from_group(
-                    "list".to_string(),
+                    PlSmallStr::from_static("list"),
                     Repetition::Repeated,
                     None,
                     None,
@@ -416,7 +417,7 @@ pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
             Some(GroupConvertedType::Map),
             Some(GroupLogicalType::Map),
             vec![ParquetType::from_group(
-                "map".to_string(),
+                PlSmallStr::from_static("map"),
                 Repetition::Repeated,
                 None,
                 None,

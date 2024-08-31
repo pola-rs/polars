@@ -38,7 +38,6 @@ once_cell = { workspace = true }
 pyo3 = { workspace = true, features = ["abi3-py38", "chrono", "extension-module", "multiple-pymethods"] }
 recursive = { workspace = true }
 serde_json = { workspace = true, optional = true }
-smartstring = { workspace = true }
 thiserror = { workspace = true }
 
 [dependencies.polars]
@@ -118,7 +117,7 @@ parquet = ["polars/parquet", "polars-parquet"]
 ipc = ["polars/ipc"]
 ipc_streaming = ["polars/ipc_streaming"]
 is_in = ["polars/is_in"]
-json = ["polars/serde", "serde_json", "polars/json"]
+json = ["polars/serde", "serde_json", "polars/json", "polars-utils/serde"]
 trigonometry = ["polars/trigonometry"]
 sign = ["polars/sign"]
 asof_join = ["polars/asof_join"]

@@ -123,7 +123,7 @@ impl TemporalFunction {
                 time_unit,
                 time_zone,
             } => Ok(Field::new(
-                "datetime",
+                PlSmallStr::from_static("datetime"),
                 DataType::Datetime(*time_unit, time_zone.clone()),
             )),
             Combine(tu) => mapper.try_map_dtype(|dt| match dt {

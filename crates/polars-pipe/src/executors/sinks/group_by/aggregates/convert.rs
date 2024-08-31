@@ -12,6 +12,7 @@ use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{ArenaExprIter, Context};
 use polars_plan::prelude::{AExpr, IRAggExpr};
 use polars_utils::arena::{Arena, Node};
+use polars_utils::pl_str::PlSmallStr;
 use polars_utils::IdxSize;
 
 use crate::executors::sinks::group_by::aggregates::count::CountAgg;
@@ -31,7 +32,7 @@ impl PhysicalIoExpr for Len {
         unimplemented!()
     }
 
-    fn live_variables(&self) -> Option<Vec<Arc<str>>> {
+    fn live_variables(&self) -> Option<Vec<PlSmallStr>> {
         Some(vec![])
     }
 }
@@ -39,7 +40,10 @@ impl PhysicalPipedExpr for Len {
     fn evaluate(&self, chunk: &DataChunk, _lazy_state: &ExecutionState) -> PolarsResult<Series> {
         // the length must match the chunks as the operators expect that
         // so we fill a null series.
-        Ok(Series::new_null("", chunk.data.height()))
+        Ok(Series::new_null(
+            PlSmallStr::const_default(),
+            chunk.data.height(),
+        ))
     }
 
     fn field(&self, _input_schema: &Schema) -> PolarsResult<Field> {

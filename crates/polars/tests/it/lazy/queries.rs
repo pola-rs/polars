@@ -4,7 +4,7 @@ use super::*;
 
 #[test]
 fn test_with_duplicate_column_empty_df() {
-    let a = Int32Chunked::from_slice("a", &[]);
+    let a = Int32Chunked::from_slice("a".into(), &[]);
 
     assert_eq!(
         DataFrame::new(vec![a.into_series()])
@@ -137,7 +137,7 @@ fn test_sorted_path() -> PolarsResult<()> {
 
     let payloads = &[1, 2, 3];
     let df = df![
-        "a"=> [AnyValue::List(Series::new("", payloads)), AnyValue::List(Series::new("", payloads)), AnyValue::List(Series::new("", payloads))]
+        "a"=> [AnyValue::List(Series::new("".into(), payloads)), AnyValue::List(Series::new("".into(), payloads)), AnyValue::List(Series::new("".into(), payloads))]
     ]?;
 
     let out = df
@@ -234,11 +234,11 @@ fn test_apply_multiple_columns() -> PolarsResult<()> {
 
 #[test]
 fn test_group_by_on_lists() -> PolarsResult<()> {
-    let s0 = Series::new("", [1i32, 2, 3]);
-    let s1 = Series::new("groups", [4i32, 5]);
+    let s0 = Series::new("".into(), [1i32, 2, 3]);
+    let s1 = Series::new("groups".into(), [4i32, 5]);
 
     let mut builder =
-        ListPrimitiveChunkedBuilder::<Int32Type>::new("arrays", 10, 10, DataType::Int32);
+        ListPrimitiveChunkedBuilder::<Int32Type>::new("arrays".into(), 10, 10, DataType::Int32);
     builder.append_series(&s0).unwrap();
     builder.append_series(&s1).unwrap();
     let s2 = builder.finish().into_series();

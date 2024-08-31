@@ -1677,6 +1677,7 @@ class PyCapsuleArrayHolder:
 
 
 def test_pycapsule_interface(df: pl.DataFrame) -> None:
+    df = df.rechunk()
     pyarrow_table = df.to_arrow()
 
     # Array via C data interface

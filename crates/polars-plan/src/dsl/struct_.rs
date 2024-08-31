@@ -18,16 +18,15 @@ impl StructNameSpace {
 
     /// Retrieve one or multiple of the fields of this [`StructChunked`] as a new Series.
     /// This expression also expands the `"*"` wildcard column.
-    pub fn field_by_names<S: AsRef<str>>(self, names: &[S]) -> Expr {
-        self.field_by_names_impl(
-            names
-                .iter()
-                .map(|name| ColumnName::from(name.as_ref()))
-                .collect(),
-        )
+    pub fn field_by_names<I, S>(self, names: I) -> Expr
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<PlSmallStr>,
+    {
+        self.field_by_names_impl(names.into_iter().map(|x| x.into()).collect())
     }
 
-    fn field_by_names_impl(self, names: Arc<[ColumnName]>) -> Expr {
+    fn field_by_names_impl(self, names: Arc<[PlSmallStr]>) -> Expr {
         self.0
             .map_private(FunctionExpr::StructExpr(StructFunction::MultipleFields(
                 names,
@@ -42,11 +41,11 @@ impl StructNameSpace {
     /// This expression also supports wildcard "*" and regex expansion.
     pub fn field_by_name(self, name: &str) -> Expr {
         if name == "*" || is_regex_projection(name) {
-            return self.field_by_names(&[name]);
+            return self.field_by_names([name]);
         }
         self.0
             .map_private(FunctionExpr::StructExpr(StructFunction::FieldByName(
-                ColumnName::from(name),
+                name.into(),
             )))
             .with_function_options(|mut options| {
                 options.flags |= FunctionFlags::ALLOW_RENAME;
@@ -55,10 +54,18 @@ impl StructNameSpace {
     }
 
     /// Rename the fields of the [`StructChunked`].
-    pub fn rename_fields(self, names: Vec<String>) -> Expr {
+    pub fn rename_fields<I, S>(self, names: I) -> Expr
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<PlSmallStr>,
+    {
+        self._rename_fields_impl(names.into_iter().map(|x| x.into()).collect())
+    }
+
+    pub fn _rename_fields_impl(self, names: Arc<[PlSmallStr]>) -> Expr {
         self.0
             .map_private(FunctionExpr::StructExpr(StructFunction::RenameFields(
-                Arc::from(names),
+                names,
             )))
     }
 

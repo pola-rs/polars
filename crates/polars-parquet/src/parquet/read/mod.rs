@@ -63,5 +63,5 @@ pub fn get_field_columns<'a>(
 ) -> impl Iterator<Item = &'a ColumnChunkMetaData> {
     columns
         .iter()
-        .filter(move |x| x.descriptor().path_in_schema[0] == field_name)
+        .filter(move |x| x.descriptor().path_in_schema[0].as_str() == field_name)
 }

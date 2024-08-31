@@ -178,7 +178,7 @@ pub(super) fn datetime(
     };
 
     let mut s = ca.into_series();
-    s.rename("datetime");
+    s.rename(PlSmallStr::from_static("datetime"));
     Ok(s)
 }
 

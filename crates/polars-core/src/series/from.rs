@@ -31,7 +31,7 @@ impl Series {
     ///
     /// The caller must ensure that the given `dtype`'s physical type matches all the `ArrayRef` dtypes.
     pub unsafe fn from_chunks_and_dtype_unchecked(
-        name: &str,
+        name: PlSmallStr,
         chunks: Vec<ArrayRef>,
         dtype: &DataType,
     ) -> Self {
@@ -121,7 +121,7 @@ impl Series {
                 // (the pid is checked before dereference)
                 {
                     let pe = PolarsExtension::new(arr.clone());
-                    let s = pe.get_series(name);
+                    let s = pe.get_series(&name);
                     pe.take_and_forget();
                     s
                 }
@@ -138,7 +138,7 @@ impl Series {
     /// # Safety
     /// The caller must ensure that the given `dtype` matches all the `ArrayRef` dtypes.
     pub unsafe fn _try_from_arrow_unchecked(
-        name: &str,
+        name: PlSmallStr,
         chunks: Vec<ArrayRef>,
         dtype: &ArrowDataType,
     ) -> PolarsResult<Self> {
@@ -150,7 +150,7 @@ impl Series {
     /// # Safety
     /// The caller must ensure that the given `dtype` matches all the `ArrayRef` dtypes.
     pub unsafe fn _try_from_arrow_unchecked_with_md(
-        name: &str,
+        name: PlSmallStr,
         chunks: Vec<ArrayRef>,
         dtype: &ArrowDataType,
         md: Option<&Metadata>,
@@ -393,7 +393,7 @@ impl Series {
                 // (the pid is checked before dereference)
                 let s = {
                     let pe = PolarsExtension::new(arr.clone());
-                    let s = pe.get_series(name);
+                    let s = pe.get_series(&name);
                     pe.take_and_forget();
                     s
                 };
@@ -459,7 +459,7 @@ impl Series {
     }
 }
 
-fn map_arrays_to_series(name: &str, chunks: Vec<ArrayRef>) -> PolarsResult<Series> {
+fn map_arrays_to_series(name: PlSmallStr, chunks: Vec<ArrayRef>) -> PolarsResult<Series> {
     let chunks = chunks
         .iter()
         .map(|arr| {
@@ -504,7 +504,12 @@ unsafe fn to_physical_and_dtype(
             feature_gated!("dtype-categorical", {
                 let s = unsafe {
                     let dt = dt.clone();
-                    Series::_try_from_arrow_unchecked_with_md("", arrays, &dt, md)
+                    Series::_try_from_arrow_unchecked_with_md(
+                        PlSmallStr::const_default(),
+                        arrays,
+                        &dt,
+                        md,
+                    )
                 }
                 .unwrap();
                 (s.chunks().clone(), s.dtype().clone())
@@ -596,7 +601,9 @@ unsafe fn to_physical_and_dtype(
                 let arrow_fields = values
                     .iter()
                     .zip(_fields.iter())
-                    .map(|(arr, field)| ArrowField::new(&field.name, arr.data_type().clone(), true))
+                    .map(|(arr, field)| {
+                        ArrowField::new(field.name.clone(), arr.data_type().clone(), true)
+                    })
                     .collect();
                 let arrow_array = Box::new(StructArray::new(
                     ArrowDataType::Struct(arrow_fields),
@@ -606,7 +613,7 @@ unsafe fn to_physical_and_dtype(
                 let polars_fields = _fields
                     .iter()
                     .zip(dtypes)
-                    .map(|(field, dtype)| Field::new(&field.name, dtype))
+                    .map(|(field, dtype)| Field::new(field.name.clone(), dtype))
                     .collect();
                 (vec![arrow_array], DataType::Struct(polars_fields))
             })
@@ -620,7 +627,8 @@ unsafe fn to_physical_and_dtype(
         | ArrowDataType::Decimal(_, _)
         | ArrowDataType::Date64) => {
             let dt = dt.clone();
-            let mut s = Series::_try_from_arrow_unchecked("", arrays, &dt).unwrap();
+            let mut s = Series::_try_from_arrow_unchecked(PlSmallStr::const_default(), arrays, &dt)
+                .unwrap();
             let dtype = s.dtype().clone();
             (std::mem::take(s.chunks_mut()), dtype)
         },
@@ -649,10 +657,24 @@ fn check_types(chunks: &[ArrayRef]) -> PolarsResult<ArrowDataType> {
     Ok(data_type)
 }
 
-impl TryFrom<(&str, Vec<ArrayRef>)> for Series {
+impl Series {
+    pub fn try_new<T>(
+        name: PlSmallStr,
+        data: T,
+    ) -> Result<Self, <(PlSmallStr, T) as TryInto<Self>>::Error>
+    where
+        (PlSmallStr, T): TryInto<Self>,
+    {
+        // # TODO
+        // * Remove the TryFrom<tuple> impls in favor of this
+        <(PlSmallStr, T) as TryInto<Self>>::try_into((name, data))
+    }
+}
+
+impl TryFrom<(PlSmallStr, Vec<ArrayRef>)> for Series {
     type Error = PolarsError;
 
-    fn try_from(name_arr: (&str, Vec<ArrayRef>)) -> PolarsResult<Self> {
+    fn try_from(name_arr: (PlSmallStr, Vec<ArrayRef>)) -> PolarsResult<Self> {
         let (name, chunks) = name_arr;
 
         let data_type = check_types(&chunks)?;
@@ -662,10 +684,10 @@ impl TryFrom<(&str, Vec<ArrayRef>)> for Series {
     }
 }
 
-impl TryFrom<(&str, ArrayRef)> for Series {
+impl TryFrom<(PlSmallStr, ArrayRef)> for Series {
     type Error = PolarsError;
 
-    fn try_from(name_arr: (&str, ArrayRef)) -> PolarsResult<Self> {
+    fn try_from(name_arr: (PlSmallStr, ArrayRef)) -> PolarsResult<Self> {
         let (name, arr) = name_arr;
         Series::try_from((name, vec![arr]))
     }
@@ -683,7 +705,7 @@ impl TryFrom<(&ArrowField, Vec<ArrayRef>)> for Series {
         // dtype is checked
         unsafe {
             Series::_try_from_arrow_unchecked_with_md(
-                &field.name,
+                field.name.clone(),
                 chunks,
                 &data_type,
                 Some(&field.metadata),
@@ -772,7 +794,7 @@ unsafe impl IntoSeries for Series {
     }
 }
 
-fn new_null(name: &str, chunks: &[ArrayRef]) -> Series {
+fn new_null(name: PlSmallStr, chunks: &[ArrayRef]) -> Series {
     let len = chunks.iter().map(|arr| arr.len()).sum();
     Series::new_null(name, len)
 }

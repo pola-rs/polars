@@ -76,7 +76,7 @@ fn fuzz_cluster_with_columns() {
             let column = rng.gen_range(0..unused_cols.len());
             let column = unused_cols.swap_remove(column);
 
-            series.push(Series::new(to_str!(column), vec![rnd_prime(rng)]));
+            series.push(Series::new(to_str!(column).into(), vec![rnd_prime(rng)]));
             used_cols.push(column);
         }
 

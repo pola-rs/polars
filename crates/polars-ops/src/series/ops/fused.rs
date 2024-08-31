@@ -38,7 +38,7 @@ fn fma_ca<T: PolarsNumericType>(
         .zip(b.downcast_iter())
         .zip(c.downcast_iter())
         .map(|((a, b), c)| fma_arr(a, b, c));
-    ChunkedArray::from_chunk_iter(a.name(), chunks)
+    ChunkedArray::from_chunk_iter(a.name().clone(), chunks)
 }
 
 pub fn fma_series(a: &Series, b: &Series, c: &Series) -> Series {
@@ -89,7 +89,7 @@ fn fsm_ca<T: PolarsNumericType>(
         .zip(b.downcast_iter())
         .zip(c.downcast_iter())
         .map(|((a, b), c)| fsm_arr(a, b, c));
-    ChunkedArray::from_chunk_iter(a.name(), chunks)
+    ChunkedArray::from_chunk_iter(a.name().clone(), chunks)
 }
 
 pub fn fsm_series(a: &Series, b: &Series, c: &Series) -> Series {
@@ -139,7 +139,7 @@ fn fms_ca<T: PolarsNumericType>(
         .zip(b.downcast_iter())
         .zip(c.downcast_iter())
         .map(|((a, b), c)| fms_arr(a, b, c));
-    ChunkedArray::from_chunk_iter(a.name(), chunks)
+    ChunkedArray::from_chunk_iter(a.name().clone(), chunks)
 }
 
 pub fn fms_series(a: &Series, b: &Series, c: &Series) -> Series {

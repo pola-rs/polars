@@ -55,27 +55,31 @@ pub(super) fn schema() -> (AvroSchema, ArrowSchema) {
 "#;
 
     let schema = ArrowSchema::from(vec![
-        Field::new("a", ArrowDataType::Int64, false),
-        Field::new("b", ArrowDataType::Utf8, false),
-        Field::new("c", ArrowDataType::Int32, false),
-        Field::new("date", ArrowDataType::Date32, false),
-        Field::new("d", ArrowDataType::Binary, false),
-        Field::new("e", ArrowDataType::Float64, false),
-        Field::new("f", ArrowDataType::Boolean, false),
-        Field::new("g", ArrowDataType::Utf8, true),
+        Field::new("a".into(), ArrowDataType::Int64, false),
+        Field::new("b".into(), ArrowDataType::Utf8, false),
+        Field::new("c".into(), ArrowDataType::Int32, false),
+        Field::new("date".into(), ArrowDataType::Date32, false),
+        Field::new("d".into(), ArrowDataType::Binary, false),
+        Field::new("e".into(), ArrowDataType::Float64, false),
+        Field::new("f".into(), ArrowDataType::Boolean, false),
+        Field::new("g".into(), ArrowDataType::Utf8, true),
         Field::new(
-            "h",
-            ArrowDataType::List(Box::new(Field::new("item", ArrowDataType::Int32, true))),
+            "h".into(),
+            ArrowDataType::List(Box::new(Field::new(
+                "item".into(),
+                ArrowDataType::Int32,
+                true,
+            ))),
             false,
         ),
         Field::new(
-            "i",
-            ArrowDataType::Struct(vec![Field::new("e", ArrowDataType::Float64, false)]),
+            "i".into(),
+            ArrowDataType::Struct(vec![Field::new("e".into(), ArrowDataType::Float64, false)]),
             false,
         ),
         Field::new(
-            "nullable_struct",
-            ArrowDataType::Struct(vec![Field::new("e", ArrowDataType::Float64, false)]),
+            "nullable_struct".into(),
+            ArrowDataType::Struct(vec![Field::new("e".into(), ArrowDataType::Float64, false)]),
             true,
         ),
     ]);
@@ -105,13 +109,13 @@ pub(super) fn data() -> RecordBatchT<Box<dyn Array>> {
         Utf8Array::<i32>::from([Some("foo"), None]).boxed(),
         array.into_box(),
         StructArray::new(
-            ArrowDataType::Struct(vec![Field::new("e", ArrowDataType::Float64, false)]),
+            ArrowDataType::Struct(vec![Field::new("e".into(), ArrowDataType::Float64, false)]),
             vec![PrimitiveArray::<f64>::from_slice([1.0, 2.0]).boxed()],
             None,
         )
         .boxed(),
         StructArray::new(
-            ArrowDataType::Struct(vec![Field::new("e", ArrowDataType::Float64, false)]),
+            ArrowDataType::Struct(vec![Field::new("e".into(), ArrowDataType::Float64, false)]),
             vec![PrimitiveArray::<f64>::from_slice([1.0, 0.0]).boxed()],
             Some([true, false].into()),
         )
@@ -298,8 +302,12 @@ fn schema_list() -> (AvroSchema, ArrowSchema) {
 "#;
 
     let schema = ArrowSchema::from(vec![Field::new(
-        "h",
-        ArrowDataType::List(Box::new(Field::new("item", ArrowDataType::Int32, false))),
+        "h".into(),
+        ArrowDataType::List(Box::new(Field::new(
+            "item".into(),
+            ArrowDataType::Int32,
+            false,
+        ))),
         false,
     )]);
 
@@ -311,7 +319,11 @@ pub(super) fn data_list() -> RecordBatchT<Box<dyn Array>> {
 
     let mut array = MutableListArray::<i32, MutablePrimitiveArray<i32>>::new_from(
         Default::default(),
-        ArrowDataType::List(Box::new(Field::new("item", ArrowDataType::Int32, false))),
+        ArrowDataType::List(Box::new(Field::new(
+            "item".into(),
+            ArrowDataType::Int32,
+            false,
+        ))),
         0,
     );
     array.try_extend(data).unwrap();

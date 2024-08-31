@@ -17,6 +17,8 @@ impl PyExpr {
 
     #[pyo3(signature = (format, strict, exact, cache))]
     fn str_to_date(&self, format: Option<String>, strict: bool, exact: bool, cache: bool) -> Self {
+        let format = format.map(|x| x.into());
+
         let options = StrptimeOptions {
             format,
             strict,
@@ -31,12 +33,15 @@ impl PyExpr {
         &self,
         format: Option<String>,
         time_unit: Option<Wrap<TimeUnit>>,
-        time_zone: Option<TimeZone>,
+        time_zone: Option<Wrap<TimeZone>>,
         strict: bool,
         exact: bool,
         cache: bool,
         ambiguous: Self,
     ) -> Self {
+        let format = format.map(|x| x.into());
+        let time_zone = time_zone.map(|x| x.0);
+
         let options = StrptimeOptions {
             format,
             strict,
@@ -57,6 +62,8 @@ impl PyExpr {
 
     #[pyo3(signature = (format, strict, cache))]
     fn str_to_time(&self, format: Option<String>, strict: bool, cache: bool) -> Self {
+        let format = format.map(|x| x.into());
+
         let options = StrptimeOptions {
             format,
             strict,

@@ -1,4 +1,5 @@
 use super::*;
+use crate::plans::conversion::functions::convert_functions;
 
 pub fn to_expr_ir(expr: Expr, arena: &mut Arena<AExpr>) -> PolarsResult<ExprIR> {
     let mut state = ConversionContext::new();
@@ -40,12 +41,12 @@ pub fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> PolarsResult<Node> {
 }
 
 #[derive(Default)]
-struct ConversionContext {
-    output_name: OutputName,
+pub(super) struct ConversionContext {
+    pub(super) output_name: OutputName,
     /// Remove alias from the expressions and set as [`OutputName`].
-    prune_alias: bool,
+    pub(super) prune_alias: bool,
     /// If an `alias` is encountered prune and ignore it.
-    ignore_alias: bool,
+    pub(super) ignore_alias: bool,
 }
 
 impl ConversionContext {
@@ -68,13 +69,17 @@ fn to_aexprs(
         .collect()
 }
 
-fn set_function_output_name<F>(e: &[ExprIR], state: &mut ConversionContext, function_fmt: F)
-where
-    F: FnOnce() -> Cow<'static, str>,
+pub(super) fn set_function_output_name<F>(
+    e: &[ExprIR],
+    state: &mut ConversionContext,
+    function_fmt: F,
+) where
+    F: FnOnce() -> PlSmallStr,
 {
     if state.output_name.is_none() {
         if e.is_empty() {
-            state.output_name = OutputName::LiteralLhs(ColumnName::from(function_fmt().as_ref()));
+            let s = function_fmt();
+            state.output_name = OutputName::LiteralLhs(s);
         } else {
             state.output_name = e[0].output_name_inner().clone();
         }
@@ -116,7 +121,7 @@ fn to_aexpr_impl_materialized_lit(
 
 /// Converts expression to AExpr and adds it to the arena, which uses an arena (Vec) for allocation.
 #[recursive]
-fn to_aexpr_impl(
+pub(super) fn to_aexpr_impl(
     expr: Expr,
     arena: &mut Arena<AExpr>,
     state: &mut ConversionContext,
@@ -137,7 +142,7 @@ fn to_aexpr_impl(
         },
         Expr::Literal(lv) => {
             if state.output_name.is_none() {
-                state.output_name = OutputName::LiteralLhs(lv.output_column_name());
+                state.output_name = OutputName::LiteralLhs(lv.output_column_name().clone());
             }
             AExpr::Literal(lv)
         },
@@ -280,7 +285,7 @@ fn to_aexpr_impl(
             options,
         } => {
             let e = to_expr_irs(input, arena)?;
-            set_function_output_name(&e, state, || Cow::Borrowed(options.fmt_str));
+            set_function_output_name(&e, state, || PlSmallStr::from_static(options.fmt_str));
             AExpr::AnonymousFunction {
                 input: e,
                 function,
@@ -292,55 +297,7 @@ fn to_aexpr_impl(
             input,
             function,
             options,
-        } => {
-            match function {
-                // This can be created by col(*).is_null() on empty dataframes.
-                FunctionExpr::Boolean(
-                    BooleanFunction::AllHorizontal | BooleanFunction::AnyHorizontal,
-                ) if input.is_empty() => {
-                    return to_aexpr_impl(lit(true), arena, state);
-                },
-                // Convert to binary expression as the optimizer understands those.
-                // Don't exceed 128 expressions as we might stackoverflow.
-                FunctionExpr::Boolean(BooleanFunction::AllHorizontal) => {
-                    if input.len() < 128 {
-                        let expr = input
-                            .into_iter()
-                            .reduce(|l, r| l.logical_and(r))
-                            .unwrap()
-                            .cast(DataType::Boolean);
-                        return to_aexpr_impl(expr, arena, state);
-                    }
-                },
-                FunctionExpr::Boolean(BooleanFunction::AnyHorizontal) => {
-                    if input.len() < 128 {
-                        let expr = input
-                            .into_iter()
-                            .reduce(|l, r| l.logical_or(r))
-                            .unwrap()
-                            .cast(DataType::Boolean);
-                        return to_aexpr_impl(expr, arena, state);
-                    }
-                },
-                _ => {},
-            }
-
-            let e = to_expr_irs(input, arena)?;
-
-            if state.output_name.is_none() {
-                // Handles special case functions like `struct.field`.
-                if let Some(name) = function.output_name() {
-                    state.output_name = name
-                } else {
-                    set_function_output_name(&e, state, || Cow::Owned(format!("{}", &function)));
-                }
-            }
-            AExpr::Function {
-                input: e,
-                function,
-                options,
-            }
-        },
+        } => return convert_functions(input, function, options, arena, state),
         Expr::Window {
             function,
             partition_by,

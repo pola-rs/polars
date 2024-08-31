@@ -79,9 +79,9 @@ impl DataFrame {
                 // if the schema adds a column not in the rows, we
                 // fill it with nulls
                 if s.is_empty() {
-                    Series::full_null(name, expected_len, s.dtype())
+                    Series::full_null(name.clone(), expected_len, s.dtype())
                 } else {
-                    s.rename(name);
+                    s.rename(name.clone());
                     s
                 }
             })
@@ -121,9 +121,9 @@ impl DataFrame {
                 // if the schema adds a column not in the rows, we
                 // fill it with nulls
                 if s.is_empty() {
-                    Series::full_null(name, expected_len, s.dtype())
+                    Series::full_null(name.clone(), expected_len, s.dtype())
                 } else {
-                    s.rename(name);
+                    s.rename(name.clone());
                     s
                 }
             })

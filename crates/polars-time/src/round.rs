@@ -59,7 +59,7 @@ impl PolarsRound for DatetimeChunked {
                     return Ok(out?.into_datetime(self.time_unit(), self.time_zone().clone()));
                 }
             } else {
-                return Ok(Int64Chunked::full_null(self.name(), self.len())
+                return Ok(Int64Chunked::full_null(self.name().clone(), self.len())
                     .into_datetime(self.time_unit(), self.time_zone().clone()));
             }
         }
@@ -112,7 +112,7 @@ impl PolarsRound for DateChunked {
                         )
                     })
                 } else {
-                    Ok(Int32Chunked::full_null(self.name(), self.len()))
+                    Ok(Int32Chunked::full_null(self.name().clone(), self.len()))
                 }
             },
             _ => broadcast_try_binary_elementwise(self, every, |opt_t, opt_every| {

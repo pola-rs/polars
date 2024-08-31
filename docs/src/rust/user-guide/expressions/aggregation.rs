@@ -116,7 +116,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         compute_age()
             .filter(col("gender").eq(lit(gender)))
             .mean()
-            .alias(&format!("avg {} birthday", gender))
+            .alias(format!("avg {} birthday", gender))
     }
 
     let df = dataset

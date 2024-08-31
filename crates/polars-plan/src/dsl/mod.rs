@@ -170,8 +170,11 @@ impl Expr {
     }
 
     /// Rename Column.
-    pub fn alias(self, name: &str) -> Expr {
-        Expr::Alias(Arc::new(self), ColumnName::from(name))
+    pub fn alias<S>(self, name: S) -> Expr
+    where
+        S: Into<PlSmallStr>,
+    {
+        Expr::Alias(Arc::new(self), name.into())
     }
 
     /// Run is_null operation on `Expr`.
@@ -322,7 +325,7 @@ impl Expr {
         self.function_with_options(
             move |s: Series| {
                 Ok(Some(Series::new(
-                    s.name(),
+                    s.name().clone(),
                     &[s.arg_min().map(|idx| idx as u32)],
                 )))
             },
@@ -343,7 +346,7 @@ impl Expr {
         self.function_with_options(
             move |s: Series| {
                 Ok(Some(Series::new(
-                    s.name(),
+                    s.name().clone(),
                     &[s.arg_max().map(|idx| idx as IdxSize)],
                 )))
             },
@@ -826,7 +829,9 @@ impl Expr {
         };
 
         self.function_with_options(
-            move |s: Series| Some(s.product().map(|sc| sc.into_series(s.name()))).transpose(),
+            move |s: Series| {
+                Some(s.product().map(|sc| sc.into_series(s.name().clone()))).transpose()
+            },
             GetOutput::map_dtype(|dt| {
                 use DataType as T;
                 Ok(match dt {
@@ -1019,7 +1024,7 @@ impl Expr {
     pub fn rolling(self, options: RollingGroupOptions) -> Self {
         // We add the index column as `partition expr` so that the optimizer will
         // not ignore it.
-        let index_col = col(options.index_column.as_str());
+        let index_col = col(options.index_column.clone());
         Expr::Window {
             function: Arc::new(self),
             partition_by: vec![index_col],
@@ -1257,12 +1262,8 @@ impl Expr {
     /// Exclude a column from a wildcard/regex selection.
     ///
     /// You may also use regexes in the exclude as long as they start with `^` and end with `$`/
-    pub fn exclude(self, columns: impl IntoVec<String>) -> Expr {
-        let v = columns
-            .into_vec()
-            .into_iter()
-            .map(|s| Excluded::Name(ColumnName::from(s)))
-            .collect();
+    pub fn exclude(self, columns: impl IntoVec<PlSmallStr>) -> Expr {
+        let v = columns.into_vec().into_iter().map(Excluded::Name).collect();
         Expr::Exclude(Arc::new(self), v)
     }
 
@@ -1500,8 +1501,8 @@ impl Expr {
             GetOutput::map_field(|field| {
                 Ok(match field.data_type() {
                     DataType::Float64 => field.clone(),
-                    DataType::Float32 => Field::new(field.name(), DataType::Float32),
-                    _ => Field::new(field.name(), DataType::Float64),
+                    DataType::Float32 => Field::new(field.name().clone(), DataType::Float32),
+                    _ => Field::new(field.name().clone(), DataType::Float64),
                 })
             }),
         )
@@ -1584,13 +1585,13 @@ impl Expr {
     pub fn cut(
         self,
         breaks: Vec<f64>,
-        labels: Option<Vec<String>>,
+        labels: Option<impl IntoVec<PlSmallStr>>,
         left_closed: bool,
         include_breaks: bool,
     ) -> Expr {
         self.apply_private(FunctionExpr::Cut {
             breaks,
-            labels,
+            labels: labels.map(|x| x.into_vec()),
             left_closed,
             include_breaks,
         })
@@ -1605,14 +1606,14 @@ impl Expr {
     pub fn qcut(
         self,
         probs: Vec<f64>,
-        labels: Option<Vec<String>>,
+        labels: Option<impl IntoVec<PlSmallStr>>,
         left_closed: bool,
         allow_duplicates: bool,
         include_breaks: bool,
     ) -> Expr {
         self.apply_private(FunctionExpr::QCut {
             probs,
-            labels,
+            labels: labels.map(|x| x.into_vec()),
             left_closed,
             allow_duplicates,
             include_breaks,
@@ -1628,7 +1629,7 @@ impl Expr {
     pub fn qcut_uniform(
         self,
         n_bins: usize,
-        labels: Option<Vec<String>>,
+        labels: Option<impl IntoVec<PlSmallStr>>,
         left_closed: bool,
         allow_duplicates: bool,
         include_breaks: bool,
@@ -1636,7 +1637,7 @@ impl Expr {
         let probs = (1..n_bins).map(|b| b as f64 / n_bins as f64).collect();
         self.apply_private(FunctionExpr::QCut {
             probs,
-            labels,
+            labels: labels.map(|x| x.into_vec()),
             left_closed,
             allow_duplicates,
             include_breaks,
@@ -1707,12 +1708,20 @@ impl Expr {
 
     /// Get maximal value that could be hold by this dtype.
     pub fn upper_bound(self) -> Expr {
-        self.map_private(FunctionExpr::UpperBound)
+        self.apply_private(FunctionExpr::UpperBound)
+            .with_function_options(|mut options| {
+                options.flags |= FunctionFlags::RETURNS_SCALAR;
+                options
+            })
     }
 
     /// Get minimal value that could be hold by this dtype.
     pub fn lower_bound(self) -> Expr {
-        self.map_private(FunctionExpr::LowerBound)
+        self.apply_private(FunctionExpr::LowerBound)
+            .with_function_options(|mut options| {
+                options.flags |= FunctionFlags::RETURNS_SCALAR;
+                options
+            })
     }
 
     pub fn reshape(self, dimensions: &[i64], nested_type: NestedType) -> Self {
@@ -1789,11 +1798,11 @@ impl Expr {
     #[cfg(feature = "dtype-struct")]
     /// Count all unique values and create a struct mapping value to count.
     /// (Note that it is better to turn parallel off in the aggregation context).
-    pub fn value_counts(self, sort: bool, parallel: bool, name: String, normalize: bool) -> Self {
+    pub fn value_counts(self, sort: bool, parallel: bool, name: &str, normalize: bool) -> Self {
         self.apply_private(FunctionExpr::ValueCounts {
             sort,
             parallel,
-            name,
+            name: name.into(),
             normalize,
         })
         .with_function_options(|mut opts| {

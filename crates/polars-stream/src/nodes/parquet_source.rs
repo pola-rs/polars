@@ -29,6 +29,7 @@ use polars_plan::plans::FileInfo;
 use polars_plan::prelude::FileScanOptions;
 use polars_utils::aliases::PlHashSet;
 use polars_utils::mmap::MemSlice;
+use polars_utils::pl_str::PlSmallStr;
 use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::IdxSize;
 
@@ -169,7 +170,11 @@ mod compute_node_impl {
             self.row_group_decoder = Some(Arc::new(row_group_decoder));
         }
 
-        fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) {
+        fn update_state(
+            &mut self,
+            recv: &mut [PortState],
+            send: &mut [PortState],
+        ) -> PolarsResult<()> {
             use std::sync::atomic::Ordering;
 
             assert!(recv.is_empty());
@@ -190,6 +195,8 @@ mod compute_node_impl {
             } else {
                 send[0] = PortState::Ready
             }
+
+            Ok(())
         }
 
         fn spawn<'env, 's>(
@@ -1038,7 +1045,7 @@ struct RowGroupDataFetcher {
     use_statistics: bool,
     verbose: bool,
     reader_schema: Arc<ArrowSchema>,
-    projection: Option<Arc<[String]>>,
+    projection: Option<Arc<[PlSmallStr]>>,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     slice_range: Option<std::ops::Range<usize>>,
     memory_prefetch_func: fn(&[u8]) -> (),
@@ -1396,7 +1403,7 @@ struct RowGroupDecoder {
     paths: Arc<Vec<PathBuf>>,
     hive_partitions: Option<Arc<Vec<HivePartitions>>>,
     hive_partitions_width: usize,
-    include_file_paths: Option<Arc<str>>,
+    include_file_paths: Option<PlSmallStr>,
     projected_arrow_fields: Arc<[polars_core::prelude::ArrowField]>,
     row_index: Option<RowIndex>,
     physical_predicate: Option<Arc<dyn PhysicalIoExpr>>,
@@ -1536,7 +1543,7 @@ impl RowGroupDecoder {
             // so we create the row index column manually instead of using `df.with_row_index` to
             // ensure it has the correct number of rows.
             let mut ca = IdxCa::from_vec(
-                name,
+                name.clone(),
                 (offset..offset + projection_height as IdxSize).collect(),
             );
             ca.set_sorted_flag(IsSorted::Ascending);
@@ -1559,7 +1566,7 @@ impl RowGroupDecoder {
                     vec![]
                 };
 
-                let file_path_series = self.include_file_paths.as_deref().map(|file_path_col| {
+                let file_path_series = self.include_file_paths.clone().map(|file_path_col| {
                     StringChunked::full(
                         file_path_col,
                         self.paths[path_index].to_str().unwrap(),
@@ -1787,13 +1794,13 @@ fn get_row_group_byte_ranges(
 /// merged.
 fn get_row_group_byte_ranges_for_projection<'a>(
     row_group_metadata: &'a RowGroupMetaData,
-    columns: &'a [String],
+    columns: &'a [PlSmallStr],
 ) -> impl Iterator<Item = std::ops::Range<usize>> + 'a {
     let row_group_columns = row_group_metadata.columns();
 
     row_group_columns.iter().filter_map(move |rg_col_metadata| {
         for col_name in columns {
-            if &rg_col_metadata.descriptor().path_in_schema[0] == col_name {
+            if rg_col_metadata.descriptor().path_in_schema[0] == col_name {
                 let (offset, len) = rg_col_metadata.byte_range();
                 let range = (offset as usize)..((offset + len) as usize);
                 return Some(range);
@@ -1819,7 +1826,7 @@ fn ensure_metadata_has_projected_fields(
             let dtype = DataType::from_arrow(&x.data_type, true);
             (x.name, dtype)
         })
-        .collect::<PlHashMap<String, DataType>>();
+        .collect::<PlHashMap<PlSmallStr, DataType>>();
 
     for field in projected_fields {
         let Some(dtype) = schema.remove(&field.name) else {

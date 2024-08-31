@@ -7,7 +7,7 @@ pub struct ListStringChunkedBuilder {
 }
 
 impl ListStringChunkedBuilder {
-    pub fn new(name: &str, capacity: usize, values_capacity: usize) -> Self {
+    pub fn new(name: PlSmallStr, capacity: usize, values_capacity: usize) -> Self {
         let values = MutableBinaryViewArray::with_capacity(values_capacity);
         let builder = LargeListBinViewBuilder::new_with_capacity(values, capacity);
         let field = Field::new(name, DataType::List(Box::new(DataType::String)));
@@ -97,7 +97,7 @@ pub struct ListBinaryChunkedBuilder {
 }
 
 impl ListBinaryChunkedBuilder {
-    pub fn new(name: &str, capacity: usize, values_capacity: usize) -> Self {
+    pub fn new(name: PlSmallStr, capacity: usize, values_capacity: usize) -> Self {
         let values = MutablePlBinary::with_capacity(values_capacity);
         let builder = LargeListBinViewBuilder::new_with_capacity(values, capacity);
         let field = Field::new(name, DataType::List(Box::new(DataType::Binary)));

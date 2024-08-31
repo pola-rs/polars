@@ -86,7 +86,10 @@ pub fn count_rows(paths: &Arc<Vec<PathBuf>>, scan_type: &FileScan) -> PolarsResu
         let count: IdxSize = count.try_into().map_err(
             |_| polars_err!(ComputeError: "count of {} exceeded maximum row size", count),
         )?;
-        DataFrame::new(vec![Series::new(crate::constants::LEN, [count])])
+        DataFrame::new(vec![Series::new(
+            PlSmallStr::from_static(crate::constants::LEN),
+            [count],
+        )])
     }
 }
 #[cfg(feature = "parquet")]

@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::prelude::*;
 
+#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 pub struct IRPlan {
     pub lp_top: Node,
     pub lp_arena: Arena<IR>,

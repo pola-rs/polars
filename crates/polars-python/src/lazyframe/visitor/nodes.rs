@@ -55,11 +55,15 @@ impl PyFileOptions {
     }
     #[getter]
     fn with_columns(&self, py: Python<'_>) -> PyResult<PyObject> {
-        Ok(self
-            .inner
-            .with_columns
-            .as_ref()
-            .map_or_else(|| py.None(), |cols| cols.to_object(py)))
+        Ok(self.inner.with_columns.as_ref().map_or_else(
+            || py.None(),
+            |cols| {
+                cols.iter()
+                    .map(|x| x.as_str())
+                    .collect::<Vec<_>>()
+                    .to_object(py)
+            },
+        ))
     }
     #[getter]
     fn cache(&self, _py: Python<'_>) -> PyResult<bool> {
@@ -71,7 +75,7 @@ impl PyFileOptions {
             .inner
             .row_index
             .as_ref()
-            .map_or_else(|| py.None(), |n| (n.name.as_ref(), n.offset).to_object(py)))
+            .map_or_else(|| py.None(), |n| (n.name.as_str(), n.offset).to_object(py)))
     }
     #[getter]
     fn rechunk(&self, _py: Python<'_>) -> PyResult<bool> {
@@ -270,10 +274,15 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                         .scan_fn
                         .as_ref()
                         .map_or_else(|| py.None(), |s| s.0.clone()),
-                    options
-                        .with_columns
-                        .as_ref()
-                        .map_or_else(|| py.None(), |cols| cols.to_object(py)),
+                    options.with_columns.as_ref().map_or_else(
+                        || py.None(),
+                        |cols| {
+                            cols.iter()
+                                .map(|x| x.as_str())
+                                .collect::<Vec<_>>()
+                                .to_object(py)
+                        },
+                    ),
                     python_src,
                     match &options.predicate {
                         PythonPredicate::None => py.None(),
@@ -472,7 +481,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                 },
                 options.args.join_nulls,
                 options.args.slice,
-                options.args.suffix.clone(),
+                options.args.suffix.as_deref(),
                 options.args.coalesce.coalesce(&options.args.how),
             )
                 .to_object(py),

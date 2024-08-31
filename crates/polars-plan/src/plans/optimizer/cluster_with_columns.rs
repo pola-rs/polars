@@ -8,9 +8,9 @@ use polars_utils::vec::inplace_zip_filtermap;
 
 use super::aexpr::AExpr;
 use super::ir::IR;
-use super::{aexpr_to_leaf_names_iter, ColumnName};
+use super::{aexpr_to_leaf_names_iter, PlSmallStr};
 
-type ColumnMap = PlHashMap<ColumnName, usize>;
+type ColumnMap = PlHashMap<PlSmallStr, usize>;
 
 fn column_map_finalize_bitset(bitset: &mut MutableBitmap, column_map: &ColumnMap) {
     assert!(bitset.len() <= column_map.len());
@@ -19,7 +19,7 @@ fn column_map_finalize_bitset(bitset: &mut MutableBitmap, column_map: &ColumnMap
     bitset.extend_constant(column_map.len() - size, false);
 }
 
-fn column_map_set(bitset: &mut MutableBitmap, column_map: &mut ColumnMap, column: ColumnName) {
+fn column_map_set(bitset: &mut MutableBitmap, column_map: &mut ColumnMap, column: PlSmallStr) {
     let size = column_map.len();
     column_map
         .entry(column)
@@ -92,7 +92,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
             column_map_set(
                 &mut input_genset,
                 column_map,
-                input_expr.output_name_arc().clone(),
+                input_expr.output_name().clone(),
             );
         }
 
@@ -132,14 +132,12 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
                     return Some((expr, liveset));
                 }
 
-                let column_name = expr.output_name_arc();
+                let column_name = expr.output_name();
                 let is_pushable = if let Some(idx) = column_map.get(column_name) {
                     let does_input_alias_also_expr = input_genset.get(*idx);
                     let is_alias_live_in_current = current_liveset.get(*idx);
 
                     if does_input_alias_also_expr && !is_alias_live_in_current {
-                        let column_name = column_name.as_ref();
-
                         // @NOTE: Pruning of re-assigned columns
                         //
                         // We checked if this expression output is also assigned by the input and
@@ -190,7 +188,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
         // This will pushdown the expressions that "has an output column that is mentioned by
         // neighbour columns, but all those neighbours were being pushed down".
         for candidate in potential_pushable.iter().copied() {
-            let column_name = current_exprs[candidate].output_name_arc();
+            let column_name = current_exprs[candidate].output_name();
             let column_idx = column_map.get(column_name).unwrap();
 
             current_liveset.clear();
@@ -258,7 +256,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
                 if do_pushdown {
                     needs_simple_projection = has_seen_unpushable;
 
-                    let column = expr.output_name_arc().as_ref();
+                    let column = expr.output_name().as_ref();
                     // @NOTE: we cannot just use the index here, as there might be renames that sit
                     // earlier in the schema
                     let datatype = current_schema.get(column).unwrap();

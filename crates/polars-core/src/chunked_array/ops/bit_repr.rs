@@ -20,7 +20,7 @@ fn reinterpret_chunked_array<T: PolarsNumericType, U: PolarsNumericType>(
         PrimitiveArray::from_data_default(reinterpreted_buf, array.validity().cloned())
     });
 
-    ChunkedArray::from_chunk_iter(ca.name(), chunks)
+    ChunkedArray::from_chunk_iter(ca.name().clone(), chunks)
 }
 
 /// Reinterprets the type of a [`ListChunked`]. T and U must have the same size
@@ -53,7 +53,7 @@ fn reinterpret_list_chunked<T: PolarsNumericType, U: PolarsNumericType>(
         )
     });
 
-    ListChunked::from_chunk_iter(ca.name(), chunks)
+    ListChunked::from_chunk_iter(ca.name().clone(), chunks)
 }
 
 #[cfg(all(feature = "reinterpret", feature = "dtype-i16", feature = "dtype-u16"))]

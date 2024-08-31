@@ -36,7 +36,7 @@ impl Series {
     /// Unpack to [`ChunkedArray`]
     /// ```
     /// # use polars_core::prelude::*;
-    /// let s = Series::new("foo", [1i32 ,2, 3]);
+    /// let s = Series::new("foo".into(), [1i32 ,2, 3]);
     /// let s_squared: Series = s.i32()
     ///     .unwrap()
     ///     .into_iter()

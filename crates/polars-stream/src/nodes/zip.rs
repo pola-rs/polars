@@ -4,6 +4,7 @@ use std::sync::Arc;
 use polars_core::functions::concat_df_horizontal;
 use polars_core::schema::Schema;
 use polars_core::series::Series;
+use polars_error::polars_ensure;
 
 use super::compute_node_prelude::*;
 use crate::morsel::SourceToken;
@@ -94,7 +95,7 @@ impl InputHead {
         } else {
             self.schema
                 .iter()
-                .map(|(name, dtype)| Series::full_null(name, len, dtype))
+                .map(|(name, dtype)| Series::full_null(name.clone(), len, dtype))
                 .collect()
         }
     }
@@ -138,7 +139,7 @@ impl ComputeNode for ZipNode {
         "zip"
     }
 
-    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) {
+    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {
         assert!(send.len() == 1);
         assert!(recv.len() == self.input_heads.len());
 
@@ -167,9 +168,9 @@ impl ComputeNode for ZipNode {
         }
 
         if !self.null_extend {
-            assert!(
+            polars_ensure!(
                 !(at_least_one_non_broadcast_done && at_least_one_non_broadcast_nonempty),
-                "zip received non-equal length inputs"
+                ShapeMismatch: "zip node received non-equal length inputs"
             );
         }
 
@@ -196,6 +197,7 @@ impl ComputeNode for ZipNode {
         for r in recv {
             *r = new_recv_state;
         }
+        Ok(())
     }
 
     fn spawn<'env, 's>(

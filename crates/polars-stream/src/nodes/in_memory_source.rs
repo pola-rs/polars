@@ -34,7 +34,7 @@ impl ComputeNode for InMemorySourceNode {
         self.seq = AtomicU64::new(0);
     }
 
-    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) {
+    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {
         assert!(recv.is_empty());
         assert!(send.len() == 1);
 
@@ -52,6 +52,7 @@ impl ComputeNode for InMemorySourceNode {
         } else {
             send[0] = PortState::Ready;
         }
+        Ok(())
     }
 
     fn spawn<'env, 's>(

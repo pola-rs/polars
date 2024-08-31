@@ -12,7 +12,7 @@ pub(super) fn process_group_by(
     maintain_order: bool,
     apply: Option<Arc<dyn DataFrameUdf>>,
     options: Arc<GroupbyOptions>,
-    acc_predicates: PlHashMap<Arc<str>, ExprIR>,
+    acc_predicates: PlHashMap<PlSmallStr, ExprIR>,
 ) -> PolarsResult<IR> {
     use IR::*;
 
