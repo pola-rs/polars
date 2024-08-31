@@ -2565,7 +2565,7 @@ class Series:
         ]
         """
 
-    def entropy(self, base: float = math.e, *, normalize: bool = False) -> float | None:
+    def entropy(self, base: float = math.e, *, normalize: bool = True) -> float | None:
         """
         Computes the entropy.
 
