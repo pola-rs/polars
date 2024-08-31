@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::collections::VecDeque;
 use std::ops::{Deref, Range};
 
+use arrow::array::BooleanArray;
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::datatypes::ArrowSchemaRef;
 use polars_core::prelude::*;
@@ -37,24 +38,25 @@ use crate::RowIndex;
 // Ensure we get the proper polars types from schema inference
 // This saves unneeded casts.
 fn assert_dtypes(data_type: &ArrowDataType) {
+    use ArrowDataType as D;
+
     match data_type {
-        ArrowDataType::Utf8 => {
-            unreachable!()
-        },
-        ArrowDataType::Binary => {
-            unreachable!()
-        },
-        ArrowDataType::List(_) => {
-            unreachable!()
-        },
-        ArrowDataType::LargeList(inner) => {
-            assert_dtypes(&inner.data_type);
-        },
-        ArrowDataType::Struct(fields) => {
-            for fld in fields {
-                assert_dtypes(fld.data_type())
-            }
-        },
+        // These should all be casted to the BinaryView / Utf8View variants
+        D::Utf8 | D::Binary | D::LargeUtf8 | D::LargeBinary => unreachable!(),
+
+        // This should have been converted to a LargeList
+        D::List(_) => unreachable!(),
+
+        // This should have been converted to a LargeList(Struct(_))
+        D::Map(_, _) => unreachable!(),
+
+        // Recursive checks
+        D::Dictionary(_, data_type, _) => assert_dtypes(data_type),
+        D::Extension(_, data_type, _) => assert_dtypes(data_type),
+        D::LargeList(inner) => assert_dtypes(&inner.data_type),
+        D::FixedSizeList(inner, _) => assert_dtypes(&inner.data_type),
+        D::Struct(fields) => fields.iter().for_each(|f| assert_dtypes(f.data_type())),
+
         _ => {},
     }
 }
@@ -232,7 +234,7 @@ fn rg_to_dfs_prefiltered(
     row_group_end: usize,
     file_metadata: &FileMetaData,
     schema: &ArrowSchemaRef,
-    live_variables: Vec<Arc<str>>,
+    live_variables: Vec<PlSmallStr>,
     predicate: &dyn PhysicalIoExpr,
     row_index: Option<RowIndex>,
     projection: &[usize],
@@ -312,6 +314,20 @@ fn rg_to_dfs_prefiltered(
     debug_assert_eq!(live_idx_to_col_idx.len(), num_live_columns);
     debug_assert_eq!(dead_idx_to_col_idx.len(), num_dead_columns);
 
+    enum MaskSetting {
+        Auto,
+        Pre,
+        Post,
+    }
+
+    let mask_setting =
+        std::env::var("POLARS_PQ_PREFILTERED_MASK").map_or(MaskSetting::Auto, |v| match &v[..] {
+            "auto" => MaskSetting::Auto,
+            "pre" => MaskSetting::Pre,
+            "post" => MaskSetting::Post,
+            _ => panic!("Invalid `POLARS_PQ_PREFILTERED_MASK` value '{v}'."),
+        });
+
     POOL.install(|| {
         // Set partitioned fields to prevent quadratic behavior.
         // Ensure all row groups are partitioned.
@@ -353,7 +369,7 @@ fn rg_to_dfs_prefiltered(
                 let mask = s.bool().expect("filter predicates was not of type boolean");
 
                 if let Some(rc) = &row_index {
-                    df.with_row_index_mut(&rc.name, Some(rg.row_offset + rc.offset));
+                    df.with_row_index_mut(rc.name.clone(), Some(rg.row_offset + rc.offset));
                 }
                 df = df.filter(mask)?;
 
@@ -393,38 +409,34 @@ fn rg_to_dfs_prefiltered(
             return Ok(dfs.into_iter().map(|(_, df)| df).collect());
         }
 
-        // @TODO: Incorporate this if we how we can properly use it. The problem here is that
-        // different columns really have a different cost when it comes to collecting them. We
-        // would need a cost model to properly estimate this.
-        //
-        // // For bitmasks that are seemingly random (i.e. not clustered or biased towards 0 or 1),
-        // // filtering with a bitmask in the Parquet reader is actually around 1.5 - 2.2 times slower
-        // // than collecting everything and filtering afterwards. This is because stopping and
-        // // starting decoding is not free.
-        // //
-        // // To combat this we try to detect here how biased our data is. We do this with a bithack
-        // // that estimates the amount of switches from 0 to 1 and from 1 to 0. This can be SIMD-ed
-        // // very well and gives us quite good estimate of how random our bitmask is. Then, we select
-        // // the filter if the bitmask is not that random.
-        // let do_filter_rg = dfs
-        //     .par_iter()
-        //     .map(|(mask, _)| {
-        //         let iter = mask.fast_iter_u64();
-        //
-        //         // The iter is TrustedLen so the size_hint is exact.
-        //         let num_items = iter.size_hint().0;
-        //         let num_switches = iter
-        //             .map(|v| (v ^ v.rotate_right(1)).count_ones() as u64)
-        //             .sum::<u64>();
-        //
-        //         // We ignore the iter remainder since we only really care about the average.
-        //         let avg_num_switches_per_element = num_switches / num_items as u64;
-        //
-        //         // We select the filter if the average amount of switches per 64 elements is less
-        //         // than or equal to 2.
-        //         avg_num_switches_per_element <= 2
-        //     })
-        //     .collect::<Vec<_>>();
+        let rg_prefilter_costs = matches!(mask_setting, MaskSetting::Auto)
+            .then(|| {
+                dfs.par_iter()
+                    .map(|(mask, _)| {
+                        let num_edges = mask.num_edges() as f64;
+                        let rg_len = mask.len() as f64;
+
+                        // @GB: I did quite some analysis on this.
+                        //
+                        // Pre-filtered and Post-filtered can both be faster in certain scenarios.
+                        //
+                        // - Pre-filtered is faster when there is some amount of clustering or
+                        // sorting involved or if the number of values selected is small.
+                        // - Post-filtering is faster when the predicate selects a somewhat random
+                        // elements throughout the row group.
+                        //
+                        // The following is a heuristic value to try and estimate which one is
+                        // faster. Essentially, it sees how many times it needs to switch between
+                        // skipping items and collecting items and compares it against the number
+                        // of values that it will collect.
+                        //
+                        // Closer to 0: post-filtering is probably better.
+                        // Closer to 1: pre-filtering is probably better.
+                        (num_edges / rg_len).clamp(0.0, 1.0)
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
 
         let mut rg_columns = (0..dfs.len() * num_dead_columns)
             .into_par_iter()
@@ -443,20 +455,58 @@ fn rg_to_dfs_prefiltered(
                 }
                 let field_md = part_mds[rg_idx as usize].get_partitions(name).unwrap();
 
-                column_idx_to_series(
-                    col_idx,
-                    field_md.as_slice(),
-                    Some(Filter::new_masked(mask.clone())),
-                    schema,
-                    store,
-                )
+                let pre = || {
+                    column_idx_to_series(
+                        col_idx,
+                        field_md.as_slice(),
+                        Some(Filter::new_masked(mask.clone())),
+                        schema,
+                        store,
+                    )
+                };
+                let post = || {
+                    let array =
+                        column_idx_to_series(col_idx, field_md.as_slice(), None, schema, store)?;
+
+                    debug_assert_eq!(array.len(), mask.len());
+
+                    let mask_arr = BooleanArray::new(ArrowDataType::Boolean, mask.clone(), None);
+                    let mask_arr = BooleanChunked::from(mask_arr);
+                    array.filter(&mask_arr)
+                };
+
+                let array = match mask_setting {
+                    MaskSetting::Auto => {
+                        // Prefiltering is more expensive for nested types so we make the cut-off
+                        // higher.
+                        let is_nested = schema.fields[col_idx].data_type.is_nested();
+                        let prefilter_cost = rg_prefilter_costs[i / num_dead_columns];
+
+                        // We empirically selected these numbers.
+                        let do_prefilter = (is_nested && prefilter_cost <= 0.01)
+                            || (!is_nested && prefilter_cost <= 0.02);
+
+                        if do_prefilter {
+                            pre()?
+                        } else {
+                            post()?
+                        }
+                    },
+                    MaskSetting::Pre => pre()?,
+                    MaskSetting::Post => post()?,
+                };
+
+                debug_assert_eq!(array.len(), mask.set_bits());
+
+                Ok(array)
             })
             .collect::<PolarsResult<Vec<_>>>()?;
 
         let Some(df) = dfs.first().map(|(_, df)| df) else {
             return Ok(Vec::new());
         };
-        let rearranged_schema = df.schema();
+        let mut rearranged_schema = df.schema();
+        rearranged_schema.merge(Schema::from(schema));
 
         rg_columns
             .par_chunks_exact_mut(num_dead_columns)
@@ -464,10 +514,12 @@ fn rg_to_dfs_prefiltered(
             .map(|(rg_cols, (_, mut df))| {
                 let rg_cols = rg_cols.iter_mut().map(std::mem::take).collect::<Vec<_>>();
 
+                debug_assert!(rg_cols.iter().all(|v| v.len() == df.height()));
+
                 // We first add the columns with the live columns at the start. Then, we do a
                 // projections that puts the columns at the right spot.
                 df._add_columns(rg_cols, &rearranged_schema)?;
-                let df = df.select(schema.get_names())?;
+                let df = df.select(schema.get_names_owned())?;
 
                 PolarsResult::Ok(df)
             })
@@ -559,7 +611,7 @@ fn rg_to_dfs_optionally_par_over_columns(
 
         let mut df = unsafe { DataFrame::new_no_checks(columns) };
         if let Some(rc) = &row_index {
-            df.with_row_index_mut(&rc.name, Some(*previous_row_count + rc.offset));
+            df.with_row_index_mut(rc.name.clone(), Some(*previous_row_count + rc.offset));
         }
 
         materialize_hive_partitions(&mut df, schema.as_ref(), hive_partition_columns, rg_slice.1);
@@ -673,7 +725,10 @@ fn rg_to_dfs_par_over_rg(
                 let mut df = unsafe { DataFrame::new_no_checks(columns) };
 
                 if let Some(rc) = &row_index {
-                    df.with_row_index_mut(&rc.name, Some(row_count_start as IdxSize + rc.offset));
+                    df.with_row_index_mut(
+                        rc.name.clone(),
+                        Some(row_count_start as IdxSize + rc.offset),
+                    );
                 }
 
                 materialize_hive_partitions(
@@ -920,7 +975,7 @@ impl BatchedParquetReader {
         chunk_size: usize,
         use_statistics: bool,
         hive_partition_columns: Option<Vec<Series>>,
-        include_file_path: Option<(Arc<str>, Arc<str>)>,
+        include_file_path: Option<(PlSmallStr, Arc<str>)>,
         mut parallel: ParallelStrategy,
     ) -> PolarsResult<Self> {
         let n_row_groups = metadata.row_groups.len();
@@ -960,7 +1015,7 @@ impl BatchedParquetReader {
             use_statistics,
             hive_partition_columns: hive_partition_columns.map(Arc::from),
             include_file_path: include_file_path
-                .map(|(col, path)| StringChunked::full(&col, &path, 1)),
+                .map(|(col, path)| StringChunked::full(col, &path, 1)),
             has_returned: false,
         })
     }

@@ -2,22 +2,26 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
-use polars_core::prelude::SortMultipleOptions;
+use polars_core::prelude::{InitHashMaps, PlHashMap, SortMultipleOptions};
 use polars_core::schema::{Schema, SchemaRef};
+use polars_error::PolarsResult;
 use polars_plan::plans::hive::HivePartitions;
-use polars_plan::plans::{AExpr, DataFrameUdf, FileInfo, FileScan};
+use polars_plan::plans::{AExpr, DataFrameUdf, FileInfo, FileScan, IR};
 use polars_plan::prelude::expr_ir::ExprIR;
 
+mod fmt;
 mod lower_expr;
 mod lower_ir;
 mod to_graph;
 
-pub use lower_ir::lower_ir;
+pub use fmt::visualize_plan;
 use polars_plan::prelude::FileScanOptions;
-use polars_utils::arena::Arena;
-use polars_utils::itertools::Itertools;
+use polars_utils::arena::{Arena, Node};
+use polars_utils::pl_str::PlSmallStr;
 use slotmap::{Key, SecondaryMap, SlotMap};
 pub use to_graph::physical_plan_to_graph;
+
+use crate::physical_plan::lower_expr::ExprCache;
 
 slotmap::new_key_type! {
     /// Key used for PNodes.
@@ -73,7 +77,7 @@ pub enum PhysNodeKind {
 
     SimpleProjection {
         input: PhysNodeKey,
-        columns: Vec<String>,
+        columns: Vec<PlSmallStr>,
     },
 
     InMemorySink {
@@ -125,148 +129,74 @@ pub enum PhysNodeKind {
     },
 }
 
-fn escape_graphviz(s: &str) -> String {
-    s.replace('\\', "\\\\")
-        .replace('\n', "\\n")
-        .replace('"', "\\\"")
-}
-
-fn fmt_exprs(exprs: &[ExprIR], expr_arena: &Arena<AExpr>) -> String {
-    exprs
-        .iter()
-        .map(|e| escape_graphviz(&e.display(expr_arena).to_string()))
-        .collect_vec()
-        .join("\\n")
-}
-
 #[recursive::recursive]
-fn visualize_plan_rec(
-    node_key: PhysNodeKey,
-    phys_sm: &SlotMap<PhysNodeKey, PhysNode>,
-    expr_arena: &Arena<AExpr>,
-    visited: &mut SecondaryMap<PhysNodeKey, ()>,
-    out: &mut Vec<String>,
+fn insert_multiplexers(
+    node: PhysNodeKey,
+    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    referenced: &mut SecondaryMap<PhysNodeKey, ()>,
 ) {
-    if visited.contains_key(node_key) {
-        return;
-    }
-    visited.insert(node_key, ());
-
-    use std::slice::from_ref;
-    let (label, inputs) = match &phys_sm[node_key].kind {
-        PhysNodeKind::InMemorySource { df } => (
-            format!(
-                "in-memory-source\\ncols: {}",
-                df.get_column_names().join(", ")
+    let seen_before = referenced.insert(node, ()).is_some();
+    if seen_before && !matches!(phys_sm[node].kind, PhysNodeKind::Multiplexer { .. }) {
+        // This node is referenced at least twice. We first set the input key to
+        // null and then update it to avoid a double-mutable-borrow issue.
+        let input_schema = phys_sm[node].output_schema.clone();
+        let orig_input_node = core::mem::replace(
+            &mut phys_sm[node],
+            PhysNode::new(
+                input_schema,
+                PhysNodeKind::Multiplexer {
+                    input: PhysNodeKey::null(),
+                },
             ),
-            &[][..],
-        ),
-        PhysNodeKind::Select {
-            input,
-            selectors,
-            extend_original,
-        } => {
-            let label = if *extend_original {
-                "with-columns"
-            } else {
-                "select"
-            };
-            (
-                format!("{label}\\n{}", fmt_exprs(selectors, expr_arena)),
-                from_ref(input),
-            )
-        },
-        PhysNodeKind::Reduce { input, exprs } => (
-            format!("reduce\\n{}", fmt_exprs(exprs, expr_arena)),
-            from_ref(input),
-        ),
-        PhysNodeKind::StreamingSlice {
-            input,
-            offset,
-            length,
-        } => (
-            format!("slice\\noffset: {offset}, length: {length}"),
-            from_ref(input),
-        ),
-        PhysNodeKind::Filter { input, predicate } => (
-            format!("filter\\n{}", fmt_exprs(from_ref(predicate), expr_arena)),
-            from_ref(input),
-        ),
-        PhysNodeKind::SimpleProjection { input, columns } => (
-            format!("select\\ncols: {}", columns.join(", ")),
-            from_ref(input),
-        ),
-        PhysNodeKind::InMemorySink { input } => ("in-memory-sink".to_string(), from_ref(input)),
-        PhysNodeKind::InMemoryMap { input, map: _ } => {
-            ("in-memory-map".to_string(), from_ref(input))
-        },
-        PhysNodeKind::Map { input, map: _ } => ("map".to_string(), from_ref(input)),
-        PhysNodeKind::Sort {
-            input,
-            by_column,
-            slice: _,
-            sort_options: _,
-        } => (
-            format!("sort\\n{}", fmt_exprs(by_column, expr_arena)),
-            from_ref(input),
-        ),
-        PhysNodeKind::OrderedUnion { inputs } => ("ordered-union".to_string(), inputs.as_slice()),
-        PhysNodeKind::Zip {
-            inputs,
-            null_extend,
-        } => {
-            let label = if *null_extend {
-                "zip-null-extend"
-            } else {
-                "zip"
-            };
-            (label.to_string(), inputs.as_slice())
-        },
-        PhysNodeKind::Multiplexer { input } => ("multiplexer".to_string(), from_ref(input)),
-        #[allow(unused)]
-        PhysNodeKind::FileScan {
-            paths,
-            file_info,
-            hive_parts,
-            output_schema,
-            scan_type,
-            predicate,
-            file_options,
-        } => {
-            // TODO: Improve formatting
-            let label = match scan_type {
-                FileScan::Parquet { .. } => "parquet-source",
-                _ => todo!(),
-            };
+        );
+        let orig_input_key = phys_sm.insert(orig_input_node);
+        phys_sm[node].kind = PhysNodeKind::Multiplexer {
+            input: orig_input_key,
+        };
+    }
 
-            (label.to_string(), &[][..])
-        },
-    };
+    if !seen_before {
+        match &phys_sm[node].kind {
+            PhysNodeKind::InMemorySource { .. } | PhysNodeKind::FileScan { .. } => {},
+            PhysNodeKind::Select { input, .. }
+            | PhysNodeKind::Reduce { input, .. }
+            | PhysNodeKind::StreamingSlice { input, .. }
+            | PhysNodeKind::Filter { input, .. }
+            | PhysNodeKind::SimpleProjection { input, .. }
+            | PhysNodeKind::InMemorySink { input }
+            | PhysNodeKind::InMemoryMap { input, .. }
+            | PhysNodeKind::Map { input, .. }
+            | PhysNodeKind::Sort { input, .. }
+            | PhysNodeKind::Multiplexer { input } => {
+                insert_multiplexers(*input, phys_sm, referenced);
+            },
 
-    out.push(format!(
-        "{} [label=\"{}\"];",
-        node_key.data().as_ffi(),
-        label
-    ));
-    for input in inputs {
-        visualize_plan_rec(*input, phys_sm, expr_arena, visited, out);
-        out.push(format!(
-            "{} -> {};",
-            input.data().as_ffi(),
-            node_key.data().as_ffi()
-        ));
+            PhysNodeKind::OrderedUnion { inputs } | PhysNodeKind::Zip { inputs, .. } => {
+                for input in inputs.clone() {
+                    insert_multiplexers(input, phys_sm, referenced);
+                }
+            },
+        }
     }
 }
 
-pub fn visualize_plan(
-    root: PhysNodeKey,
-    phys_sm: &SlotMap<PhysNodeKey, PhysNode>,
-    expr_arena: &Arena<AExpr>,
-) -> String {
-    let mut visited: SecondaryMap<PhysNodeKey, ()> = SecondaryMap::new();
-    let mut out = Vec::with_capacity(phys_sm.len() + 2);
-    out.push("digraph polars {\nrankdir=\"BT\"".to_string());
-    visualize_plan_rec(root, phys_sm, expr_arena, &mut visited, &mut out);
-    out.push("}".to_string());
-    out.join("\n")
+pub fn build_physical_plan(
+    root: Node,
+    ir_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+) -> PolarsResult<PhysNodeKey> {
+    let mut schema_cache = PlHashMap::with_capacity(ir_arena.len());
+    let mut expr_cache = ExprCache::with_capacity(expr_arena.len());
+    let phys_root = lower_ir::lower_ir(
+        root,
+        ir_arena,
+        expr_arena,
+        phys_sm,
+        &mut schema_cache,
+        &mut expr_cache,
+    )?;
+    let mut referenced = SecondaryMap::with_capacity(phys_sm.capacity());
+    insert_multiplexers(phys_root, phys_sm, &mut referenced);
+    Ok(phys_root)
 }

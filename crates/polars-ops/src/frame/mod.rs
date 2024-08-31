@@ -96,13 +96,16 @@ pub trait DataFrameOps: IntoDf {
     ) -> PolarsResult<DataFrame> {
         let df = self.to_df();
 
-        let set: PlHashSet<&str> =
-            PlHashSet::from_iter(columns.unwrap_or_else(|| df.get_column_names()));
+        let set: PlHashSet<&str> = if let Some(columns) = columns {
+            PlHashSet::from_iter(columns)
+        } else {
+            PlHashSet::from_iter(df.iter().map(|s| s.name().as_str()))
+        };
 
         let cols = POOL.install(|| {
             df.get_columns()
                 .par_iter()
-                .map(|s| match set.contains(s.name()) {
+                .map(|s| match set.contains(s.name().as_str()) {
                     true => s.to_dummies(separator, drop_first),
                     false => Ok(s.clone().into_frame()),
                 })

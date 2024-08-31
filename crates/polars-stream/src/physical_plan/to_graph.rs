@@ -47,7 +47,7 @@ fn create_stream_expr(
 
 struct GraphConversionContext<'a> {
     phys_sm: &'a SlotMap<PhysNodeKey, PhysNode>,
-    expr_arena: &'a Arena<AExpr>,
+    expr_arena: &'a mut Arena<AExpr>,
     graph: Graph,
     phys_to_graph: SecondaryMap<PhysNodeKey, GraphNodeKey>,
     expr_conversion_state: ExpressionConversionState,
@@ -56,7 +56,7 @@ struct GraphConversionContext<'a> {
 pub fn physical_plan_to_graph(
     root: PhysNodeKey,
     phys_sm: &SlotMap<PhysNodeKey, PhysNode>,
-    expr_arena: &Arena<AExpr>,
+    expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<(Graph, SecondaryMap<PhysNodeKey, GraphNodeKey>)> {
     let expr_depth_limit = get_expr_depth_limit()?;
     let mut ctx = GraphConversionContext {
@@ -138,8 +138,7 @@ fn to_graph_rec<'a>(
             let mut inputs = Vec::with_capacity(reductions.len());
 
             for e in exprs {
-                let (red, input_node) =
-                    into_reduction(e.node(), ctx.expr_arena, input_schema)?.expect("invariant");
+                let (red, input_node) = into_reduction(e.node(), ctx.expr_arena, input_schema)?;
                 reductions.push(red);
 
                 let input_phys =
@@ -295,20 +294,24 @@ fn to_graph_rec<'a>(
                         options,
                         cloud_options,
                         metadata: _,
-                    } => ctx.graph.add_node(
-                        {
-                            nodes::parquet_source::ParquetSourceNode::new(
-                                paths,
-                                file_info,
-                                hive_parts,
-                                predicate,
-                                options,
-                                cloud_options,
-                                file_options,
+                    } => {
+                        if std::env::var("POLARS_DISABLE_PARQUET_SOURCE").as_deref() != Ok("1") {
+                            ctx.graph.add_node(
+                                nodes::parquet_source::ParquetSourceNode::new(
+                                    paths,
+                                    file_info,
+                                    hive_parts,
+                                    predicate,
+                                    options,
+                                    cloud_options,
+                                    file_options,
+                                ),
+                                [],
                             )
-                        },
-                        [],
-                    ),
+                        } else {
+                            todo!()
+                        }
+                    },
                     _ => todo!(),
                 }
             }

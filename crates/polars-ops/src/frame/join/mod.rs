@@ -81,17 +81,13 @@ pub trait DataFrameJoinOps: IntoDf {
     /// | Pear   | 12                   | 115                 |
     /// +--------+----------------------+---------------------+
     /// ```
-    fn join<I, S>(
+    fn join(
         &self,
         other: &DataFrame,
-        left_on: I,
-        right_on: I,
+        left_on: impl IntoIterator<Item = impl Into<PlSmallStr>>,
+        right_on: impl IntoIterator<Item = impl Into<PlSmallStr>>,
         args: JoinArgs,
-    ) -> PolarsResult<DataFrame>
-    where
-        I: IntoIterator<Item = S>,
-        S: AsRef<str>,
-    {
+    ) -> PolarsResult<DataFrame> {
         let df_left = self.to_df();
         let selected_left = df_left.select_series(left_on)?;
         let selected_right = other.select_series(right_on)?;
@@ -114,7 +110,7 @@ pub trait DataFrameJoinOps: IntoDf {
 
         #[cfg(feature = "cross_join")]
         if let JoinType::Cross = args.how {
-            return left_df.cross_join(other, args.suffix.as_deref(), args.slice);
+            return left_df.cross_join(other, args.suffix.clone(), args.slice);
         }
 
         // Clear literals if a frame is empty. Otherwise we could get an oob
@@ -195,8 +191,8 @@ pub trait DataFrameJoinOps: IntoDf {
                 Err(_) => {
                     let (ca_left, ca_right) =
                         make_categoricals_compatible(l.categorical()?, r.categorical()?)?;
-                    *l = ca_left.into_series().with_name(l.name());
-                    *r = ca_right.into_series().with_name(r.name());
+                    *l = ca_left.into_series().with_name(l.name().clone());
+                    *r = ca_right.into_series().with_name(r.name().clone());
                 },
             }
         }
@@ -205,7 +201,8 @@ pub trait DataFrameJoinOps: IntoDf {
         if selected_left.len() == 1 {
             let s_left = &selected_left[0];
             let s_right = &selected_right[0];
-            let drop_names: Option<&[&str]> = if should_coalesce { None } else { Some(&[]) };
+            let drop_names: Option<Vec<PlSmallStr>> =
+                if should_coalesce { None } else { Some(vec![]) };
             return match args.how {
                 JoinType::Inner => left_df
                     ._inner_join_from_series(other, s_left, s_right, args, _verbose, drop_names),
@@ -254,7 +251,7 @@ pub trait DataFrameJoinOps: IntoDf {
                         right_by,
                         options.strategy,
                         options.tolerance,
-                        args.suffix.as_deref(),
+                        args.suffix.clone(),
                         args.slice,
                         should_coalesce,
                     ),
@@ -282,9 +279,12 @@ pub trait DataFrameJoinOps: IntoDf {
         let rhs_keys = prepare_keys_multiple(&selected_right, args.join_nulls)?.into_series();
 
         let drop_names = if should_coalesce {
-            Some(selected_right.iter().map(|s| s.name()).collect::<Vec<_>>())
+            selected_right
+                .iter()
+                .map(|s| s.name().clone())
+                .collect::<Vec<_>>()
         } else {
-            Some(vec![])
+            vec![]
         };
 
         // Multiple keys.
@@ -297,7 +297,10 @@ pub trait DataFrameJoinOps: IntoDf {
                 unreachable!()
             },
             JoinType::Full => {
-                let names_left = selected_left.iter().map(|s| s.name()).collect::<Vec<_>>();
+                let names_left = selected_left
+                    .iter()
+                    .map(|s| s.name().clone())
+                    .collect::<Vec<_>>();
                 args.coalesce = JoinCoalesce::KeepColumns;
                 let suffix = args.suffix.clone();
                 let out = left_df._full_join_from_series(other, &lhs_keys, &rhs_keys, args);
@@ -305,9 +308,9 @@ pub trait DataFrameJoinOps: IntoDf {
                 if should_coalesce {
                     Ok(_coalesce_full_join(
                         out?,
-                        &names_left,
-                        drop_names.as_ref().unwrap(),
-                        suffix.as_deref(),
+                        names_left.as_slice(),
+                        drop_names.as_slice(),
+                        suffix.clone(),
                         left_df,
                     ))
                 } else {
@@ -320,7 +323,7 @@ pub trait DataFrameJoinOps: IntoDf {
                 &rhs_keys,
                 args,
                 _verbose,
-                drop_names.as_deref(),
+                Some(drop_names),
             ),
             JoinType::Left => dispatch_left_right::left_join_from_series(
                 left_df.clone(),
@@ -329,7 +332,7 @@ pub trait DataFrameJoinOps: IntoDf {
                 &rhs_keys,
                 args,
                 _verbose,
-                drop_names.as_deref(),
+                Some(drop_names),
             ),
             JoinType::Right => dispatch_left_right::right_join_from_series(
                 left_df,
@@ -338,7 +341,7 @@ pub trait DataFrameJoinOps: IntoDf {
                 &rhs_keys,
                 args,
                 _verbose,
-                drop_names.as_deref(),
+                Some(drop_names),
             ),
             #[cfg(feature = "semi_anti_join")]
             JoinType::Anti | JoinType::Semi => self._join_impl(
@@ -363,16 +366,12 @@ pub trait DataFrameJoinOps: IntoDf {
     ///     left.inner_join(right, ["join_column_left"], ["join_column_right"])
     /// }
     /// ```
-    fn inner_join<I, S>(
+    fn inner_join(
         &self,
         other: &DataFrame,
-        left_on: I,
-        right_on: I,
-    ) -> PolarsResult<DataFrame>
-    where
-        I: IntoIterator<Item = S>,
-        S: AsRef<str>,
-    {
+        left_on: impl IntoIterator<Item = impl Into<PlSmallStr>>,
+        right_on: impl IntoIterator<Item = impl Into<PlSmallStr>>,
+    ) -> PolarsResult<DataFrame> {
         self.join(other, left_on, right_on, JoinArgs::new(JoinType::Inner))
     }
 
@@ -411,11 +410,12 @@ pub trait DataFrameJoinOps: IntoDf {
     /// | 100             | null   |
     /// +-----------------+--------+
     /// ```
-    fn left_join<I, S>(&self, other: &DataFrame, left_on: I, right_on: I) -> PolarsResult<DataFrame>
-    where
-        I: IntoIterator<Item = S>,
-        S: AsRef<str>,
-    {
+    fn left_join(
+        &self,
+        other: &DataFrame,
+        left_on: impl IntoIterator<Item = impl Into<PlSmallStr>>,
+        right_on: impl IntoIterator<Item = impl Into<PlSmallStr>>,
+    ) -> PolarsResult<DataFrame> {
         self.join(other, left_on, right_on, JoinArgs::new(JoinType::Left))
     }
 
@@ -429,11 +429,12 @@ pub trait DataFrameJoinOps: IntoDf {
     ///     left.full_join(right, ["join_column_left"], ["join_column_right"])
     /// }
     /// ```
-    fn full_join<I, S>(&self, other: &DataFrame, left_on: I, right_on: I) -> PolarsResult<DataFrame>
-    where
-        I: IntoIterator<Item = S>,
-        S: AsRef<str>,
-    {
+    fn full_join(
+        &self,
+        other: &DataFrame,
+        left_on: impl IntoIterator<Item = impl Into<PlSmallStr>>,
+        right_on: impl IntoIterator<Item = impl Into<PlSmallStr>>,
+    ) -> PolarsResult<DataFrame> {
         self.join(other, left_on, right_on, JoinArgs::new(JoinType::Full))
     }
 }
@@ -446,7 +447,7 @@ trait DataFrameJoinOpsPrivate: IntoDf {
         s_right: &Series,
         args: JoinArgs,
         verbose: bool,
-        drop_names: Option<&[&str]>,
+        drop_names: Option<Vec<PlSmallStr>>,
     ) -> PolarsResult<DataFrame> {
         let left_df = self.to_df();
         #[cfg(feature = "dtype-categorical")]
@@ -474,7 +475,7 @@ trait DataFrameJoinOpsPrivate: IntoDf {
                 ._take_unchecked_slice(join_tuples_right, true)
             },
         );
-        _finish_join(df_left, df_right, args.suffix.as_deref())
+        _finish_join(df_left, df_right, args.suffix.clone())
     }
 }
 

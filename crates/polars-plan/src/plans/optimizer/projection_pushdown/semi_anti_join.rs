@@ -9,7 +9,7 @@ pub(super) fn process_semi_anti_join(
     right_on: Vec<ExprIR>,
     options: Arc<JoinOptions>,
     acc_projections: Vec<ColumnNode>,
-    _projected_names: PlHashSet<Arc<str>>,
+    _projected_names: PlHashSet<PlSmallStr>,
     projections_seen: usize,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,

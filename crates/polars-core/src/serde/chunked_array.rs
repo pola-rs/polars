@@ -46,7 +46,7 @@ where
 
 fn serialize_impl<T, S>(
     serializer: S,
-    name: &str,
+    name: &PlSmallStr,
     dtype: &DataType,
     bit_settings: MetadataFlags,
     ca: &ChunkedArray<T>,

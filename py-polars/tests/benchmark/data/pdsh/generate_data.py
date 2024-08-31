@@ -1,8 +1,19 @@
 """
-Script to generate data for running the TPC-H benchmark.
+Disclaimer.
 
-Data generation logic was adapted from the TPC-H benchmark tools:
-https://www.tpc.org/tpch/
+Certain portions of the contents of this file are derived from TPC-H version 3.0.1
+(retrieved from
+http://www.tpc.org/tpc_documents_current_versions/current_specifications5.asp).
+Such portions are subject to copyrights held by Transaction Processing
+Performance Council (“TPC”) and licensed under the TPC EULA is available at
+http://www.tpc.org/tpc_documents_current_versions/current_specifications5.asp)
+(the “TPC EULA”).
+
+You may not use this file except in compliance with the TPC EULA.
+DISCLAIMER: Portions of this file is derived from the TPC-H benchmark and as
+such any result obtained using this file are not comparable to published TPC-H
+Benchmark results, as the results obtained from using this file do not comply with
+the TPC-H Benchmark.
 """
 
 from __future__ import annotations
@@ -19,12 +30,12 @@ logging.basicConfig(level=logging.INFO)
 CURRENT_DIR = Path(__file__).parent
 DBGEN_DIR = CURRENT_DIR / "dbgen"
 
-__all__ = ["load_tpch_table"]
+__all__ = ["load_pdsh_table"]
 
 
-def load_tpch_table(table_name: str, scale_factor: float = 0.01) -> pl.DataFrame:
+def load_pdsh_table(table_name: str, scale_factor: float = 0.01) -> pl.DataFrame:
     """
-    Load a TPC-H table from disk.
+    Load a PDS-H table from disk.
 
     If the file does not exist, it is generated along with all other tables.
     """
@@ -32,16 +43,16 @@ def load_tpch_table(table_name: str, scale_factor: float = 0.01) -> pl.DataFrame
     file_path = folder / f"{table_name}.parquet"
 
     if not file_path.exists():
-        _generate_tpch_data(scale_factor)
+        _generate_pdsh_data(scale_factor)
 
     return pl.read_parquet(file_path)
 
 
-def _generate_tpch_data(scale_factor: float = 0.01) -> None:
-    """Generate all TPC-H datasets with the given scale factor."""
+def _generate_pdsh_data(scale_factor: float = 0.01) -> None:
+    """Generate all PDS-H datasets with the given scale factor."""
     # TODO: Can we make this work under Windows?
     if sys.platform == "win32":
-        msg = "cannot generate TPC-H data under Windows"
+        msg = "cannot generate PDS-H data under Windows"
         raise RuntimeError(msg)
 
     subprocess.run(["./dbgen", "-f", "-v", "-s", str(scale_factor)], cwd=DBGEN_DIR)

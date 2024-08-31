@@ -36,7 +36,7 @@ where
     ignore_errors: bool,
     row_index: Option<&'a mut RowIndex>,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
-    projection: Option<Arc<[String]>>,
+    projection: Option<Arc<[PlSmallStr]>>,
 }
 
 impl<'a, R> JsonLineReader<'a, R>
@@ -67,7 +67,7 @@ where
         self
     }
 
-    pub fn with_projection(mut self, projection: Option<Arc<[String]>>) -> Self {
+    pub fn with_projection(mut self, projection: Option<Arc<[PlSmallStr]>>) -> Self {
         self.projection = projection;
         self
     }
@@ -202,7 +202,7 @@ pub(crate) struct CoreJsonReader<'a> {
     ignore_errors: bool,
     row_index: Option<&'a mut RowIndex>,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
-    projection: Option<Arc<[String]>>,
+    projection: Option<Arc<[PlSmallStr]>>,
 }
 impl<'a> CoreJsonReader<'a> {
     #[allow(clippy::too_many_arguments)]
@@ -219,7 +219,7 @@ impl<'a> CoreJsonReader<'a> {
         ignore_errors: bool,
         row_index: Option<&'a mut RowIndex>,
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
-        projection: Option<Arc<[String]>>,
+        projection: Option<Arc<[PlSmallStr]>>,
     ) -> PolarsResult<CoreJsonReader<'a>> {
         let reader_bytes = reader_bytes;
 
@@ -314,13 +314,13 @@ impl<'a> CoreJsonReader<'a> {
                     )?;
 
                     let prepredicate_height = local_df.height() as IdxSize;
-                    if let Some(projection) = &self.projection {
-                        local_df = local_df.select(projection.as_ref())?;
+                    if let Some(projection) = self.projection.as_deref() {
+                        local_df = local_df.select(projection.iter().cloned())?;
                     }
 
                     if let Some(row_index) = row_index {
                         local_df = local_df
-                            .with_row_index(row_index.name.as_ref(), Some(row_index.offset))?;
+                            .with_row_index(row_index.name.clone(), Some(row_index.offset))?;
                     }
 
                     if let Some(predicate) = &self.predicate {

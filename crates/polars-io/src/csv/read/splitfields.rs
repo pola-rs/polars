@@ -145,16 +145,6 @@ mod inner {
     const SIMD_SIZE: usize = 16;
     type SimdVec = u8x16;
 
-    #[inline]
-    unsafe fn simple_argmax(arr: &[bool; SIMD_SIZE]) -> usize {
-        for (i, item) in arr.iter().enumerate() {
-            if *item {
-                return i;
-            }
-        }
-        unreachable!();
-    }
-
     /// An adapted version of std::iter::Split.
     /// This exists solely because we cannot split the lines naively as
     pub(crate) struct SplitFields<'a> {
@@ -276,26 +266,21 @@ mod inner {
                     let bytes = unsafe { self.v.get_unchecked_release(total_idx..) };
 
                     if bytes.len() > SIMD_SIZE {
-                        unsafe {
-                            let lane: [u8; SIMD_SIZE] = bytes
+                        let lane: [u8; SIMD_SIZE] = unsafe {
+                            bytes
                                 .get_unchecked(0..SIMD_SIZE)
                                 .try_into()
-                                .unwrap_unchecked_release();
-                            let simd_bytes = SimdVec::from(lane);
-                            let has_eol_char = simd_bytes.simd_eq(self.simd_eol_char);
-                            let has_separator = simd_bytes.simd_eq(self.simd_separator);
-                            let has_any = has_separator.bitor(has_eol_char);
-                            if has_any.any() {
-                                // soundness we can transmute because we have the same alignment
-                                let has_any = std::mem::transmute::<
-                                    Mask<_, SIMD_SIZE>,
-                                    [bool; SIMD_SIZE],
-                                >(has_any);
-                                total_idx += simple_argmax(&has_any);
-                                break;
-                            } else {
-                                total_idx += SIMD_SIZE;
-                            }
+                                .unwrap_unchecked_release()
+                        };
+                        let simd_bytes = SimdVec::from(lane);
+                        let has_eol_char = simd_bytes.simd_eq(self.simd_eol_char);
+                        let has_separator = simd_bytes.simd_eq(self.simd_separator);
+                        let has_any = has_separator.bitor(has_eol_char);
+                        if let Some(idx) = has_any.first_set() {
+                            total_idx += idx;
+                            break;
+                        } else {
+                            total_idx += SIMD_SIZE;
                         }
                     } else {
                         match bytes.iter().position(|&c| self.eof_oel(c)) {
@@ -317,7 +302,7 @@ mod inner {
             };
 
             unsafe {
-                debug_assert!(pos <= self.v.len());
+                debug_assert!(pos < self.v.len());
                 // SAFETY:
                 // we are in bounds
                 let ret = Some((self.v.get_unchecked(..pos), needs_escaping));

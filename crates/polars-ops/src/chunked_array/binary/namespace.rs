@@ -24,7 +24,7 @@ pub trait BinaryNameSpaceImpl: AsBinary {
         match lit.len() {
             1 => match lit.get(0) {
                 Some(lit) => ca.contains(lit),
-                None => BooleanChunked::full_null(ca.name(), ca.len()),
+                None => BooleanChunked::full_null(ca.name().clone(), ca.len()),
             },
             _ => broadcast_binary_elementwise_values(ca, lit, |src, lit| find(src, lit).is_some()),
         }
@@ -35,7 +35,7 @@ pub trait BinaryNameSpaceImpl: AsBinary {
         let ca = self.as_binary();
         let f = |s: &[u8]| s.ends_with(sub);
         let mut out: BooleanChunked = ca.into_iter().map(|opt_s| opt_s.map(f)).collect();
-        out.rename(ca.name());
+        out.rename(ca.name().clone());
         out
     }
 
@@ -44,7 +44,7 @@ pub trait BinaryNameSpaceImpl: AsBinary {
         let ca = self.as_binary();
         let f = |s: &[u8]| s.starts_with(sub);
         let mut out: BooleanChunked = ca.into_iter().map(|opt_s| opt_s.map(f)).collect();
-        out.rename(ca.name());
+        out.rename(ca.name().clone());
         out
     }
 
@@ -53,7 +53,7 @@ pub trait BinaryNameSpaceImpl: AsBinary {
         match prefix.len() {
             1 => match prefix.get(0) {
                 Some(s) => self.starts_with(s),
-                None => BooleanChunked::full_null(ca.name(), ca.len()),
+                None => BooleanChunked::full_null(ca.name().clone(), ca.len()),
             },
             _ => broadcast_binary_elementwise_values(ca, prefix, |s, sub| s.starts_with(sub)),
         }
@@ -64,7 +64,7 @@ pub trait BinaryNameSpaceImpl: AsBinary {
         match suffix.len() {
             1 => match suffix.get(0) {
                 Some(s) => self.ends_with(s),
-                None => BooleanChunked::full_null(ca.name(), ca.len()),
+                None => BooleanChunked::full_null(ca.name().clone(), ca.len()),
             },
             _ => broadcast_binary_elementwise_values(ca, suffix, |s, sub| s.ends_with(sub)),
         }

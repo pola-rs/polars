@@ -19,7 +19,12 @@ impl LazyFrame {
         lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<SchemaRef> {
-        let node = to_alp(self.logical_plan.clone(), expr_arena, lp_arena, false, true)?;
+        let node = to_alp(
+            self.logical_plan.clone(),
+            expr_arena,
+            lp_arena,
+            &mut OptFlags::schema_only(),
+        )?;
 
         let schema = lp_arena.get(node).schema(lp_arena).into_owned();
         // Cache the logical plan so that next schema call is cheap.
@@ -48,8 +53,7 @@ impl LazyFrame {
                     self.logical_plan.clone(),
                     &mut expr_arena,
                     &mut lp_arena,
-                    false,
-                    true,
+                    &mut OptFlags::schema_only(),
                 )?;
 
                 let schema = lp_arena.get(node).schema(&lp_arena).into_owned();
@@ -83,8 +87,7 @@ impl LazyFrame {
                             self.logical_plan.clone(),
                             &mut arenas.expr_arena,
                             &mut arenas.lp_arena,
-                            false,
-                            true,
+                            &mut OptFlags::schema_only(),
                         )?;
 
                         let schema = arenas

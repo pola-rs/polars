@@ -21,6 +21,11 @@ use crate::trusted_len::TrustedLen;
 const DEFAULT_BLOCK_SIZE: usize = 8 * 1024;
 const MAX_EXP_BLOCK_SIZE: usize = 16 * 1024 * 1024;
 
+// Invariants:
+//
+// - Each view must point to a valid slice of a buffer
+// - `total_buffer_len` must be equal to `completed_buffers.iter().map(Vec::len).sum()`
+// - `total_bytes_len` must be equal to `views.iter().map(View::len).sum()`
 pub struct MutableBinaryViewArray<T: ViewType + ?Sized> {
     pub(crate) views: Vec<View>,
     pub(crate) completed_buffers: Vec<Buffer<u8>>,
@@ -97,9 +102,39 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
         }
     }
 
+    /// Get a mutable reference to the [`Vec`] of [`View`]s in this [`MutableBinaryViewArray`].
+    ///
+    /// # Safety
+    ///
+    /// This is safe as long as any mutation of the [`Vec`] does not break any invariants of the
+    /// [`MutableBinaryViewArray`] before it is read again.
     #[inline]
-    pub fn views_mut(&mut self) -> &mut Vec<View> {
+    pub unsafe fn views_mut(&mut self) -> &mut Vec<View> {
         &mut self.views
+    }
+
+    /// Set the `total_bytes_len` of the [`MutableBinaryViewArray`]
+    ///
+    /// # Safety
+    ///
+    /// This should not break invariants of the [`MutableBinaryViewArray`]
+    #[inline]
+    pub unsafe fn set_total_bytes_len(&mut self, value: usize) {
+        #[cfg(debug_assertions)]
+        {
+            let actual_length: usize = self.views().iter().map(|v| v.length as usize).sum();
+            assert_eq!(value, actual_length);
+        }
+
+        self.total_bytes_len = value;
+    }
+
+    pub fn total_bytes_len(&self) -> usize {
+        self.total_bytes_len
+    }
+
+    pub fn total_buffer_len(&self) -> usize {
+        self.total_buffer_len
     }
 
     #[inline]
@@ -268,12 +303,10 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
 
     #[inline]
     pub fn push_buffer(&mut self, buffer: Buffer<u8>) -> u32 {
-        if !self.in_progress_buffer.is_empty() {
-            self.completed_buffers
-                .push(Buffer::from(std::mem::take(&mut self.in_progress_buffer)));
-        }
+        self.finish_in_progress();
 
         let buffer_idx = self.completed_buffers.len();
+        self.total_buffer_len += buffer.len();
         self.completed_buffers.push(buffer);
         buffer_idx as u32
     }
@@ -618,6 +651,9 @@ impl MutableBinaryViewArray<[u8]> {
             let buffer_idx = self.completed_buffers().len() as u32;
             let in_progress_buffer_offset = self.in_progress_buffer.len();
 
+            self.total_bytes_len += sum_length;
+            self.total_buffer_len += sum_length;
+
             self.in_progress_buffer
                 .extend_from_slice(&buffer[..sum_length]);
             self.views.extend(lengths_iterator.map(|length| {
@@ -639,6 +675,8 @@ impl MutableBinaryViewArray<[u8]> {
                 view
             }));
         } else if max_length <= View::MAX_INLINE_SIZE as usize {
+            self.total_bytes_len += sum_length;
+
             // If the min and max are the same, we can dispatch to the optimized SIMD
             // implementation.
             if min_length == max_length {
@@ -663,7 +701,9 @@ impl MutableBinaryViewArray<[u8]> {
                     // SAFETY: We know that each view has a length <= View::MAX_INLINE_SIZE because
                     // the maximum length is <= View::MAX_INLINE_SIZE
                     let view = unsafe { View::new_inline_unchecked(view_buffer) };
+
                     buffer_offset += length;
+
                     view
                 }));
             }
@@ -688,7 +728,7 @@ impl MutableBinaryViewArray<[u8]> {
         lengths_iterator: impl Clone + ExactSizeIterator<Item = usize>,
     ) {
         let (min, max, sum) = lengths_iterator.clone().map(|v| (v, v, v)).fold(
-            (usize::MAX, 0usize, 0usize),
+            (usize::MAX, usize::MIN, 0usize),
             |(cmin, cmax, csum), (emin, emax, esum)| (cmin.min(emin), cmax.max(emax), csum + esum),
         );
 

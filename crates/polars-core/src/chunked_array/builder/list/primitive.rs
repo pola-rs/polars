@@ -14,7 +14,7 @@ where
     T: PolarsNumericType,
 {
     pub fn new(
-        name: &str,
+        name: PlSmallStr,
         capacity: usize,
         values_capacity: usize,
         logical_type: DataType,
@@ -31,7 +31,7 @@ where
     }
 
     pub fn new_with_values_type(
-        name: &str,
+        name: PlSmallStr,
         capacity: usize,
         values_capacity: usize,
         values_type: DataType,

@@ -19,7 +19,7 @@ pub struct LazyCsvReader {
     cache: bool,
     read_options: CsvReadOptions,
     cloud_options: Option<CloudOptions>,
-    include_file_paths: Option<Arc<str>>,
+    include_file_paths: Option<PlSmallStr>,
 }
 
 #[cfg(feature = "csv")]
@@ -120,13 +120,13 @@ impl LazyCsvReader {
 
     /// Set the comment prefix for this instance. Lines starting with this prefix will be ignored.
     #[must_use]
-    pub fn with_comment_prefix(self, comment_prefix: Option<&str>) -> Self {
+    pub fn with_comment_prefix(self, comment_prefix: Option<PlSmallStr>) -> Self {
         self.map_parse_options(|opts| {
-            opts.with_comment_prefix(comment_prefix.map(|s| {
+            opts.with_comment_prefix(comment_prefix.clone().map(|s| {
                 if s.len() == 1 && s.chars().next().unwrap().is_ascii() {
                     CommentPrefix::Single(s.as_bytes()[0])
                 } else {
-                    CommentPrefix::Multi(Arc::from(s))
+                    CommentPrefix::Multi(s)
                 }
             }))
         })
@@ -263,7 +263,7 @@ impl LazyCsvReader {
         Ok(self.with_schema(Some(Arc::new(schema))))
     }
 
-    pub fn with_include_file_paths(mut self, include_file_paths: Option<Arc<str>>) -> Self {
+    pub fn with_include_file_paths(mut self, include_file_paths: Option<PlSmallStr>) -> Self {
         self.include_file_paths = include_file_paths;
         self
     }
@@ -282,7 +282,7 @@ impl LazyFileListReader for LazyCsvReader {
         )?
         .build()
         .into();
-        lf.opt_state |= OptState::FILE_CACHING;
+        lf.opt_state |= OptFlags::FILE_CACHING;
         Ok(lf)
     }
 

@@ -1,10 +1,10 @@
-//! The tpch files only got ten rows, so after all the joins filters there is not data
+//! The PDSH files only got ten rows, so after all the joins filters there is not data
 //! Still we can use this to test the schema, operation correctness on empty data, and optimizations
 //! taken.
 use super::*;
 
 const fn base_path() -> &'static str {
-    "../../examples/datasets/tpc_heads"
+    "../../examples/datasets/pds_heads"
 }
 
 fn region() -> LazyFrame {
@@ -98,14 +98,14 @@ fn test_q2() -> PolarsResult<()> {
 
     let out = q.collect()?;
     let schema = Schema::from_iter([
-        Field::new("s_acctbal", DataType::Float64),
-        Field::new("s_name", DataType::String),
-        Field::new("n_name", DataType::String),
-        Field::new("p_partkey", DataType::Int64),
-        Field::new("p_mfgr", DataType::String),
-        Field::new("s_address", DataType::String),
-        Field::new("s_phone", DataType::String),
-        Field::new("s_comment", DataType::String),
+        Field::new("s_acctbal".into(), DataType::Float64),
+        Field::new("s_name".into(), DataType::String),
+        Field::new("n_name".into(), DataType::String),
+        Field::new("p_partkey".into(), DataType::Int64),
+        Field::new("p_mfgr".into(), DataType::String),
+        Field::new("s_address".into(), DataType::String),
+        Field::new("s_phone".into(), DataType::String),
+        Field::new("s_comment".into(), DataType::String),
     ]);
     assert_eq!(&out.schema(), &schema);
 

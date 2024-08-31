@@ -36,7 +36,7 @@ fn new_with_field() {
 
     let mut list = MutableFixedSizeListArray::new_with_field(
         MutablePrimitiveArray::<i32>::new(),
-        "custom_items",
+        "custom_items".into(),
         false,
         3,
     );
@@ -46,7 +46,11 @@ fn new_with_field() {
     assert_eq!(
         list.data_type(),
         &ArrowDataType::FixedSizeList(
-            Box::new(Field::new("custom_items", ArrowDataType::Int32, false)),
+            Box::new(Field::new(
+                "custom_items".into(),
+                ArrowDataType::Int32,
+                false
+            )),
             3
         )
     );

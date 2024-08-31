@@ -8746,30 +8746,31 @@ class Expr:
 
     def sign(self) -> Expr:
         """
-        Compute the element-wise indication of the sign.
+        Compute the element-wise sign function on numeric types.
 
-        The returned values can be -1, 0, or 1:
+        The returned value is computed as follows:
 
-        * -1 if x  < 0.
-        *  0 if x == 0.
-        *  1 if x  > 0.
+        * -1 if x < 0.
+        *  1 if x > 0.
+        *  x otherwise (typically 0, but could be NaN if the input is).
 
-        (null values are preserved as-is).
+        Null values are preserved as-is, and the dtype of the input is preserved.
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [-9.0, -0.0, 0.0, 4.0, None]})
-        >>> df.select(pl.col("a").sign())
-        shape: (5, 1)
+        >>> df = pl.DataFrame({"a": [-9.0, -0.0, 0.0, 4.0, float("nan"), None]})
+        >>> df.select(pl.col.a.sign())
+        shape: (6, 1)
         ┌──────┐
         │ a    │
         │ ---  │
-        │ i64  │
+        │ f64  │
         ╞══════╡
-        │ -1   │
-        │ 0    │
-        │ 0    │
-        │ 1    │
+        │ -1.0 │
+        │ -0.0 │
+        │ 0.0  │
+        │ 1.0  │
+        │ NaN  │
         │ null │
         └──────┘
         """

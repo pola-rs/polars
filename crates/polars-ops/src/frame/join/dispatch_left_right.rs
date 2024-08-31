@@ -8,12 +8,12 @@ pub(super) fn left_join_from_series(
     s_right: &Series,
     args: JoinArgs,
     verbose: bool,
-    drop_names: Option<&[&str]>,
+    drop_names: Option<Vec<PlSmallStr>>,
 ) -> PolarsResult<DataFrame> {
     let (df_left, df_right) = materialize_left_join_from_series(
         left, right, s_left, s_right, &args, verbose, drop_names,
     )?;
-    _finish_join(df_left, df_right, args.suffix.as_deref())
+    _finish_join(df_left, df_right, args.suffix)
 }
 
 pub(super) fn right_join_from_series(
@@ -23,13 +23,13 @@ pub(super) fn right_join_from_series(
     s_right: &Series,
     args: JoinArgs,
     verbose: bool,
-    drop_names: Option<&[&str]>,
+    drop_names: Option<Vec<PlSmallStr>>,
 ) -> PolarsResult<DataFrame> {
     // Swap the order of tables to do a right join.
     let (df_right, df_left) = materialize_left_join_from_series(
         right, left, s_right, s_left, &args, verbose, drop_names,
     )?;
-    _finish_join(df_left, df_right, args.suffix.as_deref())
+    _finish_join(df_left, df_right, args.suffix)
 }
 
 pub fn materialize_left_join_from_series(
@@ -39,7 +39,7 @@ pub fn materialize_left_join_from_series(
     s_right: &Series,
     args: &JoinArgs,
     verbose: bool,
-    drop_names: Option<&[&str]>,
+    drop_names: Option<Vec<PlSmallStr>>,
 ) -> PolarsResult<(DataFrame, DataFrame)> {
     #[cfg(feature = "dtype-categorical")]
     _check_categorical_src(s_left.dtype(), s_right.dtype())?;

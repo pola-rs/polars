@@ -1190,8 +1190,12 @@ mod test {
 
     #[test]
     fn test_fmt_list() {
-        let mut builder =
-            ListPrimitiveChunkedBuilder::<Int32Type>::new("a", 10, 10, DataType::Int32);
+        let mut builder = ListPrimitiveChunkedBuilder::<Int32Type>::new(
+            PlSmallStr::from_static("a"),
+            10,
+            10,
+            DataType::Int32,
+        );
         builder.append_opt_slice(Some(&[1, 2, 3, 4, 5, 6]));
         builder.append_opt_slice(None);
         let list_long = builder.finish().into_series();
@@ -1266,8 +1270,12 @@ Series: 'a' [list[i32]]
             format!("{:?}", list_long)
         );
 
-        let mut builder =
-            ListPrimitiveChunkedBuilder::<Int32Type>::new("a", 10, 10, DataType::Int32);
+        let mut builder = ListPrimitiveChunkedBuilder::<Int32Type>::new(
+            PlSmallStr::from_static("a"),
+            10,
+            10,
+            DataType::Int32,
+        );
         builder.append_opt_slice(Some(&[1]));
         builder.append_opt_slice(None);
         let list_short = builder.finish().into_series();
@@ -1308,8 +1316,12 @@ Series: 'a' [list[i32]]
             format!("{:?}", list_short)
         );
 
-        let mut builder =
-            ListPrimitiveChunkedBuilder::<Int32Type>::new("a", 10, 10, DataType::Int32);
+        let mut builder = ListPrimitiveChunkedBuilder::<Int32Type>::new(
+            PlSmallStr::from_static("a"),
+            10,
+            10,
+            DataType::Int32,
+        );
         builder.append_opt_slice(Some(&[]));
         builder.append_opt_slice(None);
         let list_empty = builder.finish().into_series();
@@ -1329,7 +1341,8 @@ Series: 'a' [list[i32]]
 
     #[test]
     fn test_fmt_temporal() {
-        let s = Int32Chunked::new("Date", &[Some(1), None, Some(3)]).into_date();
+        let s = Int32Chunked::new(PlSmallStr::from_static("Date"), &[Some(1), None, Some(3)])
+            .into_date();
         assert_eq!(
             r#"shape: (3,)
 Series: 'Date' [date]
@@ -1341,8 +1354,11 @@ Series: 'Date' [date]
             format!("{:?}", s.into_series())
         );
 
-        let s = Int64Chunked::new("", &[Some(1), None, Some(1_000_000_000_000)])
-            .into_datetime(TimeUnit::Nanoseconds, None);
+        let s = Int64Chunked::new(
+            PlSmallStr::const_default(),
+            &[Some(1), None, Some(1_000_000_000_000)],
+        )
+        .into_datetime(TimeUnit::Nanoseconds, None);
         assert_eq!(
             r#"shape: (3,)
 Series: '' [datetime[ns]]
@@ -1357,7 +1373,7 @@ Series: '' [datetime[ns]]
 
     #[test]
     fn test_fmt_chunkedarray() {
-        let ca = Int32Chunked::new("Date", &[Some(1), None, Some(3)]);
+        let ca = Int32Chunked::new(PlSmallStr::from_static("Date"), &[Some(1), None, Some(3)]);
         assert_eq!(
             r#"shape: (3,)
 ChunkedArray: 'Date' [i32]
@@ -1368,7 +1384,7 @@ ChunkedArray: 'Date' [i32]
 ]"#,
             format!("{:?}", ca)
         );
-        let ca = StringChunked::new("name", &["a", "b"]);
+        let ca = StringChunked::new(PlSmallStr::from_static("name"), &["a", "b"]);
         assert_eq!(
             r#"shape: (2,)
 ChunkedArray: 'name' [str]

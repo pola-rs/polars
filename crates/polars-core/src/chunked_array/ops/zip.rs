@@ -26,7 +26,7 @@ where
         (1, other_len) => src.new_from_index(0, other_len),
         _ => polars_bail!(ShapeMismatch: SHAPE_MISMATCH_STR),
     };
-    Ok(ret.with_name(if_true.name()))
+    Ok(ret.with_name(if_true.name().clone()))
 }
 
 fn bool_null_to_false(mask: &BooleanArray) -> Bitmap {
@@ -156,7 +156,7 @@ where
             polars_bail!(ShapeMismatch: SHAPE_MISMATCH_STR)
         };
 
-        Ok(ret.with_name(if_true.name()))
+        Ok(ret.with_name(if_true.name().clone()))
     }
 }
 
@@ -237,7 +237,7 @@ impl ChunkZip<StructType> for StructChunked {
             .map(|(lhs, rhs)| lhs.zip_with_same_type(&mask, &rhs))
             .collect::<PolarsResult<Vec<_>>>()?;
 
-        let mut out = StructChunked::from_series(self.name(), &fields)?;
+        let mut out = StructChunked::from_series(self.name().clone(), &fields)?;
 
         // Zip the validities.
         if (l.null_count + r.null_count) > 0 {

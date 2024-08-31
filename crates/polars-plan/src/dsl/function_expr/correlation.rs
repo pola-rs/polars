@@ -39,7 +39,7 @@ pub(super) fn corr(s: &[Series], ddof: u8, method: CorrelationMethod) -> PolarsR
 fn covariance(s: &[Series], ddof: u8) -> PolarsResult<Series> {
     let a = &s[0];
     let b = &s[1];
-    let name = "cov";
+    let name = PlSmallStr::from_static("cov");
 
     use polars_ops::chunked_array::cov::cov;
     let ret = match a.dtype() {
@@ -64,13 +64,13 @@ fn covariance(s: &[Series], ddof: u8) -> PolarsResult<Series> {
 fn pearson_corr(s: &[Series], ddof: u8) -> PolarsResult<Series> {
     let a = &s[0];
     let b = &s[1];
-    let name = "pearson_corr";
+    let name = PlSmallStr::from_static("pearson_corr");
 
     use polars_ops::chunked_array::cov::pearson_corr;
     let ret = match a.dtype() {
         DataType::Float32 => {
             let ret = pearson_corr(a.f32().unwrap(), b.f32().unwrap(), ddof).map(|v| v as f32);
-            return Ok(Series::new(name, &[ret]));
+            return Ok(Series::new(name.clone(), &[ret]));
         },
         DataType::Float64 => pearson_corr(a.f64().unwrap(), b.f64().unwrap(), ddof),
         DataType::Int32 => pearson_corr(a.i32().unwrap(), b.i32().unwrap(), ddof),
@@ -94,10 +94,10 @@ fn spearman_rank_corr(s: &[Series], ddof: u8, propagate_nans: bool) -> PolarsRes
 
     let (a, b) = coalesce_nulls_series(a, b);
 
-    let name = "spearman_rank_correlation";
+    let name = PlSmallStr::from_static("spearman_rank_correlation");
     if propagate_nans && a.dtype().is_float() {
         for s in [&a, &b] {
-            if nan_max_s(s, "")
+            if nan_max_s(s, PlSmallStr::const_default())
                 .get(0)
                 .unwrap()
                 .extract::<f64>()

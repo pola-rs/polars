@@ -56,7 +56,7 @@ fn fields_to_pydict(fields: &Vec<Field>, dict: &Bound<'_, PyDict>, py: Python) -
         } else {
             Wrap((&field.data_type).into())
         };
-        dict.set_item(&field.name, dt.to_object(py))?;
+        dict.set_item(field.name.as_str(), dt.to_object(py))?;
     }
     Ok(())
 }

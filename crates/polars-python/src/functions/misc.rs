@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use polars_plan::prelude::*;
 use pyo3::prelude::*;
 
@@ -52,9 +50,9 @@ pub fn register_plugin_function(
     Ok(Expr::Function {
         input: args.to_exprs(),
         function: FunctionExpr::FfiPlugin {
-            lib: Arc::from(plugin_path),
-            symbol: Arc::from(function_name),
-            kwargs: Arc::from(kwargs),
+            lib: plugin_path.into(),
+            symbol: function_name.into(),
+            kwargs: kwargs.into(),
         },
         options: FunctionOptions {
             collect_groups,

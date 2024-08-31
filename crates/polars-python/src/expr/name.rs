@@ -1,8 +1,9 @@
 use std::borrow::Cow;
 
 use polars::prelude::*;
+use polars_utils::format_pl_smallstr;
+use polars_utils::pl_str::PlSmallStr;
 use pyo3::prelude::*;
-use smartstring::alias::String as SmartString;
 
 use crate::PyExpr;
 
@@ -17,9 +18,9 @@ impl PyExpr {
             .clone()
             .name()
             .map(move |name| {
-                let out = Python::with_gil(|py| lambda.call1(py, (name,)));
+                let out = Python::with_gil(|py| lambda.call1(py, (name.as_str(),)));
                 match out {
-                    Ok(out) => Ok(out.to_string()),
+                    Ok(out) => Ok(format_pl_smallstr!("{}", out)),
                     Err(e) => Err(PolarsError::ComputeError(
                         format!("Python function in 'name.map' produced an error: {e}.").into(),
                     )),
@@ -48,7 +49,7 @@ impl PyExpr {
         let name_mapper = Arc::new(move |name: &str| {
             Python::with_gil(|py| {
                 let out = name_mapper.call1(py, (name,)).unwrap();
-                let out: SmartString = out.extract::<Cow<str>>(py).unwrap().into();
+                let out: PlSmallStr = out.extract::<Cow<str>>(py).unwrap().as_ref().into();
                 out
             })
         }) as FieldsNameMapper;

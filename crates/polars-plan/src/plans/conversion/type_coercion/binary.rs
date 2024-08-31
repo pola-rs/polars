@@ -296,7 +296,13 @@ pub(super) fn process_binary(
         st = String
     }
 
-    // only cast if the type is not already the super type.
+    // TODO! raise here?
+    // We should at least never cast to Unknown.
+    if matches!(st, DataType::Unknown(UnknownKind::Any)) {
+        return Ok(None);
+    }
+
+    // Only cast if the type is not already the super type.
     // this can prevent an expensive flattening and subsequent aggregation
     // in a group_by context. To be able to cast the groups need to be
     // flattened

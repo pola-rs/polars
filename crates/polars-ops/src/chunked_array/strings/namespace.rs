@@ -133,10 +133,10 @@ pub trait StringNameSpaceImpl: AsString {
                         ca.contains(pat, strict)
                     }
                 },
-                None => Ok(BooleanChunked::full_null(ca.name(), ca.len())),
+                None => Ok(BooleanChunked::full_null(ca.name().clone(), ca.len())),
             },
             (1, _) if ca.null_count() == 1 => Ok(BooleanChunked::full_null(
-                ca.name(),
+                ca.name().clone(),
                 ca.len().max(pat.len()),
             )),
             _ => {
@@ -188,10 +188,13 @@ pub trait StringNameSpaceImpl: AsString {
                     ca.find(pat, strict)
                 }
             } else {
-                Ok(UInt32Chunked::full_null(ca.name(), ca.len()))
+                Ok(UInt32Chunked::full_null(ca.name().clone(), ca.len()))
             };
         } else if ca.len() == 1 && ca.null_count() == 1 {
-            return Ok(UInt32Chunked::full_null(ca.name(), ca.len().max(pat.len())));
+            return Ok(UInt32Chunked::full_null(
+                ca.name().clone(),
+                ca.len().max(pat.len()),
+            ));
         }
         if literal {
             Ok(broadcast_binary_elementwise(
@@ -267,7 +270,7 @@ pub trait StringNameSpaceImpl: AsString {
         let out: BooleanChunked = if let Some(reg) = opt_reg {
             unary_elementwise_values(ca, |s| reg.is_match(s))
         } else {
-            BooleanChunked::full_null(ca.name(), ca.len())
+            BooleanChunked::full_null(ca.name().clone(), ca.len())
         };
         Ok(out)
     }
@@ -292,7 +295,7 @@ pub trait StringNameSpaceImpl: AsString {
             Ok(rx) => Ok(unary_elementwise(ca, |opt_s| {
                 opt_s.and_then(|s| rx.find(s)).map(|m| m.start() as u32)
             })),
-            Err(_) if !strict => Ok(UInt32Chunked::full_null(ca.name(), ca.len())),
+            Err(_) if !strict => Ok(UInt32Chunked::full_null(ca.name().clone(), ca.len())),
             Err(e) => Err(PolarsError::ComputeError(
                 format!("Invalid regular expression: {}", e).into(),
             )),
@@ -402,7 +405,8 @@ pub trait StringNameSpaceImpl: AsString {
         let ca = self.as_string();
         let reg = Regex::new(pat)?;
 
-        let mut builder = ListStringChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
+        let mut builder =
+            ListStringChunkedBuilder::new(ca.name().clone(), ca.len(), ca.get_values_size());
         for arr in ca.downcast_iter() {
             for opt_s in arr {
                 match opt_s {
@@ -495,7 +499,8 @@ pub trait StringNameSpaceImpl: AsString {
 
         // A sqrt(n) regex cache is not too small, not too large.
         let mut reg_cache = FastFixedCache::new((ca.len() as f64).sqrt() as usize);
-        let mut builder = ListStringChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
+        let mut builder =
+            ListStringChunkedBuilder::new(ca.name().clone(), ca.len(), ca.get_values_size());
         binary_elementwise_for_each(ca, pat, |opt_s, opt_pat| match (opt_s, opt_pat) {
             (_, None) | (None, _) => builder.append_null(),
             (Some(s), Some(pat)) => {
@@ -560,7 +565,7 @@ pub trait StringNameSpaceImpl: AsString {
 
         let out: UInt32Chunked = broadcast_try_binary_elementwise(ca, pat, op)?;
 
-        Ok(out.with_name(ca.name()))
+        Ok(out.with_name(ca.name().clone()))
     }
 
     /// Modify the strings to their lowercase equivalent.

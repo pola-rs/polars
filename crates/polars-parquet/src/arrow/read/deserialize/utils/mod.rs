@@ -1,16 +1,12 @@
 pub(crate) mod array_chunks;
 pub(crate) mod filter;
 
-use arrow::array::{
-    BinaryArray, DictionaryArray, DictionaryKey, MutableBinaryViewArray, PrimitiveArray, View,
-};
+use arrow::array::{DictionaryArray, DictionaryKey, MutableBinaryViewArray, PrimitiveArray, View};
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::datatypes::ArrowDataType;
 use arrow::pushable::Pushable;
-use arrow::types::Offset;
 
 use self::filter::Filter;
-use super::binary::utils::Binary;
 use super::BasicDecompressor;
 use crate::parquet::encoding::hybrid_rle::gatherer::{
     HybridRleGatherer, ZeroCount, ZeroCountGatherer,
@@ -22,6 +18,8 @@ use crate::parquet::schema::Repetition;
 
 #[derive(Debug)]
 pub(crate) struct State<'a, D: Decoder> {
+    pub(crate) dict: Option<&'a D::Dict>,
+    pub(crate) is_optional: bool,
     pub(crate) page_validity: Option<PageValidity<'a>>,
     pub(crate) translation: D::Translation<'a>,
 }
@@ -44,7 +42,9 @@ pub(crate) trait StateTranslation<'a, D: Decoder>: Sized {
         &mut self,
         decoder: &mut D,
         decoded: &mut D::DecodedState,
+        is_optional: bool,
         page_validity: &mut Option<PageValidity<'a>>,
+        dict: Option<&'a D::Dict>,
         additional: usize,
     ) -> ParquetResult<()>;
 }
@@ -54,13 +54,25 @@ impl<'a, D: Decoder> State<'a, D> {
         let is_optional =
             page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
 
-        let page_validity = is_optional
+        let mut page_validity = is_optional
             .then(|| page_validity_decoder(page))
             .transpose()?;
+
+        // Make the page_validity None if there are no nulls in the page
+        let null_count = page
+            .null_count()
+            .map(Ok)
+            .or_else(|| page_validity.as_ref().map(hybrid_rle_count_zeros))
+            .transpose()?;
+        if null_count == Some(0) {
+            page_validity = None;
+        }
 
         let translation = D::Translation::new(decoder, page, dict, page_validity.as_ref())?;
 
         Ok(Self {
+            dict,
+            is_optional,
             page_validity,
             translation,
         })
@@ -74,7 +86,11 @@ impl<'a, D: Decoder> State<'a, D> {
         let translation = D::Translation::new(decoder, page, dict, None)?;
 
         Ok(Self {
+            dict,
             translation,
+
+            // Nested values may be optional, but all that is handled elsewhere.
+            is_optional: false,
             page_validity: None,
         })
     }
@@ -120,7 +136,9 @@ impl<'a, D: Decoder> State<'a, D> {
                 self.translation.extend_from_state(
                     decoder,
                     decoded,
+                    self.is_optional,
                     &mut self.page_validity,
+                    self.dict,
                     num_rows,
                 )
             },
@@ -136,7 +154,9 @@ impl<'a, D: Decoder> State<'a, D> {
                         self.translation.extend_from_state(
                             decoder,
                             decoded,
+                            self.is_optional,
                             &mut self.page_validity,
+                            self.dict,
                             end - start,
                         )?;
                     }
@@ -156,7 +176,9 @@ impl<'a, D: Decoder> State<'a, D> {
                             self.translation.extend_from_state(
                                 decoder,
                                 decoded,
+                                self.is_optional,
                                 &mut self.page_validity,
+                                self.dict,
                                 num_ones,
                             )?;
                         }
@@ -494,38 +516,6 @@ where
     }
 }
 
-impl<'a, 'b, 'c, O, Out, G> BatchableCollector<u8, Binary<O>>
-    for GatheredHybridRle<'a, 'b, 'c, Out, G>
-where
-    O: Offset,
-    Out: Clone,
-    G: HybridRleGatherer<Out, Target = Binary<O>>,
-{
-    #[inline]
-    fn reserve(target: &mut Binary<O>, n: usize) {
-        target.offsets.reserve(n);
-        target.values.reserve(n);
-    }
-
-    #[inline]
-    fn push_n(&mut self, target: &mut Binary<O>, n: usize) -> ParquetResult<()> {
-        self.decoder.gather_n_into(target, n, self.gatherer)?;
-        Ok(())
-    }
-
-    #[inline]
-    fn push_n_nulls(&mut self, target: &mut Binary<O>, n: usize) -> ParquetResult<()> {
-        self.gatherer
-            .gather_repeated(target, self.null_value.clone(), n)?;
-        Ok(())
-    }
-
-    #[inline]
-    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
-        self.decoder.skip_in_place(n)
-    }
-}
-
 impl<'a, 'b, 'c, T> BatchableCollector<u32, MutableBinaryViewArray<[u8]>>
     for TranslatedHybridRle<'a, 'b, 'c, View, T>
 where
@@ -538,8 +528,11 @@ where
 
     #[inline]
     fn push_n(&mut self, target: &mut MutableBinaryViewArray<[u8]>, n: usize) -> ParquetResult<()> {
-        self.decoder
-            .translate_and_collect_n_into(target.views_mut(), n, self.translator)?;
+        self.decoder.translate_and_collect_n_into(
+            unsafe { target.views_mut() },
+            n,
+            self.translator,
+        )?;
 
         if let Some(validity) = target.validity() {
             validity.extend_constant(n, true);
@@ -612,12 +605,21 @@ pub(super) trait Decoder: Sized {
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState;
 
     /// Deserializes a [`DictPage`] into [`Self::Dict`].
-    fn deserialize_dict(&self, page: DictPage) -> Self::Dict;
+    fn deserialize_dict(&self, page: DictPage) -> ParquetResult<Self::Dict>;
+
+    fn apply_dictionary(
+        &mut self,
+        _decoded: &mut Self::DecodedState,
+        _dict: &Self::Dict,
+    ) -> ParquetResult<()> {
+        Ok(())
+    }
 
     fn decode_plain_encoded<'a>(
         &mut self,
         decoded: &mut Self::DecodedState,
         page_values: &mut <Self::Translation<'a> as StateTranslation<'a, Self>>::PlainDecoder,
+        is_optional: bool,
         page_validity: Option<&mut PageValidity<'a>>,
         limit: usize,
     ) -> ParquetResult<()>;
@@ -625,6 +627,7 @@ pub(super) trait Decoder: Sized {
         &mut self,
         decoded: &mut Self::DecodedState,
         page_values: &mut HybridRleDecoder<'a>,
+        is_optional: bool,
         page_validity: Option<&mut PageValidity<'a>>,
         dict: &Self::Dict,
         limit: usize,
@@ -693,7 +696,7 @@ impl<D: Decoder> PageDecoder<D> {
         decoder: D,
     ) -> ParquetResult<Self> {
         let dict_page = iter.read_dict_page()?;
-        let dict = dict_page.map(|d| decoder.deserialize_dict(d));
+        let dict = dict_page.map(|d| decoder.deserialize_dict(d)).transpose()?;
 
         Ok(Self {
             iter,
@@ -707,6 +710,10 @@ impl<D: Decoder> PageDecoder<D> {
         let mut num_rows_remaining = Filter::opt_num_rows(&filter, self.iter.total_num_values());
 
         let mut target = self.decoder.with_capacity(num_rows_remaining);
+
+        if let Some(dict) = self.dict.as_ref() {
+            self.decoder.apply_dictionary(&mut target, dict)?;
+        }
 
         while num_rows_remaining > 0 {
             let Some(page) = self.iter.next() else {
@@ -758,43 +765,6 @@ pub(super) fn dict_indices_decoder(page: &DataPage) -> ParquetResult<hybrid_rle:
     ))
 }
 
-/// Generate a look-up table of views from a look-up table of values into a `BinaryViewArray`.
-///
-/// This makes sure to only allocate the necessary buffer space in the `BinaryViewArray` if it is
-/// desperately needed.
-#[inline]
-pub(super) fn binary_views_dict(
-    values: &mut MutableBinaryViewArray<[u8]>,
-    dict: &BinaryArray<i64>,
-) -> Vec<View> {
-    // We create a dictionary of views here, so that the views only have be calculated
-    // once and are then just a lookup. We also only push the dictionary buffer when we
-    // see the first View that cannot be inlined.
-    //
-    // @TODO: Maybe we can do something smarter here by only pushing the items that are larger than
-    // 12 bytes. Maybe, we say if the num_inlined < dict.len() / 2 then push the whole buffer.
-    // Otherwise, only push the non-inlinable items.
-
-    let mut buffer_idx = None;
-    dict.values_iter()
-        .enumerate()
-        .map(|(i, value)| {
-            if value.len() <= View::MAX_INLINE_SIZE as usize {
-                View::new_inline(value)
-            } else {
-                let (offset_start, offset_end) = dict.offsets().start_end(i);
-                debug_assert_eq!(value.len(), offset_end - offset_start);
-
-                let buffer_idx =
-                    buffer_idx.get_or_insert_with(|| values.push_buffer(dict.values().clone()));
-
-                debug_assert!(offset_start <= u32::MAX as usize);
-                View::new_from_bytes(value, *buffer_idx, offset_start as u32)
-            }
-        })
-        .collect()
-}
-
 /// Freeze a [`MutableBitmap`] into a `Option<Bitmap>`.
 ///
 /// This will turn the several instances where `None` (representing "all valid") suffices.
@@ -810,4 +780,14 @@ pub fn freeze_validity(validity: MutableBitmap) -> Option<Bitmap> {
     }
 
     Some(validity)
+}
+
+pub(crate) fn hybrid_rle_count_zeros(
+    decoder: &hybrid_rle::HybridRleDecoder<'_>,
+) -> ParquetResult<usize> {
+    let mut count = ZeroCount::default();
+    decoder
+        .clone()
+        .gather_into(&mut count, &ZeroCountGatherer)?;
+    Ok(count.num_zero)
 }

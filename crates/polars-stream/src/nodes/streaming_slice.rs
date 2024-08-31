@@ -30,13 +30,14 @@ impl ComputeNode for StreamingSliceNode {
         self.num_pipelines = num_pipelines;
     }
 
-    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) {
+    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {
         if self.stream_offset >= self.start_offset + self.length || self.length == 0 {
             recv[0] = PortState::Done;
             send[0] = PortState::Done;
         } else {
             recv.swap_with_slice(send);
         }
+        Ok(())
     }
 
     fn spawn<'env, 's>(

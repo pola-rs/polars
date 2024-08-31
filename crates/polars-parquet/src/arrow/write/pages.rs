@@ -149,7 +149,7 @@ fn to_nested_recursive(
                 fields
             } else {
                 polars_bail!(InvalidOperation:
-                    "Parquet type must be a group for a struct array".to_string(),
+                    "Parquet type must be a group for a struct array",
                 )
             };
 
@@ -170,12 +170,12 @@ fn to_nested_recursive(
                     &fields[0]
                 } else {
                     polars_bail!(InvalidOperation:
-                        "Parquet type must be a group for a list array".to_string(),
+                        "Parquet type must be a group for a list array",
                     )
                 }
             } else {
                 polars_bail!(InvalidOperation:
-                    "Parquet type must be a group for a list array".to_string(),
+                    "Parquet type must be a group for a list array",
                 )
             };
 
@@ -194,12 +194,12 @@ fn to_nested_recursive(
                     &fields[0]
                 } else {
                     polars_bail!(InvalidOperation:
-                        "Parquet type must be a group for a list array".to_string(),
+                        "Parquet type must be a group for a list array",
                     )
                 }
             } else {
                 polars_bail!(InvalidOperation:
-                    "Parquet type must be a group for a list array".to_string(),
+                    "Parquet type must be a group for a list array",
                 )
             };
 
@@ -217,12 +217,12 @@ fn to_nested_recursive(
                     &fields[0]
                 } else {
                     polars_bail!(InvalidOperation:
-                        "Parquet type must be a group for a list array".to_string(),
+                        "Parquet type must be a group for a list array",
                     )
                 }
             } else {
                 polars_bail!(InvalidOperation:
-                    "Parquet type must be a group for a list array".to_string(),
+                    "Parquet type must be a group for a list array",
                 )
             };
 
@@ -240,12 +240,12 @@ fn to_nested_recursive(
                     &fields[0]
                 } else {
                     polars_bail!(InvalidOperation:
-                        "Parquet type must be a group for a map array".to_string(),
+                        "Parquet type must be a group for a map array",
                     )
                 }
             } else {
                 polars_bail!(InvalidOperation:
-                    "Parquet type must be a group for a map array".to_string(),
+                    "Parquet type must be a group for a map array",
                 )
             };
 
@@ -594,8 +594,8 @@ mod tests {
         let int = Int32Array::from_slice([42, 28, 19, 31]).boxed();
 
         let fields = vec![
-            Field::new("b", ArrowDataType::Boolean, false),
-            Field::new("c", ArrowDataType::Int32, false),
+            Field::new("b".into(), ArrowDataType::Boolean, false),
+            Field::new("c".into(), ArrowDataType::Int32, false),
         ];
 
         let array = StructArray::new(
@@ -606,7 +606,7 @@ mod tests {
 
         let type_ = ParquetType::GroupType {
             field_info: FieldInfo {
-                name: "a".to_string(),
+                name: "a".into(),
                 repetition: Repetition::Optional,
                 id: None,
             },
@@ -615,7 +615,7 @@ mod tests {
             fields: vec![
                 ParquetType::PrimitiveType(ParquetPrimitiveType {
                     field_info: FieldInfo {
-                        name: "b".to_string(),
+                        name: "b".into(),
                         repetition: Repetition::Required,
                         id: None,
                     },
@@ -625,7 +625,7 @@ mod tests {
                 }),
                 ParquetType::PrimitiveType(ParquetPrimitiveType {
                     field_info: FieldInfo {
-                        name: "c".to_string(),
+                        name: "c".into(),
                         repetition: Repetition::Required,
                         id: None,
                     },
@@ -658,8 +658,8 @@ mod tests {
         let int = Int32Array::from_slice([42, 28, 19, 31]).boxed();
 
         let fields = vec![
-            Field::new("b", ArrowDataType::Boolean, false),
-            Field::new("c", ArrowDataType::Int32, false),
+            Field::new("b".into(), ArrowDataType::Boolean, false),
+            Field::new("c".into(), ArrowDataType::Int32, false),
         ];
 
         let array = StructArray::new(
@@ -669,8 +669,8 @@ mod tests {
         );
 
         let fields = vec![
-            Field::new("b", array.data_type().clone(), true),
-            Field::new("c", array.data_type().clone(), true),
+            Field::new("b".into(), array.data_type().clone(), true),
+            Field::new("c".into(), array.data_type().clone(), true),
         ];
 
         let array = StructArray::new(
@@ -681,7 +681,7 @@ mod tests {
 
         let type_ = ParquetType::GroupType {
             field_info: FieldInfo {
-                name: "a".to_string(),
+                name: "a".into(),
                 repetition: Repetition::Optional,
                 id: None,
             },
@@ -690,7 +690,7 @@ mod tests {
             fields: vec![
                 ParquetType::PrimitiveType(ParquetPrimitiveType {
                     field_info: FieldInfo {
-                        name: "b".to_string(),
+                        name: "b".into(),
                         repetition: Repetition::Required,
                         id: None,
                     },
@@ -700,7 +700,7 @@ mod tests {
                 }),
                 ParquetType::PrimitiveType(ParquetPrimitiveType {
                     field_info: FieldInfo {
-                        name: "c".to_string(),
+                        name: "c".into(),
                         repetition: Repetition::Required,
                         id: None,
                     },
@@ -713,7 +713,7 @@ mod tests {
 
         let type_ = ParquetType::GroupType {
             field_info: FieldInfo {
-                name: "a".to_string(),
+                name: "a".into(),
                 repetition: Repetition::Required,
                 id: None,
             },
@@ -761,8 +761,8 @@ mod tests {
         let int = Int32Array::from_slice([42, 28, 19, 31]).boxed();
 
         let fields = vec![
-            Field::new("b", ArrowDataType::Boolean, false),
-            Field::new("c", ArrowDataType::Int32, false),
+            Field::new("b".into(), ArrowDataType::Boolean, false),
+            Field::new("c".into(), ArrowDataType::Int32, false),
         ];
 
         let array = StructArray::new(
@@ -772,7 +772,11 @@ mod tests {
         );
 
         let array = ListArray::new(
-            ArrowDataType::List(Box::new(Field::new("l", array.data_type().clone(), true))),
+            ArrowDataType::List(Box::new(Field::new(
+                "l".into(),
+                array.data_type().clone(),
+                true,
+            ))),
             vec![0i32, 2, 4].try_into().unwrap(),
             Box::new(array),
             None,
@@ -780,7 +784,7 @@ mod tests {
 
         let type_ = ParquetType::GroupType {
             field_info: FieldInfo {
-                name: "a".to_string(),
+                name: "a".into(),
                 repetition: Repetition::Optional,
                 id: None,
             },
@@ -789,7 +793,7 @@ mod tests {
             fields: vec![
                 ParquetType::PrimitiveType(ParquetPrimitiveType {
                     field_info: FieldInfo {
-                        name: "b".to_string(),
+                        name: "b".into(),
                         repetition: Repetition::Required,
                         id: None,
                     },
@@ -799,7 +803,7 @@ mod tests {
                 }),
                 ParquetType::PrimitiveType(ParquetPrimitiveType {
                     field_info: FieldInfo {
-                        name: "c".to_string(),
+                        name: "c".into(),
                         repetition: Repetition::Required,
                         id: None,
                     },
@@ -812,7 +816,7 @@ mod tests {
 
         let type_ = ParquetType::GroupType {
             field_info: FieldInfo {
-                name: "l".to_string(),
+                name: "l".into(),
                 repetition: Repetition::Required,
                 id: None,
             },
@@ -820,7 +824,7 @@ mod tests {
             converted_type: None,
             fields: vec![ParquetType::GroupType {
                 field_info: FieldInfo {
-                    name: "list".to_string(),
+                    name: "list".into(),
                     repetition: Repetition::Repeated,
                     id: None,
                 },
@@ -860,10 +864,10 @@ mod tests {
     #[test]
     fn test_map() {
         let kv_type = ArrowDataType::Struct(vec![
-            Field::new("k", ArrowDataType::Utf8, false),
-            Field::new("v", ArrowDataType::Int32, false),
+            Field::new("k".into(), ArrowDataType::Utf8, false),
+            Field::new("v".into(), ArrowDataType::Int32, false),
         ]);
-        let kv_field = Field::new("kv", kv_type.clone(), false);
+        let kv_field = Field::new("kv".into(), kv_type.clone(), false);
         let map_type = ArrowDataType::Map(Box::new(kv_field), false);
 
         let key_array = Utf8Array::<i32>::from_slice(["k1", "k2", "k3", "k4", "k5", "k6"]).boxed();
@@ -877,7 +881,7 @@ mod tests {
 
         let type_ = ParquetType::GroupType {
             field_info: FieldInfo {
-                name: "kv".to_string(),
+                name: "kv".into(),
                 repetition: Repetition::Optional,
                 id: None,
             },
@@ -886,7 +890,7 @@ mod tests {
             fields: vec![
                 ParquetType::PrimitiveType(ParquetPrimitiveType {
                     field_info: FieldInfo {
-                        name: "k".to_string(),
+                        name: "k".into(),
                         repetition: Repetition::Required,
                         id: None,
                     },
@@ -896,7 +900,7 @@ mod tests {
                 }),
                 ParquetType::PrimitiveType(ParquetPrimitiveType {
                     field_info: FieldInfo {
-                        name: "v".to_string(),
+                        name: "v".into(),
                         repetition: Repetition::Required,
                         id: None,
                     },
@@ -909,7 +913,7 @@ mod tests {
 
         let type_ = ParquetType::GroupType {
             field_info: FieldInfo {
-                name: "m".to_string(),
+                name: "m".into(),
                 repetition: Repetition::Required,
                 id: None,
             },
@@ -917,7 +921,7 @@ mod tests {
             converted_type: None,
             fields: vec![ParquetType::GroupType {
                 field_info: FieldInfo {
-                    name: "map".to_string(),
+                    name: "map".into(),
                     repetition: Repetition::Repeated,
                     id: None,
                 },

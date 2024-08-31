@@ -228,7 +228,7 @@ impl PyExpr {
     fn value_counts(&self, sort: bool, parallel: bool, name: String, normalize: bool) -> Self {
         self.inner
             .clone()
-            .value_counts(sort, parallel, name, normalize)
+            .value_counts(sort, parallel, name.as_str(), normalize)
             .into()
     }
     fn unique_counts(&self) -> Self {

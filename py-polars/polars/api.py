@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from functools import reduce
-from operator import or_
 from typing import TYPE_CHECKING, Callable, Generic, TypeVar
 from warnings import warn
 
@@ -20,9 +18,8 @@ __all__ = [
 ]
 
 # do not allow override of polars' own namespaces (as registered by '_accessors')
-_reserved_namespaces: set[str] = reduce(
-    or_,
-    (cls._accessors for cls in (pl.DataFrame, pl.Expr, pl.LazyFrame, pl.Series)),
+_reserved_namespaces: set[str] = set.union(
+    *(cls._accessors for cls in (pl.DataFrame, pl.Expr, pl.LazyFrame, pl.Series))
 )
 
 

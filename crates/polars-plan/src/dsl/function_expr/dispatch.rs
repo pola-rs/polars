@@ -58,11 +58,11 @@ pub(super) fn value_counts(
     s: &Series,
     sort: bool,
     parallel: bool,
-    name: String,
+    name: PlSmallStr,
     normalize: bool,
 ) -> PolarsResult<Series> {
     s.value_counts(sort, parallel, name, normalize)
-        .map(|df| df.into_struct(s.name()).into_series())
+        .map(|df| df.into_struct(s.name().clone()).into_series())
 }
 
 #[cfg(feature = "unique_counts")]
@@ -121,13 +121,14 @@ pub(super) fn mode(s: &Series) -> PolarsResult<Series> {
 
 #[cfg(feature = "moment")]
 pub(super) fn skew(s: &Series, bias: bool) -> PolarsResult<Series> {
-    s.skew(bias).map(|opt_v| Series::new(s.name(), &[opt_v]))
+    s.skew(bias)
+        .map(|opt_v| Series::new(s.name().clone(), &[opt_v]))
 }
 
 #[cfg(feature = "moment")]
 pub(super) fn kurtosis(s: &Series, fisher: bool, bias: bool) -> PolarsResult<Series> {
     s.kurtosis(fisher, bias)
-        .map(|opt_v| Series::new(s.name(), &[opt_v]))
+        .map(|opt_v| Series::new(s.name().clone(), &[opt_v]))
 }
 
 pub(super) fn arg_unique(s: &Series) -> PolarsResult<Series> {

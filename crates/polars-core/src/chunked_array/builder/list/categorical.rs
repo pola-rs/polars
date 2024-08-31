@@ -1,7 +1,7 @@
 use super::*;
 
 pub fn create_categorical_chunked_listbuilder(
-    name: &str,
+    name: PlSmallStr,
     ordering: CategoricalOrdering,
     capacity: usize,
     values_capacity: usize,
@@ -33,7 +33,7 @@ pub struct ListEnumCategoricalChunkedBuilder {
 
 impl ListEnumCategoricalChunkedBuilder {
     pub(super) fn new(
-        name: &str,
+        name: PlSmallStr,
         ordering: CategoricalOrdering,
         capacity: usize,
         values_capacity: usize,
@@ -91,7 +91,7 @@ impl ListLocalCategoricalChunkedBuilder {
     }
 
     pub(super) fn new(
-        name: &str,
+        name: PlSmallStr,
         ordering: CategoricalOrdering,
         capacity: usize,
         values_capacity: usize,
@@ -206,7 +206,7 @@ struct ListGlobalCategoricalChunkedBuilder {
 
 impl ListGlobalCategoricalChunkedBuilder {
     pub(super) fn new(
-        name: &str,
+        name: PlSmallStr,
         ordering: CategoricalOrdering,
         capacity: usize,
         values_capacity: usize,

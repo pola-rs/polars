@@ -23,8 +23,8 @@ use crate::compute::utils::combine_validities_and;
 /// let int = Int32Array::from_slice(&[42, 28, 19, 31]).boxed();
 ///
 /// let fields = vec![
-///     Field::new("b", ArrowDataType::Boolean, false),
-///     Field::new("c", ArrowDataType::Int32, false),
+///     Field::new("b".into(), ArrowDataType::Boolean, false),
+///     Field::new("c".into(), ArrowDataType::Int32, false),
 /// ];
 ///
 /// let array = StructArray::new(ArrowDataType::Struct(fields), vec![boolean, int], None);

@@ -173,7 +173,10 @@ impl DatetimeArgs {
             TimeUnit::Nanoseconds => dt.and_utc().timestamp_nanos_opt()?,
         };
 
-        Some(Expr::Literal(LiteralValue::DateTime(ts, self.time_unit, None)).alias("datetime"))
+        Some(
+            Expr::Literal(LiteralValue::DateTime(ts, self.time_unit, None))
+                .alias(PlSmallStr::from_static("datetime")),
+        )
     }
 }
 
@@ -394,7 +397,10 @@ impl DurationArgs {
             TimeUnit::Nanoseconds => delta.num_nanoseconds()?,
         };
 
-        Some(Expr::Literal(LiteralValue::Duration(d, self.time_unit)).alias("duration"))
+        Some(
+            Expr::Literal(LiteralValue::Duration(d, self.time_unit))
+                .alias(PlSmallStr::from_static("duration")),
+        )
     }
 }
 

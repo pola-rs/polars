@@ -180,9 +180,6 @@ def cum_count(*columns: str, reverse: bool = False) -> Expr:
 
     This function is syntactic sugar for `col(columns).cum_count()`.
 
-    If no arguments are passed, returns the cumulative count of a context.
-    Rows containing null values count towards the result.
-
     Parameters
     ----------
     *columns

@@ -62,14 +62,6 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
         self.0.set_flags(flags)
     }
 
-    fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
-        // TODO! explode by offset should return concrete type
-        self.with_state(true, |cats| {
-            cats.explode_by_offsets(offsets).u32().unwrap().clone()
-        })
-        .into_series()
-    }
-
     unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
         self.0.physical().equal_element(idx_self, idx_other, other)
     }
@@ -133,14 +125,14 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
 }
 
 impl SeriesTrait for SeriesWrap<CategoricalChunked> {
-    fn rename(&mut self, name: &str) {
+    fn rename(&mut self, name: PlSmallStr) {
         self.0.physical_mut().rename(name);
     }
 
     fn chunk_lengths(&self) -> ChunkLenIter {
         self.0.physical().chunk_lengths()
     }
-    fn name(&self) -> &str {
+    fn name(&self) -> &PlSmallStr {
         self.0.physical().name()
     }
 

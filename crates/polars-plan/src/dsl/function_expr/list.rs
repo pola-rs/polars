@@ -247,7 +247,7 @@ pub(super) fn contains(args: &mut [Series]) -> PolarsResult<Option<Series>> {
         SchemaMismatch: "invalid series dtype: expected `List`, got `{}`", list.dtype(),
     );
     polars_ops::prelude::is_in(item, list).map(|mut ca| {
-        ca.rename(list.name());
+        ca.rename(list.name().clone());
         Some(ca.into_series())
     })
 }
@@ -378,7 +378,7 @@ pub(super) fn slice(args: &mut [Series]) -> PolarsResult<Option<Series>> {
                 .collect_trusted()
         },
     };
-    out.rename(s.name());
+    out.rename(s.name().clone());
     Ok(Some(out.into_series()))
 }
 
@@ -417,7 +417,7 @@ pub(super) fn get(s: &mut [Series], null_on_oob: bool) -> PolarsResult<Option<Se
                 ca.lst_get(index, null_on_oob).map(Some)
             } else {
                 Ok(Some(Series::full_null(
-                    ca.name(),
+                    ca.name().clone(),
                     ca.len(),
                     ca.inner_dtype(),
                 )))
@@ -475,7 +475,7 @@ pub(super) fn get(s: &mut [Series], null_on_oob: bool) -> PolarsResult<Option<Se
                     })
                     .collect::<Result<IdxCa, _>>()?
             };
-            let s = Series::try_from((ca.name(), arr.values().clone())).unwrap();
+            let s = Series::try_from((ca.name().clone(), arr.values().clone())).unwrap();
             unsafe { s.take_unchecked(&take_by) }
                 .cast(ca.inner_dtype())
                 .map(Some)
@@ -599,13 +599,13 @@ pub(super) fn set_operation(s: &[Series], set_type: SetOperation) -> PolarsResul
                 if s0.len() == 0 {
                     Ok(s0.clone())
                 } else {
-                    Ok(s1.clone().with_name(s0.name()))
+                    Ok(s1.clone().with_name(s0.name().clone()))
                 }
             },
             SetOperation::Difference => Ok(s0.clone()),
             SetOperation::Union | SetOperation::SymmetricDifference => {
                 if s0.len() == 0 {
-                    Ok(s1.clone().with_name(s0.name()))
+                    Ok(s1.clone().with_name(s0.name().clone()))
                 } else {
                     Ok(s0.clone())
                 }

@@ -1,3 +1,5 @@
+use polars_utils::format_pl_smallstr;
+
 use crate::prelude::*;
 
 /// Convert a collection of [`DataType`] into a schema.
@@ -12,6 +14,6 @@ where
     dtypes
         .into_iter()
         .enumerate()
-        .map(|(i, dtype)| Field::new(format!("column_{i}").as_ref(), dtype))
+        .map(|(i, dtype)| Field::new(format_pl_smallstr!("column_{i}"), dtype))
         .collect()
 }

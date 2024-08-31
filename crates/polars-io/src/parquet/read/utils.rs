@@ -20,7 +20,7 @@ pub fn materialize_empty_df(
     let mut df = DataFrame::empty_with_arrow_schema(&schema);
 
     if let Some(row_index) = row_index {
-        df.insert_column(0, Series::new_empty(&row_index.name, &IDX_DTYPE))
+        df.insert_column(0, Series::new_empty(row_index.name.clone(), &IDX_DTYPE))
             .unwrap();
     }
 

@@ -30,7 +30,7 @@ where
         .reduce(min_or_max_fn)
 }
 
-pub fn nan_min_s(s: &Series, name: &str) -> Series {
+pub fn nan_min_s(s: &Series, name: PlSmallStr) -> Series {
     match s.dtype() {
         DataType::Float32 => {
             let ca = s.f32().unwrap();
@@ -44,7 +44,7 @@ pub fn nan_min_s(s: &Series, name: &str) -> Series {
     }
 }
 
-pub fn nan_max_s(s: &Series, name: &str) -> Series {
+pub fn nan_max_s(s: &Series, name: PlSmallStr) -> Series {
     match s.dtype() {
         DataType::Float32 => {
             let ca = s.f32().unwrap();

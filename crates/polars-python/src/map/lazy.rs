@@ -194,7 +194,7 @@ pub fn map_mul(
 
     let output_map = GetOutput::map_field(move |fld| {
         Ok(match output_type {
-            Some(ref dt) => Field::new(fld.name(), dt.0.clone()),
+            Some(ref dt) => Field::new(fld.name().clone(), dt.0.clone()),
             None => fld.clone(),
         })
     });

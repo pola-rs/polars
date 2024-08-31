@@ -49,7 +49,7 @@ fn round_trip(
 }
 
 fn prep_schema(array: &dyn Array) -> ArrowSchemaRef {
-    let fields = vec![Field::new("a", array.data_type().clone(), true)];
+    let fields = vec![Field::new("a".into(), array.data_type().clone(), true)];
     Arc::new(ArrowSchema::from(fields))
 }
 

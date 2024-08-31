@@ -68,7 +68,12 @@ impl Executor for PythonScanExec {
                 self.options.python_source,
                 PythonScanSource::Pyarrow | PythonScanSource::Cuda
             ) {
-                let args = (python_scan_function, with_columns, predicate, n_rows);
+                let args = (
+                    python_scan_function,
+                    with_columns.map(|x| x.into_iter().map(|x| x.to_string()).collect::<Vec<_>>()),
+                    predicate,
+                    n_rows,
+                );
                 callable.call1(args).map_err(to_compute_err)
             } else {
                 // If there are filters, take smaller chunks to ensure we can keep memory
@@ -80,7 +85,7 @@ impl Executor for PythonScanExec {
                 };
                 let args = (
                     python_scan_function,
-                    with_columns,
+                    with_columns.map(|x| x.into_iter().map(|x| x.to_string()).collect::<Vec<_>>()),
                     predicate,
                     n_rows,
                     batch_size,

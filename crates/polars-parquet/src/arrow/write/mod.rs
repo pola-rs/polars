@@ -32,6 +32,7 @@ use arrow::datatypes::*;
 use arrow::types::{days_ms, i256, NativeType};
 pub use nested::{num_values, write_rep_and_def};
 pub use pages::{to_leaves, to_nested, to_parquet_leaves};
+use polars_utils::pl_str::PlSmallStr;
 pub use utils::write_def_levels;
 
 pub use crate::parquet::compression::{BrotliLevel, CompressionOptions, GzipLevel, ZstdLevel};
@@ -195,7 +196,10 @@ pub fn to_parquet_schema(schema: &ArrowSchema) -> PolarsResult<SchemaDescriptor>
         .iter()
         .map(to_parquet_type)
         .collect::<PolarsResult<Vec<_>>>()?;
-    Ok(SchemaDescriptor::new("root".to_string(), parquet_types))
+    Ok(SchemaDescriptor::new(
+        PlSmallStr::from_static("root"),
+        parquet_types,
+    ))
 }
 
 /// Slices the [`Array`] to `Box<dyn Array>` and `Vec<Nested>`.
@@ -1024,6 +1028,7 @@ fn transverse_recursive<T, F: Fn(&ArrowDataType) -> T + Clone>(
 
 /// Transverses the `data_type` up to its (parquet) columns and returns a vector of
 /// items based on `map`.
+///
 /// This is used to assign an [`Encoding`] to every parquet column based on the columns' type (see example)
 pub fn transverse<T, F: Fn(&ArrowDataType) -> T + Clone>(
     data_type: &ArrowDataType,

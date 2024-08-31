@@ -1,6 +1,6 @@
 use arrow::array::{MutableArray, MutablePlString};
 use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
-use polars_core::datatypes::{DataType, SmartString};
+use polars_core::datatypes::{DataType, PlSmallStr};
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{IntoVec, Series, UnpivotArgsIR};
 use polars_core::utils::try_get_supertype;
@@ -68,8 +68,8 @@ pub trait UnpivotDF: IntoDf {
     /// ```
     fn unpivot<I, J>(&self, on: I, index: J) -> PolarsResult<DataFrame>
     where
-        I: IntoVec<SmartString>,
-        J: IntoVec<SmartString>,
+        I: IntoVec<PlSmallStr>,
+        J: IntoVec<PlSmallStr>,
     {
         let index = index.into_vec();
         let on = on.into_vec();
@@ -87,8 +87,12 @@ pub trait UnpivotDF: IntoDf {
         let index = args.index;
         let mut on = args.on;
 
-        let variable_name = args.variable_name.as_deref().unwrap_or("variable");
-        let value_name = args.value_name.as_deref().unwrap_or("value");
+        let variable_name = args
+            .variable_name
+            .unwrap_or_else(|| PlSmallStr::from_static("variable"));
+        let value_name = args
+            .value_name
+            .unwrap_or_else(|| PlSmallStr::from_static("value"));
 
         if self_.get_columns().is_empty() {
             return DataFrame::new(vec![
@@ -113,7 +117,7 @@ pub trait UnpivotDF: IntoDf {
                 return Ok(unsafe { DataFrame::new_no_checks(out) });
             }
 
-            let index_set = PlHashSet::from_iter(index.iter().map(|s| s.as_str()));
+            let index_set = PlHashSet::from_iter(index.iter().cloned());
             on = self_
                 .get_columns()
                 .iter()
@@ -121,7 +125,7 @@ pub trait UnpivotDF: IntoDf {
                     if index_set.contains(s.name()) {
                         None
                     } else {
-                        Some(s.name().into())
+                        Some(s.name().clone())
                     }
                 })
                 .collect();

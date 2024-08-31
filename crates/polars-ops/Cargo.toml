@@ -35,7 +35,6 @@ rayon = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
-smartstring = { workspace = true }
 unicode-reverse = { workspace = true, optional = true }
 
 [dependencies.jsonpath_lib]
@@ -79,10 +78,11 @@ business = ["dtype-date", "chrono"]
 fused = []
 cutqcut = ["dtype-categorical", "dtype-struct"]
 rle = ["dtype-struct"]
-timezones = ["chrono-tz", "chrono"]
+timezones = ["chrono", "chrono-tz", "polars-core/temporal", "polars-core/timezones", "polars-core/dtype-datetime"]
 random = ["rand", "rand_distr"]
 rank = ["rand"]
 find_many = ["aho-corasick"]
+serde = ["dep:serde", "polars-core/serde", "polars-utils/serde"]
 
 # extra utilities for BinaryChunked
 binary_encoding = ["base64", "hex"]
@@ -112,7 +112,7 @@ mode = []
 search_sorted = []
 merge_sorted = []
 top_k = []
-pivot = ["polars-core/reinterpret"]
+pivot = ["polars-core/reinterpret", "polars-core/dtype-struct"]
 cross_join = []
 chunked_ids = []
 asof_join = []
@@ -123,7 +123,7 @@ list_gather = []
 list_sets = []
 list_any_all = []
 list_drop_nulls = []
-list_sample = []
+list_sample = ["polars-core/random"]
 extract_groups = ["dtype-struct", "polars-core/regex"]
 is_in = ["polars-core/reinterpret"]
 hist = ["dtype-categorical", "dtype-struct"]

@@ -26,7 +26,7 @@ impl From<ExprIR> for PyExprIR {
     fn from(value: ExprIR) -> Self {
         Self {
             node: value.node().0,
-            output_name: value.output_name().into(),
+            output_name: value.output_name().to_string(),
         }
     }
 }
@@ -35,7 +35,7 @@ impl From<&ExprIR> for PyExprIR {
     fn from(value: &ExprIR) -> Self {
         Self {
             node: value.node().0,
-            output_name: value.output_name().into(),
+            output_name: value.output_name().to_string(),
         }
     }
 }

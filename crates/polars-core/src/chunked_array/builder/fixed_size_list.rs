@@ -1,13 +1,13 @@
 use arrow::types::NativeType;
+use polars_utils::pl_str::PlSmallStr;
 use polars_utils::unwrap::UnwrapUncheckedRelease;
-use smartstring::alias::String as SmartString;
 
 use crate::prelude::*;
 
 pub(crate) struct FixedSizeListNumericBuilder<T: NativeType> {
     inner: Option<MutableFixedSizeListArray<MutablePrimitiveArray<T>>>,
     width: usize,
-    name: SmartString,
+    name: PlSmallStr,
     logical_dtype: DataType,
 }
 
@@ -16,7 +16,7 @@ impl<T: NativeType> FixedSizeListNumericBuilder<T> {
     ///
     /// The caller must ensure that the physical numerical type match logical type.
     pub(crate) unsafe fn new(
-        name: &str,
+        name: PlSmallStr,
         width: usize,
         capacity: usize,
         logical_dtype: DataType,
@@ -26,7 +26,7 @@ impl<T: NativeType> FixedSizeListNumericBuilder<T> {
         Self {
             inner,
             width,
-            name: name.into(),
+            name,
             logical_dtype,
         }
     }
@@ -77,7 +77,7 @@ impl<T: NativeType> FixedSizeListBuilder for FixedSizeListNumericBuilder<T> {
         // SAFETY: physical type matches the logical
         unsafe {
             ChunkedArray::from_chunks_and_dtype(
-                self.name.as_str(),
+                self.name.clone(),
                 vec![Box::new(arr)],
                 DataType::Array(Box::new(self.logical_dtype.clone()), self.width),
             )
@@ -87,13 +87,13 @@ impl<T: NativeType> FixedSizeListBuilder for FixedSizeListNumericBuilder<T> {
 
 pub(crate) struct AnonymousOwnedFixedSizeListBuilder {
     inner: fixed_size_list::AnonymousBuilder,
-    name: SmartString,
+    name: PlSmallStr,
     inner_dtype: Option<DataType>,
 }
 
 impl AnonymousOwnedFixedSizeListBuilder {
     pub(crate) fn new(
-        name: &str,
+        name: PlSmallStr,
         width: usize,
         capacity: usize,
         inner_dtype: Option<DataType>,
@@ -101,7 +101,7 @@ impl AnonymousOwnedFixedSizeListBuilder {
         let inner = fixed_size_list::AnonymousBuilder::new(capacity, width);
         Self {
             inner,
-            name: name.into(),
+            name,
             inner_dtype,
         }
     }
@@ -128,7 +128,7 @@ impl FixedSizeListBuilder for AnonymousOwnedFixedSizeListBuilder {
                     .as_ref(),
             )
             .unwrap();
-        ChunkedArray::with_chunk(self.name.as_str(), arr)
+        ChunkedArray::with_chunk(self.name.clone(), arr)
     }
 }
 
@@ -136,7 +136,7 @@ pub(crate) fn get_fixed_size_list_builder(
     inner_type_logical: &DataType,
     capacity: usize,
     width: usize,
-    name: &str,
+    name: PlSmallStr,
 ) -> PolarsResult<Box<dyn FixedSizeListBuilder>> {
     let phys_dtype = inner_type_logical.to_physical();
 
