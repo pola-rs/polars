@@ -249,11 +249,11 @@ def assert_frame_not_equal(
     ...     assert_frame_not_equal(df1, df2)
     ... except AssertionError as e:
     ...     print(e)
-    frames are equal
+    DataFrames are equal (but are expected not to be)
     """
     __tracebackhide__ = True
 
-    _assert_correct_input_type(left, right)
+    lazy = _assert_correct_input_type(left, right)
     try:
         assert_frame_equal(
             left=left,
@@ -269,5 +269,6 @@ def assert_frame_not_equal(
     except AssertionError:
         return
     else:
-        msg = "frames are equal (but are expected not to be)"
+        objects = "LazyFrames" if lazy else "DataFrames"
+        msg = f"{objects} are equal (but are expected not to be)"
         raise AssertionError(msg)

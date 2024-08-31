@@ -409,7 +409,7 @@ def assert_series_not_equal(
     ...     assert_series_not_equal(s1, s2)
     ... except AssertionError as e:
     ...     print(e)
-    Series are equal
+    Series are equal (but are expected not to be)
     """
     __tracebackhide__ = True
 
