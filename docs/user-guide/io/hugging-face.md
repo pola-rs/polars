@@ -65,7 +65,7 @@ See this file at [https://huggingface.co/datasets/nameexhaustion/polars-docs/blo
 
 #### Parquet
 
-{{code_block('user-guide/io/hugging-face','scan_parquet_hive',['scan_parquet'])}}
+{{code_block('user-guide/io/hugging-face','scan_parquet_hive_repr',['scan_parquet'])}}
 
 ```python exec="on" result="text" session="user-guide/io/hugging-face"
 --8<-- "python/user-guide/io/hugging-face.py:scan_parquet_hive_repr"

@@ -20,6 +20,7 @@ pub mod hashing;
 pub mod idx_vec;
 pub mod mem;
 pub mod min_max;
+pub mod pl_str;
 pub mod priority;
 pub mod slice;
 pub mod sort;
@@ -34,7 +35,7 @@ pub use functions::*;
 pub mod aliases;
 pub mod fixedringbuffer;
 pub mod fmt;
-pub mod iter;
+pub mod itertools;
 pub mod macros;
 pub mod vec;
 #[cfg(target_family = "wasm")]

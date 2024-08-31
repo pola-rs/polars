@@ -3,7 +3,7 @@ from __future__ import annotations
 import io
 from datetime import datetime, time, timezone
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import fsspec
 import numpy as np
@@ -18,7 +18,7 @@ from hypothesis import strategies as st
 import polars as pl
 from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
-from polars.testing.parametric import dataframes
+from polars.testing.parametric import column, dataframes
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -54,7 +54,7 @@ COMPRESSIONS = [
 ]
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_write_parquet_using_pyarrow_9753(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
@@ -94,7 +94,7 @@ def test_write_parquet_using_pyarrow_write_to_dataset_with_partitioning(
     assert_frame_equal(df, read_df)
 
 
-@pytest.fixture()
+@pytest.fixture
 def small_parquet_path(io_files_path: Path) -> Path:
     return io_files_path / "small.parquet"
 
@@ -149,7 +149,7 @@ def test_to_from_buffer_lzo(df: pl.DataFrame) -> None:
         _ = pl.read_parquet(buf)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 @pytest.mark.parametrize("compression", COMPRESSIONS)
 def test_to_from_file(
     df: pl.DataFrame, compression: ParquetCompression, tmp_path: Path
@@ -162,7 +162,7 @@ def test_to_from_file(
     assert_frame_equal(df, read_df, categorical_as_str=True)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_to_from_file_lzo(df: pl.DataFrame, tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
@@ -246,7 +246,7 @@ def test_nested_parquet() -> None:
     assert isinstance(read.dtypes[0].inner, pl.datatypes.Struct)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_glob_parquet(df: pl.DataFrame, tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
     file_path = tmp_path / "small.parquet"
@@ -279,7 +279,7 @@ def test_chunked_round_trip() -> None:
     assert_frame_equal(pl.read_parquet(f), df)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_lazy_self_join_file_cache_prop_3979(df: pl.DataFrame, tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
@@ -431,7 +431,7 @@ def test_parquet_nested_dictionaries_6217() -> None:
         assert_frame_equal(read, df)  # type: ignore[arg-type]
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_fetch_union(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
@@ -457,7 +457,7 @@ def test_fetch_union(tmp_path: Path) -> None:
     assert_frame_equal(result_glob, expected)
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 def test_struct_pyarrow_dataset_5796(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
@@ -472,7 +472,7 @@ def test_struct_pyarrow_dataset_5796(tmp_path: Path) -> None:
     assert_frame_equal(result, df)  # type: ignore[arg-type]
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 @pytest.mark.parametrize("case", [1048576, 1048577])
 def test_parquet_chunks_545(case: int) -> None:
     f = io.BytesIO()
@@ -585,7 +585,7 @@ def test_nested_struct_read_12610() -> None:
     assert_frame_equal(expect, actual)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_decimal_parquet(tmp_path: Path) -> None:
     path = tmp_path / "foo.parquet"
     df = pl.DataFrame(
@@ -602,7 +602,7 @@ def test_decimal_parquet(tmp_path: Path) -> None:
     assert out == {"foo": [2], "bar": [Decimal("7")]}
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_enum_parquet(tmp_path: Path) -> None:
     path = tmp_path / "enum.parquet"
     df = pl.DataFrame(
@@ -630,7 +630,7 @@ def test_parquet_rle_non_nullable_12814() -> None:
     assert_frame_equal(expect, actual)
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 def test_parquet_12831() -> None:
     n = 70_000
     df = pl.DataFrame({"x": ["aaaaaa"] * n})
@@ -640,7 +640,7 @@ def test_parquet_12831() -> None:
     assert_frame_equal(pl.from_arrow(pq.read_table(f)), df)  # type: ignore[arg-type]
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_parquet_struct_categorical(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
@@ -659,7 +659,7 @@ def test_parquet_struct_categorical(tmp_path: Path) -> None:
     assert out.to_dict(as_series=False) == {"b": [{"b": "foo", "count": 1}]}
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_null_parquet(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
@@ -670,7 +670,7 @@ def test_null_parquet(tmp_path: Path) -> None:
     assert_frame_equal(out, df)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_write_parquet_with_null_col(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
@@ -685,7 +685,7 @@ def test_write_parquet_with_null_col(tmp_path: Path) -> None:
     assert_frame_equal(out, df)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_read_parquet_binary_buffered_reader(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
@@ -698,7 +698,7 @@ def test_read_parquet_binary_buffered_reader(tmp_path: Path) -> None:
     assert_frame_equal(out, df)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_read_parquet_binary_file_io(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
@@ -712,7 +712,7 @@ def test_read_parquet_binary_file_io(tmp_path: Path) -> None:
 
 
 # https://github.com/pola-rs/polars/issues/15760
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_read_parquet_binary_fsspec(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
@@ -919,7 +919,7 @@ def test_parquet_array_dtype_nulls() -> None:
         ),
     ],
 )
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_complex_types(tmp_path: Path, series: list[Any], dtype: pl.DataType) -> None:
     xs = pl.Series(series, dtype=dtype)
     df = pl.DataFrame({"x": xs})
@@ -927,13 +927,13 @@ def test_complex_types(tmp_path: Path, series: list[Any], dtype: pl.DataType) ->
     test_round_trip(df)
 
 
-@pytest.mark.xfail()
+@pytest.mark.xfail
 def test_placeholder_zero_array() -> None:
     # @TODO: if this does not fail anymore please enable the upper test-cases
     pl.Series([[]], dtype=pl.Array(pl.Int8, 0))
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_parquet_array_statistics(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
@@ -949,8 +949,8 @@ def test_parquet_array_statistics(tmp_path: Path) -> None:
     assert result.to_dict(as_series=False) == {"a": [[4, 5, 6], [7, 8, 9]], "b": [2, 3]}
 
 
-@pytest.mark.slow()
-@pytest.mark.write_disk()
+@pytest.mark.slow
+@pytest.mark.write_disk
 def test_read_parquet_only_loads_selected_columns_15098(
     memory_usage_without_pyarrow: MemoryUsage, tmp_path: Path
 ) -> None:
@@ -980,8 +980,8 @@ def test_read_parquet_only_loads_selected_columns_15098(
     assert 8_000_000 < memory_usage_without_pyarrow.get_peak() < 13_000_000
 
 
-@pytest.mark.release()
-@pytest.mark.write_disk()
+@pytest.mark.release
+@pytest.mark.write_disk
 def test_max_statistic_parquet_writer(tmp_path: Path) -> None:
     # this hits the maximal page size
     # so the row group will be split into multiple pages
@@ -1000,7 +1000,7 @@ def test_max_statistic_parquet_writer(tmp_path: Path) -> None:
     assert_frame_equal(result, expected)
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 def test_hybrid_rle() -> None:
     # 10_007 elements to test if not a nice multiple of 8
     n = 10_007
@@ -1059,8 +1059,8 @@ def test_hybrid_rle() -> None:
     f = io.BytesIO()
     df.write_parquet(f)
     f.seek(0)
-    for column in pq.ParquetFile(f).metadata.to_dict()["row_groups"][0]["columns"]:
-        assert "RLE_DICTIONARY" in column["encodings"]
+    for col in pq.ParquetFile(f).metadata.to_dict()["row_groups"][0]["columns"]:
+        assert "RLE_DICTIONARY" in col["encodings"]
     f.seek(0)
     assert_frame_equal(pl.read_parquet(f), df)
 
@@ -1087,8 +1087,8 @@ def test_hybrid_rle() -> None:
         max_size=5000,
     )
 )
-@pytest.mark.slow()
-@pytest.mark.write_disk()
+@pytest.mark.slow
+@pytest.mark.write_disk
 @settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
 def test_roundtrip_parametric(df: pl.DataFrame, tmp_path: Path) -> None:
     # delete if exists
@@ -1112,7 +1112,7 @@ def test_parquet_statistics_uint64_16683() -> None:
     assert statistics.max == u64_max
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 @pytest.mark.parametrize("nullable", [True, False])
 def test_read_byte_stream_split(nullable: bool) -> None:
     rng = np.random.default_rng(123)
@@ -1144,7 +1144,7 @@ def test_read_byte_stream_split(nullable: bool) -> None:
     assert_frame_equal(read, df)
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 @pytest.mark.parametrize("rows_nullable", [True, False])
 @pytest.mark.parametrize("item_nullable", [True, False])
 def test_read_byte_stream_split_arrays(
@@ -1207,7 +1207,7 @@ def test_read_byte_stream_split_arrays(
     assert_frame_equal(read, df)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_parquet_nested_null_array_17795(tmp_path: Path) -> None:
     filename = tmp_path / "nested_null.parquet"
 
@@ -1215,7 +1215,7 @@ def test_parquet_nested_null_array_17795(tmp_path: Path) -> None:
     pq.read_table(filename)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_parquet_record_batches_pyarrow_fixed_size_list_16614(tmp_path: Path) -> None:
     filename = tmp_path / "a.parquet"
 
@@ -1235,7 +1235,7 @@ def test_parquet_record_batches_pyarrow_fixed_size_list_16614(tmp_path: Path) ->
     assert_frame_equal(b, x)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_parquet_list_element_field_name(tmp_path: Path) -> None:
     filename = tmp_path / "list.parquet"
 
@@ -1368,7 +1368,7 @@ def test_parquet_high_nested_null_17805(
     )
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_struct_plain_encoded_statistics(tmp_path: Path) -> None:
     df = pl.DataFrame(
         {
@@ -1450,9 +1450,6 @@ def test_null_array_dict_pages_18085() -> None:
     row_group_size=st.integers(min_value=10, max_value=1000),
 )
 def test_delta_encoding_roundtrip(df: pl.DataFrame, row_group_size: int) -> None:
-    print(df.schema)
-    print(df)
-
     f = io.BytesIO()
     pq.write_table(
         df.to_arrow(),
@@ -1510,3 +1507,328 @@ def test_delta_strings_encoding_roundtrip(
 
     f.seek(0)
     assert_frame_equal(pl.read_parquet(f), df)
+
+
+EQUALITY_OPERATORS = ["__eq__", "__lt__", "__le__", "__gt__", "__ge__"]
+BOOLEAN_OPERATORS = ["__or__", "__and__"]
+
+
+@given(
+    df=dataframes(
+        min_size=0, max_size=100, min_cols=2, max_cols=5, allowed_dtypes=[pl.Int32]
+    ),
+    first_op=st.sampled_from(EQUALITY_OPERATORS),
+    second_op=st.sampled_from(
+        [None]
+        + [
+            (booljoin, eq)
+            for booljoin in BOOLEAN_OPERATORS
+            for eq in EQUALITY_OPERATORS
+        ]
+    ),
+    l1=st.integers(min_value=0, max_value=1000),
+    l2=st.integers(min_value=0, max_value=1000),
+    r1=st.integers(min_value=0, max_value=1000),
+    r2=st.integers(min_value=0, max_value=1000),
+)
+@pytest.mark.parametrize("parallel_st", ["auto", "prefiltered"])
+@settings(
+    deadline=None,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
+@pytest.mark.write_disk
+def test_predicate_filtering(
+    tmp_path: Path,
+    df: pl.DataFrame,
+    first_op: str,
+    second_op: None | tuple[str, str],
+    l1: int,
+    l2: int,
+    r1: int,
+    r2: int,
+    parallel_st: Literal["auto", "prefiltered"],
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    f = tmp_path / "test.parquet"
+
+    df.write_parquet(f, row_group_size=5)
+
+    cols = df.columns
+
+    l1s = cols[l1 % len(cols)]
+    l2s = cols[l2 % len(cols)]
+    expr = (getattr(pl.col(l1s), first_op))(pl.col(l2s))
+
+    if second_op is not None:
+        r1s = cols[r1 % len(cols)]
+        r2s = cols[r2 % len(cols)]
+        expr = getattr(expr, second_op[0])(
+            (getattr(pl.col(r1s), second_op[1]))(pl.col(r2s))
+        )
+
+    result = pl.scan_parquet(f, parallel=parallel_st).filter(expr).collect()
+    assert_frame_equal(result, df.filter(expr))
+
+
+@given(
+    df=dataframes(
+        min_size=1,
+        max_size=5,
+        min_cols=1,
+        max_cols=1,
+        excluded_dtypes=[pl.Decimal, pl.Categorical, pl.Enum],
+    ),
+    offset=st.integers(0, 100),
+    length=st.integers(0, 100),
+)
+@settings(
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
+@pytest.mark.write_disk
+def test_slice_roundtrip(
+    df: pl.DataFrame, offset: int, length: int, tmp_path: Path
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    f = tmp_path / "test.parquet"
+
+    offset %= df.height + 1
+    length %= df.height - offset + 1
+
+    df.write_parquet(f)
+
+    scanned = pl.scan_parquet(f).slice(offset, length).collect()
+    assert_frame_equal(scanned, df.slice(offset, length))
+
+
+@pytest.mark.write_disk
+def test_struct_prefiltered(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    f = tmp_path / "test.parquet"
+
+    df = pl.DataFrame({"a": {"x": 1, "y": 2}})
+    df.write_parquet(f)
+
+    (
+        pl.scan_parquet(f, parallel="prefiltered")
+        .filter(pl.col("a").struct.field("x") == 1)
+        .collect()
+    )
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        (
+            [{"x": ""}, {"x": "0"}],
+            pa.struct([pa.field("x", pa.string(), nullable=True)]),
+        ),
+        (
+            [{"x": ""}, {"x": "0"}],
+            pa.struct([pa.field("x", pa.string(), nullable=False)]),
+        ),
+        ([[""], ["0"]], pa.list_(pa.field("item", pa.string(), nullable=False))),
+        ([[""], ["0"]], pa.list_(pa.field("item", pa.string(), nullable=True))),
+        ([[""], ["0"]], pa.list_(pa.field("item", pa.string(), nullable=False), 1)),
+        ([[""], ["0"]], pa.list_(pa.field("item", pa.string(), nullable=True), 1)),
+        (
+            [["", "1"], ["0", "2"]],
+            pa.list_(pa.field("item", pa.string(), nullable=False), 2),
+        ),
+        (
+            [["", "1"], ["0", "2"]],
+            pa.list_(pa.field("item", pa.string(), nullable=True), 2),
+        ),
+    ],
+)
+@pytest.mark.parametrize("nullable", [False, True])
+@pytest.mark.write_disk
+def test_nested_skip_18303(
+    data: tuple[list[dict[str, str] | list[str]], pa.DataType],
+    nullable: bool,
+    tmp_path: Path,
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    f = tmp_path / "test.parquet"
+
+    schema = pa.schema([pa.field("a", data[1], nullable=nullable)])
+    tb = pa.table({"a": data[0]}, schema=schema)
+    pq.write_table(tb, f)
+
+    scanned = pl.scan_parquet(f).slice(1, 1).collect()
+
+    assert_frame_equal(scanned, pl.DataFrame(tb).slice(1, 1))
+
+
+def test_nested_span_multiple_pages_18400() -> None:
+    width = 4100
+    df = pl.DataFrame(
+        [
+            pl.Series(
+                "a",
+                [
+                    list(range(width)),
+                    list(range(width)),
+                ],
+                pl.Array(pl.Int64, width),
+            ),
+        ]
+    )
+
+    f = io.BytesIO()
+    pq.write_table(
+        df.to_arrow(),
+        f,
+        use_dictionary=False,
+        data_page_size=1024,
+        column_encoding={"a": "PLAIN"},
+    )
+
+    f.seek(0)
+    assert_frame_equal(df.head(1), pl.read_parquet(f, n_rows=1))
+
+
+@given(
+    df=dataframes(
+        min_size=0,
+        max_size=1000,
+        min_cols=2,
+        max_cols=5,
+        excluded_dtypes=[pl.Decimal, pl.Categorical, pl.Enum, pl.Array],
+        include_cols=[column("filter_col", pl.Boolean, allow_null=False)],
+    ),
+)
+@pytest.mark.write_disk
+@settings(
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
+def test_parametric_small_page_mask_filtering(
+    tmp_path: Path,
+    df: pl.DataFrame,
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    f = tmp_path / "test.parquet"
+
+    df.write_parquet(f, data_page_size=1024)
+
+    expr = pl.col("filter_col")
+    result = pl.scan_parquet(f, parallel="prefiltered").filter(expr).collect()
+    assert_frame_equal(result, df.filter(expr))
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "abcd",
+        0,
+        0.0,
+        False,
+    ],
+)
+def test_different_page_validity_across_pages(value: str | int | float | bool) -> None:
+    df = pl.DataFrame(
+        {
+            "a": [None] + [value] * 4000,
+        }
+    )
+
+    f = io.BytesIO()
+    pq.write_table(
+        df.to_arrow(),
+        f,
+        use_dictionary=False,
+        data_page_size=1024,
+        column_encoding={"a": "PLAIN"},
+    )
+
+    f.seek(0)
+    assert_frame_equal(df, pl.read_parquet(f))
+
+
+@given(
+    df=dataframes(
+        min_size=0,
+        max_size=100,
+        min_cols=2,
+        max_cols=5,
+        allowed_dtypes=[pl.String, pl.Binary],
+        include_cols=[
+            column("filter_col", pl.Int8, st.integers(0, 1), allow_null=False)
+        ],
+    ),
+)
+@settings(
+    deadline=None,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
+@pytest.mark.write_disk
+def test_delta_length_byte_array_prefiltering(
+    tmp_path: Path,
+    df: pl.DataFrame,
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    f = tmp_path / "test.parquet"
+
+    cols = df.columns
+
+    encodings = {col: "DELTA_LENGTH_BYTE_ARRAY" for col in cols}
+    encodings["filter_col"] = "PLAIN"
+
+    pq.write_table(
+        df.to_arrow(),
+        f,
+        use_dictionary=False,
+        column_encoding=encodings,
+    )
+
+    expr = pl.col("filter_col") == 0
+    result = pl.scan_parquet(f, parallel="prefiltered").filter(expr).collect()
+    assert_frame_equal(result, df.filter(expr))
+
+
+@given(
+    df=dataframes(
+        min_size=0,
+        max_size=10,
+        min_cols=1,
+        max_cols=5,
+        excluded_dtypes=[pl.Decimal, pl.Categorical, pl.Enum],
+        include_cols=[
+            column("filter_col", pl.Int8, st.integers(0, 1), allow_null=False)
+        ],
+    ),
+)
+@settings(
+    deadline=None,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
+@pytest.mark.write_disk
+def test_general_prefiltering(
+    tmp_path: Path,
+    df: pl.DataFrame,
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    f = tmp_path / "test.parquet"
+
+    df.write_parquet(f)
+
+    expr = pl.col("filter_col") == 0
+
+    result = pl.scan_parquet(f, parallel="prefiltered").filter(expr).collect()
+    assert_frame_equal(result, df.filter(expr))
+
+
+def test_empty_parquet() -> None:
+    f_pd = io.BytesIO()
+    f_pl = io.BytesIO()
+
+    pd.DataFrame().to_parquet(f_pd)
+    pl.DataFrame().write_parquet(f_pl)
+
+    f_pd.seek(0)
+    f_pl.seek(0)
+
+    empty_from_pd = pl.read_parquet(f_pd)
+    assert empty_from_pd.shape == (0, 0)
+
+    empty_from_pl = pl.read_parquet(f_pl)
+    assert empty_from_pl.shape == (0, 0)

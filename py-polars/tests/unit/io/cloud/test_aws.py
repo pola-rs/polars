@@ -49,7 +49,7 @@ def s3_base(monkeypatch_module: Any) -> Iterator[str]:
     p.kill()
 
 
-@pytest.fixture()
+@pytest.fixture
 def s3(s3_base: str, io_files_path: Path) -> str:
     region = "us-east-1"
     client = boto3.client("s3", region_name=region, endpoint_url=s3_base)

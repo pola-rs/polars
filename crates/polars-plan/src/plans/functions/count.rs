@@ -1,17 +1,19 @@
 #[cfg(feature = "ipc")]
 use arrow::io::ipc::read::get_row_count as count_rows_ipc_sync;
-#[cfg(feature = "parquet")]
+#[cfg(any(feature = "parquet", feature = "json"))]
 use polars_io::cloud::CloudOptions;
 #[cfg(feature = "csv")]
 use polars_io::csv::read::count_rows as count_rows_csv;
+#[cfg(any(feature = "parquet", feature = "ipc", feature = "json"))]
+use polars_io::is_cloud_url;
 #[cfg(all(feature = "parquet", feature = "cloud"))]
 use polars_io::parquet::read::ParquetAsyncReader;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::read::ParquetReader;
 #[cfg(all(feature = "parquet", feature = "async"))]
 use polars_io::pl_async::{get_runtime, with_concurrency_budget};
-#[cfg(any(feature = "parquet", feature = "ipc"))]
-use polars_io::{path_utils::is_cloud_url, SerReader};
+#[cfg(any(feature = "json", feature = "parquet"))]
+use polars_io::SerReader;
 
 use super::*;
 
@@ -84,13 +86,16 @@ pub fn count_rows(paths: &Arc<Vec<PathBuf>>, scan_type: &FileScan) -> PolarsResu
         let count: IdxSize = count.try_into().map_err(
             |_| polars_err!(ComputeError: "count of {} exceeded maximum row size", count),
         )?;
-        DataFrame::new(vec![Series::new(crate::constants::LEN, [count])])
+        DataFrame::new(vec![Series::new(
+            PlSmallStr::from_static(crate::constants::LEN),
+            [count],
+        )])
     }
 }
 #[cfg(feature = "parquet")]
 pub(super) fn count_rows_parquet(
     paths: &Arc<Vec<PathBuf>>,
-    cloud_options: Option<&CloudOptions>,
+    #[allow(unused)] cloud_options: Option<&CloudOptions>,
 ) -> PolarsResult<usize> {
     if paths.is_empty() {
         return Ok(0);
@@ -189,6 +194,7 @@ pub(super) fn count_rows_ndjson(
     cloud_options: Option<&CloudOptions>,
 ) -> PolarsResult<usize> {
     use polars_core::config;
+    use polars_io::utils::maybe_decompress_bytes;
 
     let run_async = !paths.is_empty() && is_cloud_url(&paths[0]) || config::force_async();
 
@@ -233,7 +239,12 @@ pub(super) fn count_rows_ndjson(
                 polars_utils::open_file(&paths[i])?
             };
 
-            let reader = polars_io::ndjson::core::JsonLineReader::new(f);
+            let mmap = unsafe { memmap::Mmap::map(&f).unwrap() };
+            let owned = &mut vec![];
+
+            let reader = polars_io::ndjson::core::JsonLineReader::new(std::io::Cursor::new(
+                maybe_decompress_bytes(mmap.as_ref(), owned)?,
+            ));
             reader.count()
         })
         .sum()

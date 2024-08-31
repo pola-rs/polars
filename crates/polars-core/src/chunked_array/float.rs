@@ -30,7 +30,7 @@ where
         let chunks = self
             .downcast_iter()
             .map(|arr| set_at_nulls(arr, T::Native::nan()));
-        ChunkedArray::from_chunk_iter(self.name(), chunks)
+        ChunkedArray::from_chunk_iter(self.name().clone(), chunks)
     }
 }
 

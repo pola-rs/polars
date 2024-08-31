@@ -2,7 +2,6 @@
 #![allow(clippy::type_complexity)]
 
 mod deserialize;
-pub mod indexes;
 pub mod schema;
 pub mod statistics;
 
@@ -28,8 +27,7 @@ pub use crate::parquet::{
     metadata::{ColumnChunkMetaData, ColumnDescriptor, RowGroupMetaData},
     page::{CompressedDataPage, DataPageHeader, Page},
     read::{
-        decompress, get_column_iterator, read_columns_indexes as _read_columns_indexes,
-        read_metadata as _read_metadata, read_pages_locations, BasicDecompressor,
+        decompress, get_column_iterator, read_metadata as _read_metadata, BasicDecompressor,
         MutStreamingIterator, PageReader, ReadColumnIterator, State,
     },
     schema::types::{
@@ -42,18 +40,6 @@ pub use crate::parquet::{
 
 /// Returns all [`ColumnChunkMetaData`] associated to `field_name`.
 /// For non-nested parquet types, this returns a single column
-pub fn get_field_columns<'a>(
-    columns: &'a [ColumnChunkMetaData],
-    field_name: &str,
-) -> Vec<&'a ColumnChunkMetaData> {
-    columns
-        .iter()
-        .filter(|x| x.descriptor().path_in_schema[0] == field_name)
-        .collect()
-}
-
-/// Returns all [`ColumnChunkMetaData`] associated to `field_name`.
-/// For non-nested parquet types, this returns a single column
 pub fn get_field_pages<'a, T>(
     columns: &'a [ColumnChunkMetaData],
     items: &'a [T],
@@ -62,7 +48,7 @@ pub fn get_field_pages<'a, T>(
     columns
         .iter()
         .zip(items)
-        .filter(|(metadata, _)| metadata.descriptor().path_in_schema[0] == field_name)
+        .filter(|(metadata, _)| metadata.descriptor().path_in_schema[0].as_str() == field_name)
         .map(|(_, item)| item)
         .collect()
 }

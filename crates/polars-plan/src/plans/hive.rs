@@ -17,7 +17,7 @@ pub struct HivePartitions {
 impl HivePartitions {
     pub fn get_projection_schema_and_indices(
         &self,
-        names: &PlHashSet<String>,
+        names: &PlHashSet<PlSmallStr>,
     ) -> (SchemaRef, Vec<usize>) {
         let mut out_schema = Schema::with_capacity(self.stats.schema().len());
         let mut out_indices = Vec::with_capacity(self.stats.column_stats().len());
@@ -114,7 +114,7 @@ pub fn hive_partitions_from_paths(
                     dtype.clone()
                 };
 
-                Ok(Field::new(name, dtype))
+                Ok(Field::new(PlSmallStr::from_str(name), dtype))
             }).collect::<PolarsResult<Schema>>()?)
     } else {
         let mut hive_schema = Schema::with_capacity(16);

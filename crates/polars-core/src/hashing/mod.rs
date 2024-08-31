@@ -39,6 +39,7 @@ pub(crate) unsafe fn compare_df_rows(keys: &DataFrame, idx_a: usize, idx_b: usiz
 }
 
 /// Populate a multiple key hashmap with row indexes.
+///
 /// Instead of the keys (which could be very large), the row indexes are stored.
 /// To check if a row is equal the original DataFrame is also passed as ref.
 /// When a hash collision occurs the indexes are ptrs to the rows and the rows are compared

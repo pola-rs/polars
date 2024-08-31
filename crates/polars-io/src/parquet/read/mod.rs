@@ -16,6 +16,7 @@
 
 #[cfg(feature = "cloud")]
 mod async_impl;
+mod metadata;
 mod mmap;
 mod options;
 mod predicates;
@@ -37,3 +38,9 @@ use polars_error::{ErrString, PolarsError};
 pub use reader::ParquetAsyncReader;
 pub use reader::{BatchedParquetReader, ParquetReader};
 pub use utils::materialize_empty_df;
+
+pub mod _internal {
+    pub use super::metadata::PartitionedColumnChunkMD;
+    pub use super::mmap::to_deserializer;
+    pub use super::predicates::read_this_row_group;
+}

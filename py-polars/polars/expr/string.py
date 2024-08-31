@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import warnings
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Mapping
 
 import polars._reexport as pl
 from polars import functions as F
@@ -11,7 +11,7 @@ from polars._utils.deprecation import (
 )
 from polars._utils.parse import parse_into_expression
 from polars._utils.unstable import unstable
-from polars._utils.various import find_stacklevel
+from polars._utils.various import find_stacklevel, no_default
 from polars._utils.wrap import wrap_expr
 from polars.datatypes import Date, Datetime, Time, parse_into_dtype
 from polars.datatypes.constants import N_INFER_DEFAULT
@@ -28,6 +28,7 @@ if TYPE_CHECKING:
         TimeUnit,
         TransferEncoding,
     )
+    from polars._utils.various import NoDefault
 
 
 class ExprStringNameSpace:
@@ -923,7 +924,7 @@ class ExprStringNameSpace:
         self, pattern: str | Expr, *, literal: bool = False, strict: bool = True
     ) -> Expr:
         """
-        Check if string contains a substring that matches a pattern.
+        Check if the string contains a substring that matches a pattern.
 
         Parameters
         ----------
@@ -1034,7 +1035,7 @@ class ExprStringNameSpace:
 
         See Also
         --------
-        contains : Check if string contains a substring that matches a regex.
+        contains : Check if the string contains a substring that matches a pattern.
 
         Examples
         --------
@@ -1093,7 +1094,7 @@ class ExprStringNameSpace:
 
         See Also
         --------
-        contains : Check if string contains a substring that matches a regex.
+        contains : Check if the string contains a substring that matches a pattern.
         starts_with : Check if string values start with a substring.
 
         Examples
@@ -1156,7 +1157,7 @@ class ExprStringNameSpace:
 
         See Also
         --------
-        contains : Check if string contains a substring that matches a regex.
+        contains : Check if the string contains a substring that matches a pattern.
         ends_with : Check if string values end with a substring.
 
         Examples
@@ -2400,9 +2401,9 @@ class ExprStringNameSpace:
         self, patterns: IntoExpr, *, ascii_case_insensitive: bool = False
     ) -> Expr:
         """
-        Use the aho-corasick algorithm to find matches.
+        Use the Aho-Corasick algorithm to find matches.
 
-        This version determines if any of the patterns find a match.
+        Determines if any of the patterns are contained in the string.
 
         Parameters
         ----------
@@ -2412,6 +2413,11 @@ class ExprStringNameSpace:
             Enable ASCII-aware case-insensitive matching.
             When this option is enabled, searching will be performed without respect
             to case for ASCII letters (a-z and A-Z) only.
+
+        Notes
+        -----
+        This method supports matching on string literals only, and does not support
+        regular expression matching.
 
         Examples
         --------
@@ -2448,29 +2454,75 @@ class ExprStringNameSpace:
 
     def replace_many(
         self,
-        patterns: IntoExpr,
-        replace_with: IntoExpr,
+        patterns: IntoExpr | Mapping[str, str],
+        replace_with: IntoExpr | NoDefault = no_default,
         *,
         ascii_case_insensitive: bool = False,
     ) -> Expr:
         """
-
-        Use the aho-corasick algorithm to replace many matches.
+        Use the Aho-Corasick algorithm to replace many matches.
 
         Parameters
         ----------
         patterns
             String patterns to search and replace.
+            Accepts expression input. Strings are parsed as column names, and other
+            non-expression inputs are parsed as literals. Also accepts a mapping of
+            patterns to their replacement as syntactic sugar for
+            `replace_many(pl.Series(mapping.keys()), pl.Series(mapping.values()))`.
         replace_with
             Strings to replace where a pattern was a match.
-            This can be broadcast, so it supports many:one and many:many.
+            Accepts expression input. Non-expression inputs are parsed as literals.
+            Length must match the length of `patterns` or have length 1. This can be
+            broadcasted, so it supports many:one and many:many.
         ascii_case_insensitive
             Enable ASCII-aware case-insensitive matching.
             When this option is enabled, searching will be performed without respect
             to case for ASCII letters (a-z and A-Z) only.
 
+        Notes
+        -----
+        This method supports matching on string literals only, and does not support
+        regular expression matching.
+
         Examples
         --------
+        Replace many patterns by passing sequences of equal length to the `patterns` and
+        `replace_with` parameters.
+
+        >>> _ = pl.Config.set_fmt_str_lengths(100)
+        >>> _ = pl.Config.set_tbl_width_chars(110)
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "lyrics": [
+        ...             "Everybody wants to rule the world",
+        ...             "Tell me what you want, what you really really want",
+        ...             "Can you feel the love tonight",
+        ...         ]
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     pl.col("lyrics")
+        ...     .str.replace_many(
+        ...         ["me", "you"],
+        ...         ["you", "me"],
+        ...     )
+        ...     .alias("confusing")
+        ... )
+        shape: (3, 2)
+        ┌────────────────────────────────────────────────────┬───────────────────────────────────────────────────┐
+        │ lyrics                                             ┆ confusing                                         │
+        │ ---                                                ┆ ---                                               │
+        │ str                                                ┆ str                                               │
+        ╞════════════════════════════════════════════════════╪═══════════════════════════════════════════════════╡
+        │ Everybody wants to rule the world                  ┆ Everybody wants to rule the world                 │
+        │ Tell me what you want, what you really really want ┆ Tell you what me want, what me really really want │
+        │ Can you feel the love tonight                      ┆ Can me feel the love tonight                      │
+        └────────────────────────────────────────────────────┴───────────────────────────────────────────────────┘
+
+        Broadcast a replacement for many patterns by passing a string or a sequence of
+        length 1 to the `replace_with` parameter.
+
         >>> _ = pl.Config.set_fmt_str_lengths(100)
         >>> df = pl.DataFrame(
         ...     {
@@ -2499,27 +2551,50 @@ class ExprStringNameSpace:
         │ Tell me what you want, what you really really want ┆ Tell  what  want, what  really really want │
         │ Can you feel the love tonight                      ┆ Can  feel the love tonight                 │
         └────────────────────────────────────────────────────┴────────────────────────────────────────────┘
+
+        Passing a mapping with patterns and replacements is also supported as syntactic
+        sugar.
+
+        >>> _ = pl.Config.set_fmt_str_lengths(100)
+        >>> _ = pl.Config.set_tbl_width_chars(110)
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "lyrics": [
+        ...             "Everybody wants to rule the world",
+        ...             "Tell me what you want, what you really really want",
+        ...             "Can you feel the love tonight",
+        ...         ]
+        ...     }
+        ... )
+        >>> mapping = {"me": "you", "you": "me", "want": "need"}
         >>> df.with_columns(
-        ...     pl.col("lyrics")
-        ...     .str.replace_many(
-        ...         ["me", "you"],
-        ...         ["you", "me"],
-        ...     )
-        ...     .alias("confusing")
-        ... )  # doctest: +IGNORE_RESULT
+        ...     pl.col("lyrics").str.replace_many(mapping).alias("confusing")
+        ... )
         shape: (3, 2)
         ┌────────────────────────────────────────────────────┬───────────────────────────────────────────────────┐
         │ lyrics                                             ┆ confusing                                         │
         │ ---                                                ┆ ---                                               │
         │ str                                                ┆ str                                               │
         ╞════════════════════════════════════════════════════╪═══════════════════════════════════════════════════╡
-        │ Everybody wants to rule the world                  ┆ Everybody wants to rule the world                 │
-        │ Tell me what you want, what you really really want ┆ Tell you what me want, what me really really want │
+        │ Everybody wants to rule the world                  ┆ Everybody needs to rule the world                 │
+        │ Tell me what you want, what you really really want ┆ Tell you what me need, what me really really need │
         │ Can you feel the love tonight                      ┆ Can me feel the love tonight                      │
         └────────────────────────────────────────────────────┴───────────────────────────────────────────────────┘
         """  # noqa: W505
+        if replace_with is no_default:
+            if not isinstance(patterns, Mapping):
+                msg = "`replace_with` argument is required if `patterns` argument is not a Mapping type"
+                raise TypeError(msg)
+            # Early return in case of an empty mapping.
+            if not patterns:
+                return wrap_expr(self._pyexpr)
+            replace_with = pl.Series(patterns.values())
+            patterns = pl.Series(patterns.keys())
+
         patterns = parse_into_expression(
-            patterns, str_as_lit=False, list_as_series=True
+            patterns,  # type: ignore[arg-type]
+            str_as_lit=False,
+            list_as_series=True,
         )
         replace_with = parse_into_expression(
             replace_with, str_as_lit=True, list_as_series=True
@@ -2539,8 +2614,7 @@ class ExprStringNameSpace:
         overlapping: bool = False,
     ) -> Expr:
         """
-
-        Use the aho-corasick algorithm to extract many matches.
+        Use the Aho-Corasick algorithm to extract many matches.
 
         Parameters
         ----------
@@ -2552,6 +2626,11 @@ class ExprStringNameSpace:
             to case for ASCII letters (a-z and A-Z) only.
         overlapping
             Whether matches may overlap.
+
+        Notes
+        -----
+        This method supports matching on string literals only, and does not support
+        regular expression matching.
 
         Examples
         --------

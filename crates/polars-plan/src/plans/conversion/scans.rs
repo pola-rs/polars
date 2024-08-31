@@ -19,7 +19,7 @@ fn get_first_path(paths: &[PathBuf]) -> PolarsResult<&PathBuf> {
 #[cfg(any(feature = "parquet", feature = "ipc"))]
 fn prepare_output_schema(mut schema: Schema, row_index: Option<&RowIndex>) -> SchemaRef {
     if let Some(rc) = row_index {
-        let _ = schema.insert_at_index(0, rc.name.as_ref().into(), IDX_DTYPE);
+        let _ = schema.insert_at_index(0, rc.name.clone(), IDX_DTYPE);
     }
     Arc::new(schema)
 }
@@ -28,7 +28,7 @@ fn prepare_output_schema(mut schema: Schema, row_index: Option<&RowIndex>) -> Sc
 fn prepare_schemas(mut schema: Schema, row_index: Option<&RowIndex>) -> (SchemaRef, SchemaRef) {
     if let Some(rc) = row_index {
         let reader_schema = schema.clone();
-        let _ = schema.insert_at_index(0, rc.name.as_ref().into(), IDX_DTYPE);
+        let _ = schema.insert_at_index(0, rc.name.clone(), IDX_DTYPE);
         (Arc::new(reader_schema), Arc::new(schema))
     } else {
         let schema = Arc::new(schema);
@@ -40,7 +40,7 @@ fn prepare_schemas(mut schema: Schema, row_index: Option<&RowIndex>) -> (SchemaR
 pub(super) fn parquet_file_info(
     paths: &[PathBuf],
     file_options: &FileScanOptions,
-    cloud_options: Option<&polars_io::cloud::CloudOptions>,
+    #[allow(unused)] cloud_options: Option<&polars_io::cloud::CloudOptions>,
 ) -> PolarsResult<(FileInfo, Option<FileMetaDataRef>)> {
     let path = get_first_path(paths)?;
 
@@ -254,7 +254,7 @@ pub(super) fn csv_file_info(
     let reader_schema = if let Some(rc) = &file_options.row_index {
         let reader_schema = schema.clone();
         let mut output_schema = (*reader_schema).clone();
-        output_schema.insert_at_index(0, rc.name.as_ref().into(), IDX_DTYPE)?;
+        output_schema.insert_at_index(0, rc.name.clone(), IDX_DTYPE)?;
         schema = Arc::new(output_schema);
         reader_schema
     } else {

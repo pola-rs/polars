@@ -26,13 +26,13 @@ use polars_error::*;
 #[cfg(feature = "aws")]
 use polars_utils::cache::FastFixedCache;
 #[cfg(feature = "aws")]
+use polars_utils::pl_str::PlSmallStr;
+#[cfg(feature = "aws")]
 use regex::Regex;
 #[cfg(feature = "http")]
 use reqwest::header::HeaderMap;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-#[cfg(feature = "aws")]
-use smartstring::alias::String as SmartString;
 #[cfg(feature = "cloud")]
 use url::Url;
 
@@ -42,7 +42,7 @@ use crate::file_cache::get_env_file_cache_ttl;
 use crate::pl_async::with_concurrency_budget;
 
 #[cfg(feature = "aws")]
-static BUCKET_REGION: Lazy<std::sync::Mutex<FastFixedCache<SmartString, SmartString>>> =
+static BUCKET_REGION: Lazy<std::sync::Mutex<FastFixedCache<PlSmallStr, PlSmallStr>>> =
     Lazy::new(|| std::sync::Mutex::new(FastFixedCache::new(32)));
 
 /// The type of the config keys must satisfy the following requirements:
@@ -277,7 +277,7 @@ impl CloudOptions {
             &mut builder,
             &[(
                 Path::new("~/.aws/config"),
-                &[("region = (.*)\n", AmazonS3ConfigKey::Region)],
+                &[("region\\s*=\\s*(.*)\n", AmazonS3ConfigKey::Region)],
             )],
         );
         read_config(
@@ -285,9 +285,12 @@ impl CloudOptions {
             &[(
                 Path::new("~/.aws/credentials"),
                 &[
-                    ("aws_access_key_id = (.*)\n", AmazonS3ConfigKey::AccessKeyId),
                     (
-                        "aws_secret_access_key = (.*)\n",
+                        "aws_access_key_id\\s*=\\s*(.*)\n",
+                        AmazonS3ConfigKey::AccessKeyId,
+                    ),
+                    (
+                        "aws_secret_access_key\\s*=\\s*(.*)\n",
                         AmazonS3ConfigKey::SecretAccessKey,
                     ),
                 ],

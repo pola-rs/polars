@@ -15,9 +15,9 @@ use std::sync::{Arc, Mutex};
 
 pub use dsl::*;
 use polars_core::prelude::*;
+use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-use smartstring::alias::String as SmartString;
 use strum_macros::IntoStaticStr;
 
 #[cfg(feature = "python")]
@@ -26,11 +26,13 @@ use crate::dsl::python_udf::PythonFunction;
 use crate::plans::functions::merge_sorted::merge_sorted;
 use crate::prelude::*;
 
+#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 #[derive(Clone, IntoStaticStr)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 pub enum FunctionIR {
     #[cfg(feature = "python")]
     OpaquePython(OpaquePythonUdf),
+    #[cfg_attr(feature = "ir_serde", serde(skip))]
     Opaque {
         function: Arc<dyn DataFrameUdf>,
         schema: Option<Arc<dyn UdfSchema>>,
@@ -40,21 +42,22 @@ pub enum FunctionIR {
         projection_pd: bool,
         streamable: bool,
         // used for formatting
-        fmt_str: &'static str,
+        fmt_str: PlSmallStr,
     },
     FastCount {
         paths: Arc<Vec<PathBuf>>,
         scan_type: FileScan,
-        alias: Option<Arc<str>>,
+        alias: Option<PlSmallStr>,
     },
     /// Streaming engine pipeline
+    #[cfg_attr(feature = "ir_serde", serde(skip))]
     Pipeline {
         function: Arc<Mutex<dyn DataFrameUdfMut>>,
         schema: SchemaRef,
         original: Option<Arc<IRPlan>>,
     },
     Unnest {
-        columns: Arc<[ColumnName]>,
+        columns: Arc<[PlSmallStr]>,
     },
     Rechunk,
     // The two DataFrames are temporary concatenated
@@ -64,27 +67,31 @@ pub enum FunctionIR {
     #[cfg(feature = "merge_sorted")]
     MergeSorted {
         // sorted column that serves as the key
-        column: Arc<str>,
+        column: PlSmallStr,
     },
     Rename {
-        existing: Arc<[SmartString]>,
-        new: Arc<[SmartString]>,
+        existing: Arc<[PlSmallStr]>,
+        new: Arc<[PlSmallStr]>,
         // A column name gets swapped with an existing column
         swapping: bool,
+        #[cfg_attr(feature = "ir_serde", serde(skip))]
         schema: CachedSchema,
     },
     Explode {
-        columns: Arc<[ColumnName]>,
+        columns: Arc<[PlSmallStr]>,
+        #[cfg_attr(feature = "ir_serde", serde(skip))]
         schema: CachedSchema,
     },
     #[cfg(feature = "pivot")]
     Unpivot {
         args: Arc<UnpivotArgsIR>,
+        #[cfg_attr(feature = "ir_serde", serde(skip))]
         schema: CachedSchema,
     },
     RowIndex {
-        name: Arc<str>,
+        name: PlSmallStr,
         // Might be cached.
+        #[cfg_attr(feature = "ir_serde", serde(skip))]
         schema: CachedSchema,
         offset: Option<IdxSize>,
     },
@@ -231,7 +238,7 @@ impl FunctionIR {
         }
     }
 
-    pub(crate) fn additional_projection_pd_columns(&self) -> Cow<[Arc<str>]> {
+    pub(crate) fn additional_projection_pd_columns(&self) -> Cow<[PlSmallStr]> {
         use FunctionIR::*;
         match self {
             Unnest { columns } => Cow::Borrowed(columns.as_ref()),
@@ -265,7 +272,7 @@ impl FunctionIR {
             Unnest { columns: _columns } => {
                 #[cfg(feature = "dtype-struct")]
                 {
-                    df.unnest(_columns.as_ref())
+                    df.unnest(_columns.iter().cloned())
                 }
                 #[cfg(not(feature = "dtype-struct"))]
                 {
@@ -286,14 +293,14 @@ impl FunctionIR {
                 }
             },
             Rename { existing, new, .. } => rename::rename_impl(df, existing, new),
-            Explode { columns, .. } => df.explode(columns.as_ref()),
+            Explode { columns, .. } => df.explode(columns.iter().cloned()),
             #[cfg(feature = "pivot")]
             Unpivot { args, .. } => {
                 use polars_ops::pivot::UnpivotDF;
                 let args = (**args).clone();
                 df.unpivot2(args)
             },
-            RowIndex { name, offset, .. } => df.with_row_index(name.as_ref(), *offset),
+            RowIndex { name, offset, .. } => df.with_row_index(name.clone(), *offset),
         }
     }
 

@@ -994,25 +994,6 @@ def test_mode() -> None:
     assert pl.int_range(0, 3, eager=True).mode().to_list() == [2, 1, 0]
 
 
-def test_rank() -> None:
-    s = pl.Series("a", [1, 2, 3, 2, 2, 3, 0])
-
-    assert_series_equal(
-        s.rank("dense"), pl.Series("a", [2, 3, 4, 3, 3, 4, 1], dtype=UInt32)
-    )
-
-    df = pl.DataFrame([s])
-    assert df.select(pl.col("a").rank("dense"))["a"].to_list() == [2, 3, 4, 3, 3, 4, 1]
-
-    assert_series_equal(
-        s.rank("dense", descending=True),
-        pl.Series("a", [3, 2, 1, 2, 2, 1, 4], dtype=UInt32),
-    )
-
-    assert s.rank(method="average").dtype == pl.Float64
-    assert s.rank(method="max").dtype == pl.get_index_type()
-
-
 def test_diff() -> None:
     s = pl.Series("a", [1, 2, 3, 2, 2, 3, 0])
     expected = pl.Series("a", [1, 1, -1, 0, 1, -3])
@@ -1766,8 +1747,8 @@ def test_sign() -> None:
     assert_series_equal(a.sign(), expected)
 
     # Floats
-    a = pl.Series("a", [-9.0, -0.0, 0.0, 4.0, None])
-    expected = pl.Series("a", [-1, 0, 0, 1, None])
+    a = pl.Series("a", [-9.0, -0.0, 0.0, 4.0, float("nan"), None])
+    expected = pl.Series("a", [-1.0, 0.0, 0.0, 1.0, float("nan"), None])
     assert_series_equal(a.sign(), expected)
 
     # Invalid input

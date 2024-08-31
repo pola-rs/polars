@@ -24,6 +24,11 @@ impl<'a, P: ParquetNativeType> ArrayChunks<'a, P> {
 
         Some(Self { bytes })
     }
+
+    pub(crate) fn skip_in_place(&mut self, n: usize) {
+        let n = usize::min(self.bytes.len(), n);
+        self.bytes = &self.bytes[n..];
+    }
 }
 
 impl<'a, P: ParquetNativeType> Iterator for ArrayChunks<'a, P> {
@@ -33,13 +38,6 @@ impl<'a, P: ParquetNativeType> Iterator for ArrayChunks<'a, P> {
     fn next(&mut self) -> Option<Self::Item> {
         let item = self.bytes.first()?;
         self.bytes = &self.bytes[1..];
-        Some(item)
-    }
-
-    #[inline(always)]
-    fn nth(&mut self, n: usize) -> Option<Self::Item> {
-        let item = self.bytes.get(n)?;
-        self.bytes = &self.bytes[n + 1..];
         Some(item)
     }
 

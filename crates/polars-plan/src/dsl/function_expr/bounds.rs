@@ -1,7 +1,7 @@
 use super::*;
 
 pub(super) fn upper_bound(s: &Series) -> PolarsResult<Series> {
-    let name = s.name();
+    let name = s.name().clone();
     use DataType::*;
     let s = match s.dtype().to_physical() {
         #[cfg(feature = "dtype-i8")]
@@ -26,7 +26,7 @@ pub(super) fn upper_bound(s: &Series) -> PolarsResult<Series> {
 }
 
 pub(super) fn lower_bound(s: &Series) -> PolarsResult<Series> {
-    let name = s.name();
+    let name = s.name().clone();
     use DataType::*;
     let s = match s.dtype().to_physical() {
         #[cfg(feature = "dtype-i8")]

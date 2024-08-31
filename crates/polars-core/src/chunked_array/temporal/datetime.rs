@@ -72,7 +72,7 @@ impl DatetimeChunked {
                 )?
             },
         };
-        ca.rename(self.name());
+        ca.rename(self.name().clone());
         Ok(ca)
     }
 
@@ -86,7 +86,7 @@ impl DatetimeChunked {
 
     /// Construct a new [`DatetimeChunked`] from an iterator over [`NaiveDateTime`].
     pub fn from_naive_datetime<I: IntoIterator<Item = NaiveDateTime>>(
-        name: &str,
+        name: PlSmallStr,
         v: I,
         tu: TimeUnit,
     ) -> Self {
@@ -100,7 +100,7 @@ impl DatetimeChunked {
     }
 
     pub fn from_naive_datetime_options<I: IntoIterator<Item = Option<NaiveDateTime>>>(
-        name: &str,
+        name: PlSmallStr,
         v: I,
         tu: TimeUnit,
     ) -> Self {
@@ -205,7 +205,7 @@ mod test {
 
         // NOTE: the values are checked and correct.
         let dt = DatetimeChunked::from_naive_datetime(
-            "name",
+            PlSmallStr::from_static("name"),
             datetimes.iter().copied(),
             TimeUnit::Nanoseconds,
         );

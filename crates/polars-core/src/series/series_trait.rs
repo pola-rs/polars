@@ -61,7 +61,7 @@ pub(crate) mod private {
         #[cfg(feature = "object")]
         fn get_list_builder(
             &self,
-            _name: &str,
+            _name: PlSmallStr,
             _values_capacity: usize,
             _list_capacity: usize,
         ) -> Box<dyn ListBuilderTrait> {
@@ -78,10 +78,6 @@ pub(crate) mod private {
         fn _get_flags(&self) -> MetadataFlags;
 
         fn _set_flags(&mut self, flags: MetadataFlags);
-
-        fn explode_by_offsets(&self, _offsets: &[i64]) -> Series {
-            invalid_operation_panic!(explode_by_offsets, self)
-        }
 
         unsafe fn equal_element(
             &self,
@@ -111,29 +107,29 @@ pub(crate) mod private {
         }
         #[cfg(feature = "algorithm_group_by")]
         unsafe fn agg_min(&self, groups: &GroupsProxy) -> Series {
-            Series::full_null(self._field().name(), groups.len(), self._dtype())
+            Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
         }
         #[cfg(feature = "algorithm_group_by")]
         unsafe fn agg_max(&self, groups: &GroupsProxy) -> Series {
-            Series::full_null(self._field().name(), groups.len(), self._dtype())
+            Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
         }
         /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
         /// first cast to `Int64` to prevent overflow issues.
         #[cfg(feature = "algorithm_group_by")]
         unsafe fn agg_sum(&self, groups: &GroupsProxy) -> Series {
-            Series::full_null(self._field().name(), groups.len(), self._dtype())
+            Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
         }
         #[cfg(feature = "algorithm_group_by")]
         unsafe fn agg_std(&self, groups: &GroupsProxy, _ddof: u8) -> Series {
-            Series::full_null(self._field().name(), groups.len(), self._dtype())
+            Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
         }
         #[cfg(feature = "algorithm_group_by")]
         unsafe fn agg_var(&self, groups: &GroupsProxy, _ddof: u8) -> Series {
-            Series::full_null(self._field().name(), groups.len(), self._dtype())
+            Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
         }
         #[cfg(feature = "algorithm_group_by")]
         unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
-            Series::full_null(self._field().name(), groups.len(), self._dtype())
+            Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
         }
 
         fn subtract(&self, _rhs: &Series) -> PolarsResult<Series> {
@@ -179,7 +175,7 @@ pub trait SeriesTrait:
     Send + Sync + private::PrivateSeries + private::PrivateSeriesNumeric
 {
     /// Rename the Series.
-    fn rename(&mut self, name: &str);
+    fn rename(&mut self, name: PlSmallStr);
 
     fn bitand(&self, _other: &Series) -> PolarsResult<Series> {
         polars_bail!(opq = bitand, self._dtype());
@@ -201,7 +197,7 @@ pub trait SeriesTrait:
     fn chunk_lengths(&self) -> ChunkLenIter;
 
     /// Name of series.
-    fn name(&self) -> &str;
+    fn name(&self) -> &PlSmallStr;
 
     /// Get field (used in schema)
     fn field(&self) -> Cow<Field> {
@@ -326,7 +322,7 @@ pub trait SeriesTrait:
     ///
     /// ```rust
     /// use polars_core::prelude::*;
-    /// let s = Series::new("a", [0i32, 1, 8]);
+    /// let s = Series::new("a".into(), [0i32, 1, 8]);
     /// let s2 = s.new_from_index(2, 4);
     /// assert_eq!(Vec::from(s2.i32().unwrap()), &[Some(8), Some(8), Some(8), Some(8)])
     /// ```
@@ -408,7 +404,7 @@ pub trait SeriesTrait:
     /// ```rust
     /// # use polars_core::prelude::*;
     /// fn example() -> PolarsResult<()> {
-    ///     let s = Series::new("series", &[1, 2, 3]);
+    ///     let s = Series::new("series".into(), &[1, 2, 3]);
     ///
     ///     let shifted = s.shift(1);
     ///     assert_eq!(Vec::from(shifted.i32()?), &[None, Some(1), Some(2)]);

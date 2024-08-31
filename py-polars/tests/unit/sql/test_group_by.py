@@ -10,7 +10,7 @@ from polars.exceptions import SQLSyntaxError
 from polars.testing import assert_frame_equal
 
 
-@pytest.fixture()
+@pytest.fixture
 def foods_ipc_path() -> Path:
     return Path(__file__).parent.parent / "io" / "files" / "foods1.ipc"
 

@@ -12,6 +12,7 @@ use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{DataPage, DictPage};
 
 pub(crate) struct NullDecoder;
+#[derive(Debug)]
 pub(crate) struct NullArrayLength {
     length: usize,
 }
@@ -46,7 +47,9 @@ impl<'a> utils::StateTranslation<'a, NullDecoder> for () {
         &mut self,
         _decoder: &mut NullDecoder,
         decoded: &mut <NullDecoder as utils::Decoder>::DecodedState,
+        _is_optional: bool,
         _page_validity: &mut Option<utils::PageValidity<'a>>,
+        _: Option<&'a <NullDecoder as utils::Decoder>::Dict>,
         additional: usize,
     ) -> ParquetResult<()> {
         decoded.length += additional;
@@ -65,12 +68,15 @@ impl utils::Decoder for NullDecoder {
         NullArrayLength { length: 0 }
     }
 
-    fn deserialize_dict(&self, _: DictPage) -> Self::Dict {}
+    fn deserialize_dict(&self, _: DictPage) -> ParquetResult<Self::Dict> {
+        Ok(())
+    }
 
     fn decode_plain_encoded<'a>(
         &mut self,
         _decoded: &mut Self::DecodedState,
         _page_values: &mut <Self::Translation<'a> as utils::StateTranslation<'a, Self>>::PlainDecoder,
+        _is_optional: bool,
         _page_validity: Option<&mut utils::PageValidity<'a>>,
         _limit: usize,
     ) -> ParquetResult<()> {
@@ -81,6 +87,7 @@ impl utils::Decoder for NullDecoder {
         &mut self,
         _decoded: &mut Self::DecodedState,
         _page_values: &mut hybrid_rle::HybridRleDecoder<'a>,
+        _is_optional: bool,
         _page_validity: Option<&mut utils::PageValidity<'a>>,
         _dict: &Self::Dict,
         _limit: usize,
@@ -136,18 +143,20 @@ pub fn iter_to_arrays(
         };
         let page = page?;
 
-        let rows = page.num_values();
-        let page_filter;
-        (page_filter, filter) = Filter::opt_split_at(&filter, rows);
+        let state_filter;
+        (state_filter, filter) = Filter::opt_split_at(&filter, page.num_values());
 
-        let num_rows = match page_filter {
-            None => rows,
+        // Skip the whole page if we don't need any rows from it
+        if state_filter.as_ref().is_some_and(|f| f.num_rows() == 0) {
+            continue;
+        }
+
+        let num_rows = match state_filter {
+            None => page.num_values(),
             Some(filter) => filter.num_rows(),
         };
 
         len = (len + num_rows).min(num_rows);
-
-        iter.reuse_page_buffer(page);
     }
 
     Ok(Box::new(NullArray::new(data_type, len)))

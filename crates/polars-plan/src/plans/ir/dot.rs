@@ -2,6 +2,7 @@ use std::fmt;
 use std::path::PathBuf;
 
 use polars_core::schema::Schema;
+use polars_utils::pl_str::PlSmallStr;
 
 use super::format::ExprIRSliceDisplay;
 use crate::constants::UNLIMITED_CACHE;
@@ -32,9 +33,9 @@ impl fmt::Display for DotNode {
 
 #[inline(always)]
 fn write_label<'a, 'b>(
-    f: &'b mut fmt::Formatter<'a>,
+    f: &'a mut fmt::Formatter<'b>,
     id: DotNode,
-    mut w: impl FnMut(&mut EscapeLabel<'a, 'b>) -> fmt::Result,
+    mut w: impl FnMut(&mut EscapeLabel<'a>) -> fmt::Result,
 ) -> fmt::Result {
     write!(f, "{INDENT}{id}[label=\"")?;
 
@@ -341,8 +342,8 @@ impl<'a> IRDotDisplay<'a> {
 }
 
 // A few utility structures for formatting
-pub(crate) struct PathsDisplay<'a>(pub &'a [PathBuf]);
-struct NumColumns<'a>(Option<&'a [String]>);
+pub struct PathsDisplay<'a>(pub &'a [PathBuf]);
+struct NumColumns<'a>(Option<&'a [PlSmallStr]>);
 struct NumColumnsSchema<'a>(Option<&'a Schema>);
 struct OptionExprIRDisplay<'a>(Option<ExprIRDisplay<'a>>);
 
@@ -390,9 +391,9 @@ impl fmt::Display for OptionExprIRDisplay<'_> {
 }
 
 /// Utility structure to write to a [`fmt::Formatter`] whilst escaping the output as a label name
-struct EscapeLabel<'a, 'b>(&'b mut fmt::Formatter<'a>);
+pub struct EscapeLabel<'a>(pub &'a mut dyn fmt::Write);
 
-impl<'a, 'b> fmt::Write for EscapeLabel<'a, 'b> {
+impl<'a> fmt::Write for EscapeLabel<'a> {
     fn write_str(&mut self, mut s: &str) -> fmt::Result {
         loop {
             let mut char_indices = s.char_indices();

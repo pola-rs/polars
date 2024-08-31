@@ -29,13 +29,6 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
         self.0.dtype()
     }
 
-    fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
-        self.0
-            .explode_by_offsets(offsets)
-            .into_duration(self.0.time_unit())
-            .into_series()
-    }
-
     fn _set_flags(&mut self, flags: MetadataFlags) {
         self.0.deref_mut().set_flags(flags)
     }
@@ -259,14 +252,14 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
 }
 
 impl SeriesTrait for SeriesWrap<DurationChunked> {
-    fn rename(&mut self, name: &str) {
+    fn rename(&mut self, name: PlSmallStr) {
         self.0.rename(name);
     }
 
     fn chunk_lengths(&self) -> ChunkLenIter {
         self.0.chunk_lengths()
     }
-    fn name(&self) -> &str {
+    fn name(&self) -> &PlSmallStr {
         self.0.name()
     }
 

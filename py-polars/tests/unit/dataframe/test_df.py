@@ -1555,7 +1555,7 @@ def test_reproducible_hash_with_seeds() -> None:
         assert_series_equal(expected, result, check_names=False, check_exact=True)
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 @pytest.mark.parametrize(
     "e",
     [

@@ -8,7 +8,7 @@ use polars_core::config::{get_rg_prefetch_size, verbose};
 use polars_core::prelude::*;
 use polars_parquet::read::RowGroupMetaData;
 use polars_parquet::write::FileMetaData;
-use smartstring::alias::String as SmartString;
+use polars_utils::pl_str::PlSmallStr;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::Mutex;
 
@@ -18,6 +18,7 @@ use crate::cloud::{
     build_object_store, object_path_from_str, CloudLocation, CloudOptions, PolarsObjectStore,
 };
 use crate::parquet::metadata::FileMetaDataRef;
+use crate::parquet::read::metadata::PartitionedColumnChunkMD;
 use crate::pl_async::get_runtime;
 use crate::predicates::PhysicalIoExpr;
 
@@ -164,7 +165,7 @@ pub async fn fetch_metadata(
 /// Download rowgroups for the column whose indexes are given in `projection`.
 /// We concurrently download the columns for each field.
 async fn download_projection(
-    fields: Arc<[SmartString]>,
+    fields: Arc<[PlSmallStr]>,
     row_group: RowGroupMetaData,
     async_reader: Arc<ParquetObjectStore>,
     sender: QueueSend,
@@ -181,7 +182,7 @@ async fn download_projection(
 
         // A single column can have multiple matches (structs).
         let iter = columns.iter().filter_map(|meta| {
-            if meta.descriptor().path_in_schema[0] == name.as_str() {
+            if meta.descriptor().path_in_schema[0] == name {
                 let (offset, len) = meta.byte_range();
                 Some((offset, offset as usize..(offset + len) as usize))
             } else {
@@ -264,10 +265,10 @@ impl FetchRowGroupsFromObjectStore {
         row_group_range: Range<usize>,
         row_groups: &[RowGroupMetaData],
     ) -> PolarsResult<Self> {
-        let projected_fields: Option<Arc<[SmartString]>> = projection.map(|projection| {
+        let projected_fields: Option<Arc<[PlSmallStr]>> = projection.map(|projection| {
             projection
                 .iter()
-                .map(|i| SmartString::from(schema.fields[*i].name.as_str()))
+                .map(|i| (schema.fields[*i].name.clone()))
                 .collect()
         });
 
@@ -277,8 +278,19 @@ impl FetchRowGroupsFromObjectStore {
             row_group_range
                 .filter_map(|i| {
                     let rg = &row_groups[i];
+
+                    // TODO!
+                    // Optimize this. Now we partition the predicate columns twice. (later on reading as well)
+                    // I think we must add metadata context where we can cache and amortize the partitioning.
+                    let mut part_md = PartitionedColumnChunkMD::new(rg);
+                    let live = pred.live_variables();
+                    part_md.set_partitions(
+                        live.as_ref()
+                            .map(|vars| vars.iter().map(|s| s.as_ref()).collect::<PlHashSet<_>>())
+                            .as_ref(),
+                    );
                     let should_be_read =
-                        matches!(read_this_row_group(Some(pred), rg, &schema), Ok(true));
+                        matches!(read_this_row_group(Some(pred), &part_md, &schema), Ok(true));
 
                     // Already add the row groups that will be skipped to the prefetched data.
                     if !should_be_read {

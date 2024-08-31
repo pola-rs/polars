@@ -313,7 +313,7 @@ impl ListNameSpace {
                             let fields = (0..upper_bound)
                                 .map(|i| {
                                     let name = _default_struct_name_gen(i);
-                                    Field::from_owned(name, inner.clone())
+                                    Field::new(name, inner.clone())
                                 })
                                 .collect();
                             let dt = DataType::Struct(fields);

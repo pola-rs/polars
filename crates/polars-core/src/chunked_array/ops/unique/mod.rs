@@ -116,7 +116,7 @@ where
                     }
 
                     let arr: PrimitiveArray<T::Native> = arr.into();
-                    Ok(ChunkedArray::with_chunk(self.name(), arr))
+                    Ok(ChunkedArray::with_chunk(self.name().clone(), arr))
                 } else {
                     let mask = self.not_equal_missing(&self.shift(1));
                     self.filter(&mask)
@@ -149,7 +149,7 @@ where
 
                             let unique = state.finalize_unique();
 
-                            return Ok(Self::with_chunk(self.name(), unique));
+                            return Ok(Self::with_chunk(self.name().clone(), unique));
                         }
                     }
                 }
@@ -161,7 +161,7 @@ where
     }
 
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
-        Ok(IdxCa::from_vec(self.name(), arg_unique_ca!(self)))
+        Ok(IdxCa::from_vec(self.name().clone(), arg_unique_ca!(self)))
     }
 
     fn n_unique(&self) -> PolarsResult<usize> {
@@ -230,7 +230,7 @@ impl ChunkUnique for BinaryChunked {
                     set.extend(arr.values_iter())
                 }
                 Ok(BinaryChunked::from_iter_values(
-                    self.name(),
+                    self.name().clone(),
                     set.iter().copied(),
                 ))
             },
@@ -241,7 +241,7 @@ impl ChunkUnique for BinaryChunked {
                     set.extend(arr.iter())
                 }
                 Ok(BinaryChunked::from_iter_options(
-                    self.name(),
+                    self.name().clone(),
                     set.iter().copied(),
                 ))
             },
@@ -249,7 +249,7 @@ impl ChunkUnique for BinaryChunked {
     }
 
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
-        Ok(IdxCa::from_vec(self.name(), arg_unique_ca!(self)))
+        Ok(IdxCa::from_vec(self.name().clone(), arg_unique_ca!(self)))
     }
 
     fn n_unique(&self) -> PolarsResult<usize> {
@@ -290,11 +290,11 @@ impl ChunkUnique for BooleanChunked {
 
         let unique = state.finalize_unique();
 
-        Ok(Self::with_chunk(self.name(), unique))
+        Ok(Self::with_chunk(self.name().clone(), unique))
     }
 
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
-        Ok(IdxCa::from_vec(self.name(), arg_unique_ca!(self)))
+        Ok(IdxCa::from_vec(self.name().clone(), arg_unique_ca!(self)))
     }
 }
 
@@ -304,7 +304,8 @@ mod test {
 
     #[test]
     fn unique() {
-        let ca = ChunkedArray::<Int32Type>::from_slice("a", &[1, 2, 3, 2, 1]);
+        let ca =
+            ChunkedArray::<Int32Type>::from_slice(PlSmallStr::from_static("a"), &[1, 2, 3, 2, 1]);
         assert_eq!(
             ca.unique()
                 .unwrap()
@@ -313,13 +314,16 @@ mod test {
                 .collect::<Vec<_>>(),
             vec![Some(1), Some(2), Some(3)]
         );
-        let ca = BooleanChunked::from_slice("a", &[true, false, true]);
+        let ca = BooleanChunked::from_slice(PlSmallStr::from_static("a"), &[true, false, true]);
         assert_eq!(
             ca.unique().unwrap().into_iter().collect::<Vec<_>>(),
             vec![Some(false), Some(true)]
         );
 
-        let ca = StringChunked::new("", &[Some("a"), None, Some("a"), Some("b"), None]);
+        let ca = StringChunked::new(
+            PlSmallStr::const_default(),
+            &[Some("a"), None, Some("a"), Some("b"), None],
+        );
         assert_eq!(
             Vec::from(&ca.unique().unwrap().sort(false)),
             &[None, Some("a"), Some("b")]
@@ -328,7 +332,8 @@ mod test {
 
     #[test]
     fn arg_unique() {
-        let ca = ChunkedArray::<Int32Type>::from_slice("a", &[1, 2, 1, 1, 3]);
+        let ca =
+            ChunkedArray::<Int32Type>::from_slice(PlSmallStr::from_static("a"), &[1, 2, 1, 1, 3]);
         assert_eq!(
             ca.arg_unique().unwrap().into_iter().collect::<Vec<_>>(),
             vec![Some(0), Some(1), Some(4)]

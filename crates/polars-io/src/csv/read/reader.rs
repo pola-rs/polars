@@ -304,7 +304,7 @@ where
                         let schema = dtypes
                             .iter()
                             .zip(df.get_column_names())
-                            .map(|(dtype, name)| Field::new(name, dtype.clone()))
+                            .map(|(dtype, name)| Field::new(name.clone(), dtype.clone()))
                             .collect::<Schema>();
 
                         Arc::new(schema)

@@ -70,7 +70,7 @@ pub(crate) fn cast_chunks(
 }
 
 fn cast_impl_inner(
-    name: &str,
+    name: PlSmallStr,
     chunks: &[ArrayRef],
     dtype: &DataType,
     options: CastOptions,
@@ -98,7 +98,7 @@ fn cast_impl_inner(
 }
 
 fn cast_impl(
-    name: &str,
+    name: PlSmallStr,
     chunks: &[ArrayRef],
     dtype: &DataType,
     options: CastOptions,
@@ -108,7 +108,7 @@ fn cast_impl(
 
 #[cfg(feature = "dtype-struct")]
 fn cast_single_to_struct(
-    name: &str,
+    name: PlSmallStr,
     chunks: &[ArrayRef],
     fields: &[Field],
     options: CastOptions,
@@ -117,12 +117,12 @@ fn cast_single_to_struct(
     // cast to first field dtype
     let mut fields = fields.iter();
     let fld = fields.next().unwrap();
-    let s = cast_impl_inner(&fld.name, chunks, &fld.dtype, options)?;
+    let s = cast_impl_inner(fld.name.clone(), chunks, &fld.dtype, options)?;
     let length = s.len();
     new_fields.push(s);
 
     for fld in fields {
-        new_fields.push(Series::full_null(&fld.name, length, &fld.dtype));
+        new_fields.push(Series::full_null(fld.name.clone(), length, &fld.dtype));
     }
 
     StructChunked::from_series(name, &new_fields).map(|ca| ca.into_series())
@@ -136,7 +136,11 @@ where
         if self.dtype() == data_type {
             // SAFETY: chunks are correct dtype
             let mut out = unsafe {
-                Series::from_chunks_and_dtype_unchecked(self.name(), self.chunks.clone(), data_type)
+                Series::from_chunks_and_dtype_unchecked(
+                    self.name().clone(),
+                    self.chunks.clone(),
+                    data_type,
+                )
             };
             out.set_sorted_flag(self.is_sorted_flag());
             return Ok(out);
@@ -195,30 +199,32 @@ where
             },
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => {
-                cast_single_to_struct(self.name(), &self.chunks, fields, options)
+                cast_single_to_struct(self.name().clone(), &self.chunks, fields, options)
             },
-            _ => cast_impl_inner(self.name(), &self.chunks, data_type, options).map(|mut s| {
-                // maintain sorted if data types
-                // - remain signed
-                // - unsigned -> signed
-                // this may still fail with overflow?
-                let dtype = self.dtype();
+            _ => cast_impl_inner(self.name().clone(), &self.chunks, data_type, options).map(
+                |mut s| {
+                    // maintain sorted if data types
+                    // - remain signed
+                    // - unsigned -> signed
+                    // this may still fail with overflow?
+                    let dtype = self.dtype();
 
-                let to_signed = data_type.is_signed_integer();
-                let unsigned2unsigned =
-                    dtype.is_unsigned_integer() && data_type.is_unsigned_integer();
-                let allowed = to_signed || unsigned2unsigned;
+                    let to_signed = data_type.is_signed_integer();
+                    let unsigned2unsigned =
+                        dtype.is_unsigned_integer() && data_type.is_unsigned_integer();
+                    let allowed = to_signed || unsigned2unsigned;
 
-                if (allowed)
+                    if (allowed)
                     && (s.null_count() == self.null_count())
                     // physical to logicals
                     || (self.dtype().to_physical() == data_type.to_physical())
-                {
-                    let is_sorted = self.is_sorted_flag();
-                    s.set_sorted_flag(is_sorted)
-                }
-                s
-            }),
+                    {
+                        let is_sorted = self.is_sorted_flag();
+                        s.set_sorted_flag(is_sorted)
+                    }
+                    s
+                },
+            ),
         }
     }
 }
@@ -276,7 +282,7 @@ impl ChunkCast for StringChunked {
                     let iter =
                         unsafe { self.downcast_iter().flatten().trust_my_length(self.len()) };
                     let builder =
-                        CategoricalChunkedBuilder::new(self.name(), self.len(), *ordering);
+                        CategoricalChunkedBuilder::new(self.name().clone(), self.len(), *ordering);
                     let ca = builder.drain_iter_and_finish(iter);
                     Ok(ca.into_series())
                 },
@@ -292,13 +298,13 @@ impl ChunkCast for StringChunked {
                 CategoricalChunked::from_string_to_enum(self, rev_map.get_categories(), *ordering)
                     .map(|ca| {
                         let mut s = ca.into_series();
-                        s.rename(self.name());
+                        s.rename(self.name().clone());
                         s
                     })
             },
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => {
-                cast_single_to_struct(self.name(), &self.chunks, fields, options)
+                cast_single_to_struct(self.name().clone(), &self.chunks, fields, options)
             },
             #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(precision, scale) => match (precision, scale) {
@@ -310,7 +316,7 @@ impl ChunkCast for StringChunked {
                             *scale,
                         )
                     });
-                    Ok(Int128Chunked::from_chunk_iter(self.name(), chunks)
+                    Ok(Int128Chunked::from_chunk_iter(self.name().clone(), chunks)
                         .into_decimal_unchecked(*precision, *scale)
                         .into_series())
                 },
@@ -322,7 +328,7 @@ impl ChunkCast for StringChunked {
             #[cfg(feature = "dtype-date")]
             DataType::Date => {
                 let result = cast_chunks(&self.chunks, data_type, options)?;
-                let out = Series::try_from((self.name(), result))?;
+                let out = Series::try_from((self.name().clone(), result))?;
                 Ok(out)
             },
             #[cfg(feature = "dtype-datetime")]
@@ -336,7 +342,7 @@ impl ChunkCast for StringChunked {
                             &Datetime(time_unit.to_owned(), Some(time_zone.clone())),
                             options,
                         )?;
-                        Series::try_from((self.name(), result))
+                        Series::try_from((self.name().clone(), result))
                     },
                     _ => {
                         let result = cast_chunks(
@@ -344,7 +350,7 @@ impl ChunkCast for StringChunked {
                             &Datetime(time_unit.to_owned(), None),
                             options,
                         )?;
-                        Series::try_from((self.name(), result))
+                        Series::try_from((self.name().clone(), result))
                     },
                 };
                 out
@@ -371,7 +377,7 @@ impl BinaryChunked {
             .downcast_iter()
             .map(|arr| arr.to_utf8view_unchecked().boxed())
             .collect();
-        let field = Arc::new(Field::new(self.name(), DataType::String));
+        let field = Arc::new(Field::new(self.name().clone(), DataType::String));
 
         let mut ca = StringChunked::new_with_compute_len(field, chunks);
 
@@ -388,7 +394,7 @@ impl StringChunked {
             .downcast_iter()
             .map(|arr| arr.to_binview().boxed())
             .collect();
-        let field = Arc::new(Field::new(self.name(), DataType::Binary));
+        let field = Arc::new(Field::new(self.name().clone(), DataType::Binary));
 
         let mut ca = BinaryChunked::new_with_compute_len(field, chunks);
 
@@ -408,9 +414,9 @@ impl ChunkCast for BinaryChunked {
         match data_type {
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => {
-                cast_single_to_struct(self.name(), &self.chunks, fields, options)
+                cast_single_to_struct(self.name().clone(), &self.chunks, fields, options)
             },
-            _ => cast_impl(self.name(), &self.chunks, data_type, options),
+            _ => cast_impl(self.name().clone(), &self.chunks, data_type, options),
         }
     }
 
@@ -431,9 +437,9 @@ impl ChunkCast for BinaryOffsetChunked {
         match data_type {
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => {
-                cast_single_to_struct(self.name(), &self.chunks, fields, options)
+                cast_single_to_struct(self.name().clone(), &self.chunks, fields, options)
             },
-            _ => cast_impl(self.name(), &self.chunks, data_type, options),
+            _ => cast_impl(self.name().clone(), &self.chunks, data_type, options),
         }
     }
 
@@ -451,9 +457,9 @@ impl ChunkCast for BooleanChunked {
         match data_type {
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => {
-                cast_single_to_struct(self.name(), &self.chunks, fields, options)
+                cast_single_to_struct(self.name().clone(), &self.chunks, fields, options)
             },
-            _ => cast_impl(self.name(), &self.chunks, data_type, options),
+            _ => cast_impl(self.name().clone(), &self.chunks, data_type, options),
         }
     }
 
@@ -488,7 +494,7 @@ impl ChunkCast for ListChunked {
                         // we must take this path to correct for physical types.
                         unsafe {
                             Ok(Series::from_chunks_and_dtype_unchecked(
-                                self.name(),
+                                self.name().clone(),
                                 vec![arr],
                                 &List(Box::new(child_type)),
                             ))
@@ -510,7 +516,7 @@ impl ChunkCast for ListChunked {
                 // we must take this path to correct for physical types.
                 unsafe {
                     Ok(Series::from_chunks_and_dtype_unchecked(
-                        self.name(),
+                        self.name().clone(),
                         chunks,
                         &Array(child_type.clone(), *width),
                     ))
@@ -565,7 +571,7 @@ impl ChunkCast for ArrayChunked {
                         // we must take this path to correct for physical types.
                         unsafe {
                             Ok(Series::from_chunks_and_dtype_unchecked(
-                                self.name(),
+                                self.name().clone(),
                                 vec![arr],
                                 &Array(Box::new(child_type), *width),
                             ))
@@ -581,7 +587,7 @@ impl ChunkCast for ArrayChunked {
                 // we must take this path to correct for physical types.
                 unsafe {
                     Ok(Series::from_chunks_and_dtype_unchecked(
-                        self.name(),
+                        self.name().clone(),
                         chunks,
                         &List(child_type.clone()),
                     ))
@@ -615,7 +621,11 @@ fn cast_list(
     let arr = ca.downcast_iter().next().unwrap();
     // SAFETY: inner dtype is passed correctly
     let s = unsafe {
-        Series::from_chunks_and_dtype_unchecked("", vec![arr.values().clone()], ca.inner_dtype())
+        Series::from_chunks_and_dtype_unchecked(
+            PlSmallStr::const_default(),
+            vec![arr.values().clone()],
+            ca.inner_dtype(),
+        )
     };
     let new_inner = s.cast_with_options(child_type, options)?;
 
@@ -640,7 +650,11 @@ unsafe fn cast_list_unchecked(ca: &ListChunked, child_type: &DataType) -> Polars
     let arr = ca.downcast_iter().next().unwrap();
     // SAFETY: inner dtype is passed correctly
     let s = unsafe {
-        Series::from_chunks_and_dtype_unchecked("", vec![arr.values().clone()], ca.inner_dtype())
+        Series::from_chunks_and_dtype_unchecked(
+            PlSmallStr::const_default(),
+            vec![arr.values().clone()],
+            ca.inner_dtype(),
+        )
     };
     let new_inner = s.cast_unchecked(child_type)?;
     let new_values = new_inner.array_ref(0).clone();
@@ -653,7 +667,7 @@ unsafe fn cast_list_unchecked(ca: &ListChunked, child_type: &DataType) -> Polars
         arr.validity().cloned(),
     );
     Ok(ListChunked::from_chunks_and_dtype_unchecked(
-        ca.name(),
+        ca.name().clone(),
         vec![Box::new(new_arr)],
         DataType::List(Box::new(child_type.clone())),
     )
@@ -672,7 +686,11 @@ fn cast_fixed_size_list(
     let arr = ca.downcast_iter().next().unwrap();
     // SAFETY: inner dtype is passed correctly
     let s = unsafe {
-        Series::from_chunks_and_dtype_unchecked("", vec![arr.values().clone()], ca.inner_dtype())
+        Series::from_chunks_and_dtype_unchecked(
+            PlSmallStr::const_default(),
+            vec![arr.values().clone()],
+            ca.inner_dtype(),
+        )
     };
     let new_inner = s.cast_with_options(child_type, options)?;
 
@@ -694,8 +712,12 @@ mod test {
 
     #[test]
     fn test_cast_list() -> PolarsResult<()> {
-        let mut builder =
-            ListPrimitiveChunkedBuilder::<Int32Type>::new("a", 10, 10, DataType::Int32);
+        let mut builder = ListPrimitiveChunkedBuilder::<Int32Type>::new(
+            PlSmallStr::from_static("a"),
+            10,
+            10,
+            DataType::Int32,
+        );
         builder.append_opt_slice(Some(&[1i32, 2, 3]));
         builder.append_opt_slice(Some(&[1i32, 2, 3]));
         let ca = builder.finish();
@@ -713,7 +735,7 @@ mod test {
     #[cfg(feature = "dtype-categorical")]
     fn test_cast_noop() {
         // check if we can cast categorical twice without panic
-        let ca = StringChunked::new("foo", &["bar", "ham"]);
+        let ca = StringChunked::new(PlSmallStr::from_static("foo"), &["bar", "ham"]);
         let out = ca
             .cast_with_options(
                 &DataType::Categorical(None, Default::default()),

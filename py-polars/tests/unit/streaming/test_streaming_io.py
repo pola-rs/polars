@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 pytestmark = pytest.mark.xdist_group("streaming")
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_streaming_parquet_glob_5900(df: pl.DataFrame, tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
     file_path = tmp_path / "small.parquet"
@@ -47,7 +47,7 @@ def test_scan_csv_overwrite_small_dtypes(
     assert df.dtypes == [pl.String, pl.Int64, pl.Float64, dtype]
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_sink_parquet(io_files_path: Path, tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
@@ -64,7 +64,7 @@ def test_sink_parquet(io_files_path: Path, tmp_path: Path) -> None:
         assert_frame_equal(result, df_read)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_sink_parquet_10115(tmp_path: Path) -> None:
     in_path = tmp_path / "in.parquet"
     out_path = tmp_path / "out.parquet"
@@ -89,7 +89,7 @@ def test_sink_parquet_10115(tmp_path: Path) -> None:
     }
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_sink_ipc(io_files_path: Path, tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
@@ -106,7 +106,7 @@ def test_sink_ipc(io_files_path: Path, tmp_path: Path) -> None:
         assert_frame_equal(result, df_read)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_sink_csv(io_files_path: Path, tmp_path: Path) -> None:
     source_file = io_files_path / "small.parquet"
     target_file = tmp_path / "sink.csv"
@@ -119,7 +119,7 @@ def test_sink_csv(io_files_path: Path, tmp_path: Path) -> None:
         assert_frame_equal(target_data, source_data)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_sink_csv_14494(tmp_path: Path) -> None:
     pl.LazyFrame({"c": [1, 2, 3]}, schema={"c": pl.Int64}).filter(
         pl.col("c") > 10
@@ -194,7 +194,7 @@ def test_sink_csv_batch_size_zero() -> None:
         lf.sink_csv("test.csv", batch_size=0)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_sink_csv_nested_data(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
     path = tmp_path / "data.csv"
@@ -218,7 +218,7 @@ def test_scan_empty_csv_10818(io_files_path: Path) -> None:
     assert df.is_empty()
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_streaming_cross_join_schema(tmp_path: Path) -> None:
     file_path = tmp_path / "temp.parquet"
     a = pl.DataFrame({"a": [1, 2]}).lazy()
@@ -228,7 +228,7 @@ def test_streaming_cross_join_schema(tmp_path: Path) -> None:
     assert read.to_dict(as_series=False) == {"a": [1, 2], "b": ["b", "b"]}
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_sink_ndjson_should_write_same_data(
     io_files_path: Path, tmp_path: Path
 ) -> None:
@@ -246,7 +246,7 @@ def test_sink_ndjson_should_write_same_data(
     assert_frame_equal(df, expected)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_parquet_eq_statistics(monkeypatch: Any, capfd: Any, tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
@@ -286,7 +286,7 @@ def test_parquet_eq_statistics(monkeypatch: Any, capfd: Any, tmp_path: Path) -> 
         )
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_streaming_empty_parquet_16523(tmp_path: Path) -> None:
     file_path = tmp_path / "foo.parquet"
     df = pl.DataFrame({"a": []}, schema={"a": pl.Int32})

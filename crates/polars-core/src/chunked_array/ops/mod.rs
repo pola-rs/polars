@@ -121,6 +121,7 @@ pub trait ChunkTakeUnchecked<Idx: ?Sized> {
 }
 
 /// Create a `ChunkedArray` with new values by index or by boolean mask.
+///
 /// Note that these operations clone data. This is however the only way we can modify at mask or
 /// index level as the underlying Arrow arrays are immutable.
 pub trait ChunkSet<'a, A, B> {
@@ -130,7 +131,7 @@ pub trait ChunkSet<'a, A, B> {
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
-    /// let ca = UInt32Chunked::new("a", &[1, 2, 3]);
+    /// let ca = UInt32Chunked::new("a".into(), &[1, 2, 3]);
     /// let new = ca.scatter_single(vec![0, 1], Some(10)).unwrap();
     ///
     /// assert_eq!(Vec::from(&new), &[Some(10), Some(10), Some(3)]);
@@ -149,7 +150,7 @@ pub trait ChunkSet<'a, A, B> {
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
-    /// let ca = Int32Chunked::new("a", &[1, 2, 3]);
+    /// let ca = Int32Chunked::new("a".into(), &[1, 2, 3]);
     /// let new = ca.scatter_with(vec![0, 1], |opt_v| opt_v.map(|v| v - 5)).unwrap();
     ///
     /// assert_eq!(Vec::from(&new), &[Some(-4), Some(-3), Some(3)]);
@@ -168,8 +169,8 @@ pub trait ChunkSet<'a, A, B> {
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
-    /// let ca = Int32Chunked::new("a", &[1, 2, 3]);
-    /// let mask = BooleanChunked::new("mask", &[false, true, false]);
+    /// let ca = Int32Chunked::new("a".into(), &[1, 2, 3]);
+    /// let mask = BooleanChunked::new("mask".into(), &[false, true, false]);
     /// let new = ca.set(&mask, Some(5)).unwrap();
     /// assert_eq!(Vec::from(&new), &[Some(1), Some(5), Some(3)]);
     /// ```
@@ -424,13 +425,13 @@ pub trait ChunkFillNullValue<T> {
 /// Fill a ChunkedArray with one value.
 pub trait ChunkFull<T> {
     /// Create a ChunkedArray with a single value.
-    fn full(name: &str, value: T, length: usize) -> Self
+    fn full(name: PlSmallStr, value: T, length: usize) -> Self
     where
         Self: Sized;
 }
 
 pub trait ChunkFullNull {
-    fn full_null(_name: &str, _length: usize) -> Self
+    fn full_null(_name: PlSmallStr, _length: usize) -> Self
     where
         Self: Sized;
 }
@@ -447,8 +448,8 @@ pub trait ChunkFilter<T: PolarsDataType> {
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
-    /// let array = Int32Chunked::new("array", &[1, 2, 3]);
-    /// let mask = BooleanChunked::new("mask", &[true, false, true]);
+    /// let array = Int32Chunked::new("array".into(), &[1, 2, 3]);
+    /// let mask = BooleanChunked::new("mask".into(), &[true, false, true]);
     ///
     /// let filtered = array.filter(&mask).unwrap();
     /// assert_eq!(Vec::from(&filtered), [Some(1), Some(3)])
@@ -461,7 +462,7 @@ pub trait ChunkFilter<T: PolarsDataType> {
 /// Create a new ChunkedArray filled with values at that index.
 pub trait ChunkExpandAtIndex<T: PolarsDataType> {
     /// Create a new ChunkedArray filled with values at that index.
-    fn new_from_index(&self, length: usize, index: usize) -> ChunkedArray<T>;
+    fn new_from_index(&self, index: usize, length: usize) -> ChunkedArray<T>;
 }
 
 macro_rules! impl_chunk_expand {
@@ -471,8 +472,8 @@ macro_rules! impl_chunk_expand {
         }
         let opt_val = $self.get($index);
         match opt_val {
-            Some(val) => ChunkedArray::full($self.name(), val, $length),
-            None => ChunkedArray::full_null($self.name(), $length),
+            Some(val) => ChunkedArray::full($self.name().clone(), val, $length),
+            None => ChunkedArray::full_null($self.name().clone(), $length),
         }
     }};
 }
@@ -525,18 +526,20 @@ impl ChunkExpandAtIndex<ListType> for ListChunked {
         let opt_val = self.get_as_series(index);
         match opt_val {
             Some(val) => {
-                let mut ca = ListChunked::full(self.name(), &val, length);
+                let mut ca = ListChunked::full(self.name().clone(), &val, length);
                 unsafe { ca.to_logical(self.inner_dtype().clone()) };
                 ca
             },
-            None => ListChunked::full_null_with_dtype(self.name(), length, self.inner_dtype()),
+            None => {
+                ListChunked::full_null_with_dtype(self.name().clone(), length, self.inner_dtype())
+            },
         }
     }
 }
 
 #[cfg(feature = "dtype-struct")]
 impl ChunkExpandAtIndex<StructType> for StructChunked {
-    fn new_from_index(&self, length: usize, index: usize) -> ChunkedArray<StructType> {
+    fn new_from_index(&self, index: usize, length: usize) -> ChunkedArray<StructType> {
         let (chunk_idx, idx) = self.index_to_chunked_index(index);
         let chunk = self.downcast_chunks().get(chunk_idx).unwrap();
         let chunk = if chunk.is_null(idx) {
@@ -546,7 +549,7 @@ impl ChunkExpandAtIndex<StructType> for StructChunked {
                 .values()
                 .iter()
                 .map(|arr| {
-                    let s = Series::try_from(("", arr.clone())).unwrap();
+                    let s = Series::try_from((PlSmallStr::const_default(), arr.clone())).unwrap();
                     let s = s.new_from_index(idx, length);
                     s.chunks()[0].clone()
                 })
@@ -566,12 +569,12 @@ impl ChunkExpandAtIndex<FixedSizeListType> for ArrayChunked {
         let opt_val = self.get_as_series(index);
         match opt_val {
             Some(val) => {
-                let mut ca = ArrayChunked::full(self.name(), &val, length);
+                let mut ca = ArrayChunked::full(self.name().clone(), &val, length);
                 unsafe { ca.to_logical(self.inner_dtype().clone()) };
                 ca
             },
             None => ArrayChunked::full_null_with_dtype(
-                self.name(),
+                self.name().clone(),
                 length,
                 self.inner_dtype(),
                 self.width(),
@@ -585,8 +588,8 @@ impl<T: PolarsObject> ChunkExpandAtIndex<ObjectType<T>> for ObjectChunked<T> {
     fn new_from_index(&self, index: usize, length: usize) -> ObjectChunked<T> {
         let opt_val = self.get(index);
         match opt_val {
-            Some(val) => ObjectChunked::<T>::full(self.name(), val.clone(), length),
-            None => ObjectChunked::<T>::full_null(self.name(), length),
+            Some(val) => ObjectChunked::<T>::full(self.name().clone(), val.clone(), length),
+            None => ObjectChunked::<T>::full_null(self.name().clone(), length),
         }
     }
 }

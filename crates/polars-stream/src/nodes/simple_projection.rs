@@ -1,16 +1,17 @@
 use std::sync::Arc;
 
 use polars_core::schema::Schema;
+use polars_utils::pl_str::PlSmallStr;
 
 use super::compute_node_prelude::*;
 
 pub struct SimpleProjectionNode {
-    columns: Vec<String>,
+    columns: Vec<PlSmallStr>,
     input_schema: Arc<Schema>,
 }
 
 impl SimpleProjectionNode {
-    pub fn new(columns: Vec<String>, input_schema: Arc<Schema>) -> Self {
+    pub fn new(columns: Vec<PlSmallStr>, input_schema: Arc<Schema>) -> Self {
         Self {
             columns,
             input_schema,
@@ -23,9 +24,10 @@ impl ComputeNode for SimpleProjectionNode {
         "simple_projection"
     }
 
-    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) {
+    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {
         assert!(recv.len() == 1 && send.len() == 1);
         recv.swap_with_slice(send);
+        Ok(())
     }
 
     fn spawn<'env, 's>(
@@ -46,7 +48,12 @@ impl ComputeNode for SimpleProjectionNode {
                 while let Ok(morsel) = recv.recv().await {
                     let morsel = morsel.try_map(|df| {
                         // TODO: can this be unchecked?
-                        df.select_with_schema(&slf.columns, &slf.input_schema)
+                        let check_duplicates = true;
+                        df._select_with_schema_impl(
+                            slf.columns.as_slice(),
+                            &slf.input_schema,
+                            check_duplicates,
+                        )
                     })?;
 
                     if send.send(morsel).await.is_err() {

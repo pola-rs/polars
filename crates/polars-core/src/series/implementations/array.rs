@@ -4,7 +4,6 @@ use std::borrow::Cow;
 use super::{private, MetadataFlags};
 use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::comparison::*;
-use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::AsSinglePtr;
 #[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::*;
@@ -28,10 +27,6 @@ impl private::PrivateSeries for SeriesWrap<ArrayChunked> {
 
     fn _set_flags(&mut self, flags: MetadataFlags) {
         self.0.set_flags(flags)
-    }
-
-    fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
-        self.0.explode_by_offsets(offsets)
     }
 
     unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
@@ -73,14 +68,14 @@ impl private::PrivateSeries for SeriesWrap<ArrayChunked> {
 }
 
 impl SeriesTrait for SeriesWrap<ArrayChunked> {
-    fn rename(&mut self, name: &str) {
+    fn rename(&mut self, name: PlSmallStr) {
         self.0.rename(name);
     }
 
     fn chunk_lengths(&self) -> ChunkLenIter {
         self.0.chunk_lengths()
     }
-    fn name(&self) -> &str {
+    fn name(&self) -> &PlSmallStr {
         self.0.name()
     }
 

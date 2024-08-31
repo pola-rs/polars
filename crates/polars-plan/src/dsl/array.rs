@@ -174,7 +174,7 @@ impl ArrayNameSpace {
                     let fields = (0..*width)
                         .map(|i| {
                             let name = arr_default_struct_name_gen(i);
-                            Field::from_owned(name, inner.as_ref().clone())
+                            Field::new(name, inner.as_ref().clone())
                         })
                         .collect();
                     Ok(DataType::Struct(fields))

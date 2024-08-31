@@ -1,6 +1,7 @@
 use arrow_format::ipc::planus::ReadAsRoot;
 use arrow_format::ipc::{FieldRef, FixedSizeListRef, MapRef, TimeRef, TimestampRef, UnionRef};
 use polars_error::{polars_bail, polars_err, PolarsResult};
+use polars_utils::pl_str::PlSmallStr;
 
 use super::super::{IpcField, IpcSchema};
 use super::{OutOfSpecKind, StreamMetadata};
@@ -31,10 +32,11 @@ fn deserialize_field(ipc_field: arrow_format::ipc::FieldRef) -> PolarsResult<(Fi
     let (data_type, ipc_field_) = get_data_type(ipc_field, extension, true)?;
 
     let field = Field {
-        name: ipc_field
-            .name()?
-            .ok_or_else(|| polars_err!(oos = "Every field in IPC must have a name"))?
-            .to_string(),
+        name: PlSmallStr::from_str(
+            ipc_field
+                .name()?
+                .ok_or_else(|| polars_err!(oos = "Every field in IPC must have a name"))?,
+        ),
         data_type,
         is_nullable: ipc_field.nullable()?,
         metadata,
@@ -49,7 +51,7 @@ fn read_metadata(field: &arrow_format::ipc::FieldRef) -> PolarsResult<Metadata> 
         for kv in list {
             let kv = kv?;
             if let (Some(k), Some(v)) = (kv.key()?, kv.value()?) {
-                metadata_map.insert(k.to_string(), v.to_string());
+                metadata_map.insert(PlSmallStr::from_str(k), PlSmallStr::from_str(v));
             }
         }
         metadata_map
@@ -100,10 +102,10 @@ fn deserialize_time(time: TimeRef) -> PolarsResult<(ArrowDataType, IpcField)> {
 }
 
 fn deserialize_timestamp(timestamp: TimestampRef) -> PolarsResult<(ArrowDataType, IpcField)> {
-    let timezone = timestamp.timezone()?.map(|tz| tz.to_string());
+    let timezone = timestamp.timezone()?;
     let time_unit = deserialize_timeunit(timestamp.unit()?)?;
     Ok((
-        ArrowDataType::Timestamp(time_unit, timezone),
+        ArrowDataType::Timestamp(time_unit, timezone.map(PlSmallStr::from_str)),
         IpcField::default(),
     ))
 }
@@ -397,7 +399,7 @@ pub(super) fn fb_to_schema(
             let v_str = kv.value()?;
             if let Some(k) = k_str {
                 if let Some(v) = v_str {
-                    metadata.insert(k.to_string(), v.to_string());
+                    metadata.insert(PlSmallStr::from_str(k), PlSmallStr::from_str(v));
                 }
             }
         }

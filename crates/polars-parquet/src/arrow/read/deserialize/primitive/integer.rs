@@ -4,11 +4,11 @@ use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
 
 use super::super::utils;
-use super::basic::{
-    AsDecoderFunction, ClosureDecoderFunction, DecoderFunction, IntoDecoderFunction,
-    PlainDecoderFnCollector, PrimitiveDecoder, UnitDecoderFunction, ValuesDictionary,
+use super::{
+    deserialize_plain, AsDecoderFunction, ClosureDecoderFunction, DecoderFunction, DeltaCollector,
+    DeltaTranslator, IntoDecoderFunction, PlainDecoderFnCollector, PrimitiveDecoder,
+    UnitDecoderFunction,
 };
-use super::{DeltaCollector, DeltaTranslator};
 use crate::parquet::encoding::hybrid_rle::{self, DictionaryTranslator};
 use crate::parquet::encoding::{byte_stream_split, delta_bitpacked, Encoding};
 use crate::parquet::error::ParquetResult;
@@ -16,19 +16,20 @@ use crate::parquet::page::{split_buffer, DataPage, DictPage};
 use crate::parquet::types::{decode, NativeType as ParquetNativeType};
 use crate::read::deserialize::utils::array_chunks::ArrayChunks;
 use crate::read::deserialize::utils::{
-    freeze_validity, BatchableCollector, Decoder, PageValidity, TranslatedHybridRle,
+    dict_indices_decoder, freeze_validity, BatchableCollector, Decoder, PageValidity,
+    TranslatedHybridRle,
 };
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
-pub(crate) enum StateTranslation<'a, P: ParquetNativeType, T: NativeType> {
+pub(crate) enum StateTranslation<'a, P: ParquetNativeType> {
     Plain(ArrayChunks<'a, P>),
-    Dictionary(ValuesDictionary<'a, T>),
+    Dictionary(hybrid_rle::HybridRleDecoder<'a>),
     ByteStreamSplit(byte_stream_split::Decoder<'a>),
     DeltaBinaryPacked(delta_bitpacked::Decoder<'a>),
 }
 
-impl<'a, P, T, D> utils::StateTranslation<'a, IntDecoder<P, T, D>> for StateTranslation<'a, P, T>
+impl<'a, P, T, D> utils::StateTranslation<'a, IntDecoder<P, T, D>> for StateTranslation<'a, P>
 where
     T: NativeType,
     P: ParquetNativeType,
@@ -44,8 +45,9 @@ where
         _page_validity: Option<&PageValidity<'a>>,
     ) -> ParquetResult<Self> {
         match (page.encoding(), dict) {
-            (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict)) => {
-                Ok(Self::Dictionary(ValuesDictionary::try_new(page, dict)?))
+            (Encoding::PlainDictionary | Encoding::RleDictionary, Some(_)) => {
+                let values = dict_indices_decoder(page)?;
+                Ok(Self::Dictionary(values))
             },
             (Encoding::Plain, _) => {
                 let values = split_buffer(page)?.values;
@@ -84,8 +86,8 @@ where
         }
 
         match self {
-            Self::Plain(v) => _ = v.nth(n - 1),
-            Self::Dictionary(v) => v.values.skip_in_place(n)?,
+            Self::Plain(v) => v.skip_in_place(n),
+            Self::Dictionary(v) => v.skip_in_place(n)?,
             Self::ByteStreamSplit(v) => _ = v.iter_converted(|_| ()).nth(n - 1),
             Self::DeltaBinaryPacked(v) => v.skip_in_place(n)?,
         }
@@ -97,21 +99,25 @@ where
         &mut self,
         decoder: &mut IntDecoder<P, T, D>,
         decoded: &mut <IntDecoder<P, T, D> as utils::Decoder>::DecodedState,
+        is_optional: bool,
         page_validity: &mut Option<PageValidity<'a>>,
+        dict: Option<&'a <IntDecoder<P, T, D> as utils::Decoder>::Dict>,
         additional: usize,
     ) -> ParquetResult<()> {
         match self {
             Self::Plain(page_values) => decoder.decode_plain_encoded(
                 decoded,
                 page_values,
+                is_optional,
                 page_validity.as_mut(),
                 additional,
             )?,
-            Self::Dictionary(page) => decoder.decode_dictionary_encoded(
+            Self::Dictionary(ref mut page) => decoder.decode_dictionary_encoded(
                 decoded,
-                &mut page.values,
+                page,
+                is_optional,
                 page_validity.as_mut(),
-                page.dict,
+                dict.unwrap(),
                 additional,
             )?,
             Self::ByteStreamSplit(page_values) => {
@@ -124,6 +130,10 @@ where
                                 .iter_converted(|v| decoder.0.decoder.decode(decode(v)))
                                 .take(additional),
                         );
+
+                        if is_optional {
+                            validity.extend_constant(additional, true);
+                        }
                     },
                     Some(page_validity) => {
                         utils::extend_from_decoder(
@@ -146,7 +156,13 @@ where
                 };
 
                 match page_validity {
-                    None => page_values.gather_n_into(values, additional, &mut gatherer)?,
+                    None => {
+                        page_values.gather_n_into(values, additional, &mut gatherer)?;
+
+                        if is_optional {
+                            validity.extend_constant(additional, true);
+                        }
+                    },
                     Some(page_validity) => utils::extend_from_decoder(
                         validity,
                         page_validity,
@@ -182,8 +198,8 @@ where
     D: DecoderFunction<P, T>,
 {
     #[inline]
-    fn new(decoder: PrimitiveDecoder<P, T, D>) -> Self {
-        Self(decoder)
+    fn new(decoder: D) -> Self {
+        Self(PrimitiveDecoder::new(decoder))
     }
 }
 
@@ -194,7 +210,7 @@ where
     UnitDecoderFunction<T>: Default + DecoderFunction<T, T>,
 {
     pub(crate) fn unit() -> Self {
-        Self::new(PrimitiveDecoder::unit())
+        Self::new(UnitDecoderFunction::<T>::default())
     }
 }
 
@@ -206,7 +222,7 @@ where
     AsDecoderFunction<P, T>: Default + DecoderFunction<P, T>,
 {
     pub(crate) fn cast_as() -> Self {
-        Self::new(PrimitiveDecoder::cast_as())
+        Self::new(AsDecoderFunction::<P, T>::default())
     }
 }
 
@@ -218,7 +234,7 @@ where
     IntoDecoderFunction<P, T>: Default + DecoderFunction<P, T>,
 {
     pub(crate) fn cast_into() -> Self {
-        Self::new(PrimitiveDecoder::cast_into())
+        Self::new(IntoDecoderFunction::<P, T>::default())
     }
 }
 
@@ -230,7 +246,7 @@ where
     F: Copy + Fn(P) -> T,
 {
     pub(crate) fn closure(f: F) -> Self {
-        Self::new(PrimitiveDecoder::closure(f))
+        Self::new(ClosureDecoderFunction(f, std::marker::PhantomData))
     }
 }
 
@@ -241,23 +257,27 @@ where
     i64: num_traits::AsPrimitive<P>,
     D: DecoderFunction<P, T>,
 {
-    type Translation<'a> = StateTranslation<'a, P, T>;
+    type Translation<'a> = StateTranslation<'a, P>;
     type Dict = Vec<T>;
     type DecodedState = (Vec<T>, MutableBitmap);
     type Output = PrimitiveArray<T>;
 
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState {
-        self.0.with_capacity(capacity)
+        (
+            Vec::<T>::with_capacity(capacity),
+            MutableBitmap::with_capacity(capacity),
+        )
     }
 
-    fn deserialize_dict(&self, page: DictPage) -> Self::Dict {
-        self.0.deserialize_dict(page)
+    fn deserialize_dict(&self, page: DictPage) -> ParquetResult<Self::Dict> {
+        Ok(deserialize_plain::<P, T, D>(&page.buffer, self.0.decoder))
     }
 
     fn decode_plain_encoded<'a>(
         &mut self,
         (values, validity): &mut Self::DecodedState,
         page_values: &mut <Self::Translation<'a> as utils::StateTranslation<'a, Self>>::PlainDecoder,
+        is_optional: bool,
         page_validity: Option<&mut PageValidity<'a>>,
         limit: usize,
     ) -> ParquetResult<()> {
@@ -269,6 +289,10 @@ where
                     _pd: Default::default(),
                 }
                 .push_n(values, limit)?;
+
+                if is_optional {
+                    validity.extend_constant(limit, true);
+                }
             },
             Some(page_validity) => {
                 let collector = PlainDecoderFnCollector {
@@ -294,11 +318,20 @@ where
         &mut self,
         (values, validity): &mut Self::DecodedState,
         page_values: &mut hybrid_rle::HybridRleDecoder<'a>,
+        is_optional: bool,
         page_validity: Option<&mut PageValidity<'a>>,
         dict: &Self::Dict,
         limit: usize,
     ) -> ParquetResult<()> {
         match page_validity {
+            None => {
+                let translator = DictionaryTranslator(dict);
+                page_values.translate_and_collect_n_into(values, limit, &translator)?;
+
+                if is_optional {
+                    validity.extend_constant(limit, true);
+                }
+            },
             Some(page_validity) => {
                 let translator = DictionaryTranslator(dict);
                 let translated_hybridrle = TranslatedHybridRle::new(page_values, &translator);
@@ -310,10 +343,6 @@ where
                     values,
                     translated_hybridrle,
                 )?;
-            },
-            None => {
-                let translator = DictionaryTranslator(dict);
-                page_values.translate_and_collect_n_into(values, limit, &translator)?;
             },
         }
 

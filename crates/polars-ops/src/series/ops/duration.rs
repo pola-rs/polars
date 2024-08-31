@@ -6,7 +6,7 @@ use polars_error::PolarsResult;
 pub fn impl_duration(s: &[Series], time_unit: TimeUnit) -> PolarsResult<Series> {
     if s.iter().any(|s| s.is_empty()) {
         return Ok(Series::new_empty(
-            s[0].name(),
+            s[0].name().clone(),
             &DataType::Duration(time_unit),
         ));
     }

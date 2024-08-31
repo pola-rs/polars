@@ -1,6 +1,5 @@
 //! APIs to read from Parquet format.
 
-mod binary;
 mod binview;
 mod boolean;
 mod dictionary;

@@ -1,6 +1,5 @@
 mod column;
 mod compression;
-mod indexes;
 pub mod levels;
 mod metadata;
 mod page;
@@ -11,7 +10,6 @@ use std::io::{Seek, SeekFrom};
 
 pub use column::*;
 pub use compression::{decompress, BasicDecompressor};
-pub use indexes::{read_columns_indexes, read_pages_locations};
 pub use metadata::{deserialize_metadata, read_metadata, read_metadata_with_size};
 #[cfg(feature = "async")]
 pub use page::{get_page_stream, get_page_stream_from_column_start};
@@ -65,5 +63,5 @@ pub fn get_field_columns<'a>(
 ) -> impl Iterator<Item = &'a ColumnChunkMetaData> {
     columns
         .iter()
-        .filter(move |x| x.descriptor().path_in_schema[0] == field_name)
+        .filter(move |x| x.descriptor().path_in_schema[0].as_str() == field_name)
 }

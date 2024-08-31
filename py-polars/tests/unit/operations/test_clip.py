@@ -9,7 +9,7 @@ from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal
 
 
-@pytest.fixture()
+@pytest.fixture
 def clip_exprs() -> list[pl.Expr]:
     return [
         pl.col("a").clip(pl.col("min"), pl.col("max")).alias("clip"),

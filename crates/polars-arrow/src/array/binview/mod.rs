@@ -30,12 +30,12 @@ use polars_utils::aliases::{InitHashMaps, PlHashMap};
 use polars_utils::slice::GetSaferUnchecked;
 use private::Sealed;
 
-use crate::array::binview::view::{validate_binary_view, validate_utf8_only, validate_utf8_view};
+use crate::array::binview::view::{validate_binary_view, validate_utf8_only};
 use crate::array::iterator::NonNullValuesIter;
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
 pub type BinaryViewArray = BinaryViewArrayGeneric<[u8]>;
 pub type Utf8ViewArray = BinaryViewArrayGeneric<str>;
-pub use view::View;
+pub use view::{validate_utf8_view, View};
 
 use super::Splitable;
 
@@ -159,6 +159,34 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         total_bytes_len: usize,
         total_buffer_len: usize,
     ) -> Self {
+        // Verify the invariants
+        #[cfg(debug_assertions)]
+        {
+            // @TODO: Enable this. This is currently bugged with concatenate.
+            // let mut actual_total_buffer_len = 0;
+            // let mut actual_total_bytes_len = 0;
+            //
+            // for buffer in buffers.iter() {
+            //     actual_total_buffer_len += buffer.len();
+            // }
+
+            for view in views.iter() {
+                // actual_total_bytes_len += view.length as usize;
+                if view.length > View::MAX_INLINE_SIZE {
+                    assert!((view.buffer_idx as usize) < (buffers.len()));
+                    assert!(
+                        view.offset as usize + view.length as usize
+                            <= buffers[view.buffer_idx as usize].len()
+                    );
+                }
+            }
+
+            // assert_eq!(actual_total_buffer_len, total_buffer_len);
+            // if (total_bytes_len as u64) != UNKNOWN_LEN {
+            //     assert_eq!(actual_total_bytes_len, total_bytes_len);
+            // }
+        }
+
         Self {
             data_type,
             views,

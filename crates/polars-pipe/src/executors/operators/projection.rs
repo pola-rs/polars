@@ -4,19 +4,19 @@ use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
 use polars_core::schema::SchemaRef;
 use polars_plan::prelude::ProjectionOptions;
-use smartstring::alias::String as SmartString;
+use polars_utils::pl_str::PlSmallStr;
 
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{DataChunk, Operator, OperatorResult, PExecutionContext};
 
 #[derive(Clone)]
 pub(crate) struct SimpleProjectionOperator {
-    columns: Arc<[SmartString]>,
+    columns: Arc<[PlSmallStr]>,
     input_schema: SchemaRef,
 }
 
 impl SimpleProjectionOperator {
-    pub(crate) fn new(columns: Arc<[SmartString]>, input_schema: SchemaRef) -> Self {
+    pub(crate) fn new(columns: Arc<[PlSmallStr]>, input_schema: SchemaRef) -> Self {
         Self {
             columns,
             input_schema,
@@ -30,11 +30,12 @@ impl Operator for SimpleProjectionOperator {
         _context: &PExecutionContext,
         chunk: &DataChunk,
     ) -> PolarsResult<OperatorResult> {
-        let chunk = chunk.with_data(
-            chunk
-                .data
-                .select_with_schema_unchecked(self.columns.as_ref(), &self.input_schema)?,
-        );
+        let check_duplicates = false;
+        let chunk = chunk.with_data(chunk.data._select_with_schema_impl(
+            self.columns.as_ref(),
+            &self.input_schema,
+            check_duplicates,
+        )?);
         Ok(OperatorResult::Finished(chunk))
     }
     fn split(&self, _thread_no: usize) -> Box<dyn Operator> {

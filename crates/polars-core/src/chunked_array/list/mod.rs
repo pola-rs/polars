@@ -41,7 +41,9 @@ impl ListChunked {
         let chunks: Vec<_> = self.downcast_iter().map(|c| c.values().clone()).collect();
 
         // SAFETY: Data type of arrays matches because they are chunks from the same array.
-        unsafe { Series::from_chunks_and_dtype_unchecked(self.name(), chunks, self.inner_dtype()) }
+        unsafe {
+            Series::from_chunks_and_dtype_unchecked(self.name().clone(), chunks, self.inner_dtype())
+        }
     }
 
     /// Returns an iterator over the offsets of this chunked array.
@@ -76,7 +78,7 @@ impl ListChunked {
         // Inner dtype is passed correctly
         let elements = unsafe {
             Series::from_chunks_and_dtype_unchecked(
-                self.name(),
+                self.name().clone(),
                 vec![arr.values().clone()],
                 ca.inner_dtype(),
             )
@@ -102,7 +104,7 @@ impl ListChunked {
         // SAFETY: arr's inner dtype is derived from out dtype.
         Ok(unsafe {
             ListChunked::from_chunks_and_dtype_unchecked(
-                ca.name(),
+                ca.name().clone(),
                 vec![Box::new(arr)],
                 DataType::List(Box::new(out.dtype().clone())),
             )

@@ -13,6 +13,7 @@ pub use iterator::*;
 mod mutable;
 pub use mutable::*;
 use polars_error::{polars_bail, PolarsResult};
+use polars_utils::pl_str::PlSmallStr;
 
 /// An [`Array`] semantically equivalent to `Vec<Option<Vec<Option<T>>>>` with Arrow's in-memory.
 #[derive(Clone)]
@@ -185,7 +186,7 @@ impl<O: Offset> ListArray<O> {
 impl<O: Offset> ListArray<O> {
     /// Returns a default [`ArrowDataType`]: inner field is named "item" and is nullable
     pub fn default_datatype(data_type: ArrowDataType) -> ArrowDataType {
-        let field = Box::new(Field::new("item", data_type, true));
+        let field = Box::new(Field::new(PlSmallStr::from_static("item"), data_type, true));
         if O::IS_LARGE {
             ArrowDataType::LargeList(field)
         } else {

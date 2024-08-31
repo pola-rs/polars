@@ -264,7 +264,7 @@ fn test_streaming_left_join() -> PolarsResult<()> {
 #[cfg(feature = "cross_join")]
 fn test_streaming_slice() -> PolarsResult<()> {
     let vals = (0..100).collect::<Vec<_>>();
-    let s = Series::new("", vals);
+    let s = Series::new("".into(), vals);
     let lf_a = df![
         "a" => s
     ]?

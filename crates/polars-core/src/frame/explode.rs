@@ -1,6 +1,8 @@
 use arrow::offset::OffsetsBuffer;
+use polars_utils::pl_str::PlSmallStr;
 use rayon::prelude::*;
-use smartstring::alias::String as SmartString;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 use crate::chunked_array::ops::explode::offsets_to_indexes;
 use crate::prelude::*;
@@ -18,11 +20,12 @@ fn get_exploded(series: &Series) -> PolarsResult<(Series, OffsetsBuffer<i64>)> {
 
 /// Arguments for `[DataFrame::unpivot]` function
 #[derive(Clone, Default, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct UnpivotArgsIR {
-    pub on: Vec<SmartString>,
-    pub index: Vec<SmartString>,
-    pub variable_name: Option<SmartString>,
-    pub value_name: Option<SmartString>,
+    pub on: Vec<PlSmallStr>,
+    pub index: Vec<PlSmallStr>,
+    pub variable_name: Option<PlSmallStr>,
+    pub value_name: Option<PlSmallStr>,
 }
 
 impl DataFrame {
@@ -36,15 +39,19 @@ impl DataFrame {
             return Ok(df);
         }
         columns.sort_by(|sa, sb| {
-            self.check_name_to_idx(sa.name())
+            self.check_name_to_idx(sa.name().as_str())
                 .expect("checked above")
-                .partial_cmp(&self.check_name_to_idx(sb.name()).expect("checked above"))
+                .partial_cmp(
+                    &self
+                        .check_name_to_idx(sb.name().as_str())
+                        .expect("checked above"),
+                )
                 .expect("cmp usize -> Ordering")
         });
 
         // first remove all the exploded columns
         for s in &columns {
-            df = df.drop(s.name())?;
+            df = df.drop(s.name().as_str())?;
         }
 
         let exploded_columns = POOL.install(|| {
@@ -60,7 +67,7 @@ impl DataFrame {
             exploded: Series,
         ) -> PolarsResult<()> {
             if exploded.len() == df.height() || df.width() == 0 {
-                let col_idx = original_df.check_name_to_idx(exploded.name())?;
+                let col_idx = original_df.check_name_to_idx(exploded.name().as_str())?;
                 df.columns.insert(col_idx, exploded);
             } else {
                 polars_bail!(
@@ -95,7 +102,7 @@ impl DataFrame {
             let (exploded, offsets) = &exploded_columns[0];
 
             let row_idx = offsets_to_indexes(offsets.as_slice(), exploded.len());
-            let mut row_idx = IdxCa::from_vec("", row_idx);
+            let mut row_idx = IdxCa::from_vec(PlSmallStr::const_default(), row_idx);
             row_idx.set_sorted_flag(IsSorted::Ascending);
 
             // SAFETY:
@@ -120,13 +127,13 @@ impl DataFrame {
     ///
     /// ```ignore
     /// # use polars_core::prelude::*;
-    /// let s0 = Series::new("a", &[1i64, 2, 3]);
-    /// let s1 = Series::new("b", &[1i64, 1, 1]);
-    /// let s2 = Series::new("c", &[2i64, 2, 2]);
+    /// let s0 = Series::new("a".into(), &[1i64, 2, 3]);
+    /// let s1 = Series::new("b".into(), &[1i64, 1, 1]);
+    /// let s2 = Series::new("c".into(), &[2i64, 2, 2]);
     /// let list = Series::new("foo", &[s0, s1, s2]);
     ///
-    /// let s0 = Series::new("B", [1, 2, 3]);
-    /// let s1 = Series::new("C", [1, 1, 1]);
+    /// let s0 = Series::new("B".into(), [1, 2, 3]);
+    /// let s1 = Series::new("C".into(), [1, 1, 1]);
     /// let df = DataFrame::new(vec![list, s0, s1])?;
     /// let exploded = df.explode(["foo"])?;
     ///
@@ -176,7 +183,7 @@ impl DataFrame {
     pub fn explode<I, S>(&self, columns: I) -> PolarsResult<DataFrame>
     where
         I: IntoIterator<Item = S>,
-        S: AsRef<str>,
+        S: Into<PlSmallStr>,
     {
         // We need to sort the column by order of original occurrence. Otherwise the insert by index
         // below will panic
@@ -193,13 +200,13 @@ mod test {
     #[cfg(feature = "dtype-i8")]
     #[cfg_attr(miri, ignore)]
     fn test_explode() {
-        let s0 = Series::new("a", &[1i8, 2, 3]);
-        let s1 = Series::new("b", &[1i8, 1, 1]);
-        let s2 = Series::new("c", &[2i8, 2, 2]);
-        let list = Series::new("foo", &[s0, s1, s2]);
+        let s0 = Series::new(PlSmallStr::from_static("a"), &[1i8, 2, 3]);
+        let s1 = Series::new(PlSmallStr::from_static("b"), &[1i8, 1, 1]);
+        let s2 = Series::new(PlSmallStr::from_static("c"), &[2i8, 2, 2]);
+        let list = Series::new(PlSmallStr::from_static("foo"), &[s0, s1, s2]);
 
-        let s0 = Series::new("B", [1, 2, 3]);
-        let s1 = Series::new("C", [1, 1, 1]);
+        let s0 = Series::new(PlSmallStr::from_static("B"), [1, 2, 3]);
+        let s1 = Series::new(PlSmallStr::from_static("C"), [1, 1, 1]);
         let df = DataFrame::new(vec![list, s0.clone(), s1.clone()]).unwrap();
         let exploded = df.explode(["foo"]).unwrap();
         assert_eq!(exploded.shape(), (9, 3));
@@ -214,11 +221,14 @@ mod test {
     #[test]
     #[cfg_attr(miri, ignore)]
     fn test_explode_df_empty_list() -> PolarsResult<()> {
-        let s0 = Series::new("a", &[1, 2, 3]);
-        let s1 = Series::new("b", &[1, 1, 1]);
-        let list = Series::new("foo", &[s0, s1.clone(), s1.clear()]);
-        let s0 = Series::new("B", [1, 2, 3]);
-        let s1 = Series::new("C", [1, 1, 1]);
+        let s0 = Series::new(PlSmallStr::from_static("a"), &[1, 2, 3]);
+        let s1 = Series::new(PlSmallStr::from_static("b"), &[1, 1, 1]);
+        let list = Series::new(
+            PlSmallStr::from_static("foo"),
+            &[s0, s1.clone(), s1.clear()],
+        );
+        let s0 = Series::new(PlSmallStr::from_static("B"), [1, 2, 3]);
+        let s1 = Series::new(PlSmallStr::from_static("C"), [1, 1, 1]);
         let df = DataFrame::new(vec![list, s0.clone(), s1.clone()])?;
 
         let out = df.explode(["foo"])?;
@@ -230,7 +240,10 @@ mod test {
 
         assert!(out.equals_missing(&expected));
 
-        let list = Series::new("foo", [s0.clone(), s1.clear(), s1.clone()]);
+        let list = Series::new(
+            PlSmallStr::from_static("foo"),
+            [s0.clone(), s1.clear(), s1.clone()],
+        );
         let df = DataFrame::new(vec![list, s0, s1])?;
         let out = df.explode(["foo"])?;
         let expected = df![
@@ -246,9 +259,9 @@ mod test {
     #[test]
     #[cfg_attr(miri, ignore)]
     fn test_explode_single_col() -> PolarsResult<()> {
-        let s0 = Series::new("a", &[1i32, 2, 3]);
-        let s1 = Series::new("b", &[1i32, 1, 1]);
-        let list = Series::new("foo", &[s0, s1]);
+        let s0 = Series::new(PlSmallStr::from_static("a"), &[1i32, 2, 3]);
+        let s1 = Series::new(PlSmallStr::from_static("b"), &[1i32, 1, 1]);
+        let list = Series::new(PlSmallStr::from_static("foo"), &[s0, s1]);
         let df = DataFrame::new(vec![list])?;
 
         let out = df.explode(["foo"])?;

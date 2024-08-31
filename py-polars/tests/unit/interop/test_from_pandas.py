@@ -321,7 +321,7 @@ def test_untrusted_categorical_input() -> None:
     assert_frame_equal(result, expected, categorical_as_str=True)
 
 
-@pytest.fixture()
+@pytest.fixture
 def _set_pyarrow_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "polars._utils.construction.dataframe._PYARROW_AVAILABLE", False

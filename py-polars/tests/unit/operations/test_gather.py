@@ -148,3 +148,11 @@ def test_chunked_gather_phys_repr_17446() -> None:
         dfb = pl.concat([dfb, dfb])
 
         assert dfa.join(dfb, how="left", on=pl.col("replace_unique_id")).shape == (4, 2)
+
+
+def test_gather_str_col_18099() -> None:
+    df = pl.DataFrame({"foo": [1, 2, 3], "idx": [0, 0, 1]})
+    assert df.with_columns(pl.col("foo").gather("idx")).to_dict(as_series=False) == {
+        "foo": [1, 1, 2],
+        "idx": [0, 0, 1],
+    }

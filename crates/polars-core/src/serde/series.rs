@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::fmt::Formatter;
 
 use serde::de::{Error as DeError, MapAccess, Visitor};
+#[cfg(feature = "object")]
 use serde::ser::Error as SerError;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
@@ -145,95 +146,96 @@ impl<'de> Deserialize<'de> for Series {
                     return Err(de::Error::missing_field("values"));
                 }
                 let name = name.ok_or_else(|| de::Error::missing_field("name"))?;
+                let name = PlSmallStr::from_str(name.as_ref());
                 let dtype = dtype.ok_or_else(|| de::Error::missing_field("datatype"))?;
 
                 let mut s = match dtype {
                     #[cfg(feature = "dtype-i8")]
                     DataType::Int8 => {
                         let values: Vec<Option<i8>> = map.next_value()?;
-                        Ok(Series::new(&name, values))
+                        Ok(Series::new(name, values))
                     },
                     #[cfg(feature = "dtype-u8")]
                     DataType::UInt8 => {
                         let values: Vec<Option<u8>> = map.next_value()?;
-                        Ok(Series::new(&name, values))
+                        Ok(Series::new(name, values))
                     },
                     #[cfg(feature = "dtype-i16")]
                     DataType::Int16 => {
                         let values: Vec<Option<i16>> = map.next_value()?;
-                        Ok(Series::new(&name, values))
+                        Ok(Series::new(name, values))
                     },
                     #[cfg(feature = "dtype-u16")]
                     DataType::UInt16 => {
                         let values: Vec<Option<u16>> = map.next_value()?;
-                        Ok(Series::new(&name, values))
+                        Ok(Series::new(name, values))
                     },
                     DataType::Int32 => {
                         let values: Vec<Option<i32>> = map.next_value()?;
-                        Ok(Series::new(&name, values))
+                        Ok(Series::new(name, values))
                     },
                     DataType::UInt32 => {
                         let values: Vec<Option<u32>> = map.next_value()?;
-                        Ok(Series::new(&name, values))
+                        Ok(Series::new(name, values))
                     },
                     DataType::Int64 => {
                         let values: Vec<Option<i64>> = map.next_value()?;
-                        Ok(Series::new(&name, values))
+                        Ok(Series::new(name, values))
                     },
                     DataType::UInt64 => {
                         let values: Vec<Option<u64>> = map.next_value()?;
-                        Ok(Series::new(&name, values))
+                        Ok(Series::new(name, values))
                     },
                     #[cfg(feature = "dtype-date")]
                     DataType::Date => {
                         let values: Vec<Option<i32>> = map.next_value()?;
-                        Ok(Series::new(&name, values).cast(&DataType::Date).unwrap())
+                        Ok(Series::new(name, values).cast(&DataType::Date).unwrap())
                     },
                     #[cfg(feature = "dtype-datetime")]
                     DataType::Datetime(tu, tz) => {
                         let values: Vec<Option<i64>> = map.next_value()?;
-                        Ok(Series::new(&name, values)
+                        Ok(Series::new(name, values)
                             .cast(&DataType::Datetime(tu, tz))
                             .unwrap())
                     },
                     #[cfg(feature = "dtype-duration")]
                     DataType::Duration(tu) => {
                         let values: Vec<Option<i64>> = map.next_value()?;
-                        Ok(Series::new(&name, values)
+                        Ok(Series::new(name, values)
                             .cast(&DataType::Duration(tu))
                             .unwrap())
                     },
                     #[cfg(feature = "dtype-time")]
                     DataType::Time => {
                         let values: Vec<Option<i64>> = map.next_value()?;
-                        Ok(Series::new(&name, values).cast(&DataType::Time).unwrap())
+                        Ok(Series::new(name, values).cast(&DataType::Time).unwrap())
                     },
                     #[cfg(feature = "dtype-decimal")]
                     DataType::Decimal(precision, Some(scale)) => {
                         let values: Vec<Option<i128>> = map.next_value()?;
-                        Ok(ChunkedArray::from_slice_options(&name, &values)
+                        Ok(ChunkedArray::from_slice_options(name, &values)
                             .into_decimal_unchecked(precision, scale)
                             .into_series())
                     },
                     DataType::Boolean => {
                         let values: Vec<Option<bool>> = map.next_value()?;
-                        Ok(Series::new(&name, values))
+                        Ok(Series::new(name, values))
                     },
                     DataType::Float32 => {
                         let values: Vec<Option<f32>> = map.next_value()?;
-                        Ok(Series::new(&name, values))
+                        Ok(Series::new(name, values))
                     },
                     DataType::Float64 => {
                         let values: Vec<Option<f64>> = map.next_value()?;
-                        Ok(Series::new(&name, values))
+                        Ok(Series::new(name, values))
                     },
                     DataType::String => {
                         let values: Vec<Option<Cow<str>>> = map.next_value()?;
-                        Ok(Series::new(&name, values))
+                        Ok(Series::new(name, values))
                     },
                     DataType::List(inner) => {
                         let values: Vec<Option<Series>> = map.next_value()?;
-                        let mut lb = AnonymousListBuilder::new(&name, values.len(), Some(*inner));
+                        let mut lb = AnonymousListBuilder::new(name, values.len(), Some(*inner));
                         for value in &values {
                             lb.append_opt_series(value.as_ref()).map_err(|e| {
                                 de::Error::custom(format!("could not append series to list: {e}"))
@@ -245,7 +247,7 @@ impl<'de> Deserialize<'de> for Series {
                     DataType::Array(inner, width) => {
                         let values: Vec<Option<Series>> = map.next_value()?;
                         let mut builder =
-                            get_fixed_size_list_builder(&inner, values.len(), width, &name)
+                            get_fixed_size_list_builder(&inner, values.len(), width, name)
                                 .map_err(|e| {
                                     de::Error::custom(format!(
                                         "could not get supported list builder: {e}"
@@ -270,25 +272,25 @@ impl<'de> Deserialize<'de> for Series {
                     },
                     DataType::Binary => {
                         let values: Vec<Option<Cow<[u8]>>> = map.next_value()?;
-                        Ok(Series::new(&name, values))
+                        Ok(Series::new(name, values))
                     },
                     #[cfg(feature = "dtype-struct")]
                     DataType::Struct(_) => {
                         let values: Vec<Series> = map.next_value()?;
-                        let ca = StructChunked::from_series(&name, &values).unwrap();
+                        let ca = StructChunked::from_series(name.clone(), &values).unwrap();
                         let mut s = ca.into_series();
-                        s.rename(&name);
+                        s.rename(name);
                         Ok(s)
                     },
                     #[cfg(feature = "dtype-categorical")]
                     dt @ (DataType::Categorical(_, _) | DataType::Enum(_, _)) => {
                         let values: Vec<Option<Cow<str>>> = map.next_value()?;
-                        Ok(Series::new(&name, values).cast(&dt).unwrap())
+                        Ok(Series::new(name, values).cast(&dt).unwrap())
                     },
                     DataType::Null => {
                         let values: Vec<usize> = map.next_value()?;
                         let len = values.first().unwrap();
-                        Ok(Series::new_null(&name, *len))
+                        Ok(Series::new_null(name, *len))
                     },
                     dt => Err(A::Error::custom(format!(
                         "deserializing data of type {dt} is not supported"

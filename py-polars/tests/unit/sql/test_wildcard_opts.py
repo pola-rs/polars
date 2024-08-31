@@ -9,7 +9,7 @@ from polars.exceptions import DuplicateError, SQLInterfaceError
 from polars.testing import assert_frame_equal
 
 
-@pytest.fixture()
+@pytest.fixture
 def df() -> pl.DataFrame:
     return pl.DataFrame(
         {

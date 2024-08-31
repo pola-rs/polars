@@ -8,7 +8,7 @@ use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
 use polars_ops::prelude::CrossJoin as CrossJoinTrait;
 use polars_utils::arena::Node;
-use smartstring::alias::String as SmartString;
+use polars_utils::pl_str::PlSmallStr;
 
 use crate::executors::operators::PlaceHolder;
 use crate::operators::{
@@ -19,7 +19,7 @@ use crate::operators::{
 #[derive(Default)]
 pub struct CrossJoin {
     chunks: Vec<DataChunk>,
-    suffix: SmartString,
+    suffix: PlSmallStr,
     swapped: bool,
     node: Node,
     placeholder: PlaceHolder,
@@ -27,7 +27,7 @@ pub struct CrossJoin {
 
 impl CrossJoin {
     pub(crate) fn new(
-        suffix: SmartString,
+        suffix: PlSmallStr,
         swapped: bool,
         node: Node,
         placeholder: PlaceHolder,
@@ -73,7 +73,7 @@ impl Sink for CrossJoin {
     fn finalize(&mut self, _context: &PExecutionContext) -> PolarsResult<FinalizedSink> {
         let op = Box::new(CrossJoinProbe {
             df: Arc::new(chunks_to_df_unchecked(std::mem::take(&mut self.chunks))),
-            suffix: Arc::from(self.suffix.as_ref()),
+            suffix: self.suffix.clone(),
             in_process_left: None,
             in_process_right: None,
             in_process_left_df: Default::default(),
@@ -97,11 +97,11 @@ impl Sink for CrossJoin {
 #[derive(Clone)]
 pub struct CrossJoinProbe {
     df: Arc<DataFrame>,
-    suffix: Arc<str>,
+    suffix: PlSmallStr,
     in_process_left: Option<StepBy<Range<usize>>>,
     in_process_right: Option<StepBy<Range<usize>>>,
     in_process_left_df: DataFrame,
-    output_names: Option<Vec<SmartString>>,
+    output_names: Option<Vec<PlSmallStr>>,
     swapped: bool,
 }
 
@@ -159,7 +159,7 @@ impl Operator for CrossJoinProbe {
                             (&self.in_process_left_df, &right_df)
                         };
 
-                        let mut df = a.cross_join(b, Some(self.suffix.as_ref()), None)?;
+                        let mut df = a.cross_join(b, Some(self.suffix.clone()), None)?;
                         // Cross joins can produce multiple chunks.
                         // No parallelize in operators
                         df.as_single_chunk();
@@ -183,7 +183,7 @@ impl Operator for CrossJoinProbe {
                 // this we can amortize the name allocations.
                 let mut df = match &self.output_names {
                     None => {
-                        let df = a.cross_join(b, Some(self.suffix.as_ref()), None)?;
+                        let df = a.cross_join(b, Some(self.suffix.clone()), None)?;
                         self.output_names = Some(df.get_column_names_owned());
                         df
                     },

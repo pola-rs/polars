@@ -157,7 +157,7 @@ Refer to the [Polars CLI repository](https://github.com/pola-rs/polars-cli) for 
 
 ### Blazingly fast
 
-Polars is very fast. In fact, it is one of the best performing solutions available. See the [TPC-H benchmarks](https://www.pola.rs/benchmarks.html) results.
+Polars is very fast. In fact, it is one of the best performing solutions available. See the [PDS-H benchmarks](https://www.pola.rs/benchmarks.html) results.
 
 ### Lightweight
 
@@ -217,7 +217,7 @@ improvements point to the `main` branch of this repo.
 polars = { git = "https://github.com/pola-rs/polars", rev = "<optional git tag>" }
 ```
 
-Requires Rust version `>=1.71`.
+Requires Rust version `>=1.80`.
 
 ## Contributing
 

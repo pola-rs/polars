@@ -51,8 +51,6 @@ pub use schema::*;
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 
-pub type ColumnName = Arc<str>;
-
 #[derive(Clone, Copy, Debug)]
 pub enum Context {
     /// Any operation that is done on groups
@@ -213,7 +211,7 @@ impl Clone for DslPlan {
 
 impl Default for DslPlan {
     fn default() -> Self {
-        let df = DataFrame::new::<Series>(vec![]).unwrap();
+        let df = DataFrame::empty();
         let schema = df.schema();
         DslPlan::DataFrameScan {
             df: Arc::new(df),
@@ -247,7 +245,12 @@ impl DslPlan {
         let mut lp_arena = Arena::with_capacity(16);
         let mut expr_arena = Arena::with_capacity(16);
 
-        let node = to_alp(self, &mut expr_arena, &mut lp_arena, true, true)?;
+        let node = to_alp(
+            self,
+            &mut expr_arena,
+            &mut lp_arena,
+            &mut OptFlags::default(),
+        )?;
         let plan = IRPlan::new(node, lp_arena, expr_arena);
 
         Ok(plan)

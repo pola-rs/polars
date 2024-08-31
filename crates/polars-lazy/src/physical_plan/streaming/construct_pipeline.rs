@@ -26,7 +26,7 @@ impl PhysicalIoExpr for Wrap {
         };
         h.evaluate_io(df)
     }
-    fn live_variables(&self) -> Option<Vec<Arc<str>>> {
+    fn live_variables(&self) -> Option<Vec<PlSmallStr>> {
         // @TODO: This should not unwrap
         Some(expr_to_leaf_column_names(self.0.as_expression()?))
     }

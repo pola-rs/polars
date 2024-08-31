@@ -213,10 +213,10 @@ mod test {
             let idx_chunks: Vec<_> = (0..num_idx_chunks).map(|_| random_vec(&mut rng, 0..num_nonnull_elems as IdxSize, 0..200)).collect();
             let null_idx_chunks: Vec<_> = idx_chunks.iter().map(|c| random_filter(&mut rng, c, 0.7..1.0)).collect();
 
-            let nonnull_ca = UInt32Chunked::from_chunk_iter("", elem_chunks.iter().cloned().map(|v| v.into_iter().collect_arr()));
-            let ca = UInt32Chunked::from_chunk_iter("", null_elem_chunks.iter().cloned().map(|v| v.into_iter().collect_arr()));
-            let nonnull_idx_ca = IdxCa::from_chunk_iter("", idx_chunks.iter().cloned().map(|v| v.into_iter().collect_arr()));
-            let idx_ca = IdxCa::from_chunk_iter("", null_idx_chunks.iter().cloned().map(|v| v.into_iter().collect_arr()));
+            let nonnull_ca = UInt32Chunked::from_chunk_iter("".into(), elem_chunks.iter().cloned().map(|v| v.into_iter().collect_arr()));
+            let ca = UInt32Chunked::from_chunk_iter("".into(), null_elem_chunks.iter().cloned().map(|v| v.into_iter().collect_arr()));
+            let nonnull_idx_ca = IdxCa::from_chunk_iter("".into(), idx_chunks.iter().cloned().map(|v| v.into_iter().collect_arr()));
+            let idx_ca = IdxCa::from_chunk_iter("".into(), null_idx_chunks.iter().cloned().map(|v| v.into_iter().collect_arr()));
 
             gather_skip_nulls_check(&ca, &idx_ca);
             gather_skip_nulls_check(&ca, &nonnull_idx_ca);

@@ -18,7 +18,7 @@ class GPUEngine:
 
     - `device`: Select the device to run the query on.
     - `memory_resource`: Set an RMM memory resource for
-       device-side allocations.
+      device-side allocations.
     """
 
     device: int | None

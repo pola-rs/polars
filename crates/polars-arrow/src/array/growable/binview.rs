@@ -2,6 +2,7 @@ use std::ops::Deref;
 use std::sync::Arc;
 
 use polars_utils::aliases::{InitHashMaps, PlHashSet};
+use polars_utils::itertools::Itertools;
 
 use super::Growable;
 use crate::array::binview::{BinaryViewArrayGeneric, ViewType};
@@ -10,7 +11,6 @@ use crate::array::{Array, MutableBinaryViewArray, View};
 use crate::bitmap::{Bitmap, MutableBitmap};
 use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
-use crate::legacy::utils::CustomIterTools;
 
 /// Concrete [`Growable`] for the [`BinaryArray`].
 pub struct GrowableBinaryViewArray<'a, T: ViewType + ?Sized> {
@@ -103,6 +103,7 @@ impl<'a, T: ViewType + ?Sized> Growable<'a> for GrowableBinaryViewArray<'a, T> {
         let range = start..start + len;
 
         let views_iter = array.views().get_unchecked(range).iter().cloned();
+
         if self.same_buffers.is_some() {
             let mut total_len = 0;
             self.inner

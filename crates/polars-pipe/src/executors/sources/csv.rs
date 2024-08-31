@@ -6,7 +6,7 @@ use polars_io::csv::read::{BatchedCsvReader, CsvReadOptions, CsvReader};
 use polars_io::path_utils::is_cloud_url;
 use polars_plan::global::_set_n_rows_for_scan;
 use polars_plan::prelude::FileScanOptions;
-use polars_utils::iter::EnumerateIdxTrait;
+use polars_utils::itertools::Itertools;
 
 use super::*;
 use crate::pipeline::determine_chunk_size;
@@ -125,7 +125,8 @@ impl CsvSource {
         };
 
         if let Some(col) = &file_options.include_file_paths {
-            self.include_file_path = Some(StringChunked::full(col, path.to_str().unwrap(), 1));
+            self.include_file_path =
+                Some(StringChunked::full(col.clone(), path.to_str().unwrap(), 1));
         };
 
         self.reader = Some(reader);
@@ -211,7 +212,7 @@ impl Source for CsvSource {
 
             if let Some(ca) = &mut self.include_file_path {
                 if ca.len() < max_height {
-                    *ca = ca.new_from_index(max_height, 0);
+                    *ca = ca.new_from_index(0, max_height);
                 };
 
                 for data_chunk in &mut out {

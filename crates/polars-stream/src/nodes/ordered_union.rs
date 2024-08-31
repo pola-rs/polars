@@ -23,7 +23,7 @@ impl ComputeNode for OrderedUnionNode {
         "ordered_union"
     }
 
-    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) {
+    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {
         assert!(self.cur_input_idx <= recv.len() && send.len() == 1);
 
         // Skip inputs that are done.
@@ -46,6 +46,7 @@ impl ComputeNode for OrderedUnionNode {
 
         // Set the morsel offset one higher than any sent so far.
         self.morsel_offset = self.max_morsel_seq_sent.successor();
+        Ok(())
     }
 
     fn spawn<'env, 's>(

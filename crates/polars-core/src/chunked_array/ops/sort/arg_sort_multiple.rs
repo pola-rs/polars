@@ -1,7 +1,7 @@
 use arrow::compute::utils::combine_validities_and_many;
 use compare_inner::NullOrderCmp;
 use polars_row::{convert_columns, EncodingField, RowsEncoded};
-use polars_utils::iter::EnumerateIdxTrait;
+use polars_utils::itertools::Itertools;
 
 use super::*;
 use crate::utils::_split_offsets;
@@ -100,7 +100,8 @@ pub fn _get_rows_encoded_compat_array(by: &Series) -> PolarsResult<ArrayRef> {
                 ca.physical().chunks[0].clone()
             }
         },
-        _ => by.to_arrow(0, CompatLevel::newest()),
+        // Take physical
+        _ => by.chunks()[0].clone(),
     };
     Ok(out)
 }
@@ -120,7 +121,10 @@ pub fn encode_rows_vertical_par_unordered(by: &[Series]) -> PolarsResult<BinaryO
     });
     let chunks = POOL.install(|| chunks.collect::<PolarsResult<Vec<_>>>());
 
-    Ok(BinaryOffsetChunked::from_chunk_iter("", chunks?))
+    Ok(BinaryOffsetChunked::from_chunk_iter(
+        PlSmallStr::const_default(),
+        chunks?,
+    ))
 }
 
 // Almost the same but broadcast nulls to the row-encoded array.
@@ -155,12 +159,18 @@ pub fn encode_rows_vertical_par_unordered_broadcast_nulls(
     });
     let chunks = POOL.install(|| chunks.collect::<PolarsResult<Vec<_>>>());
 
-    Ok(BinaryOffsetChunked::from_chunk_iter("", chunks?))
+    Ok(BinaryOffsetChunked::from_chunk_iter(
+        PlSmallStr::const_default(),
+        chunks?,
+    ))
 }
 
 pub(crate) fn encode_rows_unordered(by: &[Series]) -> PolarsResult<BinaryOffsetChunked> {
     let rows = _get_rows_encoded_unordered(by)?;
-    Ok(BinaryOffsetChunked::with_chunk("", rows.into_array()))
+    Ok(BinaryOffsetChunked::with_chunk(
+        PlSmallStr::const_default(),
+        rows.into_array(),
+    ))
 }
 
 pub fn _get_rows_encoded_unordered(by: &[Series]) -> PolarsResult<RowsEncoded> {
@@ -225,7 +235,7 @@ pub fn _get_rows_encoded(
 }
 
 pub fn _get_rows_encoded_ca(
-    name: &str,
+    name: PlSmallStr,
     by: &[Series],
     descending: &[bool],
     nulls_last: &[bool],
@@ -243,7 +253,7 @@ pub fn _get_rows_encoded_arr(
 }
 
 pub fn _get_rows_encoded_ca_unordered(
-    name: &str,
+    name: PlSmallStr,
     by: &[Series],
 ) -> PolarsResult<BinaryOffsetChunked> {
     _get_rows_encoded_unordered(by)
