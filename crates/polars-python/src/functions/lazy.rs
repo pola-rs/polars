@@ -442,12 +442,24 @@ pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool) -> PyResult<PyExpr> {
         });
         Ok(dsl::lit(s).into())
     } else {
-        Err(PyTypeError::new_err(format!(
-            "cannot create expression literal for value of type {}: {}\
-            \n\nHint: Pass `allow_object=True` to accept any value and create a literal of type Object.",
-            value.get_type().qualname()?,
-            value.repr()?
-        )))
+        Python::with_gil(|py| {
+            // One final attempt before erroring. Do we have a date/datetime subclass?
+            // E.g. pd.Timestamp, or Freezegun.
+            let datetime_module = PyModule::import_bound(py, "datetime")?;
+            let datetime_class = datetime_module.getattr("datetime")?;
+            let date_class = datetime_module.getattr("date")?;
+            if value.is_instance(&datetime_class)? || value.is_instance(&date_class)? {
+                let av = py_object_to_any_value(value, true)?;
+                Ok(Expr::Literal(LiteralValue::try_from(av).unwrap()).into())
+            } else {
+                Err(PyTypeError::new_err(format!(
+                    "cannot create expression literal for value of type {}: {}\
+                    \n\nHint: Pass `allow_object=True` to accept any value and create a literal of type Object.",
+                    value.get_type().qualname()?,
+                    value.repr()?
+                )))
+            }
+        })
     }
 }
 

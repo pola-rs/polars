@@ -310,3 +310,17 @@ def test_date_ranges_datetime_input() -> None:
         "literal", [[date(2022, 1, 1), date(2022, 1, 2), date(2022, 1, 3)]]
     )
     assert_series_equal(result, expected)
+
+
+def test_date_range_with_subclass_18470_18447() -> None:
+    class MyAmazingDate(date):
+        pass
+
+    class MyAmazingDatetime(datetime):
+        pass
+
+    result = pl.datetime_range(
+        MyAmazingDate(2020, 1, 1), MyAmazingDatetime(2020, 1, 2), eager=True
+    )
+    expected = pl.Series("literal", [datetime(2020, 1, 1), datetime(2020, 1, 2)])
+    assert_series_equal(result, expected)
