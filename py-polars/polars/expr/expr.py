@@ -10260,7 +10260,7 @@ class Expr:
                 new = pl.Series(new)
 
         old = parse_into_expression(old, str_as_lit=True)  # type: ignore[arg-type]
-        new = parse_into_expression(new, str_as_lit=True)  # type: ignore[arg-type]
+        new = parse_into_expression(new, str_as_lit=True)
 
         result = self._from_pyexpr(self._pyexpr.replace(old, new))
 
