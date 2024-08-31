@@ -15,7 +15,7 @@ from polars.plugins import (
 )
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_register_plugin_function_invalid_plugin_path(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
     plugin_path = tmp_path / "lib.so"
@@ -44,7 +44,7 @@ def test_serialize_kwargs(input: dict[str, Any] | None, expected: bytes) -> None
     assert _serialize_kwargs(input) == expected
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_resolve_plugin_path(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
@@ -63,7 +63,7 @@ def test_resolve_plugin_path(tmp_path: Path) -> None:
     assert result == expected
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_resolve_plugin_path_raises(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
     (tmp_path / "__init__.py").touch()
@@ -72,7 +72,7 @@ def test_resolve_plugin_path_raises(tmp_path: Path) -> None:
         _resolve_plugin_path(tmp_path)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 @pytest.mark.parametrize(
     ("path", "expected"),
     [
@@ -89,7 +89,7 @@ def test_is_dynamic_lib(path: Path, expected: bool, tmp_path: Path) -> None:
     assert _is_dynamic_lib(full_path) is expected
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_is_dynamic_lib_dir(tmp_path: Path) -> None:
     path = Path("lib.so")
     full_path = tmp_path / path

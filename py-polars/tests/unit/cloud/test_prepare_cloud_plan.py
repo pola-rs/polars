@@ -94,7 +94,7 @@ def test_prepare_cloud_plan_fail_on_local_data_source(lf: pl.LazyFrame) -> None:
         prepare_cloud_plan(lf)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_prepare_cloud_plan_fail_on_python_scan(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
     data_path = tmp_path / "data.parquet"

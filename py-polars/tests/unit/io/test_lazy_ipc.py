@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-@pytest.fixture()
+@pytest.fixture
 def foods_ipc_path(io_files_path: Path) -> Path:
     return io_files_path / "foods1.ipc"
 

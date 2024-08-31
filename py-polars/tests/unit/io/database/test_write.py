@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from polars._typing import DbWriteEngine
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 @pytest.mark.parametrize(
     ("engine", "uri_connection"),
     [
@@ -237,7 +237,7 @@ class TestWriteDatabase:
             df.write_database(connection=True, table_name="misc")  # type: ignore[arg-type]
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_write_database_using_sa_session(tmp_path: str) -> None:
     df = pl.DataFrame(
         {
@@ -261,7 +261,7 @@ def test_write_database_using_sa_session(tmp_path: str) -> None:
     assert_frame_equal(result, df)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 @pytest.mark.parametrize("pass_connection", [True, False])
 def test_write_database_sa_rollback(tmp_path: str, pass_connection: bool) -> None:
     df = pl.DataFrame(
@@ -291,7 +291,7 @@ def test_write_database_sa_rollback(tmp_path: str, pass_connection: bool) -> Non
     assert count == 0
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 @pytest.mark.parametrize("pass_connection", [True, False])
 def test_write_database_sa_commit(tmp_path: str, pass_connection: bool) -> None:
     df = pl.DataFrame(

@@ -27,7 +27,7 @@ def test_count_csv(io_files_path: Path, path: str, n_rows: int) -> None:
     assert_frame_equal(lf.collect(), expected)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_commented_csv() -> None:
     csv_a = NamedTemporaryFile()
     csv_a.write(

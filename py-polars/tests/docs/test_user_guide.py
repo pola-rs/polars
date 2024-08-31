@@ -29,7 +29,7 @@ def _change_test_dir() -> Iterator[None]:
     os.chdir(current_path)
 
 
-@pytest.mark.docs()
+@pytest.mark.docs
 @pytest.mark.parametrize("path", snippet_paths)
 @pytest.mark.usefixtures("_change_test_dir")
 def test_run_python_snippets(path: Path) -> None:
