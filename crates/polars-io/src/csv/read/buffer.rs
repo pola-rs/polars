@@ -355,7 +355,6 @@ impl ParsedBuffer for BooleanChunkedBuilder {
     }
 }
 
-
 #[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
 pub struct DatetimeField<T: PolarsNumericType> {
     compiled: Option<DatetimeInfer<T>>,

@@ -2281,6 +2281,7 @@ def test_read_csv_cast_unparsable_later(
     df.write_csv(f)
     assert df.equals(pl.read_csv(f, schema={"x": dtype}))
 
+
 def test_csv_bool_formats() -> None:
     csv = io.StringIO(
         "a,b\n"
