@@ -2280,3 +2280,22 @@ def test_read_csv_cast_unparsable_later(
     f = io.BytesIO()
     df.write_csv(f)
     assert df.equals(pl.read_csv(f, schema={"x": dtype}))
+
+def test_csv_bool_formats() -> None:
+    csv = io.StringIO(
+        "a,b\n"
+        "1,true\n"
+        "0,false\n"
+    )  # fmt: skip
+    dtypes = {
+        "a": pl.Boolean,
+        "b": pl.Boolean,
+    }
+    result = pl.read_csv(csv, schema_overrides=dtypes)
+    expected = pl.DataFrame(
+        {
+            "a": [True, False],
+            "b": [True, False],
+        }
+    )
+    assert result.equals(expected)

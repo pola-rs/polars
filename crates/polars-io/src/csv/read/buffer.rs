@@ -339,9 +339,9 @@ impl ParsedBuffer for BooleanChunkedBuilder {
         } else {
             bytes
         };
-        if bytes.eq_ignore_ascii_case(b"false") {
+        if bytes == b"0" || bytes.eq_ignore_ascii_case(b"false") {
             self.append_value(false);
-        } else if bytes.eq_ignore_ascii_case(b"true") {
+        } else if bytes == b"1" || bytes.eq_ignore_ascii_case(b"true") {
             self.append_value(true);
         } else if ignore_errors || bytes.is_empty() {
             self.append_null();
@@ -354,6 +354,7 @@ impl ParsedBuffer for BooleanChunkedBuilder {
         Ok(())
     }
 }
+
 
 #[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
 pub struct DatetimeField<T: PolarsNumericType> {
