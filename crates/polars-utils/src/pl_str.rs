@@ -123,14 +123,6 @@ impl From<&str> for PlSmallStr {
     }
 }
 
-/// TODO: remove
-impl From<&&str> for PlSmallStr {
-    #[inline(always)]
-    fn from(value: &&str) -> Self {
-        Self::from_str(value)
-    }
-}
-
 impl From<String> for PlSmallStr {
     #[inline(always)]
     fn from(value: String) -> Self {
