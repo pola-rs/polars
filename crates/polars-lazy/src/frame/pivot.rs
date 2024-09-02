@@ -33,8 +33,7 @@ impl PhysicalAggExpr for PivotExpr {
     }
 
     fn root_name(&self) -> PolarsResult<&PlSmallStr> {
-        // Ok(PlSmallStr::EMPTY_REF)
-        Ok(&polars_utils::pl_str::STATIC_EMPTY)
+        Ok(PlSmallStr::EMPTY_REF)
     }
 }
 
