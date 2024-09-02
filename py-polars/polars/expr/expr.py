@@ -9311,7 +9311,7 @@ class Expr:
         ignore_nulls: bool = False,
     ) -> Expr:
         r"""
-        Exponentially-weighted moving average.
+        Compute exponentially-weighted moving average.
 
         Parameters
         ----------
@@ -9326,11 +9326,11 @@ class Expr:
                 .. math::
                     \alpha = \frac{2}{\theta + 1} \; \forall \; \theta \geq 1
         half_life
-            Specify decay in terms of half-life, :math:`\lambda`, with
+            Specify decay in terms of half-life, :math:`\tau`, with
 
                 .. math::
-                    \alpha = 1 - \exp \left\{ \frac{ -\ln(2) }{ \lambda } \right\} \;
-                    \forall \; \lambda > 0
+                    \alpha = 1 - \exp \left\{ \frac{ -\ln(2) }{ \tau } \right\} \;
+                    \forall \; \tau > 0
         alpha
             Specify smoothing factor alpha directly, :math:`0 < \alpha \leq 1`.
         adjust
@@ -9393,20 +9393,20 @@ class Expr:
         half_life: str | timedelta,
     ) -> Expr:
         r"""
-        Calculate time-based exponentially weighted moving average.
+        Compute time-based exponentially weighted moving average.
 
-        Given observations :math:`x_1, x_2, \ldots, x_n` at times
-        :math:`t_1, t_2, \ldots, t_n`, the EWMA is calculated as
+        Given observations :math:`x_0, x_1, \ldots, x_{n-1}` at times
+        :math:`t_0, t_1, \ldots, t_{n-1}`, the EWMA is calculated as
 
             .. math::
 
                 y_0 &= x_0
 
-                \alpha_i &= \exp(-\lambda(t_i - t_{i-1}))
+                \alpha_i &= 1 - \exp \left\{ \frac{ -\ln(2)(t_i-t_{i-1}) }{ \tau } \right\}
 
                 y_i &= \alpha_i x_i + (1 - \alpha_i) y_{i-1}; \quad i > 0
 
-        where :math:`\lambda` equals :math:`\ln(2) / \text{half_life}`.
+        where :math:`\tau` is the `half_life`.
 
         Parameters
         ----------
@@ -9490,7 +9490,7 @@ class Expr:
         ignore_nulls: bool = False,
     ) -> Expr:
         r"""
-        Exponentially-weighted moving standard deviation.
+        Compute exponentially-weighted moving standard deviation.
 
         Parameters
         ----------
@@ -9581,7 +9581,7 @@ class Expr:
         ignore_nulls: bool = False,
     ) -> Expr:
         r"""
-        Exponentially-weighted moving variance.
+        Compute exponentially-weighted moving variance.
 
         Parameters
         ----------
