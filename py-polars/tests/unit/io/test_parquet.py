@@ -1831,7 +1831,7 @@ def test_general_prefiltering(
     deadline=None,
     suppress_health_check=[HealthCheck.function_scoped_fixture],
 )
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_row_index_prefiltering(
     tmp_path: Path,
     df: pl.DataFrame,
