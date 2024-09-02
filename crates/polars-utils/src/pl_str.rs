@@ -1,4 +1,4 @@
-use kstring::KString;
+use kstring::{KString, KStringBase};
 
 #[macro_export]
 macro_rules! format_pl_smallstr {
@@ -16,9 +16,11 @@ macro_rules! format_pl_smallstr {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PlSmallStr(kstring::KStringBase<kstring::backend::ArcStr>);
 
+pub static STATIC_EMPTY: PlSmallStr = PlSmallStr(KString::EMPTY);
+
 impl PlSmallStr {
     pub const EMPTY: Self = Self(KString::EMPTY);
-    pub const EMPTY_REF: &'static Self = &Self(KString::EMPTY);
+    // pub const EMPTY_REF: &'static Self = &Self(KString::EMPTY);
 
     #[inline(always)]
     pub const fn from_static(s: &'static str) -> Self {
