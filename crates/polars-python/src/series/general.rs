@@ -315,16 +315,16 @@ impl PySeries {
         self.series.clone().into()
     }
 
-    #[pyo3(signature = (lambda, output_type, skip_nulls))]
-    fn apply_lambda(
+    #[pyo3(signature = (function, return_dtype, skip_nulls))]
+    fn map_elements(
         &self,
-        lambda: &Bound<PyAny>,
-        output_type: Option<Wrap<DataType>>,
+        function: &Bound<PyAny>,
+        return_dtype: Option<Wrap<DataType>>,
         skip_nulls: bool,
     ) -> PyResult<PySeries> {
         let series = &self.series;
 
-        if output_type.is_none() {
+        if return_dtype.is_none() {
             polars_warn!(
                 MapWithoutReturnDtypeWarning,
                 "Calling `map_elements` without specifying `return_dtype` can lead to unpredictable results. \
@@ -332,9 +332,9 @@ impl PySeries {
         }
 
         if skip_nulls && (series.null_count() == series.len()) {
-            if let Some(output_type) = output_type {
+            if let Some(return_dtype) = return_dtype {
                 return Ok(
-                    Series::full_null(series.name().clone(), series.len(), &output_type.0).into(),
+                    Series::full_null(series.name().clone(), series.len(), &return_dtype.0).into(),
                 );
             }
             let msg = "The output type of the 'map_elements' function cannot be determined.\n\
@@ -343,7 +343,7 @@ impl PySeries {
             raise_err!(msg, ComputeError)
         }
 
-        let output_type = output_type.map(|dt| dt.0);
+        let return_dtype = return_dtype.map(|dt| dt.0);
 
         macro_rules! dispatch_apply {
             ($self:expr, $method:ident, $($args:expr),*) => {
@@ -385,7 +385,7 @@ impl PySeries {
                     (true, AnyValue::Null) => AnyValue::Null,
                     (_, av) => {
                         let input = Wrap(av);
-                        call_lambda_and_extract::<_, Wrap<AnyValue>>(py, lambda, input)
+                        call_lambda_and_extract::<_, Wrap<AnyValue>>(py, function, input)
                             .unwrap()
                             .0
                     },
@@ -394,13 +394,13 @@ impl PySeries {
                 return Ok(Series::new(self.series.name().clone(), &avs).into());
             }
 
-            let out = match output_type {
+            let out = match return_dtype {
                 Some(DataType::Int8) => {
                     let ca: Int8Chunked = dispatch_apply!(
                         series,
                         apply_lambda_with_primitive_out_type,
                         py,
-                        lambda,
+                        function,
                         0,
                         None
                     )?;
@@ -411,7 +411,7 @@ impl PySeries {
                         series,
                         apply_lambda_with_primitive_out_type,
                         py,
-                        lambda,
+                        function,
                         0,
                         None
                     )?;
@@ -422,7 +422,7 @@ impl PySeries {
                         series,
                         apply_lambda_with_primitive_out_type,
                         py,
-                        lambda,
+                        function,
                         0,
                         None
                     )?;
@@ -433,7 +433,7 @@ impl PySeries {
                         series,
                         apply_lambda_with_primitive_out_type,
                         py,
-                        lambda,
+                        function,
                         0,
                         None
                     )?;
@@ -444,7 +444,7 @@ impl PySeries {
                         series,
                         apply_lambda_with_primitive_out_type,
                         py,
-                        lambda,
+                        function,
                         0,
                         None
                     )?;
@@ -455,7 +455,7 @@ impl PySeries {
                         series,
                         apply_lambda_with_primitive_out_type,
                         py,
-                        lambda,
+                        function,
                         0,
                         None
                     )?;
@@ -466,7 +466,7 @@ impl PySeries {
                         series,
                         apply_lambda_with_primitive_out_type,
                         py,
-                        lambda,
+                        function,
                         0,
                         None
                     )?;
@@ -477,7 +477,7 @@ impl PySeries {
                         series,
                         apply_lambda_with_primitive_out_type,
                         py,
-                        lambda,
+                        function,
                         0,
                         None
                     )?;
@@ -488,7 +488,7 @@ impl PySeries {
                         series,
                         apply_lambda_with_primitive_out_type,
                         py,
-                        lambda,
+                        function,
                         0,
                         None
                     )?;
@@ -499,7 +499,7 @@ impl PySeries {
                         series,
                         apply_lambda_with_primitive_out_type,
                         py,
-                        lambda,
+                        function,
                         0,
                         None
                     )?;
@@ -510,7 +510,7 @@ impl PySeries {
                         series,
                         apply_lambda_with_bool_out_type,
                         py,
-                        lambda,
+                        function,
                         0,
                         None
                     )?;
@@ -521,7 +521,7 @@ impl PySeries {
                         series,
                         apply_lambda_with_string_out_type,
                         py,
-                        lambda,
+                        function,
                         0,
                         None
                     )?;
@@ -534,15 +534,15 @@ impl PySeries {
                         series,
                         apply_lambda_with_object_out_type,
                         py,
-                        lambda,
+                        function,
                         0,
                         None
                     )?;
                     ca.into_series()
                 },
-                None => return dispatch_apply!(series, apply_lambda_unknown, py, lambda),
+                None => return dispatch_apply!(series, apply_lambda_unknown, py, function),
 
-                _ => return dispatch_apply!(series, apply_lambda_unknown, py, lambda),
+                _ => return dispatch_apply!(series, apply_lambda_unknown, py, function),
             };
 
             Ok(out.into())
