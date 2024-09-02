@@ -1,5 +1,3 @@
-use kstring::KString;
-
 #[macro_export]
 macro_rules! format_pl_smallstr {
     ($($arg:tt)*) => {{
@@ -11,29 +9,31 @@ macro_rules! format_pl_smallstr {
     }}
 }
 
+type Inner = kstring::KStringBase<kstring::backend::ArcStr>;
+
 /// String type that interns small strings and has O(1) clone.
 #[derive(Clone, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct PlSmallStr(kstring::KStringBase<kstring::backend::ArcStr>);
+pub struct PlSmallStr(Inner);
 
 impl PlSmallStr {
-    pub const EMPTY: Self = Self(KString::EMPTY);
-    pub const EMPTY_REF: &'static Self = &Self(KString::EMPTY);
+    pub const EMPTY: Self = Self(Inner::EMPTY);
+    pub const EMPTY_REF: &'static Self = &Self(Inner::EMPTY);
 
     #[inline(always)]
     pub const fn from_static(s: &'static str) -> Self {
-        Self(KString::from_static(s))
+        Self(Inner::from_static(s))
     }
 
     #[inline(always)]
     #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Self {
-        Self(KString::from_ref(s))
+        Self(Inner::from_ref(s))
     }
 
     #[inline(always)]
     pub fn from_string(s: String) -> Self {
-        Self(KString::from_string(s))
+        Self(Inner::from_string(s))
     }
 
     #[inline(always)]
