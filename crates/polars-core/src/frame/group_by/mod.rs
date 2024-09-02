@@ -330,7 +330,7 @@ impl<'df> GroupBy<'df> {
     /// ```rust
     /// # use polars_core::prelude::*;
     /// fn example(df: DataFrame) -> PolarsResult<DataFrame> {
-    ///     df.group_by(["date"])?.select(&["temp", "rain"]).mean()
+    ///     df.group_by(["date"])?.select(["temp", "rain"]).mean()
     /// }
     /// ```
     /// Returns:
