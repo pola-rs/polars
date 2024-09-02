@@ -248,7 +248,7 @@ impl SQLExprVisitor<'_> {
             })
             .collect::<PolarsResult<Vec<_>>>()?;
 
-        Series::from_any_values(PlSmallStr::const_default(), &array_elements, true)
+        Series::from_any_values(PlSmallStr::EMPTY, &array_elements, true)
     }
 
     fn visit_expr(&mut self, expr: &SQLExpr) -> PolarsResult<Expr> {

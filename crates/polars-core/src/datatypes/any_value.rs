@@ -343,7 +343,7 @@ impl<'a> Deserialize<'a> for AnyValue<'static> {
 impl AnyValue<'static> {
     pub fn zero(dtype: &DataType) -> Self {
         match dtype {
-            DataType::String => AnyValue::StringOwned(PlSmallStr::const_default()),
+            DataType::String => AnyValue::StringOwned(PlSmallStr::EMPTY),
             DataType::Boolean => AnyValue::Boolean(false),
             // SAFETY:
             // Numeric values are static, inform the compiler of this.
@@ -1302,7 +1302,7 @@ mod test {
                 DataType::Datetime(TimeUnit::Milliseconds, None),
             ),
             (
-                ArrowDataType::Timestamp(ArrowTimeUnit::Second, Some(PlSmallStr::const_default())),
+                ArrowDataType::Timestamp(ArrowTimeUnit::Second, Some(PlSmallStr::EMPTY)),
                 DataType::Datetime(TimeUnit::Milliseconds, None),
             ),
             (ArrowDataType::LargeUtf8, DataType::String),

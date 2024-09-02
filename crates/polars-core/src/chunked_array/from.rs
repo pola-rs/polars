@@ -27,7 +27,7 @@ fn from_chunks_list_dtype(chunks: &mut Vec<ArrayRef>, dtype: DataType) -> DataTy
             let values_arr = list_arr.values();
             let cat = unsafe {
                 Series::_try_from_arrow_unchecked(
-                    PlSmallStr::const_default(),
+                    PlSmallStr::EMPTY,
                     vec![values_arr.clone()],
                     values_arr.data_type(),
                 )
@@ -59,7 +59,7 @@ fn from_chunks_list_dtype(chunks: &mut Vec<ArrayRef>, dtype: DataType) -> DataTy
             let values_arr = list_arr.values();
             let cat = unsafe {
                 Series::_try_from_arrow_unchecked(
-                    PlSmallStr::const_default(),
+                    PlSmallStr::EMPTY,
                     vec![values_arr.clone()],
                     values_arr.data_type(),
                 )
@@ -88,7 +88,7 @@ where
     A: Array,
 {
     fn from(arr: A) -> Self {
-        Self::with_chunk(PlSmallStr::const_default(), arr)
+        Self::with_chunk(PlSmallStr::EMPTY, arr)
     }
 }
 

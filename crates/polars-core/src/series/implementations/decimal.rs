@@ -55,7 +55,7 @@ impl SeriesWrap<DecimalChunked> {
                 // SAFETY: dtype is passed correctly
                 let s = unsafe {
                     Series::from_chunks_and_dtype_unchecked(
-                        PlSmallStr::const_default(),
+                        PlSmallStr::EMPTY,
                         vec![arr.values().clone()],
                         dtype,
                     )

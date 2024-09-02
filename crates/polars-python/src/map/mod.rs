@@ -269,7 +269,7 @@ fn iterator_to_list(
             Some(s) => {
                 if s.len() == 0 && s.dtype() != dt {
                     builder
-                        .append_series(&Series::full_null(PlSmallStr::const_default(), 0, dt))
+                        .append_series(&Series::full_null(PlSmallStr::EMPTY, 0, dt))
                         .unwrap()
                 } else {
                     builder.append_series(&s).map_err(PyPolarsErr::from)?

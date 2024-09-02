@@ -217,7 +217,7 @@ fn any_horizontal(s: &[Series]) -> PolarsResult<Series> {
         .install(|| {
             s.par_iter()
                 .try_fold(
-                    || BooleanChunked::new(PlSmallStr::const_default(), &[false]),
+                    || BooleanChunked::new(PlSmallStr::EMPTY, &[false]),
                     |acc, b| {
                         let b = b.cast(&DataType::Boolean)?;
                         let b = b.bool()?;
@@ -225,7 +225,7 @@ fn any_horizontal(s: &[Series]) -> PolarsResult<Series> {
                     },
                 )
                 .try_reduce(
-                    || BooleanChunked::new(PlSmallStr::const_default(), [false]),
+                    || BooleanChunked::new(PlSmallStr::EMPTY, [false]),
                     |a, b| Ok(a.bitor(b)),
                 )
         })?
@@ -239,7 +239,7 @@ fn all_horizontal(s: &[Series]) -> PolarsResult<Series> {
         .install(|| {
             s.par_iter()
                 .try_fold(
-                    || BooleanChunked::new(PlSmallStr::const_default(), &[true]),
+                    || BooleanChunked::new(PlSmallStr::EMPTY, &[true]),
                     |acc, b| {
                         let b = b.cast(&DataType::Boolean)?;
                         let b = b.bool()?;
@@ -247,7 +247,7 @@ fn all_horizontal(s: &[Series]) -> PolarsResult<Series> {
                     },
                 )
                 .try_reduce(
-                    || BooleanChunked::new(PlSmallStr::const_default(), [true]),
+                    || BooleanChunked::new(PlSmallStr::EMPTY, [true]),
                     |a, b| Ok(a.bitand(b)),
                 )
         })?

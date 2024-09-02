@@ -122,7 +122,7 @@ pub fn encode_rows_vertical_par_unordered(by: &[Series]) -> PolarsResult<BinaryO
     let chunks = POOL.install(|| chunks.collect::<PolarsResult<Vec<_>>>());
 
     Ok(BinaryOffsetChunked::from_chunk_iter(
-        PlSmallStr::const_default(),
+        PlSmallStr::EMPTY,
         chunks?,
     ))
 }
@@ -160,7 +160,7 @@ pub fn encode_rows_vertical_par_unordered_broadcast_nulls(
     let chunks = POOL.install(|| chunks.collect::<PolarsResult<Vec<_>>>());
 
     Ok(BinaryOffsetChunked::from_chunk_iter(
-        PlSmallStr::const_default(),
+        PlSmallStr::EMPTY,
         chunks?,
     ))
 }
@@ -168,7 +168,7 @@ pub fn encode_rows_vertical_par_unordered_broadcast_nulls(
 pub(crate) fn encode_rows_unordered(by: &[Series]) -> PolarsResult<BinaryOffsetChunked> {
     let rows = _get_rows_encoded_unordered(by)?;
     Ok(BinaryOffsetChunked::with_chunk(
-        PlSmallStr::const_default(),
+        PlSmallStr::EMPTY,
         rows.into_array(),
     ))
 }

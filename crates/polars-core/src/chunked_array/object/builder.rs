@@ -94,7 +94,7 @@ where
     T: PolarsObject,
 {
     fn default() -> Self {
-        ObjectChunkedBuilder::new(PlSmallStr::const_default(), 0)
+        ObjectChunkedBuilder::new(PlSmallStr::EMPTY, 0)
     }
 }
 

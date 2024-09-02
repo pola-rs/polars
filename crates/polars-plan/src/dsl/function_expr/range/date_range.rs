@@ -75,7 +75,7 @@ pub(super) fn date_ranges(
 
     let range_impl = |start, end, builder: &mut ListPrimitiveChunkedBuilder<Int32Type>| {
         let rng = datetime_range_impl(
-            PlSmallStr::const_default(),
+            PlSmallStr::EMPTY,
             start,
             end,
             interval,

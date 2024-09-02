@@ -220,7 +220,7 @@ impl<'a> IntoIterator for &'a ListChunked {
                         .trust_my_length(self.len())
                         .map(move |arr| {
                             Some(Series::from_chunks_and_dtype_unchecked(
-                                PlSmallStr::const_default(),
+                                PlSmallStr::EMPTY,
                                 vec![arr],
                                 dtype,
                             ))
@@ -237,7 +237,7 @@ impl<'a> IntoIterator for &'a ListChunked {
                         .map(move |arr| {
                             arr.map(|arr| {
                                 Series::from_chunks_and_dtype_unchecked(
-                                    PlSmallStr::const_default(),
+                                    PlSmallStr::EMPTY,
                                     vec![arr],
                                     dtype,
                                 )
@@ -262,7 +262,7 @@ impl ListChunked {
                 .flat_map(|arr| arr.values_iter())
                 .map(move |arr| {
                     Series::from_chunks_and_dtype_unchecked(
-                        PlSmallStr::const_default(),
+                        PlSmallStr::EMPTY,
                         vec![arr],
                         inner_type,
                     )
@@ -288,7 +288,7 @@ impl<'a> IntoIterator for &'a ArrayChunked {
                         .trust_my_length(self.len())
                         .map(move |arr| {
                             Some(Series::from_chunks_and_dtype_unchecked(
-                                PlSmallStr::const_default(),
+                                PlSmallStr::EMPTY,
                                 vec![arr],
                                 dtype,
                             ))
@@ -305,7 +305,7 @@ impl<'a> IntoIterator for &'a ArrayChunked {
                         .map(move |arr| {
                             arr.map(|arr| {
                                 Series::from_chunks_and_dtype_unchecked(
-                                    PlSmallStr::const_default(),
+                                    PlSmallStr::EMPTY,
                                     vec![arr],
                                     dtype,
                                 )
@@ -350,7 +350,7 @@ impl<'a> Iterator for FixedSizeListIterNoNull<'a> {
             self.current += 1;
             unsafe {
                 Some(Series::from_chunks_and_dtype_unchecked(
-                    PlSmallStr::const_default(),
+                    PlSmallStr::EMPTY,
                     vec![self.array.value_unchecked(old)],
                     &self.inner_type,
                 ))
@@ -376,7 +376,7 @@ impl<'a> DoubleEndedIterator for FixedSizeListIterNoNull<'a> {
             unsafe {
                 Some(
                     Series::try_from((
-                        PlSmallStr::const_default(),
+                        PlSmallStr::EMPTY,
                         self.array.value_unchecked(self.current_end),
                     ))
                     .unwrap(),
@@ -652,7 +652,7 @@ mod test {
                     PlSmallStr::from_static("test"),
                     &[$first_val, $second_val],
                 );
-                let a_b = <$ca_type>::from_slice(PlSmallStr::const_default(), &[$third_val]);
+                let a_b = <$ca_type>::from_slice(PlSmallStr::EMPTY, &[$third_val]);
                 a.append(&a_b).unwrap();
 
                 // normal iterator
@@ -716,7 +716,7 @@ mod test {
             fn $test_name() {
                 let mut a =
                     <$ca_type>::new(PlSmallStr::from_static("test"), &[$first_val, $second_val]);
-                let a_b = <$ca_type>::new(PlSmallStr::const_default(), &[$third_val]);
+                let a_b = <$ca_type>::new(PlSmallStr::EMPTY, &[$third_val]);
                 a.append(&a_b).unwrap();
 
                 // normal iterator
@@ -876,7 +876,7 @@ mod test {
                     PlSmallStr::from_static("test"),
                     &[$first_val, $second_val],
                 );
-                let a_b = <$ca_type>::from_slice(PlSmallStr::const_default(), &[$third_val]);
+                let a_b = <$ca_type>::from_slice(PlSmallStr::EMPTY, &[$third_val]);
                 a.append(&a_b).unwrap();
 
                 // normal iterator

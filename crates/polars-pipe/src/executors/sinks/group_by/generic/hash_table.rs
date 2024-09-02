@@ -271,7 +271,7 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
         cols.extend(
             key_columns
                 .into_iter()
-                .map(|arr| Series::try_from((PlSmallStr::const_default(), arr)).unwrap()),
+                .map(|arr| Series::try_from((PlSmallStr::EMPTY, arr)).unwrap()),
         );
         cols.extend(agg_builders.into_iter().map(|buf| buf.into_series()));
         physical_agg_to_logical(&mut cols, &self.output_schema);

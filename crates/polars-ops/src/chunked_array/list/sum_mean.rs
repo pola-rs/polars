@@ -109,7 +109,7 @@ pub(super) fn sum_with_nulls(ca: &ListChunked, inner_dtype: &DataType) -> Polars
             .try_apply_amortized(|s| {
                 s.as_ref()
                     .sum_reduce()
-                    .map(|sc| sc.into_series(PlSmallStr::const_default()))
+                    .map(|sc| sc.into_series(PlSmallStr::EMPTY))
             })?
             .explode()
             .unwrap()

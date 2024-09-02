@@ -49,15 +49,11 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
         DataType::List(dt) => {
             let v: ArrayRef = downcast!(LargeListArray);
             if dt.is_primitive() {
-                let s = Series::from_chunks_and_dtype_unchecked(
-                    PlSmallStr::const_default(),
-                    vec![v],
-                    dt,
-                );
+                let s = Series::from_chunks_and_dtype_unchecked(PlSmallStr::EMPTY, vec![v], dt);
                 AnyValue::List(s)
             } else {
                 let s = Series::from_chunks_and_dtype_unchecked(
-                    PlSmallStr::const_default(),
+                    PlSmallStr::EMPTY,
                     vec![v],
                     &dt.to_physical(),
                 )
@@ -70,15 +66,11 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
         DataType::Array(dt, width) => {
             let v: ArrayRef = downcast!(FixedSizeListArray);
             if dt.is_primitive() {
-                let s = Series::from_chunks_and_dtype_unchecked(
-                    PlSmallStr::const_default(),
-                    vec![v],
-                    dt,
-                );
+                let s = Series::from_chunks_and_dtype_unchecked(PlSmallStr::EMPTY, vec![v], dt);
                 AnyValue::Array(s, *width)
             } else {
                 let s = Series::from_chunks_and_dtype_unchecked(
-                    PlSmallStr::const_default(),
+                    PlSmallStr::EMPTY,
                     vec![v],
                     &dt.to_physical(),
                 )

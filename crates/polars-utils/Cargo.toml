@@ -14,6 +14,7 @@ polars-error = { workspace = true }
 ahash = { workspace = true }
 bytemuck = { workspace = true }
 bytes = { workspace = true }
+compact_str = { workspace = true }
 hashbrown = { workspace = true }
 indexmap = { workspace = true }
 libc = { workspace = true }

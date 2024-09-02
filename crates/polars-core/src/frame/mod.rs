@@ -2881,7 +2881,7 @@ impl DataFrame {
                 }
             }
         }
-        let mut ca = IdxCa::mmap_slice(PlSmallStr::const_default(), idx);
+        let mut ca = IdxCa::mmap_slice(PlSmallStr::EMPTY, idx);
         ca.set_sorted_flag(sorted);
         self.take_unchecked_impl(&ca, allow_threads)
     }
@@ -3133,10 +3133,10 @@ mod test {
     #[test]
     #[cfg_attr(miri, ignore)]
     fn test_filter_broadcast_on_list_col() {
-        let s1 = Series::new(PlSmallStr::const_default(), [true, false, true]);
+        let s1 = Series::new(PlSmallStr::EMPTY, [true, false, true]);
         let ll: ListChunked = [&s1].iter().copied().collect();
 
-        let mask = BooleanChunked::from_slice(PlSmallStr::const_default(), &[false]);
+        let mask = BooleanChunked::from_slice(PlSmallStr::EMPTY, &[false]);
         let new = ll.filter(&mask).unwrap();
 
         assert_eq!(new.chunks.len(), 1);

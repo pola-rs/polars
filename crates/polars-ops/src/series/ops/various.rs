@@ -94,7 +94,7 @@ pub trait SeriesMethods: SeriesSealed {
         #[cfg(feature = "dtype-struct")]
         if matches!(s.dtype(), DataType::Struct(_)) {
             let encoded = _get_rows_encoded_ca(
-                PlSmallStr::const_default(),
+                PlSmallStr::EMPTY,
                 &[s.clone()],
                 &[options.descending],
                 &[options.nulls_last],

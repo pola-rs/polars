@@ -1354,11 +1354,8 @@ Series: 'Date' [date]
             format!("{:?}", s.into_series())
         );
 
-        let s = Int64Chunked::new(
-            PlSmallStr::const_default(),
-            &[Some(1), None, Some(1_000_000_000_000)],
-        )
-        .into_datetime(TimeUnit::Nanoseconds, None);
+        let s = Int64Chunked::new(PlSmallStr::EMPTY, &[Some(1), None, Some(1_000_000_000_000)])
+            .into_datetime(TimeUnit::Nanoseconds, None);
         assert_eq!(
             r#"shape: (3,)
 Series: '' [datetime[ns]]

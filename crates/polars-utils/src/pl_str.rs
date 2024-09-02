@@ -1,71 +1,56 @@
-use std::sync::Arc;
-
-use once_cell::sync::Lazy;
-
 #[macro_export]
 macro_rules! format_pl_smallstr {
     ($($arg:tt)*) => {{
         use std::fmt::Write;
 
-        // TODO: Optimize
         let mut string = String::new();
         write!(string, $($arg)*).unwrap();
         PlSmallStr::from_string(string)
     }}
 }
 
+type Inner = compact_str::CompactString;
+
 /// String type that interns small strings and has O(1) clone.
 #[derive(Clone, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct PlSmallStr(Arc<str>);
+pub struct PlSmallStr(Inner);
 
 impl PlSmallStr {
-    /// Initialize an empty string ""
-    /// TODO: make this a `const fn`
-    #[inline(always)]
-    pub fn const_default() -> Self {
-        Self::empty_static().clone()
-    }
+    pub const EMPTY: Self = Self::from_static("");
+    pub const EMPTY_REF: &'static Self = &Self::from_static("");
 
-    /// This is a workaround until `const_default` becomes a const fn
     #[inline(always)]
-    pub fn empty_static() -> &'static Self {
-        static THIS: Lazy<PlSmallStr> = Lazy::new(|| PlSmallStr::from_static(""));
-        &THIS
-    }
-
-    /// TODO: make this a `const fn`
-    #[inline(always)]
-    pub fn from_static(s: &'static str) -> Self {
-        Self(Arc::from(s))
+    pub const fn from_static(s: &'static str) -> Self {
+        Self(Inner::const_new(s))
     }
 
     #[inline(always)]
     #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Self {
-        Self(Arc::from(s))
+        Self(Inner::from(s))
     }
 
     #[inline(always)]
     pub fn from_string(s: String) -> Self {
-        Self(Arc::from(s))
+        Self(Inner::from(s))
     }
 
     #[inline(always)]
     pub fn as_str(&self) -> &str {
-        self.0.as_ref()
+        self.0.as_str()
     }
 
     #[inline(always)]
     pub fn into_string(self) -> String {
-        self.0.to_string()
+        self.0.into_string()
     }
 }
 
 impl Default for PlSmallStr {
     #[inline(always)]
     fn default() -> Self {
-        Self::const_default()
+        Self::EMPTY
     }
 }
 
@@ -97,18 +82,21 @@ impl core::borrow::Borrow<str> for PlSmallStr {
 /// AsRef impls for other types
 
 impl AsRef<std::path::Path> for PlSmallStr {
+    #[inline(always)]
     fn as_ref(&self) -> &std::path::Path {
         self.as_str().as_ref()
     }
 }
 
 impl AsRef<[u8]> for PlSmallStr {
+    #[inline(always)]
     fn as_ref(&self) -> &[u8] {
         self.as_str().as_bytes()
     }
 }
 
 impl AsRef<std::ffi::OsStr> for PlSmallStr {
+    #[inline(always)]
     fn as_ref(&self) -> &std::ffi::OsStr {
         self.as_str().as_ref()
     }

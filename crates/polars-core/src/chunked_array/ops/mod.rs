@@ -549,7 +549,7 @@ impl ChunkExpandAtIndex<StructType> for StructChunked {
                 .values()
                 .iter()
                 .map(|arr| {
-                    let s = Series::try_from((PlSmallStr::const_default(), arr.clone())).unwrap();
+                    let s = Series::try_from((PlSmallStr::EMPTY, arr.clone())).unwrap();
                     let s = s.new_from_index(idx, length);
                     s.chunks()[0].clone()
                 })

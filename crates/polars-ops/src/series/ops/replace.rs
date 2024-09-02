@@ -138,10 +138,7 @@ fn replace_by_single_strict(s: &Series, old: &Series, new: &Series) -> PolarsRes
 
     // Transfer validity from `mask` to `out`.
     if mask.null_count() > 0 {
-        out = out.zip_with(
-            &mask,
-            &Series::new_null(PlSmallStr::const_default(), s.len()),
-        )?
+        out = out.zip_with(&mask, &Series::new_null(PlSmallStr::EMPTY, s.len()))?
     }
     Ok(out)
 }

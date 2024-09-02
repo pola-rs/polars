@@ -9,7 +9,7 @@ pub struct AnonymousListBuilder<'a> {
 
 impl Default for AnonymousListBuilder<'_> {
     fn default() -> Self {
-        Self::new(PlSmallStr::const_default(), 0, None)
+        Self::new(PlSmallStr::EMPTY, 0, None)
     }
 }
 
@@ -91,7 +91,7 @@ impl<'a> AnonymousListBuilder<'a> {
                 Some(dt) => DataType::List(Box::new(dt)),
             };
 
-            let mut ca = ListChunked::with_chunk(PlSmallStr::const_default(), arr);
+            let mut ca = ListChunked::with_chunk(PlSmallStr::EMPTY, arr);
             if slf.fast_explode {
                 ca.set_fast_explode();
             }
@@ -111,7 +111,7 @@ pub struct AnonymousOwnedListBuilder {
 
 impl Default for AnonymousOwnedListBuilder {
     fn default() -> Self {
-        Self::new(PlSmallStr::const_default(), 0, None)
+        Self::new(PlSmallStr::EMPTY, 0, None)
     }
 }
 
@@ -151,7 +151,7 @@ impl ListBuilderTrait for AnonymousOwnedListBuilder {
             Some(dt) => DataType::List(Box::new(dt)),
         };
 
-        let mut ca = ListChunked::with_chunk(PlSmallStr::const_default(), arr);
+        let mut ca = ListChunked::with_chunk(PlSmallStr::EMPTY, arr);
         if slf.fast_explode {
             ca.set_fast_explode();
         }

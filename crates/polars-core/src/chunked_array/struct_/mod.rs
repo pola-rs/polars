@@ -110,7 +110,7 @@ impl StructChunked {
             }
             constructor(name, &new_fields)
         } else if fields.is_empty() {
-            let fields = &[Series::new_null(PlSmallStr::const_default(), 0)];
+            let fields = &[Series::new_null(PlSmallStr::EMPTY, 0)];
             constructor(name, fields)
         } else {
             constructor(name, fields)

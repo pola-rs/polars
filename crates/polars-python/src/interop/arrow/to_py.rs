@@ -20,7 +20,7 @@ pub(crate) fn to_py_array(
     pyarrow: &Bound<PyModule>,
 ) -> PyResult<PyObject> {
     let schema = Box::new(ffi::export_field_to_c(&ArrowField::new(
-        PlSmallStr::const_default(),
+        PlSmallStr::EMPTY,
         array.data_type().clone(),
         true,
     )));
@@ -103,7 +103,7 @@ impl DataFrameStreamIterator {
     }
 
     fn field(&self) -> ArrowField {
-        ArrowField::new(PlSmallStr::const_default(), self.data_type.clone(), false)
+        ArrowField::new(PlSmallStr::EMPTY, self.data_type.clone(), false)
     }
 }
 

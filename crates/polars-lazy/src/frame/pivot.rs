@@ -22,7 +22,7 @@ impl PhysicalAggExpr for PivotExpr {
         let state = ExecutionState::new();
         let dtype = df.get_columns()[0].dtype();
         let phys_expr = prepare_expression_for_context(
-            PlSmallStr::const_default(),
+            PlSmallStr::EMPTY,
             &self.0,
             dtype,
             Context::Aggregation,
@@ -33,7 +33,7 @@ impl PhysicalAggExpr for PivotExpr {
     }
 
     fn root_name(&self) -> PolarsResult<&PlSmallStr> {
-        Ok(PlSmallStr::empty_static())
+        Ok(PlSmallStr::EMPTY_REF)
     }
 }
 

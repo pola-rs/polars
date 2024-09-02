@@ -40,10 +40,7 @@ impl PhysicalPipedExpr for Len {
     fn evaluate(&self, chunk: &DataChunk, _lazy_state: &ExecutionState) -> PolarsResult<Series> {
         // the length must match the chunks as the operators expect that
         // so we fill a null series.
-        Ok(Series::new_null(
-            PlSmallStr::const_default(),
-            chunk.data.height(),
-        ))
+        Ok(Series::new_null(PlSmallStr::EMPTY, chunk.data.height()))
     }
 
     fn field(&self, _input_schema: &Schema) -> PolarsResult<Field> {

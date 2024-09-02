@@ -42,7 +42,7 @@ fn count_bits_set_by_offsets(values: &Bitmap, offset: &[i64]) -> Vec<IdxSize> {
 
 #[cfg(feature = "list_count")]
 pub fn list_count_matches(ca: &ListChunked, value: AnyValue) -> PolarsResult<Series> {
-    let value = Series::new(PlSmallStr::const_default(), [value]);
+    let value = Series::new(PlSmallStr::EMPTY, [value]);
 
     let ca = ca.apply_to_inner(&|s| {
         ChunkCompare::<&Series>::equal_missing(&s, &value).map(|ca| ca.into_series())

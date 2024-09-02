@@ -106,8 +106,7 @@ mod inner_mod {
 
             let len = self.len();
             let arr = ca.downcast_iter().next().unwrap();
-            let mut ca =
-                ChunkedArray::<T>::from_slice(PlSmallStr::const_default(), &[T::Native::zero()]);
+            let mut ca = ChunkedArray::<T>::from_slice(PlSmallStr::EMPTY, &[T::Native::zero()]);
             let ptr = ca.chunks[0].as_mut() as *mut dyn Array as *mut PrimitiveArray<T::Native>;
             let mut series_container = ca.into_series();
 
@@ -232,7 +231,7 @@ mod inner_mod {
             // container where we swap the window contents every iteration doing
             // so will save a lot of heap allocations.
             let mut heap_container =
-                ChunkedArray::<T>::from_slice(PlSmallStr::const_default(), &[T::Native::zero()]);
+                ChunkedArray::<T>::from_slice(PlSmallStr::EMPTY, &[T::Native::zero()]);
             let ptr = heap_container.chunks[0].as_mut() as *mut dyn Array
                 as *mut PrimitiveArray<T::Native>;
 

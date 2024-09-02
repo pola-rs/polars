@@ -235,7 +235,7 @@ mod test {
 
     #[test]
     fn test_binary_search_cmp() {
-        let mut s = Series::new(PlSmallStr::const_default(), &[1, 1, 2, 2, 4, 8]);
+        let mut s = Series::new(PlSmallStr::EMPTY, &[1, 1, 2, 2, 4, 8]);
         s.set_sorted_flag(IsSorted::Ascending);
         let out = s.gt(10).unwrap();
         assert!(!out.any());
@@ -246,18 +246,12 @@ mod test {
         let out = s.gt(2).unwrap();
         assert_eq!(
             out.into_series(),
-            Series::new(
-                PlSmallStr::const_default(),
-                [false, false, false, false, true, true]
-            )
+            Series::new(PlSmallStr::EMPTY, [false, false, false, false, true, true])
         );
         let out = s.gt(3).unwrap();
         assert_eq!(
             out.into_series(),
-            Series::new(
-                PlSmallStr::const_default(),
-                [false, false, false, false, true, true]
-            )
+            Series::new(PlSmallStr::EMPTY, [false, false, false, false, true, true])
         );
 
         let out = s.gt_eq(10).unwrap();
@@ -268,18 +262,12 @@ mod test {
         let out = s.gt_eq(2).unwrap();
         assert_eq!(
             out.into_series(),
-            Series::new(
-                PlSmallStr::const_default(),
-                [false, false, true, true, true, true]
-            )
+            Series::new(PlSmallStr::EMPTY, [false, false, true, true, true, true])
         );
         let out = s.gt_eq(3).unwrap();
         assert_eq!(
             out.into_series(),
-            Series::new(
-                PlSmallStr::const_default(),
-                [false, false, false, false, true, true]
-            )
+            Series::new(PlSmallStr::EMPTY, [false, false, false, false, true, true])
         );
 
         let out = s.lt(10).unwrap();
@@ -290,18 +278,12 @@ mod test {
         let out = s.lt(2).unwrap();
         assert_eq!(
             out.into_series(),
-            Series::new(
-                PlSmallStr::const_default(),
-                [true, true, false, false, false, false]
-            )
+            Series::new(PlSmallStr::EMPTY, [true, true, false, false, false, false])
         );
         let out = s.lt(3).unwrap();
         assert_eq!(
             out.into_series(),
-            Series::new(
-                PlSmallStr::const_default(),
-                [true, true, true, true, false, false]
-            )
+            Series::new(PlSmallStr::EMPTY, [true, true, true, true, false, false])
         );
 
         let out = s.lt_eq(10).unwrap();
@@ -312,18 +294,12 @@ mod test {
         let out = s.lt_eq(2).unwrap();
         assert_eq!(
             out.into_series(),
-            Series::new(
-                PlSmallStr::const_default(),
-                [true, true, true, true, false, false]
-            )
+            Series::new(PlSmallStr::EMPTY, [true, true, true, true, false, false])
         );
         let out = s.lt(3).unwrap();
         assert_eq!(
             out.into_series(),
-            Series::new(
-                PlSmallStr::const_default(),
-                [true, true, true, true, false, false]
-            )
+            Series::new(PlSmallStr::EMPTY, [true, true, true, true, false, false])
         );
     }
 }

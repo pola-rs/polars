@@ -1189,9 +1189,9 @@ mod test {
 
     #[test]
     fn test_align_chunks() -> PolarsResult<()> {
-        let a = Int32Chunked::new(PlSmallStr::const_default(), &[1, 2, 3, 4]);
-        let mut b = Int32Chunked::new(PlSmallStr::const_default(), &[1]);
-        let b2 = Int32Chunked::new(PlSmallStr::const_default(), &[2, 3, 4]);
+        let a = Int32Chunked::new(PlSmallStr::EMPTY, &[1, 2, 3, 4]);
+        let mut b = Int32Chunked::new(PlSmallStr::EMPTY, &[1]);
+        let b2 = Int32Chunked::new(PlSmallStr::EMPTY, &[2, 3, 4]);
 
         b.append(&b2)?;
         let (a, b) = align_chunks_binary(&a, &b);
@@ -1200,8 +1200,8 @@ mod test {
             b.chunk_lengths().collect::<Vec<_>>()
         );
 
-        let a = Int32Chunked::new(PlSmallStr::const_default(), &[1, 2, 3, 4]);
-        let mut b = Int32Chunked::new(PlSmallStr::const_default(), &[1]);
+        let a = Int32Chunked::new(PlSmallStr::EMPTY, &[1, 2, 3, 4]);
+        let mut b = Int32Chunked::new(PlSmallStr::EMPTY, &[1]);
         let b1 = b.clone();
         b.append(&b1)?;
         b.append(&b1)?;

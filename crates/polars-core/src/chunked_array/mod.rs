@@ -951,7 +951,7 @@ pub(crate) fn to_array<T: PolarsNumericType>(
 impl<T: PolarsDataType> Default for ChunkedArray<T> {
     fn default() -> Self {
         ChunkedArray {
-            field: Arc::new(Field::new(PlSmallStr::const_default(), DataType::Null)),
+            field: Arc::new(Field::new(PlSmallStr::EMPTY, DataType::Null)),
             chunks: Default::default(),
             md: Arc::new(IMMetadata::default()),
             length: 0,
@@ -1075,7 +1075,7 @@ pub(crate) mod test {
 
     #[test]
     fn sorting() {
-        let s = UInt32Chunked::new(PlSmallStr::const_default(), &[9, 2, 4]);
+        let s = UInt32Chunked::new(PlSmallStr::EMPTY, &[9, 2, 4]);
         let sorted = s.sort(false);
         assert_slice_equal(&sorted, &[2, 4, 9]);
         let sorted = s.sort(true);
@@ -1102,19 +1102,19 @@ pub(crate) mod test {
 
     #[test]
     fn reverse() {
-        let s = UInt32Chunked::new(PlSmallStr::const_default(), &[1, 2, 3]);
+        let s = UInt32Chunked::new(PlSmallStr::EMPTY, &[1, 2, 3]);
         // path with continuous slice
         assert_slice_equal(&s.reverse(), &[3, 2, 1]);
         // path with options
-        let s = UInt32Chunked::new(PlSmallStr::const_default(), &[Some(1), None, Some(3)]);
+        let s = UInt32Chunked::new(PlSmallStr::EMPTY, &[Some(1), None, Some(3)]);
         assert_eq!(Vec::from(&s.reverse()), &[Some(3), None, Some(1)]);
-        let s = BooleanChunked::new(PlSmallStr::const_default(), &[true, false]);
+        let s = BooleanChunked::new(PlSmallStr::EMPTY, &[true, false]);
         assert_eq!(Vec::from(&s.reverse()), &[Some(false), Some(true)]);
 
-        let s = StringChunked::new(PlSmallStr::const_default(), &["a", "b", "c"]);
+        let s = StringChunked::new(PlSmallStr::EMPTY, &["a", "b", "c"]);
         assert_eq!(Vec::from(&s.reverse()), &[Some("c"), Some("b"), Some("a")]);
 
-        let s = StringChunked::new(PlSmallStr::const_default(), &[Some("a"), None, Some("c")]);
+        let s = StringChunked::new(PlSmallStr::EMPTY, &[Some("a"), None, Some("c")]);
         assert_eq!(Vec::from(&s.reverse()), &[Some("c"), None, Some("a")]);
     }
 
@@ -1125,7 +1125,7 @@ pub(crate) mod test {
         let _lock = SINGLE_LOCK.lock();
         disable_string_cache();
         let ca = StringChunked::new(
-            PlSmallStr::const_default(),
+            PlSmallStr::EMPTY,
             &[Some("foo"), None, Some("bar"), Some("ham")],
         );
         let ca = ca

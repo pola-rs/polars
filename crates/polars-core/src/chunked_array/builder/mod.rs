@@ -46,7 +46,7 @@ where
         let chunks = iter
             .into_iter()
             .map(|(values, opt_buffer)| to_primitive::<T>(values, opt_buffer));
-        ChunkedArray::from_chunk_iter(PlSmallStr::const_default(), chunks)
+        ChunkedArray::from_chunk_iter(PlSmallStr::EMPTY, chunks)
     }
 }
 

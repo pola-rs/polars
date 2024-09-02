@@ -272,13 +272,13 @@ mod test {
         let mut builder = get_list_builder(&DataType::Int32, 5, 5, PlSmallStr::from_static("a"))?;
 
         builder
-            .append_series(&Series::new(PlSmallStr::const_default(), &[1, 2, 3, 3]))
+            .append_series(&Series::new(PlSmallStr::EMPTY, &[1, 2, 3, 3]))
             .unwrap();
         builder
-            .append_series(&Series::new(PlSmallStr::const_default(), &[1]))
+            .append_series(&Series::new(PlSmallStr::EMPTY, &[1]))
             .unwrap();
         builder
-            .append_series(&Series::new(PlSmallStr::const_default(), &[2]))
+            .append_series(&Series::new(PlSmallStr::EMPTY, &[2]))
             .unwrap();
 
         let ca = builder.finish();
@@ -302,15 +302,13 @@ mod test {
         // primitive
         let mut builder = get_list_builder(&DataType::Int32, 5, 5, PlSmallStr::from_static("a"))?;
         builder
-            .append_series(&Series::new(PlSmallStr::const_default(), &[1i32, 2]))
+            .append_series(&Series::new(PlSmallStr::EMPTY, &[1i32, 2]))
             .unwrap();
         builder
-            .append_series(
-                &Int32Chunked::from_slice(PlSmallStr::const_default(), &[]).into_series(),
-            )
+            .append_series(&Int32Chunked::from_slice(PlSmallStr::EMPTY, &[]).into_series())
             .unwrap();
         builder
-            .append_series(&Series::new(PlSmallStr::const_default(), &[3i32]))
+            .append_series(&Series::new(PlSmallStr::EMPTY, &[3i32]))
             .unwrap();
 
         let ca = builder.finish();
@@ -323,23 +321,19 @@ mod test {
         // more primitive
         let mut builder = get_list_builder(&DataType::Int32, 5, 5, PlSmallStr::from_static("a"))?;
         builder
-            .append_series(&Series::new(PlSmallStr::const_default(), &[1i32]))
+            .append_series(&Series::new(PlSmallStr::EMPTY, &[1i32]))
             .unwrap();
         builder
-            .append_series(
-                &Int32Chunked::from_slice(PlSmallStr::const_default(), &[]).into_series(),
-            )
+            .append_series(&Int32Chunked::from_slice(PlSmallStr::EMPTY, &[]).into_series())
             .unwrap();
         builder
-            .append_series(&Series::new(PlSmallStr::const_default(), &[2i32]))
+            .append_series(&Series::new(PlSmallStr::EMPTY, &[2i32]))
             .unwrap();
         builder
-            .append_series(
-                &Int32Chunked::from_slice(PlSmallStr::const_default(), &[]).into_series(),
-            )
+            .append_series(&Int32Chunked::from_slice(PlSmallStr::EMPTY, &[]).into_series())
             .unwrap();
         builder
-            .append_series(&Series::new(PlSmallStr::const_default(), &[3, 4i32]))
+            .append_series(&Series::new(PlSmallStr::EMPTY, &[3, 4i32]))
             .unwrap();
 
         let ca = builder.finish();
@@ -352,36 +346,36 @@ mod test {
         // string
         let mut builder = get_list_builder(&DataType::String, 5, 5, PlSmallStr::from_static("a"))?;
         builder
-            .append_series(&Series::new(PlSmallStr::const_default(), &["abc"]))
+            .append_series(&Series::new(PlSmallStr::EMPTY, &["abc"]))
             .unwrap();
         builder
             .append_series(
                 &<StringChunked as NewChunkedArray<StringType, &str>>::from_slice(
-                    PlSmallStr::const_default(),
+                    PlSmallStr::EMPTY,
                     &[],
                 )
                 .into_series(),
             )
             .unwrap();
         builder
-            .append_series(&Series::new(PlSmallStr::const_default(), &["de"]))
+            .append_series(&Series::new(PlSmallStr::EMPTY, &["de"]))
             .unwrap();
         builder
             .append_series(
                 &<StringChunked as NewChunkedArray<StringType, &str>>::from_slice(
-                    PlSmallStr::const_default(),
+                    PlSmallStr::EMPTY,
                     &[],
                 )
                 .into_series(),
             )
             .unwrap();
         builder
-            .append_series(&Series::new(PlSmallStr::const_default(), &["fg"]))
+            .append_series(&Series::new(PlSmallStr::EMPTY, &["fg"]))
             .unwrap();
         builder
             .append_series(
                 &<StringChunked as NewChunkedArray<StringType, &str>>::from_slice(
-                    PlSmallStr::const_default(),
+                    PlSmallStr::EMPTY,
                     &[],
                 )
                 .into_series(),
@@ -398,23 +392,19 @@ mod test {
         // boolean
         let mut builder = get_list_builder(&DataType::Boolean, 5, 5, PlSmallStr::from_static("a"))?;
         builder
-            .append_series(&Series::new(PlSmallStr::const_default(), &[true]))
+            .append_series(&Series::new(PlSmallStr::EMPTY, &[true]))
             .unwrap();
         builder
-            .append_series(
-                &BooleanChunked::from_slice(PlSmallStr::const_default(), &[]).into_series(),
-            )
+            .append_series(&BooleanChunked::from_slice(PlSmallStr::EMPTY, &[]).into_series())
             .unwrap();
         builder
-            .append_series(&Series::new(PlSmallStr::const_default(), &[false]))
+            .append_series(&Series::new(PlSmallStr::EMPTY, &[false]))
             .unwrap();
         builder
-            .append_series(
-                &BooleanChunked::from_slice(PlSmallStr::const_default(), &[]).into_series(),
-            )
+            .append_series(&BooleanChunked::from_slice(PlSmallStr::EMPTY, &[]).into_series())
             .unwrap();
         builder
-            .append_series(&Series::new(PlSmallStr::const_default(), &[true, true]))
+            .append_series(&Series::new(PlSmallStr::EMPTY, &[true, true]))
             .unwrap();
 
         let ca = builder.finish();

@@ -40,6 +40,7 @@ bytes = { version = "1.7" }
 chrono = { version = "0.4.31", default-features = false, features = ["std"] }
 chrono-tz = "0.8.1"
 ciborium = "0.2"
+compact_str = { version = "0.8.0", features = ["serde"] }
 crossbeam-channel = "0.5.8"
 crossbeam-deque = "0.8.5"
 crossbeam-queue = "0.3"

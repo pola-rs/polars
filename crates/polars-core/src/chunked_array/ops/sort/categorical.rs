@@ -124,7 +124,7 @@ mod test {
                 enable_string_cache();
             }
 
-            let s = Series::new(PlSmallStr::const_default(), init)
+            let s = Series::new(PlSmallStr::EMPTY, init)
                 .cast(&DataType::Categorical(None, CategoricalOrdering::Lexical))?;
             let ca = s.categorical()?;
             let ca_lexical = ca.clone();
@@ -132,7 +132,7 @@ mod test {
             let out = ca_lexical.sort(false);
             assert_order(&out, &["a", "b", "c", "d"]);
 
-            let s = Series::new(PlSmallStr::const_default(), init)
+            let s = Series::new(PlSmallStr::EMPTY, init)
                 .cast(&DataType::Categorical(None, Default::default()))?;
             let ca = s.categorical()?;
 
@@ -160,7 +160,7 @@ mod test {
                 enable_string_cache();
             }
 
-            let s = Series::new(PlSmallStr::const_default(), init)
+            let s = Series::new(PlSmallStr::EMPTY, init)
                 .cast(&DataType::Categorical(None, CategoricalOrdering::Lexical))?;
             let ca = s.categorical()?;
             let ca_lexical: CategoricalChunked = ca.clone();
