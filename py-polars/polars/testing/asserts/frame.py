@@ -70,11 +70,10 @@ def assert_frame_equal(
     >>> from polars.testing import assert_frame_equal
     >>> df1 = pl.DataFrame({"a": [1, 2, 3]})
     >>> df2 = pl.DataFrame({"a": [1, 5, 3]})
-    >>> try:
-    ...     assert_frame_equal(df1, df2)
-    ... except AssertionError as e:
-    ...     print(e)
-    DataFrames are different (value mismatch for column 'a')
+    >>> assert_frame_equal(df1, df2)
+    Traceback (most recent call last):
+    ...
+    AssertionError: DataFrames are different (value mismatch for column 'a')
     [left]:  [1, 2, 3]
     [right]: [1, 5, 3]
     """
@@ -245,11 +244,10 @@ def assert_frame_not_equal(
     >>> from polars.testing import assert_frame_not_equal
     >>> df1 = pl.DataFrame({"a": [1, 2, 3]})
     >>> df2 = pl.DataFrame({"a": [1, 2, 3]})
-    >>> try:
-    ...     assert_frame_not_equal(df1, df2)
-    ... except AssertionError as e:
-    ...     print(e)
-    DataFrames are equal (but are expected not to be)
+    >>> assert_frame_not_equal(df1, df2)
+    Traceback (most recent call last):
+    ...
+    AssertionError: DataFrames are equal (but are expected not to be)
     """
     __tracebackhide__ = True
 
