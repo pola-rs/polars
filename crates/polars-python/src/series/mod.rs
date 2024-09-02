@@ -17,6 +17,8 @@ mod general;
 #[cfg(feature = "pymethods")]
 mod import;
 #[cfg(feature = "pymethods")]
+mod map;
+#[cfg(feature = "pymethods")]
 mod numpy_ufunc;
 #[cfg(feature = "pymethods")]
 mod scatter;
