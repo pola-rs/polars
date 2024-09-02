@@ -3954,7 +3954,7 @@ class Series:
 
         See Also
         --------
-        assert_series_equal
+        polars.testing.assert_series_equal
 
         Examples
         --------

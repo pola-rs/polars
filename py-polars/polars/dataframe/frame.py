@@ -5357,7 +5357,7 @@ class DataFrame:
 
         See Also
         --------
-        assert_frame_equal
+        polars.testing.assert_frame_equal
 
         Examples
         --------
