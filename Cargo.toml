@@ -40,6 +40,7 @@ bytes = { version = "1.7" }
 chrono = { version = "0.4.31", default-features = false, features = ["std"] }
 chrono-tz = "0.8.1"
 ciborium = "0.2"
+compact_str = { version = "0.8.0", features = ["serde"] }
 crossbeam-channel = "0.5.8"
 crossbeam-deque = "0.8.5"
 crossbeam-queue = "0.3"
@@ -55,7 +56,6 @@ hex = "0.4.3"
 indexmap = { version = "2", features = ["std"] }
 itoa = "1.0.6"
 itoap = { version = "1", features = ["simd"] }
-kstring = { version = "2.0.2", default-features = false, features = ["std", "unsafe", "max_inline", "serde"] }
 libc = "0.2"
 memchr = "2.6"
 memmap = { package = "memmap2", version = "0.7" }

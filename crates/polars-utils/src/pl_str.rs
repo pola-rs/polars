@@ -9,7 +9,7 @@ macro_rules! format_pl_smallstr {
     }}
 }
 
-type Inner = kstring::KStringBase<kstring::backend::ArcStr>;
+type Inner = compact_str::CompactString;
 
 /// String type that interns small strings and has O(1) clone.
 #[derive(Clone, Eq, Hash, PartialOrd, Ord)]
@@ -17,23 +17,23 @@ type Inner = kstring::KStringBase<kstring::backend::ArcStr>;
 pub struct PlSmallStr(Inner);
 
 impl PlSmallStr {
-    pub const EMPTY: Self = Self(Inner::EMPTY);
-    pub const EMPTY_REF: &'static Self = &Self(Inner::EMPTY);
+    pub const EMPTY: Self = Self::from_static("");
+    pub const EMPTY_REF: &'static Self = &Self::from_static("");
 
     #[inline(always)]
     pub const fn from_static(s: &'static str) -> Self {
-        Self(Inner::from_static(s))
+        Self(Inner::const_new(s))
     }
 
     #[inline(always)]
     #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Self {
-        Self(Inner::from_ref(s))
+        Self(Inner::from(s))
     }
 
     #[inline(always)]
     pub fn from_string(s: String) -> Self {
-        Self(Inner::from_string(s))
+        Self(Inner::from(s))
     }
 
     #[inline(always)]
