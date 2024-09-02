@@ -5,6 +5,7 @@ use std::ops::{Deref, Range};
 use arrow::array::BooleanArray;
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowSchemaRef;
+use polars_core::chunked_array::builder::NullChunkedBuilder;
 use polars_core::prelude::*;
 use polars_core::utils::{accumulate_dataframes_vertical, split_df};
 use polars_core::POOL;
@@ -151,6 +152,20 @@ fn rg_to_dfs(
     use_statistics: bool,
     hive_partition_columns: Option<&[Series]>,
 ) -> PolarsResult<Vec<DataFrame>> {
+    // If we are only interested in the row_index, we take a little special path here.
+    if projection.is_empty() {
+        if let Some(row_index) = row_index {
+            let placeholder =
+                NullChunkedBuilder::new(PlSmallStr::from_static("__PL_TMP"), slice.1).finish();
+            return Ok(vec![DataFrame::new(vec![placeholder.into_series()])?
+                .with_row_index(
+                    row_index.name.clone(),
+                    Some(row_index.offset + IdxSize::try_from(slice.0).unwrap()),
+                )?
+                .select(std::iter::once(row_index.name))?]);
+        }
+    }
+
     use ParallelStrategy as S;
 
     if parallel == S::Prefiltered {
