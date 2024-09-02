@@ -8235,6 +8235,8 @@ class DataFrame:
 
         Examples
         --------
+        >>> import polars as pl
+        >>> import polars.selectors as cs
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": ["x", "y", "z"],
@@ -8242,7 +8244,17 @@ class DataFrame:
         ...         "c": [2, 4, 6],
         ...     }
         ... )
-        >>> import polars.selectors as cs
+        >>> df
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ x   ┆ 1   ┆ 2   │
+        │ y   ┆ 3   ┆ 4   │
+        │ z   ┆ 5   ┆ 6   │
+        └─────┴─────┴─────┘
         >>> df.unpivot(cs.numeric(), index="a")
         shape: (6, 3)
         ┌─────┬──────────┬───────┐
@@ -8257,6 +8269,54 @@ class DataFrame:
         │ y   ┆ c        ┆ 4     │
         │ z   ┆ c        ┆ 6     │
         └─────┴──────────┴───────┘
+
+        To unpivot multiple sets of value columns,
+        join them into a single `pl.Struct` column, `unpivot` one struct column,
+        then `unnest` the struct.
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "PRODUCT": ["x", "y", "z"],
+        ...         "QUANTITY1": ["xq1", "yq1", "zq1"],
+        ...         "QUANTITY2": ["xq2", "yq2", "zq2"],
+        ...         "PRICE1": ["xp1", "yp1", "zp1"],
+        ...         "PRICE2": ["xp2", "yp2", "zp2"],
+        ...     }
+        ... )
+        >>> df
+        shape: (3, 5)
+        ┌─────────┬───────────┬───────────┬────────┬────────┐
+        │ PRODUCT ┆ QUANTITY1 ┆ QUANTITY2 ┆ PRICE1 ┆ PRICE2 │
+        │ ---     ┆ ---       ┆ ---       ┆ ---    ┆ ---    │
+        │ str     ┆ str       ┆ str       ┆ str    ┆ str    │
+        ╞═════════╪═══════════╪═══════════╪════════╪════════╡
+        │ x       ┆ xq1       ┆ xq2       ┆ xp1    ┆ xp2    │
+        │ y       ┆ yq1       ┆ yq2       ┆ yp1    ┆ yp2    │
+        │ z       ┆ zq1       ┆ zq2       ┆ zp1    ┆ zp2    │
+        └─────────┴───────────┴───────────┴────────┴────────┘
+        >>> (
+        ...     df
+        ...     .select(
+        ...         "PRODUCT",
+        ...         pl.struct(QTY="QUANTITY1", PRICE="PRICE1").alias("PQ1"),
+        ...         pl.struct(QTY="QUANTITY2", PRICE="PRICE2").alias("PQ2")
+        ...     )
+        ...     .unpivot(cs.numeric(), index="PRODUCT")
+        ...     .unnest("value")
+        ... )
+        shape: (6, 4)
+        ┌─────────┬──────────┬─────┬───────┐
+        │ PRODUCT ┆ variable ┆ QTY ┆ PRICE │
+        │ ---     ┆ ---      ┆ --- ┆ ---   │
+        │ str     ┆ str      ┆ str ┆ str   │
+        ╞═════════╪══════════╪═════╪═══════╡
+        │ x       ┆ PQ1      ┆ xq1 ┆ xp1   │
+        │ y       ┆ PQ1      ┆ yq1 ┆ yp1   │
+        │ z       ┆ PQ1      ┆ zq1 ┆ zp1   │
+        │ x       ┆ PQ2      ┆ xq2 ┆ xp2   │
+        │ y       ┆ PQ2      ┆ yq2 ┆ yp2   │
+        │ z       ┆ PQ2      ┆ zq2 ┆ zp2   │
+        └─────────┴──────────┴─────┴───────┘
         """
         on = [] if on is None else _expand_selectors(self, on)
         index = [] if index is None else _expand_selectors(self, index)
