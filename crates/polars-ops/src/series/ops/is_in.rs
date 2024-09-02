@@ -574,7 +574,7 @@ fn is_in_string_categorical(
     // In case of fast unique, we can directly use the categories. Otherwise we need to
     // first get the unique physicals
     let categories = StringChunked::with_chunk(
-        PlSmallStr::const_default(),
+        PlSmallStr::EMPTY,
         other.get_rev_map().get_categories().clone(),
     );
     let other = if other._can_fast_unique() {

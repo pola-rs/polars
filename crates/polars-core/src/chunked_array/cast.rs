@@ -617,7 +617,7 @@ fn cast_list(
     // SAFETY: inner dtype is passed correctly
     let s = unsafe {
         Series::from_chunks_and_dtype_unchecked(
-            PlSmallStr::const_default(),
+            PlSmallStr::EMPTY,
             vec![arr.values().clone()],
             ca.inner_dtype(),
         )
@@ -646,7 +646,7 @@ unsafe fn cast_list_unchecked(ca: &ListChunked, child_type: &DataType) -> Polars
     // SAFETY: inner dtype is passed correctly
     let s = unsafe {
         Series::from_chunks_and_dtype_unchecked(
-            PlSmallStr::const_default(),
+            PlSmallStr::EMPTY,
             vec![arr.values().clone()],
             ca.inner_dtype(),
         )
@@ -682,7 +682,7 @@ fn cast_fixed_size_list(
     // SAFETY: inner dtype is passed correctly
     let s = unsafe {
         Series::from_chunks_and_dtype_unchecked(
-            PlSmallStr::const_default(),
+            PlSmallStr::EMPTY,
             vec![arr.values().clone()],
             ca.inner_dtype(),
         )

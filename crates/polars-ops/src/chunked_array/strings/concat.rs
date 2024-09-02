@@ -61,7 +61,7 @@ pub fn hor_str_concat(
     ignore_nulls: bool,
 ) -> PolarsResult<StringChunked> {
     if cas.is_empty() {
-        return Ok(StringChunked::full_null(PlSmallStr::const_default(), 0));
+        return Ok(StringChunked::full_null(PlSmallStr::EMPTY, 0));
     }
     if cas.len() == 1 {
         let ca = cas[0];

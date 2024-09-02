@@ -186,7 +186,7 @@ unsafe fn mmap_dictionary<T: AsRef<[u8]>>(
     };
 
     // Make a fake schema for the dictionary batch.
-    let field = Field::new(PlSmallStr::const_default(), value_type.clone(), false);
+    let field = Field::new(PlSmallStr::EMPTY, value_type.clone(), false);
 
     let chunk = _mmap_record(
         &[field],

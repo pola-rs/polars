@@ -191,9 +191,7 @@ impl Sink for SortSink {
             let mut lock = self.io_thread.write().unwrap();
             let io_thread = lock.take().unwrap();
 
-            let dist =
-                Series::from_any_values(PlSmallStr::const_default(), &self.dist_sample, true)
-                    .unwrap();
+            let dist = Series::from_any_values(PlSmallStr::EMPTY, &self.dist_sample, true).unwrap();
             let dist = dist.sort_with(SortOptions::from(&self.sort_options))?;
 
             let instant = self.ooc_start.unwrap();

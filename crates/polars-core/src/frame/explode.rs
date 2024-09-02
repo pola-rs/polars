@@ -102,7 +102,7 @@ impl DataFrame {
             let (exploded, offsets) = &exploded_columns[0];
 
             let row_idx = offsets_to_indexes(offsets.as_slice(), exploded.len());
-            let mut row_idx = IdxCa::from_vec(PlSmallStr::const_default(), row_idx);
+            let mut row_idx = IdxCa::from_vec(PlSmallStr::EMPTY, row_idx);
             row_idx.set_sorted_flag(IsSorted::Ascending);
 
             // SAFETY:

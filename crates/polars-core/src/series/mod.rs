@@ -167,10 +167,7 @@ impl Series {
             match self.dtype() {
                 #[cfg(feature = "object")]
                 DataType::Object(_, _) => self
-                    .take(&ChunkedArray::<IdxType>::new_vec(
-                        PlSmallStr::const_default(),
-                        vec![],
-                    ))
+                    .take(&ChunkedArray::<IdxType>::new_vec(PlSmallStr::EMPTY, vec![]))
                     .unwrap(),
                 dt => Series::new_empty(self.name().clone(), dt),
             }
@@ -654,7 +651,7 @@ impl Series {
     pub fn gather_every(&self, n: usize, offset: usize) -> Series {
         let idx = ((offset as IdxSize)..self.len() as IdxSize)
             .step_by(n)
-            .collect_ca(PlSmallStr::const_default());
+            .collect_ca(PlSmallStr::EMPTY);
         // SAFETY: we stay in-bounds.
         unsafe { self.take_unchecked(&idx) }
     }

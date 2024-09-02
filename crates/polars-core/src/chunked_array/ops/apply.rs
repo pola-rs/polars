@@ -519,9 +519,8 @@ impl<'a> ChunkApply<'a, Series> for ListChunked {
         let mut idx = 0;
         self.downcast_iter().for_each(|arr| {
             arr.iter().for_each(|opt_val| {
-                let opt_val = opt_val.map(|arrayref| {
-                    Series::try_from((PlSmallStr::const_default(), arrayref)).unwrap()
-                });
+                let opt_val = opt_val
+                    .map(|arrayref| Series::try_from((PlSmallStr::EMPTY, arrayref)).unwrap());
 
                 // SAFETY:
                 // length asserted above

@@ -131,7 +131,7 @@ fn sort_by_groups_no_match_single<'a>(
                 },
                 _ => Ok(None),
             })
-            .collect_ca_with_dtype(PlSmallStr::const_default(), dtype)
+            .collect_ca_with_dtype(PlSmallStr::EMPTY, dtype)
     });
     let s = ca?.with_name(s_in.name().clone()).into_series();
     ac_in.with_series(s, true, Some(expr))?;

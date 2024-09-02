@@ -321,7 +321,7 @@ mod test {
         );
 
         let ca = StringChunked::new(
-            PlSmallStr::const_default(),
+            PlSmallStr::EMPTY,
             &[Some("a"), None, Some("a"), Some("b"), None],
         );
         assert_eq!(

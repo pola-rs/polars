@@ -13,7 +13,7 @@ pub(crate) fn eval_field_to_dtype(f: &Field, expr: &Expr, list: bool) -> Field {
         .cloned()
         .unwrap_or_else(|| f.data_type().clone());
 
-    let df = Series::new_empty(PlSmallStr::const_default(), &dtype).into_frame();
+    let df = Series::new_empty(PlSmallStr::EMPTY, &dtype).into_frame();
 
     #[cfg(feature = "python")]
     let out = {
@@ -47,7 +47,7 @@ pub trait ExprEvalExtension: IntoExpr + Sized {
         let expr2 = expr.clone();
         let func = move |mut s: Series| {
             let name = s.name().clone();
-            s.rename(PlSmallStr::const_default());
+            s.rename(PlSmallStr::EMPTY);
 
             // Ensure we get the new schema.
             let output_field = eval_field_to_dtype(s.field().as_ref(), &expr, false);

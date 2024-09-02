@@ -113,7 +113,7 @@ impl WindowExpr {
         // SAFETY:
         // we only have unique indices ranging from 0..len
         unsafe { perfect_sort(&POOL, &idx_mapping, &mut take_idx) };
-        let idx = IdxCa::from_vec(PlSmallStr::const_default(), take_idx);
+        let idx = IdxCa::from_vec(PlSmallStr::EMPTY, take_idx);
 
         // SAFETY:
         // groups should always be in bounds.

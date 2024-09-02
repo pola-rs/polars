@@ -679,10 +679,7 @@ pub trait AsofJoinBy: IntoDf {
 
         // SAFETY: join tuples are in bounds.
         let right_df = unsafe {
-            proj_other_df.take_unchecked(&IdxCa::with_chunk(
-                PlSmallStr::const_default(),
-                right_join_tuples,
-            ))
+            proj_other_df.take_unchecked(&IdxCa::with_chunk(PlSmallStr::EMPTY, right_join_tuples))
         };
 
         _finish_join(left, right_df, suffix)

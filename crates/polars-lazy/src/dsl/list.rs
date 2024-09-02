@@ -51,7 +51,7 @@ fn run_per_sublist(
     output_field: Field,
 ) -> PolarsResult<Option<Series>> {
     let phys_expr = prepare_expression_for_context(
-        PlSmallStr::const_default(),
+        PlSmallStr::EMPTY,
         expr,
         lst.inner_dtype(),
         Context::Default,
@@ -77,7 +77,7 @@ fn run_per_sublist(
                     }
                 })
             })
-            .collect_ca_with_dtype(PlSmallStr::const_default(), output_field.dtype.clone());
+            .collect_ca_with_dtype(PlSmallStr::EMPTY, output_field.dtype.clone());
         err = m_err.into_inner().unwrap();
         ca
     } else {
@@ -123,19 +123,15 @@ fn run_on_group_by_engine(
     let groups = offsets_to_groups(arr.offsets()).unwrap();
 
     // List elements in a series.
-    let values = Series::try_from((PlSmallStr::const_default(), arr.values().clone())).unwrap();
+    let values = Series::try_from((PlSmallStr::EMPTY, arr.values().clone())).unwrap();
     let inner_dtype = lst.inner_dtype();
     // SAFETY:
     // Invariant in List means values physicals can be cast to inner dtype
     let values = unsafe { values.cast_unchecked(inner_dtype).unwrap() };
 
     let df_context = values.into_frame();
-    let phys_expr = prepare_expression_for_context(
-        PlSmallStr::const_default(),
-        expr,
-        inner_dtype,
-        Context::Aggregation,
-    )?;
+    let phys_expr =
+        prepare_expression_for_context(PlSmallStr::EMPTY, expr, inner_dtype, Context::Aggregation)?;
 
     let state = ExecutionState::new();
     let mut ac = phys_expr.evaluate_on_groups(&df_context, &groups, &state)?;
