@@ -54,13 +54,13 @@ pub fn prefetch_l2(slice: &[u8]) {
 }
 
 /// `madvise()` with `MADV_SEQUENTIAL` on unix systems. This is a no-op on non-unix systems.
-pub fn madvise_sequential(slice: &[u8]) {
+pub fn madvise_sequential(#[allow(unused)] slice: &[u8]) {
     #[cfg(target_family = "unix")]
     madvise(slice, libc::MADV_SEQUENTIAL);
 }
 
 /// `madvise()` with `MADV_WILLNEED` on unix systems. This is a no-op on non-unix systems.
-pub fn madvise_willneed(slice: &[u8]) {
+pub fn madvise_willneed(#[allow(unused)] slice: &[u8]) {
     #[cfg(target_family = "unix")]
     madvise(slice, libc::MADV_WILLNEED);
 }
