@@ -6216,7 +6216,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ z   ┆ c        ┆ 6     │
         └─────┴──────────┴───────┘
 
-        To unpivot multiple sets of value columns, 
+        To unpivot multiple sets of value columns,
         join them into a single `pl.Struct` column, `unpivot` one struct column,
         then `unnest` the struct.
 
@@ -6243,8 +6243,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> (
         ...     lf
         ...     .select([
-        ...         "PRODUCT", 
-        ...         pl.struct(QTY="QUANTITY1", PRICE="PRICE1").alias("PQ1"), 
+        ...         "PRODUCT",
+        ...         pl.struct(QTY="QUANTITY1", PRICE="PRICE1").alias("PQ1"),
         ...         pl.struct(QTY="QUANTITY2", PRICE="PRICE2").alias("PQ2")
         ...     ])
         ...     .unpivot(cs.numeric(), index="PRODUCT")
