@@ -12,7 +12,7 @@ impl<T> ObjectChunkedBuilder<T>
 where
     T: PolarsObject,
 {
-    pub fn new(name: &str, capacity: usize) -> Self {
+    pub fn new(name: PlSmallStr, capacity: usize) -> Self {
         ObjectChunkedBuilder {
             field: Field::new(name, DataType::Object(T::type_name(), None)),
             values: Vec::with_capacity(capacity),
@@ -78,7 +78,7 @@ where
 /// Initialize a polars Object data type. The type has got information needed to
 /// construct new objects.
 pub(crate) fn get_object_type<T: PolarsObject>() -> DataType {
-    let object_builder = Box::new(|name: &str, capacity: usize| {
+    let object_builder = Box::new(|name: PlSmallStr, capacity: usize| {
         Box::new(ObjectChunkedBuilder::<T>::new(name, capacity)) as Box<dyn AnonymousObjectBuilder>
     });
 
@@ -94,7 +94,7 @@ where
     T: PolarsObject,
 {
     fn default() -> Self {
-        ObjectChunkedBuilder::new("", 0)
+        ObjectChunkedBuilder::new(PlSmallStr::EMPTY, 0)
     }
 }
 
@@ -102,11 +102,11 @@ impl<T> NewChunkedArray<ObjectType<T>, T> for ObjectChunked<T>
 where
     T: PolarsObject,
 {
-    fn from_slice(name: &str, v: &[T]) -> Self {
+    fn from_slice(name: PlSmallStr, v: &[T]) -> Self {
         Self::from_iter_values(name, v.iter().cloned())
     }
 
-    fn from_slice_options(name: &str, opt_v: &[Option<T>]) -> Self {
+    fn from_slice_options(name: PlSmallStr, opt_v: &[Option<T>]) -> Self {
         let mut builder = ObjectChunkedBuilder::<T>::new(name, opt_v.len());
         opt_v
             .iter()
@@ -115,14 +115,17 @@ where
         builder.finish()
     }
 
-    fn from_iter_options(name: &str, it: impl Iterator<Item = Option<T>>) -> ObjectChunked<T> {
+    fn from_iter_options(
+        name: PlSmallStr,
+        it: impl Iterator<Item = Option<T>>,
+    ) -> ObjectChunked<T> {
         let mut builder = ObjectChunkedBuilder::new(name, get_iter_capacity(&it));
         it.for_each(|opt| builder.append_option(opt));
         builder.finish()
     }
 
     /// Create a new ChunkedArray from an iterator.
-    fn from_iter_values(name: &str, it: impl Iterator<Item = T>) -> ObjectChunked<T> {
+    fn from_iter_values(name: PlSmallStr, it: impl Iterator<Item = T>) -> ObjectChunked<T> {
         let mut builder = ObjectChunkedBuilder::new(name, get_iter_capacity(&it));
         it.for_each(|v| builder.append_value(v));
         builder.finish()
@@ -133,7 +136,7 @@ impl<T> ObjectChunked<T>
 where
     T: PolarsObject,
 {
-    pub fn new_from_vec(name: &str, v: Vec<T>) -> Self {
+    pub fn new_from_vec(name: PlSmallStr, v: Vec<T>) -> Self {
         let field = Arc::new(Field::new(name, DataType::Object(T::type_name(), None)));
         let len = v.len();
         let arr = Box::new(ObjectArray {
@@ -146,7 +149,7 @@ where
         unsafe { ObjectChunked::new_with_dims(field, vec![arr], len as IdxSize, 0) }
     }
 
-    pub fn new_from_vec_and_validity(name: &str, v: Vec<T>, validity: Bitmap) -> Self {
+    pub fn new_from_vec_and_validity(name: PlSmallStr, v: Vec<T>, validity: Bitmap) -> Self {
         let field = Arc::new(Field::new(name, DataType::Object(T::type_name(), None)));
         let len = v.len();
         let null_count = validity.unset_bits();
@@ -162,7 +165,7 @@ where
         }
     }
 
-    pub fn new_empty(name: &str) -> Self {
+    pub fn new_empty(name: PlSmallStr) -> Self {
         Self::new_from_vec(name, vec![])
     }
 }

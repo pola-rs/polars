@@ -8,7 +8,7 @@ use polars_core::config::{get_rg_prefetch_size, verbose};
 use polars_core::prelude::*;
 use polars_parquet::read::RowGroupMetaData;
 use polars_parquet::write::FileMetaData;
-use smartstring::alias::String as SmartString;
+use polars_utils::pl_str::PlSmallStr;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::Mutex;
 
@@ -165,7 +165,7 @@ pub async fn fetch_metadata(
 /// Download rowgroups for the column whose indexes are given in `projection`.
 /// We concurrently download the columns for each field.
 async fn download_projection(
-    fields: Arc<[SmartString]>,
+    fields: Arc<[PlSmallStr]>,
     row_group: RowGroupMetaData,
     async_reader: Arc<ParquetObjectStore>,
     sender: QueueSend,
@@ -182,7 +182,7 @@ async fn download_projection(
 
         // A single column can have multiple matches (structs).
         let iter = columns.iter().filter_map(|meta| {
-            if meta.descriptor().path_in_schema[0] == name.as_str() {
+            if meta.descriptor().path_in_schema[0] == name {
                 let (offset, len) = meta.byte_range();
                 Some((offset, offset as usize..(offset + len) as usize))
             } else {
@@ -265,10 +265,10 @@ impl FetchRowGroupsFromObjectStore {
         row_group_range: Range<usize>,
         row_groups: &[RowGroupMetaData],
     ) -> PolarsResult<Self> {
-        let projected_fields: Option<Arc<[SmartString]>> = projection.map(|projection| {
+        let projected_fields: Option<Arc<[PlSmallStr]>> = projection.map(|projection| {
             projection
                 .iter()
-                .map(|i| SmartString::from(schema.fields[*i].name.as_str()))
+                .map(|i| (schema.fields[*i].name.clone()))
                 .collect()
         });
 

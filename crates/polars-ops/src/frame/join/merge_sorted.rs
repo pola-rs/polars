@@ -38,7 +38,7 @@ pub fn _merge_sorted_dfs(
 
             let out = merge_series(&lhs_phys, &rhs_phys, &merge_indicator)?;
             let mut out = out.cast(lhs.dtype()).unwrap();
-            out.rename(lhs.name());
+            out.rename(lhs.name().clone());
             Ok(out)
         })
         .collect::<PolarsResult<_>>()?;
@@ -81,7 +81,7 @@ fn merge_series(lhs: &Series, rhs: &Series, merge_indicator: &[bool]) -> PolarsR
                 .zip(rhs.fields_as_series())
                 .map(|(lhs, rhs)| merge_series(lhs, &rhs, merge_indicator))
                 .collect::<PolarsResult<Vec<_>>>()?;
-            StructChunked::from_series("", &new_fields)
+            StructChunked::from_series(PlSmallStr::EMPTY, &new_fields)
                 .unwrap()
                 .into_series()
         },

@@ -29,7 +29,6 @@ memchr = { workspace = true }
 once_cell = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 rayon = { workspace = true }
-smartstring = { workspace = true }
 tokio = { workspace = true, optional = true }
 
 [dev-dependencies]
@@ -231,6 +230,7 @@ serde = [
   "polars-time?/serde",
   "polars-io/serde",
   "polars-ops/serde",
+  "polars-utils/serde",
 ]
 fused = ["polars-plan/fused", "polars-ops/fused"]
 list_sets = ["polars-plan/list_sets", "polars-ops/list_sets"]

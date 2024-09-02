@@ -75,7 +75,7 @@ class SeriesPlot:
         **kwargs: Unpack[EncodeKwds],
     ) -> alt.Chart:
         """
-        Draw kernel dentity estimate plot.
+        Draw kernel density estimate plot.
 
         Polars does not implement plotting logic itself but instead defers to
         `Altair <https://altair-viz.github.io/>`_.

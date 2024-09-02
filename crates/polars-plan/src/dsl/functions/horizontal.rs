@@ -8,11 +8,11 @@ fn cum_fold_dtype() -> GetOutput {
             st = get_supertype(&st, &fld.dtype).unwrap();
         }
         Ok(Field::new(
-            &fields[0].name,
+            fields[0].name.clone(),
             DataType::Struct(
                 fields
                     .iter()
-                    .map(|fld| Field::new(fld.name(), st.clone()))
+                    .map(|fld| Field::new(fld.name().clone(), st.clone()))
                     .collect(),
             ),
         ))
@@ -118,15 +118,16 @@ where
                 let mut result = vec![acc.clone()];
 
                 for s in s_iter {
-                    let name = s.name().to_string();
+                    let name = s.name().clone();
                     if let Some(a) = f(acc.clone(), s.clone())? {
                         acc = a;
                     }
-                    acc.rename(&name);
+                    acc.rename(name);
                     result.push(acc.clone());
                 }
 
-                StructChunked::from_series(acc.name(), &result).map(|ca| Some(ca.into_series()))
+                StructChunked::from_series(acc.name().clone(), &result)
+                    .map(|ca| Some(ca.into_series()))
             },
             None => Err(polars_err!(ComputeError: "`reduce` did not have any expressions to fold")),
         }
@@ -167,15 +168,15 @@ where
         }
 
         for s in series {
-            let name = s.name().to_string();
+            let name = s.name().clone();
             if let Some(a) = f(acc.clone(), s)? {
                 acc = a;
-                acc.rename(&name);
+                acc.rename(name);
                 result.push(acc.clone());
             }
         }
 
-        StructChunked::from_series(acc.name(), &result).map(|ca| Some(ca.into_series()))
+        StructChunked::from_series(acc.name().clone(), &result).map(|ca| Some(ca.into_series()))
     }) as Arc<dyn SeriesUdf>);
 
     Expr::AnonymousFunction {

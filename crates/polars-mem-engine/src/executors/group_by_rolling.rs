@@ -26,7 +26,10 @@ unsafe fn update_keys(keys: &mut [Series], groups: &GroupsProxy) {
         },
         GroupsProxy::Slice { groups, .. } => {
             for key in keys.iter_mut() {
-                let indices = groups.iter().map(|[first, _len]| *first).collect_ca("");
+                let indices = groups
+                    .iter()
+                    .map(|[first, _len]| *first)
+                    .collect_ca(PlSmallStr::EMPTY);
                 *key = key.take_unchecked(&indices);
             }
         },

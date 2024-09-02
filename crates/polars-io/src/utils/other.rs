@@ -210,7 +210,7 @@ pub static BOOLEAN_RE: Lazy<Regex> = Lazy::new(|| {
 });
 
 pub fn materialize_projection(
-    with_columns: Option<&[String]>,
+    with_columns: Option<&[PlSmallStr]>,
     schema: &Schema,
     hive_partitions: Option<&[Series]>,
     has_row_index: bool,

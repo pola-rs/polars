@@ -529,7 +529,7 @@ def test_when_then_null_broadcast() -> None:
     )
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 @pytest.mark.parametrize("len", [1, 10, 100, 500])
 @pytest.mark.parametrize(
     ("dtype", "vals"),

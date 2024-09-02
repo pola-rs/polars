@@ -257,7 +257,7 @@ def test_filter_horizontal_selector_15428() -> None:
     assert_frame_equal(df, expected_df)
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 @pytest.mark.parametrize(
     "dtype", [pl.Boolean, pl.Int8, pl.Int16, pl.Int32, pl.Int64, pl.String]
 )

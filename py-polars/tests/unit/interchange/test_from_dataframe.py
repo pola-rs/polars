@@ -406,13 +406,13 @@ def test_construct_offsets_buffer_copy() -> None:
     assert_series_equal(result, expected)
 
 
-@pytest.fixture()
+@pytest.fixture
 def bitmask() -> PolarsBuffer:
     data = pl.Series([False, True, True, False])
     return PolarsBuffer(data)
 
 
-@pytest.fixture()
+@pytest.fixture
 def bytemask() -> PolarsBuffer:
     data = pl.Series([0, 1, 1, 0], dtype=pl.UInt8)
     return PolarsBuffer(data)

@@ -53,7 +53,7 @@ pub(super) fn sum_array_numerical(ca: &ArrayChunked, inner_type: &DataType) -> S
         })
         .collect::<Vec<_>>();
 
-    Series::try_from((ca.name(), chunks)).unwrap()
+    Series::try_from((ca.name().clone(), chunks)).unwrap()
 }
 
 pub(super) fn sum_with_nulls(ca: &ArrayChunked, inner_dtype: &DataType) -> PolarsResult<Series> {
@@ -115,6 +115,6 @@ pub(super) fn sum_with_nulls(ca: &ArrayChunked, inner_dtype: &DataType) -> Polar
             },
         }
     };
-    out.rename(ca.name());
+    out.rename(ca.name().clone());
     Ok(out)
 }

@@ -1,5 +1,7 @@
 use std::borrow::Cow;
-use std::fs::{self, File};
+#[cfg(target_family = "unix")]
+use std::fs;
+use std::fs::File;
 use std::io;
 use std::io::{Cursor, ErrorKind, Read, Seek, SeekFrom, Write};
 #[cfg(target_family = "unix")]

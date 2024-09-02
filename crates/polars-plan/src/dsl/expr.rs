@@ -70,9 +70,9 @@ impl AsRef<Expr> for AggExpr {
 #[must_use]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum Expr {
-    Alias(Arc<Expr>, ColumnName),
-    Column(ColumnName),
-    Columns(Arc<[ColumnName]>),
+    Alias(Arc<Expr>, PlSmallStr),
+    Column(PlSmallStr),
+    Columns(Arc<[PlSmallStr]>),
     DtypeColumn(Vec<DataType>),
     IndexColumn(Arc<[i64]>),
     Literal(LiteralValue),
@@ -136,27 +136,25 @@ pub enum Expr {
         length: Arc<Expr>,
     },
     /// Can be used in a select statement to exclude a column from selection
+    /// TODO: See if we can replace `Vec<Excluded>` with `Arc<Excluded>`
     Exclude(Arc<Expr>, Vec<Excluded>),
     /// Set root name as Alias
     KeepName(Arc<Expr>),
     Len,
     /// Take the nth column in the `DataFrame`
     Nth(i64),
-    // skipped fields must be last otherwise serde fails in pickle
-    #[cfg_attr(feature = "serde", serde(skip))]
     RenameAlias {
         function: SpecialEq<Arc<dyn RenameAliasFn>>,
         expr: Arc<Expr>,
     },
     #[cfg(feature = "dtype-struct")]
-    Field(Arc<[ColumnName]>),
+    Field(Arc<[PlSmallStr]>),
     AnonymousFunction {
         /// function arguments
         input: Vec<Expr>,
         /// function to apply
         function: SpecialEq<Arc<dyn SeriesUdf>>,
         /// output dtype of the function
-        #[cfg_attr(feature = "serde", serde(skip))]
         output_type: GetOutput,
         options: FunctionOptions,
     },
@@ -303,7 +301,7 @@ impl Default for Expr {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 
 pub enum Excluded {
-    Name(ColumnName),
+    Name(PlSmallStr),
     Dtype(DataType),
 }
 

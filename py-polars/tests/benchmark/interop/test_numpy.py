@@ -18,19 +18,19 @@ def floats_array() -> np.ndarray[Any, Any]:
     return np.random.randn(n_rows)
 
 
-@pytest.fixture()
+@pytest.fixture
 def floats(floats_array: np.ndarray[Any, Any]) -> pl.Series:
     return pl.Series(floats_array)
 
 
-@pytest.fixture()
+@pytest.fixture
 def floats_with_nulls(floats: pl.Series) -> pl.Series:
     null_probability = 0.1
     validity = pl.Series(np.random.uniform(size=floats.len())) > null_probability
     return pl.select(pl.when(validity).then(floats)).to_series()
 
 
-@pytest.fixture()
+@pytest.fixture
 def floats_chunked(floats_array: np.ndarray[Any, Any]) -> pl.Series:
     n_chunks = 5
     chunk_len = len(floats_array) // n_chunks

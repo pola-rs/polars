@@ -131,7 +131,7 @@ where
                                     self.p.evaluate_io(df)
                                 }
 
-                                fn live_variables(&self) -> Option<Vec<Arc<str>>> {
+                                fn live_variables(&self) -> Option<Vec<PlSmallStr>> {
                                     None
                                 }
 
@@ -259,7 +259,7 @@ where
             match &options.args.how {
                 #[cfg(feature = "cross_join")]
                 JoinType::Cross => Box::new(CrossJoin::new(
-                    options.args.suffix().into(),
+                    options.args.suffix().clone(),
                     swapped,
                     node,
                     placeholder,
@@ -293,7 +293,7 @@ where
                             let (join_columns_left, join_columns_right) = swap_eval();
 
                             Box::new(GenericBuild::<()>::new(
-                                Arc::from(options.args.suffix()),
+                                options.args.suffix().clone(),
                                 options.args.clone(),
                                 swapped,
                                 join_columns_left,
@@ -320,7 +320,7 @@ where
                             let (join_columns_left, join_columns_right) = swap_eval();
 
                             Box::new(GenericBuild::<Tracker>::new(
-                                Arc::from(options.args.suffix()),
+                                options.args.suffix().clone(),
                                 options.args.clone(),
                                 swapped,
                                 join_columns_left,
@@ -390,7 +390,7 @@ where
                     let keys = input_schema
                         .iter_names()
                         .map(|name| {
-                            let name: Arc<str> = Arc::from(name.as_str());
+                            let name: PlSmallStr = name.clone();
                             let node = expr_arena.add(AExpr::Column(name.clone()));
                             ExprIR::new(node, OutputName::Alias(name))
                         })
@@ -421,7 +421,7 @@ where
                                     input_schema.get_full(name.as_str()).unwrap();
                                 group_by_out_schema.with_column(name.clone(), dtype.clone());
 
-                                let name: Arc<str> = Arc::from(name.as_str());
+                                let name: PlSmallStr = name.clone();
                                 let col = expr_arena.add(AExpr::Column(name.clone()));
                                 let node = match options.keep_strategy {
                                     UniqueKeepStrategy::First | UniqueKeepStrategy::Any => {

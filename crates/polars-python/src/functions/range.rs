@@ -34,7 +34,7 @@ pub fn eager_int_range(
         let start_v: <$T as PolarsNumericType>::Native = lower.extract()?;
         let end_v: <$T as PolarsNumericType>::Native = upper.extract()?;
         let step: i64 = step.extract()?;
-        new_int_range::<$T>(start_v, end_v, step, "literal")
+        new_int_range::<$T>(start_v, end_v, step, PlSmallStr::from_static("literal"))
     });
 
     let s = ret.map_err(PyPolarsErr::from)?;
@@ -100,13 +100,14 @@ pub fn datetime_range(
     every: &str,
     closed: Wrap<ClosedWindow>,
     time_unit: Option<Wrap<TimeUnit>>,
-    time_zone: Option<TimeZone>,
+    time_zone: Option<Wrap<TimeZone>>,
 ) -> PyExpr {
     let start = start.inner;
     let end = end.inner;
     let every = Duration::parse(every);
     let closed = closed.0;
     let time_unit = time_unit.map(|x| x.0);
+    let time_zone = time_zone.map(|x| x.0);
     dsl::datetime_range(start, end, every, closed, time_unit, time_zone).into()
 }
 
@@ -117,13 +118,14 @@ pub fn datetime_ranges(
     every: &str,
     closed: Wrap<ClosedWindow>,
     time_unit: Option<Wrap<TimeUnit>>,
-    time_zone: Option<TimeZone>,
+    time_zone: Option<Wrap<TimeZone>>,
 ) -> PyExpr {
     let start = start.inner;
     let end = end.inner;
     let every = Duration::parse(every);
     let closed = closed.0;
     let time_unit = time_unit.map(|x| x.0);
+    let time_zone = time_zone.map(|x| x.0);
     dsl::datetime_ranges(start, end, every, closed, time_unit, time_zone).into()
 }
 

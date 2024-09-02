@@ -227,7 +227,10 @@ macro_rules! impl_decimal {
         #[pymethods]
         impl PySeries {
             fn $name(&self, rhs: PyDecimal) -> PyResult<Self> {
-                let rhs = Series::new("decimal", &[AnyValue::Decimal(rhs.0, rhs.1)]);
+                let rhs = Series::new(
+                    PlSmallStr::from_static("decimal"),
+                    &[AnyValue::Decimal(rhs.0, rhs.1)],
+                );
                 let s = self.series.$method(&rhs).map_err(PyPolarsErr::from)?;
                 Ok(s.into_series().into())
             }

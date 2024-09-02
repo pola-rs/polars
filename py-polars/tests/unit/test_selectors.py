@@ -9,7 +9,7 @@ import polars as pl
 import polars.selectors as cs
 from polars._typing import SelectorType
 from polars.dependencies import _ZONEINFO_AVAILABLE
-from polars.exceptions import ColumnNotFoundError
+from polars.exceptions import ColumnNotFoundError, InvalidOperationError
 from polars.selectors import expand_selector, is_selector
 from polars.testing import assert_frame_equal
 from tests.unit.conftest import INTEGER_DTYPES, TEMPORAL_DTYPES
@@ -30,7 +30,7 @@ def assert_repr_equals(item: Any, expected: str) -> None:
     assert repr(item) == expected
 
 
-@pytest.fixture()
+@pytest.fixture
 def df() -> pl.DataFrame:
     # set up an empty dataframe with plenty of columns of various dtypes
     df = pl.DataFrame(
@@ -809,3 +809,16 @@ def test_selector_result_order(df: pl.DataFrame, selector: SelectorType) -> None
             "qqR": pl.String,
         }
     )
+
+
+def test_selector_list_of_lists_18499() -> None:
+    lf = pl.DataFrame(
+        {
+            "foo": [1, 2, 3, 1],
+            "bar": ["a", "a", "a", "a"],
+            "ham": ["b", "b", "b", "b"],
+        }
+    )
+
+    with pytest.raises(InvalidOperationError, match="invalid selector expression"):
+        lf.unique(subset=[["bar", "ham"]])  # type: ignore[list-item]

@@ -603,11 +603,11 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     }
 
     pub(crate) unsafe fn set_dtype(&mut self, dtype: DataType) {
-        self.field = Arc::new(Field::new(self.name(), dtype))
+        self.field = Arc::new(Field::new(self.name().clone(), dtype))
     }
 
     /// Name of the [`ChunkedArray`].
-    pub fn name(&self) -> &str {
+    pub fn name(&self) -> &PlSmallStr {
         self.field.name()
     }
 
@@ -617,12 +617,12 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     }
 
     /// Rename this [`ChunkedArray`].
-    pub fn rename(&mut self, name: &str) {
+    pub fn rename(&mut self, name: PlSmallStr) {
         self.field = Arc::new(Field::new(name, self.field.data_type().clone()))
     }
 
     /// Return this [`ChunkedArray`] with a new name.
-    pub fn with_name(mut self, name: &str) -> Self {
+    pub fn with_name(mut self, name: PlSmallStr) -> Self {
         self.rename(name);
         self
     }
@@ -704,7 +704,7 @@ impl ListChunked {
     pub fn get_as_series(&self, idx: usize) -> Option<Series> {
         unsafe {
             Some(Series::from_chunks_and_dtype_unchecked(
-                self.name(),
+                self.name().clone(),
                 vec![self.get(idx)?],
                 &self.inner_dtype().to_physical(),
             ))
@@ -718,7 +718,7 @@ impl ArrayChunked {
     pub fn get_as_series(&self, idx: usize) -> Option<Series> {
         unsafe {
             Some(Series::from_chunks_and_dtype_unchecked(
-                self.name(),
+                self.name().clone(),
                 vec![self.get(idx)?],
                 &self.inner_dtype().to_physical(),
             ))
@@ -754,7 +754,9 @@ where
                 .collect();
 
             // SAFETY: We just slice the original chunks, their type will not change.
-            unsafe { Self::from_chunks_and_dtype(self.name(), chunks, self.dtype().clone()) }
+            unsafe {
+                Self::from_chunks_and_dtype(self.name().clone(), chunks, self.dtype().clone())
+            }
         };
 
         if self.chunks.len() != 1 {
@@ -949,7 +951,7 @@ pub(crate) fn to_array<T: PolarsNumericType>(
 impl<T: PolarsDataType> Default for ChunkedArray<T> {
     fn default() -> Self {
         ChunkedArray {
-            field: Arc::new(Field::new("default", DataType::Null)),
+            field: Arc::new(Field::new(PlSmallStr::EMPTY, DataType::Null)),
             chunks: Default::default(),
             md: Arc::new(IMMetadata::default()),
             length: 0,
@@ -963,19 +965,19 @@ pub(crate) mod test {
     use crate::prelude::*;
 
     pub(crate) fn get_chunked_array() -> Int32Chunked {
-        ChunkedArray::new("a", &[1, 2, 3])
+        ChunkedArray::new(PlSmallStr::from_static("a"), &[1, 2, 3])
     }
 
     #[test]
     fn test_sort() {
-        let a = Int32Chunked::new("a", &[1, 9, 3, 2]);
+        let a = Int32Chunked::new(PlSmallStr::from_static("a"), &[1, 9, 3, 2]);
         let b = a
             .sort(false)
             .into_iter()
             .map(|opt| opt.unwrap())
             .collect::<Vec<_>>();
         assert_eq!(b, [1, 2, 3, 9]);
-        let a = StringChunked::new("a", &["b", "a", "c"]);
+        let a = StringChunked::new(PlSmallStr::from_static("a"), &["b", "a", "c"]);
         let a = a.sort(false);
         let b = a.into_iter().collect::<Vec<_>>();
         assert_eq!(b, [Some("a"), Some("b"), Some("c")]);
@@ -984,8 +986,8 @@ pub(crate) mod test {
 
     #[test]
     fn arithmetic() {
-        let a = &Int32Chunked::new("a", &[1, 100, 6, 40]);
-        let b = &Int32Chunked::new("b", &[-1, 2, 3, 4]);
+        let a = &Int32Chunked::new(PlSmallStr::from_static("a"), &[1, 100, 6, 40]);
+        let b = &Int32Chunked::new(PlSmallStr::from_static("b"), &[-1, 2, 3, 4]);
 
         // Not really asserting anything here but still making sure the code is exercised
         // This (and more) is properly tested from the integration test suite and Python bindings.
@@ -1014,7 +1016,10 @@ pub(crate) mod test {
     fn filter() {
         let a = get_chunked_array();
         let b = a
-            .filter(&BooleanChunked::new("filter", &[true, false, false]))
+            .filter(&BooleanChunked::new(
+                PlSmallStr::from_static("filter"),
+                &[true, false, false],
+            ))
             .unwrap();
         assert_eq!(b.len(), 1);
         assert_eq!(b.into_iter().next(), Some(Some(1)));
@@ -1022,7 +1027,7 @@ pub(crate) mod test {
 
     #[test]
     fn aggregates() {
-        let a = &Int32Chunked::new("a", &[1, 100, 10, 9]);
+        let a = &Int32Chunked::new(PlSmallStr::from_static("a"), &[1, 100, 10, 9]);
         assert_eq!(a.max(), Some(100));
         assert_eq!(a.min(), Some(1));
         assert_eq!(a.sum(), Some(120))
@@ -1051,8 +1056,8 @@ pub(crate) mod test {
 
     #[test]
     fn slice() {
-        let mut first = UInt32Chunked::new("first", &[0, 1, 2]);
-        let second = UInt32Chunked::new("second", &[3, 4, 5]);
+        let mut first = UInt32Chunked::new(PlSmallStr::from_static("first"), &[0, 1, 2]);
+        let second = UInt32Chunked::new(PlSmallStr::from_static("second"), &[3, 4, 5]);
         first.append(&second).unwrap();
         assert_slice_equal(&first.slice(0, 3), &[0, 1, 2]);
         assert_slice_equal(&first.slice(0, 4), &[0, 1, 2, 3]);
@@ -1070,7 +1075,7 @@ pub(crate) mod test {
 
     #[test]
     fn sorting() {
-        let s = UInt32Chunked::new("", &[9, 2, 4]);
+        let s = UInt32Chunked::new(PlSmallStr::EMPTY, &[9, 2, 4]);
         let sorted = s.sort(false);
         assert_slice_equal(&sorted, &[2, 4, 9]);
         let sorted = s.sort(true);
@@ -1097,19 +1102,19 @@ pub(crate) mod test {
 
     #[test]
     fn reverse() {
-        let s = UInt32Chunked::new("", &[1, 2, 3]);
+        let s = UInt32Chunked::new(PlSmallStr::EMPTY, &[1, 2, 3]);
         // path with continuous slice
         assert_slice_equal(&s.reverse(), &[3, 2, 1]);
         // path with options
-        let s = UInt32Chunked::new("", &[Some(1), None, Some(3)]);
+        let s = UInt32Chunked::new(PlSmallStr::EMPTY, &[Some(1), None, Some(3)]);
         assert_eq!(Vec::from(&s.reverse()), &[Some(3), None, Some(1)]);
-        let s = BooleanChunked::new("", &[true, false]);
+        let s = BooleanChunked::new(PlSmallStr::EMPTY, &[true, false]);
         assert_eq!(Vec::from(&s.reverse()), &[Some(false), Some(true)]);
 
-        let s = StringChunked::new("", &["a", "b", "c"]);
+        let s = StringChunked::new(PlSmallStr::EMPTY, &["a", "b", "c"]);
         assert_eq!(Vec::from(&s.reverse()), &[Some("c"), Some("b"), Some("a")]);
 
-        let s = StringChunked::new("", &[Some("a"), None, Some("c")]);
+        let s = StringChunked::new(PlSmallStr::EMPTY, &[Some("a"), None, Some("c")]);
         assert_eq!(Vec::from(&s.reverse()), &[Some("c"), None, Some("a")]);
     }
 
@@ -1119,7 +1124,10 @@ pub(crate) mod test {
         use crate::{disable_string_cache, SINGLE_LOCK};
         let _lock = SINGLE_LOCK.lock();
         disable_string_cache();
-        let ca = StringChunked::new("", &[Some("foo"), None, Some("bar"), Some("ham")]);
+        let ca = StringChunked::new(
+            PlSmallStr::EMPTY,
+            &[Some("foo"), None, Some("bar"), Some("ham")],
+        );
         let ca = ca
             .cast(&DataType::Categorical(None, Default::default()))
             .unwrap();
@@ -1131,7 +1139,7 @@ pub(crate) mod test {
     #[test]
     #[ignore]
     fn test_shrink_to_fit() {
-        let mut builder = StringChunkedBuilder::new("foo", 2048);
+        let mut builder = StringChunkedBuilder::new(PlSmallStr::from_static("foo"), 2048);
         builder.append_value("foo");
         let mut arr = builder.finish();
         let before = arr

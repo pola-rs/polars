@@ -369,7 +369,7 @@ pub fn get_supertype_with_options(
                 let mut new_fields = Vec::with_capacity(fields_a.len());
                 for a in fields_a {
                     let st = get_supertype(&a.dtype, rhs)?;
-                    new_fields.push(Field::new(&a.name, st))
+                    new_fields.push(Field::new(a.name.clone(), st))
                 }
                 Some(Struct(new_fields))
             }
@@ -426,7 +426,7 @@ fn union_struct_fields(fields_a: &[Field], fields_b: &[Field]) -> Option<DataTyp
     }
     let new_fields = longest_map
         .into_iter()
-        .map(|(name, dtype)| Field::new(name, dtype))
+        .map(|(name, dtype)| Field::new(name.clone(), dtype))
         .collect::<Vec<_>>();
     Some(DataType::Struct(new_fields))
 }
@@ -442,7 +442,7 @@ fn super_type_structs(fields_a: &[Field], fields_b: &[Field]) -> Option<DataType
                 return union_struct_fields(fields_a, fields_b);
             }
             let st = get_supertype(&a.dtype, &b.dtype)?;
-            new_fields.push(Field::new(&a.name, st))
+            new_fields.push(Field::new(a.name.clone(), st))
         }
         Some(DataType::Struct(new_fields))
     }

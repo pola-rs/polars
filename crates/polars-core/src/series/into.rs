@@ -34,7 +34,7 @@ impl Series {
                         let dtype = &field.dtype;
                         let s = unsafe {
                             Series::from_chunks_and_dtype_unchecked(
-                                "",
+                                PlSmallStr::EMPTY,
                                 vec![values.clone()],
                                 &dtype.to_physical(),
                             )
@@ -59,7 +59,7 @@ impl Series {
                     // We pass physical arrays and cast to logical before we convert to arrow.
                     let s = unsafe {
                         Series::from_chunks_and_dtype_unchecked(
-                            "",
+                            PlSmallStr::EMPTY,
                             vec![arr.values().clone()],
                             &inner.to_physical(),
                         )
@@ -84,7 +84,7 @@ impl Series {
                 let ca = self.categorical().unwrap();
                 let arr = ca.physical().chunks()[chunk_idx].clone();
                 // SAFETY: categoricals are always u32's.
-                let cats = unsafe { UInt32Chunked::from_chunks("", vec![arr]) };
+                let cats = unsafe { UInt32Chunked::from_chunks(PlSmallStr::EMPTY, vec![arr]) };
 
                 // SAFETY: we only take a single chunk and change nothing about the index/rev_map mapping.
                 let new = unsafe {

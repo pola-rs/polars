@@ -80,7 +80,8 @@ pub fn extract_many(
 ) -> PolarsResult<ListChunked> {
     match patterns.dtype() {
         DataType::List(inner) if inner.is_string() => {
-            let mut builder = ListStringChunkedBuilder::new(ca.name(), ca.len(), ca.len() * 2);
+            let mut builder =
+                ListStringChunkedBuilder::new(ca.name().clone(), ca.len(), ca.len() * 2);
             let patterns = patterns.list().unwrap();
             let (ca, patterns) = align_chunks_binary(ca, patterns);
 
@@ -101,7 +102,8 @@ pub fn extract_many(
         DataType::String => {
             let patterns = patterns.str().unwrap();
             let ac = build_ac(patterns, ascii_case_insensitive)?;
-            let mut builder = ListStringChunkedBuilder::new(ca.name(), ca.len(), ca.len() * 2);
+            let mut builder =
+                ListStringChunkedBuilder::new(ca.name().clone(), ca.len(), ca.len() * 2);
 
             for arr in ca.downcast_iter() {
                 for opt_val in arr.into_iter() {

@@ -130,7 +130,11 @@ impl ApplyExpr {
             Ok(out)
         } else {
             let field = self.to_field(self.input_schema.as_ref().unwrap()).unwrap();
-            Ok(Series::full_null(field.name(), 1, field.data_type()))
+            Ok(Series::full_null(
+                field.name().clone(),
+                1,
+                field.data_type(),
+            ))
         }
     }
     fn apply_single_group_aware<'a>(
@@ -145,17 +149,17 @@ impl ApplyExpr {
             ComputeError: "cannot aggregate, the column is already aggregated",
         );
 
-        let name = s.name().to_string();
+        let name = s.name().clone();
         let agg = ac.aggregated();
         // Collection of empty list leads to a null dtype. See: #3687.
         if agg.len() == 0 {
             // Create input for the function to determine the output dtype, see #3946.
             let agg = agg.list().unwrap();
             let input_dtype = agg.inner_dtype();
-            let input = Series::full_null("", 0, input_dtype);
+            let input = Series::full_null(PlSmallStr::EMPTY, 0, input_dtype);
 
             let output = self.eval_and_flatten(&mut [input])?;
-            let ca = ListChunked::full(&name, &output, 0);
+            let ca = ListChunked::full(name, &output, 0);
             return self.finish_apply_groups(ac, ca);
         }
 
@@ -163,7 +167,7 @@ impl ApplyExpr {
             None => Ok(None),
             Some(mut s) => {
                 if self.pass_name_to_apply {
-                    s.rename(&name);
+                    s.rename(name.clone());
                 }
                 self.function.call_udf(&mut [s])
             },
@@ -181,7 +185,7 @@ impl ApplyExpr {
             if let Some(dtype) = dtype {
                 // TODO! uncomment this line and remove debug_assertion after a while.
                 // POOL.install(|| {
-                //     iter.collect_ca_with_dtype::<PolarsResult<_>>("", DataType::List(Box::new(dtype)))
+                //     iter.collect_ca_with_dtype::<PolarsResult<_>>(PlSmallStr::EMPTY, DataType::List(Box::new(dtype)))
                 // })?
                 let out: ListChunked = POOL.install(|| iter.collect::<PolarsResult<_>>())?;
 
@@ -199,7 +203,7 @@ impl ApplyExpr {
                 .collect::<PolarsResult<_>>()?
         };
 
-        self.finish_apply_groups(ac, ca.with_name(&name))
+        self.finish_apply_groups(ac, ca.with_name(name))
     }
 
     /// Apply elementwise e.g. ignore the group/list indices.
@@ -254,14 +258,14 @@ impl ApplyExpr {
             ac.with_update_groups(UpdateGroups::No);
 
             let agg_state = if self.returns_scalar {
-                AggState::AggregatedScalar(Series::new_empty(field.name(), &field.dtype))
+                AggState::AggregatedScalar(Series::new_empty(field.name().clone(), &field.dtype))
             } else {
                 match self.collect_groups {
                     ApplyOptions::ElementWise | ApplyOptions::ApplyList => ac
                         .agg_state()
-                        .map(|_| Series::new_empty(field.name(), &field.dtype)),
+                        .map(|_| Series::new_empty(field.name().clone(), &field.dtype)),
                     ApplyOptions::GroupWise => AggState::AggregatedList(Series::new_empty(
-                        field.name(),
+                        field.name().clone(),
                         &DataType::List(Box::new(field.dtype.clone())),
                     )),
                 }
@@ -283,7 +287,7 @@ impl ApplyExpr {
                 self.function.call_udf(&mut container)
             })
             .collect::<PolarsResult<ListChunked>>()?
-            .with_name(&field.name);
+            .with_name(field.name.clone());
 
         drop(iters);
 
@@ -330,8 +334,8 @@ impl PhysicalExpr for ApplyExpr {
         if self.allow_rename {
             self.eval_and_flatten(&mut inputs)
         } else {
-            let in_name = inputs[0].name().to_string();
-            Ok(self.eval_and_flatten(&mut inputs)?.with_name(&in_name))
+            let in_name = inputs[0].name().clone();
+            Ok(self.eval_and_flatten(&mut inputs)?.with_name(in_name))
         }
     }
 
@@ -577,7 +581,7 @@ impl ApplyExpr {
             #[cfg(feature = "is_between")]
             FunctionExpr::Boolean(BooleanFunction::IsBetween { closed }) => {
                 let should_read = || -> Option<bool> {
-                    let root: Arc<str> = expr_to_leaf_column_name(&input[0]).ok()?;
+                    let root: PlSmallStr = expr_to_leaf_column_name(&input[0]).ok()?;
                     let Expr::Literal(left) = &input[1] else {
                         return None;
                     };
@@ -592,11 +596,20 @@ impl ApplyExpr {
                     let (left, left_dtype) = (left.to_any_value()?, left.get_datatype());
                     let (right, right_dtype) = (right.to_any_value()?, right.get_datatype());
 
-                    let left =
-                        Series::from_any_values_and_dtype("", &[left], &left_dtype, false).ok()?;
-                    let right =
-                        Series::from_any_values_and_dtype("", &[right], &right_dtype, false)
-                            .ok()?;
+                    let left = Series::from_any_values_and_dtype(
+                        PlSmallStr::EMPTY,
+                        &[left],
+                        &left_dtype,
+                        false,
+                    )
+                    .ok()?;
+                    let right = Series::from_any_values_and_dtype(
+                        PlSmallStr::EMPTY,
+                        &[right],
+                        &right_dtype,
+                        false,
+                    )
+                    .ok()?;
 
                     // don't read the row_group anyways as
                     // the condition will evaluate to false.
@@ -649,8 +662,8 @@ impl PartitionedAggregation for ApplyExpr {
         if self.allow_rename {
             self.eval_and_flatten(&mut [s])
         } else {
-            let in_name = s.name().to_string();
-            Ok(self.eval_and_flatten(&mut [s])?.with_name(&in_name))
+            let in_name = s.name().clone();
+            Ok(self.eval_and_flatten(&mut [s])?.with_name(in_name))
         }
     }
 

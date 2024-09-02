@@ -53,7 +53,7 @@ struct CountStarExpr {
     // File Type
     scan_type: FileScan,
     // Column Alias
-    alias: Option<Arc<str>>,
+    alias: Option<PlSmallStr>,
 }
 
 // Visit the logical plan and return CountStarExpr with the expr information gathered
@@ -125,7 +125,7 @@ fn visit_logical_plan_for_scan_paths(
     }
 }
 
-fn is_valid_count_expr(e: &ExprIR, expr_arena: &Arena<AExpr>) -> (bool, Option<Arc<str>>) {
+fn is_valid_count_expr(e: &ExprIR, expr_arena: &Arena<AExpr>) -> (bool, Option<PlSmallStr>) {
     match expr_arena.get(e.node()) {
         AExpr::Len => (true, e.get_alias().cloned()),
         _ => (false, None),

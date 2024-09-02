@@ -6,7 +6,7 @@ import pytest
 import polars as pl
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 def test_bool_arg_min_max() -> None:
     # masks that ensures we take more than u64 chunks
     # and slicing and dicing to ensure the offsets work

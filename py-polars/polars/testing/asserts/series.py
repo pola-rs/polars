@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from polars._utils.deprecation import deprecate_renamed_parameter
 from polars.datatypes import (
@@ -18,6 +18,19 @@ from polars.testing.asserts.utils import raise_assertion_error
 
 if TYPE_CHECKING:
     from polars import DataType
+
+
+def _assert_correct_input_type(left: Any, right: Any) -> bool:
+    __tracebackhide__ = True
+
+    if not (isinstance(left, Series) and isinstance(right, Series)):
+        raise_assertion_error(
+            "inputs",
+            "unexpected input types",
+            type(left).__name__,
+            type(right).__name__,
+        )
+    return True
 
 
 @deprecate_renamed_parameter("check_dtype", "check_dtypes", version="0.20.31")
@@ -90,13 +103,7 @@ def assert_series_equal(
     """
     __tracebackhide__ = True
 
-    if not (isinstance(left, Series) and isinstance(right, Series)):  # type: ignore[redundant-expr]
-        raise_assertion_error(
-            "inputs",
-            "unexpected input types",
-            type(left).__name__,
-            type(right).__name__,
-        )
+    _assert_correct_input_type(left, right)
 
     if left.len() != right.len():
         raise_assertion_error("Series", "length mismatch", left.len(), right.len())
@@ -404,6 +411,7 @@ def assert_series_not_equal(
     """
     __tracebackhide__ = True
 
+    _assert_correct_input_type(left, right)
     try:
         assert_series_equal(
             left=left,
@@ -419,5 +427,5 @@ def assert_series_not_equal(
     except AssertionError:
         return
     else:
-        msg = "Series are equal"
+        msg = "Series are equal (but are expected not to be)"
         raise AssertionError(msg)

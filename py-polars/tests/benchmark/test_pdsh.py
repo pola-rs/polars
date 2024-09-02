@@ -1,58 +1,76 @@
+"""
+Disclaimer.
+
+Certain portions of the contents of this file are derived from TPC-H version 3.0.1
+(retrieved from
+http://www.tpc.org/tpc_documents_current_versions/current_specifications5.asp).
+Such portions are subject to copyrights held by Transaction Processing
+Performance Council (“TPC”) and licensed under the TPC EULA is available at
+http://www.tpc.org/tpc_documents_current_versions/current_specifications5.asp)
+(the “TPC EULA”).
+
+You may not use this file except in compliance with the TPC EULA.
+DISCLAIMER: Portions of this file is derived from the TPC-H benchmark and as
+such any result obtained using this file are not comparable to published TPC-H
+Benchmark results, as the results obtained from using this file do not comply with
+the TPC-H Benchmark.
+"""
+
 import sys
 from datetime import date
 
 import pytest
 
 import polars as pl
-from tests.benchmark.data import load_tpch_table
+from tests.benchmark.data import load_pdsh_table
 
 if sys.platform == "win32":
-    pytest.skip("TPC-H data cannot be generated under Windows", allow_module_level=True)
+    pytest.skip("PDS-H data cannot be generated under Windows", allow_module_level=True)
 
 pytestmark = pytest.mark.benchmark()
 
 
 @pytest.fixture(scope="module")
 def customer() -> pl.LazyFrame:
-    return load_tpch_table("customer").lazy()
+    return load_pdsh_table("customer").lazy()
 
 
 @pytest.fixture(scope="module")
 def lineitem() -> pl.LazyFrame:
-    return load_tpch_table("lineitem").lazy()
+    return load_pdsh_table("lineitem").lazy()
 
 
 @pytest.fixture(scope="module")
 def nation() -> pl.LazyFrame:
-    return load_tpch_table("nation").lazy()
+    return load_pdsh_table("nation").lazy()
 
 
 @pytest.fixture(scope="module")
 def orders() -> pl.LazyFrame:
-    return load_tpch_table("orders").lazy()
+    return load_pdsh_table("orders").lazy()
 
 
 @pytest.fixture(scope="module")
 def part() -> pl.LazyFrame:
-    return load_tpch_table("part").lazy()
+    return load_pdsh_table("part").lazy()
 
 
 @pytest.fixture(scope="module")
 def partsupp() -> pl.LazyFrame:
-    return load_tpch_table("partsupp").lazy()
+    return load_pdsh_table("partsupp").lazy()
 
 
 @pytest.fixture(scope="module")
 def region() -> pl.LazyFrame:
-    return load_tpch_table("region").lazy()
+    return load_pdsh_table("region").lazy()
 
 
 @pytest.fixture(scope="module")
 def supplier() -> pl.LazyFrame:
-    return load_tpch_table("supplier").lazy()
+    return load_pdsh_table("supplier").lazy()
 
 
-def test_tpch_q1(lineitem: pl.LazyFrame) -> None:
+def test_pdsh_q1(lineitem: pl.LazyFrame) -> None:
     var1 = date(1998, 9, 2)
 
     q_final = (
@@ -81,7 +99,7 @@ def test_tpch_q1(lineitem: pl.LazyFrame) -> None:
     q_final.collect()
 
 
-def test_tpch_q2(
+def test_pdsh_q2(
     nation: pl.LazyFrame,
     part: pl.LazyFrame,
     partsupp: pl.LazyFrame,
@@ -125,7 +143,7 @@ def test_tpch_q2(
     q_final.collect()
 
 
-def test_tpch_q3(
+def test_pdsh_q3(
     customer: pl.LazyFrame, lineitem: pl.LazyFrame, orders: pl.LazyFrame
 ) -> None:
     var1 = "BUILDING"
@@ -154,7 +172,7 @@ def test_tpch_q3(
     q_final.collect()
 
 
-def test_tpch_q4(lineitem: pl.LazyFrame, orders: pl.LazyFrame) -> None:
+def test_pdsh_q4(lineitem: pl.LazyFrame, orders: pl.LazyFrame) -> None:
     var1 = date(1993, 7, 1)
     var2 = date(1993, 10, 1)
 
@@ -170,7 +188,7 @@ def test_tpch_q4(lineitem: pl.LazyFrame, orders: pl.LazyFrame) -> None:
     q_final.collect()
 
 
-def test_tpch_q5(
+def test_pdsh_q5(
     customer: pl.LazyFrame,
     lineitem: pl.LazyFrame,
     nation: pl.LazyFrame,
@@ -205,7 +223,7 @@ def test_tpch_q5(
     q_final.collect()
 
 
-def test_tpch_q6(lineitem: pl.LazyFrame) -> None:
+def test_pdsh_q6(lineitem: pl.LazyFrame) -> None:
     var1 = date(1994, 1, 1)
     var2 = date(1995, 1, 1)
     var3 = 0.05
@@ -225,7 +243,7 @@ def test_tpch_q6(lineitem: pl.LazyFrame) -> None:
     q_final.collect()
 
 
-def test_tpch_q7(
+def test_pdsh_q7(
     customer: pl.LazyFrame,
     lineitem: pl.LazyFrame,
     nation: pl.LazyFrame,
@@ -274,7 +292,7 @@ def test_tpch_q7(
     q_final.collect()
 
 
-def test_tpch_q8(
+def test_pdsh_q8(
     customer: pl.LazyFrame,
     lineitem: pl.LazyFrame,
     nation: pl.LazyFrame,
@@ -322,7 +340,7 @@ def test_tpch_q8(
     q_final.collect()
 
 
-def test_tpch_q9(
+def test_pdsh_q9(
     lineitem: pl.LazyFrame,
     nation: pl.LazyFrame,
     orders: pl.LazyFrame,
@@ -357,7 +375,7 @@ def test_tpch_q9(
     q_final.collect()
 
 
-def test_tpch_q10(
+def test_pdsh_q10(
     customer: pl.LazyFrame,
     lineitem: pl.LazyFrame,
     nation: pl.LazyFrame,
@@ -404,7 +422,7 @@ def test_tpch_q10(
     q_final.collect()
 
 
-def test_tpch_q11(
+def test_pdsh_q11(
     nation: pl.LazyFrame, partsupp: pl.LazyFrame, supplier: pl.LazyFrame
 ) -> None:
     var1 = "GERMANY"
@@ -438,7 +456,7 @@ def test_tpch_q11(
     q_final.collect()
 
 
-def test_tpch_q12(lineitem: pl.LazyFrame, orders: pl.LazyFrame) -> None:
+def test_pdsh_q12(lineitem: pl.LazyFrame, orders: pl.LazyFrame) -> None:
     var1 = "MAIL"
     var2 = "SHIP"
     var3 = date(1994, 1, 1)
@@ -467,7 +485,7 @@ def test_tpch_q12(lineitem: pl.LazyFrame, orders: pl.LazyFrame) -> None:
     q_final.collect()
 
 
-def test_tpch_q13(customer: pl.LazyFrame, orders: pl.LazyFrame) -> None:
+def test_pdsh_q13(customer: pl.LazyFrame, orders: pl.LazyFrame) -> None:
     var1 = "special"
     var2 = "requests"
 
@@ -484,7 +502,7 @@ def test_tpch_q13(customer: pl.LazyFrame, orders: pl.LazyFrame) -> None:
     q_final.collect()
 
 
-def test_tpch_q14(lineitem: pl.LazyFrame, part: pl.LazyFrame) -> None:
+def test_pdsh_q14(lineitem: pl.LazyFrame, part: pl.LazyFrame) -> None:
     var1 = date(1995, 9, 1)
     var2 = date(1995, 10, 1)
 
@@ -507,7 +525,7 @@ def test_tpch_q14(lineitem: pl.LazyFrame, part: pl.LazyFrame) -> None:
     q_final.collect()
 
 
-def test_tpch_q15(lineitem: pl.LazyFrame, supplier: pl.LazyFrame) -> None:
+def test_pdsh_q15(lineitem: pl.LazyFrame, supplier: pl.LazyFrame) -> None:
     var1 = date(1996, 1, 1)
     var2 = date(1996, 4, 1)
 
@@ -532,7 +550,7 @@ def test_tpch_q15(lineitem: pl.LazyFrame, supplier: pl.LazyFrame) -> None:
     q_final.collect()
 
 
-def test_tpch_q16(
+def test_pdsh_q16(
     part: pl.LazyFrame, partsupp: pl.LazyFrame, supplier: pl.LazyFrame
 ) -> None:
     var1 = "Brand#45"
@@ -558,7 +576,7 @@ def test_tpch_q16(
     q_final.collect()
 
 
-def test_tpch_q17(lineitem: pl.LazyFrame, part: pl.LazyFrame) -> None:
+def test_pdsh_q17(lineitem: pl.LazyFrame, part: pl.LazyFrame) -> None:
     var1 = "Brand#23"
     var2 = "MED BOX"
 
@@ -579,7 +597,7 @@ def test_tpch_q17(lineitem: pl.LazyFrame, part: pl.LazyFrame) -> None:
     q_final.collect()
 
 
-def test_tpch_q18(
+def test_pdsh_q18(
     customer: pl.LazyFrame, lineitem: pl.LazyFrame, orders: pl.LazyFrame
 ) -> None:
     var1 = 300
@@ -608,7 +626,7 @@ def test_tpch_q18(
     q_final.collect()
 
 
-def test_tpch_q19(lineitem: pl.LazyFrame, part: pl.LazyFrame) -> None:
+def test_pdsh_q19(lineitem: pl.LazyFrame, part: pl.LazyFrame) -> None:
     q_final = (
         part.join(lineitem, left_on="p_partkey", right_on="l_partkey")
         .filter(pl.col("l_shipmode").is_in(["AIR", "AIR REG"]))
@@ -649,7 +667,7 @@ def test_tpch_q19(lineitem: pl.LazyFrame, part: pl.LazyFrame) -> None:
     q_final.collect()
 
 
-def test_tpch_q20(
+def test_pdsh_q20(
     lineitem: pl.LazyFrame,
     nation: pl.LazyFrame,
     part: pl.LazyFrame,
@@ -687,7 +705,7 @@ def test_tpch_q20(
     q_final.collect()
 
 
-def test_tpch_q21(
+def test_pdsh_q21(
     lineitem: pl.LazyFrame,
     nation: pl.LazyFrame,
     orders: pl.LazyFrame,
@@ -723,7 +741,7 @@ def test_tpch_q21(
     q_final.collect()
 
 
-def test_tpch_q22(customer: pl.LazyFrame, orders: pl.LazyFrame) -> None:
+def test_pdsh_q22(customer: pl.LazyFrame, orders: pl.LazyFrame) -> None:
     q1 = (
         customer.with_columns(pl.col("c_phone").str.slice(0, 2).alias("cntrycode"))
         .filter(pl.col("cntrycode").str.contains("13|31|23|29|30|18|17"))

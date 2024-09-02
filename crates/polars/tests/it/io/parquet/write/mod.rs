@@ -67,8 +67,8 @@ fn test_column(column: &str, compression: CompressionOptions) -> ParquetResult<(
     };
 
     let schema = SchemaDescriptor::new(
-        "schema".to_string(),
-        vec![ParquetType::from_physical("col".to_string(), type_)],
+        "schema".into(),
+        vec![ParquetType::from_physical("col".into(), type_)],
     );
 
     let a = schema.columns();
@@ -181,9 +181,9 @@ fn basic() -> ParquetResult<()> {
     };
 
     let schema = SchemaDescriptor::new(
-        "schema".to_string(),
+        "schema".into(),
         vec![ParquetType::from_physical(
-            "col".to_string(),
+            "col".into(),
             PhysicalType::Int32,
         )],
     );

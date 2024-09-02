@@ -1,5 +1,6 @@
 *.iml
 *.so
+*.pyd
 *.ipynb
 .ENV
 .env

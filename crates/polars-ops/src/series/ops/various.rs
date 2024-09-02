@@ -16,18 +16,19 @@ pub trait SeriesMethods: SeriesSealed {
         &self,
         sort: bool,
         parallel: bool,
-        name: String,
+        name: PlSmallStr,
         normalize: bool,
     ) -> PolarsResult<DataFrame> {
         let s = self.as_series();
         polars_ensure!(
-            s.name() != name,
-            Duplicate: "using `value_counts` on a column/series named '{}' would lead to duplicate column names; change `name` to fix", name,
+            s.name() != &name,
+            Duplicate: "using `value_counts` on a column/series named '{}' would lead to duplicate \
+            column names; change `name` to fix", name,
         );
         // we need to sort here as well in case of `maintain_order` because duplicates behavior is undefined
         let groups = s.group_tuples(parallel, sort)?;
         let values = unsafe { s.agg_first(&groups) };
-        let counts = groups.group_count().with_name(name.as_str());
+        let counts = groups.group_count().with_name(name.clone());
 
         let counts = if normalize {
             let len = s.len() as f64;
@@ -63,7 +64,7 @@ pub trait SeriesMethods: SeriesSealed {
             _ => {
                 let mut h = vec![];
                 s.0.vec_hash(build_hasher, &mut h).unwrap();
-                UInt64Chunked::from_vec(s.name(), h)
+                UInt64Chunked::from_vec(s.name().clone(), h)
             },
         }
     }
@@ -93,7 +94,7 @@ pub trait SeriesMethods: SeriesSealed {
         #[cfg(feature = "dtype-struct")]
         if matches!(s.dtype(), DataType::Struct(_)) {
             let encoded = _get_rows_encoded_ca(
-                "",
+                PlSmallStr::EMPTY,
                 &[s.clone()],
                 &[options.descending],
                 &[options.nulls_last],

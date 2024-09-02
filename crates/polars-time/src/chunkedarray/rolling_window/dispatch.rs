@@ -32,7 +32,7 @@ where
 {
     polars_ensure!(options.min_periods <= options.window_size, InvalidOperation: "`min_periods` should be <= `window_size`");
     if ca.is_empty() {
-        return Ok(Series::new_empty(ca.name(), ca.dtype()));
+        return Ok(Series::new_empty(ca.name().clone(), ca.dtype()));
     }
     let ca = ca.rechunk();
 
@@ -55,7 +55,7 @@ where
             options.fn_params,
         ),
     };
-    Series::try_from((ca.name(), arr))
+    Series::try_from((ca.name().clone(), arr))
 }
 
 #[cfg(feature = "rolling_window_by")]
@@ -80,7 +80,7 @@ where
     T: PolarsNumericType,
 {
     if ca.is_empty() {
-        return Ok(Series::new_empty(ca.name(), ca.dtype()));
+        return Ok(Series::new_empty(ca.name().clone(), ca.dtype()));
     }
     polars_ensure!(by.null_count() == 0 && ca.null_count() == 0, InvalidOperation: "'Expr.rolling_*_by(...)' not yet supported for series with null values, consider using 'DataFrame.rolling' or 'Expr.rolling'");
     polars_ensure!(ca.len() == by.len(), InvalidOperation: "`by` column in `rolling_*_by` must be the same length as values column");
@@ -141,7 +141,7 @@ where
             Some(sorting_indices.cont_slice().unwrap()),
         )?
     };
-    Series::try_from((ca.name(), out))
+    Series::try_from((ca.name().clone(), out))
 }
 
 pub trait SeriesOpsTime: AsSeries {

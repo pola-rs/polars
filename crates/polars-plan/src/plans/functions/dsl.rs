@@ -36,12 +36,12 @@ pub enum DslFunction {
         args: UnpivotArgsDSL,
     },
     RowIndex {
-        name: Arc<str>,
+        name: PlSmallStr,
         offset: Option<IdxSize>,
     },
     Rename {
-        existing: Arc<[SmartString]>,
-        new: Arc<[SmartString]>,
+        existing: Arc<[PlSmallStr]>,
+        new: Arc<[PlSmallStr]>,
     },
     Unnest(Vec<Selector>),
     Stats(StatsFunction),
@@ -102,10 +102,10 @@ impl DslFunction {
                 validate_columns_in_input(index.as_ref(), input_schema, "unpivot")?;
 
                 let args = UnpivotArgsIR {
-                    on: on.iter().map(|s| s.as_ref().into()).collect(),
-                    index: index.iter().map(|s| s.as_ref().into()).collect(),
-                    variable_name: args.variable_name.map(|s| s.as_ref().into()),
-                    value_name: args.value_name.map(|s| s.as_ref().into()),
+                    on: on.iter().cloned().collect(),
+                    index: index.iter().cloned().collect(),
+                    variable_name: args.variable_name.clone(),
+                    value_name: args.value_name.clone(),
                 };
 
                 FunctionIR::Unpivot {

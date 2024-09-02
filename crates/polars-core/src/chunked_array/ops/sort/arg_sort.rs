@@ -14,7 +14,7 @@ where
 }
 
 pub(super) fn arg_sort<I, J, T>(
-    name: &str,
+    name: PlSmallStr,
     iters: I,
     options: SortOptions,
     null_count: usize,
@@ -69,7 +69,7 @@ where
 }
 
 pub(super) fn arg_sort_no_nulls<I, J, T>(
-    name: &str,
+    name: PlSmallStr,
     iters: I,
     options: SortOptions,
     len: usize,

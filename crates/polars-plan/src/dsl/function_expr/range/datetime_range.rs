@@ -95,7 +95,7 @@ pub(super) fn datetime_range(
                 Some(tz) => Some(parse_time_zone(tz)?),
                 _ => None,
             };
-            datetime_range_impl(name, start, end, interval, closed, tu, tz.as_ref())?
+            datetime_range_impl(name.clone(), start, end, interval, closed, tu, tz.as_ref())?
         },
         _ => unimplemented!(),
     };
@@ -189,7 +189,7 @@ pub(super) fn datetime_ranges(
     let out = match dtype {
         DataType::Datetime(tu, ref tz) => {
             let mut builder = ListPrimitiveChunkedBuilder::<Int64Type>::new(
-                start.name(),
+                start.name().clone(),
                 start.len(),
                 start.len() * CAPACITY_FACTOR,
                 DataType::Int64,
@@ -201,7 +201,15 @@ pub(super) fn datetime_ranges(
                 _ => None,
             };
             let range_impl = |start, end, builder: &mut ListPrimitiveChunkedBuilder<Int64Type>| {
-                let rng = datetime_range_impl("", start, end, interval, closed, tu, tz.as_ref())?;
+                let rng = datetime_range_impl(
+                    PlSmallStr::EMPTY,
+                    start,
+                    end,
+                    interval,
+                    closed,
+                    tu,
+                    tz.as_ref(),
+                )?;
                 builder.append_slice(rng.cont_slice().unwrap());
                 Ok(())
             };
@@ -219,7 +227,7 @@ impl<'a> FieldsMapper<'a> {
     pub(super) fn map_to_datetime_range_dtype(
         &self,
         time_unit: Option<&TimeUnit>,
-        time_zone: Option<&str>,
+        time_zone: Option<&PlSmallStr>,
     ) -> PolarsResult<DataType> {
         let data_dtype = self.map_to_supertype()?.dtype;
 
@@ -233,10 +241,7 @@ impl<'a> FieldsMapper<'a> {
             Some(tu) => *tu,
             None => data_tu,
         };
-        let tz = match time_zone {
-            Some(tz) => Some(tz.to_string()),
-            None => data_tz,
-        };
+        let tz = time_zone.cloned().or(data_tz);
 
         Ok(DataType::Datetime(tu, tz))
     }

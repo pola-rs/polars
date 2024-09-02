@@ -125,7 +125,8 @@ impl CsvSource {
         };
 
         if let Some(col) = &file_options.include_file_paths {
-            self.include_file_path = Some(StringChunked::full(col, path.to_str().unwrap(), 1));
+            self.include_file_path =
+                Some(StringChunked::full(col.clone(), path.to_str().unwrap(), 1));
         };
 
         self.reader = Some(reader);

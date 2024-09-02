@@ -20,8 +20,8 @@ where
 #[test]
 fn sparse_debug() -> PolarsResult<()> {
     let fields = vec![
-        Field::new("a", ArrowDataType::Int32, true),
-        Field::new("b", ArrowDataType::Utf8, true),
+        Field::new("a".into(), ArrowDataType::Int32, true),
+        Field::new("b".into(), ArrowDataType::Utf8, true),
     ];
     let data_type = ArrowDataType::Union(fields, None, UnionMode::Sparse);
     let types = vec![0, 0, 1].into();
@@ -40,8 +40,8 @@ fn sparse_debug() -> PolarsResult<()> {
 #[test]
 fn dense_debug() -> PolarsResult<()> {
     let fields = vec![
-        Field::new("a", ArrowDataType::Int32, true),
-        Field::new("b", ArrowDataType::Utf8, true),
+        Field::new("a".into(), ArrowDataType::Int32, true),
+        Field::new("b".into(), ArrowDataType::Utf8, true),
     ];
     let data_type = ArrowDataType::Union(fields, None, UnionMode::Dense);
     let types = vec![0, 0, 1].into();
@@ -61,8 +61,8 @@ fn dense_debug() -> PolarsResult<()> {
 #[test]
 fn slice() -> PolarsResult<()> {
     let fields = vec![
-        Field::new("a", ArrowDataType::Int32, true),
-        Field::new("b", ArrowDataType::LargeUtf8, true),
+        Field::new("a".into(), ArrowDataType::Int32, true),
+        Field::new("b".into(), ArrowDataType::LargeUtf8, true),
     ];
     let data_type = ArrowDataType::Union(fields, None, UnionMode::Sparse);
     let types = Buffer::from(vec![0, 0, 1]);
@@ -89,8 +89,8 @@ fn slice() -> PolarsResult<()> {
 #[test]
 fn iter_sparse() -> PolarsResult<()> {
     let fields = vec![
-        Field::new("a", ArrowDataType::Int32, true),
-        Field::new("b", ArrowDataType::Utf8, true),
+        Field::new("a".into(), ArrowDataType::Int32, true),
+        Field::new("b".into(), ArrowDataType::Utf8, true),
     ];
     let data_type = ArrowDataType::Union(fields, None, UnionMode::Sparse);
     let types = Buffer::from(vec![0, 0, 1]);
@@ -122,8 +122,8 @@ fn iter_sparse() -> PolarsResult<()> {
 #[test]
 fn iter_dense() -> PolarsResult<()> {
     let fields = vec![
-        Field::new("a", ArrowDataType::Int32, true),
-        Field::new("b", ArrowDataType::Utf8, true),
+        Field::new("a".into(), ArrowDataType::Int32, true),
+        Field::new("b".into(), ArrowDataType::Utf8, true),
     ];
     let data_type = ArrowDataType::Union(fields, None, UnionMode::Dense);
     let types = Buffer::from(vec![0, 0, 1]);
@@ -156,8 +156,8 @@ fn iter_dense() -> PolarsResult<()> {
 #[test]
 fn iter_sparse_slice() -> PolarsResult<()> {
     let fields = vec![
-        Field::new("a", ArrowDataType::Int32, true),
-        Field::new("b", ArrowDataType::Utf8, true),
+        Field::new("a".into(), ArrowDataType::Int32, true),
+        Field::new("b".into(), ArrowDataType::Utf8, true),
     ];
     let data_type = ArrowDataType::Union(fields, None, UnionMode::Sparse);
     let types = Buffer::from(vec![0, 0, 1]);
@@ -182,8 +182,8 @@ fn iter_sparse_slice() -> PolarsResult<()> {
 #[test]
 fn iter_dense_slice() -> PolarsResult<()> {
     let fields = vec![
-        Field::new("a", ArrowDataType::Int32, true),
-        Field::new("b", ArrowDataType::Utf8, true),
+        Field::new("a".into(), ArrowDataType::Int32, true),
+        Field::new("b".into(), ArrowDataType::Utf8, true),
     ];
     let data_type = ArrowDataType::Union(fields, None, UnionMode::Dense);
     let types = Buffer::from(vec![0, 0, 1]);
@@ -209,8 +209,8 @@ fn iter_dense_slice() -> PolarsResult<()> {
 #[test]
 fn scalar() -> PolarsResult<()> {
     let fields = vec![
-        Field::new("a", ArrowDataType::Int32, true),
-        Field::new("b", ArrowDataType::Utf8, true),
+        Field::new("a".into(), ArrowDataType::Int32, true),
+        Field::new("b".into(), ArrowDataType::Utf8, true),
     ];
     let data_type = ArrowDataType::Union(fields, None, UnionMode::Dense);
     let types = Buffer::from(vec![0, 0, 1]);
@@ -266,8 +266,8 @@ fn scalar() -> PolarsResult<()> {
 #[test]
 fn dense_without_offsets_is_error() {
     let fields = vec![
-        Field::new("a", ArrowDataType::Int32, true),
-        Field::new("b", ArrowDataType::Utf8, true),
+        Field::new("a".into(), ArrowDataType::Int32, true),
+        Field::new("b".into(), ArrowDataType::Utf8, true),
     ];
     let data_type = ArrowDataType::Union(fields, None, UnionMode::Dense);
     let types = vec![0, 0, 1].into();
@@ -282,8 +282,8 @@ fn dense_without_offsets_is_error() {
 #[test]
 fn fields_must_match() {
     let fields = vec![
-        Field::new("a", ArrowDataType::Int64, true),
-        Field::new("b", ArrowDataType::Utf8, true),
+        Field::new("a".into(), ArrowDataType::Int64, true),
+        Field::new("b".into(), ArrowDataType::Utf8, true),
     ];
     let data_type = ArrowDataType::Union(fields, None, UnionMode::Sparse);
     let types = vec![0, 0, 1].into();
@@ -298,8 +298,8 @@ fn fields_must_match() {
 #[test]
 fn sparse_with_offsets_is_error() {
     let fields = vec![
-        Field::new("a", ArrowDataType::Int32, true),
-        Field::new("b", ArrowDataType::Utf8, true),
+        Field::new("a".into(), ArrowDataType::Int32, true),
+        Field::new("b".into(), ArrowDataType::Utf8, true),
     ];
     let data_type = ArrowDataType::Union(fields, None, UnionMode::Sparse);
     let fields = vec![
@@ -316,8 +316,8 @@ fn sparse_with_offsets_is_error() {
 #[test]
 fn offsets_must_be_in_bounds() {
     let fields = vec![
-        Field::new("a", ArrowDataType::Int32, true),
-        Field::new("b", ArrowDataType::Utf8, true),
+        Field::new("a".into(), ArrowDataType::Int32, true),
+        Field::new("b".into(), ArrowDataType::Utf8, true),
     ];
     let data_type = ArrowDataType::Union(fields, None, UnionMode::Sparse);
     let fields = vec![
@@ -335,8 +335,8 @@ fn offsets_must_be_in_bounds() {
 #[test]
 fn sparse_with_wrong_offsets1_is_error() {
     let fields = vec![
-        Field::new("a", ArrowDataType::Int32, true),
-        Field::new("b", ArrowDataType::Utf8, true),
+        Field::new("a".into(), ArrowDataType::Int32, true),
+        Field::new("b".into(), ArrowDataType::Utf8, true),
     ];
     let data_type = ArrowDataType::Union(fields, None, UnionMode::Sparse);
     let fields = vec![
@@ -354,8 +354,8 @@ fn sparse_with_wrong_offsets1_is_error() {
 #[test]
 fn types_must_be_in_bounds() -> PolarsResult<()> {
     let fields = vec![
-        Field::new("a", ArrowDataType::Int32, true),
-        Field::new("b", ArrowDataType::Utf8, true),
+        Field::new("a".into(), ArrowDataType::Int32, true),
+        Field::new("b".into(), ArrowDataType::Utf8, true),
     ];
     let data_type = ArrowDataType::Union(fields, None, UnionMode::Sparse);
     let fields = vec![

@@ -73,8 +73,8 @@ def test_streaming_sort_multiple_columns_logical_types() -> None:
     assert_frame_equal(result, expected)
 
 
-@pytest.mark.write_disk()
-@pytest.mark.slow()
+@pytest.mark.write_disk
+@pytest.mark.slow
 def test_ooc_sort(tmp_path: Path, monkeypatch: Any) -> None:
     tmp_path.mkdir(exist_ok=True)
     monkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
@@ -92,8 +92,8 @@ def test_ooc_sort(tmp_path: Path, monkeypatch: Any) -> None:
         assert_series_equal(out, s.sort(descending=descending))
 
 
-@pytest.mark.debug()
-@pytest.mark.write_disk()
+@pytest.mark.debug
+@pytest.mark.write_disk
 @pytest.mark.parametrize("spill_source", [True, False])
 def test_streaming_sort(
     tmp_path: Path, monkeypatch: Any, capfd: Any, spill_source: bool
@@ -119,7 +119,7 @@ def test_streaming_sort(
         assert "PARTITIONED FORCE SPILLED" in err
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 @pytest.mark.parametrize("spill_source", [True, False])
 def test_out_of_core_sort_9503(
     tmp_path: Path, monkeypatch: Any, spill_source: bool
@@ -183,8 +183,8 @@ def test_out_of_core_sort_9503(
     }
 
 
-@pytest.mark.write_disk()
-@pytest.mark.slow()
+@pytest.mark.write_disk
+@pytest.mark.slow
 def test_streaming_sort_multiple_columns(
     str_ints_df: pl.DataFrame, tmp_path: Path, monkeypatch: Any, capfd: Any
 ) -> None:

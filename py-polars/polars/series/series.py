@@ -1365,7 +1365,10 @@ class Series:
                 if isinstance(arg, (int, float, np.ndarray)):
                     args.append(arg)
                 elif isinstance(arg, Series):
-                    args.append(arg.to_physical()._s.to_numpy_view())
+                    phys_arg = arg.to_physical()
+                    if phys_arg._s.n_chunks() > 1:
+                        phys_arg._s.rechunk(in_place=True)
+                    args.append(phys_arg._s.to_numpy_view())
                 else:
                     msg = f"unsupported type {type(arg).__name__!r} for {arg!r}"
                     raise TypeError(msg)
@@ -2562,7 +2565,7 @@ class Series:
         ]
         """
 
-    def entropy(self, base: float = math.e, *, normalize: bool = False) -> float | None:
+    def entropy(self, base: float = math.e, *, normalize: bool = True) -> float | None:
         """
         Computes the entropy.
 
@@ -4991,27 +4994,28 @@ class Series:
 
     def sign(self) -> Series:
         """
-        Compute the element-wise indication of the sign.
+        Compute the element-wise sign function on numeric types.
 
-        The returned values can be -1, 0, or 1:
+        The returned value is computed as follows:
 
-        * -1 if x  < 0.
-        *  0 if x == 0.
-        *  1 if x  > 0.
+        * -1 if x < 0.
+        *  1 if x > 0.
+        *  x otherwise (typically 0, but could be NaN if the input is).
 
-        (null values are preserved as-is).
+        Null values are preserved as-is, and the dtype of the input is preserved.
 
         Examples
         --------
-        >>> s = pl.Series("a", [-9.0, -0.0, 0.0, 4.0, None])
+        >>> s = pl.Series("a", [-9.0, -0.0, 0.0, 4.0, float("nan"), None])
         >>> s.sign()
-        shape: (5,)
-        Series: 'a' [i64]
+        shape: (6,)
+        Series: 'a' [f64]
         [
-                -1
-                0
-                0
-                1
+                -1.0
+                -0.0
+                0.0
+                1.0
+                NaN
                 null
         ]
         """

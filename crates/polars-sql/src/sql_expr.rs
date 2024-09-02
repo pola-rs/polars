@@ -248,7 +248,7 @@ impl SQLExprVisitor<'_> {
             })
             .collect::<PolarsResult<Vec<_>>>()?;
 
-        Series::from_any_values("", &array_elements, true)
+        Series::from_any_values(PlSmallStr::EMPTY, &array_elements, true)
     }
 
     fn visit_expr(&mut self, expr: &SQLExpr) -> PolarsResult<Expr> {
@@ -446,7 +446,7 @@ impl SQLExprVisitor<'_> {
     ///
     /// e.g. column
     fn visit_identifier(&self, ident: &Ident) -> PolarsResult<Expr> {
-        Ok(col(&ident.value))
+        Ok(col(ident.value.as_str()))
     }
 
     /// Visit a compound SQL identifier
@@ -989,7 +989,7 @@ impl SQLExprVisitor<'_> {
                     },
                 }
             },
-            SQLValue::SingleQuotedString(s) => AnyValue::StringOwned(s.into()),
+            SQLValue::SingleQuotedString(s) => AnyValue::StringOwned(s.as_str().into()),
             other => polars_bail!(SQLInterface: "value {:?} is not currently supported", other),
         })
     }
@@ -1178,7 +1178,7 @@ pub fn sql_expr<S: AsRef<str>>(s: S) -> PolarsResult<Expr> {
     Ok(match &expr {
         SelectItem::ExprWithAlias { expr, alias } => {
             let expr = parse_sql_expr(expr, &mut ctx, None)?;
-            expr.alias(&alias.value)
+            expr.alias(alias.value.as_str())
         },
         SelectItem::UnnamedExpr(expr) => parse_sql_expr(expr, &mut ctx, None)?,
         _ => polars_bail!(SQLInterface: "unable to parse '{}' as Expr", s.as_ref()),
@@ -1363,27 +1363,31 @@ pub(crate) fn resolve_compound_identifier(
     }?;
 
     let col_dtype: PolarsResult<(Expr, Option<&DataType>)> = if lf.is_none() && schema.is_empty() {
-        Ok((col(&ident_root.value), None))
+        Ok((col(ident_root.value.as_str()), None))
     } else {
         let name = &remaining_idents.next().unwrap().value;
         if lf.is_some() && name == "*" {
             return Ok(schema
                 .iter_names()
-                .map(|name| col(name))
+                .map(|name| col(name.clone()))
                 .collect::<Vec<_>>());
         } else if let Some((_, name, dtype)) = schema.get_full(name) {
-            let resolved = &ctx.resolve_name(&ident_root.value, name);
+            let resolved = ctx.resolve_name(&ident_root.value, name);
+            let resolved = resolved.as_str();
             Ok((
                 if name != resolved {
-                    col(resolved).alias(name)
+                    col(resolved).alias(name.clone())
                 } else {
-                    col(name)
+                    col(name.clone())
                 },
                 Some(dtype),
             ))
         } else if lf.is_none() {
             remaining_idents = idents.iter().skip(1);
-            Ok((col(&ident_root.value), schema.get(&ident_root.value)))
+            Ok((
+                col(ident_root.value.as_str()),
+                schema.get(&ident_root.value),
+            ))
         } else {
             polars_bail!(
                 SQLInterface: "no column named '{}' found in table '{}'",

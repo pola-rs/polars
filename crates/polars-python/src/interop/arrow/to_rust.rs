@@ -51,7 +51,12 @@ pub fn to_rust_df(rb: &[Bound<PyAny>]) -> PyResult<DataFrame> {
         .first()
         .ok_or_else(|| PyPolarsErr::Other("empty table".into()))?
         .getattr("schema")?;
-    let names = schema.getattr("names")?.extract::<Vec<String>>()?;
+    let names = schema
+        .getattr("names")?
+        .extract::<Vec<String>>()?
+        .into_iter()
+        .map(PlSmallStr::from_string)
+        .collect::<Vec<_>>();
 
     let dfs = rb
         .iter()
@@ -79,7 +84,7 @@ pub fn to_rust_df(rb: &[Bound<PyAny>]) -> PyResult<DataFrame> {
                         .into_par_iter()
                         .enumerate()
                         .map(|(i, arr)| {
-                            let s = Series::try_from((names[i].as_str(), arr))
+                            let s = Series::try_from((names[i].clone(), arr))
                                 .map_err(PyPolarsErr::from)?;
                             Ok(s)
                         })
@@ -90,8 +95,8 @@ pub fn to_rust_df(rb: &[Bound<PyAny>]) -> PyResult<DataFrame> {
                     .into_iter()
                     .enumerate()
                     .map(|(i, arr)| {
-                        let s = Series::try_from((names[i].as_str(), arr))
-                            .map_err(PyPolarsErr::from)?;
+                        let s =
+                            Series::try_from((names[i].clone(), arr)).map_err(PyPolarsErr::from)?;
                         Ok(s)
                     })
                     .collect::<PyResult<Vec<_>>>()

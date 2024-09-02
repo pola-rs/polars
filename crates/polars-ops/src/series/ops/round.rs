@@ -101,7 +101,7 @@ mod test {
 
     #[test]
     fn test_round_series() {
-        let series = Series::new("a", &[1.003, 2.23222, 3.4352]);
+        let series = Series::new("a".into(), &[1.003, 2.23222, 3.4352]);
         let out = series.round(2).unwrap();
         let ca = out.f64().unwrap();
         assert_eq!(ca.get(0), Some(1.0));

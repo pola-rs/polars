@@ -97,13 +97,7 @@ pub fn as_struct(exprs: Vec<PyExpr>) -> PyResult<PyExpr> {
 
 #[pyfunction]
 pub fn field(names: Vec<String>) -> PyExpr {
-    dsl::Expr::Field(
-        names
-            .into_iter()
-            .map(|name| Arc::from(name.as_str()))
-            .collect(),
-    )
-    .into()
+    dsl::Expr::Field(names.into_iter().map(|x| x.into()).collect()).into()
 }
 
 #[pyfunction]
@@ -254,7 +248,7 @@ pub fn datetime(
     second: Option<PyExpr>,
     microsecond: Option<PyExpr>,
     time_unit: Wrap<TimeUnit>,
-    time_zone: Option<TimeZone>,
+    time_zone: Option<Wrap<TimeZone>>,
     ambiguous: Option<PyExpr>,
 ) -> PyExpr {
     let year = year.inner;
@@ -265,6 +259,7 @@ pub fn datetime(
         .map(|e| e.inner)
         .unwrap_or(dsl::lit(String::from("raise")));
     let time_unit = time_unit.0;
+    let time_zone = time_zone.map(|x| x.0);
     let args = DatetimeArgs {
         year,
         month,

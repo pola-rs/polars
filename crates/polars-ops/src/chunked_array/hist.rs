@@ -105,7 +105,8 @@ where
     if include_category {
         // Use AnyValue for formatting.
         let mut lower = AnyValue::Float64(lower_bound);
-        let mut categories = StringChunkedBuilder::new("category", breaks.len());
+        let mut categories =
+            StringChunkedBuilder::new(PlSmallStr::from_static("category"), breaks.len());
 
         let mut buf = String::new();
         for br in &breaks {
@@ -122,17 +123,20 @@ where
         fields.push(categories);
     };
     if include_breakpoint {
-        fields.insert(0, Series::new("breakpoint", breaks))
+        fields.insert(
+            0,
+            Series::new(PlSmallStr::from_static("breakpoint"), breaks),
+        )
     }
 
-    let count = Series::new("count", count);
+    let count = Series::new(PlSmallStr::from_static("count"), count);
     fields.push(count);
 
     if fields.len() == 1 {
         let out = fields.pop().unwrap();
-        out.with_name(ca.name())
+        out.with_name(ca.name().clone())
     } else {
-        StructChunked::from_series(ca.name(), &fields)
+        StructChunked::from_series(ca.name().clone(), &fields)
             .unwrap()
             .into_series()
     }

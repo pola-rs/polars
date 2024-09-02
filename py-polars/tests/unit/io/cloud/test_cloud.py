@@ -4,7 +4,7 @@ import polars as pl
 from polars.exceptions import ComputeError
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 @pytest.mark.parametrize("format", ["parquet", "csv", "ndjson", "ipc"])
 def test_scan_nonexistent_cloud_path_17444(format: str) -> None:
     # https://github.com/pola-rs/polars/issues/17444

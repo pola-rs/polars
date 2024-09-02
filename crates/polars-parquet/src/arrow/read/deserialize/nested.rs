@@ -162,7 +162,7 @@ pub fn columns_to_iter_recursive(
             PageNestedDecoder::new(
                 columns.pop().unwrap(),
                 field.data_type().clone(),
-                primitive::PrimitiveDecoder::<f32, _, _>::unit(),
+                primitive::FloatDecoder::<f32, _, _>::unit(),
                 init,
             )?
             .collect_n(filter)
@@ -174,7 +174,7 @@ pub fn columns_to_iter_recursive(
             PageNestedDecoder::new(
                 columns.pop().unwrap(),
                 field.data_type().clone(),
-                primitive::PrimitiveDecoder::<f64, _, _>::unit(),
+                primitive::FloatDecoder::<f64, _, _>::unit(),
                 init,
             )?
             .collect_n(filter)
@@ -524,14 +524,14 @@ fn dict_read<K: DictionaryKey>(
         Float32 => PageNestedDecoder::new(
             iter,
             data_type,
-            dictionary::DictionaryDecoder::new(primitive::PrimitiveDecoder::<f32, _, _>::unit()),
+            dictionary::DictionaryDecoder::new(primitive::FloatDecoder::<f32, _, _>::unit()),
             init,
         )?
         .collect_n(filter)?,
         Float64 => PageNestedDecoder::new(
             iter,
             data_type,
-            dictionary::DictionaryDecoder::new(primitive::PrimitiveDecoder::<f64, _, _>::unit()),
+            dictionary::DictionaryDecoder::new(primitive::FloatDecoder::<f64, _, _>::unit()),
             init,
         )?
         .collect_n(filter)?,

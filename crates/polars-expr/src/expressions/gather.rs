@@ -81,7 +81,7 @@ impl PhysicalExpr for GatherExpr {
                 .map(|(s, idx)| Some(s?.as_ref().take(idx?.as_ref().idx().unwrap())))
                 .map(|opt_res| opt_res.transpose())
                 .collect::<PolarsResult<ListChunked>>()?
-                .with_name(ac.series().name())
+                .with_name(ac.series().name().clone())
         };
 
         ac.with_series(taken.into_series(), true, Some(&self.expr))?;
@@ -250,7 +250,7 @@ impl GatherExpr {
             &ac.dtype(),
             idx.series().len(),
             groups.len(),
-            ac.series().name(),
+            ac.series().name().clone(),
         )?;
 
         let iter = ac.iter_groups(false).zip(idx.iter_groups(false));

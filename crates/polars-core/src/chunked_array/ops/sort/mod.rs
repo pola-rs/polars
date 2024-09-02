@@ -165,7 +165,7 @@ where
 
         sort_impl_unstable(vals.as_mut_slice(), options);
 
-        let mut ca = ChunkedArray::from_vec(ca.name(), vals);
+        let mut ca = ChunkedArray::from_vec(ca.name().clone(), vals);
         let s = if options.descending {
             IsSorted::Descending
         } else {
@@ -205,7 +205,7 @@ where
             vals.into(),
             Some(create_validity(len, null_count, options.nulls_last)),
         );
-        let mut new_ca = ChunkedArray::with_chunk(ca.name(), arr);
+        let mut new_ca = ChunkedArray::with_chunk(ca.name().clone(), arr);
         let s = if options.descending {
             IsSorted::Descending
         } else {
@@ -225,12 +225,12 @@ where
         let iter = ca
             .downcast_iter()
             .map(|arr| arr.values().as_slice().iter().copied());
-        arg_sort::arg_sort_no_nulls(ca.name(), iter, options, ca.len())
+        arg_sort::arg_sort_no_nulls(ca.name().clone(), iter, options, ca.len())
     } else {
         let iter = ca
             .downcast_iter()
             .map(|arr| arr.iter().map(|opt| opt.copied()));
-        arg_sort::arg_sort(ca.name(), iter, options, ca.null_count(), ca.len())
+        arg_sort::arg_sort(ca.name().clone(), iter, options, ca.null_count(), ca.len())
     }
 }
 
@@ -409,14 +409,14 @@ impl ChunkSort<BinaryType> for BinaryChunked {
     fn arg_sort(&self, options: SortOptions) -> IdxCa {
         if self.null_count() == 0 {
             arg_sort::arg_sort_no_nulls(
-                self.name(),
+                self.name().clone(),
                 self.downcast_iter().map(|arr| arr.values_iter()),
                 options,
                 self.len(),
             )
         } else {
             arg_sort::arg_sort(
-                self.name(),
+                self.name().clone(),
                 self.downcast_iter().map(|arr| arr.iter()),
                 options,
                 self.null_count(),
@@ -477,7 +477,7 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
                 let arr = unsafe {
                     BinaryArray::from_data_unchecked_default(offsets.into(), values.into(), None)
                 };
-                ChunkedArray::with_chunk(self.name(), arr)
+                ChunkedArray::with_chunk(self.name().clone(), arr)
             },
             (_, true) => {
                 for val in v {
@@ -495,7 +495,7 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
                         Some(create_validity(len, null_count, true)),
                     )
                 };
-                ChunkedArray::with_chunk(self.name(), arr)
+                ChunkedArray::with_chunk(self.name().clone(), arr)
             },
             (_, false) => {
                 offsets.extend(std::iter::repeat(length_so_far).take(null_count));
@@ -514,7 +514,7 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
                         Some(create_validity(len, null_count, false)),
                     )
                 };
-                ChunkedArray::with_chunk(self.name(), arr)
+                ChunkedArray::with_chunk(self.name().clone(), arr)
             },
         };
 
@@ -552,13 +552,16 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
 
         if self.null_count() == 0 {
             argsort(&mut idx);
-            IdxCa::from_vec(self.name(), idx)
+            IdxCa::from_vec(self.name().clone(), idx)
         } else {
             // This branch (almost?) never gets called as the row-encoding also encodes nulls.
             let (partitioned_part, validity) =
                 partition_nulls(&mut idx, arr.validity().cloned(), options);
             argsort(partitioned_part);
-            IdxCa::with_chunk(self.name(), IdxArr::from_data_default(idx.into(), validity))
+            IdxCa::with_chunk(
+                self.name().clone(),
+                IdxArr::from_data_default(idx.into(), validity),
+            )
         }
     }
 
@@ -595,7 +598,7 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
 impl StructChunked {
     pub(crate) fn arg_sort(&self, options: SortOptions) -> IdxCa {
         let bin = _get_rows_encoded_ca(
-            self.name(),
+            self.name().clone(),
             &[self.clone().into_series()],
             &[options.descending],
             &[options.nulls_last],
@@ -656,7 +659,7 @@ impl ChunkSort<BooleanType> for BooleanChunked {
         }
 
         let mut ca: BooleanChunked = vals.into_iter().collect_trusted();
-        ca.rename(self.name());
+        ca.rename(self.name().clone());
         ca
     }
 
@@ -672,14 +675,14 @@ impl ChunkSort<BooleanType> for BooleanChunked {
     fn arg_sort(&self, options: SortOptions) -> IdxCa {
         if self.null_count() == 0 {
             arg_sort::arg_sort_no_nulls(
-                self.name(),
+                self.name().clone(),
                 self.downcast_iter().map(|arr| arr.values_iter()),
                 options,
                 self.len(),
             )
         } else {
             arg_sort::arg_sort(
-                self.name(),
+                self.name().clone(),
                 self.downcast_iter().map(|arr| arr.iter()),
                 options,
                 self.null_count(),
@@ -721,7 +724,7 @@ pub(crate) fn convert_sort_column_multi_sort(s: &Series) -> PolarsResult<Series>
                 .iter()
                 .map(convert_sort_column_multi_sort)
                 .collect::<PolarsResult<Vec<_>>>()?;
-            let mut out = StructChunked::from_series(ca.name(), &new_fields)?;
+            let mut out = StructChunked::from_series(ca.name().clone(), &new_fields)?;
             out.zip_outer_validity(ca);
             out.into_series()
         },
@@ -775,7 +778,7 @@ mod test {
     #[test]
     fn test_arg_sort() {
         let a = Int32Chunked::new(
-            "a",
+            PlSmallStr::from_static("a"),
             &[
                 Some(1), // 0
                 Some(5), // 1
@@ -809,7 +812,7 @@ mod test {
     #[test]
     fn test_sort() {
         let a = Int32Chunked::new(
-            "a",
+            PlSmallStr::from_static("a"),
             &[
                 Some(1),
                 Some(5),
@@ -859,7 +862,10 @@ mod test {
                 None
             ]
         );
-        let b = BooleanChunked::new("b", &[Some(false), Some(true), Some(false)]);
+        let b = BooleanChunked::new(
+            PlSmallStr::from_static("b"),
+            &[Some(false), Some(true), Some(false)],
+        );
         let out = b.sort_with(SortOptions::default().with_order_descending(true));
         assert_eq!(Vec::from(&out), &[Some(true), Some(false), Some(false)]);
         let out = b.sort_with(SortOptions::default().with_order_descending(false));
@@ -869,9 +875,12 @@ mod test {
     #[test]
     #[cfg_attr(miri, ignore)]
     fn test_arg_sort_multiple() -> PolarsResult<()> {
-        let a = Int32Chunked::new("a", &[1, 2, 1, 1, 3, 4, 3, 3]);
-        let b = Int64Chunked::new("b", &[0, 1, 2, 3, 4, 5, 6, 1]);
-        let c = StringChunked::new("c", &["a", "b", "c", "d", "e", "f", "g", "h"]);
+        let a = Int32Chunked::new(PlSmallStr::from_static("a"), &[1, 2, 1, 1, 3, 4, 3, 3]);
+        let b = Int64Chunked::new(PlSmallStr::from_static("b"), &[0, 1, 2, 3, 4, 5, 6, 1]);
+        let c = StringChunked::new(
+            PlSmallStr::from_static("c"),
+            &["a", "b", "c", "d", "e", "f", "g", "h"],
+        );
         let df = DataFrame::new(vec![a.into_series(), b.into_series(), c.into_series()])?;
 
         let out = df.sort(["a", "b", "c"], SortMultipleOptions::default())?;
@@ -890,8 +899,12 @@ mod test {
         );
 
         // now let the first sort be a string
-        let a = StringChunked::new("a", &["a", "b", "c", "a", "b", "c"]).into_series();
-        let b = Int32Chunked::new("b", &[5, 4, 2, 3, 4, 5]).into_series();
+        let a = StringChunked::new(
+            PlSmallStr::from_static("a"),
+            &["a", "b", "c", "a", "b", "c"],
+        )
+        .into_series();
+        let b = Int32Chunked::new(PlSmallStr::from_static("b"), &[5, 4, 2, 3, 4, 5]).into_series();
         let df = DataFrame::new(vec![a, b])?;
 
         let out = df.sort(["a", "b"], SortMultipleOptions::default())?;
@@ -931,7 +944,10 @@ mod test {
 
     #[test]
     fn test_sort_string() {
-        let ca = StringChunked::new("a", &[Some("a"), None, Some("c"), None, Some("b")]);
+        let ca = StringChunked::new(
+            PlSmallStr::from_static("a"),
+            &[Some("a"), None, Some("c"), None, Some("b")],
+        );
         let out = ca.sort_with(SortOptions {
             descending: false,
             nulls_last: false,
@@ -970,7 +986,10 @@ mod test {
         assert_eq!(Vec::from(&out), expected);
 
         // no nulls
-        let ca = StringChunked::new("a", &[Some("a"), Some("c"), Some("b")]);
+        let ca = StringChunked::new(
+            PlSmallStr::from_static("a"),
+            &[Some("a"), Some("c"), Some("b")],
+        );
         let out = ca.sort(false);
         let expected = &[Some("a"), Some("b"), Some("c")];
         assert_eq!(Vec::from(&out), expected);

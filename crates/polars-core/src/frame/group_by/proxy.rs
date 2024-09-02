@@ -345,7 +345,7 @@ impl GroupsProxy {
                 }
                 unsafe {
                     (
-                        Some(IdxCa::from_vec("", gather_offsets)),
+                        Some(IdxCa::from_vec(PlSmallStr::EMPTY, gather_offsets)),
                         OffsetsBuffer::new_unchecked(list_offset.into()),
                         can_fast_explode,
                     )
@@ -369,7 +369,7 @@ impl GroupsProxy {
 
                 unsafe {
                     (
-                        Some(IdxCa::from_vec("", gather_offsets)),
+                        Some(IdxCa::from_vec(PlSmallStr::EMPTY, gather_offsets)),
                         OffsetsBuffer::new_unchecked(list_offset.into()),
                         can_fast_explode,
                     )

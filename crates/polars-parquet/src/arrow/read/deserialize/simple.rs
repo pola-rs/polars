@@ -278,13 +278,13 @@ pub fn page_iter_to_array(
         (PhysicalType::Float, Float32) => Box::new(PageDecoder::new(
             pages,
             data_type,
-            primitive::PrimitiveDecoder::<f32, _, _>::unit(),
+            primitive::FloatDecoder::<f32, _, _>::unit(),
         )?
         .collect_n(filter)?),
         (PhysicalType::Double, Float64) => Box::new(PageDecoder::new(
             pages,
             data_type,
-            primitive::PrimitiveDecoder::<f64, _, _>::unit(),
+            primitive::FloatDecoder::<f64, _, _>::unit(),
         )?
         .collect_n(filter)?),
         // Don't compile this code with `i32` as we don't use this in polars
@@ -393,7 +393,7 @@ fn timestamp(
                 PageDecoder::new(
                     pages,
                     data_type,
-                    primitive::PrimitiveDecoder::closure(|x: [u32; 3]| int96_to_i64_ns(x)),
+                    primitive::FloatDecoder::closure(|x: [u32; 3]| int96_to_i64_ns(x)),
                 )?
                 .collect_n(filter)?,
             )),
@@ -401,7 +401,7 @@ fn timestamp(
                 PageDecoder::new(
                     pages,
                     data_type,
-                    primitive::PrimitiveDecoder::closure(|x: [u32; 3]| int96_to_i64_us(x)),
+                    primitive::FloatDecoder::closure(|x: [u32; 3]| int96_to_i64_us(x)),
                 )?
                 .collect_n(filter)?,
             )),
@@ -409,7 +409,7 @@ fn timestamp(
                 PageDecoder::new(
                     pages,
                     data_type,
-                    primitive::PrimitiveDecoder::closure(|x: [u32; 3]| int96_to_i64_ms(x)),
+                    primitive::FloatDecoder::closure(|x: [u32; 3]| int96_to_i64_ms(x)),
                 )?
                 .collect_n(filter)?,
             )),
@@ -417,7 +417,7 @@ fn timestamp(
                 PageDecoder::new(
                     pages,
                     data_type,
-                    primitive::PrimitiveDecoder::closure(|x: [u32; 3]| int96_to_i64_s(x)),
+                    primitive::FloatDecoder::closure(|x: [u32; 3]| int96_to_i64_s(x)),
                 )?
                 .collect_n(filter)?,
             )),
@@ -473,7 +473,7 @@ fn timestamp_dict<K: DictionaryKey>(
             (a, true) => PageDecoder::new(
                 pages,
                 ArrowDataType::Timestamp(TimeUnit::Nanosecond, None),
-                dictionary::DictionaryDecoder::<K, _>::new(primitive::PrimitiveDecoder::closure(
+                dictionary::DictionaryDecoder::<K, _>::new(primitive::FloatDecoder::closure(
                     |x: [u32; 3]| int96_to_i64_ns(x) * a,
                 )),
             )?
@@ -481,7 +481,7 @@ fn timestamp_dict<K: DictionaryKey>(
             (a, false) => PageDecoder::new(
                 pages,
                 ArrowDataType::Timestamp(TimeUnit::Nanosecond, None),
-                dictionary::DictionaryDecoder::<K, _>::new(primitive::PrimitiveDecoder::closure(
+                dictionary::DictionaryDecoder::<K, _>::new(primitive::FloatDecoder::closure(
                     |x: [u32; 3]| int96_to_i64_ns(x) / a,
                 )),
             )?
@@ -494,17 +494,13 @@ fn timestamp_dict<K: DictionaryKey>(
         (a, true) => PageDecoder::new(
             pages,
             data_type,
-            dictionary::DictionaryDecoder::new(primitive::PrimitiveDecoder::closure(|x: i64| {
-                x * a
-            })),
+            dictionary::DictionaryDecoder::new(primitive::FloatDecoder::closure(|x: i64| x * a)),
         )?
         .collect_n(filter),
         (a, false) => PageDecoder::new(
             pages,
             data_type,
-            dictionary::DictionaryDecoder::new(primitive::PrimitiveDecoder::closure(|x: i64| {
-                x / a
-            })),
+            dictionary::DictionaryDecoder::new(primitive::FloatDecoder::closure(|x: i64| x / a)),
         )?
         .collect_n(filter),
     }
@@ -524,132 +520,99 @@ fn dict_read<K: DictionaryKey>(
         panic!()
     };
 
-    Ok(
-        match (physical_type, values_data_type.to_logical_type()) {
-            (PhysicalType::Int32, UInt8) => PageDecoder::new(
+    Ok(match (physical_type, values_data_type.to_logical_type()) {
+        (PhysicalType::Int32, UInt8) => PageDecoder::new(
+            iter,
+            data_type,
+            dictionary::DictionaryDecoder::new(primitive::FloatDecoder::<i32, u8, _>::cast_as()),
+        )?
+        .collect_n(filter)?,
+        (PhysicalType::Int32, UInt16) => PageDecoder::new(
+            iter,
+            data_type,
+            dictionary::DictionaryDecoder::new(primitive::FloatDecoder::<i32, u16, _>::cast_as()),
+        )?
+        .collect_n(filter)?,
+        (PhysicalType::Int32, UInt32) => PageDecoder::new(
+            iter,
+            data_type,
+            dictionary::DictionaryDecoder::new(primitive::FloatDecoder::<i32, u32, _>::cast_as()),
+        )?
+        .collect_n(filter)?,
+        (PhysicalType::Int64, UInt64) => PageDecoder::new(
+            iter,
+            data_type,
+            dictionary::DictionaryDecoder::new(primitive::FloatDecoder::<i64, u64, _>::cast_as()),
+        )?
+        .collect_n(filter)?,
+        (PhysicalType::Int32, Int8) => PageDecoder::new(
+            iter,
+            data_type,
+            dictionary::DictionaryDecoder::new(primitive::FloatDecoder::<i32, i8, _>::cast_as()),
+        )?
+        .collect_n(filter)?,
+        (PhysicalType::Int32, Int16) => PageDecoder::new(
+            iter,
+            data_type,
+            dictionary::DictionaryDecoder::new(primitive::FloatDecoder::<i32, i16, _>::cast_as()),
+        )?
+        .collect_n(filter)?,
+        (PhysicalType::Int32, Int32 | Date32 | Time32(_) | Interval(IntervalUnit::YearMonth)) => {
+            PageDecoder::new(
                 iter,
                 data_type,
-                dictionary::DictionaryDecoder::new(
-                    primitive::PrimitiveDecoder::<i32, u8, _>::cast_as(),
-                ),
+                dictionary::DictionaryDecoder::new(primitive::FloatDecoder::<i32, _, _>::unit()),
             )?
-            .collect_n(filter)?,
-            (PhysicalType::Int32, UInt16) => PageDecoder::new(
-                iter,
-                data_type,
-                dictionary::DictionaryDecoder::new(
-                    primitive::PrimitiveDecoder::<i32, u16, _>::cast_as(),
-                ),
-            )?
-            .collect_n(filter)?,
-            (PhysicalType::Int32, UInt32) => PageDecoder::new(
-                iter,
-                data_type,
-                dictionary::DictionaryDecoder::new(
-                    primitive::PrimitiveDecoder::<i32, u32, _>::cast_as(),
-                ),
-            )?
-            .collect_n(filter)?,
-            (PhysicalType::Int64, UInt64) => PageDecoder::new(
-                iter,
-                data_type,
-                dictionary::DictionaryDecoder::new(
-                    primitive::PrimitiveDecoder::<i64, u64, _>::cast_as(),
-                ),
-            )?
-            .collect_n(filter)?,
-            (PhysicalType::Int32, Int8) => PageDecoder::new(
-                iter,
-                data_type,
-                dictionary::DictionaryDecoder::new(
-                    primitive::PrimitiveDecoder::<i32, i8, _>::cast_as(),
-                ),
-            )?
-            .collect_n(filter)?,
-            (PhysicalType::Int32, Int16) => PageDecoder::new(
-                iter,
-                data_type,
-                dictionary::DictionaryDecoder::new(
-                    primitive::PrimitiveDecoder::<i32, i16, _>::cast_as(),
-                ),
-            )?
-            .collect_n(filter)?,
-            (
-                PhysicalType::Int32,
-                Int32 | Date32 | Time32(_) | Interval(IntervalUnit::YearMonth),
-            ) => {
-                PageDecoder::new(
-                    iter,
-                    data_type,
-                    dictionary::DictionaryDecoder::new(
-                        primitive::PrimitiveDecoder::<i32, _, _>::unit(),
-                    ),
-                )?
-                .collect_n(filter)?
-            },
-
-            (PhysicalType::Int64, Timestamp(time_unit, _)) => {
-                let time_unit = *time_unit;
-                return timestamp_dict::<K>(
-                    iter,
-                    physical_type,
-                    logical_type,
-                    data_type,
-                    filter,
-                    time_unit,
-                );
-            },
-
-            (PhysicalType::Int64, Int64 | Date64 | Time64(_) | Duration(_)) => {
-                PageDecoder::new(
-                    iter,
-                    data_type,
-                    dictionary::DictionaryDecoder::new(
-                        primitive::PrimitiveDecoder::<i64, _, _>::unit(),
-                    ),
-                )?
-                .collect_n(filter)?
-            },
-            (PhysicalType::Float, Float32) => {
-                PageDecoder::new(
-                    iter,
-                    data_type,
-                    dictionary::DictionaryDecoder::new(
-                        primitive::PrimitiveDecoder::<f32, _, _>::unit(),
-                    ),
-                )?
-                .collect_n(filter)?
-            },
-            (PhysicalType::Double, Float64) => {
-                PageDecoder::new(
-                    iter,
-                    data_type,
-                    dictionary::DictionaryDecoder::new(
-                        primitive::PrimitiveDecoder::<f64, _, _>::unit(),
-                    ),
-                )?
-                .collect_n(filter)?
-            },
-            (_, LargeUtf8 | LargeBinary | Utf8 | Binary) => unreachable!(),
-            (PhysicalType::ByteArray, Utf8View | BinaryView) => PageDecoder::new(
-                iter,
-                data_type,
-                dictionary::DictionaryDecoder::new(BinViewDecoder::default()),
-            )?
-            .collect_n(filter)?,
-            (PhysicalType::FixedLenByteArray(size), FixedSizeBinary(_)) => PageDecoder::new(
-                iter,
-                data_type,
-                dictionary::DictionaryDecoder::new(fixed_size_binary::BinaryDecoder {
-                    size: *size,
-                }),
-            )?
-            .collect_n(filter)?,
-            other => {
-                return Err(ParquetError::FeatureNotSupported(format!(
-                    "Reading dictionaries of type {other:?}"
-                )));
-            },
+            .collect_n(filter)?
         },
-    )
+
+        (PhysicalType::Int64, Timestamp(time_unit, _)) => {
+            let time_unit = *time_unit;
+            return timestamp_dict::<K>(
+                iter,
+                physical_type,
+                logical_type,
+                data_type,
+                filter,
+                time_unit,
+            );
+        },
+
+        (PhysicalType::Int64, Int64 | Date64 | Time64(_) | Duration(_)) => PageDecoder::new(
+            iter,
+            data_type,
+            dictionary::DictionaryDecoder::new(primitive::FloatDecoder::<i64, _, _>::unit()),
+        )?
+        .collect_n(filter)?,
+        (PhysicalType::Float, Float32) => PageDecoder::new(
+            iter,
+            data_type,
+            dictionary::DictionaryDecoder::new(primitive::FloatDecoder::<f32, _, _>::unit()),
+        )?
+        .collect_n(filter)?,
+        (PhysicalType::Double, Float64) => PageDecoder::new(
+            iter,
+            data_type,
+            dictionary::DictionaryDecoder::new(primitive::FloatDecoder::<f64, _, _>::unit()),
+        )?
+        .collect_n(filter)?,
+        (_, LargeUtf8 | LargeBinary | Utf8 | Binary) => unreachable!(),
+        (PhysicalType::ByteArray, Utf8View | BinaryView) => PageDecoder::new(
+            iter,
+            data_type,
+            dictionary::DictionaryDecoder::new(BinViewDecoder::default()),
+        )?
+        .collect_n(filter)?,
+        (PhysicalType::FixedLenByteArray(size), FixedSizeBinary(_)) => PageDecoder::new(
+            iter,
+            data_type,
+            dictionary::DictionaryDecoder::new(fixed_size_binary::BinaryDecoder { size: *size }),
+        )?
+        .collect_n(filter)?,
+        other => {
+            return Err(ParquetError::FeatureNotSupported(format!(
+                "Reading dictionaries of type {other:?}"
+            )));
+        },
+    })
 }

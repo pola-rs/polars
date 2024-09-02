@@ -9,14 +9,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let df = df!(
             "id" => &[9, 4, 2],
             "place" => &["Mars", "Earth", "Saturn"],
-        "date" => date_range("date",
+        "date" => date_range("date".into(),
 			    NaiveDate::from_ymd_opt(2022, 1, 1).unwrap().and_hms_opt(0, 0, 0).unwrap(), NaiveDate::from_ymd_opt(2022, 1, 3).unwrap().and_hms_opt(0, 0, 0).unwrap(), Duration::parse("1d"),ClosedWindow::Both, TimeUnit::Milliseconds, None)?,
             "sales" => &[33.4, 2142134.1, 44.7],
             "has_people" => &[false, true, false],
-            "logged_at" => date_range("logged_at",
+            "logged_at" => date_range("logged_at".into(),
 			    NaiveDate::from_ymd_opt(2022, 1, 1).unwrap().and_hms_opt(0, 0, 0).unwrap(), NaiveDate::from_ymd_opt(2022, 1, 1).unwrap().and_hms_opt(0, 0, 2).unwrap(), Duration::parse("1s"),ClosedWindow::Both, TimeUnit::Milliseconds, None)?,
     )?
-    .with_row_index("index", None)?;
+    .with_row_index("index".into(), None)?;
     println!("{}", &df);
     // --8<-- [end:selectors_df]
 

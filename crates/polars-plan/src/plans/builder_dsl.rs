@@ -90,7 +90,7 @@ impl DslBuilder {
         use_statistics: bool,
         hive_options: HiveOptions,
         glob: bool,
-        include_file_paths: Option<Arc<str>>,
+        include_file_paths: Option<PlSmallStr>,
     ) -> PolarsResult<Self> {
         let paths = init_paths(paths);
 
@@ -135,7 +135,7 @@ impl DslBuilder {
         rechunk: bool,
         cloud_options: Option<CloudOptions>,
         hive_options: HiveOptions,
-        include_file_paths: Option<Arc<str>>,
+        include_file_paths: Option<PlSmallStr>,
     ) -> PolarsResult<Self> {
         let paths = init_paths(paths);
 
@@ -172,7 +172,7 @@ impl DslBuilder {
         cache: bool,
         cloud_options: Option<CloudOptions>,
         glob: bool,
-        include_file_paths: Option<Arc<str>>,
+        include_file_paths: Option<PlSmallStr>,
     ) -> PolarsResult<Self> {
         let paths = init_paths(paths);
 
@@ -366,13 +366,10 @@ impl DslBuilder {
         .into()
     }
 
-    pub fn row_index(self, name: &str, offset: Option<IdxSize>) -> Self {
+    pub fn row_index(self, name: PlSmallStr, offset: Option<IdxSize>) -> Self {
         DslPlan::MapFunction {
             input: Arc::new(self.0),
-            function: DslFunction::RowIndex {
-                name: ColumnName::from(name),
-                offset,
-            },
+            function: DslFunction::RowIndex { name, offset },
         }
         .into()
     }
@@ -431,9 +428,9 @@ impl DslBuilder {
             function: DslFunction::OpaquePython(OpaquePythonUdf {
                 function,
                 schema,
-                predicate_pd: optimizations.contains(OptState::PREDICATE_PUSHDOWN),
-                projection_pd: optimizations.contains(OptState::PROJECTION_PUSHDOWN),
-                streamable: optimizations.contains(OptState::STREAMING),
+                predicate_pd: optimizations.contains(OptFlags::PREDICATE_PUSHDOWN),
+                projection_pd: optimizations.contains(OptFlags::PROJECTION_PUSHDOWN),
+                streamable: optimizations.contains(OptFlags::STREAMING),
                 validate_output,
             }),
         }
@@ -445,7 +442,7 @@ impl DslBuilder {
         function: F,
         optimizations: AllowedOptimizations,
         schema: Option<Arc<dyn UdfSchema>>,
-        name: &str,
+        name: PlSmallStr,
     ) -> Self
     where
         F: DataFrameUdf + 'static,
@@ -457,10 +454,10 @@ impl DslBuilder {
             function: DslFunction::FunctionIR(FunctionIR::Opaque {
                 function,
                 schema,
-                predicate_pd: optimizations.contains(OptState::PREDICATE_PUSHDOWN),
-                projection_pd: optimizations.contains(OptState::PROJECTION_PUSHDOWN),
-                streamable: optimizations.contains(OptState::STREAMING),
-                fmt_str: name.into(),
+                predicate_pd: optimizations.contains(OptFlags::PREDICATE_PUSHDOWN),
+                projection_pd: optimizations.contains(OptFlags::PROJECTION_PUSHDOWN),
+                streamable: optimizations.contains(OptFlags::STREAMING),
+                fmt_str: name,
             }),
         }
         .into()

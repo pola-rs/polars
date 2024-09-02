@@ -155,9 +155,9 @@ where
             out.into(),
             Some(validity.into()),
         );
-        Ok(ChunkedArray::with_chunk(chunked_arr.name(), array))
+        Ok(ChunkedArray::with_chunk(chunked_arr.name().clone(), array))
     } else {
-        Ok(ChunkedArray::from_vec(chunked_arr.name(), out))
+        Ok(ChunkedArray::from_vec(chunked_arr.name().clone(), out))
     }
 }
 
@@ -257,9 +257,9 @@ where
             out.into(),
             Some(validity.into()),
         );
-        Ok(ChunkedArray::with_chunk(ca_sorted.name(), array))
+        Ok(ChunkedArray::with_chunk(ca_sorted.name().clone(), array))
     } else {
-        Ok(ChunkedArray::from_vec(ca_sorted.name(), out))
+        Ok(ChunkedArray::from_vec(ca_sorted.name().clone(), out))
     }
 }
 

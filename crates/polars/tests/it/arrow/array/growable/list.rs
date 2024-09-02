@@ -19,7 +19,7 @@ fn extension() {
     let array = create_list_array(data);
 
     let data_type =
-        ArrowDataType::Extension("ext".to_owned(), Box::new(array.data_type().clone()), None);
+        ArrowDataType::Extension("ext".into(), Box::new(array.data_type().clone()), None);
     let array_ext = ListArray::new(
         data_type,
         array.offsets().clone(),

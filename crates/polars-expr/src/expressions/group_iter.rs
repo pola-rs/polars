@@ -13,7 +13,11 @@ impl<'a> AggregationContext<'a> {
             AggState::Literal(_) => {
                 self.groups();
                 let s = self.series().rechunk();
-                let name = if keep_names { s.name() } else { "" };
+                let name = if keep_names {
+                    s.name().clone()
+                } else {
+                    PlSmallStr::EMPTY
+                };
                 // SAFETY: dtype is correct
                 unsafe {
                     Box::new(LitIter::new(
@@ -27,7 +31,11 @@ impl<'a> AggregationContext<'a> {
             AggState::AggregatedScalar(_) => {
                 self.groups();
                 let s = self.series();
-                let name = if keep_names { s.name() } else { "" };
+                let name = if keep_names {
+                    s.name().clone()
+                } else {
+                    PlSmallStr::EMPTY
+                };
                 // SAFETY: dtype is correct
                 unsafe {
                     Box::new(FlatIter::new(
@@ -41,7 +49,11 @@ impl<'a> AggregationContext<'a> {
             AggState::AggregatedList(_) => {
                 let s = self.series();
                 let list = s.list().unwrap();
-                let name = if keep_names { s.name() } else { "" };
+                let name = if keep_names {
+                    s.name().clone()
+                } else {
+                    PlSmallStr::EMPTY
+                };
                 Box::new(list.amortized_iter_with_name(name))
             },
             AggState::NotAggregated(_) => {
@@ -49,7 +61,11 @@ impl<'a> AggregationContext<'a> {
                 let _ = self.aggregated();
                 let s = self.series();
                 let list = s.list().unwrap();
-                let name = if keep_names { s.name() } else { "" };
+                let name = if keep_names {
+                    s.name().clone()
+                } else {
+                    PlSmallStr::EMPTY
+                };
                 Box::new(list.amortized_iter_with_name(name))
             },
         }
@@ -68,7 +84,7 @@ struct LitIter {
 impl LitIter {
     /// # Safety
     /// Caller must ensure the given `logical` dtype belongs to `array`.
-    unsafe fn new(array: ArrayRef, len: usize, logical: &DataType, name: &str) -> Self {
+    unsafe fn new(array: ArrayRef, len: usize, logical: &DataType, name: PlSmallStr) -> Self {
         let series_container = Rc::new(Series::from_chunks_and_dtype_unchecked(
             name,
             vec![array],
@@ -117,7 +133,7 @@ struct FlatIter {
 impl FlatIter {
     /// # Safety
     /// Caller must ensure the given `logical` dtype belongs to `array`.
-    unsafe fn new(chunks: &[ArrayRef], len: usize, logical: &DataType, name: &str) -> Self {
+    unsafe fn new(chunks: &[ArrayRef], len: usize, logical: &DataType, name: PlSmallStr) -> Self {
         let mut stack = Vec::with_capacity(chunks.len());
         for chunk in chunks.iter().rev() {
             stack.push(chunk.clone())

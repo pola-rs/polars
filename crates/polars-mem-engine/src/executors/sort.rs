@@ -1,3 +1,5 @@
+use polars_utils::format_pl_smallstr;
+
 use super::*;
 
 pub(crate) struct SortExec {
@@ -29,9 +31,14 @@ impl SortExec {
                 // therefore we rename more complex expressions so that
                 // polars core does not match these.
                 if !matches!(e.as_expression(), Some(&Expr::Column(_))) {
-                    s.rename(&format!("_POLARS_SORT_BY_{i}"));
+                    s.rename(format_pl_smallstr!("_POLARS_SORT_BY_{i}"));
                 }
-                polars_ensure!(s.len() == height, ShapeMismatch: "sort expressions must have same length as DataFrame, got DataFrame height: {} and Series length: {}", height, s.len());
+                polars_ensure!(
+                    s.len() == height,
+                    ShapeMismatch: "sort expressions must have same \
+                    length as DataFrame, got DataFrame height: {} and Series length: {}",
+                    height, s.len()
+                );
                 Ok(s)
             })
             .collect::<PolarsResult<Vec<_>>>()?;

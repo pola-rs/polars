@@ -150,7 +150,7 @@ class ExceptionTestParams(NamedTuple):
     kwargs: dict[str, Any] | None = None
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 @pytest.mark.parametrize(
     (
         "read_method",
@@ -698,7 +698,7 @@ def test_read_database_cx_credentials(uri: str) -> None:
             pl.read_database_uri("SELECT * FROM data", uri=uri, engine="connectorx")
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_read_kuzu_graph_database(tmp_path: Path, io_files_path: Path) -> None:
     import kuzu
 

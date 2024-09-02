@@ -54,7 +54,7 @@ pub trait Utf8JsonPathImpl: AsString {
                     )?;
                     unary_elementwise(ca, |opt_s| opt_s.and_then(|s| extract_json(&pat, s)))
                 } else {
-                    StringChunked::full_null(ca.name(), ca.len())
+                    StringChunked::full_null(ca.name().clone(), ca.len())
                 };
                 Ok(out)
             },
@@ -112,7 +112,7 @@ pub trait Utf8JsonPathImpl: AsString {
             ca.len(),
         )
         .map_err(|e| polars_err!(ComputeError: "error deserializing JSON: {}", e))?;
-        Series::try_from(("", array))
+        Series::try_from((PlSmallStr::EMPTY, array))
     }
 
     fn json_path_select(&self, json_path: &str) -> PolarsResult<StringChunked> {
@@ -167,7 +167,7 @@ mod tests {
     #[test]
     fn test_json_infer() {
         let s = Series::new(
-            "json",
+            "json".into(),
             [
                 None,
                 Some(r#"{"a": 1, "b": [{"c": 0}, {"c": 1}]}"#),
@@ -177,10 +177,10 @@ mod tests {
         );
         let ca = s.str().unwrap();
 
-        let inner_dtype = DataType::Struct(vec![Field::new("c", DataType::Int64)]);
+        let inner_dtype = DataType::Struct(vec![Field::new("c".into(), DataType::Int64)]);
         let expected_dtype = DataType::Struct(vec![
-            Field::new("a", DataType::Int64),
-            Field::new("b", DataType::List(Box::new(inner_dtype))),
+            Field::new("a".into(), DataType::Int64),
+            Field::new("b".into(), DataType::List(Box::new(inner_dtype))),
         ]);
 
         assert_eq!(ca.json_infer(None).unwrap(), expected_dtype);
@@ -192,7 +192,7 @@ mod tests {
     #[test]
     fn test_json_decode() {
         let s = Series::new(
-            "json",
+            "json".into(),
             [
                 None,
                 Some(r#"{"a": 1, "b": "hello"}"#),
@@ -203,14 +203,14 @@ mod tests {
         let ca = s.str().unwrap();
 
         let expected_series = StructChunked::from_series(
-            "",
+            "".into(),
             &[
-                Series::new("a", &[None, Some(1), Some(2), None]),
-                Series::new("b", &[None, Some("hello"), Some("goodbye"), None]),
+                Series::new("a".into(), &[None, Some(1), Some(2), None]),
+                Series::new("b".into(), &[None, Some("hello"), Some("goodbye"), None]),
             ],
         )
         .unwrap()
-        .with_outer_validity_chunked(BooleanChunked::new("", [false, true, true, false]))
+        .with_outer_validity_chunked(BooleanChunked::new("".into(), [false, true, true, false]))
         .into_series();
         let expected_dtype = expected_series.dtype().clone();
 
@@ -227,7 +227,7 @@ mod tests {
     #[test]
     fn test_json_path_select() {
         let s = Series::new(
-            "json",
+            "json".into(),
             [
                 None,
                 Some(r#"{"a":1,"b":[{"c":0},{"c":1}]}"#),
@@ -244,7 +244,7 @@ mod tests {
             .equals_missing(&s));
 
         let b_series = Series::new(
-            "json",
+            "json".into(),
             [
                 None,
                 Some(r#"[{"c":0},{"c":1}]"#),
@@ -258,7 +258,10 @@ mod tests {
             .into_series()
             .equals_missing(&b_series));
 
-        let c_series = Series::new("json", [None, Some(r#"[0,1]"#), Some(r#"[2,5]"#), None]);
+        let c_series = Series::new(
+            "json".into(),
+            [None, Some(r#"[0,1]"#), Some(r#"[2,5]"#), None],
+        );
         assert!(ca
             .json_path_select("$.b[:].c")
             .unwrap()
@@ -269,7 +272,7 @@ mod tests {
     #[test]
     fn test_json_path_extract() {
         let s = Series::new(
-            "json",
+            "json".into(),
             [
                 None,
                 Some(r#"{"a":1,"b":[{"c":0},{"c":1}]}"#),
@@ -280,11 +283,11 @@ mod tests {
         let ca = s.str().unwrap();
 
         let c_series = Series::new(
-            "",
+            "".into(),
             [
                 None,
-                Some(Series::new("", &[0, 1])),
-                Some(Series::new("", &[2, 5])),
+                Some(Series::new("".into(), &[0, 1])),
+                Some(Series::new("".into(), &[2, 5])),
                 None,
             ],
         );

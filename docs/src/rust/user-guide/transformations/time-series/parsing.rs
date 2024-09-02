@@ -60,13 +60,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Some(TimeUnit::Microseconds),
             None,
             StrptimeOptions {
-                format: Some("%Y-%m-%dT%H:%M:%S%z".to_string()),
+                format: Some("%Y-%m-%dT%H:%M:%S%z".into()),
                 ..Default::default()
             },
             lit("raise"),
         )
         .dt()
-        .convert_time_zone("Europe/Brussels".to_string());
+        .convert_time_zone("Europe/Brussels".into());
     let mixed_parsed = df!("date" => &data)?.lazy().select([q]).collect()?;
 
     println!("{}", &mixed_parsed);

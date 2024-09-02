@@ -21,12 +21,12 @@ else:
     from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
 
-@pytest.fixture()
+@pytest.fixture
 def series_of_int_dates() -> pl.Series:
     return pl.Series([10000, 20000, 30000], dtype=pl.Date)
 
 
-@pytest.fixture()
+@pytest.fixture
 def series_of_str_dates() -> pl.Series:
     return pl.Series(["2020-01-01 00:00:00.000000000", "2020-02-02 03:20:10.987654321"])
 

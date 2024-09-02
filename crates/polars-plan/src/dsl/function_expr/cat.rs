@@ -46,5 +46,5 @@ fn get_categories(s: &Series) -> PolarsResult<Series> {
     let ca = s.categorical()?;
     let rev_map = ca.get_rev_map();
     let arr = rev_map.get_categories().clone().boxed();
-    Series::try_from((ca.name(), arr))
+    Series::try_from((ca.name().clone(), arr))
 }

@@ -19,7 +19,7 @@ impl CategoricalChunked {
             let cats: UInt32Chunked = vals
                 .into_iter()
                 .map(|(idx, _v)| idx)
-                .collect_ca_trusted(self.name());
+                .collect_ca_trusted(self.name().clone());
 
             // SAFETY:
             // we only reordered the indexes so we are still in bounds
@@ -61,7 +61,7 @@ impl CategoricalChunked {
         if self.uses_lexical_ordering() {
             let iters = [self.iter_str()];
             arg_sort::arg_sort(
-                self.name(),
+                self.name().clone(),
                 iters,
                 options,
                 self.physical().null_count(),
@@ -124,7 +124,7 @@ mod test {
                 enable_string_cache();
             }
 
-            let s = Series::new("", init)
+            let s = Series::new(PlSmallStr::EMPTY, init)
                 .cast(&DataType::Categorical(None, CategoricalOrdering::Lexical))?;
             let ca = s.categorical()?;
             let ca_lexical = ca.clone();
@@ -132,7 +132,8 @@ mod test {
             let out = ca_lexical.sort(false);
             assert_order(&out, &["a", "b", "c", "d"]);
 
-            let s = Series::new("", init).cast(&DataType::Categorical(None, Default::default()))?;
+            let s = Series::new(PlSmallStr::EMPTY, init)
+                .cast(&DataType::Categorical(None, Default::default()))?;
             let ca = s.categorical()?;
 
             let out = ca.sort(false);
@@ -159,7 +160,7 @@ mod test {
                 enable_string_cache();
             }
 
-            let s = Series::new("", init)
+            let s = Series::new(PlSmallStr::EMPTY, init)
                 .cast(&DataType::Categorical(None, CategoricalOrdering::Lexical))?;
             let ca = s.categorical()?;
             let ca_lexical: CategoricalChunked = ca.clone();

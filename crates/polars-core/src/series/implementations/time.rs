@@ -39,10 +39,6 @@ impl private::PrivateSeries for SeriesWrap<TimeChunked> {
         self.0.set_flags(flags)
     }
 
-    fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
-        self.0.explode_by_offsets(offsets).into_time().into_series()
-    }
-
     #[cfg(feature = "zip_with")]
     fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> PolarsResult<Series> {
         let other = other.to_physical_repr().into_owned();
@@ -119,14 +115,14 @@ impl private::PrivateSeries for SeriesWrap<TimeChunked> {
 }
 
 impl SeriesTrait for SeriesWrap<TimeChunked> {
-    fn rename(&mut self, name: &str) {
+    fn rename(&mut self, name: PlSmallStr) {
         self.0.rename(name);
     }
 
     fn chunk_lengths(&self) -> ChunkLenIter {
         self.0.chunk_lengths()
     }
-    fn name(&self) -> &str {
+    fn name(&self) -> &PlSmallStr {
         self.0.name()
     }
 

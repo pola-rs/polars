@@ -86,7 +86,7 @@ where
                     None,
                 );
 
-                let mut ca = ListChunked::with_chunk(self.name(), arr);
+                let mut ca = ListChunked::with_chunk(self.name().clone(), arr);
                 if can_fast_explode {
                     ca.set_fast_explode()
                 }
@@ -148,7 +148,7 @@ where
                     Box::new(array),
                     None,
                 );
-                let mut ca = ListChunked::with_chunk(self.name(), arr);
+                let mut ca = ListChunked::with_chunk(self.name().clone(), arr);
                 if can_fast_explode {
                     ca.set_fast_explode()
                 }
@@ -162,14 +162,14 @@ impl AggList for NullChunked {
     unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
         match groups {
             GroupsProxy::Idx(groups) => {
-                let mut builder = ListNullChunkedBuilder::new(self.name(), groups.len());
+                let mut builder = ListNullChunkedBuilder::new(self.name().clone(), groups.len());
                 for idx in groups.all().iter() {
                     builder.append_with_len(idx.len());
                 }
                 builder.finish().into_series()
             },
             GroupsProxy::Slice { groups, .. } => {
-                let mut builder = ListNullChunkedBuilder::new(self.name(), groups.len());
+                let mut builder = ListNullChunkedBuilder::new(self.name().clone(), groups.len());
                 for [_, len] in groups {
                     builder.append_with_len(*len as usize);
                 }
@@ -269,7 +269,7 @@ impl<T: PolarsObject> AggList for ObjectChunked<T> {
             extension_array,
             None,
         );
-        let mut listarr = ListChunked::with_chunk(self.name(), arr);
+        let mut listarr = ListChunked::with_chunk(self.name().clone(), arr);
         if can_fast_explode {
             listarr.set_fast_explode()
         }
@@ -293,8 +293,10 @@ impl AggList for StructChunked {
         let arr = gathered.chunks()[0].clone();
         let dtype = LargeListArray::default_datatype(arr.data_type().clone());
 
-        let mut chunk =
-            ListChunked::with_chunk(self.name(), LargeListArray::new(dtype, offsets, arr, None));
+        let mut chunk = ListChunked::with_chunk(
+            self.name().clone(),
+            LargeListArray::new(dtype, offsets, arr, None),
+        );
         chunk.set_dtype(DataType::List(Box::new(self.dtype().clone())));
         if can_fast_explode {
             chunk.set_fast_explode()
@@ -322,8 +324,10 @@ where
     let arr = gathered.chunks()[0].clone();
     let dtype = LargeListArray::default_datatype(arr.data_type().clone());
 
-    let mut chunk =
-        ListChunked::with_chunk(ca.name(), LargeListArray::new(dtype, offsets, arr, None));
+    let mut chunk = ListChunked::with_chunk(
+        ca.name().clone(),
+        LargeListArray::new(dtype, offsets, arr, None),
+    );
     chunk.set_dtype(DataType::List(Box::new(ca.dtype().clone())));
     if can_fast_explode {
         chunk.set_fast_explode()

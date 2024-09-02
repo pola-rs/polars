@@ -7,7 +7,7 @@ use once_cell::sync::Lazy;
 use polars_core::chunked_array::temporal::validate_time_zone;
 use polars_core::utils::handle_casting_failures;
 #[cfg(feature = "dtype-struct")]
-use polars_utils::format_smartstring;
+use polars_utils::format_pl_smallstr;
 #[cfg(feature = "regex")]
 use regex::{escape, Regex};
 #[cfg(feature = "serde")]
@@ -25,12 +25,12 @@ static TZ_AWARE_RE: Lazy<Regex> =
 pub enum StringFunction {
     #[cfg(feature = "concat_str")]
     ConcatHorizontal {
-        delimiter: String,
+        delimiter: PlSmallStr,
         ignore_nulls: bool,
     },
     #[cfg(feature = "concat_str")]
     ConcatVertical {
-        delimiter: String,
+        delimiter: PlSmallStr,
         ignore_nulls: bool,
     },
     #[cfg(feature = "regex")]
@@ -45,7 +45,7 @@ pub enum StringFunction {
     #[cfg(feature = "extract_groups")]
     ExtractGroups {
         dtype: DataType,
-        pat: String,
+        pat: PlSmallStr,
     },
     #[cfg(feature = "regex")]
     Find {
@@ -182,13 +182,13 @@ impl StringFunction {
             #[cfg(feature = "dtype-struct")]
             SplitExact { n, .. } => mapper.with_dtype(DataType::Struct(
                 (0..n + 1)
-                    .map(|i| Field::from_owned(format_smartstring!("field_{i}"), DataType::String))
+                    .map(|i| Field::new(format_pl_smallstr!("field_{i}"), DataType::String))
                     .collect(),
             )),
             #[cfg(feature = "dtype-struct")]
             SplitN(n) => mapper.with_dtype(DataType::Struct(
                 (0..*n)
-                    .map(|i| Field::from_owned(format_smartstring!("field_{i}"), DataType::String))
+                    .map(|i| Field::new(format_pl_smallstr!("field_{i}"), DataType::String))
                     .collect(),
             )),
             #[cfg(feature = "find_many")]
@@ -576,7 +576,7 @@ pub(super) fn extract_all(args: &[Series]) -> PolarsResult<Series> {
             ca.extract_all(pat).map(|ca| ca.into_series())
         } else {
             Ok(Series::full_null(
-                ca.name(),
+                ca.name().clone(),
                 ca.len(),
                 &DataType::List(Box::new(DataType::String)),
             ))
@@ -596,7 +596,11 @@ pub(super) fn count_matches(args: &[Series], literal: bool) -> PolarsResult<Seri
         if let Some(pat) = pat.get(0) {
             ca.count_matches(pat, literal).map(|ca| ca.into_series())
         } else {
-            Ok(Series::full_null(ca.name(), ca.len(), &DataType::UInt32))
+            Ok(Series::full_null(
+                ca.name().clone(),
+                ca.len(),
+                &DataType::UInt32,
+            ))
         }
     } else {
         ca.count_matches_many(pat, literal)
@@ -786,7 +790,7 @@ where
         })
         .collect_trusted();
 
-    out.rename(ca.name());
+    out.rename(ca.name().clone());
     out
 }
 

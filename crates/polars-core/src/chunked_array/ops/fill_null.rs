@@ -30,7 +30,7 @@ impl Series {
     /// ```rust
     /// # use polars_core::prelude::*;
     /// fn example() -> PolarsResult<()> {
-    ///     let s = Series::new("some_missing", &[Some(1), None, Some(2)]);
+    ///     let s = Series::new("some_missing".into(), &[Some(1), None, Some(2)]);
     ///
     ///     let filled = s.fill_null(FillNullStrategy::Forward(None))?;
     ///     assert_eq!(Vec::from(filled.i32()?), &[Some(1), Some(1), Some(2)]);
@@ -219,7 +219,7 @@ where
         FillNullStrategy::Forward(_) => unreachable!(),
         FillNullStrategy::Backward(_) => unreachable!(),
     };
-    out.rename(ca.name());
+    out.rename(ca.name().clone());
     Ok(out)
 }
 

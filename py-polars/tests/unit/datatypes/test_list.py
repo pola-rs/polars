@@ -667,7 +667,7 @@ def test_as_list_logical_type() -> None:
     ).to_dict(as_series=False) == {"literal": [True], "timestamp": [[date(2000, 1, 1)]]}
 
 
-@pytest.fixture()
+@pytest.fixture
 def data_dispersion() -> pl.DataFrame:
     return pl.DataFrame(
         {

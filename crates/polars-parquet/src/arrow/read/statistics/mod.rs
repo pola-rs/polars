@@ -198,22 +198,30 @@ fn create_dt(data_type: &ArrowDataType) -> ArrowDataType {
         ArrowDataType::Struct(fields) => ArrowDataType::Struct(
             fields
                 .iter()
-                .map(|f| Field::new(&f.name, create_dt(&f.data_type), f.is_nullable))
+                .map(|f| Field::new(f.name.clone(), create_dt(&f.data_type), f.is_nullable))
                 .collect(),
         ),
         ArrowDataType::Map(f, ordered) => ArrowDataType::Map(
-            Box::new(Field::new(&f.name, create_dt(&f.data_type), f.is_nullable)),
+            Box::new(Field::new(
+                f.name.clone(),
+                create_dt(&f.data_type),
+                f.is_nullable,
+            )),
             *ordered,
         ),
         ArrowDataType::LargeList(f) => ArrowDataType::LargeList(Box::new(Field::new(
-            &f.name,
+            f.name.clone(),
             create_dt(&f.data_type),
             f.is_nullable,
         ))),
         // FixedSizeList piggy backs on list
-        ArrowDataType::List(f) | ArrowDataType::FixedSizeList(f, _) => ArrowDataType::List(
-            Box::new(Field::new(&f.name, create_dt(&f.data_type), f.is_nullable)),
-        ),
+        ArrowDataType::List(f) | ArrowDataType::FixedSizeList(f, _) => {
+            ArrowDataType::List(Box::new(Field::new(
+                f.name.clone(),
+                create_dt(&f.data_type),
+                f.is_nullable,
+            )))
+        },
         _ => ArrowDataType::UInt64,
     }
 }

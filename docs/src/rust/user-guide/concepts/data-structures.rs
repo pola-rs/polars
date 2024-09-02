@@ -2,7 +2,7 @@ fn main() {
     // --8<-- [start:series]
     use polars::prelude::*;
 
-    let s = Series::new("a", &[1, 2, 3, 4, 5]);
+    let s = Series::new("a".into(), &[1, 2, 3, 4, 5]);
 
     println!("{}", s);
     // --8<-- [end:series]
@@ -39,7 +39,7 @@ fn main() {
     // --8<-- [end:tail]
 
     // --8<-- [start:sample]
-    let n = Series::new("", &[2]);
+    let n = Series::new("".into(), &[2]);
     let sampled_df = df.sample_n(&n, false, false, None).unwrap();
 
     println!("{}", sampled_df);

@@ -21,7 +21,7 @@ where
 {
     fn get_list_builder(
         &self,
-        _name: &str,
+        _name: PlSmallStr,
         _values_capacity: usize,
         _list_capacity: usize,
     ) -> Box<dyn ListBuilderTrait> {
@@ -83,7 +83,7 @@ impl<T> SeriesTrait for SeriesWrap<ObjectChunked<T>>
 where
     T: PolarsObject,
 {
-    fn rename(&mut self, name: &str) {
+    fn rename(&mut self, name: PlSmallStr) {
         ObjectChunked::rename(&mut self.0, name)
     }
 
@@ -91,7 +91,7 @@ where
         ObjectChunked::chunk_lengths(&self.0)
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &PlSmallStr {
         ObjectChunked::name(&self.0)
     }
 
@@ -246,7 +246,7 @@ mod test {
             }
         }
 
-        let ca = ObjectChunked::new_from_vec("a", vec![0i32, 1, 2]);
+        let ca = ObjectChunked::new_from_vec("a".into(), vec![0i32, 1, 2]);
         let s = ca.into_series();
 
         let ca = s.as_any().downcast_ref::<ObjectChunked<i32>>().unwrap();
