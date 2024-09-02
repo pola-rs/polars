@@ -43,7 +43,7 @@ pub fn iejoin(
     selected_left: Vec<Series>,
     selected_right: Vec<Series>,
     options: &IEJoinOptions,
-    suffix: Option<&str>,
+    suffix: Option<PlSmallStr>,
     slice: Option<(i64, usize)>,
 ) -> PolarsResult<DataFrame> {
     if selected_left.len() != 2 {
@@ -105,8 +105,8 @@ pub fn iejoin(
     // denoting which entries have been visited while traversing L2.
     let mut bit_array = FilteredBitArray::from_len_zeroed(l1_order.len());
 
-    let mut left_row_ids_builder = PrimitiveChunkedBuilder::<IdxType>::new("left_indices", 0);
-    let mut right_row_ids_builder = PrimitiveChunkedBuilder::<IdxType>::new("right_indices", 0);
+    let mut left_row_ids_builder = PrimitiveChunkedBuilder::<IdxType>::new("".into(), 0);
+    let mut right_row_ids_builder = PrimitiveChunkedBuilder::<IdxType>::new("".into(), 0);
 
     let slice_end = match slice {
         Some((offset, len)) if offset >= 0 => Some(offset.saturating_add_unsigned(len as u64)),

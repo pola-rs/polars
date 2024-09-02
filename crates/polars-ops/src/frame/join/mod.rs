@@ -206,7 +206,7 @@ pub trait DataFrameJoinOps: IntoDf {
                 selected_left,
                 selected_right,
                 &options,
-                args.suffix.as_deref(),
+                args.suffix,
                 args.slice,
             );
         }
