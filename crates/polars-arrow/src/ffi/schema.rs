@@ -108,7 +108,7 @@ impl ArrowSchema {
                 None
             };
 
-        let name = CString::new(name.as_str()).unwrap();
+        let name = CString::new(name.as_bytes()).unwrap();
         let format = CString::new(format).unwrap();
 
         let mut private = Box::new(SchemaPrivateData {
