@@ -11,7 +11,7 @@ macro_rules! format_pl_smallstr {
 
 type Inner = compact_str::CompactString;
 
-/// String type that interns small strings and has O(1) clone.
+/// String type that inlines small strings.
 #[derive(Clone, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PlSmallStr(Inner);
