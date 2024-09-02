@@ -129,7 +129,7 @@ impl BitXor for &BooleanChunked {
                 return match rhs.get(0) {
                     Some(true) => self.not(),
                     Some(false) => self.clone(),
-                    None => &rhs.new_from_index(0, self.len()) | self,
+                    None => self | &rhs.new_from_index(0, self.len()),
                 };
             },
             _ => {},
