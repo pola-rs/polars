@@ -25,8 +25,7 @@ pub static mut CALL_SERIES_UDF_PYTHON: Option<
 pub static mut CALL_DF_UDF_PYTHON: Option<
     fn(s: DataFrame, lambda: &PyObject) -> PolarsResult<DataFrame>,
 > = None;
-pub(super) const MAGIC_BYTE_MARK_UDF: &[u8] = "POLARS_PYTHON_UDF".as_bytes();
-pub(super) const MAGIC_BYTE_MARK_GET_OUTPUT: &[u8] = "POLARS_PYTHON_GET_OUTPUT".as_bytes();
+pub(super) const MAGIC_BYTE_MARK: &[u8] = "PLPYUDF".as_bytes();
 
 #[derive(Clone, Debug)]
 pub struct PythonFunction(pub PyObject);
@@ -126,9 +125,9 @@ impl PythonUdfExpression {
 
     #[cfg(feature = "serde")]
     pub(crate) fn try_deserialize(buf: &[u8]) -> PolarsResult<Arc<dyn SeriesUdf>> {
-        debug_assert!(buf.starts_with(MAGIC_BYTE_MARK_UDF));
+        debug_assert!(buf.starts_with(MAGIC_BYTE_MARK));
         // skip header
-        let buf = &buf[MAGIC_BYTE_MARK_UDF.len()..];
+        let buf = &buf[MAGIC_BYTE_MARK.len()..];
         let mut reader = Cursor::new(buf);
         let (output_type, is_elementwise, returns_scalar): (Option<DataType>, bool, bool) =
             ciborium::de::from_reader(&mut reader).map_err(map_err)?;
@@ -190,7 +189,7 @@ impl SeriesUdf for PythonUdfExpression {
 
     #[cfg(feature = "serde")]
     fn try_serialize(&self, buf: &mut Vec<u8>) -> PolarsResult<()> {
-        buf.extend_from_slice(MAGIC_BYTE_MARK_UDF);
+        buf.extend_from_slice(MAGIC_BYTE_MARK);
         ciborium::ser::into_writer(
             &(
                 self.output_type.clone(),
@@ -244,8 +243,8 @@ impl PythonGetOutput {
     #[cfg(feature = "serde")]
     pub(crate) fn try_deserialize(buf: &[u8]) -> PolarsResult<Arc<dyn FunctionOutputField>> {
         // Skip header.
-        debug_assert!(buf.starts_with(MAGIC_BYTE_MARK_GET_OUTPUT));
-        let buf = &buf[MAGIC_BYTE_MARK_GET_OUTPUT.len()..];
+        debug_assert!(buf.starts_with(MAGIC_BYTE_MARK));
+        let buf = &buf[MAGIC_BYTE_MARK.len()..];
 
         let mut reader = Cursor::new(buf);
         let return_dtype: Option<DataType> =
@@ -273,7 +272,7 @@ impl FunctionOutputField for PythonGetOutput {
 
     #[cfg(feature = "serde")]
     fn try_serialize(&self, buf: &mut Vec<u8>) -> PolarsResult<()> {
-        buf.extend_from_slice(MAGIC_BYTE_MARK_GET_OUTPUT);
+        buf.extend_from_slice(MAGIC_BYTE_MARK);
         ciborium::ser::into_writer(&self.return_dtype, &mut *buf).unwrap();
         Ok(())
     }
