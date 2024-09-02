@@ -1,4 +1,4 @@
-use kstring::{KString, KStringBase};
+use kstring::KString;
 
 #[macro_export]
 macro_rules! format_pl_smallstr {
