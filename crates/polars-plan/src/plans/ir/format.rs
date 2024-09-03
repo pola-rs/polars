@@ -221,13 +221,14 @@ impl<'a> IRDisplay<'a> {
                 self.with_root(*input)._format(f, sub_indent)
             },
             Scan {
-                paths,
+                sources,
                 file_info,
                 predicate,
                 scan_type,
                 file_options,
                 ..
             } => {
+                let paths = sources.as_paths();
                 let n_columns = file_options
                     .with_columns
                     .as_ref()

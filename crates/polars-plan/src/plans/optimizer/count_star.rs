@@ -95,9 +95,10 @@ fn visit_logical_plan_for_scan_paths(
             })
         },
         IR::Scan {
-            scan_type, paths, ..
+            scan_type, sources, ..
         } if !matches!(scan_type, FileScan::Anonymous { .. }) => Some(CountStarExpr {
-            paths: paths.clone(),
+            // @FIX: Count Star Should probably just have a Arc Slice
+            paths: Arc::new(sources.as_paths().as_ref().to_vec()),
             scan_type: scan_type.clone(),
             node,
             alias: None,

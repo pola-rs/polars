@@ -5,6 +5,7 @@ use polars_io::cloud::CloudOptions;
 use polars_io::csv::read::{
     infer_file_schema, CommentPrefix, CsvEncoding, CsvParseOptions, CsvReadOptions, NullValues,
 };
+use polars_io::mmap::ReaderBytes;
 use polars_io::path_utils::expand_paths;
 use polars_io::utils::get_reader_bytes;
 use polars_io::RowIndex;
@@ -14,7 +15,7 @@ use crate::prelude::*;
 #[derive(Clone)]
 #[cfg(feature = "csv")]
 pub struct LazyCsvReader {
-    paths: Arc<Vec<PathBuf>>,
+    source: ScanSource,
     glob: bool,
     cache: bool,
     read_options: CsvReadOptions,
@@ -30,13 +31,13 @@ impl LazyCsvReader {
         self
     }
 
-    pub fn new_paths(paths: Arc<Vec<PathBuf>>) -> Self {
+    pub fn new_paths(paths: Arc<[PathBuf]>) -> Self {
         Self::new("").with_paths(paths)
     }
 
     pub fn new(path: impl AsRef<Path>) -> Self {
         LazyCsvReader {
-            paths: Arc::new(vec![path.as_ref().to_path_buf()]),
+            source: ScanSource::Files([path.as_ref().to_path_buf()].into()),
             glob: true,
             cache: true,
             read_options: Default::default(),
@@ -219,38 +220,54 @@ impl LazyCsvReader {
     where
         F: Fn(Schema) -> PolarsResult<Schema>,
     {
-        // TODO: Path expansion should happen when converting to the IR
-        // https://github.com/pola-rs/polars/issues/17634
-        let paths = expand_paths(self.paths(), self.glob(), self.cloud_options())?;
+        let mut n_threads = self.read_options.n_threads;
 
-        let Some(path) = paths.first() else {
-            polars_bail!(ComputeError: "no paths specified for this reader");
+        let mut infer_schema = |reader_bytes: ReaderBytes| {
+            let skip_rows = self.read_options.skip_rows;
+            let parse_options = self.read_options.get_parse_options();
+
+            PolarsResult::Ok(
+                infer_file_schema(
+                    &reader_bytes,
+                    parse_options.separator,
+                    self.read_options.infer_schema_length,
+                    self.read_options.has_header,
+                    // we set it to None and modify them after the schema is updated
+                    None,
+                    skip_rows,
+                    self.read_options.skip_rows_after_header,
+                    parse_options.comment_prefix.as_ref(),
+                    parse_options.quote_char,
+                    parse_options.eol_char,
+                    None,
+                    parse_options.try_parse_dates,
+                    self.read_options.raise_if_empty,
+                    &mut n_threads,
+                    parse_options.decimal_comma,
+                )?
+                .0,
+            )
         };
 
-        let mut file = polars_utils::open_file(path)?;
+        let schema = match self.source.clone() {
+            ScanSource::Files(paths) => {
+                // TODO: Path expansion should happen when converting to the IR
+                // https://github.com/pola-rs/polars/issues/17634
+                let paths = expand_paths(&paths[..], self.glob(), self.cloud_options())?;
 
-        let reader_bytes = get_reader_bytes(&mut file).expect("could not mmap file");
-        let skip_rows = self.read_options.skip_rows;
-        let parse_options = self.read_options.get_parse_options();
+                let Some(path) = paths.first() else {
+                    polars_bail!(ComputeError: "no paths specified for this reader");
+                };
 
-        let (schema, _, _) = infer_file_schema(
-            &reader_bytes,
-            parse_options.separator,
-            self.read_options.infer_schema_length,
-            self.read_options.has_header,
-            // we set it to None and modify them after the schema is updated
-            None,
-            skip_rows,
-            self.read_options.skip_rows_after_header,
-            parse_options.comment_prefix.as_ref(),
-            parse_options.quote_char,
-            parse_options.eol_char,
-            None,
-            parse_options.try_parse_dates,
-            self.read_options.raise_if_empty,
-            &mut self.read_options.n_threads,
-            parse_options.decimal_comma,
-        )?;
+                let mut file = polars_utils::open_file(path)?;
+                infer_schema(get_reader_bytes(&mut file).expect("could not mmap file"))?
+            },
+            ScanSource::Buffer(buffer) => infer_schema(
+                get_reader_bytes(&mut std::io::Cursor::new(buffer)).expect("could not mmap file"),
+            )?,
+        };
+
+        self.read_options.n_threads = n_threads;
         let mut schema = f(schema)?;
 
         // the dtypes set may be for the new names, so update again
@@ -273,7 +290,7 @@ impl LazyFileListReader for LazyCsvReader {
     /// Get the final [LazyFrame].
     fn finish(self) -> PolarsResult<LazyFrame> {
         let mut lf: LazyFrame = DslBuilder::scan_csv(
-            self.paths,
+            self.source.to_dsl(false),
             self.read_options,
             self.cache,
             self.cloud_options,
@@ -294,12 +311,12 @@ impl LazyFileListReader for LazyCsvReader {
         self.glob
     }
 
-    fn paths(&self) -> &[PathBuf] {
-        &self.paths
+    fn source(&self) -> &ScanSource {
+        &self.source
     }
 
-    fn with_paths(mut self, paths: Arc<Vec<PathBuf>>) -> Self {
-        self.paths = paths;
+    fn with_source(mut self, source: ScanSource) -> Self {
+        self.source = source;
         self
     }
 

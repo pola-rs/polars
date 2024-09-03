@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 
 use hive::HivePartitions;
 use polars_core::config;
@@ -11,7 +10,7 @@ use rayon::prelude::*;
 use super::*;
 
 pub struct IpcExec {
-    pub(crate) paths: Arc<Vec<PathBuf>>,
+    pub(crate) sources: ScanSource,
     pub(crate) file_info: FileInfo,
     pub(crate) predicate: Option<Arc<dyn PhysicalExpr>>,
     pub(crate) options: IpcScanOptions,
@@ -22,7 +21,8 @@ pub struct IpcExec {
 
 impl IpcExec {
     fn read(&mut self) -> PolarsResult<DataFrame> {
-        let is_cloud = self.paths.iter().any(is_cloud_url);
+        let paths = self.sources.as_paths();
+        let is_cloud = paths.iter().any(is_cloud_url);
         let force_async = config::force_async();
 
         let mut out = if is_cloud || force_async {
@@ -54,6 +54,7 @@ impl IpcExec {
         &mut self,
         path_idx_to_file: F,
     ) -> PolarsResult<DataFrame> {
+        let paths = self.sources.as_paths();
         if config::verbose() {
             eprintln!("executing ipc read sync with row_index = {:?}, n_rows = {:?}, predicate = {:?} for paths {:?}",
                 self.file_options.row_index.as_ref(),
@@ -62,7 +63,7 @@ impl IpcExec {
                     x.1
                 }).as_ref(),
                 self.predicate.is_some(),
-                self.paths
+                paths
             );
         }
 
@@ -86,13 +87,13 @@ impl IpcExec {
                 .with_include_file_path(self.file_options.include_file_paths.as_ref().map(|x| {
                     (
                         x.clone(),
-                        Arc::from(self.paths[path_index].to_str().unwrap().to_string()),
+                        Arc::from(paths[path_index].to_str().unwrap().to_string()),
                     )
                 }))
                 .memory_mapped(
                     self.options
                         .memory_map
-                        .then(|| self.paths[path_index].clone()),
+                        .then(|| paths[path_index].clone()),
                 )
                 .finish()
         };
@@ -101,9 +102,9 @@ impl IpcExec {
             assert_eq!(x.0, 0);
             x.1
         }) {
-            let mut out = Vec::with_capacity(self.paths.len());
+            let mut out = Vec::with_capacity(paths.len());
 
-            for i in 0..self.paths.len() {
+            for i in 0..paths.len() {
                 let df = read_path(i, Some(n_rows))?;
                 let df_height = df.height();
                 out.push(df);
@@ -121,7 +122,7 @@ impl IpcExec {
             out
         } else {
             POOL.install(|| {
-                (0..self.paths.len())
+                (0..paths.len())
                     .into_par_iter()
                     .map(|i| read_path(i, None))
                     .collect::<PolarsResult<Vec<_>>>()
@@ -157,7 +158,8 @@ impl IpcExec {
     }
 
     fn read_sync(&mut self) -> PolarsResult<DataFrame> {
-        let paths = self.paths.clone();
+        let paths = self.sources.into_paths();
+        let paths = paths.clone();
         self.read_impl(move |i| std::fs::File::open(&paths[i]).map_err(Into::into))
     }
 
@@ -167,9 +169,11 @@ impl IpcExec {
         // concurrently.
         use polars_io::file_cache::init_entries_from_uri_list;
 
+        let paths = self.sources.into_paths();
+
         tokio::task::block_in_place(|| {
             let cache_entries = init_entries_from_uri_list(
-                self.paths
+                paths
                     .iter()
                     .map(|x| Arc::from(x.to_str().unwrap()))
                     .collect::<Vec<_>>()
@@ -184,9 +188,11 @@ impl IpcExec {
 
 impl Executor for IpcExec {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
+        let paths = self.sources.as_paths();
+
         let profile_name = if state.has_node_timer() {
             let mut ids = vec![PlSmallStr::from_str(
-                self.paths[0].to_string_lossy().as_ref(),
+                paths[0].to_string_lossy().as_ref(),
             )];
             if self.predicate.is_some() {
                 ids.push("predicate".into())

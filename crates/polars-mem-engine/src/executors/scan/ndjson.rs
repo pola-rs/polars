@@ -1,12 +1,10 @@
-use std::path::PathBuf;
-
 use polars_core::config;
 use polars_core::utils::accumulate_dataframes_vertical;
 
 use super::*;
 
 pub struct JsonExec {
-    paths: Arc<Vec<PathBuf>>,
+    sources: ScanSource,
     options: NDJsonReadOptions,
     file_scan_options: FileScanOptions,
     file_info: FileInfo,
@@ -15,14 +13,14 @@ pub struct JsonExec {
 
 impl JsonExec {
     pub fn new(
-        paths: Arc<Vec<PathBuf>>,
+        sources: ScanSource,
         options: NDJsonReadOptions,
         file_scan_options: FileScanOptions,
         file_info: FileInfo,
         predicate: Option<Arc<dyn PhysicalExpr>>,
     ) -> Self {
         Self {
-            paths,
+            sources,
             options,
             file_scan_options,
             file_info,
@@ -38,10 +36,11 @@ impl JsonExec {
             .unwrap()
             .as_ref()
             .unwrap_right();
+        let paths = self.sources.as_paths();
 
         let verbose = config::verbose();
         let force_async = config::force_async();
-        let run_async = force_async || is_cloud_url(self.paths.first().unwrap());
+        let run_async = force_async || is_cloud_url(paths.first().unwrap());
 
         if force_async && verbose {
             eprintln!("ASYNC READING FORCED");
@@ -66,8 +65,7 @@ impl JsonExec {
             return Ok(df);
         }
 
-        let dfs = self
-            .paths
+        let dfs = paths
             .iter()
             .map_while(|p| {
                 if n_rows == Some(0) {
@@ -149,8 +147,9 @@ impl JsonExec {
 
 impl Executor for JsonExec {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
+        let paths = self.sources.as_paths();
         let profile_name = if state.has_node_timer() {
-            let ids = vec![self.paths[0].to_string_lossy().clone()];
+            let ids = vec![paths[0].to_string_lossy().clone()];
             let name = comma_delimited("ndjson".to_string(), &ids);
             Cow::Owned(name)
         } else {

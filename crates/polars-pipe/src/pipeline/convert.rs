@@ -74,7 +74,7 @@ where
             Ok(Box::new(sources::DataFrameSource::from_df(df)) as Box<dyn Source>)
         },
         Scan {
-            paths,
+            sources,
             file_info,
             hive_parts,
             file_options,
@@ -82,6 +82,8 @@ where
             output_schema,
             scan_type,
         } => {
+            let paths = sources.into_paths();
+
             // Add predicate to operators.
             // Except for parquet, as that format can use statistics to prune file/row-groups.
             #[cfg(feature = "parquet")]
@@ -102,7 +104,7 @@ where
                 #[cfg(feature = "csv")]
                 FileScan::Csv { options, .. } => {
                     let src = sources::CsvSource::new(
-                        paths,
+                        sources,
                         file_info.schema,
                         options,
                         file_options,
@@ -144,7 +146,7 @@ where
                         })
                         .transpose()?;
                     let src = sources::ParquetSource::new(
-                        paths,
+                        sources,
                         parquet_options,
                         cloud_options,
                         metadata,

@@ -119,7 +119,7 @@ pub enum PhysNodeKind {
     },
 
     FileScan {
-        paths: Arc<Vec<PathBuf>>,
+        paths: Arc<[PathBuf]>,
         file_info: FileInfo,
         hive_parts: Option<Arc<Vec<HivePartitions>>>,
         predicate: Option<ExprIR>,

@@ -317,7 +317,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             ))
         },
         IR::Scan {
-            paths,
+            sources,
             file_info: _,
             hive_parts: _,
             predicate,
@@ -325,7 +325,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             scan_type,
             file_options,
         } => Scan {
-            paths: paths.to_object(py),
+            paths: sources.into_paths().to_object(py),
             // TODO: file info
             file_info: py.None(),
             predicate: predicate.as_ref().map(|e| e.into()),

@@ -325,7 +325,7 @@ impl<'a> PredicatePushDown<'a> {
                 Ok(lp)
             },
             Scan {
-                mut paths,
+                mut sources,
                 file_info,
                 hive_parts: mut scan_hive_parts,
                 ref predicate,
@@ -366,6 +366,7 @@ impl<'a> PredicatePushDown<'a> {
                 if let (Some(hive_parts), Some(predicate)) = (&scan_hive_parts, &predicate) {
                     if let Some(io_expr) = self.expr_eval.unwrap()(predicate, expr_arena) {
                         if let Some(stats_evaluator) = io_expr.as_stats_evaluator() {
+                            let paths = sources.as_paths();
                             let mut new_paths = Vec::with_capacity(paths.len());
                             let mut new_hive_parts = Vec::with_capacity(paths.len());
 
@@ -400,7 +401,7 @@ impl<'a> PredicatePushDown<'a> {
                                     filter: None,
                                 });
                             } else {
-                                paths = Arc::from(new_paths);
+                                sources = ScanSource::Files(new_paths.into());
                                 scan_hive_parts = Some(Arc::from(new_hive_parts));
                             }
                         }
@@ -422,7 +423,7 @@ impl<'a> PredicatePushDown<'a> {
 
                 let lp = if do_optimization {
                     Scan {
-                        paths,
+                        sources,
                         file_info,
                         hive_parts,
                         predicate,
@@ -432,7 +433,7 @@ impl<'a> PredicatePushDown<'a> {
                     }
                 } else {
                     let lp = Scan {
-                        paths,
+                        sources,
                         file_info,
                         hive_parts,
                         predicate: None,

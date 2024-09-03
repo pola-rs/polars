@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use polars_core::config;
@@ -9,7 +8,7 @@ use polars_core::utils::{
 use super::*;
 
 pub struct CsvExec {
-    pub paths: Arc<Vec<PathBuf>>,
+    pub sources: ScanSource,
     pub file_info: FileInfo,
     pub options: CsvReadOptions,
     pub file_options: FileScanOptions,
@@ -18,6 +17,7 @@ pub struct CsvExec {
 
 impl CsvExec {
     fn read(&self) -> PolarsResult<DataFrame> {
+        let paths = self.sources.as_paths();
         let with_columns = self
             .file_options
             .with_columns
@@ -45,7 +45,7 @@ impl CsvExec {
             .with_row_index(None)
             .with_path::<&str>(None);
 
-        if self.paths.is_empty() {
+        if paths.is_empty() {
             let out = if let Some(schema) = options_base.schema {
                 DataFrame::from_rows_and_schema(&[], schema.as_ref())?
             } else {
@@ -56,7 +56,7 @@ impl CsvExec {
 
         let verbose = config::verbose();
         let force_async = config::force_async();
-        let run_async = force_async || is_cloud_url(self.paths.first().unwrap());
+        let run_async = force_async || is_cloud_url(paths.first().unwrap());
 
         if force_async && verbose {
             eprintln!("ASYNC READING FORCED");
@@ -64,7 +64,7 @@ impl CsvExec {
 
         let finish_read =
             |i: usize, options: CsvReadOptions, predicate: Option<Arc<dyn PhysicalIoExpr>>| {
-                let path = &self.paths[i];
+                let path = &paths[i];
                 let mut df = if run_async {
                     #[cfg(feature = "cloud")]
                     {
@@ -123,14 +123,14 @@ impl CsvExec {
             }
 
             let mut n_rows_read = 0usize;
-            let mut out = Vec::with_capacity(self.paths.len());
+            let mut out = Vec::with_capacity(paths.len());
             // If we have n_rows or row_index then we need to count how many rows we read, so we need
             // to delay applying the predicate.
             let predicate_during_read = predicate
                 .clone()
                 .filter(|_| n_rows.is_none() && self.file_options.row_index.is_none());
 
-            for i in 0..self.paths.len() {
+            for i in 0..paths.len() {
                 let opts = options_base
                     .clone()
                     .with_row_index(self.file_options.row_index.clone().map(|mut ri| {
@@ -178,7 +178,7 @@ impl CsvExec {
                             "reached n_rows = {} at file {} / {}",
                             n_rows.unwrap(),
                             1 + i,
-                            self.paths.len()
+                            paths.len()
                         )
                     }
                     break;
@@ -203,10 +203,10 @@ impl CsvExec {
             let dfs = POOL.install(|| {
                 let step = std::cmp::min(POOL.current_num_threads(), 128);
 
-                (0..self.paths.len())
+                (0..paths.len())
                     .step_by(step)
                     .map(|start| {
-                        (start..std::cmp::min(start.saturating_add(step), self.paths.len()))
+                        (start..std::cmp::min(start.saturating_add(step), paths.len()))
                             .into_par_iter()
                             .map(|i| finish_read(i, options_base.clone(), predicate.clone()))
                             .collect::<PolarsResult<Vec<_>>>()
@@ -234,9 +234,10 @@ impl CsvExec {
 
 impl Executor for CsvExec {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
+        let paths = self.sources.as_paths();
         let profile_name = if state.has_node_timer() {
             let mut ids = vec![PlSmallStr::from_str(
-                self.paths[0].to_string_lossy().as_ref(),
+                paths[0].to_string_lossy().as_ref(),
             )];
             if self.predicate.is_some() {
                 ids.push("predicate".into())

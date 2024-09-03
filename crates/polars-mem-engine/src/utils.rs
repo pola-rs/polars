@@ -13,8 +13,8 @@ pub(crate) fn agg_source_paths(
 ) {
     lp_arena.iter(root_lp).for_each(|(_, lp)| {
         use IR::*;
-        if let Scan { paths, .. } = lp {
-            for path in paths.as_ref() {
+        if let Scan { sources, .. } = lp {
+            for path in sources.as_paths() {
                 acc_paths.insert(path.clone());
             }
         }

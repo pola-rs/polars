@@ -254,7 +254,7 @@ impl PyLazyFrame {
         low_memory, cloud_options, use_statistics, hive_partitioning, hive_schema, try_parse_hive_dates, retries, glob, include_file_paths)
     )]
     fn new_from_parquet(
-        path: Option<PathBuf>,
+        path: Option<PyObject>,
         paths: Vec<PathBuf>,
         n_rows: Option<usize>,
         cache: bool,
@@ -271,15 +271,54 @@ impl PyLazyFrame {
         glob: bool,
         include_file_paths: Option<String>,
     ) -> PyResult<Self> {
+        use crate::file::{get_either_file_or_path, EitherPythonFileOrPath};
+
         let parallel = parallel.0;
         let hive_schema = hive_schema.map(|s| Arc::new(s.0));
 
-        let first_path = if let Some(path) = &path {
-            path
-        } else {
-            paths
+        use polars_plan::plans::ScanSource;
+        use EitherPythonFileOrPath as EF;
+        let use_first_path = path.is_some();
+        let first_path = match path
+            .map(|py_f| get_either_file_or_path(py_f, false))
+            .transpose()?
+        {
+            Some(EF::Path(path)) => path,
+            Some(EF::Py(f)) => {
+                let scan_source = ScanSource::Buffer(f.as_arc());
+
+                let row_index = row_index.map(|(name, offset)| RowIndex {
+                    name: name.into(),
+                    offset,
+                });
+
+                let args = ScanArgsParquet {
+                    n_rows,
+                    cache,
+                    parallel,
+                    rechunk,
+                    row_index,
+                    low_memory,
+                    cloud_options: None,
+                    use_statistics,
+                    hive_options: HiveOptions {
+                        enabled: hive_partitioning,
+                        hive_start_idx: 0,
+                        schema: hive_schema,
+                        try_parse_dates: try_parse_hive_dates,
+                    },
+                    glob,
+                    include_file_paths: include_file_paths.map(|x| x.into()),
+                };
+
+                let lf = LazyFrame::scan_parquet_sourced(scan_source, args)
+                    .map_err(PyPolarsErr::from)?;
+                return Ok(lf.into());
+            },
+            None => paths
                 .first()
-                .ok_or_else(|| PyValueError::new_err("expected a path argument"))?
+                .cloned()
+                .ok_or_else(|| PyValueError::new_err("expected a path argument"))?,
         };
 
         #[cfg(feature = "cloud")]
@@ -322,7 +361,7 @@ impl PyLazyFrame {
             include_file_paths: include_file_paths.map(|x| x.into()),
         };
 
-        let lf = if path.is_some() {
+        let lf = if use_first_path {
             LazyFrame::scan_parquet(first_path, args)
         } else {
             LazyFrame::scan_parquet_files(Arc::from(paths), args)

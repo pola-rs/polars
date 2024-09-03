@@ -1,6 +1,4 @@
-#[cfg(any(feature = "csv", feature = "ipc", feature = "parquet"))]
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, RwLock};
 
 use polars_core::prelude::*;
 #[cfg(any(feature = "parquet", feature = "ipc", feature = "csv"))]
@@ -60,7 +58,7 @@ impl DslBuilder {
         };
 
         Ok(DslPlan::Scan {
-            paths: Arc::new(Mutex::new((Arc::new(vec![]), true))),
+            sources: DslScanSource::Buffer(Arc::default()),
             file_info: Arc::new(RwLock::new(Some(file_info))),
             hive_parts: None,
             predicate: None,
@@ -79,7 +77,7 @@ impl DslBuilder {
     #[cfg(feature = "parquet")]
     #[allow(clippy::too_many_arguments)]
     pub fn scan_parquet(
-        paths: Arc<Vec<std::path::PathBuf>>,
+        source: DslScanSource,
         n_rows: Option<usize>,
         cache: bool,
         parallel: polars_io::parquet::read::ParallelStrategy,
@@ -92,8 +90,6 @@ impl DslBuilder {
         glob: bool,
         include_file_paths: Option<PlSmallStr>,
     ) -> PolarsResult<Self> {
-        let paths = init_paths(paths);
-
         let options = FileScanOptions {
             with_columns: None,
             cache,
@@ -106,7 +102,8 @@ impl DslBuilder {
             include_file_paths,
         };
         Ok(DslPlan::Scan {
-            paths,
+            // @FIX: sources -> source
+            sources: source,
             file_info: Arc::new(RwLock::new(None)),
             hive_parts: None,
             predicate: None,
@@ -127,7 +124,7 @@ impl DslBuilder {
     #[cfg(feature = "ipc")]
     #[allow(clippy::too_many_arguments)]
     pub fn scan_ipc(
-        paths: Arc<Vec<std::path::PathBuf>>,
+        source: DslScanSource,
         options: IpcScanOptions,
         n_rows: Option<usize>,
         cache: bool,
@@ -137,10 +134,8 @@ impl DslBuilder {
         hive_options: HiveOptions,
         include_file_paths: Option<PlSmallStr>,
     ) -> PolarsResult<Self> {
-        let paths = init_paths(paths);
-
         Ok(DslPlan::Scan {
-            paths,
+            sources: source,
             file_info: Arc::new(RwLock::new(None)),
             hive_parts: None,
             file_options: FileScanOptions {
@@ -167,15 +162,13 @@ impl DslBuilder {
     #[allow(clippy::too_many_arguments)]
     #[cfg(feature = "csv")]
     pub fn scan_csv(
-        paths: Arc<Vec<std::path::PathBuf>>,
+        source: DslScanSource,
         read_options: CsvReadOptions,
         cache: bool,
         cloud_options: Option<CloudOptions>,
         glob: bool,
         include_file_paths: Option<PlSmallStr>,
     ) -> PolarsResult<Self> {
-        let paths = init_paths(paths);
-
         // This gets partially moved by FileScanOptions
         let read_options_clone = read_options.clone();
 
@@ -195,7 +188,7 @@ impl DslBuilder {
             include_file_paths,
         };
         Ok(DslPlan::Scan {
-            paths,
+            sources: source,
             file_info: Arc::new(RwLock::new(None)),
             hive_parts: None,
             file_options: options,
@@ -463,10 +456,4 @@ impl DslBuilder {
         }
         .into()
     }
-}
-
-/// Initialize paths as non-expanded.
-#[cfg(any(feature = "csv", feature = "ipc", feature = "parquet"))]
-fn init_paths(paths: Arc<Vec<std::path::PathBuf>>) -> Arc<Mutex<(Arc<Vec<PathBuf>>, bool)>> {
-    Arc::new(Mutex::new((paths, false)))
 }

@@ -247,7 +247,7 @@ impl<'a> IRDotDisplay<'a> {
                 })?;
             },
             Scan {
-                paths,
+                sources,
                 file_info,
                 hive_parts: _,
                 predicate,
@@ -255,6 +255,7 @@ impl<'a> IRDotDisplay<'a> {
                 file_options: options,
                 output_schema: _,
             } => {
+                let paths = sources.as_paths();
                 let name: &str = scan_type.into();
                 let path = PathsDisplay(paths.as_ref());
                 let with_columns = options.with_columns.as_ref().map(|cols| cols.as_ref());

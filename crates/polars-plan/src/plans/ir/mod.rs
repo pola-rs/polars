@@ -6,12 +6,14 @@ pub(crate) mod tree_format;
 
 use std::borrow::Cow;
 use std::fmt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 pub use dot::{EscapeLabel, IRDotDisplay, PathsDisplay};
 pub use format::{ExprIRDisplay, IRDisplay};
 use hive::HivePartitions;
 use polars_core::prelude::*;
+use polars_core::POOL;
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::unitvec;
 #[cfg(feature = "ir_serde")]
@@ -33,6 +35,176 @@ pub struct IRPlanRef<'a> {
     pub expr_arena: &'a Arena<AExpr>,
 }
 
+#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, Hash)]
+pub enum ScanSource {
+    Files(Arc<[PathBuf]>),
+    #[cfg_attr(feature = "ir_serde", serde(skip))]
+    Buffer(Arc<[u8]>),
+}
+
+impl Default for ScanSource {
+    fn default() -> Self {
+        Self::Files(Arc::default())
+    }
+}
+
+pub struct ScanSourceSliceInfo {
+    pub item_slice: std::ops::Range<usize>,
+    pub source_slice: std::ops::Range<usize>,
+}
+
+impl ScanSource {
+    pub fn as_paths(&self) -> &[PathBuf] {
+        match self {
+            ScanSource::Files(paths) => paths,
+            ScanSource::Buffer(_) => unimplemented!(),
+        }
+    }
+
+    pub fn into_paths(&self) -> Arc<[PathBuf]> {
+        match self {
+            ScanSource::Files(paths) => paths.clone(),
+            ScanSource::Buffer(_) => unimplemented!(),
+        }
+    }
+
+    pub fn to_dsl(self, is_expanded: bool) -> DslScanSource {
+        match self {
+            ScanSource::Files(paths) => {
+                DslScanSource::File(Arc::new(Mutex::new(ScanFileSource { paths, is_expanded })))
+            },
+            ScanSource::Buffer(buffer) => DslScanSource::Buffer(buffer),
+        }
+    }
+
+    pub fn num_sources(&self) -> usize {
+        match self {
+            ScanSource::Files(paths) => paths.len(),
+            ScanSource::Buffer(_) => 1,
+        }
+    }
+
+    pub fn is_cloud_url(&self) -> PolarsResult<bool> {
+        match self {
+            ScanSource::Files(paths) => {
+                Ok(polars_io::is_cloud_url(paths.first().ok_or_else(
+                    || polars_err!(ComputeError: "expected at least 1 path"),
+                )?))
+            },
+            ScanSource::Buffer(_) => Ok(false),
+        }
+    }
+
+    /// Normalize the slice and collect information as to what rows and parts of the source are
+    /// used in this slice. 
+    pub fn collect_slice_information(
+        &self,
+        slice: (i64, usize),
+        path_to_num_rows: impl Fn(&Path) -> PolarsResult<usize> + Send + Sync,
+        buffer_to_num_rows: impl Fn(&[u8]) -> PolarsResult<usize> + Send + Sync,
+    ) -> PolarsResult<ScanSourceSliceInfo> {
+        fn slice_to_start_end(
+            offset: i64,
+            length: usize,
+            num_rows: usize,
+        ) -> std::ops::Range<usize> {
+            if offset < 0 {
+                let slice_start_as_n_from_end = -offset as usize;
+                let (start, len) = if slice_start_as_n_from_end > num_rows {
+                    // We need to trim the slice, e.g. SLICE[offset: -100, len: 75] on a file of 50
+                    // rows should only give the first 25 rows.
+                    let start_position = slice_start_as_n_from_end - num_rows;
+                    (0, length.saturating_sub(start_position))
+                } else {
+                    (num_rows - slice_start_as_n_from_end, length)
+                };
+
+                let end = start.saturating_add(len);
+
+                start..end
+            } else {
+                let offset = offset as usize;
+                offset.min(num_rows)..(offset + length).min(num_rows)
+            }
+        }
+
+        let (offset, length) = slice;
+
+        Ok(match self {
+            ScanSource::Files(paths) if paths.len() == 1 => {
+                let num_rows = path_to_num_rows(&paths[0])?;
+                ScanSourceSliceInfo {
+                    item_slice: slice_to_start_end(offset, length, num_rows),
+                    source_slice: 0..1,
+                }
+            },
+            ScanSource::Files(paths) => {
+                use rayon::prelude::*;
+
+                assert_ne!(paths.len(), 0);
+
+                // Walk the files in reverse until we find the first file, and then translate the
+                // slice into a positive-offset equivalent.
+                const CHUNK_SIZE: usize = 8;
+                let mut row_counts = Vec::with_capacity(paths.len());
+
+                POOL.install(|| {
+                    for idx_end in (0..paths.len()).step_by(CHUNK_SIZE) {
+                        let idx_start = idx_end.saturating_sub(CHUNK_SIZE);
+
+                        row_counts.extend(
+                            (idx_start..=idx_end)
+                                .into_par_iter()
+                                .map(|i| path_to_num_rows(&paths[i]))
+                                .collect::<PolarsResult<Vec<_>>>()?
+                                .into_iter()
+                                .rev(),
+                        );
+                    }
+
+                    PolarsResult::Ok(())
+                })?;
+
+                let num_rows = row_counts.iter().sum::<usize>();
+
+                let item_slice = slice_to_start_end(offset, length, num_rows);
+
+                let mut source_start = paths.len() - 1;
+                let mut source_end = 0;
+
+                let mut sum = 0;
+                for (i, row_count) in row_counts.iter().rev().enumerate() {
+                    if sum < item_slice.end {
+                        source_end = usize::max(source_end, i);
+                    }
+
+                    sum += row_count;
+
+                    if sum >= item_slice.start {
+                        source_start = usize::min(source_start, i);
+                    }
+                }
+
+                let source_slice = source_start..source_end + 1;
+
+                ScanSourceSliceInfo {
+                    item_slice,
+                    source_slice,
+                }
+            },
+            ScanSource::Buffer(buffer) => {
+                let num_rows = buffer_to_num_rows(buffer)?;
+
+                ScanSourceSliceInfo {
+                    item_slice: slice_to_start_end(offset, length, num_rows),
+                    source_slice: 0..1,
+                }
+            },
+        })
+    }
+}
+
 /// [`IR`] is a representation of [`DslPlan`] with [`Node`]s which are allocated in an [`Arena`]
 /// In this IR the logical plan has access to the full dataset.
 #[derive(Clone, Debug, Default)]
@@ -52,7 +224,7 @@ pub enum IR {
         predicate: ExprIR,
     },
     Scan {
-        paths: Arc<Vec<PathBuf>>,
+        sources: ScanSource,
         file_info: FileInfo,
         hive_parts: Option<Arc<Vec<HivePartitions>>>,
         predicate: Option<ExprIR>,

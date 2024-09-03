@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
@@ -18,8 +19,11 @@ pub trait LazyFileListReader: Clone {
             return self.finish_no_glob();
         }
 
-        let lfs = self
-            .paths()
+        let ScanSource::Files(paths) = self.source() else {
+            unreachable!("Should never be globbed");
+        };
+
+        let lfs = paths
             .iter()
             .map(|path| {
                 self.clone()
@@ -27,7 +31,7 @@ pub trait LazyFileListReader: Clone {
                     .with_n_rows(None)
                     // Each individual reader should not apply a row index.
                     .with_row_index(None)
-                    .with_paths(Arc::new(vec![path.clone()]))
+                    .with_paths([path.clone()].into())
                     .with_rechunk(false)
                     .finish_no_glob()
                     .map_err(|e| {
@@ -40,7 +44,7 @@ pub trait LazyFileListReader: Clone {
 
         polars_ensure!(
             !lfs.is_empty(),
-            ComputeError: "no matching files found in {:?}", self.paths().iter().map(|x| x.to_str().unwrap()).collect::<Vec<_>>()
+            ComputeError: "no matching files found in {:?}", paths.iter().map(|x| x.to_str().unwrap()).collect::<Vec<_>>()
         );
 
         let mut lf = self.concat_impl(lfs)?;
@@ -79,11 +83,17 @@ pub trait LazyFileListReader: Clone {
         true
     }
 
-    fn paths(&self) -> &[PathBuf];
+    fn source(&self) -> &ScanSource;
 
     /// Set paths of the scanned files.
     #[must_use]
-    fn with_paths(self, paths: Arc<Vec<PathBuf>>) -> Self;
+    fn with_source(self, source: ScanSource) -> Self;
+
+    /// Set paths of the scanned files.
+    #[must_use]
+    fn with_paths(self, paths: Arc<[PathBuf]>) -> Self {
+        self.with_source(ScanSource::Files(paths))
+    }
 
     /// Configure the row limit.
     fn with_n_rows(self, n_rows: impl Into<Option<usize>>) -> Self;

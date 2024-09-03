@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
 use either::Either;
 use polars_io::path_utils::is_cloud_url;
@@ -14,6 +15,18 @@ fn get_first_path(paths: &[PathBuf]) -> PolarsResult<&PathBuf> {
     paths
         .first()
         .ok_or_else(|| polars_err!(ComputeError: "expected at least 1 path"))
+}
+
+impl From<ScanSource> for DslScanSource {
+    fn from(value: ScanSource) -> Self {
+        match value {
+            ScanSource::Files(paths) => DslScanSource::File(Arc::new(Mutex::new(ScanFileSource {
+                paths,
+                is_expanded: true,
+            }))),
+            ScanSource::Buffer(buffer) => DslScanSource::Buffer(buffer),
+        }
+    }
 }
 
 #[cfg(any(feature = "parquet", feature = "ipc"))]
@@ -38,46 +51,64 @@ fn prepare_schemas(mut schema: Schema, row_index: Option<&RowIndex>) -> (SchemaR
 
 #[cfg(feature = "parquet")]
 pub(super) fn parquet_file_info(
-    paths: &[PathBuf],
+    source: &ScanSource,
     file_options: &FileScanOptions,
     #[allow(unused)] cloud_options: Option<&polars_io::cloud::CloudOptions>,
 ) -> PolarsResult<(FileInfo, Option<FileMetaDataRef>)> {
-    let path = get_first_path(paths)?;
+    let (schema, reader_schema, num_rows, metadata) = match source {
+        ScanSource::Files(paths) => {
+            let path = get_first_path(paths)?;
+            if is_cloud_url(path) {
+                #[cfg(not(feature = "cloud"))]
+                panic!("One or more of the cloud storage features ('aws', 'gcp', ...) must be enabled.");
 
-    let (schema, reader_schema, num_rows, metadata) = if is_cloud_url(path) {
-        #[cfg(not(feature = "cloud"))]
-        panic!("One or more of the cloud storage features ('aws', 'gcp', ...) must be enabled.");
+                #[cfg(feature = "cloud")]
+                {
+                    let uri = path.to_string_lossy();
+                    get_runtime().block_on(async {
+                        let mut reader =
+                            ParquetAsyncReader::from_uri(&uri, cloud_options, None).await?;
+                        let reader_schema = reader.schema().await?;
+                        let num_rows = reader.num_rows().await?;
+                        let metadata = reader.get_metadata().await?.clone();
 
-        #[cfg(feature = "cloud")]
-        {
-            let uri = path.to_string_lossy();
-            get_runtime().block_on(async {
-                let mut reader = ParquetAsyncReader::from_uri(&uri, cloud_options, None).await?;
-                let reader_schema = reader.schema().await?;
-                let num_rows = reader.num_rows().await?;
-                let metadata = reader.get_metadata().await?.clone();
-
+                        let schema = prepare_output_schema(
+                            Schema::from_arrow_schema(reader_schema.as_ref()),
+                            file_options.row_index.as_ref(),
+                        );
+                        PolarsResult::Ok((schema, reader_schema, Some(num_rows), Some(metadata)))
+                    })?
+                }
+            } else {
+                let file = polars_utils::open_file(path)?;
+                let mut reader = ParquetReader::new(file);
+                let reader_schema = reader.schema()?;
                 let schema = prepare_output_schema(
                     Schema::from_arrow_schema(reader_schema.as_ref()),
                     file_options.row_index.as_ref(),
                 );
-                PolarsResult::Ok((schema, reader_schema, Some(num_rows), Some(metadata)))
-            })?
-        }
-    } else {
-        let file = polars_utils::open_file(path)?;
-        let mut reader = ParquetReader::new(file);
-        let reader_schema = reader.schema()?;
-        let schema = prepare_output_schema(
-            Schema::from_arrow_schema(reader_schema.as_ref()),
-            file_options.row_index.as_ref(),
-        );
-        (
-            schema,
-            reader_schema,
-            Some(reader.num_rows()?),
-            Some(reader.get_metadata()?.clone()),
-        )
+                (
+                    schema,
+                    reader_schema,
+                    Some(reader.num_rows()?),
+                    Some(reader.get_metadata()?.clone()),
+                )
+            }
+        },
+        ScanSource::Buffer(buffer) => {
+            let mut reader = ParquetReader::new(std::io::Cursor::new(buffer));
+            let reader_schema = reader.schema()?;
+            let schema = prepare_output_schema(
+                Schema::from_arrow_schema(reader_schema.as_ref()),
+                file_options.row_index.as_ref(),
+            );
+            (
+                schema,
+                reader_schema,
+                Some(reader.num_rows()?),
+                Some(reader.get_metadata()?.clone()),
+            )
+        },
     };
 
     let file_info = FileInfo::new(

@@ -7,6 +7,7 @@ use std::io::{Cursor, ErrorKind, Read, Seek, SeekFrom, Write};
 #[cfg(target_family = "unix")]
 use std::os::fd::{FromRawFd, RawFd};
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use polars::io::mmap::MmapBytesReader;
 use polars_error::{polars_err, polars_warn};
@@ -29,6 +30,10 @@ impl PyFileLikeObject {
     /// instantiate it with `PyFileLikeObject::require`
     pub fn new(object: PyObject) -> Self {
         PyFileLikeObject { inner: object }
+    }
+
+    pub fn as_arc(&self) -> Arc<[u8]> {
+        self.as_file_buffer().into_inner().into()
     }
 
     pub fn as_buffer(&self) -> std::io::Cursor<Vec<u8>> {
@@ -189,6 +194,65 @@ impl EitherRustPythonFile {
             EitherRustPythonFile::Rust(f) => Box::new(f),
         }
     }
+}
+
+pub enum EitherPythonFileOrPath {
+    Py(PyFileLikeObject),
+    Path(PathBuf),
+}
+
+pub fn get_either_file_or_path(
+    py_f: PyObject,
+    write: bool,
+) -> PyResult<EitherPythonFileOrPath> {
+    Python::with_gil(|py| {
+        let py_f = py_f.into_bound(py);
+        if let Ok(s) = py_f.extract::<Cow<str>>() {
+            let file_path = std::path::Path::new(&*s);
+            let file_path = resolve_homedir(file_path);
+            Ok(EitherPythonFileOrPath::Path(file_path))
+        } else {
+            let io = py.import_bound("io").unwrap();
+            let is_utf8_encoding = |py_f: &Bound<PyAny>| -> PyResult<bool> {
+                let encoding = py_f.getattr("encoding")?;
+                let encoding = encoding.extract::<Cow<str>>()?;
+                Ok(encoding.eq_ignore_ascii_case("utf-8") || encoding.eq_ignore_ascii_case("utf8"))
+            };
+
+            // BytesIO is relatively fast, and some code relies on it.
+            if !py_f.is_exact_instance(&io.getattr("BytesIO").unwrap()) {
+                polars_warn!("Polars found a filename. \
+                Ensure you pass a path to the file instead of a python file object when possible for best \
+                performance.");
+            }
+            // Unwrap TextIOWrapper
+            // Allow subclasses to allow things like pytest.capture.CaptureIO
+            let py_f = if py_f
+                .is_instance(&io.getattr("TextIOWrapper").unwrap())
+                .unwrap_or_default()
+            {
+                if !is_utf8_encoding(&py_f)? {
+                    return Err(PyPolarsErr::from(
+                        polars_err!(InvalidOperation: "file encoding is not UTF-8"),
+                    )
+                    .into());
+                }
+                // XXX: we have to clear buffer here.
+                // Is there a better solution?
+                if write {
+                    py_f.call_method0("flush")?;
+                } else {
+                    py_f.call_method1("seek", (0, 1))?;
+                }
+                py_f.getattr("buffer")?
+            } else {
+                py_f
+            };
+            PyFileLikeObject::ensure_requirements(&py_f, !write, write, !write)?;
+            let f = PyFileLikeObject::new(py_f.to_object(py));
+            Ok(EitherPythonFileOrPath::Py(f))
+        }
+    })
 }
 
 fn get_either_file_and_path(

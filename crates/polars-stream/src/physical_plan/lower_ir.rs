@@ -331,7 +331,7 @@ pub fn lower_ir(
 
         v @ IR::Scan { .. } => {
             let IR::Scan {
-                paths,
+                sources,
                 file_info,
                 hive_parts,
                 output_schema,
@@ -342,6 +342,8 @@ pub fn lower_ir(
             else {
                 unreachable!();
             };
+
+            let paths = sources.into_paths();
 
             PhysNodeKind::FileScan {
                 paths,

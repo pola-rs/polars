@@ -1,11 +1,11 @@
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, RwLock};
 
 use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
 use polars_io::RowIndex;
-use polars_plan::plans::{DslPlan, FileScan};
+use polars_plan::plans::{DslPlan, FileScan, ScanSource};
 use polars_plan::prelude::{FileScanOptions, NDJsonReadOptions};
 
 use crate::prelude::LazyFrame;
@@ -13,7 +13,7 @@ use crate::scan::file_list_reader::LazyFileListReader;
 
 #[derive(Clone)]
 pub struct LazyJsonLineReader {
-    pub(crate) paths: Arc<Vec<PathBuf>>,
+    pub(crate) source: ScanSource,
     pub(crate) batch_size: Option<NonZeroUsize>,
     pub(crate) low_memory: bool,
     pub(crate) rechunk: bool,
@@ -28,13 +28,13 @@ pub struct LazyJsonLineReader {
 }
 
 impl LazyJsonLineReader {
-    pub fn new_paths(paths: Arc<Vec<PathBuf>>) -> Self {
+    pub fn new_paths(paths: Arc<[PathBuf]>) -> Self {
         Self::new(PathBuf::new()).with_paths(paths)
     }
 
     pub fn new(path: impl AsRef<Path>) -> Self {
         LazyJsonLineReader {
-            paths: Arc::new(vec![path.as_ref().to_path_buf()]),
+            source: ScanSource::Files([path.as_ref().to_path_buf()].into()),
             batch_size: None,
             low_memory: false,
             rechunk: false,
@@ -117,8 +117,6 @@ impl LazyJsonLineReader {
 
 impl LazyFileListReader for LazyJsonLineReader {
     fn finish(self) -> PolarsResult<LazyFrame> {
-        let paths = Arc::new(Mutex::new((self.paths, false)));
-
         let file_options = FileScanOptions {
             slice: self.n_rows.map(|x| (0, x)),
             with_columns: None,
@@ -147,7 +145,7 @@ impl LazyFileListReader for LazyJsonLineReader {
         };
 
         Ok(LazyFrame::from(DslPlan::Scan {
-            paths,
+            sources: self.source.to_dsl(false),
             file_info: Arc::new(RwLock::new(None)),
             hive_parts: None,
             predicate: None,
@@ -160,12 +158,12 @@ impl LazyFileListReader for LazyJsonLineReader {
         unreachable!();
     }
 
-    fn paths(&self) -> &[PathBuf] {
-        &self.paths
+    fn source(&self) -> &ScanSource {
+        &self.source
     }
 
-    fn with_paths(mut self, paths: Arc<Vec<PathBuf>>) -> Self {
-        self.paths = paths;
+    fn with_source(mut self, source: ScanSource) -> Self {
+        self.source = source;
         self
     }
 
