@@ -148,8 +148,6 @@ impl<'a> FromIterator<&'a PlSmallStr> for PlSmallStr {
     }
 }
 
-/// FromIterator impls, copied from String
-
 impl FromIterator<char> for PlSmallStr {
     #[inline(always)]
     fn from_iter<I: IntoIterator<Item = char>>(iter: I) -> PlSmallStr {
