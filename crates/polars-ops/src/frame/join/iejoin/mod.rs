@@ -4,7 +4,7 @@ use std::cmp::min;
 
 use filtered_bit_array::FilteredBitArray;
 use polars_core::chunked_array::ChunkedArray;
-use polars_core::datatypes::{IdxCa, IdxType, NumericNative, PolarsNumericType};
+use polars_core::datatypes::{IdxCa, NumericNative, PolarsNumericType};
 use polars_core::frame::DataFrame;
 use polars_core::prelude::*;
 use polars_core::{with_match_physical_numeric_polars_type, POOL};
@@ -13,7 +13,7 @@ use polars_utils::total_ord::{TotalEq, TotalOrd};
 use polars_utils::IdxSize;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-
+use polars_utils::slice::GetSaferUnchecked;
 use crate::frame::_finish_join;
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
@@ -99,7 +99,8 @@ pub fn iejoin(
     let l2_order = y_ordered.arg_sort(l2_sort_options).slice(
         y_ordered.null_count() as i64,
         y_ordered.len() - y_ordered.null_count(),
-    );
+    ).rechunk();
+    let l2_order = l2_order.downcast_get(0).unwrap().values().as_slice();
 
     // Create a bit array with order corresponding to L1,
     // denoting which entries have been visited while traversing L2.
@@ -120,7 +121,7 @@ pub fn iejoin(
         // To handle inclusive comparisons in x and duplicate x values we also need the
         // sort of l1 to be stable, so that the left hand side entries come before the right
         // hand side entries (as we mark visited entries from the right hand side).
-        for p in l2_order.into_no_null_iter() {
+        for &p in l2_order {
             match_count += l1_array.process_entry(
                 p as usize,
                 &mut bit_array,
@@ -313,7 +314,9 @@ where
     // matches for duplicate y values when traversing forwards in l1.
     let start_index = find_search_start_index(l1_array, l1_index, op1);
     bit_array.on_set_bits_from(start_index, |set_bit: usize| {
-        let right_row_index = l1_array[set_bit].row_index;
+        // SAFETY
+        // set bit is within bounds.
+        let right_row_index = unsafe { l1_array.get_unchecked_release(set_bit) }.row_index;
         debug_assert!(right_row_index < 0);
         left_row_ids.push((row_index - 1) as IdxSize);
         right_row_ids.push((-right_row_index) as IdxSize - 1);
@@ -419,7 +422,7 @@ where
 /// Create a vector of L2 items from the array of y values ordered according to the L1 order,
 /// and their ordering. We don't need to store actual y values but only track whether we're at
 /// the end of a run of equal values.
-fn build_l2_array<T>(ca: &ChunkedArray<T>, order: &IdxCa) -> PolarsResult<Vec<L2Item>>
+fn build_l2_array<T>(ca: &ChunkedArray<T>, order: &[IdxSize]) -> PolarsResult<Vec<L2Item>>
 where
     T: PolarsNumericType,
     T::Native: TotalOrd,
@@ -427,7 +430,7 @@ where
     let mut array = Vec::with_capacity(ca.len());
     let mut prev_index = 0;
     let mut prev_value = T::Native::default();
-    for (i, l1_index) in order.into_no_null_iter().enumerate() {
+    for (i, l1_index) in order.iter().copied().enumerate() {
         let value = ca
             .get(l1_index as usize)
             // Nulls should have been skipped over
