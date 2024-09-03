@@ -979,6 +979,8 @@ impl AnyValue<'_> {
             #[cfg(feature = "dtype-categorical")]
             (Categorical(idx_l, rev_l, ptr_l), Categorical(idx_r, rev_r, ptr_r)) => {
                 if !same_revmap(rev_l, *ptr_l, rev_r, *ptr_r) {
+                    // We can't support this because our Hash impl directly hashes the index. If you
+                    // add support for this we must change the Hash impl.
                     unimplemented!(
                         "comparing categoricals with different revmaps is not supported"
                     );
@@ -988,6 +990,8 @@ impl AnyValue<'_> {
             },
             #[cfg(feature = "dtype-categorical")]
             (Enum(idx_l, rev_l, ptr_l), Enum(idx_r, rev_r, ptr_r)) => {
+                // We can't support this because our Hash impl directly hashes the index. If you
+                // add support for this we must change the Hash impl.
                 if !same_revmap(rev_l, *ptr_l, rev_r, *ptr_r) {
                     unimplemented!("comparing enums with different revmaps is not supported");
                 }
