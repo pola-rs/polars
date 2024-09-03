@@ -131,7 +131,6 @@ fn read_int96_timestamps() -> PolarsResult<()> {
                 arrow::datatypes::ArrowDataType::Timestamp(time_unit, None),
                 false,
             )],
-            metadata: BTreeMap::new(),
         };
         let reader = FileReader::new(reader, metadata.row_groups, schema, None);
         reader.collect::<PolarsResult<Vec<_>>>()

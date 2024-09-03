@@ -4,9 +4,9 @@ use polars_error::{polars_bail, PolarsResult};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-use super::{Field, Metadata};
+use super::Field;
 
-/// An ordered sequence of [`Field`]s with associated [`Metadata`].
+/// An ordered sequence of [`Field`]s
 ///
 /// [`ArrowSchema`] is an abstraction used to read from, and write to, Arrow IPC format,
 /// Apache Parquet, and Apache Avro. All these formats have a concept of a schema
@@ -16,22 +16,11 @@ use super::{Field, Metadata};
 pub struct ArrowSchema {
     /// The fields composing this schema.
     pub fields: Vec<Field>,
-    /// Optional metadata.
-    pub metadata: Metadata,
 }
 
 pub type ArrowSchemaRef = Arc<ArrowSchema>;
 
 impl ArrowSchema {
-    /// Attaches a [`Metadata`] to [`ArrowSchema`]
-    #[inline]
-    pub fn with_metadata(self, metadata: Metadata) -> Self {
-        Self {
-            fields: self.fields,
-            metadata,
-        }
-    }
-
     #[inline]
     pub fn len(&self) -> usize {
         self.fields.len()
@@ -58,10 +47,7 @@ impl ArrowSchema {
             })
             .collect();
 
-        ArrowSchema {
-            fields,
-            metadata: self.metadata,
-        }
+        ArrowSchema { fields }
     }
 
     pub fn try_project(&self, indices: &[usize]) -> PolarsResult<Self> {
@@ -76,10 +62,7 @@ impl ArrowSchema {
             Ok(out.clone())
         }).collect::<PolarsResult<Vec<_>>>()?;
 
-        Ok(ArrowSchema {
-            fields,
-            metadata: self.metadata.clone(),
-        })
+        Ok(ArrowSchema { fields })
     }
 }
 
