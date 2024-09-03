@@ -56,7 +56,7 @@ pub trait Itertools: Iterator {
             Some(a) => self.all(|x| a == x),
         }
     }
-    
+
     // Stable copy of the unstable eq_by from the stdlib.
     fn eq_by_<I, F>(mut self, other: I, mut eq: F) -> bool
     where
@@ -76,7 +76,7 @@ pub trait Itertools: Iterator {
                     } else {
                         return false;
                     }
-                }
+                },
             }
         }
     }
@@ -94,17 +94,13 @@ pub trait Itertools: Iterator {
                 (None, None) => return Some(Ordering::Equal),
                 (None, Some(_)) => return Some(Ordering::Less),
                 (Some(_), None) => return Some(Ordering::Greater),
-                (Some(l), Some(r)) => {
-                    match partial_cmp(l, r) {
-                        Some(Ordering::Equal) => continue,
-                        ord => return ord,
-                    }
-                }
+                (Some(l), Some(r)) => match partial_cmp(l, r) {
+                    Some(Ordering::Equal) => continue,
+                    ord => return ord,
+                },
             }
         }
     }
 }
 
-
 impl<T: Iterator + ?Sized> Itertools for T {}
-

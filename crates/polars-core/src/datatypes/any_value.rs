@@ -947,12 +947,12 @@ impl AnyValue<'_> {
             (l, StringOwned(r)) => *l == AnyValue::String(r.as_str()),
             (l, BinaryOwned(r)) => *l == AnyValue::Binary(r.as_slice()),
             (l, ObjectOwned(r)) => *l == AnyValue::Object(&*r.0),
-            
+
             // Comparison with null.
             (Null, Null) => null_equal,
             (Null, _) => false,
             (_, Null) => false,
-            
+
             // Equality between equal types.
             (Boolean(l), Boolean(r)) => *l == *r,
             (UInt8(l), UInt8(r)) => *l == *r,
@@ -979,9 +979,11 @@ impl AnyValue<'_> {
             #[cfg(feature = "dtype-categorical")]
             (Categorical(idx_l, rev_l, ptr_l), Categorical(idx_r, rev_r, ptr_r)) => {
                 if !same_revmap(rev_l, *ptr_l, rev_r, *ptr_r) {
-                    unimplemented!("comparing categoricals with different revmaps is not supported");
+                    unimplemented!(
+                        "comparing categoricals with different revmaps is not supported"
+                    );
                 }
-                
+
                 idx_l == idx_r
             },
             #[cfg(feature = "dtype-categorical")]
@@ -989,7 +991,7 @@ impl AnyValue<'_> {
                 if !same_revmap(rev_l, *ptr_l, rev_r, *ptr_r) {
                     unimplemented!("comparing enums with different revmaps is not supported");
                 }
-                
+
                 idx_l == idx_r
             },
             #[cfg(feature = "dtype-duration")]
@@ -1002,7 +1004,8 @@ impl AnyValue<'_> {
             },
             #[cfg(feature = "dtype-struct")]
             (StructOwned(l), Struct(idx, arr, fields)) => {
-                l.0.iter().eq_by_(struct_av_iter(*idx, arr, fields), |lv, rv| *lv == rv)
+                l.0.iter()
+                    .eq_by_(struct_av_iter(*idx, arr, fields), |lv, rv| *lv == rv)
             },
             #[cfg(feature = "dtype-struct")]
             (Struct(idx, arr, fields), StructOwned(r)) => {
@@ -1041,10 +1044,10 @@ impl AnyValue<'_> {
             },
             #[cfg(feature = "object")]
             (Object(l), Object(r)) => l == r,
-            
+
             (_, _) => {
                 unimplemented!("ordering for mixed dtypes is not supported")
-            }
+            },
         }
     }
 }
@@ -1073,7 +1076,7 @@ impl PartialOrd for AnyValue<'_> {
             (Null, Null) => Some(Ordering::Equal),
             (Null, _) => Some(Ordering::Less),
             (_, Null) => Some(Ordering::Greater),
-            
+
             // Comparison between equal types.
             (Boolean(l), Boolean(r)) => l.partial_cmp(r),
             (UInt8(l), UInt8(r)) => l.partial_cmp(r),
@@ -1093,42 +1096,49 @@ impl PartialOrd for AnyValue<'_> {
             #[cfg(feature = "dtype-datetime")]
             (Datetime(lt, lu, lz), Datetime(rt, ru, rz)) => {
                 if lu != ru || lz != rz {
-                    unimplemented!("comparing datetimes with different units or timezones is not supported");
+                    unimplemented!(
+                        "comparing datetimes with different units or timezones is not supported"
+                    );
                 }
-                
+
                 lt.partial_cmp(rt)
-            }
+            },
             #[cfg(feature = "dtype-duration")]
             (Duration(lt, lu), Duration(rt, ru)) => {
                 if lu != ru {
                     unimplemented!("comparing durations with different units is not supported");
                 }
-                
+
                 lt.partial_cmp(rt)
-            }
+            },
             #[cfg(feature = "dtype-time")]
             (Time(l), Time(r)) => l.partial_cmp(r),
             #[cfg(feature = "dtype-categorical")]
             (Categorical(..), Categorical(..)) => {
-                unimplemented!("can't order categoricals as AnyValues, dtype for ordering is needed")
-            }
+                unimplemented!(
+                    "can't order categoricals as AnyValues, dtype for ordering is needed"
+                )
+            },
             #[cfg(feature = "dtype-categorical")]
             (Enum(..), Enum(..)) => {
                 unimplemented!("can't order enums as AnyValues, dtype for ordering is needed")
-            }
+            },
             (List(_), List(_)) => {
                 unimplemented!("ordering for List dtype is not supported")
-            }
+            },
             #[cfg(feature = "dtype-array")]
             (Array(..), Array(..)) => {
                 unimplemented!("ordering for Array dtype is not supported")
-            }
+            },
             #[cfg(feature = "object")]
             (Object(_), Object(_)) => {
                 unimplemented!("ordering for Object dtype is not supported")
-            }
+            },
             #[cfg(feature = "dtype-struct")]
-            (StructOwned(_), StructOwned(_)) | (StructOwned(_), Struct(..)) | (Struct(..), StructOwned(_))  | (Struct(..), Struct(..)) => {
+            (StructOwned(_), StructOwned(_))
+            | (StructOwned(_), Struct(..))
+            | (Struct(..), StructOwned(_))
+            | (Struct(..), Struct(..)) => {
                 unimplemented!("ordering for Struct dtype is not supported")
             },
             #[cfg(feature = "dtype-decimal")]
@@ -1157,11 +1167,11 @@ impl PartialOrd for AnyValue<'_> {
                         Some(Ordering::Less)
                     }
                 }
-            }
-            
+            },
+
             (_, _) => {
                 unimplemented!("ordering for mixed dtypes is not supported")
-            }
+            },
         }
     }
 }
@@ -1191,20 +1201,16 @@ fn struct_to_avs_static(idx: usize, arr: &StructArray, fields: &[Field]) -> Vec<
 
 #[cfg(feature = "dtype-categorical")]
 fn same_revmap(
-    rev_l: &RevMapping, 
+    rev_l: &RevMapping,
     ptr_l: SyncPtr<Utf8ViewArray>,
-    rev_r: &RevMapping, 
+    rev_r: &RevMapping,
     ptr_r: SyncPtr<Utf8ViewArray>,
 ) -> bool {
     if ptr_l.is_null() && ptr_r.is_null() {
         match (rev_l, rev_r) {
-            (RevMapping::Global(_, _, id_l), RevMapping::Global(_, _, id_r)) => {
-                id_l == id_r
-            },
-            (RevMapping::Local(_, id_l), RevMapping::Local(_, id_r)) => {
-                id_l == id_r
-            },
-            _ => false
+            (RevMapping::Global(_, _, id_l), RevMapping::Global(_, _, id_r)) => id_l == id_r,
+            (RevMapping::Local(_, id_l), RevMapping::Local(_, id_r)) => id_l == id_r,
+            _ => false,
         }
     } else {
         ptr_l == ptr_r
@@ -1212,7 +1218,11 @@ fn same_revmap(
 }
 
 #[cfg(feature = "dtype-struct")]
-fn struct_av_iter<'a>(idx: usize, arr: &'a StructArray, fields: &'a [Field]) -> impl Iterator<Item = AnyValue<'a>> {
+fn struct_av_iter<'a>(
+    idx: usize,
+    arr: &'a StructArray,
+    fields: &'a [Field],
+) -> impl Iterator<Item = AnyValue<'a>> {
     let arrs = arr.values();
     (0..arrs.len()).map(move |i| unsafe {
         let arr = &**arrs.get_unchecked_release(i);
