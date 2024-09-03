@@ -1,4 +1,4 @@
-use chrono::Datelike;
+use chrono::{Datelike, Timelike};
 use polars_error::PolarsResult;
 
 use crate::array::*;
@@ -8,7 +8,9 @@ use crate::compute::cast::CastOptionsImpl;
 use crate::compute::decimal::deserialize_decimal;
 use crate::datatypes::{ArrowDataType, TimeUnit};
 use crate::offset::Offset;
-use crate::temporal_conversions::EPOCH_DAYS_FROM_CE;
+use crate::temporal_conversions::{
+    EPOCH_DAYS_FROM_CE, MINUTES_IN_HOUR, NANOSECONDS, SECONDS_IN_MINUTE,
+};
 use crate::types::NativeType;
 
 pub(super) const RFC3339: &str = "%Y-%m-%dT%H:%M:%S%.f%:z";
@@ -133,4 +135,24 @@ pub(super) fn utf8view_to_date32(from: &Utf8ViewArray) -> PrimitiveArray<i32> {
 pub(super) fn utf8view_to_date32_dyn(from: &dyn Array) -> PolarsResult<Box<dyn Array>> {
     let from = from.as_any().downcast_ref().unwrap();
     Ok(Box::new(utf8view_to_date32(from)))
+}
+
+pub(super) fn utf8view_to_time64(from: &Utf8ViewArray) -> PrimitiveArray<i64> {
+    let iter = from.iter().map(|x| {
+        x.and_then(|x| {
+            x.parse::<chrono::NaiveTime>().ok().map(|x| {
+                ((x.hour() as i64) * MINUTES_IN_HOUR * SECONDS_IN_MINUTE
+                    + (x.minute() as i64) * SECONDS_IN_MINUTE
+                    + (x.second() as i64))
+                    * NANOSECONDS
+            })
+        })
+    });
+    PrimitiveArray::<i64>::from_trusted_len_iter(iter)
+        .to(ArrowDataType::Time64(TimeUnit::Nanosecond))
+}
+
+pub(super) fn utf8view_to_time64_dyn(from: &dyn Array) -> PolarsResult<Box<dyn Array>> {
+    let from = from.as_any().downcast_ref().unwrap();
+    Ok(Box::new(utf8view_to_time64(from)))
 }

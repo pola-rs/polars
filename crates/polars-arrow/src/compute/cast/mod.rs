@@ -24,7 +24,7 @@ pub use utf8_to::*;
 use crate::array::*;
 use crate::compute::cast::binview_to::{
     binview_to_dictionary, utf8view_to_date32_dyn, utf8view_to_dictionary,
-    utf8view_to_naive_timestamp_dyn, view_to_binary,
+    utf8view_to_naive_timestamp_dyn, utf8view_to_time64_dyn, view_to_binary,
 };
 use crate::datatypes::*;
 use crate::match_integer_type;
@@ -428,6 +428,7 @@ pub fn cast(
                 )
                 .map(|arr| arr.boxed()),
                 Date32 => utf8view_to_date32_dyn(array),
+                Time64(_) => utf8view_to_time64_dyn(array),
                 _ => polars_bail!(InvalidOperation:
                     "casting from {from_type:?} to {to_type:?} not supported",
                 ),
