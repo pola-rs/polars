@@ -6241,8 +6241,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ z       ┆ zq1       ┆ zq2       ┆ zp1    ┆ zp2    │
         └─────────┴───────────┴───────────┴────────┴────────┘
         >>> (
-        ...     lf
-        ...     .select(
+        ...     lf.select(
         ...         "PRODUCT",
         ...         pl.struct(QTY="QUANTITY1", PRICE="PRICE1").alias("PQ1"),
         ...         pl.struct(QTY="QUANTITY2", PRICE="PRICE2").alias("PQ2"),

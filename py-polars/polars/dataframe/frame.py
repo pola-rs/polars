@@ -8295,8 +8295,7 @@ class DataFrame:
         │ z       ┆ zq1       ┆ zq2       ┆ zp1    ┆ zp2    │
         └─────────┴───────────┴───────────┴────────┴────────┘
         >>> (
-        ...     df
-        ...     .select(
+        ...     df.select(
         ...         "PRODUCT",
         ...         pl.struct(QTY="QUANTITY1", PRICE="PRICE1").alias("PQ1"),
         ...         pl.struct(QTY="QUANTITY2", PRICE="PRICE2").alias("PQ2"),
