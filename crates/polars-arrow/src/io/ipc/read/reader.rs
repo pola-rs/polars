@@ -34,10 +34,7 @@ impl<R: Read + Seek> FileReader<R> {
     ) -> Self {
         let projection = projection.map(|projection| {
             let (p, h, fields) = prepare_projection(&metadata.schema.fields, projection);
-            let schema = ArrowSchema {
-                fields,
-                metadata: metadata.schema.metadata.clone(),
-            };
+            let schema = ArrowSchema { fields };
             (p, h, schema)
         });
         Self {

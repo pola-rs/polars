@@ -38,13 +38,7 @@ pub fn serialize_schema(
         .map(|(field, ipc_field)| serialize_field(field, ipc_field))
         .collect::<Vec<_>>();
 
-    let custom_metadata = schema
-        .metadata
-        .iter()
-        .map(|(k, v)| key_value(k.clone().into_string(), v.clone().into_string()))
-        .collect::<Vec<_>>();
-
-    let custom_metadata = (!custom_metadata.is_empty()).then_some(custom_metadata);
+    let custom_metadata = None;
 
     arrow_format::ipc::Schema {
         endianness,

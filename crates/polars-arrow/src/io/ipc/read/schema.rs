@@ -391,22 +391,8 @@ pub(super) fn fb_to_schema(
         arrow_format::ipc::Endianness::Big => false,
     };
 
-    let mut metadata = Metadata::default();
-    if let Some(md_fields) = schema.custom_metadata()? {
-        for kv in md_fields {
-            let kv = kv?;
-            let k_str = kv.key()?;
-            let v_str = kv.value()?;
-            if let Some(k) = k_str {
-                if let Some(v) = v_str {
-                    metadata.insert(PlSmallStr::from_str(k), PlSmallStr::from_str(v));
-                }
-            }
-        }
-    }
-
     Ok((
-        ArrowSchema { fields, metadata },
+        ArrowSchema { fields },
         IpcSchema {
             fields: ipc_fields,
             is_little_endian,
