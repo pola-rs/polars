@@ -70,18 +70,14 @@ impl<T: std::fmt::Debug> ExponentialSearch<T> for &[T] {
         // We checked the ned bound and previous bound was within slice as per the `while` condition.
         let prev_bound = bound / 2;
 
-        let slice = unsafe {
-            self.get_unchecked_release(prev_bound..end_bound)
-        };
+        let slice = unsafe { self.get_unchecked_release(prev_bound..end_bound) };
 
         match slice.binary_search_by(f) {
             Ok(i) => Ok(i + prev_bound),
-            Err(i) => Err(i + prev_bound)
+            Err(i) => Err(i + prev_bound),
         }
     }
 }
-
-
 
 #[cfg(test)]
 mod test {

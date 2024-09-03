@@ -1,7 +1,5 @@
 mod filtered_bit_array;
 
-use std::cmp::min;
-
 use filtered_bit_array::FilteredBitArray;
 use polars_core::chunked_array::ChunkedArray;
 use polars_core::datatypes::{IdxCa, NumericNative, PolarsNumericType};
@@ -257,45 +255,19 @@ where
     let sub_l1 = l1_array.get_unchecked_release(index..);
     let value = l1_array.get_unchecked_release(index).value;
 
-    if operator.is_strict() {
-        match operator {
-            InequalityOperator::Gt => {
-                sub_l1.partition_point_exponential(|a| a.value.tot_ge(&value)) + index
-            },
-            InequalityOperator::Lt => {
-                sub_l1.partition_point_exponential(|a| a.value.tot_le(&value)) + index
-            }
-            _ => unreachable!()
+    match operator {
+        InequalityOperator::Gt => {
+            sub_l1.partition_point_exponential(|a| a.value.tot_ge(&value)) + index
+        },
+        InequalityOperator::Lt => {
+            sub_l1.partition_point_exponential(|a| a.value.tot_le(&value)) + index
         }
-    } else {
-        // Search backwards to find the first value equal to the current x value
-        let mut left_bound = if index > 0 { index - 1 } else { 0 };
-        let mut right_bound = index;
-        let mut step_size = 1;
-        while left_bound > 0 && l1_array[left_bound].value.tot_eq(&value) {
-            right_bound = left_bound;
-            left_bound = if left_bound > step_size {
-                left_bound - step_size
-            } else {
-                0
-            };
-            step_size *= 2
+        InequalityOperator::GtEq => {
+            sub_l1.partition_point_exponential(|a| value.tot_lt(&a.value)) + index
         }
-
-        if l1_array[left_bound].value.tot_eq(&value) {
-            return left_bound;
+        InequalityOperator::LtEq => {
+            sub_l1.partition_point_exponential(|a| value.tot_gt(&a.value)) + index
         }
-
-        // Now binary search to find the first value equal to the current x value
-        while right_bound - left_bound > 1 {
-            let mid = left_bound + (right_bound - left_bound) / 2;
-            if l1_array[mid].value.tot_eq(&value) {
-                right_bound = mid;
-            } else {
-                left_bound = mid;
-            }
-        }
-        right_bound
     }
 }
 

@@ -551,7 +551,7 @@ fn test_foo() {
             selected.clone(),
             selected,
             JoinArgs::new(JoinType::IEJoin(IEJoinOptions {
-                operator1: InequalityOperator::Gt,
+                operator1: InequalityOperator::GtEq,
                 operator2: InequalityOperator::Lt,
             })),
             false,
