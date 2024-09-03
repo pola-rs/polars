@@ -8299,7 +8299,7 @@ class DataFrame:
         ...     .select(
         ...         "PRODUCT",
         ...         pl.struct(QTY="QUANTITY1", PRICE="PRICE1").alias("PQ1"),
-        ...         pl.struct(QTY="QUANTITY2", PRICE="PRICE2").alias("PQ2")
+        ...         pl.struct(QTY="QUANTITY2", PRICE="PRICE2").alias("PQ2"),
         ...     )
         ...     .unpivot(cs.numeric(), index="PRODUCT")
         ...     .unnest("value")
