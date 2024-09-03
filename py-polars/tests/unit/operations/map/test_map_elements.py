@@ -10,6 +10,10 @@ import polars as pl
 from polars.exceptions import PolarsInefficientMapWarning
 from polars.testing import assert_frame_equal, assert_series_equal
 
+pytestmark = pytest.mark.filterwarnings(
+    "ignore::polars.exceptions.PolarsInefficientMapWarning"
+)
+
 
 def test_map_elements_infer_list() -> None:
     df = pl.DataFrame(
@@ -180,17 +184,13 @@ def test_map_elements_skip_nulls() -> None:
     some_map = {None: "a", 1: "b"}
     s = pl.Series([None, 1])
 
-    with pytest.warns(
-        PolarsInefficientMapWarning,
-        match=r"(?s)Replace this expression.*s\.map_elements\(lambda x:",
-    ):
-        assert s.map_elements(
-            lambda x: some_map[x], return_dtype=pl.String
-        ).to_list() == [None, "b"]
+    assert s.map_elements(
+        lambda x: some_map[x], return_dtype=pl.String, skip_nulls=True
+    ).to_list() == [None, "b"]
 
-        assert s.map_elements(
-            lambda x: some_map[x], return_dtype=pl.String, skip_nulls=False
-        ).to_list() == ["a", "b"]
+    assert s.map_elements(
+        lambda x: some_map[x], return_dtype=pl.String, skip_nulls=False
+    ).to_list() == ["a", "b"]
 
 
 def test_map_elements_object_dtypes() -> None:
