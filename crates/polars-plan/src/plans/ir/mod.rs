@@ -15,7 +15,7 @@ use hive::HivePartitions;
 use polars_core::prelude::*;
 use polars_core::POOL;
 use polars_utils::idx_vec::UnitVec;
-use polars_utils::unitvec;
+use polars_utils::{format_pl_smallstr, unitvec};
 #[cfg(feature = "ir_serde")]
 use serde::{Deserialize, Serialize};
 
@@ -65,7 +65,9 @@ impl ScanSource {
     pub fn try_into_paths(&self) -> PolarsResult<Arc<[PathBuf]>> {
         match self {
             ScanSource::Files(paths) => Ok(paths.clone()),
-            ScanSource::Buffer(_) => Err(polars_err!(nyi = "Unable to convert BytesIO scan into path")),
+            ScanSource::Buffer(_) => Err(polars_err!(
+                nyi = "Unable to convert BytesIO scan into path"
+            )),
         }
     }
 
@@ -103,8 +105,16 @@ impl ScanSource {
         }
     }
 
+    pub fn id(&self) -> PlSmallStr {
+        match self {
+            ScanSource::Files(paths) if paths.is_empty() => PlSmallStr::from_static("EMPTY"),
+            ScanSource::Files(paths) => PlSmallStr::from_str(paths[0].to_string_lossy().as_ref()),
+            ScanSource::Buffer(_) => PlSmallStr::from_static("IN_MEMORY"),
+        }
+    }
+
     /// Normalize the slice and collect information as to what rows and parts of the source are
-    /// used in this slice. 
+    /// used in this slice.
     pub fn collect_slice_information(
         &self,
         slice: (i64, usize),

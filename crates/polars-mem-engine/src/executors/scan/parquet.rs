@@ -13,7 +13,7 @@ use polars_io::RowIndex;
 use super::*;
 
 pub struct ParquetExec {
-    sources: ScanSource,
+    source: ScanSource,
     file_info: FileInfo,
     hive_parts: Option<Arc<Vec<HivePartitions>>>,
     predicate: Option<Arc<dyn PhysicalExpr>>,
@@ -28,7 +28,7 @@ pub struct ParquetExec {
 impl ParquetExec {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
-        sources: ScanSource,
+        source: ScanSource,
         file_info: FileInfo,
         hive_parts: Option<Arc<Vec<HivePartitions>>>,
         predicate: Option<Arc<dyn PhysicalExpr>>,
@@ -38,7 +38,7 @@ impl ParquetExec {
         metadata: Option<FileMetaDataRef>,
     ) -> Self {
         ParquetExec {
-            sources,
+            source,
             file_info,
             hive_parts,
             predicate,
@@ -51,7 +51,7 @@ impl ParquetExec {
 
     fn read_par(&mut self) -> PolarsResult<Vec<DataFrame>> {
         let parallel = match self.options.parallel {
-            ParallelStrategy::Auto if self.sources.num_sources() > POOL.current_num_threads() => {
+            ParallelStrategy::Auto if self.source.num_sources() > POOL.current_num_threads() => {
                 ParallelStrategy::RowGroups
             },
             identity => identity,
@@ -63,16 +63,16 @@ impl ParquetExec {
         let slice_info = match self.file_options.slice {
             None => ScanSourceSliceInfo {
                 item_slice: 0..usize::MAX,
-                source_slice: 0..self.sources.num_sources(),
+                source_slice: 0..self.source.num_sources(),
             },
-            Some(slice) => self.sources.collect_slice_information(
+            Some(slice) => self.source.collect_slice_information(
                 slice,
                 |path| ParquetReader::new(std::fs::File::open(path)?).num_rows(),
                 |buff| ParquetReader::new(std::io::Cursor::new(buff)).num_rows(),
             )?,
         };
 
-        match &self.sources {
+        match &self.source {
             ScanSource::Buffer(buffer) => {
                 let row_index = self.file_options.row_index.take();
                 let (projection, predicate) = prepare_scan_args(
@@ -88,7 +88,10 @@ impl ParquetExec {
                     .set_low_memory(self.options.low_memory)
                     .use_statistics(self.options.use_statistics)
                     .set_rechunk(false)
-                    .with_slice(Some((slice_info.item_slice.start, slice_info.item_slice.len())))
+                    .with_slice(Some((
+                        slice_info.item_slice.start,
+                        slice_info.item_slice.len(),
+                    )))
                     .with_row_index(row_index)
                     .with_predicate(predicate.clone())
                     .with_projection(projection.clone())
@@ -223,7 +226,7 @@ impl ParquetExec {
         use polars_io::utils::slice::split_slice_at_file;
 
         let verbose = verbose();
-        let paths = self.sources.into_paths();
+        let paths = self.source.into_paths();
         let first_metadata = &self.metadata;
         let cloud_options = self.cloud_options.as_ref();
 
@@ -440,7 +443,7 @@ impl ParquetExec {
             .and_then(|_| self.predicate.take())
             .map(phys_expr_to_io_expr);
 
-        let is_cloud = match &self.sources {
+        let is_cloud = match &self.source {
             ScanSource::Files(paths) => is_cloud_url(paths.first().unwrap()),
             ScanSource::Buffer(_) => false,
         };
@@ -472,8 +475,7 @@ impl ParquetExec {
 impl Executor for ParquetExec {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         let profile_name = if state.has_node_timer() {
-            let paths = self.sources.as_paths();
-            let mut ids = vec![paths[0].to_string_lossy()];
+            let mut ids = vec![self.source.id()];
             if self.predicate.is_some() {
                 ids.push("predicate".into())
             }

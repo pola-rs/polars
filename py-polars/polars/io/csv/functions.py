@@ -984,7 +984,7 @@ def read_csv_batched(
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
 @deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
 def scan_csv(
-    source: str | Path | list[str] | list[Path],
+    source: str | Path | list[str] | list[Path] | IO[str] | IO[bytes],
     *,
     has_header: bool = True,
     separator: str = ",",
@@ -1232,6 +1232,8 @@ def scan_csv(
 
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source, check_not_directory=False)
+    elif isinstance(source, (IO, BytesIO)):
+        pass
     else:
         source = [
             normalize_filepath(source, check_not_directory=False) for source in source
@@ -1276,7 +1278,7 @@ def scan_csv(
 
 
 def _scan_csv_impl(
-    source: str | list[str] | list[Path],
+    source: str | list[str] | list[Path] | IO[str] | IO[bytes],
     *,
     has_header: bool = True,
     separator: str = ",",

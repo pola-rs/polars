@@ -103,9 +103,14 @@ impl PartialEq for FunctionIR {
         use FunctionIR::*;
         match (self, other) {
             (Rechunk, Rechunk) => true,
-            (FastCount { sources: srcs_l, .. }, FastCount { sources: srcs_r, .. }) => {
-                srcs_l == srcs_r
-            },
+            (
+                FastCount {
+                    sources: srcs_l, ..
+                },
+                FastCount {
+                    sources: srcs_r, ..
+                },
+            ) => srcs_l == srcs_r,
             (
                 Rename {
                     existing: existing_l,

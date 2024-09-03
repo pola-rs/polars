@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+from io import BytesIO
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any, Sequence
 
@@ -346,7 +347,7 @@ def read_ipc_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, DataTyp
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
 @deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
 def scan_ipc(
-    source: str | Path | list[str] | list[Path],
+    source: str | Path | list[str] | list[Path] | IO[str] | IO[bytes],
     *,
     n_rows: int | None = None,
     cache: bool = True,
@@ -428,6 +429,8 @@ def scan_ipc(
     """
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source, check_not_directory=False)
+        sources = []
+    elif isinstance(source, (IO, BytesIO)):
         sources = []
     else:
         sources = [

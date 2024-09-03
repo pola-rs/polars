@@ -113,7 +113,7 @@ impl PyLazyFrame {
     )
     )]
     fn new_from_csv(
-        path: Option<PathBuf>,
+        path: Option<PyObject>,
         paths: Vec<PathBuf>,
         separator: &str,
         has_header: bool,
@@ -145,6 +145,10 @@ impl PyLazyFrame {
         file_cache_ttl: Option<u64>,
         include_file_paths: Option<String>,
     ) -> PyResult<Self> {
+        use std::path::Path;
+
+        use crate::file::{get_either_file_or_path, EitherPythonFileOrPath};
+
         let null_values = null_values.map(|w| w.0);
         let quote_char = quote_char.map(|s| s.as_bytes()[0]);
         let separator = separator.as_bytes()[0];
@@ -161,38 +165,43 @@ impl PyLazyFrame {
                 .collect::<Schema>()
         });
 
-        #[cfg(feature = "cloud")]
-        let cloud_options = {
-            let first_path = if let Some(path) = &path {
-                path
-            } else {
-                paths
-                    .first()
-                    .ok_or_else(|| PyValueError::new_err("expected a path argument"))?
-            };
+        use polars_plan::plans::ScanSource;
+        use EitherPythonFileOrPath as EF;
+        let (first_path, mut r) = match path
+            .map(|py_f| get_either_file_or_path(py_f, false))
+            .transpose()?
+        {
+            Some(EF::Path(path)) => {
+                let reader = LazyCsvReader::new(<PathBuf as AsRef<Path>>::as_ref(&path));
+                (Some(path), reader)
+            },
+            Some(EF::Py(f)) => (
+                None,
+                LazyCsvReader::new_sourced(ScanSource::Buffer(f.as_arc())),
+            ),
+            None => (
+                Some(
+                    paths
+                        .first()
+                        .cloned()
+                        .ok_or_else(|| PyValueError::new_err("expected a path argument"))?,
+                ),
+                LazyCsvReader::new_paths(paths.into()),
+            ),
+        };
 
+        #[cfg(feature = "cloud")]
+        if let Some(first_path) = first_path {
             let first_path_url = first_path.to_string_lossy();
 
-            let mut cloud_options = if let Some(opts) = cloud_options {
-                parse_cloud_options(&first_path_url, opts)?
-            } else {
-                parse_cloud_options(&first_path_url, vec![])?
-            };
-
-            cloud_options = cloud_options.with_max_retries(retries);
-
+            let mut cloud_options =
+                parse_cloud_options(&first_path_url, cloud_options.unwrap_or_default())?;
             if let Some(file_cache_ttl) = file_cache_ttl {
                 cloud_options.file_cache_ttl = file_cache_ttl;
             }
-
-            Some(cloud_options)
-        };
-
-        let r = if let Some(path) = path.as_ref() {
-            LazyCsvReader::new(path)
-        } else {
-            LazyCsvReader::new_paths(paths.into())
-        };
+            cloud_options = cloud_options.with_max_retries(retries);
+            r = r.with_cloud_options(Some(cloud_options));
+        }
 
         let mut r = r
             .with_infer_schema_length(infer_schema_length)
@@ -219,7 +228,6 @@ impl PyLazyFrame {
             .with_decimal_comma(decimal_comma)
             .with_glob(glob)
             .with_raise_if_empty(raise_if_empty)
-            .with_cloud_options(cloud_options)
             .with_include_file_paths(include_file_paths.map(|x| x.into()));
 
         if let Some(lambda) = with_schema_modify {
@@ -276,6 +284,32 @@ impl PyLazyFrame {
         let parallel = parallel.0;
         let hive_schema = hive_schema.map(|s| Arc::new(s.0));
 
+        let row_index = row_index.map(|(name, offset)| RowIndex {
+            name: name.into(),
+            offset,
+        });
+
+        let hive_options = HiveOptions {
+            enabled: hive_partitioning,
+            hive_start_idx: 0,
+            schema: hive_schema,
+            try_parse_dates: try_parse_hive_dates,
+        };
+
+        let mut args = ScanArgsParquet {
+            n_rows,
+            cache,
+            parallel,
+            rechunk,
+            row_index,
+            low_memory,
+            cloud_options: None,
+            use_statistics,
+            hive_options,
+            glob,
+            include_file_paths: include_file_paths.map(|x| x.into()),
+        };
+
         use polars_plan::plans::ScanSource;
         use EitherPythonFileOrPath as EF;
         let use_first_path = path.is_some();
@@ -285,35 +319,10 @@ impl PyLazyFrame {
         {
             Some(EF::Path(path)) => path,
             Some(EF::Py(f)) => {
-                let scan_source = ScanSource::Buffer(f.as_arc());
-
-                let row_index = row_index.map(|(name, offset)| RowIndex {
-                    name: name.into(),
-                    offset,
-                });
-
-                let args = ScanArgsParquet {
-                    n_rows,
-                    cache,
-                    parallel,
-                    rechunk,
-                    row_index,
-                    low_memory,
-                    cloud_options: None,
-                    use_statistics,
-                    hive_options: HiveOptions {
-                        enabled: hive_partitioning,
-                        hive_start_idx: 0,
-                        schema: hive_schema,
-                        try_parse_dates: try_parse_hive_dates,
-                    },
-                    glob,
-                    include_file_paths: include_file_paths.map(|x| x.into()),
-                };
-
-                let lf = LazyFrame::scan_parquet_sourced(scan_source, args)
-                    .map_err(PyPolarsErr::from)?;
-                return Ok(lf.into());
+                return LazyFrame::scan_parquet_sourced(ScanSource::Buffer(f.as_arc()), args)
+                    .map(Self::from)
+                    .map_err(PyPolarsErr::from)
+                    .map_err(From::from);
             },
             None => paths
                 .first()
@@ -322,44 +331,12 @@ impl PyLazyFrame {
         };
 
         #[cfg(feature = "cloud")]
-        let cloud_options = {
+        {
             let first_path_url = first_path.to_string_lossy();
-
-            let mut cloud_options = if let Some(opts) = cloud_options {
-                parse_cloud_options(&first_path_url, opts)?
-            } else {
-                parse_cloud_options(&first_path_url, vec![])?
-            };
-
-            cloud_options = cloud_options.with_max_retries(retries);
-
-            Some(cloud_options)
-        };
-
-        let row_index = row_index.map(|(name, offset)| RowIndex {
-            name: name.into(),
-            offset,
-        });
-        let hive_options = HiveOptions {
-            enabled: hive_partitioning,
-            hive_start_idx: 0,
-            schema: hive_schema,
-            try_parse_dates: try_parse_hive_dates,
-        };
-
-        let args = ScanArgsParquet {
-            n_rows,
-            cache,
-            parallel,
-            rechunk,
-            row_index,
-            low_memory,
-            cloud_options,
-            use_statistics,
-            hive_options,
-            glob,
-            include_file_paths: include_file_paths.map(|x| x.into()),
-        };
+            let cloud_options =
+                parse_cloud_options(&first_path_url, cloud_options.unwrap_or_default())?;
+            args.cloud_options = Some(cloud_options.with_max_retries(retries));
+        }
 
         let lf = if use_first_path {
             LazyFrame::scan_parquet(first_path, args)
@@ -374,7 +351,7 @@ impl PyLazyFrame {
     #[staticmethod]
     #[pyo3(signature = (path, paths, n_rows, cache, rechunk, row_index, memory_map, cloud_options, hive_partitioning, hive_schema, try_parse_hive_dates, retries, file_cache_ttl, include_file_paths))]
     fn new_from_ipc(
-        path: Option<PathBuf>,
+        path: Option<PyObject>,
         paths: Vec<PathBuf>,
         n_rows: Option<usize>,
         cache: bool,
@@ -389,37 +366,12 @@ impl PyLazyFrame {
         file_cache_ttl: Option<u64>,
         include_file_paths: Option<String>,
     ) -> PyResult<Self> {
+        use crate::file::{get_either_file_or_path, EitherPythonFileOrPath};
+
         let row_index = row_index.map(|(name, offset)| RowIndex {
             name: name.into(),
             offset,
         });
-
-        #[cfg(feature = "cloud")]
-        let cloud_options = {
-            let first_path = if let Some(path) = &path {
-                path
-            } else {
-                paths
-                    .first()
-                    .ok_or_else(|| PyValueError::new_err("expected a path argument"))?
-            };
-
-            let first_path_url = first_path.to_string_lossy();
-
-            let mut cloud_options = if let Some(opts) = cloud_options {
-                parse_cloud_options(&first_path_url, opts)?
-            } else {
-                parse_cloud_options(&first_path_url, vec![])?
-            };
-
-            cloud_options = cloud_options.with_max_retries(retries);
-
-            if let Some(file_cache_ttl) = file_cache_ttl {
-                cloud_options.file_cache_ttl = file_cache_ttl;
-            }
-
-            Some(cloud_options)
-        };
 
         let hive_options = HiveOptions {
             enabled: hive_partitioning,
@@ -428,20 +380,52 @@ impl PyLazyFrame {
             try_parse_dates: try_parse_hive_dates,
         };
 
-        let args = ScanArgsIpc {
+        let mut args = ScanArgsIpc {
             n_rows,
             cache,
             rechunk,
             row_index,
             memory_map,
             #[cfg(feature = "cloud")]
-            cloud_options,
+            cloud_options: None,
             hive_options,
             include_file_paths: include_file_paths.map(|x| x.into()),
         };
 
-        let lf = if let Some(path) = &path {
-            LazyFrame::scan_ipc(path, args)
+        use polars_plan::plans::ScanSource;
+        use EitherPythonFileOrPath as EF;
+        let use_first_path = path.is_some();
+        let first_path = match path
+            .map(|py_f| get_either_file_or_path(py_f, false))
+            .transpose()?
+        {
+            Some(EF::Path(path)) => path,
+            Some(EF::Py(f)) => {
+                return LazyFrame::scan_ipc_sourced(ScanSource::Buffer(f.as_arc()), args)
+                    .map(Self::from)
+                    .map_err(PyPolarsErr::from)
+                    .map_err(From::from);
+            },
+            None => paths
+                .first()
+                .cloned()
+                .ok_or_else(|| PyValueError::new_err("expected a path argument"))?,
+        };
+
+        #[cfg(feature = "cloud")]
+        {
+            let first_path_url = first_path.to_string_lossy();
+
+            let mut cloud_options =
+                parse_cloud_options(&first_path_url, cloud_options.unwrap_or_default())?;
+            if let Some(file_cache_ttl) = file_cache_ttl {
+                cloud_options.file_cache_ttl = file_cache_ttl;
+            }
+            args.cloud_options = Some(cloud_options.with_max_retries(retries));
+        }
+
+        let lf = if use_first_path {
+            LazyFrame::scan_ipc(first_path, args)
         } else {
             LazyFrame::scan_ipc_files(paths.into(), args)
         }

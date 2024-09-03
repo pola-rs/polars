@@ -58,7 +58,7 @@ impl IR {
                 output_schema: _,
                 file_options: options,
             } => DslPlan::Scan {
-                sources: sources.into(),
+                sources: sources.to_dsl(true),
                 file_info: Arc::new(RwLock::new(Some(file_info))),
                 hive_parts,
                 predicate: predicate.map(|e| e.to_expr(expr_arena)),

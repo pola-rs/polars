@@ -4,11 +4,12 @@ use polars_core::config;
 use polars_core::utils::{
     accumulate_dataframes_vertical, accumulate_dataframes_vertical_unchecked,
 };
+use polars_error::feature_gated;
 
 use super::*;
 
 pub struct CsvExec {
-    pub sources: ScanSource,
+    pub source: ScanSource,
     pub file_info: FileInfo,
     pub options: CsvReadOptions,
     pub file_options: FileScanOptions,
@@ -17,7 +18,7 @@ pub struct CsvExec {
 
 impl CsvExec {
     fn read(&self) -> PolarsResult<DataFrame> {
-        let paths = self.sources.as_paths();
+        let paths = self.source.as_paths();
         let with_columns = self
             .file_options
             .with_columns
@@ -65,41 +66,27 @@ impl CsvExec {
         let finish_read =
             |i: usize, options: CsvReadOptions, predicate: Option<Arc<dyn PhysicalIoExpr>>| {
                 let path = &paths[i];
-                let mut df = if run_async {
-                    #[cfg(feature = "cloud")]
-                    {
-                        let file = polars_io::file_cache::FILE_CACHE
+                let file = if run_async {
+                    feature_gated!("cloud", {
+                        polars_io::file_cache::FILE_CACHE
                             .get_entry(path.to_str().unwrap())
                             // Safety: This was initialized by schema inference.
                             .unwrap()
-                            .try_open_assume_latest()?;
-                        let owned = &mut vec![];
-                        let mmap = unsafe { memmap::Mmap::map(&file).unwrap() };
-
-                        options
-                            .into_reader_with_file_handle(std::io::Cursor::new(
-                                maybe_decompress_bytes(mmap.as_ref(), owned)?,
-                            ))
-                            ._with_predicate(predicate.clone())
-                            .finish()
-                    }
-                    #[cfg(not(feature = "cloud"))]
-                    {
-                        panic!("required feature `cloud` is not enabled")
-                    }
+                            .try_open_assume_latest()
+                    })
                 } else {
-                    let file = polars_utils::open_file(path)?;
-                    let mmap = unsafe { memmap::Mmap::map(&file).unwrap() };
-                    let owned = &mut vec![];
-
-                    options
-                        .into_reader_with_file_handle(std::io::Cursor::new(maybe_decompress_bytes(
-                            mmap.as_ref(),
-                            owned,
-                        )?))
-                        ._with_predicate(predicate.clone())
-                        .finish()
+                    polars_utils::open_file(path)
                 }?;
+
+                let owned = &mut vec![];
+                let mmap = unsafe { memmap::Mmap::map(&file).unwrap() };
+                let mut df = options
+                    .into_reader_with_file_handle(std::io::Cursor::new(maybe_decompress_bytes(
+                        mmap.as_ref(),
+                        owned,
+                    )?))
+                    ._with_predicate(predicate.clone())
+                    .finish()?;
 
                 if let Some(col) = &self.file_options.include_file_paths {
                     let path = path.to_str().unwrap();
@@ -234,11 +221,8 @@ impl CsvExec {
 
 impl Executor for CsvExec {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
-        let paths = self.sources.as_paths();
         let profile_name = if state.has_node_timer() {
-            let mut ids = vec![PlSmallStr::from_str(
-                paths[0].to_string_lossy().as_ref(),
-            )];
+            let mut ids = vec![self.source.id()];
             if self.predicate.is_some() {
                 ids.push("predicate".into())
             }

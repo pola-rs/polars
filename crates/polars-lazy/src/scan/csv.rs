@@ -35,6 +35,10 @@ impl LazyCsvReader {
         Self::new("").with_paths(paths)
     }
 
+    pub fn new_sourced(source: ScanSource) -> Self {
+        Self::new("").with_source(source)
+    }
+
     pub fn new(path: impl AsRef<Path>) -> Self {
         LazyCsvReader {
             source: ScanSource::Files([path.as_ref().to_path_buf()].into()),

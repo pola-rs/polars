@@ -145,9 +145,12 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         metadata,
                         ..
                     } => {
-                        let (file_info, md) =
-                            scans::parquet_file_info(&source, &file_options, cloud_options.as_ref())
-                                .map_err(|e| e.context(failed_here!(parquet scan)))?;
+                        let (file_info, md) = scans::parquet_file_info(
+                            &source,
+                            &file_options,
+                            cloud_options.as_ref(),
+                        )
+                        .map_err(|e| e.context(failed_here!(parquet scan)))?;
                         *metadata = md;
                         file_info
                     },
@@ -171,7 +174,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         options,
                         cloud_options,
                     } => scans::csv_file_info(
-                        source.as_paths(),
+                        &source,
                         &file_options,
                         options,
                         cloud_options.as_ref(),

@@ -132,4 +132,8 @@ impl LazyFrame {
     pub fn scan_ipc_files(paths: Arc<[PathBuf]>, args: ScanArgsIpc) -> PolarsResult<Self> {
         LazyIpcReader::new(args).with_paths(paths).finish()
     }
+
+    pub fn scan_ipc_sourced(source: ScanSource, args: ScanArgsIpc) -> PolarsResult<Self> {
+        LazyIpcReader::new(args).with_source(source).finish()
+    }
 }

@@ -295,7 +295,7 @@ def read_parquet_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, Dat
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
 @deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
 def scan_parquet(
-    source: str | Path | list[str] | list[Path] | io.BytesIO,
+    source: str | Path | list[str] | list[Path] | IO[str] | IO[bytes],
     *,
     n_rows: int | None = None,
     row_index_name: str | None = None,
@@ -422,8 +422,8 @@ def scan_parquet(
 
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source, check_not_directory=False)
-    elif isinstance(source, io.BytesIO):
-        pass
+    elif isinstance(source, (IO, BytesIO)):
+        sources = []
     else:
         source = [
             normalize_filepath(source, check_not_directory=False) for source in source
@@ -450,7 +450,7 @@ def scan_parquet(
 
 
 def _scan_parquet_impl(
-    source: str | list[str] | list[Path] | io.BytesIO,
+    source: str | list[str] | list[Path] | IO[str] | IO[bytes],
     *,
     n_rows: int | None = None,
     cache: bool = True,

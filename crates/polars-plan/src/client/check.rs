@@ -2,7 +2,7 @@ use polars_core::error::{polars_err, PolarsResult};
 use polars_io::path_utils::is_cloud_url;
 
 use crate::plans::options::SinkType;
-use crate::plans::{DslPlan, FileScan, DslScanSource};
+use crate::plans::{DslPlan, DslScanSource, FileScan};
 
 /// Assert that the given [`DslPlan`] is eligible to be executed on Polars Cloud.
 pub(super) fn assert_cloud_eligible(dsl: &DslPlan) -> PolarsResult<()> {
@@ -15,13 +15,7 @@ pub(super) fn assert_cloud_eligible(dsl: &DslPlan) -> PolarsResult<()> {
             } => {
                 match sources {
                     DslScanSource::File(file) => {
-                        if file
-                            .lock()
-                            .unwrap()
-                            .paths
-                            .iter()
-                            .any(|p| !is_cloud_url(p))
-                        {
+                        if file.lock().unwrap().paths.iter().any(|p| !is_cloud_url(p)) {
                             return ineligible_error("contains scan of local file system");
                         }
                     },

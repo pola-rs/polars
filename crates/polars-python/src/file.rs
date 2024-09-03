@@ -201,10 +201,7 @@ pub enum EitherPythonFileOrPath {
     Path(PathBuf),
 }
 
-pub fn get_either_file_or_path(
-    py_f: PyObject,
-    write: bool,
-) -> PyResult<EitherPythonFileOrPath> {
+pub fn get_either_file_or_path(py_f: PyObject, write: bool) -> PyResult<EitherPythonFileOrPath> {
     Python::with_gil(|py| {
         let py_f = py_f.into_bound(py);
         if let Ok(s) = py_f.extract::<Cow<str>>() {

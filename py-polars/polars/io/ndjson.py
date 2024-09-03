@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 from io import BytesIO, StringIO
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Sequence
+from typing import IO, TYPE_CHECKING, Any, Sequence
 
 from polars._utils.deprecation import deprecate_renamed_parameter
 from polars._utils.various import normalize_filepath
@@ -166,7 +166,7 @@ def read_ndjson(
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
 @deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
 def scan_ndjson(
-    source: str | Path | list[str] | list[Path],
+    source: str | Path | list[str] | list[Path] | IO[str] | IO[bytes],
     *,
     schema: SchemaDefinition | None = None,
     schema_overrides: SchemaDefinition | None = None,
@@ -249,6 +249,8 @@ def scan_ndjson(
     """
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source, check_not_directory=False)
+        sources = []
+    elif isinstance(source, (IO, BytesIO)):
         sources = []
     else:
         sources = [

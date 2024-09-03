@@ -3,7 +3,9 @@ use arrow::io::ipc::read::get_row_count as count_rows_ipc_sync;
 #[cfg(any(feature = "parquet", feature = "json"))]
 use polars_io::cloud::CloudOptions;
 #[cfg(feature = "csv")]
-use polars_io::csv::read::{count_rows as count_rows_csv, count_rows_from_slice as count_rows_csv_from_slice};
+use polars_io::csv::read::{
+    count_rows as count_rows_csv, count_rows_from_slice as count_rows_csv_from_slice,
+};
 #[cfg(all(feature = "parquet", feature = "cloud"))]
 use polars_io::parquet::read::ParquetAsyncReader;
 #[cfg(feature = "parquet")]
