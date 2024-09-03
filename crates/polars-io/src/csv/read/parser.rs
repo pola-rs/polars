@@ -14,7 +14,7 @@ use super::options::{CommentPrefix, NullValuesCompiled};
 use super::splitfields::SplitFields;
 use super::utils::get_file_chunks;
 use crate::path_utils::is_cloud_url;
-use crate::utils::maybe_decompress_bytes;
+use crate::utils::compression::maybe_decompress_bytes;
 
 /// Read the number of rows without parsing columns
 /// useful for count(*) queries
