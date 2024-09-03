@@ -325,7 +325,10 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             scan_type,
             file_options,
         } => Scan {
-            paths: sources.into_paths().to_object(py),
+            paths: sources
+                .try_into_paths()
+                .map_err(|_| PyNotImplementedError::new_err("scan with BytesIO"))?
+                .to_object(py),
             // TODO: file info
             file_info: py.None(),
             predicate: predicate.as_ref().map(|e| e.into()),
@@ -596,7 +599,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                     offset,
                 } => ("row_index", name.to_string(), offset.unwrap_or(0)).to_object(py),
                 FunctionIR::FastCount {
-                    paths: _,
+                    sources: _,
                     scan_type: _,
                     alias: _,
                 } => return Err(PyNotImplementedError::new_err("function count")),

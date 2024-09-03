@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use super::*;
 
 pub(super) struct CountStar;
@@ -32,7 +30,7 @@ impl OptimizationRule for CountStar {
                 let alp = IR::MapFunction {
                     input: placeholder_node,
                     function: FunctionIR::FastCount {
-                        paths: count_star_expr.paths,
+                        sources: count_star_expr.sources,
                         scan_type: count_star_expr.scan_type,
                         alias: count_star_expr.alias,
                     },
@@ -49,7 +47,7 @@ struct CountStarExpr {
     // Top node of the projection to replace
     node: Node,
     // Paths to the input files
-    paths: Arc<Vec<PathBuf>>,
+    sources: Arc<[ScanSource]>,
     // File Type
     scan_type: FileScan,
     // Column Alias
@@ -67,11 +65,11 @@ fn visit_logical_plan_for_scan_paths(
     match lp_arena.get(node) {
         IR::Union { inputs, .. } => {
             let mut scan_type: Option<FileScan> = None;
-            let mut paths = Vec::with_capacity(inputs.len());
+            let mut sources = Vec::with_capacity(inputs.len());
             for input in inputs {
                 match visit_logical_plan_for_scan_paths(*input, lp_arena, expr_arena, true) {
                     Some(expr) => {
-                        paths.extend(expr.paths.iter().cloned());
+                        sources.extend(expr.sources.iter().cloned());
                         match &scan_type {
                             None => scan_type = Some(expr.scan_type),
                             Some(scan_type) => {
@@ -88,7 +86,7 @@ fn visit_logical_plan_for_scan_paths(
                 }
             }
             Some(CountStarExpr {
-                paths: paths.into(),
+                sources: sources.into(),
                 scan_type: scan_type.unwrap(),
                 node,
                 alias: None,
@@ -97,8 +95,7 @@ fn visit_logical_plan_for_scan_paths(
         IR::Scan {
             scan_type, sources, ..
         } if !matches!(scan_type, FileScan::Anonymous { .. }) => Some(CountStarExpr {
-            // @FIX: Count Star Should probably just have a Arc Slice
-            paths: Arc::new(sources.as_paths().as_ref().to_vec()),
+            sources: [sources.clone()].into(),
             scan_type: scan_type.clone(),
             node,
             alias: None,

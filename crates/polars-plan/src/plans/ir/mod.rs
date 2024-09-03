@@ -36,7 +36,7 @@ pub struct IRPlanRef<'a> {
 }
 
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum ScanSource {
     Files(Arc<[PathBuf]>),
     #[cfg_attr(feature = "ir_serde", serde(skip))]
@@ -59,6 +59,13 @@ impl ScanSource {
         match self {
             ScanSource::Files(paths) => paths,
             ScanSource::Buffer(_) => unimplemented!(),
+        }
+    }
+
+    pub fn try_into_paths(&self) -> PolarsResult<Arc<[PathBuf]>> {
+        match self {
+            ScanSource::Files(paths) => Ok(paths.clone()),
+            ScanSource::Buffer(_) => Err(polars_err!(nyi = "Unable to convert BytesIO scan into path")),
         }
     }
 

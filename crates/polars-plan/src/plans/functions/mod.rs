@@ -10,7 +10,6 @@ mod schema;
 use std::borrow::Cow;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 pub use dsl::*;
@@ -45,7 +44,7 @@ pub enum FunctionIR {
         fmt_str: PlSmallStr,
     },
     FastCount {
-        paths: Arc<Vec<PathBuf>>,
+        sources: Arc<[ScanSource]>,
         scan_type: FileScan,
         alias: Option<PlSmallStr>,
     },
@@ -104,8 +103,8 @@ impl PartialEq for FunctionIR {
         use FunctionIR::*;
         match (self, other) {
             (Rechunk, Rechunk) => true,
-            (FastCount { paths: paths_l, .. }, FastCount { paths: paths_r, .. }) => {
-                paths_l == paths_r
+            (FastCount { sources: srcs_l, .. }, FastCount { sources: srcs_r, .. }) => {
+                srcs_l == srcs_r
             },
             (
                 Rename {
@@ -138,11 +137,11 @@ impl Hash for FunctionIR {
             FunctionIR::OpaquePython { .. } => {},
             FunctionIR::Opaque { fmt_str, .. } => fmt_str.hash(state),
             FunctionIR::FastCount {
-                paths,
+                sources,
                 scan_type,
                 alias,
             } => {
-                paths.hash(state);
+                sources.hash(state);
                 scan_type.hash(state);
                 alias.hash(state);
             },
@@ -261,8 +260,8 @@ impl FunctionIR {
                 ..
             }) => python_udf::call_python_udf(function, df, *validate_output, schema.as_deref()),
             FastCount {
-                paths, scan_type, ..
-            } => count::count_rows(paths, scan_type),
+                sources, scan_type, ..
+            } => count::count_rows(sources, scan_type),
             Rechunk => {
                 df.as_single_chunk_par();
                 Ok(df)

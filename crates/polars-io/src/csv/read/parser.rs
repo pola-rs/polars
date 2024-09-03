@@ -54,12 +54,32 @@ pub fn count_rows(
         reader_bytes = &reader_bytes[1..];
     }
 
+    count_rows_from_slice(
+        reader_bytes,
+        separator,
+        quote_char,
+        comment_prefix,
+        eol_char,
+        has_header,
+    )
+}
+
+/// Read the number of rows without parsing columns
+/// useful for count(*) queries
+pub fn count_rows_from_slice(
+    bytes: &[u8],
+    separator: u8,
+    quote_char: Option<u8>,
+    comment_prefix: Option<&CommentPrefix>,
+    eol_char: u8,
+    has_header: bool,
+) -> PolarsResult<usize> {
     const MIN_ROWS_PER_THREAD: usize = 1024;
     let max_threads = POOL.current_num_threads();
 
     // Determine if parallelism is beneficial and how many threads
     let n_threads = get_line_stats(
-        reader_bytes,
+        bytes,
         MIN_ROWS_PER_THREAD,
         eol_char,
         None,
@@ -67,22 +87,16 @@ pub fn count_rows(
         quote_char,
     )
     .map(|(mean, std)| {
-        let n_rows = (reader_bytes.len() as f32 / (mean - 0.01 * std)) as usize;
+        let n_rows = (bytes.len() as f32 / (mean - 0.01 * std)) as usize;
         (n_rows / MIN_ROWS_PER_THREAD).clamp(1, max_threads)
     })
     .unwrap_or(1);
 
-    let file_chunks: Vec<(usize, usize)> = get_file_chunks(
-        reader_bytes,
-        n_threads,
-        None,
-        separator,
-        quote_char,
-        eol_char,
-    );
+    let file_chunks: Vec<(usize, usize)> =
+        get_file_chunks(bytes, n_threads, None, separator, quote_char, eol_char);
 
     let iter = file_chunks.into_par_iter().map(|(start, stop)| {
-        let local_bytes = &reader_bytes[start..stop];
+        let local_bytes = &bytes[start..stop];
         let row_iterator = SplitLines::new(local_bytes, quote_char.unwrap_or(b'"'), eol_char);
         if comment_prefix.is_some() {
             Ok(row_iterator
