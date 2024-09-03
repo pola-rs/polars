@@ -44,7 +44,7 @@ pub trait ExponentialSearch<T> {
     }
 }
 
-impl<T> ExponentialSearch<T> for &[T] {
+impl<T: std::fmt::Debug> ExponentialSearch<T> for &[T] {
     fn exponential_search_by<F>(&self, mut f: F) -> Result<usize, usize>
     where
         F: FnMut(&T) -> Ordering,
@@ -69,9 +69,28 @@ impl<T> ExponentialSearch<T> for &[T] {
         // SAFETY:
         // We checked the ned bound and previous bound was within slice as per the `while` condition.
         let prev_bound = bound / 2;
-        unsafe {
+
+        let slice = unsafe {
             self.get_unchecked_release(prev_bound..end_bound)
-                .binary_search_by(f)
+        };
+
+        match slice.binary_search_by(f) {
+            Ok(i) => Ok(i + prev_bound),
+            Err(i) => Err(i + prev_bound)
         }
+    }
+}
+
+
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_partition_point() {
+        let v = [1, 2, 3, 3, 5, 6, 7];
+        let i = v.as_slice().partition_point_exponential(|&x| x < 5);
+        assert_eq!(i, 4);
     }
 }

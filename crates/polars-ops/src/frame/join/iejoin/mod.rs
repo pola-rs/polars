@@ -257,42 +257,16 @@ where
     let sub_l1 = l1_array.get_unchecked_release(index..);
     let value = l1_array.get_unchecked_release(index).value;
 
-    dbg!(l1_array, value);
     if operator.is_strict() {
-        // match operator {
-        //     InequalityOperator::Gt => {
-        //         sub_l1.partition_point_exponential(|a| a.value.ge(&value)) + index
-        //     },
-        //     InequalityOperator::Lt => {
-        //         sub_l1.partition_point_exponential(|a| a.value.le(&value)) + index
-        //     }
-        //     _ => unreachable!()
-        // }
-        dbg!(sub_l1);
-        let i = sub_l1.partition_point_exponential(|a| a.value.ge(&value));
-        dbg!(i, i + index);
-        // let i = (&sub_l1[i..]).partition_point_exponential(|a| a.value.ne(&value)) + i;
-        // dbg!(i);
-
-        // Search forward until we find a value not equal to the current x value
-        let mut left_bound = index;
-        let mut right_bound = index + 1;
-        let mut step_size = 1;
-        while right_bound < l1_array.len() && l1_array[right_bound].value.tot_eq(&value) {
-            left_bound = right_bound;
-            right_bound = min(right_bound + step_size, l1_array.len());
-            step_size *= 2;
-        }
-        // Now binary search to find the first value not equal to the current x value
-        while right_bound - left_bound > 1 {
-            let mid = left_bound + (right_bound - left_bound) / 2;
-            if l1_array[mid].value.tot_eq(&value) {
-                left_bound = mid;
-            } else {
-                right_bound = mid;
+        match operator {
+            InequalityOperator::Gt => {
+                sub_l1.partition_point_exponential(|a| a.value.tot_ge(&value)) + index
+            },
+            InequalityOperator::Lt => {
+                sub_l1.partition_point_exponential(|a| a.value.tot_le(&value)) + index
             }
+            _ => unreachable!()
         }
-        dbg!(right_bound)
     } else {
         // Search backwards to find the first value equal to the current x value
         let mut left_bound = if index > 0 { index - 1 } else { 0 };
