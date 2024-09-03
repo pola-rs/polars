@@ -507,8 +507,12 @@ def test_parquet_slice_pushdown_non_zero_offset(
         pl.scan_parquet(paths[0]).collect(streaming=streaming)
 
     df = dfs[1]
-    assert_frame_equal(pl.scan_parquet(paths).slice(1, 1).collect(streaming=streaming), df)
-    assert_frame_equal(pl.scan_parquet(paths[1:]).head(1).collect(streaming=streaming), df)
+    assert_frame_equal(
+        pl.scan_parquet(paths).slice(1, 1).collect(streaming=streaming), df
+    )
+    assert_frame_equal(
+        pl.scan_parquet(paths[1:]).head(1).collect(streaming=streaming), df
+    )
 
     # Negative slice unsupported in streaming
     if not streaming:
