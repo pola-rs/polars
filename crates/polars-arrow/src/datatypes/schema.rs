@@ -68,9 +68,6 @@ impl ArrowSchema {
 
 impl From<Vec<Field>> for ArrowSchema {
     fn from(fields: Vec<Field>) -> Self {
-        Self {
-            fields,
-            ..Default::default()
-        }
+        Self { fields }
     }
 }
