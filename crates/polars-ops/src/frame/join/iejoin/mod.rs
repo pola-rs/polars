@@ -9,11 +9,12 @@ use polars_core::frame::DataFrame;
 use polars_core::prelude::*;
 use polars_core::{with_match_physical_numeric_polars_type, POOL};
 use polars_error::{polars_err, PolarsResult};
+use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::total_ord::{TotalEq, TotalOrd};
 use polars_utils::IdxSize;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-use polars_utils::slice::GetSaferUnchecked;
+
 use crate::frame::_finish_join;
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
@@ -26,6 +27,11 @@ pub enum InequalityOperator {
     GtEq,
 }
 
+impl InequalityOperator {
+    fn is_strict(&self) -> bool {
+        matches!(self, InequalityOperator::Gt | InequalityOperator::Lt)
+    }
+}
 #[derive(Clone, Debug, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct IEJoinOptions {
@@ -62,9 +68,13 @@ pub fn iejoin(
 
     let mut x = selected_left[0].to_physical_repr().into_owned();
     x.extend(&selected_right[0].to_physical_repr())?;
+    // Rechunk because we will gather.
+    let x = x.rechunk();
 
     let mut y = selected_left[1].to_physical_repr().into_owned();
     y.extend(&selected_right[1].to_physical_repr())?;
+    // Rechunk because we will gather.
+    let y = y.rechunk();
 
     // Determine the sort order based on the comparison operators used.
     // We want to sort L1 so that "x[i] op1 x[j]" is true for j > i,
@@ -96,10 +106,13 @@ pub fn iejoin(
         .with_order_descending(l2_descending);
     // Get the indexes into l1, ordered by y values.
     // l2_order is the same as "p" from Khayyat et al.
-    let l2_order = y_ordered.arg_sort(l2_sort_options).slice(
-        y_ordered.null_count() as i64,
-        y_ordered.len() - y_ordered.null_count(),
-    ).rechunk();
+    let l2_order = y_ordered
+        .arg_sort(l2_sort_options)
+        .slice(
+            y_ordered.null_count() as i64,
+            y_ordered.len() - y_ordered.null_count(),
+        )
+        .rechunk();
     let l2_order = l2_order.downcast_get(0).unwrap().values().as_slice();
 
     // Create a bit array with order corresponding to L1,
@@ -115,7 +128,7 @@ pub fn iejoin(
     };
     let mut match_count = 0;
 
-    if is_strict(op2) {
+    if op2.is_strict() {
         // For strict inequalities, we rely on using a stable sort of l2 so that
         // p values only increase as we traverse a run of equal y values.
         // To handle inclusive comparisons in x and duplicate x values we also need the
@@ -167,21 +180,23 @@ pub fn iejoin(
         }
     }
 
-
     debug_assert_eq!(left_row_idx.len(), right_row_idx.len());
     let left_row_idx = IdxCa::from_vec("".into(), left_row_idx);
     let right_row_idx = IdxCa::from_vec("".into(), right_row_idx);
     let (left_row_idx, right_row_idx) = match slice {
         None => (left_row_idx, right_row_idx),
-        Some((offset, len)) => (left_row_idx.slice(offset, len), right_row_idx.slice(offset, len)),
+        Some((offset, len)) => (
+            left_row_idx.slice(offset, len),
+            right_row_idx.slice(offset, len),
+        ),
     };
 
-    let (join_left, join_right) = unsafe { POOL.join(|| {
-        left.take_unchecked(&left_row_idx)
-    },
-    || {
-        right.take_unchecked(&right_row_idx)
-    }) };
+    let (join_left, join_right) = unsafe {
+        POOL.join(
+            || left.take_unchecked(&left_row_idx),
+            || right.take_unchecked(&right_row_idx),
+        )
+    };
 
     _finish_join(join_left, join_right, suffix)
 }
@@ -239,7 +254,7 @@ where
 {
     let value = l1_array[index].value;
 
-    if is_strict(operator) {
+    if operator.is_strict() {
         // Search forward until we find a value not equal to the current x value
         let mut left_bound = index;
         let mut right_bound = index + 1;
@@ -401,21 +416,28 @@ fn build_l1_array<T>(
 where
     T: PolarsNumericType,
 {
+    assert_eq!(ca.null_count(), 0);
+    assert_eq!(order.null_count(), 0);
+    assert_eq!(ca.chunks().len(), 1);
+    let arr = ca.downcast_get(0).unwrap();
+    let values = arr.values().as_slice();
+
     let mut array: Vec<L1Item<T::Native>> = Vec::with_capacity(ca.len());
-    for index in order.into_no_null_iter() {
-        let value = ca
-            .get(index as usize)
-            // Nulls should have been skipped over
-            .ok_or_else(|| polars_err!(ComputeError: "Unexpected null value in IEJoin data"))?;
-        let row_index = if index < right_df_offset {
-            // Row from LHS
-            index as i64 + 1
-        } else {
-            // Row from RHS
-            -((index - right_df_offset) as i64) - 1
-        };
-        array.push(L1Item { row_index, value });
+
+    for arr in order.downcast_iter() {
+        for index in arr.values().as_slice().iter().copied() {
+            let value = unsafe { *values.get_unchecked_release(index as usize) };
+            let row_index = if index < right_df_offset {
+                // Row from LHS
+                index as i64 + 1
+            } else {
+                // Row from RHS
+                -((index - right_df_offset) as i64) - 1
+            };
+            array.push(L1Item { row_index, value });
+        }
     }
+
     Ok(Box::new(array))
 }
 
@@ -427,14 +449,18 @@ where
     T: PolarsNumericType,
     T::Native: TotalOrd,
 {
+    assert_eq!(ca.null_count(), 0);
+    assert_eq!(ca.chunks().len(), 1);
+
     let mut array = Vec::with_capacity(ca.len());
     let mut prev_index = 0;
     let mut prev_value = T::Native::default();
+
+    let arr = ca.downcast_get(0).unwrap();
+    let values = arr.values().as_slice();
+
     for (i, l1_index) in order.iter().copied().enumerate() {
-        let value = ca
-            .get(l1_index as usize)
-            // Nulls should have been skipped over
-            .ok_or_else(|| polars_err!(ComputeError: "Unexpected null value in IEJoin data"))?;
+        let value = unsafe { *values.get_unchecked_release(l1_index as usize) };
         if i > 0 {
             array.push(L2Item {
                 l1_index: prev_index,
@@ -451,8 +477,4 @@ where
         });
     }
     Ok(array)
-}
-
-fn is_strict(operator: InequalityOperator) -> bool {
-    matches!(operator, InequalityOperator::Gt | InequalityOperator::Lt)
 }
