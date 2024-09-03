@@ -3,9 +3,9 @@ macro_rules! format_pl_smallstr {
     ($($arg:tt)*) => {{
         use std::fmt::Write;
 
-        let mut string = String::new();
+        let mut string = PlSmallStr::EMPTY;
         write!(string, $($arg)*).unwrap();
-        PlSmallStr::from_string(string)
+        string
     }}
 }
 
@@ -125,7 +125,70 @@ impl From<&String> for PlSmallStr {
     }
 }
 
-/// FromIterator impls (TODO)
+impl From<Inner> for PlSmallStr {
+    #[inline(always)]
+    fn from(value: Inner) -> Self {
+        Self(value)
+    }
+}
+
+/// FromIterator impls
+
+impl FromIterator<PlSmallStr> for PlSmallStr {
+    #[inline(always)]
+    fn from_iter<T: IntoIterator<Item = PlSmallStr>>(iter: T) -> Self {
+        Self(Inner::from_iter(iter.into_iter().map(|x| x.0)))
+    }
+}
+
+impl<'a> FromIterator<&'a PlSmallStr> for PlSmallStr {
+    #[inline(always)]
+    fn from_iter<T: IntoIterator<Item = &'a PlSmallStr>>(iter: T) -> Self {
+        Self(Inner::from_iter(iter.into_iter().map(|x| x.as_str())))
+    }
+}
+
+impl FromIterator<char> for PlSmallStr {
+    #[inline(always)]
+    fn from_iter<I: IntoIterator<Item = char>>(iter: I) -> PlSmallStr {
+        Self(Inner::from_iter(iter))
+    }
+}
+
+impl<'a> FromIterator<&'a char> for PlSmallStr {
+    #[inline(always)]
+    fn from_iter<I: IntoIterator<Item = &'a char>>(iter: I) -> PlSmallStr {
+        Self(Inner::from_iter(iter))
+    }
+}
+
+impl<'a> FromIterator<&'a str> for PlSmallStr {
+    #[inline(always)]
+    fn from_iter<I: IntoIterator<Item = &'a str>>(iter: I) -> PlSmallStr {
+        Self(Inner::from_iter(iter))
+    }
+}
+
+impl FromIterator<String> for PlSmallStr {
+    #[inline(always)]
+    fn from_iter<I: IntoIterator<Item = String>>(iter: I) -> PlSmallStr {
+        Self(Inner::from_iter(iter))
+    }
+}
+
+impl FromIterator<Box<str>> for PlSmallStr {
+    #[inline(always)]
+    fn from_iter<I: IntoIterator<Item = Box<str>>>(iter: I) -> PlSmallStr {
+        Self(Inner::from_iter(iter))
+    }
+}
+
+impl<'a> FromIterator<std::borrow::Cow<'a, str>> for PlSmallStr {
+    #[inline(always)]
+    fn from_iter<I: IntoIterator<Item = std::borrow::Cow<'a, str>>>(iter: I) -> PlSmallStr {
+        Self(Inner::from_iter(iter))
+    }
+}
 
 /// PartialEq impls
 
@@ -150,6 +213,25 @@ impl PartialEq<PlSmallStr> for String {
     #[inline(always)]
     fn eq(&self, other: &PlSmallStr) -> bool {
         self.as_str() == other.as_str()
+    }
+}
+
+/// Write
+
+impl core::fmt::Write for PlSmallStr {
+    #[inline(always)]
+    fn write_char(&mut self, c: char) -> std::fmt::Result {
+        self.0.write_char(c)
+    }
+
+    #[inline(always)]
+    fn write_fmt(&mut self, args: std::fmt::Arguments<'_>) -> std::fmt::Result {
+        self.0.write_fmt(args)
+    }
+
+    #[inline(always)]
+    fn write_str(&mut self, s: &str) -> std::fmt::Result {
+        self.0.write_str(s)
     }
 }
 
