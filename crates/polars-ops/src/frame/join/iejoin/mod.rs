@@ -14,7 +14,7 @@ use polars_utils::total_ord::{TotalEq, TotalOrd};
 use polars_utils::IdxSize;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-
+use polars_utils::binary_search::ExponentialSearch;
 use crate::frame::_finish_join;
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
@@ -84,6 +84,8 @@ pub fn iejoin(
     // determining whether to sort descending.
     let l1_descending = matches!(op1, InequalityOperator::Gt | InequalityOperator::GtEq);
     let l2_descending = matches!(op2, InequalityOperator::Lt | InequalityOperator::LtEq);
+    // let l1_descending = false;
+    // let l2_descending = false;
 
     let l1_sort_options = SortOptions::default()
         .with_maintain_order(true)
@@ -243,7 +245,7 @@ trait L1Array {
 
 /// Find the position in the L1 array where we should begin checking for matches,
 /// given the index in L1 corresponding to the current position in L2.
-fn find_search_start_index<T>(
+unsafe fn find_search_start_index<T>(
     l1_array: &[L1Item<T>],
     index: usize,
     operator: InequalityOperator,
@@ -252,9 +254,26 @@ where
     T: NumericNative,
     T: TotalOrd,
 {
-    let value = l1_array[index].value;
+    let sub_l1 = l1_array.get_unchecked_release(index..);
+    let value = l1_array.get_unchecked_release(index).value;
 
+    dbg!(l1_array, value);
     if operator.is_strict() {
+        // match operator {
+        //     InequalityOperator::Gt => {
+        //         sub_l1.partition_point_exponential(|a| a.value.ge(&value)) + index
+        //     },
+        //     InequalityOperator::Lt => {
+        //         sub_l1.partition_point_exponential(|a| a.value.le(&value)) + index
+        //     }
+        //     _ => unreachable!()
+        // }
+        dbg!(sub_l1);
+        let i = sub_l1.partition_point_exponential(|a| a.value.ge(&value));
+        dbg!(i, i + index);
+        // let i = (&sub_l1[i..]).partition_point_exponential(|a| a.value.ne(&value)) + i;
+        // dbg!(i);
+
         // Search forward until we find a value not equal to the current x value
         let mut left_bound = index;
         let mut right_bound = index + 1;
@@ -273,7 +292,7 @@ where
                 right_bound = mid;
             }
         }
-        right_bound
+        dbg!(right_bound)
     } else {
         // Search backwards to find the first value equal to the current x value
         let mut left_bound = if index > 0 { index - 1 } else { 0 };
@@ -327,7 +346,7 @@ where
     // that have already been visited (so satisfy the second operator).
     // Because we use a stable sort for l2, we know that we won't find any
     // matches for duplicate y values when traversing forwards in l1.
-    let start_index = find_search_start_index(l1_array, l1_index, op1);
+    let start_index = unsafe { find_search_start_index(l1_array, l1_index, op1) };
     bit_array.on_set_bits_from(start_index, |set_bit: usize| {
         // SAFETY
         // set bit is within bounds.
@@ -416,17 +435,18 @@ fn build_l1_array<T>(
 where
     T: PolarsNumericType,
 {
-    assert_eq!(ca.null_count(), 0);
     assert_eq!(order.null_count(), 0);
     assert_eq!(ca.chunks().len(), 1);
     let arr = ca.downcast_get(0).unwrap();
+    // Even if there are nulls, they will not be selected by order.
     let values = arr.values().as_slice();
 
     let mut array: Vec<L1Item<T::Native>> = Vec::with_capacity(ca.len());
 
-    for arr in order.downcast_iter() {
-        for index in arr.values().as_slice().iter().copied() {
-            let value = unsafe { *values.get_unchecked_release(index as usize) };
+    for order_arr in order.downcast_iter() {
+        for index in order_arr.values().as_slice().iter().copied() {
+            debug_assert!(arr.get(index as usize).is_some());
+            let value = unsafe { *values.get_unchecked(index as usize) };
             let row_index = if index < right_df_offset {
                 // Row from LHS
                 index as i64 + 1
@@ -449,7 +469,6 @@ where
     T: PolarsNumericType,
     T::Native: TotalOrd,
 {
-    assert_eq!(ca.null_count(), 0);
     assert_eq!(ca.chunks().len(), 1);
 
     let mut array = Vec::with_capacity(ca.len());
@@ -457,10 +476,12 @@ where
     let mut prev_value = T::Native::default();
 
     let arr = ca.downcast_get(0).unwrap();
+    // Even if there are nulls, they will not be selected by order.
     let values = arr.values().as_slice();
 
     for (i, l1_index) in order.iter().copied().enumerate() {
-        let value = unsafe { *values.get_unchecked_release(l1_index as usize) };
+        debug_assert!(arr.get(l1_index as usize).is_some());
+        let value = unsafe { *values.get_unchecked(l1_index as usize) };
         if i > 0 {
             array.push(L2Item {
                 l1_index: prev_index,

@@ -534,10 +534,9 @@ pub fn private_left_join_multiple_keys(
 #[test]
 fn test_foo() {
     let west = df![
-        "t_id" => [404, 498, 676, 742],
-        "time" => [100, 140, 80, 90],
-        "cost" => [6, 11, 10, 5],
-        "cores" => [4, 2, 1, 4]
+        "t_id" => [0, 1, 2, 3, 4, 5],
+        "time" => [100, 140, 100, 80, 90, 90],
+        "cost" => [6, 11, 11, 10, 5, 5],
     ]
     .unwrap();
 
