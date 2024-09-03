@@ -943,9 +943,11 @@ impl AnyValue<'_> {
             // Map to borrowed.
             (StringOwned(l), r) => AnyValue::String(l.as_str()) == *r,
             (BinaryOwned(l), r) => AnyValue::Binary(l.as_slice()) == *r,
+            #[cfg(feature = "object")]
             (ObjectOwned(l), r) => AnyValue::Object(&*l.0) == *r,
             (l, StringOwned(r)) => *l == AnyValue::String(r.as_str()),
             (l, BinaryOwned(r)) => *l == AnyValue::Binary(r.as_slice()),
+            #[cfg(feature = "object")]
             (l, ObjectOwned(r)) => *l == AnyValue::Object(&*r.0),
 
             // Comparison with null.
@@ -1071,9 +1073,11 @@ impl PartialOrd for AnyValue<'_> {
             // Map to borrowed.
             (StringOwned(l), r) => AnyValue::String(l.as_str()).partial_cmp(r),
             (BinaryOwned(l), r) => AnyValue::Binary(l.as_slice()).partial_cmp(r),
+            #[cfg(feature = "object")]
             (ObjectOwned(l), r) => AnyValue::Object(&*l.0).partial_cmp(r),
             (l, StringOwned(r)) => l.partial_cmp(&AnyValue::String(r.as_str())),
             (l, BinaryOwned(r)) => l.partial_cmp(&AnyValue::Binary(r.as_slice())),
+            #[cfg(feature = "object")]
             (l, ObjectOwned(r)) => l.partial_cmp(&AnyValue::Object(&*r.0)),
 
             // Comparison with null.
