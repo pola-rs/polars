@@ -53,7 +53,7 @@ flate2 = { version = "1", default-features = false }
 futures = "0.3.25"
 hashbrown = { version = "0.14", features = ["rayon", "ahash", "serde"] }
 hex = "0.4.3"
-indexmap = { version = "2", features = ["std"] }
+indexmap = { version = "2", features = ["std", "serde"] }
 itoa = "1.0.6"
 itoap = { version = "1", features = ["simd"] }
 libc = "0.2"
