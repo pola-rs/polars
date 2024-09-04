@@ -314,7 +314,7 @@ fn infer_file_schema_inner(
             decimal_comma,
         );
     } else if !raise_if_empty {
-        return Ok((Schema::new(), 0, 0));
+        return Ok((Schema::default(), 0, 0));
     } else {
         polars_bail!(NoData: "empty CSV");
     };

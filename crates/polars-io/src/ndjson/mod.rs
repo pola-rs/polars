@@ -15,6 +15,7 @@ pub fn infer_schema<R: std::io::BufRead>(
         crate::json::infer::data_types_to_supertype(data_types.map(|dt| DataType::from(&dt)))?;
     let schema = StructArray::get_fields(&data_type.to_arrow(CompatLevel::newest()))
         .iter()
+        .map(Into::<Field>::into)
         .collect();
     Ok(schema)
 }

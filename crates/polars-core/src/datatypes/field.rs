@@ -13,6 +13,12 @@ pub struct Field {
     pub dtype: DataType,
 }
 
+impl From<Field> for (PlSmallStr, DataType) {
+    fn from(value: Field) -> Self {
+        (value.name, value.dtype)
+    }
+}
+
 pub type FieldRef = Arc<Field>;
 
 impl Field {

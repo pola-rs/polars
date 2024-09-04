@@ -8,7 +8,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let url = "https://theunitedstates.io/congress-legislators/legislators-historical.csv";
 
-    let mut schema = Schema::new();
+    let mut schema = Schema::default();
     schema.with_column(
         "first_name".into(),
         DataType::Categorical(None, Default::default()),

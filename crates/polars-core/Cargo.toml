@@ -12,6 +12,7 @@ description = "Core of the Polars DataFrame library"
 polars-compute = { workspace = true }
 polars-error = { workspace = true }
 polars-row = { workspace = true }
+polars-schema = { workspace = true }
 polars-utils = { workspace = true }
 
 ahash = { workspace = true }
@@ -116,7 +117,7 @@ dtype-struct = []
 bigidx = ["arrow/bigidx", "polars-utils/bigidx"]
 python = []
 
-serde = ["dep:serde", "bitflags/serde"]
+serde = ["dep:serde", "bitflags/serde", "polars-schema/serde"]
 serde-lazy = ["serde", "arrow/serde", "indexmap/serde", "chrono/serde"]
 
 docs-selection = [
