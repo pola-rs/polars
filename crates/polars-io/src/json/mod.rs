@@ -301,7 +301,7 @@ where
                             polars_bail!(ComputeError: "can only deserialize json objects")
                         };
 
-                        let mut schema = Schema::from_iter(fields.iter());
+                        let mut schema = Schema::from_iter(fields.iter().map(Into::<Field>::into));
                         overwrite_schema(&mut schema, overwrite)?;
 
                         DataType::Struct(

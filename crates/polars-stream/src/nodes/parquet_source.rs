@@ -10,7 +10,6 @@ use polars_core::frame::DataFrame;
 use polars_core::prelude::{
     ArrowSchema, ChunkFull, DataType, IdxCa, InitHashMaps, PlHashMap, StringChunked,
 };
-use polars_core::schema::IndexOfSchema;
 use polars_core::series::{IntoSeries, IsSorted, Series};
 use polars_core::utils::operation_exceeded_idxsize_msg;
 use polars_error::{polars_bail, polars_err, PolarsResult};

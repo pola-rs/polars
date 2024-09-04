@@ -38,7 +38,7 @@ pub(crate) fn collect_statistics(
     }
 
     Ok(Some(BatchStats::new(
-        Arc::new(schema.into()),
+        Arc::new(Schema::from_arrow_schema(schema)),
         stats,
         Some(part_md.num_rows()),
     )))

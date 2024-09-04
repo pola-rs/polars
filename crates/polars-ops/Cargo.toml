@@ -13,6 +13,7 @@ polars-compute = { workspace = true }
 polars-core = { workspace = true, features = ["algorithm_group_by", "zip_with"] }
 polars-error = { workspace = true }
 polars-json = { workspace = true, optional = true }
+polars-schema = { workspace = true }
 polars-utils = { workspace = true }
 
 ahash = { workspace = true }
@@ -82,7 +83,7 @@ timezones = ["chrono", "chrono-tz", "polars-core/temporal", "polars-core/timezon
 random = ["rand", "rand_distr"]
 rank = ["rand"]
 find_many = ["aho-corasick"]
-serde = ["dep:serde", "polars-core/serde", "polars-utils/serde"]
+serde = ["dep:serde", "polars-core/serde", "polars-utils/serde", "polars-schema/serde"]
 
 # extra utilities for BinaryChunked
 binary_encoding = ["base64", "hex"]

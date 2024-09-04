@@ -539,7 +539,10 @@ impl DataFrame {
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn schema(&self) -> Schema {
-        self.columns.as_slice().into()
+        self.columns
+            .iter()
+            .map(|x| (x.name().clone(), x.dtype().clone()))
+            .collect()
     }
 
     /// Get a reference to the [`DataFrame`] columns.

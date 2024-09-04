@@ -5,7 +5,7 @@ use arrow::ffi;
 use arrow::record_batch::RecordBatch;
 use polars::datatypes::CompatLevel;
 use polars::frame::DataFrame;
-use polars::prelude::{ArrayRef, ArrowField, PlSmallStr};
+use polars::prelude::{ArrayRef, ArrowField, PlSmallStr, SchemaExt};
 use polars::series::Series;
 use polars_core::utils::arrow;
 use polars_error::PolarsResult;

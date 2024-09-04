@@ -496,7 +496,7 @@ fn rg_to_dfs_prefiltered(
                     .collect::<PolarsResult<Vec<Series>>>()?;
 
                 let mut rearranged_schema = df.schema();
-                rearranged_schema.merge(Schema::from(schema));
+                rearranged_schema.merge(Schema::from_arrow_schema(schema.as_ref()));
 
                 debug_assert!(rg_columns.iter().all(|v| v.len() == df.height()));
 

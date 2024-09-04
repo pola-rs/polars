@@ -57,8 +57,10 @@ pub(super) fn parquet_file_info(
                 let num_rows = reader.num_rows().await?;
                 let metadata = reader.get_metadata().await?.clone();
 
-                let schema =
-                    prepare_output_schema((&reader_schema).into(), file_options.row_index.as_ref());
+                let schema = prepare_output_schema(
+                    Schema::from_arrow_schema(reader_schema.as_ref()),
+                    file_options.row_index.as_ref(),
+                );
                 PolarsResult::Ok((schema, reader_schema, Some(num_rows), Some(metadata)))
             })?
         }
@@ -66,8 +68,10 @@ pub(super) fn parquet_file_info(
         let file = polars_utils::open_file(path)?;
         let mut reader = ParquetReader::new(file);
         let reader_schema = reader.schema()?;
-        let schema =
-            prepare_output_schema((&reader_schema).into(), file_options.row_index.as_ref());
+        let schema = prepare_output_schema(
+            Schema::from_arrow_schema(reader_schema.as_ref()),
+            file_options.row_index.as_ref(),
+        );
         (
             schema,
             reader_schema,
@@ -115,7 +119,7 @@ pub(super) fn ipc_file_info(
     };
     let file_info = FileInfo::new(
         prepare_output_schema(
-            metadata.schema.as_ref().into(),
+            Schema::from_arrow_schema(metadata.schema.as_ref()),
             file_options.row_index.as_ref(),
         ),
         Some(Either::Left(Arc::clone(&metadata.schema))),
