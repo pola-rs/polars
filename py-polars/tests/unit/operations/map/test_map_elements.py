@@ -364,3 +364,10 @@ def test_unknown_map_elements() -> None:
         "Flour": [10.0, 100.0, 100.0, 20.0],
     }
     assert q.collect_schema().dtypes() == [pl.Int64, pl.Unknown]
+
+
+def test_map_elements_list_dtype_18472() -> None:
+    s = pl.Series([[None], ["abc  ", None]])
+    result = s.map_elements(lambda s: [i.strip() if i else None for i in s])
+    expected = pl.Series([[None], ["abc", None]])
+    assert_series_equal(result, expected)

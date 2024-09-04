@@ -5336,7 +5336,9 @@ class Series:
 
         warn_on_inefficient_map(function, columns=[self.name], map_target="series")
         return self._from_pyseries(
-            self._s.apply_lambda(function, pl_return_dtype, skip_nulls)
+            self._s.map_elements(
+                function, return_dtype=pl_return_dtype, skip_nulls=skip_nulls
+            )
         )
 
     def shift(self, n: int = 1, *, fill_value: IntoExpr | None = None) -> Series:
