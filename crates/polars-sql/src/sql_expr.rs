@@ -1358,7 +1358,7 @@ pub(crate) fn resolve_compound_identifier(
         Ok(Arc::new(if let Some(active_schema) = active_schema {
             active_schema.clone()
         } else {
-            Schema::new()
+            Schema::default()
         }))
     }?;
 

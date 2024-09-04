@@ -18,18 +18,6 @@ impl<D> Schema<D>
 where
     D: Clone + Default,
 {
-    pub fn _fields(&self) -> &PlIndexMap<PlSmallStr, D> {
-        &self.fields
-    }
-
-    pub fn _fields_mut(&mut self) -> &mut PlIndexMap<PlSmallStr, D> {
-        &mut self.fields
-    }
-
-    pub fn new() -> Self {
-        Self::with_capacity(0)
-    }
-
     pub fn with_capacity(capacity: usize) -> Self {
         let fields = PlIndexMap::with_capacity(capacity);
         Self { fields }
@@ -318,6 +306,10 @@ where
     /// For an owned version, use [`iter_fields`][Self::iter_fields], which clones the data to iterate owned `Field`s
     pub fn iter(&self) -> impl ExactSizeIterator<Item = (&PlSmallStr, &D)> + '_ {
         self.fields.iter()
+    }
+
+    pub fn iter_mut(&mut self) -> impl ExactSizeIterator<Item = (&PlSmallStr, &mut D)> + '_ {
+        self.fields.iter_mut()
     }
 
     /// Generates another schema with just the specified columns selected from this one.
