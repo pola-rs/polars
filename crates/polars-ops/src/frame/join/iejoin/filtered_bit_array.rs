@@ -20,25 +20,25 @@ impl FilteredBitArray {
         }
     }
 
-    pub fn set_bit(&mut self, index: usize) {
-        self.bit_array.set(index, true);
-        self.filter.set(index / Self::CHUNK_SIZE, true);
+    pub unsafe fn set_bit_unchecked(&mut self, index: usize) {
+        self.bit_array.set_unchecked(index, true);
+        self.filter.set_unchecked(index / Self::CHUNK_SIZE, true);
     }
 
-    pub fn on_set_bits_from<F>(&self, start: usize, mut action: F)
+    pub unsafe fn on_set_bits_from<F>(&self, start: usize, mut action: F)
     where
         F: FnMut(usize),
     {
         let start_chunk = start / Self::CHUNK_SIZE;
         let mut chunk_offset = start % Self::CHUNK_SIZE;
         for chunk_idx in start_chunk..self.filter.len() {
-            if self.filter.get(chunk_idx) {
+            if self.filter.get_unchecked(chunk_idx) {
                 // There are some set bits in this chunk
                 let start = chunk_idx * Self::CHUNK_SIZE + chunk_offset;
                 let end = min((chunk_idx + 1) * Self::CHUNK_SIZE, self.bit_array.len());
                 for bit_idx in start..end {
                     // SAFETY: `bit_idx` is always less than `self.bit_array.len()`
-                    if unsafe { self.bit_array.get_unchecked(bit_idx) } {
+                    if self.bit_array.get_unchecked(bit_idx) {
                         action(bit_idx);
                     }
                 }

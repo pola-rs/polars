@@ -7,12 +7,13 @@ use polars_core::frame::DataFrame;
 use polars_core::prelude::*;
 use polars_core::{with_match_physical_numeric_polars_type, POOL};
 use polars_error::{polars_err, PolarsResult};
+use polars_utils::binary_search::ExponentialSearch;
 use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::total_ord::{TotalEq, TotalOrd};
 use polars_utils::IdxSize;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-use polars_utils::binary_search::ExponentialSearch;
+
 use crate::frame::_finish_join;
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
@@ -82,8 +83,6 @@ pub fn iejoin(
     // determining whether to sort descending.
     let l1_descending = matches!(op1, InequalityOperator::Gt | InequalityOperator::GtEq);
     let l2_descending = matches!(op2, InequalityOperator::Lt | InequalityOperator::LtEq);
-    // let l1_descending = false;
-    // let l2_descending = false;
 
     let l1_sort_options = SortOptions::default()
         .with_maintain_order(true)
@@ -135,13 +134,15 @@ pub fn iejoin(
         // sort of l1 to be stable, so that the left hand side entries come before the right
         // hand side entries (as we mark visited entries from the right hand side).
         for &p in l2_order {
-            match_count += l1_array.process_entry(
-                p as usize,
-                &mut bit_array,
-                op1,
-                &mut left_row_idx,
-                &mut right_row_idx,
-            );
+            match_count += unsafe {
+                l1_array.process_entry(
+                    p as usize,
+                    &mut bit_array,
+                    op1,
+                    &mut left_row_idx,
+                    &mut right_row_idx,
+                )
+            };
 
             if slice_end.is_some_and(|end| match_count >= end) {
                 break;
@@ -156,25 +157,31 @@ pub fn iejoin(
         // check for matches after we reach the end of the run and have marked all rhs entries
         // in the run as visited.
         let mut run_start = 0;
+
         for i in 0..l2_array.len() {
-            let p = l2_array[i].l1_index;
-            l1_array.mark_visited(p as usize, &mut bit_array);
-            if l2_array[i].run_end {
-                for l2_item in l2_array.iter().take(i + 1).skip(run_start) {
-                    let p = l2_item.l1_index;
-                    match_count += l1_array.process_lhs_entry(
-                        p as usize,
-                        &bit_array,
-                        op1,
-                        &mut left_row_idx,
-                        &mut right_row_idx,
-                    );
-                }
+            // Elide bound checks
+            unsafe {
+                let item = l2_array.get_unchecked_release(i);
+                let p = item.l1_index;
+                l1_array.mark_visited(p as usize, &mut bit_array);
 
-                run_start = i + 1;
+                if item.run_end {
+                    for l2_item in l2_array.get_unchecked_release(run_start..i + 1) {
+                        let p = l2_item.l1_index;
+                        match_count += l1_array.process_lhs_entry(
+                            p as usize,
+                            &bit_array,
+                            op1,
+                            &mut left_row_idx,
+                            &mut right_row_idx,
+                        );
+                    }
 
-                if slice_end.is_some_and(|end| match_count >= end) {
-                    break;
+                    run_start = i + 1;
+
+                    if slice_end.is_some_and(|end| match_count >= end) {
+                        break;
+                    }
                 }
             }
         }
@@ -220,7 +227,7 @@ struct L2Item {
 }
 
 trait L1Array {
-    fn process_entry(
+    unsafe fn process_entry(
         &self,
         l1_index: usize,
         bit_array: &mut FilteredBitArray,
@@ -229,7 +236,7 @@ trait L1Array {
         right_row_ids: &mut Vec<IdxSize>,
     ) -> i64;
 
-    fn process_lhs_entry(
+    unsafe fn process_lhs_entry(
         &self,
         l1_index: usize,
         bit_array: &FilteredBitArray,
@@ -238,7 +245,7 @@ trait L1Array {
         right_row_ids: &mut Vec<IdxSize>,
     ) -> i64;
 
-    fn mark_visited(&self, index: usize, bit_array: &mut FilteredBitArray);
+    unsafe fn mark_visited(&self, index: usize, bit_array: &mut FilteredBitArray);
 }
 
 /// Find the position in the L1 array where we should begin checking for matches,
@@ -261,13 +268,13 @@ where
         },
         InequalityOperator::Lt => {
             sub_l1.partition_point_exponential(|a| a.value.tot_le(&value)) + index
-        }
+        },
         InequalityOperator::GtEq => {
             sub_l1.partition_point_exponential(|a| value.tot_lt(&a.value)) + index
-        }
+        },
         InequalityOperator::LtEq => {
             sub_l1.partition_point_exponential(|a| value.tot_gt(&a.value)) + index
-        }
+        },
     }
 }
 
@@ -293,15 +300,17 @@ where
     // Because we use a stable sort for l2, we know that we won't find any
     // matches for duplicate y values when traversing forwards in l1.
     let start_index = unsafe { find_search_start_index(l1_array, l1_index, op1) };
-    bit_array.on_set_bits_from(start_index, |set_bit: usize| {
-        // SAFETY
-        // set bit is within bounds.
-        let right_row_index = unsafe { l1_array.get_unchecked_release(set_bit) }.row_index;
-        debug_assert!(right_row_index < 0);
-        left_row_ids.push((row_index - 1) as IdxSize);
-        right_row_ids.push((-right_row_index) as IdxSize - 1);
-        match_count += 1;
-    });
+    unsafe {
+        bit_array.on_set_bits_from(start_index, |set_bit: usize| {
+            // SAFETY
+            // set bit is within bounds.
+            let right_row_index = l1_array.get_unchecked_release(set_bit).row_index;
+            debug_assert!(right_row_index < 0);
+            left_row_ids.push((row_index - 1) as IdxSize);
+            right_row_ids.push((-right_row_index) as IdxSize - 1);
+            match_count += 1;
+        })
+    };
 
     match_count
 }
@@ -310,7 +319,7 @@ impl<T> L1Array for Vec<L1Item<T>>
 where
     T: NumericNative,
 {
-    fn process_entry(
+    unsafe fn process_entry(
         &self,
         l1_index: usize,
         bit_array: &mut FilteredBitArray,
@@ -318,7 +327,7 @@ where
         left_row_ids: &mut Vec<IdxSize>,
         right_row_ids: &mut Vec<IdxSize>,
     ) -> i64 {
-        let row_index = self[l1_index].row_index;
+        let row_index = self.get_unchecked_release(l1_index).row_index;
         let from_lhs = row_index > 0;
         if from_lhs {
             find_matches_in_l1(
@@ -331,12 +340,12 @@ where
                 right_row_ids,
             )
         } else {
-            bit_array.set_bit(l1_index);
+            bit_array.set_bit_unchecked(l1_index);
             0
         }
     }
 
-    fn process_lhs_entry(
+    unsafe fn process_lhs_entry(
         &self,
         l1_index: usize,
         bit_array: &FilteredBitArray,
@@ -344,7 +353,7 @@ where
         left_row_ids: &mut Vec<IdxSize>,
         right_row_ids: &mut Vec<IdxSize>,
     ) -> i64 {
-        let row_index = self[l1_index].row_index;
+        let row_index = self.get_unchecked_release(l1_index).row_index;
         let from_lhs = row_index > 0;
         if from_lhs {
             find_matches_in_l1(
@@ -361,12 +370,12 @@ where
         }
     }
 
-    fn mark_visited(&self, index: usize, bit_array: &mut FilteredBitArray) {
-        let from_lhs = self[index].row_index > 0;
+    unsafe fn mark_visited(&self, index: usize, bit_array: &mut FilteredBitArray) {
+        let from_lhs = self.get_unchecked_release(index).row_index > 0;
         // We only mark RHS entries as visited,
         // so that we don't try to match LHS entries with other LHS entries.
         if !from_lhs {
-            bit_array.set_bit(index);
+            bit_array.set_bit_unchecked(index);
         }
     }
 }
