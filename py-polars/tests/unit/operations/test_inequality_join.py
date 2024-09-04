@@ -24,8 +24,8 @@ def test_self_join() -> None:
         }
     )
 
-    actual = west.inequality_join(
-        west, on=[pl.col("time") > pl.col("time"), pl.col("cost") < pl.col("cost")]
+    actual = west.join_between(
+        west, pl.col("time") > pl.col("time"), pl.col("cost") < pl.col("cost")
     )
 
     expected = pl.DataFrame(
@@ -61,8 +61,8 @@ def test_basic_ie_join() -> None:
         }
     )
 
-    actual = east.inequality_join(
-        west, on=[pl.col("dur") < pl.col("time"), pl.col("rev") > pl.col("cost")]
+    actual = east.join_between(
+        west, pl.col("dur") < pl.col("time"), pl.col("rev") > pl.col("cost")
     )
 
     expected = pl.DataFrame(
@@ -103,8 +103,8 @@ def test_ie_join_with_slice(offset: int, length: int) -> None:
     ).lazy()
 
     actual = (
-        east.inequality_join(
-            west, on=[pl.col("dur") < pl.col("time"), pl.col("rev") < pl.col("cost")]
+        east.join_between(
+            west, pl.col("dur") < pl.col("time"), pl.col("rev") < pl.col("cost")
         )
         .slice(offset, length)
         .collect()
@@ -145,12 +145,10 @@ def test_ie_join_with_expressions() -> None:
         }
     )
 
-    actual = east.inequality_join(
+    actual = east.join_between(
         west,
-        on=[
-            (pl.col("dur") * 2) < pl.col("time"),
-            pl.col("rev") > (pl.col("cost").cast(pl.Int32) // 2).cast(pl.Int64),
-        ],
+        (pl.col("dur") * 2) < pl.col("time"),
+        pl.col("rev") > (pl.col("cost").cast(pl.Int32) // 2).cast(pl.Int64),
     )
 
     expected = pl.DataFrame(
@@ -200,9 +198,8 @@ def test_join_between() -> None:
 
     actual = left.join_between(
         right,
-        left_on="time",
-        right_on_lower="start_time",
-        right_on_upper="end_time",
+        pl.col("time") >= pl.col("start_time"),
+        pl.col("time") < pl.col("end_time"),
     ).select("id", "id_right")
 
     expected = pl.DataFrame(
@@ -319,7 +316,7 @@ def test_ie_join(east: pl.DataFrame, west: pl.DataFrame, op1: str, op2: str) -> 
     expr0 = _inequality_expression("dur", op1, "time")
     expr1 = _inequality_expression("rev", op2, "cost")
 
-    actual = east.inequality_join(west, on=[expr0, expr1])
+    actual = east.join_between(west, expr0, expr1)
 
     expected = east.join(west, how="cross").filter(expr0 & expr1)
     assert_frame_equal(actual, expected, check_row_order=False, check_exact=True)
@@ -337,7 +334,7 @@ def test_ie_join_with_nulls(
     expr0 = _inequality_expression("dur", op1, "time")
     expr1 = _inequality_expression("rev", op2, "cost")
 
-    actual = east.inequality_join(west, on=[expr0, expr1])
+    actual = east.join_between(west, expr0, expr1)
 
     expected = east.join(west, how="cross").filter(expr0 & expr1)
     assert_frame_equal(actual, expected, check_row_order=False, check_exact=True)
@@ -355,7 +352,7 @@ def test_ie_join_with_floats(
     expr0 = _inequality_expression("dur", op1, "time")
     expr1 = _inequality_expression("rev", op2, "cost")
 
-    actual = east.inequality_join(west, on=[expr0, expr1])
+    actual = east.join_between(west, expr0, expr1)
 
     expected = east.join(west, how="cross").filter(expr0 & expr1)
     assert_frame_equal(actual, expected, check_row_order=False, check_exact=True)

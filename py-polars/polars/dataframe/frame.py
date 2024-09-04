@@ -7085,59 +7085,16 @@ class DataFrame:
             .collect(_eager=True)
         )
 
-    def inequality_join(
+    def join_between(
         self,
         other: DataFrame,
+        predicate_1: Expr,
+        predicate_2: Expr,
         *,
-        on: Sequence[Expr],
         suffix: str = "_right",
     ) -> DataFrame:
         """
         Perform a join using two inequality expressions.
-
-        Parameters
-        ----------
-        other
-            DataFrame to join with.
-        on
-            A sequence of two inequality expressions to join on, where each expression
-            is in the form `left_hand_side_expr op right_hand_side_expr` and op
-            is one of <, <=, >, >=.
-            for example [pl.col("a") < pl.col("b"), pl.col("c") > pl.col("d")]
-        suffix
-            Suffix to append to columns with a duplicate name.
-
-        Returns
-        -------
-        DataFrame
-        """
-        if not isinstance(other, DataFrame):
-            msg = f"expected `other` join table to be a DataFrame, got {type(other).__name__!r}"
-            raise TypeError(msg)
-
-        return (
-            self.lazy()
-            .inequality_join(
-                other.lazy(),
-                on=on,
-                suffix=suffix,
-            )
-            .collect(_eager=True)
-        )
-
-    def join_between(
-        self,
-        other: DataFrame,
-        *,
-        left_on: str | Expr,
-        right_on_lower: str | Expr,
-        right_on_upper: str | Expr,
-        exclusive_lower: bool = False,
-        exclusive_upper: bool = True,
-        suffix: str = "_right",
-    ) -> DataFrame:
-        """
-        Join by matching values from this table with an interval in another table.
 
         A row from this table may be included in zero or multiple rows in the result,
         and the relative order of rows may differ between the input and output tables.
@@ -7146,16 +7103,18 @@ class DataFrame:
         ----------
         other
             DataFrame to join with.
-        left_on
-            Join column of the left table.
-        right_on_lower
-            Lower bound of the interval in the other table
-        right_on_upper
-            Upper bound of the interval in the other table
-        exclusive_lower
-            Whether the lower bound of the interval is an exclusive bound
-        exclusive_upper
-            Whether the upper bound of the interval is an exclusive bound
+        predicate_1
+            Inequality condition to join the two table on.
+            The left `pl.col(..)` will refer to the left table
+            and the right `pl.col(..)`
+            to the right table.
+            For example: `pl.col("time") >= pl.col("duration")`
+        predicate_2
+            Inequality condition to join the two table on.
+            The left `pl.col(..)` will refer to the left table
+            and the right `pl.col(..)`
+            to the right table.
+            For example: `pl.col("cost") < pl.col("cost")`
         suffix
             Suffix to append to columns with a duplicate name.
         """
@@ -7167,11 +7126,8 @@ class DataFrame:
             self.lazy()
             .join_between(
                 other.lazy(),
-                left_on=left_on,
-                right_on_lower=right_on_lower,
-                right_on_upper=right_on_upper,
-                exclusive_lower=exclusive_lower,
-                exclusive_upper=exclusive_upper,
+                predicate_1=predicate_1,
+                predicate_2=predicate_2,
                 suffix=suffix,
             )
             .collect(_eager=True)

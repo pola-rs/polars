@@ -4341,52 +4341,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             )
         )
 
-    def inequality_join(
-        self,
-        other: LazyFrame,
-        *,
-        on: Sequence[Expr],
-        suffix: str = "_right",
-    ) -> LazyFrame:
-        """
-        Perform a join using two inequality expressions.
-
-        Parameters
-        ----------
-        other
-            LazyFrame to join with.
-        on
-            A sequence of two inequality expressions to join on, where each expression
-            is in the form `left_hand_side_expr op right_hand_side_expr` and op
-            is one of <, <=, >, >=.
-            for example [pl.col("a") < pl.col("b"), pl.col("c") > pl.col("d")]
-        suffix
-            Suffix to append to columns with a duplicate name.
-
-        Returns
-        -------
-        LazyFrame
-        """
-        if not isinstance(other, LazyFrame):
-            msg = f"expected `other` join table to be a LazyFrame, not a {type(other).__name__!r}"
-            raise TypeError(msg)
-
-        if on is None:
-            msg = "you must pass the expressions to join on as an argument"
-            raise ValueError(msg)
-
-        if not all(isinstance(expr, pl.Expr) for expr in on):
-            msg = "Join expressions must all be an Expr instance"
-            raise ValueError(msg)
-
-        return self._from_pyldf(
-            self._ldf.inequality_join(
-                other._ldf,
-                [expr._pyexpr for expr in on],
-                suffix,
-            )
-        )
-
     def join(
         self,
         other: LazyFrame,
@@ -4610,16 +4564,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def join_between(
         self,
         other: LazyFrame,
+        predicate_1: Expr,
+        predicate_2: Expr,
         *,
-        left_on: str | Expr,
-        right_on_lower: str | Expr,
-        right_on_upper: str | Expr,
-        exclusive_lower: bool = False,
-        exclusive_upper: bool = True,
         suffix: str = "_right",
     ) -> LazyFrame:
         """
-        Join by matching values from this table with an interval in another table.
+        Perform a join using two inequality expressions.
 
         A row from this table may be included in zero or multiple rows in the result,
         and the relative order of rows may differ between the input and output tables.
@@ -4628,16 +4579,18 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ----------
         other
             LazyFrame to join with.
-        left_on
-            Join column of the left table.
-        right_on_lower
-            Lower bound of the interval in the other table
-        right_on_upper
-            Upper bound of the interval in the other table
-        exclusive_lower
-            Whether the lower bound of the interval is an exclusive bound
-        exclusive_upper
-            Whether the upper bound of the interval is an exclusive bound
+        predicate_1
+            Inequality condition to join the two table on.
+            The left `pl.col(..)` will refer to the left table
+            and the right `pl.col(..)`
+            to the right table.
+            For example: `pl.col("time") >= pl.col("duration")`
+        predicate_2
+            Inequality condition to join the two table on.
+            The left `pl.col(..)` will refer to the left table
+            and the right `pl.col(..)`
+            to the right table.
+            For example: `pl.col("cost") < pl.col("cost")`
         suffix
             Suffix to append to columns with a duplicate name.
         """
@@ -4645,21 +4598,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             msg = f"expected `other` join table to be a LazyFrame, not a {type(other).__name__!r}"
             raise TypeError(msg)
 
-        left_on = wrap_expr(parse_into_expression(left_on))
-        right_on_lower = wrap_expr(parse_into_expression(right_on_lower))
-        right_on_upper = wrap_expr(parse_into_expression(right_on_upper))
-
-        lower_expr = (
-            left_on > right_on_lower if exclusive_lower else left_on >= right_on_lower
-        )
-        upper_expr = (
-            left_on < right_on_upper if exclusive_upper else left_on <= right_on_upper
-        )
-
         return self._from_pyldf(
             self._ldf.inequality_join(
                 other._ldf,
-                [lower_expr._pyexpr, upper_expr._pyexpr],
+                [predicate_1._pyexpr, predicate_2._pyexpr],
                 suffix,
             )
         )

@@ -26,6 +26,7 @@ Manipulation/selection
     LazyFrame.interpolate
     LazyFrame.join
     LazyFrame.join_asof
+    LazyFrame.join_between
     LazyFrame.last
     LazyFrame.limit
     LazyFrame.melt

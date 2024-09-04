@@ -35,6 +35,7 @@ Manipulation/selection
     DataFrame.iter_slices
     DataFrame.join
     DataFrame.join_asof
+    DataFrame.join_between
     DataFrame.limit
     DataFrame.melt
     DataFrame.merge_sorted

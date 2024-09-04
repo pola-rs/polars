@@ -30,6 +30,7 @@ where
 }
 
 // https://en.wikipedia.org/wiki/Exponential_search
+// Use if you expect matches to be close by. Otherwise use binary search.
 pub trait ExponentialSearch<T> {
     fn exponential_search_by<F>(&self, f: F) -> Result<usize, usize>
     where
@@ -67,7 +68,7 @@ impl<T: std::fmt::Debug> ExponentialSearch<T> for &[T] {
         }
         let end_bound = std::cmp::min(self.len(), bound);
         // SAFETY:
-        // We checked the ned bound and previous bound was within slice as per the `while` condition.
+        // We checked the end bound and previous bound was within slice as per the `while` condition.
         let prev_bound = bound / 2;
 
         let slice = unsafe { self.get_unchecked_release(prev_bound..end_bound) };
