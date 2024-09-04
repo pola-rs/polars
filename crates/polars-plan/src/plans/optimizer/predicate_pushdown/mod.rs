@@ -401,7 +401,7 @@ impl<'a> PredicatePushDown<'a> {
                                     filter: None,
                                 });
                             } else {
-                                sources = ScanSource::Files(new_paths.into());
+                                sources = ScanSources::Files(new_paths.into());
                                 scan_hive_parts = Some(Arc::from(new_hive_parts));
                             }
                         }

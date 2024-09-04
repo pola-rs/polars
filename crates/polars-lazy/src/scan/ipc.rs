@@ -37,14 +37,14 @@ impl Default for ScanArgsIpc {
 #[derive(Clone)]
 struct LazyIpcReader {
     args: ScanArgsIpc,
-    source: ScanSource,
+    sources: ScanSources,
 }
 
 impl LazyIpcReader {
     fn new(args: ScanArgsIpc) -> Self {
         Self {
             args,
-            source: ScanSource::default(),
+            sources: ScanSources::default(),
         }
     }
 }
@@ -58,7 +58,7 @@ impl LazyFileListReader for LazyIpcReader {
         };
 
         let mut lf: LazyFrame = DslBuilder::scan_ipc(
-            self.source.to_dsl(false),
+            self.sources.to_dsl(false),
             options,
             args.n_rows,
             args.cache,
@@ -79,12 +79,12 @@ impl LazyFileListReader for LazyIpcReader {
         unreachable!()
     }
 
-    fn source(&self) -> &ScanSource {
-        &self.source
+    fn sources(&self) -> &ScanSources {
+        &self.sources
     }
 
-    fn with_source(mut self, source: ScanSource) -> Self {
-        self.source = source;
+    fn with_sources(mut self, sources: ScanSources) -> Self {
+        self.sources = sources;
         self
     }
 
@@ -133,7 +133,7 @@ impl LazyFrame {
         LazyIpcReader::new(args).with_paths(paths).finish()
     }
 
-    pub fn scan_ipc_sourced(source: ScanSource, args: ScanArgsIpc) -> PolarsResult<Self> {
-        LazyIpcReader::new(args).with_source(source).finish()
+    pub fn scan_ipc_sourced(sources: ScanSources, args: ScanArgsIpc) -> PolarsResult<Self> {
+        LazyIpcReader::new(args).with_sources(sources).finish()
     }
 }

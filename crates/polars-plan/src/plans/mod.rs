@@ -1,6 +1,5 @@
 use std::fmt;
 use std::fmt::Debug;
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
 
 use hive::HivePartitions;
@@ -61,17 +60,9 @@ pub enum Context {
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone)]
-pub struct ScanFileSource {
-    pub paths: Arc<[PathBuf]>,
+pub struct DslScanSources {
+    pub sources: ScanSources,
     pub is_expanded: bool,
-}
-
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone)]
-pub enum DslScanSource {
-    File(Arc<Mutex<ScanFileSource>>),
-    // @Q? Can we serde skip this?
-    Buffer(Arc<[u8]>),
 }
 
 // https://stackoverflow.com/questions/1031076/what-are-projection-and-selection
@@ -91,7 +82,7 @@ pub enum DslPlan {
         cache_hits: u32,
     },
     Scan {
-        sources: DslScanSource,
+        sources: Arc<Mutex<DslScanSources>>,
         // Option as this is mostly materialized on the IR phase.
         // During conversion we update the value in the DSL as well
         // This is to cater to use cases where parts of a `LazyFrame`

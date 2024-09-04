@@ -422,7 +422,7 @@ def scan_parquet(
 
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source, check_not_directory=False)
-    elif isinstance(source, (IO, BytesIO)):
+    elif isinstance(source, (IO, io.BytesIO)):
         sources = []
     else:
         source = [

@@ -1,9 +1,10 @@
-use std::path::PathBuf;
+use std::path::Path;
 
 use memchr::memchr2_iter;
 use num_traits::Pow;
 use polars_core::prelude::*;
 use polars_core::{config, POOL};
+use polars_error::feature_gated;
 use polars_utils::index::Bounded;
 use polars_utils::slice::GetSaferUnchecked;
 use rayon::prelude::*;
@@ -18,7 +19,7 @@ use crate::utils::maybe_decompress_bytes;
 /// Read the number of rows without parsing columns
 /// useful for count(*) queries
 pub fn count_rows(
-    path: &PathBuf,
+    path: &Path,
     separator: u8,
     quote_char: Option<u8>,
     comment_prefix: Option<&CommentPrefix>,
@@ -26,18 +27,13 @@ pub fn count_rows(
     has_header: bool,
 ) -> PolarsResult<usize> {
     let file = if is_cloud_url(path) || config::force_async() {
-        #[cfg(feature = "cloud")]
-        {
+        feature_gated!("cloud", {
             crate::file_cache::FILE_CACHE
                 .get_entry(path.to_str().unwrap())
                 // Safety: This was initialized by schema inference.
                 .unwrap()
                 .try_open_assume_latest()?
-        }
-        #[cfg(not(feature = "cloud"))]
-        {
-            panic!("required feature `cloud` is not enabled")
-        }
+        })
     } else {
         polars_utils::open_file(path)?
     };

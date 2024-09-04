@@ -44,14 +44,14 @@ impl Default for ScanArgsParquet {
 #[derive(Clone)]
 struct LazyParquetReader {
     args: ScanArgsParquet,
-    source: ScanSource,
+    sources: ScanSources,
 }
 
 impl LazyParquetReader {
     fn new(args: ScanArgsParquet) -> Self {
         Self {
             args,
-            source: ScanSource::default(),
+            sources: ScanSources::default(),
         }
     }
 }
@@ -62,7 +62,7 @@ impl LazyFileListReader for LazyParquetReader {
         let row_index = self.args.row_index;
 
         let mut lf: LazyFrame = DslBuilder::scan_parquet(
-            self.source.to_dsl(false),
+            self.sources.to_dsl(false),
             self.args.n_rows,
             self.args.cache,
             self.args.parallel,
@@ -95,12 +95,12 @@ impl LazyFileListReader for LazyParquetReader {
         unreachable!();
     }
 
-    fn source(&self) -> &ScanSource {
-        &self.source
+    fn sources(&self) -> &ScanSources {
+        &self.sources
     }
 
-    fn with_source(mut self, source: ScanSource) -> Self {
-        self.source = source;
+    fn with_sources(mut self, sources: ScanSources) -> Self {
+        self.sources = sources;
         self
     }
 
@@ -145,8 +145,8 @@ impl LazyFrame {
     }
 
     /// Create a LazyFrame directly from a parquet scan.
-    pub fn scan_parquet_sourced(source: ScanSource, args: ScanArgsParquet) -> PolarsResult<Self> {
-        LazyParquetReader::new(args).with_source(source).finish()
+    pub fn scan_parquet_sourced(sources: ScanSources, args: ScanArgsParquet) -> PolarsResult<Self> {
+        LazyParquetReader::new(args).with_sources(sources).finish()
     }
 
     /// Create a LazyFrame directly from a parquet scan.

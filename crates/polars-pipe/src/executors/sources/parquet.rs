@@ -20,7 +20,7 @@ use polars_io::prelude::materialize_projection;
 use polars_io::prelude::ParquetAsyncReader;
 use polars_io::utils::slice::split_slice_at_file;
 use polars_io::SerReader;
-use polars_plan::plans::{FileInfo, ScanSource};
+use polars_plan::plans::{FileInfo, ScanSources};
 use polars_plan::prelude::hive::HivePartitions;
 use polars_plan::prelude::FileScanOptions;
 use polars_utils::itertools::Itertools;
@@ -36,7 +36,7 @@ pub struct ParquetSource {
     processed_paths: usize,
     processed_rows: AtomicUsize,
     iter: Range<usize>,
-    sources: ScanSource,
+    sources: ScanSources,
     options: ParquetOptions,
     file_options: FileScanOptions,
     #[allow(dead_code)]
@@ -246,7 +246,7 @@ impl ParquetSource {
     #[allow(unused_variables)]
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
-        sources: ScanSource,
+        sources: ScanSources,
         options: ParquetOptions,
         cloud_options: Option<CloudOptions>,
         metadata: Option<FileMetaDataRef>,

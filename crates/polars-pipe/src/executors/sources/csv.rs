@@ -4,7 +4,7 @@ use polars_core::{config, POOL};
 use polars_io::csv::read::{BatchedCsvReader, CsvReadOptions, CsvReader};
 use polars_io::path_utils::is_cloud_url;
 use polars_plan::global::_set_n_rows_for_scan;
-use polars_plan::plans::ScanSource;
+use polars_plan::plans::ScanSources;
 use polars_plan::prelude::FileScanOptions;
 use polars_utils::itertools::Itertools;
 
@@ -20,7 +20,7 @@ pub(crate) struct CsvSource {
     batched_reader: Option<BatchedCsvReader<'static>>,
     reader: Option<CsvReader<File>>,
     n_threads: usize,
-    sources: ScanSource,
+    sources: ScanSources,
     options: Option<CsvReadOptions>,
     file_options: FileScanOptions,
     verbose: bool,
@@ -141,7 +141,7 @@ impl CsvSource {
     }
 
     pub(crate) fn new(
-        sources: ScanSource,
+        sources: ScanSources,
         schema: SchemaRef,
         options: CsvReadOptions,
         file_options: FileScanOptions,

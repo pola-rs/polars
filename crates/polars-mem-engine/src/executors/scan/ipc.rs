@@ -1,6 +1,7 @@
 use hive::HivePartitions;
 use polars_core::config;
 use polars_core::utils::accumulate_dataframes_vertical;
+use polars_error::feature_gated;
 use polars_io::cloud::CloudOptions;
 use polars_io::path_utils::is_cloud_url;
 use polars_io::predicates::apply_predicate;
@@ -9,7 +10,7 @@ use rayon::prelude::*;
 use super::*;
 
 pub struct IpcExec {
-    pub(crate) sources: ScanSource,
+    pub(crate) sources: ScanSources,
     pub(crate) file_info: FileInfo,
     pub(crate) predicate: Option<Arc<dyn PhysicalExpr>>,
     pub(crate) options: IpcScanOptions,
@@ -20,24 +21,20 @@ pub struct IpcExec {
 
 impl IpcExec {
     fn read(&mut self) -> PolarsResult<DataFrame> {
-        let paths = self.sources.as_paths();
-        let is_cloud = paths.iter().any(is_cloud_url);
+        let is_cloud = match &self.sources {
+            ScanSources::Files(paths) => paths.iter().any(is_cloud_url),
+            ScanSources::Buffers(_) => false,
+        };
         let force_async = config::force_async();
 
         let mut out = if is_cloud || force_async {
-            #[cfg(not(feature = "cloud"))]
-            {
-                panic!("activate cloud feature")
-            }
-
-            #[cfg(feature = "cloud")]
-            {
+            feature_gated!("cloud", {
                 if force_async && config::verbose() {
                     eprintln!("ASYNC READING FORCED");
                 }
 
                 polars_io::pl_async::get_runtime().block_on_potential_spawn(self.read_async())?
-            }
+            })
         } else {
             self.read_sync()?
         };
@@ -49,11 +46,10 @@ impl IpcExec {
         Ok(out)
     }
 
-    fn read_impl<F: Fn(usize) -> PolarsResult<std::fs::File> + Send + Sync>(
+    fn read_impl(
         &mut self,
-        path_idx_to_file: F,
+        idx_to_cached_file: impl Fn(usize) -> Option<PolarsResult<std::fs::File>> + Send + Sync,
     ) -> PolarsResult<DataFrame> {
-        let paths = self.sources.as_paths();
         if config::verbose() {
             eprintln!("executing ipc read sync with row_index = {:?}, n_rows = {:?}, predicate = {:?} for paths {:?}",
                 self.file_options.row_index.as_ref(),
@@ -62,7 +58,7 @@ impl IpcExec {
                     x.1
                 }).as_ref(),
                 self.predicate.is_some(),
-                paths
+                self.sources,
             );
         }
 
@@ -73,33 +69,60 @@ impl IpcExec {
             self.file_options.row_index.is_some(),
         );
 
-        let read_path = |path_index: usize, n_rows: Option<usize>| {
-            IpcReader::new(path_idx_to_file(path_index)?)
-                .with_n_rows(n_rows)
-                .with_row_index(self.file_options.row_index.clone())
-                .with_projection(projection.clone())
-                .with_hive_partition_columns(
-                    self.hive_parts
-                        .as_ref()
-                        .map(|x| x[path_index].materialize_partition_columns()),
-                )
-                .with_include_file_path(self.file_options.include_file_paths.as_ref().map(|x| {
-                    (
-                        x.clone(),
-                        Arc::from(paths[path_index].to_str().unwrap().to_string()),
+        let read_path = |index: usize, n_rows: Option<usize>| {
+            let source = self.sources.at(index);
+
+            match source {
+                ScanSourceRef::File(path) => {
+                    let file = match idx_to_cached_file(index) {
+                        None => std::fs::File::open(path)?,
+                        Some(f) => f?,
+                    };
+
+                    IpcReader::new(file)
+                        .with_n_rows(n_rows)
+                        .with_row_index(self.file_options.row_index.clone())
+                        .with_projection(projection.clone())
+                        .with_hive_partition_columns(
+                            self.hive_parts
+                                .as_ref()
+                                .map(|x| x[index].materialize_partition_columns()),
+                        )
+                        .with_include_file_path(
+                            self.file_options
+                                .include_file_paths
+                                .as_ref()
+                                .map(|x| (x.clone(), Arc::from(source.to_file_path()))),
+                        )
+                        .memory_mapped(self.options.memory_map.then(|| path.to_path_buf()))
+                        .finish()
+                },
+                ScanSourceRef::Buffer(buff) => IpcReader::new(std::io::Cursor::new(buff))
+                    .with_n_rows(n_rows)
+                    .with_row_index(self.file_options.row_index.clone())
+                    .with_projection(projection.clone())
+                    .with_hive_partition_columns(
+                        self.hive_parts
+                            .as_ref()
+                            .map(|x| x[index].materialize_partition_columns()),
                     )
-                }))
-                .memory_mapped(self.options.memory_map.then(|| paths[path_index].clone()))
-                .finish()
+                    .with_include_file_path(
+                        self.file_options
+                            .include_file_paths
+                            .as_ref()
+                            .map(|x| (x.clone(), Arc::from(source.to_file_path()))),
+                    )
+                    .finish(),
+            }
         };
 
         let mut dfs = if let Some(mut n_rows) = self.file_options.slice.map(|x| {
             assert_eq!(x.0, 0);
             x.1
         }) {
-            let mut out = Vec::with_capacity(paths.len());
+            let mut out = Vec::with_capacity(self.sources.len());
 
-            for i in 0..paths.len() {
+            for i in 0..self.sources.len() {
                 let df = read_path(i, Some(n_rows))?;
                 let df_height = df.height();
                 out.push(df);
@@ -117,7 +140,7 @@ impl IpcExec {
             out
         } else {
             POOL.install(|| {
-                (0..paths.len())
+                (0..self.sources.len())
                     .into_par_iter()
                     .map(|i| read_path(i, None))
                     .collect::<PolarsResult<Vec<_>>>()
@@ -153,9 +176,7 @@ impl IpcExec {
     }
 
     fn read_sync(&mut self) -> PolarsResult<DataFrame> {
-        let paths = self.sources.into_paths();
-        let paths = paths.clone();
-        self.read_impl(move |i| std::fs::File::open(&paths[i]).map_err(Into::into))
+        self.read_impl(|_| None)
     }
 
     #[cfg(feature = "cloud")]
@@ -176,17 +197,15 @@ impl IpcExec {
                 self.cloud_options.as_ref(),
             )?;
 
-            self.read_impl(move |i| cache_entries[i].try_open_check_latest())
+            self.read_impl(|i| Some(cache_entries[i].try_open_check_latest()))
         })
     }
 }
 
 impl Executor for IpcExec {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
-        let paths = self.sources.as_paths();
-
         let profile_name = if state.has_node_timer() {
-            let mut ids = vec![PlSmallStr::from_str(paths[0].to_string_lossy().as_ref())];
+            let mut ids = vec![self.sources.id()];
             if self.predicate.is_some() {
                 ids.push("predicate".into())
             }

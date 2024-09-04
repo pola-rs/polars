@@ -1,10 +1,11 @@
 use polars_core::config;
 use polars_core::utils::accumulate_dataframes_vertical;
+use polars_error::feature_gated;
 
 use super::*;
 
 pub struct JsonExec {
-    sources: ScanSource,
+    sources: ScanSources,
     options: NDJsonReadOptions,
     file_scan_options: FileScanOptions,
     file_info: FileInfo,
@@ -13,7 +14,7 @@ pub struct JsonExec {
 
 impl JsonExec {
     pub fn new(
-        sources: ScanSource,
+        sources: ScanSources,
         options: NDJsonReadOptions,
         file_scan_options: FileScanOptions,
         file_info: FileInfo,
@@ -36,11 +37,10 @@ impl JsonExec {
             .unwrap()
             .as_ref()
             .unwrap_right();
-        let paths = self.sources.as_paths();
 
         let verbose = config::verbose();
         let force_async = config::force_async();
-        let run_async = force_async || is_cloud_url(paths.first().unwrap());
+        let run_async = force_async || self.sources.is_cloud_url();
 
         if force_async && verbose {
             eprintln!("ASYNC READING FORCED");
@@ -65,59 +65,80 @@ impl JsonExec {
             return Ok(df);
         }
 
-        let dfs = paths
+        let dfs = self
+            .sources
             .iter()
-            .map_while(|p| {
+            .map_while(|source| {
                 if n_rows == Some(0) {
                     return None;
                 }
 
-                let file = if run_async {
-                    #[cfg(feature = "cloud")]
-                    {
-                        match polars_io::file_cache::FILE_CACHE
-                            .get_entry(p.to_str().unwrap())
-                            // Safety: This was initialized by schema inference.
-                            .unwrap()
-                            .try_open_assume_latest()
-                        {
-                            Ok(v) => v,
-                            Err(e) => return Some(Err(e)),
-                        }
-                    }
-                    #[cfg(not(feature = "cloud"))]
-                    {
-                        panic!("required feature `cloud` is not enabled")
-                    }
-                } else {
-                    match polars_utils::open_file(p.as_ref()) {
-                        Ok(v) => v,
-                        Err(e) => return Some(Err(e)),
-                    }
-                };
-
-                let mmap = unsafe { memmap::Mmap::map(&file).unwrap() };
-                let owned = &mut vec![];
-                let curs =
-                    std::io::Cursor::new(match maybe_decompress_bytes(mmap.as_ref(), owned) {
-                        Ok(v) => v,
-                        Err(e) => return Some(Err(e)),
-                    });
-                let reader = JsonLineReader::new(curs);
-
                 let row_index = self.file_scan_options.row_index.as_mut();
 
-                let df = reader
-                    .with_schema(schema.clone())
-                    .with_rechunk(self.file_scan_options.rechunk)
-                    .with_chunk_size(Some(self.options.chunk_size))
-                    .with_row_index(row_index)
-                    .with_predicate(self.predicate.clone().map(phys_expr_to_io_expr))
-                    .with_projection(self.file_scan_options.with_columns.clone())
-                    .low_memory(self.options.low_memory)
-                    .with_n_rows(n_rows)
-                    .with_ignore_errors(self.options.ignore_errors)
-                    .finish();
+                let owned = &mut vec![];
+                let df = match source {
+                    ScanSourceRef::File(path) => {
+                        let file = if run_async {
+                            feature_gated!("cloud", {
+                                match polars_io::file_cache::FILE_CACHE
+                                    .get_entry(path.to_str().unwrap())
+                                    // Safety: This was initialized by schema inference.
+                                    .unwrap()
+                                    .try_open_assume_latest()
+                                {
+                                    Ok(v) => v,
+                                    Err(e) => return Some(Err(e)),
+                                }
+                            })
+                        } else {
+                            match polars_utils::open_file(path) {
+                                Ok(v) => v,
+                                Err(e) => return Some(Err(e)),
+                            }
+                        };
+
+                        let mmap = unsafe { memmap::Mmap::map(&file).unwrap() };
+                        let curs = std::io::Cursor::new(
+                            match maybe_decompress_bytes(mmap.as_ref(), owned) {
+                                Ok(v) => v,
+                                Err(e) => return Some(Err(e)),
+                            },
+                        );
+                        let reader = JsonLineReader::new(curs);
+
+                        reader
+                            .with_schema(schema.clone())
+                            .with_rechunk(self.file_scan_options.rechunk)
+                            .with_chunk_size(Some(self.options.chunk_size))
+                            .with_row_index(row_index)
+                            .with_predicate(self.predicate.clone().map(phys_expr_to_io_expr))
+                            .with_projection(self.file_scan_options.with_columns.clone())
+                            .low_memory(self.options.low_memory)
+                            .with_n_rows(n_rows)
+                            .with_ignore_errors(self.options.ignore_errors)
+                            .finish()
+                    },
+                    ScanSourceRef::Buffer(buff) => {
+                        let curs =
+                            std::io::Cursor::new(match maybe_decompress_bytes(buff, owned) {
+                                Ok(v) => v,
+                                Err(e) => return Some(Err(e)),
+                            });
+                        let reader = JsonLineReader::new(curs);
+
+                        reader
+                            .with_schema(schema.clone())
+                            .with_rechunk(self.file_scan_options.rechunk)
+                            .with_chunk_size(Some(self.options.chunk_size))
+                            .with_row_index(row_index)
+                            .with_predicate(self.predicate.clone().map(phys_expr_to_io_expr))
+                            .with_projection(self.file_scan_options.with_columns.clone())
+                            .low_memory(self.options.low_memory)
+                            .with_n_rows(n_rows)
+                            .with_ignore_errors(self.options.ignore_errors)
+                            .finish()
+                    },
+                };
 
                 let mut df = match df {
                     Ok(df) => df,
@@ -129,10 +150,10 @@ impl JsonExec {
                 }
 
                 if let Some(col) = &self.file_scan_options.include_file_paths {
-                    let path = p.to_str().unwrap();
+                    let name = source.to_file_path();
                     unsafe {
                         df.with_column_unchecked(
-                            StringChunked::full(col.clone(), path, df.height()).into_series(),
+                            StringChunked::full(col.clone(), name, df.height()).into_series(),
                         )
                     };
                 }
@@ -147,9 +168,8 @@ impl JsonExec {
 
 impl Executor for JsonExec {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
-        let paths = self.sources.as_paths();
         let profile_name = if state.has_node_timer() {
-            let ids = vec![paths[0].to_string_lossy().clone()];
+            let ids = vec![self.sources.id()];
             let name = comma_delimited("ndjson".to_string(), &ids);
             Cow::Owned(name)
         } else {

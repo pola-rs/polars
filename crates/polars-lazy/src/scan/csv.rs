@@ -15,7 +15,7 @@ use crate::prelude::*;
 #[derive(Clone)]
 #[cfg(feature = "csv")]
 pub struct LazyCsvReader {
-    source: ScanSource,
+    sources: ScanSources,
     glob: bool,
     cache: bool,
     read_options: CsvReadOptions,
@@ -35,13 +35,13 @@ impl LazyCsvReader {
         Self::new("").with_paths(paths)
     }
 
-    pub fn new_sourced(source: ScanSource) -> Self {
-        Self::new("").with_source(source)
+    pub fn new_sourced(sources: ScanSources) -> Self {
+        Self::new("").with_sources(sources)
     }
 
     pub fn new(path: impl AsRef<Path>) -> Self {
         LazyCsvReader {
-            source: ScanSource::Files([path.as_ref().to_path_buf()].into()),
+            sources: ScanSources::Files([path.as_ref().to_path_buf()].into()),
             glob: true,
             cache: true,
             read_options: Default::default(),
@@ -253,8 +253,8 @@ impl LazyCsvReader {
             )
         };
 
-        let schema = match self.source.clone() {
-            ScanSource::Files(paths) => {
+        let schema = match self.sources.clone() {
+            ScanSources::Files(paths) => {
                 // TODO: Path expansion should happen when converting to the IR
                 // https://github.com/pola-rs/polars/issues/17634
                 let paths = expand_paths(&paths[..], self.glob(), self.cloud_options())?;
@@ -266,9 +266,16 @@ impl LazyCsvReader {
                 let mut file = polars_utils::open_file(path)?;
                 infer_schema(get_reader_bytes(&mut file).expect("could not mmap file"))?
             },
-            ScanSource::Buffer(buffer) => infer_schema(
-                get_reader_bytes(&mut std::io::Cursor::new(buffer)).expect("could not mmap file"),
-            )?,
+            ScanSources::Buffers(buffers) => {
+                let Some(buffer) = buffers.first() else {
+                    polars_bail!(ComputeError: "no buffers specified for this reader");
+                };
+
+                infer_schema(
+                    get_reader_bytes(&mut std::io::Cursor::new(buffer))
+                        .expect("could not mmap file"),
+                )?
+            },
         };
 
         self.read_options.n_threads = n_threads;
@@ -294,7 +301,7 @@ impl LazyFileListReader for LazyCsvReader {
     /// Get the final [LazyFrame].
     fn finish(self) -> PolarsResult<LazyFrame> {
         let mut lf: LazyFrame = DslBuilder::scan_csv(
-            self.source.to_dsl(false),
+            self.sources.to_dsl(false),
             self.read_options,
             self.cache,
             self.cloud_options,
@@ -315,12 +322,12 @@ impl LazyFileListReader for LazyCsvReader {
         self.glob
     }
 
-    fn source(&self) -> &ScanSource {
-        &self.source
+    fn sources(&self) -> &ScanSources {
+        &self.sources
     }
 
-    fn with_source(mut self, source: ScanSource) -> Self {
-        self.source = source;
+    fn with_sources(mut self, sources: ScanSources) -> Self {
+        self.sources = sources;
         self
     }
 

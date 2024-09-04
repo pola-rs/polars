@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use super::*;
 
 pub(super) struct CountStar;
@@ -47,7 +49,7 @@ struct CountStarExpr {
     // Top node of the projection to replace
     node: Node,
     // Paths to the input files
-    sources: Arc<[ScanSource]>,
+    sources: ScanSources,
     // File Type
     scan_type: FileScan,
     // Column Alias
@@ -64,12 +66,37 @@ fn visit_logical_plan_for_scan_paths(
 ) -> Option<CountStarExpr> {
     match lp_arena.get(node) {
         IR::Union { inputs, .. } => {
+            enum MutableSources {
+                Files(Vec<PathBuf>),
+                Buffers(Vec<Arc<[u8]>>),
+            }
+
             let mut scan_type: Option<FileScan> = None;
-            let mut sources = Vec::with_capacity(inputs.len());
+            let mut sources = None;
             for input in inputs {
                 match visit_logical_plan_for_scan_paths(*input, lp_arena, expr_arena, true) {
                     Some(expr) => {
-                        sources.extend(expr.sources.iter().cloned());
+                        match expr.sources {
+                            ScanSources::Files(paths) => match sources {
+                                Some(MutableSources::Files(ref mut files)) => {
+                                    files.extend_from_slice(&paths[..])
+                                },
+                                Some(MutableSources::Buffers(_)) => {
+                                    todo!("Mixing in memory buffers and paths in count star opt")
+                                },
+                                None => sources = Some(MutableSources::Files(paths.to_vec())),
+                            },
+                            ScanSources::Buffers(bs) => match sources {
+                                Some(MutableSources::Files(_)) => {
+                                    todo!("Mixing in memory buffers and paths in count star opt")
+                                },
+                                Some(MutableSources::Buffers(ref mut buffers)) => {
+                                    buffers.extend_from_slice(&bs[..])
+                                },
+                                None => sources = Some(MutableSources::Buffers(bs.to_vec())),
+                            },
+                        }
+
                         match &scan_type {
                             None => scan_type = Some(expr.scan_type),
                             Some(scan_type) => {
@@ -86,7 +113,11 @@ fn visit_logical_plan_for_scan_paths(
                 }
             }
             Some(CountStarExpr {
-                sources: sources.into(),
+                sources: match sources {
+                    Some(MutableSources::Files(files)) => ScanSources::Files(files.into()),
+                    Some(MutableSources::Buffers(buffers)) => ScanSources::Buffers(buffers.into()),
+                    None => ScanSources::default(),
+                },
                 scan_type: scan_type.unwrap(),
                 node,
                 alias: None,
@@ -95,7 +126,7 @@ fn visit_logical_plan_for_scan_paths(
         IR::Scan {
             scan_type, sources, ..
         } if !matches!(scan_type, FileScan::Anonymous { .. }) => Some(CountStarExpr {
-            sources: [sources.clone()].into(),
+            sources: sources.clone(),
             scan_type: scan_type.clone(),
             node,
             alias: None,

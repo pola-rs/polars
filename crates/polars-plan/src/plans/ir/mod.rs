@@ -7,7 +7,6 @@ pub(crate) mod tree_format;
 use std::borrow::Cow;
 use std::fmt;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 
 pub use dot::{EscapeLabel, IRDotDisplay, PathsDisplay};
 pub use format::{ExprIRDisplay, IRDisplay};
@@ -15,7 +14,7 @@ use hive::HivePartitions;
 use polars_core::prelude::*;
 use polars_core::POOL;
 use polars_utils::idx_vec::UnitVec;
-use polars_utils::{format_pl_smallstr, unitvec};
+use polars_utils::unitvec;
 #[cfg(feature = "ir_serde")]
 use serde::{Deserialize, Serialize};
 
@@ -35,18 +34,17 @@ pub struct IRPlanRef<'a> {
     pub expr_arena: &'a Arena<AExpr>,
 }
 
-#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub enum ScanSource {
+pub enum ScanSources {
     Files(Arc<[PathBuf]>),
-    #[cfg_attr(feature = "ir_serde", serde(skip))]
-    Buffer(Arc<[u8]>),
+    Buffers(Arc<[Arc<[u8]>]>),
 }
 
-impl Default for ScanSource {
-    fn default() -> Self {
-        Self::Files(Arc::default())
-    }
+#[derive(Debug, Clone, Copy)]
+pub enum ScanSourceRef<'a> {
+    File(&'a Path),
+    Buffer(&'a [u8]),
 }
 
 pub struct ScanSourceSliceInfo {
@@ -54,62 +52,88 @@ pub struct ScanSourceSliceInfo {
     pub source_slice: std::ops::Range<usize>,
 }
 
-impl ScanSource {
+impl Default for ScanSources {
+    fn default() -> Self {
+        Self::Buffers(Arc::default())
+    }
+}
+
+impl<'a> ScanSourceRef<'a> {
+    pub fn to_file_path(&self) -> &str {
+        match self {
+            ScanSourceRef::File(path) => path.to_str().unwrap(),
+            ScanSourceRef::Buffer(_) => "in-mem",
+        }
+    }
+}
+
+impl ScanSources {
+    pub fn iter(&self) -> ScanSourceIter {
+        ScanSourceIter {
+            sources: self,
+            offset: 0,
+        }
+    }
     pub fn as_paths(&self) -> &[PathBuf] {
         match self {
-            ScanSource::Files(paths) => paths,
-            ScanSource::Buffer(_) => unimplemented!(),
+            Self::Files(paths) => &paths,
+            Self::Buffers(_) => unimplemented!(),
         }
     }
 
-    pub fn try_into_paths(&self) -> PolarsResult<Arc<[PathBuf]>> {
+    pub fn try_into_paths(&self) -> Option<Arc<[PathBuf]>> {
         match self {
-            ScanSource::Files(paths) => Ok(paths.clone()),
-            ScanSource::Buffer(_) => Err(polars_err!(
-                nyi = "Unable to convert BytesIO scan into path"
-            )),
+            Self::Files(paths) => Some(paths.clone()),
+            Self::Buffers(_) => None,
         }
     }
 
     pub fn into_paths(&self) -> Arc<[PathBuf]> {
         match self {
-            ScanSource::Files(paths) => paths.clone(),
-            ScanSource::Buffer(_) => unimplemented!(),
+            Self::Files(paths) => paths.clone(),
+            Self::Buffers(_) => unimplemented!(),
         }
     }
 
-    pub fn to_dsl(self, is_expanded: bool) -> DslScanSource {
-        match self {
-            ScanSource::Files(paths) => {
-                DslScanSource::File(Arc::new(Mutex::new(ScanFileSource { paths, is_expanded })))
-            },
-            ScanSource::Buffer(buffer) => DslScanSource::Buffer(buffer),
+    pub fn to_dsl(self, is_expanded: bool) -> DslScanSources {
+        DslScanSources {
+            sources: self,
+            is_expanded,
         }
     }
 
-    pub fn num_sources(&self) -> usize {
+    pub fn is_cloud_url(&self) -> bool {
         match self {
-            ScanSource::Files(paths) => paths.len(),
-            ScanSource::Buffer(_) => 1,
+            Self::Files(paths) => paths.first().map_or(false, |p| polars_io::is_cloud_url(p)),
+            Self::Buffers(_) => false,
         }
     }
 
-    pub fn is_cloud_url(&self) -> PolarsResult<bool> {
+    pub fn len(&self) -> usize {
         match self {
-            ScanSource::Files(paths) => {
-                Ok(polars_io::is_cloud_url(paths.first().ok_or_else(
-                    || polars_err!(ComputeError: "expected at least 1 path"),
-                )?))
-            },
-            ScanSource::Buffer(_) => Ok(false),
+            Self::Files(s) => s.len(),
+            Self::Buffers(s) => s.len(),
         }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    pub fn first(&self) -> Option<ScanSourceRef> {
+        self.get(0)
     }
 
     pub fn id(&self) -> PlSmallStr {
+        if self.is_empty() {
+            return PlSmallStr::from_static("EMPTY");
+        }
+
         match self {
-            ScanSource::Files(paths) if paths.is_empty() => PlSmallStr::from_static("EMPTY"),
-            ScanSource::Files(paths) => PlSmallStr::from_str(paths[0].to_string_lossy().as_ref()),
-            ScanSource::Buffer(_) => PlSmallStr::from_static("IN_MEMORY"),
+            Self::Files(paths) => {
+                PlSmallStr::from_str(paths.first().unwrap().to_string_lossy().as_ref())
+            },
+            Self::Buffers(_) => PlSmallStr::from_static("IN_MEMORY"),
         }
     }
 
@@ -118,8 +142,7 @@ impl ScanSource {
     pub fn collect_slice_information(
         &self,
         slice: (i64, usize),
-        path_to_num_rows: impl Fn(&Path) -> PolarsResult<usize> + Send + Sync,
-        buffer_to_num_rows: impl Fn(&[u8]) -> PolarsResult<usize> + Send + Sync,
+        map_to_num_rows: impl Fn(ScanSourceRef) -> PolarsResult<usize> + Send + Sync,
     ) -> PolarsResult<ScanSourceSliceInfo> {
         fn slice_to_start_end(
             offset: i64,
@@ -148,79 +171,113 @@ impl ScanSource {
 
         let (offset, length) = slice;
 
-        Ok(match self {
-            ScanSource::Files(paths) if paths.len() == 1 => {
-                let num_rows = path_to_num_rows(&paths[0])?;
-                ScanSourceSliceInfo {
-                    item_slice: slice_to_start_end(offset, length, num_rows),
-                    source_slice: 0..1,
-                }
-            },
-            ScanSource::Files(paths) => {
-                use rayon::prelude::*;
+        if self.is_empty() {
+            return Ok(ScanSourceSliceInfo {
+                item_slice: 0..0,
+                source_slice: 0..0,
+            });
+        }
 
-                assert_ne!(paths.len(), 0);
+        if self.len() == 1 {
+            let num_rows = map_to_num_rows(self.get(0).unwrap())?;
+            let item_slice = slice_to_start_end(offset, length, num_rows);
+            let source_slice = if item_slice.is_empty() { 0..0 } else { 0..1 };
 
-                // Walk the files in reverse until we find the first file, and then translate the
-                // slice into a positive-offset equivalent.
-                const CHUNK_SIZE: usize = 8;
-                let mut row_counts = Vec::with_capacity(paths.len());
+            Ok(ScanSourceSliceInfo {
+                item_slice,
+                source_slice,
+            })
+        } else {
+            use rayon::prelude::*;
 
-                POOL.install(|| {
-                    for idx_end in (0..paths.len()).step_by(CHUNK_SIZE) {
-                        let idx_start = idx_end.saturating_sub(CHUNK_SIZE);
+            // Walk the files in reverse until we find the first file, and then translate the
+            // slice into a positive-offset equivalent.
+            const CHUNK_SIZE: usize = 8;
+            let mut row_counts = Vec::with_capacity(self.len());
 
-                        row_counts.extend(
-                            (idx_start..=idx_end)
-                                .into_par_iter()
-                                .map(|i| path_to_num_rows(&paths[i]))
-                                .collect::<PolarsResult<Vec<_>>>()?
-                                .into_iter()
-                                .rev(),
-                        );
-                    }
+            POOL.install(|| {
+                for idx_end in (0..self.len()).step_by(CHUNK_SIZE) {
+                    let idx_start = idx_end.saturating_sub(CHUNK_SIZE);
 
-                    PolarsResult::Ok(())
-                })?;
-
-                let num_rows = row_counts.iter().sum::<usize>();
-
-                let item_slice = slice_to_start_end(offset, length, num_rows);
-
-                let mut source_start = paths.len() - 1;
-                let mut source_end = 0;
-
-                let mut sum = 0;
-                for (i, row_count) in row_counts.iter().rev().enumerate() {
-                    if sum < item_slice.end {
-                        source_end = usize::max(source_end, i);
-                    }
-
-                    sum += row_count;
-
-                    if sum >= item_slice.start {
-                        source_start = usize::min(source_start, i);
-                    }
+                    row_counts.extend(
+                        (idx_start..=idx_end)
+                            .into_par_iter()
+                            .map(|i| map_to_num_rows(self.at(i)))
+                            .collect::<PolarsResult<Vec<_>>>()?
+                            .into_iter()
+                            .rev(),
+                    );
                 }
 
-                let source_slice = source_start..source_end + 1;
+                PolarsResult::Ok(())
+            })?;
 
-                ScanSourceSliceInfo {
-                    item_slice,
-                    source_slice,
-                }
-            },
-            ScanSource::Buffer(buffer) => {
-                let num_rows = buffer_to_num_rows(buffer)?;
+            let num_rows = row_counts.iter().sum::<usize>();
 
-                ScanSourceSliceInfo {
-                    item_slice: slice_to_start_end(offset, length, num_rows),
-                    source_slice: 0..1,
+            let item_slice = slice_to_start_end(offset, length, num_rows);
+
+            let mut source_start = self.len() - 1;
+            let mut source_end = 0;
+
+            let mut sum = 0;
+            for (i, row_count) in row_counts.iter().rev().enumerate() {
+                if sum < item_slice.end {
+                    source_end = usize::max(source_end, i);
                 }
-            },
-        })
+
+                sum += row_count;
+
+                if sum >= item_slice.start {
+                    source_start = usize::min(source_start, i);
+                }
+            }
+
+            let source_slice = source_start..source_end + 1;
+
+            Ok(ScanSourceSliceInfo {
+                item_slice,
+                source_slice,
+            })
+        }
+    }
+
+    pub fn get(&self, idx: usize) -> Option<ScanSourceRef> {
+        match self {
+            ScanSources::Files(paths) => paths.get(idx).map(|p| ScanSourceRef::File(p)),
+            ScanSources::Buffers(buffers) => buffers.get(idx).map(|b| ScanSourceRef::Buffer(b)),
+        }
+    }
+
+    pub fn at(&self, idx: usize) -> ScanSourceRef {
+        self.get(idx).unwrap()
     }
 }
+
+pub struct ScanSourceIter<'a> {
+    sources: &'a ScanSources,
+    offset: usize,
+}
+
+impl<'a> Iterator for ScanSourceIter<'a> {
+    type Item = ScanSourceRef<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let item = match self.sources {
+            ScanSources::Files(paths) => ScanSourceRef::File(paths.get(self.offset)?),
+            ScanSources::Buffers(buffers) => ScanSourceRef::Buffer(buffers.get(self.offset)?),
+        };
+
+        self.offset += 1;
+        Some(item)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = self.sources.len() - self.offset;
+        (len, Some(len))
+    }
+}
+
+impl<'a> ExactSizeIterator for ScanSourceIter<'a> {}
 
 /// [`IR`] is a representation of [`DslPlan`] with [`Node`]s which are allocated in an [`Arena`]
 /// In this IR the logical plan has access to the full dataset.
@@ -241,7 +298,7 @@ pub enum IR {
         predicate: ExprIR,
     },
     Scan {
-        sources: ScanSource,
+        sources: ScanSources,
         file_info: FileInfo,
         hive_parts: Option<Arc<Vec<HivePartitions>>>,
         predicate: Option<ExprIR>,

@@ -19,8 +19,8 @@ pub trait LazyFileListReader: Clone {
             return self.finish_no_glob();
         }
 
-        let ScanSource::Files(paths) = self.source() else {
-            unreachable!("Should never be globbed");
+        let ScanSources::Files(paths) = self.sources() else {
+            unreachable!("in-memory buffers should never be globbed");
         };
 
         let lfs = paths
@@ -83,16 +83,16 @@ pub trait LazyFileListReader: Clone {
         true
     }
 
-    fn source(&self) -> &ScanSource;
+    fn sources(&self) -> &ScanSources;
 
     /// Set paths of the scanned files.
     #[must_use]
-    fn with_source(self, source: ScanSource) -> Self;
+    fn with_sources(self, source: ScanSources) -> Self;
 
     /// Set paths of the scanned files.
     #[must_use]
     fn with_paths(self, paths: Arc<[PathBuf]>) -> Self {
-        self.with_source(ScanSource::Files(paths))
+        self.with_sources(ScanSources::Files(paths))
     }
 
     /// Configure the row limit.

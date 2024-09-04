@@ -1,11 +1,11 @@
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 
 use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
-use polars_io::RowIndex;
-use polars_plan::plans::{DslPlan, FileScan, ScanSource};
+use polars_io::{HiveOptions, RowIndex};
+use polars_plan::plans::{DslPlan, FileScan, ScanSources};
 use polars_plan::prelude::{FileScanOptions, NDJsonReadOptions};
 
 use crate::prelude::LazyFrame;
@@ -13,7 +13,7 @@ use crate::scan::file_list_reader::LazyFileListReader;
 
 #[derive(Clone)]
 pub struct LazyJsonLineReader {
-    pub(crate) source: ScanSource,
+    pub(crate) sources: ScanSources,
     pub(crate) batch_size: Option<NonZeroUsize>,
     pub(crate) low_memory: bool,
     pub(crate) rechunk: bool,
@@ -29,12 +29,12 @@ pub struct LazyJsonLineReader {
 
 impl LazyJsonLineReader {
     pub fn new_paths(paths: Arc<[PathBuf]>) -> Self {
-        Self::new(PathBuf::new()).with_paths(paths)
+        Self::new_sourced(ScanSources::Files(paths))
     }
 
-    pub fn new(path: impl AsRef<Path>) -> Self {
+    pub fn new_sourced(sources: ScanSources) -> Self {
         LazyJsonLineReader {
-            source: ScanSource::Files([path.as_ref().to_path_buf()].into()),
+            sources,
             batch_size: None,
             low_memory: false,
             rechunk: false,
@@ -47,6 +47,10 @@ impl LazyJsonLineReader {
             include_file_paths: None,
             cloud_options: None,
         }
+    }
+
+    pub fn new(path: impl AsRef<Path>) -> Self {
+        Self::new_sourced(ScanSources::Files([path.as_ref().to_path_buf()].into()))
     }
     /// Add a row index column.
     #[must_use]
@@ -124,7 +128,11 @@ impl LazyFileListReader for LazyJsonLineReader {
             row_index: self.row_index,
             rechunk: self.rechunk,
             file_counter: 0,
-            hive_options: Default::default(),
+            hive_options: {
+                let mut options = HiveOptions::default();
+                options.enabled = Some(false);
+                options
+            },
             glob: true,
             include_file_paths: self.include_file_paths,
         };
@@ -145,7 +153,7 @@ impl LazyFileListReader for LazyJsonLineReader {
         };
 
         Ok(LazyFrame::from(DslPlan::Scan {
-            sources: self.source.to_dsl(false),
+            sources: Arc::new(Mutex::new(self.sources.to_dsl(false))),
             file_info: Arc::new(RwLock::new(None)),
             hive_parts: None,
             predicate: None,
@@ -158,12 +166,12 @@ impl LazyFileListReader for LazyJsonLineReader {
         unreachable!();
     }
 
-    fn source(&self) -> &ScanSource {
-        &self.source
+    fn sources(&self) -> &ScanSources {
+        &self.sources
     }
 
-    fn with_source(mut self, source: ScanSource) -> Self {
-        self.source = source;
+    fn with_sources(mut self, sources: ScanSources) -> Self {
+        self.sources = sources;
         self
     }
 

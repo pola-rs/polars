@@ -1,5 +1,12 @@
 #[cfg(feature = "ipc")]
 use arrow::io::ipc::read::get_row_count as count_rows_ipc_sync;
+#[cfg(any(
+    feature = "parquet",
+    feature = "ipc",
+    feature = "json",
+    feature = "csv"
+))]
+use polars_core::error::feature_gated;
 #[cfg(any(feature = "parquet", feature = "json"))]
 use polars_io::cloud::CloudOptions;
 #[cfg(feature = "csv")]
@@ -18,7 +25,7 @@ use polars_io::SerReader;
 use super::*;
 
 #[allow(unused_variables)]
-pub fn count_rows(sources: &Arc<[ScanSource]>, scan_type: &FileScan) -> PolarsResult<DataFrame> {
+pub fn count_rows(sources: &ScanSources, scan_type: &FileScan) -> PolarsResult<DataFrame> {
     #[cfg(not(any(
         feature = "parquet",
         feature = "ipc",
@@ -79,7 +86,7 @@ pub fn count_rows(sources: &Arc<[ScanSource]>, scan_type: &FileScan) -> PolarsRe
 
 #[cfg(feature = "csv")]
 fn count_all_rows_csv(
-    sources: &Arc<[ScanSource]>,
+    sources: &ScanSources,
     options: &polars_io::prelude::CsvReadOptions,
 ) -> PolarsResult<usize> {
     let parse_options = options.get_parse_options();
@@ -87,20 +94,15 @@ fn count_all_rows_csv(
     sources
         .iter()
         .map(|source| match source {
-            ScanSource::Files(paths) => paths
-                .iter()
-                .map(|path| {
-                    count_rows_csv(
-                        path,
-                        parse_options.separator,
-                        parse_options.quote_char,
-                        parse_options.comment_prefix.as_ref(),
-                        parse_options.eol_char,
-                        options.has_header,
-                    )
-                })
-                .sum::<PolarsResult<usize>>(),
-            ScanSource::Buffer(buf) => count_rows_csv_from_slice(
+            ScanSourceRef::File(path) => count_rows_csv(
+                path,
+                parse_options.separator,
+                parse_options.quote_char,
+                parse_options.comment_prefix.as_ref(),
+                parse_options.eol_char,
+                options.has_header,
+            ),
+            ScanSourceRef::Buffer(buf) => count_rows_csv_from_slice(
                 &buf[..],
                 parse_options.separator,
                 parse_options.quote_char,
@@ -114,31 +116,26 @@ fn count_all_rows_csv(
 
 #[cfg(feature = "parquet")]
 pub(super) fn count_rows_parquet(
-    sources: &Arc<[ScanSource]>,
+    sources: &ScanSources,
     #[allow(unused)] cloud_options: Option<&CloudOptions>,
 ) -> PolarsResult<usize> {
     if sources.is_empty() {
         return Ok(0);
     };
-    let is_cloud = sources.first().unwrap().is_cloud_url()?;
+    let is_cloud = sources.is_cloud_url();
 
     if is_cloud {
-        #[cfg(not(feature = "cloud"))]
-        panic!("One or more of the cloud storage features ('aws', 'gcp', ...) must be enabled.");
-
-        #[cfg(feature = "cloud")]
-        {
-            get_runtime().block_on(count_rows_cloud_parquet(sources, cloud_options))
-        }
+        feature_gated!("cloud", {
+            get_runtime().block_on(count_rows_cloud_parquet(sources.as_paths(), cloud_options))
+        })
     } else {
         sources
             .iter()
             .map(|source| match source {
-                ScanSource::Files(paths) => paths
-                    .iter()
-                    .map(|path| ParquetReader::new(polars_utils::open_file(path)?).num_rows())
-                    .sum::<PolarsResult<usize>>(),
-                ScanSource::Buffer(buffer) => {
+                ScanSourceRef::File(path) => {
+                    ParquetReader::new(polars_utils::open_file(path)?).num_rows()
+                },
+                ScanSourceRef::Buffer(buffer) => {
                     ParquetReader::new(std::io::Cursor::new(buffer)).num_rows()
                 },
             })
@@ -148,17 +145,14 @@ pub(super) fn count_rows_parquet(
 
 #[cfg(all(feature = "parquet", feature = "async"))]
 async fn count_rows_cloud_parquet(
-    sources: &Arc<[ScanSource]>,
+    paths: &[std::path::PathBuf],
     cloud_options: Option<&CloudOptions>,
 ) -> PolarsResult<usize> {
-    let collection = sources.iter().flat_map(|source| {
-        source.as_paths().iter().map(|path| {
-            with_concurrency_budget(1, || async {
-                let mut reader =
-                    ParquetAsyncReader::from_uri(&path.to_string_lossy(), cloud_options, None)
-                        .await?;
-                reader.num_rows().await
-            })
+    let collection = paths.iter().map(|path| {
+        with_concurrency_budget(1, || async {
+            let mut reader =
+                ParquetAsyncReader::from_uri(&path.to_string_lossy(), cloud_options, None).await?;
+            reader.num_rows().await
         })
     });
     futures::future::try_join_all(collection)
@@ -168,34 +162,31 @@ async fn count_rows_cloud_parquet(
 
 #[cfg(feature = "ipc")]
 pub(super) fn count_rows_ipc(
-    sources: &Arc<[ScanSource]>,
+    sources: &ScanSources,
     #[cfg(feature = "cloud")] cloud_options: Option<&CloudOptions>,
     metadata: Option<&arrow::io::ipc::read::FileMetadata>,
 ) -> PolarsResult<usize> {
     if sources.is_empty() {
         return Ok(0);
     };
-    let is_cloud = sources.first().unwrap().is_cloud_url()?;
+    let is_cloud = sources.is_cloud_url();
 
     if is_cloud {
-        #[cfg(not(feature = "cloud"))]
-        panic!("One or more of the cloud storage features ('aws', 'gcp', ...) must be enabled.");
-
-        #[cfg(feature = "cloud")]
-        {
-            get_runtime().block_on(count_rows_cloud_ipc(sources, cloud_options, metadata))
-        }
+        feature_gated!("cloud", {
+            get_runtime().block_on(count_rows_cloud_ipc(
+                sources.as_paths(),
+                cloud_options,
+                metadata,
+            ))
+        })
     } else {
         sources
             .iter()
             .map(|source| match source {
-                ScanSource::Files(paths) => paths
-                    .iter()
-                    .map(|path| {
-                        count_rows_ipc_sync(&mut polars_utils::open_file(path)?).map(|v| v as usize)
-                    })
-                    .sum::<PolarsResult<usize>>(),
-                ScanSource::Buffer(buffer) => {
+                ScanSourceRef::File(path) => {
+                    count_rows_ipc_sync(&mut polars_utils::open_file(path)?).map(|v| v as usize)
+                },
+                ScanSourceRef::Buffer(buffer) => {
                     count_rows_ipc_sync(&mut std::io::Cursor::new(buffer)).map(|v| v as usize)
                 },
             })
@@ -205,19 +196,16 @@ pub(super) fn count_rows_ipc(
 
 #[cfg(all(feature = "ipc", feature = "async"))]
 async fn count_rows_cloud_ipc(
-    sources: &Arc<[ScanSource]>,
+    paths: &[std::path::PathBuf],
     cloud_options: Option<&CloudOptions>,
     metadata: Option<&arrow::io::ipc::read::FileMetadata>,
 ) -> PolarsResult<usize> {
     use polars_io::ipc::IpcReaderAsync;
 
-    let collection = sources.iter().flat_map(|source| {
-        source.as_paths().iter().map(|path| {
-            with_concurrency_budget(1, || async {
-                let reader =
-                    IpcReaderAsync::from_uri(&path.to_string_lossy(), cloud_options).await?;
-                reader.count_rows(metadata).await
-            })
+    let collection = paths.iter().map(|path| {
+        with_concurrency_budget(1, || async {
+            let reader = IpcReaderAsync::from_uri(&path.to_string_lossy(), cloud_options).await?;
+            reader.count_rows(metadata).await
         })
     });
     futures::future::try_join_all(collection)
@@ -227,23 +215,26 @@ async fn count_rows_cloud_ipc(
 
 #[cfg(feature = "json")]
 pub(super) fn count_rows_ndjson(
-    sources: &Arc<[ScanSource]>,
+    sources: &ScanSources,
     cloud_options: Option<&CloudOptions>,
 ) -> PolarsResult<usize> {
     use polars_core::config;
-    use polars_core::error::feature_gated;
     use polars_io::utils::maybe_decompress_bytes;
 
-    let run_async =
-        !sources.is_empty() && sources.first().unwrap().is_cloud_url()? || config::force_async();
+    if sources.is_empty() {
+        return Ok(0);
+    }
+
+    let is_cloud_url = sources.is_cloud_url();
+    let run_async = is_cloud_url || config::force_async();
 
     let cache_entries = {
         feature_gated!("cloud", {
             if run_async {
                 Some(polars_io::file_cache::init_entries_from_uri_list(
                     sources
+                        .as_paths()
                         .iter()
-                        .flat_map(|source| source.as_paths())
                         .map(|path| Arc::from(path.to_str().unwrap()))
                         .collect::<Vec<_>>()
                         .as_slice(),
@@ -258,29 +249,26 @@ pub(super) fn count_rows_ndjson(
     sources
         .iter()
         .map(|source| match source {
-            ScanSource::Files(paths) => paths
-                .iter()
-                .map(|path| {
-                    let f = if run_async {
-                        feature_gated!("cloud", {
-                            let entry: &Arc<polars_io::file_cache::FileCacheEntry> =
-                                &cache_entries.as_ref().unwrap()[0];
-                            entry.try_open_check_latest()?
-                        })
-                    } else {
-                        polars_utils::open_file(path)?
-                    };
+            ScanSourceRef::File(path) => {
+                let f = if run_async {
+                    feature_gated!("cloud", {
+                        let entry: &Arc<polars_io::file_cache::FileCacheEntry> =
+                            &cache_entries.as_ref().unwrap()[0];
+                        entry.try_open_check_latest()?
+                    })
+                } else {
+                    polars_utils::open_file(path)?
+                };
 
-                    let mmap = unsafe { memmap::Mmap::map(&f).unwrap() };
-                    let owned = &mut vec![];
+                let mmap = unsafe { memmap::Mmap::map(&f).unwrap() };
+                let owned = &mut vec![];
 
-                    let reader = polars_io::ndjson::core::JsonLineReader::new(
-                        std::io::Cursor::new(maybe_decompress_bytes(mmap.as_ref(), owned)?),
-                    );
-                    reader.count()
-                })
-                .sum::<PolarsResult<usize>>(),
-            ScanSource::Buffer(buffer) => {
+                let reader = polars_io::ndjson::core::JsonLineReader::new(std::io::Cursor::new(
+                    maybe_decompress_bytes(mmap.as_ref(), owned)?,
+                ));
+                reader.count()
+            },
+            ScanSourceRef::Buffer(buffer) => {
                 polars_ensure!(!run_async, nyi = "BytesIO with force_async");
 
                 let owned = &mut vec![];

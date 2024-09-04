@@ -12,7 +12,7 @@ mod ir_to_dsl;
 mod scans;
 mod stack_opt;
 
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 
 pub use dsl_to_ir::*;
 pub use expr_to_ir::*;
@@ -58,7 +58,10 @@ impl IR {
                 output_schema: _,
                 file_options: options,
             } => DslPlan::Scan {
-                sources: sources.to_dsl(true),
+                sources: Arc::new(Mutex::new(DslScanSources {
+                    sources,
+                    is_expanded: true,
+                })),
                 file_info: Arc::new(RwLock::new(Some(file_info))),
                 hive_parts,
                 predicate: predicate.map(|e| e.to_expr(expr_arena)),

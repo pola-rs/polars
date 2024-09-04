@@ -9,7 +9,7 @@ use polars_error::feature_gated;
 use super::*;
 
 pub struct CsvExec {
-    pub source: ScanSource,
+    pub sources: ScanSources,
     pub file_info: FileInfo,
     pub options: CsvReadOptions,
     pub file_options: FileScanOptions,
@@ -18,7 +18,6 @@ pub struct CsvExec {
 
 impl CsvExec {
     fn read(&self) -> PolarsResult<DataFrame> {
-        let paths = self.source.as_paths();
         let with_columns = self
             .file_options
             .with_columns
@@ -46,7 +45,7 @@ impl CsvExec {
             .with_row_index(None)
             .with_path::<&str>(None);
 
-        if paths.is_empty() {
+        if self.sources.is_empty() {
             let out = if let Some(schema) = options_base.schema {
                 DataFrame::from_rows_and_schema(&[], schema.as_ref())?
             } else {
@@ -57,7 +56,7 @@ impl CsvExec {
 
         let verbose = config::verbose();
         let force_async = config::force_async();
-        let run_async = force_async || is_cloud_url(paths.first().unwrap());
+        let run_async = force_async || self.sources.is_cloud_url();
 
         if force_async && verbose {
             eprintln!("ASYNC READING FORCED");
@@ -65,34 +64,45 @@ impl CsvExec {
 
         let finish_read =
             |i: usize, options: CsvReadOptions, predicate: Option<Arc<dyn PhysicalIoExpr>>| {
-                let path = &paths[i];
-                let file = if run_async {
-                    feature_gated!("cloud", {
-                        polars_io::file_cache::FILE_CACHE
-                            .get_entry(path.to_str().unwrap())
-                            // Safety: This was initialized by schema inference.
-                            .unwrap()
-                            .try_open_assume_latest()
-                    })
-                } else {
-                    polars_utils::open_file(path)
-                }?;
-
+                let source = self.sources.at(i);
                 let owned = &mut vec![];
-                let mmap = unsafe { memmap::Mmap::map(&file).unwrap() };
-                let mut df = options
-                    .into_reader_with_file_handle(std::io::Cursor::new(maybe_decompress_bytes(
-                        mmap.as_ref(),
-                        owned,
-                    )?))
-                    ._with_predicate(predicate.clone())
-                    .finish()?;
+
+                let mut df = match source {
+                    ScanSourceRef::File(path) => {
+                        let file = if run_async {
+                            feature_gated!("cloud", {
+                                polars_io::file_cache::FILE_CACHE
+                                    .get_entry(path.to_str().unwrap())
+                                    // Safety: This was initialized by schema inference.
+                                    .unwrap()
+                                    .try_open_assume_latest()
+                            })
+                        } else {
+                            polars_utils::open_file(path)
+                        }?;
+
+                        let mmap = unsafe { memmap::Mmap::map(&file).unwrap() };
+                        options
+                            .into_reader_with_file_handle(std::io::Cursor::new(
+                                maybe_decompress_bytes(mmap.as_ref(), owned)?,
+                            ))
+                            ._with_predicate(predicate.clone())
+                            .finish()?
+                    },
+                    ScanSourceRef::Buffer(buffer) => options
+                        .into_reader_with_file_handle(std::io::Cursor::new(maybe_decompress_bytes(
+                            buffer, owned,
+                        )?))
+                        ._with_predicate(predicate.clone())
+                        .finish()?,
+                };
 
                 if let Some(col) = &self.file_options.include_file_paths {
-                    let path = path.to_str().unwrap();
+                    let name = source.to_file_path();
+
                     unsafe {
                         df.with_column_unchecked(
-                            StringChunked::full(col.clone(), path, df.height()).into_series(),
+                            StringChunked::full(col.clone(), name, df.height()).into_series(),
                         )
                     };
                 }
@@ -110,14 +120,14 @@ impl CsvExec {
             }
 
             let mut n_rows_read = 0usize;
-            let mut out = Vec::with_capacity(paths.len());
+            let mut out = Vec::with_capacity(self.sources.len());
             // If we have n_rows or row_index then we need to count how many rows we read, so we need
             // to delay applying the predicate.
             let predicate_during_read = predicate
                 .clone()
                 .filter(|_| n_rows.is_none() && self.file_options.row_index.is_none());
 
-            for i in 0..paths.len() {
+            for i in 0..self.sources.len() {
                 let opts = options_base
                     .clone()
                     .with_row_index(self.file_options.row_index.clone().map(|mut ri| {
@@ -162,10 +172,10 @@ impl CsvExec {
                 if n_rows.is_some() && n_rows_read == n_rows.unwrap() {
                     if verbose {
                         eprintln!(
-                            "reached n_rows = {} at file {} / {}",
+                            "reached n_rows = {} at source {} / {}",
                             n_rows.unwrap(),
                             1 + i,
-                            paths.len()
+                            self.sources.len()
                         )
                     }
                     break;
@@ -190,10 +200,10 @@ impl CsvExec {
             let dfs = POOL.install(|| {
                 let step = std::cmp::min(POOL.current_num_threads(), 128);
 
-                (0..paths.len())
+                (0..self.sources.len())
                     .step_by(step)
                     .map(|start| {
-                        (start..std::cmp::min(start.saturating_add(step), paths.len()))
+                        (start..std::cmp::min(start.saturating_add(step), self.sources.len()))
                             .into_par_iter()
                             .map(|i| finish_read(i, options_base.clone(), predicate.clone()))
                             .collect::<PolarsResult<Vec<_>>>()
@@ -222,7 +232,7 @@ impl CsvExec {
 impl Executor for CsvExec {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         let profile_name = if state.has_node_timer() {
-            let mut ids = vec![self.source.id()];
+            let mut ids = vec![self.sources.id()];
             if self.predicate.is_some() {
                 ids.push("predicate".into())
             }

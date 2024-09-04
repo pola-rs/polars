@@ -255,9 +255,8 @@ impl<'a> IRDotDisplay<'a> {
                 file_options: options,
                 output_schema: _,
             } => {
-                let paths = sources.as_paths();
                 let name: &str = scan_type.into();
-                let path = PathsDisplay(paths.as_ref());
+                let path = ScanSourcesDisplay(sources);
                 let with_columns = options.with_columns.as_ref().map(|cols| cols.as_ref());
                 let with_columns = NumColumns(with_columns);
                 let total_columns =
@@ -344,9 +343,35 @@ impl<'a> IRDotDisplay<'a> {
 
 // A few utility structures for formatting
 pub struct PathsDisplay<'a>(pub &'a [PathBuf]);
+pub struct ScanSourcesDisplay<'a>(pub &'a ScanSources);
 struct NumColumns<'a>(Option<&'a [PlSmallStr]>);
 struct NumColumnsSchema<'a>(Option<&'a Schema>);
 struct OptionExprIRDisplay<'a>(Option<ExprIRDisplay<'a>>);
+
+impl fmt::Display for ScanSourceRef<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ScanSourceRef::File(path) => path.display().fmt(f),
+            ScanSourceRef::Buffer(buff) => write!(f, "{} in-mem bytes", buff.len()),
+        }
+    }
+}
+
+impl fmt::Display for ScanSourcesDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.0.len() {
+            0 => write!(f, "[]"),
+            1 => write!(f, "[{}]", self.0.at(0)),
+            2 => write!(f, "[{}, {}]", self.0.at(0), self.0.at(1)),
+            _ => write!(
+                f,
+                "[{}, ... {} other sources]",
+                self.0.at(0),
+                self.0.len() - 1,
+            ),
+        }
+    }
+}
 
 impl fmt::Display for PathsDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -357,7 +382,7 @@ impl fmt::Display for PathsDisplay<'_> {
             _ => write!(
                 f,
                 "[{}, ... {} other files]",
-                self.0[0].to_string_lossy(),
+                self.0[0].display(),
                 self.0.len() - 1,
             ),
         }

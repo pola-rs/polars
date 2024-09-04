@@ -6,14 +6,13 @@ use polars_core::utils::accumulate_dataframes_vertical;
 use polars_error::feature_gated;
 use polars_io::cloud::CloudOptions;
 use polars_io::parquet::metadata::FileMetaDataRef;
-use polars_io::path_utils::is_cloud_url;
 use polars_io::utils::slice::split_slice_at_file;
 use polars_io::RowIndex;
 
 use super::*;
 
 pub struct ParquetExec {
-    source: ScanSource,
+    sources: ScanSources,
     file_info: FileInfo,
     hive_parts: Option<Arc<Vec<HivePartitions>>>,
     predicate: Option<Arc<dyn PhysicalExpr>>,
@@ -28,7 +27,7 @@ pub struct ParquetExec {
 impl ParquetExec {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
-        source: ScanSource,
+        sources: ScanSources,
         file_info: FileInfo,
         hive_parts: Option<Arc<Vec<HivePartitions>>>,
         predicate: Option<Arc<dyn PhysicalExpr>>,
@@ -38,7 +37,7 @@ impl ParquetExec {
         metadata: Option<FileMetaDataRef>,
     ) -> Self {
         ParquetExec {
-            source,
+            sources,
             file_info,
             hive_parts,
             predicate,
@@ -51,7 +50,7 @@ impl ParquetExec {
 
     fn read_par(&mut self) -> PolarsResult<Vec<DataFrame>> {
         let parallel = match self.options.parallel {
-            ParallelStrategy::Auto if self.source.num_sources() > POOL.current_num_threads() => {
+            ParallelStrategy::Auto if self.sources.len() > POOL.current_num_threads() => {
                 ParallelStrategy::RowGroups
             },
             identity => identity,
@@ -63,78 +62,53 @@ impl ParquetExec {
         let slice_info = match self.file_options.slice {
             None => ScanSourceSliceInfo {
                 item_slice: 0..usize::MAX,
-                source_slice: 0..self.source.num_sources(),
+                source_slice: 0..self.sources.len(),
             },
-            Some(slice) => self.source.collect_slice_information(
-                slice,
-                |path| ParquetReader::new(std::fs::File::open(path)?).num_rows(),
-                |buff| ParquetReader::new(std::io::Cursor::new(buff)).num_rows(),
-            )?,
+            Some(slice) => {
+                self.sources
+                    .collect_slice_information(slice, |source| match source {
+                        ScanSourceRef::File(path) => {
+                            ParquetReader::new(std::fs::File::open(path)?).num_rows()
+                        },
+                        ScanSourceRef::Buffer(buff) => {
+                            ParquetReader::new(std::io::Cursor::new(buff)).num_rows()
+                        },
+                    })?
+            },
         };
 
-        match &self.source {
-            ScanSource::Buffer(buffer) => {
-                let row_index = self.file_options.row_index.take();
+        let mut current_offset = 0;
+        let base_row_index = self.file_options.row_index.take();
+        // Limit no. of files at a time to prevent open file limits.
+
+        let paths = self.sources.as_paths();
+
+        for i in slice_info.source_slice.step_by(step) {
+            let end = std::cmp::min(i.saturating_add(step), paths.len());
+            let hive_parts = self.hive_parts.as_ref().map(|x| &x[i..end]);
+
+            if current_offset >= slice_info.item_slice.end && !result.is_empty() {
+                return Ok(result);
+            }
+
+            // First initialize the readers, predicates and metadata.
+            // This will be used to determine the slices. That way we can actually read all the
+            // files in parallel even if we add row index columns or slices.
+            let iter = (0..self.sources.len()).into_par_iter().map(|i| {
+                let source = self.sources.at(i);
+                let hive_partitions = hive_parts.map(|x| x[i].materialize_partition_columns());
+
                 let (projection, predicate) = prepare_scan_args(
                     self.predicate.clone(),
                     &mut self.file_options.with_columns.clone(),
                     &mut self.file_info.schema.clone(),
-                    row_index.is_some(),
-                    None,
+                    base_row_index.is_some(),
+                    hive_partitions.as_deref(),
                 );
 
-                result = vec![ParquetReader::new(std::io::Cursor::new(buffer))
-                    .read_parallel(parallel)
-                    .set_low_memory(self.options.low_memory)
-                    .use_statistics(self.options.use_statistics)
-                    .set_rechunk(false)
-                    .with_slice(Some((
-                        slice_info.item_slice.start,
-                        slice_info.item_slice.len(),
-                    )))
-                    .with_row_index(row_index)
-                    .with_predicate(predicate.clone())
-                    .with_projection(projection.clone())
-                    .check_schema(
-                        self.file_info
-                            .reader_schema
-                            .clone()
-                            .unwrap()
-                            .unwrap_left()
-                            .as_ref(),
-                    )?
-                    .finish()?];
-            },
-            ScanSource::Files(paths) => {
-                let mut current_offset = 0;
-                let base_row_index = self.file_options.row_index.take();
-                // Limit no. of files at a time to prevent open file limits.
-
-                for i in slice_info.source_slice.step_by(step) {
-                    let end = std::cmp::min(i.saturating_add(step), paths.len());
-                    let paths = &paths[i..end];
-                    let hive_parts = self.hive_parts.as_ref().map(|x| &x[i..end]);
-
-                    if current_offset >= slice_info.item_slice.end && !result.is_empty() {
-                        return Ok(result);
-                    }
-
-                    // First initialize the readers, predicates and metadata.
-                    // This will be used to determine the slices. That way we can actually read all the
-                    // files in parallel even if we add row index columns or slices.
-                    let iter = (0..paths.len()).into_par_iter().map(|i| {
-                        let path = &paths[i];
-                        let hive_partitions =
-                            hive_parts.map(|x| x[i].materialize_partition_columns());
-
+                match source {
+                    ScanSourceRef::File(path) => {
                         let file = std::fs::File::open(path)?;
-                        let (projection, predicate) = prepare_scan_args(
-                            self.predicate.clone(),
-                            &mut self.file_options.with_columns.clone(),
-                            &mut self.file_info.schema.clone(),
-                            base_row_index.is_some(),
-                            hive_partitions.as_deref(),
-                        );
 
                         let mut reader = ParquetReader::new(file)
                             .read_parallel(parallel)
@@ -152,68 +126,68 @@ impl ParquetExec {
                         reader
                             .num_rows()
                             .map(|num_rows| (reader, num_rows, predicate, projection))
-                    });
-
-                    // We do this in parallel because wide tables can take a long time deserializing metadata.
-                    let readers_and_metadata =
-                        POOL.install(|| iter.collect::<PolarsResult<Vec<_>>>())?;
-
-                    let current_offset_ref = &mut current_offset;
-                    let row_statistics = readers_and_metadata
-                        .iter()
-                        .map(|(_, num_rows, _, _)| {
-                            let cum_rows = *current_offset_ref;
-                            (
-                                cum_rows,
-                                split_slice_at_file(
-                                    current_offset_ref,
-                                    *num_rows,
-                                    slice_info.item_slice.start,
-                                    slice_info.item_slice.end,
-                                ),
-                            )
-                        })
-                        .collect::<Vec<_>>();
-
-                    let out = POOL.install(|| {
-                        readers_and_metadata
-                            .into_par_iter()
-                            .zip(row_statistics.into_par_iter())
-                            .map(
-                                |((reader, _, predicate, projection), (cumulative_read, slice))| {
-                                    let row_index = base_row_index.as_ref().map(|rc| RowIndex {
-                                        name: rc.name.clone(),
-                                        offset: rc.offset + cumulative_read as IdxSize,
-                                    });
-
-                                    let df = reader
-                                        .with_slice(Some(slice))
-                                        .with_row_index(row_index)
-                                        .with_predicate(predicate.clone())
-                                        .with_projection(projection.clone())
-                                        .check_schema(
-                                            self.file_info
-                                                .reader_schema
-                                                .clone()
-                                                .unwrap()
-                                                .unwrap_left()
-                                                .as_ref(),
-                                        )?
-                                        .finish()?;
-
-                                    Ok(df)
-                                },
-                            )
-                            .collect::<PolarsResult<Vec<_>>>()
-                    })?;
-
-                    if result.is_empty() {
-                        result = out;
-                    } else {
-                        result.extend_from_slice(&out)
-                    }
+                    },
+                    ScanSourceRef::Buffer(_) => todo!(),
                 }
-            },
+            });
+
+            // We do this in parallel because wide tables can take a long time deserializing metadata.
+            let readers_and_metadata = POOL.install(|| iter.collect::<PolarsResult<Vec<_>>>())?;
+
+            let current_offset_ref = &mut current_offset;
+            let row_statistics = readers_and_metadata
+                .iter()
+                .map(|(_, num_rows, _, _)| {
+                    let cum_rows = *current_offset_ref;
+                    (
+                        cum_rows,
+                        split_slice_at_file(
+                            current_offset_ref,
+                            *num_rows,
+                            slice_info.item_slice.start,
+                            slice_info.item_slice.end,
+                        ),
+                    )
+                })
+                .collect::<Vec<_>>();
+
+            let out = POOL.install(|| {
+                readers_and_metadata
+                    .into_par_iter()
+                    .zip(row_statistics.into_par_iter())
+                    .map(
+                        |((reader, _, predicate, projection), (cumulative_read, slice))| {
+                            let row_index = base_row_index.as_ref().map(|rc| RowIndex {
+                                name: rc.name.clone(),
+                                offset: rc.offset + cumulative_read as IdxSize,
+                            });
+
+                            let df = reader
+                                .with_slice(Some(slice))
+                                .with_row_index(row_index)
+                                .with_predicate(predicate.clone())
+                                .with_projection(projection.clone())
+                                .check_schema(
+                                    self.file_info
+                                        .reader_schema
+                                        .clone()
+                                        .unwrap()
+                                        .unwrap_left()
+                                        .as_ref(),
+                                )?
+                                .finish()?;
+
+                            Ok(df)
+                        },
+                    )
+                    .collect::<PolarsResult<Vec<_>>>()
+            })?;
+
+            if result.is_empty() {
+                result = out;
+            } else {
+                result.extend_from_slice(&out)
+            }
         }
 
         Ok(result)
@@ -226,7 +200,7 @@ impl ParquetExec {
         use polars_io::utils::slice::split_slice_at_file;
 
         let verbose = verbose();
-        let paths = self.source.into_paths();
+        let paths = self.sources.into_paths();
         let first_metadata = &self.metadata;
         let cloud_options = self.cloud_options.as_ref();
 
@@ -443,10 +417,7 @@ impl ParquetExec {
             .and_then(|_| self.predicate.take())
             .map(phys_expr_to_io_expr);
 
-        let is_cloud = match &self.source {
-            ScanSource::Files(paths) => is_cloud_url(paths.first().unwrap()),
-            ScanSource::Buffer(_) => false,
-        };
+        let is_cloud = self.sources.is_cloud_url();
         let force_async = config::force_async();
 
         let out = if is_cloud || force_async {
@@ -475,7 +446,7 @@ impl ParquetExec {
 impl Executor for ParquetExec {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         let profile_name = if state.has_node_timer() {
-            let mut ids = vec![self.source.id()];
+            let mut ids = vec![self.sources.id()];
             if self.predicate.is_some() {
                 ids.push("predicate".into())
             }

@@ -105,21 +105,16 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
 
     let v = match lp {
         DslPlan::Scan {
-            mut sources,
+            sources,
             file_info,
             hive_parts,
             predicate,
             mut file_options,
             mut scan_type,
         } => {
-            sources.expand_paths(&mut scan_type, &mut file_options)?;
-
-            let source = match sources {
-                DslScanSource::File(paths) => {
-                    ScanSource::Files(paths.as_ref().lock().unwrap().paths.clone())
-                },
-                DslScanSource::Buffer(buf) => ScanSource::Buffer(buf),
-            };
+            let mut sources_lock = sources.lock().unwrap();
+            sources_lock.expand_paths(&mut scan_type, &mut file_options)?;
+            let sources = sources_lock.sources.clone();
 
             let file_info_read = file_info.read().unwrap();
 
@@ -146,7 +141,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         ..
                     } => {
                         let (file_info, md) = scans::parquet_file_info(
-                            &source,
+                            &sources,
                             &file_options,
                             cloud_options.as_ref(),
                         )
@@ -160,12 +155,9 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         metadata,
                         ..
                     } => {
-                        let (file_info, md) = scans::ipc_file_info(
-                            source.as_paths(),
-                            &file_options,
-                            cloud_options.as_ref(),
-                        )
-                        .map_err(|e| e.context(failed_here!(ipc scan)))?;
+                        let (file_info, md) =
+                            scans::ipc_file_info(&sources, &file_options, cloud_options.as_ref())
+                                .map_err(|e| e.context(failed_here!(ipc scan)))?;
                         *metadata = Some(md);
                         file_info
                     },
@@ -174,7 +166,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         options,
                         cloud_options,
                     } => scans::csv_file_info(
-                        &source,
+                        &sources,
                         &file_options,
                         options,
                         cloud_options.as_ref(),
@@ -185,7 +177,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         options,
                         cloud_options,
                     } => scans::ndjson_file_info(
-                        source.as_paths(),
+                        &sources,
                         &file_options,
                         options,
                         cloud_options.as_ref(),
@@ -205,7 +197,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 let mut owned = None;
 
                 hive_partitions_from_paths(
-                    source.as_paths().as_ref(),
+                    &sources.as_paths(),
                     file_options.hive_options.hive_start_idx,
                     file_options.hive_options.schema.clone(),
                     match resolved_file_info.reader_schema.as_ref().unwrap() {
@@ -279,7 +271,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             }
 
             IR::Scan {
-                sources: source,
+                sources,
                 file_info: resolved_file_info,
                 hive_parts,
                 output_schema: None,
@@ -819,64 +811,48 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
     Ok(ctxt.lp_arena.add(v))
 }
 
-impl DslScanSource {
+impl DslScanSources {
     /// Expand scan paths if they were not already expanded.
     pub fn expand_paths(
         &mut self,
         scan_type: &mut FileScan,
         file_options: &mut FileScanOptions,
     ) -> PolarsResult<()> {
-        match self {
-            DslScanSource::File(source) => {
-                #[allow(unused_mut)]
-                let mut lock = source.lock().unwrap();
+        if self.is_expanded {
+            return Ok(());
+        }
 
-                // Return if paths are already expanded
-                if lock.is_expanded {
-                    return Ok(());
-                }
+        let ScanSources::Files(paths) = &self.sources else {
+            self.is_expanded = true;
+            return Ok(());
+        };
 
-                {
-                    let paths_expanded = match &scan_type {
-                        #[cfg(feature = "parquet")]
-                        FileScan::Parquet { cloud_options, .. } => {
-                            expand_scan_paths_with_hive_update(
-                                &lock.paths[..],
-                                file_options,
-                                cloud_options,
-                            )?
-                        },
-                        #[cfg(feature = "ipc")]
-                        FileScan::Ipc { cloud_options, .. } => expand_scan_paths_with_hive_update(
-                            &lock.paths[..],
-                            file_options,
-                            cloud_options,
-                        )?,
-                        #[cfg(feature = "csv")]
-                        FileScan::Csv { cloud_options, .. } => expand_paths(
-                            &lock.paths[..],
-                            file_options.glob,
-                            cloud_options.as_ref(),
-                        )?,
-                        #[cfg(feature = "json")]
-                        FileScan::NDJson { cloud_options, .. } => expand_paths(
-                            &lock.paths[..],
-                            file_options.glob,
-                            cloud_options.as_ref(),
-                        )?,
-                        FileScan::Anonymous { .. } => unreachable!(), // Invariant: Anonymous scans are already expanded.
-                    };
-
-                    #[allow(unreachable_code)]
-                    {
-                        lock.paths = paths_expanded;
-                        lock.is_expanded = true;
-
-                        Ok(())
-                    }
-                }
+        let expanded_sources = match &scan_type {
+            #[cfg(feature = "parquet")]
+            FileScan::Parquet { cloud_options, .. } => {
+                expand_scan_paths_with_hive_update(&paths, file_options, cloud_options)?
             },
-            DslScanSource::Buffer(_) => Ok(()),
+            #[cfg(feature = "ipc")]
+            FileScan::Ipc { cloud_options, .. } => {
+                expand_scan_paths_with_hive_update(&paths, file_options, cloud_options)?
+            },
+            #[cfg(feature = "csv")]
+            FileScan::Csv { cloud_options, .. } => {
+                expand_paths(&paths, file_options.glob, cloud_options.as_ref())?
+            },
+            #[cfg(feature = "json")]
+            FileScan::NDJson { cloud_options, .. } => {
+                expand_paths(&paths, file_options.glob, cloud_options.as_ref())?
+            },
+            FileScan::Anonymous { .. } => unreachable!(), // Invariant: Anonymous scans are already expanded.
+        };
+
+        #[allow(unreachable_code)]
+        {
+            self.sources = ScanSources::Files(expanded_sources);
+            self.is_expanded = true;
+
+            Ok(())
         }
     }
 }

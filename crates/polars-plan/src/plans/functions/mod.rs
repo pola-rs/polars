@@ -13,6 +13,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Mutex};
 
 pub use dsl::*;
+use polars_core::error::feature_gated;
 use polars_core::prelude::*;
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
@@ -44,7 +45,7 @@ pub enum FunctionIR {
         fmt_str: PlSmallStr,
     },
     FastCount {
-        sources: Arc<[ScanSource]>,
+        sources: ScanSources,
         scan_type: FileScan,
         alias: Option<PlSmallStr>,
     },
@@ -274,14 +275,7 @@ impl FunctionIR {
             #[cfg(feature = "merge_sorted")]
             MergeSorted { column } => merge_sorted(&df, column.as_ref()),
             Unnest { columns: _columns } => {
-                #[cfg(feature = "dtype-struct")]
-                {
-                    df.unnest(_columns.iter().cloned())
-                }
-                #[cfg(not(feature = "dtype-struct"))]
-                {
-                    panic!("activate feature 'dtype-struct'")
-                }
+                feature_gated!("dtype-struct", df.unnest(_columns.iter().cloned()))
             },
             Pipeline { function, .. } => {
                 // we use a global string cache here as streaming chunks all have different rev maps
