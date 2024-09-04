@@ -16,14 +16,10 @@ pub(super) fn convert_functions(
 ) -> PolarsResult<Node> {
     match function {
         // This can be created by col(*).is_null() on empty dataframes.
-        FunctionExpr::Boolean(BooleanFunction::AllHorizontal)
-            if input.is_empty() =>
-        {
+        FunctionExpr::Boolean(BooleanFunction::AllHorizontal) if input.is_empty() => {
             return to_aexpr_impl(lit(true), arena, state);
         },
-        FunctionExpr::Boolean(BooleanFunction::AnyHorizontal)
-            if input.is_empty() =>
-        {
+        FunctionExpr::Boolean(BooleanFunction::AnyHorizontal) if input.is_empty() => {
             return to_aexpr_impl(lit(false), arena, state);
         },
         // Convert to binary expression as the optimizer understands those.
