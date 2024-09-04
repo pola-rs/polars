@@ -9,10 +9,12 @@ from typing import TYPE_CHECKING, Any, Iterable, Sequence
 from polars import functions as F
 from polars._utils.various import parse_version
 from polars.convert import from_arrow
-from polars.datatypes import (
-    N_INFER_DEFAULT,
+from polars.datatypes import N_INFER_DEFAULT
+from polars.exceptions import (
+    DuplicateError,
+    ModuleUpgradeRequiredError,
+    UnsuitableSQLError,
 )
-from polars.exceptions import ModuleUpgradeRequiredError, UnsuitableSQLError
 from polars.io.database._arrow_registry import ARROW_DRIVER_REGISTRY
 from polars.io.database._cursor_proxies import ODBCCursorProxy, SurrealDBCursorProxy
 from polars.io.database._inference import _infer_dtype_from_cursor_description
@@ -266,25 +268,25 @@ class ConnectionExecutor:
             if hasattr(self.result, "fetchall"):
                 if self.driver_name == "sqlalchemy":
                     if hasattr(self.result, "cursor"):
-                        cursor_desc = {
-                            d[0]: d[1:] for d in self.result.cursor.description
-                        }
+                        cursor_desc = [
+                            (d[0], d[1:]) for d in self.result.cursor.description
+                        ]
                     elif hasattr(self.result, "_metadata"):
-                        cursor_desc = {k: None for k in self.result._metadata.keys}
+                        cursor_desc = [(k, None) for k in self.result._metadata.keys]
                     else:
                         msg = f"Unable to determine metadata from query result; {self.result!r}"
                         raise ValueError(msg)
 
                 elif hasattr(self.result, "description"):
-                    cursor_desc = {d[0]: d[1:] for d in self.result.description}
+                    cursor_desc = [(d[0], d[1:]) for d in self.result.description]
                 else:
-                    cursor_desc = {}
+                    cursor_desc = []
 
                 schema_overrides = self._inject_type_overrides(
                     description=cursor_desc,
                     schema_overrides=(schema_overrides or {}),
                 )
-                result_columns = list(cursor_desc)
+                result_columns = [nm for nm, _ in cursor_desc]
                 frames = (
                     DataFrame(
                         data=rows,
@@ -307,7 +309,7 @@ class ConnectionExecutor:
 
     def _inject_type_overrides(
         self,
-        description: dict[str, Any],
+        description: list[tuple[str, Any]],
         schema_overrides: SchemaDict,
     ) -> SchemaDict:
         """
@@ -320,11 +322,16 @@ class ConnectionExecutor:
         We currently only do the additional inference from string/python type values.
         (Further refinement will require per-driver module knowledge and lookups).
         """
-        for nm, desc in description.items():
-            if desc is not None and nm not in schema_overrides:
+        dupe_check = set()
+        for nm, desc in description:
+            if nm in dupe_check:
+                msg = f"column {nm!r} appears more than once in the query/result cursor"
+                raise DuplicateError(msg)
+            elif desc is not None and nm not in schema_overrides:
                 dtype = _infer_dtype_from_cursor_description(self.cursor, desc)
                 if dtype is not None:
                     schema_overrides[nm] = dtype  # type: ignore[index]
+            dupe_check.add(nm)
 
         return schema_overrides
 
