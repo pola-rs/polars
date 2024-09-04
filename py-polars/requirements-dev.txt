@@ -16,10 +16,8 @@ pip
 # ------------
 
 # Interop
-# TODO: Unpin NumPy when issue has been resolved.
-# https://github.com/pola-rs/polars/issues/18543
-numpy < 2.1
-numba; python_version < '3.13'  # Numba can lag Python releases
+numpy
+numba >= 0.54; python_version < '3.13'  # Numba can lag Python releases
 pandas
 pyarrow
 pydantic>=2.0.0
