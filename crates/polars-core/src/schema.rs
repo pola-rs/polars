@@ -11,32 +11,14 @@ pub type Schema = polars_schema::schema::Schema<DataType>;
 pub trait SchemaExt {
     fn from_arrow_schema(value: &ArrowSchema) -> Self;
 
-    /// Look up the name in the schema and return an owned [`Field`] by cloning the data.
-    ///
-    /// Returns `None` if the field does not exist.
-    ///
-    /// This method constructs the `Field` by cloning the name and dtype. For a version that returns references, see
-    /// [`get`][Self::get] or [`get_full`][Self::get_full].
     fn get_field(&self, name: &str) -> Option<Field>;
 
-    /// Look up the name in the schema and return an owned [`Field`] by cloning the data.
-    ///
-    /// Returns `Err(PolarsErr)` if the field does not exist.
-    ///
-    /// This method constructs the `Field` by cloning the name and dtype. For a version that returns references, see
-    /// [`get`][Self::get] or [`get_full`][Self::get_full].
     fn try_get_field(&self, name: &str) -> PolarsResult<Field>;
 
-    /// Convert self to `ArrowSchema` by cloning the fields.
     fn to_arrow(&self, compat_level: CompatLevel) -> ArrowSchema;
 
-    /// Iterates the [`Field`]s in this schema, constructing them anew by cloning each `(&name, &dtype)` pair.
-    ///
-    /// Note that this clones each name and dtype in order to form an owned [`Field`]. For a clone-free version, use
-    /// [`iter`][Self::iter], which returns `(&name, &dtype)`.
     fn iter_fields(&self) -> impl ExactSizeIterator<Item = Field> + '_;
 
-    /// Take another [`Schema`] and try to find the supertypes between them.
     fn to_supertype(&mut self, other: &Schema) -> PolarsResult<bool>;
 }
 
@@ -49,17 +31,30 @@ impl SchemaExt for Schema {
             .collect()
     }
 
+    /// Look up the name in the schema and return an owned [`Field`] by cloning the data.
+    ///
+    /// Returns `None` if the field does not exist.
+    ///
+    /// This method constructs the `Field` by cloning the name and dtype. For a version that returns references, see
+    /// [`get`][Self::get] or [`get_full`][Self::get_full].
     fn get_field(&self, name: &str) -> Option<Field> {
         self.get_full(name)
             .map(|(_, name, dtype)| Field::new(name.clone(), dtype.clone()))
     }
 
+    /// Look up the name in the schema and return an owned [`Field`] by cloning the data.
+    ///
+    /// Returns `Err(PolarsErr)` if the field does not exist.
+    ///
+    /// This method constructs the `Field` by cloning the name and dtype. For a version that returns references, see
+    /// [`get`][Self::get] or [`get_full`][Self::get_full].
     fn try_get_field(&self, name: &str) -> PolarsResult<Field> {
         self.get_full(name)
             .ok_or_else(|| polars_err!(SchemaFieldNotFound: "{}", name))
             .map(|(_, name, dtype)| Field::new(name.clone(), dtype.clone()))
     }
 
+    /// Convert self to `ArrowSchema` by cloning the fields.
     fn to_arrow(&self, compat_level: CompatLevel) -> ArrowSchema {
         let fields: Vec<_> = self
             .iter()
@@ -68,11 +63,16 @@ impl SchemaExt for Schema {
         ArrowSchema::from(fields)
     }
 
+    /// Iterates the [`Field`]s in this schema, constructing them anew by cloning each `(&name, &dtype)` pair.
+    ///
+    /// Note that this clones each name and dtype in order to form an owned [`Field`]. For a clone-free version, use
+    /// [`iter`][Self::iter], which returns `(&name, &dtype)`.
     fn iter_fields(&self) -> impl ExactSizeIterator<Item = Field> + '_ {
         self.iter()
             .map(|(name, dtype)| Field::new(name.clone(), dtype.clone()))
     }
 
+    /// Take another [`Schema`] and try to find the supertypes between them.
     fn to_supertype(&mut self, other: &Schema) -> PolarsResult<bool> {
         polars_ensure!(self.len() == other.len(), ComputeError: "schema lengths differ");
 
