@@ -46,15 +46,15 @@ fn infer_and_finish<'a, A: ApplyLambda<'a>>(
         let py_pyseries = series.getattr(py, "_s").unwrap();
         let series = py_pyseries.extract::<PySeries>(py).unwrap().series;
 
-        // Empty dtype is incorrect, use AnyValues.
-        if series.is_empty() {
+        let dt = series.dtype();
+
+        // Null dtype may be incorrect, fall back to AnyValues logic.
+        if dt.is_nested_null() {
             let av = out.extract::<Wrap<AnyValue>>()?;
             return applyer
                 .apply_extract_any_values(py, lambda, null_count, av.0)
                 .map(|s| s.into());
         }
-
-        let dt = series.dtype();
 
         // make a new python function that is:
         // def new_lambda(lambda: Callable):
