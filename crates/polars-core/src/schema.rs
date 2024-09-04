@@ -8,10 +8,30 @@ use crate::utils::try_get_supertype;
 pub type SchemaRef = Arc<Schema>;
 pub type Schema = polars_schema::schema::Schema<DataType>;
 
-pub trait SchemaExt {
+mod private {
+    use polars_utils::aliases::PlIndexMap;
+    use polars_utils::pl_str::PlSmallStr;
+
+    use super::{DataType, Schema};
+
+    pub trait SchemaExtBase {
+        fn _fields(&self) -> &PlIndexMap<PlSmallStr, DataType>;
+        fn _fields_mut(&mut self) -> &mut PlIndexMap<PlSmallStr, DataType>;
+    }
+
+    impl SchemaExtBase for Schema {
+        fn _fields(&self) -> &PlIndexMap<PlSmallStr, DataType> {
+            Schema::_fields(self)
+        }
+
+        fn _fields_mut(&mut self) -> &mut PlIndexMap<PlSmallStr, DataType> {
+            Schema::_fields_mut(self)
+        }
+    }
+}
+
+pub trait SchemaExt: private::SchemaExtBase {
     fn len(&self) -> usize;
-    fn _fields(&self) -> &PlIndexMap<PlSmallStr, DataType>;
-    fn _fields_mut(&mut self) -> &mut PlIndexMap<PlSmallStr, DataType>;
     fn from_arrow_schema(value: &ArrowSchema) -> Self;
 
     fn is_empty(&self) -> bool {
@@ -84,14 +104,6 @@ impl SchemaExt for Schema {
         Schema::len(self)
     }
 
-    fn _fields(&self) -> &PlIndexMap<PlSmallStr, DataType> {
-        Schema::_fields(self)
-    }
-
-    fn _fields_mut(&mut self) -> &mut PlIndexMap<PlSmallStr, DataType> {
-        Schema::_fields_mut(self)
-    }
-
     fn from_arrow_schema(value: &ArrowSchema) -> Self {
         value
             .fields
@@ -99,22 +111,6 @@ impl SchemaExt for Schema {
             .map(|x| (x.name.clone(), DataType::from_arrow(&x.data_type, true)))
             .collect()
     }
-
-    // fn from_series_slice(value: &[Series]) -> Self {
-    //     value
-    //         .iter()
-    //         .map(|s| (s.name().clone(), s.dtype().clone()))
-    //         .collect()
-    // }
-
-    // fn from_field_iter(iter: impl Iterator<Item = impl Into<Field>>) -> Self {
-    //     iter.into_iter()
-    //         .map(|x| {
-    //             let x: Field = x.into();
-    //             (x.name().clone(), x.data_type().clone())
-    //         })
-    //         .collect()
-    // }
 }
 
 /// This trait exists to be unify the API of polars Schema and arrows Schema.
