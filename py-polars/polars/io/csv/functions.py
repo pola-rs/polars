@@ -1234,6 +1234,8 @@ def scan_csv(
         source = normalize_filepath(source, check_not_directory=False)
     elif isinstance(source, (IO, BytesIO)):
         pass
+    elif isinstance(source, list) and isinstance(source[0], BytesIO):
+        pass
     else:
         source = [
             normalize_filepath(source, check_not_directory=False) for source in source
@@ -1331,8 +1333,8 @@ def _scan_csv_impl(
         storage_options = None
 
     pylf = PyLazyFrame.new_from_csv(
-        path=source,
-        paths=sources,
+        source,
+        sources,
         separator=separator,
         has_header=has_header,
         ignore_errors=ignore_errors,

@@ -1,6 +1,3 @@
-use std::path::PathBuf;
-use std::sync::Arc;
-
 use either::Either;
 use polars_io::path_utils::is_cloud_url;
 #[cfg(feature = "cloud")]
@@ -182,47 +179,18 @@ pub(super) fn csv_file_info(
 
     let infer_schema_func = |i| {
         let source = sources.at(i);
+        let memslice = source.to_memslice(run_async, cache_entries.as_ref(), i)?;
         let owned = &mut vec![];
-        match source {
-            ScanSourceRef::File(path) => {
-                let file = if run_async {
-                    feature_gated!("cloud", {
-                        let entry: &Arc<polars_io::file_cache::FileCacheEntry> =
-                            &cache_entries.as_ref().unwrap()[i];
-                        entry.try_open_check_latest()?
-                    })
-                } else {
-                    polars_utils::open_file(path)?
-                };
-
-                let mmap = unsafe { memmap::Mmap::map(&file).unwrap() };
-                let mut reader =
-                    std::io::Cursor::new(maybe_decompress_bytes(mmap.as_ref(), owned)?);
-
-                if reader.read(&mut [0; 4])? < 2 && csv_options.raise_if_empty {
-                    polars_bail!(NoData: "empty CSV")
-                }
-                reader.rewind()?;
-
-                let reader_bytes = get_reader_bytes(&mut reader).expect("could not mmap file");
-
-                // this needs a way to estimated bytes/rows.
-                SchemaInferenceResult::try_from_reader_bytes_and_options(&reader_bytes, csv_options)
-            },
-            ScanSourceRef::Buffer(buffer) => {
-                let mut reader = std::io::Cursor::new(maybe_decompress_bytes(buffer, owned)?);
-
-                if reader.read(&mut [0; 4])? < 2 && csv_options.raise_if_empty {
-                    polars_bail!(NoData: "empty CSV")
-                }
-                reader.rewind()?;
-
-                let reader_bytes = get_reader_bytes(&mut reader).expect("could not open file");
-
-                // this needs a way to estimated bytes/rows.
-                SchemaInferenceResult::try_from_reader_bytes_and_options(&reader_bytes, csv_options)
-            },
+        let mut reader = std::io::Cursor::new(maybe_decompress_bytes(&memslice, owned)?);
+        if reader.read(&mut [0; 4])? < 2 && csv_options.raise_if_empty {
+            polars_bail!(NoData: "empty CSV")
         }
+        reader.rewind()?;
+
+        let reader_bytes = get_reader_bytes(&mut reader).expect("could not mmap file");
+
+        // this needs a way to estimated bytes/rows.
+        SchemaInferenceResult::try_from_reader_bytes_and_options(&reader_bytes, csv_options)
     };
 
     let merge_func = |a: PolarsResult<SchemaInferenceResult>,
@@ -336,27 +304,11 @@ pub(super) fn ndjson_file_info(
             )
         }
     } else {
-        let schema = match first {
-            ScanSourceRef::File(path) => {
-                let f = if run_async {
-                    feature_gated!("cloud", {
-                        cache_entries.unwrap()[0].try_open_check_latest()?
-                    })
-                } else {
-                    polars_utils::open_file(path)?
-                };
+        let memslice = first.to_memslice(run_async, cache_entries.as_ref(), 0)?;
+        let mut reader = std::io::Cursor::new(maybe_decompress_bytes(&memslice, owned)?);
 
-                let mmap = unsafe { memmap::Mmap::map(&f).unwrap() };
-                let mut reader =
-                    std::io::Cursor::new(maybe_decompress_bytes(mmap.as_ref(), owned)?);
-
-                polars_io::ndjson::infer_schema(&mut reader, ndjson_options.infer_schema_length)?
-            },
-            ScanSourceRef::Buffer(buff) => {
-                let mut reader = std::io::Cursor::new(maybe_decompress_bytes(buff, owned)?);
-                polars_io::ndjson::infer_schema(&mut reader, ndjson_options.infer_schema_length)?
-            },
-        };
+        let schema =
+            polars_io::ndjson::infer_schema(&mut reader, ndjson_options.infer_schema_length)?;
 
         prepare_schemas(schema, file_options.row_index.as_ref())
     };

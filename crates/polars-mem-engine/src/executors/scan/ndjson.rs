@@ -1,6 +1,7 @@
 use polars_core::config;
 use polars_core::utils::accumulate_dataframes_vertical;
 use polars_error::feature_gated;
+use polars_utils::mmap::MemSlice;
 
 use super::*;
 
@@ -75,8 +76,7 @@ impl JsonExec {
 
                 let row_index = self.file_scan_options.row_index.as_mut();
 
-                let owned = &mut vec![];
-                let df = match source {
+                let memslice = match source {
                     ScanSourceRef::File(path) => {
                         let file = if run_async {
                             feature_gated!("cloud", {
@@ -97,48 +97,29 @@ impl JsonExec {
                             }
                         };
 
-                        let mmap = unsafe { memmap::Mmap::map(&file).unwrap() };
-                        let curs = std::io::Cursor::new(
-                            match maybe_decompress_bytes(mmap.as_ref(), owned) {
-                                Ok(v) => v,
-                                Err(e) => return Some(Err(e)),
-                            },
-                        );
-                        let reader = JsonLineReader::new(curs);
-
-                        reader
-                            .with_schema(schema.clone())
-                            .with_rechunk(self.file_scan_options.rechunk)
-                            .with_chunk_size(Some(self.options.chunk_size))
-                            .with_row_index(row_index)
-                            .with_predicate(self.predicate.clone().map(phys_expr_to_io_expr))
-                            .with_projection(self.file_scan_options.with_columns.clone())
-                            .low_memory(self.options.low_memory)
-                            .with_n_rows(n_rows)
-                            .with_ignore_errors(self.options.ignore_errors)
-                            .finish()
+                        MemSlice::from_mmap(Arc::new(unsafe { memmap::Mmap::map(&file).unwrap() }))
                     },
-                    ScanSourceRef::Buffer(buff) => {
-                        let curs =
-                            std::io::Cursor::new(match maybe_decompress_bytes(buff, owned) {
-                                Ok(v) => v,
-                                Err(e) => return Some(Err(e)),
-                            });
-                        let reader = JsonLineReader::new(curs);
-
-                        reader
-                            .with_schema(schema.clone())
-                            .with_rechunk(self.file_scan_options.rechunk)
-                            .with_chunk_size(Some(self.options.chunk_size))
-                            .with_row_index(row_index)
-                            .with_predicate(self.predicate.clone().map(phys_expr_to_io_expr))
-                            .with_projection(self.file_scan_options.with_columns.clone())
-                            .low_memory(self.options.low_memory)
-                            .with_n_rows(n_rows)
-                            .with_ignore_errors(self.options.ignore_errors)
-                            .finish()
-                    },
+                    ScanSourceRef::Buffer(buff) => MemSlice::from_bytes(buff.clone()),
                 };
+
+                let owned = &mut vec![];
+                let curs = std::io::Cursor::new(match maybe_decompress_bytes(&memslice, owned) {
+                    Ok(v) => v,
+                    Err(e) => return Some(Err(e)),
+                });
+                let reader = JsonLineReader::new(curs);
+
+                let df = reader
+                    .with_schema(schema.clone())
+                    .with_rechunk(self.file_scan_options.rechunk)
+                    .with_chunk_size(Some(self.options.chunk_size))
+                    .with_row_index(row_index)
+                    .with_predicate(self.predicate.clone().map(phys_expr_to_io_expr))
+                    .with_projection(self.file_scan_options.with_columns.clone())
+                    .low_memory(self.options.low_memory)
+                    .with_n_rows(n_rows)
+                    .with_ignore_errors(self.options.ignore_errors)
+                    .finish();
 
                 let mut df = match df {
                     Ok(df) => df,

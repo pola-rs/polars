@@ -5,6 +5,7 @@ use polars_core::utils::{
     accumulate_dataframes_vertical, accumulate_dataframes_vertical_unchecked,
 };
 use polars_error::feature_gated;
+use polars_utils::mmap::MemSlice;
 
 use super::*;
 
@@ -67,7 +68,7 @@ impl CsvExec {
                 let source = self.sources.at(i);
                 let owned = &mut vec![];
 
-                let mut df = match source {
+                let memslice = match source {
                     ScanSourceRef::File(path) => {
                         let file = if run_async {
                             feature_gated!("cloud", {
@@ -82,20 +83,16 @@ impl CsvExec {
                         }?;
 
                         let mmap = unsafe { memmap::Mmap::map(&file).unwrap() };
-                        options
-                            .into_reader_with_file_handle(std::io::Cursor::new(
-                                maybe_decompress_bytes(mmap.as_ref(), owned)?,
-                            ))
-                            ._with_predicate(predicate.clone())
-                            .finish()?
+                        MemSlice::from_mmap(Arc::new(mmap))
                     },
-                    ScanSourceRef::Buffer(buffer) => options
-                        .into_reader_with_file_handle(std::io::Cursor::new(maybe_decompress_bytes(
-                            buffer, owned,
-                        )?))
-                        ._with_predicate(predicate.clone())
-                        .finish()?,
+                    ScanSourceRef::Buffer(buffer) => MemSlice::from_bytes(buffer.clone()),
                 };
+
+                let reader = std::io::Cursor::new(maybe_decompress_bytes(&memslice, owned)?);
+                let mut df = options
+                    .into_reader_with_file_handle(reader)
+                    ._with_predicate(predicate.clone())
+                    .finish()?;
 
                 if let Some(col) = &self.file_options.include_file_paths {
                     let name = source.to_file_path();

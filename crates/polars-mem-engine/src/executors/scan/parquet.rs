@@ -8,6 +8,7 @@ use polars_io::cloud::CloudOptions;
 use polars_io::parquet::metadata::FileMetaDataRef;
 use polars_io::utils::slice::split_slice_at_file;
 use polars_io::RowIndex;
+use polars_utils::mmap::MemSlice;
 
 use super::*;
 
@@ -81,10 +82,8 @@ impl ParquetExec {
         let base_row_index = self.file_options.row_index.take();
         // Limit no. of files at a time to prevent open file limits.
 
-        let paths = self.sources.as_paths();
-
         for i in slice_info.source_slice.step_by(step) {
-            let end = std::cmp::min(i.saturating_add(step), paths.len());
+            let end = std::cmp::min(i.saturating_add(step), self.sources.len());
             let hive_parts = self.hive_parts.as_ref().map(|x| &x[i..end]);
 
             if current_offset >= slice_info.item_slice.end && !result.is_empty() {
@@ -106,29 +105,30 @@ impl ParquetExec {
                     hive_partitions.as_deref(),
                 );
 
-                match source {
+                let memslice = match source {
                     ScanSourceRef::File(path) => {
                         let file = std::fs::File::open(path)?;
-
-                        let mut reader = ParquetReader::new(file)
-                            .read_parallel(parallel)
-                            .set_low_memory(self.options.low_memory)
-                            .use_statistics(self.options.use_statistics)
-                            .set_rechunk(false)
-                            .with_hive_partition_columns(hive_partitions)
-                            .with_include_file_path(
-                                self.file_options
-                                    .include_file_paths
-                                    .as_ref()
-                                    .map(|x| (x.clone(), Arc::from(paths[i].to_str().unwrap()))),
-                            );
-
-                        reader
-                            .num_rows()
-                            .map(|num_rows| (reader, num_rows, predicate, projection))
+                        MemSlice::from_mmap(Arc::new(unsafe { memmap::Mmap::map(&file).unwrap() }))
                     },
-                    ScanSourceRef::Buffer(_) => todo!(),
-                }
+                    ScanSourceRef::Buffer(buff) => MemSlice::from_bytes(buff.clone()),
+                };
+
+                let mut reader = ParquetReader::new(std::io::Cursor::new(memslice))
+                    .read_parallel(parallel)
+                    .set_low_memory(self.options.low_memory)
+                    .use_statistics(self.options.use_statistics)
+                    .set_rechunk(false)
+                    .with_hive_partition_columns(hive_partitions)
+                    .with_include_file_path(
+                        self.file_options
+                            .include_file_paths
+                            .as_ref()
+                            .map(|x| (x.clone(), Arc::from(source.to_file_path()))),
+                    );
+
+                reader
+                    .num_rows()
+                    .map(|num_rows| (reader, num_rows, predicate, projection))
             });
 
             // We do this in parallel because wide tables can take a long time deserializing metadata.

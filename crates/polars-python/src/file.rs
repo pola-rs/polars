@@ -7,7 +7,6 @@ use std::io::{Cursor, ErrorKind, Read, Seek, SeekFrom, Write};
 #[cfg(target_family = "unix")]
 use std::os::fd::{FromRawFd, RawFd};
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use polars::io::mmap::MmapBytesReader;
 use polars_error::{polars_err, polars_warn};
@@ -32,7 +31,7 @@ impl PyFileLikeObject {
         PyFileLikeObject { inner: object }
     }
 
-    pub fn as_arc(&self) -> Arc<[u8]> {
+    pub fn as_bytes(&self) -> bytes::Bytes {
         self.as_file_buffer().into_inner().into()
     }
 
@@ -252,7 +251,7 @@ pub fn get_either_file_or_path(py_f: PyObject, write: bool) -> PyResult<EitherPy
     })
 }
 
-fn get_either_file_and_path(
+fn get_either_buffer_or_path(
     py_f: PyObject,
     write: bool,
 ) -> PyResult<(EitherRustPythonFile, Option<PathBuf>)> {
@@ -366,7 +365,7 @@ fn get_either_file_and_path(
 /// # Arguments
 /// * `write` - open for writing; will truncate existing file and create new file if not.
 pub fn get_either_file(py_f: PyObject, write: bool) -> PyResult<EitherRustPythonFile> {
-    Ok(get_either_file_and_path(py_f, write)?.0)
+    Ok(get_either_buffer_or_path(py_f, write)?.0)
 }
 
 pub fn get_file_like(f: PyObject, truncate: bool) -> PyResult<Box<dyn FileLike>> {
@@ -403,7 +402,7 @@ pub fn get_mmap_bytes_reader_and_path<'a>(
     }
     // string so read file
     else {
-        match get_either_file_and_path(py_f.to_object(py_f.py()), false)? {
+        match get_either_buffer_or_path(py_f.to_object(py_f.py()), false)? {
             (EitherRustPythonFile::Rust(f), path) => Ok((Box::new(f), path)),
             (EitherRustPythonFile::Py(f), path) => Ok((Box::new(f), path)),
         }

@@ -11,9 +11,12 @@ use std::path::{Path, PathBuf};
 pub use dot::{EscapeLabel, IRDotDisplay, PathsDisplay};
 pub use format::{ExprIRDisplay, IRDisplay};
 use hive::HivePartitions;
+use polars_core::error::feature_gated;
 use polars_core::prelude::*;
 use polars_core::POOL;
+use polars_io::file_cache::FileCacheEntry;
 use polars_utils::idx_vec::UnitVec;
+use polars_utils::mmap::MemSlice;
 use polars_utils::unitvec;
 #[cfg(feature = "ir_serde")]
 use serde::{Deserialize, Serialize};
@@ -38,13 +41,14 @@ pub struct IRPlanRef<'a> {
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum ScanSources {
     Files(Arc<[PathBuf]>),
-    Buffers(Arc<[Arc<[u8]>]>),
+    #[cfg_attr(feature = "serde", serde(skip))]
+    Buffers(Arc<[bytes::Bytes]>),
 }
 
 #[derive(Debug, Clone, Copy)]
 pub enum ScanSourceRef<'a> {
     File(&'a Path),
-    Buffer(&'a [u8]),
+    Buffer(&'a bytes::Bytes),
 }
 
 pub struct ScanSourceSliceInfo {
@@ -63,6 +67,29 @@ impl<'a> ScanSourceRef<'a> {
         match self {
             ScanSourceRef::File(path) => path.to_str().unwrap(),
             ScanSourceRef::Buffer(_) => "in-mem",
+        }
+    }
+
+    pub fn to_memslice(
+        &self,
+        run_async: bool,
+        cache_entries: Option<&Vec<Arc<FileCacheEntry>>>,
+        index: usize,
+    ) -> PolarsResult<MemSlice> {
+        match self {
+            Self::File(path) => {
+                let f = if run_async {
+                    feature_gated!("cloud", {
+                        cache_entries.unwrap()[index].try_open_check_latest()?
+                    })
+                } else {
+                    polars_utils::open_file(path)?
+                };
+
+                let mmap = unsafe { memmap::Mmap::map(&f)? };
+                Ok(MemSlice::from_mmap(Arc::new(mmap)))
+            },
+            Self::Buffer(buff) => Ok(MemSlice::from_bytes((*buff).clone())),
         }
     }
 }
@@ -92,6 +119,13 @@ impl ScanSources {
         match self {
             Self::Files(paths) => paths.clone(),
             Self::Buffers(_) => unimplemented!(),
+        }
+    }
+
+    pub fn first_path(&self) -> Option<&Path> {
+        match self {
+            ScanSources::Files(paths) => paths.first().map(|p| p.as_path()),
+            ScanSources::Buffers(_) => None,
         }
     }
 

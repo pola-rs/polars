@@ -68,7 +68,7 @@ fn visit_logical_plan_for_scan_paths(
         IR::Union { inputs, .. } => {
             enum MutableSources {
                 Files(Vec<PathBuf>),
-                Buffers(Vec<Arc<[u8]>>),
+                Buffers(Vec<bytes::Bytes>),
             }
 
             let mut scan_type: Option<FileScan> = None;

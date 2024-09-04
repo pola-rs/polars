@@ -347,7 +347,7 @@ def read_ipc_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, DataTyp
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
 @deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
 def scan_ipc(
-    source: str | Path | list[str] | list[Path] | IO[str] | IO[bytes],
+    source: str | Path | IO[bytes] | list[str] | list[Path] | list[IO[bytes]],
     *,
     n_rows: int | None = None,
     cache: bool = True,
@@ -430,8 +430,11 @@ def scan_ipc(
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source, check_not_directory=False)
         sources = []
-    elif isinstance(source, (IO, BytesIO)):
+    elif isinstance(source, BytesIO):
         sources = []
+    elif isinstance(source, list) and isinstance(source[0], BytesIO):
+        sources = source
+        source = None  # type: ignore[assignment]
     else:
         sources = [
             normalize_filepath(source, check_not_directory=False) for source in source

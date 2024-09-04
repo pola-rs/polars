@@ -46,6 +46,13 @@ mod private {
         }
     }
 
+    impl AsRef<[u8]> for MemSlice {
+        #[inline(always)]
+        fn as_ref(&self) -> &[u8] {
+            self.slice
+        }
+    }
+
     impl Default for MemSlice {
         fn default() -> Self {
             Self::from_bytes(bytes::Bytes::new())
