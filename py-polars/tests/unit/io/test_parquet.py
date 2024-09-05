@@ -12,7 +12,7 @@ import pyarrow as pa
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 import pytest
-from hypothesis import HealthCheck, given, settings
+from hypothesis import given
 from hypothesis import strategies as st
 
 import polars as pl
@@ -1559,9 +1559,7 @@ def test_predicate_filtering(
     offset=st.integers(0, 100),
     length=st.integers(0, 100),
 )
-def test_slice_roundtrip(
-    df: pl.DataFrame, offset: int, length: int
-) -> None:
+def test_slice_roundtrip(df: pl.DataFrame, offset: int, length: int) -> None:
     offset %= df.height + 1
     length %= df.height - offset + 1
 

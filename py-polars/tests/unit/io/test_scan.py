@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 from dataclasses import dataclass
 from functools import partial
 from math import ceil
@@ -9,7 +10,6 @@ from typing import TYPE_CHECKING, Any, Callable
 import pytest
 
 import polars as pl
-import io
 from polars.testing.asserts.frame import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -699,39 +699,41 @@ def test_async_path_expansion_bracket_17629(tmp_path: Path) -> None:
 )
 def test_scan_in_memory(method: str) -> None:
     f = io.BytesIO()
-    df = pl.DataFrame({
-        'a': [1, 2, 3],
-        'b': ['x', 'y', 'z'],
-    })
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3],
+            "b": ["x", "y", "z"],
+        }
+    )
 
-    (getattr(df, f'write_{method}'))(f)
+    (getattr(df, f"write_{method}"))(f)
 
     f.seek(0)
-    result = (getattr(pl, f'scan_{method}'))(f).collect()
+    result = (getattr(pl, f"scan_{method}"))(f).collect()
     assert_frame_equal(df, result)
 
     f.seek(0)
-    result = (getattr(pl, f'scan_{method}'))(f).slice(1, 2).collect()
+    result = (getattr(pl, f"scan_{method}"))(f).slice(1, 2).collect()
     assert_frame_equal(df.slice(1, 2), result)
 
     f.seek(0)
-    result = (getattr(pl, f'scan_{method}'))(f).slice(-1, 1).collect()
+    result = (getattr(pl, f"scan_{method}"))(f).slice(-1, 1).collect()
     assert_frame_equal(df.slice(-1, 1), result)
 
     g = io.BytesIO()
-    (getattr(df, f'write_{method}'))(g)
+    (getattr(df, f"write_{method}"))(g)
 
     f.seek(0)
     g.seek(0)
-    result = (getattr(pl, f'scan_{method}'))([f, g]).collect()
+    result = (getattr(pl, f"scan_{method}"))([f, g]).collect()
     assert_frame_equal(df.vstack(df), result)
 
     f.seek(0)
     g.seek(0)
-    result = (getattr(pl, f'scan_{method}'))([f, g]).slice(1, 2).collect()
+    result = (getattr(pl, f"scan_{method}"))([f, g]).slice(1, 2).collect()
     assert_frame_equal(df.vstack(df).slice(1, 2), result)
 
     f.seek(0)
     g.seek(0)
-    result = (getattr(pl, f'scan_{method}'))([f, g]).slice(-1, 1).collect()
+    result = (getattr(pl, f"scan_{method}"))([f, g]).slice(-1, 1).collect()
     assert_frame_equal(df.vstack(df).slice(-1, 1), result)

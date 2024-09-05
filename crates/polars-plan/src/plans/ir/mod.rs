@@ -13,7 +13,6 @@ pub use format::{ExprIRDisplay, IRDisplay};
 use hive::HivePartitions;
 use polars_core::error::feature_gated;
 use polars_core::prelude::*;
-use polars_core::POOL;
 use polars_io::file_cache::FileCacheEntry;
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::mmap::MemSlice;
@@ -103,7 +102,7 @@ impl ScanSources {
     }
     pub fn as_paths(&self) -> &[PathBuf] {
         match self {
-            Self::Files(paths) => &paths,
+            Self::Files(paths) => paths,
             Self::Buffers(_) => unimplemented!(),
         }
     }
@@ -138,7 +137,7 @@ impl ScanSources {
 
     pub fn is_cloud_url(&self) -> bool {
         match self {
-            Self::Files(paths) => paths.first().map_or(false, |p| polars_io::is_cloud_url(p)),
+            Self::Files(paths) => paths.first().map_or(false, polars_io::is_cloud_url),
             Self::Buffers(_) => false,
         }
     }
@@ -171,114 +170,10 @@ impl ScanSources {
         }
     }
 
-    /// Normalize the slice and collect information as to what rows and parts of the source are
-    /// used in this slice.
-    pub fn collect_slice_information(
-        &self,
-        slice: (i64, usize),
-        map_to_num_rows: impl Fn(ScanSourceRef) -> PolarsResult<usize> + Send + Sync,
-    ) -> PolarsResult<ScanSourceSliceInfo> {
-        fn slice_to_start_end(
-            offset: i64,
-            length: usize,
-            num_rows: usize,
-        ) -> std::ops::Range<usize> {
-            if offset < 0 {
-                let slice_start_as_n_from_end = -offset as usize;
-                let (start, len) = if slice_start_as_n_from_end > num_rows {
-                    // We need to trim the slice, e.g. SLICE[offset: -100, len: 75] on a file of 50
-                    // rows should only give the first 25 rows.
-                    let start_position = slice_start_as_n_from_end - num_rows;
-                    (0, length.saturating_sub(start_position))
-                } else {
-                    (num_rows - slice_start_as_n_from_end, length)
-                };
-
-                let end = start.saturating_add(len);
-
-                start..end
-            } else {
-                let offset = offset as usize;
-                offset.min(num_rows)..(offset + length).min(num_rows)
-            }
-        }
-
-        let (offset, length) = slice;
-
-        if self.is_empty() {
-            return Ok(ScanSourceSliceInfo {
-                item_slice: 0..0,
-                source_slice: 0..0,
-            });
-        }
-
-        if self.len() == 1 {
-            let num_rows = map_to_num_rows(self.get(0).unwrap())?;
-            let item_slice = slice_to_start_end(offset, length, num_rows);
-            let source_slice = if item_slice.is_empty() { 0..0 } else { 0..1 };
-
-            Ok(ScanSourceSliceInfo {
-                item_slice,
-                source_slice,
-            })
-        } else {
-            use rayon::prelude::*;
-
-            // Walk the files in reverse until we find the first file, and then translate the
-            // slice into a positive-offset equivalent.
-            const CHUNK_SIZE: usize = 8;
-            let mut row_counts = Vec::with_capacity(self.len());
-
-            POOL.install(|| {
-                for idx_end in (0..self.len()).step_by(CHUNK_SIZE) {
-                    let idx_start = idx_end.saturating_sub(CHUNK_SIZE);
-
-                    row_counts.extend(
-                        (idx_start..=idx_end)
-                            .into_par_iter()
-                            .map(|i| map_to_num_rows(self.at(i)))
-                            .collect::<PolarsResult<Vec<_>>>()?
-                            .into_iter()
-                            .rev(),
-                    );
-                }
-
-                PolarsResult::Ok(())
-            })?;
-
-            let num_rows = row_counts.iter().sum::<usize>();
-
-            let item_slice = slice_to_start_end(offset, length, num_rows);
-
-            let mut source_start = self.len() - 1;
-            let mut source_end = 0;
-
-            let mut sum = 0;
-            for (i, row_count) in row_counts.iter().rev().enumerate() {
-                if sum < item_slice.end {
-                    source_end = usize::max(source_end, i);
-                }
-
-                sum += row_count;
-
-                if sum >= item_slice.start {
-                    source_start = usize::min(source_start, i);
-                }
-            }
-
-            let source_slice = source_start..source_end + 1;
-
-            Ok(ScanSourceSliceInfo {
-                item_slice,
-                source_slice,
-            })
-        }
-    }
-
     pub fn get(&self, idx: usize) -> Option<ScanSourceRef> {
         match self {
             ScanSources::Files(paths) => paths.get(idx).map(|p| ScanSourceRef::File(p)),
-            ScanSources::Buffers(buffers) => buffers.get(idx).map(|b| ScanSourceRef::Buffer(b)),
+            ScanSources::Buffers(buffers) => buffers.get(idx).map(ScanSourceRef::Buffer),
         }
     }
 

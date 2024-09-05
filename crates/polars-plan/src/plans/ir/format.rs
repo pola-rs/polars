@@ -243,7 +243,7 @@ impl<'a> IRDisplay<'a> {
                 write_scan(
                     f,
                     scan_type.into(),
-                    &sources,
+                    sources,
                     indent,
                     n_columns,
                     file_info.schema.len(),

@@ -60,40 +60,94 @@ impl ParquetExec {
         let mut result = vec![];
 
         let step = std::cmp::min(POOL.current_num_threads(), 128);
-        let slice_info = match self.file_options.slice {
-            None => ScanSourceSliceInfo {
-                item_slice: 0..usize::MAX,
-                source_slice: 0..self.sources.len(),
-            },
-            Some(slice) => {
-                self.sources
-                    .collect_slice_information(slice, |source| match source {
-                        ScanSourceRef::File(path) => {
-                            ParquetReader::new(std::fs::File::open(path)?).num_rows()
-                        },
-                        ScanSourceRef::Buffer(buff) => {
-                            ParquetReader::new(std::io::Cursor::new(buff)).num_rows()
-                        },
-                    })?
-            },
+        // Modified if we have a negative slice
+        let mut first_source = 0;
+
+        // (offset, end)
+        let (slice_offset, slice_end) = if let Some(slice) = self.file_options.slice {
+            if slice.0 >= 0 {
+                (slice.0 as usize, slice.1.saturating_add(slice.0 as usize))
+            } else {
+                // Walk the files in reverse until we find the first file, and then translate the
+                // slice into a positive-offset equivalent.
+                let slice_start_as_n_from_end = -slice.0 as usize;
+                let mut cum_rows = 0;
+                let chunk_size = 8;
+                POOL.install(|| {
+                    for path_indexes in (0..self.sources.len())
+                        .rev()
+                        .collect::<Vec<_>>()
+                        .chunks(chunk_size)
+                    {
+                        let row_counts = path_indexes
+                            .into_par_iter()
+                            .map(|&i| {
+                                let memslice = match self.sources.at(i) {
+                                    ScanSourceRef::File(path) => {
+                                        let file = std::fs::File::open(path)?;
+                                        MemSlice::from_mmap(Arc::new(unsafe {
+                                            memmap::Mmap::map(&file).unwrap()
+                                        }))
+                                    },
+                                    ScanSourceRef::Buffer(buff) => {
+                                        MemSlice::from_bytes(buff.clone())
+                                    },
+                                };
+
+                                ParquetReader::new(std::io::Cursor::new(memslice)).num_rows()
+                            })
+                            .collect::<PolarsResult<Vec<_>>>()?;
+
+                        for (path_idx, rc) in path_indexes.iter().zip(row_counts) {
+                            cum_rows += rc;
+
+                            if cum_rows >= slice_start_as_n_from_end {
+                                first_source = *path_idx;
+                                break;
+                            }
+                        }
+
+                        if first_source > 0 {
+                            break;
+                        }
+                    }
+
+                    PolarsResult::Ok(())
+                })?;
+
+                let (start, len) = if slice_start_as_n_from_end > cum_rows {
+                    // We need to trim the slice, e.g. SLICE[offset: -100, len: 75] on a file of 50
+                    // rows should only give the first 25 rows.
+                    let first_file_position = slice_start_as_n_from_end - cum_rows;
+                    (0, slice.1.saturating_sub(first_file_position))
+                } else {
+                    (cum_rows - slice_start_as_n_from_end, slice.1)
+                };
+
+                let end = start.saturating_add(len);
+
+                (start, end)
+            }
+        } else {
+            (0, usize::MAX)
         };
 
         let mut current_offset = 0;
         let base_row_index = self.file_options.row_index.take();
         // Limit no. of files at a time to prevent open file limits.
 
-        for i in slice_info.source_slice.step_by(step) {
+        for i in (first_source..self.sources.len()).step_by(step) {
             let end = std::cmp::min(i.saturating_add(step), self.sources.len());
             let hive_parts = self.hive_parts.as_ref().map(|x| &x[i..end]);
 
-            if current_offset >= slice_info.item_slice.end && !result.is_empty() {
+            if current_offset >= slice_end && !result.is_empty() {
                 return Ok(result);
             }
 
             // First initialize the readers, predicates and metadata.
             // This will be used to determine the slices. That way we can actually read all the
             // files in parallel even if we add row index columns or slices.
-            let iter = (0..self.sources.len()).into_par_iter().map(|i| {
+            let iter = (i..end).into_par_iter().map(|i| {
                 let source = self.sources.at(i);
                 let hive_partitions = hive_parts.map(|x| x[i].materialize_partition_columns());
 
@@ -141,12 +195,7 @@ impl ParquetExec {
                     let cum_rows = *current_offset_ref;
                     (
                         cum_rows,
-                        split_slice_at_file(
-                            current_offset_ref,
-                            *num_rows,
-                            slice_info.item_slice.start,
-                            slice_info.item_slice.end,
-                        ),
+                        split_slice_at_file(current_offset_ref, *num_rows, slice_offset, slice_end),
                     )
                 })
                 .collect::<Vec<_>>();

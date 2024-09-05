@@ -128,10 +128,11 @@ impl LazyFileListReader for LazyJsonLineReader {
             row_index: self.row_index,
             rechunk: self.rechunk,
             file_counter: 0,
-            hive_options: {
-                let mut options = HiveOptions::default();
-                options.enabled = Some(false);
-                options
+            hive_options: HiveOptions {
+                enabled: Some(false),
+                hive_start_idx: 0,
+                schema: None,
+                try_parse_dates: true,
             },
             glob: true,
             include_file_paths: self.include_file_paths,

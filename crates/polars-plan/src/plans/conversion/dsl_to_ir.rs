@@ -197,7 +197,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 let mut owned = None;
 
                 hive_partitions_from_paths(
-                    &sources.as_paths(),
+                    sources.as_paths(),
                     file_options.hive_options.hive_start_idx,
                     file_options.hive_options.schema.clone(),
                     match resolved_file_info.reader_schema.as_ref().unwrap() {
@@ -830,19 +830,19 @@ impl DslScanSources {
         let expanded_sources = match &scan_type {
             #[cfg(feature = "parquet")]
             FileScan::Parquet { cloud_options, .. } => {
-                expand_scan_paths_with_hive_update(&paths, file_options, cloud_options)?
+                expand_scan_paths_with_hive_update(paths, file_options, cloud_options)?
             },
             #[cfg(feature = "ipc")]
             FileScan::Ipc { cloud_options, .. } => {
-                expand_scan_paths_with_hive_update(&paths, file_options, cloud_options)?
+                expand_scan_paths_with_hive_update(paths, file_options, cloud_options)?
             },
             #[cfg(feature = "csv")]
             FileScan::Csv { cloud_options, .. } => {
-                expand_paths(&paths, file_options.glob, cloud_options.as_ref())?
+                expand_paths(paths, file_options.glob, cloud_options.as_ref())?
             },
             #[cfg(feature = "json")]
             FileScan::NDJson { cloud_options, .. } => {
-                expand_paths(&paths, file_options.glob, cloud_options.as_ref())?
+                expand_paths(paths, file_options.glob, cloud_options.as_ref())?
             },
             FileScan::Anonymous { .. } => unreachable!(), // Invariant: Anonymous scans are already expanded.
         };
