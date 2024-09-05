@@ -5,6 +5,7 @@ use polars_error::feature_gated;
 use polars_io::cloud::CloudOptions;
 use polars_io::path_utils::is_cloud_url;
 use polars_io::predicates::apply_predicate;
+use polars_utils::mmap::MemSlice;
 use rayon::prelude::*;
 
 use super::*;
@@ -13,6 +14,7 @@ pub struct IpcExec {
     pub(crate) sources: ScanSources,
     pub(crate) file_info: FileInfo,
     pub(crate) predicate: Option<Arc<dyn PhysicalExpr>>,
+    #[allow(dead_code)]
     pub(crate) options: IpcScanOptions,
     pub(crate) file_options: FileScanOptions,
     pub(crate) hive_parts: Option<Arc<Vec<HivePartitions>>>,
@@ -72,48 +74,34 @@ impl IpcExec {
         let read_path = |index: usize, n_rows: Option<usize>| {
             let source = self.sources.at(index);
 
-            match source {
+            let memslice = match source {
                 ScanSourceRef::File(path) => {
                     let file = match idx_to_cached_file(index) {
                         None => std::fs::File::open(path)?,
                         Some(f) => f?,
                     };
 
-                    IpcReader::new(file)
-                        .with_n_rows(n_rows)
-                        .with_row_index(self.file_options.row_index.clone())
-                        .with_projection(projection.clone())
-                        .with_hive_partition_columns(
-                            self.hive_parts
-                                .as_ref()
-                                .map(|x| x[index].materialize_partition_columns()),
-                        )
-                        .with_include_file_path(
-                            self.file_options
-                                .include_file_paths
-                                .as_ref()
-                                .map(|x| (x.clone(), Arc::from(source.to_file_path()))),
-                        )
-                        .memory_mapped(self.options.memory_map.then(|| path.to_path_buf()))
-                        .finish()
+                    MemSlice::from_mmap(Arc::new(unsafe { memmap::Mmap::map(&file).unwrap() }))
                 },
-                ScanSourceRef::Buffer(buff) => IpcReader::new(std::io::Cursor::new(buff))
-                    .with_n_rows(n_rows)
-                    .with_row_index(self.file_options.row_index.clone())
-                    .with_projection(projection.clone())
-                    .with_hive_partition_columns(
-                        self.hive_parts
-                            .as_ref()
-                            .map(|x| x[index].materialize_partition_columns()),
-                    )
-                    .with_include_file_path(
-                        self.file_options
-                            .include_file_paths
-                            .as_ref()
-                            .map(|x| (x.clone(), Arc::from(source.to_file_path()))),
-                    )
-                    .finish(),
-            }
+                ScanSourceRef::Buffer(buff) => MemSlice::from_bytes(buff.clone()),
+            };
+
+            IpcReader::new(std::io::Cursor::new(memslice))
+                .with_n_rows(n_rows)
+                .with_row_index(self.file_options.row_index.clone())
+                .with_projection(projection.clone())
+                .with_hive_partition_columns(
+                    self.hive_parts
+                        .as_ref()
+                        .map(|x| x[index].materialize_partition_columns()),
+                )
+                .with_include_file_path(
+                    self.file_options
+                        .include_file_paths
+                        .as_ref()
+                        .map(|x| (x.clone(), Arc::from(source.to_file_path()))),
+                )
+                .finish()
         };
 
         let mut dfs = if let Some(mut n_rows) = self.file_options.slice.map(|x| {

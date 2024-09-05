@@ -124,16 +124,17 @@ impl LazyFileListReader for LazyIpcReader {
 impl LazyFrame {
     /// Create a LazyFrame directly from a ipc scan.
     pub fn scan_ipc(path: impl AsRef<Path>, args: ScanArgsIpc) -> PolarsResult<Self> {
-        LazyIpcReader::new(args)
-            .with_paths([path.as_ref().to_path_buf()].into())
-            .finish()
+        Self::scan_ipc_sources(
+            ScanSources::Files([path.as_ref().to_path_buf()].into()),
+            args,
+        )
     }
 
     pub fn scan_ipc_files(paths: Arc<[PathBuf]>, args: ScanArgsIpc) -> PolarsResult<Self> {
-        LazyIpcReader::new(args).with_paths(paths).finish()
+        Self::scan_ipc_sources(ScanSources::Files(paths), args)
     }
 
-    pub fn scan_ipc_sourced(sources: ScanSources, args: ScanArgsIpc) -> PolarsResult<Self> {
+    pub fn scan_ipc_sources(sources: ScanSources, args: ScanArgsIpc) -> PolarsResult<Self> {
         LazyIpcReader::new(args).with_sources(sources).finish()
     }
 }

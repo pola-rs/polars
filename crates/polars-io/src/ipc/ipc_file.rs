@@ -52,6 +52,7 @@ use crate::RowIndex;
 #[derive(Clone, Debug, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct IpcScanOptions {
+    /// Not used anymore.
     pub memory_map: bool,
 }
 

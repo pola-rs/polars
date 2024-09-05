@@ -32,22 +32,22 @@ impl LazyCsvReader {
     }
 
     pub fn new_paths(paths: Arc<[PathBuf]>) -> Self {
-        Self::new("").with_paths(paths)
+        Self::new_with_sources(ScanSources::Files(paths))
     }
 
-    pub fn new_sourced(sources: ScanSources) -> Self {
-        Self::new("").with_sources(sources)
-    }
-
-    pub fn new(path: impl AsRef<Path>) -> Self {
+    pub fn new_with_sources(sources: ScanSources) -> Self {
         LazyCsvReader {
-            sources: ScanSources::Files([path.as_ref().to_path_buf()].into()),
+            sources,
             glob: true,
             cache: true,
             read_options: Default::default(),
             cloud_options: Default::default(),
             include_file_paths: None,
         }
+    }
+
+    pub fn new(path: impl AsRef<Path>) -> Self {
+        Self::new_with_sources(ScanSources::Files([path.as_ref().to_path_buf()].into()))
     }
 
     /// Skip this number of rows after the header location.

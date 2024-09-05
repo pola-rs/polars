@@ -257,9 +257,9 @@ def scan_ndjson(
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source, check_not_directory=False)
         sources = []
-    elif isinstance(source, BytesIO):
+    elif isinstance(source, (BytesIO, StringIO)):
         sources = []
-    elif isinstance(source, list) and isinstance(source[0], BytesIO):
+    elif isinstance(source, list) and isinstance(source[0], (BytesIO, StringIO)):
         sources = source
         source = None  # type: ignore[assignment]
     else:

@@ -70,7 +70,7 @@ impl PyLazyFrame {
             Some(source) => pyobject_to_first_path_and_scan_sources(source)?,
         };
 
-        let mut r = LazyJsonLineReader::new_sourced(sources);
+        let mut r = LazyJsonLineReader::new_with_sources(sources);
 
         #[cfg(feature = "cloud")]
         if let Some(first_path) = first_path {
@@ -168,7 +168,7 @@ impl PyLazyFrame {
             Some(source) => pyobject_to_first_path_and_scan_sources(source)?,
         };
 
-        let mut r = LazyCsvReader::new_sourced(sources);
+        let mut r = LazyCsvReader::new_with_sources(sources);
 
         #[cfg(feature = "cloud")]
         if let Some(first_path) = first_path {
@@ -302,7 +302,7 @@ impl PyLazyFrame {
             args.cloud_options = Some(cloud_options.with_max_retries(retries));
         }
 
-        let lf = LazyFrame::scan_parquet_sourced(sources, args).map_err(PyPolarsErr::from)?;
+        let lf = LazyFrame::scan_parquet_sources(sources, args).map_err(PyPolarsErr::from)?;
 
         Ok(lf.into())
     }
@@ -368,7 +368,7 @@ impl PyLazyFrame {
             args.cloud_options = Some(cloud_options.with_max_retries(retries));
         }
 
-        let lf = LazyFrame::scan_ipc_sourced(sources, args).map_err(PyPolarsErr::from)?;
+        let lf = LazyFrame::scan_ipc_sources(sources, args).map_err(PyPolarsErr::from)?;
         Ok(lf.into())
     }
 

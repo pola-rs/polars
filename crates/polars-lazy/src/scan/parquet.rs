@@ -139,18 +139,19 @@ impl LazyFileListReader for LazyParquetReader {
 impl LazyFrame {
     /// Create a LazyFrame directly from a parquet scan.
     pub fn scan_parquet(path: impl AsRef<Path>, args: ScanArgsParquet) -> PolarsResult<Self> {
-        LazyParquetReader::new(args)
-            .with_paths(vec![path.as_ref().to_path_buf()].into())
-            .finish()
+        Self::scan_parquet_sources(
+            ScanSources::Files([path.as_ref().to_path_buf()].into()),
+            args,
+        )
     }
 
     /// Create a LazyFrame directly from a parquet scan.
-    pub fn scan_parquet_sourced(sources: ScanSources, args: ScanArgsParquet) -> PolarsResult<Self> {
+    pub fn scan_parquet_sources(sources: ScanSources, args: ScanArgsParquet) -> PolarsResult<Self> {
         LazyParquetReader::new(args).with_sources(sources).finish()
     }
 
     /// Create a LazyFrame directly from a parquet scan.
     pub fn scan_parquet_files(paths: Arc<[PathBuf]>, args: ScanArgsParquet) -> PolarsResult<Self> {
-        LazyParquetReader::new(args).with_paths(paths).finish()
+        Self::scan_parquet_sources(ScanSources::Files(paths), args)
     }
 }

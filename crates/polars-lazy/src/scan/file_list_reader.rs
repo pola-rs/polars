@@ -83,9 +83,10 @@ pub trait LazyFileListReader: Clone {
         true
     }
 
+    /// Get the sources for this reader.
     fn sources(&self) -> &ScanSources;
 
-    /// Set paths of the scanned files.
+    /// Set sources of the scanned files.
     #[must_use]
     fn with_sources(self, source: ScanSources) -> Self;
 

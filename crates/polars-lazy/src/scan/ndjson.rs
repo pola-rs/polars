@@ -29,10 +29,10 @@ pub struct LazyJsonLineReader {
 
 impl LazyJsonLineReader {
     pub fn new_paths(paths: Arc<[PathBuf]>) -> Self {
-        Self::new_sourced(ScanSources::Files(paths))
+        Self::new_with_sources(ScanSources::Files(paths))
     }
 
-    pub fn new_sourced(sources: ScanSources) -> Self {
+    pub fn new_with_sources(sources: ScanSources) -> Self {
         LazyJsonLineReader {
             sources,
             batch_size: None,
@@ -50,8 +50,9 @@ impl LazyJsonLineReader {
     }
 
     pub fn new(path: impl AsRef<Path>) -> Self {
-        Self::new_sourced(ScanSources::Files([path.as_ref().to_path_buf()].into()))
+        Self::new_with_sources(ScanSources::Files([path.as_ref().to_path_buf()].into()))
     }
+
     /// Add a row index column.
     #[must_use]
     pub fn with_row_index(mut self, row_index: Option<RowIndex>) -> Self {
