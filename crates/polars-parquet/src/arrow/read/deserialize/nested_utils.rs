@@ -713,7 +713,7 @@ fn extend_offsets_limited<'a, D: utils::NestedDecoder>(
 
 pub struct PageNestedDecoder<D: utils::NestedDecoder> {
     pub iter: BasicDecompressor,
-    pub data_type: ArrowDataType,
+    pub dtype: ArrowDataType,
     pub dict: Option<D::Dict>,
     pub decoder: D,
     pub init: Vec<InitNested>,
@@ -737,7 +737,7 @@ fn level_iters(page: &DataPage) -> ParquetResult<(HybridRleDecoder, HybridRleDec
 impl<D: utils::NestedDecoder> PageNestedDecoder<D> {
     pub fn new(
         mut iter: BasicDecompressor,
-        data_type: ArrowDataType,
+        dtype: ArrowDataType,
         decoder: D,
         init: Vec<InitNested>,
     ) -> ParquetResult<Self> {
@@ -746,7 +746,7 @@ impl<D: utils::NestedDecoder> PageNestedDecoder<D> {
 
         Ok(Self {
             iter,
-            data_type,
+            dtype,
             dict,
             decoder,
             init,
@@ -970,7 +970,7 @@ impl<D: utils::NestedDecoder> PageNestedDecoder<D> {
         ));
         _ = nested_state.pop().unwrap();
 
-        let array = self.decoder.finalize(self.data_type, self.dict, target)?;
+        let array = self.decoder.finalize(self.dtype, self.dict, target)?;
 
         Ok((nested_state, array))
     }

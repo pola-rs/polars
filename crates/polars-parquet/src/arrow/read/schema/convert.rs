@@ -311,7 +311,7 @@ pub(crate) fn is_nullable(field_info: &FieldInfo) -> bool {
 fn to_field(type_: &ParquetType, options: &SchemaInferenceOptions) -> Option<Field> {
     Some(Field::new(
         type_.get_field_info().name.clone(),
-        to_data_type(type_, options)?,
+        to_dtype(type_, options)?,
         is_nullable(type_.get_field_info()),
     ))
 }
@@ -340,7 +340,7 @@ fn to_list(
             } {
                 // extract the repetition field
                 let nested_item = fields.first().unwrap();
-                to_data_type(nested_item, options)
+                to_dtype(nested_item, options)
             } else {
                 to_struct(fields, options)
             }
@@ -383,7 +383,7 @@ fn to_list(
 ///
 /// If this schema is a group type and none of its children is reserved in the
 /// conversion, the result is Ok(None).
-pub(crate) fn to_data_type(
+pub(crate) fn to_dtype(
     type_: &ParquetType,
     options: &SchemaInferenceOptions,
 ) -> Option<ArrowDataType> {

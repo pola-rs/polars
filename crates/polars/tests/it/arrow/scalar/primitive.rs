@@ -19,18 +19,18 @@ fn basics() {
     let a = PrimitiveScalar::from(Some(2i32));
 
     assert_eq!(a.value(), &Some(2i32));
-    assert_eq!(a.data_type(), &ArrowDataType::Int32);
+    assert_eq!(a.dtype(), &ArrowDataType::Int32);
 
     let a = a.to(ArrowDataType::Date32);
-    assert_eq!(a.data_type(), &ArrowDataType::Date32);
+    assert_eq!(a.dtype(), &ArrowDataType::Date32);
 
     let a = PrimitiveScalar::<i32>::from(None);
 
-    assert_eq!(a.data_type(), &ArrowDataType::Int32);
+    assert_eq!(a.dtype(), &ArrowDataType::Int32);
     assert!(!a.is_valid());
 
     let a = a.to(ArrowDataType::Date32);
-    assert_eq!(a.data_type(), &ArrowDataType::Date32);
+    assert_eq!(a.dtype(), &ArrowDataType::Date32);
 
     let _: &dyn std::any::Any = a.as_any();
 }

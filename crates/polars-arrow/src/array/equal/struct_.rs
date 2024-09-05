@@ -1,7 +1,7 @@
 use crate::array::{Array, StructArray};
 
 pub(super) fn equal(lhs: &StructArray, rhs: &StructArray) -> bool {
-    lhs.data_type() == rhs.data_type()
+    lhs.dtype() == rhs.dtype()
         && lhs.len() == rhs.len()
         && match (lhs.validity(), rhs.validity()) {
             (None, None) => lhs.values().iter().eq(rhs.values().iter()),

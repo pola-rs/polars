@@ -98,9 +98,7 @@ pub(crate) fn finish_reader<R: ArrowReader>(
             // Create an empty dataframe with the correct data types
             let empty_cols = arrow_schema
                 .iter_values()
-                .map(|fld| {
-                    Series::try_from((fld.name.clone(), new_empty_array(fld.data_type.clone())))
-                })
+                .map(|fld| Series::try_from((fld.name.clone(), new_empty_array(fld.dtype.clone()))))
                 .collect::<PolarsResult<_>>()?;
             DataFrame::new(empty_cols)?
         } else {
@@ -126,14 +124,14 @@ pub(crate) fn schema_to_arrow_checked(
             #[cfg(feature = "object")]
             {
                 polars_ensure!(
-                    !matches!(field.data_type(), DataType::Object(_, _)),
+                    !matches!(field.dtype(), DataType::Object(_, _)),
                     ComputeError: "cannot write 'Object' datatype to {}",
                     _file_name
                 );
             }
 
             let field = field
-                .data_type()
+                .dtype()
                 .to_arrow_field(field.name().clone(), compat_level);
             Ok((field.name.clone(), field))
         })

@@ -20,10 +20,10 @@ Config options
     Config.set_tbl_cell_alignment
     Config.set_tbl_cell_numeric_alignment
     Config.set_tbl_cols
-    Config.set_tbl_column_data_type_inline
+    Config.set_tbl_column_dtype_inline
     Config.set_tbl_dataframe_shape_below
     Config.set_tbl_formatting
-    Config.set_tbl_hide_column_data_types
+    Config.set_tbl_hide_column_dtypes
     Config.set_tbl_hide_column_names
     Config.set_tbl_hide_dataframe_shape
     Config.set_tbl_hide_dtype_separator

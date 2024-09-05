@@ -392,7 +392,7 @@ mod stats {
 
             #[cfg(debug_assertions)]
             {
-                match (fld_l.data_type(), fld_r.data_type()) {
+                match (fld_l.dtype(), fld_r.dtype()) {
                     #[cfg(feature = "dtype-categorical")]
                     (DataType::String, DataType::Categorical(_, _) | DataType::Enum(_, _)) => {},
                     #[cfg(feature = "dtype-categorical")]

@@ -290,7 +290,7 @@ impl ToPyObject for Wrap<DataType> {
                 let field_class = pl.getattr(intern!(py, "Field")).unwrap();
                 let iter = fields.iter().map(|fld| {
                     let name = fld.name().as_str();
-                    let dtype = Wrap(fld.data_type().clone()).to_object(py);
+                    let dtype = Wrap(fld.dtype().clone()).to_object(py);
                     field_class.call1((name, dtype)).unwrap()
                 });
                 let fields = PyList::new_bound(py, iter);
@@ -399,7 +399,7 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
                 let s = get_series(&categories.as_borrowed())?;
                 let ca = s.str().map_err(PyPolarsErr::from)?;
                 let categories = ca.downcast_iter().next().unwrap().clone();
-                create_enum_data_type(categories)
+                create_enum_dtype(categories)
             },
             "Date" => DataType::Date,
             "Time" => DataType::Time,

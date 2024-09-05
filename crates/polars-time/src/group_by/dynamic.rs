@@ -133,8 +133,8 @@ impl Wrap<&DataFrame> {
         let time_type = time.dtype();
 
         polars_ensure!(time.null_count() == 0, ComputeError: "null values in `rolling` not supported, fill nulls.");
-        ensure_duration_matches_data_type(options.period, time_type, "period")?;
-        ensure_duration_matches_data_type(options.offset, time_type, "offset")?;
+        ensure_duration_matches_dtype(options.period, time_type, "period")?;
+        ensure_duration_matches_dtype(options.offset, time_type, "offset")?;
 
         use DataType::*;
         let (dt, tu, tz): (Series, TimeUnit, Option<TimeZone>) = match time_type {
@@ -202,9 +202,9 @@ impl Wrap<&DataFrame> {
         let time_type = time.dtype();
 
         polars_ensure!(time.null_count() == 0, ComputeError: "null values in dynamic group_by not supported, fill nulls.");
-        ensure_duration_matches_data_type(options.every, time_type, "every")?;
-        ensure_duration_matches_data_type(options.offset, time_type, "offset")?;
-        ensure_duration_matches_data_type(options.period, time_type, "period")?;
+        ensure_duration_matches_dtype(options.every, time_type, "every")?;
+        ensure_duration_matches_dtype(options.offset, time_type, "offset")?;
+        ensure_duration_matches_dtype(options.period, time_type, "period")?;
 
         use DataType::*;
         let (dt, tu) = match time_type {

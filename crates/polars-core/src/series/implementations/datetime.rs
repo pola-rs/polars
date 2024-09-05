@@ -249,8 +249,8 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
             .into_series()
     }
 
-    fn cast(&self, data_type: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
-        match (data_type, self.0.time_unit()) {
+    fn cast(&self, dtype: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
+        match (dtype, self.0.time_unit()) {
             (DataType::String, TimeUnit::Milliseconds) => {
                 Ok(self.0.to_string("%F %T%.3f")?.into_series())
             },
@@ -260,7 +260,7 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
             (DataType::String, TimeUnit::Nanoseconds) => {
                 Ok(self.0.to_string("%F %T%.9f")?.into_series())
             },
-            _ => self.0.cast_with_options(data_type, cast_options),
+            _ => self.0.cast_with_options(dtype, cast_options),
         }
     }
 

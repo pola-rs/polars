@@ -587,14 +587,14 @@ impl<'a> Display for ExprIRDisplay<'a> {
             },
             Cast {
                 expr,
-                data_type,
+                dtype,
                 options,
             } => {
                 self.with_root(expr).fmt(f)?;
                 if options.strict() {
-                    write!(f, ".strict_cast({data_type:?})")
+                    write!(f, ".strict_cast({dtype:?})")
                 } else {
-                    write!(f, ".cast({data_type:?})")
+                    write!(f, ".cast({dtype:?})")
                 }
             },
             Ternary {

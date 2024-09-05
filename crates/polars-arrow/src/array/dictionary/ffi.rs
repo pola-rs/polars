@@ -15,7 +15,7 @@ unsafe impl<K: DictionaryKey> ToFfi for DictionaryArray<K> {
 
     fn to_ffi_aligned(&self) -> Self {
         Self {
-            data_type: self.data_type.clone(),
+            dtype: self.dtype.clone(),
             keys: self.keys.to_ffi_aligned(),
             values: self.values.clone(),
         }
@@ -28,7 +28,7 @@ impl<K: DictionaryKey, A: ffi::ArrowArrayRef> FromFfi<A> for DictionaryArray<K> 
         let validity = unsafe { array.validity() }?;
         let values = unsafe { array.buffer::<K>(1) }?;
 
-        let data_type = array.data_type().clone();
+        let dtype = array.dtype().clone();
 
         let keys = PrimitiveArray::<K>::try_new(K::PRIMITIVE.into(), values, validity)?;
         let values = array.dictionary()?.ok_or_else(
@@ -37,6 +37,6 @@ impl<K: DictionaryKey, A: ffi::ArrowArrayRef> FromFfi<A> for DictionaryArray<K> 
         let values = ffi::try_from(values)?;
 
         // the assumption of this trait
-        DictionaryArray::<K>::try_new_unchecked(data_type, keys, values)
+        DictionaryArray::<K>::try_new_unchecked(dtype, keys, values)
     }
 }

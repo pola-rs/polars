@@ -88,14 +88,14 @@ unsafe fn _mmap_record<T: AsRef<[u8]>>(
 
     fields
         .iter_values()
-        .map(|f| &f.data_type)
+        .map(|f| &f.dtype)
         .cloned()
         .zip(ipc_fields)
-        .map(|(data_type, ipc_field)| {
+        .map(|(dtype, ipc_field)| {
             array::mmap(
                 data.clone(),
                 offset,
-                data_type,
+                dtype,
                 ipc_field,
                 dictionaries,
                 &mut field_nodes,
@@ -178,7 +178,7 @@ unsafe fn mmap_dictionary<T: AsRef<[u8]>>(
         .ok_or_else(|| polars_err!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::MissingData))?;
 
     let value_type = if let ArrowDataType::Dictionary(_, value_type, _) =
-        first_field.data_type.to_logical_type()
+        first_field.dtype.to_logical_type()
     {
         value_type.as_ref()
     } else {

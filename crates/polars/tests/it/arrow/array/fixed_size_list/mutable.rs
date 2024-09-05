@@ -44,7 +44,7 @@ fn new_with_field() {
     let list: FixedSizeListArray = list.into();
 
     assert_eq!(
-        list.data_type(),
+        list.dtype(),
         &ArrowDataType::FixedSizeList(
             Box::new(Field::new(
                 "custom_items".into(),

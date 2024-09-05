@@ -1799,7 +1799,7 @@ fn ensure_metadata_has_projected_fields(
     let mut schema = schema
         .into_iter_values()
         .map(|x| {
-            let dtype = DataType::from_arrow(&x.data_type, true);
+            let dtype = DataType::from_arrow(&x.dtype, true);
             (x.name, dtype)
         })
         .collect::<PlHashMap<PlSmallStr, DataType>>();
@@ -1809,7 +1809,7 @@ fn ensure_metadata_has_projected_fields(
             polars_bail!(SchemaMismatch: "did not find column: {}", field.name)
         };
 
-        let expected_dtype = DataType::from_arrow(&field.data_type, true);
+        let expected_dtype = DataType::from_arrow(&field.dtype, true);
 
         if dtype != expected_dtype {
             polars_bail!(SchemaMismatch: "data type mismatch for column {}: found: {}, expected: {}",

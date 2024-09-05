@@ -33,7 +33,7 @@ fn to() {
     )
     .unwrap();
     let a = a.to(ArrowDataType::Date32);
-    assert_eq!(a.data_type(), &ArrowDataType::Date32);
+    assert_eq!(a.dtype(), &ArrowDataType::Date32);
 }
 
 #[test]
@@ -311,7 +311,7 @@ fn try_from_trusted_len_iter() {
 }
 
 #[test]
-fn wrong_data_type() {
+fn wrong_dtype() {
     assert!(MutablePrimitiveArray::<i32>::try_new(ArrowDataType::Utf8, vec![], None).is_err());
 }
 

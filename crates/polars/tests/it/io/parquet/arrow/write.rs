@@ -40,7 +40,7 @@ fn round_trip_opt_stats(
         _ => unreachable!(),
     };
 
-    let field = Field::new("a1".into(), array.data_type().clone(), true);
+    let field = Field::new("a1".into(), array.dtype().clone(), true);
     let schema = ArrowSchema::from_iter([field]);
 
     let options = WriteOptions {

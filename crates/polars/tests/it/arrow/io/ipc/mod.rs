@@ -53,7 +53,7 @@ fn prep_schema(array: &dyn Array) -> ArrowSchemaRef {
     let name = PlSmallStr::from_static("a");
     Arc::new(ArrowSchema::from_iter([Field::new(
         name,
-        array.data_type().clone(),
+        array.dtype().clone(),
         true,
     )]))
 }

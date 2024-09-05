@@ -632,10 +632,10 @@ impl PartitionedAggregation for AggregationExpr {
                 let vals = values.iter().map(|arr| &**arr).collect::<Vec<_>>();
                 let values = concatenate(&vals).unwrap();
 
-                let data_type = ListArray::<i64>::default_datatype(values.data_type().clone());
+                let dtype = ListArray::<i64>::default_datatype(values.dtype().clone());
                 // SAFETY: offsets are monotonically increasing.
                 let arr = ListArray::<i64>::new(
-                    data_type,
+                    dtype,
                     unsafe { Offsets::new_unchecked(offsets).into() },
                     values,
                     None,

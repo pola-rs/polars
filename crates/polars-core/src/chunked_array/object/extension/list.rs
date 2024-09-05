@@ -69,11 +69,11 @@ impl<T: PolarsObject> ListBuilderTrait for ExtensionListBuilder<T> {
         let mut pe = create_extension(obj_arr.into_iter_cloned());
         unsafe { pe.set_to_series_fn::<T>() };
         let extension_array = Box::new(pe.take_and_forget()) as ArrayRef;
-        let extension_dtype = extension_array.data_type();
+        let extension_dtype = extension_array.dtype();
 
-        let data_type = ListArray::<i64>::default_datatype(extension_dtype.clone());
+        let dtype = ListArray::<i64>::default_datatype(extension_dtype.clone());
         let arr = ListArray::<i64>::new(
-            data_type,
+            dtype,
             // SAFETY: offsets are monotonically increasing.
             unsafe { Offsets::new_unchecked(offsets).into() },
             extension_array,

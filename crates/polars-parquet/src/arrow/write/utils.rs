@@ -142,10 +142,10 @@ pub fn get_bit_width(max: u64) -> u32 {
     64 - max.leading_zeros()
 }
 
-pub(super) fn invalid_encoding(encoding: Encoding, data_type: &ArrowDataType) -> PolarsError {
+pub(super) fn invalid_encoding(encoding: Encoding, dtype: &ArrowDataType) -> PolarsError {
     polars_err!(InvalidOperation:
         "Datatype {:?} cannot be encoded by {:?} encoding",
-        data_type,
+        dtype,
         encoding
     )
 }

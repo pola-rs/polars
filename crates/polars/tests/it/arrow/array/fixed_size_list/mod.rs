@@ -9,7 +9,7 @@ fn data() -> FixedSizeListArray {
 
     FixedSizeListArray::try_new(
         ArrowDataType::FixedSizeList(
-            Box::new(Field::new("a".into(), values.data_type().clone(), true)),
+            Box::new(Field::new("a".into(), values.dtype().clone(), true)),
             2,
         ),
         values.boxed(),
@@ -108,7 +108,7 @@ fn wrong_len() {
 }
 
 #[test]
-fn wrong_data_type() {
+fn wrong_dtype() {
     let values = Int32Array::from_slice([10, 20, 0]);
     assert!(FixedSizeListArray::try_new(
         ArrowDataType::Binary,

@@ -50,7 +50,7 @@ pub fn write(
         null_count: array.null_count() as i64,
     });
     use PhysicalType::*;
-    match array.data_type().to_physical_type() {
+    match array.dtype().to_physical_type() {
         Null => (),
         Boolean => write_boolean(
             array.as_any().downcast_ref().unwrap(),

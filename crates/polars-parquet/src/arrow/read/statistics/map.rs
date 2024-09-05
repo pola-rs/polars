@@ -6,25 +6,25 @@ use super::make_mutable;
 
 #[derive(Debug)]
 pub struct DynMutableMapArray {
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
     pub inner: Box<dyn MutableArray>,
 }
 
 impl DynMutableMapArray {
-    pub fn try_with_capacity(data_type: ArrowDataType, capacity: usize) -> PolarsResult<Self> {
-        let inner = match data_type.to_logical_type() {
+    pub fn try_with_capacity(dtype: ArrowDataType, capacity: usize) -> PolarsResult<Self> {
+        let inner = match dtype.to_logical_type() {
             ArrowDataType::Map(inner, _) => inner,
             _ => unreachable!(),
         };
-        let inner = make_mutable(inner.data_type(), capacity)?;
+        let inner = make_mutable(inner.dtype(), capacity)?;
 
-        Ok(Self { data_type, inner })
+        Ok(Self { dtype, inner })
     }
 }
 
 impl MutableArray for DynMutableMapArray {
-    fn data_type(&self) -> &ArrowDataType {
-        &self.data_type
+    fn dtype(&self) -> &ArrowDataType {
+        &self.dtype
     }
 
     fn len(&self) -> usize {
@@ -37,7 +37,7 @@ impl MutableArray for DynMutableMapArray {
 
     fn as_box(&mut self) -> Box<dyn Array> {
         Box::new(MapArray::new(
-            self.data_type.clone(),
+            self.dtype.clone(),
             vec![0, self.inner.len() as i32].try_into().unwrap(),
             self.inner.as_box(),
             None,

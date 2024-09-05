@@ -428,13 +428,13 @@ fn create_physical_expr_inner(
         },
         Cast {
             expr,
-            data_type,
+            dtype,
             options,
         } => {
             let phys_expr = create_physical_expr_inner(*expr, ctxt, expr_arena, schema, state)?;
             Ok(Arc::new(CastExpr {
                 input: phys_expr,
-                data_type: data_type.clone(),
+                dtype: dtype.clone(),
                 expr: node_to_expr(expression, expr_arena),
                 options: *options,
             }))

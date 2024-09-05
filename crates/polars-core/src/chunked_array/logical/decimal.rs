@@ -11,7 +11,7 @@ impl Int128Chunked {
         // physical i128 type doesn't exist
         // so we update the decimal dtype
         for arr in self.chunks.iter_mut() {
-            let mut default = PrimitiveArray::new_empty(arr.data_type().clone());
+            let mut default = PrimitiveArray::new_empty(arr.dtype().clone());
             let arr = arr
                 .as_any_mut()
                 .downcast_mut::<PrimitiveArray<i128>>()

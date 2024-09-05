@@ -83,7 +83,7 @@ pub enum Expr {
     },
     Cast {
         expr: Arc<Expr>,
-        data_type: DataType,
+        dtype: DataType,
         options: CastOptions,
     },
     Sort {
@@ -192,11 +192,11 @@ impl Hash for Expr {
             },
             Expr::Cast {
                 expr,
-                data_type,
+                dtype,
                 options: strict,
             } => {
                 expr.hash(state);
-                data_type.hash(state);
+                dtype.hash(state);
                 strict.hash(state)
             },
             Expr::Sort { expr, options } => {

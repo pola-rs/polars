@@ -84,7 +84,7 @@ impl ExprNameNameSpace {
                 DataType::Struct(fds) => {
                     let fields = fds
                         .iter()
-                        .map(|fd| Field::new(f(fd.name()), fd.data_type().clone()))
+                        .map(|fd| Field::new(f(fd.name()), fd.dtype().clone()))
                         .collect();
                     Ok(DataType::Struct(fields))
                 },

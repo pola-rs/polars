@@ -70,7 +70,7 @@ pub(crate) fn import_array_pycapsules(
         let array_ptr = std::ptr::replace(array_capsule.pointer() as _, ArrowArray::empty());
 
         let field = ffi::import_field_from_c(schema_ptr).unwrap();
-        let array = ffi::import_array_from_c(array_ptr, field.data_type().clone()).unwrap();
+        let array = ffi::import_array_from_c(array_ptr, field.dtype().clone()).unwrap();
         (field, array)
     };
 
@@ -113,7 +113,7 @@ pub(crate) fn import_stream_pycapsule(capsule: &Bound<PyCapsule>) -> PyResult<Py
 
     // Series::try_from fails for an empty vec of chunks
     let s = if produced_arrays.is_empty() {
-        let polars_dt = DataType::from_arrow(stream.field().data_type(), false);
+        let polars_dt = DataType::from_arrow(stream.field().dtype(), false);
         Series::new_empty(stream.field().name.clone(), &polars_dt)
     } else {
         Series::try_from((stream.field(), produced_arrays)).unwrap()

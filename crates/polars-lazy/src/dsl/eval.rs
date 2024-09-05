@@ -8,10 +8,10 @@ use crate::prelude::*;
 pub(crate) fn eval_field_to_dtype(f: &Field, expr: &Expr, list: bool) -> Field {
     // Dummy df to determine output dtype.
     let dtype = f
-        .data_type()
+        .dtype()
         .inner_dtype()
         .cloned()
-        .unwrap_or_else(|| f.data_type().clone());
+        .unwrap_or_else(|| f.dtype().clone());
 
     let df = Series::new_empty(PlSmallStr::EMPTY, &dtype).into_frame();
 
@@ -109,8 +109,8 @@ pub trait ExprEvalExtension: IntoExpr + Sized {
             };
             let s = Series::new(name, avs);
 
-            if s.dtype() != output_field.data_type() {
-                s.cast(output_field.data_type()).map(Some)
+            if s.dtype() != output_field.dtype() {
+                s.cast(output_field.dtype()).map(Some)
             } else {
                 Ok(Some(s))
             }

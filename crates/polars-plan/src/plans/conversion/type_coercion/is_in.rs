@@ -27,7 +27,7 @@ pub(super) fn resolve_is_in(
         // all-null can represent anything (and/or empty list), so cast to target dtype
         (_, DataType::Null) => AExpr::Cast {
             expr: other_e.node(),
-            data_type: type_left,
+            dtype: type_left,
             options: CastOptions::NonStrict,
         },
         #[cfg(feature = "dtype-categorical")]
@@ -37,7 +37,7 @@ pub(super) fn resolve_is_in(
         #[cfg(feature = "dtype-decimal")]
         (DataType::Decimal(_, _), dt) if dt.is_numeric() => AExpr::Cast {
             expr: other_e.node(),
-            data_type: type_left,
+            dtype: type_left,
             options: CastOptions::NonStrict,
         },
         #[cfg(feature = "dtype-decimal")]

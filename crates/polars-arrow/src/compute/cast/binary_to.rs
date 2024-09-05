@@ -53,11 +53,11 @@ impl Parse for f64 {
 /// Conversion of binary
 pub fn binary_to_large_binary(
     from: &BinaryArray<i32>,
-    to_data_type: ArrowDataType,
+    to_dtype: ArrowDataType,
 ) -> BinaryArray<i64> {
     let values = from.values().clone();
     BinaryArray::<i64>::new(
-        to_data_type,
+        to_dtype,
         from.offsets().into(),
         values,
         from.validity().cloned(),
@@ -67,12 +67,12 @@ pub fn binary_to_large_binary(
 /// Conversion of binary
 pub fn binary_large_to_binary(
     from: &BinaryArray<i64>,
-    to_data_type: ArrowDataType,
+    to_dtype: ArrowDataType,
 ) -> PolarsResult<BinaryArray<i32>> {
     let values = from.values().clone();
     let offsets = from.offsets().try_into()?;
     Ok(BinaryArray::<i32>::new(
-        to_data_type,
+        to_dtype,
         offsets,
         values,
         from.validity().cloned(),
@@ -82,10 +82,10 @@ pub fn binary_large_to_binary(
 /// Conversion to utf8
 pub fn binary_to_utf8<O: Offset>(
     from: &BinaryArray<O>,
-    to_data_type: ArrowDataType,
+    to_dtype: ArrowDataType,
 ) -> PolarsResult<Utf8Array<O>> {
     Utf8Array::<O>::try_new(
-        to_data_type,
+        to_dtype,
         from.offsets().clone(),
         from.values().clone(),
         from.validity().cloned(),
@@ -97,12 +97,12 @@ pub fn binary_to_utf8<O: Offset>(
 /// This function errors if the values are not valid utf8
 pub fn binary_to_large_utf8(
     from: &BinaryArray<i32>,
-    to_data_type: ArrowDataType,
+    to_dtype: ArrowDataType,
 ) -> PolarsResult<Utf8Array<i64>> {
     let values = from.values().clone();
     let offsets = from.offsets().into();
 
-    Utf8Array::<i64>::try_new(to_data_type, offsets, values, from.validity().cloned())
+    Utf8Array::<i64>::try_new(to_dtype, offsets, values, from.validity().cloned())
 }
 
 /// Casts a [`BinaryArray`] to a [`PrimitiveArray`], making any uncastable value a Null.
@@ -169,16 +169,11 @@ fn fixed_size_to_offsets<O: Offset>(values_len: usize, fixed_size: usize) -> Off
 /// Conversion of `FixedSizeBinary` to `Binary`.
 pub fn fixed_size_binary_binary<O: Offset>(
     from: &FixedSizeBinaryArray,
-    to_data_type: ArrowDataType,
+    to_dtype: ArrowDataType,
 ) -> BinaryArray<O> {
     let values = from.values().clone();
     let offsets = fixed_size_to_offsets(values.len(), from.size());
-    BinaryArray::<O>::new(
-        to_data_type,
-        offsets.into(),
-        values,
-        from.validity().cloned(),
-    )
+    BinaryArray::<O>::new(to_dtype, offsets.into(), values, from.validity().cloned())
 }
 
 pub fn fixed_size_binary_to_binview(from: &FixedSizeBinaryArray) -> BinaryViewArray {
@@ -248,14 +243,11 @@ pub fn fixed_size_binary_to_binview(from: &FixedSizeBinaryArray) -> BinaryViewAr
 }
 
 /// Conversion of binary
-pub fn binary_to_list<O: Offset>(
-    from: &BinaryArray<O>,
-    to_data_type: ArrowDataType,
-) -> ListArray<O> {
+pub fn binary_to_list<O: Offset>(from: &BinaryArray<O>, to_dtype: ArrowDataType) -> ListArray<O> {
     let values = from.values().clone();
     let values = PrimitiveArray::new(ArrowDataType::UInt8, values, None);
     ListArray::<O>::new(
-        to_data_type,
+        to_dtype,
         from.offsets().clone(),
         values.boxed(),
         from.validity().cloned(),

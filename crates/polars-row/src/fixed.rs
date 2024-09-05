@@ -219,7 +219,7 @@ pub(super) unsafe fn decode_primitive<T: NativeType + FixedLengthEncoding>(
 where
     T::Encoded: FromSlice,
 {
-    let data_type: ArrowDataType = T::PRIMITIVE.into();
+    let dtype: ArrowDataType = T::PRIMITIVE.into();
     let mut has_nulls = false;
     let null_sentinel = get_null_sentinel(field);
 
@@ -252,7 +252,7 @@ where
     let increment_len = T::ENCODED_LEN;
 
     increment_row_counter(rows, increment_len);
-    PrimitiveArray::new(data_type, values.into(), validity)
+    PrimitiveArray::new(dtype, values.into(), validity)
 }
 
 pub(super) unsafe fn decode_bool(rows: &mut [&[u8]], field: &EncodingField) -> BooleanArray {

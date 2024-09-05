@@ -12,7 +12,7 @@ pub(super) unsafe fn take_binview_unchecked(
         take_values_and_validity_unchecked(arr.views(), arr.validity(), indices);
 
     BinaryViewArray::new_unchecked_unknown_md(
-        arr.data_type().clone(),
+        arr.dtype().clone(),
         views.into(),
         arr.data_buffers().clone(),
         validity,

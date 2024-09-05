@@ -106,7 +106,7 @@ macro_rules! impl_signed_arith_kernel {
 
             fn prim_wrapping_floor_div_scalar(lhs: PArr<$T>, rhs: $T) -> PArr<$T> {
                 if rhs == 0 {
-                    PArr::full_null(lhs.len(), lhs.data_type().clone())
+                    PArr::full_null(lhs.len(), lhs.dtype().clone())
                 } else if rhs == -1 {
                     Self::prim_wrapping_neg(lhs)
                 } else if rhs == 1 {
@@ -145,7 +145,7 @@ macro_rules! impl_signed_arith_kernel {
 
             fn prim_wrapping_trunc_div_scalar(lhs: PArr<$T>, rhs: $T) -> PArr<$T> {
                 if rhs == 0 {
-                    PArr::full_null(lhs.len(), lhs.data_type().clone())
+                    PArr::full_null(lhs.len(), lhs.dtype().clone())
                 } else if rhs == -1 {
                     Self::prim_wrapping_neg(lhs)
                 } else if rhs == 1 {
@@ -177,7 +177,7 @@ macro_rules! impl_signed_arith_kernel {
 
             fn prim_wrapping_mod_scalar(lhs: PArr<$T>, rhs: $T) -> PArr<$T> {
                 if rhs == 0 {
-                    PArr::full_null(lhs.len(), lhs.data_type().clone())
+                    PArr::full_null(lhs.len(), lhs.dtype().clone())
                 } else if rhs == -1 || rhs == 1 {
                     lhs.fill_with(0)
                 } else {

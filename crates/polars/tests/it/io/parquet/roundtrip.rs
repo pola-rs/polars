@@ -18,7 +18,7 @@ fn round_trip(
     compression: CompressionOptions,
     encodings: Vec<Encoding>,
 ) -> PolarsResult<()> {
-    let field = Field::new("a1".into(), array.data_type().clone(), true);
+    let field = Field::new("a1".into(), array.dtype().clone(), true);
     let schema = ArrowSchema::from_iter([field]);
 
     let options = WriteOptions {

@@ -76,5 +76,5 @@ pub unsafe fn take_primitive_unchecked<T: NativeType>(
 ) -> PrimitiveArray<T> {
     let (values, validity) =
         take_values_and_validity_unchecked(arr.values(), arr.validity(), indices);
-    PrimitiveArray::new_unchecked(arr.data_type().clone(), values.into(), validity)
+    PrimitiveArray::new_unchecked(arr.dtype().clone(), values.into(), validity)
 }

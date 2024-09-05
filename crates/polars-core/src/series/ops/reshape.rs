@@ -71,12 +71,12 @@ impl Series {
         let offsets = vec![0i64, values.len() as i64];
         let inner_type = s.dtype();
 
-        let data_type = ListArray::<i64>::default_datatype(values.data_type().clone());
+        let dtype = ListArray::<i64>::default_datatype(values.dtype().clone());
 
         // SAFETY: offsets are correct.
         let arr = unsafe {
             ListArray::new(
-                data_type,
+                dtype,
                 Offsets::new_unchecked(offsets).into(),
                 values.clone(),
                 None,

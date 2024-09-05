@@ -31,7 +31,7 @@ use crate::compute::utils::combine_validities_and;
 /// ```
 #[derive(Clone)]
 pub struct StructArray {
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
     values: Vec<Box<dyn Array>>,
     validity: Option<Bitmap>,
 }
@@ -40,23 +40,23 @@ impl StructArray {
     /// Returns a new [`StructArray`].
     /// # Errors
     /// This function errors iff:
-    /// * `data_type`'s physical type is not [`crate::datatypes::PhysicalType::Struct`].
-    /// * the children of `data_type` are empty
+    /// * `dtype`'s physical type is not [`crate::datatypes::PhysicalType::Struct`].
+    /// * the children of `dtype` are empty
     /// * the values's len is different from children's length
     /// * any of the values's data type is different from its corresponding children' data type
     /// * any element of values has a different length than the first element
     /// * the validity's length is not equal to the length of the first element
     pub fn try_new(
-        data_type: ArrowDataType,
+        dtype: ArrowDataType,
         values: Vec<Box<dyn Array>>,
         validity: Option<Bitmap>,
     ) -> PolarsResult<Self> {
-        let fields = Self::try_get_fields(&data_type)?;
+        let fields = Self::try_get_fields(&dtype)?;
         if fields.is_empty() {
             assert!(values.is_empty(), "invalid struct");
             assert_eq!(validity.map(|v| v.len()).unwrap_or(0), 0, "invalid struct");
             return Ok(Self {
-                data_type,
+                dtype,
                 values,
                 validity: None,
             });
@@ -66,14 +66,14 @@ impl StructArray {
         }
 
         fields
-            .iter().map(|a| &a.data_type)
-            .zip(values.iter().map(|a| a.data_type()))
+            .iter().map(|a| &a.dtype)
+            .zip(values.iter().map(|a| a.dtype()))
             .enumerate()
-            .try_for_each(|(index, (data_type, child))| {
-                if data_type != child {
+            .try_for_each(|(index, (dtype, child))| {
+                if dtype != child {
                     polars_bail!(ComputeError:
                         "The children DataTypes of a StructArray must equal the children data types.
-                         However, the field {index} has data type {data_type:?} but the value has data type {child:?}"
+                         However, the field {index} has data type {dtype:?} but the value has data type {child:?}"
                     )
                 } else {
                     Ok(())
@@ -102,7 +102,7 @@ impl StructArray {
         }
 
         Ok(Self {
-            data_type,
+            dtype,
             values,
             validity,
         })
@@ -111,41 +111,41 @@ impl StructArray {
     /// Returns a new [`StructArray`]
     /// # Panics
     /// This function panics iff:
-    /// * `data_type`'s physical type is not [`crate::datatypes::PhysicalType::Struct`].
-    /// * the children of `data_type` are empty
+    /// * `dtype`'s physical type is not [`crate::datatypes::PhysicalType::Struct`].
+    /// * the children of `dtype` are empty
     /// * the values's len is different from children's length
     /// * any of the values's data type is different from its corresponding children' data type
     /// * any element of values has a different length than the first element
     /// * the validity's length is not equal to the length of the first element
     pub fn new(
-        data_type: ArrowDataType,
+        dtype: ArrowDataType,
         values: Vec<Box<dyn Array>>,
         validity: Option<Bitmap>,
     ) -> Self {
-        Self::try_new(data_type, values, validity).unwrap()
+        Self::try_new(dtype, values, validity).unwrap()
     }
 
     /// Creates an empty [`StructArray`].
-    pub fn new_empty(data_type: ArrowDataType) -> Self {
-        if let ArrowDataType::Struct(fields) = &data_type.to_logical_type() {
+    pub fn new_empty(dtype: ArrowDataType) -> Self {
+        if let ArrowDataType::Struct(fields) = &dtype.to_logical_type() {
             let values = fields
                 .iter()
-                .map(|field| new_empty_array(field.data_type().clone()))
+                .map(|field| new_empty_array(field.dtype().clone()))
                 .collect();
-            Self::new(data_type, values, None)
+            Self::new(dtype, values, None)
         } else {
             panic!("StructArray must be initialized with DataType::Struct");
         }
     }
 
     /// Creates a null [`StructArray`] of length `length`.
-    pub fn new_null(data_type: ArrowDataType, length: usize) -> Self {
-        if let ArrowDataType::Struct(fields) = &data_type {
+    pub fn new_null(dtype: ArrowDataType, length: usize) -> Self {
+        if let ArrowDataType::Struct(fields) = &dtype {
             let values = fields
                 .iter()
-                .map(|field| new_null_array(field.data_type().clone(), length))
+                .map(|field| new_null_array(field.dtype().clone(), length))
                 .collect();
-            Self::new(data_type, values, Some(Bitmap::new_zeroed(length)))
+            Self::new(dtype, values, Some(Bitmap::new_zeroed(length)))
         } else {
             panic!("StructArray must be initialized with DataType::Struct");
         }
@@ -158,11 +158,11 @@ impl StructArray {
     #[must_use]
     pub fn into_data(self) -> (Vec<Field>, Vec<Box<dyn Array>>, Option<Bitmap>) {
         let Self {
-            data_type,
+            dtype,
             values,
             validity,
         } = self;
-        let fields = if let ArrowDataType::Struct(fields) = data_type {
+        let fields = if let ArrowDataType::Struct(fields) = dtype {
             fields
         } else {
             unreachable!()
@@ -242,14 +242,14 @@ impl StructArray {
 
     /// Returns the fields of this [`StructArray`].
     pub fn fields(&self) -> &[Field] {
-        Self::get_fields(&self.data_type)
+        Self::get_fields(&self.dtype)
     }
 }
 
 impl StructArray {
     /// Returns the fields the `DataType::Struct`.
-    pub(crate) fn try_get_fields(data_type: &ArrowDataType) -> PolarsResult<&[Field]> {
-        match data_type.to_logical_type() {
+    pub(crate) fn try_get_fields(dtype: &ArrowDataType) -> PolarsResult<&[Field]> {
+        match dtype.to_logical_type() {
             ArrowDataType::Struct(fields) => Ok(fields),
             _ => {
                 polars_bail!(ComputeError: "Struct array must be created with a DataType whose physical type is Struct")
@@ -258,8 +258,8 @@ impl StructArray {
     }
 
     /// Returns the fields the `DataType::Struct`.
-    pub fn get_fields(data_type: &ArrowDataType) -> &[Field] {
-        Self::try_get_fields(data_type).unwrap()
+    pub fn get_fields(dtype: &ArrowDataType) -> &[Field] {
+        Self::try_get_fields(dtype).unwrap()
     }
 }
 
@@ -295,12 +295,12 @@ impl Splitable for StructArray {
 
         (
             Self {
-                data_type: self.data_type.clone(),
+                dtype: self.dtype.clone(),
                 values: lhs_values,
                 validity: lhs_validity,
             },
             Self {
-                data_type: self.data_type.clone(),
+                dtype: self.dtype.clone(),
                 values: rhs_values,
                 validity: rhs_validity,
             },

@@ -28,14 +28,14 @@ pub fn filter_with_bitmap(array: &dyn Array, mask: &Bitmap) -> Box<dyn Array> {
     // Fast-path: completely empty or completely full mask.
     let false_count = mask.unset_bits();
     if false_count == mask.len() {
-        return new_empty_array(array.data_type().clone());
+        return new_empty_array(array.dtype().clone());
     }
     if false_count == 0 {
         return array.to_boxed();
     }
 
     use arrow::datatypes::PhysicalType::*;
-    match array.data_type().to_physical_type() {
+    match array.dtype().to_physical_type() {
         Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
             let array: &PrimitiveArray<$T> = array.as_any().downcast_ref().unwrap();
             let (values, validity) = primitive::filter_values_and_validity::<$T>(array.values(), array.validity(), mask);
@@ -45,7 +45,7 @@ pub fn filter_with_bitmap(array: &dyn Array, mask: &Bitmap) -> Box<dyn Array> {
             let array = array.as_any().downcast_ref::<BooleanArray>().unwrap();
             let (values, validity) =
                 boolean::filter_bitmap_and_validity(array.values(), array.validity(), mask);
-            BooleanArray::new(array.data_type().clone(), values, validity).boxed()
+            BooleanArray::new(array.dtype().clone(), values, validity).boxed()
         },
         BinaryView => {
             let array = array.as_any().downcast_ref::<BinaryViewArray>().unwrap();
@@ -54,7 +54,7 @@ pub fn filter_with_bitmap(array: &dyn Array, mask: &Bitmap) -> Box<dyn Array> {
             let (views, validity) = primitive::filter_values_and_validity(views, validity, mask);
             unsafe {
                 BinaryViewArray::new_unchecked_unknown_md(
-                    array.data_type().clone(),
+                    array.dtype().clone(),
                     views.into(),
                     array.data_buffers().clone(),
                     validity,

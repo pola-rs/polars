@@ -8,22 +8,18 @@ use crate::offset::{Offset, Offsets};
 /// Auxiliary struct
 #[derive(Debug)]
 pub struct DynMutableListArray<O: Offset> {
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
     offsets: Offsets<O>,
     values: Box<dyn MutableArray>,
     validity: Option<MutableBitmap>,
 }
 
 impl<O: Offset> DynMutableListArray<O> {
-    pub fn new_from(
-        values: Box<dyn MutableArray>,
-        data_type: ArrowDataType,
-        capacity: usize,
-    ) -> Self {
+    pub fn new_from(values: Box<dyn MutableArray>, dtype: ArrowDataType, capacity: usize) -> Self {
         assert_eq!(values.len(), 0);
-        ListArray::<O>::get_child_field(&data_type);
+        ListArray::<O>::get_child_field(&dtype);
         Self {
-            data_type,
+            dtype,
             offsets: Offsets::<O>::with_capacity(capacity),
             values,
             validity: None,
@@ -80,7 +76,7 @@ impl<O: Offset> MutableArray for DynMutableListArray<O> {
 
     fn as_box(&mut self) -> Box<dyn Array> {
         ListArray::new(
-            self.data_type.clone(),
+            self.dtype.clone(),
             std::mem::take(&mut self.offsets).into(),
             self.values.as_box(),
             std::mem::take(&mut self.validity).map(|x| x.into()),
@@ -90,7 +86,7 @@ impl<O: Offset> MutableArray for DynMutableListArray<O> {
 
     fn as_arc(&mut self) -> std::sync::Arc<dyn Array> {
         ListArray::new(
-            self.data_type.clone(),
+            self.dtype.clone(),
             std::mem::take(&mut self.offsets).into(),
             self.values.as_box(),
             std::mem::take(&mut self.validity).map(|x| x.into()),
@@ -98,8 +94,8 @@ impl<O: Offset> MutableArray for DynMutableListArray<O> {
         .arced()
     }
 
-    fn data_type(&self) -> &ArrowDataType {
-        &self.data_type
+    fn dtype(&self) -> &ArrowDataType {
+        &self.dtype
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -126,7 +122,7 @@ impl<O: Offset> MutableArray for DynMutableListArray<O> {
 
 #[derive(Debug)]
 pub struct FixedItemsUtf8Dictionary {
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
     keys: MutablePrimitiveArray<i32>,
     values: Utf8Array<i32>,
 }
@@ -134,9 +130,9 @@ pub struct FixedItemsUtf8Dictionary {
 impl FixedItemsUtf8Dictionary {
     pub fn with_capacity(values: Utf8Array<i32>, capacity: usize) -> Self {
         Self {
-            data_type: ArrowDataType::Dictionary(
+            dtype: ArrowDataType::Dictionary(
                 IntegerType::Int32,
-                Box::new(values.data_type().clone()),
+                Box::new(values.dtype().clone()),
                 false,
             ),
             keys: MutablePrimitiveArray::<i32>::with_capacity(capacity),
@@ -166,7 +162,7 @@ impl MutableArray for FixedItemsUtf8Dictionary {
     fn as_box(&mut self) -> Box<dyn Array> {
         Box::new(
             DictionaryArray::try_new(
-                self.data_type.clone(),
+                self.dtype.clone(),
                 std::mem::take(&mut self.keys).into(),
                 Box::new(self.values.clone()),
             )
@@ -177,7 +173,7 @@ impl MutableArray for FixedItemsUtf8Dictionary {
     fn as_arc(&mut self) -> std::sync::Arc<dyn Array> {
         std::sync::Arc::new(
             DictionaryArray::try_new(
-                self.data_type.clone(),
+                self.dtype.clone(),
                 std::mem::take(&mut self.keys).into(),
                 Box::new(self.values.clone()),
             )
@@ -185,8 +181,8 @@ impl MutableArray for FixedItemsUtf8Dictionary {
         )
     }
 
-    fn data_type(&self) -> &ArrowDataType {
-        &self.data_type
+    fn dtype(&self) -> &ArrowDataType {
+        &self.dtype
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -214,15 +210,15 @@ impl MutableArray for FixedItemsUtf8Dictionary {
 /// Auxiliary struct
 #[derive(Debug)]
 pub struct DynMutableStructArray {
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
     values: Vec<Box<dyn MutableArray>>,
     validity: Option<MutableBitmap>,
 }
 
 impl DynMutableStructArray {
-    pub fn new(values: Vec<Box<dyn MutableArray>>, data_type: ArrowDataType) -> Self {
+    pub fn new(values: Vec<Box<dyn MutableArray>>, dtype: ArrowDataType) -> Self {
         Self {
-            data_type,
+            dtype,
             values,
             validity: None,
         }
@@ -273,7 +269,7 @@ impl MutableArray for DynMutableStructArray {
         let values = self.values.iter_mut().map(|x| x.as_box()).collect();
 
         Box::new(StructArray::new(
-            self.data_type.clone(),
+            self.dtype.clone(),
             values,
             std::mem::take(&mut self.validity).map(|x| x.into()),
         ))
@@ -283,14 +279,14 @@ impl MutableArray for DynMutableStructArray {
         let values = self.values.iter_mut().map(|x| x.as_box()).collect();
 
         std::sync::Arc::new(StructArray::new(
-            self.data_type.clone(),
+            self.dtype.clone(),
             values,
             std::mem::take(&mut self.validity).map(|x| x.into()),
         ))
     }
 
-    fn data_type(&self) -> &ArrowDataType {
-        &self.data_type
+    fn dtype(&self) -> &ArrowDataType {
+        &self.dtype
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

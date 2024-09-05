@@ -303,7 +303,7 @@ impl GetOutput {
     ) -> Self {
         SpecialEq::new(Arc::new(move |_: &Schema, _: Context, flds: &[Field]| {
             let mut fld = flds[0].clone();
-            let new_type = f(fld.data_type())?;
+            let new_type = f(fld.dtype())?;
             fld.coerce(new_type);
             Ok(fld)
         }))
@@ -334,7 +334,7 @@ impl GetOutput {
     {
         SpecialEq::new(Arc::new(move |_: &Schema, _: Context, flds: &[Field]| {
             let mut fld = flds[0].clone();
-            let dtypes = flds.iter().map(|fld| fld.data_type()).collect::<Vec<_>>();
+            let dtypes = flds.iter().map(|fld| fld.dtype()).collect::<Vec<_>>();
             let new_type = f(&dtypes)?;
             fld.coerce(new_type);
             Ok(fld)

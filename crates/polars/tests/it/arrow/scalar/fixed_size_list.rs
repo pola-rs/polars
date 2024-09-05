@@ -40,7 +40,7 @@ fn basics() {
         BooleanArray::from_slice([true, false]),
         a.values().unwrap().as_ref()
     );
-    assert_eq!(a.data_type(), &dt);
+    assert_eq!(a.dtype(), &dt);
     assert!(a.is_valid());
 
     let _: &dyn std::any::Any = a.as_any();

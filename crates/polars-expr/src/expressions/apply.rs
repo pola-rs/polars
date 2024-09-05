@@ -130,11 +130,7 @@ impl ApplyExpr {
             Ok(out)
         } else {
             let field = self.to_field(self.input_schema.as_ref().unwrap()).unwrap();
-            Ok(Series::full_null(
-                field.name().clone(),
-                1,
-                field.data_type(),
-            ))
+            Ok(Series::full_null(field.name().clone(), 1, field.dtype()))
         }
     }
     fn apply_single_group_aware<'a>(

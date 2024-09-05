@@ -26,7 +26,7 @@ impl SchemaExt for Schema {
     fn from_arrow_schema(value: &ArrowSchema) -> Self {
         value
             .iter_values()
-            .map(|x| (x.name.clone(), DataType::from_arrow(&x.data_type, true)))
+            .map(|x| (x.name.clone(), DataType::from_arrow(&x.dtype, true)))
             .collect()
     }
 
@@ -173,7 +173,7 @@ impl SchemaNamesAndDtypes for ArrowSchema {
 
     fn get_names_and_dtypes(&'_ self) -> Vec<(&'_ str, Self::DataType)> {
         self.iter_values()
-            .map(|x| (x.name.as_str(), x.data_type.clone()))
+            .map(|x| (x.name.as_str(), x.dtype.clone()))
             .collect()
     }
 }

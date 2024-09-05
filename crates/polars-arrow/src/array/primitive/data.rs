@@ -7,9 +7,9 @@ use crate::types::NativeType;
 
 impl<T: NativeType> Arrow2Arrow for PrimitiveArray<T> {
     fn to_data(&self) -> ArrayData {
-        let data_type = self.data_type.clone().into();
+        let dtype = self.dtype.clone().into();
 
-        let builder = ArrayDataBuilder::new(data_type)
+        let builder = ArrayDataBuilder::new(dtype)
             .len(self.len())
             .buffers(vec![self.values.clone().into()])
             .nulls(self.validity.as_ref().map(|b| b.clone().into()));
@@ -19,13 +19,13 @@ impl<T: NativeType> Arrow2Arrow for PrimitiveArray<T> {
     }
 
     fn from_data(data: &ArrayData) -> Self {
-        let data_type = data.data_type().clone().into();
+        let dtype = data.data_type().clone().into();
 
         let mut values: Buffer<T> = data.buffers()[0].clone().into();
         values.slice(data.offset(), data.len());
 
         Self {
-            data_type,
+            dtype,
             values,
             validity: data.nulls().map(|n| Bitmap::from_null_buffer(n.clone())),
         }

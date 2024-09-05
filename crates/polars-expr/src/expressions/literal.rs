@@ -43,11 +43,7 @@ impl PhysicalExpr for LiteralExpr {
                 .into_series(),
             Boolean(v) => BooleanChunked::full(get_literal_name().clone(), *v, 1).into_series(),
             Null => polars_core::prelude::Series::new_null(get_literal_name().clone(), 1),
-            Range {
-                low,
-                high,
-                data_type,
-            } => match data_type {
+            Range { low, high, dtype } => match dtype {
                 DataType::Int32 => {
                     polars_ensure!(
                         *low >= i32::MIN as i64 && *high <= i32::MAX as i64,

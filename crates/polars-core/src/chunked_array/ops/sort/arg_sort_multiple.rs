@@ -179,7 +179,7 @@ pub fn _get_rows_encoded_unordered(by: &[Series]) -> PolarsResult<RowsEncoded> {
     for by in by {
         let arr = _get_rows_encoded_compat_array(by)?;
         let field = EncodingField::new_unsorted();
-        match arr.data_type() {
+        match arr.dtype() {
             // Flatten the struct fields.
             ArrowDataType::Struct(_) => {
                 let arr = arr.as_any().downcast_ref::<StructArray>().unwrap();
@@ -215,7 +215,7 @@ pub fn _get_rows_encoded(
             nulls_last: *null_last,
             no_order: false,
         };
-        match arr.data_type() {
+        match arr.dtype() {
             // Flatten the struct fields.
             ArrowDataType::Struct(_) => {
                 let arr = arr.as_any().downcast_ref::<StructArray>().unwrap();

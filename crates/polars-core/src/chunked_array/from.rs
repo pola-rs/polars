@@ -6,7 +6,7 @@ use super::*;
 fn from_chunks_list_dtype(chunks: &mut Vec<ArrayRef>, dtype: DataType) -> DataType {
     // ensure we don't get List<null>
     let dtype = if let Some(arr) = chunks.get(0) {
-        arr.data_type().into()
+        arr.dtype().into()
     } else {
         dtype
     };
@@ -29,7 +29,7 @@ fn from_chunks_list_dtype(chunks: &mut Vec<ArrayRef>, dtype: DataType) -> DataTy
                 Series::_try_from_arrow_unchecked(
                     PlSmallStr::EMPTY,
                     vec![values_arr.clone()],
-                    values_arr.data_type(),
+                    values_arr.dtype(),
                 )
                 .unwrap()
             };
@@ -61,7 +61,7 @@ fn from_chunks_list_dtype(chunks: &mut Vec<ArrayRef>, dtype: DataType) -> DataTy
                 Series::_try_from_arrow_unchecked(
                     PlSmallStr::EMPTY,
                     vec![values_arr.clone()],
-                    values_arr.data_type(),
+                    values_arr.dtype(),
                 )
                 .unwrap()
             };
@@ -221,10 +221,7 @@ where
         #[cfg(debug_assertions)]
         {
             if !chunks.is_empty() && !chunks[0].is_empty() && dtype.is_primitive() {
-                assert_eq!(
-                    chunks[0].data_type(),
-                    &dtype.to_arrow(CompatLevel::newest())
-                )
+                assert_eq!(chunks[0].dtype(), &dtype.to_arrow(CompatLevel::newest()))
             }
         }
         let field = Arc::new(Field::new(name, dtype));

@@ -58,10 +58,8 @@ impl FunctionIR {
                             match dtype {
                                 DataType::Struct(flds) => {
                                     for fld in flds {
-                                        new_schema.with_column(
-                                            fld.name().clone(),
-                                            fld.data_type().clone(),
-                                        );
+                                        new_schema
+                                            .with_column(fld.name().clone(), fld.dtype().clone());
                                     }
                                 },
                                 DataType::Unknown(_) => {

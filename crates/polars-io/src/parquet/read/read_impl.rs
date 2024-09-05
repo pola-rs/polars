@@ -37,10 +37,10 @@ use crate::RowIndex;
 #[cfg(debug_assertions)]
 // Ensure we get the proper polars types from schema inference
 // This saves unneeded casts.
-fn assert_dtypes(data_type: &ArrowDataType) {
+fn assert_dtypes(dtype: &ArrowDataType) {
     use ArrowDataType as D;
 
-    match data_type {
+    match dtype {
         // These should all be casted to the BinaryView / Utf8View variants
         D::Utf8 | D::Binary | D::LargeUtf8 | D::LargeBinary => unreachable!(),
 
@@ -51,11 +51,11 @@ fn assert_dtypes(data_type: &ArrowDataType) {
         D::Map(_, _) => unreachable!(),
 
         // Recursive checks
-        D::Dictionary(_, data_type, _) => assert_dtypes(data_type),
-        D::Extension(_, data_type, _) => assert_dtypes(data_type),
-        D::LargeList(inner) => assert_dtypes(&inner.data_type),
-        D::FixedSizeList(inner, _) => assert_dtypes(&inner.data_type),
-        D::Struct(fields) => fields.iter().for_each(|f| assert_dtypes(f.data_type())),
+        D::Dictionary(_, dtype, _) => assert_dtypes(dtype),
+        D::Extension(_, dtype, _) => assert_dtypes(dtype),
+        D::LargeList(inner) => assert_dtypes(&inner.dtype),
+        D::FixedSizeList(inner, _) => assert_dtypes(&inner.dtype),
+        D::Struct(fields) => fields.iter().for_each(|f| assert_dtypes(f.dtype())),
 
         _ => {},
     }
@@ -73,7 +73,7 @@ fn column_idx_to_series(
 
     #[cfg(debug_assertions)]
     {
-        assert_dtypes(field.data_type())
+        assert_dtypes(field.dtype())
     }
     let columns = mmap_columns(store, field_md);
     let stats = columns
@@ -85,7 +85,7 @@ fn column_idx_to_series(
 
     // We cannot really handle nested metadata at the moment. Just skip it.
     use ArrowDataType as AD;
-    match field.data_type() {
+    match field.dtype() {
         AD::List(_) | AD::LargeList(_) | AD::Struct(_) | AD::FixedSizeList(_, _) => {
             return Ok(series)
         },
@@ -473,12 +473,8 @@ fn rg_to_dfs_prefiltered(
                             MaskSetting::Auto => {
                                 // Prefiltering is more expensive for nested types so we make the cut-off
                                 // higher.
-                                let is_nested = schema
-                                    .get_at_index(col_idx)
-                                    .unwrap()
-                                    .1
-                                    .data_type
-                                    .is_nested();
+                                let is_nested =
+                                    schema.get_at_index(col_idx).unwrap().1.dtype.is_nested();
 
                                 // We empirically selected these numbers.
                                 let do_prefilter = (is_nested && prefilter_cost <= 0.01)
