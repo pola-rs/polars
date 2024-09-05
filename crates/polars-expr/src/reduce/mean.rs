@@ -29,10 +29,9 @@ pub struct MeanReduceState {
 
 impl ReductionState for MeanReduceState {
     fn update(&mut self, batch: &Series) -> PolarsResult<()> {
-        // TODO: don't go through mean but add sum_as_f64 to series trait.
         let count = batch.len() as u64 - batch.null_count() as u64;
         self.count += count;
-        self.sum += batch.mean().unwrap_or(0.0) * count as f64;
+        self.sum += batch._sum_as_f64();
         Ok(())
     }
 
