@@ -436,11 +436,6 @@ pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool) -> PyResult<PyExpr> {
     ) {
         let av = py_object_to_any_value(value, true)?;
         Ok(Expr::Literal(LiteralValue::try_from(av).unwrap()).into())
-    } else if allow_object {
-        let s = Python::with_gil(|py| {
-            PySeries::new_object(py, "", vec![ObjectValue::from(value.into_py(py))], false).series
-        });
-        Ok(dsl::lit(s).into())
     } else {
         Python::with_gil(|py| {
             // One final attempt before erroring. Do we have a date/datetime subclass?
@@ -451,6 +446,12 @@ pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool) -> PyResult<PyExpr> {
             if value.is_instance(&datetime_class)? || value.is_instance(&date_class)? {
                 let av = py_object_to_any_value(value, true)?;
                 Ok(Expr::Literal(LiteralValue::try_from(av).unwrap()).into())
+            } else if allow_object {
+                let s = Python::with_gil(|py| {
+                    PySeries::new_object(py, "", vec![ObjectValue::from(value.into_py(py))], false)
+                        .series
+                });
+                Ok(dsl::lit(s).into())
             } else {
                 Err(PyTypeError::new_err(format!(
                     "cannot create expression literal for value of type {}: {}\
