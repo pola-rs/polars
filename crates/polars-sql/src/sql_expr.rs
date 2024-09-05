@@ -386,7 +386,7 @@ impl SQLExprVisitor<'_> {
                             lit("latest"),
                         ))
                     } else {
-                        let fn_name = match dtype {
+                        let fn_name = match data_type {
                             SQLDataType::Timestamp(_, _) => "TIMESTAMP",
                             SQLDataType::Datetime(_) => "DATETIME",
                             _ => unreachable!(),
@@ -395,7 +395,7 @@ impl SQLExprVisitor<'_> {
                     }
                 },
                 _ => {
-                    polars_bail!(SQLInterface: "typed literal should be one of DATE, DATETIME, TIME, or TIMESTAMP (found {})", dtype)
+                    polars_bail!(SQLInterface: "typed literal should be one of DATE, DATETIME, TIME, or TIMESTAMP (found {})", data_type)
                 },
             },
             SQLExpr::UnaryOp { op, expr } => self.visit_unary_op(op, expr),

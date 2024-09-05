@@ -55,7 +55,7 @@ pub(super) fn extract_groups(
         .map(|ca| ca.into_series());
     }
 
-    let dtype = dtype.try_to_arrow(CompatLevel::newest())?;
+    let arrow_dtype = dtype.try_to_arrow(CompatLevel::newest())?;
     let DataType::Struct(fields) = dtype else {
         unreachable!() // Implementation error if it isn't a struct.
     };
@@ -66,7 +66,7 @@ pub(super) fn extract_groups(
 
     let chunks = ca
         .downcast_iter()
-        .map(|array| extract_groups_array(array, &reg, &names, dtype.clone()))
+        .map(|array| extract_groups_array(array, &reg, &names, arrow_dtype.clone()))
         .collect::<PolarsResult<Vec<_>>>()?;
 
     Series::try_from((ca.name().clone(), chunks))
