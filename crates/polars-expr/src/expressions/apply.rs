@@ -156,7 +156,7 @@ impl ApplyExpr {
             // Create input for the function to determine the output dtype, see #3946.
             let agg = agg.list().unwrap();
             let input_dtype = agg.inner_dtype();
-            let input = Series::full_null(PlSmallStr::const_default(), 0, input_dtype);
+            let input = Series::full_null(PlSmallStr::EMPTY, 0, input_dtype);
 
             let output = self.eval_and_flatten(&mut [input])?;
             let ca = ListChunked::full(name, &output, 0);
@@ -185,7 +185,7 @@ impl ApplyExpr {
             if let Some(dtype) = dtype {
                 // TODO! uncomment this line and remove debug_assertion after a while.
                 // POOL.install(|| {
-                //     iter.collect_ca_with_dtype::<PolarsResult<_>>(PlSmallStr::const_default(), DataType::List(Box::new(dtype)))
+                //     iter.collect_ca_with_dtype::<PolarsResult<_>>(PlSmallStr::EMPTY, DataType::List(Box::new(dtype)))
                 // })?
                 let out: ListChunked = POOL.install(|| iter.collect::<PolarsResult<_>>())?;
 
@@ -597,14 +597,14 @@ impl ApplyExpr {
                     let (right, right_dtype) = (right.to_any_value()?, right.get_datatype());
 
                     let left = Series::from_any_values_and_dtype(
-                        PlSmallStr::const_default(),
+                        PlSmallStr::EMPTY,
                         &[left],
                         &left_dtype,
                         false,
                     )
                     .ok()?;
                     let right = Series::from_any_values_and_dtype(
-                        PlSmallStr::const_default(),
+                        PlSmallStr::EMPTY,
                         &[right],
                         &right_dtype,
                         false,

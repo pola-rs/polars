@@ -186,12 +186,12 @@ mod test {
 
     #[test]
     fn test_ndarray_from_ca() -> PolarsResult<()> {
-        let ca = Float64Chunked::new(PlSmallStr::const_default(), &[1.0, 2.0, 3.0]);
+        let ca = Float64Chunked::new(PlSmallStr::EMPTY, &[1.0, 2.0, 3.0]);
         let ndarr = ca.to_ndarray()?;
         assert_eq!(ndarr, ArrayView1::from(&[1.0, 2.0, 3.0]));
 
         let mut builder = ListPrimitiveChunkedBuilder::<Float64Type>::new(
-            PlSmallStr::const_default(),
+            PlSmallStr::EMPTY,
             10,
             10,
             DataType::Float64,
@@ -207,7 +207,7 @@ mod test {
 
         // test list array that is not square
         let mut builder = ListPrimitiveChunkedBuilder::<Float64Type>::new(
-            PlSmallStr::const_default(),
+            PlSmallStr::EMPTY,
             10,
             10,
             DataType::Float64,

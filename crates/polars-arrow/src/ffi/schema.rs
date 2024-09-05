@@ -75,7 +75,7 @@ impl ArrowSchema {
         {
             flags += *is_ordered as i64;
             // we do not store field info in the dict values, so can't recover it all :(
-            let field = Field::new(PlSmallStr::const_default(), values.as_ref().clone(), true);
+            let field = Field::new(PlSmallStr::EMPTY, values.as_ref().clone(), true);
             Some(Box::new(ArrowSchema::new(&field)))
         } else {
             None
@@ -108,7 +108,7 @@ impl ArrowSchema {
                 None
             };
 
-        let name = CString::new(name.as_str()).unwrap();
+        let name = CString::new(name.as_bytes()).unwrap();
         let format = CString::new(format).unwrap();
 
         let mut private = Box::new(SchemaPrivateData {

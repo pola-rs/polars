@@ -39,10 +39,7 @@ impl<'a> FileStream<'a> {
     {
         let (projection, schema) = if let Some(projection) = projection {
             let (p, h, fields) = prepare_projection(&metadata.schema.fields, projection);
-            let schema = ArrowSchema {
-                fields,
-                metadata: metadata.schema.metadata.clone(),
-            };
+            let schema = ArrowSchema { fields };
             (Some((p, h)), Some(schema))
         } else {
             (None, None)

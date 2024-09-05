@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{Field, InitHashMaps, PlHashMap, PlHashSet};
-use polars_core::schema::Schema;
+use polars_core::schema::{Schema, SchemaExt};
 use polars_error::PolarsResult;
 use polars_expr::planner::get_expr_depth_limit;
 use polars_expr::state::ExecutionState;

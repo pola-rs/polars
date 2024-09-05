@@ -13,7 +13,7 @@ impl PolarsExtension {
         let arr = arr.slice_typed_unchecked(i, 1);
         let pe = Self::new(arr);
         let pe = ManuallyDrop::new(pe);
-        pe.get_series(&PlSmallStr::const_default())
+        pe.get_series(&PlSmallStr::EMPTY)
             .get(0)
             .unwrap()
             .into_static()

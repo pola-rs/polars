@@ -9402,7 +9402,8 @@ class Expr:
 
                 y_0 &= x_0
 
-                \alpha_i &= 1 - \exp \left\{ \frac{ -\ln(2)(t_i-t_{i-1}) }{ \tau } \right\}
+                \alpha_i &= 1 - \exp \left\{ \frac{ -\ln(2)(t_i-t_{i-1}) }
+                    { \tau } \right\}
 
                 y_i &= \alpha_i x_i + (1 - \alpha_i) y_{i-1}; \quad i > 0
 

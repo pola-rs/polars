@@ -189,7 +189,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut ConversionContext) -> PolarsResult<No
                     file_options.hive_options.schema.clone(),
                     match resolved_file_info.reader_schema.as_ref().unwrap() {
                         Either::Left(v) => {
-                            owned = Some(Schema::from(v));
+                            owned = Some(Schema::from_arrow_schema(v.as_ref()));
                             owned.as_ref().unwrap()
                         },
                         Either::Right(v) => v.as_ref(),

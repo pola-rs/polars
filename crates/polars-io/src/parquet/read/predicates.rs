@@ -8,9 +8,9 @@ impl ColumnStats {
     fn from_arrow_stats(stats: Statistics, field: &ArrowField) -> Self {
         Self::new(
             field.into(),
-            Some(Series::try_from((PlSmallStr::const_default(), stats.null_count)).unwrap()),
-            Some(Series::try_from((PlSmallStr::const_default(), stats.min_value)).unwrap()),
-            Some(Series::try_from((PlSmallStr::const_default(), stats.max_value)).unwrap()),
+            Some(Series::try_from((PlSmallStr::EMPTY, stats.null_count)).unwrap()),
+            Some(Series::try_from((PlSmallStr::EMPTY, stats.min_value)).unwrap()),
+            Some(Series::try_from((PlSmallStr::EMPTY, stats.max_value)).unwrap()),
         )
     }
 }
@@ -38,7 +38,7 @@ pub(crate) fn collect_statistics(
     }
 
     Ok(Some(BatchStats::new(
-        Arc::new(schema.into()),
+        Arc::new(Schema::from_arrow_schema(schema)),
         stats,
         Some(part_md.num_rows()),
     )))

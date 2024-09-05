@@ -221,7 +221,7 @@ mod test {
         };
 
         let values = &[Some(foo1), None, Some(foo2), None];
-        let ca = ObjectChunked::new(PlSmallStr::const_default(), values);
+        let ca = ObjectChunked::new(PlSmallStr::EMPTY, values);
 
         let groups =
             GroupsProxy::Idx(vec![(0, unitvec![0, 1]), (2, unitvec![2]), (3, unitvec![3])].into());
@@ -245,7 +245,7 @@ mod test {
         };
 
         let values = &[Some(foo1.clone()), None, Some(foo2.clone()), None];
-        let ca = ObjectChunked::new(PlSmallStr::const_default(), values);
+        let ca = ObjectChunked::new(PlSmallStr::EMPTY, values);
 
         let groups = vec![(0, unitvec![0, 1]), (2, unitvec![2]), (3, unitvec![3])].into();
         let out = unsafe { ca.agg_list(&GroupsProxy::Idx(groups)) };

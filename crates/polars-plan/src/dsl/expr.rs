@@ -143,8 +143,6 @@ pub enum Expr {
     Len,
     /// Take the nth column in the `DataFrame`
     Nth(i64),
-    // skipped fields must be last otherwise serde fails in pickle
-    #[cfg_attr(feature = "serde", serde(skip))]
     RenameAlias {
         function: SpecialEq<Arc<dyn RenameAliasFn>>,
         expr: Arc<Expr>,
@@ -157,7 +155,6 @@ pub enum Expr {
         /// function to apply
         function: SpecialEq<Arc<dyn SeriesUdf>>,
         /// output dtype of the function
-        #[cfg_attr(feature = "serde", serde(skip))]
         output_type: GetOutput,
         options: FunctionOptions,
     },

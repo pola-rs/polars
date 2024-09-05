@@ -29,7 +29,7 @@ pub trait ToStruct: AsArray {
                 .into_par_iter()
                 .map(|i| {
                     ca.array_get(
-                        &Int64Chunked::from_slice(PlSmallStr::const_default(), &[i as i64]),
+                        &Int64Chunked::from_slice(PlSmallStr::EMPTY, &[i as i64]),
                         true,
                     )
                     .map(|mut s| {

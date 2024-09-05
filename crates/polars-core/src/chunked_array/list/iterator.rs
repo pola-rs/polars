@@ -51,7 +51,7 @@ impl<'a, I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'a
                     // dtype is known
                     unsafe {
                         let s = Series::from_chunks_and_dtype_unchecked(
-                            PlSmallStr::const_default(),
+                            PlSmallStr::EMPTY,
                             vec![array_ref],
                             &self.inner_dtype.to_physical(),
                         )
@@ -123,7 +123,7 @@ impl ListChunked {
     /// If the returned `AmortSeries` is cloned, the local copy will be replaced and a new container
     /// will be set.
     pub fn amortized_iter(&self) -> AmortizedListIter<impl Iterator<Item = Option<ArrayBox>> + '_> {
-        self.amortized_iter_with_name(PlSmallStr::const_default())
+        self.amortized_iter_with_name(PlSmallStr::EMPTY)
     }
 
     /// See `amortized_iter`.
@@ -392,16 +392,15 @@ mod test {
 
     #[test]
     fn test_iter_list() {
-        let mut builder =
-            get_list_builder(&DataType::Int32, 10, 10, PlSmallStr::const_default()).unwrap();
+        let mut builder = get_list_builder(&DataType::Int32, 10, 10, PlSmallStr::EMPTY).unwrap();
         builder
-            .append_series(&Series::new(PlSmallStr::const_default(), &[1, 2, 3]))
+            .append_series(&Series::new(PlSmallStr::EMPTY, &[1, 2, 3]))
             .unwrap();
         builder
-            .append_series(&Series::new(PlSmallStr::const_default(), &[3, 2, 1]))
+            .append_series(&Series::new(PlSmallStr::EMPTY, &[3, 2, 1]))
             .unwrap();
         builder
-            .append_series(&Series::new(PlSmallStr::const_default(), &[1, 1]))
+            .append_series(&Series::new(PlSmallStr::EMPTY, &[1, 1]))
             .unwrap();
         let ca = builder.finish();
 

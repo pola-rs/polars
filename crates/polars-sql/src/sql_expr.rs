@@ -248,7 +248,7 @@ impl SQLExprVisitor<'_> {
             })
             .collect::<PolarsResult<Vec<_>>>()?;
 
-        Series::from_any_values(PlSmallStr::const_default(), &array_elements, true)
+        Series::from_any_values(PlSmallStr::EMPTY, &array_elements, true)
     }
 
     fn visit_expr(&mut self, expr: &SQLExpr) -> PolarsResult<Expr> {
@@ -1358,7 +1358,7 @@ pub(crate) fn resolve_compound_identifier(
         Ok(Arc::new(if let Some(active_schema) = active_schema {
             active_schema.clone()
         } else {
-            Schema::new()
+            Schema::default()
         }))
     }?;
 

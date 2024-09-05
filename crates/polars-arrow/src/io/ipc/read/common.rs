@@ -280,11 +280,7 @@ pub fn read_dictionary<R: Read + Seek>(
     };
 
     // Make a fake schema for the dictionary batch.
-    let fields = vec![Field::new(
-        PlSmallStr::const_default(),
-        value_type.clone(),
-        false,
-    )];
+    let fields = vec![Field::new(PlSmallStr::EMPTY, value_type.clone(), false)];
     let ipc_schema = IpcSchema {
         fields: vec![first_ipc_field.clone()],
         is_little_endian: ipc_schema.is_little_endian,

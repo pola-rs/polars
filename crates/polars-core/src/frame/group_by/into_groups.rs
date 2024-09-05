@@ -324,7 +324,7 @@ impl IntoGroupsProxy for ListChunked {
         let ca = if multithreaded {
             encode_rows_vertical_par_unordered(by).unwrap()
         } else {
-            _get_rows_encoded_ca_unordered(PlSmallStr::const_default(), by).unwrap()
+            _get_rows_encoded_ca_unordered(PlSmallStr::EMPTY, by).unwrap()
         };
 
         ca.group_tuples(multithreaded, sorted)

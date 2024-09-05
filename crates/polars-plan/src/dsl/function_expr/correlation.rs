@@ -97,7 +97,7 @@ fn spearman_rank_corr(s: &[Series], ddof: u8, propagate_nans: bool) -> PolarsRes
     let name = PlSmallStr::from_static("spearman_rank_correlation");
     if propagate_nans && a.dtype().is_float() {
         for s in [&a, &b] {
-            if nan_max_s(s, PlSmallStr::const_default())
+            if nan_max_s(s, PlSmallStr::EMPTY)
                 .get(0)
                 .unwrap()
                 .extract::<f64>()

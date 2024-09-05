@@ -6,8 +6,8 @@ use crate::prelude::*;
 #[cfg(feature = "pivot")]
 pub(crate) fn prepare_eval_expr(expr: Expr) -> Expr {
     expr.map_expr(|e| match e {
-        Expr::Column(_) => Expr::Column(PlSmallStr::const_default()),
-        Expr::Nth(_) => Expr::Column(PlSmallStr::const_default()),
+        Expr::Column(_) => Expr::Column(PlSmallStr::EMPTY),
+        Expr::Nth(_) => Expr::Column(PlSmallStr::EMPTY),
         e => e,
     })
 }

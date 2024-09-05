@@ -1,71 +1,56 @@
-use std::sync::Arc;
-
-use once_cell::sync::Lazy;
-
 #[macro_export]
 macro_rules! format_pl_smallstr {
     ($($arg:tt)*) => {{
         use std::fmt::Write;
 
-        // TODO: Optimize
-        let mut string = String::new();
+        let mut string = PlSmallStr::EMPTY;
         write!(string, $($arg)*).unwrap();
-        PlSmallStr::from_string(string)
+        string
     }}
 }
 
-/// String type that interns small strings and has O(1) clone.
+type Inner = compact_str::CompactString;
+
+/// String type that inlines small strings.
 #[derive(Clone, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct PlSmallStr(Arc<str>);
+pub struct PlSmallStr(Inner);
 
 impl PlSmallStr {
-    /// Initialize an empty string ""
-    /// TODO: make this a `const fn`
-    #[inline(always)]
-    pub fn const_default() -> Self {
-        Self::empty_static().clone()
-    }
+    pub const EMPTY: Self = Self::from_static("");
+    pub const EMPTY_REF: &'static Self = &Self::from_static("");
 
-    /// This is a workaround until `const_default` becomes a const fn
     #[inline(always)]
-    pub fn empty_static() -> &'static Self {
-        static THIS: Lazy<PlSmallStr> = Lazy::new(|| PlSmallStr::from_static(""));
-        &THIS
-    }
-
-    /// TODO: make this a `const fn`
-    #[inline(always)]
-    pub fn from_static(s: &'static str) -> Self {
-        Self(Arc::from(s))
+    pub const fn from_static(s: &'static str) -> Self {
+        Self(Inner::const_new(s))
     }
 
     #[inline(always)]
     #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Self {
-        Self(Arc::from(s))
+        Self(Inner::from(s))
     }
 
     #[inline(always)]
     pub fn from_string(s: String) -> Self {
-        Self(Arc::from(s))
+        Self(Inner::from(s))
     }
 
     #[inline(always)]
     pub fn as_str(&self) -> &str {
-        self.0.as_ref()
+        self.0.as_str()
     }
 
     #[inline(always)]
     pub fn into_string(self) -> String {
-        self.0.to_string()
+        self.0.into_string()
     }
 }
 
 impl Default for PlSmallStr {
     #[inline(always)]
     fn default() -> Self {
-        Self::const_default()
+        Self::EMPTY
     }
 }
 
@@ -97,18 +82,21 @@ impl core::borrow::Borrow<str> for PlSmallStr {
 /// AsRef impls for other types
 
 impl AsRef<std::path::Path> for PlSmallStr {
+    #[inline(always)]
     fn as_ref(&self) -> &std::path::Path {
         self.as_str().as_ref()
     }
 }
 
 impl AsRef<[u8]> for PlSmallStr {
+    #[inline(always)]
     fn as_ref(&self) -> &[u8] {
         self.as_str().as_bytes()
     }
 }
 
 impl AsRef<std::ffi::OsStr> for PlSmallStr {
+    #[inline(always)]
     fn as_ref(&self) -> &std::ffi::OsStr {
         self.as_str().as_ref()
     }
@@ -119,14 +107,6 @@ impl AsRef<std::ffi::OsStr> for PlSmallStr {
 impl From<&str> for PlSmallStr {
     #[inline(always)]
     fn from(value: &str) -> Self {
-        Self::from_str(value)
-    }
-}
-
-/// TODO: remove
-impl From<&&str> for PlSmallStr {
-    #[inline(always)]
-    fn from(value: &&str) -> Self {
         Self::from_str(value)
     }
 }
@@ -145,7 +125,70 @@ impl From<&String> for PlSmallStr {
     }
 }
 
-/// FromIterator impls (TODO)
+impl From<Inner> for PlSmallStr {
+    #[inline(always)]
+    fn from(value: Inner) -> Self {
+        Self(value)
+    }
+}
+
+/// FromIterator impls
+
+impl FromIterator<PlSmallStr> for PlSmallStr {
+    #[inline(always)]
+    fn from_iter<T: IntoIterator<Item = PlSmallStr>>(iter: T) -> Self {
+        Self(Inner::from_iter(iter.into_iter().map(|x| x.0)))
+    }
+}
+
+impl<'a> FromIterator<&'a PlSmallStr> for PlSmallStr {
+    #[inline(always)]
+    fn from_iter<T: IntoIterator<Item = &'a PlSmallStr>>(iter: T) -> Self {
+        Self(Inner::from_iter(iter.into_iter().map(|x| x.as_str())))
+    }
+}
+
+impl FromIterator<char> for PlSmallStr {
+    #[inline(always)]
+    fn from_iter<I: IntoIterator<Item = char>>(iter: I) -> PlSmallStr {
+        Self(Inner::from_iter(iter))
+    }
+}
+
+impl<'a> FromIterator<&'a char> for PlSmallStr {
+    #[inline(always)]
+    fn from_iter<I: IntoIterator<Item = &'a char>>(iter: I) -> PlSmallStr {
+        Self(Inner::from_iter(iter))
+    }
+}
+
+impl<'a> FromIterator<&'a str> for PlSmallStr {
+    #[inline(always)]
+    fn from_iter<I: IntoIterator<Item = &'a str>>(iter: I) -> PlSmallStr {
+        Self(Inner::from_iter(iter))
+    }
+}
+
+impl FromIterator<String> for PlSmallStr {
+    #[inline(always)]
+    fn from_iter<I: IntoIterator<Item = String>>(iter: I) -> PlSmallStr {
+        Self(Inner::from_iter(iter))
+    }
+}
+
+impl FromIterator<Box<str>> for PlSmallStr {
+    #[inline(always)]
+    fn from_iter<I: IntoIterator<Item = Box<str>>>(iter: I) -> PlSmallStr {
+        Self(Inner::from_iter(iter))
+    }
+}
+
+impl<'a> FromIterator<std::borrow::Cow<'a, str>> for PlSmallStr {
+    #[inline(always)]
+    fn from_iter<I: IntoIterator<Item = std::borrow::Cow<'a, str>>>(iter: I) -> PlSmallStr {
+        Self(Inner::from_iter(iter))
+    }
+}
 
 /// PartialEq impls
 
@@ -170,6 +213,25 @@ impl PartialEq<PlSmallStr> for String {
     #[inline(always)]
     fn eq(&self, other: &PlSmallStr) -> bool {
         self.as_str() == other.as_str()
+    }
+}
+
+/// Write
+
+impl core::fmt::Write for PlSmallStr {
+    #[inline(always)]
+    fn write_char(&mut self, c: char) -> std::fmt::Result {
+        self.0.write_char(c)
+    }
+
+    #[inline(always)]
+    fn write_fmt(&mut self, args: std::fmt::Arguments<'_>) -> std::fmt::Result {
+        self.0.write_fmt(args)
+    }
+
+    #[inline(always)]
+    fn write_str(&mut self, s: &str) -> std::fmt::Result {
+        self.0.write_str(s)
     }
 }
 

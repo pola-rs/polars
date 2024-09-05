@@ -67,7 +67,7 @@ impl ChunkReverse for BinaryChunked {
             }
         } else {
             let ca = IdxCa::from_vec(
-                PlSmallStr::const_default(),
+                PlSmallStr::EMPTY,
                 (0..self.len() as IdxSize).rev().collect(),
             );
             unsafe { self.take_unchecked(&ca) }
@@ -124,7 +124,7 @@ impl<T: PolarsObject> ChunkReverse for ObjectChunked<T> {
             self.take_unchecked(
                 &(0..self.len() as IdxSize)
                     .rev()
-                    .collect_ca(PlSmallStr::const_default()),
+                    .collect_ca(PlSmallStr::EMPTY),
             )
         }
     }

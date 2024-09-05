@@ -922,15 +922,15 @@ pub(super) fn expand_selector(
     replace_selector_inner(s, &mut members, &mut vec![], schema, keys)?;
 
     if members.len() <= 1 {
-        Ok(members
+        members
             .into_iter()
             .map(|e| {
                 let Expr::Column(name) = e else {
-                    unreachable!()
+                    polars_bail!(InvalidOperation: "invalid selector expression: {}", e)
                 };
-                name
+                Ok(name)
             })
-            .collect())
+            .collect()
     } else {
         // Ensure that multiple columns returned from combined/nested selectors remain in schema order
         let selected = schema

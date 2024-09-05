@@ -286,7 +286,7 @@ impl LazyFrame {
     /// # use polars_lazy::prelude::*;
     /// fn sort_by_multiple_columns_with_specific_order(df: DataFrame) -> LazyFrame {
     ///     df.lazy().sort(
-    ///         &["sepal_width", "sepal_length"],
+    ///         ["sepal_width", "sepal_length"],
     ///         SortMultipleOptions::new()
     ///             .with_order_descending_multi([false, true])
     ///     )
@@ -919,7 +919,7 @@ impl LazyFrame {
     /// fn example(df: DataFrame) -> LazyFrame {
     ///       df.lazy()
     ///         .filter(col("sepal_width").is_not_null())
-    ///         .select(&[col("sepal_width"), col("sepal_length")])
+    ///         .select([col("sepal_width"), col("sepal_length")])
     /// }
     /// ```
     pub fn filter(self, predicate: Expr) -> Self {
@@ -943,14 +943,14 @@ impl LazyFrame {
     /// /// Column "bar" is renamed to "ham".
     /// fn example(df: DataFrame) -> LazyFrame {
     ///       df.lazy()
-    ///         .select(&[col("foo"),
+    ///         .select([col("foo"),
     ///                   col("bar").alias("ham")])
     /// }
     ///
     /// /// This function selects all columns except "foo"
     /// fn exclude_a_column(df: DataFrame) -> LazyFrame {
     ///       df.lazy()
-    ///         .select(&[col(PlSmallStr::from_static("*")).exclude(["foo"])])
+    ///         .select([col(PlSmallStr::from_static("*")).exclude(["foo"])])
     /// }
     /// ```
     pub fn select<E: AsRef<[Expr]>>(self, exprs: E) -> Self {

@@ -192,7 +192,7 @@ impl ListChunked {
 #[cfg(feature = "dtype-struct")]
 impl ChunkFullNull for StructChunked {
     fn full_null(name: PlSmallStr, length: usize) -> StructChunked {
-        let s = vec![Series::new_null(PlSmallStr::const_default(), length)];
+        let s = vec![Series::new_null(PlSmallStr::EMPTY, length)];
         StructChunked::from_series(name, &s)
             .unwrap()
             .with_outer_validity(Some(Bitmap::new_zeroed(length)))

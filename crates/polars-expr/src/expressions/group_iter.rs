@@ -16,7 +16,7 @@ impl<'a> AggregationContext<'a> {
                 let name = if keep_names {
                     s.name().clone()
                 } else {
-                    PlSmallStr::const_default()
+                    PlSmallStr::EMPTY
                 };
                 // SAFETY: dtype is correct
                 unsafe {
@@ -34,7 +34,7 @@ impl<'a> AggregationContext<'a> {
                 let name = if keep_names {
                     s.name().clone()
                 } else {
-                    PlSmallStr::const_default()
+                    PlSmallStr::EMPTY
                 };
                 // SAFETY: dtype is correct
                 unsafe {
@@ -52,7 +52,7 @@ impl<'a> AggregationContext<'a> {
                 let name = if keep_names {
                     s.name().clone()
                 } else {
-                    PlSmallStr::const_default()
+                    PlSmallStr::EMPTY
                 };
                 Box::new(list.amortized_iter_with_name(name))
             },
@@ -64,7 +64,7 @@ impl<'a> AggregationContext<'a> {
                 let name = if keep_names {
                     s.name().clone()
                 } else {
-                    PlSmallStr::const_default()
+                    PlSmallStr::EMPTY
                 };
                 Box::new(list.amortized_iter_with_name(name))
             },

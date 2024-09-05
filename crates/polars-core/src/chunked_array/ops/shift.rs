@@ -225,7 +225,7 @@ mod test {
 
     #[test]
     fn test_shift() {
-        let ca = Int32Chunked::new(PlSmallStr::const_default(), &[1, 2, 3]);
+        let ca = Int32Chunked::new(PlSmallStr::EMPTY, &[1, 2, 3]);
 
         // shift by 0, 1, 2, 3, 4
         let shifted = ca.shift_and_fill(0, Some(5));

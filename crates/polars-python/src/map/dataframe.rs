@@ -8,15 +8,14 @@ use pyo3::types::{PyBool, PyFloat, PyInt, PyList, PyString, PyTuple};
 use super::*;
 use crate::PyDataFrame;
 
+/// Create iterators for all the Series in the DataFrame.
 fn get_iters(df: &DataFrame) -> Vec<SeriesIter> {
     df.get_columns().iter().map(|s| s.iter()).collect()
 }
 
-fn get_iters_skip(df: &DataFrame, skip: usize) -> Vec<std::iter::Skip<SeriesIter>> {
-    df.get_columns()
-        .iter()
-        .map(|s| s.iter().skip(skip))
-        .collect()
+/// Create iterators for all the Series in the DataFrame, skipping the first `n` rows.
+fn get_iters_skip(df: &DataFrame, n: usize) -> Vec<std::iter::Skip<SeriesIter>> {
+    df.get_columns().iter().map(|s| s.iter().skip(n)).collect()
 }
 
 // the return type is Union[PySeries, PyDataFrame] and a boolean indicating if it is a dataframe or not

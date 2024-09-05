@@ -1,13 +1,20 @@
+#[cfg(target_family = "unix")]
 use std::collections::btree_map::Entry;
+#[cfg(target_family = "unix")]
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::{BufReader, Cursor, Read, Seek};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+#[cfg(target_family = "unix")]
+use std::sync::Mutex;
 
 use memmap::Mmap;
+#[cfg(target_family = "unix")]
 use once_cell::sync::Lazy;
 use polars_core::config::verbose;
-use polars_error::{polars_bail, PolarsResult};
+#[cfg(target_family = "unix")]
+use polars_error::polars_bail;
+use polars_error::PolarsResult;
 use polars_utils::mmap::MemSlice;
 
 // Keep track of memory mapped files so we don't write to them while reading
@@ -60,7 +67,7 @@ impl Drop for MMapSemaphore {
     }
 }
 
-pub fn ensure_not_mapped(file: &File) -> PolarsResult<()> {
+pub fn ensure_not_mapped(#[allow(unused)] file: &File) -> PolarsResult<()> {
     #[cfg(target_family = "unix")]
     {
         use std::os::unix::fs::MetadataExt;

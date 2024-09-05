@@ -29,7 +29,7 @@ unsafe fn update_keys(keys: &mut [Series], groups: &GroupsProxy) {
                 let indices = groups
                     .iter()
                     .map(|[first, _len]| *first)
-                    .collect_ca(PlSmallStr::const_default());
+                    .collect_ca(PlSmallStr::EMPTY);
                 *key = key.take_unchecked(&indices);
             }
         },

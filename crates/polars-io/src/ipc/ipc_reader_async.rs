@@ -5,7 +5,7 @@ use object_store::path::Path;
 use object_store::ObjectMeta;
 use polars_core::datatypes::IDX_DTYPE;
 use polars_core::frame::DataFrame;
-use polars_core::schema::Schema;
+use polars_core::schema::{Schema, SchemaExt};
 use polars_error::{polars_bail, polars_err, to_compute_err, PolarsResult};
 use polars_utils::pl_str::PlSmallStr;
 
@@ -157,7 +157,10 @@ impl IpcReaderAsync {
                     &fetched_metadata
                 };
 
-                let schema = prepare_schema((&metadata.schema).into(), options.row_index.as_ref());
+                let schema = prepare_schema(
+                    Schema::from_arrow_schema(metadata.schema.as_ref()),
+                    options.row_index.as_ref(),
+                );
 
                 let hive_partitions = None;
 

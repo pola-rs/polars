@@ -284,7 +284,7 @@ impl<'df> GroupBy<'df> {
                             let indices = groups
                                 .iter()
                                 .map(|&[first, _len]| first)
-                                .collect_ca(PlSmallStr::const_default());
+                                .collect_ca(PlSmallStr::EMPTY);
                             // SAFETY: groups are always in bounds.
                             let mut out = unsafe { s.take_unchecked(&indices) };
                             // Sliced groups are always in order of discovery.
@@ -330,7 +330,7 @@ impl<'df> GroupBy<'df> {
     /// ```rust
     /// # use polars_core::prelude::*;
     /// fn example(df: DataFrame) -> PolarsResult<DataFrame> {
-    ///     df.group_by(["date"])?.select(&["temp", "rain"]).mean()
+    ///     df.group_by(["date"])?.select(["temp", "rain"]).mean()
     /// }
     /// ```
     /// Returns:

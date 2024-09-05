@@ -1817,6 +1817,42 @@ def test_general_prefiltering(
     assert_frame_equal(result, df.filter(expr))
 
 
+@given(
+    df=dataframes(
+        min_size=0,
+        max_size=10,
+        min_cols=1,
+        max_cols=5,
+        excluded_dtypes=[pl.Decimal, pl.Categorical, pl.Enum],
+        include_cols=[column("filter_col", pl.Boolean, allow_null=False)],
+    ),
+)
+@settings(
+    deadline=None,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
+@pytest.mark.write_disk
+def test_row_index_prefiltering(
+    tmp_path: Path,
+    df: pl.DataFrame,
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    f = tmp_path / "test.parquet"
+
+    df.write_parquet(f)
+
+    expr = pl.col("filter_col")
+
+    result = (
+        pl.scan_parquet(
+            f, row_index_name="ri", row_index_offset=42, parallel="prefiltered"
+        )
+        .filter(expr)
+        .collect()
+    )
+    assert_frame_equal(result, df.with_row_index("ri", 42).filter(expr))
+
+
 def test_empty_parquet() -> None:
     f_pd = io.BytesIO()
     f_pl = io.BytesIO()
@@ -1832,3 +1868,38 @@ def test_empty_parquet() -> None:
 
     empty_from_pl = pl.read_parquet(f_pl)
     assert empty_from_pl.shape == (0, 0)
+
+
+@pytest.mark.parametrize(
+    "strategy",
+    ["columns", "row_groups", "prefiltered"],
+)
+@pytest.mark.write_disk
+def test_row_index_projection_pushdown_18463(
+    tmp_path: Path, strategy: pl.ParallelStrategy
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    f = tmp_path / "test.parquet"
+
+    pl.DataFrame({"A": [1, 4], "B": [2, 5]}).write_parquet(f)
+
+    df = pl.scan_parquet(f, parallel=strategy).with_row_index()
+
+    assert_frame_equal(df.select("index").collect(), df.collect().select("index"))
+
+    df = pl.scan_parquet(f, parallel=strategy).with_row_index("other_idx_name")
+
+    assert_frame_equal(
+        df.select("other_idx_name").collect(), df.collect().select("other_idx_name")
+    )
+
+    df = pl.scan_parquet(f, parallel=strategy).with_row_index(offset=42)
+
+    assert_frame_equal(df.select("index").collect(), df.collect().select("index"))
+
+    df = pl.scan_parquet(f, parallel=strategy).with_row_index()
+
+    assert_frame_equal(
+        df.select("index").slice(1, 1).collect(),
+        df.collect().select("index").slice(1, 1),
+    )

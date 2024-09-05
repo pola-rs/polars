@@ -3954,7 +3954,7 @@ class Series:
 
         See Also
         --------
-        assert_series_equal
+        polars.testing.assert_series_equal
 
         Examples
         --------
@@ -5336,7 +5336,9 @@ class Series:
 
         warn_on_inefficient_map(function, columns=[self.name], map_target="series")
         return self._from_pyseries(
-            self._s.apply_lambda(function, pl_return_dtype, skip_nulls)
+            self._s.map_elements(
+                function, return_dtype=pl_return_dtype, skip_nulls=skip_nulls
+            )
         )
 
     def shift(self, n: int = 1, *, fill_value: IntoExpr | None = None) -> Series:
@@ -6967,7 +6969,8 @@ class Series:
 
                 y_0 &= x_0
 
-                \alpha_i &= 1 - \exp \left\{ \frac{ -\ln(2)(t_i-t_{i-1}) }{ \tau } \right\}
+                \alpha_i &= 1 - \exp \left\{ \frac{ -\ln(2)(t_i-t_{i-1}) }
+                    { \tau } \right\}
 
                 y_i &= \alpha_i x_i + (1 - \alpha_i) y_{i-1}; \quad i > 0
 

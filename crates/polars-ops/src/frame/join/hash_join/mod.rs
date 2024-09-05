@@ -147,8 +147,8 @@ pub trait JoinDispatch: IntoDf {
             join_idx_l.slice(offset, len);
             join_idx_r.slice(offset, len);
         }
-        let idx_ca_l = IdxCa::with_chunk(PlSmallStr::const_default(), join_idx_l);
-        let idx_ca_r = IdxCa::with_chunk(PlSmallStr::const_default(), join_idx_r);
+        let idx_ca_l = IdxCa::with_chunk(PlSmallStr::EMPTY, join_idx_l);
+        let idx_ca_r = IdxCa::with_chunk(PlSmallStr::EMPTY, join_idx_r);
 
         // Take the left and right dataframes by join tuples
         let (df_left, df_right) = POOL.join(

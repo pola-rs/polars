@@ -238,7 +238,7 @@ pub fn rows_to_schema_first_non_null(
 
 impl<'a> From<&AnyValue<'a>> for Field {
     fn from(val: &AnyValue<'a>) -> Self {
-        Field::new(PlSmallStr::const_default(), val.into())
+        Field::new(PlSmallStr::EMPTY, val.into())
     }
 }
 

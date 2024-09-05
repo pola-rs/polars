@@ -504,12 +504,7 @@ unsafe fn to_physical_and_dtype(
             feature_gated!("dtype-categorical", {
                 let s = unsafe {
                     let dt = dt.clone();
-                    Series::_try_from_arrow_unchecked_with_md(
-                        PlSmallStr::const_default(),
-                        arrays,
-                        &dt,
-                        md,
-                    )
+                    Series::_try_from_arrow_unchecked_with_md(PlSmallStr::EMPTY, arrays, &dt, md)
                 }
                 .unwrap();
                 (s.chunks().clone(), s.dtype().clone())
@@ -627,8 +622,7 @@ unsafe fn to_physical_and_dtype(
         | ArrowDataType::Decimal(_, _)
         | ArrowDataType::Date64) => {
             let dt = dt.clone();
-            let mut s = Series::_try_from_arrow_unchecked(PlSmallStr::const_default(), arrays, &dt)
-                .unwrap();
+            let mut s = Series::_try_from_arrow_unchecked(PlSmallStr::EMPTY, arrays, &dt).unwrap();
             let dtype = s.dtype().clone();
             (std::mem::take(s.chunks_mut()), dtype)
         },
