@@ -352,7 +352,9 @@ def test_ie_join_with_floats(
     expr0 = _inequality_expression("dur", op1, "time")
     expr1 = _inequality_expression("rev", op2, "cost")
 
+    print(east, west)
     actual = east.join_between(west, expr0, expr1)
+    print(actual)
 
     expected = east.join(west, how="cross").filter(expr0 & expr1)
     assert_frame_equal(actual, expected, check_row_order=False, check_exact=True)

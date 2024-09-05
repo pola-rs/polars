@@ -200,7 +200,7 @@ pub trait DataFrameJoinOps: IntoDf {
         }
 
         if let JoinType::IEJoin(options) = args.how {
-            let func = if POOL.current_num_threads() > 1 {
+            let func = if POOL.current_num_threads() > 1 && !left_df.is_empty() && !other.is_empty() {
                 iejoin::iejoin_par
             } else {
                 iejoin::iejoin

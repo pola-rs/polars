@@ -192,17 +192,22 @@ pub(super) fn iejoin_par(
         let intersects = min_l >= min_r && min_l <= max_r ||
             min_r >= min_l && min_r <= max_l;
 
+        let intersects = true;
 
 
         if intersects {
             let (l, r) = unsafe {
                 (selected_left.iter().map(|s| s.take_unchecked(l_l1_idx)).collect_vec(),
-                 selected_right.iter().map(|s| s.take_unchecked(l_l1_idx)).collect_vec())
-
+                 selected_right.iter().map(|s| s.take_unchecked(r_l1_idx)).collect_vec())
             };
+
 
             // Compute the row indexes
             let (idx_l, idx_r) = iejoin_tuples(l, r, options, None)?;
+
+            if idx_l.is_empty() {
+                return Ok(None)
+            }
 
             // These are row indexes in the slices we have given, so we use those to gather in the
             // original l1 offset arrays. This gives us indexes in the original tables.
@@ -225,8 +230,8 @@ pub(super) fn iejoin_par(
     let mut right_idx = IdxCa::default();
     for opt in row_indices {
         if let Some((l, r)) = opt {
-            left_idx.append(&l);
-            right_idx.append(&r);
+            left_idx.append(&l)?;
+            right_idx.append(&r)?;
         }
     }
     if let Some((offset, end)) = slice {

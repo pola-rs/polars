@@ -958,9 +958,12 @@ pub(crate) fn to_array<T: PolarsNumericType>(
 
 impl<T: PolarsDataType> Default for ChunkedArray<T> {
     fn default() -> Self {
+        let dtype = T::get_dtype();
+        let arrow_dtype = dtype.to_physical().to_arrow(CompatLevel::newest());
         ChunkedArray {
-            field: Arc::new(Field::new(PlSmallStr::EMPTY, DataType::Null)),
-            chunks: Default::default(),
+            field: Arc::new(Field::new(PlSmallStr::EMPTY, dtype)),
+            // Invariant: always has 1 chunk.
+            chunks: vec![new_empty_array(arrow_dtype)],
             md: Arc::new(IMMetadata::default()),
             length: 0,
             null_count: 0,
