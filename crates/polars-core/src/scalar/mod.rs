@@ -5,7 +5,7 @@ use polars_utils::pl_str::PlSmallStr;
 use crate::datatypes::{AnyValue, DataType};
 use crate::prelude::Series;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Scalar {
     dtype: DataType,
     value: AnyValue<'static>,
