@@ -2881,7 +2881,7 @@ def test_sum_empty_column_names() -> None:
 
 
 def test_flags() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [9, 5, 6]})
     assert df.flags == {
         "a": {"SORTED_ASC": False, "SORTED_DESC": False},
         "b": {"SORTED_ASC": False, "SORTED_DESC": False},
