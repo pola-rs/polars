@@ -168,7 +168,6 @@ pub enum AExpr {
         truthy: Node,
         falsy: Node,
     },
-    #[cfg_attr(feature = "ir_serde", serde(skip))]
     AnonymousFunction {
         input: Vec<ExprIR>,
         function: SpecialEq<Arc<dyn SeriesUdf>>,
