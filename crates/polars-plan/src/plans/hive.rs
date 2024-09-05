@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use polars_core::prelude::*;
@@ -69,6 +70,18 @@ pub fn hive_partitions_from_paths(
     let Some(path) = paths.first() else {
         return Ok(None);
     };
+
+    let mut deduped_paths = Vec::with_capacity(paths.len());
+    for path in paths {
+        let mut path = path.parent().unwrap().to_path_buf();
+        path.push("placeholder.parquet");
+        deduped_paths.push(path);
+    }
+    let paths: Vec<PathBuf> = deduped_paths
+        .into_iter()
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect();
 
     let sep = separator(path);
     let path_string = path.to_str().unwrap();
@@ -143,7 +156,7 @@ pub fn hive_partitions_from_paths(
         }
 
         if !schema_inference_map.is_empty() {
-            for path in paths {
+            for path in &paths {
                 for (name, value) in get_hive_parts_iter!(path.to_str().unwrap()) {
                     let Some(entry) = schema_inference_map.get_mut(name) else {
                         continue;
@@ -174,7 +187,7 @@ pub fn hive_partitions_from_paths(
         false,
     )?;
 
-    for path in paths {
+    for path in &paths {
         let path = path.to_str().unwrap();
 
         for (name, value) in get_hive_parts_iter!(path) {
