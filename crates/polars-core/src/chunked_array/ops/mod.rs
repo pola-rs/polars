@@ -242,6 +242,8 @@ pub trait ChunkAgg<T> {
         None
     }
 
+    fn _sum_as_f64(&self) -> f64;
+
     fn min(&self) -> Option<T> {
         None
     }

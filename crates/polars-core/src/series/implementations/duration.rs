@@ -288,6 +288,10 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
         (a, b)
     }
 
+    fn _sum_as_f64(&self) -> f64 {
+        self.0._sum_as_f64()
+    }
+
     fn mean(&self) -> Option<f64> {
         self.0.mean()
     }

@@ -382,6 +382,10 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
         }))
     }
 
+    fn _sum_as_f64(&self) -> f64 {
+        self.0._sum_as_f64() / self.scale_factor() as f64
+    }
+
     fn mean(&self) -> Option<f64> {
         self.0.mean().map(|v| v / self.scale_factor() as f64)
     }

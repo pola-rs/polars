@@ -88,6 +88,10 @@ where
         )
     }
 
+    fn _sum_as_f64(&self) -> f64 {
+        self.downcast_iter().map(float_sum::sum_arr_as_f64).sum()
+    }
+
     fn min(&self) -> Option<T::Native> {
         if self.null_count() == self.len() {
             return None;
@@ -216,13 +220,11 @@ where
     }
 
     fn mean(&self) -> Option<f64> {
-        if self.null_count() == self.len() {
+        let count = self.len() - self.null_count();
+        if count == 0 {
             return None;
         }
-
-        let len = (self.len() - self.null_count()) as f64;
-        let sum: f64 = self.downcast_iter().map(float_sum::sum_arr_as_f64).sum();
-        Some(sum / len)
+        Some(self._sum_as_f64() / count as f64)
     }
 }
 

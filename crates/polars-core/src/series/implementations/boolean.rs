@@ -166,6 +166,10 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
         ChunkFilter::filter(&self.0, filter).map(|ca| ca.into_series())
     }
 
+    fn _sum_as_f64(&self) -> f64 {
+        self.0.sum().unwrap() as f64
+    }
+
     fn mean(&self) -> Option<f64> {
         self.0.mean()
     }

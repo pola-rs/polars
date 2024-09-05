@@ -292,6 +292,11 @@ pub trait SeriesTrait:
         }
     }
 
+    /// Returns the sum of the array as an f64.
+    fn _sum_as_f64(&self) -> f64 {
+        invalid_operation_panic!(_sum_as_f64, self)
+    }
+
     /// Returns the mean value in the array
     /// Returns an option because the array is nullable.
     fn mean(&self) -> Option<f64> {

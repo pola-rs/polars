@@ -145,6 +145,10 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
         (a.into_series(), b.into_series())
     }
 
+    fn _sum_as_f64(&self) -> f64 {
+        self.0._sum_as_f64()
+    }
+
     fn mean(&self) -> Option<f64> {
         self.0.mean()
     }
