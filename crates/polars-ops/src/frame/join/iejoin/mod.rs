@@ -1,6 +1,8 @@
 mod filtered_bit_array;
+mod l1_l2;
 
 use filtered_bit_array::FilteredBitArray;
+use l1_l2::*;
 use polars_core::chunked_array::ChunkedArray;
 use polars_core::datatypes::{IdxCa, NumericNative, PolarsNumericType};
 use polars_core::frame::DataFrame;
@@ -9,7 +11,7 @@ use polars_core::{with_match_physical_numeric_polars_type, POOL};
 use polars_error::{polars_err, PolarsResult};
 use polars_utils::binary_search::ExponentialSearch;
 use polars_utils::slice::GetSaferUnchecked;
-use polars_utils::total_ord::{TotalEq, TotalOrd};
+use polars_utils::total_ord::{TotalEq};
 use polars_utils::IdxSize;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -46,7 +48,7 @@ fn ie_join_impl_t<T: PolarsNumericType>(
     op1: InequalityOperator,
     op2: InequalityOperator,
     x: Series,
-    y_ordered: Series,
+    y_ordered_by_x: Series,
     left_height: usize,
 ) -> PolarsResult<(Vec<IdxSize>, Vec<IdxSize>)> {
     // Create a bit array with order corresponding to L1,
@@ -87,8 +89,7 @@ fn ie_join_impl_t<T: PolarsNumericType>(
             }
         }
     } else {
-        let ca: &ChunkedArray<T> = y_ordered.as_ref().as_ref();
-        let l2_array = build_l2_array(ca, l2_order)?;
+        let l2_array = build_l2_array(&y_ordered_by_x, l2_order)?;
 
         // For non-strict inequalities in l2, we need to track runs of equal y values and only
         // check for matches after we reach the end of the run and have marked all rhs entries
@@ -181,18 +182,18 @@ pub fn iejoin(
         .arg_sort(l1_sort_options)
         .slice(x.null_count() as i64, x.len() - x.null_count());
 
-    let y_ordered = unsafe { y.take_unchecked(&l1_order) };
+    let y_ordered_by_x = unsafe { y.take_unchecked(&l1_order) };
     let l2_sort_options = SortOptions::default()
         .with_maintain_order(true)
         .with_nulls_last(false)
         .with_order_descending(l2_descending);
     // Get the indexes into l1, ordered by y values.
     // l2_order is the same as "p" from Khayyat et al.
-    let l2_order = y_ordered
+    let l2_order = y_ordered_by_x
         .arg_sort(l2_sort_options)
         .slice(
-            y_ordered.null_count() as i64,
-            y_ordered.len() - y_ordered.null_count(),
+            y_ordered_by_x.null_count() as i64,
+            y_ordered_by_x.len() - y_ordered_by_x.null_count(),
         )
         .rechunk();
     let l2_order = l2_order.downcast_get(0).unwrap().values().as_slice();
@@ -205,7 +206,7 @@ pub fn iejoin(
             op1,
             op2,
             x,
-            y_ordered,
+            y_ordered_by_x,
             left.height()
         )
     })?;
@@ -229,251 +230,4 @@ pub fn iejoin(
     };
 
     _finish_join(join_left, join_right, suffix)
-}
-
-/// Item in L1 array used in the IEJoin algorithm
-#[derive(Clone, Copy, Debug)]
-struct L1Item<T> {
-    /// 1 based index for entries from the LHS df, or -1 based index for entries from the RHS
-    row_index: i64,
-    /// X value
-    value: T,
-}
-
-/// Item in L2 array used in the IEJoin algorithm
-#[derive(Clone, Copy, Debug)]
-struct L2Item {
-    /// Corresponding index into the L1 array of
-    l1_index: IdxSize,
-    /// Whether this is the end of a run of equal y values
-    run_end: bool,
-}
-
-trait L1Array {
-    unsafe fn process_entry(
-        &self,
-        l1_index: usize,
-        bit_array: &mut FilteredBitArray,
-        op1: InequalityOperator,
-        left_row_ids: &mut Vec<IdxSize>,
-        right_row_ids: &mut Vec<IdxSize>,
-    ) -> i64;
-
-    unsafe fn process_lhs_entry(
-        &self,
-        l1_index: usize,
-        bit_array: &FilteredBitArray,
-        op1: InequalityOperator,
-        left_row_ids: &mut Vec<IdxSize>,
-        right_row_ids: &mut Vec<IdxSize>,
-    ) -> i64;
-
-    unsafe fn mark_visited(&self, index: usize, bit_array: &mut FilteredBitArray);
-}
-
-/// Find the position in the L1 array where we should begin checking for matches,
-/// given the index in L1 corresponding to the current position in L2.
-unsafe fn find_search_start_index<T>(
-    l1_array: &[L1Item<T>],
-    index: usize,
-    operator: InequalityOperator,
-) -> usize
-where
-    T: NumericNative,
-    T: TotalOrd,
-{
-    let sub_l1 = l1_array.get_unchecked_release(index..);
-    let value = l1_array.get_unchecked_release(index).value;
-
-    match operator {
-        InequalityOperator::Gt => {
-            sub_l1.partition_point_exponential(|a| a.value.tot_ge(&value)) + index
-        },
-        InequalityOperator::Lt => {
-            sub_l1.partition_point_exponential(|a| a.value.tot_le(&value)) + index
-        },
-        InequalityOperator::GtEq => {
-            sub_l1.partition_point_exponential(|a| value.tot_lt(&a.value)) + index
-        },
-        InequalityOperator::LtEq => {
-            sub_l1.partition_point_exponential(|a| value.tot_gt(&a.value)) + index
-        },
-    }
-}
-
-fn find_matches_in_l1<T>(
-    l1_array: &[L1Item<T>],
-    l1_index: usize,
-    row_index: i64,
-    bit_array: &FilteredBitArray,
-    op1: InequalityOperator,
-    left_row_ids: &mut Vec<IdxSize>,
-    right_row_ids: &mut Vec<IdxSize>,
-) -> i64
-where
-    T: NumericNative,
-    T: TotalOrd,
-{
-    debug_assert!(row_index > 0);
-    let mut match_count = 0;
-
-    // This entry comes from the left hand side DataFrame.
-    // Find all following entries in L1 (meaning they satisfy the first operator)
-    // that have already been visited (so satisfy the second operator).
-    // Because we use a stable sort for l2, we know that we won't find any
-    // matches for duplicate y values when traversing forwards in l1.
-    let start_index = unsafe { find_search_start_index(l1_array, l1_index, op1) };
-    unsafe {
-        bit_array.on_set_bits_from(start_index, |set_bit: usize| {
-            // SAFETY
-            // set bit is within bounds.
-            let right_row_index = l1_array.get_unchecked_release(set_bit).row_index;
-            debug_assert!(right_row_index < 0);
-            left_row_ids.push((row_index - 1) as IdxSize);
-            right_row_ids.push((-right_row_index) as IdxSize - 1);
-            match_count += 1;
-        })
-    };
-
-    match_count
-}
-
-impl<T> L1Array for Vec<L1Item<T>>
-where
-    T: NumericNative,
-{
-    unsafe fn process_entry(
-        &self,
-        l1_index: usize,
-        bit_array: &mut FilteredBitArray,
-        op1: InequalityOperator,
-        left_row_ids: &mut Vec<IdxSize>,
-        right_row_ids: &mut Vec<IdxSize>,
-    ) -> i64 {
-        let row_index = self.get_unchecked_release(l1_index).row_index;
-        let from_lhs = row_index > 0;
-        if from_lhs {
-            find_matches_in_l1(
-                self,
-                l1_index,
-                row_index,
-                bit_array,
-                op1,
-                left_row_ids,
-                right_row_ids,
-            )
-        } else {
-            bit_array.set_bit_unchecked(l1_index);
-            0
-        }
-    }
-
-    unsafe fn process_lhs_entry(
-        &self,
-        l1_index: usize,
-        bit_array: &FilteredBitArray,
-        op1: InequalityOperator,
-        left_row_ids: &mut Vec<IdxSize>,
-        right_row_ids: &mut Vec<IdxSize>,
-    ) -> i64 {
-        let row_index = self.get_unchecked_release(l1_index).row_index;
-        let from_lhs = row_index > 0;
-        if from_lhs {
-            find_matches_in_l1(
-                self,
-                l1_index,
-                row_index,
-                bit_array,
-                op1,
-                left_row_ids,
-                right_row_ids,
-            )
-        } else {
-            0
-        }
-    }
-
-    unsafe fn mark_visited(&self, index: usize, bit_array: &mut FilteredBitArray) {
-        let from_lhs = self.get_unchecked_release(index).row_index > 0;
-        // We only mark RHS entries as visited,
-        // so that we don't try to match LHS entries with other LHS entries.
-        if !from_lhs {
-            bit_array.set_bit_unchecked(index);
-        }
-    }
-}
-
-/// Create a vector of L1 items from the array of LHS x values concatenated with RHS x values
-/// and their ordering.
-fn build_l1_array<T>(
-    ca: &ChunkedArray<T>,
-    order: &IdxCa,
-    right_df_offset: IdxSize,
-) -> PolarsResult<Vec<L1Item<T::Native>>>
-where
-    T: PolarsNumericType,
-{
-    assert_eq!(order.null_count(), 0);
-    assert_eq!(ca.chunks().len(), 1);
-    let arr = ca.downcast_get(0).unwrap();
-    // Even if there are nulls, they will not be selected by order.
-    let values = arr.values().as_slice();
-
-    let mut array: Vec<L1Item<T::Native>> = Vec::with_capacity(ca.len());
-
-    for order_arr in order.downcast_iter() {
-        for index in order_arr.values().as_slice().iter().copied() {
-            debug_assert!(arr.get(index as usize).is_some());
-            let value = unsafe { *values.get_unchecked(index as usize) };
-            let row_index = if index < right_df_offset {
-                // Row from LHS
-                index as i64 + 1
-            } else {
-                // Row from RHS
-                -((index - right_df_offset) as i64) - 1
-            };
-            array.push(L1Item { row_index, value });
-        }
-    }
-
-    Ok(array)
-}
-
-/// Create a vector of L2 items from the array of y values ordered according to the L1 order,
-/// and their ordering. We don't need to store actual y values but only track whether we're at
-/// the end of a run of equal values.
-fn build_l2_array<T>(ca: &ChunkedArray<T>, order: &[IdxSize]) -> PolarsResult<Vec<L2Item>>
-where
-    T: PolarsNumericType,
-    T::Native: TotalOrd,
-{
-    assert_eq!(ca.chunks().len(), 1);
-
-    let mut array = Vec::with_capacity(ca.len());
-    let mut prev_index = 0;
-    let mut prev_value = T::Native::default();
-
-    let arr = ca.downcast_get(0).unwrap();
-    // Even if there are nulls, they will not be selected by order.
-    let values = arr.values().as_slice();
-
-    for (i, l1_index) in order.iter().copied().enumerate() {
-        debug_assert!(arr.get(l1_index as usize).is_some());
-        let value = unsafe { *values.get_unchecked(l1_index as usize) };
-        if i > 0 {
-            array.push(L2Item {
-                l1_index: prev_index,
-                run_end: value.tot_ne(&prev_value),
-            });
-        }
-        prev_index = l1_index;
-        prev_value = value;
-    }
-    if !order.is_empty() {
-        array.push(L2Item {
-            l1_index: prev_index,
-            run_end: true,
-        });
-    }
-    Ok(array)
 }
