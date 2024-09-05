@@ -22,8 +22,7 @@ pub(crate) fn collect_statistics(
 ) -> PolarsResult<Option<BatchStats>> {
     // TODO! fix this performance. This is a full sequential scan.
     let stats = schema
-        .fields
-        .iter()
+        .iter_values()
         .map(|field| match part_md.get_partitions(&field.name) {
             Some(md) => {
                 let st = deserialize(field, &md)?;

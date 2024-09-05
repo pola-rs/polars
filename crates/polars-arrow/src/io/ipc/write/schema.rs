@@ -32,8 +32,7 @@ pub fn serialize_schema(
     };
 
     let fields = schema
-        .fields
-        .iter()
+        .iter_values()
         .zip(ipc_fields.iter())
         .map(|(field, ipc_field)| serialize_field(field, ipc_field))
         .collect::<Vec<_>>();

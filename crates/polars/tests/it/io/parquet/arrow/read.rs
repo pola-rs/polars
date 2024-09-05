@@ -123,13 +123,11 @@ fn read_int96_timestamps() -> PolarsResult<()> {
     let parse = |time_unit: TimeUnit| {
         let mut reader = Cursor::new(timestamp_data);
         let metadata = read_metadata(&mut reader)?;
-        let schema = arrow::datatypes::ArrowSchema {
-            fields: vec![arrow::datatypes::Field::new(
-                "timestamps".into(),
-                arrow::datatypes::ArrowDataType::Timestamp(time_unit, None),
-                false,
-            )],
-        };
+        let schema = arrow::datatypes::ArrowSchema::from_iter([arrow::datatypes::Field::new(
+            "timestamps".into(),
+            arrow::datatypes::ArrowDataType::Timestamp(time_unit, None),
+            false,
+        )]);
         let reader = FileReader::new(reader, metadata.row_groups, schema, None);
         reader.collect::<PolarsResult<Vec<_>>>()
     };

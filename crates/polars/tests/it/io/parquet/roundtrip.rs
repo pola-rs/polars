@@ -19,7 +19,7 @@ fn round_trip(
     encodings: Vec<Encoding>,
 ) -> PolarsResult<()> {
     let field = Field::new("a1".into(), array.data_type().clone(), true);
-    let schema = ArrowSchema::from(vec![field]);
+    let schema = ArrowSchema::from_iter([field]);
 
     let options = WriteOptions {
         statistics: StatisticsOptions::full(),

@@ -3,6 +3,7 @@ use std::io::{Read, Seek};
 use arrow::array::Array;
 use arrow::datatypes::Field;
 use arrow::record_batch::RecordBatchT;
+use polars::prelude::ArrowSchema;
 use polars_error::PolarsResult;
 use polars_parquet::arrow::read::{column_iter_to_arrays, Filter};
 use polars_parquet::parquet::metadata::ColumnChunkMetaData;
@@ -133,19 +134,19 @@ pub fn to_deserializer(
 pub fn read_columns_many<R: Read + Seek>(
     reader: &mut R,
     row_group: &RowGroupMetaData,
-    fields: Vec<Field>,
+    fields: &ArrowSchema,
     filter: Option<Filter>,
 ) -> PolarsResult<Vec<Box<dyn Array>>> {
     // reads all the necessary columns for all fields from the row group
     // This operation is IO-bounded `O(C)` where C is the number of columns in the row group
     let field_columns = fields
-        .iter()
+        .iter_values()
         .map(|field| read_columns(reader, row_group.columns(), &field.name))
         .collect::<PolarsResult<Vec<_>>>()?;
 
     field_columns
         .into_iter()
-        .zip(fields.clone())
+        .zip(fields.iter_values().cloned())
         .map(|(columns, field)| to_deserializer(columns.clone(), field, filter.clone()))
         .collect()
 }

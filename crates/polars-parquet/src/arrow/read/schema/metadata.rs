@@ -66,7 +66,7 @@ fn get_arrow_schema_from_metadata(encoded_meta: &str) -> PolarsResult<ArrowSchem
             };
             let mut schema = deserialize_schema(slice).map(|x| x.0)?;
             // Convert the data types to the data types we support.
-            for field in schema.fields.iter_mut() {
+            for field in schema.iter_values_mut() {
                 field.data_type = convert_data_type(std::mem::take(&mut field.data_type))
             }
             Ok(schema)

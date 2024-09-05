@@ -3018,6 +3018,7 @@ dependencies = [
  "parking_lot",
  "polars-arrow-format",
  "polars-error",
+ "polars-schema",
  "polars-utils",
  "proptest",
  "rand",

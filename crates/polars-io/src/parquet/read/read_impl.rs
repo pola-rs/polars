@@ -69,7 +69,7 @@ fn column_idx_to_series(
     file_schema: &ArrowSchema,
     store: &mmap::ColumnStore,
 ) -> PolarsResult<Series> {
-    let field = &file_schema.fields[column_i];
+    let field = file_schema.get_at_index(column_i).unwrap().1;
 
     #[cfg(debug_assertions)]
     {
@@ -234,7 +234,7 @@ fn projected_columns_set<'a>(
         Some(
             projection
                 .iter()
-                .map(|i| schema.fields[*i].name.as_str())
+                .map(|i| schema.get_at_index(*i).unwrap().0.as_str())
                 .collect::<PlHashSet<_>>(),
         )
     }
@@ -303,7 +303,7 @@ fn rg_to_dfs_prefiltered(
     // column indexes of the schema.
     let mut live_idx_to_col_idx = Vec::with_capacity(num_live_columns);
     let mut dead_idx_to_col_idx = Vec::with_capacity(num_dead_columns);
-    for (i, field) in schema.fields.iter().enumerate() {
+    for (i, field) in schema.iter_values().enumerate() {
         if live_variables.contains(&field.name[..]) {
             live_idx_to_col_idx.push(i);
         } else {
@@ -351,7 +351,7 @@ fn rg_to_dfs_prefiltered(
                     .map(|i| {
                         let col_idx = live_idx_to_col_idx[i];
 
-                        let name = &schema.fields[col_idx].name;
+                        let name = schema.get_at_index(col_idx).unwrap().0;
                         let field_md = part_mds[rg_idx].get_partitions(name).unwrap();
 
                         column_idx_to_series(col_idx, field_md.as_slice(), None, schema, store)
@@ -431,7 +431,7 @@ fn rg_to_dfs_prefiltered(
                     .into_par_iter()
                     .map(|i| {
                         let col_idx = dead_idx_to_col_idx[i];
-                        let name = &schema.fields[col_idx].name;
+                        let name = schema.get_at_index(col_idx).unwrap().0;
 
                         #[cfg(debug_assertions)]
                         {
@@ -473,7 +473,12 @@ fn rg_to_dfs_prefiltered(
                             MaskSetting::Auto => {
                                 // Prefiltering is more expensive for nested types so we make the cut-off
                                 // higher.
-                                let is_nested = schema.fields[col_idx].data_type.is_nested();
+                                let is_nested = schema
+                                    .get_at_index(col_idx)
+                                    .unwrap()
+                                    .1
+                                    .data_type
+                                    .is_nested();
 
                                 // We empirically selected these numbers.
                                 let do_prefilter = (is_nested && prefilter_cost <= 0.01)
@@ -572,7 +577,7 @@ fn rg_to_dfs_optionally_par_over_columns(
                 projection
                     .par_iter()
                     .map(|column_i| {
-                        let name = &schema.fields[*column_i].name;
+                        let name = schema.get_at_index(*column_i).unwrap().0;
                         let part = part_md.get_partitions(name).unwrap();
 
                         column_idx_to_series(
@@ -589,7 +594,7 @@ fn rg_to_dfs_optionally_par_over_columns(
             projection
                 .iter()
                 .map(|column_i| {
-                    let name = &schema.fields[*column_i].name;
+                    let name = schema.get_at_index(*column_i).unwrap().0;
                     let part = part_md.get_partitions(name).unwrap();
 
                     column_idx_to_series(
@@ -703,7 +708,7 @@ fn rg_to_dfs_par_over_rg(
                 let columns = projection
                     .iter()
                     .map(|column_i| {
-                        let name = &schema.fields[*column_i].name;
+                        let name = schema.get_at_index(*column_i).unwrap().0;
                         let field_md = part_md.get_partitions(name).unwrap();
 
                         column_idx_to_series(

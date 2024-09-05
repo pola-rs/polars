@@ -192,8 +192,7 @@ fn decimal_length_from_precision(precision: usize) -> usize {
 /// Creates a parquet [`SchemaDescriptor`] from a [`ArrowSchema`].
 pub fn to_parquet_schema(schema: &ArrowSchema) -> PolarsResult<SchemaDescriptor> {
     let parquet_types = schema
-        .fields
-        .iter()
+        .iter_values()
         .map(to_parquet_type)
         .collect::<PolarsResult<Vec<_>>>()?;
     Ok(SchemaDescriptor::new(

@@ -236,7 +236,7 @@ impl PyLazyFrame {
                         ShapeMismatch: "The length of the new names list should be equal to or less than the original column length",
                     );
                     Ok(schema
-                        .iter_dtypes()
+                        .iter_values()
                         .zip(new_names)
                         .map(|(dtype, name)| Field::new(name.into(), dtype.clone()))
                         .collect())

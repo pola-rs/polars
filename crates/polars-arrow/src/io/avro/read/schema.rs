@@ -26,18 +26,19 @@ fn external_props(schema: &AvroSchema) -> Metadata {
 /// Infers an [`ArrowSchema`] from the root [`Record`].
 /// This
 pub fn infer_schema(record: &Record) -> PolarsResult<ArrowSchema> {
-    Ok(record
+    record
         .fields
         .iter()
         .map(|field| {
-            schema_to_field(
+            let field = schema_to_field(
                 &field.schema,
                 Some(&field.name),
                 external_props(&field.schema),
-            )
+            )?;
+
+            Ok((field.name.clone(), field))
         })
-        .collect::<PolarsResult<Vec<_>>>()?
-        .into())
+        .collect::<PolarsResult<ArrowSchema>>()
 }
 
 fn schema_to_field(

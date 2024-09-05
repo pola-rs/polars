@@ -244,7 +244,7 @@ fn create_physical_plan_impl(
             if streamable {
                 // This can cause problems with string caches
                 streamable = !input_schema
-                    .iter_dtypes()
+                    .iter_values()
                     .any(|dt| dt.contains_categoricals())
                     || {
                         #[cfg(feature = "dtype-categorical")]

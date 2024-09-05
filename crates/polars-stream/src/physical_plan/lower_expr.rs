@@ -701,7 +701,7 @@ fn build_select_node_with_ctx(
             return Ok(input);
         }
 
-        let output_schema = Arc::new(input_schema.select(&columns)?);
+        let output_schema = Arc::new(input_schema.try_project(&columns)?);
         let node_kind = PhysNodeKind::SimpleProjection { input, columns };
         return Ok(ctx.phys_sm.insert(PhysNode::new(output_schema, node_kind)));
     }

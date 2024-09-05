@@ -61,10 +61,9 @@ fn default_ipc_field(data_type: &ArrowDataType, current_id: &mut i64) -> IpcFiel
 }
 
 /// Assigns every dictionary field a unique ID
-pub fn default_ipc_fields(fields: &[Field]) -> Vec<IpcField> {
+pub fn default_ipc_fields<'a>(fields: impl ExactSizeIterator<Item = &'a Field>) -> Vec<IpcField> {
     let mut dictionary_id = 0i64;
     fields
-        .iter()
         .map(|field| default_ipc_field(field.data_type().to_logical_type(), &mut dictionary_id))
         .collect()
 }

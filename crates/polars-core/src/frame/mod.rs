@@ -335,8 +335,7 @@ impl DataFrame {
     /// Create an empty `DataFrame` with empty columns as per the `schema`.
     pub fn empty_with_arrow_schema(schema: &ArrowSchema) -> Self {
         let cols = schema
-            .fields
-            .iter()
+            .iter_values()
             .map(|fld| Series::new_empty(fld.name.clone(), &(fld.data_type().into())))
             .collect();
         unsafe { DataFrame::new_no_checks(cols) }

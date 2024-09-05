@@ -6,7 +6,7 @@ use crate::prelude::*;
 use crate::utils::try_get_supertype;
 
 pub type SchemaRef = Arc<Schema>;
-pub type Schema = polars_schema::schema::Schema<DataType>;
+pub type Schema = polars_schema::Schema<DataType>;
 
 pub trait SchemaExt {
     fn from_arrow_schema(value: &ArrowSchema) -> Self;
@@ -25,8 +25,7 @@ pub trait SchemaExt {
 impl SchemaExt for Schema {
     fn from_arrow_schema(value: &ArrowSchema) -> Self {
         value
-            .fields
-            .iter()
+            .iter_values()
             .map(|x| (x.name.clone(), DataType::from_arrow(&x.data_type, true)))
             .collect()
     }
@@ -56,11 +55,14 @@ impl SchemaExt for Schema {
 
     /// Convert self to `ArrowSchema` by cloning the fields.
     fn to_arrow(&self, compat_level: CompatLevel) -> ArrowSchema {
-        let fields: Vec<_> = self
-            .iter()
-            .map(|(name, dtype)| dtype.to_arrow_field(name.clone(), compat_level))
-            .collect();
-        ArrowSchema::from(fields)
+        self.iter()
+            .map(|(name, dtype)| {
+                (
+                    name.clone(),
+                    dtype.to_arrow_field(name.clone(), compat_level),
+                )
+            })
+            .collect()
     }
 
     /// Iterates the [`Field`]s in this schema, constructing them anew by cloning each `(&name, &dtype)` pair.
@@ -130,19 +132,19 @@ impl IndexOfSchema for Schema {
 
 impl IndexOfSchema for ArrowSchema {
     fn index_of(&self, name: &str) -> Option<usize> {
-        self.fields.iter().position(|f| f.name.as_str() == name)
+        self.iter_values().position(|f| f.name.as_str() == name)
     }
 
     fn get_names(&self) -> Vec<&PlSmallStr> {
-        self.fields.iter().map(|f| &f.name).collect()
+        self.iter_values().map(|f| &f.name).collect()
     }
 
     fn get_names_owned(&self) -> Vec<PlSmallStr> {
-        self.fields.iter().map(|f| f.name.clone()).collect()
+        self.iter_values().map(|f| f.name.clone()).collect()
     }
 
     fn get_names_str(&self) -> Vec<&str> {
-        self.fields.iter().map(|f| f.name.as_str()).collect()
+        self.iter_values().map(|f| f.name.as_str()).collect()
     }
 }
 
@@ -170,8 +172,7 @@ impl SchemaNamesAndDtypes for ArrowSchema {
     type DataType = ArrowDataType;
 
     fn get_names_and_dtypes(&'_ self) -> Vec<(&'_ str, Self::DataType)> {
-        self.fields
-            .iter()
+        self.iter_values()
             .map(|x| (x.name.as_str(), x.data_type.clone()))
             .collect()
     }

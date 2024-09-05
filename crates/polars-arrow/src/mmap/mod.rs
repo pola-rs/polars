@@ -10,7 +10,7 @@ use polars_error::{polars_bail, polars_err, to_compute_err, PolarsResult};
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::array::Array;
-use crate::datatypes::{ArrowDataType, Field};
+use crate::datatypes::{ArrowDataType, ArrowSchema, Field};
 use crate::io::ipc::read::file::{get_dictionary_batch, get_record_batch};
 use crate::io::ipc::read::{
     first_dict_field, Dictionaries, FileMetadata, IpcBuffer, Node, OutOfSpecKind,
@@ -72,7 +72,7 @@ fn get_buffers_nodes(batch: RecordBatchRef) -> PolarsResult<(VecDeque<IpcBuffer>
 }
 
 unsafe fn _mmap_record<T: AsRef<[u8]>>(
-    fields: &[Field],
+    fields: &ArrowSchema,
     ipc_fields: &[IpcField],
     data: Arc<T>,
     batch: RecordBatchRef,
@@ -87,7 +87,7 @@ unsafe fn _mmap_record<T: AsRef<[u8]>>(
         .unwrap_or_else(VecDeque::new);
 
     fields
-        .iter()
+        .iter_values()
         .map(|f| &f.data_type)
         .cloned()
         .zip(ipc_fields)
@@ -108,7 +108,7 @@ unsafe fn _mmap_record<T: AsRef<[u8]>>(
 }
 
 unsafe fn _mmap_unchecked<T: AsRef<[u8]>>(
-    fields: &[Field],
+    fields: &ArrowSchema,
     ipc_fields: &[IpcField],
     data: Arc<T>,
     block: Block,
@@ -148,7 +148,7 @@ pub unsafe fn mmap_unchecked<T: AsRef<[u8]>>(
     let (message, offset) = read_message(data.as_ref().as_ref(), block)?;
     let batch = get_record_batch(message)?;
     _mmap_record(
-        &metadata.schema.fields,
+        &metadata.schema,
         &metadata.ipc_schema.fields,
         data.clone(),
         batch,
@@ -170,7 +170,7 @@ unsafe fn mmap_dictionary<T: AsRef<[u8]>>(
         .id()
         .map_err(|err| polars_err!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::InvalidFlatbufferId(err)))?;
     let (first_field, first_ipc_field) =
-        first_dict_field(id, &metadata.schema.fields, &metadata.ipc_schema.fields)?;
+        first_dict_field(id, &metadata.schema, &metadata.ipc_schema.fields)?;
 
     let batch = batch
         .data()
@@ -189,7 +189,7 @@ unsafe fn mmap_dictionary<T: AsRef<[u8]>>(
     let field = Field::new(PlSmallStr::EMPTY, value_type.clone(), false);
 
     let chunk = _mmap_record(
-        &[field],
+        &std::iter::once((field.name.clone(), field)).collect(),
         &[first_ipc_field.clone()],
         data.clone(),
         batch,

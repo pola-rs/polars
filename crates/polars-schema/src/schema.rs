@@ -2,7 +2,7 @@ use core::fmt::{Debug, Formatter};
 use core::hash::{Hash, Hasher};
 
 use indexmap::map::MutableKeys;
-use polars_error::{polars_ensure, polars_err, PolarsResult};
+use polars_error::{polars_bail, polars_ensure, polars_err, PolarsResult};
 use polars_utils::aliases::{InitHashMaps, PlIndexMap};
 use polars_utils::pl_str::PlSmallStr;
 
@@ -53,6 +53,10 @@ where
         self.fields.swap_indices(old_index, new_index);
 
         Some(old_name)
+    }
+
+    pub fn insert(&mut self, key: PlSmallStr, value: D) -> Option<D> {
+        self.fields.insert(key, value)
     }
 
     /// Create a new schema from this one, inserting a field with `name` and `dtype` at the given `index`.
@@ -286,21 +290,6 @@ where
         )
     }
 
-    /// Iterates over references to the dtypes in this schema.
-    pub fn iter_dtypes(&self) -> impl '_ + ExactSizeIterator<Item = &D> {
-        self.fields.iter().map(|(_name, dtype)| dtype)
-    }
-
-    /// Iterates over mut references to the dtypes in this schema.
-    pub fn iter_dtypes_mut(&mut self) -> impl '_ + ExactSizeIterator<Item = &mut D> {
-        self.fields.iter_mut().map(|(_name, dtype)| dtype)
-    }
-
-    /// Iterates over references to the names in this schema.
-    pub fn iter_names(&self) -> impl '_ + ExactSizeIterator<Item = &PlSmallStr> {
-        self.fields.iter().map(|(name, _dtype)| name)
-    }
-
     /// Iterates over the `(&name, &dtype)` pairs in this schema.
     ///
     /// For an owned version, use [`iter_fields`][Self::iter_fields], which clones the data to iterate owned `Field`s
@@ -312,8 +301,31 @@ where
         self.fields.iter_mut()
     }
 
+    /// Iterates over references to the names in this schema.
+    pub fn iter_names(&self) -> impl '_ + ExactSizeIterator<Item = &PlSmallStr> {
+        self.fields.iter().map(|(name, _dtype)| name)
+    }
+
+    /// Iterates over references to the dtypes in this schema.
+    pub fn iter_values(&self) -> impl '_ + ExactSizeIterator<Item = &D> {
+        self.fields.iter().map(|(_name, dtype)| dtype)
+    }
+
+    pub fn into_iter_values(self) -> impl ExactSizeIterator<Item = D> {
+        self.fields.into_values()
+    }
+
+    /// Iterates over mut references to the dtypes in this schema.
+    pub fn iter_values_mut(&mut self) -> impl '_ + ExactSizeIterator<Item = &mut D> {
+        self.fields.iter_mut().map(|(_name, dtype)| dtype)
+    }
+
+    pub fn index_of(&self, name: &str) -> Option<usize> {
+        self.fields.get_index_of(name)
+    }
+
     /// Generates another schema with just the specified columns selected from this one.
-    pub fn select<I>(&self, columns: I) -> PolarsResult<Self>
+    pub fn try_project<I>(&self, columns: I) -> PolarsResult<Self>
     where
         I: IntoIterator,
         I::Item: AsRef<str>,
@@ -332,8 +344,42 @@ where
         Ok(Self::from(schema))
     }
 
-    pub fn index_of(&self, name: &str) -> Option<usize> {
-        self.fields.get_index_of(name)
+    pub fn try_project_indices(&self, indices: &[usize]) -> PolarsResult<Self> {
+        let fields = indices
+            .iter()
+            .map(|&i| {
+                let Some((k, v)) = self.fields.get_index(i) else {
+                    polars_bail!(
+                        SchemaFieldNotFound:
+                        "projection index {} is out of bounds for schema of length {}",
+                        i, self.fields.len()
+                    );
+                };
+
+                Ok((k.clone(), v.clone()))
+            })
+            .collect::<PolarsResult<PlIndexMap<_, _>>>()?;
+
+        Ok(Self { fields })
+    }
+
+    /// Returns a new [`Schema`] with a subset of all fields whose `predicate`
+    /// evaluates to true.
+    pub fn filter<F: Fn(usize, &D) -> bool>(self, predicate: F) -> Self {
+        let fields = self
+            .fields
+            .into_iter()
+            .enumerate()
+            .filter_map(|(index, (name, d))| {
+                if (predicate)(index, &d) {
+                    Some((name, d))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        Self { fields }
     }
 }
 

@@ -114,7 +114,7 @@ impl<'a> FallibleStreamingIterator for RecordSerializer<'a> {
 
         let mut is_first_row = true;
         write!(&mut self.buffer, "{{")?;
-        for (f, ref mut it) in self.schema.fields.iter().zip(self.iterators.iter_mut()) {
+        for (f, ref mut it) in self.schema.iter_values().zip(self.iterators.iter_mut()) {
             if !is_first_row {
                 write!(&mut self.buffer, ",")?;
             }

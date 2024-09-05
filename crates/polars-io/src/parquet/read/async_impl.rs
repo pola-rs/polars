@@ -268,7 +268,7 @@ impl FetchRowGroupsFromObjectStore {
         let projected_fields: Option<Arc<[PlSmallStr]>> = projection.map(|projection| {
             projection
                 .iter()
-                .map(|i| (schema.fields[*i].name.clone()))
+                .map(|i| (schema.get_at_index(*i).as_ref().unwrap().0.clone()))
                 .collect()
         });
 

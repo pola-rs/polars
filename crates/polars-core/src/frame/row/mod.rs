@@ -207,7 +207,7 @@ pub fn rows_to_schema_first_non_null(
     for row in rows.iter().take(max_infer).skip(1) {
         // for i in 1..max_infer {
         let nulls: Vec<_> = schema
-            .iter_dtypes()
+            .iter_values()
             .enumerate()
             .filter_map(|(i, dtype)| {
                 // double check struct and list types types

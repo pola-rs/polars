@@ -396,7 +396,7 @@ pub(crate) fn insert_streaming_nodes(
 
                 let valid_types = || {
                     output_schema
-                        .iter_dtypes()
+                        .iter_values()
                         .all(|dt| allowed_dtype(dt, string_cache))
                 };
 

@@ -92,7 +92,7 @@ pub struct DataFrameStreamIterator {
 impl DataFrameStreamIterator {
     fn new(df: &DataFrame) -> Self {
         let schema = df.schema().to_arrow(CompatLevel::newest());
-        let data_type = ArrowDataType::Struct(schema.fields);
+        let data_type = ArrowDataType::Struct(schema.into_iter_values().collect());
 
         Self {
             columns: df.get_columns().to_vec(),
