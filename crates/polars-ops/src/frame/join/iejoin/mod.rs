@@ -15,8 +15,9 @@ use polars_utils::total_ord::{TotalEq};
 use polars_utils::IdxSize;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-
+use polars_core::utils::{_set_partition_size, split};
 use crate::frame::_finish_join;
+use rayon::prelude::*;
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -125,6 +126,75 @@ fn ie_join_impl_t<T: PolarsNumericType>(
         }
     }
     Ok((left_row_idx, right_row_idx))
+}
+
+pub fn iejoin_par(
+    left: &DataFrame,
+    right: &DataFrame,
+    selected_left: Vec<Series>,
+    selected_right: Vec<Series>,
+    options: &IEJoinOptions,
+    suffix: Option<PlSmallStr>,
+    slice: Option<(i64, usize)>,
+) -> PolarsResult<DataFrame> {
+    let l1_descending = matches!(options.operator1, InequalityOperator::Gt | InequalityOperator::GtEq);
+
+    let l1_sort_options = SortOptions::default()
+        .with_maintain_order(true)
+        .with_nulls_last(false)
+        .with_order_descending(l1_descending);
+
+    let sl = &selected_left[0];
+    let l1_s_l = sl.arg_sort(l1_sort_options)
+        .slice(
+            sl.null_count() as i64,
+            sl.len() - sl.null_count(),
+        );
+
+    let sr = &selected_right[0];
+    let l1_s_r = sr.arg_sort(l1_sort_options)
+        .slice(
+            sr.null_count() as i64,
+            sr.len() - sr.null_count(),
+        );
+
+    // Because we do a cartesian product, the number of partitions is squared.
+    // We take the sqrt, but we don't expect every partition to produce results and work can be
+    // imbalanced, so we multiply the number of partitions by 2, which leads to 2^2= 4
+    // let n_partitions = (_set_partition_size() as f32).sqrt() as usize  * 2;
+    let n_partitions = 2;
+    // dbg!(n_partitions);
+    let splitted_a = split(&l1_s_l, n_partitions);
+    let splitted_b = split(&l1_s_r, n_partitions);
+
+    let cartesian_prod = splitted_a.iter()
+        .flat_map(|l| splitted_b.iter().map(move |r| (l, r))).collect::<Vec<_>>();
+
+    // TODO par iter
+    cartesian_prod.iter().flat_map(|(a, b)| {
+        let first = a.get(0)?;
+        let last = a.last()?;
+
+        let start = sl.get(last as usize).unwrap();
+        let end = sl.get(last as usize).unwrap();
+        let min = std::cmp::min_by(start, end)
+
+
+
+        dbg!(sl.get(first as usize), sl.get(last as usize));
+        let first = b.get(0)?;
+        let last = b.last()?;
+        dbg!(sr.get(first as usize), sr.get(last as usize));
+
+        println!("\n\n\n");
+
+
+        Some(())
+    }).collect::<Vec<_>>();
+
+    dbg!(cartesian_prod.len());
+    todo!()
+
 }
 
 /// Inequality join. Matches rows between two DataFrames using two inequality operators
