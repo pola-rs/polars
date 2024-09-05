@@ -13,7 +13,6 @@ pub use format::{ExprIRDisplay, IRDisplay};
 use hive::HivePartitions;
 use polars_core::error::feature_gated;
 use polars_core::prelude::*;
-use polars_io::file_cache::FileCacheEntry;
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::mmap::MemSlice;
 use polars_utils::unitvec;
@@ -72,7 +71,7 @@ impl<'a> ScanSourceRef<'a> {
     pub fn to_memslice(
         &self,
         run_async: bool,
-        cache_entries: Option<&Vec<Arc<FileCacheEntry>>>,
+        cache_entries: Option<&Vec<Arc<polars_io::file_cache::FileCacheEntry>>>,
         index: usize,
     ) -> PolarsResult<MemSlice> {
         match self {
