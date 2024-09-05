@@ -19,7 +19,7 @@ impl<T: NativeType> Arrow2Arrow for PrimitiveArray<T> {
     }
 
     fn from_data(data: &ArrayData) -> Self {
-        let dtype = data.dtype().clone().into();
+        let dtype = data.data_type().clone().into();
 
         let mut values: Buffer<T> = data.buffers()[0].clone().into();
         values.slice(data.offset(), data.len());

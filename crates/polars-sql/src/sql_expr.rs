@@ -274,9 +274,9 @@ impl SQLExprVisitor<'_> {
             SQLExpr::Cast {
                 kind,
                 expr,
-                dtype,
+                data_type,
                 format,
-            } => self.visit_cast(expr, dtype, format, kind),
+            } => self.visit_cast(expr, data_type, format, kind),
             SQLExpr::Ceil { expr, .. } => Ok(self.visit_expr(expr)?.ceil()),
             SQLExpr::CompoundIdentifier(idents) => self.visit_compound_identifier(idents),
             SQLExpr::Extract { field, expr } => {
@@ -356,7 +356,7 @@ impl SQLExprVisitor<'_> {
                 trim_what,
                 trim_characters,
             } => self.visit_trim(expr, trim_where, trim_what, trim_characters),
-            SQLExpr::TypedString { dtype, value } => match dtype {
+            SQLExpr::TypedString { data_type, value } => match data_type {
                 SQLDataType::Date => {
                     if is_iso_date(value) {
                         Ok(lit(value.as_str()).cast(DataType::Date))
@@ -542,12 +542,7 @@ impl SQLExprVisitor<'_> {
                 (Some(name.clone()), Some(s), None)
             },
             // identify "CAST(expr AS type) <op> string" and/or "expr::type <op> string" expressions
-            (
-                Expr::Cast {
-                    expr, dtype, ..
-                },
-                Expr::Literal(LiteralValue::String(s)),
-            ) => {
+            (Expr::Cast { expr, dtype, .. }, Expr::Literal(LiteralValue::String(s))) => {
                 if let Expr::Column(name) = &**expr {
                     (Some(name.clone()), Some(s), Some(dtype))
                 } else {

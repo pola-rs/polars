@@ -485,7 +485,7 @@ pub fn to_data(array: &dyn Array) -> arrow_data::ArrayData {
 #[cfg(feature = "arrow_rs")]
 pub fn from_data(data: &arrow_data::ArrayData) -> Box<dyn Array> {
     use crate::datatypes::PhysicalType::*;
-    let dtype: ArrowDataType = data.dtype().clone().into();
+    let dtype: ArrowDataType = data.data_type().clone().into();
     match dtype.to_physical_type() {
         Null => Box::new(NullArray::from_data(data)),
         Boolean => Box::new(BooleanArray::from_data(data)),

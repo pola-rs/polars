@@ -89,7 +89,7 @@ impl From<arrow_schema::Field> for Field {
 #[cfg(feature = "arrow_rs")]
 impl From<&arrow_schema::Field> for Field {
     fn from(value: &arrow_schema::Field) -> Self {
-        let dtype = value.dtype().clone().into();
+        let dtype = value.data_type().clone().into();
         let metadata = value
             .metadata()
             .iter()

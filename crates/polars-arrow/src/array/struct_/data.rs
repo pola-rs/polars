@@ -17,7 +17,7 @@ impl Arrow2Arrow for StructArray {
     }
 
     fn from_data(data: &ArrayData) -> Self {
-        let dtype = data.dtype().clone().into();
+        let dtype = data.data_type().clone().into();
 
         Self {
             dtype,

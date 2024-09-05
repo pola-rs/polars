@@ -19,7 +19,7 @@ impl Arrow2Arrow for MapArray {
     }
 
     fn from_data(data: &ArrayData) -> Self {
-        let dtype = data.dtype().clone().into();
+        let dtype = data.data_type().clone().into();
         if data.is_empty() {
             // Handle empty offsets
             return Self::new_empty(dtype);
@@ -29,7 +29,7 @@ impl Arrow2Arrow for MapArray {
         offsets.slice(data.offset(), data.len() + 1);
 
         Self {
-            dtype: data.dtype().clone().into(),
+            dtype: data.data_type().clone().into(),
             offsets,
             field: from_data(&data.child_data()[0]),
             validity: data.nulls().map(|n| Bitmap::from_null_buffer(n.clone())),
