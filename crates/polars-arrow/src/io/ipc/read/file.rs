@@ -89,7 +89,7 @@ fn read_dictionary_block<R: Read + Seek>(
 
     read_dictionary(
         batch,
-        &metadata.schema.fields,
+        &metadata.schema,
         &metadata.ipc_schema,
         dictionaries,
         reader,
@@ -317,7 +317,7 @@ pub fn read_batch<R: Read + Seek>(
 
     read_record_batch(
         batch,
-        &metadata.schema.fields,
+        &metadata.schema,
         &metadata.ipc_schema,
         projection,
         limit,

@@ -132,9 +132,9 @@ async fn maybe_next<R: AsyncRead + Unpin + Send>(
                 .read_to_end(&mut state.data_buffer)
                 .await?;
 
-            read_record_batch(
+            let chunk = read_record_batch(
                 batch,
-                &state.metadata.schema.fields,
+                &state.metadata.schema,
                 &state.metadata.ipc_schema,
                 None,
                 None,
@@ -144,8 +144,9 @@ async fn maybe_next<R: AsyncRead + Unpin + Send>(
                 0,
                 state.data_buffer.len() as u64,
                 &mut scratch,
-            )
-            .map(|chunk| Some(StreamState::Some((state, chunk))))
+            )?;
+
+            Ok(Some(StreamState::Some((state, chunk))))
         },
         arrow_format::ipc::MessageHeaderRef::DictionaryBatch(batch) => {
             state.data_buffer.clear();
@@ -161,7 +162,7 @@ async fn maybe_next<R: AsyncRead + Unpin + Send>(
 
             read_dictionary(
                 batch,
-                &state.metadata.schema.fields,
+                &state.metadata.schema,
                 &state.metadata.ipc_schema,
                 &mut state.dictionaries,
                 &mut dict_reader,

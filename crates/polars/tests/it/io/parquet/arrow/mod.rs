@@ -1259,8 +1259,7 @@ fn integration_write(
     };
 
     let encodings = schema
-        .fields
-        .iter()
+        .iter_values()
         .map(|f| {
             transverse(&f.data_type, |x| {
                 if let ArrowDataType::Dictionary(..) = x {
@@ -1346,7 +1345,7 @@ fn generic_data() -> PolarsResult<(ArrowSchema, RecordBatchT<Box<dyn Array>>)> {
     let array13 = PrimitiveArray::<i32>::from_slice([1, 2, 3])
         .to(ArrowDataType::Interval(IntervalUnit::YearMonth));
 
-    let schema = ArrowSchema::from(vec![
+    let schema = ArrowSchema::from_iter([
         Field::new("a1".into(), array1.data_type().clone(), true),
         Field::new("a2".into(), array2.data_type().clone(), true),
         Field::new("a3".into(), array3.data_type().clone(), true),
@@ -1452,7 +1451,7 @@ fn assert_array_roundtrip(
     array: Box<dyn Array>,
     limit: Option<usize>,
 ) -> PolarsResult<()> {
-    let schema = ArrowSchema::from(vec![Field::new(
+    let schema = ArrowSchema::from_iter([Field::new(
         "a1".into(),
         array.data_type().clone(),
         is_nullable,
@@ -1585,11 +1584,8 @@ fn nested_dict_data(
         Some([true, false, true, true].into()),
     )?;
 
-    let schema = ArrowSchema::from(vec![Field::new(
-        "c1".into(),
-        values.data_type().clone(),
-        true,
-    )]);
+    let schema =
+        ArrowSchema::from_iter([Field::new("c1".into(), values.data_type().clone(), true)]);
     let chunk = RecordBatchT::try_new(vec![values.boxed()])?;
 
     Ok((schema, chunk))
@@ -1620,7 +1616,7 @@ fn nested_dict_limit() -> PolarsResult<()> {
 fn filter_chunk() -> PolarsResult<()> {
     let chunk1 = RecordBatchT::new(vec![PrimitiveArray::from_slice([1i16, 3]).boxed()]);
     let chunk2 = RecordBatchT::new(vec![PrimitiveArray::from_slice([2i16, 4]).boxed()]);
-    let schema = ArrowSchema::from(vec![Field::new("c1".into(), ArrowDataType::Int16, true)]);
+    let schema = ArrowSchema::from_iter([Field::new("c1".into(), ArrowDataType::Int16, true)]);
 
     let r = integration_write(&schema, &[chunk1.clone(), chunk2.clone()])?;
 

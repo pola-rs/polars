@@ -132,8 +132,7 @@ where
 
 fn get_encodings(schema: &ArrowSchema) -> Vec<Vec<Encoding>> {
     schema
-        .fields
-        .iter()
+        .iter_values()
         .map(|f| transverse(&f.data_type, encoding_map))
         .collect()
 }

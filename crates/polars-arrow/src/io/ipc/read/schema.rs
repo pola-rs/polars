@@ -381,10 +381,15 @@ pub(super) fn fb_to_schema(
     let fields = schema
         .fields()?
         .ok_or_else(|| polars_err!(oos = OutOfSpecKind::MissingFields))?;
-    let (fields, ipc_fields) = try_unzip_vec(fields.iter().map(|field| {
-        let (field, fields) = deserialize_field(field?)?;
-        Ok((field, fields))
-    }))?;
+
+    let mut arrow_schema = ArrowSchema::with_capacity(fields.len());
+    let mut ipc_fields = Vec::with_capacity(fields.len());
+
+    for field in fields {
+        let (field, ipc_field) = deserialize_field(field?)?;
+        arrow_schema.insert(field.name.clone(), field);
+        ipc_fields.push(ipc_field);
+    }
 
     let is_little_endian = match schema.endianness()? {
         arrow_format::ipc::Endianness::Little => true,
@@ -392,7 +397,7 @@ pub(super) fn fb_to_schema(
     };
 
     Ok((
-        ArrowSchema { fields },
+        arrow_schema,
         IpcSchema {
             fields: ipc_fields,
             is_little_endian,

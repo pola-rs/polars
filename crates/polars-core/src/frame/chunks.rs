@@ -5,15 +5,15 @@ use crate::prelude::*;
 use crate::utils::_split_offsets;
 use crate::POOL;
 
-impl TryFrom<(RecordBatch, &[ArrowField])> for DataFrame {
+impl TryFrom<(RecordBatch, &ArrowSchema)> for DataFrame {
     type Error = PolarsError;
 
-    fn try_from(arg: (RecordBatch, &[ArrowField])) -> PolarsResult<DataFrame> {
+    fn try_from(arg: (RecordBatch, &ArrowSchema)) -> PolarsResult<DataFrame> {
         let columns: PolarsResult<Vec<Series>> = arg
             .0
             .columns()
             .iter()
-            .zip(arg.1)
+            .zip(arg.1.iter_values())
             .map(|(arr, field)| Series::try_from((field, arr.clone())))
             .collect();
 

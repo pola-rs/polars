@@ -467,7 +467,7 @@ fn skip_item<'a>(
 /// `fields`, `avro_fields` and `projection` must have the same length.
 pub fn deserialize(
     block: &Block,
-    fields: &[Field],
+    fields: &ArrowSchema,
     avro_fields: &[AvroField],
     projection: &[bool],
 ) -> PolarsResult<RecordBatchT<Box<dyn Array>>> {
@@ -479,7 +479,7 @@ pub fn deserialize(
 
     // create mutables, one per field
     let mut arrays: Vec<Box<dyn MutableArray>> = fields
-        .iter()
+        .iter_values()
         .zip(avro_fields.iter())
         .zip(projection.iter())
         .map(|((field, avro_field), projection)| {
@@ -496,7 +496,7 @@ pub fn deserialize(
     for _ in 0..rows {
         let iter = arrays
             .iter_mut()
-            .zip(fields.iter())
+            .zip(fields.iter_values())
             .zip(avro_fields.iter())
             .zip(projection.iter());
 

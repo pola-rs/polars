@@ -25,6 +25,13 @@ pub struct Field {
     pub metadata: Metadata,
 }
 
+/// Support for `ArrowSchema::from_iter([field, ..])`
+impl From<Field> for (PlSmallStr, Field) {
+    fn from(value: Field) -> Self {
+        (value.name.clone(), value)
+    }
+}
+
 impl Field {
     /// Creates a new [`Field`].
     pub fn new(name: PlSmallStr, data_type: ArrowDataType, is_nullable: bool) -> Self {

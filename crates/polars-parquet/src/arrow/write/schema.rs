@@ -49,16 +49,15 @@ fn convert_data_type(data_type: ArrowDataType) -> ArrowDataType {
 
 pub fn schema_to_metadata_key(schema: &ArrowSchema) -> KeyValue {
     // Convert schema until more arrow readers are aware of binview
-    let serialized_schema = if schema.fields.iter().any(|field| field.data_type.is_view()) {
-        let fields = schema
-            .fields
-            .iter()
+    let serialized_schema = if schema.iter_values().any(|field| field.data_type.is_view()) {
+        let schema = schema
+            .iter_values()
             .map(|field| convert_field(field.clone()))
-            .collect::<Vec<_>>();
-        let schema = ArrowSchema::from(fields);
-        schema_to_bytes(&schema, &default_ipc_fields(&schema.fields))
+            .map(|x| (x.name.clone(), x))
+            .collect();
+        schema_to_bytes(&schema, &default_ipc_fields(schema.iter_values()))
     } else {
-        schema_to_bytes(schema, &default_ipc_fields(&schema.fields))
+        schema_to_bytes(schema, &default_ipc_fields(schema.iter_values()))
     };
 
     // manually prepending the length to the schema as arrow uses the legacy IPC format

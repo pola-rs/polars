@@ -259,7 +259,7 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
 
         let key_dtypes = self
             .output_schema
-            .iter_dtypes()
+            .iter_values()
             .take(self.num_keys)
             .map(|dtype| dtype.to_physical().to_arrow(CompatLevel::newest()))
             .collect::<Vec<_>>();

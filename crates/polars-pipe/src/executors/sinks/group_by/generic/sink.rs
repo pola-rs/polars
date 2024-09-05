@@ -28,7 +28,7 @@ impl GenericGroupby2 {
     ) -> Self {
         let key_dtypes: Arc<[DataType]> = Arc::from(
             output_schema
-                .iter_dtypes()
+                .iter_values()
                 .take(key_columns.len())
                 .cloned()
                 .collect::<Vec<_>>(),

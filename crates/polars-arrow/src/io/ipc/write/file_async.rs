@@ -44,7 +44,7 @@ where
         ipc_fields: Option<Vec<IpcField>>,
         options: WriteOptions,
     ) -> Self {
-        let fields = ipc_fields.unwrap_or_else(|| default_ipc_fields(&schema.fields));
+        let fields = ipc_fields.unwrap_or_else(|| default_ipc_fields(schema.iter_values()));
         let encoded = EncodedData {
             ipc_message: schema_to_bytes(&schema, &fields),
             arrow_data: vec![],

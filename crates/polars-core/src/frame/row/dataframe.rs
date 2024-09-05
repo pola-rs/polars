@@ -56,7 +56,7 @@ impl DataFrame {
         let capacity = rows.size_hint().0;
 
         let mut buffers: Vec<_> = schema
-            .iter_dtypes()
+            .iter_values()
             .map(|dtype| {
                 let buf: AnyValueBuffer = (dtype, capacity).into();
                 buf
@@ -98,7 +98,7 @@ impl DataFrame {
         let capacity = rows.size_hint().0;
 
         let mut buffers: Vec<_> = schema
-            .iter_dtypes()
+            .iter_values()
             .map(|dtype| {
                 let buf: AnyValueBuffer = (dtype, capacity).into();
                 buf
@@ -136,7 +136,7 @@ impl DataFrame {
     pub fn from_rows(rows: &[Row]) -> PolarsResult<Self> {
         let schema = rows_to_schema_first_non_null(rows, Some(50))?;
         let has_nulls = schema
-            .iter_dtypes()
+            .iter_values()
             .any(|dtype| matches!(dtype, DataType::Null));
         polars_ensure!(
             !has_nulls, ComputeError: "unable to infer row types because of null values"

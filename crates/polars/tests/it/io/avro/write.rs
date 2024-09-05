@@ -15,7 +15,7 @@ use polars_error::PolarsResult;
 use super::read::read_avro;
 
 pub(super) fn schema() -> ArrowSchema {
-    ArrowSchema::from(vec![
+    ArrowSchema::from_iter([
         Field::new("int64".into(), ArrowDataType::Int64, false),
         Field::new("int64 nullable".into(), ArrowDataType::Int64, true),
         Field::new("utf8".into(), ArrowDataType::Utf8, false),
@@ -178,7 +178,7 @@ fn deflate() -> PolarsResult<()> {
 }
 
 fn large_format_schema() -> ArrowSchema {
-    ArrowSchema::from(vec![
+    ArrowSchema::from_iter([
         Field::new("large_utf8".into(), ArrowDataType::LargeUtf8, false),
         Field::new("large_utf8_nullable".into(), ArrowDataType::LargeUtf8, true),
         Field::new("large_binary".into(), ArrowDataType::LargeBinary, false),
@@ -201,7 +201,7 @@ fn large_format_data() -> RecordBatchT<Box<dyn Array>> {
 }
 
 fn large_format_expected_schema() -> ArrowSchema {
-    ArrowSchema::from(vec![
+    ArrowSchema::from_iter([
         Field::new("large_utf8".into(), ArrowDataType::Utf8, false),
         Field::new("large_utf8_nullable".into(), ArrowDataType::Utf8, true),
         Field::new("large_binary".into(), ArrowDataType::Binary, false),
@@ -239,7 +239,7 @@ fn check_large_format() -> PolarsResult<()> {
 }
 
 fn struct_schema() -> ArrowSchema {
-    ArrowSchema::from(vec![
+    ArrowSchema::from_iter([
         Field::new(
             "struct".into(),
             ArrowDataType::Struct(vec![

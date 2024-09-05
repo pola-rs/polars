@@ -973,16 +973,10 @@ impl ParquetSourceNode {
             if let Some(columns) = self.file_options.with_columns.as_deref() {
                 columns
                     .iter()
-                    .map(|x| {
-                        // `index_of` on ArrowSchema is slow, so we use the polars native Schema,
-                        // but we need to remember to subtact the row index.
-                        let pos = self.file_info.schema.index_of(x.as_str()).unwrap()
-                            - (self.file_options.row_index.is_some() as usize);
-                        reader_schema.fields[pos].clone()
-                    })
+                    .map(|x| reader_schema.get(x).unwrap().clone())
                     .collect()
             } else {
-                Arc::from(reader_schema.fields.as_slice())
+                reader_schema.iter_values().cloned().collect()
             };
 
         if self.verbose {
@@ -1803,8 +1797,7 @@ fn ensure_metadata_has_projected_fields(
 
     // Note: We convert to Polars-native dtypes for timezone normalization.
     let mut schema = schema
-        .fields
-        .into_iter()
+        .into_iter_values()
         .map(|x| {
             let dtype = DataType::from_arrow(&x.data_type, true);
             (x.name, dtype)

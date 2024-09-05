@@ -10,8 +10,7 @@ use crate::datatypes::*;
 pub fn to_record(schema: &ArrowSchema, name: String) -> PolarsResult<Record> {
     let mut name_counter: i32 = 0;
     let fields = schema
-        .fields
-        .iter()
+        .iter_values()
         .map(|f| field_to_field(f, &mut name_counter))
         .collect::<PolarsResult<_>>()?;
     Ok(Record {
