@@ -360,7 +360,7 @@ fn expand_struct_fields(
             unreachable!()
         };
         let field = input[0].to_field(schema, Context::Default)?;
-        let DataType::Struct(fields) = field.data_type() else {
+        let DataType::Struct(fields) = field.dtype() else {
             polars_bail!(InvalidOperation: "expected 'struct'")
         };
 
@@ -499,7 +499,7 @@ fn prepare_excluded(
                             },
                             Excluded::Dtype(dt) => {
                                 for fld in schema.iter_fields() {
-                                    if dtypes_match(fld.data_type(), dt) {
+                                    if dtypes_match(fld.dtype(), dt) {
                                         exclude.insert(fld.name.clone());
                                     }
                                 }

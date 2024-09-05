@@ -25,7 +25,7 @@ impl PySeries {
                 let schema = &*schema_ptr;
 
                 let field = arrow::ffi::import_field_from_c(schema).unwrap();
-                arrow::ffi::import_array_from_c(array, field.data_type).unwrap()
+                arrow::ffi::import_array_from_c(array, field.dtype).unwrap()
             })
             .collect::<Vec<_>>();
 

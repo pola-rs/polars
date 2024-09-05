@@ -15,7 +15,7 @@ use super::*;
 /// This function errors iff any of the rows is not a valid JSON (i.e. the format is not valid NDJSON).
 pub fn deserialize_iter<'a>(
     rows: impl Iterator<Item = &'a str>,
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
     buf_size: usize,
     count: usize,
 ) -> PolarsResult<ArrayRef> {
@@ -23,12 +23,12 @@ pub fn deserialize_iter<'a>(
     let mut buf = String::with_capacity(std::cmp::min(buf_size + count + 2, u32::MAX as usize));
     buf.push('[');
 
-    fn _deserializer(s: &mut str, data_type: ArrowDataType) -> PolarsResult<Box<dyn Array>> {
+    fn _deserializer(s: &mut str, dtype: ArrowDataType) -> PolarsResult<Box<dyn Array>> {
         let slice = unsafe { s.as_bytes_mut() };
         let out = simd_json::to_borrowed_value(slice)
             .map_err(|e| PolarsError::ComputeError(format!("json parsing error: '{e}'").into()))?;
         Ok(if let BorrowedValue::Array(rows) = out {
-            super::super::json::deserialize::_deserialize(&rows, data_type.clone())
+            super::super::json::deserialize::_deserialize(&rows, dtype.clone())
         } else {
             unreachable!()
         })
@@ -43,7 +43,7 @@ pub fn deserialize_iter<'a>(
         if buf.len() + next_row_length >= u32::MAX as usize {
             let _ = buf.pop();
             buf.push(']');
-            arr.push(_deserializer(&mut buf, data_type.clone())?);
+            arr.push(_deserializer(&mut buf, dtype.clone())?);
             buf.clear();
             buf.push('[');
         }
@@ -54,9 +54,9 @@ pub fn deserialize_iter<'a>(
     buf.push(']');
 
     if arr.is_empty() {
-        _deserializer(&mut buf, data_type.clone())
+        _deserializer(&mut buf, dtype.clone())
     } else {
-        arr.push(_deserializer(&mut buf, data_type.clone())?);
+        arr.push(_deserializer(&mut buf, dtype.clone())?);
         concatenate_owned_unchecked(&arr)
     }
 }

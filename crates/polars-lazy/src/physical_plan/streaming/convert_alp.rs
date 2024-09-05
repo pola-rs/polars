@@ -356,7 +356,7 @@ pub(crate) fn insert_streaming_nodes(
                         #[cfg(feature = "dtype-struct")]
                         DataType::Struct(fields) => fields
                             .iter()
-                            .all(|fld| allowed_dtype(fld.data_type(), string_cache)),
+                            .all(|fld| allowed_dtype(fld.dtype(), string_cache)),
                         // We need to be able to sink to disk or produce the aggregate return dtype.
                         DataType::Unknown(_) => false,
                         #[cfg(feature = "dtype-decimal")]

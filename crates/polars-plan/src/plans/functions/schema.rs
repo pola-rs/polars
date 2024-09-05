@@ -60,7 +60,7 @@ impl FunctionIR {
                                     for fld in flds {
                                         new_schema.with_column(
                                             fld.name().clone(),
-                                            fld.data_type().clone(),
+                                            fld.dtype().clone(),
                                         );
                                     }
                                 },

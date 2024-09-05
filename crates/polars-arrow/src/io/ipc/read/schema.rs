@@ -29,7 +29,7 @@ fn deserialize_field(ipc_field: arrow_format::ipc::FieldRef) -> PolarsResult<(Fi
 
     let extension = get_extension(&metadata);
 
-    let (data_type, ipc_field_) = get_data_type(ipc_field, extension, true)?;
+    let (dtype, ipc_field_) = get_dtype(ipc_field, extension, true)?;
 
     let field = Field {
         name: PlSmallStr::from_str(
@@ -37,7 +37,7 @@ fn deserialize_field(ipc_field: arrow_format::ipc::FieldRef) -> PolarsResult<(Fi
                 .name()?
                 .ok_or_else(|| polars_err!(oos = "Every field in IPC must have a name"))?,
         ),
-        data_type,
+        dtype,
         is_nullable: ipc_field.nullable()?,
         metadata,
     };
@@ -87,7 +87,7 @@ fn deserialize_timeunit(time_unit: arrow_format::ipc::TimeUnit) -> PolarsResult<
 fn deserialize_time(time: TimeRef) -> PolarsResult<(ArrowDataType, IpcField)> {
     let unit = deserialize_timeunit(time.unit()?)?;
 
-    let data_type = match (time.bit_width()?, unit) {
+    let dtype = match (time.bit_width()?, unit) {
         (32, TimeUnit::Second) => ArrowDataType::Time32(TimeUnit::Second),
         (32, TimeUnit::Millisecond) => ArrowDataType::Time32(TimeUnit::Millisecond),
         (64, TimeUnit::Microsecond) => ArrowDataType::Time64(TimeUnit::Microsecond),
@@ -98,7 +98,7 @@ fn deserialize_time(time: TimeRef) -> PolarsResult<(ArrowDataType, IpcField)> {
             )
         },
     };
-    Ok((data_type, IpcField::default()))
+    Ok((dtype, IpcField::default()))
 }
 
 fn deserialize_timestamp(timestamp: TimestampRef) -> PolarsResult<(ArrowDataType, IpcField)> {
@@ -143,9 +143,9 @@ fn deserialize_map(map: MapRef, field: FieldRef) -> PolarsResult<(ArrowDataType,
         .ok_or_else(|| polars_err!(oos = "IPC: Map must contain one child"))??;
     let (field, ipc_field) = deserialize_field(inner)?;
 
-    let data_type = ArrowDataType::Map(Box::new(field), is_sorted);
+    let dtype = ArrowDataType::Map(Box::new(field), is_sorted);
     Ok((
-        data_type,
+        dtype,
         IpcField {
             fields: vec![ipc_field],
             dictionary_id: None,
@@ -234,7 +234,7 @@ fn deserialize_fixed_size_list(
 }
 
 /// Get the Arrow data type from the flatbuffer Field table
-fn get_data_type(
+fn get_dtype(
     field: arrow_format::ipc::FieldRef,
     extension: Extension,
     may_be_dictionary: bool,
@@ -245,7 +245,7 @@ fn get_data_type(
                 .index_type()?
                 .ok_or_else(|| polars_err!(oos = "indexType is mandatory in Dictionary."))?;
             let index_type = deserialize_integer(int)?;
-            let (inner, mut ipc_field) = get_data_type(field, extension, false)?;
+            let (inner, mut ipc_field) = get_dtype(field, extension, false)?;
             ipc_field.dictionary_id = Some(dictionary.id()?);
             return Ok((
                 ArrowDataType::Dictionary(index_type, Box::new(inner), dictionary.is_ordered()?),
@@ -256,9 +256,9 @@ fn get_data_type(
 
     if let Some(extension) = extension {
         let (name, metadata) = extension;
-        let (data_type, fields) = get_data_type(field, None, false)?;
+        let (dtype, fields) = get_dtype(field, None, false)?;
         return Ok((
-            ArrowDataType::Extension(name, Box::new(data_type), metadata),
+            ArrowDataType::Extension(name, Box::new(dtype), metadata),
             fields,
         ));
     }
@@ -272,8 +272,8 @@ fn get_data_type(
         Null(_) => (ArrowDataType::Null, IpcField::default()),
         Bool(_) => (ArrowDataType::Boolean, IpcField::default()),
         Int(int) => {
-            let data_type = deserialize_integer(int)?.into();
-            (data_type, IpcField::default())
+            let dtype = deserialize_integer(int)?.into();
+            (dtype, IpcField::default())
         },
         Binary(_) => (ArrowDataType::Binary, IpcField::default()),
         LargeBinary(_) => (ArrowDataType::LargeBinary, IpcField::default()),
@@ -291,24 +291,24 @@ fn get_data_type(
             IpcField::default(),
         ),
         FloatingPoint(float) => {
-            let data_type = match float.precision()? {
+            let dtype = match float.precision()? {
                 arrow_format::ipc::Precision::Half => ArrowDataType::Float16,
                 arrow_format::ipc::Precision::Single => ArrowDataType::Float32,
                 arrow_format::ipc::Precision::Double => ArrowDataType::Float64,
             };
-            (data_type, IpcField::default())
+            (dtype, IpcField::default())
         },
         Date(date) => {
-            let data_type = match date.unit()? {
+            let dtype = match date.unit()? {
                 arrow_format::ipc::DateUnit::Day => ArrowDataType::Date32,
                 arrow_format::ipc::DateUnit::Millisecond => ArrowDataType::Date64,
             };
-            (data_type, IpcField::default())
+            (dtype, IpcField::default())
         },
         Time(time) => deserialize_time(time)?,
         Timestamp(timestamp) => deserialize_timestamp(timestamp)?,
         Interval(interval) => {
-            let data_type = match interval.unit()? {
+            let dtype = match interval.unit()? {
                 arrow_format::ipc::IntervalUnit::YearMonth => {
                     ArrowDataType::Interval(IntervalUnit::YearMonth)
                 },
@@ -319,7 +319,7 @@ fn get_data_type(
                     ArrowDataType::Interval(IntervalUnit::MonthDayNano)
                 },
             };
-            (data_type, IpcField::default())
+            (dtype, IpcField::default())
         },
         Duration(duration) => {
             let time_unit = deserialize_timeunit(duration.unit()?)?;
@@ -339,13 +339,13 @@ fn get_data_type(
                 .try_into()
                 .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?;
 
-            let data_type = match bit_width {
+            let dtype = match bit_width {
                 128 => ArrowDataType::Decimal(precision, scale),
                 256 => ArrowDataType::Decimal256(precision, scale),
                 _ => return Err(polars_err!(oos = OutOfSpecKind::NegativeFooterLength)),
             };
 
-            (data_type, IpcField::default())
+            (dtype, IpcField::default())
         },
         List(_) => deserialize_list(field)?,
         LargeList(_) => deserialize_large_list(field)?,

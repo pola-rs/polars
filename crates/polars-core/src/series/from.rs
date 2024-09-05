@@ -468,9 +468,9 @@ fn map_arrays_to_series(name: PlSmallStr, chunks: Vec<ArrayRef>) -> PolarsResult
             let inner = arr.field().clone();
 
             // map has i32 offsets
-            let data_type = ListArray::<i32>::default_datatype(inner.data_type().clone());
+            let dtype = ListArray::<i32>::default_datatype(inner.dtype().clone());
             Box::new(ListArray::<i32>::new(
-                data_type,
+                dtype,
                 arr.offsets().clone(),
                 inner,
                 arr.validity().cloned(),
@@ -490,7 +490,7 @@ unsafe fn to_physical_and_dtype(
     arrays: Vec<ArrayRef>,
     md: Option<&Metadata>,
 ) -> (Vec<ArrayRef>, DataType) {
-    match arrays[0].data_type() {
+    match arrays[0].dtype() {
         ArrowDataType::Utf8 | ArrowDataType::LargeUtf8 => {
             let chunks = cast_chunks(&arrays, &DataType::String, CastOptions::NonStrict).unwrap();
             (chunks, DataType::String)
@@ -538,7 +538,7 @@ unsafe fn to_physical_and_dtype(
                         let arr = arr.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
 
                         let dtype =
-                            FixedSizeListArray::default_datatype(values.data_type().clone(), *size);
+                            FixedSizeListArray::default_datatype(values.dtype().clone(), *size);
                         Box::from(FixedSizeListArray::new(
                             dtype,
                             values,
@@ -566,7 +566,7 @@ unsafe fn to_physical_and_dtype(
                 .map(|(arr, values)| {
                     let arr = arr.as_any().downcast_ref::<ListArray<i64>>().unwrap();
 
-                    let dtype = ListArray::<i64>::default_datatype(values.data_type().clone());
+                    let dtype = ListArray::<i64>::default_datatype(values.dtype().clone());
                     Box::from(ListArray::<i64>::new(
                         dtype,
                         arr.offsets().clone(),
@@ -597,7 +597,7 @@ unsafe fn to_physical_and_dtype(
                     .iter()
                     .zip(_fields.iter())
                     .map(|(arr, field)| {
-                        ArrowField::new(field.name.clone(), arr.data_type().clone(), true)
+                        ArrowField::new(field.name.clone(), arr.dtype().clone(), true)
                     })
                     .collect();
                 let arrow_array = Box::new(StructArray::new(
@@ -635,20 +635,20 @@ unsafe fn to_physical_and_dtype(
 
 fn check_types(chunks: &[ArrayRef]) -> PolarsResult<ArrowDataType> {
     let mut chunks_iter = chunks.iter();
-    let data_type: ArrowDataType = chunks_iter
+    let dtype: ArrowDataType = chunks_iter
         .next()
         .ok_or_else(|| polars_err!(NoData: "expected at least one array-ref"))?
-        .data_type()
+        .dtype()
         .clone();
 
     for chunk in chunks_iter {
-        if chunk.data_type() != &data_type {
+        if chunk.dtype() != &dtype {
             polars_bail!(
                 ComputeError: "cannot create series from multiple arrays with different types"
             );
         }
     }
-    Ok(data_type)
+    Ok(dtype)
 }
 
 impl Series {
@@ -671,10 +671,10 @@ impl TryFrom<(PlSmallStr, Vec<ArrayRef>)> for Series {
     fn try_from(name_arr: (PlSmallStr, Vec<ArrayRef>)) -> PolarsResult<Self> {
         let (name, chunks) = name_arr;
 
-        let data_type = check_types(&chunks)?;
+        let dtype = check_types(&chunks)?;
         // SAFETY:
         // dtype is checked
-        unsafe { Series::_try_from_arrow_unchecked(name, chunks, &data_type) }
+        unsafe { Series::_try_from_arrow_unchecked(name, chunks, &dtype) }
     }
 }
 
@@ -693,7 +693,7 @@ impl TryFrom<(&ArrowField, Vec<ArrayRef>)> for Series {
     fn try_from(field_arr: (&ArrowField, Vec<ArrayRef>)) -> PolarsResult<Self> {
         let (field, chunks) = field_arr;
 
-        let data_type = check_types(&chunks)?;
+        let dtype = check_types(&chunks)?;
 
         // SAFETY:
         // dtype is checked
@@ -701,7 +701,7 @@ impl TryFrom<(&ArrowField, Vec<ArrayRef>)> for Series {
             Series::_try_from_arrow_unchecked_with_md(
                 field.name.clone(),
                 chunks,
-                &data_type,
+                &dtype,
                 Some(&field.metadata),
             )
         }

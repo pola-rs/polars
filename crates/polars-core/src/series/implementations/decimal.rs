@@ -61,10 +61,10 @@ impl SeriesWrap<DecimalChunked> {
                     )
                 };
                 let new_values = s.array_ref(0).clone();
-                let data_type =
+                let dtype =
                     ListArray::<i64>::default_datatype(dtype.to_arrow(CompatLevel::newest()));
                 let new_arr = ListArray::<i64>::new(
-                    data_type,
+                    dtype,
                     arr.offsets().clone(),
                     new_values,
                     arr.validity().cloned(),
@@ -290,8 +290,8 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
             .into_series()
     }
 
-    fn cast(&self, data_type: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
-        self.0.cast_with_options(data_type, cast_options)
+    fn cast(&self, dtype: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
+        self.0.cast_with_options(dtype, cast_options)
     }
 
     fn get(&self, index: usize) -> PolarsResult<AnyValue> {

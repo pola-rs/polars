@@ -18,8 +18,8 @@ pub(crate) unsafe fn drop_list(ca: &ListChunked) {
         // if empty the memory is leaked somewhere
         assert!(!ca.chunks.is_empty());
         for lst_arr in &ca.chunks {
-            if let ArrowDataType::LargeList(fld) = lst_arr.data_type() {
-                let dtype = fld.data_type();
+            if let ArrowDataType::LargeList(fld) = lst_arr.dtype() {
+                let dtype = fld.dtype();
 
                 assert!(matches!(dtype, ArrowDataType::Extension(_, _, _)));
 

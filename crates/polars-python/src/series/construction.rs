@@ -327,7 +327,7 @@ impl PySeries {
     fn from_arrow(name: &str, array: &Bound<PyAny>) -> PyResult<Self> {
         let arr = array_to_rust(array)?;
 
-        match arr.data_type() {
+        match arr.dtype() {
             ArrowDataType::LargeList(_) => {
                 let array = arr.as_any().downcast_ref::<LargeListArray>().unwrap();
                 let fast_explode = array.offsets().as_slice().windows(2).all(|w| w[0] != w[1]);

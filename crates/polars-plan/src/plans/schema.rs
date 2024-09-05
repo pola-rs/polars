@@ -61,7 +61,7 @@ impl FileInfo {
 
         for field in hive_schema.iter_fields() {
             if let Ok(existing) = schema.try_get_mut(&field.name) {
-                *existing = field.data_type().clone();
+                *existing = field.dtype().clone();
             } else {
                 schema
                     .insert_at_index(schema.len(), field.name, field.dtype.clone())

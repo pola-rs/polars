@@ -6,15 +6,15 @@ use crate::datatypes::ArrowDataType;
 
 impl Arrow2Arrow for UnionArray {
     fn to_data(&self) -> ArrayData {
-        let data_type = arrow_schema::DataType::from(self.data_type.clone());
+        let dtype = arrow_schema::DataType::from(self.dtype.clone());
         let len = self.len();
 
         let builder = match self.offsets.clone() {
-            Some(offsets) => ArrayDataBuilder::new(data_type)
+            Some(offsets) => ArrayDataBuilder::new(dtype)
                 .len(len)
                 .buffers(vec![self.types.clone().into(), offsets.into()])
                 .child_data(self.fields.iter().map(|x| to_data(x.as_ref())).collect()),
-            None => ArrayDataBuilder::new(data_type)
+            None => ArrayDataBuilder::new(dtype)
                 .len(len)
                 .buffers(vec![self.types.clone().into()])
                 .child_data(
@@ -30,7 +30,7 @@ impl Arrow2Arrow for UnionArray {
     }
 
     fn from_data(data: &ArrayData) -> Self {
-        let data_type: ArrowDataType = data.data_type().clone().into();
+        let dtype: ArrowDataType = data.dtype().clone().into();
 
         let fields = data.child_data().iter().map(from_data).collect();
         let buffers = data.buffers();
@@ -46,7 +46,7 @@ impl Arrow2Arrow for UnionArray {
         };
 
         // Map from type id to array index
-        let map = match &data_type {
+        let map = match &dtype {
             ArrowDataType::Union(_, Some(ids), _) => {
                 let mut map = [0; 127];
                 for (pos, &id) in ids.iter().enumerate() {
@@ -63,7 +63,7 @@ impl Arrow2Arrow for UnionArray {
             map,
             fields,
             offsets,
-            data_type,
+            dtype,
             offset: data.offset(),
         }
     }

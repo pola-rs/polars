@@ -97,11 +97,11 @@ impl utils::Decoder for NullDecoder {
 
     fn finalize(
         &self,
-        data_type: ArrowDataType,
+        dtype: ArrowDataType,
         _dict: Option<Self::Dict>,
         decoded: Self::DecodedState,
     ) -> ParquetResult<Self::Output> {
-        Ok(NullArray::new(data_type, decoded.length))
+        Ok(NullArray::new(dtype, decoded.length))
     }
 }
 
@@ -128,7 +128,7 @@ use super::BasicDecompressor;
 /// Converts [`PagesIter`] to an [`ArrayIter`]
 pub fn iter_to_arrays(
     mut iter: BasicDecompressor,
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
     mut filter: Option<Filter>,
 ) -> ParquetResult<Box<dyn Array>> {
     _ = iter.read_dict_page()?;
@@ -159,5 +159,5 @@ pub fn iter_to_arrays(
         len = (len + num_rows).min(num_rows);
     }
 
-    Ok(Box::new(NullArray::new(data_type, len)))
+    Ok(Box::new(NullArray::new(dtype, len)))
 }

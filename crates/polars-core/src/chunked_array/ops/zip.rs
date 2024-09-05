@@ -94,7 +94,7 @@ where
                     combine_validities_and,
                 ),
                 (Some(t), Some(f)) => {
-                    let dtype = if_true.downcast_iter().next().unwrap().data_type();
+                    let dtype = if_true.downcast_iter().next().unwrap().dtype();
                     let chunks = mask.downcast_iter().map(|m| {
                         let bm = bool_null_to_false(m);
                         let t = t.clone();

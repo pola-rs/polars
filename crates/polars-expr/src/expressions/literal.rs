@@ -46,8 +46,8 @@ impl PhysicalExpr for LiteralExpr {
             Range {
                 low,
                 high,
-                data_type,
-            } => match data_type {
+                dtype,
+            } => match dtype {
                 DataType::Int32 => {
                     polars_ensure!(
                         *low >= i32::MIN as i64 && *high <= i32::MAX as i64,

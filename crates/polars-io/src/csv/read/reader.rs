@@ -168,7 +168,7 @@ impl<R: MmapBytesReader> CsvReader<R> {
                 .map(|mut fld| {
                     use DataType::*;
 
-                    match fld.data_type() {
+                    match fld.dtype() {
                         Time => {
                             self.options.fields_to_cast.push(fld.clone());
                             fld.coerce(String);

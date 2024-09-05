@@ -51,12 +51,12 @@ impl AnonymousBuilder {
     }
 
     pub fn finish(self, inner_dtype: Option<&ArrowDataType>) -> PolarsResult<FixedSizeListArray> {
-        let mut inner_dtype = inner_dtype.unwrap_or_else(|| self.arrays[0].data_type());
+        let mut inner_dtype = inner_dtype.unwrap_or_else(|| self.arrays[0].dtype());
 
         if is_nested_null(inner_dtype) {
             for arr in &self.arrays {
-                if !is_nested_null(arr.data_type()) {
-                    inner_dtype = arr.data_type();
+                if !is_nested_null(arr.dtype()) {
+                    inner_dtype = arr.dtype();
                     break;
                 }
             }
@@ -67,9 +67,9 @@ impl AnonymousBuilder {
             .arrays
             .iter()
             .map(|arr| {
-                if matches!(arr.data_type(), ArrowDataType::Null) {
+                if matches!(arr.dtype(), ArrowDataType::Null) {
                     new_null_array(inner_dtype.clone(), arr.len())
-                } else if is_nested_null(arr.data_type()) {
+                } else if is_nested_null(arr.dtype()) {
                     convert_inner_type(&**arr, inner_dtype)
                 } else {
                     arr.to_boxed()
@@ -79,9 +79,9 @@ impl AnonymousBuilder {
 
         let values = concatenate_owned_unchecked(&arrays)?;
 
-        let data_type = FixedSizeListArray::default_datatype(inner_dtype.clone(), self.width);
+        let dtype = FixedSizeListArray::default_datatype(inner_dtype.clone(), self.width);
         Ok(FixedSizeListArray::new(
-            data_type,
+            dtype,
             values,
             self.validity.map(|validity| validity.into()),
         ))

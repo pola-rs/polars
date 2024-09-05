@@ -78,8 +78,8 @@ fn timeunit_from_precision(prec: &Option<u64>) -> PolarsResult<TimeUnit> {
     })
 }
 
-pub(crate) fn map_sql_polars_datatype(data_type: &SQLDataType) -> PolarsResult<DataType> {
-    Ok(match data_type {
+pub(crate) fn map_sql_polars_datatype(dtype: &SQLDataType) -> PolarsResult<DataType> {
+    Ok(match dtype {
         // ---------------------------------
         // array/list
         // ---------------------------------
@@ -208,7 +208,7 @@ pub(crate) fn map_sql_polars_datatype(data_type: &SQLDataType) -> PolarsResult<D
             },
         },
         _ => {
-            polars_bail!(SQLInterface: "datatype {:?} is not currently supported", data_type)
+            polars_bail!(SQLInterface: "datatype {:?} is not currently supported", dtype)
         },
     })
 }
@@ -274,9 +274,9 @@ impl SQLExprVisitor<'_> {
             SQLExpr::Cast {
                 kind,
                 expr,
-                data_type,
+                dtype,
                 format,
-            } => self.visit_cast(expr, data_type, format, kind),
+            } => self.visit_cast(expr, dtype, format, kind),
             SQLExpr::Ceil { expr, .. } => Ok(self.visit_expr(expr)?.ceil()),
             SQLExpr::CompoundIdentifier(idents) => self.visit_compound_identifier(idents),
             SQLExpr::Extract { field, expr } => {
@@ -356,7 +356,7 @@ impl SQLExprVisitor<'_> {
                 trim_what,
                 trim_characters,
             } => self.visit_trim(expr, trim_where, trim_what, trim_characters),
-            SQLExpr::TypedString { data_type, value } => match data_type {
+            SQLExpr::TypedString { dtype, value } => match dtype {
                 SQLDataType::Date => {
                     if is_iso_date(value) {
                         Ok(lit(value.as_str()).cast(DataType::Date))
@@ -386,7 +386,7 @@ impl SQLExprVisitor<'_> {
                             lit("latest"),
                         ))
                     } else {
-                        let fn_name = match data_type {
+                        let fn_name = match dtype {
                             SQLDataType::Timestamp(_, _) => "TIMESTAMP",
                             SQLDataType::Datetime(_) => "DATETIME",
                             _ => unreachable!(),
@@ -395,7 +395,7 @@ impl SQLExprVisitor<'_> {
                     }
                 },
                 _ => {
-                    polars_bail!(SQLInterface: "typed literal should be one of DATE, DATETIME, TIME, or TIMESTAMP (found {})", data_type)
+                    polars_bail!(SQLInterface: "typed literal should be one of DATE, DATETIME, TIME, or TIMESTAMP (found {})", dtype)
                 },
             },
             SQLExpr::UnaryOp { op, expr } => self.visit_unary_op(op, expr),
@@ -544,14 +544,14 @@ impl SQLExprVisitor<'_> {
             // identify "CAST(expr AS type) <op> string" and/or "expr::type <op> string" expressions
             (
                 Expr::Cast {
-                    expr, data_type, ..
+                    expr, dtype, ..
                 },
                 Expr::Literal(LiteralValue::String(s)),
             ) => {
                 if let Expr::Column(name) = &**expr {
-                    (Some(name.clone()), Some(s), Some(data_type))
+                    (Some(name.clone()), Some(s), Some(dtype))
                 } else {
-                    (None, Some(s), Some(data_type))
+                    (None, Some(s), Some(dtype))
                 }
             },
             _ => (None, None, None),
@@ -879,7 +879,7 @@ impl SQLExprVisitor<'_> {
     fn visit_cast(
         &mut self,
         expr: &SQLExpr,
-        data_type: &SQLDataType,
+        dtype: &SQLDataType,
         format: &Option<CastFormat>,
         cast_kind: &CastKind,
     ) -> PolarsResult<Expr> {
@@ -891,10 +891,10 @@ impl SQLExprVisitor<'_> {
         let expr = self.visit_expr(expr)?;
 
         #[cfg(feature = "json")]
-        if data_type == &SQLDataType::JSON {
+        if dtype == &SQLDataType::JSON {
             return Ok(expr.str().json_decode(None, None));
         }
-        let polars_type = map_sql_polars_datatype(data_type)?;
+        let polars_type = map_sql_polars_datatype(dtype)?;
         Ok(match cast_kind {
             CastKind::Cast | CastKind::DoubleColon => expr.strict_cast(polars_type),
             CastKind::TryCast | CastKind::SafeCast => expr.cast(polars_type),

@@ -8,5 +8,5 @@ pub fn atan2<T>(arr_1: &PrimitiveArray<T>, arr_2: &PrimitiveArray<T>) -> Primiti
 where
     T: Float + NativeType,
 {
-    binary(arr_1, arr_2, arr_1.data_type().clone(), |a, b| a.atan2(b))
+    binary(arr_1, arr_2, arr_1.dtype().clone(), |a, b| a.atan2(b))
 }

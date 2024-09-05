@@ -9,7 +9,7 @@ fn dt() -> ArrowDataType {
 }
 
 fn array() -> MapArray {
-    let data_type = ArrowDataType::Map(Box::new(Field::new("a".into(), dt(), true)), false);
+    let dtype = ArrowDataType::Map(Box::new(Field::new("a".into(), dt(), true)), false);
 
     let field = StructArray::new(
         dt(),
@@ -21,7 +21,7 @@ fn array() -> MapArray {
     );
 
     MapArray::new(
-        data_type,
+        dtype,
         vec![0, 1, 2, 3].try_into().unwrap(),
         Box::new(field),
         None,

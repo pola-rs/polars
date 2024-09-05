@@ -126,16 +126,16 @@ where
                 if !T::Native::is_float() && MetadataEnv::experimental_enabled() {
                     let md = self.metadata();
                     if let (Some(min), Some(max)) = (md.get_min_value(), md.get_max_value()) {
-                        let data_type = self
+                        let dtype = self
                             .field
                             .as_ref()
-                            .data_type()
+                            .dtype()
                             .to_arrow(CompatLevel::oldest());
                         if let Some(mut state) = PrimitiveRangedUniqueState::new(
                             *min,
                             *max,
                             self.null_count() > 0,
-                            data_type,
+                            dtype,
                         ) {
                             use polars_compute::unique::RangedUniqueKernel;
 
@@ -272,13 +272,13 @@ impl ChunkUnique for BooleanChunked {
     fn unique(&self) -> PolarsResult<Self> {
         use polars_compute::unique::RangedUniqueKernel;
 
-        let data_type = self
+        let dtype = self
             .field
             .as_ref()
-            .data_type()
+            .dtype()
             .to_arrow(CompatLevel::oldest());
         let has_null = self.null_count() > 0;
-        let mut state = BooleanUniqueKernelState::new(has_null, data_type);
+        let mut state = BooleanUniqueKernelState::new(has_null, dtype);
 
         for arr in self.downcast_iter() {
             state.append(arr);

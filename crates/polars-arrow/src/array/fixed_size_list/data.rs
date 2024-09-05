@@ -6,8 +6,8 @@ use crate::datatypes::ArrowDataType;
 
 impl Arrow2Arrow for FixedSizeListArray {
     fn to_data(&self) -> ArrayData {
-        let data_type = self.data_type.clone().into();
-        let builder = ArrayDataBuilder::new(data_type)
+        let dtype = self.dtype.clone().into();
+        let builder = ArrayDataBuilder::new(dtype)
             .len(self.len())
             .nulls(self.validity.as_ref().map(|b| b.clone().into()))
             .child_data(vec![to_data(self.values.as_ref())]);
@@ -17,8 +17,8 @@ impl Arrow2Arrow for FixedSizeListArray {
     }
 
     fn from_data(data: &ArrayData) -> Self {
-        let data_type: ArrowDataType = data.data_type().clone().into();
-        let size = match data_type {
+        let dtype: ArrowDataType = data.dtype().clone().into();
+        let size = match dtype {
             ArrowDataType::FixedSizeList(_, size) => size,
             _ => unreachable!("must be FixedSizeList type"),
         };
@@ -28,7 +28,7 @@ impl Arrow2Arrow for FixedSizeListArray {
 
         Self {
             size,
-            data_type,
+            dtype,
             values,
             validity: data.nulls().map(|n| Bitmap::from_null_buffer(n.clone())),
         }

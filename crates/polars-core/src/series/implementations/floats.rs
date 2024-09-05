@@ -14,7 +14,7 @@ macro_rules! impl_dyn_series {
                 Cow::Borrowed(self.0.ref_field())
             }
             fn _dtype(&self) -> &DataType {
-                self.0.ref_field().data_type()
+                self.0.ref_field().dtype()
             }
 
             fn _set_flags(&mut self, flags: MetadataFlags) {
@@ -261,10 +261,10 @@ macro_rules! impl_dyn_series {
 
             fn cast(
                 &self,
-                data_type: &DataType,
+                dtype: &DataType,
                 cast_options: CastOptions,
             ) -> PolarsResult<Series> {
-                self.0.cast_with_options(data_type, cast_options)
+                self.0.cast_with_options(dtype, cast_options)
             }
 
             fn get(&self, index: usize) -> PolarsResult<AnyValue> {

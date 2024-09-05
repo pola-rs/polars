@@ -41,7 +41,7 @@ pub fn reduce(stats: &[&Option<Statistics>]) -> ParquetResult<Option<Statistics>
         .all(|x| x.physical_type() == stats[0].physical_type());
     if !same_type {
         return Err(ParquetError::oos(
-            "The statistics do not have the same data_type",
+            "The statistics do not have the same dtype",
         ));
     };
 

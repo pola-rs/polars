@@ -1249,7 +1249,7 @@ pub trait GetAnyValue {
 impl GetAnyValue for ArrayRef {
     // Should only be called with physical types
     unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
-        match self.data_type() {
+        match self.dtype() {
             ArrowDataType::Int8 => {
                 let arr = self
                     .as_any()

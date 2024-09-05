@@ -51,7 +51,7 @@ impl ChunkReverse for BinaryChunked {
 
             unsafe {
                 let arr = BinaryViewArray::new_unchecked(
-                    arr.data_type().clone(),
+                    arr.dtype().clone(),
                     views.into(),
                     arr.data_buffers().clone(),
                     arr.validity().map(|bitmap| bitmap.iter().rev().collect()),

@@ -512,7 +512,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         // SAFETY: we keep the correct dtype
         let mut ca = unsafe {
             self.copy_with_chunks(vec![new_empty_array(
-                self.chunks.first().unwrap().data_type().clone(),
+                self.chunks.first().unwrap().dtype().clone(),
             )])
         };
 
@@ -599,7 +599,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
 
     /// Get data type of [`ChunkedArray`].
     pub fn dtype(&self) -> &DataType {
-        self.field.data_type()
+        self.field.dtype()
     }
 
     pub(crate) unsafe fn set_dtype(&mut self, dtype: DataType) {
@@ -618,7 +618,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
 
     /// Rename this [`ChunkedArray`].
     pub fn rename(&mut self, name: PlSmallStr) {
-        self.field = Arc::new(Field::new(name, self.field.data_type().clone()))
+        self.field = Arc::new(Field::new(name, self.field.dtype().clone()))
     }
 
     /// Return this [`ChunkedArray`] with a new name.

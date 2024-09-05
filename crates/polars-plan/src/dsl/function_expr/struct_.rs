@@ -51,7 +51,7 @@ impl StructFunction {
                     let fields = fields
                         .iter()
                         .zip(names.as_ref())
-                        .map(|(fld, name)| Field::new(name.clone(), fld.data_type().clone()))
+                        .map(|(fld, name)| Field::new(name.clone(), fld.dtype().clone()))
                         .collect();
                     DataType::Struct(fields)
                 },
@@ -73,7 +73,7 @@ impl StructFunction {
                             let name = fld.name();
                             Field::new(
                                 format_pl_smallstr!("{prefix}{name}"),
-                                fld.data_type().clone(),
+                                fld.dtype().clone(),
                             )
                         })
                         .collect();
@@ -89,7 +89,7 @@ impl StructFunction {
                             let name = fld.name();
                             Field::new(
                                 format_pl_smallstr!("{name}{suffix}"),
-                                fld.data_type().clone(),
+                                fld.dtype().clone(),
                             )
                         })
                         .collect();
@@ -103,14 +103,14 @@ impl StructFunction {
                 let args = mapper.args();
                 let struct_ = &args[0];
 
-                if let DataType::Struct(fields) = struct_.data_type() {
+                if let DataType::Struct(fields) = struct_.dtype() {
                     let mut name_2_dtype = PlIndexMap::with_capacity(fields.len() * 2);
 
                     for field in fields {
-                        name_2_dtype.insert(field.name(), field.data_type());
+                        name_2_dtype.insert(field.name(), field.dtype());
                     }
                     for arg in &args[1..] {
-                        name_2_dtype.insert(arg.name(), arg.data_type());
+                        name_2_dtype.insert(arg.name(), arg.dtype());
                     }
                     let dtype = DataType::Struct(
                         name_2_dtype
@@ -122,7 +122,7 @@ impl StructFunction {
                     out.coerce(dtype);
                     Ok(out)
                 } else {
-                    let dt = struct_.data_type();
+                    let dt = struct_.dtype();
                     polars_bail!(op = "with_fields", got = dt, expected = "Struct")
                 }
             },

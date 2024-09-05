@@ -161,7 +161,7 @@ impl<'a> AnyValue<'a> {
 
                                 if arr.is_valid_unchecked(idx) {
                                     let v = arr.value_unchecked(idx);
-                                    match fld.data_type() {
+                                    match fld.dtype() {
                                         DataType::Categorical(Some(rev_map), _) => {
                                             AnyValue::Categorical(
                                                 v,
@@ -178,13 +178,13 @@ impl<'a> AnyValue<'a> {
                                     AnyValue::Null
                                 }
                             } else {
-                                arr_to_any_value(&**arr, idx, fld.data_type())
+                                arr_to_any_value(&**arr, idx, fld.dtype())
                             }
                         }
 
                         #[cfg(not(feature = "dtype-categorical"))]
                         {
-                            arr_to_any_value(&**arr, idx, fld.data_type())
+                            arr_to_any_value(&**arr, idx, fld.dtype())
                         }
                     })
                 }

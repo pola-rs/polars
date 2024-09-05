@@ -409,7 +409,7 @@ impl PhysicalExpr for WindowExpr {
             return Ok(Series::full_null(
                 field.name().clone(),
                 0,
-                field.data_type(),
+                field.dtype(),
             ));
         }
 

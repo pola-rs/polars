@@ -1026,7 +1026,7 @@ fn resolve_with_columns(
             );
             polars_bail!(ComputeError: msg)
         }
-        new_schema.with_column(field.name().clone(), field.data_type().clone());
+        new_schema.with_column(field.name().clone(), field.dtype().clone());
         arena.clear();
     }
 

@@ -76,7 +76,7 @@ pub fn array_to_page<O: Offset>(
             encode_options,
             &mut buffer,
         ),
-        _ => return Err(invalid_encoding(encoding, array.data_type())),
+        _ => return Err(invalid_encoding(encoding, array.dtype())),
     }
 
     let statistics = if options.has_statistics() {

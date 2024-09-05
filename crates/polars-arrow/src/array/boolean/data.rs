@@ -20,7 +20,7 @@ impl Arrow2Arrow for BooleanArray {
     }
 
     fn from_data(data: &ArrayData) -> Self {
-        assert_eq!(data.data_type(), &arrow_schema::DataType::Boolean);
+        assert_eq!(data.dtype(), &arrow_schema::DataType::Boolean);
 
         let buffers = data.buffers();
         let buffer = BooleanBuffer::new(buffers[0].clone(), data.offset(), data.len());
@@ -28,7 +28,7 @@ impl Arrow2Arrow for BooleanArray {
         let values = Bitmap::from_null_buffer(NullBuffer::new(buffer));
 
         Self {
-            data_type: ArrowDataType::Boolean,
+            dtype: ArrowDataType::Boolean,
             values,
             validity: data.nulls().map(|n| Bitmap::from_null_buffer(n.clone())),
         }

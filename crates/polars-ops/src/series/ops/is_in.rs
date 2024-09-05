@@ -523,12 +523,12 @@ fn is_in_struct(ca_in: &StructChunked, other: &Series) -> PolarsResult<BooleanCh
             let ca_in_dtypes: Vec<_> = ca_in
                 .struct_fields()
                 .iter()
-                .map(|f| f.data_type())
+                .map(|f| f.dtype())
                 .collect();
             let other_dtypes: Vec<_> = other
                 .struct_fields()
                 .iter()
-                .map(|f| f.data_type())
+                .map(|f| f.dtype())
                 .collect();
             if ca_in_dtypes != other_dtypes {
                 let ca_in_names = ca_in.struct_fields().iter().map(|f| f.name().clone());

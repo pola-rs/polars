@@ -697,7 +697,7 @@ impl From<(&DataType, usize)> for AnyValueBufferTrusted<'_> {
                 let buffers = fields
                     .iter()
                     .map(|field| {
-                        let dtype = field.data_type().to_physical();
+                        let dtype = field.dtype().to_physical();
                         let buffer: AnyValueBuffer = (&dtype, len).into();
                         (buffer, field.name.clone())
                     })

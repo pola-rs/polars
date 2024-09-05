@@ -91,9 +91,9 @@ fn deserialize_utf8view_into<'a, A: Borrow<BorrowedValue<'a>>>(
 
 fn deserialize_list<'a, A: Borrow<BorrowedValue<'a>>>(
     rows: &[A],
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
 ) -> ListArray<i64> {
-    let child = ListArray::<i64>::get_child_type(&data_type);
+    let child = ListArray::<i64>::get_child_type(&dtype);
 
     let mut validity = MutableBitmap::with_capacity(rows.len());
     let mut offsets = Offsets::<i64>::with_capacity(rows.len());
@@ -123,18 +123,18 @@ fn deserialize_list<'a, A: Borrow<BorrowedValue<'a>>>(
 
     let values = _deserialize(&inner, child.clone());
 
-    ListArray::<i64>::new(data_type, offsets.into(), values, validity.into())
+    ListArray::<i64>::new(dtype, offsets.into(), values, validity.into())
 }
 
 fn deserialize_struct<'a, A: Borrow<BorrowedValue<'a>>>(
     rows: &[A],
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
 ) -> StructArray {
-    let fields = StructArray::get_fields(&data_type);
+    let fields = StructArray::get_fields(&dtype);
 
     let mut values = fields
         .iter()
-        .map(|f| (f.name.as_str(), (f.data_type(), vec![])))
+        .map(|f| (f.name.as_str(), (f.dtype(), vec![])))
         .collect::<PlHashMap<_, _>>();
 
     let mut validity = MutableBitmap::with_capacity(rows.len());
@@ -160,24 +160,24 @@ fn deserialize_struct<'a, A: Borrow<BorrowedValue<'a>>>(
     let values = fields
         .iter()
         .map(|fld| {
-            let (data_type, vals) = values.get(fld.name.as_str()).unwrap();
-            _deserialize(vals, (*data_type).clone())
+            let (dtype, vals) = values.get(fld.name.as_str()).unwrap();
+            _deserialize(vals, (*dtype).clone())
         })
         .collect::<Vec<_>>();
 
-    StructArray::new(data_type.clone(), values, validity.into())
+    StructArray::new(dtype.clone(), values, validity.into())
 }
 
 fn fill_array_from<B, T, A>(
     f: fn(&mut MutablePrimitiveArray<T>, &[B]),
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
     rows: &[B],
 ) -> Box<dyn Array>
 where
     T: NativeType,
     A: From<MutablePrimitiveArray<T>> + Array,
 {
-    let mut array = MutablePrimitiveArray::<T>::with_capacity(rows.len()).to(data_type);
+    let mut array = MutablePrimitiveArray::<T>::with_capacity(rows.len()).to(dtype);
     f(&mut array, rows);
     Box::new(A::from(array))
 }
@@ -248,19 +248,19 @@ where
 
 pub(crate) fn _deserialize<'a, A: Borrow<BorrowedValue<'a>>>(
     rows: &[A],
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
 ) -> Box<dyn Array> {
-    match &data_type {
-        ArrowDataType::Null => Box::new(NullArray::new(data_type, rows.len())),
+    match &dtype {
+        ArrowDataType::Null => Box::new(NullArray::new(dtype, rows.len())),
         ArrowDataType::Boolean => {
             fill_generic_array_from::<_, _, BooleanArray>(deserialize_boolean_into, rows)
         },
         ArrowDataType::Int8 => {
-            fill_array_from::<_, _, PrimitiveArray<i8>>(deserialize_primitive_into, data_type, rows)
+            fill_array_from::<_, _, PrimitiveArray<i8>>(deserialize_primitive_into, dtype, rows)
         },
         ArrowDataType::Int16 => fill_array_from::<_, _, PrimitiveArray<i16>>(
             deserialize_primitive_into,
-            data_type,
+            dtype,
             rows,
         ),
         ArrowDataType::Int32
@@ -269,7 +269,7 @@ pub(crate) fn _deserialize<'a, A: Borrow<BorrowedValue<'a>>>(
         | ArrowDataType::Interval(IntervalUnit::YearMonth) => {
             fill_array_from::<_, _, PrimitiveArray<i32>>(
                 deserialize_primitive_into,
-                data_type,
+                dtype,
                 rows,
             )
         },
@@ -281,7 +281,7 @@ pub(crate) fn _deserialize<'a, A: Borrow<BorrowedValue<'a>>>(
         | ArrowDataType::Time64(_)
         | ArrowDataType::Duration(_) => fill_array_from::<_, _, PrimitiveArray<i64>>(
             deserialize_primitive_into,
-            data_type,
+            dtype,
             rows,
         ),
         ArrowDataType::Timestamp(tu, tz) => {
@@ -296,35 +296,35 @@ pub(crate) fn _deserialize<'a, A: Borrow<BorrowedValue<'a>>>(
                 },
                 _ => None,
             });
-            Box::new(Int64Array::from_iter(iter).to(data_type))
+            Box::new(Int64Array::from_iter(iter).to(dtype))
         },
         ArrowDataType::UInt8 => {
-            fill_array_from::<_, _, PrimitiveArray<u8>>(deserialize_primitive_into, data_type, rows)
+            fill_array_from::<_, _, PrimitiveArray<u8>>(deserialize_primitive_into, dtype, rows)
         },
         ArrowDataType::UInt16 => fill_array_from::<_, _, PrimitiveArray<u16>>(
             deserialize_primitive_into,
-            data_type,
+            dtype,
             rows,
         ),
         ArrowDataType::UInt32 => fill_array_from::<_, _, PrimitiveArray<u32>>(
             deserialize_primitive_into,
-            data_type,
+            dtype,
             rows,
         ),
         ArrowDataType::UInt64 => fill_array_from::<_, _, PrimitiveArray<u64>>(
             deserialize_primitive_into,
-            data_type,
+            dtype,
             rows,
         ),
         ArrowDataType::Float16 => unreachable!(),
         ArrowDataType::Float32 => fill_array_from::<_, _, PrimitiveArray<f32>>(
             deserialize_primitive_into,
-            data_type,
+            dtype,
             rows,
         ),
         ArrowDataType::Float64 => fill_array_from::<_, _, PrimitiveArray<f64>>(
             deserialize_primitive_into,
-            data_type,
+            dtype,
             rows,
         ),
         ArrowDataType::LargeUtf8 => {
@@ -333,19 +333,19 @@ pub(crate) fn _deserialize<'a, A: Borrow<BorrowedValue<'a>>>(
         ArrowDataType::Utf8View => {
             fill_generic_array_from::<_, _, Utf8ViewArray>(deserialize_utf8view_into, rows)
         },
-        ArrowDataType::LargeList(_) => Box::new(deserialize_list(rows, data_type)),
+        ArrowDataType::LargeList(_) => Box::new(deserialize_list(rows, dtype)),
         ArrowDataType::LargeBinary => Box::new(deserialize_binary(rows)),
-        ArrowDataType::Struct(_) => Box::new(deserialize_struct(rows, data_type)),
+        ArrowDataType::Struct(_) => Box::new(deserialize_struct(rows, dtype)),
         _ => todo!(),
     }
 }
 
-pub fn deserialize(json: &BorrowedValue, data_type: ArrowDataType) -> PolarsResult<Box<dyn Array>> {
+pub fn deserialize(json: &BorrowedValue, dtype: ArrowDataType) -> PolarsResult<Box<dyn Array>> {
     match json {
-        BorrowedValue::Array(rows) => match data_type {
-            ArrowDataType::LargeList(inner) => Ok(_deserialize(rows, inner.data_type)),
+        BorrowedValue::Array(rows) => match dtype {
+            ArrowDataType::LargeList(inner) => Ok(_deserialize(rows, inner.dtype)),
             _ => todo!("read an Array from a non-Array data type"),
         },
-        _ => Ok(_deserialize(&[json], data_type)),
+        _ => Ok(_deserialize(&[json], dtype)),
     }
 }

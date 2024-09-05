@@ -124,13 +124,13 @@ impl fmt::Debug for Expr {
             },
             Cast {
                 expr,
-                data_type,
+                dtype,
                 options,
             } => {
                 if options.strict() {
-                    write!(f, "{expr:?}.strict_cast({data_type:?})")
+                    write!(f, "{expr:?}.strict_cast({dtype:?})")
                 } else {
-                    write!(f, "{expr:?}.cast({data_type:?})")
+                    write!(f, "{expr:?}.cast({dtype:?})")
                 }
             },
             Ternary {

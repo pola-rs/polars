@@ -393,7 +393,7 @@ macro_rules! match_dtype_to_logical_apply_macro {
 
 /// Apply a macro on the Downcasted ChunkedArray's
 #[macro_export]
-macro_rules! match_arrow_data_type_apply_macro_ca {
+macro_rules! match_arrow_dtype_apply_macro_ca {
     ($self:expr, $macro:ident, $macro_string:ident, $macro_bool:ident $(, $opt_args:expr)*) => {{
         match $self.dtype() {
             DataType::String => $macro_string!($self.str().unwrap() $(, $opt_args)*),

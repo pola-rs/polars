@@ -7,8 +7,8 @@ use crate::datatypes::ArrowDataType;
 
 impl Arrow2Arrow for FixedSizeBinaryArray {
     fn to_data(&self) -> ArrayData {
-        let data_type = self.data_type.clone().into();
-        let builder = ArrayDataBuilder::new(data_type)
+        let dtype = self.dtype.clone().into();
+        let builder = ArrayDataBuilder::new(dtype)
             .len(self.len())
             .buffers(vec![self.values.clone().into()])
             .nulls(self.validity.as_ref().map(|b| b.clone().into()));
@@ -18,8 +18,8 @@ impl Arrow2Arrow for FixedSizeBinaryArray {
     }
 
     fn from_data(data: &ArrayData) -> Self {
-        let data_type: ArrowDataType = data.data_type().clone().into();
-        let size = match data_type {
+        let dtype: ArrowDataType = data.dtype().clone().into();
+        let size = match dtype {
             ArrowDataType::FixedSizeBinary(size) => size,
             _ => unreachable!("must be FixedSizeBinary"),
         };
@@ -29,7 +29,7 @@ impl Arrow2Arrow for FixedSizeBinaryArray {
 
         Self {
             size,
-            data_type,
+            dtype,
             values,
             validity: data.nulls().map(|n| Bitmap::from_null_buffer(n.clone())),
         }

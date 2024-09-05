@@ -57,7 +57,7 @@ impl PhysicalExpr for AliasExpr {
             self.name.clone(),
             self.physical_expr
                 .to_field(input_schema)?
-                .data_type()
+                .dtype()
                 .clone(),
         ))
     }

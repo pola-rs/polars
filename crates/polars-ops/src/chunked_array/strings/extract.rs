@@ -13,7 +13,7 @@ fn extract_groups_array(
     arr: &Utf8ViewArray,
     reg: &Regex,
     names: &[&str],
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
 ) -> PolarsResult<ArrayRef> {
     let mut builders = (0..names.len())
         .map(|_| MutablePlString::with_capacity(arr.len()))
@@ -36,7 +36,7 @@ fn extract_groups_array(
     }
 
     let values = builders.into_iter().map(|a| a.freeze().boxed()).collect();
-    Ok(StructArray::new(data_type.clone(), values, arr.validity().cloned()).boxed())
+    Ok(StructArray::new(dtype.clone(), values, arr.validity().cloned()).boxed())
 }
 
 #[cfg(feature = "extract_groups")]
@@ -55,7 +55,7 @@ pub(super) fn extract_groups(
         .map(|ca| ca.into_series());
     }
 
-    let data_type = dtype.try_to_arrow(CompatLevel::newest())?;
+    let dtype = dtype.try_to_arrow(CompatLevel::newest())?;
     let DataType::Struct(fields) = dtype else {
         unreachable!() // Implementation error if it isn't a struct.
     };
@@ -66,7 +66,7 @@ pub(super) fn extract_groups(
 
     let chunks = ca
         .downcast_iter()
-        .map(|array| extract_groups_array(array, &reg, &names, data_type.clone()))
+        .map(|array| extract_groups_array(array, &reg, &names, dtype.clone()))
         .collect::<PolarsResult<Vec<_>>>()?;
 
     Series::try_from((ca.name().clone(), chunks))

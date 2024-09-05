@@ -19,7 +19,7 @@ impl TryFrom<StructArray> for DataFrame {
                     Series::_try_from_arrow_unchecked_with_md(
                         fld.name.clone(),
                         vec![arr],
-                        fld.data_type(),
+                        fld.dtype(),
                         Some(&fld.metadata),
                     )
                 }

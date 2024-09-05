@@ -133,7 +133,7 @@ impl ApplyExpr {
             Ok(Series::full_null(
                 field.name().clone(),
                 1,
-                field.data_type(),
+                field.dtype(),
             ))
         }
     }

@@ -588,11 +588,11 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
         .into_py(py),
         AExpr::Cast {
             expr,
-            data_type,
+            dtype,
             options,
         } => Cast {
             expr: expr.0,
-            dtype: Wrap(data_type.clone()).to_object(py),
+            dtype: Wrap(dtype.clone()).to_object(py),
             options: *options as u8,
         }
         .into_py(py),

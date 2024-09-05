@@ -9,7 +9,7 @@ where
     T: Pow<F, Output = T> + NativeType,
     F: NativeType,
 {
-    binary(arr_1, arr_2, arr_1.data_type().clone(), |a, b| {
+    binary(arr_1, arr_2, arr_1.dtype().clone(), |a, b| {
         Pow::pow(a, b)
     })
 }

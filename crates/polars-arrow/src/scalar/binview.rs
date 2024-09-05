@@ -62,7 +62,7 @@ impl<T: ViewType + ?Sized> Scalar for BinaryViewScalar<T> {
     }
 
     #[inline]
-    fn data_type(&self) -> &ArrowDataType {
+    fn dtype(&self) -> &ArrowDataType {
         if T::IS_UTF8 {
             &ArrowDataType::Utf8View
         } else {

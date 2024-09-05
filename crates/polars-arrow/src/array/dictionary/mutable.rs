@@ -13,7 +13,7 @@ use crate::datatypes::ArrowDataType;
 
 #[derive(Debug)]
 pub struct MutableDictionaryArray<K: DictionaryKey, M: MutableArray> {
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
     map: ValueMap<K, M>,
     // invariant: `max(keys) < map.values().len()`
     keys: MutablePrimitiveArray<K>,
@@ -24,7 +24,7 @@ impl<K: DictionaryKey, M: MutableArray> From<MutableDictionaryArray<K, M>> for D
         // SAFETY: the invariant of this struct ensures that this is up-held
         unsafe {
             DictionaryArray::<K>::try_new_unchecked(
-                other.data_type,
+                other.dtype,
                 other.keys.into(),
                 other.map.into_values().as_box(),
             )
@@ -69,10 +69,10 @@ impl<K: DictionaryKey, M: MutableArray> MutableDictionaryArray<K, M> {
 
     fn from_value_map(value_map: ValueMap<K, M>) -> Self {
         let keys = MutablePrimitiveArray::<K>::new();
-        let data_type =
-            ArrowDataType::Dictionary(K::KEY_TYPE, Box::new(value_map.data_type().clone()), false);
+        let dtype =
+            ArrowDataType::Dictionary(K::KEY_TYPE, Box::new(value_map.dtype().clone()), false);
         Self {
-            data_type,
+            dtype,
             map: value_map,
             keys,
         }
@@ -134,7 +134,7 @@ impl<K: DictionaryKey, M: MutableArray> MutableDictionaryArray<K, M> {
 
     fn take_into(&mut self) -> DictionaryArray<K> {
         DictionaryArray::<K>::try_new(
-            self.data_type.clone(),
+            self.dtype.clone(),
             std::mem::take(&mut self.keys).into(),
             self.map.take_into(),
         )
@@ -159,8 +159,8 @@ impl<K: DictionaryKey, M: 'static + MutableArray> MutableArray for MutableDictio
         Arc::new(self.take_into())
     }
 
-    fn data_type(&self) -> &ArrowDataType {
-        &self.data_type
+    fn dtype(&self) -> &ArrowDataType {
+        &self.dtype
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
