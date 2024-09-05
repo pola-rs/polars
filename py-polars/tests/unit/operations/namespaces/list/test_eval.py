@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+from typing import Any
+
 import pytest
 
 import polars as pl
@@ -104,3 +108,25 @@ def test_list_eval_type_cast_11188() -> None:
     assert df.select(
         pl.col("a").list.eval(pl.element().cast(pl.String)).alias("a_str")
     ).schema == {"a_str": pl.List(pl.String)}
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        {"a": [["0"], ["1"]]},
+        {"a": [["0", "1"], ["2", "3"]]},
+        {"a": [["0", "1"]]},
+        {"a": [["0"]]},
+    ],
+)
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.lit(""),
+        pl.format("test: {}", pl.element()),
+    ],
+)
+def test_list_eval_list_output_18510(data: dict[str, Any], expr: pl.Expr) -> None:
+    df = pl.DataFrame(data)
+    result = df.select(pl.col("a").list.eval(pl.lit("")))
+    assert result.to_series().dtype == pl.List(pl.String)
