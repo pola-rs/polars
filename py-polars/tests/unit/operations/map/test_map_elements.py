@@ -371,3 +371,15 @@ def test_map_elements_list_dtype_18472() -> None:
     result = s.map_elements(lambda s: [i.strip() if i else None for i in s])
     expected = pl.Series([[None], ["abc", None]])
     assert_series_equal(result, expected)
+
+
+def test_map_elements_list_return_dtype() -> None:
+    s = pl.Series([[1], [2, 3]])
+    return_dtype = pl.List(pl.UInt16)
+
+    result = s.map_elements(
+        lambda s: [i + 1 for i in s],
+        return_dtype=return_dtype,
+    )
+    expected = pl.Series([[2], [3, 4]], dtype=return_dtype)
+    assert_series_equal(result, expected)

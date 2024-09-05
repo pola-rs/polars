@@ -1,10 +1,12 @@
 use pyo3::prelude::*;
+use pyo3::types::PyCFunction;
 use pyo3::Python;
 
 use super::PySeries;
 use crate::error::PyPolarsErr;
 use crate::map::series::{call_lambda_and_extract, ApplyLambda};
 use crate::prelude::*;
+use crate::py_modules::SERIES;
 use crate::{apply_method_all_arrow_series2, raise_err};
 
 #[pymethods]
@@ -218,6 +220,31 @@ impl PySeries {
                         function,
                         0,
                         None
+                    )?;
+
+                    ca.into_series()
+                },
+                Some(DataType::List(inner)) => {
+                    // Make sure the function returns a Series of the correct data type.
+                    let function_owned = function.to_object(py);
+                    let dtype_py = Wrap((*inner).clone()).to_object(py);
+                    let function_wrapped =
+                        PyCFunction::new_closure_bound(py, None, None, move |args, _kwargs| {
+                            Python::with_gil(|py| {
+                                let out = function_owned.call1(py, args)?;
+                                SERIES.call1(py, ("", out, dtype_py.clone()))
+                            })
+                        })?
+                        .to_object(py);
+
+                    let ca = dispatch_apply!(
+                        series,
+                        apply_lambda_with_list_out_type,
+                        py,
+                        function_wrapped,
+                        0,
+                        None,
+                        inner.as_ref()
                     )?;
 
                     ca.into_series()
