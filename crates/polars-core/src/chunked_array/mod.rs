@@ -691,6 +691,14 @@ where
     }
 
     #[inline]
+    pub fn first(&self) -> Option<T::Physical<'_>> {
+        unsafe {
+            let arr = self.downcast_get_unchecked(0);
+            arr.get_unchecked(0)
+        }
+    }
+
+    #[inline]
     pub fn last(&self) -> Option<T::Physical<'_>> {
         unsafe {
             let arr = self.downcast_get_unchecked(self.chunks.len().checked_sub(1)?);

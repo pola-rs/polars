@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 use polars_core::utils::{_set_partition_size, split};
 use crate::frame::_finish_join;
 use rayon::prelude::*;
+use polars_utils::itertools::Itertools;
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -128,7 +129,7 @@ fn ie_join_impl_t<T: PolarsNumericType>(
     Ok((left_row_idx, right_row_idx))
 }
 
-pub fn iejoin_par(
+pub(super) fn iejoin_par(
     left: &DataFrame,
     right: &DataFrame,
     selected_left: Vec<Series>,
@@ -161,47 +162,83 @@ pub fn iejoin_par(
     // Because we do a cartesian product, the number of partitions is squared.
     // We take the sqrt, but we don't expect every partition to produce results and work can be
     // imbalanced, so we multiply the number of partitions by 2, which leads to 2^2= 4
-    // let n_partitions = (_set_partition_size() as f32).sqrt() as usize  * 2;
-    let n_partitions = 2;
-    // dbg!(n_partitions);
+    let n_partitions = (_set_partition_size() as f32).sqrt() as usize  * 2;
     let splitted_a = split(&l1_s_l, n_partitions);
     let splitted_b = split(&l1_s_r, n_partitions);
 
     let cartesian_prod = splitted_a.iter()
         .flat_map(|l| splitted_b.iter().map(move |r| (l, r))).collect::<Vec<_>>();
 
-    // TODO par iter
-    cartesian_prod.iter().flat_map(|(a, b)| {
-        let first = a.get(0)?;
-        let last = a.last()?;
+    let iter = cartesian_prod.par_iter().map(|(l_l1_idx, r_l1_idx)| {
+        if l_l1_idx.is_empty() || r_l1_idx.is_empty() {
+            return Ok(None)
+        }
+        fn get_extrema<'a>(l1_idx: &'a IdxCa, s: &'a Series) -> Option<(AnyValue<'a>, AnyValue<'a>)> {
+            let first = l1_idx.first()?;
+            let last = l1_idx.last()?;
 
-        let start = sl.get(last as usize).unwrap();
-        let end = sl.get(last as usize).unwrap();
-        let min = std::cmp::min_by(start, end)
+            let start = s.get(first as usize).unwrap();
+            let end = s.get(last as usize).unwrap();
+
+            Some(if start < end {
+                (start, end)
+            } else {
+                (end, start)
+            })
+        }
+        let Some((min_l, max_l)) = get_extrema(l_l1_idx, sl) else {return Ok(None)};
+        let Some((min_r, max_r)) = get_extrema(r_l1_idx, sr) else {return Ok(None)};
+
+        let intersects = min_l >= min_r && min_l <= max_r ||
+            min_r >= min_l && min_r <= max_l;
 
 
 
-        dbg!(sl.get(first as usize), sl.get(last as usize));
-        let first = b.get(0)?;
-        let last = b.last()?;
-        dbg!(sr.get(first as usize), sr.get(last as usize));
+        if intersects {
+            let (l, r) = unsafe {
+                (selected_left.iter().map(|s| s.take_unchecked(l_l1_idx)).collect_vec(),
+                 selected_right.iter().map(|s| s.take_unchecked(l_l1_idx)).collect_vec())
 
-        println!("\n\n\n");
+            };
 
+            // Compute the row indexes
+            let (idx_l, idx_r) = iejoin_tuples(l, r, options, None)?;
 
-        Some(())
-    }).collect::<Vec<_>>();
+            // These are row indexes in the slices we have given, so we use those to gather in the
+            // original l1 offset arrays. This gives us indexes in the original tables.
+            unsafe {
+                Ok(Some((
+                    l_l1_idx.take_unchecked(&idx_l),
+                    r_l1_idx.take_unchecked(&idx_r)
+                )))
+            }
+        } else {
+            Ok(None)
+        }
+    });
 
-    dbg!(cartesian_prod.len());
-    todo!()
+    let row_indices = POOL.install(|| {
+        iter.collect::<PolarsResult<Vec<_>>>()
+    })?;
+
+    let mut left_idx = IdxCa::default();
+    let mut right_idx = IdxCa::default();
+    for opt in row_indices {
+        if let Some((l, r)) = opt {
+            left_idx.append(&l);
+            right_idx.append(&r);
+        }
+    }
+    if let Some((offset, end)) = slice {
+        left_idx = left_idx.slice(offset, end);
+        right_idx = right_idx.slice(offset, end);
+    }
+
+    unsafe { materialize_join(left, right, &left_idx, &right_idx, suffix) }
 
 }
 
-/// Inequality join. Matches rows between two DataFrames using two inequality operators
-/// (one of [<, <=, >, >=]).
-/// Based on Khayyat et al. 2015, "Lightning Fast and Space Efficient Inequality Joins"
-/// and extended to work with duplicate values.
-pub fn iejoin(
+pub(super) fn iejoin(
     left: &DataFrame,
     right: &DataFrame,
     selected_left: Vec<Series>,
@@ -210,6 +247,34 @@ pub fn iejoin(
     suffix: Option<PlSmallStr>,
     slice: Option<(i64, usize)>,
 ) -> PolarsResult<DataFrame> {
+
+    let (left_row_idx, right_row_idx)=  iejoin_tuples(selected_left, selected_right, options, slice)?;
+    unsafe { materialize_join(left, right, &left_row_idx, &right_row_idx, suffix) }
+}
+
+unsafe fn materialize_join(left: &DataFrame, right: &DataFrame, left_row_idx: &IdxCa, right_row_idx: &IdxCa, suffix: Option<PlSmallStr>) -> PolarsResult<DataFrame> {
+    let (join_left, join_right) = {
+        POOL.join(
+            || left.take_unchecked(&left_row_idx),
+            || right.take_unchecked(&right_row_idx),
+        )
+    };
+
+    _finish_join(join_left, join_right, suffix)
+
+}
+
+
+/// Inequality join. Matches rows between two DataFrames using two inequality operators
+/// (one of [<, <=, >, >=]).
+/// Based on Khayyat et al. 2015, "Lightning Fast and Space Efficient Inequality Joins"
+/// and extended to work with duplicate values.
+fn iejoin_tuples(
+    selected_left: Vec<Series>,
+    selected_right: Vec<Series>,
+    options: &IEJoinOptions,
+    slice: Option<(i64, usize)>,
+) -> PolarsResult<(IdxCa, IdxCa)> {
     if selected_left.len() != 2 {
         return Err(
             polars_err!(ComputeError: "IEJoin requires exactly two expressions from the left DataFrame"),
@@ -234,6 +299,8 @@ pub fn iejoin(
     let l2_descending = matches!(op2, InequalityOperator::Lt | InequalityOperator::LtEq);
 
     let mut x = selected_left[0].to_physical_repr().into_owned();
+    let left_height = x.len();
+
     x.extend(&selected_right[0].to_physical_repr())?;
     // Rechunk because we will gather.
     let x = x.rechunk();
@@ -277,7 +344,7 @@ pub fn iejoin(
             op2,
             x,
             y_ordered_by_x,
-            left.height()
+            left_height
         )
     })?;
 
@@ -291,13 +358,5 @@ pub fn iejoin(
             right_row_idx.slice(offset, len),
         ),
     };
-
-    let (join_left, join_right) = unsafe {
-        POOL.join(
-            || left.take_unchecked(&left_row_idx),
-            || right.take_unchecked(&right_row_idx),
-        )
-    };
-
-    _finish_join(join_left, join_right, suffix)
+    Ok((left_row_idx, right_row_idx))
 }
