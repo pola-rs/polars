@@ -190,9 +190,7 @@ fn is_nested_null(dtype: &ArrowDataType) -> bool {
         ArrowDataType::Null => true,
         ArrowDataType::LargeList(field) => is_nested_null(field.dtype()),
         ArrowDataType::FixedSizeList(field, _) => is_nested_null(field.dtype()),
-        ArrowDataType::Struct(fields) => {
-            fields.iter().all(|field| is_nested_null(field.dtype()))
-        },
+        ArrowDataType::Struct(fields) => fields.iter().all(|field| is_nested_null(field.dtype())),
         _ => false,
     }
 }
@@ -217,8 +215,7 @@ pub fn convert_inner_type(array: &dyn Array, dtype: &ArrowDataType) -> Box<dyn A
             let array = array.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
             let inner = array.values();
             let new_values = convert_inner_type(inner.as_ref(), field.dtype());
-            let dtype =
-                FixedSizeListArray::default_datatype(new_values.dtype().clone(), *width);
+            let dtype = FixedSizeListArray::default_datatype(new_values.dtype().clone(), *width);
             FixedSizeListArray::new(dtype, new_values, array.validity().cloned()).boxed()
         },
         ArrowDataType::Struct(fields) => {

@@ -71,10 +71,7 @@ impl StructFunction {
                         .iter()
                         .map(|fld| {
                             let name = fld.name();
-                            Field::new(
-                                format_pl_smallstr!("{prefix}{name}"),
-                                fld.dtype().clone(),
-                            )
+                            Field::new(format_pl_smallstr!("{prefix}{name}"), fld.dtype().clone())
                         })
                         .collect();
                     Ok(DataType::Struct(fields))
@@ -87,10 +84,7 @@ impl StructFunction {
                         .iter()
                         .map(|fld| {
                             let name = fld.name();
-                            Field::new(
-                                format_pl_smallstr!("{name}{suffix}"),
-                                fld.dtype().clone(),
-                            )
+                            Field::new(format_pl_smallstr!("{name}{suffix}"), fld.dtype().clone())
                         })
                         .collect();
                     Ok(DataType::Struct(fields))

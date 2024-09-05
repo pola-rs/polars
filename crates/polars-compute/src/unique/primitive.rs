@@ -23,12 +23,7 @@ impl<T: NativeType> PrimitiveRangedUniqueState<T>
 where
     T: Add<T, Output = T> + Sub<T, Output = T> + FromPrimitive + IsFloat,
 {
-    pub fn new(
-        min_value: T,
-        max_value: T,
-        has_null: bool,
-        dtype: ArrowDataType,
-    ) -> Option<Self> {
+    pub fn new(min_value: T, max_value: T, has_null: bool, dtype: ArrowDataType) -> Option<Self> {
         // We cannot really do this for floating point number as these are not as discrete as
         // integers.
         if T::is_float() {

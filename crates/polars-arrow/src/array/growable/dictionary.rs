@@ -84,12 +84,8 @@ impl<'a, T: DictionaryKey> GrowableDictionary<'a, T> {
 
         // SAFETY: the invariant of this struct ensures that this is up-held
         unsafe {
-            DictionaryArray::<T>::try_new_unchecked(
-                self.dtype.clone(),
-                keys,
-                self.values.clone(),
-            )
-            .unwrap()
+            DictionaryArray::<T>::try_new_unchecked(self.dtype.clone(), keys, self.values.clone())
+                .unwrap()
         }
     }
 }

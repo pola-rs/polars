@@ -390,9 +390,7 @@ fn mmap_fixed_size_list<T: AsRef<[u8]>>(
     variadic_buffer_counts: &mut VecDeque<usize>,
     buffers: &mut VecDeque<IpcBuffer>,
 ) -> PolarsResult<ArrowArray> {
-    let child = FixedSizeListArray::try_child_and_size(dtype)?
-        .0
-        .dtype();
+    let child = FixedSizeListArray::try_child_and_size(dtype)?.0.dtype();
     let (num_rows, null_count) = get_num_rows_and_null_count(node)?;
 
     let data_ref = data.as_ref().as_ref();

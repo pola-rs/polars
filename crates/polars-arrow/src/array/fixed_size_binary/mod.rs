@@ -181,10 +181,7 @@ impl FixedSizeBinaryArray {
     /// Panics iff the dtype is not supported for the physical type.
     #[inline]
     pub fn to(self, dtype: ArrowDataType) -> Self {
-        match (
-            dtype.to_logical_type(),
-            self.dtype().to_logical_type(),
-        ) {
+        match (dtype.to_logical_type(), self.dtype().to_logical_type()) {
             (ArrowDataType::FixedSizeBinary(size_a), ArrowDataType::FixedSizeBinary(size_b))
                 if size_a == size_b => {},
             _ => panic!("Wrong DataType"),

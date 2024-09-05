@@ -187,8 +187,7 @@ pub trait ChunkCast {
     }
 
     /// Cast a [`ChunkedArray`] to [`DataType`]
-    fn cast_with_options(&self, dtype: &DataType, options: CastOptions)
-        -> PolarsResult<Series>;
+    fn cast_with_options(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Series>;
 
     /// Does not check if the cast is a valid one and may over/underflow
     ///

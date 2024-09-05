@@ -98,9 +98,7 @@ pub(crate) fn finish_reader<R: ArrowReader>(
             // Create an empty dataframe with the correct data types
             let empty_cols = arrow_schema
                 .iter_values()
-                .map(|fld| {
-                    Series::try_from((fld.name.clone(), new_empty_array(fld.dtype.clone())))
-                })
+                .map(|fld| Series::try_from((fld.name.clone(), new_empty_array(fld.dtype.clone()))))
                 .collect::<PolarsResult<_>>()?;
             DataFrame::new(empty_cols)?
         } else {

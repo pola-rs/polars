@@ -201,30 +201,27 @@ where
             DataType::Struct(fields) => {
                 cast_single_to_struct(self.name().clone(), &self.chunks, fields, options)
             },
-            _ => cast_impl_inner(self.name().clone(), &self.chunks, dtype, options).map(
-                |mut s| {
-                    // maintain sorted if data types
-                    // - remain signed
-                    // - unsigned -> signed
-                    // this may still fail with overflow?
-                    let dtype = self.dtype();
+            _ => cast_impl_inner(self.name().clone(), &self.chunks, dtype, options).map(|mut s| {
+                // maintain sorted if data types
+                // - remain signed
+                // - unsigned -> signed
+                // this may still fail with overflow?
+                let dtype = self.dtype();
 
-                    let to_signed = dtype.is_signed_integer();
-                    let unsigned2unsigned =
-                        dtype.is_unsigned_integer() && dtype.is_unsigned_integer();
-                    let allowed = to_signed || unsigned2unsigned;
+                let to_signed = dtype.is_signed_integer();
+                let unsigned2unsigned = dtype.is_unsigned_integer() && dtype.is_unsigned_integer();
+                let allowed = to_signed || unsigned2unsigned;
 
-                    if (allowed)
+                if (allowed)
                     && (s.null_count() == self.null_count())
                     // physical to logicals
                     || (self.dtype().to_physical() == dtype.to_physical())
-                    {
-                        let is_sorted = self.is_sorted_flag();
-                        s.set_sorted_flag(is_sorted)
-                    }
-                    s
-                },
-            ),
+                {
+                    let is_sorted = self.is_sorted_flag();
+                    s.set_sorted_flag(is_sorted)
+                }
+                s
+            }),
         }
     }
 }
@@ -233,11 +230,7 @@ impl<T> ChunkCast for ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
-    fn cast_with_options(
-        &self,
-        dtype: &DataType,
-        options: CastOptions,
-    ) -> PolarsResult<Series> {
+    fn cast_with_options(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Series> {
         self.cast_impl(dtype, options)
     }
 
@@ -269,11 +262,7 @@ where
 }
 
 impl ChunkCast for StringChunked {
-    fn cast_with_options(
-        &self,
-        dtype: &DataType,
-        options: CastOptions,
-    ) -> PolarsResult<Series> {
+    fn cast_with_options(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Series> {
         match dtype {
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(rev_map, ordering) => match rev_map {
@@ -401,11 +390,7 @@ impl StringChunked {
 }
 
 impl ChunkCast for BinaryChunked {
-    fn cast_with_options(
-        &self,
-        dtype: &DataType,
-        options: CastOptions,
-    ) -> PolarsResult<Series> {
+    fn cast_with_options(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Series> {
         match dtype {
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => {
@@ -424,11 +409,7 @@ impl ChunkCast for BinaryChunked {
 }
 
 impl ChunkCast for BinaryOffsetChunked {
-    fn cast_with_options(
-        &self,
-        dtype: &DataType,
-        options: CastOptions,
-    ) -> PolarsResult<Series> {
+    fn cast_with_options(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Series> {
         match dtype {
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => {
@@ -444,11 +425,7 @@ impl ChunkCast for BinaryOffsetChunked {
 }
 
 impl ChunkCast for BooleanChunked {
-    fn cast_with_options(
-        &self,
-        dtype: &DataType,
-        options: CastOptions,
-    ) -> PolarsResult<Series> {
+    fn cast_with_options(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Series> {
         match dtype {
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => {
@@ -466,11 +443,7 @@ impl ChunkCast for BooleanChunked {
 /// We cannot cast anything to or from List/LargeList
 /// So this implementation casts the inner type
 impl ChunkCast for ListChunked {
-    fn cast_with_options(
-        &self,
-        dtype: &DataType,
-        options: CastOptions,
-    ) -> PolarsResult<Series> {
+    fn cast_with_options(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Series> {
         use DataType::*;
         match dtype {
             List(child_type) => {
@@ -540,11 +513,7 @@ impl ChunkCast for ListChunked {
 /// So this implementation casts the inner type
 #[cfg(feature = "dtype-array")]
 impl ChunkCast for ArrayChunked {
-    fn cast_with_options(
-        &self,
-        dtype: &DataType,
-        options: CastOptions,
-    ) -> PolarsResult<Series> {
+    fn cast_with_options(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Series> {
         use DataType::*;
         match dtype {
             Array(child_type, width) => {
@@ -694,8 +663,7 @@ fn cast_fixed_size_list(
 
     let new_values = new_inner.array_ref(0).clone();
 
-    let dtype =
-        FixedSizeListArray::default_datatype(new_values.dtype().clone(), ca.width());
+    let dtype = FixedSizeListArray::default_datatype(new_values.dtype().clone(), ca.width());
     let new_arr = FixedSizeListArray::new(dtype, new_values, arr.validity().cloned());
     Ok((Box::new(new_arr), inner_dtype))
 }

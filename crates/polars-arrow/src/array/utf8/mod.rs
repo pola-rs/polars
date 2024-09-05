@@ -260,12 +260,7 @@ impl<O: Offset> Utf8Array<O> {
             match bitmap.into_mut() {
                 // SAFETY: invariants are preserved
                 Left(bitmap) => Left(unsafe {
-                    Utf8Array::new_unchecked(
-                        self.dtype,
-                        self.offsets,
-                        self.values,
-                        Some(bitmap),
-                    )
+                    Utf8Array::new_unchecked(self.dtype, self.offsets, self.values, Some(bitmap))
                 }),
                 Right(mutable_bitmap) => match (self.values.into_mut(), self.offsets.into_mut()) {
                     (Left(values), Left(offsets)) => {

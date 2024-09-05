@@ -406,11 +406,7 @@ impl PhysicalExpr for WindowExpr {
 
         if df.is_empty() {
             let field = self.phys_function.to_field(&df.schema())?;
-            return Ok(Series::full_null(
-                field.name().clone(),
-                0,
-                field.dtype(),
-            ));
+            return Ok(Series::full_null(field.name().clone(), 0, field.dtype()));
         }
 
         let group_by_columns = self

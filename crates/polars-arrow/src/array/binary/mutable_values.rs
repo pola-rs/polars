@@ -24,12 +24,7 @@ pub struct MutableBinaryValuesArray<O: Offset> {
 
 impl<O: Offset> From<MutableBinaryValuesArray<O>> for BinaryArray<O> {
     fn from(other: MutableBinaryValuesArray<O>) -> Self {
-        BinaryArray::<O>::new(
-            other.dtype,
-            other.offsets.into(),
-            other.values.into(),
-            None,
-        )
+        BinaryArray::<O>::new(other.dtype, other.offsets.into(), other.values.into(), None)
     }
 }
 

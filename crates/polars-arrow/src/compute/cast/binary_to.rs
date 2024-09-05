@@ -173,12 +173,7 @@ pub fn fixed_size_binary_binary<O: Offset>(
 ) -> BinaryArray<O> {
     let values = from.values().clone();
     let offsets = fixed_size_to_offsets(values.len(), from.size());
-    BinaryArray::<O>::new(
-        to_dtype,
-        offsets.into(),
-        values,
-        from.validity().cloned(),
-    )
+    BinaryArray::<O>::new(to_dtype, offsets.into(), values, from.validity().cloned())
 }
 
 pub fn fixed_size_binary_to_binview(from: &FixedSizeBinaryArray) -> BinaryViewArray {
@@ -248,10 +243,7 @@ pub fn fixed_size_binary_to_binview(from: &FixedSizeBinaryArray) -> BinaryViewAr
 }
 
 /// Conversion of binary
-pub fn binary_to_list<O: Offset>(
-    from: &BinaryArray<O>,
-    to_dtype: ArrowDataType,
-) -> ListArray<O> {
+pub fn binary_to_list<O: Offset>(from: &BinaryArray<O>, to_dtype: ArrowDataType) -> ListArray<O> {
     let values = from.values().clone();
     let values = PrimitiveArray::new(ArrowDataType::UInt8, values, None);
     ListArray::<O>::new(

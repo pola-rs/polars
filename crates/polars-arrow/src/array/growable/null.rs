@@ -19,10 +19,7 @@ impl Default for GrowableNull {
 impl GrowableNull {
     /// Creates a new [`GrowableNull`].
     pub fn new(dtype: ArrowDataType) -> Self {
-        Self {
-            dtype,
-            length: 0,
-        }
+        Self { dtype, length: 0 }
     }
 }
 

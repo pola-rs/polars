@@ -139,11 +139,7 @@ impl LiteralValue {
             Int(v) => materialize_dyn_int(*v),
             Float(v) => AnyValue::Float64(*v),
             StrCat(v) => AnyValue::String(v),
-            Range {
-                low,
-                high,
-                dtype,
-            } => {
+            Range { low, high, dtype } => {
                 let opt_s = match dtype {
                     DataType::Int32 => {
                         if *low < i32::MIN as i64 || *high > i32::MAX as i64 {
@@ -502,11 +498,7 @@ impl Hash for LiteralValue {
                     rng = rng.rotate_right(17).wrapping_add(RANDOM);
                 }
             },
-            LiteralValue::Range {
-                low,
-                high,
-                dtype,
-            } => {
+            LiteralValue::Range { low, high, dtype } => {
                 low.hash(state);
                 high.hash(state);
                 dtype.hash(state)

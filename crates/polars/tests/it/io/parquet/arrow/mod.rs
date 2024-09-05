@@ -429,9 +429,7 @@ pub fn pyarrow_nested_nullable(column: &str) -> Box<dyn Array> {
                 "list_decimal256" => {
                     Field::new("item".into(), ArrowDataType::Decimal256(9, 0), true)
                 },
-                "list_struct_nullable" => {
-                    Field::new("item".into(), values.dtype().clone(), true)
-                },
+                "list_struct_nullable" => Field::new("item".into(), values.dtype().clone(), true),
                 "list_struct_list_nullable" => {
                     Field::new("item".into(), values.dtype().clone(), true)
                 },
@@ -1451,11 +1449,8 @@ fn assert_array_roundtrip(
     array: Box<dyn Array>,
     limit: Option<usize>,
 ) -> PolarsResult<()> {
-    let schema = ArrowSchema::from_iter([Field::new(
-        "a1".into(),
-        array.dtype().clone(),
-        is_nullable,
-    )]);
+    let schema =
+        ArrowSchema::from_iter([Field::new("a1".into(), array.dtype().clone(), is_nullable)]);
     let chunk = RecordBatchT::try_new(vec![array])?;
 
     assert_roundtrip(schema, chunk, limit)
@@ -1584,8 +1579,7 @@ fn nested_dict_data(
         Some([true, false, true, true].into()),
     )?;
 
-    let schema =
-        ArrowSchema::from_iter([Field::new("c1".into(), values.dtype().clone(), true)]);
+    let schema = ArrowSchema::from_iter([Field::new("c1".into(), values.dtype().clone(), true)]);
     let chunk = RecordBatchT::try_new(vec![values.boxed()])?;
 
     Ok((schema, chunk))

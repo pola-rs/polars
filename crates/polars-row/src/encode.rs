@@ -483,10 +483,7 @@ fn allocate_rows_buf(
         values.reserve(current_offset);
         current_offset
     } else {
-        let row_size: usize = columns
-            .iter()
-            .map(|arr| encoded_size(arr.dtype()))
-            .sum();
+        let row_size: usize = columns.iter().map(|arr| encoded_size(arr.dtype())).sum();
         let n_bytes = num_rows * row_size;
         values.clear();
         values.reserve(n_bytes);

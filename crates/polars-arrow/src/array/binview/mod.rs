@@ -316,16 +316,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     #[inline]
     pub fn new_null(dtype: ArrowDataType, length: usize) -> Self {
         let validity = Some(Bitmap::new_zeroed(length));
-        unsafe {
-            Self::new_unchecked(
-                dtype,
-                Buffer::zeroed(length),
-                Arc::from([]),
-                validity,
-                0,
-                0,
-            )
-        }
+        unsafe { Self::new_unchecked(dtype, Buffer::zeroed(length), Arc::from([]), validity, 0, 0) }
     }
 
     /// Returns the element at index `i`

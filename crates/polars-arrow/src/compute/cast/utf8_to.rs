@@ -56,10 +56,7 @@ pub fn utf8_large_to_utf8(from: &Utf8Array<i64>) -> PolarsResult<Utf8Array<i32>>
 }
 
 /// Conversion to binary
-pub fn utf8_to_binary<O: Offset>(
-    from: &Utf8Array<O>,
-    to_dtype: ArrowDataType,
-) -> BinaryArray<O> {
+pub fn utf8_to_binary<O: Offset>(from: &Utf8Array<O>, to_dtype: ArrowDataType) -> BinaryArray<O> {
     // SAFETY: erasure of an invariant is always safe
     unsafe {
         BinaryArray::<O>::new(

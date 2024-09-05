@@ -12,8 +12,7 @@ fn _test_round_trip(array: Box<dyn Array>, expected: Box<dyn Array>) -> PolarsRe
 
     // import references
     let result_field = unsafe { ffi::import_field_from_c(&schema_ffi)? };
-    let result_array =
-        unsafe { ffi::import_array_from_c(array_ffi, result_field.dtype.clone())? };
+    let result_array = unsafe { ffi::import_array_from_c(array_ffi, result_field.dtype.clone())? };
 
     assert_eq!(&result_array, &expected);
     assert_eq!(result_field, field);

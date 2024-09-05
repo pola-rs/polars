@@ -18,11 +18,7 @@ use crate::types::NativeType;
 /// This implies that the operation must be infallible for any value of the
 /// corresponding type or this function may panic.
 #[inline]
-pub fn unary<I, F, O>(
-    array: &PrimitiveArray<I>,
-    op: F,
-    dtype: ArrowDataType,
-) -> PrimitiveArray<O>
+pub fn unary<I, F, O>(array: &PrimitiveArray<I>, op: F, dtype: ArrowDataType) -> PrimitiveArray<O>
 where
     I: NativeType,
     O: NativeType,

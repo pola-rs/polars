@@ -55,10 +55,7 @@ impl PhysicalExpr for AliasExpr {
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         Ok(Field::new(
             self.name.clone(),
-            self.physical_expr
-                .to_field(input_schema)?
-                .dtype()
-                .clone(),
+            self.physical_expr.to_field(input_schema)?.dtype().clone(),
         ))
     }
 

@@ -214,9 +214,7 @@ impl AExpr {
                     },
                 }
             },
-            Cast {
-                expr, dtype, ..
-            } => {
+            Cast { expr, dtype, .. } => {
                 let field = arena.get(*expr).to_field_impl(schema, arena, nested)?;
                 Ok(Field::new(field.name().clone(), dtype.clone()))
             },

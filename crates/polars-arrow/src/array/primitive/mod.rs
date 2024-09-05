@@ -350,19 +350,11 @@ impl<T: NativeType> PrimitiveArray<T> {
 
         if let Some(bitmap) = self.validity {
             match bitmap.into_mut() {
-                Left(bitmap) => Left(PrimitiveArray::new(
-                    self.dtype,
-                    self.values,
-                    Some(bitmap),
-                )),
+                Left(bitmap) => Left(PrimitiveArray::new(self.dtype, self.values, Some(bitmap))),
                 Right(mutable_bitmap) => match self.values.into_mut() {
                     Right(values) => Right(
-                        MutablePrimitiveArray::try_new(
-                            self.dtype,
-                            values,
-                            Some(mutable_bitmap),
-                        )
-                        .unwrap(),
+                        MutablePrimitiveArray::try_new(self.dtype, values, Some(mutable_bitmap))
+                            .unwrap(),
                     ),
                     Left(values) => Left(PrimitiveArray::new(
                         self.dtype,

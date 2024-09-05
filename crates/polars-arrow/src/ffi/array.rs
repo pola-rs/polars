@@ -353,11 +353,7 @@ fn buffer_offset(array: &ArrowArray, dtype: &ArrowDataType, i: usize) -> usize {
 }
 
 /// Returns the length, in slots, of the buffer `i` (indexed according to the C data interface)
-unsafe fn buffer_len(
-    array: &ArrowArray,
-    dtype: &ArrowDataType,
-    i: usize,
-) -> PolarsResult<usize> {
+unsafe fn buffer_len(array: &ArrowArray, dtype: &ArrowDataType, i: usize) -> PolarsResult<usize> {
     Ok(match (dtype.to_physical_type(), i) {
         (PhysicalType::FixedSizeBinary, 1) => {
             if let ArrowDataType::FixedSizeBinary(size) = dtype.to_logical_type() {

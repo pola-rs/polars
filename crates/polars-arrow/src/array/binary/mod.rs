@@ -302,21 +302,15 @@ impl<O: Offset> BinaryArray<O> {
                 (Left(values), Left(offsets)) => {
                     Left(BinaryArray::new(self.dtype, offsets, values, None))
                 },
-                (Left(values), Right(offsets)) => Left(BinaryArray::new(
-                    self.dtype,
-                    offsets.into(),
-                    values,
-                    None,
-                )),
-                (Right(values), Left(offsets)) => Left(BinaryArray::new(
-                    self.dtype,
-                    offsets,
-                    values.into(),
-                    None,
-                )),
-                (Right(values), Right(offsets)) => Right(
-                    MutableBinaryArray::try_new(self.dtype, offsets, values, None).unwrap(),
-                ),
+                (Left(values), Right(offsets)) => {
+                    Left(BinaryArray::new(self.dtype, offsets.into(), values, None))
+                },
+                (Right(values), Left(offsets)) => {
+                    Left(BinaryArray::new(self.dtype, offsets, values.into(), None))
+                },
+                (Right(values), Right(offsets)) => {
+                    Right(MutableBinaryArray::try_new(self.dtype, offsets, values, None).unwrap())
+                },
             }
         }
     }

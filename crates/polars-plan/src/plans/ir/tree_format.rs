@@ -30,9 +30,7 @@ impl fmt::Display for TreeFmtAExpr<'_> {
             AExpr::Column(name) => return write!(f, "col({})", name),
             AExpr::Literal(lv) => return write!(f, "lit({lv:?})"),
             AExpr::BinaryExpr { op, .. } => return write!(f, "binary: {}", op),
-            AExpr::Cast {
-                dtype, options, ..
-            } => {
+            AExpr::Cast { dtype, options, .. } => {
                 return if options.strict() {
                     write!(f, "strict cast({})", dtype)
                 } else {

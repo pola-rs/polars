@@ -105,22 +105,19 @@ impl RangedUniqueKernel for BooleanUniqueKernelState {
 
 impl GenericUniqueKernel for BooleanArray {
     fn unique(&self) -> Self {
-        let mut state =
-            BooleanUniqueKernelState::new(self.null_count() > 0, self.dtype().clone());
+        let mut state = BooleanUniqueKernelState::new(self.null_count() > 0, self.dtype().clone());
         state.append(self);
         state.finalize_unique()
     }
 
     fn n_unique(&self) -> usize {
-        let mut state =
-            BooleanUniqueKernelState::new(self.null_count() > 0, self.dtype().clone());
+        let mut state = BooleanUniqueKernelState::new(self.null_count() > 0, self.dtype().clone());
         state.append(self);
         state.finalize_n_unique()
     }
 
     fn n_unique_non_null(&self) -> usize {
-        let mut state =
-            BooleanUniqueKernelState::new(self.null_count() > 0, self.dtype().clone());
+        let mut state = BooleanUniqueKernelState::new(self.null_count() > 0, self.dtype().clone());
         state.append(self);
         state.finalize_n_unique_non_null()
     }

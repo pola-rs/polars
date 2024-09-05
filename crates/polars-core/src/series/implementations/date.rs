@@ -246,9 +246,7 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
                 .into_series()),
             #[cfg(feature = "dtype-datetime")]
             DataType::Datetime(_, _) => {
-                let mut out = self
-                    .0
-                    .cast_with_options(dtype, CastOptions::NonStrict)?;
+                let mut out = self.0.cast_with_options(dtype, CastOptions::NonStrict)?;
                 out.set_sorted_flag(self.0.is_sorted_flag());
                 Ok(out)
             },

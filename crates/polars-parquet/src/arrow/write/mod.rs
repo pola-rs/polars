@@ -287,8 +287,7 @@ pub fn array_to_pages(
     options: WriteOptions,
     mut encoding: Encoding,
 ) -> PolarsResult<DynIter<'static, PolarsResult<Page>>> {
-    if let ArrowDataType::Dictionary(key_type, _, _) = primitive_array.dtype().to_logical_type()
-    {
+    if let ArrowDataType::Dictionary(key_type, _, _) = primitive_array.dtype().to_logical_type() {
         return match_integer_type!(key_type, |$T| {
             dictionary::array_to_pages::<$T>(
                 primitive_array.as_any().downcast_ref().unwrap(),
@@ -1029,10 +1028,7 @@ fn transverse_recursive<T, F: Fn(&ArrowDataType) -> T + Clone>(
 /// items based on `map`.
 ///
 /// This is used to assign an [`Encoding`] to every parquet column based on the columns' type (see example)
-pub fn transverse<T, F: Fn(&ArrowDataType) -> T + Clone>(
-    dtype: &ArrowDataType,
-    map: F,
-) -> Vec<T> {
+pub fn transverse<T, F: Fn(&ArrowDataType) -> T + Clone>(dtype: &ArrowDataType, map: F) -> Vec<T> {
     let mut encodings = vec![];
     transverse_recursive(dtype, map, &mut encodings);
     encodings

@@ -33,13 +33,12 @@ impl<'a> GrowableFixedSizeList<'a> {
             use_validity = true;
         };
 
-        let size = if let ArrowDataType::FixedSizeList(_, size) =
-            &arrays[0].dtype().to_logical_type()
-        {
-            *size
-        } else {
-            unreachable!("`GrowableFixedSizeList` expects `DataType::FixedSizeList`")
-        };
+        let size =
+            if let ArrowDataType::FixedSizeList(_, size) = &arrays[0].dtype().to_logical_type() {
+                *size
+            } else {
+                unreachable!("`GrowableFixedSizeList` expects `DataType::FixedSizeList`")
+            };
 
         let inner = arrays
             .iter()

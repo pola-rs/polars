@@ -473,12 +473,8 @@ fn rg_to_dfs_prefiltered(
                             MaskSetting::Auto => {
                                 // Prefiltering is more expensive for nested types so we make the cut-off
                                 // higher.
-                                let is_nested = schema
-                                    .get_at_index(col_idx)
-                                    .unwrap()
-                                    .1
-                                    .dtype
-                                    .is_nested();
+                                let is_nested =
+                                    schema.get_at_index(col_idx).unwrap().1.dtype.is_nested();
 
                                 // We empirically selected these numbers.
                                 let do_prefilter = (is_nested && prefilter_cost <= 0.01)

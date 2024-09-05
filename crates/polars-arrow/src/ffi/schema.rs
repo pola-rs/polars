@@ -71,8 +71,7 @@ impl ArrowSchema {
         let children_ptr = schema_children(field.dtype(), &mut flags);
         let n_children = children_ptr.len() as i64;
 
-        let dictionary = if let ArrowDataType::Dictionary(_, values, is_ordered) = field.dtype()
-        {
+        let dictionary = if let ArrowDataType::Dictionary(_, values, is_ordered) = field.dtype() {
             flags += *is_ordered as i64;
             // we do not store field info in the dict values, so can't recover it all :(
             let field = Field::new(PlSmallStr::EMPTY, values.as_ref().clone(), true);
@@ -83,30 +82,30 @@ impl ArrowSchema {
 
         let metadata = &field.metadata;
 
-        let metadata =
-            if let ArrowDataType::Extension(name, _, extension_metadata) = field.dtype() {
-                // append extension information.
-                let mut metadata = metadata.clone();
+        let metadata = if let ArrowDataType::Extension(name, _, extension_metadata) = field.dtype()
+        {
+            // append extension information.
+            let mut metadata = metadata.clone();
 
-                // metadata
-                if let Some(extension_metadata) = extension_metadata {
-                    metadata.insert(
-                        PlSmallStr::from_static("ARROW:extension:metadata"),
-                        extension_metadata.clone(),
-                    );
-                }
-
+            // metadata
+            if let Some(extension_metadata) = extension_metadata {
                 metadata.insert(
-                    PlSmallStr::from_static("ARROW:extension:name"),
-                    name.clone(),
+                    PlSmallStr::from_static("ARROW:extension:metadata"),
+                    extension_metadata.clone(),
                 );
+            }
 
-                Some(metadata_to_bytes(&metadata))
-            } else if !metadata.is_empty() {
-                Some(metadata_to_bytes(metadata))
-            } else {
-                None
-            };
+            metadata.insert(
+                PlSmallStr::from_static("ARROW:extension:name"),
+                name.clone(),
+            );
+
+            Some(metadata_to_bytes(&metadata))
+        } else if !metadata.is_empty() {
+            Some(metadata_to_bytes(metadata))
+        } else {
+            None
+        };
 
         let name = CString::new(name.as_bytes()).unwrap();
         let format = CString::new(format).unwrap();

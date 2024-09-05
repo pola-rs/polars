@@ -258,20 +258,14 @@ pub(crate) fn _deserialize<'a, A: Borrow<BorrowedValue<'a>>>(
         ArrowDataType::Int8 => {
             fill_array_from::<_, _, PrimitiveArray<i8>>(deserialize_primitive_into, dtype, rows)
         },
-        ArrowDataType::Int16 => fill_array_from::<_, _, PrimitiveArray<i16>>(
-            deserialize_primitive_into,
-            dtype,
-            rows,
-        ),
+        ArrowDataType::Int16 => {
+            fill_array_from::<_, _, PrimitiveArray<i16>>(deserialize_primitive_into, dtype, rows)
+        },
         ArrowDataType::Int32
         | ArrowDataType::Date32
         | ArrowDataType::Time32(_)
         | ArrowDataType::Interval(IntervalUnit::YearMonth) => {
-            fill_array_from::<_, _, PrimitiveArray<i32>>(
-                deserialize_primitive_into,
-                dtype,
-                rows,
-            )
+            fill_array_from::<_, _, PrimitiveArray<i32>>(deserialize_primitive_into, dtype, rows)
         },
         ArrowDataType::Interval(IntervalUnit::DayTime) => {
             unimplemented!("There is no natural representation of DayTime in JSON.")
@@ -279,11 +273,9 @@ pub(crate) fn _deserialize<'a, A: Borrow<BorrowedValue<'a>>>(
         ArrowDataType::Int64
         | ArrowDataType::Date64
         | ArrowDataType::Time64(_)
-        | ArrowDataType::Duration(_) => fill_array_from::<_, _, PrimitiveArray<i64>>(
-            deserialize_primitive_into,
-            dtype,
-            rows,
-        ),
+        | ArrowDataType::Duration(_) => {
+            fill_array_from::<_, _, PrimitiveArray<i64>>(deserialize_primitive_into, dtype, rows)
+        },
         ArrowDataType::Timestamp(tu, tz) => {
             let iter = rows.iter().map(|row| match row.borrow() {
                 BorrowedValue::Static(StaticNode::I64(v)) => Some(*v),
@@ -301,32 +293,22 @@ pub(crate) fn _deserialize<'a, A: Borrow<BorrowedValue<'a>>>(
         ArrowDataType::UInt8 => {
             fill_array_from::<_, _, PrimitiveArray<u8>>(deserialize_primitive_into, dtype, rows)
         },
-        ArrowDataType::UInt16 => fill_array_from::<_, _, PrimitiveArray<u16>>(
-            deserialize_primitive_into,
-            dtype,
-            rows,
-        ),
-        ArrowDataType::UInt32 => fill_array_from::<_, _, PrimitiveArray<u32>>(
-            deserialize_primitive_into,
-            dtype,
-            rows,
-        ),
-        ArrowDataType::UInt64 => fill_array_from::<_, _, PrimitiveArray<u64>>(
-            deserialize_primitive_into,
-            dtype,
-            rows,
-        ),
+        ArrowDataType::UInt16 => {
+            fill_array_from::<_, _, PrimitiveArray<u16>>(deserialize_primitive_into, dtype, rows)
+        },
+        ArrowDataType::UInt32 => {
+            fill_array_from::<_, _, PrimitiveArray<u32>>(deserialize_primitive_into, dtype, rows)
+        },
+        ArrowDataType::UInt64 => {
+            fill_array_from::<_, _, PrimitiveArray<u64>>(deserialize_primitive_into, dtype, rows)
+        },
         ArrowDataType::Float16 => unreachable!(),
-        ArrowDataType::Float32 => fill_array_from::<_, _, PrimitiveArray<f32>>(
-            deserialize_primitive_into,
-            dtype,
-            rows,
-        ),
-        ArrowDataType::Float64 => fill_array_from::<_, _, PrimitiveArray<f64>>(
-            deserialize_primitive_into,
-            dtype,
-            rows,
-        ),
+        ArrowDataType::Float32 => {
+            fill_array_from::<_, _, PrimitiveArray<f32>>(deserialize_primitive_into, dtype, rows)
+        },
+        ArrowDataType::Float64 => {
+            fill_array_from::<_, _, PrimitiveArray<f64>>(deserialize_primitive_into, dtype, rows)
+        },
         ArrowDataType::LargeUtf8 => {
             fill_generic_array_from::<_, _, Utf8Array<i64>>(deserialize_utf8_into, rows)
         },

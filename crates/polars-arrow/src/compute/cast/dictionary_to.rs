@@ -87,11 +87,8 @@ where
     if casted_keys.null_count() > keys.null_count() {
         polars_bail!(ComputeError: "overflow")
     } else {
-        let dtype = ArrowDataType::Dictionary(
-            K2::KEY_TYPE,
-            Box::new(values.dtype().clone()),
-            is_ordered,
-        );
+        let dtype =
+            ArrowDataType::Dictionary(K2::KEY_TYPE, Box::new(values.dtype().clone()), is_ordered);
         // SAFETY: this is safe because given a type `T` that fits in a `usize`, casting it to type `P` either overflows or also fits in a `usize`
         unsafe { DictionaryArray::try_new_unchecked(dtype, casted_keys, values.clone()) }
     }
@@ -114,11 +111,8 @@ where
     if casted_keys.null_count() > keys.null_count() {
         polars_bail!(ComputeError: "overflow")
     } else {
-        let dtype = ArrowDataType::Dictionary(
-            K2::KEY_TYPE,
-            Box::new(values.dtype().clone()),
-            is_ordered,
-        );
+        let dtype =
+            ArrowDataType::Dictionary(K2::KEY_TYPE, Box::new(values.dtype().clone()), is_ordered);
         // some of the values may not fit in `usize` and thus this needs to be checked
         DictionaryArray::try_new(dtype, casted_keys, values.clone())
     }

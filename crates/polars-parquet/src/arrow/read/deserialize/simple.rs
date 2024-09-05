@@ -437,20 +437,12 @@ fn timestamp(
                 .collect_n(filter)?,
         ),
         (a, true) => Box::new(
-            PageDecoder::new(
-                pages,
-                dtype,
-                primitive::IntDecoder::closure(|x: i64| x * a),
-            )?
-            .collect_n(filter)?,
+            PageDecoder::new(pages, dtype, primitive::IntDecoder::closure(|x: i64| x * a))?
+                .collect_n(filter)?,
         ),
         (a, false) => Box::new(
-            PageDecoder::new(
-                pages,
-                dtype,
-                primitive::IntDecoder::closure(|x: i64| x / a),
-            )?
-            .collect_n(filter)?,
+            PageDecoder::new(pages, dtype, primitive::IntDecoder::closure(|x: i64| x / a))?
+                .collect_n(filter)?,
         ),
     })
 }

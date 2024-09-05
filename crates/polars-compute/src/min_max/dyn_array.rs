@@ -12,8 +12,7 @@ macro_rules! call_op {
     }};
     (dt: $T:ty, $scalar:ty, $arr:expr, $op:path) => {{
         let arr: &$T = $arr.as_any().downcast_ref().unwrap();
-        $op(arr)
-            .map(|v| Box::new(<$scalar>::new(arr.dtype().clone(), Some(v))) as Box<dyn Scalar>)
+        $op(arr).map(|v| Box::new(<$scalar>::new(arr.dtype().clone(), Some(v))) as Box<dyn Scalar>)
     }};
     ($T:ty, $scalar:ty, $arr:expr, $op:path, ret_two) => {{
         let arr: &$T = $arr.as_any().downcast_ref().unwrap();

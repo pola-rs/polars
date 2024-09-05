@@ -221,10 +221,7 @@ where
         #[cfg(debug_assertions)]
         {
             if !chunks.is_empty() && !chunks[0].is_empty() && dtype.is_primitive() {
-                assert_eq!(
-                    chunks[0].dtype(),
-                    &dtype.to_arrow(CompatLevel::newest())
-                )
+                assert_eq!(chunks[0].dtype(), &dtype.to_arrow(CompatLevel::newest()))
             }
         }
         let field = Arc::new(Field::new(name, dtype));

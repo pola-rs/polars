@@ -259,11 +259,7 @@ macro_rules! impl_dyn_series {
                 ChunkExpandAtIndex::new_from_index(&self.0, index, length).into_series()
             }
 
-            fn cast(
-                &self,
-                dtype: &DataType,
-                cast_options: CastOptions,
-            ) -> PolarsResult<Series> {
+            fn cast(&self, dtype: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
                 self.0.cast_with_options(dtype, cast_options)
             }
 
