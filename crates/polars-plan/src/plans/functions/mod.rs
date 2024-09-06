@@ -24,6 +24,7 @@ use strum_macros::IntoStaticStr;
 use crate::dsl::python_udf::PythonFunction;
 #[cfg(feature = "merge_sorted")]
 use crate::plans::functions::merge_sorted::merge_sorted;
+use crate::plans::ir::ScanSourcesDisplay;
 use crate::prelude::*;
 
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
@@ -266,8 +267,10 @@ impl FunctionIR {
                 ..
             }) => python_udf::call_python_udf(function, df, *validate_output, schema.as_deref()),
             FastCount {
-                sources, scan_type, ..
-            } => count::count_rows(sources, scan_type),
+                sources,
+                scan_type,
+                alias,
+            } => count::count_rows(sources, scan_type, alias.clone()),
             Rechunk => {
                 df.as_single_chunk_par();
                 Ok(df)
@@ -343,6 +346,21 @@ impl Display for FunctionIR {
                 } else {
                     write!(f, "STREAMING")
                 }
+            },
+            FastCount {
+                sources,
+                scan_type,
+                alias,
+            } => {
+                let scan_type: &str = scan_type.into();
+                let default_column_name = PlSmallStr::from_static(crate::constants::LEN);
+                let alias = alias.as_ref().unwrap_or(&default_column_name);
+
+                write!(
+                    f,
+                    "FAST COUNT ({scan_type}) {} as \"{alias}\"",
+                    ScanSourcesDisplay(&sources)
+                )
             },
             v => {
                 let s: &str = v.into();

@@ -8,7 +8,7 @@ use std::borrow::Cow;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-pub use dot::{EscapeLabel, IRDotDisplay, PathsDisplay};
+pub use dot::{EscapeLabel, IRDotDisplay, PathsDisplay, ScanSourcesDisplay};
 pub use format::{ExprIRDisplay, IRDisplay};
 use hive::HivePartitions;
 use polars_core::error::feature_gated;

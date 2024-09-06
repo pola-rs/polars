@@ -25,7 +25,11 @@ use polars_io::SerReader;
 use super::*;
 
 #[allow(unused_variables)]
-pub fn count_rows(sources: &ScanSources, scan_type: &FileScan) -> PolarsResult<DataFrame> {
+pub fn count_rows(
+    sources: &ScanSources,
+    scan_type: &FileScan,
+    alias: Option<PlSmallStr>,
+) -> PolarsResult<DataFrame> {
     #[cfg(not(any(
         feature = "parquet",
         feature = "ipc",
@@ -77,10 +81,8 @@ pub fn count_rows(sources: &ScanSources, scan_type: &FileScan) -> PolarsResult<D
         let count: IdxSize = count.try_into().map_err(
             |_| polars_err!(ComputeError: "count of {} exceeded maximum row size", count),
         )?;
-        DataFrame::new(vec![Series::new(
-            PlSmallStr::from_static(crate::constants::LEN),
-            [count],
-        )])
+        let column_name = alias.unwrap_or(PlSmallStr::from_static(crate::constants::LEN));
+        DataFrame::new(vec![Series::new(column_name, [count])])
     }
 }
 
