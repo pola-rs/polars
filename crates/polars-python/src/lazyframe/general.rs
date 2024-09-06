@@ -969,7 +969,7 @@ impl PyLazyFrame {
             .into())
     }
 
-    fn inequality_join(&self, other: Self, on: Vec<PyExpr>, suffix: String) -> PyResult<Self> {
+    fn join_where(&self, other: Self, on: Vec<PyExpr>, suffix: String) -> PyResult<Self> {
         let ldf = self.ldf.clone();
         let other = other.ldf;
         let (left_on, operators, right_on) = parse_ie_join_expressions(on)?;
@@ -1224,51 +1224,3 @@ impl PyLazyFrame {
     }
 }
 
-fn parse_ie_join_expressions(
-    expressions: Vec<PyExpr>,
-) -> PyResult<(Vec<Expr>, Vec<InequalityOperator>, Vec<Expr>)> {
-    if expressions.len() != 2 {
-        return Err(PyValueError::new_err(format!(
-            "expected two inequality expressions for an inequality join, got {}",
-            expressions.len()
-        )));
-    }
-
-    let mut left_on = Vec::with_capacity(2);
-    let mut operators = Vec::with_capacity(2);
-    let mut right_on = Vec::with_capacity(2);
-
-    for expression in expressions.into_iter() {
-        let (left, op, right) = parse_inequality_expression(expression)?;
-        left_on.push(left);
-        operators.push(op);
-        right_on.push(right);
-    }
-
-    Ok((left_on, operators, right_on))
-}
-
-fn parse_inequality_expression(expression: PyExpr) -> PyResult<(Expr, InequalityOperator, Expr)> {
-    fn to_inequality_operator(op: &Operator) -> PyResult<InequalityOperator> {
-        match op {
-            Operator::Lt => Ok(InequalityOperator::Lt),
-            Operator::LtEq => Ok(InequalityOperator::LtEq),
-            Operator::Gt => Ok(InequalityOperator::Gt),
-            Operator::GtEq => Ok(InequalityOperator::GtEq),
-            _ => Err(PyValueError::new_err(format!(
-                "expected an inequality operator in join inequality, got '{}'",
-                op
-            ))),
-        }
-    }
-
-    match expression.inner {
-        Expr::BinaryExpr { left, op, right } => {
-            let inequality_op = to_inequality_operator(&op)?;
-            Ok(((*left).clone(), inequality_op, (*right).clone()))
-        },
-        _ => Err(PyValueError::new_err(
-            "expected a binary expression for a join inequality",
-        )),
-    }
-}

@@ -537,6 +537,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut ConversionContext) -> PolarsResult<No
             input_right,
             left_on,
             right_on,
+            predicates,
             mut options,
         } => {
             if matches!(options.args.how, JoinType::Cross) {

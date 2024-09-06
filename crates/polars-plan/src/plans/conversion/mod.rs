@@ -215,6 +215,7 @@ impl IR {
                 DslPlan::Join {
                     input_left: Arc::new(i_l),
                     input_right: Arc::new(i_r),
+                    predicates: Default::default(),
                     left_on,
                     right_on,
                     options,
