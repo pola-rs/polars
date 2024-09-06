@@ -99,8 +99,10 @@ impl<T> UnitVec<T> {
         }
     }
 
+    /// # Panics
+    /// Panics if `new_cap < self.len` or `new_cap == 0`
     fn realloc(&mut self, new_cap: usize) {
-        assert!(new_cap >= self.len);
+        assert!(new_cap >= self.len.max(1));
         unsafe {
             let mut me = std::mem::ManuallyDrop::new(Vec::with_capacity(new_cap));
             let buffer = me.as_mut_ptr();
