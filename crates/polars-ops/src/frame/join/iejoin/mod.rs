@@ -189,13 +189,14 @@ pub(super) fn iejoin_par(
         let Some((min_l, max_l)) = get_extrema(l_l1_idx, sl) else {return Ok(None)};
         let Some((min_r, max_r)) = get_extrema(r_l1_idx, sr) else {return Ok(None)};
 
-        let intersects = min_l >= min_r && min_l <= max_r ||
-            min_r >= min_l && min_r <= max_l;
+        let include_block = match options.operator1 {
+            InequalityOperator::Lt => min_l < max_r,
+            InequalityOperator::LtEq => min_l <= max_r,
+            InequalityOperator::Gt => max_l > min_r,
+            InequalityOperator::GtEq => max_l >= min_r
+        };
 
-        let intersects = true;
-
-
-        if intersects {
+        if include_block {
             let (l, r) = unsafe {
                 (selected_left.iter().map(|s| s.take_unchecked(l_l1_idx)).collect_vec(),
                  selected_right.iter().map(|s| s.take_unchecked(r_l1_idx)).collect_vec())
