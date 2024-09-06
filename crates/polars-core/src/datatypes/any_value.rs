@@ -353,6 +353,7 @@ impl AnyValue<'static> {
                 )
             },
             DataType::Duration(unit) => AnyValue::Duration(0, *unit),
+            #[cfg(feature="dtype-decimal")]
             DataType::Decimal(_p, s) => {
                 AnyValue::Decimal(0, s.expect("unknown scale during execution"))
             },
@@ -847,6 +848,7 @@ impl<'a> AnyValue<'a> {
 
                 Duration(l + r, *lu)
             },
+            #[cfg(feature="dtype-decimal")]
             (Decimal(l, ls), Decimal(r, rs)) => {
                 if ls != rs {
                     unimplemented!("adding decimals with different scales is not supported here");
