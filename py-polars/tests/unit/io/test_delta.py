@@ -474,13 +474,11 @@ def test_write_delta_with_merge(tmp_path: Path) -> None:
         assert merger.predicate == "s.a = t.a"
         assert merger.source_alias == "s"
         assert merger.target_alias == "t"
-    except AttributeError:
+    except AttributeError as err:
         import deltalake
 
-        msg = (
-            f"dl ver {deltalake.__version__},  {TableMerger.__init__.__code__.co_names}"
-        )
-        raise ValueError(msg) from None
+        msg = f"dl ver {deltalake.__version__},  {dir(merger)}"
+        raise ValueError(msg) from err
 
     merger.when_matched_delete(predicate="t.a > 2").execute()
 
