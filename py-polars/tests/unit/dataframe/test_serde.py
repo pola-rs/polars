@@ -62,9 +62,9 @@ def test_df_serde_json_stringio(df: pl.DataFrame) -> None:
 
 
 def test_df_serialize_json() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]}).sort("a")
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [9, 5, 6]}).sort("a")
     result = df.serialize(format="json")
-    expected = '{"columns":[{"name":"a","datatype":"Int64","bit_settings":"SORTED_ASC","values":[1,2,3]},{"name":"b","datatype":"Int64","bit_settings":"","values":[4,5,6]}]}'
+    expected = '{"columns":[{"name":"a","datatype":"Int64","bit_settings":"SORTED_ASC","values":[1,2,3]},{"name":"b","datatype":"Int64","bit_settings":"","values":[9,5,6]}]}'
     assert result == expected
 
 

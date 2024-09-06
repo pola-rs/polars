@@ -53,6 +53,7 @@ def test_streaming_block_on_literals_6054() -> None:
     ).sort("col_1").to_dict(as_series=False) == {"col_1": [0, 1], "col_2": [0, 5]}
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_streaming_streamable_functions(monkeypatch: Any, capfd: Any) -> None:
     monkeypatch.setenv("POLARS_VERBOSE", "1")
     assert (
@@ -115,6 +116,7 @@ def test_streaming_literal_expansion() -> None:
     }
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_streaming_apply(monkeypatch: Any, capfd: Any) -> None:
     monkeypatch.setenv("POLARS_VERBOSE", "1")
 
