@@ -473,9 +473,10 @@ def test_write_delta_with_merge(tmp_path: Path) -> None:
     except AttributeError:
         import deltalake
 
-        print(f"deltalake version is {deltalake.__version__}")
-        print(TableMerger.__init__.__code__.co_names)
-        raise
+        msg = (
+            f"dl ver {deltalake.__version__},  {TableMerger.__init__.__code__.co_names}"
+        )
+        raise ValueError(msg) from None
 
     assert isinstance(merger, TableMerger)
     assert merger.predicate == "s.a = t.a"
