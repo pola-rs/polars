@@ -3,11 +3,15 @@ use recursive::recursive;
 use super::*;
 
 fn float_type(field: &mut Field) {
-    if (field.dtype.is_numeric()
-        || matches!(field.dtype, DataType::Decimal(..) | DataType::Boolean))
-        && field.dtype != DataType::Float32
-    {
-        field.coerce(DataType::Float64)
+    let should_coerce = match &field.dtype {
+        DataType::Float32 => false,
+        #[cfg(feature="dtype-decimal")]
+        DataType::Decimal(..) => true,
+        DataType::Boolean => true,
+        dt => dt.is_numeric(),
+    };
+    if should_coerce {
+        field.coerce(DataType::Float64);
     }
 }
 
