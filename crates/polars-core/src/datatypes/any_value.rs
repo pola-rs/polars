@@ -352,6 +352,7 @@ impl AnyValue<'static> {
                     AnyValue::UInt8(0).cast(dtype),
                 )
             },
+            #[cfg(feature = "dtype-duration")]
             DataType::Duration(unit) => AnyValue::Duration(0, *unit),
             #[cfg(feature="dtype-decimal")]
             DataType::Decimal(_p, s) => {
@@ -841,6 +842,7 @@ impl<'a> AnyValue<'a> {
             (UInt64(l), UInt64(r)) => UInt64(l + r),
             (Float32(l), Float32(r)) => Float32(l + r),
             (Float64(l), Float64(r)) => Float64(l + r),
+            #[cfg(feature = "dtype-duration")]
             (Duration(l, lu), Duration(r, ru)) => {
                 if lu != ru {
                     unimplemented!("adding durations with different units is not supported here");
