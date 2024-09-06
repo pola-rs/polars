@@ -325,6 +325,12 @@ mod tests {
 
     #[test]
     #[should_panic]
+    fn test_unitvec_realloc_one() {
+        super::UnitVec::<usize>::new().realloc(1);
+    }
+
+    #[test]
+    #[should_panic]
     fn test_untivec_realloc_lt_len() {
         super::UnitVec::<usize>::from(&[1, 2][..]).realloc(1)
     }
