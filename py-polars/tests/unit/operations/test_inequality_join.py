@@ -174,6 +174,7 @@ def test_join_between() -> None:
     left = pl.DataFrame(
         {
             "id": [0, 1, 2, 3, 4, 5],
+            "group": [0, 0, 0, 1, 1, 1],
             "time": [
                 datetime(2024, 8, 26, 15, 34, 30),
                 datetime(2024, 8, 26, 15, 35, 30),
@@ -187,6 +188,7 @@ def test_join_between() -> None:
     right = pl.DataFrame(
         {
             "id": [0, 1, 2],
+            "group": [0, 1, 1],
             "start_time": [
                 datetime(2024, 8, 26, 15, 34, 0),
                 datetime(2024, 8, 26, 15, 35, 0),
@@ -213,6 +215,64 @@ def test_join_between() -> None:
         }
     )
     assert_frame_equal(actual, expected, check_row_order=False, check_exact=True)
+
+    q = (
+        left.lazy()
+        .join_where(
+            right.lazy(),
+            pl.col("time") >= pl.col("start_time"),
+            pl.col("time") < pl.col("end_time"),
+            pl.col("group") == pl.col("group"),
+        )
+        .select("id", "id_right", "group")
+        .sort("id")
+    )
+
+    explained = q.explain()
+    assert "INNER JOIN" in explained
+    assert "FILTER" in explained
+    actual = q.collect()
+
+    expected = (
+        left.join(right, how="cross")
+        .filter(
+            pl.col("time") >= pl.col("start_time"),
+            pl.col("time") < pl.col("end_time"),
+            pl.col("group") == pl.col("group_right"),
+        )
+        .select("id", "id_right", "group")
+        .sort("id")
+    )
+    assert_frame_equal(actual, expected, check_exact=True)
+
+    q = (
+        left.lazy()
+        .join_where(
+            right.lazy(),
+            pl.col("time") >= pl.col("start_time"),
+            pl.col("time") < pl.col("end_time"),
+            pl.col("group") != pl.col("group"),
+        )
+        .select("id", "id_right", "group")
+        .sort("id")
+    )
+
+    explained = q.explain()
+    assert "IEJOIN" in explained
+    assert "FILTER" in explained
+    actual = q.collect()
+
+    expected = (
+        left.join(right, how="cross")
+        .filter(
+            pl.col("time") >= pl.col("start_time"),
+            pl.col("time") < pl.col("end_time"),
+            pl.col("group") != pl.col("group_right"),
+        )
+        .select("id", "id_right", "group")
+        .sort("id")
+    )
+    assert_frame_equal(actual, expected, check_exact=True)
 
 
 def _inequality_expression(col1: str, op: str, col2: str) -> pl.Expr:

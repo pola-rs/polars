@@ -4561,6 +4561,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             )
         )
 
+    @unstable()
     def join_where(
         self,
         other: LazyFrame,
@@ -4593,7 +4594,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         pyexprs = parse_into_list_of_expressions(*predicates)
 
         return self._from_pyldf(
-            self._ldf.inequality_join(
+            self._ldf.join_where(
                 other._ldf,
                 pyexprs,
                 suffix,

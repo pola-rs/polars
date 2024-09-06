@@ -7,18 +7,19 @@ use polars_core::chunked_array::ChunkedArray;
 use polars_core::datatypes::{IdxCa, NumericNative, PolarsNumericType};
 use polars_core::frame::DataFrame;
 use polars_core::prelude::*;
+use polars_core::utils::{_set_partition_size, split};
 use polars_core::{with_match_physical_numeric_polars_type, POOL};
 use polars_error::{polars_err, PolarsResult};
 use polars_utils::binary_search::ExponentialSearch;
+use polars_utils::itertools::Itertools;
 use polars_utils::slice::GetSaferUnchecked;
-use polars_utils::total_ord::{TotalEq};
+use polars_utils::total_ord::TotalEq;
 use polars_utils::IdxSize;
+use rayon::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-use polars_core::utils::{_set_partition_size, split};
+
 use crate::frame::_finish_join;
-use rayon::prelude::*;
-use polars_utils::itertools::Itertools;
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -138,7 +139,10 @@ pub(super) fn iejoin_par(
     suffix: Option<PlSmallStr>,
     slice: Option<(i64, usize)>,
 ) -> PolarsResult<DataFrame> {
-    let l1_descending = matches!(options.operator1, InequalityOperator::Gt | InequalityOperator::GtEq);
+    let l1_descending = matches!(
+        options.operator1,
+        InequalityOperator::Gt | InequalityOperator::GtEq
+    );
 
     let l1_sort_options = SortOptions::default()
         .with_maintain_order(true)
@@ -146,34 +150,35 @@ pub(super) fn iejoin_par(
         .with_order_descending(l1_descending);
 
     let sl = &selected_left[0];
-    let l1_s_l = sl.arg_sort(l1_sort_options)
-        .slice(
-            sl.null_count() as i64,
-            sl.len() - sl.null_count(),
-        );
+    let l1_s_l = sl
+        .arg_sort(l1_sort_options)
+        .slice(sl.null_count() as i64, sl.len() - sl.null_count());
 
     let sr = &selected_right[0];
-    let l1_s_r = sr.arg_sort(l1_sort_options)
-        .slice(
-            sr.null_count() as i64,
-            sr.len() - sr.null_count(),
-        );
+    let l1_s_r = sr
+        .arg_sort(l1_sort_options)
+        .slice(sr.null_count() as i64, sr.len() - sr.null_count());
 
     // Because we do a cartesian product, the number of partitions is squared.
     // We take the sqrt, but we don't expect every partition to produce results and work can be
     // imbalanced, so we multiply the number of partitions by 2, which leads to 2^2= 4
-    let n_partitions = (_set_partition_size() as f32).sqrt() as usize  * 2;
+    let n_partitions = (_set_partition_size() as f32).sqrt() as usize * 2;
     let splitted_a = split(&l1_s_l, n_partitions);
     let splitted_b = split(&l1_s_r, n_partitions);
 
-    let cartesian_prod = splitted_a.iter()
-        .flat_map(|l| splitted_b.iter().map(move |r| (l, r))).collect::<Vec<_>>();
+    let cartesian_prod = splitted_a
+        .iter()
+        .flat_map(|l| splitted_b.iter().map(move |r| (l, r)))
+        .collect::<Vec<_>>();
 
     let iter = cartesian_prod.par_iter().map(|(l_l1_idx, r_l1_idx)| {
         if l_l1_idx.is_empty() || r_l1_idx.is_empty() {
-            return Ok(None)
+            return Ok(None);
         }
-        fn get_extrema<'a>(l1_idx: &'a IdxCa, s: &'a Series) -> Option<(AnyValue<'a>, AnyValue<'a>)> {
+        fn get_extrema<'a>(
+            l1_idx: &'a IdxCa,
+            s: &'a Series,
+        ) -> Option<(AnyValue<'a>, AnyValue<'a>)> {
             let first = l1_idx.first()?;
             let last = l1_idx.last()?;
 
@@ -186,28 +191,39 @@ pub(super) fn iejoin_par(
                 (end, start)
             })
         }
-        let Some((min_l, max_l)) = get_extrema(l_l1_idx, sl) else {return Ok(None)};
-        let Some((min_r, max_r)) = get_extrema(r_l1_idx, sr) else {return Ok(None)};
+        let Some((min_l, max_l)) = get_extrema(l_l1_idx, sl) else {
+            return Ok(None);
+        };
+        let Some((min_r, max_r)) = get_extrema(r_l1_idx, sr) else {
+            return Ok(None);
+        };
 
         let include_block = match options.operator1 {
             InequalityOperator::Lt => min_l < max_r,
             InequalityOperator::LtEq => min_l <= max_r,
             InequalityOperator::Gt => max_l > min_r,
-            InequalityOperator::GtEq => max_l >= min_r
+            InequalityOperator::GtEq => max_l >= min_r,
         };
 
         if include_block {
             let (l, r) = unsafe {
-                (selected_left.iter().map(|s| s.take_unchecked(l_l1_idx)).collect_vec(),
-                 selected_right.iter().map(|s| s.take_unchecked(r_l1_idx)).collect_vec())
+                (
+                    selected_left
+                        .iter()
+                        .map(|s| s.take_unchecked(l_l1_idx))
+                        .collect_vec(),
+                    selected_right
+                        .iter()
+                        .map(|s| s.take_unchecked(r_l1_idx))
+                        .collect_vec(),
+                )
             };
-
 
             // Compute the row indexes
             let (idx_l, idx_r) = iejoin_tuples(l, r, options, None)?;
 
             if idx_l.is_empty() {
-                return Ok(None)
+                return Ok(None);
             }
 
             // These are row indexes in the slices we have given, so we use those to gather in the
@@ -215,7 +231,7 @@ pub(super) fn iejoin_par(
             unsafe {
                 Ok(Some((
                     l_l1_idx.take_unchecked(&idx_l),
-                    r_l1_idx.take_unchecked(&idx_r)
+                    r_l1_idx.take_unchecked(&idx_r),
                 )))
             }
         } else {
@@ -223,17 +239,13 @@ pub(super) fn iejoin_par(
         }
     });
 
-    let row_indices = POOL.install(|| {
-        iter.collect::<PolarsResult<Vec<_>>>()
-    })?;
+    let row_indices = POOL.install(|| iter.collect::<PolarsResult<Vec<_>>>())?;
 
     let mut left_idx = IdxCa::default();
     let mut right_idx = IdxCa::default();
-    for opt in row_indices {
-        if let Some((l, r)) = opt {
-            left_idx.append(&l)?;
-            right_idx.append(&r)?;
-        }
+    for (l, r) in row_indices.into_iter().flatten() {
+        left_idx.append(&l)?;
+        right_idx.append(&r)?;
     }
     if let Some((offset, end)) = slice {
         left_idx = left_idx.slice(offset, end);
@@ -241,7 +253,6 @@ pub(super) fn iejoin_par(
     }
 
     unsafe { materialize_join(left, right, &left_idx, &right_idx, suffix) }
-
 }
 
 pub(super) fn iejoin(
@@ -253,23 +264,27 @@ pub(super) fn iejoin(
     suffix: Option<PlSmallStr>,
     slice: Option<(i64, usize)>,
 ) -> PolarsResult<DataFrame> {
-
-    let (left_row_idx, right_row_idx)=  iejoin_tuples(selected_left, selected_right, options, slice)?;
+    let (left_row_idx, right_row_idx) =
+        iejoin_tuples(selected_left, selected_right, options, slice)?;
     unsafe { materialize_join(left, right, &left_row_idx, &right_row_idx, suffix) }
 }
 
-unsafe fn materialize_join(left: &DataFrame, right: &DataFrame, left_row_idx: &IdxCa, right_row_idx: &IdxCa, suffix: Option<PlSmallStr>) -> PolarsResult<DataFrame> {
+unsafe fn materialize_join(
+    left: &DataFrame,
+    right: &DataFrame,
+    left_row_idx: &IdxCa,
+    right_row_idx: &IdxCa,
+    suffix: Option<PlSmallStr>,
+) -> PolarsResult<DataFrame> {
     let (join_left, join_right) = {
         POOL.join(
-            || left.take_unchecked(&left_row_idx),
-            || right.take_unchecked(&right_row_idx),
+            || left.take_unchecked(left_row_idx),
+            || right.take_unchecked(right_row_idx),
         )
     };
 
     _finish_join(join_left, join_right, suffix)
-
 }
-
 
 /// Inequality join. Matches rows between two DataFrames using two inequality operators
 /// (one of [<, <=, >, >=]).

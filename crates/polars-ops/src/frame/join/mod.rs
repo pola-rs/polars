@@ -200,7 +200,8 @@ pub trait DataFrameJoinOps: IntoDf {
         }
 
         if let JoinType::IEJoin(options) = args.how {
-            let func = if POOL.current_num_threads() > 1 && !left_df.is_empty() && !other.is_empty() {
+            let func = if POOL.current_num_threads() > 1 && !left_df.is_empty() && !other.is_empty()
+            {
                 iejoin::iejoin_par
             } else {
                 iejoin::iejoin
@@ -534,35 +535,4 @@ pub fn private_left_join_multiple_keys(
     let a = prepare_keys_multiple(a.get_columns(), join_nulls)?.into_series();
     let b = prepare_keys_multiple(b.get_columns(), join_nulls)?.into_series();
     sort_or_hash_left(&a, &b, false, JoinValidation::ManyToMany, join_nulls)
-}
-
-#[test]
-fn test_foo() {
-    let west = df![
-        "t_id" => [0, 1, 2, 3, 4, 5],
-        "time" => [100, 140, 100, 80, 90, 90],
-        "cost" => [6, 11, 11, 10, 5, 5],
-    ]
-    .unwrap();
-
-    let time = west.column("time").unwrap();
-    let cost = west.column("cost").unwrap();
-
-    let selected = vec![time.clone(), cost.clone()];
-
-    let out = west
-        ._join_impl(
-            &west.clone(),
-            selected.clone(),
-            selected,
-            JoinArgs::new(JoinType::IEJoin(IEJoinOptions {
-                operator1: InequalityOperator::Gt,
-                operator2: InequalityOperator::LtEq,
-            })),
-            false,
-            false,
-        )
-        .unwrap();
-
-    dbg!(out);
 }

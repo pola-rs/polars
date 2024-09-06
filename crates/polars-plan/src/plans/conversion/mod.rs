@@ -21,8 +21,8 @@ use polars_core::prelude::*;
 use polars_utils::vec::ConvertVec;
 use recursive::recursive;
 mod functions;
-pub(crate) mod type_coercion;
 mod join;
+pub(crate) mod type_coercion;
 
 pub(crate) use expr_expansion::{expand_selectors, is_regex_projection, prepare_projection};
 

@@ -35,7 +35,6 @@ use polars_expr::{create_physical_expr, ExpressionConversionState};
 use polars_io::RowIndex;
 use polars_mem_engine::{create_physical_plan, Executor};
 use polars_ops::frame::JoinCoalesce;
-use polars_ops::prelude::InequalityOperator;
 pub use polars_plan::frame::{AllowedOptimizations, OptFlags};
 use polars_plan::global::FETCH_ROWS;
 use polars_utils::pl_str::PlSmallStr;
@@ -2106,7 +2105,6 @@ impl JoinBuilder {
         LazyFrame::from_logical_plan(lp, opt_state)
     }
 
-
     // Finish with join predicates
     pub fn join_where(self, predicates: Vec<Expr>) -> LazyFrame {
         let mut opt_state = self.lf.opt_state;
@@ -2126,11 +2124,11 @@ impl JoinBuilder {
             coalesce: self.coalesce,
         };
         let options = JoinOptions {
-                allow_parallel: self.allow_parallel,
-                force_parallel: self.force_parallel,
-                args,
-                ..Default::default()
-            };
+            allow_parallel: self.allow_parallel,
+            force_parallel: self.force_parallel,
+            args,
+            ..Default::default()
+        };
 
         let lp = DslPlan::Join {
             input_left: Arc::new(self.lf.logical_plan),
@@ -2142,6 +2140,5 @@ impl JoinBuilder {
         };
 
         LazyFrame::from_logical_plan(lp, opt_state)
-
     }
 }

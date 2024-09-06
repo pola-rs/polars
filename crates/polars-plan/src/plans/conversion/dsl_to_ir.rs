@@ -52,9 +52,7 @@ macro_rules! failed_here {
         format!("'{}' failed", stringify!($($t)*)).into()
     }
 }
-pub(super) use failed_input;
-pub(super) use failed_here;
-pub(super) use failed_input_args;
+pub(super) use {failed_here, failed_input, failed_input_args};
 
 pub fn to_alp(
     lp: DslPlan,
@@ -85,7 +83,11 @@ pub(super) struct DslConversionContext<'a> {
     pub(super) opt_flags: &'a mut OptFlags,
 }
 
-pub(super) fn run_conversion(lp: IR, ctxt: &mut DslConversionContext, name: &str) -> PolarsResult<Node> {
+pub(super) fn run_conversion(
+    lp: IR,
+    ctxt: &mut DslConversionContext,
+    name: &str,
+) -> PolarsResult<Node> {
     let lp_node = ctxt.lp_arena.add(lp);
     ctxt.conversion_optimizer
         .coerce_types(ctxt.expr_arena, ctxt.lp_arena, lp_node)
@@ -100,7 +102,6 @@ pub(super) fn run_conversion(lp: IR, ctxt: &mut DslConversionContext, name: &str
 #[recursive]
 pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult<Node> {
     let owned = Arc::unwrap_or_clone;
-
 
     let v = match lp {
         DslPlan::Scan {
@@ -544,7 +545,15 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             predicates,
             options,
         } => {
-            return join::resolve_join(input_left, input_right, left_on, right_on, predicates, options, ctxt)
+            return join::resolve_join(
+                input_left,
+                input_right,
+                left_on,
+                right_on,
+                predicates,
+                options,
+                ctxt,
+            )
         },
         DslPlan::HStack {
             input,

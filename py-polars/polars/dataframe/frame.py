@@ -7085,6 +7085,7 @@ class DataFrame:
             .collect(_eager=True)
         )
 
+    @unstable()
     def join_where(
         self,
         other: DataFrame,
