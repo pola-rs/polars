@@ -23,6 +23,11 @@ impl Scalar {
     }
 
     #[inline(always)]
+    pub fn is_nan(&self) -> bool {
+        self.value.is_nan()
+    }
+
+    #[inline(always)]
     pub fn value(&self) -> &AnyValue<'static> {
         &self.value
     }
