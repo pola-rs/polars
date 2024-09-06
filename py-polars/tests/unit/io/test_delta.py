@@ -460,16 +460,22 @@ def test_write_delta_with_merge(tmp_path: Path) -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
 
     df.write_delta(tmp_path)
+    try:
+        merger = df.write_delta(
+            tmp_path,
+            mode="merge",
+            delta_merge_options={
+                "predicate": "s.a = t.a",
+                "source_alias": "s",
+                "target_alias": "t",
+            },
+        )
+    except AttributeError:
+        import deltalake
 
-    merger = df.write_delta(
-        tmp_path,
-        mode="merge",
-        delta_merge_options={
-            "predicate": "s.a = t.a",
-            "source_alias": "s",
-            "target_alias": "t",
-        },
-    )
+        print(f"deltalake version is {deltalake.__version__}")
+        print(TableMerger.__init__.__code__.co_names)
+        raise
 
     assert isinstance(merger, TableMerger)
     assert merger.predicate == "s.a = t.a"
