@@ -72,8 +72,8 @@ fn timeunit_from_precision(prec: &Option<u64>) -> PolarsResult<TimeUnit> {
     })
 }
 
-pub(crate) fn map_sql_dtype_to_polars(data_type: &SQLDataType) -> PolarsResult<DataType> {
-    Ok(match data_type {
+pub(crate) fn map_sql_dtype_to_polars(dtype: &SQLDataType) -> PolarsResult<DataType> {
+    Ok(match dtype {
         // ---------------------------------
         // array/list
         // ---------------------------------
@@ -202,7 +202,7 @@ pub(crate) fn map_sql_dtype_to_polars(data_type: &SQLDataType) -> PolarsResult<D
             },
         },
         _ => {
-            polars_bail!(SQLInterface: "datatype {:?} is not currently supported", data_type)
+            polars_bail!(SQLInterface: "datatype {:?} is not currently supported", dtype)
         },
     })
 }

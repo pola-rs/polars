@@ -720,7 +720,7 @@ impl SQLExprVisitor<'_> {
         if dtype == &SQLDataType::JSON {
             return Ok(expr.str().json_decode(None, None));
         }
-        let polars_type = map_sql_dtype_to_polars(data_type)?;
+        let polars_type = map_sql_dtype_to_polars(dtype)?;
         Ok(match cast_kind {
             CastKind::Cast | CastKind::DoubleColon => expr.strict_cast(polars_type),
             CastKind::TryCast | CastKind::SafeCast => expr.cast(polars_type),
