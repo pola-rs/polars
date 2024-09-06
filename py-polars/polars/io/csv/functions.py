@@ -443,6 +443,8 @@ def read_csv(
         # * The `storage_options` configuration keys are different between
         #   fsspec and object_store (would require a breaking change)
     ):
+        source = normalize_filepath(source, check_not_directory=False)
+
         if schema_overrides_is_list:
             msg = "passing a list to `schema_overrides` is unsupported for hf:// paths"
             raise ValueError(msg)

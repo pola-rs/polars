@@ -359,7 +359,7 @@ impl Display for FunctionIR {
                 write!(
                     f,
                     "FAST COUNT ({scan_type}) {} as \"{alias}\"",
-                    ScanSourcesDisplay(&sources)
+                    ScanSourcesDisplay(sources)
                 )
             },
             v => {
