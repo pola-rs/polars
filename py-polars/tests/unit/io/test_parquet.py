@@ -3,7 +3,7 @@ from __future__ import annotations
 import io
 from datetime import datetime, time, timezone
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast, IO
 
 import fsspec
 import numpy as np
@@ -1862,12 +1862,13 @@ def test_concat_multiple_inmem() -> None:
     f.seek(0)
     g.seek(0)
 
-    assert_frame_equal(pl.read_parquet([f, g]), dfs)
+    items: list[IO[bytes]] = [f, g]
+    assert_frame_equal(pl.read_parquet(items), dfs)
 
     f.seek(0)
     g.seek(0)
 
-    assert_frame_equal(pl.read_parquet([f, g], use_pyarrow=True), dfs)
+    assert_frame_equal(pl.read_parquet(items, use_pyarrow=True), dfs)
 
     f.seek(0)
     g.seek(0)

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import os
-from io import BytesIO
+from io import BytesIO, BufferedIOBase
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any, Sequence
 
@@ -427,20 +427,23 @@ def scan_ipc(
     include_file_paths
         Include the path of the source file(s) as a column with this name.
     """
+
+    sources: list[str] | list[Path] | list[IO[bytes]] = []
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source, check_not_directory=False)
-        sources = []
-    elif isinstance(source, BytesIO):
-        sources = []
-    elif (
-        isinstance(source, list) and len(source) > 0 and isinstance(source[0], BytesIO)
-    ):
-        sources = source
-        source = None  # type: ignore[assignment]
-    else:
-        sources = [
-            normalize_filepath(source, check_not_directory=False) for source in source
-        ]
+    elif isinstance(source, list):
+        if len(source) > 0:
+            if isinstance(source[0], (str, Path)):
+                sources = [
+                    normalize_filepath(
+                        source,  # type: ignore[arg-type]
+                        check_not_directory=False,
+                    )
+                    for source in source
+                ]
+            else:
+                sources = source
+
         source = None  # type: ignore[assignment]
 
     pylf = PyLazyFrame.new_from_ipc(

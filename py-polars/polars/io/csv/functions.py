@@ -443,7 +443,7 @@ def read_csv(
         # * The `storage_options` configuration keys are different between
         #   fsspec and object_store (would require a breaking change)
     ):
-        source = normalize_filepath(source, check_not_directory=False)
+        source = normalize_filepath(v, check_not_directory=False)
 
         if schema_overrides_is_list:
             msg = "passing a list to `schema_overrides` is unsupported for hf:// paths"
@@ -453,7 +453,7 @@ def read_csv(
             raise ValueError(msg)
 
         lf = _scan_csv_impl(
-            source,  # type: ignore[arg-type]
+            source,
             has_header=has_header,
             separator=separator,
             comment_prefix=comment_prefix,
@@ -1249,7 +1249,11 @@ def scan_csv(
         pass
     else:
         source = [
-            normalize_filepath(source, check_not_directory=False) for source in source
+            normalize_filepath(
+                source,  # type: ignore[arg-type]
+                check_not_directory=False,
+            )
+            for source in source
         ]
 
     if not infer_schema:
