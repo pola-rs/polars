@@ -306,7 +306,7 @@ def test_ndjson_null_inference_13183() -> None:
     }
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 @typing.no_type_check
 def test_json_wrong_input_handle_textio(tmp_path: Path) -> None:
     # this shouldn't be passed, but still we test if we can handle it gracefully
