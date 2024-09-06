@@ -432,7 +432,9 @@ def scan_ipc(
         sources = []
     elif isinstance(source, BytesIO):
         sources = []
-    elif isinstance(source, list) and isinstance(source[0], BytesIO):
+    elif (
+        isinstance(source, list) and len(source) > 0 and isinstance(source[0], BytesIO)
+    ):
         sources = source
         source = None  # type: ignore[assignment]
     else:

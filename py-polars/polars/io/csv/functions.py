@@ -1239,9 +1239,9 @@ def scan_csv(
 
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source, check_not_directory=False)
-    elif (
-        isinstance(source, (BytesIO, StringIO))
-        or isinstance(source, list)
+    elif isinstance(source, (BytesIO, StringIO)) or (
+        isinstance(source, list)
+        and len(source) > 0
         and isinstance(source[0], (BytesIO, StringIO))
     ):
         pass

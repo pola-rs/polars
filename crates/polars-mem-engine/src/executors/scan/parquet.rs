@@ -251,10 +251,7 @@ impl ParquetExec {
         use polars_io::utils::slice::split_slice_at_file;
 
         let verbose = verbose();
-        let paths = self
-            .sources
-            .into_paths()
-            .ok_or_else(|| polars_err!(nyi = "Asynchronous scanning of in-memory buffers"))?;
+        let paths = self.sources.into_paths().unwrap();
         let first_metadata = &self.metadata;
         let cloud_options = self.cloud_options.as_ref();
 
@@ -474,7 +471,7 @@ impl ParquetExec {
         let is_cloud = self.sources.is_cloud_url();
         let force_async = config::force_async();
 
-        let out = if is_cloud || force_async {
+        let out = if is_cloud || (self.sources.is_files() && force_async) {
             feature_gated!("cloud", {
                 if force_async && config::verbose() {
                     eprintln!("ASYNC READING FORCED");

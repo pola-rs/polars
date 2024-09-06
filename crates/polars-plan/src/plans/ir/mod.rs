@@ -131,6 +131,10 @@ impl ScanSources {
         }
     }
 
+    pub fn is_files(&self) -> bool {
+        matches!(self, Self::Files(_))
+    }
+
     pub fn is_cloud_url(&self) -> bool {
         match self {
             Self::Files(paths) => paths.first().map_or(false, polars_io::is_cloud_url),

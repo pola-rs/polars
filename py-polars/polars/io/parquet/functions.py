@@ -3,26 +3,26 @@ from __future__ import annotations
 import contextlib
 import io
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, Any, Sequence
+from typing import IO, TYPE_CHECKING, Any
 
 import polars.functions as F
+from polars import concat as plconcat
 from polars._utils.deprecation import deprecate_renamed_parameter
 from polars._utils.unstable import issue_unstable_warning
 from polars._utils.various import (
     is_int_sequence,
     normalize_filepath,
 )
-from polars._utils.wrap import wrap_df, wrap_ldf
+from polars._utils.wrap import wrap_ldf
 from polars.convert import from_arrow
 from polars.dependencies import import_optional
 from polars.io._utils import (
-    parse_columns_arg,
     parse_row_index_args,
     prepare_file_arg,
 )
 
 with contextlib.suppress(ImportError):
-    from polars.polars import PyDataFrame, PyLazyFrame
+    from polars.polars import PyLazyFrame
     from polars.polars import read_parquet_schema as _read_parquet_schema
 
 if TYPE_CHECKING:
@@ -33,7 +33,14 @@ if TYPE_CHECKING:
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
 @deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
 def read_parquet(
-    source: str | Path | list[str] | list[Path] | IO[bytes] | bytes,
+    source: str
+    | Path
+    | IO[bytes]
+    | bytes
+    | list[str]
+    | list[Path]
+    | list[IO[bytes]]
+    | list[bytes],
     *,
     columns: list[int] | list[str] | None = None,
     n_rows: int | None = None,
@@ -166,18 +173,10 @@ def read_parquet(
         )
 
     # Read file and bytes inputs using `read_parquet`
-    elif isinstance(source, (io.IOBase, bytes)):
-        return _read_parquet_binary(
-            source,
-            columns=columns,
-            n_rows=n_rows,
-            parallel=parallel,
-            row_index_name=row_index_name,
-            row_index_offset=row_index_offset,
-            low_memory=low_memory,
-            use_statistics=use_statistics,
-            rechunk=rechunk,
-        )
+    if isinstance(source, bytes):
+        source = io.BytesIO(source)
+    elif isinstance(source, list) and len(source) > 0 and isinstance(source[0], bytes):
+        source = [io.BytesIO(s) for s in source]  # type: ignore[arg-type]
 
     # For other inputs, defer to `scan_parquet`
     lf = scan_parquet(
@@ -209,7 +208,14 @@ def read_parquet(
 
 
 def _read_parquet_with_pyarrow(
-    source: str | Path | list[str] | list[Path] | IO[bytes] | bytes,
+    source: str
+    | Path
+    | IO[bytes]
+    | bytes
+    | list[str]
+    | list[Path]
+    | list[IO[bytes]]
+    | list[bytes],
     *,
     columns: list[int] | list[str] | None = None,
     storage_options: dict[str, Any] | None = None,
@@ -224,48 +230,35 @@ def _read_parquet_with_pyarrow(
     )
     pyarrow_options = pyarrow_options or {}
 
-    with prepare_file_arg(
-        source,  # type: ignore[arg-type]
-        use_pyarrow=True,
-        storage_options=storage_options,
-    ) as source_prep:
-        pa_table = pyarrow_parquet.read_table(
-            source_prep,
-            memory_map=memory_map,
-            columns=columns,
-            **pyarrow_options,
-        )
-    return from_arrow(pa_table, rechunk=rechunk)  # type: ignore[return-value]
+    if (
+        isinstance(source, list)
+        and len(source) > 0
+        and isinstance(source[0], (bytes, io.BytesIO))
+    ):
+        sources = source
+    else:
+        sources = [source]
 
+    results = []
+    for source in sources:
+        with prepare_file_arg(
+            source,  # type: ignore[arg-type]
+            use_pyarrow=True,
+            storage_options=storage_options,
+        ) as source_prep:
+            pa_table = pyarrow_parquet.read_table(
+                source_prep,
+                memory_map=memory_map,
+                columns=columns,
+                **pyarrow_options,
+            )
+        result = from_arrow(pa_table, rechunk=rechunk)  # type: ignore[return-value]
+        results.append(result)
 
-def _read_parquet_binary(
-    source: IO[bytes] | bytes,
-    *,
-    columns: Sequence[int] | Sequence[str] | None = None,
-    n_rows: int | None = None,
-    row_index_name: str | None = None,
-    row_index_offset: int = 0,
-    parallel: ParallelStrategy = "auto",
-    use_statistics: bool = True,
-    rechunk: bool = False,
-    low_memory: bool = False,
-) -> DataFrame:
-    projection, columns = parse_columns_arg(columns)
-    row_index = parse_row_index_args(row_index_name, row_index_offset)
-
-    with prepare_file_arg(source) as source_prep:
-        pydf = PyDataFrame.read_parquet(
-            source_prep,
-            columns=columns,
-            projection=projection,
-            n_rows=n_rows,
-            row_index=row_index,
-            parallel=parallel,
-            use_statistics=use_statistics,
-            rechunk=rechunk,
-            low_memory=low_memory,
-        )
-    return wrap_df(pydf)
+    if len(results) == 1:
+        return results[0]
+    else:
+        return plconcat(results)
 
 
 def read_parquet_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, DataType]:
@@ -423,7 +416,9 @@ def scan_parquet(
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source, check_not_directory=False)
     elif isinstance(source, io.BytesIO) or (
-        isinstance(source, list) and isinstance(source[0], io.BytesIO)
+        isinstance(source, list)
+        and len(source) > 0
+        and isinstance(source[0], io.BytesIO)
     ):
         pass
     else:

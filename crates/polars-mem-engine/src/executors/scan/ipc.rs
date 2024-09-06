@@ -29,7 +29,7 @@ impl IpcExec {
         };
         let force_async = config::force_async();
 
-        let mut out = if is_cloud || force_async {
+        let mut out = if is_cloud || (self.sources.is_files() && force_async) {
             feature_gated!("cloud", {
                 if force_async && config::verbose() {
                     eprintln!("ASYNC READING FORCED");
@@ -173,10 +173,7 @@ impl IpcExec {
         // concurrently.
         use polars_io::file_cache::init_entries_from_uri_list;
 
-        let paths = self
-            .sources
-            .into_paths()
-            .ok_or_else(|| polars_err!(nyi = "Asynchronous scanning of in-memory buffers"))?;
+        let paths = self.sources.into_paths().unwrap();
 
         tokio::task::block_in_place(|| {
             let cache_entries = init_entries_from_uri_list(

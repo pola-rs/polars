@@ -41,9 +41,9 @@ impl JsonExec {
 
         let verbose = config::verbose();
         let force_async = config::force_async();
-        let run_async = force_async || self.sources.is_cloud_url();
+        let run_async = (self.sources.is_files() && force_async) || self.sources.is_cloud_url();
 
-        if force_async && verbose {
+        if self.sources.is_files() && force_async && verbose {
             eprintln!("ASYNC READING FORCED");
         }
 

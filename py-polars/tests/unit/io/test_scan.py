@@ -769,23 +769,8 @@ def test_scan_stringio(method: str) -> None:
 
 @pytest.mark.parametrize(
     "method",
-    ["parquet", "csv", "ipc", "ndjson"],
+    [pl.scan_parquet, pl.scan_csv, pl.scan_ipc, pl.scan_ndjson],
 )
-def test_nyi_async_scan_in_memory(method: str, monkeypatch: pytest.MonkeyPatch) -> None:
-    f = io.BytesIO()
-    df = pl.DataFrame(
-        {
-            "a": [1, 2, 3],
-            "b": ["x", "y", "z"],
-        }
-    )
-
-    (getattr(df, f"write_{method}"))(f)
-
-    f.seek(0)
-    _enable_force_async(monkeypatch)
-    with pytest.raises(
-        pl.exceptions.ComputeError,
-        match="not yet implemented: Asynchronous scanning of in-memory buffers",
-    ):
-        (getattr(pl, f"scan_{method}"))(f).collect()
+def test_empty_list(method: Callable[[list[str]], pl.LazyFrame]) -> None:
+    with pytest.raises(pl.exceptions.ComputeError, match="expected at least 1 source"):
+        _ = (method)([]).collect()

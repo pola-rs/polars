@@ -259,7 +259,11 @@ def scan_ndjson(
         sources = []
     elif isinstance(source, (BytesIO, StringIO)):
         sources = []
-    elif isinstance(source, list) and isinstance(source[0], (BytesIO, StringIO)):
+    elif (
+        isinstance(source, list)
+        and len(source) > 0
+        and isinstance(source[0], (BytesIO, StringIO))
+    ):
         sources = source
         source = None  # type: ignore[assignment]
     else:

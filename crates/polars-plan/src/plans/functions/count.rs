@@ -129,9 +129,7 @@ pub(super) fn count_rows_parquet(
     if is_cloud {
         feature_gated!("cloud", {
             get_runtime().block_on(count_rows_cloud_parquet(
-                sources.as_paths().ok_or_else(|| {
-                    polars_err!(nyi = "Asynchronous scanning of in-memory buffers")
-                })?,
+                sources.as_paths().unwrap(),
                 cloud_options,
             ))
         })
@@ -181,9 +179,7 @@ pub(super) fn count_rows_ipc(
     if is_cloud {
         feature_gated!("cloud", {
             get_runtime().block_on(count_rows_cloud_ipc(
-                sources.as_paths().ok_or_else(|| {
-                    polars_err!(nyi = "Asynchronous scanning of in-memory buffers")
-                })?,
+                sources.as_paths().unwrap(),
                 cloud_options,
                 metadata,
             ))
@@ -235,7 +231,7 @@ pub(super) fn count_rows_ndjson(
     }
 
     let is_cloud_url = sources.is_cloud_url();
-    let run_async = is_cloud_url || config::force_async();
+    let run_async = is_cloud_url || (sources.is_files() && config::force_async());
 
     let cache_entries = {
         feature_gated!("cloud", {
@@ -243,9 +239,7 @@ pub(super) fn count_rows_ndjson(
                 Some(polars_io::file_cache::init_entries_from_uri_list(
                     sources
                         .as_paths()
-                        .ok_or_else(|| {
-                            polars_err!(nyi = "Asynchronous scanning of in-memory buffers")
-                        })?
+                        .unwrap()
                         .iter()
                         .map(|path| Arc::from(path.to_str().unwrap()))
                         .collect::<Vec<_>>()

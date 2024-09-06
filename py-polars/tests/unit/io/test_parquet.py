@@ -1835,3 +1835,45 @@ def test_row_index_projection_pushdown_18463(
         df.select("index").slice(1, 1).collect(),
         df.collect().select("index").slice(1, 1),
     )
+
+
+def test_concat_multiple_inmem() -> None:
+    f = io.BytesIO()
+    g = io.BytesIO()
+
+    df1 = pl.DataFrame(
+        {
+            "a": [1, 2, 3],
+            "b": ["xyz", "abc", "wow"],
+        }
+    )
+    df2 = pl.DataFrame(
+        {
+            "a": [5, 6, 7],
+            "b": ["a", "few", "entries"],
+        }
+    )
+
+    dfs = pl.concat([df1, df2])
+
+    df1.write_parquet(f)
+    df2.write_parquet(g)
+
+    f.seek(0)
+    g.seek(0)
+
+    assert_frame_equal(pl.read_parquet([f, g]), dfs)
+
+    f.seek(0)
+    g.seek(0)
+
+    assert_frame_equal(pl.read_parquet([f, g], use_pyarrow=True), dfs)
+
+    f.seek(0)
+    g.seek(0)
+
+    fb = f.read()
+    gb = g.read()
+
+    assert_frame_equal(pl.read_parquet([fb, gb]), dfs)
+    assert_frame_equal(pl.read_parquet([fb, gb], use_pyarrow=True), dfs)
