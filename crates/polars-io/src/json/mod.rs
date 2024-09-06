@@ -329,10 +329,8 @@ where
                         Ok(inner_dtype)
                     }
                 };
-                if let Err(e) = &dtype_result {
-                    if let PolarsError::NoData(_) = e {
-                        return Ok(DataFrame::empty());
-                    }
+                if let Err(PolarsError::NoData(_)) = &dtype_result {
+                    return Ok(DataFrame::empty());
                 };
                 let dtype = dtype_result?;
                 let dtype = if let BorrowedValue::Array(_) = &json_value {
