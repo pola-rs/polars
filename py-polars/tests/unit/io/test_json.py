@@ -306,7 +306,7 @@ def test_ndjson_null_inference_13183() -> None:
     }
 
 
-@pytest.mark.write_disk
+@pytest.mark.write_disk()
 @typing.no_type_check
 def test_json_wrong_input_handle_textio(tmp_path: Path) -> None:
     # this shouldn't be passed, but still we test if we can handle it gracefully
@@ -385,3 +385,13 @@ def test_empty_json() -> None:
     df = pl.read_json(b'{"j":{}}')
     assert df.dtypes == [pl.Struct([])]
     assert df.shape == (0, 1)
+
+
+def test_empty_list_json() -> None:
+    df = pl.read_json(io.StringIO("[]"))
+    assert df.shape == (0, 0)
+    assert isinstance(df, pl.DataFrame)
+
+    df = pl.read_json(b"[]")
+    assert df.shape == (0, 0)
+    assert isinstance(df, pl.DataFrame)
