@@ -25,7 +25,9 @@ struct MinReduceState {
 
 impl MinReduceState {
     fn update_with_value(&mut self, other: &AnyValue<'static>) {
-        if self.value.is_null() || !other.is_null() && other < self.value.value() {
+        if self.value.is_null()
+            || !other.is_null() && (other < self.value.value() || self.value.is_nan())
+        {
             self.value.update(other.clone());
         }
     }
@@ -78,7 +80,9 @@ struct MaxReduceState {
 
 impl MaxReduceState {
     fn update_with_value(&mut self, other: &AnyValue<'static>) {
-        if self.value.is_null() || !other.is_null() && other > self.value.value() {
+        if self.value.is_null()
+            || !other.is_null() && (other > self.value.value() || self.value.is_nan())
+        {
             self.value.update(other.clone());
         }
     }

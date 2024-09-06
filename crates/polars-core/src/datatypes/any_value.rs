@@ -499,6 +499,14 @@ impl<'a> AnyValue<'a> {
         )
     }
 
+    pub fn is_nan(&self) -> bool {
+        match self {
+            AnyValue::Float32(f) => f.is_nan(),
+            AnyValue::Float64(f) => f.is_nan(),
+            _ => false,
+        }
+    }
+
     pub fn is_null(&self) -> bool {
         matches!(self, AnyValue::Null)
     }
