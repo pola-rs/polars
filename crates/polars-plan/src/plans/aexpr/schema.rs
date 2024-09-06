@@ -5,7 +5,7 @@ use super::*;
 fn float_type(field: &mut Field) {
     let should_coerce = match &field.dtype {
         DataType::Float32 => false,
-        #[cfg(feature="dtype-decimal")]
+        #[cfg(feature = "dtype-decimal")]
         DataType::Decimal(..) => true,
         DataType::Boolean => true,
         dt => dt.is_numeric(),
