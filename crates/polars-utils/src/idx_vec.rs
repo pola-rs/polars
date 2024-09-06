@@ -121,9 +121,17 @@ impl<T> UnitVec<T> {
     }
 
     pub fn with_capacity(capacity: usize) -> Self {
-        let mut new = Self::new();
-        new.reserve(capacity);
-        new
+        if capacity <= 1 {
+            Self::new()
+        } else {
+            let mut me = std::mem::ManuallyDrop::new(Vec::with_capacity(capacity));
+            let data = me.as_mut_ptr();
+            Self {
+                len: 0,
+                capacity: NonZeroUsize::new(capacity).unwrap(),
+                data,
+            }
+        }
     }
 
     #[inline]
@@ -179,20 +187,12 @@ impl<T> Clone for UnitVec<T> {
     fn clone(&self) -> Self {
         unsafe {
             if self.capacity.get() == 1 {
-                Self {
-                    data: self.data,
-                    len: self.len,
-                    capacity: self.capacity,
-                }
+                Self { ..*self }
             } else {
-                let mut me = std::mem::ManuallyDrop::new(Vec::with_capacity(self.len));
-                let buffer = me.as_mut_ptr();
-                std::ptr::copy(self.data_ptr(), buffer, self.len);
-                Self {
-                    data: buffer,
-                    len: self.len,
-                    capacity: NonZeroUsize::new(std::cmp::max(self.len, 1)).unwrap(),
-                }
+                let mut copy = Self::with_capacity(self.len);
+                std::ptr::copy(self.data_ptr(), copy.data_ptr_mut(), self.len);
+                copy.len = self.len;
+                copy
             }
         }
     }
@@ -318,5 +318,21 @@ mod tests {
     fn test_unitvec() {
         let v = unitvec![1usize];
         assert_eq!(v, v.clone());
+
+        for n in [
+            26903816120209729usize,
+            42566276440897687,
+            44435161834424652,
+            49390731489933083,
+            51201454727649242,
+            83861672190814841,
+            92169290527847622,
+            92476373900398436,
+            95488551309275459,
+            97499984126814549,
+        ] {
+            let v = unitvec![n];
+            assert_eq!(v, v.clone());
+        }
     }
 }
