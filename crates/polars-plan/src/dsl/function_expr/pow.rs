@@ -37,12 +37,15 @@ where
     ChunkedArray<T>: IntoSeries,
 {
     if (base.len() == 1) && (exponent.len() != 1) {
+        let name = base.name();
         let base = base
             .get(0)
             .ok_or_else(|| polars_err!(ComputeError: "base is null"))?;
 
         Ok(Some(
-            unary_elementwise_values(exponent, |exp| Pow::pow(base, exp)).into_series(),
+            unary_elementwise_values(exponent, |exp| Pow::pow(base, exp))
+                .into_series()
+                .with_name(name.clone()),
         ))
     } else {
         Ok(Some(
