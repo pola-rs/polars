@@ -13,7 +13,7 @@ use crate::parquet::schema::types::{
 };
 use crate::parquet::statistics::{PrimitiveStatistics, Statistics as ParquetStatistics};
 use crate::parquet::types::int96_to_i64_ns;
-use crate::read::ColumnChunkMetaData;
+use crate::read::ColumnChunkMetadata;
 
 mod binary;
 mod binview;
@@ -550,11 +550,13 @@ fn push(
 ///
 /// # Errors
 /// This function errors if the deserialization of the statistics fails (e.g. invalid utf8)
-pub fn deserialize(field: &Field, field_md: &[&ColumnChunkMetaData]) -> PolarsResult<Statistics> {
+pub fn deserialize<'a>(
+    field: &Field,
+    field_md: impl ExactSizeIterator<Item = &'a ColumnChunkMetadata>,
+) -> PolarsResult<Statistics> {
     let mut statistics = MutableStatistics::try_new(field)?;
 
     let mut stats = field_md
-        .iter()
         .map(|column| {
             Ok((
                 column.statistics().transpose()?,

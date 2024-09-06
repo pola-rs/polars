@@ -6,8 +6,8 @@ use arrow::record_batch::RecordBatchT;
 use polars::prelude::ArrowSchema;
 use polars_error::PolarsResult;
 use polars_parquet::arrow::read::{column_iter_to_arrays, Filter};
-use polars_parquet::parquet::metadata::ColumnChunkMetaData;
-use polars_parquet::parquet::read::{get_field_columns, BasicDecompressor, PageReader};
+use polars_parquet::parquet::metadata::ColumnChunkMetadata;
+use polars_parquet::parquet::read::{BasicDecompressor, PageReader};
 use polars_parquet::read::RowGroupMetaData;
 use polars_utils::mmap::MemReader;
 
@@ -70,23 +70,25 @@ impl Iterator for RowGroupDeserializer {
 /// the field (one for non-nested types)
 pub fn read_columns<'a, R: Read + Seek>(
     reader: &mut R,
-    columns: &'a [ColumnChunkMetaData],
+    row_group_metadata: &'a RowGroupMetaData,
     field_name: &'a str,
-) -> PolarsResult<Vec<(&'a ColumnChunkMetaData, Vec<u8>)>> {
-    get_field_columns(columns, field_name)
+) -> PolarsResult<Vec<(&'a ColumnChunkMetadata, Vec<u8>)>> {
+    row_group_metadata
+        .columns_under_root_iter(field_name)
         .map(|meta| _read_single_column(reader, meta))
         .collect()
 }
 
 fn _read_single_column<'a, R>(
     reader: &mut R,
-    meta: &'a ColumnChunkMetaData,
-) -> PolarsResult<(&'a ColumnChunkMetaData, Vec<u8>)>
+    meta: &'a ColumnChunkMetadata,
+) -> PolarsResult<(&'a ColumnChunkMetadata, Vec<u8>)>
 where
     R: Read + Seek,
 {
-    let (start, length) = meta.byte_range();
-    reader.seek(std::io::SeekFrom::Start(start))?;
+    let byte_range = meta.byte_range();
+    let length = byte_range.end - byte_range.start;
+    reader.seek(std::io::SeekFrom::Start(byte_range.start))?;
 
     let mut chunk = vec![];
     chunk.try_reserve(length as usize)?;
@@ -97,7 +99,7 @@ where
 /// Converts a vector of columns associated with the parquet field whose name is [`Field`]
 /// to an iterator of [`Array`], [`ArrayIter`] of chunk size `chunk_size`.
 pub fn to_deserializer(
-    columns: Vec<(&ColumnChunkMetaData, Vec<u8>)>,
+    columns: Vec<(&ColumnChunkMetadata, Vec<u8>)>,
     field: Field,
     filter: Option<Filter>,
 ) -> PolarsResult<Box<dyn Array>> {
@@ -141,7 +143,7 @@ pub fn read_columns_many<R: Read + Seek>(
     // This operation is IO-bounded `O(C)` where C is the number of columns in the row group
     let field_columns = fields
         .iter_values()
-        .map(|field| read_columns(reader, row_group.columns(), &field.name))
+        .map(|field| read_columns(reader, row_group, &field.name))
         .collect::<PolarsResult<Vec<_>>>()?;
 
     field_columns

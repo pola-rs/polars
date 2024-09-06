@@ -16,6 +16,7 @@ use polars_error::{polars_bail, polars_err, PolarsResult};
 use polars_expr::prelude::PhysicalExpr;
 use polars_io::cloud::CloudOptions;
 use polars_io::predicates::PhysicalIoExpr;
+use polars_io::prelude::_internal::read_this_row_group;
 use polars_io::prelude::{FileMetaData, ParquetOptions};
 use polars_io::utils::byte_source::{
     ByteSource, DynByteSource, DynByteSourceBuilder, MemSliceByteSource,
@@ -26,7 +27,6 @@ use polars_parquet::read::RowGroupMetaData;
 use polars_plan::plans::hive::HivePartitions;
 use polars_plan::plans::FileInfo;
 use polars_plan::prelude::FileScanOptions;
-use polars_utils::aliases::PlHashSet;
 use polars_utils::mmap::MemSlice;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::slice::GetSaferUnchecked;
@@ -1035,28 +1035,6 @@ struct RowGroupDataFetcher {
     current_shared_file_state: Arc<tokio::sync::OnceCell<SharedFileState>>,
 }
 
-fn read_this_row_group(
-    rg_md: &RowGroupMetaData,
-    predicate: Option<&dyn PhysicalIoExpr>,
-    reader_schema: &ArrowSchema,
-) -> PolarsResult<bool> {
-    let Some(pred) = predicate else {
-        return Ok(true);
-    };
-    use polars_io::prelude::_internal::*;
-    // TODO!
-    // Optimize this. Now we partition the predicate columns twice. (later on reading as well)
-    // I think we must add metadata context where we can cache and amortize the partitioning.
-    let mut part_md = PartitionedColumnChunkMD::new(rg_md);
-    let live = pred.live_variables();
-    part_md.set_partitions(
-        live.as_ref()
-            .map(|vars| vars.iter().map(|s| s.as_ref()).collect::<PlHashSet<_>>())
-            .as_ref(),
-    );
-    read_this_row_group(Some(pred), &part_md, reader_schema)
-}
-
 impl RowGroupDataFetcher {
     fn into_stream(self) -> RowGroupDataStream {
         RowGroupDataStream::new(self)
@@ -1097,8 +1075,8 @@ impl RowGroupDataFetcher {
 
                 if self.use_statistics
                     && !match read_this_row_group(
-                        &row_group_metadata,
                         self.predicate.as_deref(),
+                        &row_group_metadata,
                         self.reader_schema.as_ref(),
                     ) {
                         Ok(v) => v,
@@ -1441,19 +1419,15 @@ impl RowGroupDecoder {
 
                             let columns_to_deserialize = row_group_data
                                 .row_group_metadata
-                                .columns()
-                                .iter()
-                                .filter(|col_md| {
-                                    col_md.descriptor().path_in_schema[0] == arrow_field.name
-                                })
+                                .columns_under_root_iter(&arrow_field.name)
                                 .map(|col_md| {
-                                    let (offset, len) = col_md.byte_range();
-                                    let offset = offset as usize;
-                                    let len = len as usize;
+                                    let byte_range = col_md.byte_range();
 
                                     (
                                         col_md,
-                                        row_group_data.byte_source.get_range(offset..offset + len),
+                                        row_group_data.byte_source.get_range(
+                                            byte_range.start as usize..byte_range.end as usize,
+                                        ),
                                     )
                                 })
                                 .collect::<Vec<_>>();
@@ -1759,31 +1733,22 @@ async fn read_parquet_metadata_bytes(
 fn get_row_group_byte_ranges(
     row_group_metadata: &RowGroupMetaData,
 ) -> impl ExactSizeIterator<Item = std::ops::Range<usize>> + '_ {
-    let row_group_columns = row_group_metadata.columns();
-
-    row_group_columns.iter().map(|rg_col_metadata| {
-        let (offset, len) = rg_col_metadata.byte_range();
-        (offset as usize)..(offset + len) as usize
-    })
+    row_group_metadata
+        .byte_ranges_iter()
+        .map(|byte_range| byte_range.start as usize..byte_range.end as usize)
 }
 
-/// TODO: This is quadratic - incorporate https://github.com/pola-rs/polars/pull/18327 that is
-/// merged.
 fn get_row_group_byte_ranges_for_projection<'a>(
     row_group_metadata: &'a RowGroupMetaData,
     columns: &'a [PlSmallStr],
 ) -> impl Iterator<Item = std::ops::Range<usize>> + 'a {
-    let row_group_columns = row_group_metadata.columns();
-
-    row_group_columns.iter().filter_map(move |rg_col_metadata| {
-        for col_name in columns {
-            if rg_col_metadata.descriptor().path_in_schema[0] == col_name {
-                let (offset, len) = rg_col_metadata.byte_range();
-                let range = (offset as usize)..((offset + len) as usize);
-                return Some(range);
-            }
-        }
-        None
+    columns.iter().flat_map(|col_name| {
+        row_group_metadata
+            .columns_under_root_iter(col_name)
+            .map(|col| {
+                let byte_range = col.byte_range();
+                byte_range.start as usize..byte_range.end as usize
+            })
     })
 }
 
