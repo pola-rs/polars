@@ -19,19 +19,14 @@ pub(crate) fn json_values_to_supertype(
             let r = r?;
             try_get_supertype(&l, &r)
         });
-    match (out_opt, values.len()==0) {
-        (Some(out), true) => {
-            match out {
-                Ok(out)=>Ok(out),
-                _=>Err(PolarsError::NoData("no data".into()))
-            }
+    match (out_opt, values.len() == 0) {
+        (Some(out), true) => match out {
+            Ok(out) => Ok(out),
+            _ => Err(PolarsError::NoData("no data".into())),
         },
-        (Some(out), false) => {
-            out
-        },
+        (Some(out), false) => out,
         (None, true) => Err(PolarsError::NoData("no data".into())),
-        (None, false) => polars_bail!(ComputeError: "could not infer data-type")
-
+        (None, false) => polars_bail!(ComputeError: "could not infer data-type"),
     }
 }
 
