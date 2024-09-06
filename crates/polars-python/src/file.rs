@@ -12,7 +12,7 @@ use polars::io::mmap::MmapBytesReader;
 use polars_error::{polars_err, polars_warn};
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyString};
+use pyo3::types::{PyBytes, PyString, PyStringMethods};
 
 use crate::error::PyPolarsErr;
 use crate::prelude::resolve_homedir;
@@ -47,11 +47,19 @@ impl PyFileLikeObject {
                 .call_method_bound(py, "read", (), None)
                 .expect("no read method found");
 
-            let bytes: &Bound<'_, PyBytes> = bytes
-                .downcast_bound(py)
-                .expect("Expecting to be able to downcast into bytes from read result.");
+            if let Ok(bytes) = bytes.downcast_bound::<PyBytes>(py) {
+                return bytes.as_bytes().to_vec();
+            }
 
-            bytes.as_bytes().to_vec()
+            if let Ok(bytes) = bytes.downcast_bound::<PyString>(py) {
+                return bytes
+                    .to_cow()
+                    .expect("PyString is not valid UTF-8")
+                    .into_owned()
+                    .into_bytes();
+            }
+
+            panic!("Expecting to be able to downcast into bytes from read result.");
         });
 
         Cursor::new(buf)
@@ -215,8 +223,10 @@ pub fn get_either_file_or_path(py_f: PyObject, write: bool) -> PyResult<EitherPy
                 Ok(encoding.eq_ignore_ascii_case("utf-8") || encoding.eq_ignore_ascii_case("utf8"))
             };
 
-            // BytesIO is relatively fast, and some code relies on it.
-            if !py_f.is_exact_instance(&io.getattr("BytesIO").unwrap()) {
+            // BytesIO / StringIO is relatively fast, and some code relies on it.
+            if !py_f.is_exact_instance(&io.getattr("BytesIO").unwrap())
+                || !py_f.is_exact_instance(&io.getattr("StringIO").unwrap())
+            {
                 polars_warn!("Polars found a filename. \
                 Ensure you pass a path to the file instead of a python file object when possible for best \
                 performance.");
@@ -325,8 +335,10 @@ fn get_either_buffer_or_path(
                 ));
             }
 
-            // BytesIO is relatively fast, and some code relies on it.
-            if !py_f.is_exact_instance(&io.getattr("BytesIO").unwrap()) {
+            // BytesIO / StringIO is relatively fast, and some code relies on it.
+            if !py_f.is_exact_instance(&io.getattr("BytesIO").unwrap())
+                || !py_f.is_exact_instance(&io.getattr("StringIO").unwrap())
+            {
                 polars_warn!("Polars found a filename. \
                 Ensure you pass a path to the file instead of a python file object when possible for best \
                 performance.");

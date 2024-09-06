@@ -741,6 +741,34 @@ def test_scan_in_memory(method: str) -> None:
 
 @pytest.mark.parametrize(
     "method",
+    ["csv", "ndjson"],
+)
+def test_scan_stringio(method: str) -> None:
+    f = io.StringIO()
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3],
+            "b": ["x", "y", "z"],
+        }
+    )
+
+    (getattr(df, f"write_{method}"))(f)
+
+    f.seek(0)
+    result = (getattr(pl, f"scan_{method}"))(f).collect()
+    assert_frame_equal(df, result)
+
+    g = io.StringIO()
+    (getattr(df, f"write_{method}"))(g)
+
+    f.seek(0)
+    g.seek(0)
+    result = (getattr(pl, f"scan_{method}"))([f, g]).collect()
+    assert_frame_equal(df.vstack(df), result)
+
+
+@pytest.mark.parametrize(
+    "method",
     ["parquet", "csv", "ipc", "ndjson"],
 )
 def test_nyi_async_scan_in_memory(method: str, monkeypatch: pytest.MonkeyPatch) -> None:
