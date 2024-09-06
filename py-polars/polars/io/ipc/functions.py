@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import contextlib
 import os
-from io import BytesIO, BufferedIOBase
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any, Sequence
 
@@ -427,7 +426,6 @@ def scan_ipc(
     include_file_paths
         Include the path of the source file(s) as a column with this name.
     """
-
     sources: list[str] | list[Path] | list[IO[bytes]] = []
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source, check_not_directory=False)

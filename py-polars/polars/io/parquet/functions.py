@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import io
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, Any, List
+from typing import IO, TYPE_CHECKING, Any
 
 import polars.functions as F
 from polars import concat as plconcat
@@ -176,8 +176,8 @@ def read_parquet(
     if isinstance(source, bytes):
         source = io.BytesIO(source)
     elif isinstance(source, list) and len(source) > 0 and isinstance(source[0], bytes):
-        assert all(isinstance(s, bytes) for s in source) 
-        source = [io.BytesIO(s) for s in source]  # type: ignore
+        assert all(isinstance(s, bytes) for s in source)
+        source = [io.BytesIO(s) for s in source]  # type: ignore[arg-type, assignment]
 
     # For other inputs, defer to `scan_parquet`
     lf = scan_parquet(
@@ -234,9 +234,9 @@ def _read_parquet_with_pyarrow(
     sources: list[str | Path | IO[bytes] | bytes | list[str] | list[Path]] = []
     if isinstance(source, list):
         if len(source) > 0 and isinstance(source[0], (bytes, io.BytesIO)):
-            sources = source # type: ignore
+            sources = source  # type: ignore[assignment]
         else:
-            sources = [source] # type: ignore
+            sources = [source]  # type: ignore[list-item]
     else:
         sources = [source]
 
@@ -253,8 +253,8 @@ def _read_parquet_with_pyarrow(
                 columns=columns,
                 **pyarrow_options,
             )
-        result = from_arrow(pa_table, rechunk=rechunk)  # type: ignore[return-value]
-        results.append(result) # type: ignore[arg-type]
+        result = from_arrow(pa_table, rechunk=rechunk)
+        results.append(result)  # type: ignore[arg-type]
 
     if len(results) == 1:
         return results[0]
@@ -424,12 +424,12 @@ def scan_parquet(
         pass
     else:
         source = [
-            normalize_filepath(source, check_not_directory=False) # type: ignore[arg-type]
+            normalize_filepath(source, check_not_directory=False)  # type: ignore[arg-type]
             for source in source
         ]
 
     return _scan_parquet_impl(
-        source, # type: ignore[arg-type]
+        source,  # type: ignore[arg-type]
         n_rows=n_rows,
         cache=cache,
         parallel=parallel,

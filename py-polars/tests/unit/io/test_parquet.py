@@ -3,7 +3,7 @@ from __future__ import annotations
 import io
 from datetime import datetime, time, timezone
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any, Literal, cast, IO
+from typing import IO, TYPE_CHECKING, Any, Literal, cast
 
 import fsspec
 import numpy as np
