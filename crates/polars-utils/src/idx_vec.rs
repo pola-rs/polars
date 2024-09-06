@@ -316,10 +316,25 @@ macro_rules! unitvec {
 }
 
 mod tests {
+
     #[test]
-    fn test_unitvec() {
-        let v = unitvec![1usize];
-        assert_eq!(v, v.clone());
+    #[should_panic]
+    fn test_unitvec_realloc_zero() {
+        super::UnitVec::<usize>::new().realloc(0);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_untivec_realloc_lt_len() {
+        super::UnitVec::<usize>::from(&[1, 2][..]).realloc(1)
+    }
+
+    #[test]
+    fn test_unitvec_clone() {
+        {
+            let v = unitvec![1usize];
+            assert_eq!(v, v.clone());
+        }
 
         for n in [
             26903816120209729usize,
