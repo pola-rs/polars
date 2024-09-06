@@ -2107,106 +2107,41 @@ impl JoinBuilder {
     }
 
 
-    // // Finish with join predicates
-    // pub fn join_where(self, predicates: Vec<Expr>) -> PolarsResult<LazyFrame> {
-    //     let to_inner = Arc::unwrap_or_clone;
-    //
-    //     let mut ie_left_on = vec![];
-    //     let mut ie_right_on = vec![];
-    //     let mut ie_op = vec![];
-    //
-    //     let mut eq_left_on = vec![];
-    //     let mut eq_right_on = vec![];
-    //
-    //     let mut remaining_preds = vec![];
-    //
-    //     fn to_inequality_operator(op: &Operator) -> Option<InequalityOperator> {
-    //         match op {
-    //             Operator::Lt => Some(InequalityOperator::Lt),
-    //             Operator::LtEq => Some(InequalityOperator::LtEq),
-    //             Operator::Gt => Some(InequalityOperator::Gt),
-    //             Operator::GtEq => Some(InequalityOperator::GtEq),
-    //             _ => None,
-    //         }
-    //     }
-    //
-    //     for pred in predicates.into_iter() {
-    //         let Expr::BinaryExpr {left, op, right} = pred else { polars_bail!(InvalidOperation: "can only join on binary expressions") };
-    //         polars_ensure!(op.is_comparison(), InvalidOperation: "expected comparison in join predicate");
-    //
-    //         if let Some(ie_op_) = to_inequality_operator(&op) {
-    //             ie_left_on.push(to_inner(left));
-    //             ie_right_on.push(to_inner(right));
-    //             ie_op.push(ie_op_)
-    //         } else if matches!(op, Operator::Eq) {
-    //             eq_left_on.push(to_inner(left));
-    //             eq_right_on.push(to_inner(right));
-    //         } else {
-    //
-    //             remaining_preds.push(pred);
-    //         }
-    //     }
-    //
-    //
-    //     fn parse_ie_join_expressions(
-    //         expressions: Vec<Expr>,
-    //     ) -> PolarsResult<(Vec<Expr>, Vec<InequalityOperator>, Vec<Expr>)> {
-    //
-    //         let mut left_on = Vec::with_capacity(2);
-    //         let mut operators = Vec::with_capacity(2);
-    //         let mut right_on = Vec::with_capacity(2);
-    //
-    //         for expression in expressions.into_iter() {
-    //             let (left, op, right) = parse_inequality_expression(expression)?;
-    //             left_on.push(left);
-    //             operators.push(op);
-    //             right_on.push(right);
-    //         }
-    //
-    //         Ok((left_on, operators, right_on))
-    //     }
-    //
-    //     fn parse_inequality_expression(expression: Expr) -> PolarsResult<(Expr, InequalityOperator, Expr)> {
-    //         fn to_inequality_operator(op: &Operator) -> PolarsResult<InequalityOperator> {
-    //             match op {
-    //                 Operator::Lt => Ok(InequalityOperator::Lt),
-    //                 Operator::LtEq => Ok(InequalityOperator::LtEq),
-    //                 Operator::Gt => Ok(InequalityOperator::Gt),
-    //                 Operator::GtEq => Ok(InequalityOperator::GtEq),
-    //                 _ => Err(PyValueError::new_err(format!(
-    //                     "expected an inequality operator in join inequality, got '{}'",
-    //                     op
-    //                 ))),
-    //             }
-    //         }
-    //
-    //         match expression.inner {
-    //             Expr::BinaryExpr { left, op, right } => {
-    //                 let inequality_op = to_inequality_operator(&op)?;
-    //                 Ok(((*left).clone(), inequality_op, (*right).clone()))
-    //             },
-    //             _ => Err(PyValueError::new_err(
-    //                 "expected a binary expression for a join inequality",
-    //             )),
-    //         }
-    //     }
-    //
-    //     let mut opt_state = self.lf.opt_state;
-    //     let other = self.other.expect("with not set");
-    //
-    //     // If any of the nodes reads from files we must activate this plan as well.
-    //     if other.opt_state.contains(OptFlags::FILE_CACHING) {
-    //         opt_state |= OptFlags::FILE_CACHING;
-    //     }
-    //
-    //     let args = JoinArgs {
-    //         how: self.how,
-    //         validation: self.validation,
-    //         suffix: self.suffix,
-    //         slice: None,
-    //         join_nulls: self.join_nulls,
-    //         coalesce: self.coalesce,
-    //     };
-    //
-    // }
+    // Finish with join predicates
+    pub fn join_where(self, predicates: Vec<Expr>) -> LazyFrame {
+        let mut opt_state = self.lf.opt_state;
+        let other = self.other.expect("with not set");
+
+        // If any of the nodes reads from files we must activate this plan as well.
+        if other.opt_state.contains(OptFlags::FILE_CACHING) {
+            opt_state |= OptFlags::FILE_CACHING;
+        }
+
+        let args = JoinArgs {
+            how: self.how,
+            validation: self.validation,
+            suffix: self.suffix,
+            slice: None,
+            join_nulls: self.join_nulls,
+            coalesce: self.coalesce,
+        };
+        let options = JoinOptions {
+                allow_parallel: self.allow_parallel,
+                force_parallel: self.force_parallel,
+                args,
+                ..Default::default()
+            };
+
+        let lp = DslPlan::Join {
+            input_left: Arc::new(self.lf.logical_plan),
+            input_right: Arc::new(other.logical_plan),
+            left_on: Default::default(),
+            right_on: Default::default(),
+            predicates,
+            options: Arc::from(options),
+        };
+
+        LazyFrame::from_logical_plan(lp, opt_state)
+
+    }
 }

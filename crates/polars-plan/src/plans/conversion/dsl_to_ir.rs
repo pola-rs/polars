@@ -85,6 +85,15 @@ pub(super) struct DslConversionContext<'a> {
     pub(super) opt_flags: &'a mut OptFlags,
 }
 
+pub(super) fn run_conversion(lp: IR, ctxt: &mut DslConversionContext, name: &str) -> PolarsResult<Node> {
+    let lp_node = ctxt.lp_arena.add(lp);
+    ctxt.conversion_optimizer
+        .coerce_types(ctxt.expr_arena, ctxt.lp_arena, lp_node)
+        .map_err(|e| e.context(format!("'{name}' failed").into()))?;
+
+    Ok(lp_node)
+}
+
 /// converts LogicalPlan to IR
 /// it adds expressions & lps to the respective arenas as it traverses the plan
 /// finally it returns the top node of the logical plan
@@ -92,14 +101,6 @@ pub(super) struct DslConversionContext<'a> {
 pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult<Node> {
     let owned = Arc::unwrap_or_clone;
 
-    fn run_conversion(lp: IR, ctxt: &mut DslConversionContext, name: &str) -> PolarsResult<Node> {
-        let lp_node = ctxt.lp_arena.add(lp);
-        ctxt.conversion_optimizer
-            .coerce_types(ctxt.expr_arena, ctxt.lp_arena, lp_node)
-            .map_err(|e| e.context(format!("'{name}' failed").into()))?;
-
-        Ok(lp_node)
-    }
 
     let v = match lp {
         DslPlan::Scan {
@@ -541,10 +542,9 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             left_on,
             right_on,
             predicates,
-            mut options,
+            options,
         } => {
-            let ir = join::resolve_join(input_left, input_right, left_on, right_on, predicates, options, ctxt)?;
-            return run_conversion(ir, ctxt, "join");
+            return join::resolve_join(input_left, input_right, left_on, right_on, predicates, options, ctxt)
         },
         DslPlan::HStack {
             input,

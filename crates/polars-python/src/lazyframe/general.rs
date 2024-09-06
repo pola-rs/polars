@@ -969,21 +969,17 @@ impl PyLazyFrame {
             .into())
     }
 
-    fn join_where(&self, other: Self, on: Vec<PyExpr>, suffix: String) -> PyResult<Self> {
+    fn join_where(&self, other: Self, predicates: Vec<PyExpr>, suffix: String) -> PyResult<Self> {
         let ldf = self.ldf.clone();
         let other = other.ldf;
-        let (left_on, operators, right_on) = parse_ie_join_expressions(on)?;
+
+        let predicates = predicates.to_exprs();
+
         Ok(ldf
             .join_builder()
             .with(other)
-            .left_on(left_on)
-            .right_on(right_on)
-            .how(JoinType::IEJoin(IEJoinOptions {
-                operator1: operators[0],
-                operator2: operators[1],
-            }))
             .suffix(suffix)
-            .finish()
+            .join_where(predicates)
             .into())
     }
 
