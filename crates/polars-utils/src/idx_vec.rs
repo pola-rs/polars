@@ -178,13 +178,21 @@ impl<T> Drop for UnitVec<T> {
 impl<T> Clone for UnitVec<T> {
     fn clone(&self) -> Self {
         unsafe {
-            let mut me = std::mem::ManuallyDrop::new(Vec::with_capacity(self.len));
-            let buffer = me.as_mut_ptr();
-            std::ptr::copy(self.data_ptr(), buffer, self.len);
-            UnitVec {
-                data: buffer,
-                len: self.len,
-                capacity: NonZeroUsize::new(std::cmp::max(self.len, 1)).unwrap(),
+            if self.capacity.get() == 1 {
+                Self {
+                    data: self.data,
+                    len: self.len,
+                    capacity: self.capacity,
+                }
+            } else {
+                let mut me = std::mem::ManuallyDrop::new(Vec::with_capacity(self.len));
+                let buffer = me.as_mut_ptr();
+                std::ptr::copy(self.data_ptr(), buffer, self.len);
+                Self {
+                    data: buffer,
+                    len: self.len,
+                    capacity: NonZeroUsize::new(std::cmp::max(self.len, 1)).unwrap(),
+                }
             }
         }
     }
@@ -295,11 +303,20 @@ macro_rules! unitvec {
     );
     ($elem:expr) => (
         {let mut new = $crate::idx_vec::UnitVec::new();
+        let v = $elem;
         // SAFETY: first element always fits.
-        unsafe { new.push_unchecked($elem) };
+        unsafe { new.push_unchecked(v) };
         new}
     );
     ($($x:expr),+ $(,)?) => (
             vec![$($x),+].into()
     );
+}
+
+mod tests {
+    #[test]
+    fn test_unitvec() {
+        let v = unitvec![1usize];
+        assert_eq!(v, v.clone());
+    }
 }
