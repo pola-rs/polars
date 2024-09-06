@@ -7085,16 +7085,14 @@ class DataFrame:
             .collect(_eager=True)
         )
 
-    def join_between(
+    def join_where(
         self,
         other: DataFrame,
-        predicate_1: Expr,
-        predicate_2: Expr,
-        *,
+        *predicates: Expr | Iterable[Expr],
         suffix: str = "_right",
     ) -> DataFrame:
         """
-        Perform a join using two inequality expressions.
+        Perform a join based on one or multiple equality predicates.
 
         A row from this table may be included in zero or multiple rows in the result,
         and the relative order of rows may differ between the input and output tables.
@@ -7103,18 +7101,12 @@ class DataFrame:
         ----------
         other
             DataFrame to join with.
-        predicate_1
-            Inequality condition to join the two table on.
+        *predicates
+            (In)Equality condition to join the two table on.
             The left `pl.col(..)` will refer to the left table
             and the right `pl.col(..)`
             to the right table.
             For example: `pl.col("time") >= pl.col("duration")`
-        predicate_2
-            Inequality condition to join the two table on.
-            The left `pl.col(..)` will refer to the left table
-            and the right `pl.col(..)`
-            to the right table.
-            For example: `pl.col("cost") < pl.col("cost")`
         suffix
             Suffix to append to columns with a duplicate name.
         """
@@ -7124,10 +7116,9 @@ class DataFrame:
 
         return (
             self.lazy()
-            .join_between(
+            .join_where(
                 other.lazy(),
-                predicate_1=predicate_1,
-                predicate_2=predicate_2,
+                *predicates,
                 suffix=suffix,
             )
             .collect(_eager=True)

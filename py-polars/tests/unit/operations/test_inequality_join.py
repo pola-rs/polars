@@ -24,7 +24,7 @@ def test_self_join() -> None:
         }
     )
 
-    actual = west.join_between(
+    actual = west.join_where(
         west, pl.col("time") > pl.col("time"), pl.col("cost") < pl.col("cost")
     )
 
@@ -61,7 +61,7 @@ def test_basic_ie_join() -> None:
         }
     )
 
-    actual = east.join_between(
+    actual = east.join_where(
         west, pl.col("dur") < pl.col("time"), pl.col("rev") > pl.col("cost")
     )
 
@@ -103,7 +103,7 @@ def test_ie_join_with_slice(offset: int, length: int) -> None:
     ).lazy()
 
     actual = (
-        east.join_between(
+        east.join_where(
             west, pl.col("dur") < pl.col("time"), pl.col("rev") < pl.col("cost")
         )
         .slice(offset, length)
@@ -122,9 +122,13 @@ def test_ie_join_with_slice(offset: int, length: int) -> None:
             "cores_right": [1, 4, 2, 1, 4],
         }
     )
-    expected = expected_full.slice(offset, length)
+    # The ordering of the result is arbitrary, so we can
+    # only verify that each row of the slice is present in the full expected result.
+    assert len(actual) == len(expected_full.slice(offset, length))
 
-    assert_frame_equal(actual, expected)
+    expected_rows = set(expected_full.iter_rows())
+    for row in actual.iter_rows():
+        assert row in expected_rows, f"{row} not in expected rows"
 
 
 def test_ie_join_with_expressions() -> None:
@@ -145,7 +149,7 @@ def test_ie_join_with_expressions() -> None:
         }
     )
 
-    actual = east.join_between(
+    actual = east.join_where(
         west,
         (pl.col("dur") * 2) < pl.col("time"),
         pl.col("rev") > (pl.col("cost").cast(pl.Int32) // 2).cast(pl.Int64),
@@ -196,7 +200,7 @@ def test_join_between() -> None:
         }
     )
 
-    actual = left.join_between(
+    actual = left.join_where(
         right,
         pl.col("time") >= pl.col("start_time"),
         pl.col("time") < pl.col("end_time"),
@@ -316,7 +320,7 @@ def test_ie_join(east: pl.DataFrame, west: pl.DataFrame, op1: str, op2: str) -> 
     expr0 = _inequality_expression("dur", op1, "time")
     expr1 = _inequality_expression("rev", op2, "cost")
 
-    actual = east.join_between(west, expr0, expr1)
+    actual = east.join_where(west, expr0, expr1)
 
     expected = east.join(west, how="cross").filter(expr0 & expr1)
     assert_frame_equal(actual, expected, check_row_order=False, check_exact=True)
@@ -334,7 +338,7 @@ def test_ie_join_with_nulls(
     expr0 = _inequality_expression("dur", op1, "time")
     expr1 = _inequality_expression("rev", op2, "cost")
 
-    actual = east.join_between(west, expr0, expr1)
+    actual = east.join_where(west, expr0, expr1)
 
     expected = east.join(west, how="cross").filter(expr0 & expr1)
     assert_frame_equal(actual, expected, check_row_order=False, check_exact=True)
@@ -353,7 +357,7 @@ def test_ie_join_with_floats(
     expr1 = _inequality_expression("rev", op2, "cost")
 
     print(east, west)
-    actual = east.join_between(west, expr0, expr1)
+    actual = east.join_where(west, expr0, expr1)
     print(actual)
 
     expected = east.join(west, how="cross").filter(expr0 & expr1)

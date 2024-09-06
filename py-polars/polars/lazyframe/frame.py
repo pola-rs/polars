@@ -4561,16 +4561,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             )
         )
 
-    def join_between(
+    def join_where(
         self,
         other: LazyFrame,
-        predicate_1: Expr,
-        predicate_2: Expr,
-        *,
+        *predicates: Expr | Iterable[Expr],
         suffix: str = "_right",
     ) -> LazyFrame:
         """
-        Perform a join using two inequality expressions.
+        Perform a join based on one or multiple equality predicates.
 
         A row from this table may be included in zero or multiple rows in the result,
         and the relative order of rows may differ between the input and output tables.
@@ -4579,18 +4577,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ----------
         other
             LazyFrame to join with.
-        predicate_1
-            Inequality condition to join the two table on.
+        *predicates
+            (In)Equality condition to join the two table on.
             The left `pl.col(..)` will refer to the left table
             and the right `pl.col(..)`
             to the right table.
             For example: `pl.col("time") >= pl.col("duration")`
-        predicate_2
-            Inequality condition to join the two table on.
-            The left `pl.col(..)` will refer to the left table
-            and the right `pl.col(..)`
-            to the right table.
-            For example: `pl.col("cost") < pl.col("cost")`
         suffix
             Suffix to append to columns with a duplicate name.
         """
@@ -4598,10 +4590,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             msg = f"expected `other` join table to be a LazyFrame, not a {type(other).__name__!r}"
             raise TypeError(msg)
 
+        pyexprs = parse_into_list_of_expressions(*predicates)
+
         return self._from_pyldf(
             self._ldf.inequality_join(
                 other._ldf,
-                [predicate_1._pyexpr, predicate_2._pyexpr],
+                pyexprs,
                 suffix,
             )
         )
