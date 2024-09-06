@@ -19,7 +19,7 @@ pub(crate) fn json_values_to_supertype(
             let r = r?;
             try_get_supertype(&l, &r)
         });
-    match (out_opt, values.len() == 0) {
+    match (out_opt, values.is_empty()) {
         (Some(out), true) => match out {
             Ok(out) => Ok(out),
             _ => Err(PolarsError::NoData("no data".into())),
