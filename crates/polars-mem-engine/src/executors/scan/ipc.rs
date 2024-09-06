@@ -173,7 +173,10 @@ impl IpcExec {
         // concurrently.
         use polars_io::file_cache::init_entries_from_uri_list;
 
-        let paths = self.sources.into_paths();
+        let paths = self
+            .sources
+            .into_paths()
+            .ok_or_else(|| polars_err!(nyi = "Asynchronous scanning of in-memory buffers"))?;
 
         tokio::task::block_in_place(|| {
             let cache_entries = init_entries_from_uri_list(

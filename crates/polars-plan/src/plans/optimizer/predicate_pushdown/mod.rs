@@ -366,7 +366,9 @@ impl<'a> PredicatePushDown<'a> {
                 if let (Some(hive_parts), Some(predicate)) = (&scan_hive_parts, &predicate) {
                     if let Some(io_expr) = self.expr_eval.unwrap()(predicate, expr_arena) {
                         if let Some(stats_evaluator) = io_expr.as_stats_evaluator() {
-                            let paths = sources.as_paths();
+                            let paths = sources.as_paths().ok_or_else(|| {
+                                polars_err!(nyi = "Hive partitioning of in-memory buffers")
+                            })?;
                             let mut new_paths = Vec::with_capacity(paths.len());
                             let mut new_hive_parts = Vec::with_capacity(paths.len());
 

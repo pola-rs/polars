@@ -77,7 +77,10 @@ impl ParquetSource {
         usize,
         Option<Vec<Series>>,
     )> {
-        let paths = self.sources.as_paths();
+        let paths = self
+            .sources
+            .as_paths()
+            .ok_or_else(|| polars_err!(nyi = "Streaming scanning of in-memory buffers"))?;
         let path = &paths[index];
         let options = self.options;
         let file_options = self.file_options.clone();
@@ -256,7 +259,9 @@ impl ParquetSource {
         verbose: bool,
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
     ) -> PolarsResult<Self> {
-        let paths = sources.as_paths();
+        let paths = sources
+            .as_paths()
+            .ok_or_else(|| polars_err!(nyi = "Streaming scanning of in-memory buffers"))?;
         let n_threads = POOL.current_num_threads();
 
         let iter = 0..paths.len();

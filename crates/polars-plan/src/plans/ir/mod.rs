@@ -71,7 +71,10 @@ impl<'a> ScanSourceRef<'a> {
     pub fn to_memslice(
         &self,
         run_async: bool,
-        cache_entries: Option<&Vec<Arc<polars_io::file_cache::FileCacheEntry>>>,
+        #[cfg(feature = "cloud")] cache_entries: Option<
+            &Vec<Arc<polars_io::file_cache::FileCacheEntry>>,
+        >,
+        #[cfg(not(feature = "cloud"))] cache_entries: Option<&()>,
         index: usize,
     ) -> PolarsResult<MemSlice> {
         match self {
@@ -99,24 +102,18 @@ impl ScanSources {
             offset: 0,
         }
     }
-    pub fn as_paths(&self) -> &[PathBuf] {
-        match self {
-            Self::Files(paths) => paths,
-            Self::Buffers(_) => unimplemented!(),
-        }
-    }
 
-    pub fn try_into_paths(&self) -> Option<Arc<[PathBuf]>> {
+    pub fn as_paths(&self) -> Option<&[PathBuf]> {
         match self {
-            Self::Files(paths) => Some(paths.clone()),
+            Self::Files(paths) => Some(paths.as_ref()),
             Self::Buffers(_) => None,
         }
     }
 
-    pub fn into_paths(&self) -> Arc<[PathBuf]> {
+    pub fn into_paths(&self) -> Option<Arc<[PathBuf]>> {
         match self {
-            Self::Files(paths) => paths.clone(),
-            Self::Buffers(_) => unimplemented!(),
+            Self::Files(paths) => Some(paths.clone()),
+            Self::Buffers(_) => None,
         }
     }
 

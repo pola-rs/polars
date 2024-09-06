@@ -1,5 +1,6 @@
 use std::fs::File;
 
+use polars_core::error::feature_gated;
 use polars_core::{config, POOL};
 use polars_io::csv::read::{BatchedCsvReader, CsvReadOptions, CsvReader};
 use polars_io::path_utils::is_cloud_url;
@@ -36,7 +37,10 @@ impl CsvSource {
     // otherwise all files would be opened during construction of the pipeline
     // leading to Too many Open files error
     fn init_next_reader(&mut self) -> PolarsResult<()> {
-        let paths = self.sources.as_paths();
+        let paths = self
+            .sources
+            .as_paths()
+            .ok_or_else(|| polars_err!(nyi = "Streaming scanning of in-memory buffers"))?;
         let file_options = self.file_options.clone();
 
         let n_rows = file_options.slice.map(|x| {
@@ -105,8 +109,7 @@ impl CsvSource {
             .with_row_index(row_index);
 
         let reader: CsvReader<File> = if run_async {
-            #[cfg(feature = "cloud")]
-            {
+            feature_gated!("cloud", {
                 options.into_reader_with_file_handle(
                     polars_io::file_cache::FILE_CACHE
                         .get_entry(path.to_str().unwrap())
@@ -114,11 +117,7 @@ impl CsvSource {
                         .unwrap()
                         .try_open_assume_latest()?,
                 )
-            }
-            #[cfg(not(feature = "cloud"))]
-            {
-                panic!("required feature `cloud` is not enabled")
-            }
+            })
         } else {
             options
                 .with_path(Some(path))

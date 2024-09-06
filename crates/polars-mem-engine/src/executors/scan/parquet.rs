@@ -138,7 +138,6 @@ impl ParquetExec {
 
         for i in (first_source..self.sources.len()).step_by(step) {
             let end = std::cmp::min(i.saturating_add(step), self.sources.len());
-            let hive_parts = self.hive_parts.as_ref().map(|x| &x[i..end]);
 
             if current_offset >= slice_end && !result.is_empty() {
                 return Ok(result);
@@ -149,7 +148,10 @@ impl ParquetExec {
             // files in parallel even if we add row index columns or slices.
             let iter = (i..end).into_par_iter().map(|i| {
                 let source = self.sources.at(i);
-                let hive_partitions = hive_parts.map(|x| x[i].materialize_partition_columns());
+                let hive_partitions = self
+                    .hive_parts
+                    .as_ref()
+                    .map(|x| x[i].materialize_partition_columns());
 
                 let (projection, predicate) = prepare_scan_args(
                     self.predicate.clone(),
@@ -249,7 +251,10 @@ impl ParquetExec {
         use polars_io::utils::slice::split_slice_at_file;
 
         let verbose = verbose();
-        let paths = self.sources.into_paths();
+        let paths = self
+            .sources
+            .into_paths()
+            .ok_or_else(|| polars_err!(nyi = "Asynchronous scanning of in-memory buffers"))?;
         let first_metadata = &self.metadata;
         let cloud_options = self.cloud_options.as_ref();
 

@@ -737,3 +737,27 @@ def test_scan_in_memory(method: str) -> None:
     g.seek(0)
     result = (getattr(pl, f"scan_{method}"))([f, g]).slice(-1, 1).collect()
     assert_frame_equal(df.vstack(df).slice(-1, 1), result)
+
+
+@pytest.mark.parametrize(
+    "method",
+    ["parquet", "csv", "ipc", "ndjson"],
+)
+def test_nyi_async_scan_in_memory(method: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    f = io.BytesIO()
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3],
+            "b": ["x", "y", "z"],
+        }
+    )
+
+    (getattr(df, f"write_{method}"))(f)
+
+    f.seek(0)
+    _enable_force_async(monkeypatch)
+    with pytest.raises(
+        pl.exceptions.ComputeError,
+        match="not yet implemented: Asynchronous scanning of in-memory buffers",
+    ):
+        (getattr(pl, f"scan_{method}"))(f).collect()

@@ -160,21 +160,24 @@ pub(super) fn csv_file_info(
     let run_async = sources.is_cloud_url() || config::force_async();
 
     let cache_entries = {
-        feature_gated!("cloud", {
-            if run_async {
+        if run_async {
+            feature_gated!("cloud", {
                 Some(polars_io::file_cache::init_entries_from_uri_list(
                     sources
                         .as_paths()
+                        .ok_or_else(|| {
+                            polars_err!(nyi = "Asynchronous scanning of in-memory buffers")
+                        })?
                         .iter()
                         .map(|path| Arc::from(path.to_str().unwrap()))
                         .collect::<Vec<_>>()
                         .as_slice(),
                     cloud_options,
                 )?)
-            } else {
-                None
-            }
-        })
+            })
+        } else {
+            None
+        }
     };
 
     let infer_schema_func = |i| {
@@ -280,6 +283,9 @@ pub(super) fn ndjson_file_info(
                 Some(polars_io::file_cache::init_entries_from_uri_list(
                     sources
                         .as_paths()
+                        .ok_or_else(|| {
+                            polars_err!(nyi = "Asynchronous scanning of in-memory buffers")
+                        })?
                         .iter()
                         .map(|path| Arc::from(path.to_str().unwrap()))
                         .collect::<Vec<_>>()

@@ -126,7 +126,12 @@ pub(super) fn count_rows_parquet(
 
     if is_cloud {
         feature_gated!("cloud", {
-            get_runtime().block_on(count_rows_cloud_parquet(sources.as_paths(), cloud_options))
+            get_runtime().block_on(count_rows_cloud_parquet(
+                sources.as_paths().ok_or_else(|| {
+                    polars_err!(nyi = "Asynchronous scanning of in-memory buffers")
+                })?,
+                cloud_options,
+            ))
         })
     } else {
         sources
@@ -174,7 +179,9 @@ pub(super) fn count_rows_ipc(
     if is_cloud {
         feature_gated!("cloud", {
             get_runtime().block_on(count_rows_cloud_ipc(
-                sources.as_paths(),
+                sources.as_paths().ok_or_else(|| {
+                    polars_err!(nyi = "Asynchronous scanning of in-memory buffers")
+                })?,
                 cloud_options,
                 metadata,
             ))
@@ -234,6 +241,9 @@ pub(super) fn count_rows_ndjson(
                 Some(polars_io::file_cache::init_entries_from_uri_list(
                     sources
                         .as_paths()
+                        .ok_or_else(|| {
+                            polars_err!(nyi = "Asynchronous scanning of in-memory buffers")
+                        })?
                         .iter()
                         .map(|path| Arc::from(path.to_str().unwrap()))
                         .collect::<Vec<_>>()

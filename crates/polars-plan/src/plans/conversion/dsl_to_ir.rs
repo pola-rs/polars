@@ -193,11 +193,15 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             } else if file_options.hive_options.enabled.unwrap_or(false)
                 && resolved_file_info.reader_schema.is_some()
             {
+                let paths = sources
+                    .as_paths()
+                    .ok_or_else(|| polars_err!(nyi = "Hive-partitioning of in-memory buffers"))?;
+
                 #[allow(unused_assignments)]
                 let mut owned = None;
 
                 hive_partitions_from_paths(
-                    sources.as_paths(),
+                    paths,
                     file_options.hive_options.hive_start_idx,
                     file_options.hive_options.schema.clone(),
                     match resolved_file_info.reader_schema.as_ref().unwrap() {

@@ -326,7 +326,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             file_options,
         } => Scan {
             paths: sources
-                .try_into_paths()
+                .into_paths()
                 .ok_or_else(|| PyNotImplementedError::new_err("scan with BytesIO"))?
                 .to_object(py),
             // TODO: file info
