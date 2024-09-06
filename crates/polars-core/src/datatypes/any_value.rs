@@ -341,16 +341,22 @@ impl<'a> Deserialize<'a> for AnyValue<'static> {
 }
 
 impl AnyValue<'static> {
-    pub fn zero(dtype: &DataType) -> Self {
+    pub fn zero_sum(dtype: &DataType) -> Self {
         match dtype {
             DataType::String => AnyValue::StringOwned(PlSmallStr::EMPTY),
-            DataType::Boolean => AnyValue::Boolean(false),
-            // SAFETY:
-            // Numeric values are static, inform the compiler of this.
+            DataType::Binary => AnyValue::BinaryOwned(Vec::new()),
+            DataType::Boolean => (0 as IdxSize).into(),
+            // SAFETY: numeric values are static, inform the compiler of this.
             d if d.is_numeric() => unsafe {
                 std::mem::transmute::<AnyValue<'_>, AnyValue<'static>>(
                     AnyValue::UInt8(0).cast(dtype),
                 )
+            },
+            #[cfg(feature = "dtype-duration")]
+            DataType::Duration(unit) => AnyValue::Duration(0, *unit),
+            #[cfg(feature = "dtype-decimal")]
+            DataType::Decimal(_p, s) => {
+                AnyValue::Decimal(0, s.expect("unknown scale during execution"))
             },
             _ => AnyValue::Null,
         }
@@ -836,7 +842,23 @@ impl<'a> AnyValue<'a> {
             (UInt64(l), UInt64(r)) => UInt64(l + r),
             (Float32(l), Float32(r)) => Float32(l + r),
             (Float64(l), Float64(r)) => Float64(l + r),
-            _ => todo!(),
+            #[cfg(feature = "dtype-duration")]
+            (Duration(l, lu), Duration(r, ru)) => {
+                if lu != ru {
+                    unimplemented!("adding durations with different units is not supported here");
+                }
+
+                Duration(l + r, *lu)
+            },
+            #[cfg(feature = "dtype-decimal")]
+            (Decimal(l, ls), Decimal(r, rs)) => {
+                if ls != rs {
+                    unimplemented!("adding decimals with different scales is not supported here");
+                }
+
+                Decimal(l + r, *ls)
+            },
+            _ => unimplemented!(),
         }
     }
 
