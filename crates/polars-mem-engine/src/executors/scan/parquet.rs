@@ -8,7 +8,6 @@ use polars_io::cloud::CloudOptions;
 use polars_io::parquet::metadata::FileMetaDataRef;
 use polars_io::utils::slice::split_slice_at_file;
 use polars_io::RowIndex;
-use polars_utils::mmap::MemSlice;
 
 use super::*;
 
@@ -82,18 +81,7 @@ impl ParquetExec {
                         let row_counts = path_indexes
                             .into_par_iter()
                             .map(|&i| {
-                                let memslice = match self.sources.at(i) {
-                                    ScanSourceRef::File(path) => {
-                                        let file = std::fs::File::open(path)?;
-                                        MemSlice::from_mmap(Arc::new(unsafe {
-                                            memmap::Mmap::map(&file).unwrap()
-                                        }))
-                                    },
-                                    ScanSourceRef::Buffer(buff) => {
-                                        MemSlice::from_bytes(buff.clone())
-                                    },
-                                };
-
+                                let memslice = self.sources.at(i).to_memslice()?;
                                 ParquetReader::new(std::io::Cursor::new(memslice)).num_rows()
                             })
                             .collect::<PolarsResult<Vec<_>>>()?;
@@ -161,13 +149,7 @@ impl ParquetExec {
                     hive_partitions.as_deref(),
                 );
 
-                let memslice = match source {
-                    ScanSourceRef::File(path) => {
-                        let file = std::fs::File::open(path)?;
-                        MemSlice::from_mmap(Arc::new(unsafe { memmap::Mmap::map(&file).unwrap() }))
-                    },
-                    ScanSourceRef::Buffer(buff) => MemSlice::from_bytes(buff.clone()),
-                };
+                let memslice = source.to_memslice()?;
 
                 let mut reader = ParquetReader::new(std::io::Cursor::new(memslice))
                     .read_parallel(parallel)

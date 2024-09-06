@@ -826,7 +826,7 @@ impl DslScanSources {
             return Ok(());
         }
 
-        let ScanSources::Files(paths) = &self.sources else {
+        let ScanSources::Paths(paths) = &self.sources else {
             self.is_expanded = true;
             return Ok(());
         };
@@ -853,7 +853,7 @@ impl DslScanSources {
 
         #[allow(unreachable_code)]
         {
-            self.sources = ScanSources::Files(expanded_sources);
+            self.sources = ScanSources::Paths(expanded_sources);
             self.is_expanded = true;
 
             Ok(())

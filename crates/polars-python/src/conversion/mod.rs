@@ -2,6 +2,7 @@ pub(crate) mod any_value;
 pub(crate) mod chunked_array;
 mod datetime;
 use std::fmt::{Display, Formatter};
+use std::fs::File;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 
@@ -540,7 +541,8 @@ impl<'py> FromPyObject<'py> for Wrap<ScanSources> {
         }
 
         enum MutableSources {
-            Files(Vec<PathBuf>),
+            Paths(Vec<PathBuf>),
+            Files(Vec<File>),
             Buffers(Vec<bytes::Bytes>),
         }
 
@@ -562,13 +564,19 @@ impl<'py> FromPyObject<'py> for Wrap<ScanSources> {
             EitherPythonFileOrPath::Path(path) => {
                 let mut sources = Vec::with_capacity(num_items);
                 sources.push(path);
+                MutableSources::Paths(sources)
+            },
+            EitherPythonFileOrPath::File(file) => {
+                let mut sources = Vec::with_capacity(num_items);
+                sources.push(file);
                 MutableSources::Files(sources)
             },
         };
 
         for source in iter {
             match (&mut sources, source?) {
-                (MutableSources::Files(v), EitherPythonFileOrPath::Path(p)) => v.push(p),
+                (MutableSources::Paths(v), EitherPythonFileOrPath::Path(p)) => v.push(p),
+                (MutableSources::Files(v), EitherPythonFileOrPath::File(f)) => v.push(f),
                 (MutableSources::Buffers(v), EitherPythonFileOrPath::Py(f)) => v.push(f.as_bytes()),
                 _ => {
                     return Err(PyTypeError::new_err(
@@ -579,6 +587,7 @@ impl<'py> FromPyObject<'py> for Wrap<ScanSources> {
         }
 
         Ok(Wrap(match sources {
+            MutableSources::Paths(i) => ScanSources::Paths(i.into()),
             MutableSources::Files(i) => ScanSources::Files(i.into()),
             MutableSources::Buffers(i) => ScanSources::Buffers(i.into()),
         }))

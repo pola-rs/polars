@@ -32,7 +32,7 @@ impl LazyCsvReader {
     }
 
     pub fn new_paths(paths: Arc<[PathBuf]>) -> Self {
-        Self::new_with_sources(ScanSources::Files(paths))
+        Self::new_with_sources(ScanSources::Paths(paths))
     }
 
     pub fn new_with_sources(sources: ScanSources) -> Self {
@@ -47,7 +47,7 @@ impl LazyCsvReader {
     }
 
     pub fn new(path: impl AsRef<Path>) -> Self {
-        Self::new_with_sources(ScanSources::Files([path.as_ref().to_path_buf()].into()))
+        Self::new_with_sources(ScanSources::Paths([path.as_ref().to_path_buf()].into()))
     }
 
     /// Skip this number of rows after the header location.
@@ -254,7 +254,7 @@ impl LazyCsvReader {
         };
 
         let schema = match self.sources.clone() {
-            ScanSources::Files(paths) => {
+            ScanSources::Paths(paths) => {
                 // TODO: Path expansion should happen when converting to the IR
                 // https://github.com/pola-rs/polars/issues/17634
                 let paths = expand_paths(&paths[..], self.glob(), self.cloud_options())?;
@@ -265,6 +265,16 @@ impl LazyCsvReader {
 
                 let mut file = polars_utils::open_file(path)?;
                 infer_schema(get_reader_bytes(&mut file).expect("could not mmap file"))?
+            },
+            ScanSources::Files(files) => {
+                let Some(file) = files.first() else {
+                    polars_bail!(ComputeError: "no buffers specified for this reader");
+                };
+
+                infer_schema(
+                    get_reader_bytes(&mut std::io::BufReader::new(file))
+                        .expect("could not mmap file"),
+                )?
             },
             ScanSources::Buffers(buffers) => {
                 let Some(buffer) = buffers.first() else {

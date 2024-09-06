@@ -171,9 +171,8 @@ def read_parquet(
             memory_map=memory_map,
             rechunk=rechunk,
         )
-
     # Read file and bytes inputs using `read_parquet`
-    if isinstance(source, bytes):
+    elif isinstance(source, bytes):
         source = io.BytesIO(source)
     elif isinstance(source, list) and len(source) > 0 and isinstance(source[0], bytes):
         assert all(isinstance(s, bytes) for s in source)
@@ -233,7 +232,7 @@ def _read_parquet_with_pyarrow(
 
     sources: list[str | Path | IO[bytes] | bytes | list[str] | list[Path]] = []
     if isinstance(source, list):
-        if len(source) > 0 and isinstance(source[0], (bytes, io.BytesIO)):
+        if len(source) > 0 and isinstance(source[0], (bytes, io.IOBase)):
             sources = source  # type: ignore[assignment]
         else:
             sources = [source]  # type: ignore[list-item]
@@ -416,10 +415,10 @@ def scan_parquet(
 
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source, check_not_directory=False)
-    elif isinstance(source, io.BytesIO) or (
+    elif isinstance(source, io.IOBase) or (
         isinstance(source, list)
         and len(source) > 0
-        and isinstance(source[0], io.BytesIO)
+        and isinstance(source[0], io.IOBase)
     ):
         pass
     else:

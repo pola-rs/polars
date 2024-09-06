@@ -140,7 +140,7 @@ impl LazyFrame {
     /// Create a LazyFrame directly from a parquet scan.
     pub fn scan_parquet(path: impl AsRef<Path>, args: ScanArgsParquet) -> PolarsResult<Self> {
         Self::scan_parquet_sources(
-            ScanSources::Files([path.as_ref().to_path_buf()].into()),
+            ScanSources::Paths([path.as_ref().to_path_buf()].into()),
             args,
         )
     }
@@ -152,6 +152,6 @@ impl LazyFrame {
 
     /// Create a LazyFrame directly from a parquet scan.
     pub fn scan_parquet_files(paths: Arc<[PathBuf]>, args: ScanArgsParquet) -> PolarsResult<Self> {
-        Self::scan_parquet_sources(ScanSources::Files(paths), args)
+        Self::scan_parquet_sources(ScanSources::Paths(paths), args)
     }
 }

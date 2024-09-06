@@ -35,44 +35,34 @@ pub(super) fn parquet_file_info(
 ) -> PolarsResult<(FileInfo, Option<FileMetaDataRef>)> {
     use polars_core::error::feature_gated;
 
-    let first_source = sources
-        .first()
-        .ok_or_else(|| polars_err!(ComputeError: "expected at least 1 source"))?;
+    let (reader_schema, num_rows, metadata) = {
+        if sources.is_cloud_url() {
+            let first_path = &sources.as_paths().unwrap()[0];
+            feature_gated!("cloud", {
+                let uri = first_path.to_string_lossy();
+                get_runtime().block_on(async {
+                    let mut reader =
+                        ParquetAsyncReader::from_uri(&uri, cloud_options, None).await?;
 
-    let (reader_schema, num_rows, metadata) = match first_source {
-        ScanSourceRef::File(path) => {
-            if is_cloud_url(path) {
-                feature_gated!("cloud", {
-                    let uri = path.to_string_lossy();
-                    get_runtime().block_on(async {
-                        let mut reader =
-                            ParquetAsyncReader::from_uri(&uri, cloud_options, None).await?;
-
-                        PolarsResult::Ok((
-                            reader.schema().await?,
-                            Some(reader.num_rows().await?),
-                            Some(reader.get_metadata().await?.clone()),
-                        ))
-                    })?
-                })
-            } else {
-                let file = polars_utils::open_file(path)?;
-                let mut reader = ParquetReader::new(file);
-                (
-                    reader.schema()?,
-                    Some(reader.num_rows()?),
-                    Some(reader.get_metadata()?.clone()),
-                )
-            }
-        },
-        ScanSourceRef::Buffer(buffer) => {
-            let mut reader = ParquetReader::new(std::io::Cursor::new(buffer));
+                    PolarsResult::Ok((
+                        reader.schema().await?,
+                        Some(reader.num_rows().await?),
+                        Some(reader.get_metadata().await?.clone()),
+                    ))
+                })?
+            })
+        } else {
+            let first_source = sources
+                .first()
+                .ok_or_else(|| polars_err!(ComputeError: "expected at least 1 source"))?;
+            let memslice = first_source.to_memslice()?;
+            let mut reader = ParquetReader::new(std::io::Cursor::new(memslice));
             (
                 reader.schema()?,
                 Some(reader.num_rows()?),
                 Some(reader.get_metadata()?.clone()),
             )
-        },
+        }
     };
 
     let schema = prepare_output_schema(
@@ -103,7 +93,7 @@ pub(super) fn ipc_file_info(
     };
 
     let metadata = match first {
-        ScanSourceRef::File(path) => {
+        ScanSourceRef::Path(path) => {
             if is_cloud_url(path) {
                 feature_gated!("cloud", {
                     let uri = path.to_string_lossy();
@@ -119,6 +109,9 @@ pub(super) fn ipc_file_info(
                     polars_utils::open_file(path)?,
                 ))?
             }
+        },
+        ScanSourceRef::File(file) => {
+            arrow::io::ipc::read::read_file_metadata(&mut std::io::BufReader::new(file))?
         },
         ScanSourceRef::Buffer(buff) => {
             arrow::io::ipc::read::read_file_metadata(&mut std::io::Cursor::new(buff))?
@@ -182,7 +175,7 @@ pub(super) fn csv_file_info(
 
     let infer_schema_func = |i| {
         let source = sources.at(i);
-        let memslice = source.to_memslice(run_async, cache_entries.as_ref(), i)?;
+        let memslice = source.to_memslice_possibly_async(run_async, cache_entries.as_ref(), i)?;
         let owned = &mut vec![];
         let mut reader = std::io::Cursor::new(maybe_decompress_bytes(&memslice, owned)?);
         if reader.read(&mut [0; 4])? < 2 && csv_options.raise_if_empty {
@@ -308,7 +301,7 @@ pub(super) fn ndjson_file_info(
             )
         }
     } else {
-        let memslice = first.to_memslice(run_async, cache_entries.as_ref(), 0)?;
+        let memslice = first.to_memslice_possibly_async(run_async, cache_entries.as_ref(), 0)?;
         let mut reader = std::io::Cursor::new(maybe_decompress_bytes(&memslice, owned)?);
 
         let schema =

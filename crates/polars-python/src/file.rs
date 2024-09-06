@@ -206,6 +206,7 @@ impl EitherRustPythonFile {
 pub enum EitherPythonFileOrPath {
     Py(PyFileLikeObject),
     Path(PathBuf),
+    File(File),
 }
 
 pub fn get_either_file_or_path(py_f: PyObject, write: bool) -> PyResult<EitherPythonFileOrPath> {
@@ -222,6 +223,55 @@ pub fn get_either_file_or_path(py_f: PyObject, write: bool) -> PyResult<EitherPy
                 let encoding = encoding.extract::<Cow<str>>()?;
                 Ok(encoding.eq_ignore_ascii_case("utf-8") || encoding.eq_ignore_ascii_case("utf8"))
             };
+
+            #[cfg(target_family = "unix")]
+            if let Some(fd) = (py_f.is_exact_instance(&io.getattr("FileIO").unwrap())
+                || (py_f.is_exact_instance(&io.getattr("BufferedReader").unwrap())
+                    || py_f.is_exact_instance(&io.getattr("BufferedWriter").unwrap())
+                    || py_f.is_exact_instance(&io.getattr("BufferedRandom").unwrap())
+                    || py_f.is_exact_instance(&io.getattr("BufferedRWPair").unwrap())
+                    || (py_f.is_exact_instance(&io.getattr("TextIOWrapper").unwrap())
+                        && is_utf8_encoding(&py_f)?))
+                    && if write {
+                        // invalidate read buffer
+                        py_f.call_method0("flush").is_ok()
+                    } else {
+                        // flush write buffer
+                        py_f.call_method1("seek", (0, 1)).is_ok()
+                    })
+            .then(|| {
+                py_f.getattr("fileno")
+                    .and_then(|fileno| fileno.call0())
+                    .and_then(|fileno| fileno.extract::<libc::c_int>())
+                    .ok()
+            })
+            .flatten()
+            .map(|fileno| unsafe {
+                // `File::from_raw_fd()` takes the ownership of the file descriptor.
+                // When the File is dropped, it closes the file descriptor.
+                // This is undesired - the Python file object will become invalid.
+                // Therefore, we duplicate the file descriptor here.
+                // Closing the duplicated file descriptor will not close
+                // the original file descriptor;
+                // and the status, e.g. stream position, is still shared with
+                // the original file descriptor.
+                // We use `F_DUPFD_CLOEXEC` here instead of `dup()`
+                // because it also sets the `O_CLOEXEC` flag on the duplicated file descriptor,
+                // which `dup()` clears.
+                // `open()` in both Rust and Python automatically set `O_CLOEXEC` flag;
+                // it prevents leaking file descriptors across processes,
+                // and we want to be consistent with them.
+                // `F_DUPFD_CLOEXEC` is defined in POSIX.1-2008
+                // and is present on all alive UNIX(-like) systems.
+                libc::fcntl(fileno, libc::F_DUPFD_CLOEXEC, 0)
+            })
+            .filter(|fileno| *fileno != -1)
+            .map(|fileno| fileno as RawFd)
+            {
+                return Ok(EitherPythonFileOrPath::File(unsafe {
+                    File::from_raw_fd(fd)
+                }));
+            }
 
             // BytesIO / StringIO is relatively fast, and some code relies on it.
             if !py_f.is_exact_instance(&io.getattr("BytesIO").unwrap())

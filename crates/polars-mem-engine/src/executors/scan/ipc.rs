@@ -24,8 +24,8 @@ pub struct IpcExec {
 impl IpcExec {
     fn read(&mut self) -> PolarsResult<DataFrame> {
         let is_cloud = match &self.sources {
-            ScanSources::Files(paths) => paths.iter().any(is_cloud_url),
-            ScanSources::Buffers(_) => false,
+            ScanSources::Paths(paths) => paths.iter().any(is_cloud_url),
+            ScanSources::Files(_) | ScanSources::Buffers(_) => false,
         };
         let force_async = config::force_async();
 
@@ -75,13 +75,16 @@ impl IpcExec {
             let source = self.sources.at(index);
 
             let memslice = match source {
-                ScanSourceRef::File(path) => {
+                ScanSourceRef::Path(path) => {
                     let file = match idx_to_cached_file(index) {
                         None => std::fs::File::open(path)?,
                         Some(f) => f?,
                     };
 
-                    MemSlice::from_mmap(Arc::new(unsafe { memmap::Mmap::map(&file).unwrap() }))
+                    MemSlice::from_mmap(Arc::new(unsafe { memmap::Mmap::map(&file)? }))
+                },
+                ScanSourceRef::File(file) => {
+                    MemSlice::from_mmap(Arc::new(unsafe { memmap::Mmap::map(file)? }))
                 },
                 ScanSourceRef::Buffer(buff) => MemSlice::from_bytes(buff.clone()),
             };

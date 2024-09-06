@@ -67,7 +67,7 @@ fn visit_logical_plan_for_scan_paths(
     match lp_arena.get(node) {
         IR::Union { inputs, .. } => {
             enum MutableSources {
-                Files(Vec<PathBuf>),
+                Paths(Vec<PathBuf>),
                 Buffers(Vec<bytes::Bytes>),
             }
 
@@ -76,25 +76,22 @@ fn visit_logical_plan_for_scan_paths(
             for input in inputs {
                 match visit_logical_plan_for_scan_paths(*input, lp_arena, expr_arena, true) {
                     Some(expr) => {
-                        match expr.sources {
-                            ScanSources::Files(paths) => match sources {
-                                Some(MutableSources::Files(ref mut files)) => {
-                                    files.extend_from_slice(&paths[..])
-                                },
-                                Some(MutableSources::Buffers(_)) => {
-                                    todo!("Mixing in memory buffers and paths in count star opt")
-                                },
-                                None => sources = Some(MutableSources::Files(paths.to_vec())),
+                        match (expr.sources, &mut sources) {
+                            (
+                                ScanSources::Paths(paths),
+                                Some(MutableSources::Paths(ref mut mutable_paths)),
+                            ) => mutable_paths.extend_from_slice(&paths[..]),
+                            (ScanSources::Paths(paths), None) => {
+                                sources = Some(MutableSources::Paths(paths.to_vec()))
                             },
-                            ScanSources::Buffers(bs) => match sources {
-                                Some(MutableSources::Files(_)) => {
-                                    todo!("Mixing in memory buffers and paths in count star opt")
-                                },
-                                Some(MutableSources::Buffers(ref mut buffers)) => {
-                                    buffers.extend_from_slice(&bs[..])
-                                },
-                                None => sources = Some(MutableSources::Buffers(bs.to_vec())),
+                            (
+                                ScanSources::Buffers(buffers),
+                                Some(MutableSources::Buffers(ref mut mutable_buffers)),
+                            ) => mutable_buffers.extend_from_slice(&buffers[..]),
+                            (ScanSources::Buffers(buffers), None) => {
+                                sources = Some(MutableSources::Buffers(buffers.to_vec()))
                             },
+                            _ => return None,
                         }
 
                         match &scan_type {
@@ -114,7 +111,7 @@ fn visit_logical_plan_for_scan_paths(
             }
             Some(CountStarExpr {
                 sources: match sources {
-                    Some(MutableSources::Files(files)) => ScanSources::Files(files.into()),
+                    Some(MutableSources::Paths(paths)) => ScanSources::Paths(paths.into()),
                     Some(MutableSources::Buffers(buffers)) => ScanSources::Buffers(buffers.into()),
                     None => ScanSources::default(),
                 },

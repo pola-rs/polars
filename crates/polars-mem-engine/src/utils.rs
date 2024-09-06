@@ -9,7 +9,7 @@ use polars_utils::arena::{Arena, Node};
 ///
 /// # Notes
 ///
-/// - Scan sources with in-memory buffers are ignored.
+/// - Scan sources with opened files or in-memory buffers are ignored.
 pub(crate) fn agg_source_paths<'a>(
     root_lp: Node,
     acc_paths: &mut PlHashSet<&'a Path>,
@@ -18,8 +18,8 @@ pub(crate) fn agg_source_paths<'a>(
     for (_, lp) in lp_arena.iter(root_lp) {
         if let IR::Scan { sources, .. } = lp {
             match sources {
-                ScanSources::Files(paths) => acc_paths.extend(paths.iter().map(|p| p.as_path())),
-                ScanSources::Buffers(_) => {
+                ScanSources::Paths(paths) => acc_paths.extend(paths.iter().map(|p| p.as_path())),
+                ScanSources::Buffers(_) | ScanSources::Files(_) => {
                     // Ignore
                 },
             }

@@ -3,11 +3,11 @@ from __future__ import annotations
 import contextlib
 from io import BytesIO, StringIO
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, Any, Sequence
+from typing import IO, TYPE_CHECKING, Any
 
 from polars._utils.deprecation import deprecate_renamed_parameter
 from polars._utils.various import normalize_filepath
-from polars._utils.wrap import wrap_df, wrap_ldf
+from polars._utils.wrap import wrap_ldf
 from polars.datatypes import N_INFER_DEFAULT
 from polars.io._utils import parse_row_index_args
 
@@ -120,29 +120,6 @@ def read_ndjson(
     │ 3   ┆ 8   │
     └─────┴─────┘
     """
-    if not (
-        isinstance(source, (str, Path))
-        or isinstance(source, Sequence)
-        and source
-        and isinstance(source[0], (str, Path))
-    ):
-        # TODO: A lot of the parameters aren't applied for BytesIO
-        if isinstance(source, StringIO):
-            source = BytesIO(source.getvalue().encode())
-
-        pydf = PyDataFrame.read_ndjson(
-            source,
-            ignore_errors=ignore_errors,
-            schema=schema,
-            schema_overrides=schema_overrides,
-        )
-
-        df = wrap_df(pydf)
-
-        if n_rows:
-            df = df.head(n_rows)
-
-        return df
 
     return scan_ndjson(
         source,  # type: ignore[arg-type]

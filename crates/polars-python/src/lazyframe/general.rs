@@ -26,8 +26,9 @@ fn pyobject_to_first_path_and_scan_sources(
     use crate::file::{get_either_file_or_path, EitherPythonFileOrPath};
     Ok(match get_either_file_or_path(obj, false)? {
         EitherPythonFileOrPath::Path(path) => {
-            (Some(path.clone()), ScanSources::Files([path].into()))
+            (Some(path.clone()), ScanSources::Paths([path].into()))
         },
+        EitherPythonFileOrPath::File(file) => (None, ScanSources::Files([file].into())),
         EitherPythonFileOrPath::Py(f) => (None, ScanSources::Buffers([f.as_bytes()].into())),
     })
 }

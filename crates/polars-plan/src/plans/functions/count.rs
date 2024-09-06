@@ -96,7 +96,7 @@ fn count_all_rows_csv(
     sources
         .iter()
         .map(|source| match source {
-            ScanSourceRef::File(path) => count_rows_csv(
+            ScanSourceRef::Path(path) => count_rows_csv(
                 path,
                 parse_options.separator,
                 parse_options.quote_char,
@@ -104,14 +104,18 @@ fn count_all_rows_csv(
                 parse_options.eol_char,
                 options.has_header,
             ),
-            ScanSourceRef::Buffer(buf) => count_rows_csv_from_slice(
-                &buf[..],
-                parse_options.separator,
-                parse_options.quote_char,
-                parse_options.comment_prefix.as_ref(),
-                parse_options.eol_char,
-                options.has_header,
-            ),
+            _ => {
+                let memslice = source.to_memslice()?;
+
+                count_rows_csv_from_slice(
+                    &memslice[..],
+                    parse_options.separator,
+                    parse_options.quote_char,
+                    parse_options.comment_prefix.as_ref(),
+                    parse_options.eol_char,
+                    options.has_header,
+                )
+            },
         })
         .sum()
 }
@@ -136,13 +140,8 @@ pub(super) fn count_rows_parquet(
     } else {
         sources
             .iter()
-            .map(|source| match source {
-                ScanSourceRef::File(path) => {
-                    ParquetReader::new(polars_utils::open_file(path)?).num_rows()
-                },
-                ScanSourceRef::Buffer(buffer) => {
-                    ParquetReader::new(std::io::Cursor::new(buffer)).num_rows()
-                },
+            .map(|source| {
+                ParquetReader::new(std::io::Cursor::new(source.to_memslice()?)).num_rows()
             })
             .sum::<PolarsResult<usize>>()
     }
@@ -187,13 +186,9 @@ pub(super) fn count_rows_ipc(
     } else {
         sources
             .iter()
-            .map(|source| match source {
-                ScanSourceRef::File(path) => {
-                    count_rows_ipc_sync(&mut polars_utils::open_file(path)?).map(|v| v as usize)
-                },
-                ScanSourceRef::Buffer(buffer) => {
-                    count_rows_ipc_sync(&mut std::io::Cursor::new(buffer)).map(|v| v as usize)
-                },
+            .map(|source| {
+                let memslice = source.to_memslice()?;
+                count_rows_ipc_sync(&mut std::io::Cursor::new(memslice)).map(|v| v as usize)
             })
             .sum::<PolarsResult<usize>>()
     }
@@ -234,8 +229,8 @@ pub(super) fn count_rows_ndjson(
     let run_async = is_cloud_url || (sources.is_files() && config::force_async());
 
     let cache_entries = {
-        feature_gated!("cloud", {
-            if run_async {
+        if run_async {
+            feature_gated!("cloud", {
                 Some(polars_io::file_cache::init_entries_from_uri_list(
                     sources
                         .as_paths()
@@ -246,43 +241,23 @@ pub(super) fn count_rows_ndjson(
                         .as_slice(),
                     cloud_options,
                 )?)
-            } else {
-                None
-            }
-        })
+            })
+        } else {
+            None
+        }
     };
 
     sources
         .iter()
-        .map(|source| match source {
-            ScanSourceRef::File(path) => {
-                let f = if run_async {
-                    feature_gated!("cloud", {
-                        let entry: &Arc<polars_io::file_cache::FileCacheEntry> =
-                            &cache_entries.as_ref().unwrap()[0];
-                        entry.try_open_check_latest()?
-                    })
-                } else {
-                    polars_utils::open_file(path)?
-                };
+        .map(|source| {
+            let memslice =
+                source.to_memslice_possibly_async(run_async, cache_entries.as_ref(), 0)?;
 
-                let mmap = unsafe { memmap::Mmap::map(&f).unwrap() };
-                let owned = &mut vec![];
-
-                let reader = polars_io::ndjson::core::JsonLineReader::new(std::io::Cursor::new(
-                    maybe_decompress_bytes(mmap.as_ref(), owned)?,
-                ));
-                reader.count()
-            },
-            ScanSourceRef::Buffer(buffer) => {
-                polars_ensure!(!run_async, nyi = "BytesIO with force_async");
-
-                let owned = &mut vec![];
-                let reader = polars_io::ndjson::core::JsonLineReader::new(std::io::Cursor::new(
-                    maybe_decompress_bytes(buffer, owned)?,
-                ));
-                reader.count()
-            },
+            let owned = &mut vec![];
+            let reader = polars_io::ndjson::core::JsonLineReader::new(std::io::Cursor::new(
+                maybe_decompress_bytes(&memslice[..], owned)?,
+            ));
+            reader.count()
         })
         .sum()
 }

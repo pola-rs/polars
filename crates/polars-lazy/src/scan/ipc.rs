@@ -125,13 +125,13 @@ impl LazyFrame {
     /// Create a LazyFrame directly from a ipc scan.
     pub fn scan_ipc(path: impl AsRef<Path>, args: ScanArgsIpc) -> PolarsResult<Self> {
         Self::scan_ipc_sources(
-            ScanSources::Files([path.as_ref().to_path_buf()].into()),
+            ScanSources::Paths([path.as_ref().to_path_buf()].into()),
             args,
         )
     }
 
     pub fn scan_ipc_files(paths: Arc<[PathBuf]>, args: ScanArgsIpc) -> PolarsResult<Self> {
-        Self::scan_ipc_sources(ScanSources::Files(paths), args)
+        Self::scan_ipc_sources(ScanSources::Paths(paths), args)
     }
 
     pub fn scan_ipc_sources(sources: ScanSources, args: ScanArgsIpc) -> PolarsResult<Self> {

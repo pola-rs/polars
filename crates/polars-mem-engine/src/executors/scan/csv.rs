@@ -4,8 +4,6 @@ use polars_core::config;
 use polars_core::utils::{
     accumulate_dataframes_vertical, accumulate_dataframes_vertical_unchecked,
 };
-use polars_error::feature_gated;
-use polars_utils::mmap::MemSlice;
 
 use super::*;
 
@@ -68,25 +66,7 @@ impl CsvExec {
                 let source = self.sources.at(i);
                 let owned = &mut vec![];
 
-                let memslice = match source {
-                    ScanSourceRef::File(path) => {
-                        let file = if run_async {
-                            feature_gated!("cloud", {
-                                polars_io::file_cache::FILE_CACHE
-                                    .get_entry(path.to_str().unwrap())
-                                    // Safety: This was initialized by schema inference.
-                                    .unwrap()
-                                    .try_open_assume_latest()
-                            })
-                        } else {
-                            polars_utils::open_file(path)
-                        }?;
-
-                        let mmap = unsafe { memmap::Mmap::map(&file).unwrap() };
-                        MemSlice::from_mmap(Arc::new(mmap))
-                    },
-                    ScanSourceRef::Buffer(buffer) => MemSlice::from_bytes(buffer.clone()),
-                };
+                let memslice = source.to_memslice_async_latest(run_async)?;
 
                 let reader = std::io::Cursor::new(maybe_decompress_bytes(&memslice, owned)?);
                 let mut df = options

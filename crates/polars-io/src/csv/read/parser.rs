@@ -40,15 +40,7 @@ pub fn count_rows(
 
     let mmap = unsafe { memmap::Mmap::map(&file).unwrap() };
     let owned = &mut vec![];
-    let mut reader_bytes = maybe_decompress_bytes(mmap.as_ref(), owned)?;
-
-    for _ in 0..reader_bytes.len() {
-        if reader_bytes[0] != eol_char {
-            break;
-        }
-
-        reader_bytes = &reader_bytes[1..];
-    }
+    let reader_bytes = maybe_decompress_bytes(mmap.as_ref(), owned)?;
 
     count_rows_from_slice(
         reader_bytes,
@@ -63,13 +55,21 @@ pub fn count_rows(
 /// Read the number of rows without parsing columns
 /// useful for count(*) queries
 pub fn count_rows_from_slice(
-    bytes: &[u8],
+    mut bytes: &[u8],
     separator: u8,
     quote_char: Option<u8>,
     comment_prefix: Option<&CommentPrefix>,
     eol_char: u8,
     has_header: bool,
 ) -> PolarsResult<usize> {
+    for _ in 0..bytes.len() {
+        if bytes[0] != eol_char {
+            break;
+        }
+
+        bytes = &bytes[1..];
+    }
+
     const MIN_ROWS_PER_THREAD: usize = 1024;
     let max_threads = POOL.current_num_threads();
 

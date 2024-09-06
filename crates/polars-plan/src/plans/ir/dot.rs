@@ -351,7 +351,8 @@ struct OptionExprIRDisplay<'a>(Option<ExprIRDisplay<'a>>);
 impl fmt::Display for ScanSourceRef<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ScanSourceRef::File(path) => path.display().fmt(f),
+            ScanSourceRef::Path(path) => path.display().fmt(f),
+            ScanSourceRef::File(_) => f.write_str("open-file"),
             ScanSourceRef::Buffer(buff) => write!(f, "{} in-mem bytes", buff.len()),
         }
     }

@@ -1,7 +1,5 @@
 use polars_core::config;
 use polars_core::utils::accumulate_dataframes_vertical;
-use polars_error::feature_gated;
-use polars_utils::mmap::MemSlice;
 
 use super::*;
 
@@ -76,30 +74,9 @@ impl JsonExec {
 
                 let row_index = self.file_scan_options.row_index.as_mut();
 
-                let memslice = match source {
-                    ScanSourceRef::File(path) => {
-                        let file = if run_async {
-                            feature_gated!("cloud", {
-                                match polars_io::file_cache::FILE_CACHE
-                                    .get_entry(path.to_str().unwrap())
-                                    // Safety: This was initialized by schema inference.
-                                    .unwrap()
-                                    .try_open_assume_latest()
-                                {
-                                    Ok(v) => v,
-                                    Err(e) => return Some(Err(e)),
-                                }
-                            })
-                        } else {
-                            match polars_utils::open_file(path) {
-                                Ok(v) => v,
-                                Err(e) => return Some(Err(e)),
-                            }
-                        };
-
-                        MemSlice::from_mmap(Arc::new(unsafe { memmap::Mmap::map(&file).unwrap() }))
-                    },
-                    ScanSourceRef::Buffer(buff) => MemSlice::from_bytes(buff.clone()),
+                let memslice = match source.to_memslice_async_latest(run_async) {
+                    Ok(memslice) => memslice,
+                    Err(err) => return Some(Err(err)),
                 };
 
                 let owned = &mut vec![];

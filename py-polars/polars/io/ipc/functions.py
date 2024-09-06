@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import io
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any, Sequence
 
@@ -15,8 +16,6 @@ from polars._utils.various import (
 from polars._utils.wrap import wrap_df, wrap_ldf
 from polars.dependencies import import_optional
 from polars.io._utils import (
-    is_glob_pattern,
-    is_local_file,
     parse_columns_arg,
     parse_row_index_args,
     prepare_file_arg,
@@ -176,42 +175,31 @@ def _read_ipc_impl(
     rechunk: bool = True,
     memory_map: bool = True,
 ) -> DataFrame:
-    if isinstance(source, (str, Path)):
-        source = normalize_filepath(source, check_not_directory=False)
+    if isinstance(source, (memoryview, bytearray, bytes)):
+        source = io.BytesIO(source)
+
     if isinstance(columns, str):
         columns = [columns]
 
-    if isinstance(source, str) and is_glob_pattern(source) and is_local_file(source):
-        scan = scan_ipc(
-            source,
-            n_rows=n_rows,
-            rechunk=rechunk,
-            row_index_name=row_index_name,
-            row_index_offset=row_index_offset,
-            memory_map=memory_map,
-        )
-        if columns is None:
-            df = scan.collect()
-        elif is_str_sequence(columns, allow_str=False):
-            df = scan.select(columns).collect()
-        else:
-            msg = (
-                "cannot use glob patterns and integer based projection as `columns` argument"
-                "\n\nUse columns: List[str]"
-            )
-            raise TypeError(msg)
-        return df
-
-    projection, columns = parse_columns_arg(columns)
-    pydf = PyDataFrame.read_ipc(
+    scan = scan_ipc(
         source,
-        columns,
-        projection,
-        n_rows,
-        parse_row_index_args(row_index_name, row_index_offset),
+        n_rows=n_rows,
+        rechunk=rechunk,
+        row_index_name=row_index_name,
+        row_index_offset=row_index_offset,
         memory_map=memory_map,
     )
-    return wrap_df(pydf)
+    if columns is None:
+        df = scan.collect()
+    elif is_str_sequence(columns, allow_str=False):
+        df = scan.select(columns).collect()
+    else:
+        msg = (
+            "cannot use glob patterns and integer based projection as `columns` argument"
+            "\n\nUse columns: List[str]"
+        )
+        raise TypeError(msg)
+    return df
 
 
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")

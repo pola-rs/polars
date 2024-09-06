@@ -104,6 +104,12 @@ impl MmapBytesReader for BufReader<File> {
     }
 }
 
+impl MmapBytesReader for BufReader<&File> {
+    fn to_file(&self) -> Option<&File> {
+        Some(self.get_ref())
+    }
+}
+
 impl<T> MmapBytesReader for Cursor<T>
 where
     T: AsRef<[u8]> + Send + Sync,
