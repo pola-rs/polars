@@ -15,6 +15,7 @@ df.hvplot.scatter(
     y="sepal_length",
     by="species",
     width=650,
+    title="Irises",
 )
 # --8<-- [end:hvplot_show_plot]
 """
@@ -27,6 +28,7 @@ plot = df.hvplot.scatter(
     y="sepal_length",
     by="species",
     width=650,
+    title="Irises",
 )
 hvplot.save(plot, "docs/images/hvplot_scatter.html")
 with open("docs/images/hvplot_scatter.html", "r") as f:
@@ -44,6 +46,7 @@ ax.scatter(
     y=df["sepal_length"],
     c=df["species"].cast(pl.Categorical).to_physical(),
 )
+ax.set_title('Irises')
 # --8<-- [end:matplotlib_show_plot]
 """
 
@@ -58,6 +61,7 @@ ax.scatter(
     y=df["sepal_length"],
     c=df["species"].cast(pl.Categorical).to_physical(),
 )
+ax.set_title("Irises")
 fig.savefig("docs/images/matplotlib_scatter.png")
 with open("docs/images/matplotlib_scatter.png", "rb") as f:
     png = base64.b64encode(f.read()).decode()
@@ -72,7 +76,7 @@ sns.scatterplot(
     x="sepal_width",
     y="sepal_length",
     hue="species",
-)
+).set_title('Irises')
 # --8<-- [end:seaborn_show_plot]
 """
 
@@ -86,7 +90,7 @@ ax = sns.scatterplot(
     x="sepal_width",
     y="sepal_length",
     hue="species",
-)
+).set_title("Irises")
 fig.savefig("docs/images/seaborn_scatter.png")
 with open("docs/images/seaborn_scatter.png", "rb") as f:
     png = base64.b64encode(f.read()).decode()
@@ -103,6 +107,7 @@ px.scatter(
     y="sepal_length",
     color="species",
     width=650,
+    title="Irises",
 )
 # --8<-- [end:plotly_show_plot]
 """
@@ -116,6 +121,7 @@ fig = px.scatter(
     y="sepal_length",
     color="species",
     width=650,
+    title="Irises",
 )
 fig.write_html(
     "docs/images/plotly_scatter.html", full_html=False, include_plotlyjs="cdn"
@@ -132,6 +138,7 @@ with open("docs/images/plotly_scatter.html", "r") as f:
         x="sepal_length",
         y="sepal_width",
         color="species",
+        title="Irises",
     )
     .properties(width=500)
     .configure_scale(zero=False)
@@ -145,6 +152,7 @@ chart = (
         x="sepal_length",
         y="sepal_width",
         color="species",
+        title="Irises",
     )
     .properties(width=500)
     .configure_scale(zero=False)

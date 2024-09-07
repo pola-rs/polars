@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Callable
 
+from polars.dataframe.plotting import configure_chart
 from polars.dependencies import altair as alt
 
 if TYPE_CHECKING:
@@ -30,18 +31,18 @@ class SeriesPlot:
     def hist(
         self,
         /,
+        title: str | None = None,
+        x_axis_title: str | None = None,
+        y_axis_title: str | None = None,
         **kwargs: Unpack[EncodeKwds],
     ) -> alt.Chart:
         """
         Draw histogram.
 
-        Polars does not implement plotting logic itself but instead defers to
-        `Altair <https://altair-viz.github.io/>`_.
-
-        `s.plot.hist(**kwargs)` is shorthand for
-        `alt.Chart(s.to_frame()).mark_bar().encode(x=alt.X(f'{s.name}:Q', bin=True), y='count()', **kwargs).interactive()`,
-        and is provided for convenience - for full customisatibility, use a plotting
-        library directly.
+        Polars defers to `Altair <https://altair-viz.github.io/>`_ for plotting, and
+        this functionality is only provided for convenience.
+        For configuration, we suggest reading `Chart Configuration
+        <https://altair-viz.github.io/altair-tutorial/notebooks/08-Configuration.html>`_.
 
         .. versionchanged:: 1.6.0
             In prior versions of Polars, HvPlot was the plotting backend. If you would
@@ -51,6 +52,12 @@ class SeriesPlot:
 
         Parameters
         ----------
+        title
+            Plot title.
+        x_axis_title
+            Title of x-axis.
+        y_axis_title
+            Title of y-axis.
         **kwargs
             Additional arguments and keyword arguments passed to Altair.
 
@@ -58,32 +65,34 @@ class SeriesPlot:
         --------
         >>> s = pl.Series("price", [1, 3, 3, 3, 5, 2, 6, 5, 5, 5, 7])
         >>> s.plot.hist()  # doctest: +SKIP
-        """  # noqa: W505
+        """
         if self._series_name == "count()":
             msg = "Cannot use `plot.hist` when Series name is `'count()'`"
             raise ValueError(msg)
-        return (
+        return configure_chart(
             alt.Chart(self._df)
             .mark_bar()
-            .encode(x=alt.X(f"{self._series_name}:Q", bin=True), y="count()", **kwargs)  # type: ignore[misc]
-            .interactive()
+            .encode(x=alt.X(f"{self._series_name}:Q", bin=True), y="count()", **kwargs),  # type: ignore[misc]
+            title=title,
+            x_axis_title=x_axis_title,
+            y_axis_title=y_axis_title,
         )
 
     def kde(
         self,
         /,
+        title: str | None = None,
+        x_axis_title: str | None = None,
+        y_axis_title: str | None = None,
         **kwargs: Unpack[EncodeKwds],
     ) -> alt.Chart:
         """
         Draw kernel density estimate plot.
 
-        Polars does not implement plotting logic itself but instead defers to
-        `Altair <https://altair-viz.github.io/>`_.
-
-        `s.plot.kde(**kwargs)` is shorthand for
-        `alt.Chart(s.to_frame()).transform_density(s.name, as_=[s.name, 'density']).mark_area().encode(x=s.name, y='density:Q', **kwargs).interactive()`,
-        and is provided for convenience - for full customisatibility, use a plotting
-        library directly.
+        Polars defers to `Altair <https://altair-viz.github.io/>`_ for plotting, and
+        this functionality is only provided for convenience.
+        For configuration, we suggest reading `Chart Configuration
+        <https://altair-viz.github.io/altair-tutorial/notebooks/08-Configuration.html>`_.
 
         .. versionchanged:: 1.6.0
             In prior versions of Polars, HvPlot was the plotting backend. If you would
@@ -93,6 +102,12 @@ class SeriesPlot:
 
         Parameters
         ----------
+        title
+            Plot title.
+        x_axis_title
+            Title of x-axis.
+        y_axis_title
+            Title of y-axis.
         **kwargs
             Additional keyword arguments passed to Altair.
 
@@ -100,33 +115,35 @@ class SeriesPlot:
         --------
         >>> s = pl.Series("price", [1, 3, 3, 3, 5, 2, 6, 5, 5, 5, 7])
         >>> s.plot.kde()  # doctest: +SKIP
-        """  # noqa: W505
+        """
         if self._series_name == "density":
             msg = "Cannot use `plot.kde` when Series name is `'density'`"
             raise ValueError(msg)
-        return (
+        return configure_chart(
             alt.Chart(self._df)
             .transform_density(self._series_name, as_=[self._series_name, "density"])
             .mark_area()
-            .encode(x=self._series_name, y="density:Q", **kwargs)  # type: ignore[misc]
-            .interactive()
+            .encode(x=self._series_name, y="density:Q", **kwargs),  # type: ignore[misc]
+            title=title,
+            x_axis_title=x_axis_title,
+            y_axis_title=y_axis_title,
         )
 
     def line(
         self,
         /,
+        title: str | None = None,
+        x_axis_title: str | None = None,
+        y_axis_title: str | None = None,
         **kwargs: Unpack[EncodeKwds],
     ) -> alt.Chart:
         """
         Draw line plot.
 
-        Polars does not implement plotting logic itself but instead defers to
-        `Altair <https://altair-viz.github.io/>`_.
-
-        `s.plot.line(**kwargs)` is shorthand for
-        `alt.Chart(s.to_frame().with_row_index()).mark_line().encode(x='index', y=s.name, **kwargs).interactive()`,
-        and is provided for convenience - for full customisatibility, use a plotting
-        library directly.
+        Polars defers to `Altair <https://altair-viz.github.io/>`_ for plotting, and
+        this functionality is only provided for convenience.
+        For configuration, we suggest reading `Chart Configuration
+        <https://altair-viz.github.io/altair-tutorial/notebooks/08-Configuration.html>`_.
 
         .. versionchanged:: 1.6.0
             In prior versions of Polars, HvPlot was the plotting backend. If you would
@@ -136,6 +153,12 @@ class SeriesPlot:
 
         Parameters
         ----------
+        title
+            Plot title.
+        x_axis_title
+            Title of x-axis.
+        y_axis_title
+            Title of y-axis.
         **kwargs
             Additional keyword arguments passed to Altair.
 
@@ -143,18 +166,27 @@ class SeriesPlot:
         --------
         >>> s = pl.Series("price", [1, 3, 3, 3, 5, 2, 6, 5, 5, 5, 7])
         >>> s.plot.kde()  # doctest: +SKIP
-        """  # noqa: W505
+        """
         if self._series_name == "index":
             msg = "Cannot call `plot.line` when Series name is 'index'"
             raise ValueError(msg)
-        return (
+        return configure_chart(
             alt.Chart(self._df.with_row_index())
             .mark_line()
-            .encode(x="index", y=self._series_name, **kwargs)  # type: ignore[misc]
-            .interactive()
+            .encode(x="index", y=self._series_name, **kwargs),  # type: ignore[misc]
+            title=title,
+            x_axis_title=x_axis_title,
+            y_axis_title=y_axis_title,
         )
 
-    def __getattr__(self, attr: str) -> Callable[..., alt.Chart]:
+    def __getattr__(
+        self,
+        attr: str,
+        *,
+        title: str | None = None,
+        x_axis_title: str | None = None,
+        y_axis_title: str | None = None,
+    ) -> Callable[..., alt.Chart]:
         if self._series_name == "index":
             msg = "Cannot call `plot.{attr}` when Series name is 'index'"
             raise ValueError(msg)
@@ -165,8 +197,9 @@ class SeriesPlot:
         if method is None:
             msg = "Altair has no method 'mark_{attr}'"
             raise AttributeError(msg)
-        return (
-            lambda **kwargs: method()
-            .encode(x="index", y=self._series_name, **kwargs)
-            .interactive()
+        return lambda **kwargs: configure_chart(
+            method().encode(x="index", y=self._series_name, **kwargs),
+            title=title,
+            x_axis_title=x_axis_title,
+            y_axis_title=y_axis_title,
         )

@@ -32,13 +32,16 @@ import altair as alt
         y="sepal_width",
         color="species",
     )
-    .properties(width=500)
+    .properties(width=500, title="Irises")
     .configure_scale(zero=False)
 )
 ```
 
-and is only provided for convenience, and to signal that Altair is known to work well with
+(with some extra configuration) and is only provided for convenience, and to signal that Altair is known to work well with
 Polars.
+
+For configuration, we suggest reading [Chart Configuration](https://altair-viz.github.io/altair-tutorial/notebooks/08-Configuration.html). For example, you can change the x-axis label rotation by appending
+`.configure_axisX(rotation=30)` to your call.
 
 ## hvPlot
 

@@ -35,6 +35,73 @@ if TYPE_CHECKING:
     ]
 
 
+def configure_chart(
+    chart: alt.Chart,
+    *,
+    title: str | None,
+    x_axis_title: str | None,
+    y_axis_title: str | None,
+) -> alt.Chart:
+    """
+    A nice-looking default configuration, produced by Altair maintainer.
+
+    Source: https://gist.github.com/binste/b4042fa76a89d72d45cbbb9355ec6906.
+    """
+    properties = {}
+    if title is not None:
+        properties["title"] = title
+    if x_axis_title is not None:
+        chart.encoding.x.title = x_axis_title
+    if y_axis_title is not None:
+        chart.encoding.y.title = y_axis_title
+    return (
+        chart.properties(**properties)
+        .configure_axis(
+            labelFontSize=16,
+            titleFontSize=16,
+            titleFontWeight="normal",
+            gridColor="lightGray",
+            labelAngle=0,
+            labelFlush=False,
+            labelPadding=5,
+        )
+        .configure_axisY(
+            domain=False,
+            ticks=False,
+            labelPadding=10,
+            titleAngle=0,
+            titleY=-20,
+            titleAlign="left",
+            titlePadding=0,
+        )
+        .configure_axisTemporal(grid=False)
+        .configure_axisDiscrete(ticks=False, labelPadding=10, grid=False)
+        .configure_scale(barBandPaddingInner=0.2)
+        .configure_header(labelFontSize=16, titleFontSize=16)
+        .configure_legend(labelFontSize=16, titleFontSize=16, titleFontWeight="normal")
+        .configure_title(
+            fontSize=20,
+            fontStyle="normal",
+            align="left",
+            anchor="start",
+            orient="top",
+            fontWeight=600,
+            offset=10,
+            subtitlePadding=3,
+            subtitleFontSize=16,
+        )
+        .configure_view(
+            strokeWidth=0, continuousHeight=350, continuousWidth=600, step=50
+        )
+        .configure_line(strokeWidth=3.5)
+        .configure_text(fontSize=16)
+        .configure_circle(size=60)
+        .configure_point(size=60)
+        .configure_square(size=60)
+        .interactive()
+    )
+
+
 class DataFramePlot:
     """DataFrame.plot namespace."""
 
@@ -50,18 +117,18 @@ class DataFramePlot:
         color: ChannelColor | None = None,
         tooltip: ChannelTooltip | None = None,
         /,
+        title: str | None = None,
+        x_axis_title: str | None = None,
+        y_axis_title: str | None = None,
         **kwargs: Unpack[EncodeKwds],
     ) -> alt.Chart:
         """
         Draw bar plot.
 
-        Polars does not implement plotting logic itself but instead defers to
-        `Altair <https://altair-viz.github.io/>`_.
-
-        `df.plot.bar(**kwargs)` is shorthand for
-        `alt.Chart(df).mark_bar().encode(**kwargs).interactive()`,
-        and is provided for convenience - for full customisatibility, use a plotting
-        library directly.
+        Polars defers to `Altair <https://altair-viz.github.io/>`_ for plotting, and
+        this functionality is only provided for convenience.
+        For configuration, we suggest reading `Chart Configuration
+        <https://altair-viz.github.io/altair-tutorial/notebooks/08-Configuration.html>`_.
 
         .. versionchanged:: 1.6.0
             In prior versions of Polars, HvPlot was the plotting backend. If you would
@@ -79,6 +146,12 @@ class DataFramePlot:
             Column to color bars by.
         tooltip
             Columns to show values of when hovering over bars with pointer.
+        title
+            Plot title.
+        x_axis_title
+            Title of x-axis.
+        y_axis_title
+            Title of y-axis.
         **kwargs
             Additional keyword arguments passed to Altair.
 
@@ -104,7 +177,12 @@ class DataFramePlot:
             encodings["color"] = color
         if tooltip is not None:
             encodings["tooltip"] = tooltip
-        return self._chart.mark_bar().encode(**encodings, **kwargs).interactive()
+        return configure_chart(
+            self._chart.mark_bar().encode(**encodings, **kwargs),
+            title=title,
+            x_axis_title=x_axis_title,
+            y_axis_title=y_axis_title,
+        )
 
     def line(
         self,
@@ -114,17 +192,18 @@ class DataFramePlot:
         order: ChannelOrder | None = None,
         tooltip: ChannelTooltip | None = None,
         /,
+        title: str | None = None,
+        x_axis_title: str | None = None,
+        y_axis_title: str | None = None,
         **kwargs: Unpack[EncodeKwds],
     ) -> alt.Chart:
         """
         Draw line plot.
 
-        Polars does not implement plotting logic itself but instead defers to
-        `Altair <https://altair-viz.github.io/>`_.
-
-        `alt.Chart(df).mark_line().encode(**kwargs).interactive()`,
-        and is provided for convenience - for full customisatibility, use a plotting
-        library directly.
+        Polars defers to `Altair <https://altair-viz.github.io/>`_ for plotting, and
+        this functionality is only provided for convenience.
+        For configuration, we suggest reading `Chart Configuration
+        <https://altair-viz.github.io/altair-tutorial/notebooks/08-Configuration.html>`_.
 
         .. versionchanged:: 1.6.0
             In prior versions of Polars, HvPlot was the plotting backend. If you would
@@ -144,6 +223,12 @@ class DataFramePlot:
             Column to use for order of data points in lines.
         tooltip
             Columns to show values of when hovering over lines with pointer.
+        title
+            Plot title.
+        x_axis_title
+            Title of x-axis.
+        y_axis_title
+            Title of y-axis.
         **kwargs
             Additional keyword arguments passed to Altair.
 
@@ -170,7 +255,12 @@ class DataFramePlot:
             encodings["order"] = order
         if tooltip is not None:
             encodings["tooltip"] = tooltip
-        return self._chart.mark_line().encode(**encodings, **kwargs).interactive()
+        return configure_chart(
+            self._chart.mark_line().encode(**encodings, **kwargs),
+            title=title,
+            x_axis_title=x_axis_title,
+            y_axis_title=y_axis_title,
+        )
 
     def point(
         self,
@@ -180,18 +270,18 @@ class DataFramePlot:
         size: ChannelSize | None = None,
         tooltip: ChannelTooltip | None = None,
         /,
+        title: str | None = None,
+        x_axis_title: str | None = None,
+        y_axis_title: str | None = None,
         **kwargs: Unpack[EncodeKwds],
     ) -> alt.Chart:
         """
         Draw scatter plot.
 
-        Polars does not implement plotting logic itself but instead defers to
-        `Altair <https://altair-viz.github.io/>`_.
-
-        `df.plot.point(**kwargs)` is shorthand for
-        `alt.Chart(df).mark_point().encode(**kwargs).interactive()`,
-        and is provided for convenience - for full customisatibility, use a plotting
-        library directly.
+        Polars defers to `Altair <https://altair-viz.github.io/>`_ for plotting, and
+        this functionality is only provided for convenience.
+        For configuration, we suggest reading `Chart Configuration
+        <https://altair-viz.github.io/altair-tutorial/notebooks/08-Configuration.html>`_.
 
         .. versionchanged:: 1.6.0
             In prior versions of Polars, HvPlot was the plotting backend. If you would
@@ -211,6 +301,12 @@ class DataFramePlot:
             Column which determines points' sizes.
         tooltip
             Columns to show values of when hovering over points with pointer.
+        title
+            Plot title.
+        x_axis_title
+            Title of x-axis.
+        y_axis_title
+            Title of y-axis.
         **kwargs
             Additional keyword arguments passed to Altair.
 
@@ -236,21 +332,34 @@ class DataFramePlot:
             encodings["size"] = size
         if tooltip is not None:
             encodings["tooltip"] = tooltip
-        return (
-            self._chart.mark_point()
-            .encode(
+        return configure_chart(
+            self._chart.mark_point().encode(
                 **encodings,
                 **kwargs,
-            )
-            .interactive()
+            ),
+            title=title,
+            x_axis_title=x_axis_title,
+            y_axis_title=y_axis_title,
         )
 
     # Alias to `point` because of how common it is.
     scatter = point
 
-    def __getattr__(self, attr: str) -> Callable[..., alt.Chart]:
+    def __getattr__(
+        self,
+        attr: str,
+        *,
+        title: str | None = None,
+        x_axis_title: str | None = None,
+        y_axis_title: str | None = None,
+    ) -> Callable[..., alt.Chart]:
         method = getattr(self._chart, f"mark_{attr}", None)
         if method is None:
             msg = "Altair has no method 'mark_{attr}'"
             raise AttributeError(msg)
-        return lambda **kwargs: method().encode(**kwargs).interactive()
+        return lambda **kwargs: configure_chart(
+            method().encode(**kwargs),
+            title=title,
+            x_axis_title=x_axis_title,
+            y_axis_title=y_axis_title,
+        )

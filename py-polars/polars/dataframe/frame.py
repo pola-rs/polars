@@ -618,22 +618,10 @@ class DataFrame:
             is add `import hvplot.polars` at the top of your script and replace
             `df.plot` with `df.hvplot`.
 
-        Polars does not implement plotting logic itself, but instead defers to
-        `Altair <https://altair-viz.github.io/>`_:
-
-        - `df.plot.line(**kwargs)`
-          is shorthand for
-          `alt.Chart(df).mark_line().encode(**kwargs).interactive()`
-        - `df.plot.point(**kwargs)`
-          is shorthand for
-          `alt.Chart(df).mark_point().encode(**kwargs).interactive()` (and
-          `plot.scatter` is provided as an alias)
-        - `df.plot.bar(**kwargs)`
-          is shorthand for
-          `alt.Chart(df).mark_bar().encode(**kwargs).interactive()`
-        - for any other attribute `attr`, `df.plot.attr(**kwargs)`
-          is shorthand for
-          `alt.Chart(df).mark_attr().encode(**kwargs).interactive()`
+        Polars defers to `Altair <https://altair-viz.github.io/>`_ for plotting, and
+        this functionality is only provided for convenience.
+        For configuration, we suggest reading `Chart Configuration
+        <https://altair-viz.github.io/altair-tutorial/notebooks/08-Configuration.html>`_.
 
         Examples
         --------

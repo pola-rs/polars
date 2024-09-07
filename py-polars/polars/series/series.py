@@ -7403,18 +7403,10 @@ class Series:
             is add `import hvplot.polars` at the top of your script and replace
             `df.plot` with `df.hvplot`.
 
-        Polars does not implement plotting logic itself, but instead defers to
-        Altair:
-
-        - `s.plot.hist(**kwargs)`
-          is shorthand for
-          `alt.Chart(s.to_frame()).mark_bar().encode(x=alt.X(f'{s.name}:Q', bin=True), y='count()', **kwargs).interactive()`
-        - `s.plot.kde(**kwargs)`
-          is shorthand for
-          `alt.Chart(s.to_frame()).transform_density(s.name, as_=[s.name, 'density']).mark_area().encode(x=s.name, y='density:Q', **kwargs).interactive()`
-        - for any other attribute `attr`, `s.plot.attr(**kwargs)`
-          is shorthand for
-          `alt.Chart(s.to_frame().with_row_index()).mark_attr().encode(x='index', y=s.name, **kwargs).interactive()`
+        Polars defers to `Altair <https://altair-viz.github.io/>`_ for plotting, and
+        this functionality is only provided for convenience.
+        For configuration, we suggest reading `Chart Configuration
+        <https://altair-viz.github.io/altair-tutorial/notebooks/08-Configuration.html>`_.
 
         Examples
         --------
@@ -7430,7 +7422,7 @@ class Series:
         Line plot:
 
         >>> s.plot.line()  # doctest: +SKIP
-        """  # noqa: W505
+        """
         if not _ALTAIR_AVAILABLE or parse_version(altair.__version__) < (5, 4, 0):
             msg = "altair>=5.4.0 is required for `.plot`"
             raise ModuleUpgradeRequiredError(msg)
