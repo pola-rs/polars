@@ -488,9 +488,13 @@ impl PyLazyFrame {
             .with_simplify_expr(simplify_expression)
             .with_slice_pushdown(slice_pushdown)
             .with_cluster_with_columns(cluster_with_columns)
-            .with_streaming(streaming)
             ._with_eager(_eager)
             .with_projection_pushdown(projection_pushdown);
+
+        #[cfg(feature = "streaming")]
+        {
+            ldf = ldf.with_streaming(streaming);
+        }
 
         #[cfg(feature = "new_streaming")]
         {
