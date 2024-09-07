@@ -3317,6 +3317,7 @@ dependencies = [
  "fallible-streaming-iterator",
  "flate2",
  "futures",
+ "hashbrown",
  "lz4",
  "lz4_flex",
  "num-traits",

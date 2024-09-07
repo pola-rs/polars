@@ -18,7 +18,6 @@ use crate::cloud::{
     build_object_store, object_path_from_str, CloudLocation, CloudOptions, PolarsObjectStore,
 };
 use crate::parquet::metadata::FileMetaDataRef;
-use crate::parquet::read::metadata::PartitionedColumnChunkMD;
 use crate::pl_async::get_runtime;
 use crate::predicates::PhysicalIoExpr;
 
@@ -178,16 +177,12 @@ async fn download_projection(
     let mut ranges = Vec::with_capacity(fields.len());
     let mut offsets = Vec::with_capacity(fields.len());
     fields.iter().for_each(|name| {
-        let columns = row_group.columns();
-
         // A single column can have multiple matches (structs).
-        let iter = columns.iter().filter_map(|meta| {
-            if meta.descriptor().path_in_schema[0] == name {
-                let (offset, len) = meta.byte_range();
-                Some((offset, offset as usize..(offset + len) as usize))
-            } else {
-                None
-            }
+        let iter = row_group.columns_under_root_iter(name).map(|meta| {
+            let byte_range = meta.byte_range();
+            let offset = byte_range.start;
+            let byte_range = byte_range.start as usize..byte_range.end as usize;
+            (offset, byte_range)
         });
 
         for (offset, range) in iter {
@@ -215,33 +210,30 @@ async fn download_row_group(
     sender: QueueSend,
     rg_index: usize,
 ) -> bool {
-    if rg.columns().is_empty() {
+    if rg.n_columns() == 0 {
         return true;
     }
-    let offset = rg.columns().iter().map(|c| c.byte_range().0).min().unwrap();
-    let (max_offset, len) = rg
-        .columns()
-        .iter()
-        .map(|c| c.byte_range())
-        .max_by_key(|k| k.0)
-        .unwrap();
+
+    let full_byte_range = rg.full_byte_range();
+    let full_byte_range = full_byte_range.start as usize..full_byte_range.end as usize;
 
     let result = async_reader
-        .get_range(offset as usize, (max_offset - offset + len) as usize)
+        .get_range(
+            full_byte_range.start,
+            full_byte_range.end - full_byte_range.start,
+        )
         .await
         .map(|bytes| {
-            let base_offset = offset;
             (
                 rg_index,
-                rg.columns()
-                    .iter()
-                    .map(|c| {
-                        let (offset, len) = c.byte_range();
-                        let slice_offset = offset - base_offset;
-
+                rg.byte_ranges_iter()
+                    .map(|range| {
                         (
-                            offset,
-                            bytes.slice(slice_offset as usize..(slice_offset + len) as usize),
+                            range.start,
+                            bytes.slice(
+                                range.start as usize - full_byte_range.start
+                                    ..range.end as usize - full_byte_range.start,
+                            ),
                         )
                     })
                     .collect::<DownloadedRowGroup>(),
@@ -279,18 +271,8 @@ impl FetchRowGroupsFromObjectStore {
                 .filter_map(|i| {
                     let rg = &row_groups[i];
 
-                    // TODO!
-                    // Optimize this. Now we partition the predicate columns twice. (later on reading as well)
-                    // I think we must add metadata context where we can cache and amortize the partitioning.
-                    let mut part_md = PartitionedColumnChunkMD::new(rg);
-                    let live = pred.live_variables();
-                    part_md.set_partitions(
-                        live.as_ref()
-                            .map(|vars| vars.iter().map(|s| s.as_ref()).collect::<PlHashSet<_>>())
-                            .as_ref(),
-                    );
                     let should_be_read =
-                        matches!(read_this_row_group(Some(pred), &part_md, &schema), Ok(true));
+                        matches!(read_this_row_group(Some(pred), rg, &schema), Ok(true));
 
                     // Already add the row groups that will be skipped to the prefetched data.
                     if !should_be_read {

@@ -6,7 +6,7 @@ mod row_metadata;
 mod schema_descriptor;
 mod sort;
 
-pub use column_chunk_metadata::ColumnChunkMetaData;
+pub use column_chunk_metadata::ColumnChunkMetadata;
 pub use column_descriptor::{ColumnDescriptor, Descriptor};
 pub use column_order::ColumnOrder;
 pub use file_metadata::{FileMetaData, KeyValue};

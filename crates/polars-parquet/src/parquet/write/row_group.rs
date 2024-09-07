@@ -10,7 +10,7 @@ use super::column_chunk::write_column_chunk_async;
 use super::page::{is_data_page, PageWriteSpec};
 use super::{DynIter, DynStreamingIterator};
 use crate::parquet::error::{ParquetError, ParquetResult};
-use crate::parquet::metadata::{ColumnChunkMetaData, ColumnDescriptor};
+use crate::parquet::metadata::{ColumnChunkMetadata, ColumnDescriptor};
 use crate::parquet::page::CompressedPage;
 
 pub struct ColumnOffsetsMetadata {
@@ -34,7 +34,7 @@ impl ColumnOffsetsMetadata {
     }
 
     pub fn from_column_chunk_metadata(
-        column_chunk_metadata: &ColumnChunkMetaData,
+        column_chunk_metadata: &ColumnChunkMetadata,
     ) -> ColumnOffsetsMetadata {
         ColumnOffsetsMetadata {
             dictionary_page_offset: column_chunk_metadata.dictionary_page_offset(),

@@ -26,7 +26,7 @@ use crate::parquet::schema::types::PrimitiveType;
 
 /// Creates a new iterator of compressed pages.
 pub fn get_page_iterator(
-    column_metadata: &ColumnChunkMetaData,
+    column_metadata: &ColumnChunkMetadata,
     reader: MemReader,
     buffer: Vec<u8>,
     max_header_size: usize,
