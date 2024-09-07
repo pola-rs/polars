@@ -184,11 +184,13 @@ impl LazyFrame {
     }
 
     /// Run nodes that are capably of doing so on the streaming engine.
+    #[cfg(feature = "streaming")]
     pub fn with_streaming(mut self, toggle: bool) -> Self {
         self.opt_state.set(OptFlags::STREAMING, toggle);
         self
     }
 
+    #[cfg(feature = "new_streaming")]
     pub fn with_new_streaming(mut self, toggle: bool) -> Self {
         self.opt_state.set(OptFlags::NEW_STREAMING, toggle);
         self
