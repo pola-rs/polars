@@ -58,6 +58,7 @@ impl JoinCoalesce {
             },
             #[cfg(feature = "asof_join")]
             AsOf(_) => matches!(self, JoinSpecific | CoalesceColumns),
+            IEJoin(_) => false,
             Cross => false,
             #[cfg(feature = "semi_anti_join")]
             Semi | Anti => false,
@@ -120,6 +121,7 @@ pub enum JoinType {
     Semi,
     #[cfg(feature = "semi_anti_join")]
     Anti,
+    IEJoin(IEJoinOptions),
 }
 
 impl From<JoinType> for JoinArgs {
@@ -138,6 +140,7 @@ impl Display for JoinType {
             Full { .. } => "FULL",
             #[cfg(feature = "asof_join")]
             AsOf(_) => "ASOF",
+            IEJoin(_) => "IEJOIN",
             Cross => "CROSS",
             #[cfg(feature = "semi_anti_join")]
             Semi => "SEMI",

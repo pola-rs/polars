@@ -349,7 +349,7 @@ def test_arr_eval_named_cols() -> None:
 def test_alias_in_join_keys() -> None:
     df = pl.DataFrame({"A": ["a", "b"], "B": [["a", "b"], ["c", "d"]]})
     with pytest.raises(
-        ComputeError,
+        InvalidOperationError,
         match=r"'alias' is not allowed in a join key, use 'with_columns' first",
     ):
         df.join(df, on=pl.col("A").alias("foo"))

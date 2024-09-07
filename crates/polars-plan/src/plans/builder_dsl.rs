@@ -403,6 +403,7 @@ impl DslBuilder {
             input_right: Arc::new(other),
             left_on,
             right_on,
+            predicates: Default::default(),
             options,
         }
         .into()

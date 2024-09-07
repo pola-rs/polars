@@ -21,6 +21,7 @@ use polars_core::prelude::*;
 use polars_utils::vec::ConvertVec;
 use recursive::recursive;
 mod functions;
+mod join;
 pub(crate) mod type_coercion;
 
 pub(crate) use expr_expansion::{expand_selectors, is_regex_projection, prepare_projection};
@@ -215,6 +216,7 @@ impl IR {
                 DslPlan::Join {
                     input_left: Arc::new(i_l),
                     input_right: Arc::new(i_r),
+                    predicates: Default::default(),
                     left_on,
                     right_on,
                     options,

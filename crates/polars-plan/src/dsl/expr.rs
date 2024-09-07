@@ -376,7 +376,7 @@ impl Display for Operator {
 }
 
 impl Operator {
-    pub(crate) fn is_comparison(&self) -> bool {
+    pub fn is_comparison(&self) -> bool {
         matches!(
             self,
             Self::Eq

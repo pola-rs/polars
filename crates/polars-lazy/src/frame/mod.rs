@@ -2072,7 +2072,7 @@ impl JoinBuilder {
         let mut opt_state = self.lf.opt_state;
         let other = self.other.expect("with not set");
 
-        // If any of the nodes reads from files we must activate this this plan as well.
+        // If any of the nodes reads from files we must activate this plan as well.
         if other.opt_state.contains(OptFlags::FILE_CACHING) {
             opt_state |= OptFlags::FILE_CACHING;
         }
@@ -2102,6 +2102,43 @@ impl JoinBuilder {
                 .into(),
             )
             .build();
+        LazyFrame::from_logical_plan(lp, opt_state)
+    }
+
+    // Finish with join predicates
+    pub fn join_where(self, predicates: Vec<Expr>) -> LazyFrame {
+        let mut opt_state = self.lf.opt_state;
+        let other = self.other.expect("with not set");
+
+        // If any of the nodes reads from files we must activate this plan as well.
+        if other.opt_state.contains(OptFlags::FILE_CACHING) {
+            opt_state |= OptFlags::FILE_CACHING;
+        }
+
+        let args = JoinArgs {
+            how: self.how,
+            validation: self.validation,
+            suffix: self.suffix,
+            slice: None,
+            join_nulls: self.join_nulls,
+            coalesce: self.coalesce,
+        };
+        let options = JoinOptions {
+            allow_parallel: self.allow_parallel,
+            force_parallel: self.force_parallel,
+            args,
+            ..Default::default()
+        };
+
+        let lp = DslPlan::Join {
+            input_left: Arc::new(self.lf.logical_plan),
+            input_right: Arc::new(other.logical_plan),
+            left_on: Default::default(),
+            right_on: Default::default(),
+            predicates,
+            options: Arc::from(options),
+        };
+
         LazyFrame::from_logical_plan(lp, opt_state)
     }
 }

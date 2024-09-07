@@ -969,6 +969,20 @@ impl PyLazyFrame {
             .into())
     }
 
+    fn join_where(&self, other: Self, predicates: Vec<PyExpr>, suffix: String) -> PyResult<Self> {
+        let ldf = self.ldf.clone();
+        let other = other.ldf;
+
+        let predicates = predicates.to_exprs();
+
+        Ok(ldf
+            .join_builder()
+            .with(other)
+            .suffix(suffix)
+            .join_where(predicates)
+            .into())
+    }
+
     fn with_columns(&mut self, exprs: Vec<PyExpr>) -> Self {
         let ldf = self.ldf.clone();
         ldf.with_columns(exprs.to_exprs()).into()

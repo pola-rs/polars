@@ -52,6 +52,7 @@ macro_rules! failed_here {
         format!("'{}' failed", stringify!($($t)*)).into()
     }
 }
+pub(super) use {failed_here, failed_input, failed_input_args};
 
 pub fn to_alp(
     lp: DslPlan,
@@ -65,7 +66,7 @@ pub fn to_alp(
         opt_flags.contains(OptFlags::TYPE_COERCION),
     );
 
-    let mut ctxt = ConversionContext {
+    let mut ctxt = DslConversionContext {
         expr_arena,
         lp_arena,
         conversion_optimizer,
@@ -75,28 +76,32 @@ pub fn to_alp(
     to_alp_impl(lp, &mut ctxt)
 }
 
-struct ConversionContext<'a> {
-    expr_arena: &'a mut Arena<AExpr>,
-    lp_arena: &'a mut Arena<IR>,
-    conversion_optimizer: ConversionOptimizer,
-    opt_flags: &'a mut OptFlags,
+pub(super) struct DslConversionContext<'a> {
+    pub(super) expr_arena: &'a mut Arena<AExpr>,
+    pub(super) lp_arena: &'a mut Arena<IR>,
+    pub(super) conversion_optimizer: ConversionOptimizer,
+    pub(super) opt_flags: &'a mut OptFlags,
+}
+
+pub(super) fn run_conversion(
+    lp: IR,
+    ctxt: &mut DslConversionContext,
+    name: &str,
+) -> PolarsResult<Node> {
+    let lp_node = ctxt.lp_arena.add(lp);
+    ctxt.conversion_optimizer
+        .coerce_types(ctxt.expr_arena, ctxt.lp_arena, lp_node)
+        .map_err(|e| e.context(format!("'{name}' failed").into()))?;
+
+    Ok(lp_node)
 }
 
 /// converts LogicalPlan to IR
 /// it adds expressions & lps to the respective arenas as it traverses the plan
 /// finally it returns the top node of the logical plan
 #[recursive]
-pub fn to_alp_impl(lp: DslPlan, ctxt: &mut ConversionContext) -> PolarsResult<Node> {
+pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult<Node> {
     let owned = Arc::unwrap_or_clone;
-
-    fn run_conversion(lp: IR, ctxt: &mut ConversionContext, name: &str) -> PolarsResult<Node> {
-        let lp_node = ctxt.lp_arena.add(lp);
-        ctxt.conversion_optimizer
-            .coerce_types(ctxt.expr_arena, ctxt.lp_arena, lp_node)
-            .map_err(|e| e.context(format!("'{name}' failed").into()))?;
-
-        Ok(lp_node)
-    }
 
     let v = match lp {
         DslPlan::Scan {
@@ -537,90 +542,18 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut ConversionContext) -> PolarsResult<No
             input_right,
             left_on,
             right_on,
-            mut options,
+            predicates,
+            options,
         } => {
-            if matches!(options.args.how, JoinType::Cross) {
-                polars_ensure!(left_on.len() + right_on.len() == 0, InvalidOperation: "a 'cross' join doesn't expect any join keys");
-            } else {
-                let mut turn_off_coalesce = false;
-                for e in left_on.iter().chain(right_on.iter()) {
-                    if has_expr(e, |e| matches!(e, Expr::Alias(_, _))) {
-                        polars_bail!(
-                            ComputeError:
-                            "'alias' is not allowed in a join key, use 'with_columns' first",
-                        )
-                    }
-                    // Any expression that is not a simple column expression will turn of coalescing.
-                    turn_off_coalesce |= has_expr(e, |e| !matches!(e, Expr::Column(_)));
-                }
-                if turn_off_coalesce {
-                    let options = Arc::make_mut(&mut options);
-                    if matches!(options.args.coalesce, JoinCoalesce::CoalesceColumns) {
-                        polars_warn!("coalescing join requested but not all join keys are column references, turning off key coalescing");
-                    }
-                    options.args.coalesce = JoinCoalesce::KeepColumns;
-                }
-
-                options.args.validation.is_valid_join(&options.args.how)?;
-
-                polars_ensure!(
-                    left_on.len() == right_on.len(),
-                    ComputeError:
-                        format!(
-                            "the number of columns given as join key (left: {}, right:{}) should be equal",
-                            left_on.len(),
-                            right_on.len()
-                        )
-                );
-            }
-
-            let input_left = to_alp_impl(owned(input_left), ctxt)
-                .map_err(|e| e.context(failed_input!(join left)))?;
-            let input_right = to_alp_impl(owned(input_right), ctxt)
-                .map_err(|e| e.context(failed_input!(join, right)))?;
-
-            let schema_left = ctxt.lp_arena.get(input_left).schema(ctxt.lp_arena);
-            let schema_right = ctxt.lp_arena.get(input_right).schema(ctxt.lp_arena);
-
-            let schema =
-                det_join_schema(&schema_left, &schema_right, &left_on, &right_on, &options)
-                    .map_err(|e| e.context(failed_here!(join schema resolving)))?;
-
-            let left_on = to_expr_irs_ignore_alias(left_on, ctxt.expr_arena)?;
-            let right_on = to_expr_irs_ignore_alias(right_on, ctxt.expr_arena)?;
-            let mut joined_on = PlHashSet::new();
-            for (l, r) in left_on.iter().zip(right_on.iter()) {
-                polars_ensure!(
-                    joined_on.insert((l.output_name(), r.output_name())),
-                    InvalidOperation: "joining with repeated key names; already joined on {} and {}",
-                    l.output_name(),
-                    r.output_name()
-                )
-            }
-            drop(joined_on);
-
-            ctxt.conversion_optimizer
-                .fill_scratch(&left_on, ctxt.expr_arena);
-            ctxt.conversion_optimizer
-                .fill_scratch(&right_on, ctxt.expr_arena);
-
-            // Every expression must be elementwise so that we are
-            // guaranteed the keys for a join are all the same length.
-            let all_elementwise =
-                |aexprs: &[ExprIR]| all_streamable(aexprs, &*ctxt.expr_arena, Context::Default);
-            polars_ensure!(
-                all_elementwise(&left_on) && all_elementwise(&right_on),
-                InvalidOperation: "All join key expressions must be elementwise."
-            );
-            let lp = IR::Join {
+            return join::resolve_join(
                 input_left,
                 input_right,
-                schema,
                 left_on,
                 right_on,
+                predicates,
                 options,
-            };
-            return run_conversion(lp, ctxt, "join");
+                ctxt,
+            )
         },
         DslPlan::HStack {
             input,
