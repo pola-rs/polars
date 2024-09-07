@@ -4569,7 +4569,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         suffix: str = "_right",
     ) -> LazyFrame:
         """
-        Perform a join based on one or multiple equality predicates.
+        Perform a join based on one or multiple (in)equality predicates.
 
         A row from this table may be included in zero or multiple rows in the result,
         and the relative order of rows may differ between the input and output tables.
@@ -4586,6 +4586,43 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             For example: `pl.col("time") >= pl.col("duration")`
         suffix
             Suffix to append to columns with a duplicate name.
+
+        Examples
+        --------
+        >>> east = pl.LazyFrame(
+        ...    {
+        ...        "id": [100, 101, 102],
+        ...        "dur": [120, 140, 160],
+        ...        "rev": [12, 14, 16],
+        ...        "cores": [2, 8, 4],
+        ...    }
+        ...)
+        >>> west = pl.LazyFrame(
+        ...     {
+        ...         "t_id": [404, 498, 676, 742],
+        ...         "time": [90, 130, 150, 170],
+        ...         "cost": [9, 13, 15, 16],
+        ...         "cores": [4, 2, 1, 4],
+        ...     }
+        ... )
+        >>> east.join_where(
+        >>>     west,
+        >>>     pl.col("dur") < pl.col("time"),
+        >>>     pl.col("rev") < pl.col("cost"),
+        >>> )
+        shape: (5, 8)
+        ┌─────┬─────┬─────┬───────┬──────┬──────┬──────┬─────────────┐
+        │ id  ┆ dur ┆ rev ┆ cores ┆ t_id ┆ time ┆ cost ┆ cores_right │
+        │ --- ┆ --- ┆ --- ┆ ---   ┆ ---  ┆ ---  ┆ ---  ┆ ---         │
+        │ i64 ┆ i64 ┆ i64 ┆ i64   ┆ i64  ┆ i64  ┆ i64  ┆ i64         │
+        ╞═════╪═════╪═════╪═══════╪══════╪══════╪══════╪═════════════╡
+        │ 100 ┆ 120 ┆ 12  ┆ 2     ┆ 498  ┆ 130  ┆ 13   ┆ 2           │
+        │ 100 ┆ 120 ┆ 12  ┆ 2     ┆ 676  ┆ 150  ┆ 15   ┆ 1           │
+        │ 100 ┆ 120 ┆ 12  ┆ 2     ┆ 742  ┆ 170  ┆ 16   ┆ 4           │
+        │ 101 ┆ 140 ┆ 14  ┆ 8     ┆ 676  ┆ 150  ┆ 15   ┆ 1           │
+        │ 101 ┆ 140 ┆ 14  ┆ 8     ┆ 742  ┆ 170  ┆ 16   ┆ 4           │
+        └─────┴─────┴─────┴───────┴──────┴──────┴──────┴─────────────┘
+
         """
         if not isinstance(other, LazyFrame):
             msg = f"expected `other` join table to be a LazyFrame, not a {type(other).__name__!r}"
