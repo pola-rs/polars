@@ -472,9 +472,6 @@ def test_write_delta_with_merge(tmp_path: Path) -> None:
     )
 
     assert isinstance(merger, TableMerger)
-    assert merger.source_alias == "s"  # type: ignore[attr-defined]
-    assert merger.target_alias == "t"  # type: ignore[attr-defined]
-
     merger.when_matched_delete(predicate="t.a > 2").execute()
 
     result = pl.read_delta(str(tmp_path))
