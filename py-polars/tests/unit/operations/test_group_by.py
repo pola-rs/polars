@@ -861,7 +861,7 @@ def test_group_by_apply_first_input_is_literal() -> None:
     pow = df.group_by("g").agg(2 ** pl.col("x"))
     assert pow.sort("g").to_dict(as_series=False) == {
         "g": [1, 2],
-        "x": [[2.0, 4.0], [8.0, 16.0, 32.0]],
+        "literal": [[2.0, 4.0], [8.0, 16.0, 32.0]],
     }
 
 
