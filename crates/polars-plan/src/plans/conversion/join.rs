@@ -132,6 +132,10 @@ fn resolve_join_where(
 
     let owned = |e: Arc<Expr>| (*e).clone();
 
+    // Partition to:
+    // - IEjoin supported inequality predicates
+    // - equality predicates
+    // - remaining predicates
     let mut ie_left_on = vec![];
     let mut ie_right_on = vec![];
     let mut ie_op = vec![];
@@ -174,7 +178,34 @@ fn resolve_join_where(
         }
     }
 
+    // Now choose a primary join and do the remaining predicates as filters
+    fn to_binary(l: Expr, op: Operator, r: Expr) -> Expr {
+        Expr::BinaryExpr {
+            left: Arc::from(l),
+            op,
+            right: Arc::from(r),
+        }
+    }
+    // Add the ie predicates to the remaining predicates buffer so that they will be executed in the
+    // filter node.
+    fn ie_predicates_to_remaining(
+        remaining_preds: &mut Vec<Expr>,
+        ie_left_on: Vec<Expr>,
+        ie_right_on: Vec<Expr>,
+        ie_op: Vec<InequalityOperator>,
+    ) {
+        for ((l, op), r) in ie_left_on
+            .into_iter()
+            .zip(ie_op.into_iter())
+            .zip(ie_right_on.into_iter())
+        {
+            remaining_preds.push(to_binary(l, op.into(), r))
+        }
+    }
+
     let join_node = if !eq_left_on.is_empty() {
+        // We found one or more  equality predicates. Go into a default equi join
+        // as those are cheapest on avg.
         let join_node = resolve_join(
             input_left,
             input_right,
@@ -185,39 +216,47 @@ fn resolve_join_where(
             ctxt,
         )?;
 
-        for ((l, op), r) in ie_left_on
-            .into_iter()
-            .zip(ie_op.into_iter())
-            .zip(ie_right_on.into_iter())
-        {
-            remaining_preds.push(Expr::BinaryExpr {
-                left: Arc::from(l),
-                op: op.into(),
-                right: Arc::from(r),
-            })
-        }
+        ie_predicates_to_remaining(&mut remaining_preds, ie_left_on, ie_right_on, ie_op);
         join_node
-    } else if ie_right_on.len() == 2 {
+    }
+    //  TODO! once we support single IEjoin predicates, we must add a branch for the singe ie_pred case.
+    else if ie_right_on.len() >= 2 {
+        // Do an IEjoin.
         let opts = Arc::make_mut(&mut options);
         opts.args.how = JoinType::IEJoin(IEJoinOptions {
             operator1: ie_op[0],
             operator2: ie_op[1],
         });
 
-        resolve_join(
+        let join_node = resolve_join(
             input_left,
             input_right,
-            ie_left_on,
-            ie_right_on,
+            ie_left_on[..2].to_vec(),
+            ie_right_on[..2].to_vec(),
             vec![],
             options.clone(),
             ctxt,
-        )?
+        )?;
+
+        // The surplus ie-predicates will be added to the remaining predicates so that
+        // they will be applied in a filter node.
+        while ie_right_on.len() > 2 {
+            // Invariant: they all have equal length, so we can pop and unwrap all while len > 2.
+            // The first 2 predicates are used in the
+            let l = ie_right_on.pop().unwrap();
+            let r = ie_left_on.pop().unwrap();
+            let op = ie_op.pop().unwrap();
+
+            remaining_preds.push(to_binary(l, op.into(), r))
+        }
+        join_node
     } else {
+        // No predicates found that are supported in a fast algorithm.
+        // Do a cross join and follow up with filters.
         let opts = Arc::make_mut(&mut options);
         opts.args.how = JoinType::Cross;
 
-        resolve_join(
+        let join_node = resolve_join(
             input_left,
             input_right,
             vec![],
@@ -225,7 +264,10 @@ fn resolve_join_where(
             vec![],
             options.clone(),
             ctxt,
-        )?
+        )?;
+        // TODO: This can be removed once we support the single IEjoin.
+        ie_predicates_to_remaining(&mut remaining_preds, ie_left_on, ie_right_on, ie_op);
+        join_node
     };
 
     let IR::Join {

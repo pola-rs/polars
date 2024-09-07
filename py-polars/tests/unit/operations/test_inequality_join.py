@@ -170,7 +170,7 @@ def test_ie_join_with_expressions() -> None:
     assert_frame_equal(actual, expected, check_row_order=False, check_exact=True)
 
 
-def test_join_between() -> None:
+def test_join_where_predicates() -> None:
     left = pl.DataFrame(
         {
             "id": [0, 1, 2, 3, 4, 5],
@@ -273,6 +273,26 @@ def test_join_between() -> None:
         .sort("id")
     )
     assert_frame_equal(actual, expected, check_exact=True)
+
+    q = (
+        left.lazy()
+        .join_where(
+            right.lazy(),
+            pl.col("group") != pl.col("group"),
+        )
+        .select("id", "group", "group_right")
+        .sort("id")
+        .select("group", "group_right")
+    )
+
+    explained = q.explain()
+    assert "CROSS" in explained
+    assert "FILTER" in explained
+    actual = q.collect()
+    assert actual.to_dict(as_series=False) == {
+        "group": [0, 0, 0, 0, 0, 0, 1, 1, 1],
+        "group_right": [1, 1, 1, 1, 1, 1, 0, 0, 0],
+    }
 
 
 def _inequality_expression(col1: str, op: str, col2: str) -> pl.Expr:
