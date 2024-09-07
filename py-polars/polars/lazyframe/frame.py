@@ -4609,7 +4609,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>>     west,
         >>>     pl.col("dur") < pl.col("time"),
         >>>     pl.col("rev") < pl.col("cost"),
-        >>> )
+        >>> ).collect()
         shape: (5, 8)
         ┌─────┬─────┬─────┬───────┬──────┬──────┬──────┬─────────────┐
         │ id  ┆ dur ┆ rev ┆ cores ┆ t_id ┆ time ┆ cost ┆ cores_right │
