@@ -112,7 +112,7 @@ def read_ipc(
             raise ValueError(msg)
 
         lf = scan_ipc(
-            source,  # type: ignore[arg-type]
+            source,
             n_rows=n_rows,
             memory_map=memory_map,
             storage_options=storage_options,
