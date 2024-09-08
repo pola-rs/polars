@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any
 
 import hypothesis.strategies as st
 import numpy as np
+import pytest
 from hypothesis import given
 
 import polars as pl
@@ -436,9 +437,13 @@ def test_ie_join_with_floats(
     expr0 = _inequality_expression("dur", op1, "time")
     expr1 = _inequality_expression("rev", op2, "cost")
 
-    print(east, west)
     actual = east.join_where(west, expr0, expr1)
-    print(actual)
 
     expected = east.join(west, how="cross").filter(expr0 & expr1)
     assert_frame_equal(actual, expected, check_row_order=False, check_exact=True)
+
+
+def test_raise_on_suffixed_predicate_18604() -> None:
+    df = pl.DataFrame({"id": [1, 2]})
+    with pytest.raises(pl.exceptions.ColumnNotFoundError):
+        df.join_where(df, pl.col("id") >= pl.col("id_right"))
