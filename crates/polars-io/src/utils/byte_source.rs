@@ -1,7 +1,7 @@
 use std::ops::Range;
 use std::sync::Arc;
 
-use polars_error::{to_compute_err, PolarsResult};
+use polars_error::PolarsResult;
 use polars_utils::_limit_path_len_io_err;
 use polars_utils::mmap::MemSlice;
 
@@ -34,9 +34,8 @@ impl MemSliceByteSource {
                 .into_std()
                 .await,
         );
-        let mmap = Arc::new(unsafe { memmap::Mmap::map(file.as_ref()) }.map_err(to_compute_err)?);
 
-        Ok(Self(MemSlice::from_mmap(mmap)))
+        Ok(Self(MemSlice::from_file(file.as_ref())?))
     }
 }
 

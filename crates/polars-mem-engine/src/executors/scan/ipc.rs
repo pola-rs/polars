@@ -81,11 +81,9 @@ impl IpcExec {
                         Some(f) => f?,
                     };
 
-                    MemSlice::from_mmap(Arc::new(unsafe { memmap::Mmap::map(&file)? }))
+                    MemSlice::from_file(&file)?
                 },
-                ScanSourceRef::File(file) => {
-                    MemSlice::from_mmap(Arc::new(unsafe { memmap::Mmap::map(file)? }))
-                },
+                ScanSourceRef::File(file) => MemSlice::from_file(file)?,
                 ScanSourceRef::Buffer(buff) => MemSlice::from_bytes(buff.clone()),
             };
 

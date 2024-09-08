@@ -4,11 +4,11 @@ use std::sync::Arc;
 
 #[cfg(feature = "avro")]
 use polars::io::avro::AvroCompression;
-use polars::io::mmap::ensure_not_mapped;
 use polars::io::RowIndex;
 use polars::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_parquet::arrow::write::StatisticsOptions;
+use polars_utils::mmap::ensure_not_mapped;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 

@@ -205,13 +205,9 @@ impl<'a> ScanSourceRef<'a> {
                     polars_utils::open_file(path)?
                 };
 
-                Ok(MemSlice::from_mmap(Arc::new(unsafe {
-                    memmap::Mmap::map(&file)?
-                })))
+                MemSlice::from_file(&file)
             },
-            ScanSourceRef::File(file) => Ok(MemSlice::from_mmap(Arc::new(unsafe {
-                memmap::Mmap::map(*file)?
-            }))),
+            ScanSourceRef::File(file) => MemSlice::from_file(file),
             ScanSourceRef::Buffer(buff) => Ok(MemSlice::from_bytes((*buff).clone())),
         }
     }
@@ -227,7 +223,7 @@ impl<'a> ScanSourceRef<'a> {
     ) -> PolarsResult<MemSlice> {
         match self {
             Self::Path(path) => {
-                let f = if run_async {
+                let file = if run_async {
                     feature_gated!("cloud", {
                         cache_entries.unwrap()[index].try_open_check_latest()?
                     })
@@ -235,13 +231,9 @@ impl<'a> ScanSourceRef<'a> {
                     polars_utils::open_file(path)?
                 };
 
-                let mmap = unsafe { memmap::Mmap::map(&f)? };
-                Ok(MemSlice::from_mmap(Arc::new(mmap)))
+                MemSlice::from_file(&file)
             },
-            Self::File(file) => {
-                let mmap = unsafe { memmap::Mmap::map(*file)? };
-                Ok(MemSlice::from_mmap(Arc::new(mmap)))
-            },
+            Self::File(file) => MemSlice::from_file(file),
             Self::Buffer(buff) => Ok(MemSlice::from_bytes((*buff).clone())),
         }
     }
