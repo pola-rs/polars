@@ -130,6 +130,17 @@ fn resolve_join_where(
 ) -> PolarsResult<Node> {
     check_join_keys(&predicates)?;
 
+    for e in &predicates {
+        let no_binary_comparisons = e
+            .into_iter()
+            .filter(|e| match e {
+                Expr::BinaryExpr { op, .. } => op.is_comparison(),
+                _ => false,
+            })
+            .count();
+        polars_ensure!(no_binary_comparisons == 1, InvalidOperation: "only 1 binary comparison allowed as join condition")
+    }
+
     let owned = |e: Arc<Expr>| (*e).clone();
 
     // Partition to:

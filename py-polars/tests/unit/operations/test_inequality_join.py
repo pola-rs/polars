@@ -447,3 +447,11 @@ def test_raise_on_suffixed_predicate_18604() -> None:
     df = pl.DataFrame({"id": [1, 2]})
     with pytest.raises(pl.exceptions.ColumnNotFoundError):
         df.join_where(df, pl.col("id") >= pl.col("id_right"))
+
+
+def test_raise_on_multiple_binary_comparisons() -> None:
+    df = pl.DataFrame({"id": [1, 2]})
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        df.join_where(
+            df, (pl.col("id") < pl.col("id")) & (pl.col("id") >= pl.col("id"))
+        )
