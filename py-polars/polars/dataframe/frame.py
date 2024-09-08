@@ -7095,6 +7095,10 @@ class DataFrame:
         """
         Perform a join based on one or multiple equality predicates.
 
+        .. warning::
+            This functionality is experimental. It may be
+            changed at any point without it being considered a breaking change.
+
         A row from this table may be included in zero or multiple rows in the result,
         and the relative order of rows may differ between the input and output tables.
 
@@ -7110,6 +7114,13 @@ class DataFrame:
             For example: `pl.col("time") >= pl.col("duration")`
         suffix
             Suffix to append to columns with a duplicate name.
+
+        Notes
+        -----
+        This method is strict about its equality expressions.
+        Only 1 equality expression is allowed per predicate, where
+        the lhs `pl.col` refers to the left table in the join, and the
+        rhs `pl.col` refers to the right table.
 
         Examples
         --------
