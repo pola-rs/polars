@@ -18,6 +18,10 @@ On this page you can find a non-exhaustive list of libraries and tools that supp
 
 [Apache Arrow](https://arrow.apache.org/) enables zero-copy reads of data within the same process, meaning that data can be directly accessed in its in-memory format without the need for copying or serialisation. This enhances performance when integrating with different tools using Apache Arrow. Polars is compatible with a wide range of libraries that also make use of Apache Arrow, like Pandas and DuckDB.
 
+### Data visualisation
+
+See the [dedicated visualization section](misc/visualization.md).
+
 ### IO
 
 #### Delta Lake
