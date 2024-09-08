@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import io
-import os
-import re
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
@@ -10,7 +8,6 @@ import pandas as pd
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError
 from polars.interchange.protocol import CompatLevel
 from polars.testing import assert_frame_equal
 
