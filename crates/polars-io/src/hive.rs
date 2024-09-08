@@ -19,7 +19,7 @@ pub(crate) fn materialize_hive_partitions<D>(
         for s in hive_columns {
             let i = match df.get_columns().binary_search_by_key(
                 &reader_schema.index_of(s.name()).unwrap_or(usize::MAX),
-                |s| reader_schema.index_of(s.name()).unwrap_or(usize::MIN),
+                |df_col| reader_schema.index_of(df_col.name()).unwrap_or(usize::MIN),
             ) {
                 Ok(i) => i,
                 Err(i) => i,
