@@ -18,7 +18,7 @@ impl<R: MmapBytesReader> IpcReader<R> {
     ) -> PolarsResult<DataFrame> {
         match self.reader.to_file() {
             Some(file) => {
-                let semaphore = MMapSemaphore::new_from_file(&file)?;
+                let semaphore = MMapSemaphore::new_from_file(file)?;
                 let metadata =
                     read::read_file_metadata(&mut std::io::Cursor::new(semaphore.as_ref()))?;
 
