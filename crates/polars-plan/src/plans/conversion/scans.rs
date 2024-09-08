@@ -152,7 +152,7 @@ pub(super) fn csv_file_info(
     // * See if we can do this without downloading the entire file
 
     // prints the error message if paths is empty.
-    let run_async = sources.is_cloud_url() || (sources.is_files() && config::force_async());
+    let run_async = sources.is_cloud_url() || (sources.is_paths() && config::force_async());
 
     let cache_entries = {
         if run_async {
@@ -268,7 +268,7 @@ pub(super) fn ndjson_file_info(
         polars_bail!(ComputeError: "expected at least 1 source");
     };
 
-    let run_async = sources.is_cloud_url() || (sources.is_files() && config::force_async());
+    let run_async = sources.is_cloud_url() || (sources.is_paths() && config::force_async());
 
     let cache_entries = {
         if run_async {

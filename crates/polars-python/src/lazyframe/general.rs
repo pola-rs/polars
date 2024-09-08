@@ -23,14 +23,13 @@ use crate::{PyDataFrame, PyExpr, PyLazyGroupBy};
 fn pyobject_to_first_path_and_scan_sources(
     obj: PyObject,
 ) -> PyResult<(Option<PathBuf>, ScanSources)> {
-    use crate::file::{get_either_file_or_path, EitherPythonFileOrPath};
-    Ok(match get_either_file_or_path(obj, false)? {
-        EitherPythonFileOrPath::Path(path) => {
+    use crate::file::{get_python_scan_source_input, PythonScanSourceInput};
+    Ok(match get_python_scan_source_input(obj, false)? {
+        PythonScanSourceInput::Path(path) => {
             (Some(path.clone()), ScanSources::Paths([path].into()))
         },
-        EitherPythonFileOrPath::File(file) => (None, ScanSources::Files([file].into())),
-        EitherPythonFileOrPath::Py(f) => (None, ScanSources::Buffers([f.as_bytes()].into())),
-        EitherPythonFileOrPath::Buffer(buff) => (None, ScanSources::Buffers([buff].into())),
+        PythonScanSourceInput::File(file) => (None, ScanSources::Files([file].into())),
+        PythonScanSourceInput::Buffer(buff) => (None, ScanSources::Buffers([buff].into())),
     })
 }
 

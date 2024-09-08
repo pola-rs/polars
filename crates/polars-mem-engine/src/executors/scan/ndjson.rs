@@ -39,9 +39,9 @@ impl JsonExec {
 
         let verbose = config::verbose();
         let force_async = config::force_async();
-        let run_async = (self.sources.is_files() && force_async) || self.sources.is_cloud_url();
+        let run_async = (self.sources.is_paths() && force_async) || self.sources.is_cloud_url();
 
-        if self.sources.is_files() && force_async && verbose {
+        if self.sources.is_paths() && force_async && verbose {
             eprintln!("ASYNC READING FORCED");
         }
 
@@ -108,7 +108,7 @@ impl JsonExec {
                 }
 
                 if let Some(col) = &self.file_scan_options.include_file_paths {
-                    let name = source.to_file_path();
+                    let name = source.to_include_path_name();
                     unsafe {
                         df.with_column_unchecked(
                             StringChunked::full(col.clone(), name, df.height()).into_series(),

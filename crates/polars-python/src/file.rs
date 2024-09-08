@@ -203,20 +203,22 @@ impl EitherRustPythonFile {
     }
 }
 
-pub enum EitherPythonFileOrPath {
-    Py(PyFileLikeObject),
+pub enum PythonScanSourceInput {
     Buffer(bytes::Bytes),
     Path(PathBuf),
     File(File),
 }
 
-pub fn get_either_file_or_path(py_f: PyObject, write: bool) -> PyResult<EitherPythonFileOrPath> {
+pub fn get_python_scan_source_input(
+    py_f: PyObject,
+    write: bool,
+) -> PyResult<PythonScanSourceInput> {
     Python::with_gil(|py| {
         let py_f = py_f.into_bound(py);
 
         // If the pyobject is a `bytes` class
         if let Ok(bytes) = py_f.downcast::<PyBytes>() {
-            return Ok(EitherPythonFileOrPath::Buffer(
+            return Ok(PythonScanSourceInput::Buffer(
                 bytes::Bytes::copy_from_slice(bytes.as_bytes()),
             ));
         }
@@ -224,7 +226,7 @@ pub fn get_either_file_or_path(py_f: PyObject, write: bool) -> PyResult<EitherPy
         if let Ok(s) = py_f.extract::<Cow<str>>() {
             let file_path = std::path::Path::new(&*s);
             let file_path = resolve_homedir(file_path);
-            Ok(EitherPythonFileOrPath::Path(file_path))
+            Ok(PythonScanSourceInput::Path(file_path))
         } else {
             let io = py.import_bound("io").unwrap();
             let is_utf8_encoding = |py_f: &Bound<PyAny>| -> PyResult<bool> {
@@ -277,7 +279,7 @@ pub fn get_either_file_or_path(py_f: PyObject, write: bool) -> PyResult<EitherPy
             .filter(|fileno| *fileno != -1)
             .map(|fileno| fileno as RawFd)
             {
-                return Ok(EitherPythonFileOrPath::File(unsafe {
+                return Ok(PythonScanSourceInput::File(unsafe {
                     File::from_raw_fd(fd)
                 }));
             }
@@ -314,8 +316,9 @@ pub fn get_either_file_or_path(py_f: PyObject, write: bool) -> PyResult<EitherPy
                 py_f
             };
             PyFileLikeObject::ensure_requirements(&py_f, !write, write, !write)?;
-            let f = PyFileLikeObject::new(py_f.to_object(py));
-            Ok(EitherPythonFileOrPath::Py(f))
+            Ok(PythonScanSourceInput::Buffer(
+                PyFileLikeObject::new(py_f.to_object(py)).as_bytes(),
+            ))
         }
     })
 }
@@ -396,7 +399,7 @@ fn get_either_buffer_or_path(
 
             // BytesIO / StringIO is relatively fast, and some code relies on it.
             if !py_f.is_exact_instance(&io.getattr("BytesIO").unwrap())
-                || !py_f.is_exact_instance(&io.getattr("StringIO").unwrap())
+                && !py_f.is_exact_instance(&io.getattr("StringIO").unwrap())
             {
                 polars_warn!("Polars found a filename. \
                 Ensure you pass a path to the file instead of a python file object when possible for best \

@@ -226,7 +226,7 @@ pub(super) fn count_rows_ndjson(
     }
 
     let is_cloud_url = sources.is_cloud_url();
-    let run_async = is_cloud_url || (sources.is_files() && config::force_async());
+    let run_async = is_cloud_url || (sources.is_paths() && config::force_async());
 
     let cache_entries = {
         if run_async {

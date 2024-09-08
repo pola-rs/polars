@@ -161,7 +161,7 @@ impl ParquetExec {
                         self.file_options
                             .include_file_paths
                             .as_ref()
-                            .map(|x| (x.clone(), Arc::from(source.to_file_path()))),
+                            .map(|x| (x.clone(), Arc::from(source.to_include_path_name()))),
                     );
 
                 reader
@@ -453,7 +453,7 @@ impl ParquetExec {
         let is_cloud = self.sources.is_cloud_url();
         let force_async = config::force_async();
 
-        let out = if is_cloud || (self.sources.is_files() && force_async) {
+        let out = if is_cloud || (self.sources.is_paths() && force_async) {
             feature_gated!("cloud", {
                 if force_async && config::verbose() {
                     eprintln!("ASYNC READING FORCED");

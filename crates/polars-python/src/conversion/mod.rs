@@ -32,7 +32,7 @@ use pyo3::pybacked::PyBackedStr;
 use pyo3::types::{PyDict, PyList, PySequence};
 
 use crate::error::PyPolarsErr;
-use crate::file::{get_either_file_or_path, EitherPythonFileOrPath};
+use crate::file::{get_python_scan_source_input, PythonScanSourceInput};
 #[cfg(feature = "object")]
 use crate::object::OBJECT_NAME;
 use crate::prelude::*;
@@ -549,29 +549,24 @@ impl<'py> FromPyObject<'py> for Wrap<ScanSources> {
         let num_items = list.len();
         let mut iter = list
             .into_iter()
-            .map(|val| get_either_file_or_path(val.unbind(), false));
+            .map(|val| get_python_scan_source_input(val.unbind(), false));
 
         let Some(first) = iter.next() else {
             return Ok(Wrap(ScanSources::default()));
         };
 
         let mut sources = match first? {
-            EitherPythonFileOrPath::Py(f) => {
-                let mut sources = Vec::with_capacity(num_items);
-                sources.push(f.as_bytes());
-                MutableSources::Buffers(sources)
-            },
-            EitherPythonFileOrPath::Path(path) => {
+            PythonScanSourceInput::Path(path) => {
                 let mut sources = Vec::with_capacity(num_items);
                 sources.push(path);
                 MutableSources::Paths(sources)
             },
-            EitherPythonFileOrPath::File(file) => {
+            PythonScanSourceInput::File(file) => {
                 let mut sources = Vec::with_capacity(num_items);
                 sources.push(file);
                 MutableSources::Files(sources)
             },
-            EitherPythonFileOrPath::Buffer(buffer) => {
+            PythonScanSourceInput::Buffer(buffer) => {
                 let mut sources = Vec::with_capacity(num_items);
                 sources.push(buffer);
                 MutableSources::Buffers(sources)
@@ -580,10 +575,9 @@ impl<'py> FromPyObject<'py> for Wrap<ScanSources> {
 
         for source in iter {
             match (&mut sources, source?) {
-                (MutableSources::Paths(v), EitherPythonFileOrPath::Path(p)) => v.push(p),
-                (MutableSources::Files(v), EitherPythonFileOrPath::File(f)) => v.push(f),
-                (MutableSources::Buffers(v), EitherPythonFileOrPath::Py(f)) => v.push(f.as_bytes()),
-                (MutableSources::Buffers(v), EitherPythonFileOrPath::Buffer(f)) => v.push(f),
+                (MutableSources::Paths(v), PythonScanSourceInput::Path(p)) => v.push(p),
+                (MutableSources::Files(v), PythonScanSourceInput::File(f)) => v.push(f),
+                (MutableSources::Buffers(v), PythonScanSourceInput::Buffer(f)) => v.push(f),
                 _ => {
                     return Err(PyTypeError::new_err(
                         "Cannot combine in-memory bytes, paths and files for scan sources",
