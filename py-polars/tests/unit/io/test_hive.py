@@ -554,6 +554,30 @@ def test_hive_partition_columns_contained_in_file(
     )
     assert_with_projections(lf, rhs)
 
+    # partial cols in file
+    df = pl.DataFrame(
+        {"x": 1, "b": 2, "y": 1},
+        schema={"x": pl.Int32, "b": pl.Int16, "y": pl.Int32},
+    )
+    write_func(df, path)
+
+    lf = scan_func(path, hive_partitioning=True)  # type: ignore[call-arg]
+    rhs = df
+    assert_frame_equal(lf.collect(projection_pushdown=projection_pushdown), rhs)
+    assert_with_projections(lf, rhs)
+
+    lf = scan_func(  # type: ignore[call-arg]
+        path,
+        hive_schema={"a": pl.String, "b": pl.String},
+        hive_partitioning=True,
+    )
+    rhs = df.with_columns(pl.col("a", "b").cast(pl.String))
+    assert_frame_equal(
+        lf.collect(projection_pushdown=projection_pushdown),
+        rhs,
+    )
+    assert_with_projections(lf, rhs)
+
 
 @pytest.mark.write_disk
 def test_hive_partition_dates(tmp_path: Path) -> None:
