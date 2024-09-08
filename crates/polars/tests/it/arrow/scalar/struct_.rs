@@ -34,7 +34,7 @@ fn basics() {
     let a = StructScalar::new(dt.clone(), Some(values.clone()));
 
     assert_eq!(a.values(), &values);
-    assert_eq!(a.data_type(), &dt);
+    assert_eq!(a.dtype(), &dt);
     assert!(a.is_valid());
 
     let _: &dyn std::any::Any = a.as_any();

@@ -55,7 +55,7 @@ impl ArrayChunked {
                 Series::_try_from_arrow_unchecked_with_md(
                     self.name().clone(),
                     vec![(*arr.values()).clone()],
-                    &field.data_type,
+                    &field.dtype,
                     Some(&field.metadata),
                 )
                 .unwrap()

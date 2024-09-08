@@ -308,13 +308,13 @@ impl Decoder for BinaryDecoder {
 
     fn finalize(
         &self,
-        data_type: ArrowDataType,
+        dtype: ArrowDataType,
         _dict: Option<Self::Dict>,
         (values, validity): Self::DecodedState,
     ) -> ParquetResult<Self::Output> {
         let validity = freeze_validity(validity);
         Ok(FixedSizeBinaryArray::new(
-            data_type,
+            dtype,
             values.values.into(),
             validity,
         ))
@@ -324,13 +324,13 @@ impl Decoder for BinaryDecoder {
 impl utils::DictDecodable for BinaryDecoder {
     fn finalize_dict_array<K: DictionaryKey>(
         &self,
-        data_type: ArrowDataType,
+        dtype: ArrowDataType,
         dict: Self::Dict,
         keys: PrimitiveArray<K>,
     ) -> ParquetResult<DictionaryArray<K>> {
         let dict =
             FixedSizeBinaryArray::new(ArrowDataType::FixedSizeBinary(self.size), dict.into(), None);
-        Ok(DictionaryArray::try_new(data_type, keys, Box::new(dict)).unwrap())
+        Ok(DictionaryArray::try_new(dtype, keys, Box::new(dict)).unwrap())
     }
 }
 

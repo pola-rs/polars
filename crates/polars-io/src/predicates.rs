@@ -100,7 +100,7 @@ impl ColumnStats {
 
     /// Returns the [`DataType`] of the column.
     pub fn dtype(&self) -> &DataType {
-        self.field.data_type()
+        self.field.dtype()
     }
 
     /// Returns the null count of each row group of the column.

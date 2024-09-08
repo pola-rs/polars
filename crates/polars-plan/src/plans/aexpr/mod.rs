@@ -141,7 +141,7 @@ pub enum AExpr {
     },
     Cast {
         expr: Node,
-        data_type: DataType,
+        dtype: DataType,
         options: CastOptions,
     },
     Sort {
@@ -168,7 +168,6 @@ pub enum AExpr {
         truthy: Node,
         falsy: Node,
     },
-    #[cfg_attr(feature = "ir_serde", serde(skip))]
     AnonymousFunction {
         input: Vec<ExprIR>,
         function: SpecialEq<Arc<dyn SeriesUdf>>,
@@ -245,7 +244,7 @@ impl AExpr {
         arena: &Arena<AExpr>,
     ) -> PolarsResult<DataType> {
         self.to_field(schema, ctxt, arena)
-            .map(|f| f.data_type().clone())
+            .map(|f| f.dtype().clone())
     }
 
     /// Push nodes at this level to a pre-allocated stack

@@ -53,7 +53,7 @@ impl Series {
             DataType::Struct(fields) => {
                 let fields = fields
                     .iter()
-                    .map(|fld| Series::full_null(fld.name().clone(), size, fld.data_type()))
+                    .map(|fld| Series::full_null(fld.name().clone(), size, fld.dtype()))
                     .collect::<Vec<_>>();
                 let ca = StructChunked::from_series(name, &fields).unwrap();
 

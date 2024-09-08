@@ -103,7 +103,7 @@ impl From<PyDataType> for DataType {
             #[cfg(feature = "object")]
             PyDataType::Object => Object(OBJECT_NAME, None),
             PyDataType::Categorical => Categorical(None, Default::default()),
-            PyDataType::Enum(categories) => create_enum_data_type(categories),
+            PyDataType::Enum(categories) => create_enum_dtype(categories),
             PyDataType::Struct => Struct(vec![]),
             PyDataType::Decimal(p, s) => Decimal(p, Some(s)),
             PyDataType::Array(width) => Array(DataType::Null.into(), width),

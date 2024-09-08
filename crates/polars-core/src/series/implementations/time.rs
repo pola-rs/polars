@@ -145,6 +145,10 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
         (a.into_series(), b.into_series())
     }
 
+    fn _sum_as_f64(&self) -> f64 {
+        self.0._sum_as_f64()
+    }
+
     fn mean(&self) -> Option<f64> {
         self.0.mean()
     }
@@ -210,8 +214,8 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
             .into_series()
     }
 
-    fn cast(&self, data_type: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
-        match data_type {
+    fn cast(&self, dtype: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
+        match dtype {
             DataType::String => Ok(self
                 .0
                 .clone()
@@ -220,7 +224,7 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
                 .unwrap()
                 .to_string("%T")
                 .into_series()),
-            _ => self.0.cast_with_options(data_type, cast_options),
+            _ => self.0.cast_with_options(dtype, cast_options),
         }
     }
 

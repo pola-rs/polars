@@ -236,7 +236,7 @@ impl PyLazyFrame {
                         ShapeMismatch: "The length of the new names list should be equal to or less than the original column length",
                     );
                     Ok(schema
-                        .iter_dtypes()
+                        .iter_values()
                         .zip(new_names)
                         .map(|(dtype, name)| Field::new(name.into(), dtype.clone()))
                         .collect())
@@ -488,9 +488,13 @@ impl PyLazyFrame {
             .with_simplify_expr(simplify_expression)
             .with_slice_pushdown(slice_pushdown)
             .with_cluster_with_columns(cluster_with_columns)
-            .with_streaming(streaming)
             ._with_eager(_eager)
             .with_projection_pushdown(projection_pushdown);
+
+        #[cfg(feature = "streaming")]
+        {
+            ldf = ldf.with_streaming(streaming);
+        }
 
         #[cfg(feature = "new_streaming")]
         {
@@ -969,6 +973,20 @@ impl PyLazyFrame {
             .into())
     }
 
+    fn join_where(&self, other: Self, predicates: Vec<PyExpr>, suffix: String) -> PyResult<Self> {
+        let ldf = self.ldf.clone();
+        let other = other.ldf;
+
+        let predicates = predicates.to_exprs();
+
+        Ok(ldf
+            .join_builder()
+            .with(other)
+            .suffix(suffix)
+            .join_where(predicates)
+            .into())
+    }
+
     fn with_columns(&mut self, exprs: Vec<PyExpr>) -> Self {
         let ldf = self.ldf.clone();
         ldf.with_columns(exprs.to_exprs()).into()
@@ -1179,7 +1197,7 @@ impl PyLazyFrame {
         let schema_dict = PyDict::new_bound(py);
         schema.iter_fields().for_each(|fld| {
             schema_dict
-                .set_item(fld.name().as_str(), Wrap(fld.data_type().clone()))
+                .set_item(fld.name().as_str(), Wrap(fld.dtype().clone()))
                 .unwrap()
         });
         Ok(schema_dict.to_object(py))

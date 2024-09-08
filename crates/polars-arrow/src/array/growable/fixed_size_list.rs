@@ -33,13 +33,12 @@ impl<'a> GrowableFixedSizeList<'a> {
             use_validity = true;
         };
 
-        let size = if let ArrowDataType::FixedSizeList(_, size) =
-            &arrays[0].data_type().to_logical_type()
-        {
-            *size
-        } else {
-            unreachable!("`GrowableFixedSizeList` expects `DataType::FixedSizeList`")
-        };
+        let size =
+            if let ArrowDataType::FixedSizeList(_, size) = &arrays[0].dtype().to_logical_type() {
+                *size
+            } else {
+                unreachable!("`GrowableFixedSizeList` expects `DataType::FixedSizeList`")
+            };
 
         let inner = arrays
             .iter()
@@ -60,7 +59,7 @@ impl<'a> GrowableFixedSizeList<'a> {
         let values = self.values.as_box();
 
         FixedSizeListArray::new(
-            self.arrays[0].data_type().clone(),
+            self.arrays[0].dtype().clone(),
             values,
             validity.map(|v| v.into()),
         )
@@ -111,7 +110,7 @@ impl<'a> From<GrowableFixedSizeList<'a>> for FixedSizeListArray {
         let values = values.as_box();
 
         Self::new(
-            val.arrays[0].data_type().clone(),
+            val.arrays[0].dtype().clone(),
             values,
             val.validity.map(|v| v.into()),
         )

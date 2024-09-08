@@ -126,7 +126,7 @@ impl<R: Read + Seek> RowGroupReader<R> {
 
     #[inline]
     fn _next(&mut self) -> PolarsResult<Option<RowGroupDeserializer>> {
-        if self.schema.fields.is_empty() {
+        if self.schema.is_empty() {
             return Ok(None);
         }
         if self.remaining_rows == 0 {
@@ -145,7 +145,7 @@ impl<R: Read + Seek> RowGroupReader<R> {
         let column_chunks = read_columns_many(
             &mut self.reader,
             &row_group,
-            self.schema.fields.clone(),
+            &self.schema,
             Some(Filter::new_limited(self.remaining_rows)),
         )?;
 

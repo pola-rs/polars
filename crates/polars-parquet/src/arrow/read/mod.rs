@@ -24,7 +24,7 @@ pub use crate::parquet::read::{get_page_stream, read_metadata_async as _read_met
 pub use crate::parquet::{
     error::ParquetError,
     fallible_streaming_iterator,
-    metadata::{ColumnChunkMetaData, ColumnDescriptor, RowGroupMetaData},
+    metadata::{ColumnChunkMetadata, ColumnDescriptor, RowGroupMetaData},
     page::{CompressedDataPage, DataPageHeader, Page},
     read::{
         decompress, get_column_iterator, read_metadata as _read_metadata, BasicDecompressor,
@@ -38,10 +38,10 @@ pub use crate::parquet::{
     FallibleStreamingIterator,
 };
 
-/// Returns all [`ColumnChunkMetaData`] associated to `field_name`.
+/// Returns all [`ColumnChunkMetadata`] associated to `field_name`.
 /// For non-nested parquet types, this returns a single column
 pub fn get_field_pages<'a, T>(
-    columns: &'a [ColumnChunkMetaData],
+    columns: &'a [ColumnChunkMetadata],
     items: &'a [T],
     field_name: &str,
 ) -> Vec<&'a T> {

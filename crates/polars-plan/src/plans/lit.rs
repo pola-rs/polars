@@ -51,7 +51,7 @@ pub enum LiteralValue {
     Range {
         low: i64,
         high: i64,
-        data_type: DataType,
+        dtype: DataType,
     },
     #[cfg(feature = "dtype-date")]
     Date(i32),
@@ -139,12 +139,8 @@ impl LiteralValue {
             Int(v) => materialize_dyn_int(*v),
             Float(v) => AnyValue::Float64(*v),
             StrCat(v) => AnyValue::String(v),
-            Range {
-                low,
-                high,
-                data_type,
-            } => {
-                let opt_s = match data_type {
+            Range { low, high, dtype } => {
+                let opt_s = match dtype {
                     DataType::Int32 => {
                         if *low < i32::MIN as i64 || *high > i32::MAX as i64 {
                             return None;
@@ -204,7 +200,7 @@ impl LiteralValue {
             LiteralValue::Decimal(_, scale) => DataType::Decimal(None, Some(*scale)),
             LiteralValue::String(_) => DataType::String,
             LiteralValue::Binary(_) => DataType::Binary,
-            LiteralValue::Range { data_type, .. } => data_type.clone(),
+            LiteralValue::Range { dtype, .. } => dtype.clone(),
             #[cfg(feature = "dtype-date")]
             LiteralValue::Date(_) => DataType::Date,
             #[cfg(feature = "dtype-datetime")]
@@ -502,14 +498,10 @@ impl Hash for LiteralValue {
                     rng = rng.rotate_right(17).wrapping_add(RANDOM);
                 }
             },
-            LiteralValue::Range {
-                low,
-                high,
-                data_type,
-            } => {
+            LiteralValue::Range { low, high, dtype } => {
                 low.hash(state);
                 high.hash(state);
-                data_type.hash(state)
+                dtype.hash(state)
             },
             _ => {
                 if let Some(v) = self.to_any_value() {

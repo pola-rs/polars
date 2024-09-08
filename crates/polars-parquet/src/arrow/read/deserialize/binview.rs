@@ -843,7 +843,7 @@ impl utils::Decoder for BinViewDecoder {
 
     fn finalize(
         &self,
-        data_type: ArrowDataType,
+        dtype: ArrowDataType,
         _dict: Option<Self::Dict>,
         (values, validity): Self::DecodedState,
     ) -> ParquetResult<Box<dyn Array>> {
@@ -852,13 +852,13 @@ impl utils::Decoder for BinViewDecoder {
         let validity = freeze_validity(validity);
         array = array.with_validity(validity);
 
-        match data_type.to_physical_type() {
+        match dtype.to_physical_type() {
             PhysicalType::BinaryView => Ok(array.boxed()),
             PhysicalType::Utf8View => {
                 // SAFETY: we already checked utf8
                 unsafe {
                     Ok(Utf8ViewArray::new_unchecked(
-                        data_type,
+                        dtype,
                         array.views().clone(),
                         array.data_buffers().clone(),
                         array.validity().cloned(),
@@ -876,13 +876,13 @@ impl utils::Decoder for BinViewDecoder {
 impl utils::DictDecodable for BinViewDecoder {
     fn finalize_dict_array<K: DictionaryKey>(
         &self,
-        data_type: ArrowDataType,
+        dtype: ArrowDataType,
         dict: Self::Dict,
         keys: PrimitiveArray<K>,
     ) -> ParquetResult<DictionaryArray<K>> {
-        let value_data_type = match &data_type {
+        let value_dtype = match &dtype {
             ArrowDataType::Dictionary(_, values, _) => values.as_ref().clone(),
-            _ => data_type.clone(),
+            _ => dtype.clone(),
         };
 
         let mut view_dict = MutableBinaryViewArray::with_capacity(dict.0.len());
@@ -893,13 +893,13 @@ impl utils::DictDecodable for BinViewDecoder {
         unsafe { view_dict.set_total_bytes_len(dict.0.iter().map(|v| v.length as usize).sum()) };
         let view_dict = view_dict.freeze();
 
-        let dict = match value_data_type.to_physical_type() {
+        let dict = match value_dtype.to_physical_type() {
             PhysicalType::Utf8View => view_dict.to_utf8view().unwrap().boxed(),
             PhysicalType::BinaryView => view_dict.boxed(),
             _ => unreachable!(),
         };
 
-        Ok(DictionaryArray::try_new(data_type, keys, dict).unwrap())
+        Ok(DictionaryArray::try_new(dtype, keys, dict).unwrap())
     }
 }
 

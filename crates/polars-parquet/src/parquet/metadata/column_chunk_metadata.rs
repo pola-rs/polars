@@ -25,7 +25,7 @@ use serde_types::*;
 // access to the descriptor (e.g. physical, converted, logical).
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde_types", derive(Deserialize, Serialize))]
-pub struct ColumnChunkMetaData {
+pub struct ColumnChunkMetadata {
     #[cfg_attr(
         feature = "serde_types",
         serde(serialize_with = "serialize_column_chunk")
@@ -67,8 +67,8 @@ where
 }
 
 // Represents common operations for a column chunk.
-impl ColumnChunkMetaData {
-    /// Returns a new [`ColumnChunkMetaData`]
+impl ColumnChunkMetadata {
+    /// Returns a new [`ColumnChunkMetadata`]
     pub fn new(column_chunk: ColumnChunk, column_descr: ColumnDescriptor) -> Self {
         Self {
             column_chunk,
@@ -164,15 +164,9 @@ impl ColumnChunkMetaData {
     }
 
     /// Returns the offset and length in bytes of the column chunk within the file
-    pub fn byte_range(&self) -> (u64, u64) {
-        let start = if let Some(dict_page_offset) = self.dictionary_page_offset() {
-            dict_page_offset as u64
-        } else {
-            self.data_page_offset() as u64
-        };
-        let length = self.compressed_size() as u64;
+    pub fn byte_range(&self) -> core::ops::Range<u64> {
         // this has been validated in [`try_from_thrift`]
-        (start, length)
+        column_metadata_byte_range(self.metadata())
     }
 
     /// Method to convert from Thrift.
@@ -204,4 +198,16 @@ impl ColumnChunkMetaData {
     pub fn into_thrift(self) -> ColumnChunk {
         self.column_chunk
     }
+}
+
+pub(super) fn column_metadata_byte_range(
+    column_metadata: &ColumnMetaData,
+) -> core::ops::Range<u64> {
+    let offset = if let Some(dict_page_offset) = column_metadata.dictionary_page_offset {
+        dict_page_offset as u64
+    } else {
+        column_metadata.data_page_offset as u64
+    };
+    let len = column_metadata.total_compressed_size as u64;
+    offset..offset.checked_add(len).unwrap()
 }

@@ -9,14 +9,14 @@ use crate::io::ipc::read::array::{try_get_array_length, try_get_field_node};
 
 pub fn read_null(
     field_nodes: &mut VecDeque<Node>,
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
     limit: Option<usize>,
 ) -> PolarsResult<NullArray> {
-    let field_node = try_get_field_node(field_nodes, &data_type)?;
+    let field_node = try_get_field_node(field_nodes, &dtype)?;
 
     let length = try_get_array_length(field_node, limit)?;
 
-    NullArray::try_new(data_type, length)
+    NullArray::try_new(dtype, length)
 }
 
 pub fn skip_null(field_nodes: &mut VecDeque<Node>) -> PolarsResult<()> {

@@ -13,7 +13,7 @@ pub fn concatenate(arrays: &[&dyn Array]) -> PolarsResult<Box<dyn Array>> {
 
     if arrays
         .iter()
-        .any(|array| array.data_type() != arrays[0].data_type())
+        .any(|array| array.dtype() != arrays[0].dtype())
     {
         polars_bail!(InvalidOperation: "It is not possible to concatenate arrays of different data types.")
     }

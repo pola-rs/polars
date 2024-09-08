@@ -142,7 +142,7 @@ fn to_nested_recursive(
     let is_optional = is_nullable(type_.get_field_info());
 
     use PhysicalType::*;
-    match array.data_type().to_physical_type() {
+    match array.dtype().to_physical_type() {
         Struct => {
             let array = array.as_any().downcast_ref::<StructArray>().unwrap();
             let fields = if let ParquetType::GroupType { fields, .. } = type_ {
@@ -392,7 +392,7 @@ pub fn to_leaves(array: &dyn Array, leaves: &mut Vec<Box<dyn Array>>) {
         let child_validity = BitmapState::from(array.validity());
         let validity = (&child_validity) & (&inherited_validity);
 
-        match array.data_type().to_physical_type() {
+        match array.dtype().to_physical_type() {
             P::Struct => {
                 let array = array.as_any().downcast_ref::<StructArray>().unwrap();
 
@@ -669,8 +669,8 @@ mod tests {
         );
 
         let fields = vec![
-            Field::new("b".into(), array.data_type().clone(), true),
-            Field::new("c".into(), array.data_type().clone(), true),
+            Field::new("b".into(), array.dtype().clone(), true),
+            Field::new("c".into(), array.dtype().clone(), true),
         ];
 
         let array = StructArray::new(
@@ -774,7 +774,7 @@ mod tests {
         let array = ListArray::new(
             ArrowDataType::List(Box::new(Field::new(
                 "l".into(),
-                array.data_type().clone(),
+                array.dtype().clone(),
                 true,
             ))),
             vec![0i32, 2, 4].try_into().unwrap(),

@@ -406,7 +406,7 @@ pub(crate) fn new_serializer<'a>(
     offset: usize,
     take: usize,
 ) -> Box<dyn StreamingIterator<Item = [u8]> + 'a + Send + Sync> {
-    match array.data_type().to_logical_type() {
+    match array.dtype().to_logical_type() {
         ArrowDataType::Boolean => {
             boolean_serializer(array.as_any().downcast_ref().unwrap(), offset, take)
         },

@@ -123,7 +123,7 @@ pub(super) fn primitive_to_utf8<T: NativeType + SerPrimitive, O: Offset>(
     let (values, offsets) = primitive_to_values_and_offsets(from);
     unsafe {
         Utf8Array::<O>::new_unchecked(
-            Utf8Array::<O>::default_data_type(),
+            Utf8Array::<O>::default_dtype(),
             offsets.into(),
             values.into(),
             from.validity().cloned(),
@@ -317,7 +317,7 @@ pub fn primitive_to_dictionary<T: NativeType + Eq + Hash, K: DictionaryKey>(
 ) -> PolarsResult<DictionaryArray<K>> {
     let iter = from.iter().map(|x| x.copied());
     let mut array = MutableDictionaryArray::<K, _>::try_empty(MutablePrimitiveArray::<T>::from(
-        from.data_type().clone(),
+        from.dtype().clone(),
     ))?;
     array.reserve(from.len());
     array.try_extend(iter)?;

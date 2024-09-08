@@ -121,7 +121,7 @@ impl<K: DictionaryKey, D: utils::DictDecodable> utils::Decoder for DictionaryDec
 
     fn finalize(
         &self,
-        data_type: ArrowDataType,
+        dtype: ArrowDataType,
         dict: Option<Self::Dict>,
         (values, validity): Self::DecodedState,
     ) -> ParquetResult<DictionaryArray<K>> {
@@ -129,7 +129,7 @@ impl<K: DictionaryKey, D: utils::DictDecodable> utils::Decoder for DictionaryDec
         let dict = dict.unwrap();
         let keys = PrimitiveArray::new(K::PRIMITIVE.into(), values.into(), validity);
 
-        self.decoder.finalize_dict_array(data_type, dict, keys)
+        self.decoder.finalize_dict_array(dtype, dict, keys)
     }
 
     fn decode_plain_encoded<'a>(

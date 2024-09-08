@@ -273,3 +273,18 @@ def test_group_by_slice_all_keys() -> None:
 
     gb = df.group_by(["a", "b", "c"], maintain_order=True)
     assert_frame_equal(gb.tail(1), gb.head(1))
+
+
+def test_slice_first_in_agg_18551() -> None:
+    df = pl.DataFrame({"id": [1, 1, 2], "name": ["A", "B", "C"], "value": [31, 21, 32]})
+
+    assert df.group_by("id", maintain_order=True).agg(
+        sort_by=pl.col("name").sort_by("value"),
+        x=pl.col("name").sort_by("value").slice(0, 1).first(),
+        y=pl.col("name").sort_by("value").slice(1, 1).first(),
+    ).to_dict(as_series=False) == {
+        "id": [1, 2],
+        "sort_by": [["B", "A"], ["C"]],
+        "x": ["B", "C"],
+        "y": ["A", None],
+    }

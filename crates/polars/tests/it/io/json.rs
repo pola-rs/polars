@@ -151,7 +151,7 @@ fn test_read_ndjson_iss_5875() {
         DataType::List(Box::new(DataType::String)),
     );
 
-    let mut schema = Schema::new();
+    let mut schema = Schema::default();
     schema.with_column(
         "struct".into(),
         DataType::Struct(vec![field_int_inner, field_float_inner, field_str_inner]),

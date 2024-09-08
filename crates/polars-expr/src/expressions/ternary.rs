@@ -280,10 +280,10 @@ impl PhysicalExpr for TernaryExpr {
                 let values = out.array_ref(0);
                 let offsets = ac_target.series().list().unwrap().offsets()?;
                 let inner_type = out.dtype();
-                let data_type = LargeListArray::default_datatype(values.data_type().clone());
+                let dtype = LargeListArray::default_datatype(values.dtype().clone());
 
                 // SAFETY: offsets are correct.
-                let out = LargeListArray::new(data_type, offsets, values.clone(), None);
+                let out = LargeListArray::new(dtype, offsets, values.clone(), None);
 
                 let mut out = ListChunked::with_chunk(truthy.name().clone(), out);
                 unsafe { out.to_logical(inner_type.clone()) };

@@ -25,7 +25,7 @@ pub unsafe fn take_unchecked<O: Offset, I: Index>(
     values: &BinaryArray<O>,
     indices: &PrimitiveArray<I>,
 ) -> BinaryArray<O> {
-    let data_type = values.data_type().clone();
+    let dtype = values.dtype().clone();
     let indices_has_validity = indices.null_count() > 0;
     let values_has_validity = values.null_count() > 0;
 
@@ -37,5 +37,5 @@ pub unsafe fn take_unchecked<O: Offset, I: Index>(
         (false, true) => take_indices_validity(values.offsets(), values.values(), indices),
         (true, true) => take_values_indices_validity(values, indices),
     };
-    BinaryArray::<O>::new_unchecked(data_type, offsets, values, validity)
+    BinaryArray::<O>::new_unchecked(dtype, offsets, values, validity)
 }

@@ -182,20 +182,19 @@ pub trait ChunkSet<'a, A, B> {
 /// Cast `ChunkedArray<T>` to `ChunkedArray<N>`
 pub trait ChunkCast {
     /// Cast a [`ChunkedArray`] to [`DataType`]
-    fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
-        self.cast_with_options(data_type, CastOptions::NonStrict)
+    fn cast(&self, dtype: &DataType) -> PolarsResult<Series> {
+        self.cast_with_options(dtype, CastOptions::NonStrict)
     }
 
     /// Cast a [`ChunkedArray`] to [`DataType`]
-    fn cast_with_options(&self, data_type: &DataType, options: CastOptions)
-        -> PolarsResult<Series>;
+    fn cast_with_options(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Series>;
 
     /// Does not check if the cast is a valid one and may over/underflow
     ///
     /// # Safety
     /// - This doesn't do utf8 validation checking when casting from binary
     /// - This doesn't do categorical bound checking when casting from UInt32
-    unsafe fn cast_unchecked(&self, data_type: &DataType) -> PolarsResult<Series>;
+    unsafe fn cast_unchecked(&self, dtype: &DataType) -> PolarsResult<Series>;
 }
 
 /// Fastest way to do elementwise operations on a [`ChunkedArray<T>`] when the operation is cheaper than
@@ -242,6 +241,8 @@ pub trait ChunkAgg<T> {
     fn sum(&self) -> Option<T> {
         None
     }
+
+    fn _sum_as_f64(&self) -> f64;
 
     fn min(&self) -> Option<T> {
         None
@@ -543,7 +544,7 @@ impl ChunkExpandAtIndex<StructType> for StructChunked {
         let (chunk_idx, idx) = self.index_to_chunked_index(index);
         let chunk = self.downcast_chunks().get(chunk_idx).unwrap();
         let chunk = if chunk.is_null(idx) {
-            new_null_array(chunk.data_type().clone(), length)
+            new_null_array(chunk.dtype().clone(), length)
         } else {
             let values = chunk
                 .values()
@@ -555,7 +556,7 @@ impl ChunkExpandAtIndex<StructType> for StructChunked {
                 })
                 .collect::<Vec<_>>();
 
-            StructArray::new(chunk.data_type().clone(), values, None).boxed()
+            StructArray::new(chunk.dtype().clone(), values, None).boxed()
         };
 
         // SAFETY: chunks are from self.

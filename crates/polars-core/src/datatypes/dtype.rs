@@ -261,7 +261,7 @@ impl DataType {
             Struct(fields) => {
                 let new_fields = fields
                     .iter()
-                    .map(|s| Field::new(s.name().clone(), s.data_type().to_physical()))
+                    .map(|s| Field::new(s.name().clone(), s.dtype().to_physical()))
                     .collect();
                 Struct(new_fields)
             },
@@ -791,7 +791,7 @@ pub fn merge_dtypes(left: &DataType, right: &DataType) -> PolarsResult<DataType>
 }
 
 #[cfg(feature = "dtype-categorical")]
-pub fn create_enum_data_type(categories: Utf8ViewArray) -> DataType {
+pub fn create_enum_dtype(categories: Utf8ViewArray) -> DataType {
     let rev_map = RevMapping::build_local(categories);
     DataType::Enum(Some(Arc::new(rev_map)), Default::default())
 }

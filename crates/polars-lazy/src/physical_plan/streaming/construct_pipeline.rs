@@ -244,7 +244,7 @@ fn get_pipeline_node(
     // so we just create a scan that returns an empty df
     let dummy = lp_arena.add(IR::DataFrameScan {
         df: Arc::new(DataFrame::empty()),
-        schema: Arc::new(Schema::new()),
+        schema: Arc::new(Schema::default()),
         output_schema: None,
         filter: None,
     });

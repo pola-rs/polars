@@ -478,6 +478,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                     JoinType::Cross => "cross",
                     JoinType::Semi => "leftsemi",
                     JoinType::Anti => "leftanti",
+                    JoinType::IEJoin(_) => return Err(PyNotImplementedError::new_err("IEJoin")),
                 },
                 options.args.join_nulls,
                 options.args.slice,

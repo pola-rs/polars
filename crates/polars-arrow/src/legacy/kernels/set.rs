@@ -34,7 +34,7 @@ where
         }
     });
 
-    PrimitiveArray::new(array.data_type().clone(), av.into(), None)
+    PrimitiveArray::new(array.dtype().clone(), av.into(), None)
 }
 
 /// Set values in a primitive array based on a mask array. This is fast when large chunks of bits are set or unset.
@@ -42,7 +42,7 @@ pub fn set_with_mask<T: NativeType>(
     array: &PrimitiveArray<T>,
     mask: &BooleanArray,
     value: T,
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
 ) -> PrimitiveArray<T> {
     let values = array.values();
 
@@ -61,7 +61,7 @@ pub fn set_with_mask<T: NativeType>(
         valid.bitor(mask_bitmap)
     });
 
-    PrimitiveArray::new(data_type, buf.into(), validity)
+    PrimitiveArray::new(dtype, buf.into(), validity)
 }
 
 /// Efficiently sets value at the indices from the iterator to `set_value`.
@@ -70,7 +70,7 @@ pub fn scatter_single_non_null<T, I>(
     array: &PrimitiveArray<T>,
     idx: I,
     set_value: T,
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
 ) -> PolarsResult<PrimitiveArray<T>>
 where
     T: NativeType,
@@ -89,7 +89,7 @@ where
     })?;
 
     Ok(PrimitiveArray::new(
-        data_type,
+        dtype,
         buf.into(),
         array.validity().cloned(),
     ))

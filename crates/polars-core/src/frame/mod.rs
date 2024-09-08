@@ -335,9 +335,8 @@ impl DataFrame {
     /// Create an empty `DataFrame` with empty columns as per the `schema`.
     pub fn empty_with_arrow_schema(schema: &ArrowSchema) -> Self {
         let cols = schema
-            .fields
-            .iter()
-            .map(|fld| Series::new_empty(fld.name.clone(), &(fld.data_type().into())))
+            .iter_values()
+            .map(|fld| Series::new_empty(fld.name.clone(), &(fld.dtype().into())))
             .collect();
         unsafe { DataFrame::new_no_checks(cols) }
     }
@@ -539,7 +538,10 @@ impl DataFrame {
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn schema(&self) -> Schema {
-        self.columns.as_slice().into()
+        self.columns
+            .iter()
+            .map(|x| (x.name().clone(), x.dtype().clone()))
+            .collect()
     }
 
     /// Get a reference to the [`DataFrame`] columns.

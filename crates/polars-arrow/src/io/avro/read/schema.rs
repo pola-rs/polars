@@ -26,18 +26,19 @@ fn external_props(schema: &AvroSchema) -> Metadata {
 /// Infers an [`ArrowSchema`] from the root [`Record`].
 /// This
 pub fn infer_schema(record: &Record) -> PolarsResult<ArrowSchema> {
-    Ok(record
+    record
         .fields
         .iter()
         .map(|field| {
-            schema_to_field(
+            let field = schema_to_field(
                 &field.schema,
                 Some(&field.name),
                 external_props(&field.schema),
-            )
+            )?;
+
+            Ok((field.name.clone(), field))
         })
-        .collect::<PolarsResult<Vec<_>>>()?
-        .into())
+        .collect::<PolarsResult<ArrowSchema>>()
 }
 
 fn schema_to_field(
@@ -46,7 +47,7 @@ fn schema_to_field(
     props: Metadata,
 ) -> PolarsResult<Field> {
     let mut nullable = false;
-    let data_type = match schema {
+    let dtype = match schema {
         AvroSchema::Null => ArrowDataType::Null,
         AvroSchema::Boolean => ArrowDataType::Boolean,
         AvroSchema::Int(logical) => match logical {
@@ -106,7 +107,7 @@ fn schema_to_field(
                     .iter()
                     .find(|&schema| !matches!(schema, AvroSchema::Null))
                 {
-                    schema_to_field(schema, None, Metadata::default())?.data_type
+                    schema_to_field(schema, None, Metadata::default())?.dtype
                 } else {
                     polars_bail!(nyi = "Can't read avro union {schema:?}");
                 }
@@ -156,5 +157,5 @@ fn schema_to_field(
 
     let name = name.unwrap_or_default();
 
-    Ok(Field::new(PlSmallStr::from_str(name), data_type, nullable).with_metadata(props))
+    Ok(Field::new(PlSmallStr::from_str(name), dtype, nullable).with_metadata(props))
 }

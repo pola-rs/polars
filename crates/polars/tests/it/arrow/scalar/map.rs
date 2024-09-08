@@ -59,7 +59,7 @@ fn basics() {
     let a = MapScalar::new(dt.clone(), Some(Box::new(kv_array.clone())));
 
     assert_eq!(kv_array, a.values().as_ref());
-    assert_eq!(a.data_type(), &dt);
+    assert_eq!(a.dtype(), &dt);
     assert!(a.is_valid());
 
     let _: &dyn std::any::Any = a.as_any();

@@ -87,12 +87,10 @@ impl<R: MmapBytesReader> ParquetReader<R> {
         let self_schema = self.schema()?;
         let self_schema = self_schema.as_ref();
 
-        if let Some(ref projection) = self.projection {
-            let projection = projection.as_slice();
-
+        if let Some(projection) = self.projection.as_deref() {
             ensure_matching_schema(
-                &schema.try_project(projection)?,
-                &self_schema.try_project(projection)?,
+                &schema.try_project_indices(projection)?,
+                &self_schema.try_project_indices(projection)?,
             )?;
         } else {
             ensure_matching_schema(schema, self_schema)?;
@@ -290,12 +288,10 @@ impl ParquetAsyncReader {
         let self_schema = self.schema().await?;
         let self_schema = self_schema.as_ref();
 
-        if let Some(ref projection) = self.projection {
-            let projection = projection.as_slice();
-
+        if let Some(projection) = self.projection.as_deref() {
             ensure_matching_schema(
-                &schema.try_project(projection)?,
-                &self_schema.try_project(projection)?,
+                &schema.try_project_indices(projection)?,
+                &self_schema.try_project_indices(projection)?,
             )?;
         } else {
             ensure_matching_schema(schema, self_schema)?;

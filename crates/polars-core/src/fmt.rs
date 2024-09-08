@@ -446,16 +446,16 @@ fn field_to_str(f: &Field, str_truncate: usize) -> (String, usize) {
     if env_is_true(FMT_TABLE_HIDE_COLUMN_NAMES) {
         column_name = "".to_string();
     }
-    let column_data_type = if env_is_true(FMT_TABLE_HIDE_COLUMN_DATA_TYPES) {
+    let column_dtype = if env_is_true(FMT_TABLE_HIDE_COLUMN_DATA_TYPES) {
         "".to_string()
     } else if env_is_true(FMT_TABLE_INLINE_COLUMN_DATA_TYPE)
         | env_is_true(FMT_TABLE_HIDE_COLUMN_NAMES)
     {
-        format!("{}", f.data_type())
+        format!("{}", f.dtype())
     } else {
-        format!("\n{}", f.data_type())
+        format!("\n{}", f.dtype())
     };
-    let mut dtype_length = column_data_type.trim_start().len();
+    let mut dtype_length = column_dtype.trim_start().len();
     let mut separator = "\n---";
     if env_is_true(FMT_TABLE_HIDE_COLUMN_SEPARATOR)
         | env_is_true(FMT_TABLE_HIDE_COLUMN_NAMES)
@@ -466,11 +466,11 @@ fn field_to_str(f: &Field, str_truncate: usize) -> (String, usize) {
     let s = if env_is_true(FMT_TABLE_INLINE_COLUMN_DATA_TYPE)
         & !env_is_true(FMT_TABLE_HIDE_COLUMN_DATA_TYPES)
     {
-        let inline_name_dtype = format!("{column_name} ({column_data_type})");
+        let inline_name_dtype = format!("{column_name} ({column_dtype})");
         dtype_length = inline_name_dtype.len();
         inline_name_dtype
     } else {
-        format!("{column_name}{separator}{column_data_type}")
+        format!("{column_name}{separator}{column_dtype}")
     };
     let mut s_len = std::cmp::max(name_length, dtype_length);
     let separator_length = separator.trim().len();
@@ -729,7 +729,7 @@ impl Display for DataFrame {
                 let num_preset = std::env::var(FMT_TABLE_CELL_NUMERIC_ALIGNMENT)
                     .unwrap_or_else(|_| str_preset.to_string());
                 for (column_index, column) in table.column_iter_mut().enumerate() {
-                    let dtype = fields[column_index].data_type();
+                    let dtype = fields[column_index].dtype();
                     let mut preset = str_preset.as_str();
                     if dtype.is_numeric() || dtype.is_decimal() {
                         preset = num_preset.as_str();

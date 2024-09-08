@@ -512,7 +512,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         // SAFETY: we keep the correct dtype
         let mut ca = unsafe {
             self.copy_with_chunks(vec![new_empty_array(
-                self.chunks.first().unwrap().data_type().clone(),
+                self.chunks.first().unwrap().dtype().clone(),
             )])
         };
 
@@ -599,7 +599,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
 
     /// Get data type of [`ChunkedArray`].
     pub fn dtype(&self) -> &DataType {
-        self.field.data_type()
+        self.field.dtype()
     }
 
     pub(crate) unsafe fn set_dtype(&mut self, dtype: DataType) {
@@ -618,7 +618,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
 
     /// Rename this [`ChunkedArray`].
     pub fn rename(&mut self, name: PlSmallStr) {
-        self.field = Arc::new(Field::new(name, self.field.data_type().clone()))
+        self.field = Arc::new(Field::new(name, self.field.dtype().clone()))
     }
 
     /// Return this [`ChunkedArray`] with a new name.
@@ -687,6 +687,14 @@ where
             // SAFETY: up to the caller to make sure the index is valid.
             self.downcast_get_unchecked(chunk_idx)
                 .value_unchecked(arr_idx)
+        }
+    }
+
+    #[inline]
+    pub fn first(&self) -> Option<T::Physical<'_>> {
+        unsafe {
+            let arr = self.downcast_get_unchecked(0);
+            arr.get_unchecked(0)
         }
     }
 
@@ -950,9 +958,12 @@ pub(crate) fn to_array<T: PolarsNumericType>(
 
 impl<T: PolarsDataType> Default for ChunkedArray<T> {
     fn default() -> Self {
+        let dtype = T::get_dtype();
+        let arrow_dtype = dtype.to_physical().to_arrow(CompatLevel::newest());
         ChunkedArray {
-            field: Arc::new(Field::new(PlSmallStr::EMPTY, DataType::Null)),
-            chunks: Default::default(),
+            field: Arc::new(Field::new(PlSmallStr::EMPTY, dtype)),
+            // Invariant: always has 1 chunk.
+            chunks: vec![new_empty_array(arrow_dtype)],
             md: Arc::new(IMMetadata::default()),
             length: 0,
             null_count: 0,

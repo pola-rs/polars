@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use polars_core::schema::Schema;
+use polars_core::schema::{Schema, SchemaExt};
 use polars_expr::reduce::{Reduction, ReductionState};
 use polars_utils::itertools::Itertools;
 

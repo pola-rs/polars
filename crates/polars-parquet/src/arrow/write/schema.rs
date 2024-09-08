@@ -17,15 +17,15 @@ use crate::parquet::schema::Repetition;
 fn convert_field(field: Field) -> Field {
     Field {
         name: field.name,
-        data_type: convert_data_type(field.data_type),
+        dtype: convert_dtype(field.dtype),
         is_nullable: field.is_nullable,
         metadata: field.metadata,
     }
 }
 
-fn convert_data_type(data_type: ArrowDataType) -> ArrowDataType {
+fn convert_dtype(dtype: ArrowDataType) -> ArrowDataType {
     use ArrowDataType as D;
-    match data_type {
+    match dtype {
         D::LargeList(field) => D::LargeList(Box::new(convert_field(*field))),
         D::Struct(mut fields) => {
             for field in &mut fields {
@@ -35,13 +35,13 @@ fn convert_data_type(data_type: ArrowDataType) -> ArrowDataType {
         },
         D::BinaryView => D::LargeBinary,
         D::Utf8View => D::LargeUtf8,
-        D::Dictionary(it, data_type, sorted) => {
-            let dtype = convert_data_type(*data_type);
+        D::Dictionary(it, dtype, sorted) => {
+            let dtype = convert_dtype(*dtype);
             D::Dictionary(it, Box::new(dtype), sorted)
         },
-        D::Extension(name, data_type, metadata) => {
-            let data_type = convert_data_type(*data_type);
-            D::Extension(name, Box::new(data_type), metadata)
+        D::Extension(name, dtype, metadata) => {
+            let dtype = convert_dtype(*dtype);
+            D::Extension(name, Box::new(dtype), metadata)
         },
         dt => dt,
     }
@@ -49,16 +49,15 @@ fn convert_data_type(data_type: ArrowDataType) -> ArrowDataType {
 
 pub fn schema_to_metadata_key(schema: &ArrowSchema) -> KeyValue {
     // Convert schema until more arrow readers are aware of binview
-    let serialized_schema = if schema.fields.iter().any(|field| field.data_type.is_view()) {
-        let fields = schema
-            .fields
-            .iter()
+    let serialized_schema = if schema.iter_values().any(|field| field.dtype.is_view()) {
+        let schema = schema
+            .iter_values()
             .map(|field| convert_field(field.clone()))
-            .collect::<Vec<_>>();
-        let schema = ArrowSchema::from(fields);
-        schema_to_bytes(&schema, &default_ipc_fields(&schema.fields))
+            .map(|x| (x.name.clone(), x))
+            .collect();
+        schema_to_bytes(&schema, &default_ipc_fields(schema.iter_values()))
     } else {
-        schema_to_bytes(schema, &default_ipc_fields(&schema.fields))
+        schema_to_bytes(schema, &default_ipc_fields(schema.iter_values()))
     };
 
     // manually prepending the length to the schema as arrow uses the legacy IPC format
@@ -86,7 +85,7 @@ pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
         Repetition::Required
     };
     // create type from field
-    match field.data_type().to_logical_type() {
+    match field.dtype().to_logical_type() {
         ArrowDataType::Null => Ok(ParquetType::try_from_primitive(
             name,
             PhysicalType::Int32,

@@ -12,7 +12,7 @@ use crate::datatypes::{ArrowDataType, Field};
 /// The mutable version of [`FixedSizeListArray`].
 #[derive(Debug, Clone)]
 pub struct MutableFixedSizeListArray<M: MutableArray> {
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
     size: usize,
     values: M,
     validity: Option<MutableBitmap>,
@@ -21,7 +21,7 @@ pub struct MutableFixedSizeListArray<M: MutableArray> {
 impl<M: MutableArray> From<MutableFixedSizeListArray<M>> for FixedSizeListArray {
     fn from(mut other: MutableFixedSizeListArray<M>) -> Self {
         FixedSizeListArray::new(
-            other.data_type,
+            other.dtype,
             other.values.as_box(),
             other.validity.map(|x| x.into()),
         )
@@ -31,29 +31,29 @@ impl<M: MutableArray> From<MutableFixedSizeListArray<M>> for FixedSizeListArray 
 impl<M: MutableArray> MutableFixedSizeListArray<M> {
     /// Creates a new [`MutableFixedSizeListArray`] from a [`MutableArray`] and size.
     pub fn new(values: M, size: usize) -> Self {
-        let data_type = FixedSizeListArray::default_datatype(values.data_type().clone(), size);
-        Self::new_from(values, data_type, size)
+        let dtype = FixedSizeListArray::default_datatype(values.dtype().clone(), size);
+        Self::new_from(values, dtype, size)
     }
 
     /// Creates a new [`MutableFixedSizeListArray`] from a [`MutableArray`] and size.
     pub fn new_with_field(values: M, name: PlSmallStr, nullable: bool, size: usize) -> Self {
-        let data_type = ArrowDataType::FixedSizeList(
-            Box::new(Field::new(name, values.data_type().clone(), nullable)),
+        let dtype = ArrowDataType::FixedSizeList(
+            Box::new(Field::new(name, values.dtype().clone(), nullable)),
             size,
         );
-        Self::new_from(values, data_type, size)
+        Self::new_from(values, dtype, size)
     }
 
     /// Creates a new [`MutableFixedSizeListArray`] from a [`MutableArray`], [`ArrowDataType`] and size.
-    pub fn new_from(values: M, data_type: ArrowDataType, size: usize) -> Self {
+    pub fn new_from(values: M, dtype: ArrowDataType, size: usize) -> Self {
         assert_eq!(values.len(), 0);
-        match data_type {
+        match dtype {
             ArrowDataType::FixedSizeList(..) => (),
-            _ => panic!("data type must be FixedSizeList (got {data_type:?})"),
+            _ => panic!("data type must be FixedSizeList (got {dtype:?})"),
         };
         Self {
             size,
-            data_type,
+            dtype,
             values,
             validity: None,
         }
@@ -147,7 +147,7 @@ impl<M: MutableArray + 'static> MutableArray for MutableFixedSizeListArray<M> {
 
     fn as_box(&mut self) -> Box<dyn Array> {
         FixedSizeListArray::new(
-            self.data_type.clone(),
+            self.dtype.clone(),
             self.values.as_box(),
             std::mem::take(&mut self.validity).map(|x| x.into()),
         )
@@ -156,15 +156,15 @@ impl<M: MutableArray + 'static> MutableArray for MutableFixedSizeListArray<M> {
 
     fn as_arc(&mut self) -> Arc<dyn Array> {
         FixedSizeListArray::new(
-            self.data_type.clone(),
+            self.dtype.clone(),
             self.values.as_box(),
             std::mem::take(&mut self.validity).map(|x| x.into()),
         )
         .arced()
     }
 
-    fn data_type(&self) -> &ArrowDataType {
-        &self.data_type
+    fn dtype(&self) -> &ArrowDataType {
+        &self.dtype
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

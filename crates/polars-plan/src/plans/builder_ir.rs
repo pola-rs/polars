@@ -183,7 +183,7 @@ impl<'a> IRBuilder<'a> {
                 .unwrap();
 
             expr_irs.push(ExprIR::new(node, OutputName::ColumnLhs(field.name.clone())));
-            new_schema.with_column(field.name().clone(), field.data_type().clone());
+            new_schema.with_column(field.name().clone(), field.dtype().clone());
         }
 
         let lp = IR::HStack {

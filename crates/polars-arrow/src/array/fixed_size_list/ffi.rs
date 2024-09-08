@@ -30,12 +30,12 @@ unsafe impl ToFfi for FixedSizeListArray {
 
 impl<A: ffi::ArrowArrayRef> FromFfi<A> for FixedSizeListArray {
     unsafe fn try_from_ffi(array: A) -> PolarsResult<Self> {
-        let data_type = array.data_type().clone();
+        let dtype = array.dtype().clone();
         let validity = unsafe { array.validity() }?;
         let child = unsafe { array.child(0)? };
         let values = ffi::try_from(child)?;
 
-        let mut fsl = Self::try_new(data_type, values, validity)?;
+        let mut fsl = Self::try_new(dtype, values, validity)?;
         fsl.slice(array.offset(), array.length());
         Ok(fsl)
     }

@@ -18,19 +18,26 @@ pub struct Field {
     /// Its name
     pub name: PlSmallStr,
     /// Its logical [`ArrowDataType`]
-    pub data_type: ArrowDataType,
+    pub dtype: ArrowDataType,
     /// Its nullability
     pub is_nullable: bool,
     /// Additional custom (opaque) metadata.
     pub metadata: Metadata,
 }
 
+/// Support for `ArrowSchema::from_iter([field, ..])`
+impl From<Field> for (PlSmallStr, Field) {
+    fn from(value: Field) -> Self {
+        (value.name.clone(), value)
+    }
+}
+
 impl Field {
     /// Creates a new [`Field`].
-    pub fn new(name: PlSmallStr, data_type: ArrowDataType, is_nullable: bool) -> Self {
+    pub fn new(name: PlSmallStr, dtype: ArrowDataType, is_nullable: bool) -> Self {
         Field {
             name,
-            data_type,
+            dtype,
             is_nullable,
             metadata: Default::default(),
         }
@@ -41,7 +48,7 @@ impl Field {
     pub fn with_metadata(self, metadata: Metadata) -> Self {
         Self {
             name: self.name,
-            data_type: self.data_type,
+            dtype: self.dtype,
             is_nullable: self.is_nullable,
             metadata,
         }
@@ -49,8 +56,8 @@ impl Field {
 
     /// Returns the [`Field`]'s [`ArrowDataType`].
     #[inline]
-    pub fn data_type(&self) -> &ArrowDataType {
-        &self.data_type
+    pub fn dtype(&self) -> &ArrowDataType {
+        &self.dtype
     }
 }
 
@@ -59,7 +66,7 @@ impl From<Field> for arrow_schema::Field {
     fn from(value: Field) -> Self {
         Self::new(
             value.name.to_string(),
-            value.data_type.into(),
+            value.dtype.into(),
             value.is_nullable,
         )
         .with_metadata(
@@ -82,7 +89,7 @@ impl From<arrow_schema::Field> for Field {
 #[cfg(feature = "arrow_rs")]
 impl From<&arrow_schema::Field> for Field {
     fn from(value: &arrow_schema::Field) -> Self {
-        let data_type = value.data_type().clone().into();
+        let dtype = value.data_type().clone().into();
         let metadata = value
             .metadata()
             .iter()
@@ -90,7 +97,7 @@ impl From<&arrow_schema::Field> for Field {
             .collect();
         Self::new(
             PlSmallStr::from_str(value.name().as_str()),
-            data_type,
+            dtype,
             value.is_nullable(),
         )
         .with_metadata(metadata)

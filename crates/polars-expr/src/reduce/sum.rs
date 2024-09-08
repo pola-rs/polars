@@ -13,6 +13,7 @@ impl SumReduce {
         // returning the empty sum to be consistent.
         use DataType::*;
         let dtype = match dtype {
+            Boolean => IDX_DTYPE,
             Int8 | UInt8 | Int16 | UInt16 => Int64,
             dt => dt,
         };
@@ -22,7 +23,7 @@ impl SumReduce {
 
 impl Reduction for SumReduce {
     fn new_reducer(&self) -> Box<dyn ReductionState> {
-        let value = Scalar::new(self.dtype.clone(), AnyValue::zero(&self.dtype));
+        let value = Scalar::new(self.dtype.clone(), AnyValue::zero_sum(&self.dtype));
         Box::new(SumReduceState { value })
     }
 }

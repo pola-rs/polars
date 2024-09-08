@@ -635,7 +635,7 @@ pub(super) trait Decoder: Sized {
 
     fn finalize(
         &self,
-        data_type: ArrowDataType,
+        dtype: ArrowDataType,
         dict: Option<Self::Dict>,
         decoded: Self::DecodedState,
     ) -> ParquetResult<Self::Output>;
@@ -676,7 +676,7 @@ pub(crate) trait NestedDecoder: Decoder {
 pub trait DictDecodable: Decoder {
     fn finalize_dict_array<K: DictionaryKey>(
         &self,
-        data_type: ArrowDataType,
+        dtype: ArrowDataType,
         dict: Self::Dict,
         keys: PrimitiveArray<K>,
     ) -> ParquetResult<DictionaryArray<K>>;
@@ -684,7 +684,7 @@ pub trait DictDecodable: Decoder {
 
 pub struct PageDecoder<D: Decoder> {
     pub iter: BasicDecompressor,
-    pub data_type: ArrowDataType,
+    pub dtype: ArrowDataType,
     pub dict: Option<D::Dict>,
     pub decoder: D,
 }
@@ -692,7 +692,7 @@ pub struct PageDecoder<D: Decoder> {
 impl<D: Decoder> PageDecoder<D> {
     pub fn new(
         mut iter: BasicDecompressor,
-        data_type: ArrowDataType,
+        dtype: ArrowDataType,
         decoder: D,
     ) -> ParquetResult<Self> {
         let dict_page = iter.read_dict_page()?;
@@ -700,7 +700,7 @@ impl<D: Decoder> PageDecoder<D> {
 
         Ok(Self {
             iter,
-            data_type,
+            dtype,
             dict,
             decoder,
         })
@@ -745,7 +745,7 @@ impl<D: Decoder> PageDecoder<D> {
             self.iter.reuse_page_buffer(page);
         }
 
-        self.decoder.finalize(self.data_type, self.dict, target)
+        self.decoder.finalize(self.dtype, self.dict, target)
     }
 }
 

@@ -18,7 +18,7 @@ from sqlalchemy.sql.expression import cast as alchemy_cast
 
 import polars as pl
 from polars._utils.various import parse_version
-from polars.exceptions import UnsuitableSQLError
+from polars.exceptions import DuplicateError, UnsuitableSQLError
 from polars.io.database._arrow_registry import ARROW_DRIVER_REGISTRY
 from polars.testing import assert_frame_equal
 
@@ -676,6 +676,23 @@ def test_read_database_exceptions(
     read_database = getattr(pl, read_method)
     with pytest.raises(errclass, match=errmsg):
         read_database(**params)
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT 1, 1 FROM test_data",
+        'SELECT 1 AS "n", 2 AS "n" FROM test_data',
+        'SELECT name, value AS "name" FROM test_data',
+    ],
+)
+def test_read_database_duplicate_column_error(tmp_sqlite_db: Path, query: str) -> None:
+    alchemy_conn = create_engine(f"sqlite:///{tmp_sqlite_db}").connect()
+    with pytest.raises(
+        DuplicateError,
+        match="column .+ appears more than once in the query/result cursor",
+    ):
+        pl.read_database(query, connection=alchemy_conn)
 
 
 @pytest.mark.parametrize(

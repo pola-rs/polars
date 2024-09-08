@@ -13,6 +13,12 @@ pub struct Field {
     pub dtype: DataType,
 }
 
+impl From<Field> for (PlSmallStr, DataType) {
+    fn from(value: Field) -> Self {
+        (value.name, value.dtype)
+    }
+}
+
 pub type FieldRef = Arc<Field>;
 
 impl Field {
@@ -54,10 +60,10 @@ impl Field {
     /// # use polars_core::prelude::*;
     /// let f = Field::new("Birthday".into(), DataType::Date);
     ///
-    /// assert_eq!(f.data_type(), &DataType::Date);
+    /// assert_eq!(f.dtype(), &DataType::Date);
     /// ```
     #[inline]
-    pub fn data_type(&self) -> &DataType {
+    pub fn dtype(&self) -> &DataType {
         &self.dtype
     }
 
@@ -139,8 +145,8 @@ impl DataType {
             ArrowDataType::Float32 => DataType::Float32,
             ArrowDataType::Float64 => DataType::Float64,
             #[cfg(feature = "dtype-array")]
-            ArrowDataType::FixedSizeList(f, size) => DataType::Array(DataType::from_arrow(f.data_type(), bin_to_view).boxed(), *size),
-            ArrowDataType::LargeList(f) | ArrowDataType::List(f) => DataType::List(DataType::from_arrow(f.data_type(), bin_to_view).boxed()),
+            ArrowDataType::FixedSizeList(f, size) => DataType::Array(DataType::from_arrow(f.dtype(), bin_to_view).boxed(), *size),
+            ArrowDataType::LargeList(f) | ArrowDataType::List(f) => DataType::List(DataType::from_arrow(f.dtype(), bin_to_view).boxed()),
             ArrowDataType::Date32 => DataType::Date,
             ArrowDataType::Timestamp(tu, tz) => DataType::Datetime(tu.into(), DataType::canonical_timezone(tz)),
             ArrowDataType::Duration(tu) => DataType::Duration(tu.into()),
@@ -192,6 +198,6 @@ impl From<&ArrowDataType> for DataType {
 
 impl From<&ArrowField> for Field {
     fn from(f: &ArrowField) -> Self {
-        Field::new(f.name.clone(), f.data_type().into())
+        Field::new(f.name.clone(), f.dtype().into())
     }
 }

@@ -32,19 +32,12 @@ pub fn serialize_schema(
     };
 
     let fields = schema
-        .fields
-        .iter()
+        .iter_values()
         .zip(ipc_fields.iter())
         .map(|(field, ipc_field)| serialize_field(field, ipc_field))
         .collect::<Vec<_>>();
 
-    let custom_metadata = schema
-        .metadata
-        .iter()
-        .map(|(k, v)| key_value(k.clone().into_string(), v.clone().into_string()))
-        .collect::<Vec<_>>();
-
-    let custom_metadata = (!custom_metadata.is_empty()).then_some(custom_metadata);
+    let custom_metadata = None;
 
     arrow_format::ipc::Schema {
         endianness,
@@ -85,7 +78,7 @@ fn write_extension(
 pub(crate) fn serialize_field(field: &Field, ipc_field: &IpcField) -> arrow_format::ipc::Field {
     // custom metadata.
     let mut kv_vec = vec![];
-    if let ArrowDataType::Extension(name, _, metadata) = field.data_type() {
+    if let ArrowDataType::Extension(name, _, metadata) = field.dtype() {
         write_extension(
             name.as_str(),
             metadata.as_ref().map(|x| x.as_str()),
@@ -93,28 +86,28 @@ pub(crate) fn serialize_field(field: &Field, ipc_field: &IpcField) -> arrow_form
         );
     }
 
-    let type_ = serialize_type(field.data_type());
-    let children = serialize_children(field.data_type(), ipc_field);
+    let type_ = serialize_type(field.dtype());
+    let children = serialize_children(field.dtype(), ipc_field);
 
-    let dictionary =
-        if let ArrowDataType::Dictionary(index_type, inner, is_ordered) = field.data_type() {
-            if let ArrowDataType::Extension(name, _, metadata) = inner.as_ref() {
-                write_extension(
-                    name.as_str(),
-                    metadata.as_ref().map(|x| x.as_str()),
-                    &mut kv_vec,
-                );
-            }
-            Some(serialize_dictionary(
-                index_type,
-                ipc_field
-                    .dictionary_id
-                    .expect("All Dictionary types have `dict_id`"),
-                *is_ordered,
-            ))
-        } else {
-            None
-        };
+    let dictionary = if let ArrowDataType::Dictionary(index_type, inner, is_ordered) = field.dtype()
+    {
+        if let ArrowDataType::Extension(name, _, metadata) = inner.as_ref() {
+            write_extension(
+                name.as_str(),
+                metadata.as_ref().map(|x| x.as_str()),
+                &mut kv_vec,
+            );
+        }
+        Some(serialize_dictionary(
+            index_type,
+            ipc_field
+                .dictionary_id
+                .expect("All Dictionary types have `dict_id`"),
+            *is_ordered,
+        ))
+    } else {
+        None
+    };
 
     write_metadata(&field.metadata, &mut kv_vec);
 
@@ -143,10 +136,10 @@ fn serialize_time_unit(unit: &TimeUnit) -> arrow_format::ipc::TimeUnit {
     }
 }
 
-fn serialize_type(data_type: &ArrowDataType) -> arrow_format::ipc::Type {
+fn serialize_type(dtype: &ArrowDataType) -> arrow_format::ipc::Type {
     use arrow_format::ipc;
     use ArrowDataType::*;
-    match data_type {
+    match dtype {
         Null => ipc::Type::Null(Box::new(ipc::Null {})),
         Boolean => ipc::Type::Bool(Box::new(ipc::Bool {})),
         UInt8 => ipc::Type::Int(Box::new(ipc::Int {
@@ -260,11 +253,11 @@ fn serialize_type(data_type: &ArrowDataType) -> arrow_format::ipc::Type {
 }
 
 fn serialize_children(
-    data_type: &ArrowDataType,
+    dtype: &ArrowDataType,
     ipc_field: &IpcField,
 ) -> Vec<arrow_format::ipc::Field> {
     use ArrowDataType::*;
-    match data_type {
+    match dtype {
         Null
         | Boolean
         | Int8

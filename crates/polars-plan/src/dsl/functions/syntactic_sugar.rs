@@ -57,10 +57,10 @@ pub fn is_not_null(expr: Expr) -> Expr {
 /// Follows the rules of Rust casting, with the exception that integers and floats can be cast to `DataType::Date` and
 /// `DataType::DateTime(_, _)`. A column consisting entirely of of `Null` can be cast to any type, regardless of the
 /// nominal type of the column.
-pub fn cast(expr: Expr, data_type: DataType) -> Expr {
+pub fn cast(expr: Expr, dtype: DataType) -> Expr {
     Expr::Cast {
         expr: Arc::new(expr),
-        data_type,
+        dtype,
         options: CastOptions::NonStrict,
     }
 }

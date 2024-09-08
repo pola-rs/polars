@@ -113,15 +113,15 @@ pub fn iter_unique_dtypes<R: std::io::BufRead>(
     let rows = vec!["".to_string(); 1]; // 1 <=> read row by row
     let mut reader = FileReader::new(reader, rows, number_of_rows.map(|v| v.into()));
 
-    let mut data_types = PlIndexSet::default();
+    let mut dtypes = PlIndexSet::default();
     let mut buf = vec![];
     while let Some(rows) = reader.next()? {
         // 0 because it is row by row
         let value = parse_value(&mut buf, rows[0].as_bytes())?;
-        let data_type = crate::json::infer(&value)?;
-        data_types.insert(data_type);
+        let dtype = crate::json::infer(&value)?;
+        dtypes.insert(dtype);
     }
-    Ok(data_types.into_iter())
+    Ok(dtypes.into_iter())
 }
 
 /// Infers the [`ArrowDataType`] from an iterator of JSON strings. A limited number of
@@ -130,17 +130,17 @@ pub fn iter_unique_dtypes<R: std::io::BufRead>(
 /// # Implementation
 /// This implementation infers each row by going through the entire iterator.
 pub fn infer_iter<A: AsRef<str>>(rows: impl Iterator<Item = A>) -> PolarsResult<ArrowDataType> {
-    let mut data_types = IndexSet::<_, PlRandomState>::default();
+    let mut dtypes = IndexSet::<_, PlRandomState>::default();
 
     let mut buf = vec![];
     for row in rows {
         let v = parse_value(&mut buf, row.as_ref().as_bytes())?;
-        let data_type = crate::json::infer(&v)?;
-        if data_type != ArrowDataType::Null {
-            data_types.insert(data_type);
+        let dtype = crate::json::infer(&v)?;
+        if dtype != ArrowDataType::Null {
+            dtypes.insert(dtype);
         }
     }
 
-    let v: Vec<&ArrowDataType> = data_types.iter().collect();
-    Ok(crate::json::infer_schema::coerce_data_type(&v))
+    let v: Vec<&ArrowDataType> = dtypes.iter().collect();
+    Ok(crate::json::infer_schema::coerce_dtype(&v))
 }

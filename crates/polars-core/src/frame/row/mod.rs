@@ -115,18 +115,18 @@ pub fn infer_schema(
     Schema::from_iter(resolve_fields(values))
 }
 
-fn add_or_insert(values: &mut Tracker, key: PlSmallStr, data_type: DataType) {
-    if data_type == DataType::Null {
+fn add_or_insert(values: &mut Tracker, key: PlSmallStr, dtype: DataType) {
+    if dtype == DataType::Null {
         return;
     }
 
     if values.contains_key(&key) {
         let x = values.get_mut(&key).unwrap();
-        x.insert(data_type);
+        x.insert(dtype);
     } else {
         // create hashset and add value type
         let mut hs = PlHashSet::new();
-        hs.insert(data_type);
+        hs.insert(dtype);
         values.insert(key, hs);
     }
 }
@@ -135,13 +135,13 @@ fn resolve_fields(spec: Tracker) -> Vec<Field> {
     spec.iter()
         .map(|(k, hs)| {
             let v: Vec<&DataType> = hs.iter().collect();
-            Field::new(k.clone(), coerce_data_type(&v))
+            Field::new(k.clone(), coerce_dtype(&v))
         })
         .collect()
 }
 
 /// Coerces a slice of datatypes into a single supertype.
-pub fn coerce_data_type<A: Borrow<DataType>>(datatypes: &[A]) -> DataType {
+pub fn coerce_dtype<A: Borrow<DataType>>(datatypes: &[A]) -> DataType {
     use DataType::*;
 
     let are_all_equal = datatypes.windows(2).all(|w| w[0].borrow() == w[1].borrow());
@@ -207,7 +207,7 @@ pub fn rows_to_schema_first_non_null(
     for row in rows.iter().take(max_infer).skip(1) {
         // for i in 1..max_infer {
         let nulls: Vec<_> = schema
-            .iter_dtypes()
+            .iter_values()
             .enumerate()
             .filter_map(|(i, dtype)| {
                 // double check struct and list types types

@@ -307,7 +307,7 @@ impl FunctionExpr {
             MaxHorizontal => mapper.map_to_supertype(),
             MinHorizontal => mapper.map_to_supertype(),
             SumHorizontal => {
-                if mapper.fields[0].data_type() == &DataType::Boolean {
+                if mapper.fields[0].dtype() == &DataType::Boolean {
                     mapper.with_dtype(DataType::UInt32)
                 } else {
                     mapper.map_to_supertype()
@@ -377,7 +377,7 @@ impl<'a> FieldsMapper<'a> {
 
     /// Map a single dtype.
     pub fn map_dtype(&self, func: impl FnOnce(&DataType) -> DataType) -> PolarsResult<Field> {
-        let dtype = func(self.fields[0].data_type());
+        let dtype = func(self.fields[0].dtype());
         Ok(Field::new(self.fields[0].name().clone(), dtype))
     }
 
@@ -425,7 +425,7 @@ impl<'a> FieldsMapper<'a> {
         &self,
         func: impl FnOnce(&DataType) -> PolarsResult<DataType>,
     ) -> PolarsResult<Field> {
-        let dtype = func(self.fields[0].data_type())?;
+        let dtype = func(self.fields[0].dtype())?;
         Ok(Field::new(self.fields[0].name().clone(), dtype))
     }
 
@@ -438,7 +438,7 @@ impl<'a> FieldsMapper<'a> {
         let dtypes = self
             .fields
             .iter()
-            .map(|fld| fld.data_type())
+            .map(|fld| fld.dtype())
             .collect::<Vec<_>>();
         let new_type = func(&dtypes)?;
         fld.coerce(new_type);
@@ -457,7 +457,7 @@ impl<'a> FieldsMapper<'a> {
     pub fn map_to_list_and_array_inner_dtype(&self) -> PolarsResult<Field> {
         let mut first = self.fields[0].clone();
         let dt = first
-            .data_type()
+            .dtype()
             .inner_dtype()
             .cloned()
             .unwrap_or_else(|| DataType::Unknown(Default::default()));
@@ -506,7 +506,7 @@ impl<'a> FieldsMapper<'a> {
         let mut first = self.fields[0].clone();
         use DataType::*;
         let dt = first
-            .data_type()
+            .dtype()
             .inner_dtype()
             .cloned()
             .unwrap_or_else(|| Unknown(Default::default()));
@@ -520,8 +520,8 @@ impl<'a> FieldsMapper<'a> {
     }
 
     pub(super) fn pow_dtype(&self) -> PolarsResult<Field> {
-        let base_dtype = self.fields[0].data_type();
-        let exponent_dtype = self.fields[1].data_type();
+        let base_dtype = self.fields[0].dtype();
+        let exponent_dtype = self.fields[1].dtype();
         if base_dtype.is_integer() {
             if exponent_dtype.is_float() {
                 Ok(Field::new(
@@ -556,8 +556,8 @@ impl<'a> FieldsMapper<'a> {
                 let new = &self.fields[2];
                 let default = self.fields.get(3);
                 match default {
-                    Some(default) => try_get_supertype(default.data_type(), new.data_type())?,
-                    None => new.data_type().clone(),
+                    Some(default) => try_get_supertype(default.dtype(), new.dtype())?,
+                    None => new.dtype().clone(),
                 }
             },
         };

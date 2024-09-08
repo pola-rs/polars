@@ -39,8 +39,8 @@ unsafe extern "C" fn c_release_schema(schema: *mut ArrowSchema) {
 }
 
 /// allocate (and hold) the children
-fn schema_children(data_type: &ArrowDataType, flags: &mut i64) -> Box<[*mut ArrowSchema]> {
-    match data_type {
+fn schema_children(dtype: &ArrowDataType, flags: &mut i64) -> Box<[*mut ArrowSchema]> {
+    match dtype {
         ArrowDataType::List(field)
         | ArrowDataType::FixedSizeList(field, _)
         | ArrowDataType::LargeList(field) => {
@@ -62,17 +62,16 @@ fn schema_children(data_type: &ArrowDataType, flags: &mut i64) -> Box<[*mut Arro
 impl ArrowSchema {
     /// creates a new [ArrowSchema]
     pub(crate) fn new(field: &Field) -> Self {
-        let format = to_format(field.data_type());
+        let format = to_format(field.dtype());
         let name = field.name.clone();
 
         let mut flags = field.is_nullable as i64 * 2;
 
         // note: this cannot be done along with the above because the above is fallible and this op leaks.
-        let children_ptr = schema_children(field.data_type(), &mut flags);
+        let children_ptr = schema_children(field.dtype(), &mut flags);
         let n_children = children_ptr.len() as i64;
 
-        let dictionary = if let ArrowDataType::Dictionary(_, values, is_ordered) = field.data_type()
-        {
+        let dictionary = if let ArrowDataType::Dictionary(_, values, is_ordered) = field.dtype() {
             flags += *is_ordered as i64;
             // we do not store field info in the dict values, so can't recover it all :(
             let field = Field::new(PlSmallStr::EMPTY, values.as_ref().clone(), true);
@@ -83,30 +82,30 @@ impl ArrowSchema {
 
         let metadata = &field.metadata;
 
-        let metadata =
-            if let ArrowDataType::Extension(name, _, extension_metadata) = field.data_type() {
-                // append extension information.
-                let mut metadata = metadata.clone();
+        let metadata = if let ArrowDataType::Extension(name, _, extension_metadata) = field.dtype()
+        {
+            // append extension information.
+            let mut metadata = metadata.clone();
 
-                // metadata
-                if let Some(extension_metadata) = extension_metadata {
-                    metadata.insert(
-                        PlSmallStr::from_static("ARROW:extension:metadata"),
-                        extension_metadata.clone(),
-                    );
-                }
-
+            // metadata
+            if let Some(extension_metadata) = extension_metadata {
                 metadata.insert(
-                    PlSmallStr::from_static("ARROW:extension:name"),
-                    name.clone(),
+                    PlSmallStr::from_static("ARROW:extension:metadata"),
+                    extension_metadata.clone(),
                 );
+            }
 
-                Some(metadata_to_bytes(&metadata))
-            } else if !metadata.is_empty() {
-                Some(metadata_to_bytes(metadata))
-            } else {
-                None
-            };
+            metadata.insert(
+                PlSmallStr::from_static("ARROW:extension:name"),
+                name.clone(),
+            );
+
+            Some(metadata_to_bytes(&metadata))
+        } else if !metadata.is_empty() {
+            Some(metadata_to_bytes(metadata))
+        } else {
+            None
+        };
 
         let name = CString::new(name.as_bytes()).unwrap();
         let format = CString::new(format).unwrap();
@@ -204,25 +203,25 @@ impl Drop for ArrowSchema {
 
 pub(crate) unsafe fn to_field(schema: &ArrowSchema) -> PolarsResult<Field> {
     let dictionary = schema.dictionary();
-    let data_type = if let Some(dictionary) = dictionary {
+    let dtype = if let Some(dictionary) = dictionary {
         let indices = to_integer_type(schema.format())?;
         let values = to_field(dictionary)?;
         let is_ordered = schema.flags & 1 == 1;
-        ArrowDataType::Dictionary(indices, Box::new(values.data_type().clone()), is_ordered)
+        ArrowDataType::Dictionary(indices, Box::new(values.dtype().clone()), is_ordered)
     } else {
-        to_data_type(schema)?
+        to_dtype(schema)?
     };
     let (metadata, extension) = unsafe { metadata_from_bytes(schema.metadata) };
 
-    let data_type = if let Some((name, extension_metadata)) = extension {
-        ArrowDataType::Extension(name, Box::new(data_type), extension_metadata)
+    let dtype = if let Some((name, extension_metadata)) = extension {
+        ArrowDataType::Extension(name, Box::new(dtype), extension_metadata)
     } else {
-        data_type
+        dtype
     };
 
     Ok(Field::new(
         PlSmallStr::from_str(schema.name()),
-        data_type,
+        dtype,
         schema.nullable(),
     )
     .with_metadata(metadata))
@@ -248,7 +247,7 @@ fn to_integer_type(format: &str) -> PolarsResult<IntegerType> {
     })
 }
 
-unsafe fn to_data_type(schema: &ArrowSchema) -> PolarsResult<ArrowDataType> {
+unsafe fn to_dtype(schema: &ArrowSchema) -> PolarsResult<ArrowDataType> {
     Ok(match schema.format() {
         "n" => ArrowDataType::Null,
         "b" => ArrowDataType::Boolean,
@@ -414,8 +413,8 @@ unsafe fn to_data_type(schema: &ArrowSchema) -> PolarsResult<ArrowDataType> {
 }
 
 /// the inverse of [to_field]
-fn to_format(data_type: &ArrowDataType) -> String {
-    match data_type {
+fn to_format(dtype: &ArrowDataType) -> String {
+    match dtype {
         ArrowDataType::Null => "n".to_string(),
         ArrowDataType::Boolean => "b".to_string(),
         ArrowDataType::Int8 => "c".to_string(),
@@ -496,17 +495,17 @@ fn to_format(data_type: &ArrowDataType) -> String {
     }
 }
 
-pub(super) fn get_child(data_type: &ArrowDataType, index: usize) -> PolarsResult<ArrowDataType> {
-    match (index, data_type) {
-        (0, ArrowDataType::List(field)) => Ok(field.data_type().clone()),
-        (0, ArrowDataType::FixedSizeList(field, _)) => Ok(field.data_type().clone()),
-        (0, ArrowDataType::LargeList(field)) => Ok(field.data_type().clone()),
-        (0, ArrowDataType::Map(field, _)) => Ok(field.data_type().clone()),
-        (index, ArrowDataType::Struct(fields)) => Ok(fields[index].data_type().clone()),
-        (index, ArrowDataType::Union(fields, _, _)) => Ok(fields[index].data_type().clone()),
+pub(super) fn get_child(dtype: &ArrowDataType, index: usize) -> PolarsResult<ArrowDataType> {
+    match (index, dtype) {
+        (0, ArrowDataType::List(field)) => Ok(field.dtype().clone()),
+        (0, ArrowDataType::FixedSizeList(field, _)) => Ok(field.dtype().clone()),
+        (0, ArrowDataType::LargeList(field)) => Ok(field.dtype().clone()),
+        (0, ArrowDataType::Map(field, _)) => Ok(field.dtype().clone()),
+        (index, ArrowDataType::Struct(fields)) => Ok(fields[index].dtype().clone()),
+        (index, ArrowDataType::Union(fields, _, _)) => Ok(fields[index].dtype().clone()),
         (index, ArrowDataType::Extension(_, subtype, _)) => get_child(subtype, index),
-        (child, data_type) => polars_bail!(ComputeError:
-            "Requested child {child} to type {data_type:?} that has no such child",
+        (child, dtype) => polars_bail!(ComputeError:
+            "Requested child {child} to type {dtype:?} that has no such child",
         ),
     }
 }
@@ -694,7 +693,7 @@ mod tests {
         for expected in dts {
             let field = Field::new(PlSmallStr::from_static("a"), expected.clone(), true);
             let schema = ArrowSchema::new(&field);
-            let result = unsafe { super::to_data_type(&schema).unwrap() };
+            let result = unsafe { super::to_dtype(&schema).unwrap() };
             assert_eq!(result, expected);
         }
     }

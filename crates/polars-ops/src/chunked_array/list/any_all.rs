@@ -10,7 +10,7 @@ where
     let offsets = arr.offsets().as_slice();
     let values = arr.values();
 
-    polars_ensure!(values.data_type() == &ArrowDataType::Boolean, ComputeError: "expected boolean elements in list");
+    polars_ensure!(values.dtype() == &ArrowDataType::Boolean, ComputeError: "expected boolean elements in list");
 
     let values = values.as_any().downcast_ref::<BooleanArray>().unwrap();
     let validity = arr.validity().cloned();

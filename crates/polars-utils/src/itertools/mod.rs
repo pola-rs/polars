@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 use crate::IdxSize;
 
 pub mod enumerate_idx;
@@ -52,6 +54,51 @@ pub trait Itertools: Iterator {
         match self.next() {
             None => true,
             Some(a) => self.all(|x| a == x),
+        }
+    }
+
+    // Stable copy of the unstable eq_by from the stdlib.
+    fn eq_by_<I, F>(mut self, other: I, mut eq: F) -> bool
+    where
+        Self: Sized,
+        I: IntoIterator,
+        F: FnMut(Self::Item, I::Item) -> bool,
+    {
+        let mut other = other.into_iter();
+        loop {
+            match (self.next(), other.next()) {
+                (None, None) => return true,
+                (None, Some(_)) => return false,
+                (Some(_), None) => return false,
+                (Some(l), Some(r)) => {
+                    if eq(l, r) {
+                        continue;
+                    } else {
+                        return false;
+                    }
+                },
+            }
+        }
+    }
+
+    // Stable copy of the unstable partial_cmp_by from the stdlib.
+    fn partial_cmp_by_<I, F>(mut self, other: I, mut partial_cmp: F) -> Option<Ordering>
+    where
+        Self: Sized,
+        I: IntoIterator,
+        F: FnMut(Self::Item, I::Item) -> Option<Ordering>,
+    {
+        let mut other = other.into_iter();
+        loop {
+            match (self.next(), other.next()) {
+                (None, None) => return Some(Ordering::Equal),
+                (None, Some(_)) => return Some(Ordering::Less),
+                (Some(_), None) => return Some(Ordering::Greater),
+                (Some(l), Some(r)) => match partial_cmp(l, r) {
+                    Some(Ordering::Equal) => continue,
+                    ord => return ord,
+                },
+            }
         }
     }
 }

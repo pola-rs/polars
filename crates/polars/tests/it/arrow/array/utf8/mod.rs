@@ -148,7 +148,7 @@ fn not_utf8_individually() {
 }
 
 #[test]
-fn wrong_data_type() {
+fn wrong_dtype() {
     let offsets = vec![0, 4].try_into().unwrap();
     let values = b"abbb".to_vec().into();
     assert!(Utf8Array::<i32>::try_new(ArrowDataType::Int32, offsets, values, None).is_err());

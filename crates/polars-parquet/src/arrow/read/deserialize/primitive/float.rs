@@ -296,12 +296,12 @@ where
 
     fn finalize(
         &self,
-        data_type: ArrowDataType,
+        dtype: ArrowDataType,
         _dict: Option<Self::Dict>,
         (values, validity): Self::DecodedState,
     ) -> ParquetResult<Self::Output> {
         let validity = freeze_validity(validity);
-        Ok(PrimitiveArray::try_new(data_type, values.into(), validity).unwrap())
+        Ok(PrimitiveArray::try_new(dtype, values.into(), validity).unwrap())
     }
 }
 
@@ -313,18 +313,18 @@ where
 {
     fn finalize_dict_array<K: DictionaryKey>(
         &self,
-        data_type: ArrowDataType,
+        dtype: ArrowDataType,
         dict: Self::Dict,
         keys: PrimitiveArray<K>,
     ) -> ParquetResult<DictionaryArray<K>> {
-        let value_type = match &data_type {
+        let value_type = match &dtype {
             ArrowDataType::Dictionary(_, value, _) => value.as_ref().clone(),
             _ => T::PRIMITIVE.into(),
         };
 
         let dict = Box::new(PrimitiveArray::new(value_type, dict.into(), None));
 
-        Ok(DictionaryArray::try_new(data_type, keys, dict).unwrap())
+        Ok(DictionaryArray::try_new(dtype, keys, dict).unwrap())
     }
 }
 

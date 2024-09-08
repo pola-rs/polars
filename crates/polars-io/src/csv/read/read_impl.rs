@@ -35,7 +35,7 @@ pub(crate) fn cast_columns(
     ignore_errors: bool,
 ) -> PolarsResult<()> {
     let cast_fn = |s: &Series, fld: &Field| {
-        let out = match (s.dtype(), fld.data_type()) {
+        let out = match (s.dtype(), fld.dtype()) {
             #[cfg(feature = "temporal")]
             (DataType::String, DataType::Date) => s
                 .str()

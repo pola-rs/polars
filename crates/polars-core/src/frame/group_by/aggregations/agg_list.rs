@@ -74,13 +74,13 @@ where
                     list_values.into(),
                     validity,
                 );
-                let data_type = ListArray::<i64>::default_datatype(
+                let dtype = ListArray::<i64>::default_datatype(
                     T::get_dtype().to_arrow(CompatLevel::newest()),
                 );
                 // SAFETY:
                 // offsets are monotonically increasing
                 let arr = ListArray::<i64>::new(
-                    data_type,
+                    dtype,
                     Offsets::new_unchecked(offsets).into(),
                     Box::new(array),
                     None,
@@ -139,11 +139,11 @@ where
                     list_values.into(),
                     validity,
                 );
-                let data_type = ListArray::<i64>::default_datatype(
+                let dtype = ListArray::<i64>::default_datatype(
                     T::get_dtype().to_arrow(CompatLevel::newest()),
                 );
                 let arr = ListArray::<i64>::new(
-                    data_type,
+                    dtype,
                     Offsets::new_unchecked(offsets).into(),
                     Box::new(array),
                     None,
@@ -259,12 +259,12 @@ impl<T: PolarsObject> AggList for ObjectChunked<T> {
         // the pointer does not fail.
         pe.set_to_series_fn::<T>();
         let extension_array = Box::new(pe.take_and_forget()) as ArrayRef;
-        let extension_dtype = extension_array.data_type();
+        let extension_dtype = extension_array.dtype();
 
-        let data_type = ListArray::<i64>::default_datatype(extension_dtype.clone());
+        let dtype = ListArray::<i64>::default_datatype(extension_dtype.clone());
         // SAFETY: offsets are monotonically increasing.
         let arr = ListArray::<i64>::new(
-            data_type,
+            dtype,
             Offsets::new_unchecked(offsets).into(),
             extension_array,
             None,
@@ -291,7 +291,7 @@ impl AggList for StructChunked {
         };
 
         let arr = gathered.chunks()[0].clone();
-        let dtype = LargeListArray::default_datatype(arr.data_type().clone());
+        let dtype = LargeListArray::default_datatype(arr.dtype().clone());
 
         let mut chunk = ListChunked::with_chunk(
             self.name().clone(),
@@ -322,7 +322,7 @@ where
     };
 
     let arr = gathered.chunks()[0].clone();
-    let dtype = LargeListArray::default_datatype(arr.data_type().clone());
+    let dtype = LargeListArray::default_datatype(arr.dtype().clone());
 
     let mut chunk = ListChunked::with_chunk(
         ca.name().clone(),

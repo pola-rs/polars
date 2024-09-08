@@ -163,11 +163,11 @@ pub(super) fn to_aexpr_impl(
         },
         Expr::Cast {
             expr,
-            data_type,
+            dtype,
             options,
         } => AExpr::Cast {
             expr: to_aexpr_impl(owned(expr), arena, state)?,
-            data_type,
+            dtype,
             options,
         },
         Expr::Gather {

@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{Field, InitHashMaps, PlHashMap, PlHashSet};
-use polars_core::schema::Schema;
+use polars_core::schema::{Schema, SchemaExt};
 use polars_error::PolarsResult;
 use polars_expr::planner::get_expr_depth_limit;
 use polars_expr::state::ExecutionState;
@@ -67,7 +67,7 @@ pub(crate) fn is_elementwise(
         },
         AExpr::Cast {
             expr,
-            data_type: _,
+            dtype: _,
             options: _,
         } => is_elementwise(*expr, arena, cache),
         AExpr::Sort { .. } | AExpr::SortBy { .. } | AExpr::Gather { .. } => false,
@@ -120,7 +120,7 @@ fn is_input_independent_rec(
         | AExpr::Alias(inner, _)
         | AExpr::Cast {
             expr: inner,
-            data_type: _,
+            dtype: _,
             options: _,
         }
         | AExpr::Sort {
@@ -459,14 +459,14 @@ fn lower_exprs_with_ctx(
             },
             AExpr::Cast {
                 expr: inner,
-                data_type,
+                dtype,
                 options,
             } => {
                 let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &[inner], ctx)?;
                 input_nodes.insert(trans_input);
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Cast {
                     expr: trans_exprs[0],
-                    data_type,
+                    dtype,
                     options,
                 }));
             },
@@ -701,7 +701,7 @@ fn build_select_node_with_ctx(
             return Ok(input);
         }
 
-        let output_schema = Arc::new(input_schema.select(&columns)?);
+        let output_schema = Arc::new(input_schema.try_project(&columns)?);
         let node_kind = PhysNodeKind::SimpleProjection { input, columns };
         return Ok(ctx.phys_sm.insert(PhysNode::new(output_schema, node_kind)));
     }

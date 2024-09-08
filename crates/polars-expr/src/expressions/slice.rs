@@ -60,9 +60,16 @@ fn check_argument(arg: &Series, groups: &GroupsProxy, name: &str, expr: &Expr) -
     Ok(())
 }
 
-fn slice_groups_idx(offset: i64, length: usize, first: IdxSize, idx: &[IdxSize]) -> IdxItem {
+fn slice_groups_idx(offset: i64, length: usize, mut first: IdxSize, idx: &[IdxSize]) -> IdxItem {
     let (offset, len) = slice_offsets(offset, length, idx.len());
-    (first + offset as IdxSize, idx[offset..offset + len].into())
+
+    // If slice isn't out of bounds, we replace first.
+    // If slice is oob, the `idx` vec will be empty and `first` will be ignored
+    if let Some(f) = idx.get(offset) {
+        first = *f;
+    }
+    // This is a clone of the vec, which is unfortunate. Maybe we have a `sliceable` unitvec one day.
+    (first, idx[offset..offset + len].into())
 }
 
 fn slice_groups_slice(offset: i64, length: usize, first: IdxSize, len: IdxSize) -> [IdxSize; 2] {

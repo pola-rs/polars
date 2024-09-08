@@ -106,8 +106,8 @@ fn run_per_sublist(
 
     ca.rename(s.name().clone());
 
-    if ca.dtype() != output_field.data_type() {
-        ca.cast(output_field.data_type()).map(Some)
+    if ca.dtype() != output_field.dtype() {
+        ca.cast(output_field.dtype()).map(Some)
     } else {
         Ok(Some(ca.into_series()))
     }
@@ -136,7 +136,7 @@ fn run_on_group_by_engine(
     let state = ExecutionState::new();
     let mut ac = phys_expr.evaluate_on_groups(&df_context, &groups, &state)?;
     let out = match ac.agg_state() {
-        AggState::AggregatedScalar(_) | AggState::Literal(_) => {
+        AggState::AggregatedScalar(_) => {
             let out = ac.aggregated();
             out.as_list().into_series()
         },
@@ -156,7 +156,7 @@ pub trait ListNameSpaceExtension: IntoListNameSpace + Sized {
                 match e {
                     #[cfg(feature = "dtype-categorical")]
                     Expr::Cast {
-                        data_type: DataType::Categorical(_, _) | DataType::Enum(_, _),
+                        dtype: DataType::Categorical(_, _) | DataType::Enum(_, _),
                         ..
                     } => {
                         polars_bail!(
@@ -181,11 +181,11 @@ pub trait ListNameSpaceExtension: IntoListNameSpace + Sized {
             if lst.is_empty() {
                 return Ok(Some(Series::new_empty(
                     s.name().clone(),
-                    output_field.data_type(),
+                    output_field.dtype(),
                 )));
             }
             if lst.null_count() == lst.len() {
-                return Ok(Some(s.cast(output_field.data_type())?));
+                return Ok(Some(s.cast(output_field.dtype())?));
             }
 
             let fits_idx_size = lst.get_values_size() <= (IdxSize::MAX as usize);

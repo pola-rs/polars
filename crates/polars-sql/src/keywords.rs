@@ -1,10 +1,8 @@
-//! Keywords that are supported by Polars SQL
-//!
-//! This is useful for syntax highlighting
+//! Keywords that are supported by the Polars SQL interface.
 //!
 //! This module defines:
-//! - all Polars SQL keywords [`all_keywords`]
-//! - all of polars SQL functions [`all_functions`]
+//! - all recognised Polars SQL keywords [`all_keywords`]
+//! - all recognised Polars SQL functions [`all_functions`]
 use crate::functions::PolarsSQLFunctions;
 use crate::table_functions::PolarsTableFunctions;
 

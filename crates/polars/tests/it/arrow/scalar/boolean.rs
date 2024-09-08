@@ -19,7 +19,7 @@ fn basics() {
     let a = BooleanScalar::new(Some(true));
 
     assert_eq!(a.value(), Some(true));
-    assert_eq!(a.data_type(), &ArrowDataType::Boolean);
+    assert_eq!(a.dtype(), &ArrowDataType::Boolean);
     assert!(a.is_valid());
 
     let _: &dyn std::any::Any = a.as_any();

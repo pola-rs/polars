@@ -6,14 +6,10 @@ use arrow::datatypes::ArrowDataType;
 #[test]
 fn try_new_ok() {
     let values = Utf8Array::<i32>::from_slice(["a", "aa"]);
-    let data_type =
-        ArrowDataType::Dictionary(i32::KEY_TYPE, Box::new(values.data_type().clone()), false);
-    let array = DictionaryArray::try_new(
-        data_type,
-        PrimitiveArray::from_vec(vec![1, 0]),
-        values.boxed(),
-    )
-    .unwrap();
+    let dtype = ArrowDataType::Dictionary(i32::KEY_TYPE, Box::new(values.dtype().clone()), false);
+    let array =
+        DictionaryArray::try_new(dtype, PrimitiveArray::from_vec(vec![1, 0]), values.boxed())
+            .unwrap();
 
     assert_eq!(array.keys(), &PrimitiveArray::from_vec(vec![1i32, 0]));
     assert_eq!(
@@ -28,14 +24,10 @@ fn try_new_ok() {
 #[test]
 fn split_at() {
     let values = Utf8Array::<i32>::from_slice(["a", "aa"]);
-    let data_type =
-        ArrowDataType::Dictionary(i32::KEY_TYPE, Box::new(values.data_type().clone()), false);
-    let array = DictionaryArray::try_new(
-        data_type,
-        PrimitiveArray::from_vec(vec![1, 0]),
-        values.boxed(),
-    )
-    .unwrap();
+    let dtype = ArrowDataType::Dictionary(i32::KEY_TYPE, Box::new(values.dtype().clone()), false);
+    let array =
+        DictionaryArray::try_new(dtype, PrimitiveArray::from_vec(vec![1, 0]), values.boxed())
+            .unwrap();
 
     let (lhs, rhs) = array.split_at(1);
 
@@ -46,15 +38,10 @@ fn split_at() {
 #[test]
 fn try_new_incorrect_key() {
     let values = Utf8Array::<i32>::from_slice(["a", "aa"]);
-    let data_type =
-        ArrowDataType::Dictionary(i16::KEY_TYPE, Box::new(values.data_type().clone()), false);
+    let dtype = ArrowDataType::Dictionary(i16::KEY_TYPE, Box::new(values.dtype().clone()), false);
 
-    let r = DictionaryArray::try_new(
-        data_type,
-        PrimitiveArray::from_vec(vec![1, 0]),
-        values.boxed(),
-    )
-    .is_err();
+    let r = DictionaryArray::try_new(dtype, PrimitiveArray::from_vec(vec![1, 0]), values.boxed())
+        .is_err();
 
     assert!(r);
 }
@@ -66,9 +53,8 @@ fn try_new_nulls() {
     let value: &[&str] = &[];
     let values = Utf8Array::<i32>::from_slice(value);
 
-    let data_type =
-        ArrowDataType::Dictionary(u32::KEY_TYPE, Box::new(values.data_type().clone()), false);
-    let r = DictionaryArray::try_new(data_type, keys, values.boxed()).is_ok();
+    let dtype = ArrowDataType::Dictionary(u32::KEY_TYPE, Box::new(values.dtype().clone()), false);
+    let r = DictionaryArray::try_new(dtype, keys, values.boxed()).is_ok();
 
     assert!(r);
 }
@@ -76,14 +62,10 @@ fn try_new_nulls() {
 #[test]
 fn try_new_incorrect_dt() {
     let values = Utf8Array::<i32>::from_slice(["a", "aa"]);
-    let data_type = ArrowDataType::Int32;
+    let dtype = ArrowDataType::Int32;
 
-    let r = DictionaryArray::try_new(
-        data_type,
-        PrimitiveArray::from_vec(vec![1, 0]),
-        values.boxed(),
-    )
-    .is_err();
+    let r = DictionaryArray::try_new(dtype, PrimitiveArray::from_vec(vec![1, 0]), values.boxed())
+        .is_err();
 
     assert!(r);
 }
@@ -91,15 +73,10 @@ fn try_new_incorrect_dt() {
 #[test]
 fn try_new_incorrect_values_dt() {
     let values = Utf8Array::<i32>::from_slice(["a", "aa"]);
-    let data_type =
-        ArrowDataType::Dictionary(i32::KEY_TYPE, Box::new(ArrowDataType::LargeUtf8), false);
+    let dtype = ArrowDataType::Dictionary(i32::KEY_TYPE, Box::new(ArrowDataType::LargeUtf8), false);
 
-    let r = DictionaryArray::try_new(
-        data_type,
-        PrimitiveArray::from_vec(vec![1, 0]),
-        values.boxed(),
-    )
-    .is_err();
+    let r = DictionaryArray::try_new(dtype, PrimitiveArray::from_vec(vec![1, 0]), values.boxed())
+        .is_err();
 
     assert!(r);
 }

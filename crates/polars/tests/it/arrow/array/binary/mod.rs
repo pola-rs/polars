@@ -126,7 +126,7 @@ fn wrong_offsets() {
 
 #[test]
 #[should_panic]
-fn wrong_data_type() {
+fn wrong_dtype() {
     let offsets = vec![0, 4].try_into().unwrap();
     let values = Buffer::from(b"abbb".to_vec());
     BinaryArray::<i32>::new(ArrowDataType::Int8, offsets, values, None);

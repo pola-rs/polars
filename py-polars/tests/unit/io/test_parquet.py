@@ -1868,3 +1868,38 @@ def test_empty_parquet() -> None:
 
     empty_from_pl = pl.read_parquet(f_pl)
     assert empty_from_pl.shape == (0, 0)
+
+
+@pytest.mark.parametrize(
+    "strategy",
+    ["columns", "row_groups", "prefiltered"],
+)
+@pytest.mark.write_disk
+def test_row_index_projection_pushdown_18463(
+    tmp_path: Path, strategy: pl.ParallelStrategy
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    f = tmp_path / "test.parquet"
+
+    pl.DataFrame({"A": [1, 4], "B": [2, 5]}).write_parquet(f)
+
+    df = pl.scan_parquet(f, parallel=strategy).with_row_index()
+
+    assert_frame_equal(df.select("index").collect(), df.collect().select("index"))
+
+    df = pl.scan_parquet(f, parallel=strategy).with_row_index("other_idx_name")
+
+    assert_frame_equal(
+        df.select("other_idx_name").collect(), df.collect().select("other_idx_name")
+    )
+
+    df = pl.scan_parquet(f, parallel=strategy).with_row_index(offset=42)
+
+    assert_frame_equal(df.select("index").collect(), df.collect().select("index"))
+
+    df = pl.scan_parquet(f, parallel=strategy).with_row_index()
+
+    assert_frame_equal(
+        df.select("index").slice(1, 1).collect(),
+        df.collect().select("index").slice(1, 1),
+    )

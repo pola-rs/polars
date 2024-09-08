@@ -78,7 +78,7 @@ macro_rules! impl_dyn_series {
             }
 
             fn _dtype(&self) -> &DataType {
-                self.0.ref_field().data_type()
+                self.0.ref_field().dtype()
             }
 
             fn _get_flags(&self) -> MetadataFlags {
@@ -318,6 +318,10 @@ macro_rules! impl_dyn_series {
                 ChunkFilter::filter(&self.0, filter).map(|ca| ca.into_series())
             }
 
+            fn _sum_as_f64(&self) -> f64 {
+                self.0._sum_as_f64()
+            }
+
             fn mean(&self) -> Option<f64> {
                 self.0.mean()
             }
@@ -362,8 +366,8 @@ macro_rules! impl_dyn_series {
                 ChunkExpandAtIndex::new_from_index(&self.0, index, length).into_series()
             }
 
-            fn cast(&self, data_type: &DataType, options: CastOptions) -> PolarsResult<Series> {
-                self.0.cast_with_options(data_type, options)
+            fn cast(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Series> {
+                self.0.cast_with_options(dtype, options)
             }
 
             fn get(&self, index: usize) -> PolarsResult<AnyValue> {

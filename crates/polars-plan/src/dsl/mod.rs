@@ -391,28 +391,28 @@ impl Expr {
 
     /// Cast expression to another data type.
     /// Throws an error if conversion had overflows.
-    pub fn strict_cast(self, data_type: DataType) -> Self {
+    pub fn strict_cast(self, dtype: DataType) -> Self {
         Expr::Cast {
             expr: Arc::new(self),
-            data_type,
+            dtype,
             options: CastOptions::Strict,
         }
     }
 
     /// Cast expression to another data type.
-    pub fn cast(self, data_type: DataType) -> Self {
+    pub fn cast(self, dtype: DataType) -> Self {
         Expr::Cast {
             expr: Arc::new(self),
-            data_type,
+            dtype,
             options: CastOptions::NonStrict,
         }
     }
 
     /// Cast expression to another data type.
-    pub fn cast_with_options(self, data_type: DataType, cast_options: CastOptions) -> Self {
+    pub fn cast_with_options(self, dtype: DataType, cast_options: CastOptions) -> Self {
         Expr::Cast {
             expr: Arc::new(self),
-            data_type,
+            dtype,
             options: cast_options,
         }
     }
@@ -1499,7 +1499,7 @@ impl Expr {
                 }
             },
             GetOutput::map_field(|field| {
-                Ok(match field.data_type() {
+                Ok(match field.dtype() {
                     DataType::Float64 => field.clone(),
                     DataType::Float32 => Field::new(field.name().clone(), DataType::Float32),
                     _ => Field::new(field.name().clone(), DataType::Float64),

@@ -17,14 +17,14 @@ mod util;
 pub use schema::infer_schema;
 
 use crate::array::Array;
-use crate::datatypes::Field;
+use crate::datatypes::ArrowSchema;
 use crate::record_batch::RecordBatchT;
 
 /// Single threaded, blocking reader of Avro; [`Iterator`] of [`RecordBatchT`].
 pub struct Reader<R: Read> {
     iter: BlockStreamingIterator<R>,
     avro_fields: Vec<AvroField>,
-    fields: Vec<Field>,
+    fields: ArrowSchema,
     projection: Vec<bool>,
 }
 
@@ -33,7 +33,7 @@ impl<R: Read> Reader<R> {
     pub fn new(
         reader: R,
         metadata: FileMetadata,
-        fields: Vec<Field>,
+        fields: ArrowSchema,
         projection: Option<Vec<bool>>,
     ) -> Self {
         let projection = projection.unwrap_or_else(|| fields.iter().map(|_| true).collect());
@@ -56,7 +56,7 @@ impl<R: Read> Iterator for Reader<R> {
     type Item = PolarsResult<RecordBatchT<Box<dyn Array>>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let fields = &self.fields[..];
+        let fields = &self.fields;
         let avro_fields = &self.avro_fields;
         let projection = &self.projection;
 
