@@ -11,6 +11,14 @@ def test_dataframe_plot() -> None:
         }
     )
     df.plot.line(x="length", y="width", color="species").to_json()
+    df.plot.line(
+        x="length",
+        y="width",
+        color="species",
+        title="title",
+        x_axis_title="x_axis_title",
+        y_axis_title="y_axis_title",
+    ).to_json()
     df.plot.point(x="length", y="width", size="species").to_json()
     df.plot.scatter(x="length", y="width", size="species").to_json()
     df.plot.bar(x="length", y="width", color="species").to_json()
