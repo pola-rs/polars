@@ -571,6 +571,11 @@ impl<'py> FromPyObject<'py> for Wrap<ScanSources> {
                 sources.push(file);
                 MutableSources::Files(sources)
             },
+            EitherPythonFileOrPath::Buffer(buffer) => {
+                let mut sources = Vec::with_capacity(num_items);
+                sources.push(buffer);
+                MutableSources::Buffers(sources)
+            },
         };
 
         for source in iter {
@@ -578,9 +583,10 @@ impl<'py> FromPyObject<'py> for Wrap<ScanSources> {
                 (MutableSources::Paths(v), EitherPythonFileOrPath::Path(p)) => v.push(p),
                 (MutableSources::Files(v), EitherPythonFileOrPath::File(f)) => v.push(f),
                 (MutableSources::Buffers(v), EitherPythonFileOrPath::Py(f)) => v.push(f.as_bytes()),
+                (MutableSources::Buffers(v), EitherPythonFileOrPath::Buffer(f)) => v.push(f),
                 _ => {
                     return Err(PyTypeError::new_err(
-                        "Cannot combine in-memory bytes and paths for scan sources",
+                        "Cannot combine in-memory bytes, paths and files for scan sources",
                     ))
                 },
             }

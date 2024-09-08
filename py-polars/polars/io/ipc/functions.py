@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import contextlib
 import os
-import io
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any, Sequence
 
@@ -10,12 +9,15 @@ import polars._reexport as pl
 import polars.functions as F
 from polars._utils.deprecation import deprecate_renamed_parameter
 from polars._utils.various import (
+    is_path_or_str_sequence,
     is_str_sequence,
     normalize_filepath,
 )
 from polars._utils.wrap import wrap_df, wrap_ldf
 from polars.dependencies import import_optional
 from polars.io._utils import (
+    is_glob_pattern,
+    is_local_file,
     parse_columns_arg,
     parse_row_index_args,
     prepare_file_arg,
@@ -175,31 +177,42 @@ def _read_ipc_impl(
     rechunk: bool = True,
     memory_map: bool = True,
 ) -> DataFrame:
-    if isinstance(source, (memoryview, bytearray, bytes)):
-        source = io.BytesIO(source)
-
+    if isinstance(source, (str, Path)):
+        source = normalize_filepath(source, check_not_directory=False)
     if isinstance(columns, str):
         columns = [columns]
 
-    scan = scan_ipc(
+    if isinstance(source, str) and is_glob_pattern(source) and is_local_file(source):
+        scan = scan_ipc(
+            source,
+            n_rows=n_rows,
+            rechunk=rechunk,
+            row_index_name=row_index_name,
+            row_index_offset=row_index_offset,
+            memory_map=memory_map,
+        )
+        if columns is None:
+            df = scan.collect()
+        elif is_str_sequence(columns, allow_str=False):
+            df = scan.select(columns).collect()
+        else:
+            msg = (
+                "cannot use glob patterns and integer based projection as `columns` argument"
+                "\n\nUse columns: List[str]"
+            )
+            raise TypeError(msg)
+        return df
+
+    projection, columns = parse_columns_arg(columns)
+    pydf = PyDataFrame.read_ipc(
         source,
-        n_rows=n_rows,
-        rechunk=rechunk,
-        row_index_name=row_index_name,
-        row_index_offset=row_index_offset,
+        columns,
+        projection,
+        n_rows,
+        parse_row_index_args(row_index_name, row_index_offset),
         memory_map=memory_map,
     )
-    if columns is None:
-        df = scan.collect()
-    elif is_str_sequence(columns, allow_str=False):
-        df = scan.select(columns).collect()
-    else:
-        msg = (
-            "cannot use glob patterns and integer based projection as `columns` argument"
-            "\n\nUse columns: List[str]"
-        )
-        raise TypeError(msg)
-    return df
+    return wrap_df(pydf)
 
 
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
@@ -334,7 +347,14 @@ def read_ipc_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, DataTyp
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
 @deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
 def scan_ipc(
-    source: str | Path | IO[bytes] | list[str] | list[Path] | list[IO[bytes]],
+    source: str
+    | Path
+    | IO[bytes]
+    | bytes
+    | list[str]
+    | list[Path]
+    | list[IO[bytes]]
+    | list[bytes],
     *,
     n_rows: int | None = None,
     cache: bool = True,
@@ -414,21 +434,17 @@ def scan_ipc(
     include_file_paths
         Include the path of the source file(s) as a column with this name.
     """
-    sources: list[str] | list[Path] | list[IO[bytes]] = []
+    sources: list[str] | list[Path] | list[IO[bytes]] | list[bytes] = []
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source, check_not_directory=False)
     elif isinstance(source, list):
-        if len(source) > 0:
-            if isinstance(source[0], (str, Path)):
-                sources = [
-                    normalize_filepath(
-                        source,  # type: ignore[arg-type]
-                        check_not_directory=False,
-                    )
-                    for source in source
-                ]
-            else:
-                sources = source
+        if is_path_or_str_sequence(source):
+            sources = [
+                normalize_filepath(source, check_not_directory=False)
+                for source in source
+            ]
+        else:
+            sources = source
 
         source = None  # type: ignore[assignment]
 

@@ -686,6 +686,19 @@ def test_write_parquet_with_null_col(tmp_path: Path) -> None:
 
 
 @pytest.mark.write_disk
+def test_scan_parquet_binary_buffered_reader(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    file_path = tmp_path / "test.parquet"
+    df.write_parquet(file_path)
+
+    with file_path.open("rb") as f:
+        out = pl.scan_parquet(f).collect()
+    assert_frame_equal(out, df)
+
+
+@pytest.mark.write_disk
 def test_read_parquet_binary_buffered_reader(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 

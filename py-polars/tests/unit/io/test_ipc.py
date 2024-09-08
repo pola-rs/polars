@@ -44,11 +44,13 @@ def test_from_to_buffer(
 ) -> None:
     # use an ad-hoc buffer (file=None)
     buf1 = write_ipc(df, stream, None, compression=compression)
+    buf1.seek(0)
     read_df = read_ipc(stream, buf1, use_pyarrow=False)
     assert_frame_equal(df, read_df, categorical_as_str=True)
 
     # explicitly supply an existing buffer
     buf2 = io.BytesIO()
+    buf2.seek(0)
     write_ipc(df, stream, buf2, compression=compression)
     buf2.seek(0)
     read_df = read_ipc(stream, buf2, use_pyarrow=False)
@@ -245,6 +247,7 @@ def test_list_nested_enum() -> None:
     df = pl.DataFrame(pl.Series("list_cat", [["a", "b", "c", None]], dtype=dtype))
     buffer = io.BytesIO()
     df.write_ipc(buffer, compat_level=CompatLevel.newest())
+    buffer.seek(0)
     df = pl.read_ipc(buffer)
     assert df.get_column("list_cat").dtype == dtype
 
@@ -258,6 +261,7 @@ def test_struct_nested_enum() -> None:
     )
     buffer = io.BytesIO()
     df.write_ipc(buffer, compat_level=CompatLevel.newest())
+    buffer.seek(0)
     df = pl.read_ipc(buffer)
     assert df.get_column("struct_cat").dtype == dtype
 

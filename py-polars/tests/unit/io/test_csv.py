@@ -953,6 +953,7 @@ def test_write_csv_separator() -> None:
     df.write_csv(f, separator="\t")
     f.seek(0)
     assert f.read() == b"a\tb\n1\t1\n2\t2\n3\t3\n"
+    f.seek(0)
     assert_frame_equal(df, pl.read_csv(f, separator="\t"))
 
 
@@ -962,6 +963,7 @@ def test_write_csv_line_terminator() -> None:
     df.write_csv(f, line_terminator="\r\n")
     f.seek(0)
     assert f.read() == b"a,b\r\n1,1\r\n2,2\r\n3,3\r\n"
+    f.seek(0)
     assert_frame_equal(df, pl.read_csv(f, eol_char="\n"))
 
 
@@ -996,6 +998,7 @@ def test_quoting_round_trip() -> None:
         }
     )
     df.write_csv(f)
+    f.seek(0)
     read_df = pl.read_csv(f)
     assert_frame_equal(read_df, df)
 
@@ -1183,6 +1186,7 @@ def test_csv_write_escape_headers() -> None:
     out = io.BytesIO()
     df1.write_csv(out)
 
+    out.seek(0)
     df2 = pl.read_csv(out)
     assert_frame_equal(df1, df2)
     assert df2.schema == {"c,o,l,u,m,n": pl.Int64}
@@ -2279,4 +2283,5 @@ def test_read_csv_cast_unparsable_later(
 ) -> None:
     f = io.BytesIO()
     df.write_csv(f)
+    f.seek(0)
     assert df.equals(pl.read_csv(f, schema={"x": dtype}))

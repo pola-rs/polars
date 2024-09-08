@@ -205,6 +205,7 @@ impl EitherRustPythonFile {
 
 pub enum EitherPythonFileOrPath {
     Py(PyFileLikeObject),
+    Buffer(bytes::Bytes),
     Path(PathBuf),
     File(File),
 }
@@ -212,6 +213,14 @@ pub enum EitherPythonFileOrPath {
 pub fn get_either_file_or_path(py_f: PyObject, write: bool) -> PyResult<EitherPythonFileOrPath> {
     Python::with_gil(|py| {
         let py_f = py_f.into_bound(py);
+
+        // If the pyobject is a `bytes` class
+        if let Ok(bytes) = py_f.downcast::<PyBytes>() {
+            return Ok(EitherPythonFileOrPath::Buffer(
+                bytes::Bytes::copy_from_slice(bytes.as_bytes()),
+            ));
+        }
+
         if let Ok(s) = py_f.extract::<Cow<str>>() {
             let file_path = std::path::Path::new(&*s);
             let file_path = resolve_homedir(file_path);
@@ -275,7 +284,7 @@ pub fn get_either_file_or_path(py_f: PyObject, write: bool) -> PyResult<EitherPy
 
             // BytesIO / StringIO is relatively fast, and some code relies on it.
             if !py_f.is_exact_instance(&io.getattr("BytesIO").unwrap())
-                || !py_f.is_exact_instance(&io.getattr("StringIO").unwrap())
+                && !py_f.is_exact_instance(&io.getattr("StringIO").unwrap())
             {
                 polars_warn!("Polars found a filename. \
                 Ensure you pass a path to the file instead of a python file object when possible for best \

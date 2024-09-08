@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import os
-import io
+from io import BytesIO, StringIO
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any, Callable, Mapping, Sequence
 
@@ -11,12 +11,14 @@ import polars.functions as F
 from polars._utils.deprecation import deprecate_renamed_parameter
 from polars._utils.various import (
     _process_null_values,
+    is_path_or_str_sequence,
     is_str_sequence,
     normalize_filepath,
 )
-from polars._utils.wrap import wrap_ldf
+from polars._utils.wrap import wrap_df, wrap_ldf
 from polars.datatypes import N_INFER_DEFAULT, String, parse_into_dtype
 from polars.io._utils import (
+    is_glob_pattern,
     parse_columns_arg,
     parse_row_index_args,
     prepare_file_arg,
@@ -25,7 +27,7 @@ from polars.io.csv._utils import _check_arg_is_1byte, _update_columns
 from polars.io.csv.batched_reader import BatchedCsvReader
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import PyLazyFrame
+    from polars.polars import PyDataFrame, PyLazyFrame
 
 if TYPE_CHECKING:
     from polars import DataFrame, LazyFrame
@@ -563,8 +565,15 @@ def _read_csv_impl(
     decimal_comma: bool = False,
     glob: bool = True,
 ) -> DataFrame:
-    if isinstance(source, (bytes, memoryview, bytearray)):
-        source = io.BytesIO(source)
+    path: str | None
+    if isinstance(source, (str, Path)):
+        path = normalize_filepath(source, check_not_directory=False)
+    else:
+        path = None
+        if isinstance(source, BytesIO):
+            source = source.getvalue()
+        if isinstance(source, StringIO):
+            source = source.getvalue().encode()
 
     dtype_list: Sequence[tuple[str, PolarsDataType]] | None = None
     dtype_slice: Sequence[PolarsDataType] | None = None
@@ -579,58 +588,93 @@ def _read_csv_impl(
             msg = f"`schema_overrides` should be of type list or dict, got {type(schema_overrides).__name__!r}"
             raise TypeError(msg)
 
+    processed_null_values = _process_null_values(null_values)
+
     if isinstance(columns, str):
         columns = [columns]
+    if isinstance(source, str) and is_glob_pattern(source):
+        dtypes_dict = None
+        if dtype_list is not None:
+            dtypes_dict = dict(dtype_list)
+        if dtype_slice is not None:
+            msg = (
+                "cannot use glob patterns and unnamed dtypes as `schema_overrides` argument"
+                "\n\nUse `schema_overrides`: Mapping[str, Type[DataType]]"
+            )
+            raise ValueError(msg)
+        from polars import scan_csv
 
-    dtypes_dict = None
-    if dtype_list is not None:
-        dtypes_dict = dict(dtype_list)
-    if dtype_slice is not None:
-        msg = (
-            "cannot use glob patterns and unnamed dtypes as `schema_overrides` argument"
-            "\n\nUse `schema_overrides`: Mapping[str, Type[DataType]]"
+        scan = scan_csv(
+            source,
+            has_header=has_header,
+            separator=separator,
+            comment_prefix=comment_prefix,
+            quote_char=quote_char,
+            skip_rows=skip_rows,
+            schema=schema,
+            schema_overrides=dtypes_dict,
+            null_values=null_values,
+            missing_utf8_is_empty_string=missing_utf8_is_empty_string,
+            ignore_errors=ignore_errors,
+            infer_schema_length=infer_schema_length,
+            n_rows=n_rows,
+            low_memory=low_memory,
+            rechunk=rechunk,
+            skip_rows_after_header=skip_rows_after_header,
+            row_index_name=row_index_name,
+            row_index_offset=row_index_offset,
+            eol_char=eol_char,
+            raise_if_empty=raise_if_empty,
+            truncate_ragged_lines=truncate_ragged_lines,
+            decimal_comma=decimal_comma,
+            glob=glob,
         )
-        raise ValueError(msg)
-    from polars import scan_csv
+        if columns is None:
+            return scan.collect()
+        elif is_str_sequence(columns, allow_str=False):
+            return scan.select(columns).collect()
+        else:
+            msg = (
+                "cannot use glob patterns and integer based projection as `columns` argument"
+                "\n\nUse columns: List[str]"
+            )
+            raise ValueError(msg)
 
-    scan = scan_csv(
+    projection, columns = parse_columns_arg(columns)
+
+    pydf = PyDataFrame.read_csv(
         source,
-        has_header=has_header,
-        separator=separator,
-        comment_prefix=comment_prefix,
-        quote_char=quote_char,
-        skip_rows=skip_rows,
-        schema=schema,
-        schema_overrides=dtypes_dict,
-        null_values=null_values,
-        missing_utf8_is_empty_string=missing_utf8_is_empty_string,
-        ignore_errors=ignore_errors,
-        infer_schema_length=infer_schema_length,
-        n_rows=n_rows,
-        encoding=encoding,
-        low_memory=low_memory,
-        rechunk=rechunk,
-        skip_rows_after_header=skip_rows_after_header,
-        row_index_name=row_index_name,
-        row_index_offset=row_index_offset,
+        infer_schema_length,
+        batch_size,
+        has_header,
+        ignore_errors,
+        n_rows,
+        skip_rows,
+        projection,
+        separator,
+        rechunk,
+        columns,
+        encoding,
+        n_threads,
+        path,
+        dtype_list,
+        dtype_slice,
+        low_memory,
+        comment_prefix,
+        quote_char,
+        processed_null_values,
+        missing_utf8_is_empty_string,
+        try_parse_dates,
+        skip_rows_after_header,
+        parse_row_index_args(row_index_name, row_index_offset),
+        sample_size=sample_size,
         eol_char=eol_char,
         raise_if_empty=raise_if_empty,
         truncate_ragged_lines=truncate_ragged_lines,
         decimal_comma=decimal_comma,
-        glob=glob,
-        try_parse_dates=try_parse_dates,
+        schema=schema,
     )
-
-    if columns is None:
-        return scan.collect()
-    elif is_str_sequence(columns, allow_str=False):
-        return scan.select(columns).collect()
-    else:
-        msg = (
-            "cannot use glob patterns and integer based projection as `columns` argument"
-            "\n\nUse columns: List[str]"
-        )
-        raise ValueError(msg)
+    return wrap_df(pydf)
 
 
 @deprecate_renamed_parameter("dtypes", "schema_overrides", version="0.20.31")
@@ -947,10 +991,12 @@ def scan_csv(
     | Path
     | IO[str]
     | IO[bytes]
+    | bytes
     | list[str]
     | list[Path]
     | list[IO[str]]
-    | list[IO[bytes]],
+    | list[IO[bytes]]
+    | list[bytes],
     *,
     has_header: bool = True,
     separator: str = ",",
@@ -1198,19 +1244,9 @@ def scan_csv(
 
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source, check_not_directory=False)
-    elif isinstance(source, io.IOBase) or (
-        isinstance(source, list)
-        and len(source) > 0
-        and isinstance(source[0], io.IOBase)
-    ):
-        pass
-    else:
+    elif is_path_or_str_sequence(source, allow_str=False):
         source = [
-            normalize_filepath(
-                source,  # type: ignore[arg-type]
-                check_not_directory=False,
-            )
-            for source in source
+            normalize_filepath(source, check_not_directory=False) for source in source
         ]
 
     if not infer_schema:
@@ -1255,10 +1291,12 @@ def _scan_csv_impl(
     source: str
     | IO[str]
     | IO[bytes]
+    | bytes
     | list[str]
     | list[Path]
     | list[IO[str]]
-    | list[IO[bytes]],
+    | list[IO[bytes]]
+    | list[bytes],
     *,
     has_header: bool = True,
     separator: str = ",",

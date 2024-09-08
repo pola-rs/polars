@@ -30,6 +30,7 @@ fn pyobject_to_first_path_and_scan_sources(
         },
         EitherPythonFileOrPath::File(file) => (None, ScanSources::Files([file].into())),
         EitherPythonFileOrPath::Py(f) => (None, ScanSources::Buffers([f.as_bytes()].into())),
+        EitherPythonFileOrPath::Buffer(buff) => (None, ScanSources::Buffers([buff].into())),
     })
 }
 

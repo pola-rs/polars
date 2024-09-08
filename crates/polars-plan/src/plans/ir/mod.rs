@@ -239,7 +239,7 @@ impl ScanSources {
     pub fn get(&self, idx: usize) -> Option<ScanSourceRef> {
         match self {
             Self::Paths(paths) => paths.get(idx).map(|p| ScanSourceRef::Path(p)),
-            Self::Files(files) => files.get(idx).map(|f| ScanSourceRef::File(f)),
+            Self::Files(files) => files.get(idx).map(ScanSourceRef::File),
             Self::Buffers(buffers) => buffers.get(idx).map(ScanSourceRef::Buffer),
         }
     }

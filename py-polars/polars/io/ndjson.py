@@ -3,11 +3,11 @@ from __future__ import annotations
 import contextlib
 from io import BytesIO, StringIO
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, Any
+from typing import IO, TYPE_CHECKING, Any, Sequence
 
 from polars._utils.deprecation import deprecate_renamed_parameter
-from polars._utils.various import normalize_filepath
-from polars._utils.wrap import wrap_ldf
+from polars._utils.various import is_path_or_str_sequence, normalize_filepath
+from polars._utils.wrap import wrap_df, wrap_ldf
 from polars.datatypes import N_INFER_DEFAULT
 from polars.io._utils import parse_row_index_args
 
@@ -120,6 +120,29 @@ def read_ndjson(
     │ 3   ┆ 8   │
     └─────┴─────┘
     """
+    if not (
+        isinstance(source, (str, Path))
+        or isinstance(source, Sequence)
+        and source
+        and isinstance(source[0], (str, Path))
+    ):
+        # TODO: A lot of the parameters aren't applied for BytesIO
+        if isinstance(source, StringIO):
+            source = BytesIO(source.getvalue().encode())
+
+        pydf = PyDataFrame.read_ndjson(
+            source,
+            ignore_errors=ignore_errors,
+            schema=schema,
+            schema_overrides=schema_overrides,
+        )
+
+        df = wrap_df(pydf)
+
+        if n_rows:
+            df = df.head(n_rows)
+
+        return df
 
     return scan_ndjson(
         source,  # type: ignore[arg-type]
@@ -234,26 +257,17 @@ def scan_ndjson(
     sources: list[str] | list[Path] | list[IO[str]] | list[IO[bytes]] = []
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source, check_not_directory=False)
-    elif isinstance(source, (BytesIO, StringIO)):
-        pass
-    elif (
-        isinstance(source, list)
-        and len(source) > 0
-        and isinstance(source[0], (BytesIO, StringIO))
-    ):
-        sources = source
-        source = None  # type: ignore[assignment]
-    else:
-        assert all(isinstance(s, (str, Path)) for s in source)
+    elif isinstance(source, list):
+        if is_path_or_str_sequence(source):
+            sources = [
+                normalize_filepath(source, check_not_directory=False)
+                for source in source
+            ]
+        else:
+            sources = source
 
-        sources = [
-            normalize_filepath(
-                source,  # type: ignore[arg-type]
-                check_not_directory=False,
-            )
-            for source in source
-        ]
         source = None  # type: ignore[assignment]
+
     if infer_schema_length == 0:
         msg = "'infer_schema_length' should be positive"
         raise ValueError(msg)

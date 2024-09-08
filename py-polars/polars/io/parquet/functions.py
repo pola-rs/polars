@@ -11,6 +11,7 @@ from polars._utils.deprecation import deprecate_renamed_parameter
 from polars._utils.unstable import issue_unstable_warning
 from polars._utils.various import (
     is_int_sequence,
+    is_path_or_str_sequence,
     normalize_filepath,
 )
 from polars._utils.wrap import wrap_ldf
@@ -171,8 +172,9 @@ def read_parquet(
             memory_map=memory_map,
             rechunk=rechunk,
         )
+
     # Read file and bytes inputs using `read_parquet`
-    elif isinstance(source, bytes):
+    if isinstance(source, bytes):
         source = io.BytesIO(source)
     elif isinstance(source, list) and len(source) > 0 and isinstance(source[0], bytes):
         assert all(isinstance(s, bytes) for s in source)
@@ -415,16 +417,9 @@ def scan_parquet(
 
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source, check_not_directory=False)
-    elif isinstance(source, io.IOBase) or (
-        isinstance(source, list)
-        and len(source) > 0
-        and isinstance(source[0], io.IOBase)
-    ):
-        pass
-    else:
+    elif is_path_or_str_sequence(source):
         source = [
-            normalize_filepath(source, check_not_directory=False)  # type: ignore[arg-type]
-            for source in source
+            normalize_filepath(source, check_not_directory=False) for source in source
         ]
 
     return _scan_parquet_impl(
