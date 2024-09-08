@@ -76,9 +76,9 @@ def configure_chart(
             titleAngle=0,
             titleAlign="left",
             titlePadding=0,
-            # This pushes the title high enough so it does not overlap with the latest tick.
-            # For some edge cases, this might still happen and there is no automated way
-            # to resolve it right now but it usually works well.
+            # This pushes the title high enough so it does not overlap with the latest
+            # tick. For some edge cases, this might still happen and there is no
+            # automated way to resolve it right now but it usually works well.
             titleY=-25,
         )
         .configure_axisTemporal(grid=False)
