@@ -7114,13 +7114,13 @@ class DataFrame:
         Examples
         --------
         >>> east = pl.DataFrame(
-        ...    {
-        ...        "id": [100, 101, 102],
-        ...        "dur": [120, 140, 160],
-        ...        "rev": [12, 14, 16],
-        ...        "cores": [2, 8, 4],
-        ...    }
-        ...)
+        ...     {
+        ...         "id": [100, 101, 102],
+        ...         "dur": [120, 140, 160],
+        ...         "rev": [12, 14, 16],
+        ...         "cores": [2, 8, 4],
+        ...     }
+        ... )
         >>> west = pl.DataFrame(
         ...     {
         ...         "t_id": [404, 498, 676, 742],
@@ -7130,10 +7130,10 @@ class DataFrame:
         ...     }
         ... )
         >>> east.join_where(
-        >>>     west,
-        >>>     pl.col("dur") < pl.col("time"),
-        >>>     pl.col("rev") < pl.col("cost"),
-        >>> )
+        ...     west,
+        ...     pl.col("dur") < pl.col("time"),
+        ...     pl.col("rev") < pl.col("cost"),
+        ... )
         shape: (5, 8)
         ┌─────┬─────┬─────┬───────┬──────┬──────┬──────┬─────────────┐
         │ id  ┆ dur ┆ rev ┆ cores ┆ t_id ┆ time ┆ cost ┆ cores_right │
