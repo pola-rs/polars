@@ -68,6 +68,8 @@ def configure_chart(
         .configure_axisY(
             domain=False,
             ticks=False,
+            # Add some padding to compensate for the removed ticks as else
+            # the labels would be too close to the axis
             labelPadding=10,
             titleAngle=0,
             titleY=-20,
