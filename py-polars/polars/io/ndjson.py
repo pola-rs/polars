@@ -170,10 +170,12 @@ def scan_ndjson(
     | Path
     | IO[str]
     | IO[bytes]
+    | bytes
     | list[str]
     | list[Path]
     | list[IO[str]]
-    | list[IO[bytes]],
+    | list[IO[bytes]]
+    | bytes,
     *,
     schema: SchemaDefinition | None = None,
     schema_overrides: SchemaDefinition | None = None,
