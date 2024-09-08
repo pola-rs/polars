@@ -71,10 +71,15 @@ def configure_chart(
             # Add some padding to compensate for the removed ticks as else
             # the labels would be too close to the axis
             labelPadding=10,
+            # The settings below move the axis title on top of the axis
+            # and orient it horizontally
             titleAngle=0,
-            titleY=-20,
             titleAlign="left",
             titlePadding=0,
+            # This pushes the title high enough so it does not overlap with the latest tick.
+            # For some edge cases, this might still happen and there is no automated way
+            # to resolve it right now but it usually works well.
+            titleY=-25,
         )
         .configure_axisTemporal(grid=False)
         .configure_axisDiscrete(ticks=False, labelPadding=10, grid=False)
