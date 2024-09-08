@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import date, datetime
 
 import numpy as np
@@ -157,6 +158,76 @@ def test_list_categorical_get() -> None:
     assert_series_equal(
         df["actions"].list.get(0, null_on_oob=True), expected, categorical_as_str=True
     )
+
+
+def test_list_gather_wrong_indices_list_type() -> None:
+    a = pl.Series("a", [[1, 2, 3], [4, 5], [6, 7, 8, 9]])
+    expected = pl.Series("a", [[1, 2], [4], [6, 9]])
+
+    # int8
+    indices_series = pl.Series("indices", [[0, 1], [0], [0, 3]], dtype=pl.List(pl.Int8))
+    result = a.list.gather(indices=indices_series)
+    assert_series_equal(result, expected)
+
+    # int16
+    indices_series = pl.Series(
+        "indices", [[0, 1], [0], [0, 3]], dtype=pl.List(pl.Int16)
+    )
+    result = a.list.gather(indices=indices_series)
+    assert_series_equal(result, expected)
+
+    # int32
+    indices_series = pl.Series(
+        "indices", [[0, 1], [0], [0, 3]], dtype=pl.List(pl.Int32)
+    )
+    result = a.list.gather(indices=indices_series)
+    assert_series_equal(result, expected)
+
+    # int64
+    indices_series = pl.Series(
+        "indices", [[0, 1], [0], [0, 3]], dtype=pl.List(pl.Int64)
+    )
+    result = a.list.gather(indices=indices_series)
+    assert_series_equal(result, expected)
+
+    # uint8
+    indices_series = pl.Series(
+        "indices", [[0, 1], [0], [0, 3]], dtype=pl.List(pl.UInt8)
+    )
+    result = a.list.gather(indices=indices_series)
+    assert_series_equal(result, expected)
+
+    # uint16
+    indices_series = pl.Series(
+        "indices", [[0, 1], [0], [0, 3]], dtype=pl.List(pl.UInt16)
+    )
+    result = a.list.gather(indices=indices_series)
+    assert_series_equal(result, expected)
+
+    # uint32
+    indices_series = pl.Series(
+        "indices", [[0, 1], [0], [0, 3]], dtype=pl.List(pl.UInt32)
+    )
+    result = a.list.gather(indices=indices_series)
+    assert_series_equal(result, expected)
+
+    # uint64
+    indices_series = pl.Series(
+        "indices", [[0, 1], [0], [0, 3]], dtype=pl.List(pl.UInt64)
+    )
+    result = a.list.gather(indices=indices_series)
+    assert_series_equal(result, expected)
+
+    df = pl.DataFrame(
+        {
+            "index": [["2"], ["2"], ["2"]],
+            "lists": [[3, 4, 5], [4, 5, 6], [7, 8, 9, 4]],
+        }
+    )
+    with pytest.raises(
+        ComputeError, match=re.escape("cannot use dtype `list[str]` as an index")
+    ):
+        df.select(pl.col("lists").list.gather(pl.col("index")))
 
 
 def test_contains() -> None:

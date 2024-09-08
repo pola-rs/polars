@@ -447,7 +447,7 @@ pub trait ListNameSpaceImpl: AsList {
 
         use DataType::*;
         match idx.dtype() {
-            List(_) => {
+            List(boxed_dt) if boxed_dt.is_integer() => {
                 let idx_ca = idx.list().unwrap();
                 let mut out = {
                     list_ca
@@ -835,9 +835,7 @@ fn cast_index(idx: Series, len: usize, null_on_oob: bool) -> PolarsResult<Series
             let a = idx.i64().unwrap();
             cast_signed_index_ca(a, len)
         },
-        _ => {
-            unreachable!()
-        },
+        _ => unreachable!(),
     };
     polars_ensure!(
         out.null_count() == idx_null_count || null_on_oob,
