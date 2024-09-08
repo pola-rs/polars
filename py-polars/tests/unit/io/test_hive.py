@@ -555,19 +555,20 @@ def test_hive_partition_columns_contained_in_file(
     assert_with_projections(lf, rhs)
 
     # partial cols in file
+    partial_path = tmp_path / "a=1/b=2/partial_data.bin"
     df = pl.DataFrame(
         {"x": 1, "b": 2, "y": 1},
         schema={"x": pl.Int32, "b": pl.Int16, "y": pl.Int32},
     )
-    write_func(df, path)
+    write_func(df, partial_path)
 
-    lf = scan_func(path, hive_partitioning=True)  # type: ignore[call-arg]
+    lf = scan_func(partial_path, hive_partitioning=True)  # type: ignore[call-arg]
     rhs = df
     assert_frame_equal(lf.collect(projection_pushdown=projection_pushdown), rhs)
     assert_with_projections(lf, rhs)
 
     lf = scan_func(  # type: ignore[call-arg]
-        path,
+        partial_path,
         hive_schema={"a": pl.String, "b": pl.String},
         hive_partitioning=True,
     )
