@@ -835,7 +835,9 @@ fn cast_index(idx: Series, len: usize, null_on_oob: bool) -> PolarsResult<Series
             let a = idx.i64().unwrap();
             cast_signed_index_ca(a, len)
         },
-        _ => unreachable!(),
+        _ => {
+            unreachable!()
+        },
     };
     polars_ensure!(
         out.null_count() == idx_null_count || null_on_oob,
