@@ -16,27 +16,17 @@ pub(crate) fn materialize_hive_partitions<S: IndexOfSchema>(
     num_rows: usize,
 ) {
     if let Some(hive_columns) = hive_partition_columns {
-        let Some(first) = hive_columns.first() else {
-            return;
-        };
+        // Insert these hive columns in the order they are stored in the file.
+        for s in hive_columns {
+            let i = match df.get_columns().binary_search_by_key(
+                &reader_schema.index_of(s.name()).unwrap_or(usize::MAX),
+                |s| reader_schema.index_of(s.name()).unwrap_or(usize::MIN),
+            ) {
+                Ok(i) => i,
+                Err(i) => i,
+            };
 
-        if reader_schema.index_of(first.name()).is_some() {
-            // Insert these hive columns in the order they are stored in the file.
-            for s in hive_columns {
-                let i = match df.get_columns().binary_search_by_key(
-                    &reader_schema.index_of(s.name()).unwrap_or(usize::MAX),
-                    |s| reader_schema.index_of(s.name()).unwrap_or(usize::MIN),
-                ) {
-                    Ok(i) => i,
-                    Err(i) => i,
-                };
-
-                df.insert_column(i, s.new_from_index(0, num_rows)).unwrap();
-            }
-        } else {
-            for s in hive_columns {
-                unsafe { df.with_column_unchecked(s.new_from_index(0, num_rows)) };
-            }
+            df.insert_column(i, s.new_from_index(0, num_rows)).unwrap();
         }
     }
 }
