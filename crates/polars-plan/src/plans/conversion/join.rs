@@ -304,9 +304,9 @@ fn resolve_join_where(
         let original_right = right;
 
         for name in aexpr_to_leaf_names(right, ctxt.expr_arena) {
+            polars_ensure!(schema_right.contains(name.as_str()), ColumnNotFound: "could not find column {name} in the right table during join operation");
             if schema_left.contains(name.as_str()) {
                 let new_name = _join_suffix_name(name.as_str(), suffix.as_str());
-                polars_ensure!(schema_right.contains(name.as_str()), ColumnNotFound: "could not find column {name} in the right table during join operation");
 
                 right = rename_matching_aexpr_leaf_names(
                     right,
