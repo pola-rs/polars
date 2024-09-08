@@ -145,7 +145,7 @@ def read_ndjson(
         return df
 
     return scan_ndjson(
-        source,  # type: ignore[arg-type]
+        source,
         schema=schema,
         schema_overrides=schema_overrides,
         infer_schema_length=infer_schema_length,
