@@ -163,7 +163,7 @@ fn resolve_join_where(
     let owned = |e: Arc<Expr>| (*e).clone();
 
     // We do a few things
-    // First weartition to:
+    // First we partition to:
     // - IEjoin supported inequality predicates
     // - equality predicates
     // - remaining predicates
