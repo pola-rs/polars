@@ -227,6 +227,10 @@ impl LiteralValue {
             LiteralValue::UInt32(value)
         }
     }
+
+    pub fn is_scalar(&self) -> bool {
+        !matches!(self, LiteralValue::Series(_) | LiteralValue::Range {..})
+    }
 }
 
 pub trait Literal {

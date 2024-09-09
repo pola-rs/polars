@@ -15,6 +15,7 @@ pub struct BinaryExpr {
     expr: Expr,
     has_literal: bool,
     allow_threading: bool,
+    is_scalar: bool
 }
 
 impl BinaryExpr {
@@ -25,6 +26,7 @@ impl BinaryExpr {
         expr: Expr,
         has_literal: bool,
         allow_threading: bool,
+        is_scalar: bool
     ) -> Self {
         Self {
             left,
@@ -33,6 +35,7 @@ impl BinaryExpr {
             expr,
             has_literal,
             allow_threading,
+            is_scalar
         }
     }
 }
@@ -252,6 +255,10 @@ impl PhysicalExpr for BinaryExpr {
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.expr.to_field(input_schema, Context::Default)
+    }
+
+    fn is_scalar(&self) -> bool {
+        self.is_scalar
     }
 
     fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {

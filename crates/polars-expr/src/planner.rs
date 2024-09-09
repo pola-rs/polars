@@ -293,6 +293,7 @@ fn create_physical_expr_inner(
             )))
         },
         BinaryExpr { left, op, right } => {
+            let is_scalar = is_scalar_ae(expression, expr_arena);
             let lhs = create_physical_expr_inner(*left, ctxt, expr_arena, schema, state)?;
             let rhs = create_physical_expr_inner(*right, ctxt, expr_arena, schema, state)?;
             Ok(Arc::new(phys_expr::BinaryExpr::new(
@@ -302,6 +303,7 @@ fn create_physical_expr_inner(
                 node_to_expr(expression, expr_arena),
                 state.local.has_lit,
                 state.allow_threading,
+                is_scalar
             )))
         },
         Column(column) => Ok(Arc::new(ColumnExpr::new(
@@ -444,6 +446,7 @@ fn create_physical_expr_inner(
             truthy,
             falsy,
         } => {
+            let is_scalar = is_scalar_ae(expression, expr_arena);
             let mut lit_count = 0u8;
             state.reset();
             let predicate =
@@ -461,6 +464,7 @@ fn create_physical_expr_inner(
                 falsy,
                 node_to_expr(expression, expr_arena),
                 lit_count < 2,
+                is_scalar
             )))
         },
         AnonymousFunction {
@@ -469,6 +473,7 @@ fn create_physical_expr_inner(
             output_type: _,
             options,
         } => {
+            let is_scalar = is_scalar_ae(expression, expr_arena);
             let output_dtype = schema.and_then(|schema| {
                 expr_arena
                     .get(expression)
@@ -500,6 +505,7 @@ fn create_physical_expr_inner(
                 state.allow_threading,
                 schema.cloned(),
                 output_dtype,
+                is_scalar
             )))
         },
         Function {
@@ -508,6 +514,7 @@ fn create_physical_expr_inner(
             options,
             ..
         } => {
+            let is_scalar = is_scalar_ae(expression, expr_arena);
             let output_dtype = schema.and_then(|schema| {
                 expr_arena
                     .get(expression)
@@ -538,6 +545,7 @@ fn create_physical_expr_inner(
                 state.allow_threading,
                 schema.cloned(),
                 output_dtype,
+                is_scalar
             )))
         },
         Slice {

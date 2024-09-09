@@ -3,6 +3,7 @@ mod hash;
 mod schema;
 mod utils;
 mod traverse;
+mod scalar;
 
 use std::hash::{Hash, Hasher};
 
@@ -20,6 +21,7 @@ pub use utils::*;
 use crate::constants::LEN;
 use crate::plans::Context;
 use crate::prelude::*;
+pub use scalar::is_scalar_ae;
 
 #[derive(Clone, Debug, IntoStaticStr)]
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]

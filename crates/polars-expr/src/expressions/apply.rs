@@ -37,6 +37,7 @@ impl ApplyExpr {
         allow_threading: bool,
         input_schema: Option<SchemaRef>,
         output_dtype: Option<DataType>,
+        returns_scalar: bool
     ) -> Self {
         #[cfg(debug_assertions)]
         if matches!(options.collect_groups, ApplyOptions::ElementWise)
@@ -50,7 +51,7 @@ impl ApplyExpr {
             function,
             expr,
             collect_groups: options.collect_groups,
-            returns_scalar: options.flags.contains(FunctionFlags::RETURNS_SCALAR),
+            returns_scalar,
             allow_rename: options.flags.contains(FunctionFlags::ALLOW_RENAME),
             pass_name_to_apply: options.flags.contains(FunctionFlags::PASS_NAME_TO_APPLY),
             input_schema,
@@ -425,6 +426,9 @@ impl PhysicalExpr for ApplyExpr {
         } else {
             None
         }
+    }
+    fn is_scalar(&self) -> bool {
+        self.returns_scalar
     }
 }
 

@@ -127,6 +127,10 @@ impl PhysicalExpr for LiteralExpr {
     fn is_literal(&self) -> bool {
         true
     }
+
+    fn is_scalar(&self) -> bool {
+        self.0.is_scalar()
+    }
 }
 
 impl PartitionedAggregation for LiteralExpr {

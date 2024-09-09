@@ -630,6 +630,10 @@ impl PhysicalExpr for WindowExpr {
         self.function.to_field(input_schema, Context::Default)
     }
 
+    fn is_scalar(&self) -> bool {
+        false
+    }
+
     #[allow(clippy::ptr_arg)]
     fn evaluate_on_groups<'a>(
         &self,
