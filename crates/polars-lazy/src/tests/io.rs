@@ -417,7 +417,6 @@ fn test_ipc_globbing() -> PolarsResult<()> {
             cache: true,
             rechunk: false,
             row_index: None,
-            memory_map: true,
             cloud_options: None,
             hive_options: Default::default(),
             include_file_paths: None,
