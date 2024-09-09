@@ -21,9 +21,12 @@ mod serde_types {
 use serde_types::*;
 
 /// Metadata for a column chunk.
-// This contains the `ColumnDescriptor` associated with the chunk so that deserializers have
-// access to the descriptor (e.g. physical, converted, logical).
-#[derive(Debug, Clone)]
+///
+/// This contains the `ColumnDescriptor` associated with the chunk so that deserializers have
+/// access to the descriptor (e.g. physical, converted, logical).
+///
+/// This struct is intentionally not `Clone`, as it is a huge struct.
+#[derive(Debug)]
 #[cfg_attr(feature = "serde_types", derive(Deserialize, Serialize))]
 pub struct ColumnChunkMetadata {
     #[cfg_attr(

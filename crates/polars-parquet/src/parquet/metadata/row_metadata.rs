@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use hashbrown::hash_map::RawEntryMut;
 use parquet_format_safe::RowGroup;
 use polars_utils::aliases::{InitHashMaps, PlHashMap};
@@ -8,7 +10,6 @@ use polars_utils::unitvec;
 use super::column_chunk_metadata::{column_metadata_byte_range, ColumnChunkMetadata};
 use super::schema_descriptor::SchemaDescriptor;
 use crate::parquet::error::{ParquetError, ParquetResult};
-use crate::parquet::write::ColumnOffsetsMetadata;
 
 type ColumnLookup = PlHashMap<PlSmallStr, UnitVec<usize>>;
 
@@ -34,9 +35,8 @@ impl InitColumnLookup for ColumnLookup {
 
 /// Metadata for a row group.
 #[derive(Debug, Clone, Default)]
-// #[cfg_attr(feature = "serde_types", derive(serde::Deserialize, serde::Serialize))]
 pub struct RowGroupMetaData {
-    columns: Vec<ColumnChunkMetadata>,
+    columns: Arc<[ColumnChunkMetadata]>,
     column_lookup: PlHashMap<PlSmallStr, UnitVec<usize>>,
     num_rows: usize,
     total_byte_size: usize,
@@ -125,7 +125,7 @@ impl RowGroupMetaData {
 
                 Ok(column)
             })
-            .collect::<ParquetResult<Vec<_>>>()?;
+            .collect::<ParquetResult<Arc<[_]>>>()?;
 
         Ok(RowGroupMetaData {
             columns,
@@ -134,27 +134,5 @@ impl RowGroupMetaData {
             total_byte_size,
             full_byte_range,
         })
-    }
-
-    /// Method to convert to Thrift.
-    pub(crate) fn into_thrift(self) -> RowGroup {
-        let file_offset = self
-            .columns
-            .iter()
-            .map(|c| {
-                ColumnOffsetsMetadata::from_column_chunk_metadata(c).calc_row_group_file_offset()
-            })
-            .next()
-            .unwrap_or(None);
-        let total_compressed_size = Some(self.compressed_size() as i64);
-        RowGroup {
-            columns: self.columns.into_iter().map(|v| v.into_thrift()).collect(),
-            total_byte_size: self.total_byte_size as i64,
-            num_rows: self.num_rows as i64,
-            sorting_columns: None,
-            file_offset,
-            total_compressed_size,
-            ordinal: None,
-        }
     }
 }

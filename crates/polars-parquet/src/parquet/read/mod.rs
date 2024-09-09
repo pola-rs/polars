@@ -19,24 +19,7 @@ use polars_utils::mmap::MemReader;
 pub use stream::read_metadata as read_metadata_async;
 
 use crate::parquet::error::ParquetResult;
-use crate::parquet::metadata::{ColumnChunkMetadata, FileMetaData, RowGroupMetaData};
-
-/// Filters row group metadata to only those row groups,
-/// for which the predicate function returns true
-pub fn filter_row_groups(
-    metadata: &FileMetaData,
-    predicate: &dyn Fn(&RowGroupMetaData, usize) -> bool,
-) -> FileMetaData {
-    let mut filtered_row_groups = Vec::<RowGroupMetaData>::new();
-    for (i, row_group_metadata) in metadata.row_groups.iter().enumerate() {
-        if predicate(row_group_metadata, i) {
-            filtered_row_groups.push(row_group_metadata.clone());
-        }
-    }
-    let mut metadata = metadata.clone();
-    metadata.row_groups = filtered_row_groups;
-    metadata
-}
+use crate::parquet::metadata::ColumnChunkMetadata;
 
 /// Returns a new [`PageReader`] by seeking `reader` to the beginning of `column_chunk`.
 pub fn get_page_iterator(

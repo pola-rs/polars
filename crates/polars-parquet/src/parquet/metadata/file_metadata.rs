@@ -10,7 +10,7 @@ pub use crate::parquet::thrift_format::KeyValue;
 /// Metadata for a Parquet file.
 // This is almost equal to [`parquet_format_safe::FileMetaData`] but contains the descriptors,
 // which are crucial to deserialize pages.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct FileMetaData {
     /// version of this file.
     pub version: i32,
@@ -86,25 +86,6 @@ impl FileMetaData {
             schema_descr,
             column_orders,
         })
-    }
-
-    /// Serializes itself to thrift's [`parquet_format_safe::FileMetaData`].
-    pub fn into_thrift(self) -> parquet_format_safe::FileMetaData {
-        parquet_format_safe::FileMetaData {
-            version: self.version,
-            schema: self.schema_descr.into_thrift(),
-            num_rows: self.num_rows as i64,
-            row_groups: self
-                .row_groups
-                .into_iter()
-                .map(|v| v.into_thrift())
-                .collect(),
-            key_value_metadata: self.key_value_metadata,
-            created_by: self.created_by,
-            column_orders: None, // todo
-            encryption_algorithm: None,
-            footer_signing_key_metadata: None,
-        }
     }
 }
 
