@@ -447,7 +447,7 @@ pub trait ListNameSpaceImpl: AsList {
 
         use DataType::*;
         match idx.dtype() {
-            List(_) => {
+            List(boxed_dt) if boxed_dt.is_integer() => {
                 let idx_ca = idx.list().unwrap();
                 let mut out = {
                     list_ca
