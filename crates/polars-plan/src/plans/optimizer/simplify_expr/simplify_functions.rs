@@ -18,7 +18,7 @@ pub(super) fn optimize_functions(
                     function: FunctionExpr::Boolean(BooleanFunction::IsNull),
                     options: _,
                 } => Some(AExpr::BinaryExpr {
-                    left: expr_arena.add(AExpr::new_null_count(input)),
+                    left: expr_arena.add(new_null_count(input)),
                     op: Operator::Gt,
                     right: expr_arena.add(AExpr::Literal(LiteralValue::new_idxsize(0))),
                 }),
@@ -34,7 +34,7 @@ pub(super) fn optimize_functions(
                         match expr_arena.get(is_not_null_input_node) {
                             AExpr::Column(_) => Some(AExpr::BinaryExpr {
                                 op: Operator::Lt,
-                                left: expr_arena.add(AExpr::new_null_count(input)),
+                                left: expr_arena.add(new_null_count(input)),
                                 right: expr_arena.add(AExpr::Agg(IRAggExpr::Count(
                                     is_not_null_input_node,
                                     true,
@@ -66,7 +66,7 @@ pub(super) fn optimize_functions(
                         match expr_arena.get(is_null_input_node) {
                             AExpr::Column(_) => Some(AExpr::BinaryExpr {
                                 op: Operator::Eq,
-                                right: expr_arena.add(AExpr::new_null_count(input)),
+                                right: expr_arena.add(new_null_count(input)),
                                 left: expr_arena
                                     .add(AExpr::Agg(IRAggExpr::Count(is_null_input_node, true))),
                             }),
@@ -81,7 +81,7 @@ pub(super) fn optimize_functions(
                     function: FunctionExpr::Boolean(BooleanFunction::IsNotNull),
                     options: _,
                 } => Some(AExpr::BinaryExpr {
-                    left: expr_arena.add(AExpr::new_null_count(input)),
+                    left: expr_arena.add(new_null_count(input)),
                     op: Operator::Eq,
                     right: expr_arena.add(AExpr::Literal(LiteralValue::new_idxsize(0))),
                 }),

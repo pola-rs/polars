@@ -1,8 +1,24 @@
+mod simplify_functions;
+
 use polars_utils::floor_divmod::FloorDivMod;
 use polars_utils::total_ord::ToTotalOrd;
+use simplify_functions::optimize_functions;
 
 use crate::plans::*;
-use crate::prelude::optimizer::simplify_functions::optimize_functions;
+
+fn new_null_count(input: &[ExprIR]) -> AExpr {
+    AExpr::Function {
+        input: input.to_vec(),
+        function: FunctionExpr::NullCount,
+        options: FunctionOptions {
+            collect_groups: ApplyOptions::GroupWise,
+            fmt_str: "",
+            cast_to_supertypes: None,
+            check_lengths: UnsafeBool::default(),
+            flags: FunctionFlags::ALLOW_GROUP_AWARE | FunctionFlags::RETURNS_SCALAR,
+        },
+    }
+}
 
 macro_rules! eval_binary_same_type {
     ($lhs:expr, $rhs:expr, |$l: ident, $r: ident| $ret: expr) => {{
@@ -457,7 +473,7 @@ impl OptimizationRule for SimplifyExprRule {
                             match expr_arena.get(drop_nulls_input_node) {
                                 AExpr::Column(_) => Some(AExpr::BinaryExpr {
                                     op: Operator::Minus,
-                                    right: expr_arena.add(AExpr::new_null_count(input)),
+                                    right: expr_arena.add(new_null_count(input)),
                                     left: expr_arena.add(AExpr::Agg(IRAggExpr::Count(
                                         drop_nulls_input_node,
                                         true,
@@ -481,7 +497,7 @@ impl OptimizationRule for SimplifyExprRule {
                         input,
                         function: FunctionExpr::Boolean(BooleanFunction::IsNull),
                         options: _,
-                    } => Some(AExpr::new_null_count(input)),
+                    } => Some(new_null_count(input)),
                     AExpr::Function {
                         input,
                         function: FunctionExpr::Boolean(BooleanFunction::IsNotNull),
@@ -494,7 +510,7 @@ impl OptimizationRule for SimplifyExprRule {
                             match expr_arena.get(is_not_null_input_node) {
                                 AExpr::Column(_) => Some(AExpr::BinaryExpr {
                                     op: Operator::Minus,
-                                    right: expr_arena.add(AExpr::new_null_count(input)),
+                                    right: expr_arena.add(new_null_count(input)),
                                     left: expr_arena.add(AExpr::Agg(IRAggExpr::Count(
                                         is_not_null_input_node,
                                         true,
