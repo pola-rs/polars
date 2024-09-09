@@ -7,6 +7,7 @@ import pytest
 
 import polars as pl
 from polars.exceptions import ComputeError
+from polars.testing import assert_series_equal
 
 
 def test_series_init_instantiated_object() -> None:
@@ -194,7 +195,7 @@ def test_raise_list_object() -> None:
 
 def test_object_null_slice() -> None:
     s = pl.Series("x", [1, None, 42], dtype=pl.Object)
-    assert s.is_null() == [False, True, False]
-    assert s.slice(0, 2).is_null() == [False, True]
-    assert s.slice(1, 1).is_null() == [True]
-    assert s.slice(2, 1).is_null() == [False]
+    assert_series_equal(s.is_null(), pl.Series("x", [False, True, False]))
+    assert_series_equal(s.slice(0, 2).is_null(), pl.Series("x", [False, True]))
+    assert_series_equal(s.slice(1, 1).is_null(), pl.Series("x", [True]))
+    assert_series_equal(s.slice(2, 1).is_null(), pl.Series("x", [False]))
