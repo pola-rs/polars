@@ -2,7 +2,7 @@
 use std::borrow::{Borrow, Cow};
 
 #[cfg(feature = "object")]
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::bitmap::MutableBitmap;
 
 use crate::chunked_array::builder::{get_list_builder, AnonymousOwnedListBuilder};
 #[cfg(feature = "object")]
@@ -268,17 +268,7 @@ impl<T: PolarsObject> FromIterator<Option<T>> for ObjectChunked<T> {
             })
             .collect();
 
-        let null_bit_buffer: Option<Bitmap> = null_mask_builder.into();
-        let null_bitmap = null_bit_buffer;
-
-        let len = values.len();
-
-        let arr = Box::new(ObjectArray {
-            values: Arc::new(values),
-            null_bitmap,
-            offset: 0,
-            len,
-        });
+        let arr = Box::new(ObjectArray::from(values).with_validity(null_mask_builder.into()));
         ChunkedArray::new_with_compute_len(
             Arc::new(Field::new(PlSmallStr::EMPTY, get_object_type::<T>())),
             vec![arr],
