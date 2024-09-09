@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use polars_core::prelude::{InitHashMaps, PlHashMap, PlIndexMap};
 use polars_core::schema::Schema;
-use polars_error::{polars_err, PolarsResult};
+use polars_error::PolarsResult;
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::{AExpr, IR};
 use polars_plan::prelude::SinkType;
