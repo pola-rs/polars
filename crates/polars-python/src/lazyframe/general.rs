@@ -438,6 +438,7 @@ impl PyLazyFrame {
         comm_subplan_elim: bool,
         comm_subexpr_elim: bool,
         cluster_with_columns: bool,
+        collapse_joins: bool,
         streaming: bool,
         _eager: bool,
         #[allow(unused_variables)] new_streaming: bool,
@@ -449,6 +450,7 @@ impl PyLazyFrame {
             .with_simplify_expr(simplify_expression)
             .with_slice_pushdown(slice_pushdown)
             .with_cluster_with_columns(cluster_with_columns)
+            .with_collapse_joins(collapse_joins)
             ._with_eager(_eager)
             .with_projection_pushdown(projection_pushdown);
 

@@ -204,3 +204,40 @@ def test_drop_nulls_followed_by_count() -> None:
     )
     assert "null_count" not in non_optimized_result_plan
     assert "drop_nulls" in non_optimized_result_plan
+
+
+def test_collapse_joins() -> None:
+    a = pl.LazyFrame({"a": [1, 2, 3], "b": [2, 2, 2]})
+    b = pl.LazyFrame({"x": [7, 1, 2]})
+
+    cross = a.join(b, how="cross")
+
+    inner_join = cross.filter(pl.col.a == pl.col.x)
+    e = inner_join.explain()
+    assert "INNER JOIN" in e
+    assert "FILTER" not in e
+
+    inner_join = cross.filter(pl.col.x == pl.col.a)
+    e = inner_join.explain()
+    assert "INNER JOIN" in e
+    assert "FILTER" not in e
+
+    double_inner_join = cross.filter(pl.col.x == pl.col.a).filter(pl.col.x == pl.col.b)
+    e = double_inner_join.explain()
+    assert "INNER JOIN" in e
+    assert "FILTER" not in e
+
+    dont_mix = cross.filter(pl.col.x + pl.col.a != 0)
+    e = dont_mix.explain()
+    assert "CROSS JOIN" in e
+    assert "FILTER" in e
+
+    no_literals = cross.filter(pl.col.x == 2)
+    e = no_literals.explain()
+    assert "CROSS JOIN" in e
+
+    iejoin = cross.filter(pl.col.x >= pl.col.a).filter(pl.col.x <= pl.col.b)
+    e = iejoin.explain()
+    assert "IEJOIN" in e
+    assert "CROSS JOIN" not in e
+    assert "FILTER" not in e
