@@ -183,7 +183,11 @@ where
 
     unsafe fn slice_unchecked(&mut self, offset: usize, length: usize) {
         let len = std::cmp::min(self.len - offset, length);
-
+        self.null_bitmap = self
+            .null_bitmap
+            .take()
+            .map(|bitmap| bitmap.sliced_unchecked(offset, length))
+            .filter(|bitmap| bitmap.unset_bits() > 0);
         self.len = len;
         self.offset = offset;
     }
