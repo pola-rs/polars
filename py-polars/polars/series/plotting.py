@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Callable
 
+from polars.dataframe.plotting import _add_tooltip
 from polars.dependencies import altair as alt
 
 if TYPE_CHECKING:
@@ -62,7 +63,7 @@ class SeriesPlot:
         if self._series_name == "count()":
             msg = "Cannot use `plot.hist` when Series name is `'count()'`"
             raise ValueError(msg)
-        return (
+        return _add_tooltip(
             alt.Chart(self._df)
             .mark_bar()
             .encode(x=alt.X(f"{self._series_name}:Q", bin=True), y="count()", **kwargs)  # type: ignore[misc]
@@ -104,7 +105,7 @@ class SeriesPlot:
         if self._series_name == "density":
             msg = "Cannot use `plot.kde` when Series name is `'density'`"
             raise ValueError(msg)
-        return (
+        return _add_tooltip(
             alt.Chart(self._df)
             .transform_density(self._series_name, as_=[self._series_name, "density"])
             .mark_area()
@@ -147,7 +148,7 @@ class SeriesPlot:
         if self._series_name == "index":
             msg = "Cannot call `plot.line` when Series name is 'index'"
             raise ValueError(msg)
-        return (
+        return _add_tooltip(
             alt.Chart(self._df.with_row_index())
             .mark_line()
             .encode(x="index", y=self._series_name, **kwargs)  # type: ignore[misc]
@@ -165,8 +166,6 @@ class SeriesPlot:
         if method is None:
             msg = "Altair has no method 'mark_{attr}'"
             raise AttributeError(msg)
-        return (
-            lambda **kwargs: method()
-            .encode(x="index", y=self._series_name, **kwargs)
-            .interactive()
+        return lambda **kwargs: _add_tooltip(
+            method().encode(x="index", y=self._series_name, **kwargs).interactive()
         )
