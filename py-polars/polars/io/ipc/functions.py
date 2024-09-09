@@ -114,7 +114,6 @@ def read_ipc(
         lf = scan_ipc(
             source,
             n_rows=n_rows,
-            memory_map=memory_map,
             storage_options=storage_options,
             row_index_name=row_index_name,
             row_index_offset=row_index_offset,
@@ -189,7 +188,6 @@ def _read_ipc_impl(
             rechunk=rechunk,
             row_index_name=row_index_name,
             row_index_offset=row_index_offset,
-            memory_map=memory_map,
         )
         if columns is None:
             df = scan.collect()
@@ -448,6 +446,9 @@ def scan_ipc(
 
         source = None  # type: ignore[assignment]
 
+    # Memory Mapping is now a no-op
+    _ = memory_map
+
     pylf = PyLazyFrame.new_from_ipc(
         source,
         sources,
@@ -455,7 +456,6 @@ def scan_ipc(
         cache,
         rechunk,
         parse_row_index_args(row_index_name, row_index_offset),
-        memory_map=memory_map,
         cloud_options=storage_options,
         retries=retries,
         file_cache_ttl=file_cache_ttl,

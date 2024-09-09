@@ -13,7 +13,6 @@ pub struct ScanArgsIpc {
     pub cache: bool,
     pub rechunk: bool,
     pub row_index: Option<RowIndex>,
-    pub memory_map: bool,
     pub cloud_options: Option<CloudOptions>,
     pub hive_options: HiveOptions,
     pub include_file_paths: Option<PlSmallStr>,
@@ -26,7 +25,6 @@ impl Default for ScanArgsIpc {
             cache: true,
             rechunk: false,
             row_index: None,
-            memory_map: true,
             cloud_options: Default::default(),
             hive_options: Default::default(),
             include_file_paths: None,
@@ -53,9 +51,7 @@ impl LazyFileListReader for LazyIpcReader {
     fn finish(self) -> PolarsResult<LazyFrame> {
         let args = self.args;
 
-        let options = IpcScanOptions {
-            memory_map: args.memory_map,
-        };
+        let options = IpcScanOptions {};
 
         let mut lf: LazyFrame = DslBuilder::scan_ipc(
             self.sources.to_dsl(false),

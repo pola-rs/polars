@@ -310,7 +310,7 @@ impl PyLazyFrame {
 
     #[cfg(feature = "ipc")]
     #[staticmethod]
-    #[pyo3(signature = (source, sources, n_rows, cache, rechunk, row_index, memory_map, cloud_options, hive_partitioning, hive_schema, try_parse_hive_dates, retries, file_cache_ttl, include_file_paths))]
+    #[pyo3(signature = (source, sources, n_rows, cache, rechunk, row_index, cloud_options, hive_partitioning, hive_schema, try_parse_hive_dates, retries, file_cache_ttl, include_file_paths))]
     fn new_from_ipc(
         source: Option<PyObject>,
         sources: Wrap<ScanSources>,
@@ -318,7 +318,6 @@ impl PyLazyFrame {
         cache: bool,
         rechunk: bool,
         row_index: Option<(String, IdxSize)>,
-        memory_map: bool,
         cloud_options: Option<Vec<(String, String)>>,
         hive_partitioning: Option<bool>,
         hive_schema: Option<Wrap<Schema>>,
@@ -344,7 +343,6 @@ impl PyLazyFrame {
             cache,
             rechunk,
             row_index,
-            memory_map,
             #[cfg(feature = "cloud")]
             cloud_options: None,
             hive_options,
