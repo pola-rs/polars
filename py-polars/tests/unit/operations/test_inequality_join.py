@@ -10,6 +10,7 @@ from hypothesis import given
 
 import polars as pl
 from polars.testing import assert_frame_equal
+from polars.testing.parametric.strategies import series
 
 if TYPE_CHECKING:
     from hypothesis.strategies import DrawFn, SearchStrategy
@@ -482,3 +483,38 @@ def test_ie_join_use_keys_multiple() -> None:
         "b": [2, 2, 2],
         "x_right": [1, 3, 7],
     }
+
+
+@given(
+    left=series(
+        dtype=pl.Int64,
+        strategy=st.integers(min_value=0, max_value=10) | st.none(),
+        max_size=10,
+    ),
+    right=series(
+        dtype=pl.Int64,
+        strategy=st.integers(min_value=-10, max_value=10) | st.none(),
+        max_size=10,
+    ),
+    op=operators(),
+)
+def test_single_inequality(left: pl.Series, right: pl.Series, op: str) -> None:
+    expr = _inequality_expression("x", op, "y")
+
+    left_df = pl.DataFrame(
+        {
+            "id": np.arange(len(left)),
+            "x": left,
+        }
+    )
+    right_df = pl.DataFrame(
+        {
+            "id": np.arange(len(right)),
+            "y": right,
+        }
+    )
+
+    actual = left_df.join_where(right_df, expr)
+
+    expected = left_df.join(right_df, how="cross").filter(expr)
+    assert_frame_equal(actual, expected, check_row_order=False, check_exact=True)
