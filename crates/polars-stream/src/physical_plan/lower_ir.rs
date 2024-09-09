@@ -345,7 +345,7 @@ pub fn lower_ir(
 
             let paths = sources
                 .into_paths()
-                .ok_or_else(|| polars_err!(nyi = "Streaming scanning of in-memory buffers"))?;
+                .unwrap_or_else(|| todo!("streaming scanning of in-memory buffers"));
 
             PhysNodeKind::FileScan {
                 paths,
@@ -358,7 +358,14 @@ pub fn lower_ir(
             }
         },
 
-        _ => todo!(),
+        IR::PythonScan { .. } => todo!(),
+        IR::Reduce { .. } => todo!(),
+        IR::Cache { .. } => todo!(),
+        IR::GroupBy { .. } => todo!(),
+        IR::Join { .. } => todo!(),
+        IR::Distinct { .. } => todo!(),
+        IR::ExtContext { .. } => todo!(),
+        IR::Invalid => unreachable!(),
     };
 
     Ok(phys_sm.insert(PhysNode::new(output_schema, node_kind)))
