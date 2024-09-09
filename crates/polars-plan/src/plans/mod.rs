@@ -1,6 +1,5 @@
 use std::fmt;
 use std::fmt::Debug;
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
 
 use hive::HivePartitions;
@@ -59,6 +58,13 @@ pub enum Context {
     Default,
 }
 
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone)]
+pub struct DslScanSources {
+    pub sources: ScanSources,
+    pub is_expanded: bool,
+}
+
 // https://stackoverflow.com/questions/1031076/what-are-projection-and-selection
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum DslPlan {
@@ -76,7 +82,7 @@ pub enum DslPlan {
         cache_hits: u32,
     },
     Scan {
-        paths: Arc<Mutex<(Arc<Vec<PathBuf>>, bool)>>,
+        sources: Arc<Mutex<DslScanSources>>,
         // Option as this is mostly materialized on the IR phase.
         // During conversion we update the value in the DSL as well
         // This is to cater to use cases where parts of a `LazyFrame`
@@ -193,7 +199,7 @@ impl Clone for DslPlan {
             Self::PythonScan { options } => Self::PythonScan { options: options.clone() },
             Self::Filter { input, predicate } => Self::Filter { input: input.clone(), predicate: predicate.clone() },
             Self::Cache { input, id, cache_hits } => Self::Cache { input: input.clone(), id: id.clone(), cache_hits: cache_hits.clone() },
-            Self::Scan { paths, file_info, hive_parts, predicate, file_options, scan_type } => Self::Scan { paths: paths.clone(), file_info: file_info.clone(), hive_parts: hive_parts.clone(), predicate: predicate.clone(), file_options: file_options.clone(), scan_type: scan_type.clone() },
+            Self::Scan { sources, file_info, hive_parts, predicate, file_options, scan_type } => Self::Scan { sources: sources.clone(), file_info: file_info.clone(), hive_parts: hive_parts.clone(), predicate: predicate.clone(), file_options: file_options.clone(), scan_type: scan_type.clone() },
             Self::DataFrameScan { df, schema, output_schema, filter: selection } => Self::DataFrameScan { df: df.clone(), schema: schema.clone(), output_schema: output_schema.clone(), filter: selection.clone() },
             Self::Select { expr, input, options } => Self::Select { expr: expr.clone(), input: input.clone(), options: options.clone() },
             Self::GroupBy { input, keys, aggs,  apply, maintain_order, options } => Self::GroupBy { input: input.clone(), keys: keys.clone(), aggs: aggs.clone(), apply: apply.clone(), maintain_order: maintain_order.clone(), options: options.clone() },

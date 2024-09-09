@@ -2,7 +2,9 @@ pub(crate) mod any_value;
 pub(crate) mod chunked_array;
 mod datetime;
 use std::fmt::{Display, Formatter};
+use std::fs::File;
 use std::hash::{Hash, Hasher};
+use std::path::PathBuf;
 
 #[cfg(feature = "object")]
 use polars::chunked_array::object::PolarsObjectSafe;
@@ -19,6 +21,7 @@ use polars_core::utils::materialize_dyn_int;
 use polars_lazy::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_parquet::write::StatisticsOptions;
+use polars_plan::plans::ScanSources;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::total_ord::{TotalEq, TotalHash};
 use pyo3::basic::CompareOp;
@@ -29,6 +32,7 @@ use pyo3::pybacked::PyBackedStr;
 use pyo3::types::{PyDict, PyList, PySequence};
 
 use crate::error::PyPolarsErr;
+use crate::file::{get_python_scan_source_input, PythonScanSourceInput};
 #[cfg(feature = "object")]
 use crate::object::OBJECT_NAME;
 use crate::prelude::*;
@@ -525,6 +529,68 @@ impl<'py> FromPyObject<'py> for Wrap<Schema> {
                 })
                 .collect::<PyResult<Schema>>()?,
         ))
+    }
+}
+
+impl<'py> FromPyObject<'py> for Wrap<ScanSources> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        let list = ob.downcast::<PyList>()?.to_owned();
+
+        if list.is_empty() {
+            return Ok(Wrap(ScanSources::default()));
+        }
+
+        enum MutableSources {
+            Paths(Vec<PathBuf>),
+            Files(Vec<File>),
+            Buffers(Vec<bytes::Bytes>),
+        }
+
+        let num_items = list.len();
+        let mut iter = list
+            .into_iter()
+            .map(|val| get_python_scan_source_input(val.unbind(), false));
+
+        let Some(first) = iter.next() else {
+            return Ok(Wrap(ScanSources::default()));
+        };
+
+        let mut sources = match first? {
+            PythonScanSourceInput::Path(path) => {
+                let mut sources = Vec::with_capacity(num_items);
+                sources.push(path);
+                MutableSources::Paths(sources)
+            },
+            PythonScanSourceInput::File(file) => {
+                let mut sources = Vec::with_capacity(num_items);
+                sources.push(file);
+                MutableSources::Files(sources)
+            },
+            PythonScanSourceInput::Buffer(buffer) => {
+                let mut sources = Vec::with_capacity(num_items);
+                sources.push(buffer);
+                MutableSources::Buffers(sources)
+            },
+        };
+
+        for source in iter {
+            match (&mut sources, source?) {
+                (MutableSources::Paths(v), PythonScanSourceInput::Path(p)) => v.push(p),
+                (MutableSources::Files(v), PythonScanSourceInput::File(f)) => v.push(f),
+                (MutableSources::Buffers(v), PythonScanSourceInput::Buffer(f)) => v.push(f),
+                _ => {
+                    return Err(PyTypeError::new_err(
+                        "Cannot combine in-memory bytes, paths and files for scan sources",
+                    ))
+                },
+            }
+        }
+
+        Ok(Wrap(match sources {
+            MutableSources::Paths(i) => ScanSources::Paths(i.into()),
+            MutableSources::Files(i) => ScanSources::Files(i.into()),
+            MutableSources::Buffers(i) => ScanSources::Buffers(i.into()),
+        }))
     }
 }
 

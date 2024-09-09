@@ -32,7 +32,7 @@ impl OptimizationRule for CountStar {
                 let alp = IR::MapFunction {
                     input: placeholder_node,
                     function: FunctionIR::FastCount {
-                        paths: count_star_expr.paths,
+                        sources: count_star_expr.sources,
                         scan_type: count_star_expr.scan_type,
                         alias: count_star_expr.alias,
                     },
@@ -49,7 +49,7 @@ struct CountStarExpr {
     // Top node of the projection to replace
     node: Node,
     // Paths to the input files
-    paths: Arc<Vec<PathBuf>>,
+    sources: ScanSources,
     // File Type
     scan_type: FileScan,
     // Column Alias
@@ -66,12 +66,34 @@ fn visit_logical_plan_for_scan_paths(
 ) -> Option<CountStarExpr> {
     match lp_arena.get(node) {
         IR::Union { inputs, .. } => {
+            enum MutableSources {
+                Paths(Vec<PathBuf>),
+                Buffers(Vec<bytes::Bytes>),
+            }
+
             let mut scan_type: Option<FileScan> = None;
-            let mut paths = Vec::with_capacity(inputs.len());
+            let mut sources = None;
             for input in inputs {
                 match visit_logical_plan_for_scan_paths(*input, lp_arena, expr_arena, true) {
                     Some(expr) => {
-                        paths.extend(expr.paths.iter().cloned());
+                        match (expr.sources, &mut sources) {
+                            (
+                                ScanSources::Paths(paths),
+                                Some(MutableSources::Paths(ref mut mutable_paths)),
+                            ) => mutable_paths.extend_from_slice(&paths[..]),
+                            (ScanSources::Paths(paths), None) => {
+                                sources = Some(MutableSources::Paths(paths.to_vec()))
+                            },
+                            (
+                                ScanSources::Buffers(buffers),
+                                Some(MutableSources::Buffers(ref mut mutable_buffers)),
+                            ) => mutable_buffers.extend_from_slice(&buffers[..]),
+                            (ScanSources::Buffers(buffers), None) => {
+                                sources = Some(MutableSources::Buffers(buffers.to_vec()))
+                            },
+                            _ => return None,
+                        }
+
                         match &scan_type {
                             None => scan_type = Some(expr.scan_type),
                             Some(scan_type) => {
@@ -88,16 +110,20 @@ fn visit_logical_plan_for_scan_paths(
                 }
             }
             Some(CountStarExpr {
-                paths: paths.into(),
+                sources: match sources {
+                    Some(MutableSources::Paths(paths)) => ScanSources::Paths(paths.into()),
+                    Some(MutableSources::Buffers(buffers)) => ScanSources::Buffers(buffers.into()),
+                    None => ScanSources::default(),
+                },
                 scan_type: scan_type.unwrap(),
                 node,
                 alias: None,
             })
         },
         IR::Scan {
-            scan_type, paths, ..
+            scan_type, sources, ..
         } if !matches!(scan_type, FileScan::Anonymous { .. }) => Some(CountStarExpr {
-            paths: paths.clone(),
+            sources: sources.clone(),
             scan_type: scan_type.clone(),
             node,
             alias: None,

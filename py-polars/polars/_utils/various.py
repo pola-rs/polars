@@ -84,6 +84,24 @@ def _is_iterable_of(val: Iterable[object], eltype: type | tuple[type, ...]) -> b
     return all(isinstance(x, eltype) for x in val)
 
 
+def is_path_or_str_sequence(
+    val: object, *, allow_str: bool = False, include_series: bool = False
+) -> TypeGuard[Sequence[str | Path]]:
+    """
+    Check that `val` is a sequence of strings or paths.
+
+    Note that a single string is a sequence of strings by definition, use
+    `allow_str=False` to return False on a single string.
+    """
+    if allow_str is False and isinstance(val, str):
+        return False
+    elif _check_for_numpy(val) and isinstance(val, np.ndarray):
+        return np.issubdtype(val.dtype, np.str_)
+    elif include_series and isinstance(val, pl.Series):
+        return val.dtype == pl.String
+    return isinstance(val, Sequence) and _is_iterable_of(val, (Path, str))
+
+
 def is_bool_sequence(
     val: object, *, include_series: bool = False
 ) -> TypeGuard[Sequence[bool]]:

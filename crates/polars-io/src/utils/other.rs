@@ -7,6 +7,7 @@ use polars_core::prelude::*;
 #[cfg(any(feature = "ipc_streaming", feature = "parquet"))]
 use polars_core::utils::{accumulate_dataframes_vertical_unchecked, split_df_as_ref};
 use polars_error::to_compute_err;
+use polars_utils::mmap::MMapSemaphore;
 use regex::{Regex, RegexBuilder};
 
 use crate::mmap::{MmapBytesReader, ReaderBytes};
@@ -21,12 +22,15 @@ pub fn get_reader_bytes<'a, R: Read + MmapBytesReader + ?Sized>(
         .ok()
         .and_then(|offset| Some((reader.to_file()?, offset)))
     {
-        let mmap = unsafe { memmap::MmapOptions::new().offset(offset).map(file)? };
+        let mut options = memmap::MmapOptions::new();
+        options.offset(offset);
 
         // somehow bck thinks borrows alias
         // this is sound as file was already bound to 'a
         use std::fs::File;
+
         let file = unsafe { std::mem::transmute::<&File, &'a File>(file) };
+        let mmap = MMapSemaphore::new_from_file_with_options(file, options)?;
         Ok(ReaderBytes::Mapped(mmap, file))
     } else {
         // we can get the bytes for free

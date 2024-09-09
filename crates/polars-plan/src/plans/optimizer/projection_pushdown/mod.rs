@@ -398,7 +398,7 @@ impl ProjectionPushDown {
                 Ok(PythonScan { options })
             },
             Scan {
-                paths,
+                sources,
                 mut file_info,
                 mut hive_parts,
                 scan_type,
@@ -510,7 +510,7 @@ impl ProjectionPushDown {
                     }
                 };
                 let lp = Scan {
-                    paths,
+                    sources,
                     file_info,
                     hive_parts,
                     output_schema,

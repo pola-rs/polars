@@ -317,7 +317,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             ))
         },
         IR::Scan {
-            paths,
+            sources,
             file_info: _,
             hive_parts: _,
             predicate,
@@ -325,7 +325,10 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             scan_type,
             file_options,
         } => Scan {
-            paths: paths.to_object(py),
+            paths: sources
+                .into_paths()
+                .ok_or_else(|| PyNotImplementedError::new_err("scan with BytesIO"))?
+                .to_object(py),
             // TODO: file info
             file_info: py.None(),
             predicate: predicate.as_ref().map(|e| e.into()),
@@ -596,7 +599,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                     offset,
                 } => ("row_index", name.to_string(), offset.unwrap_or(0)).to_object(py),
                 FunctionIR::FastCount {
-                    paths: _,
+                    sources: _,
                     scan_type: _,
                     alias: _,
                 } => return Err(PyNotImplementedError::new_err("function count")),

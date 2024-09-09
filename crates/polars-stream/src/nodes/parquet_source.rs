@@ -46,7 +46,7 @@ type AsyncTaskData = Option<(
 
 #[allow(clippy::type_complexity)]
 pub struct ParquetSourceNode {
-    paths: Arc<Vec<PathBuf>>,
+    paths: Arc<[PathBuf]>,
     file_info: FileInfo,
     hive_parts: Option<Arc<Vec<HivePartitions>>>,
     predicate: Option<Arc<dyn PhysicalExpr>>,
@@ -71,7 +71,7 @@ pub struct ParquetSourceNode {
 #[allow(clippy::too_many_arguments)]
 impl ParquetSourceNode {
     pub fn new(
-        paths: Arc<Vec<PathBuf>>,
+        paths: Arc<[PathBuf]>,
         file_info: FileInfo,
         hive_parts: Option<Arc<Vec<HivePartitions>>>,
         predicate: Option<Arc<dyn PhysicalExpr>>,
@@ -1355,7 +1355,7 @@ struct SharedFileState {
 
 /// Turns row group data into DataFrames.
 struct RowGroupDecoder {
-    paths: Arc<Vec<PathBuf>>,
+    paths: Arc<[PathBuf]>,
     hive_partitions: Option<Arc<Vec<HivePartitions>>>,
     hive_partitions_width: usize,
     include_file_paths: Option<PlSmallStr>,

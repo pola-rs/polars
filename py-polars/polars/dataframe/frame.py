@@ -2857,10 +2857,20 @@ class DataFrame:
         if not null_value:
             null_value = None
 
+        def write_csv_to_string() -> str:
+            with BytesIO() as buf:
+                self.write_csv(buf)
+                csv_bytes = buf.getvalue()
+            return csv_bytes.decode("utf8")
+
         should_return_buffer = False
         if file is None:
             buffer = file = BytesIO()
             should_return_buffer = True
+        elif isinstance(file, StringIO):
+            csv_str = write_csv_to_string()
+            file.write(csv_str)
+            return None
         elif isinstance(file, (str, os.PathLike)):
             file = normalize_filepath(file)
 

@@ -2,7 +2,7 @@ use polars_core::error::{polars_err, PolarsResult};
 use polars_io::path_utils::is_cloud_url;
 
 use crate::plans::options::SinkType;
-use crate::plans::{DslPlan, FileScan};
+use crate::plans::{DslPlan, FileScan, ScanSources};
 
 /// Assert that the given [`DslPlan`] is eligible to be executed on Polars Cloud.
 pub(super) fn assert_cloud_eligible(dsl: &DslPlan) -> PolarsResult<()> {
@@ -10,15 +10,28 @@ pub(super) fn assert_cloud_eligible(dsl: &DslPlan) -> PolarsResult<()> {
         match plan_node {
             #[cfg(feature = "python")]
             DslPlan::PythonScan { .. } => return ineligible_error("contains Python scan"),
-            DslPlan::Scan { paths, .. }
-                if paths.lock().unwrap().0.iter().any(|p| !is_cloud_url(p)) =>
-            {
-                return ineligible_error("contains scan of local file system")
-            },
             DslPlan::Scan {
-                scan_type: FileScan::Anonymous { .. },
-                ..
-            } => return ineligible_error("contains anonymous scan"),
+                sources, scan_type, ..
+            } => {
+                let sources_lock = sources.lock().unwrap();
+                match &sources_lock.sources {
+                    ScanSources::Paths(paths) => {
+                        if paths.iter().any(|p| !is_cloud_url(p)) {
+                            return ineligible_error("contains scan of local file system");
+                        }
+                    },
+                    ScanSources::Files(_) => {
+                        return ineligible_error("contains scan of opened files");
+                    },
+                    ScanSources::Buffers(_) => {
+                        return ineligible_error("contains scan of in-memory buffer");
+                    },
+                }
+
+                if matches!(scan_type, FileScan::Anonymous { .. }) {
+                    return ineligible_error("contains anonymous scan");
+                }
+            },
             DslPlan::Sink { payload, .. } => {
                 if !matches!(payload, SinkType::Cloud { .. }) {
                     return ineligible_error("contains sink to non-cloud location");

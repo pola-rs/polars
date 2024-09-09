@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import io
-import os
-import re
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
@@ -10,7 +8,6 @@ import pandas as pd
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError
 from polars.interchange.protocol import CompatLevel
 from polars.testing import assert_frame_equal
 
@@ -44,11 +41,13 @@ def test_from_to_buffer(
 ) -> None:
     # use an ad-hoc buffer (file=None)
     buf1 = write_ipc(df, stream, None, compression=compression)
+    buf1.seek(0)
     read_df = read_ipc(stream, buf1, use_pyarrow=False)
     assert_frame_equal(df, read_df, categorical_as_str=True)
 
     # explicitly supply an existing buffer
     buf2 = io.BytesIO()
+    buf2.seek(0)
     write_ipc(df, stream, buf2, compression=compression)
     buf2.seek(0)
     read_df = read_ipc(stream, buf2, use_pyarrow=False)
@@ -245,6 +244,7 @@ def test_list_nested_enum() -> None:
     df = pl.DataFrame(pl.Series("list_cat", [["a", "b", "c", None]], dtype=dtype))
     buffer = io.BytesIO()
     df.write_ipc(buffer, compat_level=CompatLevel.newest())
+    buffer.seek(0)
     df = pl.read_ipc(buffer)
     assert df.get_column("list_cat").dtype == dtype
 
@@ -258,6 +258,7 @@ def test_struct_nested_enum() -> None:
     )
     buffer = io.BytesIO()
     df.write_ipc(buffer, compat_level=CompatLevel.newest())
+    buffer.seek(0)
     df = pl.read_ipc(buffer)
     assert df.get_column("struct_cat").dtype == dtype
 
@@ -339,29 +340,3 @@ def test_ipc_decimal_15920(
         path = f"{tmp_path}/data"
         df.write_ipc(path)
         assert_frame_equal(pl.read_ipc(path), df)
-
-
-@pytest.mark.write_disk
-def test_ipc_raise_on_writing_mmap(tmp_path: Path) -> None:
-    p = tmp_path / "foo.ipc"
-    df = pl.DataFrame({"foo": [1, 2, 3]})
-    # first write is allowed
-    df.write_ipc(p)
-
-    # now open as memory mapped
-    df = pl.read_ipc(p, memory_map=True)
-
-    if os.name == "nt":
-        # In Windows, it's the duty of the system to ensure exclusive access
-        with pytest.raises(
-            OSError,
-            match=re.escape(
-                "The requested operation cannot be performed on a file with a user-mapped section open. (os error 1224)"
-            ),
-        ):
-            df.write_ipc(p)
-    else:
-        with pytest.raises(
-            ComputeError, match="cannot write to file: already memory mapped"
-        ):
-            df.write_ipc(p)

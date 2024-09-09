@@ -1,14 +1,13 @@
 use std::borrow::Cow;
 use std::fmt;
 use std::fmt::{Display, Formatter};
-use std::path::PathBuf;
 
 use polars_core::datatypes::AnyValue;
 use polars_core::schema::Schema;
 use polars_io::RowIndex;
 use recursive::recursive;
 
-use super::ir::dot::PathsDisplay;
+use self::ir::dot::ScanSourcesDisplay;
 use crate::prelude::*;
 
 pub struct IRDisplay<'a> {
@@ -56,7 +55,7 @@ impl AsExpr for ExprIR {
 fn write_scan(
     f: &mut Formatter,
     name: &str,
-    path: &[PathBuf],
+    sources: &ScanSources,
     indent: usize,
     n_columns: i64,
     total_columns: usize,
@@ -64,7 +63,12 @@ fn write_scan(
     slice: Option<(i64, usize)>,
     row_index: Option<&RowIndex>,
 ) -> fmt::Result {
-    write!(f, "{:indent$}{name} SCAN {}", "", PathsDisplay(path))?;
+    write!(
+        f,
+        "{:indent$}{name} SCAN {}",
+        "",
+        ScanSourcesDisplay(sources)
+    )?;
 
     let total_columns = total_columns - usize::from(row_index.is_some());
     if n_columns > 0 {
@@ -171,7 +175,7 @@ impl<'a> IRDisplay<'a> {
                 write_scan(
                     f,
                     "PYTHON",
-                    &[],
+                    &ScanSources::default(),
                     indent,
                     n_columns,
                     total_columns,
@@ -221,7 +225,7 @@ impl<'a> IRDisplay<'a> {
                 self.with_root(*input)._format(f, sub_indent)
             },
             Scan {
-                paths,
+                sources,
                 file_info,
                 predicate,
                 scan_type,
@@ -239,7 +243,7 @@ impl<'a> IRDisplay<'a> {
                 write_scan(
                     f,
                     scan_type.into(),
-                    paths,
+                    sources,
                     indent,
                     n_columns,
                     file_info.schema.len(),

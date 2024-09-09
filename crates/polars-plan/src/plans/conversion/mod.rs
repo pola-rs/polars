@@ -50,7 +50,7 @@ impl IR {
         };
         match lp {
             IR::Scan {
-                paths,
+                sources,
                 file_info,
                 hive_parts,
                 predicate,
@@ -58,7 +58,10 @@ impl IR {
                 output_schema: _,
                 file_options: options,
             } => DslPlan::Scan {
-                paths: Arc::new(Mutex::new((paths, true))),
+                sources: Arc::new(Mutex::new(DslScanSources {
+                    sources,
+                    is_expanded: true,
+                })),
                 file_info: Arc::new(RwLock::new(Some(file_info))),
                 hive_parts,
                 predicate: predicate.map(|e| e.to_expr(expr_arena)),

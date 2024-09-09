@@ -1,14 +1,16 @@
+use std::fs::File;
 use std::io;
-use std::sync::Arc;
 
 pub use memmap::Mmap;
 
 mod private {
+    use std::fs::File;
     use std::ops::Deref;
     use std::sync::Arc;
 
-    pub use memmap::Mmap;
+    use polars_error::PolarsResult;
 
+    use super::MMapSemaphore;
     use crate::mem::prefetch_l2;
 
     /// A read-only reference to a slice of memory that can potentially be memory-mapped.
@@ -34,7 +36,7 @@ mod private {
     #[allow(unused)]
     enum MemSliceInner {
         Bytes(bytes::Bytes),
-        Mmap(Arc<Mmap>),
+        Mmap(Arc<MMapSemaphore>),
     }
 
     impl Deref for MemSlice {
@@ -42,6 +44,13 @@ mod private {
 
         #[inline(always)]
         fn deref(&self) -> &Self::Target {
+            self.slice
+        }
+    }
+
+    impl AsRef<[u8]> for MemSlice {
+        #[inline(always)]
+        fn as_ref(&self) -> &[u8] {
             self.slice
         }
     }
@@ -75,13 +84,19 @@ mod private {
         }
 
         #[inline]
-        pub fn from_mmap(mmap: Arc<Mmap>) -> Self {
+        pub fn from_mmap(mmap: Arc<MMapSemaphore>) -> Self {
             Self {
                 slice: unsafe {
                     std::mem::transmute::<&[u8], &'static [u8]>(mmap.as_ref().as_ref())
                 },
                 inner: MemSliceInner::Mmap(mmap),
             }
+        }
+
+        #[inline]
+        pub fn from_file(file: &File) -> PolarsResult<Self> {
+            let mmap = MMapSemaphore::new_from_file(file)?;
+            Ok(Self::from_mmap(Arc::new(mmap)))
         }
 
         /// Construct a `MemSlice` that simply wraps around a `&[u8]`.
@@ -108,6 +123,8 @@ mod private {
     }
 }
 
+use memmap::MmapOptions;
+use polars_error::{polars_bail, PolarsResult};
 pub use private::MemSlice;
 
 /// A cursor over a [`MemSlice`].
@@ -147,11 +164,6 @@ impl MemReader {
     #[inline(always)]
     pub fn from_bytes(bytes: bytes::Bytes) -> Self {
         Self::new(MemSlice::from_bytes(bytes))
-    }
-
-    #[inline(always)]
-    pub fn from_mmap(mmap: Arc<Mmap>) -> Self {
-        Self::new(MemSlice::from_mmap(mmap))
     }
 
     // Construct a `MemSlice` that simply wraps around a `&[u8]`. The caller must ensure the
@@ -224,8 +236,91 @@ impl io::Seek for MemReader {
     }
 }
 
-mod tests {
+// Keep track of memory mapped files so we don't write to them while reading
+// Use a btree as it uses less memory than a hashmap and this thing never shrinks.
+// Write handle in Windows is exclusive, so this is only necessary in Unix.
+#[cfg(target_family = "unix")]
+static MEMORY_MAPPED_FILES: once_cell::sync::Lazy<
+    std::sync::Mutex<std::collections::BTreeMap<(u64, u64), u32>>,
+> = once_cell::sync::Lazy::new(|| std::sync::Mutex::new(Default::default()));
 
+#[derive(Debug)]
+pub struct MMapSemaphore {
+    #[cfg(target_family = "unix")]
+    key: (u64, u64),
+    mmap: Mmap,
+}
+
+impl MMapSemaphore {
+    pub fn new_from_file_with_options(
+        file: &File,
+        options: MmapOptions,
+    ) -> PolarsResult<MMapSemaphore> {
+        let mmap = unsafe { options.map(file) }?;
+
+        #[cfg(target_family = "unix")]
+        {
+            use std::os::unix::fs::MetadataExt;
+            let metadata = file.metadata()?;
+
+            let mut guard = MEMORY_MAPPED_FILES.lock().unwrap();
+            let key = (metadata.dev(), metadata.ino());
+            match guard.entry(key) {
+                std::collections::btree_map::Entry::Occupied(mut e) => *e.get_mut() += 1,
+                std::collections::btree_map::Entry::Vacant(e) => _ = e.insert(1),
+            }
+            Ok(Self { key, mmap })
+        }
+
+        #[cfg(not(target_family = "unix"))]
+        Ok(Self { mmap })
+    }
+
+    pub fn new_from_file(file: &File) -> PolarsResult<MMapSemaphore> {
+        Self::new_from_file_with_options(file, MmapOptions::default())
+    }
+
+    pub fn as_ptr(&self) -> *const u8 {
+        self.mmap.as_ptr()
+    }
+}
+
+impl AsRef<[u8]> for MMapSemaphore {
+    #[inline]
+    fn as_ref(&self) -> &[u8] {
+        self.mmap.as_ref()
+    }
+}
+
+#[cfg(target_family = "unix")]
+impl Drop for MMapSemaphore {
+    fn drop(&mut self) {
+        let mut guard = MEMORY_MAPPED_FILES.lock().unwrap();
+        if let std::collections::btree_map::Entry::Occupied(mut e) = guard.entry(self.key) {
+            let v = e.get_mut();
+            *v -= 1;
+
+            if *v == 0 {
+                e.remove_entry();
+            }
+        }
+    }
+}
+
+pub fn ensure_not_mapped(#[allow(unused)] file: &File) -> PolarsResult<()> {
+    #[cfg(target_family = "unix")]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let guard = MEMORY_MAPPED_FILES.lock().unwrap();
+        let metadata = file.metadata()?;
+        if guard.contains_key(&(metadata.dev(), metadata.ino())) {
+            polars_bail!(ComputeError: "cannot write to file: already memory mapped");
+        }
+    }
+    Ok(())
+}
+
+mod tests {
     #[test]
     fn test_mem_slice_zero_copy() {
         use std::sync::Arc;
@@ -264,9 +359,11 @@ mod tests {
         }
 
         {
+            use crate::mmap::MMapSemaphore;
+
             let path = "../../examples/datasets/foods1.csv";
             let file = std::fs::File::open(path).unwrap();
-            let mmap = unsafe { memmap::Mmap::map(&file) }.unwrap();
+            let mmap = MMapSemaphore::new_from_file(&file).unwrap();
             let ptr = mmap.as_ptr();
 
             let mem_slice = MemSlice::from_mmap(Arc::new(mmap));

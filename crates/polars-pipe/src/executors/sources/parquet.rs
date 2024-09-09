@@ -20,7 +20,7 @@ use polars_io::prelude::materialize_projection;
 use polars_io::prelude::ParquetAsyncReader;
 use polars_io::utils::slice::split_slice_at_file;
 use polars_io::SerReader;
-use polars_plan::plans::FileInfo;
+use polars_plan::plans::{FileInfo, ScanSources};
 use polars_plan::prelude::hive::HivePartitions;
 use polars_plan::prelude::FileScanOptions;
 use polars_utils::itertools::Itertools;
@@ -36,7 +36,7 @@ pub struct ParquetSource {
     processed_paths: usize,
     processed_rows: AtomicUsize,
     iter: Range<usize>,
-    paths: Arc<Vec<PathBuf>>,
+    sources: ScanSources,
     options: ParquetOptions,
     file_options: FileScanOptions,
     #[allow(dead_code)]
@@ -77,7 +77,11 @@ impl ParquetSource {
         usize,
         Option<Vec<Series>>,
     )> {
-        let path = &self.paths[index];
+        let paths = self
+            .sources
+            .as_paths()
+            .ok_or_else(|| polars_err!(nyi = "Streaming scanning of in-memory buffers"))?;
+        let path = &paths[index];
         let options = self.options;
         let file_options = self.file_options.clone();
         let schema = self.file_info.schema.clone();
@@ -245,7 +249,7 @@ impl ParquetSource {
     #[allow(unused_variables)]
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
-        paths: Arc<Vec<PathBuf>>,
+        sources: ScanSources,
         options: ParquetOptions,
         cloud_options: Option<CloudOptions>,
         metadata: Option<FileMetaDataRef>,
@@ -255,6 +259,9 @@ impl ParquetSource {
         verbose: bool,
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
     ) -> PolarsResult<Self> {
+        let paths = sources
+            .as_paths()
+            .ok_or_else(|| polars_err!(nyi = "Streaming scanning of in-memory buffers"))?;
         let n_threads = POOL.current_num_threads();
 
         let iter = 0..paths.len();
@@ -273,7 +280,7 @@ impl ParquetSource {
             options,
             file_options,
             iter,
-            paths,
+            sources,
             cloud_options,
             metadata,
             file_info,

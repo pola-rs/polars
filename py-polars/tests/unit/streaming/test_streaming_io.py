@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 from typing import TYPE_CHECKING, Any
 from unittest.mock import patch
 
@@ -294,3 +295,26 @@ def test_streaming_empty_parquet_16523(tmp_path: Path) -> None:
     q = pl.scan_parquet(file_path)
     q2 = pl.LazyFrame({"a": [1]}, schema={"a": pl.Int32})
     assert q.join(q2, on="a").collect(streaming=True).shape == (0, 1)
+
+
+@pytest.mark.parametrize(
+    "method",
+    ["parquet", "csv"],
+)
+def test_nyi_scan_in_memory(method: str) -> None:
+    f = io.BytesIO()
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3],
+            "b": ["x", "y", "z"],
+        }
+    )
+
+    (getattr(df, f"write_{method}"))(f)
+
+    f.seek(0)
+    with pytest.raises(
+        pl.exceptions.ComputeError,
+        match="not yet implemented: Streaming scanning of in-memory buffers",
+    ):
+        (getattr(pl, f"scan_{method}"))(f).collect(streaming=True)
