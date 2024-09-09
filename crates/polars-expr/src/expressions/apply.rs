@@ -45,13 +45,14 @@ impl ApplyExpr {
         {
             panic!("expr {:?} is not implemented correctly. 'returns_scalar' and 'elementwise' are mutually exclusive", expr)
         }
+        dbg!(returns_scalar, options.flags.contains(FunctionFlags::RETURNS_SCALAR), &expr);
 
         Self {
             inputs,
             function,
             expr,
             collect_groups: options.collect_groups,
-            returns_scalar,
+            returns_scalar: options.flags.contains(FunctionFlags::RETURNS_SCALAR),
             allow_rename: options.flags.contains(FunctionFlags::ALLOW_RENAME),
             pass_name_to_apply: options.flags.contains(FunctionFlags::PASS_NAME_TO_APPLY),
             input_schema,
