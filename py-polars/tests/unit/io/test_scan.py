@@ -577,6 +577,17 @@ def test_path_expansion_excludes_empty_files_17362(tmp_path: Path) -> None:
 
 
 @pytest.mark.write_disk
+def test_path_expansion_empty_directory_does_not_panic(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    with pytest.raises(pl.exceptions.ComputeError):
+        pl.scan_parquet(tmp_path).collect()
+
+    with pytest.raises(pl.exceptions.ComputeError):
+        pl.scan_parquet(tmp_path / "**/*").collect()
+
+
+@pytest.mark.write_disk
 def test_scan_single_dir_differing_file_extensions_raises_17436(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
