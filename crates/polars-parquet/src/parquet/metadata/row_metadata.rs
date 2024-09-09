@@ -35,7 +35,6 @@ impl InitColumnLookup for ColumnLookup {
 
 /// Metadata for a row group.
 #[derive(Debug, Clone, Default)]
-// #[cfg_attr(feature = "serde_types", derive(serde::Deserialize, serde::Serialize))]
 pub struct RowGroupMetaData {
     columns: Arc<[ColumnChunkMetadata]>,
     column_lookup: PlHashMap<PlSmallStr, UnitVec<usize>>,
