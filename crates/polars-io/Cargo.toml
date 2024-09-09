@@ -13,8 +13,8 @@ polars-core = { workspace = true }
 polars-error = { workspace = true }
 polars-json = { workspace = true, optional = true }
 polars-parquet = { workspace = true, optional = true }
-polars-time = { workspace = true, features = [], optional = true }
 polars-schema = { workspace = true }
+polars-time = { workspace = true, features = [], optional = true }
 polars-utils = { workspace = true, features = ['mmap'] }
 
 ahash = { workspace = true }
