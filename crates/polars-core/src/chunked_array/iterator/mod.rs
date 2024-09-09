@@ -432,7 +432,7 @@ impl<T: PolarsObject> ObjectChunked<T> {
         // we know that we only iterate over length == self.len()
         unsafe {
             self.downcast_iter()
-                .flat_map(|arr| arr.values().iter())
+                .flat_map(|arr| arr.values_iter())
                 .trust_my_length(self.len())
         }
     }

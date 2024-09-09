@@ -61,10 +61,8 @@ where
             .unwrap_or(0) as IdxSize;
 
         let arr = Box::new(ObjectArray {
-            values: Arc::new(self.values),
-            null_bitmap,
-            offset: 0,
-            len,
+            values: self.values.into(),
+            validity: null_bitmap,
         });
 
         self.field.dtype = get_object_type::<T>();
@@ -140,10 +138,8 @@ where
         let field = Arc::new(Field::new(name, DataType::Object(T::type_name(), None)));
         let len = v.len();
         let arr = Box::new(ObjectArray {
-            values: Arc::new(v),
-            null_bitmap: None,
-            offset: 0,
-            len,
+            values: v.into(),
+            validity: None,
         });
 
         unsafe { ObjectChunked::new_with_dims(field, vec![arr], len as IdxSize, 0) }
@@ -154,10 +150,8 @@ where
         let len = v.len();
         let null_count = validity.unset_bits();
         let arr = Box::new(ObjectArray {
-            values: Arc::new(v),
-            null_bitmap: Some(validity),
-            offset: 0,
-            len,
+            values: v.into(),
+            validity: Some(validity),
         });
 
         unsafe {
