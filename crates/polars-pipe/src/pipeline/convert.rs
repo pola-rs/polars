@@ -67,7 +67,7 @@ where
                 }
                 // projection is free
                 if let Some(schema) = output_schema {
-                    let columns = schema.iter_names().cloned().collect::<Vec<_>>();
+                    let columns = schema.iter_names_cloned().collect::<Vec<_>>();
                     df = df._select_impl_unchecked(&columns)?;
                 }
             }
@@ -590,7 +590,7 @@ where
     let op = match lp_arena.get(node) {
         SimpleProjection { input, columns, .. } => {
             let input_schema = lp_arena.get(*input).schema(lp_arena);
-            let columns = columns.iter_names().cloned().collect();
+            let columns = columns.iter_names_cloned().collect();
             let op = operators::SimpleProjectionOperator::new(columns, input_schema.into_owned());
             Box::new(op) as Box<dyn Operator>
         },

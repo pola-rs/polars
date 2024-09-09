@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use polars_core::prelude::{InitHashMaps, PlHashMap, PlIndexMap};
-use polars_core::schema::{IndexOfSchema, Schema};
+use polars_core::schema::Schema;
 use polars_error::{polars_err, PolarsResult};
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::{AExpr, IR};
@@ -26,7 +26,7 @@ pub fn lower_ir(
     let output_schema = IR::schema_with_cache(node, ir_arena, schema_cache);
     let node_kind = match ir_node {
         IR::SimpleProjection { input, columns } => {
-            let columns = columns.get_names_owned();
+            let columns = columns.iter_names_cloned().collect::<Vec<_>>();
             let phys_input = lower_ir(
                 *input,
                 ir_arena,
@@ -200,7 +200,7 @@ pub fn lower_ir(
                     let phys_input = phys_sm.insert(PhysNode::new(schema, node_kind));
                     node_kind = PhysNodeKind::SimpleProjection {
                         input: phys_input,
-                        columns: projection_schema.get_names_owned(),
+                        columns: projection_schema.iter_names_cloned().collect::<Vec<_>>(),
                     };
                     schema = projection_schema.clone();
                 }

@@ -475,7 +475,7 @@ fn rg_to_dfs_prefiltered(
                 // We first add the columns with the live columns at the start. Then, we do a
                 // projections that puts the columns at the right spot.
                 df._add_columns(rg_columns, &rearranged_schema)?;
-                let df = df.select(schema.get_names_owned())?;
+                let df = df.select(schema.iter_names_cloned())?;
 
                 PolarsResult::Ok(Some(df))
             })

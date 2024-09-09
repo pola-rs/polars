@@ -90,97 +90,46 @@ impl SchemaExt for Schema {
     }
 }
 
-/// This trait exists to be unify the API of polars Schema and arrows Schema.
-pub trait IndexOfSchema: Debug {
-    /// Get the index of a column by name.
-    fn index_of(&self, name: &str) -> Option<usize>;
-
-    /// Get a vector of all column names.
-    fn get_names(&self) -> Vec<&PlSmallStr>;
-
-    fn get_names_str(&self) -> Vec<&str>;
-
-    fn get_names_owned(&self) -> Vec<PlSmallStr>;
-
-    fn try_index_of(&self, name: &str) -> PolarsResult<usize> {
-        self.index_of(name).ok_or_else(|| {
-            polars_err!(
-                ColumnNotFound:
-                "unable to find column {:?}; valid columns: {:?}", name, self.get_names(),
-            )
-        })
-    }
-}
-
-impl IndexOfSchema for Schema {
-    fn index_of(&self, name: &str) -> Option<usize> {
-        self.index_of(name)
-    }
-
-    fn get_names(&self) -> Vec<&PlSmallStr> {
-        self.iter_names().collect()
-    }
-
-    fn get_names_owned(&self) -> Vec<PlSmallStr> {
-        self.iter_names().cloned().collect()
-    }
-
-    fn get_names_str(&self) -> Vec<&str> {
-        self.iter_names().map(|x| x.as_str()).collect()
-    }
-}
-
-impl IndexOfSchema for ArrowSchema {
-    fn index_of(&self, name: &str) -> Option<usize> {
-        self.iter_values().position(|f| f.name.as_str() == name)
-    }
-
-    fn get_names(&self) -> Vec<&PlSmallStr> {
-        self.iter_values().map(|f| &f.name).collect()
-    }
-
-    fn get_names_owned(&self) -> Vec<PlSmallStr> {
-        self.iter_values().map(|f| f.name.clone()).collect()
-    }
-
-    fn get_names_str(&self) -> Vec<&str> {
-        self.iter_values().map(|f| f.name.as_str()).collect()
-    }
-}
-
 pub trait SchemaNamesAndDtypes {
     const IS_ARROW: bool;
-    type DataType: Debug + PartialEq;
+    type DataType: Debug + Clone + Default + PartialEq;
 
-    /// Get a vector of (name, dtype) pairs
-    fn get_names_and_dtypes(&'_ self) -> Vec<(&'_ str, Self::DataType)>;
-}
-
-impl SchemaNamesAndDtypes for Schema {
-    const IS_ARROW: bool = false;
-    type DataType = DataType;
-
-    fn get_names_and_dtypes(&'_ self) -> Vec<(&'_ str, Self::DataType)> {
-        self.iter()
-            .map(|(name, dtype)| (name.as_str(), dtype.clone()))
-            .collect()
-    }
+    fn iter_names_and_dtypes(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (&PlSmallStr, &Self::DataType)>;
 }
 
 impl SchemaNamesAndDtypes for ArrowSchema {
     const IS_ARROW: bool = true;
     type DataType = ArrowDataType;
 
-    fn get_names_and_dtypes(&'_ self) -> Vec<(&'_ str, Self::DataType)> {
-        self.iter_values()
-            .map(|x| (x.name.as_str(), x.dtype.clone()))
-            .collect()
+    fn iter_names_and_dtypes(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (&PlSmallStr, &Self::DataType)> {
+        self.iter_values().map(|x| (&x.name, &x.dtype))
     }
 }
 
-pub fn ensure_matching_schema<S: SchemaNamesAndDtypes>(lhs: &S, rhs: &S) -> PolarsResult<()> {
-    let lhs = lhs.get_names_and_dtypes();
-    let rhs = rhs.get_names_and_dtypes();
+impl SchemaNamesAndDtypes for Schema {
+    const IS_ARROW: bool = false;
+    type DataType = DataType;
+
+    fn iter_names_and_dtypes(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (&PlSmallStr, &Self::DataType)> {
+        self.iter()
+    }
+}
+
+pub fn ensure_matching_schema<D>(
+    lhs: &polars_schema::Schema<D>,
+    rhs: &polars_schema::Schema<D>,
+) -> PolarsResult<()>
+where
+    polars_schema::Schema<D>: SchemaNamesAndDtypes,
+{
+    let lhs = lhs.iter_names_and_dtypes();
+    let rhs = rhs.iter_names_and_dtypes();
 
     if lhs.len() != rhs.len() {
         polars_bail!(
@@ -190,7 +139,7 @@ pub fn ensure_matching_schema<S: SchemaNamesAndDtypes>(lhs: &S, rhs: &S) -> Pola
         );
     }
 
-    for (i, ((l_name, l_dtype), (r_name, r_dtype))) in lhs.iter().zip(&rhs).enumerate() {
+    for (i, ((l_name, l_dtype), (r_name, r_dtype))) in lhs.zip(rhs).enumerate() {
         if l_name != r_name {
             polars_bail!(
                 SchemaMismatch:
@@ -199,18 +148,20 @@ pub fn ensure_matching_schema<S: SchemaNamesAndDtypes>(lhs: &S, rhs: &S) -> Pola
             )
         }
         if l_dtype != r_dtype
-            && (!S::IS_ARROW
+            && (!polars_schema::Schema::<D>::IS_ARROW
                 || unsafe {
                     // For timezone normalization. Easier than writing out the entire PartialEq.
                     DataType::from_arrow(
-                        std::mem::transmute::<&<S as SchemaNamesAndDtypes>::DataType, &ArrowDataType>(
-                            l_dtype,
-                        ),
+                        std::mem::transmute::<
+                            &<polars_schema::Schema<D> as SchemaNamesAndDtypes>::DataType,
+                            &ArrowDataType,
+                        >(l_dtype),
                         true,
                     ) != DataType::from_arrow(
-                        std::mem::transmute::<&<S as SchemaNamesAndDtypes>::DataType, &ArrowDataType>(
-                            r_dtype,
-                        ),
+                        std::mem::transmute::<
+                            &<polars_schema::Schema<D> as SchemaNamesAndDtypes>::DataType,
+                            &ArrowDataType,
+                        >(r_dtype),
                         true,
                     )
                 })

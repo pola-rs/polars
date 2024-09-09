@@ -14,10 +14,7 @@ pub struct Schema<D> {
 
 impl<D: Eq> Eq for Schema<D> {}
 
-impl<D> Schema<D>
-where
-    D: Clone + Default,
-{
+impl<D> Schema<D> {
     pub fn with_capacity(capacity: usize) -> Self {
         let fields = PlIndexMap::with_capacity(capacity);
         Self { fields }
@@ -57,42 +54,6 @@ where
 
     pub fn insert(&mut self, key: PlSmallStr, value: D) -> Option<D> {
         self.fields.insert(key, value)
-    }
-
-    /// Create a new schema from this one, inserting a field with `name` and `dtype` at the given `index`.
-    ///
-    /// If a field named `name` already exists, it is updated with the new dtype. Regardless, the field named `name` is
-    /// always moved to the given index. Valid indices range from `0` (front of the schema) to `self.len()` (after the
-    /// end of the schema).
-    ///
-    /// For a mutating version that doesn't clone, see [`insert_at_index`][Self::insert_at_index].
-    ///
-    /// Runtime: **O(m * n)** where `m` is the (average) length of the field names and `n` is the number of fields in
-    /// the schema. This method clones every field in the schema.
-    ///
-    /// Returns: `Ok(new_schema)` if `index <= self.len()`, else `Err(PolarsError)`
-    pub fn new_inserting_at_index(
-        &self,
-        index: usize,
-        name: PlSmallStr,
-        field: D,
-    ) -> PolarsResult<Self> {
-        polars_ensure!(
-            index <= self.len(),
-            OutOfBounds:
-                "index {} is out of bounds for schema with length {} (the max index allowed is self.len())",
-                    index,
-                    self.len()
-        );
-
-        let mut new = Self::default();
-        let mut iter = self.fields.iter().filter_map(|(fld_name, dtype)| {
-            (fld_name != &name).then_some((fld_name.clone(), dtype.clone()))
-        });
-        new.fields.extend(iter.by_ref().take(index));
-        new.fields.insert(name.clone(), field);
-        new.fields.extend(iter);
-        Ok(new)
     }
 
     /// Insert a field with `name` and `dtype` at the given `index` into this schema.
@@ -275,21 +236,6 @@ where
         self.fields.extend(other.fields)
     }
 
-    /// Merge borrowed `other` into `self`.
-    ///
-    /// Merging logic:
-    /// - Fields that occur in `self` but not `other` are unmodified
-    /// - Fields that occur in `other` but not `self` are appended, in order, to the end of `self`
-    /// - Fields that occur in both `self` and `other` are updated with the dtype from `other`, but keep their original
-    ///   index
-    pub fn merge_from_ref(&mut self, other: &Self) {
-        self.fields.extend(
-            other
-                .iter()
-                .map(|(column, field)| (column.clone(), field.clone())),
-        )
-    }
-
     /// Iterates over the `(&name, &dtype)` pairs in this schema.
     ///
     /// For an owned version, use [`iter_fields`][Self::iter_fields], which clones the data to iterate owned `Field`s
@@ -304,6 +250,10 @@ where
     /// Iterates over references to the names in this schema.
     pub fn iter_names(&self) -> impl '_ + ExactSizeIterator<Item = &PlSmallStr> {
         self.fields.iter().map(|(name, _dtype)| name)
+    }
+
+    pub fn iter_names_cloned(&self) -> impl '_ + ExactSizeIterator<Item = PlSmallStr> {
+        self.iter_names().cloned()
     }
 
     /// Iterates over references to the dtypes in this schema.
@@ -322,6 +272,74 @@ where
 
     pub fn index_of(&self, name: &str) -> Option<usize> {
         self.fields.get_index_of(name)
+    }
+
+    pub fn try_index_of(&self, name: &str) -> PolarsResult<usize> {
+        let Some(i) = self.fields.get_index_of(name) else {
+            polars_bail!(
+                ColumnNotFound:
+                "unable to find column {:?}; valid columns: {:?}",
+                name, self.iter_names().collect::<Vec<_>>(),
+            )
+        };
+
+        Ok(i)
+    }
+}
+
+impl<D> Schema<D>
+where
+    D: Clone + Default,
+{
+    /// Create a new schema from this one, inserting a field with `name` and `dtype` at the given `index`.
+    ///
+    /// If a field named `name` already exists, it is updated with the new dtype. Regardless, the field named `name` is
+    /// always moved to the given index. Valid indices range from `0` (front of the schema) to `self.len()` (after the
+    /// end of the schema).
+    ///
+    /// For a mutating version that doesn't clone, see [`insert_at_index`][Self::insert_at_index].
+    ///
+    /// Runtime: **O(m * n)** where `m` is the (average) length of the field names and `n` is the number of fields in
+    /// the schema. This method clones every field in the schema.
+    ///
+    /// Returns: `Ok(new_schema)` if `index <= self.len()`, else `Err(PolarsError)`
+    pub fn new_inserting_at_index(
+        &self,
+        index: usize,
+        name: PlSmallStr,
+        field: D,
+    ) -> PolarsResult<Self> {
+        polars_ensure!(
+            index <= self.len(),
+            OutOfBounds:
+                "index {} is out of bounds for schema with length {} (the max index allowed is self.len())",
+                    index,
+                    self.len()
+        );
+
+        let mut new = Self::default();
+        let mut iter = self.fields.iter().filter_map(|(fld_name, dtype)| {
+            (fld_name != &name).then_some((fld_name.clone(), dtype.clone()))
+        });
+        new.fields.extend(iter.by_ref().take(index));
+        new.fields.insert(name.clone(), field);
+        new.fields.extend(iter);
+        Ok(new)
+    }
+
+    /// Merge borrowed `other` into `self`.
+    ///
+    /// Merging logic:
+    /// - Fields that occur in `self` but not `other` are unmodified
+    /// - Fields that occur in `other` but not `self` are appended, in order, to the end of `self`
+    /// - Fields that occur in both `self` and `other` are updated with the dtype from `other`, but keep their original
+    ///   index
+    pub fn merge_from_ref(&mut self, other: &Self) {
+        self.fields.extend(
+            other
+                .iter()
+                .map(|(column, field)| (column.clone(), field.clone())),
+        )
     }
 
     /// Generates another schema with just the specified columns selected from this one.
@@ -421,7 +439,6 @@ impl<D> From<PlIndexMap<PlSmallStr, D>> for Schema<D> {
 impl<F, D> FromIterator<F> for Schema<D>
 where
     F: Into<(PlSmallStr, D)>,
-    D: Clone,
 {
     fn from_iter<I: IntoIterator<Item = F>>(iter: I) -> Self {
         let fields = PlIndexMap::from_iter(iter.into_iter().map(|x| x.into()));
