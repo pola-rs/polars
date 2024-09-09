@@ -190,3 +190,11 @@ def test_raise_list_object() -> None:
     # We don't want to support this. Unsafe enough as it is already.
     with pytest.raises(ValueError):
         pl.Series([[object()]], dtype=pl.List(pl.Object()))
+
+
+def test_object_null_slice() -> None:
+    s = pl.Series("x", [1, None, 42], dtype=pl.Object)
+    assert s.is_null() == [False, True, False]
+    assert s.slice(0, 2).is_null() == [False, True]
+    assert s.slice(1, 1).is_null() == [True]
+    assert s.slice(2, 1).is_null() == [False]
