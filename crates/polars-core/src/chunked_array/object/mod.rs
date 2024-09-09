@@ -321,7 +321,7 @@ impl<T: PolarsObject> From<Vec<T>> for ObjectArray<T> {
     fn from(values: Vec<T>) -> Self {
         Self {
             values: values.into(),
-            validity: None
+            validity: None,
         }
     }
 }
