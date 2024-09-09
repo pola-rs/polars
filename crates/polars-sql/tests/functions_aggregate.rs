@@ -57,7 +57,38 @@ fn test_quantile_disc() {
         let sql_expr = format!("QUANTILE_DISC(Sales, {})", q);
         let (expected, actual) = create_expected(expr, &sql_expr);
 
-        assert!(expected.equals(&actual))
+        assert!(
+            expected.equals(&actual),
+            "q: {q}: expected {expected:?}, got {actual:?}"
+        )
+    }
+}
+
+#[test]
+fn test_quantile_disc_conformance() {
+    for (q, expected) in [
+        (0., 1000),
+        (0.1, 1000),
+        (0.2, 2000),
+        (0.3, 2000),
+        (0.4, 3000),
+        (0.5, 3000),
+        (0.6, 4000),
+        (0.7, 4000),
+        (0.8, 5000),
+        (0.9, 5000),
+        (1., 6000),
+    ] {
+        let expr = lit(expected);
+
+        let sql_expr = format!("QUANTILE_DISC(Sales, {q})");
+
+        let (expected, actual) = create_expected(expr, &sql_expr);
+
+        assert!(
+            expected.equals(&actual),
+            "q: {q}: expected {expected:?}, got {actual:?}"
+        );
     }
 }
 
@@ -69,6 +100,9 @@ fn test_quantile_cont() {
         let sql_expr = format!("QUANTILE_CONT(Sales, {})", q);
         let (expected, actual) = create_expected(expr, &sql_expr);
 
-        assert!(expected.equals(&actual))
+        assert!(
+            expected.equals(&actual),
+            "q: {q}: expected {expected:?}, got {actual:?}"
+        )
     }
 }

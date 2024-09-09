@@ -1273,6 +1273,13 @@ impl SQLFunctionVisitor<'_> {
                                     polars_bail!(SQLSyntax: "QUANTILE_DISC value must be between 0 and 1 ({})", args[1])
                                 }
                             },
+                            Expr::Literal(LiteralValue::Int(n)) => {
+                                if (0..=1).contains(&n) {
+                                    Expr::from(n as f64)
+                                } else {
+                                    polars_bail!(SQLSyntax: "QUANTILE_DISC value must be between 0 and 1 ({})", args[1])
+                                }
+                            },
                             _ => polars_bail!(SQLSyntax: "invalid value for QUANTILE_DISC ({})", args[1])
                         };
                         Ok(e.quantile(value, QuantileInterpolOptions::Lower))
@@ -1288,6 +1295,13 @@ impl SQLFunctionVisitor<'_> {
                             Expr::Literal(LiteralValue::Float(f)) => {
                                 if (0.0..=1.0).contains(&f) {
                                     Expr::from(f)
+                                } else {
+                                    polars_bail!(SQLSyntax: "QUANTILE_CONT value must be between 0 and 1 ({})", args[1])
+                                }
+                            },
+                            Expr::Literal(LiteralValue::Int(n)) => {
+                                if (0..=1).contains(&n) {
+                                    Expr::from(n as f64)
                                 } else {
                                     polars_bail!(SQLSyntax: "QUANTILE_CONT value must be between 0 and 1 ({})", args[1])
                                 }
