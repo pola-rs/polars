@@ -10247,7 +10247,12 @@ class Expr:
                 old, new, default=default, return_dtype=return_dtype
             )
 
-        if new is no_default and isinstance(old, Mapping):
+        if new is no_default:
+            if not isinstance(old, Mapping):
+                msg = (
+                    "`new` argument is required if `old` argument is not a Mapping type"
+                )
+                raise TypeError(msg)
             new = pl.Series(old.values())
             old = pl.Series(old.keys())
         else:
@@ -10257,7 +10262,7 @@ class Expr:
                 new = pl.Series(new)
 
         old = parse_into_expression(old, str_as_lit=True)  # type: ignore[arg-type]
-        new = parse_into_expression(new, str_as_lit=True)  # type: ignore[arg-type]
+        new = parse_into_expression(new, str_as_lit=True)
 
         result = self._from_pyexpr(self._pyexpr.replace(old, new))
 
@@ -10438,7 +10443,12 @@ class Expr:
         │ 3   ┆ 1.0 ┆ 10.0     │
         └─────┴─────┴──────────┘
         """  # noqa: W505
-        if new is no_default and isinstance(old, Mapping):
+        if new is no_default:
+            if not isinstance(old, Mapping):
+                msg = (
+                    "`new` argument is required if `old` argument is not a Mapping type"
+                )
+                raise TypeError(msg)
             new = pl.Series(old.values())
             old = pl.Series(old.keys())
 
