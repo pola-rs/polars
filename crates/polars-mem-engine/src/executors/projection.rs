@@ -37,7 +37,7 @@ impl ProjectionExec {
                     self.has_windows,
                     self.options.run_parallel,
                 )?;
-                check_expand_literals(selected_cols, df.is_empty(), self.options)
+                check_expand_literals(&self.expr, selected_cols, df.is_empty(), self.options)
             });
 
             let df = POOL.install(|| iter.collect::<PolarsResult<Vec<_>>>())?;
@@ -53,7 +53,7 @@ impl ProjectionExec {
                 self.has_windows,
                 self.options.run_parallel,
             )?;
-            check_expand_literals(selected_cols, df.is_empty(), self.options)?
+            check_expand_literals(&self.expr, selected_cols, df.is_empty(), self.options)?
         };
 
         // this only runs during testing and check if the runtime type matches the predicted schema

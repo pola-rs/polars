@@ -22,6 +22,7 @@ use crate::constants::LEN;
 use crate::plans::Context;
 use crate::prelude::*;
 pub use scalar::is_scalar_ae;
+pub use traverse::*;
 
 #[derive(Clone, Debug, IntoStaticStr)]
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]

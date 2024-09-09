@@ -243,6 +243,7 @@ pub(super) fn evaluate_physical_expressions(
 }
 
 pub(super) fn check_expand_literals(
+    phys_expr: &[Arc<dyn PhysicalExpr>],
     mut selected_columns: Vec<Series>,
     zero_length: bool,
     options: ProjectionOptions,
@@ -282,21 +283,25 @@ pub(super) fn check_expand_literals(
     if !all_equal_len && should_broadcast {
         selected_columns = selected_columns
             .into_iter()
-            .map(|series| {
+            .zip(phys_expr)
+            .map(|(series, phys)| {
                 Ok(match series.len() {
                     0 if df_height == 1 => series,
                     1 => {
                         if has_empty {
-
-                        polars_ensure!(df_height == 1,
-                        ComputeError: "Series length {} doesn't match the DataFrame height of {}",
-                        series.len(), df_height
-                    );
-
+                            polars_ensure!(df_height == 1,
+                                ComputeError: "Series length {} doesn't match the DataFrame height of {}",
+                                series.len(), df_height
+                            );
                             series.slice(0, 0)
                         } else if df_height == 1 {
                             series
                         } else {
+                            polars_ensure!(phys.is_scalar(),
+                                InvalidOperation: "Series length {} doesn't match the DataFrame height of {}\n\n\
+                                If you want this Series to be broadcasted, ensure it is a scalar (for instance by adding '.first()'.",
+                                series.len(), df_height
+                            );
                             series.new_from_index(0, df_height)
                         }
                     },
