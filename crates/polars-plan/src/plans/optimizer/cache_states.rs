@@ -15,7 +15,7 @@ fn get_upper_projections(
     // During projection pushdown all accumulated.
     match parent {
         SimpleProjection { columns, .. } => {
-            let iter = columns.iter_names().cloned();
+            let iter = columns.iter_names_cloned();
             names_scratch.extend(iter);
             *found_required_columns = true;
             false
@@ -264,7 +264,7 @@ pub(super) fn set_cache_states(
                     // all columns
                     if !found_required_columns {
                         let schema = lp.schema(lp_arena);
-                        v.names_union.extend(schema.iter_names().cloned());
+                        v.names_union.extend(schema.iter_names_cloned());
                     }
                 }
                 frame.cache_id = Some(*id);

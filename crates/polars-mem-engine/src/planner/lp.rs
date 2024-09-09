@@ -430,7 +430,7 @@ fn create_physical_plan_impl(
                 .transpose()?;
             Ok(Box::new(executors::DataFrameExec {
                 df,
-                projection: output_schema.map(|s| s.iter_names().cloned().collect()),
+                projection: output_schema.map(|s| s.iter_names_cloned().collect()),
                 filter: selection,
                 predicate_has_windows: state.has_windows,
             }))

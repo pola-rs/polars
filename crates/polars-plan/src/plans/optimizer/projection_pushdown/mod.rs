@@ -346,7 +346,7 @@ impl ProjectionPushDown {
                 expr_arena,
             ),
             SimpleProjection { columns, input, .. } => {
-                let exprs = names_to_expr_irs(columns.iter_names().cloned(), expr_arena);
+                let exprs = names_to_expr_irs(columns.iter_names_cloned(), expr_arena);
                 process_projection(
                     self,
                     input,
