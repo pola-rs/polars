@@ -733,7 +733,9 @@ impl LazyFrame {
                         // Fallback to normal engine if error is due to not being implemented
                         // and auto_new_streaming is set, otherwise propagate error.
                         if auto_new_streaming
-                            && e.downcast_ref::<&str>() == Some(&"not yet implemented")
+                            && e.downcast_ref::<&str>()
+                                .map(|s| s.starts_with("not yet implemented"))
+                                .unwrap_or(false)
                         {
                             if polars_core::config::verbose() {
                                 eprintln!("caught unimplemented error in new streaming engine, falling back to normal engine");
