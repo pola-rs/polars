@@ -7118,19 +7118,10 @@ class DataFrame:
             DataFrame to join with.
         *predicates
             (In)Equality condition to join the two table on.
-            The left `pl.col(..)` will refer to the left table
-            and the right `pl.col(..)`
-            to the right table.
-            For example: `pl.col("time") >= pl.col("duration")`
+            When a column name occurs in both tables, the proper suffix must
+            be applied in the predicate.
         suffix
             Suffix to append to columns with a duplicate name.
-
-        Notes
-        -----
-        This method is strict about its equality expressions.
-        Only 1 equality expression is allowed per predicate, where
-        the lhs `pl.col` refers to the left table in the join, and the
-        rhs `pl.col` refers to the right table.
 
         Examples
         --------

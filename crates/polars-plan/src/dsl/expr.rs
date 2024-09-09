@@ -393,6 +393,29 @@ impl Operator {
         )
     }
 
+    pub fn swap_operands(self) -> Self {
+        match self {
+            Operator::Eq => Operator::Eq,
+            Operator::Gt => Operator::Lt,
+            Operator::GtEq => Operator::LtEq,
+            Operator::LtEq => Operator::GtEq,
+            Operator::Or => Operator::Or,
+            Operator::LogicalAnd => Operator::LogicalAnd,
+            Operator::LogicalOr => Operator::LogicalOr,
+            Operator::Xor => Operator::Xor,
+            Operator::NotEq => Operator::NotEq,
+            Operator::EqValidity => Operator::EqValidity,
+            Operator::NotEqValidity => Operator::NotEqValidity,
+            Operator::Divide => Operator::Multiply,
+            Operator::Multiply => Operator::Divide,
+            Operator::And => Operator::And,
+            Operator::Plus => Operator::Minus,
+            Operator::Minus => Operator::Plus,
+            Operator::Lt => Operator::Gt,
+            _ => unimplemented!(),
+        }
+    }
+
     pub fn is_arithmetic(&self) -> bool {
         !(self.is_comparison())
     }
