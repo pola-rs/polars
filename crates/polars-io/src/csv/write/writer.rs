@@ -2,7 +2,7 @@ use std::io::Write;
 use std::num::NonZeroUsize;
 
 use polars_core::frame::DataFrame;
-use polars_core::schema::{IndexOfSchema, Schema};
+use polars_core::schema::Schema;
 use polars_core::POOL;
 use polars_error::PolarsResult;
 
@@ -228,7 +228,11 @@ impl<W: Write> BatchedWriter<W> {
 
         if !self.has_written_header {
             self.has_written_header = true;
-            let names = self.schema.get_names_str();
+            let names = self
+                .schema
+                .iter_names()
+                .map(|x| x.as_str())
+                .collect::<Vec<_>>();
             write_header(&mut self.writer.buffer, &names, &self.writer.options)?;
         };
 

@@ -1073,14 +1073,14 @@ pub(crate) fn maybe_init_projection_excluding_hive(
 
     let (first_hive_name, _) = hive_schema.get_at_index(0)?;
 
+    // TODO: Optimize this
     let names = match reader_schema {
-        Either::Left(ref v) => {
-            let names = v.get_names_owned();
-            names.contains(first_hive_name).then_some(names)
-        },
+        Either::Left(ref v) => v
+            .contains(first_hive_name.as_str())
+            .then(|| v.iter_names().cloned().collect::<Vec<_>>()),
         Either::Right(ref v) => v
             .contains(first_hive_name.as_str())
-            .then(|| v.get_names_owned()),
+            .then(|| v.iter_names().cloned().collect()),
     };
 
     let names = names?;

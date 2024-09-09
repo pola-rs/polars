@@ -1,6 +1,5 @@
 use std::any::Any;
 
-use polars_core::prelude::IndexOfSchema;
 use polars_core::schema::SchemaRef;
 
 use crate::executors::sources::ReProjectSource;
@@ -41,7 +40,7 @@ impl Sink for ReProjectSink {
     fn finalize(&mut self, context: &PExecutionContext) -> PolarsResult<FinalizedSink> {
         Ok(match self.sink.finalize(context)? {
             FinalizedSink::Finished(df) => {
-                FinalizedSink::Finished(df._select_impl(self.schema.get_names_owned().as_slice())?)
+                FinalizedSink::Finished(df.select(self.schema.iter_names().cloned())?)
             },
             FinalizedSink::Source(source) => {
                 FinalizedSink::Source(Box::new(ReProjectSource::new(self.schema.clone(), source)))

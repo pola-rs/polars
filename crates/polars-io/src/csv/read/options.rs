@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use polars_core::datatypes::{DataType, Field};
-use polars_core::schema::{IndexOfSchema, Schema, SchemaRef};
+use polars_core::schema::{Schema, SchemaRef};
 use polars_error::PolarsResult;
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]

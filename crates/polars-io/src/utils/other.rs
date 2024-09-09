@@ -111,26 +111,10 @@ pub(crate) fn columns_to_projection(
     schema: &ArrowSchema,
 ) -> PolarsResult<Vec<usize>> {
     let mut prj = Vec::with_capacity(columns.len());
-    if columns.len() > 100 {
-        let mut column_names = PlHashMap::with_capacity(schema.len());
-        schema.iter_values().enumerate().for_each(|(i, c)| {
-            column_names.insert(c.name.as_str(), i);
-        });
 
-        for column in columns.iter() {
-            let Some(&i) = column_names.get(column.as_str()) else {
-                polars_bail!(
-                    ColumnNotFound:
-                    "unable to find column {:?}; valid columns: {:?}", column, schema.get_names(),
-                );
-            };
-            prj.push(i);
-        }
-    } else {
-        for column in columns.iter() {
-            let i = schema.try_index_of(column)?;
-            prj.push(i);
-        }
+    for column in columns {
+        let i = schema.try_index_of(column)?;
+        prj.push(i);
     }
 
     Ok(prj)
