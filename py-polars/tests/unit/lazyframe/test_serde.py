@@ -40,29 +40,31 @@ def test_lf_serde_roundtrip_binary(lf: pl.LazyFrame) -> None:
         ],
     )
 )
+@pytest.mark.filterwarnings("ignore")
 def test_lf_serde_roundtrip_json(lf: pl.LazyFrame) -> None:
     serialized = lf.serialize(format="json")
     result = pl.LazyFrame.deserialize(io.StringIO(serialized), format="json")
     assert_frame_equal(result, lf, categorical_as_str=True)
 
 
-@pytest.fixture()
+@pytest.fixture
 def lf() -> pl.LazyFrame:
     """Sample LazyFrame for testing serialization/deserialization."""
     return pl.LazyFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]}).select("a").sum()
+
+
+@pytest.mark.filterwarnings("ignore")
+def test_lf_serde_json_stringio(lf: pl.LazyFrame) -> None:
+    serialized = lf.serialize(format="json")
+    assert isinstance(serialized, str)
+    result = pl.LazyFrame.deserialize(io.StringIO(serialized), format="json")
+    assert_frame_equal(result, lf)
 
 
 def test_lf_serde(lf: pl.LazyFrame) -> None:
     serialized = lf.serialize()
     assert isinstance(serialized, bytes)
     result = pl.LazyFrame.deserialize(io.BytesIO(serialized))
-    assert_frame_equal(result, lf)
-
-
-def test_lf_serde_json_stringio(lf: pl.LazyFrame) -> None:
-    serialized = lf.serialize(format="json")
-    assert isinstance(serialized, str)
-    result = pl.LazyFrame.deserialize(io.StringIO(serialized), format="json")
     assert_frame_equal(result, lf)
 
 
@@ -74,6 +76,7 @@ def test_lf_serde_json_stringio(lf: pl.LazyFrame) -> None:
         ("json", io.BytesIO()),
     ],
 )
+@pytest.mark.filterwarnings("ignore")
 def test_lf_serde_to_from_buffer(
     lf: pl.LazyFrame, format: SerializationFormat, buf: io.IOBase
 ) -> None:
@@ -83,7 +86,7 @@ def test_lf_serde_to_from_buffer(
     assert_frame_equal(lf, result)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_lf_serde_to_from_file(lf: pl.LazyFrame, tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
@@ -100,7 +103,7 @@ def test_lf_deserialize_validation() -> None:
         pl.LazyFrame.deserialize(f, format="json")
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_lf_serde_scan(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
     path = tmp_path / "dataset.parquet"

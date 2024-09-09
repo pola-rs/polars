@@ -5,6 +5,12 @@ use polars_core::prelude::*;
 use polars_utils::cache::FastFixedCache;
 
 use crate::prelude::*;
+use crate::truncate::fast_truncate;
+
+#[inline(always)]
+fn fast_round(t: i64, every: i64) -> i64 {
+    fast_truncate(t + every / 2, every)
+}
 
 pub trait PolarsRound {
     fn round(&self, every: &StringChunked, tz: Option<&Tz>) -> PolarsResult<Self>
@@ -35,11 +41,7 @@ impl PolarsRound for DatetimeChunked {
                         TimeUnit::Nanoseconds => every_parsed.duration_ns(),
                     };
                     return Ok(self
-                        .apply_values(|t| {
-                            // Round half-way values away from zero
-                            let half_away = t.signum() * every / 2;
-                            t + half_away - (t + half_away) % every
-                        })
+                        .apply_values(|t| fast_round(t, every))
                         .into_datetime(self.time_unit(), time_zone.clone()));
                 } else {
                     let w = Window::new(every_parsed, every_parsed, offset);
@@ -57,7 +59,7 @@ impl PolarsRound for DatetimeChunked {
                     return Ok(out?.into_datetime(self.time_unit(), self.time_zone().clone()));
                 }
             } else {
-                return Ok(Int64Chunked::full_null(self.name(), self.len())
+                return Ok(Int64Chunked::full_null(self.name().clone(), self.len())
                     .into_datetime(self.time_unit(), self.time_zone().clone()));
             }
         }
@@ -110,7 +112,7 @@ impl PolarsRound for DateChunked {
                         )
                     })
                 } else {
-                    Ok(Int32Chunked::full_null(self.name(), self.len()))
+                    Ok(Int32Chunked::full_null(self.name().clone(), self.len()))
                 }
             },
             _ => broadcast_try_binary_elementwise(self, every, |opt_t, opt_every| {

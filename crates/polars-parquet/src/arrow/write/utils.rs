@@ -92,7 +92,7 @@ pub fn build_plain_page(
             max_def_level: 0,
             max_rep_level: 0,
         },
-        Some(num_rows),
+        num_rows,
     ))
 }
 
@@ -134,16 +134,18 @@ impl<T, I: Iterator<Item = T>> Iterator for ExactSizedIter<T, I> {
     }
 }
 
+impl<T, I: Iterator<Item = T>> std::iter::ExactSizeIterator for ExactSizedIter<T, I> {}
+
 /// Returns the number of bits needed to bitpack `max`
 #[inline]
 pub fn get_bit_width(max: u64) -> u32 {
     64 - max.leading_zeros()
 }
 
-pub(super) fn invalid_encoding(encoding: Encoding, data_type: &ArrowDataType) -> PolarsError {
+pub(super) fn invalid_encoding(encoding: Encoding, dtype: &ArrowDataType) -> PolarsError {
     polars_err!(InvalidOperation:
         "Datatype {:?} cannot be encoded by {:?} encoding",
-        data_type,
+        dtype,
         encoding
     )
 }

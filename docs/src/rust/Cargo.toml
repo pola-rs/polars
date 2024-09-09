@@ -134,6 +134,7 @@ required-features = ["polars/lazy", "polars/asof_join"]
 [[bin]]
 name = "user-guide-transformations-unpivot"
 path = "user-guide/transformations/unpivot.rs"
+required-features = ["polars/pivot"]
 [[bin]]
 name = "user-guide-transformations-pivot"
 path = "user-guide/transformations/pivot.rs"

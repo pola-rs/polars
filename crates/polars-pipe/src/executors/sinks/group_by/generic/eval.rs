@@ -1,6 +1,5 @@
 use std::cell::UnsafeCell;
 
-use polars_core::export::ahash::RandomState;
 use polars_row::{EncodingField, RowsEncoded};
 
 use super::*;
@@ -13,7 +12,7 @@ pub(super) struct Eval {
     key_columns_expr: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
     // the columns that will be aggregated
     aggregation_columns_expr: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
-    hb: RandomState,
+    hb: PlRandomState,
     // amortize allocations
     aggregation_series: UnsafeCell<Vec<Series>>,
     keys_columns: UnsafeCell<Vec<ArrayRef>>,
@@ -28,7 +27,7 @@ impl Eval {
         key_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
         aggregation_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
     ) -> Self {
-        let hb = RandomState::default();
+        let hb = PlRandomState::default();
         Self {
             key_columns_expr: key_columns,
             aggregation_columns_expr: aggregation_columns,

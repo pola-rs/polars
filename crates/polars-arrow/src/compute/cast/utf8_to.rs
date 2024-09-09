@@ -35,35 +35,32 @@ pub fn utf8_to_dictionary<O: Offset, K: DictionaryKey>(
 
 /// Conversion of utf8
 pub fn utf8_to_large_utf8(from: &Utf8Array<i32>) -> Utf8Array<i64> {
-    let data_type = Utf8Array::<i64>::default_data_type();
+    let dtype = Utf8Array::<i64>::default_dtype();
     let validity = from.validity().cloned();
     let values = from.values().clone();
 
     let offsets = from.offsets().into();
     // SAFETY: sound because `values` fulfills the same invariants as `from.values()`
-    unsafe { Utf8Array::<i64>::new_unchecked(data_type, offsets, values, validity) }
+    unsafe { Utf8Array::<i64>::new_unchecked(dtype, offsets, values, validity) }
 }
 
 /// Conversion of utf8
 pub fn utf8_large_to_utf8(from: &Utf8Array<i64>) -> PolarsResult<Utf8Array<i32>> {
-    let data_type = Utf8Array::<i32>::default_data_type();
+    let dtype = Utf8Array::<i32>::default_dtype();
     let validity = from.validity().cloned();
     let values = from.values().clone();
     let offsets = from.offsets().try_into()?;
 
     // SAFETY: sound because `values` fulfills the same invariants as `from.values()`
-    Ok(unsafe { Utf8Array::<i32>::new_unchecked(data_type, offsets, values, validity) })
+    Ok(unsafe { Utf8Array::<i32>::new_unchecked(dtype, offsets, values, validity) })
 }
 
 /// Conversion to binary
-pub fn utf8_to_binary<O: Offset>(
-    from: &Utf8Array<O>,
-    to_data_type: ArrowDataType,
-) -> BinaryArray<O> {
+pub fn utf8_to_binary<O: Offset>(from: &Utf8Array<O>, to_dtype: ArrowDataType) -> BinaryArray<O> {
     // SAFETY: erasure of an invariant is always safe
     unsafe {
         BinaryArray::<O>::new(
-            to_data_type,
+            to_dtype,
             from.offsets().clone(),
             from.values().clone(),
             from.validity().cloned(),

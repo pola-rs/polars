@@ -251,9 +251,9 @@ fn create_physical_expr_inner(
 
                     if apply_columns.is_empty() {
                         if has_aexpr(function, expr_arena, |e| matches!(e, AExpr::Literal(_))) {
-                            apply_columns.push(Arc::from("literal"))
+                            apply_columns.push(PlSmallStr::from_static("literal"))
                         } else if has_aexpr(function, expr_arena, |e| matches!(e, AExpr::Len)) {
-                            apply_columns.push(Arc::from("len"))
+                            apply_columns.push(PlSmallStr::from_static("len"))
                         } else {
                             let e = node_to_expr(function, expr_arena);
                             polars_bail!(
@@ -428,13 +428,13 @@ fn create_physical_expr_inner(
         },
         Cast {
             expr,
-            data_type,
+            dtype,
             options,
         } => {
             let phys_expr = create_physical_expr_inner(*expr, ctxt, expr_arena, schema, state)?;
             Ok(Arc::new(CastExpr {
                 input: phys_expr,
-                data_type: data_type.clone(),
+                dtype: dtype.clone(),
                 expr: node_to_expr(expression, expr_arena),
                 options: *options,
             }))
@@ -575,12 +575,6 @@ fn create_physical_expr_inner(
                 name.clone(),
                 node_to_expr(*input, expr_arena),
             )))
-        },
-        Wildcard => {
-            polars_bail!(ComputeError: "wildcard column selection not supported at this point")
-        },
-        Nth(n) => {
-            polars_bail!(ComputeError: "nth column selection not supported at this point (n={})", n)
         },
     }
 }

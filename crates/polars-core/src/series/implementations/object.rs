@@ -1,8 +1,6 @@
 use std::any::Any;
 use std::borrow::Cow;
 
-use ahash::RandomState;
-
 use super::{BitRepr, MetadataFlags};
 use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::object::PolarsObjectSafe;
@@ -23,7 +21,7 @@ where
 {
     fn get_list_builder(
         &self,
-        _name: &str,
+        _name: PlSmallStr,
         _values_capacity: usize,
         _list_capacity: usize,
     ) -> Box<dyn ListBuilderTrait> {
@@ -56,12 +54,16 @@ where
         (&self.0).into_total_eq_inner()
     }
 
-    fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
+    fn vec_hash(&self, random_state: PlRandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
         self.0.vec_hash(random_state, buf)?;
         Ok(())
     }
 
-    fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) -> PolarsResult<()> {
+    fn vec_hash_combine(
+        &self,
+        build_hasher: PlRandomState,
+        hashes: &mut [u64],
+    ) -> PolarsResult<()> {
         self.0.vec_hash_combine(build_hasher, hashes)?;
         Ok(())
     }
@@ -81,7 +83,7 @@ impl<T> SeriesTrait for SeriesWrap<ObjectChunked<T>>
 where
     T: PolarsObject,
 {
-    fn rename(&mut self, name: &str) {
+    fn rename(&mut self, name: PlSmallStr) {
         ObjectChunked::rename(&mut self.0, name)
     }
 
@@ -89,7 +91,7 @@ where
         ObjectChunked::chunk_lengths(&self.0)
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &PlSmallStr {
         ObjectChunked::name(&self.0)
     }
 
@@ -117,7 +119,7 @@ where
         if self.dtype() != other.dtype() {
             polars_bail!(append);
         }
-        ObjectChunked::append(&mut self.0, other.as_ref().as_ref());
+        ObjectChunked::append(&mut self.0, other.as_ref().as_ref())?;
         Ok(())
     }
 
@@ -158,8 +160,8 @@ where
         ChunkExpandAtIndex::new_from_index(&self.0, index, length).into_series()
     }
 
-    fn cast(&self, data_type: &DataType, _cast_options: CastOptions) -> PolarsResult<Series> {
-        if matches!(data_type, DataType::Object(_, None)) {
+    fn cast(&self, dtype: &DataType, _cast_options: CastOptions) -> PolarsResult<Series> {
+        if matches!(dtype, DataType::Object(_, None)) {
             Ok(self.0.clone().into_series())
         } else {
             Err(PolarsError::ComputeError(
@@ -244,7 +246,7 @@ mod test {
             }
         }
 
-        let ca = ObjectChunked::new_from_vec("a", vec![0i32, 1, 2]);
+        let ca = ObjectChunked::new_from_vec("a".into(), vec![0i32, 1, 2]);
         let s = ca.into_series();
 
         let ca = s.as_any().downcast_ref::<ObjectChunked<i32>>().unwrap();

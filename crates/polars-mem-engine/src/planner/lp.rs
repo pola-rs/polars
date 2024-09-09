@@ -244,7 +244,7 @@ fn create_physical_plan_impl(
             if streamable {
                 // This can cause problems with string caches
                 streamable = !input_schema
-                    .iter_dtypes()
+                    .iter_values()
                     .any(|dt| dt.contains_categoricals())
                     || {
                         #[cfg(feature = "dtype-categorical")]
@@ -276,7 +276,7 @@ fn create_physical_plan_impl(
         },
         #[allow(unused_variables)]
         Scan {
-            paths,
+            sources,
             file_info,
             hive_parts,
             output_schema,
@@ -306,7 +306,7 @@ fn create_physical_plan_impl(
             match scan_type {
                 #[cfg(feature = "csv")]
                 FileScan::Csv { options, .. } => Ok(Box::new(executors::CsvExec {
-                    paths,
+                    sources,
                     file_info,
                     options,
                     predicate,
@@ -318,7 +318,7 @@ fn create_physical_plan_impl(
                     cloud_options,
                     metadata,
                 } => Ok(Box::new(executors::IpcExec {
-                    paths,
+                    sources,
                     file_info,
                     predicate,
                     options,
@@ -332,7 +332,7 @@ fn create_physical_plan_impl(
                     cloud_options,
                     metadata,
                 } => Ok(Box::new(executors::ParquetExec::new(
-                    paths,
+                    sources,
                     file_info,
                     hive_parts,
                     predicate,
@@ -343,7 +343,7 @@ fn create_physical_plan_impl(
                 ))),
                 #[cfg(feature = "json")]
                 FileScan::NDJson { options, .. } => Ok(Box::new(executors::JsonExec::new(
-                    paths,
+                    sources,
                     options,
                     file_options,
                     file_info,
@@ -375,7 +375,8 @@ fn create_physical_plan_impl(
                 state.expr_depth,
             );
 
-            let streamable = all_streamable(&expr, expr_arena, Context::Default);
+            let streamable =
+                options.should_broadcast && all_streamable(&expr, expr_arena, Context::Default);
             let phys_expr = create_physical_expressions_from_irs(
                 &expr,
                 Context::Default,
@@ -429,7 +430,7 @@ fn create_physical_plan_impl(
                 .transpose()?;
             Ok(Box::new(executors::DataFrameExec {
                 df,
-                projection: output_schema.map(|s| s.iter_names().cloned().collect()),
+                projection: output_schema.map(|s| s.iter_names_cloned().collect()),
                 filter: selection,
                 predicate_has_windows: state.has_windows,
             }))
@@ -629,7 +630,8 @@ fn create_physical_plan_impl(
             let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
             let input = create_physical_plan_impl(input, lp_arena, expr_arena, state)?;
 
-            let streamable = all_streamable(&exprs, expr_arena, Context::Default);
+            let streamable =
+                options.should_broadcast && all_streamable(&exprs, expr_arena, Context::Default);
 
             let mut state = ExpressionConversionState::new(
                 POOL.current_num_threads() > exprs.len(),

@@ -618,7 +618,7 @@ def test_full_outer_join_list_() -> None:
     }
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 def test_join_validation() -> None:
     def test_each_join_validation(
         unique: pl.DataFrame, duplicate: pl.DataFrame, on: str, how: JoinStrategy
@@ -788,8 +788,7 @@ def test_join_on_wildcard_error() -> None:
     df = pl.DataFrame({"x": [1]})
     df2 = pl.DataFrame({"x": [1], "y": [2]})
     with pytest.raises(
-        ComputeError,
-        match="wildcard column selection not supported at this point",
+        InvalidOperationError,
     ):
         df.join(df2, on=pl.all())
 
@@ -798,8 +797,7 @@ def test_join_on_nth_error() -> None:
     df = pl.DataFrame({"x": [1]})
     df2 = pl.DataFrame({"x": [1], "y": [2]})
     with pytest.raises(
-        ComputeError,
-        match=r"nth column selection not supported at this point \(n=0\)",
+        InvalidOperationError,
     ):
         df.join(df2, on=pl.first())
 
@@ -850,7 +848,7 @@ def test_join_list_non_numeric() -> None:
     }
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 def test_join_4_columns_with_validity() -> None:
     # join on 4 columns so we trigger combine validities
     # use 138 as that is 2 u64 and a remainder
@@ -872,7 +870,7 @@ def test_join_4_columns_with_validity() -> None:
     )
 
 
-@pytest.mark.release()
+@pytest.mark.release
 def test_cross_join() -> None:
     # triggers > 100 rows implementation
     # https://github.com/pola-rs/polars/blob/5f5acb2a523ce01bc710768b396762b8e69a9e07/polars/polars-core/src/frame/cross_join.rs#L34
@@ -883,7 +881,7 @@ def test_cross_join() -> None:
     assert_frame_equal(df2.join(df1, how="cross").slice(0, 100), out)
 
 
-@pytest.mark.release()
+@pytest.mark.release
 def test_cross_join_slice_pushdown() -> None:
     # this will likely go out of memory if we did not pushdown the slice
     df = (

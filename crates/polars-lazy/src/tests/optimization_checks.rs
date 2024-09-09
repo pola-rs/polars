@@ -65,7 +65,7 @@ pub(crate) fn is_pipeline(q: LazyFrame) -> bool {
     matches!(
         lp_arena.get(lp),
         IR::MapFunction {
-            function: FunctionNode::Pipeline { .. },
+            function: FunctionIR::Pipeline { .. },
             ..
         }
     )
@@ -79,7 +79,7 @@ pub(crate) fn has_pipeline(q: LazyFrame) -> bool {
         matches!(
             lp,
             IR::MapFunction {
-                function: FunctionNode::Pipeline { .. },
+                function: FunctionIR::Pipeline { .. },
                 ..
             }
         )
@@ -308,7 +308,10 @@ pub fn test_predicate_block_cast() -> PolarsResult<()> {
 
         let out = lf.collect()?;
         let s = out.column("value").unwrap();
-        assert_eq!(s, &Series::new("value", [1.0f32, 2.0]));
+        assert_eq!(
+            s,
+            &Series::new(PlSmallStr::from_static("value"), [1.0f32, 2.0])
+        );
     }
 
     Ok(())
@@ -495,8 +498,8 @@ fn test_with_column_prune() -> PolarsResult<()> {
         matches!(lp, SimpleProjection { .. } | DataFrameScan { .. })
     }));
     assert_eq!(
-        q.schema().unwrap().as_ref(),
-        &Schema::from_iter([Field::new("c1", DataType::Int32)])
+        q.collect_schema().unwrap().as_ref(),
+        &Schema::from_iter([Field::new(PlSmallStr::from_static("c1"), DataType::Int32)])
     );
     Ok(())
 }

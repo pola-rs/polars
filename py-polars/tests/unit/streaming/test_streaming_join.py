@@ -269,7 +269,7 @@ def test_non_coalescing_streaming_left_join() -> None:
     }
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_streaming_outer_join_partial_flush(tmp_path: Path) -> None:
     data = {
         "value_at": [datetime(2024, i + 1, 1) for i in range(6)],

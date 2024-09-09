@@ -83,6 +83,6 @@ pub fn array_to_page_v1(
         DataPageHeader::V1(header),
         CowBuffer::Owned(buffer),
         descriptor.clone(),
-        Some(array.len()),
+        array.len(),
     )))
 }

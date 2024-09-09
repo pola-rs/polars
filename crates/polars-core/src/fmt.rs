@@ -446,16 +446,16 @@ fn field_to_str(f: &Field, str_truncate: usize) -> (String, usize) {
     if env_is_true(FMT_TABLE_HIDE_COLUMN_NAMES) {
         column_name = "".to_string();
     }
-    let column_data_type = if env_is_true(FMT_TABLE_HIDE_COLUMN_DATA_TYPES) {
+    let column_dtype = if env_is_true(FMT_TABLE_HIDE_COLUMN_DATA_TYPES) {
         "".to_string()
     } else if env_is_true(FMT_TABLE_INLINE_COLUMN_DATA_TYPE)
         | env_is_true(FMT_TABLE_HIDE_COLUMN_NAMES)
     {
-        format!("{}", f.data_type())
+        format!("{}", f.dtype())
     } else {
-        format!("\n{}", f.data_type())
+        format!("\n{}", f.dtype())
     };
-    let mut dtype_length = column_data_type.trim_start().len();
+    let mut dtype_length = column_dtype.trim_start().len();
     let mut separator = "\n---";
     if env_is_true(FMT_TABLE_HIDE_COLUMN_SEPARATOR)
         | env_is_true(FMT_TABLE_HIDE_COLUMN_NAMES)
@@ -466,11 +466,11 @@ fn field_to_str(f: &Field, str_truncate: usize) -> (String, usize) {
     let s = if env_is_true(FMT_TABLE_INLINE_COLUMN_DATA_TYPE)
         & !env_is_true(FMT_TABLE_HIDE_COLUMN_DATA_TYPES)
     {
-        let inline_name_dtype = format!("{column_name} ({column_data_type})");
+        let inline_name_dtype = format!("{column_name} ({column_dtype})");
         dtype_length = inline_name_dtype.len();
         inline_name_dtype
     } else {
-        format!("{column_name}{separator}{column_data_type}")
+        format!("{column_name}{separator}{column_dtype}")
     };
     let mut s_len = std::cmp::max(name_length, dtype_length);
     let separator_length = separator.trim().len();
@@ -729,7 +729,7 @@ impl Display for DataFrame {
                 let num_preset = std::env::var(FMT_TABLE_CELL_NUMERIC_ALIGNMENT)
                     .unwrap_or_else(|_| str_preset.to_string());
                 for (column_index, column) in table.column_iter_mut().enumerate() {
-                    let dtype = fields[column_index].data_type();
+                    let dtype = fields[column_index].dtype();
                     let mut preset = str_preset.as_str();
                     if dtype.is_numeric() || dtype.is_decimal() {
                         preset = num_preset.as_str();
@@ -1190,8 +1190,12 @@ mod test {
 
     #[test]
     fn test_fmt_list() {
-        let mut builder =
-            ListPrimitiveChunkedBuilder::<Int32Type>::new("a", 10, 10, DataType::Int32);
+        let mut builder = ListPrimitiveChunkedBuilder::<Int32Type>::new(
+            PlSmallStr::from_static("a"),
+            10,
+            10,
+            DataType::Int32,
+        );
         builder.append_opt_slice(Some(&[1, 2, 3, 4, 5, 6]));
         builder.append_opt_slice(None);
         let list_long = builder.finish().into_series();
@@ -1266,8 +1270,12 @@ Series: 'a' [list[i32]]
             format!("{:?}", list_long)
         );
 
-        let mut builder =
-            ListPrimitiveChunkedBuilder::<Int32Type>::new("a", 10, 10, DataType::Int32);
+        let mut builder = ListPrimitiveChunkedBuilder::<Int32Type>::new(
+            PlSmallStr::from_static("a"),
+            10,
+            10,
+            DataType::Int32,
+        );
         builder.append_opt_slice(Some(&[1]));
         builder.append_opt_slice(None);
         let list_short = builder.finish().into_series();
@@ -1308,8 +1316,12 @@ Series: 'a' [list[i32]]
             format!("{:?}", list_short)
         );
 
-        let mut builder =
-            ListPrimitiveChunkedBuilder::<Int32Type>::new("a", 10, 10, DataType::Int32);
+        let mut builder = ListPrimitiveChunkedBuilder::<Int32Type>::new(
+            PlSmallStr::from_static("a"),
+            10,
+            10,
+            DataType::Int32,
+        );
         builder.append_opt_slice(Some(&[]));
         builder.append_opt_slice(None);
         let list_empty = builder.finish().into_series();
@@ -1329,7 +1341,8 @@ Series: 'a' [list[i32]]
 
     #[test]
     fn test_fmt_temporal() {
-        let s = Int32Chunked::new("Date", &[Some(1), None, Some(3)]).into_date();
+        let s = Int32Chunked::new(PlSmallStr::from_static("Date"), &[Some(1), None, Some(3)])
+            .into_date();
         assert_eq!(
             r#"shape: (3,)
 Series: 'Date' [date]
@@ -1341,7 +1354,7 @@ Series: 'Date' [date]
             format!("{:?}", s.into_series())
         );
 
-        let s = Int64Chunked::new("", &[Some(1), None, Some(1_000_000_000_000)])
+        let s = Int64Chunked::new(PlSmallStr::EMPTY, &[Some(1), None, Some(1_000_000_000_000)])
             .into_datetime(TimeUnit::Nanoseconds, None);
         assert_eq!(
             r#"shape: (3,)
@@ -1357,7 +1370,7 @@ Series: '' [datetime[ns]]
 
     #[test]
     fn test_fmt_chunkedarray() {
-        let ca = Int32Chunked::new("Date", &[Some(1), None, Some(3)]);
+        let ca = Int32Chunked::new(PlSmallStr::from_static("Date"), &[Some(1), None, Some(3)]);
         assert_eq!(
             r#"shape: (3,)
 ChunkedArray: 'Date' [i32]
@@ -1368,7 +1381,7 @@ ChunkedArray: 'Date' [i32]
 ]"#,
             format!("{:?}", ca)
         );
-        let ca = StringChunked::new("name", &["a", "b"]);
+        let ca = StringChunked::new(PlSmallStr::from_static("name"), &["a", "b"]);
         assert_eq!(
             r#"shape: (2,)
 ChunkedArray: 'name' [str]

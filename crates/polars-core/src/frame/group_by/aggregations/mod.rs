@@ -359,7 +359,7 @@ where
 {
     let invalid_quantile = !(0.0..=1.0).contains(&quantile);
     if invalid_quantile {
-        return Series::full_null(ca.name(), groups.len(), ca.dtype());
+        return Series::full_null(ca.name().clone(), groups.len(), ca.dtype());
     }
     match groups {
         GroupsProxy::Idx(groups) => {

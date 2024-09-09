@@ -1,6 +1,5 @@
 use std::hash::Hash;
 
-use ahash::RandomState;
 use hashbrown::HashMap;
 use num_traits::Zero;
 use polars_core::hashing::{
@@ -13,13 +12,14 @@ use polars_core::utils::flatten::flatten_nullable;
 use polars_core::utils::{_set_partition_size, split_and_flatten};
 use polars_core::{with_match_physical_float_polars_type, IdBuildHasher, POOL};
 use polars_utils::abs_diff::AbsDiff;
+use polars_utils::aliases::PlRandomState;
 use polars_utils::hashing::{hash_to_partition, DirtyHash};
 use polars_utils::idx_vec::IdxVec;
 use polars_utils::nulls::IsNull;
+use polars_utils::pl_str::PlSmallStr;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 use polars_utils::unitvec;
 use rayon::prelude::*;
-use smartstring::alias::String as SmartString;
 
 use super::*;
 
@@ -259,7 +259,7 @@ where
     let split_by_right = split_and_flatten(by_right, n_threads);
     let offsets = compute_len_offsets(split_by_left.iter().map(|s| s.len()));
 
-    let hb = RandomState::default();
+    let hb = PlRandomState::default();
     let prep_by_left = prepare_bytes(&split_by_left, &hb);
     let prep_by_right = prepare_bytes(&split_by_right, &hb);
     let hash_tbls = build_tables(prep_by_right, false);
@@ -600,11 +600,11 @@ pub trait AsofJoinBy: IntoDf {
         other: &DataFrame,
         left_on: &Series,
         right_on: &Series,
-        left_by: Vec<SmartString>,
-        right_by: Vec<SmartString>,
+        left_by: Vec<PlSmallStr>,
+        right_by: Vec<PlSmallStr>,
         strategy: AsofStrategy,
         tolerance: Option<AnyValue<'static>>,
-        suffix: Option<&str>,
+        suffix: Option<PlSmallStr>,
         slice: Option<(i64, usize)>,
         coalesce: bool,
     ) -> PolarsResult<DataFrame> {
@@ -678,8 +678,9 @@ pub trait AsofJoinBy: IntoDf {
         let left = self_df.clone();
 
         // SAFETY: join tuples are in bounds.
-        let right_df =
-            unsafe { proj_other_df.take_unchecked(&IdxCa::with_chunk("", right_join_tuples)) };
+        let right_df = unsafe {
+            proj_other_df.take_unchecked(&IdxCa::with_chunk(PlSmallStr::EMPTY, right_join_tuples))
+        };
 
         _finish_join(left, right_df, suffix)
     }

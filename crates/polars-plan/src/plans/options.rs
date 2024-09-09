@@ -19,7 +19,8 @@ use polars_time::{DynamicGroupOptions, RollingGroupOptions};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-use crate::plans::ExprIR;
+use crate::dsl::Selector;
+use crate::plans::{ExprIR, PlSmallStr};
 #[cfg(feature = "python")]
 use crate::prelude::python_udf::PythonFunction;
 
@@ -30,14 +31,14 @@ pub type FileCount = u32;
 /// Generic options for all file types.
 pub struct FileScanOptions {
     pub slice: Option<(i64, usize)>,
-    pub with_columns: Option<Arc<[String]>>,
+    pub with_columns: Option<Arc<[PlSmallStr]>>,
     pub cache: bool,
     pub row_index: Option<RowIndex>,
     pub rechunk: bool,
     pub file_counter: FileCount,
     pub hive_options: HiveOptions,
     pub glob: bool,
-    pub include_file_paths: Option<Arc<str>>,
+    pub include_file_paths: Option<PlSmallStr>,
 }
 
 #[derive(Clone, Debug, Copy, Default, Eq, PartialEq, Hash)]
@@ -71,9 +72,23 @@ pub struct GroupbyOptions {
 
 #[derive(Clone, Debug, Eq, PartialEq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct DistinctOptions {
+pub struct DistinctOptionsDSL {
     /// Subset of columns that will be taken into account.
-    pub subset: Option<Arc<Vec<String>>>,
+    pub subset: Option<Vec<Selector>>,
+    /// This will maintain the order of the input.
+    /// Note that this is more expensive.
+    /// `maintain_order` is not supported in the streaming
+    /// engine.
+    pub maintain_order: bool,
+    /// Which rows to keep.
+    pub keep_strategy: UniqueKeepStrategy,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
+pub struct DistinctOptionsIR {
+    /// Subset of columns that will be taken into account.
+    pub subset: Option<Arc<[PlSmallStr]>>,
     /// This will maintain the order of the input.
     /// Note that this is more expensive.
     /// `maintain_order` is not supported in the streaming
@@ -199,6 +214,13 @@ impl FunctionOptions {
     pub fn check_lengths(&self) -> bool {
         self.check_lengths.0
     }
+
+    pub fn is_elementwise(&self) -> bool {
+        self.collect_groups == ApplyOptions::ElementWise
+            && !self
+                .flags
+                .contains(FunctionFlags::CHANGES_LENGTH | FunctionFlags::RETURNS_SCALAR)
+    }
 }
 
 impl Default for FunctionOptions {
@@ -235,7 +257,7 @@ pub struct PythonOptions {
     /// Schema the reader will produce when the file is read.
     pub output_schema: Option<SchemaRef>,
     // Projected column names.
-    pub with_columns: Option<Arc<[String]>>,
+    pub with_columns: Option<Arc<[PlSmallStr]>>,
     // Which interface is the python function.
     pub python_source: PythonScanSource,
     /// Optional predicate the reader must apply.

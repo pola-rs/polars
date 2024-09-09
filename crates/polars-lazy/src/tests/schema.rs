@@ -27,13 +27,13 @@ fn test_schema_update_after_projection_pd() -> PolarsResult<()> {
     assert!(matches!(
         lp,
         IR::MapFunction {
-            function: FunctionNode::Explode { .. },
+            function: FunctionIR::Explode { .. },
             ..
         }
     ));
 
     let schema = lp.schema(&lp_arena).into_owned();
-    let mut expected = Schema::new();
+    let mut expected = Schema::default();
     expected.with_column("a".into(), DataType::Int32);
     expected.with_column("b".into(), DataType::Int32);
     assert_eq!(schema.as_ref(), &expected);

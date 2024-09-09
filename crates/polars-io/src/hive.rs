@@ -1,5 +1,4 @@
 use polars_core::frame::DataFrame;
-use polars_core::schema::IndexOfSchema;
 use polars_core::series::Series;
 
 /// Materializes hive partitions.
@@ -9,9 +8,9 @@ use polars_core::series::Series;
 /// # Safety
 ///
 /// num_rows equals the height of the df when the df height is non-zero.
-pub(crate) fn materialize_hive_partitions<S: IndexOfSchema>(
+pub(crate) fn materialize_hive_partitions<D>(
     df: &mut DataFrame,
-    reader_schema: &S,
+    reader_schema: &polars_schema::Schema<D>,
     hive_partition_columns: Option<&[Series]>,
     num_rows: usize,
 ) {

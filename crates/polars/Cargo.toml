@@ -25,7 +25,7 @@ polars-utils = { workspace = true }
 
 [dev-dependencies]
 ahash = { workspace = true }
-apache-avro = { version = "0.16", features = ["snappy"] }
+apache-avro = { version = "0.17", features = ["snappy"] }
 arrow = { workspace = true, features = ["arrow_rs"] }
 arrow-buffer = { workspace = true }
 avro-schema = { workspace = true, features = ["async"] }
@@ -65,13 +65,14 @@ default = [
 ]
 ndarray = ["polars-core/ndarray"]
 # serde support for dataframes and series
-serde = ["polars-core/serde"]
+serde = ["polars-core/serde", "polars-utils/serde"]
 serde-lazy = [
   "polars-core/serde-lazy",
   "polars-lazy?/serde",
   "polars-time?/serde",
   "polars-io?/serde",
   "polars-ops?/serde",
+  "polars-utils/serde",
 ]
 parquet = ["polars-io", "polars-lazy?/parquet", "polars-io/parquet", "polars-sql?/parquet"]
 async = ["polars-lazy?/async"]
@@ -190,7 +191,7 @@ moment = ["polars-ops/moment", "polars-lazy?/moment"]
 partition_by = ["polars-core/partition_by"]
 pct_change = ["polars-ops/pct_change", "polars-lazy?/pct_change"]
 peaks = ["polars-lazy/peaks"]
-pivot = ["polars-lazy?/pivot"]
+pivot = ["polars-lazy?/pivot", "polars-ops/pivot", "dtype-struct", "rows"]
 product = ["polars-core/product"]
 propagate_nans = ["polars-lazy?/propagate_nans"]
 range = ["polars-lazy?/range"]
@@ -228,6 +229,7 @@ zip_with = ["polars-core/zip_with"]
 
 bigidx = ["polars-core/bigidx", "polars-lazy?/bigidx", "polars-ops/big_idx"]
 polars_cloud = ["polars-lazy?/polars_cloud"]
+ir_serde = ["polars-plan/ir_serde"]
 
 test = [
   "lazy",

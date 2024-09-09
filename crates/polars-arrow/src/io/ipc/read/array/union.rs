@@ -16,7 +16,7 @@ use crate::io::ipc::read::array::{try_get_array_length, try_get_field_node};
 pub fn read_union<R: Read + Seek>(
     field_nodes: &mut VecDeque<Node>,
     variadic_buffer_counts: &mut VecDeque<usize>,
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
     ipc_field: &IpcField,
     buffers: &mut VecDeque<IpcBuffer>,
     reader: &mut R,
@@ -28,7 +28,7 @@ pub fn read_union<R: Read + Seek>(
     version: Version,
     scratch: &mut Vec<u8>,
 ) -> PolarsResult<UnionArray> {
-    let field_node = try_get_field_node(field_nodes, &data_type)?;
+    let field_node = try_get_field_node(field_nodes, &dtype)?;
 
     if version != Version::V5 {
         let _ = buffers
@@ -48,7 +48,7 @@ pub fn read_union<R: Read + Seek>(
         scratch,
     )?;
 
-    let offsets = if let ArrowDataType::Union(_, _, mode) = data_type {
+    let offsets = if let ArrowDataType::Union(_, _, mode) = dtype {
         if !mode.is_sparse() {
             Some(read_buffer(
                 buffers,
@@ -66,7 +66,7 @@ pub fn read_union<R: Read + Seek>(
         unreachable!()
     };
 
-    let fields = UnionArray::get_fields(&data_type);
+    let fields = UnionArray::get_fields(&dtype);
 
     let fields = fields
         .iter()
@@ -90,12 +90,12 @@ pub fn read_union<R: Read + Seek>(
         })
         .collect::<PolarsResult<Vec<_>>>()?;
 
-    UnionArray::try_new(data_type, types, fields, offsets)
+    UnionArray::try_new(dtype, types, fields, offsets)
 }
 
 pub fn skip_union(
     field_nodes: &mut VecDeque<Node>,
-    data_type: &ArrowDataType,
+    dtype: &ArrowDataType,
     buffers: &mut VecDeque<IpcBuffer>,
     variadic_buffer_counts: &mut VecDeque<usize>,
 ) -> PolarsResult<()> {
@@ -108,7 +108,7 @@ pub fn skip_union(
     let _ = buffers
         .pop_front()
         .ok_or_else(|| polars_err!(oos = "IPC: missing validity buffer."))?;
-    if let ArrowDataType::Union(_, _, Dense) = data_type {
+    if let ArrowDataType::Union(_, _, Dense) = dtype {
         let _ = buffers
             .pop_front()
             .ok_or_else(|| polars_err!(oos = "IPC: missing offsets buffer."))?;
@@ -116,14 +116,9 @@ pub fn skip_union(
         unreachable!()
     };
 
-    let fields = UnionArray::get_fields(data_type);
+    let fields = UnionArray::get_fields(dtype);
 
-    fields.iter().try_for_each(|field| {
-        skip(
-            field_nodes,
-            field.data_type(),
-            buffers,
-            variadic_buffer_counts,
-        )
-    })
+    fields
+        .iter()
+        .try_for_each(|field| skip(field_nodes, field.dtype(), buffers, variadic_buffer_counts))
 }

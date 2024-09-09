@@ -5,7 +5,7 @@ pub(super) fn process_generic(
     proj_pd: &mut ProjectionPushDown,
     lp: IR,
     acc_projections: Vec<ColumnNode>,
-    projected_names: PlHashSet<Arc<str>>,
+    projected_names: PlHashSet<PlSmallStr>,
     projections_seen: usize,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,

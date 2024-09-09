@@ -1,5 +1,4 @@
 mod binary;
-mod indexes;
 mod primitive;
 mod sidecar;
 
@@ -68,8 +67,8 @@ fn test_column(column: &str, compression: CompressionOptions) -> ParquetResult<(
     };
 
     let schema = SchemaDescriptor::new(
-        "schema".to_string(),
-        vec![ParquetType::from_physical("col".to_string(), type_)],
+        "schema".into(),
+        vec![ParquetType::from_physical("col".into(), type_)],
     );
 
     let a = schema.columns();
@@ -182,9 +181,9 @@ fn basic() -> ParquetResult<()> {
     };
 
     let schema = SchemaDescriptor::new(
-        "schema".to_string(),
+        "schema".into(),
         vec![ParquetType::from_physical(
-            "col".to_string(),
+            "col".into(),
             PhysicalType::Int32,
         )],
     );
@@ -214,7 +213,11 @@ fn basic() -> ParquetResult<()> {
     // validated against an equivalent array produced by pyarrow.
     let expected = 51;
     assert_eq!(
-        metadata.row_groups[0].columns()[0].uncompressed_size(),
+        metadata.row_groups[0]
+            .columns_under_root_iter("col")
+            .next()
+            .unwrap()
+            .uncompressed_size(),
         expected
     );
 

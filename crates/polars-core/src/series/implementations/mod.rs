@@ -20,7 +20,7 @@ pub(crate) mod null;
 mod object;
 mod string;
 #[cfg(feature = "dtype-struct")]
-mod struct__;
+mod struct_;
 #[cfg(feature = "dtype-time")]
 mod time;
 
@@ -29,15 +29,12 @@ use std::borrow::Cow;
 use std::ops::{BitAnd, BitOr, BitXor};
 use std::sync::RwLockReadGuard;
 
-use ahash::RandomState;
-
 use super::*;
 use crate::chunked_array::comparison::*;
 use crate::chunked_array::metadata::MetadataTrait;
 use crate::chunked_array::ops::compare_inner::{
     IntoTotalEqInner, IntoTotalOrdInner, TotalEqInner, TotalOrdInner,
 };
-use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::AsSinglePtr;
 
 // Utility wrapper struct
@@ -81,7 +78,7 @@ macro_rules! impl_dyn_series {
             }
 
             fn _dtype(&self) -> &DataType {
-                self.0.ref_field().data_type()
+                self.0.ref_field().dtype()
             }
 
             fn _get_flags(&self) -> MetadataFlags {
@@ -90,10 +87,6 @@ macro_rules! impl_dyn_series {
 
             fn _set_flags(&mut self, flags: MetadataFlags) {
                 self.0.set_flags(flags)
-            }
-
-            fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
-                self.0.explode_by_offsets(offsets)
             }
 
             unsafe fn equal_element(
@@ -121,14 +114,18 @@ macro_rules! impl_dyn_series {
                 (&self.0).into_total_ord_inner()
             }
 
-            fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
+            fn vec_hash(
+                &self,
+                random_state: PlRandomState,
+                buf: &mut Vec<u64>,
+            ) -> PolarsResult<()> {
                 self.0.vec_hash(random_state, buf)?;
                 Ok(())
             }
 
             fn vec_hash_combine(
                 &self,
-                build_hasher: RandomState,
+                build_hasher: PlRandomState,
                 hashes: &mut [u64],
             ) -> PolarsResult<()> {
                 self.0.vec_hash_combine(build_hasher, hashes)?;
@@ -275,14 +272,14 @@ macro_rules! impl_dyn_series {
                 Ok(self.0.bitxor(&other).into_series())
             }
 
-            fn rename(&mut self, name: &str) {
+            fn rename(&mut self, name: PlSmallStr) {
                 self.0.rename(name);
             }
 
             fn chunk_lengths(&self) -> ChunkLenIter {
                 self.0.chunk_lengths()
             }
-            fn name(&self) -> &str {
+            fn name(&self) -> &PlSmallStr {
                 self.0.name()
             }
 
@@ -307,18 +304,22 @@ macro_rules! impl_dyn_series {
 
             fn append(&mut self, other: &Series) -> PolarsResult<()> {
                 polars_ensure!(self.0.dtype() == other.dtype(), append);
-                self.0.append(other.as_ref().as_ref());
+                self.0.append(other.as_ref().as_ref())?;
                 Ok(())
             }
 
             fn extend(&mut self, other: &Series) -> PolarsResult<()> {
                 polars_ensure!(self.0.dtype() == other.dtype(), extend);
-                self.0.extend(other.as_ref().as_ref());
+                self.0.extend(other.as_ref().as_ref())?;
                 Ok(())
             }
 
             fn filter(&self, filter: &BooleanChunked) -> PolarsResult<Series> {
                 ChunkFilter::filter(&self.0, filter).map(|ca| ca.into_series())
+            }
+
+            fn _sum_as_f64(&self) -> f64 {
+                self.0._sum_as_f64()
             }
 
             fn mean(&self) -> Option<f64> {
@@ -365,8 +366,8 @@ macro_rules! impl_dyn_series {
                 ChunkExpandAtIndex::new_from_index(&self.0, index, length).into_series()
             }
 
-            fn cast(&self, data_type: &DataType, options: CastOptions) -> PolarsResult<Series> {
-                self.0.cast_with_options(data_type, options)
+            fn cast(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Series> {
+                self.0.cast_with_options(dtype, options)
             }
 
             fn get(&self, index: usize) -> PolarsResult<AnyValue> {

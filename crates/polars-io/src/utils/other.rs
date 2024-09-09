@@ -7,6 +7,7 @@ use polars_core::prelude::*;
 #[cfg(any(feature = "ipc_streaming", feature = "parquet"))]
 use polars_core::utils::{accumulate_dataframes_vertical_unchecked, split_df_as_ref};
 use polars_error::to_compute_err;
+use polars_utils::mmap::MMapSemaphore;
 use regex::{Regex, RegexBuilder};
 
 use crate::mmap::{MmapBytesReader, ReaderBytes};
@@ -21,12 +22,15 @@ pub fn get_reader_bytes<'a, R: Read + MmapBytesReader + ?Sized>(
         .ok()
         .and_then(|offset| Some((reader.to_file()?, offset)))
     {
-        let mmap = unsafe { memmap::MmapOptions::new().offset(offset).map(file)? };
+        let mut options = memmap::MmapOptions::new();
+        options.offset(offset);
 
         // somehow bck thinks borrows alias
         // this is sound as file was already bound to 'a
         use std::fs::File;
+
         let file = unsafe { std::mem::transmute::<&File, &'a File>(file) };
+        let mmap = MMapSemaphore::new_from_file_with_options(file, options)?;
         Ok(ReaderBytes::Mapped(mmap, file))
     } else {
         // we can get the bytes for free
@@ -89,12 +93,11 @@ pub fn maybe_decompress_bytes<'a>(bytes: &'a [u8], out: &'a mut Vec<u8>) -> Pola
     feature = "avro"
 ))]
 pub(crate) fn apply_projection(schema: &ArrowSchema, projection: &[usize]) -> ArrowSchema {
-    let fields = &schema.fields;
-    let fields = projection
+    projection
         .iter()
-        .map(|idx| fields[*idx].clone())
-        .collect::<Vec<_>>();
-    ArrowSchema::from(fields)
+        .map(|idx| schema.get_at_index(*idx).unwrap())
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect()
 }
 
 #[cfg(any(
@@ -108,26 +111,10 @@ pub(crate) fn columns_to_projection(
     schema: &ArrowSchema,
 ) -> PolarsResult<Vec<usize>> {
     let mut prj = Vec::with_capacity(columns.len());
-    if columns.len() > 100 {
-        let mut column_names = PlHashMap::with_capacity(schema.fields.len());
-        schema.fields.iter().enumerate().for_each(|(i, c)| {
-            column_names.insert(c.name.as_str(), i);
-        });
 
-        for column in columns.iter() {
-            let Some(&i) = column_names.get(column.as_str()) else {
-                polars_bail!(
-                    ColumnNotFound:
-                    "unable to find column {:?}; valid columns: {:?}", column, schema.get_names(),
-                );
-            };
-            prj.push(i);
-        }
-    } else {
-        for column in columns.iter() {
-            let i = schema.try_index_of(column)?;
-            prj.push(i);
-        }
+    for column in columns {
+        let i = schema.try_index_of(column)?;
+        prj.push(i);
     }
 
     Ok(prj)
@@ -210,7 +197,7 @@ pub static BOOLEAN_RE: Lazy<Regex> = Lazy::new(|| {
 });
 
 pub fn materialize_projection(
-    with_columns: Option<&[String]>,
+    with_columns: Option<&[PlSmallStr]>,
     schema: &Schema,
     hive_partitions: Option<&[Series]>,
     has_row_index: bool,

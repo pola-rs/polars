@@ -1,4 +1,3 @@
-use arrow::datatypes::ArrowSchemaRef;
 use polars_core::prelude::*;
 use polars_parquet::read::statistics::{deserialize, Statistics};
 use polars_parquet::read::RowGroupMetaData;
@@ -9,40 +8,47 @@ impl ColumnStats {
     fn from_arrow_stats(stats: Statistics, field: &ArrowField) -> Self {
         Self::new(
             field.into(),
-            Some(Series::try_from(("", stats.null_count)).unwrap()),
-            Some(Series::try_from(("", stats.min_value)).unwrap()),
-            Some(Series::try_from(("", stats.max_value)).unwrap()),
+            Some(Series::try_from((PlSmallStr::EMPTY, stats.null_count)).unwrap()),
+            Some(Series::try_from((PlSmallStr::EMPTY, stats.min_value)).unwrap()),
+            Some(Series::try_from((PlSmallStr::EMPTY, stats.max_value)).unwrap()),
         )
     }
 }
 
-/// Collect the statistics in a column chunk.
+/// Collect the statistics in a row-group
 pub(crate) fn collect_statistics(
     md: &RowGroupMetaData,
     schema: &ArrowSchema,
 ) -> PolarsResult<Option<BatchStats>> {
-    let mut stats = vec![];
+    // TODO! fix this performance. This is a full sequential scan.
+    let stats = schema
+        .iter_values()
+        .map(|field| {
+            let iter = md.columns_under_root_iter(&field.name);
 
-    for field in schema.fields.iter() {
-        let st = deserialize(field, md)?;
-        stats.push(ColumnStats::from_arrow_stats(st, field));
+            Ok(if iter.len() == 0 {
+                ColumnStats::new(field.into(), None, None, None)
+            } else {
+                ColumnStats::from_arrow_stats(deserialize(field, iter)?, field)
+            })
+        })
+        .collect::<PolarsResult<Vec<_>>>()?;
+
+    if stats.is_empty() {
+        return Ok(None);
     }
 
-    Ok(if stats.is_empty() {
-        None
-    } else {
-        Some(BatchStats::new(
-            Arc::new(schema.into()),
-            stats,
-            Some(md.num_rows()),
-        ))
-    })
+    Ok(Some(BatchStats::new(
+        Arc::new(Schema::from_arrow_schema(schema)),
+        stats,
+        Some(md.num_rows()),
+    )))
 }
 
-pub(super) fn read_this_row_group(
+pub fn read_this_row_group(
     predicate: Option<&dyn PhysicalIoExpr>,
     md: &RowGroupMetaData,
-    schema: &ArrowSchemaRef,
+    schema: &ArrowSchema,
 ) -> PolarsResult<bool> {
     if let Some(pred) = predicate {
         if let Some(pred) = pred.as_stats_evaluator() {

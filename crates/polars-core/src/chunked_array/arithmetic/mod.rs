@@ -76,7 +76,7 @@ impl Add for &BinaryChunked {
                         unsafe { std::mem::transmute::<_, &'static [u8]>(out) }
                     })
                 },
-                None => BinaryChunked::full_null(self.name(), self.len()),
+                None => BinaryChunked::full_null(self.name().clone(), self.len()),
             };
         }
         // broadcasting path lhs
@@ -91,7 +91,7 @@ impl Add for &BinaryChunked {
                     // ref is valid for the lifetime of this closure.
                     unsafe { std::mem::transmute::<_, &'static [u8]>(out) }
                 }),
-                None => BinaryChunked::full_null(self.name(), rhs.len()),
+                None => BinaryChunked::full_null(self.name().clone(), rhs.len()),
             };
         }
 
@@ -137,7 +137,7 @@ impl Add for &BooleanChunked {
             let rhs = rhs.get(0);
             return match rhs {
                 Some(rhs) => unary_elementwise_values(self, |v| v as IdxSize + rhs as IdxSize),
-                None => IdxCa::full_null(self.name(), self.len()),
+                None => IdxCa::full_null(self.name().clone(), self.len()),
             };
         }
         // Broadcasting path lhs.
@@ -161,10 +161,10 @@ pub(crate) mod test {
     use crate::prelude::*;
 
     pub(crate) fn create_two_chunked() -> (Int32Chunked, Int32Chunked) {
-        let mut a1 = Int32Chunked::new("a", &[1, 2, 3]);
-        let a2 = Int32Chunked::new("a", &[4, 5, 6]);
-        let a3 = Int32Chunked::new("a", &[1, 2, 3, 4, 5, 6]);
-        a1.append(&a2);
+        let mut a1 = Int32Chunked::new(PlSmallStr::from_static("a"), &[1, 2, 3]);
+        let a2 = Int32Chunked::new(PlSmallStr::from_static("a"), &[4, 5, 6]);
+        let a3 = Int32Chunked::new(PlSmallStr::from_static("a"), &[1, 2, 3, 4, 5, 6]);
+        a1.append(&a2).unwrap();
         (a1, a3)
     }
 

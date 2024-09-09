@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     from tests.unit.conftest import MemoryUsage
 
 
-@pytest.fixture()
+@pytest.fixture
 def foods_file_path(io_files_path: Path) -> Path:
     return io_files_path / "foods1.csv"
 
@@ -85,7 +85,7 @@ def test_to_from_buffer(df_no_lists: pl.DataFrame) -> None:
         assert_frame_equal(df.select("time", "cat"), read_df, categorical_as_str=True)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_to_from_file(df_no_lists: pl.DataFrame, tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
@@ -455,7 +455,7 @@ def test_read_csv_buffer_ownership() -> None:
     assert buf.read() == bts
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_read_csv_encoding(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
@@ -643,12 +643,12 @@ def test_empty_line_with_multiple_columns() -> None:
 
 def test_preserve_whitespace_at_line_start() -> None:
     df = pl.read_csv(
-        b"a\n  b  \n    c\nd",
+        b"   a\n  b  \n    c\nd",
         new_columns=["A"],
         has_header=False,
         use_pyarrow=False,
     )
-    expected = pl.DataFrame({"A": ["a", "  b  ", "    c", "d"]})
+    expected = pl.DataFrame({"A": ["   a", "  b  ", "    c", "d"]})
     assert_frame_equal(df, expected)
 
 
@@ -953,6 +953,7 @@ def test_write_csv_separator() -> None:
     df.write_csv(f, separator="\t")
     f.seek(0)
     assert f.read() == b"a\tb\n1\t1\n2\t2\n3\t3\n"
+    f.seek(0)
     assert_frame_equal(df, pl.read_csv(f, separator="\t"))
 
 
@@ -962,6 +963,7 @@ def test_write_csv_line_terminator() -> None:
     df.write_csv(f, line_terminator="\r\n")
     f.seek(0)
     assert f.read() == b"a,b\r\n1,1\r\n2,2\r\n3,3\r\n"
+    f.seek(0)
     assert_frame_equal(df, pl.read_csv(f, eol_char="\n"))
 
 
@@ -996,6 +998,7 @@ def test_quoting_round_trip() -> None:
         }
     )
     df.write_csv(f)
+    f.seek(0)
     read_df = pl.read_csv(f)
     assert_frame_equal(read_df, df)
 
@@ -1101,7 +1104,7 @@ def test_csv_string_escaping() -> None:
     assert_frame_equal(df_read, df)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_glob_csv(df_no_lists: pl.DataFrame, tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
@@ -1183,6 +1186,7 @@ def test_csv_write_escape_headers() -> None:
     out = io.BytesIO()
     df1.write_csv(out)
 
+    out.seek(0)
     df2 = pl.read_csv(out)
     assert_frame_equal(df1, df2)
     assert df2.schema == {"c,o,l,u,m,n": pl.Int64}
@@ -1639,7 +1643,7 @@ def test_csv_statistics_offset() -> None:
     assert pl.read_csv(io.StringIO(csv), n_rows=N).height == 4999
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_csv_scan_categorical(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
@@ -1653,7 +1657,7 @@ def test_csv_scan_categorical(tmp_path: Path) -> None:
     assert result["x"].dtype == pl.Categorical
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_csv_scan_new_columns_less_than_original_columns(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
@@ -1694,14 +1698,14 @@ def test_read_empty_csv(io_files_path: Path) -> None:
     assert_frame_equal(df, pl.DataFrame())
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 def test_read_web_file() -> None:
     url = "https://raw.githubusercontent.com/pola-rs/polars/main/examples/datasets/foods1.csv"
     df = pl.read_csv(url)
     assert df.shape == (27, 4)
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 def test_csv_multiline_splits() -> None:
     # create a very unlikely csv file with many multilines in a
     # single field (e.g. 5000). polars must reject multi-threading here
@@ -2008,7 +2012,7 @@ def test_invalid_csv_raise() -> None:
         )
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_partial_read_compressed_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -2066,8 +2070,8 @@ def test_csv_invalid_escape_utf8_14960() -> None:
         pl.read_csv('col1\n""•'.encode())
 
 
-@pytest.mark.slow()
-@pytest.mark.write_disk()
+@pytest.mark.slow
+@pytest.mark.write_disk
 def test_read_csv_only_loads_selected_columns(
     memory_usage_without_pyarrow: MemoryUsage,
     tmp_path: Path,
@@ -2133,7 +2137,7 @@ def test_csv_escape_cf_15349() -> None:
     assert f.read() == b'test\nnormal\n"with\rcr"\n'
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 @pytest.mark.parametrize("streaming", [True, False])
 def test_skip_rows_after_header(tmp_path: Path, streaming: bool) -> None:
     tmp_path.mkdir(exist_ok=True)
@@ -2233,7 +2237,7 @@ a,b,c,d
     assert out == columns
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_write_csv_to_dangling_file_17328(
     df_no_lists: pl.DataFrame, tmp_path: Path
 ) -> None:
@@ -2249,7 +2253,7 @@ def test_write_csv_raise_on_non_utf8_17328(
         df_no_lists.write_csv((tmp_path / "dangling.csv").open("w", encoding="gbk"))
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_write_csv_appending_17543(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
     df = pl.DataFrame({"col": ["value"]})
@@ -2279,4 +2283,5 @@ def test_read_csv_cast_unparsable_later(
 ) -> None:
     f = io.BytesIO()
     df.write_csv(f)
+    f.seek(0)
     assert df.equals(pl.read_csv(f, schema={"x": dtype}))

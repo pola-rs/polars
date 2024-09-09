@@ -1,12 +1,13 @@
 use std::fs::File;
-use std::path::PathBuf;
 
+use polars_core::error::feature_gated;
 use polars_core::{config, POOL};
 use polars_io::csv::read::{BatchedCsvReader, CsvReadOptions, CsvReader};
 use polars_io::path_utils::is_cloud_url;
 use polars_plan::global::_set_n_rows_for_scan;
+use polars_plan::plans::ScanSources;
 use polars_plan::prelude::FileScanOptions;
-use polars_utils::iter::EnumerateIdxTrait;
+use polars_utils::itertools::Itertools;
 
 use super::*;
 use crate::pipeline::determine_chunk_size;
@@ -20,7 +21,7 @@ pub(crate) struct CsvSource {
     batched_reader: Option<BatchedCsvReader<'static>>,
     reader: Option<CsvReader<File>>,
     n_threads: usize,
-    paths: Arc<Vec<PathBuf>>,
+    sources: ScanSources,
     options: Option<CsvReadOptions>,
     file_options: FileScanOptions,
     verbose: bool,
@@ -36,6 +37,10 @@ impl CsvSource {
     // otherwise all files would be opened during construction of the pipeline
     // leading to Too many Open files error
     fn init_next_reader(&mut self) -> PolarsResult<()> {
+        let paths = self
+            .sources
+            .as_paths()
+            .ok_or_else(|| polars_err!(nyi = "Streaming scanning of in-memory buffers"))?;
         let file_options = self.file_options.clone();
 
         let n_rows = file_options.slice.map(|x| {
@@ -43,12 +48,12 @@ impl CsvSource {
             x.1
         });
 
-        if self.current_path_idx == self.paths.len()
+        if self.current_path_idx == paths.len()
             || (n_rows.is_some() && n_rows.unwrap() <= self.n_rows_read)
         {
             return Ok(());
         }
-        let path = &self.paths[self.current_path_idx];
+        let path = &paths[self.current_path_idx];
 
         let force_async = config::force_async();
         let run_async = force_async || is_cloud_url(path);
@@ -104,8 +109,7 @@ impl CsvSource {
             .with_row_index(row_index);
 
         let reader: CsvReader<File> = if run_async {
-            #[cfg(feature = "cloud")]
-            {
+            feature_gated!("cloud", {
                 options.into_reader_with_file_handle(
                     polars_io::file_cache::FILE_CACHE
                         .get_entry(path.to_str().unwrap())
@@ -113,11 +117,7 @@ impl CsvSource {
                         .unwrap()
                         .try_open_assume_latest()?,
                 )
-            }
-            #[cfg(not(feature = "cloud"))]
-            {
-                panic!("required feature `cloud` is not enabled")
-            }
+            })
         } else {
             options
                 .with_path(Some(path))
@@ -125,7 +125,8 @@ impl CsvSource {
         };
 
         if let Some(col) = &file_options.include_file_paths {
-            self.include_file_path = Some(StringChunked::full(col, path.to_str().unwrap(), 1));
+            self.include_file_path =
+                Some(StringChunked::full(col.clone(), path.to_str().unwrap(), 1));
         };
 
         self.reader = Some(reader);
@@ -139,7 +140,7 @@ impl CsvSource {
     }
 
     pub(crate) fn new(
-        paths: Arc<Vec<PathBuf>>,
+        sources: ScanSources,
         schema: SchemaRef,
         options: CsvReadOptions,
         file_options: FileScanOptions,
@@ -150,7 +151,7 @@ impl CsvSource {
             reader: None,
             batched_reader: None,
             n_threads: POOL.current_num_threads(),
-            paths,
+            sources,
             options: Some(options),
             file_options,
             verbose,
@@ -211,7 +212,7 @@ impl Source for CsvSource {
 
             if let Some(ca) = &mut self.include_file_path {
                 if ca.len() < max_height {
-                    *ca = ca.new_from_index(max_height, 0);
+                    *ca = ca.new_from_index(0, max_height);
                 };
 
                 for data_chunk in &mut out {

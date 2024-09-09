@@ -81,7 +81,7 @@ impl PhysicalExpr for GatherExpr {
                 .map(|(s, idx)| Some(s?.as_ref().take(idx?.as_ref().idx().unwrap())))
                 .map(|opt_res| opt_res.transpose())
                 .collect::<PolarsResult<ListChunked>>()?
-                .with_name(ac.series().name())
+                .with_name(ac.series().name().clone())
         };
 
         ac.with_series(taken.into_series(), true, Some(&self.expr))?;
@@ -250,24 +250,22 @@ impl GatherExpr {
             &ac.dtype(),
             idx.series().len(),
             groups.len(),
-            ac.series().name(),
+            ac.series().name().clone(),
         )?;
 
-        unsafe {
-            let iter = ac.iter_groups(false).zip(idx.iter_groups(false));
-            for (s, idx) in iter {
-                match (s, idx) {
-                    (Some(s), Some(idx)) => {
-                        let idx = convert_to_unsigned_index(idx.as_ref(), s.as_ref().len())?;
-                        let out = s.as_ref().take(&idx)?;
-                        builder.append_series(&out)?;
-                    },
-                    _ => builder.append_null(),
-                };
-            }
-            let out = builder.finish().into_series();
-            ac.with_agg_state(AggState::AggregatedList(out));
+        let iter = ac.iter_groups(false).zip(idx.iter_groups(false));
+        for (s, idx) in iter {
+            match (s, idx) {
+                (Some(s), Some(idx)) => {
+                    let idx = convert_to_unsigned_index(idx.as_ref(), s.as_ref().len())?;
+                    let out = s.as_ref().take(&idx)?;
+                    builder.append_series(&out)?;
+                },
+                _ => builder.append_null(),
+            };
         }
+        let out = builder.finish().into_series();
+        ac.with_agg_state(AggState::AggregatedList(out));
         Ok(ac)
     }
 }

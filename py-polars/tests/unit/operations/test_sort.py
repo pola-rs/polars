@@ -507,7 +507,7 @@ def test_sort_type_coercion_6892() -> None:
     }
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 def test_sort_row_fmt(str_ints_df: pl.DataFrame) -> None:
     # we sort nulls_last as this will always dispatch
     # to row_fmt and is the default in pandas
@@ -736,7 +736,7 @@ def test_sort_descending_nulls_last(descending: bool, nulls_last: bool) -> None:
     )
 
 
-@pytest.mark.release()
+@pytest.mark.release
 def test_sort_nan_1942() -> None:
     # https://github.com/pola-rs/polars/issues/1942
     import time

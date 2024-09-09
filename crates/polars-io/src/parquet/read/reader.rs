@@ -38,7 +38,7 @@ pub struct ParquetReader<R: Read + Seek> {
     metadata: Option<FileMetaDataRef>,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     hive_partition_columns: Option<Vec<Series>>,
-    include_file_path: Option<(Arc<str>, Arc<str>)>,
+    include_file_path: Option<(PlSmallStr, Arc<str>)>,
     use_statistics: bool,
 }
 
@@ -87,12 +87,10 @@ impl<R: MmapBytesReader> ParquetReader<R> {
         let self_schema = self.schema()?;
         let self_schema = self_schema.as_ref();
 
-        if let Some(ref projection) = self.projection {
-            let projection = projection.as_slice();
-
+        if let Some(projection) = self.projection.as_deref() {
             ensure_matching_schema(
-                &schema.try_project(projection)?,
-                &self_schema.try_project(projection)?,
+                &schema.try_project_indices(projection)?,
+                &self_schema.try_project_indices(projection)?,
             )?;
         } else {
             ensure_matching_schema(schema, self_schema)?;
@@ -134,7 +132,7 @@ impl<R: MmapBytesReader> ParquetReader<R> {
 
     pub fn with_include_file_path(
         mut self,
-        include_file_path: Option<(Arc<str>, Arc<str>)>,
+        include_file_path: Option<(PlSmallStr, Arc<str>)>,
     ) -> Self {
         self.include_file_path = include_file_path;
         self
@@ -234,7 +232,7 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
             unsafe {
                 df.with_column_unchecked(
                     StringChunked::full(
-                        col,
+                        col.clone(),
                         value,
                         if df.width() > 0 { df.height() } else { n_rows },
                     )
@@ -259,7 +257,7 @@ pub struct ParquetAsyncReader {
     row_index: Option<RowIndex>,
     use_statistics: bool,
     hive_partition_columns: Option<Vec<Series>>,
-    include_file_path: Option<(Arc<str>, Arc<str>)>,
+    include_file_path: Option<(PlSmallStr, Arc<str>)>,
     schema: Option<ArrowSchemaRef>,
     parallel: ParallelStrategy,
 }
@@ -290,12 +288,10 @@ impl ParquetAsyncReader {
         let self_schema = self.schema().await?;
         let self_schema = self_schema.as_ref();
 
-        if let Some(ref projection) = self.projection {
-            let projection = projection.as_slice();
-
+        if let Some(projection) = self.projection.as_deref() {
             ensure_matching_schema(
-                &schema.try_project(projection)?,
-                &self_schema.try_project(projection)?,
+                &schema.try_project_indices(projection)?,
+                &self_schema.try_project_indices(projection)?,
             )?;
         } else {
             ensure_matching_schema(schema, self_schema)?;
@@ -362,7 +358,7 @@ impl ParquetAsyncReader {
 
     pub fn with_include_file_path(
         mut self,
-        include_file_path: Option<(Arc<str>, Arc<str>)>,
+        include_file_path: Option<(PlSmallStr, Arc<str>)>,
     ) -> Self {
         self.include_file_path = include_file_path;
         self

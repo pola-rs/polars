@@ -32,13 +32,13 @@ TEMPORAL_DTYPES = [*DATETIME_DTYPES, *DURATION_DTYPES, pl.Date(), pl.Time()]
 NESTED_DTYPES = [pl.List, pl.Struct, pl.Array]
 
 
-@pytest.fixture()
+@pytest.fixture
 def partition_limit() -> int:
     """The limit at which Polars will start partitioning in debug builds."""
     return 15
 
 
-@pytest.fixture()
+@pytest.fixture
 def df() -> pl.DataFrame:
     df = pl.DataFrame(
         {
@@ -68,14 +68,14 @@ def df() -> pl.DataFrame:
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 def df_no_lists(df: pl.DataFrame) -> pl.DataFrame:
     return df.select(
         pl.all().exclude(["list_str", "list_int", "list_bool", "list_int", "list_flt"])
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 def fruits_cars() -> pl.DataFrame:
     return pl.DataFrame(
         {
@@ -88,7 +88,7 @@ def fruits_cars() -> pl.DataFrame:
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 def str_ints_df() -> pl.DataFrame:
     n = 1000
 
@@ -199,7 +199,7 @@ class MemoryUsage:
         return tracemalloc.get_traced_memory()[1]
 
 
-@pytest.fixture()
+@pytest.fixture
 def memory_usage_without_pyarrow() -> Generator[MemoryUsage, Any, Any]:
     """
     Provide an API for measuring peak memory usage.

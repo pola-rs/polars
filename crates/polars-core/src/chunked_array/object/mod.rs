@@ -169,7 +169,7 @@ where
         self
     }
 
-    fn data_type(&self) -> &ArrowDataType {
+    fn dtype(&self) -> &ArrowDataType {
         &ArrowDataType::FixedSizeBinary(std::mem::size_of::<T>())
     }
 

@@ -70,18 +70,12 @@ def assert_frame_equal(
     >>> from polars.testing import assert_frame_equal
     >>> df1 = pl.DataFrame({"a": [1, 2, 3]})
     >>> df2 = pl.DataFrame({"a": [1, 5, 3]})
-    >>> assert_frame_equal(df1, df2)  # doctest: +SKIP
+    >>> assert_frame_equal(df1, df2)
     Traceback (most recent call last):
     ...
-    AssertionError: Series are different (value mismatch)
+    AssertionError: DataFrames are different (value mismatch for column 'a')
     [left]:  [1, 2, 3]
     [right]: [1, 5, 3]
-
-    The above exception was the direct cause of the following exception:
-
-    Traceback (most recent call last):
-    ...
-    AssertionError: values for column 'a' are different
     """
     __tracebackhide__ = True
 
@@ -250,13 +244,14 @@ def assert_frame_not_equal(
     >>> from polars.testing import assert_frame_not_equal
     >>> df1 = pl.DataFrame({"a": [1, 2, 3]})
     >>> df2 = pl.DataFrame({"a": [1, 2, 3]})
-    >>> assert_frame_not_equal(df1, df2)  # doctest: +SKIP
+    >>> assert_frame_not_equal(df1, df2)
     Traceback (most recent call last):
     ...
-    AssertionError: frames are equal
+    AssertionError: DataFrames are equal (but are expected not to be)
     """
     __tracebackhide__ = True
 
+    lazy = _assert_correct_input_type(left, right)
     try:
         assert_frame_equal(
             left=left,
@@ -272,5 +267,6 @@ def assert_frame_not_equal(
     except AssertionError:
         return
     else:
-        msg = "frames are equal"
+        objects = "LazyFrames" if lazy else "DataFrames"
+        msg = f"{objects} are equal (but are expected not to be)"
         raise AssertionError(msg)

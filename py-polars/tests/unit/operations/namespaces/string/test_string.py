@@ -4,7 +4,12 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
-from polars.exceptions import ComputeError, InvalidOperationError
+from polars.exceptions import (
+    ColumnNotFoundError,
+    ComputeError,
+    InvalidOperationError,
+    SchemaError,
+)
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -1061,6 +1066,88 @@ def test_replace_many(
     )
 
 
+@pytest.mark.parametrize(
+    ("mapping", "case_insensitive", "expected"),
+    [
+        ({}, False, "Tell me what you want"),
+        ({"me": "them"}, False, "Tell them what you want"),
+        ({"who": "them"}, False, "Tell me what you want"),
+        ({"me": "it", "you": "it"}, False, "Tell it what it want"),
+        ({"Me": "it", "you": "it"}, False, "Tell me what it want"),
+        ({"me": "you", "you": "me"}, False, "Tell you what me want"),
+        ({}, True, "Tell me what you want"),
+        ({"Me": "it", "you": "it"}, True, "Tell it what it want"),
+        ({"me": "you", "YOU": "me"}, True, "Tell you what me want"),
+    ],
+)
+def test_replace_many_mapping(
+    mapping: dict[str, str],
+    case_insensitive: bool,
+    expected: str,
+) -> None:
+    df = pl.DataFrame({"text": ["Tell me what you want"]})
+    # series
+    assert (
+        expected
+        == df["text"]
+        .str.replace_many(mapping, ascii_case_insensitive=case_insensitive)
+        .item()
+    )
+    # expr
+    assert (
+        expected
+        == df.select(
+            pl.col("text").str.replace_many(
+                mapping,
+                ascii_case_insensitive=case_insensitive,
+            )
+        ).item()
+    )
+
+
+def test_replace_many_invalid_inputs() -> None:
+    df = pl.DataFrame({"text": ["Tell me what you want"]})
+
+    # Ensure a string as the first argument is parsed as a column name.
+    with pytest.raises(ColumnNotFoundError, match="me"):
+        df.select(pl.col("text").str.replace_many("me", "you"))
+
+    with pytest.raises(SchemaError):
+        df.select(pl.col("text").str.replace_many(1, 2))
+
+    with pytest.raises(SchemaError):
+        df.select(pl.col("text").str.replace_many([1], [2]))
+
+    with pytest.raises(SchemaError):
+        df.select(pl.col("text").str.replace_many(["me"], None))
+
+    with pytest.raises(TypeError):
+        df.select(pl.col("text").str.replace_many(["me"]))
+
+    with pytest.raises(
+        InvalidOperationError,
+        match="expected the same amount of patterns as replacement strings",
+    ):
+        df.select(pl.col("text").str.replace_many(["a"], ["b", "c"]))
+
+    s = df.to_series()
+
+    with pytest.raises(ColumnNotFoundError, match="me"):
+        s.str.replace_many("me", "you")  # type: ignore[arg-type]
+
+    with pytest.raises(SchemaError):
+        df.select(pl.col("text").str.replace_many(["me"], None))
+
+    with pytest.raises(TypeError):
+        df.select(pl.col("text").str.replace_many(["me"]))
+
+    with pytest.raises(
+        InvalidOperationError,
+        match="expected the same amount of patterns as replacement strings",
+    ):
+        s.str.replace_many(["a"], ["b", "c"])
+
+
 def test_extract_all_count() -> None:
     df = pl.DataFrame({"foo": ["123 bla 45 asd", "xaz 678 910t", "boo", None]})
     assert (
@@ -1489,23 +1576,52 @@ def test_splitn_expr() -> None:
 def test_titlecase() -> None:
     df = pl.DataFrame(
         {
-            "sing": [
+            "misc": [
                 "welcome to my world",
-                "THERE'S NO TURNING BACK",
                 "double  space",
                 "and\ta\t tab",
+                "by jean-paul sartre, 'esq'",
+                "SOMETIMES/life/gives/you/a/2nd/chance",
+            ],
+        }
+    )
+    expected = [
+        "Welcome To My World",
+        "Double  Space",
+        "And\tA\t Tab",
+        "By Jean-Paul Sartre, 'Esq'",
+        "Sometimes/Life/Gives/You/A/2nd/Chance",
+    ]
+    actual = df.select(pl.col("misc").str.to_titlecase()).to_series()
+    for ex, act in zip(expected, actual):
+        assert ex == act, f"{ex} != {act}"
+
+    df = pl.DataFrame(
+        {
+            "quotes": [
+                "'e.t. phone home'",
+                "you talkin' to me?",
+                "i feel the need--the need for speed",
+                "to infinity,and BEYOND!",
+                "say 'what' again!i dare you - I\u00a0double-dare you!",
+                "What.we.got.here... is#failure#to#communicate",
             ]
         }
     )
-
-    assert df.select(pl.col("sing").str.to_titlecase()).to_dict(as_series=False) == {
-        "sing": [
-            "Welcome To My World",
-            "There's No Turning Back",
-            "Double  Space",
-            "And\tA\t Tab",
-        ]
-    }
+    expected_str = [
+        "'E.T. Phone Home'",
+        "You Talkin' To Me?",
+        "I Feel The Need--The Need For Speed",
+        "To Infinity,And Beyond!",
+        "Say 'What' Again!I Dare You - I\u00a0Double-Dare You!",
+        "What.We.Got.Here... Is#Failure#To#Communicate",
+    ]
+    expected_py = [s.title() for s in df["quotes"].to_list()]
+    for ex_str, ex_py, act in zip(
+        expected_str, expected_py, df["quotes"].str.to_titlecase()
+    ):
+        assert ex_str == act, f"{ex_str} != {act}"
+        assert ex_py == act, f"{ex_py} != {act}"
 
 
 def test_string_replace_with_nulls_10124() -> None:

@@ -12,8 +12,7 @@ macro_rules! call_op {
     }};
     (dt: $T:ty, $scalar:ty, $arr:expr, $op:path) => {{
         let arr: &$T = $arr.as_any().downcast_ref().unwrap();
-        $op(arr)
-            .map(|v| Box::new(<$scalar>::new(arr.data_type().clone(), Some(v))) as Box<dyn Scalar>)
+        $op(arr).map(|v| Box::new(<$scalar>::new(arr.dtype().clone(), Some(v))) as Box<dyn Scalar>)
     }};
     ($T:ty, $scalar:ty, $arr:expr, $op:path, ret_two) => {{
         let arr: &$T = $arr.as_any().downcast_ref().unwrap();
@@ -28,8 +27,8 @@ macro_rules! call_op {
         let arr: &$T = $arr.as_any().downcast_ref().unwrap();
         $op(arr).map(|(l, r)| {
             (
-                Box::new(<$scalar>::new(arr.data_type().clone(), Some(l))) as Box<dyn Scalar>,
-                Box::new(<$scalar>::new(arr.data_type().clone(), Some(r))) as Box<dyn Scalar>,
+                Box::new(<$scalar>::new(arr.dtype().clone(), Some(l))) as Box<dyn Scalar>,
+                Box::new(<$scalar>::new(arr.dtype().clone(), Some(r))) as Box<dyn Scalar>,
             )
         })
     }};
@@ -42,7 +41,7 @@ macro_rules! call {
         use arrow::datatypes::{PhysicalType as PH, PrimitiveType as PR};
         use PrimitiveArray as PArr;
         use PrimitiveScalar as PScalar;
-        match arr.data_type().to_physical_type() {
+        match arr.dtype().to_physical_type() {
             PH::Boolean => call_op!(BooleanArray, BooleanScalar, arr, $op$(, $variant)?),
             PH::Primitive(PR::Int8) => call_op!(dt: PArr<i8>, PScalar<i8>, arr, $op$(, $variant)?),
             PH::Primitive(PR::Int16) => call_op!(dt: PArr<i16>, PScalar<i16>, arr, $op$(, $variant)?),
@@ -65,7 +64,7 @@ macro_rules! call {
             PH::Utf8 => call_op!(Utf8Array<i32>, BinaryScalar<i32>, arr, $op$(, $variant)?),
             PH::LargeUtf8 => call_op!(Utf8Array<i64>, BinaryScalar<i64>, arr, $op$(, $variant)?),
 
-            _ => todo!("Dynamic MinMax is not yet implemented for {:?}", arr.data_type()),
+            _ => todo!("Dynamic MinMax is not yet implemented for {:?}", arr.dtype()),
         }
     }};
 }

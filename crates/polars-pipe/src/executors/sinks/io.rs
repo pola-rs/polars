@@ -170,6 +170,7 @@ impl IOThread {
                 if let Some(partitions) = partitions {
                     for (part, mut df) in partitions.into_no_null_iter().zip(iter) {
                         df.shrink_to_fit();
+                        df.align_chunks();
                         let mut path = dir2.clone();
                         path.push(format!("{part}"));
 
@@ -193,6 +194,7 @@ impl IOThread {
 
                     for mut df in iter {
                         df.shrink_to_fit();
+                        df.align_chunks();
                         writer.write_batch(&df).unwrap();
                     }
                     writer.finish().unwrap();
@@ -240,7 +242,7 @@ impl IOThread {
     }
 
     pub(in crate::executors::sinks) fn dump_partition(&self, partition_no: IdxSize, df: DataFrame) {
-        let partition = Some(IdxCa::from_vec("", vec![partition_no]));
+        let partition = Some(IdxCa::from_vec(PlSmallStr::EMPTY, vec![partition_no]));
         let iter = Box::new(std::iter::once(df));
         self.dump_iter(partition, iter)
     }

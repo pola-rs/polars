@@ -4,7 +4,6 @@ use std::sync::Mutex;
 
 use hashbrown::hash_map::RawEntryMut;
 use num_traits::NumCast;
-use polars_core::export::ahash::RandomState;
 use polars_core::frame::row::AnyValueBuffer;
 use polars_core::prelude::*;
 use polars_core::utils::_set_partition_size;
@@ -62,13 +61,13 @@ pub struct StringGroupbySink {
     // by:
     //      * offset = (idx)
     //      * end = (offset + 1)
-    keys: Vec<Option<smartstring::alias::String>>,
+    keys: Vec<Option<PlSmallStr>>,
     aggregators: Vec<AggregateFunction>,
     // the key that will be aggregated on
     key_column: Arc<dyn PhysicalPipedExpr>,
     // the columns that will be aggregated
     aggregation_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
-    hb: RandomState,
+    hb: PlRandomState,
     // Initializing Aggregation functions. If we aggregate by 2 columns
     // this vec will have two functions. We will use these functions
     // to populate the buffer where the hashmap points to
@@ -187,7 +186,7 @@ impl StringGroupbySink {
                             .collect::<Vec<_>>();
 
                         let cap = std::cmp::min(slice_len, agg_map.len());
-                        let mut key_builder = StringChunkedBuilder::new("", cap);
+                        let mut key_builder = StringChunkedBuilder::new(PlSmallStr::EMPTY, cap);
                         agg_map.into_iter().skip(offset).take(slice_len).for_each(
                             |(k, &offset)| {
                                 let key_offset = k.idx as usize;
@@ -583,7 +582,7 @@ fn get_entry<'a>(
     key_val: Option<&str>,
     h: u64,
     current_partition: &'a mut PlIdHashMap<Key, IdxSize>,
-    keys: &[Option<smartstring::alias::String>],
+    keys: &[Option<PlSmallStr>],
 ) -> RawEntryMut<'a, Key, IdxSize, IdBuildHasher> {
     current_partition.raw_entry_mut().from_hash(h, |key| {
         // first compare the hash before we incur the cache miss

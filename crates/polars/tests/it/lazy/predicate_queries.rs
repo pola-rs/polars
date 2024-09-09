@@ -1,5 +1,5 @@
 // used only if feature="is_in", feature="dtype-categorical"
-#[allow(unused_imports)]
+#[cfg(all(feature = "is_in", feature = "dtype-categorical"))]
 use polars_core::{disable_string_cache, StringCacheHolder, SINGLE_LOCK};
 
 use super::*;
@@ -135,7 +135,7 @@ fn test_is_in_categorical_3420() -> PolarsResult<()> {
     disable_string_cache();
     let _sc = StringCacheHolder::hold();
 
-    let s = Series::new("x", ["a", "b", "c"])
+    let s = Series::new("x".into(), ["a", "b", "c"])
         .strict_cast(&DataType::Categorical(None, Default::default()))?;
     let out = df
         .lazy()

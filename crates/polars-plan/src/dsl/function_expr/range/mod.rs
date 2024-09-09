@@ -83,7 +83,7 @@ impl RangeFunction {
             } => {
                 // output dtype may change based on `interval`, `time_unit`, and `time_zone`
                 let dtype =
-                    mapper.map_to_datetime_range_dtype(time_unit.as_ref(), time_zone.as_deref())?;
+                    mapper.map_to_datetime_range_dtype(time_unit.as_ref(), time_zone.as_ref())?;
                 mapper.with_dtype(dtype)
             },
             #[cfg(feature = "dtype-datetime")]
@@ -95,7 +95,7 @@ impl RangeFunction {
             } => {
                 // output dtype may change based on `interval`, `time_unit`, and `time_zone`
                 let inner_dtype =
-                    mapper.map_to_datetime_range_dtype(time_unit.as_ref(), time_zone.as_deref())?;
+                    mapper.map_to_datetime_range_dtype(time_unit.as_ref(), time_zone.as_ref())?;
                 mapper.with_dtype(DataType::List(Box::new(inner_dtype)))
             },
             #[cfg(feature = "dtype-time")]

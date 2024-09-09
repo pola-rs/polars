@@ -1031,12 +1031,12 @@ pub fn ensure_is_constant_duration(
     Ok(())
 }
 
-pub fn ensure_duration_matches_data_type(
+pub fn ensure_duration_matches_dtype(
     duration: Duration,
-    data_type: &DataType,
+    dtype: &DataType,
     variable_name: &str,
 ) -> PolarsResult<()> {
-    match data_type {
+    match dtype {
         DataType::Int64 | DataType::UInt64 | DataType::Int32 | DataType::UInt32 => {
             polars_ensure!(duration.parsed_int || duration.is_zero(),
                 InvalidOperation: "`{}` duration must be a parsed integer (i.e. use '2i', not '2d') when working with a numeric column", variable_name);
@@ -1046,7 +1046,7 @@ pub fn ensure_duration_matches_data_type(
                 InvalidOperation: "`{}` duration may not be a parsed integer (i.e. use '2d', not '2i') when working with a temporal column", variable_name);
         },
         _ => {
-            polars_bail!(InvalidOperation: "unsupported data type: {} for `{}`, expected UInt64, UInt32, Int64, Int32, Datetime, Date, Duration, or Time", data_type, variable_name)
+            polars_bail!(InvalidOperation: "unsupported data type: {} for `{}`, expected UInt64, UInt32, Int64, Int32, Datetime, Date, Duration, or Time", dtype, variable_name)
         },
     }
     Ok(())

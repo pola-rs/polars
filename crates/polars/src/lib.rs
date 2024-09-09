@@ -405,6 +405,7 @@
 //!                               `T` in complex lazy expressions. However this does require `unsafe` code allow this.
 //! * `POLARS_NO_PARQUET_STATISTICS` -> if set, statistics in parquet files are ignored.
 //! * `POLARS_PANIC_ON_ERR` -> panic instead of returning an Error.
+//! * `POLARS_BACKTRACE_IN_ERR` -> include a Rust backtrace in Error messages.
 //! * `POLARS_NO_CHUNKED_JOIN` -> force rechunk before joins.
 //!
 //! ## User guide

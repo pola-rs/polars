@@ -86,12 +86,12 @@ from polars.datatypes import (
 )
 from polars.datatypes._utils import dtype_to_init_repr
 from polars.dependencies import (
-    _HVPLOT_AVAILABLE,
+    _ALTAIR_AVAILABLE,
     _PYARROW_AVAILABLE,
     _check_for_numpy,
     _check_for_pandas,
     _check_for_pyarrow,
-    hvplot,
+    altair,
     import_optional,
 )
 from polars.dependencies import numpy as np
@@ -104,6 +104,7 @@ from polars.series.binary import BinaryNameSpace
 from polars.series.categorical import CatNameSpace
 from polars.series.datetime import DateTimeNameSpace
 from polars.series.list import ListNameSpace
+from polars.series.plotting import SeriesPlot
 from polars.series.string import StringNameSpace
 from polars.series.struct import StructNameSpace
 from polars.series.utils import expr_dispatch, get_ffi_func
@@ -117,7 +118,6 @@ if TYPE_CHECKING:
     import jax
     import numpy.typing as npt
     import torch
-    from hvplot.plotting.core import hvPlotTabularPolars
 
     from polars import DataFrame, DataType, Expr
     from polars._typing import (
@@ -1250,7 +1250,31 @@ class Series:
     def __getitem__(
         self, key: SingleIndexSelector | MultiIndexSelector
     ) -> Any | Series:
-        """Get part of the Series as a new Series or scalar."""
+        """
+        Get part of the Series as a new Series or scalar.
+
+        Parameters
+        ----------
+        key
+            Row(s) to select.
+
+        Returns
+        -------
+        Series or scalar, depending on `key`.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 4, 2])
+        >>> s[0]
+        1
+        >>> s[0:2]
+        shape: (2,)
+        Series: 'a' [i64]
+        [
+            1
+            4
+        ]
+        """
         return get_series_item_by_key(self, key)
 
     def __setitem__(
@@ -1359,7 +1383,10 @@ class Series:
                 if isinstance(arg, (int, float, np.ndarray)):
                     args.append(arg)
                 elif isinstance(arg, Series):
-                    args.append(arg.to_physical()._s.to_numpy_view())
+                    phys_arg = arg.to_physical()
+                    if phys_arg._s.n_chunks() > 1:
+                        phys_arg._s.rechunk(in_place=True)
+                    args.append(phys_arg._s.to_numpy_view())
                 else:
                     msg = f"unsupported type {type(arg).__name__!r} for {arg!r}"
                     raise TypeError(msg)
@@ -2422,7 +2449,7 @@ class Series:
             If None given, we determine the boundaries based on the data.
         bin_count
             If no bins provided, this will be used to determine
-            the distance of the bins
+            the distance of the bins.
         include_breakpoint
             Include a column that indicates the upper breakpoint.
         include_category
@@ -2436,18 +2463,17 @@ class Series:
         --------
         >>> a = pl.Series("a", [1, 3, 8, 8, 2, 1, 3])
         >>> a.hist(bin_count=4)
-        shape: (5, 3)
-        ┌────────────┬─────────────┬───────┐
-        │ breakpoint ┆ category    ┆ count │
-        │ ---        ┆ ---         ┆ ---   │
-        │ f64        ┆ cat         ┆ u32   │
-        ╞════════════╪═════════════╪═══════╡
-        │ 0.0        ┆ (-inf, 0.0] ┆ 0     │
-        │ 2.25       ┆ (0.0, 2.25] ┆ 3     │
-        │ 4.5        ┆ (2.25, 4.5] ┆ 2     │
-        │ 6.75       ┆ (4.5, 6.75] ┆ 0     │
-        │ inf        ┆ (6.75, inf] ┆ 2     │
-        └────────────┴─────────────┴───────┘
+        shape: (4, 3)
+        ┌────────────┬───────────────┬───────┐
+        │ breakpoint ┆ category      ┆ count │
+        │ ---        ┆ ---           ┆ ---   │
+        │ f64        ┆ cat           ┆ u32   │
+        ╞════════════╪═══════════════╪═══════╡
+        │ 2.75       ┆ (0.993, 2.75] ┆ 3     │
+        │ 4.5        ┆ (2.75, 4.5]   ┆ 2     │
+        │ 6.25       ┆ (4.5, 6.25]   ┆ 0     │
+        │ 8.0        ┆ (6.25, 8.0]   ┆ 2     │
+        └────────────┴───────────────┴───────┘
         """
         out = (
             self.to_frame()
@@ -2557,7 +2583,7 @@ class Series:
         ]
         """
 
-    def entropy(self, base: float = math.e, *, normalize: bool = False) -> float | None:
+    def entropy(self, base: float = math.e, *, normalize: bool = True) -> float | None:
         """
         Computes the entropy.
 
@@ -3946,7 +3972,7 @@ class Series:
 
         See Also
         --------
-        assert_series_equal
+        polars.testing.assert_series_equal
 
         Examples
         --------
@@ -4986,27 +5012,28 @@ class Series:
 
     def sign(self) -> Series:
         """
-        Compute the element-wise indication of the sign.
+        Compute the element-wise sign function on numeric types.
 
-        The returned values can be -1, 0, or 1:
+        The returned value is computed as follows:
 
-        * -1 if x  < 0.
-        *  0 if x == 0.
-        *  1 if x  > 0.
+        * -1 if x < 0.
+        *  1 if x > 0.
+        *  x otherwise (typically 0, but could be NaN if the input is).
 
-        (null values are preserved as-is).
+        Null values are preserved as-is, and the dtype of the input is preserved.
 
         Examples
         --------
-        >>> s = pl.Series("a", [-9.0, -0.0, 0.0, 4.0, None])
+        >>> s = pl.Series("a", [-9.0, -0.0, 0.0, 4.0, float("nan"), None])
         >>> s.sign()
-        shape: (5,)
-        Series: 'a' [i64]
+        shape: (6,)
+        Series: 'a' [f64]
         [
-                -1
-                0
-                0
-                1
+                -1.0
+                -0.0
+                0.0
+                1.0
+                NaN
                 null
         ]
         """
@@ -5327,7 +5354,9 @@ class Series:
 
         warn_on_inefficient_map(function, columns=[self.name], map_target="series")
         return self._from_pyseries(
-            self._s.apply_lambda(function, pl_return_dtype, skip_nulls)
+            self._s.map_elements(
+                function, return_dtype=pl_return_dtype, skip_nulls=skip_nulls
+            )
         )
 
     def shift(self, n: int = 1, *, fill_value: IntoExpr | None = None) -> Series:
@@ -6874,7 +6903,7 @@ class Series:
         ignore_nulls: bool = False,
     ) -> Series:
         r"""
-        Exponentially-weighted moving average.
+        Compute exponentially-weighted moving average.
 
         Parameters
         ----------
@@ -6889,11 +6918,11 @@ class Series:
                 .. math::
                     \alpha = \frac{2}{\theta + 1} \; \forall \; \theta \geq 1
         half_life
-            Specify decay in terms of half-life, :math:`\lambda`, with
+            Specify decay in terms of half-life, :math:`\tau`, with
 
                 .. math::
-                    \alpha = 1 - \exp \left\{ \frac{ -\ln(2) }{ \lambda } \right\} \;
-                    \forall \; \lambda > 0
+                    \alpha = 1 - \exp \left\{ \frac{ -\ln(2) }{ \tau } \right\} \;
+                    \forall \; \tau > 0
         alpha
             Specify smoothing factor alpha directly, :math:`0 < \alpha \leq 1`.
         adjust
@@ -6949,20 +6978,21 @@ class Series:
         half_life: str | timedelta,
     ) -> Series:
         r"""
-        Calculate time-based exponentially weighted moving average.
+        Compute time-based exponentially weighted moving average.
 
-        Given observations :math:`x_1, x_2, \ldots, x_n` at times
-        :math:`t_1, t_2, \ldots, t_n`, the EWMA is calculated as
+        Given observations :math:`x_0, x_1, \ldots, x_{n-1}` at times
+        :math:`t_0, t_1, \ldots, t_{n-1}`, the EWMA is calculated as
 
             .. math::
 
                 y_0 &= x_0
 
-                \alpha_i &= \exp(-\lambda(t_i - t_{i-1}))
+                \alpha_i &= 1 - \exp \left\{ \frac{ -\ln(2)(t_i-t_{i-1}) }
+                    { \tau } \right\}
 
                 y_i &= \alpha_i x_i + (1 - \alpha_i) y_{i-1}; \quad i > 0
 
-        where :math:`\lambda` equals :math:`\ln(2) / \text{half_life}`.
+        where :math:`\tau` is the `half_life`.
 
         Parameters
         ----------
@@ -7038,7 +7068,7 @@ class Series:
         ignore_nulls: bool = False,
     ) -> Series:
         r"""
-        Exponentially-weighted moving standard deviation.
+        Compute exponentially-weighted moving standard deviation.
 
         Parameters
         ----------
@@ -7122,7 +7152,7 @@ class Series:
         ignore_nulls: bool = False,
     ) -> Series:
         r"""
-        Exponentially-weighted moving variance.
+        Compute exponentially-weighted moving variance.
 
         Parameters
         ----------
@@ -7377,7 +7407,7 @@ class Series:
 
     @property
     @unstable()
-    def plot(self) -> hvPlotTabularPolars:
+    def plot(self) -> SeriesPlot:
         """
         Create a plot namespace.
 
@@ -7385,33 +7415,44 @@ class Series:
             This functionality is currently considered **unstable**. It may be
             changed at any point without it being considered a breaking change.
 
+        .. versionchanged:: 1.6.0
+            In prior versions of Polars, HvPlot was the plotting backend. If you would
+            like to restore the previous plotting functionality, all you need to do
+            is add `import hvplot.polars` at the top of your script and replace
+            `df.plot` with `df.hvplot`.
+
         Polars does not implement plotting logic itself, but instead defers to
-        hvplot. Please see the `hvplot reference gallery <https://hvplot.holoviz.org/reference/index.html>`_
-        for more information and documentation.
+        Altair:
+
+        - `s.plot.hist(**kwargs)`
+          is shorthand for
+          `alt.Chart(s.to_frame()).mark_bar().encode(x=alt.X(f'{s.name}:Q', bin=True), y='count()', **kwargs).interactive()`
+        - `s.plot.kde(**kwargs)`
+          is shorthand for
+          `alt.Chart(s.to_frame()).transform_density(s.name, as_=[s.name, 'density']).mark_area().encode(x=s.name, y='density:Q', **kwargs).interactive()`
+        - for any other attribute `attr`, `s.plot.attr(**kwargs)`
+          is shorthand for
+          `alt.Chart(s.to_frame().with_row_index()).mark_attr().encode(x='index', y=s.name, **kwargs).interactive()`
 
         Examples
         --------
         Histogram:
 
-        >>> s = pl.Series("values", [1, 4, 2])
+        >>> s = pl.Series([1, 4, 4, 6, 2, 4, 3, 5, 5, 7, 1])
         >>> s.plot.hist()  # doctest: +SKIP
 
-        KDE plot (note: in addition to ``hvplot``, this one also requires ``scipy``):
+        KDE plot:
 
         >>> s.plot.kde()  # doctest: +SKIP
 
-        For more info on what you can pass, you can use ``hvplot.help``:
+        Line plot:
 
-        >>> import hvplot  # doctest: +SKIP
-        >>> hvplot.help("hist")  # doctest: +SKIP
-        """
-        if not _HVPLOT_AVAILABLE or parse_version(hvplot.__version__) < parse_version(
-            "0.9.1"
-        ):
-            msg = "hvplot>=0.9.1 is required for `.plot`"
+        >>> s.plot.line()  # doctest: +SKIP
+        """  # noqa: W505
+        if not _ALTAIR_AVAILABLE or parse_version(altair.__version__) < (5, 4, 0):
+            msg = "altair>=5.4.0 is required for `.plot`"
             raise ModuleUpgradeRequiredError(msg)
-        hvplot.post_patch()
-        return hvplot.plotting.core.hvPlotTabularPolars(self)
+        return SeriesPlot(self)
 
 
 def _resolve_temporal_dtype(

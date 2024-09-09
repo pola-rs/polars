@@ -249,7 +249,7 @@ def test_group_by_median_by_dtype(
     assert_frame_equal(result, df_expected)
 
 
-@pytest.fixture()
+@pytest.fixture
 def df() -> pl.DataFrame:
     return pl.DataFrame(
         {
@@ -642,7 +642,7 @@ def test_group_by_binary_agg_with_literal() -> None:
     assert out.to_dict(as_series=False) == {"id": ["a", "b"], "value": [[4, 6], [4, 6]]}
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 @pytest.mark.parametrize("dtype", [pl.Int32, pl.UInt32])
 def test_overflow_mean_partitioned_group_by_5194(dtype: PolarsDataType) -> None:
     df = pl.DataFrame(
@@ -861,7 +861,7 @@ def test_group_by_apply_first_input_is_literal() -> None:
     pow = df.group_by("g").agg(2 ** pl.col("x"))
     assert pow.sort("g").to_dict(as_series=False) == {
         "g": [1, 2],
-        "x": [[2.0, 4.0], [8.0, 16.0, 32.0]],
+        "literal": [[2.0, 4.0], [8.0, 16.0, 32.0]],
     }
 
 
@@ -924,7 +924,7 @@ def test_group_by_multiple_null_cols_15623() -> None:
     assert df.is_empty()
 
 
-@pytest.mark.release()
+@pytest.mark.release
 def test_categorical_vs_str_group_by() -> None:
     # this triggers the perfect hash table
     s = pl.Series("a", np.random.randint(0, 50, 100))
@@ -951,7 +951,7 @@ def test_categorical_vs_str_group_by() -> None:
         )
 
 
-@pytest.mark.release()
+@pytest.mark.release
 def test_boolean_min_max_agg() -> None:
     np.random.seed(0)
     idx = np.random.randint(0, 500, 1000)

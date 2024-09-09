@@ -33,9 +33,11 @@ impl Default for SchemaInferenceOptions {
     }
 }
 
-/// Infers a [`ArrowSchema`] from parquet's [`FileMetaData`]. This first looks for the metadata key
-/// `"ARROW:schema"`; if it does not exist, it converts the parquet types declared in the
-/// file's parquet schema to Arrow's equivalent.
+/// Infers a [`ArrowSchema`] from parquet's [`FileMetaData`].
+///
+/// This first looks for the metadata key `"ARROW:schema"`; if it does not exist, it converts the
+/// Parquet types declared in the file's Parquet schema to Arrow's equivalent.
+///
 /// # Error
 /// This function errors iff the key `"ARROW:schema"` exists but is not correctly encoded,
 /// indicating that that the file's arrow metadata was incorrectly written.
@@ -52,7 +54,6 @@ pub fn infer_schema_with_options(
 
     let schema = read_schema_from_metadata(&mut metadata)?;
     Ok(schema.unwrap_or_else(|| {
-        let fields = parquet_to_arrow_schema_with_options(file_metadata.schema().fields(), options);
-        ArrowSchema { fields, metadata }
+        parquet_to_arrow_schema_with_options(file_metadata.schema().fields(), options)
     }))
 }

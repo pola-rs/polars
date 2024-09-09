@@ -113,7 +113,7 @@ fn iss_8395() -> PolarsResult<()> {
 
     // assert that the df only contains [vegetables, seafood]
     let s = df.column("category")?.unique()?.sort(Default::default())?;
-    let expected = Series::new("category", &["seafood", "vegetables"]);
+    let expected = Series::new("category".into(), &["seafood", "vegetables"]);
     assert!(s.equals(&expected));
     Ok(())
 }

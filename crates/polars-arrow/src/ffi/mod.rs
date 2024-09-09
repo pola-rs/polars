@@ -40,7 +40,7 @@ pub unsafe fn import_field_from_c(field: &ArrowSchema) -> PolarsResult<Field> {
 /// being valid according to the [C data interface](https://arrow.apache.org/docs/format/CDataInterface.html) (FFI).
 pub unsafe fn import_array_from_c(
     array: ArrowArray,
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
 ) -> PolarsResult<Box<dyn Array>> {
-    try_from(InternalArrowArray::new(array, data_type))
+    try_from(InternalArrowArray::new(array, dtype))
 }

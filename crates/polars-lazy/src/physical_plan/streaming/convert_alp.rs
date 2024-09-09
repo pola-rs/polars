@@ -212,7 +212,7 @@ pub(crate) fn insert_streaming_nodes(
             // Rechunks are ignored
             MapFunction {
                 input,
-                function: FunctionNode::Rechunk,
+                function: FunctionIR::Rechunk,
             } => {
                 state.streamable = true;
                 stack.push(StackFrame::new(*input, state, current_idx))
@@ -294,7 +294,7 @@ pub(crate) fn insert_streaming_nodes(
                         Scan { .. } => true,
                         MapFunction {
                             input,
-                            function: FunctionNode::Rechunk,
+                            function: FunctionIR::Rechunk,
                         } => matches!(lp_arena.get(*input), Scan { .. }),
                         _ => false,
                     }) =>
@@ -356,7 +356,7 @@ pub(crate) fn insert_streaming_nodes(
                         #[cfg(feature = "dtype-struct")]
                         DataType::Struct(fields) => fields
                             .iter()
-                            .all(|fld| allowed_dtype(fld.data_type(), string_cache)),
+                            .all(|fld| allowed_dtype(fld.dtype(), string_cache)),
                         // We need to be able to sink to disk or produce the aggregate return dtype.
                         DataType::Unknown(_) => false,
                         #[cfg(feature = "dtype-decimal")]
@@ -396,7 +396,7 @@ pub(crate) fn insert_streaming_nodes(
 
                 let valid_types = || {
                     output_schema
-                        .iter_dtypes()
+                        .iter_values()
                         .all(|dt| allowed_dtype(dt, string_cache))
                 };
 

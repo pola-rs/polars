@@ -14,7 +14,7 @@ macro_rules! ffi_dyn {
 
 pub fn align_to_c_data_interface(array: Box<dyn Array>) -> Box<dyn Array> {
     use crate::datatypes::PhysicalType::*;
-    match array.data_type().to_physical_type() {
+    match array.dtype().to_physical_type() {
         Null => ffi_dyn!(array, NullArray),
         Boolean => ffi_dyn!(array, BooleanArray),
         Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {

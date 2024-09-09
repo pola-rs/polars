@@ -22,6 +22,17 @@ def test_index_not_silently_excluded() -> None:
         pl.from_pandas(df, include_index=True)
 
 
+def test_nameless_multiindex_doesnt_raise_with_include_index_false_18130() -> None:
+    df = pd.DataFrame(
+        range(4),
+        columns=["A"],
+        index=pd.MultiIndex.from_product((["C", "D"], [3, 4])),
+    )
+    result = pl.from_pandas(df)
+    expected = pl.DataFrame({"A": [0, 1, 2, 3]})
+    assert_frame_equal(result, expected)
+
+
 def test_from_pandas() -> None:
     df = pd.DataFrame(
         {
@@ -310,7 +321,7 @@ def test_untrusted_categorical_input() -> None:
     assert_frame_equal(result, expected, categorical_as_str=True)
 
 
-@pytest.fixture()
+@pytest.fixture
 def _set_pyarrow_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "polars._utils.construction.dataframe._PYARROW_AVAILABLE", False

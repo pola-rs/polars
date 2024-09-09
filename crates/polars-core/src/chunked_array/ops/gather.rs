@@ -244,7 +244,7 @@ impl ChunkTakeUnchecked<IdxCa> for BinaryChunked {
             .map(|arr| take_unchecked(arr.as_ref(), indices_arr))
             .collect::<Vec<_>>();
 
-        let mut out = ChunkedArray::from_chunks(self.name(), chunks);
+        let mut out = ChunkedArray::from_chunks(self.name().clone(), chunks);
 
         let sorted_flag =
             _update_gather_sorted_flag(self.is_sorted_flag(), indices.is_sorted_flag());
@@ -264,7 +264,7 @@ impl ChunkTakeUnchecked<IdxCa> for StringChunked {
 impl<I: AsRef<[IdxSize]> + ?Sized> ChunkTakeUnchecked<I> for BinaryChunked {
     /// Gather values from ChunkedArray by index.
     unsafe fn take_unchecked(&self, indices: &I) -> Self {
-        let indices = IdxCa::mmap_slice("", indices.as_ref());
+        let indices = IdxCa::mmap_slice(PlSmallStr::EMPTY, indices.as_ref());
         self.take_unchecked(&indices)
     }
 }
@@ -296,7 +296,7 @@ impl ChunkTakeUnchecked<IdxCa> for StructChunked {
 #[cfg(feature = "dtype-struct")]
 impl<I: AsRef<[IdxSize]> + ?Sized> ChunkTakeUnchecked<I> for StructChunked {
     unsafe fn take_unchecked(&self, indices: &I) -> Self {
-        let idx = IdxCa::mmap_slice("", indices.as_ref());
+        let idx = IdxCa::mmap_slice(PlSmallStr::EMPTY, indices.as_ref());
         self.take_unchecked(&idx)
     }
 }
@@ -307,7 +307,7 @@ impl IdxCa {
         let idx = bytemuck::cast_slice::<_, IdxSize>(idx);
         let arr = unsafe { arrow::ffi::mmap::slice(idx) };
         let arr = arr.with_validity_typed(Some(validity));
-        let ca = IdxCa::with_chunk("", arr);
+        let ca = IdxCa::with_chunk(PlSmallStr::EMPTY, arr);
 
         f(&ca)
     }

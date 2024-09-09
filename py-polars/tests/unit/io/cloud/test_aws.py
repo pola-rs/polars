@@ -49,7 +49,7 @@ def s3_base(monkeypatch_module: Any) -> Iterator[str]:
     p.kill()
 
 
-@pytest.fixture()
+@pytest.fixture
 def s3(s3_base: str, io_files_path: Path) -> str:
     region = "us-east-1"
     client = boto3.client("s3", region_name=region, endpoint_url=s3_base)
@@ -99,6 +99,6 @@ def test_lazy_count_s3(s3: str) -> None:
         "s3://bucket/foods*.parquet", storage_options={"endpoint_url": s3}
     ).select(pl.len())
 
-    assert "FAST COUNT(*)" in lf.explain()
+    assert "FAST_COUNT" in lf.explain()
     expected = pl.DataFrame({"len": [54]}, schema={"len": pl.UInt32})
     assert_frame_equal(lf.collect(), expected)

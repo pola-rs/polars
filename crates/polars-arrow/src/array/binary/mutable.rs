@@ -52,16 +52,16 @@ impl<O: Offset> MutableBinaryArray<O> {
     /// This function returns an error iff:
     /// * The last offset is not equal to the values' length.
     /// * the validity's length is not equal to `offsets.len()`.
-    /// * The `data_type`'s [`crate::datatypes::PhysicalType`] is not equal to either `Binary` or `LargeBinary`.
+    /// * The `dtype`'s [`crate::datatypes::PhysicalType`] is not equal to either `Binary` or `LargeBinary`.
     /// # Implementation
     /// This function is `O(1)`
     pub fn try_new(
-        data_type: ArrowDataType,
+        dtype: ArrowDataType,
         offsets: Offsets<O>,
         values: Vec<u8>,
         validity: Option<MutableBitmap>,
     ) -> PolarsResult<Self> {
-        let values = MutableBinaryValuesArray::try_new(data_type, offsets, values)?;
+        let values = MutableBinaryValuesArray::try_new(dtype, offsets, values)?;
 
         if validity
             .as_ref()
@@ -79,8 +79,8 @@ impl<O: Offset> MutableBinaryArray<O> {
         Self::from_trusted_len_iter(slice.as_ref().iter().map(|x| x.as_ref()))
     }
 
-    fn default_data_type() -> ArrowDataType {
-        BinaryArray::<O>::default_data_type()
+    fn default_dtype() -> ArrowDataType {
+        BinaryArray::<O>::default_dtype()
     }
 
     /// Initializes a new [`MutableBinaryArray`] with a pre-allocated capacity of slots.
@@ -201,8 +201,8 @@ impl<O: Offset> MutableArray for MutableBinaryArray<O> {
         array.arced()
     }
 
-    fn data_type(&self) -> &ArrowDataType {
-        self.values.data_type()
+    fn dtype(&self) -> &ArrowDataType {
+        self.values.dtype()
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -247,7 +247,7 @@ impl<O: Offset> MutableBinaryArray<O> {
     {
         let (validity, offsets, values) = trusted_len_unzip(iterator);
 
-        Self::try_new(Self::default_data_type(), offsets, values, validity).unwrap()
+        Self::try_new(Self::default_dtype(), offsets, values, validity).unwrap()
     }
 
     /// Creates a [`MutableBinaryArray`] from an iterator of trusted length.
@@ -271,7 +271,7 @@ impl<O: Offset> MutableBinaryArray<O> {
         iterator: I,
     ) -> Self {
         let (offsets, values) = trusted_len_values_iter(iterator);
-        Self::try_new(Self::default_data_type(), offsets, values, None).unwrap()
+        Self::try_new(Self::default_dtype(), offsets, values, None).unwrap()
     }
 
     /// Creates a new [`BinaryArray`] from a [`TrustedLen`] of `&[u8]`.
@@ -305,7 +305,7 @@ impl<O: Offset> MutableBinaryArray<O> {
             validity = None;
         }
 
-        Ok(Self::try_new(Self::default_data_type(), offsets, values, validity).unwrap())
+        Ok(Self::try_new(Self::default_dtype(), offsets, values, validity).unwrap())
     }
 
     /// Creates a [`MutableBinaryArray`] from an falible iterator of trusted length.
@@ -403,7 +403,7 @@ impl<O: Offset> MutableBinaryArray<O> {
     /// Creates a new [`MutableBinaryArray`] from a [`Iterator`] of `&[u8]`.
     pub fn from_iter_values<T: AsRef<[u8]>, I: Iterator<Item = T>>(iterator: I) -> Self {
         let (offsets, values) = values_iter(iterator);
-        Self::try_new(Self::default_data_type(), offsets, values, None).unwrap()
+        Self::try_new(Self::default_dtype(), offsets, values, None).unwrap()
     }
 
     /// Extend with a fallible iterator
@@ -442,9 +442,8 @@ impl<O: Offset, T: AsRef<[u8]>> TryPush<Option<T>> for MutableBinaryArray<O> {
             Some(value) => {
                 self.values.try_push(value.as_ref())?;
 
-                match &mut self.validity {
-                    Some(validity) => validity.push(true),
-                    None => {},
+                if let Some(validity) = &mut self.validity {
+                    validity.push(true)
                 }
             },
             None => {

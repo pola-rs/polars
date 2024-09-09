@@ -176,7 +176,7 @@ def test_cast_list_to_array(data: Any, inner_type: pl.DataType) -> None:
     assert s.to_list() == data
 
 
-@pytest.fixture()
+@pytest.fixture
 def data_dispersion() -> pl.DataFrame:
     return pl.DataFrame(
         {

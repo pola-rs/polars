@@ -3,20 +3,19 @@ use std::any::Any;
 use polars_error::constants::LENGTH_LIMIT_MSG;
 
 use crate::prelude::compare_inner::{IntoTotalEqInner, TotalEqInner};
-use crate::prelude::explode::ExplodeByOffsets;
 use crate::prelude::*;
 use crate::series::private::{PrivateSeries, PrivateSeriesNumeric};
 use crate::series::*;
 
 impl Series {
-    pub fn new_null(name: &str, len: usize) -> Series {
-        NullChunked::new(Arc::from(name), len).into_series()
+    pub fn new_null(name: PlSmallStr, len: usize) -> Series {
+        NullChunked::new(name, len).into_series()
     }
 }
 
 #[derive(Clone)]
 pub struct NullChunked {
-    pub(crate) name: Arc<str>,
+    pub(crate) name: PlSmallStr,
     length: IdxSize,
     // we still need chunks as many series consumers expect
     // chunks to be there
@@ -24,7 +23,7 @@ pub struct NullChunked {
 }
 
 impl NullChunked {
-    pub(crate) fn new(name: Arc<str>, len: usize) -> Self {
+    pub(crate) fn new(name: PlSmallStr, len: usize) -> Self {
         Self {
             name,
             length: len as IdxSize,
@@ -38,7 +37,7 @@ impl NullChunked {
 impl PrivateSeriesNumeric for NullChunked {
     fn bit_repr(&self) -> Option<BitRepr> {
         Some(BitRepr::Small(UInt32Chunked::full_null(
-            self.name.as_ref(),
+            self.name.clone(),
             self.len(),
         )))
     }
@@ -56,7 +55,7 @@ impl PrivateSeries for NullChunked {
         self.length = IdxSize::try_from(inner(&self.chunks)).expect(LENGTH_LIMIT_MSG);
     }
     fn _field(&self) -> Cow<Field> {
-        Cow::Owned(Field::new(self.name(), DataType::Null))
+        Cow::Owned(Field::new(self.name().clone(), DataType::Null))
     }
 
     #[allow(unused)]
@@ -78,12 +77,8 @@ impl PrivateSeries for NullChunked {
             },
         };
 
-        Ok(Self::new(self.name().into(), len).into_series())
+        Ok(Self::new(self.name().clone(), len).into_series())
     }
-    fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
-        ExplodeByOffsets::explode_by_offsets(self, offsets)
-    }
-
     fn subtract(&self, _rhs: &Series) -> PolarsResult<Series> {
         null_arithmetic(self, _rhs, "subtract")
     }
@@ -122,12 +117,16 @@ impl PrivateSeries for NullChunked {
         MetadataFlags::empty()
     }
 
-    fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
+    fn vec_hash(&self, random_state: PlRandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
         VecHash::vec_hash(self, random_state, buf)?;
         Ok(())
     }
 
-    fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) -> PolarsResult<()> {
+    fn vec_hash_combine(
+        &self,
+        build_hasher: PlRandomState,
+        hashes: &mut [u64],
+    ) -> PolarsResult<()> {
         VecHash::vec_hash_combine(self, build_hasher, hashes)?;
         Ok(())
     }
@@ -144,16 +143,16 @@ fn null_arithmetic(lhs: &NullChunked, rhs: &Series, op: &str) -> PolarsResult<Se
         (len_l, len_r) if len_l == len_r => len_l,
         _ => polars_bail!(ComputeError: "Cannot {:?} two series of different lengths.", op),
     };
-    Ok(NullChunked::new(lhs.name().into(), output_len).into_series())
+    Ok(NullChunked::new(lhs.name().clone(), output_len).into_series())
 }
 
 impl SeriesTrait for NullChunked {
-    fn name(&self) -> &str {
-        self.name.as_ref()
+    fn name(&self) -> &PlSmallStr {
+        &self.name
     }
 
-    fn rename(&mut self, name: &str) {
-        self.name = Arc::from(name)
+    fn rename(&mut self, name: PlSmallStr) {
+        self.name = name
     }
 
     fn chunks(&self) -> &Vec<ArrayRef> {
@@ -199,8 +198,8 @@ impl SeriesTrait for NullChunked {
         NullChunked::new(self.name.clone(), 0).into_series()
     }
 
-    fn cast(&self, data_type: &DataType, _cast_options: CastOptions) -> PolarsResult<Series> {
-        Ok(Series::full_null(self.name.as_ref(), self.len(), data_type))
+    fn cast(&self, dtype: &DataType, _cast_options: CastOptions) -> PolarsResult<Series> {
+        Ok(Series::full_null(self.name.clone(), self.len(), dtype))
     }
 
     fn null_count(&self) -> usize {
@@ -265,11 +264,11 @@ impl SeriesTrait for NullChunked {
     }
 
     fn is_null(&self) -> BooleanChunked {
-        BooleanChunked::full(self.name(), true, self.len())
+        BooleanChunked::full(self.name().clone(), true, self.len())
     }
 
     fn is_not_null(&self) -> BooleanChunked {
-        BooleanChunked::full(self.name(), false, self.len())
+        BooleanChunked::full(self.name().clone(), false, self.len())
     }
 
     fn reverse(&self) -> Series {

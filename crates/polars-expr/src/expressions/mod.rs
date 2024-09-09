@@ -421,7 +421,9 @@ impl<'a> AggregationContext<'a> {
                 self.groups();
                 let rows = self.groups.len();
                 let s = s.new_from_index(0, rows);
-                s.reshape_list(&[rows as i64, -1]).unwrap()
+                let out = s.reshape_list(&[rows as i64, -1]).unwrap();
+                self.state = AggState::AggregatedList(out.clone());
+                out
             },
         }
     }
@@ -613,7 +615,7 @@ impl PhysicalIoExpr for PhysicalIoHelper {
         self.expr.evaluate(df, &state)
     }
 
-    fn live_variables(&self) -> Option<Vec<Arc<str>>> {
+    fn live_variables(&self) -> Option<Vec<PlSmallStr>> {
         Some(expr_to_leaf_column_names(self.expr.as_expression()?))
     }
 

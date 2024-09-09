@@ -11,6 +11,8 @@ use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::utils::{get_time_units, try_get_supertype};
 use polars_utils::arena::{Arena, Node};
+#[cfg(feature = "ir_serde")]
+use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 pub use utils::*;
 
@@ -19,6 +21,7 @@ use crate::plans::Context;
 use crate::prelude::*;
 
 #[derive(Clone, Debug, IntoStaticStr)]
+#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 pub enum IRAggExpr {
     Min {
         input: Node,
@@ -125,10 +128,11 @@ impl From<IRAggExpr> for GroupByMethod {
 
 /// IR expression node that is allocated in an [`Arena`][polars_utils::arena::Arena].
 #[derive(Clone, Debug, Default)]
+#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 pub enum AExpr {
     Explode(Node),
-    Alias(Node, ColumnName),
-    Column(ColumnName),
+    Alias(Node, PlSmallStr),
+    Column(PlSmallStr),
     Literal(LiteralValue),
     BinaryExpr {
         left: Node,
@@ -137,7 +141,7 @@ pub enum AExpr {
     },
     Cast {
         expr: Node,
-        data_type: DataType,
+        dtype: DataType,
         options: CastOptions,
     },
     Sort {
@@ -186,21 +190,19 @@ pub enum AExpr {
         order_by: Option<(Node, SortOptions)>,
         options: WindowType,
     },
-    #[default]
-    Wildcard,
     Slice {
         input: Node,
         offset: Node,
         length: Node,
     },
+    #[default]
     Len,
-    Nth(i64),
 }
 
 impl AExpr {
     #[cfg(feature = "cse")]
-    pub(crate) fn col(name: &str) -> Self {
-        AExpr::Column(ColumnName::from(name))
+    pub(crate) fn col(name: PlSmallStr) -> Self {
+        AExpr::Column(name)
     }
     /// Any expression that is sensitive to the number of elements in a group
     /// - Aggregations
@@ -220,7 +222,6 @@ impl AExpr {
             | Len
             | Slice { .. }
             | Gather { .. }
-            | Nth(_)
              => true,
             Alias(_, _)
             | Explode(_)
@@ -230,7 +231,6 @@ impl AExpr {
             // to determine if the whole expr. is group sensitive
             | BinaryExpr { .. }
             | Ternary { .. }
-            | Wildcard
             | Cast { .. }
             | Filter { .. } => false,
         }
@@ -244,7 +244,7 @@ impl AExpr {
         arena: &Arena<AExpr>,
     ) -> PolarsResult<DataType> {
         self.to_field(schema, ctxt, arena)
-            .map(|f| f.data_type().clone())
+            .map(|f| f.dtype().clone())
     }
 
     /// Push nodes at this level to a pre-allocated stack
@@ -252,7 +252,7 @@ impl AExpr {
         use AExpr::*;
 
         match self {
-            Nth(_) | Column(_) | Literal(_) | Wildcard | Len => {},
+            Column(_) | Literal(_) | Len => {},
             Alias(e, _) => container.push_node(*e),
             BinaryExpr { left, op: _, right } => {
                 // reverse order so that left is popped first
@@ -334,7 +334,7 @@ impl AExpr {
     pub(crate) fn replace_inputs(mut self, inputs: &[Node]) -> Self {
         use AExpr::*;
         let input = match &mut self {
-            Column(_) | Literal(_) | Wildcard | Len | Nth(_) => return self,
+            Column(_) | Literal(_) | Len => return self,
             Alias(input, _) => input,
             Cast { expr, .. } => expr,
             Explode(input) => input,
@@ -424,10 +424,7 @@ impl AExpr {
     }
 
     pub(crate) fn is_leaf(&self) -> bool {
-        matches!(
-            self,
-            AExpr::Column(_) | AExpr::Literal(_) | AExpr::Len | AExpr::Nth(_)
-        )
+        matches!(self, AExpr::Column(_) | AExpr::Literal(_) | AExpr::Len)
     }
 }
 

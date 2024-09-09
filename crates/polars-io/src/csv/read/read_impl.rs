@@ -15,7 +15,7 @@ use super::buffer::init_buffers;
 use super::options::{CommentPrefix, CsvEncoding, NullValues, NullValuesCompiled};
 use super::parser::{
     get_line_stats, is_comment_line, next_line_position, next_line_position_naive, parse_lines,
-    skip_bom, skip_line_ending, skip_this_line, skip_whitespace_exclude,
+    skip_bom, skip_line_ending, skip_this_line,
 };
 use super::schema_inference::{check_decimal_comma, infer_file_schema};
 #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
@@ -35,7 +35,7 @@ pub(crate) fn cast_columns(
     ignore_errors: bool,
 ) -> PolarsResult<()> {
     let cast_fn = |s: &Series, fld: &Field| {
-        let out = match (s.dtype(), fld.data_type()) {
+        let out = match (s.dtype(), fld.dtype()) {
             #[cfg(feature = "temporal")]
             (DataType::String, DataType::Date) => s
                 .str()
@@ -74,7 +74,7 @@ pub(crate) fn cast_columns(
             df.get_columns()
                 .into_par_iter()
                 .map(|s| {
-                    if let Some(fld) = to_cast.iter().find(|fld| fld.name().as_str() == s.name()) {
+                    if let Some(fld) = to_cast.iter().find(|fld| fld.name() == s.name()) {
                         cast_fn(s, fld)
                     } else {
                         Ok(s.clone())
@@ -150,7 +150,7 @@ impl<'a> CoreReader<'a> {
         has_header: bool,
         ignore_errors: bool,
         schema: Option<SchemaRef>,
-        columns: Option<Arc<[String]>>,
+        columns: Option<Arc<[PlSmallStr]>>,
         encoding: CsvEncoding,
         mut n_threads: Option<usize>,
         schema_overwrite: Option<SchemaRef>,
@@ -278,8 +278,9 @@ impl<'a> CoreReader<'a> {
     ) -> PolarsResult<(&'b [u8], Option<usize>)> {
         let starting_point_offset = bytes.as_ptr() as usize;
 
-        // Skip all leading white space and the occasional utf8-bom
-        bytes = skip_whitespace_exclude(skip_bom(bytes), self.separator);
+        // Skip utf8 byte-order-mark (BOM)
+        bytes = skip_bom(bytes);
+
         // \n\n can be a empty string row of a single column
         // in other cases we skip it.
         if self.schema.len() > 1 {
@@ -495,7 +496,7 @@ impl<'a> CoreReader<'a> {
                 )
             };
             if let Some(ref row_index) = self.row_index {
-                df.insert_column(0, Series::new_empty(&row_index.name, &IDX_DTYPE))?;
+                df.insert_column(0, Series::new_empty(row_index.name.clone(), &IDX_DTYPE))?;
             }
             return Ok(df);
         }
@@ -558,7 +559,7 @@ impl<'a> CoreReader<'a> {
                             let mut local_df = unsafe { DataFrame::new_no_checks(columns) };
                             let current_row_count = local_df.height() as IdxSize;
                             if let Some(rc) = &self.row_index {
-                                local_df.with_row_index_mut(&rc.name, Some(rc.offset));
+                                local_df.with_row_index_mut(rc.name.clone(), Some(rc.offset));
                             };
 
                             cast_columns(&mut local_df, &self.to_cast, false, self.ignore_errors)?;
@@ -616,7 +617,7 @@ impl<'a> CoreReader<'a> {
 
                         cast_columns(&mut df, &self.to_cast, false, self.ignore_errors)?;
                         if let Some(rc) = &self.row_index {
-                            df.with_row_index_mut(&rc.name, Some(rc.offset));
+                            df.with_row_index_mut(rc.name.clone(), Some(rc.offset));
                         }
                         let n_read = df.height() as IdxSize;
                         Ok((df, n_read))
@@ -665,7 +666,7 @@ impl<'a> CoreReader<'a> {
 
                         cast_columns(&mut df, &self.to_cast, false, self.ignore_errors)?;
                         if let Some(rc) = &self.row_index {
-                            df.with_row_index_mut(&rc.name, Some(rc.offset));
+                            df.with_row_index_mut(rc.name.clone(), Some(rc.offset));
                         }
                         let n_read = df.height() as IdxSize;
                         (df, n_read)

@@ -1,5 +1,6 @@
 *.iml
 *.so
+*.pyd
 *.ipynb
 .ENV
 .env
@@ -29,7 +30,6 @@ __pycache__/
 .coverage
 
 # Rust
-.cargo/
 target/
 
 # Data

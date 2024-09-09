@@ -42,7 +42,6 @@ Computation
     Expr.log1p
     Expr.mode
     Expr.n_unique
-    Expr.null_count
     Expr.pct_change
     Expr.peak_max
     Expr.peak_min

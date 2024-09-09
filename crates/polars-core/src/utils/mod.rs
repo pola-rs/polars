@@ -18,7 +18,6 @@ use num_traits::{One, Zero};
 use rayon::prelude::*;
 pub use schema::*;
 pub use series::*;
-use smartstring::alias::String as SmartString;
 pub use supertype::*;
 pub use {arrow, rayon};
 
@@ -40,7 +39,8 @@ pub fn _set_partition_size() -> usize {
     POOL.current_num_threads()
 }
 
-/// Just a wrapper structure. Useful for certain impl specializations
+/// Just a wrapper structure which is useful for certain impl specializations.
+///
 /// This is for instance use to implement
 /// `impl<T> FromIterator<T::Native> for NoNull<ChunkedArray<T>>`
 /// as `Option<T::Native>` was already implemented:
@@ -160,7 +160,7 @@ impl<T: PolarsDataType> Container for ChunkedArray<T> {
 
     fn iter_chunks(&self) -> impl Iterator<Item = Self> {
         self.downcast_iter()
-            .map(|arr| Self::with_chunk(self.name(), arr.clone()))
+            .map(|arr| Self::with_chunk(self.name().clone(), arr.clone()))
     }
 
     fn n_chunks(&self) -> usize {
@@ -393,7 +393,7 @@ macro_rules! match_dtype_to_logical_apply_macro {
 
 /// Apply a macro on the Downcasted ChunkedArray's
 #[macro_export]
-macro_rules! match_arrow_data_type_apply_macro_ca {
+macro_rules! match_arrow_dtype_apply_macro_ca {
     ($self:expr, $macro:ident, $macro_string:ident, $macro_bool:ident $(, $opt_args:expr)*) => {{
         match $self.dtype() {
             DataType::String => $macro_string!($self.str().unwrap() $(, $opt_args)*),
@@ -684,7 +684,7 @@ macro_rules! apply_method_physical_numeric {
 macro_rules! df {
     ($($col_name:expr => $slice:expr), + $(,)?) => {
         $crate::prelude::DataFrame::new(vec![
-            $(<$crate::prelude::Series as $crate::prelude::NamedFrom::<_, _>>::new($col_name, $slice),)+
+            $(<$crate::prelude::Series as $crate::prelude::NamedFrom::<_, _>>::new($col_name.into(), $slice),)+
         ])
     }
 }
@@ -744,6 +744,7 @@ where
     for df in iter {
         acc_df.vstack_mut(&df)?;
     }
+
     Ok(acc_df)
 }
 
@@ -847,6 +848,16 @@ where
 pub(crate) fn align_chunks_binary_owned_series(left: Series, right: Series) -> (Series, Series) {
     match (left.chunks().len(), right.chunks().len()) {
         (1, 1) => (left, right),
+        // All chunks are equal length
+        (a, b)
+            if a == b
+                && left
+                    .chunk_lengths()
+                    .zip(right.chunk_lengths())
+                    .all(|(l, r)| l == r) =>
+        {
+            (left, right)
+        },
         (_, 1) => (left.rechunk(), right),
         (1, _) => (left, right.rechunk()),
         (_, _) => (left.rechunk(), right.rechunk()),
@@ -863,6 +874,16 @@ where
 {
     match (left.chunks.len(), right.chunks.len()) {
         (1, 1) => (left, right),
+        // All chunks are equal length
+        (a, b)
+            if a == b
+                && left
+                    .chunk_lengths()
+                    .zip(right.chunk_lengths())
+                    .all(|(l, r)| l == r) =>
+        {
+            (left, right)
+        },
         (_, 1) => (left.rechunk(), right),
         (1, _) => (left, right.rechunk()),
         (_, _) => (left.rechunk(), right.rechunk()),
@@ -974,42 +995,18 @@ where
     combine_validities_and(left_validity.as_ref(), right_validity.as_ref())
 }
 
+/// Convenience for `x.into_iter().map(Into::into).collect()` using an `into_vec()` function.
 pub trait IntoVec<T> {
     fn into_vec(self) -> Vec<T>;
 }
 
-pub trait Arg {}
-impl Arg for bool {}
-
-impl IntoVec<bool> for bool {
-    fn into_vec(self) -> Vec<bool> {
-        vec![self]
-    }
-}
-
-impl<T: Arg> IntoVec<T> for Vec<T> {
-    fn into_vec(self) -> Self {
-        self
-    }
-}
-
-impl<I, S> IntoVec<String> for I
+impl<I, S> IntoVec<PlSmallStr> for I
 where
     I: IntoIterator<Item = S>,
-    S: AsRef<str>,
+    S: Into<PlSmallStr>,
 {
-    fn into_vec(self) -> Vec<String> {
-        self.into_iter().map(|s| s.as_ref().to_string()).collect()
-    }
-}
-
-impl<I, S> IntoVec<SmartString> for I
-where
-    I: IntoIterator<Item = S>,
-    S: AsRef<str>,
-{
-    fn into_vec(self) -> Vec<SmartString> {
-        self.into_iter().map(|s| s.as_ref().into()).collect()
+    fn into_vec(self) -> Vec<PlSmallStr> {
+        self.into_iter().map(|s| s.into()).collect()
     }
 }
 
@@ -1160,13 +1157,29 @@ pub fn coalesce_nulls_series(a: &Series, b: &Series) -> (Series, Series) {
     }
 }
 
+pub fn operation_exceeded_idxsize_msg(operation: &str) -> String {
+    if core::mem::size_of::<IdxSize>() == core::mem::size_of::<u32>() {
+        format!(
+            "{} exceeded the maximum supported limit of {} rows. Consider installing 'polars-u64-idx'.",
+            operation,
+            IdxSize::MAX,
+        )
+    } else {
+        format!(
+            "{} exceeded the maximum supported limit of {} rows.",
+            operation,
+            IdxSize::MAX,
+        )
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
 
     #[test]
     fn test_split() {
-        let ca: Int32Chunked = (0..10).collect_ca("a");
+        let ca: Int32Chunked = (0..10).collect_ca("a".into());
 
         let out = split(&ca, 3);
         assert_eq!(out[0].len(), 3);
@@ -1175,28 +1188,30 @@ mod test {
     }
 
     #[test]
-    fn test_align_chunks() {
-        let a = Int32Chunked::new("", &[1, 2, 3, 4]);
-        let mut b = Int32Chunked::new("", &[1]);
-        let b2 = Int32Chunked::new("", &[2, 3, 4]);
+    fn test_align_chunks() -> PolarsResult<()> {
+        let a = Int32Chunked::new(PlSmallStr::EMPTY, &[1, 2, 3, 4]);
+        let mut b = Int32Chunked::new(PlSmallStr::EMPTY, &[1]);
+        let b2 = Int32Chunked::new(PlSmallStr::EMPTY, &[2, 3, 4]);
 
-        b.append(&b2);
+        b.append(&b2)?;
         let (a, b) = align_chunks_binary(&a, &b);
         assert_eq!(
             a.chunk_lengths().collect::<Vec<_>>(),
             b.chunk_lengths().collect::<Vec<_>>()
         );
 
-        let a = Int32Chunked::new("", &[1, 2, 3, 4]);
-        let mut b = Int32Chunked::new("", &[1]);
+        let a = Int32Chunked::new(PlSmallStr::EMPTY, &[1, 2, 3, 4]);
+        let mut b = Int32Chunked::new(PlSmallStr::EMPTY, &[1]);
         let b1 = b.clone();
-        b.append(&b1);
-        b.append(&b1);
-        b.append(&b1);
+        b.append(&b1)?;
+        b.append(&b1)?;
+        b.append(&b1)?;
         let (a, b) = align_chunks_binary(&a, &b);
         assert_eq!(
             a.chunk_lengths().collect::<Vec<_>>(),
             b.chunk_lengths().collect::<Vec<_>>()
         );
+
+        Ok(())
     }
 }

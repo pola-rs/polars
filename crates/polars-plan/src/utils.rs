@@ -3,16 +3,18 @@ use std::iter::FlatMap;
 
 use polars_core::prelude::*;
 use polars_utils::idx_vec::UnitVec;
-use smartstring::alias::String as SmartString;
 
-use crate::constants::{get_len_name, LEN};
+use crate::constants::get_len_name;
 use crate::prelude::*;
 
 /// Utility to write comma delimited strings
-pub fn comma_delimited(mut s: String, items: &[SmartString]) -> String {
+pub fn comma_delimited<S>(mut s: String, items: &[S]) -> String
+where
+    S: AsRef<str>,
+{
     s.push('(');
     for c in items {
-        s.push_str(c);
+        s.push_str(c.as_ref());
         s.push_str(", ");
     }
     s.pop();
@@ -135,7 +137,7 @@ pub fn has_null(current_expr: &Expr) -> bool {
     })
 }
 
-pub fn aexpr_output_name(node: Node, arena: &Arena<AExpr>) -> PolarsResult<Arc<str>> {
+pub fn aexpr_output_name(node: Node, arena: &Arena<AExpr>) -> PolarsResult<PlSmallStr> {
     for (_, ae) in arena.iter(node) {
         match ae {
             // don't follow the partition by branch
@@ -143,7 +145,7 @@ pub fn aexpr_output_name(node: Node, arena: &Arena<AExpr>) -> PolarsResult<Arc<s
             AExpr::Column(name) => return Ok(name.clone()),
             AExpr::Alias(_, name) => return Ok(name.clone()),
             AExpr::Len => return Ok(get_len_name()),
-            AExpr::Literal(val) => return Ok(val.output_column_name()),
+            AExpr::Literal(val) => return Ok(val.output_column_name().clone()),
             _ => {},
         }
     }
@@ -155,7 +157,7 @@ pub fn aexpr_output_name(node: Node, arena: &Arena<AExpr>) -> PolarsResult<Arc<s
 }
 
 /// output name of expr
-pub fn expr_output_name(expr: &Expr) -> PolarsResult<Arc<str>> {
+pub fn expr_output_name(expr: &Expr) -> PolarsResult<PlSmallStr> {
     for e in expr {
         match e {
             // don't follow the partition by branch
@@ -171,7 +173,7 @@ pub fn expr_output_name(expr: &Expr) -> PolarsResult<Arc<str>> {
                 "this expression may produce multiple output names"
             ),
             Expr::Len => return Ok(get_len_name()),
-            Expr::Literal(val) => return Ok(val.output_column_name()),
+            Expr::Literal(val) => return Ok(val.output_column_name().clone()),
             _ => {},
         }
     }
@@ -183,7 +185,7 @@ pub fn expr_output_name(expr: &Expr) -> PolarsResult<Arc<str>> {
 
 /// This function should be used to find the name of the start of an expression
 /// Normal iteration would just return the first root column it found
-pub(crate) fn get_single_leaf(expr: &Expr) -> PolarsResult<Arc<str>> {
+pub(crate) fn get_single_leaf(expr: &Expr) -> PolarsResult<PlSmallStr> {
     for e in expr {
         match e {
             Expr::Filter { input, .. } => return get_single_leaf(input),
@@ -191,7 +193,7 @@ pub(crate) fn get_single_leaf(expr: &Expr) -> PolarsResult<Arc<str>> {
             Expr::SortBy { expr, .. } => return get_single_leaf(expr),
             Expr::Window { function, .. } => return get_single_leaf(function),
             Expr::Column(name) => return Ok(name.clone()),
-            Expr::Len => return Ok(ColumnName::from(LEN)),
+            Expr::Len => return Ok(get_len_name()),
             _ => {},
         }
     }
@@ -201,17 +203,17 @@ pub(crate) fn get_single_leaf(expr: &Expr) -> PolarsResult<Arc<str>> {
 }
 
 #[allow(clippy::type_complexity)]
-pub fn expr_to_leaf_column_names_iter(expr: &Expr) -> impl Iterator<Item = Arc<str>> + '_ {
+pub fn expr_to_leaf_column_names_iter(expr: &Expr) -> impl Iterator<Item = PlSmallStr> + '_ {
     expr_to_leaf_column_exprs_iter(expr).flat_map(|e| expr_to_leaf_column_name(e).ok())
 }
 
 /// This should gradually replace expr_to_root_column as this will get all names in the tree.
-pub fn expr_to_leaf_column_names(expr: &Expr) -> Vec<Arc<str>> {
+pub fn expr_to_leaf_column_names(expr: &Expr) -> Vec<PlSmallStr> {
     expr_to_leaf_column_names_iter(expr).collect()
 }
 
 /// unpack alias(col) to name of the root column name
-pub fn expr_to_leaf_column_name(expr: &Expr) -> PolarsResult<Arc<str>> {
+pub fn expr_to_leaf_column_name(expr: &Expr) -> PolarsResult<PlSmallStr> {
     let mut leaves = expr_to_leaf_column_exprs_iter(expr).collect::<Vec<_>>();
     polars_ensure!(leaves.len() <= 1, ComputeError: "found more than one root column name");
     match leaves.pop() {
@@ -240,7 +242,7 @@ pub(crate) fn aexpr_to_column_nodes_iter<'a>(
     })
 }
 
-pub fn column_node_to_name(node: ColumnNode, arena: &Arena<AExpr>) -> &Arc<str> {
+pub fn column_node_to_name(node: ColumnNode, arena: &Arena<AExpr>) -> &PlSmallStr {
     if let AExpr::Column(name) = arena.get(node.0) {
         name
     } else {
@@ -254,7 +256,7 @@ pub(crate) fn rename_matching_aexpr_leaf_names(
     node: Node,
     arena: &mut Arena<AExpr>,
     current: &str,
-    new_name: &str,
+    new_name: PlSmallStr,
 ) -> Node {
     let mut leaves = aexpr_to_column_nodes_iter(node, arena);
 
@@ -262,10 +264,10 @@ pub(crate) fn rename_matching_aexpr_leaf_names(
         // we convert to expression as we cannot easily copy the aexpr.
         let mut new_expr = node_to_expr(node, arena);
         new_expr = new_expr.map_expr(|e| match e {
-            Expr::Column(name) if &*name == current => Expr::Column(ColumnName::from(new_name)),
+            Expr::Column(name) if &*name == current => Expr::Column(new_name.clone()),
             e => e,
         });
-        to_aexpr(new_expr, arena)
+        to_aexpr(new_expr, arena).expect("infallible")
     } else {
         node
     }
@@ -294,18 +296,18 @@ pub fn expressions_to_schema(
 pub fn aexpr_to_leaf_names_iter(
     node: Node,
     arena: &Arena<AExpr>,
-) -> impl Iterator<Item = Arc<str>> + '_ {
+) -> impl Iterator<Item = PlSmallStr> + '_ {
     aexpr_to_column_nodes_iter(node, arena).map(|node| match arena.get(node.0) {
         AExpr::Column(name) => name.clone(),
         _ => unreachable!(),
     })
 }
 
-pub fn aexpr_to_leaf_names(node: Node, arena: &Arena<AExpr>) -> Vec<Arc<str>> {
+pub fn aexpr_to_leaf_names(node: Node, arena: &Arena<AExpr>) -> Vec<PlSmallStr> {
     aexpr_to_leaf_names_iter(node, arena).collect()
 }
 
-pub fn aexpr_to_leaf_name(node: Node, arena: &Arena<AExpr>) -> Arc<str> {
+pub fn aexpr_to_leaf_name(node: Node, arena: &Arena<AExpr>) -> PlSmallStr {
     aexpr_to_leaf_names_iter(node, arena).next().unwrap()
 }
 
@@ -358,7 +360,7 @@ pub(crate) fn expr_irs_to_schema<I: IntoIterator<Item = K>, K: AsRef<ExprIR>>(
             let mut field = arena.get(e.node()).to_field(schema, ctxt, arena).unwrap();
 
             if let Some(name) = e.get_alias() {
-                field.name = name.as_ref().into()
+                field.name = name.clone()
             }
             field
         })

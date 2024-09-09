@@ -681,9 +681,9 @@ class Expr:
 
         See Also
         --------
-        map
-        prefix
-        suffix
+        name.map
+        name.prefix
+        name.suffix
 
         Examples
         --------
@@ -2494,7 +2494,7 @@ class Expr:
         )
 
     def gather(
-        self, indices: int | Sequence[int] | Expr | Series | np.ndarray[Any, Any]
+        self, indices: int | Sequence[int] | IntoExpr | Series | np.ndarray[Any, Any]
     ) -> Expr:
         """
         Take values by index.
@@ -2541,8 +2541,10 @@ class Expr:
         │ two   ┆ [4, 99]   │
         └───────┴───────────┘
         """
-        if isinstance(indices, Sequence) or (
-            _check_for_numpy(indices) and isinstance(indices, np.ndarray)
+        if (
+            isinstance(indices, Sequence)
+            and not isinstance(indices, str)
+            or (_check_for_numpy(indices) and isinstance(indices, np.ndarray))
         ):
             indices_lit = F.lit(pl.Series("", indices, dtype=Int64))._pyexpr
         else:
@@ -4298,14 +4300,14 @@ class Expr:
             Dtype of the output Series.
             If not set, the dtype will be inferred based on the first non-null value
             that is returned by the function.
-        is_elementwise
-            If set to true this can run in the streaming engine, but may yield
-            incorrect results in group-by. Ensure you know what you are doing!
         agg_list
             Aggregate the values of the expression into a list before applying the
             function. This parameter only works in a group-by context.
             The function will be invoked only once on a list of groups, rather than
             once per group.
+        is_elementwise
+            If set to true this can run in the streaming engine, but may yield
+            incorrect results in group-by. Ensure you know what you are doing!
         returns_scalar
             If the function returns a scalar, by default it will be wrapped in
             a list in the output, since the assumption is that the function
@@ -4743,7 +4745,7 @@ class Expr:
         """
         Flatten a list or string column.
 
-        Alias for :func:`polars.expr.list.ExprListNameSpace.explode`.
+        Alias for :func:`Expr.list.explode`.
 
         Examples
         --------
@@ -4883,7 +4885,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"foo": [1, 2, 3, 4, 5, 6, 7]})
-        >>> df.head(3)
+        >>> df.select(pl.col("foo").head(3))
         shape: (3, 1)
         ┌─────┐
         │ foo │
@@ -4909,7 +4911,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"foo": [1, 2, 3, 4, 5, 6, 7]})
-        >>> df.tail(3)
+        >>> df.select(pl.col("foo").tail(3))
         shape: (3, 1)
         ┌─────┐
         │ foo │
@@ -4940,7 +4942,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"foo": [1, 2, 3, 4, 5, 6, 7]})
-        >>> df.limit(3)
+        >>> df.select(pl.col("foo").limit(3))
         shape: (3, 1)
         ┌─────┐
         │ foo │
@@ -8744,30 +8746,31 @@ class Expr:
 
     def sign(self) -> Expr:
         """
-        Compute the element-wise indication of the sign.
+        Compute the element-wise sign function on numeric types.
 
-        The returned values can be -1, 0, or 1:
+        The returned value is computed as follows:
 
-        * -1 if x  < 0.
-        *  0 if x == 0.
-        *  1 if x  > 0.
+        * -1 if x < 0.
+        *  1 if x > 0.
+        *  x otherwise (typically 0, but could be NaN if the input is).
 
-        (null values are preserved as-is).
+        Null values are preserved as-is, and the dtype of the input is preserved.
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [-9.0, -0.0, 0.0, 4.0, None]})
-        >>> df.select(pl.col("a").sign())
-        shape: (5, 1)
+        >>> df = pl.DataFrame({"a": [-9.0, -0.0, 0.0, 4.0, float("nan"), None]})
+        >>> df.select(pl.col.a.sign())
+        shape: (6, 1)
         ┌──────┐
         │ a    │
         │ ---  │
-        │ i64  │
+        │ f64  │
         ╞══════╡
-        │ -1   │
-        │ 0    │
-        │ 0    │
-        │ 1    │
+        │ -1.0 │
+        │ -0.0 │
+        │ 0.0  │
+        │ 1.0  │
+        │ NaN  │
         │ null │
         └──────┘
         """
@@ -9211,6 +9214,9 @@ class Expr:
         """
         Shuffle the contents of this expression.
 
+        Note this is shuffled independently of any other column or Expression. If you
+        want each row to stay the same use df.sample(shuffle=True)
+
         Parameters
         ----------
         seed
@@ -9305,7 +9311,7 @@ class Expr:
         ignore_nulls: bool = False,
     ) -> Expr:
         r"""
-        Exponentially-weighted moving average.
+        Compute exponentially-weighted moving average.
 
         Parameters
         ----------
@@ -9320,11 +9326,11 @@ class Expr:
                 .. math::
                     \alpha = \frac{2}{\theta + 1} \; \forall \; \theta \geq 1
         half_life
-            Specify decay in terms of half-life, :math:`\lambda`, with
+            Specify decay in terms of half-life, :math:`\tau`, with
 
                 .. math::
-                    \alpha = 1 - \exp \left\{ \frac{ -\ln(2) }{ \lambda } \right\} \;
-                    \forall \; \lambda > 0
+                    \alpha = 1 - \exp \left\{ \frac{ -\ln(2) }{ \tau } \right\} \;
+                    \forall \; \tau > 0
         alpha
             Specify smoothing factor alpha directly, :math:`0 < \alpha \leq 1`.
         adjust
@@ -9387,20 +9393,21 @@ class Expr:
         half_life: str | timedelta,
     ) -> Expr:
         r"""
-        Calculate time-based exponentially weighted moving average.
+        Compute time-based exponentially weighted moving average.
 
-        Given observations :math:`x_1, x_2, \ldots, x_n` at times
-        :math:`t_1, t_2, \ldots, t_n`, the EWMA is calculated as
+        Given observations :math:`x_0, x_1, \ldots, x_{n-1}` at times
+        :math:`t_0, t_1, \ldots, t_{n-1}`, the EWMA is calculated as
 
             .. math::
 
                 y_0 &= x_0
 
-                \alpha_i &= \exp(-\lambda(t_i - t_{i-1}))
+                \alpha_i &= 1 - \exp \left\{ \frac{ -\ln(2)(t_i-t_{i-1}) }
+                    { \tau } \right\}
 
                 y_i &= \alpha_i x_i + (1 - \alpha_i) y_{i-1}; \quad i > 0
 
-        where :math:`\lambda` equals :math:`\ln(2) / \text{half_life}`.
+        where :math:`\tau` is the `half_life`.
 
         Parameters
         ----------
@@ -9484,7 +9491,7 @@ class Expr:
         ignore_nulls: bool = False,
     ) -> Expr:
         r"""
-        Exponentially-weighted moving standard deviation.
+        Compute exponentially-weighted moving standard deviation.
 
         Parameters
         ----------
@@ -9575,7 +9582,7 @@ class Expr:
         ignore_nulls: bool = False,
     ) -> Expr:
         r"""
-        Exponentially-weighted moving variance.
+        Compute exponentially-weighted moving variance.
 
         Parameters
         ----------
@@ -10240,7 +10247,12 @@ class Expr:
                 old, new, default=default, return_dtype=return_dtype
             )
 
-        if new is no_default and isinstance(old, Mapping):
+        if new is no_default:
+            if not isinstance(old, Mapping):
+                msg = (
+                    "`new` argument is required if `old` argument is not a Mapping type"
+                )
+                raise TypeError(msg)
             new = pl.Series(old.values())
             old = pl.Series(old.keys())
         else:
@@ -10250,7 +10262,7 @@ class Expr:
                 new = pl.Series(new)
 
         old = parse_into_expression(old, str_as_lit=True)  # type: ignore[arg-type]
-        new = parse_into_expression(new, str_as_lit=True)  # type: ignore[arg-type]
+        new = parse_into_expression(new, str_as_lit=True)
 
         result = self._from_pyexpr(self._pyexpr.replace(old, new))
 
@@ -10431,7 +10443,12 @@ class Expr:
         │ 3   ┆ 1.0 ┆ 10.0     │
         └─────┴─────┴──────────┘
         """  # noqa: W505
-        if new is no_default and isinstance(old, Mapping):
+        if new is no_default:
+            if not isinstance(old, Mapping):
+                msg = (
+                    "`new` argument is required if `old` argument is not a Mapping type"
+                )
+                raise TypeError(msg)
             new = pl.Series(old.values())
             old = pl.Series(old.keys())
 

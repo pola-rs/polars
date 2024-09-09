@@ -53,7 +53,7 @@ impl TreeWalker for Expr {
             BinaryExpr { left, op, right } => {
                 BinaryExpr { left: am(left, &mut f)? , op, right: am(right, f)?}
             },
-            Cast { expr, data_type, options: strict } => Cast { expr: am(expr, f)?, data_type, options: strict },
+            Cast { expr, dtype, options: strict } => Cast { expr: am(expr, f)?, dtype, options: strict },
             Sort { expr, options } => Sort { expr: am(expr, f)?, options },
             Gather { expr, idx, returns_scalar } => Gather { expr: am(expr, &mut f)?, idx: am(idx, f)?, returns_scalar },
             SortBy { expr, by, sort_options } => SortBy { expr: am(expr, &mut f)?, by: by.into_iter().map(f).collect::<Result<_, _>>()?, sort_options },
@@ -166,17 +166,16 @@ impl AExpr {
             (Alias(_, l), Alias(_, r)) => l == r,
             (Column(l), Column(r)) => l == r,
             (Literal(l), Literal(r)) => l == r,
-            (Nth(l), Nth(r)) => l == r,
             (Window { options: l, .. }, Window { options: r, .. }) => l == r,
             (
                 Cast {
                     options: strict_l,
-                    data_type: dtl,
+                    dtype: dtl,
                     ..
                 },
                 Cast {
                     options: strict_r,
-                    data_type: dtr,
+                    dtype: dtr,
                     ..
                 },
             ) => strict_l == strict_r && dtl == dtr,

@@ -31,7 +31,7 @@ impl Scalar for NullScalar {
     }
 
     #[inline]
-    fn data_type(&self) -> &ArrowDataType {
+    fn dtype(&self) -> &ArrowDataType {
         &ArrowDataType::Null
     }
 }

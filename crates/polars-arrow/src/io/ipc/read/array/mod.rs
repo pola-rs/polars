@@ -34,10 +34,10 @@ use crate::datatypes::ArrowDataType;
 
 fn try_get_field_node<'a>(
     field_nodes: &mut VecDeque<Node<'a>>,
-    data_type: &ArrowDataType,
+    dtype: &ArrowDataType,
 ) -> PolarsResult<Node<'a>> {
     field_nodes.pop_front().ok_or_else(|| {
-        polars_err!(ComputeError: "IPC: unable to fetch the field for {:?}\n\nThe file or stream is corrupted.", data_type)
+        polars_err!(ComputeError: "IPC: unable to fetch the field for {:?}\n\nThe file or stream is corrupted.", dtype)
     })
 }
 

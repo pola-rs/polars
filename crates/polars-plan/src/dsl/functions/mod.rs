@@ -17,6 +17,7 @@ mod range;
 mod repeat;
 mod selectors;
 mod syntactic_sugar;
+#[cfg(feature = "temporal")]
 mod temporal;
 
 pub use arity::*;
@@ -41,6 +42,7 @@ pub use range::*;
 pub use repeat::*;
 pub use selectors::*;
 pub use syntactic_sugar::*;
+#[cfg(feature = "temporal")]
 pub use temporal::*;
 
 #[cfg(feature = "arg_where")]

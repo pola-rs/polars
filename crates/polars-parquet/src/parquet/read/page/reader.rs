@@ -1,5 +1,5 @@
 use std::io::Seek;
-use std::sync::{Arc, OnceLock};
+use std::sync::OnceLock;
 
 use parquet_format_safe::thrift::protocol::TCompactInputProtocol;
 use polars_utils::mmap::{MemReader, MemSlice};
@@ -7,15 +7,14 @@ use polars_utils::mmap::{MemReader, MemSlice};
 use super::PageIterator;
 use crate::parquet::compression::Compression;
 use crate::parquet::error::{ParquetError, ParquetResult};
-use crate::parquet::indexes::Interval;
-use crate::parquet::metadata::{ColumnChunkMetaData, Descriptor};
+use crate::parquet::metadata::{ColumnChunkMetadata, Descriptor};
 use crate::parquet::page::{
     CompressedDataPage, CompressedDictPage, CompressedPage, DataPageHeader, PageType,
     ParquetPageHeader,
 };
 use crate::parquet::CowBuffer;
 
-/// This meta is a small part of [`ColumnChunkMetaData`].
+/// This meta is a small part of [`ColumnChunkMetadata`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PageMetaData {
     /// The start offset of this column chunk in file.
@@ -45,10 +44,10 @@ impl PageMetaData {
     }
 }
 
-impl From<&ColumnChunkMetaData> for PageMetaData {
-    fn from(column: &ColumnChunkMetaData) -> Self {
+impl From<&ColumnChunkMetadata> for PageMetaData {
+    fn from(column: &ColumnChunkMetadata) -> Self {
         Self {
-            column_start: column.byte_range().0,
+            column_start: column.byte_range().start,
             num_values: column.num_values(),
             compression: column.compression(),
             descriptor: column.descriptor().descriptor.clone(),
@@ -56,11 +55,9 @@ impl From<&ColumnChunkMetaData> for PageMetaData {
     }
 }
 
-/// Type declaration for a page filter
-pub type PageFilter = Arc<dyn Fn(&Descriptor, &DataPageHeader) -> bool + Send + Sync>;
-
 /// A fallible [`Iterator`] of [`CompressedDataPage`]. This iterator reads pages back
 /// to back until all pages have been consumed.
+///
 /// The pages from this iterator always have [`None`] [`crate::parquet::page::CompressedDataPage::selected_rows()`] since
 /// filter pushdown is not supported without a
 /// pre-computed [page index](https://github.com/apache/parquet-format/blob/master/PageIndex.md).
@@ -75,8 +72,6 @@ pub struct PageReader {
 
     // The number of total values in this column chunk.
     total_num_values: i64,
-
-    pages_filter: PageFilter,
 
     descriptor: Descriptor,
 
@@ -94,12 +89,11 @@ impl PageReader {
     /// The parameter `max_header_size`
     pub fn new(
         reader: MemReader,
-        column: &ColumnChunkMetaData,
-        pages_filter: PageFilter,
+        column: &ColumnChunkMetadata,
         scratch: Vec<u8>,
         max_page_size: usize,
     ) -> Self {
-        Self::new_with_page_meta(reader, column.into(), pages_filter, scratch, max_page_size)
+        Self::new_with_page_meta(reader, column.into(), scratch, max_page_size)
     }
 
     /// Create a a new [`PageReader`] with [`PageMetaData`].
@@ -108,7 +102,6 @@ impl PageReader {
     pub fn new_with_page_meta(
         reader: MemReader,
         reader_meta: PageMetaData,
-        pages_filter: PageFilter,
         scratch: Vec<u8>,
         max_page_size: usize,
     ) -> Self {
@@ -118,7 +111,6 @@ impl PageReader {
             compression: reader_meta.compression,
             seen_num_values: 0,
             descriptor: reader_meta.descriptor,
-            pages_filter,
             scratch,
             max_page_size,
         }
@@ -135,6 +127,12 @@ impl PageReader {
     }
 
     pub fn read_dict(&mut self) -> ParquetResult<Option<CompressedDictPage>> {
+        // If there are no pages, we cannot check if the first page is a dictionary page. Just
+        // return the fact there is no dictionary page.
+        if self.reader.remaining_len() == 0 {
+            return Ok(None);
+        }
+
         // a dictionary page exists iff the first data page is not at the start of
         // the column
         let seek_offset = self.reader.position();
@@ -161,14 +159,7 @@ impl PageReader {
             ));
         }
 
-        finish_page(
-            page_header,
-            buffer,
-            self.compression,
-            &self.descriptor,
-            None,
-        )
-        .map(|p| {
+        finish_page(page_header, buffer, self.compression, &self.descriptor).map(|p| {
             if let CompressedPage::Dict(d) = p {
                 Some(d)
             } else {
@@ -190,16 +181,7 @@ impl Iterator for PageReader {
     fn next(&mut self) -> Option<Self::Item> {
         let mut buffer = std::mem::take(&mut self.scratch);
         let maybe_maybe_page = next_page(self).transpose();
-        if let Some(ref maybe_page) = maybe_maybe_page {
-            if let Ok(CompressedPage::Data(page)) = maybe_page {
-                // check if we should filter it (only valid for data pages)
-                let to_consume = (self.pages_filter)(&self.descriptor, page.header());
-                if !to_consume {
-                    self.scratch = std::mem::take(&mut buffer);
-                    return self.next();
-                }
-            }
-        } else {
+        if maybe_maybe_page.is_none() {
             // no page => we take back the buffer
             self.scratch = std::mem::take(&mut buffer);
         }
@@ -245,14 +227,7 @@ pub(super) fn build_page(reader: &mut PageReader) -> ParquetResult<Option<Compre
         ));
     }
 
-    finish_page(
-        page_header,
-        buffer,
-        reader.compression,
-        &reader.descriptor,
-        None,
-    )
-    .map(Some)
+    finish_page(page_header, buffer, reader.compression, &reader.descriptor).map(Some)
 }
 
 pub(super) fn finish_page(
@@ -260,7 +235,6 @@ pub(super) fn finish_page(
     data: MemSlice,
     compression: Compression,
     descriptor: &Descriptor,
-    selected_rows: Option<Vec<Interval>>,
 ) -> ParquetResult<CompressedPage> {
     let type_ = page_header.type_.try_into()?;
     let uncompressed_page_size = page_header.uncompressed_page_size.try_into()?;
@@ -313,7 +287,6 @@ pub(super) fn finish_page(
                 compression,
                 uncompressed_page_size,
                 descriptor.clone(),
-                selected_rows,
             )))
         },
         PageType::DataPageV2 => {
@@ -336,7 +309,6 @@ pub(super) fn finish_page(
                 compression,
                 uncompressed_page_size,
                 descriptor.clone(),
-                selected_rows,
             )))
         },
     }

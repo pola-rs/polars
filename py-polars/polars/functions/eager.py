@@ -273,7 +273,14 @@ def _alignment_join(
         idx_y: tuple[int, LazyFrame],
     ) -> tuple[int, LazyFrame]:
         (_, x), (y_idx, y) = idx_x, idx_y
-        return y_idx, x.join(y, how=how, on=align_on, suffix=f":{y_idx}", coalesce=True)
+        return y_idx, x.join(
+            y,
+            how=how,
+            on=align_on,
+            suffix=f":{y_idx}",
+            join_nulls=True,
+            coalesce=True,
+        )
 
     joined = reduce(join_func, idx_frames)[1].sort(by=align_on, descending=descending)
     if post_align_collect:

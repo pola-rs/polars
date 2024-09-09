@@ -8,7 +8,7 @@ use polars_core::config::{get_rg_prefetch_size, verbose};
 use polars_core::prelude::*;
 use polars_parquet::read::RowGroupMetaData;
 use polars_parquet::write::FileMetaData;
-use smartstring::alias::String as SmartString;
+use polars_utils::pl_str::PlSmallStr;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::Mutex;
 
@@ -164,7 +164,7 @@ pub async fn fetch_metadata(
 /// Download rowgroups for the column whose indexes are given in `projection`.
 /// We concurrently download the columns for each field.
 async fn download_projection(
-    fields: Arc<[SmartString]>,
+    fields: Arc<[PlSmallStr]>,
     row_group: RowGroupMetaData,
     async_reader: Arc<ParquetObjectStore>,
     sender: QueueSend,
@@ -177,16 +177,12 @@ async fn download_projection(
     let mut ranges = Vec::with_capacity(fields.len());
     let mut offsets = Vec::with_capacity(fields.len());
     fields.iter().for_each(|name| {
-        let columns = row_group.columns();
-
         // A single column can have multiple matches (structs).
-        let iter = columns.iter().filter_map(|meta| {
-            if meta.descriptor().path_in_schema[0] == name.as_str() {
-                let (offset, len) = meta.byte_range();
-                Some((offset, offset as usize..(offset + len) as usize))
-            } else {
-                None
-            }
+        let iter = row_group.columns_under_root_iter(name).map(|meta| {
+            let byte_range = meta.byte_range();
+            let offset = byte_range.start;
+            let byte_range = byte_range.start as usize..byte_range.end as usize;
+            (offset, byte_range)
         });
 
         for (offset, range) in iter {
@@ -214,33 +210,30 @@ async fn download_row_group(
     sender: QueueSend,
     rg_index: usize,
 ) -> bool {
-    if rg.columns().is_empty() {
+    if rg.n_columns() == 0 {
         return true;
     }
-    let offset = rg.columns().iter().map(|c| c.byte_range().0).min().unwrap();
-    let (max_offset, len) = rg
-        .columns()
-        .iter()
-        .map(|c| c.byte_range())
-        .max_by_key(|k| k.0)
-        .unwrap();
+
+    let full_byte_range = rg.full_byte_range();
+    let full_byte_range = full_byte_range.start as usize..full_byte_range.end as usize;
 
     let result = async_reader
-        .get_range(offset as usize, (max_offset - offset + len) as usize)
+        .get_range(
+            full_byte_range.start,
+            full_byte_range.end - full_byte_range.start,
+        )
         .await
         .map(|bytes| {
-            let base_offset = offset;
             (
                 rg_index,
-                rg.columns()
-                    .iter()
-                    .map(|c| {
-                        let (offset, len) = c.byte_range();
-                        let slice_offset = offset - base_offset;
-
+                rg.byte_ranges_iter()
+                    .map(|range| {
                         (
-                            offset,
-                            bytes.slice(slice_offset as usize..(slice_offset + len) as usize),
+                            range.start,
+                            bytes.slice(
+                                range.start as usize - full_byte_range.start
+                                    ..range.end as usize - full_byte_range.start,
+                            ),
                         )
                     })
                     .collect::<DownloadedRowGroup>(),
@@ -264,10 +257,10 @@ impl FetchRowGroupsFromObjectStore {
         row_group_range: Range<usize>,
         row_groups: &[RowGroupMetaData],
     ) -> PolarsResult<Self> {
-        let projected_fields: Option<Arc<[SmartString]>> = projection.map(|projection| {
+        let projected_fields: Option<Arc<[PlSmallStr]>> = projection.map(|projection| {
             projection
                 .iter()
-                .map(|i| SmartString::from(schema.fields[*i].name.as_str()))
+                .map(|i| (schema.get_at_index(*i).as_ref().unwrap().0.clone()))
                 .collect()
         });
 
@@ -277,6 +270,7 @@ impl FetchRowGroupsFromObjectStore {
             row_group_range
                 .filter_map(|i| {
                     let rg = &row_groups[i];
+
                     let should_be_read =
                         matches!(read_this_row_group(Some(pred), rg, &schema), Ok(true));
 

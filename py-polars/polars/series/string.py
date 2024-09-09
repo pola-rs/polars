@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Mapping
 
 from polars._utils.deprecation import deprecate_function
 from polars._utils.unstable import unstable
+from polars._utils.various import no_default
 from polars.datatypes.constants import N_INFER_DEFAULT
 from polars.series.utils import expr_dispatch
 
@@ -18,6 +19,7 @@ if TYPE_CHECKING:
         TimeUnit,
         TransferEncoding,
     )
+    from polars._utils.various import NoDefault
     from polars.polars import PySeries
 
 
@@ -376,7 +378,7 @@ class StringNameSpace:
         self, pattern: str | Expr, *, literal: bool = False, strict: bool = True
     ) -> Series:
         """
-        Check if strings in Series contain a substring that matches a regex.
+        Check if the string contains a substring that matches a pattern.
 
         Parameters
         ----------
@@ -480,7 +482,7 @@ class StringNameSpace:
 
         See Also
         --------
-        contains : Check if string contains a substring that matches a regex.
+        contains : Check if the string contains a substring that matches a pattern.
 
         Examples
         --------
@@ -535,7 +537,7 @@ class StringNameSpace:
 
         See Also
         --------
-        contains : Check if string contains a substring that matches a regex.
+        contains : Check if the string contains a substring that matches a pattern.
         starts_with : Check if string values start with a substring.
 
         Examples
@@ -562,7 +564,7 @@ class StringNameSpace:
 
         See Also
         --------
-        contains : Check if string contains a substring that matches a regex.
+        contains : Check if the string contains a substring that matches a pattern.
         ends_with : Check if string values end with a substring.
 
         Examples
@@ -1481,7 +1483,7 @@ class StringNameSpace:
 
     def to_lowercase(self) -> Series:
         """
-        Modify the strings to their lowercase equivalent.
+        Modify strings to their lowercase equivalent.
 
         Examples
         --------
@@ -1497,7 +1499,7 @@ class StringNameSpace:
 
     def to_uppercase(self) -> Series:
         """
-        Modify the strings to their uppercase equivalent.
+        Modify strings to their uppercase equivalent.
 
         Examples
         --------
@@ -1513,17 +1515,31 @@ class StringNameSpace:
 
     def to_titlecase(self) -> Series:
         """
-        Modify the strings to their titlecase equivalent.
+        Modify strings to their titlecase equivalent.
+
+        Notes
+        -----
+        This is a form of case transform where the first letter of each word is
+        capitalized, with the rest of the word in lowercase. Non-alphanumeric
+        characters define the word boundaries.
 
         Examples
         --------
-        >>> s = pl.Series("sing", ["welcome to my world", "THERE'S NO TURNING BACK"])
+        >>> s = pl.Series(
+        ...     "quotes",
+        ...     [
+        ...         "'e.t. phone home'",
+        ...         "you talkin' to me?",
+        ...         "to infinity,and BEYOND!",
+        ...     ],
+        ... )
         >>> s.str.to_titlecase()
-        shape: (2,)
-        Series: 'sing' [str]
+        shape: (3,)
+        Series: 'quotes' [str]
         [
-            "Welcome To My World"
-            "There's No Turning Back"
+            "'E.T. Phone Home'"
+            "You Talkin' To Me?"
+            "To Infinity,And Beyond!"
         ]
         """
 
@@ -1804,9 +1820,9 @@ class StringNameSpace:
         self, patterns: Series | list[str], *, ascii_case_insensitive: bool = False
     ) -> Series:
         """
-        Use the aho-corasick algorithm to find matches.
+        Use the Aho-Corasick algorithm to find matches.
 
-        This version determines if any of the patterns find a match.
+        Determines if any of the patterns are contained in the string.
 
         Parameters
         ----------
@@ -1816,6 +1832,11 @@ class StringNameSpace:
             Enable ASCII-aware case-insensitive matching.
             When this option is enabled, searching will be performed without respect
             to case for ASCII letters (a-z and A-Z) only.
+
+        Notes
+        -----
+        This method supports matching on string literals only, and does not support
+        regular expression matching.
 
         Examples
         --------
@@ -1840,28 +1861,39 @@ class StringNameSpace:
 
     def replace_many(
         self,
-        patterns: Series | list[str],
-        replace_with: Series | list[str] | str,
+        patterns: Series | list[str] | Mapping[str, str],
+        replace_with: Series | list[str] | str | NoDefault = no_default,
         *,
         ascii_case_insensitive: bool = False,
     ) -> Series:
         """
-        Use the aho-corasick algorithm to replace many matches.
+        Use the Aho-Corasick algorithm to replace many matches.
 
         Parameters
         ----------
         patterns
             String patterns to search and replace.
+            Also accepts a mapping of patterns to their replacement as syntactic sugar
+            for `replace_many(pl.Series(mapping.keys()), pl.Series(mapping.values()))`.
         replace_with
             Strings to replace where a pattern was a match.
-            This can be broadcast, so it supports many:one and many:many.
+            Length must match the length of `patterns` or have length 1. This can be
+            broadcasted, so it supports many:one and many:many.
         ascii_case_insensitive
             Enable ASCII-aware case-insensitive matching.
             When this option is enabled, searching will be performed without respect
             to case for ASCII letters (a-z and A-Z) only.
 
+        Notes
+        -----
+        This method supports matching on string literals only, and does not support
+        regular expression matching.
+
         Examples
         --------
+        Replace many patterns by passing lists of equal length to the `patterns` and
+        `replace_with` parameters.
+
         >>> _ = pl.Config.set_fmt_str_lengths(100)
         >>> s = pl.Series(
         ...     "lyrics",
@@ -1879,6 +1911,49 @@ class StringNameSpace:
             "Tell you what me want, what me really really want"
             "Can me feel the love tonight"
         ]
+
+        Broadcast a replacement for many patterns by passing a string or a sequence of
+        length 1 to the `replace_with` parameter.
+
+        >>> _ = pl.Config.set_fmt_str_lengths(100)
+        >>> s = pl.Series(
+        ...     "lyrics",
+        ...     [
+        ...         "Everybody wants to rule the world",
+        ...         "Tell me what you want, what you really really want",
+        ...         "Can you feel the love tonight",
+        ...     ],
+        ... )
+        >>> s.str.replace_many(["me", "you", "they"], "")
+        shape: (3,)
+        Series: 'lyrics' [str]
+        [
+            "Everybody wants to rule the world"
+            "Tell  what  want, what  really really want"
+            "Can  feel the love tonight"
+        ]
+
+        Passing a mapping with patterns and replacements is also supported as syntactic
+        sugar.
+
+        >>> _ = pl.Config.set_fmt_str_lengths(100)
+        >>> s = pl.Series(
+        ...     "lyrics",
+        ...     [
+        ...         "Everybody wants to rule the world",
+        ...         "Tell me what you want, what you really really want",
+        ...         "Can you feel the love tonight",
+        ...     ],
+        ... )
+        >>> mapping = {"me": "you", "you": "me", "want": "need"}
+        >>> s.str.replace_many(mapping)
+        shape: (3,)
+        Series: 'lyrics' [str]
+        [
+            "Everybody needs to rule the world"
+            "Tell you what me need, what me really really need"
+            "Can me feel the love tonight"
+        ]
         """
 
     @unstable()
@@ -1890,7 +1965,7 @@ class StringNameSpace:
         overlapping: bool = False,
     ) -> Series:
         """
-        Use the aho-corasick algorithm to extract many matches.
+        Use the Aho-Corasick algorithm to extract many matches.
 
         Parameters
         ----------
@@ -1902,6 +1977,11 @@ class StringNameSpace:
             to case for ASCII letters (a-z and A-Z) only.
         overlapping
             Whether matches may overlap.
+
+        Notes
+        -----
+        This method supports matching on string literals only, and does not support
+        regular expression matching.
 
         Examples
         --------

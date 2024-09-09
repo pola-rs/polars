@@ -9,6 +9,7 @@ import polars._reexport as pl
 import polars.functions as F
 from polars._utils.deprecation import deprecate_renamed_parameter
 from polars._utils.various import (
+    is_path_or_str_sequence,
     is_str_sequence,
     normalize_filepath,
 )
@@ -111,9 +112,8 @@ def read_ipc(
             raise ValueError(msg)
 
         lf = scan_ipc(
-            source,  # type: ignore[arg-type]
+            source,
             n_rows=n_rows,
-            memory_map=memory_map,
             storage_options=storage_options,
             row_index_name=row_index_name,
             row_index_offset=row_index_offset,
@@ -188,7 +188,6 @@ def _read_ipc_impl(
             rechunk=rechunk,
             row_index_name=row_index_name,
             row_index_offset=row_index_offset,
-            memory_map=memory_map,
         )
         if columns is None:
             df = scan.collect()
@@ -346,7 +345,14 @@ def read_ipc_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, DataTyp
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
 @deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
 def scan_ipc(
-    source: str | Path | list[str] | list[Path],
+    source: str
+    | Path
+    | IO[bytes]
+    | bytes
+    | list[str]
+    | list[Path]
+    | list[IO[bytes]]
+    | list[bytes],
     *,
     n_rows: int | None = None,
     cache: bool = True,
@@ -426,14 +432,22 @@ def scan_ipc(
     include_file_paths
         Include the path of the source file(s) as a column with this name.
     """
+    sources: list[str] | list[Path] | list[IO[bytes]] | list[bytes] = []
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source, check_not_directory=False)
-        sources = []
-    else:
-        sources = [
-            normalize_filepath(source, check_not_directory=False) for source in source
-        ]
+    elif isinstance(source, list):
+        if is_path_or_str_sequence(source):
+            sources = [
+                normalize_filepath(source, check_not_directory=False)
+                for source in source
+            ]
+        else:
+            sources = source
+
         source = None  # type: ignore[assignment]
+
+    # Memory Mapping is now a no-op
+    _ = memory_map
 
     pylf = PyLazyFrame.new_from_ipc(
         source,
@@ -442,7 +456,6 @@ def scan_ipc(
         cache,
         rechunk,
         parse_row_index_args(row_index_name, row_index_offset),
-        memory_map=memory_map,
         cloud_options=storage_options,
         retries=retries,
         file_cache_ttl=file_cache_ttl,

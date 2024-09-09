@@ -168,7 +168,7 @@ impl<R: MmapBytesReader> CsvReader<R> {
                 .map(|mut fld| {
                     use DataType::*;
 
-                    match fld.data_type() {
+                    match fld.dtype() {
                         Time => {
                             self.options.fields_to_cast.push(fld.clone());
                             fld.coerce(String);
@@ -304,7 +304,7 @@ where
                         let schema = dtypes
                             .iter()
                             .zip(df.get_column_names())
-                            .map(|(dtype, name)| Field::new(name, dtype.clone()))
+                            .map(|(dtype, name)| Field::new(name.clone(), dtype.clone()))
                             .collect::<Schema>();
 
                         Arc::new(schema)

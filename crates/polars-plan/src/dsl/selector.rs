@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use super::*;
 
-#[derive(Clone, PartialEq, Hash)]
+#[derive(Clone, PartialEq, Hash, Debug, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum Selector {
     Add(Box<Selector>, Box<Selector>),
@@ -58,18 +58,18 @@ impl Sub for Selector {
 
 impl From<&str> for Selector {
     fn from(value: &str) -> Self {
-        Selector::new(col(value))
+        Selector::new(col(PlSmallStr::from_str(value)))
     }
 }
 
 impl From<String> for Selector {
     fn from(value: String) -> Self {
-        Selector::new(col(value.as_ref()))
+        Selector::new(col(PlSmallStr::from_string(value)))
     }
 }
 
-impl From<ColumnName> for Selector {
-    fn from(value: ColumnName) -> Self {
+impl From<PlSmallStr> for Selector {
+    fn from(value: PlSmallStr) -> Self {
         Selector::new(Expr::Column(value))
     }
 }

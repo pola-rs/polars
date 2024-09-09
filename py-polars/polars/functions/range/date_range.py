@@ -140,6 +140,36 @@ def date_range(
         1985-01-07
         1985-01-09
     ]
+
+    Omit `eager=True` if you want to use `date_range` as an expression:
+
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "date": [
+    ...             date(2024, 1, 1),
+    ...             date(2024, 1, 2),
+    ...             date(2024, 1, 1),
+    ...             date(2024, 1, 3),
+    ...         ],
+    ...         "key": ["one", "one", "two", "two"],
+    ...     }
+    ... )
+    >>> result = (
+    ...     df.group_by("key")
+    ...     .agg(pl.date_range(pl.col("date").min(), pl.col("date").max()))
+    ...     .sort("key")
+    ... )
+    >>> with pl.Config(fmt_str_lengths=50):
+    ...     print(result)
+    shape: (2, 2)
+    ┌─────┬──────────────────────────────────────┐
+    │ key ┆ date                                 │
+    │ --- ┆ ---                                  │
+    │ str ┆ list[date]                           │
+    ╞═════╪══════════════════════════════════════╡
+    │ one ┆ [2024-01-01, 2024-01-02]             │
+    │ two ┆ [2024-01-01, 2024-01-02, 2024-01-03] │
+    └─────┴──────────────────────────────────────┘
     """
     interval = parse_interval_argument(interval)
 

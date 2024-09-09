@@ -4,10 +4,11 @@ mod binary;
 /// but OTOH it has no external dependencies and is very familiar to Rust developers.
 mod boolean;
 mod dictionary;
+pub(crate) mod file;
 mod fixed_binary;
-mod indexes;
 mod primitive;
 mod primitive_nested;
+pub(crate) mod row_group;
 mod struct_;
 mod utils;
 
@@ -16,11 +17,9 @@ use std::fs::File;
 use dictionary::DecodedDictPage;
 use polars_parquet::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use polars_parquet::parquet::error::{ParquetError, ParquetResult};
-use polars_parquet::parquet::metadata::ColumnChunkMetaData;
+use polars_parquet::parquet::metadata::ColumnChunkMetadata;
 use polars_parquet::parquet::page::DataPage;
-use polars_parquet::parquet::read::{
-    get_column_iterator, get_field_columns, read_metadata, BasicDecompressor,
-};
+use polars_parquet::parquet::read::{get_column_iterator, read_metadata, BasicDecompressor};
 use polars_parquet::parquet::schema::types::{GroupConvertedType, ParquetType};
 use polars_parquet::parquet::schema::Repetition;
 use polars_parquet::parquet::types::int96_to_i64_ns;
@@ -142,9 +141,9 @@ pub fn page_to_array(page: &DataPage, dict: Option<&DecodedDictPage>) -> Parquet
 
 /// Reads columns into an [`Array`].
 /// This is CPU-intensive: decompress, decode and de-serialize.
-pub fn columns_to_array<I>(mut columns: I, field: &ParquetType) -> ParquetResult<Array>
+pub fn columns_to_array<'a, I>(mut columns: I, field: &ParquetType) -> ParquetResult<Array>
 where
-    I: Iterator<Item = ParquetResult<(PageReader, ColumnChunkMetaData)>>,
+    I: Iterator<Item = ParquetResult<(PageReader, &'a ColumnChunkMetadata)>>,
 {
     let mut validity = vec![];
     let mut has_filled = false;
@@ -157,6 +156,7 @@ where
             .map(|dict| dictionary::deserialize(&dict, column.physical_type()))
             .transpose()?;
         while let Some(page) = iterator.next().transpose()? {
+            let page = page.decompress(&mut iterator)?;
             if !has_filled {
                 struct_::extend_validity(&mut validity, &page)?;
             }
@@ -200,11 +200,11 @@ pub fn read_column(
         reader,
         &metadata.row_groups[row_group],
         field.name(),
-        None,
         usize::MAX,
     );
 
-    let mut statistics = get_field_columns(metadata.row_groups[row_group].columns(), field.name())
+    let mut statistics = metadata.row_groups[row_group]
+        .columns_under_root_iter(field.name())
         .map(|column_meta| column_meta.statistics().transpose())
         .collect::<ParquetResult<Vec<_>>>()?;
 

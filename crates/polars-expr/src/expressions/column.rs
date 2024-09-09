@@ -7,13 +7,13 @@ use super::*;
 use crate::expressions::{AggregationContext, PartitionedAggregation, PhysicalExpr};
 
 pub struct ColumnExpr {
-    name: Arc<str>,
+    name: PlSmallStr,
     expr: Expr,
     schema: Option<SchemaRef>,
 }
 
 impl ColumnExpr {
-    pub fn new(name: Arc<str>, expr: Expr, schema: Option<SchemaRef>) -> Self {
+    pub fn new(name: PlSmallStr, expr: Expr, schema: Option<SchemaRef>) -> Self {
         Self { name, expr, schema }
     }
 }
@@ -123,7 +123,7 @@ impl ColumnExpr {
         // Linear search will be relatively cheap as we only search the CSE columns.
         Ok(columns
             .iter()
-            .find(|s| s.name() == self.name.as_ref())
+            .find(|s| s.name() == &self.name)
             .unwrap()
             .clone())
     }

@@ -69,6 +69,26 @@ def test_except_intersect_by_name() -> None:
     assert res_i.columns == ["x", "y", "z"]
 
 
+@pytest.mark.parametrize(
+    ("op", "op_subtype"),
+    [
+        ("EXCEPT", "ALL"),
+        ("EXCEPT", "ALL BY NAME"),
+        ("INTERSECT", "ALL"),
+        ("INTERSECT", "ALL BY NAME"),
+    ],
+)
+def test_except_intersect_all_unsupported(op: str, op_subtype: str) -> None:
+    df1 = pl.DataFrame({"n": [1, 1, 1, 2, 2, 2, 3]})  # noqa: F841
+    df2 = pl.DataFrame({"n": [1, 1, 2, 2]})  # noqa: F841
+
+    with pytest.raises(
+        SQLInterfaceError,
+        match=f"'{op} {op_subtype}' is not supported",
+    ):
+        pl.sql(f"SELECT * FROM df1 {op} {op_subtype} SELECT * FROM df2")
+
+
 @pytest.mark.parametrize("op", ["EXCEPT", "INTERSECT", "UNION"])
 def test_except_intersect_errors(op: str) -> None:
     df1 = pl.DataFrame({"x": [1, 9, 1, 1], "y": [2, 3, 4, 4], "z": [5, 5, 5, 5]})  # noqa: F841

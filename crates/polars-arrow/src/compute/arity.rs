@@ -8,21 +8,17 @@ use crate::bitmap::{Bitmap, MutableBitmap};
 use crate::datatypes::ArrowDataType;
 use crate::types::NativeType;
 
-/// Applies an unary and infallible function to a [`PrimitiveArray`]. This is the
-/// fastest way to perform an operation on a [`PrimitiveArray`] when the benefits
-/// of a vectorized operation outweighs the cost of branching nulls and
-/// non-nulls.
+/// Applies an unary and infallible function to a [`PrimitiveArray`].
+///
+/// This is the /// fastest way to perform an operation on a [`PrimitiveArray`] when the benefits
+/// of a vectorized operation outweighs the cost of branching nulls and non-nulls.
 ///
 /// # Implementation
 /// This will apply the function for all values, including those on null slots.
 /// This implies that the operation must be infallible for any value of the
 /// corresponding type or this function may panic.
 #[inline]
-pub fn unary<I, F, O>(
-    array: &PrimitiveArray<I>,
-    op: F,
-    data_type: ArrowDataType,
-) -> PrimitiveArray<O>
+pub fn unary<I, F, O>(array: &PrimitiveArray<I>, op: F, dtype: ArrowDataType) -> PrimitiveArray<O>
 where
     I: NativeType,
     O: NativeType,
@@ -30,7 +26,7 @@ where
 {
     let values = array.values().iter().map(|v| op(*v)).collect::<Vec<_>>();
 
-    PrimitiveArray::<O>::new(data_type, values.into(), array.validity().cloned())
+    PrimitiveArray::<O>::new(dtype, values.into(), array.validity().cloned())
 }
 
 /// Version of unary that checks for errors in the closure used to create the
@@ -38,7 +34,7 @@ where
 pub fn try_unary<I, F, O>(
     array: &PrimitiveArray<I>,
     op: F,
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
 ) -> PolarsResult<PrimitiveArray<O>>
 where
     I: NativeType,
@@ -53,7 +49,7 @@ where
         .into();
 
     Ok(PrimitiveArray::<O>::new(
-        data_type,
+        dtype,
         values,
         array.validity().cloned(),
     ))
@@ -64,7 +60,7 @@ where
 pub fn unary_with_bitmap<I, F, O>(
     array: &PrimitiveArray<I>,
     op: F,
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
 ) -> (PrimitiveArray<O>, Bitmap)
 where
     I: NativeType,
@@ -85,7 +81,7 @@ where
         .into();
 
     (
-        PrimitiveArray::<O>::new(data_type, values, array.validity().cloned()),
+        PrimitiveArray::<O>::new(dtype, values, array.validity().cloned()),
         mut_bitmap.into(),
     )
 }
@@ -96,7 +92,7 @@ where
 pub fn unary_checked<I, F, O>(
     array: &PrimitiveArray<I>,
     op: F,
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
 ) -> PrimitiveArray<O>
 where
     I: NativeType,
@@ -128,14 +124,17 @@ where
     let bitmap: Bitmap = mut_bitmap.into();
     let validity = combine_validities_and(array.validity(), Some(&bitmap));
 
-    PrimitiveArray::<O>::new(data_type, values, validity)
+    PrimitiveArray::<O>::new(dtype, values, validity)
 }
 
-/// Applies a binary operations to two primitive arrays. This is the fastest
-/// way to perform an operation on two primitive array when the benefits of a
+/// Applies a binary operations to two primitive arrays.
+///
+/// This is the fastest way to perform an operation on two primitive array when the benefits of a
 /// vectorized operation outweighs the cost of branching nulls and non-nulls.
+///
 /// # Errors
 /// This function errors iff the arrays have a different length.
+///
 /// # Implementation
 /// This will apply the function for all values, including those on null slots.
 /// This implies that the operation must be infallible for any value of the
@@ -148,7 +147,7 @@ where
 pub fn binary<T, D, F>(
     lhs: &PrimitiveArray<T>,
     rhs: &PrimitiveArray<D>,
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
     op: F,
 ) -> PrimitiveArray<T>
 where
@@ -168,7 +167,7 @@ where
         .collect::<Vec<_>>()
         .into();
 
-    PrimitiveArray::<T>::new(data_type, values, validity)
+    PrimitiveArray::<T>::new(dtype, values, validity)
 }
 
 /// Version of binary that checks for errors in the closure used to create the
@@ -176,7 +175,7 @@ where
 pub fn try_binary<T, D, F>(
     lhs: &PrimitiveArray<T>,
     rhs: &PrimitiveArray<D>,
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
     op: F,
 ) -> PolarsResult<PrimitiveArray<T>>
 where
@@ -196,7 +195,7 @@ where
         .collect::<PolarsResult<Vec<_>>>()?
         .into();
 
-    Ok(PrimitiveArray::<T>::new(data_type, values, validity))
+    Ok(PrimitiveArray::<T>::new(dtype, values, validity))
 }
 
 /// Version of binary that returns an array and bitmap. Used when working with
@@ -204,7 +203,7 @@ where
 pub fn binary_with_bitmap<T, D, F>(
     lhs: &PrimitiveArray<T>,
     rhs: &PrimitiveArray<D>,
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
     op: F,
 ) -> (PrimitiveArray<T>, Bitmap)
 where
@@ -231,7 +230,7 @@ where
         .into();
 
     (
-        PrimitiveArray::<T>::new(data_type, values, validity),
+        PrimitiveArray::<T>::new(dtype, values, validity),
         mut_bitmap.into(),
     )
 }
@@ -242,7 +241,7 @@ where
 pub fn binary_checked<T, D, F>(
     lhs: &PrimitiveArray<T>,
     rhs: &PrimitiveArray<D>,
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
     op: F,
 ) -> PrimitiveArray<T>
 where
@@ -280,5 +279,5 @@ where
     // as Null
     let validity = combine_validities_and(validity.as_ref(), Some(&bitmap));
 
-    PrimitiveArray::<T>::new(data_type, values, validity)
+    PrimitiveArray::<T>::new(dtype, values, validity)
 }

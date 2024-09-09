@@ -2,10 +2,10 @@ use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
-use ahash::RandomState;
 use hashbrown::hash_map::RawEntryMut;
 use once_cell::sync::Lazy;
-use smartstring::{LazyCompact, SmartString};
+use polars_utils::aliases::PlRandomState;
+use polars_utils::pl_str::PlSmallStr;
 
 use crate::datatypes::{InitHashMaps2, PlIdHashMap};
 use crate::hashing::_HASHMAP_INIT_SIZE;
@@ -133,7 +133,7 @@ impl Hash for Key {
 pub(crate) struct SCacheInner {
     map: PlIdHashMap<Key, ()>,
     pub(crate) uuid: u32,
-    payloads: Vec<StrHashGlobal>,
+    payloads: Vec<PlSmallStr>,
 }
 
 impl SCacheInner {
@@ -149,8 +149,8 @@ impl SCacheInner {
     #[inline]
     pub(crate) fn insert_from_hash(&mut self, h: u64, s: &str) -> u32 {
         let mut global_idx = self.payloads.len() as u32;
-        // Note that we don't create the StrHashGlobal to search the key in the hashmap
-        // as StrHashGlobal may allocate a string
+        // Note that we don't create the PlSmallStr to search the key in the hashmap
+        // as PlSmallStr may allocate a string
         let entry = self.map.raw_entry_mut().from_hash(h, |key| {
             (key.hash == h) && {
                 let pos = key.idx as usize;
@@ -169,7 +169,7 @@ impl SCacheInner {
                 entry.insert_hashed_nocheck(h, key, ());
 
                 // only just now we allocate the string
-                self.payloads.push(s.into());
+                self.payloads.push(PlSmallStr::from_str(s));
             },
         }
         global_idx
@@ -178,7 +178,6 @@ impl SCacheInner {
     #[inline]
     pub(crate) fn get_cat(&self, s: &str) -> Option<u32> {
         let h = StringCache::get_hash_builder().hash_one(s);
-        // as StrHashGlobal may allocate a string
         self.map
             .raw_entry()
             .from_hash(h, |key| {
@@ -219,8 +218,8 @@ impl StringCache {
     /// The global `StringCache` will always use a predictable seed. This allows local builders to mimic
     /// the hashes in case of contention.
     #[inline]
-    pub(crate) fn get_hash_builder() -> RandomState {
-        RandomState::with_seed(0)
+    pub(crate) fn get_hash_builder() -> PlRandomState {
+        PlRandomState::with_seed(0)
     }
 
     /// Lock the string cache
@@ -254,5 +253,3 @@ impl StringCache {
 }
 
 pub(crate) static STRING_CACHE: Lazy<StringCache> = Lazy::new(Default::default);
-
-type StrHashGlobal = SmartString<LazyCompact>;

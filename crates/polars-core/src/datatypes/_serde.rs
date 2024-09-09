@@ -4,6 +4,7 @@
 //! We could use [serde_1712](https://github.com/serde-rs/serde/issues/1712), but that gave problems caused by
 //! [rust_96956](https://github.com/rust-lang/rust/issues/96956), so we make a dummy type without static
 
+#[cfg(feature = "dtype-categorical")]
 use serde::de::SeqAccess;
 use serde::{Deserialize, Serialize};
 
@@ -191,7 +192,7 @@ impl From<SerializableDataType> for DataType {
             #[cfg(feature = "dtype-categorical")]
             Categorical(_, ordering) => Self::Categorical(None, ordering),
             #[cfg(feature = "dtype-categorical")]
-            Enum(Some(categories), _) => create_enum_data_type(categories.0),
+            Enum(Some(categories), _) => create_enum_dtype(categories.0),
             #[cfg(feature = "dtype-categorical")]
             Enum(None, ordering) => Self::Enum(None, ordering),
             #[cfg(feature = "dtype-decimal")]

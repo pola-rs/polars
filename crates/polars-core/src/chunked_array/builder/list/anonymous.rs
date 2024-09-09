@@ -1,7 +1,7 @@
 use super::*;
 
 pub struct AnonymousListBuilder<'a> {
-    name: String,
+    name: PlSmallStr,
     builder: AnonymousBuilder<'a>,
     fast_explode: bool,
     inner_dtype: DtypeMerger,
@@ -9,14 +9,14 @@ pub struct AnonymousListBuilder<'a> {
 
 impl Default for AnonymousListBuilder<'_> {
     fn default() -> Self {
-        Self::new("", 0, None)
+        Self::new(PlSmallStr::EMPTY, 0, None)
     }
 }
 
 impl<'a> AnonymousListBuilder<'a> {
-    pub fn new(name: &str, capacity: usize, inner_dtype: Option<DataType>) -> Self {
+    pub fn new(name: PlSmallStr, capacity: usize, inner_dtype: Option<DataType>) -> Self {
         Self {
-            name: name.into(),
+            name,
             builder: AnonymousBuilder::new(capacity),
             fast_explode: true,
             inner_dtype: DtypeMerger::new(inner_dtype),
@@ -63,12 +63,6 @@ impl<'a> AnonymousListBuilder<'a> {
             // Empty arrays tend to be null type and thus differ
             // if we would push it the concat would fail.
             DataType::Null if s.is_empty() => self.append_empty(),
-            #[cfg(feature = "dtype-struct")]
-            DataType::Struct(_) => {
-                let arr = &**s.array_ref(0);
-                self.builder.push(arr);
-                return Ok(());
-            },
             dt => self.inner_dtype.update(dt)?,
         }
         self.builder.push_multiple(s.chunks());
@@ -80,7 +74,7 @@ impl<'a> AnonymousListBuilder<'a> {
         let slf = std::mem::take(self);
         if slf.builder.is_empty() {
             ListChunked::full_null_with_dtype(
-                &slf.name,
+                slf.name.clone(),
                 0,
                 &slf.inner_dtype.materialize().unwrap_or(DataType::Null),
             )
@@ -93,22 +87,22 @@ impl<'a> AnonymousListBuilder<'a> {
             let arr = slf.builder.finish(inner_dtype_physical.as_ref()).unwrap();
 
             let list_dtype_logical = match inner_dtype {
-                None => DataType::from(arr.data_type()),
+                None => DataType::from(arr.dtype()),
                 Some(dt) => DataType::List(Box::new(dt)),
             };
 
-            let mut ca = ListChunked::with_chunk("", arr);
+            let mut ca = ListChunked::with_chunk(PlSmallStr::EMPTY, arr);
             if slf.fast_explode {
                 ca.set_fast_explode();
             }
-            ca.field = Arc::new(Field::new(&slf.name, list_dtype_logical));
+            ca.field = Arc::new(Field::new(slf.name.clone(), list_dtype_logical));
             ca
         }
     }
 }
 
 pub struct AnonymousOwnedListBuilder {
-    name: String,
+    name: PlSmallStr,
     builder: AnonymousBuilder<'static>,
     owned: Vec<Series>,
     inner_dtype: DtypeMerger,
@@ -117,7 +111,7 @@ pub struct AnonymousOwnedListBuilder {
 
 impl Default for AnonymousOwnedListBuilder {
     fn default() -> Self {
-        Self::new("", 0, None)
+        Self::new(PlSmallStr::EMPTY, 0, None)
     }
 }
 
@@ -127,17 +121,9 @@ impl ListBuilderTrait for AnonymousOwnedListBuilder {
             self.append_empty();
         } else {
             unsafe {
-                match s.dtype() {
-                    #[cfg(feature = "dtype-struct")]
-                    DataType::Struct(_) => {
-                        self.builder.push(&*(&**s.array_ref(0) as *const dyn Array));
-                    },
-                    dt => {
-                        self.inner_dtype.update(dt)?;
-                        self.builder
-                            .push_multiple(&*(s.chunks().as_ref() as *const [ArrayRef]));
-                    },
-                }
+                self.inner_dtype.update(s.dtype())?;
+                self.builder
+                    .push_multiple(&*(s.chunks().as_ref() as *const [ArrayRef]));
             }
             // This make sure that the underlying ArrayRef's are not dropped.
             self.owned.push(s.clone());
@@ -161,23 +147,23 @@ impl ListBuilderTrait for AnonymousOwnedListBuilder {
         let arr = slf.builder.finish(inner_dtype_physical.as_ref()).unwrap();
 
         let list_dtype_logical = match inner_dtype {
-            None => DataType::from_arrow(arr.data_type(), false),
+            None => DataType::from_arrow(arr.dtype(), false),
             Some(dt) => DataType::List(Box::new(dt)),
         };
 
-        let mut ca = ListChunked::with_chunk("", arr);
+        let mut ca = ListChunked::with_chunk(PlSmallStr::EMPTY, arr);
         if slf.fast_explode {
             ca.set_fast_explode();
         }
-        ca.field = Arc::new(Field::new(&slf.name, list_dtype_logical));
+        ca.field = Arc::new(Field::new(slf.name.clone(), list_dtype_logical));
         ca
     }
 }
 
 impl AnonymousOwnedListBuilder {
-    pub fn new(name: &str, capacity: usize, inner_dtype: Option<DataType>) -> Self {
+    pub fn new(name: PlSmallStr, capacity: usize, inner_dtype: Option<DataType>) -> Self {
         Self {
-            name: name.into(),
+            name,
             builder: AnonymousBuilder::new(capacity),
             owned: Vec::with_capacity(capacity),
             inner_dtype: DtypeMerger::new(inner_dtype),

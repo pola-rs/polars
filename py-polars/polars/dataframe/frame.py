@@ -66,6 +66,7 @@ from polars._utils.various import (
 from polars._utils.wrap import wrap_expr, wrap_ldf, wrap_s
 from polars.dataframe._html import NotebookFormatter
 from polars.dataframe.group_by import DynamicGroupBy, GroupBy, RollingGroupBy
+from polars.dataframe.plotting import DataFramePlot
 from polars.datatypes import (
     N_INFER_DEFAULT,
     Boolean,
@@ -82,15 +83,15 @@ from polars.datatypes import (
 )
 from polars.datatypes.group import INTEGER_DTYPES
 from polars.dependencies import (
+    _ALTAIR_AVAILABLE,
     _GREAT_TABLES_AVAILABLE,
-    _HVPLOT_AVAILABLE,
     _PANDAS_AVAILABLE,
     _PYARROW_AVAILABLE,
     _check_for_numpy,
     _check_for_pandas,
     _check_for_pyarrow,
+    altair,
     great_tables,
-    hvplot,
     import_optional,
 )
 from polars.dependencies import numpy as np
@@ -123,8 +124,8 @@ if TYPE_CHECKING:
     import numpy.typing as npt
     import torch
     from great_tables import GT
-    from hvplot.plotting.core import hvPlotTabularPolars
-    from xlsxwriter import Workbook, Worksheet
+    from xlsxwriter import Workbook
+    from xlsxwriter.worksheet import Worksheet
 
     from polars import DataType, Expr, LazyFrame, Series
     from polars._typing import (
@@ -603,7 +604,7 @@ class DataFrame:
 
     @property
     @unstable()
-    def plot(self) -> hvPlotTabularPolars:
+    def plot(self) -> DataFramePlot:
         """
         Create a plot namespace.
 
@@ -611,9 +612,28 @@ class DataFrame:
             This functionality is currently considered **unstable**. It may be
             changed at any point without it being considered a breaking change.
 
+        .. versionchanged:: 1.6.0
+            In prior versions of Polars, HvPlot was the plotting backend. If you would
+            like to restore the previous plotting functionality, all you need to do
+            is add `import hvplot.polars` at the top of your script and replace
+            `df.plot` with `df.hvplot`.
+
         Polars does not implement plotting logic itself, but instead defers to
-        hvplot. Please see the `hvplot reference gallery <https://hvplot.holoviz.org/reference/index.html>`_
-        for more information and documentation.
+        `Altair <https://altair-viz.github.io/>`_:
+
+        - `df.plot.line(**kwargs)`
+          is shorthand for
+          `alt.Chart(df).mark_line().encode(**kwargs).interactive()`
+        - `df.plot.point(**kwargs)`
+          is shorthand for
+          `alt.Chart(df).mark_point().encode(**kwargs).interactive()` (and
+          `plot.scatter` is provided as an alias)
+        - `df.plot.bar(**kwargs)`
+          is shorthand for
+          `alt.Chart(df).mark_bar().encode(**kwargs).interactive()`
+        - for any other attribute `attr`, `df.plot.attr(**kwargs)`
+          is shorthand for
+          `alt.Chart(df).mark_attr().encode(**kwargs).interactive()`
 
         Examples
         --------
@@ -626,32 +646,37 @@ class DataFrame:
         ...         "species": ["setosa", "setosa", "versicolor"],
         ...     }
         ... )
-        >>> df.plot.scatter(x="length", y="width", by="species")  # doctest: +SKIP
+        >>> df.plot.point(x="length", y="width", color="species")  # doctest: +SKIP
 
         Line plot:
 
         >>> from datetime import date
         >>> df = pl.DataFrame(
         ...     {
-        ...         "date": [date(2020, 1, 2), date(2020, 1, 3), date(2020, 1, 4)],
-        ...         "stock_1": [1, 4, 6],
-        ...         "stock_2": [1, 5, 2],
+        ...         "date": [date(2020, 1, 2), date(2020, 1, 3), date(2020, 1, 4)] * 2,
+        ...         "price": [1, 4, 6, 1, 5, 2],
+        ...         "stock": ["a", "a", "a", "b", "b", "b"],
         ...     }
         ... )
-        >>> df.plot.line(x="date", y=["stock_1", "stock_2"])  # doctest: +SKIP
+        >>> df.plot.line(x="date", y="price", color="stock")  # doctest: +SKIP
 
-        For more info on what you can pass, you can use ``hvplot.help``:
+        Bar plot:
 
-        >>> import hvplot  # doctest: +SKIP
-        >>> hvplot.help("scatter")  # doctest: +SKIP
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "day": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] * 2,
+        ...         "group": ["a"] * 7 + ["b"] * 7,
+        ...         "value": [1, 3, 2, 4, 5, 6, 1, 1, 3, 2, 4, 5, 1, 2],
+        ...     }
+        ... )
+        >>> df.plot.bar(
+        ...     x="day", y="value", color="day", column="group"
+        ... )  # doctest: +SKIP
         """
-        if not _HVPLOT_AVAILABLE or parse_version(hvplot.__version__) < parse_version(
-            "0.9.1"
-        ):
-            msg = "hvplot>=0.9.1 is required for `.plot`"
+        if not _ALTAIR_AVAILABLE or parse_version(altair.__version__) < (5, 4, 0):
+            msg = "altair>=5.4.0 is required for `.plot`"
             raise ModuleUpgradeRequiredError(msg)
-        hvplot.post_patch()
-        return hvplot.plotting.core.hvPlotTabularPolars(self)
+        return DataFramePlot(self)
 
     @property
     @unstable()
@@ -1194,7 +1219,130 @@ class DataFrame:
             | tuple[MultiIndexSelector, MultiColSelector]
         ),
     ) -> DataFrame | Series | Any:
-        """Get part of the DataFrame as a new DataFrame, Series, or scalar."""
+        """
+        Get part of the DataFrame as a new DataFrame, Series, or scalar.
+
+        Parameters
+        ----------
+        key
+            Rows / columns to select. This is easiest to explain via example. Suppose
+            we have a DataFrame with columns `'a'`, `'d'`, `'c'`, `'d'`. Here is what
+            various types of `key` would do:
+
+            - `df[0, 'a']` extracts the first element of column `'a'` and returns a
+              scalar.
+            - `df[0]` extracts the first row and returns a Dataframe.
+            - `df['a']` extracts column `'a'` and returns a Series.
+            - `df[0:2]` extracts the first two rows and returns a Dataframe.
+            - `df[0:2, 'a']` extracts the first two rows from column `'a'` and returns
+              a Series.
+            - `df[0:2, 0]` extracts the first two rows from the first column and returns
+              a Series.
+            - `df[[0, 1], [0, 1, 2]]` extracts the first two rows and the first three
+              columns and returns a Dataframe.
+            - `df[0: 2, ['a', 'c']]` extracts the first two rows from columns `'a'` and
+              `'c'` and returns a Dataframe.
+            - `df[:, 0: 2]` extracts all rows from the first two columns and returns a
+              Dataframe.
+            - `df[:, 'a': 'c']` extracts all rows and all columns positioned between
+              `'a'` and `'c'` *inclusive* and returns a Dataframe. In our example,
+              that would extract columns `'a'`, `'d'`, and `'c'`.
+
+        Returns
+        -------
+        DataFrame, Series, or scalar, depending on `key`.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"a": [1, 2, 3], "d": [4, 5, 6], "c": [1, 3, 2], "b": [7, 8, 9]}
+        ... )
+        >>> df[0]
+        shape: (1, 4)
+        ┌─────┬─────┬─────┬─────┐
+        │ a   ┆ d   ┆ c   ┆ b   │
+        │ --- ┆ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╪═════╡
+        │ 1   ┆ 4   ┆ 1   ┆ 7   │
+        └─────┴─────┴─────┴─────┘
+        >>> df[0, "a"]
+        1
+        >>> df["a"]
+        shape: (3,)
+        Series: 'a' [i64]
+        [
+            1
+            2
+            3
+        ]
+        >>> df[0:2]
+        shape: (2, 4)
+        ┌─────┬─────┬─────┬─────┐
+        │ a   ┆ d   ┆ c   ┆ b   │
+        │ --- ┆ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╪═════╡
+        │ 1   ┆ 4   ┆ 1   ┆ 7   │
+        │ 2   ┆ 5   ┆ 3   ┆ 8   │
+        └─────┴─────┴─────┴─────┘
+        >>> df[0:2, "a"]
+        shape: (2,)
+        Series: 'a' [i64]
+        [
+            1
+            2
+        ]
+        >>> df[0:2, 0]
+        shape: (2,)
+        Series: 'a' [i64]
+        [
+            1
+            2
+        ]
+        >>> df[[0, 1], [0, 1, 2]]
+        shape: (2, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ d   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ 4   ┆ 1   │
+        │ 2   ┆ 5   ┆ 3   │
+        └─────┴─────┴─────┘
+        >>> df[0:2, ["a", "c"]]
+        shape: (2, 2)
+        ┌─────┬─────┐
+        │ a   ┆ c   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 1   │
+        │ 2   ┆ 3   │
+        └─────┴─────┘
+        >>> df[:, 0:2]
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ a   ┆ d   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 4   │
+        │ 2   ┆ 5   │
+        │ 3   ┆ 6   │
+        └─────┴─────┘
+        >>> df[:, "a":"c"]
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ d   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ 4   ┆ 1   │
+        │ 2   ┆ 5   ┆ 3   │
+        │ 3   ┆ 6   ┆ 2   │
+        └─────┴─────┴─────┘
+        """
         return get_df_item_by_key(self, key)
 
     def __setitem__(
@@ -2709,10 +2857,20 @@ class DataFrame:
         if not null_value:
             null_value = None
 
+        def write_csv_to_string() -> str:
+            with BytesIO() as buf:
+                self.write_csv(buf)
+                csv_bytes = buf.getvalue()
+            return csv_bytes.decode("utf8")
+
         should_return_buffer = False
         if file is None:
             buffer = file = BytesIO()
             should_return_buffer = True
+        elif isinstance(file, StringIO):
+            csv_str = write_csv_to_string()
+            file.write(csv_str)
+            return None
         elif isinstance(file, (str, os.PathLike)):
             file = normalize_filepath(file)
 
@@ -3820,6 +3978,7 @@ class DataFrame:
                         mode=mode,
                         catalog_name=catalog,
                         db_schema_name=db_schema,
+                        **(engine_options or {}),
                     )
                 elif db_schema is not None:
                     adbc_str_version = ".".join(str(v) for v in adbc_version)
@@ -5208,7 +5367,7 @@ class DataFrame:
 
         See Also
         --------
-        assert_frame_equal
+        polars.testing.assert_frame_equal
 
         Examples
         --------
@@ -5810,7 +5969,7 @@ class DataFrame:
         >>> for name, data in df.group_by("a"):  # doctest: +SKIP
         ...     print(name)
         ...     print(data)
-        a
+        ('a',)
         shape: (2, 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
@@ -5820,7 +5979,7 @@ class DataFrame:
         │ a   ┆ 1   ┆ 5   │
         │ a   ┆ 1   ┆ 3   │
         └─────┴─────┴─────┘
-        b
+        ('b',)
         shape: (2, 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
@@ -5830,7 +5989,7 @@ class DataFrame:
         │ b   ┆ 2   ┆ 4   │
         │ b   ┆ 3   ┆ 2   │
         └─────┴─────┴─────┘
-        c
+        ('c',)
         shape: (1, 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
@@ -6179,7 +6338,7 @@ class DataFrame:
         │ 2021-12-16 03:00:00 ┆ 6   │
         └─────────────────────┴─────┘
 
-        Group by windows of 1 hour starting at 2021-12-16 00:00:00.
+        Group by windows of 1 hour.
 
         >>> df.group_by_dynamic("time", every="1h", closed="right").agg(pl.col("n"))
         shape: (4, 2)
@@ -6438,7 +6597,7 @@ class DataFrame:
         tolerance: str | int | float | timedelta | None = None,
         allow_parallel: bool = True,
         force_parallel: bool = False,
-        coalesce: bool | None = None,
+        coalesce: bool = True,
     ) -> DataFrame:
         """
         Perform an asof join.
@@ -6516,9 +6675,8 @@ class DataFrame:
             Force the physical plan to evaluate the computation of both DataFrames up to
             the join in parallel.
         coalesce
-            Coalescing behavior (merging of join columns).
+            Coalescing behavior (merging of `on` / `left_on` / `right_on` columns):
 
-            - None: -> join specific.
             - True: -> Always coalesce join columns.
             - False: -> Never coalesce join columns.
 
@@ -6591,6 +6749,20 @@ class DataFrame:
 
         - date `2016-03-01` from `population` is matched with `2016-01-01` from `gdp`;
         - date `2018-08-01` from `population` is matched with `2018-01-01` from `gdp`.
+
+        You can verify this by passing `coalesce=False`:
+
+        >>> population.join_asof(gdp, on="date", strategy="backward", coalesce=False)
+        shape: (3, 4)
+        ┌────────────┬────────────┬────────────┬──────┐
+        │ date       ┆ population ┆ date_right ┆ gdp  │
+        │ ---        ┆ ---        ┆ ---        ┆ ---  │
+        │ date       ┆ f64        ┆ date       ┆ i64  │
+        ╞════════════╪════════════╪════════════╪══════╡
+        │ 2016-03-01 ┆ 82.19      ┆ 2016-01-01 ┆ 4164 │
+        │ 2018-08-01 ┆ 82.66      ┆ 2018-01-01 ┆ 4566 │
+        │ 2019-01-01 ┆ 83.12      ┆ 2019-01-01 ┆ 4696 │
+        └────────────┴────────────┴────────────┴──────┘
 
         If we instead use `strategy='forward'`, then each date from `population` which
         doesn't have an exact match is matched with the closest later date from `gdp`:
@@ -6823,10 +6995,6 @@ class DataFrame:
             Note that joining on any other expressions than `col`
             will turn off coalescing.
 
-        Returns
-        -------
-        DataFrame
-
         See Also
         --------
         join_asof
@@ -6927,6 +7095,94 @@ class DataFrame:
             .collect(_eager=True)
         )
 
+    @unstable()
+    def join_where(
+        self,
+        other: DataFrame,
+        *predicates: Expr | Iterable[Expr],
+        suffix: str = "_right",
+    ) -> DataFrame:
+        """
+        Perform a join based on one or multiple equality predicates.
+
+        .. warning::
+            This functionality is experimental. It may be
+            changed at any point without it being considered a breaking change.
+
+        A row from this table may be included in zero or multiple rows in the result,
+        and the relative order of rows may differ between the input and output tables.
+
+        Parameters
+        ----------
+        other
+            DataFrame to join with.
+        *predicates
+            (In)Equality condition to join the two table on.
+            The left `pl.col(..)` will refer to the left table
+            and the right `pl.col(..)`
+            to the right table.
+            For example: `pl.col("time") >= pl.col("duration")`
+        suffix
+            Suffix to append to columns with a duplicate name.
+
+        Notes
+        -----
+        This method is strict about its equality expressions.
+        Only 1 equality expression is allowed per predicate, where
+        the lhs `pl.col` refers to the left table in the join, and the
+        rhs `pl.col` refers to the right table.
+
+        Examples
+        --------
+        >>> east = pl.DataFrame(
+        ...     {
+        ...         "id": [100, 101, 102],
+        ...         "dur": [120, 140, 160],
+        ...         "rev": [12, 14, 16],
+        ...         "cores": [2, 8, 4],
+        ...     }
+        ... )
+        >>> west = pl.DataFrame(
+        ...     {
+        ...         "t_id": [404, 498, 676, 742],
+        ...         "time": [90, 130, 150, 170],
+        ...         "cost": [9, 13, 15, 16],
+        ...         "cores": [4, 2, 1, 4],
+        ...     }
+        ... )
+        >>> east.join_where(
+        ...     west,
+        ...     pl.col("dur") < pl.col("time"),
+        ...     pl.col("rev") < pl.col("cost"),
+        ... )
+        shape: (5, 8)
+        ┌─────┬─────┬─────┬───────┬──────┬──────┬──────┬─────────────┐
+        │ id  ┆ dur ┆ rev ┆ cores ┆ t_id ┆ time ┆ cost ┆ cores_right │
+        │ --- ┆ --- ┆ --- ┆ ---   ┆ ---  ┆ ---  ┆ ---  ┆ ---         │
+        │ i64 ┆ i64 ┆ i64 ┆ i64   ┆ i64  ┆ i64  ┆ i64  ┆ i64         │
+        ╞═════╪═════╪═════╪═══════╪══════╪══════╪══════╪═════════════╡
+        │ 100 ┆ 120 ┆ 12  ┆ 2     ┆ 498  ┆ 130  ┆ 13   ┆ 2           │
+        │ 100 ┆ 120 ┆ 12  ┆ 2     ┆ 676  ┆ 150  ┆ 15   ┆ 1           │
+        │ 100 ┆ 120 ┆ 12  ┆ 2     ┆ 742  ┆ 170  ┆ 16   ┆ 4           │
+        │ 101 ┆ 140 ┆ 14  ┆ 8     ┆ 676  ┆ 150  ┆ 15   ┆ 1           │
+        │ 101 ┆ 140 ┆ 14  ┆ 8     ┆ 742  ┆ 170  ┆ 16   ┆ 4           │
+        └─────┴─────┴─────┴───────┴──────┴──────┴──────┴─────────────┘
+
+        """
+        if not isinstance(other, DataFrame):
+            msg = f"expected `other` join table to be a DataFrame, got {type(other).__name__!r}"
+            raise TypeError(msg)
+
+        return (
+            self.lazy()
+            .join_where(
+                other.lazy(),
+                *predicates,
+                suffix=suffix,
+            )
+            .collect(_eager=True)
+        )
+
     def map_rows(
         self,
         function: Callable[[tuple[Any, ...]], Any],
@@ -7003,17 +7259,17 @@ class DataFrame:
 
         Return a DataFrame with a single column by mapping each row to a scalar:
 
-        >>> df.map_rows(lambda t: (t[0] * 2 + t[1]))  # doctest: +SKIP
+        >>> df.map_rows(lambda t: (t[0] * 2 + t[1]))
         shape: (3, 1)
-        ┌───────┐
-        │ apply │
-        │ ---   │
-        │ i64   │
-        ╞═══════╡
-        │ 1     │
-        │ 9     │
-        │ 14    │
-        └───────┘
+        ┌─────┐
+        │ map │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 1   │
+        │ 9   │
+        │ 14  │
+        └─────┘
 
         In this case it is better to use the following native expression:
 
@@ -8581,17 +8837,15 @@ class DataFrame:
         """
         Start a lazy query from this point. This returns a `LazyFrame` object.
 
-        Operations on a `LazyFrame` are not executed until this is requested by either
-        calling:
+        Operations on a `LazyFrame` are not executed until this is triggered
+        by calling one of:
 
         * :meth:`.collect() <polars.LazyFrame.collect>`
             (run on all data)
-        * :meth:`.describe_plan() <polars.LazyFrame.describe_plan>`
-            (print unoptimized query plan)
-        * :meth:`.describe_optimized_plan() <polars.LazyFrame.describe_optimized_plan>`
-            (print optimized query plan)
+        * :meth:`.explain() <polars.LazyFrame.explain>`
+            (print the query plan)
         * :meth:`.show_graph() <polars.LazyFrame.show_graph>`
-            (show (un)optimized query plan as graphviz graph)
+            (show the query plan as graphviz graph)
         * :meth:`.collect_schema() <polars.LazyFrame.collect_schema>`
             (return the final frame schema)
 

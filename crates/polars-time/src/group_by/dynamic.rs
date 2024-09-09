@@ -7,10 +7,10 @@ use polars_core::utils::flatten::flatten_par;
 use polars_core::POOL;
 use polars_ops::series::SeriesMethods;
 use polars_utils::idx_vec::IdxVec;
+use polars_utils::pl_str::PlSmallStr;
 use polars_utils::slice::{GetSaferUnchecked, SortedSlice};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-use smartstring::alias::String as SmartString;
 
 use crate::prelude::*;
 
@@ -21,7 +21,7 @@ struct Wrap<T>(pub T);
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct DynamicGroupOptions {
     /// Time or index column.
-    pub index_column: SmartString,
+    pub index_column: PlSmallStr,
     /// Start a window at this interval.
     pub every: Duration,
     /// Window duration.
@@ -55,7 +55,7 @@ impl Default for DynamicGroupOptions {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct RollingGroupOptions {
     /// Time or index column.
-    pub index_column: SmartString,
+    pub index_column: PlSmallStr,
     /// Window duration.
     pub period: Duration,
     pub offset: Duration,
@@ -133,8 +133,8 @@ impl Wrap<&DataFrame> {
         let time_type = time.dtype();
 
         polars_ensure!(time.null_count() == 0, ComputeError: "null values in `rolling` not supported, fill nulls.");
-        ensure_duration_matches_data_type(options.period, time_type, "period")?;
-        ensure_duration_matches_data_type(options.offset, time_type, "offset")?;
+        ensure_duration_matches_dtype(options.period, time_type, "period")?;
+        ensure_duration_matches_dtype(options.offset, time_type, "offset")?;
 
         use DataType::*;
         let (dt, tu, tz): (Series, TimeUnit, Option<TimeZone>) = match time_type {
@@ -202,9 +202,9 @@ impl Wrap<&DataFrame> {
         let time_type = time.dtype();
 
         polars_ensure!(time.null_count() == 0, ComputeError: "null values in dynamic group_by not supported, fill nulls.");
-        ensure_duration_matches_data_type(options.every, time_type, "every")?;
-        ensure_duration_matches_data_type(options.offset, time_type, "offset")?;
-        ensure_duration_matches_data_type(options.period, time_type, "period")?;
+        ensure_duration_matches_dtype(options.every, time_type, "every")?;
+        ensure_duration_matches_dtype(options.offset, time_type, "offset")?;
+        ensure_duration_matches_dtype(options.period, time_type, "period")?;
 
         use DataType::*;
         let (dt, tu) = match time_type {
@@ -225,7 +225,7 @@ impl Wrap<&DataFrame> {
                 )?;
                 let out = out.cast(&Int64).unwrap().cast(&Int32).unwrap();
                 for k in &mut keys {
-                    if k.name() == UP_NAME || k.name() == LB_NAME {
+                    if k.name().as_str() == UP_NAME || k.name().as_str() == LB_NAME {
                         *k = k.cast(&Int64).unwrap().cast(&Int32).unwrap()
                     }
                 }
@@ -243,7 +243,7 @@ impl Wrap<&DataFrame> {
                 )?;
                 let out = out.cast(&Int64).unwrap();
                 for k in &mut keys {
-                    if k.name() == UP_NAME || k.name() == LB_NAME {
+                    if k.name().as_str() == UP_NAME || k.name().as_str() == LB_NAME {
                         *k = k.cast(&Int64).unwrap()
                     }
                 }
@@ -476,21 +476,23 @@ impl Wrap<&DataFrame> {
             *key = unsafe { key.agg_first(&groups) };
         }
 
-        let lower = lower_bound.map(|lower| Int64Chunked::new_vec(LB_NAME, lower));
-        let upper = upper_bound.map(|upper| Int64Chunked::new_vec(UP_NAME, upper));
+        let lower =
+            lower_bound.map(|lower| Int64Chunked::new_vec(PlSmallStr::from_static(LB_NAME), lower));
+        let upper =
+            upper_bound.map(|upper| Int64Chunked::new_vec(PlSmallStr::from_static(UP_NAME), upper));
 
         if options.label == Label::Left {
             let mut lower = lower.clone().unwrap();
             if by.is_empty() {
                 lower.set_sorted_flag(IsSorted::Ascending)
             }
-            dt = lower.with_name(dt.name());
+            dt = lower.with_name(dt.name().clone());
         } else if options.label == Label::Right {
             let mut upper = upper.clone().unwrap();
             if by.is_empty() {
                 upper.set_sorted_flag(IsSorted::Ascending)
             }
-            dt = upper.with_name(dt.name());
+            dt = upper.with_name(dt.name().clone());
         }
 
         if let (true, Some(mut lower), Some(mut upper)) = (options.include_boundaries, lower, upper)
@@ -671,7 +673,7 @@ mod test {
             TimeUnit::Milliseconds,
         ] {
             let mut date = StringChunked::new(
-                "dt",
+                "dt".into(),
                 [
                     "2020-01-01 13:45:48",
                     "2020-01-01 16:42:13",
@@ -691,7 +693,7 @@ mod test {
             )?
             .into_series();
             date.set_sorted_flag(IsSorted::Ascending);
-            let a = Series::new("a", [3, 7, 5, 9, 2, 1]);
+            let a = Series::new("a".into(), [3, 7, 5, 9, 2, 1]);
             let df = DataFrame::new(vec![date, a.clone()])?;
 
             let (_, _, groups) = df
@@ -707,7 +709,7 @@ mod test {
                 .unwrap();
 
             let sum = unsafe { a.agg_sum(&groups) };
-            let expected = Series::new("", [3, 10, 15, 24, 11, 1]);
+            let expected = Series::new("".into(), [3, 10, 15, 24, 11, 1]);
             assert_eq!(sum, expected);
         }
 
@@ -717,7 +719,7 @@ mod test {
     #[test]
     fn test_rolling_group_by_aggs() -> PolarsResult<()> {
         let mut date = StringChunked::new(
-            "dt",
+            "dt".into(),
             [
                 "2020-01-01 13:45:48",
                 "2020-01-01 16:42:13",
@@ -738,7 +740,7 @@ mod test {
         .into_series();
         date.set_sorted_flag(IsSorted::Ascending);
 
-        let a = Series::new("a", [3, 7, 5, 9, 2, 1]);
+        let a = Series::new("a".into(), [3, 7, 5, 9, 2, 1]);
         let df = DataFrame::new(vec![date, a.clone()])?;
 
         let (_, _, groups) = df
@@ -753,10 +755,13 @@ mod test {
             )
             .unwrap();
 
-        let nulls = Series::new("", [Some(3), Some(7), None, Some(9), Some(2), Some(1)]);
+        let nulls = Series::new(
+            "".into(),
+            [Some(3), Some(7), None, Some(9), Some(2), Some(1)],
+        );
 
         let min = unsafe { a.agg_min(&groups) };
-        let expected = Series::new("", [3, 3, 3, 3, 2, 1]);
+        let expected = Series::new("".into(), [3, 3, 3, 3, 2, 1]);
         assert_eq!(min, expected);
 
         // Expected for nulls is equality.
@@ -764,7 +769,7 @@ mod test {
         assert_eq!(min, expected);
 
         let max = unsafe { a.agg_max(&groups) };
-        let expected = Series::new("", [3, 7, 7, 9, 9, 1]);
+        let expected = Series::new("".into(), [3, 7, 7, 9, 9, 1]);
         assert_eq!(max, expected);
 
         let max = unsafe { nulls.agg_max(&groups) };
@@ -772,21 +777,21 @@ mod test {
 
         let var = unsafe { a.agg_var(&groups, 1) };
         let expected = Series::new(
-            "",
+            "".into(),
             [0.0, 8.0, 4.000000000000002, 6.666666666666667, 24.5, 0.0],
         );
         assert!(abs(&(var - expected)?).unwrap().lt(1e-12).unwrap().all());
 
         let var = unsafe { nulls.agg_var(&groups, 1) };
-        let expected = Series::new("", [0.0, 8.0, 8.0, 9.333333333333343, 24.5, 0.0]);
+        let expected = Series::new("".into(), [0.0, 8.0, 8.0, 9.333333333333343, 24.5, 0.0]);
         assert!(abs(&(var - expected)?).unwrap().lt(1e-12).unwrap().all());
 
         let quantile = unsafe { a.agg_quantile(&groups, 0.5, QuantileInterpolOptions::Linear) };
-        let expected = Series::new("", [3.0, 5.0, 5.0, 6.0, 5.5, 1.0]);
+        let expected = Series::new("".into(), [3.0, 5.0, 5.0, 6.0, 5.5, 1.0]);
         assert_eq!(quantile, expected);
 
         let quantile = unsafe { nulls.agg_quantile(&groups, 0.5, QuantileInterpolOptions::Linear) };
-        let expected = Series::new("", [3.0, 5.0, 5.0, 7.0, 5.5, 1.0]);
+        let expected = Series::new("".into(), [3.0, 5.0, 5.0, 7.0, 5.5, 1.0]);
         assert_eq!(quantile, expected);
 
         Ok(())
@@ -807,7 +812,7 @@ mod test {
             .and_utc()
             .timestamp_millis();
         let range = datetime_range_impl(
-            "date",
+            "date".into(),
             start,
             stop,
             Duration::parse("30m"),
@@ -817,7 +822,7 @@ mod test {
         )?
         .into_series();
 
-        let groups = Series::new("groups", ["a", "a", "a", "b", "b", "a", "a"]);
+        let groups = Series::new("groups".into(), ["a", "a", "a", "b", "b", "a", "a"]);
         let df = DataFrame::new(vec![range, groups.clone()]).unwrap();
 
         let (time_key, mut keys, groups) = df
@@ -861,7 +866,7 @@ mod test {
             .and_utc()
             .timestamp_millis();
         let range = datetime_range_impl(
-            "_upper_boundary",
+            "_upper_boundary".into(),
             start,
             stop,
             Duration::parse("1h"),
@@ -886,7 +891,7 @@ mod test {
             .and_utc()
             .timestamp_millis();
         let range = datetime_range_impl(
-            "_lower_boundary",
+            "_lower_boundary".into(),
             start,
             stop,
             Duration::parse("1h"),
@@ -927,7 +932,7 @@ mod test {
             .and_utc()
             .timestamp_millis();
         let range = datetime_range_impl(
-            "date",
+            "date".into(),
             start,
             stop,
             Duration::parse("1d"),
@@ -937,7 +942,7 @@ mod test {
         )?
         .into_series();
 
-        let groups = Series::new("groups", ["a", "a", "a", "b", "b", "a", "a"]);
+        let groups = Series::new("groups".into(), ["a", "a", "a", "b", "b", "a", "a"]);
         let df = DataFrame::new(vec![range, groups.clone()]).unwrap();
 
         let (mut time_key, keys, _groups) = df
@@ -955,8 +960,8 @@ mod test {
                 },
             )
             .unwrap();
-        time_key.rename("");
-        let lower_bound = keys[1].clone().with_name("");
+        time_key.rename("".into());
+        let lower_bound = keys[1].clone().with_name("".into());
         assert!(time_key.equals(&lower_bound));
         Ok(())
     }

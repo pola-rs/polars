@@ -1309,7 +1309,7 @@ def test_compare_schema_between_lazy_and_eager_6904() -> None:
     assert eager_result.shape == lazy_result.shape
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 @pytest.mark.parametrize(
     "dtype",
     [

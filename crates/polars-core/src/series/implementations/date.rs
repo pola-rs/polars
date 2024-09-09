@@ -39,10 +39,6 @@ impl private::PrivateSeries for SeriesWrap<DateChunked> {
         self.0.set_flags(flags)
     }
 
-    fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
-        self.0.explode_by_offsets(offsets).into_date().into_series()
-    }
-
     #[cfg(feature = "zip_with")]
     fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> PolarsResult<Series> {
         let other = other.to_physical_repr().into_owned();
@@ -51,12 +47,16 @@ impl private::PrivateSeries for SeriesWrap<DateChunked> {
             .map(|ca| ca.into_date().into_series())
     }
 
-    fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
+    fn vec_hash(&self, random_state: PlRandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
         self.0.vec_hash(random_state, buf)?;
         Ok(())
     }
 
-    fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) -> PolarsResult<()> {
+    fn vec_hash_combine(
+        &self,
+        build_hasher: PlRandomState,
+        hashes: &mut [u64],
+    ) -> PolarsResult<()> {
         self.0.vec_hash_combine(build_hasher, hashes)?;
         Ok(())
     }
@@ -140,14 +140,14 @@ impl private::PrivateSeries for SeriesWrap<DateChunked> {
 }
 
 impl SeriesTrait for SeriesWrap<DateChunked> {
-    fn rename(&mut self, name: &str) {
+    fn rename(&mut self, name: PlSmallStr) {
         self.0.rename(name);
     }
 
     fn chunk_lengths(&self) -> ChunkLenIter {
         self.0.chunk_lengths()
     }
-    fn name(&self) -> &str {
+    fn name(&self) -> &PlSmallStr {
         self.0.name()
     }
 
@@ -170,6 +170,10 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
         (a.into_date().into_series(), b.into_date().into_series())
     }
 
+    fn _sum_as_f64(&self) -> f64 {
+        self.0._sum_as_f64()
+    }
+
     fn mean(&self) -> Option<f64> {
         self.0.mean()
     }
@@ -185,7 +189,7 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
         // ref Cow
         // ref SeriesTrait
         // ref ChunkedArray
-        self.0.append(other.as_ref().as_ref().as_ref());
+        self.0.append(other.as_ref().as_ref().as_ref())?;
         Ok(())
     }
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {
@@ -195,7 +199,7 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
         // ref SeriesTrait
         // ref ChunkedArray
         let other = other.to_physical_repr();
-        self.0.extend(other.as_ref().as_ref().as_ref());
+        self.0.extend(other.as_ref().as_ref().as_ref())?;
         Ok(())
     }
 
@@ -234,8 +238,8 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
             .into_series()
     }
 
-    fn cast(&self, data_type: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
-        match data_type {
+    fn cast(&self, dtype: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
+        match dtype {
             DataType::String => Ok(self
                 .0
                 .clone()
@@ -246,13 +250,11 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
                 .into_series()),
             #[cfg(feature = "dtype-datetime")]
             DataType::Datetime(_, _) => {
-                let mut out = self
-                    .0
-                    .cast_with_options(data_type, CastOptions::NonStrict)?;
+                let mut out = self.0.cast_with_options(dtype, CastOptions::NonStrict)?;
                 out.set_sorted_flag(self.0.is_sorted_flag());
                 Ok(out)
             },
-            _ => self.0.cast_with_options(data_type, cast_options),
+            _ => self.0.cast_with_options(dtype, cast_options),
         }
     }
 

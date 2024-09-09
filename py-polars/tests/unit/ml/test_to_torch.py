@@ -15,7 +15,7 @@ torch, _ = _lazy_import("torch")
 pytestmark = pytest.mark.ci_only
 
 
-@pytest.fixture()
+@pytest.fixture
 def df() -> pl.DataFrame:
     return pl.DataFrame(
         {

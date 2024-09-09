@@ -37,12 +37,15 @@ where
     ChunkedArray<T>: IntoSeries,
 {
     if (base.len() == 1) && (exponent.len() != 1) {
+        let name = base.name();
         let base = base
             .get(0)
             .ok_or_else(|| polars_err!(ComputeError: "base is null"))?;
 
         Ok(Some(
-            unary_elementwise_values(exponent, |exp| Pow::pow(base, exp)).into_series(),
+            unary_elementwise_values(exponent, |exp| Pow::pow(base, exp))
+                .into_series()
+                .with_name(name.clone()),
         ))
     } else {
         Ok(Some(
@@ -65,7 +68,11 @@ where
 
     if exponent.len() == 1 {
         let Some(exponent_value) = exponent.get(0) else {
-            return Ok(Some(Series::full_null(base.name(), base.len(), &dtype)));
+            return Ok(Some(Series::full_null(
+                base.name().clone(),
+                base.len(),
+                &dtype,
+            )));
         };
         let s = match exponent_value.to_f64().unwrap() {
             a if a == 1.0 => base.clone().into_series(),
@@ -104,7 +111,11 @@ where
 
     if exponent.len() == 1 {
         let Some(exponent_value) = exponent.get(0) else {
-            return Ok(Some(Series::full_null(base.name(), base.len(), &dtype)));
+            return Ok(Some(Series::full_null(
+                base.name().clone(),
+                base.len(),
+                &dtype,
+            )));
         };
         let s = match exponent_value.to_u64().unwrap() {
             1 => base.clone().into_series(),

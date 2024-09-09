@@ -2,15 +2,19 @@ use std::borrow::Cow;
 use std::collections::VecDeque;
 use std::ops::{Deref, Range};
 
-use arrow::array::new_empty_array;
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::array::BooleanArray;
+use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowSchemaRef;
+use polars_core::chunked_array::builder::NullChunkedBuilder;
 use polars_core::prelude::*;
 use polars_core::utils::{accumulate_dataframes_vertical, split_df};
 use polars_core::POOL;
-use polars_parquet::read::{self, ArrayIter, FileMetaData, Filter, PhysicalType, RowGroupMetaData};
+use polars_parquet::parquet::error::ParquetResult;
+use polars_parquet::parquet::statistics::Statistics;
+use polars_parquet::read::{
+    self, ColumnChunkMetadata, FileMetaData, Filter, PhysicalType, RowGroupMetaData,
+};
 use polars_utils::mmap::MemSlice;
-use polars_utils::vec::inplace_zip_filtermap;
 use rayon::prelude::*;
 
 #[cfg(feature = "cloud")]
@@ -23,6 +27,7 @@ use super::{mmap, ParallelStrategy};
 use crate::hive::materialize_hive_partitions;
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 use crate::parquet::metadata::FileMetaDataRef;
+use crate::parquet::read::ROW_COUNT_OVERFLOW_ERR;
 use crate::predicates::{apply_predicate, PhysicalIoExpr};
 use crate::utils::get_reader_bytes;
 use crate::utils::slice::split_slice_at_file;
@@ -31,51 +36,64 @@ use crate::RowIndex;
 #[cfg(debug_assertions)]
 // Ensure we get the proper polars types from schema inference
 // This saves unneeded casts.
-fn assert_dtypes(data_type: &ArrowDataType) {
-    match data_type {
-        ArrowDataType::Utf8 => {
-            unreachable!()
-        },
-        ArrowDataType::Binary => {
-            unreachable!()
-        },
-        ArrowDataType::List(_) => {
-            unreachable!()
-        },
-        ArrowDataType::LargeList(inner) => {
-            assert_dtypes(&inner.data_type);
-        },
-        ArrowDataType::Struct(fields) => {
-            for fld in fields {
-                assert_dtypes(fld.data_type())
-            }
-        },
+fn assert_dtypes(dtype: &ArrowDataType) {
+    use ArrowDataType as D;
+
+    match dtype {
+        // These should all be casted to the BinaryView / Utf8View variants
+        D::Utf8 | D::Binary | D::LargeUtf8 | D::LargeBinary => unreachable!(),
+
+        // This should have been converted to a LargeList
+        D::List(_) => unreachable!(),
+
+        // This should have been converted to a LargeList(Struct(_))
+        D::Map(_, _) => unreachable!(),
+
+        // Recursive checks
+        D::Dictionary(_, dtype, _) => assert_dtypes(dtype),
+        D::Extension(_, dtype, _) => assert_dtypes(dtype),
+        D::LargeList(inner) => assert_dtypes(&inner.dtype),
+        D::FixedSizeList(inner, _) => assert_dtypes(&inner.dtype),
+        D::Struct(fields) => fields.iter().for_each(|f| assert_dtypes(f.dtype())),
+
         _ => {},
     }
 }
 
 fn column_idx_to_series(
     column_i: usize,
-    md: &RowGroupMetaData,
+    // The metadata belonging to this column
+    field_md: &[&ColumnChunkMetadata],
     filter: Option<Filter>,
     file_schema: &ArrowSchema,
     store: &mmap::ColumnStore,
 ) -> PolarsResult<Series> {
-    let field = &file_schema.fields[column_i];
+    let field = file_schema.get_at_index(column_i).unwrap().1;
 
     #[cfg(debug_assertions)]
     {
-        assert_dtypes(field.data_type())
+        assert_dtypes(field.dtype())
     }
+    let columns = mmap_columns(store, field_md);
+    let stats = columns
+        .iter()
+        .map(|(col_md, _)| col_md.statistics().transpose())
+        .collect::<ParquetResult<Vec<Option<Statistics>>>>();
+    let array = mmap::to_deserializer(columns, field.clone(), filter)?;
+    let mut series = Series::try_from((field, array))?;
 
-    let columns = mmap_columns(store, md.columns(), &field.name);
-    let iter = mmap::to_deserializer(columns, field.clone(), filter)?;
-
-    let mut series = array_iter_to_series(iter, field, None)?;
+    // We cannot really handle nested metadata at the moment. Just skip it.
+    use ArrowDataType as AD;
+    match field.dtype() {
+        AD::List(_) | AD::LargeList(_) | AD::Struct(_) | AD::FixedSizeList(_, _) => {
+            return Ok(series)
+        },
+        _ => {},
+    }
 
     // See if we can find some statistics for this series. If we cannot find anything just return
     // the series as is.
-    let Some(Ok(stats)) = md.columns()[column_i].statistics() else {
+    let Ok(Some(stats)) = stats.map(|mut s| s.pop().flatten()) else {
         return Ok(series);
     };
 
@@ -117,38 +135,6 @@ fn column_idx_to_series(
     Ok(series)
 }
 
-pub(super) fn array_iter_to_series(
-    iter: ArrayIter,
-    field: &ArrowField,
-    num_rows: Option<usize>,
-) -> PolarsResult<Series> {
-    let mut total_count = 0;
-    let chunks = match num_rows {
-        None => iter.collect::<PolarsResult<Vec<_>>>()?,
-        Some(n) => {
-            let mut out = Vec::with_capacity(2);
-
-            for arr in iter {
-                let arr = arr?;
-                let len = arr.len();
-                out.push(arr);
-
-                total_count += len;
-                if total_count >= n {
-                    break;
-                }
-            }
-            out
-        },
-    };
-    if chunks.is_empty() {
-        let arr = new_empty_array(field.data_type.clone());
-        Series::try_from((field, arr))
-    } else {
-        Series::try_from((field, chunks))
-    }
-}
-
 #[allow(clippy::too_many_arguments)]
 fn rg_to_dfs(
     store: &mmap::ColumnStore,
@@ -165,6 +151,20 @@ fn rg_to_dfs(
     use_statistics: bool,
     hive_partition_columns: Option<&[Series]>,
 ) -> PolarsResult<Vec<DataFrame>> {
+    // If we are only interested in the row_index, we take a little special path here.
+    if projection.is_empty() {
+        if let Some(row_index) = row_index {
+            let placeholder =
+                NullChunkedBuilder::new(PlSmallStr::from_static("__PL_TMP"), slice.1).finish();
+            return Ok(vec![DataFrame::new(vec![placeholder.into_series()])?
+                .with_row_index(
+                    row_index.name.clone(),
+                    Some(row_index.offset + IdxSize::try_from(slice.0).unwrap()),
+                )?
+                .select(std::iter::once(row_index.name))?]);
+        }
+    }
+
     use ParallelStrategy as S;
 
     if parallel == S::Prefiltered {
@@ -229,94 +229,107 @@ fn rg_to_dfs_prefiltered(
     row_group_end: usize,
     file_metadata: &FileMetaData,
     schema: &ArrowSchemaRef,
-    live_variables: Vec<Arc<str>>,
+    live_variables: Vec<PlSmallStr>,
     predicate: &dyn PhysicalIoExpr,
     row_index: Option<RowIndex>,
     projection: &[usize],
     use_statistics: bool,
     hive_partition_columns: Option<&[Series]>,
 ) -> PolarsResult<Vec<DataFrame>> {
-    struct RowGroupInfo {
-        index: u32,
-        row_offset: IdxSize,
-    }
-
     if row_group_end > u32::MAX as usize {
         polars_bail!(ComputeError: "Parquet file contains too many row groups (> {})", u32::MAX);
     }
 
     let mut row_offset = *previous_row_count;
-    let mut row_groups: Vec<RowGroupInfo> = (row_group_start..row_group_end)
-        .filter_map(|index| {
-            let md = &file_metadata.row_groups[index];
+    let rg_offsets: Vec<IdxSize> = match row_index {
+        None => Vec::new(),
+        Some(_) => (row_group_start..row_group_end)
+            .map(|index| {
+                let md = &file_metadata.row_groups[index];
 
-            let current_offset = row_offset;
-            let current_row_count = md.num_rows() as IdxSize;
-            row_offset += current_row_count;
+                let current_offset = row_offset;
+                let current_row_count = md.num_rows() as IdxSize;
+                row_offset += current_row_count;
 
-            if use_statistics {
-                match read_this_row_group(Some(predicate), &file_metadata.row_groups[index], schema)
-                {
-                    Ok(false) => return None,
-                    Ok(true) => {},
-                    Err(e) => return Some(Err(e)),
-                }
-            }
+                current_offset
+            })
+            .collect(),
+    };
 
-            Some(Ok(RowGroupInfo {
-                index: index as u32,
-                row_offset: current_offset,
-            }))
-        })
-        .collect::<PolarsResult<Vec<_>>>()?;
-
-    let num_live_columns = live_variables.len();
-    let num_dead_columns = projection.len() - num_live_columns;
-
+    // Deduplicate the live variables
     let live_variables = live_variables
         .iter()
         .map(Deref::deref)
         .collect::<PlHashSet<_>>();
 
+    // Get the number of live columns
+    let num_live_columns = live_variables.len();
+    let num_dead_columns = projection.len() - num_live_columns;
+
     // We create two look-up tables that map indexes offsets into the live- and dead-set onto
     // column indexes of the schema.
     let mut live_idx_to_col_idx = Vec::with_capacity(num_live_columns);
     let mut dead_idx_to_col_idx = Vec::with_capacity(num_dead_columns);
-    for (i, col) in file_metadata.schema().columns().iter().enumerate() {
-        if live_variables.contains(col.path_in_schema[0].deref()) {
+    for (i, field) in schema.iter_values().enumerate() {
+        if live_variables.contains(&field.name[..]) {
             live_idx_to_col_idx.push(i);
         } else {
             dead_idx_to_col_idx.push(i);
         }
     }
-    debug_assert_eq!(live_variables.len(), num_live_columns);
+
+    debug_assert_eq!(live_idx_to_col_idx.len(), num_live_columns);
     debug_assert_eq!(dead_idx_to_col_idx.len(), num_dead_columns);
 
-    POOL.install(|| {
-        // Collect the data for the live columns
-        let mut live_columns = (0..row_groups.len() * num_live_columns)
+    enum MaskSetting {
+        Auto,
+        Pre,
+        Post,
+    }
+
+    let mask_setting =
+        std::env::var("POLARS_PQ_PREFILTERED_MASK").map_or(MaskSetting::Auto, |v| match &v[..] {
+            "auto" => MaskSetting::Auto,
+            "pre" => MaskSetting::Pre,
+            "post" => MaskSetting::Post,
+            _ => panic!("Invalid `POLARS_PQ_PREFILTERED_MASK` value '{v}'."),
+        });
+
+    let dfs: Vec<Option<DataFrame>> = POOL.install(|| {
+        // Set partitioned fields to prevent quadratic behavior.
+        // Ensure all row groups are partitioned.
+
+        (row_group_start..row_group_end)
             .into_par_iter()
-            .map(|i| {
-                let col_idx = live_idx_to_col_idx[i % num_live_columns];
-                let rg_idx = row_groups[i / num_live_columns].index as usize;
-
+            .map(|rg_idx| {
                 let md = &file_metadata.row_groups[rg_idx];
-                column_idx_to_series(col_idx, md, None, schema, store)
-            })
-            .collect::<PolarsResult<Vec<_>>>()?;
 
-        // Apply the predicate to the live columns and save the dataframe and the bitmask
-        let mut dfs = live_columns
-            .par_chunks_exact_mut(num_live_columns)
-            .enumerate()
-            .map(|(i, columns)| {
-                let rg = &row_groups[i];
-                let rg_idx = rg.index as usize;
+                if use_statistics {
+                    match read_this_row_group(Some(predicate), md, schema) {
+                        Ok(false) => return Ok(None),
+                        Ok(true) => {},
+                        Err(e) => return Err(e),
+                    }
+                }
 
-                let columns = columns.iter_mut().map(std::mem::take).collect::<Vec<_>>();
+                // Collect the data for the live columns
+                let live_columns = (0..num_live_columns)
+                    .into_par_iter()
+                    .map(|i| {
+                        let col_idx = live_idx_to_col_idx[i];
 
+                        let name = schema.get_at_index(col_idx).unwrap().0;
+                        let field_md = file_metadata.row_groups[rg_idx]
+                            .columns_under_root_iter(name)
+                            .collect::<Vec<_>>();
+
+                        column_idx_to_series(col_idx, field_md.as_slice(), None, schema, store)
+                    })
+                    .collect::<PolarsResult<Vec<_>>>()?;
+
+                // Apply the predicate to the live columns and save the dataframe and the bitmask
                 let md = &file_metadata.row_groups[rg_idx];
-                let mut df = unsafe { DataFrame::new_no_checks(columns) };
+                let mut df = unsafe { DataFrame::new_no_checks(live_columns) };
 
                 materialize_hive_partitions(
                     &mut df,
@@ -328,119 +341,156 @@ fn rg_to_dfs_prefiltered(
                 let mask = s.bool().expect("filter predicates was not of type boolean");
 
                 if let Some(rc) = &row_index {
-                    df.with_row_index_mut(&rc.name, Some(rg.row_offset + rc.offset));
+                    df.with_row_index_mut(rc.name.clone(), Some(rg_offsets[rg_idx] + rc.offset));
                 }
                 df = df.filter(mask)?;
 
-                let mut bitmap = MutableBitmap::with_capacity(mask.len());
+                let mut filter_mask = MutableBitmap::with_capacity(mask.len());
 
+                // We need to account for the validity of the items
                 for chunk in mask.downcast_iter() {
-                    bitmap.extend_from_bitmap(chunk.values());
+                    match chunk.validity() {
+                        None => filter_mask.extend_from_bitmap(chunk.values()),
+                        Some(validity) => {
+                            filter_mask.extend_from_bitmap(&(validity & chunk.values()))
+                        },
+                    }
                 }
 
-                let bitmap = bitmap.freeze();
+                let filter_mask = filter_mask.freeze();
 
-                debug_assert_eq!(md.num_rows(), bitmap.len());
-                debug_assert_eq!(df.height(), bitmap.set_bits());
+                debug_assert_eq!(md.num_rows(), filter_mask.len());
+                debug_assert_eq!(df.height(), filter_mask.set_bits());
 
-                Ok((bitmap, df))
-            })
-            .collect::<PolarsResult<Vec<(Bitmap, DataFrame)>>>()?;
+                if filter_mask.set_bits() == 0 {
+                    return Ok(None);
+                }
 
-        // Filter out the row-groups that do not include any rows that match the predicate.
-        inplace_zip_filtermap(&mut dfs, &mut row_groups, |(mask, df), rg| {
-            (mask.set_bits() > 0).then_some(((mask, df), rg))
-        });
+                // We don't need to do any further work if there are no dead columns
+                if num_dead_columns == 0 {
+                    return Ok(Some(df));
+                }
 
-        for (_, df) in &dfs {
-            *previous_row_count += df.height() as IdxSize;
-        }
+                let prefilter_cost = matches!(mask_setting, MaskSetting::Auto)
+                    .then(|| {
+                        let num_edges = filter_mask.num_edges() as f64;
+                        let rg_len = filter_mask.len() as f64;
 
-        // @TODO: Incorporate this if we how we can properly use it. The problem here is that
-        // different columns really have a different cost when it comes to collecting them. We
-        // would need a cost model to properly estimate this.
-        //
-        // // For bitmasks that are seemingly random (i.e. not clustered or biased towards 0 or 1),
-        // // filtering with a bitmask in the Parquet reader is actually around 1.5 - 2.2 times slower
-        // // than collecting everything and filtering afterwards. This is because stopping and
-        // // starting decoding is not free.
-        // //
-        // // To combat this we try to detect here how biased our data is. We do this with a bithack
-        // // that estimates the amount of switches from 0 to 1 and from 1 to 0. This can be SIMD-ed
-        // // very well and gives us quite good estimate of how random our bitmask is. Then, we select
-        // // the filter if the bitmask is not that random.
-        // let do_filter_rg = dfs
-        //     .par_iter()
-        //     .map(|(mask, _)| {
-        //         let iter = mask.fast_iter_u64();
-        //
-        //         // The iter is TrustedLen so the size_hint is exact.
-        //         let num_items = iter.size_hint().0;
-        //         let num_switches = iter
-        //             .map(|v| (v ^ v.rotate_right(1)).count_ones() as u64)
-        //             .sum::<u64>();
-        //
-        //         // We ignore the iter remainder since we only really care about the average.
-        //         let avg_num_switches_per_element = num_switches / num_items as u64;
-        //
-        //         // We select the filter if the average amount of switches per 64 elements is less
-        //         // than or equal to 2.
-        //         avg_num_switches_per_element <= 2
-        //     })
-        //     .collect::<Vec<_>>();
+                        // @GB: I did quite some analysis on this.
+                        //
+                        // Pre-filtered and Post-filtered can both be faster in certain scenarios.
+                        //
+                        // - Pre-filtered is faster when there is some amount of clustering or
+                        // sorting involved or if the number of values selected is small.
+                        // - Post-filtering is faster when the predicate selects a somewhat random
+                        // elements throughout the row group.
+                        //
+                        // The following is a heuristic value to try and estimate which one is
+                        // faster. Essentially, it sees how many times it needs to switch between
+                        // skipping items and collecting items and compares it against the number
+                        // of values that it will collect.
+                        //
+                        // Closer to 0: pre-filtering is probably better.
+                        // Closer to 1: post-filtering is probably better.
+                        (num_edges / rg_len).clamp(0.0, 1.0)
+                    })
+                    .unwrap_or_default();
 
-        let mut rg_columns = (0..dfs.len() * num_dead_columns)
-            .into_par_iter()
-            .map(|i| {
-                let col_idx = dead_idx_to_col_idx[i % num_dead_columns];
-                let rg_idx = row_groups[i / num_dead_columns].index as usize;
+                let rg_columns = (0..num_dead_columns)
+                    .into_par_iter()
+                    .map(|i| {
+                        let col_idx = dead_idx_to_col_idx[i];
+                        let name = schema.get_at_index(col_idx).unwrap().0;
 
-                let (mask, _) = &dfs[i / num_dead_columns];
+                        #[cfg(debug_assertions)]
+                        {
+                            let md = &file_metadata.row_groups[rg_idx];
+                            debug_assert_eq!(md.num_rows(), mask.len());
+                        }
+                        let field_md = file_metadata.row_groups[rg_idx]
+                            .columns_under_root_iter(name)
+                            .collect::<Vec<_>>();
 
-                let md = &file_metadata.row_groups[rg_idx];
-                debug_assert_eq!(md.num_rows(), mask.len());
-                column_idx_to_series(
-                    col_idx,
-                    md,
-                    Some(Filter::new_masked(mask.clone())),
-                    schema,
-                    store,
-                )
-            })
-            .collect::<PolarsResult<Vec<_>>>()?;
+                        let pre = || {
+                            column_idx_to_series(
+                                col_idx,
+                                field_md.as_slice(),
+                                Some(Filter::new_masked(filter_mask.clone())),
+                                schema,
+                                store,
+                            )
+                        };
+                        let post = || {
+                            let array = column_idx_to_series(
+                                col_idx,
+                                field_md.as_slice(),
+                                None,
+                                schema,
+                                store,
+                            )?;
 
-        let mut rearranged_schema: Schema = Schema::new();
-        if let Some(rc) = &row_index {
-            rearranged_schema.insert_at_index(
-                0,
-                SmartString::from(rc.name.deref()),
-                IdxType::get_dtype(),
-            )?;
-        }
-        for i in live_idx_to_col_idx.iter().copied() {
-            rearranged_schema.insert_at_index(
-                rearranged_schema.len(),
-                schema.fields[i].name.clone().into(),
-                schema.fields[i].data_type().into(),
-            )?;
-        }
-        rearranged_schema.merge(Schema::from(schema.as_ref()));
+                            debug_assert_eq!(array.len(), mask.len());
 
-        rg_columns
-            .par_chunks_exact_mut(num_dead_columns)
-            .zip(dfs)
-            .map(|(rg_cols, (_, mut df))| {
-                let rg_cols = rg_cols.iter_mut().map(std::mem::take).collect::<Vec<_>>();
+                            let mask_arr = BooleanArray::new(
+                                ArrowDataType::Boolean,
+                                filter_mask.clone(),
+                                None,
+                            );
+                            let mask_arr = BooleanChunked::from(mask_arr);
+                            array.filter(&mask_arr)
+                        };
+
+                        let array = match mask_setting {
+                            MaskSetting::Auto => {
+                                // Prefiltering is more expensive for nested types so we make the cut-off
+                                // higher.
+                                let is_nested =
+                                    schema.get_at_index(col_idx).unwrap().1.dtype.is_nested();
+
+                                // We empirically selected these numbers.
+                                let do_prefilter = (is_nested && prefilter_cost <= 0.01)
+                                    || (!is_nested && prefilter_cost <= 0.02);
+
+                                if do_prefilter {
+                                    pre()?
+                                } else {
+                                    post()?
+                                }
+                            },
+                            MaskSetting::Pre => pre()?,
+                            MaskSetting::Post => post()?,
+                        };
+
+                        debug_assert_eq!(array.len(), filter_mask.set_bits());
+
+                        Ok(array)
+                    })
+                    .collect::<PolarsResult<Vec<Series>>>()?;
+
+                let mut rearranged_schema = df.schema();
+                rearranged_schema.merge(Schema::from_arrow_schema(schema.as_ref()));
+
+                debug_assert!(rg_columns.iter().all(|v| v.len() == df.height()));
 
                 // We first add the columns with the live columns at the start. Then, we do a
                 // projections that puts the columns at the right spot.
-                df._add_columns(rg_cols, &rearranged_schema)?;
-                let df = df.select(schema.get_names())?;
+                df._add_columns(rg_columns, &rearranged_schema)?;
+                let df = df.select(schema.iter_names_cloned())?;
 
-                PolarsResult::Ok(df)
+                PolarsResult::Ok(Some(df))
             })
-            .collect::<PolarsResult<Vec<DataFrame>>>()
-    })
+            .collect::<PolarsResult<Vec<Option<DataFrame>>>>()
+    })?;
+
+    let dfs: Vec<DataFrame> = dfs.into_iter().flatten().collect();
+
+    let row_count: usize = dfs.iter().map(|df| df.height()).sum();
+    let row_count = IdxSize::try_from(row_count).map_err(|_| ROW_COUNT_OVERFLOW_ERR)?;
+    *previous_row_count = previous_row_count
+        .checked_add(row_count)
+        .ok_or(ROW_COUNT_OVERFLOW_ERR)?;
+
+    Ok(dfs)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -469,6 +519,7 @@ fn rg_to_dfs_optionally_par_over_columns(
 
     for rg_idx in row_group_start..row_group_end {
         let md = &file_metadata.row_groups[rg_idx];
+
         let rg_slice =
             split_slice_at_file(&mut n_rows_processed, md.num_rows(), slice.0, slice_end);
         let current_row_count = md.num_rows() as IdxSize;
@@ -490,9 +541,12 @@ fn rg_to_dfs_optionally_par_over_columns(
                 projection
                     .par_iter()
                     .map(|column_i| {
+                        let name = schema.get_at_index(*column_i).unwrap().0;
+                        let part = md.columns_under_root_iter(name).collect::<Vec<_>>();
+
                         column_idx_to_series(
                             *column_i,
-                            md,
+                            part.as_slice(),
                             Some(Filter::new_ranged(rg_slice.0, rg_slice.0 + rg_slice.1)),
                             schema,
                             store,
@@ -504,9 +558,12 @@ fn rg_to_dfs_optionally_par_over_columns(
             projection
                 .iter()
                 .map(|column_i| {
+                    let name = schema.get_at_index(*column_i).unwrap().0;
+                    let part = md.columns_under_root_iter(name).collect::<Vec<_>>();
+
                     column_idx_to_series(
                         *column_i,
-                        md,
+                        part.as_slice(),
                         Some(Filter::new_ranged(rg_slice.0, rg_slice.0 + rg_slice.1)),
                         schema,
                         store,
@@ -517,13 +574,19 @@ fn rg_to_dfs_optionally_par_over_columns(
 
         let mut df = unsafe { DataFrame::new_no_checks(columns) };
         if let Some(rc) = &row_index {
-            df.with_row_index_mut(&rc.name, Some(*previous_row_count + rc.offset));
+            df.with_row_index_mut(rc.name.clone(), Some(*previous_row_count + rc.offset));
         }
 
         materialize_hive_partitions(&mut df, schema.as_ref(), hive_partition_columns, rg_slice.1);
         apply_predicate(&mut df, predicate, true)?;
 
-        *previous_row_count += current_row_count;
+        *previous_row_count = previous_row_count.checked_add(current_row_count).ok_or_else(||
+            polars_err!(
+                ComputeError: "Parquet file produces more than pow(2, 32) rows; \
+                consider compiling with polars-bigidx feature (polars-u64-idx package on python), \
+                or set 'streaming'"
+            ),
+        )?;
         dfs.push(df);
 
         if *previous_row_count as usize >= slice_end {
@@ -563,7 +626,9 @@ fn rg_to_dfs_par_over_rg(
         let rg_md = &file_metadata.row_groups[i];
         let rg_slice =
             split_slice_at_file(&mut n_rows_processed, rg_md.num_rows(), slice.0, slice_end);
-        *previous_row_count += rg_slice.1 as IdxSize;
+        *previous_row_count = previous_row_count
+            .checked_add(rg_slice.1 as IdxSize)
+            .ok_or(ROW_COUNT_OVERFLOW_ERR)?;
 
         if rg_slice.1 == 0 {
             continue;
@@ -573,17 +638,15 @@ fn rg_to_dfs_par_over_rg(
     }
 
     let dfs = POOL.install(|| {
+        // Set partitioned fields to prevent quadratic behavior.
+        // Ensure all row groups are partitioned.
         row_groups
             .into_par_iter()
-            .map(|(rg_idx, md, slice, row_count_start)| {
-                if slice.1 == 0
-                    || use_statistics
-                        && !read_this_row_group(
-                            predicate,
-                            &file_metadata.row_groups[rg_idx],
-                            schema,
-                        )?
-                {
+            .enumerate()
+            .map(|(iter_idx, (_rg_idx, _md, slice, row_count_start))| {
+                let md = &file_metadata.row_groups[iter_idx];
+
+                if slice.1 == 0 || use_statistics && !read_this_row_group(predicate, md, schema)? {
                     return Ok(None);
                 }
                 // test we don't read the parquet file if this env var is set
@@ -595,9 +658,12 @@ fn rg_to_dfs_par_over_rg(
                 let columns = projection
                     .iter()
                     .map(|column_i| {
+                        let name = schema.get_at_index(*column_i).unwrap().0;
+                        let field_md = md.columns_under_root_iter(name).collect::<Vec<_>>();
+
                         column_idx_to_series(
                             *column_i,
-                            md,
+                            field_md.as_slice(),
                             Some(Filter::new_ranged(slice.0, slice.0 + slice.1)),
                             schema,
                             store,
@@ -608,7 +674,10 @@ fn rg_to_dfs_par_over_rg(
                 let mut df = unsafe { DataFrame::new_no_checks(columns) };
 
                 if let Some(rc) = &row_index {
-                    df.with_row_index_mut(&rc.name, Some(row_count_start as IdxSize + rc.offset));
+                    df.with_row_index_mut(
+                        rc.name.clone(),
+                        Some(row_count_start as IdxSize + rc.offset),
+                    );
                 }
 
                 materialize_hive_partitions(
@@ -675,7 +744,13 @@ pub fn read_parquet<R: MmapBytesReader>(
         .unwrap_or_else(|| Cow::Owned((0usize..reader_schema.len()).collect::<Vec<_>>()));
 
     if let ParallelStrategy::Auto = parallel {
-        if n_row_groups > materialized_projection.len() || n_row_groups > POOL.current_num_threads()
+        if predicate.is_some_and(|predicate| {
+            predicate.live_variables().map_or(0, |v| v.len()) * n_row_groups
+                >= POOL.current_num_threads()
+        }) {
+            parallel = ParallelStrategy::Prefiltered;
+        } else if n_row_groups > materialized_projection.len()
+            || n_row_groups > POOL.current_num_threads()
         {
             parallel = ParallelStrategy::RowGroups;
         } else {
@@ -855,7 +930,7 @@ impl BatchedParquetReader {
         chunk_size: usize,
         use_statistics: bool,
         hive_partition_columns: Option<Vec<Series>>,
-        include_file_path: Option<(Arc<str>, Arc<str>)>,
+        include_file_path: Option<(PlSmallStr, Arc<str>)>,
         mut parallel: ParallelStrategy,
     ) -> PolarsResult<Self> {
         let n_row_groups = metadata.row_groups.len();
@@ -895,7 +970,7 @@ impl BatchedParquetReader {
             use_statistics,
             hive_partition_columns: hive_partition_columns.map(Arc::from),
             include_file_path: include_file_path
-                .map(|(col, path)| StringChunked::full(&col, &path, 1)),
+                .map(|(col, path)| StringChunked::full(col, &path, 1)),
             has_returned: false,
         })
     }
@@ -1029,7 +1104,7 @@ impl BatchedParquetReader {
 
                 // Re-use the same ChunkedArray
                 if ca.len() < max_len {
-                    *ca = ca.new_from_index(max_len, 0);
+                    *ca = ca.new_from_index(0, max_len);
                 }
 
                 for df in &mut dfs {

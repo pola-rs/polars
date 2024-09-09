@@ -87,7 +87,7 @@ pub trait ListNameSpaceImpl: AsList {
             DataType::String => match separator.len() {
                 1 => match separator.get(0) {
                     Some(separator) => self.join_literal(separator, ignore_nulls),
-                    _ => Ok(StringChunked::full_null(ca.name(), ca.len())),
+                    _ => Ok(StringChunked::full_null(ca.name().clone(), ca.len())),
                 },
                 _ => self.join_many(separator, ignore_nulls),
             },
@@ -99,7 +99,7 @@ pub trait ListNameSpaceImpl: AsList {
         let ca = self.as_list();
         // used to amortize heap allocs
         let mut buf = String::with_capacity(128);
-        let mut builder = StringChunkedBuilder::new(ca.name(), ca.len());
+        let mut builder = StringChunkedBuilder::new(ca.name().clone(), ca.len());
 
         ca.for_each_amortized(|opt_s| {
             let opt_val = opt_s.and_then(|s| {
@@ -135,7 +135,7 @@ pub trait ListNameSpaceImpl: AsList {
         let ca = self.as_list();
         // used to amortize heap allocs
         let mut buf = String::with_capacity(128);
-        let mut builder = StringChunkedBuilder::new(ca.name(), ca.len());
+        let mut builder = StringChunkedBuilder::new(ca.name().clone(), ca.len());
         {
             ca.amortized_iter()
                 .zip(separator)
@@ -303,7 +303,7 @@ pub trait ListNameSpaceImpl: AsList {
                 if let Some(periods) = periods.get(0) {
                     ca.apply_amortized(|s| s.as_ref().shift(periods))
                 } else {
-                    ListChunked::full_null_with_dtype(ca.name(), ca.len(), ca.inner_dtype())
+                    ListChunked::full_null_with_dtype(ca.name().clone(), ca.len(), ca.inner_dtype())
                 }
             },
             _ => ca.zip_and_apply_amortized(periods, |opt_s, opt_periods| {
@@ -333,7 +333,7 @@ pub trait ListNameSpaceImpl: AsList {
                 last = *o;
             }
         });
-        IdxCa::from_vec(ca.name(), lengths)
+        IdxCa::from_vec(ca.name().clone(), lengths)
     }
 
     /// Get the value by index in the sublists.
@@ -352,7 +352,7 @@ pub trait ListNameSpaceImpl: AsList {
             .collect::<Vec<_>>();
         // SAFETY: every element in list has dtype equal to its inner type
         unsafe {
-            Series::try_from((ca.name(), chunks))
+            Series::try_from((ca.name().clone(), chunks))
                 .unwrap()
                 .cast_unchecked(ca.inner_dtype())
         }
@@ -366,7 +366,7 @@ pub trait ListNameSpaceImpl: AsList {
                 (Some(n), Some(offset)) => list_ca
                     .apply_amortized(|s| s.as_ref().gather_every(n as usize, offset as usize)),
                 _ => ListChunked::full_null_with_dtype(
-                    list_ca.name(),
+                    list_ca.name().clone(),
                     list_ca.len(),
                     list_ca.inner_dtype(),
                 ),
@@ -383,7 +383,7 @@ pub trait ListNameSpaceImpl: AsList {
                     })
                 } else {
                     ListChunked::full_null_with_dtype(
-                        list_ca.name(),
+                        list_ca.name().clone(),
                         list_ca.len(),
                         list_ca.inner_dtype(),
                     )
@@ -399,7 +399,7 @@ pub trait ListNameSpaceImpl: AsList {
                     })
                 } else {
                     ListChunked::full_null_with_dtype(
-                        list_ca.name(),
+                        list_ca.name().clone(),
                         list_ca.len(),
                         list_ca.inner_dtype(),
                     )
@@ -439,7 +439,7 @@ pub trait ListNameSpaceImpl: AsList {
                     })
                     .collect::<PolarsResult<ListChunked>>()
                     .map(|mut ca| {
-                        ca.rename(list_ca.name());
+                        ca.rename(list_ca.name().clone());
                         ca.into_series()
                     })
             }
@@ -447,7 +447,7 @@ pub trait ListNameSpaceImpl: AsList {
 
         use DataType::*;
         match idx.dtype() {
-            List(_) => {
+            List(boxed_dt) if boxed_dt.is_integer() => {
                 let idx_ca = idx.list().unwrap();
                 let mut out = {
                     list_ca
@@ -466,7 +466,7 @@ pub trait ListNameSpaceImpl: AsList {
                         })
                         .collect::<PolarsResult<ListChunked>>()?
                 };
-                out.rename(list_ca.name());
+                out.rename(list_ca.name().clone());
 
                 Ok(out.into_series())
             },
@@ -486,7 +486,7 @@ pub trait ListNameSpaceImpl: AsList {
                                 })
                                 .collect::<PolarsResult<ListChunked>>()?
                         };
-                        out.rename(list_ca.name());
+                        out.rename(list_ca.name().clone());
                         Ok(out.into_series())
                     }
                 } else {
@@ -526,7 +526,7 @@ pub trait ListNameSpaceImpl: AsList {
                     })
                 } else {
                     Ok(ListChunked::full_null_with_dtype(
-                        ca.name(),
+                        ca.name().clone(),
                         ca.len(),
                         ca.inner_dtype(),
                     ))
@@ -565,7 +565,7 @@ pub trait ListNameSpaceImpl: AsList {
                     })
                 } else {
                     Ok(ListChunked::full_null_with_dtype(
-                        ca.name(),
+                        ca.name().clone(),
                         ca.len(),
                         ca.inner_dtype(),
                     ))
@@ -635,7 +635,7 @@ pub trait ListNameSpaceImpl: AsList {
             // there was a None, so all values will be None
             if to_append.len() != other_len {
                 return Ok(ListChunked::full_null_with_dtype(
-                    ca.name(),
+                    ca.name().clone(),
                     length,
                     &inner_super_type,
                 ));
@@ -650,7 +650,7 @@ pub trait ListNameSpaceImpl: AsList {
                 &inner_super_type,
                 ca.get_values_size() + vals_size_other + 1,
                 length,
-                ca.name(),
+                ca.name().clone(),
             )?;
             ca.into_iter().for_each(|opt_s| {
                 let opt_s = opt_s.map(|mut s| {
@@ -687,7 +687,7 @@ pub trait ListNameSpaceImpl: AsList {
                 &inner_super_type,
                 ca.get_values_size() + vals_size_other + 1,
                 length,
-                ca.name(),
+                ca.name().clone(),
             )?;
 
             for _ in 0..ca.len() {

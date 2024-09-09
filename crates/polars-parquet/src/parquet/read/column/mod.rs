@@ -1,15 +1,12 @@
-use std::io::{Read, Seek};
 use std::vec::IntoIter;
 
-use super::{get_field_columns, get_page_iterator, MemReader, PageFilter, PageReader};
+use polars_utils::idx_vec::UnitVec;
+
+use super::{get_page_iterator, MemReader, PageReader};
 use crate::parquet::error::{ParquetError, ParquetResult};
-use crate::parquet::metadata::{ColumnChunkMetaData, RowGroupMetaData};
+use crate::parquet::metadata::{ColumnChunkMetadata, RowGroupMetaData};
 use crate::parquet::page::CompressedPage;
 use crate::parquet::schema::types::ParquetType;
-
-#[cfg(feature = "async")]
-#[cfg_attr(docsrs, doc(cfg(feature = "async")))]
-mod stream;
 
 /// Returns a [`ColumnIterator`] of column chunks corresponding to `field`.
 ///
@@ -18,18 +15,17 @@ mod stream;
 /// For primitive fields (e.g. `i64`), [`ColumnIterator`] yields exactly one column.
 /// For complex fields, it yields multiple columns.
 /// `max_page_size` is the maximum number of bytes allowed.
-pub fn get_column_iterator(
+pub fn get_column_iterator<'a>(
     reader: MemReader,
-    row_group: &RowGroupMetaData,
+    row_group: &'a RowGroupMetaData,
     field_name: &str,
-    page_filter: Option<PageFilter>,
     max_page_size: usize,
-) -> ColumnIterator {
-    let columns = get_field_columns(row_group.columns(), field_name)
-        .cloned()
-        .collect::<Vec<_>>();
-
-    ColumnIterator::new(reader, columns, page_filter, max_page_size)
+) -> ColumnIterator<'a> {
+    let columns = row_group
+        .columns_under_root_iter(field_name)
+        .rev()
+        .collect::<UnitVec<_>>();
+    ColumnIterator::new(reader, columns, max_page_size)
 }
 
 /// State of [`MutStreamingIterator`].
@@ -52,34 +48,30 @@ pub trait MutStreamingIterator: Sized {
 
 /// A [`MutStreamingIterator`] that reads column chunks one by one,
 /// returning a [`PageReader`] per column.
-pub struct ColumnIterator {
+pub struct ColumnIterator<'a> {
     reader: MemReader,
-    columns: Vec<ColumnChunkMetaData>,
-    page_filter: Option<PageFilter>,
+    columns: UnitVec<&'a ColumnChunkMetadata>,
     max_page_size: usize,
 }
 
-impl ColumnIterator {
+impl<'a> ColumnIterator<'a> {
     /// Returns a new [`ColumnIterator`]
     /// `max_page_size` is the maximum allowed page size
     pub fn new(
         reader: MemReader,
-        mut columns: Vec<ColumnChunkMetaData>,
-        page_filter: Option<PageFilter>,
+        columns: UnitVec<&'a ColumnChunkMetadata>,
         max_page_size: usize,
     ) -> Self {
-        columns.reverse();
         Self {
             reader,
             columns,
-            page_filter,
             max_page_size,
         }
     }
 }
 
-impl Iterator for ColumnIterator {
-    type Item = ParquetResult<(PageReader, ColumnChunkMetaData)>;
+impl<'a> Iterator for ColumnIterator<'a> {
+    type Item = ParquetResult<(PageReader, &'a ColumnChunkMetadata)>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.columns.is_empty() {
@@ -87,16 +79,11 @@ impl Iterator for ColumnIterator {
         };
         let column = self.columns.pop().unwrap();
 
-        let iter = match get_page_iterator(
-            &column,
-            self.reader.clone(),
-            self.page_filter.clone(),
-            Vec::new(),
-            self.max_page_size,
-        ) {
-            Err(e) => return Some(Err(e)),
-            Ok(v) => v,
-        };
+        let iter =
+            match get_page_iterator(column, self.reader.clone(), Vec::new(), self.max_page_size) {
+                Err(e) => return Some(Err(e)),
+                Ok(v) => v,
+            };
         Some(Ok((iter, column)))
     }
 }
@@ -107,11 +94,11 @@ pub struct ReadColumnIterator {
     field: ParquetType,
     chunks: Vec<(
         Vec<Result<CompressedPage, ParquetError>>,
-        ColumnChunkMetaData,
+        ColumnChunkMetadata,
     )>,
     current: Option<(
         IntoIter<Result<CompressedPage, ParquetError>>,
-        ColumnChunkMetaData,
+        ColumnChunkMetadata,
     )>,
 }
 
@@ -121,7 +108,7 @@ impl ReadColumnIterator {
         field: ParquetType,
         chunks: Vec<(
             Vec<Result<CompressedPage, ParquetError>>,
-            ColumnChunkMetaData,
+            ColumnChunkMetadata,
         )>,
     ) -> Self {
         Self {
@@ -135,7 +122,7 @@ impl ReadColumnIterator {
 impl MutStreamingIterator for ReadColumnIterator {
     type Item = (
         IntoIter<Result<CompressedPage, ParquetError>>,
-        ColumnChunkMetaData,
+        ColumnChunkMetadata,
     );
     type Error = ParquetError;
 
@@ -158,38 +145,3 @@ impl MutStreamingIterator for ReadColumnIterator {
         self.current.as_mut()
     }
 }
-
-/// Reads all columns that are part of the parquet field `field_name`
-/// # Implementation
-/// This operation is IO-bounded `O(C)` where C is the number of columns associated to
-/// the field (one for non-nested types)
-/// It reads the columns sequentially. Use [`read_column`] to fork this operation to multiple
-/// readers.
-pub fn read_columns<'a, R: Read + Seek>(
-    reader: &mut R,
-    columns: &'a [ColumnChunkMetaData],
-    field_name: &'a str,
-) -> Result<Vec<(&'a ColumnChunkMetaData, Vec<u8>)>, ParquetError> {
-    get_field_columns(columns, field_name)
-        .map(|column| read_column(reader, column).map(|c| (column, c)))
-        .collect()
-}
-
-/// Reads a column chunk into memory
-/// This operation is IO-bounded and allocates the column's `compressed_size`.
-pub fn read_column<R>(reader: &mut R, column: &ColumnChunkMetaData) -> Result<Vec<u8>, ParquetError>
-where
-    R: Read + Seek,
-{
-    let (start, length) = column.byte_range();
-    reader.seek(std::io::SeekFrom::Start(start))?;
-
-    let mut chunk = vec![];
-    chunk.try_reserve(length as usize)?;
-    reader.by_ref().take(length).read_to_end(&mut chunk)?;
-    Ok(chunk)
-}
-
-#[cfg(feature = "async")]
-#[cfg_attr(docsrs, doc(cfg(feature = "async")))]
-pub use stream::{read_column_async, read_columns_async};

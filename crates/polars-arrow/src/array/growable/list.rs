@@ -70,7 +70,7 @@ impl<'a, O: Offset> GrowableList<'a, O> {
         let values = self.values.as_box();
 
         ListArray::<O>::new(
-            self.arrays[0].data_type().clone(),
+            self.arrays[0].dtype().clone(),
             offsets.into(),
             values,
             validity.map(|v| v.into()),

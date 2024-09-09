@@ -28,7 +28,7 @@ pub(super) fn fill_null(s: &[Series]) -> PolarsResult<Series> {
                     let cats = series.to_physical_repr();
                     let mask = cats.is_not_null();
                     let out = cats
-                        .zip_with_same_type(&mask, &Series::new("", &[idx]))
+                        .zip_with_same_type(&mask, &Series::new(PlSmallStr::EMPTY, &[idx]))
                         .unwrap();
                     unsafe { return out.cast_unchecked(series.dtype()) }
                 }

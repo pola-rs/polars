@@ -20,13 +20,13 @@ def show_versions() -> None:
     Python:               3.11.8 (main, Feb  6 2024, 21:21:21) [Clang 15.0.0 (clang-1500.1.0.2.5)]
     ----Optional dependencies----
     adbc_driver_manager:  0.11.0
+    altair:               5.4.0
     cloudpickle:          3.0.0
     connectorx:           0.3.2
     deltalake:            0.17.1
     fastexcel:            0.10.4
     fsspec:               2023.12.2
     gevent:               24.2.1
-    hvplot:               0.9.2
     matplotlib:           3.8.4
     nest_asyncio:         1.6.0
     numpy:                1.26.4
@@ -44,9 +44,9 @@ def show_versions() -> None:
     # module) as a micro-optimization for polars' initial import
     import platform
 
-    deps = _get_dependency_info()
+    deps = _get_dependency_list()
     core_properties = ("Polars", "Index type", "Platform", "Python")
-    keylen = max(len(x) for x in [*core_properties, *deps.keys()]) + 1
+    keylen = max(len(x) for x in [*core_properties, *deps]) + 1
 
     print("--------Version info---------")
     print(f"{'Polars:':{keylen}s} {get_polars_version()}")
@@ -55,14 +55,16 @@ def show_versions() -> None:
     print(f"{'Python:':{keylen}s} {sys.version}")
 
     print("\n----Optional dependencies----")
-    for name, v in deps.items():
-        print(f"{name:{keylen}s} {v}")
+    for name in deps:
+        print(f"{name:{keylen}s} ", end="", flush=True)
+        print(_get_dependency_version(name))
 
 
-def _get_dependency_info() -> dict[str, str]:
-    # see the list of dependencies in pyproject.toml
-    opt_deps = [
+# See the list of dependencies in pyproject.toml.
+def _get_dependency_list() -> list[str]:
+    return [
         "adbc_driver_manager",
+        "altair",
         "cloudpickle",
         "connectorx",
         "deltalake",
@@ -70,7 +72,6 @@ def _get_dependency_info() -> dict[str, str]:
         "fsspec",
         "gevent",
         "great_tables",
-        "hvplot",
         "matplotlib",
         "nest_asyncio",
         "numpy",
@@ -84,7 +85,6 @@ def _get_dependency_info() -> dict[str, str]:
         "xlsx2csv",
         "xlsxwriter",
     ]
-    return {f"{name}:": _get_dependency_version(name) for name in opt_deps}
 
 
 def _get_dependency_version(dep_name: str) -> str:

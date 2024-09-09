@@ -83,8 +83,8 @@ impl DataFrame {
     ///
     /// ```rust
     /// use polars_core::prelude::*;
-    /// let a = UInt32Chunked::new("a", &[1, 2, 3]).into_series();
-    /// let b = Float64Chunked::new("b", &[10., 8., 6.]).into_series();
+    /// let a = UInt32Chunked::new("a".into(), &[1, 2, 3]).into_series();
+    /// let b = Float64Chunked::new("b".into(), &[10., 8., 6.]).into_series();
     ///
     /// let df = DataFrame::new(vec![a, b]).unwrap();
     /// let ndarray = df.to_ndarray::<Float64Type>(IndexOrder::Fortran).unwrap();
@@ -186,12 +186,16 @@ mod test {
 
     #[test]
     fn test_ndarray_from_ca() -> PolarsResult<()> {
-        let ca = Float64Chunked::new("", &[1.0, 2.0, 3.0]);
+        let ca = Float64Chunked::new(PlSmallStr::EMPTY, &[1.0, 2.0, 3.0]);
         let ndarr = ca.to_ndarray()?;
         assert_eq!(ndarr, ArrayView1::from(&[1.0, 2.0, 3.0]));
 
-        let mut builder =
-            ListPrimitiveChunkedBuilder::<Float64Type>::new("", 10, 10, DataType::Float64);
+        let mut builder = ListPrimitiveChunkedBuilder::<Float64Type>::new(
+            PlSmallStr::EMPTY,
+            10,
+            10,
+            DataType::Float64,
+        );
         builder.append_opt_slice(Some(&[1.0, 2.0, 3.0]));
         builder.append_opt_slice(Some(&[2.0, 4.0, 5.0]));
         builder.append_opt_slice(Some(&[6.0, 7.0, 8.0]));
@@ -202,8 +206,12 @@ mod test {
         assert_eq!(ndarr, expected);
 
         // test list array that is not square
-        let mut builder =
-            ListPrimitiveChunkedBuilder::<Float64Type>::new("", 10, 10, DataType::Float64);
+        let mut builder = ListPrimitiveChunkedBuilder::<Float64Type>::new(
+            PlSmallStr::EMPTY,
+            10,
+            10,
+            DataType::Float64,
+        );
         builder.append_opt_slice(Some(&[1.0, 2.0, 3.0]));
         builder.append_opt_slice(Some(&[2.0]));
         builder.append_opt_slice(Some(&[6.0, 7.0, 8.0]));
