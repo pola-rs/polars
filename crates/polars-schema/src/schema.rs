@@ -253,7 +253,7 @@ impl<D> Schema<D> {
     }
 
     pub fn iter_names_cloned(&self) -> impl '_ + ExactSizeIterator<Item = PlSmallStr> {
-        self.iter_names_cloned()
+        self.iter_names().cloned()
     }
 
     /// Iterates over references to the dtypes in this schema.
