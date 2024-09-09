@@ -562,8 +562,14 @@ def test_hive_partition_columns_contained_in_file(
     )
     write_func(df, partial_path)
 
+    rhs = rhs.select(
+        pl.col("x").cast(pl.Int32),
+        pl.col("b").cast(pl.Int16),
+        pl.col("y").cast(pl.Int32),
+        pl.col("a").cast(pl.Int64),
+    )
+
     lf = scan_func(partial_path, hive_partitioning=True)  # type: ignore[call-arg]
-    rhs = df
     assert_frame_equal(lf.collect(projection_pushdown=projection_pushdown), rhs)
     assert_with_projections(lf, rhs)
 
@@ -572,7 +578,12 @@ def test_hive_partition_columns_contained_in_file(
         hive_schema={"a": pl.String, "b": pl.String},
         hive_partitioning=True,
     )
-    rhs = df.with_columns(pl.col("a", "b").cast(pl.String))
+    rhs = rhs.select(
+        pl.col("x").cast(pl.Int32),
+        pl.col("b").cast(pl.String),
+        pl.col("y").cast(pl.Int32),
+        pl.col("a").cast(pl.String),
+    )
     assert_frame_equal(
         lf.collect(projection_pushdown=projection_pushdown),
         rhs,
