@@ -519,6 +519,10 @@ impl PhysicalExpr for WindowExpr {
         match self.determine_map_strategy(ac.agg_state(), sorted_keys, &gb)? {
             Nothing => {
                 let mut out = ac.flat_naive().into_owned();
+
+                if ac.is_literal() {
+                    out = out.new_from_index(0, df.height())
+                }
                 cache_gb(gb, state, &cache_key);
                 if let Some(name) = &self.out_name {
                     out.rename(name.clone());
