@@ -18,7 +18,8 @@ pub struct ApplyExpr {
     function: SpecialEq<Arc<dyn SeriesUdf>>,
     expr: Expr,
     collect_groups: ApplyOptions,
-    returns_scalar: bool,
+    function_returns_scalar: bool,
+    function_operates_on_scalar: bool,
     allow_rename: bool,
     pass_name_to_apply: bool,
     input_schema: Option<SchemaRef>,
@@ -29,6 +30,7 @@ pub struct ApplyExpr {
 }
 
 impl ApplyExpr {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         inputs: Vec<Arc<dyn PhysicalExpr>>,
         function: SpecialEq<Arc<dyn SeriesUdf>>,
@@ -37,7 +39,7 @@ impl ApplyExpr {
         allow_threading: bool,
         input_schema: Option<SchemaRef>,
         output_dtype: Option<DataType>,
-        returns_scalar: bool
+        returns_scalar: bool,
     ) -> Self {
         #[cfg(debug_assertions)]
         if matches!(options.collect_groups, ApplyOptions::ElementWise)
@@ -45,14 +47,14 @@ impl ApplyExpr {
         {
             panic!("expr {:?} is not implemented correctly. 'returns_scalar' and 'elementwise' are mutually exclusive", expr)
         }
-        dbg!(returns_scalar, options.flags.contains(FunctionFlags::RETURNS_SCALAR), &expr);
 
         Self {
             inputs,
             function,
             expr,
             collect_groups: options.collect_groups,
-            returns_scalar: options.flags.contains(FunctionFlags::RETURNS_SCALAR),
+            function_returns_scalar: options.flags.contains(FunctionFlags::RETURNS_SCALAR),
+            function_operates_on_scalar: returns_scalar,
             allow_rename: options.flags.contains(FunctionFlags::ALLOW_RENAME),
             pass_name_to_apply: options.flags.contains(FunctionFlags::PASS_NAME_TO_APPLY),
             input_schema,
@@ -74,7 +76,8 @@ impl ApplyExpr {
             function,
             expr,
             collect_groups,
-            returns_scalar: false,
+            function_returns_scalar: false,
+            function_operates_on_scalar: false,
             allow_rename: false,
             pass_name_to_apply: false,
             input_schema: None,
@@ -106,7 +109,7 @@ impl ApplyExpr {
         ca: ListChunked,
     ) -> PolarsResult<AggregationContext<'a>> {
         let all_unit_len = all_unit_length(&ca);
-        if all_unit_len && self.returns_scalar {
+        if all_unit_len && self.function_returns_scalar {
             ac.with_agg_state(AggState::AggregatedScalar(
                 ca.explode().unwrap().into_series(),
             ));
@@ -255,7 +258,7 @@ impl ApplyExpr {
             let mut ac = acs.swap_remove(0);
             ac.with_update_groups(UpdateGroups::No);
 
-            let agg_state = if self.returns_scalar {
+            let agg_state = if self.function_returns_scalar {
                 AggState::AggregatedScalar(Series::new_empty(field.name().clone(), &field.dtype))
             } else {
                 match self.collect_groups {
@@ -429,7 +432,7 @@ impl PhysicalExpr for ApplyExpr {
         }
     }
     fn is_scalar(&self) -> bool {
-        self.returns_scalar
+        self.function_returns_scalar || self.function_operates_on_scalar
     }
 }
 

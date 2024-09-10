@@ -1,9 +1,9 @@
 #[cfg(feature = "cse")]
 mod hash;
-mod schema;
-mod utils;
-mod traverse;
 mod scalar;
+mod schema;
+mod traverse;
+mod utils;
 
 use std::hash::{Hash, Hasher};
 
@@ -13,16 +13,16 @@ use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::utils::{get_time_units, try_get_supertype};
 use polars_utils::arena::{Arena, Node};
+pub use scalar::is_scalar_ae;
 #[cfg(feature = "ir_serde")]
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
+pub use traverse::*;
 pub use utils::*;
 
 use crate::constants::LEN;
 use crate::plans::Context;
 use crate::prelude::*;
-pub use scalar::is_scalar_ae;
-pub use traverse::*;
 
 #[derive(Clone, Debug, IntoStaticStr)]
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]

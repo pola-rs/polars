@@ -299,7 +299,7 @@ pub(super) fn check_expand_literals(
                         } else {
                             polars_ensure!(phys.is_scalar(),
                                 InvalidOperation: "Series length {} doesn't match the DataFrame height of {}\n\n\
-                                If you want this Series to be broadcasted, ensure it is a scalar (for instance by adding '.first()'.",
+                                If you want this Series to be broadcasted, ensure it is a scalar (for instance by adding '.first()').",
                                 series.len(), df_height
                             );
                             series.new_from_index(0, df_height)

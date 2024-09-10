@@ -303,7 +303,7 @@ fn create_physical_expr_inner(
                 node_to_expr(expression, expr_arena),
                 state.local.has_lit,
                 state.allow_threading,
-                is_scalar
+                is_scalar,
             )))
         },
         Column(column) => Ok(Arc::new(ColumnExpr::new(
@@ -464,7 +464,7 @@ fn create_physical_expr_inner(
                 falsy,
                 node_to_expr(expression, expr_arena),
                 lit_count < 2,
-                is_scalar
+                is_scalar,
             )))
         },
         AnonymousFunction {
@@ -505,7 +505,7 @@ fn create_physical_expr_inner(
                 state.allow_threading,
                 schema.cloned(),
                 output_dtype,
-                is_scalar
+                is_scalar,
             )))
         },
         Function {
@@ -545,7 +545,7 @@ fn create_physical_expr_inner(
                 state.allow_threading,
                 schema.cloned(),
                 output_dtype,
-                is_scalar
+                is_scalar,
             )))
         },
         Slice {

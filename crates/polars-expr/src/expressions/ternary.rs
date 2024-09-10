@@ -12,7 +12,7 @@ pub struct TernaryExpr {
     expr: Expr,
     // Can be expensive on small data to run literals in parallel.
     run_par: bool,
-    returns_scalar: bool
+    returns_scalar: bool,
 }
 
 impl TernaryExpr {
@@ -22,7 +22,7 @@ impl TernaryExpr {
         falsy: Arc<dyn PhysicalExpr>,
         expr: Expr,
         run_par: bool,
-        returns_scalar: bool
+        returns_scalar: bool,
     ) -> Self {
         Self {
             predicate,
@@ -30,7 +30,7 @@ impl TernaryExpr {
             falsy,
             expr,
             run_par,
-            returns_scalar
+            returns_scalar,
         }
     }
 }

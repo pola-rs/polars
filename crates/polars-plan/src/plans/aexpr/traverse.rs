@@ -1,7 +1,6 @@
 use super::*;
 
 impl AExpr {
-
     /// Push nodes at this level to a pre-allocated stack.
     pub(crate) fn nodes<C: PushNode>(&self, container: &mut C) {
         use AExpr::*;
@@ -51,12 +50,12 @@ impl AExpr {
             AnonymousFunction { input, .. } | Function { input, .. } =>
             // we iterate in reverse order, so that the lhs is popped first and will be found
             // as the root columns/ input columns by `_suffix` and `_keep_name` etc.
-                {
-                    input
-                        .iter()
-                        .rev()
-                        .for_each(|e| container.push_node(e.node()))
-                },
+            {
+                input
+                    .iter()
+                    .rev()
+                    .for_each(|e| container.push_node(e.node()))
+            },
             Explode(e) => container.push_node(*e),
             Window {
                 function,

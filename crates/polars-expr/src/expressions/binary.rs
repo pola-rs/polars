@@ -15,7 +15,7 @@ pub struct BinaryExpr {
     expr: Expr,
     has_literal: bool,
     allow_threading: bool,
-    is_scalar: bool
+    is_scalar: bool,
 }
 
 impl BinaryExpr {
@@ -26,7 +26,7 @@ impl BinaryExpr {
         expr: Expr,
         has_literal: bool,
         allow_threading: bool,
-        is_scalar: bool
+        is_scalar: bool,
     ) -> Self {
         Self {
             left,
@@ -35,7 +35,7 @@ impl BinaryExpr {
             expr,
             has_literal,
             allow_threading,
-            is_scalar
+            is_scalar,
         }
     }
 }
