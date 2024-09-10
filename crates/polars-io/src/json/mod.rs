@@ -71,7 +71,7 @@ use std::ops::Deref;
 use arrow::legacy::conversion::chunk_to_struct;
 use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{polars_bail, PolarsError, PolarsResult};
 use polars_json::json::write::FallibleStreamingIterator;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -274,27 +274,41 @@ where
                 let mut bytes = rb.deref().to_vec();
                 let json_value =
                     simd_json::to_borrowed_value(&mut bytes).map_err(to_compute_err)?;
-
-                // struct type
-                let dtype = if let Some(mut schema) = self.schema {
+                let dtype_result = if let Some(mut schema) = self.schema {
                     if let Some(overwrite) = self.schema_overwrite {
                         let mut_schema = Arc::make_mut(&mut schema);
                         overwrite_schema(mut_schema, overwrite)?;
                     }
-
-                    DataType::Struct(schema.iter_fields().collect()).to_arrow(CompatLevel::newest())
+                    Ok(DataType::Struct(schema.iter_fields().collect())
+                        .to_arrow(CompatLevel::newest()))
                 } else {
                     // infer
-                    let inner_dtype = if let BorrowedValue::Array(values) = &json_value {
-                        infer::json_values_to_supertype(
+                    let inner_dtype_result = if let BorrowedValue::Array(values) = &json_value {
+                        let supertype = infer::json_values_to_supertype(
                             values,
                             self.infer_schema_len
                                 .unwrap_or(NonZeroUsize::new(usize::MAX).unwrap()),
-                        )?
-                        .to_arrow(CompatLevel::newest())
+                        );
+                        match supertype {
+                            Ok(supertype) => Ok(supertype.to_arrow(CompatLevel::newest())),
+                            Err(e) => Err(e),
+                        }
                     } else {
-                        polars_json::json::infer(&json_value)?
+                        polars_json::json::infer(&json_value)
                     };
+                    if inner_dtype_result.is_err() {
+                        match &json_value {
+                            BorrowedValue::Array(array) => {
+                                if array.is_empty() {
+                                    return Ok(DataFrame::empty());
+                                }
+                            },
+                            _ => {
+                                polars_bail!(ComputeError: "could not infer data-type")
+                            },
+                        }
+                    }
+                    let inner_dtype = inner_dtype_result?;
 
                     if let Some(overwrite) = self.schema_overwrite {
                         let ArrowDataType::Struct(fields) = inner_dtype else {
@@ -304,18 +318,21 @@ where
                         let mut schema = Schema::from_iter(fields.iter().map(Into::<Field>::into));
                         overwrite_schema(&mut schema, overwrite)?;
 
-                        DataType::Struct(
+                        Ok(DataType::Struct(
                             schema
                                 .into_iter()
                                 .map(|(name, dt)| Field::new(name, dt))
                                 .collect(),
                         )
-                        .to_arrow(CompatLevel::newest())
+                        .to_arrow(CompatLevel::newest()))
                     } else {
-                        inner_dtype
+                        Ok(inner_dtype)
                     }
                 };
-
+                if let Err(PolarsError::NoData(_)) = &dtype_result {
+                    return Ok(DataFrame::empty());
+                };
+                let dtype = dtype_result?;
                 let dtype = if let BorrowedValue::Array(_) = &json_value {
                     ArrowDataType::LargeList(Box::new(arrow::datatypes::Field::new(
                         PlSmallStr::from_static("item"),
