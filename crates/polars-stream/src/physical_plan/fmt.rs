@@ -1,7 +1,7 @@
 use std::fmt::Write;
 
 use polars_plan::plans::expr_ir::ExprIR;
-use polars_plan::plans::{AExpr, EscapeLabel, FileScan, PathsDisplay};
+use polars_plan::plans::{AExpr, EscapeLabel, FileScan, ScanSourcesDisplay};
 use polars_utils::arena::Arena;
 use polars_utils::itertools::Itertools;
 use slotmap::{Key, SecondaryMap, SlotMap};
@@ -107,7 +107,7 @@ fn visualize_plan_rec(
         },
         PhysNodeKind::Multiplexer { input } => ("multiplexer".to_string(), from_ref(input)),
         PhysNodeKind::FileScan {
-            paths,
+            scan_sources,
             file_info,
             hive_parts,
             output_schema: _,
@@ -127,9 +127,9 @@ fn visualize_plan_rec(
             let mut f = EscapeLabel(&mut out);
 
             {
-                let paths_display = PathsDisplay(paths.as_ref());
+                let disp = ScanSourcesDisplay(scan_sources);
 
-                write!(f, "\npaths: {}", paths_display).unwrap();
+                write!(f, "\npaths: {}", disp).unwrap();
             }
 
             {

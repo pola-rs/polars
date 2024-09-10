@@ -331,7 +331,7 @@ pub fn lower_ir(
 
         v @ IR::Scan { .. } => {
             let IR::Scan {
-                sources,
+                sources: scan_sources,
                 file_info,
                 hive_parts,
                 output_schema,
@@ -343,12 +343,8 @@ pub fn lower_ir(
                 unreachable!();
             };
 
-            let paths = sources
-                .into_paths()
-                .unwrap_or_else(|| todo!("streaming scanning of in-memory buffers"));
-
             PhysNodeKind::FileScan {
-                paths,
+                scan_sources,
                 file_info,
                 hive_parts,
                 output_schema,

@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
@@ -6,7 +5,7 @@ use polars_core::prelude::{InitHashMaps, PlHashMap, SortMultipleOptions};
 use polars_core::schema::{Schema, SchemaRef};
 use polars_error::PolarsResult;
 use polars_plan::plans::hive::HivePartitions;
-use polars_plan::plans::{AExpr, DataFrameUdf, FileInfo, FileScan, IR};
+use polars_plan::plans::{AExpr, DataFrameUdf, FileInfo, FileScan, ScanSources, IR};
 use polars_plan::prelude::expr_ir::ExprIR;
 
 mod fmt;
@@ -119,7 +118,7 @@ pub enum PhysNodeKind {
     },
 
     FileScan {
-        paths: Arc<[PathBuf]>,
+        scan_sources: ScanSources,
         file_info: FileInfo,
         hive_parts: Option<Arc<Vec<HivePartitions>>>,
         predicate: Option<ExprIR>,
