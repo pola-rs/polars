@@ -59,9 +59,8 @@ impl ReduceNode {
                 scope.spawn_task(TaskPriority::High, async move {
                     while let Ok(morsel) = recv.recv().await {
                         for (reducer, selector) in local_reducers.iter_mut().zip(selectors) {
-                            // TODO: don't convert to physical representation here.
                             let input = selector.evaluate(morsel.df(), state).await?;
-                            reducer.update(&input.to_physical_repr())?;
+                            reducer.update(&input)?;
                         }
                     }
 

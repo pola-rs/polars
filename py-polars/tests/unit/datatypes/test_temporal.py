@@ -1399,12 +1399,12 @@ def test_replace_time_zone_sortedness_expressions(
     from_tz: str | None, expected_sortedness: bool, ambiguous: str
 ) -> None:
     df = (
-        pl.Series("ts", [1603584000000000, 1603587600000000])
+        pl.Series("ts", [1603584000000000, 1603584060000000, 1603587600000000])
         .cast(pl.Datetime("us", from_tz))
         .sort()
         .to_frame()
     )
-    df = df.with_columns(ambiguous=pl.Series([ambiguous] * 2))
+    df = df.with_columns(ambiguous=pl.Series([ambiguous] * 3))
     assert df["ts"].flags["SORTED_ASC"]
     result = df.select(
         pl.col("ts").dt.replace_time_zone("UTC", ambiguous=pl.col("ambiguous"))
