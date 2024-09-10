@@ -465,6 +465,4 @@ def test_raise_on_multiple_binary_comparisons() -> None:
 def test_raise_invalid_input_join_where() -> None:
     df = pl.DataFrame({"id": [1, 2]})
     with pytest.raises(pl.exceptions.InvalidOperationError):
-        df.join_where(
-            df
-        )
+        df.join_where(df)
