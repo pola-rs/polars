@@ -8,9 +8,9 @@ use crate::array::*;
 use crate::bitmap::utils::bytes_for;
 use crate::bitmap::Bitmap;
 use crate::buffer::Buffer;
-use crate::storage::SharedStorage;
 use crate::datatypes::{ArrowDataType, PhysicalType};
 use crate::ffi::schema::get_child;
+use crate::storage::SharedStorage;
 use crate::types::NativeType;
 use crate::{match_integer_type, with_match_primitive_type_full};
 
@@ -330,10 +330,7 @@ unsafe fn create_bitmap(
         None
     };
     Ok(Bitmap::from_inner_unchecked(
-        storage,
-        offset,
-        len,
-        null_count,
+        storage, offset, len, null_count,
     ))
 }
 

@@ -7,7 +7,7 @@ use crate::ffi::InternalArrowArray;
 
 enum BackingStorage {
     Vec {
-        capacity: usize
+        capacity: usize,
     },
     InternalArrowArray(InternalArrowArray),
     #[cfg(feature = "arrow_rs")]
@@ -29,8 +29,8 @@ impl<T> Drop for SharedStorageInner<T> {
             Some(BackingStorage::ArrowBuffer(b)) => drop(b),
             Some(BackingStorage::Vec { capacity }) => unsafe {
                 drop(Vec::from_raw_parts(self.ptr, self.length, capacity))
-            }
-            None => {}
+            },
+            None => {},
         }
     }
 }
@@ -38,6 +38,9 @@ impl<T> Drop for SharedStorageInner<T> {
 pub struct SharedStorage<T> {
     inner: NonNull<SharedStorageInner<T>>,
 }
+
+unsafe impl<T: Sync + Send> Send for SharedStorage<T> {}
+unsafe impl<T: Sync + Send> Sync for SharedStorage<T> {}
 
 impl<T> SharedStorage<T> {
     pub fn from_static(slice: &'static [T]) -> Self {
@@ -69,7 +72,7 @@ impl<T> SharedStorage<T> {
             inner: NonNull::new(Box::into_raw(Box::new(inner))).unwrap(),
         }
     }
-    
+
     pub fn from_internal_arrow_array(ptr: *const T, len: usize, arr: InternalArrowArray) -> Self {
         let inner = SharedStorageInner {
             ref_count: AtomicU64::new(1),
@@ -101,7 +104,7 @@ impl<T: crate::types::NativeType> SharedStorage<T> {
             inner: NonNull::new(Box::into_raw(Box::new(inner))).unwrap(),
         }
     }
-    
+
     pub fn into_arrow_buffer(self) -> arrow_buffer::Buffer {
         let ptr = NonNull::new(self.as_ptr() as *mut u8).unwrap();
         let len = self.len() * std::mem::size_of::<T>();
@@ -115,12 +118,12 @@ impl<T> SharedStorage<T> {
     pub fn len(&self) -> usize {
         self.inner().length
     }
-    
+
     #[inline(always)]
     pub fn as_ptr(&self) -> *const T {
         self.inner().ptr
     }
-    
+
     #[inline(always)]
     pub fn is_exclusive(&mut self) -> bool {
         // Ordering semantics copied from Arc<T>.
@@ -128,7 +131,7 @@ impl<T> SharedStorage<T> {
     }
 
     /// Gets the reference count of this storage.
-    /// 
+    ///
     /// Because this function takes a shared reference this should not be used
     /// in cases where we are checking if the refcount is one for safety,
     /// someone else could increment it in the meantime.
@@ -137,14 +140,14 @@ impl<T> SharedStorage<T> {
         // Ordering semantics copied from Arc<T>.
         self.inner().ref_count.load(Ordering::Acquire)
     }
-    
+
     pub fn try_as_mut_slice(&mut self) -> Option<&mut [T]> {
         self.is_exclusive().then(|| {
             let inner = self.inner();
             unsafe { core::slice::from_raw_parts_mut(inner.ptr, inner.length) }
         })
     }
-    
+
     pub fn try_into_vec(mut self) -> Result<Vec<T>, Self> {
         let Some(BackingStorage::Vec { capacity }) = self.inner().backing else {
             return Err(self);
@@ -170,9 +173,6 @@ impl<T> SharedStorage<T> {
         unsafe { drop(Box::from_raw(self.inner.as_ptr())) }
     }
 }
-
-unsafe impl<T: Sync + Send> Send for SharedStorage<T> {}
-unsafe impl<T: Sync + Send> Sync for SharedStorage<T> {}
 
 impl<T> Deref for SharedStorage<T> {
     type Target = [T];
@@ -203,11 +203,13 @@ impl<T> Drop for SharedStorage<T> {
         if inner.backing.is_none() {
             return;
         }
-        
+
         // Ordering semantics copied from Arc<T>.
         if inner.ref_count.fetch_sub(1, Ordering::Release) == 1 {
             std::sync::atomic::fence(Ordering::Acquire);
-            unsafe { self.drop_slow(); }
+            unsafe {
+                self.drop_slow();
+            }
         }
     }
 }

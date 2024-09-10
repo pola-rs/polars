@@ -8,13 +8,13 @@ use crate::array::{
     MutableBinaryArray, MutableBinaryValuesArray, MutableBinaryViewArray, PrimitiveArray,
     StructArray, Utf8Array, Utf8ViewArray,
 };
-use crate::storage::SharedStorage;
 use crate::bitmap::Bitmap;
 use crate::datatypes::ArrowDataType;
 #[cfg(feature = "dtype-array")]
 use crate::legacy::prelude::fixed_size_list::AnonymousBuilder as AnonymousFixedSizeListArrayBuilder;
 use crate::legacy::prelude::list::AnonymousBuilder as AnonymousListArrayBuilder;
 use crate::legacy::trusted_len::TrustedLenPush;
+use crate::storage::SharedStorage;
 use crate::trusted_len::TrustedLen;
 use crate::types::NativeType;
 

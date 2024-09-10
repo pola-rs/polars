@@ -4,8 +4,8 @@ use either::Either;
 use num_traits::Zero;
 
 use super::IntoIter;
-use crate::storage::SharedStorage;
 use crate::array::{ArrayAccessor, Splitable};
+use crate::storage::SharedStorage;
 
 /// [`Buffer`] is a contiguous memory region that can be shared across
 /// thread boundaries.
@@ -82,7 +82,11 @@ impl<T> Buffer<T> {
     pub(crate) fn from_storage(storage: SharedStorage<T>) -> Self {
         let ptr = storage.as_ptr();
         let length = storage.len();
-        Buffer { storage, ptr, length, }
+        Buffer {
+            storage,
+            ptr,
+            length,
+        }
     }
 
     /// Returns the number of bytes in the buffer
@@ -213,7 +217,7 @@ impl<T> Buffer<T> {
             Err(slf) => {
                 self.storage = slf;
                 Either::Left(self)
-            }
+            },
         }
     }
 

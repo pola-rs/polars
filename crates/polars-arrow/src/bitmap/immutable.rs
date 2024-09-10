@@ -12,8 +12,8 @@ use crate::bitmap::aligned::AlignedBitmapSlice;
 use crate::bitmap::iterator::{
     FastU32BitmapIter, FastU56BitmapIter, FastU64BitmapIter, TrueIdxIter,
 };
-use crate::storage::SharedStorage;
 use crate::legacy::utils::FromTrustedLenIterator;
+use crate::storage::SharedStorage;
 use crate::trusted_len::TrustedLen;
 
 const UNKNOWN_BIT_COUNT: u64 = u64::MAX;
@@ -294,7 +294,8 @@ impl Bitmap {
                 // Subtract the null count of the chunks we slice off.
                 let slice_end = self.offset + offset + length;
                 let head_count = count_zeros(&self.storage, self.offset, offset);
-                let tail_count = count_zeros(&self.storage, slice_end, self.length - length - offset);
+                let tail_count =
+                    count_zeros(&self.storage, slice_end, self.length - length - offset);
                 let new_count = *unset_bit_count_cache - head_count as u64 - tail_count as u64;
                 *unset_bit_count_cache = new_count;
             } else {
@@ -370,7 +371,7 @@ impl Bitmap {
             Err(storage) => {
                 self.storage = storage;
                 Either::Left(self)
-            }
+            },
         }
     }
 
@@ -399,10 +400,9 @@ impl Bitmap {
         // We intentionally leak 1MiB of zeroed memory once so we don't have to
         // refcount it.
         const GLOBAL_ZERO_SIZE: usize = 1024 * 1024;
-        static GLOBAL_ZEROES: LazyLock<SharedStorage<u8>> = LazyLock::new(|| {
-            SharedStorage::from_static(vec![0; GLOBAL_ZERO_SIZE].leak())
-        });
-        
+        static GLOBAL_ZEROES: LazyLock<SharedStorage<u8>> =
+            LazyLock::new(|| SharedStorage::from_static(vec![0; GLOBAL_ZERO_SIZE].leak()));
+
         let bytes_needed = length.div_ceil(8);
         let storage = if bytes_needed <= GLOBAL_ZERO_SIZE {
             GLOBAL_ZEROES.clone()
@@ -427,7 +427,14 @@ impl Bitmap {
             vec![0; length.saturating_add(7) / 8]
         };
         let unset_bits = if value { 0 } else { length };
-        unsafe { Bitmap::from_inner_unchecked(SharedStorage::from_vec(bytes), 0, length, Some(unset_bits)) }
+        unsafe {
+            Bitmap::from_inner_unchecked(
+                SharedStorage::from_vec(bytes),
+                0,
+                length,
+                Some(unset_bits),
+            )
+        }
     }
 
     /// Counts the nulls (unset bits) starting from `offset` bits and for `length` bits.
