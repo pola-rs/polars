@@ -391,6 +391,16 @@ def test_empty_json() -> None:
     assert df.shape == (0, 1)
 
 
+def test_empty_list_json() -> None:
+    df = pl.read_json(io.StringIO("[]"))
+    assert df.shape == (0, 0)
+    assert isinstance(df, pl.DataFrame)
+
+    df = pl.read_json(b"[]")
+    assert df.shape == (0, 0)
+    assert isinstance(df, pl.DataFrame)
+
+
 def test_compressed_json() -> None:
     # shared setup
     json_obj = [
