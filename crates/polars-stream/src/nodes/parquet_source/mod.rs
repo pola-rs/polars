@@ -8,7 +8,7 @@ use polars_error::PolarsResult;
 use polars_expr::prelude::{phys_expr_to_io_expr, PhysicalExpr};
 use polars_io::cloud::CloudOptions;
 use polars_io::predicates::PhysicalIoExpr;
-use polars_io::prelude::ParquetOptions;
+use polars_io::prelude::{FileMetadata, ParquetOptions};
 use polars_io::utils::byte_source::DynByteSourceBuilder;
 use polars_plan::plans::hive::HivePartitions;
 use polars_plan::plans::{FileInfo, ScanSources};
@@ -23,6 +23,7 @@ use crate::morsel::SourceToken;
 
 mod init;
 mod mem_prefetch_funcs;
+mod metadata_fetch;
 mod metadata_utils;
 mod row_group_data_fetch;
 mod row_group_decode;
@@ -41,6 +42,7 @@ pub struct ParquetSourceNode {
     options: ParquetOptions,
     cloud_options: Option<CloudOptions>,
     file_options: FileScanOptions,
+    first_metadata: Arc<FileMetadata>,
     // Run-time vars
     config: Config,
     verbose: bool,
@@ -77,6 +79,7 @@ impl ParquetSourceNode {
         options: ParquetOptions,
         cloud_options: Option<CloudOptions>,
         file_options: FileScanOptions,
+        first_metadata: Arc<FileMetadata>,
     ) -> Self {
         let verbose = config::verbose();
 
@@ -95,6 +98,7 @@ impl ParquetSourceNode {
             options,
             cloud_options,
             file_options,
+            first_metadata,
 
             config: Config {
                 // Initialized later
