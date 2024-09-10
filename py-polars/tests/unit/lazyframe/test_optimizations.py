@@ -258,8 +258,8 @@ def test_collapse_joins_combinations() -> None:
 
     exprs = []
 
-    for lhs in [pl.col.a, pl.col.b, pl.col.x, pl.lit(1)]:
-        for rhs in [pl.col.a, pl.col.b, pl.col.x, pl.lit(1)]:
+    for lhs in [pl.col.a, pl.col.b, pl.col.x, pl.lit(1), pl.col.a + pl.col.b]:
+        for rhs in [pl.col.a, pl.col.b, pl.col.x, pl.lit(1), pl.col.a * pl.col.x]:
             for cmp in ["__eq__", "__ge__", "__lt__"]:
                 e = (getattr(lhs, cmp))(rhs)
                 exprs.append(e)
