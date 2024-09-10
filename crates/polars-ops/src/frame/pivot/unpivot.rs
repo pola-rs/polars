@@ -1,7 +1,7 @@
 use arrow::array::{MutableArray, MutablePlString};
 use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
 use polars_core::datatypes::{DataType, PlSmallStr};
-use polars_core::frame::DataFrame;
+use polars_core::frame::{Column, DataFrame};
 use polars_core::prelude::{IntoVec, Series, UnpivotArgsIR};
 use polars_core::utils::try_get_supertype;
 use polars_error::{polars_err, PolarsResult};
@@ -96,8 +96,8 @@ pub trait UnpivotDF: IntoDf {
 
         if self_.get_columns().is_empty() {
             return DataFrame::new(vec![
-                Series::new_empty(variable_name, &DataType::String),
-                Series::new_empty(value_name, &DataType::Null),
+                Column::new_empty(variable_name, &DataType::String),
+                Column::new_empty(value_name, &DataType::Null),
             ]);
         }
 
@@ -107,8 +107,8 @@ pub trait UnpivotDF: IntoDf {
         if on.is_empty() {
             // return empty frame if there are no columns available to use as value vars
             if index.len() == self_.width() {
-                let variable_col = Series::new_empty(variable_name, &DataType::String);
-                let value_col = Series::new_empty(value_name, &DataType::Null);
+                let variable_col = Column::new_empty(variable_name, &DataType::String);
+                let value_col = Column::new_empty(value_name, &DataType::Null);
 
                 let mut out = self_.select(index).unwrap().clear().take_columns();
                 out.push(variable_col);
@@ -167,13 +167,13 @@ pub trait UnpivotDF: IntoDf {
             let value_col = col.cast(&st).map_err(
                 |_| polars_err!(InvalidOperation: "'unpivot' not supported for dtype: {}", col.dtype()),
             )?;
-            values.extend_from_slice(value_col.chunks())
+            values.extend_from_slice(value_col.as_materialized_series().chunks())
         }
         let values_arr = concatenate_owned_unchecked(&values)?;
         // SAFETY:
         // The give dtype is correct
         let values =
-            unsafe { Series::from_chunks_and_dtype_unchecked(value_name, vec![values_arr], &st) };
+            unsafe { Series::from_chunks_and_dtype_unchecked(value_name, vec![values_arr], &st) }.into();
 
         let variable_col = variable_col.as_box();
         // SAFETY:
@@ -184,7 +184,7 @@ pub trait UnpivotDF: IntoDf {
                 vec![variable_col],
                 &DataType::String,
             )
-        };
+        }.into();
 
         ids.hstack_mut(&[variables, values])?;
 

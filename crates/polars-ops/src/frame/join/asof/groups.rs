@@ -32,8 +32,8 @@ pub(crate) unsafe fn compare_df_rows2(
     join_nulls: bool,
 ) -> bool {
     for (l, r) in left.get_columns().iter().zip(right.get_columns()) {
-        let l = l.get_unchecked(left_idx);
-        let r = r.get_unchecked(right_idx);
+        let l = l.as_materialized_series().get_unchecked(left_idx);
+        let r = r.as_materialized_series().get_unchecked(right_idx);
         if !l.eq_missing(&r, join_nulls) {
             return false;
         }
@@ -398,8 +398,8 @@ where
     F: Sync + for<'a> Fn(T::Physical<'a>, T::Physical<'a>) -> bool,
 {
     let out = if left_by.width() == 1 {
-        let left_by_s = left_by.get_columns()[0].to_physical_repr().into_owned();
-        let right_by_s = right_by.get_columns()[0].to_physical_repr().into_owned();
+        let left_by_s = left_by.get_columns()[0].to_physical_repr();
+        let right_by_s = right_by.get_columns()[0].to_physical_repr();
         let left_dtype = left_by_s.dtype();
         let right_dtype = right_by_s.dtype();
         polars_ensure!(left_dtype == right_dtype,
@@ -418,8 +418,8 @@ where
             },
             x if x.is_float() => {
                 with_match_physical_float_polars_type!(left_by_s.dtype(), |$T| {
-                    let left_by: &ChunkedArray<$T> = left_by_s.as_ref().as_ref().as_ref();
-                    let right_by: &ChunkedArray<$T> = right_by_s.as_ref().as_ref().as_ref();
+                    let left_by: &ChunkedArray<$T> = left_by_s.as_materialized_series().as_ref().as_ref().as_ref();
+                    let right_by: &ChunkedArray<$T> = right_by_s.as_materialized_series().as_ref().as_ref().as_ref();
                     asof_join_by_numeric::<T, $T, A, F>(
                         left_by, right_by, left_asof, right_asof, filter,
                     )?
@@ -648,8 +648,8 @@ pub trait AsofJoinBy: IntoDf {
             {
                 #[cfg(feature = "dtype-categorical")]
                 _check_categorical_src(l.dtype(), r.dtype())?;
-                *l = l.to_physical_repr().into_owned();
-                *r = r.to_physical_repr().into_owned();
+                *l = l.to_physical_repr();
+                *r = r.to_physical_repr();
             }
         }
 
@@ -707,8 +707,8 @@ pub trait AsofJoinBy: IntoDf {
         let self_df = self.to_df();
         let left_by = left_by.into_iter().map(|s| s.as_ref().into()).collect();
         let right_by = right_by.into_iter().map(|s| s.as_ref().into()).collect();
-        let left_key = self_df.column(left_on)?;
-        let right_key = other.column(right_on)?;
+        let left_key = self_df.column(left_on)?.as_materialized_series();
+        let right_key = other.column(right_on)?.as_materialized_series();
         self_df._join_asof_by(
             other, left_key, right_key, left_by, right_by, strategy, tolerance, None, None, true,
         )

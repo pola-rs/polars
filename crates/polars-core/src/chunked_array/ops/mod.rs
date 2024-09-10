@@ -384,7 +384,7 @@ pub trait ChunkSort<T: PolarsDataType> {
     #[allow(unused_variables)]
     fn arg_sort_multiple(
         &self,
-        by: &[Series],
+        by: &[Column],
         _options: &SortMultipleOptions,
     ) -> PolarsResult<IdxCa> {
         polars_bail!(opq = arg_sort_multiple, T::get_dtype());

@@ -23,6 +23,7 @@ impl TryFrom<StructArray> for DataFrame {
                         Some(&fld.metadata),
                     )
                 }
+                .map(Column::from)
             })
             .collect::<PolarsResult<Vec<_>>>()?;
         DataFrame::new(columns)

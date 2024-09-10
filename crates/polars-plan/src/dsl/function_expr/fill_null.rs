@@ -47,5 +47,5 @@ pub(super) fn fill_null(s: &[Series]) -> PolarsResult<Series> {
 }
 
 pub(super) fn coalesce(s: &mut [Series]) -> PolarsResult<Series> {
-    coalesce_series(s)
+    coalesce_columns(s)
 }

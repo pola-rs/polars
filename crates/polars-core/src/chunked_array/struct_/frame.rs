@@ -5,6 +5,8 @@ use crate::prelude::StructChunked;
 
 impl DataFrame {
     pub fn into_struct(self, name: PlSmallStr) -> StructChunked {
-        StructChunked::from_series(name, &self.columns).expect("same invariants")
+        // @scalar-opt
+        let series = self.materialized_column_iter().cloned().collect::<Vec<_>>();
+        StructChunked::from_series(name, &series).expect("same invariants")
     }
 }

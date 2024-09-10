@@ -290,15 +290,15 @@ impl StructChunked {
     }
 
     pub fn get_row_encoded_array(&self, options: SortOptions) -> PolarsResult<BinaryArray<i64>> {
-        let s = self.clone().into_series();
-        _get_rows_encoded_arr(&[s], &[options.descending], &[options.nulls_last])
+        let c = self.clone().into_column();
+        _get_rows_encoded_arr(&[c], &[options.descending], &[options.nulls_last])
     }
 
     pub fn get_row_encoded(&self, options: SortOptions) -> PolarsResult<BinaryOffsetChunked> {
-        let s = self.clone().into_series();
+        let c = self.clone().into_column();
         _get_rows_encoded_ca(
             self.name().clone(),
-            &[s],
+            &[c],
             &[options.descending],
             &[options.nulls_last],
         )
@@ -346,8 +346,11 @@ impl StructChunked {
     }
 
     pub fn unnest(self) -> DataFrame {
+        // @scalar-opt
+        let columns = self.fields_as_series().into_iter().map(Column::from).collect();
+
         // SAFETY: invariants for struct are the same
-        unsafe { DataFrame::new_no_checks(self.fields_as_series()) }
+        unsafe { DataFrame::new_no_checks(columns) }
     }
 
     /// Get access to one of this `[StructChunked]`'s fields

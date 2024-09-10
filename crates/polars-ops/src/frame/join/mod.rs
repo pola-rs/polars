@@ -93,8 +93,8 @@ pub trait DataFrameJoinOps: IntoDf {
         args: JoinArgs,
     ) -> PolarsResult<DataFrame> {
         let df_left = self.to_df();
-        let selected_left = df_left.select_series(left_on)?;
-        let selected_right = other.select_series(right_on)?;
+        let selected_left = df_left.select_columns(left_on)?;
+        let selected_right = other.select_columns(right_on)?;
         self._join_impl(other, selected_left, selected_right, args, true, false)
     }
 
@@ -104,8 +104,8 @@ pub trait DataFrameJoinOps: IntoDf {
     fn _join_impl(
         &self,
         other: &DataFrame,
-        mut selected_left: Vec<Series>,
-        mut selected_right: Vec<Series>,
+        mut selected_left: Vec<Column>,
+        mut selected_right: Vec<Column>,
         mut args: JoinArgs,
         _check_rechunk: bool,
         _verbose: bool,
@@ -118,7 +118,7 @@ pub trait DataFrameJoinOps: IntoDf {
         }
 
         // Clear literals if a frame is empty. Otherwise we could get an oob
-        fn clear(s: &mut [Series]) {
+        fn clear(s: &mut [Column]) {
             for s in s.iter_mut() {
                 if s.len() == 1 {
                     *s = s.clear()
@@ -195,8 +195,8 @@ pub trait DataFrameJoinOps: IntoDf {
                 Err(_) => {
                     let (ca_left, ca_right) =
                         make_categoricals_compatible(l.categorical()?, r.categorical()?)?;
-                    *l = ca_left.into_series().with_name(l.name().clone());
-                    *r = ca_right.into_series().with_name(r.name().clone());
+                    *l = ca_left.into_column().with_name(l.name().clone());
+                    *r = ca_right.into_column().with_name(r.name().clone());
                 },
             }
         }
@@ -222,8 +222,8 @@ pub trait DataFrameJoinOps: IntoDf {
 
         // Single keys.
         if selected_left.len() == 1 {
-            let s_left = &selected_left[0];
-            let s_right = &selected_right[0];
+            let s_left = &selected_left[0].as_materialized_series();
+            let s_right = &selected_right[0].as_materialized_series();
             let drop_names: Option<Vec<PlSmallStr>> =
                 if should_coalesce { None } else { Some(vec![]) };
             return match args.how {
@@ -377,8 +377,8 @@ pub trait DataFrameJoinOps: IntoDf {
             #[cfg(feature = "semi_anti_join")]
             JoinType::Anti | JoinType::Semi => self._join_impl(
                 other,
-                vec![lhs_keys],
-                vec![rhs_keys],
+                vec![lhs_keys.into()],
+                vec![rhs_keys.into()],
                 args,
                 _check_rechunk,
                 _verbose,
@@ -513,15 +513,15 @@ trait DataFrameJoinOpsPrivate: IntoDf {
 impl DataFrameJoinOps for DataFrame {}
 impl DataFrameJoinOpsPrivate for DataFrame {}
 
-fn prepare_keys_multiple(s: &[Series], join_nulls: bool) -> PolarsResult<BinaryOffsetChunked> {
+fn prepare_keys_multiple(s: &[Column], join_nulls: bool) -> PolarsResult<BinaryOffsetChunked> {
     let keys = s
         .iter()
         .map(|s| {
             let phys = s.to_physical_repr();
             match phys.dtype() {
-                DataType::Float32 => phys.f32().unwrap().to_canonical().into_series(),
-                DataType::Float64 => phys.f64().unwrap().to_canonical().into_series(),
-                _ => phys.into_owned(),
+                DataType::Float32 => phys.f32().unwrap().to_canonical().into_column(),
+                DataType::Float64 => phys.f64().unwrap().to_canonical().into_column(),
+                _ => phys,
             }
         })
         .collect::<Vec<_>>();

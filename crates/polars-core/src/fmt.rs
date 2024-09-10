@@ -616,8 +616,7 @@ impl Display for DataFrame {
 
                     for i in 0..(half + rest) {
                         let row = self
-                            .columns
-                            .iter()
+                            .materialized_column_iter()
                             .map(|s| s.str_value(i).unwrap())
                             .collect();
 
@@ -630,8 +629,7 @@ impl Display for DataFrame {
                     rows.push(dots);
                     for i in (height - half)..height {
                         let row = self
-                            .columns
-                            .iter()
+                            .materialized_column_iter()
                             .map(|s| s.str_value(i).unwrap())
                             .collect();
 
@@ -644,8 +642,7 @@ impl Display for DataFrame {
                     for i in 0..height {
                         if self.width() > 0 {
                             let row = self
-                                .columns
-                                .iter()
+                                .materialized_column_iter()
                                 .map(|s| s.str_value(i).unwrap())
                                 .collect();
 

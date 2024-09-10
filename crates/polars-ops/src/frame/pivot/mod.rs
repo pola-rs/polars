@@ -232,9 +232,16 @@ fn pivot_impl(
             polars_bail!(ComputeError: "cannot use column name {column} that \
             already exists in the DataFrame. Please rename it prior to calling `pivot`.")
         }
-        let columns_struct = StructChunked::from_series(column.clone(), fields)
-            .unwrap()
-            .into_series();
+        // @scalar-opt
+        let columns_struct = StructChunked::from_series(
+            column.clone(),
+            &fields
+                .iter()
+                .map(|c| c.as_materialized_series().clone())
+                .collect::<Vec<_>>(),
+        )
+        .unwrap()
+        .into_series();
         let mut binding = pivot_df.clone();
         let pivot_df = unsafe { binding.with_column_unchecked(columns_struct) };
         pivot_impl_single_column(
@@ -306,13 +313,13 @@ fn pivot_impl_single_column(
                         First => value_col.agg_first(&groups),
                         Mean => value_col.agg_mean(&groups),
                         Median => value_col.agg_median(&groups),
-                        Count => groups.group_count().into_series(),
+                        Count => groups.group_count().into_column(),
                         Expr(ref expr) => {
                             let name = expr.root_name()?.clone();
                             let mut value_col = value_col.clone();
                             value_col.rename(name);
                             let tmp_df = value_col.into_frame();
-                            let mut aggregated = expr.evaluate(&tmp_df, &groups)?;
+                            let mut aggregated = Column::from(expr.evaluate(&tmp_df, &groups)?);
                             aggregated.rename(value_col_name.clone());
                             aggregated
                         },
@@ -354,7 +361,7 @@ fn pivot_impl_single_column(
                     n_cols,
                     &row_locations,
                     &col_locations,
-                    &value_agg_phys,
+                    value_agg_phys.as_materialized_series(),
                     logical_type,
                     &headers,
                 )

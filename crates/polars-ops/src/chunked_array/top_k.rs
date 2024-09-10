@@ -216,7 +216,7 @@ pub fn top_k(s: &[Series], descending: bool) -> PolarsResult<Series> {
         #[cfg(feature = "dtype-struct")]
         DataType::Struct(_) => {
             // Fallback to more generic impl.
-            top_k_by_impl(k, src, &[src.clone()], vec![descending])
+            top_k_by_impl(k, src, &[src.clone().into()], vec![descending])
         },
         _dt => {
             macro_rules! dispatch {
@@ -229,9 +229,9 @@ pub fn top_k(s: &[Series], descending: bool) -> PolarsResult<Series> {
     }
 }
 
-pub fn top_k_by(s: &[Series], descending: Vec<bool>) -> PolarsResult<Series> {
+pub fn top_k_by(s: &[Column], descending: Vec<bool>) -> PolarsResult<Series> {
     /// Return (k, src, by)
-    fn extract_parameters(s: &[Series]) -> PolarsResult<(usize, &Series, &[Series])> {
+    fn extract_parameters(s: &[Column]) -> PolarsResult<(usize, &Series, &[Column])> {
         let k_s = &s[1];
 
         polars_ensure!(
@@ -243,7 +243,7 @@ pub fn top_k_by(s: &[Series], descending: Vec<bool>) -> PolarsResult<Series> {
             polars_bail!(ComputeError: "`k` must be set for `top_k`")
         };
 
-        let src = &s[0];
+        let src = &s[0].as_materialized_series();
 
         let by = &s[2..];
 
@@ -272,7 +272,7 @@ pub fn top_k_by(s: &[Series], descending: Vec<bool>) -> PolarsResult<Series> {
 fn top_k_by_impl(
     k: usize,
     src: &Series,
-    by: &[Series],
+    by: &[Column],
     descending: Vec<bool>,
 ) -> PolarsResult<Series> {
     if src.is_empty() {

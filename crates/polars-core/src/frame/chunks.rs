@@ -9,12 +9,12 @@ impl TryFrom<(RecordBatch, &ArrowSchema)> for DataFrame {
     type Error = PolarsError;
 
     fn try_from(arg: (RecordBatch, &ArrowSchema)) -> PolarsResult<DataFrame> {
-        let columns: PolarsResult<Vec<Series>> = arg
+        let columns: PolarsResult<Vec<Column>> = arg
             .0
             .columns()
             .iter()
             .zip(arg.1.iter_values())
-            .map(|(arr, field)| Series::try_from((field, arr.clone())))
+            .map(|(arr, field)| Series::try_from((field, arr.clone())).map(Column::from))
             .collect();
 
         DataFrame::new(columns?)
@@ -29,7 +29,11 @@ impl DataFrame {
             let columns = self
                 .get_columns()
                 .iter()
-                .map(|s| s.select_chunk(i))
+                .map(|column| match column {
+                    Column::Series(s) => s.select_chunk(i),
+                    Column::Scalar(s) => s.select_chunk(i),
+                })
+                .map(Column::from)
                 .collect::<Vec<_>>();
 
             DataFrame::new_no_checks(columns)

@@ -36,7 +36,11 @@ pub fn _merge_sorted_dfs(
             let lhs_phys = lhs.to_physical_repr();
             let rhs_phys = rhs.to_physical_repr();
 
-            let out = merge_series(&lhs_phys, &rhs_phys, &merge_indicator)?;
+            let out = Column::from(merge_series(
+                lhs_phys.as_materialized_series(),
+                rhs_phys.as_materialized_series(),
+                &merge_indicator,
+            )?);
             let mut out = out.cast(lhs.dtype()).unwrap();
             out.rename(lhs.name().clone());
             Ok(out)

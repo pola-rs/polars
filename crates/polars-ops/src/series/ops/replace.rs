@@ -179,7 +179,7 @@ fn replace_by_multiple(
         },
     )?;
 
-    let replaced = joined.column("__POLARS_REPLACE_NEW").unwrap();
+    let replaced = joined.column("__POLARS_REPLACE_NEW").unwrap().as_materialized_series();
 
     if replaced.null_count() == 0 {
         return Ok(replaced.clone());
@@ -226,7 +226,7 @@ fn replace_by_multiple_strict(s: &Series, old: Series, new: Series) -> PolarsRes
         .unwrap();
     ensure_all_replaced(mask, s, old_has_null, false)?;
 
-    Ok(replaced.clone())
+    Ok(replaced.as_materialized_series().clone())
 }
 
 // Build replacer dataframe.
@@ -235,11 +235,12 @@ fn create_replacer(mut old: Series, mut new: Series, add_mask: bool) -> PolarsRe
     new.rename(PlSmallStr::from_static("__POLARS_REPLACE_NEW"));
 
     let cols = if add_mask {
-        let mask = Series::new(PlSmallStr::from_static("__POLARS_REPLACE_MASK"), &[true])
+        // @scalar-opt
+        let mask = Column::new(PlSmallStr::from_static("__POLARS_REPLACE_MASK"), &[true])
             .new_from_index(0, new.len());
-        vec![old, new, mask]
+        vec![old.into(), new.into(), mask.into()]
     } else {
-        vec![old, new]
+        vec![old.into(), new.into()]
     };
     let out = unsafe { DataFrame::new_no_checks(cols) };
     Ok(out)

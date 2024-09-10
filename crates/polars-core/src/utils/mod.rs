@@ -141,7 +141,9 @@ impl Container for DataFrame {
     }
 
     fn chunk_lengths(&self) -> impl Iterator<Item = usize> {
-        self.get_columns()[0].chunk_lengths()
+        // @scalar-correctness?
+        // This should return a option
+        self.first_series_column().unwrap().chunk_lengths()
     }
 }
 
@@ -684,7 +686,7 @@ macro_rules! apply_method_physical_numeric {
 macro_rules! df {
     ($($col_name:expr => $slice:expr), + $(,)?) => {
         $crate::prelude::DataFrame::new(vec![
-            $(<$crate::prelude::Series as $crate::prelude::NamedFrom::<_, _>>::new($col_name.into(), $slice),)+
+            $($crate::prelude::Column::from(<$crate::prelude::Series as $crate::prelude::NamedFrom::<_, _>>::new($col_name.into(), $slice)),)+
         ])
     }
 }

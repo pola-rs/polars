@@ -45,7 +45,7 @@ pub use crate::frame::explode::UnpivotArgsIR;
 pub(crate) use crate::frame::group_by::aggregations::*;
 #[cfg(feature = "algorithm_group_by")]
 pub use crate::frame::group_by::*;
-pub use crate::frame::{DataFrame, UniqueKeepStrategy};
+pub use crate::frame::{DataFrame, Column, UniqueKeepStrategy};
 pub use crate::hashing::VecHash;
 pub use crate::named_from::{NamedFrom, NamedFromOwned};
 pub use crate::scalar::Scalar;

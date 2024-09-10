@@ -205,8 +205,8 @@ where
 pub(super) fn iejoin_par(
     left: &DataFrame,
     right: &DataFrame,
-    selected_left: Vec<Series>,
-    selected_right: Vec<Series>,
+    selected_left: Vec<Column>,
+    selected_right: Vec<Column>,
     options: &IEJoinOptions,
     suffix: Option<PlSmallStr>,
     slice: Option<(i64, usize)>,
@@ -221,12 +221,12 @@ pub(super) fn iejoin_par(
         .with_nulls_last(false)
         .with_order_descending(l1_descending);
 
-    let sl = &selected_left[0];
+    let sl = &selected_left[0].as_materialized_series();
     let l1_s_l = sl
         .arg_sort(l1_sort_options)
         .slice(sl.null_count() as i64, sl.len() - sl.null_count());
 
-    let sr = &selected_right[0];
+    let sr = &selected_right[0].as_materialized_series();
     let l1_s_r = sr
         .arg_sort(l1_sort_options)
         .slice(sr.null_count() as i64, sr.len() - sr.null_count());
@@ -282,11 +282,11 @@ pub(super) fn iejoin_par(
                 (
                     selected_left
                         .iter()
-                        .map(|s| s.take_unchecked(l_l1_idx))
+                        .map(|s| s.as_materialized_series().take_unchecked(l_l1_idx).into())
                         .collect_vec(),
                     selected_right
                         .iter()
-                        .map(|s| s.take_unchecked(r_l1_idx))
+                        .map(|s| s.as_materialized_series().take_unchecked(r_l1_idx).into())
                         .collect_vec(),
                 )
             };
@@ -342,8 +342,8 @@ pub(super) fn iejoin_par(
 pub(super) fn iejoin(
     left: &DataFrame,
     right: &DataFrame,
-    selected_left: Vec<Series>,
-    selected_right: Vec<Series>,
+    selected_left: Vec<Column>,
+    selected_right: Vec<Column>,
     options: &IEJoinOptions,
     suffix: Option<PlSmallStr>,
     slice: Option<(i64, usize)>,
@@ -378,8 +378,8 @@ unsafe fn materialize_join(
 /// Based on Khayyat et al. 2015, "Lightning Fast and Space Efficient Inequality Joins"
 /// and extended to work with duplicate values.
 fn iejoin_tuples(
-    selected_left: Vec<Series>,
-    selected_right: Vec<Series>,
+    selected_left: Vec<Column>,
+    selected_right: Vec<Column>,
     options: &IEJoinOptions,
     slice: Option<(i64, usize)>,
 ) -> PolarsResult<(IdxCa, IdxCa)> {
@@ -411,14 +411,14 @@ fn iejoin_tuples(
     let l1_descending = matches!(op1, InequalityOperator::Gt | InequalityOperator::GtEq);
     let l2_descending = matches!(op2, InequalityOperator::Lt | InequalityOperator::LtEq);
 
-    let mut x = selected_left[0].to_physical_repr().into_owned();
+    let mut x = selected_left[0].to_physical_repr();
     let left_height = x.len();
 
     x.extend(&selected_right[0].to_physical_repr())?;
     // Rechunk because we will gather.
     let x = x.rechunk();
 
-    let mut y = selected_left[1].to_physical_repr().into_owned();
+    let mut y = selected_left[1].to_physical_repr();
     y.extend(&selected_right[1].to_physical_repr())?;
     // Rechunk because we will gather.
     let y = y.rechunk();
@@ -432,7 +432,7 @@ fn iejoin_tuples(
         .arg_sort(l1_sort_options)
         .slice(x.null_count() as i64, x.len() - x.null_count());
 
-    let y_ordered_by_x = unsafe { y.take_unchecked(&l1_order) };
+    let y_ordered_by_x = unsafe { y.as_materialized_series().take_unchecked(&l1_order) };
     let l2_sort_options = SortOptions::default()
         .with_maintain_order(true)
         .with_nulls_last(false)
@@ -455,7 +455,7 @@ fn iejoin_tuples(
             l2_order,
             op1,
             op2,
-            x,
+            x.as_materialized_series().clone(),
             y_ordered_by_x,
             left_height
         )

@@ -108,7 +108,7 @@ impl DataFrame {
         let columns = self.get_columns();
         POOL.install(|| {
             columns.par_iter().enumerate().try_for_each(|(col_idx, s)| {
-                let s = s.cast(&N::get_dtype())?;
+                let s = s.as_materialized_series().cast(&N::get_dtype())?;
                 let s = match s.dtype() {
                     DataType::Float32 => {
                         let ca = s.f32().unwrap();

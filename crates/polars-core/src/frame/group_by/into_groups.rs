@@ -320,7 +320,7 @@ impl IntoGroupsProxy for ListChunked {
         sorted: bool,
     ) -> PolarsResult<GroupsProxy> {
         multithreaded &= POOL.current_num_threads() > 1;
-        let by = &[self.clone().into_series()];
+        let by = &[self.clone().into_column()];
         let ca = if multithreaded {
             encode_rows_vertical_par_unordered(by).unwrap()
         } else {
