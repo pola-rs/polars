@@ -1,4 +1,5 @@
 use arrow::legacy::error::PolarsResult;
+use either::Either;
 
 use super::*;
 use crate::dsl::Expr;
@@ -16,8 +17,8 @@ fn check_join_keys(keys: &[Expr]) -> PolarsResult<()> {
     Ok(())
 }
 pub fn resolve_join(
-    input_left: Arc<DslPlan>,
-    input_right: Arc<DslPlan>,
+    input_left: Either<Arc<DslPlan>, Node>,
+    input_right: Either<Arc<DslPlan>, Node>,
     left_on: Vec<Expr>,
     right_on: Vec<Expr>,
     predicates: Vec<Expr>,
@@ -26,7 +27,13 @@ pub fn resolve_join(
 ) -> PolarsResult<Node> {
     if !predicates.is_empty() {
         debug_assert!(left_on.is_empty() && right_on.is_empty());
-        return resolve_join_where(input_left, input_right, predicates, options, ctxt);
+        return resolve_join_where(
+            input_left.unwrap_left(),
+            input_right.unwrap_left(),
+            predicates,
+            options,
+            ctxt,
+        );
     }
 
     let owned = Arc::unwrap_or_clone;
@@ -62,10 +69,12 @@ pub fn resolve_join(
         );
     }
 
-    let input_left =
-        to_alp_impl(owned(input_left), ctxt).map_err(|e| e.context(failed_input!(join left)))?;
-    let input_right =
-        to_alp_impl(owned(input_right), ctxt).map_err(|e| e.context(failed_input!(join, right)))?;
+    let input_left = input_left.map_right(Ok).right_or_else(|input| {
+        to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_input!(join left)))
+    })?;
+    let input_right = input_right.map_right(Ok).right_or_else(|input| {
+        to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_input!(join right)))
+    })?;
 
     let schema_left = ctxt.lp_arena.get(input_left).schema(ctxt.lp_arena);
     let schema_right = ctxt.lp_arena.get(input_right).schema(ctxt.lp_arena);
@@ -129,7 +138,6 @@ fn resolve_join_where(
     ctxt: &mut DslConversionContext,
 ) -> PolarsResult<Node> {
     check_join_keys(&predicates)?;
-
     for e in &predicates {
         let no_binary_comparisons = e
             .into_iter()
@@ -138,15 +146,40 @@ fn resolve_join_where(
                 _ => false,
             })
             .count();
-        polars_ensure!(no_binary_comparisons == 1, InvalidOperation: "only 1 binary comparison allowed as join condition")
+        polars_ensure!(no_binary_comparisons == 1, InvalidOperation: "only 1 binary comparison allowed as join condition");
     }
+    let input_left = to_alp_impl(Arc::unwrap_or_clone(input_left), ctxt)
+        .map_err(|e| e.context(failed_input!(join left)))?;
+    let input_right = to_alp_impl(Arc::unwrap_or_clone(input_right), ctxt)
+        .map_err(|e| e.context(failed_input!(join left)))?;
+
+    let schema_left = ctxt.lp_arena.get(input_left).schema(ctxt.lp_arena);
+    let schema_right = ctxt
+        .lp_arena
+        .get(input_right)
+        .schema(ctxt.lp_arena)
+        .into_owned();
 
     let owned = |e: Arc<Expr>| (*e).clone();
 
-    // Partition to:
+    // We do a few things
+    // First we partition to:
     // - IEjoin supported inequality predicates
     // - equality predicates
     // - remaining predicates
+    // And then decide to which join we dispatch.
+    // The remaining predicates will be applied as filter.
+
+    // What make things a bit complicated is that duplicate join names
+    // are referred to in the query with the name post-join, but on joins
+    // we refer to the names pre-join (e.g. without suffix). So there is some
+    // bookkeeping.
+    //
+    // - First we determine which side of the binary expression refers to the left and right table
+    // and make sure that lhs of the binary expr, maps to the lhs of the join tables and vice versa.
+    // Next we ensure the suffixes are removed when we partition.
+    //
+    // If a predicate has to be applied as post-join filter, we put the suffixes back if needed.
     let mut ie_left_on = vec![];
     let mut ie_right_on = vec![];
     let mut ie_op = vec![];
@@ -166,37 +199,110 @@ fn resolve_join_where(
         }
     }
 
-    for pred in predicates.into_iter() {
-        let Expr::BinaryExpr { left, op, right } = pred.clone() else {
-            polars_bail!(InvalidOperation: "can only join on binary expressions")
-        };
-        polars_ensure!(op.is_comparison(), InvalidOperation: "expected comparison in join predicate");
-
-        if let Some(ie_op_) = to_inequality_operator(&op) {
-            // We already have an IEjoin or an Inner join, push to remaining
-            if ie_op.len() >= 2 || !eq_right_on.is_empty() {
-                remaining_preds.push(Expr::BinaryExpr { left, op, right })
-            } else {
-                ie_left_on.push(owned(left));
-                ie_right_on.push(owned(right));
-                ie_op.push(ie_op_)
-            }
-        } else if matches!(op, Operator::Eq) {
-            eq_left_on.push(owned(left));
-            eq_right_on.push(owned(right));
-        } else {
-            remaining_preds.push(pred);
-        }
+    fn rename_expr(e: Expr, old: &str, new: &str) -> Expr {
+        e.map_expr(|e| match e {
+            Expr::Column(name) if name.as_str() == old => Expr::Column(new.into()),
+            e => e,
+        })
     }
 
-    // Now choose a primary join and do the remaining predicates as filters
-    fn to_binary(l: Expr, op: Operator, r: Expr) -> Expr {
+    fn determine_order_and_pre_join_names(
+        left: Expr,
+        op: Operator,
+        right: Expr,
+        schema_left: &Schema,
+        schema_right: &Schema,
+        suffix: &str,
+    ) -> PolarsResult<(Expr, Operator, Expr)> {
+        let left_names = expr_to_leaf_column_names_iter(&left).collect::<PlHashSet<_>>();
+        let right_names = expr_to_leaf_column_names_iter(&right).collect::<PlHashSet<_>>();
+
+        // All left should be in the left schema.
+        let (left_names, right_names, left, op, mut right) =
+            if !left_names.iter().all(|n| schema_left.contains(n)) {
+                // If all right names are in left schema -> swap
+                if right_names.iter().all(|n| schema_left.contains(n)) {
+                    (right_names, left_names, right, op.swap_operands(), left)
+                } else {
+                    polars_bail!(InvalidOperation: "got ambiguous column names in 'join_where'")
+                }
+            } else {
+                (left_names, right_names, left, op, right)
+            };
+        for name in &left_names {
+            polars_ensure!(!right_names.contains(name.as_str()), InvalidOperation: "got ambiguous column names in 'join_where'\n\n\
+            Note that you should refer to the column names as they are post-join operation.")
+        }
+
+        // Now we know left belongs to the left schema, rhs suffixes are dealt with.
+        for post_join_name in right_names {
+            if let Some(pre_join_name) = post_join_name.strip_suffix(suffix) {
+                // Name is both sides, so a suffix will be added by the join.
+                // We rename
+                if schema_right.contains(pre_join_name) && schema_left.contains(pre_join_name) {
+                    right = rename_expr(right, &post_join_name, pre_join_name);
+                }
+            }
+        }
+        Ok((left, op, right))
+    }
+
+    // Make it a binary comparison and ensure the columns refer to post join names.
+    fn to_binary_post_join(
+        l: Expr,
+        op: Operator,
+        mut r: Expr,
+        schema_right: &Schema,
+        suffix: &str,
+    ) -> Expr {
+        let names = expr_to_leaf_column_names_iter(&r).collect::<Vec<_>>();
+        for pre_join_name in &names {
+            if !schema_right.contains(pre_join_name) {
+                let post_join_name = _join_suffix_name(pre_join_name, suffix);
+                r = rename_expr(r, pre_join_name, post_join_name.as_str());
+            }
+        }
+
         Expr::BinaryExpr {
             left: Arc::from(l),
             op,
             right: Arc::from(r),
         }
     }
+
+    let suffix = options.args.suffix().clone();
+    for pred in predicates.into_iter() {
+        let Expr::BinaryExpr { left, op, right } = pred.clone() else {
+            polars_bail!(InvalidOperation: "can only join on binary expressions")
+        };
+        polars_ensure!(op.is_comparison(), InvalidOperation: "expected comparison in join predicate");
+        let (left, op, right) = determine_order_and_pre_join_names(
+            owned(left),
+            op,
+            owned(right),
+            &schema_left,
+            &schema_right,
+            &suffix,
+        )?;
+
+        if let Some(ie_op_) = to_inequality_operator(&op) {
+            // We already have an IEjoin or an Inner join, push to remaining
+            if ie_op.len() >= 2 || !eq_right_on.is_empty() {
+                remaining_preds.push(to_binary_post_join(left, op, right, &schema_right, &suffix))
+            } else {
+                ie_left_on.push(left);
+                ie_right_on.push(right);
+                ie_op.push(ie_op_)
+            }
+        } else if matches!(op, Operator::Eq) {
+            eq_left_on.push(left);
+            eq_right_on.push(right);
+        } else {
+            remaining_preds.push(to_binary_post_join(left, op, right, &schema_right, &suffix));
+        }
+    }
+
+    // Now choose a primary join and do the remaining predicates as filters
     // Add the ie predicates to the remaining predicates buffer so that they will be executed in the
     // filter node.
     fn ie_predicates_to_remaining(
@@ -204,13 +310,15 @@ fn resolve_join_where(
         ie_left_on: Vec<Expr>,
         ie_right_on: Vec<Expr>,
         ie_op: Vec<InequalityOperator>,
+        schema_right: &Schema,
+        suffix: &str,
     ) {
         for ((l, op), r) in ie_left_on
             .into_iter()
             .zip(ie_op.into_iter())
             .zip(ie_right_on.into_iter())
         {
-            remaining_preds.push(to_binary(l, op.into(), r))
+            remaining_preds.push(to_binary_post_join(l, op.into(), r, schema_right, suffix))
         }
     }
 
@@ -218,8 +326,8 @@ fn resolve_join_where(
         // We found one or more  equality predicates. Go into a default equi join
         // as those are cheapest on avg.
         let join_node = resolve_join(
-            input_left,
-            input_right,
+            Either::Right(input_left),
+            Either::Right(input_right),
             eq_left_on,
             eq_right_on,
             vec![],
@@ -227,7 +335,14 @@ fn resolve_join_where(
             ctxt,
         )?;
 
-        ie_predicates_to_remaining(&mut remaining_preds, ie_left_on, ie_right_on, ie_op);
+        ie_predicates_to_remaining(
+            &mut remaining_preds,
+            ie_left_on,
+            ie_right_on,
+            ie_op,
+            &schema_right,
+            &suffix,
+        );
         join_node
     }
     //  TODO! once we support single IEjoin predicates, we must add a branch for the singe ie_pred case.
@@ -240,8 +355,8 @@ fn resolve_join_where(
         });
 
         let join_node = resolve_join(
-            input_left,
-            input_right,
+            Either::Right(input_left),
+            Either::Right(input_right),
             ie_left_on[..2].to_vec(),
             ie_right_on[..2].to_vec(),
             vec![],
@@ -258,7 +373,7 @@ fn resolve_join_where(
             let r = ie_left_on.pop().unwrap();
             let op = ie_op.pop().unwrap();
 
-            remaining_preds.push(to_binary(l, op.into(), r))
+            remaining_preds.push(to_binary_post_join(l, op.into(), r, &schema_right, &suffix))
         }
         join_node
     } else {
@@ -268,8 +383,8 @@ fn resolve_join_where(
         opts.args.how = JoinType::Cross;
 
         let join_node = resolve_join(
-            input_left,
-            input_right,
+            Either::Right(input_left),
+            Either::Right(input_right),
             vec![],
             vec![],
             vec![],
@@ -277,7 +392,14 @@ fn resolve_join_where(
             ctxt,
         )?;
         // TODO: This can be removed once we support the single IEjoin.
-        ie_predicates_to_remaining(&mut remaining_preds, ie_left_on, ie_right_on, ie_op);
+        ie_predicates_to_remaining(
+            &mut remaining_preds,
+            ie_left_on,
+            ie_right_on,
+            ie_op,
+            &schema_right,
+            &suffix,
+        );
         join_node
     };
 
@@ -300,8 +422,6 @@ fn resolve_join_where(
         .get(*input_left)
         .schema(ctxt.lp_arena)
         .into_owned();
-
-    let suffix = options.args.suffix();
 
     let mut last_node = join_node;
 

@@ -15,7 +15,14 @@ if TYPE_CHECKING:
     from hypothesis.strategies import DrawFn, SearchStrategy
 
 
-def test_self_join() -> None:
+@pytest.mark.parametrize(
+    ("pred_1", "pred_2"),
+    [
+        (pl.col("time") > pl.col("time_right"), pl.col("cost") < pl.col("cost_right")),
+        (pl.col("time_right") < pl.col("time"), pl.col("cost_right") > pl.col("cost")),
+    ],
+)
+def test_self_join(pred_1: pl.Expr, pred_2: pl.Expr) -> None:
     west = pl.DataFrame(
         {
             "t_id": [404, 498, 676, 742],
@@ -25,9 +32,7 @@ def test_self_join() -> None:
         }
     )
 
-    actual = west.join_where(
-        west, pl.col("time") > pl.col("time"), pl.col("cost") < pl.col("cost")
-    )
+    actual = west.join_where(west, pred_1, pred_2)
 
     expected = pl.DataFrame(
         {
@@ -223,7 +228,7 @@ def test_join_where_predicates() -> None:
             right.lazy(),
             pl.col("time") >= pl.col("start_time"),
             pl.col("time") < pl.col("end_time"),
-            pl.col("group") == pl.col("group"),
+            pl.col("group_right") == pl.col("group"),
         )
         .select("id", "id_right", "group")
         .sort("id")
@@ -252,7 +257,7 @@ def test_join_where_predicates() -> None:
             right.lazy(),
             pl.col("time") >= pl.col("start_time"),
             pl.col("time") < pl.col("end_time"),
-            pl.col("group") != pl.col("group"),
+            pl.col("group") != pl.col("group_right"),
         )
         .select("id", "id_right", "group")
         .sort("id")
@@ -279,7 +284,7 @@ def test_join_where_predicates() -> None:
         left.lazy()
         .join_where(
             right.lazy(),
-            pl.col("group") != pl.col("group"),
+            pl.col("group") != pl.col("group_right"),
         )
         .select("id", "group", "group_right")
         .sort("id")
@@ -443,10 +448,10 @@ def test_ie_join_with_floats(
     assert_frame_equal(actual, expected, check_row_order=False, check_exact=True)
 
 
-def test_raise_on_suffixed_predicate_18604() -> None:
+def test_raise_on_ambiguous_name() -> None:
     df = pl.DataFrame({"id": [1, 2]})
-    with pytest.raises(pl.exceptions.ColumnNotFoundError):
-        df.join_where(df, pl.col("id") >= pl.col("id_right"))
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        df.join_where(df, pl.col("id") >= pl.col("id"))
 
 
 def test_raise_on_multiple_binary_comparisons() -> None:

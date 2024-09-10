@@ -558,8 +558,8 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             options,
         } => {
             return join::resolve_join(
-                input_left,
-                input_right,
+                Either::Left(input_left),
+                Either::Left(input_right),
                 left_on,
                 right_on,
                 predicates,
