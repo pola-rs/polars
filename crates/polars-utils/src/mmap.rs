@@ -62,9 +62,7 @@ mod private {
     }
 
     impl MemSlice {
-        pub const fn empty() -> Self {
-            Self::from_static(&[])
-        }
+        pub const EMPTY: Self = Self::from_static(&[]);
 
         /// Copy the contents into a new owned `Vec`
         #[inline(always)]

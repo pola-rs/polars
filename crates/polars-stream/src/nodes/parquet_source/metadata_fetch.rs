@@ -82,7 +82,8 @@ impl ParquetSourceNode {
                     );
 
                     if path_idx == 0 {
-                        return Ok((0, byte_source, MemSlice::from_slice(&[])));
+                        let metadata_bytes = MemSlice::EMPTY;
+                        return Ok((0, byte_source, metadata_bytes));
                     }
 
                     let (metadata_bytes, maybe_full_bytes) =
