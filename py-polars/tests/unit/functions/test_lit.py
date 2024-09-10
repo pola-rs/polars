@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 )
 def test_lit_list_input(input: list[Any]) -> None:
     df = pl.DataFrame({"a": [1, 2]})
-    result = df.with_columns(pl.lit(input))
+    result = df.with_columns(pl.lit(input).first())
     expected = pl.DataFrame({"a": [1, 2], "literal": [input, input]})
     assert_frame_equal(result, expected)
 
@@ -41,7 +41,7 @@ def test_lit_list_input(input: list[Any]) -> None:
 )
 def test_lit_tuple_input(input: tuple[Any, ...]) -> None:
     df = pl.DataFrame({"a": [1, 2]})
-    result = df.with_columns(pl.lit(input))
+    result = df.with_columns(pl.lit(input).first())
 
     expected = pl.DataFrame({"a": [1, 2], "literal": [list(input), list(input)]})
     assert_frame_equal(result, expected)

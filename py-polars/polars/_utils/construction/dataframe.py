@@ -63,7 +63,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars.polars import PyDataFrame
 
 if TYPE_CHECKING:
-    from polars import DataFrame, Series
+    from polars import DataFrame, Expr, Series
     from polars._typing import (
         Orientation,
         PolarsDataType,
@@ -1212,15 +1212,22 @@ def arrow_to_pydf(
     if rechunk:
         pydf = pydf.rechunk()
 
+    def broadcastable_s(s: Series, name: str) -> Expr:
+        if s.len() == 1:
+            return F.lit(s).first().alias(name)
+        return F.lit(s).alias(name)
+
     reset_order = False
     if len(dictionary_cols) > 0:
         df = wrap_df(pydf)
-        df = df.with_columns([F.lit(s).alias(s.name) for s in dictionary_cols.values()])
+        df = df.with_columns(
+            [broadcastable_s(s, name) for s in dictionary_cols.values()]
+        )
         reset_order = True
 
     if len(struct_cols) > 0:
         df = wrap_df(pydf)
-        df = df.with_columns([F.lit(s).alias(s.name) for s in struct_cols.values()])
+        df = df.with_columns([broadcastable_s(s, name) for s in struct_cols.values()])
         reset_order = True
 
     if reset_order:
