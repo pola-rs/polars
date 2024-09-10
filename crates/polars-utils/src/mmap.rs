@@ -62,6 +62,10 @@ mod private {
     }
 
     impl MemSlice {
+        pub const fn empty() -> Self {
+            Self::from_static(&[])
+        }
+
         /// Copy the contents into a new owned `Vec`
         #[inline(always)]
         pub fn to_vec(self) -> Vec<u8> {
@@ -101,8 +105,9 @@ mod private {
 
         /// Construct a `MemSlice` that simply wraps around a `&[u8]`.
         #[inline]
-        pub fn from_slice(slice: &'static [u8]) -> Self {
-            Self::from_bytes(bytes::Bytes::from_static(slice))
+        pub const fn from_static(slice: &'static [u8]) -> Self {
+            let inner = MemSliceInner::Bytes(bytes::Bytes::from_static(slice));
+            Self { slice, inner }
         }
 
         /// Attempt to prefetch the memory belonging to to this [`MemSlice`]
@@ -170,7 +175,7 @@ impl MemReader {
     /// slice outlives the returned `MemSlice`.
     #[inline]
     pub fn from_slice(slice: &'static [u8]) -> Self {
-        Self::new(MemSlice::from_slice(slice))
+        Self::new(MemSlice::from_static(slice))
     }
 
     #[inline(always)]
@@ -377,8 +382,9 @@ mod tests {
             let slice = vec.as_slice();
             let ptr = slice.as_ptr();
 
-            let mem_slice =
-                MemSlice::from_slice(unsafe { std::mem::transmute::<&[u8], &'static [u8]>(slice) });
+            let mem_slice = MemSlice::from_static(unsafe {
+                std::mem::transmute::<&[u8], &'static [u8]>(slice)
+            });
             let ptr_out = mem_slice.as_ptr();
 
             assert_eq!(ptr_out, ptr);
@@ -393,8 +399,9 @@ mod tests {
             let vec = vec![1u8, 2, 3, 4, 5];
             let slice = vec.as_slice();
 
-            let mem_slice =
-                MemSlice::from_slice(unsafe { std::mem::transmute::<&[u8], &'static [u8]>(slice) });
+            let mem_slice = MemSlice::from_static(unsafe {
+                std::mem::transmute::<&[u8], &'static [u8]>(slice)
+            });
 
             let out = &*mem_slice.slice(3..5);
             assert_eq!(out, &slice[3..5]);

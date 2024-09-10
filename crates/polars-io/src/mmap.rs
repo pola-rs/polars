@@ -87,7 +87,7 @@ impl std::ops::Deref for ReaderBytes<'_> {
 impl ReaderBytes<'static> {
     pub fn into_mem_slice(self) -> MemSlice {
         match self {
-            ReaderBytes::Borrowed(v) => MemSlice::from_slice(v),
+            ReaderBytes::Borrowed(v) => MemSlice::from_static(v),
             ReaderBytes::Owned(v) => MemSlice::from_vec(v),
             ReaderBytes::Mapped(v, _) => MemSlice::from_mmap(Arc::new(v)),
         }
