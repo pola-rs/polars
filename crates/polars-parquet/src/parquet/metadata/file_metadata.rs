@@ -2,16 +2,16 @@ use parquet_format_safe::ColumnOrder as TColumnOrder;
 
 use super::column_order::ColumnOrder;
 use super::schema_descriptor::SchemaDescriptor;
-use super::RowGroupMetaData;
+use super::RowGroupMetadata;
 use crate::parquet::error::ParquetError;
 use crate::parquet::metadata::get_sort_order;
 pub use crate::parquet::thrift_format::KeyValue;
 
 /// Metadata for a Parquet file.
-// This is almost equal to [`parquet_format_safe::FileMetaData`] but contains the descriptors,
+// This is almost equal to [`parquet_format_safe::FileMetadata`] but contains the descriptors,
 // which are crucial to deserialize pages.
 #[derive(Debug)]
-pub struct FileMetaData {
+pub struct FileMetadata {
     /// version of this file.
     pub version: i32,
     /// number of rows in the file.
@@ -26,7 +26,7 @@ pub struct FileMetaData {
     /// ```
     pub created_by: Option<String>,
     /// The row groups of this file
-    pub row_groups: Vec<RowGroupMetaData>,
+    pub row_groups: Vec<RowGroupMetadata>,
     /// key_value_metadata of this file.
     pub key_value_metadata: Option<Vec<KeyValue>>,
     /// schema descriptor.
@@ -41,7 +41,7 @@ pub struct FileMetaData {
     pub column_orders: Option<Vec<ColumnOrder>>,
 }
 
-impl FileMetaData {
+impl FileMetadata {
     /// Returns the [`SchemaDescriptor`] that describes schema of this file.
     pub fn schema(&self) -> &SchemaDescriptor {
         &self.schema_descr
@@ -61,23 +61,23 @@ impl FileMetaData {
             .unwrap_or(ColumnOrder::Undefined)
     }
 
-    /// Deserializes [`crate::parquet::thrift_format::FileMetaData`] into this struct
+    /// Deserializes [`crate::parquet::thrift_format::FileMetadata`] into this struct
     pub fn try_from_thrift(
-        metadata: parquet_format_safe::FileMetaData,
+        metadata: parquet_format_safe::FileMetadata,
     ) -> Result<Self, ParquetError> {
         let schema_descr = SchemaDescriptor::try_from_thrift(&metadata.schema)?;
 
         let row_groups = metadata
             .row_groups
             .into_iter()
-            .map(|rg| RowGroupMetaData::try_from_thrift(&schema_descr, rg))
+            .map(|rg| RowGroupMetadata::try_from_thrift(&schema_descr, rg))
             .collect::<Result<_, ParquetError>>()?;
 
         let column_orders = metadata
             .column_orders
             .map(|orders| parse_column_orders(&orders, &schema_descr));
 
-        Ok(FileMetaData {
+        Ok(FileMetadata {
             version: metadata.version,
             num_rows: metadata.num_rows.try_into()?,
             created_by: metadata.created_by,

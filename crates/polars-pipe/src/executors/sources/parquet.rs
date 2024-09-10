@@ -10,7 +10,7 @@ use polars_core::error::*;
 use polars_core::prelude::Series;
 use polars_core::POOL;
 use polars_io::cloud::CloudOptions;
-use polars_io::parquet::metadata::FileMetaDataRef;
+use polars_io::parquet::metadata::FileMetadataRef;
 use polars_io::parquet::read::{BatchedParquetReader, ParquetOptions, ParquetReader};
 use polars_io::path_utils::is_cloud_url;
 use polars_io::pl_async::get_runtime;
@@ -41,7 +41,7 @@ pub struct ParquetSource {
     file_options: FileScanOptions,
     #[allow(dead_code)]
     cloud_options: Option<CloudOptions>,
-    metadata: Option<FileMetaDataRef>,
+    metadata: Option<FileMetadataRef>,
     file_info: FileInfo,
     hive_parts: Option<Arc<Vec<HivePartitions>>>,
     verbose: bool,
@@ -252,7 +252,7 @@ impl ParquetSource {
         sources: ScanSources,
         options: ParquetOptions,
         cloud_options: Option<CloudOptions>,
-        metadata: Option<FileMetaDataRef>,
+        metadata: Option<FileMetadataRef>,
         file_options: FileScanOptions,
         file_info: FileInfo,
         hive_parts: Option<Arc<Vec<HivePartitions>>>,

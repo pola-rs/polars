@@ -17,13 +17,13 @@ use polars_expr::prelude::PhysicalExpr;
 use polars_io::cloud::CloudOptions;
 use polars_io::predicates::PhysicalIoExpr;
 use polars_io::prelude::_internal::read_this_row_group;
-use polars_io::prelude::{FileMetaData, ParquetOptions};
+use polars_io::prelude::{FileMetadata, ParquetOptions};
 use polars_io::utils::byte_source::{
     ByteSource, DynByteSource, DynByteSourceBuilder, MemSliceByteSource,
 };
 use polars_io::utils::slice::SplitSlicePosition;
 use polars_io::{is_cloud_url, RowIndex};
-use polars_parquet::read::RowGroupMetaData;
+use polars_parquet::read::RowGroupMetadata;
 use polars_plan::plans::hive::HivePartitions;
 use polars_plan::plans::FileInfo;
 use polars_plan::prelude::FileScanOptions;
@@ -540,7 +540,7 @@ impl ParquetSourceNode {
             usize,
             usize,
             Arc<DynByteSource>,
-            FileMetaData,
+            FileMetadata,
             usize,
         )>,
         task_handles_ext::AbortOnDropHandle<PolarsResult<()>>,
@@ -1007,7 +1007,7 @@ struct RowGroupData {
     row_offset: usize,
     slice: Option<(usize, usize)>,
     file_max_row_group_height: usize,
-    row_group_metadata: RowGroupMetaData,
+    row_group_metadata: RowGroupMetadata,
     shared_file_state: Arc<tokio::sync::OnceCell<SharedFileState>>,
 }
 
@@ -1016,7 +1016,7 @@ struct RowGroupDataFetcher {
         usize,
         usize,
         Arc<DynByteSource>,
-        FileMetaData,
+        FileMetadata,
         usize,
     )>,
     use_statistics: bool,
@@ -1028,7 +1028,7 @@ struct RowGroupDataFetcher {
     memory_prefetch_func: fn(&[u8]) -> (),
     current_path_index: usize,
     current_byte_source: Arc<DynByteSource>,
-    current_row_groups: std::vec::IntoIter<RowGroupMetaData>,
+    current_row_groups: std::vec::IntoIter<RowGroupMetadata>,
     current_row_group_idx: usize,
     current_max_row_group_height: usize,
     current_row_offset: usize,
@@ -1731,7 +1731,7 @@ async fn read_parquet_metadata_bytes(
 }
 
 fn get_row_group_byte_ranges(
-    row_group_metadata: &RowGroupMetaData,
+    row_group_metadata: &RowGroupMetadata,
 ) -> impl ExactSizeIterator<Item = std::ops::Range<usize>> + '_ {
     row_group_metadata
         .byte_ranges_iter()
@@ -1739,7 +1739,7 @@ fn get_row_group_byte_ranges(
 }
 
 fn get_row_group_byte_ranges_for_projection<'a>(
-    row_group_metadata: &'a RowGroupMetaData,
+    row_group_metadata: &'a RowGroupMetadata,
     columns: &'a [PlSmallStr],
 ) -> impl Iterator<Item = std::ops::Range<usize>> + 'a {
     columns.iter().flat_map(|col_name| {
@@ -1756,7 +1756,7 @@ fn get_row_group_byte_ranges_for_projection<'a>(
 /// dtype. There are no ordering requirements and extra columns are permitted.
 fn ensure_metadata_has_projected_fields(
     projected_fields: &[polars_core::prelude::ArrowField],
-    metadata: &FileMetaData,
+    metadata: &FileMetadata,
 ) -> PolarsResult<()> {
     let schema = polars_parquet::arrow::read::infer_schema(metadata)?;
 

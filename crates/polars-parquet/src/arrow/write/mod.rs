@@ -38,7 +38,7 @@ pub use utils::write_def_levels;
 pub use crate::parquet::compression::{BrotliLevel, CompressionOptions, GzipLevel, ZstdLevel};
 pub use crate::parquet::encoding::Encoding;
 pub use crate::parquet::metadata::{
-    Descriptor, FileMetaData, KeyValue, SchemaDescriptor, ThriftFileMetaData,
+    Descriptor, FileMetadata, KeyValue, SchemaDescriptor, ThriftFileMetadata,
 };
 pub use crate::parquet::page::{CompressedDataPage, CompressedPage, Page};
 use crate::parquet::schema::types::PrimitiveType as ParquetPrimitiveType;

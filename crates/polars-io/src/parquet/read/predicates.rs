@@ -1,6 +1,6 @@
 use polars_core::prelude::*;
 use polars_parquet::read::statistics::{deserialize, Statistics};
-use polars_parquet::read::RowGroupMetaData;
+use polars_parquet::read::RowGroupMetadata;
 
 use crate::predicates::{BatchStats, ColumnStats, PhysicalIoExpr};
 
@@ -17,7 +17,7 @@ impl ColumnStats {
 
 /// Collect the statistics in a row-group
 pub(crate) fn collect_statistics(
-    md: &RowGroupMetaData,
+    md: &RowGroupMetadata,
     schema: &ArrowSchema,
 ) -> PolarsResult<Option<BatchStats>> {
     // TODO! fix this performance. This is a full sequential scan.
@@ -47,7 +47,7 @@ pub(crate) fn collect_statistics(
 
 pub fn read_this_row_group(
     predicate: Option<&dyn PhysicalIoExpr>,
-    md: &RowGroupMetaData,
+    md: &RowGroupMetadata,
     schema: &ArrowSchema,
 ) -> PolarsResult<bool> {
     if let Some(pred) = predicate {
