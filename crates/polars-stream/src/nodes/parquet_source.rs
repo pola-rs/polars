@@ -21,7 +21,7 @@ use polars_io::utils::byte_source::{
     ByteSource, DynByteSource, DynByteSourceBuilder, MemSliceByteSource,
 };
 use polars_io::utils::slice::SplitSlicePosition;
-use polars_io::{is_cloud_url, RowIndex};
+use polars_io::RowIndex;
 use polars_parquet::read::RowGroupMetadata;
 use polars_plan::plans::hive::HivePartitions;
 use polars_plan::plans::{FileInfo, ScanSources};
