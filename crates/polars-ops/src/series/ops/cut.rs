@@ -137,7 +137,13 @@ pub fn qcut(
 
     if ca.null_count() == ca.len() {
         // If we only have nulls we don't have any breakpoints.
-        return cut(&s, vec![], labels, left_closed, include_breaks);
+        return cut(
+            &s,
+            vec![],
+            None::<Vec<PlSmallStr>>,
+            left_closed,
+            include_breaks,
+        );
     }
 
     let f = |&p| {
