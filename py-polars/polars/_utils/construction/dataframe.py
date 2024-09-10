@@ -1221,13 +1221,13 @@ def arrow_to_pydf(
     if len(dictionary_cols) > 0:
         df = wrap_df(pydf)
         df = df.with_columns(
-            [broadcastable_s(s, name) for s in dictionary_cols.values()]
+            [broadcastable_s(s, s.name) for s in dictionary_cols.values()]
         )
         reset_order = True
 
     if len(struct_cols) > 0:
         df = wrap_df(pydf)
-        df = df.with_columns([broadcastable_s(s, name) for s in struct_cols.values()])
+        df = df.with_columns([broadcastable_s(s, s.name) for s in struct_cols.values()])
         reset_order = True
 
     if reset_order:
