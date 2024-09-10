@@ -466,3 +466,19 @@ def test_raise_invalid_input_join_where() -> None:
     df = pl.DataFrame({"id": [1, 2]})
     with pytest.raises(pl.exceptions.InvalidOperationError):
         df.join_where(df)
+
+
+def test_ie_join_use_keys_multiple() -> None:
+    a = pl.LazyFrame({"a": [1, 2, 3], "x": [7, 2, 1]})
+    b = pl.LazyFrame({"b": [2, 2, 2], "x": [7, 1, 3]})
+
+    assert a.join_where(
+        b,
+        pl.col.a >= pl.col.b,
+        pl.col.a <= pl.col.b,
+    ).collect().sort("x_right").to_dict(as_series=False) == {
+        "a": [2, 2, 2],
+        "x": [2, 2, 2],
+        "b": [2, 2, 2],
+        "x_right": [1, 3, 7],
+    }
