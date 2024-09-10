@@ -3,6 +3,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use polars_core::error::{feature_gated, PolarsResult};
+use polars_io::cloud::CloudOptions;
+use polars_io::utils::byte_source::{DynByteSource, DynByteSourceBuilder};
 use polars_utils::mmap::MemSlice;
 use polars_utils::pl_str::PlSmallStr;
 
@@ -235,6 +237,22 @@ impl<'a> ScanSourceRef<'a> {
             },
             Self::File(file) => MemSlice::from_file(file),
             Self::Buffer(buff) => Ok(MemSlice::from_bytes((*buff).clone())),
+        }
+    }
+
+    pub async fn to_dyn_byte_source(
+        &self,
+        builder: &DynByteSourceBuilder,
+        cloud_options: Option<&CloudOptions>,
+    ) -> PolarsResult<DynByteSource> {
+        match self {
+            Self::Path(path) => {
+                builder
+                    .try_build_from_path(path.to_str().unwrap(), cloud_options)
+                    .await
+            },
+            Self::File(file) => Ok(DynByteSource::from(MemSlice::from_file(file)?)),
+            Self::Buffer(buff) => Ok(DynByteSource::from(MemSlice::from_bytes((*buff).clone()))),
         }
     }
 }

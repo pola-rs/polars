@@ -1,5 +1,4 @@
 use std::future::Future;
-use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
@@ -25,7 +24,7 @@ use polars_io::utils::slice::SplitSlicePosition;
 use polars_io::{is_cloud_url, RowIndex};
 use polars_parquet::read::RowGroupMetadata;
 use polars_plan::plans::hive::HivePartitions;
-use polars_plan::plans::FileInfo;
+use polars_plan::plans::{FileInfo, ScanSources};
 use polars_plan::prelude::FileScanOptions;
 use polars_utils::mmap::MemSlice;
 use polars_utils::pl_str::PlSmallStr;
@@ -46,7 +45,7 @@ type AsyncTaskData = Option<(
 
 #[allow(clippy::type_complexity)]
 pub struct ParquetSourceNode {
-    paths: Arc<[PathBuf]>,
+    scan_sources: ScanSources,
     file_info: FileInfo,
     hive_parts: Option<Arc<Vec<HivePartitions>>>,
     predicate: Option<Arc<dyn PhysicalExpr>>,
@@ -71,7 +70,7 @@ pub struct ParquetSourceNode {
 #[allow(clippy::too_many_arguments)]
 impl ParquetSourceNode {
     pub fn new(
-        paths: Arc<[PathBuf]>,
+        scan_sources: ScanSources,
         file_info: FileInfo,
         hive_parts: Option<Arc<Vec<HivePartitions>>>,
         predicate: Option<Arc<dyn PhysicalExpr>>,
@@ -81,16 +80,15 @@ impl ParquetSourceNode {
     ) -> Self {
         let verbose = config::verbose();
 
-        let byte_source_builder =
-            if is_cloud_url(paths[0].to_str().unwrap()) || config::force_async() {
-                DynByteSourceBuilder::ObjectStore
-            } else {
-                DynByteSourceBuilder::Mmap
-            };
+        let byte_source_builder = if scan_sources.is_cloud_url() || config::force_async() {
+            DynByteSourceBuilder::ObjectStore
+        } else {
+            DynByteSourceBuilder::Mmap
+        };
         let memory_prefetch_func = get_memory_prefetch_func(verbose);
 
         Self {
-            paths,
+            scan_sources,
             file_info,
             hive_parts,
             predicate,
@@ -570,23 +568,25 @@ impl ParquetSourceNode {
         }
 
         let fetch_metadata_bytes_for_path_index = {
-            let paths = &self.paths;
+            let scan_sources = &self.scan_sources;
             let cloud_options = Arc::new(self.cloud_options.clone());
 
-            let paths = paths.clone();
+            let scan_sources = scan_sources.clone();
             let cloud_options = cloud_options.clone();
             let byte_source_builder = byte_source_builder.clone();
 
             move |path_idx: usize| {
-                let paths = paths.clone();
+                let scan_sources = scan_sources.clone();
                 let cloud_options = cloud_options.clone();
                 let byte_source_builder = byte_source_builder.clone();
 
                 let handle = io_runtime.spawn(async move {
                     let mut byte_source = Arc::new(
-                        byte_source_builder
-                            .try_build_from_path(
-                                paths[path_idx].to_str().unwrap(),
+                        scan_sources
+                            .get(path_idx)
+                            .unwrap()
+                            .to_dyn_byte_source(
+                                &byte_source_builder,
                                 cloud_options.as_ref().as_ref(),
                             )
                             .await?,
@@ -681,13 +681,13 @@ impl ParquetSourceNode {
                 .slice
                 .map(|(offset, len)| offset as usize..offset as usize + len);
 
-            let mut metadata_stream = futures::stream::iter(0..self.paths.len())
+            let mut metadata_stream = futures::stream::iter(0..self.scan_sources.len())
                 .map(fetch_metadata_bytes_for_path_index)
                 .buffered(metadata_prefetch_size)
                 .map(process_metadata_bytes)
                 .buffered(metadata_decode_ahead_size);
 
-            let paths = self.paths.clone();
+            let scan_sources = self.scan_sources.clone();
 
             // We need to be able to both stop early as well as skip values, which is easier to do
             // using a custom task instead of futures::stream
@@ -715,9 +715,11 @@ impl ParquetSourceNode {
                         .map_err(|err| {
                             err.wrap_msg(|msg| {
                                 format!(
-                                    "error at path (index: {}, path: {}): {}",
+                                    "error at path (index: {}, path: {:?}): {}",
                                     current_path_index,
-                                    paths[current_path_index].to_str().unwrap(),
+                                    scan_sources
+                                        .get(current_path_index)
+                                        .map(|x| PlSmallStr::from_str(x.to_include_path_name())),
                                     msg
                                 )
                             })
@@ -771,7 +773,7 @@ impl ParquetSourceNode {
                                         Stopped reading at file at index {} \
                                         (remaining {} files will not be read)",
                                     current_path_index,
-                                    paths.len() - current_path_index - 1,
+                                    scan_sources.len() - current_path_index - 1,
                                 );
                             }
                             break;
@@ -786,7 +788,7 @@ impl ParquetSourceNode {
             let slice = self.file_options.slice.unwrap();
             let slice_start_as_n_from_end = -slice.0 as usize;
 
-            let mut metadata_stream = futures::stream::iter((0..self.paths.len()).rev())
+            let mut metadata_stream = futures::stream::iter((0..self.scan_sources.len()).rev())
                 .map(fetch_metadata_bytes_for_path_index)
                 .buffered(metadata_prefetch_size)
                 .map(process_metadata_bytes)
@@ -831,7 +833,7 @@ impl ParquetSourceNode {
                 PolarsResult::Ok((slice_range, processed_metadata_rev, cum_rows))
             };
 
-            let path_count = self.paths.len();
+            let path_count = self.scan_sources.len();
 
             io_runtime.spawn(async move {
                 if start_rx.await.is_err() {
@@ -935,7 +937,7 @@ impl ParquetSourceNode {
         );
         assert_eq!(self.predicate.is_some(), self.physical_predicate.is_some());
 
-        let paths = self.paths.clone();
+        let scan_sources = self.scan_sources.clone();
         let hive_partitions = self.hive_parts.clone();
         let hive_partitions_width = hive_partitions
             .as_deref()
@@ -948,7 +950,7 @@ impl ParquetSourceNode {
         let ideal_morsel_size = get_ideal_morsel_size();
 
         RowGroupDecoder {
-            paths,
+            scan_sources,
             hive_partitions,
             hive_partitions_width,
             include_file_paths,
@@ -983,7 +985,7 @@ impl ParquetSourceNode {
             eprintln!(
                 "[ParquetSource]: {} columns to be projected from {} files",
                 self.projected_arrow_fields.len(),
-                self.paths.len(),
+                self.scan_sources.len(),
             );
         }
     }
@@ -1355,7 +1357,7 @@ struct SharedFileState {
 
 /// Turns row group data into DataFrames.
 struct RowGroupDecoder {
-    paths: Arc<[PathBuf]>,
+    scan_sources: ScanSources,
     hive_partitions: Option<Arc<Vec<HivePartitions>>>,
     hive_partitions_width: usize,
     include_file_paths: Option<PlSmallStr>,
@@ -1520,7 +1522,10 @@ impl RowGroupDecoder {
                 let file_path_series = self.include_file_paths.clone().map(|file_path_col| {
                     StringChunked::full(
                         file_path_col,
-                        self.paths[path_index].to_str().unwrap(),
+                        self.scan_sources
+                            .get(path_index)
+                            .unwrap()
+                            .to_include_path_name(),
                         row_group_data.file_max_row_group_height,
                     )
                     .into_series()

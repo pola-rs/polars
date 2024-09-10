@@ -150,6 +150,12 @@ impl From<ObjectStoreByteSource> for DynByteSource {
     }
 }
 
+impl From<MemSlice> for DynByteSource {
+    fn from(value: MemSlice) -> Self {
+        Self::MemSlice(MemSliceByteSource(value))
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum DynByteSourceBuilder {
     Mmap,
