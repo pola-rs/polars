@@ -156,7 +156,13 @@ def test_local_time_sortedness(time_zone: str | None) -> None:
 
     # three elements - not sorted
     ser = (
-        pl.Series([datetime(2022, 1, 1, 23), datetime(2022, 1, 2, 21), datetime(2022, 1, 3, 22)]).dt.replace_time_zone(time_zone)
+        pl.Series(
+            [
+                datetime(2022, 1, 1, 23),
+                datetime(2022, 1, 2, 21),
+                datetime(2022, 1, 3, 22),
+            ]
+        ).dt.replace_time_zone(time_zone)
     ).sort()
     result = ser.dt.time()
     assert not result.flags["SORTED_ASC"]
@@ -193,7 +199,13 @@ def test_local_time_before_epoch(time_unit: TimeUnit) -> None:
 def test_offset_by_sortedness(
     time_zone: str | None, offset: str, expected: bool
 ) -> None:
-    s = pl.datetime_range(datetime(2020, 10, 25), datetime(2020, 10, 25, 3), '30m', time_zone=time_zone, eager=True).sort()
+    s = pl.datetime_range(
+        datetime(2020, 10, 25),
+        datetime(2020, 10, 25, 3),
+        "30m",
+        time_zone=time_zone,
+        eager=True,
+    ).sort()
     assert s.flags["SORTED_ASC"]
     assert not s.flags["SORTED_DESC"]
     result = s.dt.offset_by(offset)
