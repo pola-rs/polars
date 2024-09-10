@@ -3638,7 +3638,7 @@ class DataFrame:
 
     def write_parquet(
         self,
-        file: str | Path | BytesIO,
+        file: str | Path | IO[bytes],
         *,
         compression: ParquetCompression = "zstd",
         compression_level: int | None = None,
