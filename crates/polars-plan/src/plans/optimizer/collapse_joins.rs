@@ -6,9 +6,9 @@
 use std::sync::Arc;
 
 use polars_core::schema::SchemaRef;
-use polars_ops::frame::{JoinCoalesce, JoinType};
 #[cfg(feature = "iejoin")]
 use polars_ops::frame::{IEJoinOptions, InequalityOperator};
+use polars_ops::frame::{JoinCoalesce, JoinType};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 
