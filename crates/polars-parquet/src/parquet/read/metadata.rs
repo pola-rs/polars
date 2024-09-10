@@ -2,7 +2,7 @@ use std::cmp::min;
 use std::io::{Read, Seek, SeekFrom};
 
 use parquet_format_safe::thrift::protocol::TCompactInputProtocol;
-use parquet_format_safe::FileMetadata as TFileMetadata;
+use parquet_format_safe::FileMetaData as TFileMetadata;
 
 use super::super::metadata::FileMetadata;
 use super::super::{DEFAULT_FOOTER_READ_SIZE, FOOTER_SIZE, HEADER_SIZE, PARQUET_MAGIC};

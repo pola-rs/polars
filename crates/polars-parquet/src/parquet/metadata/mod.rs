@@ -14,4 +14,4 @@ pub use row_metadata::RowGroupMetadata;
 pub use schema_descriptor::SchemaDescriptor;
 pub use sort::*;
 
-pub use crate::parquet::thrift_format::FileMetadata as ThriftFileMetadata;
+pub use crate::parquet::thrift_format::FileMetaData as ThriftFileMetadata;

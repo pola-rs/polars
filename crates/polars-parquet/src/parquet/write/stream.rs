@@ -2,7 +2,7 @@ use std::io::Write;
 
 use futures::{AsyncWrite, AsyncWriteExt};
 use parquet_format_safe::thrift::protocol::TCompactOutputStreamProtocol;
-use parquet_format_safe::{FileMetadata, RowGroup};
+use parquet_format_safe::RowGroup;
 
 use super::row_group::write_row_group_async;
 use super::{RowGroupIterColumns, WriteOptions};
@@ -20,7 +20,7 @@ async fn start_file<W: AsyncWrite + Unpin>(writer: &mut W) -> ParquetResult<u64>
 
 async fn end_file<W: AsyncWrite + Unpin + Send>(
     mut writer: &mut W,
-    metadata: FileMetadata,
+    metadata: parquet_format_safe::FileMetaData,
 ) -> ParquetResult<u64> {
     // Write file metadata
     let mut protocol = TCompactOutputStreamProtocol::new(&mut writer);
@@ -169,7 +169,7 @@ impl<W: AsyncWrite + Unpin + Send> FileStreamer<W> {
             }
         }
 
-        let metadata = FileMetadata::new(
+        let metadata = parquet_format_safe::FileMetaData::new(
             self.options.version.into(),
             self.schema.clone().into_thrift(),
             num_rows,
