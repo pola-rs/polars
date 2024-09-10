@@ -32,7 +32,7 @@ pub(super) fn parquet_file_info(
     sources: &ScanSources,
     file_options: &FileScanOptions,
     #[allow(unused)] cloud_options: Option<&polars_io::cloud::CloudOptions>,
-) -> PolarsResult<(FileInfo, Option<FileMetaDataRef>)> {
+) -> PolarsResult<(FileInfo, Option<FileMetadataRef>)> {
     use polars_core::error::feature_gated;
 
     let (reader_schema, num_rows, metadata) = {

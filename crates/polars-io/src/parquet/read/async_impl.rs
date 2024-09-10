@@ -6,8 +6,8 @@ use bytes::Bytes;
 use object_store::path::Path as ObjectPath;
 use polars_core::config::{get_rg_prefetch_size, verbose};
 use polars_core::prelude::*;
-use polars_parquet::read::RowGroupMetaData;
-use polars_parquet::write::FileMetaData;
+use polars_parquet::read::RowGroupMetadata;
+use polars_parquet::write::FileMetadata;
 use polars_utils::pl_str::PlSmallStr;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::Mutex;
@@ -17,7 +17,7 @@ use super::predicates::read_this_row_group;
 use crate::cloud::{
     build_object_store, object_path_from_str, CloudLocation, CloudOptions, PolarsObjectStore,
 };
-use crate::parquet::metadata::FileMetaDataRef;
+use crate::parquet::metadata::FileMetadataRef;
 use crate::pl_async::get_runtime;
 use crate::predicates::PhysicalIoExpr;
 
@@ -29,14 +29,14 @@ pub struct ParquetObjectStore {
     store: PolarsObjectStore,
     path: ObjectPath,
     length: Option<usize>,
-    metadata: Option<FileMetaDataRef>,
+    metadata: Option<FileMetadataRef>,
 }
 
 impl ParquetObjectStore {
     pub async fn from_uri(
         uri: &str,
         options: Option<&CloudOptions>,
-        metadata: Option<FileMetaDataRef>,
+        metadata: Option<FileMetadataRef>,
     ) -> PolarsResult<Self> {
         let (CloudLocation { prefix, .. }, store) = build_object_store(uri, options, false).await?;
         let path = object_path_from_str(&prefix)?;
@@ -74,13 +74,13 @@ impl ParquetObjectStore {
     }
 
     /// Fetch the metadata of the parquet file, do not memoize it.
-    async fn fetch_metadata(&mut self) -> PolarsResult<FileMetaData> {
+    async fn fetch_metadata(&mut self) -> PolarsResult<FileMetadata> {
         let length = self.length().await?;
         fetch_metadata(&self.store, &self.path, length).await
     }
 
     /// Fetch and memoize the metadata of the parquet file.
-    pub async fn get_metadata(&mut self) -> PolarsResult<&FileMetaDataRef> {
+    pub async fn get_metadata(&mut self) -> PolarsResult<&FileMetadataRef> {
         if self.metadata.is_none() {
             self.metadata = Some(Arc::new(self.fetch_metadata().await?));
         }
@@ -107,7 +107,7 @@ pub async fn fetch_metadata(
     store: &PolarsObjectStore,
     path: &ObjectPath,
     file_byte_length: usize,
-) -> PolarsResult<FileMetaData> {
+) -> PolarsResult<FileMetadata> {
     let footer_header_bytes = store
         .get_range(
             path,
@@ -165,7 +165,7 @@ pub async fn fetch_metadata(
 /// We concurrently download the columns for each field.
 async fn download_projection(
     fields: Arc<[PlSmallStr]>,
-    row_group: RowGroupMetaData,
+    row_group: RowGroupMetadata,
     async_reader: Arc<ParquetObjectStore>,
     sender: QueueSend,
     rg_index: usize,
@@ -205,7 +205,7 @@ async fn download_projection(
 }
 
 async fn download_row_group(
-    rg: RowGroupMetaData,
+    rg: RowGroupMetadata,
     async_reader: Arc<ParquetObjectStore>,
     sender: QueueSend,
     rg_index: usize,
@@ -255,7 +255,7 @@ impl FetchRowGroupsFromObjectStore {
         projection: Option<&[usize]>,
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
         row_group_range: Range<usize>,
-        row_groups: &[RowGroupMetaData],
+        row_groups: &[RowGroupMetadata],
     ) -> PolarsResult<Self> {
         let projected_fields: Option<Arc<[PlSmallStr]>> = projection.map(|projection| {
             projection

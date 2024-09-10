@@ -35,7 +35,7 @@ impl InitColumnLookup for ColumnLookup {
 
 /// Metadata for a row group.
 #[derive(Debug, Clone, Default)]
-pub struct RowGroupMetaData {
+pub struct RowGroupMetadata {
     columns: Arc<[ColumnChunkMetadata]>,
     column_lookup: PlHashMap<PlSmallStr, UnitVec<usize>>,
     num_rows: usize,
@@ -43,7 +43,7 @@ pub struct RowGroupMetaData {
     full_byte_range: core::ops::Range<u64>,
 }
 
-impl RowGroupMetaData {
+impl RowGroupMetadata {
     #[inline(always)]
     pub fn n_columns(&self) -> usize {
         self.columns.len()
@@ -91,7 +91,7 @@ impl RowGroupMetaData {
     pub(crate) fn try_from_thrift(
         schema_descr: &SchemaDescriptor,
         rg: RowGroup,
-    ) -> ParquetResult<RowGroupMetaData> {
+    ) -> ParquetResult<RowGroupMetadata> {
         if schema_descr.columns().len() != rg.columns.len() {
             return Err(ParquetError::oos(format!("The number of columns in the row group ({}) must be equal to the number of columns in the schema ({})", rg.columns.len(), schema_descr.columns().len())));
         }
@@ -127,7 +127,7 @@ impl RowGroupMetaData {
             })
             .collect::<ParquetResult<Arc<[_]>>>()?;
 
-        Ok(RowGroupMetaData {
+        Ok(RowGroupMetadata {
             columns,
             column_lookup,
             num_rows,
