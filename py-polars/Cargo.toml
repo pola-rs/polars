@@ -9,7 +9,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 libc = { workspace = true }
-polars-python = { workspace = true, features = ["pymethods"] }
+polars-python = { workspace = true, features = ["pymethods", "iejoin"] }
 pyo3 = { workspace = true, features = ["abi3-py38", "chrono", "extension-module", "multiple-pymethods"] }
 
 [build-dependencies]
@@ -45,7 +45,6 @@ is_in = ["polars-python/is_in"]
 json = ["polars-python/json"]
 sign = ["polars-python/sign"]
 asof_join = ["polars-python/asof_join"]
-iejoin = ["polars-python/iejoin"]
 cross_join = ["polars-python/cross_join"]
 pct_change = ["polars-python/pct_change"]
 repeat_by = ["polars-python/repeat_by"]
