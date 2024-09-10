@@ -44,6 +44,7 @@ pub fn resolve_join(
     if matches!(options.args.how, JoinType::Cross) {
         polars_ensure!(left_on.len() + right_on.len() == 0, InvalidOperation: "a 'cross' join doesn't expect any join keys");
     } else {
+        polars_ensure!(left_on.len() + right_on.len() > 0, InvalidOperation: "expected join keys/predicates");
         check_join_keys(&left_on)?;
         check_join_keys(&right_on)?;
 

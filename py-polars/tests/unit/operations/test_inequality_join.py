@@ -460,3 +460,9 @@ def test_raise_on_multiple_binary_comparisons() -> None:
         df.join_where(
             df, (pl.col("id") < pl.col("id")) & (pl.col("id") >= pl.col("id"))
         )
+
+
+def test_raise_invalid_input_join_where() -> None:
+    df = pl.DataFrame({"id": [1, 2]})
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        df.join_where(df)
