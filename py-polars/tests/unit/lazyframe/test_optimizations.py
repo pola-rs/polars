@@ -1,3 +1,7 @@
+import itertools
+
+import pytest
+
 import polars as pl
 from polars.testing import assert_frame_equal
 
@@ -241,3 +245,52 @@ def test_collapse_joins() -> None:
     assert "IEJOIN" in e
     assert "CROSS JOIN" not in e
     assert "FILTER" not in e
+
+
+@pytest.mark.slow
+def test_collapse_joins_combinations() -> None:
+    # This just tests all possible combinations for expressions on a cross join.
+
+    a = pl.LazyFrame({"a": [1, 2, 3], "x": [7, 2, 1]})
+    b = pl.LazyFrame({"b": [2, 2, 2], "x": [7, 1, 3]})
+
+    cross = a.join(b, how="cross")
+
+    exprs = []
+
+    for lhs in [pl.col.a, pl.col.b, pl.col.x, pl.lit(1)]:
+        for rhs in [pl.col.a, pl.col.b, pl.col.x, pl.lit(1)]:
+            for cmp in ["__eq__", "__ge__", "__lt__"]:
+                e = (getattr(lhs, cmp))(rhs)
+                exprs.append(e)
+
+    for amount in range(3):
+        for merge in itertools.product(["__and__", "__or__"] * (amount - 1)):
+            for es in itertools.product(*([exprs] * amount)):
+                e = es[0]
+                for i in range(amount - 1):
+                    e = (getattr(e, merge[i]))(es[i + 1])
+
+                # NOTE: We need to sort because the order of the cross-join &
+                # IE-join is unspecified. Therefore, this might not necessarily
+                # create the exact same dataframe.
+                optimized = cross.filter(e).sort(pl.all()).collect()
+                unoptimized = (
+                    cross.filter(e).sort(pl.all()).collect(collapse_joins=False)
+                )
+
+                try:
+                    assert_frame_equal(optimized, unoptimized)
+                except:
+                    print(e)
+                    print()
+                    print("Optimized")
+                    print(cross.filter(e).explain())
+                    print(optimized)
+                    print()
+                    print("Unoptimized")
+                    print(cross.filter(e).explain(collapse_joins=False))
+                    print(unoptimized)
+                    print()
+
+                    raise

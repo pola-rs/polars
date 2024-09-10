@@ -8,48 +8,23 @@ use std::sync::Arc;
 use polars_core::schema::SchemaRef;
 use polars_ops::frame::{IEJoinOptions, InequalityOperator, JoinCoalesce, JoinType};
 use polars_utils::arena::{Arena, Node};
+use polars_utils::pl_str::PlSmallStr;
 
 use super::{aexpr_to_leaf_names_iter, AExpr, IR};
 use crate::dsl::Operator;
-use crate::plans::ExprIR;
+use crate::plans::{ExprIR, OutputName};
 
 /// Join origin of an expression
-///
-/// If an expression only uses columns from the left or right table these are marked as such. If it
-/// uses columns from both it is marked as `Join`. If it does not use any columns from the `Join`
-/// it is marked as `None`.
 #[derive(Debug, Clone, Copy)]
 enum ExprOrigin {
+    /// Utilizes no columns
     None,
+    /// Utilizes columns from the left side of the join
     Left,
+    /// Utilizes columns from the right side of the join
     Right,
-    Join,
-}
-
-impl ExprOrigin {
-    pub fn from_in(in_left: bool, in_right: bool) -> ExprOrigin {
-        use ExprOrigin as O;
-        match (in_left, in_right) {
-            (true, false) => O::Left,
-            (false, true) => O::Right,
-            _ => O::Join,
-        }
-    }
-}
-
-impl std::ops::BitOr for ExprOrigin {
-    type Output = Self;
-
-    #[inline]
-    fn bitor(self, rhs: Self) -> Self::Output {
-        use ExprOrigin as O;
-        match (self, rhs) {
-            (O::None, other) | (other, O::None) => other,
-            (O::Left, O::Left) => O::Left,
-            (O::Right, O::Right) => O::Right,
-            _ => O::Join,
-        }
-    }
+    /// Utilizes columns from both sides of the join
+    Both,
 }
 
 fn get_origin(
@@ -57,19 +32,70 @@ fn get_origin(
     expr_arena: &Arena<AExpr>,
     left_schema: &SchemaRef,
     right_schema: &SchemaRef,
+    suffix: &str,
 ) -> ExprOrigin {
-    let mut origin = ExprOrigin::None;
+    let mut expr_origin = ExprOrigin::None;
 
     for name in aexpr_to_leaf_names_iter(root, expr_arena) {
         let in_left = left_schema.contains(name.as_str());
         let in_right = right_schema.contains(name.as_str());
+        let has_suffix = name.as_str().ends_with(suffix);
+        let in_right = in_right
+            | (has_suffix && right_schema.contains(&name.as_str()[..name.len() - suffix.len()]));
 
-        let name_origin = ExprOrigin::from_in(in_left, in_right);
+        let name_origin = match (in_left, in_right, has_suffix) {
+            (true, false, _) | (true, true, false) => ExprOrigin::Left,
+            (false, true, _) | (true, true, true) => ExprOrigin::Right,
+            (false, false, _) => {
+                unreachable!("Invalid filter column should have been filtered before")
+            },
+        };
 
-        origin = origin | name_origin;
+        use ExprOrigin as O;
+        expr_origin = match (expr_origin, name_origin) {
+            (O::None, other) | (other, O::None) => other,
+            (O::Left, O::Left) => O::Left,
+            (O::Right, O::Right) => O::Right,
+            _ => O::Both,
+        };
     }
 
-    origin
+    expr_origin
+}
+
+/// Remove the join suffixes from a list of expressions
+fn remove_suffix(
+    exprs: &mut Vec<ExprIR>,
+    expr_arena: &mut Arena<AExpr>,
+    schema: &SchemaRef,
+    suffix: &str,
+) {
+    let mut stack = Vec::new();
+
+    for expr in exprs {
+        if let OutputName::ColumnLhs(colname) = expr.output_name_inner() {
+            if colname.ends_with(suffix) && !schema.contains(colname.as_str()) {
+                expr.set_columnlhs(PlSmallStr::from(&colname[..colname.len() - suffix.len()]));
+            }
+        }
+
+        stack.clear();
+        stack.push(expr.node());
+        while let Some(node) = stack.pop() {
+            let expr = expr_arena.get_mut(node);
+            expr.nodes(&mut stack);
+
+            let AExpr::Column(colname) = expr else {
+                continue;
+            };
+
+            if !colname.ends_with(suffix) || schema.contains(colname.as_str()) {
+                continue;
+            }
+
+            *colname = PlSmallStr::from(&colname[..colname.len() - suffix.len()]);
+        }
+    }
 }
 
 /// An iterator over all the minterms in a boolean expression boolean.
@@ -169,6 +195,8 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &mut Arena<AEx
                     continue;
                 }
 
+                let suffix = options.args.suffix();
+
                 debug_assert!(left_on.is_empty());
                 debug_assert!(right_on.is_empty());
 
@@ -217,17 +245,29 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &mut Arena<AEx
                         let mut op = *op;
                         let mut right = *right;
 
-                        let left_origin = get_origin(left, expr_arena, left_schema, right_schema);
-                        let right_origin = get_origin(right, expr_arena, left_schema, right_schema);
+                        let left_origin = get_origin(
+                            left,
+                            expr_arena,
+                            left_schema,
+                            right_schema,
+                            suffix.as_str(),
+                        );
+                        let right_origin = get_origin(
+                            right,
+                            expr_arena,
+                            left_schema,
+                            right_schema,
+                            suffix.as_str(),
+                        );
 
                         use ExprOrigin as EO;
 
                         // We can only join if both sides of the binary expression stem from
                         // different sides of the join.
                         match (left_origin, right_origin) {
-                            (EO::Join, _) | (_, EO::Join) => {
-                                // If either expression originates from the join itself (e.g. it uses a
-                                // `..._right`), we need to filter afterwards.
+                            (EO::Both, _) | (_, EO::Both) => {
+                                // If either expression originates from the both sides, we need to
+                                // filter it afterwards.
                                 remaining_predicates.push(node);
                                 continue;
                             },
@@ -279,6 +319,8 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &mut Arena<AEx
                     let input_left = *input_left;
                     let input_right = *input_right;
                     let schema = schema.clone();
+
+                    remove_suffix(&mut eq_right_on, expr_arena, right_schema, suffix.as_str());
 
                     let new_join = IR::Join {
                         input_left,
@@ -334,6 +376,8 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &mut Arena<AEx
                     let input_left = *input_left;
                     let input_right = *input_right;
                     let schema = schema.clone();
+
+                    remove_suffix(&mut ie_right_on, expr_arena, right_schema, suffix.as_str());
 
                     let new_join = IR::Join {
                         input_left,

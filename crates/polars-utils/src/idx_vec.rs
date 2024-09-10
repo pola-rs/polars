@@ -72,6 +72,11 @@ impl<T> UnitVec<T> {
     }
 
     #[inline(always)]
+    pub fn clear(&mut self) {
+        self.len = 0;
+    }
+
+    #[inline(always)]
     pub fn push(&mut self, idx: T) {
         if self.len == self.capacity.get() {
             self.reserve(1);
