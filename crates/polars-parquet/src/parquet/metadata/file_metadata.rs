@@ -10,7 +10,7 @@ pub use crate::parquet::thrift_format::KeyValue;
 /// Metadata for a Parquet file.
 // This is almost equal to [`parquet_format_safe::FileMetaData`] but contains the descriptors,
 // which are crucial to deserialize pages.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FileMetadata {
     /// version of this file.
     pub version: i32,

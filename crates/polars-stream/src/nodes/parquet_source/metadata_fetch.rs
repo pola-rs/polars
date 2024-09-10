@@ -83,6 +83,11 @@ impl ParquetSourceNode {
                             )
                             .await?,
                     );
+
+                    if path_idx == 0 {
+                        return Ok((0, byte_source, MemSlice::from_slice(&[])));
+                    }
+
                     let (metadata_bytes, maybe_full_bytes) =
                         read_parquet_metadata_bytes(byte_source.as_ref(), verbose).await?;
 
@@ -109,20 +114,27 @@ impl ParquetSourceNode {
             }
         };
 
+        let first_metadata = self.first_metadata.clone();
+
         let process_metadata_bytes = {
             move |handle: task_handles_ext::AbortOnDropHandle<
                 PolarsResult<(usize, Arc<DynByteSource>, MemSlice)>,
             >| {
                 let projected_arrow_fields = projected_arrow_fields.clone();
+                let first_metadata = first_metadata.clone();
                 // Run on CPU runtime - metadata deserialization is expensive, especially
                 // for very wide tables.
                 let handle = async_executor::spawn(TaskPriority::Low, async move {
                     let (path_index, byte_source, metadata_bytes) = handle.await.unwrap()?;
 
-                    let metadata = polars_parquet::parquet::read::deserialize_metadata(
-                        metadata_bytes.as_ref(),
-                        metadata_bytes.len() * 2 + 1024,
-                    )?;
+                    let metadata = if path_index == 0 {
+                        Arc::unwrap_or_clone(first_metadata)
+                    } else {
+                        polars_parquet::parquet::read::deserialize_metadata(
+                            metadata_bytes.as_ref(),
+                            metadata_bytes.len() * 2 + 1024,
+                        )?
+                    };
 
                     ensure_metadata_has_projected_fields(
                         projected_arrow_fields.as_ref(),
