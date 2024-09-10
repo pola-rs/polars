@@ -1,8 +1,10 @@
 use arrow::legacy::error::PolarsResult;
 use either::Either;
+use polars_core::error::feature_gated;
 
 use super::*;
 use crate::dsl::Expr;
+#[cfg(feature = "iejoin")]
 use crate::plans::AExpr;
 
 fn check_join_keys(keys: &[Expr]) -> PolarsResult<()> {
@@ -26,14 +28,16 @@ pub fn resolve_join(
     ctxt: &mut DslConversionContext,
 ) -> PolarsResult<Node> {
     if !predicates.is_empty() {
-        debug_assert!(left_on.is_empty() && right_on.is_empty());
-        return resolve_join_where(
-            input_left.unwrap_left(),
-            input_right.unwrap_left(),
-            predicates,
-            options,
-            ctxt,
-        );
+        feature_gated!("iejoin", {
+            debug_assert!(left_on.is_empty() && right_on.is_empty());
+            return resolve_join_where(
+                input_left.unwrap_left(),
+                input_right.unwrap_left(),
+                predicates,
+                options,
+                ctxt,
+            );
+        })
     }
 
     let owned = Arc::unwrap_or_clone;
@@ -119,6 +123,7 @@ pub fn resolve_join(
     run_conversion(lp, ctxt, "join")
 }
 
+#[cfg(feature = "iejoin")]
 impl From<InequalityOperator> for Operator {
     fn from(value: InequalityOperator) -> Self {
         match value {
@@ -130,6 +135,7 @@ impl From<InequalityOperator> for Operator {
     }
 }
 
+#[cfg(feature = "iejoin")]
 fn resolve_join_where(
     input_left: Arc<DslPlan>,
     input_right: Arc<DslPlan>,

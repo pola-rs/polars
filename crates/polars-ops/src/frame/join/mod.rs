@@ -7,6 +7,7 @@ mod cross_join;
 mod dispatch_left_right;
 mod general;
 mod hash_join;
+#[cfg(feature = "iejoin")]
 mod iejoin;
 #[cfg(feature = "merge_sorted")]
 mod merge_sorted;
@@ -29,6 +30,7 @@ use general::create_chunked_index_mapping;
 pub use general::{_coalesce_full_join, _finish_join, _join_suffix_name};
 pub use hash_join::*;
 use hashbrown::hash_map::{Entry, RawEntryMut};
+#[cfg(feature = "iejoin")]
 pub use iejoin::{IEJoinOptions, InequalityOperator};
 #[cfg(feature = "merge_sorted")]
 pub use merge_sorted::_merge_sorted_dfs;
@@ -199,6 +201,7 @@ pub trait DataFrameJoinOps: IntoDf {
             }
         }
 
+        #[cfg(feature = "iejoin")]
         if let JoinType::IEJoin(options) = args.how {
             let func = if POOL.current_num_threads() > 1 && !left_df.is_empty() && !other.is_empty()
             {
@@ -289,6 +292,7 @@ pub trait DataFrameJoinOps: IntoDf {
                         panic!("expected by arguments on both sides")
                     },
                 },
+                #[cfg(feature = "iejoin")]
                 JoinType::IEJoin(_) => {
                     unreachable!()
                 },
@@ -316,6 +320,7 @@ pub trait DataFrameJoinOps: IntoDf {
             JoinType::AsOf(_) => polars_bail!(
                 ComputeError: "asof join not supported for join on multiple keys"
             ),
+            #[cfg(feature = "iejoin")]
             JoinType::IEJoin(_) => {
                 unreachable!()
             },
