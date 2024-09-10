@@ -11,7 +11,7 @@ use polars_io::utils::slice::SplitSlicePosition;
 use polars_utils::mmap::MemSlice;
 use polars_utils::pl_str::PlSmallStr;
 
-use super::metadata_utils::read_parquet_metadata_bytes;
+use super::metadata_utils::{ensure_metadata_has_projected_fields, read_parquet_metadata_bytes};
 use super::row_group_data_fetch::RowGroupDataFetcher;
 use super::row_group_decode::RowGroupDecoder;
 use super::{AsyncTaskData, ParquetSourceNode};
@@ -19,7 +19,6 @@ use crate::async_executor;
 use crate::async_primitives::connector::connector;
 use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
 use crate::morsel::get_ideal_morsel_size;
-use crate::nodes::parquet_source::metadata_utils::ensure_metadata_has_projected_fields;
 use crate::nodes::{MorselSeq, TaskPriority};
 use crate::utils::task_handles_ext;
 
