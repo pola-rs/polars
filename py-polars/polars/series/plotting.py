@@ -10,6 +10,8 @@ if TYPE_CHECKING:
 
     from altair.typing import EncodeKwds
 
+    from polars.dataframe.plotting import Encodings
+
     if sys.version_info >= (3, 11):
         from typing import Unpack
     else:
@@ -63,11 +65,13 @@ class SeriesPlot:
         if self._series_name == "count()":
             msg = "Cannot use `plot.hist` when Series name is `'count()'`"
             raise ValueError(msg)
-        return _add_tooltip(
-            alt.Chart(self._df)
-            .mark_bar()
-            .encode(x=alt.X(f"{self._series_name}:Q", bin=True), y="count()", **kwargs)  # type: ignore[misc]
-            .interactive()
+        encodings: Encodings = {
+            "x": alt.X(f"{self._series_name}:Q", bin=True),
+            "y": "count()",
+        }
+        _add_tooltip(encodings, **kwargs)
+        return (
+            alt.Chart(self._df).mark_bar().encode(**encodings, **kwargs).interactive()
         )
 
     def kde(
@@ -105,11 +109,13 @@ class SeriesPlot:
         if self._series_name == "density":
             msg = "Cannot use `plot.kde` when Series name is `'density'`"
             raise ValueError(msg)
-        return _add_tooltip(
+        encodings: Encodings = {"x": self._series_name, "y": "density:Q"}
+        _add_tooltip(encodings, **kwargs)
+        return (
             alt.Chart(self._df)
             .transform_density(self._series_name, as_=[self._series_name, "density"])
             .mark_area()
-            .encode(x=self._series_name, y="density:Q", **kwargs)  # type: ignore[misc]
+            .encode(**encodings, **kwargs)
             .interactive()
         )
 
@@ -148,10 +154,12 @@ class SeriesPlot:
         if self._series_name == "index":
             msg = "Cannot call `plot.line` when Series name is 'index'"
             raise ValueError(msg)
-        return _add_tooltip(
+        encodings: Encodings = {"x": "index", "y": self._series_name}
+        _add_tooltip(encodings, **kwargs)
+        return (
             alt.Chart(self._df.with_row_index())
             .mark_line()
-            .encode(x="index", y=self._series_name, **kwargs)  # type: ignore[misc]
+            .encode(**encodings, **kwargs)
             .interactive()
         )
 
@@ -166,6 +174,10 @@ class SeriesPlot:
         if method is None:
             msg = "Altair has no method 'mark_{attr}'"
             raise AttributeError(msg)
-        return lambda **kwargs: _add_tooltip(
-            method().encode(x="index", y=self._series_name, **kwargs).interactive()
-        )
+        encodings: Encodings = {"x": "index", "y": self._series_name}
+
+        def func(**kwargs: EncodeKwds) -> alt.Chart:
+            _add_tooltip(encodings, **kwargs)
+            return method().encode(**encodings, **kwargs).interactive()
+
+        return func
