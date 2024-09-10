@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use polars_core::error::{feature_gated, PolarsResult};
 use polars_io::cloud::CloudOptions;
+#[cfg(feature = "cloud")]
 use polars_io::utils::byte_source::{DynByteSource, DynByteSourceBuilder};
 use polars_utils::mmap::MemSlice;
 use polars_utils::pl_str::PlSmallStr;
@@ -240,6 +241,7 @@ impl<'a> ScanSourceRef<'a> {
         }
     }
 
+    #[cfg(feature = "cloud")]
     pub async fn to_dyn_byte_source(
         &self,
         builder: &DynByteSourceBuilder,
