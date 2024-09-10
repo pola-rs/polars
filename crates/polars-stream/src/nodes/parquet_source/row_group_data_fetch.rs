@@ -187,10 +187,8 @@ impl RowGroupDataFetcher {
                                     })
                                 }
                             } else {
-                                let mut iter = get_row_group_byte_ranges(&row_group_metadata);
-                                let first = iter.next().unwrap();
-                                let range =
-                                    iter.fold(first, |l, r| l.start.min(r.start)..l.end.max(r.end));
+                                let range = row_group_metadata.full_byte_range();
+                                let range = range.start as usize..range.end as usize;
 
                                 memory_prefetch_func(unsafe { slice.get_unchecked_release(range) })
                             };
@@ -236,14 +234,8 @@ impl RowGroupDataFetcher {
                         // single range request for the entire row group. During testing this
                         // provided much higher throughput from cloud than making multiple range
                         // request with `get_ranges()`.
-                        let mut iter = get_row_group_byte_ranges(&row_group_metadata);
-                        let mut ranges = Vec::with_capacity(iter.len());
-                        let first = iter.next().unwrap();
-                        ranges.push(first.clone());
-                        let full_range = iter.fold(first, |l, r| {
-                            ranges.push(r.clone());
-                            l.start.min(r.start)..l.end.max(r.end)
-                        });
+                        let full_range = row_group_metadata.full_byte_range();
+                        let full_range = full_range.start as usize..full_range.end as usize;
 
                         let mem_slice = {
                             let full_range_2 = full_range.clone();
@@ -365,14 +357,6 @@ impl futures::stream::Stream for RowGroupDataStream {
             Poll::Pending => Poll::Pending,
         }
     }
-}
-
-fn get_row_group_byte_ranges(
-    row_group_metadata: &RowGroupMetadata,
-) -> impl ExactSizeIterator<Item = std::ops::Range<usize>> + '_ {
-    row_group_metadata
-        .byte_ranges_iter()
-        .map(|byte_range| byte_range.start as usize..byte_range.end as usize)
 }
 
 fn get_row_group_byte_ranges_for_projection<'a>(
