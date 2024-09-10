@@ -297,7 +297,7 @@ def test_flat_aggregation_to_list_conversion_6918() -> None:
 
     assert df.group_by("a", maintain_order=True).agg(
         pl.concat_list([pl.col("b").list.get(i).mean().implode() for i in range(2)])
-    ).to_dict(as_series=False) == {"a": [1, 2], "b": [[[0.0, 1.0]], [[3.0, 4.0]]]}
+    ).to_dict(as_series=False) == {"a": [1, 2], "b": [[0.0, 1.0], [3.0, 4.0]]}
 
 
 def test_list_count_matches() -> None:
