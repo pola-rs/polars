@@ -1,3 +1,4 @@
+use polars_plan::constants::CSE_REPLACED;
 use polars_utils::itertools::Itertools;
 
 use super::*;
@@ -243,6 +244,7 @@ pub(super) fn evaluate_physical_expressions(
 }
 
 pub(super) fn check_expand_literals(
+    df: &DataFrame,
     phys_expr: &[Arc<dyn PhysicalExpr>],
     mut selected_columns: Vec<Series>,
     zero_length: bool,
@@ -253,6 +255,16 @@ pub(super) fn check_expand_literals(
     };
     let duplicate_check = options.duplicate_check;
     let should_broadcast = options.should_broadcast;
+
+    // When we have CSE we cannot verify scalars yet.
+    let verify_scalar = if !df.get_columns().is_empty() {
+        !df.get_columns()[df.width() - 1]
+            .name()
+            .starts_with(CSE_REPLACED)
+    } else {
+        true
+    };
+
     let mut df_height = 0;
     let mut has_empty = false;
     let mut all_equal_len = true;
@@ -297,11 +309,14 @@ pub(super) fn check_expand_literals(
                         } else if df_height == 1 {
                             series
                         } else {
-                            polars_ensure!(phys.is_scalar(),
-                                InvalidOperation: "Series length {} doesn't match the DataFrame height of {}\n\n\
+                            if verify_scalar {
+                                polars_ensure!(phys.is_scalar(),
+                                InvalidOperation: "Series: {}, length {} doesn't match the DataFrame height of {}\n\n\
                                 If you want this Series to be broadcasted, ensure it is a scalar (for instance by adding '.first()').",
-                                series.len(), df_height
+                                series.name(), series.len(), df_height
                             );
+
+                            }
                             series.new_from_index(0, df_height)
                         }
                     },
