@@ -554,6 +554,42 @@ def test_hive_partition_columns_contained_in_file(
     )
     assert_with_projections(lf, rhs)
 
+    # partial cols in file
+    partial_path = tmp_path / "a=1/b=2/partial_data.bin"
+    df = pl.DataFrame(
+        {"x": 1, "b": 2, "y": 1},
+        schema={"x": pl.Int32, "b": pl.Int16, "y": pl.Int32},
+    )
+    write_func(df, partial_path)
+
+    rhs = rhs.select(
+        pl.col("x").cast(pl.Int32),
+        pl.col("b").cast(pl.Int16),
+        pl.col("y").cast(pl.Int32),
+        pl.col("a").cast(pl.Int64),
+    )
+
+    lf = scan_func(partial_path, hive_partitioning=True)  # type: ignore[call-arg]
+    assert_frame_equal(lf.collect(projection_pushdown=projection_pushdown), rhs)
+    assert_with_projections(lf, rhs)
+
+    lf = scan_func(  # type: ignore[call-arg]
+        partial_path,
+        hive_schema={"a": pl.String, "b": pl.String},
+        hive_partitioning=True,
+    )
+    rhs = rhs.select(
+        pl.col("x").cast(pl.Int32),
+        pl.col("b").cast(pl.String),
+        pl.col("y").cast(pl.Int32),
+        pl.col("a").cast(pl.String),
+    )
+    assert_frame_equal(
+        lf.collect(projection_pushdown=projection_pushdown),
+        rhs,
+    )
+    assert_with_projections(lf, rhs)
+
 
 @pytest.mark.write_disk
 def test_hive_partition_dates(tmp_path: Path) -> None:
