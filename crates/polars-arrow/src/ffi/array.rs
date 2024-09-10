@@ -7,7 +7,8 @@ use super::ArrowArray;
 use crate::array::*;
 use crate::bitmap::utils::bytes_for;
 use crate::bitmap::Bitmap;
-use crate::buffer::{Buffer, Bytes, BytesAllocator};
+use crate::buffer::Buffer;
+use crate::storage::SharedStorage;
 use crate::datatypes::{ArrowDataType, PhysicalType};
 use crate::ffi::schema::get_child;
 use crate::types::NativeType;
@@ -259,8 +260,8 @@ unsafe fn create_buffer_known_len<T: NativeType>(
         return Ok(Buffer::new());
     }
     let ptr: *mut T = get_buffer_ptr(array, dtype, index)?;
-    let bytes = Bytes::from_foreign(ptr, len, BytesAllocator::InternalArrowArray(owner));
-    Ok(Buffer::from_bytes(bytes))
+    let storage = SharedStorage::from_internal_arrow_array(ptr, len, owner);
+    Ok(Buffer::from_storage(storage))
 }
 
 /// returns the buffer `i` of `array` interpreted as a [`Buffer`].
@@ -286,8 +287,8 @@ unsafe fn create_buffer<T: NativeType>(
     // We have to check alignment.
     // This is the zero-copy path.
     if ptr.align_offset(std::mem::align_of::<T>()) == 0 {
-        let bytes = Bytes::from_foreign(ptr, len, BytesAllocator::InternalArrowArray(owner));
-        Ok(Buffer::from_bytes(bytes).sliced(offset, len - offset))
+        let storage = SharedStorage::from_internal_arrow_array(ptr, len, owner);
+        Ok(Buffer::from_storage(storage).sliced(offset, len - offset))
     }
     // This is the path where alignment isn't correct.
     // We copy the data to a new vec
@@ -321,7 +322,7 @@ unsafe fn create_bitmap(
 
     let offset: usize = array.offset.try_into().expect("offset to fit in `usize`");
     let bytes_len = bytes_for(offset + len);
-    let bytes = Bytes::from_foreign(ptr, bytes_len, BytesAllocator::InternalArrowArray(owner));
+    let storage = SharedStorage::from_internal_arrow_array(ptr, bytes_len, owner);
 
     let null_count = if is_validity {
         Some(array.null_count())
@@ -329,7 +330,7 @@ unsafe fn create_bitmap(
         None
     };
     Ok(Bitmap::from_inner_unchecked(
-        Arc::new(bytes),
+        storage,
         offset,
         len,
         null_count,

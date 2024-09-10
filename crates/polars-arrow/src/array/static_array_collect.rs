@@ -1,5 +1,4 @@
 use std::borrow::Cow;
-use std::sync::Arc;
 
 use polars_utils::no_call_const;
 
@@ -9,6 +8,7 @@ use crate::array::{
     MutableBinaryArray, MutableBinaryValuesArray, MutableBinaryViewArray, PrimitiveArray,
     StructArray, Utf8Array, Utf8ViewArray,
 };
+use crate::storage::SharedStorage;
 use crate::bitmap::Bitmap;
 use crate::datatypes::ArrowDataType;
 #[cfg(feature = "dtype-array")]
@@ -256,7 +256,7 @@ macro_rules! impl_collect_vec_validity {
             unsafe {
                 // SAFETY: we made sure the null_count is correct.
                 Some(Bitmap::from_inner_unchecked(
-                    Arc::new(bitmap.into()),
+                    SharedStorage::from_vec(bitmap),
                     0,
                     buf.len(),
                     Some(null_count),
@@ -317,7 +317,7 @@ macro_rules! impl_trusted_collect_vec_validity {
             unsafe {
                 // SAFETY: we made sure the null_count is correct.
                 Some(Bitmap::from_inner_unchecked(
-                    Arc::new(bitmap.into()),
+                    SharedStorage::from_vec(bitmap),
                     0,
                     buf.len(),
                     Some(null_count),
@@ -766,7 +766,7 @@ macro_rules! impl_collect_bool_validity {
 
         let false_count = len - true_count;
         let values = unsafe {
-            Bitmap::from_inner_unchecked(Arc::new(buf.into()), 0, len, Some(false_count))
+            Bitmap::from_inner_unchecked(SharedStorage::from_vec(buf), 0, len, Some(false_count))
         };
 
         let null_count = len - nonnull_count;
@@ -774,7 +774,7 @@ macro_rules! impl_collect_bool_validity {
             unsafe {
                 // SAFETY: we made sure the null_count is correct.
                 Some(Bitmap::from_inner_unchecked(
-                    Arc::new(validity.into()),
+                    SharedStorage::from_vec(validity),
                     0,
                     len,
                     Some(null_count),

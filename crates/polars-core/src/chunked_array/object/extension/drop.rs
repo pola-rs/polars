@@ -41,7 +41,7 @@ pub(crate) unsafe fn drop_object_array(values: &dyn Array) {
 
     // If the buf is not shared with anyone but us we can deallocate.
     let buf = arr.values();
-    if buf.shared_count_strong() == 1 && !buf.is_empty() {
+    if buf.storage_refcount() == 1 && !buf.is_empty() {
         PolarsExtension::new(arr.clone());
     };
 }
