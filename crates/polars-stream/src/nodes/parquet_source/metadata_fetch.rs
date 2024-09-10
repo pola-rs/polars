@@ -18,9 +18,6 @@ use crate::utils::task_handles_ext;
 impl ParquetSourceNode {
     /// Constructs the task that fetches file metadata.
     /// Note: This must be called AFTER `self.projected_arrow_fields` has been initialized.
-    ///
-    /// TODO: During IR conversion the metadata of the first file is already downloaded - see if
-    /// we can find a way to re-use it.
     #[allow(clippy::type_complexity)]
     pub(super) fn init_metadata_fetcher(
         &mut self,
