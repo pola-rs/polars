@@ -1723,7 +1723,7 @@ class Expr:
         ...         "b": [1, 1, 2, 2],
         ...     }
         ... )
-        >>> df.select(pl.all().mode())  # doctest: +IGNORE_RESULT
+        >>> df.select(pl.all().mode().first())  # doctest: +IGNORE_RESULT
         shape: (2, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -1731,7 +1731,6 @@ class Expr:
         │ i64 ┆ i64 │
         ╞═════╪═════╡
         │ 1   ┆ 1   │
-        │ 1   ┆ 2   │
         └─────┴─────┘
         """
         return self._from_pyexpr(self._pyexpr.mode())

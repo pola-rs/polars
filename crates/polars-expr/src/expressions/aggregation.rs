@@ -451,6 +451,10 @@ impl PhysicalExpr for AggregationExpr {
         }
     }
 
+    fn is_scalar(&self) -> bool {
+        true
+    }
+
     fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
         Some(self)
     }
@@ -741,6 +745,10 @@ impl PhysicalExpr for AggQuantileExpr {
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.input.to_field(input_schema)
+    }
+
+    fn is_scalar(&self) -> bool {
+        true
     }
 }
 

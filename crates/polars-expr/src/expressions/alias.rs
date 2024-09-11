@@ -59,6 +59,10 @@ impl PhysicalExpr for AliasExpr {
         ))
     }
 
+    fn is_scalar(&self) -> bool {
+        self.physical_expr.is_scalar()
+    }
+
     fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
         Some(self)
     }

@@ -66,4 +66,8 @@ impl PhysicalExpr for RollingExpr {
     fn as_expression(&self) -> Option<&Expr> {
         Some(&self.expr)
     }
+
+    fn is_scalar(&self) -> bool {
+        false
+    }
 }

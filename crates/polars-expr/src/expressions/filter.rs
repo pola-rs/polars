@@ -148,4 +148,8 @@ impl PhysicalExpr for FilterExpr {
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.input.to_field(input_schema)
     }
+
+    fn is_scalar(&self) -> bool {
+        false
+    }
 }

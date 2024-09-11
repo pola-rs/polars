@@ -205,6 +205,10 @@ impl ExprIR {
             alias.hash(state)
         }
     }
+
+    pub fn is_scalar(&self, expr_arena: &Arena<AExpr>) -> bool {
+        is_scalar_ae(self.node, expr_arena)
+    }
 }
 
 impl AsRef<ExprIR> for ExprIR {

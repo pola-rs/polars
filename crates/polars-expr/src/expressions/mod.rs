@@ -587,6 +587,7 @@ pub trait PhysicalExpr: Send + Sync {
     fn is_literal(&self) -> bool {
         false
     }
+    fn is_scalar(&self) -> bool;
 }
 
 impl Display for &dyn PhysicalExpr {

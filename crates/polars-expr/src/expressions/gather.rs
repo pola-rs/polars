@@ -92,6 +92,10 @@ impl PhysicalExpr for GatherExpr {
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.phys_expr.to_field(input_schema)
     }
+
+    fn is_scalar(&self) -> bool {
+        self.returns_scalar
+    }
 }
 
 impl GatherExpr {
