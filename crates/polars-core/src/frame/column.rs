@@ -588,6 +588,7 @@ impl Column {
         unsafe { self.as_materialized_series().cast_unchecked(dtype) }.map(Column::from)
     }
 
+    #[cfg(feature = "zip_with")]
     pub fn zip_with_same_type(
         &self,
         mask: &ChunkedArray<BooleanType>,
@@ -712,6 +713,7 @@ impl Column {
         self.as_materialized_series().is_null()
     }
 
+    #[cfg(feature = "zip_with")]
     pub fn zip_with(&self, mask: &BooleanChunked, other: &Self) -> PolarsResult<Self> {
         // @scalar-opt
         self.as_materialized_series()

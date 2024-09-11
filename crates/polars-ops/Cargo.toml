@@ -43,9 +43,6 @@ package = "jsonpath_lib_polars_vendor"
 optional = true
 version = "0.0.1"
 
-[dev-dependencies]
-rand = { workspace = true, features = ["small_rng"] }
-
 [build-dependencies]
 version_check = { workspace = true }
 

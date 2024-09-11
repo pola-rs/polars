@@ -20,6 +20,7 @@ mod concat;
 mod correlation;
 #[cfg(feature = "cum_agg")]
 mod cum;
+#[cfg(feature = "cutqcut")]
 mod cut;
 #[cfg(feature = "temporal")]
 mod datetime;

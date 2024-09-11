@@ -31,9 +31,6 @@ pyo3 = { workspace = true, optional = true }
 rayon = { workspace = true }
 tokio = { workspace = true, optional = true }
 
-[dev-dependencies]
-serde_json = { workspace = true }
-
 [build-dependencies]
 version_check = { workspace = true }
 
