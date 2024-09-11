@@ -63,7 +63,6 @@ impl DslBuilder {
                 is_expanded: true,
             })),
             file_info: Arc::new(RwLock::new(Some(file_info))),
-            hive_parts: None,
             predicate: None,
             file_options,
             scan_type: FileScan::Anonymous {
@@ -107,7 +106,6 @@ impl DslBuilder {
         Ok(DslPlan::Scan {
             sources: Arc::new(Mutex::new(sources)),
             file_info: Arc::new(RwLock::new(None)),
-            hive_parts: None,
             predicate: None,
             file_options: options,
             scan_type: FileScan::Parquet {
@@ -139,7 +137,6 @@ impl DslBuilder {
         Ok(DslPlan::Scan {
             sources: Arc::new(Mutex::new(sources)),
             file_info: Arc::new(RwLock::new(None)),
-            hive_parts: None,
             file_options: FileScanOptions {
                 with_columns: None,
                 cache,
@@ -192,7 +189,6 @@ impl DslBuilder {
         Ok(DslPlan::Scan {
             sources: Arc::new(Mutex::new(sources)),
             file_info: Arc::new(RwLock::new(None)),
-            hive_parts: None,
             file_options: options,
             predicate: None,
             scan_type: FileScan::Csv {
