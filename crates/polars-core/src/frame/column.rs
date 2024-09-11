@@ -13,18 +13,17 @@ use crate::series::{BitRepr, IsSorted, SeriesPhysIter};
 
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+#[cfg_attr(feature = "serde", serde(from = "Series"))]
+#[cfg_attr(feature = "serde", serde(into = "_SerdeSeries"))]
 pub enum Column {
     Series(Series),
     Scalar(ScalarColumn),
 }
 
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct ScalarColumn {
     name: PlSmallStr,
     value: AnyValue<'static>,
-    // invariant: Series.len() == length
-    #[cfg_attr(feature = "serde", serde(skip))]
     materialized: OnceLock<Series>,
     length: usize,
 }
@@ -970,3 +969,27 @@ impl IntoColumn for Column {
         self
     }
 }
+
+/// We don't want to serialize the scalar columns. So this helps pretend that columns are always
+/// initialized without implementing From<Column> for Series.
+///
+/// Those casts should be explicit.
+#[derive(Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", serde(into = "Series"))]
+struct _SerdeSeries(Series);
+
+impl From<Column> for _SerdeSeries {
+    #[inline]
+    fn from(value: Column) -> Self {
+        Self(value.take_materialized_series())
+    }
+}
+
+impl Into<Series> for _SerdeSeries {
+    #[inline]
+    fn into(self) -> Series {
+        self.0
+    }
+}
+

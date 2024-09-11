@@ -293,17 +293,18 @@ impl PartitionGroupByExec {
 
         // MERGE phase
 
-        // @scalar-correctness?
         let df = accumulate_dataframes_vertical(splitted_dfs)?;
-        let keys: Vec<Column> =
-            splitted_keys
-                .into_iter()
-                .fold(Vec::<Column>::new(), |mut acc, e| {
-                    acc.iter_mut().zip(e).for_each(|(acc, e)| {
-                        _ = acc.append(&e.into_column());
-                    });
-                    acc
+        let keys = splitted_keys
+            .into_iter()
+            .reduce(|mut acc, e| {
+                acc.iter_mut().zip(e).for_each(|(acc, e)| {
+                    let _ = acc.append(&e);
                 });
+                acc
+            })
+            .unwrap();
+        // @scalar-opt
+        let keys = keys.into_iter().map(Column::from).collect();
 
         // the partitioned group_by has added columns so we must update the schema.
         state.set_schema(self.output_schema.clone());
