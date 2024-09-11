@@ -122,7 +122,7 @@ pub(super) fn drop_nulls(s: &Column) -> PolarsResult<Column> {
 
 #[cfg(feature = "mode")]
 pub(super) fn mode(s: &Column) -> PolarsResult<Column> {
-    mode::mode(s)
+    mode::mode(s.as_materialized_series()).map(Column::from)
 }
 
 #[cfg(feature = "moment")]
@@ -160,11 +160,7 @@ pub(super) fn hist(
     include_category: bool,
     include_breakpoint: bool,
 ) -> PolarsResult<Column> {
-    let bins = if s.len() == 2 {
-        Some(&s[1])
-    } else {
-        None
-    };
+    let bins = if s.len() == 2 { Some(&s[1]) } else { None };
     let s = s[0].as_materialized_series();
     hist_series(
         s,

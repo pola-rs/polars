@@ -792,6 +792,28 @@ impl Sub for &Column {
     }
 }
 
+impl Mul for Column {
+    type Output = PolarsResult<Column>;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        // @scalar-opt
+        self.as_materialized_series()
+            .mul(rhs.as_materialized_series())
+            .map(Column::from)
+    }
+}
+
+impl Mul for &Column {
+    type Output = PolarsResult<Column>;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        // @scalar-opt
+        self.as_materialized_series()
+            .mul(rhs.as_materialized_series())
+            .map(Column::from)
+    }
+}
+
 impl<T> Sub<T> for &Column
 where
     T: Num + NumCast,

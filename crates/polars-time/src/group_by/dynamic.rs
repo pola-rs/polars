@@ -197,7 +197,8 @@ impl Wrap<&DataFrame> {
         if group_by.is_empty() {
             // If by is given, the column must be sorted in the 'by' arg, which we can not check now
             // this will be checked when the groups are materialized.
-            time.as_materialized_series().ensure_sorted_arg("group_by_dynamic")?;
+            time.as_materialized_series()
+                .ensure_sorted_arg("group_by_dynamic")?;
         }
         let time_type = time.dtype();
 
@@ -755,43 +756,43 @@ mod test {
             )
             .unwrap();
 
-        let nulls = Column::new(
+        let nulls = Series::new(
             "".into(),
             [Some(3), Some(7), None, Some(9), Some(2), Some(1)],
         );
 
-        let min = unsafe { a.agg_min(&groups) };
-        let expected = Column::new("".into(), [3, 3, 3, 3, 2, 1]);
+        let min = unsafe { a.as_materialized_series().agg_min(&groups) };
+        let expected = Series::new("".into(), [3, 3, 3, 3, 2, 1]);
         assert_eq!(min, expected);
 
         // Expected for nulls is equality.
         let min = unsafe { nulls.agg_min(&groups) };
         assert_eq!(min, expected);
 
-        let max = unsafe { a.agg_max(&groups) };
-        let expected = Column::new("".into(), [3, 7, 7, 9, 9, 1]);
+        let max = unsafe { a.as_materialized_series().agg_max(&groups) };
+        let expected = Series::new("".into(), [3, 7, 7, 9, 9, 1]);
         assert_eq!(max, expected);
 
         let max = unsafe { nulls.agg_max(&groups) };
         assert_eq!(max, expected);
 
-        let var = unsafe { a.agg_var(&groups, 1) };
-        let expected = Column::new(
+        let var = unsafe { a.as_materialized_series().agg_var(&groups, 1) };
+        let expected = Series::new(
             "".into(),
             [0.0, 8.0, 4.000000000000002, 6.666666666666667, 24.5, 0.0],
         );
-        assert!(abs(&(var - expected)?.as_materialized_series()).unwrap().lt(1e-12).unwrap().all());
+        assert!(abs(&(var - expected)?).unwrap().lt(1e-12).unwrap().all());
 
         let var = unsafe { nulls.agg_var(&groups, 1) };
-        let expected = Column::new("".into(), [0.0, 8.0, 8.0, 9.333333333333343, 24.5, 0.0]);
-        assert!(abs(&(var - expected)?.as_materialized_series()).unwrap().lt(1e-12).unwrap().all());
+        let expected = Series::new("".into(), [0.0, 8.0, 8.0, 9.333333333333343, 24.5, 0.0]);
+        assert!(abs(&(var - expected)?).unwrap().lt(1e-12).unwrap().all());
 
-        let quantile = unsafe { a.agg_quantile(&groups, 0.5, QuantileInterpolOptions::Linear) };
-        let expected = Column::new("".into(), [3.0, 5.0, 5.0, 6.0, 5.5, 1.0]);
+        let quantile = unsafe { a.as_materialized_series().agg_quantile(&groups, 0.5, QuantileInterpolOptions::Linear) };
+        let expected = Series::new("".into(), [3.0, 5.0, 5.0, 6.0, 5.5, 1.0]);
         assert_eq!(quantile, expected);
 
         let quantile = unsafe { nulls.agg_quantile(&groups, 0.5, QuantileInterpolOptions::Linear) };
-        let expected = Column::new("".into(), [3.0, 5.0, 5.0, 7.0, 5.5, 1.0]);
+        let expected = Series::new("".into(), [3.0, 5.0, 5.0, 7.0, 5.5, 1.0]);
         assert_eq!(quantile, expected);
 
         Ok(())

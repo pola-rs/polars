@@ -251,11 +251,11 @@
 //! # fn example() -> PolarsResult<()> {
 //!
 //! // apply a closure over all values
-//! let s = Series::new("foo".into(), &[Some(1), Some(2), None]);
+//! let s = Column::new("foo".into(), &[Some(1), Some(2), None]);
 //! s.i32()?.apply_values(|value| value * 20);
 //!
 //! // count string lengths
-//! let s = Series::new("foo".into(), &["foo", "bar", "foobar"]);
+//! let s = Column::new("foo".into(), &["foo", "bar", "foobar"]);
 //! unary_elementwise_values(s.str()?, |str_val| str_val.len() as u64);
 //!
 //! # Ok(())
@@ -474,7 +474,10 @@
 //!              "D" => &[2, 4, 6]
 //!     ]?;
 //!
-//! let unpivoted = df.unpivot(&["A", "B"], &["C", "D"]).unwrap();
+//! let unpivoted = df.unpivot(
+//!     &[PlSmallStr::from_static("A"), PlSmallStr::from_static("B")],
+//!     &[PlSmallStr::from_static("C"), PlSmallStr::from_static("D")],
+//! ).unwrap();
 //! // unpivoted:
 //!
 //! // +-----+-----+----------+-------+
@@ -510,14 +513,14 @@
 //! let s1 = Series::new("b".into(), &[1i64, 1, 1]);
 //! let s2 = Series::new("c".into(), &[2i64, 2, 2]);
 //! // construct a new ListChunked for a slice of Series.
-//! let list = Series::new("foo", &[s0, s1, s2]);
+//! let list = Column::new("foo".into(), &[s0, s1, s2]);
 //!
 //! // construct a few more Series.
-//! let s0 = Series::new("B".into(), [1, 2, 3]);
-//! let s1 = Series::new("C".into(), [1, 1, 1]);
+//! let s0 = Column::new("B".into(), [1, 2, 3]);
+//! let s1 = Column::new("C".into(), [1, 1, 1]);
 //! let df = DataFrame::new(vec![list, s0, s1])?;
 //!
-//! let exploded = df.explode(["foo"])?;
+//! let exploded = df.explode([PlSmallStr::from("foo")])?;
 //! // exploded:
 //!
 //! // +-----+-----+-----+

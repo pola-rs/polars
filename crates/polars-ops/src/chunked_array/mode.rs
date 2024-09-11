@@ -19,15 +19,13 @@ where
 }
 
 fn mode_f32(ca: &Float32Chunked) -> PolarsResult<Float32Chunked> {
-    // @scalar-opt
-    let s = ca.apply_as_ints(|v| mode(&v.clone().into()).unwrap().as_materialized_series().clone());
+    let s = ca.apply_as_ints(|v| mode(v).unwrap());
     let ca = s.f32().unwrap().clone();
     Ok(ca)
 }
 
 fn mode_64(ca: &Float64Chunked) -> PolarsResult<Float64Chunked> {
-    // @scalar-opt
-    let s = ca.apply_as_ints(|v| mode(&v.clone().into()).unwrap().as_materialized_series().clone());
+    let s = ca.apply_as_ints(|v| mode(v).unwrap());
     let ca = s.f64().unwrap().clone();
     Ok(ca)
 }
@@ -63,18 +61,18 @@ fn mode_indices(groups: GroupsProxy) -> Vec<IdxSize> {
     }
 }
 
-pub fn mode(s: &Column) -> PolarsResult<Column> {
+pub fn mode(s: &Series) -> PolarsResult<Series> {
     let s_phys = s.to_physical_repr();
     let out = match s_phys.dtype() {
-        DataType::Binary => mode_primitive(s_phys.binary().unwrap())?.into_column(),
-        DataType::Boolean => mode_primitive(s_phys.bool().unwrap())?.into_column(),
-        DataType::Float32 => mode_f32(s_phys.f32().unwrap())?.into_column(),
-        DataType::Float64 => mode_64(s_phys.f64().unwrap())?.into_column(),
-        DataType::String => mode_primitive(&s_phys.str().unwrap().as_binary())?.into_column(),
+        DataType::Binary => mode_primitive(s_phys.binary().unwrap())?.into_series(),
+        DataType::Boolean => mode_primitive(s_phys.bool().unwrap())?.into_series(),
+        DataType::Float32 => mode_f32(s_phys.f32().unwrap())?.into_series(),
+        DataType::Float64 => mode_64(s_phys.f64().unwrap())?.into_series(),
+        DataType::String => mode_primitive(&s_phys.str().unwrap().as_binary())?.into_series(),
         dt if dt.is_integer() => {
             with_match_physical_integer_polars_type!(dt, |$T| {
-                let ca: &ChunkedArray<$T> = s_phys.as_materialized_series().as_ref().as_ref().as_ref();
-                mode_primitive(ca)?.into_column()
+                let ca: &ChunkedArray<$T> = s_phys.as_ref().as_ref().as_ref();
+                mode_primitive(ca)?.into_series()
             })
         },
         _ => polars_bail!(opq = mode, s.dtype()),
@@ -122,7 +120,7 @@ mod test {
         ca_builder.append_value("test2");
         ca_builder.append_value("test2");
         ca_builder.append_value("test2");
-        let s = ca_builder.finish().into_column();
+        let s = ca_builder.finish().into_series();
         let result = mode(&s).unwrap();
         assert_eq!(result.str_value(0).unwrap(), "test2");
         assert_eq!(result.len(), 1);

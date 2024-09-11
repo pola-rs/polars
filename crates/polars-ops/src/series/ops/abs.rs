@@ -1,10 +1,7 @@
 use polars_core::prelude::*;
 
 /// Convert numerical values to their absolute value.
-pub fn abs(c: &Column) -> PolarsResult<Column> {
-    // @scalar-opt
-    let s = c.as_materialized_series();
-
+pub fn abs(s: &Series) -> PolarsResult<Series> {
     use DataType::*;
     let out = match s.dtype() {
         #[cfg(feature = "dtype-i8")]
@@ -34,5 +31,5 @@ pub fn abs(c: &Column) -> PolarsResult<Column> {
         dt if dt.is_unsigned_integer() => s.clone(),
         dt => polars_bail!(opq = abs, dt),
     };
-    Ok(out.into())
+    Ok(out)
 }

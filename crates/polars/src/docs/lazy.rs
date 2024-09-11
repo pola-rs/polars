@@ -81,11 +81,8 @@
 //! ]?;
 //! // sort this DataFrame by multiple columns
 //!
-//! // ordering of the columns
-//! let descending = vec![true, false];
-//!
 //! let sorted = df.lazy()
-//!     .sort_by_exprs(vec![col("b"), col("a")], descending, false, false)
+//!     .sort_by_exprs(vec![col("b"), col("a")])
 //!     .collect()?;
 //!
 //! // sorted:

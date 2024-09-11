@@ -217,7 +217,7 @@ fn test_window_mapping() -> PolarsResult<()> {
         .select([(lit(10) + col("A")).alias("foo").over([col("fruits")])])
         .collect()?;
 
-    let expected = Series::new("foo".into(), [11, 12, 13, 14, 15]);
+    let expected = Column::new("foo".into(), [11, 12, 13, 14, 15]);
     assert!(out.column("foo")?.equals(&expected));
 
     let out = df
@@ -232,7 +232,7 @@ fn test_window_mapping() -> PolarsResult<()> {
                 .over([col("fruits")]),
         ])
         .collect()?;
-    let expected = Series::new("foo".into(), [11, 12, 8, 9, 15]);
+    let expected = Column::new("foo".into(), [11, 12, 8, 9, 15]);
     assert!(out.column("foo")?.equals(&expected));
 
     let out = df
@@ -247,7 +247,7 @@ fn test_window_mapping() -> PolarsResult<()> {
                 .over([col("fruits")]),
         ])
         .collect()?;
-    let expected = Series::new("foo".into(), [None, Some(3), None, Some(-1), Some(-1)]);
+    let expected = Column::new("foo".into(), [None, Some(3), None, Some(-1), Some(-1)]);
     assert!(out.column("foo")?.equals_missing(&expected));
 
     // now sorted
@@ -259,7 +259,7 @@ fn test_window_mapping() -> PolarsResult<()> {
         .lazy()
         .select([(lit(10) + col("A")).alias("foo").over([col("fruits")])])
         .collect()?;
-    let expected = Series::new("foo".into(), [13, 14, 11, 12, 15]);
+    let expected = Column::new("foo".into(), [13, 14, 11, 12, 15]);
     assert!(out.column("foo")?.equals(&expected));
 
     let out = df
@@ -275,7 +275,7 @@ fn test_window_mapping() -> PolarsResult<()> {
         ])
         .collect()?;
 
-    let expected = Series::new("foo".into(), [8, 9, 11, 12, 15]);
+    let expected = Column::new("foo".into(), [8, 9, 11, 12, 15]);
     assert!(out.column("foo")?.equals(&expected));
 
     let out = df
@@ -290,7 +290,7 @@ fn test_window_mapping() -> PolarsResult<()> {
         ])
         .collect()?;
 
-    let expected = Series::new("foo".into(), [None, Some(-1), None, Some(3), Some(-1)]);
+    let expected = Column::new("foo".into(), [None, Some(-1), None, Some(3), Some(-1)]);
     assert!(out.column("foo")?.equals_missing(&expected));
 
     Ok(())
@@ -381,7 +381,7 @@ fn test_window_naive_any() -> PolarsResult<()> {
         .collect()?;
 
     let res = df.column("res")?;
-    assert_eq!(res.sum::<usize>().unwrap(), 5);
+    assert_eq!(res.as_materialized_series().sum::<usize>().unwrap(), 5);
     Ok(())
 }
 

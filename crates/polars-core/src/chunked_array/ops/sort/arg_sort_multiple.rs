@@ -106,7 +106,7 @@ pub fn _get_rows_encoded_compat_array(by: &Series) -> PolarsResult<ArrayRef> {
     Ok(out)
 }
 
-pub fn encode_rows_vertical_par_unordered(by: &[Column]) -> PolarsResult<BinaryOffsetChunked> {
+pub fn encode_rows_vertical_par_unordered(by: &[Series]) -> PolarsResult<BinaryOffsetChunked> {
     let n_threads = POOL.current_num_threads();
     let len = by[0].len();
     let splits = _split_offsets(len, n_threads);
@@ -129,7 +129,7 @@ pub fn encode_rows_vertical_par_unordered(by: &[Column]) -> PolarsResult<BinaryO
 
 // Almost the same but broadcast nulls to the row-encoded array.
 pub fn encode_rows_vertical_par_unordered_broadcast_nulls(
-    by: &[Column],
+    by: &[Series],
 ) -> PolarsResult<BinaryOffsetChunked> {
     let n_threads = POOL.current_num_threads();
     let len = by[0].len();
@@ -138,15 +138,14 @@ pub fn encode_rows_vertical_par_unordered_broadcast_nulls(
     let chunks = splits.into_par_iter().map(|(offset, len)| {
         let sliced = by
             .iter()
-            .map(|s| s.as_materialized_series().slice(offset as i64, len))
-            .map(Column::from)
+            .map(|s| s.slice(offset as i64, len))
             .collect::<Vec<_>>();
         let rows = _get_rows_encoded_unordered(&sliced)?;
 
         let validities = sliced
             .iter()
-            .flat_map(|c| {
-                let s = c.as_materialized_series().rechunk();
+            .flat_map(|s| {
+                let s = s.rechunk();
                 #[allow(clippy::unnecessary_to_owned)]
                 s.chunks()
                     .to_vec()
@@ -166,7 +165,7 @@ pub fn encode_rows_vertical_par_unordered_broadcast_nulls(
     ))
 }
 
-pub(crate) fn encode_rows_unordered(by: &[Column]) -> PolarsResult<BinaryOffsetChunked> {
+pub(crate) fn encode_rows_unordered(by: &[Series]) -> PolarsResult<BinaryOffsetChunked> {
     let rows = _get_rows_encoded_unordered(by)?;
     Ok(BinaryOffsetChunked::with_chunk(
         PlSmallStr::EMPTY,
@@ -174,11 +173,11 @@ pub(crate) fn encode_rows_unordered(by: &[Column]) -> PolarsResult<BinaryOffsetC
     ))
 }
 
-pub fn _get_rows_encoded_unordered(by: &[Column]) -> PolarsResult<RowsEncoded> {
+pub fn _get_rows_encoded_unordered(by: &[Series]) -> PolarsResult<RowsEncoded> {
     let mut cols = Vec::with_capacity(by.len());
     let mut fields = Vec::with_capacity(by.len());
     for by in by {
-        let arr = _get_rows_encoded_compat_array(by.as_materialized_series())?;
+        let arr = _get_rows_encoded_compat_array(by)?;
         let field = EncodingField::new_unsorted();
         match arr.dtype() {
             // Flatten the struct fields.
@@ -256,7 +255,7 @@ pub fn _get_rows_encoded_arr(
 
 pub fn _get_rows_encoded_ca_unordered(
     name: PlSmallStr,
-    by: &[Column],
+    by: &[Series],
 ) -> PolarsResult<BinaryOffsetChunked> {
     _get_rows_encoded_unordered(by)
         .map(|rows| BinaryOffsetChunked::with_chunk(name, rows.into_array()))

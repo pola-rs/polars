@@ -95,6 +95,16 @@ pub trait DataFrameJoinOps: IntoDf {
         let df_left = self.to_df();
         let selected_left = df_left.select_columns(left_on)?;
         let selected_right = other.select_columns(right_on)?;
+
+        let selected_left = selected_left
+            .into_iter()
+            .map(Column::take_materialized_series)
+            .collect::<Vec<_>>();
+        let selected_right = selected_right
+            .into_iter()
+            .map(Column::take_materialized_series)
+            .collect::<Vec<_>>();
+
         self._join_impl(other, selected_left, selected_right, args, true, false)
     }
 
@@ -104,8 +114,8 @@ pub trait DataFrameJoinOps: IntoDf {
     fn _join_impl(
         &self,
         other: &DataFrame,
-        mut selected_left: Vec<Column>,
-        mut selected_right: Vec<Column>,
+        mut selected_left: Vec<Series>,
+        mut selected_right: Vec<Series>,
         mut args: JoinArgs,
         _check_rechunk: bool,
         _verbose: bool,
@@ -118,7 +128,7 @@ pub trait DataFrameJoinOps: IntoDf {
         }
 
         // Clear literals if a frame is empty. Otherwise we could get an oob
-        fn clear(s: &mut [Column]) {
+        fn clear(s: &mut [Series]) {
             for s in s.iter_mut() {
                 if s.len() == 1 {
                     *s = s.clear()
@@ -195,8 +205,8 @@ pub trait DataFrameJoinOps: IntoDf {
                 Err(_) => {
                     let (ca_left, ca_right) =
                         make_categoricals_compatible(l.categorical()?, r.categorical()?)?;
-                    *l = ca_left.into_column().with_name(l.name().clone());
-                    *r = ca_right.into_column().with_name(r.name().clone());
+                    *l = ca_left.into_series().with_name(l.name().clone());
+                    *r = ca_right.into_series().with_name(r.name().clone());
                 },
             }
         }
@@ -222,8 +232,8 @@ pub trait DataFrameJoinOps: IntoDf {
 
         // Single keys.
         if selected_left.len() == 1 {
-            let s_left = &selected_left[0].as_materialized_series();
-            let s_right = &selected_right[0].as_materialized_series();
+            let s_left = &selected_left[0];
+            let s_right = &selected_right[0];
             let drop_names: Option<Vec<PlSmallStr>> =
                 if should_coalesce { None } else { Some(vec![]) };
             return match args.how {
@@ -513,15 +523,15 @@ trait DataFrameJoinOpsPrivate: IntoDf {
 impl DataFrameJoinOps for DataFrame {}
 impl DataFrameJoinOpsPrivate for DataFrame {}
 
-fn prepare_keys_multiple(s: &[Column], join_nulls: bool) -> PolarsResult<BinaryOffsetChunked> {
+fn prepare_keys_multiple(s: &[Series], join_nulls: bool) -> PolarsResult<BinaryOffsetChunked> {
     let keys = s
         .iter()
         .map(|s| {
             let phys = s.to_physical_repr();
             match phys.dtype() {
-                DataType::Float32 => phys.f32().unwrap().to_canonical().into_column(),
-                DataType::Float64 => phys.f64().unwrap().to_canonical().into_column(),
-                _ => phys,
+                DataType::Float32 => phys.f32().unwrap().to_canonical().into_series(),
+                DataType::Float64 => phys.f64().unwrap().to_canonical().into_series(),
+                _ => phys.into_owned(),
             }
         })
         .collect::<Vec<_>>();
@@ -537,7 +547,19 @@ pub fn private_left_join_multiple_keys(
     b: &DataFrame,
     join_nulls: bool,
 ) -> PolarsResult<LeftJoinIds> {
-    let a = prepare_keys_multiple(a.get_columns(), join_nulls)?.into_series();
-    let b = prepare_keys_multiple(b.get_columns(), join_nulls)?.into_series();
+    // @scalar-opt
+    let a_cols = a
+        .get_columns()
+        .iter()
+        .map(|c| c.as_materialized_series().clone())
+        .collect::<Vec<_>>();
+    let b_cols = b
+        .get_columns()
+        .iter()
+        .map(|c| c.as_materialized_series().clone())
+        .collect::<Vec<_>>();
+
+    let a = prepare_keys_multiple(&a_cols, join_nulls)?.into_series();
+    let b = prepare_keys_multiple(&b_cols, join_nulls)?.into_series();
     sort_or_hash_left(&a, &b, false, JoinValidation::ManyToMany, join_nulls)
 }
