@@ -121,8 +121,8 @@ where
 ///
 /// ```rust
 /// # use polars_core::prelude::*;
-/// let s1 = Series::new("Fruit".into(), ["Apple", "Apple", "Pear"]);
-/// let s2 = Series::new("Color".into(), ["Red", "Yellow", "Green"]);
+/// let s1 = Column::new("Fruit".into(), ["Apple", "Apple", "Pear"]);
+/// let s2 = Column::new("Color".into(), ["Red", "Yellow", "Green"]);
 ///
 /// let df: PolarsResult<DataFrame> = DataFrame::new(vec![s1, s2]);
 /// ```
@@ -151,8 +151,8 @@ where
 /// let df = df!("Fruit" => ["Apple", "Apple", "Pear"],
 ///              "Color" => ["Red", "Yellow", "Green"])?;
 ///
-/// assert_eq!(df[0], Series::new("Fruit".into(), &["Apple", "Apple", "Pear"]));
-/// assert_eq!(df[1], Series::new("Color".into(), &["Red", "Yellow", "Green"]));
+/// assert_eq!(df[0], Column::new("Fruit".into(), &["Apple", "Apple", "Pear"]));
+/// assert_eq!(df[1], Column::new("Color".into(), &["Red", "Yellow", "Green"]));
 /// # Ok::<(), PolarsError>(())
 /// ```
 ///
@@ -163,8 +163,8 @@ where
 /// let df = df!("Fruit" => ["Apple", "Apple", "Pear"],
 ///              "Color" => ["Red", "Yellow", "Green"])?;
 ///
-/// assert_eq!(df["Fruit"], Series::new("Fruit".into(), &["Apple", "Apple", "Pear"]));
-/// assert_eq!(df["Color"], Series::new("Color".into(), &["Red", "Yellow", "Green"]));
+/// assert_eq!(df["Fruit"], Column::new("Fruit".into(), &["Apple", "Apple", "Pear"]));
+/// assert_eq!(df["Color"], Column::new("Color".into(), &["Red", "Yellow", "Green"]));
 /// # Ok::<(), PolarsError>(())
 /// ```
 #[derive(Clone)]
@@ -276,8 +276,8 @@ impl DataFrame {
     ///
     /// ```
     /// # use polars_core::prelude::*;
-    /// let s0 = Series::new("days".into(), [0, 1, 2].as_ref());
-    /// let s1 = Series::new("temp".into(), [22.1, 19.9, 7.].as_ref());
+    /// let s0 = Column::new("days".into(), [0, 1, 2].as_ref());
+    /// let s1 = Column::new("temp".into(), [22.1, 19.9, 7.].as_ref());
     ///
     /// let df = DataFrame::new(vec![s0, s1])?;
     /// # Ok::<(), PolarsError>(())
@@ -377,8 +377,8 @@ impl DataFrame {
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
-    /// let s1 = Series::new("Ocean".into(), ["Atlantic", "Indian"]);
-    /// let s2 = Series::new("Area (km²)".into(), [106_460_000, 70_560_000]);
+    /// let s1 = Column::new("Ocean".into(), ["Atlantic", "Indian"]);
+    /// let s2 = Column::new("Area (km²)".into(), [106_460_000, 70_560_000]);
     /// let mut df = DataFrame::new(vec![s1.clone(), s2.clone()])?;
     ///
     /// assert_eq!(df.pop(), Some(s2));
@@ -588,7 +588,7 @@ impl DataFrame {
     /// # use polars_core::prelude::*;
     /// let df: DataFrame = df!("Name" => ["Adenine", "Cytosine", "Guanine", "Thymine"],
     ///                         "Symbol" => ["A", "C", "G", "T"])?;
-    /// let columns: &[Series] = df.get_columns();
+    /// let columns: &[Column] = df.get_columns();
     ///
     /// assert_eq!(columns[0].name(), "Name");
     /// assert_eq!(columns[1].name(), "Symbol");
@@ -619,14 +619,14 @@ impl DataFrame {
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
-    /// let s1: Series = Series::new("Name".into(), ["Pythagoras' theorem", "Shannon entropy"]);
-    /// let s2: Series = Series::new("Formula".into(), ["a²+b²=c²", "H=-Σ[P(x)log|P(x)|]"]);
+    /// let s1 = Column::new("Name".into(), ["Pythagoras' theorem", "Shannon entropy"]);
+    /// let s2 = Column::new("Formula".into(), ["a²+b²=c²", "H=-Σ[P(x)log|P(x)|]"]);
     /// let df: DataFrame = DataFrame::new(vec![s1.clone(), s2.clone()])?;
     ///
     /// let mut iterator = df.iter();
     ///
-    /// assert_eq!(iterator.next(), Some(&s1));
-    /// assert_eq!(iterator.next(), Some(&s2));
+    /// assert_eq!(iterator.next(), Some(s1.as_materialized_series()));
+    /// assert_eq!(iterator.next(), Some(s2.as_materialized_series()));
     /// assert_eq!(iterator.next(), None);
     /// # Ok::<(), PolarsError>(())
     /// ```
@@ -837,8 +837,8 @@ impl DataFrame {
     /// ```rust
     /// # use polars_core::prelude::*;
     /// let df1: DataFrame = df!("Element" => ["Copper", "Silver", "Gold"])?;
-    /// let s1: Series = Series::new("Proton".into(), [29, 47, 79]);
-    /// let s2: Series = Series::new("Electron".into(), [29, 47, 79]);
+    /// let s1 = Column::new("Proton".into(), [29, 47, 79]);
+    /// let s2 = Column::new("Electron".into(), [29, 47, 79]);
     ///
     /// let df2: DataFrame = df1.hstack(&[s1, s2])?;
     /// assert_eq!(df2.shape(), (3, 3));
@@ -1047,7 +1047,7 @@ impl DataFrame {
     /// assert!(s1.is_err());
     ///
     /// let s2: Column = df.drop_in_place("Animal")?;
-    /// assert_eq!(s2, Column::new_series("Animal".into(), &["Tiger", "Lion", "Great auk"]));
+    /// assert_eq!(s2, Column::new("Animal".into(), &["Tiger", "Lion", "Great auk"]));
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn drop_in_place(&mut self, name: &str) -> PolarsResult<Column> {
@@ -1355,8 +1355,8 @@ impl DataFrame {
     /// let df: DataFrame = df!("Star" => ["Sun", "Betelgeuse", "Sirius A", "Sirius B"],
     ///                         "Absolute magnitude" => [4.83, -5.85, 1.42, 11.18])?;
     ///
-    /// let s1: Option<&Series> = df.select_at_idx(0);
-    /// let s2: Series = Series::new("Star".into(), ["Sun", "Betelgeuse", "Sirius A", "Sirius B"]);
+    /// let s1: Option<&Column> = df.select_at_idx(0);
+    /// let s2 = Column::new("Star".into(), ["Sun", "Betelgeuse", "Sirius A", "Sirius B"]);
     ///
     /// assert_eq!(s1, Some(&s2));
     /// # Ok::<(), PolarsError>(())
@@ -1468,8 +1468,8 @@ impl DataFrame {
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
-    /// let s1: Series = Series::new("Password".into(), ["123456", "[]B$u$g$s$B#u#n#n#y[]{}"]);
-    /// let s2: Series = Series::new("Robustness".into(), ["Weak", "Strong"]);
+    /// let s1 = Column::new("Password".into(), ["123456", "[]B$u$g$s$B#u#n#n#y[]{}"]);
+    /// let s2 = Column::new("Robustness".into(), ["Weak", "Strong"]);
     /// let df: DataFrame = DataFrame::new(vec![s1.clone(), s2])?;
     ///
     /// assert_eq!(df.column("Password")?, &s1);
@@ -1488,7 +1488,7 @@ impl DataFrame {
     /// # use polars_core::prelude::*;
     /// let df: DataFrame = df!("Latin name" => ["Oncorhynchus kisutch", "Salmo salar"],
     ///                         "Max weight (kg)" => [16.0, 35.89])?;
-    /// let sv: Vec<&Series> = df.columns(["Latin name", "Max weight (kg)"])?;
+    /// let sv: Vec<&Column> = df.columns(["Latin name", "Max weight (kg)"])?;
     ///
     /// assert_eq!(&df[0], sv[0]);
     /// assert_eq!(&df[1], sv[1]);
@@ -1609,7 +1609,7 @@ impl DataFrame {
     /// let df: DataFrame = df!("Name" => ["Methane", "Ethane", "Propane"],
     ///                         "Carbon" => [1, 2, 3],
     ///                         "Hydrogen" => [4, 6, 8])?;
-    /// let sv: Vec<Series> = df.select_series(["Carbon", "Hydrogen"])?;
+    /// let sv: Vec<Column> = df.select_columns(["Carbon", "Hydrogen"])?;
     ///
     /// assert_eq!(df["Carbon"], sv[0]);
     /// assert_eq!(df["Hydrogen"], sv[1]);
@@ -2020,8 +2020,8 @@ impl DataFrame {
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
-    /// let s0 = Series::new("foo".into(), ["ham", "spam", "egg"]);
-    /// let s1 = Series::new("names".into(), ["Jean", "Claude", "van"]);
+    /// let s0 = Column::new("foo".into(), ["ham", "spam", "egg"]);
+    /// let s1 = Column::new("names".into(), ["Jean", "Claude", "van"]);
     /// let mut df = DataFrame::new(vec![s0, s1])?;
     ///
     /// fn str_to_len(str_val: &Series) -> Series {
@@ -2070,8 +2070,8 @@ impl DataFrame {
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
-    /// let s0 = Series::new("foo".into(), ["ham", "spam", "egg"]);
-    /// let s1 = Series::new("ascii".into(), [70, 79, 79]);
+    /// let s0 = Column::new("foo".into(), ["ham", "spam", "egg"]);
+    /// let s1 = Column::new("ascii".into(), [70, 79, 79]);
     /// let mut df = DataFrame::new(vec![s0, s1])?;
     ///
     /// // Add 32 to get lowercase ascii values
@@ -2140,14 +2140,14 @@ impl DataFrame {
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
-    /// let s0 = Series::new("foo".into(), ["ham", "spam", "egg", "bacon", "quack"]);
-    /// let s1 = Series::new("values".into(), [1, 2, 3, 4, 5]);
+    /// let s0 = Column::new("foo".into(), ["ham", "spam", "egg", "bacon", "quack"]);
+    /// let s1 = Column::new("values".into(), [1, 2, 3, 4, 5]);
     /// let mut df = DataFrame::new(vec![s0, s1])?;
     ///
     /// let idx = vec![0, 1, 4];
     ///
-    /// df.try_apply("foo", |s| {
-    ///     s.str()?
+    /// df.try_apply("foo", |c| {
+    ///     c.str()?
     ///     .scatter_with(idx, |opt_val| opt_val.map(|string| format!("{}-is-modified", string)))
     /// });
     /// # Ok::<(), PolarsError>(())
@@ -2204,16 +2204,16 @@ impl DataFrame {
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
-    /// let s0 = Series::new("foo".into(), ["ham", "spam", "egg", "bacon", "quack"]);
-    /// let s1 = Series::new("values".into(), [1, 2, 3, 4, 5]);
+    /// let s0 = Column::new("foo".into(), ["ham", "spam", "egg", "bacon", "quack"]);
+    /// let s1 = Column::new("values".into(), [1, 2, 3, 4, 5]);
     /// let mut df = DataFrame::new(vec![s0, s1])?;
     ///
     /// // create a mask
-    /// let values = df.column("values")?;
+    /// let values = df.column("values")?.as_materialized_series();
     /// let mask = values.lt_eq(1)? | values.gt_eq(5_i32)?;
     ///
-    /// df.try_apply("foo", |s| {
-    ///     s.str()?
+    /// df.try_apply("foo", |c| {
+    ///     c.str()?
     ///     .set(&mask, Some("not_within_bounds"))
     /// });
     /// # Ok::<(), PolarsError>(())

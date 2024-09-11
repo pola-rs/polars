@@ -801,6 +801,58 @@ impl Column {
     }
 }
 
+impl ChunkCompare<&Column> for Column {
+    type Item = PolarsResult<BooleanChunked>;
+
+    /// Create a boolean mask by checking for equality.
+    #[inline]
+    fn equal(&self, rhs: &Column) -> PolarsResult<BooleanChunked> {
+        self.as_materialized_series().equal(rhs.as_materialized_series())
+    }
+
+    /// Create a boolean mask by checking for equality.
+    #[inline]
+    fn equal_missing(&self, rhs: &Column) -> PolarsResult<BooleanChunked> {
+        self.as_materialized_series().equal_missing(rhs.as_materialized_series())
+    }
+
+    /// Create a boolean mask by checking for inequality.
+    #[inline]
+    fn not_equal(&self, rhs: &Column) -> PolarsResult<BooleanChunked> {
+        self.as_materialized_series().not_equal(rhs.as_materialized_series())
+    }
+
+    /// Create a boolean mask by checking for inequality.
+    #[inline]
+    fn not_equal_missing(&self, rhs: &Column) -> PolarsResult<BooleanChunked> {
+        self.as_materialized_series().not_equal_missing(rhs.as_materialized_series())
+    }
+
+    /// Create a boolean mask by checking if self > rhs.
+    #[inline]
+    fn gt(&self, rhs: &Column) -> PolarsResult<BooleanChunked> {
+        self.as_materialized_series().gt(rhs.as_materialized_series())
+    }
+
+    /// Create a boolean mask by checking if self >= rhs.
+    #[inline]
+    fn gt_eq(&self, rhs: &Column) -> PolarsResult<BooleanChunked> {
+        self.as_materialized_series().gt_eq(rhs.as_materialized_series())
+    }
+
+    /// Create a boolean mask by checking if self < rhs.
+    #[inline]
+    fn lt(&self, rhs: &Column) -> PolarsResult<BooleanChunked> {
+        self.as_materialized_series().lt(rhs.as_materialized_series())
+    }
+
+    /// Create a boolean mask by checking if self <= rhs.
+    #[inline]
+    fn lt_eq(&self, rhs: &Column) -> PolarsResult<BooleanChunked> {
+        self.as_materialized_series().lt_eq(rhs.as_materialized_series())
+    }
+}
+
 impl Default for Column {
     fn default() -> Self {
         // @scalar-opt

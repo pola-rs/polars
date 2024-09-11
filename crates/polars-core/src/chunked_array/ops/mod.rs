@@ -306,6 +306,7 @@ pub trait ChunkVar {
 /// fn filter_all_ones(df: &DataFrame) -> PolarsResult<DataFrame> {
 ///     let mask = df
 ///     .column("column_a")?
+///     .as_materialized_series()
 ///     .equal(1)?;
 ///
 ///     df.filter(&mask)
