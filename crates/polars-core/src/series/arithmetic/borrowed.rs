@@ -180,7 +180,7 @@ impl NumOpsDispatchInner for FixedSizeListType {
 fn reshape_list_based_on(data: &ArrayRef, shape: &ArrayRef) -> PolarsResult<ArrayRef> {
     if let Some(list_chunk) = shape.as_any().downcast_ref::<LargeListArray>() {
         let result = LargeListArray::try_new(
-            list_chunk.data_type().clone(),
+            list_chunk.dtype().clone(),
             list_chunk.offsets().clone(),
             reshape_list_based_on(data, list_chunk.values())?,
             list_chunk.validity().cloned(),
@@ -275,7 +275,7 @@ impl ListChunked {
             let combined = self.amortized_iter().zip(rhs.list()?.amortized_iter()).map(|(a, b)| {
                 let (Some(a_owner), Some(b_owner)) = (a, b) else {
                     // Operations with nulls always result in nulls:
-                    return Ok(Series::full_null(self.name(), 1, self.dtype()));
+                    return Ok(Series::full_null(self.name().clone(), 1, self.dtype()));
                 };
                 let a = a_owner.as_ref();
                 let b = b_owner.as_ref();
