@@ -1,4 +1,5 @@
 mod check;
+mod paths;
 
 use arrow::legacy::error::to_compute_err;
 use polars_core::error::PolarsResult;

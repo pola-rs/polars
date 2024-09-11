@@ -107,3 +107,4 @@ impl<'a> IntoIterator for &'a DslPlan {
         DslPlanIter { stack: vec![self] }
     }
 }
+
