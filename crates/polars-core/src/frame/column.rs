@@ -700,6 +700,11 @@ impl Column {
         // @scalar-opt
         self.as_materialized_series().phys_iter()
     }
+
+    pub unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
+        // @scalar-opt
+        self.as_materialized_series().get_unchecked(index)
+    }
 }
 
 impl Default for Column {

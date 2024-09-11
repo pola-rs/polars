@@ -3,6 +3,7 @@ use std::sync::Arc;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{
     ArrowField, ArrowSchema, BooleanChunked, ChunkFull, IdxCa, StringChunked,
+    IntColumn, Column,
 };
 use polars_core::series::{IntoSeries, IsSorted, Series};
 use polars_core::utils::arrow::bitmap::{Bitmap, MutableBitmap};
@@ -68,7 +69,7 @@ impl RowGroupDecoder {
         if self.row_index.is_some() {
             // Add a placeholder so that we don't have to shift the entire vec
             // later.
-            out_columns.push(Series::default());
+            out_columns.push(Column::default());
         }
 
         let slice_range = row_group_data
@@ -197,7 +198,7 @@ impl RowGroupDecoder {
             );
             ca.set_sorted_flag(IsSorted::Ascending);
 
-            Ok(Some(ca.into_series()))
+            Ok(Some(ca.into_column()))
         } else {
             Ok(None)
         }
