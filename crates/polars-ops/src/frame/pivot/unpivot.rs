@@ -1,7 +1,8 @@
 use arrow::array::{MutableArray, MutablePlString};
 use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
 use polars_core::datatypes::{DataType, PlSmallStr};
-use polars_core::frame::{Column, DataFrame};
+use polars_core::frame::column::Column;
+use polars_core::frame::DataFrame;
 use polars_core::prelude::{IntoVec, Series, UnpivotArgsIR};
 use polars_core::utils::try_get_supertype;
 use polars_error::{polars_err, PolarsResult};
@@ -173,7 +174,8 @@ pub trait UnpivotDF: IntoDf {
         // SAFETY:
         // The give dtype is correct
         let values =
-            unsafe { Series::from_chunks_and_dtype_unchecked(value_name, vec![values_arr], &st) }.into();
+            unsafe { Series::from_chunks_and_dtype_unchecked(value_name, vec![values_arr], &st) }
+                .into();
 
         let variable_col = variable_col.as_box();
         // SAFETY:
@@ -184,7 +186,8 @@ pub trait UnpivotDF: IntoDf {
                 vec![variable_col],
                 &DataType::String,
             )
-        }.into();
+        }
+        .into();
 
         ids.hstack_mut(&[variables, values])?;
 

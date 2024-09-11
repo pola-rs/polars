@@ -1137,10 +1137,10 @@ pub fn coalesce_nulls<'a, T: PolarsDataType>(
     }
 }
 
-pub fn coalesce_nulls_series(a: &Series, b: &Series) -> (Series, Series) {
+pub fn coalesce_nulls_columns(a: &Column, b: &Column) -> (Column, Column) {
     if a.null_count() > 0 || b.null_count() > 0 {
-        let mut a = a.rechunk();
-        let mut b = b.rechunk();
+        let mut a = a.as_materialized_series().rechunk();
+        let mut b = b.as_materialized_series().rechunk();
         for (arr_a, arr_b) in unsafe { a.chunks_mut().iter_mut().zip(b.chunks_mut()) } {
             let validity = match (arr_a.validity(), arr_b.validity()) {
                 (None, Some(b)) => Some(b.clone()),
@@ -1153,7 +1153,7 @@ pub fn coalesce_nulls_series(a: &Series, b: &Series) -> (Series, Series) {
         }
         a.compute_len();
         b.compute_len();
-        (a, b)
+        (a.into(), b.into())
     } else {
         (a.clone(), b.clone())
     }

@@ -22,7 +22,9 @@ pub(crate) fn materialize_hive_partitions<D>(
             return;
         }
 
-        let hive_columns_iter = hive_columns.iter().map(|s| s.new_from_index(0, num_rows));
+        let hive_columns_iter = hive_columns
+            .iter()
+            .map(|s| s.new_from_index(0, num_rows).into());
 
         if reader_schema.index_of(hive_columns[0].name()).is_none() || df.width() == 0 {
             // Fast-path - all hive columns are at the end

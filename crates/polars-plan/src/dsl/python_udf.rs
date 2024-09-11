@@ -4,6 +4,7 @@ use std::sync::Arc;
 use polars_core::datatypes::{DataType, Field};
 use polars_core::error::*;
 use polars_core::frame::DataFrame;
+use polars_core::frame::column::Column;
 use polars_core::prelude::Series;
 use polars_core::schema::Schema;
 use pyo3::prelude::*;
@@ -20,7 +21,7 @@ use crate::prelude::*;
 
 // Will be overwritten on Python Polars start up.
 pub static mut CALL_SERIES_UDF_PYTHON: Option<
-    fn(s: Series, lambda: &PyObject) -> PolarsResult<Series>,
+    fn(s: Column, lambda: &PyObject) -> PolarsResult<Column>,
 > = None;
 pub static mut CALL_DF_UDF_PYTHON: Option<
     fn(s: DataFrame, lambda: &PyObject) -> PolarsResult<DataFrame>,
@@ -124,7 +125,7 @@ impl PythonUdfExpression {
     }
 
     #[cfg(feature = "serde")]
-    pub(crate) fn try_deserialize(buf: &[u8]) -> PolarsResult<Arc<dyn SeriesUdf>> {
+    pub(crate) fn try_deserialize(buf: &[u8]) -> PolarsResult<Arc<dyn ColumnsUdf>> {
         debug_assert!(buf.starts_with(MAGIC_BYTE_MARK));
         // skip header
         let buf = &buf[MAGIC_BYTE_MARK.len()..];
@@ -147,7 +148,7 @@ impl PythonUdfExpression {
                 output_type,
                 is_elementwise,
                 returns_scalar,
-            )) as Arc<dyn SeriesUdf>)
+            )) as Arc<dyn ColumnsUdf>)
         })
     }
 }
@@ -163,8 +164,8 @@ impl DataFrameUdf for PythonFunction {
     }
 }
 
-impl SeriesUdf for PythonUdfExpression {
-    fn call_udf(&self, s: &mut [Series]) -> PolarsResult<Option<Series>> {
+impl ColumnsUdf for PythonUdfExpression {
+    fn call_udf(&self, s: &mut [Column]) -> PolarsResult<Option<Column>> {
         let func = unsafe { CALL_SERIES_UDF_PYTHON.unwrap() };
 
         let output_type = self

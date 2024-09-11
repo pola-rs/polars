@@ -82,7 +82,7 @@ pub fn count_rows(
             |_| polars_err!(ComputeError: "count of {} exceeded maximum row size", count),
         )?;
         let column_name = alias.unwrap_or(PlSmallStr::from_static(crate::constants::LEN));
-        DataFrame::new(vec![Series::new(column_name, [count])])
+        DataFrame::new(vec![Column::new(column_name, [count])])
     }
 }
 

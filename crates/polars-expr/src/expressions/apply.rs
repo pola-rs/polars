@@ -15,7 +15,7 @@ use crate::expressions::{
 
 pub struct ApplyExpr {
     inputs: Vec<Arc<dyn PhysicalExpr>>,
-    function: SpecialEq<Arc<dyn SeriesUdf>>,
+    function: SpecialEq<Arc<dyn ColumnsUdf>>,
     expr: Expr,
     collect_groups: ApplyOptions,
     function_returns_scalar: bool,
@@ -33,7 +33,7 @@ impl ApplyExpr {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         inputs: Vec<Arc<dyn PhysicalExpr>>,
-        function: SpecialEq<Arc<dyn SeriesUdf>>,
+        function: SpecialEq<Arc<dyn ColumnsUdf>>,
         expr: Expr,
         options: FunctionOptions,
         allow_threading: bool,
@@ -67,7 +67,7 @@ impl ApplyExpr {
 
     pub(crate) fn new_minimal(
         inputs: Vec<Arc<dyn PhysicalExpr>>,
-        function: SpecialEq<Arc<dyn SeriesUdf>>,
+        function: SpecialEq<Arc<dyn ColumnsUdf>>,
         expr: Expr,
         collect_groups: ApplyOptions,
     ) -> Self {
@@ -438,7 +438,7 @@ impl PhysicalExpr for ApplyExpr {
 
 fn apply_multiple_elementwise<'a>(
     mut acs: Vec<AggregationContext<'a>>,
-    function: &dyn SeriesUdf,
+    function: &dyn ColumnsUdf,
     expr: &Expr,
     check_lengths: bool,
 ) -> PolarsResult<AggregationContext<'a>> {

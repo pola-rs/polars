@@ -1,6 +1,6 @@
 use super::*;
 
-pub(super) fn shrink(s: Series) -> PolarsResult<Series> {
+pub(super) fn shrink(s: Column) -> PolarsResult<Column> {
     if !s.dtype().is_numeric() {
         return Ok(s);
     }
@@ -8,6 +8,9 @@ pub(super) fn shrink(s: Series) -> PolarsResult<Series> {
     if s.dtype().is_float() {
         return s.cast(&DataType::Float32);
     }
+
+    // @scalar-opt
+    let s = s.as_materialized_series();
 
     if s.dtype().is_unsigned_integer() {
         let max = s.max_reduce()?.value().extract::<u64>().unwrap_or(0_u64);
@@ -19,7 +22,7 @@ pub(super) fn shrink(s: Series) -> PolarsResult<Series> {
         } else if max <= u32::MAX as u64 {
             s.cast(&DataType::UInt32)
         } else {
-            Ok(s)
+            Ok(s.clone())
         }
     } else {
         let min = s.min_reduce()?.value().extract::<i64>().unwrap_or(0_i64);
@@ -32,7 +35,7 @@ pub(super) fn shrink(s: Series) -> PolarsResult<Series> {
         } else if min >= i32::MIN as i64 && max <= i32::MAX as i64 {
             s.cast(&DataType::Int32)
         } else {
-            Ok(s)
+            Ok(s.clone())
         }
-    }
+    }.map(Column::from)
 }

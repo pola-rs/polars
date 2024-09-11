@@ -23,16 +23,16 @@ impl Hash for RandomMethod {
     }
 }
 
-pub(super) fn shuffle(s: &Series, seed: Option<u64>) -> PolarsResult<Series> {
+pub(super) fn shuffle(s: &Column, seed: Option<u64>) -> PolarsResult<Column> {
     Ok(s.shuffle(seed))
 }
 
 pub(super) fn sample_frac(
-    s: &[Series],
+    s: &[Column],
     with_replacement: bool,
     shuffle: bool,
     seed: Option<u64>,
-) -> PolarsResult<Series> {
+) -> PolarsResult<Column> {
     let src = &s[0];
     let frac_s = &s[1];
 
@@ -46,16 +46,16 @@ pub(super) fn sample_frac(
 
     match frac.get(0) {
         Some(frac) => src.sample_frac(frac, with_replacement, shuffle, seed),
-        None => Ok(Series::new_empty(src.name().clone(), src.dtype())),
+        None => Ok(Column::new_empty(src.name().clone(), src.dtype())),
     }
 }
 
 pub(super) fn sample_n(
-    s: &[Series],
+    s: &[Column],
     with_replacement: bool,
     shuffle: bool,
     seed: Option<u64>,
-) -> PolarsResult<Series> {
+) -> PolarsResult<Column> {
     let src = &s[0];
     let n_s = &s[1];
 
@@ -69,6 +69,6 @@ pub(super) fn sample_n(
 
     match n.get(0) {
         Some(n) => src.sample_n(n as usize, with_replacement, shuffle, seed),
-        None => Ok(Series::new_empty(src.name().clone(), src.dtype())),
+        None => Ok(Column::new_empty(src.name().clone(), src.dtype())),
     }
 }

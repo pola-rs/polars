@@ -11,9 +11,10 @@ pub(super) fn merge_sorted(df: &DataFrame, column: &str) -> PolarsResult<DataFra
                 .map(|s| {
                     Series::from_chunks_and_dtype_unchecked(
                         s.name().clone(),
-                        s.chunks()[..1].to_vec(),
+                        s.as_materialized_series().chunks()[..1].to_vec(),
                         s.dtype(),
                     )
+                    .into()
                 })
                 .collect::<Vec<_>>(),
             df.get_columns()
@@ -21,9 +22,10 @@ pub(super) fn merge_sorted(df: &DataFrame, column: &str) -> PolarsResult<DataFra
                 .map(|s| {
                     Series::from_chunks_and_dtype_unchecked(
                         s.name().clone(),
-                        s.chunks()[1..].to_vec(),
+                        s.as_materialized_series().chunks()[1..].to_vec(),
                         s.dtype(),
                     )
+                    .into()
                 })
                 .collect::<Vec<_>>(),
         )
@@ -34,5 +36,11 @@ pub(super) fn merge_sorted(df: &DataFrame, column: &str) -> PolarsResult<DataFra
 
     let lhs = left.column(column)?;
     let rhs = right.column(column)?;
-    _merge_sorted_dfs(&left, &right, lhs, rhs, true)
+    _merge_sorted_dfs(
+        &left,
+        &right,
+        lhs.as_materialized_series(),
+        rhs.as_materialized_series(),
+        true,
+    )
 }

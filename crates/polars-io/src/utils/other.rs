@@ -203,6 +203,7 @@ pub(crate) fn chunk_df_for_writing(
     // See: #16403
     if !df.get_columns().is_empty()
         && df.get_columns()[0]
+            .as_materialized_series()
             .chunk_lengths()
             .take(5)
             .all(|len| len < row_group_size)

@@ -84,31 +84,31 @@ const UP_NAME: &str = "_upper_boundary";
 pub trait PolarsTemporalGroupby {
     fn rolling(
         &self,
-        group_by: Vec<Series>,
+        group_by: Vec<Column>,
         options: &RollingGroupOptions,
-    ) -> PolarsResult<(Series, Vec<Series>, GroupsProxy)>;
+    ) -> PolarsResult<(Column, Vec<Column>, GroupsProxy)>;
 
     fn group_by_dynamic(
         &self,
-        group_by: Vec<Series>,
+        group_by: Vec<Column>,
         options: &DynamicGroupOptions,
-    ) -> PolarsResult<(Series, Vec<Series>, GroupsProxy)>;
+    ) -> PolarsResult<(Column, Vec<Column>, GroupsProxy)>;
 }
 
 impl PolarsTemporalGroupby for DataFrame {
     fn rolling(
         &self,
-        group_by: Vec<Series>,
+        group_by: Vec<Column>,
         options: &RollingGroupOptions,
-    ) -> PolarsResult<(Series, Vec<Series>, GroupsProxy)> {
+    ) -> PolarsResult<(Column, Vec<Column>, GroupsProxy)> {
         Wrap(self).rolling(group_by, options)
     }
 
     fn group_by_dynamic(
         &self,
-        group_by: Vec<Series>,
+        group_by: Vec<Column>,
         options: &DynamicGroupOptions,
-    ) -> PolarsResult<(Series, Vec<Series>, GroupsProxy)> {
+    ) -> PolarsResult<(Column, Vec<Column>, GroupsProxy)> {
         Wrap(self).group_by_dynamic(group_by, options)
     }
 }
@@ -116,9 +116,9 @@ impl PolarsTemporalGroupby for DataFrame {
 impl Wrap<&DataFrame> {
     fn rolling(
         &self,
-        group_by: Vec<Series>,
+        group_by: Vec<Column>,
         options: &RollingGroupOptions,
-    ) -> PolarsResult<(Series, Vec<Series>, GroupsProxy)> {
+    ) -> PolarsResult<(Column, Vec<Column>, GroupsProxy)> {
         polars_ensure!(
                         !options.period.is_zero() && !options.period.negative,
                         ComputeError:
@@ -128,7 +128,7 @@ impl Wrap<&DataFrame> {
         if group_by.is_empty() {
             // If by is given, the column must be sorted in the 'by' arg, which we can not check now
             // this will be checked when the groups are materialized.
-            time.ensure_sorted_arg("rolling")?;
+            time.as_materialized_series().ensure_sorted_arg("rolling")?;
         }
         let time_type = time.dtype();
 
@@ -137,7 +137,7 @@ impl Wrap<&DataFrame> {
         ensure_duration_matches_dtype(options.offset, time_type, "offset")?;
 
         use DataType::*;
-        let (dt, tu, tz): (Series, TimeUnit, Option<TimeZone>) = match time_type {
+        let (dt, tu, tz): (Column, TimeUnit, Option<TimeZone>) = match time_type {
             Datetime(tu, tz) => (time.clone(), *tu, tz.clone()),
             Date => (
                 time.cast(&Datetime(TimeUnit::Milliseconds, None))?,
@@ -190,14 +190,14 @@ impl Wrap<&DataFrame> {
     /// Returns: time_keys, keys, groupsproxy.
     fn group_by_dynamic(
         &self,
-        group_by: Vec<Series>,
+        group_by: Vec<Column>,
         options: &DynamicGroupOptions,
-    ) -> PolarsResult<(Series, Vec<Series>, GroupsProxy)> {
+    ) -> PolarsResult<(Column, Vec<Column>, GroupsProxy)> {
         let time = self.0.column(&options.index_column)?.rechunk();
         if group_by.is_empty() {
             // If by is given, the column must be sorted in the 'by' arg, which we can not check now
             // this will be checked when the groups are materialized.
-            time.ensure_sorted_arg("group_by_dynamic")?;
+            time.as_materialized_series().ensure_sorted_arg("group_by_dynamic")?;
         }
         let time_type = time.dtype();
 
@@ -260,12 +260,12 @@ impl Wrap<&DataFrame> {
 
     fn impl_group_by_dynamic(
         &self,
-        mut dt: Series,
-        mut by: Vec<Series>,
+        mut dt: Column,
+        mut by: Vec<Column>,
         options: &DynamicGroupOptions,
         tu: TimeUnit,
         time_type: &DataType,
-    ) -> PolarsResult<(Series, Vec<Series>, GroupsProxy)> {
+    ) -> PolarsResult<(Column, Vec<Column>, GroupsProxy)> {
         polars_ensure!(!options.every.negative, ComputeError: "'every' argument must be positive");
         if dt.is_empty() {
             return dt.cast(time_type).map(|s| (s, by, GroupsProxy::default()));
@@ -501,12 +501,12 @@ impl Wrap<&DataFrame> {
                 lower.set_sorted_flag(IsSorted::Ascending);
                 upper.set_sorted_flag(IsSorted::Ascending);
             }
-            by.push(lower.into_datetime(tu, tz.clone()).into_series());
-            by.push(upper.into_datetime(tu, tz.clone()).into_series());
+            by.push(lower.into_datetime(tu, tz.clone()).into_column());
+            by.push(upper.into_datetime(tu, tz.clone()).into_column());
         }
 
         dt.into_datetime(tu, None)
-            .into_series()
+            .into_column()
             .cast(time_type)
             .map(|s| (s, by, groups))
     }
@@ -514,13 +514,13 @@ impl Wrap<&DataFrame> {
     /// Returns: time_keys, keys, groupsproxy
     fn impl_rolling(
         &self,
-        dt: Series,
-        group_by: Vec<Series>,
+        dt: Column,
+        group_by: Vec<Column>,
         options: &RollingGroupOptions,
         tu: TimeUnit,
         tz: Option<Tz>,
         time_type: &DataType,
-    ) -> PolarsResult<(Series, Vec<Series>, GroupsProxy)> {
+    ) -> PolarsResult<(Column, Vec<Column>, GroupsProxy)> {
         let mut dt = dt.rechunk();
 
         let groups = if group_by.is_empty() {
@@ -691,9 +691,9 @@ mod test {
                 None,
                 &StringChunked::from_iter(std::iter::once("raise")),
             )?
-            .into_series();
+            .into_column();
             date.set_sorted_flag(IsSorted::Ascending);
-            let a = Series::new("a".into(), [3, 7, 5, 9, 2, 1]);
+            let a = Column::new("a".into(), [3, 7, 5, 9, 2, 1]);
             let df = DataFrame::new(vec![date, a.clone()])?;
 
             let (_, _, groups) = df
@@ -709,7 +709,7 @@ mod test {
                 .unwrap();
 
             let sum = unsafe { a.agg_sum(&groups) };
-            let expected = Series::new("".into(), [3, 10, 15, 24, 11, 1]);
+            let expected = Column::new("".into(), [3, 10, 15, 24, 11, 1]);
             assert_eq!(sum, expected);
         }
 
@@ -737,10 +737,10 @@ mod test {
             None,
             &StringChunked::from_iter(std::iter::once("raise")),
         )?
-        .into_series();
+        .into_column();
         date.set_sorted_flag(IsSorted::Ascending);
 
-        let a = Series::new("a".into(), [3, 7, 5, 9, 2, 1]);
+        let a = Column::new("a".into(), [3, 7, 5, 9, 2, 1]);
         let df = DataFrame::new(vec![date, a.clone()])?;
 
         let (_, _, groups) = df
@@ -755,13 +755,13 @@ mod test {
             )
             .unwrap();
 
-        let nulls = Series::new(
+        let nulls = Column::new(
             "".into(),
             [Some(3), Some(7), None, Some(9), Some(2), Some(1)],
         );
 
         let min = unsafe { a.agg_min(&groups) };
-        let expected = Series::new("".into(), [3, 3, 3, 3, 2, 1]);
+        let expected = Column::new("".into(), [3, 3, 3, 3, 2, 1]);
         assert_eq!(min, expected);
 
         // Expected for nulls is equality.
@@ -769,29 +769,29 @@ mod test {
         assert_eq!(min, expected);
 
         let max = unsafe { a.agg_max(&groups) };
-        let expected = Series::new("".into(), [3, 7, 7, 9, 9, 1]);
+        let expected = Column::new("".into(), [3, 7, 7, 9, 9, 1]);
         assert_eq!(max, expected);
 
         let max = unsafe { nulls.agg_max(&groups) };
         assert_eq!(max, expected);
 
         let var = unsafe { a.agg_var(&groups, 1) };
-        let expected = Series::new(
+        let expected = Column::new(
             "".into(),
             [0.0, 8.0, 4.000000000000002, 6.666666666666667, 24.5, 0.0],
         );
-        assert!(abs(&(var - expected)?).unwrap().lt(1e-12).unwrap().all());
+        assert!(abs(&(var - expected)?.as_materialized_series()).unwrap().lt(1e-12).unwrap().all());
 
         let var = unsafe { nulls.agg_var(&groups, 1) };
-        let expected = Series::new("".into(), [0.0, 8.0, 8.0, 9.333333333333343, 24.5, 0.0]);
-        assert!(abs(&(var - expected)?).unwrap().lt(1e-12).unwrap().all());
+        let expected = Column::new("".into(), [0.0, 8.0, 8.0, 9.333333333333343, 24.5, 0.0]);
+        assert!(abs(&(var - expected)?.as_materialized_series()).unwrap().lt(1e-12).unwrap().all());
 
         let quantile = unsafe { a.agg_quantile(&groups, 0.5, QuantileInterpolOptions::Linear) };
-        let expected = Series::new("".into(), [3.0, 5.0, 5.0, 6.0, 5.5, 1.0]);
+        let expected = Column::new("".into(), [3.0, 5.0, 5.0, 6.0, 5.5, 1.0]);
         assert_eq!(quantile, expected);
 
         let quantile = unsafe { nulls.agg_quantile(&groups, 0.5, QuantileInterpolOptions::Linear) };
-        let expected = Series::new("".into(), [3.0, 5.0, 5.0, 7.0, 5.5, 1.0]);
+        let expected = Column::new("".into(), [3.0, 5.0, 5.0, 7.0, 5.5, 1.0]);
         assert_eq!(quantile, expected);
 
         Ok(())
@@ -820,9 +820,9 @@ mod test {
             TimeUnit::Milliseconds,
             None,
         )?
-        .into_series();
+        .into_column();
 
-        let groups = Series::new("groups".into(), ["a", "a", "a", "b", "b", "a", "a"]);
+        let groups = Column::new("groups".into(), ["a", "a", "a", "b", "b", "a", "a"]);
         let df = DataFrame::new(vec![range, groups.clone()]).unwrap();
 
         let (time_key, mut keys, groups) = df
@@ -874,7 +874,7 @@ mod test {
             TimeUnit::Milliseconds,
             None,
         )?
-        .into_series();
+        .into_column();
         assert_eq!(&upper, &range);
 
         let upper = out.column("_lower_boundary").unwrap().slice(0, 3);
@@ -899,7 +899,7 @@ mod test {
             TimeUnit::Milliseconds,
             None,
         )?
-        .into_series();
+        .into_column();
         assert_eq!(&upper, &range);
 
         let expected = GroupsProxy::Idx(
@@ -940,9 +940,9 @@ mod test {
             TimeUnit::Milliseconds,
             None,
         )?
-        .into_series();
+        .into_column();
 
-        let groups = Series::new("groups".into(), ["a", "a", "a", "b", "b", "a", "a"]);
+        let groups = Column::new("groups".into(), ["a", "a", "a", "b", "b", "a", "a"]);
         let df = DataFrame::new(vec![range, groups.clone()]).unwrap();
 
         let (mut time_key, keys, _groups) = df

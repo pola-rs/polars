@@ -156,12 +156,14 @@ fn rg_to_dfs(
         if let Some(row_index) = row_index {
             let placeholder =
                 NullChunkedBuilder::new(PlSmallStr::from_static("__PL_TMP"), slice.1).finish();
-            return Ok(vec![DataFrame::new(vec![placeholder.into_series()])?
-                .with_row_index(
-                    row_index.name.clone(),
-                    Some(row_index.offset + IdxSize::try_from(slice.0).unwrap()),
-                )?
-                .select(std::iter::once(row_index.name))?]);
+            return Ok(vec![DataFrame::new(vec![placeholder
+                .into_series()
+                .into_column()])?
+            .with_row_index(
+                row_index.name.clone(),
+                Some(row_index.offset + IdxSize::try_from(slice.0).unwrap()),
+            )?
+            .select(std::iter::once(row_index.name))?]);
         }
     }
 
@@ -322,6 +324,7 @@ fn rg_to_dfs_prefiltered(
                             .collect::<Vec<_>>();
 
                         column_idx_to_series(col_idx, field_md.as_slice(), None, schema, store)
+                            .map(Column::from)
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
 
@@ -515,7 +518,7 @@ fn rg_to_dfs_optionally_par_over_columns(
                             Some(Filter::new_ranged(rg_slice.0, rg_slice.0 + rg_slice.1)),
                             schema,
                             store,
-                        )
+                        ).map(Column::from)
                     })
                     .collect::<PolarsResult<Vec<_>>>()
             })?
@@ -532,7 +535,7 @@ fn rg_to_dfs_optionally_par_over_columns(
                         Some(Filter::new_ranged(rg_slice.0, rg_slice.0 + rg_slice.1)),
                         schema,
                         store,
-                    )
+                    ).map(Column::from)
                 })
                 .collect::<PolarsResult<Vec<_>>>()?
         };
@@ -632,7 +635,7 @@ fn rg_to_dfs_par_over_rg(
                             Some(Filter::new_ranged(slice.0, slice.0 + slice.1)),
                             schema,
                             store,
-                        )
+                        ).map(Column::from)
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
 

@@ -732,14 +732,6 @@ pub unsafe trait IntoSeries {
     fn into_series(self) -> Series
     where
         Self: Sized;
-
-    #[inline(always)]
-    fn into_column(self) -> Column 
-    where
-        Self: Sized
-    {
-        Column::from(self.into_series())
-    }
 }
 
 impl<T> From<ChunkedArray<T>> for Series

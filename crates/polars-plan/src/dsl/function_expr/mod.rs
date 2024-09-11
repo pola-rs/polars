@@ -776,7 +776,7 @@ macro_rules! wrap {
     };
 
     ($e:expr, $($args:expr),*) => {{
-        let f = move |s: &mut [Series]| {
+        let f = move |s: &mut [Column]| {
             $e(s, $($args),*)
         };
 
@@ -784,13 +784,13 @@ macro_rules! wrap {
     }};
 }
 
-// Fn(&[Series], args)
+// Fn(&[Column], args)
 // all expression arguments are in the slice.
 // the first element is the root expression.
 #[macro_export]
 macro_rules! map_as_slice {
     ($func:path) => {{
-        let f = move |s: &mut [Series]| {
+        let f = move |s: &mut [Column]| {
             $func(s).map(Some)
         };
 
@@ -798,7 +798,7 @@ macro_rules! map_as_slice {
     }};
 
     ($func:path, $($args:expr),*) => {{
-        let f = move |s: &mut [Series]| {
+        let f = move |s: &mut [Column]| {
             $func(s, $($args),*).map(Some)
         };
 
@@ -811,18 +811,18 @@ macro_rules! map_as_slice {
 #[macro_export]
 macro_rules! map_owned {
     ($func:path) => {{
-        let f = move |s: &mut [Series]| {
-            let s = std::mem::take(&mut s[0]);
-            $func(s).map(Some)
+        let f = move |c: &mut [Column]| {
+            let c = std::mem::take(&mut c[0]);
+            $func(c).map(Some)
         };
 
         SpecialEq::new(Arc::new(f))
     }};
 
     ($func:path, $($args:expr),*) => {{
-        let f = move |s: &mut [Series]| {
-            let s = std::mem::take(&mut s[0]);
-            $func(s, $($args),*).map(Some)
+        let f = move |c: &mut [Column]| {
+            let c = std::mem::take(&mut c[0]);
+            $func(c, $($args),*).map(Some)
         };
 
         SpecialEq::new(Arc::new(f))
@@ -833,25 +833,25 @@ macro_rules! map_owned {
 #[macro_export]
 macro_rules! map {
     ($func:path) => {{
-        let f = move |s: &mut [Series]| {
-            let s = &s[0];
-            $func(s).map(Some)
+        let f = move |c: &mut [Column]| {
+            let c = &c[0];
+            $func(c).map(Some)
         };
 
         SpecialEq::new(Arc::new(f))
     }};
 
     ($func:path, $($args:expr),*) => {{
-        let f = move |s: &mut [Series]| {
-            let s = &s[0];
-            $func(s, $($args),*).map(Some)
+        let f = move |c: &mut [Column]| {
+            let c = &c[0];
+            $func(c, $($args),*).map(Some)
         };
 
         SpecialEq::new(Arc::new(f))
     }};
 }
 
-impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
+impl From<FunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
     fn from(func: FunctionExpr) -> Self {
         use FunctionExpr::*;
         match func {
@@ -877,9 +877,9 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             Abs => map!(abs::abs),
             Negate => map!(dispatch::negate),
             NullCount => {
-                let f = |s: &mut [Series]| {
+                let f = |s: &mut [Column]| {
                     let s = &s[0];
-                    Ok(Some(Series::new(
+                    Ok(Some(Column::new(
                         s.name().clone(),
                         [s.null_count() as IdxSize],
                     )))

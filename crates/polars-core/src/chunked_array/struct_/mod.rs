@@ -62,6 +62,15 @@ fn constructor(name: PlSmallStr, fields: &[Series]) -> PolarsResult<StructChunke
 }
 
 impl StructChunked {
+    pub fn from_columns(name: PlSmallStr, fields: &[Column]) -> PolarsResult<Self> {
+        // @scalar-opt!
+        let series = fields
+            .iter()
+            .map(|c| c.as_materialized_series().clone())
+            .collect::<Vec<_>>();
+        Self::from_series(name, &series)
+    }
+
     pub fn from_series(name: PlSmallStr, fields: &[Series]) -> PolarsResult<Self> {
         let mut names = PlHashSet::with_capacity(fields.len());
         let first_len = fields.first().map(|s| s.len()).unwrap_or(0);
@@ -347,7 +356,11 @@ impl StructChunked {
 
     pub fn unnest(self) -> DataFrame {
         // @scalar-opt
-        let columns = self.fields_as_series().into_iter().map(Column::from).collect();
+        let columns = self
+            .fields_as_series()
+            .into_iter()
+            .map(Column::from)
+            .collect();
 
         // SAFETY: invariants for struct are the same
         unsafe { DataFrame::new_no_checks(columns) }

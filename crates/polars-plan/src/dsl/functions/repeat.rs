@@ -5,7 +5,7 @@ use super::*;
 /// Generally you won't need this function, as `lit(value)` already represents a column containing
 /// only `value` whose length is automatically set to the correct number of rows.
 pub fn repeat<E: Into<Expr>>(value: E, n: Expr) -> Expr {
-    let function = |s: Series, n: Series| {
+    let function = |s: Column, n: Column| {
         polars_ensure!(
             n.dtype().is_integer(),
             SchemaMismatch: "expected expression of dtype 'integer', got '{}'", n.dtype()
