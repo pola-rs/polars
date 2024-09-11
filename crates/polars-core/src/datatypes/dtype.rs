@@ -235,7 +235,7 @@ impl DataType {
         match prev {
             DataType::Array(_, _) => {
                 while let DataType::Array(inner, _) = &prev {
-                    prev = &inner;
+                    prev = inner;
                 }
                 Some(prev)
             },
