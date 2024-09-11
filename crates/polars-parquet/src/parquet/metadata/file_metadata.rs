@@ -16,7 +16,7 @@ pub struct FileMetadata {
     pub version: i32,
     /// number of rows in the file.
     pub num_rows: usize,
-    /// Max row group height, useful for sharing column materializaztions.
+    /// Max row group height, useful for sharing column materializations.
     pub max_row_group_height: usize,
     /// String message for application that wrote this file.
     ///
