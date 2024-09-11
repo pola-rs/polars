@@ -7,7 +7,6 @@ use polars_error::PolarsResult;
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::chunked_array::metadata::MetadataFlags;
-use crate::chunked_array::object::PolarsObjectSafe;
 use crate::prelude::*;
 use crate::series::{BitRepr, IsSorted, SeriesPhysIter};
 
@@ -615,6 +614,7 @@ impl Column {
         self.as_materialized_series().get(index)
     }
 
+    #[cfg(feature = "dtype-decimal")]
     pub fn decimal(&self) -> PolarsResult<&DecimalChunked> {
         // @scalar-opt
         self.as_materialized_series().decimal()
@@ -632,6 +632,7 @@ impl Column {
             .map(Self::from)
     }
 
+    #[cfg(feature = "dtype-array")]
     pub fn reshape_array(&self, dimensions: &[i64]) -> PolarsResult<Self> {
         // @scalar-opt
         self.as_materialized_series()
@@ -651,11 +652,13 @@ impl Column {
         self.as_materialized_series().filter(filter).map(Self::from)
     }
 
+    #[cfg(feature = "random")]
     pub fn shuffle(&self, seed: Option<u64>) -> Self {
         // @scalar-opt
         self.as_materialized_series().shuffle(seed).into()
     }
 
+    #[cfg(feature = "random")]
     pub fn sample_frac(
         &self,
         frac: f64,
@@ -668,6 +671,7 @@ impl Column {
             .map(Self::from)
     }
 
+    #[cfg(feature = "random")]
     pub fn sample_n(
         &self,
         n: usize,
@@ -780,7 +784,11 @@ impl Column {
         self.as_materialized_series().get_unchecked(index)
     }
 
-    pub fn get_object(&self, index: usize) -> Option<&dyn PolarsObjectSafe> {
+    #[cfg(feature = "object")]
+    pub fn get_object(
+        &self,
+        index: usize,
+    ) -> Option<&dyn crate::chunked_array::object::PolarsObjectSafe> {
         self.as_materialized_series().get_object(index)
     }
 
@@ -1034,12 +1042,6 @@ impl ScalarColumn {
         self.materialized
             .into_inner()
             .unwrap_or_else(|| Self::_to_series(self.name, self.value, self.length))
-    }
-
-    pub fn select_chunk(&self, _: usize) -> Series {
-        // @scalar-opt
-        // @scalar-correctness?
-        todo!()
     }
 
     fn with_name(self, name: PlSmallStr) -> Self {

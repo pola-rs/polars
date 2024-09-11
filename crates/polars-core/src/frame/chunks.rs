@@ -29,10 +29,7 @@ impl DataFrame {
             let columns = self
                 .get_columns()
                 .iter()
-                .map(|column| match column {
-                    Column::Series(s) => s.select_chunk(i),
-                    Column::Scalar(s) => s.select_chunk(i),
-                })
+                .map(|column| column.as_materialized_series().select_chunk(i))
                 .map(Column::from)
                 .collect::<Vec<_>>();
 
