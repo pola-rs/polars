@@ -83,8 +83,8 @@ impl DataFrame {
     ///
     /// ```rust
     /// use polars_core::prelude::*;
-    /// let a = UInt32Chunked::new("a".into(), &[1, 2, 3]).into_series();
-    /// let b = Float64Chunked::new("b".into(), &[10., 8., 6.]).into_series();
+    /// let a = UInt32Chunked::new("a".into(), &[1, 2, 3]).into_column();
+    /// let b = Float64Chunked::new("b".into(), &[10., 8., 6.]).into_column();
     ///
     /// let df = DataFrame::new(vec![a, b]).unwrap();
     /// let ndarray = df.to_ndarray::<Float64Type>(IndexOrder::Fortran).unwrap();
