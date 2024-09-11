@@ -125,26 +125,19 @@ def test_dt_datetime_deprecated() -> None:
     assert result.item() == expected
 
 
-@pytest.mark.parametrize(
-    ("time_zone", "expected"),
-    [
-        (None, True),
-        ("Asia/Kathmandu", False),
-        ("UTC", True),
-    ],
-)
-def test_local_date_sortedness(time_zone: str | None, expected: bool) -> None:
-    # singleton - always sorted
+@pytest.mark.parametrize("time_zone", [None, "Asia/Kathmandu", "UTC"])
+def test_local_date_sortedness(time_zone: str | None) -> None:
+    # singleton
     ser = (pl.Series([datetime(2022, 1, 1, 23)]).dt.replace_time_zone(time_zone)).sort()
     result = ser.dt.date()
     assert result.flags["SORTED_ASC"]
 
-    # 2 elements - depends on time zone
+    # 2 elements
     ser = (
         pl.Series([datetime(2022, 1, 1, 23)] * 2).dt.replace_time_zone(time_zone)
     ).sort()
     result = ser.dt.date()
-    assert result.flags["SORTED_ASC"] >= expected
+    assert result.flags["SORTED_ASC"]
 
 
 @pytest.mark.parametrize("time_zone", [None, "Asia/Kathmandu", "UTC"])

@@ -247,20 +247,20 @@ pub(super) fn time(s: &Series) -> PolarsResult<Series> {
 pub(super) fn date(s: &Series) -> PolarsResult<Series> {
     match s.dtype() {
         #[cfg(feature = "timezones")]
-        DataType::Datetime(_, Some(tz)) => {
-            let mut out = {
-                polars_ops::chunked_array::replace_time_zone(
-                    s.datetime().unwrap(),
-                    None,
-                    &StringChunked::from_iter(std::iter::once("raise")),
-                    NonExistent::Raise,
-                )?
-                .cast(&DataType::Date)?
-            };
-            if tz != "UTC" {
-                // DST transitions may not preserve sortedness.
-                out.set_sorted_flag(IsSorted::Not);
-            }
+        DataType::Datetime(_, Some(_)) => {
+            let mut out = polars_ops::chunked_array::replace_time_zone(
+                s.datetime().unwrap(),
+                None,
+                &StringChunked::from_iter(std::iter::once("raise")),
+                NonExistent::Raise,
+            )?
+            .cast(&DataType::Date)?;
+            // `replace_time_zone` may unset sorted flag. But, we're only taking the date
+            // part of the result, so we can safely preserve the sorted flag here. We may
+            // need to make an exception if a time zone introduces a change which involves
+            // "going back in time" and repeating a day, but we're not aware of that ever
+            // having happened.
+            out.set_sorted_flag(s.is_sorted_flag());
             Ok(out)
         },
         DataType::Datetime(_, _) => s.datetime().unwrap().cast(&DataType::Date),
@@ -271,22 +271,13 @@ pub(super) fn date(s: &Series) -> PolarsResult<Series> {
 pub(super) fn datetime(s: &Series) -> PolarsResult<Series> {
     match s.dtype() {
         #[cfg(feature = "timezones")]
-        DataType::Datetime(tu, Some(tz)) => {
-            let mut out = {
-                polars_ops::chunked_array::replace_time_zone(
-                    s.datetime().unwrap(),
-                    None,
-                    &StringChunked::from_iter(std::iter::once("raise")),
-                    NonExistent::Raise,
-                )?
-                .cast(&DataType::Datetime(*tu, None))?
-            };
-            if tz != "UTC" {
-                // DST transitions may not preserve sortedness.
-                out.set_sorted_flag(IsSorted::Not);
-            }
-            Ok(out)
-        },
+        DataType::Datetime(tu, Some(_)) => polars_ops::chunked_array::replace_time_zone(
+            s.datetime().unwrap(),
+            None,
+            &StringChunked::from_iter(std::iter::once("raise")),
+            NonExistent::Raise,
+        )?
+        .cast(&DataType::Datetime(*tu, None)),
         DataType::Datetime(tu, _) => s.datetime().unwrap().cast(&DataType::Datetime(*tu, None)),
         dtype => polars_bail!(ComputeError: "expected Datetime, got {}", dtype),
     }
