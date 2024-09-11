@@ -37,5 +37,6 @@ pub(super) fn shrink(s: Column) -> PolarsResult<Column> {
         } else {
             Ok(s.clone())
         }
-    }.map(Column::from)
+    }
+    .map(Column::from)
 }

@@ -387,8 +387,8 @@ pub trait DataFrameJoinOps: IntoDf {
             #[cfg(feature = "semi_anti_join")]
             JoinType::Anti | JoinType::Semi => self._join_impl(
                 other,
-                vec![lhs_keys.into()],
-                vec![rhs_keys.into()],
+                vec![lhs_keys],
+                vec![rhs_keys],
                 args,
                 _check_rechunk,
                 _verbose,

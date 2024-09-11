@@ -216,7 +216,7 @@ pub fn top_k(s: &[Column], descending: bool) -> PolarsResult<Column> {
         #[cfg(feature = "dtype-struct")]
         DataType::Struct(_) => {
             // Fallback to more generic impl.
-            top_k_by_impl(k, src, &[src.clone().into()], vec![descending])
+            top_k_by_impl(k, src, &[src.clone()], vec![descending])
         },
         _dt => {
             macro_rules! dispatch {
@@ -289,6 +289,9 @@ fn top_k_by_impl(
 
     let idx = _arg_bottom_k(k, by, &mut sort_options)?;
 
-    let result = unsafe { src.as_materialized_series().take_unchecked(&idx.into_inner()) };
+    let result = unsafe {
+        src.as_materialized_series()
+            .take_unchecked(&idx.into_inner())
+    };
     Ok(result.into())
 }

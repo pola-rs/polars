@@ -1512,7 +1512,7 @@ impl Expr {
                 if let DataType::Float32 = c.dtype() {
                     out.cast(&DataType::Float32).map(Column::from).map(Some)
                 } else {
-                    Ok(Some(out.into()))
+                    Ok(Some(out))
                 }
             },
             GetOutput::map_field(|field| {

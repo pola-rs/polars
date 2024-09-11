@@ -113,20 +113,26 @@ fn spearman_rank_corr(s: &[Column], ddof: u8, propagate_nans: bool) -> PolarsRes
     let a = a.drop_nulls();
     let b = b.drop_nulls();
 
-    let a_rank = a.as_materialized_series().rank(
-        RankOptions {
-            method: RankMethod::Average,
-            ..Default::default()
-        },
-        None,
-    ).into();
-    let b_rank = b.as_materialized_series().rank(
-        RankOptions {
-            method: RankMethod::Average,
-            ..Default::default()
-        },
-        None,
-    ).into();
+    let a_rank = a
+        .as_materialized_series()
+        .rank(
+            RankOptions {
+                method: RankMethod::Average,
+                ..Default::default()
+            },
+            None,
+        )
+        .into();
+    let b_rank = b
+        .as_materialized_series()
+        .rank(
+            RankOptions {
+                method: RankMethod::Average,
+                ..Default::default()
+            },
+            None,
+        )
+        .into();
 
     pearson_corr(&[a_rank, b_rank], ddof)
 }

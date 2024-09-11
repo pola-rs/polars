@@ -221,9 +221,12 @@ pub(super) fn contains(s: &[Column]) -> PolarsResult<Column> {
     polars_ensure!(matches!(array.dtype(), DataType::Array(_, _)),
         SchemaMismatch: "invalid series dtype: expected `Array`, got `{}`", array.dtype(),
     );
-    Ok(is_in(item.as_materialized_series(), array.as_materialized_series())?
-        .with_name(array.name().clone())
-        .into_column())
+    Ok(is_in(
+        item.as_materialized_series(),
+        array.as_materialized_series(),
+    )?
+    .with_name(array.name().clone())
+    .into_column())
 }
 
 #[cfg(feature = "array_count")]
@@ -236,7 +239,8 @@ pub(super) fn count_matches(args: &[Column]) -> PolarsResult<Column> {
         element.len()
     );
     let ca = s.array()?;
-    ca.array_count_matches(element.get(0).unwrap()).map(Column::from)
+    ca.array_count_matches(element.get(0).unwrap())
+        .map(Column::from)
 }
 
 pub(super) fn shift(s: &[Column]) -> PolarsResult<Column> {

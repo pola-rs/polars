@@ -40,13 +40,13 @@ pub use crate::datatypes::{ArrayCollectIterExt, *};
 pub use crate::error::{
     polars_bail, polars_ensure, polars_err, polars_warn, PolarsError, PolarsResult,
 };
+pub use crate::frame::column::{Column, IntoColumn};
 pub use crate::frame::explode::UnpivotArgsIR;
 #[cfg(feature = "algorithm_group_by")]
 pub(crate) use crate::frame::group_by::aggregations::*;
 #[cfg(feature = "algorithm_group_by")]
 pub use crate::frame::group_by::*;
 pub use crate::frame::{DataFrame, UniqueKeepStrategy};
-pub use crate::frame::column::{Column, IntoColumn};
 pub use crate::hashing::VecHash;
 pub use crate::named_from::{NamedFrom, NamedFromOwned};
 pub use crate::scalar::Scalar;

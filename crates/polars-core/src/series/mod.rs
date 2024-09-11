@@ -463,6 +463,7 @@ impl Series {
     /// Cast from physical to logical types without any checks on the validity of the cast.
     ///
     /// # Safety
+    ///
     /// This can lead to invalid memory access in downstream code.
     pub unsafe fn cast_unchecked(&self, dtype: &DataType) -> PolarsResult<Self> {
         match self.dtype() {

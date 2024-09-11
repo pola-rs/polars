@@ -254,14 +254,12 @@ pub(super) fn compute_col_idx(
             let ca: &ChunkedArray<Float64Type> = column_agg_physical
                 .as_materialized_series()
                 .as_ref()
-                .as_ref()
                 .as_ref();
             compute_col_idx_numeric(ca)
         },
         T::Float32 => {
             let ca: &ChunkedArray<Float32Type> = column_agg_physical
                 .as_materialized_series()
-                .as_ref()
                 .as_ref()
                 .as_ref();
             compute_col_idx_numeric(ca)
@@ -429,14 +427,12 @@ pub(super) fn compute_row_idx(
                 let ca: &ChunkedArray<Float64Type> = index_agg_physical
                     .as_materialized_series()
                     .as_ref()
-                    .as_ref()
                     .as_ref();
                 compute_row_index(index, ca, count, index_s.dtype())
             },
             T::Float32 => {
                 let ca: &ChunkedArray<Float32Type> = index_agg_physical
                     .as_materialized_series()
-                    .as_ref()
                     .as_ref()
                     .as_ref();
                 compute_row_index(index, ca, count, index_s.dtype())

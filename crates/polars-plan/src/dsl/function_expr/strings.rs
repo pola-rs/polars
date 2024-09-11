@@ -672,7 +672,7 @@ fn to_date(s: &Column, options: &StrptimeOptions) -> PolarsResult<Column> {
     };
 
     if options.strict && ca.null_count() != out.null_count() {
-        handle_casting_failures(s.as_materialized_series(), &out.as_materialized_series())?;
+        handle_casting_failures(s.as_materialized_series(), out.as_materialized_series())?;
     }
     Ok(out.into_column())
 }
@@ -719,7 +719,7 @@ fn to_datetime(
     };
 
     if options.strict && datetime_strings.null_count() != out.null_count() {
-        handle_casting_failures(&s[0].as_materialized_series(), &out.as_materialized_series())?;
+        handle_casting_failures(s[0].as_materialized_series(), out.as_materialized_series())?;
     }
     Ok(out.into_column())
 }
@@ -736,7 +736,7 @@ fn to_time(s: &Column, options: &StrptimeOptions) -> PolarsResult<Column> {
         .into_column();
 
     if options.strict && ca.null_count() != out.null_count() {
-        handle_casting_failures(s.as_materialized_series(), &out.as_materialized_series())?;
+        handle_casting_failures(s.as_materialized_series(), out.as_materialized_series())?;
     }
     Ok(out.into_column())
 }

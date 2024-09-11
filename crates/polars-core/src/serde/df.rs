@@ -2,7 +2,7 @@ use polars_error::PolarsError;
 use serde::de::Error;
 use serde::*;
 
-use crate::prelude::{DataFrame, Column};
+use crate::prelude::{Column, DataFrame};
 
 // utility to ensure we serde to a struct
 // {

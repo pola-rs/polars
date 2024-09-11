@@ -137,7 +137,14 @@ fn test_full_outer_join() -> PolarsResult<()> {
         JoinArgs::new(JoinType::Full).with_coalesce(JoinCoalesce::CoalesceColumns),
     )?;
     assert_eq!(joined.height(), 5);
-    assert_eq!(joined.column("days")?.as_materialized_series().sum::<i32>().unwrap(), 7);
+    assert_eq!(
+        joined
+            .column("days")?
+            .as_materialized_series()
+            .sum::<i32>()
+            .unwrap(),
+        7
+    );
 
     let df_left = df!(
             "a"=> ["a", "b", "a", "z"],

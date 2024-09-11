@@ -16,11 +16,8 @@ pub(super) fn diff(s: &Column, n: i64, null_behavior: NullBehavior) -> PolarsRes
 
 #[cfg(feature = "pct_change")]
 pub(super) fn pct_change(s: &[Column]) -> PolarsResult<Column> {
-    polars_ops::prelude::pct_change(
-        &s[0].as_materialized_series(),
-        &s[1].as_materialized_series(),
-    )
-    .map(Column::from)
+    polars_ops::prelude::pct_change(s[0].as_materialized_series(), s[1].as_materialized_series())
+        .map(Column::from)
 }
 
 #[cfg(feature = "interpolate")]
@@ -175,9 +172,9 @@ pub(super) fn hist(
 #[cfg(feature = "replace")]
 pub(super) fn replace(s: &[Column]) -> PolarsResult<Column> {
     polars_ops::series::replace(
-        &s[0].as_materialized_series(),
-        &s[1].as_materialized_series(),
-        &s[2].as_materialized_series(),
+        s[0].as_materialized_series(),
+        s[1].as_materialized_series(),
+        s[2].as_materialized_series(),
     )
     .map(Column::from)
 }
@@ -186,16 +183,16 @@ pub(super) fn replace(s: &[Column]) -> PolarsResult<Column> {
 pub(super) fn replace_strict(s: &[Column], return_dtype: Option<DataType>) -> PolarsResult<Column> {
     match s.get(3) {
         Some(default) => polars_ops::series::replace_or_default(
-            &s[0].as_materialized_series(),
-            &s[1].as_materialized_series(),
-            &s[2].as_materialized_series(),
+            s[0].as_materialized_series(),
+            s[1].as_materialized_series(),
+            s[2].as_materialized_series(),
             default.as_materialized_series(),
             return_dtype,
         ),
         None => polars_ops::series::replace_strict(
-            &s[0].as_materialized_series(),
-            &s[1].as_materialized_series(),
-            &s[2].as_materialized_series(),
+            s[0].as_materialized_series(),
+            s[1].as_materialized_series(),
+            s[2].as_materialized_series(),
             return_dtype,
         ),
     }

@@ -465,10 +465,7 @@ pub(super) fn truncate(s: &[Column]) -> PolarsResult<Column> {
 
 #[cfg(feature = "offset_by")]
 pub(super) fn offset_by(s: &[Column]) -> PolarsResult<Column> {
-    impl_offset_by(
-        &s[0].as_materialized_series(),
-        &s[1].as_materialized_series(),
-    ).map(Column::from)
+    impl_offset_by(s[0].as_materialized_series(), s[1].as_materialized_series()).map(Column::from)
 }
 
 #[cfg(feature = "month_start")]

@@ -2,12 +2,12 @@ use polars_core::prelude::*;
 use polars_utils::format_pl_smallstr;
 
 fn map_cats(
-    s: &Column,
+    s: &Series,
     labels: &[PlSmallStr],
     sorted_breaks: &[f64],
     left_closed: bool,
     include_breaks: bool,
-) -> PolarsResult<Column> {
+) -> PolarsResult<Series> {
     let out_name = PlSmallStr::from_static("category");
 
     // Create new categorical and pre-register labels for consistent categorical indexes.
@@ -58,12 +58,12 @@ fn map_cats(
             });
 
         let outvals = vec![
-            brk_vals.finish().into_column(),
+            brk_vals.finish().into_series(),
             bld.finish()
                 ._with_fast_unique(label_has_value.iter().all(bool::clone))
-                .into_column(),
+                .into_series(),
         ];
-        Ok(StructChunked::from_columns(out_name, &outvals)?.into_column())
+        Ok(StructChunked::from_series(out_name, &outvals)?.into_series())
     } else {
         Ok(bld
             .drain_iter_and_finish(s_iter.map(|opt| {
@@ -74,7 +74,7 @@ fn map_cats(
                 })
             }))
             ._with_fast_unique(label_has_value.iter().all(bool::clone))
-            .into_column())
+            .into_series())
     }
 }
 
@@ -96,12 +96,12 @@ pub fn compute_labels(breaks: &[f64], left_closed: bool) -> PolarsResult<Vec<PlS
 }
 
 pub fn cut(
-    s: &Column,
+    s: &Series,
     mut breaks: Vec<f64>,
     labels: Option<Vec<PlSmallStr>>,
     left_closed: bool,
     include_breaks: bool,
-) -> PolarsResult<Column> {
+) -> PolarsResult<Series> {
     // Breaks must be sorted to cut inputs properly.
     polars_ensure!(!breaks.iter().any(|x| x.is_nan()), ComputeError: "breaks cannot be NaN");
     breaks.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
@@ -122,13 +122,13 @@ pub fn cut(
 }
 
 pub fn qcut(
-    s: &Column,
+    s: &Series,
     probs: Vec<f64>,
     labels: Option<Vec<PlSmallStr>>,
     left_closed: bool,
     allow_duplicates: bool,
     include_breaks: bool,
-) -> PolarsResult<Column> {
+) -> PolarsResult<Series> {
     polars_ensure!(!probs.iter().any(|x| x.is_nan()), ComputeError: "quantiles cannot be NaN");
 
     if s.null_count() == s.len() {
@@ -177,7 +177,7 @@ mod test {
 
         use super::map_cats;
 
-        let s = Column::new("x".into(), &[1, 2, 3, 4, 5]);
+        let s = Series::new("x".into(), &[1, 2, 3, 4, 5]);
 
         let labels = &["a", "b", "c"].map(PlSmallStr::from_static);
         let breaks = &[2.0, 4.0];

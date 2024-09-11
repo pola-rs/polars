@@ -20,6 +20,7 @@ mod concat;
 mod correlation;
 #[cfg(feature = "cum_agg")]
 mod cum;
+mod cut;
 #[cfg(feature = "temporal")]
 mod datetime;
 mod dispatch;
@@ -1074,7 +1075,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
                 left_closed,
                 include_breaks,
             } => map!(
-                cut,
+                cut::cut,
                 breaks.clone(),
                 labels.clone(),
                 left_closed,
@@ -1088,7 +1089,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
                 allow_duplicates,
                 include_breaks,
             } => map!(
-                qcut,
+                cut::qcut,
                 probs.clone(),
                 labels.clone(),
                 left_closed,

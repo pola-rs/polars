@@ -232,7 +232,14 @@ fn test_lazy_binary_ops() {
         .select([col("a").eq(lit(2)).alias("foo")])
         .collect()
         .unwrap();
-    assert_eq!(new.column("foo").unwrap().as_materialized_series().sum::<i32>().unwrap(), 1);
+    assert_eq!(
+        new.column("foo")
+            .unwrap()
+            .as_materialized_series()
+            .sum::<i32>()
+            .unwrap(),
+        1
+    );
 }
 
 #[test]
@@ -501,7 +508,8 @@ fn test_lazy_query_7() {
     ];
     let data = vec![Some(1.), Some(2.), Some(3.), Some(4.), None, None];
     let df = DataFrame::new(vec![
-        DatetimeChunked::from_naive_datetime("date".into(), dates, TimeUnit::Nanoseconds).into_column(),
+        DatetimeChunked::from_naive_datetime("date".into(), dates, TimeUnit::Nanoseconds)
+            .into_column(),
         Column::new("data".into(), data),
     ])
     .unwrap();
@@ -516,7 +524,13 @@ fn test_lazy_query_7() {
         ))))
         .collect()
         .unwrap();
-    let a = out.column("shifted").unwrap().as_materialized_series().sum::<f64>().unwrap() - 7.0;
+    let a = out
+        .column("shifted")
+        .unwrap()
+        .as_materialized_series()
+        .sum::<f64>()
+        .unwrap()
+        - 7.0;
     assert!(a < 0.01 && a > -0.01);
 }
 

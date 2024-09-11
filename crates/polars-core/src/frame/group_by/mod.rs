@@ -55,7 +55,9 @@ impl DataFrame {
 
         let groups = if by.len() == 1 {
             let column = &by[0];
-            column.as_materialized_series().group_tuples(multithreaded, sorted)
+            column
+                .as_materialized_series()
+                .group_tuples(multithreaded, sorted)
         } else if by.iter().any(|s| s.dtype().is_object()) {
             #[cfg(feature = "object")]
             {
@@ -294,7 +296,7 @@ impl<'df> GroupBy<'df> {
                         },
                     }
                 })
-                .map(|s| Column::from(s))
+                .map(Column::from)
                 .collect()
         })
     }
@@ -396,7 +398,7 @@ impl<'df> GroupBy<'df> {
             let new_name = fmt_group_by_column(agg_col.name().as_str(), GroupByMethod::Sum);
             let mut agg = unsafe { agg_col.agg_sum(&self.groups) };
             agg.rename(new_name);
-            cols.push(agg.into());
+            cols.push(agg);
         }
         DataFrame::new(cols)
     }
@@ -433,7 +435,7 @@ impl<'df> GroupBy<'df> {
             let new_name = fmt_group_by_column(agg_col.name().as_str(), GroupByMethod::Min);
             let mut agg = unsafe { agg_col.agg_min(&self.groups) };
             agg.rename(new_name);
-            cols.push(agg.into());
+            cols.push(agg);
         }
         DataFrame::new(cols)
     }
@@ -470,7 +472,7 @@ impl<'df> GroupBy<'df> {
             let new_name = fmt_group_by_column(agg_col.name().as_str(), GroupByMethod::Max);
             let mut agg = unsafe { agg_col.agg_max(&self.groups) };
             agg.rename(new_name);
-            cols.push(agg.into());
+            cols.push(agg);
         }
         DataFrame::new(cols)
     }
@@ -507,7 +509,7 @@ impl<'df> GroupBy<'df> {
             let new_name = fmt_group_by_column(agg_col.name().as_str(), GroupByMethod::First);
             let mut agg = unsafe { agg_col.agg_first(&self.groups) };
             agg.rename(new_name);
-            cols.push(agg.into());
+            cols.push(agg);
         }
         DataFrame::new(cols)
     }
@@ -544,7 +546,7 @@ impl<'df> GroupBy<'df> {
             let new_name = fmt_group_by_column(agg_col.name().as_str(), GroupByMethod::Last);
             let mut agg = unsafe { agg_col.agg_last(&self.groups) };
             agg.rename(new_name);
-            cols.push(agg.into());
+            cols.push(agg);
         }
         DataFrame::new(cols)
     }
@@ -581,7 +583,7 @@ impl<'df> GroupBy<'df> {
             let new_name = fmt_group_by_column(agg_col.name().as_str(), GroupByMethod::NUnique);
             let mut agg = unsafe { agg_col.agg_n_unique(&self.groups) };
             agg.rename(new_name);
-            cols.push(agg.into());
+            cols.push(agg);
         }
         DataFrame::new(cols)
     }
@@ -616,7 +618,7 @@ impl<'df> GroupBy<'df> {
             );
             let mut agg = unsafe { agg_col.agg_quantile(&self.groups, quantile, interpol) };
             agg.rename(new_name);
-            cols.push(agg.into());
+            cols.push(agg);
         }
         DataFrame::new(cols)
     }
@@ -1124,7 +1126,13 @@ mod test {
             .unwrap();
 
         assert_eq!(
-            Vec::from(res.column("bar_sum").unwrap().as_materialized_series().i32().unwrap()),
+            Vec::from(
+                res.column("bar_sum")
+                    .unwrap()
+                    .as_materialized_series()
+                    .i32()
+                    .unwrap()
+            ),
             &[Some(2), Some(2), Some(1)]
         );
     }

@@ -179,7 +179,10 @@ fn replace_by_multiple(
         },
     )?;
 
-    let replaced = joined.column("__POLARS_REPLACE_NEW").unwrap().as_materialized_series();
+    let replaced = joined
+        .column("__POLARS_REPLACE_NEW")
+        .unwrap()
+        .as_materialized_series();
 
     if replaced.null_count() == 0 {
         return Ok(replaced.clone());
@@ -238,7 +241,7 @@ fn create_replacer(mut old: Series, mut new: Series, add_mask: bool) -> PolarsRe
         // @scalar-opt
         let mask = Column::new(PlSmallStr::from_static("__POLARS_REPLACE_MASK"), &[true])
             .new_from_index(0, new.len());
-        vec![old.into(), new.into(), mask.into()]
+        vec![old.into(), new.into(), mask]
     } else {
         vec![old.into(), new.into()]
     };

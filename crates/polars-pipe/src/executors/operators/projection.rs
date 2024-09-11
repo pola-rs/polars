@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use polars_core::error::PolarsResult;
+use polars_core::frame::column::{Column, IntoColumn};
 use polars_core::frame::DataFrame;
 use polars_core::schema::SchemaRef;
-use polars_core::frame::column::{Column, IntoColumn};
 use polars_plan::prelude::ProjectionOptions;
 use polars_utils::pl_str::PlSmallStr;
 
@@ -118,7 +118,10 @@ impl Operator for HstackOperator {
         let projected = self
             .exprs
             .iter()
-            .map(|e| e.evaluate(chunk, &context.execution_state).map(Column::from))
+            .map(|e| {
+                e.evaluate(chunk, &context.execution_state)
+                    .map(Column::from)
+            })
             .collect::<PolarsResult<Vec<_>>>()?;
 
         let columns = chunk.data.get_columns()[..width].to_vec();

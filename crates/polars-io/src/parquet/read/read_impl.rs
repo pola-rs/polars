@@ -518,7 +518,8 @@ fn rg_to_dfs_optionally_par_over_columns(
                             Some(Filter::new_ranged(rg_slice.0, rg_slice.0 + rg_slice.1)),
                             schema,
                             store,
-                        ).map(Column::from)
+                        )
+                        .map(Column::from)
                     })
                     .collect::<PolarsResult<Vec<_>>>()
             })?
@@ -535,7 +536,8 @@ fn rg_to_dfs_optionally_par_over_columns(
                         Some(Filter::new_ranged(rg_slice.0, rg_slice.0 + rg_slice.1)),
                         schema,
                         store,
-                    ).map(Column::from)
+                    )
+                    .map(Column::from)
                 })
                 .collect::<PolarsResult<Vec<_>>>()?
         };
@@ -635,7 +637,8 @@ fn rg_to_dfs_par_over_rg(
                             Some(Filter::new_ranged(slice.0, slice.0 + slice.1)),
                             schema,
                             store,
-                        ).map(Column::from)
+                        )
+                        .map(Column::from)
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
 

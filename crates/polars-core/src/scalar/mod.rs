@@ -5,7 +5,7 @@ use polars_utils::pl_str::PlSmallStr;
 use serde::{Deserialize, Serialize};
 
 use crate::datatypes::{AnyValue, DataType};
-use crate::prelude::{Column, Series, IntoColumn};
+use crate::prelude::{Column, IntoColumn, Series};
 
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]

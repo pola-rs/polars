@@ -5,7 +5,7 @@ use polars_core::prelude::Field;
 use polars_core::schema::Schema;
 use polars_utils::pl_str::PlSmallStr;
 
-use super::{Expr, GetOutput, ColumnsUdf, SpecialEq};
+use super::{ColumnsUdf, Expr, GetOutput, SpecialEq};
 use crate::prelude::{Context, FunctionOptions};
 
 /// Represents a user-defined function

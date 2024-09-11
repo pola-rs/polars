@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use polars_core::datatypes::{DataType, Field};
 use polars_core::error::*;
-use polars_core::frame::DataFrame;
 use polars_core::frame::column::Column;
+use polars_core::frame::DataFrame;
 use polars_core::schema::Schema;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedBytes;

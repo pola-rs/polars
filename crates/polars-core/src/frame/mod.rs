@@ -174,7 +174,7 @@ pub struct DataFrame {
 }
 
 impl DataFrame {
-    pub fn materialized_column_iter(&self) -> impl Iterator<Item = &Series> + ExactSizeIterator {
+    pub fn materialized_column_iter(&self) -> impl ExactSizeIterator<Item = &Series> {
         self.columns.iter().map(Column::as_materialized_series)
     }
 
@@ -630,7 +630,7 @@ impl DataFrame {
     /// assert_eq!(iterator.next(), None);
     /// # Ok::<(), PolarsError>(())
     /// ```
-    pub fn iter(&self) -> impl Iterator<Item = &Series> + ExactSizeIterator {
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = &Series> {
         self.materialized_column_iter()
     }
 
@@ -2505,8 +2505,8 @@ impl DataFrame {
                 self.columns[0].clone().as_materialized_series().clone(),
             )),
             2 => min_fn(
-                &self.columns[0].as_materialized_series(),
-                &self.columns[1].as_materialized_series(),
+                self.columns[0].as_materialized_series(),
+                self.columns[1].as_materialized_series(),
             )
             .map(Some),
             _ => {

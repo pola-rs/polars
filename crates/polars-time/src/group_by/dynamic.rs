@@ -787,7 +787,10 @@ mod test {
         let expected = Series::new("".into(), [0.0, 8.0, 8.0, 9.333333333333343, 24.5, 0.0]);
         assert!(abs(&(var - expected)?).unwrap().lt(1e-12).unwrap().all());
 
-        let quantile = unsafe { a.as_materialized_series().agg_quantile(&groups, 0.5, QuantileInterpolOptions::Linear) };
+        let quantile = unsafe {
+            a.as_materialized_series()
+                .agg_quantile(&groups, 0.5, QuantileInterpolOptions::Linear)
+        };
         let expected = Series::new("".into(), [3.0, 5.0, 5.0, 6.0, 5.5, 1.0]);
         assert_eq!(quantile, expected);
 

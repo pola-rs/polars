@@ -508,7 +508,8 @@ pub(super) fn gather(args: &[Column], null_on_oob: bool) -> PolarsResult<Column>
         // make sure we return a list
         out.reshape_list(&[-1, 1])
     } else {
-        ca.lst_gather(idx.as_materialized_series(), null_on_oob).map(Column::from)
+        ca.lst_gather(idx.as_materialized_series(), null_on_oob)
+            .map(Column::from)
     }
 }
 
@@ -518,7 +519,9 @@ pub(super) fn gather_every(args: &[Column]) -> PolarsResult<Column> {
     let n = &args[1].strict_cast(&IDX_DTYPE)?;
     let offset = &args[2].strict_cast(&IDX_DTYPE)?;
 
-    ca.list()?.lst_gather_every(n.idx()?, offset.idx()?).map(Column::from)
+    ca.list()?
+        .lst_gather_every(n.idx()?, offset.idx()?)
+        .map(Column::from)
 }
 
 #[cfg(feature = "list_count")]
@@ -600,10 +603,10 @@ pub(super) fn set_operation(s: &[Column], set_type: SetOperation) -> PolarsResul
     let s0 = &s[0];
     let s1 = &s[1];
 
-    if s0.len() == 0 || s1.len() == 0 {
+    if s0.is_empty() || s1.is_empty() {
         return match set_type {
             SetOperation::Intersection => {
-                if s0.len() == 0 {
+                if s0.is_empty() {
                     Ok(s0.clone())
                 } else {
                     Ok(s1.clone().with_name(s0.name().clone()))
@@ -611,7 +614,7 @@ pub(super) fn set_operation(s: &[Column], set_type: SetOperation) -> PolarsResul
             },
             SetOperation::Difference => Ok(s0.clone()),
             SetOperation::Union | SetOperation::SymmetricDifference => {
-                if s0.len() == 0 {
+                if s0.is_empty() {
                     Ok(s1.clone().with_name(s0.name().clone()))
                 } else {
                     Ok(s0.clone())

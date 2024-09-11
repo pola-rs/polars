@@ -64,7 +64,7 @@ pub(crate) fn cast_columns(
             (_, dt) => c.cast(dt),
         }?;
         if !ignore_errors && c.null_count() != out.null_count() {
-            handle_casting_failures(c.as_materialized_series(), &out.as_materialized_series())?;
+            handle_casting_failures(c.as_materialized_series(), out.as_materialized_series())?;
         }
         Ok(out)
     };

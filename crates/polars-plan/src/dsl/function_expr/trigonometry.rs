@@ -113,7 +113,9 @@ where
 {
     let dtype = T::get_dtype();
     let x = x.cast(&dtype)?;
-    let x = y.unpack_series_matching_type(x.as_materialized_series()).unwrap();
+    let x = y
+        .unpack_series_matching_type(x.as_materialized_series())
+        .unwrap();
 
     if x.len() == 1 {
         let x_value = x

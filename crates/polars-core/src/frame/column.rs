@@ -45,7 +45,7 @@ impl Column {
     #[inline]
     pub fn new_empty(name: PlSmallStr, dtype: &DataType) -> Self {
         // @scalar-opt
-        Self::Series(Series::new_empty(name, &dtype))
+        Self::Series(Series::new_empty(name, dtype))
     }
 
     #[inline]
@@ -266,41 +266,69 @@ impl Column {
         self.as_materialized_series().null_count()
     }
 
+    /// # Safety
+    ///
+    /// Does no bounds checks, groups must be correct.
+    #[cfg(feature = "algorithm_group_by")]
     pub unsafe fn agg_min(&self, groups: &GroupsProxy) -> Self {
         // @scalar-opt
         unsafe { self.as_materialized_series().agg_min(groups) }.into()
     }
 
+    /// # Safety
+    ///
+    /// Does no bounds checks, groups must be correct.
+    #[cfg(feature = "algorithm_group_by")]
     pub unsafe fn agg_max(&self, groups: &GroupsProxy) -> Self {
         // @scalar-opt
         unsafe { self.as_materialized_series().agg_max(groups) }.into()
     }
 
+    /// # Safety
+    ///
+    /// Does no bounds checks, groups must be correct.
+    #[cfg(feature = "algorithm_group_by")]
     pub unsafe fn agg_mean(&self, groups: &GroupsProxy) -> Self {
         // @scalar-opt
         unsafe { self.as_materialized_series().agg_mean(groups) }.into()
     }
 
+    /// # Safety
+    ///
+    /// Does no bounds checks, groups must be correct.
+    #[cfg(feature = "algorithm_group_by")]
     pub unsafe fn agg_sum(&self, groups: &GroupsProxy) -> Self {
         // @scalar-opt
         unsafe { self.as_materialized_series().agg_sum(groups) }.into()
     }
 
+    /// # Safety
+    ///
+    /// Does no bounds checks, groups must be correct.
     pub unsafe fn agg_first(&self, groups: &GroupsProxy) -> Self {
         // @scalar-opt
         unsafe { self.as_materialized_series().agg_first(groups) }.into()
     }
 
+    /// # Safety
+    ///
+    /// Does no bounds checks, groups must be correct.
     pub unsafe fn agg_last(&self, groups: &GroupsProxy) -> Self {
         // @scalar-opt
         unsafe { self.as_materialized_series().agg_last(groups) }.into()
     }
 
+    /// # Safety
+    ///
+    /// Does no bounds checks, groups must be correct.
     pub unsafe fn agg_n_unique(&self, groups: &GroupsProxy) -> Self {
         // @scalar-opt
         unsafe { self.as_materialized_series().agg_n_unique(groups) }.into()
     }
 
+    /// # Safety
+    ///
+    /// Does no bounds checks, groups must be correct.
     pub unsafe fn agg_quantile(
         &self,
         groups: &GroupsProxy,
@@ -315,21 +343,37 @@ impl Column {
         .into()
     }
 
+    /// # Safety
+    ///
+    /// Does no bounds checks, groups must be correct.
+    #[cfg(feature = "algorithm_group_by")]
     pub unsafe fn agg_median(&self, groups: &GroupsProxy) -> Self {
         // @scalar-opt
         unsafe { self.as_materialized_series().agg_median(groups) }.into()
     }
 
+    /// # Safety
+    ///
+    /// Does no bounds checks, groups must be correct.
+    #[cfg(feature = "algorithm_group_by")]
     pub unsafe fn agg_var(&self, groups: &GroupsProxy, ddof: u8) -> Self {
         // @scalar-opt
         unsafe { self.as_materialized_series().agg_var(groups, ddof) }.into()
     }
 
-    pub unsafe fn agg_std(&self, groups: &GroupsProxy, ddof: u8) -> Self {
+    /// # Safety
+    ///
+    /// Does no bounds checks, groups must be correct.
+    #[cfg(feature = "algorithm_group_by")]
+    pub(crate) unsafe fn agg_std(&self, groups: &GroupsProxy, ddof: u8) -> Self {
         // @scalar-opt
         unsafe { self.as_materialized_series().agg_std(groups, ddof) }.into()
     }
 
+    /// # Safety
+    ///
+    /// Does no bounds checks, groups must be correct.
+    #[cfg(feature = "algorithm_group_by")]
     pub unsafe fn agg_list(&self, groups: &GroupsProxy) -> Self {
         // @scalar-opt
         unsafe { self.as_materialized_series().agg_list(groups) }.into()
@@ -398,6 +442,9 @@ impl Column {
             .vec_hash_combine(build_hasher, hashes)
     }
 
+    /// # Safety
+    ///
+    /// Indexes need to be in bounds.
     pub(crate) unsafe fn equal_element(
         &self,
         idx_self: usize,
@@ -524,6 +571,9 @@ impl Column {
             .map(Column::from)
     }
 
+    /// # Safety
+    ///
+    /// This can lead to invalid memory access in downstream code.
     pub unsafe fn cast_unchecked(&self, dtype: &DataType) -> PolarsResult<Column> {
         // @scalar-opt
         unsafe { self.as_materialized_series().cast_unchecked(dtype) }.map(Column::from)
@@ -709,6 +759,9 @@ impl Column {
         self.as_materialized_series().phys_iter()
     }
 
+    /// # Safety
+    ///
+    /// Does not perform bounds check on `index`
     pub unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
         // @scalar-opt
         self.as_materialized_series().get_unchecked(index)
@@ -1008,10 +1061,9 @@ impl From<Column> for _SerdeSeries {
     }
 }
 
-impl Into<Series> for _SerdeSeries {
+impl From<_SerdeSeries> for Series {
     #[inline]
-    fn into(self) -> Series {
-        self.0
+    fn from(value: _SerdeSeries) -> Self {
+        value.0
     }
 }
-

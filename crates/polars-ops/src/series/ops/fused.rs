@@ -160,6 +160,7 @@ pub fn fms_columns(a: &Column, b: &Column, c: &Column) -> Column {
     } else {
         (&(a.as_materialized_series() * b.as_materialized_series()).unwrap()
             - c.as_materialized_series())
-        .unwrap().into()
+        .unwrap()
+        .into()
     }
 }

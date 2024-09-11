@@ -221,7 +221,14 @@ fn test_parser() -> PolarsResult<()> {
     assert_eq!(col.get(2)?, AnyValue::String("Setosa"));
 
     assert_eq!("sepal_length", df.get_columns()[0].name().as_str());
-    assert_eq!(1, df.column("sepal_length").unwrap().as_materialized_series().chunks().len());
+    assert_eq!(
+        1,
+        df.column("sepal_length")
+            .unwrap()
+            .as_materialized_series()
+            .chunks()
+            .len()
+    );
     assert_eq!(df.height(), 7);
 
     // test windows line endings
