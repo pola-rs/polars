@@ -113,7 +113,7 @@ fn check_df_dtypes_support_view(df: &DataFrame) -> Option<&DataType> {
 fn check_df_columns_contiguous(df: &DataFrame) -> bool {
     let columns = df.get_columns();
 
-    if columns.iter().any(|s| s.n_chunks() > 1) {
+    if columns.iter().any(|s| s.as_materialized_series().n_chunks() > 1) {
         return false;
     }
     if columns.len() <= 1 {
@@ -126,7 +126,7 @@ fn check_df_columns_contiguous(df: &DataFrame) -> bool {
                 let slices = columns
                     .iter()
                     .map(|s| {
-                        let ca: &ChunkedArray<$T> = s.unpack().unwrap();
+                        let ca: &ChunkedArray<$T> = s.as_materialized_series().unpack().unwrap();
                         ca.data_views().next().unwrap()
                     })
                     .collect::<Vec<_>>();
@@ -174,7 +174,7 @@ where
     T: PolarsNumericType,
     T::Native: Element,
 {
-    let ca: &ChunkedArray<T> = df.get_columns().first().unwrap().unpack().unwrap();
+    let ca: &ChunkedArray<T> = df.get_columns().first().unwrap().as_materialized_series().unpack().unwrap();
     let first_slice = ca.data_views().next().unwrap();
 
     let start_ptr = first_slice.as_ptr();

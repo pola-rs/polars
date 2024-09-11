@@ -85,7 +85,8 @@ pub fn to_rust_df(rb: &[Bound<PyAny>]) -> PyResult<DataFrame> {
                         .enumerate()
                         .map(|(i, arr)| {
                             let s = Series::try_from((names[i].clone(), arr))
-                                .map_err(PyPolarsErr::from)?;
+                                .map_err(PyPolarsErr::from)?
+                                .into_column();
                             Ok(s)
                         })
                         .collect::<PyResult<Vec<_>>>()
@@ -95,8 +96,9 @@ pub fn to_rust_df(rb: &[Bound<PyAny>]) -> PyResult<DataFrame> {
                     .into_iter()
                     .enumerate()
                     .map(|(i, arr)| {
-                        let s =
-                            Series::try_from((names[i].clone(), arr)).map_err(PyPolarsErr::from)?;
+                        let s = Series::try_from((names[i].clone(), arr))
+                            .map_err(PyPolarsErr::from)?
+                            .into_column();
                         Ok(s)
                     })
                     .collect::<PyResult<Vec<_>>>()

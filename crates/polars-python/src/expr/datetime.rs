@@ -33,8 +33,9 @@ impl PyExpr {
             .clone()
             .map(
                 |s| {
-                    s.timestamp(TimeUnit::Milliseconds)
-                        .map(|ca| Some((ca / 1000).into_series()))
+                    s.take_materialized_series()
+                        .timestamp(TimeUnit::Milliseconds)
+                        .map(|ca| Some((ca / 1000).into_column()))
                 },
                 GetOutput::from_type(DataType::Int64),
             )

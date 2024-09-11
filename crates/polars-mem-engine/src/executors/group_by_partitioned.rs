@@ -300,7 +300,7 @@ impl PartitionGroupByExec {
                 .into_iter()
                 .fold(Vec::<Column>::new(), |mut acc, e| {
                     acc.iter_mut().zip(e).for_each(|(acc, e)| {
-                        acc.append(&e.into_column());
+                        _ = acc.append(&e.into_column());
                     });
                     acc
                 });

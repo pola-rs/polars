@@ -5,7 +5,6 @@ use polars_core::datatypes::{DataType, Field};
 use polars_core::error::*;
 use polars_core::frame::DataFrame;
 use polars_core::frame::column::Column;
-use polars_core::prelude::Series;
 use polars_core::schema::Schema;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedBytes;
@@ -20,7 +19,7 @@ use crate::constants::MAP_LIST_NAME;
 use crate::prelude::*;
 
 // Will be overwritten on Python Polars start up.
-pub static mut CALL_SERIES_UDF_PYTHON: Option<
+pub static mut CALL_COLUMNS_UDF_PYTHON: Option<
     fn(s: Column, lambda: &PyObject) -> PolarsResult<Column>,
 > = None;
 pub static mut CALL_DF_UDF_PYTHON: Option<
@@ -166,7 +165,7 @@ impl DataFrameUdf for PythonFunction {
 
 impl ColumnsUdf for PythonUdfExpression {
     fn call_udf(&self, s: &mut [Column]) -> PolarsResult<Option<Column>> {
-        let func = unsafe { CALL_SERIES_UDF_PYTHON.unwrap() };
+        let func = unsafe { CALL_COLUMNS_UDF_PYTHON.unwrap() };
 
         let output_type = self
             .output_type

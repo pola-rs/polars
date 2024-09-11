@@ -174,7 +174,7 @@ pub struct DataFrame {
 }
 
 impl DataFrame {
-    pub fn materialized_column_iter(&self) -> impl Iterator<Item = &Series> {
+    pub fn materialized_column_iter(&self) -> impl Iterator<Item = &Series> + ExactSizeIterator {
         self.columns.iter().map(Column::as_materialized_series)
     }
 
@@ -630,7 +630,7 @@ impl DataFrame {
     /// assert_eq!(iterator.next(), None);
     /// # Ok::<(), PolarsError>(())
     /// ```
-    pub fn iter(&self) -> impl Iterator<Item = &Series> {
+    pub fn iter(&self) -> impl Iterator<Item = &Series> + ExactSizeIterator {
         self.materialized_column_iter()
     }
 

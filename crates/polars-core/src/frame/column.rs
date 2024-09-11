@@ -7,6 +7,7 @@ use polars_error::PolarsResult;
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::chunked_array::metadata::MetadataFlags;
+use crate::chunked_array::object::PolarsObjectSafe;
 use crate::prelude::*;
 use crate::series::{BitRepr, IsSorted, SeriesPhysIter};
 
@@ -72,6 +73,14 @@ impl Column {
                 };
                 s
             },
+        }
+    }
+
+    #[inline]
+    pub fn take_materialized_series(self) -> Series {
+        match self {
+            Column::Series(s) => s,
+            Column::Scalar(s) => s.take_materialized_series(),
         }
     }
 
@@ -705,6 +714,10 @@ impl Column {
         // @scalar-opt
         self.as_materialized_series().get_unchecked(index)
     }
+
+    pub fn get_object(&self, index: usize) -> Option<&dyn PolarsObjectSafe> {
+        self.as_materialized_series().get_object(index)
+    }
 }
 
 impl Default for Column {
@@ -924,6 +937,12 @@ impl ScalarColumn {
 
     pub fn as_materialized_series(&self) -> &Series {
         self.materialized.get_or_init(|| self.to_series())
+    }
+
+    pub fn take_materialized_series(self) -> Series {
+        self.materialized
+            .into_inner()
+            .unwrap_or_else(|| Self::_to_series(self.name, self.value, self.length))
     }
 
     pub fn select_chunk(&self, _: usize) -> Series {
