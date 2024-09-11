@@ -4571,8 +4571,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Perform a join based on one or multiple (in)equality predicates.
 
-        A row from this table may be included in zero or multiple rows in the result,
-        and the relative order of rows may differ between the input and output tables.
+        This performs an inner join, so only rows where all predicates are true
+        are included in the result, and a row from either DataFrame may be included
+        multiple times in the result.
+
+        .. note::
+            The row order of the input DataFrames is not preserved.
 
         .. warning::
             This functionality is experimental. It may be
@@ -4583,7 +4587,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         other
             DataFrame to join with.
         *predicates
-            (In)Equality condition to join the two table on.
+            (In)Equality condition to join the two tables on.
             When a column name occurs in both tables, the proper suffix must
             be applied in the predicate.
         suffix
