@@ -403,10 +403,10 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         self.buffers
             .iter()
             .map(|buf| {
-                if buf.shared_count_strong() == 1 {
-                    buf.len()
-                } else {
+                if buf.storage_refcount() > 1 {
                     0
+                } else {
+                    buf.len()
                 }
             })
             .sum()
