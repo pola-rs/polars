@@ -566,9 +566,9 @@ fn create_physical_expr_inner(
         },
         Explode(expr) => {
             let input = create_physical_expr_inner(*expr, ctxt, expr_arena, schema, state)?;
-            let function =
-                SpecialEq::new(Arc::new(move |s: &mut [Series]| s[0].explode().map(Some))
-                    as Arc<dyn ColumnsUdf>);
+            let function = SpecialEq::new(Arc::new(
+                move |c: &mut [polars_core::frame::column::Column]| c[0].explode().map(Some),
+            ) as Arc<dyn ColumnsUdf>);
             Ok(Arc::new(ApplyExpr::new_minimal(
                 vec![input],
                 function,
