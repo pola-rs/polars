@@ -228,6 +228,21 @@ impl DataType {
         prev
     }
 
+    #[cfg(feature = "dtype-array")]
+    /// Get the inner data type of a multidimensional array.
+    pub fn array_leaf_dtype(&self) -> Option<&DataType> {
+        let mut prev = self;
+        match prev {
+            DataType::Array(_, _) => {
+                while let DataType::Array(inner, _) = &prev {
+                    prev = &inner;
+                }
+                Some(prev)
+            },
+            _ => None,
+        }
+    }
+
     /// Cast the leaf types of Lists/Arrays and keep the nesting.
     pub fn cast_leaf(&self, to: DataType) -> DataType {
         use DataType::*;
@@ -717,7 +732,7 @@ impl Display for DataType {
             DataType::Time => "time",
             #[cfg(feature = "dtype-array")]
             DataType::Array(_, _) => {
-                let tp = self.leaf_dtype();
+                let tp = self.array_leaf_dtype().unwrap();
 
                 let dims = self.get_shape().unwrap();
                 let shape = if dims.len() == 1 {
