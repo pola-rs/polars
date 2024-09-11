@@ -23,7 +23,7 @@ pub enum Column {
 #[derive(Debug, Clone)]
 pub struct ScalarColumn {
     name: PlSmallStr,
-    value: AnyValue<'static>,
+    value: Scalar,
     materialized: OnceLock<Series>,
     length: usize,
 }
@@ -49,7 +49,7 @@ impl Column {
     }
 
     #[inline]
-    pub fn new_scalar(name: PlSmallStr, value: AnyValue<'static>, length: usize) -> Self {
+    pub fn new_scalar(name: PlSmallStr, value: Scalar, length: usize) -> Self {
         Self::Scalar(ScalarColumn::new(name, value, length))
     }
 
@@ -85,14 +85,21 @@ impl Column {
 
     #[inline]
     pub fn dtype(&self) -> &DataType {
-        // @scalar-opt
-        self.as_materialized_series().dtype()
+        match self {
+            Column::Series(s) => s.dtype(),
+            Column::Scalar(s) => s.value.dtype(),
+        }
     }
 
     #[inline]
     pub fn field(&self) -> Cow<Field> {
-        // @scalar-opt
-        self.as_materialized_series().field()
+        match self {
+            Column::Series(s) => s.field(),
+            Column::Scalar(s) => match s.materialized.get() {
+                None => Cow::Owned(Field::new(s.name.clone(), s.value.dtype().clone())),
+                Some(s) => s.field(),
+            },
+        }
     }
 
     #[inline]
@@ -166,6 +173,7 @@ impl Column {
         self.as_materialized_series().str()
     }
 
+    #[cfg(feature = "dtype-datetime")]
     pub fn datetime(&self) -> PolarsResult<&DatetimeChunked> {
         // @scalar-opt
         self.as_materialized_series().datetime()
@@ -461,6 +469,7 @@ impl Column {
         }
     }
 
+    #[cfg(feature = "dtype-categorical")]
     pub fn categorical(&self) -> PolarsResult<&CategoricalChunked> {
         self.as_materialized_series().categorical()
     }
@@ -682,6 +691,7 @@ impl Column {
             .map(Self::from)
     }
 
+    #[cfg(feature = "dtype-array")]
     pub fn array(&self) -> PolarsResult<&ArrayChunked> {
         // @scalar-opt
         self.as_materialized_series().array()
@@ -724,11 +734,13 @@ impl Column {
         self.as_materialized_series().is_not_nan()
     }
 
+    #[cfg(feature = "dtype-date")]
     pub fn date(&self) -> PolarsResult<&DateChunked> {
         // @scalar-opt
         self.as_materialized_series().date()
     }
 
+    #[cfg(feature = "dtype-duration")]
     pub fn duration(&self) -> PolarsResult<&DurationChunked> {
         // @scalar-opt
         self.as_materialized_series().duration()
@@ -769,6 +781,12 @@ impl Column {
 
     pub fn get_object(&self, index: usize) -> Option<&dyn PolarsObjectSafe> {
         self.as_materialized_series().get_object(index)
+    }
+
+    pub fn bitand(&self, rhs: &Self) -> PolarsResult<Self> {
+        self.as_materialized_series()
+            .bitand(rhs.as_materialized_series())
+            .map(Column::from)
     }
 }
 
@@ -989,7 +1007,7 @@ where
 
 impl ScalarColumn {
     #[inline]
-    pub fn new(name: PlSmallStr, value: AnyValue<'static>, length: usize) -> Self {
+    pub fn new(name: PlSmallStr, value: Scalar, length: usize) -> Self {
         Self {
             name,
             value,
@@ -998,11 +1016,9 @@ impl ScalarColumn {
         }
     }
 
-    fn _to_series(name: PlSmallStr, value: AnyValue<'static>, length: usize) -> Series {
+    fn _to_series(name: PlSmallStr, value: Scalar, length: usize) -> Series {
         // @TODO: There is probably a better way to do this.
-        Scalar::new(value.dtype(), value)
-            .into_series(name)
-            .new_from_index(0, length)
+        value.into_series(name).new_from_index(0, length)
     }
 
     pub fn to_series(&self) -> Series {
