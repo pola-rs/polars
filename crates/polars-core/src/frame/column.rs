@@ -518,6 +518,7 @@ impl Column {
         self.as_materialized_series().bool()
     }
 
+    #[cfg(feature = "dtype-struct")]
     pub fn struct_(&self) -> PolarsResult<&StructChunked> {
         // @scalar-opt
         self.as_materialized_series().struct_()
