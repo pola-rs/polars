@@ -5179,12 +5179,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         n
             Number of rows to return.
 
-        Notes
-        -----
-        Consider using the :func:`fetch` operation if you only want to test your
-        query. The :func:`fetch` operation will load the first `n` rows at the scan
-        level, whereas the :func:`head`/:func:`limit` are applied at the end.
-
         Examples
         --------
         >>> lf = pl.LazyFrame(
@@ -5227,12 +5221,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ----------
         n
             Number of rows to return.
-
-        Notes
-        -----
-        Consider using the :func:`fetch` operation if you only want to test your
-        query. The :func:`fetch` operation will load the first `n` rows at the scan
-        level, whereas the :func:`head`/:func:`limit` are applied at the end.
 
         Examples
         --------
