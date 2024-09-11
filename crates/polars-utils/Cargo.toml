@@ -27,11 +27,11 @@ serde = { workspace = true, optional = true }
 stacker = { workspace = true }
 sysinfo = { version = "0.31", default-features = false, features = ["system"], optional = true }
 
-[build-dependencies]
-version_check = { workspace = true }
-
 [dev-dependencies]
 rand = { workspace = true }
+
+[build-dependencies]
+version_check = { workspace = true }
 
 [features]
 mmap = ["memmap"]

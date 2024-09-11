@@ -76,6 +76,23 @@ arrow-buffer = { workspace = true, optional = true }
 arrow-data = { workspace = true, optional = true }
 arrow-schema = { workspace = true, optional = true }
 
+[dev-dependencies]
+criterion = "0.5"
+crossbeam-channel = { workspace = true }
+doc-comment = "0.3"
+flate2 = { workspace = true, default-features = true }
+# used to run formal property testing
+proptest = { version = "1", default-features = false, features = ["std"] }
+# use for flaky testing
+rand = { workspace = true }
+# use for generating and testing random data samples
+sample-arrow2 = "0.17"
+sample-std = "0.2"
+sample-test = "0.2"
+# used to test async readers
+tokio = { workspace = true, features = ["macros", "rt", "fs", "io-util"] }
+tokio-util = { workspace = true, features = ["compat"] }
+
 [build-dependencies]
 version_check = { workspace = true }
 

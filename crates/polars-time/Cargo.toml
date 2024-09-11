@@ -24,6 +24,9 @@ once_cell = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true, optional = true }
 
+[dev-dependencies]
+polars-ops = { workspace = true, features = ["abs"] }
+
 [features]
 dtype-date = ["polars-core/dtype-date", "temporal"]
 dtype-datetime = ["polars-core/dtype-datetime", "temporal"]

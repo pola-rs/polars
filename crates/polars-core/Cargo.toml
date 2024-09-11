@@ -39,6 +39,10 @@ serde_json = { workspace = true, optional = true }
 thiserror = { workspace = true }
 xxhash-rust = { workspace = true }
 
+[dev-dependencies]
+bincode = { version = "1" }
+serde_json = { workspace = true }
+
 [build-dependencies]
 version_check = { workspace = true }
 
