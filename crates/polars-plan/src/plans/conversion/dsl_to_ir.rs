@@ -107,7 +107,6 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
         DslPlan::Scan {
             sources,
             file_info,
-            hive_parts,
             predicate,
             mut file_options,
             mut scan_type,
@@ -188,9 +187,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 }
             };
 
-            let hive_parts = if hive_parts.is_some() {
-                hive_parts
-            } else if file_options.hive_options.enabled.unwrap_or(false)
+            let hive_parts = if file_options.hive_options.enabled.unwrap_or(false)
                 && resolved_file_info.reader_schema.is_some()
             {
                 let paths = sources

@@ -52,7 +52,7 @@ impl IR {
             IR::Scan {
                 sources,
                 file_info,
-                hive_parts,
+                hive_parts: _,
                 predicate,
                 scan_type,
                 output_schema: _,
@@ -63,7 +63,6 @@ impl IR {
                     is_expanded: true,
                 })),
                 file_info: Arc::new(RwLock::new(Some(file_info))),
-                hive_parts,
                 predicate: predicate.map(|e| e.to_expr(expr_arena)),
                 scan_type,
                 file_options: options,
