@@ -8,7 +8,7 @@ use polars_utils::pl_str::PlSmallStr;
 
 use crate::chunked_array::metadata::MetadataFlags;
 use crate::prelude::*;
-use crate::series::{BitRepr, IsSorted};
+use crate::series::{BitRepr, IsSorted, SeriesPhysIter};
 
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
@@ -689,6 +689,16 @@ impl Column {
     pub fn product(&self) -> PolarsResult<Scalar> {
         // @scalar-opt
         self.as_materialized_series().product()
+    }
+
+    pub fn binary_offset(&self) -> PolarsResult<&BinaryOffsetChunked> {
+        // @scalar-opt
+        self.as_materialized_series().binary_offset()
+    }
+
+    pub fn phys_iter(&self) -> SeriesPhysIter<'_> {
+        // @scalar-opt
+        self.as_materialized_series().phys_iter()
     }
 }
 

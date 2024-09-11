@@ -1262,6 +1262,19 @@ impl DataFrame {
         Ok(())
     }
 
+    pub fn _add_series(&mut self, series: Vec<Series>, schema: &Schema) -> PolarsResult<()> {
+        for (i, s) in series.into_iter().enumerate() {
+            // we need to branch here
+            // because users can add multiple columns with the same name
+            if i == 0 || schema.get(s.name().as_str()).is_some() {
+                self.with_column_and_schema(s.into_column(), schema)?;
+            } else {
+                self.with_column(s.clone().into_column())?;
+            }
+        }
+        Ok(())
+    }
+
     pub fn _add_columns(&mut self, columns: Vec<Column>, schema: &Schema) -> PolarsResult<()> {
         for (i, s) in columns.into_iter().enumerate() {
             // we need to branch here

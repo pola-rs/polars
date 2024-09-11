@@ -268,7 +268,7 @@ impl<K: ExtraPayload> GenericFullOuterJoinProbe<K> {
                 right_df
                     .get_columns()
                     .iter()
-                    .map(|s| Series::full_null(s.name().clone(), size, s.dtype()))
+                    .map(|s| Column::full_null(s.name().clone(), size, s.dtype()))
                     .collect(),
             )
         };

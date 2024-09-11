@@ -14,7 +14,7 @@ impl DataChunk {
         #[cfg(debug_assertions)]
         {
             for c in data.get_columns() {
-                assert_eq!(c.chunks().len(), 1);
+                assert_eq!(c.as_materialized_series().chunks().len(), 1);
             }
         }
         Self { chunk_index, data }

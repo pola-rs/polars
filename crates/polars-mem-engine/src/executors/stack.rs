@@ -37,7 +37,7 @@ impl StackExec {
                     self.options.run_parallel,
                 )?;
                 // We don't have to do a broadcast check as cse is not allowed to hit this.
-                df._add_columns(res, schema)?;
+                df._add_series(res, schema)?;
                 Ok(df)
             });
 
@@ -85,6 +85,22 @@ impl StackExec {
                             c.name(), len, height
                         );
                     }
+=======
+                if !self.options.should_broadcast {
+                    debug_assert!(
+                        res.iter()
+                            .all(|column| column.name().starts_with("__POLARS_CSER_0x")),
+                        "non-broadcasting hstack should only be used for CSE columns"
+                    );
+                    // Safety: this case only appears as a result of
+                    // CSE optimization, and the usage there produces
+                    // new, unique column names. It is immediately
+                    // followed by a projection which pulls out the
+                    // possibly mismatching column lengths.
+                    unsafe { df.get_columns_mut().extend(res.into_iter().map(Column::from)) };
+                } else {
+                    df._add_series(res, schema)?;
+>>>>>>> e774e00d2f (finish polars-pipe)
                 }
                 df._add_columns(res, schema)?;
             }

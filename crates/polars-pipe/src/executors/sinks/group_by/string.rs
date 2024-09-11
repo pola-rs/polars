@@ -209,8 +209,8 @@ impl StringGroupbySink {
                         );
 
                         let mut cols = Vec::with_capacity(1 + self.number_of_aggs());
-                        cols.push(key_builder.finish().into_series());
-                        cols.extend(buffers.into_iter().map(|buf| buf.into_series()));
+                        cols.push(key_builder.finish().into_series().into_column());
+                        cols.extend(buffers.into_iter().map(|buf| buf.into_series().into_column()));
                         physical_agg_to_logical(&mut cols, &self.output_schema);
                         Some(unsafe { DataFrame::new_no_checks(cols) })
                     })
