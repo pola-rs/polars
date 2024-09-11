@@ -136,6 +136,9 @@ pub(crate) fn decompress(
     } else if bytes.starts_with(&ZLIB0) || bytes.starts_with(&ZLIB1) || bytes.starts_with(&ZLIB2) {
         let mut decoder = flate2::read::ZlibDecoder::new(bytes);
         decompress_impl(&mut decoder, n_rows, separator, quote_char, eol_char)
+    } else if bytes.starts_with(&LZMA) {
+        let mut decoder = xz2::read::XzDecoder::new(bytes);
+        decompress_impl(&mut decoder, n_rows, separator, quote_char, eol_char)
     } else if bytes.starts_with(&ZSTD) {
         let mut decoder = zstd::Decoder::new(bytes).ok()?;
         decompress_impl(&mut decoder, n_rows, separator, quote_char, eol_char)

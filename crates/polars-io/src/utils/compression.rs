@@ -1,6 +1,7 @@
 // magic numbers
 pub mod magic {
     pub const GZIP: [u8; 2] = [31, 139];
+    pub const LZMA: [u8; 6] = [0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00];
     pub const ZLIB0: [u8; 2] = [0x78, 0x01];
     pub const ZLIB1: [u8; 2] = [0x78, 0x9C];
     pub const ZLIB2: [u8; 2] = [0x78, 0xDA];
@@ -15,5 +16,6 @@ pub fn is_compressed(bytes: &[u8]) -> bool {
         || bytes.starts_with(&ZLIB1)
         || bytes.starts_with(&ZLIB2)
         || bytes.starts_with(&GZIP)
+        || bytes.starts_with(&LZMA)
         || bytes.starts_with(&ZSTD)
 }
