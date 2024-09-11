@@ -1236,13 +1236,10 @@ impl DataFrame {
     /// # Safety
     /// The caller must ensure `column.len() == self.height()` .
     pub unsafe fn with_column_unchecked(&mut self, column: Series) -> &mut Self {
-        #[cfg(debug_assertions)]
-        {
-            return self.with_column(column).unwrap();
-        }
-        #[cfg(not(debug_assertions))]
-        {
-            self.get_columns_mut().push(column);
+        if cfg!(debug_assertions) {
+            self.with_column(column).unwrap()
+        } else {
+            self.get_columns_mut().push(column.into_column());
             self
         }
     }
