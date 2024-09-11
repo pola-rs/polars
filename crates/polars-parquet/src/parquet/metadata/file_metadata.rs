@@ -16,6 +16,8 @@ pub struct FileMetadata {
     pub version: i32,
     /// number of rows in the file.
     pub num_rows: usize,
+    /// Max row group height, useful for sharing column materializaztions.
+    pub max_row_group_height: usize,
     /// String message for application that wrote this file.
     ///
     /// This should have the following format:
@@ -67,10 +69,16 @@ impl FileMetadata {
     ) -> Result<Self, ParquetError> {
         let schema_descr = SchemaDescriptor::try_from_thrift(&metadata.schema)?;
 
+        let mut max_row_group_height = 0;
+
         let row_groups = metadata
             .row_groups
             .into_iter()
-            .map(|rg| RowGroupMetadata::try_from_thrift(&schema_descr, rg))
+            .map(|rg| {
+                let md = RowGroupMetadata::try_from_thrift(&schema_descr, rg)?;
+                max_row_group_height = max_row_group_height.max(md.num_rows());
+                Ok(md)
+            })
             .collect::<Result<_, ParquetError>>()?;
 
         let column_orders = metadata
@@ -80,6 +88,7 @@ impl FileMetadata {
         Ok(FileMetadata {
             version: metadata.version,
             num_rows: metadata.num_rows.try_into()?,
+            max_row_group_height,
             created_by: metadata.created_by,
             row_groups,
             key_value_metadata: metadata.key_value_metadata,
