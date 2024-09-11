@@ -38,7 +38,6 @@ pub(super) struct RowGroupDataFetcher {
         usize,
         Arc<DynByteSource>,
         FileMetadata,
-        usize,
     )>,
     pub(super) use_statistics: bool,
     pub(super) verbose: bool,
@@ -62,15 +61,14 @@ impl RowGroupDataFetcher {
     }
 
     pub(super) async fn init_next_file_state(&mut self) -> bool {
-        let Ok((path_index, row_offset, byte_source, metadata, file_max_row_group_height)) =
-            self.metadata_rx.recv().await
+        let Ok((path_index, row_offset, byte_source, metadata)) = self.metadata_rx.recv().await
         else {
             return false;
         };
 
         self.current_path_index = path_index;
         self.current_byte_source = byte_source;
-        self.current_max_row_group_height = file_max_row_group_height;
+        self.current_max_row_group_height = metadata.max_row_group_height;
         // The metadata task also sends a row offset to start counting from as it may skip files
         // during slice pushdown.
         self.current_row_offset = row_offset;

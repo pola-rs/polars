@@ -28,7 +28,6 @@ impl ParquetSourceNode {
             usize,
             Arc<DynByteSource>,
             FileMetadata,
-            usize,
         )>,
         task_handles_ext::AbortOnDropHandle<PolarsResult<()>>,
     ) {
@@ -40,8 +39,6 @@ impl ParquetSourceNode {
                 || self.file_options.with_columns.as_deref() == Some(&[])
         );
         let projected_arrow_fields = self.projected_arrow_fields.clone();
-        let needs_max_row_group_height_calc =
-            self.file_options.include_file_paths.is_some() || self.hive_parts.is_some();
 
         let (normalized_slice_oneshot_tx, normalized_slice_oneshot_rx) =
             tokio::sync::oneshot::channel();
@@ -139,18 +136,7 @@ impl ParquetSourceNode {
                         &metadata,
                     )?;
 
-                    let file_max_row_group_height = if needs_max_row_group_height_calc {
-                        metadata
-                            .row_groups
-                            .iter()
-                            .map(|x| x.num_rows())
-                            .max()
-                            .unwrap_or(0)
-                    } else {
-                        0
-                    };
-
-                    PolarsResult::Ok((path_index, byte_source, metadata, file_max_row_group_height))
+                    PolarsResult::Ok((path_index, byte_source, metadata))
                 });
 
                 async_executor::AbortOnDropHandle::new(handle)
@@ -213,19 +199,18 @@ impl ParquetSourceNode {
                         break;
                     };
 
-                    let (path_index, byte_source, metadata, file_max_row_group_height) = v
-                        .map_err(|err| {
-                            err.wrap_msg(|msg| {
-                                format!(
-                                    "error at path (index: {}, path: {:?}): {}",
-                                    current_path_index,
-                                    scan_sources
-                                        .get(current_path_index)
-                                        .map(|x| PlSmallStr::from_str(x.to_include_path_name())),
-                                    msg
-                                )
-                            })
-                        })?;
+                    let (path_index, byte_source, metadata) = v.map_err(|err| {
+                        err.wrap_msg(|msg| {
+                            format!(
+                                "error at path (index: {}, path: {:?}): {}",
+                                current_path_index,
+                                scan_sources
+                                    .get(current_path_index)
+                                    .map(|x| PlSmallStr::from_str(x.to_include_path_name())),
+                                msg
+                            )
+                        })
+                    })?;
 
                     assert_eq!(path_index, current_path_index);
 
@@ -254,13 +239,7 @@ impl ParquetSourceNode {
                     };
 
                     if metadata_tx
-                        .send((
-                            path_index,
-                            current_row_offset,
-                            byte_source,
-                            metadata,
-                            file_max_row_group_height,
-                        ))
+                        .send((path_index, current_row_offset, byte_source, metadata))
                         .await
                         .is_err()
                     {
@@ -304,7 +283,7 @@ impl ParquetSourceNode {
 
                 while let Some(v) = metadata_stream.next().await {
                     let v = v?;
-                    let (_, _, metadata, _) = &v;
+                    let (_, _, metadata) = &v;
                     cum_rows += metadata.num_rows;
                     processed_metadata_rev.push(v);
 
@@ -372,9 +351,7 @@ impl ParquetSourceNode {
                 let metadata_iter = processed_metadata_rev.into_iter().rev();
                 let current_row_offset_ref = &mut 0usize;
 
-                for (current_path_index, byte_source, metadata, file_max_row_group_height) in
-                    metadata_iter
-                {
+                for (current_path_index, byte_source, metadata) in metadata_iter {
                     let current_row_offset = *current_row_offset_ref;
                     *current_row_offset_ref = current_row_offset.saturating_add(metadata.num_rows);
 
@@ -393,7 +370,6 @@ impl ParquetSourceNode {
                             current_row_offset,
                             byte_source,
                             metadata,
-                            file_max_row_group_height,
                         ))
                         .await
                         .is_err()
