@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use polars_core::prelude::{InitHashMaps, PlHashMap, PlIndexMap};
 use polars_core::schema::Schema;
-use polars_error::{polars_err, PolarsResult};
+use polars_error::PolarsResult;
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::{AExpr, IR};
 use polars_plan::prelude::SinkType;
@@ -331,7 +331,7 @@ pub fn lower_ir(
 
         v @ IR::Scan { .. } => {
             let IR::Scan {
-                sources,
+                sources: scan_sources,
                 file_info,
                 hive_parts,
                 output_schema,
@@ -343,12 +343,8 @@ pub fn lower_ir(
                 unreachable!();
             };
 
-            let paths = sources
-                .into_paths()
-                .ok_or_else(|| polars_err!(nyi = "Streaming scanning of in-memory buffers"))?;
-
             PhysNodeKind::FileScan {
-                paths,
+                scan_sources,
                 file_info,
                 hive_parts,
                 output_schema,
@@ -358,7 +354,14 @@ pub fn lower_ir(
             }
         },
 
-        _ => todo!(),
+        IR::PythonScan { .. } => todo!(),
+        IR::Reduce { .. } => todo!(),
+        IR::Cache { .. } => todo!(),
+        IR::GroupBy { .. } => todo!(),
+        IR::Join { .. } => todo!(),
+        IR::Distinct { .. } => todo!(),
+        IR::ExtContext { .. } => todo!(),
+        IR::Invalid => unreachable!(),
     };
 
     Ok(phys_sm.insert(PhysNode::new(output_schema, node_kind)))

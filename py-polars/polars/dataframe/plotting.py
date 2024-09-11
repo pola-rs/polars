@@ -6,15 +6,13 @@ if TYPE_CHECKING:
     import sys
 
     import altair as alt
-    from altair.typing import (
-        ChannelColor,
-        ChannelOrder,
-        ChannelSize,
-        ChannelTooltip,
-        ChannelX,
-        ChannelY,
-        EncodeKwds,
-    )
+    from altair.typing import ChannelColor as Color
+    from altair.typing import ChannelOrder as Order
+    from altair.typing import ChannelSize as Size
+    from altair.typing import ChannelTooltip as Tooltip
+    from altair.typing import ChannelX as X
+    from altair.typing import ChannelY as Y
+    from altair.typing import EncodeKwds
 
     from polars import DataFrame
 
@@ -29,10 +27,13 @@ if TYPE_CHECKING:
 
     Encodings: TypeAlias = Dict[
         str,
-        Union[
-            ChannelX, ChannelY, ChannelColor, ChannelOrder, ChannelSize, ChannelTooltip
-        ],
+        Union[X, Y, Color, Order, Size, Tooltip],
     ]
+
+
+def _add_tooltip(encodings: Encodings, /, **kwargs: Unpack[EncodeKwds]) -> None:
+    if "tooltip" not in kwargs:
+        encodings["tooltip"] = [*encodings.values(), *kwargs.values()]  # type: ignore[assignment]
 
 
 class DataFramePlot:
@@ -45,10 +46,9 @@ class DataFramePlot:
 
     def bar(
         self,
-        x: ChannelX | None = None,
-        y: ChannelY | None = None,
-        color: ChannelColor | None = None,
-        tooltip: ChannelTooltip | None = None,
+        x: X | None = None,
+        y: Y | None = None,
+        color: Color | None = None,
         /,
         **kwargs: Unpack[EncodeKwds],
     ) -> alt.Chart:
@@ -77,8 +77,6 @@ class DataFramePlot:
             Column with y-coordinates of bars.
         color
             Column to color bars by.
-        tooltip
-            Columns to show values of when hovering over bars with pointer.
         **kwargs
             Additional keyword arguments passed to Altair.
 
@@ -102,17 +100,15 @@ class DataFramePlot:
             encodings["y"] = y
         if color is not None:
             encodings["color"] = color
-        if tooltip is not None:
-            encodings["tooltip"] = tooltip
+        _add_tooltip(encodings, **kwargs)
         return self._chart.mark_bar().encode(**encodings, **kwargs).interactive()
 
     def line(
         self,
-        x: ChannelX | None = None,
-        y: ChannelY | None = None,
-        color: ChannelColor | None = None,
-        order: ChannelOrder | None = None,
-        tooltip: ChannelTooltip | None = None,
+        x: X | None = None,
+        y: Y | None = None,
+        color: Color | None = None,
+        order: Order | None = None,
         /,
         **kwargs: Unpack[EncodeKwds],
     ) -> alt.Chart:
@@ -142,8 +138,6 @@ class DataFramePlot:
             Column to color lines by.
         order
             Column to use for order of data points in lines.
-        tooltip
-            Columns to show values of when hovering over lines with pointer.
         **kwargs
             Additional keyword arguments passed to Altair.
 
@@ -168,17 +162,15 @@ class DataFramePlot:
             encodings["color"] = color
         if order is not None:
             encodings["order"] = order
-        if tooltip is not None:
-            encodings["tooltip"] = tooltip
+        _add_tooltip(encodings, **kwargs)
         return self._chart.mark_line().encode(**encodings, **kwargs).interactive()
 
     def point(
         self,
-        x: ChannelX | None = None,
-        y: ChannelY | None = None,
-        color: ChannelColor | None = None,
-        size: ChannelSize | None = None,
-        tooltip: ChannelTooltip | None = None,
+        x: X | None = None,
+        y: Y | None = None,
+        color: Color | None = None,
+        size: Size | None = None,
         /,
         **kwargs: Unpack[EncodeKwds],
     ) -> alt.Chart:
@@ -209,8 +201,6 @@ class DataFramePlot:
             Column to color points by.
         size
             Column which determines points' sizes.
-        tooltip
-            Columns to show values of when hovering over points with pointer.
         **kwargs
             Additional keyword arguments passed to Altair.
 
@@ -234,8 +224,7 @@ class DataFramePlot:
             encodings["color"] = color
         if size is not None:
             encodings["size"] = size
-        if tooltip is not None:
-            encodings["tooltip"] = tooltip
+        _add_tooltip(encodings, **kwargs)
         return (
             self._chart.mark_point()
             .encode(
@@ -253,4 +242,10 @@ class DataFramePlot:
         if method is None:
             msg = "Altair has no method 'mark_{attr}'"
             raise AttributeError(msg)
-        return lambda **kwargs: method().encode(**kwargs).interactive()
+        encodings: Encodings = {}
+
+        def func(**kwargs: EncodeKwds) -> alt.Chart:
+            _add_tooltip(encodings, **kwargs)
+            return method().encode(**encodings, **kwargs).interactive()
+
+        return func

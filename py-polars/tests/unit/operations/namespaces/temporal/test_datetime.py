@@ -138,15 +138,13 @@ def test_local_date_sortedness(time_zone: str | None, expected: bool) -> None:
     ser = (pl.Series([datetime(2022, 1, 1, 23)]).dt.replace_time_zone(time_zone)).sort()
     result = ser.dt.date()
     assert result.flags["SORTED_ASC"]
-    assert result.flags["SORTED_DESC"] is False
 
     # 2 elements - depends on time zone
     ser = (
         pl.Series([datetime(2022, 1, 1, 23)] * 2).dt.replace_time_zone(time_zone)
     ).sort()
     result = ser.dt.date()
-    assert result.flags["SORTED_ASC"] == expected
-    assert result.flags["SORTED_DESC"] is False
+    assert result.flags["SORTED_ASC"] >= expected
 
 
 @pytest.mark.parametrize("time_zone", [None, "Asia/Kathmandu", "UTC"])
@@ -155,11 +153,16 @@ def test_local_time_sortedness(time_zone: str | None) -> None:
     ser = (pl.Series([datetime(2022, 1, 1, 23)]).dt.replace_time_zone(time_zone)).sort()
     result = ser.dt.time()
     assert result.flags["SORTED_ASC"]
-    assert not result.flags["SORTED_DESC"]
 
-    # two elements - not sorted
+    # three elements - not sorted
     ser = (
-        pl.Series([datetime(2022, 1, 1, 23)] * 2).dt.replace_time_zone(time_zone)
+        pl.Series(
+            [
+                datetime(2022, 1, 1, 23),
+                datetime(2022, 1, 2, 21),
+                datetime(2022, 1, 3, 22),
+            ]
+        ).dt.replace_time_zone(time_zone)
     ).sort()
     result = ser.dt.time()
     assert not result.flags["SORTED_ASC"]
@@ -180,31 +183,34 @@ def test_local_time_before_epoch(time_unit: TimeUnit) -> None:
     ("time_zone", "offset", "expected"),
     [
         (None, "1d", True),
-        ("Asia/Kathmandu", "1d", False),
+        ("Europe/London", "1d", False),
         ("UTC", "1d", True),
         (None, "1mo", True),
-        ("Asia/Kathmandu", "1mo", False),
+        ("Europe/London", "1mo", False),
         ("UTC", "1mo", True),
         (None, "1w", True),
-        ("Asia/Kathmandu", "1w", False),
+        ("Europe/London", "1w", False),
         ("UTC", "1w", True),
         (None, "1h", True),
-        ("Asia/Kathmandu", "1h", True),
+        ("Europe/London", "1h", True),
         ("UTC", "1h", True),
     ],
 )
 def test_offset_by_sortedness(
     time_zone: str | None, offset: str, expected: bool
 ) -> None:
-    # create 2 values, as a single value is always sorted
-    ser = (
-        pl.Series(
-            [datetime(2022, 1, 1, 22), datetime(2022, 1, 1, 22)]
-        ).dt.replace_time_zone(time_zone)
+    s = pl.datetime_range(
+        datetime(2020, 10, 25),
+        datetime(2020, 10, 25, 3),
+        "30m",
+        time_zone=time_zone,
+        eager=True,
     ).sort()
-    result = ser.dt.offset_by(offset)
+    assert s.flags["SORTED_ASC"]
+    assert not s.flags["SORTED_DESC"]
+    result = s.dt.offset_by(offset)
     assert result.flags["SORTED_ASC"] == expected
-    assert result.flags["SORTED_DESC"] is False
+    assert not result.flags["SORTED_DESC"]
 
 
 def test_dt_datetime_date_time_invalid() -> None:

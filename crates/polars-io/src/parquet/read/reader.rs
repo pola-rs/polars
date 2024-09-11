@@ -18,7 +18,7 @@ use super::utils::materialize_empty_df;
 #[cfg(feature = "cloud")]
 use crate::cloud::CloudOptions;
 use crate::mmap::MmapBytesReader;
-use crate::parquet::metadata::FileMetaDataRef;
+use crate::parquet::metadata::FileMetadataRef;
 use crate::predicates::PhysicalIoExpr;
 use crate::prelude::*;
 use crate::RowIndex;
@@ -35,7 +35,7 @@ pub struct ParquetReader<R: Read + Seek> {
     schema: Option<ArrowSchemaRef>,
     row_index: Option<RowIndex>,
     low_memory: bool,
-    metadata: Option<FileMetaDataRef>,
+    metadata: Option<FileMetadataRef>,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     hive_partition_columns: Option<Vec<Series>>,
     include_file_path: Option<(PlSmallStr, Arc<str>)>,
@@ -138,7 +138,7 @@ impl<R: MmapBytesReader> ParquetReader<R> {
         self
     }
 
-    pub fn get_metadata(&mut self) -> PolarsResult<&FileMetaDataRef> {
+    pub fn get_metadata(&mut self) -> PolarsResult<&FileMetadataRef> {
         if self.metadata.is_none() {
             self.metadata = Some(Arc::new(read::read_metadata(&mut self.reader)?));
         }
@@ -267,7 +267,7 @@ impl ParquetAsyncReader {
     pub async fn from_uri(
         uri: &str,
         cloud_options: Option<&CloudOptions>,
-        metadata: Option<FileMetaDataRef>,
+        metadata: Option<FileMetadataRef>,
     ) -> PolarsResult<ParquetAsyncReader> {
         Ok(ParquetAsyncReader {
             reader: ParquetObjectStore::from_uri(uri, cloud_options, metadata).await?,
@@ -406,7 +406,7 @@ impl ParquetAsyncReader {
         )
     }
 
-    pub async fn get_metadata(&mut self) -> PolarsResult<&FileMetaDataRef> {
+    pub async fn get_metadata(&mut self) -> PolarsResult<&FileMetadataRef> {
         self.reader.get_metadata().await
     }
 

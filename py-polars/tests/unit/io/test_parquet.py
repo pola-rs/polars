@@ -1891,3 +1891,16 @@ def test_concat_multiple_inmem() -> None:
 
     assert_frame_equal(pl.read_parquet([fb, gb]), dfs)
     assert_frame_equal(pl.read_parquet([fb, gb], use_pyarrow=True), dfs)
+
+
+@pytest.mark.write_disk
+def test_write_binary_open_file(tmp_path: Path) -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+
+    path = tmp_path / "test.parquet"
+
+    with path.open("wb") as f_write:
+        df.write_parquet(f_write)
+
+    out = pl.read_parquet(path)
+    assert_frame_equal(out, df)

@@ -1,5 +1,6 @@
 use polars_core::config;
 use polars_core::utils::accumulate_dataframes_vertical;
+use polars_io::utils::compression::maybe_decompress_bytes;
 
 use super::*;
 

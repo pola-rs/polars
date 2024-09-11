@@ -12,7 +12,7 @@ use polars_core::POOL;
 use polars_parquet::parquet::error::ParquetResult;
 use polars_parquet::parquet::statistics::Statistics;
 use polars_parquet::read::{
-    self, ColumnChunkMetadata, FileMetaData, Filter, PhysicalType, RowGroupMetaData,
+    self, ColumnChunkMetadata, FileMetadata, Filter, PhysicalType, RowGroupMetadata,
 };
 use polars_utils::mmap::MemSlice;
 use rayon::prelude::*;
@@ -26,7 +26,7 @@ use super::utils::materialize_empty_df;
 use super::{mmap, ParallelStrategy};
 use crate::hive::materialize_hive_partitions;
 use crate::mmap::{MmapBytesReader, ReaderBytes};
-use crate::parquet::metadata::FileMetaDataRef;
+use crate::parquet::metadata::FileMetadataRef;
 use crate::parquet::read::ROW_COUNT_OVERFLOW_ERR;
 use crate::predicates::{apply_predicate, PhysicalIoExpr};
 use crate::utils::get_reader_bytes;
@@ -142,7 +142,7 @@ fn rg_to_dfs(
     row_group_start: usize,
     row_group_end: usize,
     slice: (usize, usize),
-    file_metadata: &FileMetaData,
+    file_metadata: &FileMetadata,
     schema: &ArrowSchemaRef,
     predicate: Option<&dyn PhysicalIoExpr>,
     row_index: Option<RowIndex>,
@@ -227,7 +227,7 @@ fn rg_to_dfs_prefiltered(
     previous_row_count: &mut IdxSize,
     row_group_start: usize,
     row_group_end: usize,
-    file_metadata: &FileMetaData,
+    file_metadata: &FileMetadata,
     schema: &ArrowSchemaRef,
     live_variables: Vec<PlSmallStr>,
     predicate: &dyn PhysicalIoExpr,
@@ -501,7 +501,7 @@ fn rg_to_dfs_optionally_par_over_columns(
     row_group_start: usize,
     row_group_end: usize,
     slice: (usize, usize),
-    file_metadata: &FileMetaData,
+    file_metadata: &FileMetadata,
     schema: &ArrowSchemaRef,
     predicate: Option<&dyn PhysicalIoExpr>,
     row_index: Option<RowIndex>,
@@ -605,7 +605,7 @@ fn rg_to_dfs_par_over_rg(
     row_group_end: usize,
     previous_row_count: &mut IdxSize,
     slice: (usize, usize),
-    file_metadata: &FileMetaData,
+    file_metadata: &FileMetadata,
     schema: &ArrowSchemaRef,
     predicate: Option<&dyn PhysicalIoExpr>,
     row_index: Option<RowIndex>,
@@ -701,7 +701,7 @@ pub fn read_parquet<R: MmapBytesReader>(
     slice: (usize, usize),
     projection: Option<&[usize]>,
     reader_schema: &ArrowSchemaRef,
-    metadata: Option<FileMetaDataRef>,
+    metadata: Option<FileMetadataRef>,
     predicate: Option<&dyn PhysicalIoExpr>,
     mut parallel: ParallelStrategy,
     row_index: Option<RowIndex>,
@@ -855,7 +855,7 @@ pub(super) fn compute_row_group_range(
     row_group_start: usize,
     row_group_end: usize,
     slice: (usize, usize),
-    row_groups: &[RowGroupMetaData],
+    row_groups: &[RowGroupMetadata],
 ) -> std::ops::Range<usize> {
     let mut start = row_group_start;
     let mut cum_rows: usize = (0..row_group_start).map(|i| row_groups[i].num_rows()).sum();
@@ -901,7 +901,7 @@ pub struct BatchedParquetReader {
     slice: (usize, usize),
     projection: Arc<[usize]>,
     schema: ArrowSchemaRef,
-    metadata: FileMetaDataRef,
+    metadata: FileMetadataRef,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     row_index: Option<RowIndex>,
     rows_read: IdxSize,
@@ -921,7 +921,7 @@ impl BatchedParquetReader {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         row_group_fetcher: RowGroupFetcher,
-        metadata: FileMetaDataRef,
+        metadata: FileMetadataRef,
         schema: ArrowSchemaRef,
         slice: (usize, usize),
         projection: Option<Vec<usize>>,

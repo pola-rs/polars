@@ -8,7 +8,7 @@ use polars_error::PolarsResult;
 use polars_parquet::arrow::read::{column_iter_to_arrays, Filter};
 use polars_parquet::parquet::metadata::ColumnChunkMetadata;
 use polars_parquet::parquet::read::{BasicDecompressor, PageReader};
-use polars_parquet::read::RowGroupMetaData;
+use polars_parquet::read::RowGroupMetadata;
 use polars_utils::mmap::MemReader;
 
 /// An [`Iterator`] of [`RecordBatchT`] that (dynamically) adapts a vector of iterators of [`Array`] into
@@ -70,7 +70,7 @@ impl Iterator for RowGroupDeserializer {
 /// the field (one for non-nested types)
 pub fn read_columns<'a, R: Read + Seek>(
     reader: &mut R,
-    row_group_metadata: &'a RowGroupMetaData,
+    row_group_metadata: &'a RowGroupMetadata,
     field_name: &'a str,
 ) -> PolarsResult<Vec<(&'a ColumnChunkMetadata, Vec<u8>)>> {
     row_group_metadata
@@ -135,7 +135,7 @@ pub fn to_deserializer(
 /// and convert them to [`ArrayIter`] via [`to_deserializer`].
 pub fn read_columns_many<R: Read + Seek>(
     reader: &mut R,
-    row_group: &RowGroupMetaData,
+    row_group: &RowGroupMetadata,
     fields: &ArrowSchema,
     filter: Option<Filter>,
 ) -> PolarsResult<Vec<Box<dyn Array>>> {

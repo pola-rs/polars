@@ -1,3 +1,4 @@
+use polars_plan::constants::CSE_REPLACED;
 use polars_utils::itertools::Itertools;
 
 use super::*;
@@ -243,6 +244,8 @@ pub(super) fn evaluate_physical_expressions(
 }
 
 pub(super) fn check_expand_literals(
+    df: &DataFrame,
+    phys_expr: &[Arc<dyn PhysicalExpr>],
     mut selected_columns: Vec<Series>,
     zero_length: bool,
     options: ProjectionOptions,
@@ -252,6 +255,16 @@ pub(super) fn check_expand_literals(
     };
     let duplicate_check = options.duplicate_check;
     let should_broadcast = options.should_broadcast;
+
+    // When we have CSE we cannot verify scalars yet.
+    let verify_scalar = if !df.get_columns().is_empty() {
+        !df.get_columns()[df.width() - 1]
+            .name()
+            .starts_with(CSE_REPLACED)
+    } else {
+        true
+    };
+
     let mut df_height = 0;
     let mut has_empty = false;
     let mut all_equal_len = true;
@@ -282,21 +295,28 @@ pub(super) fn check_expand_literals(
     if !all_equal_len && should_broadcast {
         selected_columns = selected_columns
             .into_iter()
-            .map(|series| {
+            .zip(phys_expr)
+            .map(|(series, phys)| {
                 Ok(match series.len() {
                     0 if df_height == 1 => series,
                     1 => {
                         if has_empty {
-
-                        polars_ensure!(df_height == 1,
-                        ComputeError: "Series length {} doesn't match the DataFrame height of {}",
-                        series.len(), df_height
-                    );
-
+                            polars_ensure!(df_height == 1,
+                                ComputeError: "Series length {} doesn't match the DataFrame height of {}",
+                                series.len(), df_height
+                            );
                             series.slice(0, 0)
                         } else if df_height == 1 {
                             series
                         } else {
+                            if verify_scalar {
+                                polars_ensure!(phys.is_scalar(),
+                                InvalidOperation: "Series: {}, length {} doesn't match the DataFrame height of {}\n\n\
+                                If you want this Series to be broadcasted, ensure it is a scalar (for instance by adding '.first()').",
+                                series.name(), series.len(), df_height
+                            );
+
+                            }
                             series.new_from_index(0, df_height)
                         }
                     },

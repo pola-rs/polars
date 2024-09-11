@@ -24,7 +24,7 @@ use super::utils::get_file_chunks;
 use crate::mmap::ReaderBytes;
 use crate::predicates::PhysicalIoExpr;
 #[cfg(not(any(feature = "decompress", feature = "decompress-fast")))]
-use crate::utils::is_compressed;
+use crate::utils::compression::SupportedCompression;
 use crate::utils::update_row_counts;
 use crate::RowIndex;
 
@@ -179,7 +179,7 @@ impl<'a> CoreReader<'a> {
         let mut reader_bytes = reader_bytes;
 
         #[cfg(not(any(feature = "decompress", feature = "decompress-fast")))]
-        if is_compressed(&reader_bytes) {
+        if SupportedCompression::check(&reader_bytes).is_some() {
             polars_bail!(
                 ComputeError: "cannot read compressed CSV file; \
                 compile with feature 'decompress' or 'decompress-fast'"

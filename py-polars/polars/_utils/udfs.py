@@ -604,10 +604,10 @@ class InstructionTranslator:
             return "replace_strict"
         else:
             msg = (
-                "unrecognized opname"
-                "\n\nPlease report a bug to https://github.com/pola-rs/polars/issues"
-                " with the content of function you were passing to `map` and the"
-                f" following instruction object:\n{inst!r}"
+                f"unexpected or unrecognised op name ({inst.opname})\n\n"
+                "Please report a bug to https://github.com/pola-rs/polars/issues "
+                "with the content of function you were passing to the `map` "
+                f"expressions and the following instruction object:\n{inst!r}"
             )
             raise AssertionError(msg)
 
@@ -751,7 +751,7 @@ class RewrittenInstructions:
         self._original_instructions = list(instructions)
         self._rewritten_instructions = self._rewrite(
             self._upgrade_instruction(inst)
-            for inst in self._original_instructions
+            for inst in self._unpack_superinstructions(self._original_instructions)
             if inst.opname not in self._ignored_ops
         )
 
@@ -1017,6 +1017,22 @@ class RewrittenInstructions:
             updated_instructions.append(px)
 
         return len(matching_instructions)
+
+    @staticmethod
+    def _unpack_superinstructions(
+        instructions: list[Instruction],
+    ) -> Iterator[Instruction]:
+        """Expand known 'superinstructions' into their component parts."""
+        for inst in instructions:
+            if inst.opname == "LOAD_FAST_LOAD_FAST":
+                for idx in (0, 1):
+                    yield inst._replace(
+                        opname="LOAD_FAST",
+                        argval=inst.argval[idx],
+                        argrepr=inst.argval[idx],
+                    )
+            else:
+                yield inst
 
     @staticmethod
     def _upgrade_instruction(inst: Instruction) -> Instruction:

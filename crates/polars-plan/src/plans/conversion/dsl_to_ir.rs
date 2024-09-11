@@ -558,8 +558,8 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             options,
         } => {
             return join::resolve_join(
-                input_left,
-                input_right,
+                Either::Left(input_left),
+                Either::Left(input_right),
                 left_on,
                 right_on,
                 predicates,
@@ -1068,27 +1068,26 @@ pub(crate) fn maybe_init_projection_excluding_hive(
     // Update `with_columns` with a projection so that hive columns aren't loaded from the
     // file
     let hive_parts = hive_parts?;
-
     let hive_schema = hive_parts.schema();
 
-    let (first_hive_name, _) = hive_schema.get_at_index(0)?;
-
-    // TODO: Optimize this
-    let names = match reader_schema {
-        Either::Left(ref v) => v
-            .contains(first_hive_name.as_str())
-            .then(|| v.iter_names_cloned().collect::<Vec<_>>()),
-        Either::Right(ref v) => v
-            .contains(first_hive_name.as_str())
-            .then(|| v.iter_names_cloned().collect()),
-    };
-
-    let names = names?;
-
-    Some(
-        names
-            .into_iter()
-            .filter(|x| !hive_schema.contains(x))
-            .collect::<Arc<[_]>>(),
-    )
+    match &reader_schema {
+        Either::Left(reader_schema) => hive_schema
+            .iter_names()
+            .any(|x| reader_schema.contains(x))
+            .then(|| {
+                reader_schema
+                    .iter_names_cloned()
+                    .filter(|x| !hive_schema.contains(x))
+                    .collect::<Arc<[_]>>()
+            }),
+        Either::Right(reader_schema) => hive_schema
+            .iter_names()
+            .any(|x| reader_schema.contains(x))
+            .then(|| {
+                reader_schema
+                    .iter_names_cloned()
+                    .filter(|x| !hive_schema.contains(x))
+                    .collect::<Arc<[_]>>()
+            }),
+    }
 }

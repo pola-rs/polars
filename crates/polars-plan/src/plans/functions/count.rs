@@ -219,7 +219,7 @@ pub(super) fn count_rows_ndjson(
     cloud_options: Option<&CloudOptions>,
 ) -> PolarsResult<usize> {
     use polars_core::config;
-    use polars_io::utils::maybe_decompress_bytes;
+    use polars_io::utils::compression::maybe_decompress_bytes;
 
     if sources.is_empty() {
         return Ok(0);

@@ -256,7 +256,7 @@ fn to_graph_rec<'a>(
 
         v @ FileScan { .. } => {
             let FileScan {
-                paths,
+                scan_sources,
                 file_info,
                 hive_parts,
                 output_schema,
@@ -293,18 +293,19 @@ fn to_graph_rec<'a>(
                     FileScan::Parquet {
                         options,
                         cloud_options,
-                        metadata: _,
+                        metadata: first_metadata,
                     } => {
                         if std::env::var("POLARS_DISABLE_PARQUET_SOURCE").as_deref() != Ok("1") {
                             ctx.graph.add_node(
                                 nodes::parquet_source::ParquetSourceNode::new(
-                                    paths,
+                                    scan_sources,
                                     file_info,
                                     hive_parts,
                                     predicate,
                                     options,
                                     cloud_options,
                                     file_options,
+                                    first_metadata.unwrap(),
                                 ),
                                 [],
                             )

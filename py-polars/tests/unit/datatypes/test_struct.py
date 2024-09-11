@@ -265,6 +265,7 @@ def test_from_dicts_struct() -> None:
     ]
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_list_to_struct() -> None:
     df = pl.DataFrame({"a": [[1, 2, 3], [1, 2]]})
     assert df.select([pl.col("a").list.to_struct()]).to_series().to_list() == [

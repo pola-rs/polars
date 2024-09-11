@@ -190,6 +190,9 @@ impl PhysicalExpr for ColumnExpr {
             )
         })
     }
+    fn is_scalar(&self) -> bool {
+        false
+    }
 }
 
 impl PartitionedAggregation for ColumnExpr {

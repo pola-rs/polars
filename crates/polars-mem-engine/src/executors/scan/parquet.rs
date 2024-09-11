@@ -5,7 +5,7 @@ use polars_core::config::{get_file_prefetch_size, verbose};
 use polars_core::utils::accumulate_dataframes_vertical;
 use polars_error::feature_gated;
 use polars_io::cloud::CloudOptions;
-use polars_io::parquet::metadata::FileMetaDataRef;
+use polars_io::parquet::metadata::FileMetadataRef;
 use polars_io::utils::slice::split_slice_at_file;
 use polars_io::RowIndex;
 
@@ -21,7 +21,7 @@ pub struct ParquetExec {
     cloud_options: Option<CloudOptions>,
     file_options: FileScanOptions,
     #[allow(dead_code)]
-    metadata: Option<FileMetaDataRef>,
+    metadata: Option<FileMetadataRef>,
 }
 
 impl ParquetExec {
@@ -34,7 +34,7 @@ impl ParquetExec {
         options: ParquetOptions,
         cloud_options: Option<CloudOptions>,
         file_options: FileScanOptions,
-        metadata: Option<FileMetaDataRef>,
+        metadata: Option<FileMetadataRef>,
     ) -> Self {
         ParquetExec {
             sources,

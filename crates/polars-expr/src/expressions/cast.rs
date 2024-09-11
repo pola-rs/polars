@@ -76,6 +76,10 @@ impl PhysicalExpr for CastExpr {
         })
     }
 
+    fn is_scalar(&self) -> bool {
+        self.input.is_scalar()
+    }
+
     fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
         Some(self)
     }
