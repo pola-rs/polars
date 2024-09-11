@@ -25,7 +25,7 @@ impl GroupByDynamicExec {
         let keys = self
             .keys
             .iter()
-            .map(|e| e.evaluate(&df, state))
+            .map(|e| e.evaluate(&df, state).map(Column::from))
             .collect::<PolarsResult<Vec<_>>>()?;
 
         let (mut time_key, mut keys, groups) = df.group_by_dynamic(keys, &self.options)?;
@@ -59,6 +59,11 @@ impl GroupByDynamicExec {
         }
 
         let agg_columns = evaluate_aggs(&df, &self.aggs, groups, state)?;
+        // @scalar-opt
+        let agg_columns = agg_columns
+            .into_iter()
+            .map(Column::from)
+            .collect::<Vec<_>>();
 
         let mut columns = Vec::with_capacity(agg_columns.len() + 1 + keys.len());
         columns.extend_from_slice(&keys);

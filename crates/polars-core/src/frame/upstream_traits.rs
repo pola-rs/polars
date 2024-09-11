@@ -12,6 +12,16 @@ impl FromIterator<Series> for DataFrame {
     }
 }
 
+impl FromIterator<Column> for DataFrame {
+    /// # Panics
+    ///
+    /// Panics if Column have different lengths.
+    fn from_iter<T: IntoIterator<Item = Column>>(iter: T) -> Self {
+        let v = iter.into_iter().collect();
+        DataFrame::new(v).expect("could not create DataFrame from iterator")
+    }
+}
+
 impl Index<usize> for DataFrame {
     type Output = Column;
 

@@ -431,9 +431,9 @@ fn rg_to_dfs_prefiltered(
 
                         debug_assert_eq!(array.len(), filter_mask.set_bits());
 
-                        Ok(array)
+                        Ok(array.into_column())
                     })
-                    .collect::<PolarsResult<Vec<Series>>>()?;
+                    .collect::<PolarsResult<Vec<Column>>>()?;
 
                 let mut rearranged_schema = df.schema();
                 rearranged_schema.merge(Schema::from_arrow_schema(schema.as_ref()));

@@ -88,13 +88,13 @@ impl Executor for JoinExec {
             let left_on_series = self
                 .left_on
                 .iter()
-                .map(|e| e.evaluate(&df_left, state))
+                .map(|e| e.evaluate(&df_left, state).map(Column::from))
                 .collect::<PolarsResult<Vec<_>>>()?;
 
             let right_on_series = self
                 .right_on
                 .iter()
-                .map(|e| e.evaluate(&df_right, state))
+                .map(|e| e.evaluate(&df_right, state).map(Column::from))
                 .collect::<PolarsResult<Vec<_>>>()?;
 
             // prepare the tolerance

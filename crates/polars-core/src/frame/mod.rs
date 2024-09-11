@@ -1262,7 +1262,7 @@ impl DataFrame {
         Ok(())
     }
 
-    pub fn _add_columns(&mut self, columns: Vec<Series>, schema: &Schema) -> PolarsResult<()> {
+    pub fn _add_columns(&mut self, columns: Vec<Column>, schema: &Schema) -> PolarsResult<()> {
         for (i, s) in columns.into_iter().enumerate() {
             // we need to branch here
             // because users can add multiple columns with the same name
