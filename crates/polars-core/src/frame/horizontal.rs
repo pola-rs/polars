@@ -29,21 +29,21 @@ impl DataFrame {
     ///
     /// # Safety
     /// The caller must ensure:
-    /// - the length of all [`Series`] is equal to the height of this [`DataFrame`]
+    /// - the length of all [`Column`] is equal to the height of this [`DataFrame`]
     /// - the columns names are unique
     pub unsafe fn hstack_mut_unchecked(&mut self, columns: &[Column]) -> &mut Self {
         self.columns.extend_from_slice(columns);
         self
     }
 
-    /// Add multiple [`Series`] to a [`DataFrame`].
+    /// Add multiple [`Column`] to a [`DataFrame`].
     /// The added `Series` are required to have the same length.
     ///
     /// # Example
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
-    /// fn stack(df: &mut DataFrame, columns: &[Series]) {
+    /// fn stack(df: &mut DataFrame, columns: &[Column]) {
     ///     df.hstack_mut(columns);
     /// }
     /// ```

@@ -68,6 +68,8 @@ impl<'a> Deserialize<'a> for SpecialEq<Arc<dyn ColumnsUdf>> {
         }
         #[cfg(not(feature = "python"))]
         {
+            _ = deserializer;
+
             Err(D::Error::custom(
                 "deserialization not supported for this 'opaque' function",
             ))
@@ -394,6 +396,8 @@ impl<'a> Deserialize<'a> for GetOutput {
         }
         #[cfg(not(feature = "python"))]
         {
+            _ = deserializer;
+
             Err(D::Error::custom(
                 "deserialization not supported for this output field",
             ))
