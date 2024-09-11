@@ -3231,6 +3231,7 @@ dependencies = [
  "num-traits",
  "once_cell",
  "polars-error",
+ "rand",
  "raw-cpuid",
  "rayon",
  "serde",
