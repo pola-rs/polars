@@ -173,6 +173,7 @@ def test_write_iceberg(df: pl.DataFrame, tmp_path: Path) -> None:
     from pyiceberg.catalog.sql import SqlCatalog
 
     # time64[ns] type is currently not supported in pyiceberg.
+    # https://github.com/apache/iceberg-python/issues/1169
     df = df.drop("time")
 
     # in-memory catalog
