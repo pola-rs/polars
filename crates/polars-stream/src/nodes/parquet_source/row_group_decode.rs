@@ -431,7 +431,7 @@ impl RowGroupDecoder {
         row_group_data: RowGroupData,
     ) -> PolarsResult<Vec<DataFrame>> {
         debug_assert!(row_group_data.slice.is_none()); // Invariant of the optimizer.
-        assert!(self.predicate_arrow_field_indices.len() < self.projected_arrow_schema.len());
+        assert!(self.predicate_arrow_field_indices.len() <= self.projected_arrow_schema.len());
 
         let prefilter_setting = self.use_prefiltered.as_ref().unwrap();
 

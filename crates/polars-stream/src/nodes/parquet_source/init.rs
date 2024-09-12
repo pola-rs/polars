@@ -299,7 +299,6 @@ impl ParquetSourceNode {
                 .as_ref()
                 .unwrap()
                 .live_variables()
-                .filter(|x| x.len() < projected_arrow_schema.len())
                 .and_then(|x| {
                     let mut out = x
                         .iter()
@@ -309,8 +308,11 @@ impl ParquetSourceNode {
 
                     out.sort_unstable();
                     out.dedup();
-                    // There is at least one non-predicate column.
-                    (out.len() < projected_arrow_schema.len()).then_some(out)
+                    // There is at least one non-predicate column, or pre-filtering was
+                    // explicitly requested.
+                    (out.len() < projected_arrow_schema.len()
+                        || matches!(self.options.parallel, ParallelStrategy::Prefiltered))
+                    .then_some(out)
                 });
 
             use_prefiltered &= v.is_some();
