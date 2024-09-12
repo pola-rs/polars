@@ -699,8 +699,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         >>> lf = pl.LazyFrame({"a": [1, 2, 3]}).sum()
         >>> bytes = lf.serialize()
-        >>> bytes  # doctest: +ELLIPSIS
-        b'\xa1kMapFunction\xa2einput\xa1mDataFrameScan\xa4bdf\xa1gcolumns\x81\xa4d...'
 
         The bytes can later be deserialized back into a LazyFrame.
 

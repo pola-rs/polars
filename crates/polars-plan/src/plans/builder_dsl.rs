@@ -13,7 +13,6 @@ use polars_io::HiveOptions;
 #[cfg(any(feature = "parquet", feature = "csv", feature = "ipc"))]
 use polars_io::RowIndex;
 
-use crate::constants::UNLIMITED_CACHE;
 #[cfg(feature = "python")]
 use crate::prelude::python_udf::PythonFunction;
 use crate::prelude::*;
@@ -63,7 +62,6 @@ impl DslBuilder {
                 is_expanded: true,
             })),
             file_info: Arc::new(RwLock::new(Some(file_info))),
-            predicate: None,
             file_options,
             scan_type: FileScan::Anonymous {
                 function,
@@ -106,7 +104,6 @@ impl DslBuilder {
         Ok(DslPlan::Scan {
             sources: Arc::new(Mutex::new(sources)),
             file_info: Arc::new(RwLock::new(None)),
-            predicate: None,
             file_options: options,
             scan_type: FileScan::Parquet {
                 options: ParquetOptions {
@@ -148,7 +145,6 @@ impl DslBuilder {
                 glob: true,
                 include_file_paths,
             },
-            predicate: None,
             scan_type: FileScan::Ipc {
                 options,
                 cloud_options,
@@ -190,7 +186,6 @@ impl DslBuilder {
             sources: Arc::new(Mutex::new(sources)),
             file_info: Arc::new(RwLock::new(None)),
             file_options: options,
-            predicate: None,
             scan_type: FileScan::Csv {
                 options: read_options,
                 cloud_options,
@@ -202,12 +197,7 @@ impl DslBuilder {
     pub fn cache(self) -> Self {
         let input = Arc::new(self.0);
         let id = input.as_ref() as *const DslPlan as usize;
-        DslPlan::Cache {
-            input,
-            id,
-            cache_hits: UNLIMITED_CACHE,
-        }
-        .into()
+        DslPlan::Cache { input, id }.into()
     }
 
     pub fn drop(self, to_drop: Vec<Selector>, strict: bool) -> Self {
@@ -321,8 +311,6 @@ impl DslBuilder {
         DslPlan::DataFrameScan {
             df: Arc::new(df),
             schema,
-            output_schema: None,
-            filter: None,
         }
         .into()
     }
