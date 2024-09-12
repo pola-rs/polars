@@ -1,6 +1,7 @@
 pub mod reduce;
 
 use polars_utils::pl_str::PlSmallStr;
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use crate::datatypes::{AnyValue, DataType};
