@@ -72,6 +72,9 @@
 //! // from a chunked-array
 //! let ca = UInt32Chunked::new("foo".into(), &[Some(1), None, Some(3)]);
 //! let s = ca.into_series();
+//!
+//! // into a Column
+//! let s = s.into_column();
 //! ```
 //!
 //! ### DataFrame
@@ -88,10 +91,10 @@
 //!     "values_nulls" => [Some(1), None, Some(3)]
 //! ]?;
 //!
-//! // from a Vec<Series>
-//! let s1 = Series::new("names".into(), &["a", "b", "c"]);
-//! let s2 = Series::new("values".into(), &[Some(1), None, Some(3)]);
-//! let df = DataFrame::new(vec![s1, s2])?;
+//! // from a Vec<Column>
+//! let c1 = Column::new("names".into(), &["a", "b", "c"]);
+//! let c2 = Column::new("values".into(), &[Some(1), None, Some(3)]);
+//! let df = DataFrame::new(vec![c1, c2])?;
 //! # Ok(())
 //! # }
 //! ```
@@ -251,12 +254,12 @@
 //! # fn example() -> PolarsResult<()> {
 //!
 //! // apply a closure over all values
-//! let s = Column::new("foo".into(), &[Some(1), Some(2), None]);
+//! let s = Series::new("foo".into(), &[Some(1), Some(2), None]);
 //! s.i32()?.apply_values(|value| value * 20);
 //!
 //! // count string lengths
-//! let s = Column::new("foo".into(), &["foo", "bar", "foobar"]);
-//! unary_elementwise_values(s.str()?, |str_val| str_val.len() as u64);
+//! let s = Series::new("foo".into(), &["foo", "bar", "foobar"]);
+//! unary_elementwise_values::<StringType, UInt64Type, _>(s.str()?, |str_val| str_val.len() as u64);
 //!
 //! # Ok(())
 //! # }
@@ -354,9 +357,14 @@
 //! // ordering of the columns
 //! let descending = vec![true, false];
 //! // columns to sort by
-//! let by = &["b", "a"];
+//! let by = [PlSmallStr::from_static("b"), PlSmallStr::from_static("a")];
 //! // do the sort operation
-//! let sorted = df.sort(by, descending, true)?;
+//! let sorted = df.sort(
+//!     by,
+//!     SortMultipleOptions::default()
+//!         .with_order_descending_multi(descending)
+//!         .with_maintain_order(true)
+//! )?;
 //!
 //! // sorted:
 //!
@@ -442,7 +450,14 @@
 //!      )?;
 //!
 //! // group_by "foo" | pivot "bar" column | aggregate "N"
-//!  let pivoted = pivot::pivot(&df, ["foo"], ["bar"], ["N"], false, Some(first()), None);
+//!  let pivoted = pivot::pivot(
+//!     &df,
+//!     [PlSmallStr::from_static("foo")],
+//!     Some([PlSmallStr::from_static("bar")]),
+//!     Some([PlSmallStr::from_static("N")]),
+//!     false, Some(first()),
+//!     None
+//! );
 //!
 //! // pivoted:
 //! // +-----+------+------+------+------+------+
@@ -475,8 +490,8 @@
 //!     ]?;
 //!
 //! let unpivoted = df.unpivot(
-//!     &[PlSmallStr::from_static("A"), PlSmallStr::from_static("B")],
-//!     &[PlSmallStr::from_static("C"), PlSmallStr::from_static("D")],
+//!     [PlSmallStr::from_static("A"), PlSmallStr::from_static("B")],
+//!     [PlSmallStr::from_static("C"), PlSmallStr::from_static("D")],
 //! ).unwrap();
 //! // unpivoted:
 //!
@@ -560,10 +575,8 @@
 //!
 //! # fn example(df: &DataFrame) -> PolarsResult<()> {
 //! // read from path
-//! let df = CsvReader::from_path("iris_csv")?
-//!             .infer_schema(None)
-//!             .has_header(true)
-//!             .finish()?;
+//! let mut file = std::fs::File::open("iris_csv")?;
+//! let df = CsvReader::new(file).finish()?;
 //! # Ok(())
 //! # }
 //! ```

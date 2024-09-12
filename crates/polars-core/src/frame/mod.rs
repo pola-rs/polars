@@ -971,7 +971,7 @@ impl DataFrame {
             .zip(other.columns.iter())
             .try_for_each::<_, PolarsResult<_>>(|(left, right)| {
                 // @scalar-opt
-                let left = left.as_materialized_series_mut();
+                let left = left.into_materialized_series();
                 let right = right.as_materialized_series();
 
                 ensure_can_extend(&*left, right)?;
@@ -993,7 +993,7 @@ impl DataFrame {
             .zip(other.columns.iter())
             .for_each(|(left, right)| {
                 // @scalar-opt
-                let left = left.as_materialized_series_mut();
+                let left = left.into_materialized_series();
                 let right = right.as_materialized_series();
 
                 left.append(right).expect("should not fail");
@@ -1025,7 +1025,7 @@ impl DataFrame {
             .iter_mut()
             .zip(other.columns.iter())
             .try_for_each::<_, PolarsResult<_>>(|(left, right)| {
-                let left = left.as_materialized_series_mut();
+                let left = left.into_materialized_series();
                 let right = right.as_materialized_series();
 
                 ensure_can_extend(&*left, right)?;

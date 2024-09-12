@@ -10,6 +10,15 @@ use crate::chunked_array::metadata::MetadataFlags;
 use crate::prelude::*;
 use crate::series::{BitRepr, IsSorted, SeriesPhysIter};
 
+/// A column within a [`DataFrame`].
+///
+/// This is lazily initialized to a [`Series`] with methods like
+/// [`as_materialized_series`][Column::as_materialized_series] and
+/// [`take_materialized_series`][Column::take_materialized_series].
+///
+/// Currently, there are two ways to represent a [`Column`].
+/// 1. A [`Series`] of values
+/// 2. A [`ScalarColumn`] that repeats a single [`Scalar`]
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[cfg_attr(feature = "serde", serde(from = "Series"))]
@@ -19,14 +28,23 @@ pub enum Column {
     Scalar(ScalarColumn),
 }
 
+/// A column
 #[derive(Debug, Clone)]
 pub struct ScalarColumn {
     name: PlSmallStr,
     value: Scalar,
-    materialized: OnceLock<Series>,
     length: usize,
+
+    // invariants:
+    // materialized.name() == name
+    // materialized.len() == length
+    // materialized.dtype() == value.dtype
+    // materialized[i] == value, for all 0 <= i < length
+    /// A lazily materialized [`Series`] variant of this [`ScalarColumn`]
+    materialized: OnceLock<Series>,
 }
 
+/// Convert `Self` into a [`Column`]
 pub trait IntoColumn: Sized {
     fn into_column(self) -> Column;
 }
@@ -52,6 +70,10 @@ impl Column {
         Self::Scalar(ScalarColumn::new(name, value, length))
     }
 
+    // # Materialize
+    /// Get a reference to a [`Series`] for this [`Column`]
+    ///
+    /// This may need to materialize the [`Series`] on the first invocation for a specific column.
     #[inline]
     pub fn as_materialized_series(&self) -> &Series {
         match self {
@@ -59,9 +81,11 @@ impl Column {
             Column::Scalar(s) => s.as_materialized_series(),
         }
     }
-
+    /// Turn [`Column`] into a [`Column::Series`].
+    ///
+    /// This may need to materialize the [`Series`] on the first invocation for a specific column.
     #[inline]
-    pub fn as_materialized_series_mut(&mut self) -> &mut Series {
+    pub fn into_materialized_series(&mut self) -> &mut Series {
         match self {
             Column::Series(s) => s,
             Column::Scalar(s) => {
@@ -73,7 +97,9 @@ impl Column {
             },
         }
     }
-
+    /// Take [`Series`] from a [`Column`]
+    ///
+    /// This may need to materialize the [`Series`] on the first invocation for a specific column.
     #[inline]
     pub fn take_materialized_series(self) -> Series {
         match self {
@@ -101,6 +127,7 @@ impl Column {
         }
     }
 
+    // # Downcasting
     #[inline]
     pub fn as_series(&self) -> Option<&Series> {
         match self {
@@ -108,7 +135,6 @@ impl Column {
             Column::Scalar(_) => None,
         }
     }
-
     #[inline]
     pub fn as_scalar_column(&self) -> Option<&ScalarColumn> {
         match self {
@@ -482,7 +508,7 @@ impl Column {
 
     pub fn append(&mut self, other: &Column) -> PolarsResult<&mut Self> {
         // @scalar-opt
-        self.as_materialized_series_mut()
+        self.into_materialized_series()
             .append(other.as_materialized_series())?;
         Ok(self)
     }
@@ -537,7 +563,7 @@ impl Column {
 
     pub fn extend(&mut self, other: &Column) -> PolarsResult<&mut Self> {
         // @scalar-opt
-        self.as_materialized_series_mut()
+        self.into_materialized_series()
             .extend(other.as_materialized_series())?;
         Ok(self)
     }
@@ -1096,10 +1122,14 @@ impl ScalarColumn {
         Self::_to_series(self.name.clone(), self.value.clone(), self.length)
     }
 
+    /// Get the [`ScalarColumn`] as [`Series`]
+    ///
+    /// This needs to materialize upon the first call. Afterwards, this is cached.
     pub fn as_materialized_series(&self) -> &Series {
         self.materialized.get_or_init(|| self.to_series())
     }
 
+    /// Take the [`ScalarColumn`] and materialize as a [`Series`] if not already done.
     pub fn take_materialized_series(self) -> Series {
         self.materialized
             .into_inner()
@@ -1123,6 +1153,13 @@ impl IntoColumn for Column {
     #[inline(always)]
     fn into_column(self) -> Column {
         self
+    }
+}
+
+impl IntoColumn for ScalarColumn {
+    #[inline(always)]
+    fn into_column(self) -> Column {
+        self.into()
     }
 }
 

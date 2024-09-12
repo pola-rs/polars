@@ -45,6 +45,7 @@ impl Scalar {
         Series::from_any_values_and_dtype(name, &[self.as_any_value()], &self.dtype, true).unwrap()
     }
 
+    /// Turn a scalar into a column with `length=1`.
     pub fn into_column(self, name: PlSmallStr) -> Column {
         // @scalar-opt
         Series::from_any_values_and_dtype(name, &[self.as_any_value()], &self.dtype, true)

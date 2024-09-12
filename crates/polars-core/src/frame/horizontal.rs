@@ -86,7 +86,7 @@ pub fn concat_df_horizontal(dfs: &[DataFrame], check_duplicates: bool) -> Polars
                     let diff = max_len - df.height();
                     df.columns.iter_mut().for_each(|s| {
                         // @scalar-opt
-                        let s = s.as_materialized_series_mut();
+                        let s = s.into_materialized_series();
                         *s = s.extend_constant(AnyValue::Null, diff).unwrap()
                     });
                 }
