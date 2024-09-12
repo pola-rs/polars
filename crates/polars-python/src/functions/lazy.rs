@@ -409,7 +409,7 @@ pub fn nth(n: i64) -> PyExpr {
 }
 
 #[pyfunction]
-pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool) -> PyResult<PyExpr> {
+pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool, is_scalar: bool) -> PyResult<PyExpr> {
     if value.is_instance_of::<PyBool>() {
         let val = value.extract::<bool>().unwrap();
         Ok(dsl::lit(val).into())
@@ -425,7 +425,16 @@ pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool) -> PyResult<PyExpr> {
     } else if let Ok(pystr) = value.downcast::<PyString>() {
         Ok(dsl::lit(pystr.to_string()).into())
     } else if let Ok(series) = value.extract::<PySeries>() {
-        Ok(dsl::lit(series.series).into())
+        let s = series.series;
+        if is_scalar {
+            let av = s
+                .get(0)
+                .map_err(|_| PyValueError::new_err("expected at least 1 value"))?;
+            let av = av.into_static().map_err(PyPolarsErr::from)?;
+            Ok(dsl::lit(Scalar::new(s.dtype().clone(), av)).into())
+        } else {
+            Ok(dsl::lit(s).into())
+        }
     } else if value.is_none() {
         Ok(dsl::lit(Null {}).into())
     } else if let Ok(value) = value.downcast::<PyBytes>() {

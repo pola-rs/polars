@@ -1,11 +1,13 @@
 pub mod reduce;
 
 use polars_utils::pl_str::PlSmallStr;
+use serde::{Deserialize, Serialize};
 
 use crate::datatypes::{AnyValue, DataType};
 use crate::prelude::Series;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Scalar {
     dtype: DataType,
     value: AnyValue<'static>,
