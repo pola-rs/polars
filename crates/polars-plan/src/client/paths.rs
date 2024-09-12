@@ -20,9 +20,10 @@ impl DslPlan {
 
     /// Set sources paths in iteration order.
     pub fn set_sources_paths(&self, new_paths: Vec<Arc<[PathBuf]>>) -> Vec<Arc<[PathBuf]>> {
-        self.into_iter().flat_map(|subplan| match subplan {
+        self.into_iter().zip(new_paths).for_each(|(subplan, paths)| match subplan {
             DslPlan::Scan { sources, .. } => {
-                let src = sources.lock().unwrap();
+                let mut src = sources.lock().unwrap();
+
                 match &*src.sources {
                     ScanSources::Paths(paths) => Some(paths.clone()),
                     _ => None
