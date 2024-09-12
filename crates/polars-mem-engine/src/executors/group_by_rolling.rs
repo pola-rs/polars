@@ -21,10 +21,7 @@ unsafe fn update_keys(keys: &mut [Column], groups: &GroupsProxy) {
             // can be empty, but we still want to know the first value
             // of that group
             for key in keys.iter_mut() {
-                *key = key
-                    .as_materialized_series()
-                    .take_unchecked_from_slice(first)
-                    .into_column();
+                *key = key.take_slice_unchecked(first);
             }
         },
         GroupsProxy::Slice { groups, .. } => {
@@ -33,10 +30,7 @@ unsafe fn update_keys(keys: &mut [Column], groups: &GroupsProxy) {
                     .iter()
                     .map(|[first, _len]| *first)
                     .collect_ca(PlSmallStr::EMPTY);
-                *key = key
-                    .as_materialized_series()
-                    .take_unchecked(&indices)
-                    .into_column();
+                *key = key.take_unchecked(&indices);
             }
         },
     }

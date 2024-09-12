@@ -2,7 +2,6 @@ use std::fmt::Write;
 
 use arrow::bitmap::MutableBitmap;
 
-use crate::chunked_array::builder::BinaryOffsetChunkedBuilder;
 #[cfg(feature = "dtype-categorical")]
 use crate::chunked_array::cast::CastOptions;
 #[cfg(feature = "object")]
@@ -164,7 +163,6 @@ impl Series {
             #[cfg(feature = "object")]
             DataType::Object(_, registry) => any_values_to_object(values, registry)?,
             DataType::Null => Series::new_null(PlSmallStr::EMPTY, values.len()),
-            DataType::BinaryOffset => any_values_to_binary_offset(values, strict)?.into_series(),
             dt => {
                 polars_bail!(
                     InvalidOperation:
@@ -343,43 +341,6 @@ fn any_values_to_binary(values: &[AnyValue], strict: bool) -> PolarsResult<Binar
         any_values_to_binary_strict(values)
     } else {
         Ok(any_values_to_binary_nonstrict(values))
-    }
-}
-
-fn any_values_to_binary_offset(
-    values: &[AnyValue],
-    strict: bool,
-) -> PolarsResult<BinaryOffsetChunked> {
-    fn any_values_to_binary_offset_strict(
-        values: &[AnyValue],
-    ) -> PolarsResult<BinaryOffsetChunked> {
-        let mut builder = BinaryOffsetChunkedBuilder::new(PlSmallStr::EMPTY, values.len());
-        for av in values {
-            match av {
-                AnyValue::Binary(s) => builder.append_value(s),
-                AnyValue::BinaryOwned(s) => builder.append_value(s.as_slice()),
-                AnyValue::Null => builder.append_null(),
-                av => return Err(invalid_value_error(&DataType::Binary, av)),
-            }
-        }
-        Ok(builder.finish())
-    }
-    fn any_values_to_binary_offset_nonstrict(values: &[AnyValue]) -> BinaryOffsetChunked {
-        values
-            .iter()
-            .map(|av| match av {
-                AnyValue::Binary(b) => Some(*b),
-                AnyValue::BinaryOwned(b) => Some(&**b),
-                AnyValue::String(s) => Some(s.as_bytes()),
-                AnyValue::StringOwned(s) => Some(s.as_str().as_bytes()),
-                _ => None,
-            })
-            .collect_trusted()
-    }
-    if strict {
-        any_values_to_binary_offset_strict(values)
-    } else {
-        Ok(any_values_to_binary_offset_nonstrict(values))
     }
 }
 

@@ -693,6 +693,16 @@ impl<'a> AnyValue<'a> {
             None => AnyValue::Null,
         }
     }
+
+    pub fn idx(&self) -> IdxSize {
+        match self {
+            #[cfg(not(feature = "bigidx"))]
+            Self::UInt32(v) => *v,
+            #[cfg(feature = "bigidx")]
+            Self::UInt64(v) => *v,
+            _ => panic!("expected index type found {self:?}"),
+        }
+    }
 }
 
 impl From<AnyValue<'_>> for DataType {

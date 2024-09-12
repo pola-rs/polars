@@ -32,8 +32,8 @@ pub(crate) unsafe fn compare_df_rows2(
     join_nulls: bool,
 ) -> bool {
     for (l, r) in left.get_columns().iter().zip(right.get_columns()) {
-        let l = l.as_materialized_series().get_unchecked(left_idx);
-        let r = r.as_materialized_series().get_unchecked(right_idx);
+        let l = l.get_unchecked(left_idx);
+        let r = r.get_unchecked(right_idx);
         if !l.eq_missing(&r, join_nulls) {
             return false;
         }

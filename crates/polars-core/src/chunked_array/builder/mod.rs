@@ -1,4 +1,3 @@
-mod binary_offset;
 mod boolean;
 #[cfg(feature = "dtype-array")]
 pub mod fixed_size_list;
@@ -11,7 +10,6 @@ use std::sync::Arc;
 
 use arrow::array::*;
 use arrow::bitmap::Bitmap;
-pub use binary_offset::*;
 pub use boolean::*;
 #[cfg(feature = "dtype-array")]
 pub(crate) use fixed_size_list::*;

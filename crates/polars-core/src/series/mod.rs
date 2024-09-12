@@ -1,6 +1,7 @@
 //! Type agnostic columnar data structure.
 pub use crate::prelude::ChunkCompare;
 use crate::prelude::*;
+use crate::{HEAD_DEFAULT_LENGTH, TAIL_DEFAULT_LENGTH};
 
 pub mod amortized_iter;
 mod any_value;
@@ -817,18 +818,14 @@ impl Series {
     }
     /// Get the head of the Series.
     pub fn head(&self, length: Option<usize>) -> Series {
-        match length {
-            Some(len) => self.slice(0, std::cmp::min(len, self.len())),
-            None => self.slice(0, std::cmp::min(10, self.len())),
-        }
+        let len = length.unwrap_or(HEAD_DEFAULT_LENGTH);
+        self.slice(0, std::cmp::min(len, self.len()))
     }
 
     /// Get the tail of the Series.
     pub fn tail(&self, length: Option<usize>) -> Series {
-        let len = match length {
-            Some(len) => std::cmp::min(len, self.len()),
-            None => std::cmp::min(10, self.len()),
-        };
+        let len = length.unwrap_or(TAIL_DEFAULT_LENGTH);
+        let len = std::cmp::min(len, self.len());
         self.slice(-(len as i64), len)
     }
 

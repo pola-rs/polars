@@ -72,6 +72,7 @@ pub(super) fn shift_and_fill(args: &[Column]) -> PolarsResult<Column> {
                 let ca = s.str()?;
                 let fill_value = match fill_value {
                     AnyValue::String(v) => Some(v),
+                    AnyValue::StringOwned(ref v) => Some(v.as_str()),
                     AnyValue::Null => None,
                     v => polars_bail!(ComputeError: "fill value '{}' is not supported", v),
                 };
