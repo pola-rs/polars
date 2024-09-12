@@ -19,4 +19,4 @@ version_check = { workspace = true }
 
 [features]
 nightly = []
-serde = ["dep:serde", "serde/derive"]
+serde = ["dep:serde", "serde/derive", "polars-utils/serde"]
