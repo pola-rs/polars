@@ -5,4 +5,4 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch
 jax[cpu]
-pyiceberg>=0.6.1
+pyiceberg>=0.7.1
