@@ -309,7 +309,7 @@ impl ParquetSourceNode {
                     out.sort_unstable();
                     out.dedup();
                     // There is at least one non-predicate column, or pre-filtering was
-                    // explicitly requested.
+                    // explicitly requested (only useful for testing).
                     (out.len() < projected_arrow_schema.len()
                         || matches!(self.options.parallel, ParallelStrategy::Prefiltered))
                     .then_some(out)
