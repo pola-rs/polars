@@ -108,14 +108,9 @@ impl IR {
             IR::DataFrameScan {
                 df,
                 schema,
-                output_schema,
-                filter: selection,
-            } => DslPlan::DataFrameScan {
-                df,
-                schema,
-                output_schema,
-                filter: selection.map(|e| e.to_expr(expr_arena)),
-            },
+                output_schema: _,
+                filter: _,
+            } => DslPlan::DataFrameScan { df, schema },
             IR::Select {
                 expr,
                 input,
@@ -169,14 +164,10 @@ impl IR {
             IR::Cache {
                 input,
                 id,
-                cache_hits,
+                cache_hits: _,
             } => {
                 let input = Arc::new(convert_to_lp(input, lp_arena));
-                DslPlan::Cache {
-                    input,
-                    id,
-                    cache_hits,
-                }
+                DslPlan::Cache { input, id }
             },
             IR::GroupBy {
                 input,

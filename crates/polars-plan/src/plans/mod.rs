@@ -64,7 +64,6 @@ pub struct DslScanSources {
     pub is_expanded: bool,
 }
 
-// https://stackoverflow.com/questions/1031076/what-are-projection-and-selection
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum DslPlan {
     #[cfg(feature = "python")]
@@ -75,11 +74,7 @@ pub enum DslPlan {
         predicate: Expr,
     },
     /// Cache the input at this point in the LP
-    Cache {
-        input: Arc<DslPlan>,
-        id: usize,
-        cache_hits: u32,
-    },
+    Cache { input: Arc<DslPlan>, id: usize },
     Scan {
         sources: Arc<Mutex<DslScanSources>>,
         // Option as this is mostly materialized on the IR phase.
@@ -96,9 +91,6 @@ pub enum DslPlan {
     DataFrameScan {
         df: Arc<DataFrame>,
         schema: SchemaRef,
-        // schema of the projected file
-        output_schema: Option<SchemaRef>,
-        filter: Option<Expr>,
     },
     /// Polars' `select` operation, this can mean projection, but also full data access.
     Select {
@@ -195,9 +187,9 @@ impl Clone for DslPlan {
             #[cfg(feature = "python")]
             Self::PythonScan { options } => Self::PythonScan { options: options.clone() },
             Self::Filter { input, predicate } => Self::Filter { input: input.clone(), predicate: predicate.clone() },
-            Self::Cache { input, id, cache_hits } => Self::Cache { input: input.clone(), id: id.clone(), cache_hits: cache_hits.clone() },
+            Self::Cache { input, id } => Self::Cache { input: input.clone(), id: id.clone() },
             Self::Scan { sources, file_info, file_options, scan_type } => Self::Scan { sources: sources.clone(), file_info: file_info.clone(), file_options: file_options.clone(), scan_type: scan_type.clone() },
-            Self::DataFrameScan { df, schema, output_schema, filter: selection } => Self::DataFrameScan { df: df.clone(), schema: schema.clone(), output_schema: output_schema.clone(), filter: selection.clone() },
+            Self::DataFrameScan { df, schema, } => Self::DataFrameScan { df: df.clone(), schema: schema.clone(),  },
             Self::Select { expr, input, options } => Self::Select { expr: expr.clone(), input: input.clone(), options: options.clone() },
             Self::GroupBy { input, keys, aggs,  apply, maintain_order, options } => Self::GroupBy { input: input.clone(), keys: keys.clone(), aggs: aggs.clone(), apply: apply.clone(), maintain_order: maintain_order.clone(), options: options.clone() },
             Self::Join { input_left, input_right, left_on, right_on, predicates, options } => Self::Join { input_left: input_left.clone(), input_right: input_right.clone(), left_on: left_on.clone(), right_on: right_on.clone(), options: options.clone(), predicates: predicates.clone() },
@@ -222,8 +214,6 @@ impl Default for DslPlan {
         DslPlan::DataFrameScan {
             df: Arc::new(df),
             schema: Arc::new(schema),
-            output_schema: None,
-            filter: None,
         }
     }
 }

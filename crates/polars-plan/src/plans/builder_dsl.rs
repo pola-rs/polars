@@ -13,7 +13,6 @@ use polars_io::HiveOptions;
 #[cfg(any(feature = "parquet", feature = "csv", feature = "ipc"))]
 use polars_io::RowIndex;
 
-use crate::constants::UNLIMITED_CACHE;
 #[cfg(feature = "python")]
 use crate::prelude::python_udf::PythonFunction;
 use crate::prelude::*;
@@ -198,12 +197,7 @@ impl DslBuilder {
     pub fn cache(self) -> Self {
         let input = Arc::new(self.0);
         let id = input.as_ref() as *const DslPlan as usize;
-        DslPlan::Cache {
-            input,
-            id,
-            cache_hits: UNLIMITED_CACHE,
-        }
-        .into()
+        DslPlan::Cache { input, id }.into()
     }
 
     pub fn drop(self, to_drop: Vec<Selector>, strict: bool) -> Self {
@@ -317,8 +311,6 @@ impl DslBuilder {
         DslPlan::DataFrameScan {
             df: Arc::new(df),
             schema,
-            output_schema: None,
-            filter: None,
         }
         .into()
     }

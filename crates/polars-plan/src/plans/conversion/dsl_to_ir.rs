@@ -371,18 +371,11 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_input!(slice)))?;
             IR::Slice { input, offset, len }
         },
-        DslPlan::DataFrameScan {
+        DslPlan::DataFrameScan { df, schema } => IR::DataFrameScan {
             df,
             schema,
-            output_schema,
-            filter: selection,
-        } => IR::DataFrameScan {
-            df,
-            schema,
-            output_schema,
-            filter: selection
-                .map(|expr| to_expr_ir(expr, ctxt.expr_arena))
-                .transpose()?,
+            output_schema: None,
+            filter: None,
         },
         DslPlan::Select {
             expr,
@@ -485,17 +478,13 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
 
             return run_conversion(lp, ctxt, "sort");
         },
-        DslPlan::Cache {
-            input,
-            id,
-            cache_hits,
-        } => {
+        DslPlan::Cache { input, id } => {
             let input =
                 to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_input!(cache)))?;
             IR::Cache {
                 input,
                 id,
-                cache_hits,
+                cache_hits: crate::constants::UNLIMITED_CACHE,
             }
         },
         DslPlan::GroupBy {
