@@ -6,6 +6,7 @@ use futures::StreamExt;
 use polars_core::frame::DataFrame;
 use polars_error::PolarsResult;
 use polars_io::prelude::ParallelStrategy;
+use polars_io::prelude::_internal::PrefilterMaskSetting;
 
 use super::row_group_data_fetch::RowGroupDataFetcher;
 use super::row_group_decode::RowGroupDecoder;
@@ -287,11 +288,66 @@ impl ParquetSourceNode {
         let ideal_morsel_size = get_ideal_morsel_size();
         let min_values_per_thread = self.config.min_values_per_thread;
 
-        let use_prefiltered = physical_predicate.is_some()
+        let mut use_prefiltered = physical_predicate.is_some()
             && matches!(
                 self.options.parallel,
                 ParallelStrategy::Auto | ParallelStrategy::Prefiltered
             );
+
+        let predicate_arrow_field_indices = if use_prefiltered {
+            let v = physical_predicate
+                .as_ref()
+                .unwrap()
+                .live_variables()
+                .filter(|x| x.len() < projected_arrow_schema.len())
+                .and_then(|x| {
+                    let mut out = x
+                        .iter()
+                        // Can be `None` - if the column is e.g. a hive column, or the row index column.
+                        .filter_map(|x| projected_arrow_schema.index_of(x))
+                        .collect::<Vec<_>>();
+
+                    out.sort_unstable();
+                    out.dedup();
+                    // There is at least one non-predicate column.
+                    (out.len() < projected_arrow_schema.len()).then_some(out)
+                });
+
+            use_prefiltered &= v.is_some();
+
+            v.unwrap_or_default()
+        } else {
+            vec![]
+        };
+
+        let use_prefiltered = use_prefiltered.then(PrefilterMaskSetting::init_from_env);
+
+        let non_predicate_arrow_field_indices = if use_prefiltered.is_some() {
+            filtered_range(
+                predicate_arrow_field_indices.as_slice(),
+                projected_arrow_schema.len(),
+            )
+        } else {
+            vec![]
+        };
+
+        if use_prefiltered.is_some() && self.verbose {
+            eprintln!(
+                "[ParquetSource]: Pre-filtered decode enabled ({} live, {} non-live)",
+                predicate_arrow_field_indices.len(),
+                non_predicate_arrow_field_indices.len()
+            )
+        }
+
+        let predicate_arrow_field_mask = if use_prefiltered.is_some() {
+            let mut out = vec![false; projected_arrow_schema.len()];
+            for i in predicate_arrow_field_indices.iter() {
+                out[*i] = true;
+            }
+            out
+        } else {
+            vec![]
+        };
 
         RowGroupDecoder {
             scan_sources,
@@ -302,6 +358,9 @@ impl ParquetSourceNode {
             row_index,
             physical_predicate,
             use_prefiltered,
+            predicate_arrow_field_indices,
+            non_predicate_arrow_field_indices,
+            predicate_arrow_field_mask,
             ideal_morsel_size,
             min_values_per_thread,
         }
@@ -339,5 +398,32 @@ impl ParquetSourceNode {
                 self.scan_sources.len(),
             );
         }
+    }
+}
+
+/// Returns 0..len in a Vec, excluding indices in `exclude`.
+/// `exclude` needs to be a sorted list of unique values.
+fn filtered_range(exclude: &[usize], len: usize) -> Vec<usize> {
+    let mut j = 0;
+
+    (0..len)
+        .filter(|&i| {
+            if j == exclude.len() || i != exclude[j] {
+                true
+            } else {
+                j += 1;
+                false
+            }
+        })
+        .collect()
+}
+
+mod tests {
+
+    #[test]
+    fn test_filtered_range() {
+        use super::filtered_range;
+        assert_eq!(filtered_range(&[1, 3], 7).as_slice(), &[0, 2, 4, 5, 6]);
+        assert_eq!(filtered_range(&[1, 6], 7).as_slice(), &[0, 2, 3, 4, 5,]);
     }
 }
