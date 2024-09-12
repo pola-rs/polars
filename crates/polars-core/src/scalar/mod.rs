@@ -5,7 +5,7 @@ use polars_utils::pl_str::PlSmallStr;
 use serde::{Deserialize, Serialize};
 
 use crate::datatypes::{AnyValue, DataType};
-use crate::prelude::{Column, IntoColumn, Series};
+use crate::prelude::{Column, Series};
 
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -47,10 +47,7 @@ impl Scalar {
 
     /// Turn a scalar into a column with `length=1`.
     pub fn into_column(self, name: PlSmallStr) -> Column {
-        // @scalar-opt
-        Series::from_any_values_and_dtype(name, &[self.as_any_value()], &self.dtype, true)
-            .unwrap()
-            .into_column()
+        Column::new_scalar(name, self, 1)
     }
 
     #[inline(always)]

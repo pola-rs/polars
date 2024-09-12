@@ -9,6 +9,7 @@ use polars_utils::pl_str::PlSmallStr;
 use crate::chunked_array::metadata::MetadataFlags;
 use crate::prelude::*;
 use crate::series::{BitRepr, IsSorted, SeriesPhysIter};
+use crate::utils::Container;
 
 /// A column within a [`DataFrame`].
 ///
@@ -28,7 +29,9 @@ pub enum Column {
     Scalar(ScalarColumn),
 }
 
-/// A column
+/// A [`Column`] that consists of a repeated [`Scalar`]
+///
+/// This is lazily materialized into a [`Series`].
 #[derive(Debug, Clone)]
 pub struct ScalarColumn {
     name: PlSmallStr,
@@ -61,8 +64,7 @@ impl Column {
 
     #[inline]
     pub fn new_empty(name: PlSmallStr, dtype: &DataType) -> Self {
-        // @scalar-opt
-        Self::Series(Series::new_empty(name, dtype))
+        Self::new_scalar(name, Scalar::new(dtype.clone(), AnyValue::Null), 0)
     }
 
     #[inline]
@@ -127,6 +129,42 @@ impl Column {
         }
     }
 
+    #[inline]
+    pub fn name(&self) -> &PlSmallStr {
+        match self {
+            Column::Series(s) => s.name(),
+            Column::Scalar(s) => &s.name,
+        }
+    }
+
+    #[inline]
+    pub fn len(&self) -> usize {
+        match self {
+            Column::Series(s) => s.len(),
+            Column::Scalar(s) => s.length,
+        }
+    }
+
+    #[inline]
+    pub fn with_name(mut self, name: PlSmallStr) -> Column {
+        self.rename(name);
+        self
+    }
+
+    #[inline]
+    pub fn rename(&mut self, name: PlSmallStr) {
+        match self {
+            Column::Series(s) => _ = s.rename(name),
+            Column::Scalar(s) => {
+                if let Some(series) = s.materialized.get_mut() {
+                    series.rename(name.clone());
+                }
+
+                s.name = name;
+            },
+        }
+    }
+
     // # Downcasting
     #[inline]
     pub fn as_series(&self) -> Option<&Series> {
@@ -143,79 +181,109 @@ impl Column {
         }
     }
 
+    // # To Chunked Arrays
+    pub fn bool(&self) -> PolarsResult<&BooleanChunked> {
+        // @scalar-opt
+        self.as_materialized_series().bool()
+    }
     pub fn i8(&self) -> PolarsResult<&Int8Chunked> {
         // @scalar-opt
         self.as_materialized_series().i8()
     }
-
     pub fn i16(&self) -> PolarsResult<&Int16Chunked> {
         // @scalar-opt
         self.as_materialized_series().i16()
     }
-
     pub fn i32(&self) -> PolarsResult<&Int32Chunked> {
         // @scalar-opt
         self.as_materialized_series().i32()
     }
-
     pub fn i64(&self) -> PolarsResult<&Int64Chunked> {
         // @scalar-opt
         self.as_materialized_series().i64()
     }
-
     pub fn u8(&self) -> PolarsResult<&UInt8Chunked> {
         // @scalar-opt
         self.as_materialized_series().u8()
     }
-
     pub fn u16(&self) -> PolarsResult<&UInt16Chunked> {
         // @scalar-opt
         self.as_materialized_series().u16()
     }
-
     pub fn u32(&self) -> PolarsResult<&UInt32Chunked> {
         // @scalar-opt
         self.as_materialized_series().u32()
     }
-
     pub fn u64(&self) -> PolarsResult<&UInt64Chunked> {
         // @scalar-opt
         self.as_materialized_series().u64()
     }
-
     pub fn f32(&self) -> PolarsResult<&Float32Chunked> {
         // @scalar-opt
         self.as_materialized_series().f32()
     }
-
     pub fn f64(&self) -> PolarsResult<&Float64Chunked> {
         // @scalar-opt
         self.as_materialized_series().f64()
     }
-
     pub fn str(&self) -> PolarsResult<&StringChunked> {
         // @scalar-opt
         self.as_materialized_series().str()
     }
-
+    pub fn list(&self) -> PolarsResult<&ListChunked> {
+        // @scalar-opt
+        self.as_materialized_series().list()
+    }
+    pub fn binary(&self) -> PolarsResult<&BinaryChunked> {
+        // @scalar-opt
+        self.as_materialized_series().binary()
+    }
+    pub fn idx(&self) -> PolarsResult<&IdxCa> {
+        // @scalar-opt
+        self.as_materialized_series().idx()
+    }
     #[cfg(feature = "dtype-datetime")]
     pub fn datetime(&self) -> PolarsResult<&DatetimeChunked> {
         // @scalar-opt
         self.as_materialized_series().datetime()
     }
+    #[cfg(feature = "dtype-struct")]
+    pub fn struct_(&self) -> PolarsResult<&StructChunked> {
+        // @scalar-opt
+        self.as_materialized_series().struct_()
+    }
+    #[cfg(feature = "dtype-decimal")]
+    pub fn decimal(&self) -> PolarsResult<&DecimalChunked> {
+        // @scalar-opt
+        self.as_materialized_series().decimal()
+    }
+    #[cfg(feature = "dtype-array")]
+    pub fn array(&self) -> PolarsResult<&ArrayChunked> {
+        // @scalar-opt
+        self.as_materialized_series().array()
+    }
+    #[cfg(feature = "dtype-categorical")]
+    pub fn categorical(&self) -> PolarsResult<&CategoricalChunked> {
+        self.as_materialized_series().categorical()
+    }
 
-    #[inline]
-    pub fn rename(&mut self, name: PlSmallStr) {
-        match self {
-            Column::Series(s) => _ = s.rename(name),
-            Column::Scalar(s) => {
-                if let Some(series) = s.materialized.get_mut() {
-                    series.rename(name.clone());
-                }
-
-                s.name = name;
-            },
-        }
+    // # Casting
+    pub fn strict_cast(&self, dtype: &DataType) -> PolarsResult<Self> {
+        // @scalar-opt
+        self.as_materialized_series()
+            .strict_cast(dtype)
+            .map(Column::from)
+    }
+    pub fn cast(&self, dtype: &DataType) -> PolarsResult<Column> {
+        // @scalar-opt
+        self.as_materialized_series().cast(dtype).map(Column::from)
+    }
+    /// # Safety
+    ///
+    /// This can lead to invalid memory access in downstream code.
+    pub unsafe fn cast_unchecked(&self, dtype: &DataType) -> PolarsResult<Column> {
+        // @scalar-opt
+        unsafe { self.as_materialized_series().cast_unchecked(dtype) }.map(Column::from)
     }
 
     pub fn clear(&self) -> Self {
@@ -237,22 +305,6 @@ impl Column {
     pub fn new_from_index(&self, index: usize, length: usize) -> Self {
         // @scalar-opt
         Self::Series(self.as_materialized_series().new_from_index(index, length))
-    }
-
-    #[inline]
-    pub fn len(&self) -> usize {
-        match self {
-            Column::Series(s) => s.len(),
-            Column::Scalar(s) => s.length,
-        }
-    }
-
-    #[inline]
-    pub fn name(&self) -> &PlSmallStr {
-        match self {
-            Column::Series(s) => s.name(),
-            Column::Scalar(s) => &s.name,
-        }
     }
 
     pub fn has_nulls(&self) -> bool {
@@ -494,18 +546,6 @@ impl Column {
         }
     }
 
-    #[cfg(feature = "dtype-categorical")]
-    pub fn categorical(&self) -> PolarsResult<&CategoricalChunked> {
-        self.as_materialized_series().categorical()
-    }
-
-    pub fn with_name(self, name: PlSmallStr) -> Column {
-        match self {
-            Column::Series(s) => s.with_name(name).into(),
-            Column::Scalar(s) => s.with_name(name).into(),
-        }
-    }
-
     pub fn append(&mut self, other: &Column) -> PolarsResult<&mut Self> {
         // @scalar-opt
         self.into_materialized_series()
@@ -518,40 +558,14 @@ impl Column {
         self.as_materialized_series().arg_sort(options)
     }
 
-    pub fn cast(&self, dtype: &DataType) -> PolarsResult<Column> {
-        // @scalar-opt
-        self.as_materialized_series().cast(dtype).map(Column::from)
-    }
-
-    pub fn idx(&self) -> PolarsResult<&IdxCa> {
-        // @scalar-opt
-        self.as_materialized_series().idx()
-    }
-
-    pub fn binary(&self) -> PolarsResult<&BinaryChunked> {
-        // @scalar-opt
-        self.as_materialized_series().binary()
-    }
-
     pub fn bit_repr(&self) -> Option<BitRepr> {
         // @scalar-opt
         self.as_materialized_series().bit_repr()
     }
 
-    pub fn bool(&self) -> PolarsResult<&BooleanChunked> {
-        // @scalar-opt
-        self.as_materialized_series().bool()
-    }
-
-    #[cfg(feature = "dtype-struct")]
-    pub fn struct_(&self) -> PolarsResult<&StructChunked> {
-        // @scalar-opt
-        self.as_materialized_series().struct_()
-    }
-
-    pub fn into_frame(&self) -> DataFrame {
-        // @scalar-opt
-        self.as_materialized_series().clone().into_frame()
+    pub fn into_frame(self) -> DataFrame {
+        // SAFETY: A single-column dataframe cannot have length mismatches or duplicate names
+        unsafe { DataFrame::new_no_checks(vec![self]) }
     }
 
     pub fn unique_stable(&self) -> PolarsResult<Column> {
@@ -599,21 +613,6 @@ impl Column {
         self.as_materialized_series().shift(periods).into()
     }
 
-    pub fn strict_cast(&self, dtype: &DataType) -> PolarsResult<Self> {
-        // @scalar-opt
-        self.as_materialized_series()
-            .strict_cast(dtype)
-            .map(Column::from)
-    }
-
-    /// # Safety
-    ///
-    /// This can lead to invalid memory access in downstream code.
-    pub unsafe fn cast_unchecked(&self, dtype: &DataType) -> PolarsResult<Column> {
-        // @scalar-opt
-        unsafe { self.as_materialized_series().cast_unchecked(dtype) }.map(Column::from)
-    }
-
     #[cfg(feature = "zip_with")]
     pub fn zip_with_same_type(
         &self,
@@ -639,12 +638,6 @@ impl Column {
     pub fn get(&self, index: usize) -> PolarsResult<AnyValue> {
         // @scalar-opt
         self.as_materialized_series().get(index)
-    }
-
-    #[cfg(feature = "dtype-decimal")]
-    pub fn decimal(&self) -> PolarsResult<&DecimalChunked> {
-        // @scalar-opt
-        self.as_materialized_series().decimal()
     }
 
     pub fn unique(&self) -> PolarsResult<Column> {
@@ -721,17 +714,6 @@ impl Column {
         self.as_materialized_series()
             .extend_constant(value, n)
             .map(Self::from)
-    }
-
-    #[cfg(feature = "dtype-array")]
-    pub fn array(&self) -> PolarsResult<&ArrayChunked> {
-        // @scalar-opt
-        self.as_materialized_series().array()
-    }
-
-    pub fn list(&self) -> PolarsResult<&ListChunked> {
-        // @scalar-opt
-        self.as_materialized_series().list()
     }
 
     pub fn is_null(&self) -> BooleanChunked {
@@ -1108,14 +1090,23 @@ impl ScalarColumn {
         Self {
             name,
             value,
-            materialized: OnceLock::new(),
             length,
+
+            materialized: OnceLock::new(),
         }
     }
 
     fn _to_series(name: PlSmallStr, value: Scalar, length: usize) -> Series {
-        // @TODO: There is probably a better way to do this.
-        value.into_series(name).new_from_index(0, length)
+        let series = if length == 0 {
+            Series::new_empty(name, value.dtype())
+        } else {
+            // @TODO: There is probably a better way to do this.
+            value.into_series(name).new_from_index(0, length)
+        };
+
+        debug_assert_eq!(series.len(), length);
+
+        series
     }
 
     pub fn to_series(&self) -> Series {
@@ -1135,17 +1126,26 @@ impl ScalarColumn {
             .into_inner()
             .unwrap_or_else(|| Self::_to_series(self.name, self.value, self.length))
     }
-
-    fn with_name(self, name: PlSmallStr) -> Self {
-        // @TODO: Keep materialized somehow?
-        Self::new(name, self.value, self.length)
-    }
 }
 
 impl<T: IntoSeries> IntoColumn for T {
     #[inline]
     fn into_column(self) -> Column {
-        Column::from(self.into_series())
+        let series = self.into_series();
+
+        if series.len() == 1 {
+            // SAFETY: We just did the bounds check
+            let value = unsafe { series.get_unchecked(0) };
+
+            if let Ok(value) = value.into_static() {
+                let value = Scalar::new(series.dtype().clone(), value);
+                let mut col = ScalarColumn::new(series.name().clone(), value, 1);
+                col.materialized = OnceLock::from(series);
+                return Column::Scalar(col);
+            }
+        }
+
+        Column::Series(series)
     }
 }
 

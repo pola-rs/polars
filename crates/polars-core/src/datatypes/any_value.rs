@@ -912,7 +912,7 @@ impl<'a> AnyValue<'a> {
             Object(v) => ObjectOwned(OwnedObject(v.to_boxed())),
             #[cfg(feature = "dtype-struct")]
             Struct(idx, arr, fields) => {
-                let avs = struct_to_avs_static(idx, arr, fields);
+                let avs = struct_to_avs_static(idx, arr, fields)?;
                 StructOwned(Box::new((avs, fields.to_vec())))
             },
             #[cfg(feature = "dtype-struct")]
@@ -1224,7 +1224,11 @@ impl TotalEq for AnyValue<'_> {
 }
 
 #[cfg(feature = "dtype-struct")]
-fn struct_to_avs_static(idx: usize, arr: &StructArray, fields: &[Field]) -> Vec<AnyValue<'static>> {
+fn struct_to_avs_static(
+    idx: usize,
+    arr: &StructArray,
+    fields: &[Field],
+) -> PolarsResult<Vec<AnyValue<'static>>> {
     let arrs = arr.values();
     let mut avs = Vec::with_capacity(arrs.len());
     // amortize loop counter
@@ -1233,10 +1237,10 @@ fn struct_to_avs_static(idx: usize, arr: &StructArray, fields: &[Field]) -> Vec<
             let arr = &**arrs.get_unchecked_release(i);
             let field = fields.get_unchecked_release(i);
             let av = arr_to_any_value(arr, idx, &field.dtype);
-            avs.push_unchecked(av.into_static().unwrap());
+            avs.push_unchecked(av.into_static()?);
         }
     }
-    avs
+    Ok(avs)
 }
 
 #[cfg(feature = "dtype-categorical")]

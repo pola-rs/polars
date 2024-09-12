@@ -722,7 +722,8 @@ impl DataFrame {
     pub fn n_chunks(&self) -> usize {
         // @scalar-correctness?
         match self.first_series_column() {
-            None => 0,
+            None if self.columns.is_empty() => 0,
+            None => 1,
             Some(s) => s.n_chunks(),
         }
     }

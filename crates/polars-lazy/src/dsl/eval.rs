@@ -81,7 +81,7 @@ pub trait ExprEvalExtension: IntoExpr + Sized {
                     .map(|len| {
                         let s = c.slice(0, len);
                         if (len - s.null_count()) >= min_periods {
-                            let df = c.into_frame();
+                            let df = c.clone().into_frame();
                             let out = phys_expr.evaluate(&df, &state)?.into_column();
                             finish(out)
                         } else {
