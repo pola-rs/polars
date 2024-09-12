@@ -260,7 +260,8 @@ impl ListChunked {
             let combined = self.amortized_iter().zip(rhs.list()?.amortized_iter()).map(|(a, b)| {
                 let (Some(a_owner), Some(b_owner)) = (a, b) else {
                     // Operations with nulls always result in nulls:
-                    return Ok(Series::full_null(self.name().clone(), 1, self.dtype()));
+                    let inner_dtype = self.dtype().inner_dtype().unwrap();
+                    return Ok(ListChunked::full_null_with_dtype(self.name().clone(), 1, inner_dtype));
                 };
                 let a = a_owner.as_ref();
                 let b = b_owner.as_ref();
@@ -281,10 +282,10 @@ impl ListChunked {
                 } else {
                     op(a, b)
                 };
-                chunk_result.and_then(|s| s.implode()).map(Series::from)
+                chunk_result.and_then(|s| s.implode())
             });
             for c in combined.into_iter() {
-                result.append(c?.list()?)?;
+                result.append(&c?)?;
             }
             return Ok(result.into());
         }
