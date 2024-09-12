@@ -88,7 +88,6 @@ pub enum DslPlan {
         // are used as base of different queries in a loop. That way
         // the expensive schema resolving is cached.
         file_info: Arc<RwLock<Option<FileInfo>>>,
-        predicate: Option<Expr>,
         file_options: FileScanOptions,
         scan_type: FileScan,
     },
@@ -197,7 +196,7 @@ impl Clone for DslPlan {
             Self::PythonScan { options } => Self::PythonScan { options: options.clone() },
             Self::Filter { input, predicate } => Self::Filter { input: input.clone(), predicate: predicate.clone() },
             Self::Cache { input, id, cache_hits } => Self::Cache { input: input.clone(), id: id.clone(), cache_hits: cache_hits.clone() },
-            Self::Scan { sources, file_info, predicate, file_options, scan_type } => Self::Scan { sources: sources.clone(), file_info: file_info.clone(), predicate: predicate.clone(), file_options: file_options.clone(), scan_type: scan_type.clone() },
+            Self::Scan { sources, file_info, file_options, scan_type } => Self::Scan { sources: sources.clone(), file_info: file_info.clone(), file_options: file_options.clone(), scan_type: scan_type.clone() },
             Self::DataFrameScan { df, schema, output_schema, filter: selection } => Self::DataFrameScan { df: df.clone(), schema: schema.clone(), output_schema: output_schema.clone(), filter: selection.clone() },
             Self::Select { expr, input, options } => Self::Select { expr: expr.clone(), input: input.clone(), options: options.clone() },
             Self::GroupBy { input, keys, aggs,  apply, maintain_order, options } => Self::GroupBy { input: input.clone(), keys: keys.clone(), aggs: aggs.clone(), apply: apply.clone(), maintain_order: maintain_order.clone(), options: options.clone() },

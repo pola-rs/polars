@@ -63,7 +63,6 @@ impl DslBuilder {
                 is_expanded: true,
             })),
             file_info: Arc::new(RwLock::new(Some(file_info))),
-            predicate: None,
             file_options,
             scan_type: FileScan::Anonymous {
                 function,
@@ -106,7 +105,6 @@ impl DslBuilder {
         Ok(DslPlan::Scan {
             sources: Arc::new(Mutex::new(sources)),
             file_info: Arc::new(RwLock::new(None)),
-            predicate: None,
             file_options: options,
             scan_type: FileScan::Parquet {
                 options: ParquetOptions {
@@ -148,7 +146,6 @@ impl DslBuilder {
                 glob: true,
                 include_file_paths,
             },
-            predicate: None,
             scan_type: FileScan::Ipc {
                 options,
                 cloud_options,
@@ -190,7 +187,6 @@ impl DslBuilder {
             sources: Arc::new(Mutex::new(sources)),
             file_info: Arc::new(RwLock::new(None)),
             file_options: options,
-            predicate: None,
             scan_type: FileScan::Csv {
                 options: read_options,
                 cloud_options,

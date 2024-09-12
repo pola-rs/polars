@@ -107,7 +107,6 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
         DslPlan::Scan {
             sources,
             file_info,
-            predicate,
             mut file_options,
             mut scan_type,
         } => {
@@ -276,9 +275,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 file_info: resolved_file_info,
                 hive_parts,
                 output_schema: None,
-                predicate: predicate
-                    .map(|expr| to_expr_ir(expr, ctxt.expr_arena))
-                    .transpose()?,
+                predicate: None,
                 scan_type,
                 file_options,
             }
