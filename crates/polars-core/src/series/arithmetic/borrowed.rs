@@ -1,5 +1,3 @@
-use std::cell::Cell;
-
 use arrow::array::Array;
 
 use super::*;
@@ -228,6 +226,7 @@ impl ListChunked {
         &self,
         rhs: &Series,
         op: &dyn Fn(&Series, &Series) -> PolarsResult<Series>,
+        has_nulls: Option<bool>,
     ) -> PolarsResult<Series> {
         polars_ensure!(
             self.len() == rhs.len(),
@@ -236,13 +235,7 @@ impl ListChunked {
             rhs.len()
         );
 
-        thread_local! {
-            static HAS_NULLS: Cell<bool> = const { Cell::new(false) };
-        };
-
-        let orig_has_nulls = HAS_NULLS.get();
-
-        let mut has_nulls = orig_has_nulls;
+        let mut has_nulls = has_nulls.unwrap_or(false);
         if !has_nulls {
             for chunk in self.chunks().iter() {
                 if maybe_list_has_nulls(chunk) {
@@ -263,14 +256,6 @@ impl ListChunked {
             // A slower implementation since we can't just add the underlying
             // values Arrow arrays. Given nulls, the two values arrays might not
             // line up the way we expect.
-
-            // This can be recursive, so preserve the knowledge that there
-            // were nulls. Unfortunately get_leaf_array() and explode()
-            // don't work on the Series that come out of amortized_iter(),
-            // so we need to stick to this code path.
-            HAS_NULLS.set(true);
-            scopeguard::defer! { HAS_NULLS.set(orig_has_nulls); };
-
             let mut result = self.clear();
             let combined = self.amortized_iter().zip(rhs.list()?.amortized_iter()).map(|(a, b)| {
                 let (Some(a_owner), Some(b_owner)) = (a, b) else {
@@ -285,7 +270,18 @@ impl ListChunked {
                     a.len(),
                     b.len()
                 );
-                op(a, b).and_then(|s| s.implode()).map(Series::from)
+                let chunk_result = if let Ok(a_listchunked) = a.list() {
+                    // If `a` contains more lists, we're going to reach this
+                    // function recursively, and again have to decide whether to
+                    // use the fast path (no nulls) or slow path (there were
+                    // nulls). Since we know there were nulls, that means we
+                    // have to stick to the slow path, so pass that information
+                    // along.
+                    a_listchunked.arithm_helper(b, op, Some(true))
+                } else {
+                    op(a, b)
+                };
+                chunk_result.and_then(|s| s.implode()).map(Series::from)
             });
             for c in combined.into_iter() {
                 result.append(c?.list()?)?;
@@ -321,19 +317,19 @@ impl ListChunked {
 
 impl NumOpsDispatchInner for ListType {
     fn add_to(lhs: &ListChunked, rhs: &Series) -> PolarsResult<Series> {
-        lhs.arithm_helper(rhs, &|l, r| l.add_to(r))
+        lhs.arithm_helper(rhs, &|l, r| l.add_to(r), None)
     }
     fn subtract(lhs: &ListChunked, rhs: &Series) -> PolarsResult<Series> {
-        lhs.arithm_helper(rhs, &|l, r| l.subtract(r))
+        lhs.arithm_helper(rhs, &|l, r| l.subtract(r), None)
     }
     fn multiply(lhs: &ListChunked, rhs: &Series) -> PolarsResult<Series> {
-        lhs.arithm_helper(rhs, &|l, r| l.multiply(r))
+        lhs.arithm_helper(rhs, &|l, r| l.multiply(r), None)
     }
     fn divide(lhs: &ListChunked, rhs: &Series) -> PolarsResult<Series> {
-        lhs.arithm_helper(rhs, &|l, r| l.divide(r))
+        lhs.arithm_helper(rhs, &|l, r| l.divide(r), None)
     }
     fn remainder(lhs: &ListChunked, rhs: &Series) -> PolarsResult<Series> {
-        lhs.arithm_helper(rhs, &|l, r| l.remainder(r))
+        lhs.arithm_helper(rhs, &|l, r| l.remainder(r), None)
     }
 }
 

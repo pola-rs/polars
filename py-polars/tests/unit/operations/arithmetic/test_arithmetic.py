@@ -664,9 +664,18 @@ def test_list_arithmetic_same_size(
     ],
 )
 def test_list_arithmetic_nulls(a: list[Any], b: list[Any], expected: list[Any]) -> None:
+    series_a = pl.Series(a)
+    series_b = pl.Series(b)
+    series_expected = pl.Series(expected)
+
+    # Same dtype:
+    assert_series_equal(series_a + series_b, series_expected)
+
+    # Different dtype:
     assert_series_equal(
-        pl.Series(a) + pl.Series(b),
-        pl.Series(expected),
+        series_a._recursive_cast_to_dtype(pl.Int32())
+        + series_b._recursive_cast_to_dtype(pl.Int64()),
+        series_expected._recursive_cast_to_dtype(pl.Int64()),
     )
 
 

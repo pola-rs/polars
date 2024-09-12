@@ -1058,21 +1058,21 @@ class Series:
             return F.lit(self) - other
         return self._arithmetic(other, "sub", "sub_<>")
 
-    def _recursive_cast_to_float64(self) -> Series:
+    def _recursive_cast_to_dtype(self, leaf_dtype: PolarsDataType) -> Series:
         """
-        Convert leaf dtypes to Float64 dtypes.
+        Convert leaf dtype the to given primitive datatype.
 
         This is equivalent to logic in DataType::cast_leaf() in Rust.
         """
 
-        def convert_to_float64(dtype: PolarsDataType) -> PolarsDataType:
+        def convert_to_primitive(dtype: PolarsDataType) -> PolarsDataType:
             if isinstance(dtype, Array):
-                return Array(convert_to_float64(dtype.inner), shape=dtype.shape)
+                return Array(convert_to_primitive(dtype.inner), shape=dtype.shape)
             if isinstance(dtype, List):
-                return List(convert_to_float64(dtype.inner))
-            return Float64()
+                return List(convert_to_primitive(dtype.inner))
+            return leaf_dtype
 
-        return self.cast(convert_to_float64(self.dtype))
+        return self.cast(convert_to_primitive(self.dtype))
 
     @overload
     def __truediv__(self, other: Expr) -> Expr: ...
@@ -1091,7 +1091,7 @@ class Series:
         if self.dtype.is_float() or self.dtype == Decimal:
             as_float = self
         else:
-            as_float = self._recursive_cast_to_float64()
+            as_float = self._recursive_cast_to_dtype(Float64())
 
         return as_float._arithmetic(other, "div", "div_<>")
 
