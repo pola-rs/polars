@@ -371,7 +371,7 @@ def test_group_by_iteration() -> None:
 def test_group_by_iteration_selector() -> None:
     df = pl.DataFrame({"a": ["one", "two", "one", "two"], "b": [1, 2, 3, 4]})
     result = dict(df.group_by(cs.string()))
-    result_first = result[("one",)]
+    result_first = result["one",]
     assert result_first.to_dict(as_series=False) == {"a": ["one", "one"], "b": [1, 3]}
 
 

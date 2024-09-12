@@ -128,9 +128,8 @@ def is_sequence(
     val: object, *, include_series: bool = False
 ) -> TypeGuard[Sequence[Any]]:
     """Check whether the given input is a numpy array or python sequence."""
-    return (
-        (_check_for_numpy(val) and isinstance(val, np.ndarray))
-        or isinstance(val, (pl.Series, Sequence) if include_series else Sequence)
+    return (_check_for_numpy(val) and isinstance(val, np.ndarray)) or (
+        isinstance(val, (pl.Series, Sequence) if include_series else Sequence)
         and not isinstance(val, str)
     )
 

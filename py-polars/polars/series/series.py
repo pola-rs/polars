@@ -267,7 +267,7 @@ class Series:
         *,
         strict: bool = True,
         nan_to_null: bool = False,
-    ):
+    ) -> None:
         # If 'Unknown' treat as None to trigger type inference
         if dtype == Unknown:
             dtype = None
@@ -761,24 +761,24 @@ class Series:
         return self._from_pyseries(f(other))
 
     @overload  # type: ignore[override]
-    def __eq__(self, other: Expr) -> Expr: ...
+    def __eq__(self, other: Expr) -> Expr: ...  # type: ignore[overload-overlap]
 
     @overload
-    def __eq__(self, other: Any) -> Series: ...
+    def __eq__(self, other: object) -> Series: ...
 
-    def __eq__(self, other: Any) -> Series | Expr:
+    def __eq__(self, other: object) -> Series | Expr:
         warn_null_comparison(other)
         if isinstance(other, pl.Expr):
             return F.lit(self).__eq__(other)
         return self._comp(other, "eq")
 
     @overload  # type: ignore[override]
-    def __ne__(self, other: Expr) -> Expr: ...
+    def __ne__(self, other: Expr) -> Expr: ...  # type: ignore[overload-overlap]
 
     @overload
-    def __ne__(self, other: Any) -> Series: ...
+    def __ne__(self, other: object) -> Series: ...
 
-    def __ne__(self, other: Any) -> Series | Expr:
+    def __ne__(self, other: object) -> Series | Expr:
         warn_null_comparison(other)
         if isinstance(other, pl.Expr):
             return F.lit(self).__ne__(other)
@@ -3974,7 +3974,7 @@ class Series:
 
     def cast(
         self,
-        dtype: PolarsDataType | type[int] | type[float] | type[str] | type[bool],
+        dtype: type[int | float | str | bool] | PolarsDataType,
         *,
         strict: bool = True,
         wrap_numerical: bool = False,

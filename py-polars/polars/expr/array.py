@@ -17,7 +17,7 @@ class ExprArrayNameSpace:
 
     _accessor = "arr"
 
-    def __init__(self, expr: Expr):
+    def __init__(self, expr: Expr) -> None:
         self._pyexpr = expr._pyexpr
 
     def min(self) -> Expr:

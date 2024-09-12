@@ -148,13 +148,7 @@ def test_cse_9630() -> None:
 @pytest.mark.write_disk
 def test_schema_row_index_cse() -> None:
     csv_a = NamedTemporaryFile()
-    csv_a.write(
-        b"""
-A,B
-Gr1,A
-Gr1,B
-    """.strip()
-    )
+    csv_a.write(b"A,B\nGr1,A\nGr1,B")
     csv_a.seek(0)
 
     df_a = pl.scan_csv(csv_a.name).with_row_index("Idx")
@@ -165,8 +159,6 @@ Gr1,B
         .all()
         .collect(comm_subexpr_elim=True)
     )
-
-    csv_a.close()
 
     expected = pl.DataFrame(
         {

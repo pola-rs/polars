@@ -166,7 +166,7 @@ def test_null_obj_str_13512() -> None:
 
 def test_format_object_series_14267() -> None:
     s = pl.Series([Path(), Path("abc")])
-    expected = "shape: (2,)\n" "Series: '' [o][object]\n" "[\n" "\t.\n" "\tabc\n" "]"
+    expected = "shape: (2,)\nSeries: '' [o][object]\n[\n\t.\n\tabc\n]"
     assert str(s) == expected
 
 

@@ -55,7 +55,7 @@ DATETIME_PATTERNS = [
     for fraction in FRACTIONS
     if time_format.endswith("%S") or fraction == ""
     for tz in TIMEZONES
-    if date_format.startswith("%Y") and time_format != "" or tz == ""
+    if (date_format.startswith("%Y") and time_format != "") or tz == ""
 ]
 
 

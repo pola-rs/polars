@@ -458,9 +458,15 @@ def test_dataclasses_initvar_typing() -> None:
     assert dataclasses.asdict(abc) == df.rows(named=True)[0]
 
 
-def test_collections_namedtuple() -> None:
-    TestData = namedtuple("TestData", ["id", "info"])
-    nt_data = [TestData(1, "a"), TestData(2, "b"), TestData(3, "c")]
+@pytest.mark.parametrize(
+    "nt",
+    [
+        namedtuple("TestData", ["id", "info"]),  # noqa: PYI024
+        NamedTuple("TestData", [("id", int), ("info", str)]),
+    ],
+)
+def test_collections_namedtuple(nt: type) -> None:
+    nt_data = [nt(1, "a"), nt(2, "b"), nt(3, "c")]
 
     result = pl.DataFrame(nt_data)
     expected = pl.DataFrame({"id": [1, 2, 3], "info": ["a", "b", "c"]})

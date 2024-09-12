@@ -351,7 +351,7 @@ class DataFrame:
         orient: Orientation | None = None,
         infer_schema_length: int | None = N_INFER_DEFAULT,
         nan_to_null: bool = False,
-    ):
+    ) -> None:
         if data is None:
             self._df = dict_to_pydf(
                 {}, schema=schema, schema_overrides=schema_overrides
@@ -1106,10 +1106,10 @@ class DataFrame:
         )
         raise TypeError(msg)
 
-    def __eq__(self, other: Any) -> DataFrame:  # type: ignore[override]
+    def __eq__(self, other: object) -> DataFrame:  # type: ignore[override]
         return self._comp(other, "eq")
 
-    def __ne__(self, other: Any) -> DataFrame:  # type: ignore[override]
+    def __ne__(self, other: object) -> DataFrame:  # type: ignore[override]
         return self._comp(other, "neq")
 
     def __gt__(self, other: Any) -> DataFrame:
@@ -3428,7 +3428,7 @@ class DataFrame:
             hidden_columns = ()
         hidden_columns = _expand_selectors(df, hidden_columns)
         if isinstance(column_widths, int):
-            column_widths = {column: column_widths for column in df.columns}
+            column_widths = dict.fromkeys(df.columns, column_widths)
         else:
             column_widths = _expand_selector_dicts(  # type: ignore[assignment]
                 df, column_widths, expand_keys=True, expand_values=False
@@ -3740,10 +3740,8 @@ class DataFrame:
         if compression is None:
             compression = "uncompressed"
         if isinstance(file, (str, Path)):
-            if (
-                partition_by is not None
-                or pyarrow_options is not None
-                and pyarrow_options.get("partition_cols")
+            if partition_by is not None or (
+                pyarrow_options is not None and pyarrow_options.get("partition_cols")
             ):
                 file = normalize_filepath(file, check_not_directory=False)
             else:
@@ -5999,7 +5997,7 @@ class DataFrame:
         │ c   ┆ 3   ┆ 1   │
         └─────┴─────┴─────┘
         """
-        for _key, value in named_by.items():
+        for value in named_by.values():
             if not isinstance(value, (str, pl.Expr, pl.Series)):
                 msg = (
                     f"Expected Polars expression or object convertible to one, got {type(value)}.\n\n"

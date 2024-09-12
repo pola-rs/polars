@@ -1731,7 +1731,7 @@ def test_different_page_validity_across_pages(value: str | int | float | bool) -
 def test_delta_length_byte_array_prefiltering(df: pl.DataFrame) -> None:
     cols = df.columns
 
-    encodings = {col: "DELTA_LENGTH_BYTE_ARRAY" for col in cols}
+    encodings = dict.fromkeys(cols, "DELTA_LENGTH_BYTE_ARRAY")
     encodings["filter_col"] = "PLAIN"
 
     f = io.BytesIO()

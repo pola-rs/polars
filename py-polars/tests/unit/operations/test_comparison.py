@@ -236,7 +236,7 @@ def verify_total_ordering(
         "ne_missing": [refmiss != "="],
     }
     ans_correct = pl.DataFrame(
-        ans_correct_dict, schema={c: pl.Boolean for c in ans_correct_dict}
+        ans_correct_dict, schema=dict.fromkeys(ans_correct_dict, pl.Boolean)
     )
 
     assert_frame_equal(ans[:1], ans_correct)
@@ -287,7 +287,7 @@ def verify_total_ordering_broadcast(
         "ne_missing": [refmiss != "="],
     }
     ans_correct = pl.DataFrame(
-        ans_correct_dict, schema={c: pl.Boolean for c in ans_correct_dict}
+        ans_correct_dict, schema=dict.fromkeys(ans_correct_dict, pl.Boolean)
     )
 
     assert_frame_equal(ans_first[:1], ans_correct)

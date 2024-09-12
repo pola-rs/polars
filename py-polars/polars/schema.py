@@ -58,7 +58,7 @@ class Schema(BaseSchema):
             | Iterable[tuple[str, DataType | PythonDataType]]
             | None
         ) = None,
-    ):
+    ) -> None:
         input = (
             schema.items() if schema and isinstance(schema, Mapping) else (schema or {})
         )
