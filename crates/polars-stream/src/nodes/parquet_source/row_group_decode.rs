@@ -69,7 +69,7 @@ impl RowGroupDecoder {
 
         assert!(slice_range.end <= row_group_data.row_group_metadata.num_rows());
 
-        self.decode_columns(
+        self.decode_all_columns(
             &mut out_columns,
             &row_group_data,
             Some(polars_parquet::read::Filter::Range(slice_range.clone())),
@@ -196,7 +196,7 @@ impl RowGroupDecoder {
 
     /// Potentially parallelizes based on number of rows & columns. Decoded columns are appended to
     /// `out_vec`.
-    async fn decode_columns(
+    async fn decode_all_columns(
         &self,
         out_vec: &mut Vec<Series>,
         row_group_data: &Arc<RowGroupData>,
