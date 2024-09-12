@@ -13,7 +13,7 @@ use polars_io::cloud::CloudOptions;
 use polars_io::csv::read::{
     count_rows as count_rows_csv, count_rows_from_slice as count_rows_csv_from_slice,
 };
-#[cfg(all(feature = "parquet", feature = "cloud"))]
+#[cfg(all(feature = "parquet", feature = "async"))]
 use polars_io::parquet::read::ParquetAsyncReader;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::read::ParquetReader;
