@@ -965,7 +965,7 @@ fn test_infer_schema_eol() -> PolarsResult<()> {
     let no_eol = "colx,coly\nabcdef,1234";
     let file = Cursor::new(no_eol);
     let df = CsvReader::new(file).finish()?;
-    assert_eq!(df.dtypes(), &[DataType::String, DataType::Int64,]);
+    assert_eq!(df.dtypes(), &[DataType::String, DataType::Int64]);
     Ok(())
 }
 

@@ -197,7 +197,7 @@ fn test_binaryexpr_pushdown_left_join_9506() -> PolarsResult<()> {
 fn test_count_blocked_at_union_3963() -> PolarsResult<()> {
     let lf1 = df![
         "k" => ["x", "x", "y"],
-        "v" => [3, 2, 6,]
+        "v" => [3, 2, 6]
     ]?
     .lazy();
 

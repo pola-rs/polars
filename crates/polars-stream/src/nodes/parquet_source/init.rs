@@ -426,6 +426,6 @@ mod tests {
     fn test_filtered_range() {
         use super::filtered_range;
         assert_eq!(filtered_range(&[1, 3], 7).as_slice(), &[0, 2, 4, 5, 6]);
-        assert_eq!(filtered_range(&[1, 6], 7).as_slice(), &[0, 2, 3, 4, 5,]);
+        assert_eq!(filtered_range(&[1, 6], 7).as_slice(), &[0, 2, 3, 4, 5]);
     }
 }

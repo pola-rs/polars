@@ -1403,7 +1403,7 @@ fn test_categorical_addition() -> PolarsResult<()> {
 #[test]
 fn test_error_duplicate_names() {
     let df = fruits_cars();
-    assert!(df.lazy().select([col("*"), col("*"),]).collect().is_err());
+    assert!(df.lazy().select([col("*"), col("*")]).collect().is_err());
 }
 
 #[test]
