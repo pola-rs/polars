@@ -5,6 +5,7 @@ use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use polars_core::frame::DataFrame;
 use polars_error::PolarsResult;
+use polars_io::prelude::ParallelStrategy;
 
 use super::row_group_data_fetch::RowGroupDataFetcher;
 use super::row_group_decode::RowGroupDecoder;
@@ -264,11 +265,11 @@ impl ParquetSourceNode {
 
     /// Creates a `RowGroupDecoder` that turns `RowGroupData` into DataFrames.
     /// This must be called AFTER the following have been initialized:
-    /// * `self.projected_arrow_fields`
+    /// * `self.projected_arrow_schema`
     /// * `self.physical_predicate`
     pub(super) fn init_row_group_decoder(&self) -> RowGroupDecoder {
         assert!(
-            !self.projected_arrow_fields.is_empty()
+            !self.projected_arrow_schema.is_empty()
                 || self.file_options.with_columns.as_deref() == Some(&[])
         );
         assert_eq!(self.predicate.is_some(), self.physical_predicate.is_some());
@@ -280,24 +281,33 @@ impl ParquetSourceNode {
             .map(|x| x[0].get_statistics().column_stats().len())
             .unwrap_or(0);
         let include_file_paths = self.file_options.include_file_paths.clone();
-        let projected_arrow_fields = self.projected_arrow_fields.clone();
+        let projected_arrow_schema = self.projected_arrow_schema.clone();
         let row_index = self.file_options.row_index.clone();
         let physical_predicate = self.physical_predicate.clone();
         let ideal_morsel_size = get_ideal_morsel_size();
+        let min_values_per_thread = self.config.min_values_per_thread;
+
+        let use_prefiltered = physical_predicate.is_some()
+            && matches!(
+                self.options.parallel,
+                ParallelStrategy::Auto | ParallelStrategy::Prefiltered
+            );
 
         RowGroupDecoder {
             scan_sources,
             hive_partitions,
             hive_partitions_width,
             include_file_paths,
-            projected_arrow_fields,
+            projected_arrow_schema,
             row_index,
             physical_predicate,
+            use_prefiltered,
             ideal_morsel_size,
+            min_values_per_thread,
         }
     }
 
-    pub(super) fn init_projected_arrow_fields(&mut self) {
+    pub(super) fn init_projected_arrow_schema(&mut self) {
         let reader_schema = self
             .file_info
             .reader_schema
@@ -307,20 +317,25 @@ impl ParquetSourceNode {
             .unwrap_left()
             .clone();
 
-        self.projected_arrow_fields =
+        self.projected_arrow_schema =
             if let Some(columns) = self.file_options.with_columns.as_deref() {
-                columns
-                    .iter()
-                    .map(|x| reader_schema.get(x).unwrap().clone())
-                    .collect()
+                Arc::new(
+                    columns
+                        .iter()
+                        .map(|x| {
+                            let (_, k, v) = reader_schema.get_full(x).unwrap();
+                            (k.clone(), v.clone())
+                        })
+                        .collect(),
+                )
             } else {
-                reader_schema.iter_values().cloned().collect()
+                reader_schema.clone()
             };
 
         if self.verbose {
             eprintln!(
                 "[ParquetSource]: {} columns to be projected from {} files",
-                self.projected_arrow_fields.len(),
+                self.projected_arrow_schema.len(),
                 self.scan_sources.len(),
             );
         }
