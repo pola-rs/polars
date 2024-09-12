@@ -165,8 +165,8 @@ class TestIcebergExpressions:
         assert _convert_predicate(expr) == LessThanOrEqual("ts", "2023-08-08")
 
 
-@pytest.mark.slow()
-@pytest.mark.write_disk()
+@pytest.mark.slow
+@pytest.mark.write_disk
 @pytest.mark.filterwarnings(
     "ignore:No preferred file implementation for scheme*:UserWarning"
 )
