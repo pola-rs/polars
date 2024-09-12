@@ -1,0 +1,42 @@
+name: Remote Benchmark
+
+on:
+  workflow_dispatch:
+  # remove this
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  SCALE_FACTOR: '1.0'
+
+jobs:
+  main:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Clone Polars-benchmark
+        run: |
+          git clone --depth=1 https://github.com/pola-rs/polars-benchmark.git 
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Set up Rust
+        run: rustup show
+
+      - name: Install Polars release build
+        env:
+          RUSTFLAGS: -C embed-bitcode -D warnings
+        working-directory: py-polars
+        run: maturin develop --release -- -C codegen-units=8 -C lto=thin -C target-cpu=native
+
+      - name: Run benchmark
+        working-directory: polars-benchmark
+        run: |
+          make run-polars-no-env
