@@ -902,6 +902,8 @@ impl<'a> AnyValue<'a> {
             #[cfg(feature = "dtype-time")]
             Time(v) => Time(v),
             List(v) => List(v),
+            #[cfg(feature = "dtype-array")]
+            Array(s, size) => Array(s, size),
             String(v) => StringOwned(PlSmallStr::from_str(v)),
             StringOwned(v) => StringOwned(v),
             Binary(v) => BinaryOwned(v.to_vec()),
