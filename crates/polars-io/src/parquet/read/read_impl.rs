@@ -266,11 +266,21 @@ fn rg_to_dfs_prefiltered(
     let num_live_columns = live_variables.len();
     let num_dead_columns = projection.len() - num_live_columns;
 
+    // @NOTE: This is probably already sorted, but just to be sure.
+    let mut projection_sorted = projection.to_vec();
+    projection_sorted.sort();
+
     // We create two look-up tables that map indexes offsets into the live- and dead-set onto
     // column indexes of the schema.
     let mut live_idx_to_col_idx = Vec::with_capacity(num_live_columns);
     let mut dead_idx_to_col_idx = Vec::with_capacity(num_dead_columns);
+    let mut offset = 0;
     for (i, field) in schema.iter_values().enumerate() {
+        if projection_sorted.get(offset).copied() != Some(i) {
+            continue;
+        }
+
+        offset += 1;
         if live_variables.contains(&field.name[..]) {
             live_idx_to_col_idx.push(i);
         } else {
