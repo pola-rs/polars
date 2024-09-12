@@ -356,8 +356,8 @@ fn any_values_to_binary_offset(
         let mut builder = BinaryOffsetChunkedBuilder::new(PlSmallStr::EMPTY, values.len());
         for av in values {
             match av {
-                AnyValue::Binary(s) => builder.append_value(*s),
-                AnyValue::BinaryOwned(s) => builder.append_value(&**s),
+                AnyValue::Binary(s) => builder.append_value(s),
+                AnyValue::BinaryOwned(s) => builder.append_value(s.as_slice()),
                 AnyValue::Null => builder.append_null(),
                 av => return Err(invalid_value_error(&DataType::Binary, av)),
             }
