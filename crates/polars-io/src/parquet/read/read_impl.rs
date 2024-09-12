@@ -753,14 +753,16 @@ pub fn read_parquet<R: MmapBytesReader>(
         .map(Cow::Borrowed)
         .unwrap_or_else(|| Cow::Owned((0usize..reader_schema.len()).collect::<Vec<_>>()));
 
-    if let ParallelStrategy::Auto = parallel {
-        if predicate.is_some_and(|predicate| {
-            predicate.live_variables().map_or(0, |v| v.len()) * n_row_groups
+    if let Some(predicate) = predicate {
+        if std::env::var("POLARS_PARQUET_AUTO_PREFILTERED").is_ok_and(|v| v == "1")
+            && predicate.live_variables().map_or(0, |v| v.len()) * n_row_groups
                 >= POOL.current_num_threads()
-        }) {
+        {
             parallel = ParallelStrategy::Prefiltered;
-        } else if n_row_groups > materialized_projection.len()
-            || n_row_groups > POOL.current_num_threads()
+        }
+    }
+    if ParallelStrategy::Auto == parallel {
+        if n_row_groups > materialized_projection.len() || n_row_groups > POOL.current_num_threads()
         {
             parallel = ParallelStrategy::RowGroups;
         } else {
