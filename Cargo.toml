@@ -76,7 +76,6 @@ recursive = "0.1"
 regex = "1.9"
 reqwest = { version = "0.12", default-features = false }
 ryu = "1.0.13"
-scopeguard = "1.2.0"
 serde = { version = "1.0.188", features = ["derive", "rc"] }
 serde_json = "1"
 simd-json = { version = "0.13", features = ["known-key"] }

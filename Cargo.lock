@@ -3093,7 +3093,6 @@ dependencies = [
  "rand_distr",
  "rayon",
  "regex",
- "scopeguard",
  "serde",
  "serde_json",
  "thiserror",
