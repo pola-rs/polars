@@ -1,4 +1,5 @@
 pub mod reduce;
+mod from;
 
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]

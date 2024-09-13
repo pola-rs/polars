@@ -88,14 +88,8 @@ pub(super) fn group_by_helper(
 
         rayon::join(get_columns, get_agg)
     });
-    let agg_columns = agg_columns?;
-    // @scalar-opt
-    let agg_columns = agg_columns
-        .into_iter()
-        .map(Column::from)
-        .collect::<Vec<_>>();
 
-    columns.extend_from_slice(&agg_columns);
+    columns.extend(agg_columns?.into_iter().map(Column::from));
     DataFrame::new(columns)
 }
 

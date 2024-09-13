@@ -3064,14 +3064,8 @@ impl DataFrame {
         let mut count = 0;
         for s in &self.columns {
             if cols.contains(s.name()) {
-                let ca = s.as_materialized_series().struct_()?.clone();
-                // @scalar-opt
-                new_cols.extend_from_slice(
-                    &ca.fields_as_series()
-                        .into_iter()
-                        .map(Column::from)
-                        .collect::<Vec<_>>(),
-                );
+                let ca = s.struct_()?.clone();
+                new_cols.extend(ca.fields_as_series().into_iter().map(Column::from));
                 count += 1;
             } else {
                 new_cols.push(s.clone())
@@ -3171,6 +3165,16 @@ impl From<DataFrame> for Vec<Column> {
 
 // utility to test if we can vstack/extend the columns
 fn ensure_can_extend(left: &Series, right: &Series) -> PolarsResult<()> {
+    polars_ensure!(
+        left.name() == right.name(),
+        ShapeMismatch: "unable to vstack, column names don't match: {:?} and {:?}",
+        left.name(), right.name(),
+    );
+    Ok(())
+}
+
+// utility to test if we can vstack/extend the columns
+fn ensure_can_extend_cols(left: &Column, right: &Column) -> PolarsResult<()> {
     polars_ensure!(
         left.name() == right.name(),
         ShapeMismatch: "unable to vstack, column names don't match: {:?} and {:?}",

@@ -81,13 +81,11 @@ impl GroupByRollingExec {
         };
 
         let agg_columns = evaluate_aggs(&df, &self.aggs, groups, state)?;
-        // @scalar-opt
-        let agg_columns: Vec<Column> = agg_columns.into_iter().map(Column::from).collect();
 
         let mut columns = Vec::with_capacity(agg_columns.len() + 1 + keys.len());
         columns.extend_from_slice(&keys);
         columns.push(time_key);
-        columns.extend_from_slice(&agg_columns);
+        columns.extend(agg_columns.into_iter().map(Column::from));
 
         DataFrame::new(columns)
     }

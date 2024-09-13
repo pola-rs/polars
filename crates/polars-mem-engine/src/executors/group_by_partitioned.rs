@@ -303,8 +303,6 @@ impl PartitionGroupByExec {
                 acc
             })
             .unwrap();
-        // @scalar-opt
-        let keys = keys.into_iter().map(Column::from).collect();
 
         // the partitioned group_by has added columns so we must update the schema.
         state.set_schema(self.output_schema.clone());

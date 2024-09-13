@@ -80,9 +80,13 @@ pub(crate) fn any_value_into_py_object(av: AnyValue, py: Python) -> PyObject {
         AnyValue::Datetime(v, time_unit, time_zone) => {
             datetime_to_py_object(py, utils, v, time_unit, time_zone)
         },
-        AnyValue::DatetimeOwned(v, time_unit, time_zone) => {
-            datetime_to_py_object(py, utils, v, time_unit, time_zone.as_ref().map(AsRef::as_ref))
-        },
+        AnyValue::DatetimeOwned(v, time_unit, time_zone) => datetime_to_py_object(
+            py,
+            utils,
+            v,
+            time_unit,
+            time_zone.as_ref().map(AsRef::as_ref),
+        ),
         AnyValue::Duration(v, time_unit) => {
             let time_delta = elapsed_offset_to_timedelta(v, time_unit);
             time_delta.into_py(py)
@@ -123,7 +127,13 @@ pub(crate) fn any_value_into_py_object(av: AnyValue, py: Python) -> PyObject {
     }
 }
 
-fn datetime_to_py_object(py: Python, utils: &Bound<PyAny>, v: i64, tu: TimeUnit, tz: Option<&TimeZone>) -> PyObject {
+fn datetime_to_py_object(
+    py: Python,
+    utils: &Bound<PyAny>,
+    v: i64,
+    tu: TimeUnit,
+    tz: Option<&TimeZone>,
+) -> PyObject {
     if let Some(time_zone) = tz {
         // When https://github.com/pola-rs/polars/issues/16199 is
         // implemented, we'll switch to something like:
