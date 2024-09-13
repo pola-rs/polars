@@ -23,9 +23,15 @@ impl DslPlan {
     /// Set sources paths in iteration order.
     pub fn set_sources_paths(&self, new_paths: Vec<Arc<[PathBuf]>>) {
         for (subplan, paths) in self.into_iter().zip(new_paths) {
-            if let DslPlan::Scan { sources, .. } = subplan {
+            if let DslPlan::Scan {
+                sources, file_info, ..
+            } = subplan
+            {
                 let mut src = sources.lock().unwrap();
                 src.sources = ScanSources::Paths(paths.clone());
+                // Unset cached file info as it is incorrect.
+                let mut file_info = file_info.write().unwrap();
+                *file_info = None;
             }
         }
     }
