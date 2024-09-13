@@ -197,9 +197,7 @@ impl DataFrame {
     ///
     /// FFI buffers are included in this estimation.
     pub fn estimated_size(&self) -> usize {
-        self.columns.iter()
-            .map(Column::estimated_size)
-            .sum()
+        self.columns.iter().map(Column::estimated_size).sum()
     }
 
     // Reduce monomorphization.
