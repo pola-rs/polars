@@ -787,9 +787,11 @@ impl Column {
     }
 
     pub fn extend_constant(&self, value: AnyValue, n: usize) -> PolarsResult<Self> {
-        self.as_materialized_series().extend_constant(value, n).map(Column::from)
+        self.as_materialized_series()
+            .extend_constant(value, n)
+            .map(Column::from)
         // @scalar-opt: This currently fails because Scalar::partial_cmp cannot deal with Nulls
-        // 
+        //
         // match self {
         //     Column::Series(s) => s.extend_constant(value, n).map(Column::from),
         //     Column::Scalar(s) => {
