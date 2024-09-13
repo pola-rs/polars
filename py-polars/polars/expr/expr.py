@@ -6120,7 +6120,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.interpolate(method))
 
-    def interpolate_by(self, by: IntoExpr) -> Expr:
+    def interpolate_by(self, by: IntoExpr, *, extrapolate_flat: bool = False) -> Expr:
         """
         Fill null values using interpolation based on another column.
 
@@ -6128,6 +6128,9 @@ class Expr:
         ----------
         by
             Column to interpolate values based on.
+        extrapolate_flat
+            If True, extrapolate the highest and lowest values of the expression in
+            the regions below and above the highest/lowest by values
 
         Examples
         --------
@@ -6153,7 +6156,7 @@ class Expr:
         └──────┴─────┴────────────────┘
         """
         by = parse_into_expression(by)
-        return self._from_pyexpr(self._pyexpr.interpolate_by(by))
+        return self._from_pyexpr(self._pyexpr.interpolate_by(by, extrapolate_flat))
 
     @unstable()
     def rolling_min_by(

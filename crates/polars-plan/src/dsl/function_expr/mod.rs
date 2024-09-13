@@ -235,7 +235,9 @@ pub enum FunctionExpr {
     #[cfg(feature = "interpolate")]
     Interpolate(InterpolationMethod),
     #[cfg(feature = "interpolate_by")]
-    InterpolateBy,
+    InterpolateBy {
+        extrapolate_flat: bool,
+    },
     #[cfg(feature = "log")]
     Entropy {
         base: f64,
@@ -395,7 +397,7 @@ impl Hash for FunctionExpr {
             #[cfg(feature = "interpolate")]
             Interpolate(f) => f.hash(state),
             #[cfg(feature = "interpolate_by")]
-            InterpolateBy => {},
+            InterpolateBy { extrapolate_flat } => extrapolate_flat.hash(state),
             #[cfg(feature = "ffi_plugin")]
             FfiPlugin {
                 lib,
@@ -687,7 +689,7 @@ impl Display for FunctionExpr {
             #[cfg(feature = "interpolate")]
             Interpolate(_) => "interpolate",
             #[cfg(feature = "interpolate_by")]
-            InterpolateBy => "interpolate_by",
+            InterpolateBy { .. } => "interpolate_by",
             #[cfg(feature = "log")]
             Entropy { .. } => "entropy",
             #[cfg(feature = "log")]
@@ -1033,8 +1035,9 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                 map!(dispatch::interpolate, method)
             },
             #[cfg(feature = "interpolate_by")]
-            InterpolateBy => {
-                map_as_slice!(dispatch::interpolate_by)
+            InterpolateBy { extrapolate_flat } => {
+                map_as_slice!(dispatch::interpolate_by, extrapolate_flat)
+                //map_as_slice!(dispatch::interpolate_by, extrapolate_flat)
             },
             #[cfg(feature = "log")]
             Entropy { base, normalize } => map!(log::entropy, base, normalize),

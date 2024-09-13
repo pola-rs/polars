@@ -1218,7 +1218,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     },
                 )
                     .to_object(py),
-                FunctionExpr::InterpolateBy => ("interpolate_by",).to_object(py),
+                FunctionExpr::InterpolateBy { extrapolate_flat } => {
+                    ("interpolate_by", extrapolate_flat).to_object(py)
+                },
                 FunctionExpr::Entropy { base, normalize } => {
                     ("entropy", base, normalize).to_object(py)
                 },
