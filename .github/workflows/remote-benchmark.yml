@@ -2,19 +2,17 @@ name: Remote Benchmark
 
 on:
   workflow_dispatch:
-  # remove this
-  pull_request:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
-  SCALE_FACTOR: '1.0'
+  SCALE_FACTOR: '10.0'
 
 jobs:
   main:
-    runs-on: ubuntu-latest
+    runs-on: polars
     steps:
       - uses: actions/checkout@v4
 
