@@ -2,8 +2,6 @@ name: Remote Benchmark
 
 on:
   workflow_dispatch:
-  # remove this
-  pull_request:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
