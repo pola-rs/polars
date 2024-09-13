@@ -2,6 +2,8 @@ name: Remote Benchmark
 
 on:
   workflow_dispatch:
+  pull_request:
+    types: [ labeled ]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -12,6 +14,7 @@ env:
 
 jobs:
   main:
+    if: ${{ github.event.label.name == 'performance' }}
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
