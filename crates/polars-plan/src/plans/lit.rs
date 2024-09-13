@@ -133,7 +133,7 @@ impl LiteralValue {
             #[cfg(feature = "dtype-date")]
             Date(v) => AnyValue::Date(*v),
             #[cfg(feature = "dtype-datetime")]
-            DateTime(v, tu, tz) => AnyValue::Datetime(*v, *tu, tz),
+            DateTime(v, tu, tz) => AnyValue::Datetime(*v, *tu, tz.as_ref()),
             #[cfg(feature = "dtype-time")]
             Time(v) => AnyValue::Time(*v),
             Series(_) => return None,
@@ -311,7 +311,7 @@ impl TryFrom<AnyValue<'_>> for LiteralValue {
             #[cfg(feature = "dtype-date")]
             AnyValue::Date(v) => Ok(LiteralValue::Date(v)),
             #[cfg(feature = "dtype-datetime")]
-            AnyValue::Datetime(value, tu, tz) => Ok(LiteralValue::DateTime(value, tu, tz.clone())),
+            AnyValue::Datetime(value, tu, tz) => Ok(LiteralValue::DateTime(value, tu, tz.cloned())),
             #[cfg(feature = "dtype-duration")]
             AnyValue::Duration(value, tu) => Ok(LiteralValue::Duration(value, tu)),
             #[cfg(feature = "dtype-time")]

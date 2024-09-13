@@ -7,6 +7,7 @@ use polars_utils::index::check_bounds;
 use polars_utils::pl_str::PlSmallStr;
 
 use self::gather::check_bounds_ca;
+use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::metadata::MetadataFlags;
 use crate::prelude::*;
 use crate::series::{BitRepr, IsSorted, SeriesPhysIter};
@@ -39,7 +40,8 @@ pub enum Column {
 #[derive(Debug, Clone)]
 pub struct ScalarColumn {
     name: PlSmallStr,
-    value: Scalar,
+    // The value of this scalar may be incoherent when `length == 0`.
+    scalar: Scalar,
     length: usize,
 
     // invariants:
@@ -72,8 +74,8 @@ impl Column {
     }
 
     #[inline]
-    pub fn new_scalar(name: PlSmallStr, value: Scalar, length: usize) -> Self {
-        Self::Scalar(ScalarColumn::new(name, value, length))
+    pub fn new_scalar(name: PlSmallStr, scalar: Scalar, length: usize) -> Self {
+        Self::Scalar(ScalarColumn::new(name, scalar, length))
     }
 
     // # Materialize
@@ -119,7 +121,7 @@ impl Column {
     pub fn dtype(&self) -> &DataType {
         match self {
             Column::Series(s) => s.dtype(),
-            Column::Scalar(s) => s.value.dtype(),
+            Column::Scalar(s) => s.scalar.dtype(),
         }
     }
 
@@ -128,7 +130,7 @@ impl Column {
         match self {
             Column::Series(s) => s.field(),
             Column::Scalar(s) => match s.materialized.get() {
-                None => Cow::Owned(Field::new(s.name.clone(), s.value.dtype().clone())),
+                None => Cow::Owned(Field::new(s.name.clone(), s.scalar.dtype().clone())),
                 Some(s) => s.field(),
             },
         }
@@ -188,87 +190,67 @@ impl Column {
 
     // # To Chunked Arrays
     pub fn bool(&self) -> PolarsResult<&BooleanChunked> {
-        // @scalar-opt
         self.as_materialized_series().bool()
     }
     pub fn i8(&self) -> PolarsResult<&Int8Chunked> {
-        // @scalar-opt
         self.as_materialized_series().i8()
     }
     pub fn i16(&self) -> PolarsResult<&Int16Chunked> {
-        // @scalar-opt
         self.as_materialized_series().i16()
     }
     pub fn i32(&self) -> PolarsResult<&Int32Chunked> {
-        // @scalar-opt
         self.as_materialized_series().i32()
     }
     pub fn i64(&self) -> PolarsResult<&Int64Chunked> {
-        // @scalar-opt
         self.as_materialized_series().i64()
     }
     pub fn u8(&self) -> PolarsResult<&UInt8Chunked> {
-        // @scalar-opt
         self.as_materialized_series().u8()
     }
     pub fn u16(&self) -> PolarsResult<&UInt16Chunked> {
-        // @scalar-opt
         self.as_materialized_series().u16()
     }
     pub fn u32(&self) -> PolarsResult<&UInt32Chunked> {
-        // @scalar-opt
         self.as_materialized_series().u32()
     }
     pub fn u64(&self) -> PolarsResult<&UInt64Chunked> {
-        // @scalar-opt
         self.as_materialized_series().u64()
     }
     pub fn f32(&self) -> PolarsResult<&Float32Chunked> {
-        // @scalar-opt
         self.as_materialized_series().f32()
     }
     pub fn f64(&self) -> PolarsResult<&Float64Chunked> {
-        // @scalar-opt
         self.as_materialized_series().f64()
     }
     pub fn str(&self) -> PolarsResult<&StringChunked> {
-        // @scalar-opt
         self.as_materialized_series().str()
     }
     pub fn list(&self) -> PolarsResult<&ListChunked> {
-        // @scalar-opt
         self.as_materialized_series().list()
     }
     pub fn binary(&self) -> PolarsResult<&BinaryChunked> {
-        // @scalar-opt
         self.as_materialized_series().binary()
     }
     pub fn idx(&self) -> PolarsResult<&IdxCa> {
-        // @scalar-opt
         self.as_materialized_series().idx()
     }
     pub fn binary_offset(&self) -> PolarsResult<&BinaryOffsetChunked> {
-        // @scalar-opt
         self.as_materialized_series().binary_offset()
     }
     #[cfg(feature = "dtype-datetime")]
     pub fn datetime(&self) -> PolarsResult<&DatetimeChunked> {
-        // @scalar-opt
         self.as_materialized_series().datetime()
     }
     #[cfg(feature = "dtype-struct")]
     pub fn struct_(&self) -> PolarsResult<&StructChunked> {
-        // @scalar-opt
         self.as_materialized_series().struct_()
     }
     #[cfg(feature = "dtype-decimal")]
     pub fn decimal(&self) -> PolarsResult<&DecimalChunked> {
-        // @scalar-opt
         self.as_materialized_series().decimal()
     }
     #[cfg(feature = "dtype-array")]
     pub fn array(&self) -> PolarsResult<&ArrayChunked> {
-        // @scalar-opt
         self.as_materialized_series().array()
     }
     #[cfg(feature = "dtype-categorical")]
@@ -277,38 +259,46 @@ impl Column {
     }
     #[cfg(feature = "dtype-date")]
     pub fn date(&self) -> PolarsResult<&DateChunked> {
-        // @scalar-opt
         self.as_materialized_series().date()
     }
     #[cfg(feature = "dtype-duration")]
     pub fn duration(&self) -> PolarsResult<&DurationChunked> {
-        // @scalar-opt
         self.as_materialized_series().duration()
     }
 
     // # Casting
+    pub fn cast_with_options(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Self> {
+        match self {
+            Column::Series(s) => s.cast_with_options(dtype, options).map(Column::from),
+            Column::Scalar(s) => s.cast_with_options(dtype, options).map(Column::from),
+        }
+    }
     pub fn strict_cast(&self, dtype: &DataType) -> PolarsResult<Self> {
-        // @scalar-opt
-        self.as_materialized_series()
-            .strict_cast(dtype)
-            .map(Column::from)
+        match self {
+            Column::Series(s) => s.strict_cast(dtype).map(Column::from),
+            Column::Scalar(s) => s.strict_cast(dtype).map(Column::from),
+        }
     }
     pub fn cast(&self, dtype: &DataType) -> PolarsResult<Column> {
-        // @scalar-opt
-        self.as_materialized_series().cast(dtype).map(Column::from)
+        match self {
+            Column::Series(s) => s.cast(dtype).map(Column::from),
+            Column::Scalar(s) => s.cast(dtype).map(Column::from),
+        }
     }
     /// # Safety
     ///
     /// This can lead to invalid memory access in downstream code.
     pub unsafe fn cast_unchecked(&self, dtype: &DataType) -> PolarsResult<Column> {
-        // @scalar-opt
-        unsafe { self.as_materialized_series().cast_unchecked(dtype) }.map(Column::from)
+        match self {
+            Column::Series(s) => unsafe { s.cast_unchecked(dtype) }.map(Column::from),
+            Column::Scalar(s) => unsafe { s.cast_unchecked(dtype) }.map(Column::from),
+        }
     }
 
     pub fn clear(&self) -> Self {
         match self {
             Column::Series(s) => s.clear().into(),
-            Column::Scalar(s) => Self::new_scalar(s.name.clone(), s.value.clone(), 0),
+            Column::Scalar(s) => Self::new_scalar(s.name.clone(), s.scalar.clone(), 0),
         }
     }
 
@@ -326,7 +316,7 @@ impl Column {
             Column::Series(s) => s.new_from_index(index, length).into(),
             Column::Scalar(s) => {
                 if index >= s.length {
-                    Self::full_null(s.name.clone(), length, s.value.dtype())
+                    Self::full_null(s.name.clone(), length, s.scalar.dtype())
                 } else {
                     s.resize(length).into()
                 }
@@ -346,14 +336,14 @@ impl Column {
     pub fn is_null(&self) -> BooleanChunked {
         match self {
             Self::Series(s) => s.is_null(),
-            Self::Scalar(s) => BooleanChunked::full(s.name.clone(), s.value.is_null(), s.length),
+            Self::Scalar(s) => BooleanChunked::full(s.name.clone(), s.scalar.is_null(), s.length),
         }
     }
     #[inline]
     pub fn is_not_null(&self) -> BooleanChunked {
         match self {
             Self::Series(s) => s.is_not_null(),
-            Self::Scalar(s) => BooleanChunked::full(s.name.clone(), !s.value.is_null(), s.length),
+            Self::Scalar(s) => BooleanChunked::full(s.name.clone(), !s.scalar.is_null(), s.length),
         }
     }
 
@@ -376,9 +366,6 @@ impl Column {
         debug_assert!(len <= i64::MAX as usize);
         self.slice(-(len as i64), len)
     }
-    /// # Safety
-    ///
-    /// No bounds checks are performed on offset and length
     pub fn slice(&self, offset: i64, length: usize) -> Column {
         match self {
             Column::Series(s) => s.slice(offset, length).into(),
@@ -399,7 +386,7 @@ impl Column {
     pub fn null_count(&self) -> usize {
         match self {
             Self::Series(s) => s.null_count(),
-            Self::Scalar(s) if s.value.is_null() => s.length,
+            Self::Scalar(s) if s.scalar.is_null() => s.length,
             Self::Scalar(_) => 0,
         }
     }
@@ -701,6 +688,14 @@ impl Column {
     }
 
     #[cfg(feature = "zip_with")]
+    pub fn zip_with(&self, mask: &BooleanChunked, other: &Self) -> PolarsResult<Self> {
+        // @scalar-opt
+        self.as_materialized_series()
+            .zip_with(mask, other.as_materialized_series())
+            .map(Self::from)
+    }
+
+    #[cfg(feature = "zip_with")]
     pub fn zip_with_same_type(
         &self,
         mask: &ChunkedArray<BooleanType>,
@@ -798,14 +793,6 @@ impl Column {
             .map(Self::from)
     }
 
-    #[cfg(feature = "zip_with")]
-    pub fn zip_with(&self, mask: &BooleanChunked, other: &Self) -> PolarsResult<Self> {
-        // @scalar-opt
-        self.as_materialized_series()
-            .zip_with(mask, other.as_materialized_series())
-            .map(Self::from)
-    }
-
     pub fn is_finite(&self) -> PolarsResult<BooleanChunked> {
         // @scalar-opt
         self.as_materialized_series().is_finite()
@@ -862,7 +849,7 @@ impl Column {
 
         match self {
             Column::Series(s) => s.get_unchecked(index),
-            Column::Scalar(s) => s.value.as_any_value(),
+            Column::Scalar(s) => s.scalar.as_any_value(),
         }
     }
 
@@ -947,8 +934,11 @@ impl ChunkCompare<&Column> for Column {
 
 impl Default for Column {
     fn default() -> Self {
-        // @scalar-opt
-        Column::Series(Series::default())
+        Self::new_scalar(
+            PlSmallStr::EMPTY,
+            Scalar::new(DataType::Int64, AnyValue::Null),
+            0,
+        )
     }
 }
 
@@ -988,11 +978,22 @@ impl From<ScalarColumn> for Column {
 
 impl ScalarColumn {
     #[inline]
-    pub fn new(name: PlSmallStr, value: Scalar, length: usize) -> Self {
+    pub fn new(name: PlSmallStr, scalar: Scalar, length: usize) -> Self {
         Self {
             name,
-            value,
+            scalar,
             length,
+
+            materialized: OnceLock::new(),
+        }
+    }
+
+    #[inline]
+    pub fn new_empty(name: PlSmallStr, dtype: DataType) -> Self {
+        Self {
+            name,
+            scalar: Scalar::new(dtype, AnyValue::Null),
+            length: 0,
 
             materialized: OnceLock::new(),
         }
@@ -1012,7 +1013,7 @@ impl ScalarColumn {
 
     /// Materialize the [`ScalarColumn`] into a [`Series`].
     pub fn to_series(&self) -> Series {
-        Self::_to_series(self.name.clone(), self.value.clone(), self.length)
+        Self::_to_series(self.name.clone(), self.scalar.clone(), self.length)
     }
 
     /// Get the [`ScalarColumn`] as [`Series`]
@@ -1026,7 +1027,7 @@ impl ScalarColumn {
     pub fn take_materialized_series(self) -> Series {
         self.materialized
             .into_inner()
-            .unwrap_or_else(|| Self::_to_series(self.name, self.value, self.length))
+            .unwrap_or_else(|| Self::_to_series(self.name, self.scalar, self.length))
     }
 
     /// Take the [`ScalarColumn`] as a series with a single value.
@@ -1037,7 +1038,7 @@ impl ScalarColumn {
             Some(s) => s.head(Some(1)),
             None => Self::_to_series(
                 self.name.clone(),
-                self.value.clone(),
+                self.scalar.clone(),
                 usize::min(1, self.length),
             ),
         }
@@ -1057,10 +1058,16 @@ impl ScalarColumn {
     /// Resize the [`ScalarColumn`] to new `length`.
     ///
     /// This reuses the materialized [`Series`], if `length <= self.length`.
+    ///
+    /// # Panics
+    ///
+    /// This panics if `self.length == 0`.
     pub fn resize(&self, length: usize) -> ScalarColumn {
+        assert_ne!(self.length, 0);
+
         let mut sliced = Self {
             name: self.name.clone(),
-            value: self.value.clone(),
+            scalar: self.scalar.clone(),
             length,
             materialized: OnceLock::new(),
         };
@@ -1075,8 +1082,93 @@ impl ScalarColumn {
         sliced
     }
 
+    pub fn cast_with_options(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Self> {
+        // @NOTE: We expect that when casting the materialized series mostly does not need change
+        // the physical array. Therefore, we try to cast the entire materialized array if it is
+        // available.
+
+        match self.materialized.get() {
+            Some(s) => {
+                let materialized = s.cast_with_options(dtype, options)?;
+                assert_eq!(self.length, materialized.len());
+
+                let mut casted = if materialized.len() == 0 {
+                    Self::new_empty(materialized.name().clone(), materialized.dtype().clone())
+                } else {
+                    // SAFETY: Just did bounds check
+                    let scalar = unsafe { materialized.get_unchecked(0) }.into_static()?;
+                    Self::new(
+                        materialized.name().clone(),
+                        Scalar::new(materialized.dtype().clone(), scalar),
+                        self.length,
+                    )
+                };
+                casted.materialized = OnceLock::from(materialized);
+                Ok(casted)
+            },
+            None => {
+                let s = self
+                    .as_single_value_series()
+                    .cast_with_options(dtype, options)?;
+                assert_eq!(1, s.len());
+
+                if self.length == 0 {
+                    Ok(Self::new_empty(s.name().clone(), s.dtype().clone()))
+                } else {
+                    Self::from_single_value_series(s, self.length)
+                }
+            },
+        }
+    }
+
+    pub fn strict_cast(&self, dtype: &DataType) -> PolarsResult<Self> {
+        self.cast_with_options(dtype, CastOptions::Strict)
+    }
+    pub fn cast(&self, dtype: &DataType) -> PolarsResult<Self> {
+        self.cast_with_options(dtype, CastOptions::NonStrict)
+    }
+    /// # Safety
+    ///
+    /// This can lead to invalid memory access in downstream code.
+    pub unsafe fn cast_unchecked(&self, dtype: &DataType) -> PolarsResult<Self> {
+        // @NOTE: We expect that when casting the materialized series mostly does not need change
+        // the physical array. Therefore, we try to cast the entire materialized array if it is
+        // available.
+
+        match self.materialized.get() {
+            Some(s) => {
+                let materialized = s.cast_unchecked(dtype)?;
+                assert_eq!(self.length, materialized.len());
+
+                let mut casted = if materialized.len() == 0 {
+                    Self::new_empty(materialized.name().clone(), materialized.dtype().clone())
+                } else {
+                    // SAFETY: Just did bounds check
+                    let scalar = unsafe { materialized.get_unchecked(0) }.into_static()?;
+                    Self::new(
+                        materialized.name().clone(),
+                        Scalar::new(materialized.dtype().clone(), scalar),
+                        self.length,
+                    )
+                };
+                casted.materialized = OnceLock::from(materialized);
+                Ok(casted)
+            },
+            None => {
+                let s = self.as_single_value_series().cast_unchecked(dtype)?;
+                assert_eq!(1, s.len());
+
+                if self.length == 0 {
+                    Ok(Self::new_empty(s.name().clone(), s.dtype().clone()))
+                } else {
+                    Self::from_single_value_series(s, self.length)
+                }
+            },
+        }
+    }
+
     pub fn has_nulls(&self) -> bool {
-        self.length != 0 && self.value.is_null()
+        self.length != 0 && self.scalar.is_null()
     }
 }
 

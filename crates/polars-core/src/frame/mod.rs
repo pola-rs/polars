@@ -174,10 +174,12 @@ pub struct DataFrame {
 }
 
 impl DataFrame {
+    #[inline]
     pub fn materialized_column_iter(&self) -> impl ExactSizeIterator<Item = &Series> {
         self.columns.iter().map(Column::as_materialized_series)
     }
 
+    #[inline]
     pub fn par_materialized_column_iter(&self) -> impl ParallelIterator<Item = &Series> {
         self.columns.par_iter().map(Column::as_materialized_series)
     }
