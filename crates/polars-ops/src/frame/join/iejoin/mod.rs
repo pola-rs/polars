@@ -9,7 +9,7 @@ use polars_core::chunked_array::ChunkedArray;
 use polars_core::datatypes::{IdxCa, NumericNative, PolarsNumericType};
 use polars_core::frame::DataFrame;
 use polars_core::prelude::*;
-//use polars_core::series::IsSorted;
+use polars_core::series::IsSorted;
 use polars_core::utils::{_set_partition_size, split};
 use polars_core::{with_match_physical_numeric_polars_type, POOL};
 use polars_error::{polars_err, PolarsResult};
@@ -132,8 +132,8 @@ fn ie_join_impl_t<T: PolarsNumericType>(
 
 fn piecewise_merge_join_impl_t<T, P>(
     slice: Option<(i64, usize)>,
-    left_order: &[IdxSize],
-    right_order: &[IdxSize],
+    left_order: Option<&[IdxSize]>,
+    right_order: Option<&[IdxSize]>,
     left_ordered: Series,
     right_ordered: Series,
     mut pred: P,
@@ -142,9 +142,6 @@ where
     T: PolarsNumericType,
     P: FnMut(&T::Native, &T::Native) -> bool,
 {
-    debug_assert!(left_order.len() == left_ordered.len());
-    debug_assert!(right_order.len() == right_ordered.len());
-
     let slice_end = slice_end_index(slice);
 
     let mut left_row_idx: Vec<IdxSize> = vec![];
@@ -153,9 +150,14 @@ where
     let left_ca: &ChunkedArray<T> = left_ordered.as_ref().as_ref();
     let right_ca: &ChunkedArray<T> = right_ordered.as_ref().as_ref();
 
+    debug_assert!(left_order.is_none_or(|order| order.len() == left_ca.len()));
+    debug_assert!(right_order.is_none_or(|order| order.len() == right_ca.len()));
+
+    let mut left_idx = 0;
     let mut right_idx = 0;
     let mut match_count = 0;
-    for (left_idx, left_row) in left_order.iter().enumerate() {
+
+    while left_idx < left_ca.len() {
         debug_assert!(left_ca.get(left_idx).is_some());
         let left_val = unsafe { left_ca.value_unchecked(left_idx) };
         while right_idx < right_ca.len() {
@@ -164,13 +166,21 @@ where
             if pred(&left_val, &right_val) {
                 // If the predicate is true, then it will also be true for all
                 // remaining rows from the right side.
-                let right_end_idx = match slice_end {
-                    None => right_order.len(),
-                    Some(end) => min(right_order.len(), (end as usize) - match_count + right_idx),
+                let left_row = match left_order {
+                    None => left_idx as IdxSize,
+                    Some(order) => order[left_idx],
                 };
-                for right_row in right_order[right_idx..right_end_idx].iter() {
-                    left_row_idx.push(*left_row);
-                    right_row_idx.push(*right_row);
+                let right_end_idx = match slice_end {
+                    None => right_ca.len(),
+                    Some(end) => min(right_ca.len(), (end as usize) - match_count + right_idx),
+                };
+                for included_right_row_idx in right_idx..right_end_idx {
+                    let right_row = match right_order {
+                        None => included_right_row_idx as IdxSize,
+                        Some(order) => order[included_right_row_idx],
+                    };
+                    left_row_idx.push(left_row);
+                    right_row_idx.push(right_row);
                 }
                 match_count += right_end_idx - right_idx;
                 break;
@@ -186,6 +196,7 @@ where
         if slice_end.is_some_and(|end| match_count >= end as usize) {
             break;
         }
+        left_idx += 1;
     }
 
     Ok((left_row_idx, right_row_idx))
@@ -267,8 +278,7 @@ pub(super) fn iejoin_par(
         };
 
         if include_block {
-            //let (mut l, mut r) = unsafe {
-            let (l, r) = unsafe {
+            let (mut l, mut r) = unsafe {
                 (
                     selected_left
                         .iter()
@@ -280,13 +290,14 @@ pub(super) fn iejoin_par(
                         .collect_vec(),
                 )
             };
-            //let sorted_flag = if l1_descending {
-            //    IsSorted::Descending
-            //} else {
-            //    IsSorted::Ascending
-            //};
-            //l[0].set_sorted_flag(sorted_flag);
-            //r[0].set_sorted_flag(sorted_flag);
+            let sorted_flag = if l1_descending {
+                IsSorted::Descending
+            } else {
+                IsSorted::Ascending
+            };
+            // We sorted using the first series
+            l[0].set_sorted_flag(sorted_flag);
+            r[0].set_sorted_flag(sorted_flag);
 
             // Compute the row indexes
             let (idx_l, idx_r) = if options.operator2.is_some() {
@@ -491,6 +502,8 @@ fn piecewise_merge_join_tuples(
     // be false for the same RHS row and all following LHS rows.
     // The right side is sorted such that if the condition is true then it is also
     // true for the same LHS row and all following RHS rows.
+    // The desired sort order should match the l1 order used in iejoin_par
+    // so we don't need to re-sort slices when doing a parallel join.
     let descending = matches!(op, InequalityOperator::Gt | InequalityOperator::GtEq);
 
     let left = selected_left[0].to_physical_repr().into_owned();
@@ -500,28 +513,50 @@ fn piecewise_merge_join_tuples(
         right = right.cast(left.dtype())?;
     }
 
-    // TODO: Skip sorting if global sort was applied for parallel join?
+    fn get_sorted(series: Series, descending: bool) -> (Series, Option<IdxCa>) {
+        let expected_flag = if descending {
+            IsSorted::Descending
+        } else {
+            IsSorted::Ascending
+        };
+        if (series.is_sorted_flag() == expected_flag || series.len() <= 1) && !series.has_nulls() {
+            // Fast path, no need to re-sort
+            (series, None)
+        } else {
+            let sort_options = SortOptions::default()
+                .with_nulls_last(false)
+                .with_order_descending(descending);
 
-    let sort_options = SortOptions::default()
-        .with_nulls_last(false)
-        .with_order_descending(descending);
+            // Get order and slice to ignore any null values, which cannot be match results
+            let order = series
+                .arg_sort(sort_options)
+                .slice(
+                    series.null_count() as i64,
+                    series.len() - series.null_count(),
+                )
+                .rechunk();
+            let ordered = unsafe { series.take_unchecked(&order) };
+            (ordered, Some(order))
+        }
+    }
 
-    // Get order and slice to ignore any null values, which cannot be match results
-    let left_order = left
-        .arg_sort(sort_options)
-        .slice(left.null_count() as i64, left.len() - left.null_count())
-        .rechunk();
-    let left_ordered = unsafe { left.take_unchecked(&left_order) };
-    let left_order = left_order.downcast_get(0).unwrap().values().as_slice();
+    let (left_ordered, left_order) = get_sorted(left, descending);
+    debug_assert!(left_order
+        .as_ref()
+        .is_none_or(|order| order.chunks().len() == 1));
+    let left_order = left_order
+        .as_ref()
+        .map(|order| order.downcast_get(0).unwrap().values().as_slice());
 
-    let right_order = right
-        .arg_sort(sort_options)
-        .slice(right.null_count() as i64, right.len() - right.null_count())
-        .rechunk();
-    let right_ordered = unsafe { right.take_unchecked(&right_order) };
-    let right_order = right_order.downcast_get(0).unwrap().values().as_slice();
+    let (right_ordered, right_order) = get_sorted(right, descending);
+    debug_assert!(right_order
+        .as_ref()
+        .is_none_or(|order| order.chunks().len() == 1));
+    let right_order = right_order
+        .as_ref()
+        .map(|order| order.downcast_get(0).unwrap().values().as_slice());
 
-    let (left_row_idx, right_row_idx) = with_match_physical_numeric_polars_type!(left.dtype(), |$T| {
+    let (left_row_idx, right_row_idx) = with_match_physical_numeric_polars_type!(left_ordered.dtype(), |$T| {
         match op {
             InequalityOperator::Lt => piecewise_merge_join_impl_t::<$T, _>(
                 slice,
