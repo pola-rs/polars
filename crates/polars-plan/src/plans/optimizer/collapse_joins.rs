@@ -12,7 +12,7 @@ use polars_ops::frame::{JoinCoalesce, JoinType};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 
-use super::{aexpr_to_leaf_names_iter, AExpr, IR};
+use super::{aexpr_to_leaf_names_iter, AExpr, JoinOptions, IR};
 use crate::dsl::Operator;
 use crate::plans::{ExprIR, OutputName};
 
@@ -169,8 +169,6 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &mut Arena<AEx
     // - remaining predicates
     #[cfg(feature = "iejoin")]
     let mut ie_op = Vec::new();
-    #[cfg(feature = "iejoin")]
-    let mut ie_exprs = Vec::new();
     let mut remaining_predicates = Vec::new();
 
     let mut ir_stack = Vec::with_capacity(16);
@@ -215,7 +213,6 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &mut Arena<AEx
                 #[cfg(feature = "iejoin")]
                 {
                     ie_op.clear();
-                    ie_exprs.clear();
                 }
 
                 remaining_predicates.clear();
@@ -314,7 +311,6 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &mut Arena<AEx
                                     ie_left_on.push(ExprIR::from_node(left, expr_arena));
                                     ie_right_on.push(ExprIR::from_node(right, expr_arena));
                                     ie_op.push(ie_op_);
-                                    ie_exprs.push(node);
                                 }
                             } else {
                                 remaining_predicates.push(node);
@@ -326,112 +322,39 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &mut Arena<AEx
                     }
                 }
 
+                let mut can_simplify_join = false;
+
                 if !eq_left_on.is_empty() {
-                    let mut options = options.as_ref().clone();
-                    options.args.how = JoinType::Inner;
-                    // We need to make sure not to delete any columns
-                    options.args.coalesce = JoinCoalesce::KeepColumns;
-
-                    let input_left = *input_left;
-                    let input_right = *input_right;
-                    let schema = schema.clone();
-
                     remove_suffix(&mut eq_right_on, expr_arena, right_schema, suffix.as_str());
-
-                    let new_join = IR::Join {
-                        input_left,
-                        input_right,
-                        schema,
-                        left_on: eq_left_on,
-                        right_on: eq_right_on,
-                        options: Arc::new(options),
-                    };
-
-                    lp_arena.replace(current, new_join);
-
-                    #[allow(unused_mut)]
-                    let mut remaining_predicates_sum = remaining_predicates
-                        .iter()
-                        .copied()
-                        .reduce(|left, right| and_expr(left, right, expr_arena));
-
-                    #[cfg(feature = "iejoin")]
-                    {
-                        let ie_sum = ie_exprs
-                            .iter()
-                            .copied()
-                            .reduce(|left, right| and_expr(left, right, expr_arena));
-
-                        remaining_predicates_sum = match (remaining_predicates_sum, ie_sum) {
-                            (None, None) => None,
-                            (Some(l), Some(r)) => Some(and_expr(l, r, expr_arena)),
-                            (Some(l), None) | (None, Some(l)) => Some(l),
-                        };
-                    }
-
-                    if let Some(sum_predicate) = remaining_predicates_sum {
-                        let IR::Filter { input, predicate } = lp_arena.get_mut(predicates[0].0)
-                        else {
-                            unreachable!();
-                        };
-
-                        *input = current;
-                        predicate.set_node(sum_predicate);
-                    } else {
-                        // There are no predicates anymore. Just put the JOIN at the filters
-                        // position.
-                        lp_arena.swap(current, predicates[0].0);
-                    }
+                    can_simplify_join = true;
                 } else {
                     #[cfg(feature = "iejoin")]
-                    if ie_exprs.len() >= 2 {
-                        debug_assert_eq!(ie_exprs.len(), 2);
-
-                        // Do an IEjoin.
-                        let mut options = options.as_ref().clone();
-                        options.args.how = JoinType::IEJoin(IEJoinOptions {
-                            operator1: ie_op[0],
-                            operator2: ie_op[1],
-                        });
-                        // We need to make sure not to delete any columns
-                        options.args.coalesce = JoinCoalesce::KeepColumns;
-
-                        let input_left = *input_left;
-                        let input_right = *input_right;
-                        let schema = schema.clone();
-
+                    if !ie_op.is_empty() {
                         remove_suffix(&mut ie_right_on, expr_arena, right_schema, suffix.as_str());
-
-                        let new_join = IR::Join {
-                            input_left,
-                            input_right,
-                            schema,
-                            left_on: ie_left_on,
-                            right_on: ie_right_on,
-                            options: Arc::new(options),
-                        };
-
-                        lp_arena.replace(current, new_join);
-
-                        let remaining_predicates_sum = remaining_predicates
-                            .iter()
-                            .copied()
-                            .reduce(|left, right| and_expr(left, right, expr_arena));
-
-                        if let Some(predicates_sum) = remaining_predicates_sum {
-                            let IR::Filter { input, predicate } = lp_arena.get_mut(predicates[0].0)
-                            else {
-                                unreachable!();
-                            };
-
-                            *input = current;
-                            predicate.set_node(predicates_sum);
-                        } else {
-                            // There are no predicates anymore. Just put the JOIN at the filters
-                            // position.
-                            lp_arena.swap(current, predicates[0].0);
-                        }
+                        can_simplify_join = true;
                     }
+                }
+
+                if can_simplify_join {
+                    let new_join = insert_fitting_join(
+                        eq_left_on,
+                        eq_right_on,
+                        #[cfg(feature = "iejoin")]
+                        ie_left_on,
+                        #[cfg(feature = "iejoin")]
+                        ie_right_on,
+                        #[cfg(feature = "iejoin")]
+                        &ie_op,
+                        &remaining_predicates,
+                        lp_arena,
+                        expr_arena,
+                        options.as_ref().clone(),
+                        *input_left,
+                        *input_right,
+                        schema.clone(),
+                    );
+
+                    lp_arena.swap(predicates[0].0, new_join);
                 }
 
                 predicates.clear();
@@ -440,5 +363,109 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &mut Arena<AEx
                 predicates.clear();
             },
         }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn insert_fitting_join(
+    eq_left_on: Vec<ExprIR>,
+    eq_right_on: Vec<ExprIR>,
+    #[cfg(feature = "iejoin")] ie_left_on: Vec<ExprIR>,
+    #[cfg(feature = "iejoin")] ie_right_on: Vec<ExprIR>,
+    #[cfg(feature = "iejoin")] ie_op: &[InequalityOperator],
+    remaining_predicates: &[Node],
+    lp_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+    mut options: JoinOptions,
+    input_left: Node,
+    input_right: Node,
+    schema: SchemaRef,
+) -> Node {
+    debug_assert_eq!(eq_left_on.len(), eq_right_on.len());
+    debug_assert_eq!(ie_op.len(), ie_left_on.len());
+    debug_assert_eq!(ie_left_on.len(), ie_right_on.len());
+    debug_assert!(ie_op.len() <= 2);
+    debug_assert_eq!(options.args.how, JoinType::Cross);
+
+    let remaining_predicates = remaining_predicates
+        .iter()
+        .copied()
+        .reduce(|left, right| and_expr(left, right, expr_arena));
+
+    let (left_on, right_on, remaining_predicates) = match () {
+        _ if !eq_left_on.is_empty() => {
+            options.args.how = JoinType::Inner;
+            // We need to make sure not to delete any columns
+            options.args.coalesce = JoinCoalesce::KeepColumns;
+
+            #[cfg(feature = "iejoin")]
+            let remaining_predicates = ie_left_on.into_iter().zip(ie_op).zip(ie_right_on).fold(
+                remaining_predicates,
+                |acc, ((left, op), right)| {
+                    let e = expr_arena.add(AExpr::BinaryExpr {
+                        left: left.node(),
+                        op: (*op).into(),
+                        right: right.node(),
+                    });
+                    Some(acc.map_or(e, |acc| and_expr(acc, e, expr_arena)))
+                },
+            );
+
+            (eq_left_on, eq_right_on, remaining_predicates)
+        },
+        #[cfg(feature = "iejoin")]
+        _ if ie_op.len() >= 2 => {
+            debug_assert_eq!(ie_op.len(), 2);
+
+            // Do an IEjoin.
+            options.args.how = JoinType::IEJoin(IEJoinOptions {
+                operator1: ie_op[0],
+                operator2: ie_op[1],
+            });
+            // We need to make sure not to delete any columns
+            options.args.coalesce = JoinCoalesce::KeepColumns;
+
+            (ie_left_on, ie_right_on, remaining_predicates)
+        },
+        _ => {
+            options.args.how = JoinType::Cross;
+            // We need to make sure not to delete any columns
+            options.args.coalesce = JoinCoalesce::KeepColumns;
+
+            #[cfg(feature = "iejoin")]
+            let remaining_predicates = ie_left_on.into_iter().zip(ie_op).zip(ie_right_on).fold(
+                remaining_predicates,
+                |acc, ((left, op), right)| {
+                    let e = expr_arena.add(AExpr::BinaryExpr {
+                        left: left.node(),
+                        op: (*op).into(),
+                        right: right.node(),
+                    });
+                    Some(acc.map_or(e, |acc| and_expr(acc, e, expr_arena)))
+                },
+            );
+
+            (Vec::new(), Vec::new(), remaining_predicates)
+        },
+    };
+
+    let join_ir = IR::Join {
+        input_left,
+        input_right,
+        schema,
+        left_on,
+        right_on,
+        options: Arc::new(options),
+    };
+
+    let join_node = lp_arena.add(join_ir);
+
+    if let Some(predicate) = remaining_predicates {
+        lp_arena.add(IR::Filter {
+            input: join_node,
+            predicate: ExprIR::from_node(predicate, &*expr_arena),
+        })
+    } else {
+        join_node
     }
 }
