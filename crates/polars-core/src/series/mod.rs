@@ -802,20 +802,7 @@ impl Series {
 
     // used for formatting
     pub fn str_value(&self, index: usize) -> PolarsResult<Cow<str>> {
-        let out = match self.0.get(index)? {
-            AnyValue::String(s) => Cow::Borrowed(s),
-            AnyValue::Null => Cow::Borrowed("null"),
-            #[cfg(feature = "dtype-categorical")]
-            AnyValue::Categorical(idx, rev, arr) | AnyValue::Enum(idx, rev, arr) => {
-                if arr.is_null() {
-                    Cow::Borrowed(rev.get(idx))
-                } else {
-                    unsafe { Cow::Borrowed(arr.deref_unchecked().value(idx as usize)) }
-                }
-            },
-            av => Cow::Owned(format!("{av}")),
-        };
-        Ok(out)
+        Ok(self.0.get(index)?.str_value())
     }
     /// Get the head of the Series.
     pub fn head(&self, length: Option<usize>) -> Series {

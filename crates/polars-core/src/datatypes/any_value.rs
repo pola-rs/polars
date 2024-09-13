@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 #[cfg(feature = "dtype-struct")]
 use arrow::legacy::trusted_len::TrustedLenPush;
 use arrow::types::PrimitiveType;
@@ -701,6 +703,23 @@ impl<'a> AnyValue<'a> {
             #[cfg(feature = "bigidx")]
             Self::UInt64(v) => *v,
             _ => panic!("expected index type found {self:?}"),
+        }
+    }
+
+    pub fn str_value(&self) -> Cow<'a, str> {
+        match self {
+            Self::String(s) => Cow::Borrowed(s),
+            Self::StringOwned(s) => Cow::Owned(s.to_string()),
+            Self::Null => Cow::Borrowed("null"),
+            #[cfg(feature = "dtype-categorical")]
+            Self::Categorical(idx, rev, arr) | AnyValue::Enum(idx, rev, arr) => {
+                if arr.is_null() {
+                    Cow::Borrowed(rev.get(*idx))
+                } else {
+                    unsafe { Cow::Borrowed(arr.deref_unchecked().value(*idx as usize)) }
+                }
+            },
+            av => Cow::Owned(av.to_string()),
         }
     }
 }
