@@ -14,7 +14,7 @@ env:
 
 jobs:
   main:
-    if: ${{ github.event.label.name == 'performance' }}
+    if: ${{ github.event.label.name == 'needs-bench' }}
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
