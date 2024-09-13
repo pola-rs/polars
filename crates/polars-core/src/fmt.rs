@@ -1042,7 +1042,9 @@ impl Display for AnyValue<'_> {
             #[cfg(feature = "dtype-datetime")]
             AnyValue::Datetime(v, tu, tz) => fmt_datetime(f, *v, *tu, *tz),
             #[cfg(feature = "dtype-datetime")]
-            AnyValue::DatetimeOwned(v, tu, tz) => fmt_datetime(f, *v, *tu, tz.as_ref().map(|v| v.as_ref())),
+            AnyValue::DatetimeOwned(v, tu, tz) => {
+                fmt_datetime(f, *v, *tu, tz.as_ref().map(|v| v.as_ref()))
+            },
             #[cfg(feature = "dtype-duration")]
             AnyValue::Duration(v, tu) => match tu {
                 TimeUnit::Nanoseconds => fmt_duration_ns(f, *v),

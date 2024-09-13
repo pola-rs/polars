@@ -945,9 +945,13 @@ impl<'a> AnyValue<'a> {
             AnyValue::BinaryOwned(data) => AnyValue::Binary(data),
             AnyValue::StringOwned(data) => AnyValue::String(data.as_str()),
             #[cfg(feature = "dtype-datetime")]
-            AnyValue::DatetimeOwned(v, tu, tz) => AnyValue::Datetime(*v, *tu, tz.as_ref().map(AsRef::as_ref)),
+            AnyValue::DatetimeOwned(v, tu, tz) => {
+                AnyValue::Datetime(*v, *tu, tz.as_ref().map(AsRef::as_ref))
+            },
             #[cfg(feature = "dtype-categorical")]
-            AnyValue::CategoricalOwned(v, rev, arr) => AnyValue::Categorical(*v, rev.as_ref(), *arr),
+            AnyValue::CategoricalOwned(v, rev, arr) => {
+                AnyValue::Categorical(*v, rev.as_ref(), *arr)
+            },
             #[cfg(feature = "dtype-categorical")]
             AnyValue::EnumOwned(v, rev, arr) => AnyValue::Enum(*v, rev.as_ref(), *arr),
             av => av.clone(),
@@ -1078,9 +1082,13 @@ impl AnyValue<'_> {
             #[cfg(feature = "object")]
             (l, ObjectOwned(r)) => *l == AnyValue::Object(&*r.0),
             #[cfg(feature = "dtype-datetime")]
-            (DatetimeOwned(lv, ltu, ltz), r) => Datetime(*lv, *ltu, ltz.as_ref().map(|v| v.as_ref())) == *r,
+            (DatetimeOwned(lv, ltu, ltz), r) => {
+                Datetime(*lv, *ltu, ltz.as_ref().map(|v| v.as_ref())) == *r
+            },
             #[cfg(feature = "dtype-datetime")]
-            (l, DatetimeOwned(rv, rtu, rtz)) => *l == Datetime(*rv, *rtu, rtz.as_ref().map(|v| v.as_ref())),
+            (l, DatetimeOwned(rv, rtu, rtz)) => {
+                *l == Datetime(*rv, *rtu, rtz.as_ref().map(|v| v.as_ref()))
+            },
             #[cfg(feature = "dtype-categorical")]
             (CategoricalOwned(lv, lrev, larr), r) => Categorical(*lv, lrev.as_ref(), *larr) == *r,
             #[cfg(feature = "dtype-categorical")]
@@ -1220,13 +1228,21 @@ impl PartialOrd for AnyValue<'_> {
             #[cfg(feature = "object")]
             (l, ObjectOwned(r)) => l.partial_cmp(&AnyValue::Object(&*r.0)),
             #[cfg(feature = "dtype-datetime")]
-            (DatetimeOwned(lv, ltu, ltz), r) => Datetime(*lv, *ltu, ltz.as_ref().map(|v| v.as_ref())).partial_cmp(r),
+            (DatetimeOwned(lv, ltu, ltz), r) => {
+                Datetime(*lv, *ltu, ltz.as_ref().map(|v| v.as_ref())).partial_cmp(r)
+            },
             #[cfg(feature = "dtype-datetime")]
-            (l, DatetimeOwned(rv, rtu, rtz)) => l.partial_cmp(&Datetime(*rv, *rtu, rtz.as_ref().map(|v| v.as_ref()))),
+            (l, DatetimeOwned(rv, rtu, rtz)) => {
+                l.partial_cmp(&Datetime(*rv, *rtu, rtz.as_ref().map(|v| v.as_ref())))
+            },
             #[cfg(feature = "dtype-categorical")]
-            (CategoricalOwned(lv, lrev, larr), r) => Categorical(*lv, lrev.as_ref(), *larr).partial_cmp(r),
+            (CategoricalOwned(lv, lrev, larr), r) => {
+                Categorical(*lv, lrev.as_ref(), *larr).partial_cmp(r)
+            },
             #[cfg(feature = "dtype-categorical")]
-            (l, CategoricalOwned(rv, rrev, rarr)) => l.partial_cmp(&Categorical(*rv, rrev.as_ref(), *rarr)),
+            (l, CategoricalOwned(rv, rrev, rarr)) => {
+                l.partial_cmp(&Categorical(*rv, rrev.as_ref(), *rarr))
+            },
             #[cfg(feature = "dtype-categorical")]
             (EnumOwned(lv, lrev, larr), r) => Enum(*lv, lrev.as_ref(), *larr).partial_cmp(r),
             #[cfg(feature = "dtype-categorical")]

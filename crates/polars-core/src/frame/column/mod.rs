@@ -787,10 +787,20 @@ impl Column {
     }
 
     pub fn extend_constant(&self, value: AnyValue, n: usize) -> PolarsResult<Self> {
-        // @scalar-opt
-        self.as_materialized_series()
-            .extend_constant(value, n)
-            .map(Self::from)
+        self.as_materialized_series().extend_constant(value, n).map(Column::from)
+        // @scalar-opt: This currently fails because Scalar::partial_cmp cannot deal with Nulls
+        // 
+        // match self {
+        //     Column::Series(s) => s.extend_constant(value, n).map(Column::from),
+        //     Column::Scalar(s) => {
+        //         if s.scalar.as_any_value() == value && s.len() > 0 {
+        //             Ok(s.resize(s.len() + n).into())
+        //         } else {
+        //             // @scalar-opt
+        //             s.as_materialized_series().extend_constant(value, n).map(Column::from)
+        //         }
+        //     },
+        // }
     }
 
     pub fn is_finite(&self) -> PolarsResult<BooleanChunked> {
@@ -869,6 +879,33 @@ impl Column {
 
     pub(crate) fn str_value(&self, index: usize) -> PolarsResult<Cow<str>> {
         Ok(self.get(index)?.str_value())
+    }
+
+    pub fn max_reduce(&self) -> PolarsResult<Scalar> {
+        match self {
+            Column::Series(s) => s.max_reduce(),
+            Column::Scalar(s) => {
+                // We don't really want to deal with handling the full semantics here so we just
+                // cast to a single value series. This is a tiny bit wasteful, but probably fine.
+                s.as_single_value_series().max_reduce()
+            },
+        }
+    }
+
+    pub fn min_reduce(&self) -> PolarsResult<Scalar> {
+        match self {
+            Column::Series(s) => s.min_reduce(),
+            Column::Scalar(s) => {
+                // We don't really want to deal with handling the full semantics here so we just
+                // cast to a single value series. This is a tiny bit wasteful, but probably fine.
+                s.as_single_value_series().min_reduce()
+            },
+        }
+    }
+
+    pub(crate) fn estimated_size(&self) -> usize {
+        // @scalar-opt
+        self.as_materialized_series().estimated_size()
     }
 }
 
@@ -997,6 +1034,22 @@ impl ScalarColumn {
 
             materialized: OnceLock::new(),
         }
+    }
+
+    pub fn name(&self) -> &PlSmallStr {
+        &self.name
+    }
+
+    pub fn dtype(&self) -> &DataType {
+        self.scalar.dtype()
+    }
+
+    pub fn len(&self) -> usize {
+        self.length
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.length == 0
     }
 
     fn _to_series(name: PlSmallStr, value: Scalar, length: usize) -> Series {
