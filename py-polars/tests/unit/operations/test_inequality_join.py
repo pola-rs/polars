@@ -10,6 +10,7 @@ from hypothesis import given
 
 import polars as pl
 from polars.testing import assert_frame_equal
+from polars.testing.parametric.strategies import series
 
 if TYPE_CHECKING:
     from hypothesis.strategies import DrawFn, SearchStrategy
@@ -482,3 +483,68 @@ def test_ie_join_use_keys_multiple() -> None:
         "b": [2, 2, 2],
         "x_right": [1, 3, 7],
     }
+
+
+@given(
+    left=series(
+        dtype=pl.Int64,
+        strategy=st.integers(min_value=0, max_value=10) | st.none(),
+        max_size=10,
+    ),
+    right=series(
+        dtype=pl.Int64,
+        strategy=st.integers(min_value=-10, max_value=10) | st.none(),
+        max_size=10,
+    ),
+    op=operators(),
+)
+def test_single_inequality(left: pl.Series, right: pl.Series, op: str) -> None:
+    expr = _inequality_expression("x", op, "y")
+
+    left_df = pl.DataFrame(
+        {
+            "id": np.arange(len(left)),
+            "x": left,
+        }
+    )
+    right_df = pl.DataFrame(
+        {
+            "id": np.arange(len(right)),
+            "y": right,
+        }
+    )
+
+    actual = left_df.join_where(right_df, expr)
+
+    expected = left_df.join(right_df, how="cross").filter(expr)
+    assert_frame_equal(actual, expected, check_row_order=False, check_exact=True)
+
+
+@given(
+    offset=st.integers(-6, 5),
+    length=st.integers(0, 6),
+)
+def test_single_inequality_with_slice(offset: int, length: int) -> None:
+    left = pl.DataFrame(
+        {
+            "id": list(range(8)),
+            "x": [0, 1, 1, 2, 3, 5, 5, 7],
+        }
+    )
+    right = pl.DataFrame(
+        {
+            "id": list(range(6)),
+            "y": [-1, 2, 4, 4, 6, 9],
+        }
+    )
+
+    expr = pl.col("x") > pl.col("y")
+    actual = left.join_where(right, expr).slice(offset, length)
+
+    expected_full = left.join(right, how="cross").filter(expr)
+
+    assert len(actual) == len(expected_full.slice(offset, length))
+
+    expected_rows = set(expected_full.iter_rows())
+    for row in actual.iter_rows():
+        assert row in expected_rows, f"{row} not in expected rows"
