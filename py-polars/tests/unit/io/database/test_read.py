@@ -108,7 +108,7 @@ class MockResultSet:
         batched: bool,
         exact_batch_size: bool,
         repeat_batch_calls: bool = False,
-    ):
+    ) -> None:
         self.test_data = test_data
         self.repeat_batched_calls = repeat_batch_calls
         self.exact_batch_size = exact_batch_size

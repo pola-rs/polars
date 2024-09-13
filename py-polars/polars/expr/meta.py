@@ -20,7 +20,7 @@ class ExprMetaNameSpace:
 
     _accessor = "meta"
 
-    def __init__(self, expr: Expr):
+    def __init__(self, expr: Expr) -> None:
         self._pyexpr = expr._pyexpr
 
     def __eq__(self, other: ExprMetaNameSpace | Expr) -> bool:  # type: ignore[override]

@@ -5,11 +5,11 @@ import runpy
 from pathlib import Path
 from typing import Iterator
 
-import matplotlib
+import matplotlib as mpl
 import pytest
 
 # Do not show plots
-matplotlib.use("Agg")
+mpl.use("Agg")
 
 # Get paths to Python code snippets
 repo_root = Path(__file__).parent.parent.parent.parent

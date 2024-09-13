@@ -30,7 +30,7 @@ class DateTimeNameSpace:
 
     _accessor = "dt"
 
-    def __init__(self, series: Series):
+    def __init__(self, series: Series) -> None:
         self._s: PySeries = series._s
 
     def __getitem__(self, item: int) -> dt.date | dt.datetime | dt.timedelta:

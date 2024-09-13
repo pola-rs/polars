@@ -121,7 +121,7 @@ class PolarsDataset(TensorDataset):  # type: ignore[misc]
         *,
         label: str | Expr | Sequence[str | Expr] | None = None,
         features: str | Expr | Sequence[str | Expr] | None = None,
-    ):
+    ) -> None:
         issue_unstable_warning("`PolarsDataset` is considered unstable.")
         if isinstance(label, (str, Expr)):
             label = [label]

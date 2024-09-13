@@ -205,7 +205,7 @@ def linkcode_resolve(domain: str, info: dict[str, Any]) -> str | None:
                 # Accessing deprecated objects will generate noisy warnings
                 warnings.simplefilter("ignore", FutureWarning)
                 obj = getattr(obj, part)
-        except AttributeError:
+        except AttributeError:  # noqa: PERF203
             return None
 
     try:

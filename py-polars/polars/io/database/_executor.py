@@ -22,6 +22,7 @@ from polars.io.database._utils import _run_async
 
 if TYPE_CHECKING:
     import sys
+    from collections.abc import Iterator
     from types import TracebackType
 
     import pyarrow as pa
@@ -70,7 +71,7 @@ class CloseAfterFrameIter:
         self._iter_frames = frames
         self._cursor = cursor
 
-    def __iter__(self) -> Iterable[DataFrame]:
+    def __iter__(self) -> Iterator[DataFrame]:
         yield from self._iter_frames
 
         if hasattr(self._cursor, "close"):
@@ -546,7 +547,7 @@ class ConnectionExecutor:
                 if defer_cursor_close:
                     frame = (
                         df
-                        for df in CloseAfterFrameIter(  # type: ignore[attr-defined]
+                        for df in CloseAfterFrameIter(
                             frame,
                             cursor=self.result,
                         )
