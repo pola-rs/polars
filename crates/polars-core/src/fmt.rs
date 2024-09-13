@@ -907,6 +907,7 @@ fn fmt_float<T: Num + NumCast>(f: &mut Formatter<'_>, width: usize, v: T) -> fmt
     }
 }
 
+#[cfg(feature = "dtype-datetime")]
 fn fmt_datetime(
     f: &mut Formatter<'_>,
     v: i64,
