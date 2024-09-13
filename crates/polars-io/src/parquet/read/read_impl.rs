@@ -291,19 +291,7 @@ fn rg_to_dfs_prefiltered(
     debug_assert_eq!(live_idx_to_col_idx.len(), num_live_columns);
     debug_assert_eq!(dead_idx_to_col_idx.len(), num_dead_columns);
 
-    enum MaskSetting {
-        Auto,
-        Pre,
-        Post,
-    }
-
-    let mask_setting =
-        std::env::var("POLARS_PQ_PREFILTERED_MASK").map_or(MaskSetting::Auto, |v| match &v[..] {
-            "auto" => MaskSetting::Auto,
-            "pre" => MaskSetting::Pre,
-            "post" => MaskSetting::Post,
-            _ => panic!("Invalid `POLARS_PQ_PREFILTERED_MASK` value '{v}'."),
-        });
+    let mask_setting = PrefilterMaskSetting::init_from_env();
 
     let dfs: Vec<Option<DataFrame>> = POOL.install(|| {
         // Set partitioned fields to prevent quadratic behavior.
@@ -381,29 +369,8 @@ fn rg_to_dfs_prefiltered(
                     return Ok(Some(df));
                 }
 
-                let prefilter_cost = matches!(mask_setting, MaskSetting::Auto)
-                    .then(|| {
-                        let num_edges = filter_mask.num_edges() as f64;
-                        let rg_len = filter_mask.len() as f64;
-
-                        // @GB: I did quite some analysis on this.
-                        //
-                        // Pre-filtered and Post-filtered can both be faster in certain scenarios.
-                        //
-                        // - Pre-filtered is faster when there is some amount of clustering or
-                        // sorting involved or if the number of values selected is small.
-                        // - Post-filtering is faster when the predicate selects a somewhat random
-                        // elements throughout the row group.
-                        //
-                        // The following is a heuristic value to try and estimate which one is
-                        // faster. Essentially, it sees how many times it needs to switch between
-                        // skipping items and collecting items and compares it against the number
-                        // of values that it will collect.
-                        //
-                        // Closer to 0: pre-filtering is probably better.
-                        // Closer to 1: post-filtering is probably better.
-                        (num_edges / rg_len).clamp(0.0, 1.0)
-                    })
+                let prefilter_cost = matches!(mask_setting, PrefilterMaskSetting::Auto)
+                    .then(|| calc_prefilter_cost(&filter_mask))
                     .unwrap_or_default();
 
                 let rg_columns = (0..num_dead_columns)
@@ -450,25 +417,13 @@ fn rg_to_dfs_prefiltered(
                             array.filter(&mask_arr)
                         };
 
-                        let array = match mask_setting {
-                            MaskSetting::Auto => {
-                                // Prefiltering is more expensive for nested types so we make the cut-off
-                                // higher.
-                                let is_nested =
-                                    schema.get_at_index(col_idx).unwrap().1.dtype.is_nested();
-
-                                // We empirically selected these numbers.
-                                let do_prefilter = (is_nested && prefilter_cost <= 0.01)
-                                    || (!is_nested && prefilter_cost <= 0.02);
-
-                                if do_prefilter {
-                                    pre()?
-                                } else {
-                                    post()?
-                                }
-                            },
-                            MaskSetting::Pre => pre()?,
-                            MaskSetting::Post => post()?,
+                        let array = if mask_setting.should_prefilter(
+                            prefilter_cost,
+                            &schema.get_at_index(col_idx).unwrap().1.dtype,
+                        ) {
+                            pre()?
+                        } else {
+                            post()?
                         };
 
                         debug_assert_eq!(array.len(), filter_mask.set_bits());
@@ -1244,6 +1199,61 @@ impl BatchedParquetIter {
                     self.current_batch.next().map(Ok)
                 },
             },
+        }
+    }
+}
+
+pub fn calc_prefilter_cost(mask: &arrow::bitmap::Bitmap) -> f64 {
+    let num_edges = mask.num_edges() as f64;
+    let rg_len = mask.len() as f64;
+
+    // @GB: I did quite some analysis on this.
+    //
+    // Pre-filtered and Post-filtered can both be faster in certain scenarios.
+    //
+    // - Pre-filtered is faster when there is some amount of clustering or
+    // sorting involved or if the number of values selected is small.
+    // - Post-filtering is faster when the predicate selects a somewhat random
+    // elements throughout the row group.
+    //
+    // The following is a heuristic value to try and estimate which one is
+    // faster. Essentially, it sees how many times it needs to switch between
+    // skipping items and collecting items and compares it against the number
+    // of values that it will collect.
+    //
+    // Closer to 0: pre-filtering is probably better.
+    // Closer to 1: post-filtering is probably better.
+    (num_edges / rg_len).clamp(0.0, 1.0)
+}
+
+pub enum PrefilterMaskSetting {
+    Auto,
+    Pre,
+    Post,
+}
+
+impl PrefilterMaskSetting {
+    pub fn init_from_env() -> Self {
+        std::env::var("POLARS_PQ_PREFILTERED_MASK").map_or(Self::Auto, |v| match &v[..] {
+            "auto" => Self::Auto,
+            "pre" => Self::Pre,
+            "post" => Self::Post,
+            _ => panic!("Invalid `POLARS_PQ_PREFILTERED_MASK` value '{v}'."),
+        })
+    }
+
+    pub fn should_prefilter(&self, prefilter_cost: f64, dtype: &ArrowDataType) -> bool {
+        match self {
+            Self::Auto => {
+                // Prefiltering is more expensive for nested types so we make the cut-off
+                // higher.
+                let is_nested = dtype.is_nested();
+
+                // We empirically selected these numbers.
+                (is_nested && prefilter_cost <= 0.01) || (!is_nested && prefilter_cost <= 0.02)
+            },
+            Self::Pre => true,
+            Self::Post => false,
         }
     }
 }

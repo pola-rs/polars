@@ -5,8 +5,11 @@ use polars_core::prelude::{
     ArrowField, ArrowSchema, BooleanChunked, ChunkFull, IdxCa, StringChunked,
 };
 use polars_core::series::{IntoSeries, IsSorted, Series};
+use polars_core::utils::arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_error::{polars_bail, PolarsResult};
 use polars_io::predicates::PhysicalIoExpr;
+use polars_io::prelude::_internal::calc_prefilter_cost;
+pub use polars_io::prelude::_internal::PrefilterMaskSetting;
 use polars_io::RowIndex;
 use polars_plan::plans::hive::HivePartitions;
 use polars_plan::plans::ScanSources;
@@ -26,7 +29,13 @@ pub(super) struct RowGroupDecoder {
     pub(super) projected_arrow_schema: Arc<ArrowSchema>,
     pub(super) row_index: Option<RowIndex>,
     pub(super) physical_predicate: Option<Arc<dyn PhysicalIoExpr>>,
-    pub(super) use_prefiltered: bool,
+    pub(super) use_prefiltered: Option<PrefilterMaskSetting>,
+    /// Indices into `projected_arrow_schema. This must be sorted.
+    pub(super) predicate_arrow_field_indices: Vec<usize>,
+    /// Indices into `projected_arrow_schema. This must be sorted.
+    pub(super) non_predicate_arrow_field_indices: Vec<usize>,
+    /// The nth bit is set to `true` if the field at that index is used in the predicate.
+    pub(super) predicate_arrow_field_mask: Vec<bool>,
     pub(super) ideal_morsel_size: usize,
     pub(super) min_values_per_thread: usize,
 }
@@ -36,7 +45,7 @@ impl RowGroupDecoder {
         &self,
         row_group_data: RowGroupData,
     ) -> PolarsResult<Vec<DataFrame>> {
-        if self.use_prefiltered {
+        if self.use_prefiltered.is_some() {
             self.row_group_data_to_df_prefiltered(row_group_data).await
         } else {
             self.row_group_data_to_df_impl(row_group_data).await
@@ -421,8 +430,175 @@ impl RowGroupDecoder {
         &self,
         row_group_data: RowGroupData,
     ) -> PolarsResult<Vec<DataFrame>> {
-        // TODO: actually prefilter
-        self.row_group_data_to_df_impl(row_group_data).await
+        debug_assert!(row_group_data.slice.is_none()); // Invariant of the optimizer.
+        assert!(self.predicate_arrow_field_indices.len() <= self.projected_arrow_schema.len());
+
+        let prefilter_setting = self.use_prefiltered.as_ref().unwrap();
+
+        let row_group_data = Arc::new(row_group_data);
+
+        let mut live_columns = {
+            let capacity = self.row_index.is_some() as usize
+                + self.predicate_arrow_field_indices.len()
+                + self.hive_partitions_width
+                + self.include_file_paths.is_some() as usize;
+
+            Vec::with_capacity(capacity)
+        };
+
+        if let Some(s) = self.materialize_row_index(
+            row_group_data.as_ref(),
+            0..row_group_data.row_group_metadata.num_rows(),
+        )? {
+            live_columns.push(s);
+        }
+
+        let shared_file_state = row_group_data
+            .shared_file_state
+            .get_or_init(|| self.shared_file_state_init_func(&row_group_data))
+            .await;
+
+        assert_eq!(shared_file_state.path_index, row_group_data.path_index);
+
+        let projection_height = row_group_data.row_group_metadata.num_rows();
+
+        for s in &shared_file_state.hive_series {
+            debug_assert!(s.len() >= projection_height);
+            live_columns.push(s.slice(0, projection_height));
+        }
+
+        if let Some(file_path_series) = &shared_file_state.file_path_series {
+            debug_assert!(file_path_series.len() >= projection_height);
+            live_columns.push(file_path_series.slice(0, projection_height));
+        }
+
+        for s in self
+            .predicate_arrow_field_indices
+            .iter()
+            .map(|&i| self.projected_arrow_schema.get_at_index(i).unwrap())
+            .map(|(_, arrow_field)| decode_column(arrow_field, &row_group_data, None))
+        {
+            live_columns.push(s?);
+        }
+
+        let live_df = unsafe { DataFrame::new_no_checks(live_columns) };
+        let mask = self
+            .physical_predicate
+            .as_deref()
+            .unwrap()
+            .evaluate_io(&live_df)?;
+        let mask = mask.bool().unwrap();
+
+        let live_df_filtered = unsafe {
+            DataFrame::new_no_checks(
+                filter_cols(live_df.take_columns(), mask, self.min_values_per_thread).await?,
+            )
+        };
+
+        let mask_bitmap = {
+            let mut mask_bitmap = MutableBitmap::with_capacity(mask.len());
+
+            for chunk in mask.downcast_iter() {
+                match chunk.validity() {
+                    None => mask_bitmap.extend_from_bitmap(chunk.values()),
+                    Some(validity) => mask_bitmap.extend_from_bitmap(&(validity & chunk.values())),
+                }
+            }
+
+            mask_bitmap.freeze()
+        };
+
+        assert_eq!(mask_bitmap.len(), projection_height);
+
+        let prefilter_cost = calc_prefilter_cost(&mask_bitmap);
+
+        let dead_cols_filtered = self
+            .non_predicate_arrow_field_indices
+            .iter()
+            .map(|&i| self.projected_arrow_schema.get_at_index(i).unwrap())
+            .map(|(_, arrow_field)| {
+                decode_column_prefiltered(
+                    arrow_field,
+                    &row_group_data,
+                    prefilter_cost,
+                    prefilter_setting,
+                    mask,
+                    &mask_bitmap,
+                )
+            })
+            .collect::<PolarsResult<Vec<_>>>()?;
+
+        let mut out_columns =
+            Vec::with_capacity(live_df_filtered.width() + dead_cols_filtered.len());
+
+        let mut iters = [
+            dead_cols_filtered.into_iter(),
+            live_df_filtered.take_columns().into_iter(),
+        ];
+
+        // dead_cols_filtered
+        // [ ..arrow_fields ]
+        // live_df_filtered
+        // [ row_index?, ..arrow_fields, ..hive_cols, file_path? ]
+
+        if self.row_index.is_some() {
+            out_columns.push(iters[1].next().unwrap());
+        }
+
+        for is_live in self.predicate_arrow_field_mask.iter() {
+            out_columns.push(iters[*is_live as usize].next().unwrap())
+        }
+
+        let [dead_rem, live_rem] = iters;
+
+        out_columns.extend(live_rem); // optional hive cols, file path col
+        assert_eq!(dead_rem.len(), 0);
+
+        let df = unsafe { DataFrame::new_no_checks(out_columns) };
+        Ok(self.split_to_morsels(df))
+    }
+}
+
+fn decode_column_prefiltered(
+    arrow_field: &ArrowField,
+    row_group_data: &RowGroupData,
+    prefilter_cost: f64,
+    prefilter_setting: &PrefilterMaskSetting,
+    mask: &BooleanChunked,
+    mask_bitmap: &Bitmap,
+) -> PolarsResult<Series> {
+    let columns_to_deserialize = row_group_data
+        .row_group_metadata
+        .columns_under_root_iter(&arrow_field.name)
+        .map(|col_md| {
+            let byte_range = col_md.byte_range();
+
+            (
+                col_md,
+                row_group_data
+                    .fetched_bytes
+                    .get_range(byte_range.start as usize..byte_range.end as usize),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    let prefilter = prefilter_setting.should_prefilter(prefilter_cost, &arrow_field.dtype);
+
+    let deserialize_filter =
+        prefilter.then(|| polars_parquet::read::Filter::Mask(mask_bitmap.clone()));
+
+    let array = polars_io::prelude::_internal::to_deserializer(
+        columns_to_deserialize,
+        arrow_field.clone(),
+        deserialize_filter,
+    )?;
+
+    let series = Series::try_from((arrow_field, array))?;
+
+    if !prefilter {
+        series.filter(mask)
+    } else {
+        Ok(series)
     }
 }
 

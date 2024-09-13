@@ -14,7 +14,6 @@ use polars_io::utils::byte_source::DynByteSourceBuilder;
 use polars_plan::plans::hive::HivePartitions;
 use polars_plan::plans::{FileInfo, ScanSources};
 use polars_plan::prelude::FileScanOptions;
-use row_group_decode::RowGroupDecoder;
 
 use super::compute_node_prelude::*;
 use super::{MorselSeq, TaskPriority};
@@ -55,7 +54,6 @@ pub struct ParquetSourceNode {
     morsel_stream_starter: Option<tokio::sync::oneshot::Sender<()>>,
     // This is behind a Mutex so that we can call `shutdown()` asynchronously.
     async_task_data: Arc<tokio::sync::Mutex<AsyncTaskData>>,
-    row_group_decoder: Option<Arc<RowGroupDecoder>>,
     is_finished: Arc<AtomicBool>,
 }
 
@@ -120,7 +118,6 @@ impl ParquetSourceNode {
 
             morsel_stream_starter: None,
             async_task_data: Arc::new(tokio::sync::Mutex::new(None)),
-            row_group_decoder: None,
             is_finished: Arc::new(AtomicBool::new(false)),
         }
     }
@@ -166,9 +163,6 @@ impl ComputeNode for ParquetSourceNode {
             .try_lock()
             .unwrap()
             .replace((raw_morsel_receivers, morsel_stream_task_handle));
-
-        let row_group_decoder = self.init_row_group_decoder();
-        self.row_group_decoder = Some(Arc::new(row_group_decoder));
     }
 
     fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {
