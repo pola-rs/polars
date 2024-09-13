@@ -1010,6 +1010,7 @@ impl ScalarColumn {
         series
     }
 
+    /// Materialize the [`ScalarColumn`] into a [`Series`].
     pub fn to_series(&self) -> Series {
         Self::_to_series(self.name.clone(), self.value.clone(), self.length)
     }
@@ -1028,6 +1029,34 @@ impl ScalarColumn {
             .unwrap_or_else(|| Self::_to_series(self.name, self.value, self.length))
     }
 
+    /// Take the [`ScalarColumn`] as a series with a single value.
+    ///
+    /// If the [`ScalarColumn`] has `length=0` the resulting `Series` will also have `length=0`.
+    pub fn as_single_value_series(&self) -> Series {
+        match self.materialized.get() {
+            Some(s) => s.head(Some(1)),
+            None => Self::_to_series(
+                self.name.clone(),
+                self.value.clone(),
+                usize::min(1, self.length),
+            ),
+        }
+    }
+
+    /// Create a new [`ScalarColumn`] from a `length=1` Series and expand it `length`.
+    ///
+    /// This will panic if the value cannot be made static or if the series has length `0`.
+    pub fn from_single_value_series(series: Series, length: usize) -> PolarsResult<Self> {
+        debug_assert_eq!(series.len(), 1);
+        let value = series.get(0)?;
+        let value = value.into_static()?;
+        let value = Scalar::new(series.dtype().clone(), value);
+        Ok(ScalarColumn::new(series.name().clone(), value, length))
+    }
+
+    /// Resize the [`ScalarColumn`] to new `length`.
+    ///
+    /// This reuses the materialized [`Series`], if `length <= self.length`.
     pub fn resize(&self, length: usize) -> ScalarColumn {
         let mut sliced = Self {
             name: self.name.clone(),

@@ -1,192 +1,154 @@
-use std::ops::{Add, Div, Mul, Rem, Sub};
-
 use num_traits::{Num, NumCast};
-use polars_error::PolarsResult;
+use polars_error::{polars_bail, PolarsResult};
 
-use super::Column;
+use super::{Column, ScalarColumn, Series};
+use crate::utils::Container;
 
-impl Add for Column {
-    type Output = PolarsResult<Column>;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        // @scalar-opt
-        self.as_materialized_series()
-            .add(rhs.as_materialized_series())
-            .map(Column::from)
+fn output_length(a: &Column, b: &Column) -> PolarsResult<usize> {
+    match (a.len(), b.len()) {
+        // broadcasting
+        (1, o) | (o, 1) => Ok(o),
+        // equal
+        (a, b) if a == b => Ok(a),
+        // unequal
+        (a, b) => {
+            polars_bail!(InvalidOperation: "cannot do arithmetic operation on series of different lengths: got {} and {}", a, b)
+        },
     }
 }
 
-impl Add for &Column {
-    type Output = PolarsResult<Column>;
+fn unit_series_op<F: Fn(&Series, &Series) -> PolarsResult<Series>>(
+    l: &Series,
+    r: &Series,
+    op: F,
+    length: usize,
+) -> PolarsResult<Column> {
+    debug_assert!(l.len() <= 1);
+    debug_assert!(r.len() <= 1);
 
-    fn add(self, rhs: Self) -> Self::Output {
-        // @scalar-opt
-        self.as_materialized_series()
-            .add(rhs.as_materialized_series())
-            .map(Column::from)
+    op(l, r)
+        .and_then(|s| ScalarColumn::from_single_value_series(s, length))
+        .map(Column::from)
+}
+
+fn op_with_broadcast<F: Fn(&Series, &Series) -> PolarsResult<Series>>(
+    l: &Column,
+    r: &Column,
+    op: F,
+) -> PolarsResult<Column> {
+    // Here we rely on the underlying broadcast operations.
+
+    let length = output_length(l, r)?;
+    match (l, r) {
+        (Column::Series(l), Column::Series(r)) => op(l, r).map(Column::from),
+        (Column::Series(l), Column::Scalar(r)) => {
+            let r = r.as_single_value_series();
+            if l.len() == 1 {
+                unit_series_op(l, &r, op, length)
+            } else {
+                op(l, &r).map(Column::from)
+            }
+        },
+        (Column::Scalar(l), Column::Series(r)) => {
+            let l = l.as_single_value_series();
+            if r.len() == 1 {
+                unit_series_op(&l, r, op, length)
+            } else {
+                op(&l, r).map(Column::from)
+            }
+        },
+        (Column::Scalar(l), Column::Scalar(r)) => unit_series_op(
+            &l.as_single_value_series(),
+            &r.as_single_value_series(),
+            op,
+            length,
+        ),
     }
 }
 
-impl Sub for Column {
-    type Output = PolarsResult<Column>;
-
-    fn sub(self, rhs: Self) -> Self::Output {
-        // @scalar-opt
-        self.as_materialized_series()
-            .sub(rhs.as_materialized_series())
-            .map(Column::from)
+fn num_op_with_broadcast<T: Num + NumCast, F: Fn(&Series, T) -> Series>(
+    c: &'_ Column,
+    n: T,
+    op: F,
+) -> PolarsResult<Column> {
+    match c {
+        Column::Series(s) => Ok(op(s, n).into()),
+        Column::Scalar(s) => {
+            ScalarColumn::from_single_value_series(op(&s.as_single_value_series(), n), s.length)
+                .map(Column::from)
+        },
     }
 }
 
-impl Sub for &Column {
-    type Output = PolarsResult<Column>;
+macro_rules! broadcastable_ops {
+    ($(($trait:ident, $op:ident))+) => {
+        $(
+        impl std::ops::$trait for Column {
+            type Output = PolarsResult<Column>;
 
-    fn sub(self, rhs: Self) -> Self::Output {
-        // @scalar-opt
-        self.as_materialized_series()
-            .sub(rhs.as_materialized_series())
-            .map(Column::from)
+            #[inline]
+            fn $op(self, rhs: Self) -> Self::Output {
+                op_with_broadcast(&self, &rhs, |l, r| l.$op(r))
+            }
+        }
+
+        impl std::ops::$trait for &Column {
+            type Output = PolarsResult<Column>;
+
+            #[inline]
+            fn $op(self, rhs: Self) -> Self::Output {
+                op_with_broadcast(self, rhs, |l, r| l.$op(r))
+            }
+        }
+        )+
     }
 }
 
-impl Mul for Column {
-    type Output = PolarsResult<Column>;
+macro_rules! broadcastable_num_ops {
+    ($(($trait:ident, $op:ident))+) => {
+        $(
+        impl<T> std::ops::$trait::<T> for Column
+        where
+            T: Num + NumCast,
+        {
+            type Output = PolarsResult<Self>;
 
-    fn mul(self, rhs: Self) -> Self::Output {
-        // @scalar-opt
-        self.as_materialized_series()
-            .mul(rhs.as_materialized_series())
-            .map(Column::from)
-    }
+            #[inline]
+            fn $op(self, rhs: T) -> Self::Output {
+                num_op_with_broadcast(&self, rhs, |l, r| l.$op(r))
+            }
+        }
+
+        impl<T> std::ops::$trait::<T> for &Column
+        where
+            T: Num + NumCast,
+        {
+            type Output = PolarsResult<Column>;
+
+            #[inline]
+            fn $op(self, rhs: T) -> Self::Output {
+                num_op_with_broadcast(self, rhs, |l, r| l.$op(r))
+            }
+        }
+        )+
+    };
 }
 
-impl Mul for &Column {
-    type Output = PolarsResult<Column>;
-
-    fn mul(self, rhs: Self) -> Self::Output {
-        // @scalar-opt
-        self.as_materialized_series()
-            .mul(rhs.as_materialized_series())
-            .map(Column::from)
-    }
+broadcastable_ops! {
+    (Add, add)
+    (Sub, sub)
+    (Mul, mul)
+    (Div, div)
+    (Rem, rem)
+    (BitAnd, bitand)
+    (BitOr, bitor)
+    (BitXor, bitxor)
 }
 
-impl<T> Sub<T> for &Column
-where
-    T: Num + NumCast,
-{
-    type Output = Column;
-
-    fn sub(self, rhs: T) -> Self::Output {
-        // @scalar-opt
-        self.as_materialized_series().sub(rhs).into()
-    }
-}
-
-impl<T> Sub<T> for Column
-where
-    T: Num + NumCast,
-{
-    type Output = Self;
-
-    fn sub(self, rhs: T) -> Self::Output {
-        // @scalar-opt
-        self.as_materialized_series().sub(rhs).into()
-    }
-}
-
-impl<T> Add<T> for &Column
-where
-    T: Num + NumCast,
-{
-    type Output = Column;
-
-    fn add(self, rhs: T) -> Self::Output {
-        // @scalar-opt
-        self.as_materialized_series().add(rhs).into()
-    }
-}
-
-impl<T> Add<T> for Column
-where
-    T: Num + NumCast,
-{
-    type Output = Self;
-
-    fn add(self, rhs: T) -> Self::Output {
-        // @scalar-opt
-        self.as_materialized_series().add(rhs).into()
-    }
-}
-
-impl<T> Div<T> for &Column
-where
-    T: Num + NumCast,
-{
-    type Output = Column;
-
-    fn div(self, rhs: T) -> Self::Output {
-        // @scalar-opt
-        self.as_materialized_series().div(rhs).into()
-    }
-}
-
-impl<T> Div<T> for Column
-where
-    T: Num + NumCast,
-{
-    type Output = Self;
-
-    fn div(self, rhs: T) -> Self::Output {
-        // @scalar-opt
-        self.as_materialized_series().div(rhs).into()
-    }
-}
-
-impl<T> Mul<T> for &Column
-where
-    T: Num + NumCast,
-{
-    type Output = Column;
-
-    fn mul(self, rhs: T) -> Self::Output {
-        // @scalar-opt
-        self.as_materialized_series().mul(rhs).into()
-    }
-}
-
-impl<T> Mul<T> for Column
-where
-    T: Num + NumCast,
-{
-    type Output = Self;
-
-    fn mul(self, rhs: T) -> Self::Output {
-        // @scalar-opt
-        self.as_materialized_series().mul(rhs).into()
-    }
-}
-
-impl<T> Rem<T> for &Column
-where
-    T: Num + NumCast,
-{
-    type Output = Column;
-
-    fn rem(self, rhs: T) -> Self::Output {
-        // @scalar-opt
-        self.as_materialized_series().rem(rhs).into()
-    }
-}
-
-impl<T> Rem<T> for Column
-where
-    T: Num + NumCast,
-{
-    type Output = Self;
-
-    fn rem(self, rhs: T) -> Self::Output {
-        // @scalar-opt
-        self.as_materialized_series().rem(rhs).into()
-    }
+broadcastable_num_ops! {
+    (Add, add)
+    (Sub, sub)
+    (Mul, mul)
+    (Div, div)
+    (Rem, rem)
 }
