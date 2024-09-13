@@ -14,7 +14,7 @@ env:
 
 jobs:
   main:
-    runs-on: polars
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
 
