@@ -56,8 +56,7 @@ jobs:
           RUSTFLAGS: -C embed-bitcode -D warnings
         working-directory: py-polars
         run: |
-           # maturin develop --release -- -C codegen-units=8 -C lto=thin -C target-cpu=native
-           maturin develop -- -C target-cpu=native
+          maturin develop --release -- -C codegen-units=8 -C lto=thin -C target-cpu=native
 
       - name: Run benchmark
         working-directory: polars-benchmark
