@@ -1113,14 +1113,8 @@ impl ScalarColumn {
     /// Resize the [`ScalarColumn`] to new `length`.
     ///
     /// This reuses the materialized [`Series`], if `length <= self.length`.
-    ///
-    /// # Panics
-    ///
-    /// This panics if `self.length == 0`.
     pub fn resize(&self, length: usize) -> ScalarColumn {
-        assert_ne!(self.length, 0);
-
-        let mut sliced = Self {
+        let mut resized = Self {
             name: self.name.clone(),
             scalar: self.scalar.clone(),
             length,
@@ -1129,12 +1123,12 @@ impl ScalarColumn {
 
         if self.length >= length {
             if let Some(materialized) = self.materialized.get() {
-                sliced.materialized = OnceLock::from(materialized.head(Some(length)));
-                debug_assert_eq!(sliced.materialized.get().unwrap().len(), length);
+                resized.materialized = OnceLock::from(materialized.head(Some(length)));
+                debug_assert_eq!(resized.materialized.get().unwrap().len(), length);
             }
         }
 
-        sliced
+        resized
     }
 
     pub fn cast_with_options(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Self> {
