@@ -197,8 +197,8 @@ impl DataFrame {
     ///
     /// FFI buffers are included in this estimation.
     pub fn estimated_size(&self) -> usize {
-        self.materialized_column_iter()
-            .map(|s| s.estimated_size())
+        self.columns.iter()
+            .map(Column::estimated_size)
             .sum()
     }
 
@@ -973,10 +973,6 @@ impl DataFrame {
             .iter_mut()
             .zip(other.columns.iter())
             .try_for_each::<_, PolarsResult<_>>(|(left, right)| {
-                // @scalar-opt
-                let left = left.into_materialized_series();
-                let right = right.as_materialized_series();
-
                 ensure_can_extend(&*left, right)?;
                 left.append(right)?;
                 Ok(())
@@ -995,10 +991,6 @@ impl DataFrame {
             .iter_mut()
             .zip(other.columns.iter())
             .for_each(|(left, right)| {
-                // @scalar-opt
-                let left = left.into_materialized_series();
-                let right = right.as_materialized_series();
-
                 left.append(right).expect("should not fail");
             });
     }
@@ -1028,9 +1020,6 @@ impl DataFrame {
             .iter_mut()
             .zip(other.columns.iter())
             .try_for_each::<_, PolarsResult<_>>(|(left, right)| {
-                let left = left.into_materialized_series();
-                let right = right.as_materialized_series();
-
                 ensure_can_extend(&*left, right)?;
                 left.extend(right)?;
                 Ok(())
@@ -3164,17 +3153,7 @@ impl From<DataFrame> for Vec<Column> {
 }
 
 // utility to test if we can vstack/extend the columns
-fn ensure_can_extend(left: &Series, right: &Series) -> PolarsResult<()> {
-    polars_ensure!(
-        left.name() == right.name(),
-        ShapeMismatch: "unable to vstack, column names don't match: {:?} and {:?}",
-        left.name(), right.name(),
-    );
-    Ok(())
-}
-
-// utility to test if we can vstack/extend the columns
-fn ensure_can_extend_cols(left: &Column, right: &Column) -> PolarsResult<()> {
+fn ensure_can_extend(left: &Column, right: &Column) -> PolarsResult<()> {
     polars_ensure!(
         left.name() == right.name(),
         ShapeMismatch: "unable to vstack, column names don't match: {:?} and {:?}",
