@@ -575,7 +575,8 @@ impl DataFrame {
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn schema(&self) -> Schema {
-        self.materialized_column_iter()
+        self.columns
+            .iter()
             .map(|x| (x.name().clone(), x.dtype().clone()))
             .collect()
     }
@@ -1327,13 +1328,7 @@ impl DataFrame {
             None => return None,
         }
         // SAFETY: we just checked bounds
-        unsafe {
-            Some(
-                self.materialized_column_iter()
-                    .map(|s| s.get_unchecked(idx))
-                    .collect(),
-            )
-        }
+        unsafe { Some(self.columns.iter().map(|c| c.get_unchecked(idx)).collect()) }
     }
 
     /// Select a [`Series`] by index.
@@ -2014,7 +2009,7 @@ impl DataFrame {
     /// let s1 = Column::new("names".into(), ["Jean", "Claude", "van"]);
     /// let mut df = DataFrame::new(vec![s0, s1])?;
     ///
-    /// fn str_to_len(str_val: &Series) -> Series {
+    /// fn str_to_len(str_val: &Column) -> Column {
     ///     str_val.str()
     ///         .unwrap()
     ///         .into_iter()
@@ -2022,7 +2017,7 @@ impl DataFrame {
     ///             opt_name.map(|name: &str| name.len() as u32)
     ///          })
     ///         .collect::<UInt32Chunked>()
-    ///         .into_series()
+    ///         .into_column()
     /// }
     ///
     /// // Replace the names column by the length of the names.
@@ -2046,11 +2041,11 @@ impl DataFrame {
     /// ```
     pub fn apply<F, C>(&mut self, name: &str, f: F) -> PolarsResult<&mut Self>
     where
-        F: FnOnce(&Series) -> C,
+        F: FnOnce(&Column) -> C,
         C: IntoColumn,
     {
         let idx = self.check_name_to_idx(name)?;
-        self.apply_at_idx(idx, |c| f(c.as_materialized_series()))
+        self.apply_at_idx(idx, f)
     }
 
     /// Apply a closure to a column at index `idx`. This is the recommended way to do in place
