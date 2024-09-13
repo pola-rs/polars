@@ -237,7 +237,7 @@ impl ChunkZip<StructType> for StructChunked {
             .map(|(lhs, rhs)| lhs.zip_with_same_type(&mask, &rhs))
             .collect::<PolarsResult<Vec<_>>>()?;
 
-        let mut out = StructChunked::from_series(self.name().clone(), &fields)?;
+        let mut out = StructChunked::from_series(self.name().clone(), fields.iter())?;
 
         // Zip the validities.
         if (l.null_count + r.null_count) > 0 {

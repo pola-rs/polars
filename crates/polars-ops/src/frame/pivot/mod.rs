@@ -233,15 +233,9 @@ fn pivot_impl(
             already exists in the DataFrame. Please rename it prior to calling `pivot`.")
         }
         // @scalar-opt
-        let columns_struct = StructChunked::from_series(
-            column.clone(),
-            &fields
-                .iter()
-                .map(|c| c.as_materialized_series().clone())
-                .collect::<Vec<_>>(),
-        )
-        .unwrap()
-        .into_series();
+        let columns_struct = StructChunked::from_columns(column.clone(), fields)
+            .unwrap()
+            .into_series();
         let mut binding = pivot_df.clone();
         let pivot_df = unsafe { binding.with_column_unchecked(columns_struct) };
         pivot_impl_single_column(

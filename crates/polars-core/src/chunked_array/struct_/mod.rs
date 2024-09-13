@@ -18,21 +18,24 @@ use crate::utils::Container;
 
 pub type StructChunked = ChunkedArray<StructType>;
 
-fn constructor(name: PlSmallStr, fields: &[Series]) -> PolarsResult<StructChunked> {
+fn constructor<'a, I: ExactSizeIterator<Item = &'a Series> + Clone>(
+    name: PlSmallStr,
+    fields: I,
+) -> PolarsResult<StructChunked> {
     // Different chunk lengths: rechunk and recurse.
-    if !fields.iter().map(|s| s.n_chunks()).all_equal() {
-        let fields = fields.iter().map(|s| s.rechunk()).collect::<Vec<_>>();
-        return constructor(name, &fields);
+    if !fields.clone().map(|s| s.n_chunks()).all_equal() {
+        let fields = fields.map(|s| s.rechunk()).collect::<Vec<_>>();
+        return constructor(name, fields.iter());
     }
 
-    let n_chunks = fields[0].n_chunks();
-    let dtype = DataType::Struct(fields.iter().map(|s| s.field().into_owned()).collect());
+    let n_chunks = fields.clone().next().unwrap().n_chunks();
+    let dtype = DataType::Struct(fields.clone().map(|s| s.field().into_owned()).collect());
     let arrow_dtype = dtype.to_physical().to_arrow(CompatLevel::newest());
 
     let chunks = (0..n_chunks)
         .map(|c_i| {
             let fields = fields
-                .iter()
+                .clone()
                 .map(|field| field.chunks()[c_i].clone())
                 .collect::<Vec<_>>();
 
@@ -55,30 +58,28 @@ fn constructor(name: PlSmallStr, fields: &[Series]) -> PolarsResult<StructChunke
         },
         // Different chunk lengths: rechunk and recurse.
         Err(_) => {
-            let fields = fields.iter().map(|s| s.rechunk()).collect::<Vec<_>>();
-            constructor(name, &fields)
+            let fields = fields.map(|s| s.rechunk()).collect::<Vec<_>>();
+            constructor(name, fields.iter())
         },
     }
 }
 
 impl StructChunked {
     pub fn from_columns(name: PlSmallStr, fields: &[Column]) -> PolarsResult<Self> {
-        // @scalar-opt!
-        let series = fields
-            .iter()
-            .map(|c| c.as_materialized_series().clone())
-            .collect::<Vec<_>>();
-        Self::from_series(name, &series)
+        Self::from_series(name, fields.iter().map(|c| c.as_materialized_series()))
     }
 
-    pub fn from_series(name: PlSmallStr, fields: &[Series]) -> PolarsResult<Self> {
+    pub fn from_series<'a, I: ExactSizeIterator<Item = &'a Series> + Clone>(
+        name: PlSmallStr,
+        fields: I,
+    ) -> PolarsResult<Self> {
         let mut names = PlHashSet::with_capacity(fields.len());
-        let first_len = fields.first().map(|s| s.len()).unwrap_or(0);
+        let first_len = fields.clone().next().map(|s| s.len()).unwrap_or(0);
         let mut max_len = first_len;
 
         let mut all_equal_len = true;
         let mut is_empty = false;
-        for s in fields {
+        for s in fields.clone() {
             let s_len = s.len();
             max_len = std::cmp::max(max_len, s_len);
 
@@ -117,10 +118,10 @@ impl StructChunked {
                     );
                 }
             }
-            constructor(name, &new_fields)
-        } else if fields.is_empty() {
-            let fields = &[Series::new_null(PlSmallStr::EMPTY, 0)];
-            constructor(name, fields)
+            constructor(name, new_fields.iter())
+        } else if fields.len() == 0 {
+            let fields = [Series::new_null(PlSmallStr::EMPTY, 0)];
+            constructor(name, fields.iter())
         } else {
             constructor(name, fields)
         }
@@ -184,7 +185,7 @@ impl StructChunked {
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
 
-                let mut out = Self::from_series(self.name().clone(), &new_fields)?;
+                let mut out = Self::from_series(self.name().clone(), new_fields.iter())?;
                 if self.null_count > 0 {
                     out.zip_outer_validity(self);
                 }
@@ -240,7 +241,7 @@ impl StructChunked {
                         }
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
-                let mut out = Self::from_series(self.name().clone(), &fields)?;
+                let mut out = Self::from_series(self.name().clone(), fields.iter())?;
                 if self.null_count > 0 {
                     out.zip_outer_validity(self);
                 }
@@ -285,7 +286,7 @@ impl StructChunked {
             .iter()
             .map(func)
             .collect::<PolarsResult<Vec<_>>>()?;
-        Self::from_series(self.name().clone(), &fields).map(|mut ca| {
+        Self::from_series(self.name().clone(), fields.iter()).map(|mut ca| {
             if self.null_count > 0 {
                 // SAFETY: we don't change types/ lengths.
                 unsafe {

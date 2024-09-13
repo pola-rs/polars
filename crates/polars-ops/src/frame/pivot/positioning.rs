@@ -484,14 +484,9 @@ pub(super) fn compute_row_idx(
         }
     } else {
         let binding = pivot_df.select(index.iter().cloned())?;
-        // @scalar-opt
         let fields = binding.get_columns();
-        let fields = fields
-            .iter()
-            .map(|c| c.as_materialized_series().clone())
-            .collect::<Vec<_>>();
         let index_struct_series =
-            StructChunked::from_series(PlSmallStr::from_static("placeholder"), &fields)?
+            StructChunked::from_columns(PlSmallStr::from_static("placeholder"), fields)?
                 .into_series();
         let index_agg = unsafe { index_struct_series.agg_first(groups) };
         let index_agg_physical = index_agg.to_physical_repr();

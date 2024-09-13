@@ -724,7 +724,7 @@ pub(crate) fn convert_sort_column_multi_sort(s: &Series) -> PolarsResult<Series>
                 .iter()
                 .map(convert_sort_column_multi_sort)
                 .collect::<PolarsResult<Vec<_>>>()?;
-            let mut out = StructChunked::from_series(ca.name().clone(), &new_fields)?;
+            let mut out = StructChunked::from_series(ca.name().clone(), new_fields.iter())?;
             out.zip_outer_validity(ca);
             out.into_series()
         },

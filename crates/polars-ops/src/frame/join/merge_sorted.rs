@@ -85,7 +85,7 @@ fn merge_series(lhs: &Series, rhs: &Series, merge_indicator: &[bool]) -> PolarsR
                 .zip(rhs.fields_as_series())
                 .map(|(lhs, rhs)| merge_series(lhs, &rhs, merge_indicator))
                 .collect::<PolarsResult<Vec<_>>>()?;
-            StructChunked::from_series(PlSmallStr::EMPTY, &new_fields)
+            StructChunked::from_series(PlSmallStr::EMPTY, new_fields.iter())
                 .unwrap()
                 .into_series()
         },

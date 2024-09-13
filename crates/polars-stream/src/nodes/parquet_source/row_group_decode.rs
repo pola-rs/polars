@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{
-    ArrowField, ArrowSchema, BooleanChunked, ChunkFull, IdxCa, StringChunked,
-    IntColumn, Column,
+    AnyValue, ArrowField, ArrowSchema, BooleanChunked, Column, DataType, IdxCa, IntoColumn,
 };
-use polars_core::series::{IntoSeries, IsSorted, Series};
+use polars_core::scalar::Scalar;
+use polars_core::series::{IsSorted, Series};
 use polars_core::utils::arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_error::{polars_bail, PolarsResult};
 use polars_io::predicates::PhysicalIoExpr;
@@ -138,25 +138,33 @@ impl RowGroupDecoder {
         let path_index = row_group_data.path_index;
 
         let hive_series = if let Some(hp) = self.hive_partitions.as_deref() {
-            let mut v = hp[path_index].materialize_partition_columns();
-            for s in v.iter_mut() {
-                *s = s.new_from_index(0, row_group_data.file_max_row_group_height);
-            }
-            v
+            let v = hp[path_index].materialize_partition_columns();
+            v.into_iter()
+                .map(|s| {
+                    s.into_column()
+                        .new_from_index(0, row_group_data.file_max_row_group_height)
+                })
+                .collect()
         } else {
             vec![]
         };
 
+        // @scalar-opt
         let file_path_series = self.include_file_paths.clone().map(|file_path_col| {
-            StringChunked::full(
+            Column::new_scalar(
                 file_path_col,
-                self.scan_sources
-                    .get(path_index)
-                    .unwrap()
-                    .to_include_path_name(),
+                Scalar::new(
+                    DataType::String,
+                    AnyValue::StringOwned(
+                        self.scan_sources
+                            .get(path_index)
+                            .unwrap()
+                            .to_include_path_name()
+                            .into(),
+                    ),
+                ),
                 row_group_data.file_max_row_group_height,
             )
-            .into_series()
         });
 
         SharedFileState {
@@ -170,7 +178,7 @@ impl RowGroupDecoder {
         &self,
         row_group_data: &RowGroupData,
         slice_range: core::ops::Range<usize>,
-    ) -> PolarsResult<Option<Series>> {
+    ) -> PolarsResult<Option<Column>> {
         if let Some(RowIndex { name, offset }) = self.row_index.as_ref() {
             let projection_height = row_group_data.row_group_metadata.num_rows();
 
@@ -208,7 +216,7 @@ impl RowGroupDecoder {
     /// `out_vec`.
     async fn decode_all_columns(
         &self,
-        out_vec: &mut Vec<Series>,
+        out_vec: &mut Vec<Column>,
         row_group_data: &Arc<RowGroupData>,
         filter: Option<polars_parquet::read::Filter>,
     ) -> PolarsResult<()> {
@@ -305,7 +313,7 @@ fn decode_column(
     arrow_field: &ArrowField,
     row_group_data: &RowGroupData,
     filter: Option<polars_parquet::read::Filter>,
-) -> PolarsResult<Series> {
+) -> PolarsResult<Column> {
     let columns_to_deserialize = row_group_data
         .row_group_metadata
         .columns_under_root_iter(&arrow_field.name)
@@ -331,16 +339,16 @@ fn decode_column(
 
     // TODO: Also load in the metadata.
 
-    Ok(series)
+    Ok(series.into())
 }
 
 /// # Safety
 /// All series in `cols` have the same length.
 async unsafe fn filter_cols(
-    mut cols: Vec<Series>,
+    mut cols: Vec<Column>,
     mask: &BooleanChunked,
     min_values_per_thread: usize,
-) -> PolarsResult<Vec<Series>> {
+) -> PolarsResult<Vec<Column>> {
     if cols.is_empty() {
         return Ok(cols);
     }
@@ -418,8 +426,8 @@ fn calc_cols_per_thread(
 /// State shared across row groups for a single file.
 pub(super) struct SharedFileState {
     path_index: usize,
-    hive_series: Vec<Series>,
-    file_path_series: Option<Series>,
+    hive_series: Vec<Column>,
+    file_path_series: Option<Column>,
 }
 
 ///
@@ -567,7 +575,7 @@ fn decode_column_prefiltered(
     prefilter_setting: &PrefilterMaskSetting,
     mask: &BooleanChunked,
     mask_bitmap: &Bitmap,
-) -> PolarsResult<Series> {
+) -> PolarsResult<Column> {
     let columns_to_deserialize = row_group_data
         .row_group_metadata
         .columns_under_root_iter(&arrow_field.name)
@@ -594,12 +602,12 @@ fn decode_column_prefiltered(
         deserialize_filter,
     )?;
 
-    let series = Series::try_from((arrow_field, array))?;
+    let column = Series::try_from((arrow_field, array))?.into_column();
 
     if !prefilter {
-        series.filter(mask)
+        column.filter(mask)
     } else {
-        Ok(series)
+        Ok(column)
     }
 }
 
