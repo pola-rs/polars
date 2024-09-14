@@ -334,6 +334,9 @@ pub(super) fn check_expand_literals(
             .collect::<PolarsResult<_>>()?
     }
 
+    // @scalar-opt
+    let selected_columns = selected_columns.into_iter().map(Column::from).collect();
+
     let df = unsafe { DataFrame::new_no_checks(selected_columns) };
 
     // a literal could be projected to a zero length dataframe.

@@ -72,5 +72,12 @@ fn test_lazy_ternary() {
         )
         .collect()
         .unwrap();
-    assert_eq!(43, df.column("new").unwrap().sum::<i32>().unwrap());
+    assert_eq!(
+        43,
+        df.column("new")
+            .unwrap()
+            .as_materialized_series()
+            .sum::<i32>()
+            .unwrap()
+    );
 }

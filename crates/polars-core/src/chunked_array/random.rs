@@ -193,7 +193,7 @@ impl DataFrame {
         match n.get(0) {
             Some(n) => self.sample_n_literal(n as usize, with_replacement, shuffle, seed),
             None => {
-                let new_cols = self.columns.iter().map(Series::clear).collect_trusted();
+                let new_cols = self.columns.iter().map(Column::clear).collect_trusted();
                 Ok(unsafe { DataFrame::new_no_checks(new_cols) })
             },
         }
@@ -238,7 +238,7 @@ impl DataFrame {
                 self.sample_n_literal(n, with_replacement, shuffle, seed)
             },
             None => {
-                let new_cols = self.columns.iter().map(Series::clear).collect_trusted();
+                let new_cols = self.columns.iter().map(Column::clear).collect_trusted();
                 Ok(unsafe { DataFrame::new_no_checks(new_cols) })
             },
         }

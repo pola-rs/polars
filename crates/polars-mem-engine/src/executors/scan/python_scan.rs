@@ -24,7 +24,7 @@ fn python_df_to_rust(py: Python, df: Bound<PyAny>) -> PolarsResult<DataFrame> {
     let (ptr, len, cap) = raw_parts;
     unsafe {
         Ok(DataFrame::new_no_checks(Vec::from_raw_parts(
-            ptr as *mut Series,
+            ptr as *mut Column,
             len,
             cap,
         )))

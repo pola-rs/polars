@@ -33,7 +33,7 @@ impl ColumnExpr {
                     for df in state.ext_contexts.as_ref() {
                         let out = df.column(&self.name);
                         if out.is_ok() {
-                            return out.cloned();
+                            return out.map(Column::as_materialized_series).cloned();
                         }
                     }
                     Err(e)
@@ -75,7 +75,9 @@ impl ColumnExpr {
             // in release we fallback to linear search
             #[allow(unreachable_code)]
             {
-                df.column(&self.name).cloned()
+                df.column(&self.name)
+                    .map(Column::as_materialized_series)
+                    .cloned()
             }
         } else {
             Ok(out.clone())
@@ -98,7 +100,9 @@ impl ColumnExpr {
         }
         // in release we fallback to linear search
         #[allow(unreachable_code)]
-        df.column(&self.name).cloned()
+        df.column(&self.name)
+            .map(Column::as_materialized_series)
+            .cloned()
     }
 
     fn process_from_state_schema(
@@ -110,7 +114,9 @@ impl ColumnExpr {
         match schema.get_full(&self.name) {
             None => self.process_by_linear_search(df, state, true),
             Some((idx, _, _)) => match df.get_columns().get(idx) {
-                Some(out) => self.process_by_idx(out, state, schema, df, false),
+                Some(out) => {
+                    self.process_by_idx(out.as_materialized_series(), state, schema, df, false)
+                },
                 None => self.process_by_linear_search(df, state, true),
             },
         }
@@ -125,6 +131,7 @@ impl ColumnExpr {
             .iter()
             .find(|s| s.name() == &self.name)
             .unwrap()
+            .as_materialized_series()
             .clone())
     }
 }
@@ -142,7 +149,13 @@ impl PhysicalExpr for ColumnExpr {
                         // check if the schema was correct
                         // if not do O(n) search
                         match df.get_columns().get(idx) {
-                            Some(out) => self.process_by_idx(out, state, schema, df, true),
+                            Some(out) => self.process_by_idx(
+                                out.as_materialized_series(),
+                                state,
+                                schema,
+                                df,
+                                true,
+                            ),
                             None => {
                                 // partitioned group_by special case
                                 if let Some(schema) = state.get_schema() {

@@ -100,7 +100,7 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
         DataType::Datetime(tu, tz) => {
             let arr = &*(arr as *const dyn Array as *const Int64Array);
             let v = arr.value_unchecked(idx);
-            AnyValue::Datetime(v, *tu, tz)
+            AnyValue::Datetime(v, *tu, tz.as_ref())
         },
         #[cfg(feature = "dtype-date")]
         DataType::Date => {

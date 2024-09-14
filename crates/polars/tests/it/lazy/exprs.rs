@@ -7,9 +7,9 @@ fn fuzz_exprs() {
     use rand::Rng;
 
     let lf = DataFrame::new(vec![
-        Series::new("A".into(), vec![1, 2, 3, 4, 5]),
-        Series::new("B".into(), vec![Some(5), Some(4), None, Some(2), Some(1)]),
-        Series::new(
+        Column::new("A".into(), vec![1, 2, 3, 4, 5]),
+        Column::new("B".into(), vec![Some(5), Some(4), None, Some(2), Some(1)]),
+        Column::new(
             "C".into(),
             vec!["str", "", "a quite long string", "my", "string"],
         ),
@@ -17,9 +17,9 @@ fn fuzz_exprs() {
     .unwrap()
     .lazy();
     let empty = DataFrame::new(vec![
-        Series::new("A".into(), Vec::<bool>::new()),
-        Series::new("B".into(), Vec::<u32>::new()),
-        Series::new("C".into(), Vec::<&str>::new()),
+        Column::new("A".into(), Vec::<bool>::new()),
+        Column::new("B".into(), Vec::<u32>::new()),
+        Column::new("C".into(), Vec::<&str>::new()),
     ])
     .unwrap()
     .lazy();

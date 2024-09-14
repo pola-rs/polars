@@ -153,7 +153,7 @@ pub enum Expr {
         /// function arguments
         input: Vec<Expr>,
         /// function to apply
-        function: SpecialEq<Arc<dyn SeriesUdf>>,
+        function: SpecialEq<Arc<dyn ColumnsUdf>>,
         /// output dtype of the function
         output_type: GetOutput,
         options: FunctionOptions,

@@ -156,12 +156,14 @@ fn rg_to_dfs(
         if let Some(row_index) = row_index {
             let placeholder =
                 NullChunkedBuilder::new(PlSmallStr::from_static("__PL_TMP"), slice.1).finish();
-            return Ok(vec![DataFrame::new(vec![placeholder.into_series()])?
-                .with_row_index(
-                    row_index.name.clone(),
-                    Some(row_index.offset + IdxSize::try_from(slice.0).unwrap()),
-                )?
-                .select(std::iter::once(row_index.name))?]);
+            return Ok(vec![DataFrame::new(vec![placeholder
+                .into_series()
+                .into_column()])?
+            .with_row_index(
+                row_index.name.clone(),
+                Some(row_index.offset + IdxSize::try_from(slice.0).unwrap()),
+            )?
+            .select(std::iter::once(row_index.name))?]);
         }
     }
 
@@ -322,6 +324,7 @@ fn rg_to_dfs_prefiltered(
                             .collect::<Vec<_>>();
 
                         column_idx_to_series(col_idx, field_md.as_slice(), None, schema, store)
+                            .map(Column::from)
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
 
@@ -428,9 +431,9 @@ fn rg_to_dfs_prefiltered(
 
                         debug_assert_eq!(array.len(), filter_mask.set_bits());
 
-                        Ok(array)
+                        Ok(array.into_column())
                     })
-                    .collect::<PolarsResult<Vec<Series>>>()?;
+                    .collect::<PolarsResult<Vec<Column>>>()?;
 
                 let mut rearranged_schema = df.schema();
                 rearranged_schema.merge(Schema::from_arrow_schema(schema.as_ref()));
@@ -516,6 +519,7 @@ fn rg_to_dfs_optionally_par_over_columns(
                             schema,
                             store,
                         )
+                        .map(Column::from)
                     })
                     .collect::<PolarsResult<Vec<_>>>()
             })?
@@ -533,6 +537,7 @@ fn rg_to_dfs_optionally_par_over_columns(
                         schema,
                         store,
                     )
+                    .map(Column::from)
                 })
                 .collect::<PolarsResult<Vec<_>>>()?
         };
@@ -633,6 +638,7 @@ fn rg_to_dfs_par_over_rg(
                             schema,
                             store,
                         )
+                        .map(Column::from)
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
 

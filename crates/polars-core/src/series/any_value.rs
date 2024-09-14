@@ -743,7 +743,7 @@ fn any_values_to_struct(
         series_fields.push(s)
     }
 
-    let mut out = StructChunked::from_series(PlSmallStr::EMPTY, &series_fields)?;
+    let mut out = StructChunked::from_series(PlSmallStr::EMPTY, series_fields.iter())?;
     if has_outer_validity {
         let mut validity = MutableBitmap::new();
         validity.extend_constant(values.len(), true);

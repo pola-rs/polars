@@ -10,10 +10,10 @@ use super::utils::{
 const CAPACITY_FACTOR: usize = 5;
 
 pub(super) fn date_range(
-    s: &[Series],
+    s: &[Column],
     interval: Duration,
     closed: ClosedWindow,
-) -> PolarsResult<Series> {
+) -> PolarsResult<Column> {
     let start = &s[0];
     let end = &s[1];
 
@@ -44,14 +44,14 @@ pub(super) fn date_range(
     )?;
 
     let to_type = DataType::Date;
-    out.cast(&to_type)
+    out.cast(&to_type).map(Column::from)
 }
 
 pub(super) fn date_ranges(
-    s: &[Series],
+    s: &[Column],
     interval: Duration,
     closed: ClosedWindow,
-) -> PolarsResult<Series> {
+) -> PolarsResult<Column> {
     let start = &s[0];
     let end = &s[1];
 

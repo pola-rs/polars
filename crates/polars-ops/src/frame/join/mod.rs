@@ -93,8 +93,18 @@ pub trait DataFrameJoinOps: IntoDf {
         args: JoinArgs,
     ) -> PolarsResult<DataFrame> {
         let df_left = self.to_df();
-        let selected_left = df_left.select_series(left_on)?;
-        let selected_right = other.select_series(right_on)?;
+        let selected_left = df_left.select_columns(left_on)?;
+        let selected_right = other.select_columns(right_on)?;
+
+        let selected_left = selected_left
+            .into_iter()
+            .map(Column::take_materialized_series)
+            .collect::<Vec<_>>();
+        let selected_right = selected_right
+            .into_iter()
+            .map(Column::take_materialized_series)
+            .collect::<Vec<_>>();
+
         self._join_impl(other, selected_left, selected_right, args, true, false)
     }
 
@@ -537,7 +547,19 @@ pub fn private_left_join_multiple_keys(
     b: &DataFrame,
     join_nulls: bool,
 ) -> PolarsResult<LeftJoinIds> {
-    let a = prepare_keys_multiple(a.get_columns(), join_nulls)?.into_series();
-    let b = prepare_keys_multiple(b.get_columns(), join_nulls)?.into_series();
+    // @scalar-opt
+    let a_cols = a
+        .get_columns()
+        .iter()
+        .map(|c| c.as_materialized_series().clone())
+        .collect::<Vec<_>>();
+    let b_cols = b
+        .get_columns()
+        .iter()
+        .map(|c| c.as_materialized_series().clone())
+        .collect::<Vec<_>>();
+
+    let a = prepare_keys_multiple(&a_cols, join_nulls)?.into_series();
+    let b = prepare_keys_multiple(&b_cols, join_nulls)?.into_series();
     sort_or_hash_left(&a, &b, false, JoinValidation::ManyToMany, join_nulls)
 }

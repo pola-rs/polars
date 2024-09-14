@@ -225,7 +225,14 @@ pub fn arctan2(y: PyExpr, x: PyExpr) -> PyExpr {
 pub fn cum_fold(acc: PyExpr, lambda: PyObject, exprs: Vec<PyExpr>, include_init: bool) -> PyExpr {
     let exprs = exprs.to_exprs();
 
-    let func = move |a: Series, b: Series| binary_lambda(&lambda, a, b);
+    let func = move |a: Column, b: Column| {
+        binary_lambda(
+            &lambda,
+            a.take_materialized_series(),
+            b.take_materialized_series(),
+        )
+        .map(|v| v.map(Column::from))
+    };
     dsl::cum_fold_exprs(acc.inner, func, exprs, include_init).into()
 }
 
@@ -233,7 +240,14 @@ pub fn cum_fold(acc: PyExpr, lambda: PyObject, exprs: Vec<PyExpr>, include_init:
 pub fn cum_reduce(lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
     let exprs = exprs.to_exprs();
 
-    let func = move |a: Series, b: Series| binary_lambda(&lambda, a, b);
+    let func = move |a: Column, b: Column| {
+        binary_lambda(
+            &lambda,
+            a.take_materialized_series(),
+            b.take_materialized_series(),
+        )
+        .map(|v| v.map(Column::from))
+    };
     dsl::cum_reduce_exprs(func, exprs).into()
 }
 
@@ -394,7 +408,14 @@ pub fn first() -> PyExpr {
 pub fn fold(acc: PyExpr, lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
     let exprs = exprs.to_exprs();
 
-    let func = move |a: Series, b: Series| binary_lambda(&lambda, a, b);
+    let func = move |a: Column, b: Column| {
+        binary_lambda(
+            &lambda,
+            a.take_materialized_series(),
+            b.take_materialized_series(),
+        )
+        .map(|v| v.map(Column::from))
+    };
     dsl::fold_exprs(acc.inner, func, exprs).into()
 }
 
@@ -495,7 +516,14 @@ pub fn pearson_corr(a: PyExpr, b: PyExpr, ddof: u8) -> PyExpr {
 pub fn reduce(lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
     let exprs = exprs.to_exprs();
 
-    let func = move |a: Series, b: Series| binary_lambda(&lambda, a, b);
+    let func = move |a: Column, b: Column| {
+        binary_lambda(
+            &lambda,
+            a.take_materialized_series(),
+            b.take_materialized_series(),
+        )
+        .map(|v| v.map(Column::from))
+    };
     dsl::reduce_exprs(func, exprs).into()
 }
 

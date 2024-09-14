@@ -44,12 +44,12 @@ fn offsets_to_groups(offsets: &[i64]) -> Option<GroupsProxy> {
 }
 
 fn run_per_sublist(
-    s: Series,
+    s: Column,
     lst: &ListChunked,
     expr: &Expr,
     parallel: bool,
     output_field: Field,
-) -> PolarsResult<Option<Series>> {
+) -> PolarsResult<Option<Column>> {
     let phys_expr = prepare_expression_for_context(
         PlSmallStr::EMPTY,
         expr,
@@ -86,7 +86,7 @@ fn run_per_sublist(
         lst.into_iter()
             .map(|s| {
                 s.and_then(|s| unsafe {
-                    df_container.get_columns_mut().push(s);
+                    df_container.get_columns_mut().push(s.into_column());
                     let out = phys_expr.evaluate(&df_container, &state);
                     df_container.get_columns_mut().clear();
                     match out {
@@ -107,9 +107,9 @@ fn run_per_sublist(
     ca.rename(s.name().clone());
 
     if ca.dtype() != output_field.dtype() {
-        ca.cast(output_field.dtype()).map(Some)
+        ca.cast(output_field.dtype()).map(Column::from).map(Some)
     } else {
-        Ok(Some(ca.into_series()))
+        Ok(Some(ca.into_column()))
     }
 }
 
@@ -117,7 +117,7 @@ fn run_on_group_by_engine(
     name: PlSmallStr,
     lst: &ListChunked,
     expr: &Expr,
-) -> PolarsResult<Option<Series>> {
+) -> PolarsResult<Option<Column>> {
     let lst = lst.rechunk();
     let arr = lst.downcast_iter().next().unwrap();
     let groups = offsets_to_groups(arr.offsets()).unwrap();
@@ -142,7 +142,7 @@ fn run_on_group_by_engine(
         },
         _ => ac.aggregated(),
     };
-    Ok(Some(out.with_name(name)))
+    Ok(Some(out.with_name(name).into_column()))
 }
 
 pub trait ListNameSpaceExtension: IntoListNameSpace + Sized {
@@ -151,7 +151,7 @@ pub trait ListNameSpaceExtension: IntoListNameSpace + Sized {
         let this = self.into_list_name_space();
 
         let expr2 = expr.clone();
-        let func = move |s: Series| {
+        let func = move |c: Column| {
             for e in expr.into_iter() {
                 match e {
                     #[cfg(feature = "dtype-categorical")]
@@ -173,19 +173,19 @@ pub trait ListNameSpaceExtension: IntoListNameSpace + Sized {
                     _ => {},
                 }
             }
-            let lst = s.list()?.clone();
+            let lst = c.list()?.clone();
 
             // # fast returns
             // ensure we get the new schema
             let output_field = eval_field_to_dtype(lst.ref_field(), &expr, true);
             if lst.is_empty() {
-                return Ok(Some(Series::new_empty(
-                    s.name().clone(),
+                return Ok(Some(Column::new_empty(
+                    c.name().clone(),
                     output_field.dtype(),
                 )));
             }
             if lst.null_count() == lst.len() {
-                return Ok(Some(s.cast(output_field.dtype())?));
+                return Ok(Some(c.cast(output_field.dtype())?.into_column()));
             }
 
             let fits_idx_size = lst.get_values_size() <= (IdxSize::MAX as usize);
@@ -195,10 +195,10 @@ pub trait ListNameSpaceExtension: IntoListNameSpace + Sized {
                 expr.into_iter().any(|e| matches!(e, Expr::AnonymousFunction { options, .. } if options.fmt_str == MAP_LIST_NAME))
             };
 
-            if fits_idx_size && s.null_count() == 0 && !is_user_apply() {
-                run_on_group_by_engine(s.name().clone(), &lst, &expr)
+            if fits_idx_size && c.null_count() == 0 && !is_user_apply() {
+                run_on_group_by_engine(c.name().clone(), &lst, &expr)
             } else {
-                run_per_sublist(s, &lst, &expr, parallel, output_field)
+                run_per_sublist(c, &lst, &expr, parallel, output_field)
             }
         };
 

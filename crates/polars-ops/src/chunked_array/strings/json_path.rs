@@ -204,10 +204,11 @@ mod tests {
 
         let expected_series = StructChunked::from_series(
             "".into(),
-            &[
+            [
                 Series::new("a".into(), &[None, Some(1), Some(2), None]),
                 Series::new("b".into(), &[None, Some("hello"), Some("goodbye"), None]),
-            ],
+            ]
+            .iter(),
         )
         .unwrap()
         .with_outer_validity_chunked(BooleanChunked::new("".into(), [false, true, true, false]))

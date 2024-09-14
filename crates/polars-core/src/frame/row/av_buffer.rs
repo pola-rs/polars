@@ -624,7 +624,7 @@ impl<'a> AnyValueBufferTrusted<'a> {
                         s
                     })
                     .collect::<Vec<_>>();
-                StructChunked::from_series(PlSmallStr::EMPTY, &v)
+                StructChunked::from_series(PlSmallStr::EMPTY, v.iter())
                     .unwrap()
                     .into_series()
             },

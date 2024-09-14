@@ -106,7 +106,7 @@ pub trait DataFrameOps: IntoDf {
             df.get_columns()
                 .par_iter()
                 .map(|s| match set.contains(s.name().as_str()) {
-                    true => s.to_dummies(separator, drop_first),
+                    true => s.as_materialized_series().to_dummies(separator, drop_first),
                     false => Ok(s.clone().into_frame()),
                 })
                 .collect::<PolarsResult<Vec<_>>>()

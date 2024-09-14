@@ -49,7 +49,7 @@ pub fn predicate_to_pa(
                         let s = if v { "True" } else { "False" };
                         write!(list_repr, "{},", s).unwrap();
                     } else if let AnyValue::Datetime(v, tu, tz) = av {
-                        let dtm = to_py_datetime(v, &tu, tz.as_ref());
+                        let dtm = to_py_datetime(v, &tu, tz);
                         write!(list_repr, "{dtm},").unwrap();
                     } else if let AnyValue::Date(v) = av {
                         write!(list_repr, "to_py_date({v}),").unwrap();
@@ -83,7 +83,7 @@ pub fn predicate_to_pa(
                     Some(format!("to_py_date({v})"))
                 },
                 #[cfg(feature = "dtype-datetime")]
-                AnyValue::Datetime(v, tu, tz) => Some(to_py_datetime(v, &tu, tz.as_ref())),
+                AnyValue::Datetime(v, tu, tz) => Some(to_py_datetime(v, &tu, tz)),
                 // Activate once pyarrow supports them
                 // #[cfg(feature = "dtype-time")]
                 // AnyValue::Time(v) => {

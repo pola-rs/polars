@@ -142,8 +142,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     col2.append_slice(&[1, 7, 3]);
     col2.append_slice(&[8, 1, 0]);
     let array_df = DataFrame::new(vec![
-        col1.finish().into_series(),
-        col2.finish().into_series(),
+        col1.finish().into_column(),
+        col2.finish().into_column(),
     ])?;
 
     println!("{}", &array_df);

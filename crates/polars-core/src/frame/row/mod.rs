@@ -68,7 +68,7 @@ impl DataFrame {
         let width = self.width();
         let size = width * self.height();
         let mut buf = vec![AnyValue::Null; size];
-        for (col_i, s) in self.columns.iter().enumerate() {
+        for (col_i, s) in self.materialized_column_iter().enumerate() {
             match s.dtype() {
                 #[cfg(feature = "object")]
                 DataType::Object(_, _) => {

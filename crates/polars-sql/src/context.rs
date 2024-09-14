@@ -471,7 +471,8 @@ impl SQLContext {
                 let plan = plan
                     .split('\n')
                     .collect::<Series>()
-                    .with_name(PlSmallStr::from_static("Logical Plan"));
+                    .with_name(PlSmallStr::from_static("Logical Plan"))
+                    .into_column();
                 let df = DataFrame::new(vec![plan])?;
                 Ok(df.lazy())
             },
@@ -481,7 +482,7 @@ impl SQLContext {
 
     // SHOW TABLES
     fn execute_show_tables(&mut self, _: &Statement) -> PolarsResult<LazyFrame> {
-        let tables = Series::new("name".into(), self.get_tables());
+        let tables = Column::new("name".into(), self.get_tables());
         let df = DataFrame::new(vec![tables])?;
         Ok(df.lazy())
     }
@@ -1031,7 +1032,7 @@ impl SQLContext {
                             "UNNEST table alias requires {} column name{}, found {}", column_values.len(), plural, column_names.len()
                         );
                     }
-                    let column_series: Vec<Series> = column_values
+                    let column_series: Vec<Column> = column_values
                         .into_iter()
                         .zip(column_names)
                         .map(|(s, name)| {
@@ -1041,6 +1042,7 @@ impl SQLContext {
                                 s.clone()
                             }
                         })
+                        .map(Column::from)
                         .collect();
 
                     let lf = DataFrame::new(column_series)?.lazy();

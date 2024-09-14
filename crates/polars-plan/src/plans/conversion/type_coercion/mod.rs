@@ -531,7 +531,7 @@ mod test {
         let optimizer = StackOptimizer {};
         let rules: &mut [Box<dyn OptimizationRule>] = &mut [Box::new(TypeCoercionRule {})];
 
-        let df = DataFrame::new(Vec::from([Series::new_empty(
+        let df = DataFrame::new(Vec::from([Column::new_empty(
             PlSmallStr::from_static("fruits"),
             &DataType::Categorical(None, Default::default()),
         )]))

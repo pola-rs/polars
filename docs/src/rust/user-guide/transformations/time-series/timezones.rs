@@ -5,7 +5,7 @@ use polars::prelude::*;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:example]
     let ts = ["2021-03-27 03:00", "2021-03-28 03:00"];
-    let tz_naive = Series::new("tz_naive".into(), &ts);
+    let tz_naive = Column::new("tz_naive".into(), &ts);
     let time_zones_df = DataFrame::new(vec![tz_naive])?
         .lazy()
         .select([col("tz_naive").str().to_datetime(

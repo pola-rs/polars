@@ -8,7 +8,7 @@ use crate::utils::_split_offsets;
 
 pub(crate) fn args_validate<T: PolarsDataType>(
     ca: &ChunkedArray<T>,
-    other: &[Series],
+    other: &[Column],
     param_value: &[bool],
     param_name: &str,
 ) -> PolarsResult<()> {
@@ -25,7 +25,7 @@ pub(crate) fn args_validate<T: PolarsDataType>(
 
 pub(crate) fn arg_sort_multiple_impl<T: NullOrderCmp + Send + Copy>(
     mut vals: Vec<(IdxSize, T)>,
-    by: &[Series],
+    by: &[Column],
     options: &SortMultipleOptions,
 ) -> PolarsResult<IdxCa> {
     let nulls_last = &options.nulls_last;
@@ -36,7 +36,7 @@ pub(crate) fn arg_sort_multiple_impl<T: NullOrderCmp + Send + Copy>(
 
     let compare_inner: Vec<_> = by
         .iter()
-        .map(|s| s.into_total_ord_inner())
+        .map(|s| s.as_materialized_series().into_total_ord_inner())
         .collect_trusted();
 
     let first_descending = descending[0];
@@ -198,7 +198,7 @@ pub fn _get_rows_encoded_unordered(by: &[Series]) -> PolarsResult<RowsEncoded> {
 }
 
 pub fn _get_rows_encoded(
-    by: &[Series],
+    by: &[Column],
     descending: &[bool],
     nulls_last: &[bool],
 ) -> PolarsResult<RowsEncoded> {
@@ -209,6 +209,7 @@ pub fn _get_rows_encoded(
     let mut fields = Vec::with_capacity(by.len());
 
     for ((by, desc), null_last) in by.iter().zip(descending).zip(nulls_last) {
+        let by = by.as_materialized_series();
         let arr = _get_rows_encoded_compat_array(by)?;
         let sort_field = EncodingField {
             descending: *desc,
@@ -236,7 +237,7 @@ pub fn _get_rows_encoded(
 
 pub fn _get_rows_encoded_ca(
     name: PlSmallStr,
-    by: &[Series],
+    by: &[Column],
     descending: &[bool],
     nulls_last: &[bool],
 ) -> PolarsResult<BinaryOffsetChunked> {
@@ -245,7 +246,7 @@ pub fn _get_rows_encoded_ca(
 }
 
 pub fn _get_rows_encoded_arr(
-    by: &[Series],
+    by: &[Column],
     descending: &[bool],
     nulls_last: &[bool],
 ) -> PolarsResult<BinaryArray<i64>> {
@@ -261,7 +262,7 @@ pub fn _get_rows_encoded_ca_unordered(
 }
 
 pub(crate) fn argsort_multiple_row_fmt(
-    by: &[Series],
+    by: &[Column],
     mut descending: Vec<bool>,
     mut nulls_last: Vec<bool>,
     parallel: bool,
