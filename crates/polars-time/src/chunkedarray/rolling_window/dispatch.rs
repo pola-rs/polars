@@ -16,7 +16,7 @@ fn rolling_agg<T>(
         usize,
         bool,
         Option<&[f64]>,
-        DynArgs,
+        Option<RollingFnParams>,
     ) -> PolarsResult<ArrayRef>,
     rolling_agg_fn_nulls: &dyn Fn(
         &PrimitiveArray<T::Native>,
@@ -24,7 +24,7 @@ fn rolling_agg<T>(
         usize,
         bool,
         Option<&[f64]>,
-        DynArgs,
+        Option<RollingFnParams>,
     ) -> ArrayRef,
 ) -> PolarsResult<Series>
 where
@@ -72,7 +72,7 @@ fn rolling_agg_by<T>(
         usize,
         TimeUnit,
         Option<&TimeZone>,
-        DynArgs,
+        Option<RollingFnParams>,
         Option<&[IdxSize]>,
     ) -> PolarsResult<ArrayRef>,
 ) -> PolarsResult<Series>

@@ -3,9 +3,6 @@
 #[cfg(feature = "dtype-categorical")]
 pub mod cat;
 
-#[cfg(any(feature = "rolling_window", feature = "rolling_window_by"))]
-use std::any::Any;
-
 #[cfg(feature = "dtype-categorical")]
 pub use cat::*;
 #[cfg(feature = "rolling_window_by")]
@@ -1359,10 +1356,10 @@ impl Expr {
         quantile: f64,
         mut options: RollingOptionsDynamicWindow,
     ) -> Expr {
-        options.fn_params = Some(Arc::new(RollingQuantileParams {
+        options.fn_params = Some(RollingFnParams::Quantile(RollingQuantileParams {
             prob: quantile,
             interpol,
-        }) as Arc<dyn Any + Send + Sync>);
+        }));
 
         self.finish_rolling_by(by, options, RollingFunctionBy::QuantileBy)
     }
@@ -1435,10 +1432,10 @@ impl Expr {
         quantile: f64,
         mut options: RollingOptionsFixedWindow,
     ) -> Expr {
-        options.fn_params = Some(Arc::new(RollingQuantileParams {
+        options.fn_params = Some(RollingFnParams::Quantile(RollingQuantileParams {
             prob: quantile,
             interpol,
-        }) as Arc<dyn Any + Send + Sync>);
+        }));
 
         self.finish_rolling(options, RollingFunction::Quantile)
     }
