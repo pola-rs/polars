@@ -95,7 +95,11 @@ impl DataFrameStreamIterator {
         let dtype = ArrowDataType::Struct(schema.into_iter_values().collect());
 
         Self {
-            columns: df.get_columns().to_vec(),
+            columns: df
+                .get_columns()
+                .iter()
+                .map(|v| v.as_materialized_series().clone())
+                .collect(),
             dtype,
             idx: 0,
             n_chunks: df.n_chunks(),

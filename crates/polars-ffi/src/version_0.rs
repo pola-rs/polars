@@ -1,4 +1,4 @@
-use polars_core::prelude::CompatLevel;
+use polars_core::prelude::{Column, CompatLevel};
 
 use super::*;
 
@@ -51,6 +51,10 @@ unsafe extern "C" fn c_release_series_export(e: *mut SeriesExport) {
     }
 
     e.release = None;
+}
+
+pub fn export_column(c: &Column) -> SeriesExport {
+    export_series(c.as_materialized_series())
 }
 
 pub fn export_series(s: &Series) -> SeriesExport {

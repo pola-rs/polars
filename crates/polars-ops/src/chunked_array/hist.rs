@@ -136,7 +136,7 @@ where
         let out = fields.pop().unwrap();
         out.with_name(ca.name().clone())
     } else {
-        StructChunked::from_series(ca.name().clone(), &fields)
+        StructChunked::from_series(ca.name().clone(), fields.iter())
             .unwrap()
             .into_series()
     }

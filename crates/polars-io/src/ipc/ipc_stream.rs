@@ -13,9 +13,9 @@
 //! use std::io::Cursor;
 //!
 //!
-//! let s0 = Series::new("days".into(), &[0, 1, 2, 3, 4]);
-//! let s1 = Series::new("temp".into(), &[22.1, 19.9, 7., 2., 3.]);
-//! let mut df = DataFrame::new(vec![s0, s1]).unwrap();
+//! let c0 = Column::new("days".into(), &[0, 1, 2, 3, 4]);
+//! let c1 = Column::new("temp".into(), &[22.1, 19.9, 7., 2., 3.]);
+//! let mut df = DataFrame::new(vec![c0, c1]).unwrap();
 //!
 //! // Create an in memory file handler.
 //! // Vec<u8>: Read + Write

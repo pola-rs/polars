@@ -157,8 +157,6 @@ impl LazyFileListReader for LazyJsonLineReader {
         Ok(LazyFrame::from(DslPlan::Scan {
             sources: Arc::new(Mutex::new(self.sources.to_dsl(false))),
             file_info: Arc::new(RwLock::new(None)),
-            hive_parts: None,
-            predicate: None,
             file_options,
             scan_type,
         }))

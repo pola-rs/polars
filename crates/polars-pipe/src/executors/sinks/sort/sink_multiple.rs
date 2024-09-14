@@ -100,7 +100,8 @@ fn finalize_dataframe(
                 let (name, logical_dtype) = schema.get_at_index(sort_idx).unwrap();
                 assert_eq!(logical_dtype.to_physical(), DataType::from(arr.dtype()));
                 let col =
-                    Series::from_chunks_and_dtype_unchecked(name.clone(), vec![arr], logical_dtype);
+                    Series::from_chunks_and_dtype_unchecked(name.clone(), vec![arr], logical_dtype)
+                        .into_column();
                 cols.insert(sort_idx, col);
             }
         }
@@ -205,7 +206,7 @@ impl SortSinkMultiple {
 
         for i in self.sort_idx.iter() {
             let s = &cols[*i];
-            let arr = _get_rows_encoded_compat_array(s)?;
+            let arr = _get_rows_encoded_compat_array(s.as_materialized_series())?;
             self.sort_column.push(arr);
         }
 

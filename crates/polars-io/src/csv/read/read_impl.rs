@@ -34,22 +34,22 @@ pub(crate) fn cast_columns(
     parallel: bool,
     ignore_errors: bool,
 ) -> PolarsResult<()> {
-    let cast_fn = |s: &Series, fld: &Field| {
-        let out = match (s.dtype(), fld.dtype()) {
+    let cast_fn = |c: &Column, fld: &Field| {
+        let out = match (c.dtype(), fld.dtype()) {
             #[cfg(feature = "temporal")]
-            (DataType::String, DataType::Date) => s
+            (DataType::String, DataType::Date) => c
                 .str()
                 .unwrap()
                 .as_date(None, false)
-                .map(|ca| ca.into_series()),
+                .map(|ca| ca.into_column()),
             #[cfg(feature = "temporal")]
-            (DataType::String, DataType::Time) => s
+            (DataType::String, DataType::Time) => c
                 .str()
                 .unwrap()
                 .as_time(None, false)
-                .map(|ca| ca.into_series()),
+                .map(|ca| ca.into_column()),
             #[cfg(feature = "temporal")]
-            (DataType::String, DataType::Datetime(tu, _)) => s
+            (DataType::String, DataType::Datetime(tu, _)) => c
                 .str()
                 .unwrap()
                 .as_datetime(
@@ -60,11 +60,11 @@ pub(crate) fn cast_columns(
                     None,
                     &StringChunked::from_iter(std::iter::once("raise")),
                 )
-                .map(|ca| ca.into_series()),
-            (_, dt) => s.cast(dt),
+                .map(|ca| ca.into_column()),
+            (_, dt) => c.cast(dt),
         }?;
-        if !ignore_errors && s.null_count() != out.null_count() {
-            handle_casting_failures(s, &out)?;
+        if !ignore_errors && c.null_count() != out.null_count() {
+            handle_casting_failures(c.as_materialized_series(), out.as_materialized_series())?;
         }
         Ok(out)
     };
@@ -554,7 +554,7 @@ impl<'a> CoreReader<'a> {
 
                             let columns = buffers
                                 .into_iter()
-                                .map(|buf| buf.into_series())
+                                .map(|buf| buf.into_series().map(Column::from))
                                 .collect::<PolarsResult<_>>()?;
                             let mut local_df = unsafe { DataFrame::new_no_checks(columns) };
                             let current_row_count = local_df.height() as IdxSize;
@@ -659,7 +659,7 @@ impl<'a> CoreReader<'a> {
 
                             let columns = buffers
                                 .into_iter()
-                                .map(|buf| buf.into_series())
+                                .map(|buf| buf.into_series().map(Column::from))
                                 .collect::<PolarsResult<_>>()?;
                             unsafe { DataFrame::new_no_checks(columns) }
                         };
@@ -766,7 +766,7 @@ fn read_chunk(
 
     let columns = buffers
         .into_iter()
-        .map(|buf| buf.into_series())
+        .map(|buf| buf.into_series().map(Column::from))
         .collect::<PolarsResult<_>>()?;
     Ok(unsafe { DataFrame::new_no_checks(columns) })
 }

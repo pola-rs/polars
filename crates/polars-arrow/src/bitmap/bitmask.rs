@@ -14,7 +14,7 @@ fn nth_set_bit_u32(w: u32, n: u32) -> Option<u32> {
     // We use this by setting the first argument to 1 << n, which means the
     // first n-1 zero bits of it will spread to the first n-1 one bits of w,
     // after which the one bit will exactly get copied to the nth one bit of w.
-    #[cfg(target_feature = "bmi2")]
+    #[cfg(all(not(miri), target_feature = "bmi2"))]
     {
         if n >= 32 {
             return None;
@@ -28,7 +28,7 @@ fn nth_set_bit_u32(w: u32, n: u32) -> Option<u32> {
         Some(nth_set_bit.trailing_zeros())
     }
 
-    #[cfg(not(target_feature = "bmi2"))]
+    #[cfg(any(miri, not(target_feature = "bmi2")))]
     {
         // Each block of 2/4/8/16 bits contains how many set bits there are in that block.
         let set_per_2 = w - ((w >> 1) & 0x55555555);

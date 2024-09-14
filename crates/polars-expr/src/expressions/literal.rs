@@ -95,6 +95,7 @@ impl PhysicalExpr for LiteralExpr {
                 .into_time()
                 .into_series(),
             Series(series) => series.deref().clone(),
+            OtherScalar(s) => s.clone().into_series(get_literal_name().clone()),
             lv @ (Int(_) | Float(_) | StrCat(_)) => polars_core::prelude::Series::from_any_values(
                 get_literal_name().clone(),
                 &[lv.to_any_value().unwrap()],

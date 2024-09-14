@@ -616,9 +616,9 @@ impl Display for DataFrame {
 
                     for i in 0..(half + rest) {
                         let row = self
-                            .columns
+                            .get_columns()
                             .iter()
-                            .map(|s| s.str_value(i).unwrap())
+                            .map(|c| c.str_value(i).unwrap())
                             .collect();
 
                         let row_strings =
@@ -630,9 +630,9 @@ impl Display for DataFrame {
                     rows.push(dots);
                     for i in (height - half)..height {
                         let row = self
-                            .columns
+                            .get_columns()
                             .iter()
-                            .map(|s| s.str_value(i).unwrap())
+                            .map(|c| c.str_value(i).unwrap())
                             .collect();
 
                         let row_strings =
@@ -644,8 +644,7 @@ impl Display for DataFrame {
                     for i in 0..height {
                         if self.width() > 0 {
                             let row = self
-                                .columns
-                                .iter()
+                                .materialized_column_iter()
                                 .map(|s| s.str_value(i).unwrap())
                                 .collect();
 
@@ -908,6 +907,24 @@ fn fmt_float<T: Num + NumCast>(f: &mut Formatter<'_>, width: usize, v: T) -> fmt
     }
 }
 
+#[cfg(feature = "dtype-datetime")]
+fn fmt_datetime(
+    f: &mut Formatter<'_>,
+    v: i64,
+    tu: TimeUnit,
+    tz: Option<&self::datatypes::TimeZone>,
+) -> fmt::Result {
+    let ndt = match tu {
+        TimeUnit::Nanoseconds => timestamp_ns_to_datetime(v),
+        TimeUnit::Microseconds => timestamp_us_to_datetime(v),
+        TimeUnit::Milliseconds => timestamp_ms_to_datetime(v),
+    };
+    match tz {
+        None => std::fmt::Display::fmt(&ndt, f),
+        Some(tz) => PlTzAware::new(ndt, tz).fmt(f),
+    }
+}
+
 #[cfg(feature = "dtype-duration")]
 const NAMES: [&str; 4] = ["d", "h", "m", "s"];
 #[cfg(feature = "dtype-duration")]
@@ -1024,18 +1041,10 @@ impl Display for AnyValue<'_> {
             #[cfg(feature = "dtype-date")]
             AnyValue::Date(v) => write!(f, "{}", date32_to_date(*v)),
             #[cfg(feature = "dtype-datetime")]
-            AnyValue::Datetime(v, tu, tz) => {
-                let ndt = match tu {
-                    TimeUnit::Nanoseconds => timestamp_ns_to_datetime(*v),
-                    TimeUnit::Microseconds => timestamp_us_to_datetime(*v),
-                    TimeUnit::Milliseconds => timestamp_ms_to_datetime(*v),
-                };
-                match tz {
-                    None => write!(f, "{ndt}"),
-                    Some(tz) => {
-                        write!(f, "{}", PlTzAware::new(ndt, tz))
-                    },
-                }
+            AnyValue::Datetime(v, tu, tz) => fmt_datetime(f, *v, *tu, *tz),
+            #[cfg(feature = "dtype-datetime")]
+            AnyValue::DatetimeOwned(v, tu, tz) => {
+                fmt_datetime(f, *v, *tu, tz.as_ref().map(|v| v.as_ref()))
             },
             #[cfg(feature = "dtype-duration")]
             AnyValue::Duration(v, tu) => match tu {
@@ -1049,7 +1058,10 @@ impl Display for AnyValue<'_> {
                 write!(f, "{nt}")
             },
             #[cfg(feature = "dtype-categorical")]
-            AnyValue::Categorical(_, _, _) | AnyValue::Enum(_, _, _) => {
+            AnyValue::Categorical(_, _, _)
+            | AnyValue::CategoricalOwned(_, _, _)
+            | AnyValue::Enum(_, _, _)
+            | AnyValue::EnumOwned(_, _, _) => {
                 let s = self.get_str().unwrap();
                 write!(f, "\"{s}\"")
             },

@@ -1,6 +1,6 @@
 use super::*;
 
-pub(super) fn concat_expr(s: &[Series], rechunk: bool) -> PolarsResult<Series> {
+pub(super) fn concat_expr(s: &[Column], rechunk: bool) -> PolarsResult<Column> {
     let mut first = s[0].clone();
 
     for s in &s[1..] {

@@ -50,7 +50,7 @@ def test_contains() -> None:
             expected == df.select(pl.col("bin").bin.contains(pattern))["bin"].to_list()
         )
         # frame filter
-        assert sum([e for e in expected if e is True]) == len(
+        assert sum(e for e in expected if e is True) == len(
             df.filter(pl.col("bin").bin.contains(pattern))
         )
 

@@ -37,7 +37,7 @@ impl StackExec {
                     self.options.run_parallel,
                 )?;
                 // We don't have to do a broadcast check as cse is not allowed to hit this.
-                df._add_columns(res, schema)?;
+                df._add_series(res, schema)?;
                 Ok(df)
             });
 
@@ -64,7 +64,7 @@ impl StackExec {
                 // new, unique column names. It is immediately
                 // followed by a projection which pulls out the
                 // possibly mismatching column lengths.
-                unsafe { df.get_columns_mut().extend(res) };
+                unsafe { df.get_columns_mut() }.extend(res.into_iter().map(Column::from));
             } else {
                 let height = df.height();
 
@@ -86,7 +86,7 @@ impl StackExec {
                         );
                     }
                 }
-                df._add_columns(res, schema)?;
+                df._add_series(res, schema)?;
             }
             df
         };

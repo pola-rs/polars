@@ -302,7 +302,7 @@ class LazyFrame:
         orient: Orientation | None = None,
         infer_schema_length: int | None = N_INFER_DEFAULT,
         nan_to_null: bool = False,
-    ):
+    ) -> None:
         from polars.dataframe import DataFrame
 
         self._ldf = (
@@ -585,10 +585,10 @@ class LazyFrame:
         msg = f'"{operator!r}" comparison not supported for LazyFrame objects'
         raise TypeError(msg)
 
-    def __eq__(self, other: Any) -> NoReturn:
+    def __eq__(self, other: object) -> NoReturn:
         self._comparison_error("==")
 
-    def __ne__(self, other: Any) -> NoReturn:
+    def __ne__(self, other: object) -> NoReturn:
         self._comparison_error("!=")
 
     def __gt__(self, other: Any) -> NoReturn:
@@ -699,8 +699,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         >>> lf = pl.LazyFrame({"a": [1, 2, 3]}).sum()
         >>> bytes = lf.serialize()
-        >>> bytes  # doctest: +ELLIPSIS
-        b'\xa1kMapFunction\xa2einput\xa1mDataFrameScan\xa4bdf\xa1gcolumns\x81\xa4d...'
 
         The bytes can later be deserialized back into a LazyFrame.
 
@@ -1735,7 +1733,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             )
             import matplotlib.pyplot as plt
 
-            fig, ax = plt.subplots(1, figsize=figsize)
+            _fig, ax = plt.subplots(1, figsize=figsize)
 
             max_val = timings["end"][-1]
             timings_ = timings.reverse()
@@ -2972,7 +2970,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             cast_map.update(
                 {c: dtype}
                 if isinstance(c, str)
-                else {x: dtype for x in expand_selector(self, c)}  # type: ignore[arg-type]
+                else dict.fromkeys(expand_selector(self, c), dtype)  # type: ignore[arg-type]
             )
 
         return self._from_pyldf(self._ldf.cast(cast_map, strict))
@@ -3500,7 +3498,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ c   ┆ 1   ┆ 1.0 │
         └─────┴─────┴─────┘
         """
-        for _key, value in named_by.items():
+        for value in named_by.values():
             if not isinstance(value, (str, pl.Expr, pl.Series)):
                 msg = (
                     f"Expected Polars expression or object convertible to one, got {type(value)}.\n\n"

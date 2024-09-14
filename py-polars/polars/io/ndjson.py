@@ -122,9 +122,11 @@ def read_ndjson(
     """
     if not (
         isinstance(source, (str, Path))
-        or isinstance(source, Sequence)
-        and source
-        and isinstance(source[0], (str, Path))
+        or (
+            isinstance(source, Sequence)
+            and source
+            and isinstance(source[0], (str, Path))
+        )
     ):
         # TODO: A lot of the parameters aren't applied for BytesIO
         if isinstance(source, StringIO):
@@ -174,8 +176,7 @@ def scan_ndjson(
     | list[str]
     | list[Path]
     | list[IO[str]]
-    | list[IO[bytes]]
-    | bytes,
+    | list[IO[bytes]],
     *,
     schema: SchemaDefinition | None = None,
     schema_overrides: SchemaDefinition | None = None,

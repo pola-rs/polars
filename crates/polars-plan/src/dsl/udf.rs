@@ -5,7 +5,7 @@ use polars_core::prelude::Field;
 use polars_core::schema::Schema;
 use polars_utils::pl_str::PlSmallStr;
 
-use super::{Expr, GetOutput, SeriesUdf, SpecialEq};
+use super::{ColumnsUdf, Expr, GetOutput, SpecialEq};
 use crate::prelude::{Context, FunctionOptions};
 
 /// Represents a user-defined function
@@ -18,7 +18,7 @@ pub struct UserDefinedFunction {
     /// The function output type.
     pub return_type: GetOutput,
     /// The function implementation.
-    pub fun: SpecialEq<Arc<dyn SeriesUdf>>,
+    pub fun: SpecialEq<Arc<dyn ColumnsUdf>>,
     /// Options for the function.
     pub options: FunctionOptions,
 }
@@ -40,7 +40,7 @@ impl UserDefinedFunction {
         name: PlSmallStr,
         input_fields: Vec<Field>,
         return_type: GetOutput,
-        fun: impl SeriesUdf + 'static,
+        fun: impl ColumnsUdf + 'static,
     ) -> Self {
         Self {
             name,

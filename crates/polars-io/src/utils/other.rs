@@ -87,7 +87,7 @@ pub(crate) fn update_row_counts(dfs: &mut [(DataFrame, IdxSize)], offset: IdxSiz
         let mut previous = dfs[0].1 + offset;
         for (df, n_read) in &mut dfs[1..] {
             if let Some(s) = unsafe { df.get_columns_mut() }.get_mut(0) {
-                *s = &*s + previous;
+                *s = (&*s + previous).unwrap();
             }
             previous += *n_read;
         }
@@ -103,7 +103,7 @@ pub(crate) fn update_row_counts2(dfs: &mut [DataFrame], offset: IdxSize) {
         for df in &mut dfs[1..] {
             let n_read = df.height() as IdxSize;
             if let Some(s) = unsafe { df.get_columns_mut() }.get_mut(0) {
-                *s = &*s + previous;
+                *s = (&*s + previous).unwrap();
             }
             previous += n_read;
         }
@@ -122,7 +122,7 @@ pub(crate) fn update_row_counts3(dfs: &mut [DataFrame], heights: &[IdxSize], off
             let n_read = heights[i];
 
             if let Some(s) = unsafe { df.get_columns_mut() }.get_mut(0) {
-                *s = &*s + previous;
+                *s = (&*s + previous).unwrap();
             }
 
             previous += n_read;
@@ -203,6 +203,7 @@ pub(crate) fn chunk_df_for_writing(
     // See: #16403
     if !df.get_columns().is_empty()
         && df.get_columns()[0]
+            .as_materialized_series()
             .chunk_lengths()
             .take(5)
             .all(|len| len < row_group_size)

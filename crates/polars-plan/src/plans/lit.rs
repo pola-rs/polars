@@ -62,6 +62,7 @@ pub enum LiteralValue {
     #[cfg(feature = "dtype-time")]
     Time(i64),
     Series(SpecialEq<Series>),
+    OtherScalar(Scalar),
     // Used for dynamic languages
     Float(f64),
     // Used for dynamic languages
@@ -132,10 +133,10 @@ impl LiteralValue {
             #[cfg(feature = "dtype-date")]
             Date(v) => AnyValue::Date(*v),
             #[cfg(feature = "dtype-datetime")]
-            DateTime(v, tu, tz) => AnyValue::Datetime(*v, *tu, tz),
+            DateTime(v, tu, tz) => AnyValue::Datetime(*v, *tu, tz.as_ref()),
             #[cfg(feature = "dtype-time")]
             Time(v) => AnyValue::Time(*v),
-            Series(s) => AnyValue::List(s.0.clone().into_series()),
+            Series(_) => return None,
             Int(v) => materialize_dyn_int(*v),
             Float(v) => AnyValue::Float64(*v),
             StrCat(v) => AnyValue::String(v),
@@ -174,6 +175,7 @@ impl LiteralValue {
                 }
             },
             Binary(v) => AnyValue::Binary(v),
+            OtherScalar(s) => s.value().clone(),
         };
         Some(av)
     }
@@ -214,6 +216,7 @@ impl LiteralValue {
             LiteralValue::Int(v) => DataType::Unknown(UnknownKind::Int(*v)),
             LiteralValue::Float(_) => DataType::Unknown(UnknownKind::Float),
             LiteralValue::StrCat(_) => DataType::Unknown(UnknownKind::Str),
+            LiteralValue::OtherScalar(s) => s.dtype().clone(),
         }
     }
 
@@ -308,7 +311,7 @@ impl TryFrom<AnyValue<'_>> for LiteralValue {
             #[cfg(feature = "dtype-date")]
             AnyValue::Date(v) => Ok(LiteralValue::Date(v)),
             #[cfg(feature = "dtype-datetime")]
-            AnyValue::Datetime(value, tu, tz) => Ok(LiteralValue::DateTime(value, tu, tz.clone())),
+            AnyValue::Datetime(value, tu, tz) => Ok(LiteralValue::DateTime(value, tu, tz.cloned())),
             #[cfg(feature = "dtype-duration")]
             AnyValue::Duration(value, tu) => Ok(LiteralValue::Duration(value, tu)),
             #[cfg(feature = "dtype-time")]
@@ -466,6 +469,12 @@ impl Literal for Series {
 impl Literal for LiteralValue {
     fn lit(self) -> Expr {
         Expr::Literal(self)
+    }
+}
+
+impl Literal for Scalar {
+    fn lit(self) -> Expr {
+        Expr::Literal(LiteralValue::OtherScalar(self))
     }
 }
 

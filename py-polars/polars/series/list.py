@@ -25,7 +25,7 @@ class ListNameSpace:
 
     _accessor = "list"
 
-    def __init__(self, series: Series):
+    def __init__(self, series: Series) -> None:
         self._s: PySeries = series._s
 
     def all(self) -> Series:

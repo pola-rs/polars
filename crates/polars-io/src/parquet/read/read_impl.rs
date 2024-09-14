@@ -156,12 +156,14 @@ fn rg_to_dfs(
         if let Some(row_index) = row_index {
             let placeholder =
                 NullChunkedBuilder::new(PlSmallStr::from_static("__PL_TMP"), slice.1).finish();
-            return Ok(vec![DataFrame::new(vec![placeholder.into_series()])?
-                .with_row_index(
-                    row_index.name.clone(),
-                    Some(row_index.offset + IdxSize::try_from(slice.0).unwrap()),
-                )?
-                .select(std::iter::once(row_index.name))?]);
+            return Ok(vec![DataFrame::new(vec![placeholder
+                .into_series()
+                .into_column()])?
+            .with_row_index(
+                row_index.name.clone(),
+                Some(row_index.offset + IdxSize::try_from(slice.0).unwrap()),
+            )?
+            .select(std::iter::once(row_index.name))?]);
         }
     }
 
@@ -266,11 +268,21 @@ fn rg_to_dfs_prefiltered(
     let num_live_columns = live_variables.len();
     let num_dead_columns = projection.len() - num_live_columns;
 
+    // @NOTE: This is probably already sorted, but just to be sure.
+    let mut projection_sorted = projection.to_vec();
+    projection_sorted.sort();
+
     // We create two look-up tables that map indexes offsets into the live- and dead-set onto
     // column indexes of the schema.
     let mut live_idx_to_col_idx = Vec::with_capacity(num_live_columns);
     let mut dead_idx_to_col_idx = Vec::with_capacity(num_dead_columns);
+    let mut offset = 0;
     for (i, field) in schema.iter_values().enumerate() {
+        if projection_sorted.get(offset).copied() != Some(i) {
+            continue;
+        }
+
+        offset += 1;
         if live_variables.contains(&field.name[..]) {
             live_idx_to_col_idx.push(i);
         } else {
@@ -281,19 +293,7 @@ fn rg_to_dfs_prefiltered(
     debug_assert_eq!(live_idx_to_col_idx.len(), num_live_columns);
     debug_assert_eq!(dead_idx_to_col_idx.len(), num_dead_columns);
 
-    enum MaskSetting {
-        Auto,
-        Pre,
-        Post,
-    }
-
-    let mask_setting =
-        std::env::var("POLARS_PQ_PREFILTERED_MASK").map_or(MaskSetting::Auto, |v| match &v[..] {
-            "auto" => MaskSetting::Auto,
-            "pre" => MaskSetting::Pre,
-            "post" => MaskSetting::Post,
-            _ => panic!("Invalid `POLARS_PQ_PREFILTERED_MASK` value '{v}'."),
-        });
+    let mask_setting = PrefilterMaskSetting::init_from_env();
 
     let dfs: Vec<Option<DataFrame>> = POOL.install(|| {
         // Set partitioned fields to prevent quadratic behavior.
@@ -324,6 +324,7 @@ fn rg_to_dfs_prefiltered(
                             .collect::<Vec<_>>();
 
                         column_idx_to_series(col_idx, field_md.as_slice(), None, schema, store)
+                            .map(Column::from)
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
 
@@ -371,29 +372,8 @@ fn rg_to_dfs_prefiltered(
                     return Ok(Some(df));
                 }
 
-                let prefilter_cost = matches!(mask_setting, MaskSetting::Auto)
-                    .then(|| {
-                        let num_edges = filter_mask.num_edges() as f64;
-                        let rg_len = filter_mask.len() as f64;
-
-                        // @GB: I did quite some analysis on this.
-                        //
-                        // Pre-filtered and Post-filtered can both be faster in certain scenarios.
-                        //
-                        // - Pre-filtered is faster when there is some amount of clustering or
-                        // sorting involved or if the number of values selected is small.
-                        // - Post-filtering is faster when the predicate selects a somewhat random
-                        // elements throughout the row group.
-                        //
-                        // The following is a heuristic value to try and estimate which one is
-                        // faster. Essentially, it sees how many times it needs to switch between
-                        // skipping items and collecting items and compares it against the number
-                        // of values that it will collect.
-                        //
-                        // Closer to 0: pre-filtering is probably better.
-                        // Closer to 1: post-filtering is probably better.
-                        (num_edges / rg_len).clamp(0.0, 1.0)
-                    })
+                let prefilter_cost = matches!(mask_setting, PrefilterMaskSetting::Auto)
+                    .then(|| calc_prefilter_cost(&filter_mask))
                     .unwrap_or_default();
 
                 let rg_columns = (0..num_dead_columns)
@@ -440,32 +420,20 @@ fn rg_to_dfs_prefiltered(
                             array.filter(&mask_arr)
                         };
 
-                        let array = match mask_setting {
-                            MaskSetting::Auto => {
-                                // Prefiltering is more expensive for nested types so we make the cut-off
-                                // higher.
-                                let is_nested =
-                                    schema.get_at_index(col_idx).unwrap().1.dtype.is_nested();
-
-                                // We empirically selected these numbers.
-                                let do_prefilter = (is_nested && prefilter_cost <= 0.01)
-                                    || (!is_nested && prefilter_cost <= 0.02);
-
-                                if do_prefilter {
-                                    pre()?
-                                } else {
-                                    post()?
-                                }
-                            },
-                            MaskSetting::Pre => pre()?,
-                            MaskSetting::Post => post()?,
+                        let array = if mask_setting.should_prefilter(
+                            prefilter_cost,
+                            &schema.get_at_index(col_idx).unwrap().1.dtype,
+                        ) {
+                            pre()?
+                        } else {
+                            post()?
                         };
 
                         debug_assert_eq!(array.len(), filter_mask.set_bits());
 
-                        Ok(array)
+                        Ok(array.into_column())
                     })
-                    .collect::<PolarsResult<Vec<Series>>>()?;
+                    .collect::<PolarsResult<Vec<Column>>>()?;
 
                 let mut rearranged_schema = df.schema();
                 rearranged_schema.merge(Schema::from_arrow_schema(schema.as_ref()));
@@ -551,6 +519,7 @@ fn rg_to_dfs_optionally_par_over_columns(
                             schema,
                             store,
                         )
+                        .map(Column::from)
                     })
                     .collect::<PolarsResult<Vec<_>>>()
             })?
@@ -568,6 +537,7 @@ fn rg_to_dfs_optionally_par_over_columns(
                         schema,
                         store,
                     )
+                    .map(Column::from)
                 })
                 .collect::<PolarsResult<Vec<_>>>()?
         };
@@ -668,6 +638,7 @@ fn rg_to_dfs_par_over_rg(
                             schema,
                             store,
                         )
+                        .map(Column::from)
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
 
@@ -743,14 +714,16 @@ pub fn read_parquet<R: MmapBytesReader>(
         .map(Cow::Borrowed)
         .unwrap_or_else(|| Cow::Owned((0usize..reader_schema.len()).collect::<Vec<_>>()));
 
-    if let ParallelStrategy::Auto = parallel {
-        if predicate.is_some_and(|predicate| {
-            predicate.live_variables().map_or(0, |v| v.len()) * n_row_groups
+    if let Some(predicate) = predicate {
+        if std::env::var("POLARS_PARQUET_AUTO_PREFILTERED").is_ok_and(|v| v == "1")
+            && predicate.live_variables().map_or(0, |v| v.len()) * n_row_groups
                 >= POOL.current_num_threads()
-        }) {
+        {
             parallel = ParallelStrategy::Prefiltered;
-        } else if n_row_groups > materialized_projection.len()
-            || n_row_groups > POOL.current_num_threads()
+        }
+    }
+    if ParallelStrategy::Auto == parallel {
+        if n_row_groups > materialized_projection.len() || n_row_groups > POOL.current_num_threads()
         {
             parallel = ParallelStrategy::RowGroups;
         } else {
@@ -1232,6 +1205,61 @@ impl BatchedParquetIter {
                     self.current_batch.next().map(Ok)
                 },
             },
+        }
+    }
+}
+
+pub fn calc_prefilter_cost(mask: &arrow::bitmap::Bitmap) -> f64 {
+    let num_edges = mask.num_edges() as f64;
+    let rg_len = mask.len() as f64;
+
+    // @GB: I did quite some analysis on this.
+    //
+    // Pre-filtered and Post-filtered can both be faster in certain scenarios.
+    //
+    // - Pre-filtered is faster when there is some amount of clustering or
+    // sorting involved or if the number of values selected is small.
+    // - Post-filtering is faster when the predicate selects a somewhat random
+    // elements throughout the row group.
+    //
+    // The following is a heuristic value to try and estimate which one is
+    // faster. Essentially, it sees how many times it needs to switch between
+    // skipping items and collecting items and compares it against the number
+    // of values that it will collect.
+    //
+    // Closer to 0: pre-filtering is probably better.
+    // Closer to 1: post-filtering is probably better.
+    (num_edges / rg_len).clamp(0.0, 1.0)
+}
+
+pub enum PrefilterMaskSetting {
+    Auto,
+    Pre,
+    Post,
+}
+
+impl PrefilterMaskSetting {
+    pub fn init_from_env() -> Self {
+        std::env::var("POLARS_PQ_PREFILTERED_MASK").map_or(Self::Auto, |v| match &v[..] {
+            "auto" => Self::Auto,
+            "pre" => Self::Pre,
+            "post" => Self::Post,
+            _ => panic!("Invalid `POLARS_PQ_PREFILTERED_MASK` value '{v}'."),
+        })
+    }
+
+    pub fn should_prefilter(&self, prefilter_cost: f64, dtype: &ArrowDataType) -> bool {
+        match self {
+            Self::Auto => {
+                // Prefiltering is more expensive for nested types so we make the cut-off
+                // higher.
+                let is_nested = dtype.is_nested();
+
+                // We empirically selected these numbers.
+                (is_nested && prefilter_cost <= 0.01) || (!is_nested && prefilter_cost <= 0.02)
+            },
+            Self::Pre => true,
+            Self::Post => false,
         }
     }
 }

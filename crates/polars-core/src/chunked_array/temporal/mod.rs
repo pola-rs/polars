@@ -64,7 +64,7 @@ pub fn parse_time_zone(tz: &str) -> PolarsResult<Tz> {
 ///
 /// E.g. +01:00 -> Etc/GMT-1
 ///
-/// Note: the sign appears reversed, but is correct, see https://en.wikipedia.org/wiki/Tz_database#Area:
+/// Note: the sign appears reversed, but is correct, see <https://en.wikipedia.org/wiki/Tz_database#Area>:
 /// > In order to conform with the POSIX style, those zone names beginning with
 /// > "Etc/GMT" have their sign reversed from the standard ISO 8601 convention.
 /// > In the "Etc" area, zones west of GMT have a positive sign and those east

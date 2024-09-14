@@ -50,7 +50,7 @@ pub(super) fn extract_groups(
     if n_fields == 1 {
         return StructChunked::from_series(
             ca.name().clone(),
-            &[Series::new_null(ca.name().clone(), ca.len())],
+            [Series::new_null(ca.name().clone(), ca.len())].iter(),
         )
         .map(|ca| ca.into_series());
     }

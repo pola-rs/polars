@@ -20,7 +20,7 @@
 //!     .agg([
 //!         // expressions can be combined into powerful aggregations
 //!         col("foo")
-//!             .sort_by([col("ham").rank(Default::default(), None)], [false])
+//!             .sort_by([col("ham").rank(Default::default(), None)], SortMultipleOptions::default())
 //!             .last()
 //!             .alias("last_foo_ranked_by_ham"),
 //!         // every expression runs in parallel

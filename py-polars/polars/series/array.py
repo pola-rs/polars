@@ -20,7 +20,7 @@ class ArrayNameSpace:
 
     _accessor = "arr"
 
-    def __init__(self, series: Series):
+    def __init__(self, series: Series) -> None:
         self._s: PySeries = series._s
 
     def min(self) -> Series:

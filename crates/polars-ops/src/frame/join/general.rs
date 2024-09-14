@@ -1,7 +1,7 @@
 use polars_utils::format_pl_smallstr;
 
 use super::*;
-use crate::series::coalesce_series;
+use crate::series::coalesce_columns;
 
 pub fn _join_suffix_name(name: &str, suffix: &str) -> PlSmallStr {
     format_pl_smallstr!("{name}{suffix}")
@@ -83,7 +83,7 @@ pub fn _coalesce_full_join(
         let l = columns[pos_l].clone();
         let r = columns[pos_r].clone();
 
-        columns[pos_l] = coalesce_series(&[l, r]).unwrap();
+        columns[pos_l] = coalesce_columns(&[l, r]).unwrap();
         to_remove.push(pos_r);
     }
     // sort in reverse order, so the indexes remain correct if we remove.

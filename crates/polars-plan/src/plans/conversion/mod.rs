@@ -52,8 +52,8 @@ impl IR {
             IR::Scan {
                 sources,
                 file_info,
-                hive_parts,
-                predicate,
+                hive_parts: _,
+                predicate: _,
                 scan_type,
                 output_schema: _,
                 file_options: options,
@@ -63,8 +63,6 @@ impl IR {
                     is_expanded: true,
                 })),
                 file_info: Arc::new(RwLock::new(Some(file_info))),
-                hive_parts,
-                predicate: predicate.map(|e| e.to_expr(expr_arena)),
                 scan_type,
                 file_options: options,
             },
@@ -110,14 +108,9 @@ impl IR {
             IR::DataFrameScan {
                 df,
                 schema,
-                output_schema,
-                filter: selection,
-            } => DslPlan::DataFrameScan {
-                df,
-                schema,
-                output_schema,
-                filter: selection.map(|e| e.to_expr(expr_arena)),
-            },
+                output_schema: _,
+                filter: _,
+            } => DslPlan::DataFrameScan { df, schema },
             IR::Select {
                 expr,
                 input,
@@ -171,14 +164,10 @@ impl IR {
             IR::Cache {
                 input,
                 id,
-                cache_hits,
+                cache_hits: _,
             } => {
                 let input = Arc::new(convert_to_lp(input, lp_arena));
-                DslPlan::Cache {
-                    input,
-                    id,
-                    cache_hits,
-                }
+                DslPlan::Cache { input, id }
             },
             IR::GroupBy {
                 input,

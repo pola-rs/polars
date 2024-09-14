@@ -50,7 +50,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [end:series_struct_extract]
 
     // --8<-- [start:series_struct_rename]
-    let out = DataFrame::new([rating_series].into())?
+    let out = DataFrame::new([rating_series.into_column()].into())?
         .lazy()
         .select([col("ratings")
             .struct_()
@@ -130,7 +130,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             })
                             .collect();
 
-                        Ok(Some(out.into_series()))
+                        Ok(Some(out.into_column()))
                     },
                     GetOutput::from_type(DataType::Int32),
                 )

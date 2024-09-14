@@ -10,12 +10,12 @@ use serde::{Deserializer, Serializer};
 use super::*;
 
 /// A wrapper trait for any closure `Fn(Vec<Series>) -> PolarsResult<Series>`
-pub trait SeriesUdf: Send + Sync {
+pub trait ColumnsUdf: Send + Sync {
     fn as_any(&self) -> &dyn std::any::Any {
         unimplemented!("as_any not implemented for this 'opaque' function")
     }
 
-    fn call_udf(&self, s: &mut [Series]) -> PolarsResult<Option<Series>>;
+    fn call_udf(&self, s: &mut [Column]) -> PolarsResult<Option<Column>>;
 
     fn try_serialize(&self, _buf: &mut Vec<u8>) -> PolarsResult<()> {
         polars_bail!(ComputeError: "serialization not supported for this 'opaque' function")
@@ -31,7 +31,7 @@ pub trait SeriesUdf: Send + Sync {
 }
 
 #[cfg(feature = "serde")]
-impl Serialize for SpecialEq<Arc<dyn SeriesUdf>> {
+impl Serialize for SpecialEq<Arc<dyn ColumnsUdf>> {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -46,7 +46,7 @@ impl Serialize for SpecialEq<Arc<dyn SeriesUdf>> {
 }
 
 #[cfg(feature = "serde")]
-impl<'a> Deserialize<'a> for SpecialEq<Arc<dyn SeriesUdf>> {
+impl<'a> Deserialize<'a> for SpecialEq<Arc<dyn ColumnsUdf>> {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
         D: Deserializer<'a>,
@@ -68,6 +68,8 @@ impl<'a> Deserialize<'a> for SpecialEq<Arc<dyn SeriesUdf>> {
         }
         #[cfg(not(feature = "python"))]
         {
+            _ = deserializer;
+
             Err(D::Error::custom(
                 "deserialization not supported for this 'opaque' function",
             ))
@@ -75,42 +77,42 @@ impl<'a> Deserialize<'a> for SpecialEq<Arc<dyn SeriesUdf>> {
     }
 }
 
-impl<F> SeriesUdf for F
+impl<F> ColumnsUdf for F
 where
-    F: Fn(&mut [Series]) -> PolarsResult<Option<Series>> + Send + Sync,
+    F: Fn(&mut [Column]) -> PolarsResult<Option<Column>> + Send + Sync,
 {
-    fn call_udf(&self, s: &mut [Series]) -> PolarsResult<Option<Series>> {
+    fn call_udf(&self, s: &mut [Column]) -> PolarsResult<Option<Column>> {
         self(s)
     }
 }
 
-impl Debug for dyn SeriesUdf {
+impl Debug for dyn ColumnsUdf {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "SeriesUdf")
+        write!(f, "ColumnUdf")
     }
 }
 
-/// A wrapper trait for any binary closure `Fn(Series, Series) -> PolarsResult<Series>`
-pub trait SeriesBinaryUdf: Send + Sync {
-    fn call_udf(&self, a: Series, b: Series) -> PolarsResult<Series>;
+/// A wrapper trait for any binary closure `Fn(Column, Column) -> PolarsResult<Column>`
+pub trait ColumnBinaryUdf: Send + Sync {
+    fn call_udf(&self, a: Column, b: Column) -> PolarsResult<Column>;
 }
 
-impl<F> SeriesBinaryUdf for F
+impl<F> ColumnBinaryUdf for F
 where
-    F: Fn(Series, Series) -> PolarsResult<Series> + Send + Sync,
+    F: Fn(Column, Column) -> PolarsResult<Column> + Send + Sync,
 {
-    fn call_udf(&self, a: Series, b: Series) -> PolarsResult<Series> {
+    fn call_udf(&self, a: Column, b: Column) -> PolarsResult<Column> {
         self(a, b)
     }
 }
 
-impl Debug for dyn SeriesBinaryUdf {
+impl Debug for dyn ColumnBinaryUdf {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "SeriesBinaryUdf")
+        write!(f, "ColumnBinaryUdf")
     }
 }
 
-impl Default for SpecialEq<Arc<dyn SeriesBinaryUdf>> {
+impl Default for SpecialEq<Arc<dyn ColumnBinaryUdf>> {
     fn default() -> Self {
         panic!("implementation error");
     }
@@ -394,6 +396,8 @@ impl<'a> Deserialize<'a> for GetOutput {
         }
         #[cfg(not(feature = "python"))]
         {
+            _ = deserializer;
+
             Err(D::Error::custom(
                 "deserialization not supported for this output field",
             ))

@@ -220,7 +220,7 @@ impl Source for CsvSource {
                     // gets passed contains the column.
                     for s in unsafe { data_chunk.data.get_columns_mut() } {
                         if s.name() == ca.name() {
-                            *s = ca.slice(0, s.len()).into_series();
+                            *s = ca.slice(0, s.len()).into_column();
                             break;
                         }
                     }

@@ -42,9 +42,9 @@ mod test {
         let s1 = Series::new("foo".into(), &[1, 2, 3]);
         let s2 = Series::new("bar".into(), &[Some(true), None, Some(false)]);
         let s3 = Series::new("string".into(), &["mouse", "elephant", "dog"]);
-        let s_list = Series::new("list".into(), &[s1.clone(), s1.clone(), s1.clone()]);
+        let s_list = Column::new("list".into(), &[s1.clone(), s1.clone(), s1.clone()]);
 
-        DataFrame::new(vec![s1, s2, s3, s_list]).unwrap()
+        DataFrame::new(vec![s1.into(), s2.into(), s3.into(), s_list]).unwrap()
     }
 
     #[test]
@@ -89,7 +89,7 @@ mod test {
 
     #[test]
     fn test_serde_binary_series_owned_bincode() {
-        let s1 = Series::new(
+        let s1 = Column::new(
             "foo".into(),
             &[
                 vec![1u8, 2u8, 3u8],
@@ -142,7 +142,7 @@ mod test {
         let s =
             Series::from_any_values_and_dtype("item".into(), &[row_1, row_2, row_3], &dtype, false)
                 .unwrap();
-        let df = DataFrame::new(vec![s]).unwrap();
+        let df = DataFrame::new(vec![s.into()]).unwrap();
 
         let df_str = serde_json::to_string(&df).unwrap();
         let out = serde_json::from_str::<DataFrame>(&df_str).unwrap();

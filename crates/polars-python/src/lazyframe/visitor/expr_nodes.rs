@@ -561,6 +561,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 },
                 Binary(_) => return Err(PyNotImplementedError::new_err("binary literal")),
                 Range { .. } => return Err(PyNotImplementedError::new_err("range literal")),
+                OtherScalar { .. } => return Err(PyNotImplementedError::new_err("scalar literal")),
                 Date(..) | DateTime(..) | Decimal(..) => Literal {
                     value: Wrap(lit.to_any_value().unwrap()).to_object(py),
                     dtype,

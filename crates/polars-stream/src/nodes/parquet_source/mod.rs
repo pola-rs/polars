@@ -4,6 +4,7 @@ use std::sync::Arc;
 use mem_prefetch_funcs::get_memory_prefetch_func;
 use polars_core::config;
 use polars_core::frame::DataFrame;
+use polars_core::prelude::ArrowSchema;
 use polars_error::PolarsResult;
 use polars_expr::prelude::{phys_expr_to_io_expr, PhysicalExpr};
 use polars_io::cloud::CloudOptions;
@@ -13,7 +14,6 @@ use polars_io::utils::byte_source::DynByteSourceBuilder;
 use polars_plan::plans::hive::HivePartitions;
 use polars_plan::plans::{FileInfo, ScanSources};
 use polars_plan::prelude::FileScanOptions;
-use row_group_decode::RowGroupDecoder;
 
 use super::compute_node_prelude::*;
 use super::{MorselSeq, TaskPriority};
@@ -47,14 +47,13 @@ pub struct ParquetSourceNode {
     config: Config,
     verbose: bool,
     physical_predicate: Option<Arc<dyn PhysicalIoExpr>>,
-    projected_arrow_fields: Arc<[polars_core::prelude::ArrowField]>,
+    projected_arrow_schema: Arc<ArrowSchema>,
     byte_source_builder: DynByteSourceBuilder,
     memory_prefetch_func: fn(&[u8]) -> (),
     // This permit blocks execution until the first morsel is requested.
     morsel_stream_starter: Option<tokio::sync::oneshot::Sender<()>>,
     // This is behind a Mutex so that we can call `shutdown()` asynchronously.
     async_task_data: Arc<tokio::sync::Mutex<AsyncTaskData>>,
-    row_group_decoder: Option<Arc<RowGroupDecoder>>,
     is_finished: Arc<AtomicBool>,
 }
 
@@ -67,6 +66,9 @@ struct Config {
     metadata_decode_ahead_size: usize,
     /// Number of row groups to pre-fetch concurrently, this can be across files
     row_group_prefetch_size: usize,
+    /// Minimum number of values for a parallel spawned task to process to amortize
+    /// parallelism overhead.
+    min_values_per_thread: usize,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -106,16 +108,16 @@ impl ParquetSourceNode {
                 metadata_prefetch_size: 0,
                 metadata_decode_ahead_size: 0,
                 row_group_prefetch_size: 0,
+                min_values_per_thread: 0,
             },
             verbose,
             physical_predicate: None,
-            projected_arrow_fields: Arc::new([]),
+            projected_arrow_schema: Arc::new(ArrowSchema::default()),
             byte_source_builder,
             memory_prefetch_func,
 
             morsel_stream_starter: None,
             async_task_data: Arc::new(tokio::sync::Mutex::new(None)),
-            row_group_decoder: None,
             is_finished: Arc::new(AtomicBool::new(false)),
         }
     }
@@ -134,11 +136,17 @@ impl ComputeNode for ParquetSourceNode {
                 (metadata_prefetch_size / 2).min(1 + num_pipelines).max(1);
             let row_group_prefetch_size = polars_core::config::get_rg_prefetch_size();
 
+            // This can be set to 1 to force column-per-thread parallelism, e.g. for bug reproduction.
+            let min_values_per_thread = std::env::var("POLARS_MIN_VALUES_PER_THREAD")
+                .map(|x| x.parse::<usize>().expect("integer").max(1))
+                .unwrap_or(16_777_216);
+
             Config {
                 num_pipelines,
                 metadata_prefetch_size,
                 metadata_decode_ahead_size,
                 row_group_prefetch_size,
+                min_values_per_thread,
             }
         };
 
@@ -146,7 +154,7 @@ impl ComputeNode for ParquetSourceNode {
             eprintln!("[ParquetSource]: {:?}", &self.config);
         }
 
-        self.init_projected_arrow_fields();
+        self.init_projected_arrow_schema();
         self.physical_predicate = self.predicate.clone().map(phys_expr_to_io_expr);
 
         let (raw_morsel_receivers, morsel_stream_task_handle) = self.init_raw_morsel_stream();
@@ -155,9 +163,6 @@ impl ComputeNode for ParquetSourceNode {
             .try_lock()
             .unwrap()
             .replace((raw_morsel_receivers, morsel_stream_task_handle));
-
-        let row_group_decoder = self.init_row_group_decoder();
-        self.row_group_decoder = Some(Arc::new(row_group_decoder));
     }
 
     fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {

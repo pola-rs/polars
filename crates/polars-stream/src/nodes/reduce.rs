@@ -120,7 +120,7 @@ impl ComputeNode for ReduceNode {
                     .map(|(r, field)| {
                         r.finalize().map(|scalar| {
                             scalar
-                                .into_series(field.name.clone())
+                                .into_column(field.name.clone())
                                 .cast(&field.dtype)
                                 .unwrap()
                         })

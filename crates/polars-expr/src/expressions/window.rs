@@ -127,7 +127,7 @@ impl WindowExpr {
         out_column: Series,
         flattened: Series,
         mut ac: AggregationContext,
-        group_by_columns: &[Series],
+        group_by_columns: &[Column],
         gb: GroupBy,
         state: &ExecutionState,
         cache_key: &str,
@@ -412,7 +412,7 @@ impl PhysicalExpr for WindowExpr {
         let group_by_columns = self
             .group_by
             .iter()
-            .map(|e| e.evaluate(df, state))
+            .map(|e| e.evaluate(df, state).map(Column::from))
             .collect::<PolarsResult<Vec<_>>>()?;
 
         // if the keys are sorted
@@ -584,7 +584,12 @@ impl PhysicalExpr for WindowExpr {
                                 let right = &keys[0];
                                 PolarsResult::Ok(
                                     group_by_columns[0]
-                                        .hash_join_left(right, JoinValidation::ManyToMany, true)
+                                        .as_materialized_series()
+                                        .hash_join_left(
+                                            right.as_materialized_series(),
+                                            JoinValidation::ManyToMany,
+                                            true,
+                                        )
                                         .unwrap()
                                         .1,
                                 )

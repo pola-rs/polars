@@ -56,7 +56,7 @@ class BatchedCsvReader:
         raise_if_empty: bool = True,
         truncate_ragged_lines: bool = False,
         decimal_comma: bool = False,
-    ):
+    ) -> None:
         path = normalize_filepath(source, check_not_directory=False)
 
         dtype_list: Sequence[tuple[str, PolarsDataType]] | None = None

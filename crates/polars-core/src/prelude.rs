@@ -40,6 +40,7 @@ pub use crate::datatypes::{ArrayCollectIterExt, *};
 pub use crate::error::{
     polars_bail, polars_ensure, polars_err, polars_warn, PolarsError, PolarsResult,
 };
+pub use crate::frame::column::{Column, IntoColumn};
 pub use crate::frame::explode::UnpivotArgsIR;
 #[cfg(feature = "algorithm_group_by")]
 pub(crate) use crate::frame::group_by::aggregations::*;

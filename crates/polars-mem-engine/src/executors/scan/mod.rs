@@ -21,7 +21,7 @@ pub(crate) use ndjson::JsonExec;
 pub(crate) use parquet::ParquetExec;
 #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv"))]
 use polars_io::predicates::PhysicalIoExpr;
-#[cfg(any(feature = "parquet", feature = "csv", feature = "ipc", feature = "cse"))]
+#[cfg(any(feature = "parquet", feature = "csv", feature = "ipc"))]
 use polars_io::prelude::*;
 use polars_plan::global::_set_n_rows_for_scan;
 

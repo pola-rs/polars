@@ -225,7 +225,14 @@ pub fn arctan2(y: PyExpr, x: PyExpr) -> PyExpr {
 pub fn cum_fold(acc: PyExpr, lambda: PyObject, exprs: Vec<PyExpr>, include_init: bool) -> PyExpr {
     let exprs = exprs.to_exprs();
 
-    let func = move |a: Series, b: Series| binary_lambda(&lambda, a, b);
+    let func = move |a: Column, b: Column| {
+        binary_lambda(
+            &lambda,
+            a.take_materialized_series(),
+            b.take_materialized_series(),
+        )
+        .map(|v| v.map(Column::from))
+    };
     dsl::cum_fold_exprs(acc.inner, func, exprs, include_init).into()
 }
 
@@ -233,7 +240,14 @@ pub fn cum_fold(acc: PyExpr, lambda: PyObject, exprs: Vec<PyExpr>, include_init:
 pub fn cum_reduce(lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
     let exprs = exprs.to_exprs();
 
-    let func = move |a: Series, b: Series| binary_lambda(&lambda, a, b);
+    let func = move |a: Column, b: Column| {
+        binary_lambda(
+            &lambda,
+            a.take_materialized_series(),
+            b.take_materialized_series(),
+        )
+        .map(|v| v.map(Column::from))
+    };
     dsl::cum_reduce_exprs(func, exprs).into()
 }
 
@@ -394,7 +408,14 @@ pub fn first() -> PyExpr {
 pub fn fold(acc: PyExpr, lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
     let exprs = exprs.to_exprs();
 
-    let func = move |a: Series, b: Series| binary_lambda(&lambda, a, b);
+    let func = move |a: Column, b: Column| {
+        binary_lambda(
+            &lambda,
+            a.take_materialized_series(),
+            b.take_materialized_series(),
+        )
+        .map(|v| v.map(Column::from))
+    };
     dsl::fold_exprs(acc.inner, func, exprs).into()
 }
 
@@ -409,7 +430,7 @@ pub fn nth(n: i64) -> PyExpr {
 }
 
 #[pyfunction]
-pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool) -> PyResult<PyExpr> {
+pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool, is_scalar: bool) -> PyResult<PyExpr> {
     if value.is_instance_of::<PyBool>() {
         let val = value.extract::<bool>().unwrap();
         Ok(dsl::lit(val).into())
@@ -425,7 +446,16 @@ pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool) -> PyResult<PyExpr> {
     } else if let Ok(pystr) = value.downcast::<PyString>() {
         Ok(dsl::lit(pystr.to_string()).into())
     } else if let Ok(series) = value.extract::<PySeries>() {
-        Ok(dsl::lit(series.series).into())
+        let s = series.series;
+        if is_scalar {
+            let av = s
+                .get(0)
+                .map_err(|_| PyValueError::new_err("expected at least 1 value"))?;
+            let av = av.into_static().map_err(PyPolarsErr::from)?;
+            Ok(dsl::lit(Scalar::new(s.dtype().clone(), av)).into())
+        } else {
+            Ok(dsl::lit(s).into())
+        }
     } else if value.is_none() {
         Ok(dsl::lit(Null {}).into())
     } else if let Ok(value) = value.downcast::<PyBytes>() {
@@ -486,7 +516,14 @@ pub fn pearson_corr(a: PyExpr, b: PyExpr, ddof: u8) -> PyExpr {
 pub fn reduce(lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
     let exprs = exprs.to_exprs();
 
-    let func = move |a: Series, b: Series| binary_lambda(&lambda, a, b);
+    let func = move |a: Column, b: Column| {
+        binary_lambda(
+            &lambda,
+            a.take_materialized_series(),
+            b.take_materialized_series(),
+        )
+        .map(|v| v.map(Column::from))
+    };
     dsl::reduce_exprs(func, exprs).into()
 }
 

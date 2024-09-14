@@ -22,7 +22,7 @@ class Tag:
         elements: list[str],
         tag: str,
         attributes: dict[str, str] | None = None,
-    ):
+    ) -> None:
         self.tag = tag
         self.elements = elements
         self.attributes = attributes
@@ -54,7 +54,7 @@ class HTMLFormatter:
         max_cols: int = 75,
         max_rows: int = 40,
         from_series: bool = False,
-    ):
+    ) -> None:
         self.df = df
         self.elements: list[str] = []
         self.max_cols = max_cols

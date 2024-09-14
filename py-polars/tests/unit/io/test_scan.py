@@ -48,10 +48,10 @@ def _scan(
 
     if (
         scan_func := {
-            ".ipc"     : pl.scan_ipc,
-            ".parquet" : pl.scan_parquet,
-            ".csv"     : pl.scan_csv,
-            ".ndjson"  : pl.scan_ndjson,
+            ".ipc": pl.scan_ipc,
+            ".parquet": pl.scan_parquet,
+            ".csv": pl.scan_csv,
+            ".ndjson": pl.scan_ndjson,
         }.get(suffix)
     ) is not None:  # fmt: skip
         result = scan_func(
@@ -72,10 +72,10 @@ def _write(df: pl.DataFrame, file_path: Path) -> None:
 
     if (
         write_func := {
-            ".ipc"     : pl.DataFrame.write_ipc,
-            ".parquet" : pl.DataFrame.write_parquet,
-            ".csv"     : pl.DataFrame.write_csv,
-            ".ndjson"  : pl.DataFrame.write_ndjson,
+            ".ipc": pl.DataFrame.write_ipc,
+            ".parquet": pl.DataFrame.write_parquet,
+            ".csv": pl.DataFrame.write_csv,
+            ".ndjson": pl.DataFrame.write_ndjson,
         }.get(suffix)
     ) is not None:  # fmt: skip
         return write_func(df, file_path)  # type: ignore[operator, no-any-return]

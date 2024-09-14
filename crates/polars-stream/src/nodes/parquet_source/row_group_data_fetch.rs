@@ -23,7 +23,7 @@ use crate::utils::task_handles_ext;
 
 /// Represents byte-data that can be transformed into a DataFrame after some computation.
 pub(super) struct RowGroupData {
-    pub(super) byte_source: FetchedBytes,
+    pub(super) fetched_bytes: FetchedBytes,
     pub(super) path_index: usize,
     pub(super) row_offset: usize,
     pub(super) slice: Option<(usize, usize)>,
@@ -167,7 +167,7 @@ impl RowGroupDataFetcher {
                 // Push calculation of byte ranges to a task to run in parallel, as it can be
                 // expensive for very wide tables and projections.
                 let handle = async_executor::spawn(TaskPriority::Low, async move {
-                    let byte_source = if let DynByteSource::MemSlice(mem_slice) =
+                    let fetched_bytes = if let DynByteSource::MemSlice(mem_slice) =
                         current_byte_source.as_ref()
                     {
                         // Skip byte range calculation for `no_prefetch`.
@@ -251,7 +251,7 @@ impl RowGroupDataFetcher {
                     };
 
                     PolarsResult::Ok(RowGroupData {
-                        byte_source,
+                        fetched_bytes,
                         path_index: current_path_index,
                         row_offset: current_row_offset,
                         slice,

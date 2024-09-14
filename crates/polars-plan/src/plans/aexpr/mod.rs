@@ -174,7 +174,7 @@ pub enum AExpr {
     },
     AnonymousFunction {
         input: Vec<ExprIR>,
-        function: SpecialEq<Arc<dyn SeriesUdf>>,
+        function: SpecialEq<Arc<dyn ColumnsUdf>>,
         output_type: GetOutput,
         options: FunctionOptions,
     },
