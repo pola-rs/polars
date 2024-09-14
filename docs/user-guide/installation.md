@@ -147,7 +147,7 @@ _* Only needed if 1. you are on Python < 3.9 and/or 2. you are on Windows_
 ```toml
 # Cargo.toml
 [dependencies]
-polars = { version = "0.26.1", features = ["lazy", "temporal", "describe", "json", "parquet", "dtype-datetime"] }
+polars = { version = "*", features = ["lazy", "temporal", "describe", "json", "parquet", "dtype-datetime"] }
 ```
 
 The opt-in features are:
