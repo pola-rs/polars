@@ -1364,7 +1364,6 @@ def test_replace_time_zone_ambiguous_raises() -> None:
     ("from_tz", "expected_sortedness", "ambiguous"),
     [
         ("Europe/London", False, "earliest"),
-        ("Europe/London", False, "raise"),
         ("UTC", True, "earliest"),
         ("UTC", True, "raise"),
         (None, True, "earliest"),
@@ -1375,20 +1374,20 @@ def test_replace_time_zone_sortedness_series(
     from_tz: str | None, expected_sortedness: bool, ambiguous: Ambiguous
 ) -> None:
     ser = (
-        pl.Series("ts", [1603584000000000, 1603587600000000])
+        pl.Series("ts", [1603584000000001, 1603587600000000])
         .cast(pl.Datetime("us", from_tz))
         .sort()
     )
     assert ser.flags["SORTED_ASC"]
     result = ser.dt.replace_time_zone("UTC", ambiguous=ambiguous)
     assert result.flags["SORTED_ASC"] == expected_sortedness
+    assert result.flags["SORTED_ASC"] == result.is_sorted()
 
 
 @pytest.mark.parametrize(
     ("from_tz", "expected_sortedness", "ambiguous"),
     [
         ("Europe/London", False, "earliest"),
-        ("Europe/London", False, "raise"),
         ("UTC", True, "earliest"),
         ("UTC", True, "raise"),
         (None, True, "earliest"),
@@ -1399,7 +1398,7 @@ def test_replace_time_zone_sortedness_expressions(
     from_tz: str | None, expected_sortedness: bool, ambiguous: str
 ) -> None:
     df = (
-        pl.Series("ts", [1603584000000000, 1603584060000000, 1603587600000000])
+        pl.Series("ts", [1603584000000001, 1603584060000000, 1603587600000000])
         .cast(pl.Datetime("us", from_tz))
         .sort()
         .to_frame()
@@ -1410,6 +1409,7 @@ def test_replace_time_zone_sortedness_expressions(
         pl.col("ts").dt.replace_time_zone("UTC", ambiguous=pl.col("ambiguous"))
     )
     assert result["ts"].flags["SORTED_ASC"] == expected_sortedness
+    assert result["ts"].is_sorted() == expected_sortedness
 
 
 def test_invalid_ambiguous_value_in_expression() -> None:
