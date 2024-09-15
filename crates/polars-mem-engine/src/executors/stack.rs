@@ -66,7 +66,7 @@ impl StackExec {
                 // possibly mismatching column lengths.
                 unsafe { df.get_columns_mut() }.extend(res.into_iter().map(Column::from));
             } else {
-                let height = df.height();
+                let (df_height, df_width) = df.shape();
 
                 // When we have CSE we cannot verify scalars yet.
                 let verify_scalar = if !df.get_columns().is_empty() {
@@ -78,11 +78,11 @@ impl StackExec {
                 };
                 for (i, c) in res.iter().enumerate() {
                     let len = c.len();
-                    if verify_scalar && len != height && len == 1 {
+                    if verify_scalar && len != df_height && len == 1 && df_width > 0 {
                         polars_ensure!(self.exprs[i].is_scalar(),
                             InvalidOperation: "Series {}, length {} doesn't match the DataFrame height of {}\n\n\
                             If you want this Series to be broadcasted, ensure it is a scalar (for instance by adding '.first()').",
-                            c.name(), len, height
+                            c.name(), len, df_height
                         );
                     }
                 }
