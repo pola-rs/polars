@@ -813,6 +813,12 @@ impl DataFrame {
         self.shape().0
     }
 
+    /// Returns the size as number of rows * number of columns
+    pub fn size(&self) -> usize {
+        let s = self.shape();
+        s.0 * s.1
+    }
+
     /// Returns `true` if the [`DataFrame`] contains no rows.
     ///
     /// # Example
