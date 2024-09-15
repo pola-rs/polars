@@ -8,3 +8,4 @@ The Lazy chapter is a guide for working with `LazyFrames`. It covers the functio
 - [Query plan](query-plan.md)
 - [Execution](execution.md)
 - [Streaming](streaming.md)
+- [GPU Support](gpu.md)

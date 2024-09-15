@@ -26,6 +26,7 @@ Polars is a blazingly fast DataFrame library for manipulating structured data. T
 - **Out of Core**: The streaming API allows you to process your results without requiring all your data to be in memory at the same time
 - **Parallel**: Utilises the power of your machine by dividing the workload among the available CPU cores without any additional configuration.
 - **Vectorized Query Engine**: Using [Apache Arrow](https://arrow.apache.org/), a columnar data format, to process your queries in a vectorized manner and SIMD to optimize CPU usage.
+- **GPU Support**: Optionally run queries on NVIDIA GPUs for maximum performance for in-memory workloads.
 
 <!-- dprint-ignore-start -->
 

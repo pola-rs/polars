@@ -11,8 +11,12 @@ It does this by executing computations which can be done in parallel in separate
 For example, requesting two expressions in a `select` statement can be done in parallel, with the results only being combined at the end.
 Another example is aggregating a value within groups using `group_by().agg(<expr>)`, each group can be evaluated separately.
 It is very unlikely that the `multiprocessing` module can improve your code performance in these cases.
+If you're using the GPU Engine with Polars you should also avoid manual multiprocessing. When used simultaneously, they can compete 
+for system memory and processing power, leading to reduced performance.
+
 
 See [the optimizations section](../lazy/optimizations.md) for more optimizations.
+
 
 ## When to use multiprocessing
 
@@ -52,6 +56,7 @@ Consider the example below, which is a slightly modified example posted on the [
 {{code_block('user-guide/misc/multiprocess','example1',[])}}
 
 Using `fork` as the method, instead of `spawn`, will cause a dead lock.
+Please note: Polars will not even start and raise the error on multiprocessing method being set wrong, but if the check had not been there, the deadlock would exist.
 
 The fork method is equivalent to calling `os.fork()`, which is a system call as defined in [the POSIX standard](https://pubs.opengroup.org/onlinepubs/9699919799/functions/fork.html):
 
