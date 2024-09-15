@@ -111,7 +111,8 @@ def read_csv(
     schema
         Provide the schema. This means that polars doesn't do schema inference.
         This argument expects the complete schema, whereas `schema_overrides` can be
-        used to partially overwrite a schema.
+        used to partially overwrite a schema. Note that the order of the columns in
+        the provided `schema` must match the order of the columns in the CSV being read.
     schema_overrides
         Overwrite dtypes for specific or all columns during schema inference.
     null_values
