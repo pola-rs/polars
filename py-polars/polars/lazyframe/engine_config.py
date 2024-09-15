@@ -40,8 +40,8 @@ class GPUEngine:
     """Memory resource to use for device allocations."""
     raise_on_fail: bool
     """
-    Should unsupported queries raise an error, rather than falling
-    back to the CPU engine?
+    Whether unsupported queries should raise an error, rather than falling
+    back to the CPU engine.
     """
     config: Mapping[str, Any]
     """Additional configuration options for the engine."""
