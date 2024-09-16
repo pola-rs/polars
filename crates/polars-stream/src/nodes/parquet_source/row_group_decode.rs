@@ -66,18 +66,16 @@ impl RowGroupDecoder {
 
         let mut out_columns = Vec::with_capacity(out_width);
 
-        if self.row_index.is_some() {
-            // Add a placeholder so that we don't have to shift the entire vec
-            // later.
-            out_columns.push(Column::default());
-        }
-
         let slice_range = row_group_data
             .slice
             .map(|(offset, len)| offset..offset + len)
             .unwrap_or(0..row_group_data.row_group_metadata.num_rows());
 
         assert!(slice_range.end <= row_group_data.row_group_metadata.num_rows());
+
+        if let Some(s) = self.materialize_row_index(row_group_data.as_ref(), slice_range.clone())? {
+            out_columns.push(s);
+        }
 
         self.decode_all_columns(
             &mut out_columns,
@@ -92,10 +90,6 @@ impl RowGroupDecoder {
             debug_assert!(out_columns.len() > self.row_index.is_some() as usize);
             out_columns.last().unwrap().len()
         };
-
-        if let Some(s) = self.materialize_row_index(row_group_data.as_ref(), slice_range)? {
-            out_columns[0] = s;
-        }
 
         let shared_file_state = row_group_data
             .shared_file_state

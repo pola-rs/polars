@@ -17,9 +17,9 @@ use polars_plan::prelude::FileScanOptions;
 
 use super::compute_node_prelude::*;
 use super::{MorselSeq, TaskPriority};
-use crate::async_executor::{self};
 use crate::async_primitives::wait_group::WaitToken;
 use crate::morsel::SourceToken;
+use crate::utils::task_handles_ext;
 
 mod init;
 mod mem_prefetch_funcs;
@@ -30,7 +30,7 @@ mod row_group_decode;
 
 type AsyncTaskData = Option<(
     Vec<crate::async_primitives::connector::Receiver<(DataFrame, MorselSeq, WaitToken)>>,
-    async_executor::AbortOnDropHandle<PolarsResult<()>>,
+    task_handles_ext::AbortOnDropHandle<PolarsResult<()>>,
 )>;
 
 #[allow(clippy::type_complexity)]
@@ -157,12 +157,16 @@ impl ComputeNode for ParquetSourceNode {
         self.init_projected_arrow_schema();
         self.physical_predicate = self.predicate.clone().map(phys_expr_to_io_expr);
 
-        let (raw_morsel_receivers, morsel_stream_task_handle) = self.init_raw_morsel_stream();
+        let (raw_morsel_receivers, raw_morsel_distributor_task_handle) =
+            self.init_raw_morsel_distributor();
 
         self.async_task_data
             .try_lock()
             .unwrap()
-            .replace((raw_morsel_receivers, morsel_stream_task_handle));
+            .replace((raw_morsel_receivers, raw_morsel_distributor_task_handle));
+
+        let row_group_decoder = self.init_row_group_decoder();
+        self.row_group_decoder = Some(Arc::new(row_group_decoder));
     }
 
     fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {
