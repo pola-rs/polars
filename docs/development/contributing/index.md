@@ -95,6 +95,10 @@ cd py-polars
 make test
 ```
 
+!!! note
+
+    You need to have [CMake](https://cmake.org/) installed for `make test` to work.
+
 This will do a number of things:
 
 - Use Python to create a virtual environment in the `.venv` folder.
@@ -210,6 +214,7 @@ The user guide is maintained in the `docs/user-guide` folder. Before creating a 
 #### Building and serving the user guide
 
 The user guide is built using [MkDocs](https://www.mkdocs.org/). You install the dependencies for building the user guide by running `make build` in the root of the repo.
+Additionally, you need to make sure the [graphviz](https://graphviz.org/) `dot` binary is on your path.
 
 Activate the virtual environment and run `mkdocs serve` to build and serve the user guide, so you can view it locally and see updates as you make changes.
 
