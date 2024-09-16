@@ -58,6 +58,10 @@ pub enum PhysNodeKind {
         extend_original: bool,
     },
 
+    InputIndependentSelect {
+        selectors: Vec<ExprIR>,
+    },
+
     Reduce {
         input: PhysNodeKey,
         exprs: Vec<ExprIR>,
@@ -156,7 +160,9 @@ fn insert_multiplexers(
 
     if !seen_before {
         match &phys_sm[node].kind {
-            PhysNodeKind::InMemorySource { .. } | PhysNodeKind::FileScan { .. } => {},
+            PhysNodeKind::InMemorySource { .. }
+            | PhysNodeKind::FileScan { .. }
+            | PhysNodeKind::InputIndependentSelect { .. } => {},
             PhysNodeKind::Select { input, .. }
             | PhysNodeKind::Reduce { input, .. }
             | PhysNodeKind::StreamingSlice { input, .. }
