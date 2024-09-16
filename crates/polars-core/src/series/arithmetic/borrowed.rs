@@ -175,23 +175,23 @@ impl NumOpsDispatchInner for FixedSizeListType {
 
 /// Given an ArrayRef with some primitive values, wrap it in list(s) until it
 /// matches the requested shape.
-fn reshape_list_based_on(data: &ArrayRef, shape: &ArrayRef) -> PolarsResult<ArrayRef> {
+fn reshape_list_based_on(data: &ArrayRef, shape: &ArrayRef) -> ArrayRef {
     if let Some(list_chunk) = shape.as_any().downcast_ref::<LargeListArray>() {
-        let result = LargeListArray::try_new(
+        let result = LargeListArray::new(
             list_chunk.dtype().clone(),
             list_chunk.offsets().clone(),
-            reshape_list_based_on(data, list_chunk.values())?,
+            reshape_list_based_on(data, list_chunk.values()),
             list_chunk.validity().cloned(),
-        )?;
-        Ok(Box::new(result))
+        );
+        Box::new(result)
     } else {
-        Ok(data.clone())
+        data.clone()
     }
 }
 
 /// Given an ArrayRef, return true if it's a LargeListArrays and it has one or
 /// more nulls.
-fn maybe_list_has_nulls(data: &ArrayRef) -> bool {
+fn does_list_have_nulls(data: &ArrayRef) -> bool {
     if let Some(list_chunk) = data.as_any().downcast_ref::<LargeListArray>() {
         if list_chunk
             .validity()
@@ -200,7 +200,7 @@ fn maybe_list_has_nulls(data: &ArrayRef) -> bool {
         {
             true
         } else {
-            maybe_list_has_nulls(list_chunk.values())
+            does_list_have_nulls(list_chunk.values())
         }
     } else {
         false
@@ -238,7 +238,7 @@ impl ListChunked {
         let mut has_nulls = has_nulls.unwrap_or(false);
         if !has_nulls {
             for chunk in self.chunks().iter() {
-                if maybe_list_has_nulls(chunk) {
+                if does_list_have_nulls(chunk) {
                     has_nulls = true;
                     break;
                 }
@@ -246,7 +246,7 @@ impl ListChunked {
         }
         if !has_nulls {
             for chunk in rhs.chunks().iter() {
-                if maybe_list_has_nulls(chunk) {
+                if does_list_have_nulls(chunk) {
                     has_nulls = true;
                     break;
                 }
@@ -305,7 +305,7 @@ impl ListChunked {
         let result_chunks = result.chunks();
         assert_eq!(result_chunks.len(), 1);
         let left_chunk = &l_rechunked.chunks()[0];
-        let result_chunk = reshape_list_based_on(&result_chunks[0], left_chunk)?;
+        let result_chunk = reshape_list_based_on(&result_chunks[0], left_chunk);
 
         unsafe {
             let mut result =
