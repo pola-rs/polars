@@ -133,26 +133,24 @@ impl StructChunked {
         };
         fields
     }
+    #[inline]
+    fn field_as_series(&self, field_idx: usize) -> Series {
+        let field = &self.struct_fields()[field_idx];
+        let field_chunks = self
+            .downcast_iter()
+            .map(|chunk| chunk.values()[field_idx].clone())
+            .collect::<Vec<_>>();
 
+        // SAFETY: correct type.
+        unsafe {
+            Series::from_chunks_and_dtype_unchecked(field.name.clone(), field_chunks, &field.dtype)
+        }
+    }
     pub fn fields_as_series(&self) -> Vec<Series> {
         self.struct_fields()
             .iter()
             .enumerate()
-            .map(|(i, field)| {
-                let field_chunks = self
-                    .downcast_iter()
-                    .map(|chunk| chunk.values()[i].clone())
-                    .collect::<Vec<_>>();
-
-                // SAFETY: correct type.
-                unsafe {
-                    Series::from_chunks_and_dtype_unchecked(
-                        field.name.clone(),
-                        field_chunks,
-                        &field.dtype,
-                    )
-                }
-            })
+            .map(|(i, _)| self.field_as_series(i))
             .collect()
     }
 
@@ -373,6 +371,14 @@ impl StructChunked {
             .into_iter()
             .find(|s| s.name().as_str() == name)
             .ok_or_else(|| polars_err!(StructFieldNotFound: "{}", name))
+    }
+    pub fn field_by_index(&self, field_idx: i64) -> PolarsResult<Series> {
+        if field_idx < 0 || field_idx >= (self.struct_fields().len() as i64) {
+            polars_bail!(
+                OutOfBounds: "Given field index {} is Out Of Bound", field_idx
+            )
+        }
+        Ok(self.field_as_series(field_idx as usize))
     }
     pub(crate) fn set_outer_validity(&mut self, validity: Option<Bitmap>) {
         assert_eq!(self.chunks().len(), 1);

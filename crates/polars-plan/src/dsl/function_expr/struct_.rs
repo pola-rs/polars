@@ -146,7 +146,7 @@ impl From<StructFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
     fn from(func: StructFunction) -> Self {
         use StructFunction::*;
         match func {
-            FieldByIndex(_) => panic!("should be replaced"),
+            FieldByIndex(field_index) => map!(get_by_index, field_index),
             FieldByName(name) => map!(get_by_name, &name),
             RenameFields(names) => map!(rename_fields, names.clone()),
             PrefixFields(prefix) => map!(prefix_fields, prefix.as_str()),
@@ -159,6 +159,10 @@ impl From<StructFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
     }
 }
 
+pub(super) fn get_by_index(s: &Column, field_idx: i64) -> PolarsResult<Column> {
+    let ca = s.struct_()?;
+    ca.field_by_index(field_idx).map(Column::from)
+}
 pub(super) fn get_by_name(s: &Column, name: &str) -> PolarsResult<Column> {
     let ca = s.struct_()?;
     ca.field_by_name(name).map(Column::from)
