@@ -58,7 +58,7 @@ Since [Scikit Learn](https://scikit-learn.org/stable/) 1.4, all transformers sup
 
 #### DuckDB
 
-[DuckDB](https://duckdb.org) is a high-performance analytical database system. It is designed to be fast, reliable, portable, and easy to use. DuckDB provides a rich SQL dialect, with support far beyond basic SQL. DuckDB supports arbitrary and nested correlated subqueries, window functions, collations, complex types (arrays, structs), and more. Read about integration with Polars [on the DuckDB website](https://duckdb.org/docs/docs/guides/python/polars).
+[DuckDB](https://duckdb.org) is a high-performance analytical database system. It is designed to be fast, reliable, portable, and easy to use. DuckDB provides a rich SQL dialect, with support far beyond basic SQL. DuckDB supports arbitrary and nested correlated subqueries, window functions, collations, complex types (arrays, structs), and more. Read about integration with Polars [on the DuckDB website](https://duckdb.org/docs/guides/python/polars).
 
 #### Great Tables
 

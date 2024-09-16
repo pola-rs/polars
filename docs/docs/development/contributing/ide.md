@@ -51,7 +51,7 @@ This guide shows how to set up a debugging environment that makes debugging Rust
 Start by installing the CodeLLDB extension (see above).
 Then add the following two configurations to your `launch.json` file.
 This file is usually found in the `.vscode` folder of your project root.
-See the [official VSCode documentation](https://code.visualstudio.com/docs/docs/editor/debugging#_launch-configurations) for more information about the `launch.json` file.
+See the [official VSCode documentation](https://code.visualstudio.com/docs/editor/debugging#_launch-configurations) for more information about the `launch.json` file.
 
 <details><summary><code><b>launch.json</b></code></summary>
 

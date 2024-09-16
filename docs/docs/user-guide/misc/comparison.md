@@ -32,4 +32,4 @@ The choice between Polars and Spark often depends on the scale of data and the s
 
 ### DuckDB
 
-Polars and DuckDB have many similarities. However, DuckDB is focused on providing an in-process SQL OLAP database management system, while Polars is focused on providing a scalable `DataFrame` interface to many languages. The different front-ends lead to different optimisation strategies and different algorithm prioritisation. The interoperability between both is zero-copy. DuckDB offers a guide on [how to integrate with Polars](https://duckdb.org/docs/docs/guides/python/polars.html).
+Polars and DuckDB have many similarities. However, DuckDB is focused on providing an in-process SQL OLAP database management system, while Polars is focused on providing a scalable `DataFrame` interface to many languages. The different front-ends lead to different optimisation strategies and different algorithm prioritisation. The interoperability between both is zero-copy. DuckDB offers a guide on [how to integrate with Polars](https://duckdb.org/docs/guides/python/polars.html).

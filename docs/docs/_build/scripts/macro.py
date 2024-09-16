@@ -22,7 +22,7 @@ LANGUAGES = OrderedDict(
 )
 
 # Load all links to reference docs
-with open("docs/docs/_build//API_REFERENCE_LINKS.yml", "r") as f:
+with open("docs/docs/_build/API_REFERENCE_LINKS.yml", "r") as f:
     API_REFERENCE_LINKS = yaml.load(f, Loader=yaml.CLoader)
 
 
@@ -132,7 +132,9 @@ def code_tab(
 
 def define_env(env):
     @env.macro
-    def code_header(language: str, section: str = [], api_functions: List[str] = []) -> str:
+    def code_header(
+        language: str, section: str = [], api_functions: List[str] = []
+    ) -> str:
         language_info = LANGUAGES[language]
 
         language = language_info["code_name"]
@@ -142,7 +144,9 @@ def define_env(env):
 
         # Create API Links if they are defined in the YAML
         api_functions = [
-            link for f in api_functions if (link := create_api_function_link(language, f))
+            link
+            for f in api_functions
+            if (link := create_api_function_link(language, f))
         ]
         language_headers = " ·".join(api_functions + feature_flags_links)
         return f"""=== \":fontawesome-brands-{language_info['icon_name']}: {language_info['display_name']}\"

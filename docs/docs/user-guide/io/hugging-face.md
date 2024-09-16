@@ -25,10 +25,10 @@ Example `hf://` paths:
 
 | Path                                                  | Path components                                                                                                                                                                                 |
 | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| hf://datasets/nameexhaustion/polars-docs/docs/iris.csv     | Bucket: datasets<br>Repository: nameexhaustion/polars-docs<br>Branch: main<br>Path: iris.csv<br> [Web URL](https://huggingface.co/datasets/nameexhaustion/polars-docs/docs/tree/main/)               |
-| hf://datasets/nameexhaustion/polars-docs@foods/\*.csv | Bucket: datasets<br>Repository: nameexhaustion/polars-docs<br>Branch: foods<br>Path: \*.csv<br> [Web URL](https://huggingface.co/datasets/nameexhaustion/polars-docs/docs/tree/foods/)               |
-| hf://datasets/nameexhaustion/polars-docs/docs/hive_dates/  | Bucket: datasets<br>Repository: nameexhaustion/polars-docs<br>Branch: main<br>Path: hive_dates/<br> [Web URL](https://huggingface.co/datasets/nameexhaustion/polars-docs/docs/tree/main/hive_dates/) |
-| hf://spaces/nameexhaustion/polars-docs/docs/orders.feather | Bucket: spaces<br>Repository: nameexhaustion/polars-docs<br>Branch: main<br>Path: orders.feather<br> [Web URL](https://huggingface.co/spaces/nameexhaustion/polars-docs/docs/tree/main/)             |
+| hf://datasets/nameexhaustion/polars-docs/iris.csv     | Bucket: datasets<br>Repository: nameexhaustion/polars-docs<br>Branch: main<br>Path: iris.csv<br> [Web URL](https://huggingface.co/datasets/nameexhaustion/polars-docs/tree/main/)               |
+| hf://datasets/nameexhaustion/polars-docs@foods/\*.csv | Bucket: datasets<br>Repository: nameexhaustion/polars-docs<br>Branch: foods<br>Path: \*.csv<br> [Web URL](https://huggingface.co/datasets/nameexhaustion/polars-docs/tree/foods/)               |
+| hf://datasets/nameexhaustion/polars-docs/hive_dates/  | Bucket: datasets<br>Repository: nameexhaustion/polars-docs<br>Branch: main<br>Path: hive_dates/<br> [Web URL](https://huggingface.co/datasets/nameexhaustion/polars-docs/tree/main/hive_dates/) |
+| hf://spaces/nameexhaustion/polars-docs/orders.feather | Bucket: spaces<br>Repository: nameexhaustion/polars-docs<br>Branch: main<br>Path: orders.feather<br> [Web URL](https://huggingface.co/spaces/nameexhaustion/polars-docs/tree/main/)             |
 
 ### Authentication
 
@@ -51,7 +51,7 @@ A Hugging Face API key can be passed to Polars to access private locations using
 --8<-- "python/user-guide/io/hugging-face.py:scan_iris_repr"
 ```
 
-See this file at [https://huggingface.co/datasets/nameexhaustion/polars-docs/docs/blob/main/iris.csv](https://huggingface.co/datasets/nameexhaustion/polars-docs/docs/blob/main/iris.csv)
+See this file at [https://huggingface.co/datasets/nameexhaustion/polars-docs/blob/main/iris.csv](https://huggingface.co/datasets/nameexhaustion/polars-docs/blob/main/iris.csv)
 
 #### NDJSON
 
@@ -61,7 +61,7 @@ See this file at [https://huggingface.co/datasets/nameexhaustion/polars-docs/doc
 --8<-- "python/user-guide/io/hugging-face.py:scan_iris_repr"
 ```
 
-See this file at [https://huggingface.co/datasets/nameexhaustion/polars-docs/docs/blob/main/iris.jsonl](https://huggingface.co/datasets/nameexhaustion/polars-docs/docs/blob/main/iris.jsonl)
+See this file at [https://huggingface.co/datasets/nameexhaustion/polars-docs/blob/main/iris.jsonl](https://huggingface.co/datasets/nameexhaustion/polars-docs/blob/main/iris.jsonl)
 
 #### Parquet
 
@@ -71,7 +71,7 @@ See this file at [https://huggingface.co/datasets/nameexhaustion/polars-docs/doc
 --8<-- "python/user-guide/io/hugging-face.py:scan_parquet_hive_repr"
 ```
 
-See this folder at [https://huggingface.co/datasets/nameexhaustion/polars-docs/docs/tree/main/hive_dates/](https://huggingface.co/datasets/nameexhaustion/polars-docs/docs/tree/main/hive_dates/)
+See this folder at [https://huggingface.co/datasets/nameexhaustion/polars-docs/tree/main/hive_dates/](https://huggingface.co/datasets/nameexhaustion/polars-docs/tree/main/hive_dates/)
 
 #### IPC
 
@@ -81,4 +81,4 @@ See this folder at [https://huggingface.co/datasets/nameexhaustion/polars-docs/d
 --8<-- "python/user-guide/io/hugging-face.py:scan_ipc_repr"
 ```
 
-See this file at [https://huggingface.co/spaces/nameexhaustion/polars-docs/docs/blob/main/orders.feather](https://huggingface.co/spaces/nameexhaustion/polars-docs/docs/blob/main/orders.feather)
+See this file at [https://huggingface.co/spaces/nameexhaustion/polars-docs/blob/main/orders.feather](https://huggingface.co/spaces/nameexhaustion/polars-docs/blob/main/orders.feather)

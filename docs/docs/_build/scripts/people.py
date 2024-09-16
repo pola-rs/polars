@@ -29,11 +29,11 @@ def get_people_md():
 
 
 def on_startup(command, dirty):
-    """Mkdocs hook to autogenerate docs/docs/people.md on startup"""
+    """Mkdocs hook to autogenerate docs/docs-res/people.md on startup"""
     try:
         get_people_md()
     except Exception as e:
-        msg = f"WARNING:{__file__}: Could not generate docs/docs/people.md. Got error: {str(e)}"
+        msg = f"WARNING:{__file__}: Could not generate docs/docs-res/people.md. Got error: {str(e)}"
         print(msg)
 
 

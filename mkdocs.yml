@@ -144,7 +144,6 @@ theme:
     - navigation.footer
     - navigation.indexes
     - content.tabs.link
-    - content.code.copy
   icon:
     repo: fontawesome/brands/github
 

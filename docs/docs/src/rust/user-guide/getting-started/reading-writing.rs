@@ -60,7 +60,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [end:json]
 
     // --8<-- [start:parquet]
-    let mut file = File::create("docs/docs-res/data/output.parquet").expect("could not create file");
+    let mut file =
+        File::create("docs/docs-res/data/output.parquet").expect("could not create file");
     ParquetWriter::new(&mut file).finish(&mut df)?;
     let f = File::open("docs/docs-res/data/output.parquet")?;
     let df_parquet = ParquetReader::new(f).finish()?;
