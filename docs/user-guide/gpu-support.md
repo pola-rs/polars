@@ -30,7 +30,13 @@ You can install the GPU backend for Polars with a feature flag as part of a norm
 
 Having built a query using the lazy API [as normal](lazy/index.md), GPU-enabled execution is requested by running `.collect(engine="gpu")` instead of `.collect()`.
 
-{{code_block('user-guide/lazy/gpu', 'simple', ['collect'])}}
+{{ code_header("python", [], []) }}
+```python
+--8<-- "python/user-guide/lazy/gpu.py:setup"
+
+result = q.collect(engine="gpu")
+print(result)
+```
 
 ```python exec="on" result="text" session="user-guide/lazy"
 --8<-- "python/user-guide/lazy/gpu.py:setup"
@@ -39,7 +45,12 @@ Having built a query using the lazy API [as normal](lazy/index.md), GPU-enabled 
 
 For more detailed control over the execution, for example to specify which GPU to use on a multi-GPU node, we can provide a `GPUEngine` object. By default, the GPU engine will use a configuration applicable to most use cases.
 
-{{code_block('user-guide/lazy/gpu', 'engine', ['GPUEngine'])}}
+{{ code_header("python", [], []) }}
+```python
+--8<-- "python/user-guide/lazy/gpu.py:engine-setup"
+result = q.collect(engine=pl.GPUEngine(device=1))
+print(result)
+```
 
 ```python exec="on" result="text" session="user-guide/lazy"
 --8<-- "python/user-guide/lazy/gpu.py:engine-setup"
@@ -87,16 +98,32 @@ The release of the GPU engine in Open Beta implies that we expect things to work
 
 When running in verbose mode, any queries that cannot execute on the GPU will issue a `PerformanceWarning`:
 
-{{code_block('user-guide/lazy/gpu', 'fallback-warning', ['Config'])}}
+{{ code_header("python", [], []) }}
+```python
+--8<-- "python/user-guide/lazy/gpu.py:fallback-setup"
+
+with pl.Config() as cfg:
+    cfg.set_verbose(True)
+    result = q.collect(engine="gpu")
+
+print(result)
+```
 
 ```python exec="on" result="text" session="user-guide/lazy"
 --8<-- "python/user-guide/lazy/gpu.py:fallback-setup"
---8<-- "python/user-guide/lazy/gpu.py:fallback-result"
+print(
+    "PerformanceWarning: Query execution with GPU not supported, reason: \n"
+    "<class 'NotImplementedError'>: Grouped rolling window not implemented"
+)
+print("# some details elided")
+print()
+print(q.collect())
 ```
 
 To disable fallback, and have the GPU engine raise an exception if a query is unsupported, we can pass an appropriately configured `GPUEngine` object:
 
-```python exec="on" result="text" session="user-guide/lazy"
+{{ code_header("python", [], []) }}
+```python
 q.collect(engine=pl.GPUEngine(raise_on_fail=True))
 ```
 
