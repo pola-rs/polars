@@ -1,6 +1,7 @@
 use arrow::array::Array;
 
 use super::*;
+use crate::chunked_array::builder::AnonymousListBuilder;
 use crate::utils::align_chunks_binary;
 
 pub trait NumOpsDispatchInner: PolarsDataType + Sized {
@@ -210,6 +211,8 @@ fn does_list_have_nulls(data: &ArrayRef) -> bool {
 /// Return whether the left and right have the same shape. We assume neither has
 /// any nulls, recursively.
 fn lists_same_shapes(left: &ArrayRef, right: &ArrayRef) -> bool {
+    debug_assert!(!does_list_have_nulls(left));
+    debug_assert!(!does_list_have_nulls(right));
     let left_as_list = left.as_any().downcast_ref::<LargeListArray>();
     let right_as_list = right.as_any().downcast_ref::<LargeListArray>();
     match (left_as_list, right_as_list) {
@@ -256,12 +259,15 @@ impl ListChunked {
             // A slower implementation since we can't just add the underlying
             // values Arrow arrays. Given nulls, the two values arrays might not
             // line up the way we expect.
-            let mut result = self.clear();
+            let mut result = AnonymousListBuilder::new(
+                self.name().clone(),
+                self.len(),
+                Some(self.inner_dtype().clone()),
+            );
             let combined = self.amortized_iter().zip(rhs.list()?.amortized_iter()).map(|(a, b)| {
                 let (Some(a_owner), Some(b_owner)) = (a, b) else {
                     // Operations with nulls always result in nulls:
-                    let inner_dtype = self.dtype().inner_dtype().unwrap();
-                    return Ok(ListChunked::full_null_with_dtype(self.name().clone(), 1, inner_dtype));
+                    return Ok(None);
                 };
                 let a = a_owner.as_ref();
                 let b = b_owner.as_ref();
@@ -282,12 +288,16 @@ impl ListChunked {
                 } else {
                     op(a, b)
                 };
-                chunk_result.and_then(|s| s.implode())
-            });
-            for c in combined.into_iter() {
-                result.append(&c?)?;
+                chunk_result.map(Some)
+            }).collect::<PolarsResult<Vec<Option<Series>>>>()?;
+            for s in combined.iter() {
+                if let Some(s) = s {
+                    result.append_series(s)?;
+                } else {
+                    result.append_null();
+                }
             }
-            return Ok(result.into());
+            return Ok(result.finish().into());
         }
         let l_rechunked = self.clone().rechunk().into_series();
         let l_leaf_array = l_rechunked.get_leaf_array();
