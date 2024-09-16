@@ -60,7 +60,3 @@ print("# some details elided")
 print()
 print(q.collect())
 # --8<- [end:fallback-result]
-
-# --8<-- [start:fallback-raise]
-q.collect(engine=pl.GPUEngine(raise_on_fail=True))
-# --8<-- [end:fallback-raise]

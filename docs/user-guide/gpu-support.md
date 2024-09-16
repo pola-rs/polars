@@ -96,7 +96,9 @@ When running in verbose mode, any queries that cannot execute on the GPU will is
 
 To disable fallback, and have the GPU engine raise an exception if a query is unsupported, we can pass an appropriately configured `GPUEngine` object:
 
-{{code_block('user-guide/lazy/gpu', 'fallback-raise', ['GPUEngine'])}}
+```python exec="on" result="text" session="user-guide/lazy"
+q.collect(engine=pl.GPUEngine(raise_on_fail=True))
+```
 
 ```pytb
 Traceback (most recent call last):
