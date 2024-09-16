@@ -483,11 +483,11 @@ impl StringChunked {
 impl ChunkAggSeries for StringChunked {
     fn max_reduce(&self) -> Scalar {
         let av: AnyValue = self.max_str().into();
-        Scalar::new(DataType::String, av.into_static().unwrap())
+        Scalar::new(DataType::String, av.into_static())
     }
     fn min_reduce(&self) -> Scalar {
         let av: AnyValue = self.min_str().into();
-        Scalar::new(DataType::String, av.into_static().unwrap())
+        Scalar::new(DataType::String, av.into_static())
     }
 }
 
@@ -554,11 +554,11 @@ impl CategoricalChunked {
 impl ChunkAggSeries for CategoricalChunked {
     fn min_reduce(&self) -> Scalar {
         let av: AnyValue = self.min_categorical().into();
-        Scalar::new(DataType::String, av.into_static().unwrap())
+        Scalar::new(DataType::String, av.into_static())
     }
     fn max_reduce(&self) -> Scalar {
         let av: AnyValue = self.max_categorical().into();
-        Scalar::new(DataType::String, av.into_static().unwrap())
+        Scalar::new(DataType::String, av.into_static())
     }
 }
 
@@ -618,11 +618,11 @@ impl ChunkAggSeries for BinaryChunked {
     }
     fn max_reduce(&self) -> Scalar {
         let av: AnyValue = self.max_binary().into();
-        Scalar::new(self.dtype().clone(), av.into_static().unwrap())
+        Scalar::new(self.dtype().clone(), av.into_static())
     }
     fn min_reduce(&self) -> Scalar {
         let av: AnyValue = self.min_binary().into();
-        Scalar::new(self.dtype().clone(), av.into_static().unwrap())
+        Scalar::new(self.dtype().clone(), av.into_static())
     }
 }
 

@@ -17,7 +17,6 @@ impl PolarsExtension {
             .get(0)
             .unwrap()
             .into_static()
-            .unwrap()
     }
 
     pub(crate) unsafe fn new(array: FixedSizeBinaryArray) -> Self {
