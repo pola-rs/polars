@@ -1891,6 +1891,24 @@ impl DataFrame {
         Ok(df)
     }
 
+    pub fn _to_column_repr(&self) -> DataFrame {
+        self.columns
+            .iter()
+            .map(|c| {
+                let repr = match c {
+                    Column::Series(_) => "series",
+                    Column::Scalar(_) => "scalar",
+                };
+
+                Scalar::new(
+                    DataType::String,
+                    AnyValue::StringOwned(PlSmallStr::from_static(repr)),
+                )
+                .into_column(c.name().clone())
+            })
+            .collect()
+    }
+
     /// Return a sorted clone of this [`DataFrame`].
     ///
     /// # Example

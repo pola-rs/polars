@@ -11208,6 +11208,9 @@ class DataFrame:
             value_name=value_name,
         )
 
+    def _to_column_repr(self) -> DataFrame:
+        return self._from_pydf(self._df._to_column_repr())
+
 
 def _prepare_other_arg(other: Any, length: int | None = None) -> Series:
     # if not a series create singleton series such that it will broadcast
