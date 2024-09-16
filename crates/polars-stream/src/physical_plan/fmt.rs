@@ -59,6 +59,13 @@ fn visualize_plan_rec(
                 from_ref(input),
             )
         },
+        PhysNodeKind::InputIndependentSelect { selectors } => (
+            format!(
+                "input-independent-select\\n{}",
+                fmt_exprs(selectors, expr_arena)
+            ),
+            &[][..],
+        ),
         PhysNodeKind::Reduce { input, exprs } => (
             format!("reduce\\n{}", fmt_exprs(exprs, expr_arena)),
             from_ref(input),

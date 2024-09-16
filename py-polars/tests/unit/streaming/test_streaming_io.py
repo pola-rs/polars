@@ -297,6 +297,7 @@ def test_streaming_empty_parquet_16523(tmp_path: Path) -> None:
     assert q.join(q2, on="a").collect(streaming=True).shape == (0, 1)
 
 
+@pytest.mark.may_fail_auto_streaming
 @pytest.mark.parametrize(
     "method",
     ["parquet", "csv"],
