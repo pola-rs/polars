@@ -299,10 +299,17 @@ fn build_fallback_node_with_ctx(
 ) -> PolarsResult<PhysNodeKey> {
     // Pre-select only the columns that are needed for this fallback expression.
     let input_schema = &ctx.phys_sm[input].output_schema;
-    let select_names: PlHashSet<_> = exprs
+    let mut select_names: PlHashSet<_> = exprs
         .iter()
         .flat_map(|expr| polars_plan::utils::aexpr_to_leaf_names_iter(expr.node(), ctx.expr_arena))
         .collect();
+    // To keep the length correct we have to ensure we select at least one
+    // column.
+    if select_names.is_empty() {
+        if let Some(name) = input_schema.iter_names().next() {
+            select_names.insert(name.clone());
+        }
+    }
     let input_node = if input_schema
         .iter_names()
         .any(|name| !select_names.contains(name.as_str()))
