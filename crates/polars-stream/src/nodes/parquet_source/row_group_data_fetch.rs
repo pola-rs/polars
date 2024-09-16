@@ -291,12 +291,12 @@ type RowGroupDataStreamFut = std::pin::Pin<Box<
     dyn Future<
         Output =
             (
-                Box<RowGroupDataFetcher>           ,
-                Option                             <
-                PolarsResult                       <
-                task_handles_ext::AbortOnDropHandle  <
-                PolarsResult                       <
-                RowGroupData     >     >     >     >
+                Box<RowGroupDataFetcher>               ,
+                Option                                 <
+                PolarsResult                           <
+                task_handles_ext::AbortOnDropHandle    <
+                PolarsResult                           <
+                RowGroupData      >      >      >      >
             )
     > + Send
 >>;
