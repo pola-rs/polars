@@ -2,7 +2,7 @@
 resolver = "2"
 members = [
   "crates/*",
-  "docs/src/rust",
+  "docs/docs/src/rust",
   # "examples/*",
   "py-polars",
 ]

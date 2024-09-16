@@ -39,6 +39,5 @@ target/
 *.tbl
 
 # Project
-/docs/data/
-/docs/images/
-/docs/people.md
+/docs/docs-res/data/
+/docs/docs-res/people.md

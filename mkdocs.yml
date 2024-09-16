@@ -6,6 +6,8 @@ site_url: https://docs.pola.rs/
 repo_url: https://github.com/pola-rs/polars
 repo_name: pola-rs/polars
 
+docs_dir: docs/docs
+
 # Documentation layout
 nav:
   - User guide:
@@ -110,7 +112,6 @@ nav:
 
 not_in_nav: |
   /_build/
-  people.md
 validation:
   links:
     # Allow an absolute link to the features page for our code snippets
@@ -120,7 +121,7 @@ validation:
 theme:
   name: material
   locale: en
-  custom_dir: docs/_build/overrides
+  custom_dir: docs/docs/_build/overrides
   palette:
   # Palette toggle for light mode
   - media: "(prefers-color-scheme: light)"
@@ -169,13 +170,13 @@ markdown_extensions:
   - pymdownx.tabbed:
       alternate_style: true
   - pymdownx.snippets:
-      base_path: ['.','docs/src/']
+      base_path: ['.','docs/docs/src/']
       check_paths: true
       dedent_subsections: true
   - footnotes
 
 hooks:
-  - docs/_build/scripts/people.py
+  - docs/docs/_build/scripts/people.py
 
 plugins:
   - search:
@@ -183,7 +184,7 @@ plugins:
   - markdown-exec
   - material-plausible
   - macros:
-      module_name: docs/_build/scripts/macro
+      module_name: docs/docs/_build/scripts/macro
   - redirects:
       redirect_maps:
         'user-guide/index.md': 'index.md'
