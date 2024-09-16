@@ -52,9 +52,9 @@ def test_empty_count_window() -> None:
 
 
 def test_empty_sort_by_args() -> None:
-    df = pl.DataFrame([1, 2, 3])
-    with pytest.raises(InvalidOperationError):
-        df.select(pl.all().sort_by([]))
+    df = pl.DataFrame({"x": [2, 1, 3]})
+    assert_frame_equal(df, df.select(pl.col.x.sort_by([])))
+    assert_frame_equal(df, df.sort([]))
 
 
 def test_empty_9137() -> None:

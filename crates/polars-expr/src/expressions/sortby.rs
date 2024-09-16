@@ -201,6 +201,10 @@ impl PhysicalExpr for SortByExpr {
     }
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
         let series_f = || self.input.evaluate(df, state);
+        if self.by.is_empty() {
+            // Sorting by 0 columns returns input unchanged.
+            return series_f();
+        }
         let (series, sorted_idx) = if self.by.len() == 1 {
             let sorted_idx_f = || {
                 let s_sort_by = self.by[0].evaluate(df, state)?;

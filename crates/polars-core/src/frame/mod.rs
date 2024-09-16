@@ -1796,7 +1796,12 @@ impl DataFrame {
         slice: Option<(i64, usize)>,
     ) -> PolarsResult<Self> {
         if by_column.is_empty() {
-            polars_bail!(ComputeError: "No columns selected for sorting");
+            // If no columns selected, any order (including original order) is correct.
+            return if let Some((offset, len)) = slice {
+                Ok(self.slice(offset, len))
+            } else {
+                Ok(self.clone())
+            };
         }
         // note that the by_column argument also contains evaluated expression from
         // polars-lazy that may not even be present in this dataframe. therefore
