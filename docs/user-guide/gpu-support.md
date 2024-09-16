@@ -3,6 +3,7 @@
 Polars provides an in-memory, GPU-accelerated execution engine for Python users of the Lazy API on NVIDIA GPUs using [RAPIDS cuDF](https://docs.rapids.ai/api/cudf/stable/). This functionality is available in Open Beta and is undergoing rapid development.
 
 ### System Requirements
+
 - NVIDIA Volta™ or higher GPU with [compute capability](https://developer.nvidia.com/cuda-gpus) 7.0+
 - CUDA 11 or CUDA 12
 - Linux or Windows Subsystem for Linux 2 (WSL2)
@@ -10,13 +11,11 @@ Polars provides an in-memory, GPU-accelerated execution engine for Python users 
 See the [RAPIDS installation guide](https://docs.rapids.ai/install#system-req) for full details.
 
 ### Installation
+
 You can install the GPU backend for Polars with a feature flag as part of a normal [installation](installation.md).
 
 === ":fontawesome-brands-python: Python"
-    ```bash
-    pip install --extra-index-url=https://pypi.nvidia.com polars[gpu]
-    ```
-
+`bash pip install --extra-index-url=https://pypi.nvidia.com polars[gpu]`
 
 !!! note Installation on a CUDA 11 system
 
@@ -32,14 +31,16 @@ You can install the GPU backend for Polars with a feature flag as part of a norm
 Having built a query using the lazy API [as normal](lazy/index.md), GPU-enabled execution is requested by running `.collect(engine="gpu")` instead of `.collect()`.
 
 {{code_block('user-guide/lazy/gpu', 'simple', ['collect'])}}
+
 ```python exec="on" result="text" session="user-guide/lazy"
 --8<-- "python/user-guide/lazy/gpu.py:setup"
 --8<-- "python/user-guide/lazy/gpu.py:simple-result"
 ```
 
-For more detailed control over the execution, for example to specify which GPU to use on a multi-GPU node, we can provide a `GPUEngine` object. By default, the GPU engine will use a configuration applicable to most use cases. 
+For more detailed control over the execution, for example to specify which GPU to use on a multi-GPU node, we can provide a `GPUEngine` object. By default, the GPU engine will use a configuration applicable to most use cases.
 
 {{code_block('user-guide/lazy/gpu', 'engine', ['GPUEngine'])}}
+
 ```python exec="on" result="text" session="user-guide/lazy"
 --8<-- "python/user-guide/lazy/gpu.py:engine-setup"
 --8<-- "python/user-guide/lazy/gpu.py:engine-result"
@@ -87,6 +88,7 @@ The release of the GPU engine in Open Beta implies that we expect things to work
 When running in verbose mode, any queries that cannot execute on the GPU will issue a `PerformanceWarning`:
 
 {{code_block('user-guide/lazy/gpu', 'fallback-warning', ['Config'])}}
+
 ```python exec="on" result="text" session="user-guide/lazy"
 --8<-- "python/user-guide/lazy/gpu.py:fallback-setup"
 --8<-- "python/user-guide/lazy/gpu.py:fallback-result"
@@ -95,6 +97,7 @@ When running in verbose mode, any queries that cannot execute on the GPU will is
 To disable fallback, and have the GPU engine raise an exception if a query is unsupported, we can pass an appropriately configured `GPUEngine` object:
 
 {{code_block('user-guide/lazy/gpu', 'fallback-raise', ['GPUEngine'])}}
+
 ```pytb
 Traceback (most recent call last):
   File "<stdin>", line 1, in <module>
@@ -113,7 +116,6 @@ The **full** Polars test suite is run on every commit made to the GPU engine, en
 
 The GPU engine currently passes 99.2% of the Polars unit tests with CPU fallback enabled. Without CPU fallback, the GPU engine passes 88.8% of the Polars unit tests. With fallback, there are approximately 100 failing tests: around 40 of these fail due to mismatching debug output; there are some cases where the GPU engine produces the a correct result but uses a different data type; the remainder are cases where we do not correctly determine that a query is unsupported and therefore fail at runtime, instead of falling back.
 
-
 ### When Should I Use a GPU?
 
 Based on our benchmarking, you're most likely to observe speedups using the GPU engine when your workflow's profile is dominated by grouped aggregations and joins. In contrast I/O bound queries typically show similar performance on GPU and CPU. GPUs typically have less RAM than CPU systems, therefore very large datasets will fail due to out of memory errors. Based on our testing, raw datasets of 50-100 GiB fit (depending on the workflow) well with a GPU with 80GiB of memory.
@@ -129,4 +131,3 @@ GPU execution is only available in the Lazy API, so materialized DataFrames will
 ### Providing feedback
 
 Please report issues, and missing features, on the Polars [issue tracker](../development/contributing/index.md).
-

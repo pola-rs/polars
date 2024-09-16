@@ -90,9 +90,9 @@ pip install 'polars[numpy,fsspec]'
 
 #### GPU
 
-| Tag | Description                       |
-| --- | --------------------------------- |
-| gpu | Run queries on NVIDIA GPUs        |
+| Tag | Description                |
+| --- | -------------------------- |
+| gpu | Run queries on NVIDIA GPUs |
 
 !!! note
 

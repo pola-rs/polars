@@ -4,8 +4,8 @@ Polars provides an in-memory, GPU-accelerated execution engine for the Lazy API 
 
 If you install Polars with the [GPU feature flag](../installation.md), you can trigger GPU-based execution by running `.collect(engine="gpu")` instead of `.collect()`.
 
-
 {{code_block('user-guide/lazy/gpu', 'simple', [])}}
+
 ```python exec="on" result="text" session="user-guide/lazy"
 --8<-- "python/user-guide/lazy/gpu.py:setup"
 --8<-- "python/user-guide/lazy/gpu.py:simple-result"
