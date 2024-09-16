@@ -644,7 +644,7 @@ fn rg_to_dfs_par_over_rg(
             continue;
         }
 
-        row_groups.push((i, rg_md, rg_slice, row_count_start));
+        row_groups.push((rg_md, rg_slice, row_count_start));
     }
 
     let dfs = POOL.install(|| {
@@ -652,10 +652,7 @@ fn rg_to_dfs_par_over_rg(
         // Ensure all row groups are partitioned.
         row_groups
             .into_par_iter()
-            .enumerate()
-            .map(|(iter_idx, (_rg_idx, _md, slice, row_count_start))| {
-                let md = &file_metadata.row_groups[iter_idx];
-
+            .map(|(md, slice, row_count_start)| {
                 if slice.1 == 0 || use_statistics && !read_this_row_group(predicate, md, schema)? {
                     return Ok(None);
                 }
