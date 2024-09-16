@@ -164,9 +164,6 @@ impl ComputeNode for ParquetSourceNode {
             .try_lock()
             .unwrap()
             .replace((raw_morsel_receivers, raw_morsel_distributor_task_handle));
-
-        let row_group_decoder = self.init_row_group_decoder();
-        self.row_group_decoder = Some(Arc::new(row_group_decoder));
     }
 
     fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {
