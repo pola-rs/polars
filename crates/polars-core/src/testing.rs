@@ -199,8 +199,8 @@ mod test {
 
     #[test]
     fn test_df_equal() {
-        let a = Series::new("a".into(), [1, 2, 3].as_ref());
-        let b = Series::new("b".into(), [1, 2, 3].as_ref());
+        let a = Column::new("a".into(), [1, 2, 3].as_ref());
+        let b = Column::new("b".into(), [1, 2, 3].as_ref());
 
         let df1 = DataFrame::new(vec![a, b]).unwrap();
         assert!(df1.equals(&df1))

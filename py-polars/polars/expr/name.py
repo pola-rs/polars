@@ -11,7 +11,7 @@ class ExprNameNameSpace:
 
     _accessor = "name"
 
-    def __init__(self, expr: Expr):
+    def __init__(self, expr: Expr) -> None:
         self._from_pyexpr = expr._from_pyexpr
         self._pyexpr = expr._pyexpr
 

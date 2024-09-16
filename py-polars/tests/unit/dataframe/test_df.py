@@ -1189,7 +1189,7 @@ def test_from_generator_or_iterable() -> None:
 
     # iterable object
     class Rows:
-        def __init__(self, n: int, *, strkey: bool = True):
+        def __init__(self, n: int, *, strkey: bool = True) -> None:
             self._n = n
             self._strkey = strkey
 
@@ -1586,7 +1586,7 @@ def test_hashing_on_python_objects() -> None:
         def __hash__(self) -> int:
             return 0
 
-        def __eq__(self, other: Any) -> bool:
+        def __eq__(self, other: object) -> bool:
             return True
 
     df = df.with_columns(pl.col("a").map_elements(lambda x: Foo()).alias("foo"))
@@ -2514,7 +2514,7 @@ def test_set() -> None:
 
     # needs to be a 2 element tuple
     with pytest.raises(ValueError):
-        df[(1, 2, 3)] = 1
+        df[1, 2, 3] = 1
 
     # we cannot index with any type, such as bool
     with pytest.raises(TypeError):

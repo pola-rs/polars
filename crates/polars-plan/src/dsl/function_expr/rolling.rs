@@ -52,38 +52,62 @@ impl Hash for RollingFunction {
     }
 }
 
-pub(super) fn rolling_min(s: &Series, options: RollingOptionsFixedWindow) -> PolarsResult<Series> {
-    s.rolling_min(options)
+pub(super) fn rolling_min(s: &Column, options: RollingOptionsFixedWindow) -> PolarsResult<Column> {
+    // @scalar-opt
+    s.as_materialized_series()
+        .rolling_min(options)
+        .map(Column::from)
 }
 
-pub(super) fn rolling_max(s: &Series, options: RollingOptionsFixedWindow) -> PolarsResult<Series> {
-    s.rolling_max(options)
+pub(super) fn rolling_max(s: &Column, options: RollingOptionsFixedWindow) -> PolarsResult<Column> {
+    // @scalar-opt
+    s.as_materialized_series()
+        .rolling_max(options)
+        .map(Column::from)
 }
 
-pub(super) fn rolling_mean(s: &Series, options: RollingOptionsFixedWindow) -> PolarsResult<Series> {
-    s.rolling_mean(options)
+pub(super) fn rolling_mean(s: &Column, options: RollingOptionsFixedWindow) -> PolarsResult<Column> {
+    // @scalar-opt
+    s.as_materialized_series()
+        .rolling_mean(options)
+        .map(Column::from)
 }
 
-pub(super) fn rolling_sum(s: &Series, options: RollingOptionsFixedWindow) -> PolarsResult<Series> {
-    s.rolling_sum(options)
+pub(super) fn rolling_sum(s: &Column, options: RollingOptionsFixedWindow) -> PolarsResult<Column> {
+    // @scalar-opt
+    s.as_materialized_series()
+        .rolling_sum(options)
+        .map(Column::from)
 }
 
 pub(super) fn rolling_quantile(
-    s: &Series,
+    s: &Column,
     options: RollingOptionsFixedWindow,
-) -> PolarsResult<Series> {
-    s.rolling_quantile(options)
+) -> PolarsResult<Column> {
+    // @scalar-opt
+    s.as_materialized_series()
+        .rolling_quantile(options)
+        .map(Column::from)
 }
 
-pub(super) fn rolling_var(s: &Series, options: RollingOptionsFixedWindow) -> PolarsResult<Series> {
-    s.rolling_var(options)
+pub(super) fn rolling_var(s: &Column, options: RollingOptionsFixedWindow) -> PolarsResult<Column> {
+    // @scalar-opt
+    s.as_materialized_series()
+        .rolling_var(options)
+        .map(Column::from)
 }
 
-pub(super) fn rolling_std(s: &Series, options: RollingOptionsFixedWindow) -> PolarsResult<Series> {
-    s.rolling_std(options)
+pub(super) fn rolling_std(s: &Column, options: RollingOptionsFixedWindow) -> PolarsResult<Column> {
+    // @scalar-opt
+    s.as_materialized_series()
+        .rolling_std(options)
+        .map(Column::from)
 }
 
 #[cfg(feature = "moment")]
-pub(super) fn rolling_skew(s: &Series, window_size: usize, bias: bool) -> PolarsResult<Series> {
-    s.rolling_skew(window_size, bias)
+pub(super) fn rolling_skew(s: &Column, window_size: usize, bias: bool) -> PolarsResult<Column> {
+    // @scalar-opt
+    s.as_materialized_series()
+        .rolling_skew(window_size, bias)
+        .map(Column::from)
 }

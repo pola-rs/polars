@@ -81,7 +81,7 @@ def test_fmt_series(
     s = pl.Series(name="foo", values=values)
     with pl.Config(fmt_str_lengths=15):
         print(s)
-    out, err = capfd.readouterr()
+    out, _err = capfd.readouterr()
     assert out == expected
 
 
@@ -246,7 +246,7 @@ def test_fmt_unsigned_int_thousands_sep(
 def test_fmt_float(capfd: pytest.CaptureFixture[str]) -> None:
     s = pl.Series(name="foo", values=[7.966e-05, 7.9e-05, 8.4666e-05, 8.00007966])
     print(s)
-    out, err = capfd.readouterr()
+    out, _err = capfd.readouterr()
     expected = """shape: (4,)
 Series: 'foo' [f64]
 [

@@ -57,13 +57,13 @@ fn map_cats(
                 },
             });
 
-        let outvals = vec![
+        let outvals = [
             brk_vals.finish().into_series(),
             bld.finish()
                 ._with_fast_unique(label_has_value.iter().all(bool::clone))
                 .into_series(),
         ];
-        Ok(StructChunked::from_series(out_name, &outvals)?.into_series())
+        Ok(StructChunked::from_series(out_name, outvals.iter())?.into_series())
     } else {
         Ok(bld
             .drain_iter_and_finish(s_iter.map(|opt| {

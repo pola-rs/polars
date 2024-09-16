@@ -1,12 +1,13 @@
 use polars_error::{polars_ensure, polars_err, PolarsResult};
 use polars_utils::aliases::PlHashSet;
 
+use super::Column;
 use crate::datatypes::AnyValue;
 use crate::frame::DataFrame;
-use crate::prelude::{PlSmallStr, Series};
+use crate::prelude::PlSmallStr;
 
 fn check_hstack(
-    col: &Series,
+    col: &Column,
     names: &mut PlHashSet<PlSmallStr>,
     height: usize,
     is_empty: bool,
@@ -28,25 +29,25 @@ impl DataFrame {
     ///
     /// # Safety
     /// The caller must ensure:
-    /// - the length of all [`Series`] is equal to the height of this [`DataFrame`]
+    /// - the length of all [`Column`] is equal to the height of this [`DataFrame`]
     /// - the columns names are unique
-    pub unsafe fn hstack_mut_unchecked(&mut self, columns: &[Series]) -> &mut Self {
+    pub unsafe fn hstack_mut_unchecked(&mut self, columns: &[Column]) -> &mut Self {
         self.columns.extend_from_slice(columns);
         self
     }
 
-    /// Add multiple [`Series`] to a [`DataFrame`].
+    /// Add multiple [`Column`] to a [`DataFrame`].
     /// The added `Series` are required to have the same length.
     ///
     /// # Example
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
-    /// fn stack(df: &mut DataFrame, columns: &[Series]) {
+    /// fn stack(df: &mut DataFrame, columns: &[Column]) {
     ///     df.hstack_mut(columns);
     /// }
     /// ```
-    pub fn hstack_mut(&mut self, columns: &[Series]) -> PolarsResult<&mut Self> {
+    pub fn hstack_mut(&mut self, columns: &[Column]) -> PolarsResult<&mut Self> {
         let mut names = self
             .columns
             .iter()
@@ -83,9 +84,11 @@ pub fn concat_df_horizontal(dfs: &[DataFrame], check_duplicates: bool) -> Polars
             .map(|mut df| {
                 if df.height() != max_len {
                     let diff = max_len - df.height();
-                    df.columns
-                        .iter_mut()
-                        .for_each(|s| *s = s.extend_constant(AnyValue::Null, diff).unwrap());
+                    df.columns.iter_mut().for_each(|s| {
+                        // @scalar-opt
+                        let s = s.into_materialized_series();
+                        *s = s.extend_constant(AnyValue::Null, diff).unwrap()
+                    });
                 }
                 df
             })

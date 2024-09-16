@@ -93,7 +93,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             .into_iter()
                             .map(|d| d.map(|v| v / 1000 / 24 / 60 / 60))
                             .collect::<Int64Chunked>()
-                            .into_series(),
+                            .into_column(),
                     ))
                 },
                 GetOutput::from_type(DataType::Int64),

@@ -3,6 +3,8 @@ python:
   LazyFrame: https://docs.pola.rs/api/python/stable/reference/lazyframe/index.html
   Series: https://docs.pola.rs/api/python/stable/reference/series/index.html
   Categorical: https://docs.pola.rs/api/python/stable/reference/api/polars.Categorical.html
+  GPUEngine: https://docs.pola.rs/api/python/stable/lazyframe/api/polars.lazyframe.engine_config.GPUEngine.html
+  Config: https://docs.pola.rs/api/python/stable/reference/config.html
   select: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.select.html
   filter: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.filter.html
   with_columns: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.with_columns.html

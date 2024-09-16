@@ -309,7 +309,7 @@ impl<'a> CoreJsonReader<'a> {
                     let mut local_df = DataFrame::new(
                         buffers
                             .into_values()
-                            .map(|buf| buf.into_series())
+                            .map(|buf| buf.into_series().into_column())
                             .collect::<_>(),
                     )?;
 

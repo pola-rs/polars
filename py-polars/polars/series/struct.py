@@ -20,7 +20,7 @@ class StructNameSpace:
 
     _accessor = "struct"
 
-    def __init__(self, series: Series):
+    def __init__(self, series: Series) -> None:
         self._s: PySeries = series._s
 
     def __getitem__(self, item: int | str) -> Series:

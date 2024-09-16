@@ -11,6 +11,8 @@ It does this by executing computations which can be done in parallel in separate
 For example, requesting two expressions in a `select` statement can be done in parallel, with the results only being combined at the end.
 Another example is aggregating a value within groups using `group_by().agg(<expr>)`, each group can be evaluated separately.
 It is very unlikely that the `multiprocessing` module can improve your code performance in these cases.
+If you're using the GPU Engine with Polars you should also avoid manual multiprocessing. When used simultaneously, they can compete
+for system memory and processing power, leading to reduced performance.
 
 See [the optimizations section](../lazy/optimizations.md) for more optimizations.
 

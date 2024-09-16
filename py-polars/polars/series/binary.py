@@ -16,7 +16,7 @@ class BinaryNameSpace:
 
     _accessor = "bin"
 
-    def __init__(self, series: Series):
+    def __init__(self, series: Series) -> None:
         self._s: PySeries = series._s
 
     def contains(self, literal: IntoExpr) -> Series:

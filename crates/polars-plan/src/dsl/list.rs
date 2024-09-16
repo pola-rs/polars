@@ -295,7 +295,7 @@ impl ListNameSpace {
                 move |s| {
                     s.list()?
                         .to_struct(n_fields, name_generator.clone())
-                        .map(|s| Some(s.into_series()))
+                        .map(|s| Some(s.into_column()))
                 },
                 // we don't yet know the fields
                 GetOutput::map_dtype(move |dt: &DataType| {

@@ -330,7 +330,7 @@ class BytecodeParser:
     _map_target_name: str | None = None
     _caller_variables: dict[str, Any] | None = None
 
-    def __init__(self, function: Callable[[Any], Any], map_target: MapTarget):
+    def __init__(self, function: Callable[[Any], Any], map_target: MapTarget) -> None:
         """
         Initialize BytecodeParser instance and prepare to introspect UDFs.
 
@@ -745,7 +745,7 @@ class RewrittenInstructions:
         instructions: Iterator[Instruction],
         function: Callable[[Any], Any],
         caller_variables: dict[str, Any] | None,
-    ):
+    ) -> None:
         self._function = function
         self._caller_variables = caller_variables
         self._original_instructions = list(instructions)

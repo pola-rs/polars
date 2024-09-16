@@ -29,7 +29,7 @@ class StringNameSpace:
 
     _accessor = "str"
 
-    def __init__(self, series: Series):
+    def __init__(self, series: Series) -> None:
         self._s: PySeries = series._s
 
     def to_date(

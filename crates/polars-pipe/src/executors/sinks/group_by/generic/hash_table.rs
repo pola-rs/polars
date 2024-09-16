@@ -268,12 +268,16 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
             unsafe { polars_row::decode::decode_rows(&mut key_rows, &fields, &key_dtypes) };
 
         let mut cols = Vec::with_capacity(self.num_keys + self.agg_constructors.len());
+        cols.extend(key_columns.into_iter().map(|arr| {
+            Series::try_from((PlSmallStr::EMPTY, arr))
+                .unwrap()
+                .into_column()
+        }));
         cols.extend(
-            key_columns
+            agg_builders
                 .into_iter()
-                .map(|arr| Series::try_from((PlSmallStr::EMPTY, arr)).unwrap()),
+                .map(|buf| buf.into_series().into_column()),
         );
-        cols.extend(agg_builders.into_iter().map(|buf| buf.into_series()));
         physical_agg_to_logical(&mut cols, &self.output_schema);
         unsafe { DataFrame::new_no_checks(cols) }
     }

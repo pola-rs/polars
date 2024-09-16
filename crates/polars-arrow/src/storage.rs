@@ -1,3 +1,4 @@
+use std::marker::PhantomData;
 use std::mem::ManuallyDrop;
 use std::ops::Deref;
 use std::ptr::NonNull;
@@ -19,6 +20,8 @@ struct SharedStorageInner<T> {
     ptr: *mut T,
     length: usize,
     backing: Option<BackingStorage>,
+    // https://github.com/rust-lang/rfcs/blob/master/text/0769-sound-generic-drop.md#phantom-data
+    phantom: PhantomData<T>,
 }
 
 impl<T> Drop for SharedStorageInner<T> {
@@ -37,6 +40,7 @@ impl<T> Drop for SharedStorageInner<T> {
 
 pub struct SharedStorage<T> {
     inner: NonNull<SharedStorageInner<T>>,
+    phantom: PhantomData<SharedStorageInner<T>>,
 }
 
 unsafe impl<T: Sync + Send> Send for SharedStorage<T> {}
@@ -51,9 +55,11 @@ impl<T> SharedStorage<T> {
             ptr,
             length,
             backing: None,
+            phantom: PhantomData,
         };
         Self {
             inner: NonNull::new(Box::into_raw(Box::new(inner))).unwrap(),
+            phantom: PhantomData,
         }
     }
 
@@ -67,9 +73,11 @@ impl<T> SharedStorage<T> {
             ptr,
             length,
             backing: Some(BackingStorage::Vec { capacity }),
+            phantom: PhantomData,
         };
         Self {
             inner: NonNull::new(Box::into_raw(Box::new(inner))).unwrap(),
+            phantom: PhantomData,
         }
     }
 
@@ -79,9 +87,11 @@ impl<T> SharedStorage<T> {
             ptr: ptr.cast_mut(),
             length: len,
             backing: Some(BackingStorage::InternalArrowArray(arr)),
+            phantom: PhantomData,
         };
         Self {
             inner: NonNull::new(Box::into_raw(Box::new(inner))).unwrap(),
+            phantom: PhantomData,
         }
     }
 }
@@ -99,9 +109,11 @@ impl<T: crate::types::NativeType> SharedStorage<T> {
             ptr: ptr as *mut T,
             length,
             backing: Some(BackingStorage::ArrowBuffer(buffer)),
+            phantom: PhantomData,
         };
         Self {
             inner: NonNull::new(Box::into_raw(Box::new(inner))).unwrap(),
+            phantom: PhantomData,
         }
     }
 
@@ -193,7 +205,10 @@ impl<T> Clone for SharedStorage<T> {
             // Ordering semantics copied from Arc<T>.
             inner.ref_count.fetch_add(1, Ordering::Relaxed);
         }
-        Self { inner: self.inner }
+        Self {
+            inner: self.inner,
+            phantom: PhantomData,
+        }
     }
 }
 

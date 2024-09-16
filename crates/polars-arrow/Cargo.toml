@@ -154,7 +154,7 @@ compute = [
   "compute_take",
   "compute_temporal",
 ]
-serde = ["dep:serde", "polars-schema/serde"]
+serde = ["dep:serde", "polars-schema/serde", "polars-utils/serde"]
 simd = []
 
 # polars-arrow

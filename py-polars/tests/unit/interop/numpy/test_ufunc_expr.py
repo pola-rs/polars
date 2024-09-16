@@ -137,7 +137,7 @@ def test_generalized_ufunc_scalar() -> None:
     numba = pytest.importorskip("numba")
 
     @numba.guvectorize([(numba.int64[:], numba.int64[:])], "(n)->()")  # type: ignore[misc]
-    def my_custom_sum(arr, result) -> None:  # type: ignore[no-untyped-def]
+    def my_custom_sum(arr, result) -> None:  # type: ignore[no-untyped-def]  # noqa: ANN001
         total = 0
         for value in arr:
             total += value

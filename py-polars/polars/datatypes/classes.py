@@ -325,7 +325,7 @@ class Decimal(NumericType):
         self,
         precision: int | None = None,
         scale: int = 0,
-    ):
+    ) -> None:
         # Issuing the warning on `__init__` does not trigger when the class is used
         # without being instantiated, but it's better than nothing
         from polars._utils.unstable import issue_unstable_warning
@@ -422,7 +422,7 @@ class Datetime(TemporalType):
 
     def __init__(
         self, time_unit: TimeUnit = "us", time_zone: str | timezone | None = None
-    ):
+    ) -> None:
         if time_unit not in ("ms", "us", "ns"):
             msg = (
                 "invalid `time_unit`"
@@ -475,7 +475,7 @@ class Duration(TemporalType):
 
     time_unit: TimeUnit
 
-    def __init__(self, time_unit: TimeUnit = "us"):
+    def __init__(self, time_unit: TimeUnit = "us") -> None:
         if time_unit not in ("ms", "us", "ns"):
             msg = (
                 "invalid `time_unit`"
@@ -518,7 +518,7 @@ class Categorical(DataType):
     def __init__(
         self,
         ordering: CategoricalOrdering | None = "physical",
-    ):
+    ) -> None:
         self.ordering = ordering
 
     def __repr__(self) -> str:
@@ -554,7 +554,7 @@ class Enum(DataType):
 
     categories: Series
 
-    def __init__(self, categories: Series | Iterable[str]):
+    def __init__(self, categories: Series | Iterable[str]) -> None:
         # Issuing the warning on `__init__` does not trigger when the class is used
         # without being instantiated, but it's better than nothing
         from polars._utils.unstable import issue_unstable_warning
@@ -654,7 +654,7 @@ class List(NestedType):
 
     inner: PolarsDataType
 
-    def __init__(self, inner: PolarsDataType | PythonDataType):
+    def __init__(self, inner: PolarsDataType | PythonDataType) -> None:
         self.inner = polars.datatypes.parse_into_dtype(inner)
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
@@ -713,7 +713,7 @@ class Array(NestedType):
         shape: int | tuple[int, ...] | None = None,
         *,
         width: int | None = None,
-    ):
+    ) -> None:
         if width is not None:
             from polars._utils.deprecation import issue_deprecation_warning
 
@@ -803,7 +803,7 @@ class Field:
     name: str
     dtype: PolarsDataType
 
-    def __init__(self, name: str, dtype: PolarsDataType):
+    def __init__(self, name: str, dtype: PolarsDataType) -> None:
         self.name = name
         self.dtype = polars.datatypes.parse_into_dtype(dtype)
 
@@ -858,7 +858,7 @@ class Struct(NestedType):
 
     fields: list[Field]
 
-    def __init__(self, fields: Sequence[Field] | SchemaDict):
+    def __init__(self, fields: Sequence[Field] | SchemaDict) -> None:
         if isinstance(fields, Mapping):
             self.fields = [Field(name, dtype) for name, dtype in fields.items()]
         else:

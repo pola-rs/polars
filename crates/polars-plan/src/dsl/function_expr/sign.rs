@@ -4,7 +4,8 @@ use polars_core::with_match_physical_numeric_polars_type;
 
 use super::*;
 
-pub(super) fn sign(s: &Series) -> PolarsResult<Series> {
+pub(super) fn sign(s: &Column) -> PolarsResult<Column> {
+    let s = s.as_materialized_series();
     let dt = s.dtype();
     polars_ensure!(dt.is_numeric(), opq = sign, dt);
     with_match_physical_numeric_polars_type!(dt, |$T| {
@@ -13,10 +14,10 @@ pub(super) fn sign(s: &Series) -> PolarsResult<Series> {
     })
 }
 
-fn sign_impl<T>(ca: &ChunkedArray<T>) -> Series
+fn sign_impl<T>(ca: &ChunkedArray<T>) -> Column
 where
     T: PolarsNumericType,
-    ChunkedArray<T>: IntoSeries,
+    ChunkedArray<T>: IntoColumn,
 {
     ca.apply_values(|x| {
         if x < T::Native::zero() {
@@ -30,5 +31,5 @@ where
             x
         }
     })
-    .into_series()
+    .into_column()
 }

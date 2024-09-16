@@ -15,11 +15,11 @@ use crate::prelude::ObjectValue;
 use crate::py_modules::{POLARS, UTILS};
 use crate::Wrap;
 
-fn python_function_caller_series(s: Series, lambda: &PyObject) -> PolarsResult<Series> {
+fn python_function_caller_series(s: Column, lambda: &PyObject) -> PolarsResult<Column> {
     Python::with_gil(|py| {
-        let object = call_lambda_with_series(py, s.clone(), lambda)
+        let object = call_lambda_with_series(py, s.clone().take_materialized_series(), lambda)
             .map_err(|s| ComputeError(format!("{}", s).into()))?;
-        object.to_series(py, &POLARS, s.name())
+        object.to_series(py, &POLARS, s.name()).map(Column::from)
     })
 }
 
@@ -92,7 +92,7 @@ pub fn register_startup_deps() {
         let physical_dtype = ArrowDataType::FixedSizeBinary(object_size);
         registry::register_object_builder(object_builder, object_converter, physical_dtype);
         // register SERIES UDF
-        unsafe { python_udf::CALL_SERIES_UDF_PYTHON = Some(python_function_caller_series) }
+        unsafe { python_udf::CALL_COLUMNS_UDF_PYTHON = Some(python_function_caller_series) }
         // register DATAFRAME UDF
         unsafe { python_udf::CALL_DF_UDF_PYTHON = Some(python_function_caller_df) }
         // register warning function for `polars_warn!`

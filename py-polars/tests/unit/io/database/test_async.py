@@ -50,7 +50,7 @@ class MockSurrealConnection:
         await self.connect()
         return self
 
-    async def __aexit__(self, *args: Any, **kwargs: Any) -> None:
+    async def __aexit__(self, *args: object, **kwargs: Any) -> None:
         await self.close()
 
     async def close(self) -> None:

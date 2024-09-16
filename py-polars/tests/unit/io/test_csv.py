@@ -760,9 +760,9 @@ def test_ignore_try_parse_dates() -> None:
     ).encode()
 
     headers = ["a", "b", "c"]
-    dtypes: dict[str, type[pl.DataType]] = {
-        k: pl.String for k in headers
-    }  # Forces String type for every column
+    dtypes: dict[str, type[pl.DataType]] = dict.fromkeys(
+        headers, pl.String
+    )  # Forces String type for every column
     df = pl.read_csv(csv, columns=headers, schema_overrides=dtypes)
     assert df.dtypes == [pl.String, pl.String, pl.String]
 
@@ -1449,7 +1449,7 @@ def test_duplicated_columns() -> None:
 
 
 def test_error_message() -> None:
-    data = io.StringIO("target,wind,energy,miso\n" "1,2,3,4\n" "1,2,1e5,1\n")
+    data = io.StringIO("target,wind,energy,miso\n1,2,3,4\n1,2,1e5,1\n")
     with pytest.raises(
         ComputeError,
         match=r"could not parse `1e5` as dtype `i64` at column 'energy' \(column number 3\)",
@@ -1717,10 +1717,8 @@ def test_csv_multiline_splits() -> None:
     def some_multiline_str(n: int) -> str:
         strs = []
         strs.append('"')
-        # sample between 0 and 5 so that it is likely
-        # the multiline field also go 3 separators.
-        for length in np.random.randint(0, 5, n):
-            strs.append(f"{'xx,' * length}")
+        # sample between 0-5 so it is likely the multiline field also gets 3 separators.
+        strs.extend(f"{'xx,' * length}" for length in np.random.randint(0, 5, n))
 
         strs.append('"')
         return "\n".join(strs)
@@ -1993,7 +1991,7 @@ def test_empty_csv_no_raise() -> None:
 
 
 def test_csv_no_new_line_last() -> None:
-    csv = io.StringIO("a b\n" "1 1\n" "2 2\n" "3 2.1")
+    csv = io.StringIO("a b\n1 1\n2 2\n3 2.1")
     assert pl.read_csv(csv, separator=" ").to_dict(as_series=False) == {
         "a": [1, 2, 3],
         "b": [1.0, 2.0, 2.1],

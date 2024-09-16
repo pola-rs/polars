@@ -1731,7 +1731,7 @@ def test_different_page_validity_across_pages(value: str | int | float | bool) -
 def test_delta_length_byte_array_prefiltering(df: pl.DataFrame) -> None:
     cols = df.columns
 
-    encodings = {col: "DELTA_LENGTH_BYTE_ARRAY" for col in cols}
+    encodings = dict.fromkeys(cols, "DELTA_LENGTH_BYTE_ARRAY")
     encodings["filter_col"] = "PLAIN"
 
     f = io.BytesIO()
@@ -1904,3 +1904,16 @@ def test_write_binary_open_file(tmp_path: Path) -> None:
 
     out = pl.read_parquet(path)
     assert_frame_equal(out, df)
+
+
+def test_prefilter_with_projection() -> None:
+    f = io.BytesIO()
+    pl.DataFrame({"a": [1], "b": [2]}).write_parquet(f)
+
+    f.seek(0)
+    (
+        pl.scan_parquet(f, parallel="prefiltered")
+        .filter(pl.col.a == 1)
+        .select(pl.col.a)
+        .collect()
+    )

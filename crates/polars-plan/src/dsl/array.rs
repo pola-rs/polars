@@ -164,7 +164,7 @@ impl ArrayNameSpace {
                 move |s| {
                     s.array()?
                         .to_struct(name_generator.clone())
-                        .map(|s| Some(s.into_series()))
+                        .map(|s| Some(s.into_column()))
                 },
                 GetOutput::map_dtype(move |dt: &DataType| {
                     let DataType::Array(inner, width) = dt else {

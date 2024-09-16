@@ -404,7 +404,7 @@ impl PySeries {
 
                 df.pop()
                     .map(|s| {
-                        self.series = s;
+                        self.series = s.take_materialized_series();
                     })
                     .ok_or_else(|| {
                         PyPolarsErr::from(PolarsError::NoData(

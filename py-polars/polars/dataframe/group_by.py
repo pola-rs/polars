@@ -35,7 +35,7 @@ class GroupBy:
         *by: IntoExpr | Iterable[IntoExpr],
         maintain_order: bool,
         **named_by: IntoExpr,
-    ):
+    ) -> None:
         """
         Utility class for performing a group by operation over the given DataFrame.
 
@@ -772,7 +772,7 @@ class RollingGroupBy:
         offset: str | timedelta | None,
         closed: ClosedInterval,
         group_by: IntoExpr | Iterable[IntoExpr] | None,
-    ):
+    ) -> None:
         period = parse_as_duration_string(period)
         offset = parse_as_duration_string(offset)
 
@@ -909,7 +909,7 @@ class DynamicGroupBy:
         label: Label,
         group_by: IntoExpr | Iterable[IntoExpr] | None,
         start_by: StartBy,
-    ):
+    ) -> None:
         every = parse_as_duration_string(every)
         period = parse_as_duration_string(period)
         offset = parse_as_duration_string(offset)

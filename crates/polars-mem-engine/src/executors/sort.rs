@@ -25,7 +25,7 @@ impl SortExec {
             .iter()
             .enumerate()
             .map(|(i, e)| {
-                let mut s = e.evaluate(&df, state)?;
+                let mut s = e.evaluate(&df, state)?.into_column();
                 // Polars core will try to set the sorted columns as sorted.
                 // This should only be done with simple col("foo") expressions,
                 // therefore we rename more complex expressions so that

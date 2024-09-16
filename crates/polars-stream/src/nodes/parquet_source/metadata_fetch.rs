@@ -17,7 +17,7 @@ use crate::utils::task_handles_ext;
 
 impl ParquetSourceNode {
     /// Constructs the task that fetches file metadata.
-    /// Note: This must be called AFTER `self.projected_arrow_fields` has been initialized.
+    /// Note: This must be called AFTER `self.projected_arrow_schema` has been initialized.
     #[allow(clippy::type_complexity)]
     pub(super) fn init_metadata_fetcher(
         &mut self,
@@ -35,10 +35,10 @@ impl ParquetSourceNode {
         let io_runtime = polars_io::pl_async::get_runtime();
 
         assert!(
-            !self.projected_arrow_fields.is_empty()
+            !self.projected_arrow_schema.is_empty()
                 || self.file_options.with_columns.as_deref() == Some(&[])
         );
-        let projected_arrow_fields = self.projected_arrow_fields.clone();
+        let projected_arrow_schema = self.projected_arrow_schema.clone();
 
         let (normalized_slice_oneshot_tx, normalized_slice_oneshot_rx) =
             tokio::sync::oneshot::channel();
@@ -115,7 +115,7 @@ impl ParquetSourceNode {
             move |handle: task_handles_ext::AbortOnDropHandle<
                 PolarsResult<(usize, Arc<DynByteSource>, MemSlice)>,
             >| {
-                let projected_arrow_fields = projected_arrow_fields.clone();
+                let projected_arrow_schema = projected_arrow_schema.clone();
                 let first_metadata = first_metadata.clone();
                 // Run on CPU runtime - metadata deserialization is expensive, especially
                 // for very wide tables.
@@ -132,7 +132,7 @@ impl ParquetSourceNode {
                     };
 
                     ensure_metadata_has_projected_fields(
-                        projected_arrow_fields.as_ref(),
+                        projected_arrow_schema.as_ref(),
                         &metadata,
                     )?;
 

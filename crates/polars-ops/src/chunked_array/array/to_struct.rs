@@ -40,7 +40,7 @@ pub trait ToStruct: AsArray {
                 .collect::<PolarsResult<Vec<_>>>()
         })?;
 
-        StructChunked::from_series(ca.name().clone(), &fields)
+        StructChunked::from_series(ca.name().clone(), fields.iter())
     }
 }
 

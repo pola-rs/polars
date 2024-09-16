@@ -131,7 +131,7 @@ impl GlobalTable {
         hashes: &[u64],
         chunk_indexes: &[IdxSize],
         keys: &BinaryArray<i64>,
-        agg_cols: &[Series],
+        agg_cols: &[Column],
     ) {
         debug_assert_eq!(hashes.len(), chunk_indexes.len());
         debug_assert_eq!(hashes.len(), keys.len());
@@ -168,7 +168,14 @@ impl GlobalTable {
                 let keys = payload.keys();
                 let chunk_indexes = payload.chunk_index();
                 let agg_cols = payload.cols();
-                self.process_partition_impl(&mut hash_map, hashes, chunk_indexes, keys, agg_cols);
+
+                // @scalar-opt
+                let agg_cols = agg_cols
+                    .iter()
+                    .map(|v| v.clone().into_column())
+                    .collect::<Vec<_>>();
+
+                self.process_partition_impl(&mut hash_map, hashes, chunk_indexes, keys, &agg_cols);
             }
         }
     }

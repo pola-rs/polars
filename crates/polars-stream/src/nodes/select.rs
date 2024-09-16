@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use polars_core::prelude::IntoColumn;
 use polars_core::schema::Schema;
 
 use super::compute_node_prelude::*;
@@ -52,7 +53,7 @@ impl ComputeNode for SelectNode {
                     let mut selected = Vec::new();
                     for selector in slf.selectors.iter() {
                         let s = selector.evaluate(&df, state).await?;
-                        selected.push(s);
+                        selected.push(s.into_column());
                     }
 
                     let ret = if slf.extend_original {

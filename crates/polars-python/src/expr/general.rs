@@ -442,14 +442,6 @@ impl PyExpr {
         self.inner.clone().slice(offset.inner, length.inner).into()
     }
 
-    fn head(&self, n: usize) -> Self {
-        self.inner.clone().head(Some(n)).into()
-    }
-
-    fn tail(&self, n: usize) -> Self {
-        self.inner.clone().tail(Some(n)).into()
-    }
-
     fn append(&self, other: Self, upcast: bool) -> Self {
         self.inner.clone().append(other.inner, upcast).into()
     }

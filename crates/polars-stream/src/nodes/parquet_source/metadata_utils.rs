@@ -1,4 +1,4 @@
-use polars_core::prelude::{DataType, PlHashMap};
+use polars_core::prelude::{ArrowSchema, DataType, PlHashMap};
 use polars_error::{polars_bail, PolarsResult};
 use polars_io::prelude::FileMetadata;
 use polars_io::utils::byte_source::{ByteSource, DynByteSource};
@@ -124,7 +124,7 @@ pub(super) async fn read_parquet_metadata_bytes(
 /// Ensures that a parquet file has all the necessary columns for a projection with the correct
 /// dtype. There are no ordering requirements and extra columns are permitted.
 pub(super) fn ensure_metadata_has_projected_fields(
-    projected_fields: &[polars_core::prelude::ArrowField],
+    projected_fields: &ArrowSchema,
     metadata: &FileMetadata,
 ) -> PolarsResult<()> {
     let schema = polars_parquet::arrow::read::infer_schema(metadata)?;
@@ -138,7 +138,7 @@ pub(super) fn ensure_metadata_has_projected_fields(
         })
         .collect::<PlHashMap<PlSmallStr, DataType>>();
 
-    for field in projected_fields {
+    for field in projected_fields.iter_values() {
         let Some(dtype) = schema.remove(&field.name) else {
             polars_bail!(SchemaMismatch: "did not find column: {}", field.name)
         };

@@ -5,7 +5,6 @@ from typing import Any, cast
 
 import numpy as np
 import pandas as pd
-import pyarrow
 import pyarrow as pa
 import pytest
 
@@ -721,27 +720,27 @@ def test_compat_level(monkeypatch: pytest.MonkeyPatch) -> None:
     str_col = pl.Series(["awd"])
     bin_col = pl.Series([b"dwa"])
     assert str_col._newest_compat_level() == newest._version  # type: ignore[attr-defined]
-    assert isinstance(str_col.to_arrow(), pyarrow.LargeStringArray)
-    assert isinstance(str_col.to_arrow(compat_level=oldest), pyarrow.LargeStringArray)
-    assert isinstance(str_col.to_arrow(compat_level=newest), pyarrow.StringViewArray)
-    assert isinstance(bin_col.to_arrow(), pyarrow.LargeBinaryArray)
-    assert isinstance(bin_col.to_arrow(compat_level=oldest), pyarrow.LargeBinaryArray)
-    assert isinstance(bin_col.to_arrow(compat_level=newest), pyarrow.BinaryViewArray)
+    assert isinstance(str_col.to_arrow(), pa.LargeStringArray)
+    assert isinstance(str_col.to_arrow(compat_level=oldest), pa.LargeStringArray)
+    assert isinstance(str_col.to_arrow(compat_level=newest), pa.StringViewArray)
+    assert isinstance(bin_col.to_arrow(), pa.LargeBinaryArray)
+    assert isinstance(bin_col.to_arrow(compat_level=oldest), pa.LargeBinaryArray)
+    assert isinstance(bin_col.to_arrow(compat_level=newest), pa.BinaryViewArray)
 
     df = pl.DataFrame({"str_col": str_col, "bin_col": bin_col})
-    assert isinstance(df.to_arrow()["str_col"][0], pyarrow.LargeStringScalar)
+    assert isinstance(df.to_arrow()["str_col"][0], pa.LargeStringScalar)
     assert isinstance(
-        df.to_arrow(compat_level=oldest)["str_col"][0], pyarrow.LargeStringScalar
+        df.to_arrow(compat_level=oldest)["str_col"][0], pa.LargeStringScalar
     )
     assert isinstance(
-        df.to_arrow(compat_level=newest)["str_col"][0], pyarrow.StringViewScalar
+        df.to_arrow(compat_level=newest)["str_col"][0], pa.StringViewScalar
     )
-    assert isinstance(df.to_arrow()["bin_col"][0], pyarrow.LargeBinaryScalar)
+    assert isinstance(df.to_arrow()["bin_col"][0], pa.LargeBinaryScalar)
     assert isinstance(
-        df.to_arrow(compat_level=oldest)["bin_col"][0], pyarrow.LargeBinaryScalar
+        df.to_arrow(compat_level=oldest)["bin_col"][0], pa.LargeBinaryScalar
     )
     assert isinstance(
-        df.to_arrow(compat_level=newest)["bin_col"][0], pyarrow.BinaryViewScalar
+        df.to_arrow(compat_level=newest)["bin_col"][0], pa.BinaryViewScalar
     )
 
     assert len(df.write_ipc(None).getbuffer()) == 786

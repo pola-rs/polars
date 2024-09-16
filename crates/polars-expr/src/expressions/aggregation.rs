@@ -502,9 +502,11 @@ impl PartitionedAggregation for AggregationExpr {
                         };
                         let mut count_s = series.agg_valid_count(groups);
                         count_s.rename(PlSmallStr::from_static("__POLARS_COUNT"));
-                        Ok(StructChunked::from_series(new_name, &[agg_s, count_s])
-                            .unwrap()
-                            .into_series())
+                        Ok(
+                            StructChunked::from_series(new_name, [agg_s, count_s].iter())
+                                .unwrap()
+                                .into_series(),
+                        )
                     }
                 },
                 GroupByMethod::Implode => {

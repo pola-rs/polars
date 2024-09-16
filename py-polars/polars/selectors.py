@@ -248,7 +248,7 @@ def _expand_selector_dicts(
             if tuple_keys:
                 expanded[cols] = value
             else:
-                expanded.update({c: value for c in cols})
+                expanded.update(dict.fromkeys(cols, value))
         else:
             expanded[key] = value
     return expanded
@@ -319,7 +319,7 @@ class _selector_proxy_(Expr):
         expr: Expr,
         name: str,
         parameters: dict[str, Any] | None = None,
-    ):
+    ) -> None:
         self._pyexpr = expr._pyexpr
         self._attrs = {
             "params": parameters,

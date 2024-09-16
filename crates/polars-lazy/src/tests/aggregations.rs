@@ -31,7 +31,7 @@ fn test_agg_exprs() -> PolarsResult<()> {
         .lazy()
         .group_by_stable([col("cars")])
         .agg([(lit(1) - col("A"))
-            .map(|s| Ok(Some(&s * 2)), GetOutput::same_type())
+            .map(|s| Ok(Some((&s * 2)?)), GetOutput::same_type())
             .alias("foo")])
         .collect()?;
     let ca = out.column("foo")?.list()?;
@@ -63,12 +63,12 @@ fn test_agg_unique_first() -> PolarsResult<()> {
         .collect()?;
 
     let a = out.column("v_first").unwrap();
-    let a = a.sum::<i32>().unwrap();
+    let a = a.as_materialized_series().sum::<i32>().unwrap();
     // can be both because unique does not guarantee order
     assert!(a == 10 || a == 11);
 
     let a = out.column("true_first").unwrap();
-    let a = a.sum::<i32>().unwrap();
+    let a = a.as_materialized_series().sum::<i32>().unwrap();
     // can be both because unique does not guarantee order
     assert_eq!(a, 10);
 

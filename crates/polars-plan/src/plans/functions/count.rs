@@ -13,7 +13,7 @@ use polars_io::cloud::CloudOptions;
 use polars_io::csv::read::{
     count_rows as count_rows_csv, count_rows_from_slice as count_rows_csv_from_slice,
 };
-#[cfg(all(feature = "parquet", feature = "cloud"))]
+#[cfg(all(feature = "parquet", feature = "async"))]
 use polars_io::parquet::read::ParquetAsyncReader;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::read::ParquetReader;
@@ -82,7 +82,7 @@ pub fn count_rows(
             |_| polars_err!(ComputeError: "count of {} exceeded maximum row size", count),
         )?;
         let column_name = alias.unwrap_or(PlSmallStr::from_static(crate::constants::LEN));
-        DataFrame::new(vec![Series::new(column_name, [count])])
+        DataFrame::new(vec![Column::new(column_name, [count])])
     }
 }
 

@@ -358,14 +358,12 @@ fn resolve_join_where(
             &suffix,
         );
         join_node
-    }
-    //  TODO! once we support single IEjoin predicates, we must add a branch for the singe ie_pred case.
-    else if ie_right_on.len() >= 2 {
+    } else if ie_right_on.len() >= 2 {
         // Do an IEjoin.
         let opts = Arc::make_mut(&mut options);
         opts.args.how = JoinType::IEJoin(IEJoinOptions {
             operator1: ie_op[0],
-            operator2: ie_op[1],
+            operator2: Some(ie_op[1]),
         });
 
         let join_node = resolve_join(
@@ -390,13 +388,30 @@ fn resolve_join_where(
             remaining_preds.push(to_binary_post_join(l, op.into(), r, &schema_right, &suffix))
         }
         join_node
+    } else if ie_right_on.len() == 1 {
+        // For a single inequality comparison, we use the piecewise merge join algorithm
+        let opts = Arc::make_mut(&mut options);
+        opts.args.how = JoinType::IEJoin(IEJoinOptions {
+            operator1: ie_op[0],
+            operator2: None,
+        });
+
+        resolve_join(
+            Either::Right(input_left),
+            Either::Right(input_right),
+            ie_left_on,
+            ie_right_on,
+            vec![],
+            options.clone(),
+            ctxt,
+        )?
     } else {
         // No predicates found that are supported in a fast algorithm.
         // Do a cross join and follow up with filters.
         let opts = Arc::make_mut(&mut options);
         opts.args.how = JoinType::Cross;
 
-        let join_node = resolve_join(
+        resolve_join(
             Either::Right(input_left),
             Either::Right(input_right),
             vec![],
@@ -404,17 +419,7 @@ fn resolve_join_where(
             vec![],
             options.clone(),
             ctxt,
-        )?;
-        // TODO: This can be removed once we support the single IEjoin.
-        ie_predicates_to_remaining(
-            &mut remaining_preds,
-            ie_left_on,
-            ie_right_on,
-            ie_op,
-            &schema_right,
-            &suffix,
-        );
-        join_node
+        )?
     };
 
     let IR::Join {

@@ -528,7 +528,7 @@ mod test {
         let c = Utf8ViewArray::from_slice([Some("a"), Some(""), Some("meep")]);
 
         let encoded = convert_columns_no_order(&[Box::new(a), Box::new(b), Box::new(c)]);
-        assert_eq!(encoded.offsets, &[0, 44, 55, 99,]);
+        assert_eq!(encoded.offsets, &[0, 44, 55, 99]);
         assert_eq!(encoded.values.len(), 99);
         assert!(encoded.values.ends_with(&[0, 0, 0, 4]));
         assert!(encoded.values.starts_with(&[1, 128, 0, 0, 1, 1, 128]));
