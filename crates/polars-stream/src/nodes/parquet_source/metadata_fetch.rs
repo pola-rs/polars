@@ -34,11 +34,7 @@ impl ParquetSourceNode {
         let verbose = self.verbose;
         let io_runtime = polars_io::pl_async::get_runtime();
 
-        assert!(
-            !self.projected_arrow_schema.is_empty()
-                || self.file_options.with_columns.as_deref() == Some(&[])
-        );
-        let projected_arrow_schema = self.projected_arrow_schema.clone();
+        let projected_arrow_schema = self.projected_arrow_schema.clone().unwrap();
 
         let (normalized_slice_oneshot_tx, normalized_slice_oneshot_rx) =
             tokio::sync::oneshot::channel();

@@ -269,10 +269,6 @@ impl ParquetSourceNode {
     /// * `self.projected_arrow_schema`
     /// * `self.physical_predicate`
     pub(super) fn init_row_group_decoder(&self) -> RowGroupDecoder {
-        assert!(
-            !self.projected_arrow_schema.is_empty()
-                || self.file_options.with_columns.as_deref() == Some(&[])
-        );
         assert_eq!(self.predicate.is_some(), self.physical_predicate.is_some());
 
         let scan_sources = self.scan_sources.clone();
@@ -282,7 +278,7 @@ impl ParquetSourceNode {
             .map(|x| x[0].get_statistics().column_stats().len())
             .unwrap_or(0);
         let include_file_paths = self.file_options.include_file_paths.clone();
-        let projected_arrow_schema = self.projected_arrow_schema.clone();
+        let projected_arrow_schema = self.projected_arrow_schema.clone().unwrap();
         let row_index = self.file_options.row_index.clone();
         let physical_predicate = self.physical_predicate.clone();
         let ideal_morsel_size = get_ideal_morsel_size();
@@ -378,7 +374,7 @@ impl ParquetSourceNode {
             .unwrap_left()
             .clone();
 
-        self.projected_arrow_schema =
+        self.projected_arrow_schema = Some(
             if let Some(columns) = self.file_options.with_columns.as_deref() {
                 Arc::new(
                     columns
@@ -391,12 +387,13 @@ impl ParquetSourceNode {
                 )
             } else {
                 reader_schema.clone()
-            };
+            },
+        );
 
         if self.verbose {
             eprintln!(
-                "[ParquetSource]: {} columns to be projected from {} files",
-                self.projected_arrow_schema.len(),
+                "[ParquetSource]: {:?} columns to be projected from {} files",
+                self.projected_arrow_schema.as_ref().map(|x| x.len()),
                 self.scan_sources.len(),
             );
         }
