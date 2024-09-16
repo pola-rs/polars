@@ -633,10 +633,12 @@ def test_chained_when_no_subclass_17142() -> None:
 
 
 def test_when_then_chunked_structs_18673() -> None:
-    df = pl.DataFrame([
-        pl.Series('x', [{ 'a': 1 }]),
-        pl.Series('b', [None], dtype=pl.Boolean),
-    ])
+    df = pl.DataFrame(
+        [
+            pl.Series("x", [{"a": 1}]),
+            pl.Series("b", [None], dtype=pl.Boolean),
+        ]
+    )
 
     df = df.vstack(df)
 
