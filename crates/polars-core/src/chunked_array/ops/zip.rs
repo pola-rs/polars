@@ -234,8 +234,8 @@ impl ChunkZip<StructType> for StructChunked {
         //
         // Therefore, we broadcast only those that are necessary to be broadcasted.
         let needs_broadcast = if_true.chunks().len() > 1
-            || if_false.n_chunks().len() > 1
-            || mask.n_chunks().len() > 1;
+            || if_false.chunks().len() > 1
+            || mask.chunks().len() > 1;
         if needs_broadcast && length > 1 {
             // Special case. In this case, we know what to do.
             if mask.length == 1 {
