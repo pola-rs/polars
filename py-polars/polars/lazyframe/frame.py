@@ -6879,19 +6879,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             streamable=streamable,
         )
 
-
     def _to_metadata(
         self,
         columns: None | str | list[str] = None,
         stats: None | str | list[str] = None,
     ) -> DataFrame:
-
         """
         Get all runtime metadata for each column.
 
         This is unstable and is meant for debugging purposes.
         """
-
         lf = self
 
         if columns is not None:
@@ -6901,4 +6898,3 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             lf = lf.select(columns)
 
         return lf.collect()._to_metadata(stats=stats)
-

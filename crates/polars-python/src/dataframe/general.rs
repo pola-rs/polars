@@ -338,7 +338,9 @@ impl PyDataFrame {
     }
 
     pub fn _to_metadata(&self) -> Self {
-        Self { df: self.df._to_metadata() }
+        Self {
+            df: self.df._to_metadata(),
+        }
     }
 
     pub fn group_by_map_groups(

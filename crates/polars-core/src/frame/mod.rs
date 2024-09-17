@@ -1912,7 +1912,7 @@ impl DataFrame {
             StringChunkedBuilder::new(PlSmallStr::from_static("min_value"), num_columns);
         let mut max_value_ca =
             StringChunkedBuilder::new(PlSmallStr::from_static("max_value"), num_columns);
-        let mut distinct_count_ca = Vec::with_capacity(num_columns);
+        let mut distinct_count_ca: Vec<Option<IdxSize>> = Vec::with_capacity(num_columns);
 
         for col in &self.columns {
             let metadata = col.get_metadata();
@@ -1954,8 +1954,11 @@ impl DataFrame {
                 fast_explode_list_ca.finish().into_column(),
                 min_value_ca.finish().into_column(),
                 max_value_ca.finish().into_column(),
-                UInt32Chunked::new(PlSmallStr::from_static("distinct_count"), distinct_count_ca)
-                    .into_column(),
+                IdxCa::from_slice_options(
+                    PlSmallStr::from_static("distinct_count"),
+                    &distinct_count_ca[..],
+                )
+                .into_column(),
             ])
         }
     }

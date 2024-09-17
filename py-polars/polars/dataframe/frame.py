@@ -11225,7 +11225,6 @@ class DataFrame:
         stats
             Statistics to show
         """
-
         df = self
 
         if columns is not None:
@@ -11240,8 +11239,8 @@ class DataFrame:
             if isinstance(stats, str):
                 stats = [stats]
 
-            if 'column_name' not in stats:
-                stats = ['column_name'] + stats
+            if "column_name" not in stats:
+                stats = ["column_name"] + stats
 
             md = md.select(stats)
 
