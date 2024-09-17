@@ -812,10 +812,9 @@ impl Column {
         match self {
             Column::Series(s) => s.extend_constant(value, n).map(Column::from),
             Column::Scalar(s) => {
-                if s.len() > 0 && s.scalar.as_any_value() == value {
+                if s.scalar.as_any_value() == value {
                     Ok(s.resize(s.len() + n).into())
                 } else {
-                    // @scalar-opt
                     s.as_materialized_series()
                         .extend_constant(value, n)
                         .map(Column::from)

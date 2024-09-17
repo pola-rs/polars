@@ -1014,7 +1014,7 @@ impl<'a> AnyValue<'a> {
             Object(v) => ObjectOwned(OwnedObject(v.to_boxed())),
             #[cfg(feature = "dtype-struct")]
             Struct(idx, arr, fields) => {
-                let avs = struct_to_avs_static(idx, arr, &fields);
+                let avs = struct_to_avs_static(idx, arr, fields);
                 StructOwned(Box::new((avs, fields.to_vec())))
             },
             #[cfg(feature = "dtype-struct")]
