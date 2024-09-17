@@ -1251,6 +1251,7 @@ impl AnyValue<'_> {
             },
             #[cfg(feature = "object")]
             (Object(l), Object(r)) => l == r,
+            #[cfg(feature = "dtype-array")]
             (Array(l_values, l_size), Array(r_values, r_size)) => {
                 if l_size != r_size {
                     return false;
@@ -1275,7 +1276,7 @@ impl AnyValue<'_> {
             },
 
             (_, _) => {
-                unimplemented!("ordering for mixed dtypes {self:?} and {other:?} is not supported")
+                unimplemented!("scalar eq_missing for mixed dtypes {self:?} and {other:?} is not supported")
             },
         }
     }
@@ -1421,7 +1422,7 @@ impl PartialOrd for AnyValue<'_> {
             },
 
             (_, _) => {
-                unimplemented!("ordering for mixed dtypes is not supported")
+                unimplemented!("scalar ordering for mixed dtypes {self:?} and {other:?} is not supported")
             },
         }
     }
