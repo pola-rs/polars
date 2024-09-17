@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::Arc;
 
 use polars_core::prelude::*;
 #[cfg(any(feature = "parquet", feature = "ipc", feature = "csv"))]
@@ -57,11 +57,8 @@ impl DslBuilder {
         };
 
         Ok(DslPlan::Scan {
-            sources: Arc::new(Mutex::new(DslScanSources {
-                sources: ScanSources::Buffers(Arc::default()),
-                is_expanded: true,
-            })),
-            file_info: Arc::new(RwLock::new(Some(file_info))),
+            sources: ScanSources::Buffers(Arc::default()),
+            file_info: Some(file_info),
             file_options,
             scan_type: FileScan::Anonymous {
                 function,
@@ -70,6 +67,7 @@ impl DslBuilder {
                     skip_rows,
                 }),
             },
+            cached_ir: Default::default(),
         }
         .into())
     }
@@ -77,7 +75,7 @@ impl DslBuilder {
     #[cfg(feature = "parquet")]
     #[allow(clippy::too_many_arguments)]
     pub fn scan_parquet(
-        sources: DslScanSources,
+        sources: ScanSources,
         n_rows: Option<usize>,
         cache: bool,
         parallel: polars_io::parquet::read::ParallelStrategy,
@@ -102,8 +100,8 @@ impl DslBuilder {
             include_file_paths,
         };
         Ok(DslPlan::Scan {
-            sources: Arc::new(Mutex::new(sources)),
-            file_info: Arc::new(RwLock::new(None)),
+            sources,
+            file_info: None,
             file_options: options,
             scan_type: FileScan::Parquet {
                 options: ParquetOptions {
@@ -114,6 +112,7 @@ impl DslBuilder {
                 cloud_options,
                 metadata: None,
             },
+            cached_ir: Default::default(),
         }
         .into())
     }
@@ -121,7 +120,7 @@ impl DslBuilder {
     #[cfg(feature = "ipc")]
     #[allow(clippy::too_many_arguments)]
     pub fn scan_ipc(
-        sources: DslScanSources,
+        sources: ScanSources,
         options: IpcScanOptions,
         n_rows: Option<usize>,
         cache: bool,
@@ -132,8 +131,8 @@ impl DslBuilder {
         include_file_paths: Option<PlSmallStr>,
     ) -> PolarsResult<Self> {
         Ok(DslPlan::Scan {
-            sources: Arc::new(Mutex::new(sources)),
-            file_info: Arc::new(RwLock::new(None)),
+            sources,
+            file_info: None,
             file_options: FileScanOptions {
                 with_columns: None,
                 cache,
@@ -150,6 +149,7 @@ impl DslBuilder {
                 cloud_options,
                 metadata: None,
             },
+            cached_ir: Default::default(),
         }
         .into())
     }
@@ -157,7 +157,7 @@ impl DslBuilder {
     #[allow(clippy::too_many_arguments)]
     #[cfg(feature = "csv")]
     pub fn scan_csv(
-        sources: DslScanSources,
+        sources: ScanSources,
         read_options: CsvReadOptions,
         cache: bool,
         cloud_options: Option<CloudOptions>,
@@ -183,13 +183,14 @@ impl DslBuilder {
             include_file_paths,
         };
         Ok(DslPlan::Scan {
-            sources: Arc::new(Mutex::new(sources)),
-            file_info: Arc::new(RwLock::new(None)),
+            sources,
+            file_info: None,
             file_options: options,
             scan_type: FileScan::Csv {
                 options: read_options,
                 cloud_options,
             },
+            cached_ir: Default::default(),
         }
         .into())
     }

@@ -12,7 +12,7 @@ mod ir_to_dsl;
 mod scans;
 mod stack_opt;
 
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex};
 
 pub use dsl_to_ir::*;
 pub use expr_to_ir::*;
@@ -49,22 +49,27 @@ impl IR {
             conversion_fn(node, lp_arena).into_lp(conversion_fn, lp_arena, expr_arena)
         };
         match lp {
-            IR::Scan {
-                sources,
-                file_info,
-                hive_parts: _,
-                predicate: _,
-                scan_type,
-                output_schema: _,
-                file_options: options,
-            } => DslPlan::Scan {
-                sources: Arc::new(Mutex::new(DslScanSources {
+            ir @ IR::Scan { .. } => {
+                let IR::Scan {
                     sources,
-                    is_expanded: true,
-                })),
-                file_info: Arc::new(RwLock::new(Some(file_info))),
-                scan_type,
-                file_options: options,
+                    file_info,
+                    hive_parts: _,
+                    predicate: _,
+                    scan_type,
+                    output_schema: _,
+                    file_options,
+                } = ir.clone()
+                else {
+                    unreachable!()
+                };
+
+                DslPlan::Scan {
+                    sources: sources.clone(),
+                    file_info: Some(file_info.clone()),
+                    scan_type: scan_type.clone(),
+                    file_options: file_options.clone(),
+                    cached_ir: Arc::new(Mutex::new(Some(ir))),
+                }
             },
             #[cfg(feature = "python")]
             IR::PythonScan { options, .. } => DslPlan::PythonScan { options },

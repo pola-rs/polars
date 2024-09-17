@@ -56,6 +56,7 @@ impl ParquetSourceNode {
             let scan_sources = scan_sources.clone();
             let cloud_options = cloud_options.clone();
             let byte_source_builder = byte_source_builder.clone();
+            let have_first_metadata = self.first_metadata.is_some();
 
             move |path_idx: usize| {
                 let scan_sources = scan_sources.clone();
@@ -74,7 +75,7 @@ impl ParquetSourceNode {
                             .await?,
                     );
 
-                    if path_idx == 0 {
+                    if path_idx == 0 && have_first_metadata {
                         let metadata_bytes = MemSlice::EMPTY;
                         return Ok((0, byte_source, metadata_bytes));
                     }
@@ -118,13 +119,12 @@ impl ParquetSourceNode {
                 let handle = async_executor::spawn(TaskPriority::Low, async move {
                     let (path_index, byte_source, metadata_bytes) = handle.await.unwrap()?;
 
-                    let metadata = if path_index == 0 {
-                        Arc::unwrap_or_clone(first_metadata)
-                    } else {
-                        polars_parquet::parquet::read::deserialize_metadata(
+                    let metadata = match first_metadata {
+                        Some(md) if path_index == 0 => Arc::unwrap_or_clone(md),
+                        _ => polars_parquet::parquet::read::deserialize_metadata(
                             metadata_bytes.as_ref(),
                             metadata_bytes.len() * 2 + 1024,
-                        )?
+                        )?,
                     };
 
                     ensure_metadata_has_projected_fields(

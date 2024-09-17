@@ -1,15 +1,7 @@
-use std::path::PathBuf;
-
 use arrow::datatypes::ArrowSchemaRef;
 use either::Either;
 use expr_expansion::{is_regex_projection, rewrite_projections};
 use hive::{hive_partitions_from_paths, HivePartitions};
-#[cfg(any(feature = "ipc", feature = "parquet"))]
-use polars_io::cloud::CloudOptions;
-#[cfg(any(feature = "csv", feature = "json"))]
-use polars_io::path_utils::expand_paths;
-#[cfg(any(feature = "ipc", feature = "parquet"))]
-use polars_io::path_utils::{expand_paths_hive, expanded_from_single_directory};
 
 use super::stack_opt::ConversionOptimizer;
 use super::*;
@@ -107,31 +99,39 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
         DslPlan::Scan {
             sources,
             file_info,
-            mut file_options,
-            mut scan_type,
+            file_options,
+            scan_type,
+            cached_ir,
         } => {
-            let mut sources_lock = sources.lock().unwrap();
-            sources_lock.expand_paths(&mut scan_type, &mut file_options)?;
-            let sources = sources_lock.sources.clone();
+            // Note that the first metadata can still end up being `None` later if the files were
+            // filtered from predicate pushdown.
+            let mut cached_ir = cached_ir.lock().unwrap();
 
-            let file_info_read = file_info.read().unwrap();
+            if cached_ir.is_none() {
+                let mut file_options = file_options.clone();
+                let mut scan_type = scan_type.clone();
 
-            // leading `_` as clippy doesn't understand that you don't want to read from a lock guard
-            // if you want to keep it alive.
-            let mut _file_info_write: Option<_>;
-            let mut resolved_file_info = if let Some(file_info) = &*file_info_read {
-                _file_info_write = None;
-                let out = file_info.clone();
-                drop(file_info_read);
-                out
-            } else {
-                // Lock so that we don't resolve the same schema in parallel.
-                drop(file_info_read);
+                let sources = match &scan_type {
+                    #[cfg(feature = "parquet")]
+                    FileScan::Parquet {
+                        ref cloud_options, ..
+                    } => sources
+                        .expand_paths_with_hive_update(&mut file_options, cloud_options.as_ref())?,
+                    #[cfg(feature = "ipc")]
+                    FileScan::Ipc {
+                        ref cloud_options, ..
+                    } => sources
+                        .expand_paths_with_hive_update(&mut file_options, cloud_options.as_ref())?,
+                    #[cfg(feature = "csv")]
+                    FileScan::Csv {
+                        ref cloud_options, ..
+                    } => sources.expand_paths(&file_options, cloud_options.as_ref())?,
+                    #[cfg(feature = "json")]
+                    FileScan::NDJson { .. } => sources.expand_paths(&file_options, None)?,
+                    FileScan::Anonymous { .. } => sources,
+                };
 
-                // Set write lock and keep that lock until all fields in `file_info` are resolved.
-                _file_info_write = Some(file_info.write().unwrap());
-
-                match &mut scan_type {
+                let mut file_info = match &mut scan_type {
                     #[cfg(feature = "parquet")]
                     FileScan::Parquet {
                         cloud_options,
@@ -181,61 +181,58 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         cloud_options.as_ref(),
                     )
                     .map_err(|e| e.context(failed_here!(ndjson scan)))?,
-                    // FileInfo should be set.
-                    FileScan::Anonymous { .. } => unreachable!(),
-                }
-            };
-
-            let hive_parts = if file_options.hive_options.enabled.unwrap_or(false)
-                && resolved_file_info.reader_schema.is_some()
-            {
-                let paths = sources
-                    .as_paths()
-                    .ok_or_else(|| polars_err!(nyi = "Hive-partitioning of in-memory buffers"))?;
-
-                #[allow(unused_assignments)]
-                let mut owned = None;
-
-                hive_partitions_from_paths(
-                    paths,
-                    file_options.hive_options.hive_start_idx,
-                    file_options.hive_options.schema.clone(),
-                    match resolved_file_info.reader_schema.as_ref().unwrap() {
-                        Either::Left(v) => {
-                            owned = Some(Schema::from_arrow_schema(v.as_ref()));
-                            owned.as_ref().unwrap()
-                        },
-                        Either::Right(v) => v.as_ref(),
+                    FileScan::Anonymous { .. } => {
+                        file_info.expect("FileInfo should be set for AnonymousScan")
                     },
-                    file_options.hive_options.try_parse_dates,
-                )?
-            } else {
-                None
-            };
+                };
 
-            file_options.include_file_paths =
-                file_options.include_file_paths.filter(|_| match scan_type {
-                    #[cfg(feature = "parquet")]
-                    FileScan::Parquet { .. } => true,
-                    #[cfg(feature = "ipc")]
-                    FileScan::Ipc { .. } => true,
-                    #[cfg(feature = "csv")]
-                    FileScan::Csv { .. } => true,
-                    #[cfg(feature = "json")]
-                    FileScan::NDJson { .. } => true,
-                    FileScan::Anonymous { .. } => false,
-                });
+                let hive_parts = if file_options.hive_options.enabled.unwrap_or(false)
+                    && file_info.reader_schema.is_some()
+                {
+                    let paths = sources.as_paths().ok_or_else(|| {
+                        polars_err!(nyi = "Hive-partitioning of in-memory buffers")
+                    })?;
 
-            // Only if we have a writing file handle we must resolve hive partitions
-            // update schema's etc.
-            if let Some(lock) = &mut _file_info_write {
+                    #[allow(unused_assignments)]
+                    let mut owned = None;
+
+                    hive_partitions_from_paths(
+                        paths,
+                        file_options.hive_options.hive_start_idx,
+                        file_options.hive_options.schema.clone(),
+                        match file_info.reader_schema.as_ref().unwrap() {
+                            Either::Left(v) => {
+                                owned = Some(Schema::from_arrow_schema(v.as_ref()));
+                                owned.as_ref().unwrap()
+                            },
+                            Either::Right(v) => v.as_ref(),
+                        },
+                        file_options.hive_options.try_parse_dates,
+                    )?
+                } else {
+                    None
+                };
+
+                file_options.include_file_paths =
+                    file_options.include_file_paths.filter(|_| match scan_type {
+                        #[cfg(feature = "parquet")]
+                        FileScan::Parquet { .. } => true,
+                        #[cfg(feature = "ipc")]
+                        FileScan::Ipc { .. } => true,
+                        #[cfg(feature = "csv")]
+                        FileScan::Csv { .. } => true,
+                        #[cfg(feature = "json")]
+                        FileScan::NDJson { .. } => true,
+                        FileScan::Anonymous { .. } => false,
+                    });
+
                 if let Some(ref hive_parts) = hive_parts {
                     let hive_schema = hive_parts[0].schema();
-                    resolved_file_info.update_schema_with_hive_schema(hive_schema.clone());
+                    file_info.update_schema_with_hive_schema(hive_schema.clone());
                 }
 
                 if let Some(ref file_path_col) = file_options.include_file_paths {
-                    let schema = Arc::make_mut(&mut resolved_file_info.schema);
+                    let schema = Arc::make_mut(&mut file_info.schema);
 
                     if schema.contains(file_path_col) {
                         polars_bail!(
@@ -251,34 +248,34 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     )?;
                 }
 
-                **lock = Some(resolved_file_info.clone());
+                file_options.with_columns = if file_info.reader_schema.is_some() {
+                    maybe_init_projection_excluding_hive(
+                        file_info.reader_schema.as_ref().unwrap(),
+                        hive_parts.as_ref().map(|x| &x[0]),
+                    )
+                } else {
+                    None
+                };
+
+                if let Some(row_index) = &file_options.row_index {
+                    let schema = Arc::make_mut(&mut file_info.schema);
+                    *schema = schema
+                        .new_inserting_at_index(0, row_index.name.clone(), IDX_DTYPE)
+                        .unwrap();
+                }
+
+                cached_ir.replace(IR::Scan {
+                    sources,
+                    file_info,
+                    hive_parts,
+                    predicate: None,
+                    scan_type,
+                    output_schema: None,
+                    file_options,
+                });
             }
 
-            file_options.with_columns = if resolved_file_info.reader_schema.is_some() {
-                maybe_init_projection_excluding_hive(
-                    resolved_file_info.reader_schema.as_ref().unwrap(),
-                    hive_parts.as_ref().map(|x| &x[0]),
-                )
-            } else {
-                None
-            };
-
-            if let Some(row_index) = &file_options.row_index {
-                let schema = Arc::make_mut(&mut resolved_file_info.schema);
-                *schema = schema
-                    .new_inserting_at_index(0, row_index.name.clone(), IDX_DTYPE)
-                    .unwrap();
-            }
-
-            IR::Scan {
-                sources,
-                file_info: resolved_file_info,
-                hive_parts,
-                output_schema: None,
-                predicate: None,
-                scan_type,
-                file_options,
-            }
+            cached_ir.clone().unwrap()
         },
         #[cfg(feature = "python")]
         DslPlan::PythonScan { options } => IR::PythonScan { options },
@@ -796,75 +793,6 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
         },
     };
     Ok(ctxt.lp_arena.add(v))
-}
-
-impl DslScanSources {
-    /// Expand scan paths if they were not already expanded.
-    pub fn expand_paths(
-        &mut self,
-        scan_type: &mut FileScan,
-        file_options: &mut FileScanOptions,
-    ) -> PolarsResult<()> {
-        if self.is_expanded {
-            return Ok(());
-        }
-
-        let ScanSources::Paths(paths) = &self.sources else {
-            self.is_expanded = true;
-            return Ok(());
-        };
-
-        let expanded_sources = match &scan_type {
-            #[cfg(feature = "parquet")]
-            FileScan::Parquet { cloud_options, .. } => {
-                expand_scan_paths_with_hive_update(paths, file_options, cloud_options)?
-            },
-            #[cfg(feature = "ipc")]
-            FileScan::Ipc { cloud_options, .. } => {
-                expand_scan_paths_with_hive_update(paths, file_options, cloud_options)?
-            },
-            #[cfg(feature = "csv")]
-            FileScan::Csv { cloud_options, .. } => {
-                expand_paths(paths, file_options.glob, cloud_options.as_ref())?
-            },
-            #[cfg(feature = "json")]
-            FileScan::NDJson { cloud_options, .. } => {
-                expand_paths(paths, file_options.glob, cloud_options.as_ref())?
-            },
-            FileScan::Anonymous { .. } => unreachable!(), // Invariant: Anonymous scans are already expanded.
-        };
-
-        #[allow(unreachable_code)]
-        {
-            self.sources = ScanSources::Paths(expanded_sources);
-            self.is_expanded = true;
-
-            Ok(())
-        }
-    }
-}
-
-/// Expand scan paths and update the Hive partition information of `file_options`.
-#[cfg(any(feature = "ipc", feature = "parquet"))]
-fn expand_scan_paths_with_hive_update(
-    paths: &[PathBuf],
-    file_options: &mut FileScanOptions,
-    cloud_options: &Option<CloudOptions>,
-) -> PolarsResult<Arc<[PathBuf]>> {
-    let hive_enabled = file_options.hive_options.enabled;
-    let (expanded_paths, hive_start_idx) = expand_paths_hive(
-        paths,
-        file_options.glob,
-        cloud_options.as_ref(),
-        hive_enabled.unwrap_or(false),
-    )?;
-    let inferred_hive_enabled = hive_enabled
-        .unwrap_or_else(|| expanded_from_single_directory(paths, expanded_paths.as_ref()));
-
-    file_options.hive_options.enabled = Some(inferred_hive_enabled);
-    file_options.hive_options.hive_start_idx = hive_start_idx;
-
-    Ok(expanded_paths)
 }
 
 fn expand_filter(

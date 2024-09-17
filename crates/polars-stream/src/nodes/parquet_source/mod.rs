@@ -42,7 +42,7 @@ pub struct ParquetSourceNode {
     options: ParquetOptions,
     cloud_options: Option<CloudOptions>,
     file_options: FileScanOptions,
-    first_metadata: Arc<FileMetadata>,
+    first_metadata: Option<Arc<FileMetadata>>,
     // Run-time vars
     config: Config,
     verbose: bool,
@@ -81,7 +81,7 @@ impl ParquetSourceNode {
         options: ParquetOptions,
         cloud_options: Option<CloudOptions>,
         file_options: FileScanOptions,
-        first_metadata: Arc<FileMetadata>,
+        first_metadata: Option<Arc<FileMetadata>>,
     ) -> Self {
         let verbose = config::verbose();
 
