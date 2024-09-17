@@ -1276,7 +1276,9 @@ impl AnyValue<'_> {
             },
 
             (_, _) => {
-                unimplemented!("scalar eq_missing for mixed dtypes {self:?} and {other:?} is not supported")
+                unimplemented!(
+                    "scalar eq_missing for mixed dtypes {self:?} and {other:?} is not supported"
+                )
             },
         }
     }
@@ -1422,7 +1424,9 @@ impl PartialOrd for AnyValue<'_> {
             },
 
             (_, _) => {
-                unimplemented!("scalar ordering for mixed dtypes {self:?} and {other:?} is not supported")
+                unimplemented!(
+                    "scalar ordering for mixed dtypes {self:?} and {other:?} is not supported"
+                )
             },
         }
     }
