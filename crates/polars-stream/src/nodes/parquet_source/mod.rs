@@ -47,7 +47,7 @@ pub struct ParquetSourceNode {
     config: Config,
     verbose: bool,
     physical_predicate: Option<Arc<dyn PhysicalIoExpr>>,
-    projected_arrow_schema: Arc<ArrowSchema>,
+    projected_arrow_schema: Option<Arc<ArrowSchema>>,
     byte_source_builder: DynByteSourceBuilder,
     memory_prefetch_func: fn(&[u8]) -> (),
     // This permit blocks execution until the first morsel is requested.
@@ -112,7 +112,7 @@ impl ParquetSourceNode {
             },
             verbose,
             physical_predicate: None,
-            projected_arrow_schema: Arc::new(ArrowSchema::default()),
+            projected_arrow_schema: None,
             byte_source_builder,
             memory_prefetch_func,
 
