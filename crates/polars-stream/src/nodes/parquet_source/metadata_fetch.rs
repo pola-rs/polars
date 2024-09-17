@@ -128,8 +128,8 @@ impl ParquetSourceNode {
                     };
 
                     ensure_metadata_has_projected_fields(
-                        projected_arrow_schema.as_ref(),
                         &metadata,
+                        projected_arrow_schema.as_ref(),
                     )?;
 
                     PolarsResult::Ok((path_index, byte_source, metadata))
