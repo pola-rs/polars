@@ -14,7 +14,7 @@ use crate::chunked_array::ChunkedArray;
 use crate::prelude::sort::arg_sort_multiple::{_get_rows_encoded_arr, _get_rows_encoded_ca};
 use crate::prelude::*;
 use crate::series::Series;
-use crate::utils::{slice_offsets, Container};
+use crate::utils::Container;
 
 pub type StructChunked = ChunkedArray<StructType>;
 
@@ -133,24 +133,26 @@ impl StructChunked {
         };
         fields
     }
-    #[inline]
-    fn field_as_series(&self, field_idx: usize) -> Series {
-        let field = &self.struct_fields()[field_idx];
-        let field_chunks = self
-            .downcast_iter()
-            .map(|chunk| chunk.values()[field_idx].clone())
-            .collect::<Vec<_>>();
 
-        // SAFETY: correct type.
-        unsafe {
-            Series::from_chunks_and_dtype_unchecked(field.name.clone(), field_chunks, &field.dtype)
-        }
-    }
     pub fn fields_as_series(&self) -> Vec<Series> {
         self.struct_fields()
             .iter()
             .enumerate()
-            .map(|(i, _)| self.field_as_series(i))
+            .map(|(i, field)| {
+                let field_chunks = self
+                    .downcast_iter()
+                    .map(|chunk| chunk.values()[i].clone())
+                    .collect::<Vec<_>>();
+
+                // SAFETY: correct type.
+                unsafe {
+                    Series::from_chunks_and_dtype_unchecked(
+                        field.name.clone(),
+                        field_chunks,
+                        &field.dtype,
+                    )
+                }
+            })
             .collect()
     }
 
@@ -329,11 +331,11 @@ impl StructChunked {
     pub fn zip_outer_validity(&mut self, other: &StructChunked) {
         if self.chunks.len() != other.chunks.len()
             || !self
-                .chunks
-                .iter()
-                .zip(other.chunks.iter())
-                .map(|(a, b)| a.len() == b.len())
-                .all_equal()
+            .chunks
+            .iter()
+            .zip(other.chunks.iter())
+            .map(|(a, b)| a.len() == b.len())
+            .all_equal()
         {
             *self = self.rechunk();
             let other = other.rechunk();
@@ -371,15 +373,6 @@ impl StructChunked {
             .into_iter()
             .find(|s| s.name().as_str() == name)
             .ok_or_else(|| polars_err!(StructFieldNotFound: "{}", name))
-    }
-    pub fn field_by_index(&self, field_idx: i64) -> PolarsResult<Series> {
-        if field_idx >= (self.struct_fields().len() as i64) {
-            polars_bail!(
-                OutOfBounds: "Given field index {} is out of bound", field_idx
-            )
-        }
-        let (field_idx, _) = slice_offsets(field_idx, 0, self.struct_fields().len());
-        Ok(self.field_as_series(field_idx))
     }
     pub(crate) fn set_outer_validity(&mut self, validity: Option<Bitmap>) {
         assert_eq!(self.chunks().len(), 1);
