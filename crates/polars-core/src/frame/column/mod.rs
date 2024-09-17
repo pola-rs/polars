@@ -8,7 +8,7 @@ use polars_utils::pl_str::PlSmallStr;
 
 use self::gather::check_bounds_ca;
 use crate::chunked_array::cast::CastOptions;
-use crate::chunked_array::metadata::MetadataFlags;
+use crate::chunked_array::metadata::{MetadataFlags, MetadataTrait};
 use crate::prelude::*;
 use crate::series::{BitRepr, IsSorted, SeriesPhysIter};
 use crate::utils::{slice_offsets, Container};
@@ -578,6 +578,14 @@ impl Column {
             Column::Series(s) => s.get_flags(),
             // @scalar-opt
             Column::Scalar(_) => MetadataFlags::empty(),
+        }
+    }
+
+    pub fn get_metadata<'a>(&'a self) -> Option<Box<dyn MetadataTrait + 'a>> {
+        match self {
+            Column::Series(s) => s.boxed_metadata(),
+            // @scalar-opt
+            Column::Scalar(_) => None,
         }
     }
 

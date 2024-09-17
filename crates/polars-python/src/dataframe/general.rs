@@ -337,8 +337,8 @@ impl PyDataFrame {
         Ok(df.into())
     }
 
-    pub fn _to_column_repr(&self) -> Self {
-        Self { df: self.df._to_column_repr() }
+    pub fn _to_metadata(&self) -> Self {
+        Self { df: self.df._to_metadata() }
     }
 
     pub fn group_by_map_groups(
