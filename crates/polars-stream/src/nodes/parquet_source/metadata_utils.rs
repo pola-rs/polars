@@ -129,13 +129,14 @@ pub(super) fn ensure_metadata_has_projected_fields(
     let schema = polars_parquet::arrow::read::infer_schema(metadata)?;
 
     for field in projected_fields.iter_values() {
-        let Some(field) = schema.get(&field.name) else {
-            polars_bail!(SchemaMismatch: "did not find column: {}", field.name)
-        };
-
         // Note: We convert to Polars-native dtypes for timezone normalization.
-        let dtype = DataType::from_arrow(&field.dtype, true);
         let expected_dtype = DataType::from_arrow(&field.dtype, true);
+        let dtype = {
+            let Some(field) = schema.get(&field.name) else {
+                polars_bail!(SchemaMismatch: "did not find column: {}", field.name)
+            };
+            DataType::from_arrow(&field.dtype, true)
+        };
 
         if dtype != expected_dtype {
             polars_bail!(SchemaMismatch: "data type mismatch for column {}: found: {}, expected: {}",
