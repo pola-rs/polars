@@ -529,3 +529,15 @@ def test_parquet_slice_pushdown_non_zero_offset(
         assert_frame_equal(
             pl.scan_parquet(path).slice(-1, (1 << 32) - 1).collect(), df.tail(1)
         )
+
+
+@pytest.mark.parametrize("streaming", [True, False])
+def test_parquet_row_groups_shift_bug_18739(tmp_path: Path, streaming: bool) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    path = tmp_path / "data.bin"
+
+    df = pl.DataFrame({"id": range(100)})
+    df.write_parquet(path, row_group_size=1)
+
+    lf = pl.scan_parquet(path)
+    assert_frame_equal(df, lf.collect(streaming=streaming))
