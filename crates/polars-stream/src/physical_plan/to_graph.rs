@@ -130,6 +130,18 @@ fn to_graph_rec<'a>(
                 [input_key],
             )
         },
+
+        InputIndependentSelect { selectors } => {
+            let phys_selectors = selectors
+                .iter()
+                .map(|selector| create_stream_expr(selector, ctx))
+                .collect::<PolarsResult<_>>()?;
+            ctx.graph.add_node(
+                nodes::input_independent_select::InputIndependentSelectNode::new(phys_selectors),
+                [],
+            )
+        },
+
         Reduce { input, exprs } => {
             let input_key = to_graph_rec(*input, ctx)?;
             let input_schema = &ctx.phys_sm[*input].output_schema;

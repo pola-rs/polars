@@ -58,6 +58,7 @@ nav:
       - user-guide/lazy/query-plan.md
       - user-guide/lazy/execution.md
       - user-guide/lazy/streaming.md
+      - user-guide/lazy/gpu.md
     - IO:
       - user-guide/io/index.md
       - user-guide/io/csv.md
@@ -86,6 +87,7 @@ nav:
       - user-guide/misc/styling.md
       - user-guide/misc/comparison.md
       - user-guide/misc/arrow.md
+    - user-guide/gpu-support.md
 
   - API reference: api/index.md
 

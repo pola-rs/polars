@@ -132,6 +132,23 @@ def code_tab(
 
 def define_env(env):
     @env.macro
+    def code_header(language: str, section: str = [], api_functions: List[str] = []) -> str:
+        language_info = LANGUAGES[language]
+
+        language = language_info["code_name"]
+
+        # Create feature flags
+        feature_flags_links = create_feature_flag_links(language, api_functions)
+
+        # Create API Links if they are defined in the YAML
+        api_functions = [
+            link for f in api_functions if (link := create_api_function_link(language, f))
+        ]
+        language_headers = " ·".join(api_functions + feature_flags_links)
+        return f"""=== \":fontawesome-brands-{language_info['icon_name']}: {language_info['display_name']}\"
+    {language_headers}"""
+
+    @env.macro
     def code_block(
         path: str, section: str = None, api_functions: List[str] = None
     ) -> str:

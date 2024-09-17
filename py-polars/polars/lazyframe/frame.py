@@ -1865,7 +1865,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             polars CPU engine. If set to `"gpu"`, the GPU engine is
             used. Fine-grained control over the GPU engine, for
             example which device to use on a system with multiple
-            devices, is possible by providing a :class:`GPUEngine` object
+            devices, is possible by providing a :class:`~.GPUEngine` object
             with configuration options.
 
             .. note::
@@ -2019,9 +2019,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 "cudf_polars",
                 err_prefix="GPU engine requested, but required package",
                 install_message=(
-                    "Please install using the command `pip install cudf-polars-cu12` "
-                    "(or `pip install cudf-polars-cu11` if your system has a "
-                    "CUDA 11 driver)."
+                    "Please install using the command "
+                    "`pip install --extra-index-url=https://pypi.nvidia.com cudf-polars-cu12` "
+                    "(or `pip install --extra-index-url=https://pypi.nvidia.com cudf-polars-cu11` "
+                    "if your system has a CUDA 11 driver)."
                 ),
             )
             if not is_config_obj:
