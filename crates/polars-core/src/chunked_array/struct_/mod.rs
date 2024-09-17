@@ -14,7 +14,7 @@ use crate::chunked_array::ChunkedArray;
 use crate::prelude::sort::arg_sort_multiple::{_get_rows_encoded_arr, _get_rows_encoded_ca};
 use crate::prelude::*;
 use crate::series::Series;
-use crate::utils::Container;
+use crate::utils::{slice_offsets, Container};
 
 pub type StructChunked = ChunkedArray<StructType>;
 
@@ -373,12 +373,13 @@ impl StructChunked {
             .ok_or_else(|| polars_err!(StructFieldNotFound: "{}", name))
     }
     pub fn field_by_index(&self, field_idx: i64) -> PolarsResult<Series> {
-        if field_idx < 0 || field_idx >= (self.struct_fields().len() as i64) {
+        if field_idx >= (self.struct_fields().len() as i64) {
             polars_bail!(
-                OutOfBounds: "Given field index {} is Out Of Bound", field_idx
+                OutOfBounds: "Given field index {} is out of bound", field_idx
             )
         }
-        Ok(self.field_as_series(field_idx as usize))
+        let (field_idx, _) = slice_offsets(field_idx, 0, self.struct_fields().len());
+        Ok(self.field_as_series(field_idx))
     }
     pub(crate) fn set_outer_validity(&mut self, validity: Option<Bitmap>) {
         assert_eq!(self.chunks().len(), 1);

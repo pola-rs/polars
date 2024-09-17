@@ -103,17 +103,17 @@ def test_empty_list_eval_schema_5734() -> None:
 
 
 def test_field_by_index_18732() -> None:
-    df = pl.DataFrame({"foo": [{"a": 1}, {"a": 2}]})
+    df = pl.DataFrame({"foo": [{"a": 1, "b": 2}, {"a": 2, "b": 1}]})
 
-    # lower bound
-    with pytest.raises(OutOfBoundsError, match=r"Given field index -1 is Out Of Bound"):
-        df.filter(pl.col.foo.struct[-1] == 1)
-
-    # upper bound
-    with pytest.raises(OutOfBoundsError, match=r"Given field index 1 is Out Of Bound"):
-        df.filter(pl.col.foo.struct[1] == 1)
+    # illegal upper bound
+    with pytest.raises(OutOfBoundsError, match=r"Given field index 2 is out of bound"):
+        df.filter(pl.col.foo.struct[2] == 1)
 
     # legal
-    expected_df = pl.DataFrame({"foo": [{"a": 1}]})
+    expected_df = pl.DataFrame({"foo": [{"a": 1, "b": 2}]})
     result_df = df.filter(pl.col.foo.struct[0] == 1)
+    assert_frame_equal(expected_df, result_df)
+
+    expected_df = pl.DataFrame({"foo": [{"a": 2, "b": 1}]})
+    result_df = df.filter(pl.col.foo.struct[-1] == 1)
     assert_frame_equal(expected_df, result_df)
