@@ -427,6 +427,7 @@ pub fn insert_fitting_join(
 
             (ie_left_on, ie_right_on, remaining_predicates)
         },
+        // If anything just fall back to a cross join.
         _ => {
             options.args.how = JoinType::Cross;
             // We need to make sure not to delete any columns
