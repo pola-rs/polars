@@ -138,6 +138,10 @@ impl<R: MmapBytesReader> ParquetReader<R> {
         self
     }
 
+    pub fn set_metadata(&mut self, metadata: FileMetadataRef) {
+        self.metadata = Some(metadata);
+    }
+
     pub fn get_metadata(&mut self) -> PolarsResult<&FileMetadataRef> {
         if self.metadata.is_none() {
             self.metadata = Some(Arc::new(read::read_metadata(&mut self.reader)?));

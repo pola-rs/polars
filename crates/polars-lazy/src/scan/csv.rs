@@ -311,7 +311,7 @@ impl LazyFileListReader for LazyCsvReader {
     /// Get the final [LazyFrame].
     fn finish(self) -> PolarsResult<LazyFrame> {
         let mut lf: LazyFrame = DslBuilder::scan_csv(
-            self.sources.to_dsl(false),
+            self.sources,
             self.read_options,
             self.cache,
             self.cloud_options,

@@ -41,7 +41,7 @@ pub struct ParquetSource {
     file_options: FileScanOptions,
     #[allow(dead_code)]
     cloud_options: Option<CloudOptions>,
-    metadata: Option<FileMetadataRef>,
+    first_metadata: Option<FileMetadataRef>,
     file_info: FileInfo,
     hive_parts: Option<Arc<Vec<HivePartitions>>>,
     verbose: bool,
@@ -61,7 +61,6 @@ impl ParquetSource {
     }
 
     fn init_next_reader_sync(&mut self) -> PolarsResult<()> {
-        self.metadata = None;
         self.init_reader_sync()
     }
 
@@ -133,7 +132,16 @@ impl ParquetSource {
 
         let batched_reader = {
             let file = std::fs::File::open(path).unwrap();
-            let mut reader = ParquetReader::new(file)
+
+            let mut reader = ParquetReader::new(file);
+
+            if index == 0 {
+                if let Some(md) = self.first_metadata.clone() {
+                    reader.set_metadata(md);
+                }
+            }
+
+            let mut reader = reader
                 .with_projection(projection)
                 .check_schema(
                     self.file_info
@@ -191,7 +199,7 @@ impl ParquetSource {
     async fn init_reader_async(&self, index: usize) -> PolarsResult<BatchedParquetReader> {
         use std::sync::atomic::Ordering;
 
-        let metadata = self.metadata.clone();
+        let metadata = self.first_metadata.clone().filter(|_| index == 0);
         let predicate = self.predicate.clone();
         let cloud_options = self.cloud_options.clone();
         let (path, options, file_options, projection, chunk_size, hive_partitions) =
@@ -252,7 +260,7 @@ impl ParquetSource {
         sources: ScanSources,
         options: ParquetOptions,
         cloud_options: Option<CloudOptions>,
-        metadata: Option<FileMetadataRef>,
+        first_metadata: Option<FileMetadataRef>,
         file_options: FileScanOptions,
         file_info: FileInfo,
         hive_parts: Option<Arc<Vec<HivePartitions>>>,
@@ -282,7 +290,7 @@ impl ParquetSource {
             iter,
             sources,
             cloud_options,
-            metadata,
+            first_metadata,
             file_info,
             hive_parts,
             verbose,
@@ -293,7 +301,6 @@ impl ParquetSource {
         // Already start downloading when we deal with cloud urls.
         if run_async {
             source.init_next_reader()?;
-            source.metadata = None;
         }
         Ok(source)
     }

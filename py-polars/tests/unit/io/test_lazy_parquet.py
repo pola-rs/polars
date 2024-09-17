@@ -541,3 +541,25 @@ def test_parquet_row_groups_shift_bug_18739(tmp_path: Path, streaming: bool) -> 
 
     lf = pl.scan_parquet(path)
     assert_frame_equal(df, lf.collect(streaming=streaming))
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("streaming", [True, False])
+def test_dsl2ir_cached_metadata(tmp_path: Path, streaming: bool) -> None:
+    df = pl.DataFrame({"x": 1})
+    path = tmp_path / "1"
+    df.write_parquet(path)
+
+    lf = pl.scan_parquet(path)
+    assert_frame_equal(lf.collect(), df)
+
+    # Removes the metadata portion of the parquet file.
+    # Used to test that a reader doesn't try to read the metadata.
+    def remove_metadata(path: str | Path) -> None:
+        path = Path(path)
+        v = path.read_bytes()
+        metadata_and_footer_len = 8 + int.from_bytes(v[-8:][:4], "little")
+        path.write_bytes(v[:-metadata_and_footer_len] + b"PAR1")
+
+    remove_metadata(path)
+    assert_frame_equal(lf.collect(streaming=streaming), df)

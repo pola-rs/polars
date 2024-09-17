@@ -82,7 +82,16 @@ impl ParquetExec {
                             .into_par_iter()
                             .map(|&i| {
                                 let memslice = self.sources.at(i).to_memslice()?;
-                                ParquetReader::new(std::io::Cursor::new(memslice)).num_rows()
+
+                                let mut reader = ParquetReader::new(std::io::Cursor::new(memslice));
+
+                                if i == 0 {
+                                    if let Some(md) = self.metadata.clone() {
+                                        reader.set_metadata(md)
+                                    }
+                                }
+
+                                reader.num_rows()
                             })
                             .collect::<PolarsResult<Vec<_>>>()?;
 
@@ -151,7 +160,15 @@ impl ParquetExec {
 
                 let memslice = source.to_memslice()?;
 
-                let mut reader = ParquetReader::new(std::io::Cursor::new(memslice))
+                let mut reader = ParquetReader::new(std::io::Cursor::new(memslice));
+
+                if i == 0 {
+                    if let Some(md) = self.metadata.clone() {
+                        reader.set_metadata(md)
+                    }
+                }
+
+                let mut reader = reader
                     .read_parallel(parallel)
                     .set_low_memory(self.options.low_memory)
                     .use_statistics(self.options.use_statistics)
@@ -266,6 +283,7 @@ impl ParquetExec {
                 let mut iter = stream::iter((0..paths.len()).rev().map(|i| {
                     let paths = paths.clone();
                     let cloud_options = cloud_options.clone();
+                    let first_metadata = first_metadata.clone();
 
                     pl_async::get_runtime().spawn(async move {
                         PolarsResult::Ok((
@@ -273,7 +291,7 @@ impl ParquetExec {
                             ParquetAsyncReader::from_uri(
                                 paths[i].to_str().unwrap(),
                                 cloud_options.as_ref().as_ref(),
-                                None,
+                                first_metadata.filter(|_| i == 0),
                             )
                             .await?
                             .num_rows()

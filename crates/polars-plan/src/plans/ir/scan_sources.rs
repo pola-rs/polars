@@ -6,10 +6,11 @@ use polars_core::error::{feature_gated, PolarsResult};
 use polars_io::cloud::CloudOptions;
 #[cfg(feature = "cloud")]
 use polars_io::utils::byte_source::{DynByteSource, DynByteSourceBuilder};
+use polars_io::{expand_paths, expand_paths_hive, expanded_from_single_directory};
 use polars_utils::mmap::MemSlice;
 use polars_utils::pl_str::PlSmallStr;
 
-use super::DslScanSources;
+use super::FileScanOptions;
 
 /// Set of sources to scan from
 ///
@@ -79,17 +80,56 @@ impl PartialEq for ScanSources {
 impl Eq for ScanSources {}
 
 impl ScanSources {
+    pub fn expand_paths(
+        &self,
+        file_options: &FileScanOptions,
+        #[allow(unused_variables)] cloud_options: Option<&CloudOptions>,
+    ) -> PolarsResult<Self> {
+        match self {
+            Self::Paths(paths) => Ok(Self::Paths(expand_paths(
+                paths,
+                file_options.glob,
+                cloud_options,
+            )?)),
+            v => Ok(v.clone()),
+        }
+    }
+
+    #[cfg(any(feature = "ipc", feature = "parquet"))]
+    pub fn expand_paths_with_hive_update(
+        &self,
+        file_options: &mut FileScanOptions,
+        #[allow(unused_variables)] cloud_options: Option<&CloudOptions>,
+    ) -> PolarsResult<Self> {
+        match self {
+            Self::Paths(paths) => {
+                let hive_enabled = file_options.hive_options.enabled;
+                let (expanded_paths, hive_start_idx) = expand_paths_hive(
+                    paths,
+                    file_options.glob,
+                    cloud_options,
+                    hive_enabled.unwrap_or(false),
+                )?;
+                let inferred_hive_enabled = hive_enabled.unwrap_or_else(|| {
+                    expanded_from_single_directory(paths, expanded_paths.as_ref())
+                });
+
+                file_options.hive_options.enabled = Some(inferred_hive_enabled);
+                file_options.hive_options.hive_start_idx = hive_start_idx;
+
+                Ok(Self::Paths(expanded_paths))
+            },
+            v => {
+                file_options.hive_options.enabled = Some(false);
+                Ok(v.clone())
+            },
+        }
+    }
+
     pub fn iter(&self) -> ScanSourceIter {
         ScanSourceIter {
             sources: self,
             offset: 0,
-        }
-    }
-
-    pub fn to_dsl(self, is_expanded: bool) -> DslScanSources {
-        DslScanSources {
-            sources: self,
-            is_expanded,
         }
     }
 

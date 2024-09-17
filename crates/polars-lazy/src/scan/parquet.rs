@@ -62,7 +62,7 @@ impl LazyFileListReader for LazyParquetReader {
         let row_index = self.args.row_index;
 
         let mut lf: LazyFrame = DslBuilder::scan_parquet(
-            self.sources.to_dsl(false),
+            self.sources,
             self.args.n_rows,
             self.args.cache,
             self.args.parallel,
