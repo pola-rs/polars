@@ -1,6 +1,8 @@
 use std::borrow::Cow;
 
-use polars_core::prelude::{ArrowSchema, DataFrame, Series, IDX_DTYPE};
+use polars_core::prelude::{ArrowSchema, DataFrame, DataType, PlHashMap, Series, IDX_DTYPE};
+use polars_error::{polars_bail, PolarsResult};
+use polars_utils::pl_str::PlSmallStr;
 
 use crate::hive::materialize_hive_partitions;
 use crate::utils::apply_projection;
@@ -27,4 +29,36 @@ pub fn materialize_empty_df(
     materialize_hive_partitions(&mut df, reader_schema, hive_partition_columns, 0);
 
     df
+}
+
+/// Ensures that a parquet file has all the necessary columns for a projection with the correct
+/// dtype. There are no ordering requirements and extra columns are permitted.
+pub fn ensure_schema_has_projected_fields(
+    schema: &ArrowSchema,
+    projected_arrow_schema: &ArrowSchema,
+) -> PolarsResult<()> {
+    // Note: We convert to Polars-native dtypes for timezone normalization.
+    let mut schema = schema
+        .iter_values()
+        .map(|x| {
+            let dtype = DataType::from_arrow(&x.dtype, true);
+            (x.name.clone(), dtype)
+        })
+        .collect::<PlHashMap<PlSmallStr, DataType>>();
+
+    for field in projected_arrow_schema.iter_values() {
+        let Some(dtype) = schema.remove(&field.name) else {
+            polars_bail!(SchemaMismatch: "did not find column: {}", field.name)
+        };
+
+        let expected_dtype = DataType::from_arrow(&field.dtype, true);
+
+        if dtype != expected_dtype {
+            polars_bail!(SchemaMismatch: "data type mismatch for column {}: found: {}, expected: {}",
+                &field.name, dtype, expected_dtype
+            )
+        }
+    }
+
+    Ok(())
 }

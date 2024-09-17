@@ -1,9 +1,8 @@
-use polars_core::prelude::{ArrowSchema, DataType, PlHashMap};
-use polars_error::{polars_bail, PolarsResult};
-use polars_io::prelude::FileMetadata;
+use polars_core::prelude::ArrowSchema;
+use polars_error::PolarsResult;
+use polars_io::prelude::{ensure_schema_has_projected_fields, FileMetadata};
 use polars_io::utils::byte_source::{ByteSource, DynByteSource};
 use polars_utils::mmap::MemSlice;
-use polars_utils::pl_str::PlSmallStr;
 
 /// Read the metadata bytes of a parquet file, does not decode the bytes. If during metadata fetch
 /// the bytes of the entire file are loaded, it is returned in the second return value.
@@ -124,33 +123,9 @@ pub(super) async fn read_parquet_metadata_bytes(
 /// Ensures that a parquet file has all the necessary columns for a projection with the correct
 /// dtype. There are no ordering requirements and extra columns are permitted.
 pub(super) fn ensure_metadata_has_projected_fields(
-    projected_fields: &ArrowSchema,
     metadata: &FileMetadata,
+    projected_arrow_schema: &ArrowSchema,
 ) -> PolarsResult<()> {
     let schema = polars_parquet::arrow::read::infer_schema(metadata)?;
-
-    // Note: We convert to Polars-native dtypes for timezone normalization.
-    let mut schema = schema
-        .into_iter_values()
-        .map(|x| {
-            let dtype = DataType::from_arrow(&x.dtype, true);
-            (x.name, dtype)
-        })
-        .collect::<PlHashMap<PlSmallStr, DataType>>();
-
-    for field in projected_fields.iter_values() {
-        let Some(dtype) = schema.remove(&field.name) else {
-            polars_bail!(SchemaMismatch: "did not find column: {}", field.name)
-        };
-
-        let expected_dtype = DataType::from_arrow(&field.dtype, true);
-
-        if dtype != expected_dtype {
-            polars_bail!(SchemaMismatch: "data type mismatch for column {}: found: {}, expected: {}",
-                &field.name, dtype, expected_dtype
-            )
-        }
-    }
-
-    Ok(())
+    ensure_schema_has_projected_fields(&schema, projected_arrow_schema)
 }

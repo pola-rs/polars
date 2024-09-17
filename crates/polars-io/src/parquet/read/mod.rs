@@ -36,7 +36,7 @@ use polars_error::{ErrString, PolarsError};
 #[cfg(feature = "cloud")]
 pub use reader::ParquetAsyncReader;
 pub use reader::{BatchedParquetReader, ParquetReader};
-pub use utils::materialize_empty_df;
+pub use utils::{ensure_schema_has_projected_fields, materialize_empty_df};
 
 pub mod _internal {
     pub use super::mmap::to_deserializer;
