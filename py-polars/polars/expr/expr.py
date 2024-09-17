@@ -3425,9 +3425,7 @@ class Expr:
         ...         "c": [5, 4, 3, 2, 1],
         ...     }
         ... )
-        >>> df.with_columns(
-        ...     pl.col("c").max().over("a").name.suffix("_max"),
-        ... )
+        >>> df.with_columns(c_max=pl.col("c").max().over("a"))
         shape: (5, 4)
         ┌─────┬─────┬─────┬───────┐
         │ a   ┆ b   ┆ c   ┆ c_max │
@@ -3441,11 +3439,9 @@ class Expr:
         │ b   ┆ 3   ┆ 1   ┆ 3     │
         └─────┴─────┴─────┴───────┘
 
-        Expression input is supported.
+        Expression input is also supported.
 
-        >>> df.with_columns(
-        ...     pl.col("c").max().over(pl.col("b") // 2).name.suffix("_max"),
-        ... )
+        >>> df.with_columns(c_max=pl.col("c").max().over(pl.col("b") // 2))
         shape: (5, 4)
         ┌─────┬─────┬─────┬───────┐
         │ a   ┆ b   ┆ c   ┆ c_max │
@@ -3459,29 +3455,9 @@ class Expr:
         │ b   ┆ 3   ┆ 1   ┆ 4     │
         └─────┴─────┴─────┴───────┘
 
-        Group by multiple columns by passing a list of column names or expressions.
+        Group by multiple columns by passing multiple column names or expressions.
 
-        >>> df.with_columns(
-        ...     pl.col("c").min().over(["a", "b"]).name.suffix("_min"),
-        ... )
-        shape: (5, 4)
-        ┌─────┬─────┬─────┬───────┐
-        │ a   ┆ b   ┆ c   ┆ c_min │
-        │ --- ┆ --- ┆ --- ┆ ---   │
-        │ str ┆ i64 ┆ i64 ┆ i64   │
-        ╞═════╪═════╪═════╪═══════╡
-        │ a   ┆ 1   ┆ 5   ┆ 5     │
-        │ a   ┆ 2   ┆ 4   ┆ 4     │
-        │ b   ┆ 3   ┆ 3   ┆ 1     │
-        │ b   ┆ 5   ┆ 2   ┆ 2     │
-        │ b   ┆ 3   ┆ 1   ┆ 1     │
-        └─────┴─────┴─────┴───────┘
-
-        Or use positional arguments to group by multiple columns in the same way.
-
-        >>> df.with_columns(
-        ...     pl.col("c").min().over("a", pl.col("b") % 2).name.suffix("_min"),
-        ... )
+        >>> df.with_columns(c_min=pl.col("c").min().over("a", pl.col("b") % 2))
         shape: (5, 4)
         ┌─────┬─────┬─────┬───────┐
         │ a   ┆ b   ┆ c   ┆ c_min │
@@ -3495,25 +3471,63 @@ class Expr:
         │ b   ┆ 3   ┆ 1   ┆ 1     │
         └─────┴─────┴─────┴───────┘
 
-        Aggregate values from each group using `mapping_strategy="explode"`.
+        You can use non-elementwise expressions with `over` too. By default they are
+        evaluated using row-order, but you can specify a different one using `order_by`.
 
-        >>> df.select(
-        ...     pl.col("a").head(2).over("a", mapping_strategy="explode"),
-        ...     pl.col("b").sort_by("b").head(2).over("a", mapping_strategy="explode"),
-        ...     pl.col("c").sort_by("b").head(2).over("a", mapping_strategy="explode"),
+        >>> from datetime import date
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "store_id": ["a", "a", "b", "b"],
+        ...         "date": [
+        ...             date(2024, 9, 18),
+        ...             date(2024, 9, 17),
+        ...             date(2024, 9, 18),
+        ...             date(2024, 9, 16),
+        ...         ],
+        ...         "sales": [7, 9, 8, 10],
+        ...     }
         ... )
-        shape: (4, 3)
-        ┌─────┬─────┬─────┐
-        │ a   ┆ b   ┆ c   │
-        │ --- ┆ --- ┆ --- │
-        │ str ┆ i64 ┆ i64 │
-        ╞═════╪═════╪═════╡
-        │ a   ┆ 1   ┆ 5   │
-        │ a   ┆ 2   ┆ 4   │
-        │ b   ┆ 3   ┆ 3   │
-        │ b   ┆ 3   ┆ 1   │
-        └─────┴─────┴─────┘
+        >>> df.with_columns(
+        ...     cumulative_sales=pl.col("sales")
+        ...     .cum_sum()
+        ...     .over("store_id", order_by="date")
+        ... )
+        shape: (4, 4)
+        ┌──────────┬────────────┬───────┬──────────────────┐
+        │ store_id ┆ date       ┆ sales ┆ cumulative_sales │
+        │ ---      ┆ ---        ┆ ---   ┆ ---              │
+        │ str      ┆ date       ┆ i64   ┆ i64              │
+        ╞══════════╪════════════╪═══════╪══════════════════╡
+        │ a        ┆ 2024-09-18 ┆ 7     ┆ 16               │
+        │ a        ┆ 2024-09-17 ┆ 9     ┆ 9                │
+        │ b        ┆ 2024-09-18 ┆ 8     ┆ 18               │
+        │ b        ┆ 2024-09-16 ┆ 10    ┆ 10               │
+        └──────────┴────────────┴───────┴──────────────────┘
 
+        If you don't require that the group order be preserved, then the more performant
+        option is to use `mapping_strategy='explode'` - be careful however to only ever
+        use this in a `select` statement, not a `with_columns` one.
+
+        >>> window = {
+        ...     "partition_by": "store_id",
+        ...     "order_by": "date",
+        ...     "mapping_strategy": "explode",
+        ... }
+        >>> df.select(
+        ...     pl.all().over(**window),
+        ...     cumulative_sales=pl.col("sales").cum_sum().over(**window),
+        ... )
+        shape: (4, 4)
+        ┌──────────┬────────────┬───────┬──────────────────┐
+        │ store_id ┆ date       ┆ sales ┆ cumulative_sales │
+        │ ---      ┆ ---        ┆ ---   ┆ ---              │
+        │ str      ┆ date       ┆ i64   ┆ i64              │
+        ╞══════════╪════════════╪═══════╪══════════════════╡
+        │ a        ┆ 2024-09-17 ┆ 9     ┆ 9                │
+        │ a        ┆ 2024-09-18 ┆ 7     ┆ 16               │
+        │ b        ┆ 2024-09-16 ┆ 10    ┆ 10               │
+        │ b        ┆ 2024-09-18 ┆ 8     ┆ 18               │
+        └──────────┴────────────┴───────┴──────────────────┘
         """
         partition_by = parse_into_list_of_expressions(partition_by, *more_exprs)
         if order_by is not None:
