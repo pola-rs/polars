@@ -224,46 +224,44 @@ impl ChunkZip<StructType> for StructChunked {
 
         let length = length as usize;
 
-        let mut if_true = self;
-        let mut if_false = other;
-        let mask = mask;
+        let mut if_true: Cow<ChunkedArray<StructType>> = Cow::Borrowed(self);
+        let mut if_false: Cow<ChunkedArray<StructType>> = Cow::Borrowed(other);
 
         // align_chunks_ternary can only align chunks if:
         // - Each chunkedarray only has 1 chunk
         // - Each chunkedarray has an equal length (i.e. is broadcasted)
         //
         // Therefore, we broadcast only those that are necessary to be broadcasted.
-        let needs_broadcast = if_true.chunks().len() > 1
-            || if_false.chunks().len() > 1
-            || mask.chunks().len() > 1;
+        let needs_broadcast =
+            if_true.chunks().len() > 1 || if_false.chunks().len() > 1 || mask.chunks().len() > 1;
         if needs_broadcast && length > 1 {
             // Special case. In this case, we know what to do.
             if mask.length == 1 {
                 // pl.when(None) <=> pl.when(False)
-                return Ok(if mask.get(0).unwrap_or(false) {
-                    if self.length == 1 {
-                        self.new_from_index(0, length)
-                    } else {
-                        self.clone()
-                    }
+                let is_true = mask.get(0).unwrap_or(false);
+                return Ok(if is_true && self.length == 1 {
+                    self.new_from_index(0, length)
+                } else if is_true {
+                    self.clone()
+                } else if other.length == 1 {
+                    other.new_from_index(0, length)
                 } else {
-                    if other.length == 1 {
-                        other.new_from_index(0, length)
-                    } else {
-                        other.clone()
-                    }
+                    other.clone()
                 });
             }
 
             if self.length == 1 {
                 let broadcasted = self.new_from_index(0, length);
-                if_true = &broadcasted;
+                if_true = Cow::Owned(broadcasted);
             }
             if other.length == 1 {
                 let broadcasted = other.new_from_index(0, length);
-                if_false = &broadcasted;
+                if_false = Cow::Owned(broadcasted);
             }
         }
+
+        let if_true = if_true.as_ref();
+        let if_false = if_false.as_ref();
 
         let (l, r, mask) = align_chunks_ternary(if_true, if_false, mask);
 
