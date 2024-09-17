@@ -43,7 +43,7 @@ impl From<&ExprIR> for PyExprIR {
 type Version = (u16, u16);
 
 #[pyclass]
-pub(crate) struct NodeTraverser {
+pub struct NodeTraverser {
     root: Node,
     lp_arena: Arc<Mutex<Arena<IR>>>,
     expr_arena: Arc<Mutex<Arena<AExpr>>>,
@@ -59,7 +59,7 @@ impl NodeTraverser {
     // changes (e.g. exposing a new expression node).
     const VERSION: Version = (2, 0);
 
-    pub(crate) fn new(root: Node, lp_arena: Arena<IR>, expr_arena: Arena<AExpr>) -> Self {
+    pub fn new(root: Node, lp_arena: Arena<IR>, expr_arena: Arena<AExpr>) -> Self {
         Self {
             root,
             lp_arena: Arc::new(Mutex::new(lp_arena)),
@@ -71,7 +71,7 @@ impl NodeTraverser {
     }
 
     #[allow(clippy::type_complexity)]
-    pub(crate) fn get_arenas(&self) -> (Arc<Mutex<Arena<IR>>>, Arc<Mutex<Arena<AExpr>>>) {
+    pub fn get_arenas(&self) -> (Arc<Mutex<Arena<IR>>>, Arc<Mutex<Arena<AExpr>>>) {
         (self.lp_arena.clone(), self.expr_arena.clone())
     }
 
