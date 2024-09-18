@@ -630,3 +630,20 @@ def test_chained_when_no_subclass_17142() -> None:
 
     assert not isinstance(when, pl.Expr)
     assert "<polars.expr.whenthen.ChainedWhen object at" in str(when)
+
+
+def test_when_then_chunked_structs_18673() -> None:
+    df = pl.DataFrame(
+        [
+            pl.Series("x", [{"a": 1}]),
+            pl.Series("b", [False]),
+        ]
+    )
+
+    df = df.vstack(df)
+
+    # This used to panic
+    assert_frame_equal(
+        df.select(pl.when(pl.col.b).then(pl.first("x")).otherwise(pl.first("x"))),
+        pl.DataFrame({"x": [{"a": 1}, {"a": 1}]}),
+    )
