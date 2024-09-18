@@ -26,19 +26,27 @@ where
             // User-supplied bins. Note these are actually bin edges. Check for monotonicity.
             // If we only have one edge, we have no bins.
             let bin_len = bins.len();
-            let mut uniform = true;
+            // We also check for uniformity of bins. We declare uniformity if the difference
+            // between the largest and smallest bin is < 0.00001 the average bin size.
             if bin_len > 1 {
-                let diff = bins[1] - bins[0];
+                let mut smallest = bins[1] - bins[0];
+                let mut largest = smallest;
+                let mut avg_bin_size = smallest;
                 for i in 1..bins.len() {
-                    if bins[i - 1] >= bins[i] {
+                    let d = bins[i] - bins[i - 1];
+                    if d <= 0.0 {
                         return Err(PolarsError::ComputeError(
                             "bins must increase monotonically".into(),
                         ));
                     }
-                    if uniform && (bins[i] - bins[i - 1]) != diff {
-                        uniform = false;
+                    if d > largest {
+                        largest = d;
+                    } else if d < smallest {
+                        smallest = d;
                     }
+                    avg_bin_size += d;
                 }
+                let uniform = (largest - smallest) / (avg_bin_size / bin_len as f64) < 0.00001;
                 (bins.to_vec(), uniform)
             } else {
                 (Vec::<f64>::new(), false) // uniformity doesn't matter here
