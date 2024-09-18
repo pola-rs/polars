@@ -764,7 +764,6 @@ impl Display for DataType {
 }
 
 pub fn merge_dtypes(left: &DataType, right: &DataType) -> PolarsResult<DataType> {
-    // TODO! add struct
     use DataType::*;
     Ok(match (left, right) {
         #[cfg(feature = "dtype-categorical")]
@@ -793,6 +792,15 @@ pub fn merge_dtypes(left: &DataType, right: &DataType) -> PolarsResult<DataType>
         (List(inner_l), List(inner_r)) => {
             let merged = merge_dtypes(inner_l, inner_r)?;
             List(Box::new(merged))
+        },
+        (Struct(inner_l), Struct(inner_r)) => {
+            polars_ensure!(inner_l.len() == inner_r.len(), ComputeError: "cannot combine different structs");
+            let fields = inner_l.iter().zip(inner_r.iter()).map(|(l, r)| {
+                polars_ensure!(l.name() == r.name(), ComputeError: "cannot combine different structs");
+                let merged = merge_dtypes(l.dtype(), r.dtype())?;
+                Ok(Field::new(l.name().clone(), merged))
+            }).collect::<PolarsResult<Vec<_>>>()?;
+            Struct(fields)
         },
         #[cfg(feature = "dtype-array")]
         (Array(inner_l, width_l), Array(inner_r, width_r)) => {
