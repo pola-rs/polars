@@ -106,7 +106,7 @@ def test_field_by_index_18732() -> None:
     df = pl.DataFrame({"foo": [{"a": 1, "b": 2}, {"a": 2, "b": 1}]})
 
     # illegal upper bound
-    with pytest.raises(OutOfBoundsError, match=r"Given field index 2 is out of bound"):
+    with pytest.raises(OutOfBoundsError, match=r"index 2 for length: 2"):
         df.filter(pl.col.foo.struct[2] == 1)
 
     # legal

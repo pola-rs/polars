@@ -331,11 +331,11 @@ impl StructChunked {
     pub fn zip_outer_validity(&mut self, other: &StructChunked) {
         if self.chunks.len() != other.chunks.len()
             || !self
-            .chunks
-            .iter()
-            .zip(other.chunks.iter())
-            .map(|(a, b)| a.len() == b.len())
-            .all_equal()
+                .chunks
+                .iter()
+                .zip(other.chunks.iter())
+                .map(|(a, b)| a.len() == b.len())
+                .all_equal()
         {
             *self = self.rechunk();
             let other = other.rechunk();
