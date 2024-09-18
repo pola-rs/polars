@@ -73,13 +73,14 @@ pub fn into_reduction(
             _ => unreachable!(),
         },
         AExpr::Len => {
-            // Compute length on the first column, or if none exist we'll never
-            // be called and correctly return 0 as length anyway.
+            // Compute length on the first column, or if none exist we'll use
+            // a zero-length dummy series.
             let out: Box<dyn Reduction> = Box::new(LenReduce::new());
             let expr = if let Some(first_column) = schema.iter_names().next() {
                 expr_arena.add(AExpr::Column(first_column.as_str().into()))
             } else {
-                expr_arena.add(AExpr::Literal(LiteralValue::Null))
+                let dummy = Series::new_null(PlSmallStr::from_static("dummy"), 0);
+                expr_arena.add(AExpr::Literal(LiteralValue::Series(SpecialEq::new(dummy))))
             };
             (out, expr)
         },
