@@ -158,8 +158,9 @@ impl ArrayNameSpace {
     }
 
     #[cfg(feature = "array_to_struct")]
-    pub fn to_struct(self, name_generator: Option<ArrToStructNameGenerator>) -> Expr {
-        self.0
+    pub fn to_struct(self, name_generator: Option<ArrToStructNameGenerator>) -> PolarsResult<Expr> {
+        Ok(self
+            .0
             .map(
                 move |s| {
                     s.array()?
@@ -168,7 +169,7 @@ impl ArrayNameSpace {
                 },
                 GetOutput::map_dtype(move |dt: &DataType| {
                     let DataType::Array(inner, width) = dt else {
-                        panic!("Only array dtype is expected for `arr.to_struct`.")
+                        polars_bail!(InvalidOperation: "expected Array type, got: {}", dt)
                     };
 
                     let fields = (0..*width)
@@ -180,7 +181,7 @@ impl ArrayNameSpace {
                     Ok(DataType::Struct(fields))
                 }),
             )
-            .with_fmt("arr.to_struct")
+            .with_fmt("arr.to_struct"))
     }
 
     /// Shift every sub-array.
