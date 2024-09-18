@@ -368,7 +368,7 @@ def test_hist_all_null() -> None:
 @pytest.mark.parametrize("n_values", [3, 10, 250])
 def test_hist_rand(n_values: int, n_null: int) -> None:
     s_rand = pl.Series([None] * n_null, dtype=pl.Int64)
-    s_values = pl.Series(np.random.randint(0, 100, n_values))
+    s_values = pl.Series(np.random.randint(0, 100, n_values), dtype=pl.Int64)
     s = pl.concat((s_rand, s_values))
     out = s.hist(bin_count=10)
 
@@ -395,7 +395,7 @@ def test_hist_floating_point() -> None:
 
     np.random.seed(2)
     s_rand = pl.Series([None] * n_null, dtype=pl.Int64)
-    s_values = pl.Series(np.random.randint(0, 100, n_values))
+    s_values = pl.Series(np.random.randint(0, 100, n_values), dtype=pl.Int64)
     s = pl.concat((s_rand, s_values))
     out = s.hist(bin_count=10)
     min_edge = s.min() - (s.max() - s.min()) * 0.001  # type: ignore[operator]
