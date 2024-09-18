@@ -349,8 +349,7 @@ impl DataFrame {
     /// static EMPTY: DataFrame = DataFrame::empty();
     /// ```
     pub const fn empty() -> Self {
-        // SAFETY: An empty dataframe cannot have length mismatches or duplicate names
-        unsafe { DataFrame::new_no_checks(Vec::new()) }
+        DataFrame { columns: vec![] }
     }
 
     /// Create an empty `DataFrame` with empty columns as per the `schema`.
@@ -461,7 +460,22 @@ impl DataFrame {
     ///
     /// It is the callers responsibility to uphold the contract of all `Series`
     /// having an equal length and a unique name, if not this may panic down the line.
-    pub const unsafe fn new_no_checks(columns: Vec<Column>) -> DataFrame {
+    pub unsafe fn new_no_checks(columns: Vec<Column>) -> DataFrame {
+        #[cfg(debug_assertions)]
+        {
+            Self::new(columns).unwrap()
+        }
+        #[cfg(not(debug_assertions))]
+        {
+            Self::_new_no_checks_impl(columns)
+        }
+    }
+
+    /// This will not panic even in debug mode - there are some (rare) use cases where a DataFrame
+    /// is temporarily constructed containing duplicates for dispatching to functions. A DataFrame
+    /// constructed with this method is generally highly unsafe and should not be long-lived.
+    #[allow(clippy::missing_safety_doc)]
+    pub const unsafe fn _new_no_checks_impl(columns: Vec<Column>) -> DataFrame {
         DataFrame { columns }
     }
 
@@ -476,7 +490,17 @@ impl DataFrame {
     /// having an equal length, if not this may panic down the line.
     pub unsafe fn new_no_length_checks(columns: Vec<Column>) -> PolarsResult<DataFrame> {
         ensure_names_unique(&columns, |s| s.name().as_str())?;
-        Ok(DataFrame { columns })
+
+        Ok({
+            #[cfg(debug_assertions)]
+            {
+                Self::new(columns).unwrap()
+            }
+            #[cfg(not(debug_assertions))]
+            {
+                DataFrame { columns }
+            }
+        })
     }
 
     /// Shrink the capacity of this DataFrame to fit its length.
@@ -2635,7 +2659,7 @@ impl DataFrame {
                     })
                     .cloned()
                     .collect();
-                let numeric_df = unsafe { DataFrame::new_no_checks(columns) };
+                let numeric_df = unsafe { DataFrame::_new_no_checks_impl(columns) };
 
                 let sum = || numeric_df.sum_horizontal(null_strategy);
 
