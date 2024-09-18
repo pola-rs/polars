@@ -30,34 +30,6 @@ pub(crate) use self::python_scan::*;
 use super::*;
 use crate::prelude::*;
 
-#[cfg(any(feature = "ipc", feature = "parquet"))]
-type Projection = Option<Vec<usize>>;
-#[cfg(any(feature = "ipc", feature = "parquet"))]
-type Predicate = Option<Arc<dyn PhysicalIoExpr>>;
-
-#[cfg(any(feature = "ipc", feature = "parquet"))]
-fn prepare_scan_args(
-    predicate: Option<Arc<dyn PhysicalExpr>>,
-    with_columns: &mut Option<Arc<[PlSmallStr]>>,
-    schema: &mut SchemaRef,
-    has_row_index: bool,
-    hive_partitions: Option<&[Series]>,
-) -> (Projection, Predicate) {
-    let with_columns = mem::take(with_columns);
-    let schema = mem::take(schema);
-
-    let projection = materialize_projection(
-        with_columns.as_deref(),
-        &schema,
-        hive_partitions,
-        has_row_index,
-    );
-
-    let predicate = predicate.map(phys_expr_to_io_expr);
-
-    (projection, predicate)
-}
-
 /// Producer of an in memory DataFrame
 pub struct DataFrameExec {
     pub(crate) df: Arc<DataFrame>,
