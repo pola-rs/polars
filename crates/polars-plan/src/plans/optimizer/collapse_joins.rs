@@ -382,9 +382,12 @@ pub fn insert_fitting_join(
     schema: SchemaRef,
 ) -> Node {
     debug_assert_eq!(eq_left_on.len(), eq_right_on.len());
-    debug_assert_eq!(ie_op.len(), ie_left_on.len());
-    debug_assert_eq!(ie_left_on.len(), ie_right_on.len());
-    debug_assert!(ie_op.len() <= 2);
+    #[cfg(feature = "iejoin")]
+    {
+        debug_assert_eq!(ie_op.len(), ie_left_on.len());
+        debug_assert_eq!(ie_left_on.len(), ie_right_on.len());
+        debug_assert!(ie_op.len() <= 2);
+    }
     debug_assert_eq!(options.args.how, JoinType::Cross);
 
     let remaining_predicates = remaining_predicates
