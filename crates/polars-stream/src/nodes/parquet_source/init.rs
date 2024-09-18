@@ -388,8 +388,11 @@ impl ParquetSourceNode {
 
         if self.verbose {
             eprintln!(
-                "[ParquetSource]: {:?} columns to be projected from {} files",
-                self.projected_arrow_schema.as_ref().map(|x| x.len()),
+                "[ParquetSource]: {} / {} parquet columns to be projected from {} files",
+                self.projected_arrow_schema
+                    .as_ref()
+                    .map_or(reader_schema.len(), |x| x.len()),
+                reader_schema.len(),
                 self.scan_sources.len(),
             );
         }
