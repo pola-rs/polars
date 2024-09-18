@@ -13,13 +13,13 @@ import polars as pl
 from polars.datatypes.convert import dtype_to_py_type
 from polars.exceptions import (
     ColumnNotFoundError,
-    ShapeError,
     ComputeError,
     InvalidOperationError,
     OutOfBoundsError,
     PanicException,
     SchemaError,
     SchemaFieldNotFoundError,
+    ShapeError,
     StructFieldNotFoundError,
 )
 from tests.unit.conftest import TEMPORAL_DTYPES
