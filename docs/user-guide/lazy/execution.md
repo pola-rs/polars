@@ -77,3 +77,18 @@ shape: (27, 6)
 │ 77768 ┆ TINHEADNED                ┆ 1139665457  ┆ 1536497404 ┆ 4434          ┆ 103        │
 └───────┴───────────────────────────┴─────────────┴────────────┴───────────────┴────────────┘
 ```
+
+### Cancellable Executions
+
+With background mode, you can run a query in the background and get a handler for
+an the in process query. The handler can be used to to do something else while
+the query is running or be canceled.
+
+Here we run a background query and cancel the query if it took more than
+`max_wait_time` seconds to complete.
+
+!!! warning "background mode is **unstable**"
+
+    Background mode may be changed at any point without it being considered a breaking change.
+
+{{code_block('user-guide/lazy/execution','background',['scan_csv','collect'])}}
