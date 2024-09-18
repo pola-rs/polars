@@ -13,6 +13,7 @@ import polars as pl
 from polars.datatypes.convert import dtype_to_py_type
 from polars.exceptions import (
     ColumnNotFoundError,
+    ShapeError,
     ComputeError,
     InvalidOperationError,
     OutOfBoundsError,
@@ -293,10 +294,7 @@ def test_invalid_sort_by() -> None:
     )
 
     # `select a where b order by c desc`
-    with pytest.raises(
-        ComputeError,
-        match=r"`sort_by` produced different length \(5\) than the Series that has to be sorted \(3\)",
-    ):
+    with pytest.raises(ShapeError):
         df.select(pl.col("a").filter(pl.col("b") == "M").sort_by("c", descending=True))
 
 
@@ -447,9 +445,7 @@ def test_compare_different_len() -> None:
     )
 
     s = pl.Series([2, 5, 8])
-    with pytest.raises(
-        ComputeError, match=r"cannot evaluate two Series of different lengths"
-    ):
+    with pytest.raises(ShapeError):
         df.filter(pl.col("idx") == s)
 
 
