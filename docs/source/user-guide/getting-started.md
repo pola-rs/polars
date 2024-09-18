@@ -22,7 +22,7 @@ This chapter is here to help you get started with Polars. It covers all the fund
 
 ## Reading & writing
 
-Polars supports reading and writing for common file formats (e.g. csv, json, parquet), cloud storage (S3, Azure Blob, BigQuery) and databases (e.g. postgres, mysql). Below, we create a small dataframe and show how to write it to disk and read it back.
+Polars supports reading and writing for common file formats (e.g., csv, json, parquet), cloud storage (S3, Azure Blob, BigQuery) and databases (e.g., postgres, mysql). Below, we create a small dataframe and show how to write it to disk and read it back.
 
 {{code_block('user-guide/getting-started','df',['DataFrame'])}}
 
