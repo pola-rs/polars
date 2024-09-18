@@ -35,7 +35,6 @@ path = "user-guide/getting-started/joins.rs"
 [[bin]]
 name = "user-guide-getting-started-reading-writing"
 path = "user-guide/getting-started/reading-writing.rs"
-required-features = ["polars/json"]
 [[bin]]
 name = "user-guide-concepts-data-structures"
 path = "user-guide/concepts/data-structures.rs"

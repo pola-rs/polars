@@ -22,12 +22,12 @@ This chapter is here to help you get started with Polars. It covers all the fund
 
 ## Reading & writing
 
-Polars supports reading and writing for common file formats (e.g. csv, json, parquet), cloud storage (S3, Azure Blob, BigQuery) and databases (e.g. postgres, mysql). Below we show the concept of reading and writing to disk.
+Polars supports reading and writing for common file formats (e.g. csv, json, parquet), cloud storage (S3, Azure Blob, BigQuery) and databases (e.g. postgres, mysql). Below, we create a small DataFrame and show how to write it to disk and read it back.
 
-{{code_block('user-guide/getting-started/reading-writing','dataframe',['DataFrame'])}}
+{{code_block('user-guide/getting-started/reading-writing','setup',['DataFrame'])}}
 
 ```python exec="on" result="text" session="getting-started/reading"
---8<-- "python/user-guide/getting-started/reading-writing.py:dataframe"
+--8<-- "python/user-guide/getting-started/reading-writing.py:setup"
 ```
 
 In the example below we write the DataFrame to a csv file called `output.csv`. After that, we read it back using `read_csv` and then `print` the result for inspection.
@@ -38,7 +38,7 @@ In the example below we write the DataFrame to a csv file called `output.csv`. A
 --8<-- "python/user-guide/getting-started/reading-writing.py:csv"
 ```
 
-For more examples on the CSV file format and other data formats, start with the [IO section](io/index.md) of the user guide.
+For more examples on the CSV file format and other data formats, see the [IO section](io/index.md) of the user guide.
 
 ## Expressions
 
