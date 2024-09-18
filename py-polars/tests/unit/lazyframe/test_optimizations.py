@@ -220,31 +220,66 @@ def test_collapse_joins() -> None:
     e = inner_join.explain()
     assert "INNER JOIN" in e
     assert "FILTER" not in e
+    assert_frame_equal(inner_join.collect(collapse_joins=False), inner_join.collect())
 
     inner_join = cross.filter(pl.col.x == pl.col.a)
     e = inner_join.explain()
     assert "INNER JOIN" in e
     assert "FILTER" not in e
+    assert_frame_equal(
+        inner_join.collect(collapse_joins=False),
+        inner_join.collect(),
+        check_row_order=False,
+    )
 
     double_inner_join = cross.filter(pl.col.x == pl.col.a).filter(pl.col.x == pl.col.b)
     e = double_inner_join.explain()
     assert "INNER JOIN" in e
     assert "FILTER" not in e
+    assert_frame_equal(
+        double_inner_join.collect(collapse_joins=False),
+        double_inner_join.collect(),
+        check_row_order=False,
+    )
 
     dont_mix = cross.filter(pl.col.x + pl.col.a != 0)
     e = dont_mix.explain()
     assert "CROSS JOIN" in e
     assert "FILTER" in e
+    assert_frame_equal(
+        dont_mix.collect(collapse_joins=False),
+        dont_mix.collect(),
+        check_row_order=False,
+    )
 
     no_literals = cross.filter(pl.col.x == 2)
     e = no_literals.explain()
     assert "CROSS JOIN" in e
+    assert_frame_equal(
+        no_literals.collect(collapse_joins=False),
+        no_literals.collect(),
+        check_row_order=False,
+    )
+
+    iejoin = cross.filter(pl.col.x >= pl.col.a)
+    e = iejoin.explain()
+    assert "IEJOIN" in e
+    assert "CROSS JOIN" not in e
+    assert "FILTER" not in e
+    assert_frame_equal(
+        iejoin.collect(collapse_joins=False),
+        iejoin.collect(),
+        check_row_order=False,
+    )
 
     iejoin = cross.filter(pl.col.x >= pl.col.a).filter(pl.col.x <= pl.col.b)
     e = iejoin.explain()
     assert "IEJOIN" in e
     assert "CROSS JOIN" not in e
     assert "FILTER" not in e
+    assert_frame_equal(
+        iejoin.collect(collapse_joins=False), iejoin.collect(), check_row_order=False
+    )
 
 
 @pytest.mark.slow
@@ -275,12 +310,10 @@ def test_collapse_joins_combinations() -> None:
                 # IE-join is unspecified. Therefore, this might not necessarily
                 # create the exact same dataframe.
                 optimized = cross.filter(e).sort(pl.all()).collect()
-                unoptimized = (
-                    cross.filter(e).sort(pl.all()).collect(collapse_joins=False)
-                )
+                unoptimized = cross.filter(e).collect(collapse_joins=False)
 
                 try:
-                    assert_frame_equal(optimized, unoptimized)
+                    assert_frame_equal(optimized, unoptimized, check_row_order=False)
                 except:
                     print(e)
                     print()
