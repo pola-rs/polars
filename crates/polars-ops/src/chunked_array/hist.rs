@@ -85,6 +85,7 @@ where
     let min_break: f64 = breaks[0];
     let max_break: f64 = breaks[num_bins];
     let width = breaks[1] - min_break; // guaranteed at least one bin
+    let is_integer = !T::get_dtype().is_float();
 
     for chunk in ca.downcast_iter() {
         for item in chunk.non_null_values_iter() {
@@ -92,9 +93,15 @@ where
             if include_lower && item == min_break {
                 count[0] += 1;
             } else if item > min_break && item <= max_break {
-                let idx = ((item - min_break) / width).ceil() as usize - 1;
-                // Due to floating-point precision, the last item may sometimes exceed the bin size
-                count[std::cmp::min(idx, num_bins - 1)] += 1;
+                let idx = (item - min_break) / width;
+                // This is needed for numeric stability for integers.
+                // We can fall directly on a boundary with an integer.
+                let idx = if is_integer && (idx.round() - idx).abs() < 0.0000001 {
+                    idx.round() - 1.0
+                } else {
+                    idx.ceil() - 1.0
+                };
+                count[idx as usize] += 1;
             }
         }
     }
