@@ -239,7 +239,7 @@ impl PhysicalExpr for SortByExpr {
                 for i in 1..s_sort_by.len() {
                     polars_ensure!(
                         s_sort_by[0].len() == s_sort_by[i].len(),
-                        expr = self.expr, ComputeError:
+                        expr = self.expr, ShapeMismatch:
                         "`sort_by` produced different length ({}) than earlier Series' length in `by` ({})",
                         s_sort_by[0].len(), s_sort_by[i].len()
                     );
@@ -254,7 +254,7 @@ impl PhysicalExpr for SortByExpr {
         let (sorted_idx, series) = (sorted_idx?, series?);
         polars_ensure!(
             sorted_idx.len() == series.len(),
-            expr = self.expr, ComputeError:
+            expr = self.expr, ShapeMismatch:
             "`sort_by` produced different length ({}) than the Series that has to be sorted ({})",
             sorted_idx.len(), series.len()
         );

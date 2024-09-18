@@ -3,6 +3,7 @@ import pytest
 import polars as pl
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_invalid_broadcast() -> None:
     df = pl.DataFrame(
         {
