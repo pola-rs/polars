@@ -793,10 +793,11 @@ pub fn merge_dtypes(left: &DataType, right: &DataType) -> PolarsResult<DataType>
             let merged = merge_dtypes(inner_l, inner_r)?;
             List(Box::new(merged))
         },
+        #[cfg(feature = "dtype-struct")]
         (Struct(inner_l), Struct(inner_r)) => {
-            polars_ensure!(inner_l.len() == inner_r.len(), ComputeError: "cannot combine different structs");
+            polars_ensure!(inner_l.len() == inner_r.len(), ComputeError: "cannot combine structs with differing amounts of fields ({} != {})", inner_l.len(), inner_r.len());
             let fields = inner_l.iter().zip(inner_r.iter()).map(|(l, r)| {
-                polars_ensure!(l.name() == r.name(), ComputeError: "cannot combine different structs");
+                polars_ensure!(l.name() == r.name(), ComputeError: "cannot combine structs with different fields ({} != {})", l.name(), r.name());
                 let merged = merge_dtypes(l.dtype(), r.dtype())?;
                 Ok(Field::new(l.name().clone(), merged))
             }).collect::<PolarsResult<Vec<_>>>()?;

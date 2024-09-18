@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING, Any, Callable, Literal
 
 import pytest
 
+from hypothesis import given
+
 import polars as pl
 from polars import StringCache
 from polars.exceptions import (
@@ -845,3 +847,19 @@ def test_get_cat_categories_multiple_chunks() -> None:
     )
     df_cat = df.lazy().select(pl.col("e").cat.get_categories()).collect()
     assert len(df_cat) == 2
+
+
+@pytest.mark.parametrize(
+    "f", [
+        lambda x: (pl.List(pl.Categorical), [x]),
+        lambda x: (pl.Struct({ 'a': pl.Categorical }), { 'a': x }),
+    ]
+)
+def test_nested_categorical_concat(f: Callable[[str], tuple[pl.DataType, list[str] | dict[str, str]]]) -> None:
+    dt, va = f("a")
+    _, vb = f("b")
+    a = pl.DataFrame({ 'x': [va] }, schema={ 'x': dt })
+    b = pl.DataFrame({ 'x': [vb] }, schema={ 'x': dt })
+
+    with pytest.raises(pl.exceptions.StringCacheMismatchError):
+        stack = pl.concat([a, b])
