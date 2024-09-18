@@ -174,7 +174,7 @@ impl RowGroupDecoder {
         slice_range: core::ops::Range<usize>,
     ) -> PolarsResult<Option<Column>> {
         if let Some(RowIndex { name, offset }) = self.row_index.as_ref() {
-            let projection_height = row_group_data.row_group_metadata.num_rows();
+            let projection_height = slice_range.len();
 
             let Some(offset) = (|| {
                 let offset = offset
