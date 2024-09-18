@@ -17,8 +17,6 @@ use polars_utils::IdxSize;
 
 use super::mem_prefetch_funcs;
 use super::row_group_decode::SharedFileState;
-use crate::async_executor;
-use crate::nodes::TaskPriority;
 use crate::utils::task_handles_ext;
 
 /// Represents byte-data that can be transformed into a DataFrame after some computation.
@@ -81,7 +79,7 @@ impl RowGroupDataFetcher {
 
     pub(super) async fn next(
         &mut self,
-    ) -> Option<PolarsResult<async_executor::AbortOnDropHandle<PolarsResult<RowGroupData>>>> {
+    ) -> Option<PolarsResult<task_handles_ext::AbortOnDropHandle<PolarsResult<RowGroupData>>>> {
         'main: loop {
             for row_group_metadata in self.current_row_groups.by_ref() {
                 let current_row_offset = self.current_row_offset;
@@ -164,9 +162,7 @@ impl RowGroupDataFetcher {
                 let current_path_index = self.current_path_index;
                 let current_max_row_group_height = self.current_max_row_group_height;
 
-                // Push calculation of byte ranges to a task to run in parallel, as it can be
-                // expensive for very wide tables and projections.
-                let handle = async_executor::spawn(TaskPriority::Low, async move {
+                let handle = io_runtime.spawn(async move {
                     let fetched_bytes = if let DynByteSource::MemSlice(mem_slice) =
                         current_byte_source.as_ref()
                     {
@@ -205,16 +201,9 @@ impl RowGroupDataFetcher {
                             &row_group_metadata,
                             columns.as_ref(),
                         )
-                        .collect::<Arc<[_]>>();
+                        .collect::<Vec<_>>();
 
-                        let bytes = {
-                            let ranges_2 = ranges.clone();
-                            task_handles_ext::AbortOnDropHandle(io_runtime.spawn(async move {
-                                current_byte_source.get_ranges(ranges_2.as_ref()).await
-                            }))
-                            .await
-                            .unwrap()?
-                        };
+                        let bytes = current_byte_source.get_ranges(ranges.as_ref()).await?;
 
                         assert_eq!(bytes.len(), ranges.len());
 
@@ -261,7 +250,7 @@ impl RowGroupDataFetcher {
                     })
                 });
 
-                let handle = async_executor::AbortOnDropHandle::new(handle);
+                let handle = task_handles_ext::AbortOnDropHandle(handle);
                 return Some(Ok(handle));
             }
 
@@ -302,12 +291,12 @@ type RowGroupDataStreamFut = std::pin::Pin<Box<
     dyn Future<
         Output =
             (
-                Box<RowGroupDataFetcher>           ,
-                Option                             <
-                PolarsResult                       <
-                async_executor::AbortOnDropHandle  <
-                PolarsResult                       <
-                RowGroupData     >     >     >     >
+                Box<RowGroupDataFetcher>               ,
+                Option                                 <
+                PolarsResult                           <
+                task_handles_ext::AbortOnDropHandle    <
+                PolarsResult                           <
+                RowGroupData      >      >      >      >
             )
     > + Send
 >>;
@@ -335,7 +324,7 @@ impl RowGroupDataStream {
 }
 
 impl futures::stream::Stream for RowGroupDataStream {
-    type Item = PolarsResult<async_executor::AbortOnDropHandle<PolarsResult<RowGroupData>>>;
+    type Item = PolarsResult<task_handles_ext::AbortOnDropHandle<PolarsResult<RowGroupData>>>;
 
     fn poll_next(
         mut self: std::pin::Pin<&mut Self>,

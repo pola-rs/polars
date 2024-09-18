@@ -16,6 +16,7 @@ use crate::async_primitives::connector::connector;
 use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
 use crate::morsel::get_ideal_morsel_size;
 use crate::nodes::{MorselSeq, TaskPriority};
+use crate::utils::task_handles_ext;
 
 impl ParquetSourceNode {
     /// # Panics
@@ -36,7 +37,7 @@ impl ParquetSourceNode {
         // Safety
         // * We dropped the receivers on the line above
         // * This function is only called once.
-        morsel_stream_task_handle.await
+        morsel_stream_task_handle.await.unwrap()
     }
 
     pub(super) fn shutdown(&self) -> impl Future<Output = PolarsResult<()>> {
@@ -61,15 +62,16 @@ impl ParquetSourceNode {
             .spawn(Self::shutdown_impl(async_task_data, self.verbose));
     }
 
-    /// Constructs the task that provides a morsel stream.
+    /// Constructs the task that distributes morsels across the engine pipelines.
     #[allow(clippy::type_complexity)]
-    pub(super) fn init_raw_morsel_stream(
+    pub(super) fn init_raw_morsel_distributor(
         &mut self,
     ) -> (
         Vec<crate::async_primitives::connector::Receiver<(DataFrame, MorselSeq, WaitToken)>>,
-        async_executor::AbortOnDropHandle<PolarsResult<()>>,
+        task_handles_ext::AbortOnDropHandle<PolarsResult<()>>,
     ) {
         let verbose = self.verbose;
+        let io_runtime = polars_io::pl_async::get_runtime();
 
         let use_statistics = self.options.use_statistics;
 
@@ -79,10 +81,7 @@ impl ParquetSourceNode {
         if let Some((_, 0)) = self.file_options.slice {
             return (
                 raw_morsel_receivers,
-                async_executor::AbortOnDropHandle::new(async_executor::spawn(
-                    TaskPriority::Low,
-                    std::future::ready(Ok(())),
-                )),
+                task_handles_ext::AbortOnDropHandle(io_runtime.spawn(std::future::ready(Ok(())))),
             );
         }
 
@@ -126,12 +125,9 @@ impl ParquetSourceNode {
         let row_group_decoder = self.init_row_group_decoder();
         let row_group_decoder = Arc::new(row_group_decoder);
 
-        // Processes row group metadata and spawns I/O tasks to fetch row group data. This is
-        // currently spawned onto the CPU runtime as it does not directly make any async I/O calls,
-        // but instead it potentially performs predicate/slice evaluation on metadata. If we observe
-        // that under heavy CPU load scenarios the I/O throughput drops due to this task not being
-        // scheduled we can change it to be a high priority task.
-        let morsel_stream_task_handle = async_executor::spawn(TaskPriority::Low, async move {
+        // Distributes morsels across pipelines. This does not perform any CPU or I/O bound work -
+        // it is purely a dispatch loop.
+        let raw_morsel_distributor_task_handle = io_runtime.spawn(async move {
             let slice_range = {
                 let Ok(slice) = normalized_slice_oneshot_rx.await else {
                     // If we are here then the producer probably errored.
@@ -177,7 +173,7 @@ impl ParquetSourceNode {
                 .into_stream()
                 .map(|x| async {
                     match x {
-                        Ok(handle) => handle.await,
+                        Ok(handle) => handle.await.unwrap(),
                         Err(e) => Err(e),
                     }
                 })
@@ -258,10 +254,10 @@ impl ParquetSourceNode {
             metadata_task_handle.await.unwrap()
         });
 
-        let morsel_stream_task_handle =
-            async_executor::AbortOnDropHandle::new(morsel_stream_task_handle);
+        let raw_morsel_distributor_task_handle =
+            task_handles_ext::AbortOnDropHandle(raw_morsel_distributor_task_handle);
 
-        (raw_morsel_receivers, morsel_stream_task_handle)
+        (raw_morsel_receivers, raw_morsel_distributor_task_handle)
     }
 
     /// Creates a `RowGroupDecoder` that turns `RowGroupData` into DataFrames.
