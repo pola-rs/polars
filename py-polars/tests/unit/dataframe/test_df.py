@@ -360,11 +360,8 @@ def test_sort_multi_output_exprs_01() -> None:
     ):
         df.sort("dts", "strs", nulls_last=[True, False, True])
 
-    with pytest.raises(
-        ComputeError,
-        match="No columns selected for sorting",
-    ):
-        df.sort(pl.col("^xxx$"))
+    # No columns selected - return original input.
+    assert_frame_equal(df, df.sort(pl.col("^xxx$")))
 
 
 @pytest.mark.parametrize(
