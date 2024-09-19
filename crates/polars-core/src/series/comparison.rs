@@ -10,7 +10,16 @@ macro_rules! impl_compare {
         let (lhs, rhs) = ($self, $rhs);
         validate_types(lhs.dtype(), rhs.dtype())?;
 
-        polars_ensure!(lhs.len() == rhs.len(), ShapeMismatch: "could not compare between two series of different length ({} != {})", lhs.len(), rhs.len());
+        polars_ensure!(
+            lhs.len() == rhs.len() ||
+
+            // Broadcast
+            lhs.len() == 1 ||
+            rhs.len() == 1,
+            ShapeMismatch: "could not compare between two series of different length ({} != {})",
+            lhs.len(),
+            rhs.len()
+        );
 
         #[cfg(feature = "dtype-categorical")]
         match (lhs.dtype(), rhs.dtype()) {
