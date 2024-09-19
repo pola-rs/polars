@@ -400,6 +400,10 @@ def test_empty_list_json() -> None:
     assert df.shape == (0, 0)
     assert isinstance(df, pl.DataFrame)
 
+    df = pl.read_json(b"[]")
+    assert df.shape == (0, 0)
+    assert isinstance(df, pl.DataFrame)
+
 
 def test_compressed_json() -> None:
     # shared setup
