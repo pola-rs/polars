@@ -286,7 +286,7 @@ where
                         return Ok(DataFrame::empty());
                     }
                 }
-                
+
                 // struct type
                 let dtype = if let Some(mut schema) = self.schema {
                     if let Some(overwrite) = self.schema_overwrite {
