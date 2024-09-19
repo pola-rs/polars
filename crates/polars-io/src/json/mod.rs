@@ -281,14 +281,12 @@ where
                 } else {
                     simd_json::to_borrowed_value(owned).map_err(to_compute_err)?
                 };
-                match &json_value {
-                    BorrowedValue::Array(array) => {
-                        if array.is_empty() {
-                            return Ok(DataFrame::empty());
-                        }
-                    },
-                    _ => {},
+                if let BorrowedValue::Array(array) = &json_value {
+                    if array.is_empty() & self.schema.is_none() & self.schema_overwrite.is_none() {
+                        return Ok(DataFrame::empty());
+                    }
                 }
+                
                 // struct type
                 let dtype = if let Some(mut schema) = self.schema {
                     if let Some(overwrite) = self.schema_overwrite {
