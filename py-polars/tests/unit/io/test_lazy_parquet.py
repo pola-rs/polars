@@ -478,6 +478,7 @@ def test_predicate_push_down_categorical_17744(tmp_path: Path) -> None:
         )
 
 
+@pytest.mark.write_disk
 @pytest.mark.parametrize("streaming", [True, False])
 def test_parquet_slice_pushdown_non_zero_offset(
     tmp_path: Path, streaming: bool
@@ -531,6 +532,7 @@ def test_parquet_slice_pushdown_non_zero_offset(
         )
 
 
+@pytest.mark.write_disk
 @pytest.mark.parametrize("streaming", [True, False])
 def test_parquet_row_groups_shift_bug_18739(tmp_path: Path, streaming: bool) -> None:
     tmp_path.mkdir(exist_ok=True)
@@ -563,3 +565,81 @@ def test_dsl2ir_cached_metadata(tmp_path: Path, streaming: bool) -> None:
 
     remove_metadata(path)
     assert_frame_equal(lf.collect(streaming=streaming), df)
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("streaming", [True, False])
+def test_parquet_unaligned_schema_read(tmp_path: Path, streaming: bool) -> None:
+    dfs = [
+        pl.DataFrame({"a": 1, "b": 10}),
+        pl.DataFrame({"b": 11, "a": 2}),
+        pl.DataFrame({"x": 3, "a": 3, "y": 3, "b": 12}),
+    ]
+
+    paths = [tmp_path / "1", tmp_path / "2", tmp_path / "3"]
+
+    for df, path in zip(dfs, paths):
+        df.write_parquet(path)
+
+    lf = pl.scan_parquet(paths)
+
+    assert_frame_equal(
+        lf.select("a").collect(streaming=streaming), pl.DataFrame({"a": [1, 2, 3]})
+    )
+
+    assert_frame_equal(
+        lf.select("b", "a").collect(streaming=streaming),
+        pl.DataFrame({"b": [10, 11, 12], "a": [1, 2, 3]}),
+    )
+
+    assert_frame_equal(
+        pl.scan_parquet(paths[:2]).collect(streaming=streaming),
+        pl.DataFrame({"a": [1, 2], "b": [10, 11]}),
+    )
+
+    assert_frame_equal(
+        lf.collect(streaming=streaming),
+        pl.DataFrame({"a": [1, 2, 3], "b": [10, 11, 12]}),
+    )
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("streaming", [True, False])
+def test_parquet_unaligned_schema_read_dtype_mismatch(
+    tmp_path: Path, streaming: bool
+) -> None:
+    dfs = [
+        pl.DataFrame({"a": 1, "b": 10}),
+        pl.DataFrame({"b": "11", "a": "2"}),
+    ]
+
+    paths = [tmp_path / "1", tmp_path / "2"]
+
+    for df, path in zip(dfs, paths):
+        df.write_parquet(path)
+
+    lf = pl.scan_parquet(paths)
+
+    with pytest.raises(pl.exceptions.SchemaError, match="data type mismatch"):
+        lf.collect(streaming=streaming)
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("streaming", [True, False])
+def test_parquet_unaligned_schema_read_missing_cols_from_first(
+    tmp_path: Path, streaming: bool
+) -> None:
+    dfs = [
+        pl.DataFrame({"a": 1, "b": 10}),
+        pl.DataFrame({"b": 11}),
+    ]
+
+    paths = [tmp_path / "1", tmp_path / "2"]
+
+    for df, path in zip(dfs, paths):
+        df.write_parquet(path)
+
+    lf = pl.scan_parquet(paths)
+
+    with pytest.raises(pl.exceptions.SchemaError, match="did not find column"):
+        lf.collect(streaming=streaming)

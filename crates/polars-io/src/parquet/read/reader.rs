@@ -15,6 +15,7 @@ pub use super::read_impl::BatchedParquetReader;
 use super::read_impl::{compute_row_group_range, read_parquet, FetchRowGroupsFromMmapReader};
 #[cfg(feature = "cloud")]
 use super::utils::materialize_empty_df;
+use super::utils::projected_arrow_schema_to_projection_indices;
 #[cfg(feature = "cloud")]
 use crate::cloud::CloudOptions;
 use crate::mmap::MmapBytesReader;
@@ -80,20 +81,23 @@ impl<R: MmapBytesReader> ParquetReader<R> {
         self
     }
 
-    /// Ensure the schema of the file matches the given schema. Calling this
-    /// after setting the projection will ensure only the projected indices
-    /// are checked.
-    pub fn check_schema(mut self, schema: &ArrowSchema) -> PolarsResult<Self> {
-        let self_schema = self.schema()?;
-        let self_schema = self_schema.as_ref();
+    /// Checks that the file contains all the columns in `projected_arrow_schema` with the same
+    /// dtype, and sets the projection indices.
+    pub fn with_projected_arrow_schema(
+        mut self,
+        first_schema: &ArrowSchema,
+        projected_arrow_schema: Option<&ArrowSchema>,
+    ) -> PolarsResult<Self> {
+        let schema = self.schema()?;
 
-        if let Some(projection) = self.projection.as_deref() {
-            ensure_matching_schema(
-                &schema.try_project_indices(projection)?,
-                &self_schema.try_project_indices(projection)?,
+        if let Some(projected_arrow_schema) = projected_arrow_schema {
+            self.projection = projected_arrow_schema_to_projection_indices(
+                schema.as_ref(),
+                projected_arrow_schema,
             )?;
         } else {
-            ensure_matching_schema(schema, self_schema)?;
+            self.projection =
+                projected_arrow_schema_to_projection_indices(schema.as_ref(), first_schema)?;
         }
 
         Ok(self)
@@ -288,17 +292,21 @@ impl ParquetAsyncReader {
         })
     }
 
-    pub async fn check_schema(mut self, schema: &ArrowSchema) -> PolarsResult<Self> {
-        let self_schema = self.schema().await?;
-        let self_schema = self_schema.as_ref();
+    pub async fn with_projected_arrow_schema(
+        mut self,
+        first_schema: &ArrowSchema,
+        projected_arrow_schema: Option<&ArrowSchema>,
+    ) -> PolarsResult<Self> {
+        let schema = self.schema().await?;
 
-        if let Some(projection) = self.projection.as_deref() {
-            ensure_matching_schema(
-                &schema.try_project_indices(projection)?,
-                &self_schema.try_project_indices(projection)?,
+        if let Some(projected_arrow_schema) = projected_arrow_schema {
+            self.projection = projected_arrow_schema_to_projection_indices(
+                schema.as_ref(),
+                projected_arrow_schema,
             )?;
         } else {
-            ensure_matching_schema(schema, self_schema)?;
+            self.projection =
+                projected_arrow_schema_to_projection_indices(schema.as_ref(), first_schema)?;
         }
 
         Ok(self)
