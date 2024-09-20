@@ -1,3 +1,5 @@
+import altair as alt
+
 import polars as pl
 
 
@@ -66,3 +68,9 @@ def test_empty_dataframe() -> None:
 
 def test_nameless_series() -> None:
     pl.Series([1, 2, 3]).plot.kde().to_json()
+
+
+def test_x_with_axis_18830() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6], "c": [7, 8, 9]})
+    result = df.plot.line(x=alt.X("a", axis=alt.Axis(labelAngle=-90))).to_dict()
+    assert result["encoding"]["tooltip"] == [{"field": "a", "type": "quantitative"}]
