@@ -244,13 +244,13 @@ To add a code block with code to be run in a shell with tabs for Python and Rust
 
 #### Adding a code block
 
-The snippets for Python and Rust code blocks are in the `docs/assets/src/python/` and `docs/assets/src/rust/` directories, respectively. To add a code snippet with Python or Rust code to a `.md` page, use the following format:
+The snippets for Python and Rust code blocks are in the `docs/source/src/python/` and `docs/source/src/rust/` directories, respectively. To add a code snippet with Python or Rust code to a `.md` page, use the following format:
 
 ```
 {{code_block('user-guide/io/cloud-storage','read_parquet',['read_parquet','read_csv'])}}
 ```
 
-- The first argument is a path to either or both files called `docs/assets/src/python/user-guide/io/cloud-storage.py` and `docs/assets/src/rust/user-guide/io/cloud-storage.rs`.
+- The first argument is a path to either or both files called `docs/source/src/python/user-guide/io/cloud-storage.py` and `docs/source/src/rust/user-guide/io/cloud-storage.rs`.
 - The second argument is the name given at the start and end of each snippet in the `.py` or `.rs` file
 - The third argument is a list of links to functions in the API docs. For each element of the list there must be a corresponding entry in `docs/source/_build/API_REFERENCE_LINKS.yml`
 
