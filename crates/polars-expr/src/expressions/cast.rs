@@ -13,14 +13,7 @@ pub struct CastExpr {
 
 impl CastExpr {
     fn finish(&self, input: &Series) -> PolarsResult<Series> {
-        let dtype = if input.dtype().is_list() && !self.dtype.is_nested() {
-            // Necessary for expressions that e.g. add UInt8 to List[Int64] to
-            // work.
-            &input.dtype().cast_leaf(self.dtype.clone())
-        } else {
-            &self.dtype
-        };
-        input.cast_with_options(dtype, self.options)
+        input.cast_with_options(&self.dtype, self.options)
     }
 }
 

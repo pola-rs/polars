@@ -56,11 +56,12 @@ fn process_list_arithmetic(
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<Option<AExpr>> {
     match (&type_left, &type_right) {
-        (DataType::List(inner), _) => {
-            if type_right != **inner {
+        (DataType::List(_), _) => {
+            let leaf = type_left.leaf_dtype();
+            if type_right != *leaf {
                 let new_node_right = expr_arena.add(AExpr::Cast {
                     expr: node_right,
-                    dtype: *inner.clone(),
+                    dtype: type_left.cast_leaf(leaf.clone()),
                     options: CastOptions::NonStrict,
                 });
 
@@ -73,11 +74,12 @@ fn process_list_arithmetic(
                 Ok(None)
             }
         },
-        (_, DataType::List(inner)) => {
-            if type_left != **inner {
+        (_, DataType::List(_)) => {
+            let leaf = type_right.leaf_dtype();
+            if type_left != *leaf {
                 let new_node_left = expr_arena.add(AExpr::Cast {
                     expr: node_left,
-                    dtype: *inner.clone(),
+                    dtype: type_right.cast_leaf(leaf.clone()),
                     options: CastOptions::NonStrict,
                 });
 
