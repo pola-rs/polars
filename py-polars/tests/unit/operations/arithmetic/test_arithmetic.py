@@ -646,7 +646,9 @@ def test_list_arithmetic_same_size(
             pl.Series("a", [[1, 2], [3]]),
             pl.Series("uint8", [[2, 2], [4]], dtype=pl.List(pl.UInt8())),
             pl.Series("nested", [[[1, 2]], [[3]]]),
-            pl.Series("nested_uint8", [[[1, 2]], [[3]]], dtype=pl.List(pl.List(pl.UInt8()))),
+            pl.Series(
+                "nested_uint8", [[[1, 2]], [[3]]], dtype=pl.List(pl.List(pl.UInt8()))
+            ),
         ]
     )
     # Expr-based arithmetic:
