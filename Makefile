@@ -25,7 +25,7 @@ requirements: .venv  ## Install/refresh Python project requirements
 	   -r py-polars/requirements-dev.txt \
 	   -r py-polars/requirements-lint.txt \
 	   -r py-polars/docs/requirements-docs.txt \
-	   -r docs/requirements.txt
+	   -r docs/source/requirements.txt
 
 .PHONY: requirements-all
 requirements-all: .venv  ## Install/refresh all Python requirements (including those needed for CI tests)

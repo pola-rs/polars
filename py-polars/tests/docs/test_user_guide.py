@@ -13,7 +13,7 @@ mpl.use("Agg")
 
 # Get paths to Python code snippets
 repo_root = Path(__file__).parent.parent.parent.parent
-python_snippets_dir = repo_root / "docs" / "src" / "python"
+python_snippets_dir = repo_root / "docs" / "source" / "src" / "python"
 snippet_paths = list(python_snippets_dir.rglob("*.py"))
 
 # Skip visualization snippets
