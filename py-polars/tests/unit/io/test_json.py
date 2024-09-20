@@ -423,7 +423,7 @@ def test_compressed_json() -> None:
 
 
 def test_empty_list_json() -> None:
-    df = pl.read_json(io.StringIO("[]"))
+    df = pl.read_json(io.StringIO("[]"))  #
     assert df.shape == (0, 0)
     assert isinstance(df, pl.DataFrame)
 
