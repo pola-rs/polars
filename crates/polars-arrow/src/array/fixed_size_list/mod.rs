@@ -226,8 +226,7 @@ impl Splitable for FixedSizeListArray {
     unsafe fn _split_at_unchecked(&self, offset: usize) -> (Self, Self) {
         let (lhs_values, rhs_values) =
             unsafe { self.values.split_at_boxed_unchecked(offset * self.size) };
-        let (lhs_validity, rhs_validity) =
-            unsafe { self.validity.split_at_unchecked(offset * self.size) };
+        let (lhs_validity, rhs_validity) = unsafe { self.validity.split_at_unchecked(offset) };
 
         let size = self.size;
 
