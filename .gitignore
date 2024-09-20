@@ -39,5 +39,5 @@ target/
 *.tbl
 
 # Project
-/docs/docs-res/data/
-/docs/docs-res/people.md
+/docs/assets/data/
+/docs/assets/people.md
