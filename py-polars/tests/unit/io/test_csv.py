@@ -2263,6 +2263,17 @@ def test_write_csv_appending_17543(tmp_path: Path) -> None:
         assert pl.read_csv(f).equals(df)
 
 
+def test_write_csv_passing_params_18825() -> None:
+    df = pl.DataFrame({"c1": [1, 2], "c2": [3, 4]})
+    buffer = io.StringIO()
+    df.write_csv(buffer, separator="\t", include_header=False)
+
+    result_str = buffer.getvalue()
+    expected_str = "1\t3\n2\t4\n"
+
+    assert result_str == expected_str
+
+
 @pytest.mark.parametrize(
     ("dtype", "df"),
     [

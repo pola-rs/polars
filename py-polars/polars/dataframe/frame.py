@@ -2859,7 +2859,22 @@ class DataFrame:
 
         def write_csv_to_string() -> str:
             with BytesIO() as buf:
-                self.write_csv(buf)
+                self.write_csv(
+                    buf,
+                    include_bom=include_bom,
+                    include_header=include_header,
+                    separator=separator,
+                    line_terminator=line_terminator,
+                    quote_char=quote_char,
+                    batch_size=batch_size,
+                    datetime_format=datetime_format,
+                    date_format=date_format,
+                    time_format=time_format,
+                    float_scientific=float_scientific,
+                    float_precision=float_precision,
+                    null_value=null_value,
+                    quote_style=quote_style,
+                )
                 csv_bytes = buf.getvalue()
             return csv_bytes.decode("utf8")
 
