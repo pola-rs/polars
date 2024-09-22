@@ -1,5 +1,3 @@
-use std::any::Any;
-
 use polars::prelude::*;
 use pyo3::prelude::*;
 use pyo3::types::PyFloat;
@@ -170,7 +168,7 @@ impl PyExpr {
             weights,
             min_periods,
             center,
-            fn_params: Some(Arc::new(RollingVarParams { ddof }) as Arc<dyn Any + Send + Sync>),
+            fn_params: Some(RollingFnParams::Var(RollingVarParams { ddof })),
         };
 
         self.inner.clone().rolling_std(options).into()
@@ -189,7 +187,7 @@ impl PyExpr {
             window_size: Duration::parse(window_size),
             min_periods,
             closed_window: closed.0,
-            fn_params: Some(Arc::new(RollingVarParams { ddof }) as Arc<dyn Any + Send + Sync>),
+            fn_params: Some(RollingFnParams::Var(RollingVarParams { ddof })),
         };
 
         self.inner.clone().rolling_std_by(by.inner, options).into()
@@ -210,7 +208,7 @@ impl PyExpr {
             weights,
             min_periods,
             center,
-            fn_params: Some(Arc::new(RollingVarParams { ddof }) as Arc<dyn Any + Send + Sync>),
+            fn_params: Some(RollingFnParams::Var(RollingVarParams { ddof })),
         };
 
         self.inner.clone().rolling_var(options).into()
@@ -229,7 +227,7 @@ impl PyExpr {
             window_size: Duration::parse(window_size),
             min_periods,
             closed_window: closed.0,
-            fn_params: Some(Arc::new(RollingVarParams { ddof }) as Arc<dyn Any + Send + Sync>),
+            fn_params: Some(RollingFnParams::Var(RollingVarParams { ddof })),
         };
 
         self.inner.clone().rolling_var_by(by.inner, options).into()

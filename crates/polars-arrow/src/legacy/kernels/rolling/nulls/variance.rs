@@ -42,7 +42,7 @@ impl<'a, T: NativeType + IsFloat + Add<Output = T> + Sub<Output = T> + Mul<Outpu
         validity: &'a Bitmap,
         start: usize,
         end: usize,
-        _params: DynArgs,
+        _params: Option<RollingFnParams>,
     ) -> Self {
         let mut out = Self {
             slice,
@@ -153,14 +153,17 @@ impl<
         validity: &'a Bitmap,
         start: usize,
         end: usize,
-        params: DynArgs,
+        params: Option<RollingFnParams>,
     ) -> Self {
         Self {
             mean: MeanWindow::new(slice, validity, start, end, None),
             sum_of_squares: SumSquaredWindow::new(slice, validity, start, end, None),
             ddof: match params {
                 None => 1,
-                Some(pars) => pars.downcast_ref::<RollingVarParams>().unwrap().ddof,
+                Some(pars) => match pars {
+                    RollingFnParams::Var(p) => p.ddof,
+                    _ => unreachable!("expected Var params"),
+                },
             },
         }
     }
@@ -197,7 +200,7 @@ pub fn rolling_var<T>(
     min_periods: usize,
     center: bool,
     weights: Option<&[f64]>,
-    params: DynArgs,
+    params: Option<RollingFnParams>,
 ) -> ArrayRef
 where
     T: NativeType + std::iter::Sum<T> + Zero + AddAssign + SubAssign + IsFloat + Float,

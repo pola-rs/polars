@@ -65,7 +65,7 @@ pub fn _rolling_apply_agg_window_nulls<'a, Agg, T, O>(
     values: &'a [T],
     validity: &'a Bitmap,
     offsets: O,
-    params: DynArgs,
+    params: Option<RollingFnParams>,
 ) -> PrimitiveArray<T>
 where
     O: Iterator<Item = (IdxSize, IdxSize)> + TrustedLen,
@@ -120,7 +120,7 @@ where
 pub fn _rolling_apply_agg_window_no_nulls<'a, Agg, T, O>(
     values: &'a [T],
     offsets: O,
-    params: DynArgs,
+    params: Option<RollingFnParams>,
 ) -> PrimitiveArray<T>
 where
     // items (offset, len) -> so offsets are offset, offset + len
@@ -388,7 +388,7 @@ where
                     None => _rolling_apply_agg_window_no_nulls::<QuantileWindow<_>, _, _>(
                         values,
                         offset_iter,
-                        Some(Arc::new(RollingQuantileParams {
+                        Some(RollingFnParams::Quantile(RollingQuantileParams {
                             prob: quantile,
                             interpol,
                         })),
@@ -398,7 +398,7 @@ where
                             values,
                             validity,
                             offset_iter,
-                            Some(Arc::new(RollingQuantileParams {
+                            Some(RollingFnParams::Quantile(RollingQuantileParams {
                                 prob: quantile,
                                 interpol,
                             })),
@@ -797,14 +797,14 @@ where
                         None => _rolling_apply_agg_window_no_nulls::<VarWindow<_>, _, _>(
                             values,
                             offset_iter,
-                            Some(Arc::new(RollingVarParams { ddof })),
+                            Some(RollingFnParams::Var(RollingVarParams { ddof })),
                         ),
                         Some(validity) => {
                             _rolling_apply_agg_window_nulls::<rolling::nulls::VarWindow<_>, _, _>(
                                 values,
                                 validity,
                                 offset_iter,
-                                Some(Arc::new(RollingVarParams { ddof })),
+                                Some(RollingFnParams::Var(RollingVarParams { ddof })),
                             )
                         },
                     };
@@ -862,14 +862,14 @@ where
                         None => _rolling_apply_agg_window_no_nulls::<VarWindow<_>, _, _>(
                             values,
                             offset_iter,
-                            Some(Arc::new(RollingVarParams { ddof })),
+                            Some(RollingFnParams::Var(RollingVarParams { ddof })),
                         ),
                         Some(validity) => {
                             _rolling_apply_agg_window_nulls::<rolling::nulls::VarWindow<_>, _, _>(
                                 values,
                                 validity,
                                 offset_iter,
-                                Some(Arc::new(RollingVarParams { ddof })),
+                                Some(RollingFnParams::Var(RollingVarParams { ddof })),
                             )
                         },
                     };

@@ -21,7 +21,7 @@ use crate::legacy::error::PolarsResult;
 use crate::types::NativeType;
 
 pub trait RollingAggWindowNoNulls<'a, T: NativeType> {
-    fn new(slice: &'a [T], start: usize, end: usize, params: DynArgs) -> Self;
+    fn new(slice: &'a [T], start: usize, end: usize, params: Option<RollingFnParams>) -> Self;
 
     /// Update and recompute the window
     ///
@@ -36,7 +36,7 @@ pub(super) fn rolling_apply_agg_window<'a, Agg, T, Fo>(
     window_size: usize,
     min_periods: usize,
     det_offsets_fn: Fo,
-    params: DynArgs,
+    params: Option<RollingFnParams>,
 ) -> PolarsResult<ArrayRef>
 where
     Fo: Fn(Idx, WindowSize, Len) -> (Start, End),
