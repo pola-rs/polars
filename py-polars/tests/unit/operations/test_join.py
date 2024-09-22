@@ -1036,3 +1036,49 @@ def test_join_coalesce_not_supported_warning() -> None:
     )
 
     assert_frame_equal(expect, got, check_row_order=False)
+
+
+@pytest.mark.parametrize(
+    ("on_args"),
+    [
+        {"on": "a", "left_on": "a"},
+        {"on": "a", "right_on": "a"},
+        {"on": "a", "left_on": "a", "right_on": "a"},
+    ],
+)
+def test_join_on_and_left_right_on(on_args: dict[str, str]) -> None:
+    df1 = pl.DataFrame({"a": [1], "b": [2]})
+    df2 = pl.DataFrame({"a": [1], "c": [3]})
+    msg = "cannot use 'on' in conjunction with 'left_on' or 'right_on'"
+    with pytest.raises(ValueError, match=msg):
+        df1.join(df2, **on_args)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("on_args"),
+    [
+        {"left_on": "a"},
+        {"right_on": "a"},
+    ],
+)
+def test_join_only_left_or_right_on(on_args: dict[str, str]) -> None:
+    df1 = pl.DataFrame({"a": [1]})
+    df2 = pl.DataFrame({"a": [1]})
+    msg = "'left_on' requires corresponding 'right_on'"
+    with pytest.raises(ValueError, match=msg):
+        df1.join(df2, **on_args)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("on_args"),
+    [
+        {"on": "a"},
+        {"left_on": "a", "right_on": "a"},
+    ],
+)
+def test_cross_join_no_on_keys(on_args: dict[str, str]) -> None:
+    df1 = pl.DataFrame({"a": [1, 2]})
+    df2 = pl.DataFrame({"b": [3, 4]})
+    msg = "cross join should not pass join keys"
+    with pytest.raises(ValueError, match=msg):
+        df1.join(df2, how="cross", **on_args)  # type: ignore[arg-type]

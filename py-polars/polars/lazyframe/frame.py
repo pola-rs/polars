@@ -4502,6 +4502,17 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             msg = f"expected `other` join table to be a LazyFrame, not a {type(other).__name__!r}"
             raise TypeError(msg)
 
+        uses_on = on is not None
+        uses_left_on = left_on is not None
+        uses_right_on = right_on is not None
+        uses_lr_on = uses_left_on or uses_right_on
+        if uses_on and uses_lr_on:
+            msg = "cannot use 'on' in conjunction with 'left_on' or 'right_on'"
+            raise ValueError(msg)
+        elif uses_left_on != uses_right_on:
+            msg = "'left_on' requires corresponding 'right_on'"
+            raise ValueError(msg)
+
         if how == "outer":
             how = "full"
             issue_deprecation_warning(
@@ -4515,9 +4526,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 "Use of `how='outer_coalesce'` should be replaced with `how='full', coalesce=True`.",
                 version="0.20.29",
             )
-
         elif how == "cross":
-            if left_on is not None or right_on is not None:
+            if uses_on or uses_lr_on:
                 msg = "cross join should not pass join keys"
                 raise ValueError(msg)
             return self._from_pyldf(
@@ -4534,11 +4544,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 )
             )
 
-        if on is not None:
+        if uses_on:
             pyexprs = parse_into_list_of_expressions(on)
             pyexprs_left = pyexprs
             pyexprs_right = pyexprs
-        elif left_on is not None and right_on is not None:
+        elif uses_lr_on:
             pyexprs_left = parse_into_list_of_expressions(left_on)
             pyexprs_right = parse_into_list_of_expressions(right_on)
         else:
