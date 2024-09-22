@@ -103,26 +103,14 @@ def test_streaming_joins() -> None:
 
 
 def test_streaming_cross_join_empty() -> None:
-    df1 = pl.LazyFrame(
-        data={
-            "col1": ["a"],
-        }
-    )
+    df1 = pl.LazyFrame(data={"col1": ["a"]})
 
     df2 = pl.LazyFrame(
-        data={
-            "col1": [],
-        },
-        schema={
-            "col1": str,
-        },
+        data={"col1": []},
+        schema={"col1": str},
     )
 
-    out = df1.join(
-        df2,
-        how="cross",
-        on="col1",
-    ).collect(streaming=True)
+    out = df1.join(df2, how="cross").collect(streaming=True)
     assert out.shape == (0, 2)
     assert out.columns == ["col1", "col1_right"]
 
