@@ -671,6 +671,49 @@ fn any_values_to_array(
 }
 
 #[cfg(feature = "dtype-struct")]
+fn _any_values_to_struct<'a>(
+    av_fields: &[Field],
+    av_values: &[AnyValue<'a>],
+    field_index: usize,
+    field: &Field,
+    fields: &[Field],
+    field_avs: &mut Vec<AnyValue<'a>>,
+) {
+    // TODO: Optimize.
+
+    let mut append_by_search = || {
+        // Search for the name.
+        if let Some(i) = av_fields
+            .iter()
+            .position(|av_fld| av_fld.name == field.name)
+        {
+            field_avs.push(av_values[i].clone());
+            return;
+        }
+        field_avs.push(AnyValue::Null)
+    };
+
+    // All fields are available in this single value.
+    // We can use the index to get value.
+    if fields.len() == av_fields.len() {
+        if fields.iter().zip(av_fields.iter()).any(|(l, r)| l != r) {
+            append_by_search()
+        } else {
+            let av_val = av_values
+                .get(field_index)
+                .cloned()
+                .unwrap_or(AnyValue::Null);
+            field_avs.push(av_val)
+        }
+    }
+    // Not all fields are available, we search the proper field.
+    else {
+        // Search for the name.
+        append_by_search()
+    }
+}
+
+#[cfg(feature = "dtype-struct")]
 fn any_values_to_struct(
     values: &[AnyValue],
     fields: &[Field],
@@ -691,37 +734,13 @@ fn any_values_to_struct(
         for av in values.iter() {
             match av {
                 AnyValue::StructOwned(payload) => {
-                    // TODO: Optimize.
                     let av_fields = &payload.1;
                     let av_values = &payload.0;
-
-                    let mut append_by_search = || {
-                        // Search for the name.
-                        if let Some(i) = av_fields
-                            .iter()
-                            .position(|av_fld| av_fld.name == field.name)
-                        {
-                            field_avs.push(av_values[i].clone());
-                            return;
-                        }
-                        field_avs.push(AnyValue::Null)
-                    };
-
-                    // All fields are available in this single value.
-                    // We can use the index to get value.
-                    if fields.len() == av_fields.len() {
-                        if fields.iter().zip(av_fields.iter()).any(|(l, r)| l != r) {
-                            append_by_search()
-                        } else {
-                            let av_val = av_values.get(i).cloned().unwrap_or(AnyValue::Null);
-                            field_avs.push(av_val)
-                        }
-                    }
-                    // Not all fields are available, we search the proper field.
-                    else {
-                        // Search for the name.
-                        append_by_search()
-                    }
+                    _any_values_to_struct(av_fields, av_values, i, field, fields, &mut field_avs);
+                },
+                AnyValue::Struct(_, _, av_fields) => {
+                    let av_values: Vec<_> = av._iter_struct_av().collect();
+                    _any_values_to_struct(av_fields, &av_values, i, field, fields, &mut field_avs);
                 },
                 _ => {
                     has_outer_validity = true;
