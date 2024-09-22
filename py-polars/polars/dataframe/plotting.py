@@ -31,9 +31,9 @@ if TYPE_CHECKING:
 
 
 def _maybe_extract_shorthand(encoding: Encoding) -> Encoding:
-    if isinstance(encoding, alt.SchemaBase) and hasattr(encoding, "shorthand"):
+    if isinstance(encoding, alt.SchemaBase):
         # e.g. for `alt.X('x:Q', axis=alt.Axis(labelAngle=30))`, return `'x:Q'`
-        return encoding.shorthand
+        return getattr(encoding, "shorthand", encoding)
     return encoding
 
 
