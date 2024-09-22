@@ -811,6 +811,11 @@ fn expand_filter(
         | Expr::DtypeColumn(_)
         | Expr::IndexColumn(_)
         | Expr::Nth(_) => true,
+        #[cfg(feature = "dtype-struct")]
+        Expr::Function {
+            function: FunctionExpr::StructExpr(StructFunction::FieldByIndex(_)),
+            ..
+        } => true,
         _ => false,
     }) {
         let mut rewritten = rewrite_projections(vec![predicate], &schema, &[], opt_flags)?;
