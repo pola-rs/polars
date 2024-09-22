@@ -597,10 +597,11 @@ def test_parquet_unaligned_schema_read(tmp_path: Path, streaming: bool) -> None:
         pl.DataFrame({"a": [1, 2], "b": [10, 11]}),
     )
 
-    assert_frame_equal(
-        lf.collect(streaming=streaming),
-        pl.DataFrame({"a": [1, 2, 3], "b": [10, 11, 12]}),
-    )
+    with pytest.raises(
+        pl.exceptions.SchemaError,
+        match="parquet file contained extra columns and no selection was given",
+    ):
+        lf.collect(streaming=streaming)
 
 
 @pytest.mark.write_disk

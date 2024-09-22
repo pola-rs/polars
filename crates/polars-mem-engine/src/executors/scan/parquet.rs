@@ -216,7 +216,7 @@ impl ParquetExec {
                             .with_slice(Some(slice))
                             .with_row_index(row_index)
                             .with_predicate(predicate.clone())
-                            .with_projected_arrow_schema(
+                            .with_arrow_schema_projection(
                                 first_schema.as_ref(),
                                 projected_arrow_schema.as_deref(),
                             )?
@@ -421,7 +421,7 @@ impl ParquetExec {
                         let df = reader
                             .with_slice(Some(slice))
                             .with_row_index(row_index)
-                            .with_projected_arrow_schema(
+                            .with_arrow_schema_projection(
                                 first_schema.as_ref(),
                                 projected_arrow_schema.as_deref(),
                             )

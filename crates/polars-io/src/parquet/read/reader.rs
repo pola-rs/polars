@@ -83,7 +83,7 @@ impl<R: MmapBytesReader> ParquetReader<R> {
 
     /// Checks that the file contains all the columns in `projected_arrow_schema` with the same
     /// dtype, and sets the projection indices.
-    pub fn with_projected_arrow_schema(
+    pub fn with_arrow_schema_projection(
         mut self,
         first_schema: &ArrowSchema,
         projected_arrow_schema: Option<&ArrowSchema>,
@@ -96,6 +96,13 @@ impl<R: MmapBytesReader> ParquetReader<R> {
                 projected_arrow_schema,
             )?;
         } else {
+            if schema.len() > first_schema.len() {
+                polars_bail!(
+                   SchemaMismatch:
+                   "parquet file contained extra columns and no selection was given"
+                )
+            }
+
             self.projection =
                 projected_arrow_schema_to_projection_indices(schema.as_ref(), first_schema)?;
         }
@@ -292,7 +299,7 @@ impl ParquetAsyncReader {
         })
     }
 
-    pub async fn with_projected_arrow_schema(
+    pub async fn with_arrow_schema_projection(
         mut self,
         first_schema: &ArrowSchema,
         projected_arrow_schema: Option<&ArrowSchema>,
@@ -305,6 +312,13 @@ impl ParquetAsyncReader {
                 projected_arrow_schema,
             )?;
         } else {
+            if schema.len() > first_schema.len() {
+                polars_bail!(
+                   SchemaMismatch:
+                   "parquet file contained extra columns and no selection was given"
+                )
+            }
+
             self.projection =
                 projected_arrow_schema_to_projection_indices(schema.as_ref(), first_schema)?;
         }
