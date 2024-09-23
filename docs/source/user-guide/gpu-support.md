@@ -15,7 +15,10 @@ See the [RAPIDS installation guide](https://docs.rapids.ai/install#system-req) f
 You can install the GPU backend for Polars with a feature flag as part of a normal [installation](installation.md).
 
 === ":fontawesome-brands-python: Python"
-`bash pip install --extra-index-url=https://pypi.nvidia.com polars[gpu]`
+
+```bash
+pip install --extra-index-url=https://pypi.nvidia.com polars[gpu]
+```
 
 !!! note Installation on a CUDA 11 system
 
@@ -163,4 +166,4 @@ GPU execution is only available in the Lazy API, so materialized DataFrames will
 
 ### Providing feedback
 
-Please report issues, and missing features, on the Polars [issue tracker](../development/contributing/index.md).
+Please report issues, and missing features, on the Polars [issue tracker](https://github.com/pola-rs/polars/issues).
