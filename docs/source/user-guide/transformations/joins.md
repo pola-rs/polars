@@ -218,11 +218,7 @@ If you want to make sure that only quotes within a certain time range are joined
 the `tolerance` argument. In this case we want to make sure that the last preceding quote is within 1 minute of the
 trade so we set `tolerance = "1m"`.
 
-=== ":fontawesome-brands-python: Python"
-
-```python
---8<-- "python/user-guide/transformations/joins.py:asof2"
-```
+{{code_block('user-guide/transformations/joins','asof2',['join_asof'])}}
 
 ```python exec="on" result="text" session="user-guide/transformations/joins"
 --8<-- "python/user-guide/transformations/joins.py:asof2"
