@@ -53,6 +53,25 @@ fn lists_same_shapes(left: &ArrayRef, right: &ArrayRef) -> bool {
     }
 }
 
+fn broadcast_list(lhs: &ListChunked, rhs: &Series) -> PolarsResult<(ListChunked, Series)> {
+    let out = match (lhs.len(), rhs.len()) {
+        (1, _) => (lhs.new_from_index(0, rhs.len()), rhs.clone()),
+        (_, 1) => {
+            // Numeric scalars will be broadcasted implicitly without intermediate allocation.
+            if rhs.dtype().is_numeric() {
+                (lhs.clone(), rhs.clone())
+            } else {
+                (lhs.clone(), rhs.new_from_index(0, lhs.len()))
+            }
+        },
+        (a, b) if a == b => (lhs.clone(), rhs.clone()),
+        _ => {
+            polars_bail!(InvalidOperation: "can only do arithmetic operations on lists of the same size; got {} and {}", lhs.dtype(), rhs.dtype())
+        },
+    };
+    Ok(out)
+}
+
 impl ListChunked {
     /// Helper function for NumOpsDispatchInner implementation for ListChunked.
     ///
@@ -63,6 +82,7 @@ impl ListChunked {
         op: &dyn Fn(&Series, &Series) -> PolarsResult<Series>,
         has_nulls: Option<bool>,
     ) -> PolarsResult<Series> {
+        let (lhs, rhs) = broadcast_list(self, rhs)?;
         polars_ensure!(
             self.len() == rhs.len(),
             InvalidOperation: "can only do arithmetic operations on Series of the same size; got {} and {}",
