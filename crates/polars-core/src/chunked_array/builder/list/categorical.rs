@@ -1,9 +1,7 @@
-use ahash::RandomState;
-
 use super::*;
 
 pub fn create_categorical_chunked_listbuilder(
-    name: &str,
+    name: PlSmallStr,
     ordering: CategoricalOrdering,
     capacity: usize,
     values_capacity: usize,
@@ -35,7 +33,7 @@ pub struct ListEnumCategoricalChunkedBuilder {
 
 impl ListEnumCategoricalChunkedBuilder {
     pub(super) fn new(
-        name: &str,
+        name: PlSmallStr,
         ordering: CategoricalOrdering,
         capacity: usize,
         values_capacity: usize,
@@ -88,12 +86,12 @@ struct KeyWrapper(u32);
 
 impl ListLocalCategoricalChunkedBuilder {
     #[inline]
-    pub fn get_hash_builder() -> RandomState {
-        RandomState::with_seed(0)
+    pub fn get_hash_builder() -> PlRandomState {
+        PlRandomState::with_seed(0)
     }
 
     pub(super) fn new(
-        name: &str,
+        name: PlSmallStr,
         ordering: CategoricalOrdering,
         capacity: usize,
         values_capacity: usize,
@@ -208,7 +206,7 @@ struct ListGlobalCategoricalChunkedBuilder {
 
 impl ListGlobalCategoricalChunkedBuilder {
     pub(super) fn new(
-        name: &str,
+        name: PlSmallStr,
         ordering: CategoricalOrdering,
         capacity: usize,
         values_capacity: usize,

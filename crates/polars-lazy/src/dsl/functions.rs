@@ -2,6 +2,7 @@
 //!
 //! Function on multiple expressions.
 //!
+
 use polars_core::prelude::*;
 pub use polars_plan::dsl::functions::*;
 use polars_plan::prelude::UnionArgs;
@@ -28,8 +29,10 @@ pub(crate) fn concat_impl<L: AsRef<[LazyFrame]>>(
     lps.push(lf.logical_plan);
 
     for lf in &mut inputs[1..] {
-        // ensure we enable file caching if any lf has it enabled
-        opt_state.file_caching |= lf.opt_state.file_caching;
+        // Ensure we enable file caching if any lf has it enabled.
+        if lf.opt_state.contains(OptFlags::FILE_CACHING) {
+            opt_state |= OptFlags::FILE_CACHING;
+        }
         let lp = std::mem::take(&mut lf.logical_plan);
         lps.push(lp)
     }
@@ -63,8 +66,10 @@ pub fn concat_lf_horizontal<L: AsRef<[LazyFrame]>>(
         )?;
 
     for lf in &lfs[1..] {
-        // ensure we enable file caching if any lf has it enabled
-        opt_state.file_caching |= lf.opt_state.file_caching;
+        // Ensure we enable file caching if any lf has it enabled.
+        if lf.opt_state.contains(OptFlags::FILE_CACHING) {
+            opt_state |= OptFlags::FILE_CACHING;
+        }
     }
 
     let options = HConcatOptions {

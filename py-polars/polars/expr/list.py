@@ -25,7 +25,7 @@ class ExprListNameSpace:
 
     _accessor = "list"
 
-    def __init__(self, expr: Expr):
+    def __init__(self, expr: Expr) -> None:
         self._pyexpr = expr._pyexpr
 
     def __getitem__(self, item: int) -> Expr:
@@ -1005,7 +1005,7 @@ class ExprListNameSpace:
 
         See Also
         --------
-        ExprNameSpace.reshape: Reshape this Expr to a flat Series or a Series of Lists.
+        Expr.reshape: Reshape this Expr to a flat Series or a Series of Lists.
 
         Examples
         --------

@@ -1,8 +1,8 @@
 use std::io::Read;
 
-use ahash::AHashMap;
 use arrow_format::ipc::planus::ReadAsRoot;
 use polars_error::{polars_bail, polars_err, PolarsError, PolarsResult};
+use polars_utils::aliases::PlHashMap;
 
 use super::super::CONTINUATION_MARKER;
 use super::common::*;
@@ -93,7 +93,7 @@ fn read_next<R: Read>(
     dictionaries: &mut Dictionaries,
     message_buffer: &mut Vec<u8>,
     data_buffer: &mut Vec<u8>,
-    projection: &Option<(Vec<usize>, AHashMap<usize, usize>, ArrowSchema)>,
+    projection: &Option<(Vec<usize>, PlHashMap<usize, usize>, ArrowSchema)>,
     scratch: &mut Vec<u8>,
 ) -> PolarsResult<Option<StreamState>> {
     // determine metadata length
@@ -167,7 +167,7 @@ fn read_next<R: Read>(
 
             let chunk = read_record_batch(
                 batch,
-                &metadata.schema.fields,
+                &metadata.schema,
                 &metadata.ipc_schema,
                 projection.as_ref().map(|x| x.0.as_ref()),
                 None,
@@ -201,7 +201,7 @@ fn read_next<R: Read>(
 
             read_dictionary(
                 batch,
-                &metadata.schema.fields,
+                &metadata.schema,
                 &metadata.ipc_schema,
                 dictionaries,
                 &mut dict_reader,
@@ -238,7 +238,7 @@ pub struct StreamReader<R: Read> {
     finished: bool,
     data_buffer: Vec<u8>,
     message_buffer: Vec<u8>,
-    projection: Option<(Vec<usize>, AHashMap<usize, usize>, ArrowSchema)>,
+    projection: Option<(Vec<usize>, PlHashMap<usize, usize>, ArrowSchema)>,
     scratch: Vec<u8>,
 }
 
@@ -250,11 +250,7 @@ impl<R: Read> StreamReader<R> {
     /// To check if the reader is done, use `is_finished(self)`
     pub fn new(reader: R, metadata: StreamMetadata, projection: Option<Vec<usize>>) -> Self {
         let projection = projection.map(|projection| {
-            let (p, h, fields) = prepare_projection(&metadata.schema.fields, projection);
-            let schema = ArrowSchema {
-                fields,
-                metadata: metadata.schema.metadata.clone(),
-            };
+            let (p, h, schema) = prepare_projection(&metadata.schema, projection);
             (p, h, schema)
         });
 

@@ -30,17 +30,22 @@ where
                 if let Some(value) = rhs.get(0) {
                     self.equal(value)
                 } else {
-                    BooleanChunked::full_null("", self.len())
+                    BooleanChunked::full_null(PlSmallStr::EMPTY, self.len())
                 }
             },
             (1, _) => {
                 if let Some(value) = self.get(0) {
                     rhs.equal(value)
                 } else {
-                    BooleanChunked::full_null("", rhs.len())
+                    BooleanChunked::full_null(PlSmallStr::EMPTY, rhs.len())
                 }
             },
-            _ => arity::binary_mut_values(self, rhs, |a, b| a.tot_eq_kernel(b).into(), ""),
+            _ => arity::binary_mut_values(
+                self,
+                rhs,
+                |a, b| a.tot_eq_kernel(b).into(),
+                PlSmallStr::EMPTY,
+            ),
         }
     }
 
@@ -65,7 +70,7 @@ where
                 self,
                 rhs,
                 |a, b| a.tot_eq_missing_kernel(b).into(),
-                "",
+                PlSmallStr::EMPTY,
             ),
         }
     }
@@ -77,17 +82,22 @@ where
                 if let Some(value) = rhs.get(0) {
                     self.not_equal(value)
                 } else {
-                    BooleanChunked::full_null("", self.len())
+                    BooleanChunked::full_null(PlSmallStr::EMPTY, self.len())
                 }
             },
             (1, _) => {
                 if let Some(value) = self.get(0) {
                     rhs.not_equal(value)
                 } else {
-                    BooleanChunked::full_null("", rhs.len())
+                    BooleanChunked::full_null(PlSmallStr::EMPTY, rhs.len())
                 }
             },
-            _ => arity::binary_mut_values(self, rhs, |a, b| a.tot_ne_kernel(b).into(), ""),
+            _ => arity::binary_mut_values(
+                self,
+                rhs,
+                |a, b| a.tot_ne_kernel(b).into(),
+                PlSmallStr::EMPTY,
+            ),
         }
     }
 
@@ -112,7 +122,7 @@ where
                 self,
                 rhs,
                 |a, b| a.tot_ne_missing_kernel(b).into(),
-                "",
+                PlSmallStr::EMPTY,
             ),
         }
     }
@@ -124,17 +134,22 @@ where
                 if let Some(value) = rhs.get(0) {
                     self.lt(value)
                 } else {
-                    BooleanChunked::full_null("", self.len())
+                    BooleanChunked::full_null(PlSmallStr::EMPTY, self.len())
                 }
             },
             (1, _) => {
                 if let Some(value) = self.get(0) {
                     rhs.gt(value)
                 } else {
-                    BooleanChunked::full_null("", rhs.len())
+                    BooleanChunked::full_null(PlSmallStr::EMPTY, rhs.len())
                 }
             },
-            _ => arity::binary_mut_values(self, rhs, |a, b| a.tot_lt_kernel(b).into(), ""),
+            _ => arity::binary_mut_values(
+                self,
+                rhs,
+                |a, b| a.tot_lt_kernel(b).into(),
+                PlSmallStr::EMPTY,
+            ),
         }
     }
 
@@ -145,17 +160,22 @@ where
                 if let Some(value) = rhs.get(0) {
                     self.lt_eq(value)
                 } else {
-                    BooleanChunked::full_null("", self.len())
+                    BooleanChunked::full_null(PlSmallStr::EMPTY, self.len())
                 }
             },
             (1, _) => {
                 if let Some(value) = self.get(0) {
                     rhs.gt_eq(value)
                 } else {
-                    BooleanChunked::full_null("", rhs.len())
+                    BooleanChunked::full_null(PlSmallStr::EMPTY, rhs.len())
                 }
             },
-            _ => arity::binary_mut_values(self, rhs, |a, b| a.tot_le_kernel(b).into(), ""),
+            _ => arity::binary_mut_values(
+                self,
+                rhs,
+                |a, b| a.tot_le_kernel(b).into(),
+                PlSmallStr::EMPTY,
+            ),
         }
     }
 
@@ -172,35 +192,35 @@ impl ChunkCompare<&NullChunked> for NullChunked {
     type Item = BooleanChunked;
 
     fn equal(&self, rhs: &NullChunked) -> Self::Item {
-        BooleanChunked::full_null(self.name(), get_broadcast_length(self, rhs))
+        BooleanChunked::full_null(self.name().clone(), get_broadcast_length(self, rhs))
     }
 
     fn equal_missing(&self, rhs: &NullChunked) -> Self::Item {
-        BooleanChunked::full(self.name(), true, get_broadcast_length(self, rhs))
+        BooleanChunked::full(self.name().clone(), true, get_broadcast_length(self, rhs))
     }
 
     fn not_equal(&self, rhs: &NullChunked) -> Self::Item {
-        BooleanChunked::full_null(self.name(), get_broadcast_length(self, rhs))
+        BooleanChunked::full_null(self.name().clone(), get_broadcast_length(self, rhs))
     }
 
     fn not_equal_missing(&self, rhs: &NullChunked) -> Self::Item {
-        BooleanChunked::full(self.name(), false, get_broadcast_length(self, rhs))
+        BooleanChunked::full(self.name().clone(), false, get_broadcast_length(self, rhs))
     }
 
     fn gt(&self, rhs: &NullChunked) -> Self::Item {
-        BooleanChunked::full_null(self.name(), get_broadcast_length(self, rhs))
+        BooleanChunked::full_null(self.name().clone(), get_broadcast_length(self, rhs))
     }
 
     fn gt_eq(&self, rhs: &NullChunked) -> Self::Item {
-        BooleanChunked::full_null(self.name(), get_broadcast_length(self, rhs))
+        BooleanChunked::full_null(self.name().clone(), get_broadcast_length(self, rhs))
     }
 
     fn lt(&self, rhs: &NullChunked) -> Self::Item {
-        BooleanChunked::full_null(self.name(), get_broadcast_length(self, rhs))
+        BooleanChunked::full_null(self.name().clone(), get_broadcast_length(self, rhs))
     }
 
     fn lt_eq(&self, rhs: &NullChunked) -> Self::Item {
-        BooleanChunked::full_null(self.name(), get_broadcast_length(self, rhs))
+        BooleanChunked::full_null(self.name().clone(), get_broadcast_length(self, rhs))
     }
 }
 
@@ -224,17 +244,22 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                 if let Some(value) = rhs.get(0) {
                     arity::unary_mut_values(self, |arr| arr.tot_eq_kernel_broadcast(&value).into())
                 } else {
-                    BooleanChunked::full_null("", self.len())
+                    BooleanChunked::full_null(PlSmallStr::EMPTY, self.len())
                 }
             },
             (1, _) => {
                 if let Some(value) = self.get(0) {
                     arity::unary_mut_values(rhs, |arr| arr.tot_eq_kernel_broadcast(&value).into())
                 } else {
-                    BooleanChunked::full_null("", rhs.len())
+                    BooleanChunked::full_null(PlSmallStr::EMPTY, rhs.len())
                 }
             },
-            _ => arity::binary_mut_values(self, rhs, |a, b| a.tot_eq_kernel(b).into(), ""),
+            _ => arity::binary_mut_values(
+                self,
+                rhs,
+                |a, b| a.tot_eq_kernel(b).into(),
+                PlSmallStr::EMPTY,
+            ),
         }
     }
 
@@ -263,7 +288,7 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                 self,
                 rhs,
                 |a, b| a.tot_eq_missing_kernel(b).into(),
-                "",
+                PlSmallStr::EMPTY,
             ),
         }
     }
@@ -275,17 +300,22 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                 if let Some(value) = rhs.get(0) {
                     arity::unary_mut_values(self, |arr| arr.tot_ne_kernel_broadcast(&value).into())
                 } else {
-                    BooleanChunked::full_null("", self.len())
+                    BooleanChunked::full_null(PlSmallStr::EMPTY, self.len())
                 }
             },
             (1, _) => {
                 if let Some(value) = self.get(0) {
                     arity::unary_mut_values(rhs, |arr| arr.tot_ne_kernel_broadcast(&value).into())
                 } else {
-                    BooleanChunked::full_null("", rhs.len())
+                    BooleanChunked::full_null(PlSmallStr::EMPTY, rhs.len())
                 }
             },
-            _ => arity::binary_mut_values(self, rhs, |a, b| a.tot_ne_kernel(b).into(), ""),
+            _ => arity::binary_mut_values(
+                self,
+                rhs,
+                |a, b| a.tot_ne_kernel(b).into(),
+                PlSmallStr::EMPTY,
+            ),
         }
     }
 
@@ -314,7 +344,7 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                 self,
                 rhs,
                 |a, b| a.tot_ne_missing_kernel(b).into(),
-                "",
+                PlSmallStr::EMPTY,
             ),
         }
     }
@@ -326,17 +356,22 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                 if let Some(value) = rhs.get(0) {
                     arity::unary_mut_values(self, |arr| arr.tot_lt_kernel_broadcast(&value).into())
                 } else {
-                    BooleanChunked::full_null("", self.len())
+                    BooleanChunked::full_null(PlSmallStr::EMPTY, self.len())
                 }
             },
             (1, _) => {
                 if let Some(value) = self.get(0) {
                     arity::unary_mut_values(rhs, |arr| arr.tot_gt_kernel_broadcast(&value).into())
                 } else {
-                    BooleanChunked::full_null("", rhs.len())
+                    BooleanChunked::full_null(PlSmallStr::EMPTY, rhs.len())
                 }
             },
-            _ => arity::binary_mut_values(self, rhs, |a, b| a.tot_lt_kernel(b).into(), ""),
+            _ => arity::binary_mut_values(
+                self,
+                rhs,
+                |a, b| a.tot_lt_kernel(b).into(),
+                PlSmallStr::EMPTY,
+            ),
         }
     }
 
@@ -347,17 +382,22 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                 if let Some(value) = rhs.get(0) {
                     arity::unary_mut_values(self, |arr| arr.tot_le_kernel_broadcast(&value).into())
                 } else {
-                    BooleanChunked::full_null("", self.len())
+                    BooleanChunked::full_null(PlSmallStr::EMPTY, self.len())
                 }
             },
             (1, _) => {
                 if let Some(value) = self.get(0) {
                     arity::unary_mut_values(rhs, |arr| arr.tot_ge_kernel_broadcast(&value).into())
                 } else {
-                    BooleanChunked::full_null("", rhs.len())
+                    BooleanChunked::full_null(PlSmallStr::EMPTY, rhs.len())
                 }
             },
-            _ => arity::binary_mut_values(self, rhs, |a, b| a.tot_le_kernel(b).into(), ""),
+            _ => arity::binary_mut_values(
+                self,
+                rhs,
+                |a, b| a.tot_le_kernel(b).into(),
+                PlSmallStr::EMPTY,
+            ),
         }
     }
 
@@ -415,17 +455,22 @@ impl ChunkCompare<&BinaryChunked> for BinaryChunked {
                 if let Some(value) = rhs.get(0) {
                     self.equal(value)
                 } else {
-                    BooleanChunked::full_null("", self.len())
+                    BooleanChunked::full_null(PlSmallStr::EMPTY, self.len())
                 }
             },
             (1, _) => {
                 if let Some(value) = self.get(0) {
                     rhs.equal(value)
                 } else {
-                    BooleanChunked::full_null("", rhs.len())
+                    BooleanChunked::full_null(PlSmallStr::EMPTY, rhs.len())
                 }
             },
-            _ => arity::binary_mut_values(self, rhs, |a, b| a.tot_eq_kernel(b).into(), ""),
+            _ => arity::binary_mut_values(
+                self,
+                rhs,
+                |a, b| a.tot_eq_kernel(b).into(),
+                PlSmallStr::EMPTY,
+            ),
         }
     }
 
@@ -450,7 +495,7 @@ impl ChunkCompare<&BinaryChunked> for BinaryChunked {
                 self,
                 rhs,
                 |a, b| a.tot_eq_missing_kernel(b).into(),
-                "",
+                PlSmallStr::EMPTY,
             ),
         }
     }
@@ -462,17 +507,22 @@ impl ChunkCompare<&BinaryChunked> for BinaryChunked {
                 if let Some(value) = rhs.get(0) {
                     self.not_equal(value)
                 } else {
-                    BooleanChunked::full_null("", self.len())
+                    BooleanChunked::full_null(PlSmallStr::EMPTY, self.len())
                 }
             },
             (1, _) => {
                 if let Some(value) = self.get(0) {
                     rhs.not_equal(value)
                 } else {
-                    BooleanChunked::full_null("", rhs.len())
+                    BooleanChunked::full_null(PlSmallStr::EMPTY, rhs.len())
                 }
             },
-            _ => arity::binary_mut_values(self, rhs, |a, b| a.tot_ne_kernel(b).into(), ""),
+            _ => arity::binary_mut_values(
+                self,
+                rhs,
+                |a, b| a.tot_ne_kernel(b).into(),
+                PlSmallStr::EMPTY,
+            ),
         }
     }
 
@@ -497,7 +547,7 @@ impl ChunkCompare<&BinaryChunked> for BinaryChunked {
                 self,
                 rhs,
                 |a, b| a.tot_ne_missing_kernel(b).into(),
-                "",
+                PlSmallStr::EMPTY,
             ),
         }
     }
@@ -509,17 +559,22 @@ impl ChunkCompare<&BinaryChunked> for BinaryChunked {
                 if let Some(value) = rhs.get(0) {
                     self.lt(value)
                 } else {
-                    BooleanChunked::full_null("", self.len())
+                    BooleanChunked::full_null(PlSmallStr::EMPTY, self.len())
                 }
             },
             (1, _) => {
                 if let Some(value) = self.get(0) {
                     rhs.gt(value)
                 } else {
-                    BooleanChunked::full_null("", rhs.len())
+                    BooleanChunked::full_null(PlSmallStr::EMPTY, rhs.len())
                 }
             },
-            _ => arity::binary_mut_values(self, rhs, |a, b| a.tot_lt_kernel(b).into(), ""),
+            _ => arity::binary_mut_values(
+                self,
+                rhs,
+                |a, b| a.tot_lt_kernel(b).into(),
+                PlSmallStr::EMPTY,
+            ),
         }
     }
 
@@ -530,17 +585,22 @@ impl ChunkCompare<&BinaryChunked> for BinaryChunked {
                 if let Some(value) = rhs.get(0) {
                     self.lt_eq(value)
                 } else {
-                    BooleanChunked::full_null("", self.len())
+                    BooleanChunked::full_null(PlSmallStr::EMPTY, self.len())
                 }
             },
             (1, _) => {
                 if let Some(value) = self.get(0) {
                     rhs.gt_eq(value)
                 } else {
-                    BooleanChunked::full_null("", rhs.len())
+                    BooleanChunked::full_null(PlSmallStr::EMPTY, rhs.len())
                 }
             },
-            _ => arity::binary_mut_values(self, rhs, |a, b| a.tot_le_kernel(b).into(), ""),
+            _ => arity::binary_mut_values(
+                self,
+                rhs,
+                |a, b| a.tot_le_kernel(b).into(),
+                PlSmallStr::EMPTY,
+            ),
         }
     }
 
@@ -560,13 +620,13 @@ where
 {
     match (lhs.len(), rhs.len()) {
         (_, 1) => {
-            let right = rhs.get_as_series(0).map(|s| s.with_name(""));
+            let right = rhs.get_as_series(0).map(|s| s.with_name(PlSmallStr::EMPTY));
             lhs.amortized_iter()
                 .map(|left| op(left.as_ref().map(|us| us.as_ref()), right.as_ref()))
                 .collect_trusted()
         },
         (1, _) => {
-            let left = lhs.get_as_series(0).map(|s| s.with_name(""));
+            let left = lhs.get_as_series(0).map(|s| s.with_name(PlSmallStr::EMPTY));
             rhs.amortized_iter()
                 .map(|right| op(left.as_ref(), right.as_ref().map(|us| us.as_ref())))
                 .collect_trusted()
@@ -657,7 +717,7 @@ where
 {
     if a.len() != b.len() || a.struct_fields().len() != b.struct_fields().len() {
         // polars_ensure!(a.len() == 1 || b.len() == 1, ShapeMismatch: "length lhs: {}, length rhs: {}", a.len(), b.len());
-        BooleanChunked::full("", value, a.len())
+        BooleanChunked::full(PlSmallStr::EMPTY, value, a.len())
     } else {
         let (a, b) = align_chunks_binary(a, b);
         let mut out = a
@@ -729,30 +789,50 @@ impl ChunkCompare<&ArrayChunked> for ArrayChunked {
     type Item = BooleanChunked;
     fn equal(&self, rhs: &ArrayChunked) -> BooleanChunked {
         if self.width() != rhs.width() {
-            return BooleanChunked::full("", false, self.len());
+            return BooleanChunked::full(PlSmallStr::EMPTY, false, self.len());
         }
-        arity::binary_mut_values(self, rhs, |a, b| a.tot_eq_kernel(b).into(), "")
+        arity::binary_mut_values(
+            self,
+            rhs,
+            |a, b| a.tot_eq_kernel(b).into(),
+            PlSmallStr::EMPTY,
+        )
     }
 
     fn equal_missing(&self, rhs: &ArrayChunked) -> BooleanChunked {
         if self.width() != rhs.width() {
-            return BooleanChunked::full("", false, self.len());
+            return BooleanChunked::full(PlSmallStr::EMPTY, false, self.len());
         }
-        arity::binary_mut_with_options(self, rhs, |a, b| a.tot_eq_missing_kernel(b).into(), "")
+        arity::binary_mut_with_options(
+            self,
+            rhs,
+            |a, b| a.tot_eq_missing_kernel(b).into(),
+            PlSmallStr::EMPTY,
+        )
     }
 
     fn not_equal(&self, rhs: &ArrayChunked) -> BooleanChunked {
         if self.width() != rhs.width() {
-            return BooleanChunked::full("", true, self.len());
+            return BooleanChunked::full(PlSmallStr::EMPTY, true, self.len());
         }
-        arity::binary_mut_values(self, rhs, |a, b| a.tot_ne_kernel(b).into(), "")
+        arity::binary_mut_values(
+            self,
+            rhs,
+            |a, b| a.tot_ne_kernel(b).into(),
+            PlSmallStr::EMPTY,
+        )
     }
 
     fn not_equal_missing(&self, rhs: &ArrayChunked) -> Self::Item {
         if self.width() != rhs.width() {
-            return BooleanChunked::full("", true, self.len());
+            return BooleanChunked::full(PlSmallStr::EMPTY, true, self.len());
         }
-        arity::binary_mut_with_options(self, rhs, |a, b| a.tot_ne_missing_kernel(b).into(), "")
+        arity::binary_mut_with_options(
+            self,
+            rhs,
+            |a, b| a.tot_ne_missing_kernel(b).into(),
+            PlSmallStr::EMPTY,
+        )
     }
 
     // following are not implemented because gt, lt comparison of series don't make sense
@@ -778,7 +858,7 @@ impl Not for &BooleanChunked {
 
     fn not(self) -> Self::Output {
         let chunks = self.downcast_iter().map(compute::boolean::not);
-        ChunkedArray::from_chunk_iter(self.name(), chunks)
+        ChunkedArray::from_chunk_iter(self.name().clone(), chunks)
     }
 }
 
@@ -913,17 +993,20 @@ mod test {
     use crate::prelude::*;
 
     pub(crate) fn create_two_chunked() -> (Int32Chunked, Int32Chunked) {
-        let mut a1 = Int32Chunked::new("a", &[1, 2, 3]);
-        let a2 = Int32Chunked::new("a", &[4, 5, 6]);
-        let a3 = Int32Chunked::new("a", &[1, 2, 3, 4, 5, 6]);
-        a1.append(&a2);
+        let mut a1 = Int32Chunked::new(PlSmallStr::from_static("a"), &[1, 2, 3]);
+        let a2 = Int32Chunked::new(PlSmallStr::from_static("a"), &[4, 5, 6]);
+        let a3 = Int32Chunked::new(PlSmallStr::from_static("a"), &[1, 2, 3, 4, 5, 6]);
+        a1.append(&a2).unwrap();
         (a1, a3)
     }
 
     #[test]
     fn test_bitwise_ops() {
-        let a = BooleanChunked::new("a", &[true, false, false]);
-        let b = BooleanChunked::new("b", &[Some(true), Some(true), None]);
+        let a = BooleanChunked::new(PlSmallStr::from_static("a"), &[true, false, false]);
+        let b = BooleanChunked::new(
+            PlSmallStr::from_static("b"),
+            &[Some(true), Some(true), None],
+        );
         assert_eq!(Vec::from(&a | &b), &[Some(true), Some(true), None]);
         assert_eq!(Vec::from(&a & &b), &[Some(true), Some(false), Some(false)]);
         assert_eq!(Vec::from(!b), &[Some(false), Some(false), None]);
@@ -1049,7 +1132,9 @@ mod test {
         let a2: Int32Chunked = [Some(1), Some(2), Some(3)].iter().copied().collect();
 
         let mut a2_2chunks: Int32Chunked = [Some(1), Some(2)].iter().copied().collect();
-        a2_2chunks.append(&[Some(3)].iter().copied().collect());
+        a2_2chunks
+            .append(&[Some(3)].iter().copied().collect())
+            .unwrap();
 
         assert_eq!(
             a1.equal(&a2).into_iter().collect::<Vec<_>>(),
@@ -1129,9 +1214,9 @@ mod test {
 
     #[test]
     fn test_kleene() {
-        let a = BooleanChunked::new("", &[Some(true), Some(false), None]);
-        let trues = BooleanChunked::from_slice("", &[true, true, true]);
-        let falses = BooleanChunked::from_slice("", &[false, false, false]);
+        let a = BooleanChunked::new(PlSmallStr::EMPTY, &[Some(true), Some(false), None]);
+        let trues = BooleanChunked::from_slice(PlSmallStr::EMPTY, &[true, true, true]);
+        let falses = BooleanChunked::from_slice(PlSmallStr::EMPTY, &[false, false, false]);
 
         let c = &a | &trues;
         assert_eq!(Vec::from(&c), &[Some(true), Some(true), Some(true)]);
@@ -1142,9 +1227,9 @@ mod test {
 
     #[test]
     fn list_broadcasting_lists() {
-        let s_el = Series::new("", &[1, 2, 3]);
-        let s_lhs = Series::new("", &[s_el.clone(), s_el.clone()]);
-        let s_rhs = Series::new("", &[s_el.clone()]);
+        let s_el = Series::new(PlSmallStr::EMPTY, &[1, 2, 3]);
+        let s_lhs = Series::new(PlSmallStr::EMPTY, &[s_el.clone(), s_el.clone()]);
+        let s_rhs = Series::new(PlSmallStr::EMPTY, &[s_el.clone()]);
 
         let result = s_lhs.list().unwrap().equal(s_rhs.list().unwrap());
         assert_eq!(result.len(), 2);
@@ -1153,9 +1238,9 @@ mod test {
 
     #[test]
     fn test_broadcasting_bools() {
-        let a = BooleanChunked::from_slice("", &[true, false, true]);
-        let true_ = BooleanChunked::from_slice("", &[true]);
-        let false_ = BooleanChunked::from_slice("", &[false]);
+        let a = BooleanChunked::from_slice(PlSmallStr::EMPTY, &[true, false, true]);
+        let true_ = BooleanChunked::from_slice(PlSmallStr::EMPTY, &[true]);
+        let false_ = BooleanChunked::from_slice(PlSmallStr::EMPTY, &[false]);
 
         let out = a.equal(&true_);
         assert_eq!(Vec::from(&out), &[Some(true), Some(false), Some(true)]);
@@ -1211,9 +1296,10 @@ mod test {
         let out = false_.lt_eq(&a);
         assert_eq!(Vec::from(&out), &[Some(true), Some(true), Some(true)]);
 
-        let a = BooleanChunked::from_slice_options("", &[Some(true), Some(false), None]);
-        let all_true = BooleanChunked::from_slice("", &[true, true, true]);
-        let all_false = BooleanChunked::from_slice("", &[false, false, false]);
+        let a =
+            BooleanChunked::from_slice_options(PlSmallStr::EMPTY, &[Some(true), Some(false), None]);
+        let all_true = BooleanChunked::from_slice(PlSmallStr::EMPTY, &[true, true, true]);
+        let all_false = BooleanChunked::from_slice(PlSmallStr::EMPTY, &[false, false, false]);
         let out = a.equal(&true_);
         assert_eq!(Vec::from(&out), &[Some(true), Some(false), None]);
         let out = a.not_equal(&true_);
@@ -1235,9 +1321,9 @@ mod test {
 
     #[test]
     fn test_broadcasting_numeric() {
-        let a = Int32Chunked::from_slice("", &[1, 2, 3]);
-        let one = Int32Chunked::from_slice("", &[1]);
-        let three = Int32Chunked::from_slice("", &[3]);
+        let a = Int32Chunked::from_slice(PlSmallStr::EMPTY, &[1, 2, 3]);
+        let one = Int32Chunked::from_slice(PlSmallStr::EMPTY, &[1]);
+        let three = Int32Chunked::from_slice(PlSmallStr::EMPTY, &[3]);
 
         let out = a.equal(&one);
         assert_eq!(Vec::from(&out), &[Some(true), Some(false), Some(false)]);

@@ -1,30 +1,31 @@
 use arrow::compute::utils::combine_validities_and_many;
 use compare_inner::NullOrderCmp;
 use polars_row::{convert_columns, EncodingField, RowsEncoded};
-use polars_utils::iter::EnumerateIdxTrait;
+use polars_utils::itertools::Itertools;
 
 use super::*;
 use crate::utils::_split_offsets;
 
 pub(crate) fn args_validate<T: PolarsDataType>(
     ca: &ChunkedArray<T>,
-    other: &[Series],
-    descending: &[bool],
+    other: &[Column],
+    param_value: &[bool],
+    param_name: &str,
 ) -> PolarsResult<()> {
     for s in other {
         assert_eq!(ca.len(), s.len());
     }
-    polars_ensure!(other.len() == (descending.len() - 1),
+    polars_ensure!(other.len() == (param_value.len() - 1),
         ComputeError:
-        "the amount of ordering booleans: {} does not match the number of series: {}",
-        descending.len(), other.len() + 1,
+        "the length of `{}` ({}) does not match the number of series ({})",
+        param_name, param_value.len(), other.len() + 1,
     );
     Ok(())
 }
 
 pub(crate) fn arg_sort_multiple_impl<T: NullOrderCmp + Send + Copy>(
     mut vals: Vec<(IdxSize, T)>,
-    by: &[Series],
+    by: &[Column],
     options: &SortMultipleOptions,
 ) -> PolarsResult<IdxCa> {
     let nulls_last = &options.nulls_last;
@@ -35,7 +36,7 @@ pub(crate) fn arg_sort_multiple_impl<T: NullOrderCmp + Send + Copy>(
 
     let compare_inner: Vec<_> = by
         .iter()
-        .map(|s| s.into_total_ord_inner())
+        .map(|s| s.as_materialized_series().into_total_ord_inner())
         .collect_trusted();
 
     let first_descending = descending[0];
@@ -99,7 +100,8 @@ pub fn _get_rows_encoded_compat_array(by: &Series) -> PolarsResult<ArrayRef> {
                 ca.physical().chunks[0].clone()
             }
         },
-        _ => by.to_arrow(0, CompatLevel::newest()),
+        // Take physical
+        _ => by.chunks()[0].clone(),
     };
     Ok(out)
 }
@@ -119,7 +121,10 @@ pub fn encode_rows_vertical_par_unordered(by: &[Series]) -> PolarsResult<BinaryO
     });
     let chunks = POOL.install(|| chunks.collect::<PolarsResult<Vec<_>>>());
 
-    Ok(BinaryOffsetChunked::from_chunk_iter("", chunks?))
+    Ok(BinaryOffsetChunked::from_chunk_iter(
+        PlSmallStr::EMPTY,
+        chunks?,
+    ))
 }
 
 // Almost the same but broadcast nulls to the row-encoded array.
@@ -154,12 +159,18 @@ pub fn encode_rows_vertical_par_unordered_broadcast_nulls(
     });
     let chunks = POOL.install(|| chunks.collect::<PolarsResult<Vec<_>>>());
 
-    Ok(BinaryOffsetChunked::from_chunk_iter("", chunks?))
+    Ok(BinaryOffsetChunked::from_chunk_iter(
+        PlSmallStr::EMPTY,
+        chunks?,
+    ))
 }
 
 pub(crate) fn encode_rows_unordered(by: &[Series]) -> PolarsResult<BinaryOffsetChunked> {
     let rows = _get_rows_encoded_unordered(by)?;
-    Ok(BinaryOffsetChunked::with_chunk("", rows.into_array()))
+    Ok(BinaryOffsetChunked::with_chunk(
+        PlSmallStr::EMPTY,
+        rows.into_array(),
+    ))
 }
 
 pub fn _get_rows_encoded_unordered(by: &[Series]) -> PolarsResult<RowsEncoded> {
@@ -168,7 +179,7 @@ pub fn _get_rows_encoded_unordered(by: &[Series]) -> PolarsResult<RowsEncoded> {
     for by in by {
         let arr = _get_rows_encoded_compat_array(by)?;
         let field = EncodingField::new_unsorted();
-        match arr.data_type() {
+        match arr.dtype() {
             // Flatten the struct fields.
             ArrowDataType::Struct(_) => {
                 let arr = arr.as_any().downcast_ref::<StructArray>().unwrap();
@@ -187,7 +198,7 @@ pub fn _get_rows_encoded_unordered(by: &[Series]) -> PolarsResult<RowsEncoded> {
 }
 
 pub fn _get_rows_encoded(
-    by: &[Series],
+    by: &[Column],
     descending: &[bool],
     nulls_last: &[bool],
 ) -> PolarsResult<RowsEncoded> {
@@ -198,13 +209,14 @@ pub fn _get_rows_encoded(
     let mut fields = Vec::with_capacity(by.len());
 
     for ((by, desc), null_last) in by.iter().zip(descending).zip(nulls_last) {
+        let by = by.as_materialized_series();
         let arr = _get_rows_encoded_compat_array(by)?;
         let sort_field = EncodingField {
             descending: *desc,
             nulls_last: *null_last,
             no_order: false,
         };
-        match arr.data_type() {
+        match arr.dtype() {
             // Flatten the struct fields.
             ArrowDataType::Struct(_) => {
                 let arr = arr.as_any().downcast_ref::<StructArray>().unwrap();
@@ -224,8 +236,8 @@ pub fn _get_rows_encoded(
 }
 
 pub fn _get_rows_encoded_ca(
-    name: &str,
-    by: &[Series],
+    name: PlSmallStr,
+    by: &[Column],
     descending: &[bool],
     nulls_last: &[bool],
 ) -> PolarsResult<BinaryOffsetChunked> {
@@ -234,7 +246,7 @@ pub fn _get_rows_encoded_ca(
 }
 
 pub fn _get_rows_encoded_arr(
-    by: &[Series],
+    by: &[Column],
     descending: &[bool],
     nulls_last: &[bool],
 ) -> PolarsResult<BinaryArray<i64>> {
@@ -242,7 +254,7 @@ pub fn _get_rows_encoded_arr(
 }
 
 pub fn _get_rows_encoded_ca_unordered(
-    name: &str,
+    name: PlSmallStr,
     by: &[Series],
 ) -> PolarsResult<BinaryOffsetChunked> {
     _get_rows_encoded_unordered(by)
@@ -250,7 +262,7 @@ pub fn _get_rows_encoded_ca_unordered(
 }
 
 pub(crate) fn argsort_multiple_row_fmt(
-    by: &[Series],
+    by: &[Column],
     mut descending: Vec<bool>,
     mut nulls_last: Vec<bool>,
     parallel: bool,

@@ -13,7 +13,10 @@ impl PolarsExtension {
         let arr = arr.slice_typed_unchecked(i, 1);
         let pe = Self::new(arr);
         let pe = ManuallyDrop::new(pe);
-        pe.get_series("").get(0).unwrap().into_static().unwrap()
+        pe.get_series(&PlSmallStr::EMPTY)
+            .get(0)
+            .unwrap()
+            .into_static()
     }
 
     pub(crate) unsafe fn new(array: FixedSizeBinaryArray) -> Self {
@@ -38,8 +41,7 @@ impl PolarsExtension {
     /// Load the sentinel from the heap.
     /// be very careful, this dereferences a raw pointer on the heap,
     unsafe fn get_sentinel(&self) -> Box<ExtensionSentinel> {
-        if let ArrowDataType::Extension(_, _, Some(metadata)) =
-            self.array.as_ref().unwrap().data_type()
+        if let ArrowDataType::Extension(_, _, Some(metadata)) = self.array.as_ref().unwrap().dtype()
         {
             let mut iter = metadata.split(';');
 
@@ -57,7 +59,7 @@ impl PolarsExtension {
 
     /// Calls the heap allocated function in the `[ExtensionSentinel]` that knows
     /// how to convert the `[FixedSizeBinaryArray]` to a `Series` of type `[ObjectChunked<T>]`
-    pub(crate) unsafe fn get_series(&self, name: &str) -> Series {
+    pub(crate) unsafe fn get_series(&self, name: &PlSmallStr) -> Series {
         self.with_sentinel(|sent| {
             (sent.to_series_fn.as_ref().unwrap())(self.array.as_ref().unwrap(), name)
         })
@@ -66,7 +68,7 @@ impl PolarsExtension {
     // heap allocates a function that converts the binary array to a Series of `[ObjectChunked<T>]`
     // the `name` will be the `name` of the output `Series` when this function is called (later).
     pub(crate) unsafe fn set_to_series_fn<T: PolarsObject>(&mut self) {
-        let f = Box::new(move |arr: &FixedSizeBinaryArray, name: &str| {
+        let f = Box::new(move |arr: &FixedSizeBinaryArray, name: &PlSmallStr| {
             let iter = arr.iter().map(|opt| {
                 opt.map(|bytes| {
                     let t = std::ptr::read_unaligned(bytes.as_ptr() as *const T);
@@ -77,7 +79,7 @@ impl PolarsExtension {
                 })
             });
 
-            let ca = ObjectChunked::<T>::from_iter_options(name, iter);
+            let ca = ObjectChunked::<T>::from_iter_options(name.clone(), iter);
             ca.into_series()
         });
         self.with_sentinel(move |sent| {

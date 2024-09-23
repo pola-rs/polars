@@ -1,3 +1,11 @@
+//! Expressions that are supported by the Polars SQL interface.
+//!
+//! This is useful for syntax highlighting
+//!
+//! This module defines:
+//! - all Polars SQL keywords [`all_keywords`]
+//! - all of polars SQL functions [`all_functions`]
+
 use std::fmt::Display;
 use std::ops::Div;
 
@@ -9,214 +17,39 @@ use polars_plan::prelude::LiteralValue::Null;
 use polars_time::Duration;
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
-use regex::{Regex, RegexBuilder};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-#[cfg(feature = "dtype-decimal")]
-use sqlparser::ast::ExactNumberInfo;
 use sqlparser::ast::{
-    ArrayElemTypeDef, BinaryOperator as SQLBinaryOperator, BinaryOperator, CastFormat, CastKind,
+    BinaryOperator as SQLBinaryOperator, BinaryOperator, CastFormat, CastKind,
     DataType as SQLDataType, DateTimeField, Expr as SQLExpr, Function as SQLFunction, Ident,
-    Interval, ObjectName, Query as Subquery, SelectItem, Subscript, TimezoneInfo, TrimWhereField,
+    Interval, Query as Subquery, SelectItem, Subscript, TimezoneInfo, TrimWhereField,
     UnaryOperator, Value as SQLValue,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
 
 use crate::functions::SQLFunctionVisitor;
+use crate::types::{
+    bitstring_to_bytes_literal, is_iso_date, is_iso_datetime, is_iso_time, map_sql_dtype_to_polars,
+};
 use crate::SQLContext;
-
-static DATETIME_LITERAL_RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
-static DATE_LITERAL_RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
-static TIME_LITERAL_RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
-
-fn is_iso_datetime(value: &str) -> bool {
-    let dtm_regex = DATETIME_LITERAL_RE.get_or_init(|| {
-        RegexBuilder::new(
-            r"^\d{4}-[01]\d-[0-3]\d[ T](?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\.\d{1,9})?$",
-        )
-        .build()
-        .unwrap()
-    });
-    dtm_regex.is_match(value)
-}
-
-fn is_iso_date(value: &str) -> bool {
-    let dt_regex = DATE_LITERAL_RE.get_or_init(|| {
-        RegexBuilder::new(r"^\d{4}-[01]\d-[0-3]\d$")
-            .build()
-            .unwrap()
-    });
-    dt_regex.is_match(value)
-}
-
-fn is_iso_time(value: &str) -> bool {
-    let tm_regex = TIME_LITERAL_RE.get_or_init(|| {
-        RegexBuilder::new(r"^(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\.\d{1,9})?$")
-            .build()
-            .unwrap()
-    });
-    tm_regex.is_match(value)
-}
 
 #[inline]
 #[cold]
 #[must_use]
+/// Convert a Display-able error to PolarsError::SQLInterface
 pub fn to_sql_interface_err(err: impl Display) -> PolarsError {
     PolarsError::SQLInterface(err.to_string().into())
 }
 
-fn timeunit_from_precision(prec: &Option<u64>) -> PolarsResult<TimeUnit> {
-    Ok(match prec {
-        None => TimeUnit::Microseconds,
-        Some(n) if (1u64..=3u64).contains(n) => TimeUnit::Milliseconds,
-        Some(n) if (4u64..=6u64).contains(n) => TimeUnit::Microseconds,
-        Some(n) if (7u64..=9u64).contains(n) => TimeUnit::Nanoseconds,
-        Some(n) => {
-            polars_bail!(SQLSyntax: "invalid temporal type precision (expected 1-9, found {})", n)
-        },
-    })
-}
-
-pub(crate) fn map_sql_polars_datatype(data_type: &SQLDataType) -> PolarsResult<DataType> {
-    Ok(match data_type {
-        // ---------------------------------
-        // array/list
-        // ---------------------------------
-        SQLDataType::Array(ArrayElemTypeDef::AngleBracket(inner_type))
-        | SQLDataType::Array(ArrayElemTypeDef::SquareBracket(inner_type, _)) => {
-            DataType::List(Box::new(map_sql_polars_datatype(inner_type)?))
-        },
-
-        // ---------------------------------
-        // binary
-        // ---------------------------------
-        SQLDataType::Bytea
-        | SQLDataType::Bytes(_)
-        | SQLDataType::Binary(_)
-        | SQLDataType::Blob(_)
-        | SQLDataType::Varbinary(_) => DataType::Binary,
-
-        // ---------------------------------
-        // boolean
-        // ---------------------------------
-        SQLDataType::Boolean | SQLDataType::Bool => DataType::Boolean,
-
-        // ---------------------------------
-        // signed integer
-        // ---------------------------------
-        SQLDataType::Int(_) | SQLDataType::Integer(_) => DataType::Int32,
-        SQLDataType::Int2(_) | SQLDataType::SmallInt(_) => DataType::Int16,
-        SQLDataType::Int4(_) | SQLDataType::MediumInt(_) => DataType::Int32,
-        SQLDataType::Int8(_) | SQLDataType::BigInt(_) => DataType::Int64,
-        SQLDataType::TinyInt(_) => DataType::Int8,
-
-        // ---------------------------------
-        // unsigned integer: the following do not map to PostgreSQL types/syntax, but
-        // are enabled for wider compatibility (eg: "CAST(col AS BIGINT UNSIGNED)").
-        // ---------------------------------
-        SQLDataType::UnsignedInt(_) | SQLDataType::UnsignedInteger(_) => DataType::UInt32,
-        SQLDataType::UnsignedInt2(_) | SQLDataType::UnsignedSmallInt(_) => DataType::UInt16,
-        SQLDataType::UnsignedInt4(_) | SQLDataType::UnsignedMediumInt(_) => DataType::UInt32,
-        SQLDataType::UnsignedInt8(_) | SQLDataType::UnsignedBigInt(_) => DataType::UInt64,
-        SQLDataType::UnsignedTinyInt(_) => DataType::UInt8, // see also: "custom" types below
-
-        // ---------------------------------
-        // float
-        // ---------------------------------
-        SQLDataType::Double | SQLDataType::DoublePrecision | SQLDataType::Float8 => {
-            DataType::Float64
-        },
-        SQLDataType::Float(n_bytes) => match n_bytes {
-            Some(n) if (1u64..=24u64).contains(n) => DataType::Float32,
-            Some(n) if (25u64..=53u64).contains(n) => DataType::Float64,
-            Some(n) => {
-                polars_bail!(SQLSyntax: "unsupported `float` size (expected a value between 1 and 53, found {})", n)
-            },
-            None => DataType::Float64,
-        },
-        SQLDataType::Float4 | SQLDataType::Real => DataType::Float32,
-
-        // ---------------------------------
-        // decimal
-        // ---------------------------------
-        #[cfg(feature = "dtype-decimal")]
-        SQLDataType::Dec(info) | SQLDataType::Decimal(info) | SQLDataType::Numeric(info) => {
-            match *info {
-                ExactNumberInfo::PrecisionAndScale(p, s) => {
-                    DataType::Decimal(Some(p as usize), Some(s as usize))
-                },
-                ExactNumberInfo::Precision(p) => DataType::Decimal(Some(p as usize), Some(0)),
-                ExactNumberInfo::None => DataType::Decimal(Some(38), Some(9)),
-            }
-        },
-
-        // ---------------------------------
-        // temporal
-        // ---------------------------------
-        SQLDataType::Date => DataType::Date,
-        SQLDataType::Interval => DataType::Duration(TimeUnit::Microseconds),
-        SQLDataType::Time(_, tz) => match tz {
-            TimezoneInfo::None => DataType::Time,
-            _ => {
-                polars_bail!(SQLInterface: "`time` with timezone is not supported; found tz={}", tz)
-            },
-        },
-        SQLDataType::Datetime(prec) => DataType::Datetime(timeunit_from_precision(prec)?, None),
-        SQLDataType::Timestamp(prec, tz) => match tz {
-            TimezoneInfo::None => DataType::Datetime(timeunit_from_precision(prec)?, None),
-            _ => {
-                polars_bail!(SQLInterface: "`timestamp` with timezone is not (yet) supported")
-            },
-        },
-
-        // ---------------------------------
-        // string
-        // ---------------------------------
-        SQLDataType::Char(_)
-        | SQLDataType::CharVarying(_)
-        | SQLDataType::Character(_)
-        | SQLDataType::CharacterVarying(_)
-        | SQLDataType::Clob(_)
-        | SQLDataType::String(_)
-        | SQLDataType::Text
-        | SQLDataType::Uuid
-        | SQLDataType::Varchar(_) => DataType::String,
-
-        // ---------------------------------
-        // custom
-        // ---------------------------------
-        SQLDataType::Custom(ObjectName(idents), _) => match idents.as_slice() {
-            [Ident { value, .. }] => match value.to_lowercase().as_str() {
-                // these integer types are not supported by the PostgreSQL core distribution,
-                // but they ARE available via `pguint` (https://github.com/petere/pguint), an
-                // extension maintained by one of the PostgreSQL core developers.
-                "uint1" => DataType::UInt8,
-                "uint2" => DataType::UInt16,
-                "uint4" | "uint" => DataType::UInt32,
-                "uint8" => DataType::UInt64,
-                // `pguint` also provides a 1 byte (8bit) integer type alias
-                "int1" => DataType::Int8,
-                _ => {
-                    polars_bail!(SQLInterface: "datatype {:?} is not currently supported", value)
-                },
-            },
-            _ => {
-                polars_bail!(SQLInterface: "datatype {:?} is not currently supported", idents)
-            },
-        },
-        _ => {
-            polars_bail!(SQLInterface: "datatype {:?} is not currently supported", data_type)
-        },
-    })
-}
-
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Copy, PartialEq, Debug, Eq, Hash)]
+/// Categorises the type of (allowed) subquery constraint
 pub enum SubqueryRestriction {
-    // SingleValue,
+    /// Subquery must return a single column
     SingleColumn,
     // SingleRow,
+    // SingleValue,
     // Any
 }
 
@@ -246,7 +79,7 @@ impl SQLExprVisitor<'_> {
             })
             .collect::<PolarsResult<Vec<_>>>()?;
 
-        Series::from_any_values("", &array_elements, true)
+        Series::from_any_values(PlSmallStr::EMPTY, &array_elements, true)
     }
 
     fn visit_expr(&mut self, expr: &SQLExpr) -> PolarsResult<Expr> {
@@ -444,7 +277,7 @@ impl SQLExprVisitor<'_> {
     ///
     /// e.g. column
     fn visit_identifier(&self, ident: &Ident) -> PolarsResult<Expr> {
-        Ok(col(&ident.value))
+        Ok(col(ident.value.as_str()))
     }
 
     /// Visit a compound SQL identifier
@@ -540,16 +373,11 @@ impl SQLExprVisitor<'_> {
                 (Some(name.clone()), Some(s), None)
             },
             // identify "CAST(expr AS type) <op> string" and/or "expr::type <op> string" expressions
-            (
-                Expr::Cast {
-                    expr, data_type, ..
-                },
-                Expr::Literal(LiteralValue::String(s)),
-            ) => {
+            (Expr::Cast { expr, dtype, .. }, Expr::Literal(LiteralValue::String(s))) => {
                 if let Expr::Column(name) = &**expr {
-                    (Some(name.clone()), Some(s), Some(data_type))
+                    (Some(name.clone()), Some(s), Some(dtype))
                 } else {
-                    (None, Some(s), Some(data_type))
+                    (None, Some(s), Some(dtype))
                 }
             },
             _ => (None, None, None),
@@ -562,18 +390,34 @@ impl SQLExprVisitor<'_> {
 
                 match left_dtype {
                     DataType::Time if is_iso_time(s) => {
-                        right.clone().strict_cast(left_dtype.clone())
+                        right.clone().str().to_time(StrptimeOptions {
+                            strict: true,
+                            ..Default::default()
+                        })
                     },
                     DataType::Date if is_iso_date(s) => {
-                        right.clone().strict_cast(left_dtype.clone())
+                        right.clone().str().to_date(StrptimeOptions {
+                            strict: true,
+                            ..Default::default()
+                        })
                     },
-                    DataType::Datetime(_, _) if is_iso_datetime(s) || is_iso_date(s) => {
+                    DataType::Datetime(tu, tz) if is_iso_datetime(s) || is_iso_date(s) => {
                         if s.len() == 10 {
                             // handle upcast from ISO date string (10 chars) to datetime
-                            lit(format!("{}T00:00:00", s)).strict_cast(left_dtype.clone())
+                            lit(format!("{}T00:00:00", s))
                         } else {
-                            lit(s.replacen(' ', "T", 1)).strict_cast(left_dtype.clone())
+                            lit(s.replacen(' ', "T", 1))
                         }
+                        .str()
+                        .to_datetime(
+                            Some(*tu),
+                            tz.clone(),
+                            StrptimeOptions {
+                                strict: true,
+                                ..Default::default()
+                            },
+                            lit("latest"),
+                        )
                     },
                     _ => right.clone(),
                 }
@@ -834,13 +678,17 @@ impl SQLExprVisitor<'_> {
             (dtype_expr_match, self.active_schema.as_ref())
         {
             if elems.dtype() == &DataType::String {
-                if let Some(DataType::Date | DataType::Time | DataType::Datetime(_, _)) =
-                    schema.get(name)
-                {
-                    elems = elems.strict_cast(&schema.get(name).unwrap().clone())?;
+                if let Some(dtype) = schema.get(name) {
+                    if matches!(
+                        dtype,
+                        DataType::Date | DataType::Time | DataType::Datetime(_, _)
+                    ) {
+                        elems = elems.strict_cast(dtype)?;
+                    }
                 }
             }
         }
+
         // if we are parsing the list as an element in a series, implode.
         // otherwise, return the series as-is.
         let res = if result_as_element {
@@ -857,7 +705,7 @@ impl SQLExprVisitor<'_> {
     fn visit_cast(
         &mut self,
         expr: &SQLExpr,
-        data_type: &SQLDataType,
+        dtype: &SQLDataType,
         format: &Option<CastFormat>,
         cast_kind: &CastKind,
     ) -> PolarsResult<Expr> {
@@ -869,10 +717,10 @@ impl SQLExprVisitor<'_> {
         let expr = self.visit_expr(expr)?;
 
         #[cfg(feature = "json")]
-        if data_type == &SQLDataType::JSON {
+        if dtype == &SQLDataType::JSON {
             return Ok(expr.str().json_decode(None, None));
         }
-        let polars_type = map_sql_polars_datatype(data_type)?;
+        let polars_type = map_sql_dtype_to_polars(dtype)?;
         Ok(match cast_kind {
             CastKind::Cast | CastKind::DoubleColon => expr.strict_cast(polars_type),
             CastKind::TryCast | CastKind::SafeCast => expr.cast(polars_type),
@@ -885,9 +733,10 @@ impl SQLExprVisitor<'_> {
     ///
     /// See [SQLValue] and [LiteralValue] for more details
     fn visit_literal(&self, value: &SQLValue) -> PolarsResult<Expr> {
+        // note: double-quoted strings will be parsed as identifiers, not literals
         Ok(match value {
             SQLValue::Boolean(b) => lit(*b),
-            SQLValue::DoubleQuotedString(s) => lit(s.clone()),
+            SQLValue::DollarQuotedString(s) => lit(s.value.clone()),
             #[cfg(feature = "binary_encoding")]
             SQLValue::HexStringLiteral(x) => {
                 if x.len() % 2 != 0 {
@@ -907,12 +756,14 @@ impl SQLExprVisitor<'_> {
             },
             SQLValue::SingleQuotedByteStringLiteral(b) => {
                 // note: for PostgreSQL this represents a BIT string literal (eg: b'10101') not a BYTE string
-                // literal (see https://www.postgresql.org/docs/current/datatype-bit.html), but sqlparser
+                // literal (see https://www.postgresql.org/docs/current/datatype-bit.html), but sqlparser-rs
                 // patterned the token name after BigQuery (where b'str' really IS a byte string)
                 bitstring_to_bytes_literal(b)?
             },
             SQLValue::SingleQuotedString(s) => lit(s.clone()),
-            other => polars_bail!(SQLInterface: "value {:?} is not supported", other),
+            other => {
+                polars_bail!(SQLInterface: "value {:?} is not a supported literal type", other)
+            },
         })
     }
 
@@ -924,6 +775,14 @@ impl SQLExprVisitor<'_> {
     ) -> PolarsResult<AnyValue> {
         Ok(match value {
             SQLValue::Boolean(b) => AnyValue::Boolean(*b),
+            SQLValue::DollarQuotedString(s) => AnyValue::StringOwned(s.clone().value.into()),
+            #[cfg(feature = "binary_encoding")]
+            SQLValue::HexStringLiteral(x) => {
+                if x.len() % 2 != 0 {
+                    polars_bail!(SQLSyntax: "hex string literal must have an even number of digits; found '{}'", x)
+                };
+                AnyValue::BinaryOwned(hex::decode(x.clone()).unwrap())
+            },
             SQLValue::Null => AnyValue::Null,
             SQLValue::Number(s, _) => {
                 let negate = match op {
@@ -946,13 +805,6 @@ impl SQLExprVisitor<'_> {
                 }
                 .map_err(|_| polars_err!(SQLInterface: "cannot parse literal: {:?}", s))?
             },
-            #[cfg(feature = "binary_encoding")]
-            SQLValue::HexStringLiteral(x) => {
-                if x.len() % 2 != 0 {
-                    polars_bail!(SQLSyntax: "hex string literal must have an even number of digits; found '{}'", x)
-                };
-                AnyValue::BinaryOwned(hex::decode(x.clone()).unwrap())
-            },
             SQLValue::SingleQuotedByteStringLiteral(b) => {
                 // note: for PostgreSQL this represents a BIT literal (eg: b'10101') not BYTE
                 let bytes_literal = bitstring_to_bytes_literal(b)?;
@@ -963,9 +815,7 @@ impl SQLExprVisitor<'_> {
                     },
                 }
             },
-            SQLValue::SingleQuotedString(s) | SQLValue::DoubleQuotedString(s) => {
-                AnyValue::StringOwned(s.into())
-            },
+            SQLValue::SingleQuotedString(s) => AnyValue::StringOwned(s.as_str().into()),
             other => polars_bail!(SQLInterface: "value {:?} is not currently supported", other),
         })
     }
@@ -1154,7 +1004,7 @@ pub fn sql_expr<S: AsRef<str>>(s: S) -> PolarsResult<Expr> {
     Ok(match &expr {
         SelectItem::ExprWithAlias { expr, alias } => {
             let expr = parse_sql_expr(expr, &mut ctx, None)?;
-            expr.alias(&alias.value)
+            expr.alias(alias.value.as_str())
         },
         SelectItem::UnnamedExpr(expr) => parse_sql_expr(expr, &mut ctx, None)?,
         _ => polars_bail!(SQLInterface: "unable to parse '{}' as Expr", s.as_ref()),
@@ -1300,24 +1150,6 @@ pub(crate) fn adjust_one_indexed_param(idx: Expr, null_if_zero: bool) -> Expr {
     }
 }
 
-fn bitstring_to_bytes_literal(b: &String) -> PolarsResult<Expr> {
-    let n_bits = b.len();
-    if !b.chars().all(|c| c == '0' || c == '1') || n_bits > 64 {
-        polars_bail!(
-            SQLSyntax:
-            "bit string literal should contain only 0s and 1s and have length <= 64; found '{}' with length {}", b, n_bits
-        )
-    }
-    let s = b.as_str();
-    Ok(lit(match n_bits {
-        0 => b"".to_vec(),
-        1..=8 => u8::from_str_radix(s, 2).unwrap().to_be_bytes().to_vec(),
-        9..=16 => u16::from_str_radix(s, 2).unwrap().to_be_bytes().to_vec(),
-        17..=32 => u32::from_str_radix(s, 2).unwrap().to_be_bytes().to_vec(),
-        _ => u64::from_str_radix(s, 2).unwrap().to_be_bytes().to_vec(),
-    }))
-}
-
 pub(crate) fn resolve_compound_identifier(
     ctx: &mut SQLContext,
     idents: &[Ident],
@@ -1334,32 +1166,36 @@ pub(crate) fn resolve_compound_identifier(
         Ok(Arc::new(if let Some(active_schema) = active_schema {
             active_schema.clone()
         } else {
-            Schema::new()
+            Schema::default()
         }))
     }?;
 
     let col_dtype: PolarsResult<(Expr, Option<&DataType>)> = if lf.is_none() && schema.is_empty() {
-        Ok((col(&ident_root.value), None))
+        Ok((col(ident_root.value.as_str()), None))
     } else {
         let name = &remaining_idents.next().unwrap().value;
         if lf.is_some() && name == "*" {
             return Ok(schema
                 .iter_names()
-                .map(|name| col(name))
+                .map(|name| col(name.clone()))
                 .collect::<Vec<_>>());
         } else if let Some((_, name, dtype)) = schema.get_full(name) {
-            let resolved = &ctx.resolve_name(&ident_root.value, name);
+            let resolved = ctx.resolve_name(&ident_root.value, name);
+            let resolved = resolved.as_str();
             Ok((
                 if name != resolved {
-                    col(resolved).alias(name)
+                    col(resolved).alias(name.clone())
                 } else {
-                    col(name)
+                    col(name.clone())
                 },
                 Some(dtype),
             ))
         } else if lf.is_none() {
             remaining_idents = idents.iter().skip(1);
-            Ok((col(&ident_root.value), schema.get(&ident_root.value)))
+            Ok((
+                col(ident_root.value.as_str()),
+                schema.get(&ident_root.value),
+            ))
         } else {
             polars_bail!(
                 SQLInterface: "no column named '{}' found in table '{}'",

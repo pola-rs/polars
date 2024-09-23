@@ -1,6 +1,8 @@
+use std::borrow::Cow;
+
 use arrow::bitmap::Bitmap;
 use arrow::compute::utils::{combine_validities_and, combine_validities_and_not};
-use polars_compute::if_then_else::IfThenElseKernel;
+use polars_compute::if_then_else::{if_then_else_validity, IfThenElseKernel};
 
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectArray;
@@ -26,7 +28,7 @@ where
         (1, other_len) => src.new_from_index(0, other_len),
         _ => polars_bail!(ShapeMismatch: SHAPE_MISMATCH_STR),
     };
-    Ok(ret.with_name(if_true.name()))
+    Ok(ret.with_name(if_true.name().clone()))
 }
 
 fn bool_null_to_false(mask: &BooleanArray) -> Bitmap {
@@ -62,7 +64,7 @@ fn combine_validities_chunked<
 
 impl<T> ChunkZip<T> for ChunkedArray<T>
 where
-    T: PolarsDataType,
+    T: PolarsDataType<IsStruct = FalseT>,
     T::Array: for<'a> IfThenElseKernel<Scalar<'a> = T::Physical<'a>>,
     ChunkedArray<T>: ChunkExpandAtIndex<T>,
 {
@@ -94,7 +96,7 @@ where
                     combine_validities_and,
                 ),
                 (Some(t), Some(f)) => {
-                    let dtype = if_true.downcast_iter().next().unwrap().data_type();
+                    let dtype = if_true.downcast_iter().next().unwrap().dtype();
                     let chunks = mask.downcast_iter().map(|m| {
                         let bm = bool_null_to_false(m);
                         let t = t.clone();
@@ -156,7 +158,7 @@ where
             polars_bail!(ShapeMismatch: SHAPE_MISMATCH_STR)
         };
 
-        Ok(ret.with_name(if_true.name()))
+        Ok(ret.with_name(if_true.name().clone()))
     }
 }
 
@@ -204,5 +206,153 @@ impl<T: PolarsObject> IfThenElseKernel for ObjectArray<T> {
         mask.iter()
             .map(|m| if m { if_true } else { if_false })
             .collect_arr()
+    }
+}
+
+#[cfg(feature = "dtype-struct")]
+impl ChunkZip<StructType> for StructChunked {
+    fn zip_with(
+        &self,
+        mask: &BooleanChunked,
+        other: &ChunkedArray<StructType>,
+    ) -> PolarsResult<ChunkedArray<StructType>> {
+        let length = self.length.max(mask.length).max(other.length);
+
+        debug_assert!(self.length == 1 || self.length == length);
+        debug_assert!(mask.length == 1 || mask.length == length);
+        debug_assert!(other.length == 1 || other.length == length);
+
+        let length = length as usize;
+
+        let mut if_true: Cow<ChunkedArray<StructType>> = Cow::Borrowed(self);
+        let mut if_false: Cow<ChunkedArray<StructType>> = Cow::Borrowed(other);
+
+        // align_chunks_ternary can only align chunks if:
+        // - Each chunkedarray only has 1 chunk
+        // - Each chunkedarray has an equal length (i.e. is broadcasted)
+        //
+        // Therefore, we broadcast only those that are necessary to be broadcasted.
+        let needs_broadcast =
+            if_true.chunks().len() > 1 || if_false.chunks().len() > 1 || mask.chunks().len() > 1;
+        if needs_broadcast && length > 1 {
+            // Special case. In this case, we know what to do.
+            if mask.length == 1 {
+                // pl.when(None) <=> pl.when(False)
+                let is_true = mask.get(0).unwrap_or(false);
+                return Ok(if is_true && self.length == 1 {
+                    self.new_from_index(0, length)
+                } else if is_true {
+                    self.clone()
+                } else if other.length == 1 {
+                    other.new_from_index(0, length)
+                } else {
+                    other.clone()
+                });
+            }
+
+            if self.length == 1 {
+                let broadcasted = self.new_from_index(0, length);
+                if_true = Cow::Owned(broadcasted);
+            }
+            if other.length == 1 {
+                let broadcasted = other.new_from_index(0, length);
+                if_false = Cow::Owned(broadcasted);
+            }
+        }
+
+        let if_true = if_true.as_ref();
+        let if_false = if_false.as_ref();
+
+        let (l, r, mask) = align_chunks_ternary(if_true, if_false, mask);
+
+        // Prepare the boolean arrays such that Null maps to false.
+        // This prevents every field doing that.
+        // # SAFETY
+        // We don't modify the length and update the null count.
+        let mut mask = mask.into_owned();
+        unsafe {
+            for arr in mask.downcast_iter_mut() {
+                let bm = bool_null_to_false(arr);
+                *arr = BooleanArray::from_data_default(bm, None);
+            }
+            mask.set_null_count(0);
+        }
+
+        // Zip all the fields.
+        let fields = l
+            .fields_as_series()
+            .iter()
+            .zip(r.fields_as_series())
+            .map(|(lhs, rhs)| lhs.zip_with_same_type(&mask, &rhs))
+            .collect::<PolarsResult<Vec<_>>>()?;
+
+        let mut out = StructChunked::from_series(self.name().clone(), fields.iter())?;
+
+        // Zip the validities.
+        if (l.null_count + r.null_count) > 0 {
+            let validities = l
+                .chunks()
+                .iter()
+                .zip(r.chunks())
+                .map(|(l, r)| (l.validity(), r.validity()));
+
+            fn broadcast(v: Option<&Bitmap>, arr: &ArrayRef) -> Bitmap {
+                if v.unwrap().get(0).unwrap() {
+                    Bitmap::new_with_value(true, arr.len())
+                } else {
+                    Bitmap::new_zeroed(arr.len())
+                }
+            }
+
+            // # SAFETY
+            // We don't modify the length and update the null count.
+            unsafe {
+                for ((arr, (lv, rv)), mask) in out
+                    .chunks_mut()
+                    .iter_mut()
+                    .zip(validities)
+                    .zip(mask.downcast_iter())
+                {
+                    // TODO! we can optimize this and use a kernel that is able to broadcast wo/ allocating.
+                    let (lv, rv) = match (lv.map(|b| b.len()), rv.map(|b| b.len())) {
+                        (Some(1), Some(1)) if arr.len() != 1 => {
+                            let lv = broadcast(lv, arr);
+                            let rv = broadcast(rv, arr);
+                            (Some(lv), Some(rv))
+                        },
+                        (Some(a), Some(b)) if a == b => (lv.cloned(), rv.cloned()),
+                        (Some(1), _) => {
+                            let lv = broadcast(lv, arr);
+                            (Some(lv), rv.cloned())
+                        },
+                        (_, Some(1)) => {
+                            let rv = broadcast(rv, arr);
+                            (lv.cloned(), Some(rv))
+                        },
+                        (None, Some(_)) | (Some(_), None) | (None, None) => {
+                            (lv.cloned(), rv.cloned())
+                        },
+                        (Some(a), Some(b)) => {
+                            polars_bail!(InvalidOperation: "got different sizes in 'zip' operation, got length: {a} and {b}")
+                        },
+                    };
+
+                    // broadcast mask
+                    let validity = if mask.len() != arr.len() && mask.len() == 1 {
+                        if mask.get(0).unwrap() {
+                            lv
+                        } else {
+                            rv
+                        }
+                    } else {
+                        if_then_else_validity(mask.values(), lv.as_ref(), rv.as_ref())
+                    };
+
+                    *arr = arr.with_validity(validity);
+                }
+            }
+            out.compute_len();
+        }
+        Ok(out)
     }
 }

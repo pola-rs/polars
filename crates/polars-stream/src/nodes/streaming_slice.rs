@@ -30,13 +30,14 @@ impl ComputeNode for StreamingSliceNode {
         self.num_pipelines = num_pipelines;
     }
 
-    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) {
+    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {
         if self.stream_offset >= self.start_offset + self.length || self.length == 0 {
             recv[0] = PortState::Done;
             send[0] = PortState::Done;
         } else {
             recv.swap_with_slice(send);
         }
+        Ok(())
     }
 
     fn spawn<'env, 's>(
@@ -73,6 +74,13 @@ impl ComputeNode for StreamingSliceNode {
                         df
                     }
                 });
+
+                // Technically not necessary, but it's nice to already tell the
+                // source to stop producing more morsels as we won't be
+                // interested in the results anyway.
+                if self.stream_offset >= stop_offset {
+                    morsel.source_token().stop();
+                }
 
                 if !morsel.df().is_empty() && send.send(morsel).await.is_err() {
                     break;

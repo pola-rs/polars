@@ -58,6 +58,7 @@ impl Executor for HConcatExec {
             out?.into_iter().flatten().collect()
         };
 
-        concat_df_horizontal(&dfs)
+        // Invariant of IR. Schema is already checked to contain no duplicates.
+        concat_df_horizontal(&dfs, false)
     }
 }

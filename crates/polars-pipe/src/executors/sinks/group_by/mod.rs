@@ -13,10 +13,10 @@ use polars_core::using_string_cache;
 pub(crate) use primitive::*;
 pub(crate) use string::*;
 
-pub(super) fn physical_agg_to_logical(cols: &mut [Series], output_schema: &Schema) {
+pub(super) fn physical_agg_to_logical(cols: &mut [Column], output_schema: &Schema) {
     for (s, (name, dtype)) in cols.iter_mut().zip(output_schema.iter()) {
         if s.name() != name {
-            s.rename(name);
+            s.rename(name.clone());
         }
         match dtype {
             #[cfg(feature = "dtype-categorical")]
@@ -32,7 +32,7 @@ pub(super) fn physical_agg_to_logical(cols: &mut [Series], output_schema: &Schem
                             matches!(dt, DataType::Enum(_, _)),
                             *ordering,
                         )
-                        .into_series()
+                        .into_column()
                     }
                 } else {
                     let cats = s.u32().unwrap().clone();
@@ -40,7 +40,7 @@ pub(super) fn physical_agg_to_logical(cols: &mut [Series], output_schema: &Schem
                         // SAFETY, we go from logical to primitive back to logical so the categoricals should still match the global map.
                         *s = unsafe {
                             CategoricalChunked::from_global_indices_unchecked(cats, *ordering)
-                                .into_series()
+                                .into_column()
                         };
                     } else {
                         // we set the global string cache once we start a streaming pipeline

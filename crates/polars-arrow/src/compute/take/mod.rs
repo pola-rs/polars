@@ -40,12 +40,12 @@ use crate::with_match_primitive_type_full;
 /// Doesn't do bound checks
 pub unsafe fn take_unchecked(values: &dyn Array, indices: &IdxArr) -> Box<dyn Array> {
     if indices.len() == 0 {
-        return new_empty_array(values.data_type().clone());
+        return new_empty_array(values.dtype().clone());
     }
 
     use crate::datatypes::PhysicalType::*;
-    match values.data_type().to_physical_type() {
-        Null => Box::new(NullArray::new(values.data_type().clone(), indices.len())),
+    match values.dtype().to_physical_type() {
+        Null => Box::new(NullArray::new(values.dtype().clone(), indices.len())),
         Boolean => {
             let values = values.as_any().downcast_ref().unwrap();
             Box::new(boolean::take_unchecked(values, indices))

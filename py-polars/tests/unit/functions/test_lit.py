@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import enum
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 )
 def test_lit_list_input(input: list[Any]) -> None:
     df = pl.DataFrame({"a": [1, 2]})
-    result = df.with_columns(pl.lit(input))
+    result = df.with_columns(pl.lit(input).first())
     expected = pl.DataFrame({"a": [1, 2], "literal": [input, input]})
     assert_frame_equal(result, expected)
 
@@ -41,7 +41,7 @@ def test_lit_list_input(input: list[Any]) -> None:
 )
 def test_lit_tuple_input(input: tuple[Any, ...]) -> None:
     df = pl.DataFrame({"a": [1, 2]})
-    result = df.with_columns(pl.lit(input))
+    result = df.with_columns(pl.lit(input).first())
 
     expected = pl.DataFrame({"a": [1, 2], "literal": [list(input), list(input)]})
     assert_frame_equal(result, expected)
@@ -173,6 +173,17 @@ def test_lit_decimal() -> None:
     assert result == value
 
 
+def test_lit_string_float() -> None:
+    value = 3.2
+
+    expr = pl.lit(value, dtype=pl.Utf8)
+    df = pl.select(expr)
+    result = df.item()
+
+    assert df.dtypes[0] == pl.String
+    assert result == str(value)
+
+
 @given(s=series(min_size=1, max_size=1, allow_null=False, allowed_dtypes=pl.Decimal))
 def test_lit_decimal_parametric(s: pl.Series) -> None:
     scale = s.dtype.scale  # type: ignore[attr-defined]
@@ -184,3 +195,27 @@ def test_lit_decimal_parametric(s: pl.Series) -> None:
 
     assert df.dtypes[0] == pl.Decimal(None, scale)
     assert result == value
+
+
+def test_lit_datetime_subclass_w_allow_object() -> None:
+    class MyAmazingDate(date):
+        pass
+
+    class MyAmazingDatetime(datetime):
+        pass
+
+    result = pl.select(
+        a=pl.lit(MyAmazingDatetime(2020, 1, 1)),
+        b=pl.lit(MyAmazingDate(2020, 1, 1)),
+        c=pl.lit(MyAmazingDatetime(2020, 1, 1), allow_object=True),
+        d=pl.lit(MyAmazingDate(2020, 1, 1), allow_object=True),
+    )
+    expected = pl.DataFrame(
+        {
+            "a": [datetime(2020, 1, 1)],
+            "b": [date(2020, 1, 1)],
+            "c": [datetime(2020, 1, 1)],
+            "d": [date(2020, 1, 1)],
+        }
+    )
+    assert_frame_equal(result, expected)

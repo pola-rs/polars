@@ -214,6 +214,7 @@ pub(super) async fn expand_paths_hf(
     paths: &[PathBuf],
     check_directory_level: bool,
     cloud_options: Option<&CloudOptions>,
+    glob: bool,
 ) -> PolarsResult<(usize, Vec<PathBuf>)> {
     assert!(!paths.is_empty());
 
@@ -251,7 +252,11 @@ pub(super) async fn expand_paths_hf(
         );
         let rel_path = path_parts.path.as_str();
 
-        let (prefix, expansion) = extract_prefix_expansion(rel_path)?;
+        let (prefix, expansion) = if glob {
+            extract_prefix_expansion(rel_path)?
+        } else {
+            (path_parts.path.clone(), None)
+        };
         let expansion_matcher = &if expansion.is_some() {
             Some(Matcher::new(prefix.clone(), expansion.as_deref())?)
         } else {
@@ -300,7 +305,7 @@ pub(super) async fn expand_paths_hf(
                     let bytes = bytes?;
                     let bytes = bytes.as_ref();
                     entries.extend(try_parse_api_response(bytes)?.into_iter().filter(|x| {
-                        matcher.is_matching(x.path.as_str()) && (!x.is_file() || x.size > 0)
+                        !x.is_file() || (x.size > 0 && matcher.is_matching(x.path.as_str()))
                     }));
                 }
             } else {

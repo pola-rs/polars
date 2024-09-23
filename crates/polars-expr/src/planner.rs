@@ -161,26 +161,6 @@ impl ExpressionConversionState {
     }
 }
 
-pub fn create_physical_expr_streaming(
-    expr_ir: &ExprIR,
-    expr_arena: &Arena<AExpr>,
-    schema: Option<&SchemaRef>,
-    state: &mut ExpressionConversionState,
-) -> PolarsResult<Arc<dyn PhysicalExpr>> {
-    let phys_expr =
-        create_physical_expr_inner(expr_ir.node(), Context::Default, expr_arena, schema, state)?;
-
-    if let Some(name) = expr_ir.get_alias() {
-        Ok(Arc::new(AliasExpr::new(
-            phys_expr,
-            name.clone(),
-            node_to_expr(expr_ir.node(), expr_arena),
-        )))
-    } else {
-        Ok(phys_expr)
-    }
-}
-
 pub fn create_physical_expr(
     expr_ir: &ExprIR,
     ctxt: Context,
@@ -271,9 +251,9 @@ fn create_physical_expr_inner(
 
                     if apply_columns.is_empty() {
                         if has_aexpr(function, expr_arena, |e| matches!(e, AExpr::Literal(_))) {
-                            apply_columns.push(Arc::from("literal"))
+                            apply_columns.push(PlSmallStr::from_static("literal"))
                         } else if has_aexpr(function, expr_arena, |e| matches!(e, AExpr::Len)) {
-                            apply_columns.push(Arc::from("len"))
+                            apply_columns.push(PlSmallStr::from_static("len"))
                         } else {
                             let e = node_to_expr(function, expr_arena);
                             polars_bail!(
@@ -313,6 +293,7 @@ fn create_physical_expr_inner(
             )))
         },
         BinaryExpr { left, op, right } => {
+            let is_scalar = is_scalar_ae(expression, expr_arena);
             let lhs = create_physical_expr_inner(*left, ctxt, expr_arena, schema, state)?;
             let rhs = create_physical_expr_inner(*right, ctxt, expr_arena, schema, state)?;
             Ok(Arc::new(phys_expr::BinaryExpr::new(
@@ -322,6 +303,7 @@ fn create_physical_expr_inner(
                 node_to_expr(expression, expr_arena),
                 state.local.has_lit,
                 state.allow_threading,
+                is_scalar,
             )))
         },
         Column(column) => Ok(Arc::new(ColumnExpr::new(
@@ -356,7 +338,6 @@ fn create_physical_expr_inner(
             by,
             sort_options,
         } => {
-            polars_ensure!(!by.is_empty(), InvalidOperation: "'sort_by' got an empty set");
             let phys_expr = create_physical_expr_inner(*expr, ctxt, expr_arena, schema, state)?;
             let phys_by =
                 create_physical_expressions_from_nodes(by, ctxt, expr_arena, schema, state)?;
@@ -448,13 +429,13 @@ fn create_physical_expr_inner(
         },
         Cast {
             expr,
-            data_type,
+            dtype,
             options,
         } => {
             let phys_expr = create_physical_expr_inner(*expr, ctxt, expr_arena, schema, state)?;
             Ok(Arc::new(CastExpr {
                 input: phys_expr,
-                data_type: data_type.clone(),
+                dtype: dtype.clone(),
                 expr: node_to_expr(expression, expr_arena),
                 options: *options,
             }))
@@ -464,6 +445,7 @@ fn create_physical_expr_inner(
             truthy,
             falsy,
         } => {
+            let is_scalar = is_scalar_ae(expression, expr_arena);
             let mut lit_count = 0u8;
             state.reset();
             let predicate =
@@ -481,6 +463,7 @@ fn create_physical_expr_inner(
                 falsy,
                 node_to_expr(expression, expr_arena),
                 lit_count < 2,
+                is_scalar,
             )))
         },
         AnonymousFunction {
@@ -489,6 +472,7 @@ fn create_physical_expr_inner(
             output_type: _,
             options,
         } => {
+            let is_scalar = is_scalar_ae(expression, expr_arena);
             let output_dtype = schema.and_then(|schema| {
                 expr_arena
                     .get(expression)
@@ -520,6 +504,7 @@ fn create_physical_expr_inner(
                 state.allow_threading,
                 schema.cloned(),
                 output_dtype,
+                is_scalar,
             )))
         },
         Function {
@@ -528,6 +513,7 @@ fn create_physical_expr_inner(
             options,
             ..
         } => {
+            let is_scalar = is_scalar_ae(expression, expr_arena);
             let output_dtype = schema.and_then(|schema| {
                 expr_arena
                     .get(expression)
@@ -558,6 +544,7 @@ fn create_physical_expr_inner(
                 state.allow_threading,
                 schema.cloned(),
                 output_dtype,
+                is_scalar,
             )))
         },
         Slice {
@@ -578,9 +565,9 @@ fn create_physical_expr_inner(
         },
         Explode(expr) => {
             let input = create_physical_expr_inner(*expr, ctxt, expr_arena, schema, state)?;
-            let function =
-                SpecialEq::new(Arc::new(move |s: &mut [Series]| s[0].explode().map(Some))
-                    as Arc<dyn SeriesUdf>);
+            let function = SpecialEq::new(Arc::new(
+                move |c: &mut [polars_core::frame::column::Column]| c[0].explode().map(Some),
+            ) as Arc<dyn ColumnsUdf>);
             Ok(Arc::new(ApplyExpr::new_minimal(
                 vec![input],
                 function,
@@ -595,12 +582,6 @@ fn create_physical_expr_inner(
                 name.clone(),
                 node_to_expr(*input, expr_arena),
             )))
-        },
-        Wildcard => {
-            polars_bail!(ComputeError: "wildcard column selection not supported at this point")
-        },
-        Nth(n) => {
-            polars_bail!(ComputeError: "nth column selection not supported at this point (n={})", n)
         },
     }
 }

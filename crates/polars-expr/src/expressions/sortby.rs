@@ -131,9 +131,9 @@ fn sort_by_groups_no_match_single<'a>(
                 },
                 _ => Ok(None),
             })
-            .collect_ca_with_dtype("", dtype)
+            .collect_ca_with_dtype(PlSmallStr::EMPTY, dtype)
     });
-    let s = ca?.with_name(s_in.name()).into_series();
+    let s = ca?.with_name(s_in.name().clone()).into_series();
     ac_in.with_series(s, true, Some(expr))?;
     Ok(ac_in)
 }
@@ -152,6 +152,7 @@ fn sort_by_groups_multiple_by(
             let groups = sort_by_s
                 .iter()
                 .map(|s| unsafe { s.take_slice_unchecked(idx) })
+                .map(Column::from)
                 .collect::<Vec<_>>();
 
             let options = SortMultipleOptions {
@@ -161,13 +162,17 @@ fn sort_by_groups_multiple_by(
                 maintain_order,
             };
 
-            let sorted_idx = groups[0].arg_sort_multiple(&groups[1..], &options).unwrap();
+            let sorted_idx = groups[0]
+                .as_materialized_series()
+                .arg_sort_multiple(&groups[1..], &options)
+                .unwrap();
             map_sorted_indices_to_group_idx(&sorted_idx, idx)
         },
         GroupsIndicator::Slice([first, len]) => {
             let groups = sort_by_s
                 .iter()
                 .map(|s| s.slice(first as i64, len as usize))
+                .map(Column::from)
                 .collect::<Vec<_>>();
 
             let options = SortMultipleOptions {
@@ -176,7 +181,10 @@ fn sort_by_groups_multiple_by(
                 multithreaded,
                 maintain_order,
             };
-            let sorted_idx = groups[0].arg_sort_multiple(&groups[1..], &options).unwrap();
+            let sorted_idx = groups[0]
+                .as_materialized_series()
+                .arg_sort_multiple(&groups[1..], &options)
+                .unwrap();
             map_sorted_indices_to_group_slice(&sorted_idx, first)
         },
     };
@@ -193,6 +201,10 @@ impl PhysicalExpr for SortByExpr {
     }
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
         let series_f = || self.input.evaluate(df, state);
+        if self.by.is_empty() {
+            // Sorting by 0 columns returns input unchanged.
+            return series_f();
+        }
         let (series, sorted_idx) = if self.by.len() == 1 {
             let sorted_idx_f = || {
                 let s_sort_by = self.by[0].evaluate(df, state)?;
@@ -208,11 +220,13 @@ impl PhysicalExpr for SortByExpr {
                     .by
                     .iter()
                     .map(|e| {
-                        e.evaluate(df, state).map(|s| match s.dtype() {
-                            #[cfg(feature = "dtype-categorical")]
-                            DataType::Categorical(_, _) | DataType::Enum(_, _) => s,
-                            _ => s.to_physical_repr().into_owned(),
-                        })
+                        e.evaluate(df, state)
+                            .map(|s| match s.dtype() {
+                                #[cfg(feature = "dtype-categorical")]
+                                DataType::Categorical(_, _) | DataType::Enum(_, _) => s,
+                                _ => s.to_physical_repr().into_owned(),
+                            })
+                            .map(Column::from)
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
 
@@ -225,20 +239,22 @@ impl PhysicalExpr for SortByExpr {
                 for i in 1..s_sort_by.len() {
                     polars_ensure!(
                         s_sort_by[0].len() == s_sort_by[i].len(),
-                        expr = self.expr, ComputeError:
+                        expr = self.expr, ShapeMismatch:
                         "`sort_by` produced different length ({}) than earlier Series' length in `by` ({})",
                         s_sort_by[0].len(), s_sort_by[i].len()
                     );
                 }
 
-                s_sort_by[0].arg_sort_multiple(&s_sort_by[1..], &options)
+                s_sort_by[0]
+                    .as_materialized_series()
+                    .arg_sort_multiple(&s_sort_by[1..], &options)
             };
             POOL.install(|| rayon::join(series_f, sorted_idx_f))
         };
         let (sorted_idx, series) = (sorted_idx?, series?);
         polars_ensure!(
             sorted_idx.len() == series.len(),
-            expr = self.expr, ComputeError:
+            expr = self.expr, ShapeMismatch:
             "`sort_by` produced different length ({}) than the Series that has to be sorted ({})",
             sorted_idx.len(), series.len()
         );
@@ -356,5 +372,9 @@ impl PhysicalExpr for SortByExpr {
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.input.to_field(input_schema)
+    }
+
+    fn is_scalar(&self) -> bool {
+        false
     }
 }

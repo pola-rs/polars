@@ -3,12 +3,16 @@ mod dsl_to_ir;
 mod expr_expansion;
 mod expr_to_ir;
 mod ir_to_dsl;
-#[cfg(any(feature = "ipc", feature = "parquet", feature = "csv"))]
+#[cfg(any(
+    feature = "ipc",
+    feature = "parquet",
+    feature = "csv",
+    feature = "json"
+))]
 mod scans;
 mod stack_opt;
 
-use std::borrow::Cow;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex};
 
 pub use dsl_to_ir::*;
 pub use expr_to_ir::*;
@@ -16,9 +20,11 @@ pub use ir_to_dsl::*;
 use polars_core::prelude::*;
 use polars_utils::vec::ConvertVec;
 use recursive::recursive;
+mod functions;
+mod join;
 pub(crate) mod type_coercion;
 
-pub(crate) use expr_expansion::{is_regex_projection, prepare_projection, rewrite_projections};
+pub(crate) use expr_expansion::{expand_selectors, is_regex_projection, prepare_projection};
 
 use crate::constants::get_len_name;
 use crate::prelude::*;
@@ -43,21 +49,27 @@ impl IR {
             conversion_fn(node, lp_arena).into_lp(conversion_fn, lp_arena, expr_arena)
         };
         match lp {
-            IR::Scan {
-                paths,
-                file_info,
-                hive_parts,
-                predicate,
-                scan_type,
-                output_schema: _,
-                file_options: options,
-            } => DslPlan::Scan {
-                paths: Arc::new(Mutex::new((paths, true))),
-                file_info: Arc::new(RwLock::new(Some(file_info))),
-                hive_parts,
-                predicate: predicate.map(|e| e.to_expr(expr_arena)),
-                scan_type,
-                file_options: options,
+            ir @ IR::Scan { .. } => {
+                let IR::Scan {
+                    sources,
+                    file_info,
+                    hive_parts: _,
+                    predicate: _,
+                    scan_type,
+                    output_schema: _,
+                    file_options,
+                } = ir.clone()
+                else {
+                    unreachable!()
+                };
+
+                DslPlan::Scan {
+                    sources: sources.clone(),
+                    file_info: Some(file_info.clone()),
+                    scan_type: scan_type.clone(),
+                    file_options: file_options.clone(),
+                    cached_ir: Arc::new(Mutex::new(Some(ir))),
+                }
             },
             #[cfg(feature = "python")]
             IR::PythonScan { options, .. } => DslPlan::PythonScan { options },
@@ -101,14 +113,9 @@ impl IR {
             IR::DataFrameScan {
                 df,
                 schema,
-                output_schema,
-                filter: selection,
-            } => DslPlan::DataFrameScan {
-                df,
-                schema,
-                output_schema,
-                filter: selection.map(|e| e.to_expr(expr_arena)),
-            },
+                output_schema: _,
+                filter: _,
+            } => DslPlan::DataFrameScan { df, schema },
             IR::Select {
                 expr,
                 input,
@@ -136,7 +143,7 @@ impl IR {
                 let input = convert_to_lp(input, lp_arena);
                 let expr = columns
                     .iter_names()
-                    .map(|name| Expr::Column(ColumnName::from(name.as_str())))
+                    .map(|name| Expr::Column(name.clone()))
                     .collect::<Vec<_>>();
                 DslPlan::Select {
                     expr,
@@ -162,14 +169,10 @@ impl IR {
             IR::Cache {
                 input,
                 id,
-                cache_hits,
+                cache_hits: _,
             } => {
                 let input = Arc::new(convert_to_lp(input, lp_arena));
-                DslPlan::Cache {
-                    input,
-                    id,
-                    cache_hits,
-                }
+                DslPlan::Cache { input, id }
             },
             IR::GroupBy {
                 input,
@@ -210,6 +213,7 @@ impl IR {
                 DslPlan::Join {
                     input_left: Arc::new(i_l),
                     input_right: Arc::new(i_r),
+                    predicates: Default::default(),
                     left_on,
                     right_on,
                     options,
@@ -232,6 +236,15 @@ impl IR {
             },
             IR::Distinct { input, options } => {
                 let i = convert_to_lp(input, lp_arena);
+                let options = DistinctOptionsDSL {
+                    subset: options.subset.map(|s| {
+                        s.iter()
+                            .map(|name| Expr::Column(name.clone()).into())
+                            .collect()
+                    }),
+                    maintain_order: options.maintain_order,
+                    keep_strategy: options.keep_strategy,
+                };
                 DslPlan::Distinct {
                     input: Arc::new(i),
                     options,

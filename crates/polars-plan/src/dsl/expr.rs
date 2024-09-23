@@ -61,16 +61,18 @@ impl AsRef<Expr> for AggExpr {
     }
 }
 
-/// Expressions that can be used in various contexts. Queries consist of multiple expressions. When using the polars
-/// lazy API, don't construct an `Expr` directly; instead, create one using the functions in the `polars_lazy::dsl`
-/// module. See that module's docs for more info.
+/// Expressions that can be used in various contexts.
+///
+/// Queries consist of multiple expressions.
+/// When using the polars lazy API, don't construct an `Expr` directly; instead, create one using
+/// the functions in the `polars_lazy::dsl` module. See that module's docs for more info.
 #[derive(Clone, PartialEq)]
 #[must_use]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum Expr {
-    Alias(Arc<Expr>, ColumnName),
-    Column(ColumnName),
-    Columns(Arc<[ColumnName]>),
+    Alias(Arc<Expr>, PlSmallStr),
+    Column(PlSmallStr),
+    Columns(Arc<[PlSmallStr]>),
     DtypeColumn(Vec<DataType>),
     IndexColumn(Arc<[i64]>),
     Literal(LiteralValue),
@@ -81,7 +83,7 @@ pub enum Expr {
     },
     Cast {
         expr: Arc<Expr>,
-        data_type: DataType,
+        dtype: DataType,
         options: CastOptions,
     },
     Sort {
@@ -134,27 +136,25 @@ pub enum Expr {
         length: Arc<Expr>,
     },
     /// Can be used in a select statement to exclude a column from selection
+    /// TODO: See if we can replace `Vec<Excluded>` with `Arc<Excluded>`
     Exclude(Arc<Expr>, Vec<Excluded>),
     /// Set root name as Alias
     KeepName(Arc<Expr>),
     Len,
     /// Take the nth column in the `DataFrame`
     Nth(i64),
-    // skipped fields must be last otherwise serde fails in pickle
-    #[cfg_attr(feature = "serde", serde(skip))]
     RenameAlias {
         function: SpecialEq<Arc<dyn RenameAliasFn>>,
         expr: Arc<Expr>,
     },
     #[cfg(feature = "dtype-struct")]
-    Field(Arc<[ColumnName]>),
+    Field(Arc<[PlSmallStr]>),
     AnonymousFunction {
         /// function arguments
         input: Vec<Expr>,
         /// function to apply
-        function: SpecialEq<Arc<dyn SeriesUdf>>,
+        function: SpecialEq<Arc<dyn ColumnsUdf>>,
         /// output dtype of the function
-        #[cfg_attr(feature = "serde", serde(skip))]
         output_type: GetOutput,
         options: FunctionOptions,
     },
@@ -192,11 +192,11 @@ impl Hash for Expr {
             },
             Expr::Cast {
                 expr,
-                data_type,
+                dtype,
                 options: strict,
             } => {
                 expr.hash(state);
-                data_type.hash(state);
+                dtype.hash(state);
                 strict.hash(state)
             },
             Expr::Sort { expr, options } => {
@@ -301,7 +301,7 @@ impl Default for Expr {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 
 pub enum Excluded {
-    Name(ColumnName),
+    Name(PlSmallStr),
     Dtype(DataType),
 }
 
@@ -318,7 +318,7 @@ impl Expr {
         ctxt: Context,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<Field> {
-        let root = to_aexpr(self.clone(), expr_arena);
+        let root = to_aexpr(self.clone(), expr_arena)?;
         expr_arena.get(root).to_field(schema, ctxt, expr_arena)
     }
 }
@@ -376,7 +376,7 @@ impl Display for Operator {
 }
 
 impl Operator {
-    pub(crate) fn is_comparison(&self) -> bool {
+    pub fn is_comparison(&self) -> bool {
         matches!(
             self,
             Self::Eq
@@ -391,6 +391,29 @@ impl Operator {
                 | Self::EqValidity
                 | Self::NotEqValidity
         )
+    }
+
+    pub fn swap_operands(self) -> Self {
+        match self {
+            Operator::Eq => Operator::Eq,
+            Operator::Gt => Operator::Lt,
+            Operator::GtEq => Operator::LtEq,
+            Operator::LtEq => Operator::GtEq,
+            Operator::Or => Operator::Or,
+            Operator::LogicalAnd => Operator::LogicalAnd,
+            Operator::LogicalOr => Operator::LogicalOr,
+            Operator::Xor => Operator::Xor,
+            Operator::NotEq => Operator::NotEq,
+            Operator::EqValidity => Operator::EqValidity,
+            Operator::NotEqValidity => Operator::NotEqValidity,
+            Operator::Divide => Operator::Multiply,
+            Operator::Multiply => Operator::Divide,
+            Operator::And => Operator::And,
+            Operator::Plus => Operator::Minus,
+            Operator::Minus => Operator::Plus,
+            Operator::Lt => Operator::Gt,
+            _ => unimplemented!(),
+        }
     }
 
     pub fn is_arithmetic(&self) -> bool {

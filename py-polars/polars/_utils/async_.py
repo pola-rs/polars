@@ -15,7 +15,7 @@ T = TypeVar("T")
 
 
 class _GeventDataFrameResult(Generic[T]):
-    __slots__ = ("_watcher", "_value", "_result")
+    __slots__ = ("_result", "_value", "_watcher")
 
     def __init__(self) -> None:
         if not _GEVENT_AVAILABLE:

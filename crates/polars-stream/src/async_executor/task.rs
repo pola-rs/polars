@@ -278,6 +278,10 @@ impl<M> Runnable<M> {
 
 pub struct JoinHandle<T>(Option<Arc<dyn Joinable<T>>>);
 pub struct CancelHandle(Weak<dyn Cancellable>);
+pub struct AbortOnDropHandle<T> {
+    join_handle: JoinHandle<T>,
+    cancel_handle: CancelHandle,
+}
 
 impl<T> JoinHandle<T> {
     pub fn cancel_handle(&self) -> CancelHandle {
@@ -305,15 +309,38 @@ impl<T> Future for JoinHandle<T> {
 }
 
 impl CancelHandle {
-    pub fn cancel(self) {
+    pub fn cancel(&self) {
         if let Some(t) = self.0.upgrade() {
             t.cancel();
         }
     }
 }
 
-#[allow(unused)]
-pub fn spawn<F, S, M>(future: F, schedule: S, metadata: M) -> JoinHandle<F::Output>
+impl<T> AbortOnDropHandle<T> {
+    pub fn new(join_handle: JoinHandle<T>) -> Self {
+        let cancel_handle = join_handle.cancel_handle();
+        Self {
+            join_handle,
+            cancel_handle,
+        }
+    }
+}
+
+impl<T> Future for AbortOnDropHandle<T> {
+    type Output = T;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        Pin::new(&mut self.join_handle).poll(cx)
+    }
+}
+
+impl<T> Drop for AbortOnDropHandle<T> {
+    fn drop(&mut self) {
+        self.cancel_handle.cancel();
+    }
+}
+
+pub fn spawn<F, S, M>(future: F, schedule: S, metadata: M) -> (Runnable<M>, JoinHandle<F::Output>)
 where
     F: Future + Send + 'static,
     F::Output: Send + 'static,
@@ -321,7 +348,7 @@ where
     M: Send + Sync + 'static,
 {
     let task = unsafe { Task::spawn(future, schedule, metadata) };
-    JoinHandle(Some(task))
+    (task.clone().into_runnable(), task.into_join_handle())
 }
 
 /// Takes a future and turns it into a runnable task with associated metadata.

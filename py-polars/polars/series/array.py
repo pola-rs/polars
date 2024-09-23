@@ -20,7 +20,7 @@ class ArrayNameSpace:
 
     _accessor = "arr"
 
-    def __init__(self, series: Series):
+    def __init__(self, series: Series) -> None:
         self._s: PySeries = series._s
 
     def min(self) -> Series:
@@ -403,7 +403,7 @@ class ArrayNameSpace:
         Examples
         --------
         >>> s = pl.Series(
-        ...     "a", [[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=pl.Array(pl.Int32, 3)
+        ...     "a", [[1, 2, 3], [4, 5, 6], [7, 9, 8]], dtype=pl.Array(pl.Int32, 3)
         ... )
         >>> s.arr.last()
         shape: (3,)
@@ -411,7 +411,7 @@ class ArrayNameSpace:
         [
             3
             6
-            9
+            8
         ]
 
         """

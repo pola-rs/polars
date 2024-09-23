@@ -6,6 +6,7 @@ Manipulation/selection
 .. autosummary::
    :toctree: api/
 
+    DataFrame.__getitem__
     DataFrame.bottom_k
     DataFrame.cast
     DataFrame.clear
@@ -34,6 +35,7 @@ Manipulation/selection
     DataFrame.iter_slices
     DataFrame.join
     DataFrame.join_asof
+    DataFrame.join_where
     DataFrame.limit
     DataFrame.melt
     DataFrame.merge_sorted

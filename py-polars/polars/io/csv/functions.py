@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import contextlib
+import os
 from io import BytesIO, StringIO
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any, Callable, Mapping, Sequence
 
 import polars._reexport as pl
+import polars.functions as F
 from polars._utils.deprecation import deprecate_renamed_parameter
 from polars._utils.various import (
     _process_null_values,
+    is_path_or_str_sequence,
     is_str_sequence,
     normalize_filepath,
 )
@@ -108,7 +111,8 @@ def read_csv(
     schema
         Provide the schema. This means that polars doesn't do schema inference.
         This argument expects the complete schema, whereas `schema_overrides` can be
-        used to partially overwrite a schema.
+        used to partially overwrite a schema. Note that the order of the columns in
+        the provided `schema` must match the order of the columns in the CSV being read.
     schema_overrides
         Overwrite dtypes for specific or all columns during schema inference.
     null_values
@@ -419,44 +423,111 @@ def read_csv(
     if not infer_schema:
         infer_schema_length = 0
 
-    with prepare_file_arg(
-        source,
-        encoding=encoding,
-        use_pyarrow=False,
-        raise_if_empty=raise_if_empty,
-        storage_options=storage_options,
-    ) as data:
-        df = _read_csv_impl(
-            data,
+    # TODO: scan_csv doesn't support a "dtype slice" (i.e. list[DataType])
+    schema_overrides_is_list = isinstance(schema_overrides, Sequence)
+    encoding_supported_in_lazy = encoding in {"utf8", "utf8-lossy"}
+
+    if (
+        # Check that it is not a BytesIO object
+        isinstance(v := source, (str, Path))
+    ) and (
+        # HuggingFace only for now ⊂( ◜◒◝ )⊃
+        str(v).startswith("hf://")
+        # Also dispatch on FORCE_ASYNC, so that this codepath gets run
+        # through by our test suite during CI.
+        or (
+            os.getenv("POLARS_FORCE_ASYNC") == "1"
+            and not schema_overrides_is_list
+            and encoding_supported_in_lazy
+        )
+        # TODO: We can't dispatch this for all paths due to a few reasons:
+        # * `scan_csv` does not support compressed files
+        # * The `storage_options` configuration keys are different between
+        #   fsspec and object_store (would require a breaking change)
+    ):
+        source = normalize_filepath(v, check_not_directory=False)
+
+        if schema_overrides_is_list:
+            msg = "passing a list to `schema_overrides` is unsupported for hf:// paths"
+            raise ValueError(msg)
+        if not encoding_supported_in_lazy:
+            msg = f"unsupported encoding {encoding} for hf:// paths"
+            raise ValueError(msg)
+
+        lf = _scan_csv_impl(
+            source,
             has_header=has_header,
-            columns=columns if columns else projection,
             separator=separator,
             comment_prefix=comment_prefix,
             quote_char=quote_char,
             skip_rows=skip_rows,
-            schema_overrides=schema_overrides,
+            schema_overrides=schema_overrides,  # type: ignore[arg-type]
             schema=schema,
             null_values=null_values,
             missing_utf8_is_empty_string=missing_utf8_is_empty_string,
             ignore_errors=ignore_errors,
             try_parse_dates=try_parse_dates,
-            n_threads=n_threads,
             infer_schema_length=infer_schema_length,
-            batch_size=batch_size,
             n_rows=n_rows,
-            encoding=encoding if encoding == "utf8-lossy" else "utf8",
+            encoding=encoding,  # type: ignore[arg-type]
             low_memory=low_memory,
             rechunk=rechunk,
             skip_rows_after_header=skip_rows_after_header,
             row_index_name=row_index_name,
             row_index_offset=row_index_offset,
-            sample_size=sample_size,
             eol_char=eol_char,
             raise_if_empty=raise_if_empty,
             truncate_ragged_lines=truncate_ragged_lines,
             decimal_comma=decimal_comma,
             glob=glob,
         )
+
+        if columns:
+            lf = lf.select(columns)
+        elif projection:
+            lf = lf.select(F.nth(projection))
+
+        df = lf.collect()
+
+    else:
+        with prepare_file_arg(
+            source,
+            encoding=encoding,
+            use_pyarrow=False,
+            raise_if_empty=raise_if_empty,
+            storage_options=storage_options,
+        ) as data:
+            df = _read_csv_impl(
+                data,
+                has_header=has_header,
+                columns=columns if columns else projection,
+                separator=separator,
+                comment_prefix=comment_prefix,
+                quote_char=quote_char,
+                skip_rows=skip_rows,
+                schema_overrides=schema_overrides,
+                schema=schema,
+                null_values=null_values,
+                missing_utf8_is_empty_string=missing_utf8_is_empty_string,
+                ignore_errors=ignore_errors,
+                try_parse_dates=try_parse_dates,
+                n_threads=n_threads,
+                infer_schema_length=infer_schema_length,
+                batch_size=batch_size,
+                n_rows=n_rows,
+                encoding=encoding if encoding == "utf8-lossy" else "utf8",
+                low_memory=low_memory,
+                rechunk=rechunk,
+                skip_rows_after_header=skip_rows_after_header,
+                row_index_name=row_index_name,
+                row_index_offset=row_index_offset,
+                sample_size=sample_size,
+                eol_char=eol_char,
+                raise_if_empty=raise_if_empty,
+                truncate_ragged_lines=truncate_ragged_lines,
+                decimal_comma=decimal_comma,
+                glob=glob,
+            )
 
     if new_columns:
         return _update_columns(df, new_columns)
@@ -760,7 +831,7 @@ def read_csv_batched(
     Examples
     --------
     >>> reader = pl.read_csv_batched(
-    ...     "./tpch/tables_scale_100/lineitem.tbl",
+    ...     "./pdsh/tables_scale_100/lineitem.tbl",
     ...     separator="|",
     ...     try_parse_dates=True,
     ... )  # doctest: +SKIP
@@ -917,7 +988,16 @@ def read_csv_batched(
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
 @deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
 def scan_csv(
-    source: str | Path | list[str] | list[Path],
+    source: str
+    | Path
+    | IO[str]
+    | IO[bytes]
+    | bytes
+    | list[str]
+    | list[Path]
+    | list[IO[str]]
+    | list[IO[bytes]]
+    | list[bytes],
     *,
     has_header: bool = True,
     separator: str = ",",
@@ -1165,7 +1245,7 @@ def scan_csv(
 
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source, check_not_directory=False)
-    else:
+    elif is_path_or_str_sequence(source, allow_str=False):
         source = [
             normalize_filepath(source, check_not_directory=False) for source in source
         ]
@@ -1209,7 +1289,15 @@ def scan_csv(
 
 
 def _scan_csv_impl(
-    source: str | list[str] | list[Path],
+    source: str
+    | IO[str]
+    | IO[bytes]
+    | bytes
+    | list[str]
+    | list[Path]
+    | list[IO[str]]
+    | list[IO[bytes]]
+    | list[bytes],
     *,
     has_header: bool = True,
     separator: str = ",",
@@ -1262,8 +1350,8 @@ def _scan_csv_impl(
         storage_options = None
 
     pylf = PyLazyFrame.new_from_csv(
-        path=source,
-        paths=sources,
+        source,
+        sources,
         separator=separator,
         has_header=has_header,
         ignore_errors=ignore_errors,

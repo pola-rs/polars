@@ -84,7 +84,7 @@ fn wrong_len() {
 }
 
 #[test]
-fn wrong_data_type() {
+fn wrong_dtype() {
     let values = Buffer::from(b"abba".to_vec());
     assert!(FixedSizeBinaryArray::try_new(ArrowDataType::Binary, values, None).is_err());
 }
@@ -95,7 +95,7 @@ fn to() {
     let a = FixedSizeBinaryArray::new(ArrowDataType::FixedSizeBinary(2), values, None);
 
     let extension = ArrowDataType::Extension(
-        "a".to_string(),
+        "a".into(),
         Box::new(ArrowDataType::FixedSizeBinary(2)),
         None,
     );

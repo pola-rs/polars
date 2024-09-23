@@ -6,17 +6,17 @@ use crate::datatypes::ArrowDataType;
 pub struct UnionScalar {
     value: Box<dyn Scalar>,
     type_: i8,
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
 }
 
 impl UnionScalar {
     /// Returns a new [`UnionScalar`]
     #[inline]
-    pub fn new(data_type: ArrowDataType, type_: i8, value: Box<dyn Scalar>) -> Self {
+    pub fn new(dtype: ArrowDataType, type_: i8, value: Box<dyn Scalar>) -> Self {
         Self {
             value,
             type_,
-            data_type,
+            dtype,
         }
     }
 
@@ -45,7 +45,7 @@ impl Scalar for UnionScalar {
     }
 
     #[inline]
-    fn data_type(&self) -> &ArrowDataType {
-        &self.data_type
+    fn dtype(&self) -> &ArrowDataType {
+        &self.dtype
     }
 }

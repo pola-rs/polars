@@ -4,7 +4,7 @@ on:
   pull_request:
     paths:
       - crates/**
-      - docs/src/rust/**
+      - docs/source/src/rust/**
       - examples/**
       - py-polars/src/**
       - py-polars/Cargo.toml
@@ -15,7 +15,7 @@ on:
       - main
     paths:
       - crates/**
-      - docs/src/rust/**
+      - docs/source/src/rust/**
       - examples/**
       - py-polars/src/**
       - py-polars/Cargo.toml

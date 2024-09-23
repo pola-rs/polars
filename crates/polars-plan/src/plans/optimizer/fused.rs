@@ -65,6 +65,16 @@ impl OptimizationRule for FusedArithmetic {
         lp_arena: &Arena<IR>,
         lp_node: Node,
     ) -> PolarsResult<Option<AExpr>> {
+        // We don't want to fuse arithmetic that we send to pyarrow.
+        #[cfg(feature = "python")]
+        if let IR::PythonScan { options } = lp_arena.get(lp_node) {
+            if matches!(
+                options.python_source,
+                PythonScanSource::Pyarrow | PythonScanSource::IOPlugin
+            ) {
+                return Ok(None);
+            }
+        };
         let expr = expr_arena.get(expr_node);
 
         use AExpr::*;
@@ -96,10 +106,7 @@ impl OptimizationRule for FusedArithmetic {
                             let node = expr_arena.add(fma);
                             // we reordered the arguments, so we don't obey the left expression output name
                             // rule anymore, that's why we alias
-                            Ok(Some(Alias(
-                                node,
-                                ColumnName::from(output_field.name.as_str()),
-                            )))
+                            Ok(Some(Alias(node, output_field.name.clone())))
                         },
                         _ => unreachable!(),
                     },

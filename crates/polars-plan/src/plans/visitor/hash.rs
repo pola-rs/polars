@@ -74,7 +74,7 @@ impl Hash for HashableEqLP<'_> {
                 predicate.traverse_and_hash(self.expr_arena, state);
             },
             IR::Scan {
-                paths,
+                sources,
                 file_info: _,
                 hive_parts: _,
                 predicate,
@@ -84,7 +84,7 @@ impl Hash for HashableEqLP<'_> {
             } => {
                 // We don't have to traverse the schema, hive partitions etc. as they are derivative from the paths.
                 scan_type.hash(state);
-                paths.hash(state);
+                sources.hash(state);
                 hash_option_expr(predicate, self.expr_arena, state);
                 file_options.hash(state);
             },
@@ -254,7 +254,7 @@ impl HashableEqLP<'_> {
             ) => expr_ir_eq(l, r, self.expr_arena),
             (
                 IR::Scan {
-                    paths: pl,
+                    sources: pl,
                     file_info: _,
                     hive_parts: _,
                     predicate: pred_l,
@@ -263,7 +263,7 @@ impl HashableEqLP<'_> {
                     file_options: ol,
                 },
                 IR::Scan {
-                    paths: pr,
+                    sources: pr,
                     file_info: _,
                     hive_parts: _,
                     predicate: pred_r,
@@ -272,7 +272,7 @@ impl HashableEqLP<'_> {
                     file_options: or,
                 },
             ) => {
-                pl == pr
+                pl.as_paths() == pr.as_paths()
                     && stl == str
                     && ol == or
                     && opt_expr_ir_eq(pred_l, pred_r, self.expr_arena)

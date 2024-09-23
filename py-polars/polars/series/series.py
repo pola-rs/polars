@@ -86,12 +86,12 @@ from polars.datatypes import (
 )
 from polars.datatypes._utils import dtype_to_init_repr
 from polars.dependencies import (
-    _HVPLOT_AVAILABLE,
+    _ALTAIR_AVAILABLE,
     _PYARROW_AVAILABLE,
     _check_for_numpy,
     _check_for_pandas,
     _check_for_pyarrow,
-    hvplot,
+    altair,
     import_optional,
 )
 from polars.dependencies import numpy as np
@@ -104,6 +104,7 @@ from polars.series.binary import BinaryNameSpace
 from polars.series.categorical import CatNameSpace
 from polars.series.datetime import DateTimeNameSpace
 from polars.series.list import ListNameSpace
+from polars.series.plotting import SeriesPlot
 from polars.series.string import StringNameSpace
 from polars.series.struct import StructNameSpace
 from polars.series.utils import expr_dispatch, get_ffi_func
@@ -117,10 +118,11 @@ if TYPE_CHECKING:
     import jax
     import numpy.typing as npt
     import torch
-    from hvplot.plotting.core import hvPlotTabularPolars
 
     from polars import DataFrame, DataType, Expr
     from polars._typing import (
+        ArrowArrayExportable,
+        ArrowStreamExportable,
         BufferInfo,
         ClosedInterval,
         ComparisonOperator,
@@ -161,6 +163,8 @@ ArrayLike = Union[
     "np.ndarray[Any, Any]",
     "pd.Series[Any]",
     "pd.DatetimeIndex",
+    "ArrowArrayExportable",
+    "ArrowStreamExportable",
 ]
 
 
@@ -263,7 +267,7 @@ class Series:
         *,
         strict: bool = True,
         nan_to_null: bool = False,
-    ):
+    ) -> None:
         # If 'Unknown' treat as None to trigger type inference
         if dtype == Unknown:
             dtype = None
@@ -341,6 +345,12 @@ class Series:
                 original_name, values, dtype=dtype, strict=strict
             )
 
+        elif hasattr(values, "__arrow_c_array__"):
+            self._s = PySeries.from_arrow_c_array(values)
+
+        elif hasattr(values, "__arrow_c_stream__"):
+            self._s = PySeries.from_arrow_c_stream(values)
+
         else:
             msg = (
                 f"Series constructor called with unsupported type {type(values).__name__!r}"
@@ -407,7 +417,7 @@ class Series:
 
         Leaking
         If you don't pass the ArrowArray struct to a consumer,
-        array memory will leak.  This is a low-level function intended for
+        array memory will leak. This is a low-level function intended for
         expert users.
         """
         self._s._export_arrow_to_c(out_ptr, out_schema_ptr)
@@ -754,30 +764,28 @@ class Series:
     def __eq__(self, other: Expr) -> Expr: ...  # type: ignore[overload-overlap]
 
     @overload
-    def __eq__(self, other: Any) -> Series: ...
+    def __eq__(self, other: object) -> Series: ...
 
-    def __eq__(self, other: Any) -> Series | Expr:
+    def __eq__(self, other: object) -> Series | Expr:
         warn_null_comparison(other)
         if isinstance(other, pl.Expr):
             return F.lit(self).__eq__(other)
         return self._comp(other, "eq")
 
     @overload  # type: ignore[override]
-    def __ne__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def __ne__(self, other: Expr) -> Expr: ...  # type: ignore[overload-overlap]
 
     @overload
-    def __ne__(self, other: Any) -> Series: ...
+    def __ne__(self, other: object) -> Series: ...
 
-    def __ne__(self, other: Any) -> Series | Expr:
+    def __ne__(self, other: object) -> Series | Expr:
         warn_null_comparison(other)
         if isinstance(other, pl.Expr):
             return F.lit(self).__ne__(other)
         return self._comp(other, "neq")
 
     @overload
-    def __gt__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def __gt__(self, other: Expr) -> Expr: ...
 
     @overload
     def __gt__(self, other: Any) -> Series: ...
@@ -789,8 +797,7 @@ class Series:
         return self._comp(other, "gt")
 
     @overload
-    def __lt__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def __lt__(self, other: Expr) -> Expr: ...
 
     @overload
     def __lt__(self, other: Any) -> Series: ...
@@ -802,8 +809,7 @@ class Series:
         return self._comp(other, "lt")
 
     @overload
-    def __ge__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def __ge__(self, other: Expr) -> Expr: ...
 
     @overload
     def __ge__(self, other: Any) -> Series: ...
@@ -815,8 +821,7 @@ class Series:
         return self._comp(other, "gt_eq")
 
     @overload
-    def __le__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def __le__(self, other: Expr) -> Expr: ...
 
     @overload
     def __le__(self, other: Any) -> Series: ...
@@ -828,8 +833,7 @@ class Series:
         return self._comp(other, "lt_eq")
 
     @overload
-    def le(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def le(self, other: Expr) -> Expr: ...
 
     @overload
     def le(self, other: Any) -> Series: ...
@@ -839,8 +843,7 @@ class Series:
         return self.__le__(other)
 
     @overload
-    def lt(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def lt(self, other: Expr) -> Expr: ...
 
     @overload
     def lt(self, other: Any) -> Series: ...
@@ -850,8 +853,7 @@ class Series:
         return self.__lt__(other)
 
     @overload
-    def eq(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def eq(self, other: Expr) -> Expr: ...
 
     @overload
     def eq(self, other: Any) -> Series: ...
@@ -861,8 +863,7 @@ class Series:
         return self.__eq__(other)
 
     @overload
-    def eq_missing(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def eq_missing(self, other: Expr) -> Expr: ...
 
     @overload
     def eq_missing(self, other: Any) -> Series: ...
@@ -909,8 +910,7 @@ class Series:
         return self.to_frame().select(F.col(self.name).eq_missing(other)).to_series()
 
     @overload
-    def ne(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def ne(self, other: Expr) -> Expr: ...
 
     @overload
     def ne(self, other: Any) -> Series: ...
@@ -920,8 +920,7 @@ class Series:
         return self.__ne__(other)
 
     @overload
-    def ne_missing(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def ne_missing(self, other: Expr) -> Expr: ...
 
     @overload
     def ne_missing(self, other: Any) -> Series: ...
@@ -968,8 +967,7 @@ class Series:
         return self.to_frame().select(F.col(self.name).ne_missing(other)).to_series()
 
     @overload
-    def ge(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def ge(self, other: Expr) -> Expr: ...
 
     @overload
     def ge(self, other: Any) -> Series: ...
@@ -979,8 +977,7 @@ class Series:
         return self.__ge__(other)
 
     @overload
-    def gt(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def gt(self, other: Expr) -> Expr: ...
 
     @overload
     def gt(self, other: Any) -> Series: ...
@@ -1033,12 +1030,10 @@ class Series:
         return self._from_pyseries(f(other))
 
     @overload
-    def __add__(self, other: DataFrame) -> DataFrame:  # type: ignore[overload-overlap]
-        ...
+    def __add__(self, other: DataFrame) -> DataFrame: ...
 
     @overload
-    def __add__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def __add__(self, other: Expr) -> Expr: ...
 
     @overload
     def __add__(self, other: Any) -> Self: ...
@@ -1053,8 +1048,7 @@ class Series:
         return self._arithmetic(other, "add", "add_<>")
 
     @overload
-    def __sub__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def __sub__(self, other: Expr) -> Expr: ...
 
     @overload
     def __sub__(self, other: Any) -> Self: ...
@@ -1064,9 +1058,24 @@ class Series:
             return F.lit(self) - other
         return self._arithmetic(other, "sub", "sub_<>")
 
+    def _recursive_cast_to_dtype(self, leaf_dtype: PolarsDataType) -> Series:
+        """
+        Convert leaf dtype the to given primitive datatype.
+
+        This is equivalent to logic in DataType::cast_leaf() in Rust.
+        """
+
+        def convert_to_primitive(dtype: PolarsDataType) -> PolarsDataType:
+            if isinstance(dtype, Array):
+                return Array(convert_to_primitive(dtype.inner), shape=dtype.shape)
+            if isinstance(dtype, List):
+                return List(convert_to_primitive(dtype.inner))
+            return leaf_dtype
+
+        return self.cast(convert_to_primitive(self.dtype))
+
     @overload
-    def __truediv__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def __truediv__(self, other: Expr) -> Expr: ...
 
     @overload
     def __truediv__(self, other: Any) -> Series: ...
@@ -1080,13 +1089,14 @@ class Series:
 
         # this branch is exactly the floordiv function without rounding the floats
         if self.dtype.is_float() or self.dtype == Decimal:
-            return self._arithmetic(other, "div", "div_<>")
+            as_float = self
+        else:
+            as_float = self._recursive_cast_to_dtype(Float64())
 
-        return self.cast(Float64) / other
+        return as_float._arithmetic(other, "div", "div_<>")
 
     @overload
-    def __floordiv__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def __floordiv__(self, other: Expr) -> Expr: ...
 
     @overload
     def __floordiv__(self, other: Any) -> Series: ...
@@ -1106,12 +1116,10 @@ class Series:
         return self.not_()
 
     @overload
-    def __mul__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def __mul__(self, other: Expr) -> Expr: ...
 
     @overload
-    def __mul__(self, other: DataFrame) -> DataFrame:  # type: ignore[overload-overlap]
-        ...
+    def __mul__(self, other: DataFrame) -> DataFrame: ...
 
     @overload
     def __mul__(self, other: Any) -> Series: ...
@@ -1128,8 +1136,7 @@ class Series:
             return self._arithmetic(other, "mul", "mul_<>")
 
     @overload
-    def __mod__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
-        ...
+    def __mod__(self, other: Expr) -> Expr: ...
 
     @overload
     def __mod__(self, other: Any) -> Series: ...
@@ -1243,7 +1250,31 @@ class Series:
     def __getitem__(
         self, key: SingleIndexSelector | MultiIndexSelector
     ) -> Any | Series:
-        """Get part of the Series as a new Series or scalar."""
+        """
+        Get part of the Series as a new Series or scalar.
+
+        Parameters
+        ----------
+        key
+            Row(s) to select.
+
+        Returns
+        -------
+        Series or scalar, depending on `key`.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 4, 2])
+        >>> s[0]
+        1
+        >>> s[0:2]
+        shape: (2,)
+        Series: 'a' [i64]
+        [
+            1
+            4
+        ]
+        """
         return get_series_item_by_key(self, key)
 
     def __setitem__(
@@ -1352,7 +1383,10 @@ class Series:
                 if isinstance(arg, (int, float, np.ndarray)):
                     args.append(arg)
                 elif isinstance(arg, Series):
-                    args.append(arg.to_physical()._s.to_numpy_view())
+                    phys_arg = arg.to_physical()
+                    if phys_arg._s.n_chunks() > 1:
+                        phys_arg._s.rechunk(in_place=True)
+                    args.append(phys_arg._s.to_numpy_view())
                 else:
                     msg = f"unsupported type {type(arg).__name__!r} for {arg!r}"
                     raise TypeError(msg)
@@ -1446,6 +1480,14 @@ class Series:
                 f"`{method!r}`"
             )
             raise NotImplementedError(msg)
+
+    def __arrow_c_stream__(self, requested_schema: object | None = None) -> object:
+        """
+        Export a Series via the Arrow PyCapsule Interface.
+
+        https://arrow.apache.org/docs/dev/format/CDataInterface/PyCapsuleInterface.html
+        """
+        return self._s.__arrow_c_stream__(requested_schema)
 
     def _repr_html_(self) -> str:
         """Format output data in HTML for display in Jupyter Notebooks."""
@@ -2407,7 +2449,7 @@ class Series:
             If None given, we determine the boundaries based on the data.
         bin_count
             If no bins provided, this will be used to determine
-            the distance of the bins
+            the distance of the bins.
         include_breakpoint
             Include a column that indicates the upper breakpoint.
         include_category
@@ -2421,18 +2463,17 @@ class Series:
         --------
         >>> a = pl.Series("a", [1, 3, 8, 8, 2, 1, 3])
         >>> a.hist(bin_count=4)
-        shape: (5, 3)
-        ┌────────────┬─────────────┬───────┐
-        │ breakpoint ┆ category    ┆ count │
-        │ ---        ┆ ---         ┆ ---   │
-        │ f64        ┆ cat         ┆ u32   │
-        ╞════════════╪═════════════╪═══════╡
-        │ 0.0        ┆ (-inf, 0.0] ┆ 0     │
-        │ 2.25       ┆ (0.0, 2.25] ┆ 3     │
-        │ 4.5        ┆ (2.25, 4.5] ┆ 2     │
-        │ 6.75       ┆ (4.5, 6.75] ┆ 0     │
-        │ inf        ┆ (6.75, inf] ┆ 2     │
-        └────────────┴─────────────┴───────┘
+        shape: (4, 3)
+        ┌────────────┬───────────────┬───────┐
+        │ breakpoint ┆ category      ┆ count │
+        │ ---        ┆ ---           ┆ ---   │
+        │ f64        ┆ cat           ┆ u32   │
+        ╞════════════╪═══════════════╪═══════╡
+        │ 2.75       ┆ (0.993, 2.75] ┆ 3     │
+        │ 4.5        ┆ (2.75, 4.5]   ┆ 2     │
+        │ 6.25       ┆ (4.5, 6.25]   ┆ 0     │
+        │ 8.0        ┆ (6.25, 8.0]   ┆ 2     │
+        └────────────┴───────────────┴───────┘
         """
         out = (
             self.to_frame()
@@ -2542,7 +2583,7 @@ class Series:
         ]
         """
 
-    def entropy(self, base: float = math.e, *, normalize: bool = False) -> float | None:
+    def entropy(self, base: float = math.e, *, normalize: bool = True) -> float | None:
         """
         Computes the entropy.
 
@@ -3703,19 +3744,9 @@ class Series:
         ]
         """
 
-    def is_in(self, other: Series | Collection[Any], *, strict: bool = True) -> Series:
+    def is_in(self, other: Series | Collection[Any]) -> Series:
         """
         Check if elements of this Series are in the other Series.
-
-        Parameters
-        ----------
-        other
-            Series or sequence to test membership of.
-        strict
-            If a python collection is given, `strict`
-            will be passed to the `Series` constructor
-            and indicates how different types should be
-            handled.
 
         Returns
         -------
@@ -3941,7 +3972,7 @@ class Series:
 
         See Also
         --------
-        assert_series_equal
+        polars.testing.assert_series_equal
 
         Examples
         --------
@@ -3961,7 +3992,7 @@ class Series:
 
     def cast(
         self,
-        dtype: PolarsDataType | type[int] | type[float] | type[str] | type[bool],
+        dtype: type[int | float | str | bool] | PolarsDataType,
         *,
         strict: bool = True,
         wrap_numerical: bool = False,
@@ -4520,7 +4551,7 @@ class Series:
 
     def to_init_repr(self, n: int = 1000) -> str:
         """
-        Convert Series to instantiatable string representation.
+        Convert Series to instantiable string representation.
 
         Parameters
         ----------
@@ -4981,27 +5012,28 @@ class Series:
 
     def sign(self) -> Series:
         """
-        Compute the element-wise indication of the sign.
+        Compute the element-wise sign function on numeric types.
 
-        The returned values can be -1, 0, or 1:
+        The returned value is computed as follows:
 
-        * -1 if x  < 0.
-        *  0 if x == 0.
-        *  1 if x  > 0.
+        * -1 if x < 0.
+        *  1 if x > 0.
+        *  x otherwise (typically 0, but could be NaN if the input is).
 
-        (null values are preserved as-is).
+        Null values are preserved as-is, and the dtype of the input is preserved.
 
         Examples
         --------
-        >>> s = pl.Series("a", [-9.0, -0.0, 0.0, 4.0, None])
+        >>> s = pl.Series("a", [-9.0, -0.0, 0.0, 4.0, float("nan"), None])
         >>> s.sign()
-        shape: (5,)
-        Series: 'a' [i64]
+        shape: (6,)
+        Series: 'a' [f64]
         [
-                -1
-                0
-                0
-                1
+                -1.0
+                -0.0
+                0.0
+                1.0
+                NaN
                 null
         ]
         """
@@ -5322,7 +5354,9 @@ class Series:
 
         warn_on_inefficient_map(function, columns=[self.name], map_target="series")
         return self._from_pyseries(
-            self._s.apply_lambda(function, pl_return_dtype, skip_nulls)
+            self._s.map_elements(
+                function, return_dtype=pl_return_dtype, skip_nulls=skip_nulls
+            )
         )
 
     def shift(self, n: int = 1, *, fill_value: IntoExpr | None = None) -> Series:
@@ -6386,7 +6420,7 @@ class Series:
 
         is the biased sample :math:`i\texttt{th}` central moment, and
         :math:`\bar{x}` is
-        the sample mean.  If `bias` is False, the calculations are
+        the sample mean. If `bias` is False, the calculations are
         corrected for bias and the value computed is the adjusted
         Fisher-Pearson standardized moment coefficient, i.e.
 
@@ -6869,7 +6903,7 @@ class Series:
         ignore_nulls: bool = False,
     ) -> Series:
         r"""
-        Exponentially-weighted moving average.
+        Compute exponentially-weighted moving average.
 
         Parameters
         ----------
@@ -6884,11 +6918,11 @@ class Series:
                 .. math::
                     \alpha = \frac{2}{\theta + 1} \; \forall \; \theta \geq 1
         half_life
-            Specify decay in terms of half-life, :math:`\lambda`, with
+            Specify decay in terms of half-life, :math:`\tau`, with
 
                 .. math::
-                    \alpha = 1 - \exp \left\{ \frac{ -\ln(2) }{ \lambda } \right\} \;
-                    \forall \; \lambda > 0
+                    \alpha = 1 - \exp \left\{ \frac{ -\ln(2) }{ \tau } \right\} \;
+                    \forall \; \tau > 0
         alpha
             Specify smoothing factor alpha directly, :math:`0 < \alpha \leq 1`.
         adjust
@@ -6944,20 +6978,21 @@ class Series:
         half_life: str | timedelta,
     ) -> Series:
         r"""
-        Calculate time-based exponentially weighted moving average.
+        Compute time-based exponentially weighted moving average.
 
-        Given observations :math:`x_1, x_2, \ldots, x_n` at times
-        :math:`t_1, t_2, \ldots, t_n`, the EWMA is calculated as
+        Given observations :math:`x_0, x_1, \ldots, x_{n-1}` at times
+        :math:`t_0, t_1, \ldots, t_{n-1}`, the EWMA is calculated as
 
             .. math::
 
                 y_0 &= x_0
 
-                \alpha_i &= \exp(-\lambda(t_i - t_{i-1}))
+                \alpha_i &= 1 - \exp \left\{ \frac{ -\ln(2)(t_i-t_{i-1}) }
+                    { \tau } \right\}
 
                 y_i &= \alpha_i x_i + (1 - \alpha_i) y_{i-1}; \quad i > 0
 
-        where :math:`\lambda` equals :math:`\ln(2) / \text{half_life}`.
+        where :math:`\tau` is the `half_life`.
 
         Parameters
         ----------
@@ -7033,7 +7068,7 @@ class Series:
         ignore_nulls: bool = False,
     ) -> Series:
         r"""
-        Exponentially-weighted moving standard deviation.
+        Compute exponentially-weighted moving standard deviation.
 
         Parameters
         ----------
@@ -7117,7 +7152,7 @@ class Series:
         ignore_nulls: bool = False,
     ) -> Series:
         r"""
-        Exponentially-weighted moving variance.
+        Compute exponentially-weighted moving variance.
 
         Parameters
         ----------
@@ -7195,7 +7230,7 @@ class Series:
         Parameters
         ----------
         value
-            A constant literal value or a unit expressioin with which to extend the
+            A constant literal value or a unit expression with which to extend the
             expression result Series; can pass None to extend with nulls.
         n
             The number of additional values that will be added.
@@ -7372,7 +7407,7 @@ class Series:
 
     @property
     @unstable()
-    def plot(self) -> hvPlotTabularPolars:
+    def plot(self) -> SeriesPlot:
         """
         Create a plot namespace.
 
@@ -7380,33 +7415,44 @@ class Series:
             This functionality is currently considered **unstable**. It may be
             changed at any point without it being considered a breaking change.
 
+        .. versionchanged:: 1.6.0
+            In prior versions of Polars, HvPlot was the plotting backend. If you would
+            like to restore the previous plotting functionality, all you need to do
+            is add `import hvplot.polars` at the top of your script and replace
+            `df.plot` with `df.hvplot`.
+
         Polars does not implement plotting logic itself, but instead defers to
-        hvplot. Please see the `hvplot reference gallery <https://hvplot.holoviz.org/reference/index.html>`_
-        for more information and documentation.
+        Altair:
+
+        - `s.plot.hist(**kwargs)`
+          is shorthand for
+          `alt.Chart(s.to_frame()).mark_bar().encode(x=alt.X(f'{s.name}:Q', bin=True), y='count()', **kwargs).interactive()`
+        - `s.plot.kde(**kwargs)`
+          is shorthand for
+          `alt.Chart(s.to_frame()).transform_density(s.name, as_=[s.name, 'density']).mark_area().encode(x=s.name, y='density:Q', **kwargs).interactive()`
+        - for any other attribute `attr`, `s.plot.attr(**kwargs)`
+          is shorthand for
+          `alt.Chart(s.to_frame().with_row_index()).mark_attr().encode(x='index', y=s.name, **kwargs).interactive()`
 
         Examples
         --------
         Histogram:
 
-        >>> s = pl.Series("values", [1, 4, 2])
+        >>> s = pl.Series([1, 4, 4, 6, 2, 4, 3, 5, 5, 7, 1])
         >>> s.plot.hist()  # doctest: +SKIP
 
-        KDE plot (note: in addition to ``hvplot``, this one also requires ``scipy``):
+        KDE plot:
 
         >>> s.plot.kde()  # doctest: +SKIP
 
-        For more info on what you can pass, you can use ``hvplot.help``:
+        Line plot:
 
-        >>> import hvplot  # doctest: +SKIP
-        >>> hvplot.help("hist")  # doctest: +SKIP
-        """
-        if not _HVPLOT_AVAILABLE or parse_version(hvplot.__version__) < parse_version(
-            "0.9.1"
-        ):
-            msg = "hvplot>=0.9.1 is required for `.plot`"
+        >>> s.plot.line()  # doctest: +SKIP
+        """  # noqa: W505
+        if not _ALTAIR_AVAILABLE or parse_version(altair.__version__) < (5, 4, 0):
+            msg = "altair>=5.4.0 is required for `.plot`"
             raise ModuleUpgradeRequiredError(msg)
-        hvplot.post_patch()
-        return hvplot.plotting.core.hvPlotTabularPolars(self)
+        return SeriesPlot(self)
 
 
 def _resolve_temporal_dtype(

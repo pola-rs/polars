@@ -454,7 +454,7 @@ def test_window_agg_list_null_15437() -> None:
     assert_frame_equal(output, expected)
 
 
-@pytest.mark.release()
+@pytest.mark.release
 def test_windows_not_cached() -> None:
     ldf = (
         pl.DataFrame(
@@ -511,3 +511,10 @@ def test_window_17308() -> None:
     assert df.select(pl.col("A").sum(), pl.col("B").sum().over("grp")).to_dict(
         as_series=False
     ) == {"A": [3, 3], "B": [3, 4]}
+
+
+def test_lit_window_broadcast() -> None:
+    # the broadcast should happen in the window function
+    assert pl.DataFrame({"a": [1, 1, 2]}).select(pl.lit(0).over("a").alias("a"))[
+        "a"
+    ].to_list() == [0, 0, 0]

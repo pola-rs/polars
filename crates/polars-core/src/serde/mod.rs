@@ -10,14 +10,14 @@ mod test {
 
     #[test]
     fn test_serde() -> PolarsResult<()> {
-        let ca = UInt32Chunked::new("foo", &[Some(1), None, Some(2)]);
+        let ca = UInt32Chunked::new("foo".into(), &[Some(1), None, Some(2)]);
 
         let json = serde_json::to_string(&ca).unwrap();
 
         let out = serde_json::from_str::<Series>(&json).unwrap();
         assert!(ca.into_series().equals_missing(&out));
 
-        let ca = StringChunked::new("foo", &[Some("foo"), None, Some("bar")]);
+        let ca = StringChunked::new("foo".into(), &[Some("foo"), None, Some("bar")]);
 
         let json = serde_json::to_string(&ca).unwrap();
 
@@ -30,7 +30,7 @@ mod test {
     /// test using the `DeserializedOwned` trait
     #[test]
     fn test_serde_owned() {
-        let ca = UInt32Chunked::new("foo", &[Some(1), None, Some(2)]);
+        let ca = UInt32Chunked::new("foo".into(), &[Some(1), None, Some(2)]);
 
         let json = serde_json::to_string(&ca).unwrap();
 
@@ -39,12 +39,12 @@ mod test {
     }
 
     fn sample_dataframe() -> DataFrame {
-        let s1 = Series::new("foo", &[1, 2, 3]);
-        let s2 = Series::new("bar", &[Some(true), None, Some(false)]);
-        let s3 = Series::new("string", &["mouse", "elephant", "dog"]);
-        let s_list = Series::new("list", &[s1.clone(), s1.clone(), s1.clone()]);
+        let s1 = Series::new("foo".into(), &[1, 2, 3]);
+        let s2 = Series::new("bar".into(), &[Some(true), None, Some(false)]);
+        let s3 = Series::new("string".into(), &["mouse", "elephant", "dog"]);
+        let s_list = Column::new("list".into(), &[s1.clone(), s1.clone(), s1.clone()]);
 
-        DataFrame::new(vec![s1, s2, s3, s_list]).unwrap()
+        DataFrame::new(vec![s1.into(), s2.into(), s3.into(), s_list]).unwrap()
     }
 
     #[test]
@@ -89,8 +89,8 @@ mod test {
 
     #[test]
     fn test_serde_binary_series_owned_bincode() {
-        let s1 = Series::new(
-            "foo",
+        let s1 = Column::new(
+            "foo".into(),
             &[
                 vec![1u8, 2u8, 3u8],
                 vec![4u8, 5u8, 6u8, 7u8],
@@ -115,15 +115,15 @@ mod test {
                 AnyValue::String("1:3"),
             ],
             vec![
-                Field::new("fld_1", DataType::String),
-                Field::new("fld_2", DataType::String),
-                Field::new("fld_3", DataType::String),
+                Field::new("fld_1".into(), DataType::String),
+                Field::new("fld_2".into(), DataType::String),
+                Field::new("fld_3".into(), DataType::String),
             ],
         )));
         let dtype = DataType::Struct(vec![
-            Field::new("fld_1", DataType::String),
-            Field::new("fld_2", DataType::String),
-            Field::new("fld_3", DataType::String),
+            Field::new("fld_1".into(), DataType::String),
+            Field::new("fld_2".into(), DataType::String),
+            Field::new("fld_3".into(), DataType::String),
         ]);
         let row_2 = AnyValue::StructOwned(Box::new((
             vec![
@@ -132,16 +132,17 @@ mod test {
                 AnyValue::String("2:3"),
             ],
             vec![
-                Field::new("fld_1", DataType::String),
-                Field::new("fld_2", DataType::String),
-                Field::new("fld_3", DataType::String),
+                Field::new("fld_1".into(), DataType::String),
+                Field::new("fld_2".into(), DataType::String),
+                Field::new("fld_3".into(), DataType::String),
             ],
         )));
         let row_3 = AnyValue::Null;
 
-        let s = Series::from_any_values_and_dtype("item", &[row_1, row_2, row_3], &dtype, false)
-            .unwrap();
-        let df = DataFrame::new(vec![s]).unwrap();
+        let s =
+            Series::from_any_values_and_dtype("item".into(), &[row_1, row_2, row_3], &dtype, false)
+                .unwrap();
+        let df = DataFrame::new(vec![s.into()]).unwrap();
 
         let df_str = serde_json::to_string(&df).unwrap();
         let out = serde_json::from_str::<DataFrame>(&df_str).unwrap();

@@ -29,7 +29,7 @@ _COL_LIMIT = 5  # max number of generated cols
 
 
 @st.composite
-def series(  # noqa: D417
+def series(
     draw: DrawFn,
     /,
     *,
@@ -267,7 +267,7 @@ def dataframes(
 
 
 @st.composite
-def dataframes(  # noqa: D417
+def dataframes(
     draw: DrawFn,
     /,
     cols: int | column | Sequence[column] | None = None,
@@ -567,7 +567,7 @@ def _handle_null_probability_deprecation(
     null_probability: float | Mapping[str, float],
 ) -> bool | dict[str, bool]:
     issue_deprecation_warning(
-        "`null_probability` is deprecated. Use `include_nulls` instead.",
+        "`null_probability` is deprecated. Use `allow_null` instead.",
         version="0.20.26",
     )
 

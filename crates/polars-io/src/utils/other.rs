@@ -6,6 +6,7 @@ use once_cell::sync::Lazy;
 use polars_core::prelude::*;
 #[cfg(any(feature = "ipc_streaming", feature = "parquet"))]
 use polars_core::utils::{accumulate_dataframes_vertical_unchecked, split_df_as_ref};
+use polars_utils::mmap::MMapSemaphore;
 use regex::{Regex, RegexBuilder};
 
 use crate::mmap::{MmapBytesReader, ReaderBytes};
@@ -20,12 +21,15 @@ pub fn get_reader_bytes<'a, R: Read + MmapBytesReader + ?Sized>(
         .ok()
         .and_then(|offset| Some((reader.to_file()?, offset)))
     {
-        let mmap = unsafe { memmap::MmapOptions::new().offset(offset).map(file)? };
+        let mut options = memmap::MmapOptions::new();
+        options.offset(offset);
 
         // somehow bck thinks borrows alias
         // this is sound as file was already bound to 'a
         use std::fs::File;
+
         let file = unsafe { std::mem::transmute::<&File, &'a File>(file) };
+        let mmap = MMapSemaphore::new_from_file_with_options(file, options)?;
         Ok(ReaderBytes::Mapped(mmap, file))
     } else {
         // we can get the bytes for free
@@ -41,30 +45,6 @@ pub fn get_reader_bytes<'a, R: Read + MmapBytesReader + ?Sized>(
     }
 }
 
-/// Compute `remaining_rows_to_read` to be taken per file up front, so we can actually read
-/// concurrently/parallel
-///
-/// This takes an iterator over the number of rows per file.
-pub fn get_sequential_row_statistics<I>(
-    iter: I,
-    mut total_rows_to_read: usize,
-) -> Vec<(usize, usize)>
-where
-    I: Iterator<Item = usize>,
-{
-    let mut cumulative_read = 0;
-    iter.map(|rows_this_file| {
-        let remaining_rows_to_read = total_rows_to_read;
-        total_rows_to_read = total_rows_to_read.saturating_sub(rows_this_file);
-
-        let current_cumulative_read = cumulative_read;
-        cumulative_read += rows_this_file;
-
-        (remaining_rows_to_read, current_cumulative_read)
-    })
-    .collect()
-}
-
 #[cfg(any(
     feature = "ipc",
     feature = "ipc_streaming",
@@ -72,12 +52,11 @@ where
     feature = "avro"
 ))]
 pub(crate) fn apply_projection(schema: &ArrowSchema, projection: &[usize]) -> ArrowSchema {
-    let fields = &schema.fields;
-    let fields = projection
+    projection
         .iter()
-        .map(|idx| fields[*idx].clone())
-        .collect::<Vec<_>>();
-    ArrowSchema::from(fields)
+        .map(|idx| schema.get_at_index(*idx).unwrap())
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect()
 }
 
 #[cfg(any(
@@ -91,26 +70,10 @@ pub(crate) fn columns_to_projection(
     schema: &ArrowSchema,
 ) -> PolarsResult<Vec<usize>> {
     let mut prj = Vec::with_capacity(columns.len());
-    if columns.len() > 100 {
-        let mut column_names = PlHashMap::with_capacity(schema.fields.len());
-        schema.fields.iter().enumerate().for_each(|(i, c)| {
-            column_names.insert(c.name.as_str(), i);
-        });
 
-        for column in columns.iter() {
-            let Some(&i) = column_names.get(column.as_str()) else {
-                polars_bail!(
-                    ColumnNotFound:
-                    "unable to find column {:?}; valid columns: {:?}", column, schema.get_names(),
-                );
-            };
-            prj.push(i);
-        }
-    } else {
-        for column in columns.iter() {
-            let i = schema.try_index_of(column)?;
-            prj.push(i);
-        }
+    for column in columns {
+        let i = schema.try_index_of(column)?;
+        prj.push(i);
     }
 
     Ok(prj)
@@ -124,7 +87,7 @@ pub(crate) fn update_row_counts(dfs: &mut [(DataFrame, IdxSize)], offset: IdxSiz
         let mut previous = dfs[0].1 + offset;
         for (df, n_read) in &mut dfs[1..] {
             if let Some(s) = unsafe { df.get_columns_mut() }.get_mut(0) {
-                *s = &*s + previous;
+                *s = (&*s + previous).unwrap();
             }
             previous += *n_read;
         }
@@ -140,7 +103,7 @@ pub(crate) fn update_row_counts2(dfs: &mut [DataFrame], offset: IdxSize) {
         for df in &mut dfs[1..] {
             let n_read = df.height() as IdxSize;
             if let Some(s) = unsafe { df.get_columns_mut() }.get_mut(0) {
-                *s = &*s + previous;
+                *s = (&*s + previous).unwrap();
             }
             previous += n_read;
         }
@@ -159,7 +122,7 @@ pub(crate) fn update_row_counts3(dfs: &mut [DataFrame], heights: &[IdxSize], off
             let n_read = heights[i];
 
             if let Some(s) = unsafe { df.get_columns_mut() }.get_mut(0) {
-                *s = &*s + previous;
+                *s = (&*s + previous).unwrap();
             }
 
             previous += n_read;
@@ -168,10 +131,7 @@ pub(crate) fn update_row_counts3(dfs: &mut [DataFrame], heights: &[IdxSize], off
 }
 
 #[cfg(feature = "json")]
-pub(crate) fn overwrite_schema(
-    schema: &mut Schema,
-    overwriting_schema: &Schema,
-) -> PolarsResult<()> {
+pub fn overwrite_schema(schema: &mut Schema, overwriting_schema: &Schema) -> PolarsResult<()> {
     for (k, value) in overwriting_schema.iter() {
         *schema.try_get_mut(k)? = value.clone();
     }
@@ -196,7 +156,7 @@ pub static BOOLEAN_RE: Lazy<Regex> = Lazy::new(|| {
 });
 
 pub fn materialize_projection(
-    with_columns: Option<&[String]>,
+    with_columns: Option<&[PlSmallStr]>,
     schema: &Schema,
     hive_partitions: Option<&[Series]>,
     has_row_index: bool,
@@ -243,6 +203,7 @@ pub(crate) fn chunk_df_for_writing(
     // See: #16403
     if !df.get_columns().is_empty()
         && df.get_columns()[0]
+            .as_materialized_series()
             .chunk_lengths()
             .take(5)
             .all(|len| len < row_group_size)

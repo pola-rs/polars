@@ -1,7 +1,7 @@
 use super::*;
 use crate::{map, map_as_slice};
 
-impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
+impl From<TemporalFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
     fn from(func: TemporalFunction) -> Self {
         use TemporalFunction::*;
         match func {
@@ -14,7 +14,7 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Quarter => map!(datetime::quarter),
             Week => map!(datetime::week),
             WeekDay => map!(datetime::weekday),
-            Duration(tu) => map_as_slice!(datetime::duration, tu),
+            Duration(tu) => map_as_slice!(impl_duration, tu),
             Day => map!(datetime::day),
             OrdinalDay => map!(datetime::ordinal_day),
             Time => map!(datetime::time),
@@ -71,10 +71,10 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
 }
 
 pub(super) fn datetime(
-    s: &[Series],
+    s: &[Column],
     time_unit: &TimeUnit,
     time_zone: Option<&str>,
-) -> PolarsResult<Series> {
+) -> PolarsResult<Column> {
     use polars_core::export::chrono::NaiveDate;
     use polars_core::utils::CustomIterTools;
 
@@ -177,12 +177,12 @@ pub(super) fn datetime(
         },
     };
 
-    let mut s = ca.into_series();
-    s.rename("datetime");
+    let mut s = ca.into_column();
+    s.rename(PlSmallStr::from_static("datetime"));
     Ok(s)
 }
 
-pub(super) fn combine(s: &[Series], tu: TimeUnit) -> PolarsResult<Series> {
+pub(super) fn combine(s: &[Column], tu: TimeUnit) -> PolarsResult<Column> {
     let date = &s[0];
     let time = &s[1];
 
@@ -207,7 +207,7 @@ pub(super) fn combine(s: &[Series], tu: TimeUnit) -> PolarsResult<Series> {
             &StringChunked::from_iter(std::iter::once("raise")),
             NonExistent::Raise,
         )?
-        .into()),
+        .into_column()),
         _ => result_naive,
     }
 }

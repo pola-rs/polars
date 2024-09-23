@@ -25,7 +25,7 @@ def test_cross_join_predicate_pushdown_block_16956() -> None:
     ).cast(pl.Datetime("ms", "Europe/Amsterdam"))
 
     assert (
-        lf.join(lf, on="start_datetime", how="cross")
+        lf.join(lf, how="cross")
         .filter(
             pl.col.end_datetime_right.is_between(
                 pl.col.start_datetime, pl.col.start_datetime.dt.offset_by("132h")

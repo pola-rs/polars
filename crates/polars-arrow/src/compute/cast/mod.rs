@@ -89,7 +89,7 @@ fn cast_struct(
     let new_values = values
         .iter()
         .zip(fields)
-        .map(|(arr, field)| cast(arr.as_ref(), field.data_type(), options))
+        .map(|(arr, field)| cast(arr.as_ref(), field.dtype(), options))
         .collect::<PolarsResult<Vec<_>>>()?;
 
     Ok(StructArray::new(
@@ -190,7 +190,7 @@ fn cast_list_to_fixed_size_list<O: Offset>(
                     list.offsets().first().to_usize(),
                     list.offsets().range().to_usize(),
                 );
-                cast(sliced_values.as_ref(), inner.data_type(), options)?
+                cast(sliced_values.as_ref(), inner.dtype(), options)?
             },
         }
     } else {
@@ -230,7 +230,7 @@ fn cast_list_to_fixed_size_list<O: Offset>(
             crate::compute::take::take_unchecked(list.values().as_ref(), &indices.freeze())
         };
 
-        cast(take_values.as_ref(), inner.data_type(), options)?
+        cast(take_values.as_ref(), inner.dtype(), options)?
     };
     FixedSizeListArray::try_new(
         ArrowDataType::FixedSizeList(Box::new(inner.clone()), size),
@@ -279,7 +279,7 @@ pub fn cast(
     options: CastOptionsImpl,
 ) -> PolarsResult<Box<dyn Array>> {
     use ArrowDataType::*;
-    let from_type = array.data_type();
+    let from_type = array.dtype();
 
     // clone array if types are the same
     if from_type == to_type {
@@ -350,7 +350,7 @@ pub fn cast(
             Int64 => binview_to_primitive_dyn::<i64>(array, to_type, options),
             Float32 => binview_to_primitive_dyn::<f32>(array, to_type, options),
             Float64 => binview_to_primitive_dyn::<f64>(array, to_type, options),
-            LargeList(inner) if matches!(inner.data_type, ArrowDataType::UInt8) => {
+            LargeList(inner) if matches!(inner.dtype, ArrowDataType::UInt8) => {
                 let bin_array = view_to_binary::<i64>(array.as_any().downcast_ref().unwrap());
                 Ok(binary_to_list(&bin_array, to_type.clone()).boxed())
             },
@@ -371,7 +371,7 @@ pub fn cast(
 
         (_, List(to)) => {
             // cast primitive to list's primitive
-            let values = cast(array, &to.data_type, options)?;
+            let values = cast(array, &to.dtype, options)?;
             // create offsets, where if array.len() = 2, we have [0,1,2]
             let offsets = (0..=array.len() as i32).collect::<Vec<_>>();
             // SAFETY: offsets _are_ monotonically increasing
@@ -384,7 +384,7 @@ pub fn cast(
 
         (_, LargeList(to)) if from_type != &LargeBinary => {
             // cast primitive to list's primitive
-            let values = cast(array, &to.data_type, options)?;
+            let values = cast(array, &to.dtype, options)?;
             // create offsets, where if array.len() = 2, we have [0,1,2]
             let offsets = (0..=array.len() as i64).collect::<Vec<_>>();
             // SAFETY: offsets _are_ monotonically increasing
@@ -689,22 +689,16 @@ pub fn cast(
 
         // temporal casts
         (Int32, Date32) => primitive_to_same_primitive_dyn::<i32>(array, to_type),
-        (Int32, Time32(TimeUnit::Second)) => primitive_to_same_primitive_dyn::<i32>(array, to_type),
-        (Int32, Time32(TimeUnit::Millisecond)) => {
-            primitive_to_same_primitive_dyn::<i32>(array, to_type)
-        },
+        (Int32, Time32(TimeUnit::Second)) => primitive_dyn!(array, int32_to_time32s),
+        (Int32, Time32(TimeUnit::Millisecond)) => primitive_dyn!(array, int32_to_time32ms),
         // No support for microsecond/nanosecond with i32
         (Date32, Int32) => primitive_to_same_primitive_dyn::<i32>(array, to_type),
         (Date32, Int64) => primitive_to_primitive_dyn::<i32, i64>(array, to_type, options),
         (Time32(_), Int32) => primitive_to_same_primitive_dyn::<i32>(array, to_type),
         (Int64, Date64) => primitive_to_same_primitive_dyn::<i64>(array, to_type),
         // No support for second/milliseconds with i64
-        (Int64, Time64(TimeUnit::Microsecond)) => {
-            primitive_to_same_primitive_dyn::<i64>(array, to_type)
-        },
-        (Int64, Time64(TimeUnit::Nanosecond)) => {
-            primitive_to_same_primitive_dyn::<i64>(array, to_type)
-        },
+        (Int64, Time64(TimeUnit::Microsecond)) => primitive_dyn!(array, int64_to_time64us),
+        (Int64, Time64(TimeUnit::Nanosecond)) => primitive_dyn!(array, int64_to_time64ns),
 
         (Date64, Int32) => primitive_to_primitive_dyn::<i64, i32>(array, to_type, options),
         (Date64, Int64) => primitive_to_same_primitive_dyn::<i64>(array, to_type),

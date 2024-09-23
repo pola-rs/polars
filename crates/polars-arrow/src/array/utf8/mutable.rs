@@ -51,17 +51,17 @@ impl<O: Offset> MutableUtf8Array<O> {
     /// This function returns an error iff:
     /// * The last offset is not equal to the values' length.
     /// * the validity's length is not equal to `offsets.len()`.
-    /// * The `data_type`'s [`crate::datatypes::PhysicalType`] is not equal to either `Utf8` or `LargeUtf8`.
+    /// * The `dtype`'s [`crate::datatypes::PhysicalType`] is not equal to either `Utf8` or `LargeUtf8`.
     /// * The `values` between two consecutive `offsets` are not valid utf8
     /// # Implementation
     /// This function is `O(N)` - checking utf8 is `O(N)`
     pub fn try_new(
-        data_type: ArrowDataType,
+        dtype: ArrowDataType,
         offsets: Offsets<O>,
         values: Vec<u8>,
         validity: Option<MutableBitmap>,
     ) -> PolarsResult<Self> {
-        let values = MutableUtf8ValuesArray::try_new(data_type, offsets, values)?;
+        let values = MutableUtf8ValuesArray::try_new(dtype, offsets, values)?;
 
         if validity
             .as_ref()
@@ -82,12 +82,12 @@ impl<O: Offset> MutableUtf8Array<O> {
     /// * The `offsets` and `values` are inconsistent
     /// * The validity is not `None` and its length is different from `offsets`'s length minus one.
     pub unsafe fn new_unchecked(
-        data_type: ArrowDataType,
+        dtype: ArrowDataType,
         offsets: Offsets<O>,
         values: Vec<u8>,
         validity: Option<MutableBitmap>,
     ) -> Self {
-        let values = MutableUtf8ValuesArray::new_unchecked(data_type, offsets, values);
+        let values = MutableUtf8ValuesArray::new_unchecked(dtype, offsets, values);
         if let Some(ref validity) = validity {
             assert_eq!(values.len(), validity.len());
         }
@@ -100,8 +100,8 @@ impl<O: Offset> MutableUtf8Array<O> {
         Self::from_trusted_len_iter(slice.as_ref().iter().map(|x| x.as_ref()))
     }
 
-    fn default_data_type() -> ArrowDataType {
-        Utf8Array::<O>::default_data_type()
+    fn default_dtype() -> ArrowDataType {
+        Utf8Array::<O>::default_dtype()
     }
 
     /// Initializes a new [`MutableUtf8Array`] with a pre-allocated capacity of slots.
@@ -198,8 +198,8 @@ impl<O: Offset> MutableUtf8Array<O> {
 
     /// Extract the low-end APIs from the [`MutableUtf8Array`].
     pub fn into_data(self) -> (ArrowDataType, Offsets<O>, Vec<u8>, Option<MutableBitmap>) {
-        let (data_type, offsets, values) = self.values.into_inner();
-        (data_type, offsets, values, self.validity)
+        let (dtype, offsets, values) = self.values.into_inner();
+        (dtype, offsets, values, self.validity)
     }
 
     /// Returns an iterator of `&str`
@@ -260,7 +260,7 @@ impl<O: Offset> MutableArray for MutableUtf8Array<O> {
         array.arced()
     }
 
-    fn data_type(&self) -> &ArrowDataType {
+    fn dtype(&self) -> &ArrowDataType {
         if O::IS_LARGE {
             &ArrowDataType::LargeUtf8
         } else {
@@ -391,7 +391,7 @@ impl<O: Offset> MutableUtf8Array<O> {
         let (validity, offsets, values) = trusted_len_unzip(iterator);
 
         // soundness: P is `str`
-        Self::new_unchecked(Self::default_data_type(), offsets, values, validity)
+        Self::new_unchecked(Self::default_dtype(), offsets, values, validity)
     }
 
     /// Creates a [`MutableUtf8Array`] from an iterator of trusted length.
@@ -462,7 +462,7 @@ impl<O: Offset> MutableUtf8Array<O> {
 
         // soundness: P is `str`
         Ok(Self::new_unchecked(
-            Self::default_data_type(),
+            Self::default_dtype(),
             offsets,
             values,
             validity,
@@ -522,9 +522,8 @@ impl<O: Offset, T: AsRef<str>> TryPush<Option<T>> for MutableUtf8Array<O> {
             Some(value) => {
                 self.values.try_push(value.as_ref())?;
 
-                match &mut self.validity {
-                    Some(validity) => validity.push(true),
-                    None => {},
+                if let Some(validity) = &mut self.validity {
+                    validity.push(true)
                 }
             },
             None => {

@@ -46,8 +46,6 @@ pub enum BitRepr {
 }
 
 pub(crate) mod private {
-    use ahash::RandomState;
-
     use super::*;
     use crate::chunked_array::metadata::MetadataFlags;
     use crate::chunked_array::ops::compare_inner::{TotalEqInner, TotalOrdInner};
@@ -63,7 +61,7 @@ pub(crate) mod private {
         #[cfg(feature = "object")]
         fn get_list_builder(
             &self,
-            _name: &str,
+            _name: PlSmallStr,
             _values_capacity: usize,
             _list_capacity: usize,
         ) -> Box<dyn ListBuilderTrait> {
@@ -81,10 +79,6 @@ pub(crate) mod private {
 
         fn _set_flags(&mut self, flags: MetadataFlags);
 
-        fn explode_by_offsets(&self, _offsets: &[i64]) -> Series {
-            invalid_operation_panic!(explode_by_offsets, self)
-        }
-
         unsafe fn equal_element(
             &self,
             _idx_self: usize,
@@ -101,41 +95,57 @@ pub(crate) mod private {
         fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a> {
             invalid_operation_panic!(into_total_ord_inner, self)
         }
-        fn vec_hash(&self, _build_hasher: RandomState, _buf: &mut Vec<u64>) -> PolarsResult<()> {
+        fn vec_hash(&self, _build_hasher: PlRandomState, _buf: &mut Vec<u64>) -> PolarsResult<()> {
             polars_bail!(opq = vec_hash, self._dtype());
         }
         fn vec_hash_combine(
             &self,
-            _build_hasher: RandomState,
+            _build_hasher: PlRandomState,
             _hashes: &mut [u64],
         ) -> PolarsResult<()> {
             polars_bail!(opq = vec_hash_combine, self._dtype());
         }
+
+        /// # Safety
+        ///
+        /// Does no bounds checks, groups must be correct.
         #[cfg(feature = "algorithm_group_by")]
         unsafe fn agg_min(&self, groups: &GroupsProxy) -> Series {
-            Series::full_null(self._field().name(), groups.len(), self._dtype())
+            Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
         }
+        /// # Safety
+        ///
+        /// Does no bounds checks, groups must be correct.
         #[cfg(feature = "algorithm_group_by")]
         unsafe fn agg_max(&self, groups: &GroupsProxy) -> Series {
-            Series::full_null(self._field().name(), groups.len(), self._dtype())
+            Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
         }
         /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
         /// first cast to `Int64` to prevent overflow issues.
         #[cfg(feature = "algorithm_group_by")]
         unsafe fn agg_sum(&self, groups: &GroupsProxy) -> Series {
-            Series::full_null(self._field().name(), groups.len(), self._dtype())
+            Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
         }
+        /// # Safety
+        ///
+        /// Does no bounds checks, groups must be correct.
         #[cfg(feature = "algorithm_group_by")]
         unsafe fn agg_std(&self, groups: &GroupsProxy, _ddof: u8) -> Series {
-            Series::full_null(self._field().name(), groups.len(), self._dtype())
+            Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
         }
+        /// # Safety
+        ///
+        /// Does no bounds checks, groups must be correct.
         #[cfg(feature = "algorithm_group_by")]
         unsafe fn agg_var(&self, groups: &GroupsProxy, _ddof: u8) -> Series {
-            Series::full_null(self._field().name(), groups.len(), self._dtype())
+            Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
         }
+        /// # Safety
+        ///
+        /// Does no bounds checks, groups must be correct.
         #[cfg(feature = "algorithm_group_by")]
         unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
-            Series::full_null(self._field().name(), groups.len(), self._dtype())
+            Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
         }
 
         fn subtract(&self, _rhs: &Series) -> PolarsResult<Series> {
@@ -169,7 +179,7 @@ pub(crate) mod private {
         #[allow(unused_variables)]
         fn arg_sort_multiple(
             &self,
-            by: &[Series],
+            by: &[Column],
             _options: &SortMultipleOptions,
         ) -> PolarsResult<IdxCa> {
             polars_bail!(opq = arg_sort_multiple, self._dtype());
@@ -181,7 +191,7 @@ pub trait SeriesTrait:
     Send + Sync + private::PrivateSeries + private::PrivateSeriesNumeric
 {
     /// Rename the Series.
-    fn rename(&mut self, name: &str);
+    fn rename(&mut self, name: PlSmallStr);
 
     fn bitand(&self, _other: &Series) -> PolarsResult<Series> {
         polars_bail!(opq = bitand, self._dtype());
@@ -199,11 +209,15 @@ pub trait SeriesTrait:
         None
     }
 
+    fn boxed_metadata<'a>(&'a self) -> Option<Box<dyn MetadataTrait + 'a>> {
+        None
+    }
+
     /// Get the lengths of the underlying chunks
     fn chunk_lengths(&self) -> ChunkLenIter;
 
     /// Name of series.
-    fn name(&self) -> &str;
+    fn name(&self) -> &PlSmallStr;
 
     /// Get field (used in schema)
     fn field(&self) -> Cow<Field> {
@@ -298,6 +312,11 @@ pub trait SeriesTrait:
         }
     }
 
+    /// Returns the sum of the array as an f64.
+    fn _sum_as_f64(&self) -> f64 {
+        invalid_operation_panic!(_sum_as_f64, self)
+    }
+
     /// Returns the mean value in the array
     /// Returns an option because the array is nullable.
     fn mean(&self) -> Option<f64> {
@@ -328,13 +347,13 @@ pub trait SeriesTrait:
     ///
     /// ```rust
     /// use polars_core::prelude::*;
-    /// let s = Series::new("a", [0i32, 1, 8]);
+    /// let s = Series::new("a".into(), [0i32, 1, 8]);
     /// let s2 = s.new_from_index(2, 4);
     /// assert_eq!(Vec::from(s2.i32().unwrap()), &[Some(8), Some(8), Some(8), Some(8)])
     /// ```
     fn new_from_index(&self, _index: usize, _length: usize) -> Series;
 
-    fn cast(&self, _data_type: &DataType, options: CastOptions) -> PolarsResult<Series>;
+    fn cast(&self, _dtype: &DataType, options: CastOptions) -> PolarsResult<Series>;
 
     /// Get a single value by index. Don't use this operation for loops as a runtime cast is
     /// needed for every iteration.
@@ -410,7 +429,7 @@ pub trait SeriesTrait:
     /// ```rust
     /// # use polars_core::prelude::*;
     /// fn example() -> PolarsResult<()> {
-    ///     let s = Series::new("series", &[1, 2, 3]);
+    ///     let s = Series::new("series".into(), &[1, 2, 3]);
     ///
     ///     let shifted = s.shift(1);
     ///     assert_eq!(Vec::from(shifted.i32()?), &[None, Some(1), Some(2)]);

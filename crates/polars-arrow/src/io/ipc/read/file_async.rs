@@ -1,18 +1,18 @@
 //! Async reader for Arrow IPC files
 use std::io::SeekFrom;
 
-use ahash::AHashMap;
 use arrow_format::ipc::planus::ReadAsRoot;
 use arrow_format::ipc::{Block, MessageHeaderRef};
 use futures::stream::BoxStream;
 use futures::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt, Stream, StreamExt};
 use polars_error::{polars_bail, polars_err, PolarsResult};
+use polars_utils::aliases::PlHashMap;
 
 use super::common::{apply_projection, prepare_projection, read_dictionary, read_record_batch};
 use super::file::{deserialize_footer, get_record_batch};
 use super::{Dictionaries, FileMetadata, OutOfSpecKind};
 use crate::array::*;
-use crate::datatypes::{ArrowSchema, Field};
+use crate::datatypes::ArrowSchema;
 use crate::io::ipc::{IpcSchema, ARROW_MAGIC_V2, CONTINUATION_MARKER};
 use crate::record_batch::RecordBatchT;
 
@@ -38,11 +38,7 @@ impl<'a> FileStream<'a> {
         R: AsyncRead + AsyncSeek + Unpin + Send + 'a,
     {
         let (projection, schema) = if let Some(projection) = projection {
-            let (p, h, fields) = prepare_projection(&metadata.schema.fields, projection);
-            let schema = ArrowSchema {
-                fields,
-                metadata: metadata.schema.metadata.clone(),
-            };
+            let (p, h, schema) = prepare_projection(&metadata.schema, projection);
             (Some((p, h)), Some(schema))
         } else {
             (None, None)
@@ -70,7 +66,7 @@ impl<'a> FileStream<'a> {
         mut reader: R,
         mut dictionaries: Option<Dictionaries>,
         metadata: FileMetadata,
-        projection: Option<(Vec<usize>, AHashMap<usize, usize>)>,
+        projection: Option<(Vec<usize>, PlHashMap<usize, usize>)>,
         limit: Option<usize>,
     ) -> BoxStream<'a, PolarsResult<RecordBatchT<Box<dyn Array>>>>
     where
@@ -221,7 +217,7 @@ where
 
     read_record_batch(
         batch,
-        &metadata.schema.fields,
+        &metadata.schema,
         &metadata.ipc_schema,
         projection,
         limit,
@@ -238,7 +234,7 @@ where
 
 async fn read_dictionaries<R>(
     mut reader: R,
-    fields: &[Field],
+    fields: &ArrowSchema,
     ipc_schema: &IpcSchema,
     blocks: &[Block],
     scratch: &mut Vec<u8>,
@@ -334,14 +330,15 @@ async fn cached_read_dictionaries<R: AsyncRead + AsyncSeek + Unpin>(
 ) -> PolarsResult<()> {
     match (&dictionaries, metadata.dictionaries.as_deref()) {
         (None, Some(blocks)) => {
-            let new_dictionaries = read_dictionaries(
-                reader,
-                &metadata.schema.fields,
-                &metadata.ipc_schema,
-                blocks,
-                &mut Default::default(),
-            )
-            .await?;
+            let new_dictionaries: hashbrown::HashMap<i64, Box<dyn Array>, ahash::RandomState> =
+                read_dictionaries(
+                    reader,
+                    &metadata.schema,
+                    &metadata.ipc_schema,
+                    blocks,
+                    &mut Default::default(),
+                )
+                .await?;
             *dictionaries = Some(new_dictionaries);
         },
         (None, None) => {

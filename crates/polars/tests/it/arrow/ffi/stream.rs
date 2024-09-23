@@ -4,7 +4,7 @@ use arrow::ffi;
 use polars_error::{PolarsError, PolarsResult};
 
 fn _test_round_trip(arrays: Vec<Box<dyn Array>>) -> PolarsResult<()> {
-    let field = Field::new("a", arrays[0].data_type().clone(), true);
+    let field = Field::new("a".into(), arrays[0].dtype().clone(), true);
     let iter = Box::new(arrays.clone().into_iter().map(Ok)) as _;
 
     let mut stream = Box::new(ffi::ArrowArrayStream::empty());

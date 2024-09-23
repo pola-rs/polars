@@ -119,7 +119,7 @@ def test_map_groups_object_output() -> None:
     )
 
     class Foo:
-        def __init__(self, payload: Any):
+        def __init__(self, payload: Any) -> None:
             self.payload = payload
 
     result = df.group_by("groups").agg(

@@ -37,9 +37,9 @@ def test_df_object() -> None:
         def __init__(self, value: int) -> None:
             self._value = value
 
-        def __eq__(self, other: Any) -> bool:
+        def __eq__(self, other: object) -> bool:
             return issubclass(other.__class__, self.__class__) and (
-                self._value == other._value
+                self._value == other._value  # type: ignore[attr-defined]
             )
 
         def __repr__(self) -> str:

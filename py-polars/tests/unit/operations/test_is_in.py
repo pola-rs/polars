@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal as D
 from typing import TYPE_CHECKING
 
 import pytest
@@ -135,7 +136,7 @@ def test_is_in_series() -> None:
 
     with pytest.raises(
         InvalidOperationError,
-        match=r"`is_in` cannot check for String values in Int64 data",
+        match=r"'is_in' cannot check for String values in Int64 data",
     ):
         df.select(pl.col("b").is_in(["x", "x"]))
 
@@ -191,12 +192,12 @@ def test_is_in_float(dtype: PolarsDataType) -> None:
         (
             pl.DataFrame({"a": ["1", "2"], "b": [[1, 2], [3, 4]]}),
             None,
-            r"`is_in` cannot check for String values in List\(Int64\) data",
+            r"'is_in' cannot check for String values in List\(Int64\) data",
         ),
         (
             pl.DataFrame({"a": [date.today(), None], "b": [[1, 2], [3, 4]]}),
             None,
-            r"`is_in` cannot check for Date values in List\(Int64\) data",
+            r"'is_in' cannot check for Date values in List\(Int64\) data",
         ),
     ],
 )
@@ -404,3 +405,15 @@ def test_is_in_struct_enum_17618() -> None:
             )
         )
     ).shape == (0, 1)
+
+
+def test_is_in_decimal() -> None:
+    assert pl.DataFrame({"a": [D("0.0"), D("0.2"), D("0.1")]}).select(
+        pl.col("a").is_in([0.0, 0.1])
+    )["a"].to_list() == [True, False, True]
+    assert pl.DataFrame({"a": [D("0.0"), D("0.2"), D("0.1")]}).select(
+        pl.col("a").is_in([D("0.0"), D("0.1")])
+    )["a"].to_list() == [True, False, True]
+    assert pl.DataFrame({"a": [D("0.0"), D("0.2"), D("0.1")]}).select(
+        pl.col("a").is_in([1, 0, 2])
+    )["a"].to_list() == [True, False, False]

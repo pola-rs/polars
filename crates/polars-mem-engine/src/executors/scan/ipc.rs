@@ -1,44 +1,42 @@
-use std::path::PathBuf;
-
 use hive::HivePartitions;
 use polars_core::config;
 use polars_core::utils::accumulate_dataframes_vertical;
+use polars_error::feature_gated;
 use polars_io::cloud::CloudOptions;
 use polars_io::path_utils::is_cloud_url;
 use polars_io::predicates::apply_predicate;
+use polars_utils::mmap::MemSlice;
 use rayon::prelude::*;
 
 use super::*;
 
 pub struct IpcExec {
-    pub(crate) paths: Arc<[PathBuf]>,
+    pub(crate) sources: ScanSources,
     pub(crate) file_info: FileInfo,
     pub(crate) predicate: Option<Arc<dyn PhysicalExpr>>,
+    #[allow(dead_code)]
     pub(crate) options: IpcScanOptions,
     pub(crate) file_options: FileScanOptions,
-    pub(crate) hive_parts: Option<Arc<[HivePartitions]>>,
+    pub(crate) hive_parts: Option<Arc<Vec<HivePartitions>>>,
     pub(crate) cloud_options: Option<CloudOptions>,
 }
 
 impl IpcExec {
     fn read(&mut self) -> PolarsResult<DataFrame> {
-        let is_cloud = self.paths.iter().any(is_cloud_url);
+        let is_cloud = match &self.sources {
+            ScanSources::Paths(paths) => paths.iter().any(is_cloud_url),
+            ScanSources::Files(_) | ScanSources::Buffers(_) => false,
+        };
         let force_async = config::force_async();
 
-        let mut out = if is_cloud || force_async {
-            #[cfg(not(feature = "cloud"))]
-            {
-                panic!("activate cloud feature")
-            }
-
-            #[cfg(feature = "cloud")]
-            {
+        let mut out = if is_cloud || (self.sources.is_paths() && force_async) {
+            feature_gated!("cloud", {
                 if force_async && config::verbose() {
                     eprintln!("ASYNC READING FORCED");
                 }
 
                 polars_io::pl_async::get_runtime().block_on_potential_spawn(self.read_async())?
-            }
+            })
         } else {
             self.read_sync()?
         };
@@ -50,16 +48,19 @@ impl IpcExec {
         Ok(out)
     }
 
-    fn read_impl<F: Fn(usize) -> PolarsResult<std::fs::File> + Send + Sync>(
+    fn read_impl(
         &mut self,
-        path_idx_to_file: F,
+        idx_to_cached_file: impl Fn(usize) -> Option<PolarsResult<std::fs::File>> + Send + Sync,
     ) -> PolarsResult<DataFrame> {
         if config::verbose() {
             eprintln!("executing ipc read sync with row_index = {:?}, n_rows = {:?}, predicate = {:?} for paths {:?}",
                 self.file_options.row_index.as_ref(),
-                self.file_options.n_rows.as_ref(),
+                self.file_options.slice.map(|x| {
+                    assert_eq!(x.0, 0);
+                    x.1
+                }).as_ref(),
                 self.predicate.is_some(),
-                self.paths
+                self.sources,
             );
         }
 
@@ -70,34 +71,47 @@ impl IpcExec {
             self.file_options.row_index.is_some(),
         );
 
-        let read_path = |path_index: usize, n_rows: Option<usize>| {
-            IpcReader::new(path_idx_to_file(path_index)?)
+        let read_path = |index: usize, n_rows: Option<usize>| {
+            let source = self.sources.at(index);
+
+            let memslice = match source {
+                ScanSourceRef::Path(path) => {
+                    let file = match idx_to_cached_file(index) {
+                        None => std::fs::File::open(path)?,
+                        Some(f) => f?,
+                    };
+
+                    MemSlice::from_file(&file)?
+                },
+                ScanSourceRef::File(file) => MemSlice::from_file(file)?,
+                ScanSourceRef::Buffer(buff) => MemSlice::from_bytes(buff.clone()),
+            };
+
+            IpcReader::new(std::io::Cursor::new(memslice))
                 .with_n_rows(n_rows)
                 .with_row_index(self.file_options.row_index.clone())
                 .with_projection(projection.clone())
                 .with_hive_partition_columns(
                     self.hive_parts
                         .as_ref()
-                        .map(|x| x[path_index].materialize_partition_columns()),
+                        .map(|x| x[index].materialize_partition_columns()),
                 )
-                .with_include_file_path(self.file_options.include_file_paths.as_ref().map(|x| {
-                    (
-                        x.clone(),
-                        Arc::from(self.paths[path_index].to_str().unwrap().to_string()),
-                    )
-                }))
-                .memory_mapped(
-                    self.options
-                        .memory_map
-                        .then(|| self.paths[path_index].clone()),
+                .with_include_file_path(
+                    self.file_options
+                        .include_file_paths
+                        .as_ref()
+                        .map(|x| (x.clone(), Arc::from(source.to_include_path_name()))),
                 )
                 .finish()
         };
 
-        let mut dfs = if let Some(mut n_rows) = self.file_options.n_rows {
-            let mut out = Vec::with_capacity(self.paths.len());
+        let mut dfs = if let Some(mut n_rows) = self.file_options.slice.map(|x| {
+            assert_eq!(x.0, 0);
+            x.1
+        }) {
+            let mut out = Vec::with_capacity(self.sources.len());
 
-            for i in 0..self.paths.len() {
+            for i in 0..self.sources.len() {
                 let df = read_path(i, Some(n_rows))?;
                 let df_height = df.height();
                 out.push(df);
@@ -115,7 +129,7 @@ impl IpcExec {
             out
         } else {
             POOL.install(|| {
-                (0..self.paths.len())
+                (0..self.sources.len())
                     .into_par_iter()
                     .map(|i| read_path(i, None))
                     .collect::<PolarsResult<Vec<_>>>()
@@ -151,8 +165,7 @@ impl IpcExec {
     }
 
     fn read_sync(&mut self) -> PolarsResult<DataFrame> {
-        let paths = self.paths.clone();
-        self.read_impl(move |i| std::fs::File::open(&paths[i]).map_err(Into::into))
+        self.read_impl(|_| None)
     }
 
     #[cfg(feature = "cloud")]
@@ -161,9 +174,11 @@ impl IpcExec {
         // concurrently.
         use polars_io::file_cache::init_entries_from_uri_list;
 
+        let paths = self.sources.into_paths().unwrap();
+
         tokio::task::block_in_place(|| {
             let cache_entries = init_entries_from_uri_list(
-                self.paths
+                paths
                     .iter()
                     .map(|x| Arc::from(x.to_str().unwrap()))
                     .collect::<Vec<_>>()
@@ -171,7 +186,7 @@ impl IpcExec {
                 self.cloud_options.as_ref(),
             )?;
 
-            self.read_impl(move |i| cache_entries[i].try_open_check_latest())
+            self.read_impl(|i| Some(cache_entries[i].try_open_check_latest()))
         })
     }
 }
@@ -179,7 +194,7 @@ impl IpcExec {
 impl Executor for IpcExec {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         let profile_name = if state.has_node_timer() {
-            let mut ids = vec![self.paths[0].to_string_lossy().into()];
+            let mut ids = vec![self.sources.id()];
             if self.predicate.is_some() {
                 ids.push("predicate".into())
             }

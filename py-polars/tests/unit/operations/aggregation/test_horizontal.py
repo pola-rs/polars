@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 import polars as pl
+import polars.selectors as cs
 from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
@@ -49,6 +50,20 @@ def test_all_any_horizontally() -> None:
     # confirm that we reduced the horizontal filter components
     # (eg: explain does not contain an "all_horizontal" node)
     assert "horizontal" not in dfltr.explain().lower()
+
+
+def test_empty_all_any_horizontally() -> None:
+    # any/all_horizontal don't allow empty input, but we can still trigger this
+    # by selecting an empty set of columns with pl.selectors.
+    df = pl.DataFrame({"x": [1, 2, 3]})
+    assert_frame_equal(
+        df.select(pl.any_horizontal(cs.string().is_null())),
+        pl.DataFrame({"literal": False}),
+    )
+    assert_frame_equal(
+        df.select(pl.all_horizontal(cs.string().is_null())),
+        pl.DataFrame({"literal": True}),
+    )
 
 
 def test_all_any_single_input() -> None:

@@ -9,7 +9,6 @@ import pandas as pd
 import pyarrow as pa
 import pytest
 
-import polars
 import polars as pl
 from polars._utils.construction import iterable_to_pyseries
 from polars.datatypes import (
@@ -29,6 +28,7 @@ from polars.exceptions import (
     ShapeError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.utils.pycapsule_utils import PyCapsuleStreamHolder
 
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
@@ -628,6 +628,13 @@ def test_arrow() -> None:
             )
 
 
+def test_pycapsule_interface() -> None:
+    a = pl.Series("a", [1, 2, 3, None])
+    out = pa.chunked_array(PyCapsuleStreamHolder(a))
+    out_arr = out.combine_chunks()
+    assert out_arr == pa.array([1, 2, 3, None])
+
+
 def test_get() -> None:
     a = pl.Series("a", [1, 2, 3])
     pos_idxs = pl.Series("idxs", [2, 0, 1, 0], dtype=pl.Int8)
@@ -951,7 +958,7 @@ def test_round_sig_figs(
 
 
 def test_round_sig_figs_raises_exc() -> None:
-    with pytest.raises(polars.exceptions.InvalidOperationError):
+    with pytest.raises(pl.exceptions.InvalidOperationError):
         pl.Series([1.234, 0.1234]).round_sig_figs(digits=0)
 
 
@@ -984,25 +991,6 @@ def test_mode() -> None:
 
     # sorted data
     assert pl.int_range(0, 3, eager=True).mode().to_list() == [2, 1, 0]
-
-
-def test_rank() -> None:
-    s = pl.Series("a", [1, 2, 3, 2, 2, 3, 0])
-
-    assert_series_equal(
-        s.rank("dense"), pl.Series("a", [2, 3, 4, 3, 3, 4, 1], dtype=UInt32)
-    )
-
-    df = pl.DataFrame([s])
-    assert df.select(pl.col("a").rank("dense"))["a"].to_list() == [2, 3, 4, 3, 3, 4, 1]
-
-    assert_series_equal(
-        s.rank("dense", descending=True),
-        pl.Series("a", [3, 2, 1, 2, 2, 1, 4], dtype=UInt32),
-    )
-
-    assert s.rank(method="average").dtype == pl.Float64
-    assert s.rank(method="max").dtype == pl.get_index_type()
 
 
 def test_diff() -> None:
@@ -1164,7 +1152,7 @@ def test_from_generator_or_iterable() -> None:
 
     # iterable object
     class Data:
-        def __init__(self, n: int):
+        def __init__(self, n: int) -> None:
             self._n = n
 
         def __iter__(self) -> Iterator[int]:
@@ -1758,8 +1746,8 @@ def test_sign() -> None:
     assert_series_equal(a.sign(), expected)
 
     # Floats
-    a = pl.Series("a", [-9.0, -0.0, 0.0, 4.0, None])
-    expected = pl.Series("a", [-1, 0, 0, 1, None])
+    a = pl.Series("a", [-9.0, -0.0, 0.0, 4.0, float("nan"), None])
+    expected = pl.Series("a", [-1.0, 0.0, 0.0, 1.0, float("nan"), None])
     assert_series_equal(a.sign(), expected)
 
     # Invalid input
@@ -2147,7 +2135,7 @@ def test_series_from_pyarrow_with_dtype() -> None:
     assert s.dtype == pl.UInt8
 
 
-def test_series_from_numpy_with_dtye() -> None:
+def test_series_from_numpy_with_dtype() -> None:
     s = pl.Series("foo", np.array([-1, 2, 3]), pl.Int8)
     assert_series_equal(s, pl.Series("foo", [-1, 2, 3], dtype=pl.Int8))
 
@@ -2157,3 +2145,8 @@ def test_series_from_numpy_with_dtye() -> None:
     s = pl.Series("foo", np.array([-1, 2, 3]), dtype=pl.UInt8, strict=False)
     assert s.to_list() == [None, 2, 3]
     assert s.dtype == pl.UInt8
+
+
+def test_raise_invalid_is_between() -> None:
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.select(pl.lit(2).is_between(pl.lit("11"), pl.lit("33")))

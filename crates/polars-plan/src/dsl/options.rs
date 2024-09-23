@@ -1,9 +1,12 @@
 use polars_ops::prelude::{JoinArgs, JoinType};
 #[cfg(feature = "dynamic_group_by")]
 use polars_time::RollingGroupOptions;
+use polars_utils::pl_str::PlSmallStr;
 use polars_utils::IdxSize;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+
+use crate::dsl::Selector;
 
 #[derive(Copy, Clone, PartialEq, Debug, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -17,7 +20,7 @@ pub struct RollingCovOptions {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct StrptimeOptions {
     /// Formatting string
-    pub format: Option<String>,
+    pub format: Option<PlSmallStr>,
     /// If set then polars will return an error if any date parsing fails
     pub strict: bool,
     /// If polars may parse matches that not contain the whole string
@@ -104,4 +107,13 @@ pub enum NestedType {
     #[cfg(feature = "dtype-array")]
     Array,
     List,
+}
+
+#[derive(Clone, Default, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct UnpivotArgsDSL {
+    pub on: Vec<Selector>,
+    pub index: Vec<Selector>,
+    pub variable_name: Option<PlSmallStr>,
+    pub value_name: Option<PlSmallStr>,
 }

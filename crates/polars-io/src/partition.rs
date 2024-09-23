@@ -28,18 +28,20 @@ impl WriteDataFrameToFile for IpcWriterOptions {
     }
 }
 
-/// Write a partitioned parquet dataset. This functionality is unstable.
-pub fn write_partitioned_dataset<S, O>(
+fn write_partitioned_dataset_impl<W>(
     df: &mut DataFrame,
     path: &Path,
-    partition_by: &[S],
-    file_write_options: &O,
+    partition_by: Vec<PlSmallStr>,
+    file_write_options: &W,
     chunk_size: usize,
 ) -> PolarsResult<()>
 where
-    S: AsRef<str>,
-    O: WriteDataFrameToFile + Send + Sync,
+    W: WriteDataFrameToFile + Send + Sync,
 {
+    let partition_by = partition_by
+        .into_iter()
+        .map(Into::into)
+        .collect::<Vec<PlSmallStr>>();
     // Ensure we have a single chunk as the gather will otherwise rechunk per group.
     df.as_single_chunk_par();
 
@@ -52,8 +54,8 @@ where
         let partition_by_col_idx = partition_by
             .iter()
             .map(|x| {
-                let Some(i) = schema.index_of(x.as_ref()) else {
-                    polars_bail!(ColumnNotFound: "{}", x.as_ref())
+                let Some(i) = schema.index_of(x.as_str()) else {
+                    polars_bail!(col_not_found = x)
                 };
                 Ok(i)
             })
@@ -183,4 +185,24 @@ where
     })?;
 
     Ok(())
+}
+
+/// Write a partitioned parquet dataset. This functionality is unstable.
+pub fn write_partitioned_dataset<I, S, W>(
+    df: &mut DataFrame,
+    path: &Path,
+    partition_by: I,
+    file_write_options: &W,
+    chunk_size: usize,
+) -> PolarsResult<()>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<PlSmallStr>,
+    W: WriteDataFrameToFile + Send + Sync,
+{
+    let partition_by = partition_by
+        .into_iter()
+        .map(Into::into)
+        .collect::<Vec<PlSmallStr>>();
+    write_partitioned_dataset_impl(df, path, partition_by, file_write_options, chunk_size)
 }

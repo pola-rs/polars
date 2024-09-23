@@ -1,15 +1,18 @@
 use std::sync::Arc;
 
-use polars_core::schema::Schema;
-use polars_expr::prelude::PhysicalExpr;
-use polars_expr::reduce::Reduction;
+use polars_core::schema::{Schema, SchemaExt};
+use polars_expr::reduce::{Reduction, ReductionState};
+use polars_utils::itertools::Itertools;
 
 use super::compute_node_prelude::*;
+use crate::expression::StreamExpr;
+use crate::morsel::SourceToken;
 
 enum ReduceState {
     Sink {
-        selectors: Vec<Arc<dyn PhysicalExpr>>,
+        selectors: Vec<StreamExpr>,
         reductions: Vec<Box<dyn Reduction>>,
+        reduction_states: Vec<Box<dyn ReductionState>>,
     },
     Source(Option<DataFrame>),
     Done,
@@ -22,22 +25,25 @@ pub struct ReduceNode {
 
 impl ReduceNode {
     pub fn new(
-        selectors: Vec<Arc<dyn PhysicalExpr>>,
+        selectors: Vec<StreamExpr>,
         reductions: Vec<Box<dyn Reduction>>,
         output_schema: Arc<Schema>,
     ) -> Self {
+        let reduction_states = reductions.iter().map(|r| r.new_reducer()).collect();
         Self {
             state: ReduceState::Sink {
                 selectors,
                 reductions,
+                reduction_states,
             },
             output_schema,
         }
     }
 
     fn spawn_sink<'env, 's>(
-        selectors: &'env [Arc<dyn PhysicalExpr>],
+        selectors: &'env [StreamExpr],
         reductions: &'env mut [Box<dyn Reduction>],
+        reduction_states: &'env mut [Box<dyn ReductionState>],
         scope: &'s TaskScope<'s, 'env>,
         recv: RecvPort<'_>,
         state: &'s ExecutionState,
@@ -47,27 +53,26 @@ impl ReduceNode {
             .parallel()
             .into_iter()
             .map(|mut recv| {
-                let mut local_reductions: Vec<_> =
-                    reductions.iter().map(|d| d.init_dyn()).collect();
+                let mut local_reducers: Vec<_> =
+                    reductions.iter().map(|d| d.new_reducer()).collect();
 
                 scope.spawn_task(TaskPriority::High, async move {
                     while let Ok(morsel) = recv.recv().await {
-                        for (reduction, selector) in local_reductions.iter_mut().zip(selectors) {
-                            // TODO: don't convert to physical representation here.
-                            let input = selector.evaluate(morsel.df(), state)?;
-                            reduction.update(&input.to_physical_repr())?;
+                        for (reducer, selector) in local_reducers.iter_mut().zip(selectors) {
+                            let input = selector.evaluate(morsel.df(), state).await?;
+                            reducer.update(&input)?;
                         }
                     }
 
-                    PolarsResult::Ok(local_reductions)
+                    PolarsResult::Ok(local_reducers)
                 })
             })
             .collect();
 
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
             for task in parallel_tasks {
-                let local_reductions = task.await?;
-                for (r1, r2) in reductions.iter_mut().zip(local_reductions) {
+                let local_reducers = task.await?;
+                for (r1, r2) in reduction_states.iter_mut().zip(local_reducers) {
                     r1.combine(&*r2)?;
                 }
             }
@@ -84,7 +89,7 @@ impl ReduceNode {
     ) {
         let mut send = send.serial();
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-            let morsel = Morsel::new(df.take().unwrap(), MorselSeq::new(0));
+            let morsel = Morsel::new(df.take().unwrap(), MorselSeq::new(0), SourceToken::new());
             let _ = send.send(morsel).await;
             Ok(())
         }));
@@ -96,7 +101,7 @@ impl ComputeNode for ReduceNode {
         "reduce"
     }
 
-    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) {
+    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {
         assert!(recv.len() == 1 && send.len() == 1);
 
         // State transitions.
@@ -106,19 +111,22 @@ impl ComputeNode for ReduceNode {
                 self.state = ReduceState::Done;
             },
             // Input is done, transition to being a source.
-            ReduceState::Sink { reductions, .. } if matches!(recv[0], PortState::Done) => {
-                // TODO! make `update_state` fallible.
-                let columns = reductions
+            ReduceState::Sink {
+                reduction_states, ..
+            } if matches!(recv[0], PortState::Done) => {
+                let columns = reduction_states
                     .iter_mut()
                     .zip(self.output_schema.iter_fields())
                     .map(|(r, field)| {
                         r.finalize().map(|scalar| {
-                            scalar.into_series(&field.name).cast(&field.dtype).unwrap()
+                            scalar
+                                .into_column(field.name.clone())
+                                .cast(&field.dtype)
+                                .unwrap()
                         })
                     })
-                    .collect::<PolarsResult<Vec<_>>>()
-                    .unwrap();
-                let out = unsafe { DataFrame::new_no_checks(columns) };
+                    .try_collect_vec()?;
+                let out = DataFrame::new(columns).unwrap();
 
                 self.state = ReduceState::Source(Some(out));
             },
@@ -145,6 +153,7 @@ impl ComputeNode for ReduceNode {
                 send[0] = PortState::Done;
             },
         }
+        Ok(())
     }
 
     fn spawn<'env, 's>(
@@ -160,10 +169,19 @@ impl ComputeNode for ReduceNode {
             ReduceState::Sink {
                 selectors,
                 reductions,
+                reduction_states,
             } => {
                 assert!(send[0].is_none());
                 let recv_port = recv[0].take().unwrap();
-                Self::spawn_sink(selectors, reductions, scope, recv_port, state, join_handles)
+                Self::spawn_sink(
+                    selectors,
+                    reductions,
+                    reduction_states,
+                    scope,
+                    recv_port,
+                    state,
+                    join_handles,
+                )
             },
             ReduceState::Source(df) => {
                 assert!(recv[0].is_none());

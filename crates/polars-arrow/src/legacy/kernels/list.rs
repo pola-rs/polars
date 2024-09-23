@@ -139,7 +139,7 @@ pub fn array_to_unit_list(array: ArrayRef) -> ListArray<i64> {
     // offsets are monotonically increasing
     unsafe {
         let offsets: OffsetsBuffer<i64> = Offsets::new_unchecked(offsets).into();
-        let dtype = ListArray::<i64>::default_datatype(array.data_type().clone());
+        let dtype = ListArray::<i64>::default_datatype(array.dtype().clone());
         ListArray::<i64>::new(dtype, offsets, array, None)
     }
 }

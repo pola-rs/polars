@@ -1,9 +1,10 @@
-use std::path::PathBuf;
+use std::path::Path;
 
 use memchr::memchr2_iter;
 use num_traits::Pow;
 use polars_core::prelude::*;
 use polars_core::{config, POOL};
+use polars_error::feature_gated;
 use polars_utils::index::Bounded;
 use polars_utils::slice::GetSaferUnchecked;
 use rayon::prelude::*;
@@ -13,41 +14,68 @@ use super::options::{CommentPrefix, NullValuesCompiled};
 use super::splitfields::SplitFields;
 use super::utils::get_file_chunks;
 use crate::path_utils::is_cloud_url;
-use crate::utils::get_reader_bytes;
+use crate::utils::compression::maybe_decompress_bytes;
 
 /// Read the number of rows without parsing columns
 /// useful for count(*) queries
 pub fn count_rows(
-    path: &PathBuf,
+    path: &Path,
     separator: u8,
     quote_char: Option<u8>,
     comment_prefix: Option<&CommentPrefix>,
     eol_char: u8,
     has_header: bool,
 ) -> PolarsResult<usize> {
-    let mut reader = if is_cloud_url(path) || config::force_async() {
-        #[cfg(feature = "cloud")]
-        {
+    let file = if is_cloud_url(path) || config::force_async() {
+        feature_gated!("cloud", {
             crate::file_cache::FILE_CACHE
                 .get_entry(path.to_str().unwrap())
                 // Safety: This was initialized by schema inference.
                 .unwrap()
                 .try_open_assume_latest()?
-        }
-        #[cfg(not(feature = "cloud"))]
-        {
-            panic!("required feature `cloud` is not enabled")
-        }
+        })
     } else {
         polars_utils::open_file(path)?
     };
-    let reader_bytes = get_reader_bytes(&mut reader)?;
+
+    let mmap = unsafe { memmap::Mmap::map(&file).unwrap() };
+    let owned = &mut vec![];
+    let reader_bytes = maybe_decompress_bytes(mmap.as_ref(), owned)?;
+
+    count_rows_from_slice(
+        reader_bytes,
+        separator,
+        quote_char,
+        comment_prefix,
+        eol_char,
+        has_header,
+    )
+}
+
+/// Read the number of rows without parsing columns
+/// useful for count(*) queries
+pub fn count_rows_from_slice(
+    mut bytes: &[u8],
+    separator: u8,
+    quote_char: Option<u8>,
+    comment_prefix: Option<&CommentPrefix>,
+    eol_char: u8,
+    has_header: bool,
+) -> PolarsResult<usize> {
+    for _ in 0..bytes.len() {
+        if bytes[0] != eol_char {
+            break;
+        }
+
+        bytes = &bytes[1..];
+    }
+
     const MIN_ROWS_PER_THREAD: usize = 1024;
     let max_threads = POOL.current_num_threads();
 
     // Determine if parallelism is beneficial and how many threads
     let n_threads = get_line_stats(
-        &reader_bytes,
+        bytes,
         MIN_ROWS_PER_THREAD,
         eol_char,
         None,
@@ -55,22 +83,16 @@ pub fn count_rows(
         quote_char,
     )
     .map(|(mean, std)| {
-        let n_rows = (reader_bytes.len() as f32 / (mean - 0.01 * std)) as usize;
+        let n_rows = (bytes.len() as f32 / (mean - 0.01 * std)) as usize;
         (n_rows / MIN_ROWS_PER_THREAD).clamp(1, max_threads)
     })
     .unwrap_or(1);
 
-    let file_chunks: Vec<(usize, usize)> = get_file_chunks(
-        &reader_bytes,
-        n_threads,
-        None,
-        separator,
-        quote_char,
-        eol_char,
-    );
+    let file_chunks: Vec<(usize, usize)> =
+        get_file_chunks(bytes, n_threads, None, separator, quote_char, eol_char);
 
     let iter = file_chunks.into_par_iter().map(|(start, stop)| {
-        let local_bytes = &reader_bytes[start..stop];
+        let local_bytes = &bytes[start..stop];
         let row_iterator = SplitLines::new(local_bytes, quote_char.unwrap_or(b'"'), eol_char);
         if comment_prefix.is_some() {
             Ok(row_iterator
@@ -247,12 +269,6 @@ where
 #[inline]
 pub(super) fn skip_whitespace(input: &[u8]) -> &[u8] {
     skip_condition(input, is_whitespace)
-}
-
-#[inline]
-/// Can be used to skip whitespace, but exclude the separator
-pub(super) fn skip_whitespace_exclude(input: &[u8], exclude: u8) -> &[u8] {
-    skip_condition(input, |b| b != exclude && (is_whitespace(b)))
 }
 
 #[inline]

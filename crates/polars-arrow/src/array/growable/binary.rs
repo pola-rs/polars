@@ -13,7 +13,7 @@ use crate::offset::{Offset, Offsets};
 /// Concrete [`Growable`] for the [`BinaryArray`].
 pub struct GrowableBinary<'a, O: Offset> {
     arrays: Vec<&'a BinaryArray<O>>,
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
     validity: Option<MutableBitmap>,
     values: Vec<u8>,
     offsets: Offsets<O>,
@@ -24,7 +24,7 @@ impl<'a, O: Offset> GrowableBinary<'a, O> {
     /// # Panics
     /// If `arrays` is empty.
     pub fn new(arrays: Vec<&'a BinaryArray<O>>, mut use_validity: bool, capacity: usize) -> Self {
-        let data_type = arrays[0].data_type().clone();
+        let dtype = arrays[0].dtype().clone();
 
         // if any of the arrays has nulls, insertions from any array requires setting bits
         // as there is at least one array with nulls.
@@ -34,7 +34,7 @@ impl<'a, O: Offset> GrowableBinary<'a, O> {
 
         Self {
             arrays,
-            data_type,
+            dtype,
             values: Vec::with_capacity(0),
             offsets: Offsets::with_capacity(capacity),
             validity: prepare_validity(use_validity, capacity),
@@ -42,13 +42,13 @@ impl<'a, O: Offset> GrowableBinary<'a, O> {
     }
 
     fn to(&mut self) -> BinaryArray<O> {
-        let data_type = self.data_type.clone();
+        let dtype = self.dtype.clone();
         let validity = std::mem::take(&mut self.validity);
         let offsets = std::mem::take(&mut self.offsets);
         let values = std::mem::take(&mut self.values);
 
         BinaryArray::<O>::new(
-            data_type,
+            dtype,
             offsets.into(),
             values.into(),
             validity.map(|v| v.into()),
@@ -96,7 +96,7 @@ impl<'a, O: Offset> Growable<'a> for GrowableBinary<'a, O> {
 impl<'a, O: Offset> From<GrowableBinary<'a, O>> for BinaryArray<O> {
     fn from(val: GrowableBinary<'a, O>) -> Self {
         BinaryArray::<O>::new(
-            val.data_type,
+            val.dtype,
             val.offsets.into(),
             val.values.into(),
             val.validity.map(|v| v.into()),

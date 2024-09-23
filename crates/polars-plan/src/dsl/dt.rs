@@ -21,7 +21,7 @@ impl DateLikeNameSpace {
             }),
             &[n],
             false,
-            false,
+            None,
         )
     }
 
@@ -208,7 +208,7 @@ impl DateLikeNameSpace {
             FunctionExpr::TemporalExpr(TemporalFunction::Truncate),
             &[every],
             false,
-            false,
+            None,
         )
     }
 
@@ -246,7 +246,7 @@ impl DateLikeNameSpace {
             FunctionExpr::TemporalExpr(TemporalFunction::Round),
             &[every],
             false,
-            false,
+            None,
         )
     }
 
@@ -258,7 +258,7 @@ impl DateLikeNameSpace {
             FunctionExpr::TemporalExpr(TemporalFunction::OffsetBy),
             &[by],
             false,
-            false,
+            None,
         )
     }
 
@@ -273,7 +273,7 @@ impl DateLikeNameSpace {
             FunctionExpr::TemporalExpr(TemporalFunction::ReplaceTimeZone(time_zone, non_existent)),
             &[ambiguous],
             false,
-            false,
+            None,
         )
     }
 
@@ -283,7 +283,7 @@ impl DateLikeNameSpace {
             FunctionExpr::TemporalExpr(TemporalFunction::Combine(tu)),
             &[time],
             false,
-            false,
+            None,
         )
     }
 

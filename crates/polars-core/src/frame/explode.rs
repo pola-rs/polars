@@ -1,14 +1,12 @@
-use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
 use arrow::offset::OffsetsBuffer;
+use polars_utils::pl_str::PlSmallStr;
 use rayon::prelude::*;
-#[cfg(feature = "serde-lazy")]
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-use smartstring::alias::String as SmartString;
 
 use crate::chunked_array::ops::explode::offsets_to_indexes;
 use crate::prelude::*;
 use crate::series::IsSorted;
-use crate::utils::try_get_supertype;
 use crate::POOL;
 
 fn get_exploded(series: &Series) -> PolarsResult<(Series, OffsetsBuffer<i64>)> {
@@ -22,54 +20,56 @@ fn get_exploded(series: &Series) -> PolarsResult<(Series, OffsetsBuffer<i64>)> {
 
 /// Arguments for `[DataFrame::unpivot]` function
 #[derive(Clone, Default, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
-pub struct UnpivotArgs {
-    pub on: Vec<SmartString>,
-    pub index: Vec<SmartString>,
-    pub variable_name: Option<SmartString>,
-    pub value_name: Option<SmartString>,
-    /// Whether the unpivot may be done
-    /// in the streaming engine
-    /// This will not have a stable ordering
-    pub streamable: bool,
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct UnpivotArgsIR {
+    pub on: Vec<PlSmallStr>,
+    pub index: Vec<PlSmallStr>,
+    pub variable_name: Option<PlSmallStr>,
+    pub value_name: Option<PlSmallStr>,
 }
 
 impl DataFrame {
-    pub fn explode_impl(&self, mut columns: Vec<Series>) -> PolarsResult<DataFrame> {
+    pub fn explode_impl(&self, mut columns: Vec<Column>) -> PolarsResult<DataFrame> {
         polars_ensure!(!columns.is_empty(), InvalidOperation: "no columns provided in explode");
         let mut df = self.clone();
         if self.is_empty() {
             for s in &columns {
-                df.with_column(s.explode()?)?;
+                df.with_column(s.as_materialized_series().explode()?)?;
             }
             return Ok(df);
         }
         columns.sort_by(|sa, sb| {
-            self.check_name_to_idx(sa.name())
+            self.check_name_to_idx(sa.name().as_str())
                 .expect("checked above")
-                .partial_cmp(&self.check_name_to_idx(sb.name()).expect("checked above"))
+                .partial_cmp(
+                    &self
+                        .check_name_to_idx(sb.name().as_str())
+                        .expect("checked above"),
+                )
                 .expect("cmp usize -> Ordering")
         });
 
         // first remove all the exploded columns
         for s in &columns {
-            df = df.drop(s.name())?;
+            df = df.drop(s.name().as_str())?;
         }
 
         let exploded_columns = POOL.install(|| {
             columns
                 .par_iter()
+                .map(Column::as_materialized_series)
                 .map(get_exploded)
+                .map(|s| s.map(|(s, o)| (Column::from(s), o)))
                 .collect::<PolarsResult<Vec<_>>>()
         })?;
 
         fn process_column(
             original_df: &DataFrame,
             df: &mut DataFrame,
-            exploded: Series,
+            exploded: Column,
         ) -> PolarsResult<()> {
             if exploded.len() == df.height() || df.width() == 0 {
-                let col_idx = original_df.check_name_to_idx(exploded.name())?;
+                let col_idx = original_df.check_name_to_idx(exploded.name().as_str())?;
                 df.columns.insert(col_idx, exploded);
             } else {
                 polars_bail!(
@@ -104,7 +104,7 @@ impl DataFrame {
             let (exploded, offsets) = &exploded_columns[0];
 
             let row_idx = offsets_to_indexes(offsets.as_slice(), exploded.len());
-            let mut row_idx = IdxCa::from_vec("", row_idx);
+            let mut row_idx = IdxCa::from_vec(PlSmallStr::EMPTY, row_idx);
             row_idx.set_sorted_flag(IsSorted::Ascending);
 
             // SAFETY:
@@ -129,13 +129,13 @@ impl DataFrame {
     ///
     /// ```ignore
     /// # use polars_core::prelude::*;
-    /// let s0 = Series::new("a", &[1i64, 2, 3]);
-    /// let s1 = Series::new("b", &[1i64, 1, 1]);
-    /// let s2 = Series::new("c", &[2i64, 2, 2]);
+    /// let s0 = Series::new("a".into(), &[1i64, 2, 3]);
+    /// let s1 = Series::new("b".into(), &[1i64, 1, 1]);
+    /// let s2 = Series::new("c".into(), &[2i64, 2, 2]);
     /// let list = Series::new("foo", &[s0, s1, s2]);
     ///
-    /// let s0 = Series::new("B", [1, 2, 3]);
-    /// let s1 = Series::new("C", [1, 1, 1]);
+    /// let s0 = Series::new("B".into(), [1, 2, 3]);
+    /// let s1 = Series::new("C".into(), [1, 1, 1]);
     /// let df = DataFrame::new(vec![list, s0, s1])?;
     /// let exploded = df.explode(["foo"])?;
     ///
@@ -185,183 +185,12 @@ impl DataFrame {
     pub fn explode<I, S>(&self, columns: I) -> PolarsResult<DataFrame>
     where
         I: IntoIterator<Item = S>,
-        S: AsRef<str>,
+        S: Into<PlSmallStr>,
     {
         // We need to sort the column by order of original occurrence. Otherwise the insert by index
         // below will panic
-        let columns = self.select_series(columns)?;
+        let columns = self.select_columns(columns)?;
         self.explode_impl(columns)
-    }
-
-    ///
-    /// Unpivot a `DataFrame` from wide to long format.
-    ///
-    /// # Example
-    ///
-    /// # Arguments
-    ///
-    /// * `on` - String slice that represent the columns to use as value variables.
-    /// * `index` - String slice that represent the columns to use as id variables.
-    ///
-    /// If `on` is empty all columns that are not in `index` will be used.
-    ///
-    /// ```ignore
-    /// # use polars_core::prelude::*;
-    /// let df = df!("A" => &["a", "b", "a"],
-    ///              "B" => &[1, 3, 5],
-    ///              "C" => &[10, 11, 12],
-    ///              "D" => &[2, 4, 6]
-    ///     )?;
-    ///
-    /// let unpivoted = df.unpivot(&["A", "B"], &["C", "D"])?;
-    /// println!("{:?}", df);
-    /// println!("{:?}", unpivoted);
-    /// # Ok::<(), PolarsError>(())
-    /// ```
-    /// Outputs:
-    /// ```text
-    ///  +-----+-----+-----+-----+
-    ///  | A   | B   | C   | D   |
-    ///  | --- | --- | --- | --- |
-    ///  | str | i32 | i32 | i32 |
-    ///  +=====+=====+=====+=====+
-    ///  | "a" | 1   | 10  | 2   |
-    ///  +-----+-----+-----+-----+
-    ///  | "b" | 3   | 11  | 4   |
-    ///  +-----+-----+-----+-----+
-    ///  | "a" | 5   | 12  | 6   |
-    ///  +-----+-----+-----+-----+
-    ///
-    ///  +-----+-----+----------+-------+
-    ///  | A   | B   | variable | value |
-    ///  | --- | --- | ---      | ---   |
-    ///  | str | i32 | str      | i32   |
-    ///  +=====+=====+==========+=======+
-    ///  | "a" | 1   | "C"      | 10    |
-    ///  +-----+-----+----------+-------+
-    ///  | "b" | 3   | "C"      | 11    |
-    ///  +-----+-----+----------+-------+
-    ///  | "a" | 5   | "C"      | 12    |
-    ///  +-----+-----+----------+-------+
-    ///  | "a" | 1   | "D"      | 2     |
-    ///  +-----+-----+----------+-------+
-    ///  | "b" | 3   | "D"      | 4     |
-    ///  +-----+-----+----------+-------+
-    ///  | "a" | 5   | "D"      | 6     |
-    ///  +-----+-----+----------+-------+
-    /// ```
-    pub fn unpivot<I, J>(&self, on: I, index: J) -> PolarsResult<Self>
-    where
-        I: IntoVec<SmartString>,
-        J: IntoVec<SmartString>,
-    {
-        let index = index.into_vec();
-        let on = on.into_vec();
-        self.unpivot2(UnpivotArgs {
-            on,
-            index,
-            ..Default::default()
-        })
-    }
-
-    /// Similar to unpivot, but without generics. This may be easier if you want to pass
-    /// an empty `index` or empty `on`.
-    pub fn unpivot2(&self, args: UnpivotArgs) -> PolarsResult<Self> {
-        let index = args.index;
-        let mut on = args.on;
-
-        let variable_name = args.variable_name.as_deref().unwrap_or("variable");
-        let value_name = args.value_name.as_deref().unwrap_or("value");
-
-        let len = self.height();
-
-        // if value vars is empty we take all columns that are not in id_vars.
-        if on.is_empty() {
-            // return empty frame if there are no columns available to use as value vars
-            if index.len() == self.width() {
-                let variable_col = Series::new_empty(variable_name, &DataType::String);
-                let value_col = Series::new_empty(variable_name, &DataType::Null);
-
-                let mut out = self.select(index).unwrap().clear().columns;
-                out.push(variable_col);
-                out.push(value_col);
-
-                return Ok(unsafe { DataFrame::new_no_checks(out) });
-            }
-
-            let index_set = PlHashSet::from_iter(index.iter().map(|s| s.as_str()));
-            on = self
-                .get_columns()
-                .iter()
-                .filter_map(|s| {
-                    if index_set.contains(s.name()) {
-                        None
-                    } else {
-                        Some(s.name().into())
-                    }
-                })
-                .collect();
-        }
-
-        // values will all be placed in single column, so we must find their supertype
-        let schema = self.schema();
-        let mut iter = on.iter().map(|v| {
-            schema
-                .get(v)
-                .ok_or_else(|| polars_err!(ColumnNotFound: "{}", v))
-        });
-        let mut st = iter.next().unwrap()?.clone();
-        for dt in iter {
-            st = try_get_supertype(&st, dt?)?;
-        }
-
-        // The column name of the variable that is unpivoted
-        let mut variable_col = MutablePlString::with_capacity(len * on.len() + 1);
-        // prepare ids
-        let ids_ = self.select_with_schema_unchecked(index, &schema)?;
-        let mut ids = ids_.clone();
-        if ids.width() > 0 {
-            for _ in 0..on.len() - 1 {
-                ids.vstack_mut_unchecked(&ids_)
-            }
-        }
-        ids.as_single_chunk_par();
-        drop(ids_);
-
-        let mut values = Vec::with_capacity(on.len());
-
-        for value_column_name in &on {
-            variable_col.extend_constant(len, Some(value_column_name.as_str()));
-            // ensure we go via the schema so we are O(1)
-            // self.column() is linear
-            // together with this loop that would make it O^2 over `on`
-            let (pos, _name, _dtype) = schema.try_get_full(value_column_name)?;
-            let col = &self.columns[pos];
-            let value_col = col.cast(&st).map_err(
-                |_| polars_err!(InvalidOperation: "'unpivot' not supported for dtype: {}", col.dtype()),
-            )?;
-            values.extend_from_slice(value_col.chunks())
-        }
-        let values_arr = concatenate_owned_unchecked(&values)?;
-        // SAFETY:
-        // The give dtype is correct
-        let values =
-            unsafe { Series::from_chunks_and_dtype_unchecked(value_name, vec![values_arr], &st) };
-
-        let variable_col = variable_col.as_box();
-        // SAFETY:
-        // The given dtype is correct
-        let variables = unsafe {
-            Series::from_chunks_and_dtype_unchecked(
-                variable_name,
-                vec![variable_col],
-                &DataType::String,
-            )
-        };
-
-        ids.hstack_mut(&[variables, values])?;
-
-        Ok(ids)
     }
 }
 
@@ -373,20 +202,44 @@ mod test {
     #[cfg(feature = "dtype-i8")]
     #[cfg_attr(miri, ignore)]
     fn test_explode() {
-        let s0 = Series::new("a", &[1i8, 2, 3]);
-        let s1 = Series::new("b", &[1i8, 1, 1]);
-        let s2 = Series::new("c", &[2i8, 2, 2]);
-        let list = Series::new("foo", &[s0, s1, s2]);
+        let s0 = Series::new(PlSmallStr::from_static("a"), &[1i8, 2, 3]);
+        let s1 = Series::new(PlSmallStr::from_static("b"), &[1i8, 1, 1]);
+        let s2 = Series::new(PlSmallStr::from_static("c"), &[2i8, 2, 2]);
+        let list = Column::new(PlSmallStr::from_static("foo"), &[s0, s1, s2]);
 
-        let s0 = Series::new("B", [1, 2, 3]);
-        let s1 = Series::new("C", [1, 1, 1]);
+        let s0 = Column::new(PlSmallStr::from_static("B"), [1, 2, 3]);
+        let s1 = Column::new(PlSmallStr::from_static("C"), [1, 1, 1]);
         let df = DataFrame::new(vec![list, s0.clone(), s1.clone()]).unwrap();
         let exploded = df.explode(["foo"]).unwrap();
         assert_eq!(exploded.shape(), (9, 3));
-        assert_eq!(exploded.column("C").unwrap().i32().unwrap().get(8), Some(1));
-        assert_eq!(exploded.column("B").unwrap().i32().unwrap().get(8), Some(3));
         assert_eq!(
-            exploded.column("foo").unwrap().i8().unwrap().get(8),
+            exploded
+                .column("C")
+                .unwrap()
+                .as_materialized_series()
+                .i32()
+                .unwrap()
+                .get(8),
+            Some(1)
+        );
+        assert_eq!(
+            exploded
+                .column("B")
+                .unwrap()
+                .as_materialized_series()
+                .i32()
+                .unwrap()
+                .get(8),
+            Some(3)
+        );
+        assert_eq!(
+            exploded
+                .column("foo")
+                .unwrap()
+                .as_materialized_series()
+                .i8()
+                .unwrap()
+                .get(8),
             Some(2)
         );
     }
@@ -394,11 +247,14 @@ mod test {
     #[test]
     #[cfg_attr(miri, ignore)]
     fn test_explode_df_empty_list() -> PolarsResult<()> {
-        let s0 = Series::new("a", &[1, 2, 3]);
-        let s1 = Series::new("b", &[1, 1, 1]);
-        let list = Series::new("foo", &[s0, s1.clone(), s1.clear()]);
-        let s0 = Series::new("B", [1, 2, 3]);
-        let s1 = Series::new("C", [1, 1, 1]);
+        let s0 = Series::new(PlSmallStr::from_static("a"), &[1, 2, 3]);
+        let s1 = Series::new(PlSmallStr::from_static("b"), &[1, 1, 1]);
+        let list = Column::new(
+            PlSmallStr::from_static("foo"),
+            &[s0, s1.clone(), s1.clear()],
+        );
+        let s0 = Column::new(PlSmallStr::from_static("B"), [1, 2, 3]);
+        let s1 = Column::new(PlSmallStr::from_static("C"), [1, 1, 1]);
         let df = DataFrame::new(vec![list, s0.clone(), s1.clone()])?;
 
         let out = df.explode(["foo"])?;
@@ -410,7 +266,14 @@ mod test {
 
         assert!(out.equals_missing(&expected));
 
-        let list = Series::new("foo", [s0.clone(), s1.clear(), s1.clone()]);
+        let list = Column::new(
+            PlSmallStr::from_static("foo"),
+            [
+                s0.as_materialized_series().clone(),
+                s1.as_materialized_series().clear(),
+                s1.as_materialized_series().clone(),
+            ],
+        );
         let df = DataFrame::new(vec![list, s0, s1])?;
         let out = df.explode(["foo"])?;
         let expected = df![
@@ -426,70 +289,20 @@ mod test {
     #[test]
     #[cfg_attr(miri, ignore)]
     fn test_explode_single_col() -> PolarsResult<()> {
-        let s0 = Series::new("a", &[1i32, 2, 3]);
-        let s1 = Series::new("b", &[1i32, 1, 1]);
-        let list = Series::new("foo", &[s0, s1]);
+        let s0 = Series::new(PlSmallStr::from_static("a"), &[1i32, 2, 3]);
+        let s1 = Series::new(PlSmallStr::from_static("b"), &[1i32, 1, 1]);
+        let list = Column::new(PlSmallStr::from_static("foo"), &[s0, s1]);
         let df = DataFrame::new(vec![list])?;
 
         let out = df.explode(["foo"])?;
         let out = out
             .column("foo")?
+            .as_materialized_series()
             .i32()?
             .into_no_null_iter()
             .collect::<Vec<_>>();
         assert_eq!(out, &[1i32, 2, 3, 1, 1, 1]);
 
-        Ok(())
-    }
-
-    #[test]
-    #[cfg_attr(miri, ignore)]
-    fn test_unpivot() -> PolarsResult<()> {
-        let df = df!("A" => &["a", "b", "a"],
-         "B" => &[1, 3, 5],
-         "C" => &[10, 11, 12],
-         "D" => &[2, 4, 6]
-        )
-        .unwrap();
-
-        let unpivoted = df.unpivot(["C", "D"], ["A", "B"])?;
-        assert_eq!(
-            Vec::from(unpivoted.column("value")?.i32()?),
-            &[Some(10), Some(11), Some(12), Some(2), Some(4), Some(6)]
-        );
-
-        let args = UnpivotArgs {
-            on: vec![],
-            index: vec![],
-            ..Default::default()
-        };
-
-        let unpivoted = df.unpivot2(args).unwrap();
-        let value = unpivoted.column("value")?;
-        // String because of supertype
-        let value = value.str()?;
-        let value = value.into_no_null_iter().collect::<Vec<_>>();
-        assert_eq!(
-            value,
-            &["a", "b", "a", "1", "3", "5", "10", "11", "12", "2", "4", "6"]
-        );
-
-        let args = UnpivotArgs {
-            on: vec![],
-            index: vec!["A".into()],
-            ..Default::default()
-        };
-
-        let unpivoted = df.unpivot2(args).unwrap();
-        let value = unpivoted.column("value")?;
-        let value = value.i32()?;
-        let value = value.into_no_null_iter().collect::<Vec<_>>();
-        assert_eq!(value, &[1, 3, 5, 10, 11, 12, 2, 4, 6]);
-        let variable = unpivoted.column("variable")?;
-        let variable = variable.str()?;
-        let variable = variable.into_no_null_iter().collect::<Vec<_>>();
-        assert_eq!(variable, &["B", "B", "B", "C", "C", "C", "D", "D", "D"]);
-        assert!(unpivoted.column("A").is_ok());
         Ok(())
     }
 }

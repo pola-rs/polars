@@ -99,7 +99,7 @@ fn from_arrow_vec() {
 }
 
 #[test]
-#[should_panic(expected = "not aligned")]
+#[should_panic(expected = "arrow_buffer::Buffer misaligned")]
 fn from_arrow_misaligned() {
     let buffer = arrow_buffer::Buffer::from_vec(vec![1_i32, 2_i32, 3_i32]).slice(1);
     let _ = Buffer::<i32>::from(buffer);

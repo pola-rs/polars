@@ -37,14 +37,16 @@ impl<T: GetSize, E: Error> GetSize for Result<T, E> {
     }
 }
 
+#[cfg(feature = "cloud")]
 pub(crate) struct Size(u64);
 
+#[cfg(feature = "cloud")]
 impl GetSize for Size {
     fn size(&self) -> u64 {
         self.0
     }
 }
-
+#[cfg(feature = "cloud")]
 impl From<u64> for Size {
     fn from(value: u64) -> Self {
         Self(value)
@@ -235,8 +237,16 @@ pub struct RuntimeManager {
 
 impl RuntimeManager {
     fn new() -> Self {
+        let n_threads = std::env::var("POLARS_ASYNC_THREAD_COUNT")
+            .map(|x| x.parse::<usize>().expect("integer"))
+            .unwrap_or((POOL.current_num_threads() / 4).clamp(1, 4));
+
+        if polars_core::config::verbose() {
+            eprintln!("Async thread count: {}", n_threads);
+        }
+
         let rt = Builder::new_multi_thread()
-            .worker_threads(std::cmp::max(POOL.current_num_threads(), 4))
+            .worker_threads(n_threads)
             .enable_io()
             .enable_time()
             .build()

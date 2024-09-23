@@ -1,5 +1,6 @@
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder};
 use arrow::array::Utf8ViewArray;
+use polars_core::prelude::arity::unary_elementwise;
 use polars_core::prelude::*;
 use polars_core::utils::align_chunks_binary;
 
@@ -27,7 +28,9 @@ pub fn contains_any(
 ) -> PolarsResult<BooleanChunked> {
     let ac = build_ac(patterns, ascii_case_insensitive)?;
 
-    Ok(ca.apply_generic(|opt_val| opt_val.map(|val| ac.find(val).is_some())))
+    Ok(unary_elementwise(ca, |opt_val| {
+        opt_val.map(|val| ac.find(val).is_some())
+    }))
 }
 
 pub fn replace_all(
@@ -52,7 +55,9 @@ pub fn replace_all(
 
     let ac = build_ac(patterns, ascii_case_insensitive)?;
 
-    Ok(ca.apply_generic(|opt_val| opt_val.map(|val| ac.replace_all(val, replace_with.as_slice()))))
+    Ok(unary_elementwise(ca, |opt_val| {
+        opt_val.map(|val| ac.replace_all(val, replace_with.as_slice()))
+    }))
 }
 
 fn push(val: &str, builder: &mut ListStringChunkedBuilder, ac: &AhoCorasick, overlapping: bool) {
@@ -75,7 +80,8 @@ pub fn extract_many(
 ) -> PolarsResult<ListChunked> {
     match patterns.dtype() {
         DataType::List(inner) if inner.is_string() => {
-            let mut builder = ListStringChunkedBuilder::new(ca.name(), ca.len(), ca.len() * 2);
+            let mut builder =
+                ListStringChunkedBuilder::new(ca.name().clone(), ca.len(), ca.len() * 2);
             let patterns = patterns.list().unwrap();
             let (ca, patterns) = align_chunks_binary(ca, patterns);
 
@@ -96,7 +102,8 @@ pub fn extract_many(
         DataType::String => {
             let patterns = patterns.str().unwrap();
             let ac = build_ac(patterns, ascii_case_insensitive)?;
-            let mut builder = ListStringChunkedBuilder::new(ca.name(), ca.len(), ca.len() * 2);
+            let mut builder =
+                ListStringChunkedBuilder::new(ca.name().clone(), ca.len(), ca.len() * 2);
 
             for arr in ca.downcast_iter() {
                 for opt_val in arr.into_iter() {

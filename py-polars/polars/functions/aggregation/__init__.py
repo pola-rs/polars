@@ -18,16 +18,16 @@ from polars.functions.aggregation.vertical import (
 
 __all__ = [
     "all",
-    "any",
-    "cum_sum",
-    "max",
-    "min",
-    "sum",
     "all_horizontal",
+    "any",
     "any_horizontal",
+    "cum_sum",
     "cum_sum_horizontal",
+    "max",
     "max_horizontal",
     "mean_horizontal",
+    "min",
     "min_horizontal",
+    "sum",
     "sum_horizontal",
 ]

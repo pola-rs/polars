@@ -215,7 +215,7 @@ def _to_ast(expr: str) -> ast.expr:
 
 @singledispatch
 def _convert_predicate(a: Any) -> Any:
-    """Walks the AST to  convert the  PyArrow expression to a PyIceberg expression."""
+    """Walks the AST to convert the PyArrow expression to a PyIceberg expression."""
     msg = f"Unexpected symbol: {a}"
     raise ValueError(msg)
 

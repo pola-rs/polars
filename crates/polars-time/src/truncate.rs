@@ -12,6 +12,12 @@ pub trait PolarsTruncate {
         Self: Sized;
 }
 
+#[inline(always)]
+pub(crate) fn fast_truncate(t: i64, every: i64) -> i64 {
+    let remainder = t % every;
+    t - (remainder + every * (remainder < 0) as i64)
+}
+
 impl PolarsTruncate for DatetimeChunked {
     fn truncate(&self, tz: Option<&Tz>, every: &StringChunked) -> PolarsResult<Self> {
         let time_zone = self.time_zone();
@@ -35,10 +41,7 @@ impl PolarsTruncate for DatetimeChunked {
                         TimeUnit::Nanoseconds => every_parsed.duration_ns(),
                     };
                     return Ok(self
-                        .apply_values(|t| {
-                            let remainder = t % every;
-                            t - (remainder + every * (remainder < 0) as i64)
-                        })
+                        .apply_values(|t| fast_truncate(t, every))
                         .into_datetime(self.time_unit(), time_zone.clone()));
                 } else {
                     let w = Window::new(every_parsed, every_parsed, offset);
@@ -56,7 +59,7 @@ impl PolarsTruncate for DatetimeChunked {
                     return Ok(out?.into_datetime(self.time_unit(), self.time_zone().clone()));
                 }
             } else {
-                return Ok(Int64Chunked::full_null(self.name(), self.len())
+                return Ok(Int64Chunked::full_null(self.name().clone(), self.len())
                     .into_datetime(self.time_unit(), self.time_zone().clone()));
             }
         }
@@ -107,7 +110,7 @@ impl PolarsTruncate for DateChunked {
                             / MILLISECONDS_IN_DAY) as i32)
                     })
                 } else {
-                    Ok(Int32Chunked::full_null(self.name(), self.len()))
+                    Ok(Int32Chunked::full_null(self.name().clone(), self.len()))
                 }
             },
             _ => broadcast_try_binary_elementwise(self, every, |opt_t, opt_every| {

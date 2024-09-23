@@ -42,34 +42,35 @@ pub struct IpcCloudSink {}
 #[cfg(feature = "cloud")]
 impl IpcCloudSink {
     #[allow(clippy::new_ret_no_self)]
-    #[tokio::main(flavor = "current_thread")]
-    pub async fn new(
+    pub fn new(
         uri: &str,
         cloud_options: Option<&polars_io::cloud::CloudOptions>,
         ipc_options: IpcWriterOptions,
         schema: &Schema,
     ) -> PolarsResult<FilesSink> {
-        let cloud_writer = polars_io::cloud::CloudWriter::new(uri, cloud_options).await?;
-        let writer = IpcWriter::new(cloud_writer)
-            .with_compression(ipc_options.compression)
-            .batched(schema)?;
+        polars_io::pl_async::get_runtime().block_on_potential_spawn(async {
+            let cloud_writer = polars_io::cloud::CloudWriter::new(uri, cloud_options).await?;
+            let writer = IpcWriter::new(cloud_writer)
+                .with_compression(ipc_options.compression)
+                .batched(schema)?;
 
-        let writer = Box::new(writer) as Box<dyn SinkWriter + Send>;
+            let writer = Box::new(writer) as Box<dyn SinkWriter + Send>;
 
-        let morsels_per_sink = morsels_per_sink();
-        let backpressure = morsels_per_sink * 2;
-        let (sender, receiver) = bounded(backpressure);
+            let morsels_per_sink = morsels_per_sink();
+            let backpressure = morsels_per_sink * 2;
+            let (sender, receiver) = bounded(backpressure);
 
-        let io_thread_handle = Arc::new(Some(init_writer_thread(
-            receiver,
-            writer,
-            ipc_options.maintain_order,
-            morsels_per_sink,
-        )));
+            let io_thread_handle = Arc::new(Some(init_writer_thread(
+                receiver,
+                writer,
+                ipc_options.maintain_order,
+                morsels_per_sink,
+            )));
 
-        Ok(FilesSink {
-            sender,
-            io_thread_handle,
+            Ok(FilesSink {
+                sender,
+                io_thread_handle,
+            })
         })
     }
 }

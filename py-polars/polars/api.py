@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-from functools import reduce
-from operator import or_
-from typing import TYPE_CHECKING, Callable, TypeVar
+from typing import TYPE_CHECKING, Callable, Generic, TypeVar
 from warnings import warn
 
 import polars._reexport as pl
@@ -11,27 +9,24 @@ from polars._utils.various import find_stacklevel
 if TYPE_CHECKING:
     from polars import DataFrame, Expr, LazyFrame, Series
 
-    NS = TypeVar("NS")
-
 
 __all__ = [
-    "register_expr_namespace",
     "register_dataframe_namespace",
+    "register_expr_namespace",
     "register_lazyframe_namespace",
     "register_series_namespace",
 ]
 
 # do not allow override of polars' own namespaces (as registered by '_accessors')
-_reserved_namespaces: set[str] = reduce(
-    or_,
-    (
-        cls._accessors  # type: ignore[attr-defined]
-        for cls in (pl.DataFrame, pl.Expr, pl.LazyFrame, pl.Series)
-    ),
+_reserved_namespaces: set[str] = set.union(
+    *(cls._accessors for cls in (pl.DataFrame, pl.Expr, pl.LazyFrame, pl.Series))
 )
 
 
-class NameSpace:
+NS = TypeVar("NS")
+
+
+class NameSpace(Generic[NS]):
     """Establish property-like namespace object for user-defined functionality."""
 
     def __init__(self, name: str, namespace: type[NS]) -> None:
@@ -89,7 +84,7 @@ def register_expr_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     --------
     >>> @pl.api.register_expr_namespace("pow_n")
     ... class PowersOfN:
-    ...     def __init__(self, expr: pl.Expr):
+    ...     def __init__(self, expr: pl.Expr) -> None:
     ...         self._expr = expr
     ...
     ...     def next(self, p: int) -> pl.Expr:
@@ -142,7 +137,7 @@ def register_dataframe_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     --------
     >>> @pl.api.register_dataframe_namespace("split")
     ... class SplitFrame:
-    ...     def __init__(self, df: pl.DataFrame):
+    ...     def __init__(self, df: pl.DataFrame) -> None:
     ...         self._df = df
     ...
     ...     def by_first_letter_of_column_names(self) -> list[pl.DataFrame]:
@@ -240,7 +235,7 @@ def register_lazyframe_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     --------
     >>> @pl.api.register_lazyframe_namespace("types")
     ... class DTypeOperations:
-    ...     def __init__(self, lf: pl.LazyFrame):
+    ...     def __init__(self, lf: pl.LazyFrame) -> None:
     ...         self._lf = lf
     ...
     ...     def split_by_column_dtypes(self) -> list[pl.LazyFrame]:
@@ -341,7 +336,7 @@ def register_series_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     --------
     >>> @pl.api.register_series_namespace("math")
     ... class MathShortcuts:
-    ...     def __init__(self, s: pl.Series):
+    ...     def __init__(self, s: pl.Series) -> None:
     ...         self._s = s
     ...
     ...     def square(self) -> pl.Series:

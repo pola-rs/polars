@@ -112,10 +112,9 @@ impl<'a> Iterator for ExprIter<'a> {
     type Item = &'a Expr;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.stack.pop().map(|current_expr| {
-            current_expr.nodes(&mut self.stack);
-            current_expr
-        })
+        self.stack
+            .pop()
+            .inspect(|current_expr| current_expr.nodes(&mut self.stack))
     }
 }
 

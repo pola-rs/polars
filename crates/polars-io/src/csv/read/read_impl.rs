@@ -15,16 +15,16 @@ use super::buffer::init_buffers;
 use super::options::{CommentPrefix, CsvEncoding, NullValues, NullValuesCompiled};
 use super::parser::{
     get_line_stats, is_comment_line, next_line_position, next_line_position_naive, parse_lines,
-    skip_bom, skip_line_ending, skip_this_line, skip_whitespace_exclude,
+    skip_bom, skip_line_ending, skip_this_line,
 };
 use super::schema_inference::{check_decimal_comma, infer_file_schema};
 #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
 use super::utils::decompress;
 use super::utils::get_file_chunks;
-#[cfg(not(any(feature = "decompress", feature = "decompress-fast")))]
-use super::utils::is_compressed;
 use crate::mmap::ReaderBytes;
 use crate::predicates::PhysicalIoExpr;
+#[cfg(not(any(feature = "decompress", feature = "decompress-fast")))]
+use crate::utils::compression::SupportedCompression;
 use crate::utils::update_row_counts;
 use crate::RowIndex;
 
@@ -34,16 +34,22 @@ pub(crate) fn cast_columns(
     parallel: bool,
     ignore_errors: bool,
 ) -> PolarsResult<()> {
-    let cast_fn = |s: &Series, fld: &Field| {
-        let out = match (s.dtype(), fld.data_type()) {
+    let cast_fn = |c: &Column, fld: &Field| {
+        let out = match (c.dtype(), fld.dtype()) {
             #[cfg(feature = "temporal")]
-            (DataType::String, DataType::Date) => s
+            (DataType::String, DataType::Date) => c
                 .str()
                 .unwrap()
                 .as_date(None, false)
-                .map(|ca| ca.into_series()),
+                .map(|ca| ca.into_column()),
             #[cfg(feature = "temporal")]
-            (DataType::String, DataType::Datetime(tu, _)) => s
+            (DataType::String, DataType::Time) => c
+                .str()
+                .unwrap()
+                .as_time(None, false)
+                .map(|ca| ca.into_column()),
+            #[cfg(feature = "temporal")]
+            (DataType::String, DataType::Datetime(tu, _)) => c
                 .str()
                 .unwrap()
                 .as_datetime(
@@ -54,11 +60,11 @@ pub(crate) fn cast_columns(
                     None,
                     &StringChunked::from_iter(std::iter::once("raise")),
                 )
-                .map(|ca| ca.into_series()),
-            (_, dt) => s.cast(dt),
+                .map(|ca| ca.into_column()),
+            (_, dt) => c.cast(dt),
         }?;
-        if !ignore_errors && s.null_count() != out.null_count() {
-            handle_casting_failures(s, &out)?;
+        if !ignore_errors && c.null_count() != out.null_count() {
+            handle_casting_failures(c.as_materialized_series(), out.as_materialized_series())?;
         }
         Ok(out)
     };
@@ -68,7 +74,7 @@ pub(crate) fn cast_columns(
             df.get_columns()
                 .into_par_iter()
                 .map(|s| {
-                    if let Some(fld) = to_cast.iter().find(|fld| fld.name().as_str() == s.name()) {
+                    if let Some(fld) = to_cast.iter().find(|fld| fld.name() == s.name()) {
                         cast_fn(s, fld)
                     } else {
                         Ok(s.clone())
@@ -144,7 +150,7 @@ impl<'a> CoreReader<'a> {
         has_header: bool,
         ignore_errors: bool,
         schema: Option<SchemaRef>,
-        columns: Option<Arc<[String]>>,
+        columns: Option<Arc<[PlSmallStr]>>,
         encoding: CsvEncoding,
         mut n_threads: Option<usize>,
         schema_overwrite: Option<SchemaRef>,
@@ -173,7 +179,7 @@ impl<'a> CoreReader<'a> {
         let mut reader_bytes = reader_bytes;
 
         #[cfg(not(any(feature = "decompress", feature = "decompress-fast")))]
-        if is_compressed(&reader_bytes) {
+        if SupportedCompression::check(&reader_bytes).is_some() {
             polars_bail!(
                 ComputeError: "cannot read compressed CSV file; \
                 compile with feature 'decompress' or 'decompress-fast'"
@@ -272,8 +278,9 @@ impl<'a> CoreReader<'a> {
     ) -> PolarsResult<(&'b [u8], Option<usize>)> {
         let starting_point_offset = bytes.as_ptr() as usize;
 
-        // Skip all leading white space and the occasional utf8-bom
-        bytes = skip_whitespace_exclude(skip_bom(bytes), self.separator);
+        // Skip utf8 byte-order-mark (BOM)
+        bytes = skip_bom(bytes);
+
         // \n\n can be a empty string row of a single column
         // in other cases we skip it.
         if self.schema.len() > 1 {
@@ -489,7 +496,7 @@ impl<'a> CoreReader<'a> {
                 )
             };
             if let Some(ref row_index) = self.row_index {
-                df.insert_column(0, Series::new_empty(&row_index.name, &IDX_DTYPE))?;
+                df.insert_column(0, Series::new_empty(row_index.name.clone(), &IDX_DTYPE))?;
             }
             return Ok(df);
         }
@@ -547,12 +554,12 @@ impl<'a> CoreReader<'a> {
 
                             let columns = buffers
                                 .into_iter()
-                                .map(|buf| buf.into_series())
+                                .map(|buf| buf.into_series().map(Column::from))
                                 .collect::<PolarsResult<_>>()?;
                             let mut local_df = unsafe { DataFrame::new_no_checks(columns) };
                             let current_row_count = local_df.height() as IdxSize;
                             if let Some(rc) = &self.row_index {
-                                local_df.with_row_index_mut(&rc.name, Some(rc.offset));
+                                local_df.with_row_index_mut(rc.name.clone(), Some(rc.offset));
                             };
 
                             cast_columns(&mut local_df, &self.to_cast, false, self.ignore_errors)?;
@@ -610,7 +617,7 @@ impl<'a> CoreReader<'a> {
 
                         cast_columns(&mut df, &self.to_cast, false, self.ignore_errors)?;
                         if let Some(rc) = &self.row_index {
-                            df.with_row_index_mut(&rc.name, Some(rc.offset));
+                            df.with_row_index_mut(rc.name.clone(), Some(rc.offset));
                         }
                         let n_read = df.height() as IdxSize;
                         Ok((df, n_read))
@@ -652,14 +659,14 @@ impl<'a> CoreReader<'a> {
 
                             let columns = buffers
                                 .into_iter()
-                                .map(|buf| buf.into_series())
+                                .map(|buf| buf.into_series().map(Column::from))
                                 .collect::<PolarsResult<_>>()?;
                             unsafe { DataFrame::new_no_checks(columns) }
                         };
 
                         cast_columns(&mut df, &self.to_cast, false, self.ignore_errors)?;
                         if let Some(rc) = &self.row_index {
-                            df.with_row_index_mut(&rc.name, Some(rc.offset));
+                            df.with_row_index_mut(rc.name.clone(), Some(rc.offset));
                         }
                         let n_read = df.height() as IdxSize;
                         (df, n_read)
@@ -759,7 +766,7 @@ fn read_chunk(
 
     let columns = buffers
         .into_iter()
-        .map(|buf| buf.into_series())
+        .map(|buf| buf.into_series().map(Column::from))
         .collect::<PolarsResult<_>>()?;
     Ok(unsafe { DataFrame::new_no_checks(columns) })
 }

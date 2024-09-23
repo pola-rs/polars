@@ -4,7 +4,7 @@ use super::*;
 #[cfg(feature = "temporal")]
 fn test_lazy_agg() {
     let s0 = DateChunked::parse_from_str_slice(
-        "date",
+        "date".into(),
         &[
             "2020-08-21",
             "2020-08-21",
@@ -14,9 +14,9 @@ fn test_lazy_agg() {
         ],
         "%Y-%m-%d",
     )
-    .into_series();
-    let s1 = Series::new("temp", [20, 10, 7, 9, 1].as_ref());
-    let s2 = Series::new("rain", [0.2, 0.1, 0.3, 0.1, 0.01].as_ref());
+    .into_column();
+    let s1 = Column::new("temp".into(), [20, 10, 7, 9, 1].as_ref());
+    let s2 = Column::new("rain".into(), [0.2, 0.1, 0.3, 0.1, 0.01].as_ref());
     let df = DataFrame::new(vec![s0, s1, s2]).unwrap();
 
     let lf = df
@@ -33,7 +33,7 @@ fn test_lazy_agg() {
 
     let new = lf.collect().unwrap();
     let min = new.column("min").unwrap();
-    assert_eq!(min, &Series::new("min", [0.1f64, 0.01, 0.1]));
+    assert_eq!(min, &Column::new("min".into(), [0.1f64, 0.01, 0.1]));
 }
 
 #[test]

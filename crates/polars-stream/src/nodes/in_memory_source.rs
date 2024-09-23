@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use super::compute_node_prelude::*;
 use crate::async_primitives::wait_group::WaitGroup;
-use crate::morsel::{get_ideal_morsel_size, MorselSeq};
+use crate::morsel::{get_ideal_morsel_size, MorselSeq, SourceToken};
 
 pub struct InMemorySourceNode {
     source: Option<Arc<DataFrame>>,
@@ -28,30 +28,33 @@ impl ComputeNode for InMemorySourceNode {
 
     fn initialize(&mut self, num_pipelines: usize) {
         let len = self.source.as_ref().unwrap().height();
-        let ideal_block_count = (len / get_ideal_morsel_size()).max(1);
-        let block_count = ideal_block_count.next_multiple_of(num_pipelines);
-        self.morsel_size = len.div_ceil(block_count).max(1);
+        let ideal_morsel_count = (len / get_ideal_morsel_size()).max(1);
+        let morsel_count = ideal_morsel_count.next_multiple_of(num_pipelines);
+        self.morsel_size = len.div_ceil(morsel_count).max(1);
         self.seq = AtomicU64::new(0);
     }
 
-    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) {
+    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {
         assert!(recv.is_empty());
         assert!(send.len() == 1);
 
-        let exhausted = self
-            .source
-            .as_ref()
-            .map(|s| {
-                self.seq.load(Ordering::Relaxed) * self.morsel_size as u64 >= s.height() as u64
-            })
-            .unwrap_or(true);
-
+        // As a temporary hack for some nodes (like the FunctionIR::FastCount)
+        // node that rely on an empty input, always ensure we send at least one
+        // morsel.
+        // TODO: remove this hack.
+        let exhausted = if let Some(src) = &self.source {
+            let seq = self.seq.load(Ordering::Relaxed);
+            seq > 0 && seq * self.morsel_size as u64 >= src.height() as u64
+        } else {
+            true
+        };
         if send[0] == PortState::Done || exhausted {
             send[0] = PortState::Done;
             self.source = None;
         } else {
             send[0] = PortState::Ready;
         }
+        Ok(())
     }
 
     fn spawn<'env, 's>(
@@ -71,20 +74,28 @@ impl ComputeNode for InMemorySourceNode {
             let slf = &*self;
             join_handles.push(scope.spawn_task(TaskPriority::Low, async move {
                 let wait_group = WaitGroup::default();
+                let source_token = SourceToken::new();
                 loop {
                     let seq = slf.seq.fetch_add(1, Ordering::Relaxed);
                     let offset = (seq as usize * slf.morsel_size) as i64;
                     let df = source.slice(offset, slf.morsel_size);
-                    if df.is_empty() {
+
+                    // TODO: remove this 'always sent at least one morsel'
+                    // condition, see update_state.
+                    if df.is_empty() && seq > 0 {
                         break;
                     }
 
-                    let mut morsel = Morsel::new(df, MorselSeq::new(seq));
+                    let mut morsel = Morsel::new(df, MorselSeq::new(seq), source_token.clone());
                     morsel.set_consume_token(wait_group.token());
                     if send.send(morsel).await.is_err() {
                         break;
                     }
+
                     wait_group.wait().await;
+                    if source_token.stop_requested() {
+                        break;
+                    }
                 }
 
                 Ok(())

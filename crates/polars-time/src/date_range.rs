@@ -3,6 +3,7 @@ use chrono::{Datelike, NaiveDateTime, NaiveTime};
 use polars_core::chunked_array::temporal::time_to_time64ns;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
+use polars_utils::format_pl_smallstr;
 
 use crate::prelude::*;
 
@@ -13,7 +14,7 @@ pub fn in_nanoseconds_window(ndt: &NaiveDateTime) -> bool {
 
 /// Create a [`DatetimeChunked`] from a given `start` and `end` date and a given `interval`.
 pub fn date_range(
-    name: &str,
+    name: PlSmallStr,
     start: NaiveDateTime,
     end: NaiveDateTime,
     interval: Duration,
@@ -40,7 +41,7 @@ pub fn date_range(
 
 #[doc(hidden)]
 pub fn datetime_range_impl(
-    name: &str,
+    name: PlSmallStr,
     start: i64,
     end: i64,
     interval: Duration,
@@ -54,7 +55,7 @@ pub fn datetime_range_impl(
     );
     let mut out = match tz {
         #[cfg(feature = "timezones")]
-        Some(tz) => out.into_datetime(tu, Some(tz.to_string())),
+        Some(tz) => out.into_datetime(tu, Some(format_pl_smallstr!("{}", tz))),
         _ => out.into_datetime(tu, None),
     };
 
@@ -64,7 +65,7 @@ pub fn datetime_range_impl(
 
 /// Create a [`TimeChunked`] from a given `start` and `end` date and a given `interval`.
 pub fn time_range(
-    name: &str,
+    name: PlSmallStr,
     start: NaiveTime,
     end: NaiveTime,
     interval: Duration,
@@ -77,7 +78,7 @@ pub fn time_range(
 
 #[doc(hidden)]
 pub fn time_range_impl(
-    name: &str,
+    name: PlSmallStr,
     start: i64,
     end: i64,
     interval: Duration,

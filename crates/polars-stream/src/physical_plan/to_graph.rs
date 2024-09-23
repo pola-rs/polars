@@ -6,28 +6,57 @@ use polars_expr::planner::{create_physical_expr, get_expr_depth_limit, Expressio
 use polars_expr::reduce::into_reduction;
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
+use polars_plan::global::_set_n_rows_for_scan;
 use polars_plan::plans::expr_ir::ExprIR;
-use polars_plan::plans::{AExpr, Context, IR};
-use polars_utils::arena::Arena;
+use polars_plan::plans::{AExpr, ArenaExprIter, Context, IR};
+use polars_plan::prelude::FunctionFlags;
+use polars_utils::arena::{Arena, Node};
+use polars_utils::itertools::Itertools;
 use recursive::recursive;
 use slotmap::{SecondaryMap, SlotMap};
 
-use super::{PhysNode, PhysNodeKey};
+use super::{PhysNode, PhysNodeKey, PhysNodeKind};
+use crate::expression::StreamExpr;
 use crate::graph::{Graph, GraphNodeKey};
 use crate::nodes;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
 
+fn has_potential_recurring_entrance(node: Node, arena: &Arena<AExpr>) -> bool {
+    arena.iter(node).any(|(_n, ae)| match ae {
+        AExpr::Function { options, .. } | AExpr::AnonymousFunction { options, .. } => {
+            options.flags.contains(FunctionFlags::OPTIONAL_RE_ENTRANT)
+        },
+        _ => false,
+    })
+}
+
+fn create_stream_expr(
+    expr_ir: &ExprIR,
+    ctx: &mut GraphConversionContext<'_>,
+) -> PolarsResult<StreamExpr> {
+    let reentrant = has_potential_recurring_entrance(expr_ir.node(), ctx.expr_arena);
+    let phys = create_physical_expr(
+        expr_ir,
+        Context::Default,
+        ctx.expr_arena,
+        None,
+        &mut ctx.expr_conversion_state,
+    )?;
+    Ok(StreamExpr::new(phys, reentrant))
+}
+
 struct GraphConversionContext<'a> {
     phys_sm: &'a SlotMap<PhysNodeKey, PhysNode>,
-    expr_arena: &'a Arena<AExpr>,
+    expr_arena: &'a mut Arena<AExpr>,
     graph: Graph,
     phys_to_graph: SecondaryMap<PhysNodeKey, GraphNodeKey>,
     expr_conversion_state: ExpressionConversionState,
 }
 
 pub fn physical_plan_to_graph(
+    root: PhysNodeKey,
     phys_sm: &SlotMap<PhysNodeKey, PhysNode>,
-    expr_arena: &Arena<AExpr>,
+    expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<(Graph, SecondaryMap<PhysNodeKey, GraphNodeKey>)> {
     let expr_depth_limit = get_expr_depth_limit()?;
     let mut ctx = GraphConversionContext {
@@ -38,9 +67,7 @@ pub fn physical_plan_to_graph(
         expr_conversion_state: ExpressionConversionState::new(false, expr_depth_limit),
     };
 
-    for key in phys_sm.keys() {
-        to_graph_rec(key, &mut ctx)?;
-    }
+    to_graph_rec(root, &mut ctx)?;
 
     Ok((ctx.graph, ctx.phys_to_graph))
 }
@@ -55,8 +82,9 @@ fn to_graph_rec<'a>(
         return Ok(*graph_key);
     }
 
-    use PhysNode::*;
-    let graph_key = match &ctx.phys_sm[phys_node_key] {
+    use PhysNodeKind::*;
+    let node = &ctx.phys_sm[phys_node_key];
+    let graph_key = match &node.kind {
         InMemorySource { df } => ctx.graph.add_node(
             nodes::in_memory_source::InMemorySourceNode::new(df.clone()),
             [],
@@ -75,13 +103,7 @@ fn to_graph_rec<'a>(
         },
 
         Filter { predicate, input } => {
-            let phys_predicate_expr = create_physical_expr(
-                predicate,
-                Context::Default,
-                ctx.expr_arena,
-                None,
-                &mut ctx.expr_conversion_state,
-            )?;
+            let phys_predicate_expr = create_stream_expr(predicate, ctx)?;
             let input_key = to_graph_rec(*input, ctx)?;
             ctx.graph.add_node(
                 nodes::filter::FilterNode::new(phys_predicate_expr),
@@ -91,91 +113,80 @@ fn to_graph_rec<'a>(
 
         Select {
             selectors,
-            selector_reentrant,
             input,
-            output_schema,
             extend_original,
         } => {
             let phys_selectors = selectors
                 .iter()
-                .map(|selector| {
-                    create_physical_expr(
-                        selector,
-                        Context::Default,
-                        ctx.expr_arena,
-                        None,
-                        &mut ctx.expr_conversion_state,
-                    )
-                })
+                .map(|selector| create_stream_expr(selector, ctx))
                 .collect::<PolarsResult<_>>()?;
             let input_key = to_graph_rec(*input, ctx)?;
             ctx.graph.add_node(
                 nodes::select::SelectNode::new(
                     phys_selectors,
-                    selector_reentrant.clone(),
-                    output_schema.clone(),
+                    node.output_schema.clone(),
                     *extend_original,
                 ),
                 [input_key],
             )
         },
-        Reduce {
-            input,
-            exprs,
-            input_schema,
-            output_schema,
-        } => {
+
+        InputIndependentSelect { selectors } => {
+            let phys_selectors = selectors
+                .iter()
+                .map(|selector| create_stream_expr(selector, ctx))
+                .collect::<PolarsResult<_>>()?;
+            ctx.graph.add_node(
+                nodes::input_independent_select::InputIndependentSelectNode::new(phys_selectors),
+                [],
+            )
+        },
+
+        Reduce { input, exprs } => {
             let input_key = to_graph_rec(*input, ctx)?;
+            let input_schema = &ctx.phys_sm[*input].output_schema;
 
             let mut reductions = Vec::with_capacity(exprs.len());
             let mut inputs = Vec::with_capacity(reductions.len());
 
             for e in exprs {
-                let (red, input_node) =
-                    into_reduction(e.node(), ctx.expr_arena, input_schema.as_ref())?
-                        .expect("invariant");
+                let (red, input_node) = into_reduction(e.node(), ctx.expr_arena, input_schema)?;
                 reductions.push(red);
 
-                let input_phys = create_physical_expr(
-                    &ExprIR::from_node(input_node, ctx.expr_arena),
-                    Context::Default,
-                    ctx.expr_arena,
-                    None,
-                    &mut ctx.expr_conversion_state,
-                )?;
+                let input_phys =
+                    create_stream_expr(&ExprIR::from_node(input_node, ctx.expr_arena), ctx)?;
 
                 inputs.push(input_phys)
             }
 
             ctx.graph.add_node(
-                nodes::reduce::ReduceNode::new(inputs, reductions, output_schema.clone()),
+                nodes::reduce::ReduceNode::new(inputs, reductions, node.output_schema.clone()),
                 [input_key],
             )
         },
-        SimpleProjection { schema, input } => {
+        SimpleProjection { input, columns } => {
+            let input_schema = ctx.phys_sm[*input].output_schema.clone();
             let input_key = to_graph_rec(*input, ctx)?;
             ctx.graph.add_node(
-                nodes::simple_projection::SimpleProjectionNode::new(schema.clone()),
-                [input_key],
-            )
-        },
-
-        InMemorySink { input, schema } => {
-            let input_key = to_graph_rec(*input, ctx)?;
-            ctx.graph.add_node(
-                nodes::in_memory_sink::InMemorySinkNode::new(schema.clone()),
+                nodes::simple_projection::SimpleProjectionNode::new(columns.clone(), input_schema),
                 [input_key],
             )
         },
 
-        InMemoryMap {
-            input,
-            input_schema,
-            map,
-        } => {
+        InMemorySink { input } => {
+            let input_schema = ctx.phys_sm[*input].output_schema.clone();
             let input_key = to_graph_rec(*input, ctx)?;
             ctx.graph.add_node(
-                nodes::in_memory_map::InMemoryMapNode::new(input_schema.clone(), map.clone()),
+                nodes::in_memory_sink::InMemorySinkNode::new(input_schema),
+                [input_key],
+            )
+        },
+
+        InMemoryMap { input, map } => {
+            let input_schema = ctx.phys_sm[*input].output_schema.clone();
+            let input_key = to_graph_rec(*input, ctx)?;
+            ctx.graph.add_node(
+                nodes::in_memory_map::InMemoryMapNode::new(input_schema, map.clone()),
                 [input_key],
             )
         },
@@ -188,11 +199,11 @@ fn to_graph_rec<'a>(
 
         Sort {
             input,
-            input_schema,
             by_column,
             slice,
             sort_options,
         } => {
+            let input_schema = ctx.phys_sm[*input].output_schema.clone();
             let lmdf = Arc::new(LateMaterializedDataFrame::default());
             let mut lp_arena = Arena::default();
             let df_node = lp_arena.add(lmdf.clone().as_ir_node(input_schema.clone()));
@@ -211,7 +222,7 @@ fn to_graph_rec<'a>(
             let input_key = to_graph_rec(*input, ctx)?;
             ctx.graph.add_node(
                 nodes::in_memory_map::InMemoryMapNode::new(
-                    input_schema.clone(),
+                    input_schema,
                     Arc::new(move |df| {
                         lmdf.set_materialized_dataframe(df);
                         let mut state = ExecutionState::new();
@@ -229,6 +240,94 @@ fn to_graph_rec<'a>(
                 .collect::<Result<Vec<_>, _>>()?;
             ctx.graph
                 .add_node(nodes::ordered_union::OrderedUnionNode::new(), input_keys)
+        },
+
+        Zip {
+            inputs,
+            null_extend,
+        } => {
+            let input_schemas = inputs
+                .iter()
+                .map(|i| ctx.phys_sm[*i].output_schema.clone())
+                .collect_vec();
+            let input_keys = inputs
+                .iter()
+                .map(|i| to_graph_rec(*i, ctx))
+                .try_collect_vec()?;
+            ctx.graph.add_node(
+                nodes::zip::ZipNode::new(*null_extend, input_schemas),
+                input_keys,
+            )
+        },
+
+        Multiplexer { input } => {
+            let input_key = to_graph_rec(*input, ctx)?;
+            ctx.graph
+                .add_node(nodes::multiplexer::MultiplexerNode::new(), [input_key])
+        },
+
+        v @ FileScan { .. } => {
+            let FileScan {
+                scan_sources,
+                file_info,
+                hive_parts,
+                output_schema,
+                scan_type,
+                predicate,
+                mut file_options,
+            } = v.clone()
+            else {
+                unreachable!()
+            };
+
+            file_options.slice = if let Some((offset, len)) = file_options.slice {
+                Some((offset, _set_n_rows_for_scan(Some(len)).unwrap()))
+            } else {
+                _set_n_rows_for_scan(None).map(|x| (0, x))
+            };
+
+            let predicate = predicate
+                .map(|pred| {
+                    create_physical_expr(
+                        &pred,
+                        Context::Default,
+                        ctx.expr_arena,
+                        output_schema.as_ref(),
+                        &mut ctx.expr_conversion_state,
+                    )
+                })
+                .map_or(Ok(None), |v| v.map(Some))?;
+
+            {
+                use polars_plan::prelude::FileScan;
+
+                match scan_type {
+                    FileScan::Parquet {
+                        options,
+                        cloud_options,
+                        metadata: first_metadata,
+                    } => {
+                        if std::env::var("POLARS_DISABLE_PARQUET_SOURCE").as_deref() != Ok("1") {
+                            ctx.graph.add_node(
+                                nodes::parquet_source::ParquetSourceNode::new(
+                                    scan_sources,
+                                    file_info,
+                                    hive_parts,
+                                    predicate,
+                                    options,
+                                    cloud_options,
+                                    file_options,
+                                    first_metadata,
+                                ),
+                                [],
+                            )
+                        } else {
+                            todo!()
+                        }
+                    },
+                    _ => todo!(),
+                }
+            }
         },
     };
 

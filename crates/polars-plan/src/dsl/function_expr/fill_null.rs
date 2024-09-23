@@ -1,8 +1,7 @@
 use super::*;
 
-pub(super) fn fill_null(s: &[Series]) -> PolarsResult<Series> {
+pub(super) fn fill_null(s: &[Column]) -> PolarsResult<Column> {
     let series = s[0].clone();
-    let fill_value = s[1].clone();
 
     // Nothing to fill, so return early
     // this is done after casting as the output type must be correct
@@ -10,8 +9,10 @@ pub(super) fn fill_null(s: &[Series]) -> PolarsResult<Series> {
         return Ok(series);
     }
 
+    let fill_value = s[1].clone();
+
     // default branch
-    fn default(series: Series, fill_value: Series) -> PolarsResult<Series> {
+    fn default(series: Column, fill_value: Column) -> PolarsResult<Column> {
         let mask = series.is_not_null();
         series.zip_with_same_type(&mask, &fill_value)
     }
@@ -28,7 +29,7 @@ pub(super) fn fill_null(s: &[Series]) -> PolarsResult<Series> {
                     let cats = series.to_physical_repr();
                     let mask = cats.is_not_null();
                     let out = cats
-                        .zip_with_same_type(&mask, &Series::new("", &[idx]))
+                        .zip_with_same_type(&mask, &Column::new(PlSmallStr::EMPTY, &[idx]))
                         .unwrap();
                     unsafe { return out.cast_unchecked(series.dtype()) }
                 }
@@ -46,6 +47,6 @@ pub(super) fn fill_null(s: &[Series]) -> PolarsResult<Series> {
     }
 }
 
-pub(super) fn coalesce(s: &mut [Series]) -> PolarsResult<Series> {
-    coalesce_series(s)
+pub(super) fn coalesce(s: &mut [Column]) -> PolarsResult<Column> {
+    coalesce_columns(s)
 }

@@ -1,3 +1,5 @@
+use std::ops::Sub;
+
 use polars_core::chunked_array::ops::{SortMultipleOptions, SortOptions};
 use polars_core::export::regex;
 use polars_core::prelude::{polars_bail, polars_err, DataType, PolarsResult, Schema, TimeUnit};
@@ -8,6 +10,7 @@ use polars_plan::dsl::{coalesce, concat_str, len, max_horizontal, min_horizontal
 use polars_plan::plans::{typed_lit, LiteralValue};
 use polars_plan::prelude::LiteralValue::Null;
 use polars_plan::prelude::{col, cols, lit, StrptimeOptions};
+use polars_utils::pl_str::PlSmallStr;
 use sqlparser::ast::{
     DateTimeField, DuplicateTreatment, Expr as SQLExpr, Function as SQLFunction, FunctionArg,
     FunctionArgExpr, FunctionArgumentClause, FunctionArgumentList, FunctionArguments, Ident,
@@ -981,7 +984,7 @@ impl SQLFunctionVisitor<'_> {
                         parse_extract_date_part(
                             e,
                             &DateTimeField::Custom(Ident {
-                                value: p,
+                                value: p.to_string(),
                                 quote_style: None,
                             }),
                         )
@@ -1152,11 +1155,11 @@ impl SQLFunctionVisitor<'_> {
             Strptime => {
                 let args = extract_args(function)?;
                 match args.len() {
-                    2 => self.visit_binary(|e, fmt| {
+                    2 => self.visit_binary(|e, fmt: String| {
                         e.str().strptime(
                             DataType::Datetime(TimeUnit::Microseconds, None),
                             StrptimeOptions {
-                                format: Some(fmt),
+                                format: Some(fmt.into()),
                                 ..Default::default()
                             },
                             lit("latest"),
@@ -1272,37 +1275,39 @@ impl SQLFunctionVisitor<'_> {
             // ----
             Columns => {
                 let active_schema = self.active_schema;
-                self.try_visit_unary(|e: Expr| {
-                    match e {
-                        Expr::Literal(LiteralValue::String(pat)) => {
-                            if "*" == pat {
-                                polars_bail!(SQLSyntax: "COLUMNS('*') is not a valid regex; did you mean COLUMNS(*)?")
-                            };
-                            let pat = match pat.as_str() {
-                                _ if pat.starts_with('^') && pat.ends_with('$') => pat.to_string(),
-                                _ if pat.starts_with('^') => format!("{}.*$", pat),
-                                _ if pat.ends_with('$') => format!("^.*{}", pat),
-                                _ => format!("^.*{}.*$", pat),
-                            };
-                            if let Some(active_schema) = &active_schema {
-                                let rx = regex::Regex::new(&pat).unwrap();
-                                let col_names = active_schema
-                                    .iter_names()
-                                    .filter(|name| rx.is_match(name))
-                                    .collect::<Vec<_>>();
+                self.try_visit_unary(|e: Expr| match e {
+                    Expr::Literal(LiteralValue::String(pat)) => {
+                        if pat == "*" {
+                            polars_bail!(
+                                SQLSyntax: "COLUMNS('*') is not a valid regex; \
+                                did you mean COLUMNS(*)?"
+                            )
+                        };
+                        let pat = match pat.as_str() {
+                            _ if pat.starts_with('^') && pat.ends_with('$') => pat.to_string(),
+                            _ if pat.starts_with('^') => format!("{}.*$", pat),
+                            _ if pat.ends_with('$') => format!("^.*{}", pat),
+                            _ => format!("^.*{}.*$", pat),
+                        };
+                        if let Some(active_schema) = &active_schema {
+                            let rx = regex::Regex::new(&pat).unwrap();
+                            let col_names = active_schema
+                                .iter_names()
+                                .filter(|name| rx.is_match(name))
+                                .cloned()
+                                .collect::<Vec<_>>();
 
-                                Ok(if col_names.len() == 1 {
-                                    col(col_names[0])
-                                } else {
-                                    cols(col_names)
-                                })
+                            Ok(if col_names.len() == 1 {
+                                col(col_names.into_iter().next().unwrap())
                             } else {
-                                Ok(col(&pat))
-                            }
-                        },
-                        Expr::Wildcard => Ok(col("*")),
-                        _ => polars_bail!(SQLSyntax: "COLUMNS expects a regex; found {:?}", e),
-                    }
+                                cols(col_names)
+                            })
+                        } else {
+                            Ok(col(pat.as_str()))
+                        }
+                    },
+                    Expr::Wildcard => Ok(col("*")),
+                    _ => polars_bail!(SQLSyntax: "COLUMNS expects a regex; found {:?}", e),
                 })
             },
 
@@ -1573,7 +1578,7 @@ impl SQLFunctionVisitor<'_> {
             (true, [FunctionArgExpr::Expr(sql_expr)]) => {
                 let expr = parse_sql_expr(sql_expr, self.ctx, self.active_schema)?;
                 let expr = self.apply_window_spec(expr, &self.func.over)?;
-                Ok(expr.n_unique())
+                Ok(expr.clone().n_unique().sub(expr.null_count().gt(lit(0))))
             },
             _ => self.not_supported_error(),
         }
@@ -1758,7 +1763,7 @@ impl FromSQLExpr for StrptimeOptions {
         match expr {
             SQLExpr::Value(v) => match v {
                 SQLValue::SingleQuotedString(s) => Ok(StrptimeOptions {
-                    format: Some(s.clone()),
+                    format: Some(PlSmallStr::from_str(s)),
                     ..StrptimeOptions::default()
                 }),
                 _ => polars_bail!(SQLInterface: "cannot parse literal {:?}", v),

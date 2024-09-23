@@ -9,7 +9,7 @@ impl BinaryNameSpace {
             FunctionExpr::BinaryExpr(BinaryFunction::Contains),
             &[pat],
             false,
-            true,
+            Some(Default::default()),
         )
     }
 
@@ -19,7 +19,7 @@ impl BinaryNameSpace {
             FunctionExpr::BinaryExpr(BinaryFunction::EndsWith),
             &[sub],
             false,
-            true,
+            Some(Default::default()),
         )
     }
 
@@ -29,8 +29,14 @@ impl BinaryNameSpace {
             FunctionExpr::BinaryExpr(BinaryFunction::StartsWith),
             &[sub],
             false,
-            true,
+            Some(Default::default()),
         )
+    }
+
+    /// Return the size (number of bytes) in each element.
+    pub fn size_bytes(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::BinaryExpr(BinaryFunction::Size))
     }
 
     #[cfg(feature = "binary_encoding")]

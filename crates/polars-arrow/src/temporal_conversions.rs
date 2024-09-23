@@ -3,6 +3,7 @@
 use chrono::format::{parse, Parsed, StrftimeItems};
 use chrono::{DateTime, Duration, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, TimeDelta};
 use polars_error::{polars_err, PolarsResult};
+use polars_utils::pl_str::PlSmallStr;
 
 use crate::array::{PrimitiveArray, Utf8ViewArray};
 use crate::datatypes::{ArrowDataType, TimeUnit};
@@ -17,6 +18,10 @@ pub const MICROSECONDS: i64 = 1_000_000;
 pub const NANOSECONDS: i64 = 1_000_000_000;
 /// Number of milliseconds in a day
 pub const MILLISECONDS_IN_DAY: i64 = SECONDS_IN_DAY * MILLISECONDS;
+/// Number of microseconds in a day
+pub const MICROSECONDS_IN_DAY: i64 = SECONDS_IN_DAY * MICROSECONDS;
+/// Number of nanoseconds in a day
+pub const NANOSECONDS_IN_DAY: i64 = SECONDS_IN_DAY * NANOSECONDS;
 /// Number of days between 0001-01-01 and 1970-01-01
 pub const EPOCH_DAYS_FROM_CE: i32 = 719_163;
 
@@ -263,6 +268,7 @@ pub fn parse_offset(offset: &str) -> PolarsResult<FixedOffset> {
 }
 
 /// Parses `value` to `Option<i64>` consistent with the Arrow's definition of timestamp with timezone.
+///
 /// `tz` must be built from `timezone` (either via [`parse_offset`] or `chrono-tz`).
 /// Returns in scale `tz` of `TimeUnit`.
 #[inline]
@@ -313,7 +319,7 @@ pub fn utf8_to_naive_timestamp_scalar(value: &str, fmt: &str, tu: &TimeUnit) -> 
 fn utf8view_to_timestamp_impl<T: chrono::TimeZone>(
     array: &Utf8ViewArray,
     fmt: &str,
-    time_zone: String,
+    time_zone: PlSmallStr,
     tz: T,
     time_unit: TimeUnit,
 ) -> PrimitiveArray<i64> {
@@ -334,15 +340,25 @@ pub fn parse_offset_tz(timezone: &str) -> PolarsResult<chrono_tz::Tz> {
         .map_err(|_| polars_err!(InvalidOperation: "timezone \"{timezone}\" cannot be parsed"))
 }
 
+/// Get the time unit as a multiple of a second
+pub const fn time_unit_multiple(unit: TimeUnit) -> i64 {
+    match unit {
+        TimeUnit::Second => 1,
+        TimeUnit::Millisecond => MILLISECONDS,
+        TimeUnit::Microsecond => MICROSECONDS,
+        TimeUnit::Nanosecond => NANOSECONDS,
+    }
+}
+
 #[cfg(feature = "chrono-tz")]
 #[cfg_attr(docsrs, doc(cfg(feature = "chrono-tz")))]
 fn chrono_tz_utf_to_timestamp(
     array: &Utf8ViewArray,
     fmt: &str,
-    time_zone: String,
+    time_zone: PlSmallStr,
     time_unit: TimeUnit,
 ) -> PolarsResult<PrimitiveArray<i64>> {
-    let tz = parse_offset_tz(&time_zone)?;
+    let tz = parse_offset_tz(time_zone.as_str())?;
     Ok(utf8view_to_timestamp_impl(
         array, fmt, time_zone, tz, time_unit,
     ))
@@ -352,7 +368,7 @@ fn chrono_tz_utf_to_timestamp(
 fn chrono_tz_utf_to_timestamp(
     _: &Utf8ViewArray,
     _: &str,
-    timezone: String,
+    timezone: PlSmallStr,
     _: TimeUnit,
 ) -> PolarsResult<PrimitiveArray<i64>> {
     panic!("timezone \"{timezone}\" cannot be parsed (feature chrono-tz is not active)")
@@ -374,7 +390,7 @@ fn chrono_tz_utf_to_timestamp(
 pub(crate) fn utf8view_to_timestamp(
     array: &Utf8ViewArray,
     fmt: &str,
-    time_zone: String,
+    time_zone: PlSmallStr,
     time_unit: TimeUnit,
 ) -> PolarsResult<PrimitiveArray<i64>> {
     let tz = parse_offset(time_zone.as_str());

@@ -29,7 +29,7 @@ def permutations_int_dec_none() -> list[tuple[D | int | None, ...]]:
     )
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 def test_series_from_pydecimal_and_ints(
     permutations_int_dec_none: list[tuple[D | int | None, ...]],
 ) -> None:
@@ -45,7 +45,7 @@ def test_series_from_pydecimal_and_ints(
         assert s.to_list() == [D(x) if x is not None else None for x in data]
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 def test_frame_from_pydecimal_and_ints(
     permutations_int_dec_none: list[tuple[D | int | None, ...]], monkeypatch: Any
 ) -> None:
@@ -60,7 +60,7 @@ def test_frame_from_pydecimal_and_ints(
         row_data = [(d,) for d in data]
         for cls in (X, Y):
             for ctor in (pl.DataFrame, pl.from_records):
-                df = ctor(data=list(map(cls, data)))  # type: ignore[operator]
+                df = ctor(data=list(map(cls, data)))
                 assert df.schema == {
                     "a": pl.Decimal(scale=7),
                 }
@@ -515,3 +515,10 @@ def test_decimal_dynamic_float_st() -> None:
     assert pl.LazyFrame({"a": [D("2.0"), D("0.5")]}).filter(
         pl.col("a").is_between(0.45, 0.9)
     ).collect().to_dict(as_series=False) == {"a": [D("0.5")]}
+
+
+def test_decimal_strict_scale_inference_17770() -> None:
+    values = [D("0.1"), D("0.10"), D("1.0121")]
+    s = pl.Series(values, strict=True)
+    assert s.dtype == pl.Decimal(precision=None, scale=4)
+    assert s.to_list() == values

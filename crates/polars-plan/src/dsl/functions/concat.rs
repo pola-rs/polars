@@ -4,7 +4,7 @@ use super::*;
 /// Horizontally concat string columns in linear time
 pub fn concat_str<E: AsRef<[Expr]>>(s: E, separator: &str, ignore_nulls: bool) -> Expr {
     let input = s.as_ref().to_vec();
-    let separator = separator.to_string();
+    let separator = separator.into();
 
     Expr::Function {
         input,

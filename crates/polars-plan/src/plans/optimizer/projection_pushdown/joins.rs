@@ -8,11 +8,11 @@ fn add_keys_to_accumulated_state(
     expr: Node,
     acc_projections: &mut Vec<ColumnNode>,
     local_projection: &mut Vec<ColumnNode>,
-    projected_names: &mut PlHashSet<Arc<str>>,
+    projected_names: &mut PlHashSet<PlSmallStr>,
     expr_arena: &mut Arena<AExpr>,
     // only for left hand side table we add local names
     add_local: bool,
-) -> Option<Arc<str>> {
+) -> Option<PlSmallStr> {
     add_expr_to_accumulated(expr, acc_projections, projected_names, expr_arena);
     // the projections may do more than simply project.
     // e.g. col("foo").truncate() * col("bar")
@@ -43,7 +43,7 @@ pub(super) fn process_asof_join(
     right_on: Vec<ExprIR>,
     options: Arc<JoinOptions>,
     acc_projections: Vec<ColumnNode>,
-    _projected_names: PlHashSet<Arc<str>>,
+    _projected_names: PlHashSet<PlSmallStr>,
     projections_seen: usize,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
@@ -78,7 +78,7 @@ pub(super) fn process_asof_join(
             for name in left_by {
                 let add = _projected_names.contains(name.as_str());
 
-                let node = expr_arena.add(AExpr::Column(ColumnName::from(name.as_str())));
+                let node = expr_arena.add(AExpr::Column(name.clone()));
                 add_keys_to_accumulated_state(
                     node,
                     &mut pushdown_left,
@@ -89,7 +89,7 @@ pub(super) fn process_asof_join(
                 );
             }
             for name in right_by {
-                let node = expr_arena.add(AExpr::Column(ColumnName::from(name.as_str())));
+                let node = expr_arena.add(AExpr::Column(name.clone()));
                 add_keys_to_accumulated_state(
                     node,
                     &mut pushdown_right,
@@ -181,7 +181,7 @@ pub(super) fn process_asof_join(
         expr_arena,
     )?;
 
-    Ok(resolve_join_suffixes(
+    resolve_join_suffixes(
         input_left,
         input_right,
         left_on,
@@ -190,7 +190,7 @@ pub(super) fn process_asof_join(
         lp_arena,
         expr_arena,
         &local_projection,
-    ))
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -202,7 +202,7 @@ pub(super) fn process_join(
     right_on: Vec<ExprIR>,
     mut options: Arc<JoinOptions>,
     acc_projections: Vec<ColumnNode>,
-    projected_names: PlHashSet<Arc<str>>,
+    projected_names: PlHashSet<PlSmallStr>,
     projections_seen: usize,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
@@ -252,7 +252,7 @@ pub(super) fn process_join(
 
         // We need the join columns so we push the projection downwards
         for e in &left_on {
-            if !local_projected_names.insert(e.output_name_arc().clone()) {
+            if !local_projected_names.insert(e.output_name().clone()) {
                 continue;
             }
 
@@ -365,7 +365,7 @@ pub(super) fn process_join(
         expr_arena,
     )?;
 
-    Ok(resolve_join_suffixes(
+    resolve_join_suffixes(
         input_left,
         input_right,
         left_on,
@@ -374,7 +374,7 @@ pub(super) fn process_join(
         lp_arena,
         expr_arena,
         &local_projection,
-    ))
+    )
 }
 
 fn process_projection(
@@ -384,8 +384,8 @@ fn process_projection(
     proj: ColumnNode,
     pushdown_left: &mut Vec<ColumnNode>,
     pushdown_right: &mut Vec<ColumnNode>,
-    names_left: &mut PlHashSet<Arc<str>>,
-    names_right: &mut PlHashSet<Arc<str>>,
+    names_left: &mut PlHashSet<PlSmallStr>,
+    names_right: &mut PlHashSet<PlSmallStr>,
     expr_arena: &mut Arena<AExpr>,
     local_projection: &mut Vec<ColumnNode>,
     add_local: bool,
@@ -416,16 +416,17 @@ fn process_projection(
         // Column name of the projection without any alias.
         let leaf_column_name = column_node_to_name(proj, expr_arena).clone();
 
-        let suffix = options.args.suffix();
+        let suffix = options.args.suffix().as_str();
         // If _right suffix exists we need to push a projection down without this
         // suffix.
         if leaf_column_name.ends_with(suffix) && join_schema.contains(leaf_column_name.as_ref()) {
             // downwards name is the name without the _right i.e. "foo".
             let downwards_name = split_suffix(leaf_column_name.as_ref(), suffix);
+            let downwards_name = PlSmallStr::from_str(downwards_name);
 
-            let downwards_name_column = expr_arena.add(AExpr::Column(Arc::from(downwards_name)));
+            let downwards_name_column = expr_arena.add(AExpr::Column(downwards_name.clone()));
             // project downwards and locally immediately alias to prevent wrong projections
-            if names_right.insert(ColumnName::from(downwards_name)) {
+            if names_right.insert(downwards_name) {
                 pushdown_right.push(ColumnNode(downwards_name_column));
             }
             local_projection.push(proj);
@@ -469,21 +470,23 @@ fn resolve_join_suffixes(
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     local_projection: &[ColumnNode],
-) -> IR {
-    let suffix = options.args.suffix();
+) -> PolarsResult<IR> {
+    let suffix = options.args.suffix().as_str();
     let alp = IRBuilder::new(input_left, expr_arena, lp_arena)
         .join(input_right, left_on, right_on, options.clone())
         .build();
     let schema_after_join = alp.schema(lp_arena);
 
+    let mut all_columns = true;
     let projections = local_projection
         .iter()
         .map(|proj| {
             let name = column_node_to_name(*proj, expr_arena).clone();
             if name.ends_with(suffix) && schema_after_join.get(&name).is_none() {
-                let downstream_name = &name.as_ref()[..name.len() - suffix.len()];
-                let col = AExpr::Column(ColumnName::from(downstream_name));
+                let downstream_name = &name.as_str()[..name.len() - suffix.len()];
+                let col = AExpr::Column(downstream_name.into());
                 let node = expr_arena.add(col);
+                all_columns = false;
                 ExprIR::new(node, OutputName::Alias(name.clone()))
             } else {
                 ExprIR::new(proj.0, OutputName::ColumnLhs(name.clone()))
@@ -491,7 +494,12 @@ fn resolve_join_suffixes(
         })
         .collect::<Vec<_>>();
 
-    IRBuilder::from_lp(alp, expr_arena, lp_arena)
-        .project(projections, Default::default())
-        .build()
+    let builder = IRBuilder::from_lp(alp, expr_arena, lp_arena);
+    Ok(if all_columns {
+        builder
+            .project_simple(projections.iter().map(|e| e.output_name().clone()))?
+            .build()
+    } else {
+        builder.project(projections, Default::default()).build()
+    })
 }

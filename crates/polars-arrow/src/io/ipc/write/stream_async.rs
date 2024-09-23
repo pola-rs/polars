@@ -36,7 +36,7 @@ where
         ipc_fields: Option<Vec<IpcField>>,
         write_options: WriteOptions,
     ) -> Self {
-        let fields = ipc_fields.unwrap_or_else(|| default_ipc_fields(&schema.fields));
+        let fields = ipc_fields.unwrap_or_else(|| default_ipc_fields(schema.iter_values()));
         let task = Some(Self::start(writer, schema, &fields[..]));
         Self {
             writer: None,

@@ -39,10 +39,6 @@ impl private::PrivateSeries for SeriesWrap<TimeChunked> {
         self.0.set_flags(flags)
     }
 
-    fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
-        self.0.explode_by_offsets(offsets).into_time().into_series()
-    }
-
     #[cfg(feature = "zip_with")]
     fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> PolarsResult<Series> {
         let other = other.to_physical_repr().into_owned();
@@ -51,12 +47,16 @@ impl private::PrivateSeries for SeriesWrap<TimeChunked> {
             .map(|ca| ca.into_time().into_series())
     }
 
-    fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
+    fn vec_hash(&self, random_state: PlRandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
         self.0.vec_hash(random_state, buf)?;
         Ok(())
     }
 
-    fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) -> PolarsResult<()> {
+    fn vec_hash_combine(
+        &self,
+        build_hasher: PlRandomState,
+        hashes: &mut [u64],
+    ) -> PolarsResult<()> {
         self.0.vec_hash_combine(build_hasher, hashes)?;
         Ok(())
     }
@@ -107,7 +107,7 @@ impl private::PrivateSeries for SeriesWrap<TimeChunked> {
 
     fn arg_sort_multiple(
         &self,
-        by: &[Series],
+        by: &[Column],
         options: &SortMultipleOptions,
     ) -> PolarsResult<IdxCa> {
         self.0.deref().arg_sort_multiple(by, options)
@@ -115,14 +115,14 @@ impl private::PrivateSeries for SeriesWrap<TimeChunked> {
 }
 
 impl SeriesTrait for SeriesWrap<TimeChunked> {
-    fn rename(&mut self, name: &str) {
+    fn rename(&mut self, name: PlSmallStr) {
         self.0.rename(name);
     }
 
     fn chunk_lengths(&self) -> ChunkLenIter {
         self.0.chunk_lengths()
     }
-    fn name(&self) -> &str {
+    fn name(&self) -> &PlSmallStr {
         self.0.name()
     }
 
@@ -145,6 +145,10 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
         (a.into_series(), b.into_series())
     }
 
+    fn _sum_as_f64(&self) -> f64 {
+        self.0._sum_as_f64()
+    }
+
     fn mean(&self) -> Option<f64> {
         self.0.mean()
     }
@@ -160,7 +164,7 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
         // ref Cow
         // ref SeriesTrait
         // ref ChunkedArray
-        self.0.append(other.as_ref().as_ref().as_ref());
+        self.0.append(other.as_ref().as_ref().as_ref())?;
         Ok(())
     }
 
@@ -171,7 +175,7 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
         // ref SeriesTrait
         // ref ChunkedArray
         let other = other.to_physical_repr();
-        self.0.extend(other.as_ref().as_ref().as_ref());
+        self.0.extend(other.as_ref().as_ref().as_ref())?;
         Ok(())
     }
 
@@ -210,8 +214,8 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
             .into_series()
     }
 
-    fn cast(&self, data_type: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
-        match data_type {
+    fn cast(&self, dtype: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
+        match dtype {
             DataType::String => Ok(self
                 .0
                 .clone()
@@ -220,7 +224,7 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
                 .unwrap()
                 .to_string("%T")
                 .into_series()),
-            _ => self.0.cast_with_options(data_type, cast_options),
+            _ => self.0.cast_with_options(dtype, cast_options),
         }
     }
 
@@ -286,21 +290,20 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
 
     fn max_reduce(&self) -> PolarsResult<Scalar> {
         let sc = self.0.max_reduce();
-        let av = sc.value().cast(self.dtype()).into_static().unwrap();
+        let av = sc.value().cast(self.dtype()).into_static();
         Ok(Scalar::new(self.dtype().clone(), av))
     }
 
     fn min_reduce(&self) -> PolarsResult<Scalar> {
         let sc = self.0.min_reduce();
-        let av = sc.value().cast(self.dtype()).into_static().unwrap();
+        let av = sc.value().cast(self.dtype()).into_static();
         Ok(Scalar::new(self.dtype().clone(), av))
     }
 
     fn median_reduce(&self) -> PolarsResult<Scalar> {
         let av = AnyValue::from(self.median().map(|v| v as i64))
             .cast(self.dtype())
-            .into_static()
-            .unwrap();
+            .into_static();
         Ok(Scalar::new(self.dtype().clone(), av))
     }
 

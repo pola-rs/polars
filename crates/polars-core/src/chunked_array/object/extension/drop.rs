@@ -18,8 +18,8 @@ pub(crate) unsafe fn drop_list(ca: &ListChunked) {
         // if empty the memory is leaked somewhere
         assert!(!ca.chunks.is_empty());
         for lst_arr in &ca.chunks {
-            if let ArrowDataType::LargeList(fld) = lst_arr.data_type() {
-                let dtype = fld.data_type();
+            if let ArrowDataType::LargeList(fld) = lst_arr.dtype() {
+                let dtype = fld.dtype();
 
                 assert!(matches!(dtype, ArrowDataType::Extension(_, _, _)));
 
@@ -39,10 +39,9 @@ pub(crate) unsafe fn drop_object_array(values: &dyn Array) {
         .downcast_ref::<FixedSizeBinaryArray>()
         .unwrap();
 
-    // if the buf is not shared with anyone but us
-    // we can deallocate
+    // If the buf is not shared with anyone but us we can deallocate.
     let buf = arr.values();
-    if buf.shared_count_strong() == 1 {
+    if buf.storage_refcount() == 1 && !buf.is_empty() {
         PolarsExtension::new(arr.clone());
     };
 }

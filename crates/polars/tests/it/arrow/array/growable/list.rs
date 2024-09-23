@@ -18,10 +18,9 @@ fn extension() {
 
     let array = create_list_array(data);
 
-    let data_type =
-        ArrowDataType::Extension("ext".to_owned(), Box::new(array.data_type().clone()), None);
+    let dtype = ArrowDataType::Extension("ext".into(), Box::new(array.dtype().clone()), None);
     let array_ext = ListArray::new(
-        data_type,
+        dtype,
         array.offsets().clone(),
         array.values().clone(),
         array.validity().cloned(),
@@ -34,7 +33,7 @@ fn extension() {
     assert_eq!(a.len(), 1);
 
     let result: ListArray<i32> = a.into();
-    assert_eq!(array_ext.data_type(), result.data_type());
+    assert_eq!(array_ext.dtype(), result.dtype());
 }
 
 #[test]

@@ -11,7 +11,7 @@ impl<
         T: NativeType + IsFloat + std::iter::Sum + AddAssign + SubAssign + Div<Output = T> + NumCast,
     > RollingAggWindowNoNulls<'a, T> for MeanWindow<'a, T>
 {
-    fn new(slice: &'a [T], start: usize, end: usize, params: DynArgs) -> Self {
+    fn new(slice: &'a [T], start: usize, end: usize, params: Option<RollingFnParams>) -> Self {
         Self {
             sum: SumWindow::new(slice, start, end, params),
         }
@@ -29,7 +29,7 @@ pub fn rolling_mean<T>(
     min_periods: usize,
     center: bool,
     weights: Option<&[f64]>,
-    _params: DynArgs,
+    _params: Option<RollingFnParams>,
 ) -> PolarsResult<ArrayRef>
 where
     T: NativeType + Float + std::iter::Sum<T> + SubAssign + AddAssign + IsFloat,

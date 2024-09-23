@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import gzip
 import io
 import json
 import typing
+import zlib
 from collections import OrderedDict
 from decimal import Decimal as D
 from io import BytesIO
 from typing import TYPE_CHECKING
+
+import zstandard
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -306,7 +310,7 @@ def test_ndjson_null_inference_13183() -> None:
     }
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 @typing.no_type_check
 def test_json_wrong_input_handle_textio(tmp_path: Path) -> None:
     # this shouldn't be passed, but still we test if we can handle it gracefully
@@ -375,3 +379,54 @@ def test_json_normalize() -> None:
         "fitness.height": [130, 130, 130],
         "fitness.weight": [60, 60, 60],
     }
+
+
+def test_empty_json() -> None:
+    df = pl.read_json(io.StringIO("{}"))
+    assert df.shape == (0, 0)
+    assert isinstance(df, pl.DataFrame)
+
+    df = pl.read_json(b'{"j":{}}')
+    assert df.dtypes == [pl.Struct([])]
+    assert df.shape == (0, 1)
+
+
+def test_compressed_json() -> None:
+    # shared setup
+    json_obj = [
+        {"id": 1, "name": "Alice", "trusted": True},
+        {"id": 2, "name": "Bob", "trusted": True},
+        {"id": 3, "name": "Carol", "trusted": False},
+    ]
+    expected = pl.DataFrame(json_obj, orient="row")
+    json_bytes = json.dumps(json_obj).encode()
+
+    # gzip
+    compressed_bytes = gzip.compress(json_bytes)
+    out = pl.read_json(compressed_bytes)
+    assert_frame_equal(out, expected)
+
+    # zlib
+    compressed_bytes = zlib.compress(json_bytes)
+    out = pl.read_json(compressed_bytes)
+    assert_frame_equal(out, expected)
+
+    # zstd
+    compressed_bytes = zstandard.compress(json_bytes)
+    out = pl.read_json(compressed_bytes)
+    assert_frame_equal(out, expected)
+
+    # no compression
+    uncompressed = io.BytesIO(json_bytes)
+    out = pl.read_json(uncompressed)
+    assert_frame_equal(out, expected)
+
+
+def test_empty_list_json() -> None:
+    df = pl.read_json(io.StringIO("[]"))  #
+    assert df.shape == (0, 0)
+    assert isinstance(df, pl.DataFrame)
+
+    df = pl.read_json(b"[]")
+    assert df.shape == (0, 0)
+    assert isinstance(df, pl.DataFrame)

@@ -18,7 +18,6 @@ mod join_utils;
 mod predicate_pushdown;
 mod projection_pushdown;
 mod simplify_expr;
-mod simplify_functions;
 mod slice_pushdown_expr;
 mod slice_pushdown_lp;
 mod stack_opt;
@@ -34,7 +33,7 @@ use slice_pushdown_lp::SlicePushDown;
 pub use stack_opt::{OptimizationRule, StackOptimizer};
 
 use self::flatten_union::FlattenUnionRule;
-pub use crate::frame::{AllowedOptimizations, OptState};
+pub use crate::frame::{AllowedOptimizations, OptFlags};
 pub use crate::plans::conversion::type_coercion::TypeCoercionRule;
 use crate::plans::optimizer::count_star::CountStar;
 #[cfg(feature = "cse")]
@@ -59,7 +58,7 @@ pub(crate) fn init_hashmap<K, V>(max_len: Option<usize>) -> PlHashMap<K, V> {
 
 pub fn optimize(
     logical_plan: DslPlan,
-    opt_state: OptState,
+    mut opt_state: OptFlags,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     scratch: &mut Vec<Node>,
@@ -67,40 +66,43 @@ pub fn optimize(
 ) -> PolarsResult<Node> {
     #[allow(dead_code)]
     let verbose = verbose();
-    // get toggle values
-    let cluster_with_columns = opt_state.cluster_with_columns;
-    let predicate_pushdown = opt_state.predicate_pushdown;
-    let projection_pushdown = opt_state.projection_pushdown;
-    let type_coercion = opt_state.type_coercion;
-    let simplify_expr = opt_state.simplify_expr;
-    let slice_pushdown = opt_state.slice_pushdown;
-    let streaming = opt_state.streaming;
-    let fast_projection = opt_state.fast_projection;
-    // Don't run optimizations that don't make sense on a single node.
-    // This keeps eager execution more snappy.
-    let eager = opt_state.eager;
-    #[cfg(feature = "cse")]
-    let comm_subplan_elim = opt_state.comm_subplan_elim && !eager;
-
-    #[cfg(feature = "cse")]
-    let comm_subexpr_elim = opt_state.comm_subexpr_elim;
-    #[cfg(not(feature = "cse"))]
-    let comm_subexpr_elim = false;
-
-    #[allow(unused_variables)]
-    let agg_scan_projection = opt_state.file_caching && !streaming && !eager;
 
     // Gradually fill the rules passed to the optimizer
     let opt = StackOptimizer {};
     let mut rules: Vec<Box<dyn OptimizationRule>> = Vec::with_capacity(8);
 
-    let mut lp_top = to_alp(
-        logical_plan,
-        expr_arena,
-        lp_arena,
-        simplify_expr,
-        type_coercion,
-    )?;
+    // Unset CSE
+    // This can be turned on again during ir-conversion.
+    #[allow(clippy::eq_op)]
+    #[cfg(feature = "cse")]
+    if opt_state.contains(OptFlags::EAGER) {
+        opt_state &= !(OptFlags::COMM_SUBEXPR_ELIM | OptFlags::COMM_SUBEXPR_ELIM);
+    }
+    let mut lp_top = to_alp(logical_plan, expr_arena, lp_arena, &mut opt_state)?;
+
+    // get toggle values
+    let cluster_with_columns = opt_state.contains(OptFlags::CLUSTER_WITH_COLUMNS);
+    let predicate_pushdown = opt_state.contains(OptFlags::PREDICATE_PUSHDOWN);
+    let projection_pushdown = opt_state.contains(OptFlags::PROJECTION_PUSHDOWN);
+    let simplify_expr = opt_state.contains(OptFlags::SIMPLIFY_EXPR);
+    let slice_pushdown = opt_state.contains(OptFlags::SLICE_PUSHDOWN);
+    let streaming = opt_state.contains(OptFlags::STREAMING);
+    let fast_projection = opt_state.contains(OptFlags::FAST_PROJECTION);
+
+    // Don't run optimizations that don't make sense on a single node.
+    // This keeps eager execution more snappy.
+    let eager = opt_state.contains(OptFlags::EAGER);
+    #[cfg(feature = "cse")]
+    let comm_subplan_elim = opt_state.contains(OptFlags::COMM_SUBPLAN_ELIM);
+
+    #[cfg(feature = "cse")]
+    let comm_subexpr_elim = opt_state.contains(OptFlags::COMM_SUBEXPR_ELIM);
+    #[cfg(not(feature = "cse"))]
+    let comm_subexpr_elim = false;
+
+    #[allow(unused_variables)]
+    let agg_scan_projection = opt_state.contains(OptFlags::FILE_CACHING) && !streaming && !eager;
+
     // During debug we check if the optimizations have not modified the final schema.
     #[cfg(debug_assertions)]
     let prev_schema = lp_arena.get(lp_top).schema(lp_arena).into_owned();

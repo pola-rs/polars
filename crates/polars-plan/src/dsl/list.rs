@@ -5,6 +5,8 @@ use polars_core::prelude::*;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
 #[cfg(feature = "list_sets")]
+use polars_core::utils::SuperTypeFlags;
+#[cfg(feature = "list_sets")]
 use polars_core::utils::SuperTypeOptions;
 
 use crate::prelude::function_expr::ListFunction;
@@ -51,7 +53,7 @@ impl ListNameSpace {
             }),
             &[n],
             false,
-            false,
+            None,
         )
     }
 
@@ -72,7 +74,7 @@ impl ListNameSpace {
             }),
             &[fraction],
             false,
-            false,
+            None,
         )
     }
 
@@ -158,7 +160,7 @@ impl ListNameSpace {
             FunctionExpr::ListExpr(ListFunction::Get(null_on_oob)),
             &[index],
             false,
-            false,
+            None,
         )
     }
 
@@ -173,7 +175,7 @@ impl ListNameSpace {
             FunctionExpr::ListExpr(ListFunction::Gather(null_on_oob)),
             &[index],
             false,
-            false,
+            None,
         )
     }
 
@@ -183,7 +185,7 @@ impl ListNameSpace {
             FunctionExpr::ListExpr(ListFunction::GatherEvery),
             &[n, offset],
             false,
-            false,
+            None,
         )
     }
 
@@ -205,7 +207,7 @@ impl ListNameSpace {
             FunctionExpr::ListExpr(ListFunction::Join(ignore_nulls)),
             &[separator],
             false,
-            false,
+            None,
         )
     }
 
@@ -237,7 +239,7 @@ impl ListNameSpace {
             FunctionExpr::ListExpr(ListFunction::Shift),
             &[periods],
             false,
-            false,
+            None,
         )
     }
 
@@ -247,7 +249,7 @@ impl ListNameSpace {
             FunctionExpr::ListExpr(ListFunction::Slice),
             &[offset, length],
             false,
-            false,
+            None,
         )
     }
 
@@ -293,10 +295,11 @@ impl ListNameSpace {
                 move |s| {
                     s.list()?
                         .to_struct(n_fields, name_generator.clone())
-                        .map(|s| Some(s.into_series()))
+                        .map(|s| Some(s.into_column()))
                 },
                 // we don't yet know the fields
                 GetOutput::map_dtype(move |dt: &DataType| {
+                    polars_ensure!(matches!(dt, DataType::List(_)), SchemaMismatch: "expected 'List' as input to 'list.to_struct' got {}", dt);
                     let out = out_dtype.read().unwrap();
                     match out.as_ref() {
                         // dtype already set
@@ -310,7 +313,7 @@ impl ListNameSpace {
                             let fields = (0..upper_bound)
                                 .map(|i| {
                                     let name = _default_struct_name_gen(i);
-                                    Field::from_owned(name, inner.clone())
+                                    Field::new(name, inner.clone())
                                 })
                                 .collect();
                             let dt = DataType::Struct(fields);
@@ -334,7 +337,7 @@ impl ListNameSpace {
                 FunctionExpr::ListExpr(ListFunction::Contains),
                 &[other],
                 false,
-                false,
+                None,
             )
             .with_function_options(|mut options| {
                 options.flags |= FunctionFlags::INPUT_WILDCARD_EXPANSION;
@@ -351,7 +354,7 @@ impl ListNameSpace {
                 FunctionExpr::ListExpr(ListFunction::CountMatches),
                 &[other],
                 false,
-                false,
+                None,
             )
             .with_function_options(|mut options| {
                 options.flags |= FunctionFlags::INPUT_WILDCARD_EXPANSION;
@@ -366,7 +369,9 @@ impl ListNameSpace {
             function: FunctionExpr::ListExpr(ListFunction::SetOperation(set_operation)),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ElementWise,
-                cast_to_supertypes: Some(SuperTypeOptions { implode_list: true }),
+                cast_to_supertypes: Some(SuperTypeOptions {
+                    flags: SuperTypeFlags::default() | SuperTypeFlags::ALLOW_IMPLODE_LIST,
+                }),
                 flags: FunctionFlags::default()
                     | FunctionFlags::INPUT_WILDCARD_EXPANSION & !FunctionFlags::RETURNS_SCALAR,
                 ..Default::default()

@@ -11,7 +11,7 @@ fn basic() {
     )
     .unwrap();
     assert_eq!(a.len(), 2);
-    assert_eq!(a.data_type(), &ArrowDataType::FixedSizeBinary(2));
+    assert_eq!(a.dtype(), &ArrowDataType::FixedSizeBinary(2));
     assert_eq!(a.values(), &Vec::from([1, 2, 3, 4]));
     assert_eq!(a.validity(), None);
     assert_eq!(a.value(1), &[3, 4]);

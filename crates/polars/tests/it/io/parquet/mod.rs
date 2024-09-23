@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 mod arrow;
-mod read;
+pub(crate) mod read;
 mod roundtrip;
 mod write;
 
@@ -113,7 +113,7 @@ pub fn alltypes_plain(column: &str) -> Array {
 pub fn alltypes_statistics(column: &str) -> Statistics {
     match column {
         "id" => PrimitiveStatistics::<i32> {
-            primitive_type: PrimitiveType::from_physical("col".to_string(), PhysicalType::Int32),
+            primitive_type: PrimitiveType::from_physical("col".into(), PhysicalType::Int32),
             null_count: Some(0),
             distinct_count: None,
             min_value: Some(0),
@@ -121,7 +121,7 @@ pub fn alltypes_statistics(column: &str) -> Statistics {
         }
         .into(),
         "id-short-array" => PrimitiveStatistics::<i32> {
-            primitive_type: PrimitiveType::from_physical("col".to_string(), PhysicalType::Int32),
+            primitive_type: PrimitiveType::from_physical("col".into(), PhysicalType::Int32),
             null_count: Some(0),
             distinct_count: None,
             min_value: Some(4),
@@ -136,7 +136,7 @@ pub fn alltypes_statistics(column: &str) -> Statistics {
         }
         .into(),
         "tinyint_col" | "smallint_col" | "int_col" => PrimitiveStatistics::<i32> {
-            primitive_type: PrimitiveType::from_physical("col".to_string(), PhysicalType::Int32),
+            primitive_type: PrimitiveType::from_physical("col".into(), PhysicalType::Int32),
             null_count: Some(0),
             distinct_count: None,
             min_value: Some(0),
@@ -144,7 +144,7 @@ pub fn alltypes_statistics(column: &str) -> Statistics {
         }
         .into(),
         "bigint_col" => PrimitiveStatistics::<i64> {
-            primitive_type: PrimitiveType::from_physical("col".to_string(), PhysicalType::Int64),
+            primitive_type: PrimitiveType::from_physical("col".into(), PhysicalType::Int64),
             null_count: Some(0),
             distinct_count: None,
             min_value: Some(0),
@@ -152,7 +152,7 @@ pub fn alltypes_statistics(column: &str) -> Statistics {
         }
         .into(),
         "float_col" => PrimitiveStatistics::<f32> {
-            primitive_type: PrimitiveType::from_physical("col".to_string(), PhysicalType::Float),
+            primitive_type: PrimitiveType::from_physical("col".into(), PhysicalType::Float),
             null_count: Some(0),
             distinct_count: None,
             min_value: Some(0.0),
@@ -160,7 +160,7 @@ pub fn alltypes_statistics(column: &str) -> Statistics {
         }
         .into(),
         "double_col" => PrimitiveStatistics::<f64> {
-            primitive_type: PrimitiveType::from_physical("col".to_string(), PhysicalType::Double),
+            primitive_type: PrimitiveType::from_physical("col".into(), PhysicalType::Double),
             null_count: Some(0),
             distinct_count: None,
             min_value: Some(0.0),
@@ -168,10 +168,7 @@ pub fn alltypes_statistics(column: &str) -> Statistics {
         }
         .into(),
         "date_string_col" => BinaryStatistics {
-            primitive_type: PrimitiveType::from_physical(
-                "col".to_string(),
-                PhysicalType::ByteArray,
-            ),
+            primitive_type: PrimitiveType::from_physical("col".into(), PhysicalType::ByteArray),
             null_count: Some(0),
             distinct_count: None,
             min_value: Some(vec![48, 49, 47, 48, 49, 47, 48, 57]),
@@ -179,10 +176,7 @@ pub fn alltypes_statistics(column: &str) -> Statistics {
         }
         .into(),
         "string_col" => BinaryStatistics {
-            primitive_type: PrimitiveType::from_physical(
-                "col".to_string(),
-                PhysicalType::ByteArray,
-            ),
+            primitive_type: PrimitiveType::from_physical("col".into(), PhysicalType::ByteArray),
             null_count: Some(0),
             distinct_count: None,
             min_value: Some(vec![48]),

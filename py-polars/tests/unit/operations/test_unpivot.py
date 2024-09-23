@@ -92,3 +92,9 @@ def test_unpivot_raise_list() -> None:
         pl.LazyFrame(
             {"a": ["x", "y"], "b": [["test", "test2"], ["test3", "test4"]]}
         ).unpivot().collect()
+
+
+def test_unpivot_empty_18170() -> None:
+    assert pl.DataFrame().unpivot().schema == pl.Schema(
+        {"variable": pl.String(), "value": pl.Null()}
+    )

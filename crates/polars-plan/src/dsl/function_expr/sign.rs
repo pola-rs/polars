@@ -1,41 +1,35 @@
+use num::{One, Zero};
 use polars_core::export::num;
-use DataType::*;
+use polars_core::with_match_physical_numeric_polars_type;
 
 use super::*;
 
-pub(super) fn sign(s: &Series) -> PolarsResult<Series> {
-    match s.dtype() {
-        Float32 => {
-            let ca = s.f32().unwrap();
-            sign_float(ca)
-        },
-        Float64 => {
-            let ca = s.f64().unwrap();
-            sign_float(ca)
-        },
-        dt if dt.is_numeric() => {
-            let s = s.cast(&Float64)?;
-            sign(&s)
-        },
-        dt => polars_bail!(opq = sign, dt),
-    }
+pub(super) fn sign(s: &Column) -> PolarsResult<Column> {
+    let s = s.as_materialized_series();
+    let dt = s.dtype();
+    polars_ensure!(dt.is_numeric(), opq = sign, dt);
+    with_match_physical_numeric_polars_type!(dt, |$T| {
+        let ca: &ChunkedArray<$T> = s.as_ref().as_ref();
+        Ok(sign_impl(ca))
+    })
 }
 
-fn sign_float<T>(ca: &ChunkedArray<T>) -> PolarsResult<Series>
+fn sign_impl<T>(ca: &ChunkedArray<T>) -> Column
 where
-    T: PolarsFloatType,
-    T::Native: num::Float,
-    ChunkedArray<T>: IntoSeries,
+    T: PolarsNumericType,
+    ChunkedArray<T>: IntoColumn,
 {
-    ca.apply_values(signum_improved).into_series().cast(&Int64)
-}
-
-// Wrapper for the signum function that handles +/-0.0 inputs differently
-// See discussion here: https://github.com/rust-lang/rust/issues/57543
-fn signum_improved<F: num::Float>(v: F) -> F {
-    if v.is_zero() {
-        v
-    } else {
-        v.signum()
-    }
+    ca.apply_values(|x| {
+        if x < T::Native::zero() {
+            T::Native::zero() - T::Native::one()
+        } else if x > T::Native::zero() {
+            T::Native::one()
+        } else {
+            // Returning x here ensures we return NaN for NaN input, and
+            // maintain the sign for signed zeroes (although we don't really
+            // care about the latter).
+            x
+        }
+    })
+    .into_column()
 }

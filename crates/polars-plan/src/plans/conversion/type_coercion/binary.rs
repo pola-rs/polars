@@ -56,11 +56,12 @@ fn process_list_arithmetic(
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<Option<AExpr>> {
     match (&type_left, &type_right) {
-        (DataType::List(inner), _) => {
-            if type_right != **inner {
+        (DataType::List(_), _) => {
+            let leaf = type_left.leaf_dtype();
+            if type_right != *leaf {
                 let new_node_right = expr_arena.add(AExpr::Cast {
                     expr: node_right,
-                    data_type: *inner.clone(),
+                    dtype: type_left.cast_leaf(leaf.clone()),
                     options: CastOptions::NonStrict,
                 });
 
@@ -73,11 +74,12 @@ fn process_list_arithmetic(
                 Ok(None)
             }
         },
-        (_, DataType::List(inner)) => {
-            if type_left != **inner {
+        (_, DataType::List(_)) => {
+            let leaf = type_right.leaf_dtype();
+            if type_left != *leaf {
                 let new_node_left = expr_arena.add(AExpr::Cast {
                     expr: node_left,
-                    data_type: *inner.clone(),
+                    dtype: type_right.cast_leaf(leaf.clone()),
                     options: CastOptions::NonStrict,
                 });
 
@@ -110,7 +112,7 @@ fn process_struct_numeric_arithmetic(
             if let Some(first) = fields.first() {
                 let new_node_right = expr_arena.add(AExpr::Cast {
                     expr: node_right,
-                    data_type: DataType::Struct(vec![first.clone()]),
+                    dtype: DataType::Struct(vec![first.clone()]),
                     options: CastOptions::NonStrict,
                 });
                 Ok(Some(AExpr::BinaryExpr {
@@ -126,7 +128,7 @@ fn process_struct_numeric_arithmetic(
             if let Some(first) = fields.first() {
                 let new_node_left = expr_arena.add(AExpr::Cast {
                     expr: node_left,
-                    data_type: DataType::Struct(vec![first.clone()]),
+                    dtype: DataType::Struct(vec![first.clone()]),
                     options: CastOptions::NonStrict,
                 });
 
@@ -296,14 +298,20 @@ pub(super) fn process_binary(
         st = String
     }
 
-    // only cast if the type is not already the super type.
+    // TODO! raise here?
+    // We should at least never cast to Unknown.
+    if matches!(st, DataType::Unknown(UnknownKind::Any)) {
+        return Ok(None);
+    }
+
+    // Only cast if the type is not already the super type.
     // this can prevent an expensive flattening and subsequent aggregation
     // in a group_by context. To be able to cast the groups need to be
     // flattened
     let new_node_left = if type_left != st {
         expr_arena.add(AExpr::Cast {
             expr: node_left,
-            data_type: st.clone(),
+            dtype: st.clone(),
             options: CastOptions::NonStrict,
         })
     } else {
@@ -312,7 +320,7 @@ pub(super) fn process_binary(
     let new_node_right = if type_right != st {
         expr_arena.add(AExpr::Cast {
             expr: node_right,
-            data_type: st,
+            dtype: st,
             options: CastOptions::NonStrict,
         })
     } else {

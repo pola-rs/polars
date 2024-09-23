@@ -21,10 +21,11 @@ FILTER_PIP_WARNINGS=| grep -v "don't match your environment"; test $${PIPESTATUS
 requirements: .venv  ## Install/refresh Python project requirements
 	@unset CONDA_PREFIX \
 	&& $(VENV_BIN)/python -m pip install --upgrade uv \
-	&& $(VENV_BIN)/uv pip install --upgrade --compile-bytecode -r py-polars/requirements-dev.txt \
-	&& $(VENV_BIN)/uv pip install --upgrade -r py-polars/requirements-lint.txt \
-	&& $(VENV_BIN)/uv pip install --upgrade -r py-polars/docs/requirements-docs.txt \
-	&& $(VENV_BIN)/uv pip install --upgrade -r docs/requirements.txt
+	&& $(VENV_BIN)/uv pip install --upgrade --compile-bytecode --no-build \
+	   -r py-polars/requirements-dev.txt \
+	   -r py-polars/requirements-lint.txt \
+	   -r py-polars/docs/requirements-docs.txt \
+	   -r docs/source/requirements.txt
 
 .PHONY: requirements-all
 requirements-all: .venv  ## Install/refresh all Python requirements (including those needed for CI tests)

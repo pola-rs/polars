@@ -3,6 +3,7 @@ use arrow::legacy::kernels::set::set_at_nulls;
 use num_traits::Float;
 use polars_utils::total_ord::{canonical_f32, canonical_f64};
 
+use crate::prelude::arity::unary_elementwise_values;
 use crate::prelude::*;
 
 impl<T> ChunkedArray<T>
@@ -29,7 +30,7 @@ where
         let chunks = self
             .downcast_iter()
             .map(|arr| set_at_nulls(arr, T::Native::nan()));
-        ChunkedArray::from_chunk_iter(self.name(), chunks)
+        ChunkedArray::from_chunk_iter(self.name().clone(), chunks)
     }
 }
 
@@ -57,6 +58,6 @@ where
     T::Native: Float + Canonical,
 {
     pub fn to_canonical(&self) -> Self {
-        self.apply_values_generic(|v| v.canonical())
+        unary_elementwise_values(self, |v| v.canonical())
     }
 }

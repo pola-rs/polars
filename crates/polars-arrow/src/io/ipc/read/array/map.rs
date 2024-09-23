@@ -16,7 +16,7 @@ use crate::io::ipc::read::array::{try_get_array_length, try_get_field_node};
 pub fn read_map<R: Read + Seek>(
     field_nodes: &mut VecDeque<Node>,
     variadic_buffer_counts: &mut VecDeque<usize>,
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
     ipc_field: &IpcField,
     buffers: &mut VecDeque<IpcBuffer>,
     reader: &mut R,
@@ -28,7 +28,7 @@ pub fn read_map<R: Read + Seek>(
     version: Version,
     scratch: &mut Vec<u8>,
 ) -> PolarsResult<MapArray> {
-    let field_node = try_get_field_node(field_nodes, &data_type)?;
+    let field_node = try_get_field_node(field_nodes, &dtype)?;
 
     let validity = read_validity(
         buffers,
@@ -55,7 +55,7 @@ pub fn read_map<R: Read + Seek>(
     // Older versions of the IPC format sometimes do not report an offset
     .or_else(|_| PolarsResult::Ok(Buffer::<i32>::from(vec![0i32])))?;
 
-    let field = MapArray::get_field(&data_type);
+    let field = MapArray::get_field(&dtype);
 
     let last_offset: usize = offsets.last().copied().unwrap() as usize;
 
@@ -74,12 +74,12 @@ pub fn read_map<R: Read + Seek>(
         version,
         scratch,
     )?;
-    MapArray::try_new(data_type, offsets.try_into()?, field, validity)
+    MapArray::try_new(dtype, offsets.try_into()?, field, validity)
 }
 
 pub fn skip_map(
     field_nodes: &mut VecDeque<Node>,
-    data_type: &ArrowDataType,
+    dtype: &ArrowDataType,
     buffers: &mut VecDeque<IpcBuffer>,
     variadic_buffer_counts: &mut VecDeque<usize>,
 ) -> PolarsResult<()> {
@@ -96,7 +96,7 @@ pub fn skip_map(
         .pop_front()
         .ok_or_else(|| polars_err!(oos = "IPC: missing offsets buffer."))?;
 
-    let data_type = MapArray::get_field(data_type).data_type();
+    let dtype = MapArray::get_field(dtype).dtype();
 
-    skip(field_nodes, data_type, buffers, variadic_buffer_counts)
+    skip(field_nodes, dtype, buffers, variadic_buffer_counts)
 }

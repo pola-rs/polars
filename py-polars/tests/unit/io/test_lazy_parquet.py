@@ -9,18 +9,19 @@ import pandas as pd
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
     from polars._typing import ParallelStrategy
 
 
-@pytest.fixture()
+@pytest.fixture
 def parquet_file_path(io_files_path: Path) -> Path:
     return io_files_path / "small.parquet"
 
 
-@pytest.fixture()
+@pytest.fixture
 def foods_parquet_path(io_files_path: Path) -> Path:
     return io_files_path / "foods1.parquet"
 
@@ -64,7 +65,7 @@ def test_row_index_len_16543(foods_parquet_path: Path) -> None:
     assert q.select(pl.all()).select(pl.len()).collect().item() == 27
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_categorical_parquet_statistics(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
@@ -103,7 +104,7 @@ def test_categorical_parquet_statistics(tmp_path: Path) -> None:
     assert df.shape == (4, 3)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_parquet_eq_stats(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
@@ -124,7 +125,7 @@ def test_parquet_eq_stats(tmp_path: Path) -> None:
     )
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_parquet_is_in_stats(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
@@ -164,7 +165,7 @@ def test_parquet_is_in_stats(tmp_path: Path) -> None:
     ).collect().shape == (8, 1)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_parquet_stats(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
@@ -207,7 +208,7 @@ def test_row_index_schema_parquet(parquet_file_path: Path) -> None:
     ).dtypes == [pl.UInt32, pl.String]
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_parquet_is_in_statistics(monkeypatch: Any, capfd: Any, tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
@@ -243,7 +244,7 @@ def test_parquet_is_in_statistics(monkeypatch: Any, capfd: Any, tmp_path: Path) 
     )
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_parquet_statistics(monkeypatch: Any, capfd: Any, tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
@@ -279,7 +280,7 @@ def test_parquet_statistics(monkeypatch: Any, capfd: Any, tmp_path: Path) -> Non
     )
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_categorical(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
@@ -324,7 +325,7 @@ def test_glob_n_rows(io_files_path: Path) -> None:
     }
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_parquet_statistics_filter_9925(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
     file_path = tmp_path / "codes.parquet"
@@ -337,7 +338,7 @@ def test_parquet_statistics_filter_9925(tmp_path: Path) -> None:
     assert q.collect().to_dict(as_series=False) == {"code": [300964, 300972, 26]}
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_parquet_statistics_filter_11069(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
     file_path = tmp_path / "foo.parquet"
@@ -358,7 +359,7 @@ def test_parquet_list_arg(io_files_path: Path) -> None:
     assert df.row(0) == ("vegetables", 45, 0.5, 2)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_parquet_many_row_groups_12297(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
     file_path = tmp_path / "foo.parquet"
@@ -367,7 +368,7 @@ def test_parquet_many_row_groups_12297(tmp_path: Path) -> None:
     assert_frame_equal(pl.scan_parquet(file_path).collect(), df)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_row_index_empty_file(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
     file_path = tmp_path / "test.parquet"
@@ -377,7 +378,7 @@ def test_row_index_empty_file(tmp_path: Path) -> None:
     assert result.schema == OrderedDict([("idx", pl.UInt32), ("a", pl.Float32)])
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_io_struct_async_12500(tmp_path: Path) -> None:
     file_path = tmp_path / "test.parquet"
     pl.DataFrame(
@@ -391,7 +392,7 @@ def test_io_struct_async_12500(tmp_path: Path) -> None:
     ) == {"c1": [{"a": "foo", "b": "bar"}]}
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 @pytest.mark.parametrize("streaming", [True, False])
 def test_parquet_different_schema(tmp_path: Path, streaming: bool) -> None:
     # Schema is different but the projected columns are same dtype.
@@ -408,7 +409,7 @@ def test_parquet_different_schema(tmp_path: Path, streaming: bool) -> None:
     ).columns == ["b"]
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_nested_slice_12480(tmp_path: Path) -> None:
     path = tmp_path / "data.parquet"
     df = pl.select(pl.lit(1).repeat_by(10_000).explode().cast(pl.List(pl.Int32)))
@@ -418,7 +419,7 @@ def test_nested_slice_12480(tmp_path: Path) -> None:
     assert pl.scan_parquet(path).slice(0, 1).collect().height == 1
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_scan_deadlock_rayon_spawn_from_async_15172(
     monkeypatch: Any, tmp_path: Path
 ) -> None:
@@ -442,7 +443,7 @@ def test_scan_deadlock_rayon_spawn_from_async_15172(
     assert results[0].equals(df)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 @pytest.mark.parametrize("streaming", [True, False])
 def test_parquet_schema_mismatch_panic_17067(tmp_path: Path, streaming: bool) -> None:
     pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]}).write_parquet(tmp_path / "1.parquet")
@@ -450,3 +451,196 @@ def test_parquet_schema_mismatch_panic_17067(tmp_path: Path, streaming: bool) ->
 
     with pytest.raises(pl.exceptions.SchemaError):
         pl.scan_parquet(tmp_path).collect(streaming=streaming)
+
+
+@pytest.mark.write_disk
+def test_predicate_push_down_categorical_17744(tmp_path: Path) -> None:
+    path = tmp_path / "1"
+
+    df = pl.DataFrame(
+        data={
+            "n": [1, 2, 3],
+            "ccy": ["USD", "JPY", "EUR"],
+        },
+        schema_overrides={"ccy": pl.Categorical("lexical")},
+    )
+    df.write_parquet(path)
+    expect = df.head(1).with_columns(pl.col(pl.Categorical).cast(pl.String))
+
+    lf = pl.scan_parquet(path)
+
+    for predicate in [pl.col("ccy") == "USD", pl.col("ccy").is_in(["USD"])]:
+        assert_frame_equal(
+            lf.filter(predicate)
+            .with_columns(pl.col(pl.Categorical).cast(pl.String))
+            .collect(),
+            expect,
+        )
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("streaming", [True, False])
+def test_parquet_slice_pushdown_non_zero_offset(
+    tmp_path: Path, streaming: bool
+) -> None:
+    paths = [tmp_path / "1", tmp_path / "2", tmp_path / "3"]
+    dfs = [pl.DataFrame({"x": i}) for i in range(len(paths))]
+
+    for df, p in zip(dfs, paths):
+        df.write_parquet(p)
+
+    # Parquet files containing only the metadata - i.e. the data parts are removed.
+    # Used to test that a reader doesn't try to read any data.
+    def trim_to_metadata(path: str | Path) -> None:
+        path = Path(path)
+        v = path.read_bytes()
+        metadata_and_footer_len = 8 + int.from_bytes(v[-8:][:4], "little")
+        path.write_bytes(v[-metadata_and_footer_len:])
+
+    trim_to_metadata(paths[0])
+    trim_to_metadata(paths[2])
+
+    # Check baseline:
+    # * Metadata can be read without error
+    assert pl.read_parquet_schema(paths[0]) == dfs[0].schema
+    # * Attempting to read any data will error
+    with pytest.raises(ComputeError):
+        pl.scan_parquet(paths[0]).collect(streaming=streaming)
+
+    df = dfs[1]
+    assert_frame_equal(
+        pl.scan_parquet(paths).slice(1, 1).collect(streaming=streaming), df
+    )
+    assert_frame_equal(
+        pl.scan_parquet(paths[1:]).head(1).collect(streaming=streaming), df
+    )
+
+    # Negative slice unsupported in streaming
+    if not streaming:
+        assert_frame_equal(pl.scan_parquet(paths).slice(-2, 1).collect(), df)
+        assert_frame_equal(pl.scan_parquet(paths[:2]).tail(1).collect(), df)
+        assert_frame_equal(
+            pl.scan_parquet(paths[1:]).slice(-99, 1).collect(), df.clear()
+        )
+
+        path = tmp_path / "data"
+        df = pl.select(x=pl.int_range(0, 50))
+        df.write_parquet(path)
+        assert_frame_equal(pl.scan_parquet(path).slice(-100, 75).collect(), df.head(25))
+        assert_frame_equal(
+            pl.scan_parquet(path).slice(-1, (1 << 32) - 1).collect(), df.tail(1)
+        )
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("streaming", [True, False])
+def test_parquet_row_groups_shift_bug_18739(tmp_path: Path, streaming: bool) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    path = tmp_path / "data.bin"
+
+    df = pl.DataFrame({"id": range(100)})
+    df.write_parquet(path, row_group_size=1)
+
+    lf = pl.scan_parquet(path)
+    assert_frame_equal(df, lf.collect(streaming=streaming))
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("streaming", [True, False])
+def test_dsl2ir_cached_metadata(tmp_path: Path, streaming: bool) -> None:
+    df = pl.DataFrame({"x": 1})
+    path = tmp_path / "1"
+    df.write_parquet(path)
+
+    lf = pl.scan_parquet(path)
+    assert_frame_equal(lf.collect(), df)
+
+    # Removes the metadata portion of the parquet file.
+    # Used to test that a reader doesn't try to read the metadata.
+    def remove_metadata(path: str | Path) -> None:
+        path = Path(path)
+        v = path.read_bytes()
+        metadata_and_footer_len = 8 + int.from_bytes(v[-8:][:4], "little")
+        path.write_bytes(v[:-metadata_and_footer_len] + b"PAR1")
+
+    remove_metadata(path)
+    assert_frame_equal(lf.collect(streaming=streaming), df)
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("streaming", [True, False])
+def test_parquet_unaligned_schema_read(tmp_path: Path, streaming: bool) -> None:
+    dfs = [
+        pl.DataFrame({"a": 1, "b": 10}),
+        pl.DataFrame({"b": 11, "a": 2}),
+        pl.DataFrame({"x": 3, "a": 3, "y": 3, "b": 12}),
+    ]
+
+    paths = [tmp_path / "1", tmp_path / "2", tmp_path / "3"]
+
+    for df, path in zip(dfs, paths):
+        df.write_parquet(path)
+
+    lf = pl.scan_parquet(paths)
+
+    assert_frame_equal(
+        lf.select("a").collect(streaming=streaming), pl.DataFrame({"a": [1, 2, 3]})
+    )
+
+    assert_frame_equal(
+        lf.select("b", "a").collect(streaming=streaming),
+        pl.DataFrame({"b": [10, 11, 12], "a": [1, 2, 3]}),
+    )
+
+    assert_frame_equal(
+        pl.scan_parquet(paths[:2]).collect(streaming=streaming),
+        pl.DataFrame({"a": [1, 2], "b": [10, 11]}),
+    )
+
+    with pytest.raises(
+        pl.exceptions.SchemaError,
+        match="parquet file contained extra columns and no selection was given",
+    ):
+        lf.collect(streaming=streaming)
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("streaming", [True, False])
+def test_parquet_unaligned_schema_read_dtype_mismatch(
+    tmp_path: Path, streaming: bool
+) -> None:
+    dfs = [
+        pl.DataFrame({"a": 1, "b": 10}),
+        pl.DataFrame({"b": "11", "a": "2"}),
+    ]
+
+    paths = [tmp_path / "1", tmp_path / "2"]
+
+    for df, path in zip(dfs, paths):
+        df.write_parquet(path)
+
+    lf = pl.scan_parquet(paths)
+
+    with pytest.raises(pl.exceptions.SchemaError, match="data type mismatch"):
+        lf.collect(streaming=streaming)
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("streaming", [True, False])
+def test_parquet_unaligned_schema_read_missing_cols_from_first(
+    tmp_path: Path, streaming: bool
+) -> None:
+    dfs = [
+        pl.DataFrame({"a": 1, "b": 10}),
+        pl.DataFrame({"b": 11}),
+    ]
+
+    paths = [tmp_path / "1", tmp_path / "2"]
+
+    for df, path in zip(dfs, paths):
+        df.write_parquet(path)
+
+    lf = pl.scan_parquet(paths)
+
+    with pytest.raises(pl.exceptions.SchemaError, match="did not find column"):
+        lf.collect(streaming=streaming)

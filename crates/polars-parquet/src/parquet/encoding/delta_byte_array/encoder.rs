@@ -2,7 +2,10 @@ use super::super::delta_bitpacked;
 use crate::parquet::encoding::delta_length_byte_array;
 
 /// Encodes an iterator of according to DELTA_BYTE_ARRAY
-pub fn encode<'a, I: Iterator<Item = &'a [u8]> + Clone>(iterator: I, buffer: &mut Vec<u8>) {
+pub fn encode<'a, I: ExactSizeIterator<Item = &'a [u8]> + Clone>(
+    iterator: I,
+    buffer: &mut Vec<u8>,
+) {
     let mut previous = b"".as_ref();
 
     let mut sum_lengths = 0;
@@ -22,7 +25,7 @@ pub fn encode<'a, I: Iterator<Item = &'a [u8]> + Clone>(iterator: I, buffer: &mu
             prefix_length as i64
         })
         .collect::<Vec<_>>();
-    delta_bitpacked::encode(prefixes.iter().copied(), buffer);
+    delta_bitpacked::encode(prefixes.iter().copied(), buffer, 1);
 
     let remaining = iterator
         .zip(prefixes)

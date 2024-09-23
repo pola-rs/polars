@@ -54,7 +54,7 @@ impl<O: Offset> ValueSize for BinaryArray<O> {
 
 impl ValueSize for ArrayRef {
     fn get_values_size(&self) -> usize {
-        match self.data_type() {
+        match self.dtype() {
             ArrowDataType::LargeUtf8 => self
                 .as_any()
                 .downcast_ref::<Utf8Array<i64>>()

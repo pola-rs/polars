@@ -176,7 +176,7 @@ def test_cast_list_to_array(data: Any, inner_type: pl.DataType) -> None:
     assert s.to_list() == data
 
 
-@pytest.fixture()
+@pytest.fixture
 def data_dispersion() -> pl.DataFrame:
     return pl.DataFrame(
         {
@@ -291,6 +291,10 @@ def test_recursive_array_dtype() -> None:
     s = pl.Series(np.arange(6).reshape((2, 3)), dtype=dtype)
     assert s.dtype == dtype
     assert s.len() == 2
+    dtype = pl.Array(pl.List(pl.Array(pl.Int8, (2, 2))), 2)
+    s = pl.Series(dtype=dtype)
+    assert s.dtype == dtype
+    assert str(s) == "shape: (0,)\nSeries: '' [array[list[array[i8, (2, 2)]], 2]]\n[\n]"
 
 
 def test_ndarray_construction() -> None:

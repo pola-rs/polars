@@ -9,8 +9,7 @@ from functools import partial
 from math import cosh
 from typing import Any, Callable
 
-import numpy
-import numpy as np  # noqa: F401
+import numpy as np
 import pytest
 
 import polars as pl
@@ -103,7 +102,7 @@ TEST_CASES = [
     ("e", "lambda x: np.arcsinh(x)", 'pl.col("e").arcsinh()'),
     ("e", "lambda x: np.arctan(x)", 'pl.col("e").arctan()'),
     ("e", "lambda x: np.arctanh(x)", 'pl.col("e").arctanh()'),
-    ("a", "lambda x: 0 + numpy.cbrt(x)", '0 + pl.col("a").cbrt()'),
+    ("a", "lambda x: 0 + np.cbrt(x)", '0 + pl.col("a").cbrt()'),
     ("e", "lambda x: np.ceil(x)", 'pl.col("e").ceil()'),
     ("e", "lambda x: np.cos(x)", 'pl.col("e").cos()'),
     ("e", "lambda x: np.cosh(x)", 'pl.col("e").cosh()'),
@@ -259,7 +258,7 @@ EVAL_ENVIRONMENT = {
     "datetime": datetime,
     "dt": dt,
     "math": math,
-    "np": numpy,
+    "np": np,
     "pl": pl,
 }
 
@@ -330,7 +329,7 @@ def test_parse_apply_raw_functions() -> None:
 
     # test bare 'numpy' functions
     for func_name in _NUMPY_FUNCTIONS:
-        func = getattr(numpy, func_name)
+        func = getattr(np, func_name)
 
         # note: we can't parse/rewrite raw numpy functions...
         parser = BytecodeParser(func, map_target="expr")
@@ -343,10 +342,6 @@ def test_parse_apply_raw_functions() -> None:
         ):
             df1 = lf.select(pl.col("a").map_elements(func)).collect()
             df2 = lf.select(getattr(pl.col("a"), func_name)()).collect()
-            if func_name == "sign":
-                # note: Polars' 'sign' function returns an Int64, while numpy's
-                # 'sign' function returns a Float64
-                df1 = df1.with_columns(pl.col("a").cast(pl.Int64))
             assert_frame_equal(df1, df2)
 
     # test bare 'json.loads'
@@ -359,7 +354,7 @@ def test_parse_apply_raw_functions() -> None:
             pl.col("value").str.json_decode(),
             pl.col("value").map_elements(json.loads),
         ):
-            result_frames.append(
+            result_frames.append(  # noqa: PERF401
                 pl.LazyFrame({"value": ['{"a":1, "b": true, "c": "xx"}', None]})
                 .select(extracted=expr)
                 .unnest("extracted")
@@ -415,10 +410,8 @@ def test_parse_apply_miscellaneous() -> None:
     ):
         s = pl.Series("srs", [0, 1, 2, 3, 4])
         assert_series_equal(
-            s.map_elements(
-                lambda x: numpy.cos(3) + x - abs(-1), return_dtype=pl.Float64
-            ),
-            numpy.cos(3) + s - 1,
+            s.map_elements(lambda x: np.cos(3) + x - abs(-1), return_dtype=pl.Float64),
+            np.cos(3) + s - 1,
         )
 
     # if 's' is already the name of a global variable then the series alias

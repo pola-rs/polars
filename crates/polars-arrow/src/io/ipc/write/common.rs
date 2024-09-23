@@ -38,7 +38,7 @@ fn encode_dictionary(
     encoded_dictionaries: &mut Vec<EncodedData>,
 ) -> PolarsResult<()> {
     use PhysicalType::*;
-    match array.data_type().to_physical_type() {
+    match array.dtype().to_physical_type() {
         Utf8 | LargeUtf8 | Binary | LargeBinary | Primitive(_) | Boolean | Null
         | FixedSizeBinary | BinaryView | Utf8View => Ok(()),
         Dictionary(key_type) => match_integer_type!(key_type, |$T| {
@@ -231,7 +231,7 @@ fn serialize_compression(
 }
 
 fn set_variadic_buffer_counts(counts: &mut Vec<i64>, array: &dyn Array) {
-    match array.data_type() {
+    match array.dtype() {
         ArrowDataType::Utf8View => {
             let array = array.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
             counts.push(array.data_buffers().len() as i64);
@@ -297,7 +297,7 @@ fn chunk_to_bytes_amortized(
     let mut variadic_buffer_counts = vec![];
     for array in chunk.arrays() {
         // We don't want to write all buffers in sliced arrays.
-        let array = match array.data_type() {
+        let array = match array.dtype() {
             ArrowDataType::BinaryView => {
                 let concrete_arr = array.as_any().downcast_ref::<BinaryViewArray>().unwrap();
                 gc_bin_view(array, concrete_arr)
@@ -432,7 +432,7 @@ impl DictionaryTracker {
     ///   has never been seen before, return `Ok(true)` to indicate that the dictionary was just
     ///   inserted.
     pub fn insert(&mut self, dict_id: i64, array: &dyn Array) -> PolarsResult<bool> {
-        let values = match array.data_type() {
+        let values = match array.dtype() {
             ArrowDataType::Dictionary(key_type, _, _) => {
                 match_integer_type!(key_type, |$T| {
                     let array = array

@@ -60,3 +60,36 @@ def test_series_duration_var_overflow() -> None:
     s = pl.Series([timedelta(days=10), timedelta(days=20), timedelta(days=40)])
     with pytest.raises(PanicException, match="OverflowError"):
         s.var()
+
+
+def test_series_duration_units() -> None:
+    td = timedelta
+
+    assert_frame_equal(
+        pl.DataFrame({"x": [0, 1, 2, 3]}).select(x=pl.duration(weeks=pl.col("x"))),
+        pl.DataFrame({"x": [td(weeks=i) for i in range(4)]}),
+    )
+    assert_frame_equal(
+        pl.DataFrame({"x": [0, 1, 2, 3]}).select(x=pl.duration(days=pl.col("x"))),
+        pl.DataFrame({"x": [td(days=i) for i in range(4)]}),
+    )
+    assert_frame_equal(
+        pl.DataFrame({"x": [0, 1, 2, 3]}).select(x=pl.duration(hours=pl.col("x"))),
+        pl.DataFrame({"x": [td(hours=i) for i in range(4)]}),
+    )
+    assert_frame_equal(
+        pl.DataFrame({"x": [0, 1, 2, 3]}).select(x=pl.duration(minutes=pl.col("x"))),
+        pl.DataFrame({"x": [td(minutes=i) for i in range(4)]}),
+    )
+    assert_frame_equal(
+        pl.DataFrame({"x": [0, 1, 2, 3]}).select(
+            x=pl.duration(milliseconds=pl.col("x"))
+        ),
+        pl.DataFrame({"x": [td(milliseconds=i) for i in range(4)]}),
+    )
+    assert_frame_equal(
+        pl.DataFrame({"x": [0, 1, 2, 3]}).select(
+            x=pl.duration(microseconds=pl.col("x"))
+        ),
+        pl.DataFrame({"x": [td(microseconds=i) for i in range(4)]}),
+    )
