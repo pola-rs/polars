@@ -84,15 +84,15 @@ impl ListChunked {
     ) -> PolarsResult<Series> {
         let (lhs, rhs) = broadcast_list(self, rhs)?;
         polars_ensure!(
-            self.len() == rhs.len(),
+            lhs.len() == rhs.len(),
             InvalidOperation: "can only do arithmetic operations on Series of the same size; got {} and {}",
-            self.len(),
+            lhs.len(),
             rhs.len()
         );
 
         let mut has_nulls = has_nulls.unwrap_or(false);
         if !has_nulls {
-            for chunk in self.chunks().iter() {
+            for chunk in lhs.chunks().iter() {
                 if does_list_have_nulls(chunk) {
                     has_nulls = true;
                     break;
@@ -112,11 +112,11 @@ impl ListChunked {
             // values Arrow arrays. Given nulls, the two values arrays might not
             // line up the way we expect.
             let mut result = AnonymousListBuilder::new(
-                self.name().clone(),
-                self.len(),
-                Some(self.inner_dtype().clone()),
+                lhs.name().clone(),
+                lhs.len(),
+                Some(lhs.inner_dtype().clone()),
             );
-            let combined = self.amortized_iter().zip(rhs.list()?.amortized_iter()).map(|(a, b)| {
+            let combined = lhs.amortized_iter().zip(rhs.list()?.amortized_iter()).map(|(a, b)| {
                     let (Some(a_owner), Some(b_owner)) = (a, b) else {
                         // Operations with nulls always result in nulls:
                         return Ok(None);
@@ -151,12 +151,14 @@ impl ListChunked {
             }
             return Ok(result.finish().into());
         }
-        let l_rechunked = self.clone().rechunk().into_series();
+        let l_rechunked = lhs.clone().rechunk().into_series();
         let l_leaf_array = l_rechunked.get_leaf_array();
         let r_leaf_array = rhs.rechunk().get_leaf_array();
         polars_ensure!(
             lists_same_shapes(&l_leaf_array.chunks()[0], &r_leaf_array.chunks()[0]),
-            InvalidOperation: "can only do arithmetic operations on lists of the same size"
+            InvalidOperation: "can only do arithmetic operations on lists of the same size; got {} and {}",
+            &l_leaf_array.chunks()[0].len(),
+            &r_leaf_array.chunks()[0].len()
         );
 
         let result = op(&l_leaf_array, &r_leaf_array)?;
@@ -171,7 +173,7 @@ impl ListChunked {
 
         unsafe {
             let mut result =
-                ListChunked::new_with_dims(self.field.clone(), vec![result_chunk], 0, 0);
+                ListChunked::new_with_dims(lhs.field.clone(), vec![result_chunk], 0, 0);
             result.compute_len();
             Ok(result.into())
         }

@@ -688,16 +688,6 @@ def test_list_arithmetic_nulls(a: list[Any], b: list[Any], expected: list[Any]) 
 
 
 def test_list_arithmetic_error_cases() -> None:
-    # Different series length:
-    with pytest.raises(
-        InvalidOperationError, match="Series of the same size; got 1 and 2"
-    ):
-        _ = pl.Series("a", [[1, 2]]) / pl.Series("b", [[1, 2], [3, 4]])
-    with pytest.raises(
-        InvalidOperationError, match="Series of the same size; got 1 and 2"
-    ):
-        _ = pl.Series("a", [[1, 2]]) / pl.Series("b", [[1, 2], None])
-
     # Different list length:
     with pytest.raises(InvalidOperationError, match="lists of the same size"):
         _ = pl.Series("a", [[1, 2]]) / pl.Series("b", [[1]])
