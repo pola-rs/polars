@@ -145,16 +145,10 @@ def test_cse_9630() -> None:
     assert_frame_equal(result, expected)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_schema_row_index_cse() -> None:
     csv_a = NamedTemporaryFile()
-    csv_a.write(
-        b"""
-A,B
-Gr1,A
-Gr1,B
-    """.strip()
-    )
+    csv_a.write(b"A,B\nGr1,A\nGr1,B")
     csv_a.seek(0)
 
     df_a = pl.scan_csv(csv_a.name).with_row_index("Idx")
@@ -165,8 +159,6 @@ Gr1,B
         .all()
         .collect(comm_subexpr_elim=True)
     )
-
-    csv_a.close()
 
     expected = pl.DataFrame(
         {
@@ -181,7 +173,7 @@ Gr1,B
     assert_frame_equal(result, expected)
 
 
-@pytest.mark.debug()
+@pytest.mark.debug
 def test_cse_expr_selection_context() -> None:
     q = pl.LazyFrame(
         {
@@ -634,7 +626,7 @@ def test_cse_15548() -> None:
     assert len(ldf3.collect(comm_subplan_elim=True)) == 4
 
 
-@pytest.mark.debug()
+@pytest.mark.debug
 def test_cse_and_schema_update_projection_pd() -> None:
     df = pl.LazyFrame({"a": [1, 2], "b": [99, 99]})
 
@@ -654,7 +646,7 @@ def test_cse_and_schema_update_projection_pd() -> None:
     assert num_cse_occurrences(q.explain(comm_subexpr_elim=True)) == 1
 
 
-@pytest.mark.debug()
+@pytest.mark.debug
 def test_cse_predicate_self_join(capfd: Any, monkeypatch: Any) -> None:
     monkeypatch.setenv("POLARS_VERBOSE", "1")
     y = pl.LazyFrame({"a": [1], "b": [2], "y": [3]})
@@ -702,7 +694,7 @@ def test_cse_no_projection_15980() -> None:
     ) == {"x": ["a", "a"]}
 
 
-@pytest.mark.debug()
+@pytest.mark.debug
 def test_cse_series_collision_16138() -> None:
     holdings = pl.DataFrame(
         {
@@ -783,3 +775,15 @@ def test_cse_chunks_18124() -> None:
         )
         .filter(pl.col("ts_diff") > 1)
     ).collect().shape == (4, 4)
+
+
+def test_eager_cse_during_struct_expansion_18411() -> None:
+    df = pl.DataFrame({"foo": [0, 0, 0, 1, 1]})
+    vc = pl.col("foo").value_counts()
+    classes = vc.struct[0]
+    counts = vc.struct[1]
+    # Check if output is stable
+    assert (
+        df.select(pl.col("foo").replace(classes, counts))
+        == df.select(pl.col("foo").replace(classes, counts))
+    )["foo"].all()

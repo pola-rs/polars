@@ -75,6 +75,7 @@ impl<'a> utils::StateTranslation<'a, BinaryDecoder> for StateTranslation<'a> {
         &mut self,
         decoder: &mut BinaryDecoder,
         decoded: &mut <BinaryDecoder as Decoder>::DecodedState,
+        is_optional: bool,
         page_validity: &mut Option<PageValidity<'a>>,
         dict: Option<&'a <BinaryDecoder as Decoder>::Dict>,
         additional: usize,
@@ -84,12 +85,14 @@ impl<'a> utils::StateTranslation<'a, BinaryDecoder> for StateTranslation<'a> {
             T::Plain(page_values, _) => decoder.decode_plain_encoded(
                 decoded,
                 page_values,
+                is_optional,
                 page_validity.as_mut(),
                 additional,
             )?,
             T::Dictionary(page_values) => decoder.decode_dictionary_encoded(
                 decoded,
                 page_values,
+                is_optional,
                 page_validity.as_mut(),
                 dict.unwrap(),
                 additional,
@@ -134,14 +137,15 @@ impl Decoder for BinaryDecoder {
         )
     }
 
-    fn deserialize_dict(&self, page: DictPage) -> Self::Dict {
-        page.buffer.into_vec()
+    fn deserialize_dict(&self, page: DictPage) -> ParquetResult<Self::Dict> {
+        Ok(page.buffer.into_vec())
     }
 
     fn decode_plain_encoded<'a>(
         &mut self,
         (values, validity): &mut Self::DecodedState,
         page_values: &mut <Self::Translation<'a> as utils::StateTranslation<'a, Self>>::PlainDecoder,
+        is_optional: bool,
         page_validity: Option<&mut PageValidity<'a>>,
         limit: usize,
     ) -> ParquetResult<()> {
@@ -180,7 +184,13 @@ impl Decoder for BinaryDecoder {
         };
 
         match page_validity {
-            None => collector.push_n(&mut values.values, self.size)?,
+            None => {
+                collector.push_n(&mut values.values, limit)?;
+
+                if is_optional {
+                    validity.extend_constant(limit, true);
+                }
+            },
             Some(page_validity) => extend_from_decoder(
                 validity,
                 page_validity,
@@ -197,6 +207,7 @@ impl Decoder for BinaryDecoder {
         &mut self,
         (values, validity): &mut Self::DecodedState,
         page_values: &mut hybrid_rle::HybridRleDecoder<'a>,
+        is_optional: bool,
         page_validity: Option<&mut PageValidity<'a>>,
         dict: &Self::Dict,
         limit: usize,
@@ -274,6 +285,10 @@ impl Decoder for BinaryDecoder {
         match page_validity {
             None => {
                 page_values.gather_n_into(&mut values.values, limit, &gatherer)?;
+
+                if is_optional {
+                    validity.extend_constant(limit, true);
+                }
             },
             Some(page_validity) => {
                 let collector = GatheredHybridRle::new(page_values, &gatherer, null_value);
@@ -293,13 +308,13 @@ impl Decoder for BinaryDecoder {
 
     fn finalize(
         &self,
-        data_type: ArrowDataType,
+        dtype: ArrowDataType,
         _dict: Option<Self::Dict>,
         (values, validity): Self::DecodedState,
     ) -> ParquetResult<Self::Output> {
         let validity = freeze_validity(validity);
         Ok(FixedSizeBinaryArray::new(
-            data_type,
+            dtype,
             values.values.into(),
             validity,
         ))
@@ -309,13 +324,13 @@ impl Decoder for BinaryDecoder {
 impl utils::DictDecodable for BinaryDecoder {
     fn finalize_dict_array<K: DictionaryKey>(
         &self,
-        data_type: ArrowDataType,
+        dtype: ArrowDataType,
         dict: Self::Dict,
         keys: PrimitiveArray<K>,
     ) -> ParquetResult<DictionaryArray<K>> {
         let dict =
             FixedSizeBinaryArray::new(ArrowDataType::FixedSizeBinary(self.size), dict.into(), None);
-        Ok(DictionaryArray::try_new(data_type, keys, Box::new(dict)).unwrap())
+        Ok(DictionaryArray::try_new(dtype, keys, Box::new(dict)).unwrap())
     }
 }
 

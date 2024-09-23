@@ -26,7 +26,7 @@ impl PhysicalIoExpr for Wrap {
         };
         h.evaluate_io(df)
     }
-    fn live_variables(&self) -> Option<Vec<Arc<str>>> {
+    fn live_variables(&self) -> Option<Vec<PlSmallStr>> {
         // @TODO: This should not unwrap
         Some(expr_to_leaf_column_names(self.0.as_expression()?))
     }
@@ -244,7 +244,7 @@ fn get_pipeline_node(
     // so we just create a scan that returns an empty df
     let dummy = lp_arena.add(IR::DataFrameScan {
         df: Arc::new(DataFrame::empty()),
-        schema: Arc::new(Schema::new()),
+        schema: Arc::new(Schema::default()),
         output_schema: None,
         filter: None,
     });

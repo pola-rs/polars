@@ -59,7 +59,7 @@ fn fuzz_cluster_with_columns() {
     let mut unused_cols: Vec<u8> = Vec::with_capacity(26);
     let mut used_cols: Vec<u8> = Vec::with_capacity(26);
 
-    let mut series: Vec<Series> = Vec::with_capacity(*NUM_ORIGINAL_COLS.end());
+    let mut columns: Vec<Column> = Vec::with_capacity(*NUM_ORIGINAL_COLS.end());
 
     let mut used: Vec<u8> = Vec::with_capacity(26);
 
@@ -76,11 +76,11 @@ fn fuzz_cluster_with_columns() {
             let column = rng.gen_range(0..unused_cols.len());
             let column = unused_cols.swap_remove(column);
 
-            series.push(Series::new(to_str!(column), vec![rnd_prime(rng)]));
+            columns.push(Column::new(to_str!(column).into(), vec![rnd_prime(rng)]));
             used_cols.push(column);
         }
 
-        let mut lf = DataFrame::new(std::mem::take(&mut series)).unwrap().lazy();
+        let mut lf = DataFrame::new(std::mem::take(&mut columns)).unwrap().lazy();
 
         for _ in 0..num_with_columns {
             let num_exprs = rng.gen_range(0..8);

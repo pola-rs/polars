@@ -53,6 +53,7 @@ def test_streaming_block_on_literals_6054() -> None:
     ).sort("col_1").to_dict(as_series=False) == {"col_1": [0, 1], "col_2": [0, 5]}
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_streaming_streamable_functions(monkeypatch: Any, capfd: Any) -> None:
     monkeypatch.setenv("POLARS_VERBOSE", "1")
     assert (
@@ -72,7 +73,7 @@ def test_streaming_streamable_functions(monkeypatch: Any, capfd: Any) -> None:
     assert "df -> function -> ordered_sink" in err
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 def test_cross_join_stack() -> None:
     a = pl.Series(np.arange(100_000)).to_frame().lazy()
     t0 = time.time()
@@ -115,6 +116,7 @@ def test_streaming_literal_expansion() -> None:
     }
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_streaming_apply(monkeypatch: Any, capfd: Any) -> None:
     monkeypatch.setenv("POLARS_VERBOSE", "1")
 
@@ -161,8 +163,8 @@ def test_streaming_sortedness_propagation_9494() -> None:
     }
 
 
-@pytest.mark.write_disk()
-@pytest.mark.slow()
+@pytest.mark.write_disk
+@pytest.mark.slow
 def test_streaming_generic_left_and_inner_join_from_disk(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
     p0 = tmp_path / "df0.parquet"
@@ -212,7 +214,7 @@ def test_streaming_9776() -> None:
     assert unordered.sort(["col_1", "ID"]).rows() == expected
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_stream_empty_file(tmp_path: Path) -> None:
     p = tmp_path / "in.parquet"
     schema = {
@@ -288,7 +290,7 @@ def test_boolean_agg_schema() -> None:
         )
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_streaming_csv_headers_but_no_data_13770(tmp_path: Path) -> None:
     with Path.open(tmp_path / "header_no_data.csv", "w") as f:
         f.write("name, age\n")
@@ -303,7 +305,7 @@ def test_streaming_csv_headers_but_no_data_13770(tmp_path: Path) -> None:
     assert df.schema == schema
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_custom_temp_dir(tmp_path: Path, monkeypatch: Any) -> None:
     tmp_path.mkdir(exist_ok=True)
     monkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
@@ -317,7 +319,7 @@ def test_custom_temp_dir(tmp_path: Path, monkeypatch: Any) -> None:
     assert os.listdir(tmp_path), f"Temp directory '{tmp_path}' is empty"
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_streaming_with_hconcat(tmp_path: Path) -> None:
     df1 = pl.DataFrame(
         {

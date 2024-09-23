@@ -26,7 +26,7 @@ impl ArrayChunked {
     /// The lifetime of [AmortSeries] is bound to the iterator. Keeping it alive
     /// longer than the iterator is UB.
     pub fn amortized_iter(&self) -> AmortizedListIter<impl Iterator<Item = Option<ArrayBox>> + '_> {
-        self.amortized_iter_with_name("")
+        self.amortized_iter_with_name(PlSmallStr::EMPTY)
     }
 
     /// This is an iterator over a [`ArrayChunked`] that save allocations.
@@ -44,7 +44,7 @@ impl ArrayChunked {
     /// will be set.
     pub fn amortized_iter_with_name(
         &self,
-        name: &str,
+        name: PlSmallStr,
     ) -> AmortizedListIter<impl Iterator<Item = Option<ArrayBox>> + '_> {
         // we create the series container from the inner array
         // so that the container has the proper dtype.
@@ -84,7 +84,7 @@ impl ArrayChunked {
     {
         if self.is_empty() {
             return Ok(Series::new_empty(
-                self.name(),
+                self.name().clone(),
                 &DataType::List(Box::new(self.inner_dtype().clone())),
             )
             .list()
@@ -109,7 +109,7 @@ impl ArrayChunked {
                 })
                 .collect::<PolarsResult<_>>()?
         };
-        ca.rename(self.name());
+        ca.rename(self.name().clone());
         if fast_explode {
             ca.set_fast_explode();
         }
@@ -135,7 +135,7 @@ impl ArrayChunked {
                     to_arr(&out)
                 })
             })
-            .collect_ca_with_dtype(self.name(), self.dtype().clone())
+            .collect_ca_with_dtype(self.name().clone(), self.dtype().clone())
     }
 
     /// Try apply a closure `F` to each array.
@@ -158,7 +158,7 @@ impl ArrayChunked {
                     })
                     .transpose()
             })
-            .try_collect_ca_with_dtype(self.name(), self.dtype().clone())
+            .try_collect_ca_with_dtype(self.name().clone(), self.dtype().clone())
     }
 
     /// Zip with a `ChunkedArray` then apply a binary function `F` elementwise.
@@ -184,7 +184,7 @@ impl ArrayChunked {
                 let out = f(opt_s, opt_v);
                 out.map(|s| to_arr(&s))
             })
-            .collect_ca_with_dtype(self.name(), self.dtype().clone())
+            .collect_ca_with_dtype(self.name().clone(), self.dtype().clone())
     }
 
     /// Apply a closure `F` elementwise.
@@ -196,7 +196,7 @@ impl ArrayChunked {
         V::Array: ArrayFromIter<Option<K>>,
     {
         {
-            self.amortized_iter().map(f).collect_ca(self.name())
+            self.amortized_iter().map(f).collect_ca(self.name().clone())
         }
     }
 
@@ -208,7 +208,9 @@ impl ArrayChunked {
         V::Array: ArrayFromIter<Option<K>>,
     {
         {
-            self.amortized_iter().map(f).try_collect_ca(self.name())
+            self.amortized_iter()
+                .map(f)
+                .try_collect_ca(self.name().clone())
         }
     }
 

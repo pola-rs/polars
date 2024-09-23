@@ -79,7 +79,7 @@ pub fn serialize_schema_to_info(
     let encoded_data = if let Some(ipc_fields) = ipc_fields {
         schema_as_encoded_data(schema, ipc_fields)
     } else {
-        let ipc_fields = default_ipc_fields(&schema.fields);
+        let ipc_fields = default_ipc_fields(schema.iter_values());
         schema_as_encoded_data(schema, &ipc_fields)
     };
 
@@ -92,7 +92,7 @@ fn _serialize_schema(schema: &ArrowSchema, ipc_fields: Option<&[IpcField]>) -> V
     if let Some(ipc_fields) = ipc_fields {
         write::schema_to_bytes(schema, ipc_fields)
     } else {
-        let ipc_fields = default_ipc_fields(&schema.fields);
+        let ipc_fields = default_ipc_fields(schema.iter_values());
         write::schema_to_bytes(schema, &ipc_fields)
     }
 }
@@ -113,7 +113,7 @@ pub fn deserialize_schemas(bytes: &[u8]) -> PolarsResult<(ArrowSchema, IpcSchema
 /// Deserializes [`FlightData`] representing a record batch message to [`RecordBatchT`].
 pub fn deserialize_batch(
     data: &FlightData,
-    fields: &[Field],
+    fields: &ArrowSchema,
     ipc_schema: &IpcSchema,
     dictionaries: &read::Dictionaries,
 ) -> PolarsResult<RecordBatchT<Box<dyn Array>>> {
@@ -147,7 +147,7 @@ pub fn deserialize_batch(
 /// Deserializes [`FlightData`], assuming it to be a dictionary message, into `dictionaries`.
 pub fn deserialize_dictionary(
     data: &FlightData,
-    fields: &[Field],
+    fields: &ArrowSchema,
     ipc_schema: &IpcSchema,
     dictionaries: &mut read::Dictionaries,
 ) -> PolarsResult<()> {
@@ -182,7 +182,7 @@ pub fn deserialize_dictionary(
 /// or by upserting into `dictionaries` (when the message is a dictionary)
 pub fn deserialize_message(
     data: &FlightData,
-    fields: &[Field],
+    fields: &ArrowSchema,
     ipc_schema: &IpcSchema,
     dictionaries: &mut Dictionaries,
 ) -> PolarsResult<Option<RecordBatchT<Box<dyn Array>>>> {

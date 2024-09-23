@@ -220,7 +220,7 @@ impl<'a> IntoIterator for &'a ListChunked {
                         .trust_my_length(self.len())
                         .map(move |arr| {
                             Some(Series::from_chunks_and_dtype_unchecked(
-                                "",
+                                PlSmallStr::EMPTY,
                                 vec![arr],
                                 dtype,
                             ))
@@ -236,7 +236,11 @@ impl<'a> IntoIterator for &'a ListChunked {
                         .trust_my_length(self.len())
                         .map(move |arr| {
                             arr.map(|arr| {
-                                Series::from_chunks_and_dtype_unchecked("", vec![arr], dtype)
+                                Series::from_chunks_and_dtype_unchecked(
+                                    PlSmallStr::EMPTY,
+                                    vec![arr],
+                                    dtype,
+                                )
                             })
                         }),
                 )
@@ -256,7 +260,13 @@ impl ListChunked {
         unsafe {
             self.downcast_iter()
                 .flat_map(|arr| arr.values_iter())
-                .map(move |arr| Series::from_chunks_and_dtype_unchecked("", vec![arr], inner_type))
+                .map(move |arr| {
+                    Series::from_chunks_and_dtype_unchecked(
+                        PlSmallStr::EMPTY,
+                        vec![arr],
+                        inner_type,
+                    )
+                })
                 .trust_my_length(self.len())
         }
     }
@@ -278,7 +288,7 @@ impl<'a> IntoIterator for &'a ArrayChunked {
                         .trust_my_length(self.len())
                         .map(move |arr| {
                             Some(Series::from_chunks_and_dtype_unchecked(
-                                "",
+                                PlSmallStr::EMPTY,
                                 vec![arr],
                                 dtype,
                             ))
@@ -294,7 +304,11 @@ impl<'a> IntoIterator for &'a ArrayChunked {
                         .trust_my_length(self.len())
                         .map(move |arr| {
                             arr.map(|arr| {
-                                Series::from_chunks_and_dtype_unchecked("", vec![arr], dtype)
+                                Series::from_chunks_and_dtype_unchecked(
+                                    PlSmallStr::EMPTY,
+                                    vec![arr],
+                                    dtype,
+                                )
                             })
                         }),
                 )
@@ -336,7 +350,7 @@ impl<'a> Iterator for FixedSizeListIterNoNull<'a> {
             self.current += 1;
             unsafe {
                 Some(Series::from_chunks_and_dtype_unchecked(
-                    "",
+                    PlSmallStr::EMPTY,
                     vec![self.array.value_unchecked(old)],
                     &self.inner_type,
                 ))
@@ -360,7 +374,13 @@ impl<'a> DoubleEndedIterator for FixedSizeListIterNoNull<'a> {
         } else {
             self.current_end -= 1;
             unsafe {
-                Some(Series::try_from(("", self.array.value_unchecked(self.current_end))).unwrap())
+                Some(
+                    Series::try_from((
+                        PlSmallStr::EMPTY,
+                        self.array.value_unchecked(self.current_end),
+                    ))
+                    .unwrap(),
+                )
             }
         }
     }
@@ -412,7 +432,7 @@ impl<T: PolarsObject> ObjectChunked<T> {
         // we know that we only iterate over length == self.len()
         unsafe {
             self.downcast_iter()
-                .flat_map(|arr| arr.values().iter())
+                .flat_map(|arr| arr.values_iter())
                 .trust_my_length(self.len())
         }
     }
@@ -456,8 +476,8 @@ mod test {
 
     #[test]
     fn out_of_bounds() {
-        let mut a = UInt32Chunked::from_slice("a", &[1, 2, 3]);
-        let b = UInt32Chunked::from_slice("a", &[1, 2, 3]);
+        let mut a = UInt32Chunked::from_slice(PlSmallStr::from_static("a"), &[1, 2, 3]);
+        let b = UInt32Chunked::from_slice(PlSmallStr::from_static("a"), &[1, 2, 3]);
         a.append(&b).unwrap();
 
         let v = a.into_iter().collect::<Vec<_>>();
@@ -482,7 +502,10 @@ mod test {
         ($test_name:ident, $ca_type:ty, $first_val:expr, $second_val:expr, $third_val:expr) => {
             #[test]
             fn $test_name() {
-                let a = <$ca_type>::from_slice("test", &[$first_val, $second_val, $third_val]);
+                let a = <$ca_type>::from_slice(
+                    PlSmallStr::from_static("test"),
+                    &[$first_val, $second_val, $third_val],
+                );
 
                 // normal iterator
                 let mut it = a.into_iter();
@@ -543,7 +566,10 @@ mod test {
         ($test_name:ident, $ca_type:ty, $first_val:expr, $second_val:expr, $third_val:expr) => {
             #[test]
             fn $test_name() {
-                let a = <$ca_type>::new("test", &[$first_val, $second_val, $third_val]);
+                let a = <$ca_type>::new(
+                    PlSmallStr::from_static("test"),
+                    &[$first_val, $second_val, $third_val],
+                );
 
                 // normal iterator
                 let mut it = a.into_iter();
@@ -622,8 +648,11 @@ mod test {
         ($test_name:ident, $ca_type:ty, $first_val:expr, $second_val:expr, $third_val:expr) => {
             #[test]
             fn $test_name() {
-                let mut a = <$ca_type>::from_slice("test", &[$first_val, $second_val]);
-                let a_b = <$ca_type>::from_slice("", &[$third_val]);
+                let mut a = <$ca_type>::from_slice(
+                    PlSmallStr::from_static("test"),
+                    &[$first_val, $second_val],
+                );
+                let a_b = <$ca_type>::from_slice(PlSmallStr::EMPTY, &[$third_val]);
                 a.append(&a_b).unwrap();
 
                 // normal iterator
@@ -685,8 +714,9 @@ mod test {
         ($test_name:ident, $ca_type:ty, $first_val:expr, $second_val:expr, $third_val:expr) => {
             #[test]
             fn $test_name() {
-                let mut a = <$ca_type>::new("test", &[$first_val, $second_val]);
-                let a_b = <$ca_type>::new("", &[$third_val]);
+                let mut a =
+                    <$ca_type>::new(PlSmallStr::from_static("test"), &[$first_val, $second_val]);
+                let a_b = <$ca_type>::new(PlSmallStr::EMPTY, &[$third_val]);
                 a.append(&a_b).unwrap();
 
                 // normal iterator
@@ -766,7 +796,10 @@ mod test {
         ($test_name:ident, $ca_type:ty, $first_val:expr, $second_val:expr, $third_val:expr) => {
             #[test]
             fn $test_name() {
-                let a = <$ca_type>::from_slice("test", &[$first_val, $second_val, $third_val]);
+                let a = <$ca_type>::from_slice(
+                    PlSmallStr::from_static("test"),
+                    &[$first_val, $second_val, $third_val],
+                );
 
                 // normal iterator
                 let mut it = a.into_no_null_iter();
@@ -839,8 +872,11 @@ mod test {
         ($test_name:ident, $ca_type:ty, $first_val:expr, $second_val:expr, $third_val:expr) => {
             #[test]
             fn $test_name() {
-                let mut a = <$ca_type>::from_slice("test", &[$first_val, $second_val]);
-                let a_b = <$ca_type>::from_slice("", &[$third_val]);
+                let mut a = <$ca_type>::from_slice(
+                    PlSmallStr::from_static("test"),
+                    &[$first_val, $second_val],
+                );
+                let a_b = <$ca_type>::from_slice(PlSmallStr::EMPTY, &[$third_val]);
                 a.append(&a_b).unwrap();
 
                 // normal iterator
@@ -946,7 +982,10 @@ mod test {
     }
 
     impl_test_iter_skip!(utf8_iter_single_chunk_skip, 8, Some("0"), Some("9"), {
-        StringChunked::from_slice("test", &generate_utf8_vec(SKIP_ITERATOR_SIZE))
+        StringChunked::from_slice(
+            PlSmallStr::from_static("test"),
+            &generate_utf8_vec(SKIP_ITERATOR_SIZE),
+        )
     });
 
     impl_test_iter_skip!(
@@ -954,19 +993,36 @@ mod test {
         8,
         Some("0"),
         None,
-        { StringChunked::new("test", &generate_opt_utf8_vec(SKIP_ITERATOR_SIZE)) }
+        {
+            StringChunked::new(
+                PlSmallStr::from_static("test"),
+                &generate_opt_utf8_vec(SKIP_ITERATOR_SIZE),
+            )
+        }
     );
 
     impl_test_iter_skip!(utf8_iter_many_chunk_skip, 18, Some("0"), Some("9"), {
-        let mut a = StringChunked::from_slice("test", &generate_utf8_vec(SKIP_ITERATOR_SIZE));
-        let a_b = StringChunked::from_slice("test", &generate_utf8_vec(SKIP_ITERATOR_SIZE));
+        let mut a = StringChunked::from_slice(
+            PlSmallStr::from_static("test"),
+            &generate_utf8_vec(SKIP_ITERATOR_SIZE),
+        );
+        let a_b = StringChunked::from_slice(
+            PlSmallStr::from_static("test"),
+            &generate_utf8_vec(SKIP_ITERATOR_SIZE),
+        );
         a.append(&a_b).unwrap();
         a
     });
 
     impl_test_iter_skip!(utf8_iter_many_chunk_null_check_skip, 18, Some("0"), None, {
-        let mut a = StringChunked::new("test", &generate_opt_utf8_vec(SKIP_ITERATOR_SIZE));
-        let a_b = StringChunked::new("test", &generate_opt_utf8_vec(SKIP_ITERATOR_SIZE));
+        let mut a = StringChunked::new(
+            PlSmallStr::from_static("test"),
+            &generate_opt_utf8_vec(SKIP_ITERATOR_SIZE),
+        );
+        let a_b = StringChunked::new(
+            PlSmallStr::from_static("test"),
+            &generate_opt_utf8_vec(SKIP_ITERATOR_SIZE),
+        );
         a.append(&a_b).unwrap();
         a
     });
@@ -987,23 +1043,41 @@ mod test {
     }
 
     impl_test_iter_skip!(bool_iter_single_chunk_skip, 8, Some(true), Some(false), {
-        BooleanChunked::from_slice("test", &generate_boolean_vec(SKIP_ITERATOR_SIZE))
+        BooleanChunked::from_slice(
+            PlSmallStr::from_static("test"),
+            &generate_boolean_vec(SKIP_ITERATOR_SIZE),
+        )
     });
 
     impl_test_iter_skip!(bool_iter_single_chunk_null_check_skip, 8, None, None, {
-        BooleanChunked::new("test", &generate_opt_boolean_vec(SKIP_ITERATOR_SIZE))
+        BooleanChunked::new(
+            PlSmallStr::from_static("test"),
+            &generate_opt_boolean_vec(SKIP_ITERATOR_SIZE),
+        )
     });
 
     impl_test_iter_skip!(bool_iter_many_chunk_skip, 18, Some(true), Some(false), {
-        let mut a = BooleanChunked::from_slice("test", &generate_boolean_vec(SKIP_ITERATOR_SIZE));
-        let a_b = BooleanChunked::from_slice("test", &generate_boolean_vec(SKIP_ITERATOR_SIZE));
+        let mut a = BooleanChunked::from_slice(
+            PlSmallStr::from_static("test"),
+            &generate_boolean_vec(SKIP_ITERATOR_SIZE),
+        );
+        let a_b = BooleanChunked::from_slice(
+            PlSmallStr::from_static("test"),
+            &generate_boolean_vec(SKIP_ITERATOR_SIZE),
+        );
         a.append(&a_b).unwrap();
         a
     });
 
     impl_test_iter_skip!(bool_iter_many_chunk_null_check_skip, 18, None, None, {
-        let mut a = BooleanChunked::new("test", &generate_opt_boolean_vec(SKIP_ITERATOR_SIZE));
-        let a_b = BooleanChunked::new("test", &generate_opt_boolean_vec(SKIP_ITERATOR_SIZE));
+        let mut a = BooleanChunked::new(
+            PlSmallStr::from_static("test"),
+            &generate_opt_boolean_vec(SKIP_ITERATOR_SIZE),
+        );
+        let a_b = BooleanChunked::new(
+            PlSmallStr::from_static("test"),
+            &generate_opt_boolean_vec(SKIP_ITERATOR_SIZE),
+        );
         a.append(&a_b).unwrap();
         a
     });

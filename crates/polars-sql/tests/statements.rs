@@ -3,8 +3,8 @@ use polars_lazy::prelude::*;
 use polars_sql::*;
 
 fn create_ctx() -> SQLContext {
-    let a = Series::new("a", (1..10i64).map(|i| i / 100).collect::<Vec<_>>());
-    let b = Series::new("b", 1..10i64);
+    let a = Column::new("a".into(), (1..10i64).map(|i| i / 100).collect::<Vec<_>>());
+    let b = Column::new("b".into(), 1..10i64);
     let df = DataFrame::new(vec![a, b]).unwrap().lazy();
     let mut ctx = SQLContext::new();
     ctx.register("df", df);

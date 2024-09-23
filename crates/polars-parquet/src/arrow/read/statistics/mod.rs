@@ -13,7 +13,7 @@ use crate::parquet::schema::types::{
 };
 use crate::parquet::statistics::{PrimitiveStatistics, Statistics as ParquetStatistics};
 use crate::parquet::types::int96_to_i64_ns;
-use crate::read::ColumnChunkMetaData;
+use crate::read::ColumnChunkMetadata;
 
 mod binary;
 mod binview;
@@ -57,7 +57,7 @@ struct MutableStatistics {
 
 impl From<MutableStatistics> for Statistics {
     fn from(mut s: MutableStatistics) -> Self {
-        let null_count = match s.null_count.data_type().to_physical_type() {
+        let null_count = match s.null_count.dtype().to_physical_type() {
             PhysicalType::Struct => s
                 .null_count
                 .as_box()
@@ -92,7 +92,7 @@ impl From<MutableStatistics> for Statistics {
                 .boxed(),
         };
 
-        let distinct_count = match s.distinct_count.data_type().to_physical_type() {
+        let distinct_count = match s.distinct_count.dtype().to_physical_type() {
             PhysicalType::Struct => s
                 .distinct_count
                 .as_box()
@@ -136,13 +136,13 @@ impl From<MutableStatistics> for Statistics {
     }
 }
 
-fn make_mutable(data_type: &ArrowDataType, capacity: usize) -> PolarsResult<Box<dyn MutableArray>> {
-    Ok(match data_type.to_physical_type() {
+fn make_mutable(dtype: &ArrowDataType, capacity: usize) -> PolarsResult<Box<dyn MutableArray>> {
+    Ok(match dtype.to_physical_type() {
         PhysicalType::Boolean => {
             Box::new(MutableBooleanArray::with_capacity(capacity)) as Box<dyn MutableArray>
         },
         PhysicalType::Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
-            Box::new(MutablePrimitiveArray::<$T>::with_capacity(capacity).to(data_type.clone()))
+            Box::new(MutablePrimitiveArray::<$T>::with_capacity(capacity).to(dtype.clone()))
                 as Box<dyn MutableArray>
         }),
         PhysicalType::Binary => {
@@ -158,22 +158,22 @@ fn make_mutable(data_type: &ArrowDataType, capacity: usize) -> PolarsResult<Box<
             Box::new(MutableUtf8Array::<i64>::with_capacity(capacity)) as Box<dyn MutableArray>
         },
         PhysicalType::FixedSizeBinary => {
-            Box::new(MutableFixedSizeBinaryArray::try_new(data_type.clone(), vec![], None).unwrap())
+            Box::new(MutableFixedSizeBinaryArray::try_new(dtype.clone(), vec![], None).unwrap())
                 as _
         },
         PhysicalType::LargeList | PhysicalType::List | PhysicalType::FixedSizeList => Box::new(
-            DynMutableListArray::try_with_capacity(data_type.clone(), capacity)?,
+            DynMutableListArray::try_with_capacity(dtype.clone(), capacity)?,
         )
             as Box<dyn MutableArray>,
         PhysicalType::Dictionary(_) => Box::new(
-            dictionary::DynMutableDictionary::try_with_capacity(data_type.clone(), capacity)?,
+            dictionary::DynMutableDictionary::try_with_capacity(dtype.clone(), capacity)?,
         ),
         PhysicalType::Struct => Box::new(struct_::DynMutableStructArray::try_with_capacity(
-            data_type.clone(),
+            dtype.clone(),
             capacity,
         )?),
         PhysicalType::Map => Box::new(map::DynMutableMapArray::try_with_capacity(
-            data_type.clone(),
+            dtype.clone(),
             capacity,
         )?),
         PhysicalType::Null => {
@@ -193,37 +193,45 @@ fn make_mutable(data_type: &ArrowDataType, capacity: usize) -> PolarsResult<Box<
     })
 }
 
-fn create_dt(data_type: &ArrowDataType) -> ArrowDataType {
-    match data_type.to_logical_type() {
+fn create_dt(dtype: &ArrowDataType) -> ArrowDataType {
+    match dtype.to_logical_type() {
         ArrowDataType::Struct(fields) => ArrowDataType::Struct(
             fields
                 .iter()
-                .map(|f| Field::new(&f.name, create_dt(&f.data_type), f.is_nullable))
+                .map(|f| Field::new(f.name.clone(), create_dt(&f.dtype), f.is_nullable))
                 .collect(),
         ),
         ArrowDataType::Map(f, ordered) => ArrowDataType::Map(
-            Box::new(Field::new(&f.name, create_dt(&f.data_type), f.is_nullable)),
+            Box::new(Field::new(
+                f.name.clone(),
+                create_dt(&f.dtype),
+                f.is_nullable,
+            )),
             *ordered,
         ),
         ArrowDataType::LargeList(f) => ArrowDataType::LargeList(Box::new(Field::new(
-            &f.name,
-            create_dt(&f.data_type),
+            f.name.clone(),
+            create_dt(&f.dtype),
             f.is_nullable,
         ))),
         // FixedSizeList piggy backs on list
-        ArrowDataType::List(f) | ArrowDataType::FixedSizeList(f, _) => ArrowDataType::List(
-            Box::new(Field::new(&f.name, create_dt(&f.data_type), f.is_nullable)),
-        ),
+        ArrowDataType::List(f) | ArrowDataType::FixedSizeList(f, _) => {
+            ArrowDataType::List(Box::new(Field::new(
+                f.name.clone(),
+                create_dt(&f.dtype),
+                f.is_nullable,
+            )))
+        },
         _ => ArrowDataType::UInt64,
     }
 }
 
 impl MutableStatistics {
     fn try_new(field: &Field) -> PolarsResult<Self> {
-        let min_value = make_mutable(&field.data_type, 0)?;
-        let max_value = make_mutable(&field.data_type, 0)?;
+        let min_value = make_mutable(&field.dtype, 0)?;
+        let max_value = make_mutable(&field.dtype, 0)?;
 
-        let dt = create_dt(&field.data_type);
+        let dt = create_dt(&field.dtype);
         Ok(Self {
             null_count: make_mutable(&dt, 0)?,
             distinct_count: make_mutable(&dt, 0)?,
@@ -268,7 +276,7 @@ fn push(
     distinct_count: &mut dyn MutableArray,
     null_count: &mut dyn MutableArray,
 ) -> PolarsResult<()> {
-    match min.data_type().to_logical_type() {
+    match min.dtype().to_logical_type() {
         List(_) | LargeList(_) | FixedSizeList(_, _) => {
             let min = min
                 .as_mut_any()
@@ -394,7 +402,7 @@ fn push(
 
     use ArrowDataType::*;
     use ParquetPhysicalType as PPT;
-    match min.data_type().to_logical_type() {
+    match min.dtype().to_logical_type() {
         Boolean => boolean::push(rmap!(from, expect_as_boolean), min, max),
         Int8 => primitive::push(rmap!(from, expect_as_int32), min, max, |x: i32| Ok(x as i8)),
         Int16 => primitive::push(
@@ -542,11 +550,13 @@ fn push(
 ///
 /// # Errors
 /// This function errors if the deserialization of the statistics fails (e.g. invalid utf8)
-pub fn deserialize(field: &Field, field_md: &[&ColumnChunkMetaData]) -> PolarsResult<Statistics> {
+pub fn deserialize<'a>(
+    field: &Field,
+    field_md: impl ExactSizeIterator<Item = &'a ColumnChunkMetadata>,
+) -> PolarsResult<Statistics> {
     let mut statistics = MutableStatistics::try_new(field)?;
 
     let mut stats = field_md
-        .iter()
         .map(|column| {
             Ok((
                 column.statistics().transpose()?,

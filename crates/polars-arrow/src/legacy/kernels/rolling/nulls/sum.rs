@@ -40,7 +40,7 @@ impl<'a, T: NativeType + IsFloat + Add<Output = T> + Sub<Output = T>> RollingAgg
         validity: &'a Bitmap,
         start: usize,
         end: usize,
-        _params: DynArgs,
+        _params: Option<RollingFnParams>,
     ) -> Self {
         let mut out = Self {
             slice,
@@ -126,7 +126,7 @@ pub fn rolling_sum<T>(
     min_periods: usize,
     center: bool,
     weights: Option<&[f64]>,
-    _params: DynArgs,
+    _params: Option<RollingFnParams>,
 ) -> ArrayRef
 where
     T: NativeType + IsFloat + PartialOrd + Add<Output = T> + Sub<Output = T>,

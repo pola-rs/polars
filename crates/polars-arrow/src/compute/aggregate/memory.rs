@@ -42,7 +42,7 @@ fn binview_size<T: ViewType + ?Sized>(array: &BinaryViewArrayGeneric<T>) -> usiz
 /// FFI buffers are included in this estimation.
 pub fn estimated_bytes_size(array: &dyn Array) -> usize {
     use PhysicalType::*;
-    match array.data_type().to_physical_type() {
+    match array.dtype().to_physical_type() {
         Null => 0,
         Boolean => {
             let array = array.as_any().downcast_ref::<BooleanArray>().unwrap();

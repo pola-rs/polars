@@ -55,11 +55,15 @@ impl PyFileOptions {
     }
     #[getter]
     fn with_columns(&self, py: Python<'_>) -> PyResult<PyObject> {
-        Ok(self
-            .inner
-            .with_columns
-            .as_ref()
-            .map_or_else(|| py.None(), |cols| cols.to_object(py)))
+        Ok(self.inner.with_columns.as_ref().map_or_else(
+            || py.None(),
+            |cols| {
+                cols.iter()
+                    .map(|x| x.as_str())
+                    .collect::<Vec<_>>()
+                    .to_object(py)
+            },
+        ))
     }
     #[getter]
     fn cache(&self, _py: Python<'_>) -> PyResult<bool> {
@@ -71,7 +75,7 @@ impl PyFileOptions {
             .inner
             .row_index
             .as_ref()
-            .map_or_else(|| py.None(), |n| (n.name.as_ref(), n.offset).to_object(py)))
+            .map_or_else(|| py.None(), |n| (n.name.as_str(), n.offset).to_object(py)))
     }
     #[getter]
     fn rechunk(&self, _py: Python<'_>) -> PyResult<bool> {
@@ -270,10 +274,15 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                         .scan_fn
                         .as_ref()
                         .map_or_else(|| py.None(), |s| s.0.clone()),
-                    options
-                        .with_columns
-                        .as_ref()
-                        .map_or_else(|| py.None(), |cols| cols.to_object(py)),
+                    options.with_columns.as_ref().map_or_else(
+                        || py.None(),
+                        |cols| {
+                            cols.iter()
+                                .map(|x| x.as_str())
+                                .collect::<Vec<_>>()
+                                .to_object(py)
+                        },
+                    ),
                     python_src,
                     match &options.predicate {
                         PythonPredicate::None => py.None(),
@@ -308,7 +317,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             ))
         },
         IR::Scan {
-            paths,
+            sources,
             file_info: _,
             hive_parts: _,
             predicate,
@@ -316,7 +325,10 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             scan_type,
             file_options,
         } => Scan {
-            paths: paths.to_object(py),
+            paths: sources
+                .into_paths()
+                .ok_or_else(|| PyNotImplementedError::new_err("scan with BytesIO"))?
+                .to_object(py),
             // TODO: file info
             file_info: py.None(),
             predicate: predicate.as_ref().map(|e| e.into()),
@@ -469,10 +481,12 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                     JoinType::Cross => "cross",
                     JoinType::Semi => "leftsemi",
                     JoinType::Anti => "leftanti",
+                    #[cfg(feature = "iejoin")]
+                    JoinType::IEJoin(_) => return Err(PyNotImplementedError::new_err("IEJoin")),
                 },
                 options.args.join_nulls,
                 options.args.slice,
-                options.args.suffix.clone(),
+                options.args.suffix.as_deref(),
                 options.args.coalesce.coalesce(&options.args.how),
             )
                 .to_object(py),
@@ -586,7 +600,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                     offset,
                 } => ("row_index", name.to_string(), offset.unwrap_or(0)).to_object(py),
                 FunctionIR::FastCount {
-                    paths: _,
+                    sources: _,
                     scan_type: _,
                     alias: _,
                 } => return Err(PyNotImplementedError::new_err("function count")),

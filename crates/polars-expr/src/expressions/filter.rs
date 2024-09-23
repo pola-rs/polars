@@ -58,7 +58,7 @@ impl PhysicalExpr for FilterExpr {
             let ca = s.list()?;
             let out = if ca.is_empty() {
                 // return an empty list if ca is empty.
-                ListChunked::full_null_with_dtype(ca.name(), 0, ca.inner_dtype())
+                ListChunked::full_null_with_dtype(ca.name().clone(), 0, ca.inner_dtype())
             } else {
                 {
                     ca.amortized_iter()
@@ -70,7 +70,7 @@ impl PhysicalExpr for FilterExpr {
                             _ => Ok(None),
                         })
                         .collect::<PolarsResult<ListChunked>>()?
-                        .with_name(s.name())
+                        .with_name(s.name().clone())
                 }
             };
             ac_s.with_series(out.into_series(), true, Some(&self.expr))?;
@@ -147,5 +147,9 @@ impl PhysicalExpr for FilterExpr {
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.input.to_field(input_schema)
+    }
+
+    fn is_scalar(&self) -> bool {
+        false
     }
 }

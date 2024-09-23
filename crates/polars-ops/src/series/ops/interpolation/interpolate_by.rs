@@ -155,9 +155,9 @@ where
             out.into(),
             Some(validity.into()),
         );
-        Ok(ChunkedArray::with_chunk(chunked_arr.name(), array))
+        Ok(ChunkedArray::with_chunk(chunked_arr.name().clone(), array))
     } else {
-        Ok(ChunkedArray::from_vec(chunked_arr.name(), out))
+        Ok(ChunkedArray::from_vec(chunked_arr.name().clone(), out))
     }
 }
 
@@ -257,35 +257,35 @@ where
             out.into(),
             Some(validity.into()),
         );
-        Ok(ChunkedArray::with_chunk(ca_sorted.name(), array))
+        Ok(ChunkedArray::with_chunk(ca_sorted.name().clone(), array))
     } else {
-        Ok(ChunkedArray::from_vec(ca_sorted.name(), out))
+        Ok(ChunkedArray::from_vec(ca_sorted.name().clone(), out))
     }
 }
 
-pub fn interpolate_by(s: &Series, by: &Series, by_is_sorted: bool) -> PolarsResult<Series> {
+pub fn interpolate_by(s: &Column, by: &Column, by_is_sorted: bool) -> PolarsResult<Column> {
     polars_ensure!(s.len() == by.len(), InvalidOperation: "`by` column must be the same length as Series ({}), got {}", s.len(), by.len());
 
     fn func<T, F>(
         ca: &ChunkedArray<T>,
         by: &ChunkedArray<F>,
         is_sorted: bool,
-    ) -> PolarsResult<Series>
+    ) -> PolarsResult<Column>
     where
         T: PolarsNumericType,
         F: PolarsNumericType,
-        ChunkedArray<T>: IntoSeries,
+        ChunkedArray<T>: IntoColumn,
     {
         if is_sorted {
             interpolate_impl_by_sorted(ca, by, |y_start, y_end, x, out| unsafe {
                 signed_interp_by_sorted(y_start, y_end, x, out)
             })
-            .map(|x| x.into_series())
+            .map(|x| x.into_column())
         } else {
             interpolate_impl_by(ca, by, |y_start, y_end, x, out, sorting_indices| unsafe {
                 signed_interp_by(y_start, y_end, x, out, sorting_indices)
             })
-            .map(|x| x.into_series())
+            .map(|x| x.into_column())
         }
     }
 

@@ -7,7 +7,7 @@ from polars.exceptions import SQLSyntaxError, StructFieldNotFoundError
 from polars.testing import assert_frame_equal
 
 
-@pytest.fixture()
+@pytest.fixture
 def df_struct() -> pl.DataFrame:
     return pl.DataFrame(
         {

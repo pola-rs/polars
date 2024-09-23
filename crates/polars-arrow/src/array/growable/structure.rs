@@ -59,7 +59,7 @@ impl<'a> GrowableStruct<'a> {
         let values = values.into_iter().map(|mut x| x.as_box()).collect();
 
         StructArray::new(
-            self.arrays[0].data_type().clone(),
+            self.arrays[0].dtype().clone(),
             values,
             validity.map(|v| v.into()),
         )
@@ -122,7 +122,7 @@ impl<'a> From<GrowableStruct<'a>> for StructArray {
         let values = val.values.into_iter().map(|mut x| x.as_box()).collect();
 
         StructArray::new(
-            val.arrays[0].data_type().clone(),
+            val.arrays[0].dtype().clone(),
             values,
             val.validity.map(|v| v.into()),
         )

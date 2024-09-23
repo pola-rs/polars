@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
@@ -6,7 +5,7 @@ use polars_core::prelude::{InitHashMaps, PlHashMap, SortMultipleOptions};
 use polars_core::schema::{Schema, SchemaRef};
 use polars_error::PolarsResult;
 use polars_plan::plans::hive::HivePartitions;
-use polars_plan::plans::{AExpr, DataFrameUdf, FileInfo, FileScan, IR};
+use polars_plan::plans::{AExpr, DataFrameUdf, FileInfo, FileScan, ScanSources, IR};
 use polars_plan::prelude::expr_ir::ExprIR;
 
 mod fmt;
@@ -17,6 +16,7 @@ mod to_graph;
 pub use fmt::visualize_plan;
 use polars_plan::prelude::FileScanOptions;
 use polars_utils::arena::{Arena, Node};
+use polars_utils::pl_str::PlSmallStr;
 use slotmap::{Key, SecondaryMap, SlotMap};
 pub use to_graph::physical_plan_to_graph;
 
@@ -58,6 +58,10 @@ pub enum PhysNodeKind {
         extend_original: bool,
     },
 
+    InputIndependentSelect {
+        selectors: Vec<ExprIR>,
+    },
+
     Reduce {
         input: PhysNodeKey,
         exprs: Vec<ExprIR>,
@@ -76,7 +80,7 @@ pub enum PhysNodeKind {
 
     SimpleProjection {
         input: PhysNodeKey,
-        columns: Vec<String>,
+        columns: Vec<PlSmallStr>,
     },
 
     InMemorySink {
@@ -118,7 +122,7 @@ pub enum PhysNodeKind {
     },
 
     FileScan {
-        paths: Arc<Vec<PathBuf>>,
+        scan_sources: ScanSources,
         file_info: FileInfo,
         hive_parts: Option<Arc<Vec<HivePartitions>>>,
         predicate: Option<ExprIR>,
@@ -156,7 +160,9 @@ fn insert_multiplexers(
 
     if !seen_before {
         match &phys_sm[node].kind {
-            PhysNodeKind::InMemorySource { .. } | PhysNodeKind::FileScan { .. } => {},
+            PhysNodeKind::InMemorySource { .. }
+            | PhysNodeKind::FileScan { .. }
+            | PhysNodeKind::InputIndependentSelect { .. } => {},
             PhysNodeKind::Select { input, .. }
             | PhysNodeKind::Reduce { input, .. }
             | PhysNodeKind::StreamingSlice { input, .. }

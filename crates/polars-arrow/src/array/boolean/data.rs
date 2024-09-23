@@ -28,7 +28,7 @@ impl Arrow2Arrow for BooleanArray {
         let values = Bitmap::from_null_buffer(NullBuffer::new(buffer));
 
         Self {
-            data_type: ArrowDataType::Boolean,
+            dtype: ArrowDataType::Boolean,
             values,
             validity: data.nulls().map(|n| Bitmap::from_null_buffer(n.clone())),
         }

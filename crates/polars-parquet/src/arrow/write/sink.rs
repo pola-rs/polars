@@ -45,7 +45,7 @@ where
         encodings: Vec<Vec<Encoding>>,
         options: WriteOptions,
     ) -> PolarsResult<Self> {
-        if encodings.len() != schema.fields.len() {
+        if encodings.len() != schema.len() {
             polars_bail!(InvalidOperation:
                 "The number of encodings must equal the number of fields".to_string(),
             )
@@ -120,7 +120,7 @@ where
         self: Pin<&mut Self>,
         item: RecordBatchT<Box<dyn Array>>,
     ) -> Result<(), Self::Error> {
-        if self.schema.fields.len() != item.arrays().len() {
+        if self.schema.len() != item.arrays().len() {
             polars_bail!(InvalidOperation:
                 "The number of arrays in the chunk must equal the number of fields in the schema"
             )

@@ -7,6 +7,7 @@ use arrow::io::ipc::read::{read_file_metadata, FileReader};
 use arrow::io::ipc::write::*;
 use arrow::io::ipc::IpcField;
 use arrow::record_batch::RecordBatchT;
+use polars::prelude::PlSmallStr;
 use polars_error::*;
 
 pub(crate) fn write(
@@ -49,8 +50,12 @@ fn round_trip(
 }
 
 fn prep_schema(array: &dyn Array) -> ArrowSchemaRef {
-    let fields = vec![Field::new("a", array.data_type().clone(), true)];
-    Arc::new(ArrowSchema::from(fields))
+    let name = PlSmallStr::from_static("a");
+    Arc::new(ArrowSchema::from_iter([Field::new(
+        name,
+        array.dtype().clone(),
+        true,
+    )]))
 }
 
 #[test]

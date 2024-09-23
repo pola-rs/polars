@@ -165,7 +165,7 @@ impl SlicePushDown {
             }
             #[cfg(feature = "csv")]
             (Scan {
-                paths,
+                sources,
                 file_info,
                 hive_parts,
                 output_schema,
@@ -176,7 +176,7 @@ impl SlicePushDown {
                 file_options.slice = Some((0, state.offset as usize + state.len as usize));
 
                 let lp = Scan {
-                    paths,
+                    sources,
                     file_info,
                     hive_parts,
                     output_schema,
@@ -189,7 +189,7 @@ impl SlicePushDown {
             },
             #[cfg(feature = "parquet")]
             (Scan {
-                paths,
+                sources,
                 file_info,
                 hive_parts,
                 output_schema,
@@ -200,7 +200,7 @@ impl SlicePushDown {
                 file_options.slice = Some((state.offset, state.len as usize));
 
                 let lp = Scan {
-                    paths,
+                    sources,
                     file_info,
                     hive_parts,
                     output_schema,
@@ -213,7 +213,7 @@ impl SlicePushDown {
             },
             // TODO! we currently skip slice pushdown if there is a predicate.
             (Scan {
-                paths,
+                sources,
                 file_info,
                 hive_parts,
                 output_schema,
@@ -224,7 +224,7 @@ impl SlicePushDown {
                 options.slice = Some((0, state.len as usize));
 
                 let lp = Scan {
-                    paths,
+                    sources,
                     file_info,
                     hive_parts,
                     output_schema,

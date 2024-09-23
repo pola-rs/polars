@@ -18,21 +18,24 @@ use crate::utils::Container;
 
 pub type StructChunked = ChunkedArray<StructType>;
 
-fn constructor(name: &str, fields: &[Series]) -> PolarsResult<StructChunked> {
+fn constructor<'a, I: ExactSizeIterator<Item = &'a Series> + Clone>(
+    name: PlSmallStr,
+    fields: I,
+) -> PolarsResult<StructChunked> {
     // Different chunk lengths: rechunk and recurse.
-    if !fields.iter().map(|s| s.n_chunks()).all_equal() {
-        let fields = fields.iter().map(|s| s.rechunk()).collect::<Vec<_>>();
-        return constructor(name, &fields);
+    if !fields.clone().map(|s| s.n_chunks()).all_equal() {
+        let fields = fields.map(|s| s.rechunk()).collect::<Vec<_>>();
+        return constructor(name, fields.iter());
     }
 
-    let n_chunks = fields[0].n_chunks();
-    let dtype = DataType::Struct(fields.iter().map(|s| s.field().into_owned()).collect());
+    let n_chunks = fields.clone().next().unwrap().n_chunks();
+    let dtype = DataType::Struct(fields.clone().map(|s| s.field().into_owned()).collect());
     let arrow_dtype = dtype.to_physical().to_arrow(CompatLevel::newest());
 
     let chunks = (0..n_chunks)
         .map(|c_i| {
             let fields = fields
-                .iter()
+                .clone()
                 .map(|field| field.chunks()[c_i].clone())
                 .collect::<Vec<_>>();
 
@@ -55,21 +58,28 @@ fn constructor(name: &str, fields: &[Series]) -> PolarsResult<StructChunked> {
         },
         // Different chunk lengths: rechunk and recurse.
         Err(_) => {
-            let fields = fields.iter().map(|s| s.rechunk()).collect::<Vec<_>>();
-            constructor(name, &fields)
+            let fields = fields.map(|s| s.rechunk()).collect::<Vec<_>>();
+            constructor(name, fields.iter())
         },
     }
 }
 
 impl StructChunked {
-    pub fn from_series(name: &str, fields: &[Series]) -> PolarsResult<Self> {
+    pub fn from_columns(name: PlSmallStr, fields: &[Column]) -> PolarsResult<Self> {
+        Self::from_series(name, fields.iter().map(|c| c.as_materialized_series()))
+    }
+
+    pub fn from_series<'a, I: ExactSizeIterator<Item = &'a Series> + Clone>(
+        name: PlSmallStr,
+        fields: I,
+    ) -> PolarsResult<Self> {
         let mut names = PlHashSet::with_capacity(fields.len());
-        let first_len = fields.first().map(|s| s.len()).unwrap_or(0);
+        let first_len = fields.clone().next().map(|s| s.len()).unwrap_or(0);
         let mut max_len = first_len;
 
         let mut all_equal_len = true;
         let mut is_empty = false;
-        for s in fields {
+        for s in fields.clone() {
             let s_len = s.len();
             max_len = std::cmp::max(max_len, s_len);
 
@@ -108,10 +118,10 @@ impl StructChunked {
                     );
                 }
             }
-            constructor(name, &new_fields)
-        } else if fields.is_empty() {
-            let fields = &[Series::new_null("", 0)];
-            constructor(name, fields)
+            constructor(name, new_fields.iter())
+        } else if fields.len() == 0 {
+            let fields = [Series::new_null(PlSmallStr::EMPTY, 0)];
+            constructor(name, fields.iter())
         } else {
             constructor(name, fields)
         }
@@ -136,7 +146,11 @@ impl StructChunked {
 
                 // SAFETY: correct type.
                 unsafe {
-                    Series::from_chunks_and_dtype_unchecked(&field.name, field_chunks, &field.dtype)
+                    Series::from_chunks_and_dtype_unchecked(
+                        field.name.clone(),
+                        field_chunks,
+                        &field.dtype,
+                    )
                 }
             })
             .collect()
@@ -155,7 +169,7 @@ impl StructChunked {
                 let struct_len = self.len();
                 let new_fields = dtype_fields
                     .iter()
-                    .map(|new_field| match map.get(new_field.name().as_str()) {
+                    .map(|new_field| match map.get(new_field.name()) {
                         Some(s) => {
                             if unchecked {
                                 s.cast_unchecked(&new_field.dtype)
@@ -164,14 +178,14 @@ impl StructChunked {
                             }
                         },
                         None => Ok(Series::full_null(
-                            new_field.name(),
+                            new_field.name().clone(),
                             struct_len,
                             &new_field.dtype,
                         )),
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
 
-                let mut out = Self::from_series(self.name(), &new_fields)?;
+                let mut out = Self::from_series(self.name().clone(), new_fields.iter())?;
                 if self.null_count > 0 {
                     out.zip_outer_validity(self);
                 }
@@ -213,7 +227,7 @@ impl StructChunked {
                     scratch.clear();
                 }
                 let array = builder.freeze().boxed();
-                Series::try_from((ca.name(), array))
+                Series::try_from((ca.name().clone(), array))
             },
             _ => {
                 let fields = self
@@ -227,7 +241,7 @@ impl StructChunked {
                         }
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
-                let mut out = Self::from_series(self.name(), &fields)?;
+                let mut out = Self::from_series(self.name().clone(), fields.iter())?;
                 if self.null_count > 0 {
                     out.zip_outer_validity(self);
                 }
@@ -272,7 +286,7 @@ impl StructChunked {
             .iter()
             .map(func)
             .collect::<PolarsResult<Vec<_>>>()?;
-        Self::from_series(self.name(), &fields).map(|mut ca| {
+        Self::from_series(self.name().clone(), fields.iter()).map(|mut ca| {
             if self.null_count > 0 {
                 // SAFETY: we don't change types/ lengths.
                 unsafe {
@@ -286,15 +300,15 @@ impl StructChunked {
     }
 
     pub fn get_row_encoded_array(&self, options: SortOptions) -> PolarsResult<BinaryArray<i64>> {
-        let s = self.clone().into_series();
-        _get_rows_encoded_arr(&[s], &[options.descending], &[options.nulls_last])
+        let c = self.clone().into_column();
+        _get_rows_encoded_arr(&[c], &[options.descending], &[options.nulls_last])
     }
 
     pub fn get_row_encoded(&self, options: SortOptions) -> PolarsResult<BinaryOffsetChunked> {
-        let s = self.clone().into_series();
+        let c = self.clone().into_column();
         _get_rows_encoded_ca(
-            self.name(),
-            &[s],
+            self.name().clone(),
+            &[c],
             &[options.descending],
             &[options.nulls_last],
         )
@@ -342,15 +356,22 @@ impl StructChunked {
     }
 
     pub fn unnest(self) -> DataFrame {
+        // @scalar-opt
+        let columns = self
+            .fields_as_series()
+            .into_iter()
+            .map(Column::from)
+            .collect();
+
         // SAFETY: invariants for struct are the same
-        unsafe { DataFrame::new_no_checks(self.fields_as_series()) }
+        unsafe { DataFrame::new_no_checks(columns) }
     }
 
     /// Get access to one of this `[StructChunked]`'s fields
     pub fn field_by_name(&self, name: &str) -> PolarsResult<Series> {
         self.fields_as_series()
             .into_iter()
-            .find(|s| s.name() == name)
+            .find(|s| s.name().as_str() == name)
             .ok_or_else(|| polars_err!(StructFieldNotFound: "{}", name))
     }
     pub(crate) fn set_outer_validity(&mut self, validity: Option<Bitmap>) {

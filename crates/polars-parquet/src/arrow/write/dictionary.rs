@@ -127,7 +127,7 @@ pub(crate) fn encode_as_dictionary_optional(
     options: WriteOptions,
 ) -> Option<PolarsResult<DynIter<'static, PolarsResult<Page>>>> {
     use ArrowDataType as DT;
-    let fast_dictionary = match array.data_type() {
+    let fast_dictionary = match array.dtype() {
         DT::Int8 => min_max_integer_encode_as_dictionary_optional::<_, i8>(array),
         DT::Int16 => min_max_integer_encode_as_dictionary_optional::<_, i16>(array),
         DT::Int32 | DT::Date32 | DT::Time32(_) => {
@@ -153,7 +153,7 @@ pub(crate) fn encode_as_dictionary_optional(
         ));
     }
 
-    let dtype = Box::new(array.data_type().clone());
+    let dtype = Box::new(array.dtype().clone());
 
     let len_before = array.len();
     // This does the group by.
@@ -346,7 +346,7 @@ pub fn array_to_pages<K: DictionaryKey>(
             // write DictPage
             let (dict_page, mut statistics): (_, Option<ParquetStatistics>) = match array
                 .values()
-                .data_type()
+                .dtype()
                 .to_logical_type()
             {
                 ArrowDataType::Int8 => dyn_prim!(i8, i32, array, options, type_),

@@ -2,7 +2,9 @@ pub(crate) mod any_value;
 pub(crate) mod chunked_array;
 mod datetime;
 use std::fmt::{Display, Formatter};
+use std::fs::File;
 use std::hash::{Hash, Hasher};
+use std::path::PathBuf;
 
 #[cfg(feature = "object")]
 use polars::chunked_array::object::PolarsObjectSafe;
@@ -19,6 +21,8 @@ use polars_core::utils::materialize_dyn_int;
 use polars_lazy::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_parquet::write::StatisticsOptions;
+use polars_plan::plans::ScanSources;
+use polars_utils::pl_str::PlSmallStr;
 use polars_utils::total_ord::{TotalEq, TotalHash};
 use pyo3::basic::CompareOp;
 use pyo3::exceptions::{PyTypeError, PyValueError};
@@ -26,9 +30,9 @@ use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::types::{PyDict, PyList, PySequence};
-use smartstring::alias::String as SmartString;
 
 use crate::error::PyPolarsErr;
+use crate::file::{get_python_scan_source_input, PythonScanSourceInput};
 #[cfg(feature = "object")]
 use crate::object::OBJECT_NAME;
 use crate::prelude::*;
@@ -110,15 +114,27 @@ pub(crate) fn to_series(py: Python, s: PySeries) -> PyObject {
     constructor.call1((s,)).unwrap().into_py(py)
 }
 
+impl<'a> FromPyObject<'a> for Wrap<PlSmallStr> {
+    fn extract_bound(ob: &Bound<'a, PyAny>) -> PyResult<Self> {
+        Ok(Wrap((&*ob.extract::<PyBackedStr>()?).into()))
+    }
+}
+
 #[cfg(feature = "csv")]
 impl<'a> FromPyObject<'a> for Wrap<NullValues> {
     fn extract_bound(ob: &Bound<'a, PyAny>) -> PyResult<Self> {
-        if let Ok(s) = ob.extract::<String>() {
-            Ok(Wrap(NullValues::AllColumnsSingle(s)))
-        } else if let Ok(s) = ob.extract::<Vec<String>>() {
-            Ok(Wrap(NullValues::AllColumns(s)))
-        } else if let Ok(s) = ob.extract::<Vec<(String, String)>>() {
-            Ok(Wrap(NullValues::Named(s)))
+        if let Ok(s) = ob.extract::<PyBackedStr>() {
+            Ok(Wrap(NullValues::AllColumnsSingle((&*s).into())))
+        } else if let Ok(s) = ob.extract::<Vec<PyBackedStr>>() {
+            Ok(Wrap(NullValues::AllColumns(
+                s.into_iter().map(|x| (&*x).into()).collect(),
+            )))
+        } else if let Ok(s) = ob.extract::<Vec<(PyBackedStr, PyBackedStr)>>() {
+            Ok(Wrap(NullValues::Named(
+                s.into_iter()
+                    .map(|(a, b)| ((&*a).into(), (&*b).into()))
+                    .collect(),
+            )))
         } else {
             Err(
                 PyPolarsErr::Other("could not extract value from null_values argument".into())
@@ -243,7 +259,7 @@ impl ToPyObject for Wrap<DataType> {
             DataType::Datetime(tu, tz) => {
                 let datetime_class = pl.getattr(intern!(py, "Datetime")).unwrap();
                 datetime_class
-                    .call1((tu.to_ascii(), tz.clone()))
+                    .call1((tu.to_ascii(), tz.as_deref()))
                     .unwrap()
                     .into()
             },
@@ -267,7 +283,9 @@ impl ToPyObject for Wrap<DataType> {
                 // we should always have an initialized rev_map coming from rust
                 let categories = rev_map.as_ref().unwrap().get_categories();
                 let class = pl.getattr(intern!(py, "Enum")).unwrap();
-                let s = Series::from_arrow("category", categories.to_boxed()).unwrap();
+                let s =
+                    Series::from_arrow(PlSmallStr::from_static("category"), categories.to_boxed())
+                        .unwrap();
                 let series = to_series(py, s.into());
                 return class.call1((series,)).unwrap().into();
             },
@@ -276,7 +294,7 @@ impl ToPyObject for Wrap<DataType> {
                 let field_class = pl.getattr(intern!(py, "Field")).unwrap();
                 let iter = fields.iter().map(|fld| {
                     let name = fld.name().as_str();
-                    let dtype = Wrap(fld.data_type().clone()).to_object(py);
+                    let dtype = Wrap(fld.dtype().clone()).to_object(py);
                     field_class.call1((name, dtype)).unwrap()
                 });
                 let fields = PyList::new_bound(py, iter);
@@ -311,7 +329,7 @@ impl<'py> FromPyObject<'py> for Wrap<Field> {
         let dtype = ob
             .getattr(intern!(py, "dtype"))?
             .extract::<Wrap<DataType>>()?;
-        Ok(Wrap(Field::new(&name, dtype.0)))
+        Ok(Wrap(Field::new((&*name).into(), dtype.0)))
     }
 }
 
@@ -385,7 +403,7 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
                 let s = get_series(&categories.as_borrowed())?;
                 let ca = s.str().map_err(PyPolarsErr::from)?;
                 let categories = ca.downcast_iter().next().unwrap().clone();
-                create_enum_data_type(categories)
+                create_enum_dtype(categories)
             },
             "Date" => DataType::Date,
             "Time" => DataType::Time,
@@ -393,8 +411,8 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
                 let time_unit = ob.getattr(intern!(py, "time_unit")).unwrap();
                 let time_unit = time_unit.extract::<Wrap<TimeUnit>>()?.0;
                 let time_zone = ob.getattr(intern!(py, "time_zone")).unwrap();
-                let time_zone = time_zone.extract()?;
-                DataType::Datetime(time_unit, time_zone)
+                let time_zone = time_zone.extract::<Option<PyBackedStr>>()?;
+                DataType::Datetime(time_unit, time_zone.as_deref().map(|x| x.into()))
             },
             "Duration" => {
                 let time_unit = ob.getattr(intern!(py, "time_unit")).unwrap();
@@ -507,10 +525,72 @@ impl<'py> FromPyObject<'py> for Wrap<Schema> {
                     let key = key.extract::<PyBackedStr>()?;
                     let val = val.extract::<Wrap<DataType>>()?;
 
-                    Ok(Field::new(&key, val.0))
+                    Ok(Field::new((&*key).into(), val.0))
                 })
                 .collect::<PyResult<Schema>>()?,
         ))
+    }
+}
+
+impl<'py> FromPyObject<'py> for Wrap<ScanSources> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        let list = ob.downcast::<PyList>()?.to_owned();
+
+        if list.is_empty() {
+            return Ok(Wrap(ScanSources::default()));
+        }
+
+        enum MutableSources {
+            Paths(Vec<PathBuf>),
+            Files(Vec<File>),
+            Buffers(Vec<bytes::Bytes>),
+        }
+
+        let num_items = list.len();
+        let mut iter = list
+            .into_iter()
+            .map(|val| get_python_scan_source_input(val.unbind(), false));
+
+        let Some(first) = iter.next() else {
+            return Ok(Wrap(ScanSources::default()));
+        };
+
+        let mut sources = match first? {
+            PythonScanSourceInput::Path(path) => {
+                let mut sources = Vec::with_capacity(num_items);
+                sources.push(path);
+                MutableSources::Paths(sources)
+            },
+            PythonScanSourceInput::File(file) => {
+                let mut sources = Vec::with_capacity(num_items);
+                sources.push(file);
+                MutableSources::Files(sources)
+            },
+            PythonScanSourceInput::Buffer(buffer) => {
+                let mut sources = Vec::with_capacity(num_items);
+                sources.push(buffer);
+                MutableSources::Buffers(sources)
+            },
+        };
+
+        for source in iter {
+            match (&mut sources, source?) {
+                (MutableSources::Paths(v), PythonScanSourceInput::Path(p)) => v.push(p),
+                (MutableSources::Files(v), PythonScanSourceInput::File(f)) => v.push(f),
+                (MutableSources::Buffers(v), PythonScanSourceInput::Buffer(f)) => v.push(f),
+                _ => {
+                    return Err(PyTypeError::new_err(
+                        "Cannot combine in-memory bytes, paths and files for scan sources",
+                    ))
+                },
+            }
+        }
+
+        Ok(Wrap(match sources {
+            MutableSources::Paths(i) => ScanSources::Paths(i.into()),
+            MutableSources::Files(i) => ScanSources::Files(i.into()),
+            MutableSources::Buffers(i) => ScanSources::Buffers(i.into()),
+        }))
     }
 }
 
@@ -1173,12 +1253,15 @@ pub(crate) fn parse_parquet_compression(
     Ok(parsed)
 }
 
-pub(crate) fn strings_to_smartstrings<I, S>(container: I) -> Vec<SmartString>
+pub(crate) fn strings_to_pl_smallstr<I, S>(container: I) -> Vec<PlSmallStr>
 where
     I: IntoIterator<Item = S>,
     S: AsRef<str>,
 {
-    container.into_iter().map(|s| s.as_ref().into()).collect()
+    container
+        .into_iter()
+        .map(|s| PlSmallStr::from_str(s.as_ref()))
+        .collect()
 }
 
 #[derive(Debug, Copy, Clone)]

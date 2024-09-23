@@ -47,7 +47,7 @@ fn create_stream_expr(
 
 struct GraphConversionContext<'a> {
     phys_sm: &'a SlotMap<PhysNodeKey, PhysNode>,
-    expr_arena: &'a Arena<AExpr>,
+    expr_arena: &'a mut Arena<AExpr>,
     graph: Graph,
     phys_to_graph: SecondaryMap<PhysNodeKey, GraphNodeKey>,
     expr_conversion_state: ExpressionConversionState,
@@ -56,7 +56,7 @@ struct GraphConversionContext<'a> {
 pub fn physical_plan_to_graph(
     root: PhysNodeKey,
     phys_sm: &SlotMap<PhysNodeKey, PhysNode>,
-    expr_arena: &Arena<AExpr>,
+    expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<(Graph, SecondaryMap<PhysNodeKey, GraphNodeKey>)> {
     let expr_depth_limit = get_expr_depth_limit()?;
     let mut ctx = GraphConversionContext {
@@ -130,6 +130,18 @@ fn to_graph_rec<'a>(
                 [input_key],
             )
         },
+
+        InputIndependentSelect { selectors } => {
+            let phys_selectors = selectors
+                .iter()
+                .map(|selector| create_stream_expr(selector, ctx))
+                .collect::<PolarsResult<_>>()?;
+            ctx.graph.add_node(
+                nodes::input_independent_select::InputIndependentSelectNode::new(phys_selectors),
+                [],
+            )
+        },
+
         Reduce { input, exprs } => {
             let input_key = to_graph_rec(*input, ctx)?;
             let input_schema = &ctx.phys_sm[*input].output_schema;
@@ -138,8 +150,7 @@ fn to_graph_rec<'a>(
             let mut inputs = Vec::with_capacity(reductions.len());
 
             for e in exprs {
-                let (red, input_node) =
-                    into_reduction(e.node(), ctx.expr_arena, input_schema)?.expect("invariant");
+                let (red, input_node) = into_reduction(e.node(), ctx.expr_arena, input_schema)?;
                 reductions.push(red);
 
                 let input_phys =
@@ -257,7 +268,7 @@ fn to_graph_rec<'a>(
 
         v @ FileScan { .. } => {
             let FileScan {
-                paths,
+                scan_sources,
                 file_info,
                 hive_parts,
                 output_schema,
@@ -294,18 +305,19 @@ fn to_graph_rec<'a>(
                     FileScan::Parquet {
                         options,
                         cloud_options,
-                        metadata: _,
+                        metadata: first_metadata,
                     } => {
                         if std::env::var("POLARS_DISABLE_PARQUET_SOURCE").as_deref() != Ok("1") {
                             ctx.graph.add_node(
                                 nodes::parquet_source::ParquetSourceNode::new(
-                                    paths,
+                                    scan_sources,
                                     file_info,
                                     hive_parts,
                                     predicate,
                                     options,
                                     cloud_options,
                                     file_options,
+                                    first_metadata,
                                 ),
                                 [],
                             )

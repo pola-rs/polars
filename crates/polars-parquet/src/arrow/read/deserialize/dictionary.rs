@@ -47,6 +47,7 @@ impl<'a, K: DictionaryKey, D: utils::DictDecodable> StateTranslation<'a, Diction
         &mut self,
         decoder: &mut DictionaryDecoder<K, D>,
         decoded: &mut <DictionaryDecoder<K, D> as Decoder>::DecodedState,
+        is_optional: bool,
         page_validity: &mut Option<PageValidity<'a>>,
         _: Option<&'a <DictionaryDecoder<K, D> as Decoder>::Dict>,
         additional: usize,
@@ -65,7 +66,13 @@ impl<'a, K: DictionaryKey, D: utils::DictDecodable> StateTranslation<'a, Diction
         };
 
         match page_validity {
-            None => collector.push_n(&mut decoded.0, additional)?,
+            None => {
+                collector.push_n(&mut decoded.0, additional)?;
+
+                if is_optional {
+                    validity.extend_constant(additional, true);
+                }
+            },
             Some(page_validity) => {
                 extend_from_decoder(validity, page_validity, Some(additional), values, collector)?
             },
@@ -105,16 +112,16 @@ impl<K: DictionaryKey, D: utils::DictDecodable> utils::Decoder for DictionaryDec
         )
     }
 
-    fn deserialize_dict(&self, page: DictPage) -> Self::Dict {
-        let dict = self.decoder.deserialize_dict(page);
+    fn deserialize_dict(&self, page: DictPage) -> ParquetResult<Self::Dict> {
+        let dict = self.decoder.deserialize_dict(page)?;
         self.dict_size
             .store(dict.len(), std::sync::atomic::Ordering::Relaxed);
-        dict
+        Ok(dict)
     }
 
     fn finalize(
         &self,
-        data_type: ArrowDataType,
+        dtype: ArrowDataType,
         dict: Option<Self::Dict>,
         (values, validity): Self::DecodedState,
     ) -> ParquetResult<DictionaryArray<K>> {
@@ -122,13 +129,14 @@ impl<K: DictionaryKey, D: utils::DictDecodable> utils::Decoder for DictionaryDec
         let dict = dict.unwrap();
         let keys = PrimitiveArray::new(K::PRIMITIVE.into(), values.into(), validity);
 
-        self.decoder.finalize_dict_array(data_type, dict, keys)
+        self.decoder.finalize_dict_array(dtype, dict, keys)
     }
 
     fn decode_plain_encoded<'a>(
         &mut self,
         _decoded: &mut Self::DecodedState,
         _page_values: &mut <Self::Translation<'a> as StateTranslation<'a, Self>>::PlainDecoder,
+        _is_optional: bool,
         _page_validity: Option<&mut PageValidity<'a>>,
         _limit: usize,
     ) -> ParquetResult<()> {
@@ -139,6 +147,7 @@ impl<K: DictionaryKey, D: utils::DictDecodable> utils::Decoder for DictionaryDec
         &mut self,
         _decoded: &mut Self::DecodedState,
         _page_values: &mut HybridRleDecoder<'a>,
+        _is_optional: bool,
         _page_validity: Option<&mut PageValidity<'a>>,
         _dict: &Self::Dict,
         _limit: usize,

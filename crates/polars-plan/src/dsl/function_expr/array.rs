@@ -101,7 +101,7 @@ impl Display for ArrayFunction {
     }
 }
 
-impl From<ArrayFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
+impl From<ArrayFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
     fn from(func: ArrayFunction) -> Self {
         use ArrayFunction::*;
         match func {
@@ -133,99 +133,104 @@ impl From<ArrayFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
     }
 }
 
-pub(super) fn max(s: &Series) -> PolarsResult<Series> {
-    Ok(s.array()?.array_max())
+pub(super) fn max(s: &Column) -> PolarsResult<Column> {
+    Ok(s.array()?.array_max().into())
 }
 
-pub(super) fn min(s: &Series) -> PolarsResult<Series> {
-    Ok(s.array()?.array_min())
+pub(super) fn min(s: &Column) -> PolarsResult<Column> {
+    Ok(s.array()?.array_min().into())
 }
 
-pub(super) fn sum(s: &Series) -> PolarsResult<Series> {
-    s.array()?.array_sum()
+pub(super) fn sum(s: &Column) -> PolarsResult<Column> {
+    s.array()?.array_sum().map(Column::from)
 }
 
-pub(super) fn std(s: &Series, ddof: u8) -> PolarsResult<Series> {
-    s.array()?.array_std(ddof)
+pub(super) fn std(s: &Column, ddof: u8) -> PolarsResult<Column> {
+    s.array()?.array_std(ddof).map(Column::from)
 }
 
-pub(super) fn var(s: &Series, ddof: u8) -> PolarsResult<Series> {
-    s.array()?.array_var(ddof)
+pub(super) fn var(s: &Column, ddof: u8) -> PolarsResult<Column> {
+    s.array()?.array_var(ddof).map(Column::from)
 }
-pub(super) fn median(s: &Series) -> PolarsResult<Series> {
-    s.array()?.array_median()
+pub(super) fn median(s: &Column) -> PolarsResult<Column> {
+    s.array()?.array_median().map(Column::from)
 }
 
-pub(super) fn unique(s: &Series, stable: bool) -> PolarsResult<Series> {
+pub(super) fn unique(s: &Column, stable: bool) -> PolarsResult<Column> {
     let ca = s.array()?;
     let out = if stable {
         ca.array_unique_stable()
     } else {
         ca.array_unique()
     };
-    out.map(|ca| ca.into_series())
+    out.map(|ca| ca.into_column())
 }
 
-pub(super) fn n_unique(s: &Series) -> PolarsResult<Series> {
-    Ok(s.array()?.array_n_unique()?.into_series())
+pub(super) fn n_unique(s: &Column) -> PolarsResult<Column> {
+    Ok(s.array()?.array_n_unique()?.into_column())
 }
 
-pub(super) fn to_list(s: &Series) -> PolarsResult<Series> {
+pub(super) fn to_list(s: &Column) -> PolarsResult<Column> {
     let list_dtype = map_array_dtype_to_list_dtype(s.dtype())?;
     s.cast(&list_dtype)
 }
 
 #[cfg(feature = "array_any_all")]
-pub(super) fn any(s: &Series) -> PolarsResult<Series> {
-    s.array()?.array_any()
+pub(super) fn any(s: &Column) -> PolarsResult<Column> {
+    s.array()?.array_any().map(Column::from)
 }
 
 #[cfg(feature = "array_any_all")]
-pub(super) fn all(s: &Series) -> PolarsResult<Series> {
-    s.array()?.array_all()
+pub(super) fn all(s: &Column) -> PolarsResult<Column> {
+    s.array()?.array_all().map(Column::from)
 }
 
-pub(super) fn sort(s: &Series, options: SortOptions) -> PolarsResult<Series> {
-    Ok(s.array()?.array_sort(options)?.into_series())
+pub(super) fn sort(s: &Column, options: SortOptions) -> PolarsResult<Column> {
+    Ok(s.array()?.array_sort(options)?.into_column())
 }
 
-pub(super) fn reverse(s: &Series) -> PolarsResult<Series> {
-    Ok(s.array()?.array_reverse().into_series())
+pub(super) fn reverse(s: &Column) -> PolarsResult<Column> {
+    Ok(s.array()?.array_reverse().into_column())
 }
 
-pub(super) fn arg_min(s: &Series) -> PolarsResult<Series> {
-    Ok(s.array()?.array_arg_min().into_series())
+pub(super) fn arg_min(s: &Column) -> PolarsResult<Column> {
+    Ok(s.array()?.array_arg_min().into_column())
 }
 
-pub(super) fn arg_max(s: &Series) -> PolarsResult<Series> {
-    Ok(s.array()?.array_arg_max().into_series())
+pub(super) fn arg_max(s: &Column) -> PolarsResult<Column> {
+    Ok(s.array()?.array_arg_max().into_column())
 }
 
-pub(super) fn get(s: &[Series], null_on_oob: bool) -> PolarsResult<Series> {
+pub(super) fn get(s: &[Column], null_on_oob: bool) -> PolarsResult<Column> {
     let ca = s[0].array()?;
     let index = s[1].cast(&DataType::Int64)?;
     let index = index.i64().unwrap();
-    ca.array_get(index, null_on_oob)
+    ca.array_get(index, null_on_oob).map(Column::from)
 }
 
-pub(super) fn join(s: &[Series], ignore_nulls: bool) -> PolarsResult<Series> {
+pub(super) fn join(s: &[Column], ignore_nulls: bool) -> PolarsResult<Column> {
     let ca = s[0].array()?;
     let separator = s[1].str()?;
-    ca.array_join(separator, ignore_nulls)
+    ca.array_join(separator, ignore_nulls).map(Column::from)
 }
 
 #[cfg(feature = "is_in")]
-pub(super) fn contains(s: &[Series]) -> PolarsResult<Series> {
+pub(super) fn contains(s: &[Column]) -> PolarsResult<Column> {
     let array = &s[0];
     let item = &s[1];
     polars_ensure!(matches!(array.dtype(), DataType::Array(_, _)),
         SchemaMismatch: "invalid series dtype: expected `Array`, got `{}`", array.dtype(),
     );
-    Ok(is_in(item, array)?.with_name(array.name()).into_series())
+    Ok(is_in(
+        item.as_materialized_series(),
+        array.as_materialized_series(),
+    )?
+    .with_name(array.name().clone())
+    .into_column())
 }
 
 #[cfg(feature = "array_count")]
-pub(super) fn count_matches(args: &[Series]) -> PolarsResult<Series> {
+pub(super) fn count_matches(args: &[Column]) -> PolarsResult<Column> {
     let s = &args[0];
     let element = &args[1];
     polars_ensure!(
@@ -235,11 +240,12 @@ pub(super) fn count_matches(args: &[Series]) -> PolarsResult<Series> {
     );
     let ca = s.array()?;
     ca.array_count_matches(element.get(0).unwrap())
+        .map(Column::from)
 }
 
-pub(super) fn shift(s: &[Series]) -> PolarsResult<Series> {
+pub(super) fn shift(s: &[Column]) -> PolarsResult<Column> {
     let ca = s[0].array()?;
     let n = &s[1];
 
-    ca.array_shift(n)
+    ca.array_shift(n.as_materialized_series()).map(Column::from)
 }

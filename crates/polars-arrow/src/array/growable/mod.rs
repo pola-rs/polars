@@ -92,11 +92,11 @@ pub fn make_growable<'a>(
     capacity: usize,
 ) -> Box<dyn Growable<'a> + 'a> {
     assert!(!arrays.is_empty());
-    let data_type = arrays[0].data_type();
+    let dtype = arrays[0].dtype();
 
     use PhysicalType::*;
-    match data_type.to_physical_type() {
-        Null => Box::new(null::GrowableNull::new(data_type.clone())),
+    match dtype.to_physical_type() {
+        Null => Box::new(null::GrowableNull::new(dtype.clone())),
         Boolean => dyn_growable!(boolean::GrowableBoolean, arrays, use_validity, capacity),
         Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
             dyn_growable!(primitive::GrowablePrimitive::<$T>, arrays, use_validity, capacity)

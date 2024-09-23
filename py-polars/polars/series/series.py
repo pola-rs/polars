@@ -267,7 +267,7 @@ class Series:
         *,
         strict: bool = True,
         nan_to_null: bool = False,
-    ):
+    ) -> None:
         # If 'Unknown' treat as None to trigger type inference
         if dtype == Unknown:
             dtype = None
@@ -761,24 +761,24 @@ class Series:
         return self._from_pyseries(f(other))
 
     @overload  # type: ignore[override]
-    def __eq__(self, other: Expr) -> Expr: ...
+    def __eq__(self, other: Expr) -> Expr: ...  # type: ignore[overload-overlap]
 
     @overload
-    def __eq__(self, other: Any) -> Series: ...
+    def __eq__(self, other: object) -> Series: ...
 
-    def __eq__(self, other: Any) -> Series | Expr:
+    def __eq__(self, other: object) -> Series | Expr:
         warn_null_comparison(other)
         if isinstance(other, pl.Expr):
             return F.lit(self).__eq__(other)
         return self._comp(other, "eq")
 
     @overload  # type: ignore[override]
-    def __ne__(self, other: Expr) -> Expr: ...
+    def __ne__(self, other: Expr) -> Expr: ...  # type: ignore[overload-overlap]
 
     @overload
-    def __ne__(self, other: Any) -> Series: ...
+    def __ne__(self, other: object) -> Series: ...
 
-    def __ne__(self, other: Any) -> Series | Expr:
+    def __ne__(self, other: object) -> Series | Expr:
         warn_null_comparison(other)
         if isinstance(other, pl.Expr):
             return F.lit(self).__ne__(other)
@@ -1058,6 +1058,22 @@ class Series:
             return F.lit(self) - other
         return self._arithmetic(other, "sub", "sub_<>")
 
+    def _recursive_cast_to_dtype(self, leaf_dtype: PolarsDataType) -> Series:
+        """
+        Convert leaf dtype the to given primitive datatype.
+
+        This is equivalent to logic in DataType::cast_leaf() in Rust.
+        """
+
+        def convert_to_primitive(dtype: PolarsDataType) -> PolarsDataType:
+            if isinstance(dtype, Array):
+                return Array(convert_to_primitive(dtype.inner), shape=dtype.shape)
+            if isinstance(dtype, List):
+                return List(convert_to_primitive(dtype.inner))
+            return leaf_dtype
+
+        return self.cast(convert_to_primitive(self.dtype))
+
     @overload
     def __truediv__(self, other: Expr) -> Expr: ...
 
@@ -1073,9 +1089,11 @@ class Series:
 
         # this branch is exactly the floordiv function without rounding the floats
         if self.dtype.is_float() or self.dtype == Decimal:
-            return self._arithmetic(other, "div", "div_<>")
+            as_float = self
+        else:
+            as_float = self._recursive_cast_to_dtype(Float64())
 
-        return self.cast(Float64) / other
+        return as_float._arithmetic(other, "div", "div_<>")
 
     @overload
     def __floordiv__(self, other: Expr) -> Expr: ...
@@ -1365,7 +1383,10 @@ class Series:
                 if isinstance(arg, (int, float, np.ndarray)):
                     args.append(arg)
                 elif isinstance(arg, Series):
-                    args.append(arg.to_physical()._s.to_numpy_view())
+                    phys_arg = arg.to_physical()
+                    if phys_arg._s.n_chunks() > 1:
+                        phys_arg._s.rechunk(in_place=True)
+                    args.append(phys_arg._s.to_numpy_view())
                 else:
                     msg = f"unsupported type {type(arg).__name__!r} for {arg!r}"
                     raise TypeError(msg)
@@ -2562,7 +2583,7 @@ class Series:
         ]
         """
 
-    def entropy(self, base: float = math.e, *, normalize: bool = False) -> float | None:
+    def entropy(self, base: float = math.e, *, normalize: bool = True) -> float | None:
         """
         Computes the entropy.
 
@@ -3951,7 +3972,7 @@ class Series:
 
         See Also
         --------
-        assert_series_equal
+        polars.testing.assert_series_equal
 
         Examples
         --------
@@ -3971,7 +3992,7 @@ class Series:
 
     def cast(
         self,
-        dtype: PolarsDataType | type[int] | type[float] | type[str] | type[bool],
+        dtype: type[int | float | str | bool] | PolarsDataType,
         *,
         strict: bool = True,
         wrap_numerical: bool = False,
@@ -4991,27 +5012,28 @@ class Series:
 
     def sign(self) -> Series:
         """
-        Compute the element-wise indication of the sign.
+        Compute the element-wise sign function on numeric types.
 
-        The returned values can be -1, 0, or 1:
+        The returned value is computed as follows:
 
-        * -1 if x  < 0.
-        *  0 if x == 0.
-        *  1 if x  > 0.
+        * -1 if x < 0.
+        *  1 if x > 0.
+        *  x otherwise (typically 0, but could be NaN if the input is).
 
-        (null values are preserved as-is).
+        Null values are preserved as-is, and the dtype of the input is preserved.
 
         Examples
         --------
-        >>> s = pl.Series("a", [-9.0, -0.0, 0.0, 4.0, None])
+        >>> s = pl.Series("a", [-9.0, -0.0, 0.0, 4.0, float("nan"), None])
         >>> s.sign()
-        shape: (5,)
-        Series: 'a' [i64]
+        shape: (6,)
+        Series: 'a' [f64]
         [
-                -1
-                0
-                0
-                1
+                -1.0
+                -0.0
+                0.0
+                1.0
+                NaN
                 null
         ]
         """
@@ -5332,7 +5354,9 @@ class Series:
 
         warn_on_inefficient_map(function, columns=[self.name], map_target="series")
         return self._from_pyseries(
-            self._s.apply_lambda(function, pl_return_dtype, skip_nulls)
+            self._s.map_elements(
+                function, return_dtype=pl_return_dtype, skip_nulls=skip_nulls
+            )
         )
 
     def shift(self, n: int = 1, *, fill_value: IntoExpr | None = None) -> Series:
@@ -6879,7 +6903,7 @@ class Series:
         ignore_nulls: bool = False,
     ) -> Series:
         r"""
-        Exponentially-weighted moving average.
+        Compute exponentially-weighted moving average.
 
         Parameters
         ----------
@@ -6894,11 +6918,11 @@ class Series:
                 .. math::
                     \alpha = \frac{2}{\theta + 1} \; \forall \; \theta \geq 1
         half_life
-            Specify decay in terms of half-life, :math:`\lambda`, with
+            Specify decay in terms of half-life, :math:`\tau`, with
 
                 .. math::
-                    \alpha = 1 - \exp \left\{ \frac{ -\ln(2) }{ \lambda } \right\} \;
-                    \forall \; \lambda > 0
+                    \alpha = 1 - \exp \left\{ \frac{ -\ln(2) }{ \tau } \right\} \;
+                    \forall \; \tau > 0
         alpha
             Specify smoothing factor alpha directly, :math:`0 < \alpha \leq 1`.
         adjust
@@ -6954,20 +6978,21 @@ class Series:
         half_life: str | timedelta,
     ) -> Series:
         r"""
-        Calculate time-based exponentially weighted moving average.
+        Compute time-based exponentially weighted moving average.
 
-        Given observations :math:`x_1, x_2, \ldots, x_n` at times
-        :math:`t_1, t_2, \ldots, t_n`, the EWMA is calculated as
+        Given observations :math:`x_0, x_1, \ldots, x_{n-1}` at times
+        :math:`t_0, t_1, \ldots, t_{n-1}`, the EWMA is calculated as
 
             .. math::
 
                 y_0 &= x_0
 
-                \alpha_i &= \exp(-\lambda(t_i - t_{i-1}))
+                \alpha_i &= 1 - \exp \left\{ \frac{ -\ln(2)(t_i-t_{i-1}) }
+                    { \tau } \right\}
 
                 y_i &= \alpha_i x_i + (1 - \alpha_i) y_{i-1}; \quad i > 0
 
-        where :math:`\lambda` equals :math:`\ln(2) / \text{half_life}`.
+        where :math:`\tau` is the `half_life`.
 
         Parameters
         ----------
@@ -7043,7 +7068,7 @@ class Series:
         ignore_nulls: bool = False,
     ) -> Series:
         r"""
-        Exponentially-weighted moving standard deviation.
+        Compute exponentially-weighted moving standard deviation.
 
         Parameters
         ----------
@@ -7127,7 +7152,7 @@ class Series:
         ignore_nulls: bool = False,
     ) -> Series:
         r"""
-        Exponentially-weighted moving variance.
+        Compute exponentially-weighted moving variance.
 
         Parameters
         ----------

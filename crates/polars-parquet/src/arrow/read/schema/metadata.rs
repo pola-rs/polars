@@ -3,6 +3,7 @@ use arrow::io::ipc::read::deserialize_schema;
 use base64::engine::general_purpose;
 use base64::Engine as _;
 use polars_error::{polars_bail, PolarsResult};
+use polars_utils::pl_str::PlSmallStr;
 
 use super::super::super::ARROW_SCHEMA_META_KEY;
 pub use crate::parquet::metadata::KeyValue;
@@ -18,15 +19,15 @@ pub fn read_schema_from_metadata(metadata: &mut Metadata) -> PolarsResult<Option
 }
 
 fn convert_field(field: &mut Field) {
-    field.data_type = convert_data_type(std::mem::take(&mut field.data_type));
+    field.dtype = convert_dtype(std::mem::take(&mut field.dtype));
 }
 
-fn convert_data_type(mut data_type: ArrowDataType) -> ArrowDataType {
+fn convert_dtype(mut dtype: ArrowDataType) -> ArrowDataType {
     use ArrowDataType::*;
-    match data_type {
+    match dtype {
         List(mut field) => {
             convert_field(field.as_mut());
-            data_type = LargeList(field);
+            dtype = LargeList(field);
         },
         LargeList(ref mut field) | FixedSizeList(ref mut field, _) => convert_field(field.as_mut()),
         Struct(ref mut fields) => {
@@ -34,23 +35,23 @@ fn convert_data_type(mut data_type: ArrowDataType) -> ArrowDataType {
                 convert_field(field);
             }
         },
-        Binary | LargeBinary => data_type = BinaryView,
-        Utf8 | LargeUtf8 => data_type = Utf8View,
-        Dictionary(_, ref mut data_type, _) | Extension(_, ref mut data_type, _) => {
-            let data_type = data_type.as_mut();
-            *data_type = convert_data_type(std::mem::take(data_type));
+        Binary | LargeBinary => dtype = BinaryView,
+        Utf8 | LargeUtf8 => dtype = Utf8View,
+        Dictionary(_, ref mut dtype, _) | Extension(_, ref mut dtype, _) => {
+            let dtype = dtype.as_mut();
+            *dtype = convert_dtype(std::mem::take(dtype));
         },
         Map(mut field, _ordered) => {
             // Polars doesn't support Map.
             // A map is physically a `List<Struct<K, V>>`
             // So we read as list.
             convert_field(field.as_mut());
-            data_type = LargeList(field);
+            dtype = LargeList(field);
         },
         _ => {},
     }
 
-    data_type
+    dtype
 }
 
 /// Try to convert Arrow schema metadata into a schema
@@ -65,8 +66,8 @@ fn get_arrow_schema_from_metadata(encoded_meta: &str) -> PolarsResult<ArrowSchem
             };
             let mut schema = deserialize_schema(slice).map(|x| x.0)?;
             // Convert the data types to the data types we support.
-            for field in schema.fields.iter_mut() {
-                field.data_type = convert_data_type(std::mem::take(&mut field.data_type))
+            for field in schema.iter_values_mut() {
+                field.dtype = convert_dtype(std::mem::take(&mut field.dtype))
             }
             Ok(schema)
         },
@@ -86,9 +87,12 @@ pub(super) fn parse_key_value_metadata(key_value_metadata: &Option<Vec<KeyValue>
             key_values
                 .iter()
                 .filter_map(|kv| {
-                    kv.value
-                        .as_ref()
-                        .map(|value| (kv.key.clone(), value.clone()))
+                    kv.value.as_ref().map(|value| {
+                        (
+                            PlSmallStr::from_str(kv.key.as_str()),
+                            PlSmallStr::from_str(value.as_str()),
+                        )
+                    })
                 })
                 .collect()
         })

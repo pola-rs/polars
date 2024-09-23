@@ -8,14 +8,19 @@ use pyo3::types::{PyBool, PyFloat, PyInt, PyList, PyString, PyTuple};
 use super::*;
 use crate::PyDataFrame;
 
+/// Create iterators for all the Series in the DataFrame.
 fn get_iters(df: &DataFrame) -> Vec<SeriesIter> {
-    df.get_columns().iter().map(|s| s.iter()).collect()
-}
-
-fn get_iters_skip(df: &DataFrame, skip: usize) -> Vec<std::iter::Skip<SeriesIter>> {
     df.get_columns()
         .iter()
-        .map(|s| s.iter().skip(skip))
+        .map(|s| s.as_materialized_series().iter())
+        .collect()
+}
+
+/// Create iterators for all the Series in the DataFrame, skipping the first `n` rows.
+fn get_iters_skip(df: &DataFrame, n: usize) -> Vec<std::iter::Skip<SeriesIter>> {
+    df.get_columns()
+        .iter()
+        .map(|s| s.as_materialized_series().iter().skip(n))
         .collect()
 }
 
@@ -168,10 +173,16 @@ where
 {
     let skip = usize::from(first_value.is_some());
     if init_null_count == df.height() {
-        ChunkedArray::full_null("map", df.height())
+        ChunkedArray::full_null(PlSmallStr::from_static("map"), df.height())
     } else {
         let iter = apply_iter(df, py, lambda, init_null_count, skip);
-        iterator_to_primitive(iter, init_null_count, first_value, "map", df.height())
+        iterator_to_primitive(
+            iter,
+            init_null_count,
+            first_value,
+            PlSmallStr::from_static("map"),
+            df.height(),
+        )
     }
 }
 
@@ -185,10 +196,16 @@ pub fn apply_lambda_with_bool_out_type<'a>(
 ) -> ChunkedArray<BooleanType> {
     let skip = usize::from(first_value.is_some());
     if init_null_count == df.height() {
-        ChunkedArray::full_null("map", df.height())
+        ChunkedArray::full_null(PlSmallStr::from_static("map"), df.height())
     } else {
         let iter = apply_iter(df, py, lambda, init_null_count, skip);
-        iterator_to_bool(iter, init_null_count, first_value, "map", df.height())
+        iterator_to_bool(
+            iter,
+            init_null_count,
+            first_value,
+            PlSmallStr::from_static("map"),
+            df.height(),
+        )
     }
 }
 
@@ -202,10 +219,16 @@ pub fn apply_lambda_with_string_out_type<'a>(
 ) -> StringChunked {
     let skip = usize::from(first_value.is_some());
     if init_null_count == df.height() {
-        ChunkedArray::full_null("map", df.height())
+        ChunkedArray::full_null(PlSmallStr::from_static("map"), df.height())
     } else {
         let iter = apply_iter::<PyBackedStr>(df, py, lambda, init_null_count, skip);
-        iterator_to_string(iter, init_null_count, first_value, "map", df.height())
+        iterator_to_string(
+            iter,
+            init_null_count,
+            first_value,
+            PlSmallStr::from_static("map"),
+            df.height(),
+        )
     }
 }
 
@@ -220,7 +243,10 @@ pub fn apply_lambda_with_list_out_type<'a>(
 ) -> PyResult<ListChunked> {
     let skip = usize::from(first_value.is_some());
     if init_null_count == df.height() {
-        Ok(ChunkedArray::full_null("map", df.height()))
+        Ok(ChunkedArray::full_null(
+            PlSmallStr::from_static("map"),
+            df.height(),
+        ))
     } else {
         let mut iters = get_iters_skip(df, init_null_count + skip);
         let iter = ((init_null_count + skip)..df.height()).map(|_| {
@@ -240,7 +266,14 @@ pub fn apply_lambda_with_list_out_type<'a>(
                 Err(e) => panic!("python function failed {e}"),
             }
         });
-        iterator_to_list(dt, iter, init_null_count, first_value, "map", df.height())
+        iterator_to_list(
+            dt,
+            iter,
+            init_null_count,
+            first_value,
+            PlSmallStr::from_static("map"),
+            df.height(),
+        )
     }
 }
 

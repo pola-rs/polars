@@ -12,7 +12,7 @@ impl private::PrivateSeries for SeriesWrap<StringChunked> {
         Cow::Borrowed(self.0.ref_field())
     }
     fn _dtype(&self) -> &DataType {
-        self.0.ref_field().data_type()
+        self.0.ref_field().dtype()
     }
 
     fn _set_flags(&mut self, flags: MetadataFlags) {
@@ -21,10 +21,6 @@ impl private::PrivateSeries for SeriesWrap<StringChunked> {
     fn _get_flags(&self) -> MetadataFlags {
         self.0.get_flags()
     }
-    fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
-        self.0.explode_by_offsets(offsets)
-    }
-
     unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
         self.0.equal_element(idx_self, idx_other, other)
     }
@@ -91,7 +87,7 @@ impl private::PrivateSeries for SeriesWrap<StringChunked> {
 
     fn arg_sort_multiple(
         &self,
-        by: &[Series],
+        by: &[Column],
         options: &SortMultipleOptions,
     ) -> PolarsResult<IdxCa> {
         self.0.arg_sort_multiple(by, options)
@@ -99,14 +95,14 @@ impl private::PrivateSeries for SeriesWrap<StringChunked> {
 }
 
 impl SeriesTrait for SeriesWrap<StringChunked> {
-    fn rename(&mut self, name: &str) {
+    fn rename(&mut self, name: PlSmallStr) {
         self.0.rename(name);
     }
 
     fn chunk_lengths(&self) -> ChunkLenIter {
         self.0.chunk_lengths()
     }
-    fn name(&self) -> &str {
+    fn name(&self) -> &PlSmallStr {
         self.0.name()
     }
 
@@ -179,8 +175,8 @@ impl SeriesTrait for SeriesWrap<StringChunked> {
         ChunkExpandAtIndex::new_from_index(&self.0, index, length).into_series()
     }
 
-    fn cast(&self, data_type: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
-        self.0.cast_with_options(data_type, cast_options)
+    fn cast(&self, dtype: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
+        self.0.cast_with_options(dtype, cast_options)
     }
 
     fn get(&self, index: usize) -> PolarsResult<AnyValue> {

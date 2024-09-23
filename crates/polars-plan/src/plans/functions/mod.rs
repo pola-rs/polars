@@ -10,20 +10,21 @@ mod schema;
 use std::borrow::Cow;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 pub use dsl::*;
+use polars_core::error::feature_gated;
 use polars_core::prelude::*;
+use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-use smartstring::alias::String as SmartString;
 use strum_macros::IntoStaticStr;
 
 #[cfg(feature = "python")]
 use crate::dsl::python_udf::PythonFunction;
 #[cfg(feature = "merge_sorted")]
 use crate::plans::functions::merge_sorted::merge_sorted;
+use crate::plans::ir::ScanSourcesDisplay;
 use crate::prelude::*;
 
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
@@ -42,12 +43,12 @@ pub enum FunctionIR {
         projection_pd: bool,
         streamable: bool,
         // used for formatting
-        fmt_str: String,
+        fmt_str: PlSmallStr,
     },
     FastCount {
-        paths: Arc<Vec<PathBuf>>,
+        sources: ScanSources,
         scan_type: FileScan,
-        alias: Option<Arc<str>>,
+        alias: Option<PlSmallStr>,
     },
     /// Streaming engine pipeline
     #[cfg_attr(feature = "ir_serde", serde(skip))]
@@ -57,7 +58,7 @@ pub enum FunctionIR {
         original: Option<Arc<IRPlan>>,
     },
     Unnest {
-        columns: Arc<[ColumnName]>,
+        columns: Arc<[PlSmallStr]>,
     },
     Rechunk,
     // The two DataFrames are temporary concatenated
@@ -67,18 +68,18 @@ pub enum FunctionIR {
     #[cfg(feature = "merge_sorted")]
     MergeSorted {
         // sorted column that serves as the key
-        column: Arc<str>,
+        column: PlSmallStr,
     },
     Rename {
-        existing: Arc<[SmartString]>,
-        new: Arc<[SmartString]>,
+        existing: Arc<[PlSmallStr]>,
+        new: Arc<[PlSmallStr]>,
         // A column name gets swapped with an existing column
         swapping: bool,
         #[cfg_attr(feature = "ir_serde", serde(skip))]
         schema: CachedSchema,
     },
     Explode {
-        columns: Arc<[ColumnName]>,
+        columns: Arc<[PlSmallStr]>,
         #[cfg_attr(feature = "ir_serde", serde(skip))]
         schema: CachedSchema,
     },
@@ -89,7 +90,7 @@ pub enum FunctionIR {
         schema: CachedSchema,
     },
     RowIndex {
-        name: Arc<str>,
+        name: PlSmallStr,
         // Might be cached.
         #[cfg_attr(feature = "ir_serde", serde(skip))]
         schema: CachedSchema,
@@ -104,9 +105,14 @@ impl PartialEq for FunctionIR {
         use FunctionIR::*;
         match (self, other) {
             (Rechunk, Rechunk) => true,
-            (FastCount { paths: paths_l, .. }, FastCount { paths: paths_r, .. }) => {
-                paths_l == paths_r
-            },
+            (
+                FastCount {
+                    sources: srcs_l, ..
+                },
+                FastCount {
+                    sources: srcs_r, ..
+                },
+            ) => srcs_l == srcs_r,
             (
                 Rename {
                     existing: existing_l,
@@ -138,11 +144,11 @@ impl Hash for FunctionIR {
             FunctionIR::OpaquePython { .. } => {},
             FunctionIR::Opaque { fmt_str, .. } => fmt_str.hash(state),
             FunctionIR::FastCount {
-                paths,
+                sources,
                 scan_type,
                 alias,
             } => {
-                paths.hash(state);
+                sources.hash(state);
                 scan_type.hash(state);
                 alias.hash(state);
             },
@@ -238,7 +244,7 @@ impl FunctionIR {
         }
     }
 
-    pub(crate) fn additional_projection_pd_columns(&self) -> Cow<[Arc<str>]> {
+    pub(crate) fn additional_projection_pd_columns(&self) -> Cow<[PlSmallStr]> {
         use FunctionIR::*;
         match self {
             Unnest { columns } => Cow::Borrowed(columns.as_ref()),
@@ -261,8 +267,10 @@ impl FunctionIR {
                 ..
             }) => python_udf::call_python_udf(function, df, *validate_output, schema.as_deref()),
             FastCount {
-                paths, scan_type, ..
-            } => count::count_rows(paths, scan_type),
+                sources,
+                scan_type,
+                alias,
+            } => count::count_rows(sources, scan_type, alias.clone()),
             Rechunk => {
                 df.as_single_chunk_par();
                 Ok(df)
@@ -270,14 +278,7 @@ impl FunctionIR {
             #[cfg(feature = "merge_sorted")]
             MergeSorted { column } => merge_sorted(&df, column.as_ref()),
             Unnest { columns: _columns } => {
-                #[cfg(feature = "dtype-struct")]
-                {
-                    df.unnest(_columns.as_ref())
-                }
-                #[cfg(not(feature = "dtype-struct"))]
-                {
-                    panic!("activate feature 'dtype-struct'")
-                }
+                feature_gated!("dtype-struct", df.unnest(_columns.iter().cloned()))
             },
             Pipeline { function, .. } => {
                 // we use a global string cache here as streaming chunks all have different rev maps
@@ -293,14 +294,14 @@ impl FunctionIR {
                 }
             },
             Rename { existing, new, .. } => rename::rename_impl(df, existing, new),
-            Explode { columns, .. } => df.explode(columns.as_ref()),
+            Explode { columns, .. } => df.explode(columns.iter().cloned()),
             #[cfg(feature = "pivot")]
             Unpivot { args, .. } => {
                 use polars_ops::pivot::UnpivotDF;
                 let args = (**args).clone();
                 df.unpivot2(args)
             },
-            RowIndex { name, offset, .. } => df.with_row_index(name.as_ref(), *offset),
+            RowIndex { name, offset, .. } => df.with_row_index(name.clone(), *offset),
         }
     }
 
@@ -345,6 +346,21 @@ impl Display for FunctionIR {
                 } else {
                     write!(f, "STREAMING")
                 }
+            },
+            FastCount {
+                sources,
+                scan_type,
+                alias,
+            } => {
+                let scan_type: &str = scan_type.into();
+                let default_column_name = PlSmallStr::from_static(crate::constants::LEN);
+                let alias = alias.as_ref().unwrap_or(&default_column_name);
+
+                write!(
+                    f,
+                    "FAST COUNT ({scan_type}) {} as \"{alias}\"",
+                    ScanSourcesDisplay(sources)
+                )
             },
             v => {
                 let s: &str = v.into();

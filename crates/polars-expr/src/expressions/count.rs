@@ -22,7 +22,10 @@ impl PhysicalExpr for CountExpr {
     }
 
     fn evaluate(&self, df: &DataFrame, _state: &ExecutionState) -> PolarsResult<Series> {
-        Ok(Series::new("len", [df.height() as IdxSize]))
+        Ok(Series::new(
+            PlSmallStr::from_static("len"),
+            [df.height() as IdxSize],
+        ))
     }
 
     fn evaluate_on_groups<'a>(
@@ -31,17 +34,21 @@ impl PhysicalExpr for CountExpr {
         groups: &'a GroupsProxy,
         _state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
-        let ca = groups.group_count().with_name(LEN);
+        let ca = groups.group_count().with_name(PlSmallStr::from_static(LEN));
         let s = ca.into_series();
         Ok(AggregationContext::new(s, Cow::Borrowed(groups), true))
     }
 
     fn to_field(&self, _input_schema: &Schema) -> PolarsResult<Field> {
-        Ok(Field::new(LEN, IDX_DTYPE))
+        Ok(Field::new(PlSmallStr::from_static(LEN), IDX_DTYPE))
     }
 
     fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
         Some(self)
+    }
+
+    fn is_scalar(&self) -> bool {
+        true
     }
 }
 
@@ -67,6 +74,6 @@ impl PartitionedAggregation for CountExpr {
     ) -> PolarsResult<Series> {
         // SAFETY: groups are in bounds.
         let agg = unsafe { partitioned.agg_sum(groups) };
-        Ok(agg.with_name(LEN))
+        Ok(agg.with_name(PlSmallStr::from_static(LEN)))
     }
 }

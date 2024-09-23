@@ -9,10 +9,10 @@ use polars::prelude::*;
 use polars_core::export::rayon::prelude::*;
 use polars_core::utils::CustomIterTools;
 use polars_core::POOL;
+use polars_utils::pl_str::PlSmallStr;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::types::PyDict;
-use smartstring::alias::String as SmartString;
 
 use crate::error::PyPolarsErr;
 use crate::prelude::ObjectValue;
@@ -35,7 +35,7 @@ fn iterator_to_struct<'a>(
     it: impl Iterator<Item = Option<Bound<'a, PyAny>>>,
     init_null_count: usize,
     first_value: AnyValue<'a>,
-    name: &str,
+    name: PlSmallStr,
     capacity: usize,
 ) -> PyResult<PySeries> {
     let (vals, flds) = match &first_value {
@@ -54,11 +54,11 @@ fn iterator_to_struct<'a>(
     //      [ a values ]
     //      [ b values ]
     // ]
-    let mut struct_fields: BTreeMap<SmartString, Vec<AnyValue>> = BTreeMap::new();
+    let mut struct_fields: BTreeMap<PlSmallStr, Vec<AnyValue>> = BTreeMap::new();
 
     // As a BTreeMap sorts its keys, we also need to track the original
     // order of the field names.
-    let mut field_names_ordered: Vec<SmartString> = Vec::with_capacity(flds.len());
+    let mut field_names_ordered: Vec<PlSmallStr> = Vec::with_capacity(flds.len());
 
     // Use the first value and the known null count to initialize the buffers
     // if we find a new key later on, we make a new entry in the BTree.
@@ -96,7 +96,7 @@ fn iterator_to_struct<'a>(
                         let mut buf = Vec::with_capacity(capacity);
                         buf.extend((0..init_null_count + current_len).map(|_| AnyValue::Null));
                         buf.push(item.0);
-                        let key: SmartString = (&*key).into();
+                        let key: PlSmallStr = (&*key).into();
                         field_names_ordered.push(key.clone());
                         struct_fields.insert(key, buf);
                     };
@@ -118,11 +118,11 @@ fn iterator_to_struct<'a>(
     let fields = POOL.install(|| {
         field_names_ordered
             .par_iter()
-            .map(|name| Series::new(name, struct_fields.get(name).unwrap()))
+            .map(|name| Series::new(name.clone(), struct_fields.get(name).unwrap()))
             .collect::<Vec<_>>()
     });
 
-    Ok(StructChunked::from_series(name, &fields)
+    Ok(StructChunked::from_series(name, fields.iter())
         .unwrap()
         .into_series()
         .into())
@@ -132,7 +132,7 @@ fn iterator_to_primitive<T>(
     it: impl Iterator<Item = Option<T::Native>>,
     init_null_count: usize,
     first_value: Option<T::Native>,
-    name: &str,
+    name: PlSmallStr,
     capacity: usize,
 ) -> ChunkedArray<T>
 where
@@ -164,7 +164,7 @@ fn iterator_to_bool(
     it: impl Iterator<Item = Option<bool>>,
     init_null_count: usize,
     first_value: Option<bool>,
-    name: &str,
+    name: PlSmallStr,
     capacity: usize,
 ) -> ChunkedArray<BooleanType> {
     // SAFETY: we know the iterators len.
@@ -194,7 +194,7 @@ fn iterator_to_object(
     it: impl Iterator<Item = Option<ObjectValue>>,
     init_null_count: usize,
     first_value: Option<ObjectValue>,
-    name: &str,
+    name: PlSmallStr,
     capacity: usize,
 ) -> ObjectChunked<ObjectValue> {
     // SAFETY: we know the iterators len.
@@ -223,7 +223,7 @@ fn iterator_to_string<S: AsRef<str>>(
     it: impl Iterator<Item = Option<S>>,
     init_null_count: usize,
     first_value: Option<S>,
-    name: &str,
+    name: PlSmallStr,
     capacity: usize,
 ) -> StringChunked {
     // SAFETY: we know the iterators len.
@@ -252,7 +252,7 @@ fn iterator_to_list(
     it: impl Iterator<Item = Option<Series>>,
     init_null_count: usize,
     first_value: Option<&Series>,
-    name: &str,
+    name: PlSmallStr,
     capacity: usize,
 ) -> PyResult<ListChunked> {
     let mut builder =
@@ -260,16 +260,18 @@ fn iterator_to_list(
     for _ in 0..init_null_count {
         builder.append_null()
     }
-    builder
-        .append_opt_series(first_value)
-        .map_err(PyPolarsErr::from)?;
+    if first_value.is_some() {
+        builder
+            .append_opt_series(first_value)
+            .map_err(PyPolarsErr::from)?;
+    }
     for opt_val in it {
         match opt_val {
             None => builder.append_null(),
             Some(s) => {
                 if s.len() == 0 && s.dtype() != dt {
                     builder
-                        .append_series(&Series::full_null("", 0, dt))
+                        .append_series(&Series::full_null(PlSmallStr::EMPTY, 0, dt))
                         .unwrap()
                 } else {
                     builder.append_series(&s).map_err(PyPolarsErr::from)?

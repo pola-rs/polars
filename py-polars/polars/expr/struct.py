@@ -16,7 +16,7 @@ class ExprStructNameSpace:
 
     _accessor = "struct"
 
-    def __init__(self, expr: Expr):
+    def __init__(self, expr: Expr) -> None:
         self._pyexpr = expr._pyexpr
 
     def __getitem__(self, item: str | int) -> Expr:

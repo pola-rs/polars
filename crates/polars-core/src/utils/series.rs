@@ -9,7 +9,7 @@ pub fn with_unstable_series<F, T>(dtype: &DataType, f: F) -> T
 where
     F: Fn(&mut AmortSeries) -> T,
 {
-    let container = Series::full_null("", 0, dtype);
+    let container = Series::full_null(PlSmallStr::EMPTY, 0, dtype);
     let mut us = AmortSeries::new(Rc::new(container));
 
     f(&mut us)

@@ -17,12 +17,13 @@ impl TryFrom<StructArray> for DataFrame {
                 // reported data type is correct
                 unsafe {
                     Series::_try_from_arrow_unchecked_with_md(
-                        &fld.name,
+                        fld.name.clone(),
                         vec![arr],
-                        fld.data_type(),
+                        fld.dtype(),
                         Some(&fld.metadata),
                     )
                 }
+                .map(Column::from)
             })
             .collect::<PolarsResult<Vec<_>>>()?;
         DataFrame::new(columns)

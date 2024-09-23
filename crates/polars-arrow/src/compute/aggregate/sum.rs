@@ -102,9 +102,9 @@ where
     }
 }
 
-/// Whether [`sum`] supports `data_type`
-pub fn can_sum(data_type: &ArrowDataType) -> bool {
-    if let PhysicalType::Primitive(primitive) = data_type.to_physical_type() {
+/// Whether [`sum`] supports `dtype`
+pub fn can_sum(dtype: &ArrowDataType) -> bool {
+    if let PhysicalType::Primitive(primitive) = dtype.to_physical_type() {
         use PrimitiveType::*;
         matches!(
             primitive,
@@ -120,11 +120,11 @@ pub fn can_sum(data_type: &ArrowDataType) -> bool {
 /// # Error
 /// Errors iff the operation is not supported.
 pub fn sum(array: &dyn Array) -> PolarsResult<Box<dyn Scalar>> {
-    Ok(match array.data_type().to_physical_type() {
+    Ok(match array.dtype().to_physical_type() {
         PhysicalType::Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
-            let data_type = array.data_type().clone();
+            let dtype = array.dtype().clone();
             let array = array.as_any().downcast_ref().unwrap();
-            Box::new(PrimitiveScalar::new(data_type, sum_primitive::<$T>(array)))
+            Box::new(PrimitiveScalar::new(dtype, sum_primitive::<$T>(array)))
         }),
         _ => {
             unimplemented!()

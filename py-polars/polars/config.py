@@ -19,6 +19,12 @@ if TYPE_CHECKING:
     else:
         from typing_extensions import TypeAlias
 
+    if sys.version_info >= (3, 11):
+        from typing import Self
+    else:
+        from typing_extensions import Self
+
+
 __all__ = ["Config"]
 
 TableFormatNames: TypeAlias = Literal[
@@ -160,7 +166,7 @@ class Config(contextlib.ContextDecorator):
                 raise AttributeError(msg)
             getattr(self, opt)(value)
 
-    def __enter__(self) -> Config:
+    def __enter__(self) -> Self:
         """Support setting temporary Config options that are reset on scope exit."""
         self._original_state = self._original_state or self.save()
         return self

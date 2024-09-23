@@ -1,7 +1,6 @@
 pub mod compression;
 mod other;
 
-pub use compression::is_compressed;
 pub use other::*;
 #[cfg(feature = "cloud")]
 pub mod byte_source;

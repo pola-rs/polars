@@ -1,5 +1,4 @@
 use std::hint::unreachable_unchecked;
-use std::sync::Arc;
 
 use polars_error::{polars_bail, PolarsResult};
 
@@ -8,6 +7,7 @@ use super::utils::{
 };
 use super::{intersects_with_mut, Bitmap};
 use crate::bitmap::utils::{get_bit_unchecked, merge_reversed, set_bit_unchecked};
+use crate::storage::SharedStorage;
 use crate::trusted_len::TrustedLen;
 
 /// A container of booleans. [`MutableBitmap`] is semantically equivalent
@@ -374,7 +374,7 @@ impl From<MutableBitmap> for Option<Bitmap> {
             // SAFETY: invariants of the `MutableBitmap` equal that of `Bitmap`.
             let bitmap = unsafe {
                 Bitmap::from_inner_unchecked(
-                    Arc::new(buffer.buffer.into()),
+                    SharedStorage::from_vec(buffer.buffer),
                     0,
                     buffer.length,
                     Some(unset_bits),

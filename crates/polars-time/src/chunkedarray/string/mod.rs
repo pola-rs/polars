@@ -108,7 +108,7 @@ pub trait StringMethods: AsString {
             (string_ca.len() as f64).sqrt() as usize,
         );
         let ca = unary_elementwise(string_ca, |opt_s| convert.eval(opt_s?, use_cache));
-        Ok(ca.with_name(string_ca.name()).into())
+        Ok(ca.with_name(string_ca.name().clone()).into())
     }
 
     #[cfg(feature = "dtype-date")]
@@ -143,7 +143,7 @@ pub trait StringMethods: AsString {
             }
             None
         });
-        Ok(ca.with_name(string_ca.name()).into())
+        Ok(ca.with_name(string_ca.name().clone()).into())
     }
 
     #[cfg(feature = "dtype-datetime")]
@@ -200,7 +200,7 @@ pub trait StringMethods: AsString {
             }
             None
         })
-        .with_name(string_ca.name());
+        .with_name(string_ca.name().clone());
         match (tz_aware, tz) {
             #[cfg(feature = "timezones")]
             (false, Some(tz)) => polars_ops::prelude::replace_time_zone(
@@ -210,7 +210,10 @@ pub trait StringMethods: AsString {
                 NonExistent::Raise,
             ),
             #[cfg(feature = "timezones")]
-            (true, tz) => Ok(ca.into_datetime(tu, tz.cloned().or_else(|| Some("UTC".to_string())))),
+            (true, tz) => Ok(ca.into_datetime(
+                tu,
+                tz.cloned().or_else(|| Some(PlSmallStr::from_static("UTC"))),
+            )),
             _ => Ok(ca.into_datetime(tu, None)),
         }
     }
@@ -253,7 +256,7 @@ pub trait StringMethods: AsString {
             unary_elementwise(string_ca, |val| convert.eval(val?, use_cache))
         };
 
-        Ok(ca.with_name(string_ca.name()).into())
+        Ok(ca.with_name(string_ca.name().clone()).into())
     }
 
     #[cfg(feature = "dtype-datetime")]
@@ -293,10 +296,13 @@ pub trait StringMethods: AsString {
                 );
                 Ok(
                     unary_elementwise(string_ca, |opt_s| convert.eval(opt_s?, use_cache))
-                        .with_name(string_ca.name())
+                        .with_name(string_ca.name().clone())
                         .into_datetime(
                             tu,
-                            Some(tz.map(|x| x.to_string()).unwrap_or("UTC".to_string())),
+                            Some(
+                                tz.cloned()
+                                    .unwrap_or_else(|| PlSmallStr::from_static("UTC")),
+                            ),
                         ),
                 )
             }
@@ -332,7 +338,9 @@ pub trait StringMethods: AsString {
                 );
                 unary_elementwise(string_ca, |opt_s| convert.eval(opt_s?, use_cache))
             };
-            let dt = ca.with_name(string_ca.name()).into_datetime(tu, None);
+            let dt = ca
+                .with_name(string_ca.name().clone())
+                .into_datetime(tu, None);
             match tz {
                 #[cfg(feature = "timezones")]
                 Some(tz) => polars_ops::prelude::replace_time_zone(

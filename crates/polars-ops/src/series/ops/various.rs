@@ -16,29 +16,30 @@ pub trait SeriesMethods: SeriesSealed {
         &self,
         sort: bool,
         parallel: bool,
-        name: String,
+        name: PlSmallStr,
         normalize: bool,
     ) -> PolarsResult<DataFrame> {
         let s = self.as_series();
         polars_ensure!(
-            s.name() != name,
-            Duplicate: "using `value_counts` on a column/series named '{}' would lead to duplicate column names; change `name` to fix", name,
+            s.name() != &name,
+            Duplicate: "using `value_counts` on a column/series named '{}' would lead to duplicate \
+            column names; change `name` to fix", name,
         );
         // we need to sort here as well in case of `maintain_order` because duplicates behavior is undefined
         let groups = s.group_tuples(parallel, sort)?;
-        let values = unsafe { s.agg_first(&groups) };
-        let counts = groups.group_count().with_name(name.as_str());
+        let values = unsafe { s.agg_first(&groups) }.into();
+        let counts = groups.group_count().with_name(name.clone());
 
         let counts = if normalize {
             let len = s.len() as f64;
             let counts: Float64Chunked =
                 unary_elementwise_values(&counts, |count| count as f64 / len);
-            counts.into_series()
+            counts.into_column()
         } else {
-            counts.into_series()
+            counts.into_column()
         };
 
-        let cols = vec![values, counts.into_series()];
+        let cols = vec![values, counts];
         let df = unsafe { DataFrame::new_no_checks(cols) };
         if sort {
             df.sort(
@@ -63,7 +64,7 @@ pub trait SeriesMethods: SeriesSealed {
             _ => {
                 let mut h = vec![];
                 s.0.vec_hash(build_hasher, &mut h).unwrap();
-                UInt64Chunked::from_vec(s.name(), h)
+                UInt64Chunked::from_vec(s.name().clone(), h)
             },
         }
     }
@@ -93,8 +94,8 @@ pub trait SeriesMethods: SeriesSealed {
         #[cfg(feature = "dtype-struct")]
         if matches!(s.dtype(), DataType::Struct(_)) {
             let encoded = _get_rows_encoded_ca(
-                "",
-                &[s.clone()],
+                PlSmallStr::EMPTY,
+                &[s.clone().into()],
                 &[options.descending],
                 &[options.nulls_last],
             )?;

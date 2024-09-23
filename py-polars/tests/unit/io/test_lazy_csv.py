@@ -12,7 +12,7 @@ from polars.exceptions import ComputeError, ShapeError
 from polars.testing import assert_frame_equal
 
 
-@pytest.fixture()
+@pytest.fixture
 def foods_file_path(io_files_path: Path) -> Path:
     return io_files_path / "foods1.csv"
 
@@ -36,7 +36,7 @@ def test_scan_empty_csv(io_files_path: Path) -> None:
     assert_frame_equal(lf, pl.LazyFrame())
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_invalid_utf8(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
@@ -206,7 +206,7 @@ def test_lazy_row_index_no_push_down(foods_file_path: Path) -> None:
     assert 'SELECTION: [(col("category")) == (String(vegetables))]' in plan
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_glob_skip_rows(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
@@ -276,7 +276,7 @@ def test_scan_csv_slice_offset_zero(io_files_path: Path) -> None:
     assert result.collect().height == 4
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_scan_empty_csv_with_row_index(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
     file_path = tmp_path / "small.parquet"
@@ -287,7 +287,7 @@ def test_scan_empty_csv_with_row_index(tmp_path: Path) -> None:
     assert read.collect().schema == OrderedDict([("idx", pl.UInt32), ("a", pl.String)])
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_csv_null_values_with_projection_15515() -> None:
     data = """IndCode,SireCode,BirthDate,Flag
 ID00316,.,19940315,
@@ -309,7 +309,7 @@ ID00316,.,19940315,
         }
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_csv_respect_user_schema_ragged_lines_15254() -> None:
     with tempfile.NamedTemporaryFile() as f:
         f.write(

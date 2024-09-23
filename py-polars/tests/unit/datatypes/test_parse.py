@@ -30,7 +30,7 @@ if TYPE_CHECKING:
 
 def assert_dtype_equal(left: PolarsDataType, right: PolarsDataType) -> None:
     assert left == right
-    assert type(left) == type(right)
+    assert type(left) is type(right)
     assert hash(left) == hash(right)
 
 

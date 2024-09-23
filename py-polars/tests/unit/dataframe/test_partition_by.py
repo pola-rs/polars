@@ -6,7 +6,7 @@ import polars as pl
 import polars.selectors as cs
 
 
-@pytest.fixture()
+@pytest.fixture
 def df() -> pl.DataFrame:
     return pl.DataFrame(
         {
@@ -53,11 +53,11 @@ def test_partition_by_single(df: pl.DataFrame) -> None:
 def test_partition_by_as_dict() -> None:
     df = pl.DataFrame({"a": ["one", "two", "one", "two"], "b": [1, 2, 3, 4]})
     result = df.partition_by(cs.all(), as_dict=True)
-    result_first = result[("one", 1)]
+    result_first = result["one", 1]
     assert result_first.to_dict(as_series=False) == {"a": ["one"], "b": [1]}
 
     result = df.partition_by("a", as_dict=True)
-    result_first = result[("one",)]
+    result_first = result["one",]
     assert result_first.to_dict(as_series=False) == {"a": ["one", "one"], "b": [1, 3]}
 
 
@@ -65,7 +65,7 @@ def test_partition_by_as_dict_include_keys_false() -> None:
     df = pl.DataFrame({"a": ["one", "two", "one", "two"], "b": [1, 2, 3, 4]})
 
     result = df.partition_by("a", include_key=False, as_dict=True)
-    result_first = result[("one",)]
+    result_first = result["one",]
     assert result_first.to_dict(as_series=False) == {"b": [1, 3]}
 
 
@@ -75,7 +75,7 @@ def test_partition_by_as_dict_include_keys_false_maintain_order_false() -> None:
         df.partition_by(["a"], maintain_order=False, include_key=False, as_dict=True)
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 def test_partition_by_as_dict_include_keys_false_large() -> None:
     # test with both as_dict and include_key=False
     df = pl.DataFrame(

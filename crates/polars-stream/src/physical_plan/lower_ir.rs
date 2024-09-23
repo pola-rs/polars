@@ -4,7 +4,7 @@ use polars_core::prelude::{InitHashMaps, PlHashMap, PlIndexMap};
 use polars_core::schema::Schema;
 use polars_error::PolarsResult;
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
-use polars_plan::plans::{AExpr, ColumnName, IR};
+use polars_plan::plans::{AExpr, IR};
 use polars_plan::prelude::SinkType;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
@@ -26,7 +26,7 @@ pub fn lower_ir(
     let output_schema = IR::schema_with_cache(node, ir_arena, schema_cache);
     let node_kind = match ir_node {
         IR::SimpleProjection { input, columns } => {
-            let columns = columns.iter_names().map(|s| s.to_string()).collect();
+            let columns = columns.iter_names_cloned().collect::<Vec<_>>();
             let phys_input = lower_ir(
                 *input,
                 ir_arena,
@@ -95,7 +95,7 @@ pub fn lower_ir(
             let input_schema = &phys_sm[phys_input].output_schema;
             let mut selectors = PlIndexMap::with_capacity(input_schema.len() + exprs.len());
             for name in input_schema.iter_names() {
-                let col_name: Arc<str> = name.as_str().into();
+                let col_name = name.clone();
                 let col_expr = expr_arena.add(AExpr::Column(col_name.clone()));
                 selectors.insert(
                     name.clone(),
@@ -103,7 +103,7 @@ pub fn lower_ir(
                 );
             }
             for expr in exprs {
-                selectors.insert(expr.output_name().into(), expr);
+                selectors.insert(expr.output_name().clone(), expr);
             }
             let selectors = selectors.into_values().collect_vec();
             return super::lower_expr::build_select_node(
@@ -145,8 +145,8 @@ pub fn lower_ir(
             )?;
             let cols_and_predicate = output_schema
                 .iter_names()
+                .cloned()
                 .map(|name| {
-                    let name: ColumnName = name.as_str().into();
                     ExprIR::new(
                         expr_arena.add(AExpr::Column(name.clone())),
                         OutputName::ColumnLhs(name),
@@ -200,10 +200,7 @@ pub fn lower_ir(
                     let phys_input = phys_sm.insert(PhysNode::new(schema, node_kind));
                     node_kind = PhysNodeKind::SimpleProjection {
                         input: phys_input,
-                        columns: projection_schema
-                            .iter_names()
-                            .map(|s| s.to_string())
-                            .collect(),
+                        columns: projection_schema.iter_names_cloned().collect::<Vec<_>>(),
                     };
                     schema = projection_schema.clone();
                 }
@@ -334,7 +331,7 @@ pub fn lower_ir(
 
         v @ IR::Scan { .. } => {
             let IR::Scan {
-                paths,
+                sources: scan_sources,
                 file_info,
                 hive_parts,
                 output_schema,
@@ -347,7 +344,7 @@ pub fn lower_ir(
             };
 
             PhysNodeKind::FileScan {
-                paths,
+                scan_sources,
                 file_info,
                 hive_parts,
                 output_schema,
@@ -357,7 +354,14 @@ pub fn lower_ir(
             }
         },
 
-        _ => todo!(),
+        IR::PythonScan { .. } => todo!(),
+        IR::Reduce { .. } => todo!(),
+        IR::Cache { .. } => todo!(),
+        IR::GroupBy { .. } => todo!(),
+        IR::Join { .. } => todo!(),
+        IR::Distinct { .. } => todo!(),
+        IR::ExtContext { .. } => todo!(),
+        IR::Invalid => unreachable!(),
     };
 
     Ok(phys_sm.insert(PhysNode::new(output_schema, node_kind)))

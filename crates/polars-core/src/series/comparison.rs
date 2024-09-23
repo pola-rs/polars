@@ -10,6 +10,17 @@ macro_rules! impl_compare {
         let (lhs, rhs) = ($self, $rhs);
         validate_types(lhs.dtype(), rhs.dtype())?;
 
+        polars_ensure!(
+            lhs.len() == rhs.len() ||
+
+            // Broadcast
+            lhs.len() == 1 ||
+            rhs.len() == 1,
+            ShapeMismatch: "could not compare between two series of different length ({} != {})",
+            lhs.len(),
+            rhs.len()
+        );
+
         #[cfg(feature = "dtype-categorical")]
         match (lhs.dtype(), rhs.dtype()) {
             (Categorical(_, _) | Enum(_, _), Categorical(_, _) | Enum(_, _)) => {
@@ -17,21 +28,21 @@ macro_rules! impl_compare {
                     .categorical()
                     .unwrap()
                     .$method(rhs.categorical().unwrap())?
-                    .with_name(lhs.name()));
+                    .with_name(lhs.name().clone()));
             },
             (Categorical(_, _) | Enum(_, _), String) => {
                 return Ok(lhs
                     .categorical()
                     .unwrap()
                     .$method(rhs.str().unwrap())?
-                    .with_name(lhs.name()));
+                    .with_name(lhs.name().clone()));
             },
             (String, Categorical(_, _) | Enum(_, _)) => {
                 return Ok(rhs
                     .categorical()
                     .unwrap()
                     .$method(lhs.str().unwrap())?
-                    .with_name(lhs.name()));
+                    .with_name(lhs.name().clone()));
             },
             _ => (),
         };
@@ -80,7 +91,7 @@ macro_rules! impl_compare {
 
             dt => polars_bail!(InvalidOperation: "could not apply comparison on series of dtype '{}; operand names: '{}', '{}'", dt, lhs.name(), rhs.name()),
         };
-        out.rename(lhs.name());
+        out.rename(lhs.name().clone());
         PolarsResult::Ok(out)
     }};
 }
@@ -240,7 +251,7 @@ impl ChunkCompare<&str> for Series {
             DataType::Categorical(_, _) | DataType::Enum(_, _) => {
                 self.categorical().unwrap().equal(rhs)
             },
-            _ => Ok(BooleanChunked::full(self.name(), false, self.len())),
+            _ => Ok(BooleanChunked::full(self.name().clone(), false, self.len())),
         }
     }
 
@@ -252,7 +263,11 @@ impl ChunkCompare<&str> for Series {
             DataType::Categorical(_, _) | DataType::Enum(_, _) => {
                 self.categorical().unwrap().equal_missing(rhs)
             },
-            _ => Ok(replace_non_null(self.name(), self.0.chunks(), false)),
+            _ => Ok(replace_non_null(
+                self.name().clone(),
+                self.0.chunks(),
+                false,
+            )),
         }
     }
 
@@ -264,7 +279,7 @@ impl ChunkCompare<&str> for Series {
             DataType::Categorical(_, _) | DataType::Enum(_, _) => {
                 self.categorical().unwrap().not_equal(rhs)
             },
-            _ => Ok(BooleanChunked::full(self.name(), true, self.len())),
+            _ => Ok(BooleanChunked::full(self.name().clone(), true, self.len())),
         }
     }
 
@@ -276,7 +291,7 @@ impl ChunkCompare<&str> for Series {
             DataType::Categorical(_, _) | DataType::Enum(_, _) => {
                 self.categorical().unwrap().not_equal_missing(rhs)
             },
-            _ => Ok(replace_non_null(self.name(), self.0.chunks(), true)),
+            _ => Ok(replace_non_null(self.name().clone(), self.0.chunks(), true)),
         }
     }
 

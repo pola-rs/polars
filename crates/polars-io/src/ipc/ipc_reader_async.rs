@@ -5,8 +5,9 @@ use object_store::path::Path;
 use object_store::ObjectMeta;
 use polars_core::datatypes::IDX_DTYPE;
 use polars_core::frame::DataFrame;
-use polars_core::schema::Schema;
+use polars_core::schema::{Schema, SchemaExt};
 use polars_error::{polars_bail, polars_err, to_compute_err, PolarsResult};
+use polars_utils::pl_str::PlSmallStr;
 
 use crate::cloud::{
     build_object_store, object_path_from_str, CloudLocation, CloudOptions, PolarsObjectStore,
@@ -27,7 +28,7 @@ pub struct IpcReaderAsync {
 #[derive(Default, Clone)]
 pub struct IpcReadOptions {
     // Names of the columns to include in the output.
-    projection: Option<Arc<[String]>>,
+    projection: Option<Arc<[PlSmallStr]>>,
 
     // The maximum number of rows to include in the output.
     row_limit: Option<usize>,
@@ -40,7 +41,7 @@ pub struct IpcReadOptions {
 }
 
 impl IpcReadOptions {
-    pub fn with_projection(mut self, projection: Option<Arc<[String]>>) -> Self {
+    pub fn with_projection(mut self, projection: Option<Arc<[PlSmallStr]>>) -> Self {
         self.projection = projection;
         self
     }
@@ -141,7 +142,7 @@ impl IpcReaderAsync {
             Some(projection) => {
                 fn prepare_schema(mut schema: Schema, row_index: Option<&RowIndex>) -> Schema {
                     if let Some(rc) = row_index {
-                        let _ = schema.insert_at_index(0, rc.name.as_ref().into(), IDX_DTYPE);
+                        let _ = schema.insert_at_index(0, rc.name.clone(), IDX_DTYPE);
                     }
                     schema
                 }
@@ -156,7 +157,10 @@ impl IpcReaderAsync {
                     &fetched_metadata
                 };
 
-                let schema = prepare_schema((&metadata.schema).into(), options.row_index.as_ref());
+                let schema = prepare_schema(
+                    Schema::from_arrow_schema(metadata.schema.as_ref()),
+                    options.row_index.as_ref(),
+                );
 
                 let hive_partitions = None;
 

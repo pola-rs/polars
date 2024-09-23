@@ -1,0 +1,17 @@
+altair
+pandas
+pyarrow
+graphviz
+hvplot
+matplotlib
+seaborn
+plotly
+numba
+numpy
+
+mkdocs-material==9.5.27
+mkdocs-macros-plugin==1.0.5
+mkdocs-redirects==1.2.1
+material-plausible-plugin==0.2.0
+markdown-exec[ansi]==1.9.3
+pygithub==2.4.0

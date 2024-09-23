@@ -25,7 +25,7 @@ pub fn replace_time_zone(
         let mut out = datetime
             .0
             .clone()
-            .into_datetime(datetime.time_unit(), time_zone.map(|x| x.to_string()));
+            .into_datetime(datetime.time_unit(), time_zone.map(PlSmallStr::from_str));
         out.set_sorted_flag(datetime.is_sorted_flag());
         return Ok(out);
     }
@@ -64,7 +64,7 @@ pub fn replace_time_zone(
         )
     };
 
-    let mut out = out?.into_datetime(datetime.time_unit(), time_zone.map(|x| x.to_string()));
+    let mut out = out?.into_datetime(datetime.time_unit(), time_zone.map(PlSmallStr::from_str));
     if from_time_zone == "UTC" && ambiguous.len() == 1 && ambiguous.get(0) == Some("raise") {
         // In general, the sortedness flag can't be preserved.
         // To be safe, we only do so in the simplest case when we know for sure that there is no "daylight savings weirdness" going on, i.e.:
@@ -131,7 +131,7 @@ pub fn impl_replace_time_zone(
                 });
                 element_iter.try_collect_arr()
             });
-            ChunkedArray::try_from_chunk_iter(datetime.0.name(), iter)
+            ChunkedArray::try_from_chunk_iter(datetime.0.name().clone(), iter)
         },
         _ => try_binary_elementwise(datetime, ambiguous, |timestamp_opt, ambiguous_opt| {
             match (timestamp_opt, ambiguous_opt) {

@@ -25,11 +25,11 @@ impl PySeries {
                 let schema = &*schema_ptr;
 
                 let field = arrow::ffi::import_field_from_c(schema).unwrap();
-                arrow::ffi::import_array_from_c(array, field.data_type).unwrap()
+                arrow::ffi::import_array_from_c(array, field.dtype).unwrap()
             })
             .collect::<Vec<_>>();
 
-        let s = Series::try_from((name, chunks)).map_err(PyPolarsErr::from)?;
+        let s = Series::try_new(name.into(), chunks).map_err(PyPolarsErr::from)?;
         Ok(s.into())
     }
 
@@ -54,7 +54,11 @@ unsafe fn export_chunk(
     let out_ptr = out_ptr as *mut arrow::ffi::ArrowArray;
     *out_ptr = c_array;
 
-    let field = ArrowField::new(s.name(), s.dtype().to_arrow(CompatLevel::newest()), true);
+    let field = ArrowField::new(
+        s.name().clone(),
+        s.dtype().to_arrow(CompatLevel::newest()),
+        true,
+    );
     let c_schema = arrow::ffi::export_field_to_c(&field);
 
     let out_schema_ptr = out_schema_ptr as *mut arrow::ffi::ArrowSchema;

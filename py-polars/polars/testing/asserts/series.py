@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from polars._utils.deprecation import deprecate_renamed_parameter
 from polars.datatypes import (
@@ -12,12 +12,25 @@ from polars.datatypes import (
     unpack_dtypes,
 )
 from polars.datatypes.group import FLOAT_DTYPES
-from polars.exceptions import ComputeError, InvalidOperationError
+from polars.exceptions import ComputeError, InvalidOperationError, ShapeError
 from polars.series import Series
 from polars.testing.asserts.utils import raise_assertion_error
 
 if TYPE_CHECKING:
     from polars import DataType
+
+
+def _assert_correct_input_type(left: Any, right: Any) -> bool:
+    __tracebackhide__ = True
+
+    if not (isinstance(left, Series) and isinstance(right, Series)):
+        raise_assertion_error(
+            "inputs",
+            "unexpected input types",
+            type(left).__name__,
+            type(right).__name__,
+        )
+    return True
 
 
 @deprecate_renamed_parameter("check_dtype", "check_dtypes", version="0.20.31")
@@ -81,22 +94,16 @@ def assert_series_equal(
     >>> from polars.testing import assert_series_equal
     >>> s1 = pl.Series([1, 2, 3])
     >>> s2 = pl.Series([1, 5, 3])
-    >>> assert_series_equal(s1, s2)  # doctest: +SKIP
+    >>> assert_series_equal(s1, s2)
     Traceback (most recent call last):
     ...
-    AssertionError: Series are different (value mismatch)
+    AssertionError: Series are different (exact value mismatch)
     [left]:  [1, 2, 3]
     [right]: [1, 5, 3]
     """
     __tracebackhide__ = True
 
-    if not (isinstance(left, Series) and isinstance(right, Series)):  # type: ignore[redundant-expr]
-        raise_assertion_error(
-            "inputs",
-            "unexpected input types",
-            type(left).__name__,
-            type(right).__name__,
-        )
+    _assert_correct_input_type(left, right)
 
     if left.len() != right.len():
         raise_assertion_error("Series", "length mismatch", left.len(), right.len())
@@ -148,6 +155,14 @@ def _assert_series_values_equal(
             "incompatible data types",
             left=left.dtype,
             right=right.dtype,
+            cause=exc,
+        )
+    except ShapeError as exc:
+        raise_assertion_error(
+            "Series",
+            "incompatible lengths",
+            left=left,
+            right=right,
             cause=exc,
         )
 
@@ -397,13 +412,14 @@ def assert_series_not_equal(
     >>> from polars.testing import assert_series_not_equal
     >>> s1 = pl.Series([1, 2, 3])
     >>> s2 = pl.Series([1, 2, 3])
-    >>> assert_series_not_equal(s1, s2)  # doctest: +SKIP
+    >>> assert_series_not_equal(s1, s2)
     Traceback (most recent call last):
     ...
-    AssertionError: Series are equal
+    AssertionError: Series are equal (but are expected not to be)
     """
     __tracebackhide__ = True
 
+    _assert_correct_input_type(left, right)
     try:
         assert_series_equal(
             left=left,
@@ -419,5 +435,5 @@ def assert_series_not_equal(
     except AssertionError:
         return
     else:
-        msg = "Series are equal"
+        msg = "Series are equal (but are expected not to be)"
         raise AssertionError(msg)

@@ -25,7 +25,7 @@ polars-utils = { workspace = true }
 
 [dev-dependencies]
 ahash = { workspace = true }
-apache-avro = { version = "0.16", features = ["snappy"] }
+apache-avro = { version = "0.17", features = ["snappy"] }
 arrow = { workspace = true, features = ["arrow_rs"] }
 arrow-buffer = { workspace = true }
 avro-schema = { workspace = true, features = ["async"] }
@@ -65,13 +65,14 @@ default = [
 ]
 ndarray = ["polars-core/ndarray"]
 # serde support for dataframes and series
-serde = ["polars-core/serde"]
+serde = ["polars-core/serde", "polars-utils/serde"]
 serde-lazy = [
   "polars-core/serde-lazy",
   "polars-lazy?/serde",
   "polars-time?/serde",
   "polars-io?/serde",
   "polars-ops?/serde",
+  "polars-utils/serde",
 ]
 parquet = ["polars-io", "polars-lazy?/parquet", "polars-io/parquet", "polars-sql?/parquet"]
 async = ["polars-lazy?/async"]
@@ -129,6 +130,7 @@ approx_unique = ["polars-lazy?/approx_unique", "polars-ops/approx_unique"]
 arg_where = ["polars-lazy?/arg_where"]
 array_any_all = ["polars-lazy?/array_any_all", "dtype-array"]
 asof_join = ["polars-lazy?/asof_join", "polars-ops/asof_join"]
+iejoin = ["polars-lazy?/iejoin"]
 binary_encoding = ["polars-ops/binary_encoding", "polars-lazy?/binary_encoding", "polars-sql?/binary_encoding"]
 business = ["polars-lazy?/business", "polars-ops/business"]
 checked_arithmetic = ["polars-core/checked_arithmetic"]

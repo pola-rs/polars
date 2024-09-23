@@ -5,7 +5,7 @@ use crate::chunked_array::object::registry::get_object_builder;
 use crate::prelude::*;
 
 impl Series {
-    pub fn full_null(name: &str, size: usize, dtype: &DataType) -> Self {
+    pub fn full_null(name: PlSmallStr, size: usize, dtype: &DataType) -> Self {
         // match the logical types and create them
         match dtype {
             DataType::List(inner_dtype) => {
@@ -53,9 +53,9 @@ impl Series {
             DataType::Struct(fields) => {
                 let fields = fields
                     .iter()
-                    .map(|fld| Series::full_null(fld.name(), size, fld.data_type()))
+                    .map(|fld| Series::full_null(fld.name().clone(), size, fld.dtype()))
                     .collect::<Vec<_>>();
-                let ca = StructChunked::from_series(name, &fields).unwrap();
+                let ca = StructChunked::from_series(name, fields.iter()).unwrap();
 
                 if !fields.is_empty() {
                     ca.with_outer_validity(Some(Bitmap::new_zeroed(size)))

@@ -52,7 +52,9 @@ fn mmap_numpy_array<T: Element + NativeType>(
     let vals = unsafe { array.as_slice().unwrap() };
 
     let arr = unsafe { arrow::ffi::mmap::slice_and_owner(vals, array.to_object(py)) };
-    Series::from_arrow(name, arr.to_boxed()).unwrap().into()
+    Series::from_arrow(name.into(), arr.to_boxed())
+        .unwrap()
+        .into()
 }
 
 #[pymethods]
@@ -61,7 +63,7 @@ impl PySeries {
     fn new_bool(py: Python, name: &str, array: &Bound<PyArray1<bool>>, _strict: bool) -> Self {
         let array = array.readonly();
         let vals = array.as_slice().unwrap();
-        py.allow_threads(|| Series::new(name, vals).into())
+        py.allow_threads(|| Series::new(name.into(), vals).into())
     }
 
     #[staticmethod]
@@ -73,7 +75,7 @@ impl PySeries {
                 .iter()
                 .map(|&val| if f32::is_nan(val) { None } else { Some(val) })
                 .collect_trusted();
-            ca.with_name(name).into_series().into()
+            ca.with_name(name.into()).into_series().into()
         } else {
             mmap_numpy_array(py, name, array)
         }
@@ -88,7 +90,7 @@ impl PySeries {
                 .iter()
                 .map(|&val| if f64::is_nan(val) { None } else { Some(val) })
                 .collect_trusted();
-            ca.with_name(name).into_series().into()
+            ca.with_name(name.into()).into_series().into()
         } else {
             mmap_numpy_array(py, name, array)
         }
@@ -100,7 +102,7 @@ impl PySeries {
     #[staticmethod]
     fn new_opt_bool(name: &str, values: &Bound<PyAny>, _strict: bool) -> PyResult<Self> {
         let len = values.len()?;
-        let mut builder = BooleanChunkedBuilder::new(name, len);
+        let mut builder = BooleanChunkedBuilder::new(name.into(), len);
 
         for res in values.iter()? {
             let value = res?;
@@ -125,7 +127,7 @@ where
     T::Native: FromPyObject<'a>,
 {
     let len = values.len()?;
-    let mut builder = PrimitiveChunkedBuilder::<T>::new(name, len);
+    let mut builder = PrimitiveChunkedBuilder::<T>::new(name.into(), len);
 
     for res in values.iter()? {
         let value = res?;
@@ -166,16 +168,20 @@ init_method_opt!(new_opt_i64, Int64Type, i64);
 init_method_opt!(new_opt_f32, Float32Type, f32);
 init_method_opt!(new_opt_f64, Float64Type, f64);
 
+fn convert_to_avs<'a>(values: &'a Bound<'a, PyAny>, strict: bool) -> PyResult<Vec<AnyValue<'a>>> {
+    values
+        .iter()?
+        .map(|v| py_object_to_any_value(&(v?).as_borrowed(), strict))
+        .collect()
+}
+
 #[pymethods]
 impl PySeries {
     #[staticmethod]
     fn new_from_any_values(name: &str, values: &Bound<PyAny>, strict: bool) -> PyResult<Self> {
-        let any_values_result = values
-            .iter()?
-            .map(|v| py_object_to_any_value(&(v?).as_borrowed(), strict))
-            .collect::<PyResult<Vec<AnyValue>>>();
-        let result = any_values_result.and_then(|avs| {
-            let s = Series::from_any_values(name, avs.as_slice(), strict).map_err(|e| {
+        let avs = convert_to_avs(values, strict);
+        let result = avs.and_then(|avs| {
+            let s = Series::from_any_values(name.into(), avs.as_slice(), strict).map_err(|e| {
                 PyTypeError::new_err(format!(
                     "{e}\n\nHint: Try setting `strict=False` to allow passing data with mixed types."
                 ))
@@ -209,15 +215,12 @@ impl PySeries {
         dtype: Wrap<DataType>,
         strict: bool,
     ) -> PyResult<Self> {
-        let any_values = values
-            .iter()?
-            .map(|v| py_object_to_any_value(&(v?).as_borrowed(), strict))
-            .collect::<PyResult<Vec<AnyValue>>>()?;
-        let s = Series::from_any_values_and_dtype(name, any_values.as_slice(), &dtype.0, strict)
+        let avs = convert_to_avs(values, strict)?;
+        let s = Series::from_any_values_and_dtype(name.into(), avs.as_slice(), &dtype.0, strict)
             .map_err(|e| {
                 PyTypeError::new_err(format!(
-                    "{e}\n\nHint: Try setting `strict=False` to allow passing data with mixed types."
-                ))
+                "{e}\n\nHint: Try setting `strict=False` to allow passing data with mixed types."
+            ))
             })?;
         Ok(s.into())
     }
@@ -225,7 +228,7 @@ impl PySeries {
     #[staticmethod]
     fn new_str(name: &str, values: &Bound<PyAny>, _strict: bool) -> PyResult<Self> {
         let len = values.len()?;
-        let mut builder = StringChunkedBuilder::new(name, len);
+        let mut builder = StringChunkedBuilder::new(name.into(), len);
 
         for res in values.iter()? {
             let value = res?;
@@ -245,7 +248,7 @@ impl PySeries {
     #[staticmethod]
     fn new_binary(name: &str, values: &Bound<PyAny>, _strict: bool) -> PyResult<Self> {
         let len = values.len()?;
-        let mut builder = BinaryChunkedBuilder::new(name, len);
+        let mut builder = BinaryChunkedBuilder::new(name.into(), len);
 
         for res in values.iter()? {
             let value = res?;
@@ -277,7 +280,7 @@ impl PySeries {
                 ));
             }
         }
-        Ok(Series::new(name, series).into())
+        Ok(Series::new(name.into(), series).into())
     }
 
     #[staticmethod]
@@ -303,7 +306,7 @@ impl PySeries {
             });
             // Object builder must be registered. This is done on import.
             let ca = ObjectChunked::<ObjectValue>::new_from_vec_and_validity(
-                name,
+                name.into(),
                 values,
                 validity.into(),
             );
@@ -317,19 +320,19 @@ impl PySeries {
     #[staticmethod]
     fn new_null(name: &str, values: &Bound<PyAny>, _strict: bool) -> PyResult<Self> {
         let len = values.len()?;
-        Ok(Series::new_null(name, len).into())
+        Ok(Series::new_null(name.into(), len).into())
     }
 
     #[staticmethod]
     fn from_arrow(name: &str, array: &Bound<PyAny>) -> PyResult<Self> {
         let arr = array_to_rust(array)?;
 
-        match arr.data_type() {
+        match arr.dtype() {
             ArrowDataType::LargeList(_) => {
                 let array = arr.as_any().downcast_ref::<LargeListArray>().unwrap();
                 let fast_explode = array.offsets().as_slice().windows(2).all(|w| w[0] != w[1]);
 
-                let mut out = ListChunked::with_chunk(name, array.clone());
+                let mut out = ListChunked::with_chunk(name.into(), array.clone());
                 if fast_explode {
                     out.set_fast_explode()
                 }
@@ -337,7 +340,7 @@ impl PySeries {
             },
             _ => {
                 let series: Series =
-                    std::convert::TryFrom::try_from((name, arr)).map_err(PyPolarsErr::from)?;
+                    Series::try_new(name.into(), arr).map_err(PyPolarsErr::from)?;
                 Ok(series.into())
             },
         }

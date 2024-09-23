@@ -302,7 +302,7 @@ class LazyFrame:
         orient: Orientation | None = None,
         infer_schema_length: int | None = N_INFER_DEFAULT,
         nan_to_null: bool = False,
-    ):
+    ) -> None:
         from polars.dataframe import DataFrame
 
         self._ldf = (
@@ -585,10 +585,10 @@ class LazyFrame:
         msg = f'"{operator!r}" comparison not supported for LazyFrame objects'
         raise TypeError(msg)
 
-    def __eq__(self, other: Any) -> NoReturn:
+    def __eq__(self, other: object) -> NoReturn:
         self._comparison_error("==")
 
-    def __ne__(self, other: Any) -> NoReturn:
+    def __ne__(self, other: object) -> NoReturn:
         self._comparison_error("!=")
 
     def __gt__(self, other: Any) -> NoReturn:
@@ -699,8 +699,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         >>> lf = pl.LazyFrame({"a": [1, 2, 3]}).sum()
         >>> bytes = lf.serialize()
-        >>> bytes  # doctest: +ELLIPSIS
-        b'\xa1kMapFunction\xa2einput\xa1mDataFrameScan\xa4bdf\xa1gcolumns\x81\xa4d...'
 
         The bytes can later be deserialized back into a LazyFrame.
 
@@ -1735,7 +1733,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             )
             import matplotlib.pyplot as plt
 
-            fig, ax = plt.subplots(1, figsize=figsize)
+            _fig, ax = plt.subplots(1, figsize=figsize)
 
             max_val = timings["end"][-1]
             timings_ = timings.reverse()
@@ -1867,7 +1865,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             polars CPU engine. If set to `"gpu"`, the GPU engine is
             used. Fine-grained control over the GPU engine, for
             example which device to use on a system with multiple
-            devices, is possible by providing a :class:`GPUEngine` object
+            devices, is possible by providing a :class:`~.GPUEngine` object
             with configuration options.
 
             .. note::
@@ -2021,9 +2019,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 "cudf_polars",
                 err_prefix="GPU engine requested, but required package",
                 install_message=(
-                    "Please install using the command `pip install cudf-polars-cu12` "
-                    "(or `pip install cudf-polars-cu11` if your system has a "
-                    "CUDA 11 driver)."
+                    "Please install using the command "
+                    "`pip install --extra-index-url=https://pypi.nvidia.com cudf-polars-cu12` "
+                    "(or `pip install --extra-index-url=https://pypi.nvidia.com cudf-polars-cu11` "
+                    "if your system has a CUDA 11 driver)."
                 ),
             )
             if not is_config_obj:
@@ -2972,7 +2971,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             cast_map.update(
                 {c: dtype}
                 if isinstance(c, str)
-                else {x: dtype for x in expand_selector(self, c)}  # type: ignore[arg-type]
+                else dict.fromkeys(expand_selector(self, c), dtype)  # type: ignore[arg-type]
             )
 
         return self._from_pyldf(self._ldf.cast(cast_map, strict))
@@ -3500,7 +3499,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ c   ┆ 1   ┆ 1.0 │
         └─────┴─────┴─────┘
         """
-        for _key, value in named_by.items():
+        for value in named_by.values():
             if not isinstance(value, (str, pl.Expr, pl.Series)):
                 msg = (
                     f"Expected Polars expression or object convertible to one, got {type(value)}.\n\n"
@@ -3823,7 +3822,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 2021-12-16 03:00:00 ┆ 6   │
         └─────────────────────┴─────┘
 
-        Group by windows of 1 hour starting at 2021-12-16 00:00:00.
+        Group by windows of 1 hour.
 
         >>> lf.group_by_dynamic("time", every="1h", closed="right").agg(
         ...     pl.col("n")
@@ -4503,6 +4502,17 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             msg = f"expected `other` join table to be a LazyFrame, not a {type(other).__name__!r}"
             raise TypeError(msg)
 
+        uses_on = on is not None
+        uses_left_on = left_on is not None
+        uses_right_on = right_on is not None
+        uses_lr_on = uses_left_on or uses_right_on
+        if uses_on and uses_lr_on:
+            msg = "cannot use 'on' in conjunction with 'left_on' or 'right_on'"
+            raise ValueError(msg)
+        elif uses_left_on != uses_right_on:
+            msg = "'left_on' requires corresponding 'right_on'"
+            raise ValueError(msg)
+
         if how == "outer":
             how = "full"
             issue_deprecation_warning(
@@ -4516,9 +4526,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 "Use of `how='outer_coalesce'` should be replaced with `how='full', coalesce=True`.",
                 version="0.20.29",
             )
-
         elif how == "cross":
-            if left_on is not None or right_on is not None:
+            if uses_on or uses_lr_on:
                 msg = "cross join should not pass join keys"
                 raise ValueError(msg)
             return self._from_pyldf(
@@ -4535,11 +4544,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 )
             )
 
-        if on is not None:
+        if uses_on:
             pyexprs = parse_into_list_of_expressions(on)
             pyexprs_left = pyexprs
             pyexprs_right = pyexprs
-        elif left_on is not None and right_on is not None:
+        elif uses_lr_on:
             pyexprs_left = parse_into_list_of_expressions(left_on)
             pyexprs_right = parse_into_list_of_expressions(right_on)
         else:
@@ -4558,6 +4567,89 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 suffix,
                 validate,
                 coalesce,
+            )
+        )
+
+    @unstable()
+    def join_where(
+        self,
+        other: LazyFrame,
+        *predicates: Expr | Iterable[Expr],
+        suffix: str = "_right",
+    ) -> LazyFrame:
+        """
+        Perform a join based on one or multiple (in)equality predicates.
+
+        This performs an inner join, so only rows where all predicates are true
+        are included in the result, and a row from either DataFrame may be included
+        multiple times in the result.
+
+        .. note::
+            The row order of the input DataFrames is not preserved.
+
+        .. warning::
+            This functionality is experimental. It may be
+            changed at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        other
+            DataFrame to join with.
+        *predicates
+            (In)Equality condition to join the two tables on.
+            When a column name occurs in both tables, the proper suffix must
+            be applied in the predicate.
+        suffix
+            Suffix to append to columns with a duplicate name.
+
+        Examples
+        --------
+        >>> east = pl.LazyFrame(
+        ...     {
+        ...         "id": [100, 101, 102],
+        ...         "dur": [120, 140, 160],
+        ...         "rev": [12, 14, 16],
+        ...         "cores": [2, 8, 4],
+        ...     }
+        ... )
+        >>> west = pl.LazyFrame(
+        ...     {
+        ...         "t_id": [404, 498, 676, 742],
+        ...         "time": [90, 130, 150, 170],
+        ...         "cost": [9, 13, 15, 16],
+        ...         "cores": [4, 2, 1, 4],
+        ...     }
+        ... )
+        >>> east.join_where(
+        ...     west,
+        ...     pl.col("dur") < pl.col("time"),
+        ...     pl.col("rev") < pl.col("cost"),
+        ... ).collect()
+        shape: (5, 8)
+        ┌─────┬─────┬─────┬───────┬──────┬──────┬──────┬─────────────┐
+        │ id  ┆ dur ┆ rev ┆ cores ┆ t_id ┆ time ┆ cost ┆ cores_right │
+        │ --- ┆ --- ┆ --- ┆ ---   ┆ ---  ┆ ---  ┆ ---  ┆ ---         │
+        │ i64 ┆ i64 ┆ i64 ┆ i64   ┆ i64  ┆ i64  ┆ i64  ┆ i64         │
+        ╞═════╪═════╪═════╪═══════╪══════╪══════╪══════╪═════════════╡
+        │ 100 ┆ 120 ┆ 12  ┆ 2     ┆ 498  ┆ 130  ┆ 13   ┆ 2           │
+        │ 100 ┆ 120 ┆ 12  ┆ 2     ┆ 676  ┆ 150  ┆ 15   ┆ 1           │
+        │ 100 ┆ 120 ┆ 12  ┆ 2     ┆ 742  ┆ 170  ┆ 16   ┆ 4           │
+        │ 101 ┆ 140 ┆ 14  ┆ 8     ┆ 676  ┆ 150  ┆ 15   ┆ 1           │
+        │ 101 ┆ 140 ┆ 14  ┆ 8     ┆ 742  ┆ 170  ┆ 16   ┆ 4           │
+        └─────┴─────┴─────┴───────┴──────┴──────┴──────┴─────────────┘
+
+        """
+        if not isinstance(other, LazyFrame):
+            msg = f"expected `other` join table to be a LazyFrame, not a {type(other).__name__!r}"
+            raise TypeError(msg)
+
+        pyexprs = parse_into_list_of_expressions(*predicates)
+
+        return self._from_pyldf(
+            self._ldf.join_where(
+                other._ldf,
+                pyexprs,
+                suffix,
             )
         )
 

@@ -4,11 +4,11 @@ use std::sync::Arc;
 
 #[cfg(feature = "avro")]
 use polars::io::avro::AvroCompression;
-use polars::io::mmap::ensure_not_mapped;
 use polars::io::RowIndex;
 use polars::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_parquet::arrow::write::StatisticsOptions;
+use polars_utils::mmap::ensure_not_mapped;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 
@@ -70,7 +70,7 @@ impl PyDataFrame {
         let null_values = null_values.map(|w| w.0);
         let eol_char = eol_char.as_bytes()[0];
         let row_index = row_index.map(|(name, offset)| RowIndex {
-            name: Arc::from(name.as_str()),
+            name: name.into(),
             offset,
         });
         let quote_char = quote_char.and_then(|s| s.as_bytes().first().copied());
@@ -80,7 +80,7 @@ impl PyDataFrame {
                 .iter()
                 .map(|(name, dtype)| {
                     let dtype = dtype.0.clone();
-                    Field::new(name, dtype)
+                    Field::new((&**name).into(), dtype)
                 })
                 .collect::<Schema>()
         });
@@ -105,7 +105,7 @@ impl PyDataFrame {
                 .with_projection(projection.map(Arc::new))
                 .with_rechunk(rechunk)
                 .with_chunk_size(chunk_size)
-                .with_columns(columns.map(Arc::from))
+                .with_columns(columns.map(|x| x.into_iter().map(|x| x.into()).collect()))
                 .with_n_threads(n_threads)
                 .with_schema_overwrite(overwrite_dtype.map(Arc::new))
                 .with_dtype_overwrite(overwrite_dtype_slice.map(Arc::new))
@@ -153,7 +153,7 @@ impl PyDataFrame {
         use EitherRustPythonFile::*;
 
         let row_index = row_index.map(|(name, offset)| RowIndex {
-            name: Arc::from(name.as_str()),
+            name: name.into(),
             offset,
         });
         let result = match get_either_file(py_f, false)? {
@@ -263,7 +263,7 @@ impl PyDataFrame {
         memory_map: bool,
     ) -> PyResult<Self> {
         let row_index = row_index.map(|(name, offset)| RowIndex {
-            name: Arc::from(name.as_str()),
+            name: name.into(),
             offset,
         });
         py_f = read_if_bytesio(py_f);
@@ -296,7 +296,7 @@ impl PyDataFrame {
         rechunk: bool,
     ) -> PyResult<Self> {
         let row_index = row_index.map(|(name, offset)| RowIndex {
-            name: Arc::from(name.as_str()),
+            name: name.into(),
             offset,
         });
         py_f = read_if_bytesio(py_f);

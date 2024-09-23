@@ -26,6 +26,7 @@ ahash = { workspace = true }
 arrow = { workspace = true }
 bitflags = { workspace = true }
 bytemuck = { workspace = true }
+bytes = { workspace = true }
 chrono = { workspace = true, optional = true }
 chrono-tz = { workspace = true, optional = true }
 ciborium = { workspace = true, optional = true }
@@ -41,7 +42,6 @@ recursive = { workspace = true }
 regex = { workspace = true, optional = true }
 serde = { workspace = true, features = ["rc"], optional = true }
 serde_json = { workspace = true, optional = true }
-smartstring = { workspace = true }
 strum_macros = { workspace = true }
 
 [build-dependencies]
@@ -57,6 +57,7 @@ serde = [
   "polars-time/serde",
   "polars-io/serde",
   "polars-ops/serde",
+  "polars-utils/serde",
   "either/serde",
 ]
 streaming = []
@@ -115,6 +116,7 @@ is_unique = ["polars-ops/is_unique"]
 is_between = ["polars-ops/is_between"]
 cross_join = ["polars-ops/cross_join"]
 asof_join = ["polars-time", "polars-ops/asof_join"]
+iejoin = ["polars-ops/iejoin"]
 concat_str = []
 business = ["polars-ops/business"]
 range = []

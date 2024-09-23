@@ -39,22 +39,28 @@ fn infer_and_finish<'a, A: ApplyLambda<'a>>(
         let series = py_pyseries.extract::<PySeries>().unwrap().series;
         let dt = series.dtype();
         applyer
-            .apply_lambda_with_list_out_type(py, lambda.to_object(py), null_count, &series, dt)
+            .apply_lambda_with_list_out_type(
+                py,
+                lambda.to_object(py),
+                null_count,
+                Some(&series),
+                dt,
+            )
             .map(|ca| ca.into_series().into())
     } else if out.is_instance_of::<PyList>() || out.is_instance_of::<PyTuple>() {
         let series = SERIES.call1(py, (out,))?;
         let py_pyseries = series.getattr(py, "_s").unwrap();
         let series = py_pyseries.extract::<PySeries>(py).unwrap().series;
 
-        // Empty dtype is incorrect, use AnyValues.
-        if series.is_empty() {
+        let dt = series.dtype();
+
+        // Null dtype may be incorrect, fall back to AnyValues logic.
+        if dt.is_nested_null() {
             let av = out.extract::<Wrap<AnyValue>>()?;
             return applyer
                 .apply_extract_any_values(py, lambda, null_count, av.0)
                 .map(|s| s.into());
         }
-
-        let dt = series.dtype();
 
         // make a new python function that is:
         // def new_lambda(lambda: Callable):
@@ -63,13 +69,14 @@ fn infer_and_finish<'a, A: ApplyLambda<'a>>(
         let new_lambda = PyCFunction::new_closure_bound(py, None, None, move |args, _kwargs| {
             Python::with_gil(|py| {
                 let out = lambda_owned.call1(py, args)?;
+                // check if Series, if not, call series constructor on it
                 SERIES.call1(py, (out,))
             })
         })?
         .to_object(py);
 
         let result = applyer
-            .apply_lambda_with_list_out_type(py, new_lambda, null_count, &series, dt)
+            .apply_lambda_with_list_out_type(py, new_lambda, null_count, Some(&series), dt)
             .map(|ca| ca.into_series().into());
         match result {
             Ok(out) => Ok(out),
@@ -172,7 +179,7 @@ pub trait ApplyLambda<'a> {
         py: Python,
         lambda: PyObject,
         init_null_count: usize,
-        first_value: &Series,
+        first_value: Option<&Series>,
         dt: &DataType,
     ) -> PyResult<ListChunked>;
 
@@ -248,7 +255,7 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
                 null_count += 1
             }
         }
-        Ok(Self::full_null(self.name(), self.len())
+        Ok(Self::full_null(self.name().clone(), self.len())
             .into_series()
             .into())
     }
@@ -266,13 +273,25 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
                 .map(|val| call_lambda(py, lambda, val).ok());
-            iterator_to_struct(it, init_null_count, first_value, self.name(), self.len())
+            iterator_to_struct(
+                it,
+                init_null_count,
+                first_value,
+                self.name().clone(),
+                self.len(),
+            )
         } else {
             let it = self
                 .into_iter()
                 .skip(init_null_count + skip)
                 .map(|opt_val| opt_val.and_then(|val| call_lambda(py, lambda, val).ok()));
-            iterator_to_struct(it, init_null_count, first_value, self.name(), self.len())
+            iterator_to_struct(
+                it,
+                init_null_count,
+                first_value,
+                self.name().clone(),
+                self.len(),
+            )
         }
     }
 
@@ -289,7 +308,7 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
     {
         let skip = usize::from(first_value.is_some());
         if init_null_count == self.len() {
-            Ok(ChunkedArray::full_null(self.name(), self.len()))
+            Ok(ChunkedArray::full_null(self.name().clone(), self.len()))
         } else if !self.has_nulls() {
             let it = self
                 .into_no_null_iter()
@@ -299,7 +318,7 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
                 it,
                 init_null_count,
                 first_value,
-                self.name(),
+                self.name().clone(),
                 self.len(),
             ))
         } else {
@@ -313,7 +332,7 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
                 it,
                 init_null_count,
                 first_value,
-                self.name(),
+                self.name().clone(),
                 self.len(),
             ))
         }
@@ -328,7 +347,7 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
     ) -> PyResult<BooleanChunked> {
         let skip = usize::from(first_value.is_some());
         if init_null_count == self.len() {
-            Ok(ChunkedArray::full_null(self.name(), self.len()))
+            Ok(ChunkedArray::full_null(self.name().clone(), self.len()))
         } else if !self.has_nulls() {
             let it = self
                 .into_no_null_iter()
@@ -338,7 +357,7 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
                 it,
                 init_null_count,
                 first_value,
-                self.name(),
+                self.name().clone(),
                 self.len(),
             ))
         } else {
@@ -352,7 +371,7 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
                 it,
                 init_null_count,
                 first_value,
-                self.name(),
+                self.name().clone(),
                 self.len(),
             ))
         }
@@ -367,7 +386,7 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
     ) -> PyResult<StringChunked> {
         let skip = usize::from(first_value.is_some());
         if init_null_count == self.len() {
-            Ok(ChunkedArray::full_null(self.name(), self.len()))
+            Ok(ChunkedArray::full_null(self.name().clone(), self.len()))
         } else if !self.has_nulls() {
             let it = self
                 .into_no_null_iter()
@@ -380,7 +399,7 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
                 it,
                 init_null_count,
                 first_value,
-                self.name(),
+                self.name().clone(),
                 self.len(),
             ))
         } else {
@@ -394,7 +413,7 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
                 it,
                 init_null_count,
                 first_value,
-                self.name(),
+                self.name().clone(),
                 self.len(),
             ))
         }
@@ -405,13 +424,13 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
         py: Python,
         lambda: PyObject,
         init_null_count: usize,
-        first_value: &Series,
+        first_value: Option<&Series>,
         dt: &DataType,
     ) -> PyResult<ListChunked> {
-        let skip = 1;
+        let skip = usize::from(first_value.is_some());
         let lambda = lambda.bind(py);
         if init_null_count == self.len() {
-            Ok(ChunkedArray::full_null(self.name(), self.len()))
+            Ok(ChunkedArray::full_null(self.name().clone(), self.len()))
         } else if !self.has_nulls() {
             let it = self
                 .into_no_null_iter()
@@ -422,8 +441,8 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
                 dt,
                 it,
                 init_null_count,
-                Some(first_value),
-                self.name(),
+                first_value,
+                self.name().clone(),
                 self.len(),
             )
         } else {
@@ -437,8 +456,8 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
                 dt,
                 it,
                 init_null_count,
-                Some(first_value),
-                self.name(),
+                first_value,
+                self.name().clone(),
                 self.len(),
             )
         }
@@ -475,7 +494,7 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
                 });
             avs.extend(iter);
         }
-        Ok(Series::new(self.name(), &avs))
+        Ok(Series::new(self.name().clone(), &avs))
     }
 
     #[cfg(feature = "object")]
@@ -488,7 +507,7 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
     ) -> PyResult<ObjectChunked<ObjectValue>> {
         let skip = usize::from(first_value.is_some());
         if init_null_count == self.len() {
-            Ok(ChunkedArray::full_null(self.name(), self.len()))
+            Ok(ChunkedArray::full_null(self.name().clone(), self.len()))
         } else if !self.has_nulls() {
             let it = self
                 .into_no_null_iter()
@@ -499,7 +518,7 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
                 it,
                 init_null_count,
                 first_value,
-                self.name(),
+                self.name().clone(),
                 self.len(),
             ))
         } else {
@@ -513,7 +532,7 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
                 it,
                 init_null_count,
                 first_value,
-                self.name(),
+                self.name().clone(),
                 self.len(),
             ))
         }
@@ -541,7 +560,7 @@ where
                 null_count += 1
             }
         }
-        Ok(Self::full_null(self.name(), self.len())
+        Ok(Self::full_null(self.name().clone(), self.len())
             .into_series()
             .into())
     }
@@ -559,13 +578,25 @@ where
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
                 .map(|val| call_lambda(py, lambda, val).ok());
-            iterator_to_struct(it, init_null_count, first_value, self.name(), self.len())
+            iterator_to_struct(
+                it,
+                init_null_count,
+                first_value,
+                self.name().clone(),
+                self.len(),
+            )
         } else {
             let it = self
                 .into_iter()
                 .skip(init_null_count + skip)
                 .map(|opt_val| opt_val.and_then(|val| call_lambda(py, lambda, val).ok()));
-            iterator_to_struct(it, init_null_count, first_value, self.name(), self.len())
+            iterator_to_struct(
+                it,
+                init_null_count,
+                first_value,
+                self.name().clone(),
+                self.len(),
+            )
         }
     }
 
@@ -582,7 +613,7 @@ where
     {
         let skip = usize::from(first_value.is_some());
         if init_null_count == self.len() {
-            Ok(ChunkedArray::full_null(self.name(), self.len()))
+            Ok(ChunkedArray::full_null(self.name().clone(), self.len()))
         } else if !self.has_nulls() {
             let it = self
                 .into_no_null_iter()
@@ -592,7 +623,7 @@ where
                 it,
                 init_null_count,
                 first_value,
-                self.name(),
+                self.name().clone(),
                 self.len(),
             ))
         } else {
@@ -606,7 +637,7 @@ where
                 it,
                 init_null_count,
                 first_value,
-                self.name(),
+                self.name().clone(),
                 self.len(),
             ))
         }
@@ -621,7 +652,7 @@ where
     ) -> PyResult<BooleanChunked> {
         let skip = usize::from(first_value.is_some());
         if init_null_count == self.len() {
-            Ok(ChunkedArray::full_null(self.name(), self.len()))
+            Ok(ChunkedArray::full_null(self.name().clone(), self.len()))
         } else if !self.has_nulls() {
             let it = self
                 .into_no_null_iter()
@@ -631,7 +662,7 @@ where
                 it,
                 init_null_count,
                 first_value,
-                self.name(),
+                self.name().clone(),
                 self.len(),
             ))
         } else {
@@ -645,7 +676,7 @@ where
                 it,
                 init_null_count,
                 first_value,
-                self.name(),
+                self.name().clone(),
                 self.len(),
             ))
         }
@@ -660,7 +691,7 @@ where
     ) -> PyResult<StringChunked> {
         let skip = usize::from(first_value.is_some());
         if init_null_count == self.len() {
-            Ok(ChunkedArray::full_null(self.name(), self.len()))
+            Ok(ChunkedArray::full_null(self.name().clone(), self.len()))
         } else if !self.has_nulls() {
             let it = self
                 .into_no_null_iter()
@@ -671,7 +702,7 @@ where
                 it,
                 init_null_count,
                 first_value,
-                self.name(),
+                self.name().clone(),
                 self.len(),
             ))
         } else {
@@ -685,7 +716,7 @@ where
                 it,
                 init_null_count,
                 first_value,
-                self.name(),
+                self.name().clone(),
                 self.len(),
             ))
         }
@@ -696,13 +727,13 @@ where
         py: Python,
         lambda: PyObject,
         init_null_count: usize,
-        first_value: &Series,
+        first_value: Option<&Series>,
         dt: &DataType,
     ) -> PyResult<ListChunked> {
-        let skip = 1;
+        let skip = usize::from(first_value.is_some());
         let lambda = lambda.bind(py);
         if init_null_count == self.len() {
-            Ok(ChunkedArray::full_null(self.name(), self.len()))
+            Ok(ChunkedArray::full_null(self.name().clone(), self.len()))
         } else if !self.has_nulls() {
             let it = self
                 .into_no_null_iter()
@@ -713,8 +744,8 @@ where
                 dt,
                 it,
                 init_null_count,
-                Some(first_value),
-                self.name(),
+                first_value,
+                self.name().clone(),
                 self.len(),
             )
         } else {
@@ -728,8 +759,8 @@ where
                 dt,
                 it,
                 init_null_count,
-                Some(first_value),
-                self.name(),
+                first_value,
+                self.name().clone(),
                 self.len(),
             )
         }
@@ -766,7 +797,7 @@ where
                 });
             avs.extend(iter);
         }
-        Ok(Series::new(self.name(), &avs))
+        Ok(Series::new(self.name().clone(), &avs))
     }
 
     #[cfg(feature = "object")]
@@ -779,7 +810,7 @@ where
     ) -> PyResult<ObjectChunked<ObjectValue>> {
         let skip = usize::from(first_value.is_some());
         if init_null_count == self.len() {
-            Ok(ChunkedArray::full_null(self.name(), self.len()))
+            Ok(ChunkedArray::full_null(self.name().clone(), self.len()))
         } else if !self.has_nulls() {
             let it = self
                 .into_no_null_iter()
@@ -790,7 +821,7 @@ where
                 it,
                 init_null_count,
                 first_value,
-                self.name(),
+                self.name().clone(),
                 self.len(),
             ))
         } else {
@@ -804,7 +835,7 @@ where
                 it,
                 init_null_count,
                 first_value,
-                self.name(),
+                self.name().clone(),
                 self.len(),
             ))
         }
@@ -827,7 +858,7 @@ impl<'a> ApplyLambda<'a> for StringChunked {
                 null_count += 1
             }
         }
-        Ok(Self::full_null(self.name(), self.len())
+        Ok(Self::full_null(self.name().clone(), self.len())
             .into_series()
             .into())
     }
@@ -845,13 +876,25 @@ impl<'a> ApplyLambda<'a> for StringChunked {
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
                 .map(|val| call_lambda(py, lambda, val).ok());
-            iterator_to_struct(it, init_null_count, first_value, self.name(), self.len())
+            iterator_to_struct(
+                it,
+                init_null_count,
+                first_value,
+                self.name().clone(),
+                self.len(),
+            )
         } else {
             let it = self
                 .into_iter()
                 .skip(init_null_count + skip)
                 .map(|opt_val| opt_val.and_then(|val| call_lambda(py, lambda, val).ok()));
-            iterator_to_struct(it, init_null_count, first_value, self.name(), self.len())
+            iterator_to_struct(
+                it,
+                init_null_count,
+                first_value,
+                self.name().clone(),
+                self.len(),
+            )
         }
     }
 
@@ -868,7 +911,7 @@ impl<'a> ApplyLambda<'a> for StringChunked {
     {
         let skip = usize::from(first_value.is_some());
         if init_null_count == self.len() {
-            Ok(ChunkedArray::full_null(self.name(), self.len()))
+            Ok(ChunkedArray::full_null(self.name().clone(), self.len()))
         } else if !self.has_nulls() {
             let it = self
                 .into_no_null_iter()
@@ -878,7 +921,7 @@ impl<'a> ApplyLambda<'a> for StringChunked {
                 it,
                 init_null_count,
                 first_value,
-                self.name(),
+                self.name().clone(),
                 self.len(),
             ))
         } else {
@@ -892,7 +935,7 @@ impl<'a> ApplyLambda<'a> for StringChunked {
                 it,
                 init_null_count,
                 first_value,
-                self.name(),
+                self.name().clone(),
                 self.len(),
             ))
         }
@@ -907,7 +950,7 @@ impl<'a> ApplyLambda<'a> for StringChunked {
     ) -> PyResult<BooleanChunked> {
         let skip = usize::from(first_value.is_some());
         if init_null_count == self.len() {
-            Ok(ChunkedArray::full_null(self.name(), self.len()))
+            Ok(ChunkedArray::full_null(self.name().clone(), self.len()))
         } else if !self.has_nulls() {
             let it = self
                 .into_no_null_iter()
@@ -917,7 +960,7 @@ impl<'a> ApplyLambda<'a> for StringChunked {
                 it,
                 init_null_count,
                 first_value,
-                self.name(),
+                self.name().clone(),
                 self.len(),
             ))
         } else {
@@ -931,7 +974,7 @@ impl<'a> ApplyLambda<'a> for StringChunked {
                 it,
                 init_null_count,
                 first_value,
-                self.name(),
+                self.name().clone(),
                 self.len(),
             ))
         }
@@ -946,7 +989,7 @@ impl<'a> ApplyLambda<'a> for StringChunked {
     ) -> PyResult<StringChunked> {
         let skip = usize::from(first_value.is_some());
         if init_null_count == self.len() {
-            Ok(ChunkedArray::full_null(self.name(), self.len()))
+            Ok(ChunkedArray::full_null(self.name().clone(), self.len()))
         } else if !self.has_nulls() {
             let it = self
                 .into_no_null_iter()
@@ -957,7 +1000,7 @@ impl<'a> ApplyLambda<'a> for StringChunked {
                 it,
                 init_null_count,
                 first_value,
-                self.name(),
+                self.name().clone(),
                 self.len(),
             ))
         } else {
@@ -971,7 +1014,7 @@ impl<'a> ApplyLambda<'a> for StringChunked {
                 it,
                 init_null_count,
                 first_value,
-                self.name(),
+                self.name().clone(),
                 self.len(),
             ))
         }
@@ -981,13 +1024,13 @@ impl<'a> ApplyLambda<'a> for StringChunked {
         py: Python,
         lambda: PyObject,
         init_null_count: usize,
-        first_value: &Series,
+        first_value: Option<&Series>,
         dt: &DataType,
     ) -> PyResult<ListChunked> {
-        let skip = 1;
+        let skip = usize::from(first_value.is_some());
         let lambda = lambda.bind(py);
         if init_null_count == self.len() {
-            Ok(ChunkedArray::full_null(self.name(), self.len()))
+            Ok(ChunkedArray::full_null(self.name().clone(), self.len()))
         } else if !self.has_nulls() {
             let it = self
                 .into_no_null_iter()
@@ -998,8 +1041,8 @@ impl<'a> ApplyLambda<'a> for StringChunked {
                 dt,
                 it,
                 init_null_count,
-                Some(first_value),
-                self.name(),
+                first_value,
+                self.name().clone(),
                 self.len(),
             )
         } else {
@@ -1013,8 +1056,8 @@ impl<'a> ApplyLambda<'a> for StringChunked {
                 dt,
                 it,
                 init_null_count,
-                Some(first_value),
-                self.name(),
+                first_value,
+                self.name().clone(),
                 self.len(),
             )
         }
@@ -1051,7 +1094,7 @@ impl<'a> ApplyLambda<'a> for StringChunked {
                 });
             avs.extend(iter);
         }
-        Ok(Series::new(self.name(), &avs))
+        Ok(Series::new(self.name().clone(), &avs))
     }
 
     #[cfg(feature = "object")]
@@ -1064,7 +1107,7 @@ impl<'a> ApplyLambda<'a> for StringChunked {
     ) -> PyResult<ObjectChunked<ObjectValue>> {
         let skip = usize::from(first_value.is_some());
         if init_null_count == self.len() {
-            Ok(ChunkedArray::full_null(self.name(), self.len()))
+            Ok(ChunkedArray::full_null(self.name().clone(), self.len()))
         } else if !self.has_nulls() {
             let it = self
                 .into_no_null_iter()
@@ -1075,7 +1118,7 @@ impl<'a> ApplyLambda<'a> for StringChunked {
                 it,
                 init_null_count,
                 first_value,
-                self.name(),
+                self.name().clone(),
                 self.len(),
             ))
         } else {
@@ -1089,7 +1132,7 @@ impl<'a> ApplyLambda<'a> for StringChunked {
                 it,
                 init_null_count,
                 first_value,
-                self.name(),
+                self.name().clone(),
                 self.len(),
             ))
         }
@@ -1150,7 +1193,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                 null_count += 1
             }
         }
-        Ok(Self::full_null(self.name(), self.len())
+        Ok(Self::full_null(self.name().clone(), self.len())
             .into_series()
             .into())
     }
@@ -1180,7 +1223,13 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                         .unwrap();
                     call_lambda(py, lambda, python_series_wrapper).ok()
                 });
-            iterator_to_struct(it, init_null_count, first_value, self.name(), self.len())
+            iterator_to_struct(
+                it,
+                init_null_count,
+                first_value,
+                self.name().clone(),
+                self.len(),
+            )
         } else {
             let it = self
                 .into_iter()
@@ -1198,7 +1247,13 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                         call_lambda(py, lambda, python_series_wrapper).ok()
                     })
                 });
-            iterator_to_struct(it, init_null_count, first_value, self.name(), self.len())
+            iterator_to_struct(
+                it,
+                init_null_count,
+                first_value,
+                self.name().clone(),
+                self.len(),
+            )
         }
     }
 
@@ -1216,7 +1271,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
         let skip = usize::from(first_value.is_some());
         let pypolars = PyModule::import_bound(py, "polars")?;
         if init_null_count == self.len() {
-            Ok(ChunkedArray::full_null(self.name(), self.len()))
+            Ok(ChunkedArray::full_null(self.name().clone(), self.len()))
         } else if !self.has_nulls() {
             let it = self
                 .into_no_null_iter()
@@ -1236,7 +1291,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                 it,
                 init_null_count,
                 first_value,
-                self.name(),
+                self.name().clone(),
                 self.len(),
             ))
         } else {
@@ -1260,7 +1315,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                 it,
                 init_null_count,
                 first_value,
-                self.name(),
+                self.name().clone(),
                 self.len(),
             ))
         }
@@ -1276,7 +1331,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
         let skip = usize::from(first_value.is_some());
         let pypolars = PyModule::import_bound(py, "polars")?;
         if init_null_count == self.len() {
-            Ok(ChunkedArray::full_null(self.name(), self.len()))
+            Ok(ChunkedArray::full_null(self.name().clone(), self.len()))
         } else if !self.has_nulls() {
             let it = self
                 .into_no_null_iter()
@@ -1296,7 +1351,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                 it,
                 init_null_count,
                 first_value,
-                self.name(),
+                self.name().clone(),
                 self.len(),
             ))
         } else {
@@ -1320,7 +1375,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                 it,
                 init_null_count,
                 first_value,
-                self.name(),
+                self.name().clone(),
                 self.len(),
             ))
         }
@@ -1338,7 +1393,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
         let pypolars = PyModule::import_bound(py, "polars")?;
 
         if init_null_count == self.len() {
-            Ok(ChunkedArray::full_null(self.name(), self.len()))
+            Ok(ChunkedArray::full_null(self.name().clone(), self.len()))
         } else if !self.has_nulls() {
             let it = self
                 .into_no_null_iter()
@@ -1359,7 +1414,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                 it,
                 init_null_count,
                 first_value,
-                self.name(),
+                self.name().clone(),
                 self.len(),
             ))
         } else {
@@ -1383,7 +1438,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                 it,
                 init_null_count,
                 first_value,
-                self.name(),
+                self.name().clone(),
                 self.len(),
             ))
         }
@@ -1393,14 +1448,14 @@ impl<'a> ApplyLambda<'a> for ListChunked {
         py: Python,
         lambda: PyObject,
         init_null_count: usize,
-        first_value: &Series,
+        first_value: Option<&Series>,
         dt: &DataType,
     ) -> PyResult<ListChunked> {
-        let skip = 1;
+        let skip = usize::from(first_value.is_some());
         let pypolars = PyModule::import_bound(py, "polars")?;
         let lambda = lambda.bind(py);
         if init_null_count == self.len() {
-            Ok(ChunkedArray::full_null(self.name(), self.len()))
+            Ok(ChunkedArray::full_null(self.name().clone(), self.len()))
         } else if !self.has_nulls() {
             let it = self
                 .into_no_null_iter()
@@ -1411,8 +1466,8 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                 dt,
                 it,
                 init_null_count,
-                Some(first_value),
-                self.name(),
+                first_value,
+                self.name().clone(),
                 self.len(),
             )
         } else {
@@ -1424,8 +1479,8 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                 dt,
                 it,
                 init_null_count,
-                Some(first_value),
-                self.name(),
+                first_value,
+                self.name().clone(),
                 self.len(),
             )
         }
@@ -1473,7 +1528,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                 .map(call_with_value);
             avs.extend(iter);
         }
-        Ok(Series::new(self.name(), &avs))
+        Ok(Series::new(self.name().clone(), &avs))
     }
 
     #[cfg(feature = "object")]
@@ -1487,7 +1542,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
         let skip = usize::from(first_value.is_some());
         let pypolars = PyModule::import_bound(py, "polars")?;
         if init_null_count == self.len() {
-            Ok(ChunkedArray::full_null(self.name(), self.len()))
+            Ok(ChunkedArray::full_null(self.name().clone(), self.len()))
         } else if !self.has_nulls() {
             let it = self
                 .into_no_null_iter()
@@ -1508,7 +1563,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                 it,
                 init_null_count,
                 first_value,
-                self.name(),
+                self.name().clone(),
                 self.len(),
             ))
         } else {
@@ -1532,7 +1587,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                 it,
                 init_null_count,
                 first_value,
-                self.name(),
+                self.name().clone(),
                 self.len(),
             ))
         }
@@ -1565,7 +1620,7 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
                 null_count += 1
             }
         }
-        Ok(Self::full_null(self.name(), self.len())
+        Ok(Self::full_null(self.name().clone(), self.len())
             .into_series()
             .into())
     }
@@ -1595,7 +1650,13 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
                         .unwrap();
                     call_lambda(py, lambda, python_series_wrapper).ok()
                 });
-            iterator_to_struct(it, init_null_count, first_value, self.name(), self.len())
+            iterator_to_struct(
+                it,
+                init_null_count,
+                first_value,
+                self.name().clone(),
+                self.len(),
+            )
         } else {
             let it = self
                 .into_iter()
@@ -1613,7 +1674,13 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
                         call_lambda(py, lambda, python_series_wrapper).ok()
                     })
                 });
-            iterator_to_struct(it, init_null_count, first_value, self.name(), self.len())
+            iterator_to_struct(
+                it,
+                init_null_count,
+                first_value,
+                self.name().clone(),
+                self.len(),
+            )
         }
     }
 
@@ -1631,7 +1698,7 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
         let skip = usize::from(first_value.is_some());
         let pypolars = PyModule::import_bound(py, "polars")?;
         if init_null_count == self.len() {
-            Ok(ChunkedArray::full_null(self.name(), self.len()))
+            Ok(ChunkedArray::full_null(self.name().clone(), self.len()))
         } else if !self.has_nulls() {
             let it = self
                 .into_no_null_iter()
@@ -1651,7 +1718,7 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
                 it,
                 init_null_count,
                 first_value,
-                self.name(),
+                self.name().clone(),
                 self.len(),
             ))
         } else {
@@ -1675,7 +1742,7 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
                 it,
                 init_null_count,
                 first_value,
-                self.name(),
+                self.name().clone(),
                 self.len(),
             ))
         }
@@ -1691,7 +1758,7 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
         let skip = usize::from(first_value.is_some());
         let pypolars = PyModule::import_bound(py, "polars")?;
         if init_null_count == self.len() {
-            Ok(ChunkedArray::full_null(self.name(), self.len()))
+            Ok(ChunkedArray::full_null(self.name().clone(), self.len()))
         } else if !self.has_nulls() {
             let it = self
                 .into_no_null_iter()
@@ -1711,7 +1778,7 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
                 it,
                 init_null_count,
                 first_value,
-                self.name(),
+                self.name().clone(),
                 self.len(),
             ))
         } else {
@@ -1735,7 +1802,7 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
                 it,
                 init_null_count,
                 first_value,
-                self.name(),
+                self.name().clone(),
                 self.len(),
             ))
         }
@@ -1753,7 +1820,7 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
         let pypolars = PyModule::import_bound(py, "polars")?;
 
         if init_null_count == self.len() {
-            Ok(ChunkedArray::full_null(self.name(), self.len()))
+            Ok(ChunkedArray::full_null(self.name().clone(), self.len()))
         } else if !self.has_nulls() {
             let it = self
                 .into_no_null_iter()
@@ -1774,7 +1841,7 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
                 it,
                 init_null_count,
                 first_value,
-                self.name(),
+                self.name().clone(),
                 self.len(),
             ))
         } else {
@@ -1798,7 +1865,7 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
                 it,
                 init_null_count,
                 first_value,
-                self.name(),
+                self.name().clone(),
                 self.len(),
             ))
         }
@@ -1808,14 +1875,14 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
         py: Python,
         lambda: PyObject,
         init_null_count: usize,
-        first_value: &Series,
+        first_value: Option<&Series>,
         dt: &DataType,
     ) -> PyResult<ListChunked> {
-        let skip = 1;
+        let skip = usize::from(first_value.is_some());
         let pypolars = PyModule::import_bound(py, "polars")?;
         let lambda = lambda.bind(py);
         if init_null_count == self.len() {
-            Ok(ChunkedArray::full_null(self.name(), self.len()))
+            Ok(ChunkedArray::full_null(self.name().clone(), self.len()))
         } else if !self.has_nulls() {
             let it = self
                 .into_no_null_iter()
@@ -1826,8 +1893,8 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
                 dt,
                 it,
                 init_null_count,
-                Some(first_value),
-                self.name(),
+                first_value,
+                self.name().clone(),
                 self.len(),
             )
         } else {
@@ -1839,8 +1906,8 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
                 dt,
                 it,
                 init_null_count,
-                Some(first_value),
-                self.name(),
+                first_value,
+                self.name().clone(),
                 self.len(),
             )
         }
@@ -1888,7 +1955,7 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
                 .map(call_with_value);
             avs.extend(iter);
         }
-        Ok(Series::new(self.name(), &avs))
+        Ok(Series::new(self.name().clone(), &avs))
     }
 
     #[cfg(feature = "object")]
@@ -1902,7 +1969,7 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
         let skip = usize::from(first_value.is_some());
         let pypolars = PyModule::import_bound(py, "polars")?;
         if init_null_count == self.len() {
-            Ok(ChunkedArray::full_null(self.name(), self.len()))
+            Ok(ChunkedArray::full_null(self.name().clone(), self.len()))
         } else if !self.has_nulls() {
             let it = self
                 .into_no_null_iter()
@@ -1923,7 +1990,7 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
                 it,
                 init_null_count,
                 first_value,
-                self.name(),
+                self.name().clone(),
                 self.len(),
             ))
         } else {
@@ -1947,7 +2014,7 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
                 it,
                 init_null_count,
                 first_value,
-                self.name(),
+                self.name().clone(),
                 self.len(),
             ))
         }
@@ -1971,7 +2038,7 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
                 null_count += 1
             }
         }
-        Ok(Self::full_null(self.name(), self.len())
+        Ok(Self::full_null(self.name().clone(), self.len())
             .into_series()
             .into())
     }
@@ -1991,7 +2058,13 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
                 let out = lambda.call1((object_value.map(|v| &v.inner),)).unwrap();
                 Some(out)
             });
-        iterator_to_struct(it, init_null_count, first_value, self.name(), self.len())
+        iterator_to_struct(
+            it,
+            init_null_count,
+            first_value,
+            self.name().clone(),
+            self.len(),
+        )
     }
 
     fn apply_lambda_with_primitive_out_type<D>(
@@ -2007,7 +2080,7 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
     {
         let skip = usize::from(first_value.is_some());
         if init_null_count == self.len() {
-            Ok(ChunkedArray::full_null(self.name(), self.len()))
+            Ok(ChunkedArray::full_null(self.name().clone(), self.len()))
         } else if !self.has_nulls() {
             let it = self
                 .into_no_null_iter()
@@ -2017,7 +2090,7 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
                 it,
                 init_null_count,
                 first_value,
-                self.name(),
+                self.name().clone(),
                 self.len(),
             ))
         } else {
@@ -2031,7 +2104,7 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
                 it,
                 init_null_count,
                 first_value,
-                self.name(),
+                self.name().clone(),
                 self.len(),
             ))
         }
@@ -2046,7 +2119,7 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
     ) -> PyResult<BooleanChunked> {
         let skip = usize::from(first_value.is_some());
         if init_null_count == self.len() {
-            Ok(ChunkedArray::full_null(self.name(), self.len()))
+            Ok(ChunkedArray::full_null(self.name().clone(), self.len()))
         } else if !self.has_nulls() {
             let it = self
                 .into_no_null_iter()
@@ -2056,7 +2129,7 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
                 it,
                 init_null_count,
                 first_value,
-                self.name(),
+                self.name().clone(),
                 self.len(),
             ))
         } else {
@@ -2070,7 +2143,7 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
                 it,
                 init_null_count,
                 first_value,
-                self.name(),
+                self.name().clone(),
                 self.len(),
             ))
         }
@@ -2085,7 +2158,7 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
     ) -> PyResult<StringChunked> {
         let skip = usize::from(first_value.is_some());
         if init_null_count == self.len() {
-            Ok(ChunkedArray::full_null(self.name(), self.len()))
+            Ok(ChunkedArray::full_null(self.name().clone(), self.len()))
         } else if !self.has_nulls() {
             let it = self
                 .into_no_null_iter()
@@ -2096,7 +2169,7 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
                 it,
                 init_null_count,
                 first_value,
-                self.name(),
+                self.name().clone(),
                 self.len(),
             ))
         } else {
@@ -2110,7 +2183,7 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
                 it,
                 init_null_count,
                 first_value,
-                self.name(),
+                self.name().clone(),
                 self.len(),
             ))
         }
@@ -2121,13 +2194,13 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
         py: Python,
         lambda: PyObject,
         init_null_count: usize,
-        first_value: &Series,
+        first_value: Option<&Series>,
         dt: &DataType,
     ) -> PyResult<ListChunked> {
-        let skip = 1;
+        let skip = usize::from(first_value.is_some());
         let lambda = lambda.bind(py);
         if init_null_count == self.len() {
-            Ok(ChunkedArray::full_null(self.name(), self.len()))
+            Ok(ChunkedArray::full_null(self.name().clone(), self.len()))
         } else if !self.has_nulls() {
             let it = self
                 .into_no_null_iter()
@@ -2138,8 +2211,8 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
                 dt,
                 it,
                 init_null_count,
-                Some(first_value),
-                self.name(),
+                first_value,
+                self.name().clone(),
                 self.len(),
             )
         } else {
@@ -2153,8 +2226,8 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
                 dt,
                 it,
                 init_null_count,
-                Some(first_value),
-                self.name(),
+                first_value,
+                self.name().clone(),
                 self.len(),
             )
         }
@@ -2191,7 +2264,7 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
                 });
             avs.extend(iter);
         }
-        Ok(Series::new(self.name(), &avs))
+        Ok(Series::new(self.name().clone(), &avs))
     }
 
     #[cfg(feature = "object")]
@@ -2204,7 +2277,7 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
     ) -> PyResult<ObjectChunked<ObjectValue>> {
         let skip = usize::from(first_value.is_some());
         if init_null_count == self.len() {
-            Ok(ChunkedArray::full_null(self.name(), self.len()))
+            Ok(ChunkedArray::full_null(self.name().clone(), self.len()))
         } else if !self.has_nulls() {
             let it = self
                 .into_no_null_iter()
@@ -2215,7 +2288,7 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
                 it,
                 init_null_count,
                 first_value,
-                self.name(),
+                self.name().clone(),
                 self.len(),
             ))
         } else {
@@ -2229,7 +2302,7 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
                 it,
                 init_null_count,
                 first_value,
-                self.name(),
+                self.name().clone(),
                 self.len(),
             ))
         }
@@ -2269,7 +2342,13 @@ impl<'a> ApplyLambda<'a> for StructChunked {
             let out = lambda.call1((Wrap(val),)).unwrap();
             Some(out)
         });
-        iterator_to_struct(it, init_null_count, first_value, self.name(), self.len())
+        iterator_to_struct(
+            it,
+            init_null_count,
+            first_value,
+            self.name().clone(),
+            self.len(),
+        )
     }
 
     fn apply_lambda_with_primitive_out_type<D>(
@@ -2292,7 +2371,7 @@ impl<'a> ApplyLambda<'a> for StructChunked {
             it,
             init_null_count,
             first_value,
-            self.name(),
+            self.name().clone(),
             self.len(),
         ))
     }
@@ -2313,7 +2392,7 @@ impl<'a> ApplyLambda<'a> for StructChunked {
             it,
             init_null_count,
             first_value,
-            self.name(),
+            self.name().clone(),
             self.len(),
         ))
     }
@@ -2334,7 +2413,7 @@ impl<'a> ApplyLambda<'a> for StructChunked {
             it,
             init_null_count,
             first_value,
-            self.name(),
+            self.name().clone(),
             self.len(),
         ))
     }
@@ -2343,10 +2422,10 @@ impl<'a> ApplyLambda<'a> for StructChunked {
         py: Python,
         lambda: PyObject,
         init_null_count: usize,
-        first_value: &Series,
+        first_value: Option<&Series>,
         dt: &DataType,
     ) -> PyResult<ListChunked> {
-        let skip = 1;
+        let skip = usize::from(first_value.is_some());
         let lambda = lambda.bind(py);
         let it = iter_struct(self)
             .skip(init_null_count + skip)
@@ -2355,8 +2434,8 @@ impl<'a> ApplyLambda<'a> for StructChunked {
             dt,
             it,
             init_null_count,
-            Some(first_value),
-            self.name(),
+            first_value,
+            self.name().clone(),
             self.len(),
         )
     }
@@ -2379,7 +2458,7 @@ impl<'a> ApplyLambda<'a> for StructChunked {
         });
         avs.extend(iter);
 
-        Ok(Series::new(self.name(), &avs))
+        Ok(Series::new(self.name().clone(), &avs))
     }
 
     #[cfg(feature = "object")]
@@ -2399,7 +2478,7 @@ impl<'a> ApplyLambda<'a> for StructChunked {
             it,
             init_null_count,
             first_value,
-            self.name(),
+            self.name().clone(),
             self.len(),
         ))
     }

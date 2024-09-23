@@ -2,7 +2,7 @@ use std::io::Write;
 use std::num::NonZeroUsize;
 
 use polars_core::frame::DataFrame;
-use polars_core::schema::{IndexOfSchema, Schema};
+use polars_core::schema::Schema;
 use polars_core::POOL;
 use polars_error::PolarsResult;
 
@@ -49,9 +49,13 @@ where
         if self.bom {
             write_bom(&mut self.buffer)?;
         }
-        let names = df.get_column_names();
+        let names = df
+            .get_column_names()
+            .into_iter()
+            .map(|x| x.as_str())
+            .collect::<Vec<_>>();
         if self.header {
-            write_header(&mut self.buffer, &names, &self.options)?;
+            write_header(&mut self.buffer, names.as_slice(), &self.options)?;
         }
         write(
             &mut self.buffer,
@@ -193,8 +197,16 @@ impl<W: Write> BatchedWriter<W> {
 
         if !self.has_written_header {
             self.has_written_header = true;
-            let names = df.get_column_names();
-            write_header(&mut self.writer.buffer, &names, &self.writer.options)?;
+            let names = df
+                .get_column_names()
+                .into_iter()
+                .map(|x| x.as_str())
+                .collect::<Vec<_>>();
+            write_header(
+                &mut self.writer.buffer,
+                names.as_slice(),
+                &self.writer.options,
+            )?;
         }
 
         write(
@@ -216,7 +228,11 @@ impl<W: Write> BatchedWriter<W> {
 
         if !self.has_written_header {
             self.has_written_header = true;
-            let names = self.schema.get_names();
+            let names = self
+                .schema
+                .iter_names()
+                .map(|x| x.as_str())
+                .collect::<Vec<_>>();
             write_header(&mut self.writer.buffer, &names, &self.writer.options)?;
         };
 

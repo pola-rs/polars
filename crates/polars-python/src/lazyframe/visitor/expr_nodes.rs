@@ -561,6 +561,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 },
                 Binary(_) => return Err(PyNotImplementedError::new_err("binary literal")),
                 Range { .. } => return Err(PyNotImplementedError::new_err("range literal")),
+                OtherScalar { .. } => return Err(PyNotImplementedError::new_err("scalar literal")),
                 Date(..) | DateTime(..) | Decimal(..) => Literal {
                     value: Wrap(lit.to_any_value().unwrap()).to_object(py),
                     dtype,
@@ -588,11 +589,11 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
         .into_py(py),
         AExpr::Cast {
             expr,
-            data_type,
+            dtype,
             options,
         } => Cast {
             expr: expr.0,
-            dtype: Wrap(data_type.clone()).to_object(py),
+            dtype: Wrap(dtype.clone()).to_object(py),
             options: *options as u8,
         }
         .into_py(py),
@@ -763,7 +764,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                         ignore_nulls,
                     } => (
                         PyStringFunction::ConcatHorizontal.into_py(py),
-                        delimiter,
+                        delimiter.as_str(),
                         ignore_nulls,
                     )
                         .to_object(py),
@@ -772,7 +773,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                         ignore_nulls,
                     } => (
                         PyStringFunction::ConcatVertical.into_py(py),
-                        delimiter,
+                        delimiter.as_str(),
                         ignore_nulls,
                     )
                         .to_object(py),
@@ -796,7 +797,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     StringFunction::ExtractGroups { dtype, pat } => (
                         PyStringFunction::ExtractGroups.into_py(py),
                         Wrap(dtype.clone()).to_object(py),
-                        pat,
+                        pat.as_str(),
                     )
                         .to_object(py),
                     #[cfg(feature = "regex")]
@@ -979,7 +980,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     },
                     #[cfg(feature = "timezones")]
                     TemporalFunction::ConvertTimeZone(time_zone) => {
-                        (PyTemporalFunction::ConvertTimeZone, time_zone).into_py(py)
+                        (PyTemporalFunction::ConvertTimeZone, time_zone.as_str()).into_py(py)
                     },
                     TemporalFunction::TimeStamp(time_unit) => {
                         (PyTemporalFunction::TimeStamp, Wrap(*time_unit)).into_py(py)
@@ -1193,7 +1194,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     parallel,
                     name,
                     normalize,
-                } => ("value_counts", sort, parallel, name, normalize).to_object(py),
+                } => ("value_counts", sort, parallel, name.as_str(), normalize).to_object(py),
                 FunctionExpr::UniqueCounts => ("unique_counts",).to_object(py),
                 FunctionExpr::ApproxNUnique => ("approx_n_unique",).to_object(py),
                 FunctionExpr::Coalesce => ("coalesce",).to_object(py),

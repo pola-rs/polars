@@ -131,19 +131,41 @@ fn array_shape(dt: &DataType, infer: bool) -> Vec<i64> {
 }
 
 #[cfg(feature = "dtype-array")]
+fn broadcast_array(lhs: &ArrayChunked, rhs: &Series) -> PolarsResult<(ArrayChunked, Series)> {
+    let out = match (lhs.len(), rhs.len()) {
+        (1, _) => (lhs.new_from_index(0, rhs.len()), rhs.clone()),
+        (_, 1) => {
+            // Numeric scalars will be broadcasted implicitly without intermediate allocation.
+            if rhs.dtype().is_numeric() {
+                (lhs.clone(), rhs.clone())
+            } else {
+                (lhs.clone(), rhs.new_from_index(0, lhs.len()))
+            }
+        },
+        (a, b) if a == b => (lhs.clone(), rhs.clone()),
+        _ => {
+            polars_bail!(InvalidOperation: "can only do arithmetic of array's of the same type and shape; got {} and {}", lhs.dtype(), rhs.dtype())
+        },
+    };
+    Ok(out)
+}
+
+#[cfg(feature = "dtype-array")]
 impl ArrayChunked {
     fn arithm_helper(
         &self,
         rhs: &Series,
         op: &dyn Fn(Series, Series) -> PolarsResult<Series>,
     ) -> PolarsResult<Series> {
-        let l_leaf_array = self.clone().into_series().get_leaf_array();
-        let shape = array_shape(self.dtype(), true);
+        let (lhs, rhs) = broadcast_array(self, rhs)?;
+
+        let l_leaf_array = lhs.clone().into_series().get_leaf_array();
+        let shape = array_shape(lhs.dtype(), true);
 
         let r_leaf_array = if rhs.dtype().is_numeric() && rhs.len() == 1 {
             rhs.clone()
         } else {
-            polars_ensure!(self.dtype() == rhs.dtype(), InvalidOperation: "can only do arithmetic of array's of the same type and shape; got {} and {}", self.dtype(), rhs.dtype());
+            polars_ensure!(lhs.dtype() == rhs.dtype(), InvalidOperation: "can only do arithmetic of array's of the same type and shape; got {} and {}", self.dtype(), rhs.dtype());
             rhs.get_leaf_array()
         };
 
@@ -548,7 +570,7 @@ impl Mul for &Series {
             (_, Duration(_)) => {
                 // swap order
                 let out = rhs.multiply(self)?;
-                Ok(out.with_name(self.name()))
+                Ok(out.with_name(self.name().clone()))
             },
             _ => {
                 let (lhs, rhs) = coerce_lhs_rhs(self, rhs)?;
@@ -892,7 +914,7 @@ mod test {
     #[allow(clippy::eq_op)]
     fn test_arithmetic_series() -> PolarsResult<()> {
         // Series +-/* Series
-        let s = Series::new("foo", [1, 2, 3]);
+        let s = Series::new("foo".into(), [1, 2, 3]);
         assert_eq!(
             Vec::from((&s * &s)?.i32().unwrap()),
             [Some(1), Some(4), Some(9)]
@@ -949,9 +971,9 @@ mod test {
             [Some(0), Some(1), Some(1)]
         );
 
-        assert_eq!((&s * &s)?.name(), "foo");
-        assert_eq!((&s * 1).name(), "foo");
-        assert_eq!((1.div(&s)).name(), "foo");
+        assert_eq!((&s * &s)?.name().as_str(), "foo");
+        assert_eq!((&s * 1).name().as_str(), "foo");
+        assert_eq!((1.div(&s)).name().as_str(), "foo");
 
         Ok(())
     }
@@ -959,13 +981,13 @@ mod test {
     #[test]
     #[cfg(feature = "checked_arithmetic")]
     fn test_checked_div() {
-        let s = Series::new("foo", [1i32, 0, 1]);
+        let s = Series::new("foo".into(), [1i32, 0, 1]);
         let out = s.checked_div(&s).unwrap();
         assert_eq!(Vec::from(out.i32().unwrap()), &[Some(1), None, Some(1)]);
         let out = s.checked_div_num(0).unwrap();
         assert_eq!(Vec::from(out.i32().unwrap()), &[None, None, None]);
 
-        let s_f32 = Series::new("float32", [1.0f32, 0.0, 1.0]);
+        let s_f32 = Series::new("float32".into(), [1.0f32, 0.0, 1.0]);
         let out = s_f32.checked_div(&s_f32).unwrap();
         assert_eq!(
             Vec::from(out.f32().unwrap()),
@@ -974,7 +996,7 @@ mod test {
         let out = s_f32.checked_div_num(0.0f32).unwrap();
         assert_eq!(Vec::from(out.f32().unwrap()), &[None, None, None]);
 
-        let s_f64 = Series::new("float64", [1.0f64, 0.0, 1.0]);
+        let s_f64 = Series::new("float64".into(), [1.0f64, 0.0, 1.0]);
         let out = s_f64.checked_div(&s_f64).unwrap();
         assert_eq!(
             Vec::from(out.f64().unwrap()),

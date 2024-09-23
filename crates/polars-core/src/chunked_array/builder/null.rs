@@ -10,7 +10,7 @@ pub struct NullChunkedBuilder {
 }
 
 impl NullChunkedBuilder {
-    pub fn new(name: &str, len: usize) -> Self {
+    pub fn new(name: PlSmallStr, len: usize) -> Self {
         let array_builder = MutableNullArray::new(len);
 
         NullChunkedBuilder {
@@ -27,7 +27,7 @@ impl NullChunkedBuilder {
 
     pub fn finish(mut self) -> NullChunked {
         let arr = self.array_builder.as_box();
-        let ca = NullChunked::new(Arc::from(self.field.name.as_str()), arr.len());
+        let ca = NullChunked::new(self.field.name().clone(), arr.len());
         ca
     }
 

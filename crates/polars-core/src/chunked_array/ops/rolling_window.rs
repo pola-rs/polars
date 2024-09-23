@@ -1,9 +1,10 @@
-use arrow::legacy::prelude::DynArgs;
+use arrow::legacy::prelude::RollingFnParams;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "rolling_window", derive(PartialEq))]
 pub struct RollingOptionsFixedWindow {
     /// The length of the window.
     pub window_size: usize,
@@ -14,20 +15,9 @@ pub struct RollingOptionsFixedWindow {
     pub weights: Option<Vec<f64>>,
     /// Set the labels at the center of the window.
     pub center: bool,
-    #[cfg_attr(feature = "serde", serde(skip))]
-    pub fn_params: DynArgs,
-}
-
-#[cfg(feature = "rolling_window")]
-impl PartialEq for RollingOptionsFixedWindow {
-    fn eq(&self, other: &Self) -> bool {
-        self.window_size == other.window_size
-            && self.min_periods == other.min_periods
-            && self.weights == other.weights
-            && self.center == other.center
-            && self.fn_params.is_none()
-            && other.fn_params.is_none()
-    }
+    /// Optional parameters for the rolling
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub fn_params: Option<RollingFnParams>,
 }
 
 impl Default for RollingOptionsFixedWindow {
@@ -106,14 +96,15 @@ mod inner_mod {
 
             let len = self.len();
             let arr = ca.downcast_iter().next().unwrap();
-            let mut ca = ChunkedArray::<T>::from_slice("", &[T::Native::zero()]);
+            let mut ca = ChunkedArray::<T>::from_slice(PlSmallStr::EMPTY, &[T::Native::zero()]);
             let ptr = ca.chunks[0].as_mut() as *mut dyn Array as *mut PrimitiveArray<T::Native>;
             let mut series_container = ca.into_series();
 
-            let mut builder = PrimitiveChunkedBuilder::<T>::new(self.name(), self.len());
+            let mut builder = PrimitiveChunkedBuilder::<T>::new(self.name().clone(), self.len());
 
             if let Some(weights) = options.weights {
-                let weights_series = Float64Chunked::new("weights", &weights).into_series();
+                let weights_series =
+                    Float64Chunked::new(PlSmallStr::from_static("weights"), &weights).into_series();
 
                 let weights_series = weights_series.cast(self.dtype()).unwrap();
 
@@ -221,7 +212,7 @@ mod inner_mod {
             F: FnMut(&mut ChunkedArray<T>) -> Option<T::Native>,
         {
             if window_size > self.len() {
-                return Ok(Self::full_null(self.name(), self.len()));
+                return Ok(Self::full_null(self.name().clone(), self.len()));
             }
             let ca = self.rechunk();
             let arr = ca.downcast_iter().next().unwrap();
@@ -229,7 +220,8 @@ mod inner_mod {
             // We create a temporary dummy ChunkedArray. This will be a
             // container where we swap the window contents every iteration doing
             // so will save a lot of heap allocations.
-            let mut heap_container = ChunkedArray::<T>::from_slice("", &[T::Native::zero()]);
+            let mut heap_container =
+                ChunkedArray::<T>::from_slice(PlSmallStr::EMPTY, &[T::Native::zero()]);
             let ptr = heap_container.chunks[0].as_mut() as *mut dyn Array
                 as *mut PrimitiveArray<T::Native>;
 
@@ -274,7 +266,7 @@ mod inner_mod {
                 values.into(),
                 Some(validity.into()),
             );
-            Ok(Self::with_chunk(self.name(), arr))
+            Ok(Self::with_chunk(self.name().clone(), arr))
         }
     }
 }

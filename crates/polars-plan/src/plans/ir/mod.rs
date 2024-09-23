@@ -1,24 +1,26 @@
 mod dot;
 mod format;
 mod inputs;
+mod scan_sources;
 mod schema;
 pub(crate) mod tree_format;
 
 use std::borrow::Cow;
 use std::fmt;
-use std::path::PathBuf;
 
-pub use dot::{EscapeLabel, IRDotDisplay, PathsDisplay};
+pub use dot::{EscapeLabel, IRDotDisplay, PathsDisplay, ScanSourcesDisplay};
 pub use format::{ExprIRDisplay, IRDisplay};
 use hive::HivePartitions;
 use polars_core::prelude::*;
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::unitvec;
+pub use scan_sources::{ScanSourceIter, ScanSourceRef, ScanSources};
 #[cfg(feature = "ir_serde")]
 use serde::{Deserialize, Serialize};
 
 use crate::prelude::*;
 
+#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 pub struct IRPlan {
     pub lp_top: Node,
     pub lp_arena: Arena<IR>,
@@ -51,7 +53,7 @@ pub enum IR {
         predicate: ExprIR,
     },
     Scan {
-        paths: Arc<Vec<PathBuf>>,
+        sources: ScanSources,
         file_info: FileInfo,
         hive_parts: Option<Arc<Vec<HivePartitions>>>,
         predicate: Option<ExprIR>,

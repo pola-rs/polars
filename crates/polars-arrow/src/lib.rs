@@ -26,6 +26,7 @@ pub mod record_batch;
 
 pub mod offset;
 pub mod scalar;
+pub mod storage;
 pub mod trusted_len;
 pub mod types;
 

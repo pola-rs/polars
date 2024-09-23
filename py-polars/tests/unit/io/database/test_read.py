@@ -18,7 +18,7 @@ from sqlalchemy.sql.expression import cast as alchemy_cast
 
 import polars as pl
 from polars._utils.various import parse_version
-from polars.exceptions import UnsuitableSQLError
+from polars.exceptions import DuplicateError, UnsuitableSQLError
 from polars.io.database._arrow_registry import ARROW_DRIVER_REGISTRY
 from polars.testing import assert_frame_equal
 
@@ -108,7 +108,7 @@ class MockResultSet:
         batched: bool,
         exact_batch_size: bool,
         repeat_batch_calls: bool = False,
-    ):
+    ) -> None:
         self.test_data = test_data
         self.repeat_batched_calls = repeat_batch_calls
         self.exact_batch_size = exact_batch_size
@@ -150,7 +150,7 @@ class ExceptionTestParams(NamedTuple):
     kwargs: dict[str, Any] | None = None
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 @pytest.mark.parametrize(
     (
         "read_method",
@@ -679,6 +679,23 @@ def test_read_database_exceptions(
 
 
 @pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT 1, 1 FROM test_data",
+        'SELECT 1 AS "n", 2 AS "n" FROM test_data',
+        'SELECT name, value AS "name" FROM test_data',
+    ],
+)
+def test_read_database_duplicate_column_error(tmp_sqlite_db: Path, query: str) -> None:
+    alchemy_conn = create_engine(f"sqlite:///{tmp_sqlite_db}").connect()
+    with pytest.raises(
+        DuplicateError,
+        match="column .+ appears more than once in the query/result cursor",
+    ):
+        pl.read_database(query, connection=alchemy_conn)
+
+
+@pytest.mark.parametrize(
     "uri",
     [
         "fakedb://123:456@account/database/schema?warehouse=warehouse&role=role",
@@ -698,7 +715,7 @@ def test_read_database_cx_credentials(uri: str) -> None:
             pl.read_database_uri("SELECT * FROM data", uri=uri, engine="connectorx")
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_read_kuzu_graph_database(tmp_path: Path, io_files_path: Path) -> None:
     import kuzu
 

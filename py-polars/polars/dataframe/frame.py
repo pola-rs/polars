@@ -124,7 +124,8 @@ if TYPE_CHECKING:
     import numpy.typing as npt
     import torch
     from great_tables import GT
-    from xlsxwriter import Workbook, Worksheet
+    from xlsxwriter import Workbook
+    from xlsxwriter.worksheet import Worksheet
 
     from polars import DataType, Expr, LazyFrame, Series
     from polars._typing import (
@@ -350,7 +351,7 @@ class DataFrame:
         orient: Orientation | None = None,
         infer_schema_length: int | None = N_INFER_DEFAULT,
         nan_to_null: bool = False,
-    ):
+    ) -> None:
         if data is None:
             self._df = dict_to_pydf(
                 {}, schema=schema, schema_overrides=schema_overrides
@@ -1105,10 +1106,10 @@ class DataFrame:
         )
         raise TypeError(msg)
 
-    def __eq__(self, other: Any) -> DataFrame:  # type: ignore[override]
+    def __eq__(self, other: object) -> DataFrame:  # type: ignore[override]
         return self._comp(other, "eq")
 
-    def __ne__(self, other: Any) -> DataFrame:  # type: ignore[override]
+    def __ne__(self, other: object) -> DataFrame:  # type: ignore[override]
         return self._comp(other, "neq")
 
     def __gt__(self, other: Any) -> DataFrame:
@@ -2856,10 +2857,35 @@ class DataFrame:
         if not null_value:
             null_value = None
 
+        def write_csv_to_string() -> str:
+            with BytesIO() as buf:
+                self.write_csv(
+                    buf,
+                    include_bom=include_bom,
+                    include_header=include_header,
+                    separator=separator,
+                    line_terminator=line_terminator,
+                    quote_char=quote_char,
+                    batch_size=batch_size,
+                    datetime_format=datetime_format,
+                    date_format=date_format,
+                    time_format=time_format,
+                    float_scientific=float_scientific,
+                    float_precision=float_precision,
+                    null_value=null_value,
+                    quote_style=quote_style,
+                )
+                csv_bytes = buf.getvalue()
+            return csv_bytes.decode("utf8")
+
         should_return_buffer = False
         if file is None:
             buffer = file = BytesIO()
             should_return_buffer = True
+        elif isinstance(file, StringIO):
+            csv_str = write_csv_to_string()
+            file.write(csv_str)
+            return None
         elif isinstance(file, (str, os.PathLike)):
             file = normalize_filepath(file)
 
@@ -3417,7 +3443,7 @@ class DataFrame:
             hidden_columns = ()
         hidden_columns = _expand_selectors(df, hidden_columns)
         if isinstance(column_widths, int):
-            column_widths = {column: column_widths for column in df.columns}
+            column_widths = dict.fromkeys(df.columns, column_widths)
         else:
             column_widths = _expand_selector_dicts(  # type: ignore[assignment]
                 df, column_widths, expand_keys=True, expand_values=False
@@ -3627,7 +3653,7 @@ class DataFrame:
 
     def write_parquet(
         self,
-        file: str | Path | BytesIO,
+        file: str | Path | IO[bytes],
         *,
         compression: ParquetCompression = "zstd",
         compression_level: int | None = None,
@@ -3729,10 +3755,8 @@ class DataFrame:
         if compression is None:
             compression = "uncompressed"
         if isinstance(file, (str, Path)):
-            if (
-                partition_by is not None
-                or pyarrow_options is not None
-                and pyarrow_options.get("partition_cols")
+            if partition_by is not None or (
+                pyarrow_options is not None and pyarrow_options.get("partition_cols")
             ):
                 file = normalize_filepath(file, check_not_directory=False)
             else:
@@ -3967,6 +3991,7 @@ class DataFrame:
                         mode=mode,
                         catalog_name=catalog,
                         db_schema_name=db_schema,
+                        **(engine_options or {}),
                     )
                 elif db_schema is not None:
                     adbc_str_version = ".".join(str(v) for v in adbc_version)
@@ -5355,7 +5380,7 @@ class DataFrame:
 
         See Also
         --------
-        assert_frame_equal
+        polars.testing.assert_frame_equal
 
         Examples
         --------
@@ -5987,7 +6012,7 @@ class DataFrame:
         │ c   ┆ 3   ┆ 1   │
         └─────┴─────┴─────┘
         """
-        for _key, value in named_by.items():
+        for value in named_by.values():
             if not isinstance(value, (str, pl.Expr, pl.Series)):
                 msg = (
                     f"Expected Polars expression or object convertible to one, got {type(value)}.\n\n"
@@ -6326,7 +6351,7 @@ class DataFrame:
         │ 2021-12-16 03:00:00 ┆ 6   │
         └─────────────────────┴─────┘
 
-        Group by windows of 1 hour starting at 2021-12-16 00:00:00.
+        Group by windows of 1 hour.
 
         >>> df.group_by_dynamic("time", every="1h", closed="right").agg(pl.col("n"))
         shape: (4, 2)
@@ -7079,6 +7104,89 @@ class DataFrame:
                 validate=validate,
                 join_nulls=join_nulls,
                 coalesce=coalesce,
+            )
+            .collect(_eager=True)
+        )
+
+    @unstable()
+    def join_where(
+        self,
+        other: DataFrame,
+        *predicates: Expr | Iterable[Expr],
+        suffix: str = "_right",
+    ) -> DataFrame:
+        """
+        Perform a join based on one or multiple (in)equality predicates.
+
+        This performs an inner join, so only rows where all predicates are true
+        are included in the result, and a row from either DataFrame may be included
+        multiple times in the result.
+
+        .. note::
+            The row order of the input DataFrames is not preserved.
+
+        .. warning::
+            This functionality is experimental. It may be
+            changed at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        other
+            DataFrame to join with.
+        *predicates
+            (In)Equality condition to join the two tables on.
+            When a column name occurs in both tables, the proper suffix must
+            be applied in the predicate.
+        suffix
+            Suffix to append to columns with a duplicate name.
+
+        Examples
+        --------
+        >>> east = pl.DataFrame(
+        ...     {
+        ...         "id": [100, 101, 102],
+        ...         "dur": [120, 140, 160],
+        ...         "rev": [12, 14, 16],
+        ...         "cores": [2, 8, 4],
+        ...     }
+        ... )
+        >>> west = pl.DataFrame(
+        ...     {
+        ...         "t_id": [404, 498, 676, 742],
+        ...         "time": [90, 130, 150, 170],
+        ...         "cost": [9, 13, 15, 16],
+        ...         "cores": [4, 2, 1, 4],
+        ...     }
+        ... )
+        >>> east.join_where(
+        ...     west,
+        ...     pl.col("dur") < pl.col("time"),
+        ...     pl.col("rev") < pl.col("cost"),
+        ... )
+        shape: (5, 8)
+        ┌─────┬─────┬─────┬───────┬──────┬──────┬──────┬─────────────┐
+        │ id  ┆ dur ┆ rev ┆ cores ┆ t_id ┆ time ┆ cost ┆ cores_right │
+        │ --- ┆ --- ┆ --- ┆ ---   ┆ ---  ┆ ---  ┆ ---  ┆ ---         │
+        │ i64 ┆ i64 ┆ i64 ┆ i64   ┆ i64  ┆ i64  ┆ i64  ┆ i64         │
+        ╞═════╪═════╪═════╪═══════╪══════╪══════╪══════╪═════════════╡
+        │ 100 ┆ 120 ┆ 12  ┆ 2     ┆ 498  ┆ 130  ┆ 13   ┆ 2           │
+        │ 100 ┆ 120 ┆ 12  ┆ 2     ┆ 676  ┆ 150  ┆ 15   ┆ 1           │
+        │ 100 ┆ 120 ┆ 12  ┆ 2     ┆ 742  ┆ 170  ┆ 16   ┆ 4           │
+        │ 101 ┆ 140 ┆ 14  ┆ 8     ┆ 676  ┆ 150  ┆ 15   ┆ 1           │
+        │ 101 ┆ 140 ┆ 14  ┆ 8     ┆ 742  ┆ 170  ┆ 16   ┆ 4           │
+        └─────┴─────┴─────┴───────┴──────┴──────┴──────┴─────────────┘
+
+        """
+        if not isinstance(other, DataFrame):
+            msg = f"expected `other` join table to be a DataFrame, got {type(other).__name__!r}"
+            raise TypeError(msg)
+
+        return (
+            self.lazy()
+            .join_where(
+                other.lazy(),
+                *predicates,
+                suffix=suffix,
             )
             .collect(_eager=True)
         )

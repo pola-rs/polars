@@ -6,7 +6,7 @@ use once_cell::sync::Lazy;
 use polars_core::prelude::*;
 #[cfg(any(feature = "ipc_streaming", feature = "parquet"))]
 use polars_core::utils::{accumulate_dataframes_vertical_unchecked, split_df_as_ref};
-use polars_error::to_compute_err;
+use polars_utils::mmap::MMapSemaphore;
 use regex::{Regex, RegexBuilder};
 
 use crate::mmap::{MmapBytesReader, ReaderBytes};
@@ -21,12 +21,15 @@ pub fn get_reader_bytes<'a, R: Read + MmapBytesReader + ?Sized>(
         .ok()
         .and_then(|offset| Some((reader.to_file()?, offset)))
     {
-        let mmap = unsafe { memmap::MmapOptions::new().offset(offset).map(file)? };
+        let mut options = memmap::MmapOptions::new();
+        options.offset(offset);
 
         // somehow bck thinks borrows alias
         // this is sound as file was already bound to 'a
         use std::fs::File;
+
         let file = unsafe { std::mem::transmute::<&File, &'a File>(file) };
+        let mmap = MMapSemaphore::new_from_file_with_options(file, options)?;
         Ok(ReaderBytes::Mapped(mmap, file))
     } else {
         // we can get the bytes for free
@@ -42,46 +45,6 @@ pub fn get_reader_bytes<'a, R: Read + MmapBytesReader + ?Sized>(
     }
 }
 
-/// Decompress `bytes` if compression is detected, otherwise simply return it.
-/// An `out` vec must be given for ownership of the decompressed data.
-pub fn maybe_decompress_bytes<'a>(bytes: &'a [u8], out: &'a mut Vec<u8>) -> PolarsResult<&'a [u8]> {
-    assert!(out.is_empty());
-    use crate::prelude::is_compressed;
-    let is_compressed = bytes.len() >= 4 && is_compressed(bytes);
-
-    if is_compressed {
-        #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
-        {
-            use crate::utils::compression::magic::*;
-
-            if bytes.starts_with(&GZIP) {
-                flate2::read::MultiGzDecoder::new(bytes)
-                    .read_to_end(out)
-                    .map_err(to_compute_err)?;
-            } else if bytes.starts_with(&ZLIB0)
-                || bytes.starts_with(&ZLIB1)
-                || bytes.starts_with(&ZLIB2)
-            {
-                flate2::read::ZlibDecoder::new(bytes)
-                    .read_to_end(out)
-                    .map_err(to_compute_err)?;
-            } else if bytes.starts_with(&ZSTD) {
-                zstd::Decoder::new(bytes)?.read_to_end(out)?;
-            } else {
-                polars_bail!(ComputeError: "unimplemented compression format")
-            }
-
-            Ok(out)
-        }
-        #[cfg(not(any(feature = "decompress", feature = "decompress-fast")))]
-        {
-            panic!("cannot decompress without 'decompress' or 'decompress-fast' feature")
-        }
-    } else {
-        Ok(bytes)
-    }
-}
-
 #[cfg(any(
     feature = "ipc",
     feature = "ipc_streaming",
@@ -89,12 +52,11 @@ pub fn maybe_decompress_bytes<'a>(bytes: &'a [u8], out: &'a mut Vec<u8>) -> Pola
     feature = "avro"
 ))]
 pub(crate) fn apply_projection(schema: &ArrowSchema, projection: &[usize]) -> ArrowSchema {
-    let fields = &schema.fields;
-    let fields = projection
+    projection
         .iter()
-        .map(|idx| fields[*idx].clone())
-        .collect::<Vec<_>>();
-    ArrowSchema::from(fields)
+        .map(|idx| schema.get_at_index(*idx).unwrap())
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect()
 }
 
 #[cfg(any(
@@ -108,26 +70,10 @@ pub(crate) fn columns_to_projection(
     schema: &ArrowSchema,
 ) -> PolarsResult<Vec<usize>> {
     let mut prj = Vec::with_capacity(columns.len());
-    if columns.len() > 100 {
-        let mut column_names = PlHashMap::with_capacity(schema.fields.len());
-        schema.fields.iter().enumerate().for_each(|(i, c)| {
-            column_names.insert(c.name.as_str(), i);
-        });
 
-        for column in columns.iter() {
-            let Some(&i) = column_names.get(column.as_str()) else {
-                polars_bail!(
-                    ColumnNotFound:
-                    "unable to find column {:?}; valid columns: {:?}", column, schema.get_names(),
-                );
-            };
-            prj.push(i);
-        }
-    } else {
-        for column in columns.iter() {
-            let i = schema.try_index_of(column)?;
-            prj.push(i);
-        }
+    for column in columns {
+        let i = schema.try_index_of(column)?;
+        prj.push(i);
     }
 
     Ok(prj)
@@ -141,7 +87,7 @@ pub(crate) fn update_row_counts(dfs: &mut [(DataFrame, IdxSize)], offset: IdxSiz
         let mut previous = dfs[0].1 + offset;
         for (df, n_read) in &mut dfs[1..] {
             if let Some(s) = unsafe { df.get_columns_mut() }.get_mut(0) {
-                *s = &*s + previous;
+                *s = (&*s + previous).unwrap();
             }
             previous += *n_read;
         }
@@ -157,7 +103,7 @@ pub(crate) fn update_row_counts2(dfs: &mut [DataFrame], offset: IdxSize) {
         for df in &mut dfs[1..] {
             let n_read = df.height() as IdxSize;
             if let Some(s) = unsafe { df.get_columns_mut() }.get_mut(0) {
-                *s = &*s + previous;
+                *s = (&*s + previous).unwrap();
             }
             previous += n_read;
         }
@@ -176,7 +122,7 @@ pub(crate) fn update_row_counts3(dfs: &mut [DataFrame], heights: &[IdxSize], off
             let n_read = heights[i];
 
             if let Some(s) = unsafe { df.get_columns_mut() }.get_mut(0) {
-                *s = &*s + previous;
+                *s = (&*s + previous).unwrap();
             }
 
             previous += n_read;
@@ -210,7 +156,7 @@ pub static BOOLEAN_RE: Lazy<Regex> = Lazy::new(|| {
 });
 
 pub fn materialize_projection(
-    with_columns: Option<&[String]>,
+    with_columns: Option<&[PlSmallStr]>,
     schema: &Schema,
     hive_partitions: Option<&[Series]>,
     has_row_index: bool,
@@ -257,6 +203,7 @@ pub(crate) fn chunk_df_for_writing(
     // See: #16403
     if !df.get_columns().is_empty()
         && df.get_columns()[0]
+            .as_materialized_series()
             .chunk_lengths()
             .take(5)
             .all(|len| len < row_group_size)

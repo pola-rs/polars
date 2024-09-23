@@ -33,8 +33,9 @@ impl PyExpr {
             .clone()
             .map(
                 |s| {
-                    s.timestamp(TimeUnit::Milliseconds)
-                        .map(|ca| Some((ca / 1000).into_series()))
+                    s.take_materialized_series()
+                        .timestamp(TimeUnit::Milliseconds)
+                        .map(|ca| Some((ca / 1000).into_column()))
                 },
                 GetOutput::from_type(DataType::Int64),
             )
@@ -46,8 +47,12 @@ impl PyExpr {
     }
 
     #[cfg(feature = "timezones")]
-    fn dt_convert_time_zone(&self, time_zone: TimeZone) -> Self {
-        self.inner.clone().dt().convert_time_zone(time_zone).into()
+    fn dt_convert_time_zone(&self, time_zone: String) -> Self {
+        self.inner
+            .clone()
+            .dt()
+            .convert_time_zone(time_zone.into())
+            .into()
     }
 
     fn dt_cast_time_unit(&self, time_unit: Wrap<TimeUnit>) -> Self {
@@ -65,7 +70,7 @@ impl PyExpr {
         self.inner
             .clone()
             .dt()
-            .replace_time_zone(time_zone, ambiguous.inner, non_existent.0)
+            .replace_time_zone(time_zone.map(|x| x.into()), ambiguous.inner, non_existent.0)
             .into()
     }
 

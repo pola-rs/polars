@@ -173,7 +173,7 @@ where
                         let agg_fns =
                             unsafe { std::slice::from_raw_parts_mut(ptr, aggregators_len) };
                         let mut key_builder = PrimitiveChunkedBuilder::<K>::new(
-                            self.output_schema.get_at_index(0).unwrap().0,
+                            self.output_schema.get_at_index(0).unwrap().0.clone(),
                             agg_map.len(),
                         );
                         let dtypes = agg_fns
@@ -205,8 +205,12 @@ where
                         );
 
                         let mut cols = Vec::with_capacity(1 + self.number_of_aggs());
-                        cols.push(key_builder.finish().into_series());
-                        cols.extend(buffers.into_iter().map(|buf| buf.into_series()));
+                        cols.push(key_builder.finish().into_series().into_column());
+                        cols.extend(
+                            buffers
+                                .into_iter()
+                                .map(|buf| buf.into_series().into_column()),
+                        );
                         physical_agg_to_logical(&mut cols, &self.output_schema);
                         Some(unsafe { DataFrame::new_no_checks(cols) })
                     })

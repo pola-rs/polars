@@ -85,7 +85,7 @@ pub fn array_to_page(
     match encoding {
         Encoding::Plain => encode_plain(array, encode_options, &mut buffer),
         Encoding::DeltaLengthByteArray => encode_delta(array, encode_options, &mut buffer),
-        _ => return Err(invalid_encoding(encoding, array.data_type())),
+        _ => return Err(invalid_encoding(encoding, array.dtype())),
     }
 
     let statistics = if options.has_statistics() {

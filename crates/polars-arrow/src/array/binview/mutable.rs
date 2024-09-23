@@ -527,7 +527,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
     #[inline]
     pub fn freeze_with_dtype(self, dtype: ArrowDataType) -> BinaryViewArrayGeneric<T> {
         let mut arr: BinaryViewArrayGeneric<T> = self.into();
-        arr.data_type = dtype;
+        arr.dtype = dtype;
         arr
     }
 
@@ -752,7 +752,7 @@ impl<T: ViewType + ?Sized, P: AsRef<T>> FromIterator<Option<P>> for MutableBinar
 }
 
 impl<T: ViewType + ?Sized> MutableArray for MutableBinaryViewArray<T> {
-    fn data_type(&self) -> &ArrowDataType {
+    fn dtype(&self) -> &ArrowDataType {
         T::dtype()
     }
 

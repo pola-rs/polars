@@ -1,13 +1,14 @@
 use polars_error::{polars_ensure, polars_err, PolarsResult};
 use polars_utils::aliases::PlHashSet;
 
+use super::Column;
 use crate::datatypes::AnyValue;
 use crate::frame::DataFrame;
-use crate::prelude::{Series, SmartString};
+use crate::prelude::PlSmallStr;
 
-fn check_hstack<'a>(
-    col: &'a Series,
-    names: &mut PlHashSet<&'a str>,
+fn check_hstack(
+    col: &Column,
+    names: &mut PlHashSet<PlSmallStr>,
     height: usize,
     is_empty: bool,
 ) -> PolarsResult<()> {
@@ -17,8 +18,8 @@ fn check_hstack<'a>(
         col.len(), height,
     );
     polars_ensure!(
-        names.insert(col.name()),
-        Duplicate: "unable to hstack, column with name {:?} already exists", col.name(),
+        names.insert(col.name().clone()),
+        Duplicate: "unable to hstack, column with name {:?} already exists", col.name().as_str(),
     );
     Ok(())
 }
@@ -28,29 +29,29 @@ impl DataFrame {
     ///
     /// # Safety
     /// The caller must ensure:
-    /// - the length of all [`Series`] is equal to the height of this [`DataFrame`]
+    /// - the length of all [`Column`] is equal to the height of this [`DataFrame`]
     /// - the columns names are unique
-    pub unsafe fn hstack_mut_unchecked(&mut self, columns: &[Series]) -> &mut Self {
+    pub unsafe fn hstack_mut_unchecked(&mut self, columns: &[Column]) -> &mut Self {
         self.columns.extend_from_slice(columns);
         self
     }
 
-    /// Add multiple [`Series`] to a [`DataFrame`].
+    /// Add multiple [`Column`] to a [`DataFrame`].
     /// The added `Series` are required to have the same length.
     ///
     /// # Example
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
-    /// fn stack(df: &mut DataFrame, columns: &[Series]) {
+    /// fn stack(df: &mut DataFrame, columns: &[Column]) {
     ///     df.hstack_mut(columns);
     /// }
     /// ```
-    pub fn hstack_mut(&mut self, columns: &[Series]) -> PolarsResult<&mut Self> {
+    pub fn hstack_mut(&mut self, columns: &[Column]) -> PolarsResult<&mut Self> {
         let mut names = self
             .columns
             .iter()
-            .map(|c| c.name())
+            .map(|c| c.name().clone())
             .collect::<PlHashSet<_>>();
 
         let height = self.height();
@@ -83,9 +84,11 @@ pub fn concat_df_horizontal(dfs: &[DataFrame], check_duplicates: bool) -> Polars
             .map(|mut df| {
                 if df.height() != max_len {
                     let diff = max_len - df.height();
-                    df.columns
-                        .iter_mut()
-                        .for_each(|s| *s = s.extend_constant(AnyValue::Null, diff).unwrap());
+                    df.columns.iter_mut().for_each(|s| {
+                        // @scalar-opt
+                        let s = s.into_materialized_series();
+                        *s = s.extend_constant(AnyValue::Null, diff).unwrap()
+                    });
                 }
                 df
             })
@@ -99,15 +102,12 @@ pub fn concat_df_horizontal(dfs: &[DataFrame], check_duplicates: bool) -> Polars
     let height = first_df.height();
     let is_empty = first_df.is_empty();
 
-    let columns;
     let mut names = if check_duplicates {
-        columns = first_df
+        first_df
             .columns
             .iter()
-            .map(|s| SmartString::from(s.name()))
-            .collect::<Vec<_>>();
-
-        columns.iter().map(|n| n.as_str()).collect::<PlHashSet<_>>()
+            .map(|s| s.name().clone())
+            .collect::<PlHashSet<_>>()
     } else {
         Default::default()
     };

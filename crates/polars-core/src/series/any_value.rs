@@ -18,7 +18,7 @@ impl<'a, T: AsRef<[AnyValue<'a>]>> NamedFrom<T, [AnyValue<'a>]> for Series {
     /// of [`DataType::Null`], which is always allowed).
     ///
     /// [`AnyValue`]: crate::datatypes::AnyValue
-    fn new(name: &str, values: T) -> Self {
+    fn new(name: PlSmallStr, values: T) -> Self {
         let values = values.as_ref();
         Series::from_any_values(name, values, true).expect("data types of values should match")
     }
@@ -36,7 +36,11 @@ impl Series {
     ///   An error is returned if no supertype can be determined.
     ///   **WARNING**: A full pass over the values is required to determine the supertype.
     /// - If no values were passed, the resulting data type is `Null`.
-    pub fn from_any_values(name: &str, values: &[AnyValue], strict: bool) -> PolarsResult<Self> {
+    pub fn from_any_values(
+        name: PlSmallStr,
+        values: &[AnyValue],
+        strict: bool,
+    ) -> PolarsResult<Self> {
         fn get_first_non_null_dtype(values: &[AnyValue]) -> DataType {
             let mut all_flat_null = true;
             let first_non_null = values.iter().find(|av| {
@@ -82,7 +86,7 @@ impl Series {
     /// data type. If `strict` is `false`, values that do not match the given data type
     /// are cast. If casting is not possible, the values are set to null instead.
     pub fn from_any_values_and_dtype(
-        name: &str,
+        name: PlSmallStr,
         values: &[AnyValue],
         dtype: &DataType,
         strict: bool,
@@ -158,7 +162,7 @@ impl Series {
             DataType::Struct(fields) => any_values_to_struct(values, fields, strict)?,
             #[cfg(feature = "object")]
             DataType::Object(_, registry) => any_values_to_object(values, registry)?,
-            DataType::Null => Series::new_null(name, values.len()),
+            DataType::Null => Series::new_null(PlSmallStr::EMPTY, values.len()),
             dt => {
                 polars_bail!(
                     InvalidOperation:
@@ -185,9 +189,9 @@ fn any_values_to_integer<T: PolarsIntegerType>(
     fn any_values_to_integer_strict<T: PolarsIntegerType>(
         values: &[AnyValue],
     ) -> PolarsResult<ChunkedArray<T>> {
-        let mut builder = PrimitiveChunkedBuilder::<T>::new("", values.len());
+        let mut builder = PrimitiveChunkedBuilder::<T>::new(PlSmallStr::EMPTY, values.len());
         for av in values {
-            match av {
+            match &av {
                 av if av.is_integer() => {
                     let opt_val = av.extract::<T::Native>();
                     let val = match opt_val {
@@ -212,7 +216,8 @@ fn any_values_to_integer<T: PolarsIntegerType>(
 
 fn any_values_to_f32(values: &[AnyValue], strict: bool) -> PolarsResult<Float32Chunked> {
     fn any_values_to_f32_strict(values: &[AnyValue]) -> PolarsResult<Float32Chunked> {
-        let mut builder = PrimitiveChunkedBuilder::<Float32Type>::new("", values.len());
+        let mut builder =
+            PrimitiveChunkedBuilder::<Float32Type>::new(PlSmallStr::EMPTY, values.len());
         for av in values {
             match av {
                 AnyValue::Float32(i) => builder.append_value(*i),
@@ -230,7 +235,8 @@ fn any_values_to_f32(values: &[AnyValue], strict: bool) -> PolarsResult<Float32C
 }
 fn any_values_to_f64(values: &[AnyValue], strict: bool) -> PolarsResult<Float64Chunked> {
     fn any_values_to_f64_strict(values: &[AnyValue]) -> PolarsResult<Float64Chunked> {
-        let mut builder = PrimitiveChunkedBuilder::<Float64Type>::new("", values.len());
+        let mut builder =
+            PrimitiveChunkedBuilder::<Float64Type>::new(PlSmallStr::EMPTY, values.len());
         for av in values {
             match av {
                 AnyValue::Float64(i) => builder.append_value(*i),
@@ -249,7 +255,7 @@ fn any_values_to_f64(values: &[AnyValue], strict: bool) -> PolarsResult<Float64C
 }
 
 fn any_values_to_bool(values: &[AnyValue], strict: bool) -> PolarsResult<BooleanChunked> {
-    let mut builder = BooleanChunkedBuilder::new("", values.len());
+    let mut builder = BooleanChunkedBuilder::new(PlSmallStr::EMPTY, values.len());
     for av in values {
         match av {
             AnyValue::Boolean(b) => builder.append_value(*b),
@@ -270,7 +276,7 @@ fn any_values_to_bool(values: &[AnyValue], strict: bool) -> PolarsResult<Boolean
 
 fn any_values_to_string(values: &[AnyValue], strict: bool) -> PolarsResult<StringChunked> {
     fn any_values_to_string_strict(values: &[AnyValue]) -> PolarsResult<StringChunked> {
-        let mut builder = StringChunkedBuilder::new("", values.len());
+        let mut builder = StringChunkedBuilder::new(PlSmallStr::EMPTY, values.len());
         for av in values {
             match av {
                 AnyValue::String(s) => builder.append_value(s),
@@ -282,7 +288,7 @@ fn any_values_to_string(values: &[AnyValue], strict: bool) -> PolarsResult<Strin
         Ok(builder.finish())
     }
     fn any_values_to_string_nonstrict(values: &[AnyValue]) -> StringChunked {
-        let mut builder = StringChunkedBuilder::new("", values.len());
+        let mut builder = StringChunkedBuilder::new(PlSmallStr::EMPTY, values.len());
         let mut owned = String::new(); // Amortize allocations.
         for av in values {
             match av {
@@ -308,7 +314,7 @@ fn any_values_to_string(values: &[AnyValue], strict: bool) -> PolarsResult<Strin
 
 fn any_values_to_binary(values: &[AnyValue], strict: bool) -> PolarsResult<BinaryChunked> {
     fn any_values_to_binary_strict(values: &[AnyValue]) -> PolarsResult<BinaryChunked> {
-        let mut builder = BinaryChunkedBuilder::new("", values.len());
+        let mut builder = BinaryChunkedBuilder::new(PlSmallStr::EMPTY, values.len());
         for av in values {
             match av {
                 AnyValue::Binary(s) => builder.append_value(*s),
@@ -326,7 +332,7 @@ fn any_values_to_binary(values: &[AnyValue], strict: bool) -> PolarsResult<Binar
                 AnyValue::Binary(b) => Some(*b),
                 AnyValue::BinaryOwned(b) => Some(&**b),
                 AnyValue::String(s) => Some(s.as_bytes()),
-                AnyValue::StringOwned(s) => Some(s.as_bytes()),
+                AnyValue::StringOwned(s) => Some(s.as_str().as_bytes()),
                 _ => None,
             })
             .collect_trusted()
@@ -340,7 +346,7 @@ fn any_values_to_binary(values: &[AnyValue], strict: bool) -> PolarsResult<Binar
 
 #[cfg(feature = "dtype-date")]
 fn any_values_to_date(values: &[AnyValue], strict: bool) -> PolarsResult<DateChunked> {
-    let mut builder = PrimitiveChunkedBuilder::<Int32Type>::new("", values.len());
+    let mut builder = PrimitiveChunkedBuilder::<Int32Type>::new(PlSmallStr::EMPTY, values.len());
     for av in values {
         match av {
             AnyValue::Date(i) => builder.append_value(*i),
@@ -361,7 +367,7 @@ fn any_values_to_date(values: &[AnyValue], strict: bool) -> PolarsResult<DateChu
 
 #[cfg(feature = "dtype-time")]
 fn any_values_to_time(values: &[AnyValue], strict: bool) -> PolarsResult<TimeChunked> {
-    let mut builder = PrimitiveChunkedBuilder::<Int64Type>::new("", values.len());
+    let mut builder = PrimitiveChunkedBuilder::<Int64Type>::new(PlSmallStr::EMPTY, values.len());
     for av in values {
         match av {
             AnyValue::Time(i) => builder.append_value(*i),
@@ -387,7 +393,7 @@ fn any_values_to_datetime(
     time_zone: Option<TimeZone>,
     strict: bool,
 ) -> PolarsResult<DatetimeChunked> {
-    let mut builder = PrimitiveChunkedBuilder::<Int64Type>::new("", values.len());
+    let mut builder = PrimitiveChunkedBuilder::<Int64Type>::new(PlSmallStr::EMPTY, values.len());
     let target_dtype = DataType::Datetime(time_unit, time_zone.clone());
     for av in values {
         match av {
@@ -413,7 +419,7 @@ fn any_values_to_duration(
     time_unit: TimeUnit,
     strict: bool,
 ) -> PolarsResult<DurationChunked> {
-    let mut builder = PrimitiveChunkedBuilder::<Int64Type>::new("", values.len());
+    let mut builder = PrimitiveChunkedBuilder::<Int64Type>::new(PlSmallStr::EMPTY, values.len());
     let target_dtype = DataType::Duration(time_unit);
     for av in values {
         match av {
@@ -485,7 +491,7 @@ fn any_values_to_decimal(
     };
     let target_dtype = DataType::Decimal(precision, Some(scale));
 
-    let mut builder = PrimitiveChunkedBuilder::<Int128Type>::new("", values.len());
+    let mut builder = PrimitiveChunkedBuilder::<Int128Type>::new(PlSmallStr::EMPTY, values.len());
     for av in values {
         match av {
             // Allow equal or less scale. We do want to support different scales even in 'strict' mode.
@@ -527,7 +533,7 @@ fn any_values_to_list(
         // We must ensure the data-types match what we do physical
         #[cfg(feature = "dtype-struct")]
         DataType::Struct(fields) if fields.is_empty() => {
-            DataType::Struct(vec![Field::new("", DataType::Null)])
+            DataType::Struct(vec![Field::new(PlSmallStr::EMPTY, DataType::Null)])
         },
         _ => inner_type.clone(),
     };
@@ -557,8 +563,16 @@ fn any_values_to_list(
                         Some(b.clone())
                     } else {
                         match b.cast(inner_type) {
-                            Ok(out) => Some(out),
-                            Err(_) => Some(Series::full_null(b.name(), b.len(), inner_type)),
+                            Ok(out) => {
+                                if out.null_count() != b.null_count() {
+                                    valid = !strict;
+                                }
+                                Some(out)
+                            },
+                            Err(_) => {
+                                valid = !strict;
+                                Some(Series::full_null(b.name().clone(), b.len(), inner_type))
+                            },
                         }
                     }
                 },
@@ -617,7 +631,7 @@ fn any_values_to_array(
                     None
                 },
             })
-            .collect_ca_with_dtype("", target_dtype.clone())
+            .collect_ca_with_dtype(PlSmallStr::EMPTY, target_dtype.clone())
     }
     // Make sure that wrongly inferred AnyValues don't deviate from the datatype.
     else {
@@ -629,7 +643,7 @@ fn any_values_to_array(
                     } else {
                         let s = match b.cast(inner_type) {
                             Ok(out) => out,
-                            Err(_) => Series::full_null(b.name(), b.len(), inner_type),
+                            Err(_) => Series::full_null(b.name().clone(), b.len(), inner_type),
                         };
                         to_arr(&s)
                     }
@@ -640,7 +654,7 @@ fn any_values_to_array(
                     None
                 },
             })
-            .collect_ca_with_dtype("", target_dtype.clone())
+            .collect_ca_with_dtype(PlSmallStr::EMPTY, target_dtype.clone())
     };
 
     if strict && !valid {
@@ -663,6 +677,49 @@ fn any_values_to_array(
 }
 
 #[cfg(feature = "dtype-struct")]
+fn _any_values_to_struct<'a>(
+    av_fields: &[Field],
+    av_values: &[AnyValue<'a>],
+    field_index: usize,
+    field: &Field,
+    fields: &[Field],
+    field_avs: &mut Vec<AnyValue<'a>>,
+) {
+    // TODO: Optimize.
+
+    let mut append_by_search = || {
+        // Search for the name.
+        if let Some(i) = av_fields
+            .iter()
+            .position(|av_fld| av_fld.name == field.name)
+        {
+            field_avs.push(av_values[i].clone());
+            return;
+        }
+        field_avs.push(AnyValue::Null)
+    };
+
+    // All fields are available in this single value.
+    // We can use the index to get value.
+    if fields.len() == av_fields.len() {
+        if fields.iter().zip(av_fields.iter()).any(|(l, r)| l != r) {
+            append_by_search()
+        } else {
+            let av_val = av_values
+                .get(field_index)
+                .cloned()
+                .unwrap_or(AnyValue::Null);
+            field_avs.push(av_val)
+        }
+    }
+    // Not all fields are available, we search the proper field.
+    else {
+        // Search for the name.
+        append_by_search()
+    }
+}
+
+#[cfg(feature = "dtype-struct")]
 fn any_values_to_struct(
     values: &[AnyValue],
     fields: &[Field],
@@ -670,7 +727,7 @@ fn any_values_to_struct(
 ) -> PolarsResult<Series> {
     // Fast path for structs with no fields.
     if fields.is_empty() {
-        return Ok(StructChunked::full_null("", values.len()).into_series());
+        return Ok(StructChunked::full_null(PlSmallStr::EMPTY, values.len()).into_series());
     }
 
     // The physical series fields of the struct.
@@ -683,37 +740,13 @@ fn any_values_to_struct(
         for av in values.iter() {
             match av {
                 AnyValue::StructOwned(payload) => {
-                    // TODO: Optimize.
                     let av_fields = &payload.1;
                     let av_values = &payload.0;
-
-                    let mut append_by_search = || {
-                        // Search for the name.
-                        if let Some(i) = av_fields
-                            .iter()
-                            .position(|av_fld| av_fld.name == field.name)
-                        {
-                            field_avs.push(av_values[i].clone());
-                            return;
-                        }
-                        field_avs.push(AnyValue::Null)
-                    };
-
-                    // All fields are available in this single value.
-                    // We can use the index to get value.
-                    if fields.len() == av_fields.len() {
-                        if fields.iter().zip(av_fields.iter()).any(|(l, r)| l != r) {
-                            append_by_search()
-                        } else {
-                            let av_val = av_values.get(i).cloned().unwrap_or(AnyValue::Null);
-                            field_avs.push(av_val)
-                        }
-                    }
-                    // Not all fields are available, we search the proper field.
-                    else {
-                        // Search for the name.
-                        append_by_search()
-                    }
+                    _any_values_to_struct(av_fields, av_values, i, field, fields, &mut field_avs);
+                },
+                AnyValue::Struct(_, _, av_fields) => {
+                    let av_values: Vec<_> = av._iter_struct_av().collect();
+                    _any_values_to_struct(av_fields, &av_values, i, field, fields, &mut field_avs);
                 },
                 _ => {
                     has_outer_validity = true;
@@ -723,14 +756,19 @@ fn any_values_to_struct(
         }
         // If the inferred dtype is null, we let auto inference work.
         let s = if matches!(field.dtype, DataType::Null) {
-            Series::from_any_values(field.name(), &field_avs, strict)?
+            Series::from_any_values(field.name().clone(), &field_avs, strict)?
         } else {
-            Series::from_any_values_and_dtype(field.name(), &field_avs, &field.dtype, strict)?
+            Series::from_any_values_and_dtype(
+                field.name().clone(),
+                &field_avs,
+                &field.dtype,
+                strict,
+            )?
         };
         series_fields.push(s)
     }
 
-    let mut out = StructChunked::from_series("", &series_fields)?;
+    let mut out = StructChunked::from_series(PlSmallStr::EMPTY, series_fields.iter())?;
     if has_outer_validity {
         let mut validity = MutableBitmap::new();
         validity.extend_constant(values.len(), true);
@@ -753,7 +791,7 @@ fn any_values_to_object(
         None => {
             use crate::chunked_array::object::registry;
             let converter = registry::get_object_converter();
-            let mut builder = registry::get_object_builder("", values.len());
+            let mut builder = registry::get_object_builder(PlSmallStr::EMPTY, values.len());
             for av in values {
                 match av {
                     AnyValue::Object(val) => builder.append_value(val.as_any()),
@@ -769,7 +807,7 @@ fn any_values_to_object(
             builder
         },
         Some(registry) => {
-            let mut builder = (*registry.builder_constructor)("", values.len());
+            let mut builder = (*registry.builder_constructor)(PlSmallStr::EMPTY, values.len());
             for av in values {
                 match av {
                     AnyValue::Object(val) => builder.append_value(val.as_any()),

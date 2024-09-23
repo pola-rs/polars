@@ -5,7 +5,7 @@ on:
     paths:
       - Cargo.lock
       - py-polars/**
-      - docs/src/python/**
+      - docs/source/src/python/**
       - crates/**
       - .github/workflows/test-python.yml
   push:
@@ -14,7 +14,7 @@ on:
     paths:
       - Cargo.lock
       - crates/**
-      - docs/src/python/**
+      - docs/source/src/python/**
       - py-polars/**
       - .github/workflows/test-python.yml
 

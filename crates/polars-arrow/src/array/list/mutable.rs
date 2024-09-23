@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use polars_error::{polars_err, PolarsResult};
+use polars_utils::pl_str::PlSmallStr;
 
 use super::ListArray;
 use crate::array::physical_binary::extend_validity;
@@ -13,7 +14,7 @@ use crate::trusted_len::TrustedLen;
 /// The mutable version of [`ListArray`].
 #[derive(Debug, Clone)]
 pub struct MutableListArray<O: Offset, M: MutableArray> {
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
     offsets: Offsets<O>,
     values: M,
     validity: Option<MutableBitmap>,
@@ -23,18 +24,18 @@ impl<O: Offset, M: MutableArray + Default> MutableListArray<O, M> {
     /// Creates a new empty [`MutableListArray`].
     pub fn new() -> Self {
         let values = M::default();
-        let data_type = ListArray::<O>::default_datatype(values.data_type().clone());
-        Self::new_from(values, data_type, 0)
+        let dtype = ListArray::<O>::default_datatype(values.dtype().clone());
+        Self::new_from(values, dtype, 0)
     }
 
     /// Creates a new [`MutableListArray`] with a capacity.
     pub fn with_capacity(capacity: usize) -> Self {
         let values = M::default();
-        let data_type = ListArray::<O>::default_datatype(values.data_type().clone());
+        let dtype = ListArray::<O>::default_datatype(values.dtype().clone());
 
         let offsets = Offsets::<O>::with_capacity(capacity);
         Self {
-            data_type,
+            dtype,
             offsets,
             values,
             validity: None,
@@ -51,7 +52,7 @@ impl<O: Offset, M: MutableArray + Default> Default for MutableListArray<O, M> {
 impl<O: Offset, M: MutableArray> From<MutableListArray<O, M>> for ListArray<O> {
     fn from(mut other: MutableListArray<O, M>) -> Self {
         ListArray::new(
-            other.data_type,
+            other.dtype,
             other.offsets.into(),
             other.values.as_box(),
             other.validity.map(|x| x.into()),
@@ -109,12 +110,12 @@ where
 
 impl<O: Offset, M: MutableArray> MutableListArray<O, M> {
     /// Creates a new [`MutableListArray`] from a [`MutableArray`] and capacity.
-    pub fn new_from(values: M, data_type: ArrowDataType, capacity: usize) -> Self {
+    pub fn new_from(values: M, dtype: ArrowDataType, capacity: usize) -> Self {
         let offsets = Offsets::<O>::with_capacity(capacity);
         assert_eq!(values.len(), 0);
-        ListArray::<O>::get_child_field(&data_type);
+        ListArray::<O>::get_child_field(&dtype);
         Self {
-            data_type,
+            dtype,
             offsets,
             values,
             validity: None,
@@ -122,20 +123,20 @@ impl<O: Offset, M: MutableArray> MutableListArray<O, M> {
     }
 
     /// Creates a new [`MutableListArray`] from a [`MutableArray`].
-    pub fn new_with_field(values: M, name: &str, nullable: bool) -> Self {
-        let field = Box::new(Field::new(name, values.data_type().clone(), nullable));
-        let data_type = if O::IS_LARGE {
+    pub fn new_with_field(values: M, name: PlSmallStr, nullable: bool) -> Self {
+        let field = Box::new(Field::new(name, values.dtype().clone(), nullable));
+        let dtype = if O::IS_LARGE {
             ArrowDataType::LargeList(field)
         } else {
             ArrowDataType::List(field)
         };
-        Self::new_from(values, data_type, 0)
+        Self::new_from(values, dtype, 0)
     }
 
     /// Creates a new [`MutableListArray`] from a [`MutableArray`] and capacity.
     pub fn new_with_capacity(values: M, capacity: usize) -> Self {
-        let data_type = ListArray::<O>::default_datatype(values.data_type().clone());
-        Self::new_from(values, data_type, capacity)
+        let dtype = ListArray::<O>::default_datatype(values.dtype().clone());
+        Self::new_from(values, dtype, capacity)
     }
 
     /// Creates a new [`MutableListArray`] from a [`MutableArray`], [`Offsets`] and
@@ -146,9 +147,9 @@ impl<O: Offset, M: MutableArray> MutableListArray<O, M> {
         validity: Option<MutableBitmap>,
     ) -> Self {
         assert_eq!(values.len(), offsets.last().to_usize());
-        let data_type = ListArray::<O>::default_datatype(values.data_type().clone());
+        let dtype = ListArray::<O>::default_datatype(values.dtype().clone());
         Self {
-            data_type,
+            dtype,
             offsets,
             values,
             validity,
@@ -273,7 +274,7 @@ impl<O: Offset, M: MutableArray + 'static> MutableArray for MutableListArray<O, 
 
     fn as_box(&mut self) -> Box<dyn Array> {
         ListArray::new(
-            self.data_type.clone(),
+            self.dtype.clone(),
             std::mem::take(&mut self.offsets).into(),
             self.values.as_box(),
             std::mem::take(&mut self.validity).map(|x| x.into()),
@@ -283,7 +284,7 @@ impl<O: Offset, M: MutableArray + 'static> MutableArray for MutableListArray<O, 
 
     fn as_arc(&mut self) -> Arc<dyn Array> {
         ListArray::new(
-            self.data_type.clone(),
+            self.dtype.clone(),
             std::mem::take(&mut self.offsets).into(),
             self.values.as_box(),
             std::mem::take(&mut self.validity).map(|x| x.into()),
@@ -291,8 +292,8 @@ impl<O: Offset, M: MutableArray + 'static> MutableArray for MutableListArray<O, 
         .arced()
     }
 
-    fn data_type(&self) -> &ArrowDataType {
-        &self.data_type
+    fn dtype(&self) -> &ArrowDataType {
+        &self.dtype
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

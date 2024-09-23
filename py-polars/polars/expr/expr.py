@@ -1723,7 +1723,7 @@ class Expr:
         ...         "b": [1, 1, 2, 2],
         ...     }
         ... )
-        >>> df.select(pl.all().mode())  # doctest: +IGNORE_RESULT
+        >>> df.select(pl.all().mode().first())  # doctest: +IGNORE_RESULT
         shape: (2, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -1731,7 +1731,6 @@ class Expr:
         │ i64 ┆ i64 │
         ╞═════╪═════╡
         │ 1   ┆ 1   │
-        │ 1   ┆ 2   │
         └─────┴─────┘
         """
         return self._from_pyexpr(self._pyexpr.mode())
@@ -2541,10 +2540,8 @@ class Expr:
         │ two   ┆ [4, 99]   │
         └───────┴───────────┘
         """
-        if (
-            isinstance(indices, Sequence)
-            and not isinstance(indices, str)
-            or (_check_for_numpy(indices) and isinstance(indices, np.ndarray))
+        if (isinstance(indices, Sequence) and not isinstance(indices, str)) or (
+            _check_for_numpy(indices) and isinstance(indices, np.ndarray)
         ):
             indices_lit = F.lit(pl.Series("", indices, dtype=Int64))._pyexpr
         else:
@@ -3428,9 +3425,7 @@ class Expr:
         ...         "c": [5, 4, 3, 2, 1],
         ...     }
         ... )
-        >>> df.with_columns(
-        ...     pl.col("c").max().over("a").name.suffix("_max"),
-        ... )
+        >>> df.with_columns(c_max=pl.col("c").max().over("a"))
         shape: (5, 4)
         ┌─────┬─────┬─────┬───────┐
         │ a   ┆ b   ┆ c   ┆ c_max │
@@ -3444,11 +3439,9 @@ class Expr:
         │ b   ┆ 3   ┆ 1   ┆ 3     │
         └─────┴─────┴─────┴───────┘
 
-        Expression input is supported.
+        Expression input is also supported.
 
-        >>> df.with_columns(
-        ...     pl.col("c").max().over(pl.col("b") // 2).name.suffix("_max"),
-        ... )
+        >>> df.with_columns(c_max=pl.col("c").max().over(pl.col("b") // 2))
         shape: (5, 4)
         ┌─────┬─────┬─────┬───────┐
         │ a   ┆ b   ┆ c   ┆ c_max │
@@ -3462,29 +3455,9 @@ class Expr:
         │ b   ┆ 3   ┆ 1   ┆ 4     │
         └─────┴─────┴─────┴───────┘
 
-        Group by multiple columns by passing a list of column names or expressions.
+        Group by multiple columns by passing multiple column names or expressions.
 
-        >>> df.with_columns(
-        ...     pl.col("c").min().over(["a", "b"]).name.suffix("_min"),
-        ... )
-        shape: (5, 4)
-        ┌─────┬─────┬─────┬───────┐
-        │ a   ┆ b   ┆ c   ┆ c_min │
-        │ --- ┆ --- ┆ --- ┆ ---   │
-        │ str ┆ i64 ┆ i64 ┆ i64   │
-        ╞═════╪═════╪═════╪═══════╡
-        │ a   ┆ 1   ┆ 5   ┆ 5     │
-        │ a   ┆ 2   ┆ 4   ┆ 4     │
-        │ b   ┆ 3   ┆ 3   ┆ 1     │
-        │ b   ┆ 5   ┆ 2   ┆ 2     │
-        │ b   ┆ 3   ┆ 1   ┆ 1     │
-        └─────┴─────┴─────┴───────┘
-
-        Or use positional arguments to group by multiple columns in the same way.
-
-        >>> df.with_columns(
-        ...     pl.col("c").min().over("a", pl.col("b") % 2).name.suffix("_min"),
-        ... )
+        >>> df.with_columns(c_min=pl.col("c").min().over("a", pl.col("b") % 2))
         shape: (5, 4)
         ┌─────┬─────┬─────┬───────┐
         │ a   ┆ b   ┆ c   ┆ c_min │
@@ -3498,25 +3471,63 @@ class Expr:
         │ b   ┆ 3   ┆ 1   ┆ 1     │
         └─────┴─────┴─────┴───────┘
 
-        Aggregate values from each group using `mapping_strategy="explode"`.
+        You can use non-elementwise expressions with `over` too. By default they are
+        evaluated using row-order, but you can specify a different one using `order_by`.
 
-        >>> df.select(
-        ...     pl.col("a").head(2).over("a", mapping_strategy="explode"),
-        ...     pl.col("b").sort_by("b").head(2).over("a", mapping_strategy="explode"),
-        ...     pl.col("c").sort_by("b").head(2).over("a", mapping_strategy="explode"),
+        >>> from datetime import date
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "store_id": ["a", "a", "b", "b"],
+        ...         "date": [
+        ...             date(2024, 9, 18),
+        ...             date(2024, 9, 17),
+        ...             date(2024, 9, 18),
+        ...             date(2024, 9, 16),
+        ...         ],
+        ...         "sales": [7, 9, 8, 10],
+        ...     }
         ... )
-        shape: (4, 3)
-        ┌─────┬─────┬─────┐
-        │ a   ┆ b   ┆ c   │
-        │ --- ┆ --- ┆ --- │
-        │ str ┆ i64 ┆ i64 │
-        ╞═════╪═════╪═════╡
-        │ a   ┆ 1   ┆ 5   │
-        │ a   ┆ 2   ┆ 4   │
-        │ b   ┆ 3   ┆ 3   │
-        │ b   ┆ 3   ┆ 1   │
-        └─────┴─────┴─────┘
+        >>> df.with_columns(
+        ...     cumulative_sales=pl.col("sales")
+        ...     .cum_sum()
+        ...     .over("store_id", order_by="date")
+        ... )
+        shape: (4, 4)
+        ┌──────────┬────────────┬───────┬──────────────────┐
+        │ store_id ┆ date       ┆ sales ┆ cumulative_sales │
+        │ ---      ┆ ---        ┆ ---   ┆ ---              │
+        │ str      ┆ date       ┆ i64   ┆ i64              │
+        ╞══════════╪════════════╪═══════╪══════════════════╡
+        │ a        ┆ 2024-09-18 ┆ 7     ┆ 16               │
+        │ a        ┆ 2024-09-17 ┆ 9     ┆ 9                │
+        │ b        ┆ 2024-09-18 ┆ 8     ┆ 18               │
+        │ b        ┆ 2024-09-16 ┆ 10    ┆ 10               │
+        └──────────┴────────────┴───────┴──────────────────┘
 
+        If you don't require that the group order be preserved, then the more performant
+        option is to use `mapping_strategy='explode'` - be careful however to only ever
+        use this in a `select` statement, not a `with_columns` one.
+
+        >>> window = {
+        ...     "partition_by": "store_id",
+        ...     "order_by": "date",
+        ...     "mapping_strategy": "explode",
+        ... }
+        >>> df.select(
+        ...     pl.all().over(**window),
+        ...     cumulative_sales=pl.col("sales").cum_sum().over(**window),
+        ... )
+        shape: (4, 4)
+        ┌──────────┬────────────┬───────┬──────────────────┐
+        │ store_id ┆ date       ┆ sales ┆ cumulative_sales │
+        │ ---      ┆ ---        ┆ ---   ┆ ---              │
+        │ str      ┆ date       ┆ i64   ┆ i64              │
+        ╞══════════╪════════════╪═══════╪══════════════════╡
+        │ a        ┆ 2024-09-17 ┆ 9     ┆ 9                │
+        │ a        ┆ 2024-09-18 ┆ 7     ┆ 16               │
+        │ b        ┆ 2024-09-16 ┆ 10    ┆ 10               │
+        │ b        ┆ 2024-09-18 ┆ 8     ┆ 18               │
+        └──────────┴────────────┴───────┴──────────────────┘
         """
         partition_by = parse_into_list_of_expressions(partition_by, *more_exprs)
         if order_by is not None:
@@ -4261,7 +4272,7 @@ class Expr:
             self,
             function: Callable[[Series], Series | Any],
             return_dtype: PolarsDataType | None,
-        ):
+        ) -> None:
             self.function = function
             self.return_dtype = return_dtype
 
@@ -8746,30 +8757,31 @@ class Expr:
 
     def sign(self) -> Expr:
         """
-        Compute the element-wise indication of the sign.
+        Compute the element-wise sign function on numeric types.
 
-        The returned values can be -1, 0, or 1:
+        The returned value is computed as follows:
 
-        * -1 if x  < 0.
-        *  0 if x == 0.
-        *  1 if x  > 0.
+        * -1 if x < 0.
+        *  1 if x > 0.
+        *  x otherwise (typically 0, but could be NaN if the input is).
 
-        (null values are preserved as-is).
+        Null values are preserved as-is, and the dtype of the input is preserved.
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [-9.0, -0.0, 0.0, 4.0, None]})
-        >>> df.select(pl.col("a").sign())
-        shape: (5, 1)
+        >>> df = pl.DataFrame({"a": [-9.0, -0.0, 0.0, 4.0, float("nan"), None]})
+        >>> df.select(pl.col.a.sign())
+        shape: (6, 1)
         ┌──────┐
         │ a    │
         │ ---  │
-        │ i64  │
+        │ f64  │
         ╞══════╡
-        │ -1   │
-        │ 0    │
-        │ 0    │
-        │ 1    │
+        │ -1.0 │
+        │ -0.0 │
+        │ 0.0  │
+        │ 1.0  │
+        │ NaN  │
         │ null │
         └──────┘
         """
@@ -9310,7 +9322,7 @@ class Expr:
         ignore_nulls: bool = False,
     ) -> Expr:
         r"""
-        Exponentially-weighted moving average.
+        Compute exponentially-weighted moving average.
 
         Parameters
         ----------
@@ -9325,11 +9337,11 @@ class Expr:
                 .. math::
                     \alpha = \frac{2}{\theta + 1} \; \forall \; \theta \geq 1
         half_life
-            Specify decay in terms of half-life, :math:`\lambda`, with
+            Specify decay in terms of half-life, :math:`\tau`, with
 
                 .. math::
-                    \alpha = 1 - \exp \left\{ \frac{ -\ln(2) }{ \lambda } \right\} \;
-                    \forall \; \lambda > 0
+                    \alpha = 1 - \exp \left\{ \frac{ -\ln(2) }{ \tau } \right\} \;
+                    \forall \; \tau > 0
         alpha
             Specify smoothing factor alpha directly, :math:`0 < \alpha \leq 1`.
         adjust
@@ -9392,20 +9404,21 @@ class Expr:
         half_life: str | timedelta,
     ) -> Expr:
         r"""
-        Calculate time-based exponentially weighted moving average.
+        Compute time-based exponentially weighted moving average.
 
-        Given observations :math:`x_1, x_2, \ldots, x_n` at times
-        :math:`t_1, t_2, \ldots, t_n`, the EWMA is calculated as
+        Given observations :math:`x_0, x_1, \ldots, x_{n-1}` at times
+        :math:`t_0, t_1, \ldots, t_{n-1}`, the EWMA is calculated as
 
             .. math::
 
                 y_0 &= x_0
 
-                \alpha_i &= \exp(-\lambda(t_i - t_{i-1}))
+                \alpha_i &= 1 - \exp \left\{ \frac{ -\ln(2)(t_i-t_{i-1}) }
+                    { \tau } \right\}
 
                 y_i &= \alpha_i x_i + (1 - \alpha_i) y_{i-1}; \quad i > 0
 
-        where :math:`\lambda` equals :math:`\ln(2) / \text{half_life}`.
+        where :math:`\tau` is the `half_life`.
 
         Parameters
         ----------
@@ -9489,7 +9502,7 @@ class Expr:
         ignore_nulls: bool = False,
     ) -> Expr:
         r"""
-        Exponentially-weighted moving standard deviation.
+        Compute exponentially-weighted moving standard deviation.
 
         Parameters
         ----------
@@ -9580,7 +9593,7 @@ class Expr:
         ignore_nulls: bool = False,
     ) -> Expr:
         r"""
-        Exponentially-weighted moving variance.
+        Compute exponentially-weighted moving variance.
 
         Parameters
         ----------
@@ -10245,7 +10258,12 @@ class Expr:
                 old, new, default=default, return_dtype=return_dtype
             )
 
-        if new is no_default and isinstance(old, Mapping):
+        if new is no_default:
+            if not isinstance(old, Mapping):
+                msg = (
+                    "`new` argument is required if `old` argument is not a Mapping type"
+                )
+                raise TypeError(msg)
             new = pl.Series(old.values())
             old = pl.Series(old.keys())
         else:
@@ -10255,7 +10273,7 @@ class Expr:
                 new = pl.Series(new)
 
         old = parse_into_expression(old, str_as_lit=True)  # type: ignore[arg-type]
-        new = parse_into_expression(new, str_as_lit=True)  # type: ignore[arg-type]
+        new = parse_into_expression(new, str_as_lit=True)
 
         result = self._from_pyexpr(self._pyexpr.replace(old, new))
 
@@ -10436,7 +10454,12 @@ class Expr:
         │ 3   ┆ 1.0 ┆ 10.0     │
         └─────┴─────┴──────────┘
         """  # noqa: W505
-        if new is no_default and isinstance(old, Mapping):
+        if new is no_default:
+            if not isinstance(old, Mapping):
+                msg = (
+                    "`new` argument is required if `old` argument is not a Mapping type"
+                )
+                raise TypeError(msg)
             new = pl.Series(old.values())
             old = pl.Series(old.keys())
 

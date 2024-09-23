@@ -18,7 +18,7 @@ use crate::map::dataframe::{
     apply_lambda_unknown, apply_lambda_with_bool_out_type, apply_lambda_with_primitive_out_type,
     apply_lambda_with_string_out_type,
 };
-use crate::prelude::strings_to_smartstrings;
+use crate::prelude::strings_to_pl_smallstr;
 use crate::series::{PySeries, ToPySeries, ToSeries};
 use crate::{PyExpr, PyLazyFrame};
 
@@ -27,6 +27,8 @@ impl PyDataFrame {
     #[new]
     pub fn __init__(columns: Vec<PySeries>) -> PyResult<Self> {
         let columns = columns.to_series();
+        // @scalar-opt
+        let columns = columns.into_iter().map(|s| s.into()).collect();
         let df = DataFrame::new(columns).map_err(PyPolarsErr::from)?;
         Ok(PyDataFrame::new(df))
     }
@@ -139,13 +141,13 @@ impl PyDataFrame {
 
     /// Get column names
     pub fn columns(&self) -> Vec<&str> {
-        self.df.get_column_names()
+        self.df.get_column_names_str()
     }
 
     /// set column names
     pub fn set_column_names(&mut self, names: Vec<PyBackedStr>) -> PyResult<()> {
         self.df
-            .set_column_names(&names)
+            .set_column_names(names.iter().map(|x| &**x))
             .map_err(PyPolarsErr::from)?;
         Ok(())
     }
@@ -181,12 +183,16 @@ impl PyDataFrame {
 
     pub fn hstack(&self, columns: Vec<PySeries>) -> PyResult<Self> {
         let columns = columns.to_series();
+        // @scalar-opt
+        let columns = columns.into_iter().map(Into::into).collect::<Vec<_>>();
         let df = self.df.hstack(&columns).map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }
 
     pub fn hstack_mut(&mut self, columns: Vec<PySeries>) -> PyResult<()> {
         let columns = columns.to_series();
+        // @scalar-opt
+        let columns = columns.into_iter().map(Into::into).collect::<Vec<_>>();
         self.df.hstack_mut(&columns).map_err(PyPolarsErr::from)?;
         Ok(())
     }
@@ -208,6 +214,7 @@ impl PyDataFrame {
 
     pub fn drop_in_place(&mut self, name: &str) -> PyResult<PySeries> {
         let s = self.df.drop_in_place(name).map_err(PyPolarsErr::from)?;
+        let s = s.take_materialized_series();
         Ok(PySeries { series: s })
     }
 
@@ -222,7 +229,7 @@ impl PyDataFrame {
 
         let s = index_adjusted.and_then(|i| df.select_at_idx(i));
         match s {
-            Some(s) => Ok(PySeries::new(s.clone())),
+            Some(s) => Ok(PySeries::new(s.as_materialized_series().clone())),
             None => Err(PyIndexError::new_err(
                 polars_err!(oob = index, df.width()).to_string(),
             )),
@@ -240,19 +247,22 @@ impl PyDataFrame {
         let series = self
             .df
             .column(name)
-            .map(|s| PySeries::new(s.clone()))
+            .map(|s| PySeries::new(s.as_materialized_series().clone()))
             .map_err(PyPolarsErr::from)?;
         Ok(series)
     }
 
     pub fn select(&self, columns: Vec<PyBackedStr>) -> PyResult<Self> {
-        let df = self.df.select(columns).map_err(PyPolarsErr::from)?;
+        let df = self
+            .df
+            .select(columns.iter().map(|x| &**x))
+            .map_err(PyPolarsErr::from)?;
         Ok(PyDataFrame::new(df))
     }
 
     pub fn gather(&self, indices: Wrap<Vec<IdxSize>>) -> PyResult<Self> {
         let indices = indices.0;
-        let indices = IdxCa::from_vec("", indices);
+        let indices = IdxCa::from_vec("".into(), indices);
         let df = self.df.take(&indices).map_err(PyPolarsErr::from)?;
         Ok(PyDataFrame::new(df))
     }
@@ -322,7 +332,7 @@ impl PyDataFrame {
     pub fn with_row_index(&self, name: &str, offset: Option<IdxSize>) -> PyResult<Self> {
         let df = self
             .df
-            .with_row_index(name, offset)
+            .with_row_index(name.into(), offset)
             .map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }
@@ -334,9 +344,9 @@ impl PyDataFrame {
         maintain_order: bool,
     ) -> PyResult<Self> {
         let gb = if maintain_order {
-            self.df.group_by_stable(&by)
+            self.df.group_by_stable(by.iter().map(|x| &**x))
         } else {
-            self.df.group_by(&by)
+            self.df.group_by(by.iter().map(|x| &**x))
         }
         .map_err(PyPolarsErr::from)?;
 
@@ -384,8 +394,8 @@ impl PyDataFrame {
     ) -> PyResult<Self> {
         use polars_ops::pivot::UnpivotDF;
         let args = UnpivotArgsIR {
-            on: strings_to_smartstrings(on),
-            index: strings_to_smartstrings(index),
+            on: strings_to_pl_smallstr(on),
+            index: strings_to_pl_smallstr(index),
             value_name: value_name.map(|s| s.into()),
             variable_name: variable_name.map(|s| s.into()),
         };
@@ -581,7 +591,7 @@ impl PyDataFrame {
     }
 
     pub fn to_struct(&self, name: &str, invalid_indices: Vec<usize>) -> PySeries {
-        let ca = self.df.clone().into_struct(name);
+        let ca = self.df.clone().into_struct(name.into());
 
         if !invalid_indices.is_empty() {
             let mut validity = MutableBitmap::with_capacity(ca.len());

@@ -173,7 +173,10 @@ impl DatetimeArgs {
             TimeUnit::Nanoseconds => dt.and_utc().timestamp_nanos_opt()?,
         };
 
-        Some(Expr::Literal(LiteralValue::DateTime(ts, self.time_unit, None)).alias("datetime"))
+        Some(
+            Expr::Literal(LiteralValue::DateTime(ts, self.time_unit, None))
+                .alias(PlSmallStr::from_static("datetime")),
+        )
     }
 }
 
@@ -205,21 +208,25 @@ pub fn datetime(args: DatetimeArgs) -> Expr {
         ambiguous,
     ];
 
-    Expr::Function {
-        input,
-        function: FunctionExpr::TemporalExpr(TemporalFunction::DatetimeFunction {
-            time_unit,
-            time_zone,
+    Expr::Alias(
+        Arc::new(Expr::Function {
+            input,
+            function: FunctionExpr::TemporalExpr(TemporalFunction::DatetimeFunction {
+                time_unit,
+                time_zone,
+            }),
+            options: FunctionOptions {
+                collect_groups: ApplyOptions::ElementWise,
+                flags: FunctionFlags::default()
+                    | FunctionFlags::INPUT_WILDCARD_EXPANSION
+                    | FunctionFlags::ALLOW_RENAME,
+                fmt_str: "datetime",
+                ..Default::default()
+            },
         }),
-        options: FunctionOptions {
-            collect_groups: ApplyOptions::ElementWise,
-            flags: FunctionFlags::default()
-                | FunctionFlags::INPUT_WILDCARD_EXPANSION
-                | FunctionFlags::ALLOW_RENAME,
-            fmt_str: "datetime",
-            ..Default::default()
-        },
-    }
+        // TODO: follow left-hand rule in Polars 2.0.
+        PlSmallStr::from_static("datetime"),
+    )
 }
 
 /// Arguments used by `duration` in order to produce an [`Expr`] of [`Duration`]
@@ -394,7 +401,10 @@ impl DurationArgs {
             TimeUnit::Nanoseconds => delta.num_nanoseconds()?,
         };
 
-        Some(Expr::Literal(LiteralValue::Duration(d, self.time_unit)).alias("duration"))
+        Some(
+            Expr::Literal(LiteralValue::Duration(d, self.time_unit))
+                .alias(PlSmallStr::from_static("duration")),
+        )
     }
 }
 

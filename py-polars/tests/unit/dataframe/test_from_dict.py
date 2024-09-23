@@ -145,7 +145,7 @@ def test_from_dict_with_scalars() -> None:
     assert df9.rows() == [(0, 2, 0, "x"), (1, 1, 0, "x"), (2, 0, 0, "x")]
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 def test_from_dict_with_values_mixed() -> None:
     # a bit of everything
     mixed_dtype_data: dict[str, Any] = {

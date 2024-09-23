@@ -29,10 +29,20 @@ pub(super) fn process_unpivot(
 
         // make sure that the requested columns are projected
         args.index.iter().for_each(|name| {
-            add_str_to_accumulated(name, &mut acc_projections, &mut projected_names, expr_arena)
+            add_str_to_accumulated(
+                name.clone(),
+                &mut acc_projections,
+                &mut projected_names,
+                expr_arena,
+            )
         });
         args.on.iter().for_each(|name| {
-            add_str_to_accumulated(name, &mut acc_projections, &mut projected_names, expr_arena)
+            add_str_to_accumulated(
+                name.clone(),
+                &mut acc_projections,
+                &mut projected_names,
+                expr_arena,
+            )
         });
 
         proj_pd.pushdown_and_assign(

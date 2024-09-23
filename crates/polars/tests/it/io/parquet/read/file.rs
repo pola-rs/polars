@@ -4,7 +4,7 @@ use arrow::array::Array;
 use arrow::datatypes::ArrowSchema;
 use arrow::record_batch::RecordBatchT;
 use polars_error::PolarsResult;
-use polars_parquet::read::{Filter, RowGroupMetaData};
+use polars_parquet::read::{Filter, RowGroupMetadata};
 
 use super::row_group::{read_columns_many, RowGroupDeserializer};
 
@@ -25,7 +25,7 @@ impl<R: Read + Seek> FileReader<R> {
     /// Returns a new [`FileReader`].
     pub fn new(
         reader: R,
-        row_groups: Vec<RowGroupMetaData>,
+        row_groups: Vec<RowGroupMetadata>,
         schema: ArrowSchema,
         limit: Option<usize>,
     ) -> Self {
@@ -104,7 +104,7 @@ impl<R: Read + Seek> Iterator for FileReader<R> {
 pub struct RowGroupReader<R: Read + Seek> {
     reader: R,
     schema: ArrowSchema,
-    row_groups: std::vec::IntoIter<RowGroupMetaData>,
+    row_groups: std::vec::IntoIter<RowGroupMetadata>,
     remaining_rows: usize,
 }
 
@@ -113,7 +113,7 @@ impl<R: Read + Seek> RowGroupReader<R> {
     pub fn new(
         reader: R,
         schema: ArrowSchema,
-        row_groups: Vec<RowGroupMetaData>,
+        row_groups: Vec<RowGroupMetadata>,
         limit: Option<usize>,
     ) -> Self {
         Self {
@@ -126,7 +126,7 @@ impl<R: Read + Seek> RowGroupReader<R> {
 
     #[inline]
     fn _next(&mut self) -> PolarsResult<Option<RowGroupDeserializer>> {
-        if self.schema.fields.is_empty() {
+        if self.schema.is_empty() {
             return Ok(None);
         }
         if self.remaining_rows == 0 {
@@ -145,7 +145,7 @@ impl<R: Read + Seek> RowGroupReader<R> {
         let column_chunks = read_columns_many(
             &mut self.reader,
             &row_group,
-            self.schema.fields.clone(),
+            &self.schema,
             Some(Filter::new_limited(self.remaining_rows)),
         )?;
 

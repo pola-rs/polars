@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 import operator
 from collections import OrderedDict
 from datetime import date, datetime, timedelta
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 import pytest
@@ -19,7 +21,7 @@ from polars import (
     UInt32,
     UInt64,
 )
-from polars.exceptions import ColumnNotFoundError, InvalidOperationError
+from polars.exceptions import ColumnNotFoundError, InvalidOperationError, SchemaError
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import INTEGER_DTYPES, NUMERIC_DTYPES
 
@@ -558,33 +560,159 @@ def test_power_series() -> None:
 
 
 @pytest.mark.parametrize(
-    ("expected", "expr"),
+    ("expected", "expr", "column_names"),
     [
+        (np.array([[2, 4], [6, 8]], dtype=np.int64), lambda a, b: a + b, ("a", "a")),
+        (np.array([[0, 0], [0, 0]], dtype=np.int64), lambda a, b: a - b, ("a", "a")),
+        (np.array([[1, 4], [9, 16]], dtype=np.int64), lambda a, b: a * b, ("a", "a")),
         (
-            np.array([[2, 4], [6, 8]]),
-            pl.col("a") + pl.col("a"),
+            np.array([[1.0, 1.0], [1.0, 1.0]], dtype=np.float64),
+            lambda a, b: a / b,
+            ("a", "a"),
+        ),
+        (np.array([[0, 0], [0, 0]], dtype=np.int64), lambda a, b: a % b, ("a", "a")),
+        (
+            np.array([[3, 4], [7, 8]], dtype=np.int64),
+            lambda a, b: a + b,
+            ("a", "uint8"),
+        ),
+        # This fails because the code is buggy, see
+        # https://github.com/pola-rs/polars/issues/17820
+        #
+        # (
+        #     np.array([[[2, 4]], [[6, 8]]], dtype=np.int64),
+        #     lambda a, b: a + b,
+        #     ("nested", "nested"),
+        # ),
+    ],
+)
+def test_array_arithmetic_same_size(
+    expected: Any,
+    expr: Callable[[pl.Series | pl.Expr, pl.Series | pl.Expr], pl.Series],
+    column_names: tuple[str, str],
+) -> None:
+    df = pl.DataFrame(
+        [
+            pl.Series("a", np.array([[1, 2], [3, 4]], dtype=np.int64)),
+            pl.Series("uint8", np.array([[2, 2], [4, 4]], dtype=np.uint8)),
+            pl.Series("nested", np.array([[[1, 2]], [[3, 4]]], dtype=np.int64)),
+        ]
+    )
+    print(df.select(expr(pl.col(column_names[0]), pl.col(column_names[1]))))
+    # Expr-based arithmetic:
+    assert_frame_equal(
+        df.select(expr(pl.col(column_names[0]), pl.col(column_names[1]))),
+        pl.Series(column_names[0], expected).to_frame(),
+    )
+    # Direct arithmetic on the Series:
+    assert_series_equal(
+        expr(df[column_names[0]], df[column_names[1]]),
+        pl.Series(column_names[0], expected),
+    )
+
+
+@pytest.mark.parametrize(
+    ("expected", "expr", "column_names"),
+    [
+        ([[2, 4], [6]], lambda a, b: a + b, ("a", "a")),
+        ([[0, 0], [0]], lambda a, b: a - b, ("a", "a")),
+        ([[1, 4], [9]], lambda a, b: a * b, ("a", "a")),
+        ([[1.0, 1.0], [1.0]], lambda a, b: a / b, ("a", "a")),
+        ([[0, 0], [0]], lambda a, b: a % b, ("a", "a")),
+        (
+            [[3, 4], [7]],
+            lambda a, b: a + b,
+            ("a", "uint8"),
         ),
         (
-            np.array([[0, 0], [0, 0]]),
-            pl.col("a") - pl.col("a"),
+            [[[2, 4]], [[6]]],
+            lambda a, b: a + b,
+            ("nested", "nested"),
         ),
         (
-            np.array([[1, 4], [9, 16]]),
-            pl.col("a") * pl.col("a"),
-        ),
-        (
-            np.array([[1.0, 1.0], [1.0, 1.0]]),
-            pl.col("a") / pl.col("a"),
+            [[[2, 4]], [[6]]],
+            lambda a, b: a + b,
+            ("nested", "nested_uint8"),
         ),
     ],
 )
-def test_array_arithmetic_same_size(expected: Any, expr: pl.Expr) -> None:
-    df = pl.Series("a", np.array([[1, 2], [3, 4]])).to_frame()
-
-    assert_frame_equal(
-        df.select(expr),
-        pl.Series("a", expected).to_frame(),
+def test_list_arithmetic_same_size(
+    expected: Any,
+    expr: Callable[[pl.Series | pl.Expr, pl.Series | pl.Expr], pl.Series],
+    column_names: tuple[str, str],
+) -> None:
+    df = pl.DataFrame(
+        [
+            pl.Series("a", [[1, 2], [3]]),
+            pl.Series("uint8", [[2, 2], [4]], dtype=pl.List(pl.UInt8())),
+            pl.Series("nested", [[[1, 2]], [[3]]]),
+            pl.Series(
+                "nested_uint8", [[[1, 2]], [[3]]], dtype=pl.List(pl.List(pl.UInt8()))
+            ),
+        ]
     )
+    # Expr-based arithmetic:
+    assert_frame_equal(
+        df.select(expr(pl.col(column_names[0]), pl.col(column_names[1]))),
+        pl.Series(column_names[0], expected).to_frame(),
+    )
+    # Direct arithmetic on the Series:
+    assert_series_equal(
+        expr(df[column_names[0]], df[column_names[1]]),
+        pl.Series(column_names[0], expected),
+    )
+
+
+@pytest.mark.parametrize(
+    ("a", "b", "expected"),
+    [
+        ([[1, 2, 3]], [[1, None, 5]], [[2, None, 8]]),
+        ([[2], None, [5]], [None, [3], [2]], [None, None, [7]]),
+        ([[[2]], [None], [[4]]], [[[3]], [[6]], [[8]]], [[[5]], [None], [[12]]]),
+    ],
+)
+def test_list_arithmetic_nulls(a: list[Any], b: list[Any], expected: list[Any]) -> None:
+    series_a = pl.Series(a)
+    series_b = pl.Series(b)
+    series_expected = pl.Series(expected)
+
+    # Same dtype:
+    assert_series_equal(series_a + series_b, series_expected)
+
+    # Different dtype:
+    assert_series_equal(
+        series_a._recursive_cast_to_dtype(pl.Int32())
+        + series_b._recursive_cast_to_dtype(pl.Int64()),
+        series_expected._recursive_cast_to_dtype(pl.Int64()),
+    )
+
+
+def test_list_arithmetic_error_cases() -> None:
+    # Different series length:
+    with pytest.raises(
+        InvalidOperationError, match="Series of the same size; got 1 and 2"
+    ):
+        _ = pl.Series("a", [[1, 2]]) / pl.Series("b", [[1, 2], [3, 4]])
+    with pytest.raises(
+        InvalidOperationError, match="Series of the same size; got 1 and 2"
+    ):
+        _ = pl.Series("a", [[1, 2]]) / pl.Series("b", [[1, 2], None])
+
+    # Different list length:
+    with pytest.raises(InvalidOperationError, match="lists of the same size"):
+        _ = pl.Series("a", [[1, 2]]) / pl.Series("b", [[1]])
+    with pytest.raises(
+        InvalidOperationError, match="lists of the same size; got 2 and 1"
+    ):
+        _ = pl.Series("a", [[1, 2], [2, 3]]) / pl.Series("b", [[1], None])
+
+    # Wrong types:
+    with pytest.raises(InvalidOperationError, match="cannot cast List type"):
+        _ = pl.Series("a", [[1, 2]]) + pl.Series("b", ["hello"])
+
+    # Different nesting:
+    with pytest.raises(SchemaError, match="failed to determine supertype"):
+        _ = pl.Series("a", [[1]]) + pl.Series("b", [[[1]]])
 
 
 def test_schema_owned_arithmetic_5669() -> None:

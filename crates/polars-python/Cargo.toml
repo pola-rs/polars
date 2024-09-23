@@ -25,6 +25,7 @@ polars-stream = { workspace = true }
 ahash = { workspace = true }
 arboard = { workspace = true, optional = true }
 bytemuck = { workspace = true }
+bytes = { workspace = true }
 ciborium = { workspace = true }
 either = { workspace = true }
 itoa = { workspace = true }
@@ -35,10 +36,9 @@ num-traits = { workspace = true }
 # https://github.com/PyO3/rust-numpy/issues/409
 numpy = { git = "https://github.com/stinodego/rust-numpy.git", rev = "9ba9962ae57ba26e35babdce6f179edf5fe5b9c8", default-features = false }
 once_cell = { workspace = true }
-pyo3 = { workspace = true, features = ["abi3-py38", "chrono", "extension-module", "multiple-pymethods"] }
+pyo3 = { workspace = true, features = ["abi3-py38", "chrono", "multiple-pymethods"] }
 recursive = { workspace = true }
 serde_json = { workspace = true, optional = true }
-smartstring = { workspace = true }
 thiserror = { workspace = true }
 
 [dependencies.polars]
@@ -118,10 +118,11 @@ parquet = ["polars/parquet", "polars-parquet"]
 ipc = ["polars/ipc"]
 ipc_streaming = ["polars/ipc_streaming"]
 is_in = ["polars/is_in"]
-json = ["polars/serde", "serde_json", "polars/json"]
+json = ["polars/serde", "serde_json", "polars/json", "polars-utils/serde"]
 trigonometry = ["polars/trigonometry"]
 sign = ["polars/sign"]
 asof_join = ["polars/asof_join"]
+iejoin = ["polars/iejoin"]
 cross_join = ["polars/cross_join"]
 pct_change = ["polars/pct_change"]
 repeat_by = ["polars/repeat_by"]

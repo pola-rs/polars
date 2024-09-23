@@ -7,6 +7,7 @@ import pytest
 
 import polars as pl
 from polars.exceptions import ComputeError
+from polars.testing import assert_series_equal
 
 
 def test_series_init_instantiated_object() -> None:
@@ -165,7 +166,7 @@ def test_null_obj_str_13512() -> None:
 
 def test_format_object_series_14267() -> None:
     s = pl.Series([Path(), Path("abc")])
-    expected = "shape: (2,)\n" "Series: '' [o][object]\n" "[\n" "\t.\n" "\tabc\n" "]"
+    expected = "shape: (2,)\nSeries: '' [o][object]\n[\n\t.\n\tabc\n]"
     assert str(s) == expected
 
 
@@ -190,3 +191,11 @@ def test_raise_list_object() -> None:
     # We don't want to support this. Unsafe enough as it is already.
     with pytest.raises(ValueError):
         pl.Series([[object()]], dtype=pl.List(pl.Object()))
+
+
+def test_object_null_slice() -> None:
+    s = pl.Series("x", [1, None, 42], dtype=pl.Object)
+    assert_series_equal(s.is_null(), pl.Series("x", [False, True, False]))
+    assert_series_equal(s.slice(0, 2).is_null(), pl.Series("x", [False, True]))
+    assert_series_equal(s.slice(1, 1).is_null(), pl.Series("x", [True]))
+    assert_series_equal(s.slice(2, 1).is_null(), pl.Series("x", [False]))

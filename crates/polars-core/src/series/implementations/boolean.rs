@@ -12,16 +12,13 @@ impl private::PrivateSeries for SeriesWrap<BooleanChunked> {
         Cow::Borrowed(self.0.ref_field())
     }
     fn _dtype(&self) -> &DataType {
-        self.0.ref_field().data_type()
+        self.0.ref_field().dtype()
     }
     fn _get_flags(&self) -> MetadataFlags {
         self.0.get_flags()
     }
     fn _set_flags(&mut self, flags: MetadataFlags) {
         self.0.set_flags(flags)
-    }
-    fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
-        self.0.explode_by_offsets(offsets)
     }
 
     unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
@@ -94,7 +91,7 @@ impl private::PrivateSeries for SeriesWrap<BooleanChunked> {
 
     fn arg_sort_multiple(
         &self,
-        by: &[Series],
+        by: &[Column],
         options: &SortMultipleOptions,
     ) -> PolarsResult<IdxCa> {
         self.0.arg_sort_multiple(by, options)
@@ -124,14 +121,14 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
         Ok((&self.0).bitor(other).into_series())
     }
 
-    fn rename(&mut self, name: &str) {
+    fn rename(&mut self, name: PlSmallStr) {
         self.0.rename(name);
     }
 
     fn chunk_lengths(&self) -> ChunkLenIter {
         self.0.chunk_lengths()
     }
-    fn name(&self) -> &str {
+    fn name(&self) -> &PlSmallStr {
         self.0.name()
     }
 
@@ -169,6 +166,10 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
         ChunkFilter::filter(&self.0, filter).map(|ca| ca.into_series())
     }
 
+    fn _sum_as_f64(&self) -> f64 {
+        self.0.sum().unwrap() as f64
+    }
+
     fn mean(&self) -> Option<f64> {
         self.0.mean()
     }
@@ -201,8 +202,8 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
         ChunkExpandAtIndex::new_from_index(&self.0, index, length).into_series()
     }
 
-    fn cast(&self, data_type: &DataType, options: CastOptions) -> PolarsResult<Series> {
-        self.0.cast_with_options(data_type, options)
+    fn cast(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Series> {
+        self.0.cast_with_options(dtype, options)
     }
 
     fn get(&self, index: usize) -> PolarsResult<AnyValue> {

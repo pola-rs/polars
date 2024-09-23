@@ -5,7 +5,7 @@ use polars::chunked_array::object::PolarsObjectSafe;
 #[cfg(feature = "object")]
 use polars::datatypes::OwnedObject;
 use polars::datatypes::{DataType, Field, PlHashMap, TimeUnit};
-use polars::prelude::{AnyValue, Series};
+use polars::prelude::{AnyValue, PlSmallStr, Series, TimeZone};
 use polars_core::export::chrono::{NaiveDate, NaiveDateTime, NaiveTime, TimeDelta, Timelike};
 use polars_core::utils::any_values_to_supertype_and_n_dtypes;
 use polars_core::utils::arrow::temporal_conversions::date32_to_date;
@@ -65,28 +65,28 @@ pub(crate) fn any_value_into_py_object(av: AnyValue, py: Python) -> PyObject {
             };
             s.into_py(py)
         },
+        AnyValue::CategoricalOwned(idx, rev, arr) | AnyValue::EnumOwned(idx, rev, arr) => {
+            let s = if arr.is_null() {
+                rev.get(idx)
+            } else {
+                unsafe { arr.deref_unchecked().value(idx as usize) }
+            };
+            s.into_py(py)
+        },
         AnyValue::Date(v) => {
             let date = date32_to_date(v);
             date.into_py(py)
         },
         AnyValue::Datetime(v, time_unit, time_zone) => {
-            if let Some(time_zone) = time_zone {
-                // When https://github.com/pola-rs/polars/issues/16199 is
-                // implemented, we'll switch to something like:
-                //
-                // let tz: chrono_tz::Tz = time_zone.parse().unwrap();
-                // let datetime = tz.from_local_datetime(&naive_datetime).earliest().unwrap();
-                // datetime.into_py(py)
-                let convert = utils.getattr(intern!(py, "to_py_datetime")).unwrap();
-                let time_unit = time_unit.to_ascii();
-                convert
-                    .call1((v, time_unit, time_zone.as_str()))
-                    .unwrap()
-                    .into_py(py)
-            } else {
-                timestamp_to_naive_datetime(v, time_unit).into_py(py)
-            }
+            datetime_to_py_object(py, utils, v, time_unit, time_zone)
         },
+        AnyValue::DatetimeOwned(v, time_unit, time_zone) => datetime_to_py_object(
+            py,
+            utils,
+            v,
+            time_unit,
+            time_zone.as_ref().map(AsRef::as_ref),
+        ),
         AnyValue::Duration(v, time_unit) => {
             let time_delta = elapsed_offset_to_timedelta(v, time_unit);
             time_delta.into_py(py)
@@ -124,6 +124,31 @@ pub(crate) fn any_value_into_py_object(av: AnyValue, py: Python) -> PyObject {
                 .unwrap()
                 .into_py(py)
         },
+    }
+}
+
+fn datetime_to_py_object(
+    py: Python,
+    utils: &Bound<PyAny>,
+    v: i64,
+    tu: TimeUnit,
+    tz: Option<&TimeZone>,
+) -> PyObject {
+    if let Some(time_zone) = tz {
+        // When https://github.com/pola-rs/polars/issues/16199 is
+        // implemented, we'll switch to something like:
+        //
+        // let tz: chrono_tz::Tz = time_zone.parse().unwrap();
+        // let datetime = tz.from_local_datetime(&naive_datetime).earliest().unwrap();
+        // datetime.into_py(py)
+        let convert = utils.getattr(intern!(py, "to_py_datetime")).unwrap();
+        let time_unit = tu.to_ascii();
+        convert
+            .call1((v, time_unit, time_zone.as_str()))
+            .unwrap()
+            .into_py(py)
+    } else {
+        timestamp_to_naive_datetime(v, tu).into_py(py)
     }
 }
 
@@ -204,7 +229,7 @@ pub(crate) fn py_object_to_any_value<'py>(
                 .call1((ob, intern!(py, "us")))
                 .unwrap();
             let v = date.extract::<i64>()?;
-            Ok(AnyValue::Datetime(v, TimeUnit::Microseconds, &None))
+            Ok(AnyValue::Datetime(v, TimeUnit::Microseconds, None))
         })
     }
 
@@ -289,7 +314,10 @@ pub(crate) fn py_object_to_any_value<'py>(
         }
 
         if ob.is_empty()? {
-            Ok(AnyValue::List(Series::new_empty("", &DataType::Null)))
+            Ok(AnyValue::List(Series::new_empty(
+                PlSmallStr::EMPTY,
+                &DataType::Null,
+            )))
         } else if ob.is_instance_of::<PyList>() | ob.is_instance_of::<PyTuple>() {
             const INFER_SCHEMA_LENGTH: usize = 25;
 
@@ -320,7 +348,7 @@ pub(crate) fn py_object_to_any_value<'py>(
                     avs.push(av)
                 }
 
-                let s = Series::from_any_values_and_dtype("", &avs, &dtype, strict)
+                let s = Series::from_any_values_and_dtype(PlSmallStr::EMPTY, &avs, &dtype, strict)
                     .map_err(|e| {
                         PyTypeError::new_err(format!(
                             "{e}\n\nHint: Try setting `strict=False` to allow passing data with mixed types."
@@ -348,7 +376,7 @@ pub(crate) fn py_object_to_any_value<'py>(
             let key = k.extract::<Cow<str>>()?;
             let val = py_object_to_any_value(&v, strict)?;
             let dtype = val.dtype();
-            keys.push(Field::new(&key, dtype));
+            keys.push(Field::new(key.as_ref().into(), dtype));
             vals.push(val)
         }
         Ok(AnyValue::StructOwned(Box::new((vals, keys))))

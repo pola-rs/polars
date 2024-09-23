@@ -5,7 +5,7 @@ impl DataFrame {
     pub(crate) fn bottom_k_impl(
         &self,
         k: usize,
-        by_column: Vec<Series>,
+        by_column: Vec<Column>,
         mut sort_options: SortMultipleOptions,
     ) -> PolarsResult<DataFrame> {
         let first_descending = sort_options.descending[0];

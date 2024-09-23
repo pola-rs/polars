@@ -10,8 +10,7 @@ use crate::datatypes::*;
 pub fn to_record(schema: &ArrowSchema, name: String) -> PolarsResult<Record> {
     let mut name_counter: i32 = 0;
     let fields = schema
-        .fields
-        .iter()
+        .iter_values()
         .map(|f| field_to_field(f, &mut name_counter))
         .collect::<PolarsResult<_>>()?;
     Ok(Record {
@@ -24,22 +23,22 @@ pub fn to_record(schema: &ArrowSchema, name: String) -> PolarsResult<Record> {
 }
 
 fn field_to_field(field: &Field, name_counter: &mut i32) -> PolarsResult<AvroField> {
-    let schema = type_to_schema(field.data_type(), field.is_nullable, name_counter)?;
-    Ok(AvroField::new(&field.name, schema))
+    let schema = type_to_schema(field.dtype(), field.is_nullable, name_counter)?;
+    Ok(AvroField::new(field.name.to_string(), schema))
 }
 
 fn type_to_schema(
-    data_type: &ArrowDataType,
+    dtype: &ArrowDataType,
     is_nullable: bool,
     name_counter: &mut i32,
 ) -> PolarsResult<AvroSchema> {
     Ok(if is_nullable {
         AvroSchema::Union(vec![
             AvroSchema::Null,
-            _type_to_schema(data_type, name_counter)?,
+            _type_to_schema(dtype, name_counter)?,
         ])
     } else {
-        _type_to_schema(data_type, name_counter)?
+        _type_to_schema(dtype, name_counter)?
     })
 }
 
@@ -48,8 +47,8 @@ fn _get_field_name(name_counter: &mut i32) -> String {
     format!("r{name_counter}")
 }
 
-fn _type_to_schema(data_type: &ArrowDataType, name_counter: &mut i32) -> PolarsResult<AvroSchema> {
-    Ok(match data_type.to_logical_type() {
+fn _type_to_schema(dtype: &ArrowDataType, name_counter: &mut i32) -> PolarsResult<AvroSchema> {
+    Ok(match dtype.to_logical_type() {
         ArrowDataType::Null => AvroSchema::Null,
         ArrowDataType::Boolean => AvroSchema::Boolean,
         ArrowDataType::Int32 => AvroSchema::Int(None),
@@ -62,7 +61,7 @@ fn _type_to_schema(data_type: &ArrowDataType, name_counter: &mut i32) -> PolarsR
         ArrowDataType::LargeUtf8 => AvroSchema::String(None),
         ArrowDataType::LargeList(inner) | ArrowDataType::List(inner) => {
             AvroSchema::Array(Box::new(type_to_schema(
-                &inner.data_type,
+                &inner.dtype,
                 inner.is_nullable,
                 name_counter,
             )?))

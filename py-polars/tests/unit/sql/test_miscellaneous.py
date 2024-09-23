@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -9,8 +10,11 @@ import polars as pl
 from polars.exceptions import SQLInterfaceError, SQLSyntaxError
 from polars.testing import assert_frame_equal
 
+if TYPE_CHECKING:
+    from polars.datatypes import DataType
 
-@pytest.fixture()
+
+@pytest.fixture
 def foods_ipc_path() -> Path:
     return Path(__file__).parent.parent / "io" / "files" / "foods1.ipc"
 
@@ -51,6 +55,28 @@ def test_any_all() -> None:
         "Any eq": [0, 1, 1, 1, 1, 0],
         "Any Neq": [1, 0, 0, 0, 0, 1],
     }
+
+
+@pytest.mark.parametrize(
+    ("data", "schema"),
+    [
+        ({"x": [1, 2, 3, 4]}, None),
+        ({"x": [9, 8, 7, 6]}, {"x": pl.Int8}),
+        ({"x": ["aa", "bb"]}, {"x": pl.Struct}),
+        ({"x": [None, None], "y": [None, None]}, {"x": pl.Date, "y": pl.Float64}),
+    ],
+)
+def test_boolean_where_clauses(
+    data: dict[str, Any], schema: dict[str, DataType] | None
+) -> None:
+    df = pl.DataFrame(data=data, schema=schema)
+    empty_df = df.clear()
+
+    for true in ("TRUE", "1=1", "2 == 2", "'xx' = 'xx'", "TRUE AND 1=1"):
+        assert_frame_equal(df, df.sql(f"SELECT * FROM self WHERE {true}"))
+
+    for false in ("false", "1!=1", "2 != 2", "'xx' != 'xx'", "FALSE OR 1!=1"):
+        assert_frame_equal(empty_df, df.sql(f"SELECT * FROM self WHERE {false}"))
 
 
 def test_count() -> None:

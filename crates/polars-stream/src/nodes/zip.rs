@@ -95,7 +95,7 @@ impl InputHead {
         } else {
             self.schema
                 .iter()
-                .map(|(name, dtype)| Series::full_null(name, len, dtype))
+                .map(|(name, dtype)| Series::full_null(name.clone(), len, dtype))
                 .collect()
         }
     }

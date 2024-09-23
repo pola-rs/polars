@@ -112,7 +112,7 @@ pub(crate) fn binary_lambda(
                 .collect()?;
 
             let s = out.select_at_idx(0).unwrap().clone();
-            PySeries::new(s)
+            PySeries::new(s.take_materialized_series())
         } else {
             return Some(result_series_wrapper.to_series(py, &pypolars.into_py(py), ""))
                 .transpose();
@@ -138,9 +138,9 @@ pub fn map_single(
     pyexpr.inner.clone().map_python(func, agg_list).into()
 }
 
-pub(crate) fn call_lambda_with_series_slice(
+pub(crate) fn call_lambda_with_columns_slice(
     py: Python,
-    s: &[Series],
+    s: &[Column],
     lambda: &PyObject,
     polars_module: &PyObject,
 ) -> PyObject {
@@ -148,7 +148,7 @@ pub(crate) fn call_lambda_with_series_slice(
 
     // create a PySeries struct/object for Python
     let iter = s.iter().map(|s| {
-        let ps = PySeries::new(s.clone());
+        let ps = PySeries::new(s.as_materialized_series().clone());
 
         // Wrap this PySeries object in the python side Series wrapper
         let python_series_wrapper = pypolars.getattr("wrap_s").unwrap().call1((ps,)).unwrap();
@@ -176,17 +176,17 @@ pub fn map_mul(
     // do the import outside of the function to prevent import side effects in a hot loop.
     let pypolars = PyModule::import_bound(py, "polars").unwrap().to_object(py);
 
-    let function = move |s: &mut [Series]| {
+    let function = move |s: &mut [Column]| {
         Python::with_gil(|py| {
             // this is a python Series
-            let out = call_lambda_with_series_slice(py, s, &lambda, &pypolars);
+            let out = call_lambda_with_columns_slice(py, s, &lambda, &pypolars);
 
             // we return an error, because that will become a null value polars lazy apply list
             if map_groups && out.is_none(py) {
                 return Ok(None);
             }
 
-            Ok(Some(out.to_series(py, &pypolars, "")?))
+            Ok(Some(out.to_series(py, &pypolars, "")?.into_column()))
         })
     };
 
@@ -194,7 +194,7 @@ pub fn map_mul(
 
     let output_map = GetOutput::map_field(move |fld| {
         Ok(match output_type {
-            Some(ref dt) => Field::new(fld.name(), dt.0.clone()),
+            Some(ref dt) => Field::new(fld.name().clone(), dt.0.clone()),
             None => fld.clone(),
         })
     });

@@ -10,12 +10,12 @@ use crate::datatypes::ArrowDataType;
 pub struct MapScalar {
     values: Box<dyn Array>,
     is_valid: bool,
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
 }
 
 impl PartialEq for MapScalar {
     fn eq(&self, other: &Self) -> bool {
-        (self.data_type == other.data_type)
+        (self.dtype == other.dtype)
             && (self.is_valid == other.is_valid)
             && ((!self.is_valid) | (self.values.as_ref() == other.values.as_ref()))
     }
@@ -25,23 +25,23 @@ impl MapScalar {
     /// returns a new [`MapScalar`]
     /// # Panics
     /// iff
-    /// * the `data_type` is not `Map`
-    /// * the child of the `data_type` is not equal to the `values`
+    /// * the `dtype` is not `Map`
+    /// * the child of the `dtype` is not equal to the `values`
     #[inline]
-    pub fn new(data_type: ArrowDataType, values: Option<Box<dyn Array>>) -> Self {
-        let inner_field = MapArray::try_get_field(&data_type).unwrap();
-        let inner_data_type = inner_field.data_type();
+    pub fn new(dtype: ArrowDataType, values: Option<Box<dyn Array>>) -> Self {
+        let inner_field = MapArray::try_get_field(&dtype).unwrap();
+        let inner_dtype = inner_field.dtype();
         let (is_valid, values) = match values {
             Some(values) => {
-                assert_eq!(inner_data_type, values.data_type());
+                assert_eq!(inner_dtype, values.dtype());
                 (true, values)
             },
-            None => (false, new_empty_array(inner_data_type.clone())),
+            None => (false, new_empty_array(inner_dtype.clone())),
         };
         Self {
             values,
             is_valid,
-            data_type,
+            dtype,
         }
     }
 
@@ -60,7 +60,7 @@ impl Scalar for MapScalar {
         self.is_valid
     }
 
-    fn data_type(&self) -> &ArrowDataType {
-        &self.data_type
+    fn dtype(&self) -> &ArrowDataType {
+        &self.dtype
     }
 }

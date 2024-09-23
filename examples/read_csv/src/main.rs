@@ -2,7 +2,7 @@ use polars::io::mmap::MmapBytesReader;
 use polars::prelude::*;
 
 fn main() -> PolarsResult<()> {
-    let file = std::fs::File::open("/home/ritchie46/Downloads/tpch/tables_scale_100/lineitem.tbl")
+    let file = std::fs::File::open("/home/ritchie46/Downloads/pdsh/tables_scale_100/lineitem.tbl")
         .unwrap();
     let file = Box::new(file) as Box<dyn MmapBytesReader>;
     let _df = CsvReader::new(file)

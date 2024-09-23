@@ -3,11 +3,12 @@ use std::hash::Hash;
 #[cfg(feature = "cse")]
 use std::hash::Hasher;
 
+use polars_utils::format_pl_smallstr;
 #[cfg(feature = "ir_serde")]
 use serde::{Deserialize, Serialize};
 
 use super::*;
-use crate::constants::{get_len_name, LITERAL_NAME};
+use crate::constants::{get_len_name, get_literal_name};
 
 #[derive(Default, Debug, Clone, Hash, PartialEq, Eq)]
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
@@ -16,18 +17,18 @@ pub enum OutputName {
     #[default]
     None,
     /// The most left-hand-side literal will be the output name.
-    LiteralLhs(ColumnName),
+    LiteralLhs(PlSmallStr),
     /// The most left-hand-side column will be the output name.
-    ColumnLhs(ColumnName),
-    /// Rename the output as `ColumnName`.
-    Alias(ColumnName),
+    ColumnLhs(PlSmallStr),
+    /// Rename the output as `PlSmallStr`.
+    Alias(PlSmallStr),
     #[cfg(feature = "dtype-struct")]
     /// A struct field.
-    Field(ColumnName),
+    Field(PlSmallStr),
 }
 
 impl OutputName {
-    pub fn unwrap(&self) -> &ColumnName {
+    pub fn unwrap(&self) -> &PlSmallStr {
         match self {
             OutputName::Alias(name) => name,
             OutputName::ColumnLhs(name) => name,
@@ -79,9 +80,9 @@ impl ExprIR {
                 },
                 AExpr::Literal(lv) => {
                     if let LiteralValue::Series(s) = lv {
-                        out.output_name = OutputName::LiteralLhs(s.name().into());
+                        out.output_name = OutputName::LiteralLhs(s.name().clone());
                     } else {
-                        out.output_name = OutputName::LiteralLhs(LITERAL_NAME.into());
+                        out.output_name = OutputName::LiteralLhs(get_literal_name().clone());
                     }
                     break;
                 },
@@ -95,9 +96,8 @@ impl ExprIR {
                         },
                         _ => {
                             if input.is_empty() {
-                                out.output_name = OutputName::LiteralLhs(ColumnName::from(
-                                    format!("{}", function),
-                                ));
+                                out.output_name =
+                                    OutputName::LiteralLhs(format_pl_smallstr!("{}", function));
                             } else {
                                 out.output_name = input[0].output_name.clone();
                             }
@@ -107,7 +107,8 @@ impl ExprIR {
                 },
                 AExpr::AnonymousFunction { input, options, .. } => {
                     if input.is_empty() {
-                        out.output_name = OutputName::LiteralLhs(ColumnName::from(options.fmt_str));
+                        out.output_name =
+                            OutputName::LiteralLhs(PlSmallStr::from_static(options.fmt_str));
                     } else {
                         out.output_name = input[0].output_name.clone();
                     }
@@ -147,7 +148,7 @@ impl ExprIR {
     }
 
     #[cfg(feature = "cse")]
-    pub(crate) fn set_alias(&mut self, name: ColumnName) {
+    pub(crate) fn set_alias(&mut self, name: PlSmallStr) {
         self.output_name = OutputName::Alias(name)
     }
 
@@ -155,24 +156,20 @@ impl ExprIR {
         &self.output_name
     }
 
-    pub(crate) fn output_name_arc(&self) -> &Arc<str> {
+    pub fn output_name(&self) -> &PlSmallStr {
         self.output_name.unwrap()
-    }
-
-    pub fn output_name(&self) -> &str {
-        self.output_name_arc().as_ref()
     }
 
     pub fn to_expr(&self, expr_arena: &Arena<AExpr>) -> Expr {
         let out = node_to_expr(self.node, expr_arena);
 
         match &self.output_name {
-            OutputName::Alias(name) => out.alias(name.as_ref()),
+            OutputName::Alias(name) => out.alias(name.clone()),
             _ => out,
         }
     }
 
-    pub fn get_alias(&self) -> Option<&ColumnName> {
+    pub fn get_alias(&self) -> Option<&PlSmallStr> {
         match &self.output_name {
             OutputName::Alias(name) => Some(name),
             _ => None,
@@ -180,7 +177,7 @@ impl ExprIR {
     }
 
     /// Gets any name except one deriving from `Column`.
-    pub(crate) fn get_non_projected_name(&self) -> Option<&ColumnName> {
+    pub(crate) fn get_non_projected_name(&self) -> Option<&PlSmallStr> {
         match &self.output_name {
             OutputName::Alias(name) => Some(name),
             #[cfg(feature = "dtype-struct")]
@@ -208,6 +205,10 @@ impl ExprIR {
             alias.hash(state)
         }
     }
+
+    pub fn is_scalar(&self, expr_arena: &Arena<AExpr>) -> bool {
+        is_scalar_ae(self.node, expr_arena)
+    }
 }
 
 impl AsRef<ExprIR> for ExprIR {
@@ -232,20 +233,20 @@ impl From<&ExprIR> for Node {
     }
 }
 
-pub(crate) fn name_to_expr_ir(name: &str, expr_arena: &mut Arena<AExpr>) -> ExprIR {
-    let name = ColumnName::from(name);
+pub(crate) fn name_to_expr_ir(name: PlSmallStr, expr_arena: &mut Arena<AExpr>) -> ExprIR {
     let node = expr_arena.add(AExpr::Column(name.clone()));
     ExprIR::new(node, OutputName::ColumnLhs(name))
 }
 
-pub(crate) fn names_to_expr_irs<I: IntoIterator<Item = S>, S: AsRef<str>>(
-    names: I,
-    expr_arena: &mut Arena<AExpr>,
-) -> Vec<ExprIR> {
+pub(crate) fn names_to_expr_irs<I, S>(names: I, expr_arena: &mut Arena<AExpr>) -> Vec<ExprIR>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<PlSmallStr>,
+{
     names
         .into_iter()
         .map(|name| {
-            let name = name.as_ref();
+            let name = name.into();
             name_to_expr_ir(name, expr_arena)
         })
         .collect()

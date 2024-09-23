@@ -6,14 +6,14 @@ mod cse;
 mod io;
 mod logical;
 mod optimization_checks;
+#[cfg(all(feature = "strings", feature = "cse"))]
+mod pdsh;
 mod predicate_queries;
 mod projection_queries;
 mod queries;
 mod schema;
 #[cfg(feature = "streaming")]
 mod streaming;
-#[cfg(all(feature = "strings", feature = "cse"))]
-mod tpch;
 
 fn get_arenas() -> (Arena<AExpr>, Arena<IR>) {
     let expr_arena = Arena::with_capacity(16);

@@ -219,7 +219,7 @@ where
     ignore_errors: bool,
     infer_schema_len: Option<NonZeroUsize>,
     batch_size: NonZeroUsize,
-    projection: Option<Vec<String>>,
+    projection: Option<Vec<PlSmallStr>>,
     schema: Option<SchemaRef>,
     schema_overwrite: Option<&'a Schema>,
     json_format: JsonFormat,
@@ -272,8 +272,20 @@ where
             JsonFormat::Json => {
                 polars_ensure!(!self.ignore_errors, InvalidOperation: "'ignore_errors' only supported in ndjson");
                 let mut bytes = rb.deref().to_vec();
-                let json_value =
-                    simd_json::to_borrowed_value(&mut bytes).map_err(to_compute_err)?;
+                let owned = &mut vec![];
+                compression::maybe_decompress_bytes(&bytes, owned)?;
+                // the easiest way to avoid ownership issues is by implicitly figuring out if
+                // decompression happened (owned is only populated on decompress), then pick which bytes to parse
+                let json_value = if owned.is_empty() {
+                    simd_json::to_borrowed_value(&mut bytes).map_err(to_compute_err)?
+                } else {
+                    simd_json::to_borrowed_value(owned).map_err(to_compute_err)?
+                };
+                if let BorrowedValue::Array(array) = &json_value {
+                    if array.is_empty() & self.schema.is_none() & self.schema_overwrite.is_none() {
+                        return Ok(DataFrame::empty());
+                    }
+                }
 
                 // struct type
                 let dtype = if let Some(mut schema) = self.schema {
@@ -301,13 +313,13 @@ where
                             polars_bail!(ComputeError: "can only deserialize json objects")
                         };
 
-                        let mut schema = Schema::from_iter(fields.iter());
+                        let mut schema = Schema::from_iter(fields.iter().map(Into::<Field>::into));
                         overwrite_schema(&mut schema, overwrite)?;
 
                         DataType::Struct(
                             schema
                                 .into_iter()
-                                .map(|(name, dt)| Field::new(&name, dt))
+                                .map(|(name, dt)| Field::new(name, dt))
                                 .collect(),
                         )
                         .to_arrow(CompatLevel::newest())
@@ -318,7 +330,9 @@ where
 
                 let dtype = if let BorrowedValue::Array(_) = &json_value {
                     ArrowDataType::LargeList(Box::new(arrow::datatypes::Field::new(
-                        "item", dtype, true,
+                        PlSmallStr::from_static("item"),
+                        dtype,
+                        true,
                     )))
                 } else {
                     dtype
@@ -355,8 +369,8 @@ where
         }?;
 
         // TODO! Ensure we don't materialize the columns we don't need
-        if let Some(proj) = &self.projection {
-            out.select(proj)
+        if let Some(proj) = self.projection.as_deref() {
+            out.select(proj.iter().cloned())
         } else {
             Ok(out)
         }
@@ -405,7 +419,7 @@ where
     ///
     /// Setting `projection` to the columns you want to keep is more efficient than deserializing all of the columns and
     /// then dropping the ones you don't want.
-    pub fn with_projection(mut self, projection: Option<Vec<String>>) -> Self {
+    pub fn with_projection(mut self, projection: Option<Vec<PlSmallStr>>) -> Self {
         self.projection = projection;
         self
     }

@@ -24,10 +24,14 @@ use super::*;
 /// // only if regex features is activated
 /// col("^foo.*$")
 /// ```
-pub fn col(name: &str) -> Expr {
-    match name {
+pub fn col<S>(name: S) -> Expr
+where
+    S: Into<PlSmallStr>,
+{
+    let name = name.into();
+    match name.as_str() {
         "*" => Expr::Wildcard,
-        _ => Expr::Column(ColumnName::from(name)),
+        _ => Expr::Column(name),
     }
 }
 
@@ -37,12 +41,12 @@ pub fn all() -> Expr {
 }
 
 /// Select multiple columns by name.
-pub fn cols<I: IntoVec<String>>(names: I) -> Expr {
-    let names = names.into_vec();
-    let names = names
-        .into_iter()
-        .map(|v| ColumnName::from(v.as_str()))
-        .collect();
+pub fn cols<I, S>(names: I) -> Expr
+where
+    I: IntoIterator<Item = S>,
+    S: Into<PlSmallStr>,
+{
+    let names = names.into_iter().map(|x| x.into()).collect();
     Expr::Columns(names)
 }
 

@@ -7,19 +7,19 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     /// Get a mask of the null values.
     pub fn is_null(&self) -> BooleanChunked {
         if !self.has_nulls() {
-            return BooleanChunked::full(self.name(), false, self.len());
+            return BooleanChunked::full(self.name().clone(), false, self.len());
         }
         // dispatch to non-generic function
-        is_null(self.name(), &self.chunks)
+        is_null(self.name().clone(), &self.chunks)
     }
 
     /// Get a mask of the valid values.
     pub fn is_not_null(&self) -> BooleanChunked {
         if self.null_count() == 0 {
-            return BooleanChunked::full(self.name(), true, self.len());
+            return BooleanChunked::full(self.name().clone(), true, self.len());
         }
         // dispatch to non-generic function
-        is_not_null(self.name(), &self.chunks)
+        is_not_null(self.name().clone(), &self.chunks)
     }
 
     pub(crate) fn coalesce_nulls(&self, other: &[ArrayRef]) -> Self {
@@ -30,7 +30,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     }
 }
 
-pub fn is_not_null(name: &str, chunks: &[ArrayRef]) -> BooleanChunked {
+pub fn is_not_null(name: PlSmallStr, chunks: &[ArrayRef]) -> BooleanChunked {
     let chunks = chunks.iter().map(|arr| {
         let bitmap = arr
             .validity()
@@ -41,7 +41,7 @@ pub fn is_not_null(name: &str, chunks: &[ArrayRef]) -> BooleanChunked {
     BooleanChunked::from_chunk_iter(name, chunks)
 }
 
-pub fn is_null(name: &str, chunks: &[ArrayRef]) -> BooleanChunked {
+pub fn is_null(name: PlSmallStr, chunks: &[ArrayRef]) -> BooleanChunked {
     let chunks = chunks.iter().map(|arr| {
         let bitmap = arr
             .validity()
@@ -52,7 +52,7 @@ pub fn is_null(name: &str, chunks: &[ArrayRef]) -> BooleanChunked {
     BooleanChunked::from_chunk_iter(name, chunks)
 }
 
-pub fn replace_non_null(name: &str, chunks: &[ArrayRef], default: bool) -> BooleanChunked {
+pub fn replace_non_null(name: PlSmallStr, chunks: &[ArrayRef], default: bool) -> BooleanChunked {
     BooleanChunked::from_chunk_iter(
         name,
         chunks.iter().map(|el| {

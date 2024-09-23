@@ -67,14 +67,14 @@ where
                 }
                 // projection is free
                 if let Some(schema) = output_schema {
-                    let columns = schema.iter_names().cloned().collect::<Vec<_>>();
+                    let columns = schema.iter_names_cloned().collect::<Vec<_>>();
                     df = df._select_impl_unchecked(&columns)?;
                 }
             }
             Ok(Box::new(sources::DataFrameSource::from_df(df)) as Box<dyn Source>)
         },
         Scan {
-            paths,
+            sources,
             file_info,
             hive_parts,
             file_options,
@@ -82,6 +82,8 @@ where
             output_schema,
             scan_type,
         } => {
+            let paths = sources.into_paths();
+
             // Add predicate to operators.
             // Except for parquet, as that format can use statistics to prune file/row-groups.
             #[cfg(feature = "parquet")]
@@ -102,7 +104,7 @@ where
                 #[cfg(feature = "csv")]
                 FileScan::Csv { options, .. } => {
                     let src = sources::CsvSource::new(
-                        paths,
+                        sources,
                         file_info.schema,
                         options,
                         file_options,
@@ -131,7 +133,7 @@ where
                                     self.p.evaluate_io(df)
                                 }
 
-                                fn live_variables(&self) -> Option<Vec<Arc<str>>> {
+                                fn live_variables(&self) -> Option<Vec<PlSmallStr>> {
                                     None
                                 }
 
@@ -144,7 +146,7 @@ where
                         })
                         .transpose()?;
                     let src = sources::ParquetSource::new(
-                        paths,
+                        sources,
                         parquet_options,
                         cloud_options,
                         metadata,
@@ -259,7 +261,7 @@ where
             match &options.args.how {
                 #[cfg(feature = "cross_join")]
                 JoinType::Cross => Box::new(CrossJoin::new(
-                    options.args.suffix().into(),
+                    options.args.suffix().clone(),
                     swapped,
                     node,
                     placeholder,
@@ -293,7 +295,7 @@ where
                             let (join_columns_left, join_columns_right) = swap_eval();
 
                             Box::new(GenericBuild::<()>::new(
-                                Arc::from(options.args.suffix()),
+                                options.args.suffix().clone(),
                                 options.args.clone(),
                                 swapped,
                                 join_columns_left,
@@ -320,7 +322,7 @@ where
                             let (join_columns_left, join_columns_right) = swap_eval();
 
                             Box::new(GenericBuild::<Tracker>::new(
-                                Arc::from(options.args.suffix()),
+                                options.args.suffix().clone(),
                                 options.args.clone(),
                                 swapped,
                                 join_columns_left,
@@ -390,7 +392,7 @@ where
                     let keys = input_schema
                         .iter_names()
                         .map(|name| {
-                            let name: Arc<str> = Arc::from(name.as_str());
+                            let name: PlSmallStr = name.clone();
                             let node = expr_arena.add(AExpr::Column(name.clone()));
                             ExprIR::new(node, OutputName::Alias(name))
                         })
@@ -421,7 +423,7 @@ where
                                     input_schema.get_full(name.as_str()).unwrap();
                                 group_by_out_schema.with_column(name.clone(), dtype.clone());
 
-                                let name: Arc<str> = Arc::from(name.as_str());
+                                let name: PlSmallStr = name.clone();
                                 let col = expr_arena.add(AExpr::Column(name.clone()));
                                 let node = match options.keep_strategy {
                                     UniqueKeepStrategy::First | UniqueKeepStrategy::Any => {
@@ -588,7 +590,7 @@ where
     let op = match lp_arena.get(node) {
         SimpleProjection { input, columns, .. } => {
             let input_schema = lp_arena.get(*input).schema(lp_arena);
-            let columns = columns.iter_names().cloned().collect();
+            let columns = columns.iter_names_cloned().collect();
             let op = operators::SimpleProjectionOperator::new(columns, input_schema.into_owned());
             Box::new(op) as Box<dyn Operator>
         },

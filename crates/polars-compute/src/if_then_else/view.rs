@@ -87,7 +87,7 @@ impl IfThenElseKernel for BinaryViewArray {
             };
         }
         builder
-            .freeze_with_dtype(if_true.data_type().clone())
+            .freeze_with_dtype(if_true.dtype().clone())
             .with_validity(validity)
     }
 
@@ -125,7 +125,7 @@ impl IfThenElseKernel for BinaryViewArray {
             }
         }
         builder
-            .freeze_with_dtype(if_false.data_type().clone())
+            .freeze_with_dtype(if_false.dtype().clone())
             .with_validity(validity)
     }
 
@@ -163,7 +163,7 @@ impl IfThenElseKernel for BinaryViewArray {
             }
         };
         builder
-            .freeze_with_dtype(if_true.data_type().clone())
+            .freeze_with_dtype(if_true.dtype().clone())
             .with_validity(validity)
     }
 

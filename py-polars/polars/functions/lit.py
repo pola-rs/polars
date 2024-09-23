@@ -42,11 +42,11 @@ def lit(
     -----
     Expected datatypes:
 
-    - `pl.lit([])` -> empty  Series Float32
-    - `pl.lit([1, 2, 3])` -> Series Int64
-    - `pl.lit([[]])`-> empty  Series List<Null>
-    - `pl.lit([[1, 2, 3]])` -> Series List<i64>
-    - `pl.lit(None)` -> Series Null
+    - `pl.lit([])` -> empty List<Null>
+    - `pl.lit([1, 2, 3])` -> List<i64>
+    - `pl.lit(pl.Series([]))`-> empty Series Null
+    - `pl.lit(pl.Series([1, 2, 3]))` -> Series Int64
+    - `pl.lit(None)` -> Null
 
     Examples
     --------
@@ -73,7 +73,7 @@ def lit(
 
     if isinstance(value, datetime):
         if dtype == Date:
-            return wrap_expr(plr.lit(value.date(), allow_object=False))
+            return wrap_expr(plr.lit(value.date(), allow_object=False, is_scalar=True))
 
         # parse time unit
         if dtype is not None and (tu := getattr(dtype, "time_unit", "us")) is not None:
@@ -102,7 +102,9 @@ def lit(
                 raise TypeError(msg)
 
         dt_utc = value.replace(tzinfo=timezone.utc)
-        expr = wrap_expr(plr.lit(dt_utc, allow_object=False)).cast(Datetime(time_unit))
+        expr = wrap_expr(plr.lit(dt_utc, allow_object=False, is_scalar=True)).cast(
+            Datetime(time_unit)
+        )
         if tz is not None:
             expr = expr.dt.replace_time_zone(
                 tz, ambiguous="earliest" if value.fold == 0 else "latest"
@@ -110,36 +112,42 @@ def lit(
         return expr
 
     elif isinstance(value, timedelta):
-        expr = wrap_expr(plr.lit(value, allow_object=False))
+        expr = wrap_expr(plr.lit(value, allow_object=False, is_scalar=True))
         if dtype is not None and (tu := getattr(dtype, "time_unit", None)) is not None:
             expr = expr.cast(Duration(tu))
         return expr
 
     elif isinstance(value, time):
-        return wrap_expr(plr.lit(value, allow_object=False))
+        return wrap_expr(plr.lit(value, allow_object=False, is_scalar=True))
 
     elif isinstance(value, date):
         if dtype == Datetime:
             time_unit = getattr(dtype, "time_unit", "us") or "us"
             dt_utc = datetime(value.year, value.month, value.day)
-            expr = wrap_expr(plr.lit(dt_utc, allow_object=False)).cast(
+            expr = wrap_expr(plr.lit(dt_utc, allow_object=False, is_scalar=True)).cast(
                 Datetime(time_unit)
             )
             if (time_zone := getattr(dtype, "time_zone", None)) is not None:
                 expr = expr.dt.replace_time_zone(str(time_zone))
             return expr
         else:
-            return wrap_expr(plr.lit(value, allow_object=False))
+            return wrap_expr(plr.lit(value, allow_object=False, is_scalar=True))
 
     elif isinstance(value, pl.Series):
         value = value._s
-        return wrap_expr(plr.lit(value, allow_object))
+        return wrap_expr(plr.lit(value, allow_object, is_scalar=False))
 
     elif _check_for_numpy(value) and isinstance(value, np.ndarray):
         return lit(pl.Series("literal", value, dtype=dtype))
 
     elif isinstance(value, (list, tuple)):
-        return lit(pl.Series("literal", [value], dtype=dtype))
+        return wrap_expr(
+            plr.lit(
+                pl.Series("literal", [value], dtype=dtype)._s,
+                allow_object,
+                is_scalar=True,
+            )
+        )
 
     elif isinstance(value, enum.Enum):
         lit_value = value.value
@@ -148,7 +156,7 @@ def lit(
         return lit(lit_value, dtype=dtype)
 
     if dtype:
-        return wrap_expr(plr.lit(value, allow_object)).cast(dtype)
+        return wrap_expr(plr.lit(value, allow_object, is_scalar=True)).cast(dtype)
 
     try:
         # numpy literals like np.float32(0) have item/dtype
@@ -171,4 +179,4 @@ def lit(
     except AttributeError:
         item = value
 
-    return wrap_expr(plr.lit(item, allow_object))
+    return wrap_expr(plr.lit(item, allow_object, is_scalar=True))

@@ -15,6 +15,7 @@ pub struct BinaryExpr {
     expr: Expr,
     has_literal: bool,
     allow_threading: bool,
+    is_scalar: bool,
 }
 
 impl BinaryExpr {
@@ -25,6 +26,7 @@ impl BinaryExpr {
         expr: Expr,
         has_literal: bool,
         allow_threading: bool,
+        is_scalar: bool,
     ) -> Self {
         Self {
             left,
@@ -33,6 +35,7 @@ impl BinaryExpr {
             expr,
             has_literal,
             allow_threading,
+            is_scalar,
         }
     }
 }
@@ -68,6 +71,11 @@ pub fn apply_operator(left: &Series, right: &Series, op: Operator) -> PolarsResu
             Duration(_) | Date | Datetime(_, _) | Float32 | Float64 => left / right,
             #[cfg(feature = "dtype-array")]
             dt @ Array(_, _) => {
+                let left_dt = dt.cast_leaf(Float64);
+                let right_dt = right.dtype().cast_leaf(Float64);
+                left.cast(&left_dt)? / right.cast(&right_dt)?
+            },
+            dt @ List(_) => {
                 let left_dt = dt.cast_leaf(Float64);
                 let right_dt = right.dtype().cast_leaf(Float64);
                 left.cast(&left_dt)? / right.cast(&right_dt)?
@@ -128,7 +136,7 @@ impl BinaryExpr {
         mut ac_l: AggregationContext<'a>,
         mut ac_r: AggregationContext<'a>,
     ) -> PolarsResult<AggregationContext<'a>> {
-        let name = ac_l.series().name().to_string();
+        let name = ac_l.series().name().clone();
         ac_l.groups();
         ac_r.groups();
         polars_ensure!(ac_l.groups.len() == ac_r.groups.len(), ComputeError: "lhs and rhs should have same group length");
@@ -139,7 +147,7 @@ impl BinaryExpr {
         let res_s = if res_s.len() == 1 {
             res_s.new_from_index(0, ac_l.groups.len())
         } else {
-            ListChunked::full(&name, &res_s, ac_l.groups.len()).into_series()
+            ListChunked::full(name, &res_s, ac_l.groups.len()).into_series()
         };
         ac_l.with_series(res_s, true, Some(&self.expr))?;
         Ok(ac_l)
@@ -150,14 +158,14 @@ impl BinaryExpr {
         mut ac_l: AggregationContext<'a>,
         mut ac_r: AggregationContext<'a>,
     ) -> PolarsResult<AggregationContext<'a>> {
-        let name = ac_l.series().name().to_string();
+        let name = ac_l.series().name().clone();
         let ca = ac_l
             .iter_groups(false)
             .zip(ac_r.iter_groups(false))
             .map(|(l, r)| Some(apply_operator(l?.as_ref(), r?.as_ref(), self.op)))
             .map(|opt_res| opt_res.transpose())
             .collect::<PolarsResult<ListChunked>>()?
-            .with_name(&name);
+            .with_name(name);
 
         ac_l.with_update_groups(UpdateGroups::WithSeriesLen);
         ac_l.with_agg_state(AggState::AggregatedList(ca.into_series()));
@@ -198,7 +206,7 @@ impl PhysicalExpr for BinaryExpr {
         polars_ensure!(
             lhs.len() == rhs.len() || lhs.len() == 1 || rhs.len() == 1,
             expr = self.expr,
-            ComputeError: "cannot evaluate two Series of different lengths ({} and {})",
+            ShapeMismatch: "cannot evaluate two Series of different lengths ({} and {})",
             lhs.len(), rhs.len(),
         );
         apply_operator_owned(lhs, rhs, self.op)
@@ -252,6 +260,10 @@ impl PhysicalExpr for BinaryExpr {
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.expr.to_field(input_schema, Context::Default)
+    }
+
+    fn is_scalar(&self) -> bool {
+        self.is_scalar
     }
 
     fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
@@ -392,7 +404,7 @@ mod stats {
 
             #[cfg(debug_assertions)]
             {
-                match (fld_l.data_type(), fld_r.data_type()) {
+                match (fld_l.dtype(), fld_r.dtype()) {
                     #[cfg(feature = "dtype-categorical")]
                     (DataType::String, DataType::Categorical(_, _) | DataType::Enum(_, _)) => {},
                     #[cfg(feature = "dtype-categorical")]

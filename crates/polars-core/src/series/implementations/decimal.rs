@@ -54,20 +54,24 @@ impl SeriesWrap<DecimalChunked> {
                 let arr = ca.downcast_iter().next().unwrap();
                 // SAFETY: dtype is passed correctly
                 let s = unsafe {
-                    Series::from_chunks_and_dtype_unchecked("", vec![arr.values().clone()], dtype)
+                    Series::from_chunks_and_dtype_unchecked(
+                        PlSmallStr::EMPTY,
+                        vec![arr.values().clone()],
+                        dtype,
+                    )
                 };
                 let new_values = s.array_ref(0).clone();
-                let data_type =
+                let dtype =
                     ListArray::<i64>::default_datatype(dtype.to_arrow(CompatLevel::newest()));
                 let new_arr = ListArray::<i64>::new(
-                    data_type,
+                    dtype,
                     arr.offsets().clone(),
                     new_values,
                     arr.validity().cloned(),
                 );
                 unsafe {
                     ListChunked::from_chunks_and_dtype_unchecked(
-                        agg_s.name(),
+                        agg_s.name().clone(),
                         vec![Box::new(new_arr)],
                         DataType::List(Box::new(self.dtype().clone())),
                     )
@@ -180,21 +184,10 @@ impl private::PrivateSeries for SeriesWrap<DecimalChunked> {
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
         self.0.group_tuples(multithreaded, sorted)
     }
-
-    fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
-        self.0
-            .explode_by_offsets(offsets)
-            .decimal()
-            .unwrap()
-            .as_ref()
-            .clone()
-            .into_decimal_unchecked(self.0.precision(), self.0.scale())
-            .into_series()
-    }
 }
 
 impl SeriesTrait for SeriesWrap<DecimalChunked> {
-    fn rename(&mut self, name: &str) {
+    fn rename(&mut self, name: PlSmallStr) {
         self.0.rename(name)
     }
 
@@ -202,7 +195,7 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
         self.0.chunk_lengths()
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &PlSmallStr {
         self.0.name()
     }
 
@@ -297,8 +290,8 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
             .into_series()
     }
 
-    fn cast(&self, data_type: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
-        self.0.cast_with_options(data_type, cast_options)
+    fn cast(&self, dtype: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
+        self.0.cast_with_options(dtype, cast_options)
     }
 
     fn get(&self, index: usize) -> PolarsResult<AnyValue> {
@@ -387,6 +380,10 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
             };
             Scalar::new(self.dtype().clone(), av)
         }))
+    }
+
+    fn _sum_as_f64(&self) -> f64 {
+        self.0._sum_as_f64() / self.scale_factor() as f64
     }
 
     fn mean(&self) -> Option<f64> {

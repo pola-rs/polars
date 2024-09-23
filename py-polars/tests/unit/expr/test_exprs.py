@@ -289,6 +289,7 @@ def test_power_by_expression() -> None:
     assert out["pow_op_left"].to_list() == [2.0, 4.0, None, 16.0, None, 64.0]
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_expression_appends() -> None:
     df = pl.DataFrame({"a": [1, 1, 2]})
 

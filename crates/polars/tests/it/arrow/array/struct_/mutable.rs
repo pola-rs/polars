@@ -5,8 +5,8 @@ use arrow::datatypes::{ArrowDataType, Field};
 fn push() {
     let c1 = Box::new(MutablePrimitiveArray::<i32>::new()) as Box<dyn MutableArray>;
     let values = vec![c1];
-    let data_type = ArrowDataType::Struct(vec![Field::new("f1", ArrowDataType::Int32, true)]);
-    let mut a = MutableStructArray::new(data_type, values);
+    let dtype = ArrowDataType::Struct(vec![Field::new("f1".into(), ArrowDataType::Int32, true)]);
+    let mut a = MutableStructArray::new(dtype, values);
 
     a.value::<MutablePrimitiveArray<i32>>(0)
         .unwrap()

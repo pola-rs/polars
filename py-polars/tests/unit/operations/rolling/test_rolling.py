@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from polars._typing import ClosedInterval, PolarsDataType, TimeUnit
 
 
-@pytest.fixture()
+@pytest.fixture
 def example_df() -> pl.DataFrame:
     return pl.DataFrame(
         {
@@ -911,7 +911,7 @@ def test_rolling_median() -> None:
             )
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 def test_rolling_median_2() -> None:
     np.random.seed(12)
     n = 1000

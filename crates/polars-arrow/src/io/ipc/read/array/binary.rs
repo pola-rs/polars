@@ -14,7 +14,7 @@ use crate::offset::Offset;
 #[allow(clippy::too_many_arguments)]
 pub fn read_binary<O: Offset, R: Read + Seek>(
     field_nodes: &mut VecDeque<Node>,
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
     buffers: &mut VecDeque<IpcBuffer>,
     reader: &mut R,
     block_offset: u64,
@@ -23,7 +23,7 @@ pub fn read_binary<O: Offset, R: Read + Seek>(
     limit: Option<usize>,
     scratch: &mut Vec<u8>,
 ) -> PolarsResult<BinaryArray<O>> {
-    let field_node = try_get_field_node(field_nodes, &data_type)?;
+    let field_node = try_get_field_node(field_nodes, &dtype)?;
 
     let validity = read_validity(
         buffers,
@@ -61,7 +61,7 @@ pub fn read_binary<O: Offset, R: Read + Seek>(
         scratch,
     )?;
 
-    BinaryArray::<O>::try_new(data_type, offsets.try_into()?, values, validity)
+    BinaryArray::<O>::try_new(dtype, offsets.try_into()?, values, validity)
 }
 
 pub fn skip_binary(

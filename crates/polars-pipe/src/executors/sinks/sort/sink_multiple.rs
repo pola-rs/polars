@@ -98,8 +98,10 @@ fn finalize_dataframe(
 
             for (sort_idx, arr) in sort_idx.into_iter().zip(arrays) {
                 let (name, logical_dtype) = schema.get_at_index(sort_idx).unwrap();
-                assert_eq!(logical_dtype.to_physical(), DataType::from(arr.data_type()));
-                let col = Series::from_chunks_and_dtype_unchecked(name, vec![arr], logical_dtype);
+                assert_eq!(logical_dtype.to_physical(), DataType::from(arr.dtype()));
+                let col =
+                    Series::from_chunks_and_dtype_unchecked(name.clone(), vec![arr], logical_dtype)
+                        .into_column();
                 cols.insert(sort_idx, col);
             }
         }
@@ -204,7 +206,7 @@ impl SortSinkMultiple {
 
         for i in self.sort_idx.iter() {
             let s = &cols[*i];
-            let arr = _get_rows_encoded_compat_array(s)?;
+            let arr = _get_rows_encoded_compat_array(s.as_materialized_series())?;
             self.sort_column.push(arr);
         }
 
@@ -227,7 +229,7 @@ impl SortSinkMultiple {
         let rows_encoded = polars_row::convert_columns(&self.sort_column, &self.sort_fields);
         let column = unsafe {
             Series::from_chunks_and_dtype_unchecked(
-                POLARS_SORT_COLUMN,
+                PlSmallStr::from_static(POLARS_SORT_COLUMN),
                 vec![Box::new(rows_encoded.into_array())],
                 &DataType::BinaryOffset,
             )

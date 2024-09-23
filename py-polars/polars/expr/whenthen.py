@@ -24,7 +24,7 @@ class When:
     In this state, `then` must be called to continue to finish the expression.
     """
 
-    def __init__(self, when: Any):
+    def __init__(self, when: Any) -> None:
         self._when = when
 
     def then(self, statement: IntoExpr) -> Then:
@@ -49,7 +49,7 @@ class Then(Expr):
     Represents the state of the expression after `pl.when(...).then(...)` is called.
     """
 
-    def __init__(self, then: Any):
+    def __init__(self, then: Any) -> None:
         self._then = then
 
     @classmethod
@@ -108,7 +108,7 @@ class ChainedWhen:
     In this state, `then` must be called to continue to finish the expression.
     """
 
-    def __init__(self, chained_when: Any):
+    def __init__(self, chained_when: Any) -> None:
         self._chained_when = chained_when
 
     def then(self, statement: IntoExpr) -> ChainedThen:
@@ -133,7 +133,7 @@ class ChainedThen(Expr):
     Represents the state of the expression after an additional `then` is called.
     """
 
-    def __init__(self, chained_then: Any):
+    def __init__(self, chained_then: Any) -> None:
         self._chained_then = chained_then
 
     @classmethod

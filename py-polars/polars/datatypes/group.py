@@ -26,11 +26,18 @@ from polars.datatypes.classes import (
 )
 
 if TYPE_CHECKING:
+    import sys
+
     from polars._typing import (
         PolarsDataType,
         PolarsIntegerType,
         PolarsTemporalType,
     )
+
+    if sys.version_info >= (3, 11):
+        from typing import Self
+    else:
+        from typing_extensions import Self
 
 
 class DataTypeGroup(frozenset):  # type: ignore[type-arg]
@@ -40,7 +47,7 @@ class DataTypeGroup(frozenset):  # type: ignore[type-arg]
 
     def __new__(
         cls, items: Iterable[DataType | DataTypeClass], *, match_base_type: bool = True
-    ) -> DataTypeGroup:
+    ) -> Self:
         """
         Construct a DataTypeGroup.
 

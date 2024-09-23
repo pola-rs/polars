@@ -16,6 +16,7 @@ polars-lazy = { workspace = true, features = ["abs", "binary_encoding", "concat_
 polars-ops = { workspace = true }
 polars-plan = { workspace = true }
 polars-time = { workspace = true }
+polars-utils = { workspace = true }
 
 hex = { workspace = true }
 once_cell = { workspace = true }
@@ -41,5 +42,5 @@ json = ["polars-lazy/json", "polars-plan/json", "polars-plan/extract_jsonpath"]
 list_eval = ["polars-lazy/list_eval"]
 parquet = ["polars-lazy/parquet"]
 semi_anti_join = ["polars-lazy/semi_anti_join"]
-serde = []
+serde = ["polars-utils/serde"]
 timezones = ["polars-lazy/timezones"]

@@ -41,7 +41,7 @@ pub fn reduce(stats: &[&Option<Statistics>]) -> ParquetResult<Option<Statistics>
         .all(|x| x.physical_type() == stats[0].physical_type());
     if !same_type {
         return Err(ParquetError::oos(
-            "The statistics do not have the same data_type",
+            "The statistics do not have the same dtype",
         ));
     };
 
@@ -164,20 +164,14 @@ mod tests {
     fn binary() -> ParquetResult<()> {
         let iter = vec![
             BinaryStatistics {
-                primitive_type: PrimitiveType::from_physical(
-                    "bla".to_string(),
-                    PhysicalType::ByteArray,
-                ),
+                primitive_type: PrimitiveType::from_physical("bla".into(), PhysicalType::ByteArray),
                 null_count: Some(0),
                 distinct_count: None,
                 min_value: Some(vec![1, 2]),
                 max_value: Some(vec![3, 4]),
             },
             BinaryStatistics {
-                primitive_type: PrimitiveType::from_physical(
-                    "bla".to_string(),
-                    PhysicalType::ByteArray,
-                ),
+                primitive_type: PrimitiveType::from_physical("bla".into(), PhysicalType::ByteArray),
                 null_count: Some(0),
                 distinct_count: None,
                 min_value: Some(vec![4, 5]),
@@ -189,10 +183,7 @@ mod tests {
         assert_eq!(
             a,
             BinaryStatistics {
-                primitive_type: PrimitiveType::from_physical(
-                    "bla".to_string(),
-                    PhysicalType::ByteArray,
-                ),
+                primitive_type: PrimitiveType::from_physical("bla".into(), PhysicalType::ByteArray,),
                 null_count: Some(0),
                 distinct_count: None,
                 min_value: Some(vec![1, 2]),
@@ -208,7 +199,7 @@ mod tests {
         let iter = vec![
             FixedLenStatistics {
                 primitive_type: PrimitiveType::from_physical(
-                    "bla".to_string(),
+                    "bla".into(),
                     PhysicalType::FixedLenByteArray(2),
                 ),
                 null_count: Some(0),
@@ -218,7 +209,7 @@ mod tests {
             },
             FixedLenStatistics {
                 primitive_type: PrimitiveType::from_physical(
-                    "bla".to_string(),
+                    "bla".into(),
                     PhysicalType::FixedLenByteArray(2),
                 ),
                 null_count: Some(0),
@@ -233,7 +224,7 @@ mod tests {
             a,
             FixedLenStatistics {
                 primitive_type: PrimitiveType::from_physical(
-                    "bla".to_string(),
+                    "bla".into(),
                     PhysicalType::FixedLenByteArray(2),
                 ),
                 null_count: Some(0),
@@ -284,7 +275,7 @@ mod tests {
             distinct_count: None,
             min_value: Some(30),
             max_value: Some(70),
-            primitive_type: PrimitiveType::from_physical("bla".to_string(), PhysicalType::Int32),
+            primitive_type: PrimitiveType::from_physical("bla".into(), PhysicalType::Int32),
         }];
         let a = reduce_primitive(iter.iter());
 
@@ -295,10 +286,7 @@ mod tests {
                 distinct_count: None,
                 min_value: Some(30),
                 max_value: Some(70),
-                primitive_type: PrimitiveType::from_physical(
-                    "bla".to_string(),
-                    PhysicalType::Int32,
-                ),
+                primitive_type: PrimitiveType::from_physical("bla".into(), PhysicalType::Int32,),
             },
         );
 

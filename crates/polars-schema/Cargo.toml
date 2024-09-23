@@ -1,0 +1,22 @@
+[package]
+name = "polars-schema"
+version = { workspace = true }
+authors = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+description = "Private crate for schema utilities for the Polars DataFrame library"
+
+[dependencies]
+indexmap = { workspace = true }
+polars-error = { workspace = true }
+polars-utils = { workspace = true }
+serde = { workspace = true, optional = true }
+
+[build-dependencies]
+version_check = { workspace = true }
+
+[features]
+nightly = []
+serde = ["dep:serde", "serde/derive", "polars-utils/serde"]

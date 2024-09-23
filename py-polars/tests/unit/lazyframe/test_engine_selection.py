@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from polars._typing import EngineType
 
 
-@pytest.fixture()
+@pytest.fixture
 def df() -> pl.LazyFrame:
     return pl.LazyFrame({"a": [1, 2, 3]})
 

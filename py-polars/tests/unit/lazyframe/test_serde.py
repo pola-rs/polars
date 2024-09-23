@@ -47,7 +47,7 @@ def test_lf_serde_roundtrip_json(lf: pl.LazyFrame) -> None:
     assert_frame_equal(result, lf, categorical_as_str=True)
 
 
-@pytest.fixture()
+@pytest.fixture
 def lf() -> pl.LazyFrame:
     """Sample LazyFrame for testing serialization/deserialization."""
     return pl.LazyFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]}).select("a").sum()
@@ -86,7 +86,7 @@ def test_lf_serde_to_from_buffer(
     assert_frame_equal(lf, result)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_lf_serde_to_from_file(lf: pl.LazyFrame, tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
@@ -103,7 +103,7 @@ def test_lf_deserialize_validation() -> None:
         pl.LazyFrame.deserialize(f, format="json")
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_lf_serde_scan(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
     path = tmp_path / "dataset.parquet"

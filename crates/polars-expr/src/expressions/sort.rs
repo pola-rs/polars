@@ -108,4 +108,8 @@ impl PhysicalExpr for SortExpr {
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.physical_expr.to_field(input_schema)
     }
+
+    fn is_scalar(&self) -> bool {
+        false
+    }
 }

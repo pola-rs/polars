@@ -15,7 +15,7 @@ pub(super) struct SumSquaredWindow<'a, T> {
 impl<'a, T: NativeType + IsFloat + std::iter::Sum + AddAssign + SubAssign + Mul<Output = T>>
     RollingAggWindowNoNulls<'a, T> for SumSquaredWindow<'a, T>
 {
-    fn new(slice: &'a [T], start: usize, end: usize, _params: DynArgs) -> Self {
+    fn new(slice: &'a [T], start: usize, end: usize, _params: Option<RollingFnParams>) -> Self {
         let sum = slice[start..end].iter().map(|v| *v * *v).sum::<T>();
         Self {
             slice,
@@ -97,13 +97,18 @@ impl<
             + Sub<Output = T>,
     > RollingAggWindowNoNulls<'a, T> for VarWindow<'a, T>
 {
-    fn new(slice: &'a [T], start: usize, end: usize, params: DynArgs) -> Self {
+    fn new(slice: &'a [T], start: usize, end: usize, params: Option<RollingFnParams>) -> Self {
         Self {
             mean: MeanWindow::new(slice, start, end, None),
             sum_of_squares: SumSquaredWindow::new(slice, start, end, None),
             ddof: match params {
                 None => 1,
-                Some(pars) => pars.downcast_ref::<RollingVarParams>().unwrap().ddof,
+                Some(pars) => {
+                    let RollingFnParams::Var(pars) = pars else {
+                        unreachable!("expected Var params");
+                    };
+                    pars.ddof
+                },
             },
         }
     }
@@ -137,7 +142,7 @@ pub fn rolling_var<T>(
     min_periods: usize,
     center: bool,
     weights: Option<&[f64]>,
-    params: DynArgs,
+    params: Option<RollingFnParams>,
 ) -> PolarsResult<ArrayRef>
 where
     T: NativeType
@@ -199,7 +204,7 @@ mod test {
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[None, Some(8.0), Some(2.0), Some(0.5)]);
 
-        let testpars = Some(Arc::new(RollingVarParams { ddof: 0 }) as Arc<dyn Any + Send + Sync>);
+        let testpars = Some(RollingFnParams::Var(RollingVarParams { ddof: 0 }));
         let out = rolling_var(values, 2, 2, false, None, testpars).unwrap();
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();

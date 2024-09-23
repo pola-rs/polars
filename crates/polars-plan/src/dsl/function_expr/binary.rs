@@ -57,7 +57,7 @@ impl Display for BinaryFunction {
     }
 }
 
-impl From<BinaryFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
+impl From<BinaryFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
     fn from(func: BinaryFunction) -> Self {
         use BinaryFunction::*;
         match func {
@@ -83,59 +83,62 @@ impl From<BinaryFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
     }
 }
 
-pub(super) fn contains(s: &[Series]) -> PolarsResult<Series> {
+pub(super) fn contains(s: &[Column]) -> PolarsResult<Column> {
     let ca = s[0].binary()?;
     let lit = s[1].binary()?;
-    Ok(ca.contains_chunked(lit).with_name(ca.name()).into_series())
+    Ok(ca
+        .contains_chunked(lit)
+        .with_name(ca.name().clone())
+        .into_column())
 }
 
-pub(super) fn ends_with(s: &[Series]) -> PolarsResult<Series> {
+pub(super) fn ends_with(s: &[Column]) -> PolarsResult<Column> {
     let ca = s[0].binary()?;
     let suffix = s[1].binary()?;
 
     Ok(ca
         .ends_with_chunked(suffix)
-        .with_name(ca.name())
-        .into_series())
+        .with_name(ca.name().clone())
+        .into_column())
 }
 
-pub(super) fn starts_with(s: &[Series]) -> PolarsResult<Series> {
+pub(super) fn starts_with(s: &[Column]) -> PolarsResult<Column> {
     let ca = s[0].binary()?;
     let prefix = s[1].binary()?;
 
     Ok(ca
         .starts_with_chunked(prefix)
-        .with_name(ca.name())
-        .into_series())
+        .with_name(ca.name().clone())
+        .into_column())
 }
 
-pub(super) fn size_bytes(s: &Series) -> PolarsResult<Series> {
+pub(super) fn size_bytes(s: &Column) -> PolarsResult<Column> {
     let ca = s.binary()?;
-    Ok(ca.size_bytes().into_series())
-}
-
-#[cfg(feature = "binary_encoding")]
-pub(super) fn hex_decode(s: &Series, strict: bool) -> PolarsResult<Series> {
-    let ca = s.binary()?;
-    ca.hex_decode(strict).map(|ok| ok.into_series())
+    Ok(ca.size_bytes().into_column())
 }
 
 #[cfg(feature = "binary_encoding")]
-pub(super) fn hex_encode(s: &Series) -> PolarsResult<Series> {
+pub(super) fn hex_decode(s: &Column, strict: bool) -> PolarsResult<Column> {
     let ca = s.binary()?;
-    Ok(ca.hex_encode())
+    ca.hex_decode(strict).map(|ok| ok.into_column())
 }
 
 #[cfg(feature = "binary_encoding")]
-pub(super) fn base64_decode(s: &Series, strict: bool) -> PolarsResult<Series> {
+pub(super) fn hex_encode(s: &Column) -> PolarsResult<Column> {
     let ca = s.binary()?;
-    ca.base64_decode(strict).map(|ok| ok.into_series())
+    Ok(ca.hex_encode().into())
 }
 
 #[cfg(feature = "binary_encoding")]
-pub(super) fn base64_encode(s: &Series) -> PolarsResult<Series> {
+pub(super) fn base64_decode(s: &Column, strict: bool) -> PolarsResult<Column> {
     let ca = s.binary()?;
-    Ok(ca.base64_encode())
+    ca.base64_decode(strict).map(|ok| ok.into_column())
+}
+
+#[cfg(feature = "binary_encoding")]
+pub(super) fn base64_encode(s: &Column) -> PolarsResult<Column> {
+    let ca = s.binary()?;
+    Ok(ca.base64_encode().into())
 }
 
 impl From<BinaryFunction> for FunctionExpr {

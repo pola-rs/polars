@@ -9,7 +9,6 @@ import pandas as pd
 import pyarrow as pa
 import pytest
 
-import polars
 import polars as pl
 from polars._utils.construction import iterable_to_pyseries
 from polars.datatypes import (
@@ -959,7 +958,7 @@ def test_round_sig_figs(
 
 
 def test_round_sig_figs_raises_exc() -> None:
-    with pytest.raises(polars.exceptions.InvalidOperationError):
+    with pytest.raises(pl.exceptions.InvalidOperationError):
         pl.Series([1.234, 0.1234]).round_sig_figs(digits=0)
 
 
@@ -1153,7 +1152,7 @@ def test_from_generator_or_iterable() -> None:
 
     # iterable object
     class Data:
-        def __init__(self, n: int):
+        def __init__(self, n: int) -> None:
             self._n = n
 
         def __iter__(self) -> Iterator[int]:
@@ -1747,8 +1746,8 @@ def test_sign() -> None:
     assert_series_equal(a.sign(), expected)
 
     # Floats
-    a = pl.Series("a", [-9.0, -0.0, 0.0, 4.0, None])
-    expected = pl.Series("a", [-1, 0, 0, 1, None])
+    a = pl.Series("a", [-9.0, -0.0, 0.0, 4.0, float("nan"), None])
+    expected = pl.Series("a", [-1.0, 0.0, 0.0, 1.0, float("nan"), None])
     assert_series_equal(a.sign(), expected)
 
     # Invalid input

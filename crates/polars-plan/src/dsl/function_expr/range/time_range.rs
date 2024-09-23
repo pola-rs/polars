@@ -9,10 +9,10 @@ use super::utils::{
 const CAPACITY_FACTOR: usize = 5;
 
 pub(super) fn time_range(
-    s: &[Series],
+    s: &[Column],
     interval: Duration,
     closed: ClosedWindow,
-) -> PolarsResult<Series> {
+) -> PolarsResult<Column> {
     let start = &s[0];
     let end = &s[1];
     let name = start.name();
@@ -25,15 +25,15 @@ pub(super) fn time_range(
     let end = temporal_series_to_i64_scalar(&end.cast(&dtype)?)
         .ok_or_else(|| polars_err!(ComputeError: "end is an out-of-range time."))?;
 
-    let out = time_range_impl(name, start, end, interval, closed)?;
-    Ok(out.cast(&dtype).unwrap().into_series())
+    let out = time_range_impl(name.clone(), start, end, interval, closed)?;
+    Ok(out.cast(&dtype).unwrap().into_column())
 }
 
 pub(super) fn time_ranges(
-    s: &[Series],
+    s: &[Column],
     interval: Duration,
     closed: ClosedWindow,
-) -> PolarsResult<Series> {
+) -> PolarsResult<Column> {
     let start = &s[0];
     let end = &s[1];
 
@@ -47,14 +47,14 @@ pub(super) fn time_ranges(
 
     let len = std::cmp::max(start.len(), end.len());
     let mut builder = ListPrimitiveChunkedBuilder::<Int64Type>::new(
-        start.name(),
+        start.name().clone(),
         len,
         len * CAPACITY_FACTOR,
         DataType::Int64,
     );
 
     let range_impl = |start, end, builder: &mut ListPrimitiveChunkedBuilder<Int64Type>| {
-        let rng = time_range_impl("", start, end, interval, closed)?;
+        let rng = time_range_impl(PlSmallStr::EMPTY, start, end, interval, closed)?;
         builder.append_slice(rng.cont_slice().unwrap());
         Ok(())
     };
@@ -62,5 +62,5 @@ pub(super) fn time_ranges(
     let out = temporal_ranges_impl_broadcast(start, end, range_impl, &mut builder)?;
 
     let to_type = DataType::List(Box::new(DataType::Time));
-    out.cast(&to_type)
+    out.cast(&to_type).map(Column::from)
 }

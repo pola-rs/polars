@@ -38,14 +38,16 @@ impl ComputeNode for InMemorySourceNode {
         assert!(recv.is_empty());
         assert!(send.len() == 1);
 
-        let exhausted = self
-            .source
-            .as_ref()
-            .map(|s| {
-                self.seq.load(Ordering::Relaxed) * self.morsel_size as u64 >= s.height() as u64
-            })
-            .unwrap_or(true);
-
+        // As a temporary hack for some nodes (like the FunctionIR::FastCount)
+        // node that rely on an empty input, always ensure we send at least one
+        // morsel.
+        // TODO: remove this hack.
+        let exhausted = if let Some(src) = &self.source {
+            let seq = self.seq.load(Ordering::Relaxed);
+            seq > 0 && seq * self.morsel_size as u64 >= src.height() as u64
+        } else {
+            true
+        };
         if send[0] == PortState::Done || exhausted {
             send[0] = PortState::Done;
             self.source = None;
@@ -77,7 +79,10 @@ impl ComputeNode for InMemorySourceNode {
                     let seq = slf.seq.fetch_add(1, Ordering::Relaxed);
                     let offset = (seq as usize * slf.morsel_size) as i64;
                     let df = source.slice(offset, slf.morsel_size);
-                    if df.is_empty() {
+
+                    // TODO: remove this 'always sent at least one morsel'
+                    // condition, see update_state.
+                    if df.is_empty() && seq > 0 {
                         break;
                     }
 

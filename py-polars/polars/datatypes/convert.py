@@ -318,7 +318,7 @@ def numpy_char_code_to_dtype(dtype_char: str) -> PolarsDataType:
         return Binary
     try:
         return DataTypeMappings.NUMPY_KIND_AND_ITEMSIZE_TO_DTYPE[
-            (dtype.kind, dtype.itemsize)
+            dtype.kind, dtype.itemsize
         ]
     except KeyError:  # pragma: no cover
         msg = f"cannot parse numpy data type {dtype!r} into Polars data type"

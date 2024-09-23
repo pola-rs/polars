@@ -168,7 +168,7 @@ impl<R: MmapBytesReader> CsvReader<R> {
                 .map(|mut fld| {
                     use DataType::*;
 
-                    match fld.data_type() {
+                    match fld.dtype() {
                         Time => {
                             self.options.fields_to_cast.push(fld.clone());
                             fld.coerce(String);
@@ -304,7 +304,7 @@ where
                         let schema = dtypes
                             .iter()
                             .zip(df.get_column_names())
-                            .map(|(dtype, name)| Field::new(name, dtype.clone()))
+                            .map(|(dtype, name)| Field::new(name.clone(), dtype.clone()))
                             .collect::<Schema>();
 
                         Arc::new(schema)
@@ -325,22 +325,22 @@ fn parse_dates(mut df: DataFrame, fixed_schema: &Schema) -> DataFrame {
 
     let cols = unsafe { std::mem::take(df.get_columns_mut()) }
         .into_par_iter()
-        .map(|s| {
-            match s.dtype() {
+        .map(|c| {
+            match c.dtype() {
                 DataType::String => {
-                    let ca = s.str().unwrap();
+                    let ca = c.str().unwrap();
                     // don't change columns that are in the fixed schema.
-                    if fixed_schema.index_of(s.name()).is_some() {
-                        return s;
+                    if fixed_schema.index_of(c.name()).is_some() {
+                        return c;
                     }
 
                     #[cfg(feature = "dtype-time")]
                     if let Ok(ca) = ca.as_time(None, false) {
-                        return ca.into_series();
+                        return ca.into_column();
                     }
-                    s
+                    c
                 },
-                _ => s,
+                _ => c,
             }
         });
     let cols = POOL.install(|| cols.collect::<Vec<_>>());

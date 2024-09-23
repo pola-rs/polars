@@ -228,7 +228,7 @@ impl PyExpr {
     fn value_counts(&self, sort: bool, parallel: bool, name: String, normalize: bool) -> Self {
         self.inner
             .clone()
-            .value_counts(sort, parallel, name, normalize)
+            .value_counts(sort, parallel, name.as_str(), normalize)
             .into()
     }
     fn unique_counts(&self) -> Self {
@@ -237,8 +237,8 @@ impl PyExpr {
     fn null_count(&self) -> Self {
         self.inner.clone().null_count().into()
     }
-    fn cast(&self, data_type: Wrap<DataType>, strict: bool, wrap_numerical: bool) -> Self {
-        let dt = data_type.0;
+    fn cast(&self, dtype: Wrap<DataType>, strict: bool, wrap_numerical: bool) -> Self {
+        let dt = dtype.0;
 
         let options = if wrap_numerical {
             CastOptions::Overflowing
@@ -440,14 +440,6 @@ impl PyExpr {
 
     fn slice(&self, offset: Self, length: Self) -> Self {
         self.inner.clone().slice(offset.inner, length.inner).into()
-    }
-
-    fn head(&self, n: usize) -> Self {
-        self.inner.clone().head(Some(n)).into()
-    }
-
-    fn tail(&self, n: usize) -> Self {
-        self.inner.clone().tail(Some(n)).into()
     }
 
     fn append(&self, other: Self, upcast: bool) -> Self {

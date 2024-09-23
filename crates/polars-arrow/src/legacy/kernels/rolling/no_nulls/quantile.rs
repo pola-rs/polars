@@ -25,9 +25,12 @@ impl<
             + Sub<Output = T>,
     > RollingAggWindowNoNulls<'a, T> for QuantileWindow<'a, T>
 {
-    fn new(slice: &'a [T], start: usize, end: usize, params: DynArgs) -> Self {
+    fn new(slice: &'a [T], start: usize, end: usize, params: Option<RollingFnParams>) -> Self {
         let params = params.unwrap();
-        let params = params.downcast_ref::<RollingQuantileParams>().unwrap();
+        let RollingFnParams::Quantile(params) = params else {
+            unreachable!("expected Quantile params");
+        };
+
         Self {
             sorted: SortedBuf::new(slice, start, end),
             prob: params.prob,
@@ -103,7 +106,7 @@ pub fn rolling_quantile<T>(
     min_periods: usize,
     center: bool,
     weights: Option<&[f64]>,
-    params: DynArgs,
+    params: Option<RollingFnParams>,
 ) -> PolarsResult<ArrayRef>
 where
     T: NativeType
@@ -127,7 +130,9 @@ where
         None => {
             if !center {
                 let params = params.as_ref().unwrap();
-                let params = params.downcast_ref::<RollingQuantileParams>().unwrap();
+                let RollingFnParams::Quantile(params) = params else {
+                    unreachable!("expected Quantile params");
+                };
                 let out = super::quantile_filter::rolling_quantile::<_, Vec<_>>(
                     params.interpol,
                     min_periods,
@@ -158,7 +163,10 @@ where
                 ComputeError: "Weighted quantile is undefined if weights sum to 0"
             );
             let params = params.unwrap();
-            let params = params.downcast_ref::<RollingQuantileParams>().unwrap();
+            let RollingFnParams::Quantile(params) = params else {
+                unreachable!("expected Quantile params");
+            };
+
             Ok(rolling_apply_weighted_quantile(
                 values,
                 params.prob,
@@ -263,10 +271,10 @@ mod test {
     #[test]
     fn test_rolling_median() {
         let values = &[1.0, 2.0, 3.0, 4.0];
-        let med_pars = Some(Arc::new(RollingQuantileParams {
+        let med_pars = Some(RollingFnParams::Quantile(RollingQuantileParams {
             prob: 0.5,
             interpol: Linear,
-        }) as Arc<dyn Any + Send + Sync>);
+        }));
         let out = rolling_quantile(values, 2, 2, false, None, med_pars.clone()).unwrap();
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
@@ -306,10 +314,10 @@ mod test {
         ];
 
         for interpol in interpol_options {
-            let min_pars = Some(Arc::new(RollingQuantileParams {
+            let min_pars = Some(RollingFnParams::Quantile(RollingQuantileParams {
                 prob: 0.0,
                 interpol,
-            }) as Arc<dyn Any + Send + Sync>);
+            }));
             let out1 = rolling_min(values, 2, 2, false, None, None).unwrap();
             let out1 = out1.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
             let out1 = out1.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
@@ -318,10 +326,10 @@ mod test {
             let out2 = out2.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
             assert_eq!(out1, out2);
 
-            let max_pars = Some(Arc::new(RollingQuantileParams {
+            let max_pars = Some(RollingFnParams::Quantile(RollingQuantileParams {
                 prob: 1.0,
                 interpol,
-            }) as Arc<dyn Any + Send + Sync>);
+            }));
             let out1 = rolling_max(values, 2, 2, false, None, None).unwrap();
             let out1 = out1.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
             let out1 = out1.into_iter().map(|v| v.copied()).collect::<Vec<_>>();

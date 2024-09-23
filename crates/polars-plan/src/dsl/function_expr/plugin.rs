@@ -48,11 +48,11 @@ unsafe fn retrieve_error_msg(lib: &Library) -> &CStr {
 }
 
 pub(super) unsafe fn call_plugin(
-    s: &[Series],
+    s: &[Column],
     lib: &str,
     symbol: &str,
     kwargs: &[u8],
-) -> PolarsResult<Series> {
+) -> PolarsResult<Column> {
     let plugin = get_lib(lib)?;
     let lib = &plugin.0;
     let major = plugin.1;
@@ -78,7 +78,8 @@ pub(super) unsafe fn call_plugin(
             .get(format!("_polars_plugin_{}", symbol).as_bytes())
             .unwrap();
 
-        let input = s.iter().map(export_series).collect::<Vec<_>>();
+        // @scalar-correctness?
+        let input = s.iter().map(export_column).collect::<Vec<_>>();
         let input_len = s.len();
         let slice_ptr = input.as_ptr();
 
@@ -104,7 +105,7 @@ pub(super) unsafe fn call_plugin(
         }
 
         if !return_value.is_null() {
-            import_series(return_value)
+            import_series(return_value).map(Column::from)
         } else {
             let msg = retrieve_error_msg(lib);
             let msg = msg.to_string_lossy();

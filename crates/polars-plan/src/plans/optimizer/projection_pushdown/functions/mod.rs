@@ -12,7 +12,7 @@ pub(super) fn process_functions(
     input: Node,
     function: FunctionIR,
     mut acc_projections: Vec<ColumnNode>,
-    mut projected_names: PlHashSet<Arc<str>>,
+    mut projected_names: PlHashSet<PlSmallStr>,
     projections_seen: usize,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
@@ -52,7 +52,12 @@ pub(super) fn process_functions(
         },
         Explode { columns, .. } => {
             columns.iter().for_each(|name| {
-                add_str_to_accumulated(name, &mut acc_projections, &mut projected_names, expr_arena)
+                add_str_to_accumulated(
+                    name.clone(),
+                    &mut acc_projections,
+                    &mut projected_names,
+                    expr_arena,
+                )
             });
             proj_pd.pushdown_and_assign(
                 input,

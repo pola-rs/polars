@@ -95,7 +95,7 @@ impl PhysicalPipe {
     pub fn send_port(&mut self) -> SendPort<'_> {
         assert!(
             matches!(self, Self::SerialReceiver(..) | Self::ParallelReceiver(..)),
-            "PhysicalPipe::send_port must be called on a pipe which only has its send port initialized"
+            "PhysicalPipe::send_port must be called on a pipe which only has its receive port initialized"
         );
         SendPort(self)
     }

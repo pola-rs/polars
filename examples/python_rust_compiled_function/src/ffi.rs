@@ -24,7 +24,7 @@ fn array_to_rust(arrow_array: &Bound<PyAny>) -> PyResult<ArrayRef> {
 
     unsafe {
         let field = ffi::import_field_from_c(schema.as_ref()).unwrap();
-        let array = ffi::import_array_from_c(*array, field.data_type).unwrap();
+        let array = ffi::import_array_from_c(*array, field.dtype).unwrap();
         Ok(array)
     }
 }
@@ -33,7 +33,7 @@ fn array_to_rust(arrow_array: &Bound<PyAny>) -> PyResult<ArrayRef> {
 pub(crate) fn to_py_array(py: Python, pyarrow: &Bound<PyModule>, array: ArrayRef) -> PyResult<PyObject> {
     let schema = Box::new(ffi::export_field_to_c(&ArrowField::new(
         "",
-        array.data_type().clone(),
+        array.dtype().clone(),
         true,
     )));
     let array = Box::new(ffi::export_array_to_c(array));

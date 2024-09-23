@@ -13,6 +13,7 @@ polars-core = { workspace = true }
 polars-error = { workspace = true }
 polars-json = { workspace = true, optional = true }
 polars-parquet = { workspace = true, optional = true }
+polars-schema = { workspace = true }
 polars-time = { workspace = true, features = [], optional = true }
 polars-utils = { workspace = true, features = ['mmap'] }
 
@@ -44,7 +45,6 @@ serde = { workspace = true, features = ["rc"], optional = true }
 serde_json = { version = "1", optional = true }
 simd-json = { workspace = true, optional = true }
 simdutf8 = { workspace = true, optional = true }
-smartstring = { workspace = true }
 tokio = { workspace = true, features = ["fs", "net", "rt-multi-thread", "time", "sync"], optional = true }
 tokio-util = { workspace = true, features = ["io", "io-util"], optional = true }
 url = { workspace = true, optional = true }
@@ -67,7 +67,7 @@ json = [
   "dtype-struct",
   "csv",
 ]
-serde = ["dep:serde", "polars-core/serde-lazy", "polars-parquet/serde"]
+serde = ["dep:serde", "polars-core/serde-lazy", "polars-parquet/serde", "polars-utils/serde"]
 # support for arrows ipc file parsing
 ipc = ["arrow/io_ipc", "arrow/io_ipc_compression"]
 # support for arrows streaming ipc file parsing
@@ -95,6 +95,7 @@ timezones = [
   "dtype-datetime",
   "arrow/timezones",
   "polars-json?/chrono-tz",
+  "polars-json?/timezones",
 ]
 dtype-time = ["polars-core/dtype-time", "polars-core/temporal", "polars-time/dtype-time"]
 dtype-struct = ["polars-core/dtype-struct"]

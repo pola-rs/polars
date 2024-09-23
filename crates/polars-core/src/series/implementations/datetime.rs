@@ -32,13 +32,6 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
         self.0.set_flags(flags)
     }
 
-    fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
-        self.0
-            .explode_by_offsets(offsets)
-            .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
-            .into_series()
-    }
-
     #[cfg(feature = "zip_with")]
     fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> PolarsResult<Series> {
         let other = other.to_physical_repr().into_owned();
@@ -137,7 +130,7 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
 
     fn arg_sort_multiple(
         &self,
-        by: &[Series],
+        by: &[Column],
         options: &SortMultipleOptions,
     ) -> PolarsResult<IdxCa> {
         self.0.deref().arg_sort_multiple(by, options)
@@ -145,14 +138,14 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
 }
 
 impl SeriesTrait for SeriesWrap<DatetimeChunked> {
-    fn rename(&mut self, name: &str) {
+    fn rename(&mut self, name: PlSmallStr) {
         self.0.rename(name);
     }
 
     fn chunk_lengths(&self) -> ChunkLenIter {
         self.0.chunk_lengths()
     }
-    fn name(&self) -> &str {
+    fn name(&self) -> &PlSmallStr {
         self.0.name()
     }
 
@@ -181,6 +174,10 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
             b.into_datetime(self.0.time_unit(), self.0.time_zone().clone())
                 .into_series(),
         )
+    }
+
+    fn _sum_as_f64(&self) -> f64 {
+        self.0._sum_as_f64()
     }
 
     fn mean(&self) -> Option<f64> {
@@ -256,8 +253,8 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
             .into_series()
     }
 
-    fn cast(&self, data_type: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
-        match (data_type, self.0.time_unit()) {
+    fn cast(&self, dtype: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
+        match (dtype, self.0.time_unit()) {
             (DataType::String, TimeUnit::Milliseconds) => {
                 Ok(self.0.to_string("%F %T%.3f")?.into_series())
             },
@@ -267,7 +264,7 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
             (DataType::String, TimeUnit::Nanoseconds) => {
                 Ok(self.0.to_string("%F %T%.9f")?.into_series())
             },
-            _ => self.0.cast_with_options(data_type, cast_options),
+            _ => self.0.cast_with_options(dtype, cast_options),
         }
     }
 

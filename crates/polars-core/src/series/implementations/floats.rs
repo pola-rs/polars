@@ -14,7 +14,7 @@ macro_rules! impl_dyn_series {
                 Cow::Borrowed(self.0.ref_field())
             }
             fn _dtype(&self) -> &DataType {
-                self.0.ref_field().data_type()
+                self.0.ref_field().dtype()
             }
 
             fn _set_flags(&mut self, flags: MetadataFlags) {
@@ -23,10 +23,6 @@ macro_rules! impl_dyn_series {
             fn _get_flags(&self) -> MetadataFlags {
                 self.0.get_flags()
             }
-            fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
-                self.0.explode_by_offsets(offsets)
-            }
-
             unsafe fn equal_element(
                 &self,
                 idx_self: usize,
@@ -152,7 +148,7 @@ macro_rules! impl_dyn_series {
 
             fn arg_sort_multiple(
                 &self,
-                by: &[Series],
+                by: &[Column],
                 options: &SortMultipleOptions,
             ) -> PolarsResult<IdxCa> {
                 self.0.arg_sort_multiple(by, options)
@@ -173,14 +169,14 @@ macro_rules! impl_dyn_series {
                 self.metadata_dyn()
             }
 
-            fn rename(&mut self, name: &str) {
+            fn rename(&mut self, name: PlSmallStr) {
                 self.0.rename(name);
             }
 
             fn chunk_lengths(&self) -> ChunkLenIter {
                 self.0.chunk_lengths()
             }
-            fn name(&self) -> &str {
+            fn name(&self) -> &PlSmallStr {
                 self.0.name()
             }
 
@@ -217,6 +213,10 @@ macro_rules! impl_dyn_series {
 
             fn filter(&self, filter: &BooleanChunked) -> PolarsResult<Series> {
                 ChunkFilter::filter(&self.0, filter).map(|ca| ca.into_series())
+            }
+
+            fn _sum_as_f64(&self) -> f64 {
+                self.0._sum_as_f64()
             }
 
             fn mean(&self) -> Option<f64> {
@@ -263,12 +263,8 @@ macro_rules! impl_dyn_series {
                 ChunkExpandAtIndex::new_from_index(&self.0, index, length).into_series()
             }
 
-            fn cast(
-                &self,
-                data_type: &DataType,
-                cast_options: CastOptions,
-            ) -> PolarsResult<Series> {
-                self.0.cast_with_options(data_type, cast_options)
+            fn cast(&self, dtype: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
+                self.0.cast_with_options(dtype, cast_options)
             }
 
             fn get(&self, index: usize) -> PolarsResult<AnyValue> {

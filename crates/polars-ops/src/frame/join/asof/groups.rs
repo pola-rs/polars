@@ -16,10 +16,10 @@ use polars_utils::aliases::PlRandomState;
 use polars_utils::hashing::{hash_to_partition, DirtyHash};
 use polars_utils::idx_vec::IdxVec;
 use polars_utils::nulls::IsNull;
+use polars_utils::pl_str::PlSmallStr;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 use polars_utils::unitvec;
 use rayon::prelude::*;
-use smartstring::alias::String as SmartString;
 
 use super::*;
 
@@ -398,8 +398,8 @@ where
     F: Sync + for<'a> Fn(T::Physical<'a>, T::Physical<'a>) -> bool,
 {
     let out = if left_by.width() == 1 {
-        let left_by_s = left_by.get_columns()[0].to_physical_repr().into_owned();
-        let right_by_s = right_by.get_columns()[0].to_physical_repr().into_owned();
+        let left_by_s = left_by.get_columns()[0].to_physical_repr();
+        let right_by_s = right_by.get_columns()[0].to_physical_repr();
         let left_dtype = left_by_s.dtype();
         let right_dtype = right_by_s.dtype();
         polars_ensure!(left_dtype == right_dtype,
@@ -418,8 +418,8 @@ where
             },
             x if x.is_float() => {
                 with_match_physical_float_polars_type!(left_by_s.dtype(), |$T| {
-                    let left_by: &ChunkedArray<$T> = left_by_s.as_ref().as_ref().as_ref();
-                    let right_by: &ChunkedArray<$T> = right_by_s.as_ref().as_ref().as_ref();
+                    let left_by: &ChunkedArray<$T> = left_by_s.as_materialized_series().as_ref().as_ref().as_ref();
+                    let right_by: &ChunkedArray<$T> = right_by_s.as_materialized_series().as_ref().as_ref().as_ref();
                     asof_join_by_numeric::<T, $T, A, F>(
                         left_by, right_by, left_asof, right_asof, filter,
                     )?
@@ -600,11 +600,11 @@ pub trait AsofJoinBy: IntoDf {
         other: &DataFrame,
         left_on: &Series,
         right_on: &Series,
-        left_by: Vec<SmartString>,
-        right_by: Vec<SmartString>,
+        left_by: Vec<PlSmallStr>,
+        right_by: Vec<PlSmallStr>,
         strategy: AsofStrategy,
         tolerance: Option<AnyValue<'static>>,
-        suffix: Option<&str>,
+        suffix: Option<PlSmallStr>,
         slice: Option<(i64, usize)>,
         coalesce: bool,
     ) -> PolarsResult<DataFrame> {
@@ -648,8 +648,8 @@ pub trait AsofJoinBy: IntoDf {
             {
                 #[cfg(feature = "dtype-categorical")]
                 _check_categorical_src(l.dtype(), r.dtype())?;
-                *l = l.to_physical_repr().into_owned();
-                *r = r.to_physical_repr().into_owned();
+                *l = l.to_physical_repr();
+                *r = r.to_physical_repr();
             }
         }
 
@@ -678,8 +678,9 @@ pub trait AsofJoinBy: IntoDf {
         let left = self_df.clone();
 
         // SAFETY: join tuples are in bounds.
-        let right_df =
-            unsafe { proj_other_df.take_unchecked(&IdxCa::with_chunk("", right_join_tuples)) };
+        let right_df = unsafe {
+            proj_other_df.take_unchecked(&IdxCa::with_chunk(PlSmallStr::EMPTY, right_join_tuples))
+        };
 
         _finish_join(left, right_df, suffix)
     }
@@ -706,8 +707,8 @@ pub trait AsofJoinBy: IntoDf {
         let self_df = self.to_df();
         let left_by = left_by.into_iter().map(|s| s.as_ref().into()).collect();
         let right_by = right_by.into_iter().map(|s| s.as_ref().into()).collect();
-        let left_key = self_df.column(left_on)?;
-        let right_key = other.column(right_on)?;
+        let left_key = self_df.column(left_on)?.as_materialized_series();
+        let right_key = other.column(right_on)?.as_materialized_series();
         self_df._join_asof_by(
             other, left_key, right_key, left_by, right_by, strategy, tolerance, None, None, true,
         )

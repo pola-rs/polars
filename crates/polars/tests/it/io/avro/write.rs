@@ -15,39 +15,55 @@ use polars_error::PolarsResult;
 use super::read::read_avro;
 
 pub(super) fn schema() -> ArrowSchema {
-    ArrowSchema::from(vec![
-        Field::new("int64", ArrowDataType::Int64, false),
-        Field::new("int64 nullable", ArrowDataType::Int64, true),
-        Field::new("utf8", ArrowDataType::Utf8, false),
-        Field::new("utf8 nullable", ArrowDataType::Utf8, true),
-        Field::new("int32", ArrowDataType::Int32, false),
-        Field::new("int32 nullable", ArrowDataType::Int32, true),
-        Field::new("date", ArrowDataType::Date32, false),
-        Field::new("date nullable", ArrowDataType::Date32, true),
-        Field::new("binary", ArrowDataType::Binary, false),
-        Field::new("binary nullable", ArrowDataType::Binary, true),
-        Field::new("float32", ArrowDataType::Float32, false),
-        Field::new("float32 nullable", ArrowDataType::Float32, true),
-        Field::new("float64", ArrowDataType::Float64, false),
-        Field::new("float64 nullable", ArrowDataType::Float64, true),
-        Field::new("boolean", ArrowDataType::Boolean, false),
-        Field::new("boolean nullable", ArrowDataType::Boolean, true),
+    ArrowSchema::from_iter([
+        Field::new("int64".into(), ArrowDataType::Int64, false),
+        Field::new("int64 nullable".into(), ArrowDataType::Int64, true),
+        Field::new("utf8".into(), ArrowDataType::Utf8, false),
+        Field::new("utf8 nullable".into(), ArrowDataType::Utf8, true),
+        Field::new("int32".into(), ArrowDataType::Int32, false),
+        Field::new("int32 nullable".into(), ArrowDataType::Int32, true),
+        Field::new("date".into(), ArrowDataType::Date32, false),
+        Field::new("date nullable".into(), ArrowDataType::Date32, true),
+        Field::new("binary".into(), ArrowDataType::Binary, false),
+        Field::new("binary nullable".into(), ArrowDataType::Binary, true),
+        Field::new("float32".into(), ArrowDataType::Float32, false),
+        Field::new("float32 nullable".into(), ArrowDataType::Float32, true),
+        Field::new("float64".into(), ArrowDataType::Float64, false),
+        Field::new("float64 nullable".into(), ArrowDataType::Float64, true),
+        Field::new("boolean".into(), ArrowDataType::Boolean, false),
+        Field::new("boolean nullable".into(), ArrowDataType::Boolean, true),
         Field::new(
-            "list",
-            ArrowDataType::List(Box::new(Field::new("item", ArrowDataType::Int32, true))),
+            "list".into(),
+            ArrowDataType::List(Box::new(Field::new(
+                "item".into(),
+                ArrowDataType::Int32,
+                true,
+            ))),
             false,
         ),
         Field::new(
-            "list nullable",
-            ArrowDataType::List(Box::new(Field::new("item", ArrowDataType::Int32, true))),
+            "list nullable".into(),
+            ArrowDataType::List(Box::new(Field::new(
+                "item".into(),
+                ArrowDataType::Int32,
+                true,
+            ))),
             true,
         ),
     ])
 }
 
 pub(super) fn data() -> RecordBatchT<Box<dyn Array>> {
-    let list_dt = ArrowDataType::List(Box::new(Field::new("item", ArrowDataType::Int32, true)));
-    let list_dt1 = ArrowDataType::List(Box::new(Field::new("item", ArrowDataType::Int32, true)));
+    let list_dt = ArrowDataType::List(Box::new(Field::new(
+        "item".into(),
+        ArrowDataType::Int32,
+        true,
+    )));
+    let list_dt1 = ArrowDataType::List(Box::new(Field::new(
+        "item".into(),
+        ArrowDataType::Int32,
+        true,
+    )));
 
     let columns = vec![
         Box::new(Int64Array::from_slice([27, 47])) as Box<dyn Array>,
@@ -162,11 +178,15 @@ fn deflate() -> PolarsResult<()> {
 }
 
 fn large_format_schema() -> ArrowSchema {
-    ArrowSchema::from(vec![
-        Field::new("large_utf8", ArrowDataType::LargeUtf8, false),
-        Field::new("large_utf8_nullable", ArrowDataType::LargeUtf8, true),
-        Field::new("large_binary", ArrowDataType::LargeBinary, false),
-        Field::new("large_binary_nullable", ArrowDataType::LargeBinary, true),
+    ArrowSchema::from_iter([
+        Field::new("large_utf8".into(), ArrowDataType::LargeUtf8, false),
+        Field::new("large_utf8_nullable".into(), ArrowDataType::LargeUtf8, true),
+        Field::new("large_binary".into(), ArrowDataType::LargeBinary, false),
+        Field::new(
+            "large_binary_nullable".into(),
+            ArrowDataType::LargeBinary,
+            true,
+        ),
     ])
 }
 
@@ -181,11 +201,11 @@ fn large_format_data() -> RecordBatchT<Box<dyn Array>> {
 }
 
 fn large_format_expected_schema() -> ArrowSchema {
-    ArrowSchema::from(vec![
-        Field::new("large_utf8", ArrowDataType::Utf8, false),
-        Field::new("large_utf8_nullable", ArrowDataType::Utf8, true),
-        Field::new("large_binary", ArrowDataType::Binary, false),
-        Field::new("large_binary_nullable", ArrowDataType::Binary, true),
+    ArrowSchema::from_iter([
+        Field::new("large_utf8".into(), ArrowDataType::Utf8, false),
+        Field::new("large_utf8_nullable".into(), ArrowDataType::Utf8, true),
+        Field::new("large_binary".into(), ArrowDataType::Binary, false),
+        Field::new("large_binary_nullable".into(), ArrowDataType::Binary, true),
     ])
 }
 
@@ -219,20 +239,20 @@ fn check_large_format() -> PolarsResult<()> {
 }
 
 fn struct_schema() -> ArrowSchema {
-    ArrowSchema::from(vec![
+    ArrowSchema::from_iter([
         Field::new(
-            "struct",
+            "struct".into(),
             ArrowDataType::Struct(vec![
-                Field::new("item1", ArrowDataType::Int32, false),
-                Field::new("item2", ArrowDataType::Int32, true),
+                Field::new("item1".into(), ArrowDataType::Int32, false),
+                Field::new("item2".into(), ArrowDataType::Int32, true),
             ]),
             false,
         ),
         Field::new(
-            "struct nullable",
+            "struct nullable".into(),
             ArrowDataType::Struct(vec![
-                Field::new("item1", ArrowDataType::Int32, false),
-                Field::new("item2", ArrowDataType::Int32, true),
+                Field::new("item1".into(), ArrowDataType::Int32, false),
+                Field::new("item2".into(), ArrowDataType::Int32, true),
             ]),
             true,
         ),
@@ -241,8 +261,8 @@ fn struct_schema() -> ArrowSchema {
 
 fn struct_data() -> RecordBatchT<Box<dyn Array>> {
     let struct_dt = ArrowDataType::Struct(vec![
-        Field::new("item1", ArrowDataType::Int32, false),
-        Field::new("item2", ArrowDataType::Int32, true),
+        Field::new("item1".into(), ArrowDataType::Int32, false),
+        Field::new("item2".into(), ArrowDataType::Int32, true),
     ]);
 
     RecordBatchT::new(vec![

@@ -39,10 +39,6 @@ impl private::PrivateSeries for SeriesWrap<DateChunked> {
         self.0.set_flags(flags)
     }
 
-    fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
-        self.0.explode_by_offsets(offsets).into_date().into_series()
-    }
-
     #[cfg(feature = "zip_with")]
     fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> PolarsResult<Series> {
         let other = other.to_physical_repr().into_owned();
@@ -136,7 +132,7 @@ impl private::PrivateSeries for SeriesWrap<DateChunked> {
 
     fn arg_sort_multiple(
         &self,
-        by: &[Series],
+        by: &[Column],
         options: &SortMultipleOptions,
     ) -> PolarsResult<IdxCa> {
         self.0.deref().arg_sort_multiple(by, options)
@@ -144,14 +140,14 @@ impl private::PrivateSeries for SeriesWrap<DateChunked> {
 }
 
 impl SeriesTrait for SeriesWrap<DateChunked> {
-    fn rename(&mut self, name: &str) {
+    fn rename(&mut self, name: PlSmallStr) {
         self.0.rename(name);
     }
 
     fn chunk_lengths(&self) -> ChunkLenIter {
         self.0.chunk_lengths()
     }
-    fn name(&self) -> &str {
+    fn name(&self) -> &PlSmallStr {
         self.0.name()
     }
 
@@ -172,6 +168,10 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
     fn split_at(&self, offset: i64) -> (Series, Series) {
         let (a, b) = self.0.split_at(offset);
         (a.into_date().into_series(), b.into_date().into_series())
+    }
+
+    fn _sum_as_f64(&self) -> f64 {
+        self.0._sum_as_f64()
     }
 
     fn mean(&self) -> Option<f64> {
@@ -238,8 +238,8 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
             .into_series()
     }
 
-    fn cast(&self, data_type: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
-        match data_type {
+    fn cast(&self, dtype: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
+        match dtype {
             DataType::String => Ok(self
                 .0
                 .clone()
@@ -250,13 +250,11 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
                 .into_series()),
             #[cfg(feature = "dtype-datetime")]
             DataType::Datetime(_, _) => {
-                let mut out = self
-                    .0
-                    .cast_with_options(data_type, CastOptions::NonStrict)?;
+                let mut out = self.0.cast_with_options(dtype, CastOptions::NonStrict)?;
                 out.set_sorted_flag(self.0.is_sorted_flag());
                 Ok(out)
             },
-            _ => self.0.cast_with_options(data_type, cast_options),
+            _ => self.0.cast_with_options(dtype, cast_options),
         }
     }
 

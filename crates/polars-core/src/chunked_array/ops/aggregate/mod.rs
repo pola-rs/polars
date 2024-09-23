@@ -88,6 +88,10 @@ where
         )
     }
 
+    fn _sum_as_f64(&self) -> f64 {
+        self.downcast_iter().map(float_sum::sum_arr_as_f64).sum()
+    }
+
     fn min(&self) -> Option<T::Native> {
         if self.null_count() == self.len() {
             return None;
@@ -216,13 +220,11 @@ where
     }
 
     fn mean(&self) -> Option<f64> {
-        if self.null_count() == self.len() {
+        let count = self.len() - self.null_count();
+        if count == 0 {
             return None;
         }
-
-        let len = (self.len() - self.null_count()) as f64;
-        let sum: f64 = self.downcast_iter().map(float_sum::sum_arr_as_f64).sum();
-        Some(sum / len)
+        Some(self._sum_as_f64() / count as f64)
     }
 }
 
@@ -636,9 +638,9 @@ mod test {
         // Validated with numpy. Note that numpy uses ddof as an argument which
         // influences results. The default ddof=0, we chose ddof=1, which is
         // standard in statistics.
-        let ca1 = Int32Chunked::new("", &[5, 8, 9, 5, 0]);
+        let ca1 = Int32Chunked::new(PlSmallStr::EMPTY, &[5, 8, 9, 5, 0]);
         let ca2 = Int32Chunked::new(
-            "",
+            PlSmallStr::EMPTY,
             &[
                 Some(5),
                 None,
@@ -660,11 +662,11 @@ mod test {
 
     #[test]
     fn test_agg_float() {
-        let ca1 = Float32Chunked::new("a", &[1.0, f32::NAN]);
-        let ca2 = Float32Chunked::new("b", &[f32::NAN, 1.0]);
+        let ca1 = Float32Chunked::new(PlSmallStr::from_static("a"), &[1.0, f32::NAN]);
+        let ca2 = Float32Chunked::new(PlSmallStr::from_static("b"), &[f32::NAN, 1.0]);
         assert_eq!(ca1.min(), ca2.min());
-        let ca1 = Float64Chunked::new("a", &[1.0, f64::NAN]);
-        let ca2 = Float64Chunked::from_slice("b", &[f64::NAN, 1.0]);
+        let ca1 = Float64Chunked::new(PlSmallStr::from_static("a"), &[1.0, f64::NAN]);
+        let ca2 = Float64Chunked::from_slice(PlSmallStr::from_static("b"), &[f64::NAN, 1.0]);
         assert_eq!(ca1.min(), ca2.min());
         println!("{:?}", (ca1.min(), ca2.min()))
     }
@@ -672,12 +674,12 @@ mod test {
     #[test]
     fn test_median() {
         let ca = UInt32Chunked::new(
-            "a",
+            PlSmallStr::from_static("a"),
             &[Some(2), Some(1), None, Some(3), Some(5), None, Some(4)],
         );
         assert_eq!(ca.median(), Some(3.0));
         let ca = UInt32Chunked::new(
-            "a",
+            PlSmallStr::from_static("a"),
             &[
                 None,
                 Some(7),
@@ -694,7 +696,7 @@ mod test {
         assert_eq!(ca.median(), Some(4.0));
 
         let ca = Float32Chunked::from_slice(
-            "",
+            PlSmallStr::EMPTY,
             &[
                 0.166189, 0.166559, 0.168517, 0.169393, 0.175272, 0.233167, 0.238787, 0.266562,
                 0.26903, 0.285792, 0.292801, 0.293429, 0.301706, 0.308534, 0.331489, 0.346095,
@@ -707,7 +709,7 @@ mod test {
 
     #[test]
     fn test_mean() {
-        let ca = Float32Chunked::new("", &[Some(1.0), Some(2.0), None]);
+        let ca = Float32Chunked::new(PlSmallStr::EMPTY, &[Some(1.0), Some(2.0), None]);
         assert_eq!(ca.mean().unwrap(), 1.5);
         assert_eq!(
             ca.into_series()
@@ -718,7 +720,7 @@ mod test {
             1.5
         );
         // all null values case
-        let ca = Float32Chunked::full_null("", 3);
+        let ca = Float32Chunked::full_null(PlSmallStr::EMPTY, 3);
         assert_eq!(ca.mean(), None);
         assert_eq!(
             ca.into_series().mean_reduce().value().extract::<f32>(),
@@ -728,10 +730,10 @@ mod test {
 
     #[test]
     fn test_quantile_all_null() {
-        let test_f32 = Float32Chunked::from_slice_options("", &[None, None, None]);
-        let test_i32 = Int32Chunked::from_slice_options("", &[None, None, None]);
-        let test_f64 = Float64Chunked::from_slice_options("", &[None, None, None]);
-        let test_i64 = Int64Chunked::from_slice_options("", &[None, None, None]);
+        let test_f32 = Float32Chunked::from_slice_options(PlSmallStr::EMPTY, &[None, None, None]);
+        let test_i32 = Int32Chunked::from_slice_options(PlSmallStr::EMPTY, &[None, None, None]);
+        let test_f64 = Float64Chunked::from_slice_options(PlSmallStr::EMPTY, &[None, None, None]);
+        let test_i64 = Int64Chunked::from_slice_options(PlSmallStr::EMPTY, &[None, None, None]);
 
         let interpol_options = vec![
             QuantileInterpolOptions::Nearest,
@@ -751,10 +753,10 @@ mod test {
 
     #[test]
     fn test_quantile_single_value() {
-        let test_f32 = Float32Chunked::from_slice_options("", &[Some(1.0)]);
-        let test_i32 = Int32Chunked::from_slice_options("", &[Some(1)]);
-        let test_f64 = Float64Chunked::from_slice_options("", &[Some(1.0)]);
-        let test_i64 = Int64Chunked::from_slice_options("", &[Some(1)]);
+        let test_f32 = Float32Chunked::from_slice_options(PlSmallStr::EMPTY, &[Some(1.0)]);
+        let test_i32 = Int32Chunked::from_slice_options(PlSmallStr::EMPTY, &[Some(1)]);
+        let test_f64 = Float64Chunked::from_slice_options(PlSmallStr::EMPTY, &[Some(1.0)]);
+        let test_i64 = Int64Chunked::from_slice_options(PlSmallStr::EMPTY, &[Some(1)]);
 
         let interpol_options = vec![
             QuantileInterpolOptions::Nearest,
@@ -774,14 +776,22 @@ mod test {
 
     #[test]
     fn test_quantile_min_max() {
-        let test_f32 =
-            Float32Chunked::from_slice_options("", &[None, Some(1f32), Some(5f32), Some(1f32)]);
-        let test_i32 =
-            Int32Chunked::from_slice_options("", &[None, Some(1i32), Some(5i32), Some(1i32)]);
-        let test_f64 =
-            Float64Chunked::from_slice_options("", &[None, Some(1f64), Some(5f64), Some(1f64)]);
-        let test_i64 =
-            Int64Chunked::from_slice_options("", &[None, Some(1i64), Some(5i64), Some(1i64)]);
+        let test_f32 = Float32Chunked::from_slice_options(
+            PlSmallStr::EMPTY,
+            &[None, Some(1f32), Some(5f32), Some(1f32)],
+        );
+        let test_i32 = Int32Chunked::from_slice_options(
+            PlSmallStr::EMPTY,
+            &[None, Some(1i32), Some(5i32), Some(1i32)],
+        );
+        let test_f64 = Float64Chunked::from_slice_options(
+            PlSmallStr::EMPTY,
+            &[None, Some(1f64), Some(5f64), Some(1f64)],
+        );
+        let test_i64 = Int64Chunked::from_slice_options(
+            PlSmallStr::EMPTY,
+            &[None, Some(1i64), Some(5i64), Some(1i64)],
+        );
 
         let interpol_options = vec![
             QuantileInterpolOptions::Nearest,
@@ -822,7 +832,7 @@ mod test {
     #[test]
     fn test_quantile() {
         let ca = UInt32Chunked::new(
-            "a",
+            PlSmallStr::from_static("a"),
             &[Some(2), Some(1), None, Some(3), Some(5), None, Some(4)],
         );
 
@@ -896,7 +906,7 @@ mod test {
         );
 
         let ca = UInt32Chunked::new(
-            "a",
+            PlSmallStr::from_static("a"),
             &[
                 None,
                 Some(7),

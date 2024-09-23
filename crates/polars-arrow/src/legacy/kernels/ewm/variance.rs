@@ -408,7 +408,7 @@ mod test {
         );
         assert_allclose!(
             ewm_var(YS.to_vec(), ALPHA, false, true, 0, false),
-            PrimitiveArray::from([None, Some(0.0), Some(1.0), None, None, Some(4.2), Some(3.1),]),
+            PrimitiveArray::from([None, Some(0.0), Some(1.0), None, None, Some(4.2), Some(3.1)]),
             EPS
         );
         assert_allclose!(

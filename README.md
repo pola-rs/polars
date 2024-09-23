@@ -102,7 +102,7 @@ shape: (5, 8)
 ## SQL
 
 ```python
->>> df = pl.scan_csv("docs/data/iris.csv")
+>>> df = pl.scan_csv("docs/assets/data/iris.csv")
 >>> ## OPTION 1
 >>> # run SQL queries on frame-level
 >>> df.sql("""
@@ -141,14 +141,14 @@ SQL commands can also be run directly from your terminal using the Polars CLI:
 
 ```bash
 # run an inline SQL query
-> polars -c "SELECT species, AVG(sepal_length) AS avg_sepal_length, AVG(sepal_width) AS avg_sepal_width FROM read_csv('docs/data/iris.csv') GROUP BY species;"
+> polars -c "SELECT species, AVG(sepal_length) AS avg_sepal_length, AVG(sepal_width) AS avg_sepal_width FROM read_csv('docs/assets/data/iris.csv') GROUP BY species;"
 
 # run interactively
 > polars
 Polars CLI v0.3.0
 Type .help for help.
 
-> SELECT species, AVG(sepal_length) AS avg_sepal_length, AVG(sepal_width) AS avg_sepal_width FROM read_csv('docs/data/iris.csv') GROUP BY species;
+> SELECT species, AVG(sepal_length) AS avg_sepal_length, AVG(sepal_width) AS avg_sepal_width FROM read_csv('docs/assets/data/iris.csv') GROUP BY species;
 ```
 
 Refer to the [Polars CLI repository](https://github.com/pola-rs/polars-cli) for more information.
@@ -157,7 +157,7 @@ Refer to the [Polars CLI repository](https://github.com/pola-rs/polars-cli) for 
 
 ### Blazingly fast
 
-Polars is very fast. In fact, it is one of the best performing solutions available. See the [TPC-H benchmarks](https://www.pola.rs/benchmarks.html) results.
+Polars is very fast. In fact, it is one of the best performing solutions available. See the [PDS-H benchmarks](https://www.pola.rs/benchmarks.html) results.
 
 ### Lightweight
 

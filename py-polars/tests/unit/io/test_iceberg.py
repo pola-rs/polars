@@ -12,7 +12,7 @@ import polars as pl
 from polars.io.iceberg import _convert_predicate, _to_ast
 
 
-@pytest.fixture()
+@pytest.fixture
 def iceberg_path(io_files_path: Path) -> str:
     # Iceberg requires absolute paths, so we'll symlink
     # the test table into /tmp/iceberg/t1/
@@ -26,12 +26,12 @@ def iceberg_path(io_files_path: Path) -> str:
     return f"file://{iceberg_path.resolve()}"
 
 
-@pytest.mark.slow()
-@pytest.mark.write_disk()
+@pytest.mark.slow
+@pytest.mark.write_disk
 @pytest.mark.filterwarnings(
     "ignore:No preferred file implementation for scheme*:UserWarning"
 )
-@pytest.mark.ci_only()
+@pytest.mark.ci_only
 class TestIcebergScanIO:
     """Test coverage for `iceberg` scan ops."""
 
@@ -88,7 +88,7 @@ class TestIcebergScanIO:
         ]
 
 
-@pytest.mark.ci_only()
+@pytest.mark.ci_only
 class TestIcebergExpressions:
     """Test coverage for `iceberg` expressions comprehension."""
 
