@@ -1,14 +1,14 @@
 use std::sync::Arc;
 
 use futures::StreamExt;
-use polars_error::PolarsResult;
+use polars_error::{polars_bail, PolarsResult};
 use polars_io::prelude::FileMetadata;
 use polars_io::utils::byte_source::{DynByteSource, MemSliceByteSource};
 use polars_io::utils::slice::SplitSlicePosition;
 use polars_utils::mmap::MemSlice;
 use polars_utils::pl_str::PlSmallStr;
 
-use super::metadata_utils::{ensure_metadata_has_projected_fields, read_parquet_metadata_bytes};
+use super::metadata_utils::{ensure_schema_has_projected_fields, read_parquet_metadata_bytes};
 use super::ParquetSourceNode;
 use crate::async_executor;
 use crate::async_primitives::connector::connector;
@@ -107,6 +107,15 @@ impl ParquetSourceNode {
         };
 
         let first_metadata = self.first_metadata.clone();
+        let reader_schema_len = self
+            .file_info
+            .reader_schema
+            .as_ref()
+            .unwrap()
+            .as_ref()
+            .unwrap_left()
+            .len();
+        let has_projection = self.file_options.with_columns.is_some();
 
         let process_metadata_bytes = {
             move |handle: task_handles_ext::AbortOnDropHandle<
@@ -127,10 +136,16 @@ impl ParquetSourceNode {
                         )?,
                     };
 
-                    ensure_metadata_has_projected_fields(
-                        &metadata,
-                        projected_arrow_schema.as_ref(),
-                    )?;
+                    let schema = polars_parquet::arrow::read::infer_schema(&metadata)?;
+
+                    if !has_projection && schema.len() > reader_schema_len {
+                        polars_bail!(
+                           SchemaMismatch:
+                           "parquet file contained extra columns and no selection was given"
+                        )
+                    }
+
+                    ensure_schema_has_projected_fields(&schema, projected_arrow_schema.as_ref())?;
 
                     PolarsResult::Ok((path_index, byte_source, metadata))
                 });

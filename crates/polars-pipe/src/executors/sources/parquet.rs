@@ -131,7 +131,7 @@ impl ParquetSource {
             }
 
             let mut reader = reader
-                .with_projected_arrow_schema(
+                .with_arrow_schema_projection(
                     &self.first_schema,
                     self.projected_arrow_schema.as_deref(),
                 )?
@@ -196,7 +196,7 @@ impl ParquetSource {
                 ParquetAsyncReader::from_uri(&uri, cloud_options.as_ref(), metadata)
                     .await?
                     .with_row_index(file_options.row_index)
-                    .with_projected_arrow_schema(
+                    .with_arrow_schema_projection(
                         &self.first_schema,
                         self.projected_arrow_schema.as_deref(),
                     )
