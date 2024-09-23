@@ -131,19 +131,41 @@ fn array_shape(dt: &DataType, infer: bool) -> Vec<i64> {
 }
 
 #[cfg(feature = "dtype-array")]
+fn broadcast_array(lhs: &ArrayChunked, rhs: &Series) -> PolarsResult<(ArrayChunked, Series)> {
+    let out = match (lhs.len(), rhs.len()) {
+        (1, _) => (lhs.new_from_index(0, rhs.len()), rhs.clone()),
+        (_, 1) => {
+            // Numeric scalars will be broadcasted implicitly without intermediate allocation.
+            if rhs.dtype().is_numeric() {
+                (lhs.clone(), rhs.clone())
+            } else {
+                (lhs.clone(), rhs.new_from_index(0, lhs.len()))
+            }
+        },
+        (a, b) if a == b => (lhs.clone(), rhs.clone()),
+        _ => {
+            polars_bail!(InvalidOperation: "can only do arithmetic of array's of the same type and shape; got {} and {}", lhs.dtype(), rhs.dtype())
+        },
+    };
+    Ok(out)
+}
+
+#[cfg(feature = "dtype-array")]
 impl ArrayChunked {
     fn arithm_helper(
         &self,
         rhs: &Series,
         op: &dyn Fn(Series, Series) -> PolarsResult<Series>,
     ) -> PolarsResult<Series> {
-        let l_leaf_array = self.clone().into_series().get_leaf_array();
-        let shape = array_shape(self.dtype(), true);
+        let (lhs, rhs) = broadcast_array(self, rhs)?;
+
+        let l_leaf_array = lhs.clone().into_series().get_leaf_array();
+        let shape = array_shape(lhs.dtype(), true);
 
         let r_leaf_array = if rhs.dtype().is_numeric() && rhs.len() == 1 {
             rhs.clone()
         } else {
-            polars_ensure!(self.dtype() == rhs.dtype(), InvalidOperation: "can only do arithmetic of array's of the same type and shape; got {} and {}", self.dtype(), rhs.dtype());
+            polars_ensure!(lhs.dtype() == rhs.dtype(), InvalidOperation: "can only do arithmetic of array's of the same type and shape; got {} and {}", self.dtype(), rhs.dtype());
             rhs.get_leaf_array()
         };
 
