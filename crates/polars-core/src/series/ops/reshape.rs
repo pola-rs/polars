@@ -95,43 +95,42 @@ impl Series {
         let size = leaf_array.len();
 
         let mut total_dim_size = 1;
-        let mut num_infers = 0;
+        let mut infer_dim_index = None;
         for (index, &dim) in dimensions.iter().enumerate() {
             match dim {
                 ReshapeDimension::Infer => {
                     polars_ensure!(
-                        num_infers == 0,
+                        infer_dim_index.replace(index).is_none(),
                         InvalidOperation: "can only specify one inferred dimension"
                     );
-                    num_infers += 1;
                 },
                 ReshapeDimension::Specified(dim) => {
                     let dim = dim.get();
 
-                    if dim > 0 {
-                        total_dim_size *= dim as usize
-                    } else {
-                        polars_ensure!(
-                            index == 0,
-                            InvalidOperation: "cannot reshape array into shape containing a zero dimension after the first: {}",
-                            format_tuple!(dimensions)
-                        );
-                        total_dim_size = 0;
-                        // We can early exit here, as empty arrays will error with multiple dimensions,
-                        // and non-empty arrays will error when the first dimension is zero.
-                        break;
-                    }
+                    polars_ensure!(
+                        dim != 0 || index == 0,
+                        InvalidOperation: "cannot reshape array into shape containing a zero dimension after the first: {}",
+                        format_tuple!(dimensions)
+                    );
+
+                    total_dim_size *= dim as usize;
                 },
             }
         }
 
         if size == 0 {
-            if dimensions.len() > 1 || (num_infers == 0 && total_dim_size != 0) {
+            // we need to infer a zero but can't
+            if total_dim_size != 0 && infer_dim_index != Some(0)
+                // we need to infer a non-zero but don't have enough information
+                || total_dim_size == 0 && infer_dim_index.is_some()
+            {
                 polars_bail!(InvalidOperation: "cannot reshape empty array into shape {}", format_tuple!(dimensions))
             }
-        } else if total_dim_size == 0 {
-            polars_bail!(InvalidOperation: "cannot reshape non-empty array into shape containing a zero dimension: {}", format_tuple!(dimensions))
         } else {
+            polars_ensure!(
+                total_dim_size > 0,
+                InvalidOperation: "cannot reshape non-empty array into shape containing a zero dimension: {}", format_tuple!(dimensions)
+            );
             polars_ensure!(
                 size % total_dim_size == 0,
                 InvalidOperation: "cannot reshape array of size {} into shape {}", size, format_tuple!(dimensions)
@@ -146,8 +145,11 @@ impl Series {
         for idx in (1..dimensions.len()).rev() {
             // Infer dimension if needed
             let dim = dimensions[idx].get_or_infer_with(|| {
-                debug_assert!(num_infers > 0);
-                (size / total_dim_size) as u64
+                if total_dim_size == 0 {
+                    0
+                } else {
+                    (size / total_dim_size) as u64
+                }
             });
             prev_dtype = DataType::Array(Box::new(prev_dtype), dim as usize);
 

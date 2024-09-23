@@ -60,25 +60,25 @@ def test_reshape_invalid_dimension_size(shape: tuple[int, ...]) -> None:
         s.reshape(shape)
 
 
-def test_reshape_invalid_zero_dimension() -> None:
-    s = pl.Series("a", [1, 2, 3, 4])
-    shape = (-1, 0)
-    with pytest.raises(
-        InvalidOperationError,
-        match=re.escape(
-            f"cannot reshape array into shape containing a zero dimension after the first: {display_shape(shape)}"
-        ),
-    ):
-        s.reshape(shape)
-
-
-@pytest.mark.parametrize("shape", [(0, -1), (0, 4), (0, 0)])
-def test_reshape_invalid_zero_dimension2(shape: tuple[int, ...]) -> None:
+@pytest.mark.parametrize("shape", [(0, 5), (0, 1, -1)])
+def test_reshape_invalid_into_empty(shape: tuple[int, ...]) -> None:
     s = pl.Series("a", [1, 2, 3, 4])
     with pytest.raises(
         InvalidOperationError,
         match=re.escape(
             f"cannot reshape non-empty array into shape containing a zero dimension: {display_shape(shape)}"
+        ),
+    ):
+        s.reshape(shape)
+
+
+@pytest.mark.parametrize("shape", [(0, 0), (-1, 0)])
+def test_reshape_invalid_zero_dimension(shape: tuple[int, ...]) -> None:
+    s = pl.Series("a", [1, 2, 3, 4])
+    with pytest.raises(
+        InvalidOperationError,
+        match=re.escape(
+            f"cannot reshape array into shape containing a zero dimension after the first: {display_shape(shape)}"
         ),
     ):
         s.reshape(shape)
@@ -100,7 +100,7 @@ def test_reshape_empty_valid_1d(shape: tuple[int, ...]) -> None:
     assert_series_equal(out, s)
 
 
-@pytest.mark.parametrize("shape", [(0, 1), (1, -1), (-1, 1)])
+@pytest.mark.parametrize("shape", [(1, -1), (0, -2), (0, 3, -1)])
 def test_reshape_empty_invalid_2d(shape: tuple[int, ...]) -> None:
     s = pl.Series("a", [], dtype=pl.Int64)
     with pytest.raises(
@@ -110,6 +110,20 @@ def test_reshape_empty_invalid_2d(shape: tuple[int, ...]) -> None:
         ),
     ):
         s.reshape(shape)
+
+
+@pytest.mark.parametrize(
+    ("shape", "out_dtype"),
+    [
+        ((0, 5), pl.Array(pl.Int64, 5)),
+        ((-1, 3), pl.Array(pl.Int64, 3)),
+        ((-1, 3, 2), pl.Array(pl.Int64, (3, 2))),
+    ],
+)
+def test_reshape_empty_valid_2d(shape: tuple[int, ...], out_dtype: pl.DataType) -> None:
+    s = pl.Series("a", [], dtype=pl.Int64)
+    out = s.reshape(shape)
+    assert out.dtype == out_dtype
 
 
 @pytest.mark.parametrize("shape", [(1,), (2,)])

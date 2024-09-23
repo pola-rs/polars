@@ -159,7 +159,9 @@ def test_series_init_np_2d_zero_zero_shape() -> None:
     arr = np.array([]).reshape(0, 0)
     with pytest.raises(
         InvalidOperationError,
-        match=re.escape("cannot reshape empty array into shape (0, 0)"),
+        match=re.escape(
+            "cannot reshape array into shape containing a zero dimension after the first: (0, 0)"
+        ),
     ):
         pl.Series(arr)
 
