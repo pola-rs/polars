@@ -392,7 +392,7 @@ macro_rules! match_dtype_to_logical_apply_macro {
     }};
 }
 
-/// Apply a macro on the Downcasted ChunkedArray's
+/// Apply a macro on the Downcasted ChunkedArrays
 #[macro_export]
 macro_rules! match_arrow_dtype_apply_macro_ca {
     ($self:expr, $macro:ident, $macro_string:ident, $macro_bool:ident $(, $opt_args:expr)*) => {{
@@ -537,7 +537,7 @@ macro_rules! with_match_physical_integer_polars_type {(
     }
 })}
 
-/// Apply a macro on the Downcasted ChunkedArray's of DataTypes that are logical numerics.
+/// Apply a macro on the Downcasted ChunkedArrays of DataTypes that are logical numerics.
 /// So no logical.
 #[macro_export]
 macro_rules! downcast_as_macro_arg_physical {
@@ -562,7 +562,7 @@ macro_rules! downcast_as_macro_arg_physical {
     }};
 }
 
-/// Apply a macro on the Downcasted ChunkedArray's of DataTypes that are logical numerics.
+/// Apply a macro on the Downcasted ChunkedArrays of DataTypes that are logical numerics.
 /// So no logical.
 #[macro_export]
 macro_rules! downcast_as_macro_arg_physical_mut {

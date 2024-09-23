@@ -93,7 +93,7 @@ use crate::POOL;
 /// See all the comparison operators in the [CmpOps trait](crate::chunked_array::ops::ChunkCompare)
 ///
 /// ## Iterators
-/// The Series variants contain differently typed [ChunkedArray's](crate::chunked_array::ChunkedArray).
+/// The Series variants contain differently typed [ChunkedArray](crate::chunked_array::ChunkedArray)s.
 /// These structs can be turned into iterators, making it possible to use any function/ closure you want
 /// on a Series.
 ///
