@@ -235,7 +235,7 @@ fn pivot_impl(
         // @scalar-opt
         let columns_struct = StructChunked::from_columns(column.clone(), fields)
             .unwrap()
-            .into_series();
+            .into_column();
         let mut binding = pivot_df.clone();
         let pivot_df = unsafe { binding.with_column_unchecked(columns_struct) };
         pivot_impl_single_column(

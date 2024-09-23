@@ -1088,7 +1088,7 @@ impl BatchedParquetReader {
                                     self.metadata.num_rows
                                 },
                             )
-                            .into_series(),
+                            .into_column(),
                         )
                     };
                 }
@@ -1108,7 +1108,7 @@ impl BatchedParquetReader {
 
                 if let Some(ca) = &self.include_file_path {
                     unsafe {
-                        df.with_column_unchecked(ca.clear().into_series());
+                        df.with_column_unchecked(ca.clear().into_column());
                     }
                 };
 
@@ -1146,7 +1146,7 @@ impl BatchedParquetReader {
 
                 if let Some(ca) = &self.include_file_path {
                     unsafe {
-                        df.with_column_unchecked(ca.clear().into_series());
+                        df.with_column_unchecked(ca.clear().into_column());
                     }
                 };
 
