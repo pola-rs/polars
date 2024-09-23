@@ -32,6 +32,7 @@ use crate::compute::utils::combine_validities_and;
 #[derive(Clone)]
 pub struct StructArray {
     dtype: ArrowDataType,
+    // invariant: each array has the same length
     values: Vec<Box<dyn Array>>,
     validity: Option<Bitmap>,
 }
@@ -226,6 +227,17 @@ impl StructArray {
 impl StructArray {
     #[inline]
     fn len(&self) -> usize {
+        #[cfg(debug_assertions)]
+        if let Some(fst) = self.values.first() {
+            for arr in self.values.iter().skip(1) {
+                assert_eq!(
+                    arr.len(),
+                    fst.len(),
+                    "StructArray invariant: each array has same length"
+                );
+            }
+        }
+
         self.values.first().map(|arr| arr.len()).unwrap_or(0)
     }
 
@@ -242,7 +254,9 @@ impl StructArray {
 
     /// Returns the fields of this [`StructArray`].
     pub fn fields(&self) -> &[Field] {
-        Self::get_fields(&self.dtype)
+        let fields = Self::get_fields(&self.dtype);
+        debug_assert_eq!(self.values().len(), fields.len());
+        fields
     }
 }
 

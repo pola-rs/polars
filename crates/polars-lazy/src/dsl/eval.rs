@@ -72,7 +72,7 @@ pub trait ExprEvalExtension: IntoExpr + Sized {
                     "expected single value, got a result with length {}, {:?}",
                     out.len(), out,
                 );
-                Ok(out.get(0).unwrap().into_static().unwrap())
+                Ok(out.get(0).unwrap().into_static())
             };
 
             let avs = if parallel {

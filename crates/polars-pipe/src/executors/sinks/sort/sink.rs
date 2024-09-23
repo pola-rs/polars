@@ -124,7 +124,7 @@ impl SortSink {
                 // SAFETY: we just asserted height > 0
                 let sample = unsafe {
                     let s = &df.get_columns()[self.sort_idx];
-                    s.to_physical_repr().get_unchecked(0).into_static().unwrap()
+                    s.to_physical_repr().get_unchecked(0).into_static()
                 };
                 self.dist_sample.push(sample);
 

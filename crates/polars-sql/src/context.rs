@@ -451,7 +451,7 @@ impl SQLContext {
                     Expr::Literal(value) => {
                         value.to_any_value()
                             .ok_or_else(|| polars_err!(SQLInterface: "invalid literal value: {:?}", value))
-                            .map(|av| av.into_static().unwrap())
+                            .map(|av| av.into_static())
                     },
                     _ => polars_bail!(SQLInterface: "VALUES clause expects literals; found {}", expr),
                 }

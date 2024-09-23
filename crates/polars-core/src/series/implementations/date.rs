@@ -144,6 +144,14 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
         self.0.rename(name);
     }
 
+    fn get_metadata(&self) -> Option<RwLockReadGuard<dyn MetadataTrait>> {
+        self.0.metadata_dyn()
+    }
+
+    fn boxed_metadata<'a>(&'a self) -> Option<Box<dyn MetadataTrait + 'a>> {
+        Some(self.0.boxed_metadata_dyn())
+    }
+
     fn chunk_lengths(&self) -> ChunkLenIter {
         self.0.chunk_lengths()
     }
@@ -320,13 +328,13 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
 
     fn max_reduce(&self) -> PolarsResult<Scalar> {
         let sc = self.0.max_reduce();
-        let av = sc.value().cast(self.dtype()).into_static().unwrap();
+        let av = sc.value().cast(self.dtype()).into_static();
         Ok(Scalar::new(self.dtype().clone(), av))
     }
 
     fn min_reduce(&self) -> PolarsResult<Scalar> {
         let sc = self.0.min_reduce();
-        let av = sc.value().cast(self.dtype()).into_static().unwrap();
+        let av = sc.value().cast(self.dtype()).into_static();
         Ok(Scalar::new(self.dtype().clone(), av))
     }
 

@@ -499,7 +499,7 @@ impl<'a> AnyValueBufferTrusted<'a> {
                             }
                         }
                     },
-                    All(_, vals) => vals.push(val.clone().into_static().unwrap()),
+                    All(_, vals) => vals.push(val.clone().into_static()),
                     _ => self.add_physical(val),
                 }
             },
@@ -540,7 +540,7 @@ impl<'a> AnyValueBufferTrusted<'a> {
                             }
                         }
                     },
-                    All(_, vals) => vals.push(val.clone().into_static().unwrap()),
+                    All(_, vals) => vals.push(val.clone().into_static()),
                     _ => self.add_physical(val),
                 }
             },

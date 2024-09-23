@@ -8,7 +8,7 @@ use polars_utils::pl_str::PlSmallStr;
 
 use self::gather::check_bounds_ca;
 use crate::chunked_array::cast::CastOptions;
-use crate::chunked_array::metadata::MetadataFlags;
+use crate::chunked_array::metadata::{MetadataFlags, MetadataTrait};
 use crate::prelude::*;
 use crate::series::{BitRepr, IsSorted, SeriesPhysIter};
 use crate::utils::{slice_offsets, Container};
@@ -581,6 +581,14 @@ impl Column {
         }
     }
 
+    pub fn get_metadata<'a>(&'a self) -> Option<Box<dyn MetadataTrait + 'a>> {
+        match self {
+            Column::Series(s) => s.boxed_metadata(),
+            // @scalar-opt
+            Column::Scalar(_) => None,
+        }
+    }
+
     pub fn get_data_ptr(&self) -> usize {
         // @scalar-opt
         self.as_materialized_series().get_data_ptr()
@@ -782,27 +790,37 @@ impl Column {
     }
 
     pub fn gather_every(&self, n: usize, offset: usize) -> Column {
-        // @scalar-opt
-        self.as_materialized_series().gather_every(n, offset).into()
+        if self.len().saturating_sub(offset) == 0 {
+            return self.clear();
+        }
+
+        match self {
+            Column::Series(s) => s.gather_every(n, offset).into(),
+            Column::Scalar(s) => s.resize(s.length - offset / n).into(),
+        }
     }
 
     pub fn extend_constant(&self, value: AnyValue, n: usize) -> PolarsResult<Self> {
-        self.as_materialized_series()
-            .extend_constant(value, n)
-            .map(Column::from)
-        // @scalar-opt: This currently fails because Scalar::partial_cmp cannot deal with Nulls
-        //
-        // match self {
-        //     Column::Series(s) => s.extend_constant(value, n).map(Column::from),
-        //     Column::Scalar(s) => {
-        //         if s.scalar.as_any_value() == value && s.len() > 0 {
-        //             Ok(s.resize(s.len() + n).into())
-        //         } else {
-        //             // @scalar-opt
-        //             s.as_materialized_series().extend_constant(value, n).map(Column::from)
-        //         }
-        //     },
-        // }
+        if self.is_empty() {
+            return Ok(Self::new_scalar(
+                self.name().clone(),
+                Scalar::new(self.dtype().clone(), value.into_static()),
+                n,
+            ));
+        }
+
+        match self {
+            Column::Series(s) => s.extend_constant(value, n).map(Column::from),
+            Column::Scalar(s) => {
+                if s.scalar.as_any_value() == value {
+                    Ok(s.resize(s.len() + n).into())
+                } else {
+                    s.as_materialized_series()
+                        .extend_constant(value, n)
+                        .map(Column::from)
+                }
+            },
+        }
     }
 
     pub fn is_finite(&self) -> PolarsResult<BooleanChunked> {
@@ -994,14 +1012,11 @@ impl From<Series> for Column {
     fn from(series: Series) -> Self {
         if series.len() == 1 {
             // SAFETY: We just did the bounds check
-            let value = unsafe { series.get_unchecked(0) };
-
-            if let Ok(value) = value.into_static() {
-                let value = Scalar::new(series.dtype().clone(), value);
-                let mut col = ScalarColumn::new(series.name().clone(), value, 1);
-                col.materialized = OnceLock::from(series);
-                return Self::Scalar(col);
-            }
+            let value = unsafe { series.get_unchecked(0) }.into_static();
+            let value = Scalar::new(series.dtype().clone(), value);
+            let mut col = ScalarColumn::new(series.name().clone(), value, 1);
+            col.materialized = OnceLock::from(series);
+            return Self::Scalar(col);
         }
 
         Self::Series(series)
@@ -1105,7 +1120,7 @@ impl ScalarColumn {
     pub fn from_single_value_series(series: Series, length: usize) -> PolarsResult<Self> {
         debug_assert_eq!(series.len(), 1);
         let value = series.get(0)?;
-        let value = value.into_static()?;
+        let value = value.into_static();
         let value = Scalar::new(series.dtype().clone(), value);
         Ok(ScalarColumn::new(series.name().clone(), value, length))
     }
@@ -1114,6 +1129,14 @@ impl ScalarColumn {
     ///
     /// This reuses the materialized [`Series`], if `length <= self.length`.
     pub fn resize(&self, length: usize) -> ScalarColumn {
+        if self.length == length {
+            return self.clone();
+        }
+
+        // This is violates an invariant if this triggers, the scalar value is undefined if the
+        // self.length == 0 so therefore we should never resize using that value.
+        debug_assert_ne!(self.length, 0);
+
         let mut resized = Self {
             name: self.name.clone(),
             scalar: self.scalar.clone(),
@@ -1145,7 +1168,7 @@ impl ScalarColumn {
                     Self::new_empty(materialized.name().clone(), materialized.dtype().clone())
                 } else {
                     // SAFETY: Just did bounds check
-                    let scalar = unsafe { materialized.get_unchecked(0) }.into_static()?;
+                    let scalar = unsafe { materialized.get_unchecked(0) }.into_static();
                     Self::new(
                         materialized.name().clone(),
                         Scalar::new(materialized.dtype().clone(), scalar),
@@ -1193,7 +1216,7 @@ impl ScalarColumn {
                     Self::new_empty(materialized.name().clone(), materialized.dtype().clone())
                 } else {
                     // SAFETY: Just did bounds check
-                    let scalar = unsafe { materialized.get_unchecked(0) }.into_static()?;
+                    let scalar = unsafe { materialized.get_unchecked(0) }.into_static();
                     Self::new(
                         materialized.name().clone(),
                         Scalar::new(materialized.dtype().clone(), scalar),
