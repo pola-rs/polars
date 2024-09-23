@@ -21,6 +21,9 @@ def test_time_microseconds_3843() -> None:
 
 def test_invalid_casts() -> None:
     with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.DataFrame({"a": []}).with_columns(a=pl.lit(-1).cast(pl.Time))
+
+    with pytest.raises(pl.exceptions.InvalidOperationError):
         pl.Series([-1]).cast(pl.Time)
 
     with pytest.raises(pl.exceptions.InvalidOperationError):

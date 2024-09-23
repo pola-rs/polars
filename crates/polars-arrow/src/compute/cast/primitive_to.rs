@@ -325,6 +325,46 @@ pub fn primitive_to_dictionary<T: NativeType + Eq + Hash, K: DictionaryKey>(
     Ok(array.into())
 }
 
+pub fn primitive_map_is_valid<T: NativeType>(
+    from: &PrimitiveArray<T>,
+    f: impl Fn(T) -> bool,
+) -> PrimitiveArray<T> {
+    let validity: Bitmap = from.values().iter().map(|&v| f(v)).collect();
+
+    let mut output = from.clone();
+
+    if validity.unset_bits() > 0 {
+        let new_validity = match from.validity() {
+            None => validity,
+            Some(v) => v & &validity,
+        };
+
+        output.set_validity(Some(new_validity));
+    }
+
+    output.clone()
+}
+
+/// Conversion of `Int32` to `Time32(TimeUnit::Second)`
+pub fn int32_to_time32s(from: &PrimitiveArray<i32>) -> PrimitiveArray<i32> {
+    primitive_map_is_valid(from, |v| (0..SECONDS_IN_DAY as i32).contains(&v))
+}
+
+/// Conversion of `Int32` to `Time32(TimeUnit::Millisecond)`
+pub fn int32_to_time32ms(from: &PrimitiveArray<i32>) -> PrimitiveArray<i32> {
+    primitive_map_is_valid(from, |v| (0..MILLISECONDS_IN_DAY as i32).contains(&v))
+}
+
+/// Conversion of `Int64` to `Time32(TimeUnit::Microsecond)`
+pub fn int64_to_time64us(from: &PrimitiveArray<i64>) -> PrimitiveArray<i64> {
+    primitive_map_is_valid(from, |v| (0..MICROSECONDS_IN_DAY).contains(&v))
+}
+
+/// Conversion of `Int64` to `Time32(TimeUnit::Nanosecond)`
+pub fn int64_to_time64ns(from: &PrimitiveArray<i64>) -> PrimitiveArray<i64> {
+    primitive_map_is_valid(from, |v| (0..NANOSECONDS_IN_DAY).contains(&v))
+}
+
 /// Conversion of dates
 pub fn date32_to_date64(from: &PrimitiveArray<i32>) -> PrimitiveArray<i64> {
     unary(

@@ -1,5 +1,4 @@
-use arrow::bitmap::Bitmap;
-use arrow::temporal_conversions::NANOSECONDS_IN_DAY;
+use arrow::compute::cast::CastOptionsImpl;
 
 use super::*;
 use crate::prelude::*;
@@ -19,29 +18,14 @@ impl Int64Chunked {
         let chunks = std::mem::take(&mut self.chunks)
             .into_iter()
             .map(|chunk| {
-                let arr = chunk
-                    .as_any()
-                    .downcast_ref::<PrimitiveArray<i64>>()
-                    .expect("Int64Chunked should consist of PrimitiveArray<i64>");
-
-                let validity: Bitmap = arr
-                    .values()
-                    .iter()
-                    .map(|&v| (0..NANOSECONDS_IN_DAY).contains(&v))
-                    .collect();
-
-                if validity.unset_bits() > 0 {
-                    let new_validity = match arr.validity() {
-                        None => validity,
-                        Some(v) => v & &validity,
-                    };
-
-                    null_count += new_validity.unset_bits();
-                    arr.with_validity(Some(new_validity))
-                } else {
-                    null_count += arr.null_count();
-                    chunk
-                }
+                let casted = arrow::compute::cast::cast(
+                    chunk.as_ref(),
+                    &TimeType::get_dtype().to_arrow(CompatLevel::newest()),
+                    CastOptionsImpl::default(),
+                )
+                .unwrap();
+                null_count += casted.null_count();
+                casted
             })
             .collect::<Vec<Box<dyn Array>>>();
 
