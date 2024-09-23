@@ -55,7 +55,7 @@ Polars provides a wide range of SQL functions, including:
 
 For a full list of supported functions go the [API documentation](https://docs.rs/polars-sql/latest/src/polars_sql/keywords.rs.html). The example below demonstrates how to use a function in a query
 
-{{code_block('user-guide/sql/select','functions',['SQLquery'])}}
+{{code_block('user-guide/sql/select','functions',['SQLexecute'])}}
 
 ```python exec="on" result="text" session="user-guide/sql/select"
 --8<-- "python/user-guide/sql/select.py:functions"
