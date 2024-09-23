@@ -79,9 +79,11 @@ impl CsvExec {
                     let name = source.to_include_path_name();
 
                     unsafe {
-                        df.with_column_unchecked(
-                            StringChunked::full(col.clone(), name, df.height()).into_series(),
-                        )
+                        df.with_column_unchecked(Column::new_scalar(
+                            col.clone(),
+                            Scalar::new(DataType::String, AnyValue::StringOwned(name.into())),
+                            df.height(),
+                        ))
                     };
                 }
 

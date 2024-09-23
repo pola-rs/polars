@@ -1256,14 +1256,13 @@ impl DataFrame {
     /// on length or duplicates.
     ///
     /// # Safety
-    /// The caller must ensure `column.len() == self.height()` .
-    pub unsafe fn with_column_unchecked(&mut self, column: Series) -> &mut Self {
-        if cfg!(debug_assertions) {
-            self.with_column(column).unwrap()
-        } else {
-            self.get_columns_mut().push(column.into_column());
-            self
-        }
+    /// The caller must ensure `self.width() == 0 || column.len() == self.height()` .
+    pub unsafe fn with_column_unchecked(&mut self, column: Column) -> &mut Self {
+        debug_assert!(self.width() == 0 || self.height() == column.len());
+        debug_assert!(self.get_column_index(column.name().as_str()).is_none());
+
+        unsafe { self.get_columns_mut() }.push(column);
+        self
     }
 
     fn add_column_by_schema(&mut self, c: Column, schema: &Schema) -> PolarsResult<()> {

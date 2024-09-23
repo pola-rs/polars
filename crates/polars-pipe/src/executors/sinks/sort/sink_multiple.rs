@@ -226,16 +226,22 @@ impl SortSinkMultiple {
                 })
         }
 
-        let rows_encoded = polars_row::convert_columns(&self.sort_column, &self.sort_fields);
-        let column = unsafe {
-            Series::from_chunks_and_dtype_unchecked(
-                PlSmallStr::from_static(POLARS_SORT_COLUMN),
-                vec![Box::new(rows_encoded.into_array())],
-                &DataType::BinaryOffset,
-            )
+        let name = PlSmallStr::from_static(POLARS_SORT_COLUMN);
+        let column = if chunk.data.height() == 0 && chunk.data.width() > 0 {
+            Column::new_empty(name, &DataType::BinaryOffset)
+        } else {
+            let rows_encoded = polars_row::convert_columns(&self.sort_column, &self.sort_fields);
+            let series = unsafe {
+                Series::from_chunks_and_dtype_unchecked(
+                    name,
+                    vec![Box::new(rows_encoded.into_array())],
+                    &DataType::BinaryOffset,
+                )
+            };
+            debug_assert_eq!(series.chunks().len(), 1);
+            series.into()
         };
 
-        debug_assert_eq!(column.chunks().len(), 1);
         // SAFETY: length is correct
         unsafe { chunk.data.with_column_unchecked(column) };
         Ok(())

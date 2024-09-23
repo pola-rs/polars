@@ -56,7 +56,7 @@ impl JsonExec {
             let mut df = DataFrame::empty_with_schema(schema);
             if let Some(col) = &self.file_scan_options.include_file_paths {
                 unsafe {
-                    df.with_column_unchecked(StringChunked::full_null(col.clone(), 0).into_series())
+                    df.with_column_unchecked(Column::new_empty(col.clone(), &DataType::String))
                 };
             }
             if let Some(row_index) = &self.file_scan_options.row_index {
@@ -111,9 +111,11 @@ impl JsonExec {
                 if let Some(col) = &self.file_scan_options.include_file_paths {
                     let name = source.to_include_path_name();
                     unsafe {
-                        df.with_column_unchecked(
-                            StringChunked::full(col.clone(), name, df.height()).into_series(),
-                        )
+                        df.with_column_unchecked(Column::new_scalar(
+                            col.clone(),
+                            Scalar::new(DataType::String, AnyValue::StringOwned(name.into())),
+                            df.height(),
+                        ))
                     };
                 }
 
