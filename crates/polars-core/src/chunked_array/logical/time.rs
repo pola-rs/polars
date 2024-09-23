@@ -15,21 +15,34 @@ impl Int64Chunked {
     pub fn into_time(mut self) -> TimeChunked {
         let mut null_count = 0;
 
+        // Invalid time values are replaced with `null` during the arrow cast. We utilize the
+        // validity coming from there to create the new TimeChunked.
         let chunks = std::mem::take(&mut self.chunks)
             .into_iter()
             .map(|chunk| {
+                // We need to retain the PhysicalType underneath, but we should properly update the
+                // validity as that might change because Time is not valid for all values of Int64.
                 let casted = arrow::compute::cast::cast(
                     chunk.as_ref(),
-                    &TimeType::get_dtype().to_arrow(CompatLevel::newest()),
+                    &ArrowDataType::Time64(ArrowTimeUnit::Nanosecond),
                     CastOptionsImpl::default(),
                 )
                 .unwrap();
-                null_count += casted.null_count();
-                casted
+                let validity = casted.validity();
+
+                match validity {
+                    None => chunk,
+                    Some(validity) => {
+                        null_count += validity.unset_bits();
+                        chunk.with_validity(Some(validity.clone()))
+                    },
+                }
             })
             .collect::<Vec<Box<dyn Array>>>();
 
         let null_count = null_count as IdxSize;
+
+        debug_assert!(null_count >= self.null_count);
 
         // @TODO: We throw away metadata here. That is mostly not needed.
         // SAFETY: We calculated the null_count again. And we are taking the rest from the previous

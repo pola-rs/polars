@@ -100,6 +100,10 @@ impl<T: NativeType> PrimitiveArray<T> {
         values: Buffer<T>,
         validity: Option<Bitmap>,
     ) -> Self {
+        if cfg!(debug_assertions) {
+            check(&dtype, &values, validity.as_ref().map(|v| v.len())).unwrap();
+        }
+
         Self {
             dtype,
             values,
