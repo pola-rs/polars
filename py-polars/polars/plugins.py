@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterable
 
@@ -111,6 +112,7 @@ def _serialize_kwargs(kwargs: dict[str, Any] | None) -> bytes:
     return pickle.dumps(kwargs, protocol=5)
 
 
+@lru_cache(maxsize=16)
 def _resolve_plugin_path(path: Path | str) -> Path:
     """Get the file path of the dynamic library file."""
     if not isinstance(path, Path):
