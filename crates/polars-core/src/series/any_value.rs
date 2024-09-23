@@ -563,8 +563,14 @@ fn any_values_to_list(
                         Some(b.clone())
                     } else {
                         match b.cast(inner_type) {
-                            Ok(out) => Some(out),
+                            Ok(out) => {
+                                if out.null_count() != b.null_count() {
+                                    valid = !strict;
+                                }
+                                Some(out)
+                            },
                             Err(_) => {
+                                valid = !strict;
                                 Some(Series::full_null(b.name().clone(), b.len(), inner_type))
                             },
                         }
