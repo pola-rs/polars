@@ -43,6 +43,24 @@ impl private::PrivateSeries for SeriesWrap<ListChunked> {
     fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
         (&self.0).into_total_eq_inner()
     }
+
+    fn add_to(&self, rhs: &Series) -> PolarsResult<Series> {
+        self.0.add_to(rhs)
+    }
+
+    fn subtract(&self, rhs: &Series) -> PolarsResult<Series> {
+        self.0.subtract(rhs)
+    }
+
+    fn multiply(&self, rhs: &Series) -> PolarsResult<Series> {
+        self.0.multiply(rhs)
+    }
+    fn divide(&self, rhs: &Series) -> PolarsResult<Series> {
+        self.0.divide(rhs)
+    }
+    fn remainder(&self, rhs: &Series) -> PolarsResult<Series> {
+        self.0.remainder(rhs)
+    }
 }
 
 impl SeriesTrait for SeriesWrap<ListChunked> {

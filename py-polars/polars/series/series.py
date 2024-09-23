@@ -1058,6 +1058,22 @@ class Series:
             return F.lit(self) - other
         return self._arithmetic(other, "sub", "sub_<>")
 
+    def _recursive_cast_to_dtype(self, leaf_dtype: PolarsDataType) -> Series:
+        """
+        Convert leaf dtype the to given primitive datatype.
+
+        This is equivalent to logic in DataType::cast_leaf() in Rust.
+        """
+
+        def convert_to_primitive(dtype: PolarsDataType) -> PolarsDataType:
+            if isinstance(dtype, Array):
+                return Array(convert_to_primitive(dtype.inner), shape=dtype.shape)
+            if isinstance(dtype, List):
+                return List(convert_to_primitive(dtype.inner))
+            return leaf_dtype
+
+        return self.cast(convert_to_primitive(self.dtype))
+
     @overload
     def __truediv__(self, other: Expr) -> Expr: ...
 
@@ -1073,9 +1089,11 @@ class Series:
 
         # this branch is exactly the floordiv function without rounding the floats
         if self.dtype.is_float() or self.dtype == Decimal:
-            return self._arithmetic(other, "div", "div_<>")
+            as_float = self
+        else:
+            as_float = self._recursive_cast_to_dtype(Float64())
 
-        return self.cast(Float64) / other
+        return as_float._arithmetic(other, "div", "div_<>")
 
     @overload
     def __floordiv__(self, other: Expr) -> Expr: ...
