@@ -80,7 +80,7 @@ pub type ChunkLenIter<'a> = std::iter::Map<std::slice::Iter<'a, ArrayRef>, fn(&A
 /// }
 /// ```
 ///
-/// ## Conversion between Series and ChunkedArray's
+/// ## Conversion between Series and ChunkedArrays
 /// Conversion from a [`Series`] to a [`ChunkedArray`] is effortless.
 ///
 /// ```rust
