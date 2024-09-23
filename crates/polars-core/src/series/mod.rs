@@ -713,10 +713,6 @@ impl Series {
 
     #[cfg(feature = "dtype-time")]
     pub(crate) fn into_time(self) -> Series {
-        #[cfg(not(feature = "dtype-time"))]
-        {
-            panic!("activate feature dtype-time")
-        }
         match self.dtype() {
             DataType::Int64 => self.i64().unwrap().clone().into_time().into_series(),
             DataType::Time => self
