@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Callable, Dict, Union
 
+from polars.dependencies import altair as alt
+
 if TYPE_CHECKING:
     import sys
 
-    import altair as alt
     from altair.typing import ChannelColor as Color
     from altair.typing import ChannelOrder as Order
     from altair.typing import ChannelSize as Size
@@ -25,23 +26,29 @@ if TYPE_CHECKING:
     else:
         from typing_extensions import Unpack
 
-    Encodings: TypeAlias = Dict[
-        str,
-        Union[X, Y, Color, Order, Size, Tooltip],
-    ]
+    Encoding: TypeAlias = Union[X, Y, Color, Order, Size, Tooltip]
+    Encodings: TypeAlias = Dict[str, Encoding]
+
+
+def _maybe_extract_shorthand(encoding: Encoding) -> Encoding:
+    if isinstance(encoding, alt.SchemaBase):
+        # e.g. for `alt.X('x:Q', axis=alt.Axis(labelAngle=30))`, return `'x:Q'`
+        return getattr(encoding, "shorthand", encoding)
+    return encoding
 
 
 def _add_tooltip(encodings: Encodings, /, **kwargs: Unpack[EncodeKwds]) -> None:
     if "tooltip" not in kwargs:
-        encodings["tooltip"] = [*encodings.values(), *kwargs.values()]  # type: ignore[assignment]
+        encodings["tooltip"] = [
+            *[_maybe_extract_shorthand(x) for x in encodings.values()],
+            *[_maybe_extract_shorthand(x) for x in kwargs.values()],  # type: ignore[arg-type]
+        ]  # type: ignore[assignment]
 
 
 class DataFramePlot:
     """DataFrame.plot namespace."""
 
     def __init__(self, df: DataFrame) -> None:
-        import altair as alt
-
         self._chart = alt.Chart(df)
 
     def bar(
