@@ -1018,6 +1018,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
         cluster_with_columns: bool = True,
+        collapse_joins: bool = True,
         streaming: bool = False,
         tree_format: bool | None = None,
     ) -> str:
@@ -1051,6 +1052,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Common subexpressions will be cached and reused.
         cluster_with_columns
             Combine sequential independent calls to with_columns
+        collapse_joins
+            Collapse a join and filters into a faster join
         streaming
             Run parts of the query in a streaming fashion (this is in an alpha state)
 
@@ -1099,6 +1102,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 comm_subplan_elim,
                 comm_subexpr_elim,
                 cluster_with_columns,
+                collapse_joins,
                 streaming,
                 _eager=False,
                 new_streaming=False,
@@ -1129,6 +1133,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
         cluster_with_columns: bool = True,
+        collapse_joins: bool = True,
         streaming: bool = False,
     ) -> str | None:
         """
@@ -1165,6 +1170,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Common subexpressions will be cached and reused.
         cluster_with_columns
             Combine sequential independent calls to with_columns
+        collapse_joins
+            Collapse a join and filters into a faster join
         streaming
             Run parts of the query in a streaming fashion (this is in an alpha state)
 
@@ -1190,6 +1197,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subplan_elim,
             comm_subexpr_elim,
             cluster_with_columns,
+            collapse_joins,
             streaming,
             _eager=False,
             new_streaming=False,
@@ -1626,6 +1634,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
         cluster_with_columns: bool = True,
+        collapse_joins: bool = True,
         show_plot: bool = False,
         truncate_nodes: int = 0,
         figsize: tuple[int, int] = (18, 8),
@@ -1660,6 +1669,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Common subexpressions will be cached and reused.
         cluster_with_columns
             Combine sequential independent calls to with_columns
+        collapse_joins
+            Collapse a join and filters into a faster join
         show_plot
             Show a gantt chart of the profiling result
         truncate_nodes
@@ -1709,6 +1720,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subplan_elim = False
             comm_subexpr_elim = False
             cluster_with_columns = False
+            collapse_joins = False
 
         ldf = self._ldf.optimization_toggle(
             type_coercion,
@@ -1719,6 +1731,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subplan_elim,
             comm_subexpr_elim,
             cluster_with_columns,
+            collapse_joins,
             streaming,
             _eager=False,
             new_streaming=False,
@@ -1777,6 +1790,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
         cluster_with_columns: bool = True,
+        collapse_joins: bool = True,
         no_optimization: bool = False,
         streaming: bool = False,
         engine: EngineType = "cpu",
@@ -1796,6 +1810,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
         cluster_with_columns: bool = True,
+        collapse_joins: bool = True,
         no_optimization: bool = False,
         streaming: bool = False,
         engine: EngineType = "cpu",
@@ -1814,6 +1829,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
         cluster_with_columns: bool = True,
+        collapse_joins: bool = True,
         no_optimization: bool = False,
         streaming: bool = False,
         engine: EngineType = "cpu",
@@ -1845,6 +1861,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Common subexpressions will be cached and reused.
         cluster_with_columns
             Combine sequential independent calls to with_columns
+        collapse_joins
+            Collapse a join and filters into a faster join
         no_optimization
             Turn off (certain) optimizations.
         streaming
@@ -1976,6 +1994,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subplan_elim = False
             comm_subexpr_elim = False
             cluster_with_columns = False
+            collapse_joins = False
 
         if streaming:
             issue_unstable_warning("Streaming mode is considered unstable.")
@@ -2004,6 +2023,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subplan_elim,
             comm_subexpr_elim,
             cluster_with_columns,
+            collapse_joins,
             streaming,
             _eager,
             new_streaming,
@@ -2046,6 +2066,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
         cluster_with_columns: bool = True,
+        collapse_joins: bool = True,
         streaming: bool = True,
     ) -> _GeventDataFrameResult[DataFrame]: ...
 
@@ -2063,6 +2084,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
         cluster_with_columns: bool = True,
+        collapse_joins: bool = True,
         streaming: bool = True,
     ) -> Awaitable[DataFrame]: ...
 
@@ -2079,6 +2101,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
         cluster_with_columns: bool = True,
+        collapse_joins: bool = True,
         streaming: bool = False,
     ) -> Awaitable[DataFrame] | _GeventDataFrameResult[DataFrame]:
         """
@@ -2117,6 +2140,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Common subexpressions will be cached and reused.
         cluster_with_columns
             Combine sequential independent calls to with_columns
+        collapse_joins
+            Collapse a join and filters into a faster join
         streaming
             Process the query in batches to handle larger-than-memory data.
             If set to `False` (default), the entire query is processed in a single
@@ -2182,6 +2207,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subplan_elim = False
             comm_subexpr_elim = False
             cluster_with_columns = False
+            collapse_joins = False
 
         if streaming:
             issue_unstable_warning("Streaming mode is considered unstable.")
@@ -2195,6 +2221,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subplan_elim,
             comm_subexpr_elim,
             cluster_with_columns,
+            collapse_joins,
             streaming,
             _eager=False,
             new_streaming=False,
@@ -2252,6 +2279,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
         slice_pushdown: bool = True,
+        collapse_joins: bool = True,
         no_optimization: bool = False,
     ) -> None:
         """
@@ -2316,6 +2344,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Run simplify expressions optimization.
         slice_pushdown
             Slice pushdown optimization.
+        collapse_joins
+            Collapse a join and filters into a faster join
         no_optimization
             Turn off (certain) optimizations.
 
@@ -2334,6 +2364,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             projection_pushdown=projection_pushdown,
             simplify_expression=simplify_expression,
             slice_pushdown=slice_pushdown,
+            collapse_joins=collapse_joins,
             no_optimization=no_optimization,
         )
 
@@ -2376,6 +2407,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
         slice_pushdown: bool = True,
+        collapse_joins: bool = True,
         no_optimization: bool = False,
     ) -> None:
         """
@@ -2407,6 +2439,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Run simplify expressions optimization.
         slice_pushdown
             Slice pushdown optimization.
+        collapse_joins
+            Collapse a join and filters into a faster join
         no_optimization
             Turn off (certain) optimizations.
 
@@ -2425,6 +2459,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             projection_pushdown=projection_pushdown,
             simplify_expression=simplify_expression,
             slice_pushdown=slice_pushdown,
+            collapse_joins=collapse_joins,
             no_optimization=no_optimization,
         )
 
@@ -2458,6 +2493,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
         slice_pushdown: bool = True,
+        collapse_joins: bool = True,
         no_optimization: bool = False,
     ) -> None:
         """
@@ -2537,6 +2573,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Run simplify expressions optimization.
         slice_pushdown
             Slice pushdown optimization.
+        collapse_joins
+            Collapse a join and filters into a faster join
         no_optimization
             Turn off (certain) optimizations.
 
@@ -2562,6 +2600,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             projection_pushdown=projection_pushdown,
             simplify_expression=simplify_expression,
             slice_pushdown=slice_pushdown,
+            collapse_joins=collapse_joins,
             no_optimization=no_optimization,
         )
 
@@ -2594,6 +2633,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
         slice_pushdown: bool = True,
+        collapse_joins: bool = True,
         no_optimization: bool = False,
     ) -> None:
         """
@@ -2622,6 +2662,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Run simplify expressions optimization.
         slice_pushdown
             Slice pushdown optimization.
+        collapse_joins
+            Collapse a join and filters into a faster join
         no_optimization
             Turn off (certain) optimizations.
 
@@ -2640,6 +2682,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             projection_pushdown=projection_pushdown,
             simplify_expression=simplify_expression,
             slice_pushdown=slice_pushdown,
+            collapse_joins=collapse_joins,
             no_optimization=no_optimization,
         )
 
@@ -2653,6 +2696,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
         slice_pushdown: bool = True,
+        collapse_joins: bool = True,
         no_optimization: bool = False,
     ) -> PyLazyFrame:
         if no_optimization:
@@ -2669,6 +2713,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subplan_elim=False,
             comm_subexpr_elim=False,
             cluster_with_columns=False,
+            collapse_joins=collapse_joins,
             streaming=True,
             _eager=False,
             new_streaming=False,
@@ -2692,6 +2737,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
         cluster_with_columns: bool = True,
+        collapse_joins: bool = True,
         streaming: bool = False,
     ) -> DataFrame:
         """
@@ -2725,6 +2771,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subplan_elim=comm_subplan_elim,
             comm_subexpr_elim=comm_subexpr_elim,
             cluster_with_columns=cluster_with_columns,
+            collapse_joins=collapse_joins,
             streaming=streaming,
         )
 
@@ -2741,6 +2788,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
         cluster_with_columns: bool = True,
+        collapse_joins: bool = True,
         streaming: bool = False,
     ) -> DataFrame:
         """
@@ -2771,6 +2819,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Common subexpressions will be cached and reused.
         cluster_with_columns
             Combine sequential independent calls to with_columns
+        collapse_joins
+            Collapse a join and filters into a faster join
         streaming
             Run parts of the query in a streaming fashion (this is in an alpha state)
 
@@ -2823,6 +2873,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subplan_elim = False
             comm_subexpr_elim = False
             cluster_with_columns = False
+            collapse_joins = False
 
         if streaming:
             issue_unstable_warning("Streaming mode is considered unstable.")
@@ -2836,6 +2887,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subplan_elim,
             comm_subexpr_elim,
             cluster_with_columns,
+            collapse_joins,
             streaming,
             _eager=False,
             new_streaming=False,
