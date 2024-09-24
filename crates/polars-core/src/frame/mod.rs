@@ -1870,7 +1870,7 @@ impl DataFrame {
         let df = df.as_single_chunk_par();
         let mut take = match (by_column.len(), has_struct) {
             (1, false) => {
-                let s = &by_column[0].as_materialized_series();
+                let s = &by_column[0];
                 let options = SortOptions {
                     descending: sort_options.descending[0],
                     nulls_last: sort_options.nulls_last[0],
