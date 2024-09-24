@@ -406,9 +406,7 @@ impl LogicalType for CategoricalChunked {
 
                 #[cfg(feature = "bigidx")]
                 {
-                    let s = slf
-                        .physical
-                        .cast_with_options(&DataType::UInt64, options)?;
+                    let s = slf.physical.cast_with_options(&DataType::UInt64, options)?;
                     Ok(unsafe { casted_series.take_unchecked(s.u64()?) })
                 }
                 #[cfg(not(feature = "bigidx"))]
