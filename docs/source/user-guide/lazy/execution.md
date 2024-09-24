@@ -53,7 +53,8 @@ We look at [streaming in more detail here](streaming.md).
 
 While you're writing, optimizing or checking your query on a large dataset, querying all available data may lead to a slow development process.
 
-You can instead limit the number of scanned partitions or use .head early in the query when testing. Keep in mind that aggregations and filters may behave unpredictably on subsets of data.
+Instead, you can scan a subset of your partitions or use `.head`/`.collect` at the beginning and end of your query, respectively.
+Keep in mind that the results of aggregations and filters on subsets of your data may not be representative of the result you would get on the full data.
 
 {{code_block('user-guide/lazy/execution','partial',['scan_csv','collect','head'])}}
 
