@@ -37,7 +37,7 @@ use crate::chunked_array::cast::CastOptions;
 #[cfg(feature = "row_hash")]
 use crate::hashing::_df_rows_to_hashes_threaded_vertical;
 #[cfg(feature = "zip_with")]
-use crate::prelude::min_max_binary::min_max_binary_series;
+use crate::prelude::min_max_binary::min_max_binary_columns;
 use crate::prelude::sort::{argsort_multiple_row_fmt, prepare_arg_sort};
 use crate::series::IsSorted;
 use crate::POOL;
@@ -2584,24 +2584,19 @@ impl DataFrame {
 
     /// Aggregate the column horizontally to their min values.
     #[cfg(feature = "zip_with")]
-    pub fn min_horizontal(&self) -> PolarsResult<Option<Series>> {
-        let min_fn = |acc: &Series, s: &Series| min_max_binary_series(acc, s, true);
+    pub fn min_horizontal(&self) -> PolarsResult<Option<Column>> {
+        let min_fn = |acc: &Column, s: &Column| min_max_binary_columns(acc, s, true);
 
         match self.columns.len() {
             0 => Ok(None),
-            1 => Ok(Some(
-                self.columns[0].clone().as_materialized_series().clone(),
-            )),
-            2 => min_fn(
-                self.columns[0].as_materialized_series(),
-                self.columns[1].as_materialized_series(),
-            )
-            .map(Some),
+            1 => Ok(Some(self.columns[0].clone())),
+            2 => min_fn(&self.columns[0], &self.columns[1]).map(Some),
             _ => {
                 // the try_reduce_with is a bit slower in parallelism,
                 // but I don't think it matters here as we parallelize over columns, not over elements
                 POOL.install(|| {
-                    self.par_materialized_column_iter()
+                    self.columns
+                        .par_iter()
                         .map(|s| Ok(Cow::Borrowed(s)))
                         .try_reduce_with(|l, r| min_fn(&l, &r).map(Cow::Owned))
                         // we can unwrap the option, because we are certain there is a column
@@ -2615,22 +2610,19 @@ impl DataFrame {
 
     /// Aggregate the column horizontally to their max values.
     #[cfg(feature = "zip_with")]
-    pub fn max_horizontal(&self) -> PolarsResult<Option<Series>> {
-        let max_fn = |acc: &Series, s: &Series| min_max_binary_series(acc, s, false);
+    pub fn max_horizontal(&self) -> PolarsResult<Option<Column>> {
+        let max_fn = |acc: &Column, s: &Column| min_max_binary_columns(acc, s, false);
 
         match self.columns.len() {
             0 => Ok(None),
-            1 => Ok(Some(self.columns[0].as_materialized_series().clone())),
-            2 => max_fn(
-                self.columns[0].as_materialized_series(),
-                self.columns[1].as_materialized_series(),
-            )
-            .map(Some),
+            1 => Ok(Some(self.columns[0].clone())),
+            2 => max_fn(&self.columns[0], &self.columns[1]).map(Some),
             _ => {
                 // the try_reduce_with is a bit slower in parallelism,
                 // but I don't think it matters here as we parallelize over columns, not over elements
                 POOL.install(|| {
-                    self.par_materialized_column_iter()
+                    self.columns
+                        .par_iter()
                         .map(|s| Ok(Cow::Borrowed(s)))
                         .try_reduce_with(|l, r| max_fn(&l, &r).map(Cow::Owned))
                         // we can unwrap the option, because we are certain there is a column
