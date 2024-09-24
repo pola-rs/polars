@@ -16,8 +16,8 @@ use crate::utils::{slice_offsets, Container};
 use crate::{HEAD_DEFAULT_LENGTH, TAIL_DEFAULT_LENGTH};
 
 mod arithmetic;
-mod scalar;
 mod compare;
+mod scalar;
 
 /// A column within a [`DataFrame`].
 ///
