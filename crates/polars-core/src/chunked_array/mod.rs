@@ -768,6 +768,8 @@ where
                 })
                 .collect();
 
+            debug_assert_eq!(offset, array.len());
+
             // SAFETY: We just slice the original chunks, their type will not change.
             unsafe {
                 Self::from_chunks_and_dtype(self.name().clone(), chunks, self.dtype().clone())

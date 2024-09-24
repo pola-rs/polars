@@ -178,6 +178,7 @@ pub trait Array: Send + Sync + dyn_clone::DynClone + 'static {
     /// The caller must ensure that `offset + length <= self.len()`
     #[must_use]
     unsafe fn sliced_unchecked(&self, offset: usize, length: usize) -> Box<dyn Array> {
+        debug_assert!(offset + length <= self.len());
         let mut new = self.to_boxed();
         new.slice_unchecked(offset, length);
         new
