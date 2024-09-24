@@ -840,11 +840,11 @@ def test_list_and_numeric_arithmetic_error_cases() -> None:
     numeric = pl.Series("a", [1, 2])
     list_num = pl.Series("b", [[3, 4], [5, 6]])
     with pytest.raises(InvalidOperationError, match="operation not supported"):
-        numeric / list_num
+        _ = numeric / list_num
     with pytest.raises(InvalidOperationError, match="operation not supported"):
-        numeric - list_num
+        _ = numeric - list_num
     with pytest.raises(InvalidOperationError, match="operation not supported"):
-        numeric % list_num
+        _ = numeric % list_num
 
 
 def test_schema_owned_arithmetic_5669() -> None:
