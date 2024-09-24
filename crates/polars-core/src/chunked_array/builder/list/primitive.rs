@@ -19,7 +19,10 @@ where
         values_capacity: usize,
         inner_type: DataType,
     ) -> Self {
-        assert!(inner_type.is_numeric(), "inner type must be primitive");
+        assert!(
+            inner_type.is_numeric() || inner_type.is_temporal(),
+            "inner type must be primitive"
+        );
         let values = MutablePrimitiveArray::<T::Native>::with_capacity(values_capacity);
         let builder = LargePrimitiveBuilder::<T::Native>::new_with_capacity(values, capacity);
         let field = Field::new(name, DataType::List(Box::new(inner_type)));
