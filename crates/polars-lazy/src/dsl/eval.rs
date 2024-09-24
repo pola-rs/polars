@@ -1,4 +1,5 @@
 use polars_core::prelude::*;
+use polars_core::POOL;
 use polars_expr::{create_physical_expr, ExpressionConversionState};
 use rayon::prelude::*;
 
@@ -76,19 +77,21 @@ pub trait ExprEvalExtension: IntoExpr + Sized {
             };
 
             let avs = if parallel {
-                (1..c.len() + 1)
-                    .into_par_iter()
-                    .map(|len| {
-                        let s = c.slice(0, len);
-                        if (len - s.null_count()) >= min_periods {
-                            let df = c.clone().into_frame();
-                            let out = phys_expr.evaluate(&df, &state)?.into_column();
-                            finish(out)
-                        } else {
-                            Ok(AnyValue::Null)
-                        }
-                    })
-                    .collect::<PolarsResult<Vec<_>>>()?
+                POOL.install(|| {
+                    (1..c.len() + 1)
+                        .into_par_iter()
+                        .map(|len| {
+                            let s = c.slice(0, len);
+                            if (len - s.null_count()) >= min_periods {
+                                let df = c.clone().into_frame();
+                                let out = phys_expr.evaluate(&df, &state)?.into_column();
+                                finish(out)
+                            } else {
+                                Ok(AnyValue::Null)
+                            }
+                        })
+                        .collect::<PolarsResult<Vec<_>>>()
+                })?
             } else {
                 let mut df_container = DataFrame::empty();
                 (1..c.len() + 1)
