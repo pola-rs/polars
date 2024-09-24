@@ -1019,8 +1019,11 @@ class Series:
             else:
                 return self._from_pyseries(getattr(self._s, op_s)(_s))
         else:
-            other = maybe_cast(other, self.dtype)
-            f = get_ffi_func(op_ffi, self.dtype, self._s)
+            dtype = self.dtype
+            while hasattr(dtype, "inner"):
+                dtype = dtype.inner
+            other = maybe_cast(other, dtype)
+            f = get_ffi_func(op_ffi, dtype, self._s)
         if f is None:
             msg = (
                 f"cannot do arithmetic with Series of dtype: {self.dtype!r} and argument"
