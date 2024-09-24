@@ -49,15 +49,15 @@ impl PyDataFrame {
                 (0..df.height()).map(|idx| {
                     PyTuple::new_bound(
                         py,
-                        self.df.get_columns().iter().map(|s| match s.dtype() {
+                        self.df.get_columns().iter().map(|c| match c.dtype() {
                             DataType::Null => py.None(),
                             DataType::Object(_, _) => {
                                 let obj: Option<&ObjectValue> =
-                                    s.get_object(idx).map(|any| any.into());
+                                    c.get_object(idx).map(|any| any.into());
                                 obj.to_object(py)
                             },
                             // SAFETY: we are in bounds.
-                            _ => unsafe { Wrap(s.get_unchecked(idx)).into_py(py) },
+                            _ => unsafe { Wrap(c.get_unchecked(idx)).into_py(py) },
                         }),
                     )
                 }),
