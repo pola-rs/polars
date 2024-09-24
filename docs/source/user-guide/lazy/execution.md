@@ -48,3 +48,22 @@ If your data requires more memory than you have available Polars may be able to 
 {{code_block('user-guide/lazy/execution','stream',['scan_csv','collect'])}}
 
 We look at [streaming in more detail here](streaming.md).
+
+### Execution on a partial dataset
+
+While you're writing, optimizing or checking your query on a large dataset, querying all available data may lead to a slow development process.
+
+You can instead limit the number of scanned partitions or use .head early in the query when testing. Keep in mind that aggregations and filters may behave unpredictably on subsets of data.
+
+{{code_block('user-guide/lazy/execution','partial',['scan_csv','collect','head'])}}
+
+```text
+shape: (1, 6)
+┌─────┬─────────────────────────┬─────────────┬────────────┬───────────────┬────────────┐
+│ id  ┆ name                    ┆ created_utc ┆ updated_on ┆ comment_karma ┆ link_karma │
+│ --- ┆ ---                     ┆ ---         ┆ ---        ┆ ---           ┆ ---        │
+│ i64 ┆ str                     ┆ i64         ┆ i64        ┆ i64           ┆ i64        │
+╞═════╪═════════════════════════╪═════════════╪════════════╪═══════════════╪════════════╡
+│ 6   ┆ TAOJIANLONG_JASONBROKEN ┆ 1397113510  ┆ 1536527864 ┆ 4             ┆ 0          │
+└─────┴─────────────────────────┴─────────────┴────────────┴───────────────┴────────────┘
+ ```
