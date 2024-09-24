@@ -563,6 +563,11 @@ impl<'a> AnyValue<'a> {
             (AnyValue::Float64(v), DataType::Boolean) => AnyValue::Boolean(*v != f64::default()),
 
             // to string
+            (AnyValue::String(v), DataType::String) => {
+                AnyValue::StringOwned(PlSmallStr::from_str(v))
+            },
+            (AnyValue::StringOwned(v), DataType::String) => AnyValue::StringOwned(v.clone()),
+
             (av, DataType::String) => {
                 if av.is_unsigned_integer() {
                     AnyValue::StringOwned(format_pl_smallstr!("{}", av.extract::<u64>()?))
