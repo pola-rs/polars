@@ -2,8 +2,6 @@ use std::fmt::Write;
 
 use arrow::bitmap::MutableBitmap;
 
-#[cfg(feature = "dtype-categorical")]
-use crate::chunked_array::cast::CastOptions;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::registry::ObjectRegistry;
 use crate::prelude::*;
@@ -146,9 +144,9 @@ impl Series {
             #[cfg(feature = "dtype-duration")]
             DataType::Duration(tu) => any_values_to_duration(values, *tu, strict)?.into_series(),
             #[cfg(feature = "dtype-categorical")]
-            dt @ (DataType::Categorical(_, _) | DataType::Enum(_, _)) => {
-                any_values_to_categorical(values, dt, strict)?
-            },
+            dt @ DataType::Categorical(_, _) => any_values_to_categorical(values, dt, strict)?,
+            #[cfg(feature = "dtype-categorical")]
+            dt @ DataType::Enum(_, _) => any_values_to_enum(values, dt, strict)?,
             #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(precision, scale) => {
                 any_values_to_decimal(values, *precision, *scale, strict)?.into_series()
@@ -445,14 +443,91 @@ fn any_values_to_categorical(
     dtype: &DataType,
     strict: bool,
 ) -> PolarsResult<Series> {
-    // TODO: Handle AnyValues of type Categorical/Enum.
-    // TODO: Avoid materializing to String before casting to Categorical/Enum.
-    let ca = any_values_to_string(values, strict)?;
-    if strict {
-        ca.into_series().strict_cast(dtype)
-    } else {
-        ca.cast_with_options(dtype, CastOptions::NonStrict)
+    let ordering = match dtype {
+        DataType::Categorical(_, ordering) => ordering,
+        _ => panic!("any_values_to_categorical with dtype={dtype:?}"),
+    };
+
+    let mut builder = CategoricalChunkedBuilder::new(PlSmallStr::EMPTY, values.len(), *ordering);
+
+    let mut owned = String::new(); // Amortize allocations.
+    for av in values {
+        match av {
+            AnyValue::String(s) => builder.append_value(s),
+            AnyValue::StringOwned(s) => builder.append_value(s),
+
+            AnyValue::Enum(s, rev, _) => builder.append_value(rev.get(*s)),
+            AnyValue::EnumOwned(s, rev, _) => builder.append_value(rev.get(*s)),
+
+            AnyValue::Categorical(s, rev, _) => builder.append_value(rev.get(*s)),
+            AnyValue::CategoricalOwned(s, rev, _) => builder.append_value(rev.get(*s)),
+
+            AnyValue::Binary(_) | AnyValue::BinaryOwned(_) if !strict => builder.append_null(),
+            AnyValue::Null => builder.append_null(),
+
+            av => {
+                if strict {
+                    return Err(invalid_value_error(&DataType::String, av));
+                }
+
+                owned.clear();
+                write!(owned, "{av}").unwrap();
+                builder.append_value(&owned);
+            },
+        }
     }
+
+    let ca = builder.finish();
+
+    Ok(ca.into_series())
+}
+
+#[cfg(feature = "dtype-categorical")]
+fn any_values_to_enum(values: &[AnyValue], dtype: &DataType, strict: bool) -> PolarsResult<Series> {
+    use self::enum_::EnumChunkedBuilder;
+
+    let (rev, ordering) = match dtype {
+        DataType::Enum(rev, ordering) => (rev.clone(), ordering),
+        _ => panic!("any_values_to_categorical with dtype={dtype:?}"),
+    };
+
+    let Some(rev) = rev else {
+        polars_bail!(nyi = "Not yet possible to create enum series without a rev-map");
+    };
+
+    let mut builder =
+        EnumChunkedBuilder::new(PlSmallStr::EMPTY, values.len(), rev, *ordering, strict);
+
+    let mut owned = String::new(); // Amortize allocations.
+    for av in values {
+        match av {
+            AnyValue::String(s) => builder.append_str(s)?,
+            AnyValue::StringOwned(s) => builder.append_str(s)?,
+
+            AnyValue::Enum(s, rev, _) => builder.append_enum(*s, rev)?,
+            AnyValue::EnumOwned(s, rev, _) => builder.append_enum(*s, rev)?,
+
+            AnyValue::Categorical(s, rev, _) => builder.append_str(rev.get(*s))?,
+            AnyValue::CategoricalOwned(s, rev, _) => builder.append_str(rev.get(*s))?,
+
+            AnyValue::Binary(_) | AnyValue::BinaryOwned(_) if !strict => builder.append_null(),
+            AnyValue::Null => builder.append_null(),
+
+            av => {
+                if strict {
+                    return Err(invalid_value_error(&DataType::String, av));
+                }
+
+                owned.clear();
+                write!(owned, "{av}").unwrap();
+                builder.append_str(&owned)?
+            },
+        };
+    }
+
+    let ca = builder.finish();
+
+    Ok(ca.into_series())
 }
 
 #[cfg(feature = "dtype-decimal")]
