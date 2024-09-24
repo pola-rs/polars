@@ -2,8 +2,7 @@ python:
   DataFrame: https://docs.pola.rs/api/python/stable/reference/dataframe/index.html
   LazyFrame: https://docs.pola.rs/api/python/stable/reference/lazyframe/index.html
   Series: https://docs.pola.rs/api/python/stable/reference/series/index.html
-  Categorical: https://docs.pola.rs/api/python/stable/reference/api/polars.Categorical.html
-  GPUEngine: https://docs.pola.rs/api/python/stable/lazyframe/api/polars.lazyframe.engine_config.GPUEngine.html
+  Categorical: https://docs.pola.rs/api/python/stable/reference/api/polars.datatypes.Categorical.html
   Config: https://docs.pola.rs/api/python/stable/reference/config.html
   select: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.select.html
   filter: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.filter.html
@@ -28,7 +27,7 @@ python:
   head: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.head.html
   tail: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.tail.html
   describe: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.describe.html
-  col: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.col.html
+  col: https://docs.pola.rs/api/python/stable/reference/expressions/col.html
   sort: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.sort.html
   scan_csv: https://docs.pola.rs/api/python/stable/reference/api/polars.scan_csv.html
   collect: https://docs.pola.rs/api/python/stable/reference/lazyframe/api/polars.LazyFrame.collect.html
@@ -40,9 +39,8 @@ python:
   all: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.all.html
   exclude: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.exclude.html
   alias: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.alias.html
-  prefix: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.prefix.html
-  suffix: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.suffix.html
-  map_alias: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.map_alias.html
+  prefix: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.name.prefix.html
+  suffix: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.name.suffix.html
   n_unique: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.n_unique.html
   approx_n_unique: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.approx_n_unique.html
   when: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.when.html
@@ -86,26 +84,23 @@ python:
   lazy: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.lazy.html
   explain: https://docs.pola.rs/api/python/stable/reference/lazyframe/api/polars.LazyFrame.explain.html
   fetch: https://docs.pola.rs/api/python/stable/reference/lazyframe/api/polars.LazyFrame.fetch.html
-  SQLContext: https://docs.pola.rs/api/python/stable/reference/sql
+  SQLContext: https://docs.pola.rs/api/python/stable/reference/sql/python_api.html#polars.SQLContext
   SQLregister:
     name: register
-    link: https://docs.pola.rs/api/python/stable/reference/api/polars.SQLContext.register.html#polars.SQLContext.register
+    link: https://docs.pola.rs/api/python/stable/reference/sql/api/polars.SQLContext.register.html#polars.SQLContext.register
   SQLregister_many:
     name: register_many
-    link: https://docs.pola.rs/api/python/stable/reference/api/polars.SQLContext.register_many.html
-  SQLquery:
-    name: query
-    link: https://docs.pola.rs/api/python/stable/reference/api/polars.SQLContext.query.html
+    link: https://docs.pola.rs/api/python/stable/reference/sql/api/polars.SQLContext.register_many.html
   SQLexecute:
     name: execute
-    link: https://docs.pola.rs/api/python/stable/reference/api/polars.SQLContext.execute.html
+    link: https://docs.pola.rs/api/python/stable/reference/sql/api/polars.SQLContext.execute.html
   join_asof: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.join_asof.html
   concat: https://docs.pola.rs/api/python/stable/reference/api/polars.concat.html
   pivot: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.pivot.html
   unpivot: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.unpivot.html
   is_between: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.is_between.html
 
-  date_range: https://docs.pola.rs/api/python/stable/reference/api/polars.date_range.html
+  date_range: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.date_range.html
   upsample: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.upsample.html
   group_by_dynamic: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.group_by_dynamic.html
   cast: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.cast.html
@@ -113,7 +108,7 @@ python:
     name: log
     link: https://numpy.org/doc/stable/reference/generated/numpy.log.html
     feature_flags: ['numpy']
-  Array: https://docs.pola.rs/api/python/stable/reference/api/polars.Array.html
+  Array: https://docs.pola.rs/api/python/stable/reference/api/polars.datatypes.Array.html
   Series.arr: https://docs.pola.rs/api/python/stable/reference/series/array.html
   Series.dt.day: https://docs.pola.rs/api/python/stable/reference/series/api/polars.Series.dt.day.html
 
@@ -169,10 +164,9 @@ rust:
     name: group_by_dynamic
     link: https://docs.pola.rs/api/rust/dev/polars_lazy/frame/struct.LazyFrame.html#method.group_by_dynamic
     feature_flags: [dynamic_group_by]
-  join: https://docs.pola.rs/api/rust/dev/polars_core/frame/hash_join/index.html
+  join: https://docs.pola.rs/api/rust/dev/polars/prelude/trait.DataFrameJoinOps.html#method.join
   hstack: https://docs.pola.rs/api/rust/dev/polars_core/frame/struct.DataFrame.html#method.hstack
   concat: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/functions/fn.concat.html
-  SQLContext: https://docs.pola.rs/api/python/stable/reference/sql.html
 
   explain: https://docs.rs/polars/latest/polars/prelude/struct.LazyFrame.html#method.explain
 
@@ -189,7 +183,7 @@ rust:
 
   read_csv:
     name: CsvReader
-    link: https://docs.pola.rs/api/rust/dev/polars_io/csv/struct.CsvReader.html
+    link: https://docs.pola.rs/api/rust/dev/polars/prelude/struct.CsvReader.html
     feature_flags: ['csv']
   scan_csv:
     name: LazyCsvReader
@@ -197,7 +191,7 @@ rust:
     feature_flags: ['csv']
   write_csv:
     name: CsvWriter
-    link: https://docs.pola.rs/api/rust/dev/polars_io/csv/struct.CsvWriter.html
+    link: https://docs.pola.rs/api/rust/dev/polars/prelude/struct.CsvWriter.html
     feature_flags: ['csv']
   read_json:
     name: JsonReader
@@ -221,11 +215,11 @@ rust:
     feature_flags: ['json']
   read_parquet:
     name: ParquetReader
-    link: https://docs.pola.rs/api/rust/dev/polars_io/parquet/struct.ParquetReader.html
+    link: https://docs.pola.rs/api/rust/dev/polars/prelude/struct.ParquetReader.html
     feature_flags: ['parquet']
   write_parquet:
     name: ParquetWriter
-    link: https://docs.pola.rs/api/rust/dev/polars_io/parquet/struct.ParquetWriter.html
+    link: https://docs.pola.rs/api/rust/dev/polars/prelude/struct.ParquetWriter.html
     feature_flags: ['parquet']
   scan_parquet:
     name: scan_parquet
@@ -233,7 +227,7 @@ rust:
     feature_flags: ['parquet']
   read_ipc:
     name: IpcReader
-    link: https://docs.pola.rs/api/rust/dev/polars_io/prelude/struct.IpcReader.html
+    link: https://docs.pola.rs/api/rust/dev/polars/prelude/struct.IpcReader.html
     feature_flags: ['ipc']
   scan_pyarrow_dataset: https://docs.pola.rs/api/python/stable/reference/api/polars.scan_pyarrow_dataset.html
 
@@ -277,7 +271,7 @@ rust:
     feature_flags: ['concat_str']
   concat_list:
     name: concat_lst
-    link: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/fn.concat_lst.html
+    link: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/fn.concat_list.html
   over: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/enum.Expr.html#method.over
 
   alias: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/enum.Expr.html#method.alias
