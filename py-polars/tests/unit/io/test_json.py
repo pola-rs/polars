@@ -430,3 +430,11 @@ def test_empty_list_json() -> None:
     df = pl.read_json(b"[]")
     assert df.shape == (0, 0)
     assert isinstance(df, pl.DataFrame)
+
+
+def test_json_infer_3_dtypes() -> None:
+    # would SO before
+    df = pl.DataFrame({"a": ["{}", "1", "[1, 2]"]})
+    out = df.select(pl.col("a").str.json_decode())
+    assert out["a"].to_list() == [None, ["1"], ["1", "2"]]
+    assert out.dtypes[0] == pl.List(pl.String)
