@@ -9,10 +9,7 @@ pub(super) fn rename_impl(
         let schema = df.schema();
         existing
             .iter()
-            .map(|old| match schema.get_full(old) {
-                Some((idx, _, _)) => Some(idx),
-                None => None,
-            })
+            .map(|old| schema.get_full(old).map(|(idx, _, _)| idx))
             .collect::<Vec<_>>()
     } else {
         existing
