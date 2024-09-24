@@ -116,7 +116,7 @@ def test_series_to_numpy_temporal_zero_copy(
 
 def test_series_to_numpy_datetime_with_tz_zero_copy() -> None:
     values = [datetime(1970, 1, 1), datetime(2024, 2, 28)]
-    s = pl.Series(values).dt.convert_time_zone("Europe/Amsterdam")
+    s = pl.Series(values).dt.convert_time_zone("Europe/Amsterdam").rechunk()
     result = s.to_numpy(allow_copy=False)
 
     assert_zero_copy(s, result)

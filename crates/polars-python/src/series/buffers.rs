@@ -342,7 +342,7 @@ where
 }
 fn series_to_bitmap(s: Series) -> PyResult<Bitmap> {
     let ca_result = s.bool();
-    let ca = ca_result.map_err(PyPolarsErr::from)?;
+    let ca = ca_result.map_err(PyPolarsErr::from)?.rechunk();
     let arr = ca.downcast_iter().next().unwrap();
     let bitmap = arr.values().clone();
     Ok(bitmap)

@@ -62,6 +62,9 @@ def test_eager_struct() -> None:
 
 
 def test_struct_from_schema_only() -> None:
+    # Workaround for new streaming engine.
+    pl.enable_string_cache()
+
     # we create a dataframe with default types
     df = pl.DataFrame(
         {

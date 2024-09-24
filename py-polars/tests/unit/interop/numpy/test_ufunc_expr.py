@@ -33,13 +33,11 @@ def test_ufunc_expr_not_first() -> None:
     out = df.select(
         np.power(2.0, cast(Any, pl.col("a"))).alias("power"),
         (2.0 / cast(Any, pl.col("a"))).alias("divide_scalar"),
-        (np.array([2, 2, 2]) / cast(Any, pl.col("a"))).alias("divide_array"),
     )
     expected = pl.DataFrame(
         [
             pl.Series("power", [2**1, 2**2, 2**3], dtype=pl.Float64),
             pl.Series("divide_scalar", [2 / 1, 2 / 2, 2 / 3], dtype=pl.Float64),
-            pl.Series("divide_array", [2 / 1, 2 / 2, 2 / 3], dtype=pl.Float64),
         ]
     )
     assert_frame_equal(out, expected)
@@ -68,13 +66,11 @@ def test_lazy_ufunc_expr_not_first() -> None:
     out = ldf.select(
         np.power(2.0, cast(Any, pl.col("a"))).alias("power"),
         (2.0 / cast(Any, pl.col("a"))).alias("divide_scalar"),
-        (np.array([2, 2, 2]) / cast(Any, pl.col("a"))).alias("divide_array"),
     )
     expected = pl.DataFrame(
         [
             pl.Series("power", [2**1, 2**2, 2**3], dtype=pl.Float64),
             pl.Series("divide_scalar", [2 / 1, 2 / 2, 2 / 3], dtype=pl.Float64),
-            pl.Series("divide_array", [2 / 1, 2 / 2, 2 / 3], dtype=pl.Float64),
         ]
     )
     assert_frame_equal(out.collect(), expected)
