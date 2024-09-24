@@ -689,22 +689,16 @@ pub fn cast(
 
         // temporal casts
         (Int32, Date32) => primitive_to_same_primitive_dyn::<i32>(array, to_type),
-        (Int32, Time32(TimeUnit::Second)) => primitive_to_same_primitive_dyn::<i32>(array, to_type),
-        (Int32, Time32(TimeUnit::Millisecond)) => {
-            primitive_to_same_primitive_dyn::<i32>(array, to_type)
-        },
+        (Int32, Time32(TimeUnit::Second)) => primitive_dyn!(array, int32_to_time32s),
+        (Int32, Time32(TimeUnit::Millisecond)) => primitive_dyn!(array, int32_to_time32ms),
         // No support for microsecond/nanosecond with i32
         (Date32, Int32) => primitive_to_same_primitive_dyn::<i32>(array, to_type),
         (Date32, Int64) => primitive_to_primitive_dyn::<i32, i64>(array, to_type, options),
         (Time32(_), Int32) => primitive_to_same_primitive_dyn::<i32>(array, to_type),
         (Int64, Date64) => primitive_to_same_primitive_dyn::<i64>(array, to_type),
         // No support for second/milliseconds with i64
-        (Int64, Time64(TimeUnit::Microsecond)) => {
-            primitive_to_same_primitive_dyn::<i64>(array, to_type)
-        },
-        (Int64, Time64(TimeUnit::Nanosecond)) => {
-            primitive_to_same_primitive_dyn::<i64>(array, to_type)
-        },
+        (Int64, Time64(TimeUnit::Microsecond)) => primitive_dyn!(array, int64_to_time64us),
+        (Int64, Time64(TimeUnit::Nanosecond)) => primitive_dyn!(array, int64_to_time64ns),
 
         (Date64, Int32) => primitive_to_primitive_dyn::<i64, i32>(array, to_type, options),
         (Date64, Int64) => primitive_to_same_primitive_dyn::<i64>(array, to_type),

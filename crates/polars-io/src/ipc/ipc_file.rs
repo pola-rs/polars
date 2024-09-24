@@ -298,7 +298,14 @@ impl<R: MmapBytesReader> SerReader<R> for IpcReader<R> {
 
         if let Some((col, value)) = include_file_path {
             unsafe {
-                df.with_column_unchecked(StringChunked::full(col, &value, row_count).into_series())
+                df.with_column_unchecked(Column::new_scalar(
+                    col,
+                    Scalar::new(
+                        DataType::String,
+                        AnyValue::StringOwned(value.as_ref().into()),
+                    ),
+                    row_count,
+                ))
             };
         }
 

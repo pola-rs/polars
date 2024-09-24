@@ -451,7 +451,7 @@ pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool, is_scalar: bool) -> PyR
             let av = s
                 .get(0)
                 .map_err(|_| PyValueError::new_err("expected at least 1 value"))?;
-            let av = av.into_static().map_err(PyPolarsErr::from)?;
+            let av = av.into_static();
             Ok(dsl::lit(Scalar::new(s.dtype().clone(), av)).into())
         } else {
             Ok(dsl::lit(s).into())

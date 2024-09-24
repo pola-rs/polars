@@ -1,4 +1,6 @@
 use arrow::bitmap::Bitmap;
+use arrow::buffer::Buffer;
+use arrow::offset::OffsetsBuffer;
 
 #[cfg(feature = "object")]
 use crate::chunked_array::object::registry::get_object_builder;
@@ -63,6 +65,27 @@ impl Series {
                 } else {
                     ca.into_series()
                 }
+            },
+            DataType::BinaryOffset => {
+                let length = size as IdxSize;
+
+                let offsets = vec![0; size + 1];
+                let array = BinaryArray::<i64>::new(
+                    dtype.to_arrow(CompatLevel::oldest()),
+                    unsafe { OffsetsBuffer::new_unchecked(Buffer::from(offsets)) },
+                    Buffer::default(),
+                    Some(Bitmap::new_zeroed(size)),
+                );
+
+                unsafe {
+                    BinaryOffsetChunked::new_with_dims(
+                        Arc::new(Field::new(name, dtype.clone())),
+                        vec![Box::new(array)],
+                        length,
+                        length,
+                    )
+                }
+                .into_series()
             },
             DataType::Null => Series::new_null(name, size),
             DataType::Unknown(kind) => {

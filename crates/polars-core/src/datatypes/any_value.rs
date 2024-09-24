@@ -1,12 +1,7 @@
 use std::borrow::Cow;
 
-#[cfg(feature = "dtype-struct")]
-use arrow::legacy::trusted_len::TrustedLenPush;
 use arrow::types::PrimitiveType;
 use polars_utils::format_pl_smallstr;
-use polars_utils::itertools::Itertools;
-#[cfg(feature = "dtype-struct")]
-use polars_utils::slice::GetSaferUnchecked;
 #[cfg(feature = "dtype-categorical")]
 use polars_utils::sync::SyncPtr;
 use polars_utils::total_ord::ToTotalOrd;
@@ -907,12 +902,34 @@ impl<'a> AnyValue<'a> {
         }
     }
 
+    pub(crate) fn to_i128(&self) -> Option<i128> {
+        match self {
+            AnyValue::UInt8(v) => Some((*v).into()),
+            AnyValue::UInt16(v) => Some((*v).into()),
+            AnyValue::UInt32(v) => Some((*v).into()),
+            AnyValue::UInt64(v) => Some((*v).into()),
+            AnyValue::Int8(v) => Some((*v).into()),
+            AnyValue::Int16(v) => Some((*v).into()),
+            AnyValue::Int32(v) => Some((*v).into()),
+            AnyValue::Int64(v) => Some((*v).into()),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn to_f64(&self) -> Option<f64> {
+        match self {
+            AnyValue::Float32(v) => Some((*v).into()),
+            AnyValue::Float64(v) => Some(*v),
+            _ => None,
+        }
+    }
+
     #[must_use]
     pub fn add(&self, rhs: &AnyValue) -> AnyValue<'static> {
         use AnyValue::*;
         match (self, rhs) {
-            (Null, r) => r.clone().into_static().unwrap(),
-            (l, Null) => l.clone().into_static().unwrap(),
+            (Null, r) => r.clone().into_static(),
+            (l, Null) => l.clone().into_static(),
             (Int32(l), Int32(r)) => Int32(l + r),
             (Int64(l), Int64(r)) => Int64(l + r),
             (UInt32(l), UInt32(r)) => UInt32(l + r),
@@ -961,9 +978,9 @@ impl<'a> AnyValue<'a> {
     /// Try to coerce to an AnyValue with static lifetime.
     /// This can be done if it does not borrow any values.
     #[inline]
-    pub fn into_static(self) -> PolarsResult<AnyValue<'static>> {
+    pub fn into_static(self) -> AnyValue<'static> {
         use AnyValue::*;
-        let av = match self {
+        match self {
             Null => Null,
             Int8(v) => Int8(v),
             Int16(v) => Int16(v),
@@ -997,7 +1014,7 @@ impl<'a> AnyValue<'a> {
             Object(v) => ObjectOwned(OwnedObject(v.to_boxed())),
             #[cfg(feature = "dtype-struct")]
             Struct(idx, arr, fields) => {
-                let avs = struct_to_avs_static(idx, arr, fields)?;
+                let avs = struct_to_avs_static(idx, arr, fields);
                 StructOwned(Box::new((avs, fields.to_vec())))
             },
             #[cfg(feature = "dtype-struct")]
@@ -1022,8 +1039,7 @@ impl<'a> AnyValue<'a> {
             Enum(v, rev, arr) => EnumOwned(v, Arc::new(rev.clone()), arr),
             #[cfg(feature = "dtype-categorical")]
             EnumOwned(v, rev, arr) => EnumOwned(v, rev, arr),
-        };
-        Ok(av)
+        }
     }
 
     /// Get a reference to the `&str` contained within [`AnyValue`].
@@ -1070,6 +1086,37 @@ impl<'a> From<AnyValue<'a>> for Option<i64> {
 impl AnyValue<'_> {
     #[inline]
     pub fn eq_missing(&self, other: &Self, null_equal: bool) -> bool {
+        fn struct_owned_value_iter<'a>(
+            v: &'a (Vec<AnyValue<'_>>, Vec<Field>),
+        ) -> impl ExactSizeIterator<Item = AnyValue<'a>> {
+            v.0.iter().map(|v| v.as_borrowed())
+        }
+        fn struct_value_iter(
+            idx: usize,
+            arr: &StructArray,
+        ) -> impl ExactSizeIterator<Item = AnyValue<'_>> {
+            assert!(idx < arr.len());
+
+            arr.values().iter().map(move |field_arr| unsafe {
+                // SAFETY: We asserted before that idx is smaller than the array length. Since it
+                // is an invariant of StructArray that all fields have the same length this is fine
+                // to do.
+                field_arr.get_unchecked(idx)
+            })
+        }
+
+        fn struct_eq_missing<'a>(
+            l: impl ExactSizeIterator<Item = AnyValue<'a>>,
+            r: impl ExactSizeIterator<Item = AnyValue<'a>>,
+            null_equal: bool,
+        ) -> bool {
+            if l.len() != r.len() {
+                return false;
+            }
+
+            l.zip(r).all(|(lv, rv)| lv.eq_missing(&rv, null_equal))
+        }
+
         use AnyValue::*;
         match (self, other) {
             // Map to borrowed.
@@ -1150,25 +1197,31 @@ impl AnyValue<'_> {
             },
             #[cfg(feature = "dtype-duration")]
             (Duration(l, tu_l), Duration(r, tu_r)) => l == r && tu_l == tu_r,
+
             #[cfg(feature = "dtype-struct")]
-            (StructOwned(l), StructOwned(r)) => {
-                let l_av = &*l.0;
-                let r_av = &*r.0;
-                l_av == r_av
-            },
+            (StructOwned(l), StructOwned(r)) => struct_eq_missing(
+                struct_owned_value_iter(l.as_ref()),
+                struct_owned_value_iter(r.as_ref()),
+                null_equal,
+            ),
             #[cfg(feature = "dtype-struct")]
-            (StructOwned(l), Struct(idx, arr, fields)) => {
-                l.0.iter()
-                    .eq_by_(struct_av_iter(*idx, arr, fields), |lv, rv| *lv == rv)
-            },
+            (StructOwned(l), Struct(idx, arr, _)) => struct_eq_missing(
+                struct_owned_value_iter(l.as_ref()),
+                struct_value_iter(*idx, arr),
+                null_equal,
+            ),
             #[cfg(feature = "dtype-struct")]
-            (Struct(idx, arr, fields), StructOwned(r)) => {
-                struct_av_iter(*idx, arr, fields).eq_by_(r.0.iter(), |lv, rv| lv == *rv)
-            },
+            (Struct(idx, arr, _), StructOwned(r)) => struct_eq_missing(
+                struct_value_iter(*idx, arr),
+                struct_owned_value_iter(r.as_ref()),
+                null_equal,
+            ),
             #[cfg(feature = "dtype-struct")]
-            (Struct(l_idx, l_arr, l_fields), Struct(r_idx, r_arr, r_fields)) => {
-                struct_av_iter(*l_idx, l_arr, l_fields).eq(struct_av_iter(*r_idx, r_arr, r_fields))
-            },
+            (Struct(l_idx, l_arr, _), Struct(r_idx, r_arr, _)) => struct_eq_missing(
+                struct_value_iter(*l_idx, l_arr),
+                struct_value_iter(*r_idx, r_arr),
+                null_equal,
+            ),
             #[cfg(feature = "dtype-decimal")]
             (Decimal(l_v, l_s), Decimal(r_v, r_s)) => {
                 // l_v / 10**l_s == r_v / 10**r_s
@@ -1198,9 +1251,34 @@ impl AnyValue<'_> {
             },
             #[cfg(feature = "object")]
             (Object(l), Object(r)) => l == r,
+            #[cfg(feature = "dtype-array")]
+            (Array(l_values, l_size), Array(r_values, r_size)) => {
+                if l_size != r_size {
+                    return false;
+                }
+
+                debug_assert_eq!(l_values.len(), *l_size);
+                debug_assert_eq!(r_values.len(), *r_size);
+
+                let mut is_equal = true;
+                for i in 0..*l_size {
+                    let l = unsafe { l_values.get_unchecked(i) };
+                    let r = unsafe { r_values.get_unchecked(i) };
+
+                    is_equal &= l.eq_missing(&r, null_equal);
+                }
+                is_equal
+            },
+
+            (l, r) if l.to_i128().is_some() && r.to_i128().is_some() => l.to_i128() == r.to_i128(),
+            (l, r) if l.to_f64().is_some() && r.to_f64().is_some() => {
+                l.to_f64().unwrap().to_total_ord() == r.to_f64().unwrap().to_total_ord()
+            },
 
             (_, _) => {
-                unimplemented!("ordering for mixed dtypes is not supported")
+                unimplemented!(
+                    "scalar eq_missing for mixed dtypes {self:?} and {other:?} is not supported"
+                )
             },
         }
     }
@@ -1346,7 +1424,9 @@ impl PartialOrd for AnyValue<'_> {
             },
 
             (_, _) => {
-                unimplemented!("ordering for mixed dtypes is not supported")
+                unimplemented!(
+                    "scalar ordering for mixed dtypes {self:?} and {other:?} is not supported"
+                )
             },
         }
     }
@@ -1360,23 +1440,22 @@ impl TotalEq for AnyValue<'_> {
 }
 
 #[cfg(feature = "dtype-struct")]
-fn struct_to_avs_static(
-    idx: usize,
-    arr: &StructArray,
-    fields: &[Field],
-) -> PolarsResult<Vec<AnyValue<'static>>> {
+fn struct_to_avs_static(idx: usize, arr: &StructArray, fields: &[Field]) -> Vec<AnyValue<'static>> {
+    assert!(idx < arr.len());
+
     let arrs = arr.values();
-    let mut avs = Vec::with_capacity(arrs.len());
-    // amortize loop counter
-    for i in 0..arrs.len() {
-        unsafe {
-            let arr = &**arrs.get_unchecked_release(i);
-            let field = fields.get_unchecked_release(i);
-            let av = arr_to_any_value(arr, idx, &field.dtype);
-            avs.push_unchecked(av.into_static()?);
-        }
-    }
-    Ok(avs)
+
+    debug_assert_eq!(arrs.len(), fields.len());
+
+    arrs.iter()
+        .zip(fields)
+        .map(|(arr, field)| {
+            // SAFETY: We asserted above that the length of StructArray is larger than `idx`. Since
+            // StructArray has the invariant that each array is the same length. This is okay to do
+            // now.
+            unsafe { arr_to_any_value(arr.as_ref(), idx, &field.dtype) }.into_static()
+        })
+        .collect()
 }
 
 #[cfg(feature = "dtype-categorical")]
@@ -1395,20 +1474,6 @@ fn same_revmap(
     } else {
         ptr_l == ptr_r
     }
-}
-
-#[cfg(feature = "dtype-struct")]
-fn struct_av_iter<'a>(
-    idx: usize,
-    arr: &'a StructArray,
-    fields: &'a [Field],
-) -> impl Iterator<Item = AnyValue<'a>> {
-    let arrs = arr.values();
-    (0..arrs.len()).map(move |i| unsafe {
-        let arr = &**arrs.get_unchecked_release(i);
-        let field = fields.get_unchecked_release(i);
-        arr_to_any_value(arr, idx, &field.dtype)
-    })
 }
 
 pub trait GetAnyValue {

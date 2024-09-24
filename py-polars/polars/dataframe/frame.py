@@ -11223,6 +11223,44 @@ class DataFrame:
             value_name=value_name,
         )
 
+    def _to_metadata(
+        self,
+        columns: None | str | list[str] = None,
+        stats: None | str | list[str] = None,
+    ) -> DataFrame:
+        """
+        Get all runtime metadata for each column.
+
+        This is unstable and is meant for debugging purposes.
+
+        Parameters
+        ----------
+        columns
+            Column(s) to show the information for
+        stats
+            Statistics to show
+        """
+        df = self
+
+        if columns is not None:
+            if isinstance(columns, str):
+                columns = [columns]
+
+            df = df.select(columns)
+
+        md = self._from_pydf(df._df._to_metadata())
+
+        if stats is not None:
+            if isinstance(stats, str):
+                stats = [stats]
+
+            if "column_name" not in stats:
+                stats = ["column_name"] + stats
+
+            md = md.select(stats)
+
+        return md
+
 
 def _prepare_other_arg(other: Any, length: int | None = None) -> Series:
     # if not a series create singleton series such that it will broadcast

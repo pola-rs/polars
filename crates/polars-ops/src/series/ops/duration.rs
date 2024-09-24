@@ -72,19 +72,24 @@ pub fn impl_duration(s: &[Column], time_unit: TimeUnit) -> PolarsResult<Column> 
         TimeUnit::Milliseconds => MILLISECONDS,
     };
     if !is_zero_scalar(&seconds) {
-        duration = ((duration + seconds)? * multiplier)?;
+        let units = seconds * multiplier;
+        duration = (duration + units?)?;
     }
     if !is_zero_scalar(&minutes) {
-        duration = ((duration + minutes)? * (multiplier * 60))?;
+        let units = minutes * (multiplier * 60);
+        duration = (duration + units?)?;
     }
     if !is_zero_scalar(&hours) {
-        duration = ((duration + hours)? * (multiplier * 60 * 60))?;
+        let units = hours * (multiplier * 60 * 60);
+        duration = (duration + units?)?;
     }
     if !is_zero_scalar(&days) {
-        duration = ((duration + days)? * (multiplier * SECONDS_IN_DAY))?;
+        let units = days * (multiplier * SECONDS_IN_DAY);
+        duration = (duration + units?)?;
     }
     if !is_zero_scalar(&weeks) {
-        duration = ((duration + weeks)? * (multiplier * SECONDS_IN_DAY * 7))?;
+        let units = weeks * (multiplier * SECONDS_IN_DAY * 7);
+        duration = (duration + units?)?;
     }
 
     duration

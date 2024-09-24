@@ -144,7 +144,7 @@ fn broadcast_array(lhs: &ArrayChunked, rhs: &Series) -> PolarsResult<(ArrayChunk
         },
         (a, b) if a == b => (lhs.clone(), rhs.clone()),
         _ => {
-            polars_bail!(InvalidOperation: "can only do arithmetic of array's of the same type and shape; got {} and {}", lhs.dtype(), rhs.dtype())
+            polars_bail!(InvalidOperation: "can only do arithmetic of arrays of the same type and shape; got {} and {}", lhs.dtype(), rhs.dtype())
         },
     };
     Ok(out)
@@ -165,7 +165,7 @@ impl ArrayChunked {
         let r_leaf_array = if rhs.dtype().is_numeric() && rhs.len() == 1 {
             rhs.clone()
         } else {
-            polars_ensure!(lhs.dtype() == rhs.dtype(), InvalidOperation: "can only do arithmetic of array's of the same type and shape; got {} and {}", self.dtype(), rhs.dtype());
+            polars_ensure!(lhs.dtype() == rhs.dtype(), InvalidOperation: "can only do arithmetic of arrays of the same type and shape; got {} and {}", self.dtype(), rhs.dtype());
             rhs.get_leaf_array()
         };
 

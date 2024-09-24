@@ -352,7 +352,7 @@ Alternatively, if the performance cost is acceptable, you could just set:
 on startup."#.trim_start())
     };
     (duplicate = $name:expr) => {
-        polars_err!(Duplicate: "column with name '{}' has more than one occurrences", $name)
+        polars_err!(Duplicate: "column with name '{}' has more than one occurrence", $name)
     };
     (col_not_found = $name:expr) => {
         polars_err!(ColumnNotFound: "{:?} not found", $name)

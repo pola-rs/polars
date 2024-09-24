@@ -6,6 +6,7 @@ use std::{mem, ops};
 use polars_utils::itertools::Itertools;
 use rayon::prelude::*;
 
+use crate::chunked_array::metadata::MetadataFlags;
 #[cfg(feature = "algorithm_group_by")]
 use crate::chunked_array::ops::unique::is_unique_helper;
 use crate::prelude::*;
@@ -1255,14 +1256,13 @@ impl DataFrame {
     /// on length or duplicates.
     ///
     /// # Safety
-    /// The caller must ensure `column.len() == self.height()` .
-    pub unsafe fn with_column_unchecked(&mut self, column: Series) -> &mut Self {
-        if cfg!(debug_assertions) {
-            self.with_column(column).unwrap()
-        } else {
-            self.get_columns_mut().push(column.into_column());
-            self
-        }
+    /// The caller must ensure `self.width() == 0 || column.len() == self.height()` .
+    pub unsafe fn with_column_unchecked(&mut self, column: Column) -> &mut Self {
+        debug_assert!(self.width() == 0 || self.height() == column.len());
+        debug_assert!(self.get_column_index(column.name().as_str()).is_none());
+
+        unsafe { self.get_columns_mut() }.push(column);
+        self
     }
 
     fn add_column_by_schema(&mut self, c: Column, schema: &Schema) -> PolarsResult<()> {
@@ -1918,6 +1918,77 @@ impl DataFrame {
         let mut df = unsafe { df.take_unchecked_impl(&take, sort_options.multithreaded) };
         set_sorted(&mut df);
         Ok(df)
+    }
+
+    /// Create a `DataFrame` that has fields for all the known runtime metadata for each column.
+    ///
+    /// This dataframe does not necessarily have a specified schema and may be changed at any
+    /// point. It is primarily used for debugging.
+    pub fn _to_metadata(&self) -> DataFrame {
+        let num_columns = self.columns.len();
+
+        let mut column_names =
+            StringChunkedBuilder::new(PlSmallStr::from_static("column_name"), num_columns);
+        let mut repr_ca = StringChunkedBuilder::new(PlSmallStr::from_static("repr"), num_columns);
+        let mut sorted_asc_ca =
+            BooleanChunkedBuilder::new(PlSmallStr::from_static("sorted_asc"), num_columns);
+        let mut sorted_dsc_ca =
+            BooleanChunkedBuilder::new(PlSmallStr::from_static("sorted_dsc"), num_columns);
+        let mut fast_explode_list_ca =
+            BooleanChunkedBuilder::new(PlSmallStr::from_static("fast_explode_list"), num_columns);
+        let mut min_value_ca =
+            StringChunkedBuilder::new(PlSmallStr::from_static("min_value"), num_columns);
+        let mut max_value_ca =
+            StringChunkedBuilder::new(PlSmallStr::from_static("max_value"), num_columns);
+        let mut distinct_count_ca: Vec<Option<IdxSize>> = Vec::with_capacity(num_columns);
+
+        for col in &self.columns {
+            let metadata = col.get_metadata();
+
+            let (flags, min_value, max_value, distinct_count) =
+                metadata.map_or((MetadataFlags::default(), None, None, None), |md| {
+                    (
+                        md.get_flags(),
+                        md.min_value(),
+                        md.max_value(),
+                        md.distinct_count(),
+                    )
+                });
+
+            let repr = match col {
+                Column::Series(_) => "series",
+                Column::Scalar(_) => "scalar",
+            };
+            let sorted_asc = flags.contains(MetadataFlags::SORTED_ASC);
+            let sorted_dsc = flags.contains(MetadataFlags::SORTED_DSC);
+            let fast_explode_list = flags.contains(MetadataFlags::FAST_EXPLODE_LIST);
+
+            column_names.append_value(col.name().clone());
+            repr_ca.append_value(repr);
+            sorted_asc_ca.append_value(sorted_asc);
+            sorted_dsc_ca.append_value(sorted_dsc);
+            fast_explode_list_ca.append_value(fast_explode_list);
+            min_value_ca.append_option(min_value.map(|v| v.as_any_value().to_string()));
+            max_value_ca.append_option(max_value.map(|v| v.as_any_value().to_string()));
+            distinct_count_ca.push(distinct_count);
+        }
+
+        unsafe {
+            DataFrame::new_no_checks(vec![
+                column_names.finish().into_column(),
+                repr_ca.finish().into_column(),
+                sorted_asc_ca.finish().into_column(),
+                sorted_dsc_ca.finish().into_column(),
+                fast_explode_list_ca.finish().into_column(),
+                min_value_ca.finish().into_column(),
+                max_value_ca.finish().into_column(),
+                IdxCa::from_slice_options(
+                    PlSmallStr::from_static("distinct_count"),
+                    &distinct_count_ca[..],
+                )
+                .into_column(),
+            ])
+        }
     }
 
     /// Return a sorted clone of this [`DataFrame`].

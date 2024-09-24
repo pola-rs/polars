@@ -209,6 +209,10 @@ pub trait SeriesTrait:
         None
     }
 
+    fn boxed_metadata<'a>(&'a self) -> Option<Box<dyn MetadataTrait + 'a>> {
+        None
+    }
+
     /// Get the lengths of the underlying chunks
     fn chunk_lengths(&self) -> ChunkLenIter;
 

@@ -80,7 +80,7 @@ pub type ChunkLenIter<'a> = std::iter::Map<std::slice::Iter<'a, ArrayRef>, fn(&A
 /// }
 /// ```
 ///
-/// ## Conversion between Series and ChunkedArray's
+/// ## Conversion between Series and ChunkedArrays
 /// Conversion from a [`Series`] to a [`ChunkedArray`] is effortless.
 ///
 /// ```rust
@@ -162,6 +162,13 @@ where
     /// This fails if there is a need to block.
     pub fn metadata_dyn(&self) -> Option<RwLockReadGuard<dyn MetadataTrait>> {
         self.md.as_ref().upcast().try_read().ok()
+    }
+
+    /// Attempt to get a reference to the trait object containing the [`ChunkedArray`]'s [`Metadata`]
+    ///
+    /// This fails if there is a need to block.
+    pub fn boxed_metadata_dyn<'a>(&'a self) -> Box<dyn MetadataTrait + 'a> {
+        self.md.as_ref().boxed_upcast()
     }
 }
 

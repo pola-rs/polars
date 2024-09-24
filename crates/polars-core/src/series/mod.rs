@@ -93,7 +93,7 @@ use crate::POOL;
 /// See all the comparison operators in the [CmpOps trait](crate::chunked_array::ops::ChunkCompare)
 ///
 /// ## Iterators
-/// The Series variants contain differently typed [ChunkedArray's](crate::chunked_array::ChunkedArray).
+/// The Series variants contain differently typed [ChunkedArray](crate::chunked_array::ChunkedArray)s.
 /// These structs can be turned into iterators, making it possible to use any function/ closure you want
 /// on a Series.
 ///
@@ -713,10 +713,6 @@ impl Series {
 
     #[cfg(feature = "dtype-time")]
     pub(crate) fn into_time(self) -> Series {
-        #[cfg(not(feature = "dtype-time"))]
-        {
-            panic!("activate feature dtype-time")
-        }
         match self.dtype() {
             DataType::Int64 => self.i64().unwrap().clone().into_time().into_series(),
             DataType::Time => self

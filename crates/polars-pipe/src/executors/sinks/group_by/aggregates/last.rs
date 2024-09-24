@@ -27,7 +27,7 @@ impl AggregateFn for LastAgg {
     fn pre_agg(&mut self, chunk_idx: IdxSize, item: &mut dyn ExactSizeIterator<Item = AnyValue>) {
         let item = unsafe { item.next().unwrap_unchecked_release() };
         self.chunk_idx = chunk_idx;
-        self.last = Some(unsafe { item.into_static().unwrap_unchecked() });
+        self.last = Some(item.into_static());
     }
     fn pre_agg_ordered(
         &mut self,
@@ -37,12 +37,8 @@ impl AggregateFn for LastAgg {
         values: &Series,
     ) {
         self.chunk_idx = chunk_idx;
-        self.last = Some(unsafe {
-            values
-                .get_unchecked((offset + length - 1) as usize)
-                .into_static()
-                .unwrap_unchecked()
-        })
+        self.last =
+            Some(unsafe { values.get_unchecked((offset + length - 1) as usize) }.into_static())
     }
 
     fn dtype(&self) -> DataType {

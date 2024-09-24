@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::ops::Deref;
 
+use arrow::temporal_conversions::NANOSECONDS_IN_DAY;
 use polars_core::prelude::*;
 use polars_core::utils::NoNull;
 use polars_plan::constants::get_literal_name;
@@ -91,9 +92,18 @@ impl PhysicalExpr for LiteralExpr {
                 .into_date()
                 .into_series(),
             #[cfg(feature = "dtype-time")]
-            Time(v) => Int64Chunked::full(get_literal_name().clone(), *v, 1)
-                .into_time()
-                .into_series(),
+            Time(v) => {
+                if !(0..NANOSECONDS_IN_DAY).contains(v) {
+                    polars_bail!(
+                        InvalidOperation: "value `{v}` is out-of-range for `time` which can be 0 - {}",
+                        NANOSECONDS_IN_DAY - 1
+                    );
+                }
+
+                Int64Chunked::full(get_literal_name().clone(), *v, 1)
+                    .into_time()
+                    .into_series()
+            },
             Series(series) => series.deref().clone(),
             OtherScalar(s) => s.clone().into_series(get_literal_name().clone()),
             lv @ (Int(_) | Float(_) | StrCat(_)) => polars_core::prelude::Series::from_any_values(

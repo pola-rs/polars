@@ -245,14 +245,14 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
 
         if let Some((col, value)) = &self.include_file_path {
             unsafe {
-                df.with_column_unchecked(
-                    StringChunked::full(
-                        col.clone(),
-                        value,
-                        if df.width() > 0 { df.height() } else { n_rows },
-                    )
-                    .into_series(),
-                )
+                df.with_column_unchecked(Column::new_scalar(
+                    col.clone(),
+                    Scalar::new(
+                        DataType::String,
+                        AnyValue::StringOwned(value.as_ref().into()),
+                    ),
+                    if df.width() > 0 { df.height() } else { n_rows },
+                ))
             };
         }
 
