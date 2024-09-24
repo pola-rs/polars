@@ -240,9 +240,13 @@ impl ChunkZip<StructType> for StructChunked {
             } else if is_true {
                 self.clone()
             } else if other.length == 1 {
-                other.new_from_index(0, length)
+                let mut s = other.new_from_index(0, length);
+                s.rename(self.name().clone());
+                s
             } else {
-                other.clone()
+                let mut s = other.clone();
+                s.rename(self.name().clone());
+                s
             });
         }
 
@@ -329,7 +333,42 @@ impl ChunkZip<StructType> for StructChunked {
         if (l.null_count + r.null_count) > 0 {
             // Create one validity mask that spans the entirety of out.
             let rechunked_validity = match (l.len(), r.len()) {
-                (1, _) => {
+                (1, 1) if length != 1 => match (l.null_count() == 0, r.null_count() == 0) {
+                    (true, true) => None,
+                    (true, false) => {
+                        if mask.chunks().len() == 1 {
+                            let m = mask.chunks()[0]
+                                .as_any()
+                                .downcast_ref::<BooleanArray>()
+                                .unwrap()
+                                .values();
+                            Some(!m)
+                        } else {
+                            rechunk_bitmaps(
+                                length,
+                                mask.downcast_iter().map(|m| (m.len(), Some(!m.values()))),
+                            )
+                        }
+                    },
+                    (false, true) => {
+                        if mask.chunks().len() == 1 {
+                            let m = mask.chunks()[0]
+                                .as_any()
+                                .downcast_ref::<BooleanArray>()
+                                .unwrap()
+                                .values();
+                            Some(m.clone())
+                        } else {
+                            rechunk_bitmaps(
+                                length,
+                                mask.downcast_iter()
+                                    .map(|m| (m.len(), Some(m.values().clone()))),
+                            )
+                        }
+                    },
+                    (false, false) => Some(Bitmap::new_zeroed(length)),
+                },
+                (1, _) if length != 1 => {
                     debug_assert!(r
                         .chunk_lengths()
                         .zip(mask.chunk_lengths())
@@ -365,7 +404,7 @@ impl ChunkZip<StructType> for StructChunked {
                         )
                     }
                 },
-                (_, 1) => {
+                (_, 1) if length != 1 => {
                     debug_assert!(l
                         .chunk_lengths()
                         .zip(mask.chunk_lengths())
