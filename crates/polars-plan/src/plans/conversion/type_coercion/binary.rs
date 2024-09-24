@@ -59,9 +59,14 @@ fn process_list_arithmetic(
         (DataType::List(_), _) => {
             let leaf = type_left.leaf_dtype();
             if type_right != *leaf {
+                let new_dtype = if type_right.is_nested() {
+                    type_left.cast_leaf(leaf.clone())
+                } else {
+                    leaf.clone()
+                };
                 let new_node_right = expr_arena.add(AExpr::Cast {
                     expr: node_right,
-                    dtype: type_left.cast_leaf(leaf.clone()),
+                    dtype: new_dtype,
                     options: CastOptions::NonStrict,
                 });
 
@@ -77,9 +82,14 @@ fn process_list_arithmetic(
         (_, DataType::List(_)) => {
             let leaf = type_right.leaf_dtype();
             if type_left != *leaf {
+                let new_dtype = if type_left.is_nested() {
+                    type_right.cast_leaf(leaf.clone())
+                } else {
+                    leaf.clone()
+                };
                 let new_node_left = expr_arena.add(AExpr::Cast {
                     expr: node_left,
-                    dtype: type_right.cast_leaf(leaf.clone()),
+                    dtype: new_dtype,
                     options: CastOptions::NonStrict,
                 });
 

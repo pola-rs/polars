@@ -390,23 +390,35 @@ pub(crate) fn coerce_lhs_rhs<'a>(
     if let Some(result) = coerce_time_units(lhs, rhs) {
         return Ok(result);
     }
-    let dtype = match (lhs.dtype(), rhs.dtype()) {
+    let (left_dtype, right_dtype) = (lhs.dtype(), rhs.dtype());
+    let leaf_super_dtype = match (left_dtype, right_dtype) {
         #[cfg(feature = "dtype-struct")]
         (DataType::Struct(_), DataType::Struct(_)) => {
             return Ok((Cow::Borrowed(lhs), Cow::Borrowed(rhs)))
         },
-        _ => try_get_supertype(lhs.dtype(), rhs.dtype())?,
+        _ => try_get_supertype(left_dtype.leaf_dtype(), right_dtype.leaf_dtype())?,
     };
 
-    let left = if lhs.dtype() == &dtype {
+    let mut new_left_dtype = left_dtype.cast_leaf(leaf_super_dtype.clone());
+    let mut new_right_dtype = right_dtype.cast_leaf(leaf_super_dtype);
+
+    // If we have e.g. Array and List, we want to convert those too.
+    if (left_dtype.is_list() && right_dtype.is_array())
+        || (left_dtype.is_array() && right_dtype.is_list())
+    {
+        new_left_dtype = try_get_supertype(&new_left_dtype, &new_right_dtype)?;
+        new_right_dtype = new_left_dtype.clone();
+    }
+
+    let left = if lhs.dtype() == &new_left_dtype {
         Cow::Borrowed(lhs)
     } else {
-        Cow::Owned(lhs.cast(&dtype)?)
+        Cow::Owned(lhs.cast(&new_left_dtype)?)
     };
-    let right = if rhs.dtype() == &dtype {
+    let right = if rhs.dtype() == &new_right_dtype {
         Cow::Borrowed(rhs)
     } else {
-        Cow::Owned(rhs.cast(&dtype)?)
+        Cow::Owned(rhs.cast(&new_right_dtype)?)
     };
     Ok((left, right))
 }
