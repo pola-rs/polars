@@ -372,6 +372,10 @@ impl Series {
     pub fn cast_with_options(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Self> {
         use DataType as D;
 
+        if matches!(dtype, D::Array(_, width) if *width == 0) {
+            polars_bail!(InvalidOperation: "Arrays with 0 width are not yet supported");
+        }
+
         let do_clone = match dtype {
             D::Unknown(UnknownKind::Any) => true,
             D::Unknown(UnknownKind::Int(_)) if self.dtype().is_integer() => true,
