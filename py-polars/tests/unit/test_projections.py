@@ -122,6 +122,7 @@ def test_hconcat_projection_pushdown_length_maintained() -> None:
     assert_frame_equal(out, expected)
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_unnest_columns_available() -> None:
     df = pl.DataFrame(
         {
