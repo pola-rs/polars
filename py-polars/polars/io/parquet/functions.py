@@ -60,6 +60,7 @@ def read_parquet(
     use_pyarrow: bool = False,
     pyarrow_options: dict[str, Any] | None = None,
     memory_map: bool = True,
+    null_rows_for_missing_columns: bool = False,
 ) -> DataFrame:
     """
     Read into a DataFrame from a parquet file.
@@ -139,6 +140,12 @@ def read_parquet(
     memory_map
         Memory map underlying file. This will likely increase performance.
         Only used when `use_pyarrow=True`.
+    null_rows_for_missing_columns
+        When reading a list of parquet files, if a column existing in the first
+        file cannot be found in subsequent files, the default behavior is to
+        raise an error. However, if `null_rows_for_missing_columns` is set to
+        `True`, a full-NULL column is returned instead of erroring for the files
+        that do not contain the column.
 
     Returns
     -------
@@ -198,6 +205,7 @@ def read_parquet(
         retries=retries,
         glob=glob,
         include_file_paths=None,
+        null_rows_for_missing_columns=null_rows_for_missing_columns,
     )
 
     if columns is not None:
@@ -307,6 +315,7 @@ def scan_parquet(
     storage_options: dict[str, Any] | None = None,
     retries: int = 2,
     include_file_paths: str | None = None,
+    null_rows_for_missing_columns: bool = False,
 ) -> LazyFrame:
     """
     Lazily read from a local or cloud-hosted parquet file (or files).
@@ -388,6 +397,12 @@ def scan_parquet(
         Number of retries if accessing a cloud instance fails.
     include_file_paths
         Include the path of the source file(s) as a column with this name.
+    null_rows_for_missing_columns
+        When reading a list of parquet files, if a column existing in the first
+        file cannot be found in subsequent files, the default behavior is to
+        raise an error. However, if `null_rows_for_missing_columns` is set to
+        `True`, a full-NULL column is returned instead of erroring for the files
+        that do not contain the column.
 
     See Also
     --------
@@ -439,6 +454,7 @@ def scan_parquet(
         retries=retries,
         glob=glob,
         include_file_paths=include_file_paths,
+        null_rows_for_missing_columns=null_rows_for_missing_columns,
     )
 
 
@@ -460,6 +476,7 @@ def _scan_parquet_impl(
     try_parse_hive_dates: bool = True,
     retries: int = 2,
     include_file_paths: str | None = None,
+    null_rows_for_missing_columns: bool = False,
 ) -> LazyFrame:
     if isinstance(source, list):
         sources = source
@@ -490,5 +507,6 @@ def _scan_parquet_impl(
         retries=retries,
         glob=glob,
         include_file_paths=include_file_paths,
+        null_rows_for_missing_columns=null_rows_for_missing_columns,
     )
     return wrap_ldf(pylf)

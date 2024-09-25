@@ -23,6 +23,7 @@ pub fn get_column_iterator<'a>(
 ) -> ColumnIterator<'a> {
     let columns = row_group
         .columns_under_root_iter(field_name)
+        .unwrap()
         .rev()
         .collect::<UnitVec<_>>();
     ColumnIterator::new(reader, columns, max_page_size)

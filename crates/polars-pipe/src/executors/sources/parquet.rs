@@ -134,6 +134,7 @@ impl ParquetSource {
                 .with_arrow_schema_projection(
                     &self.first_schema,
                     self.projected_arrow_schema.as_deref(),
+                    self.file_options.null_rows_for_missing_columns,
                 )?
                 .with_row_index(file_options.row_index)
                 .with_predicate(predicate.clone())
@@ -199,6 +200,7 @@ impl ParquetSource {
                     .with_arrow_schema_projection(
                         &self.first_schema,
                         self.projected_arrow_schema.as_deref(),
+                        self.file_options.null_rows_for_missing_columns,
                     )
                     .await?
                     .with_predicate(predicate.clone())

@@ -85,9 +85,14 @@ impl<R: MmapBytesReader> ParquetReader<R> {
     /// dtype, and sets the projection indices.
     pub fn with_arrow_schema_projection(
         mut self,
-        first_schema: &ArrowSchema,
+        first_schema: &Arc<ArrowSchema>,
         projected_arrow_schema: Option<&ArrowSchema>,
+        null_rows_for_missing_columns: bool,
     ) -> PolarsResult<Self> {
+        if null_rows_for_missing_columns {
+            self.schema.replace(first_schema.clone());
+        }
+
         let schema = self.schema()?;
 
         if let Some(projected_arrow_schema) = projected_arrow_schema {
@@ -301,9 +306,14 @@ impl ParquetAsyncReader {
 
     pub async fn with_arrow_schema_projection(
         mut self,
-        first_schema: &ArrowSchema,
+        first_schema: &Arc<ArrowSchema>,
         projected_arrow_schema: Option<&ArrowSchema>,
+        null_rows_for_missing_columns: bool,
     ) -> PolarsResult<Self> {
+        if null_rows_for_missing_columns {
+            self.schema.replace(first_schema.clone());
+        }
+
         let schema = self.schema().await?;
 
         if let Some(projected_arrow_schema) = projected_arrow_schema {
