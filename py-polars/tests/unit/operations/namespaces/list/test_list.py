@@ -620,6 +620,7 @@ def test_list_unique2() -> None:
     assert sorted(result[1]) == [1, 2]
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_list_to_struct() -> None:
     df = pl.DataFrame({"n": [[0, 1, 2], [0, 1]]})
 

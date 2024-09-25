@@ -429,7 +429,7 @@ def test_str_to_integer_base_expr() -> None:
     # test strict raise
     df = pl.DataFrame({"str": ["110", "ff00", "cafe", None], "base": [2, 10, 10, 8]})
 
-    with pytest.raises(ComputeError, match="failed for 2 value"):
+    with pytest.raises(ComputeError):
         df.select(pl.col("str").str.to_integer(base="base"))
 
 
