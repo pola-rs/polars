@@ -87,13 +87,23 @@ pub(crate) fn is_elementwise(
             function: _,
             output_type: _,
             options,
-        }
-        | AExpr::Function {
-            input,
-            function: _,
-            options,
         } => {
             options.is_elementwise() && input.iter().all(|e| is_elementwise(e.node(), arena, cache))
+        },
+        AExpr::Function {
+            input,
+            function,
+            options,
+        } => {
+            match function {
+                // Non-strict strptime must be done in-memory to ensure the format
+                // is consistent across the entire dataframe.
+                FunctionExpr::StringExpr(StringFunction::Strptime(_, opts)) => opts.strict,
+                _ => {
+                    options.is_elementwise()
+                        && input.iter().all(|e| is_elementwise(e.node(), arena, cache))
+                },
+            }
         },
 
         AExpr::Window { .. } => false,

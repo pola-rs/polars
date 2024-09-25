@@ -303,7 +303,10 @@ fn binary(
         let offset = if broadcast_rhs {
             // going via skip iterator instead of slice doesn't heap alloc nor trigger a bitcount
             let a_iter = a.into_iter().skip(start_a).take(end_a - start_a);
-            let b_iter = b.into_iter();
+            let b_iter = b
+                .into_iter()
+                .skip(first_b as usize)
+                .take(second_b as usize - first_b as usize);
             set_operation(
                 &mut set,
                 &mut set2,
@@ -314,7 +317,10 @@ fn binary(
                 true,
             )
         } else if broadcast_lhs {
-            let a_iter = a.into_iter();
+            let a_iter = a
+                .into_iter()
+                .skip(first_a as usize)
+                .take(second_a as usize - first_a as usize);
             let b_iter = b.into_iter().skip(start_b).take(end_b - start_b);
             set_operation(
                 &mut set,

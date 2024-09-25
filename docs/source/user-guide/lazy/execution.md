@@ -53,27 +53,18 @@ We look at [streaming in more detail here](streaming.md).
 
 While you're writing, optimizing or checking your query on a large dataset, querying all available data may lead to a slow development process.
 
-You can instead execute the query with the `.fetch` method. The `.fetch` method takes a parameter `n_rows` and tries to 'fetch' that number of rows at the data source. The number of rows cannot be guaranteed, however, as the lazy API does not count how many rows there are at each stage of the query.
+Instead, you can scan a subset of your partitions or use `.head`/`.collect` at the beginning and end of your query, respectively.
+Keep in mind that the results of aggregations and filters on subsets of your data may not be representative of the result you would get on the full data.
 
-Here we "fetch" 100 rows from the source file and apply the predicates.
-
-{{code_block('user-guide/lazy/execution','partial',['scan_csv','collect','fetch'])}}
+{{code_block('user-guide/lazy/execution','partial',['scan_csv','collect','head'])}}
 
 ```text
-shape: (27, 6)
-┌───────┬───────────────────────────┬─────────────┬────────────┬───────────────┬────────────┐
-│ id    ┆ name                      ┆ created_utc ┆ updated_on ┆ comment_karma ┆ link_karma │
-│ ---   ┆ ---                       ┆ ---         ┆ ---        ┆ ---           ┆ ---        │
-│ i64   ┆ str                       ┆ i64         ┆ i64        ┆ i64           ┆ i64        │
-╞═══════╪═══════════════════════════╪═════════════╪════════════╪═══════════════╪════════════╡
-│ 6     ┆ TAOJIANLONG_JASONBROKEN   ┆ 1397113510  ┆ 1536527864 ┆ 4             ┆ 0          │
-│ 17    ┆ SSAIG_JASONBROKEN         ┆ 1397113544  ┆ 1536527864 ┆ 1             ┆ 0          │
-│ 19    ┆ FDBVFDSSDGFDS_JASONBROKEN ┆ 1397113552  ┆ 1536527864 ┆ 3             ┆ 0          │
-│ 37    ┆ IHATEWHOWEARE_JASONBROKEN ┆ 1397113636  ┆ 1536527864 ┆ 61            ┆ 0          │
-│ …     ┆ …                         ┆ …           ┆ …          ┆ …             ┆ …          │
-│ 77763 ┆ LUNCHY                    ┆ 1137599510  ┆ 1536528275 ┆ 65            ┆ 0          │
-│ 77765 ┆ COMPOSTELLAS              ┆ 1137474000  ┆ 1536528276 ┆ 6             ┆ 0          │
-│ 77766 ┆ GENERICBOB                ┆ 1137474000  ┆ 1536528276 ┆ 291           ┆ 14         │
-│ 77768 ┆ TINHEADNED                ┆ 1139665457  ┆ 1536497404 ┆ 4434          ┆ 103        │
-└───────┴───────────────────────────┴─────────────┴────────────┴───────────────┴────────────┘
+shape: (1, 6)
+┌─────┬─────────────────────────┬─────────────┬────────────┬───────────────┬────────────┐
+│ id  ┆ name                    ┆ created_utc ┆ updated_on ┆ comment_karma ┆ link_karma │
+│ --- ┆ ---                     ┆ ---         ┆ ---        ┆ ---           ┆ ---        │
+│ i64 ┆ str                     ┆ i64         ┆ i64        ┆ i64           ┆ i64        │
+╞═════╪═════════════════════════╪═════════════╪════════════╪═══════════════╪════════════╡
+│ 6   ┆ TAOJIANLONG_JASONBROKEN ┆ 1397113510  ┆ 1536527864 ┆ 4             ┆ 0          │
+└─────┴─────────────────────────┴─────────────┴────────────┴───────────────┴────────────┘
 ```

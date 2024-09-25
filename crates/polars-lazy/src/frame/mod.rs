@@ -1762,31 +1762,42 @@ impl LazyFrame {
     /// # Warning
     /// This can have a negative effect on query performance. This may for instance block
     /// predicate pushdown optimization.
-    pub fn with_row_index<S>(mut self, name: S, offset: Option<IdxSize>) -> LazyFrame
+    pub fn with_row_index<S>(self, name: S, offset: Option<IdxSize>) -> LazyFrame
     where
         S: Into<PlSmallStr>,
     {
         let name = name.into();
-        let add_row_index_in_map = match &mut self.logical_plan {
-            DslPlan::Scan {
-                file_options: options,
-                scan_type,
-                ..
-            } if !matches!(scan_type, FileScan::Anonymous { .. }) => {
-                let name = name.clone();
-                options.row_index = Some(RowIndex {
+
+        match &self.logical_plan {
+            v @ DslPlan::Scan { scan_type, .. }
+                if !matches!(scan_type, FileScan::Anonymous { .. }) =>
+            {
+                let DslPlan::Scan {
+                    sources,
+                    mut file_options,
+                    scan_type,
+                    file_info,
+                    cached_ir: _,
+                } = v.clone()
+                else {
+                    unreachable!()
+                };
+
+                file_options.row_index = Some(RowIndex {
                     name,
                     offset: offset.unwrap_or(0),
                 });
-                false
-            },
-            _ => true,
-        };
 
-        if add_row_index_in_map {
-            self.map_private(DslFunction::RowIndex { name, offset })
-        } else {
-            self
+                DslPlan::Scan {
+                    sources,
+                    file_options,
+                    scan_type,
+                    file_info,
+                    cached_ir: Default::default(),
+                }
+                .into()
+            },
+            _ => self.map_private(DslFunction::RowIndex { name, offset }),
         }
     }
 

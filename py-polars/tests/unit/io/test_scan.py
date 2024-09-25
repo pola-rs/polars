@@ -785,3 +785,19 @@ def test_scan_stringio(method: str) -> None:
 def test_empty_list(method: Callable[[list[str]], pl.LazyFrame]) -> None:
     with pytest.raises(pl.exceptions.ComputeError, match="expected at least 1 source"):
         _ = (method)([]).collect()
+
+
+def test_scan_double_collect_row_index_invalidates_cached_ir_18892() -> None:
+    lf = pl.scan_csv(io.BytesIO(b"a\n1\n2\n3"))
+
+    lf.collect()
+
+    out = lf.with_row_index().collect()
+
+    assert_frame_equal(
+        out,
+        pl.DataFrame(
+            {"index": [0, 1, 2], "a": [1, 2, 3]},
+            schema={"index": pl.UInt32, "a": pl.Int64},
+        ),
+    )

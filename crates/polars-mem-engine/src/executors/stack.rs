@@ -79,11 +79,19 @@ impl StackExec {
                 for (i, c) in res.iter().enumerate() {
                     let len = c.len();
                     if verify_scalar && len != df_height && len == 1 && df_width > 0 {
-                        polars_ensure!(self.exprs[i].is_scalar(),
-                            InvalidOperation: "Series {}, length {} doesn't match the DataFrame height of {}\n\n\
-                            If you want this Series to be broadcasted, ensure it is a scalar (for instance by adding '.first()').",
-                            c.name(), len, df_height
-                        );
+                        #[allow(clippy::collapsible_if)]
+                        if !self.exprs[i].is_scalar()
+                            && std::env::var("POLARS_ALLOW_NON_SCALAR_EXP").as_deref() != Ok("1")
+                        {
+                            let identifier = match self.exprs[i].as_expression() {
+                                Some(e) => format!("expression: {}", e),
+                                None => "this Series".to_string(),
+                            };
+                            polars_bail!(InvalidOperation: "Series {}, length {} doesn't match the DataFrame height of {}\n\n\
+                                If you want {} to be broadcasted, ensure it is a scalar (for instance by adding '.first()').",
+                                c.name(), len, df_height, identifier
+                            );
+                        }
                     }
                 }
                 df._add_series(res, schema)?;
