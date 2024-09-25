@@ -80,6 +80,7 @@ pub enum AnyValue<'a> {
     Enum(u32, &'a RevMapping, SyncPtr<Utf8ViewArray>),
     #[cfg(feature = "dtype-categorical")]
     EnumOwned(u32, Arc<RevMapping>, SyncPtr<Utf8ViewArray>),
+    // @TODO: This should be a ListArray<i64>, DataType instead of a Series
     /// Nested type, contains arrays that are filled with one of the datatypes.
     List(Series),
     #[cfg(feature = "dtype-array")]
