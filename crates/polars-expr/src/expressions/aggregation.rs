@@ -375,7 +375,12 @@ impl PhysicalExpr for AggregationExpr {
                     let s = match ac.agg_state() {
                         // mean agg:
                         // -> f64 -> list<f64>
-                        AggState::AggregatedScalar(s) => s.reshape_list(&[-1, 1]).unwrap(),
+                        AggState::AggregatedScalar(s) => s
+                            .reshape_list(&[
+                                ReshapeDimension::Infer,
+                                ReshapeDimension::new_dimension(1),
+                            ])
+                            .unwrap(),
                         _ => {
                             let agg = ac.aggregated();
                             agg.as_list().into_series()

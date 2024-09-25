@@ -44,7 +44,9 @@ fn cast_rhs(
         }
         if !matches!(s.dtype(), DataType::List(_)) && s.dtype() == inner_type {
             // coerce to list JIT
-            *s = s.reshape_list(&[-1, 1]).unwrap();
+            *s = s
+                .reshape_list(&[ReshapeDimension::Infer, ReshapeDimension::new_dimension(1)])
+                .unwrap();
         }
         if s.dtype() != dtype {
             *s = s.cast(dtype).map_err(|e| {

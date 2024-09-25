@@ -106,7 +106,7 @@ pub enum WindowMapping {
 pub enum NestedType {
     #[cfg(feature = "dtype-array")]
     Array,
-    List,
+    // List,
 }
 
 #[derive(Clone, Default, Debug, PartialEq, Eq, Hash)]

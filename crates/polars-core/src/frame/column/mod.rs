@@ -9,6 +9,7 @@ use polars_utils::pl_str::PlSmallStr;
 use self::gather::check_bounds_ca;
 use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::metadata::{MetadataFlags, MetadataTrait};
+use crate::datatypes::ReshapeDimension;
 use crate::prelude::*;
 use crate::series::{BitRepr, IsSorted, SeriesPhysIter};
 use crate::utils::{slice_offsets, Container};
@@ -730,7 +731,7 @@ impl Column {
         self.as_materialized_series().unique().map(Column::from)
     }
 
-    pub fn reshape_list(&self, dimensions: &[i64]) -> PolarsResult<Self> {
+    pub fn reshape_list(&self, dimensions: &[ReshapeDimension]) -> PolarsResult<Self> {
         // @scalar-opt
         self.as_materialized_series()
             .reshape_list(dimensions)
@@ -738,7 +739,7 @@ impl Column {
     }
 
     #[cfg(feature = "dtype-array")]
-    pub fn reshape_array(&self, dimensions: &[i64]) -> PolarsResult<Self> {
+    pub fn reshape_array(&self, dimensions: &[ReshapeDimension]) -> PolarsResult<Self> {
         // @scalar-opt
         self.as_materialized_series()
             .reshape_array(dimensions)

@@ -115,16 +115,18 @@ impl NumOpsDispatchInner for BooleanType {
 }
 
 #[cfg(feature = "dtype-array")]
-fn array_shape(dt: &DataType, infer: bool) -> Vec<i64> {
-    fn inner(dt: &DataType, buf: &mut Vec<i64>) {
+fn array_shape(dt: &DataType, infer: bool) -> Vec<ReshapeDimension> {
+    fn inner(dt: &DataType, buf: &mut Vec<ReshapeDimension>) {
         if let DataType::Array(_, size) = dt {
-            buf.push(*size as i64)
+            buf.push(ReshapeDimension::Specified(
+                Dimension::try_from(*size as i64).unwrap(),
+            ))
         }
     }
 
     let mut buf = vec![];
     if infer {
-        buf.push(-1)
+        buf.push(ReshapeDimension::Infer)
     }
     inner(dt, &mut buf);
     buf

@@ -80,6 +80,7 @@ pub(crate) use correlation::CorrelationMethod;
 #[cfg(feature = "fused")]
 pub(crate) use fused::FusedOperator;
 pub(crate) use list::ListFunction;
+use polars_core::datatypes::ReshapeDimension;
 use polars_core::prelude::*;
 #[cfg(feature = "random")]
 pub(crate) use random::RandomMethod;
@@ -172,7 +173,8 @@ pub enum FunctionExpr {
     Skew(bool),
     #[cfg(feature = "moment")]
     Kurtosis(bool, bool),
-    Reshape(Vec<i64>, NestedType),
+    #[cfg(feature = "dtype-array")]
+    Reshape(Vec<ReshapeDimension>),
     #[cfg(feature = "repeat_by")]
     RepeatBy,
     ArgUnique,
@@ -524,10 +526,8 @@ impl Hash for FunctionExpr {
                 left_closed.hash(state);
                 include_breaks.hash(state);
             },
-            Reshape(dims, nested) => {
-                dims.hash(state);
-                nested.hash(state);
-            },
+            #[cfg(feature = "dtype-array")]
+            Reshape(dims) => dims.hash(state),
             #[cfg(feature = "repeat_by")]
             RepeatBy => {},
             #[cfg(feature = "cutqcut")]
@@ -728,7 +728,8 @@ impl Display for FunctionExpr {
             Cut { .. } => "cut",
             #[cfg(feature = "cutqcut")]
             QCut { .. } => "qcut",
-            Reshape(_, _) => "reshape",
+            #[cfg(feature = "dtype-array")]
+            Reshape(_) => "reshape",
             #[cfg(feature = "repeat_by")]
             RepeatBy => "repeat_by",
             #[cfg(feature = "rle")]
@@ -1068,7 +1069,8 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
             PeakMax => map!(peaks::peak_max),
             #[cfg(feature = "repeat_by")]
             RepeatBy => map_as_slice!(dispatch::repeat_by),
-            Reshape(dims, nested) => map!(dispatch::reshape, &dims, &nested),
+            #[cfg(feature = "dtype-array")]
+            Reshape(dims) => map!(dispatch::reshape, &dims),
             #[cfg(feature = "cutqcut")]
             Cut {
                 breaks,
