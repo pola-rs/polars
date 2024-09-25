@@ -2166,7 +2166,7 @@ impl DataFrame {
     /// let mut df = DataFrame::new(vec![s0, s1])?;
     ///
     /// // Add 32 to get lowercase ascii values
-    /// df.apply_at_idx(1, |s| (s + 32).unwrap());
+    /// df.apply_at_idx(1, |s| s + 32);
     /// # Ok::<(), PolarsError>(())
     /// ```
     /// Results in:
