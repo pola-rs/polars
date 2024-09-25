@@ -631,7 +631,8 @@ fn any_values_to_list(
     }
     // Make sure that wrongly inferred AnyValues don't deviate from the datatype.
     else {
-        avs.iter()
+        let mut out: ListChunked = avs
+            .iter()
             .map(|av| match av {
                 AnyValue::List(b) => {
                     if b.dtype() == inner_type {
@@ -657,19 +658,20 @@ fn any_values_to_list(
                     None
                 },
             })
-            .collect_trusted()
+            .collect_trusted();
+
+        // Ensure the logical type is correct for nested types.
+        //
+        // This is needed if we have e.g. [null], here the output type will be incorrect.
+        unsafe {
+            out.set_dtype(target_dtype.clone());
+        };
+
+        out
     };
 
     if strict && !valid {
         polars_bail!(SchemaMismatch: "unexpected value while building Series of type {:?}", target_dtype);
-    }
-
-    // Ensure the logical type is correct for nested types.
-    #[cfg(feature = "dtype-struct")]
-    if !matches!(inner_type, DataType::Null) && out.inner_dtype().is_nested() {
-        unsafe {
-            out.set_dtype(target_dtype.clone());
-        };
     }
 
     Ok(out)

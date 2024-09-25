@@ -88,7 +88,7 @@ fn test_lazy_udf() {
     let df = get_df();
     let new = df
         .lazy()
-        .select([col("sepal_width").map(|s| Ok(Some((s * 200.0)?)), GetOutput::same_type())])
+        .select([col("sepal_width").map(|s| Ok(Some(s * 200.0)), GetOutput::same_type())])
         .collect()
         .unwrap();
     assert_eq!(
@@ -247,7 +247,7 @@ fn test_lazy_query_2() {
     let df = load_df();
     let ldf = df
         .lazy()
-        .with_column(col("a").map(|s| Ok(Some((s * 2)?)), GetOutput::same_type()))
+        .with_column(col("a").map(|s| Ok(Some(s * 2)), GetOutput::same_type()))
         .filter(col("a").lt(lit(2)))
         .select([col("b"), col("a")]);
 
