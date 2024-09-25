@@ -372,6 +372,7 @@ impl Series {
     pub fn cast_with_options(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Self> {
         use DataType as D;
 
+        #[cfg(feature = "dtype-array")]
         if matches!(dtype, D::Array(_, width) if *width == 0) {
             polars_bail!(InvalidOperation: "Arrays with 0 width are not yet supported");
         }
