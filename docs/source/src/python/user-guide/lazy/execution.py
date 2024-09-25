@@ -31,9 +31,10 @@ q5 = (
 # --8<-- [start:partial]
 q9 = (
     pl.scan_csv(f"docs/assets/data/reddit.csv")
+    .head(10)
     .with_columns(pl.col("name").str.to_uppercase())
     .filter(pl.col("comment_karma") > 0)
-    .fetch(n_rows=int(100))
+    .collect()
 )
 # --8<-- [end:partial]
 """
