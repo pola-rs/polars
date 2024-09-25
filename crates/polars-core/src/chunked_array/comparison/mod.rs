@@ -710,6 +710,7 @@ fn struct_helper<F, R>(
     op: F,
     reduce: R,
     value: bool,
+    apply_null_validity: bool,
 ) -> BooleanChunked
 where
     F: Fn(&Series, &Series) -> BooleanChunked,
@@ -720,13 +721,22 @@ where
         BooleanChunked::full(PlSmallStr::EMPTY, value, a.len())
     } else {
         let (a, b) = align_chunks_binary(a, b);
-        let out = a
+        let mut out = a
             .fields_as_series()
             .iter()
             .zip(b.fields_as_series().iter())
             .map(|(l, r)| op(l, r))
             .reduce(reduce)
             .unwrap();
+        if apply_null_validity && (a.null_count() > 0 || b.null_count() > 0) {
+            let mut a = a.into_owned();
+            a.zip_outer_validity(&b);
+            unsafe {
+                for (arr, a) in out.downcast_iter_mut().zip(a.downcast_iter()) {
+                    arr.set_validity(a.validity().cloned())
+                }
+            }
+        }
         out
     }
 }
@@ -741,6 +751,7 @@ impl ChunkCompare<&StructChunked> for StructChunked {
             |l, r| l.equal(r).unwrap(),
             |a, b| a.bitand(b),
             false,
+            true,
         )
     }
 
@@ -750,6 +761,7 @@ impl ChunkCompare<&StructChunked> for StructChunked {
             rhs,
             |l, r| l.equal_missing(r).unwrap(),
             |a, b| a.bitand(b),
+            false,
             false,
         )
     }
@@ -761,6 +773,7 @@ impl ChunkCompare<&StructChunked> for StructChunked {
             |l, r| l.not_equal(r).unwrap(),
             |a, b| a | b,
             true,
+            true,
         )
     }
 
@@ -771,6 +784,7 @@ impl ChunkCompare<&StructChunked> for StructChunked {
             |l, r| l.not_equal_missing(r).unwrap(),
             |a, b| a | b,
             true,
+            false,
         )
     }
 }
