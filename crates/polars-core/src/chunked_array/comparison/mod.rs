@@ -720,22 +720,13 @@ where
         BooleanChunked::full(PlSmallStr::EMPTY, value, a.len())
     } else {
         let (a, b) = align_chunks_binary(a, b);
-        let mut out = a
+        let out = a
             .fields_as_series()
             .iter()
             .zip(b.fields_as_series().iter())
             .map(|(l, r)| op(l, r))
             .reduce(reduce)
             .unwrap();
-        if a.null_count() > 0 || b.null_count() > 0 {
-            let mut a = a.into_owned();
-            a.zip_outer_validity(&b);
-            unsafe {
-                for (arr, a) in out.downcast_iter_mut().zip(a.downcast_iter()) {
-                    arr.set_validity(a.validity().cloned())
-                }
-            }
-        }
         out
     }
 }
