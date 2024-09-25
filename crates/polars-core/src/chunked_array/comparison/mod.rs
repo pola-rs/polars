@@ -728,12 +728,14 @@ where
             .map(|(l, r)| op(l, r))
             .reduce(reduce)
             .unwrap();
-        if apply_null_validity && (a.null_count() > 0 || b.null_count() > 0) {
+        if a.null_count() > 0 || b.null_count() > 0 {
             let mut a = a.into_owned();
             a.zip_outer_validity(&b);
-            unsafe {
-                for (arr, a) in out.downcast_iter_mut().zip(a.downcast_iter()) {
-                    arr.set_validity(a.validity().cloned())
+            if apply_null_validity {
+                unsafe {
+                    for (arr, a) in out.downcast_iter_mut().zip(a.downcast_iter()) {
+                        arr.set_validity(a.validity().cloned())
+                    }
                 }
             }
         }
