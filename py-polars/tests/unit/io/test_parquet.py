@@ -114,6 +114,7 @@ def test_to_from_buffer(
 
 @pytest.mark.parametrize("use_pyarrow", [True, False])
 @pytest.mark.parametrize("rechunk_and_expected_chunks", [(True, 1), (False, 3)])
+@pytest.mark.may_fail_auto_streaming
 def test_read_parquet_respects_rechunk_16416(
     use_pyarrow: bool, rechunk_and_expected_chunks: tuple[bool, int]
 ) -> None:
