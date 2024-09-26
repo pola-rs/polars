@@ -1430,6 +1430,8 @@ def test_literal_from_datetime(
         value = value.replace(tzinfo=ZoneInfo(dtype.time_zone))  # type: ignore[union-attr]
 
     assert out.schema == OrderedDict({"literal": dtype})
+    print(out.item())
+    print(value)
     assert out.item() == value
 
 
