@@ -84,11 +84,6 @@ impl<M: MutableArray> MutableFixedSizeListArray<M> {
         &self.values
     }
 
-    /// The values as a mutable reference
-    pub fn mut_values(&mut self) -> &mut M {
-        &mut self.values
-    }
-
     fn init_validity(&mut self) {
         let len = self.values.len() / self.size;
 
@@ -285,10 +280,11 @@ where
     M: MutableArray + TryExtendFromSelf,
 {
     fn try_extend_from_self(&mut self, other: &Self) -> PolarsResult<()> {
-        self.length += other.len();
         extend_validity(self.len(), &mut self.validity, &other.validity);
 
         self.values.try_extend_from_self(&other.values)?;
+        self.length += other.len();
+
         debug_assert!(self.has_valid_invariants());
 
         Ok(())
