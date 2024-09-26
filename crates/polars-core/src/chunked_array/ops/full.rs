@@ -128,14 +128,21 @@ impl ArrayChunked {
             ArrowDataType::FixedSizeList(
                 Box::new(ArrowField::new(
                     PlSmallStr::from_static("item"),
-                    inner_dtype.to_arrow(CompatLevel::newest()),
+                    inner_dtype.to_physical().to_arrow(CompatLevel::newest()),
                     true,
                 )),
                 width,
             ),
             length,
         );
-        ChunkedArray::with_chunk(name, arr)
+        // SAFETY: physical type matches the logical.
+        unsafe {
+            ChunkedArray::from_chunks_and_dtype(
+                name,
+                vec![Box::new(arr)],
+                DataType::Array(Box::new(inner_dtype.clone()), width),
+            )
+        }
     }
 }
 
@@ -147,14 +154,22 @@ impl ChunkFull<&Series> for ArrayChunked {
         let arrow_dtype = ArrowDataType::FixedSizeList(
             Box::new(ArrowField::new(
                 PlSmallStr::from_static("item"),
-                dtype.to_arrow(CompatLevel::newest()),
+                dtype.to_physical().to_arrow(CompatLevel::newest()),
                 true,
             )),
             width,
         );
         let value = value.rechunk().chunks()[0].clone();
         let arr = FixedSizeListArray::full(length, value, arrow_dtype);
-        ChunkedArray::with_chunk(name, arr)
+
+        // SAFETY: physical type matches the logical.
+        unsafe {
+            ChunkedArray::from_chunks_and_dtype(
+                name,
+                vec![Box::new(arr)],
+                DataType::Array(Box::new(dtype.clone()), width),
+            )
+        }
     }
 }
 
