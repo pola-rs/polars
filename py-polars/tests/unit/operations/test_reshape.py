@@ -139,6 +139,5 @@ def test_array_ndarray_reshape() -> None:
 )
 def test_reshape_empty(shape: tuple[int, ...]) -> None:
     s = pl.Series("a", [], dtype=pl.Int64)
-    print(s.reshape(shape))
     expected_len = max(shape[0], 0)
     assert s.reshape(shape).len() == expected_len
