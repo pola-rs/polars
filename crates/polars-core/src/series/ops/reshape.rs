@@ -124,8 +124,9 @@ impl Series {
             let len_iter = dimensions[1..]
                 .iter()
                 .map(|d| {
+                    let length = current_length as usize;
                     current_length *= d.get_or_infer(0);
-                    current_length as usize
+                    length
                 })
                 .collect::<Vec<_>>();
 
