@@ -216,7 +216,7 @@ pub fn convert_inner_type(array: &dyn Array, dtype: &ArrowDataType) -> Box<dyn A
 
             let array = array.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
             let inner = array.values();
-            let length = if width == array.len() {
+            let length = if width == array.size() {
                 array.len()
             } else {
                 assert!(array.values().len() > 0 || width != 0);
