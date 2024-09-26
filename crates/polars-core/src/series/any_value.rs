@@ -607,6 +607,17 @@ fn any_values_to_list(
     // GB:
     // Lord forgive for the sins I have committed in this function. The amount of strange
     // exceptions that need to happen for this to work are insane and I feel like I am going crazy.
+    //
+    // This function is essentially a copy of the `<ListChunked as FromIterator>` where it does not
+    // sample the datatype from the first element and instead we give it explicitly. This allows
+    // this function to properly assign a datatype if `avs` starts with a `null` value. Previously,
+    // this was solved by assigning the `dtype` again afterwards, but why? We should not link the
+    // implementation of these functions. We still need to assign the dtype of the ListArray and
+    // such, anyways.
+    //
+    // Then, `collect_ca_with_dtype` does not possess the necessary exceptions shown in this
+    // function to use that. I have tried adding the exceptions there and it broke other things. I
+    // really do feel like this is the simplest solution.
 
     let mut valid = true;
     let capacity = avs.len();
