@@ -54,6 +54,8 @@ fn apply_operator_owned(left: Series, right: Series, op: Operator) -> PolarsResu
 
 pub fn apply_operator(left: &Series, right: &Series, op: Operator) -> PolarsResult<Series> {
     use DataType::*;
+    dbg!(&left);
+    dbg!(&right);
     match op {
         Operator::Gt => ChunkCompare::gt(left, right).map(|ca| ca.into_series()),
         Operator::GtEq => ChunkCompare::gt_eq(left, right).map(|ca| ca.into_series()),
