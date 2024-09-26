@@ -21,7 +21,7 @@ pub struct ScanArgsParquet {
     /// Expand path given via globbing rules.
     pub glob: bool,
     pub include_file_paths: Option<PlSmallStr>,
-    pub null_rows_for_missing_columns: bool,
+    pub allow_missing_columns: bool,
 }
 
 impl Default for ScanArgsParquet {
@@ -38,7 +38,7 @@ impl Default for ScanArgsParquet {
             cache: true,
             glob: true,
             include_file_paths: None,
-            null_rows_for_missing_columns: false,
+            allow_missing_columns: false,
         }
     }
 }
@@ -76,7 +76,7 @@ impl LazyFileListReader for LazyParquetReader {
             self.args.hive_options,
             self.args.glob,
             self.args.include_file_paths,
-            self.args.null_rows_for_missing_columns,
+            self.args.allow_missing_columns,
         )?
         .build()
         .into();

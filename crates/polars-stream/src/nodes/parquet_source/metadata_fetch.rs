@@ -115,7 +115,7 @@ impl ParquetSourceNode {
             .unwrap_left()
             .len();
         let has_projection = self.file_options.with_columns.is_some();
-        let null_rows_for_missing_columns = self.file_options.null_rows_for_missing_columns;
+        let allow_missing_columns = self.file_options.allow_missing_columns;
 
         let process_metadata_bytes = {
             move |handle: task_handles_ext::AbortOnDropHandle<
@@ -145,7 +145,7 @@ impl ParquetSourceNode {
                         )
                     }
 
-                    if !null_rows_for_missing_columns {
+                    if !allow_missing_columns {
                         ensure_schema_has_projected_fields(
                             &schema,
                             projected_arrow_schema.as_ref(),

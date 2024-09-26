@@ -1923,7 +1923,7 @@ def test_prefilter_with_projection() -> None:
 @pytest.mark.parametrize("streaming", [True, False])
 @pytest.mark.parametrize("projection", [pl.all(), pl.col("b")])
 @pytest.mark.write_disk
-def test_null_rows_for_missing_columns(
+def test_allow_missing_columns(
     tmp_path: Path,
     parallel: str,
     streaming: bool,
@@ -1950,13 +1950,13 @@ def test_null_rows_for_missing_columns(
         pl.read_parquet(
             paths,
             parallel=parallel,  # type: ignore[arg-type]
-            null_rows_for_missing_columns=True,
+            allow_missing_columns=True,
         ).select(projection),
         expected,
     )
 
     assert_frame_equal(
-        pl.scan_parquet(paths, parallel=parallel, null_rows_for_missing_columns=True)  # type: ignore[arg-type]
+        pl.scan_parquet(paths, parallel=parallel, allow_missing_columns=True)  # type: ignore[arg-type]
         .select(projection)
         .collect(streaming=streaming),
         expected,

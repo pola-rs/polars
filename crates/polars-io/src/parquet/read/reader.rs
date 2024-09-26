@@ -87,9 +87,9 @@ impl<R: MmapBytesReader> ParquetReader<R> {
         mut self,
         first_schema: &Arc<ArrowSchema>,
         projected_arrow_schema: Option<&ArrowSchema>,
-        null_rows_for_missing_columns: bool,
+        allow_missing_columns: bool,
     ) -> PolarsResult<Self> {
-        if null_rows_for_missing_columns {
+        if allow_missing_columns {
             self.schema.replace(first_schema.clone());
         }
 
@@ -308,9 +308,9 @@ impl ParquetAsyncReader {
         mut self,
         first_schema: &Arc<ArrowSchema>,
         projected_arrow_schema: Option<&ArrowSchema>,
-        null_rows_for_missing_columns: bool,
+        allow_missing_columns: bool,
     ) -> PolarsResult<Self> {
-        if null_rows_for_missing_columns {
+        if allow_missing_columns {
             self.schema.replace(first_schema.clone());
         }
 

@@ -354,7 +354,7 @@ fn get_row_group_byte_ranges_for_projection<'a>(
         row_group_metadata
             .columns_under_root_iter(col_name)
             // `Option::into_iter` so that we return an empty iterator for the
-            // `null_rows_for_missing_columns` case
+            // `allow_missing_columns` case
             .into_iter()
             .flatten()
             .map(|col| {

@@ -202,7 +202,7 @@ impl ParquetExec {
                 })
                 .collect::<Vec<_>>();
 
-            let null_rows_for_missing_columns = self.file_options.null_rows_for_missing_columns;
+            let allow_missing_columns = self.file_options.allow_missing_columns;
 
             let out = POOL.install(|| {
                 readers_and_metadata
@@ -221,7 +221,7 @@ impl ParquetExec {
                             .with_arrow_schema_projection(
                                 &first_schema,
                                 projected_arrow_schema.as_deref(),
-                                null_rows_for_missing_columns,
+                                allow_missing_columns,
                             )?
                             .finish()?;
 
@@ -398,7 +398,7 @@ impl ParquetExec {
             let first_schema = first_schema.clone();
             let projected_arrow_schema = projected_arrow_schema.clone();
             let predicate = predicate.clone();
-            let null_rows_for_missing_columns = self.file_options.null_rows_for_missing_columns;
+            let allow_missing_columns = self.file_options.allow_missing_columns;
 
             if verbose {
                 eprintln!("reading of {}/{} file...", processed, paths.len());
@@ -428,7 +428,7 @@ impl ParquetExec {
                             .with_arrow_schema_projection(
                                 &first_schema,
                                 projected_arrow_schema.as_deref(),
-                                null_rows_for_missing_columns,
+                                allow_missing_columns,
                             )
                             .await?
                             .use_statistics(use_statistics)
