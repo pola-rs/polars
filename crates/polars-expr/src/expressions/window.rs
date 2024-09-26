@@ -315,7 +315,6 @@ impl WindowExpr {
     fn determine_map_strategy(
         &self,
         agg_state: &AggState,
-        sorted_keys: bool,
         gb: &GroupBy,
     ) -> PolarsResult<MapStrategy> {
         match (self.mapping, agg_state) {
@@ -333,19 +332,12 @@ impl WindowExpr {
             (WindowMapping::Join, AggState::AggregatedList(_)) => Ok(MapStrategy::Join),
             // no explicit aggregations, map over the groups
             //`(col("x").sum() * col("y")).over("groups")`
-            (WindowMapping::GroupsToRows, AggState::AggregatedList(_)) => {
-                if sorted_keys {
-                    if let GroupsProxy::Idx(g) = gb.get_groups() {
-                        debug_assert!(g.is_sorted_flag())
-                    }
-                    // GroupsProxy::Slice is always sorted
-
-                    // Note that group columns must be sorted for this to make sense!!!
-                    Ok(MapStrategy::Explode)
-                } else {
-                    Ok(MapStrategy::Map)
-                }
+            (WindowMapping::GroupsToRows, AggState::AggregatedList(_))
+                if gb.get_groups().is_sorted_flag() =>
+            {
+                Ok(MapStrategy::Explode)
             },
+            (WindowMapping::GroupsToRows, AggState::AggregatedList(_)) => Ok(MapStrategy::Map),
             // no aggregations, just return column
             // or an aggregation that has been flattened
             // we have to check which one
@@ -502,7 +494,7 @@ impl PhysicalExpr for WindowExpr {
         // to make sure that the caches align we sort
         // the groups, so that the cached groups and join keys
         // are consistent among all windows
-        if sort_groups || state.cache_window() {
+        if self.order_by.is_none() && (sort_groups || state.cache_window()) {
             groups.sort()
         }
         let gb = GroupBy::new(df, group_by_columns.clone(), groups, Some(apply_columns));
@@ -516,7 +508,7 @@ impl PhysicalExpr for WindowExpr {
         let mut ac = self.run_aggregation(df, state, &gb)?;
 
         use MapStrategy::*;
-        match self.determine_map_strategy(ac.agg_state(), sorted_keys, &gb)? {
+        match self.determine_map_strategy(ac.agg_state(), &gb)? {
             Nothing => {
                 let mut out = ac.flat_naive().into_owned();
 
