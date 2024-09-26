@@ -28,7 +28,7 @@ def show_versions() -> None:
     fsspec:               2023.12.2
     gevent:               24.2.1
     matplotlib:           3.8.4
-    nest_asyncio:         1.6.0
+    greenlet:             3.0.3
     numpy:                1.26.4
     openpyxl:             3.1.2
     pandas:               2.2.2
@@ -73,7 +73,7 @@ def _get_dependency_list() -> list[str]:
         "gevent",
         "great_tables",
         "matplotlib",
-        "nest_asyncio",
+        "greenlet",
         "numpy",
         "openpyxl",
         "pandas",
