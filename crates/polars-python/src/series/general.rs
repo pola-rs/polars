@@ -77,7 +77,13 @@ impl PySeries {
         })
     }
 
+    #[cfg(feature = "dtype-array")]
     fn reshape(&self, dims: Vec<i64>) -> PyResult<Self> {
+        let dims = dims
+            .into_iter()
+            .map(ReshapeDimension::new)
+            .collect::<Vec<_>>();
+
         let out = self
             .series
             .reshape_array(&dims)

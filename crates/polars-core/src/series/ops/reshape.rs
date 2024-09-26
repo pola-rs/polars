@@ -1,14 +1,9 @@
 use std::borrow::Cow;
-#[cfg(feature = "dtype-array")]
-use std::cmp::Ordering;
-#[cfg(feature = "dtype-array")]
-use std::collections::VecDeque;
 
 use arrow::array::*;
 use arrow::legacy::kernels::list::array_to_unit_list;
 use arrow::offset::Offsets;
 use polars_error::{polars_bail, polars_ensure, PolarsResult};
-#[cfg(feature = "dtype-array")]
 use polars_utils::format_tuple;
 
 use crate::chunked_array::builder::get_list_builder;
@@ -90,61 +85,57 @@ impl Series {
     }
 
     #[cfg(feature = "dtype-array")]
-    pub fn reshape_array(&self, dimensions: &[i64]) -> PolarsResult<Series> {
+    pub fn reshape_array(&self, dimensions: &[ReshapeDimension]) -> PolarsResult<Series> {
         polars_ensure!(
             !dimensions.is_empty(),
             InvalidOperation: "at least one dimension must be specified"
         );
 
-        let mut dims = dimensions.iter().copied().collect::<VecDeque<_>>();
-
         let leaf_array = self.get_leaf_array();
         let size = leaf_array.len();
 
         let mut total_dim_size = 1;
-        let mut infer_dim_index: Option<usize> = None;
-        for (index, &dim) in dims.iter().enumerate() {
-            match dim.cmp(&0) {
-                Ordering::Greater => total_dim_size *= dim as usize,
-                Ordering::Equal => {
+        let mut num_infers = 0;
+        for (index, &dim) in dimensions.iter().enumerate() {
+            match dim {
+                ReshapeDimension::Infer => {
                     polars_ensure!(
-                        index == 0,
-                        InvalidOperation: "cannot reshape array into shape containing a zero dimension after the first: {}",
-                        format_tuple!(dims)
+                        num_infers == 0,
+                        InvalidOperation: "can only specify one inferred dimension"
                     );
-                    total_dim_size = 0;
-                    // We can early exit here, as empty arrays will error with multiple dimensions,
-                    // and non-empty arrays will error when the first dimension is zero.
-                    break;
+                    num_infers += 1;
                 },
-                Ordering::Less => {
-                    polars_ensure!(
-                        infer_dim_index.is_none(),
-                        InvalidOperation: "can only specify one unknown dimension"
-                    );
-                    infer_dim_index = Some(index);
+                ReshapeDimension::Specified(dim) => {
+                    let dim = dim.get();
+
+                    if dim > 0 {
+                        total_dim_size *= dim as usize
+                    } else {
+                        polars_ensure!(
+                            index == 0,
+                            InvalidOperation: "cannot reshape array into shape containing a zero dimension after the first: {}",
+                            format_tuple!(dimensions)
+                        );
+                        total_dim_size = 0;
+                        // We can early exit here, as empty arrays will error with multiple dimensions,
+                        // and non-empty arrays will error when the first dimension is zero.
+                        break;
+                    }
                 },
             }
         }
 
         if size == 0 {
-            if dims.len() > 1 || (infer_dim_index.is_none() && total_dim_size != 0) {
-                polars_bail!(InvalidOperation: "cannot reshape empty array into shape {}", format_tuple!(dims))
+            if dimensions.len() > 1 || (num_infers == 0 && total_dim_size != 0) {
+                polars_bail!(InvalidOperation: "cannot reshape empty array into shape {}", format_tuple!(dimensions))
             }
         } else if total_dim_size == 0 {
-            polars_bail!(InvalidOperation: "cannot reshape non-empty array into shape containing a zero dimension: {}", format_tuple!(dims))
+            polars_bail!(InvalidOperation: "cannot reshape non-empty array into shape containing a zero dimension: {}", format_tuple!(dimensions))
         } else {
             polars_ensure!(
                 size % total_dim_size == 0,
-                InvalidOperation: "cannot reshape array of size {} into shape {}", size, format_tuple!(dims)
+                InvalidOperation: "cannot reshape array of size {} into shape {}", size, format_tuple!(dimensions)
             );
-        }
-
-        // Infer dimension
-        if let Some(index) = infer_dim_index {
-            let inferred_dim = size / total_dim_size;
-            let item = dims.get_mut(index).unwrap();
-            *item = i64::try_from(inferred_dim).unwrap();
         }
 
         let leaf_array = leaf_array.rechunk();
@@ -152,8 +143,12 @@ impl Series {
         let mut prev_array = leaf_array.chunks()[0].clone();
 
         // We pop the outer dimension as that is the height of the series.
-        let _ = dims.pop_front();
-        while let Some(dim) = dims.pop_back() {
+        for idx in (1..dimensions.len()).rev() {
+            // Infer dimension if needed
+            let dim = dimensions[idx].get_or_infer_with(|| {
+                debug_assert!(num_infers > 0);
+                (size / total_dim_size) as u64
+            });
             prev_dtype = DataType::Array(Box::new(prev_dtype), dim as usize);
 
             prev_array = FixedSizeListArray::new(
@@ -172,7 +167,7 @@ impl Series {
         })
     }
 
-    pub fn reshape_list(&self, dimensions: &[i64]) -> PolarsResult<Series> {
+    pub fn reshape_list(&self, dimensions: &[ReshapeDimension]) -> PolarsResult<Series> {
         polars_ensure!(
             !dimensions.is_empty(),
             InvalidOperation: "at least one dimension must be specified"
@@ -187,38 +182,43 @@ impl Series {
 
         let s_ref = s.as_ref();
 
-        let dimensions = dimensions.to_vec();
+        // let dimensions = dimensions.to_vec();
 
         match dimensions.len() {
             1 => {
                 polars_ensure!(
-                    dimensions[0] as usize == s_ref.len() || dimensions[0] == -1_i64,
+                    dimensions[0].get().map_or(true, |dim| dim as usize == s_ref.len()),
                     InvalidOperation: "cannot reshape len {} into shape {:?}", s_ref.len(), dimensions,
                 );
                 Ok(s_ref.clone())
             },
             2 => {
-                let mut rows = dimensions[0];
-                let mut cols = dimensions[1];
+                let rows = dimensions[0];
+                let cols = dimensions[1];
 
                 if s_ref.len() == 0_usize {
-                    if (rows == -1 || rows == 0) && (cols == -1 || cols == 0 || cols == 1) {
+                    if rows.get_or_infer(0) == 0 && cols.get_or_infer(0) <= 1 {
                         let s = reshape_fast_path(s.name().clone(), s_ref);
                         return Ok(s);
                     } else {
-                        polars_bail!(InvalidOperation: "cannot reshape len 0 into shape {:?}", dimensions,)
+                        polars_bail!(InvalidOperation: "cannot reshape len 0 into shape {}", format_tuple!(dimensions))
                     }
                 }
 
+                use ReshapeDimension as RD;
                 // Infer dimension.
-                if rows == -1 && cols >= 1 {
-                    rows = s_ref.len() as i64 / cols
-                } else if cols == -1 && rows >= 1 {
-                    cols = s_ref.len() as i64 / rows
-                } else if rows == -1 && cols == -1 {
-                    rows = s_ref.len() as i64;
-                    cols = 1_i64;
-                }
+
+                let (rows, cols) = match (rows, cols) {
+                    (RD::Infer, RD::Specified(cols)) if cols.get() >= 1 => {
+                        (s_ref.len() as u64 / cols.get(), cols.get())
+                    },
+                    (RD::Specified(rows), RD::Infer) if rows.get() >= 1 => {
+                        (rows.get(), s_ref.len() as u64 / rows.get())
+                    },
+                    (RD::Infer, RD::Infer) => (s_ref.len() as u64, 1u64),
+                    (RD::Specified(rows), RD::Specified(cols)) => (rows.get(), cols.get()),
+                    _ => polars_bail!(InvalidOperation: "reshape of non-zero list into zero list"),
+                };
 
                 // Fast path, we can create a unit list so we only allocate offsets.
                 if rows as usize == s_ref.len() && cols == 1 {
@@ -234,9 +234,9 @@ impl Series {
                 let mut builder =
                     get_list_builder(s_ref.dtype(), s_ref.len(), rows as usize, s.name().clone())?;
 
-                let mut offset = 0i64;
+                let mut offset = 0u64;
                 for _ in 0..rows {
-                    let row = s_ref.slice(offset, cols as usize);
+                    let row = s_ref.slice(offset as i64, cols as usize);
                     builder.append_series(&row).unwrap();
                     offset += cols;
                 }
@@ -279,7 +279,11 @@ mod test {
             (&[-1, 2], 2),
             (&[2, -1], 2),
         ] {
-            let out = s.reshape_list(dims)?;
+            let dims = dims
+                .iter()
+                .map(|&v| ReshapeDimension::new(v))
+                .collect::<Vec<_>>();
+            let out = s.reshape_list(&dims)?;
             assert_eq!(out.len(), list_len);
             assert!(matches!(out.dtype(), DataType::List(_)));
             assert_eq!(out.explode()?.len(), 4);

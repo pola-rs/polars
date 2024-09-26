@@ -244,25 +244,43 @@ impl FunctionExpr {
             },
             #[cfg(feature = "repeat_by")]
             RepeatBy => mapper.map_dtype(|dt| DataType::List(dt.clone().into())),
-            Reshape(dims, nested_type) => mapper.map_dtype(|dt| {
+            #[cfg(feature = "dtype-array")]
+            Reshape(dims) => mapper.try_map_dtype(|dt: &DataType| {
                 let dtype = dt.inner_dtype().unwrap_or(dt).clone();
-                if dims.len() == 1 {
-                    dtype
-                } else {
-                    match nested_type {
-                        NestedType::List => DataType::List(Box::new(dtype)),
-                        #[cfg(feature = "dtype-array")]
-                        NestedType::Array => {
-                            let mut prev_dtype = dtype.leaf_dtype().clone();
 
-                            // We pop the outer dimension as that is the height of the series.
-                            for dim in &dims[1..] {
-                                prev_dtype = DataType::Array(Box::new(prev_dtype), *dim as usize);
-                            }
-                            prev_dtype
-                        },
-                    }
+                if dims.len() == 1 {
+                    return Ok(dtype);
                 }
+
+                let num_infers = dims.iter().filter(|d| matches!(d, ReshapeDimension::Infer)).count();
+
+                polars_ensure!(num_infers <= 1, InvalidOperation: "can only specify one inferred dimension");
+
+                let mut inferred_size = 0;
+                if num_infers == 1 {
+                    let mut total_size = 1u64;
+                    let mut current = dt;
+                    while let DataType::Array(dt, width) = current {
+                        if *width == 0 {
+                            total_size = 0;
+                            break;
+                        }
+
+                        current = dt.as_ref();
+                        total_size *= *width as u64;
+                    }
+
+                    let current_size = dims.iter().map(|d| d.get_or_infer(1)).product::<u64>();
+                    inferred_size = total_size / current_size;
+                }
+
+                let mut prev_dtype = dtype.leaf_dtype().clone();
+
+                // We pop the outer dimension as that is the height of the series.
+                for dim in &dims[1..] {
+                    prev_dtype = DataType::Array(Box::new(prev_dtype), dim.get_or_infer(inferred_size) as usize);
+                }
+                Ok(prev_dtype)
             }),
             #[cfg(feature = "cutqcut")]
             QCut {

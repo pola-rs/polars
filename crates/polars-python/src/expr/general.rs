@@ -762,8 +762,9 @@ impl PyExpr {
         self.inner.clone().kurtosis(fisher, bias).into()
     }
 
+    #[cfg(feature = "dtype-array")]
     fn reshape(&self, dims: Vec<i64>) -> Self {
-        self.inner.clone().reshape(&dims, NestedType::Array).into()
+        self.inner.clone().reshape(&dims).into()
     }
 
     fn to_physical(&self) -> Self {
