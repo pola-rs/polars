@@ -1400,8 +1400,13 @@ def test_literal_from_date(
 @pytest.mark.parametrize(
     "value",
     [
-        datetime(1677, 9, 22),
-        datetime(1677, 9, 22, tzinfo=ZoneInfo("EST")),
+        # Very old dates with a timezone like EST caused problems for the CI due
+        # to the IANA timezone database updating their historical offset, so
+        # these have been disabled for now. A mismatch between the timezone
+        # database that chrono_tz crate uses vs. the one that Python uses (which
+        # differs from platform to platform) will cause this to fail.
+        # datetime(1677, 9, 22),
+        # datetime(1677, 9, 22, tzinfo=ZoneInfo("EST")),
         datetime(1970, 1, 1),
         datetime(1970, 1, 1, tzinfo=ZoneInfo("EST")),
         datetime(2024, 2, 29),
