@@ -27,7 +27,7 @@ impl IntoDf for DataFrame {
 impl<T: IntoDf> DataFrameOps for T {}
 
 pub trait DataFrameOps: IntoDf {
-    /// Crea dummy variables.
+    /// Create dummy variables.
     ///
     /// # Example
     ///
