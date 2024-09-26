@@ -24,7 +24,7 @@ pydantic>=2.0.0
 numba
 # Datetime / time zones
 backports.zoneinfo; python_version < '3.9'
-tzdata; platform_system == 'Windows'
+tzdata==2024.1; platform_system == 'Windows'
 # Database
 sqlalchemy
 adbc-driver-manager; python_version >= '3.9' and platform_system != 'Windows'
