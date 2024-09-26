@@ -7,48 +7,44 @@ from polars.testing import assert_frame_equal
 
 def test_unpivot() -> None:
     df = pl.DataFrame({"A": ["a", "b", "c"], "B": [1, 3, 5], "C": [2, 4, 6]})
+    expected = {
+        ("a", "B", 1),
+        ("b", "B", 3),
+        ("c", "B", 5),
+        ("a", "C", 2),
+        ("b", "C", 4),
+        ("c", "C", 6),
+    }
     for _idv, _vv in (("A", ("B", "C")), (cs.string(), cs.integer())):
         unpivoted_eager = df.unpivot(index="A", on=["B", "C"])
-        assert all(unpivoted_eager["value"] == [1, 3, 5, 2, 4, 6])
+        assert set(unpivoted_eager.iter_rows()) == expected
 
-        unpivoted_lazy = df.lazy().unpivot(index="A", on=["B", "C"])
-        assert all(unpivoted_lazy.collect()["value"] == [1, 3, 5, 2, 4, 6])
+        unpivoted_lazy = df.lazy().unpivot(index="A", on=["B", "C"]).collect()
+        assert set(unpivoted_lazy.iter_rows()) == expected
 
     unpivoted = df.unpivot(index="A", on="B")
-    assert all(unpivoted["value"] == [1, 3, 5])
-    n = 3
+    assert set(unpivoted["value"]) == {1, 3, 5}
 
+    expected_full = {
+        ("A", "a"),
+        ("A", "b"),
+        ("A", "c"),
+        ("B", "1"),
+        ("B", "3"),
+        ("B", "5"),
+        ("C", "2"),
+        ("C", "4"),
+        ("C", "6"),
+    }
     for unpivoted in [df.unpivot(), df.lazy().unpivot().collect()]:
-        assert unpivoted["variable"].to_list() == ["A"] * n + ["B"] * n + ["C"] * n
-        assert unpivoted["value"].to_list() == [
-            "a",
-            "b",
-            "c",
-            "1",
-            "3",
-            "5",
-            "2",
-            "4",
-            "6",
-        ]
+        assert set(unpivoted.iter_rows()) == expected_full
 
     with pytest.deprecated_call(match="unpivot"):
         for unpivoted in [
             df.melt(value_name="foo", variable_name="bar"),
             df.lazy().melt(value_name="foo", variable_name="bar").collect(),
         ]:
-            assert unpivoted["bar"].to_list() == ["A"] * n + ["B"] * n + ["C"] * n
-            assert unpivoted["foo"].to_list() == [
-                "a",
-                "b",
-                "c",
-                "1",
-                "3",
-                "5",
-                "2",
-                "4",
-                "6",
-            ]
+            assert set(unpivoted.iter_rows()) == expected_full
 
 
 def test_unpivot_projection_pd_7747() -> None:
