@@ -327,3 +327,18 @@ def test_array_inner_recursive_python_dtype() -> None:
 def test_array_missing_shape() -> None:
     with pytest.raises(TypeError):
         pl.Array(pl.Int8)
+
+
+def test_array_invalid_physical_type_18920() -> None:
+    s1 = pl.Series("x", [[1000, 2000]], pl.List(pl.Datetime))
+    s2 = pl.Series("x", [None], pl.List(pl.Datetime))
+
+    df1 = s1.to_frame().with_columns(pl.col.x.list.to_array(2))
+    df2 = s2.to_frame().with_columns(pl.col.x.list.to_array(2))
+
+    df = pl.concat([df1, df2])
+
+    expected_s = pl.Series("x", [[1000, 2000], None], pl.List(pl.Datetime))
+
+    expected = expected_s.to_frame().with_columns(pl.col.x.list.to_array(2))
+    assert_frame_equal(df, expected)
