@@ -48,6 +48,10 @@ impl TotalEqKernel for FixedSizeListArray {
             return Bitmap::new_with_value(false, self.len());
         }
 
+        if *self_width == 0 {
+            return Bitmap::new_with_value(true, self.len());
+        }
+
         let inner = array_tot_eq_missing_kernel(self.values().as_ref(), other.values().as_ref());
 
         agg_array_bitmap(inner, self.size(), |zeroes| zeroes == 0)
@@ -67,6 +71,10 @@ impl TotalEqKernel for FixedSizeListArray {
 
         if self_width != other_width {
             return Bitmap::new_with_value(true, self.len());
+        }
+
+        if *self_width == 0 {
+            return Bitmap::new_with_value(false, self.len());
         }
 
         let inner = array_tot_ne_missing_kernel(self.values().as_ref(), other.values().as_ref());

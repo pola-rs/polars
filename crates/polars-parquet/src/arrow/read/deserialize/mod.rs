@@ -45,7 +45,7 @@ pub fn create_list(
     nested: &mut NestedState,
     values: Box<dyn Array>,
 ) -> Box<dyn Array> {
-    let (mut offsets, validity) = nested.pop().unwrap();
+    let (length, mut offsets, validity) = nested.pop().unwrap();
     let validity = validity.and_then(freeze_validity);
     match dtype.to_logical_type() {
         ArrowDataType::List(_) => {
@@ -75,7 +75,7 @@ pub fn create_list(
             ))
         },
         ArrowDataType::FixedSizeList(_, _) => {
-            Box::new(FixedSizeListArray::new(dtype, values, validity))
+            Box::new(FixedSizeListArray::new(dtype, length, values, validity))
         },
         _ => unreachable!(),
     }
@@ -87,7 +87,7 @@ pub fn create_map(
     nested: &mut NestedState,
     values: Box<dyn Array>,
 ) -> Box<dyn Array> {
-    let (mut offsets, validity) = nested.pop().unwrap();
+    let (_, mut offsets, validity) = nested.pop().unwrap();
     match dtype.to_logical_type() {
         ArrowDataType::Map(_, _) => {
             offsets.push(values.len() as i64);

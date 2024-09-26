@@ -2,7 +2,6 @@ use bytemuck::Zeroable;
 use polars_utils::no_call_const;
 
 use crate::array::binview::BinaryViewValueIter;
-use crate::array::growable::{Growable, GrowableFixedSizeList};
 use crate::array::static_array_collect::ArrayFromIterDtype;
 use crate::array::{
     Array, ArrayValuesIter, BinaryArray, BinaryValueIter, BinaryViewArray, BooleanArray,
@@ -391,13 +390,6 @@ impl StaticArray for FixedSizeListArray {
 
     fn full_null(length: usize, dtype: ArrowDataType) -> Self {
         Self::new_null(dtype, length)
-    }
-
-    fn full(length: usize, value: Self::ValueT<'_>, dtype: ArrowDataType) -> Self {
-        let singular_arr = FixedSizeListArray::new(dtype, value, None);
-        let mut arr = GrowableFixedSizeList::new(vec![&singular_arr], false, length);
-        unsafe { arr.extend_copies(0, 0, 1, length) }
-        arr.into()
     }
 }
 

@@ -27,6 +27,6 @@ fn fixed_size_list() {
         3,
     );
     let values = Box::new(Float32Array::from_slice([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]));
-    let a = FixedSizeListArray::new(dtype, values, None);
+    let a = FixedSizeListArray::new(dtype, 2, values, None);
     assert_eq!(6 * std::mem::size_of::<f32>(), estimated_bytes_size(&a));
 }

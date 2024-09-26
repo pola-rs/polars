@@ -403,7 +403,7 @@ pub fn columns_to_iter_recursive(
                 let (mut nested, last_array) =
                     field_to_nested_array(init.clone(), &mut columns, &mut types, last_field)?;
                 debug_assert!(matches!(nested.last().unwrap(), NestedContent::Struct));
-                let (_, struct_validity) = nested.pop().unwrap();
+                let (_, _, struct_validity) = nested.pop().unwrap();
 
                 let mut field_arrays = Vec::<Box<dyn Array>>::with_capacity(fields.len());
                 field_arrays.push(last_array);
@@ -416,7 +416,7 @@ pub fn columns_to_iter_recursive(
                     {
                         debug_assert!(matches!(_nested.last().unwrap(), NestedContent::Struct));
                         debug_assert_eq!(
-                            _nested.pop().unwrap().1.and_then(freeze_validity),
+                            _nested.pop().unwrap().2.and_then(freeze_validity),
                             struct_validity.clone().and_then(freeze_validity),
                         );
                     }

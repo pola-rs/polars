@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -9,7 +8,6 @@ import pandas as pd
 import pytest
 
 import polars as pl
-from polars.exceptions import InvalidOperationError
 from polars.testing.asserts.series import assert_series_equal
 
 if TYPE_CHECKING:
@@ -157,11 +155,10 @@ def test_series_init_pandas_timestamp_18127() -> None:
 
 def test_series_init_np_2d_zero_zero_shape() -> None:
     arr = np.array([]).reshape(0, 0)
-    with pytest.raises(
-        InvalidOperationError,
-        match=re.escape("cannot reshape empty array into shape (0, 0)"),
-    ):
-        pl.Series(arr)
+    assert_series_equal(
+        pl.Series("a", arr),
+        pl.Series("a", [], pl.Array(pl.Float64, 0)),
+    )
 
 
 def test_list_null_constructor_schema() -> None:

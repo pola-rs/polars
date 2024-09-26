@@ -12,6 +12,7 @@ fn data() -> FixedSizeListArray {
             Box::new(Field::new("a".into(), values.dtype().clone(), true)),
             2,
         ),
+        2,
         values.boxed(),
         Some([true, false].into()),
     )
@@ -87,6 +88,7 @@ fn wrong_size() {
             Box::new(Field::new("a".into(), ArrowDataType::Int32, true)),
             2
         ),
+        2,
         values.boxed(),
         None
     )
@@ -95,12 +97,13 @@ fn wrong_size() {
 
 #[test]
 fn wrong_len() {
-    let values = Int32Array::from_slice([10, 20, 0]);
+    let values = Int32Array::from_slice([10, 20, 0, 0]);
     assert!(FixedSizeListArray::try_new(
         ArrowDataType::FixedSizeList(
             Box::new(Field::new("a".into(), ArrowDataType::Int32, true)),
             2
         ),
+        2,
         values.boxed(),
         Some([true, false, false].into()), // it should be 2
     )
@@ -109,11 +112,12 @@ fn wrong_len() {
 
 #[test]
 fn wrong_dtype() {
-    let values = Int32Array::from_slice([10, 20, 0]);
+    let values = Int32Array::from_slice([10, 20, 0, 0]);
     assert!(FixedSizeListArray::try_new(
         ArrowDataType::Binary,
+        2,
         values.boxed(),
-        Some([true, false, false].into()), // it should be 2
+        Some([true, false, false, false].into()),
     )
     .is_err());
 }

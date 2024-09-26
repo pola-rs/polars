@@ -64,6 +64,7 @@ impl MutableArray for DynMutableListArray {
             },
             ArrowDataType::FixedSizeList(field, _) => Box::new(FixedSizeListArray::new(
                 ArrowDataType::FixedSizeList(field.clone(), inner.len()),
+                self.len(),
                 inner,
                 None,
             )),

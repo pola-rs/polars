@@ -189,6 +189,84 @@ impl Column {
         }
     }
 
+    // # Try to Chunked Arrays
+    pub fn try_bool(&self) -> Option<&BooleanChunked> {
+        self.as_materialized_series().try_bool()
+    }
+    pub fn try_i8(&self) -> Option<&Int8Chunked> {
+        self.as_materialized_series().try_i8()
+    }
+    pub fn try_i16(&self) -> Option<&Int16Chunked> {
+        self.as_materialized_series().try_i16()
+    }
+    pub fn try_i32(&self) -> Option<&Int32Chunked> {
+        self.as_materialized_series().try_i32()
+    }
+    pub fn try_i64(&self) -> Option<&Int64Chunked> {
+        self.as_materialized_series().try_i64()
+    }
+    pub fn try_u8(&self) -> Option<&UInt8Chunked> {
+        self.as_materialized_series().try_u8()
+    }
+    pub fn try_u16(&self) -> Option<&UInt16Chunked> {
+        self.as_materialized_series().try_u16()
+    }
+    pub fn try_u32(&self) -> Option<&UInt32Chunked> {
+        self.as_materialized_series().try_u32()
+    }
+    pub fn try_u64(&self) -> Option<&UInt64Chunked> {
+        self.as_materialized_series().try_u64()
+    }
+    pub fn try_f32(&self) -> Option<&Float32Chunked> {
+        self.as_materialized_series().try_f32()
+    }
+    pub fn try_f64(&self) -> Option<&Float64Chunked> {
+        self.as_materialized_series().try_f64()
+    }
+    pub fn try_str(&self) -> Option<&StringChunked> {
+        self.as_materialized_series().try_str()
+    }
+    pub fn try_list(&self) -> Option<&ListChunked> {
+        self.as_materialized_series().try_list()
+    }
+    pub fn try_binary(&self) -> Option<&BinaryChunked> {
+        self.as_materialized_series().try_binary()
+    }
+    pub fn try_idx(&self) -> Option<&IdxCa> {
+        self.as_materialized_series().try_idx()
+    }
+    pub fn try_binary_offset(&self) -> Option<&BinaryOffsetChunked> {
+        self.as_materialized_series().try_binary_offset()
+    }
+    #[cfg(feature = "dtype-datetime")]
+    pub fn try_datetime(&self) -> Option<&DatetimeChunked> {
+        self.as_materialized_series().try_datetime()
+    }
+    #[cfg(feature = "dtype-struct")]
+    pub fn try_struct(&self) -> Option<&StructChunked> {
+        self.as_materialized_series().try_struct()
+    }
+    #[cfg(feature = "dtype-decimal")]
+    pub fn try_decimal(&self) -> Option<&DecimalChunked> {
+        self.as_materialized_series().try_decimal()
+    }
+    #[cfg(feature = "dtype-array")]
+    pub fn try_array(&self) -> Option<&ArrayChunked> {
+        self.as_materialized_series().try_array()
+    }
+    #[cfg(feature = "dtype-categorical")]
+    pub fn try_categorical(&self) -> Option<&CategoricalChunked> {
+        self.as_materialized_series().try_categorical()
+    }
+    #[cfg(feature = "dtype-date")]
+    pub fn try_date(&self) -> Option<&DateChunked> {
+        self.as_materialized_series().try_date()
+    }
+    #[cfg(feature = "dtype-duration")]
+    pub fn try_duration(&self) -> Option<&DurationChunked> {
+        self.as_materialized_series().try_duration()
+    }
+
     // # To Chunked Arrays
     pub fn bool(&self) -> PolarsResult<&BooleanChunked> {
         self.as_materialized_series().bool()

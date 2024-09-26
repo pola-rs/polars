@@ -876,9 +876,8 @@ def test_parquet_array_dtype_nulls() -> None:
         ([[1, 2, 3]], pl.Array(pl.Int64, 3)),
         ([[1, None, 3], None, [1, 2, None]], pl.Array(pl.Int64, 3)),
         ([[1, 2], None, [None, 3]], pl.Array(pl.Int64, 2)),
-        # @TODO: Enable when zero-width arrays are enabled
-        # ([[], [], []],                       pl.Array(pl.Int64, 0)),
-        # ([[], None, []],                     pl.Array(pl.Int64, 0)),
+        ([[], [], []], pl.Array(pl.Int64, 0)),
+        ([[], None, []], pl.Array(pl.Int64, 0)),
         (
             [[[1, 5, 2], [42, 13, 37]], [[1, 2, 3], [5, 2, 3]], [[1, 2, 1], [3, 1, 3]]],
             pl.Array(pl.Array(pl.Int8, 3), 2),
@@ -924,7 +923,7 @@ def test_parquet_array_dtype_nulls() -> None:
                 [[]],
                 [[None]],
                 [[[None], None]],
-                [[[None], []]],
+                [[[None], [None]]],
                 [[[[None]], [[[1]]]]],
                 [[[[[None]]]]],
                 [[[[[1]]]]],
@@ -938,12 +937,6 @@ def test_complex_types(series: list[Any], dtype: pl.DataType) -> None:
     df = pl.DataFrame({"x": xs})
 
     test_round_trip(df)
-
-
-@pytest.mark.xfail
-def test_placeholder_zero_array() -> None:
-    # @TODO: if this does not fail anymore please enable the upper test-cases
-    pl.Series([[]], dtype=pl.Array(pl.Int8, 0))
 
 
 @pytest.mark.write_disk

@@ -825,6 +825,17 @@ impl Series {
         unsafe { Ok(self.take_unchecked(&idx)) }
     }
 
+    pub fn try_idx(&self) -> Option<&IdxCa> {
+        #[cfg(feature = "bigidx")]
+        {
+            self.try_u64()
+        }
+        #[cfg(not(feature = "bigidx"))]
+        {
+            self.try_u32()
+        }
+    }
+
     pub fn idx(&self) -> PolarsResult<&IdxCa> {
         #[cfg(feature = "bigidx")]
         {
