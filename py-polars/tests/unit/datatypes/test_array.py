@@ -338,7 +338,7 @@ def test_array_invalid_physical_type_18920() -> None:
 
     df = pl.concat([df1, df2])
 
-    expected = pl.Series("x", [[1000, 2000], None], pl.List(pl.Datetime))
+    expected_s = pl.Series("x", [[1000, 2000], None], pl.List(pl.Datetime))
 
-    expected = expected.to_frame().with_columns(pl.col.x.list.to_array(2))
+    expected = expected_s.to_frame().with_columns(pl.col.x.list.to_array(2))
     assert_frame_equal(df, expected)
