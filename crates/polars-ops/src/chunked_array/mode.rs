@@ -1,4 +1,3 @@
-use arrow::legacy::utils::CustomIterTools;
 use polars_core::prelude::*;
 use polars_core::{with_match_physical_integer_polars_type, POOL};
 
@@ -33,29 +32,23 @@ fn mode_64(ca: &Float64Chunked) -> PolarsResult<Float64Chunked> {
 fn mode_indices(groups: GroupsProxy) -> Vec<IdxSize> {
     match groups {
         GroupsProxy::Idx(groups) => {
-            let mut groups = groups.into_iter().collect_trusted::<Vec<_>>();
-            groups.sort_unstable_by_key(|k| k.1.len());
-            let last = &groups.last().unwrap();
-            let max_occur = last.1.len();
+            let Some(max_len) = groups.iter().map(|g| g.1.len()).max() else {
+                return Vec::new();
+            };
             groups
-                .iter()
-                .rev()
-                .take_while(|v| v.1.len() == max_occur)
-                .map(|v| v.0)
+                .into_iter()
+                .filter(|g| g.1.len() == max_len)
+                .map(|g| g.0)
                 .collect()
         },
         GroupsProxy::Slice { groups, .. } => {
-            let last = groups.last().unwrap();
-            let max_occur = last[1];
-
+            let Some(max_len) = groups.iter().map(|g| g[1]).max() else {
+                return Vec::new();
+            };
             groups
-                .iter()
-                .rev()
-                .take_while(|v| {
-                    let len = v[1];
-                    len == max_occur
-                })
-                .map(|v| v[0])
+                .into_iter()
+                .filter(|g| g[1] == max_len)
+                .map(|g| g[0])
                 .collect()
         },
     }
