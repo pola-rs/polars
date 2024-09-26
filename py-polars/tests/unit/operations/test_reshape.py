@@ -9,6 +9,10 @@ from polars.exceptions import InvalidOperationError
 from polars.testing import assert_series_equal
 
 
+def display_shape(shape: tuple[int, ...]) -> str:
+    return "(" + ", ".join(tuple(str(d) if d >= 0 else "inferred" for d in shape)) + ")"
+
+
 def test_reshape() -> None:
     s = pl.Series("a", [1, 2, 3, 4])
     out = s.reshape((-1, 2))
@@ -47,10 +51,11 @@ def test_reshape() -> None:
 @pytest.mark.parametrize("shape", [(1, 3), (5, 1), (-1, 5), (3, -1)])
 def test_reshape_invalid_dimension_size(shape: tuple[int, ...]) -> None:
     s = pl.Series("a", [1, 2, 3, 4])
-    print(shape)
     with pytest.raises(
         InvalidOperationError,
-        match=re.escape(f"cannot reshape array of size 4 into shape {shape}"),
+        match=re.escape(
+            f"cannot reshape array of size 4 into shape {display_shape(shape)}"
+        ),
     ):
         s.reshape(shape)
 
@@ -61,7 +66,7 @@ def test_reshape_invalid_zero_dimension() -> None:
     with pytest.raises(
         InvalidOperationError,
         match=re.escape(
-            f"cannot reshape array into shape containing a zero dimension after the first: {shape}"
+            f"cannot reshape array into shape containing a zero dimension after the first: {display_shape(shape)}"
         ),
     ):
         s.reshape(shape)
@@ -73,7 +78,7 @@ def test_reshape_invalid_zero_dimension2(shape: tuple[int, ...]) -> None:
     with pytest.raises(
         InvalidOperationError,
         match=re.escape(
-            f"cannot reshape non-empty array into shape containing a zero dimension: {shape}"
+            f"cannot reshape non-empty array into shape containing a zero dimension: {display_shape(shape)}"
         ),
     ):
         s.reshape(shape)
@@ -83,7 +88,7 @@ def test_reshape_invalid_zero_dimension2(shape: tuple[int, ...]) -> None:
 def test_reshape_invalid_multiple_unknown_dims(shape: tuple[int, ...]) -> None:
     s = pl.Series("a", [1, 2, 3, 4])
     with pytest.raises(
-        InvalidOperationError, match="can only specify one unknown dimension"
+        InvalidOperationError, match="can only specify one inferred dimension"
     ):
         s.reshape(shape)
 
@@ -100,7 +105,9 @@ def test_reshape_empty_invalid_2d(shape: tuple[int, ...]) -> None:
     s = pl.Series("a", [], dtype=pl.Int64)
     with pytest.raises(
         InvalidOperationError,
-        match=re.escape(f"cannot reshape empty array into shape {shape}"),
+        match=re.escape(
+            f"cannot reshape empty array into shape {display_shape(shape)}"
+        ),
     ):
         s.reshape(shape)
 

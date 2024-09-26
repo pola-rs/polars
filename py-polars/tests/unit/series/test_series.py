@@ -980,6 +980,7 @@ def test_reinterpret() -> None:
 def test_mode() -> None:
     s = pl.Series("a", [1, 1, 2])
     assert s.mode().to_list() == [1]
+    assert s.set_sorted().mode().to_list() == [1]
 
     df = pl.DataFrame([s])
     assert df.select([pl.col("a").mode()])["a"].to_list() == [1]
@@ -990,7 +991,7 @@ def test_mode() -> None:
     assert pl.Series([1.0, 2.0, 3.0, 2.0]).mode().item() == 2.0
 
     # sorted data
-    assert pl.int_range(0, 3, eager=True).mode().to_list() == [2, 1, 0]
+    assert set(pl.int_range(0, 3, eager=True).mode().to_list()) == {0, 1, 2}
 
 
 def test_diff() -> None:
