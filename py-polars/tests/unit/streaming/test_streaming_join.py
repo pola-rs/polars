@@ -122,7 +122,7 @@ def test_streaming_join_rechunk_12498() -> None:
     b = pl.select(B=rows).lazy()
 
     q = a.join(b, how="cross")
-    assert q.collect(streaming=True).to_dict(as_series=False) == {
+    assert q.collect(streaming=True).sort(["B", "A"]).to_dict(as_series=False) == {
         "A": [0, 1, 0, 1],
         "B": [0, 0, 1, 1],
     }
