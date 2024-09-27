@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
+use arrow::compute::cast::SerPrimitive;
 use arrow::types::PrimitiveType;
-use polars_utils::format_pl_smallstr;
 #[cfg(feature = "dtype-categorical")]
 use polars_utils::sync::SyncPtr;
 use polars_utils::total_ord::ToTotalOrd;
@@ -563,19 +563,22 @@ impl<'a> AnyValue<'a> {
             (AnyValue::Float64(v), DataType::Boolean) => AnyValue::Boolean(*v != f64::default()),
 
             // to string
-            (AnyValue::String(v), DataType::String) => {
-                AnyValue::StringOwned(PlSmallStr::from_str(v))
-            },
+            (AnyValue::String(v), DataType::String) => AnyValue::String(v),
             (AnyValue::StringOwned(v), DataType::String) => AnyValue::StringOwned(v.clone()),
 
             (av, DataType::String) => {
+                let mut tmp = vec![];
                 if av.is_unsigned_integer() {
-                    AnyValue::StringOwned(format_pl_smallstr!("{}", av.extract::<u64>()?))
+                    let val = av.extract::<u64>()?;
+                    SerPrimitive::write(&mut tmp, val);
                 } else if av.is_float() {
-                    AnyValue::StringOwned(format_pl_smallstr!("{}", av.extract::<f64>()?))
+                    let val = av.extract::<f64>()?;
+                    SerPrimitive::write(&mut tmp, val);
                 } else {
-                    AnyValue::StringOwned(format_pl_smallstr!("{}", av.extract::<i64>()?))
+                    let val = av.extract::<i64>()?;
+                    SerPrimitive::write(&mut tmp, val);
                 }
+                AnyValue::StringOwned(PlSmallStr::from_str(std::str::from_utf8(&tmp).unwrap()))
             },
 
             // to binary
