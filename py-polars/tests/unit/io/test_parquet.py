@@ -1932,10 +1932,16 @@ def test_allow_missing_columns(
 
     expected = pl.DataFrame({"a": [1, 2], "b": [1, None]}).select(projection)
 
-    with pytest.raises(pl.exceptions.SchemaError, match="did not find column"):
+    with pytest.raises(
+        pl.exceptions.ColumnNotFoundError,
+        match="error with column selection, consider enabling `allow_missing_columns`: did not find column in file: b",
+    ):
         pl.read_parquet(paths, parallel=parallel)  # type: ignore[arg-type]
 
-    with pytest.raises(pl.exceptions.SchemaError, match="did not find column"):
+    with pytest.raises(
+        pl.exceptions.ColumnNotFoundError,
+        match="error with column selection, consider enabling `allow_missing_columns`: did not find column in file: b",
+    ):
         pl.scan_parquet(paths, parallel=parallel).select(projection).collect(  # type: ignore[arg-type]
             streaming=streaming
         )

@@ -95,22 +95,38 @@ impl<R: MmapBytesReader> ParquetReader<R> {
 
         let schema = self.schema()?;
 
-        if let Some(projected_arrow_schema) = projected_arrow_schema {
-            self.projection = projected_arrow_schema_to_projection_indices(
-                schema.as_ref(),
-                projected_arrow_schema,
-            )?;
-        } else {
-            if schema.len() > first_schema.len() {
-                polars_bail!(
-                   SchemaMismatch:
-                   "parquet file contained extra columns and no selection was given"
-                )
-            }
+        (|| {
+            if let Some(projected_arrow_schema) = projected_arrow_schema {
+                self.projection = projected_arrow_schema_to_projection_indices(
+                    schema.as_ref(),
+                    projected_arrow_schema,
+                )?;
+            } else {
+                if schema.len() > first_schema.len() {
+                    polars_bail!(
+                       SchemaMismatch:
+                       "parquet file contained extra columns and no selection was given"
+                    )
+                }
 
-            self.projection =
-                projected_arrow_schema_to_projection_indices(schema.as_ref(), first_schema)?;
-        }
+                self.projection =
+                    projected_arrow_schema_to_projection_indices(schema.as_ref(), first_schema)?;
+            };
+            Ok(())
+        })()
+        .map_err(|e| {
+            if !allow_missing_columns && matches!(e, PolarsError::ColumnNotFound(_)) {
+                e.wrap_msg(|s| {
+                    format!(
+                        "error with column selection, \
+                        consider enabling `allow_missing_columns`: {}",
+                        s
+                    )
+                })
+            } else {
+                e
+            }
+        })?;
 
         Ok(self)
     }
@@ -316,22 +332,38 @@ impl ParquetAsyncReader {
 
         let schema = self.schema().await?;
 
-        if let Some(projected_arrow_schema) = projected_arrow_schema {
-            self.projection = projected_arrow_schema_to_projection_indices(
-                schema.as_ref(),
-                projected_arrow_schema,
-            )?;
-        } else {
-            if schema.len() > first_schema.len() {
-                polars_bail!(
-                   SchemaMismatch:
-                   "parquet file contained extra columns and no selection was given"
-                )
-            }
+        (|| {
+            if let Some(projected_arrow_schema) = projected_arrow_schema {
+                self.projection = projected_arrow_schema_to_projection_indices(
+                    schema.as_ref(),
+                    projected_arrow_schema,
+                )?;
+            } else {
+                if schema.len() > first_schema.len() {
+                    polars_bail!(
+                       SchemaMismatch:
+                       "parquet file contained extra columns and no selection was given"
+                    )
+                }
 
-            self.projection =
-                projected_arrow_schema_to_projection_indices(schema.as_ref(), first_schema)?;
-        }
+                self.projection =
+                    projected_arrow_schema_to_projection_indices(schema.as_ref(), first_schema)?;
+            };
+            Ok(())
+        })()
+        .map_err(|e| {
+            if !allow_missing_columns && matches!(e, PolarsError::ColumnNotFound(_)) {
+                e.wrap_msg(|s| {
+                    format!(
+                        "error with column selection, \
+                        consider enabling `allow_missing_columns`: {}",
+                        s
+                    )
+                })
+            } else {
+                e
+            }
+        })?;
 
         Ok(self)
     }
