@@ -1,5 +1,5 @@
 //! Type agnostic columnar data structure.
-pub use crate::prelude::ChunkCompare;
+pub use crate::prelude::ChunkCompareEq;
 use crate::prelude::*;
 use crate::{HEAD_DEFAULT_LENGTH, TAIL_DEFAULT_LENGTH};
 
