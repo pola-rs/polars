@@ -642,5 +642,8 @@ def test_parquet_unaligned_schema_read_missing_cols_from_first(
 
     lf = pl.scan_parquet(paths)
 
-    with pytest.raises(pl.exceptions.SchemaError, match="did not find column"):
+    with pytest.raises(
+        pl.exceptions.ColumnNotFoundError,
+        match="did not find column in file: a",
+    ):
         lf.collect(streaming=streaming)
