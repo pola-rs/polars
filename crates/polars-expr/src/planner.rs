@@ -462,7 +462,7 @@ fn create_physical_expr_inner(
                 truthy,
                 falsy,
                 node_to_expr(expression, expr_arena),
-                lit_count < 2,
+                state.allow_threading && lit_count < 2,
                 is_scalar,
             )))
         },
