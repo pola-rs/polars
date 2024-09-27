@@ -56,8 +56,11 @@ impl PyDataFrame {
                                     c.get_object(idx).map(|any| any.into());
                                 obj.to_object(py)
                             },
-                            // SAFETY: we are in bounds.
-                            _ => unsafe { Wrap(c.get_unchecked(idx)).into_py(py) },
+                            _ => {
+                                // SAFETY: we are in bounds.
+                                let av = unsafe { c.get_unchecked(idx) };
+                                Wrap(av).into_py(py)
+                            },
                         }),
                     )
                 }),
