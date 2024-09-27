@@ -6,6 +6,7 @@ use crate::error::PyPolarsErr;
 use crate::PyDataFrame;
 
 #[pymethods]
+#[cfg(not(target_arch = "wasm32"))]
 impl PyLazyFrame {
     fn collect_concurrently(&self, py: Python) -> PyResult<PyInProcessQuery> {
         let ipq = py.allow_threads(|| {
@@ -17,6 +18,7 @@ impl PyLazyFrame {
 }
 
 #[pyclass]
+#[cfg(not(target_arch = "wasm32"))]
 #[repr(transparent)]
 #[derive(Clone)]
 pub struct PyInProcessQuery {
@@ -24,6 +26,7 @@ pub struct PyInProcessQuery {
 }
 
 #[pymethods]
+#[cfg(not(target_arch = "wasm32"))]
 impl PyInProcessQuery {
     pub fn cancel(&self, py: Python) {
         py.allow_threads(|| self.ipq.cancel())

@@ -15,7 +15,9 @@ use polars_python::cloud;
 use polars_python::dataframe::PyDataFrame;
 use polars_python::expr::PyExpr;
 use polars_python::functions::PyStringCacheHolder;
-use polars_python::lazyframe::{PyInProcessQuery, PyLazyFrame};
+#[cfg(not(target_arch = "wasm32"))]
+use polars_python::lazyframe::PyInProcessQuery;
+use polars_python::lazyframe::PyLazyFrame;
 use polars_python::lazygroupby::PyLazyGroupBy;
 use polars_python::series::PySeries;
 #[cfg(feature = "sql")]
@@ -87,6 +89,7 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<PySeries>().unwrap();
     m.add_class::<PyDataFrame>().unwrap();
     m.add_class::<PyLazyFrame>().unwrap();
+    #[cfg(not(target_arch = "wasm32"))]
     m.add_class::<PyInProcessQuery>().unwrap();
     m.add_class::<PyLazyGroupBy>().unwrap();
     m.add_class::<PyExpr>().unwrap();
