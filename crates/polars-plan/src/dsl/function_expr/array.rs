@@ -190,7 +190,10 @@ impl From<ArrayFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
 
 // Create a new array from a slice of series
 fn array_new(inputs: &[Column]) -> PolarsResult<Column> {
-    let kwargs = ArrayKwargs {dtype_expr: "".to_string()};
+    let kwargs = ArrayKwargs { dtype_expr: "".to_string() };
+    array_internal(inputs, kwargs)
+}
+fn array_internal(inputs: &[Column], kwargs: ArrayKwargs) -> PolarsResult<Column> {
     let ref dtype = deserialize_dtype(&kwargs.dtype_expr)?
         .unwrap_or(inputs[0].dtype().clone());
 
@@ -383,4 +386,91 @@ pub(super) fn shift(s: &[Column]) -> PolarsResult<Column> {
     let n = &s[1];
 
     ca.array_shift(n.as_materialized_series()).map(Column::from)
+}
+
+
+#[cfg(test)]
+mod test {
+    use polars_core::datatypes::Field;
+    use polars_core::frame::DataFrame;
+    use polars_core::prelude::{Column, Series};
+    use super::*;
+
+    #[test]
+    fn test_array_f64() {
+        println!("\ntest_array_f64");
+        let f1 = Series::new("f1".into(), &[1.0, 2.0]);
+        let f2 = Series::new("f2".into(), &[3.0, 4.0]);
+
+        let mut cols : Vec<Column> = Vec::new();
+        cols.push(Column::Series(f1));
+        cols.push(Column::Series(f2));
+
+        let array_df = DataFrame::new(cols.clone()).unwrap();
+        println!("input df\n{}\n", &array_df);
+
+        let mut fields: Vec<Field> = Vec::new();
+        for col in &cols{
+            let f: Field = (col.field().to_mut()).clone();
+            fields.push(f);
+        }
+        let kwargs = crate::dsl::function_expr::array::ArrayKwargs {dtype_expr: "{\"DtypeColumn\":[\"Float64\"]}".to_string()};
+        let expected_result = crate::dsl::function_expr::array::array_output_type(&fields, kwargs.clone()).unwrap();
+        println!("expected result\n{:?}\n", &expected_result);
+
+        let new_arr = crate::dsl::function_expr::array::array_internal(array_df.get_columns(), kwargs);
+        println!("actual result\n{:?}", &new_arr);
+
+        assert!(new_arr.is_ok());
+        assert_eq!(new_arr.unwrap().dtype(), expected_result.dtype());
+    }
+
+    fn i32_series() -> (Vec<Column>, Vec<Field>, DataFrame){
+        let f1 = Series::new("f1".into(), &[1, 2]);
+        let f2 = Series::new("f2".into(), &[3, 4]);
+
+        let mut cols : Vec<Column> = Vec::new();
+        cols.push(Column::Series(f1));
+        cols.push(Column::Series(f2));
+
+        let array_df = DataFrame::new(cols.clone()).unwrap();
+        println!("input df\n{}\n", &array_df);
+
+        let mut fields: Vec<Field> = Vec::new();
+        for col in &cols{
+            let f: Field = (col.field().to_mut()).clone();
+            fields.push(f);
+        }
+        (cols, fields, array_df)
+    }
+
+    #[test]
+    fn test_array_i32() {
+        println!("\ntest_array_i32");
+        let (_cols, fields, array_df) = i32_series();
+        let kwargs = crate::dsl::function_expr::array::ArrayKwargs {dtype_expr: "{\"DtypeColumn\":[\"Int32\"]}".to_string()};
+        let expected_result = crate::dsl::function_expr::array::array_output_type(&fields, kwargs.clone()).unwrap();
+        println!("expected result\n{:?}\n", &expected_result);
+
+        let new_arr = crate::dsl::function_expr::array::array_internal(array_df.get_columns(), kwargs);
+        println!("actual result\n{:?}", &new_arr);
+
+        assert!(new_arr.is_ok());
+        assert_eq!(new_arr.unwrap().dtype(), expected_result.dtype());
+    }
+
+    #[test]
+    fn test_array_i32_converted() {
+        println!("\ntest_array_i32_converted");
+        let (_cols, fields, array_df) = i32_series();
+        let kwargs = crate::dsl::function_expr::array::ArrayKwargs {dtype_expr: "{\"DtypeColumn\":[\"Float64\"]}".to_string()};
+        let expected_result = crate::dsl::function_expr::array::array_output_type(&fields, kwargs.clone()).unwrap();
+        println!("expected result\n{:?}\n", &expected_result);
+
+        let new_arr = crate::dsl::function_expr::array::array_internal(array_df.get_columns(), kwargs);
+        println!("actual result\n{:?}", &new_arr);
+
+        assert!(new_arr.is_ok());
+        assert_eq!(new_arr.unwrap().dtype(), expected_result.dtype());
+    }
 }
