@@ -716,8 +716,6 @@ where
     F: Fn(&Series, &Series) -> BooleanChunked,
     R: Fn(BooleanChunked, BooleanChunked) -> BooleanChunked,
 {
-    //dbg!(&a);
-    //dbg!(&b);
     if a.len() != b.len() || a.struct_fields().len() != b.struct_fields().len() {
         // polars_ensure!(a.len() == 1 || b.len() == 1, ShapeMismatch: "length lhs: {}, length rhs: {}", a.len(), b.len());
         BooleanChunked::full(PlSmallStr::EMPTY, value, a.len())
@@ -730,19 +728,17 @@ where
             .map(|(l, r)| op(l, r))
             .reduce(reduce)
             .unwrap();
-        dbg!(&out);
-        if a.null_count() > 0 || b.null_count() > 0 {
+
+        if apply_null_validity & (a.null_count() > 0 || b.null_count() > 0) {
             let mut a = a.into_owned();
             a.zip_outer_validity(&b);
-            if true {
-                unsafe {
-                    for (arr, a) in out.downcast_iter_mut().zip(a.downcast_iter()) {
-                        arr.set_validity(a.validity().cloned())
-                    }
+            unsafe {
+                for (arr, a) in out.downcast_iter_mut().zip(a.downcast_iter()) {
+                    arr.set_validity(a.validity().cloned())
                 }
             }
         }
-        dbg!(&out);
+
         out
     }
 }
