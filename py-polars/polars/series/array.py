@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable, Sequence
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Callable
 
 from polars import functions as F
 from polars._utils.wrap import wrap_s

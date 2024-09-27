@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import sys
 from collections import OrderedDict
-from typing import Any, Iterator, Mapping
+from collections.abc import Iterator, Mapping
+from typing import Any
 
 import pytest
 

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import multiprocessing
-from typing import TYPE_CHECKING, Any, Callable, Iterator
+from collections.abc import Iterator
+from typing import TYPE_CHECKING, Any, Callable
 
 import boto3
 import pytest

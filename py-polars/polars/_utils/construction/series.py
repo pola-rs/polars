@@ -1,16 +1,13 @@
 from __future__ import annotations
 
 import contextlib
+from collections.abc import Generator, Iterable, Iterator, Sequence
 from datetime import date, datetime, time, timedelta
 from itertools import islice
 from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
-    Generator,
-    Iterable,
-    Iterator,
-    Sequence,
 )
 
 import polars._reexport as pl

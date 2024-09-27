@@ -1,15 +1,12 @@
 from __future__ import annotations
 
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from typing import (
     TYPE_CHECKING,
     Any,
-    Collection,
-    Iterable,
     List,
     Literal,
-    Mapping,
     Protocol,
-    Sequence,
     Tuple,
     Type,
     TypedDict,

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING, Any, Iterable, Literal, overload
+from collections.abc import Iterable
+from typing import TYPE_CHECKING, Any, Literal, overload
 
 from polars.datatypes import N_INFER_DEFAULT
 from polars.dependencies import import_optional

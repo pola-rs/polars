@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Collection, Mapping, Sequence, overload
+from typing import TYPE_CHECKING, Any, overload
 
 import hypothesis.strategies as st
 from hypothesis.errors import InvalidArgument

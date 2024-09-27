@@ -4,6 +4,7 @@ import contextlib
 import math
 import operator
 import warnings
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from datetime import timedelta
 from functools import reduce
 from io import BytesIO, StringIO
@@ -13,12 +14,8 @@ from typing import (
     Any,
     Callable,
     ClassVar,
-    Collection,
     FrozenSet,
-    Iterable,
-    Mapping,
     NoReturn,
-    Sequence,
     Set,
     TypeVar,
 )

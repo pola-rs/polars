@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Iterable, Sequence
 from io import BytesIO
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Iterable, Sequence, overload
+from typing import TYPE_CHECKING, Any, overload
 
 from polars import functions as F
 from polars.datatypes import (

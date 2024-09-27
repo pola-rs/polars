@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable, Iterable
+from collections.abc import Iterable
+from typing import TYPE_CHECKING, Callable
 
 from polars import functions as F
 from polars._utils.deprecation import deprecate_renamed_function

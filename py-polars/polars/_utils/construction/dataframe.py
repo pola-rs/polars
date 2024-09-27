@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+from collections.abc import Generator, Iterable, Mapping, MutableMapping, Sequence
 from datetime import date, datetime, time, timedelta
 from functools import singledispatch
 from itertools import islice, zip_longest
@@ -9,11 +10,6 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
-    Generator,
-    Iterable,
-    Mapping,
-    MutableMapping,
-    Sequence,
 )
 
 import polars._reexport as pl

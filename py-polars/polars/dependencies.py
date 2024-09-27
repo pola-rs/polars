@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import re
 import sys
-from functools import lru_cache
+from collections.abc import Hashable
+from functools import cache
 from importlib import import_module
 from importlib.util import find_spec
 from types import ModuleType
-from typing import TYPE_CHECKING, Any, ClassVar, Hashable, cast
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 _ALTAIR_AVAILABLE = True
 _DELTALAKE_AVAILABLE = True
@@ -193,7 +194,7 @@ else:
     gevent, _GEVENT_AVAILABLE = _lazy_import("gevent")
 
 
-@lru_cache(maxsize=None)
+@cache
 def _might_be(cls: type, type_: str) -> bool:
     # infer whether the given class "might" be associated with the given
     # module (in which case it's reasonable to do a real isinstance check;

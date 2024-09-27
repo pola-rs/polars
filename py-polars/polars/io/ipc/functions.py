@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import contextlib
 import os
+from collections.abc import Sequence
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, Any, Sequence
+from typing import IO, TYPE_CHECKING, Any
 
 import polars._reexport as pl
 import polars.functions as F

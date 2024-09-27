@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import functools
+from collections.abc import Sequence
 from decimal import Decimal as PyDecimal
-from typing import TYPE_CHECKING, Any, Callable, Sequence
+from typing import TYPE_CHECKING, Any, Callable
 
 from polars import datatypes as dt
 from polars.dependencies import numpy as np

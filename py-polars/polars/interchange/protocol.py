@@ -1,14 +1,13 @@
 from __future__ import annotations
 
+from collections.abc import Iterable, Sequence
 from enum import IntEnum
 from typing import (
     TYPE_CHECKING,
     Any,
     ClassVar,
-    Iterable,
     Literal,
     Protocol,
-    Sequence,
     Tuple,
     TypedDict,
 )

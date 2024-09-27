@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime, time, timedelta, timezone
 from decimal import Context
 from functools import lru_cache
@@ -8,7 +9,6 @@ from typing import (
     Any,
     Callable,
     NoReturn,
-    Sequence,
     no_type_check,
     overload,
 )

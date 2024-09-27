@@ -3,7 +3,8 @@ from __future__ import annotations
 import io
 import itertools
 import re
-from typing import TYPE_CHECKING, Any, Iterable, Mapping, Sequence, overload
+from collections.abc import Iterable, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, overload
 
 import polars._reexport as pl
 from polars import functions as F

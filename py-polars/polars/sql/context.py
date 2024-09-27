@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import contextlib
 import re
+from collections.abc import Collection, Mapping
 from typing import (
     TYPE_CHECKING,
     Callable,
-    Collection,
     Generic,
-    Mapping,
     Union,
     overload,
 )

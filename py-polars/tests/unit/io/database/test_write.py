@@ -24,22 +24,8 @@ if TYPE_CHECKING:
     [
         ("sqlalchemy", True),
         ("sqlalchemy", False),
-        pytest.param(
-            "adbc",
-            True,
-            marks=pytest.mark.skipif(
-                sys.version_info < (3, 9) or sys.platform == "win32",
-                reason="adbc not available on Windows or <= Python 3.8",
-            ),
-        ),
-        pytest.param(
-            "adbc",
-            False,
-            marks=pytest.mark.skipif(
-                sys.version_info < (3, 9) or sys.platform == "win32",
-                reason="adbc not available on Windows or <= Python 3.8",
-            ),
-        ),
+        ("adbc", True),
+        ("adbc", False)
     ],
 )
 class TestWriteDatabase:

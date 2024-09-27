@@ -3,11 +3,12 @@ from __future__ import annotations
 import sys
 import typing
 from collections import OrderedDict
+from collections.abc import Iterator, Sequence
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from io import BytesIO
 from operator import floordiv, truediv
-from typing import TYPE_CHECKING, Any, Callable, Iterator, Sequence, cast
+from typing import TYPE_CHECKING, Any, Callable, cast
 
 import numpy as np
 import pyarrow as pa

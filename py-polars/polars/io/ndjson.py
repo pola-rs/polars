@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import contextlib
+from collections.abc import Sequence
 from io import BytesIO, StringIO
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, Any, Sequence
+from typing import IO, TYPE_CHECKING, Any
 
 from polars._utils.deprecation import deprecate_renamed_parameter
 from polars._utils.various import is_path_or_str_sequence, normalize_filepath

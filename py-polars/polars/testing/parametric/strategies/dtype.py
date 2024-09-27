@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Collection, Sequence
+from collections.abc import Collection, Sequence
+from typing import TYPE_CHECKING
 
 import hypothesis.strategies as st
 from hypothesis.errors import InvalidArgument

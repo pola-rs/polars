@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Iterable
 from textwrap import dedent
-from typing import TYPE_CHECKING, Iterable
+from typing import TYPE_CHECKING
 
 from polars.dependencies import html
 

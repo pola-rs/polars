@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import contextlib
+from collections.abc import Iterable
 from datetime import date
-from typing import TYPE_CHECKING, Iterable
+from typing import TYPE_CHECKING
 
 from polars._utils.parse import parse_into_expression
 from polars._utils.wrap import wrap_expr

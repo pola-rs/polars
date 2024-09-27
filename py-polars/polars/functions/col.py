@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import contextlib
-from typing import TYPE_CHECKING, Iterable
+from collections.abc import Iterable
+from typing import TYPE_CHECKING
 
 from polars._utils.wrap import wrap_expr
 from polars.datatypes import is_polars_dtype

@@ -5,18 +5,21 @@ import os
 import re
 import sys
 import warnings
-from collections.abc import MappingView, Sized
+from collections.abc import (
+    Collection,
+    Generator,
+    Iterable,
+    MappingView,
+    Sequence,
+    Sized,
+)
 from enum import Enum
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
-    Collection,
-    Generator,
-    Iterable,
     Literal,
-    Sequence,
     TypeVar,
     overload,
 )

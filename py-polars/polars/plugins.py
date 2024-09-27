@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import contextlib
+from collections.abc import Iterable
 from functools import lru_cache
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Iterable
+from typing import TYPE_CHECKING, Any
 
 from polars._utils.parse import parse_into_list_of_expressions
 from polars._utils.wrap import wrap_expr

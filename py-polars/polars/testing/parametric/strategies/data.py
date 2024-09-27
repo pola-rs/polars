@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import decimal
+from collections.abc import Mapping, Sequence
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, Any, Literal, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, Literal
 
 import hypothesis.strategies as st
 from hypothesis.errors import InvalidArgument

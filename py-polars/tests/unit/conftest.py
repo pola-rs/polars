@@ -6,7 +6,8 @@ import random
 import string
 import sys
 import tracemalloc
-from typing import Any, Generator, List, cast
+from collections.abc import Generator
+from typing import Any, List, cast
 
 import numpy as np
 import pytest

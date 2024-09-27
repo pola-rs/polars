@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Iterable, NoReturn, Sequence, overload
+from collections.abc import Iterable, Sequence
+from typing import TYPE_CHECKING, Any, NoReturn, overload
 
 import polars._reexport as pl
 import polars.functions as F

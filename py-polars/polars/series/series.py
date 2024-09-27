@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import math
 import os
+from collections.abc import Collection, Generator, Iterable, Mapping, Sequence
 from contextlib import nullcontext
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal as PyDecimal
@@ -11,13 +12,8 @@ from typing import (
     Any,
     Callable,
     ClassVar,
-    Collection,
-    Generator,
-    Iterable,
     Literal,
-    Mapping,
     NoReturn,
-    Sequence,
     Union,
     overload,
 )

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import contextlib
+from collections.abc import Iterable, Sequence
 from functools import reduce
 from itertools import chain
-from typing import TYPE_CHECKING, Iterable, Sequence, get_args
+from typing import TYPE_CHECKING, get_args
 
 import polars._reexport as pl
 from polars import functions as F

@@ -6,7 +6,15 @@ import contextlib
 import os
 import random
 from collections import defaultdict
-from collections.abc import Sized
+from collections.abc import (
+    Collection,
+    Generator,
+    Iterable,
+    Iterator,
+    Mapping,
+    Sequence,
+    Sized,
+)
 from io import BytesIO, StringIO
 from operator import itemgetter
 from pathlib import Path
@@ -16,13 +24,7 @@ from typing import (
     Any,
     Callable,
     ClassVar,
-    Collection,
-    Generator,
-    Iterable,
-    Iterator,
-    Mapping,
     NoReturn,
-    Sequence,
     TypeVar,
     get_args,
     overload,

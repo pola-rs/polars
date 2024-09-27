@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import json
 from collections import abc
-from typing import TYPE_CHECKING, Any, Sequence
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Any
 
 from polars._utils.unstable import unstable
 from polars.dataframe import DataFrame

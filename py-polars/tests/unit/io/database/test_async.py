@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Iterable
 from math import ceil
-from typing import TYPE_CHECKING, Any, Iterable, overload
+from typing import TYPE_CHECKING, Any, overload
 
 import pytest
 import sqlalchemy

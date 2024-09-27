@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import warnings
 from collections import OrderedDict
+from collections.abc import Sequence
 from datetime import date, datetime
 from io import BytesIO
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Sequence
+from typing import TYPE_CHECKING, Any, Callable
 
 import pytest
 

@@ -10,6 +10,7 @@ import sys
 import warnings
 from bisect import bisect_left
 from collections import defaultdict
+from collections.abc import Iterator
 from dis import get_instructions
 from inspect import signature
 from itertools import count, zip_longest
@@ -20,7 +21,6 @@ from typing import (
     Any,
     Callable,
     ClassVar,
-    Iterator,
     Literal,
     NamedTuple,
     Union,

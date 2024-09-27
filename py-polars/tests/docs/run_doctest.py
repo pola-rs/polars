@@ -35,9 +35,10 @@ import re
 import sys
 import unittest
 import warnings
+from collections.abc import Iterator
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import TYPE_CHECKING, Any, Iterator
+from typing import TYPE_CHECKING, Any
 
 import polars as pl
 

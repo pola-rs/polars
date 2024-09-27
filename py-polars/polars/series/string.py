@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Mapping
+from collections.abc import Mapping
+from typing import TYPE_CHECKING
 
 from polars._utils.deprecation import deprecate_function
 from polars._utils.unstable import unstable

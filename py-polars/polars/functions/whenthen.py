@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import contextlib
-from typing import TYPE_CHECKING, Any, Iterable
+from collections.abc import Iterable
+from typing import TYPE_CHECKING, Any
 
 import polars._reexport as pl
 from polars._utils.parse import parse_predicates_constraints_into_expression

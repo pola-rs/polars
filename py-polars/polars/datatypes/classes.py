@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import contextlib
 from collections import OrderedDict
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from datetime import timezone
 from inspect import isclass
-from typing import TYPE_CHECKING, Any, Iterable, Iterator, Mapping, Sequence
+from typing import TYPE_CHECKING, Any
 
 import polars._reexport as pl
 import polars.datatypes

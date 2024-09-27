@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import os
-from typing import TYPE_CHECKING, Iterable, Sequence
+from collections.abc import Iterable, Sequence
+from typing import TYPE_CHECKING
 
 from polars._utils.parse import parse_into_list_of_expressions
 from polars._utils.wrap import wrap_expr

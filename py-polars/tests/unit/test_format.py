@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import string
+from collections.abc import Iterator
 from decimal import Decimal as D
-from typing import TYPE_CHECKING, Any, Iterator
+from typing import TYPE_CHECKING, Any
 
 import pytest
 

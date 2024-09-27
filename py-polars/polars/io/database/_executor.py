@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Coroutine
+from collections.abc import Coroutine, Iterable, Sequence
 from contextlib import suppress
 from inspect import Parameter, signature
-from typing import TYPE_CHECKING, Any, Iterable, Sequence
+from typing import TYPE_CHECKING, Any
 
 from polars import functions as F
 from polars._utils.various import parse_version

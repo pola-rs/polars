@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import contextlib
-from typing import TYPE_CHECKING, Any, Callable, Iterable, Sequence, overload
+from collections.abc import Iterable, Sequence
+from typing import TYPE_CHECKING, Any, Callable, overload
 
 import polars._reexport as pl
 import polars.functions as F
@@ -20,7 +21,8 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     import polars.polars as plr
 
 if TYPE_CHECKING:
-    from typing import Awaitable, Collection, Literal
+    from collections.abc import Awaitable, Collection
+    from typing import Literal
 
     from polars import DataFrame, Expr, LazyFrame, Series
     from polars._typing import (
