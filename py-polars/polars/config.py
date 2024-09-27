@@ -172,7 +172,9 @@ class Config(contextlib.ContextDecorator):
 
     _original_state: str = ""
 
-    def __init__(self, *, restore_defaults: bool = False, **options: Unpack[ConfigParameters]) -> None:
+    def __init__(
+        self, *, restore_defaults: bool = False, **options: Unpack[ConfigParameters]
+    ) -> None:
         """
         Initialise a Config object instance for context manager usage.
 
