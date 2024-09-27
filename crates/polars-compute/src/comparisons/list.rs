@@ -32,7 +32,7 @@ impl<O: Offset> TotalEqKernel for ListArray<O> {
 
             let mut lhs_values = self.values().clone();
             lhs_values.slice(lstart, lend - lstart);
-            let mut rhs_values = self.values().clone();
+            let mut rhs_values = other.values().clone();
             rhs_values.slice(rstart, rend - rstart);
 
             let result = array_tot_eq_missing_kernel(lhs_values.as_ref(), rhs_values.as_ref());

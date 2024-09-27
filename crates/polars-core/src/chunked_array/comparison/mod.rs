@@ -6,7 +6,7 @@ mod categorical;
 use std::ops::{BitAnd, Not};
 
 use arrow::array::BooleanArray;
-use arrow::bitmap::MutableBitmap;
+use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::compute;
 use num_traits::{NumCast, ToPrimitive};
 use polars_compute::comparisons::{TotalEqKernel, TotalOrdKernel};
@@ -792,54 +792,74 @@ impl ChunkCompareEq<&StructChunked> for StructChunked {
     }
 }
 
+#[doc(hidden)]
+fn _array_comparison_helper<F, B>(
+    lhs: &ArrayChunked,
+    rhs: &ArrayChunked,
+    op: F,
+    broadcast_op: B,
+) -> BooleanChunked
+where
+    F: Fn(&FixedSizeListArray, &FixedSizeListArray) -> Bitmap,
+    B: Fn(&FixedSizeListArray, &Box<dyn Array>) -> Bitmap,
+{
+    match (lhs.len(), rhs.len()) {
+        (_, 1) => {
+            let right = rhs.chunks()[0]
+                .as_any()
+                .downcast_ref::<FixedSizeListArray>()
+                .unwrap()
+                .values();
+            arity::unary_mut_values(lhs, |a| broadcast_op(a, right).into())
+        },
+        (1, _) => {
+            let left = lhs.chunks()[0]
+                .as_any()
+                .downcast_ref::<FixedSizeListArray>()
+                .unwrap()
+                .values();
+            arity::unary_mut_values(rhs, |a| broadcast_op(a, left).into())
+        },
+        _ => arity::binary_mut_values(lhs, rhs, |a, b| op(a, b).into(), PlSmallStr::EMPTY),
+    }
+}
+
 #[cfg(feature = "dtype-array")]
 impl ChunkCompareEq<&ArrayChunked> for ArrayChunked {
     type Item = BooleanChunked;
     fn equal(&self, rhs: &ArrayChunked) -> BooleanChunked {
-        if self.width() != rhs.width() {
-            return BooleanChunked::full(PlSmallStr::EMPTY, false, self.len());
-        }
-        arity::binary_mut_values(
+        _array_comparison_helper(
             self,
             rhs,
-            |a, b| a.tot_eq_kernel(b).into(),
-            PlSmallStr::EMPTY,
+            TotalEqKernel::tot_eq_kernel,
+            TotalEqKernel::tot_eq_kernel_broadcast,
         )
     }
 
     fn equal_missing(&self, rhs: &ArrayChunked) -> BooleanChunked {
-        if self.width() != rhs.width() {
-            return BooleanChunked::full(PlSmallStr::EMPTY, false, self.len());
-        }
-        arity::binary_mut_with_options(
+        _array_comparison_helper(
             self,
             rhs,
-            |a, b| a.tot_eq_missing_kernel(b).into(),
-            PlSmallStr::EMPTY,
+            TotalEqKernel::tot_eq_missing_kernel,
+            TotalEqKernel::tot_eq_missing_kernel_broadcast,
         )
     }
 
     fn not_equal(&self, rhs: &ArrayChunked) -> BooleanChunked {
-        if self.width() != rhs.width() {
-            return BooleanChunked::full(PlSmallStr::EMPTY, true, self.len());
-        }
-        arity::binary_mut_values(
+        _array_comparison_helper(
             self,
             rhs,
-            |a, b| a.tot_ne_kernel(b).into(),
-            PlSmallStr::EMPTY,
+            TotalEqKernel::tot_ne_kernel,
+            TotalEqKernel::tot_ne_kernel_broadcast,
         )
     }
 
     fn not_equal_missing(&self, rhs: &ArrayChunked) -> Self::Item {
-        if self.width() != rhs.width() {
-            return BooleanChunked::full(PlSmallStr::EMPTY, true, self.len());
-        }
-        arity::binary_mut_with_options(
+        _array_comparison_helper(
             self,
             rhs,
-            |a, b| a.tot_ne_missing_kernel(b).into(),
-            PlSmallStr::EMPTY,
+            TotalEqKernel::tot_ne_missing_kernel,
+            TotalEqKernel::tot_ne_missing_kernel_broadcast,
         )
     }
 }
