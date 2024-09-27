@@ -1,3 +1,4 @@
+use std::fmt::{Debug, Formatter};
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -14,10 +15,10 @@ use super::FileScanOptions;
 
 /// Set of sources to scan from
 ///
-/// This is can either be a list of paths to files, opened files or in-memory buffers. Mixing of
+/// This can either be a list of paths to files, opened files or in-memory buffers. Mixing of
 /// buffers is not currently possible.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum ScanSources {
     Paths(Arc<[PathBuf]>),
 
@@ -25,6 +26,16 @@ pub enum ScanSources {
     Files(Arc<[File]>),
     #[cfg_attr(feature = "serde", serde(skip))]
     Buffers(Arc<[bytes::Bytes]>),
+}
+
+impl Debug for ScanSources {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Paths(p) => write!(f, "paths: {:?}", p.as_ref()),
+            Self::Files(p) => write!(f, "files: {} files", p.len()),
+            Self::Buffers(b) => write!(f, "buffers: {} in-memory-buffers", b.len()),
+        }
+    }
 }
 
 /// A reference to a single item in [`ScanSources`]
