@@ -22,7 +22,6 @@ if TYPE_CHECKING:
 @pytest.mark.parametrize(
     ("engine", "uri_connection"),
     [
-        [("sqlalchemy", True), ("sqlalchemy", False), ("adbc", True), ("adbc", False)],
         ("sqlalchemy", True),
         ("sqlalchemy", False),
         pytest.param(
