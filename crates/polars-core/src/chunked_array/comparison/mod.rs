@@ -16,7 +16,7 @@ use crate::series::implementations::null::NullChunked;
 use crate::series::IsSorted;
 use crate::utils::align_chunks_binary;
 
-impl<T> ChunkCompare<&ChunkedArray<T>> for ChunkedArray<T>
+impl<T> ChunkCompareEq<&ChunkedArray<T>> for ChunkedArray<T>
 where
     T: PolarsNumericType,
     T::Array: TotalOrdKernel<Scalar = T::Native> + TotalEqKernel<Scalar = T::Native>,
@@ -126,6 +126,14 @@ where
             ),
         }
     }
+}
+
+impl<T> ChunkCompareIneq<&ChunkedArray<T>> for ChunkedArray<T>
+where
+    T: PolarsNumericType,
+    T::Array: TotalOrdKernel<Scalar = T::Native> + TotalEqKernel<Scalar = T::Native>,
+{
+    type Item = BooleanChunked;
 
     fn lt(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
         // Broadcast.
@@ -188,7 +196,7 @@ where
     }
 }
 
-impl ChunkCompare<&NullChunked> for NullChunked {
+impl ChunkCompareEq<&NullChunked> for NullChunked {
     type Item = BooleanChunked;
 
     fn equal(&self, rhs: &NullChunked) -> Self::Item {
@@ -206,6 +214,10 @@ impl ChunkCompare<&NullChunked> for NullChunked {
     fn not_equal_missing(&self, rhs: &NullChunked) -> Self::Item {
         BooleanChunked::full(self.name().clone(), false, get_broadcast_length(self, rhs))
     }
+}
+
+impl ChunkCompareIneq<&NullChunked> for NullChunked {
+    type Item = BooleanChunked;
 
     fn gt(&self, rhs: &NullChunked) -> Self::Item {
         BooleanChunked::full_null(self.name().clone(), get_broadcast_length(self, rhs))
@@ -234,7 +246,7 @@ fn get_broadcast_length(lhs: &NullChunked, rhs: &NullChunked) -> usize {
     }
 }
 
-impl ChunkCompare<&BooleanChunked> for BooleanChunked {
+impl ChunkCompareEq<&BooleanChunked> for BooleanChunked {
     type Item = BooleanChunked;
 
     fn equal(&self, rhs: &BooleanChunked) -> BooleanChunked {
@@ -348,6 +360,10 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
             ),
         }
     }
+}
+
+impl ChunkCompareIneq<&BooleanChunked> for BooleanChunked {
+    type Item = BooleanChunked;
 
     fn lt(&self, rhs: &BooleanChunked) -> BooleanChunked {
         // Broadcast.
@@ -410,7 +426,7 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
     }
 }
 
-impl ChunkCompare<&StringChunked> for StringChunked {
+impl ChunkCompareEq<&StringChunked> for StringChunked {
     type Item = BooleanChunked;
 
     fn equal(&self, rhs: &StringChunked) -> BooleanChunked {
@@ -424,9 +440,14 @@ impl ChunkCompare<&StringChunked> for StringChunked {
     fn not_equal(&self, rhs: &StringChunked) -> BooleanChunked {
         self.as_binary().not_equal(&rhs.as_binary())
     }
+
     fn not_equal_missing(&self, rhs: &StringChunked) -> BooleanChunked {
         self.as_binary().not_equal_missing(&rhs.as_binary())
     }
+}
+
+impl ChunkCompareIneq<&StringChunked> for StringChunked {
+    type Item = BooleanChunked;
 
     fn gt(&self, rhs: &StringChunked) -> BooleanChunked {
         self.as_binary().gt(&rhs.as_binary())
@@ -445,7 +466,7 @@ impl ChunkCompare<&StringChunked> for StringChunked {
     }
 }
 
-impl ChunkCompare<&BinaryChunked> for BinaryChunked {
+impl ChunkCompareEq<&BinaryChunked> for BinaryChunked {
     type Item = BooleanChunked;
 
     fn equal(&self, rhs: &BinaryChunked) -> BooleanChunked {
@@ -551,6 +572,10 @@ impl ChunkCompare<&BinaryChunked> for BinaryChunked {
             ),
         }
     }
+}
+
+impl ChunkCompareIneq<&BinaryChunked> for BinaryChunked {
+    type Item = BooleanChunked;
 
     fn lt(&self, rhs: &BinaryChunked) -> BooleanChunked {
         // Broadcast.
@@ -644,7 +669,7 @@ where
     }
 }
 
-impl ChunkCompare<&ListChunked> for ListChunked {
+impl ChunkCompareEq<&ListChunked> for ListChunked {
     type Item = BooleanChunked;
     fn equal(&self, rhs: &ListChunked) -> BooleanChunked {
         let _series_equals = |lhs: Option<&Series>, rhs: Option<&Series>| match (lhs, rhs) {
@@ -683,23 +708,6 @@ impl ChunkCompare<&ListChunked> for ListChunked {
             };
 
         _list_comparison_helper(self, rhs, _series_not_equal_missing)
-    }
-
-    // The following are not implemented because gt, lt comparison of series don't make sense.
-    fn gt(&self, _rhs: &ListChunked) -> BooleanChunked {
-        unimplemented!()
-    }
-
-    fn gt_eq(&self, _rhs: &ListChunked) -> BooleanChunked {
-        unimplemented!()
-    }
-
-    fn lt(&self, _rhs: &ListChunked) -> BooleanChunked {
-        unimplemented!()
-    }
-
-    fn lt_eq(&self, _rhs: &ListChunked) -> BooleanChunked {
-        unimplemented!()
     }
 }
 
@@ -741,7 +749,7 @@ where
 }
 
 #[cfg(feature = "dtype-struct")]
-impl ChunkCompare<&StructChunked> for StructChunked {
+impl ChunkCompareEq<&StructChunked> for StructChunked {
     type Item = BooleanChunked;
     fn equal(&self, rhs: &StructChunked) -> BooleanChunked {
         struct_helper(
@@ -785,7 +793,7 @@ impl ChunkCompare<&StructChunked> for StructChunked {
 }
 
 #[cfg(feature = "dtype-array")]
-impl ChunkCompare<&ArrayChunked> for ArrayChunked {
+impl ChunkCompareEq<&ArrayChunked> for ArrayChunked {
     type Item = BooleanChunked;
     fn equal(&self, rhs: &ArrayChunked) -> BooleanChunked {
         if self.width() != rhs.width() {
@@ -833,23 +841,6 @@ impl ChunkCompare<&ArrayChunked> for ArrayChunked {
             |a, b| a.tot_ne_missing_kernel(b).into(),
             PlSmallStr::EMPTY,
         )
-    }
-
-    // following are not implemented because gt, lt comparison of series don't make sense
-    fn gt(&self, _rhs: &ArrayChunked) -> BooleanChunked {
-        unimplemented!()
-    }
-
-    fn gt_eq(&self, _rhs: &ArrayChunked) -> BooleanChunked {
-        unimplemented!()
-    }
-
-    fn lt(&self, _rhs: &ArrayChunked) -> BooleanChunked {
-        unimplemented!()
-    }
-
-    fn lt_eq(&self, _rhs: &ArrayChunked) -> BooleanChunked {
-        unimplemented!()
     }
 }
 
