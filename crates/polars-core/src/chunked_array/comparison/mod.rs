@@ -792,7 +792,7 @@ impl ChunkCompareEq<&StructChunked> for StructChunked {
     }
 }
 
-#[doc(hidden)]
+#[cfg(feature = "dtype-array")]
 fn _array_comparison_helper<F, B>(
     lhs: &ArrayChunked,
     rhs: &ArrayChunked,
