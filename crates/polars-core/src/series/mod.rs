@@ -90,7 +90,8 @@ use crate::POOL;
 ///     .all(|(a, b)| a == *b))
 /// ```
 ///
-/// See all the comparison operators in the [CmpOps trait](crate::chunked_array::ops::ChunkCompare)
+/// See all the comparison operators in the [ChunkCompareEq trait](crate::chunked_array::ops::ChunkCompareEq) and
+/// [ChunkCompareIneq trait](crate::chunked_array::ops::ChunkCompareIneq).
 ///
 /// ## Iterators
 /// The Series variants contain differently typed [ChunkedArray](crate::chunked_array::ChunkedArray)s.
