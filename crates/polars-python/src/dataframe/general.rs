@@ -460,12 +460,12 @@ impl PyDataFrame {
 
     pub fn max_horizontal(&self) -> PyResult<Option<PySeries>> {
         let s = self.df.max_horizontal().map_err(PyPolarsErr::from)?;
-        Ok(s.map(|s| s.into()))
+        Ok(s.map(|s| s.take_materialized_series().into()))
     }
 
     pub fn min_horizontal(&self) -> PyResult<Option<PySeries>> {
         let s = self.df.min_horizontal().map_err(PyPolarsErr::from)?;
-        Ok(s.map(|s| s.into()))
+        Ok(s.map(|s| s.take_materialized_series().into()))
     }
 
     pub fn sum_horizontal(&self, ignore_nulls: bool) -> PyResult<Option<PySeries>> {

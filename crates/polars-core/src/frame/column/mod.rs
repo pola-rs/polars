@@ -16,6 +16,7 @@ use crate::utils::{slice_offsets, Container};
 use crate::{HEAD_DEFAULT_LENGTH, TAIL_DEFAULT_LENGTH};
 
 mod arithmetic;
+mod compare;
 mod scalar;
 
 /// A column within a [`DataFrame`].
@@ -990,69 +991,17 @@ impl Column {
         // @scalar-opt
         self.as_materialized_series().estimated_size()
     }
-}
 
-impl ChunkCompareEq<&Column> for Column {
-    type Item = PolarsResult<BooleanChunked>;
+    pub(crate) fn sort_with(&self, options: SortOptions) -> PolarsResult<Self> {
+        match self {
+            Column::Series(s) => s.sort_with(options).map(Self::from),
+            Column::Scalar(s) => {
+                // This makes this function throw the same errors as Series::sort_with
+                _ = s.as_single_value_series().sort_with(options)?;
 
-    /// Create a boolean mask by checking for equality.
-    #[inline]
-    fn equal(&self, rhs: &Column) -> Self::Item {
-        self.as_materialized_series()
-            .equal(rhs.as_materialized_series())
-    }
-
-    /// Create a boolean mask by checking for equality.
-    #[inline]
-    fn equal_missing(&self, rhs: &Column) -> Self::Item {
-        self.as_materialized_series()
-            .equal_missing(rhs.as_materialized_series())
-    }
-
-    /// Create a boolean mask by checking for inequality.
-    #[inline]
-    fn not_equal(&self, rhs: &Column) -> Self::Item {
-        self.as_materialized_series()
-            .not_equal(rhs.as_materialized_series())
-    }
-
-    /// Create a boolean mask by checking for inequality.
-    #[inline]
-    fn not_equal_missing(&self, rhs: &Column) -> Self::Item {
-        self.as_materialized_series()
-            .not_equal_missing(rhs.as_materialized_series())
-    }
-}
-
-impl ChunkCompareIneq<&Column> for Column {
-    type Item = PolarsResult<BooleanChunked>;
-
-    /// Create a boolean mask by checking if self > rhs.
-    #[inline]
-    fn gt(&self, rhs: &Column) -> Self::Item {
-        self.as_materialized_series()
-            .gt(rhs.as_materialized_series())
-    }
-
-    /// Create a boolean mask by checking if self >= rhs.
-    #[inline]
-    fn gt_eq(&self, rhs: &Column) -> Self::Item {
-        self.as_materialized_series()
-            .gt_eq(rhs.as_materialized_series())
-    }
-
-    /// Create a boolean mask by checking if self < rhs.
-    #[inline]
-    fn lt(&self, rhs: &Column) -> Self::Item {
-        self.as_materialized_series()
-            .lt(rhs.as_materialized_series())
-    }
-
-    /// Create a boolean mask by checking if self <= rhs.
-    #[inline]
-    fn lt_eq(&self, rhs: &Column) -> Self::Item {
-        self.as_materialized_series()
-            .lt_eq(rhs.as_materialized_series())
+                Ok(self.clone())
+            },
+        }
     }
 }
 
