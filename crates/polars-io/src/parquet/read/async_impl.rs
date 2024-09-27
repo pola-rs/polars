@@ -178,12 +178,15 @@ async fn download_projection(
     let mut offsets = Vec::with_capacity(fields.len());
     fields.iter().for_each(|name| {
         // A single column can have multiple matches (structs).
-        let iter = row_group.columns_under_root_iter(name).map(|meta| {
-            let byte_range = meta.byte_range();
-            let offset = byte_range.start;
-            let byte_range = byte_range.start as usize..byte_range.end as usize;
-            (offset, byte_range)
-        });
+        let iter = row_group
+            .columns_under_root_iter(name)
+            .unwrap()
+            .map(|meta| {
+                let byte_range = meta.byte_range();
+                let offset = byte_range.start;
+                let byte_range = byte_range.start as usize..byte_range.end as usize;
+                (offset, byte_range)
+            });
 
         for (offset, range) in iter {
             offsets.push(offset);

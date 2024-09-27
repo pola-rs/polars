@@ -205,6 +205,7 @@ pub fn read_column(
 
     let mut statistics = metadata.row_groups[row_group]
         .columns_under_root_iter(field.name())
+        .unwrap()
         .map(|column_meta| column_meta.statistics().transpose())
         .collect::<ParquetResult<Vec<_>>>()?;
 

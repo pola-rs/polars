@@ -6,7 +6,6 @@ use polars_io::prelude::FileMetadata;
 use polars_io::utils::byte_source::{DynByteSource, MemSliceByteSource};
 use polars_io::utils::slice::SplitSlicePosition;
 use polars_utils::mmap::MemSlice;
-use polars_utils::pl_str::PlSmallStr;
 
 use super::metadata_utils::{ensure_schema_has_projected_fields, read_parquet_metadata_bytes};
 use super::ParquetSourceNode;
@@ -116,6 +115,7 @@ impl ParquetSourceNode {
             .unwrap_left()
             .len();
         let has_projection = self.file_options.with_columns.is_some();
+        let allow_missing_columns = self.file_options.allow_missing_columns;
 
         let process_metadata_bytes = {
             move |handle: task_handles_ext::AbortOnDropHandle<
@@ -145,7 +145,12 @@ impl ParquetSourceNode {
                         )
                     }
 
-                    ensure_schema_has_projected_fields(&schema, projected_arrow_schema.as_ref())?;
+                    if !allow_missing_columns {
+                        ensure_schema_has_projected_fields(
+                            &schema,
+                            projected_arrow_schema.as_ref(),
+                        )?;
+                    }
 
                     PolarsResult::Ok((path_index, byte_source, metadata))
                 });
@@ -213,11 +218,12 @@ impl ParquetSourceNode {
                     let (path_index, byte_source, metadata) = v.map_err(|err| {
                         err.wrap_msg(|msg| {
                             format!(
-                                "error at path (index: {}, path: {:?}): {}",
+                                "error at path (index: {}, path: {}): {}",
                                 current_path_index,
                                 scan_sources
                                     .get(current_path_index)
-                                    .map(|x| PlSmallStr::from_str(x.to_include_path_name())),
+                                    .unwrap()
+                                    .to_include_path_name(),
                                 msg
                             )
                         })

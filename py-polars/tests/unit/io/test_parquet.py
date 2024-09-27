@@ -1911,3 +1911,47 @@ def test_prefilter_with_projection() -> None:
         .select(pl.col.a)
         .collect()
     )
+
+
+@pytest.mark.parametrize("parallel", ["columns", "row_groups", "prefiltered", "none"])
+@pytest.mark.parametrize("streaming", [True, False])
+@pytest.mark.parametrize("projection", [pl.all(), pl.col("b")])
+@pytest.mark.write_disk
+def test_allow_missing_columns(
+    tmp_path: Path,
+    parallel: str,
+    streaming: bool,
+    projection: pl.Expr,
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    dfs = [pl.DataFrame({"a": 1, "b": 1}), pl.DataFrame({"a": 2})]
+    paths = [tmp_path / "1", tmp_path / "2"]
+
+    for df, path in zip(dfs, paths):
+        df.write_parquet(path)
+
+    expected = pl.DataFrame({"a": [1, 2], "b": [1, None]}).select(projection)
+
+    with pytest.raises(pl.exceptions.SchemaError, match="did not find column"):
+        pl.read_parquet(paths, parallel=parallel)  # type: ignore[arg-type]
+
+    with pytest.raises(pl.exceptions.SchemaError, match="did not find column"):
+        pl.scan_parquet(paths, parallel=parallel).select(projection).collect(  # type: ignore[arg-type]
+            streaming=streaming
+        )
+
+    assert_frame_equal(
+        pl.read_parquet(
+            paths,
+            parallel=parallel,  # type: ignore[arg-type]
+            allow_missing_columns=True,
+        ).select(projection),
+        expected,
+    )
+
+    assert_frame_equal(
+        pl.scan_parquet(paths, parallel=parallel, allow_missing_columns=True)  # type: ignore[arg-type]
+        .select(projection)
+        .collect(streaming=streaming),
+        expected,
+    )
