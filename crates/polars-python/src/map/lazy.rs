@@ -77,7 +77,7 @@ impl ToSeries for PyObject {
                 unsafe {
                     let field = ffi::import_field_from_c(schema.as_ref())?;
                     let array = ffi::import_array_from_c(*array, field.dtype)?;
-                    Series::from_arrow(field.name.into(), array)?
+                    Series::from_arrow(field.name, array)?
                 }
             },
         };
