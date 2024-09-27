@@ -150,9 +150,7 @@ fn test_sort_by_in_groups() -> PolarsResult<()> {
             col("cars"),
             col("A")
                 .sort_by([col("B")], SortMultipleOptions::default())
-                .implode()
                 .over([col("cars")])
-                .explode()
                 .alias("sorted_A_by_B"),
         ])
         .collect()?;
