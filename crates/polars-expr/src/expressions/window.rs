@@ -332,16 +332,14 @@ impl WindowExpr {
             (WindowMapping::Join, AggState::AggregatedList(_)) => Ok(MapStrategy::Join),
             // no explicit aggregations, map over the groups
             //`(col("x").sum() * col("y")).over("groups")`
-            (WindowMapping::GroupsToRows, AggState::AggregatedList(_))
-                if gb.get_groups().is_sorted_flag() =>
-            {
-                if let GroupsProxy::Idx(_) = gb.get_groups() {
-                    Ok(MapStrategy::Map)
-                } else {
+            (WindowMapping::GroupsToRows, AggState::AggregatedList(_)) => {
+                if let GroupsProxy::Slice { .. } = gb.get_groups() {
+                    // Result can be directly exploded if the input was sorted.
                     Ok(MapStrategy::Explode)
+                } else {
+                    Ok(MapStrategy::Map)
                 }
             },
-            (WindowMapping::GroupsToRows, AggState::AggregatedList(_)) => Ok(MapStrategy::Map),
             // no aggregations, just return column
             // or an aggregation that has been flattened
             // we have to check which one

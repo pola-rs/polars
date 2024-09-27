@@ -395,7 +395,7 @@ impl GroupsProxy {
         }
     }
 
-    pub fn is_sorted_flag(&self) -> bool {
+    pub(crate) fn is_sorted_flag(&self) -> bool {
         match self {
             GroupsProxy::Idx(groups) => groups.is_sorted_flag(),
             GroupsProxy::Slice { .. } => true,
