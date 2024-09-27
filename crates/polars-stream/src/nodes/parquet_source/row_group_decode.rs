@@ -645,11 +645,15 @@ fn decode_column_prefiltered(
 
     let column = Series::try_from((arrow_field, array))?.into_column();
 
-    if !prefilter {
-        column.filter(mask)
+    let column = if !prefilter {
+        column.filter(mask)?
     } else {
-        Ok(column)
-    }
+        column
+    };
+
+    assert_eq!(column.len(), expected_num_rows);
+
+    Ok(column)
 }
 
 mod tests {
