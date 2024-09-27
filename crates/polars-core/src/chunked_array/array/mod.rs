@@ -74,7 +74,8 @@ impl ArrayChunked {
                 out.dtype().to_arrow(CompatLevel::newest()),
                 ca.width(),
             );
-            let arr = FixedSizeListArray::new(inner_dtype, values, arr.validity().cloned());
+            let arr =
+                FixedSizeListArray::new(inner_dtype, arr.len(), values, arr.validity().cloned());
             Ok(arr)
         });
 

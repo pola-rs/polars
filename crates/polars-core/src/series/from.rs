@@ -517,37 +517,33 @@ unsafe fn to_physical_and_dtype(
             to_physical_and_dtype(out, md)
         },
         #[cfg(feature = "dtype-array")]
-        #[allow(unused_variables)]
         ArrowDataType::FixedSizeList(field, size) => {
-            feature_gated!("dtype-array", {
-                let values = arrays
-                    .iter()
-                    .map(|arr| {
-                        let arr = arr.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
-                        arr.values().clone()
-                    })
-                    .collect::<Vec<_>>();
+            let values = arrays
+                .iter()
+                .map(|arr| {
+                    let arr = arr.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
+                    arr.values().clone()
+                })
+                .collect::<Vec<_>>();
 
-                let (converted_values, dtype) =
-                    to_physical_and_dtype(values, Some(&field.metadata));
+            let (converted_values, dtype) = to_physical_and_dtype(values, Some(&field.metadata));
 
-                let arrays = arrays
-                    .iter()
-                    .zip(converted_values)
-                    .map(|(arr, values)| {
-                        let arr = arr.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
+            let arrays = arrays
+                .iter()
+                .zip(converted_values)
+                .map(|(arr, values)| {
+                    let arr = arr.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
 
-                        let dtype =
-                            FixedSizeListArray::default_datatype(values.dtype().clone(), *size);
-                        Box::from(FixedSizeListArray::new(
-                            dtype,
-                            values,
-                            arr.validity().cloned(),
-                        )) as ArrayRef
-                    })
-                    .collect();
-                (arrays, DataType::Array(Box::new(dtype), *size))
-            })
+                    let dtype = FixedSizeListArray::default_datatype(values.dtype().clone(), *size);
+                    Box::from(FixedSizeListArray::new(
+                        dtype,
+                        arr.len(),
+                        values,
+                        arr.validity().cloned(),
+                    )) as ArrayRef
+                })
+                .collect();
+            (arrays, DataType::Array(Box::new(dtype), *size))
         },
         ArrowDataType::LargeList(field) => {
             let values = arrays

@@ -96,63 +96,90 @@ impl Series {
 
         let mut total_dim_size = 1;
         let mut num_infers = 0;
-        for (index, &dim) in dimensions.iter().enumerate() {
+        for &dim in dimensions {
             match dim {
-                ReshapeDimension::Infer => {
-                    polars_ensure!(
-                        num_infers == 0,
-                        InvalidOperation: "can only specify one inferred dimension"
-                    );
-                    num_infers += 1;
-                },
-                ReshapeDimension::Specified(dim) => {
-                    let dim = dim.get();
-
-                    if dim > 0 {
-                        total_dim_size *= dim as usize
-                    } else {
-                        polars_ensure!(
-                            index == 0,
-                            InvalidOperation: "cannot reshape array into shape containing a zero dimension after the first: {}",
-                            format_tuple!(dimensions)
-                        );
-                        total_dim_size = 0;
-                        // We can early exit here, as empty arrays will error with multiple dimensions,
-                        // and non-empty arrays will error when the first dimension is zero.
-                        break;
-                    }
-                },
+                ReshapeDimension::Infer => num_infers += 1,
+                ReshapeDimension::Specified(dim) => total_dim_size *= dim.get() as usize,
             }
         }
+
+        polars_ensure!(num_infers <= 1, InvalidOperation: "can only specify one inferred dimension");
 
         if size == 0 {
-            if dimensions.len() > 1 || (num_infers == 0 && total_dim_size != 0) {
-                polars_bail!(InvalidOperation: "cannot reshape empty array into shape {}", format_tuple!(dimensions))
-            }
-        } else if total_dim_size == 0 {
-            polars_bail!(InvalidOperation: "cannot reshape non-empty array into shape containing a zero dimension: {}", format_tuple!(dimensions))
-        } else {
             polars_ensure!(
-                size % total_dim_size == 0,
-                InvalidOperation: "cannot reshape array of size {} into shape {}", size, format_tuple!(dimensions)
+                num_infers > 0 || total_dim_size == 0,
+                InvalidOperation: "cannot reshape empty array into shape without zero dimension: {}",
+                format_tuple!(dimensions),
             );
+
+            let mut prev_arrow_dtype = leaf_array
+                .dtype()
+                .to_physical()
+                .to_arrow(CompatLevel::newest());
+            let mut prev_dtype = leaf_array.dtype().clone();
+            let mut prev_array = leaf_array.chunks()[0].clone();
+
+            // @NOTE: We need to collect the iterator here because it is lazily processed.
+            let mut current_length = dimensions[0].get_or_infer(0);
+            let len_iter = dimensions[1..]
+                .iter()
+                .map(|d| {
+                    let length = current_length as usize;
+                    current_length *= d.get_or_infer(0);
+                    length
+                })
+                .collect::<Vec<_>>();
+
+            // We pop the outer dimension as that is the height of the series.
+            for (dim, length) in dimensions[1..].iter().zip(len_iter).rev() {
+                // Infer dimension if needed
+                let dim = dim.get_or_infer(0);
+                prev_arrow_dtype = prev_arrow_dtype.to_fixed_size_list(dim as usize, true);
+                prev_dtype = DataType::Array(Box::new(prev_dtype), dim as usize);
+
+                prev_array =
+                    FixedSizeListArray::new(prev_arrow_dtype.clone(), length, prev_array, None)
+                        .boxed();
+            }
+
+            return Ok(unsafe {
+                Series::from_chunks_and_dtype_unchecked(
+                    leaf_array.name().clone(),
+                    vec![prev_array],
+                    &prev_dtype,
+                )
+            });
         }
 
+        polars_ensure!(
+            total_dim_size > 0,
+            InvalidOperation: "cannot reshape non-empty array into shape containing a zero dimension: {}",
+            format_tuple!(dimensions)
+        );
+
+        polars_ensure!(
+            size % total_dim_size == 0,
+            InvalidOperation: "cannot reshape array of size {} into shape {}", size, format_tuple!(dimensions)
+        );
+
         let leaf_array = leaf_array.rechunk();
+        let mut prev_arrow_dtype = leaf_array
+            .dtype()
+            .to_physical()
+            .to_arrow(CompatLevel::newest());
         let mut prev_dtype = leaf_array.dtype().clone();
         let mut prev_array = leaf_array.chunks()[0].clone();
 
         // We pop the outer dimension as that is the height of the series.
-        for idx in (1..dimensions.len()).rev() {
+        for dim in dimensions[1..].iter().rev() {
             // Infer dimension if needed
-            let dim = dimensions[idx].get_or_infer_with(|| {
-                debug_assert!(num_infers > 0);
-                (size / total_dim_size) as u64
-            });
+            let dim = dim.get_or_infer((size / total_dim_size) as u64);
+            prev_arrow_dtype = prev_arrow_dtype.to_fixed_size_list(dim as usize, true);
             prev_dtype = DataType::Array(Box::new(prev_dtype), dim as usize);
 
             prev_array = FixedSizeListArray::new(
-                prev_dtype.to_arrow(CompatLevel::newest()),
+                prev_arrow_dtype.clone(),
+                prev_array.len() / dim as usize,
                 prev_array,
                 None,
             )

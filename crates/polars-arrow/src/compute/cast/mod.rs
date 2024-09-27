@@ -174,25 +174,20 @@ fn cast_list_to_fixed_size_list<O: Offset>(
 ) -> PolarsResult<FixedSizeListArray> {
     let null_cnt = list.null_count();
     let new_values = if null_cnt == 0 {
-        let offsets = list.offsets().buffer().iter();
-        let expected =
-            (list.offsets().first().to_usize()..list.len()).map(|ix| O::from_as_usize(ix * size));
+        let start_offset = list.offsets().first().to_usize();
+        let offsets = list.offsets().buffer();
 
-        match offsets
-            .zip(expected)
-            .find(|(actual, expected)| *actual != expected)
-        {
-            Some(_) => polars_bail!(ComputeError:
-                "not all elements have the specified width {size}"
-            ),
-            None => {
-                let sliced_values = list.values().sliced(
-                    list.offsets().first().to_usize(),
-                    list.offsets().range().to_usize(),
-                );
-                cast(sliced_values.as_ref(), inner.dtype(), options)?
-            },
+        let mut is_valid = true;
+        for (i, offset) in offsets.iter().enumerate() {
+            is_valid &= offset.to_usize() == start_offset + i * size;
         }
+
+        polars_ensure!(is_valid, ComputeError: "not all elements have the specified width {size}");
+
+        let sliced_values = list
+            .values()
+            .sliced(start_offset, list.offsets().range().to_usize());
+        cast(sliced_values.as_ref(), inner.dtype(), options)?
     } else {
         let offsets = list.offsets().as_slice();
         // Check the lengths of each list are equal to the fixed size.
@@ -232,8 +227,10 @@ fn cast_list_to_fixed_size_list<O: Offset>(
 
         cast(take_values.as_ref(), inner.dtype(), options)?
     };
+
     FixedSizeListArray::try_new(
         ArrowDataType::FixedSizeList(Box::new(inner.clone()), size),
+        list.len(),
         new_values,
         list.validity().cloned(),
     )
