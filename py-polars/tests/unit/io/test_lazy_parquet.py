@@ -449,7 +449,7 @@ def test_parquet_schema_mismatch_panic_17067(tmp_path: Path, streaming: bool) ->
     pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]}).write_parquet(tmp_path / "1.parquet")
     pl.DataFrame({"c": [1, 2, 3], "d": [4, 5, 6]}).write_parquet(tmp_path / "2.parquet")
 
-    with pytest.raises(pl.exceptions.SchemaError):
+    with pytest.raises(pl.exceptions.ColumnNotFoundError):
         pl.scan_parquet(tmp_path).collect(streaming=streaming)
 
 
