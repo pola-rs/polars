@@ -21,7 +21,27 @@ if TYPE_CHECKING:
 @pytest.mark.write_disk
 @pytest.mark.parametrize(
     ("engine", "uri_connection"),
-    [("sqlalchemy", True), ("sqlalchemy", False), ("adbc", True), ("adbc", False)],
+    [
+        [("sqlalchemy", True), ("sqlalchemy", False), ("adbc", True), ("adbc", False)],
+        ("sqlalchemy", True),
+        ("sqlalchemy", False),
+        pytest.param(
+            "adbc",
+            True,
+            marks=pytest.mark.skipif(
+                sys.platform == "win32",
+                reason="adbc not available on Windows",
+            ),
+        ),
+        pytest.param(
+            "adbc",
+            False,
+            marks=pytest.mark.skipif(
+                sys.platform == "win32",
+                reason="adbc not available on Windows",
+            ),
+        ),
+    ],
 )
 class TestWriteDatabase:
     """Database write tests that share common pytest/parametrize options."""
