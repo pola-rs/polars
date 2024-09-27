@@ -115,6 +115,31 @@ class ConfigParameters(TypedDict, total=False):
     verbose: bool | None
     expr_depth_warning: int
 
+    set_ascii_tables: bool | None
+    set_auto_structify: bool | None
+    set_decimal_separator: str | None
+    set_thousands_separator: str | bool | None
+    set_float_precision: int | None
+    set_fmt_float: FloatFmt | None
+    set_fmt_str_lengths: int | None
+    set_fmt_table_cell_list_len: int | None
+    set_streaming_chunk_size: int | None
+    set_tbl_cell_alignment: Literal["LEFT", "CENTER", "RIGHT"] | None
+    set_tbl_cell_numeric_alignment: Literal["LEFT", "CENTER", "RIGHT"] | None
+    set_tbl_cols: int | None
+    set_tbl_column_data_type_inline: bool | None
+    set_tbl_dataframe_shape_below: bool | None
+    set_tbl_formatting: TableFormatNames | None
+    set_tbl_hide_column_data_types: bool | None
+    set_tbl_hide_column_names: bool | None
+    set_tbl_hide_dtype_separator: bool | None
+    set_tbl_hide_dataframe_shape: bool | None
+    set_tbl_rows: int | None
+    set_tbl_width_chars: int | None
+    set_trim_decimal_zeros: bool | None
+    set_verbose: bool | None
+    set_expr_depth_warning: int
+
 
 class Config(contextlib.ContextDecorator):
     """
