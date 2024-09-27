@@ -5,11 +5,15 @@ import re
 from contextlib import contextmanager
 from io import BytesIO, StringIO
 from pathlib import Path
-from typing import IO, Any, ContextManager, Iterator, Sequence, overload
+from typing import IO, TYPE_CHECKING, Any, overload
 
 from polars._utils.various import is_int_sequence, is_str_sequence, normalize_filepath
 from polars.dependencies import _FSSPEC_AVAILABLE, fsspec
 from polars.exceptions import NoDataError
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator, Sequence
+    from contextlib import AbstractContextManager as ContextManager
 
 
 def parse_columns_arg(

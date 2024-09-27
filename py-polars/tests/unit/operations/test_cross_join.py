@@ -1,16 +1,7 @@
-import sys
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import pytest
-
-from polars.dependencies import _ZONEINFO_AVAILABLE
-
-if sys.version_info >= (3, 9):
-    from zoneinfo import ZoneInfo
-elif _ZONEINFO_AVAILABLE:
-    # Import from submodule due to typing issue with backports.zoneinfo package:
-    # https://github.com/pganssle/zoneinfo/issues/125
-    from backports.zoneinfo._zoneinfo import ZoneInfo
 
 import polars as pl
 

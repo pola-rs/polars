@@ -4,9 +4,10 @@ import contextlib
 import functools
 import re
 import sys
+from collections.abc import Collection
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal as PyDecimal
-from typing import TYPE_CHECKING, Any, Collection, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 from polars.datatypes.classes import (
     Array,

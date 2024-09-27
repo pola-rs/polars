@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import os
 import warnings
+from collections.abc import Collection, Mapping
 from datetime import date, datetime, time, timedelta
 from functools import lru_cache, partial, reduce
 from io import BytesIO, StringIO
@@ -13,11 +14,7 @@ from typing import (
     Any,
     Callable,
     ClassVar,
-    Collection,
-    Iterable,
-    Mapping,
     NoReturn,
-    Sequence,
     TypeVar,
     overload,
 )
@@ -91,8 +88,9 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     import sys
+    from collections.abc import Awaitable, Iterable, Sequence
     from io import IOBase
-    from typing import Awaitable, Literal
+    from typing import Literal
 
     import pyarrow as pa
 

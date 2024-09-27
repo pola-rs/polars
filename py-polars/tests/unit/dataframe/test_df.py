@@ -7,7 +7,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from io import BytesIO
 from operator import floordiv, truediv
-from typing import TYPE_CHECKING, Any, Callable, Iterator, Sequence, cast
+from typing import TYPE_CHECKING, Any, Callable, cast
 
 import numpy as np
 import pyarrow as pa
@@ -32,6 +32,7 @@ from polars.testing import (
 from tests.unit.conftest import INTEGER_DTYPES
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator, Sequence
     from zoneinfo import ZoneInfo
 
     from polars import Expr

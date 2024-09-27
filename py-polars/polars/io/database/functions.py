@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING, Any, Iterable, Literal, overload
+from typing import TYPE_CHECKING, Any, Literal, overload
 
 from polars.datatypes import N_INFER_DEFAULT
 from polars.dependencies import import_optional
@@ -10,6 +10,7 @@ from polars.io.database._executor import ConnectionExecutor
 
 if TYPE_CHECKING:
     import sys
+    from collections.abc import Iterable
 
     if sys.version_info >= (3, 10):
         from typing import TypeAlias

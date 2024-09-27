@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable, Dict, Union
+from typing import TYPE_CHECKING, Callable, Union
 
 from polars.dependencies import altair as alt
 
@@ -27,7 +27,7 @@ if TYPE_CHECKING:
         from typing_extensions import Unpack
 
     Encoding: TypeAlias = Union[X, Y, Color, Order, Size, Tooltip]
-    Encodings: TypeAlias = Dict[str, Encoding]
+    Encodings: TypeAlias = dict[str, Encoding]
 
 
 def _maybe_extract_shorthand(encoding: Encoding) -> Encoding:

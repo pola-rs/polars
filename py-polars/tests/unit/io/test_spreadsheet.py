@@ -5,7 +5,7 @@ from collections import OrderedDict
 from datetime import date, datetime
 from io import BytesIO
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Sequence
+from typing import TYPE_CHECKING, Any, Callable
 
 import pytest
 
@@ -17,6 +17,8 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import FLOAT_DTYPES, NUMERIC_DTYPES
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from polars._typing import ExcelSpreadsheetEngine, SelectorType
 
 pytestmark = pytest.mark.slow()

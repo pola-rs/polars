@@ -1,24 +1,17 @@
 from __future__ import annotations
 
-import sys
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
-from polars.dependencies import _ZONEINFO_AVAILABLE
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
     from polars._typing import PolarsDataType, PolarsTemporalType
 
-if sys.version_info >= (3, 9):
-    from zoneinfo import ZoneInfo
-elif _ZONEINFO_AVAILABLE:
-    # Import from submodule due to typing issue with backports.zoneinfo package:
-    # https://github.com/pganssle/zoneinfo/issues/125
-    from backports.zoneinfo._zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo
 
 
 @pytest.mark.parametrize(

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
-from typing import TYPE_CHECKING, Iterable
+from typing import TYPE_CHECKING
 
 import polars._reexport as pl
 from polars import functions as F
@@ -13,6 +13,8 @@ from polars._utils.wrap import wrap_expr
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Int32
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from polars import Expr
     from polars._typing import (
         Ambiguous,

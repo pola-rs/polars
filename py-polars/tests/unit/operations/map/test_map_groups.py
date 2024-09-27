@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Sequence
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
@@ -8,6 +8,9 @@ import pytest
 import polars as pl
 from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 
 def test_map_groups() -> None:
