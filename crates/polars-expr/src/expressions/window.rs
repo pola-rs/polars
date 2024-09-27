@@ -498,7 +498,7 @@ impl PhysicalExpr for WindowExpr {
         // to make sure that the caches align we sort
         // the groups, so that the cached groups and join keys
         // are consistent among all windows
-        if self.order_by.is_none() && (sort_groups || state.cache_window()) {
+        if sort_groups || state.cache_window() {
             groups.sort()
         }
         let gb = GroupBy::new(df, group_by_columns.clone(), groups, Some(apply_columns));
