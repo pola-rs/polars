@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import OrderedDict
-from collections.abc import Iterable, Mapping
+from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 from polars.datatypes import DataType
@@ -10,6 +10,8 @@ from polars.datatypes._parse import parse_into_dtype
 BaseSchema = OrderedDict[str, DataType]
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from polars._typing import PythonDataType
 
 

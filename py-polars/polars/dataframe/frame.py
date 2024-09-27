@@ -7,11 +7,8 @@ import os
 import random
 from collections import defaultdict
 from collections.abc import (
-    Collection,
     Generator,
     Iterable,
-    Iterator,
-    Mapping,
     Sequence,
     Sized,
 )
@@ -117,6 +114,11 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     import sys
+    from collections.abc import (
+        Collection,
+        Iterator,
+        Mapping,
+    )
     from datetime import timedelta
     from io import IOBase
     from typing import Literal
@@ -3975,8 +3977,9 @@ class DataFrame:
                 else (connection, False)
             )
             with (
-                conn if can_close_conn else contextlib.nullcontext()
-            ), conn.cursor() as cursor:
+                conn if can_close_conn else contextlib.nullcontext(),
+                conn.cursor() as cursor,
+            ):
                 catalog, db_schema, unpacked_table_name = unpack_table_name(table_name)
                 n_rows: int
                 if adbc_version >= (0, 7):

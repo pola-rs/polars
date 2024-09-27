@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, NoReturn, overload
 
 import polars._reexport as pl
@@ -23,6 +23,8 @@ from polars.dependencies import numpy as np
 from polars.meta.index_type import get_index_type
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from polars import DataFrame, Series
     from polars._typing import (
         MultiColSelector,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from contextlib import nullcontext
-from typing import TYPE_CHECKING, Any, ContextManager
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -11,6 +11,8 @@ from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
+    from contextlib import AbstractContextManager as ContextManager
+
     from polars._typing import PolarsDataType
 
 

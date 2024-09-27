@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from collections import abc
-from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 from polars._utils.unstable import unstable
@@ -12,20 +11,13 @@ from polars.dataframe import DataFrame
 from polars.datatypes.constants import N_INFER_DEFAULT
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from polars.schema import Schema
 
-import sys
 
-if sys.version_info >= (3, 9):
-
-    def _remove_prefix(text: str, prefix: str) -> str:
-        return text.removeprefix(prefix)
-else:
-
-    def _remove_prefix(text: str, prefix: str) -> str:
-        if text.startswith(prefix):
-            return text[len(prefix) :]
-        return text
+def _remove_prefix(text: str, prefix: str) -> str:
+    return text.removeprefix(prefix)
 
 
 def _simple_json_normalize(

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Awaitable, Generator
+from collections.abc import Awaitable
 from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 from polars._utils.wrap import wrap_df
@@ -8,6 +8,7 @@ from polars.dependencies import _GEVENT_AVAILABLE
 
 if TYPE_CHECKING:
     from asyncio.futures import Future
+    from collections.abc import Generator
 
     from polars.polars import PyDataFrame
 

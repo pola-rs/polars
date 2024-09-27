@@ -35,7 +35,6 @@ import re
 import sys
 import unittest
 import warnings
-from collections.abc import Iterator
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING, Any
@@ -43,6 +42,7 @@ from typing import TYPE_CHECKING, Any
 import polars as pl
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
     from types import ModuleType
 
 

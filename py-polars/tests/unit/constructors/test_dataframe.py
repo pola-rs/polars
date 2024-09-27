@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import sys
 from collections import OrderedDict
-from collections.abc import Iterator, Mapping
-from typing import Any
+from collections.abc import Mapping
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
 from polars.exceptions import DataOrientationWarning, InvalidOperationError
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 
 def test_df_mixed_dtypes_string() -> None:

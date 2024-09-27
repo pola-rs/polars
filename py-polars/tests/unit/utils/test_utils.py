@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -26,6 +25,7 @@ from polars._utils.various import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
     from zoneinfo import ZoneInfo
 
     from polars._typing import TimeUnit

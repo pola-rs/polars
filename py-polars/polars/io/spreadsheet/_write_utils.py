@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 from io import BytesIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, overload
@@ -22,6 +22,7 @@ from polars.exceptions import DuplicateError
 from polars.selectors import _expand_selector_dicts, _expand_selectors, numeric
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
     from typing import Literal
 
     from xlsxwriter import Workbook

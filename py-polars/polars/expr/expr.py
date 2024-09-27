@@ -4,7 +4,7 @@ import contextlib
 import math
 import operator
 import warnings
-from collections.abc import Collection, Iterable, Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from datetime import timedelta
 from functools import reduce
 from io import BytesIO, StringIO
@@ -14,9 +14,7 @@ from typing import (
     Any,
     Callable,
     ClassVar,
-    FrozenSet,
     NoReturn,
-    Set,
     TypeVar,
 )
 
@@ -66,6 +64,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     import sys
+    from collections.abc import Iterable
     from io import IOBase
 
     from polars import DataFrame, LazyFrame, Series
@@ -5768,7 +5767,7 @@ class Expr:
         └───────────┴──────────────────┴──────────┘
         """
         if isinstance(other, Collection) and not isinstance(other, str):
-            if isinstance(other, (Set, FrozenSet)):
+            if isinstance(other, (set, frozenset)):
                 other = list(other)
             other = F.lit(pl.Series(other))._pyexpr
         else:

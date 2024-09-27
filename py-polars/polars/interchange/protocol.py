@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
 from enum import IntEnum
 from typing import (
     TYPE_CHECKING,
@@ -8,7 +7,6 @@ from typing import (
     ClassVar,
     Literal,
     Protocol,
-    Tuple,
     TypedDict,
 )
 
@@ -16,6 +14,7 @@ from polars._utils.unstable import issue_unstable_warning
 
 if TYPE_CHECKING:
     import sys
+    from collections.abc import Iterable, Sequence
 
     from polars.interchange.buffer import PolarsBuffer
     from polars.interchange.column import PolarsColumn
@@ -70,7 +69,7 @@ class DtypeKind(IntEnum):
     CATEGORICAL = 23
 
 
-Dtype: TypeAlias = Tuple[DtypeKind, int, str, str]  # see Column.dtype
+Dtype: TypeAlias = tuple[DtypeKind, int, str, str]  # see Column.dtype
 
 
 class ColumnNullType(IntEnum):

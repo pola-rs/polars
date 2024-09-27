@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import math
 import os
-from collections.abc import Collection, Generator, Iterable, Mapping, Sequence
+from collections.abc import Iterable, Sequence
 from contextlib import nullcontext
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal as PyDecimal
@@ -110,6 +110,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     import sys
+    from collections.abc import Collection, Generator, Mapping
 
     import jax
     import numpy.typing as npt

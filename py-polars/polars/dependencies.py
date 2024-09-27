@@ -150,6 +150,7 @@ if TYPE_CHECKING:
     import json
     import pickle
     import subprocess
+    import zoneinfo
 
     import altair
     import deltalake
@@ -162,11 +163,6 @@ if TYPE_CHECKING:
     import pyarrow
     import pydantic
     import pyiceberg
-
-    if sys.version_info >= (3, 9):
-        import zoneinfo
-    else:
-        from backports import zoneinfo
 else:
     # infrequently-used builtins
     dataclasses, _ = _lazy_import("dataclasses")

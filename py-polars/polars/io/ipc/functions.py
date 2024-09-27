@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import contextlib
 import os
-from collections.abc import Sequence
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any
 
@@ -29,6 +28,8 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars.polars import read_ipc_schema as _read_ipc_schema
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from polars import DataFrame, DataType, LazyFrame
     from polars._typing import SchemaDict
 

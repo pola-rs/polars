@@ -4,7 +4,7 @@ from collections import OrderedDict, namedtuple
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from random import shuffle
-from typing import TYPE_CHECKING, Any, List, Literal, NamedTuple
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
 import numpy as np
 import pandas as pd
@@ -280,7 +280,7 @@ def test_init_pydantic_2x() -> None:
         "top": 123
     }]
     """
-    adapter: TypeAdapter[Any] = TypeAdapter(List[PageView])
+    adapter: TypeAdapter[Any] = TypeAdapter(list[PageView])
     models = adapter.validate_json(data_json)
 
     result = pl.DataFrame(models)

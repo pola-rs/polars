@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
 from typing import TYPE_CHECKING, Callable
 
 from polars import functions as F
@@ -9,6 +8,7 @@ from polars._utils.deprecation import deprecate_renamed_function
 
 if TYPE_CHECKING:
     import sys
+    from collections.abc import Iterable
     from datetime import timedelta
 
     from polars import DataFrame

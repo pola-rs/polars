@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -11,6 +10,9 @@ import polars as pl
 import polars.polars as plr
 from polars._utils.unstable import issue_unstable_warning
 from polars.config import _POLARS_CFG_ENV_VARS
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 
 @pytest.fixture(autouse=True)

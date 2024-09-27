@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 from polars._utils.deprecation import deprecate_function
@@ -10,6 +9,8 @@ from polars.datatypes.constants import N_INFER_DEFAULT
 from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from polars import Expr, Series
     from polars._typing import (
         Ambiguous,

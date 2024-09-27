@@ -21,12 +21,7 @@ if TYPE_CHECKING:
 @pytest.mark.write_disk
 @pytest.mark.parametrize(
     ("engine", "uri_connection"),
-    [
-        ("sqlalchemy", True),
-        ("sqlalchemy", False),
-        ("adbc", True),
-        ("adbc", False)
-    ],
+    [("sqlalchemy", True), ("sqlalchemy", False), ("adbc", True), ("adbc", False)],
 )
 class TestWriteDatabase:
     """Database write tests that share common pytest/parametrize options."""

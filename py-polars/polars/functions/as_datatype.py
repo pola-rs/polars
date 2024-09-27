@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Iterable
 from typing import TYPE_CHECKING, overload
 
 from polars import functions as F
@@ -17,6 +16,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
     from typing import Literal
 
     from polars import Expr, Series

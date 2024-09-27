@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Callable, overload
 
 import polars._reexport as pl
@@ -21,7 +21,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     import polars.polars as plr
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable, Collection
+    from collections.abc import Awaitable, Collection, Iterable
     from typing import Literal
 
     from polars import DataFrame, Expr, LazyFrame, Series

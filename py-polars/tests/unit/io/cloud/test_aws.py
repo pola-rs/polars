@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import multiprocessing
-from collections.abc import Iterator
 from typing import TYPE_CHECKING, Any, Callable
 
 import boto3
@@ -12,6 +11,7 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
     from pathlib import Path
 
 pytestmark = [

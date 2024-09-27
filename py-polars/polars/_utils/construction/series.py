@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Generator, Iterable, Iterator, Sequence
+from collections.abc import Generator, Iterator
 from datetime import date, datetime, time, timedelta
 from itertools import islice
 from typing import (
@@ -62,6 +62,8 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars.polars import PySeries
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable, Sequence
+
     from polars import DataFrame, Series
     from polars._typing import PolarsDataType
     from polars.dependencies import pandas as pd

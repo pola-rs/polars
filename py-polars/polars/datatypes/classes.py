@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import contextlib
 from collections import OrderedDict
-from collections.abc import Iterable, Iterator, Mapping, Sequence
+from collections.abc import Mapping
 from datetime import timezone
 from inspect import isclass
 from typing import TYPE_CHECKING, Any
@@ -15,6 +15,8 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars.polars import dtype_str_repr as _dtype_str_repr
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable, Iterator, Sequence
+
     from polars import Series
     from polars._typing import (
         CategoricalOrdering,

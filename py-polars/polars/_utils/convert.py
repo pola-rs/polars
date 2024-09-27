@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
 from datetime import datetime, time, timedelta, timezone
 from decimal import Context
 from functools import lru_cache
@@ -26,6 +25,7 @@ from polars._utils.constants import (
 from polars.dependencies import _ZONEINFO_AVAILABLE, zoneinfo
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
     from datetime import date, tzinfo
     from decimal import Decimal
 
