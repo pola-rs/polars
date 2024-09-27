@@ -638,76 +638,117 @@ impl ChunkCompareIneq<&BinaryChunked> for BinaryChunked {
     }
 }
 
-#[doc(hidden)]
-fn _list_comparison_helper<F>(lhs: &ListChunked, rhs: &ListChunked, op: F) -> BooleanChunked
+fn _list_comparison_helper<F, B>(
+    lhs: &ListChunked,
+    rhs: &ListChunked,
+    op: F,
+    broadcast_op: B,
+    missing: bool,
+    is_ne: bool,
+) -> BooleanChunked
 where
-    F: Fn(Option<&Series>, Option<&Series>) -> Option<bool>,
+    F: Fn(&ListArray<i64>, &ListArray<i64>) -> Bitmap,
+    B: Fn(&ListArray<i64>, &Box<dyn Array>) -> Bitmap,
 {
     match (lhs.len(), rhs.len()) {
         (_, 1) => {
-            let right = rhs.get_as_series(0).map(|s| s.with_name(PlSmallStr::EMPTY));
-            lhs.amortized_iter()
-                .map(|left| op(left.as_ref().map(|us| us.as_ref()), right.as_ref()))
-                .collect_trusted()
+            let right = rhs.chunks()[0]
+                .as_any()
+                .downcast_ref::<ListArray<i64>>()
+                .unwrap();
+
+            if !right.validity().map_or(true, |v| v.get(0).unwrap()) {
+                if missing {
+                    if is_ne {
+                        return lhs.is_not_null();
+                    } else {
+                        return lhs.is_null();
+                    }
+                } else {
+                    return BooleanChunked::full_null(PlSmallStr::EMPTY, lhs.len());
+                }
+            }
+
+            let values = right.values().sliced(
+                (*right.offsets().first()).try_into().unwrap(),
+                right.offsets().range().try_into().unwrap(),
+            );
+
+            arity::unary_mut_values(lhs, |a| broadcast_op(a, &values).into())
         },
         (1, _) => {
-            let left = lhs.get_as_series(0).map(|s| s.with_name(PlSmallStr::EMPTY));
-            rhs.amortized_iter()
-                .map(|right| op(left.as_ref(), right.as_ref().map(|us| us.as_ref())))
-                .collect_trusted()
+            let left = lhs.chunks()[0]
+                .as_any()
+                .downcast_ref::<ListArray<i64>>()
+                .unwrap();
+
+            if !left.validity().map_or(true, |v| v.get(0).unwrap()) {
+                if missing {
+                    if is_ne {
+                        return rhs.is_not_null();
+                    } else {
+                        return rhs.is_null();
+                    }
+                } else {
+                    return BooleanChunked::full_null(PlSmallStr::EMPTY, rhs.len());
+                }
+            }
+
+            let values = left.values().sliced(
+                (*left.offsets().first()).try_into().unwrap(),
+                left.offsets().range().try_into().unwrap(),
+            );
+
+            arity::unary_mut_values(rhs, |a| broadcast_op(a, &values).into())
         },
-        _ => lhs
-            .amortized_iter()
-            .zip(rhs.amortized_iter())
-            .map(|(left, right)| {
-                op(
-                    left.as_ref().map(|us| us.as_ref()),
-                    right.as_ref().map(|us| us.as_ref()),
-                )
-            })
-            .collect_trusted(),
+        _ => arity::binary_mut_values(lhs, rhs, |a, b| op(a, b).into(), PlSmallStr::EMPTY),
     }
 }
 
 impl ChunkCompareEq<&ListChunked> for ListChunked {
     type Item = BooleanChunked;
     fn equal(&self, rhs: &ListChunked) -> BooleanChunked {
-        let _series_equals = |lhs: Option<&Series>, rhs: Option<&Series>| match (lhs, rhs) {
-            (Some(l), Some(r)) => Some(l.equals(r)),
-            _ => None,
-        };
-
-        _list_comparison_helper(self, rhs, _series_equals)
+        _list_comparison_helper(
+            self,
+            rhs,
+            TotalEqKernel::tot_eq_kernel,
+            TotalEqKernel::tot_eq_kernel_broadcast,
+            false,
+            false,
+        )
     }
 
     fn equal_missing(&self, rhs: &ListChunked) -> BooleanChunked {
-        let _series_equals_missing = |lhs: Option<&Series>, rhs: Option<&Series>| match (lhs, rhs) {
-            (Some(l), Some(r)) => Some(l.equals_missing(r)),
-            (None, None) => Some(true),
-            _ => Some(false),
-        };
-
-        _list_comparison_helper(self, rhs, _series_equals_missing)
+        _list_comparison_helper(
+            self,
+            rhs,
+            TotalEqKernel::tot_eq_missing_kernel,
+            TotalEqKernel::tot_eq_missing_kernel_broadcast,
+            true,
+            false,
+        )
     }
 
     fn not_equal(&self, rhs: &ListChunked) -> BooleanChunked {
-        let _series_not_equal = |lhs: Option<&Series>, rhs: Option<&Series>| match (lhs, rhs) {
-            (Some(l), Some(r)) => Some(!l.equals(r)),
-            _ => None,
-        };
-
-        _list_comparison_helper(self, rhs, _series_not_equal)
+        _list_comparison_helper(
+            self,
+            rhs,
+            TotalEqKernel::tot_ne_kernel,
+            TotalEqKernel::tot_ne_kernel_broadcast,
+            false,
+            true,
+        )
     }
 
     fn not_equal_missing(&self, rhs: &ListChunked) -> BooleanChunked {
-        let _series_not_equal_missing =
-            |lhs: Option<&Series>, rhs: Option<&Series>| match (lhs, rhs) {
-                (Some(l), Some(r)) => Some(!l.equals_missing(r)),
-                (None, None) => Some(false),
-                _ => Some(true),
-            };
-
-        _list_comparison_helper(self, rhs, _series_not_equal_missing)
+        _list_comparison_helper(
+            self,
+            rhs,
+            TotalEqKernel::tot_ne_missing_kernel,
+            TotalEqKernel::tot_ne_missing_kernel_broadcast,
+            true,
+            true,
+        )
     }
 }
 
@@ -798,6 +839,8 @@ fn _array_comparison_helper<F, B>(
     rhs: &ArrayChunked,
     op: F,
     broadcast_op: B,
+    missing: bool,
+    is_ne: bool,
 ) -> BooleanChunked
 where
     F: Fn(&FixedSizeListArray, &FixedSizeListArray) -> Bitmap,
@@ -808,17 +851,41 @@ where
             let right = rhs.chunks()[0]
                 .as_any()
                 .downcast_ref::<FixedSizeListArray>()
-                .unwrap()
-                .values();
-            arity::unary_mut_values(lhs, |a| broadcast_op(a, right).into())
+                .unwrap();
+
+            if !right.validity().map_or(true, |v| v.get(0).unwrap()) {
+                if missing {
+                    if is_ne {
+                        return lhs.is_not_null();
+                    } else {
+                        return lhs.is_null();
+                    }
+                } else {
+                    return BooleanChunked::full_null(PlSmallStr::EMPTY, lhs.len());
+                }
+            }
+
+            arity::unary_mut_values(lhs, |a| broadcast_op(a, right.values()).into())
         },
         (1, _) => {
             let left = lhs.chunks()[0]
                 .as_any()
                 .downcast_ref::<FixedSizeListArray>()
-                .unwrap()
-                .values();
-            arity::unary_mut_values(rhs, |a| broadcast_op(a, left).into())
+                .unwrap();
+
+            if !left.validity().map_or(true, |v| v.get(0).unwrap()) {
+                if missing {
+                    if is_ne {
+                        return rhs.is_not_null();
+                    } else {
+                        return rhs.is_null();
+                    }
+                } else {
+                    return BooleanChunked::full_null(PlSmallStr::EMPTY, rhs.len());
+                }
+            }
+
+            arity::unary_mut_values(rhs, |a| broadcast_op(a, left.values()).into())
         },
         _ => arity::binary_mut_values(lhs, rhs, |a, b| op(a, b).into(), PlSmallStr::EMPTY),
     }
@@ -833,6 +900,8 @@ impl ChunkCompareEq<&ArrayChunked> for ArrayChunked {
             rhs,
             TotalEqKernel::tot_eq_kernel,
             TotalEqKernel::tot_eq_kernel_broadcast,
+            false,
+            false,
         )
     }
 
@@ -842,6 +911,8 @@ impl ChunkCompareEq<&ArrayChunked> for ArrayChunked {
             rhs,
             TotalEqKernel::tot_eq_missing_kernel,
             TotalEqKernel::tot_eq_missing_kernel_broadcast,
+            true,
+            false,
         )
     }
 
@@ -851,6 +922,8 @@ impl ChunkCompareEq<&ArrayChunked> for ArrayChunked {
             rhs,
             TotalEqKernel::tot_ne_kernel,
             TotalEqKernel::tot_ne_kernel_broadcast,
+            false,
+            true,
         )
     }
 
@@ -860,6 +933,8 @@ impl ChunkCompareEq<&ArrayChunked> for ArrayChunked {
             rhs,
             TotalEqKernel::tot_ne_missing_kernel,
             TotalEqKernel::tot_ne_missing_kernel_broadcast,
+            true,
+            true,
         )
     }
 }
