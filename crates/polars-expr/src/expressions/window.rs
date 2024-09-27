@@ -335,7 +335,11 @@ impl WindowExpr {
             (WindowMapping::GroupsToRows, AggState::AggregatedList(_))
                 if gb.get_groups().is_sorted_flag() =>
             {
-                Ok(MapStrategy::Explode)
+                if let GroupsProxy::Idx(_) = gb.get_groups() {
+                    Ok(MapStrategy::Map)
+                } else {
+                    Ok(MapStrategy::Explode)
+                }
             },
             (WindowMapping::GroupsToRows, AggState::AggregatedList(_)) => Ok(MapStrategy::Map),
             // no aggregations, just return column
