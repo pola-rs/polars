@@ -3695,7 +3695,7 @@ class Series:
 
     def is_nan(self) -> Series:
         """
-        Returns a boolean Series indicating which values are not NaN.
+        Returns a boolean Series indicating which values are NaN.
 
         Returns
         -------
