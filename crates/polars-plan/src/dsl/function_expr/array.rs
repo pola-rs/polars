@@ -2,6 +2,19 @@ use polars_ops::chunked_array::array::*;
 
 use super::*;
 use crate::{map, map_as_slice};
+use polars_core::with_match_physical_numeric_polars_type;
+use std::collections::HashMap;
+use arrow::bitmap::MutableBitmap;
+use arrow::array::{PrimitiveArray, FixedSizeListArray};
+
+
+
+#[derive(Clone, Deserialize)]
+struct ArrayKwargs {
+    // I guess DataType is not one of the serializable types?
+    // In the source code I see this done vie Wrap<DataType>
+    dtype_expr: String,
+}
 
 #[derive(Clone, Copy, Eq, PartialEq, Hash, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -19,6 +32,7 @@ pub enum ArrayFunction {
     Any,
     #[cfg(feature = "array_any_all")]
     All,
+    Array,
     Sort(SortOptions),
     Reverse,
     ArgMin,
@@ -46,6 +60,8 @@ impl ArrayFunction {
             Median => mapper.map_to_float_dtype(),
             #[cfg(feature = "array_any_all")]
             Any | All => mapper.with_dtype(DataType::Boolean),
+            // TODO: Figure out how to bind keyword argument
+            Array => array_output_type(mapper.args(), ArrayKwargs { dtype_expr: "".to_string() }),
             Sort(_) => mapper.with_same_dtype(),
             Reverse => mapper.with_same_dtype(),
             ArgMin | ArgMax => mapper.with_dtype(IDX_DTYPE),
@@ -58,6 +74,43 @@ impl ArrayFunction {
             Shift => mapper.with_same_dtype(),
         }
     }
+}
+
+fn deserialize_dtype(dtype_expr: &str) -> PolarsResult<Option<DataType>> {
+    match dtype_expr.len() {
+        0 => Ok(None),
+        _ => match serde_json::from_str::<Expr>(dtype_expr) {
+            Ok(Expr::DtypeColumn(dtypes)) if dtypes.len() == 1 => Ok(Some(dtypes[0].clone())),
+            Ok(_) => Err(
+                polars_err!(ComputeError: "Expected a DtypeColumn expression with a single dtype"),
+            ),
+            Err(_) => Err(polars_err!(ComputeError: "Could not deserialize dtype expression")),
+        },
+    }
+}
+fn array_output_type(input_fields: &[Field], kwargs: ArrayKwargs) -> PolarsResult<Field> {
+    let expected_dtype = deserialize_dtype(&kwargs.dtype_expr)?
+        .unwrap_or(input_fields[0].dtype.clone());
+
+    for field in input_fields.iter() {
+        if !field.dtype().is_numeric() {
+            polars_bail!(ComputeError: "all input fields must be numeric")
+        }
+    }
+
+    /*
+    // For now, allow casting to either the first, or provided dtype
+    for field in input_fields.iter().skip(1) {
+        if field.dtype != expected_dtype {
+            polars_bail!(ComputeError: "all input fields must have the same type")
+        }
+    }
+    */
+
+    Ok(Field::new(
+        PlSmallStr::from_static("array"),
+        DataType::Array(Box::new(expected_dtype), input_fields.len()),
+    ))
 }
 
 fn map_array_dtype_to_list_dtype(datatype: &DataType) -> PolarsResult<DataType> {
@@ -85,6 +138,7 @@ impl Display for ArrayFunction {
             Any => "any",
             #[cfg(feature = "array_any_all")]
             All => "all",
+            Array => "array",
             Sort(_) => "sort",
             Reverse => "reverse",
             ArgMin => "arg_min",
@@ -118,6 +172,7 @@ impl From<ArrayFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             Any => map!(any),
             #[cfg(feature = "array_any_all")]
             All => map!(all),
+            Array => map_as_slice!(array_new),
             Sort(options) => map!(sort, options),
             Reverse => map!(reverse),
             ArgMin => map!(arg_min),
@@ -131,6 +186,86 @@ impl From<ArrayFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             Shift => map_as_slice!(shift),
         }
     }
+}
+
+// Create a new array from a slice of series
+fn array_new(inputs: &[Column]) -> PolarsResult<Column> {
+    let kwargs = ArrayKwargs {dtype_expr: "".to_string()};
+    let ref dtype = deserialize_dtype(&kwargs.dtype_expr)?
+        .unwrap_or(inputs[0].dtype().clone());
+
+    // This conversion is yuck, there is probably a standard way to go from &[Column] to &[Series]
+    let series: Vec<Series> = inputs.iter().map(|col| col.clone().take_materialized_series()).collect();
+
+    // Convert dtype to native numeric type and invoke array_numeric
+    let res_series = with_match_physical_numeric_polars_type!(dtype, |$T| {
+        array_numeric::<$T>(&series[..], dtype)
+    })?;
+
+    Ok(res_series.into_column())
+}
+
+// Combine numeric series into an array
+fn array_numeric<'a, T: PolarsNumericType>(inputs: &[Series], dtype: &DataType)
+                                           -> PolarsResult<Series> {
+    let rows = inputs[0].len();
+    let cols = inputs.len();
+    let capacity = cols * rows;
+
+    let mut values: Vec<T::Native> = vec![T::Native::default(); capacity];
+
+    // Support for casting
+    // Cast fields to the target dtype as needed
+    let mut casts = HashMap::new();
+    for j in 0..cols {
+        if inputs[j].dtype() != dtype {
+            let cast_input = inputs[j].cast(dtype)?;
+            casts.insert(j, cast_input);
+        }
+    }
+
+    let mut cols_ca = Vec::new();
+    for j in 0..cols {
+        if inputs[j].dtype() != dtype {
+            cols_ca.push(casts.get(&j).expect("expect conversion").unpack::<T>()?);
+        } else {
+            cols_ca.push(inputs[j].unpack::<T>()?);
+        }
+    }
+
+    for i in 0..rows {
+        for j in 0..cols {
+            values[i * cols + j] = unsafe { cols_ca[j].value_unchecked(i) };
+        }
+    }
+
+    let validity = if cols_ca.iter().any(|col| col.has_nulls()) {
+        let mut validity = MutableBitmap::from_len_zeroed(capacity);
+        for (j, col) in cols_ca.iter().enumerate() {
+            let mut row_offset = 0;
+            for chunk in col.chunks() {
+                if let Some(chunk_validity) = chunk.validity() {
+                    for set_bit in chunk_validity.true_idx_iter() {
+                        validity.set(cols * (row_offset + set_bit) + j, true);
+                    }
+                } else {
+                    for chunk_row in 0..chunk.len() {
+                        validity.set(cols * (row_offset + chunk_row) + j, true);
+                    }
+                }
+                row_offset += chunk.len();
+            }
+        }
+        Some(validity.into())
+    } else {
+        None
+    };
+
+    let values_array = PrimitiveArray::from_vec(values).with_validity(validity);
+    let dtype = DataType::Array(Box::new(dtype.clone()), cols);
+    let arrow_dtype = dtype.to_arrow(CompatLevel::newest());
+    let array = FixedSizeListArray::try_new(arrow_dtype.clone(), Box::new(values_array), None)?;
+    Ok(unsafe {Series::_try_from_arrow_unchecked("Array".into(), vec![Box::new(array)], &arrow_dtype)?})
 }
 
 pub(super) fn max(s: &Column) -> PolarsResult<Column> {

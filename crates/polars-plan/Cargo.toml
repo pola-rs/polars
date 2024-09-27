@@ -41,7 +41,7 @@ rayon = { workspace = true }
 recursive = { workspace = true }
 regex = { workspace = true, optional = true }
 serde = { workspace = true, features = ["rc"], optional = true }
-serde_json = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = false }
 strum_macros = { workspace = true }
 
 [build-dependencies]
