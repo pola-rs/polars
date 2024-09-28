@@ -653,3 +653,28 @@ def test_function_expr_scalar_identification_18755() -> None:
         pl.DataFrame({"a": [1, 2]}).with_columns(pl.lit(5).shrink_dtype().alias("b")),
         pl.DataFrame({"a": [1, 2], "b": pl.Series([5, 5], dtype=pl.Int8)}),
     )
+
+
+def test_filter_star() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3, 4, 5],
+            "b": ["p", "q", "r", "s", "t"],
+            "p": [True, False, True, True, False],
+        }
+    )
+
+    expect = pl.DataFrame({"a": [1, 3, 4], "b": ["p", "r", "s"], "p": True})
+
+    assert_frame_equal(
+        df.select(pl.all().filter("p")),
+        expect,
+    )
+
+    q = df.lazy().select(pl.all().filter(~pl.col("p")))
+    assert "__POLARS_CSER" in q.explain()
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame({"a": [2, 5], "b": ["q", "t"], "p": False}),
+    )
