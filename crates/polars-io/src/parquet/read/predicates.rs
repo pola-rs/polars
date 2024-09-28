@@ -24,7 +24,7 @@ pub(crate) fn collect_statistics(
     let stats = schema
         .iter_values()
         .map(|field| {
-            let iter = md.columns_under_root_iter(&field.name);
+            let iter = md.columns_under_root_iter(&field.name).unwrap();
 
             Ok(if iter.len() == 0 {
                 ColumnStats::new(field.into(), None, None, None)

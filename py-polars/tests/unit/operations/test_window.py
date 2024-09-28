@@ -518,3 +518,21 @@ def test_lit_window_broadcast() -> None:
     assert pl.DataFrame({"a": [1, 1, 2]}).select(pl.lit(0).over("a").alias("a"))[
         "a"
     ].to_list() == [0, 0, 0]
+
+
+def test_order_by_sorted_keys_18943() -> None:
+    df = pl.DataFrame(
+        {
+            "g": [1, 1, 1, 1],
+            "t": [4, 3, 2, 1],
+            "x": [10, 20, 30, 40],
+        }
+    )
+
+    expect = pl.DataFrame({"x": [100, 90, 70, 40]})
+
+    out = df.select(pl.col("x").cum_sum().over("g", order_by="t"))
+    assert_frame_equal(out, expect)
+
+    out = df.set_sorted("g").select(pl.col("x").cum_sum().over("g", order_by="t"))
+    assert_frame_equal(out, expect)

@@ -25,6 +25,9 @@ struct MinReduceState {
 
 impl MinReduceState {
     fn update_with_value(&mut self, other: &AnyValue<'static>) {
+        // AnyValue uses total ordering, so NaN is greater than any value.
+        // This means other < self.value.value() already ignores incoming NaNs.
+        // We still must check if self is NaN and if so replace.
         if self.value.is_null()
             || !other.is_null() && (other < self.value.value() || self.value.is_nan())
         {
@@ -80,8 +83,12 @@ struct MaxReduceState {
 
 impl MaxReduceState {
     fn update_with_value(&mut self, other: &AnyValue<'static>) {
+        // AnyValue uses total ordering, so NaN is greater than any value.
+        // This means other > self.value.value() might have false positives.
+        // We also must check if self is NaN and if so replace.
         if self.value.is_null()
-            || !other.is_null() && (other > self.value.value() || self.value.is_nan())
+            || !other.is_null()
+                && (other > self.value.value() && !other.is_nan() || self.value.is_nan())
         {
             self.value.update(other.clone());
         }
@@ -90,7 +97,7 @@ impl MaxReduceState {
 
 impl ReductionState for MaxReduceState {
     fn update(&mut self, batch: &Series) -> PolarsResult<()> {
-        let sc = batch.min_reduce()?;
+        let sc = batch.max_reduce()?;
         self.update_with_value(sc.value());
         Ok(())
     }

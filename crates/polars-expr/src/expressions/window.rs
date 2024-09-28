@@ -315,7 +315,6 @@ impl WindowExpr {
     fn determine_map_strategy(
         &self,
         agg_state: &AggState,
-        sorted_keys: bool,
         gb: &GroupBy,
     ) -> PolarsResult<MapStrategy> {
         match (self.mapping, agg_state) {
@@ -334,13 +333,8 @@ impl WindowExpr {
             // no explicit aggregations, map over the groups
             //`(col("x").sum() * col("y")).over("groups")`
             (WindowMapping::GroupsToRows, AggState::AggregatedList(_)) => {
-                if sorted_keys {
-                    if let GroupsProxy::Idx(g) = gb.get_groups() {
-                        debug_assert!(g.is_sorted_flag())
-                    }
-                    // GroupsProxy::Slice is always sorted
-
-                    // Note that group columns must be sorted for this to make sense!!!
+                if let GroupsProxy::Slice { .. } = gb.get_groups() {
+                    // Result can be directly exploded if the input was sorted.
                     Ok(MapStrategy::Explode)
                 } else {
                     Ok(MapStrategy::Map)
@@ -516,7 +510,7 @@ impl PhysicalExpr for WindowExpr {
         let mut ac = self.run_aggregation(df, state, &gb)?;
 
         use MapStrategy::*;
-        match self.determine_map_strategy(ac.agg_state(), sorted_keys, &gb)? {
+        match self.determine_map_strategy(ac.agg_state(), &gb)? {
             Nothing => {
                 let mut out = ac.flat_naive().into_owned();
 

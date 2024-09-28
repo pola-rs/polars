@@ -8,7 +8,6 @@ from typing import (
     Any,
     Callable,
     NoReturn,
-    Sequence,
     no_type_check,
     overload,
 )
@@ -26,6 +25,7 @@ from polars._utils.constants import (
 from polars.dependencies import _ZONEINFO_AVAILABLE, zoneinfo
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
     from datetime import date, tzinfo
     from decimal import Decimal
 

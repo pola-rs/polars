@@ -114,6 +114,7 @@ def test_to_from_buffer(
 
 @pytest.mark.parametrize("use_pyarrow", [True, False])
 @pytest.mark.parametrize("rechunk_and_expected_chunks", [(True, 1), (False, 3)])
+@pytest.mark.may_fail_auto_streaming
 def test_read_parquet_respects_rechunk_16416(
     use_pyarrow: bool, rechunk_and_expected_chunks: tuple[bool, int]
 ) -> None:
@@ -875,9 +876,8 @@ def test_parquet_array_dtype_nulls() -> None:
         ([[1, 2, 3]], pl.Array(pl.Int64, 3)),
         ([[1, None, 3], None, [1, 2, None]], pl.Array(pl.Int64, 3)),
         ([[1, 2], None, [None, 3]], pl.Array(pl.Int64, 2)),
-        # @TODO: Enable when zero-width arrays are enabled
-        # ([[], [], []],                       pl.Array(pl.Int64, 0)),
-        # ([[], None, []],                     pl.Array(pl.Int64, 0)),
+        ([[], [], []], pl.Array(pl.Int64, 0)),
+        ([[], None, []], pl.Array(pl.Int64, 0)),
         (
             [[[1, 5, 2], [42, 13, 37]], [[1, 2, 3], [5, 2, 3]], [[1, 2, 1], [3, 1, 3]]],
             pl.Array(pl.Array(pl.Int8, 3), 2),
@@ -923,7 +923,7 @@ def test_parquet_array_dtype_nulls() -> None:
                 [[]],
                 [[None]],
                 [[[None], None]],
-                [[[None], []]],
+                [[[None], [None]]],
                 [[[[None]], [[[1]]]]],
                 [[[[[None]]]]],
                 [[[[[1]]]]],
@@ -937,12 +937,6 @@ def test_complex_types(series: list[Any], dtype: pl.DataType) -> None:
     df = pl.DataFrame({"x": xs})
 
     test_round_trip(df)
-
-
-@pytest.mark.xfail
-def test_placeholder_zero_array() -> None:
-    # @TODO: if this does not fail anymore please enable the upper test-cases
-    pl.Series([[]], dtype=pl.Array(pl.Int8, 0))
 
 
 @pytest.mark.write_disk
@@ -1916,4 +1910,54 @@ def test_prefilter_with_projection() -> None:
         .filter(pl.col.a == 1)
         .select(pl.col.a)
         .collect()
+    )
+
+
+@pytest.mark.parametrize("parallel", ["columns", "row_groups", "prefiltered", "none"])
+@pytest.mark.parametrize("streaming", [True, False])
+@pytest.mark.parametrize("projection", [pl.all(), pl.col("b")])
+@pytest.mark.write_disk
+def test_allow_missing_columns(
+    tmp_path: Path,
+    parallel: str,
+    streaming: bool,
+    projection: pl.Expr,
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    dfs = [pl.DataFrame({"a": 1, "b": 1}), pl.DataFrame({"a": 2})]
+    paths = [tmp_path / "1", tmp_path / "2"]
+
+    for df, path in zip(dfs, paths):
+        df.write_parquet(path)
+
+    expected = pl.DataFrame({"a": [1, 2], "b": [1, None]}).select(projection)
+
+    with pytest.raises(
+        pl.exceptions.ColumnNotFoundError,
+        match="error with column selection, consider enabling `allow_missing_columns`: did not find column in file: b",
+    ):
+        pl.read_parquet(paths, parallel=parallel)  # type: ignore[arg-type]
+
+    with pytest.raises(
+        pl.exceptions.ColumnNotFoundError,
+        match="error with column selection, consider enabling `allow_missing_columns`: did not find column in file: b",
+    ):
+        pl.scan_parquet(paths, parallel=parallel).select(projection).collect(  # type: ignore[arg-type]
+            streaming=streaming
+        )
+
+    assert_frame_equal(
+        pl.read_parquet(
+            paths,
+            parallel=parallel,  # type: ignore[arg-type]
+            allow_missing_columns=True,
+        ).select(projection),
+        expected,
+    )
+
+    assert_frame_equal(
+        pl.scan_parquet(paths, parallel=parallel, allow_missing_columns=True)  # type: ignore[arg-type]
+        .select(projection)
+        .collect(streaming=streaming),
+        expected,
     )

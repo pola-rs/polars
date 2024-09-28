@@ -1,6 +1,7 @@
 use polars::prelude::*;
+use pyo3::ffi::Py_uintptr_t;
 use pyo3::prelude::*;
-use pyo3::types::PyList;
+use pyo3::types::{PyDict, PyList};
 
 use crate::py_modules::POLARS;
 use crate::series::PySeries;
@@ -42,9 +43,45 @@ impl ToSeries for PyObject {
                 }
             },
         };
-        let pyseries = py_pyseries.extract::<PySeries>(py).unwrap();
-        // Finally get the actual Series
-        Ok(pyseries.series)
+        let s = match py_pyseries.extract::<PySeries>(py) {
+            Ok(pyseries) => pyseries.series,
+            // This happens if the executed Polars is not from this source.
+            // Currently only happens in PC-workers
+            // For now use arrow to convert
+            // Eventually we must use Polars' Series Export as that can deal with
+            // multiple chunks
+            Err(_) => {
+                use polars::export::arrow::ffi;
+                let kwargs = PyDict::new_bound(py);
+                kwargs.set_item("in_place", true).unwrap();
+                py_pyseries
+                    .call_method_bound(py, "rechunk", (), Some(&kwargs))
+                    .map_err(|e| polars_err!(ComputeError: "could not rechunk: {e}"))?;
+
+                // Prepare a pointer to receive the Array struct.
+                let array = Box::new(ffi::ArrowArray::empty());
+                let schema = Box::new(ffi::ArrowSchema::empty());
+
+                let array_ptr = &*array as *const ffi::ArrowArray;
+                let schema_ptr = &*schema as *const ffi::ArrowSchema;
+                // SAFETY:
+                // this is unsafe as it write to the pointers we just prepared
+                py_pyseries
+                    .call_method1(
+                        py,
+                        "_export_arrow_to_c",
+                        (array_ptr as Py_uintptr_t, schema_ptr as Py_uintptr_t),
+                    )
+                    .map_err(|e| polars_err!(ComputeError: "{e}"))?;
+
+                unsafe {
+                    let field = ffi::import_field_from_c(schema.as_ref())?;
+                    let array = ffi::import_array_from_c(*array, field.dtype)?;
+                    Series::from_arrow(field.name, array)?
+                }
+            },
+        };
+        Ok(s)
     }
 }
 

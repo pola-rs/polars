@@ -340,3 +340,17 @@ def test_ipc_decimal_15920(
         path = f"{tmp_path}/data"
         df.write_ipc(path)
         assert_frame_equal(pl.read_ipc(path), df)
+
+
+def test_ipc_variadic_buffers_categorical_binview_18636() -> None:
+    df = pl.DataFrame(
+        {
+            "Test": pl.Series(["Value012"], dtype=pl.Categorical),
+            "Test2": pl.Series(["Value Two 20032"], dtype=pl.String),
+        }
+    )
+
+    b = io.BytesIO()
+    df.write_ipc(b)
+    b.seek(0)
+    assert_frame_equal(pl.read_ipc(b), df)

@@ -1091,6 +1091,7 @@ def test_asof_join_nearest_by_date() -> None:
     assert_frame_equal(out, expected)
 
 
+@pytest.mark.may_fail_auto_streaming  # See #18927.
 def test_asof_join_string() -> None:
     left = pl.DataFrame({"x": [None, "a", "b", "c", None, "d", None]}).set_sorted("x")
     right = pl.DataFrame({"x": ["apple", None, "chutney"], "y": [0, 1, 2]}).set_sorted(

@@ -591,10 +591,9 @@ impl DataType {
             Duration(unit) => Ok(ArrowDataType::Duration(unit.to_arrow())),
             Time => Ok(ArrowDataType::Time64(ArrowTimeUnit::Nanosecond)),
             #[cfg(feature = "dtype-array")]
-            Array(dt, size) => Ok(ArrowDataType::FixedSizeList(
-                Box::new(dt.to_arrow_field(PlSmallStr::from_static("item"), compat_level)),
-                *size,
-            )),
+            Array(dt, size) => Ok(dt
+                .try_to_arrow(compat_level)?
+                .to_fixed_size_list(*size, true)),
             List(dt) => Ok(ArrowDataType::LargeList(Box::new(
                 dt.to_arrow_field(PlSmallStr::from_static("item"), compat_level),
             ))),

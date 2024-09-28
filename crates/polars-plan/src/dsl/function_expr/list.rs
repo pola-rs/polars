@@ -392,10 +392,12 @@ pub(super) fn concat(s: &mut [Column]) -> PolarsResult<Option<Column>> {
     let mut first = std::mem::take(&mut s[0]);
     let other = &s[1..];
 
-    let mut first_ca = match first.list().ok() {
+    let mut first_ca = match first.try_list() {
         Some(ca) => ca,
         None => {
-            first = first.reshape_list(&[-1, 1]).unwrap();
+            first = first
+                .reshape_list(&[ReshapeDimension::Infer, ReshapeDimension::new_dimension(1)])
+                .unwrap();
             first.list().unwrap()
         },
     }
@@ -506,7 +508,7 @@ pub(super) fn gather(args: &[Column], null_on_oob: bool) -> PolarsResult<Column>
         let idx = idx.get(0)?.try_extract::<i64>()?;
         let out = ca.lst_get(idx, null_on_oob).map(Column::from)?;
         // make sure we return a list
-        out.reshape_list(&[-1, 1])
+        out.reshape_list(&[ReshapeDimension::Infer, ReshapeDimension::new_dimension(1)])
     } else {
         ca.lst_gather(idx.as_materialized_series(), null_on_oob)
             .map(Column::from)

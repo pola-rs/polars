@@ -6,7 +6,6 @@ use super::{make_growable, Growable};
 use crate::array::growable::utils::{extend_validity, extend_validity_copies, prepare_validity};
 use crate::array::{Array, FixedSizeListArray};
 use crate::bitmap::MutableBitmap;
-use crate::datatypes::ArrowDataType;
 
 /// Concrete [`Growable`] for the [`FixedSizeListArray`].
 pub struct GrowableFixedSizeList<'a> {
@@ -14,6 +13,7 @@ pub struct GrowableFixedSizeList<'a> {
     validity: Option<MutableBitmap>,
     values: Box<dyn Growable<'a> + 'a>,
     size: usize,
+    length: usize,
 }
 
 impl<'a> GrowableFixedSizeList<'a> {
@@ -33,24 +33,25 @@ impl<'a> GrowableFixedSizeList<'a> {
             use_validity = true;
         };
 
-        let size =
-            if let ArrowDataType::FixedSizeList(_, size) = &arrays[0].dtype().to_logical_type() {
-                *size
-            } else {
-                unreachable!("`GrowableFixedSizeList` expects `DataType::FixedSizeList`")
-            };
+        let size = arrays[0].size();
 
         let inner = arrays
             .iter()
-            .map(|array| array.values().as_ref())
+            .map(|array| {
+                debug_assert_eq!(array.size(), size);
+                array.values().as_ref()
+            })
             .collect::<Vec<_>>();
         let values = make_growable(&inner, use_validity, 0);
+
+        assert_eq!(values.len(), 0);
 
         Self {
             arrays,
             values,
             validity: prepare_validity(use_validity, capacity),
             size,
+            length: 0,
         }
     }
 
@@ -60,6 +61,7 @@ impl<'a> GrowableFixedSizeList<'a> {
 
         FixedSizeListArray::new(
             self.arrays[0].dtype().clone(),
+            self.length,
             values,
             validity.map(|v| v.into()),
         )
@@ -71,16 +73,24 @@ impl<'a> Growable<'a> for GrowableFixedSizeList<'a> {
         let array = *self.arrays.get_unchecked_release(index);
         extend_validity(&mut self.validity, array, start, len);
 
+        self.length += len;
+        let start_length = self.values.len();
         self.values
             .extend(index, start * self.size, len * self.size);
+        debug_assert!(self.size == 0 || (self.values.len() - start_length) / self.size == len);
     }
 
     unsafe fn extend_copies(&mut self, index: usize, start: usize, len: usize, copies: usize) {
         let array = *self.arrays.get_unchecked_release(index);
         extend_validity_copies(&mut self.validity, array, start, len, copies);
 
+        self.length += len * copies;
+        let start_length = self.values.len();
         self.values
             .extend_copies(index, start * self.size, len * self.size, copies);
+        debug_assert!(
+            self.size == 0 || (self.values.len() - start_length) / self.size == len * copies
+        );
     }
 
     fn extend_validity(&mut self, additional: usize) {
@@ -88,11 +98,12 @@ impl<'a> Growable<'a> for GrowableFixedSizeList<'a> {
         if let Some(validity) = &mut self.validity {
             validity.extend_constant(additional, false);
         }
+        self.length += additional;
     }
 
     #[inline]
     fn len(&self) -> usize {
-        self.values.len() / self.size
+        self.length
     }
 
     fn as_arc(&mut self) -> Arc<dyn Array> {
@@ -111,6 +122,7 @@ impl<'a> From<GrowableFixedSizeList<'a>> for FixedSizeListArray {
 
         Self::new(
             val.arrays[0].dtype().clone(),
+            val.length,
             values,
             val.validity.map(|v| v.into()),
         )

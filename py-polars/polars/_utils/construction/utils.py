@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import sys
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any, Callable, Sequence, get_type_hints
+from typing import TYPE_CHECKING, Any, Callable, get_type_hints
 
 from polars.dependencies import _check_for_pydantic, pydantic
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     import pandas as pd
 
 PANDAS_SIMPLE_NUMPY_DTYPES = {

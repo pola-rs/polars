@@ -337,6 +337,7 @@ where
     T: PolarsNumericType,
 {
     let ca: &ChunkedArray<T> = s.as_ref().as_ref();
+    let ca = ca.rechunk();
     let arr = ca.downcast_iter().next().unwrap();
     arr.values().clone()
 }

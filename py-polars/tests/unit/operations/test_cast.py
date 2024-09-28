@@ -686,3 +686,9 @@ def test_bool_numeric_supertype(dtype: PolarsDataType) -> None:
     df = pl.DataFrame({"v": [1, 2, 3, 4, 5, 6]})
     result = df.select((pl.col("v") < 3).sum().cast(dtype) / pl.len())
     assert result.item() - 0.3333333 <= 0.00001
+
+
+def test_cast_consistency() -> None:
+    assert pl.DataFrame().with_columns(a=pl.lit(0.0)).with_columns(
+        b=pl.col("a").cast(pl.String), c=pl.lit(0.0).cast(pl.String)
+    ).to_dict(as_series=False) == {"a": [0.0], "b": ["0.0"], "c": ["0.0"]}

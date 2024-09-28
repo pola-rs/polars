@@ -3,7 +3,8 @@ from __future__ import annotations
 import io
 import itertools
 import re
-from typing import TYPE_CHECKING, Any, Iterable, Mapping, Sequence, overload
+from collections.abc import Iterable, Sequence
+from typing import TYPE_CHECKING, Any, overload
 
 import polars._reexport as pl
 from polars import functions as F
@@ -24,6 +25,8 @@ from polars.dependencies import pyarrow as pa
 from polars.exceptions import NoDataError
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from polars import DataFrame, Series
     from polars._typing import Orientation, SchemaDefinition, SchemaDict
     from polars.dependencies import numpy as np

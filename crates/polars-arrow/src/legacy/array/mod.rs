@@ -212,11 +212,23 @@ pub fn convert_inner_type(array: &dyn Array, dtype: &ArrowDataType) -> Box<dyn A
             .boxed()
         },
         ArrowDataType::FixedSizeList(field, width) => {
+            let width = *width;
+
             let array = array.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
             let inner = array.values();
+            let length = if width == array.size() {
+                array.len()
+            } else {
+                assert!(array.values().len() > 0 || width != 0);
+                if width == 0 {
+                    0
+                } else {
+                    array.values().len() / width
+                }
+            };
             let new_values = convert_inner_type(inner.as_ref(), field.dtype());
-            let dtype = FixedSizeListArray::default_datatype(new_values.dtype().clone(), *width);
-            FixedSizeListArray::new(dtype, new_values, array.validity().cloned()).boxed()
+            let dtype = FixedSizeListArray::default_datatype(new_values.dtype().clone(), width);
+            FixedSizeListArray::new(dtype, length, new_values, array.validity().cloned()).boxed()
         },
         ArrowDataType::Struct(fields) => {
             let array = array.as_any().downcast_ref::<StructArray>().unwrap();

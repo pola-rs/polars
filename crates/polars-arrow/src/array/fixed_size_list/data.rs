@@ -18,6 +18,7 @@ impl Arrow2Arrow for FixedSizeListArray {
 
     fn from_data(data: &ArrayData) -> Self {
         let dtype: ArrowDataType = data.data_type().clone().into();
+        let length = data.len() - data.offset();
         let size = match dtype {
             ArrowDataType::FixedSizeList(_, size) => size,
             _ => unreachable!("must be FixedSizeList type"),
@@ -28,6 +29,7 @@ impl Arrow2Arrow for FixedSizeListArray {
 
         Self {
             size,
+            length,
             dtype,
             values,
             validity: data.nulls().map(|n| Bitmap::from_null_buffer(n.clone())),

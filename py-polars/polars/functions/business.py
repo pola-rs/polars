@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import contextlib
 from datetime import date
-from typing import TYPE_CHECKING, Iterable
+from typing import TYPE_CHECKING
 
 from polars._utils.parse import parse_into_expression
 from polars._utils.wrap import wrap_expr
@@ -11,6 +11,8 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     import polars.polars as plr
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from polars import Expr
     from polars._typing import IntoExprColumn
 

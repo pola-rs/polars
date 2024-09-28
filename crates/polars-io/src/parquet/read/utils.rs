@@ -40,7 +40,7 @@ pub(super) fn projected_arrow_schema_to_projection_indices(
     for (i, field) in projected_arrow_schema.iter_values().enumerate() {
         let dtype = {
             let Some((idx, _, field)) = schema.get_full(&field.name) else {
-                polars_bail!(SchemaMismatch: "did not find column in file: {}", field.name)
+                polars_bail!(ColumnNotFound: "did not find column in file: {}", field.name)
             };
 
             projection_indices.push(idx);

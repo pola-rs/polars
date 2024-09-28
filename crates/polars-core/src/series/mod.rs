@@ -1,5 +1,5 @@
 //! Type agnostic columnar data structure.
-pub use crate::prelude::ChunkCompare;
+pub use crate::prelude::ChunkCompareEq;
 use crate::prelude::*;
 use crate::{HEAD_DEFAULT_LENGTH, TAIL_DEFAULT_LENGTH};
 
@@ -90,7 +90,8 @@ use crate::POOL;
 ///     .all(|(a, b)| a == *b))
 /// ```
 ///
-/// See all the comparison operators in the [CmpOps trait](crate::chunked_array::ops::ChunkCompare)
+/// See all the comparison operators in the [ChunkCompareEq trait](crate::chunked_array::ops::ChunkCompareEq) and
+/// [ChunkCompareIneq trait](crate::chunked_array::ops::ChunkCompareIneq).
 ///
 /// ## Iterators
 /// The Series variants contain differently typed [ChunkedArray](crate::chunked_array::ChunkedArray)s.
@@ -823,6 +824,17 @@ impl Series {
         let idx = self.arg_unique()?;
         // SAFETY: Indices are in bounds.
         unsafe { Ok(self.take_unchecked(&idx)) }
+    }
+
+    pub fn try_idx(&self) -> Option<&IdxCa> {
+        #[cfg(feature = "bigidx")]
+        {
+            self.try_u64()
+        }
+        #[cfg(not(feature = "bigidx"))]
+        {
+            self.try_u32()
+        }
     }
 
     pub fn idx(&self) -> PolarsResult<&IdxCa> {

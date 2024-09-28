@@ -1,25 +1,17 @@
-import sys
 from collections import OrderedDict
 from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pytest
 
 import polars as pl
 import polars.selectors as cs
 from polars._typing import SelectorType
-from polars.dependencies import _ZONEINFO_AVAILABLE
 from polars.exceptions import ColumnNotFoundError, InvalidOperationError
 from polars.selectors import expand_selector, is_selector
 from polars.testing import assert_frame_equal
 from tests.unit.conftest import INTEGER_DTYPES, TEMPORAL_DTYPES
-
-if sys.version_info >= (3, 9):
-    from zoneinfo import ZoneInfo
-elif _ZONEINFO_AVAILABLE:
-    # Import from submodule due to typing issue with backports.zoneinfo package:
-    # https://github.com/pganssle/zoneinfo/issues/125
-    from backports.zoneinfo._zoneinfo import ZoneInfo
 
 
 def assert_repr_equals(item: Any, expected: str) -> None:

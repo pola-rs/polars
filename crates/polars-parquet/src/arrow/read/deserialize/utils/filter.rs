@@ -29,7 +29,7 @@ impl Filter {
         }
     }
 
-    pub(crate) fn num_rows(&self) -> usize {
+    pub fn num_rows(&self) -> usize {
         match self {
             Filter::Range(range) => range.len(),
             Filter::Mask(bitmap) => bitmap.set_bits(),

@@ -105,8 +105,8 @@ pub(crate) fn any_value_into_py_object(av: AnyValue, py: Python) -> PyObject {
             let object = v.0.as_any().downcast_ref::<ObjectValue>().unwrap();
             object.inner.clone()
         },
-        AnyValue::Binary(v) => v.into_py(py),
-        AnyValue::BinaryOwned(v) => v.into_py(py),
+        AnyValue::Binary(v) => PyBytes::new_bound(py, v).into_py(py),
+        AnyValue::BinaryOwned(v) => PyBytes::new_bound(py, &v).into_py(py),
         AnyValue::Decimal(v, scale) => {
             let convert = utils.getattr(intern!(py, "to_py_decimal")).unwrap();
             const N: usize = 3;
