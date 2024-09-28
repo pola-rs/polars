@@ -1003,6 +1003,30 @@ impl Column {
             },
         }
     }
+
+    pub fn apply_unary_elementwise(&self, f: impl Fn(&Series) -> Series) -> Column {
+        match self {
+            Column::Series(s) => f(s).into(),
+            Column::Scalar(s) => {
+                ScalarColumn::from_single_value_series(f(&s.as_single_value_series()), s.len())
+                    .into()
+            },
+        }
+    }
+
+    pub fn try_apply_unary_elementwise(
+        &self,
+        f: impl Fn(&Series) -> PolarsResult<Series>,
+    ) -> PolarsResult<Column> {
+        match self {
+            Column::Series(s) => f(s).map(Column::from),
+            Column::Scalar(s) => Ok(ScalarColumn::from_single_value_series(
+                f(&s.as_single_value_series())?,
+                s.len(),
+            )
+            .into()),
+        }
+    }
 }
 
 impl Default for Column {

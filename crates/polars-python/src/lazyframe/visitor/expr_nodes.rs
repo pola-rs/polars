@@ -758,6 +758,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 FunctionExpr::ListExpr(_) => {
                     return Err(PyNotImplementedError::new_err("list expr"))
                 },
+                FunctionExpr::Bitwise(_) => {
+                    return Err(PyNotImplementedError::new_err("bitwise expr"))
+                },
                 FunctionExpr::StringExpr(strfun) => match strfun {
                     StringFunction::ConcatHorizontal {
                         delimiter,

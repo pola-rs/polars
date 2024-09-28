@@ -9,6 +9,7 @@ use arrow::types::NativeType;
 
 pub mod arithmetic;
 pub mod arity;
+pub mod bitwise;
 pub mod comparisons;
 pub mod filter;
 pub mod float_sum;

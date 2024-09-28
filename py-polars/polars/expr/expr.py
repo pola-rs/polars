@@ -47,6 +47,7 @@ from polars.dependencies import numpy as np
 from polars.exceptions import CustomUFuncWarning, PolarsInefficientMapWarning
 from polars.expr.array import ExprArrayNameSpace
 from polars.expr.binary import ExprBinaryNameSpace
+from polars.expr.bitwise import ExprBitwiseNameSpace
 from polars.expr.categorical import ExprCatNameSpace
 from polars.expr.datetime import ExprDateTimeNameSpace
 from polars.expr.list import ExprListNameSpace
@@ -10620,6 +10621,15 @@ class Expr:
 
     # Keep the `list` and `str` properties below at the end of the definition of Expr,
     # as to not confuse mypy with the type annotation `str` and `list`
+
+    @property
+    def bitwise(self) -> ExprBitwiseNameSpace:
+        """
+        Create an object namespace of all bitwise related methods.
+
+        See the individual method pages for full details.
+        """
+        return ExprBitwiseNameSpace(self)
 
     @property
     def list(self) -> ExprListNameSpace:

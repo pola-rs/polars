@@ -2,6 +2,7 @@
 mod array;
 #[cfg(feature = "pymethods")]
 mod binary;
+mod bitwise;
 #[cfg(feature = "pymethods")]
 mod categorical;
 #[cfg(feature = "pymethods")]
