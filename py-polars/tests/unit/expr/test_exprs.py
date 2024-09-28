@@ -655,7 +655,7 @@ def test_function_expr_scalar_identification_18755() -> None:
     )
 
 
-def test_filter_star() -> None:
+def test_filter_all() -> None:
     df = pl.DataFrame(
         {
             "a": [1, 2, 3, 4, 5],
