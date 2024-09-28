@@ -401,7 +401,10 @@ def scan_ipc(
 
         * `aws <https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html>`_
         * `gcp <https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html>`_
-        * `azure <https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html>`_ (hint: `{"account_name": "<ACCOUNT_NAME>"}` to use the underlying azure infrastructure identity, `{"account_name": "<ACCOUNT_NAME>", "use_azure_cli": "True"}` to use the identity specified in `az login`)
+        * `azure <https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html>`_ 
+          (hint: `{"account_name": "<ACCOUNT_NAME>"}` to use the underlying azure infrastructure identity, 
+          `{"account_name": "<ACCOUNT_NAME>", "use_azure_cli": "True"}` 
+          to use the identity specified in `az login`)
         * Hugging Face (`hf://`): Accepts an API key under the `token` parameter: \
           `{'token': '...'}`, or by setting the `HF_TOKEN` environment variable.
 
