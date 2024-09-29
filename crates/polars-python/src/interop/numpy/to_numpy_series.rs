@@ -7,7 +7,6 @@ use polars_core::with_match_physical_numeric_polars_type;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::intern;
 use pyo3::prelude::*;
-use pyo3::types::PyList;
 
 use super::to_numpy_df::df_to_numpy;
 use super::utils::{
