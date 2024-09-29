@@ -801,7 +801,7 @@ impl ChunkCompareEq<&StructChunked> for StructChunked {
         struct_helper(
             self,
             rhs,
-            |l, r| l.equal_missing(r).unwrap(),
+            |l, r| l.equal(r).unwrap(),
             |a, b| a.bitand(b),
             false,
             false,
