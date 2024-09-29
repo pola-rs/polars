@@ -765,8 +765,10 @@ where
     F: Fn(&Series, &Series) -> BooleanChunked,
     R: Fn(BooleanChunked, BooleanChunked) -> BooleanChunked,
 {
-    if a.len() != b.len() || a.struct_fields().len() != b.struct_fields().len() {
-        // polars_ensure!(a.len() == 1 || b.len() == 1, ShapeMismatch: "length lhs: {}, length rhs: {}", a.len(), b.len());
+    let len_a = a.len();
+    let len_b = b.len();
+    let broadcasts = len_a == 1 || len_b == 1;
+    if (a.len() != b.len() && !broadcasts) || a.struct_fields().len() != b.struct_fields().len() {
         BooleanChunked::full(PlSmallStr::EMPTY, value, a.len())
     } else {
         let (a, b) = align_chunks_binary(a, b);

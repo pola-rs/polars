@@ -457,9 +457,7 @@ pub(super) struct SharedFileState {
     file_path_series: Option<Column>,
 }
 
-///
-/// Pre-filtered
-///
+// Pre-filtered
 
 impl RowGroupDecoder {
     async fn row_group_data_to_df_prefiltered(

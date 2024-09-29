@@ -418,3 +418,10 @@ def test_nested_binary_literal_super_type_12227() -> None:
 
     result = pl.select((pl.lit(0) + (pl.lit(0) == pl.lit(0)) * pl.lit(0.1)) + pl.lit(0))
     assert result.item() == 0.1
+
+
+def test_struct_broadcasting_comparison() -> None:
+    df = pl.DataFrame({"foo": [{"a": 1}, {"a": 2}, {"a": 1}]})
+    assert df.select(eq=pl.col.foo == pl.col.foo.last()).to_dict(as_series=False) == {
+        "eq": [True, False, True]
+    }

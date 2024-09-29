@@ -335,7 +335,7 @@ impl ChunkZip<StructType> for StructChunked {
             let rechunked_validity = match (l.len(), r.len()) {
                 (1, 1) if length != 1 => match (l.null_count() == 0, r.null_count() == 0) {
                     (true, true) => None,
-                    (true, false) => {
+                    (false, true) => {
                         if mask.chunks().len() == 1 {
                             let m = mask.chunks()[0]
                                 .as_any()
@@ -350,7 +350,7 @@ impl ChunkZip<StructType> for StructChunked {
                             )
                         }
                     },
-                    (false, true) => {
+                    (true, false) => {
                         if mask.chunks().len() == 1 {
                             let m = mask.chunks()[0]
                                 .as_any()
