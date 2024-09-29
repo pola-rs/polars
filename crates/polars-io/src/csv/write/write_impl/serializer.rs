@@ -264,7 +264,7 @@ fn decimal_serializer(array: &PrimitiveArray<i128>, scale: usize) -> impl Serial
 fn callback_serializer<'a, T: NativeType, const QUOTE_NON_NULL: bool>(
     array: &'a PrimitiveArray<T>,
     mut callback: impl FnMut(T, &mut Vec<u8>) + 'a,
-) -> impl Serializer + 'a {
+) -> impl Serializer<'a> {
     let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
         callback(item, buf);
     };

@@ -26,16 +26,25 @@ async fn test(codec: Codec) -> PolarsResult<()> {
     Ok(())
 }
 
+// Issue with clippy interacting with tokio. See:
+// https://github.com/rust-lang/rust-clippy/issues/13458
+#[allow(clippy::needless_return)]
 #[tokio::test]
 async fn read_without_codec() -> PolarsResult<()> {
     test(Codec::Null).await
 }
 
+// Issue with clippy interacting with tokio. See:
+// https://github.com/rust-lang/rust-clippy/issues/13458
+#[allow(clippy::needless_return)]
 #[tokio::test]
 async fn read_deflate() -> PolarsResult<()> {
     test(Codec::Deflate).await
 }
 
+// Issue with clippy interacting with tokio. See:
+// https://github.com/rust-lang/rust-clippy/issues/13458
+#[allow(clippy::needless_return)]
 #[tokio::test]
 async fn read_snappy() -> PolarsResult<()> {
     test(Codec::Snappy).await

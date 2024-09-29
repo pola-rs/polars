@@ -287,7 +287,7 @@ impl ToPyObject for Wrap<DataType> {
                     Series::from_arrow(PlSmallStr::from_static("category"), categories.to_boxed())
                         .unwrap();
                 let series = to_series(py, s.into());
-                return class.call1((series,)).unwrap().into();
+                class.call1((series,)).unwrap().into()
             },
             DataType::Time => pl.getattr(intern!(py, "Time")).unwrap().into(),
             DataType::Struct(fields) => {

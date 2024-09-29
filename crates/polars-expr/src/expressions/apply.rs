@@ -426,7 +426,7 @@ impl PhysicalExpr for ApplyExpr {
                         }
                     }
                     if has_agg_list || (has_agg_scalar && has_not_agg) {
-                        return self.apply_multiple_group_aware(acs, df);
+                        self.apply_multiple_group_aware(acs, df)
                     } else {
                         apply_multiple_elementwise(
                             acs,

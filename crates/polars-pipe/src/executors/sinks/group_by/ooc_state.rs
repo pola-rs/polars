@@ -7,9 +7,8 @@ use crate::executors::sinks::io::IOThread;
 use crate::executors::sinks::memory::MemTracker;
 use crate::pipeline::morsels_per_sink;
 
-/// THIS CODE DOESN'T MAKE SENSE
-/// it is a remnant of OOC, but will be rewritten to use the generic OOC
-/// Table
+// THIS CODE DOESN'T MAKE SENSE
+// It is a remnant of OOC, but will be rewritten to use the generic OOC Table.
 
 pub(super) struct OocState {
     // OOC
