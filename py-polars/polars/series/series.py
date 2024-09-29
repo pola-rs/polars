@@ -869,7 +869,7 @@ class Series:
         """
         Method equivalent of equality operator `series == other` where `None == None`.
 
-        This differs from the standard `ne` where null values are propagated.
+        This differs from the standard `eq` where null values are propagated.
 
         Parameters
         ----------
