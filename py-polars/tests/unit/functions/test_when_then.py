@@ -627,7 +627,7 @@ def test_when_then_else_struct_18961() -> None:
 
     df = pl.DataFrame({"left": v1, "right": v2, "mask": [True, False]})
 
-    expected = [None, {"foo": 0, "bar": "1"}]
+    expected2 = [None, {"foo": 0, "bar": "1"}]
     ans = (
         df.select(
             pl.when(pl.col.mask)
@@ -637,7 +637,7 @@ def test_when_then_else_struct_18961() -> None:
         .get_column("left")
         .to_list()
     )
-    assert expected == ans
+    assert expected2 == ans
 
 
 def test_when_then_supertype_15975() -> None:
