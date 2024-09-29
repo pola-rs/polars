@@ -60,6 +60,7 @@ def read_parquet(
     use_pyarrow: bool = False,
     pyarrow_options: dict[str, Any] | None = None,
     memory_map: bool = True,
+    include_file_paths: str | None = None,
     allow_missing_columns: bool = False,
 ) -> DataFrame:
     """
@@ -140,6 +141,9 @@ def read_parquet(
     memory_map
         Memory map underlying file. This will likely increase performance.
         Only used when `use_pyarrow=True`.
+    include_file_paths
+        Include the path of the source file(s) as a column with this name.
+        Only valid when `use_pyarrow=False`.
     allow_missing_columns
         When reading a list of parquet files, if a column existing in the first
         file cannot be found in subsequent files, the default behavior is to
@@ -164,6 +168,9 @@ def read_parquet(
     if use_pyarrow:
         if n_rows is not None:
             msg = "`n_rows` cannot be used with `use_pyarrow=True`"
+            raise ValueError(msg)
+        if include_file_paths is not None:
+            msg = "`include_file_paths` cannot be used with `use_pyarrow=True`"
             raise ValueError(msg)
         if hive_schema is not None:
             msg = (
@@ -204,7 +211,7 @@ def read_parquet(
         storage_options=storage_options,
         retries=retries,
         glob=glob,
-        include_file_paths=None,
+        include_file_paths=include_file_paths,
         allow_missing_columns=allow_missing_columns,
     )
 
