@@ -625,6 +625,20 @@ def test_when_then_else_struct_18961() -> None:
     )
     assert expected == ans
 
+    df = pl.DataFrame({"left": v1, "right": v2, "mask": [True, False]})
+
+    expected = [None, {"foo": 0, "bar": "1"}]
+    ans = (
+        df.select(
+            pl.when(pl.col.mask)
+            .then(pl.col.left.first())
+            .otherwise(pl.col.right.first())
+        )
+        .get_column("left")
+        .to_list()
+    )
+    assert expected == ans
+
 
 def test_when_then_supertype_15975() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
