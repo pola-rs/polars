@@ -759,7 +759,7 @@ fn struct_helper<F, R>(
     op: F,
     reduce: R,
     value: bool,
-    apply_null_validity: bool,
+    is_missing: bool,
 ) -> BooleanChunked
 where
     F: Fn(&Series, &Series) -> BooleanChunked,
@@ -780,7 +780,7 @@ where
             .reduce(reduce)
             .unwrap();
 
-        if apply_null_validity & (a.null_count() > 0 || b.null_count() > 0) {
+        if !is_missing & (a.null_count() > 0 || b.null_count() > 0) {
             let mut a = a.into_owned();
             a.zip_outer_validity(&b);
             unsafe {
@@ -801,10 +801,10 @@ impl ChunkCompareEq<&StructChunked> for StructChunked {
         struct_helper(
             self,
             rhs,
-            |l, r| l.equal(r).unwrap(),
+            |l, r| l.equal_missing(r).unwrap(),
             |a, b| a.bitand(b),
             false,
-            true,
+            false,
         )
     }
 
@@ -815,7 +815,7 @@ impl ChunkCompareEq<&StructChunked> for StructChunked {
             |l, r| l.equal_missing(r).unwrap(),
             |a, b| a.bitand(b),
             false,
-            false,
+            true,
         )
     }
 
@@ -826,7 +826,7 @@ impl ChunkCompareEq<&StructChunked> for StructChunked {
             |l, r| l.not_equal(r).unwrap(),
             |a, b| a | b,
             true,
-            true,
+            false,
         )
     }
 
@@ -837,7 +837,7 @@ impl ChunkCompareEq<&StructChunked> for StructChunked {
             |l, r| l.not_equal_missing(r).unwrap(),
             |a, b| a | b,
             true,
-            false,
+            true,
         )
     }
 }
