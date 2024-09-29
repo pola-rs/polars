@@ -160,6 +160,30 @@ def test_missing_equality_on_bools() -> None:
     ]
 
 
+def test_struct_equality_18870() -> None:
+    s = pl.Series([{"a": 1}, None])
+
+    # eq
+    result = s.eq(s).to_list()
+    expected = [True, None]
+    assert result == expected
+
+    # ne
+    result = s.ne(s).to_list()
+    expected = [False, None]
+    assert result == expected
+
+    # eq_missing
+    result = s.eq_missing(s).to_list()
+    expected = [True, True]
+    assert result == expected
+
+    # ne_missing
+    result = s.ne_missing(s).to_list()
+    expected = [False, False]
+    assert result == expected
+
+
 def isnan(x: Any) -> bool:
     return isinstance(x, float) and math.isnan(x)
 
