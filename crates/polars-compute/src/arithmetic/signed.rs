@@ -91,7 +91,7 @@ macro_rules! impl_signed_arith_kernel {
                     lhs.fill_with(0)
                 } else if rhs == 1 {
                     lhs
-                } else if scalar_u & (scalar_u - 1) == 0 {
+                } else if scalar_u.is_power_of_two() {
                     // Power of two.
                     let shift = scalar_u.trailing_zeros();
                     if rhs > 0 {
