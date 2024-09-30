@@ -489,6 +489,17 @@ def test_insert_column() -> None:
     )
     assert_frame_equal(df, expected)
 
+    # check that we raise suitable index errors
+    for idx, column in (
+        (10, pl.col("v1").sqrt().alias("v1_sqrt")),
+        (-10, pl.Series("foo", [1, 2, 3])),
+    ):
+        with pytest.raises(
+            IndexError,
+            match=rf"column index {idx} is out of range \(frame has 5 columns\)",
+        ):
+            df.insert_column(idx, column)
+
 
 def test_replace_column() -> None:
     df = (

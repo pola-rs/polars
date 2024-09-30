@@ -4575,8 +4575,14 @@ class DataFrame:
         │ 4   ┆ 13.0 ┆ true  ┆ 0.0  │
         └─────┴──────┴───────┴──────┘
         """
-        if index < 0:
+        if (original_index := index) < 0:
             index = len(self.columns) + index
+            if index < 0:
+                msg = f"column index {original_index} is out of range (frame has {len(self.columns)} columns)"
+                raise IndexError(msg)
+        elif index > len(self.columns):
+            msg = f"column index {original_index} is out of range (frame has {len(self.columns)} columns)"
+            raise IndexError(msg)
 
         if isinstance(column, pl.Series):
             self._df.insert_column(index, column._s)
