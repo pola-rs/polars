@@ -452,6 +452,12 @@ impl<'a, T: AsExpr> Display for ExprIRSliceDisplay<'a, T> {
     }
 }
 
+impl<'a, T: AsExpr> fmt::Debug for ExprIRSliceDisplay<'a, T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        Display::fmt(self, f)
+    }
+}
+
 impl<'a> Display for ExprIRDisplay<'a> {
     #[recursive]
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -654,6 +660,12 @@ impl<'a> Display for ExprIRDisplay<'a> {
         }
 
         Ok(())
+    }
+}
+
+impl<'a> fmt::Debug for ExprIRDisplay<'a> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        Display::fmt(self, f)
     }
 }
 

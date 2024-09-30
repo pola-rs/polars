@@ -2091,7 +2091,7 @@ impl JoinBuilder {
     /// Finish builder
     pub fn finish(self) -> LazyFrame {
         let mut opt_state = self.lf.opt_state;
-        let other = self.other.expect("with not set");
+        let other = self.other.expect("'with' not set in join builder");
 
         // If any of the nodes reads from files we must activate this plan as well.
         if other.opt_state.contains(OptFlags::FILE_CACHING) {
