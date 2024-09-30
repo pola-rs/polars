@@ -85,14 +85,7 @@ impl ParquetSourceNode {
             );
         }
 
-        let reader_schema = self
-            .file_info
-            .reader_schema
-            .as_ref()
-            .unwrap()
-            .as_ref()
-            .unwrap_left()
-            .clone();
+        let reader_schema = self.schema.clone().unwrap();
 
         let (normalized_slice_oneshot_rx, metadata_rx, metadata_task_handle) =
             self.init_metadata_fetcher();
@@ -361,14 +354,7 @@ impl ParquetSourceNode {
     }
 
     pub(super) fn init_projected_arrow_schema(&mut self) {
-        let reader_schema = self
-            .file_info
-            .reader_schema
-            .as_ref()
-            .unwrap()
-            .as_ref()
-            .unwrap_left()
-            .clone();
+        let reader_schema = self.schema.clone().unwrap();
 
         self.projected_arrow_schema = Some(
             if let Some(columns) = self.file_options.with_columns.as_deref() {

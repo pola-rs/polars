@@ -136,8 +136,8 @@ pub(super) fn ensure_schema_has_projected_fields(
         };
 
         if dtype != expected_dtype {
-            polars_bail!(SchemaMismatch: "data type mismatch for column {}: found: {}, expected: {}",
-                &field.name, dtype, expected_dtype
+            polars_bail!(SchemaMismatch: "data type mismatch for column {}: expected: {}, found: {}",
+                &field.name, expected_dtype, dtype
             )
         }
     }

@@ -51,6 +51,7 @@ def read_parquet(
     use_statistics: bool = True,
     hive_partitioning: bool | None = None,
     glob: bool = True,
+    schema: SchemaDict | None = None,
     hive_schema: SchemaDict | None = None,
     try_parse_hive_dates: bool = True,
     rechunk: bool = False,
@@ -102,6 +103,10 @@ def read_parquet(
         disabled.
     glob
         Expand path given via globbing rules.
+    schema
+        Specify the datatypes of the columns. The datatypes must match the
+        datatypes in the file(s). If there are extra columns that are not in the
+        file(s), consider also enabling `allow_missing_columns`.
     hive_schema
         The column names and data types of the columns by which the data is partitioned.
         If set to `None` (default), the schema of the Hive partitions is inferred.
@@ -172,6 +177,9 @@ def read_parquet(
         if include_file_paths is not None:
             msg = "`include_file_paths` cannot be used with `use_pyarrow=True`"
             raise ValueError(msg)
+        if schema is not None:
+            msg = "`schema` cannot be used with `use_pyarrow=True`"
+            raise ValueError(msg)
         if hive_schema is not None:
             msg = (
                 "cannot use `hive_partitions` with `use_pyarrow=True`"
@@ -203,6 +211,7 @@ def read_parquet(
         parallel=parallel,
         use_statistics=use_statistics,
         hive_partitioning=hive_partitioning,
+        schema=schema,
         hive_schema=hive_schema,
         try_parse_hive_dates=try_parse_hive_dates,
         rechunk=rechunk,
@@ -314,6 +323,7 @@ def scan_parquet(
     use_statistics: bool = True,
     hive_partitioning: bool | None = None,
     glob: bool = True,
+    schema: SchemaDict | None = None,
     hive_schema: SchemaDict | None = None,
     try_parse_hive_dates: bool = True,
     rechunk: bool = False,
@@ -370,6 +380,10 @@ def scan_parquet(
         to prune reads.
     glob
         Expand path given via globbing rules.
+    schema
+        Specify the datatypes of the columns. The datatypes must match the
+        datatypes in the file(s). If there are extra columns that are not in the
+        file(s), consider also enabling `allow_missing_columns`.
     hive_schema
         The column names and data types of the columns by which the data is partitioned.
         If set to `None` (default), the schema of the Hive partitions is inferred.
@@ -456,6 +470,7 @@ def scan_parquet(
         low_memory=low_memory,
         use_statistics=use_statistics,
         hive_partitioning=hive_partitioning,
+        schema=schema,
         hive_schema=hive_schema,
         try_parse_hive_dates=try_parse_hive_dates,
         retries=retries,
@@ -479,6 +494,7 @@ def _scan_parquet_impl(
     use_statistics: bool = True,
     hive_partitioning: bool | None = None,
     glob: bool = True,
+    schema: SchemaDict | None = None,
     hive_schema: SchemaDict | None = None,
     try_parse_hive_dates: bool = True,
     retries: int = 2,
@@ -509,6 +525,7 @@ def _scan_parquet_impl(
         cloud_options=storage_options,
         use_statistics=use_statistics,
         hive_partitioning=hive_partitioning,
+        schema=schema,
         hive_schema=hive_schema,
         try_parse_hive_dates=try_parse_hive_dates,
         retries=retries,

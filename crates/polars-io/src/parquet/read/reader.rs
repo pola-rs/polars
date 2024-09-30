@@ -15,7 +15,7 @@ pub use super::read_impl::BatchedParquetReader;
 use super::read_impl::{compute_row_group_range, read_parquet, FetchRowGroupsFromMmapReader};
 #[cfg(feature = "cloud")]
 use super::utils::materialize_empty_df;
-use super::utils::projected_arrow_schema_to_projection_indices;
+use super::utils::{ensure_matching_dtypes_if_found, projected_arrow_schema_to_projection_indices};
 #[cfg(feature = "cloud")]
 use crate::cloud::CloudOptions;
 use crate::mmap::MmapBytesReader;
@@ -90,6 +90,8 @@ impl<R: MmapBytesReader> ParquetReader<R> {
         allow_missing_columns: bool,
     ) -> PolarsResult<Self> {
         if allow_missing_columns {
+            // Must check the dtypes
+            ensure_matching_dtypes_if_found(first_schema, self.schema()?.as_ref())?;
             self.schema.replace(first_schema.clone());
         }
 
@@ -327,6 +329,8 @@ impl ParquetAsyncReader {
         allow_missing_columns: bool,
     ) -> PolarsResult<Self> {
         if allow_missing_columns {
+            // Must check the dtypes
+            ensure_matching_dtypes_if_found(first_schema, self.schema().await?.as_ref())?;
             self.schema.replace(first_schema.clone());
         }
 
