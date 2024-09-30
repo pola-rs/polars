@@ -688,6 +688,11 @@ def test_filter_all() -> None:
     q = df.lazy().select((pl.all().reverse()).filter(~pl.col("p")))
     assert r'FILTER col("p").not()' in q.explain()
 
+    q = df.lazy().select(
+        pl.sum_horizontal(pl.all().cast(pl.String)).filter(pl.col("p"))
+    )
+    print(q.explain())
+
     assert_frame_equal(
         q.collect(),
         pl.DataFrame({"a": [5, 2], "b": ["t", "q"], "p": False}),
