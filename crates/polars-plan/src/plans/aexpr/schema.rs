@@ -287,10 +287,20 @@ fn func_args_to_fields(
     arena: &Arena<AExpr>,
     nested: &mut u8,
 ) -> PolarsResult<Vec<Field>> {
+    let mut first = true;
     input
         .iter()
         // Default context because `col()` would return a list in aggregation context
         .map(|e| {
+            // Only mutate first nested as that is the dtype of the function.
+            let mut nested_tmp = *nested;
+            let nested = if first {
+                first = false;
+                &mut *nested
+            } else {
+                &mut nested_tmp
+            };
+
             arena
                 .get(e.node())
                 .to_field_impl(schema, arena, nested)

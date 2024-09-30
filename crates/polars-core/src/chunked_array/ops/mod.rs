@@ -409,6 +409,13 @@ pub enum FillNullStrategy {
     /// replace with the minimal value of that data type
     MinBound,
 }
+
+impl FillNullStrategy {
+    pub fn is_elementwise(&self) -> bool {
+        matches!(self, Self::One | Self::Zero)
+    }
+}
+
 /// Replace None values with a value
 pub trait ChunkFillNullValue<T> {
     /// Replace None values with a give value `T`.
