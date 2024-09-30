@@ -458,6 +458,7 @@ where
 /// # Safety
 ///
 /// No bounds checks on `groups`.
+#[cfg(feature = "bitwise")]
 unsafe fn bitwise_agg<T: PolarsNumericType>(
     ca: &ChunkedArray<T>,
     groups: &GroupsProxy,
@@ -496,6 +497,7 @@ where
     }
 }
 
+#[cfg(feature = "bitwise")]
 impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType,

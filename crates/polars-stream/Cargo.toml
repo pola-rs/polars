@@ -37,3 +37,4 @@ version_check = { workspace = true }
 
 [features]
 nightly = []
+bitwise = ["polars-core/bitwise", "polars-plan/bitwise"]

@@ -84,7 +84,7 @@ impl BitwiseFunction {
                 polars_bail!(InvalidOperation: "dtype {} not supported in '{}' operation", dtype, self);
             }
 
-            Ok(DataType::UInt8)
+            Ok(DataType::UInt32)
         })
     }
 }
@@ -106,7 +106,7 @@ fn leading_zeros(c: &Column) -> PolarsResult<Column> {
 }
 
 fn trailing_ones(c: &Column) -> PolarsResult<Column> {
-    c.try_apply_unary_elementwise(polars_ops::series::trailing_zeros)
+    c.try_apply_unary_elementwise(polars_ops::series::trailing_ones)
 }
 
 fn trailing_zeros(c: &Column) -> PolarsResult<Column> {

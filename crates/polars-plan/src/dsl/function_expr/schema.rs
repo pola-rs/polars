@@ -26,6 +26,7 @@ impl FunctionExpr {
             StructExpr(s) => s.get_field(mapper),
             #[cfg(feature = "temporal")]
             TemporalExpr(fun) => fun.get_field(mapper),
+            #[cfg(feature = "bitwise")]
             Bitwise(fun) => fun.get_field(mapper),
 
             // Other expressions

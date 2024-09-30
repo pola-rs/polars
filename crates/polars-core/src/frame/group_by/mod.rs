@@ -869,13 +869,17 @@ pub enum GroupByMethod {
     Groups,
     NUnique,
     Quantile(f64, QuantileInterpolOptions),
-    Count { include_nulls: bool },
+    Count {
+        include_nulls: bool,
+    },
     Implode,
     Std(u8),
     Var(u8),
+    #[cfg(feature = "bitwise")]
     Bitwise(GroupByBitwiseMethod),
 }
 
+#[cfg(feature = "bitwise")]
 #[derive(Copy, Clone, Debug)]
 pub enum GroupByBitwiseMethod {
     And,
@@ -903,6 +907,7 @@ impl Display for GroupByMethod {
             Implode => "list",
             Std(_) => "std",
             Var(_) => "var",
+            #[cfg(feature = "bitwise")]
             Bitwise(t) => {
                 f.write_str("bitwise_")?;
                 return Display::fmt(t, f);
@@ -912,6 +917,7 @@ impl Display for GroupByMethod {
     }
 }
 
+#[cfg(feature = "bitwise")]
 impl Display for GroupByBitwiseMethod {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -942,7 +948,8 @@ pub fn fmt_group_by_column(name: &str, method: GroupByMethod) -> PlSmallStr {
         Quantile(quantile, _interpol) => format_pl_smallstr!("{name}_quantile_{quantile:.2}"),
         Std(_) => format_pl_smallstr!("{name}_agg_std"),
         Var(_) => format_pl_smallstr!("{name}_agg_var"),
-        Bitwise(_) => format_pl_smallstr!("{name}_agg_var"),
+        #[cfg(feature = "bitwise")]
+        Bitwise(f) => format_pl_smallstr!("{name}_agg_bitwise_{f}"),
     }
 }
 

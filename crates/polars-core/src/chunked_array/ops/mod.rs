@@ -9,6 +9,7 @@ pub(crate) mod append;
 mod apply;
 pub mod arity;
 mod bit_repr;
+#[cfg(feature = "bitwise")]
 mod bitwise_reduce;
 pub(crate) mod chunkops;
 pub(crate) mod compare_inner;
@@ -297,6 +298,7 @@ pub trait ChunkVar {
 }
 
 /// Bitwise Reduction Operations.
+#[cfg(feature = "bitwise")]
 pub trait ChunkBitwiseReduce {
     type Physical;
 

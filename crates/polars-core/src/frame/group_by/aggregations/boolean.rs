@@ -17,6 +17,7 @@ where
     ca.into_series()
 }
 
+#[cfg(feature = "bitwise")]
 unsafe fn bitwise_agg(
     ca: &BooleanChunked,
     groups: &GroupsProxy,
@@ -51,6 +52,7 @@ unsafe fn bitwise_agg(
     }
 }
 
+#[cfg(feature = "bitwise")]
 impl BooleanChunked {
     pub(crate) unsafe fn agg_and(&self, groups: &GroupsProxy) -> Series {
         bitwise_agg(self, groups, ChunkBitwiseReduce::and_reduce)
@@ -63,7 +65,9 @@ impl BooleanChunked {
     pub(crate) unsafe fn agg_xor(&self, groups: &GroupsProxy) -> Series {
         bitwise_agg(self, groups, ChunkBitwiseReduce::xor_reduce)
     }
+}
 
+impl BooleanChunked {
     pub(crate) unsafe fn agg_min(&self, groups: &GroupsProxy) -> Series {
         // faster paths
         match (self.is_sorted_flag(), self.null_count()) {

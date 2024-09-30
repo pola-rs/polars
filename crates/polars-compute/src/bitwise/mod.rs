@@ -8,14 +8,14 @@ use bytemuck::Zeroable;
 pub trait BitwiseKernel {
     type Scalar;
 
-    fn count_ones(&self) -> PrimitiveArray<u8>;
-    fn count_zeros(&self) -> PrimitiveArray<u8>;
+    fn count_ones(&self) -> PrimitiveArray<u32>;
+    fn count_zeros(&self) -> PrimitiveArray<u32>;
 
-    fn leading_ones(&self) -> PrimitiveArray<u8>;
-    fn leading_zeros(&self) -> PrimitiveArray<u8>;
+    fn leading_ones(&self) -> PrimitiveArray<u32>;
+    fn leading_zeros(&self) -> PrimitiveArray<u32>;
 
-    fn trailing_ones(&self) -> PrimitiveArray<u8>;
-    fn trailing_zeros(&self) -> PrimitiveArray<u8>;
+    fn trailing_ones(&self) -> PrimitiveArray<u32>;
+    fn trailing_zeros(&self) -> PrimitiveArray<u32>;
 
     fn reduce_and(&self) -> Option<Self::Scalar>;
     fn reduce_or(&self) -> Option<Self::Scalar>;
@@ -33,12 +33,12 @@ macro_rules! impl_bitwise_kernel {
             type Scalar = $T;
 
             #[inline(never)]
-            fn count_ones(&self) -> PrimitiveArray<u8> {
+            fn count_ones(&self) -> PrimitiveArray<u32> {
                 PrimitiveArray::new(
-                    ArrowDataType::UInt8,
+                    ArrowDataType::UInt32,
                     self.values()
                         .iter()
-                        .map(|&v| ($to_bits(v).count_ones() & 0xFF) as u8)
+                        .map(|&v| $to_bits(v).count_ones())
                         .collect_trusted::<Vec<_>>()
                         .into(),
                     self.validity().cloned(),
@@ -46,13 +46,13 @@ macro_rules! impl_bitwise_kernel {
             }
 
             #[inline(never)]
-            fn count_zeros(&self) -> PrimitiveArray<u8> {
+            fn count_zeros(&self) -> PrimitiveArray<u32> {
                 PrimitiveArray::new(
-                    ArrowDataType::UInt8,
+                    ArrowDataType::UInt32,
                     self
                         .values()
                         .iter()
-                        .map(|&v| ($to_bits(v).count_zeros() & 0xFF) as u8)
+                        .map(|&v| $to_bits(v).count_zeros())
                         .collect_trusted::<Vec<_>>()
                         .into(),
                     self.validity().cloned(),
@@ -60,12 +60,12 @@ macro_rules! impl_bitwise_kernel {
             }
 
             #[inline(never)]
-            fn leading_ones(&self) -> PrimitiveArray<u8> {
+            fn leading_ones(&self) -> PrimitiveArray<u32> {
                 PrimitiveArray::new(
-                    ArrowDataType::UInt8,
+                    ArrowDataType::UInt32,
                     self.values()
                         .iter()
-                        .map(|&v| ($to_bits(v).leading_ones() & 0xFF) as u8)
+                        .map(|&v| $to_bits(v).leading_ones())
                         .collect_trusted::<Vec<_>>()
                         .into(),
                     self.validity().cloned(),
@@ -73,12 +73,12 @@ macro_rules! impl_bitwise_kernel {
             }
 
             #[inline(never)]
-            fn leading_zeros(&self) -> PrimitiveArray<u8> {
+            fn leading_zeros(&self) -> PrimitiveArray<u32> {
                 PrimitiveArray::new(
-                    ArrowDataType::UInt8,
+                    ArrowDataType::UInt32,
                     self.values()
                         .iter()
-                        .map(|&v| ($to_bits(v).leading_zeros() & 0xFF) as u8)
+                        .map(|&v| $to_bits(v).leading_zeros())
                         .collect_trusted::<Vec<_>>()
                         .into(),
                     self.validity().cloned(),
@@ -86,12 +86,12 @@ macro_rules! impl_bitwise_kernel {
             }
 
             #[inline(never)]
-            fn trailing_ones(&self) -> PrimitiveArray<u8> {
+            fn trailing_ones(&self) -> PrimitiveArray<u32> {
                 PrimitiveArray::new(
-                    ArrowDataType::UInt8,
+                    ArrowDataType::UInt32,
                     self.values()
                         .iter()
-                        .map(|&v| ($to_bits(v).trailing_ones() & 0xFF) as u8)
+                        .map(|&v| $to_bits(v).trailing_ones())
                         .collect_trusted::<Vec<_>>()
                         .into(),
                     self.validity().cloned(),
@@ -99,11 +99,11 @@ macro_rules! impl_bitwise_kernel {
             }
 
             #[inline(never)]
-            fn trailing_zeros(&self) -> PrimitiveArray<u8> {
+            fn trailing_zeros(&self) -> PrimitiveArray<u32> {
                 PrimitiveArray::new(
-                    ArrowDataType::UInt8,
+                    ArrowDataType::UInt32,
                     self.values().iter()
-                        .map(|&v| ($to_bits(v).trailing_zeros() & 0xFF) as u8)
+                        .map(|&v| $to_bits(v).trailing_zeros())
                         .collect_trusted::<Vec<_>>()
                         .into(),
                     self.validity().cloned(),
@@ -186,12 +186,12 @@ impl BitwiseKernel for BooleanArray {
     type Scalar = bool;
 
     #[inline(never)]
-    fn count_ones(&self) -> PrimitiveArray<u8> {
+    fn count_ones(&self) -> PrimitiveArray<u32> {
         PrimitiveArray::new(
-            ArrowDataType::UInt8,
+            ArrowDataType::UInt32,
             self.values()
                 .iter()
-                .map(u8::from)
+                .map(u32::from)
                 .collect_trusted::<Vec<_>>()
                 .into(),
             self.validity().cloned(),
@@ -199,12 +199,12 @@ impl BitwiseKernel for BooleanArray {
     }
 
     #[inline(never)]
-    fn count_zeros(&self) -> PrimitiveArray<u8> {
+    fn count_zeros(&self) -> PrimitiveArray<u32> {
         PrimitiveArray::new(
-            ArrowDataType::UInt8,
+            ArrowDataType::UInt32,
             self.values()
                 .iter()
-                .map(|v| u8::from(!v))
+                .map(|v| u32::from(!v))
                 .collect_trusted::<Vec<_>>()
                 .into(),
             self.validity().cloned(),
@@ -212,22 +212,22 @@ impl BitwiseKernel for BooleanArray {
     }
 
     #[inline(always)]
-    fn leading_ones(&self) -> PrimitiveArray<u8> {
+    fn leading_ones(&self) -> PrimitiveArray<u32> {
         self.count_ones()
     }
 
     #[inline(always)]
-    fn leading_zeros(&self) -> PrimitiveArray<u8> {
+    fn leading_zeros(&self) -> PrimitiveArray<u32> {
         self.count_zeros()
     }
 
     #[inline(always)]
-    fn trailing_ones(&self) -> PrimitiveArray<u8> {
+    fn trailing_ones(&self) -> PrimitiveArray<u32> {
         self.count_ones()
     }
 
     #[inline(always)]
-    fn trailing_zeros(&self) -> PrimitiveArray<u8> {
+    fn trailing_zeros(&self) -> PrimitiveArray<u32> {
         self.count_zeros()
     }
 

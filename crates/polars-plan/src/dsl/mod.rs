@@ -13,6 +13,7 @@ mod arity;
 #[cfg(feature = "dtype-array")]
 mod array;
 pub mod binary;
+#[cfg(feature = "bitwise")]
 mod bitwise;
 #[cfg(feature = "temporal")]
 pub mod dt;

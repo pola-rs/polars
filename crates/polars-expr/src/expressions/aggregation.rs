@@ -175,6 +175,7 @@ impl PhysicalExpr for AggregationExpr {
                 .var_reduce(ddof)
                 .map(|sc| sc.into_series(s.name().clone())),
             GroupByMethod::Quantile(_, _) => unimplemented!(),
+            #[cfg(feature = "bitwise")]
             GroupByMethod::Bitwise(f) => match f {
                 GroupByBitwiseMethod::And => parallel_op_series(
                     |s| s.and_reduce().map(|sc| sc.into_series(s.name().clone())),
@@ -424,6 +425,7 @@ impl PhysicalExpr for AggregationExpr {
                     // implemented explicitly in AggQuantile struct
                     unimplemented!()
                 },
+                #[cfg(feature = "bitwise")]
                 GroupByMethod::Bitwise(f) => {
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = match f {

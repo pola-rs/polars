@@ -120,6 +120,7 @@ impl fmt::Debug for Expr {
                     Var(expr, _) => write!(f, "{expr:?}.var()"),
                     Std(expr, _) => write!(f, "{expr:?}.std()"),
                     Quantile { expr, .. } => write!(f, "{expr:?}.quantile()"),
+                    #[cfg(feature = "bitwise")]
                     Bitwise(expr, t) => {
                         let t = match t {
                             BitwiseAggFunction::And => "and",

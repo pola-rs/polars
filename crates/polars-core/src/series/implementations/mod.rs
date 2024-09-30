@@ -169,12 +169,15 @@ macro_rules! impl_dyn_series {
                 self.0.agg_list(groups)
             }
 
+            #[cfg(feature = "bitwise")]
             unsafe fn agg_and(&self, groups: &GroupsProxy) -> Series {
                 self.0.agg_and(groups)
             }
+            #[cfg(feature = "bitwise")]
             unsafe fn agg_or(&self, groups: &GroupsProxy) -> Series {
                 self.0.agg_or(groups)
             }
+            #[cfg(feature = "bitwise")]
             unsafe fn agg_xor(&self, groups: &GroupsProxy) -> Series {
                 self.0.agg_xor(groups)
             }
@@ -469,53 +472,29 @@ macro_rules! impl_dyn_series {
             ) -> PolarsResult<Scalar> {
                 QuantileAggSeries::quantile_reduce(&self.0, quantile, interpol)
             }
+
+            #[cfg(feature = "bitwise")]
             fn and_reduce(&self) -> PolarsResult<Scalar> {
                 let dt = <$pdt as PolarsDataType>::get_dtype();
-                if self.0.null_count() > 0 {
-                    return Ok(Scalar::new(dt, AnyValue::Null));
-                }
+                let av = self.0.and_reduce().map_or(AnyValue::Null, Into::into);
 
-                Ok(Scalar::new(
-                    dt,
-                    self.0
-                        .downcast_iter()
-                        .filter(|arr| !arr.is_empty())
-                        .map(|arr| polars_compute::bitwise::BitwiseKernel::reduce_and(arr).unwrap())
-                        .reduce(|a, b| a & b)
-                        .map_or(AnyValue::Null, Into::into),
-                ))
+                Ok(Scalar::new(dt, av))
             }
+
+            #[cfg(feature = "bitwise")]
             fn or_reduce(&self) -> PolarsResult<Scalar> {
                 let dt = <$pdt as PolarsDataType>::get_dtype();
-                if self.0.null_count() > 0 {
-                    return Ok(Scalar::new(dt, AnyValue::Null));
-                }
+                let av = self.0.or_reduce().map_or(AnyValue::Null, Into::into);
 
-                Ok(Scalar::new(
-                    dt,
-                    self.0
-                        .downcast_iter()
-                        .filter(|arr| !arr.is_empty())
-                        .map(|arr| polars_compute::bitwise::BitwiseKernel::reduce_or(arr).unwrap())
-                        .reduce(|a, b| a | b)
-                        .map_or(AnyValue::Null, Into::into),
-                ))
+                Ok(Scalar::new(dt, av))
             }
+
+            #[cfg(feature = "bitwise")]
             fn xor_reduce(&self) -> PolarsResult<Scalar> {
                 let dt = <$pdt as PolarsDataType>::get_dtype();
-                if self.0.null_count() > 0 {
-                    return Ok(Scalar::new(dt, AnyValue::Null));
-                }
+                let av = self.0.xor_reduce().map_or(AnyValue::Null, Into::into);
 
-                Ok(Scalar::new(
-                    dt,
-                    self.0
-                        .downcast_iter()
-                        .filter(|arr| !arr.is_empty())
-                        .map(|arr| polars_compute::bitwise::BitwiseKernel::reduce_xor(arr).unwrap())
-                        .reduce(|a, b| a ^ b)
-                        .map_or(AnyValue::Null, Into::into),
-                ))
+                Ok(Scalar::new(dt, av))
             }
 
             fn clone_inner(&self) -> Arc<dyn SeriesTrait> {

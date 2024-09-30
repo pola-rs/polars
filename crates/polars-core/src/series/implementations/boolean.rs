@@ -84,12 +84,15 @@ impl private::PrivateSeries for SeriesWrap<BooleanChunked> {
             .agg_var(groups, _ddof)
     }
 
+    #[cfg(feature = "bitwise")]
     unsafe fn agg_and(&self, groups: &GroupsProxy) -> Series {
         self.0.agg_and(groups)
     }
+    #[cfg(feature = "bitwise")]
     unsafe fn agg_or(&self, groups: &GroupsProxy) -> Series {
         self.0.agg_or(groups)
     }
+    #[cfg(feature = "bitwise")]
     unsafe fn agg_xor(&self, groups: &GroupsProxy) -> Series {
         self.0.agg_xor(groups)
     }

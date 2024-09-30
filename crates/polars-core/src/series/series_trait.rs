@@ -150,18 +150,21 @@ pub(crate) mod private {
         /// # Safety
         ///
         /// Does no bounds checks, groups must be correct.
+        #[cfg(feature = "bitwise")]
         unsafe fn agg_and(&self, groups: &GroupsProxy) -> Series {
             Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
         }
         /// # Safety
         ///
         /// Does no bounds checks, groups must be correct.
+        #[cfg(feature = "bitwise")]
         unsafe fn agg_or(&self, groups: &GroupsProxy) -> Series {
             Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
         }
         /// # Safety
         ///
         /// Does no bounds checks, groups must be correct.
+        #[cfg(feature = "bitwise")]
         unsafe fn agg_xor(&self, groups: &GroupsProxy) -> Series {
             Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
         }

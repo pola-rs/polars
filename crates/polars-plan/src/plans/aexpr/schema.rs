@@ -217,6 +217,7 @@ impl AExpr {
                         float_type(&mut field);
                         Ok(field)
                     },
+                    #[cfg(feature = "bitwise")]
                     Bitwise(expr, _) => {
                         *nested = nested.saturating_sub(1);
                         let field = arena.get(*expr).to_field_impl(schema, arena, nested)?;

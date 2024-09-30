@@ -7364,6 +7364,33 @@ class Series:
         ]
         """
 
+    def bitwise_count_ones(self) -> Self:
+        """Evaluate the number of set bits."""
+
+    def bitwise_count_zeros(self) -> Self:
+        """Evaluate the number of unset Self."""
+
+    def bitwise_leading_ones(self) -> Self:
+        """Evaluate the number most-significant set bits before seeing an unset bit."""
+
+    def bitwise_leading_zeros(self) -> Self:
+        """Evaluate the number most-significant unset bits before seeing a set bit."""
+
+    def bitwise_trailing_ones(self) -> Self:
+        """Evaluate the number least-significant set bits before seeing an unset bit."""
+
+    def bitwise_trailing_zeros(self) -> Self:
+        """Evaluate the number least-significant unset bits before seeing a set bit."""
+
+    def bitwise_and(self) -> Self:
+        """Perform an aggregation of bitwise ANDs."""
+
+    def bitwise_or(self) -> Self:
+        """Perform an aggregation of bitwise ORs."""
+
+    def bitwise_xor(self) -> Self:
+        """Perform an aggregation of bitwise XORs."""
+
     # Keep the `list` and `str` properties below at the end of the definition of Series,
     # as to not confuse mypy with the type annotation `str` and `list`
 

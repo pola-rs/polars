@@ -68,6 +68,7 @@ dtype-u8 = ["polars-plan/dtype-u8"]
 approx_unique = ["polars-plan/approx_unique"]
 is_in = ["polars-plan/is_in", "polars-ops/is_in"]
 
+bitwise = ["polars-core/bitwise", "polars-plan/bitwise"]
 round_series = ["polars-plan/round_series", "polars-ops/round_series"]
 is_between = ["polars-plan/is_between"]
 dynamic_group_by = ["polars-plan/dynamic_group_by", "polars-time", "temporal"]
