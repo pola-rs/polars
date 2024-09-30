@@ -1,87 +1,135 @@
-# --8<-- [start:setup]
-from datetime import datetime
-
-import numpy as np
+# --8<-- [start:df]
 import polars as pl
+import datetime as dt
 
 df = pl.DataFrame(
     {
-        "a": range(5),
-        "b": np.random.rand(5),
-        "c": [
-            datetime(2025, 12, 1),
-            datetime(2025, 12, 2),
-            datetime(2025, 12, 3),
-            datetime(2025, 12, 4),
-            datetime(2025, 12, 5),
+        "name": ["Alice Archer", "Ben Brown", "Chloe Cooper", "Daniel Donovan"],
+        "birthdate": [
+            dt.date(1997, 1, 10),
+            dt.date(1985, 2, 15),
+            dt.date(1983, 3, 22),
+            dt.date(1981, 4, 30),
         ],
-        "d": [1.0, 2.0, float("nan"), -42.0, None],
+        "weight": [57.9, 72.5, 53.6, 83.1],  # (kg)
+        "height": [1.56, 1.77, 1.65, 1.75],  # (m)
     }
 )
-# --8<-- [end:setup]
+
+print(df)
+# --8<-- [end:df]
+
+# --8<-- [start:csv]
+df.write_csv("docs/assets/data/output.csv")
+df_csv = pl.read_csv("docs/assets/data/output.csv", try_parse_dates=True)
+print(df_csv)
+# --8<-- [end:csv]
 
 # --8<-- [start:select]
-df.select(pl.col("*"))
+result = df.select(
+    pl.col("name"),
+    pl.col("birthdate").dt.year().alias("birth year"),
+    (pl.col("weight") / (pl.col("height") ** 2)).alias("bmi"),
+)
+print(result)
 # --8<-- [end:select]
 
-# --8<-- [start:select2]
-df.select(pl.col("a", "b"))
-# --8<-- [end:select2]
-
-# --8<-- [start:select3]
-df.select(pl.col("a"), pl.col("b")).limit(3)
-# --8<-- [end:select3]
-
-# --8<-- [start:exclude]
-df.select(pl.exclude(["a", "c"]))
-# --8<-- [end:exclude]
-
-# --8<-- [start:filter]
-df.filter(
-    pl.col("c").is_between(datetime(2025, 12, 2), datetime(2025, 12, 3)),
+# --8<-- [start:expression-expansion]
+result = df.select(
+    pl.col("name"),
+    (pl.col("weight", "height") * 0.95).round(2).name.suffix(" - 5%"),
 )
-# --8<-- [end:filter]
-
-# --8<-- [start:filter2]
-df.filter((pl.col("a") <= 3) & (pl.col("d").is_not_nan()))
-# --8<-- [end:filter2]
+print(result)
+# --8<-- [end:expression-expansion]
 
 # --8<-- [start:with_columns]
-df.with_columns(pl.col("b").sum().alias("e"), (pl.col("b") + 42).alias("b+42"))
+result = df.with_columns(
+    pl.col("birthdate").dt.year().alias("birth year"),
+    (pl.col("weight") / (pl.col("height") ** 2)).alias("bmi"),
+)
+print(result)
 # --8<-- [end:with_columns]
 
-# --8<-- [start:dataframe2]
-df2 = pl.DataFrame(
-    {
-        "x": range(8),
-        "y": ["A", "A", "A", "B", "B", "C", "X", "X"],
-    }
+# --8<-- [start:filter]
+result = df.filter(pl.col("birthdate").dt.year() < 1990)
+print(result)
+# --8<-- [end:filter]
+
+# --8<-- [start:filter-multiple]
+result = df.filter(
+    pl.col("birthdate").is_between(dt.date(1982, 12, 31), dt.date(1996, 1, 1)),
+    pl.col("height") > 1.7,
 )
-# --8<-- [end:dataframe2]
+print(result)
+# --8<-- [end:filter-multiple]
 
 # --8<-- [start:group_by]
-df2.group_by("y", maintain_order=True).len()
+result = df.group_by(
+    (pl.col("birthdate").dt.year() // 10 * 10).alias("decade"),
+    maintain_order=True,
+).len()
+print(result)
 # --8<-- [end:group_by]
 
-# --8<-- [start:group_by2]
-df2.group_by("y", maintain_order=True).agg(
-    pl.col("*").count().alias("count"),
-    pl.col("*").sum().alias("sum"),
+# --8<-- [start:group_by-agg]
+result = df.group_by(
+    (pl.col("birthdate").dt.year() // 10 * 10).alias("decade"),
+    maintain_order=True,
+).agg(
+    pl.len().alias("sample size"),
+    pl.col("weight").mean().round(2).alias("avg weight"),
+    pl.col("height").max().alias("tallest"),
 )
-# --8<-- [end:group_by2]
+print(result)
+# --8<-- [end:group_by-agg]
 
-# --8<-- [start:combine]
-df_x = df.with_columns((pl.col("a") * pl.col("b")).alias("a * b")).select(
-    pl.all().exclude(["c", "d"])
+# --8<-- [start:complex]
+result = (
+    df.with_columns(
+        (pl.col("birthdate").dt.year() // 10 * 10).alias("decade"),
+        pl.col("name").str.split(by=" ").list.first(),
+    )
+    .select(
+        pl.all().exclude("birthdate"),
+    )
+    .group_by(
+        pl.col("decade"),
+        maintain_order=True,
+    )
+    .agg(
+        pl.col("name"),
+        pl.col("weight", "height").mean().round(2).name.prefix("avg "),
+    )
+)
+print(result)
+# --8<-- [end:complex]
+
+# --8<-- [start:join]
+df2 = pl.DataFrame(
+    {
+        "name": ["Ben Brown", "Daniel Donovan", "Alice Archer", "Chloe Cooper"],
+        "parent": [True, False, False, False],
+        "siblings": [1, 2, 3, 4],
+    }
 )
 
-print(df_x)
-# --8<-- [end:combine]
+print(df.join(df2, on="name", how="left"))
+# --8<-- [end:join]
 
-# --8<-- [start:combine2]
-df_y = df.with_columns((pl.col("a") * pl.col("b")).alias("a * b")).select(
-    pl.all().exclude("d")
+# --8<-- [start:concat]
+df3 = pl.DataFrame(
+    {
+        "name": ["Ethan Edwards", "Fiona Foster", "Grace Gibson", "Henry Harris"],
+        "birthdate": [
+            dt.date(1977, 5, 10),
+            dt.date(1975, 6, 23),
+            dt.date(1973, 7, 22),
+            dt.date(1971, 8, 3),
+        ],
+        "weight": [67.9, 72.5, 57.6, 93.1],  # (kg)
+        "height": [1.76, 1.6, 1.66, 1.8],  # (m)
+    }
 )
 
-print(df_y)
-# --8<-- [end:combine2]
+print(df.vstack(df3))
+# --8<-- [end:concat]
