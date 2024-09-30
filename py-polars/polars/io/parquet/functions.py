@@ -459,7 +459,6 @@ def scan_parquet(
     ... }
     >>> pl.scan_parquet(source, storage_options=storage_options)  # doctest: +SKIP
     """
-
     if schema is not None:
         msg = "The `schema` parameter of `scan_parquet` is considered unstable."
         issue_unstable_warning(msg)
