@@ -75,10 +75,10 @@ pub fn resolve_join(
     }
 
     let input_left = input_left.map_right(Ok).right_or_else(|input| {
-        to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_input!(join left)))
+        to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(join left)))
     })?;
     let input_right = input_right.map_right(Ok).right_or_else(|input| {
-        to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_input!(join right)))
+        to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(join right)))
     })?;
 
     let schema_left = ctxt.lp_arena.get(input_left).schema(ctxt.lp_arena);
@@ -153,9 +153,9 @@ fn resolve_join_where(
 ) -> PolarsResult<Node> {
     check_join_keys(&predicates)?;
     let input_left = to_alp_impl(Arc::unwrap_or_clone(input_left), ctxt)
-        .map_err(|e| e.context(failed_input!(join left)))?;
+        .map_err(|e| e.context(failed_here!(join left)))?;
     let input_right = to_alp_impl(Arc::unwrap_or_clone(input_right), ctxt)
-        .map_err(|e| e.context(failed_input!(join left)))?;
+        .map_err(|e| e.context(failed_here!(join left)))?;
 
     let schema_left = ctxt.lp_arena.get(input_left).schema(ctxt.lp_arena);
     let schema_right = ctxt
