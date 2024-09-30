@@ -152,16 +152,6 @@ fn resolve_join_where(
     ctxt: &mut DslConversionContext,
 ) -> PolarsResult<Node> {
     check_join_keys(&predicates)?;
-    for e in &predicates {
-        let no_binary_comparisons = e
-            .into_iter()
-            .filter(|e| match e {
-                Expr::BinaryExpr { op, .. } => op.is_comparison(),
-                _ => false,
-            })
-            .count();
-        polars_ensure!(no_binary_comparisons == 1, InvalidOperation: "only 1 binary comparison allowed as join condition");
-    }
     let input_left = to_alp_impl(Arc::unwrap_or_clone(input_left), ctxt)
         .map_err(|e| e.context(failed_input!(join left)))?;
     let input_right = to_alp_impl(Arc::unwrap_or_clone(input_right), ctxt)
@@ -173,6 +163,32 @@ fn resolve_join_where(
         .get(input_right)
         .schema(ctxt.lp_arena)
         .into_owned();
+
+    for e in &predicates {
+        let no_binary_comparisons = e
+            .into_iter()
+            .filter(|e| match e {
+                Expr::BinaryExpr { op, .. } => op.is_comparison(),
+                _ => false,
+            })
+            .count();
+        polars_ensure!(no_binary_comparisons == 1, InvalidOperation: "only 1 binary comparison allowed as join condition");
+
+        fn all_in_schema(schema: &Schema, left: &Expr, right: &Expr) -> bool {
+            let mut iter =
+                expr_to_leaf_column_names_iter(left).chain(expr_to_leaf_column_names_iter(right));
+            iter.all(|name| schema.contains(name.as_str()))
+        }
+
+        let valid = e.into_iter().all(|e| match e {
+            Expr::BinaryExpr { left, op, right } if op.is_comparison() => {
+                !(all_in_schema(&schema_left, left, right)
+                    || all_in_schema(&schema_right, left, right))
+            },
+            _ => true,
+        });
+        polars_ensure!( valid, InvalidOperation: "join predicate in 'join_where' only refers to columns of a single table")
+    }
 
     let owned = |e: Arc<Expr>| (*e).clone();
 

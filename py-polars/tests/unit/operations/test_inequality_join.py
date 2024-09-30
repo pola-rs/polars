@@ -567,3 +567,11 @@ def test_ie_join_projection_pd_19005() -> None:
         [("index", pl.get_index_type()), ("index_right", pl.List(pl.get_index_type()))]
     )
     assert out.shape == (0, 2)
+
+
+def test_raise_invalid_predicate() -> None:
+    left = pl.LazyFrame({"a": [1, 2]}).with_row_index()
+    right = pl.LazyFrame({"b": [1, 2]}).with_row_index()
+
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        left.join_where(right, pl.col.index >= pl.col.a).collect()

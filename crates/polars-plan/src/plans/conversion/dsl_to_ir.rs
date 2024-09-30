@@ -401,7 +401,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 options,
             };
 
-            return run_conversion(lp, ctxt, "select");
+            return run_conversion(lp, ctxt, "select").map_err(|e| e.context(failed_here!(select)));
         },
         DslPlan::Sort {
             input,
@@ -473,7 +473,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 sort_options,
             };
 
-            return run_conversion(lp, ctxt, "sort");
+            return run_conversion(lp, ctxt, "sort").map_err(|e| e.context(failed_here!(sort)));
         },
         DslPlan::Cache { input, id } => {
             let input =
@@ -527,7 +527,8 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 options,
             };
 
-            return run_conversion(lp, ctxt, "group_by");
+            return run_conversion(lp, ctxt, "group_by")
+                .map_err(|e| e.context(failed_here!(group_by)));
         },
         DslPlan::Join {
             input_left,
@@ -546,6 +547,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 options,
                 ctxt,
             )
+            .map_err(|e| e.context(failed_here!(join)))
         },
         DslPlan::HStack {
             input,
