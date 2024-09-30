@@ -34,6 +34,14 @@ if TYPE_CHECKING:
 
 
 @overload
+def parse_as_duration_string(td: None, *, raise_on_dynamic_length: bool) -> None: ...
+
+
+@overload
+def parse_as_duration_string(
+    td: timedelta | str, *, raise_on_dynamic_length: bool
+) -> str: ...
+@overload
 def parse_as_duration_string(td: None) -> None: ...
 
 
@@ -42,11 +50,11 @@ def parse_as_duration_string(td: timedelta | str) -> str: ...
 
 
 def parse_as_duration_string(
-    td: timedelta | str | None, raise_on_dynamic_length=False
+    td: timedelta | str | None, *, raise_on_dynamic_length: bool = False
 ) -> str | None:
     """Parse duration input as a Polars duration string."""
     if td is None or isinstance(td, str):
-        if raise_on_dynamic_length:
+        if raise_on_dynamic_length and isinstance(td, str):
             if "y" in td:
                 msg = "Only fixed length durations supported. year not supported"
                 raise InvalidOperationError(msg)
