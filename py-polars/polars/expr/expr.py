@@ -4671,8 +4671,10 @@ class Expr:
         if pass_name:
 
             def wrap_f(x: Series) -> Series:  # pragma: no cover
-                def inner(s: Series) -> Series:  # pragma: no cover
-                    return function(s.alias(x.name))
+                def inner(s: Series | Any) -> Series:  # pragma: no cover
+                    if isinstance(s, pl.Series):
+                        s = s.alias(x.name)
+                    return function(s)
 
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore", PolarsInefficientMapWarning)
