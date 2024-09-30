@@ -63,12 +63,10 @@ fn visualize_plan_rec(
             input,
             name,
             offset,
-        } => {
-            (
-                format!("with-row-index\\nname: {name}\\noffset: {offset:?}"),
-                from_ref(input),
-            )
-        },
+        } => (
+            format!("with-row-index\\nname: {name}\\noffset: {offset:?}"),
+            from_ref(input),
+        ),
         PhysNodeKind::InputIndependentSelect { selectors } => (
             format!(
                 "input-independent-select\\n{}",

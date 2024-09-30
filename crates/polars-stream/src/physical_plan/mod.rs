@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{InitHashMaps, PlHashMap, SortMultipleOptions, IdxSize};
+use polars_core::prelude::{IdxSize, InitHashMaps, PlHashMap, SortMultipleOptions};
 use polars_core::schema::{Schema, SchemaRef};
 use polars_error::PolarsResult;
 use polars_plan::plans::hive::HivePartitions;
@@ -57,7 +57,7 @@ pub enum PhysNodeKind {
         selectors: Vec<ExprIR>,
         extend_original: bool,
     },
-    
+
     WithRowIndex {
         input: PhysNodeKey,
         name: PlSmallStr,

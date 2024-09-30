@@ -45,7 +45,10 @@ impl ComputeNode for WithRowIndexNode {
             while let Ok(morsel) = recv.recv().await {
                 let morsel = morsel.try_map(|df| {
                     let out = df.with_row_index(self.name.clone(), Some(self.offset));
-                    self.offset = self.offset.checked_add(df.len().try_into().unwrap()).unwrap();
+                    self.offset = self
+                        .offset
+                        .checked_add(df.len().try_into().unwrap())
+                        .unwrap();
                     out
                 })?;
                 if send.send(morsel).await.is_err() {
