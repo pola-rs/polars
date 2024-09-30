@@ -639,8 +639,6 @@ fn decode_column_prefiltered(
         deserialize_filter,
     )?;
 
-    assert_eq!(array.len(), expected_num_rows);
-
     let column = Series::try_from((arrow_field, array))?.into_column();
 
     let column = if !prefilter {
