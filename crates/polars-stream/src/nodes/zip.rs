@@ -8,6 +8,7 @@ use polars_error::polars_ensure;
 
 use super::compute_node_prelude::*;
 use crate::morsel::SourceToken;
+use crate::DEFAULT_ZIP_HEAD_BUFFER_SIZE;
 
 /// The head of an input stream.
 #[derive(Debug)]
@@ -211,7 +212,23 @@ impl ComputeNode for ZipNode {
         assert!(send.len() == 1);
         assert!(!recv.is_empty());
         let mut sender = send[0].take().unwrap().serial();
-        let mut receivers: Vec<_> = recv.iter_mut().map(|r| Some(r.take()?.serial())).collect();
+
+        let mut receivers = recv
+            .iter_mut()
+            .map(|r| {
+                // Add buffering to each receiver to reduce contention between input heads.
+                let serial_recv = r.take()?.serial();
+                let (buf_send, buf_recv) = tokio::sync::mpsc::channel(DEFAULT_ZIP_HEAD_BUFFER_SIZE);
+                join_handles.push(scope.spawn_task(TaskPriority::High, async move {
+                    while let Ok(morsel) = serial_recv.recv().await {
+                        if buf_send.send(morsel).is_err() {
+                            break;
+                        }
+                    }
+                }));
+                Some(buf_recv)
+            })
+            .collect_vec();
 
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
             let mut out = Vec::new();
