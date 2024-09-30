@@ -780,7 +780,7 @@ where
             .reduce(reduce)
             .unwrap();
 
-        if !is_missing & (a.null_count() > 0 || b.null_count() > 0) {
+        if !is_missing && (a.null_count() > 0 || b.null_count() > 0) {
             let mut a = a.into_owned();
             a.zip_outer_validity(&b);
             unsafe {
@@ -801,7 +801,7 @@ impl ChunkCompareEq<&StructChunked> for StructChunked {
         struct_helper(
             self,
             rhs,
-            |l, r| l.equal(r).unwrap(),
+            |l, r| l.equal_missing(r).unwrap(),
             |a, b| a.bitand(b),
             false,
             false,
@@ -823,7 +823,7 @@ impl ChunkCompareEq<&StructChunked> for StructChunked {
         struct_helper(
             self,
             rhs,
-            |l, r| l.not_equal(r).unwrap(),
+            |l, r| l.not_equal_missing(r).unwrap(),
             |a, b| a | b,
             true,
             false,

@@ -184,6 +184,25 @@ def test_struct_equality_18870() -> None:
     assert result == expected
 
 
+def test_struct_nested_equality() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [{"foo": 0, "bar": "1"}, {"foo": None, "bar": "1"}, None],
+            "b": [{"foo": 0, "bar": "1"}] * 3,
+        }
+    )
+
+    # eq
+    ans = df.select(pl.col("a").eq(pl.col("b")))
+    expected = pl.DataFrame({"a": [True, False, None]})
+    assert_frame_equal(ans, expected)
+
+    # ne
+    ans = df.select(pl.col("a").ne(pl.col("b")))
+    expected = pl.DataFrame({"a": [False, True, None]})
+    assert_frame_equal(ans, expected)
+
+
 def isnan(x: Any) -> bool:
     return isinstance(x, float) and math.isnan(x)
 
