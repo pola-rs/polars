@@ -10473,57 +10473,39 @@ class Expr:
         )
 
     def bitwise_count_ones(self) -> Expr:
-        """
-        Evaluate the number of set bits.
-        """
+        """Evaluate the number of set bits."""
         return self._from_pyexpr(self._pyexpr.bitwise_count_ones())
 
     def bitwise_count_zeros(self) -> Expr:
-        """
-        Evaluate the number of unset bits.
-        """
+        """Evaluate the number of unset bits."""
         return self._from_pyexpr(self._pyexpr.bitwise_count_zeros())
 
     def bitwise_leading_ones(self) -> Expr:
-        """
-        Evaluate the number most-significant set bits before seeing an unset bit.
-        """
+        """Evaluate the number most-significant set bits before seeing an unset bit."""
         return self._from_pyexpr(self._pyexpr.bitwise_leading_ones())
 
     def bitwise_leading_zeros(self) -> Expr:
-        """
-        Evaluate the number most-significant unset bits before seeing a set bit.
-        """
+        """Evaluate the number most-significant unset bits before seeing a set bit."""
         return self._from_pyexpr(self._pyexpr.bitwise_leading_zeros())
 
     def bitwise_trailing_ones(self) -> Expr:
-        """
-        Evaluate the number least-significant set bits before seeing an unset bit.
-        """
+        """Evaluate the number least-significant set bits before seeing an unset bit."""
         return self._from_pyexpr(self._pyexpr.bitwise_trailing_ones())
 
     def bitwise_trailing_zeros(self) -> Expr:
-        """
-        Evaluate the number least-significant unset bits before seeing a set bit.
-        """
+        """Evaluate the number least-significant unset bits before seeing a set bit."""
         return self._from_pyexpr(self._pyexpr.bitwise_trailing_zeros())
 
     def bitwise_and(self) -> Expr:
-        """
-        Perform an aggregation of bitwise ANDs
-        """
+        """Perform an aggregation of bitwise ANDs."""
         return self._from_pyexpr(self._pyexpr.bitwise_and())
 
     def bitwise_or(self) -> Expr:
-        """
-        Perform an aggregation of bitwise ORs
-        """
+        """Perform an aggregation of bitwise ORs."""
         return self._from_pyexpr(self._pyexpr.bitwise_or())
 
     def bitwise_xor(self) -> Expr:
-        """
-        Perform an aggregation of bitwise XORs
-        """
+        """Perform an aggregation of bitwise XORs."""
         return self._from_pyexpr(self._pyexpr.bitwise_xor())
 
     @deprecate_function(
