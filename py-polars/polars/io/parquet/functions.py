@@ -107,6 +107,10 @@ def read_parquet(
         Specify the datatypes of the columns. The datatypes must match the
         datatypes in the file(s). If there are extra columns that are not in the
         file(s), consider also enabling `allow_missing_columns`.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
     hive_schema
         The column names and data types of the columns by which the data is partitioned.
         If set to `None` (default), the schema of the Hive partitions is inferred.
@@ -165,6 +169,10 @@ def read_parquet(
     scan_parquet
     scan_pyarrow_dataset
     """
+    if schema is not None:
+        msg = "The `schema` parameter of `read_parquet` is considered unstable."
+        issue_unstable_warning(msg)
+
     if hive_schema is not None:
         msg = "The `hive_schema` parameter of `read_parquet` is considered unstable."
         issue_unstable_warning(msg)
@@ -384,6 +392,10 @@ def scan_parquet(
         Specify the datatypes of the columns. The datatypes must match the
         datatypes in the file(s). If there are extra columns that are not in the
         file(s), consider also enabling `allow_missing_columns`.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
     hive_schema
         The column names and data types of the columns by which the data is partitioned.
         If set to `None` (default), the schema of the Hive partitions is inferred.
@@ -447,6 +459,11 @@ def scan_parquet(
     ... }
     >>> pl.scan_parquet(source, storage_options=storage_options)  # doctest: +SKIP
     """
+
+    if schema is not None:
+        msg = "The `schema` parameter of `scan_parquet` is considered unstable."
+        issue_unstable_warning(msg)
+
     if hive_schema is not None:
         msg = "The `hive_schema` parameter of `scan_parquet` is considered unstable."
         issue_unstable_warning(msg)
