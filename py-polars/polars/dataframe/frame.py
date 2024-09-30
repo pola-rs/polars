@@ -4479,7 +4479,9 @@ class DataFrame:
         """
         return self.select(F.col("*").reverse())
 
-    def rename(self, mapping: dict[str, str] | Callable[[str], str]) -> DataFrame:
+    def rename(
+        self, mapping: dict[str, str] | Callable[[str], str], *, strict: bool = True
+    ) -> DataFrame:
         """
         Rename column names.
 
@@ -4488,6 +4490,10 @@ class DataFrame:
         mapping
             Key value pairs that map from old name to new name, or a function
             that takes the old name as input and returns the new name.
+        strict
+            Validate that all column names exist in the current schema,
+            and throw an exception if any do not. (Note that this parameter
+            is a no-op when passing a function to `mapping`).
 
         Examples
         --------
@@ -4517,7 +4523,7 @@ class DataFrame:
         │ 3   ┆ 8   ┆ c   │
         └─────┴─────┴─────┘
         """
-        return self.lazy().rename(mapping).collect(_eager=True)
+        return self.lazy().rename(mapping, strict=strict).collect(_eager=True)
 
     def insert_column(self, index: int, column: Series) -> DataFrame:
         """
@@ -7475,8 +7481,8 @@ class DataFrame:
             Names of the columns that should be removed from the dataframe.
             Accepts column selector input.
         strict
-            Validate that all column names exist in the schema and throw an
-            exception if a column name does not exist in the schema.
+            Validate that all column names exist in the current schema,
+            and throw an exception if any do not.
 
         Examples
         --------
